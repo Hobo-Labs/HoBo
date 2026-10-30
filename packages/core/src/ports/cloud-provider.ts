@@ -111,6 +111,7 @@ export interface IacResource {
 
 // public-contract: IaC program wire-shape ids (hobo.iac-program/v1).
 export const IAC_PROGRAM_API_VERSION = "hobo.iac-program/v1";
+// public-contract: kind discriminator consumed by provider-neutral IaC executors.
 export const IAC_PROGRAM_KIND = "iac-program";
 
 /**

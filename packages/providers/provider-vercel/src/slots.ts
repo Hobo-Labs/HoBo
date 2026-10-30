@@ -42,6 +42,7 @@ export const VERCEL_EDGE_CONFIG_PRODUCT_ID = "vercel.edge-config/v1";
 
 // public-contract: capability profiles these offerings claim to satisfy.
 export const VERCEL_PROJECT_PROFILE = "provider.project/v1";
+// public-contract: hosted-web capability profile advertised by the static deployment slot.
 export const VERCEL_STATIC_DEPLOY_PROFILE = "web.hosted/v1";
 export type VercelStaticDeploySlotOptions = { readonly projectId?: string };
 export function staticDeployment(

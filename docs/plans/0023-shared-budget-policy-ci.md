@@ -167,3 +167,8 @@ operation was used for this validation.
 The exact staged public patch was also compared against 56 private values from
 anonymous acceptance evidence: **618 files checked, zero matches**. Private native
 credentials and bearer identities remain outside the checkout.
+
+PR-base standards review also checked public wire/API constants individually.
+Their contract annotations remain adjacent to each declaration, including retained
+compatibility environment names and diagnostic provider URLs; that repair changes
+comments only.

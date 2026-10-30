@@ -12,7 +12,7 @@ export type DeployBackend = "cloudflare" | "vercel" | "in-memory";
  * retained in the public type for stored descriptions only. */
 export type DeployLane = "deploy-provider" | "resolver" | "in-memory";
 
-// Deprecated compatibility spelling. Live cloud credentials always select exact-resource resolvers.
+// public-contract: deprecated environment spelling retained for compatibility; live credentials select exact-resource resolvers.
 export const RESOLVER_LANE_ENV = "HOBO_DEPLOY_RESOLVERS";
 
 export interface DeployTargetDescription {

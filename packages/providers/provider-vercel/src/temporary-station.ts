@@ -16,6 +16,7 @@ export const VERCEL_TEMPORARY_PROVIDER_ID = PROVIDER_TARGET;
 /** The SDK has no provider-documented anonymous API; account-backed REST
  * deployments are available through vercel.static-deploy/v1 instead. */
 export { supportsAnonymousTemporaryDeploy } from "./temporary-capability.js";
+// public-contract: Vercel Drop landing page retained in availability diagnostics.
 export const VERCEL_DROP_URL = "https://vercel.com/drop";
 export type VercelDropFile = {
 	readonly file: string;
