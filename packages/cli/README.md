@@ -208,6 +208,12 @@ pipeline. Missing implementations throw before producing a successful result.
 
 ### Verification and contracts
 
+The CLI and HOBO Vitest configurations load the installed TypeScript compiler
+through Node. Native compilation, packaged-app execution and existing test
+deadlines remain enforced without transforming the compiler's internals in Vite.
+Compiler/process acceptance runs one test file at a time to fit bounded runners;
+concurrent-writer and provider race checks still run inside their owning tests.
+
 The tests execute the product paths, not only emitted string comparisons:
 
 - `typescript-project-codegen.test.ts`: imported/nested/generic types,

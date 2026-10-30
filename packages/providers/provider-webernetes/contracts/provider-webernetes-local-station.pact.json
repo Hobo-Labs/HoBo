@@ -17,7 +17,7 @@
 	},
 	"interactions": [
 		{
-			"description": "provision a station through the built-in transport, which names a .hobo.localhost host",
+			"description": "provision a station through an injected host transport, which names a .hobo.localhost host",
 			"request": {
 				"type": "message",
 				"body": {

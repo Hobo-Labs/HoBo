@@ -503,6 +503,9 @@ function runApi(config: { readonly pollsUntilDone?: number } = {}) {
 		if (done && pending === "apply") {
 			service = {
 				name: "projects/hobo-demo/locations/us-central1/services/storefront",
+				generation: "1",
+				observedGeneration: "1",
+				terminalCondition: { state: "CONDITION_SUCCEEDED" },
 				uri: "https://storefront-abc.a.run.app",
 				ingress: sentBody.ingress ?? "INGRESS_TRAFFIC_ALL",
 				template: sentBody.template ?? {},

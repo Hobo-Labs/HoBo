@@ -119,6 +119,7 @@ export {
 	parseCreateDbJson,
 	providerErrorForCliFailure,
 } from "./output.js";
+export { createNodeProcessRunner } from "./process-runner.js";
 export {
 	assertNoCredentialMaterial,
 	type CredentialScanHit,
@@ -126,10 +127,12 @@ export {
 	PRISMA_MIGRATION_PROFILE_REFS,
 	type PrismaProviderFact,
 	type PrismaProvisionReceipt,
+	type PublicSerializationOptions,
 	scanForCredentialMaterial,
 	toProviderFacts,
 	toProvisionReceipt,
 } from "./receipt.js";
+export { createPrismaClaimableResolver } from "./resolver.js";
 export {
 	createPrismaClaimablePostgresSemantics,
 	createPrismaResourceDefinition,

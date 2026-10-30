@@ -15,13 +15,14 @@
  * AWS differs from the single-origin providers in one way that matters: its
  * endpoints are *regional*, so there is no one host to allowlist. The policy
  * is therefore built per region and lists the exact regional host of each
- * service a resolver in this package addresses — six hosts, no wildcards. A
+ * service a resolver in this package addresses — seven hosts, no wildcards. A
  * region that does not parse is refused rather than interpolated, because
  * `s3.{whatever}.amazonaws.com` is a request to a host nobody reviewed.
  *
  * The path allowlist is `/` and only `/`, which looks permissive and is not:
- * five of the six services accept exactly one path (`/`, with the operation in
- * a header or a form body), and S3 addresses a single bucket segment. There is
+ * five services accept exactly one path (`/`, with the operation in
+ * a header or a form body), S3 addresses a bucket and Lambda uses its versioned
+ * function paths. There is
  * no narrower prefix that admits `/{bucket}` without also admitting every
  * sibling path, so the honest constraint here is the host list plus the
  * scheme, and this comment says so rather than implying a path check is doing
@@ -54,6 +55,7 @@ import {
 // public-contract: the closed set of AWS service endpoints the resolvers may address, and the host allowlist is derived from it.
 export const AWS_RESOLVER_SERVICES = Object.freeze([
 	"dynamodb",
+	"lambda",
 	"s3",
 	"secretsmanager",
 	"sns",

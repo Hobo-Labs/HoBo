@@ -1,4 +1,8 @@
 export {
+	type RailwayDeploymentIdentity,
+	RailwayDeploymentIdentitySchema,
+} from "./_generated/deployment_identity_pb.js";
+export {
 	EQUIVALENCE_CLASSES,
 	equivalenceForPort,
 	INITIAL_CAPABILITY_PORTS,
@@ -22,6 +26,14 @@ export {
 	railwayPortOrUndefined,
 } from "./parse.js";
 export { createRailwayProvider } from "./provider.js";
+export {
+	createRailwayDeploymentClient,
+	createRailwayResolvers,
+	RAILWAY_GRAPHQL_ENDPOINT,
+	RAILWAY_SERVICE_PRODUCT_ID,
+	type RailwayResolverOptions,
+	railwayResolverRegistry,
+} from "./resolvers.js";
 export {
 	provisionTemporaryEnvironmentStation,
 	type RailwayTemporaryStationRefusal,

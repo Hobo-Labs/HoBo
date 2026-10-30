@@ -58,6 +58,8 @@ export interface CostSignal {
 	sku: string;
 	unit: string;
 	marginalPrice: string;
+	/** Ranking hint provenance; financial admission still requires scoped quotes. */
+	pricingStatus?: "unknown" | "estimate" | "verified-zero";
 	freeTier: { unit: string; included: number; reset: string };
 }
 

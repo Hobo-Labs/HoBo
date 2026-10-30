@@ -126,11 +126,11 @@ connection, user workflows select `runs-on: hobo`.
 
 Routing considers only enabled, acknowledged provider offers owned by this account.
 It reserves the complete host timeout, including startup, under a durable transaction.
-HoBo first selects eligible offers that consume usable measured free allocation,
-then chooses the lowest projected paid cost among them. When no eligible offer can
-consume free allocation, it chooses the lowest projected paid cost among all offers.
-`@hobo/dispatcher` applies deterministic tie-breaking. A partial free allowance
-can leave a paid remainder that costs more than a fully paid alternative.
+The default `min-cost` objective chooses the lowest complete projected paid cost.
+Explicit `maximize-credits` first prefers offers consuming usable measured free
+allocation, then minimizes their paid remainder. `@hobo/dispatcher` applies
+deterministic tie-breaking. A partial free allowance can leave a paid remainder
+that costs more than a fully paid alternative.
 A job stays on its selected machine until it finishes.
 Provider budgets and concurrency limits can cause another eligible provider to win.
 If none qualifies, the job remains durably queued. Allocation must remain valid for
@@ -269,8 +269,9 @@ Bind eligible account offer IDs to real, account-scoped backend contexts;
 construct `new PipelineScheduler(store, account.id, bindings)` for that account.
 The scheduler rejects another account even if its offer IDs are identical.
 `Offer.backend` is `gh-actions` (the legacy empty default), `dagger`, or `cf`.
-The scheduler filters missing/incompatible backend bindings before free-first
-ranking. Native reservations cover the pipeline's bounded runtime rounded to a
+The scheduler excludes missing/incompatible backend bindings from selection while
+retaining their payer measurements for all-of budget constraints. Ranking follows
+the authored objective. Native reservations cover the bounded runtime rounded to a
 minute plus account startup allowance, within the account maximum.
 
 Admission, reservation, execution intent, completed results and replay commit
@@ -283,6 +284,9 @@ side effects on another provider. On process startup call `store.recover()`
 with current ISO time before accepting commands.
 Recovery cancels native reservations that never recorded launch intent so they
 can be admitted against current policy; interrupted running leases remain uncertain.
+The persisted queue deadline is exclusive: allocation is refused at or after that
+instant, including after asynchronous provider preflight. A claimed financial hold
+is retained until native final usage or valid unused-release evidence resolves it.
 
 The root entrypoint and scheduler target Node. Cloudflare Workers import the
 portable `@hobo/ci/execution` entrypoint, which has no Node ledger or Dispatcher
@@ -324,7 +328,12 @@ runner offers, including for private pushes. It requires explicit
 and must have empty event and branch filters: every matching job may run.
 Changing that isolation mode
 requires draining active leases. The local workflow-bridge store leaves such
-jobs queued rather than selecting a shared host.
+jobs queued rather than selecting a shared host. If isolation is required after a
+PostgreSQL runner was reserved, the store cancels the unused lease and requeues
+the demand. A shared financial hold remains in place until an independently
+verified unused-evidence reference is supplied to `releaseUnusedSharedBudget`
+after that cancellation is durable; an unknown or claimed effect cannot be
+released merely because the local lease was cancelled.
 
 
 Broker-to-CI routing contracts include `BudgetSignal` and `BudgetRoutingPolicy`.

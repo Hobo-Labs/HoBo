@@ -3,7 +3,7 @@ export const EQUIVALENCE_CLASSES = Object.freeze({
 		port: "compute",
 		resourceClass: "vercel:web-ssr",
 		providerService: "Vercel Web",
-		features: ["http", "ssr", "managed"],
+		features: ["http", "static", "managed"],
 	},
 	objectStore: {
 		port: "objectStore",

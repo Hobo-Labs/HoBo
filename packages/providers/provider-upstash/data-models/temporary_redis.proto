@@ -2,6 +2,14 @@ syntax = "proto3";
 
 package hobo.provider.upstash.v1;
 
+message UpstashDestroyOutcome {
+  bool destroyed = 1;
+  string reason = 2;
+  optional string manual_action = 3;
+  optional string retirement_evidence_ref = 4;
+  optional string usage_evidence_ref = 5;
+}
+
 // Design-time contract artifacts for @hobo/provider-upstash: the data shapes
 // crossing this package's boundaries — the parsed `start-redis` document, the
 // durable temporary-Redis record, the claim plan, the provision receipt, and
@@ -122,6 +130,7 @@ message UpstashTemporaryRedis {
   string metrics_url = 17;
   UpstashUnclaimedLimits limits = 18;
   bool adopted = 19;
+  optional string redis_protocol_url_ref = 20; // SecretRef locator; native URI is custody-only
 }
 
 // What the receipt says about the claim: the state plus the blocking actions
@@ -131,7 +140,9 @@ message UpstashClaimSummary {
   UpstashClaimState state = 1;
   string boundary = 2;                 // resource
   string atomicity = 3;                // single-resource
-  string claim_url = 4;
+  reserved 4;
+  reserved "claim_url";
+  string claim_ref = 6;
   repeated string blocking_action_ids = 5;
 }
 
@@ -140,7 +151,8 @@ message UpstashProvisionReceipt {
   string definition_id = 2;
   string provider_id = 3;
   string resource_ref = 4;
-  string database_id = 5;
+  reserved 5;
+  reserved "database_id";
   UpstashNonSecretEndpoint endpoint = 6;
   optional string credential_ref = 7;  // SecretRef locator, never material
   optional string rest_url_ref = 8;    // SecretRef locator, never material
@@ -157,6 +169,9 @@ message UpstashProvisionReceipt {
   // migration profile that fails at execution time is worse than none.
   repeated string migration_profiles = 18;
   string teardown = 19;                // expiry-only; there is no delete API
+  optional string redis_protocol_url_ref = 20;
+  string opaque_physical_id = 21;
+  string native_identity_ref = 22;
 }
 
 // An observation this package hands the claim plane. It is not a durable event
@@ -166,6 +181,10 @@ message UpstashProviderFact {
   UpstashProviderFactKind kind = 1;
   int64 occurred_at_ms = 2;
   string resource_ref = 3;
-  string database_id = 4;
+  reserved 4;
+  reserved "database_id";
   map<string, string> detail = 5;
+  string opaque_physical_id = 6;
+  string native_identity_ref = 7;
+  string schema_version = 8;
 }

@@ -587,7 +587,7 @@ describe("selectIacProvider under HOBO_CREDENTIALS=opensesame", () => {
 			},
 			vercelFetch: countingFetch().fetch,
 		});
-		expect(provider.id).toMatch(/^vercel-deploy:/u);
+		expect(provider.id).toMatch(/^resolver-backed:/u);
 	});
 
 	it("selectIacProvider is unchanged when HOBO_CREDENTIALS is unset", () => {
@@ -599,7 +599,7 @@ describe("selectIacProvider under HOBO_CREDENTIALS=opensesame", () => {
 					env: { ...env, VERCEL_TOKEN: placeholder },
 					vercelFetch: fetch,
 				}).id,
-			).toMatch(/^vercel-deploy:/u);
+			).toMatch(/^resolver-backed:/u);
 			expect(selectIacProvider({ ...selectionDeps, env }).id).toMatch(
 				/^pulumi-backed:/u,
 			);

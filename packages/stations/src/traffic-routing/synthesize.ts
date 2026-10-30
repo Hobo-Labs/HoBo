@@ -2,6 +2,7 @@ import {
 	type MinAvailabilitySpec,
 	type PolicyDecision,
 	parseRoutingPlan,
+	type ResiliencySpec,
 	type RoutingPlan,
 	type RoutingWeightStrategy,
 	type TenantId,
@@ -13,6 +14,12 @@ export type RoutingTopology = Readonly<{
 	tenantId: TenantId;
 	stationId?: string;
 	railHash?: `sha256:${string}`;
+	/** Explicit cost-routing eligibility; single-writer resources cannot move by price. */
+	costRouting?:
+		| "stateless"
+		| "active-active-eventual"
+		| "pinned-with-replica"
+		| "single-writer";
 	backends: readonly Readonly<{
 		id: string;
 		service: string;
@@ -41,6 +48,7 @@ export function synthesizeRoutingPlan(
 	input: Readonly<{
 		topology: RoutingTopology;
 		availability?: MinAvailabilitySpec;
+		resiliency?: ResiliencySpec;
 		policyDecision: PolicyDecision;
 		now?: string;
 		planId?: string;
@@ -122,6 +130,9 @@ export function synthesizeRoutingPlan(
 					],
 					...(input.availability !== undefined
 						? { availability: input.availability }
+						: undefined),
+					...(input.resiliency !== undefined
+						? { resiliency: input.resiliency }
 						: undefined),
 				},
 				backends,

@@ -767,7 +767,7 @@ describe("resolver-backed IacProvider: credential custody", () => {
 // selectIacProvider precedence
 // ---------------------------------------------------------------------------
 
-describe("selectIacProvider: the resolver lane is opt-in", () => {
+describe("selectIacProvider: exact artifacts for live providers", () => {
 	const deps = (env: Record<string, string | undefined>) => ({
 		store: newStore(),
 		providers: [],
@@ -785,7 +785,7 @@ describe("selectIacProvider: the resolver lane is opt-in", () => {
 		);
 	});
 
-	it("keeps today's Cloudflare deploy provider without the opt-in", () => {
+	it("selects exact Cloudflare resources by default", () => {
 		expect(
 			selectIacProvider(
 				deps({
@@ -793,12 +793,12 @@ describe("selectIacProvider: the resolver lane is opt-in", () => {
 					CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID,
 				}),
 			).id,
-		).toMatch(/^cloudflare-deploy:/u);
+		).toMatch(/^resolver-backed:/u);
 	});
 
-	it("keeps today's Vercel deploy provider without the opt-in", () => {
+	it("selects exact Vercel resources by default", () => {
 		expect(selectIacProvider(deps({ VERCEL_TOKEN: FAKE_TOKEN })).id).toMatch(
-			/^vercel-deploy:/u,
+			/^resolver-backed:/u,
 		);
 	});
 

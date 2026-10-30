@@ -49,6 +49,9 @@ function makeCapability(classKey: InitialCapabilityPort): Capability {
 				sku: fact.sku,
 				unit: fact.unit,
 				marginalPrice: fact.marginalPrice,
+				pricingStatus: /^0(?:\.0+)?$/u.test(fact.marginalPrice)
+					? "unknown"
+					: "estimate",
 				freeTier: {
 					unit: fact.unit,
 					included: fact.included,

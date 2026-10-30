@@ -355,3 +355,65 @@ flow through the shared claim plane in `@hobo/claims`:
   **read store** `hobo claim` queries for current status, so an operator asking
   whether the deployment changed hands reads a projection, never a live Vercel
   call — and never the claim URL, which lives only in custody.
+
+### Production deployment and temporary API boundary
+
+`vercelResolvers(options)` also registers `vercel.static-deploy/v1`. This product
+uploads an immutable UTF-8 static artifact into an explicitly identified,
+already-owned project using `POST /v13/deployments`. It leaves `target` unset so
+creation produces a preview; Station controls traffic independently. Desired
+properties are `projectId`, `name`, `operationId`, and a map of absolute file paths
+to UTF-8 contents in `files`. Executable build configuration is refused.
+
+All create POSTs require a host-owned `ResourceMutationJournal` with
+`persistence: "durable-cas"`. An uncertain POST is discovered by the immutable
+operation marker through bounded `GET /v7/deployments` pagination; it is never
+blindly replayed. A pinned missing resource is not recreated. Independent
+`GET /v13/deployments/{id}` must match project and team, reach a terminal native
+state, and, for ready observations, fetch the actual bytes from its immutable
+HTTPS deployment origin. Only those observed bytes produce `artifactDigest`.
+A deployment acknowledgement, graph marker, or HTTP 200 alone is not application
+health or final billing evidence. `DELETE /v13/deployments/{id}` uses native scope
+and can retire an unhealthy artifact without relying on its public HTTP endpoint.
+
+`VercelResolverOptions` accepts `mutationJournal`, optional credential-free
+`artifactTransport`, and aggregate `maxArtifactBytes` / `maxArtifactFiles` limits.
+The authenticated project and Edge Config resolvers require the same durable
+journal for creation, reject foreign native identities and unknown settings,
+and independently check ownership before deletion. Project and Edge Config
+outputs do not assert a running application.
+
+The SDK now reports `supportsAnonymousTemporaryDeploy: false`. Browser Drop is
+not a documented anonymous SDK API. The former CLI fallback used an ambient
+login, deployed with `--prod`, invented a dashboard claim link and local expiry,
+and mislabeled the result anonymous. It has been removed. Calling
+`createVercelDropCliTransport()` has no subprocess or account side effect and
+refuses deployment. An explicitly injected temporary transport must provide a
+native deployment ID, an observed claim-deployment action, explicit anonymous
+authority and a provider-reported bounded expiry. Local materialization rejects
+traversal, configuration files, duplicate paths and oversized artifacts and uses
+a new isolated directory. The authenticated resolver remains available for
+account-backed deployment; anonymous acceptance does not exercise that path.
+
+The compute manifest publishes `vercel.static-deploy/v1` explicitly.
+`createVercelStaticDeployDefinition()` and `VERCEL_DEFINITIONS` expose the
+matching static/hosted semantics and executor. `staticDeployment({projectId})`
+is the default Yard web offering. `project()` now uses the control-resource
+profile `provider.project/v1`, so a project without a deployed artifact cannot
+satisfy hosted application readiness. An explicitly configured project remains
+available as a control resource. The compute capability no longer claims SSR
+from a static-only deployment driver.
+
+`data-models/anonymous_deployment.proto` owns injected temporary deployment
+evidence, and the runtime contract derives its generated type. Its CUE schema
+and executed positive/negative fixtures refuse invented anonymity, dashboard
+links masquerading as ownership claims, and unreported expiry. The package now
+opts into scoped Protobuf generation with `data-models/buf.yaml`. Native account
+creation and deployment remain account-required and are not labeled live-tested
+by anonymous acceptance.
+
+A scoped ready deployment read also publishes `servingEndpoint` from the
+validated immutable deployment origin after fetching its artifact. Pending and
+failed deployments, project records, and guessed aliases provide no serving
+endpoint proof. Endpoint metadata never substitutes for artifact or business
+health evidence.

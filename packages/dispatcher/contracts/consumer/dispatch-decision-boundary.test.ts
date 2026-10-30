@@ -77,4 +77,32 @@ describe("dispatch decision boundary consumer", () => {
 		expect(decision.reason).toBe(interaction.response.body.reason);
 		expect(decision.dispatchEvent).toBeUndefined();
 	});
+	it("fails closed when a registered hosting backend exceeds its hard budget", () => {
+		const decision = decideDispatch({
+			registry: createDispatcherRegistry([
+				{ providerId: "cloud", category: "traffic-backend", listUnitCost: 1 },
+			]),
+			category: "traffic-backend",
+			dispatchId: "hard-cap-pact",
+			units: 2,
+			ledgerView: {
+				view: "CreditLedgerView",
+				seq: 8,
+				asOf: "2026-07-01T00:00:00Z",
+				accounts: [
+					{
+						providerId: "cloud",
+						dimension: "traffic.requests",
+						budgetCap: 1,
+						spendToDate: 0,
+						listUnitCost: 1,
+					},
+				],
+			},
+		});
+		const interaction = pact.interactions[2];
+		expect(decision.ok).toBe(interaction.response.body.ok);
+		expect(decision.reason).toBe(interaction.response.body.reason);
+		expect(decision.dispatchEvent).toBeUndefined();
+	});
 });

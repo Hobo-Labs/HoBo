@@ -136,7 +136,7 @@ import "list"
 	state:     #PrismaClaimState
 	boundary:  "resource"
 	atomicity: "single-resource"
-	claim_url: #ClaimUrl
+	claim_ref: #SecretRefLocator
 
 	// Only the blocking actions still outstanding, so "the transfer happened"
 	// cannot be read as "nobody holds a residual credential".
@@ -148,14 +148,12 @@ import "list"
 }
 
 #PrismaProvisionReceipt: {
-	schema_version:       "hobo.provider-prisma-postgres.receipt/v1"
+	schema_version:       "hobo.provider-prisma-postgres.receipt/v2"
 	definition_id:        "prisma.claimable-postgres/v1"
 	provider_id:          "prisma"
-	resource_ref:         string & !=""
-	project_id:           #ProjectId
+	resource_ref:         =~"^claimable:[a-f0-9]{64}$"
 	database_name:        string & !=""
 	region:               #Region
-	endpoint:             #PrismaNonSecretEndpoint
 	credential_ref?:      #SecretRefLocator
 	expires_at_iso:       #Instant
 	expires_at_ms:        int & >0
@@ -165,9 +163,22 @@ import "list"
 	adopted:              bool
 	output_mode:          #PrismaOutputMode
 	claim:                #PrismaClaimSummary
-	associated_resource:  #PrismaAssociatedResourceRef
 	binding_profiles: [...("binding.postgresql/v1")] & list.MinItems(1)
 
 	// pg_dump only: logical replication is not documented for this tier.
 	migration_profiles: [...("migration.postgres.pg-dump/v1")]
+	opaque_physical_id:      =~"^claimable:[a-f0-9]{64}$"
+	native_identity_ref:     #SecretRefLocator
+	endpoint_ref:            #SecretRefLocator
+	binding_ref?:            #SecretRefLocator
+	associated_resource_ref: #SecretRefLocator
+}
+
+#PrismaProviderFact: {
+	kind:                "provider.prisma.database.provisioned" | "provider.prisma.database.adopted" | "provider.prisma.claim.pending-rotation" | "provider.prisma.claim.completed" | "provider.prisma.lease.expired"
+	occurred_at_ms:      int & >0
+	resource_ref:        =~"^claimable:[a-f0-9]{64}$"
+	opaque_physical_id:  =~"^claimable:[a-f0-9]{64}$"
+	native_identity_ref: #SecretRefLocator
+	detail: [string]: string | number | bool
 }

@@ -54,6 +54,18 @@ export function createConvexManagementClient(
 		/\/+$/u,
 		"",
 	);
+	const target = new URL(base);
+	if (
+		target.protocol !== "https:" ||
+		target.username ||
+		target.password ||
+		target.search ||
+		target.hash
+	) {
+		throw new Error(
+			"convex management API base must be an HTTPS URL without credentials, query, or fragment",
+		);
+	}
 	const fetchImpl = options.fetchImpl ?? globalThis.fetch;
 
 	async function request(path: string, init?: RequestInit): Promise<JsonValue> {
@@ -62,6 +74,7 @@ export function createConvexManagementClient(
 		}
 		const response = await fetchImpl(`${base}${path}`, {
 			...init,
+			redirect: "error",
 			headers: {
 				accept: "application/json",
 				authorization: `Bearer ${deployKey}`,

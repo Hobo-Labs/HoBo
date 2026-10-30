@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "google/protobuf/struct.proto";
+
 package hobo.provider.neon.v1;
 
 // Design-time contract artifacts for @hobo/provider-neon: the data shapes the
@@ -86,7 +88,9 @@ message NeonClaimSummary {
   NeonClaimState state = 1;
   string boundary = 2;         // resource
   string atomicity = 3;        // single-resource
-  string claim_url = 4;
+  reserved 4;
+  reserved "claim_url";
+  string claim_ref = 6;
   repeated string blocking_action_ids = 5;
 }
 
@@ -109,11 +113,10 @@ message NeonProvisionReceipt {
   string definition_id = 2;
   string provider_id = 3;
   string resource_ref = 4;
-  string database_id = 5;
-  string neon_project_id = 6;
+  reserved 5, 6, 9;
+  reserved "database_id", "neon_project_id", "endpoints";
   string provider_status = 7;             // the provider's own vocabulary
   string database_name = 8;
-  NeonReceiptEndpoints endpoints = 9;
   optional string credential_ref = 10;        // locator, never material
   optional string direct_credential_ref = 11; // locator, never material
   string expires_at_iso = 12;
@@ -125,4 +128,20 @@ message NeonProvisionReceipt {
   NeonUnclaimedLimits limits = 18;
   repeated string binding_profiles = 19;
   repeated string migration_profiles = 20;
+  string opaque_physical_id = 21;
+  string native_identity_ref = 22;
+  string native_project_ref = 23;
+  string endpoint_ref = 24;
+  optional string binding_ref = 25;
+}
+
+
+// Public fact projection: native capability values exist only in custody.
+message NeonProviderFact {
+  string kind = 1;
+  int64 occurred_at_ms = 2;
+  string resource_ref = 3;
+  string opaque_physical_id = 4;
+  string native_identity_ref = 5;
+  google.protobuf.Struct detail = 6;
 }

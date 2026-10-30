@@ -1,3 +1,11 @@
+export {
+	BudgetPolicyConstraintRecordSchema,
+	BudgetPolicyEvaluationContextRecordSchema,
+	BudgetPolicyEvaluationRecordSchema,
+	BudgetPolicyMeasurementRecordSchema,
+	BudgetPolicyRecordSchema,
+	BudgetScopeIdentityRecordSchema,
+} from "./_generated/budget_policy_pb.js";
 export type {
 	CapabilityDenialCode,
 	CapabilityDiagnostic,
@@ -154,6 +162,22 @@ export {
 	parseResourceId,
 	RESOURCE_ID_PATTERN,
 } from "./ports/binding-resolver.js";
+export {
+	BUDGET_POLICY_SCHEMA,
+	type BudgetPolicy,
+	type BudgetPolicyConstraint,
+	BudgetPolicyError,
+	type BudgetPolicyEvaluation,
+	type BudgetPolicyEvaluationContext,
+	type BudgetScopeIdentity,
+	budgetScopeIdentityKey,
+	budgetThresholdSignalKey,
+	canonicalBudgetPolicyJson,
+	evaluateBudgetPolicy,
+	parseBudgetPolicy,
+	parseBudgetPolicyDocumentJson,
+	parseBudgetPolicyJson,
+} from "./ports/budget-policy.js";
 export type { CampTier } from "./ports/camp-tier.js";
 export {
 	CAMP_TIER_EGRESS,
@@ -200,6 +224,16 @@ export {
 	SlotBindingError,
 	slotBinding,
 } from "./ports/capability-slot.js";
+export {
+	type ClaimableOperationKeyDeriver,
+	type ClaimableResolverScope,
+	claimableOperationKey,
+	claimablePublicResourceId,
+	claimableResourceRef,
+	createClaimableOperationKeyDeriver,
+	createClaimableResourceResolver,
+	type ResourceRecordRepository,
+} from "./ports/claimable-resolver.js";
 export type {
 	ClockReplayResult,
 	ClockTraceEntry,
@@ -362,6 +396,7 @@ export {
 	StorageWorkerTerminatedError,
 	UnsupportedSchemaVersionError,
 } from "./ports/eventstore.js";
+export { createBoundedFetchTransport } from "./ports/fetch-http-transport.js";
 export type {
 	HttpTransport,
 	TransportGuardErrorCode,
@@ -551,6 +586,19 @@ export {
 	REALIZATION_RESULT_SCHEMA,
 	RealizationResultParseError,
 } from "./ports/realization-result.js";
+export {
+	observeResolverLifecycle,
+	type ProviderResourceRecordEnvelope,
+	ProviderResourceRecordEnvelopeSchema,
+	parseResourceLifecycleObservation,
+	type ResourceLifecycleContext,
+	type ResourceLifecycleObservation,
+	ResourceLifecycleObservationRecordSchema,
+	type ResourceLifecycleScope,
+	type ResourceMutationJournal,
+	type ResourceMutationJournalEntry,
+	ResourceMutationJournalEntrySchema,
+} from "./ports/resource-lifecycle.js";
 export type {
 	ResolvedResourceRef,
 	ResolveOutcome,

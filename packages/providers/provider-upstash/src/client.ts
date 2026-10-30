@@ -49,6 +49,8 @@ export type IdempotencyRecord = {
 };
 
 export interface IdempotencyStore {
+	/** Native keys and ids are bearer capabilities: this cache is private custody, never public events. */
+	readonly visibility: "private-custody";
 	get(key: string): Promise<IdempotencyRecord | undefined>;
 	put(record: IdempotencyRecord): Promise<void>;
 }
@@ -60,6 +62,7 @@ export function createInMemoryIdempotencyStore(
 		seed.map((r) => [r.key, r]),
 	);
 	return {
+		visibility: "private-custody",
 		async get(key) {
 			return records.get(key);
 		},
@@ -135,7 +138,7 @@ function retryAfterMs(
 		if (Number.isFinite(seconds) && seconds >= 0)
 			return Math.min(seconds, 300) * 1000;
 		const at = Date.parse(value);
-		if (Number.isFinite(at)) return Math.max(0, at - now);
+		if (Number.isFinite(at)) return Math.min(300_000, Math.max(0, at - now));
 	}
 	return undefined;
 }
@@ -143,10 +146,17 @@ function retryAfterMs(
 export function createUpstashClient(
 	options: UpstashClientOptions,
 ): UpstashClient {
+	if (options.store.visibility !== "private-custody")
+		throw new UpstashProviderError(
+			"SECRET_CUSTODY_UNAVAILABLE",
+			"native idempotency state requires private custody; public event stores are forbidden",
+		);
 	const policy = options.policy ?? UPSTASH_CONTROL_PLANE_POLICY;
 	const transport = createGuardedTransport(options.transport, policy);
 	const baseUrl = options.baseUrl ?? UPSTASH_START_REDIS_URL;
-	const sleep = options.sleep ?? (async () => undefined);
+	const sleep =
+		options.sleep ??
+		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 	const maxReadAttempts = Math.max(
 		1,
 		Math.min(options.maxReadAttempts ?? 3, 6),
@@ -214,7 +224,13 @@ export function createUpstashClient(
 		assertIdempotencyKey(idempotencyKey);
 		let lastError: UpstashProviderError | undefined;
 		for (let attempt = 0; attempt < maxReadAttempts; attempt += 1) {
-			if (attempt > 0) await sleep(retryBaseDelayMs * 2 ** (attempt - 1));
+			if (attempt > 0)
+				await sleep(
+					Math.max(
+						retryBaseDelayMs * 2 ** (attempt - 1),
+						lastError?.retryAfterMs ?? 0,
+					),
+				);
 			try {
 				const database = await post(idempotencyKey);
 				await options.store.put({

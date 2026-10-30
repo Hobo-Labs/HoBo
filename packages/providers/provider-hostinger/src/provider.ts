@@ -46,6 +46,7 @@ function makeCapability(classKey: InitialCapabilityPort): Capability {
 		estimateCost(_req: PortRequest): CostSignal {
 			return {
 				currency: "USD",
+				pricingStatus: Number(fact.marginalPrice) > 0 ? "estimate" : "unknown",
 				sku: fact.sku,
 				unit: fact.unit,
 				marginalPrice: fact.marginalPrice,

@@ -15,6 +15,7 @@
 			"name": "service",
 			"port": "compute",
 			"provider": "@hobo/provider-cloudflare",
+			"productId": "cloudflare.workers/v1",
 			"deps": ["assets", "sessions"],
 			"strategy": "rolling-update",
 			"region": "ENAM"

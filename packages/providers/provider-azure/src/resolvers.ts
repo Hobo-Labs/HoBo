@@ -124,6 +124,7 @@ import {
 	AZURE_MAX_TIMEOUT_MS,
 	azureArmUrl,
 	azureOperationUrl,
+	guardedAzureTransport,
 } from "./transport.js";
 
 // ---------------------------------------------------------------------------
@@ -485,6 +486,14 @@ async function callArm(
 	context: AzureResolverContext,
 	call: AzureCall,
 ): Promise<TransportResponse> {
+	const path = new URL(call.url).pathname.toLowerCase();
+	if (
+		!path.startsWith(`/subscriptions/${context.subscriptionId.toLowerCase()}/`)
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"ARM operation URL belongs to a different subscription scope",
+		);
 	const body = call.json === undefined ? undefined : JSON.stringify(call.json);
 	return context.transport({
 		method: call.method,
@@ -807,7 +816,13 @@ async function readResourceBody(
 	});
 	if (response.status === 404) return undefined;
 	assertArmOk(response, `${label} (final read)`);
-	return parseArmBody(response, `${label} (final read)`);
+	const body = parseArmBody(response, `${label} (final read)`);
+	if (body === undefined)
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			`${label}: a successful resource read contained no representation; absence is not confirmed`,
+		);
+	return body;
 }
 
 /** `GET` a resource id. `undefined` means "not there", which every
@@ -824,7 +839,13 @@ async function armGet(
 	});
 	if (response.status === 404) return undefined;
 	assertArmOk(response, label);
-	return parseArmBody(response, label);
+	const body = parseArmBody(response, label);
+	if (body === undefined)
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			`${label}: a successful resource read contained no representation; absence is not confirmed`,
+		);
+	return body;
 }
 
 /**
@@ -846,7 +867,19 @@ async function armDelete(
 		method: "DELETE",
 		url: azureArmUrl(resourcePath, apiVersion),
 	});
-	if (response.status === 404 || response.status === 204) return;
+	if (response.status === 404) return;
+	if (response.status === 204) {
+		const observed = await callArm(context, {
+			method: "GET",
+			url: azureArmUrl(resourcePath, apiVersion),
+		});
+		if (observed.status === 404) return;
+		assertArmOk(observed, `${label} (confirm absence)`);
+		throw new ResolverError(
+			"RESOLVER_PROVIDER_REJECTED",
+			`${label}: resource still exists or its absence is not confirmed after delete acknowledgement`,
+		);
+	}
 	const settled = await settleWrite(
 		context,
 		response,
@@ -858,6 +891,17 @@ async function armDelete(
 		throw new ResolverError(
 			"RESOLVER_PROVIDER_REJECTED",
 			`${label}: ${settled.diagnostics.join("; ")} — the resource may still exist, so this delete is reported as unconfirmed rather than as done; re-run delete to converge`,
+		);
+	}
+	const observed = await callArm(context, {
+		method: "GET",
+		url: azureArmUrl(resourcePath, apiVersion),
+	});
+	if (observed.status !== 404) {
+		assertArmOk(observed, `${label} (confirm absence)`);
+		throw new ResolverError(
+			"RESOLVER_PROVIDER_REJECTED",
+			`${label}: resource still exists or its absence is not confirmed after terminal deletion`,
 		);
 	}
 }
@@ -1076,7 +1120,7 @@ function createResolver(
 		const token = await resolveToken(request, options.resolveCredential);
 		return {
 			request,
-			transport,
+			transport: guardedAzureTransport(transport),
 			token,
 			subscriptionId,
 			resourceGroup,
@@ -2438,9 +2482,20 @@ function containerAppIngress(
 }
 
 function containerAppOutputs(
-	name: string,
+	context: AzureResolverContext,
 	body: JsonObject | undefined,
 ): JsonObject {
+	const name = context.name;
+	const expected = resourceId(context, containerAppSuffix(name));
+	if (
+		body !== undefined &&
+		optionalString(body, "id")?.toLowerCase() !== expected.toLowerCase()
+	)
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			"Container App response identity differs from requested scope",
+		);
+	assertContainerAppOwnership(context, body);
 	const properties =
 		body === undefined ? undefined : nestedRecord(body, "properties");
 	const state = optionalString(properties, "provisioningState");
@@ -2449,12 +2504,65 @@ function containerAppOutputs(
 		nestedRecord(nestedRecord(properties, "configuration"), "ingress"),
 		"fqdn",
 	);
-	return {
+	const readyRevision = optionalString(properties, "latestReadyRevisionName");
+	const image = optionalString(context.desired, "image");
+	const artifact = containerAppArtifact(context);
+	const nativeArtifact = nestedRecord(body, "tags")["hobo.artifact"];
+	const confirmed = state?.toLowerCase() === "succeeded";
+	const ready =
+		containerAppOwnership(context) !== undefined &&
+		artifact !== undefined &&
+		nativeArtifact === artifact &&
+		confirmed &&
+		optionalString(properties, "runningStatus") === "Running" &&
+		revision !== undefined &&
+		readyRevision === revision &&
+		image !== undefined &&
+		optionalString(body, "location")?.toLowerCase() ===
+			optionalString(context.desired, "location")?.toLowerCase() &&
+		optionalString(properties, "managedEnvironmentId")?.toLowerCase() ===
+			optionalString(context.desired, "managedEnvironmentId")?.toLowerCase() &&
+		containerAppSettled(
+			context,
+			properties ?? {},
+			image,
+			containerAppIngress(context),
+		);
+	const result: JsonObject = {
 		appName: name,
+		ready,
+		operationConfirmed: confirmed,
+		lifecycleStatus: ready
+			? "ready"
+			: state?.toLowerCase() === "failed"
+				? "failed"
+				: "pending",
 		...(fqdn !== undefined ? { fqdn } : undefined),
 		...(revision !== undefined ? { latestRevisionName: revision } : undefined),
 		...(state !== undefined ? { provisioningState: state } : undefined),
 	};
+	const containers = nestedRecord(properties, "template").containers;
+	if (
+		ready &&
+		fqdn &&
+		fqdn.length <= 253 &&
+		/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+azurecontainerapps\.io$/iu.test(
+			fqdn,
+		)
+	)
+		Object.assign(result, {
+			servingEndpoint: `https://${fqdn.toLowerCase()}/`,
+		});
+	const observedImage =
+		isJsonArray(containers) && isJsonObject(containers[0])
+			? optionalString(containers[0], "image")
+			: undefined;
+	const contentDigest = observedImage?.match(/@(sha256:[a-f0-9]{64})$/u)?.[1];
+	if (contentDigest !== undefined)
+		Object.assign(result, { artifactDigest: contentDigest });
+	if (isJsonString(nativeArtifact))
+		Object.assign(result, { artifactMarker: nativeArtifact });
+	return result;
 }
 
 function containerAppImmutableDiagnostics(
@@ -2500,6 +2608,15 @@ function containerAppSettled(
 ): boolean {
 	const template = nestedRecord(properties, "template");
 	const containers = template.containers;
+	if (
+		containerAppOwnership(context) !== undefined &&
+		(!isJsonArray(containers) ||
+			containers.length !== 1 ||
+			(template.initContainers !== undefined &&
+				(!isJsonArray(template.initContainers) ||
+					template.initContainers.length > 0)))
+	)
+		return false;
 	const first: JsonObject =
 		isJsonArray(containers) && isJsonObject(containers[0]) ? containers[0] : {};
 	if (optionalString(first, "image") !== image) return false;
@@ -2510,7 +2627,13 @@ function containerAppSettled(
 	if (cpu !== undefined && optionalNumber(resources, "cpu") !== cpu) {
 		return false;
 	}
-	if (memory !== undefined && optionalString(resources, "memory") !== memory) {
+	const observedMemory = optionalString(resources, "memory");
+	if (
+		memory !== undefined &&
+		(observedMemory === undefined ||
+			!/^[0-9]+(?:\.[0-9]+)?Gi$/u.test(observedMemory) ||
+			Number.parseFloat(observedMemory) !== Number.parseFloat(memory))
+	) {
 		return false;
 	}
 
@@ -2547,6 +2670,7 @@ function containerAppSettled(
 
 const CONTAINER_APPS_SPEC: Omit<AzureResolverSpec, "productId"> = {
 	async read(context) {
+		assertContainerAppScope(context);
 		const suffix = containerAppSuffix(context.name);
 		const observed = await armGet(
 			context,
@@ -2558,11 +2682,12 @@ const CONTAINER_APPS_SPEC: Omit<AzureResolverSpec, "productId"> = {
 		return outcome(
 			settledAction(context),
 			resourceId(context, suffix),
-			containerAppOutputs(context.name, observed),
+			containerAppOutputs(context, observed),
 			containerAppImmutableDiagnostics(context, observed),
 		);
 	},
 	async reconcile(context) {
+		assertContainerAppScope(context);
 		const suffix = containerAppSuffix(context.name);
 		const path = groupPath(context, suffix);
 		const id = resourceId(context, suffix);
@@ -2582,6 +2707,17 @@ const CONTAINER_APPS_SPEC: Omit<AzureResolverSpec, "productId"> = {
 			AZURE_CONTAINER_APPS_API_VERSION,
 			label,
 		);
+		assertContainerAppOwnership(context, observed);
+		if (
+			observed !== undefined &&
+			containerAppArtifact(context) !== undefined &&
+			nestedRecord(observed, "tags")["hobo.artifact"] !==
+				containerAppArtifact(context)
+		)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"Container App artifact differs; use a new immutable target name rather than overwriting an older deployment",
+			);
 		if (observed === undefined) {
 			const location = requiredDesired(
 				context,
@@ -2595,21 +2731,30 @@ const CONTAINER_APPS_SPEC: Omit<AzureResolverSpec, "productId"> = {
 				AZURE_CONTAINER_APPS_PRODUCT_ID,
 				"a Container App runs inside a managed environment, and this resolver never creates one on the caller's behalf",
 			);
+			const body = {
+				location,
+				properties: {
+					managedEnvironmentId,
+					template,
+					...(ingress === undefined
+						? undefined
+						: { configuration: { ingress } }),
+				},
+			};
+			const owner = containerAppOwnership(context);
+			if (owner !== undefined)
+				Object.assign(body, {
+					tags: {
+						"hobo.owner": owner,
+						"hobo.artifact": containerAppArtifact(context),
+					},
+				});
 			const created = await settleWrite(
 				context,
 				await callArm(context, {
 					method: "PUT",
 					url: azureArmUrl(path, AZURE_CONTAINER_APPS_API_VERSION),
-					json: {
-						location,
-						properties: {
-							managedEnvironmentId,
-							template,
-							...(ingress === undefined
-								? undefined
-								: { configuration: { ingress } }),
-						},
-					},
+					json: body,
 				}),
 				path,
 				AZURE_CONTAINER_APPS_API_VERSION,
@@ -2618,7 +2763,7 @@ const CONTAINER_APPS_SPEC: Omit<AzureResolverSpec, "productId"> = {
 			return outcome(
 				"create",
 				id,
-				containerAppOutputs(context.name, created.body),
+				containerAppOutputs(context, created.body),
 				created.diagnostics,
 			);
 		}
@@ -2629,7 +2774,7 @@ const CONTAINER_APPS_SPEC: Omit<AzureResolverSpec, "productId"> = {
 			return outcome(
 				settledAction(context),
 				id,
-				containerAppOutputs(context.name, observed),
+				containerAppOutputs(context, observed),
 				immutable,
 			);
 		}
@@ -2651,18 +2796,31 @@ const CONTAINER_APPS_SPEC: Omit<AzureResolverSpec, "productId"> = {
 			AZURE_CONTAINER_APPS_API_VERSION,
 			label,
 		);
-		return outcome(
-			"update",
-			id,
-			containerAppOutputs(context.name, updated.body),
-			[
-				...immutable,
-				"container template applied: the Container Apps template is replaced wholesale by a write, so any revision field this binding does not name is reset to the platform default",
-				...updated.diagnostics,
-			],
-		);
+		return outcome("update", id, containerAppOutputs(context, updated.body), [
+			...immutable,
+			"container template applied: the Container Apps template is replaced wholesale by a write, so any revision field this binding does not name is reset to the platform default",
+			...updated.diagnostics,
+		]);
 	},
 	async remove(context) {
+		assertContainerAppScope(context);
+		const existing = await armGet(
+			context,
+			groupPath(context, containerAppSuffix(context.name)),
+			AZURE_CONTAINER_APPS_API_VERSION,
+			`container app ${context.name}`,
+		);
+		if (existing === undefined) return;
+		containerAppOutputs(context, existing);
+		if (
+			containerAppArtifact(context) !== undefined &&
+			nestedRecord(existing, "tags")["hobo.artifact"] !==
+				containerAppArtifact(context)
+		)
+			throw new ResolverError(
+				"RESOLVER_PROVIDER_REJECTED",
+				"Container App retirement artifact no longer matches the approved source",
+			);
 		await armDelete(
 			context,
 			groupPath(context, containerAppSuffix(context.name)),
@@ -2671,6 +2829,160 @@ const CONTAINER_APPS_SPEC: Omit<AzureResolverSpec, "productId"> = {
 		);
 	},
 };
+
+function assertContainerAppScope(context: AzureResolverContext): void {
+	containerAppOwnership(context);
+	containerAppArtifact(context);
+	validateContainerAppSettings(context);
+	const expected = resourceId(context, containerAppSuffix(context.name));
+	if (
+		context.knownPhysicalId !== undefined &&
+		context.knownPhysicalId.toLowerCase() !== expected.toLowerCase()
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Container App physical identity differs from requested resource scope",
+		);
+}
+
+function validateContainerAppSettings(context: AzureResolverContext): void {
+	if (containerAppOwnership(context) !== undefined) {
+		for (const key of ["location", "managedEnvironmentId"])
+			if (!optionalString(context.desired, key))
+				throw new ResolverError(
+					"RESOLVER_PRODUCT_UNSUPPORTED",
+					`Budgeted Container Apps require explicit ${key}`,
+				);
+		const allowed = new Set([
+			"name",
+			"image",
+			"location",
+			"managedEnvironmentId",
+			"cpu",
+			"memory",
+			"minReplicas",
+			"maxReplicas",
+			"ingress",
+			"targetPort",
+			"ownershipRef",
+			"artifactDigest",
+		]);
+		for (const key of Object.keys(context.desired))
+			if (!allowed.has(key))
+				throw new ResolverError(
+					"RESOLVER_PRODUCT_UNSUPPORTED",
+					`Budgeted Container Apps do not implement desired.${key}; unhandled bindings cannot be silently omitted`,
+				);
+		if (
+			!/^[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[a-f0-9]{64}$/u.test(
+				optionalString(context.desired, "image") ?? "",
+			)
+		)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"Budgeted Container Apps require an immutable sha256 container image",
+			);
+	}
+	const cpu = optionalNumber(context.desired, "cpu"),
+		memory = optionalString(context.desired, "memory");
+	if (context.desired.cpu !== undefined && (cpu === undefined || cpu <= 0))
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Container App CPU must be a positive finite quantity",
+		);
+	if (
+		context.desired.memory !== undefined &&
+		(!memory ||
+			!/^[0-9]+(?:\.[0-9]+)?Gi$/u.test(memory) ||
+			Number.parseFloat(memory) <= 0)
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Container App memory must be an explicit positive Gi quantity",
+		);
+	for (const key of ["minReplicas", "maxReplicas", "targetPort"]) {
+		const value = optionalInteger(context.desired, key);
+		if (
+			context.desired[key] !== undefined &&
+			(value === undefined ||
+				value < (key === "minReplicas" ? 0 : 1) ||
+				(key === "targetPort" && value > 65535))
+		)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				`Container App ${key} must be a bounded integer`,
+			);
+	}
+	const min = optionalInteger(context.desired, "minReplicas"),
+		max = optionalInteger(context.desired, "maxReplicas");
+	if (min !== undefined && max !== undefined && min > max)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Container App minimum replicas exceeds its bounded maximum",
+		);
+	if (
+		containerAppOwnership(context) !== undefined &&
+		[
+			"cpu",
+			"memory",
+			"minReplicas",
+			"maxReplicas",
+			"location",
+			"managedEnvironmentId",
+		].some((key) => context.desired[key] === undefined)
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Budgeted Container Apps require explicit CPU, memory, minReplicas and maxReplicas bounds",
+		);
+}
+
+function containerAppArtifact(
+	context: AzureResolverContext,
+): string | undefined {
+	const artifact = optionalString(context.desired, "artifactDigest");
+	if (
+		(context.desired.artifactDigest !== undefined ||
+			context.desired.ownershipRef !== undefined) &&
+		(!artifact || !/^sha256:[a-f0-9]{64}$/u.test(artifact))
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Container App artifactDigest must pin the complete approved sha256 artifact",
+		);
+	return artifact;
+}
+
+function containerAppOwnership(
+	context: AzureResolverContext,
+): string | undefined {
+	const owner = optionalString(context.desired, "ownershipRef");
+	if (
+		context.desired.ownershipRef !== undefined &&
+		(!owner || !/^sha256:[a-f0-9]{64}$/u.test(owner))
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Container App ownershipRef must be a complete sha256 ownership identity",
+		);
+	return owner;
+}
+
+function assertContainerAppOwnership(
+	context: AzureResolverContext,
+	body: JsonObject | undefined,
+): void {
+	const owner = containerAppOwnership(context);
+	if (
+		owner !== undefined &&
+		body !== undefined &&
+		nestedRecord(body, "tags")["hobo.owner"] !== owner
+	)
+		throw new ResolverError(
+			"RESOLVER_PROVIDER_REJECTED",
+			"Container App has different or missing ownership metadata; implicit adoption is forbidden",
+		);
+}
 
 // ---------------------------------------------------------------------------
 // Azure Cache for Redis — Microsoft.Cache

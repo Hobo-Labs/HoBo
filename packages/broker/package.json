@@ -23,14 +23,17 @@
 		"test:contract:provider": "vitest run contracts/provider"
 	},
 	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/contracts": "workspace:*",
 		"@hobo/core": "workspace:*",
 		"@hobo/pricing": "workspace:*",
 		"@hobo/provider-cedar": "workspace:*",
-		"@hobo/provider-opa": "workspace:*"
+		"@hobo/provider-opa": "workspace:*",
+		"pg": "8.22.0"
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",
+		"@types/pg": "8.15.5",
 		"vitest": "^4.1.9",
 		"@hobo/storage-sqlite": "workspace:*"
 	},

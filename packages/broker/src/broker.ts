@@ -312,6 +312,8 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 			const billing = billingPlane.authorize({
 				spendEstimateUsd: request.spendEstimateUsd,
 				billing: policies.billing,
+				requestId: request.requestId,
+				requestDigest: JSON.stringify(request),
 			});
 			if (!billing.ok) {
 				return reject(request, billing.reasons, events);
@@ -340,6 +342,7 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				}
 			}
 			if (placementReasons.length > 0) {
+				billingPlane.release?.(request.requestId, true);
 				return reject(request, placementReasons, events);
 			}
 

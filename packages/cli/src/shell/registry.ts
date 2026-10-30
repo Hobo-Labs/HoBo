@@ -42,6 +42,7 @@ export interface CommandRunInput {
 		readonly demo: boolean;
 		readonly demoSeed: string | null;
 		readonly region: string | null;
+		readonly budgetId?: string | null;
 	};
 	readonly args: readonly string[];
 	readonly verb: string;

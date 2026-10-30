@@ -53,8 +53,12 @@ export type IdempotencyRecord = {
 };
 
 export interface IdempotencyStore {
+	/** Native keys and ids are bearer capabilities: this cache is private custody, never public events. */
+	readonly visibility: "private-custody";
 	get(key: string): Promise<IdempotencyRecord | undefined>;
 	put(record: IdempotencyRecord): Promise<void>;
+	/** Atomically claim an absent or definitely failed intent. Durable stores must CAS. */
+	claim(record: IdempotencyRecord): Promise<boolean>;
 }
 
 export function createInMemoryIdempotencyStore(
@@ -64,11 +68,19 @@ export function createInMemoryIdempotencyStore(
 		seed.map((record) => [record.key, record]),
 	);
 	return {
+		visibility: "private-custody",
+		async claim(record) {
+			const previous = records.get(record.key);
+			if (previous !== undefined && previous.state !== "failed") return false;
+			records.set(record.key, structuredClone(record));
+			return true;
+		},
 		async get(key) {
-			return records.get(key);
+			const record = records.get(key);
+			return record === undefined ? undefined : structuredClone(record);
 		},
 		async put(record) {
-			records.set(record.key, record);
+			records.set(record.key, structuredClone(record));
 		},
 	};
 }
@@ -124,6 +136,16 @@ export type PrismaClient = {
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u;
 
 export function createPrismaClient(options: PrismaClientOptions): PrismaClient {
+	if (options.store.visibility !== "private-custody")
+		throw new PrismaProviderError(
+			"SECRET_CUSTODY_UNAVAILABLE",
+			"native idempotency state requires private custody; public event stores are forbidden",
+		);
+	if (!(options.store.claim instanceof Function))
+		throw new PrismaProviderError(
+			"PROVIDER_CONTRACT_CHANGED",
+			"anonymous database creation requires an atomic idempotency claim store",
+		);
 	const outputMode = options.outputMode ?? "json";
 
 	return {
@@ -188,11 +210,16 @@ export function createPrismaClient(options: PrismaClientOptions): PrismaClient {
 				json: outputMode === "json",
 			});
 
-			await options.store.put({
+			const claimed = await options.store.claim({
 				key: input.idempotencyKey,
 				state: "in-flight",
 				attemptedAtMs: options.clock(),
 			});
+			if (!claimed)
+				throw new PrismaProviderError(
+					"PROVIDER_OPERATION_AMBIGUOUS",
+					"another worker owns this create intent; observe it before any further mutation",
+				);
 
 			let result: Awaited<ReturnType<ProcessRunner["run"]>>;
 			try {
@@ -237,13 +264,15 @@ export function createPrismaClient(options: PrismaClientOptions): PrismaClient {
 									input.region ?? options.invocation?.region ?? "us-east-1",
 							});
 			} catch (error) {
-				// A parsed failure document is a definite non-create; a parse
-				// error on a zero-exit run is a contract change. Neither
-				// created something we can point at, so release the key only
-				// when the CLI itself reported failure.
+				// Only a recognized non-creating provider rejection releases the
+				// intent. Unparseable output can follow a successful create.
 				if (
 					error instanceof PrismaProviderError &&
-					error.code !== "PROVIDER_OPERATION_AMBIGUOUS"
+					[
+						"PROVIDER_RATE_LIMITED",
+						"PROVIDER_AUTH_FAILED",
+						"PROVISIONING_CONFLICT",
+					].includes(error.code)
 				) {
 					await options.store.put({
 						key: input.idempotencyKey,

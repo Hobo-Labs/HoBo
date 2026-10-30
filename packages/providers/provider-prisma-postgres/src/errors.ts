@@ -6,6 +6,7 @@
  * connection string, is the most credential-dense text in the system. Nothing
  * from it reaches a message without going through {@link redactProviderText}.
  */
+import { isJsonString } from "./json.js";
 
 export const PROVIDER_ERROR_CODES = [
 	"PROVIDER_RATE_LIMITED",
@@ -37,6 +38,9 @@ export type ProviderErrorOptions = {
 };
 
 const CREDENTIAL_PATTERNS: readonly RegExp[] = [
+	/https?:\/\/create-db\.prisma\.io\/claim\S*/giu,
+	/\bproj_[A-Za-z0-9_-]+/gu,
+	/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
 	/postgres(?:ql)?:\/\/\S+/giu,
 	/prisma\+postgres:\/\/\S+/giu,
 	/\bBearer\s+\S+/giu,
@@ -64,6 +68,13 @@ export function containsControlChar(text: string): boolean {
 
 export function redactProviderText(text: string, maxLength = 256): string {
 	let out = text;
+	for (;;) {
+		const decoded = out.replace(/%[a-f0-9]{2}/giu, (encoded) =>
+			String.fromCharCode(Number.parseInt(encoded.slice(1), 16)),
+		);
+		if (decoded === out) break;
+		out = decoded;
+	}
 	for (const pattern of CREDENTIAL_PATTERNS)
 		out = out.replace(pattern, "[redacted]");
 	out = flattenControlChars(out).trim();
@@ -90,7 +101,18 @@ export class PrismaProviderError extends Error {
 		this.retryable = options.retryable ?? false;
 		if (options.retryAfterMs !== undefined)
 			this.retryAfterMs = options.retryAfterMs;
-		this.detail = Object.freeze({ ...options.detail });
+		this.detail = Object.freeze(
+			Object.fromEntries(
+				Object.entries(options.detail ?? {}).map(([key, value]) => [
+					key,
+					/idempotency|database.?id|project.?id|claim.?url/iu.test(key)
+						? "[redacted]"
+						: isJsonString(value)
+							? redactProviderText(value)
+							: value,
+				]),
+			),
+		);
 	}
 
 	toJSON() {

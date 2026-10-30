@@ -9,6 +9,7 @@
   "globalPassThroughEnv": [
     "CI",
     "HOBO_*",
+    "VITEST_MAX_WORKERS",
     "PLAYWRIGHT_*",
     "TMPDIR",
     "TMP",

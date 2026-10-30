@@ -8,18 +8,11 @@ import { isJsonString } from "./json.js";
 
 export type DeployBackend = "cloudflare" | "vercel" | "in-memory";
 
-/**
- * Which driver carries the deploy, independent of which cloud it targets.
- *
- * `deploy-provider` is the pre-existing bespoke client per cloud;
- * `resolver` is the direct-HTTP ResourceResolver plane, opt-in behind
- * `HOBO_DEPLOY_RESOLVERS=1`. An operator needs to know which one runs,
- * because they converge differently: the resolver plane is read-or-create
- * per product, so a re-run adopts rather than re-creating.
- */
+/** Exact-resource resolvers carry live provider effects. The legacy value is
+ * retained in the public type for stored descriptions only. */
 export type DeployLane = "deploy-provider" | "resolver" | "in-memory";
 
-// public-contract: the env var that opts a deploy into the resolver plane; renaming it silently returns every deploy to the bespoke clients.
+// Deprecated compatibility spelling. Live cloud credentials always select exact-resource resolvers.
 export const RESOLVER_LANE_ENV = "HOBO_DEPLOY_RESOLVERS";
 
 export interface DeployTargetDescription {
@@ -56,30 +49,23 @@ export function describeDeployTarget(
 	const cloudflareAccount = has(env, "CLOUDFLARE_ACCOUNT_ID");
 	const vercelToken = has(env, "VERCEL_TOKEN");
 
-	// Mirrors selectIacProvider: the resolver lane sits INSIDE the
-	// credential-gated bracket, so it can only replace the bespoke clients and
-	// never the credential-free default.
-	const resolvers = env[RESOLVER_LANE_ENV] === "1";
-
 	if (cloudflareToken && cloudflareAccount) {
 		return {
 			backend: "cloudflare",
-			lane: resolvers ? "resolver" : "deploy-provider",
+			lane: "resolver",
 			live: true,
-			summary: resolvers
-				? "Live target: Cloudflare via the direct-HTTP resolver plane (CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID set, HOBO_DEPLOY_RESOLVERS=1). Each product reconciles read-or-create, so a re-run adopts rather than re-creating."
-				: "Live target: Cloudflare Workers (CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID set). `hobo up` will deploy a real Worker. Set HOBO_DEPLOY_RESOLVERS=1 to use the resolver plane instead.",
+			summary:
+				"Cloud target: Cloudflare via the direct-HTTP resolver plane. Provider effects require a configured authoritative hosting budget, verified credential scope and native liability evidence.",
 			activate: [],
 		};
 	}
 	if (vercelToken) {
 		return {
 			backend: "vercel",
-			lane: resolvers ? "resolver" : "deploy-provider",
+			lane: "resolver",
 			live: true,
-			summary: resolvers
-				? "Live target: Vercel via the direct-HTTP resolver plane (VERCEL_TOKEN set, HOBO_DEPLOY_RESOLVERS=1). Each product reconciles read-or-create, so a re-run adopts rather than re-creating."
-				: "Live target: Vercel (VERCEL_TOKEN set). `hobo up` will deploy to real Vercel. Set HOBO_DEPLOY_RESOLVERS=1 to use the resolver plane instead.",
+			summary:
+				"Cloud target: Vercel via the direct-HTTP resolver plane. Provider effects require a configured authoritative hosting budget, verified credential scope and native liability evidence.",
 			activate: [],
 		};
 	}

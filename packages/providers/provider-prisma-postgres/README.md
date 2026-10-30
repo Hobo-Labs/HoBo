@@ -187,11 +187,15 @@ capacity. It contains no credential material, so a bundler may persist it.
   is ever followed.
 - **Bounded output and time.** stdout and stderr are capped (64 KiB) and the run
   is bounded (120 s), both configurable downward.
-- **The credential leaves in one direction only.** The connection string is
-  parsed, deposited through `SecretCustodyPort`, and replaced by a `SecretRef`
-  inside a single function scope. Records, bindings, receipts, facts, and errors
-  carry the locator plus non-secret endpoint metadata. `toProvisionReceipt` and
-  `toProviderFacts` re-scan their own output and throw rather than emit.
+- **Public serialization requires private custody.** The connection string is
+  deposited through `SecretCustodyPort`. Native SDK records remain privileged:
+  project IDs, claim URLs, endpoints, and associated-resource metadata can
+  identify or grant access to capabilities. The async `toProvisionReceipt` and
+  `toProviderFacts` require custody, a private host HMAC key deriver, and a
+  tenant/account/deployment scope. Their v2 projections carry opaque identities
+  and custody locators; they refuse missing custody, invalid locators, native
+  capability material, and credential-shaped output. Keep the native client
+  idempotency journal inside the private custody boundary.
 - **Idempotency and adoption.** One CLI run per idempotency key, ever. A repeat
   call adopts the recorded snapshot; a repeat call after an unresolved attempt
   raises `PROVIDER_OPERATION_AMBIGUOUS` and spawns nothing. Because there is no
@@ -258,7 +262,7 @@ and what this package contributes is one honest observation per interaction.
    `RotateCapabilityBinding`, `ExpireGuestLease` — is what a caller issues.
    `driver.provision()`, `observe()`, `verifyOwnership()`, and
    `attestRotation()` are the effectful halves those commands drive here.
-2. `toProviderFacts(record)` returns this package's observations
+2. `await toProviderFacts(record, publicSerialization)` returns this package's observations
    (`provider.prisma.database.provisioned` / `.adopted`,
    `provider.prisma.claim.pending-rotation` / `.completed`,
    `provider.prisma.lease.expired`). They are locator-only facts, not durable
@@ -315,9 +319,20 @@ const record = await driver.provision({
   resourceRef: "hobo://yard/demo/data/main",
 });
 
-console.log(toProvisionReceipt(record));      // locators only
-console.log(driver.associatedResource(record)); // for a bundled claim
+console.log(await toProvisionReceipt(record, publicSerialization));
+// driver.associatedResource(record) is privileged claim-orchestration input.
 ```
+
+The host supplies `publicSerialization = { custody, deriveOperationKey, scope }`.
+Create `deriveOperationKey` with `createClaimableOperationKeyDeriver` from
+`@hobo/core` using a privately stored, version-pinned key of at least 32 random
+bytes. Retain that key version and the same scope across restart; use a new
+`scope.scopeId` for each deployment incarnation. Do not derive the key from a
+public name or anonymous credential placeholder. Public `resourceRef` values
+are scope-bound hashes, and `opaquePhysicalId` also depends on the private key.
+Resolve the native project identity, claim URL, endpoint, associated-resource
+metadata, and optional binding only inside an authorized host. The serializer
+has no public deterministic fallback.
 
 Compiling first, if you want the command reviewable before it runs:
 
@@ -376,3 +391,32 @@ The two contract documents describe one boundary in two vocabularies: the
 this repo uses — exit code as status, argv and environment as the request,
 stdout document as the body — with the connection string and claim URL replaced
 by the locator and host rule they become.
+
+## Hosting budget execution
+
+`createNodeProcessRunner()` is the shipped Node runner for the pinned CLI and migration
+commands. It spawns argv without a shell, supplies only the explicit environment,
+bounds each output stream while reading, and terminates the process group at its
+deadline. Hosts explicitly supply executable search paths and required network settings.
+
+Anonymous create intents require `IdempotencyStore.claim(record)` with atomic CAS;
+a durable host persists that claim before spawning. Malformed success output remains
+unresolved because the CLI may already have created a project.
+
+Elapsed CLI-derived TTL never sets `released: true`. `destroy(record, context)` accepts
+an independent `retirement` callback returning core `ResourceLifecycleObservation`.
+Only fresh, exact-scope terminal absence plus final usage releases exposure. The result
+carries both evidence references; without that proof it retains exposure. Local custody
+revocation is separate from provider deletion. These outcome records are generated from
+protobuf and constrained by CUE.
+
+`createPrismaClaimableResolver` adapts the actual CLI-backed driver to the shared
+resolver protocol with a durable CAS repository and mutation journal. The
+idempotency key is scoped to tenant, provider account, deployment incarnation,
+product and logical resource. Claim URLs and capability bindings enter custody;
+only locators appear in resolver outcomes. A lost CLI result cannot cause a
+second create. The CLI journal is local evidence, so resolver reads report
+`ready: false` and `operationConfirmed: false`; deployment readiness requires an
+independent database probe. A locally computed TTL does not establish provider
+retirement or final charges. Deletion refuses without fresh authoritative
+retirement and final-usage evidence.

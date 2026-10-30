@@ -41,10 +41,6 @@ function runScript(script: string, overrides: Partial<typeof OPTIONS> = {}) {
 	});
 }
 
-function codeOf(error: unknown): string | undefined {
-	return (error as { code?: string }).code;
-}
-
 describe("argv handling", () => {
 	it("refuses an empty argv rather than spawning something arbitrary", async () => {
 		// `spawn(undefined, …)` would throw from deep inside child_process with a
@@ -55,7 +51,7 @@ describe("argv handling", () => {
 		try {
 			await runner.run([], OPTIONS);
 		} catch (error) {
-			expect(codeOf(error)).toBe("PROVIDER_CONTRACT_CHANGED");
+			expect(error).toMatchObject({ code: "PROVIDER_CONTRACT_CHANGED" });
 		}
 	});
 
@@ -183,7 +179,7 @@ describe("output capture", () => {
 		expect(result.stdout).toBe("x".repeat(50));
 	});
 
-	it("reports the truncation as a contract break", async () => {
+	it("reports output truncation as an ambiguous external outcome", async () => {
 		try {
 			await runScript("process.stdout.write('x'.repeat(5000))", {
 				maxOutputBytes: 10,
@@ -191,7 +187,7 @@ describe("output capture", () => {
 			expect.unreachable("oversized output must be refused");
 		} catch (error) {
 			expect(error).toBeInstanceOf(NetlifyProviderError);
-			expect(codeOf(error)).toBe("PROVIDER_CONTRACT_CHANGED");
+			expect(error).toMatchObject({ code: "PROVIDER_OPERATION_AMBIGUOUS" });
 		}
 	});
 });
@@ -209,9 +205,12 @@ describe("failure to start", () => {
 			expect.unreachable("a missing program must be reported");
 		} catch (error) {
 			expect(error).toBeInstanceOf(NetlifyProviderError);
-			expect(codeOf(error)).toBe("PROVIDER_CONTRACT_CHANGED");
-			expect((error as Error).message).toContain("could not be started");
-			expect((error as { cause?: unknown }).cause).toBeDefined();
+			expect(error).toMatchObject({ code: "PROVIDER_CONTRACT_CHANGED" });
+			expect(error).toHaveProperty(
+				"message",
+				expect.stringContaining("could not be started"),
+			);
+			expect(error).toHaveProperty("cause");
 		}
 	});
 });

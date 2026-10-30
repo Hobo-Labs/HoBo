@@ -278,16 +278,20 @@ describe("the Cloudflare transport", () => {
 		const calls: Call[] = [];
 		let n = 0;
 		const fetchImpl = async (url: string | URL, init: RequestInit = {}) => {
-			calls.push({ url: String(url), init });
+			const headers = new Headers(init.headers);
+			const recorded = { ...init };
+			if (
+				headers.get("content-type")?.startsWith("multipart/form-data") &&
+				init.body
+			)
+				recorded.body = await new Response(init.body, { headers }).formData();
+			calls.push({ url: String(url), init: recorded });
 			const entry = script[n++] ?? { body: { success: true, result: {} } };
 			const status = entry.status ?? 200;
-			const response = {
-				ok: status >= 200 && status < 300,
-				status,
-				json: async () => entry.body ?? { success: true, result: {} },
-			};
-			// SAFETY: fake fetch only implements the Response fields this transport reads.
-			return response as Response;
+			return new Response(
+				JSON.stringify(entry.body ?? { success: true, result: {} }),
+				{ status },
+			);
 		};
 		// SAFETY: fake fetch is the injected Fetch API for this transport.
 		const injected = fetchImpl as typeof fetch;
@@ -366,7 +370,11 @@ describe("the Cloudflare transport", () => {
 
 	it("accepts the camelCase account shape", async () => {
 		const c = cf([
-			ok({ accountId: "a", apiToken: "t", claimUrl: "https://claim" }),
+			ok({
+				accountId: "a",
+				apiToken: "t",
+				claimUrl: "https://dash.cloudflare.com/claim/test",
+			}),
 		]);
 		expect(
 			// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
@@ -378,7 +386,11 @@ describe("the Cloudflare transport", () => {
 		// The API has shipped more than one spelling; understanding only today's
 		// would break silently on a rollout.
 		const c = cf([
-			ok({ account_id: "a", api_token: "t", claim_url: "https://claim" }),
+			ok({
+				account_id: "a",
+				api_token: "t",
+				claim_url: "https://dash.cloudflare.com/claim/test",
+			}),
 		]);
 		expect(
 			// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
@@ -390,7 +402,7 @@ describe("the Cloudflare transport", () => {
 		const c = cf([
 			ok({
 				account: { id: "a", apiToken: "t" },
-				claim: { url: "https://claim" },
+				claim: { url: "https://dash.cloudflare.com/claim/test" },
 			}),
 		]);
 		expect(
@@ -413,7 +425,7 @@ describe("the Cloudflare transport", () => {
 			ok({
 				accountId: "a",
 				apiToken: "t",
-				claimUrl: "https://claim",
+				claimUrl: "https://dash.cloudflare.com/claim/test",
 				subdomain: "sub",
 			}),
 		]);
@@ -425,7 +437,11 @@ describe("the Cloudflare transport", () => {
 
 	it("omits the subdomain rather than reporting an empty one", async () => {
 		const c = cf([
-			ok({ accountId: "a", apiToken: "t", claimUrl: "https://claim" }),
+			ok({
+				accountId: "a",
+				apiToken: "t",
+				claimUrl: "https://dash.cloudflare.com/claim/test",
+			}),
 		]);
 		expect(
 			// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
@@ -436,7 +452,11 @@ describe("the Cloudflare transport", () => {
 	it("accepts the terms explicitly rather than by omission", async () => {
 		// Creating an account on someone's behalf requires a recorded acceptance.
 		const c = cf([
-			ok({ accountId: "a", apiToken: "t", claimUrl: "https://claim" }),
+			ok({
+				accountId: "a",
+				apiToken: "t",
+				claimUrl: "https://dash.cloudflare.com/claim/test",
+			}),
 		]);
 		// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 		await c.api.createPreviewAccount(CHALLENGE, {
@@ -463,7 +483,7 @@ describe("the Cloudflare transport", () => {
 	});
 
 	it("authenticates the upload with the temporary token", async () => {
-		const c = cf([ok({}), ok({}), ok({ subdomain: "team" })]);
+		const c = cf([ok({}), ok({ enabled: true }), ok({ subdomain: "team" })]);
 		await c.api.deployWorkerScript({
 			accountId: "acc",
 			apiToken: "tok",
@@ -484,7 +504,7 @@ describe("the Cloudflare transport", () => {
 	it("uploads the module as multipart form data", async () => {
 		// A Workers script upload is a form with a metadata part and a module
 		// part; a JSON body is rejected outright.
-		const c = cf([ok({}), ok({}), ok({ subdomain: "team" })]);
+		const c = cf([ok({}), ok({ enabled: true }), ok({ subdomain: "team" })]);
 		await c.api.deployWorkerScript({
 			accountId: "acc",
 			apiToken: "tok",
@@ -496,7 +516,7 @@ describe("the Cloudflare transport", () => {
 
 	// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 	it("names the module as the entry point in its metadata", async () => {
-		const c = cf([ok({}), ok({}), ok({ subdomain: "team" })]);
+		const c = cf([ok({}), ok({ enabled: true }), ok({ subdomain: "team" })]);
 		await c.api.deployWorkerScript({
 			accountId: "acc",
 			apiToken: "tok",
@@ -512,7 +532,7 @@ describe("the Cloudflare transport", () => {
 	});
 
 	it("declares compatibility flags in the metadata when there are any", async () => {
-		const c = cf([ok({}), ok({}), ok({ subdomain: "team" })]);
+		const c = cf([ok({}), ok({ enabled: true }), ok({ subdomain: "team" })]);
 		await c.api.deployWorkerScript({
 			accountId: "acc",
 			apiToken: "tok",
@@ -528,7 +548,7 @@ describe("the Cloudflare transport", () => {
 	});
 
 	it("omits the flags key for an empty flag list", async () => {
-		const c = cf([ok({}), ok({}), ok({ subdomain: "team" })]);
+		const c = cf([ok({}), ok({ enabled: true }), ok({ subdomain: "team" })]);
 		await c.api.deployWorkerScript({
 			accountId: "acc",
 			apiToken: "tok",
@@ -545,7 +565,7 @@ describe("the Cloudflare transport", () => {
 
 	// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 	it("declares bindings as plain text entries", async () => {
-		const c = cf([ok({}), ok({}), ok({ subdomain: "team" })]);
+		const c = cf([ok({}), ok({ enabled: true }), ok({ subdomain: "team" })]);
 		await c.api.deployWorkerScript({
 			accountId: "acc",
 			apiToken: "tok",
@@ -578,9 +598,7 @@ describe("the Cloudflare transport", () => {
 		).rejects.toThrow(/workers script upload failed/u);
 	});
 
-	it("tolerates a failed subdomain-enable, since the account lookup may still answer", async () => {
-		// Enabling the subdomain is idempotent and often already done; treating a
-		// refusal as fatal would fail a deploy that in fact succeeded.
+	it("refuses a failed subdomain enable rather than fabricating activation", async () => {
 		const c = cf([
 			ok({}),
 			{ body: { success: false } },
@@ -593,25 +611,19 @@ describe("the Cloudflare transport", () => {
 				scriptName: "s",
 				moduleSource: "export default {}",
 			}),
-		).resolves.toMatchObject({ workersDevUrl: "https://s.t.workers.dev" });
+		).rejects.toThrow(/subdomain enable failed/u);
 	});
 
 	// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
-	it("falls back to the account id as the host when no subdomain is known", async () => {
-		// workers.dev serves this shape while a freshly created subdomain lags;
-		// returning no URL at all would leave the station unreachable.
-		const c = cf([
-			ok({}),
-			{ body: { success: false } },
-			{ body: { success: false } },
-		]);
-		expect(
-			await c.api.deployWorkerScript({
+	it("refuses missing provider subdomain evidence instead of guessing a hostname", async () => {
+		const c = cf([ok({}), ok({ enabled: true }), ok({})]);
+		await expect(
+			c.api.deployWorkerScript({
 				accountId: "acc",
 				apiToken: "tok",
 				scriptName: "s",
 				moduleSource: "export default {}",
 			}),
-		).toEqual({ workersDevUrl: "https://s.acc.workers.dev" });
+		).rejects.toThrow(/reported a valid workers.dev subdomain/u);
 	});
 });

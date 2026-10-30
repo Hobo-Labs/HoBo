@@ -10,11 +10,16 @@ import {
 	type ContinuousDeliveryPlane,
 	createContinuousDeliveryPlane,
 	createContractAssertedCdFixtures,
+	HostingTransitionPhase,
 	type LocalCdFixtures,
 } from "@hobo/cloud";
+import type { createProductionHostingExecution } from "./hosting-execution.js";
 import { isJsonString, type JsonObject } from "./json.js";
 
 export interface DeployCommandDeps {
+	readonly hosting?:
+		| ReturnType<typeof createProductionHostingExecution>
+		| undefined;
 	readonly env?: NodeJS.ProcessEnv;
 	/** Inject plane for tests; default is simulate offline equip. */
 	readonly plane?: ContinuousDeliveryPlane;
@@ -28,6 +33,48 @@ export function createDeployCommand(
 ): CommandModule {
 	return {
 		run: async ({ args, flags, emitProgress }) => {
+			if (args[0]?.startsWith("hosting-")) {
+				const deploymentId = args[1];
+				if (!deps.hosting || !deploymentId)
+					return {
+						ok: false,
+						status: "rejected",
+						code: "HOBO_HOSTING_NOT_CONFIGURED",
+						message:
+							"hosting supervision requires an authenticated configured runtime and deployment ID",
+					};
+				const sub = args[0];
+				const state =
+					sub === "hosting-status"
+						? await deps.hosting.status(deploymentId)
+						: sub === "hosting-resume"
+							? await deps.hosting.resumeDeployment(deploymentId)
+							: sub === "hosting-cancel"
+								? await deps.hosting.cancel(deploymentId)
+								: sub==="hosting-resume-mutation"?await deps.hosting.resumeMutation(deploymentId):undefined;
+				if (!state)
+					return {
+						ok: false,
+						status: "rejected",
+						code: "HOBO_HOSTING_UNKNOWN",
+						message: "unknown hosting deployment or subcommand",
+					};
+				return {
+					ok: true,
+					status: "ok",
+					code: "HOBO_HOSTING_STATUS",
+					message: HostingTransitionPhase[state.phase],
+					data: {
+						deploymentId,
+						transitionId: state.plan?.transitionId,
+						phase: HostingTransitionPhase[state.phase],
+						version: state.version,
+						reservationId: state.reservationId,
+						nextObservationAtMs: state.operation?.nextObservationAtMs,
+						blockedReason: state.blockedReason,
+					},
+				};
+			}
 			// SAFETY: assertion required at this I/O or test boundary.
 			const f = flags as JsonObject;
 			const tenant =

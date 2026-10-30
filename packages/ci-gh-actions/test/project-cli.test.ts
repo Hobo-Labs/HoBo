@@ -13,6 +13,7 @@ import {
 	ciEnvironmentSecretsSha256,
 	parseCiProjectConfig,
 } from "../src/project-config.js";
+import { commonBudget } from "./fixtures/common-budget.js";
 
 function policy(accountId: string, limitMicros: number) {
 	return {
@@ -66,6 +67,49 @@ async function policyPin(
 const servers: Server[] = [];
 const directories: string[] = [];
 const execute = promisify(execFile);
+
+it("inspects the tighter common and legacy budget without contacting a relay", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "hobo-ci-common-inspect-"));
+	directories.push(directory);
+	const path = join(directory, "ci.json");
+	await writeFile(
+		path,
+		JSON.stringify({
+			defaultEnvironment: "test",
+			environments: {
+				test: {
+					relayOrigin: "https://trusted.example.test",
+					policy: {
+						...policy("account", 10000),
+						budgetPolicy: {
+							...commonBudget(),
+							tenantId: "account",
+							limitMicros: 1000,
+						},
+					},
+				},
+			},
+		}),
+	);
+	let output = "";
+	const fetch = vi.fn(async () => {
+		throw new Error("inspection must not contact a relay");
+	});
+	await runCiProjectCli(
+		["inspect", "--config", path, "--environment", "test"],
+		{
+			write: (value) => {
+				output += value;
+			},
+			fetch,
+		},
+	);
+	expect(JSON.parse(output)).toMatchObject({
+		accountId: "account",
+		budgetMicros: 1000,
+	});
+	expect(fetch).not.toHaveBeenCalled();
+});
 
 it("checks reviewed environment requirements against explicitly approved mounted secrets without printing values", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "hobo-ci-secrets-cli-"));

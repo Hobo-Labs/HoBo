@@ -3,7 +3,7 @@ export const EQUIVALENCE_CLASSES = Object.freeze({
 		port: "compute",
 		resourceClass: "netlify:site",
 		providerService: "Netlify Site",
-		features: ["http", "edge", "managed"],
+		features: ["http", "static", "edge", "managed"],
 	},
 } as const);
 

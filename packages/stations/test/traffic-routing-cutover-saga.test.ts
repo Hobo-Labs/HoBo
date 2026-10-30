@@ -44,6 +44,24 @@ const TOPOLOGY: RoutingTopology = {
 	],
 };
 
+const prior = synthesizeRoutingPlan({
+	topology: {
+		...TOPOLOGY,
+		backends: [
+			{ id: "backend:a", service: "checkout", healthy: true, weight: 100 },
+		],
+	},
+	policyDecision: policyDecision(),
+	planId: "plan:checkout:fixture-incumbent",
+	weightStrategy: "static",
+});
+if (prior.kind !== "plan") throw new Error("invalid source fixture");
+const INCUMBENT_PLAN = prior.plan;
+function seededSimplePort() {
+	const port = createSimpleTrafficRouting();
+	void port.apply(INCUMBENT_PLAN);
+	return port;
+}
 const VALID_TTL = {
 	previousTtlSeconds: 300,
 	loweredTtlSeconds: 30,
@@ -56,6 +74,8 @@ function validPrecondition(
 	return {
 		validation: { status: "validated", changeId: "change-1" },
 		ttl: VALID_TTL,
+		incumbentPlanId: INCUMBENT_PLAN.planId,
+		incumbentPlan: INCUMBENT_PLAN,
 		...overrides,
 	};
 }
@@ -66,7 +86,11 @@ function cutoverOptions(
 	return {
 		topology: TOPOLOGY,
 		policyDecision: policyDecision(),
-		port: createSimpleTrafficRouting(),
+		port: seededSimplePort(),
+		precondition: validPrecondition(),
+		healthGate: () => true,
+		restorationHealthGate: () => true,
+		beforeApply: async () => {},
 		fromBackendId: "backend:a",
 		toBackendId: "backend:b",
 		...overrides,
@@ -75,7 +99,7 @@ function cutoverOptions(
 
 test("an unvalidated change refuses the cutover before any traffic moves", async () => {
 	const applied: string[] = [];
-	const port = createSimpleTrafficRouting();
+	const port = seededSimplePort();
 	const spyPort = {
 		...port,
 		apply: async (plan: Parameters<typeof port.apply>[0]) => {
@@ -143,6 +167,11 @@ test("a stale incumbent plan refuses the cutover (live-zone precondition)", asyn
 			precondition: validPrecondition({
 				// SAFETY: assertion required at this I/O or test boundary.
 				incumbentPlanId: "plan:checkout:never-applied" as RoutingPlanId,
+				incumbentPlan: {
+					...INCUMBENT_PLAN,
+					// SAFETY: a deliberately valid but unobserved plan identity exercises refusal.
+					planId: "plan:checkout:never-applied" as RoutingPlanId,
+				},
 			}),
 		}),
 	);
@@ -151,7 +180,7 @@ test("a stale incumbent plan refuses the cutover (live-zone precondition)", asyn
 });
 
 test("a satisfied precondition emits TtlLowered with the effective RTO, then completes the ramp", async () => {
-	const port = createSimpleTrafficRouting();
+	const port = seededSimplePort();
 	// Seed the incumbent so port.status reports it active.
 	const seed = synthesizeRoutingPlan({
 		topology: {
@@ -173,6 +202,7 @@ test("a satisfied precondition emits TtlLowered with the effective RTO, then com
 			port,
 			precondition: validPrecondition({
 				incumbentPlanId: seed.plan.planId,
+				incumbentPlan: seed.plan,
 			}),
 		}),
 	);
@@ -183,8 +213,17 @@ test("a satisfied precondition emits TtlLowered with the effective RTO, then com
 		[
 			CUTOVER_EVENTS.TtlLowered,
 			CUTOVER_EVENTS.Started,
+			CUTOVER_EVENTS.ApplyRequested,
+			"contract.EffectInvoked",
+			CUTOVER_EVENTS.Observed,
 			CUTOVER_EVENTS.RampAdvanced,
+			CUTOVER_EVENTS.ApplyRequested,
+			"contract.EffectInvoked",
+			CUTOVER_EVENTS.Observed,
 			CUTOVER_EVENTS.RampAdvanced,
+			CUTOVER_EVENTS.ApplyRequested,
+			"contract.EffectInvoked",
+			CUTOVER_EVENTS.Observed,
 			CUTOVER_EVENTS.RampAdvanced,
 			CUTOVER_EVENTS.RoutingChanged,
 		],

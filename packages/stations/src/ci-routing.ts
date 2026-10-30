@@ -4,12 +4,22 @@ import {
 	AccountSchema,
 	type AccountState,
 	BudgetRoutingPolicySchema,
+	type BudgetSignal,
 	BudgetSignalSchema,
+	ciBudgetPolicy,
+	ciBudgetPolicyJson,
+	ciBudgetSignalKey,
+	ciBudgetSignalUpdate,
 } from "@hobo/ci";
 
 /** The account-scoped relay client implements this port without a Station dependency. */
 export interface CiBudgetRoutingClient {
 	getPolicy(): Promise<AccountState>;
+	getSignalState?(): Promise<AccountState>;
+	publishBudgetSignal?(
+		signal: BudgetSignal,
+		options: { revision: number },
+	): Promise<AccountState>;
 	putPolicy(
 		account: Account,
 		options: { revision: number },
@@ -70,8 +80,13 @@ export function createCiBudgetRoutingBridge(options: {
 			policy.thresholds.length
 	)
 		throw new Error("invalid CI budget routing policy");
+	const common = ciBudgetPolicy(policy);
+	if (
+		common &&
+		(common.tenantId !== policy.tenantId || !common.workloads.includes("ci"))
+	)
+		throw new Error("CI budget routing policy scope is invalid");
 	const accountId = policy.accountId;
-	const tenantId = policy.tenantId;
 	const normal = uniqueOfferIds(policy.normalOfferIds);
 	const thresholds = Object.freeze(
 		policy.thresholds
@@ -83,12 +98,20 @@ export function createCiBudgetRoutingBridge(options: {
 			)
 			.sort((left, right) => right.fraction - left.fraction),
 	);
-	const key = (fraction: number) => `broker:${tenantId}:${fraction}`;
+	const key = (fraction: number) => ciBudgetSignalKey(policy, fraction);
 
 	async function state() {
-		const current = await options.client.getPolicy();
+		const current =
+			policy.budgetPolicy && options.client.getSignalState
+				? await options.client.getSignalState()
+				: await options.client.getPolicy();
 		if (current.account?.id !== accountId)
 			throw new Error("CI routing account does not match relay policy");
+		if (
+			ciBudgetPolicyJson(current.account.budgetPolicy) !==
+			ciBudgetPolicyJson(policy.budgetPolicy)
+		)
+			throw new Error("CI routing budget scope does not match relay policy");
 		const account = fromJsonString(
 			AccountSchema,
 			toJsonString(AccountSchema, current.account),
@@ -123,38 +146,32 @@ export function createCiBudgetRoutingBridge(options: {
 	return Object.freeze({
 		async accept(serializedBrokerFact: string) {
 			const signal = fromJsonString(BudgetSignalSchema, serializedBrokerFact);
-			const data = signal.data;
-			const crossed = signal.type === "budget.ThresholdCrossed";
-			if (
-				!data ||
-				data.tenantId !== tenantId ||
-				(!crossed && signal.type !== "budget.Recovered") ||
-				!Number.isFinite(data.budgetUsd) ||
-				data.budgetUsd <= 0 ||
-				!Number.isFinite(data.thresholdFraction) ||
-				data.thresholdFraction <= 0 ||
-				data.thresholdFraction > 1 ||
-				!Number.isFinite(data.thresholdUsd) ||
-				data.thresholdUsd !==
-					Number((data.thresholdFraction * data.budgetUsd).toFixed(9)) ||
-				!Number.isFinite(data.netSpentUsd) ||
-				data.netSpentUsd >= data.thresholdUsd !== crossed ||
-				data.cycle < 1 ||
-				data.signalKey !==
-					`budget:${tenantId}:${data.thresholdFraction}:${crossed ? "crossed" : "recovered"}:${data.cycle}`
-			)
-				throw new Error("invalid or foreign CI budget signal");
+			const update = ciBudgetSignalUpdate(signal, policy);
+			if (!update) throw new Error("invalid or foreign CI budget signal");
 			const { account, revision } = await state();
-			const signalKey = key(data.thresholdFraction);
-			if (data.cycle <= (account.routingSignalCycles[signalKey] ?? 0))
+			if (update.watermark <= (account.routingSignalCycles[update.key] ?? 0))
 				return { changed: false, revision };
-			account.routingSignalCycles[signalKey] = data.cycle;
-			account.routingSignalCrossed[signalKey] = crossed;
+			if (policy.budgetPolicy) {
+				if (!options.client.publishBudgetSignal)
+					throw new Error("scoped CI routing requires the budget signal API");
+				const saved = await options.client.publishBudgetSignal(signal, {
+					revision,
+				});
+				return {
+					changed: saved.revision !== revision,
+					revision: saved.revision,
+				};
+			}
+			account.routingSignalCycles[update.key] = update.watermark;
+			account.routingSignalCrossed[update.key] = update.crossed;
 			eligibility(account);
 			return write(account, revision);
 		},
 		async reconcile() {
 			const { account, revision } = await state();
+			// Scoped eligibility is derived by the relay from its desired policy.
+			// Publishing observations cannot rewrite provider enablement or trust.
+			if (policy.budgetPolicy) return { changed: false, revision };
 			return eligibility(account)
 				? write(account, revision)
 				: { changed: false, revision };

@@ -2,6 +2,7 @@ import { open } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import { ciBudgetPolicy } from "@hobo/ci";
 import {
 	applyCiEnvironmentPolicy,
 	type CiPolicyApplyOptions,
@@ -116,7 +117,11 @@ export async function runCiProjectCli(
 				relayOrigin: selected.relayOrigin,
 				githubWebhookOrigin: selected.githubWebhookOrigin,
 				accountId: selected.policy.accountId,
-				budgetMicros: selected.policy.budget?.limitMicros,
+				budgetMicros: Math.min(
+					selected.policy.budget?.limitMicros ?? 0,
+					ciBudgetPolicy(selected.policy)?.limitMicros ??
+						Number.MAX_SAFE_INTEGER,
+				),
 				policySha256: await ciEnvironmentPolicySha256(config, selected.name),
 				secretsSha256: await ciEnvironmentSecretsSha256(config, selected.name),
 			})}\n`,

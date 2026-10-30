@@ -81,7 +81,14 @@ export const ANONYMOUS_ENV_ALLOWLIST = [
 	"TMPDIR",
 	"LANG",
 	"LC_ALL",
-	"NODE_OPTIONS",
+	"HTTPS_PROXY",
+	"HTTP_PROXY",
+	"ALL_PROXY",
+	"NO_PROXY",
+	"NODE_EXTRA_CA_CERTS",
+	"NODE_USE_ENV_PROXY",
+	"SSL_CERT_FILE",
+	"SSL_CERT_DIR",
 	"npm_config_cache",
 	"npm_config_registry",
 ] as const;
@@ -223,6 +230,17 @@ export function buildAnonymousDeployArgv(
 export function createNodeProcessRunner(): ProcessRunner {
 	return {
 		async run(argv, options) {
+			if (
+				!Number.isSafeInteger(options.timeoutMs) ||
+				options.timeoutMs <= 0 ||
+				options.timeoutMs > 2_147_483_647 ||
+				!Number.isSafeInteger(options.maxOutputBytes) ||
+				options.maxOutputBytes <= 0
+			)
+				throw new NetlifyProviderError(
+					"PROVIDER_CONTRACT_CHANGED",
+					"process execution requires positive safe duration and aggregate byte bounds",
+				);
 			const [file, ...args] = argv;
 			if (file === undefined) {
 				throw new NetlifyProviderError(
@@ -236,11 +254,28 @@ export function createNodeProcessRunner(): ProcessRunner {
 					env: { ...options.env },
 					stdio: ["ignore", "pipe", "pipe"],
 					shell: false,
+					detached: process.platform !== "win32",
 				});
 				let stdout = "";
 				let stderr = "";
 				let truncated = false;
+				let capturedBytes = 0;
+				const terminate = () => {
+					if (process.platform !== "win32" && child.pid !== undefined) {
+						try {
+							process.kill(-child.pid, "SIGKILL");
+						} catch {
+							child.kill("SIGKILL");
+						}
+					} else child.kill("SIGKILL");
+				};
 				const capture = (chunk: Buffer, into: "stdout" | "stderr"): void => {
+					capturedBytes += chunk.byteLength;
+					if (capturedBytes > options.maxOutputBytes) {
+						truncated = true;
+						terminate();
+						return;
+					}
 					const text = chunk.toString("utf8");
 					if (into === "stdout") {
 						if (stdout.length + text.length > options.maxOutputBytes) {
@@ -265,7 +300,7 @@ export function createNodeProcessRunner(): ProcessRunner {
 					capture(chunk, "stderr");
 				});
 				const timer = setTimeout(() => {
-					child.kill("SIGKILL");
+					terminate();
 				}, options.timeoutMs);
 				child.on("error", (cause) => {
 					clearTimeout(timer);
@@ -285,7 +320,7 @@ export function createNodeProcessRunner(): ProcessRunner {
 					if (truncated) {
 						reject(
 							new NetlifyProviderError(
-								"PROVIDER_CONTRACT_CHANGED",
+								"PROVIDER_OPERATION_AMBIGUOUS",
 								`the netlify cli produced more than ${options.maxOutputBytes} bytes of output`,
 							),
 						);

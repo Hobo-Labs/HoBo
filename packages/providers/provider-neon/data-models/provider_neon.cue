@@ -81,7 +81,7 @@ import "list"
 	state:     #NeonClaimState
 	boundary:  "resource"
 	atomicity: "single-resource"
-	claim_url: =~"^https://neon\\.new/"
+	claim_ref: #SecretRefLocator
 
 	// Only the blocking actions still outstanding, so "the ceremony happened"
 	// cannot be read as "nobody holds a residual credential".
@@ -104,15 +104,12 @@ import "list"
 }
 
 #NeonProvisionReceipt: {
-	schema_version:         "hobo.provider-neon.receipt/v1"
+	schema_version:         "hobo.provider-neon.receipt/v2"
 	definition_id:          "neon.claimable-postgres/v1"
 	provider_id:            "neon"
-	resource_ref:           string & !=""
-	database_id:            =~"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-	neon_project_id:        =~"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+	resource_ref:           =~"^claimable:[a-f0-9]{64}$"
 	provider_status:        #NeonDatabaseStatus
 	database_name:          string & !=""
-	endpoints:              #NeonReceiptEndpoints
 	credential_ref?:        #SecretRefLocator
 	direct_credential_ref?: #SecretRefLocator
 	expires_at_iso:         =~"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z$"
@@ -124,4 +121,18 @@ import "list"
 	limits:                 #NeonUnclaimedLimits
 	binding_profiles: [...("binding.postgresql/v1" | "binding.neon-serverless/v1")] & list.MinItems(1)
 	migration_profiles: [...("migration.postgres.pg-dump/v1" | "migration.postgres.logical-copy/v1")]
+	opaque_physical_id:  =~"^claimable:[a-f0-9]{64}$"
+	native_identity_ref: #SecretRefLocator
+	endpoint_ref:        #SecretRefLocator
+	binding_ref?:        #SecretRefLocator
+	native_project_ref:  #SecretRefLocator
+}
+
+#NeonProviderFact: {
+	kind:                "provider.neon.database.provisioned" | "provider.neon.database.adopted" | "provider.neon.database.observed" | "provider.neon.claim.pending-rotation" | "provider.neon.claim.completed" | "provider.neon.lease.expired"
+	occurred_at_ms:      int & >0
+	resource_ref:        =~"^claimable:[a-f0-9]{64}$"
+	opaque_physical_id:  =~"^claimable:[a-f0-9]{64}$"
+	native_identity_ref: #SecretRefLocator
+	detail: [string]: string | number | bool
 }

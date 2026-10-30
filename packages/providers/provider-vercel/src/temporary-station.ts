@@ -1,53 +1,38 @@
-/**
- * Vercel Drop temporary Environment Station provision
- * (https://vercel.com/docs/drop).
- *
- * Drop semantics: upload files → **new** project → production URL. No Git,
- * no Vercel CLI required for the browser path; this package mirrors that shape
- * with an injectable transport (tests / Examples mock) and a CLI Drop-equivalent
- * that uses a local `vercel login` session — never a permanent `VERCEL_TOKEN`
- * on the Examples / temporary path (stripped like Cloudflare Temporary Accounts).
- */
-
-import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+/** Vercel Drop is a browser ceremony. The account-backed Vercel CLI is not an
+ * anonymous API and must never be launched as a temporary deployment fallback. */
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-
-import {
-	TEMPORARY_STATION_TTL_MS,
-	type TemporaryEnvironmentStationResult,
-	temporaryStationExpiresAt,
-	temporaryStationTtlSeconds,
-} from "@hobo/core";
-
+import type { TemporaryEnvironmentStationResult } from "@hobo/core";
+import type { VercelAnonymousDeploymentEvidenceRecord } from "./_generated/anonymous_deployment_pb.js";
 import {
 	isJsonObject,
 	isJsonString,
-	type JsonValue,
+	type JsonObject,
 	parseJsonValue,
 } from "./json.js";
 import { PROVIDER_TARGET } from "./options.js";
-
 export const VERCEL_TEMPORARY_PROVIDER_ID = PROVIDER_TARGET;
-export const supportsAnonymousTemporaryDeploy = true as const;
-
-/** public-contract: Drop landing URL agents/operators use. */
+/** The SDK has no provider-documented anonymous API; account-backed REST
+ * deployments are available through vercel.static-deploy/v1 instead. */
+export { supportsAnonymousTemporaryDeploy } from "./temporary-capability.js";
 export const VERCEL_DROP_URL = "https://vercel.com/drop";
-
 export type VercelDropFile = {
 	readonly file: string;
 	readonly data: string;
 	readonly encoding?: "utf-8" | "base64";
 };
-
-export type VercelDropDeployResult = {
-	readonly projectName: string;
-	readonly deploymentId: string;
-	readonly stationUrl: string;
-	readonly claimUrl: string;
-};
-
+export type VercelDropDeployResult = Readonly<
+	Pick<
+		VercelAnonymousDeploymentEvidenceRecord,
+		| "projectName"
+		| "deploymentId"
+		| "stationUrl"
+		| "claimUrl"
+		| "anonymous"
+		| "expiresAt"
+	>
+> & { readonly expirySource?: "provider-reported" };
 export type VercelDropTransport = {
 	deployDrop(input: {
 		readonly stationId: string;
@@ -56,30 +41,12 @@ export type VercelDropTransport = {
 		readonly workDir: string;
 	}): Promise<VercelDropDeployResult>;
 };
-
 export type VercelTemporaryStationInput = {
 	readonly stationId: string;
 	readonly transport?: VercelDropTransport;
 	readonly files?: readonly VercelDropFile[];
 	readonly projectName?: string;
 };
-
-const DEFAULT_STATION_HTML = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>HoBo Environment Station · Vercel Drop</title>
-</head>
-<body data-hobo-station="vercel-drop">
-  <main>
-    <h1>HoBo Environment Station</h1>
-    <p>Provisioned via <a href="${VERCEL_DROP_URL}">Vercel Drop</a> (new project, no Git).</p>
-  </main>
-</body>
-</html>
-`;
-
 export function sanitizeVercelDropProjectName(stationId: string): string {
 	const compact = stationId
 		.replace(/[^a-z0-9]+/giu, "-")
@@ -88,146 +55,73 @@ export function sanitizeVercelDropProjectName(stationId: string): string {
 		.slice(-40);
 	return `hobo-drop-${compact || "anon"}`.slice(0, 52);
 }
-
-/**
- * Parse `vercel deploy` / Drop-equivalent stdout for live URL + project.
- */
 type VercelDropDeployOutput = {
 	readonly stationUrl: string;
 	readonly deploymentId: string;
 	readonly projectName?: string;
 };
-
-function jsonNonEmptyString(value: JsonValue | undefined): string {
-	return isJsonString(value) && value.length > 0 ? value : "";
+function stationUrl(raw: string): string {
+	const url = new URL(
+		raw.startsWith("https://") || raw.startsWith("http://")
+			? raw
+			: `https://${raw}`,
+	);
+	if (
+		url.protocol !== "https:" ||
+		!url.hostname.endsWith(".vercel.app") ||
+		url.username ||
+		url.password ||
+		url.port ||
+		url.search ||
+		url.hash
+	)
+		throw new Error("Vercel deployment URL leaves its HTTPS hosting authority");
+	return url.toString().replace(/\/$/u, "");
 }
-
+function fromJson(value: JsonObject): VercelDropDeployOutput | undefined {
+	const raw = value.url ?? value.alias,
+		id = value.id ?? value.deploymentId,
+		name = value.projectName ?? value.name;
+	if (!isJsonString(raw) || !isJsonString(id) || !id) return undefined;
+	return {
+		stationUrl: stationUrl(raw),
+		deploymentId: id,
+		...(isJsonString(name) && name ? { projectName: name } : undefined),
+	};
+}
+/** Native JSON identity is required; a hostname cannot stand in for an ID. */
 export function parseVercelDropDeployOutput(
 	stdout: string,
 ): VercelDropDeployOutput {
-	const trimmed = stdout.trim();
-	if (!trimmed) {
+	if (!stdout.trim())
 		throw new Error("vercel Drop deploy produced empty output");
-	}
-
-	for (const line of trimmed.split(/\r?\n/u)) {
-		const candidate = line.trim();
-		if (!candidate.startsWith("{")) continue;
-		const parsed = parseJsonValue(candidate);
-		if (!isJsonObject(parsed)) continue;
-		const urlRaw =
-			jsonNonEmptyString(parsed.url) || jsonNonEmptyString(parsed.alias);
-		const stationUrl = urlRaw.startsWith("http")
-			? urlRaw
-			: urlRaw
-				? `https://${urlRaw}`
-				: "";
-		const deploymentId =
-			jsonNonEmptyString(parsed.id) || jsonNonEmptyString(parsed.deploymentId);
-		const projectName =
-			jsonNonEmptyString(parsed.projectName) || jsonNonEmptyString(parsed.name);
-		if (stationUrl) {
-			return {
-				stationUrl,
-				deploymentId: deploymentId || new URL(stationUrl).hostname,
-				...(projectName !== "" ? { projectName } : undefined),
-			};
+	const start = stdout.indexOf("{"),
+		end = stdout.lastIndexOf("}");
+	const candidates = [
+		...(start >= 0 && end > start ? [stdout.slice(start, end + 1)] : []),
+		...stdout.split(/\r?\n/u),
+	];
+	for (const candidate of candidates) {
+		const value = parseJsonValue(candidate);
+		if (isJsonObject(value)) {
+			const parsed = fromJson(value);
+			if (parsed) return parsed;
 		}
 	}
-
-	const urlMatch = trimmed.match(
-		/https?:\/\/[^\s"'<>]+vercel\.app[^\s"'<>]*/iu,
+	throw new Error(
+		"Vercel deployment output lacks observed JSON resource identity; refusing to invent an ID or claim URL",
 	);
-	if (!urlMatch) {
-		throw new Error(
-			"vercel Drop deploy output missing *.vercel.app URL (see https://vercel.com/docs/drop)",
-		);
-	}
-	const stationUrl = urlMatch[0].replace(/[.,)]+$/u, "");
-	return {
-		stationUrl,
-		deploymentId: new URL(stationUrl).hostname.split(".")[0] || "drop",
-	};
 }
-
-function stripPermanentVercelEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-	const next = { ...env };
-	delete next.VERCEL_TOKEN;
-	delete next.VERCEL_OIDC_TOKEN;
-	delete next.NOW_TOKEN;
-	return next;
-}
-
-async function runVercelDropCli(input: {
-	readonly workDir: string;
-	readonly projectName: string;
-}): Promise<VercelDropDeployResult> {
-	const env = stripPermanentVercelEnv(process.env);
-	const stdout = await new Promise<string>((resolve, reject) => {
-		const child = spawn(
-			"npx",
-			[
-				"--yes",
-				"vercel",
-				"deploy",
-				"--yes",
-				"--prod",
-				"--name",
-				input.projectName,
-			],
-			{
-				cwd: input.workDir,
-				env,
-				stdio: ["ignore", "pipe", "pipe"],
-			},
-		);
-		let out = "";
-		let err = "";
-		child.stdout?.on("data", (chunk: Buffer) => {
-			out += chunk.toString("utf8");
-		});
-		child.stderr?.on("data", (chunk: Buffer) => {
-			err += chunk.toString("utf8");
-		});
-		child.on("error", (error) => {
-			reject(
-				new Error(
-					`vercel Drop CLI failed to start: ${error.message}. Use browser Drop at ${VERCEL_DROP_URL} or inject a transport.`,
-				),
-			);
-		});
-		child.on("close", (code) => {
-			if (code !== 0) {
-				reject(
-					new Error(
-						`vercel Drop deploy exited ${code}: ${err || out || "no output"}. Log in with \`vercel login\` (session, not VERCEL_TOKEN) or open ${VERCEL_DROP_URL}.`,
-					),
-				);
-				return;
-			}
-			resolve(out || err);
-		});
-	});
-
-	const parsed = parseVercelDropDeployOutput(stdout);
-	const projectName = parsed.projectName ?? input.projectName;
-	return {
-		projectName,
-		deploymentId: parsed.deploymentId,
-		stationUrl: parsed.stationUrl,
-		// Drop creates a new project — claim/manage via dashboard (or Drop again).
-		claimUrl: `https://vercel.com/${projectName}`,
-	};
-}
-
+/** Kept as a compatibility factory, with no subprocess or account side effect. */
 export function createVercelDropCliTransport(): VercelDropTransport {
 	return {
-		async deployDrop({ projectName, workDir }) {
-			return runVercelDropCli({ workDir, projectName });
+		async deployDrop() {
+			throw new Error(
+				"Vercel CLI uses an authenticated account and cannot provide anonymous temporary deployments; use the scoped REST deployment resolver or an independently verified anonymous transport",
+			);
 		},
 	};
 }
-
 export async function materializeVercelDropStation(input: {
 	readonly stationId: string;
 	readonly files?: readonly VercelDropFile[];
@@ -236,62 +130,143 @@ export async function materializeVercelDropStation(input: {
 	readonly workDir: string;
 	readonly files: readonly VercelDropFile[];
 }> {
-	const files =
-		input.files ??
-		([
-			{
-				file: "index.html",
-				data: DEFAULT_STATION_HTML,
-				encoding: "utf-8",
-			},
-		] as const);
-	const workDir =
-		input.rootDir ?? (await mkdtemp(path.join(tmpdir(), "hobo-vercel-drop-")));
+	const files = input.files ?? [
+		{
+			file: "index.html",
+			data: "<!doctype html><title>HoBo Environment Station</title><h1>HoBo Environment Station</h1>",
+			encoding: "utf-8" as const,
+		},
+	];
+	if (!files.length || files.length > 256)
+		throw new Error("Vercel artifact requires a bounded nonempty file set");
+	let bytes = 0;
+	const seen = new Set<string>();
 	for (const entry of files) {
-		const abs = path.join(workDir, entry.file);
-		await mkdir(path.dirname(abs), { recursive: true });
-		const body =
+		const parts = entry.file.split("/");
+		if (
+			!entry.file ||
+			path.posix.isAbsolute(entry.file) ||
+			path.win32.isAbsolute(entry.file) ||
+			entry.file.includes("\\") ||
+			parts.some(
+				(part) =>
+					!part ||
+					part === "." ||
+					part === ".." ||
+					[
+						".git",
+						".vercel",
+						"node_modules",
+						".env",
+						"vercel.json",
+						"package.json",
+					].includes(part),
+			) ||
+			seen.has(entry.file)
+		)
+			throw new Error(
+				"Vercel artifact path escapes or overrides its isolated public artifact",
+			);
+		seen.add(entry.file);
+		const data =
 			entry.encoding === "base64"
 				? Buffer.from(entry.data, "base64")
-				: entry.data;
-		await writeFile(abs, body);
+				: Buffer.from(entry.data, "utf8");
+		if (entry.encoding === "base64" && data.toString("base64") !== entry.data)
+			throw new Error("Vercel artifact requires canonical base64");
+		bytes += data.length;
+		if (bytes > 2_097_152)
+			throw new Error("Vercel artifact exceeds its aggregate byte bound");
 	}
-	return { workDir, files };
+	const root = input.rootDir ?? tmpdir();
+	await mkdir(root, { recursive: true });
+	const workDir = await mkdtemp(path.join(root, "hobo-vercel-drop-"));
+	try {
+		for (const entry of files) {
+			const target = path.join(workDir, entry.file);
+			await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+			await writeFile(
+				target,
+				entry.encoding === "base64"
+					? Buffer.from(entry.data, "base64")
+					: entry.data,
+				{ flag: "wx", mode: 0o600 },
+			);
+		}
+		return { workDir, files };
+	} catch (error) {
+		await rm(workDir, { recursive: true, force: true });
+		throw error;
+	}
 }
-
-/**
- * Provision an Environment Station via Vercel Drop semantics.
- * Never uses permanent `VERCEL_TOKEN` on this path.
- */
 export async function provisionTemporaryEnvironmentStation(
 	input: VercelTemporaryStationInput,
 ): Promise<TemporaryEnvironmentStationResult> {
+	if (!input.transport)
+		throw new Error(
+			"Vercel has no configured anonymous temporary API; account-backed CLI fallback is forbidden",
+		);
 	const projectName =
-		input.projectName ?? sanitizeVercelDropProjectName(input.stationId);
+			input.projectName ?? sanitizeVercelDropProjectName(input.stationId),
+		startedAt = Date.now();
 	const { workDir, files } = await materializeVercelDropStation({
 		stationId: input.stationId,
 		...(input.files ? { files: input.files } : undefined),
 	});
-	const transport = input.transport ?? createVercelDropCliTransport();
-	const deployed = await transport.deployDrop({
-		stationId: input.stationId,
-		projectName,
-		files,
-		workDir,
-	});
-
-	const expiresAt = temporaryStationExpiresAt(TEMPORARY_STATION_TTL_MS);
-	return {
-		stationId: input.stationId,
-		stationUrl: deployed.stationUrl,
-		primaryUrl: deployed.stationUrl,
-		claimUrl: deployed.claimUrl,
-		expiresAt,
-		ttlSeconds: temporaryStationTtlSeconds(),
-		providerId: VERCEL_TEMPORARY_PROVIDER_ID,
-		accountId: deployed.projectName,
-		scriptName: deployed.deploymentId,
-		anonymous: true,
-		temporary: true,
-	};
+	try {
+		const deployed = await input.transport.deployDrop({
+			stationId: input.stationId,
+			projectName,
+			files,
+			workDir,
+		});
+		const observedUrl = stationUrl(deployed.stationUrl),
+			claim = new URL(deployed.claimUrl),
+			expiry = Date.parse(deployed.expiresAt ?? "");
+		if (
+			claim.protocol !== "https:" ||
+			claim.hostname !== "vercel.com" ||
+			claim.username ||
+			claim.password ||
+			claim.port ||
+			claim.pathname !== "/claim-deployment" ||
+			!claim.searchParams.get("code")
+		)
+			throw new Error(
+				"Vercel temporary transport lacks an observed ownership claim action",
+			);
+		if (
+			deployed.anonymous !== true ||
+			deployed.expirySource !== "provider-reported" ||
+			!Number.isSafeInteger(expiry) ||
+			expiry <= Date.now() ||
+			expiry - startedAt > 86_400_000 ||
+			new Date(expiry).toISOString() !== deployed.expiresAt
+		)
+			throw new Error(
+				"Vercel temporary transport lacks provider-confirmed anonymous authority and bounded expiry",
+			);
+		if (deployed.projectName !== projectName)
+			throw new Error(
+				"Vercel temporary transport returned a different project scope",
+			);
+		if (!deployed.deploymentId)
+			throw new Error(
+				"Vercel temporary transport lacks a native deployment identity",
+			);
+		return {
+			stationId: input.stationId,
+			stationUrl: observedUrl,
+			primaryUrl: observedUrl,
+			claimUrl: deployed.claimUrl,
+			expiresAt: new Date(expiry).toISOString(),
+			ttlSeconds: Math.floor((expiry - startedAt) / 1000),
+			providerId: VERCEL_TEMPORARY_PROVIDER_ID,
+			scriptName: deployed.deploymentId,
+			anonymous: true,
+			temporary: true,
+		};
+	} finally {
+		await rm(workDir, { recursive: true, force: true });
+	}
 }

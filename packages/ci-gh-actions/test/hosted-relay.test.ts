@@ -1,5 +1,11 @@
 import { clone, create } from "@bufbuild/protobuf";
-import { ConfigurationSchema, LeaseSchema, OfferSchema } from "@hobo/ci";
+import {
+	CiEventSchema,
+	ConfigurationSchema,
+	type Lease,
+	LeaseSchema,
+	OfferSchema,
+} from "@hobo/ci";
 import { afterEach, expect, it } from "vitest";
 import { HostedRelay, type HostedRelayStore } from "../src/hosted-relay.js";
 import {
@@ -127,11 +133,68 @@ async function reserve(h: ReturnType<typeof setup>) {
 	return lease;
 }
 
-it("requeues a paid reservation when a partial free host becomes available", async () => {
+/** Runtime recovery consumes an already-admitted provider record. It cannot
+ * convert a live lease to a different provider through the financial authority. */
+function sandboxRecoveryStore(
+	h: ReturnType<typeof setup>,
+	original: Lease,
+	state: string,
+	event: string,
+): HostedInboxStore {
+	const lease = clone(LeaseSchema, original);
+	lease.provider = "vercel";
+	lease.sandboxName = `hobo-${lease.id}`;
+	lease.state = state;
+	const events = [
+		create(CiEventSchema, { type: event, leaseId: lease.id, at: NOW }),
+	];
+	return {
+		...h.asyncStore,
+		async get(id) {
+			return id === lease.id ? clone(LeaseSchema, lease) : undefined;
+		},
+		async all() {
+			return [clone(LeaseSchema, lease)];
+		},
+		async activeLeases() {
+			return [clone(LeaseSchema, lease)];
+		},
+		async transition(id, expected, update, type, at) {
+			if (id !== lease.id || !expected.includes(lease.state)) return undefined;
+			update(lease);
+			events.push(create(CiEventSchema, { type, leaseId: id, at }));
+			return clone(LeaseSchema, lease);
+		},
+		async ready() {
+			return true;
+		},
+		async latestLeaseIntents(ids) {
+			return events.filter((item) => ids.includes(item.leaseId));
+		},
+		async claimWebhook() {
+			return undefined;
+		},
+		async acceptWebhook() {
+			return { duplicate: false };
+		},
+		async acceptIgnoredWebhook() {
+			return { duplicate: false };
+		},
+		async ackWebhook() {
+			return true;
+		},
+		async failWebhook() {
+			return "retry";
+		},
+	};
+}
+
+it("requeues a paid reservation for a partial free host under maximize-credits", async () => {
 	const h = setup();
 	const account = h.configuration.accounts[0];
 	const paid = account?.offers[0];
 	if (!account || !paid) throw new Error("missing offer");
+	account.routingStrategy = "maximize-credits";
 	paid.freeMinutes = 0;
 	paid.priceMicrosPerMinute = 1;
 	paid.observedAt = "2026-10-26T11:00:00Z";
@@ -418,41 +481,7 @@ it.each([
 ] as const)("force-stops %s sandbox leases through a recovery-only host", async (state) => {
 	const h = setup();
 	const lease = await reserve(h);
-	h.store.transition(
-		lease.id,
-		["reserved"],
-		(entry) => {
-			entry.provider = "vercel";
-			entry.sandboxName = `hobo-${lease.id}`;
-			entry.state = state;
-		},
-		"ci.SandboxCreated",
-		NOW,
-	);
-	const store: HostedInboxStore = {
-		...h.asyncStore,
-		async ready() {
-			return true;
-		},
-		async latestLeaseIntents(ids) {
-			return h.store.events().filter((event) => ids.includes(event.leaseId));
-		},
-		async claimWebhook() {
-			return undefined;
-		},
-		async acceptWebhook() {
-			return { duplicate: false };
-		},
-		async acceptIgnoredWebhook() {
-			return { duplicate: false };
-		},
-		async ackWebhook() {
-			return true;
-		},
-		async failWebhook() {
-			return "retry";
-		},
-	};
+	const store = sandboxRecoveryStore(h, lease, state, "ci.SandboxCreated");
 	const calls: Array<{ id: string; forceStop?: boolean }> = [];
 	const runtime = createHostedRelayRuntime({
 		store,
@@ -538,41 +567,7 @@ it.each([
 ])("recovers abandoned sandbox %s only after the function deadline", async (state, event) => {
 	const h = setup();
 	const lease = await reserve(h);
-	h.store.transition(
-		lease.id,
-		["reserved"],
-		(entry) => {
-			entry.provider = "vercel";
-			entry.sandboxName = `hobo-${lease.id}`;
-			entry.state = state;
-		},
-		event,
-		NOW,
-	);
-	const store: HostedInboxStore = {
-		...h.asyncStore,
-		async ready() {
-			return true;
-		},
-		async latestLeaseIntents(ids) {
-			return h.store.events().filter((item) => ids.includes(item.leaseId));
-		},
-		async claimWebhook() {
-			return undefined;
-		},
-		async acceptWebhook() {
-			return { duplicate: false };
-		},
-		async acceptIgnoredWebhook() {
-			return { duplicate: false };
-		},
-		async ackWebhook() {
-			return true;
-		},
-		async failWebhook() {
-			return "retry";
-		},
-	};
+	const store = sandboxRecoveryStore(h, lease, state, event);
 	let now = new Date(Date.parse(NOW) + 800_000).toISOString();
 	const reconciliations: Array<{ id: string; forceStop?: boolean }> = [];
 	const runtime = createHostedRelayRuntime({
@@ -590,11 +585,11 @@ it.each([
 		},
 	});
 	await runtime.tick();
-	expect(h.store.get(lease.id)?.state).toBe(state);
+	expect((await store.get(lease.id))?.state).toBe(state);
 	expect(reconciliations.some((item) => item.forceStop)).toBe(false);
 	now = new Date(Date.parse(NOW) + 1_021_000).toISOString();
 	await runtime.tick();
-	expect(h.store.get(lease.id)?.state).toBe("uncertain");
+	expect((await store.get(lease.id))?.state).toBe("uncertain");
 	expect(reconciliations.at(-1)).toEqual({ id: lease.id, forceStop: true });
 });
 it("attributes delayed job completion to the job's own attempt after a rerun starts", async () => {

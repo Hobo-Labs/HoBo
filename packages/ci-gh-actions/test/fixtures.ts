@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import {
 	AccountSchema,
+	type CiSharedBudgetHooks,
 	ConfigurationSchema,
 	ConnectionSchema,
 	JobSchema,
@@ -252,8 +253,8 @@ export class ContractApi implements GithubTransport {
 		throw new Error(`unmatched contract: ${method} ${path}`);
 	}
 }
-export function harness(path = ":memory:") {
-	const store = new LeaseStore(path);
+export function harness(path = ":memory:", sharedBudget?: CiSharedBudgetHooks) {
+	const store = new LeaseStore(path, undefined, { sharedBudget });
 	const api = new ContractApi();
 	const identityClaims = claims();
 	const identity: IdentityVerifier = {

@@ -32,11 +32,10 @@
 import type {
 	HttpTransport,
 	ResolveRequest,
-	ResolverError,
 	ResourceResolver,
 	TransportResponse,
 } from "@hobo/core";
-import { parseResolveRequest } from "@hobo/core";
+import { parseResolveRequest, ResolverError } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -51,8 +50,9 @@ import {
 	digitaloceanResolverRegistry,
 	redactDigitalOceanText,
 } from "../src/index.js";
+import type { JsonObject, JsonValue } from "../src/json.js";
 
-type Rec = Record<string, unknown>;
+type Rec = JsonObject;
 
 const CREDENTIAL_REF = "env://DIGITALOCEAN_TOKEN";
 const TOKEN = "dop_v1_fakedigitaloceantoken0123456789abcdefghij";
@@ -100,7 +100,7 @@ function request(input: {
 			logicalId: input.logicalId ?? "thing",
 			...(input.physicalId !== undefined
 				? { physicalId: input.physicalId }
-				: {}),
+				: undefined),
 		},
 		desired: input.desired ?? {},
 		credentialRef: input.credentialRef ?? CREDENTIAL_REF,
@@ -121,7 +121,7 @@ function sequence(...responses: readonly TransportResponse[]): HttpTransport {
 	};
 }
 
-function json(status: number, payload: unknown): TransportResponse {
+function json(status: number, payload: JsonValue): TransportResponse {
 	return {
 		status,
 		headers: { "content-type": "application/json" },
@@ -143,20 +143,20 @@ function fullPage(listKey: string): TransportResponse {
 	});
 }
 
-async function codeOf(run: () => Promise<unknown>): Promise<string> {
+async function codeOf<T>(run: () => Promise<T>): Promise<string> {
 	try {
 		await run();
 	} catch (error) {
-		return (error as ResolverError).code ?? "NO_CODE";
+		return error instanceof ResolverError ? error.code : "NO_CODE";
 	}
 	return "NO_ERROR_THROWN";
 }
 
-async function messageOf(run: () => Promise<unknown>): Promise<string> {
+async function messageOf<T>(run: () => Promise<T>): Promise<string> {
 	try {
 		await run();
 	} catch (error) {
-		return (error as Error).message;
+		return error instanceof Error ? error.message : String(error);
 	}
 	return "NO_ERROR_THROWN";
 }
@@ -291,7 +291,6 @@ describe("the credential boundary", () => {
 		expect(
 			await codeOf(() =>
 				readDroplet(always(json(200, { droplets: [] })), {
-					// biome-ignore lint/suspicious/useAwait: rejecting is the point
 					resolveCredential: async () => {
 						throw "sealed";
 					},
@@ -316,6 +315,7 @@ describe("the credential boundary", () => {
 	it("refuses to build resolvers with no resolveCredential at all", () => {
 		expect(() =>
 			digitaloceanResolverRegistry({
+				// SAFETY: deliberately violate the injected port to verify runtime rejection.
 				resolveCredential: undefined as never,
 			}),
 		).toThrow(/never reads an environment variable/u);
@@ -461,12 +461,10 @@ describe("name ambiguity", () => {
 		).toBe("RESOLVER_PROVIDER_REJECTED");
 	});
 
-	it("ignores non-object entries in a page", async () => {
-		// A stray null must not become a match, and must not crash the scan.
-		const outcome = await readDroplet(
-			always(json(200, { droplets: [null, "thing", 7] })),
-		);
-		expect(outcome).toBeUndefined();
+	it("refuses malformed entries rather than turning them into absence", async () => {
+		await expect(
+			readDroplet(always(json(200, { droplets: [null, "thing", 7] }))),
+		).rejects.toThrow(/incomplete collection/u);
 	});
 
 	it("ignores a record whose name does not match", async () => {
@@ -693,7 +691,7 @@ describe("adopt versus noop", () => {
 
 	it("reports noop when the caller already named the physical id", async () => {
 		const outcome = await readDroplet(
-			always(json(200, { droplets: [{ id: 11, name: "thing" }] })),
+			always(json(200, { droplet: { id: 11, name: "thing" } })),
 			{},
 			{ physicalId: "11" },
 		);
@@ -744,12 +742,16 @@ describe("outputs from a sparse record", () => {
 			DIGITALOCEAN_KUBERNETES_CLUSTER_PRODUCT_ID,
 			"kubernetes_clusters",
 		],
-	])("publishes only the name for a bare %s record", async (_label, productId, listKey) => {
+	])("withholds readiness for a bare %s record", async (_label, productId, listKey) => {
 		const outcome = await resolverFor(productId).read(
 			request({ productId }),
 			always(json(200, { [listKey]: [{ id: "id-1", name: "thing" }] })),
 		);
-		expect(outcome?.outputs).toEqual({ name: "thing" });
+		expect(outcome?.outputs).toEqual({
+			name: "thing",
+			ready: false,
+			operationConfirmed: false,
+		});
 	});
 
 	it("publishes the droplet's public and private addresses separately", async () => {
@@ -813,7 +815,11 @@ describe("outputs from a sparse record", () => {
 				}),
 			),
 		);
-		expect(outcome?.outputs).toEqual({ name: "thing" });
+		expect(outcome?.outputs).toEqual({
+			name: "thing",
+			ready: false,
+			operationConfirmed: false,
+		});
 	});
 
 	it("publishes the database connection fields a binding needs", async () => {
@@ -1131,7 +1137,7 @@ describe("the spaces credential and clock", () => {
 			request({
 				productId: DIGITALOCEAN_SPACES_PRODUCT_ID,
 				desired,
-				...(credentialRef === undefined ? {} : { credentialRef }),
+				...(credentialRef === undefined ? undefined : { credentialRef }),
 			}),
 			transport,
 		);
@@ -1184,6 +1190,7 @@ describe("the spaces credential and clock", () => {
 		expect(
 			await codeOf(() =>
 				readSpaces(always(raw(404, "")), {
+					// SAFETY: malformed host material is deliberate input to the credential boundary.
 					resolveSpacesCredential: async () => pair as never,
 				}),
 			),

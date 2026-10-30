@@ -47,6 +47,8 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
+    "@hobo/core": "workspace:*",
+    "@hobo/broker": "workspace:*",
     "@hobo/dispatcher": "workspace:*",
     "@hobo/pricing": "workspace:*",
     "pg": "8.22.0",

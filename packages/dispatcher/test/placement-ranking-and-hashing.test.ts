@@ -531,18 +531,24 @@ describe("credit fact classification", () => {
 		);
 	});
 
-	it("ignores an unparseable or absent expiry rather than sorting on NaN", () => {
-		// A NaN expiry compared against a real timestamp is false in both
-		// directions, which would silently break the ordering for every pair it
-		// touched.
+	it("refuses an unparseable expiry and permits an explicitly unexpiring grant", () => {
+		expect(() =>
+			dispatch({
+				ledgerView: ledgerView([
+					runnerAccount("a", {
+						freeHeadroom: 100,
+						credits: [
+							{ creditId: "bad", freeHeadroom: 10, expiresAt: "whenever" },
+						],
+					}),
+				]),
+			}),
+		).toThrow(/credit.expiresAt must be a valid ISO/);
 		const result = dispatch({
 			ledgerView: ledgerView([
 				runnerAccount("a", {
-					freeHeadroom: 100,
-					credits: [
-						{ creditId: "bad", freeHeadroom: 10, expiresAt: "whenever" },
-						{ creditId: "none", freeHeadroom: 10 },
-					],
+					freeHeadroom: 10,
+					credits: [{ creditId: "none", freeHeadroom: 10 }],
 				}),
 			]),
 		});

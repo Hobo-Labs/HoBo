@@ -61,10 +61,12 @@
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
     "@hobo/ci": "workspace:*",
+    "@hobo/core": "workspace:*",
     "pg": "8.22.0",
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@hobo/broker": "workspace:*",
     "@cloudflare/workers-types": "5.20260730.1",
     "@dagger.io/dagger": "0.21.11",
     "@hobo/ci-cf": "workspace:*",

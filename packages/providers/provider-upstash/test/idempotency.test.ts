@@ -168,6 +168,49 @@ describe("createUpstashClient.createDatabase", () => {
 		assert.equal(transport.requests.length, 2);
 	});
 
+	it.each([
+		{ header: "86400", expected: 300_000 },
+		{
+			header: new Date(CLOCK() + 86_400_000).toUTCString(),
+			expected: 300_000,
+		},
+		{ header: "Thu, 01 Jan 2099 00:00:00 GMT", expected: 300_000 },
+		{ header: "30", expected: 30_000 },
+		{
+			header: new Date(CLOCK() + 30_000).toUTCString(),
+			expected: 30_000,
+		},
+	])("bounds adoption backoff for Retry-After $header", async ({
+		header,
+		expected,
+	}) => {
+		const transport = createStubTransport({
+			script: [
+				{ status: 429, headers: { "Retry-After": header }, body: "slow down" },
+				{ status: 200, body: VALID_PAYLOAD },
+			],
+		});
+		const delays: number[] = [];
+		const client = createUpstashClient({
+			transport,
+			store: createInMemoryIdempotencyStore(),
+			clock: CLOCK,
+			sleep: async (delay) => {
+				delays.push(delay);
+			},
+		});
+
+		const database = await client.adoptDatabase(FAKE_DATABASE_ID);
+
+		assert.equal(database.databaseId, FAKE_DATABASE_ID);
+		assert.deepEqual(delays, [expected]);
+		assert.equal(transport.requests.length, 2);
+		assert.deepEqual(
+			transport.requests.map((request) => request.headers["idempotency-key"]),
+			[FAKE_DATABASE_ID, FAKE_DATABASE_ID],
+		);
+	});
+
 	it("releases the key on a definite refusal so a new attempt is allowed", async () => {
 		const transport = createStubTransport({
 			script: [

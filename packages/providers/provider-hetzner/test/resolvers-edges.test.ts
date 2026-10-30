@@ -29,11 +29,10 @@
 import type {
 	HttpTransport,
 	ResolveRequest,
-	ResolverError,
 	ResourceResolver,
 	TransportResponse,
 } from "@hobo/core";
-import { parseResolveRequest } from "@hobo/core";
+import { parseResolveRequest, ResolverError } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -46,8 +45,9 @@ import {
 	hetznerResolverRegistry,
 	redactHetznerText,
 } from "../src/index.js";
+import type { JsonObject, JsonValue } from "../src/json.js";
 
-type Rec = Record<string, unknown>;
+type Rec = JsonObject;
 
 const CREDENTIAL_REF = "env://HCLOUD_TOKEN";
 const TOKEN = "fakehetznerprojecttoken0123456789abcdefgh";
@@ -94,7 +94,7 @@ function request(input: {
 			logicalId: input.logicalId ?? "thing",
 			...(input.physicalId !== undefined
 				? { physicalId: input.physicalId }
-				: {}),
+				: undefined),
 		},
 		desired: input.desired ?? {},
 		credentialRef: input.credentialRef ?? CREDENTIAL_REF,
@@ -117,7 +117,7 @@ function sequence(...responses: readonly TransportResponse[]): HttpTransport {
 	};
 }
 
-function json(status: number, payload: unknown): TransportResponse {
+function json(status: number, payload: JsonValue): TransportResponse {
 	return {
 		status,
 		headers: { "content-type": "application/json" },
@@ -129,20 +129,20 @@ function raw(status: number, body: string): TransportResponse {
 	return { status, headers: {}, body };
 }
 
-async function codeOf(run: () => Promise<unknown>): Promise<string> {
+async function codeOf<T>(run: () => Promise<T>): Promise<string> {
 	try {
 		await run();
 	} catch (error) {
-		return (error as ResolverError).code ?? "NO_CODE";
+		return error instanceof ResolverError ? error.code : "NO_CODE";
 	}
 	return "NO_ERROR_THROWN";
 }
 
-async function messageOf(run: () => Promise<unknown>): Promise<string> {
+async function messageOf<T>(run: () => Promise<T>): Promise<string> {
 	try {
 		await run();
 	} catch (error) {
-		return (error as Error).message;
+		return error instanceof Error ? error.message : String(error);
 	}
 	return "NO_ERROR_THROWN";
 }
@@ -307,7 +307,6 @@ describe("the credential boundary", () => {
 		expect(
 			await codeOf(() =>
 				resolverFor(HETZNER_CLOUD_SERVER_PRODUCT_ID, {
-					// biome-ignore lint/suspicious/useAwait: rejecting is the point
 					resolveCredential: async () => {
 						throw "sealed";
 					},
@@ -338,6 +337,7 @@ describe("the credential boundary", () => {
 	it("refuses to build a resolver with no resolveCredential at all", async () => {
 		expect(() =>
 			hetznerResolverRegistry({
+				// SAFETY: deliberately violate the injected port to verify runtime rejection.
 				resolveCredential: undefined as never,
 			}),
 		).toThrow(/never reads an environment variable/u);
@@ -433,6 +433,7 @@ describe("the object storage credential boundary", () => {
 		expect(
 			await codeOf(() =>
 				resolverFor(HETZNER_OBJECT_STORAGE_PRODUCT_ID, {
+					// SAFETY: malformed host material is deliberate input to the credential boundary.
 					resolveObjectStorageCredential: async () => pair as never,
 				}).read(
 					request({ productId: HETZNER_OBJECT_STORAGE_PRODUCT_ID, desired }),
@@ -446,6 +447,7 @@ describe("the object storage credential boundary", () => {
 		expect(
 			await codeOf(() =>
 				resolverFor(HETZNER_OBJECT_STORAGE_PRODUCT_ID, {
+					// SAFETY: deliberately omit the injected key pair to test the runtime refusal.
 					resolveObjectStorageCredential: async () => undefined as never,
 				}).read(
 					request({ productId: HETZNER_OBJECT_STORAGE_PRODUCT_ID, desired }),
@@ -603,14 +605,13 @@ describe("reading the collection", () => {
 		).toBe("RESOLVER_PROVIDER_REJECTED");
 	});
 
-	it("ignores non-object entries in the list", async () => {
-		// A stray null in an array must not become a match, and must not crash
-		// the filter either.
-		const outcome = await resolverFor(HETZNER_CLOUD_SERVER_PRODUCT_ID).read(
-			request({ productId: HETZNER_CLOUD_SERVER_PRODUCT_ID }),
-			always(json(200, { servers: [null, "thing", 7] })),
-		);
-		expect(outcome).toBeUndefined();
+	it("refuses malformed entries rather than treating them as absence", async () => {
+		await expect(
+			resolverFor(HETZNER_CLOUD_SERVER_PRODUCT_ID).read(
+				request({ productId: HETZNER_CLOUD_SERVER_PRODUCT_ID }),
+				always(json(200, { servers: [null, "thing", 7] })),
+			),
+		).rejects.toThrow(/incomplete collection/u);
 	});
 
 	it("ignores an entry whose name does not match exactly", async () => {
@@ -847,12 +848,12 @@ describe("naming and placement", () => {
 	])("refuses a create with no %s", async (missing) => {
 		// A machine billed at a size nobody asked for is a cost incident, and
 		// an image nobody asked for is an unknown OS in production.
-		const desired: Rec = {
-			serverType: "cx22",
-			image: "ubuntu-24.04",
+		const desired = {
 			location: "fsn1",
+			...(missing === "serverType"
+				? { image: "ubuntu-24.04" }
+				: { serverType: "cx22" }),
 		};
-		delete desired[missing];
 		expect(
 			await codeOf(() =>
 				resolverFor(HETZNER_CLOUD_SERVER_PRODUCT_ID).reconcile(
@@ -881,7 +882,7 @@ describe("adopt versus noop", () => {
 				productId: HETZNER_CLOUD_SERVER_PRODUCT_ID,
 				physicalId: "11",
 			}),
-			always(json(200, { servers: [{ id: 11, name: "thing" }] })),
+			always(json(200, { server: { id: 11, name: "thing" } })),
 		);
 		expect(outcome?.action).toBe("noop");
 	});
@@ -912,7 +913,11 @@ describe("outputs from a sparse record", () => {
 			request({ productId: HETZNER_CLOUD_SERVER_PRODUCT_ID }),
 			always(json(200, { servers: [{ id: 12, name: "thing" }] })),
 		);
-		expect(Object.keys(outcome?.outputs ?? {})).toEqual(["name"]);
+		expect(outcome?.outputs).toEqual({
+			name: "thing",
+			ready: false,
+			operationConfirmed: false,
+		});
 	});
 
 	it("publishes every server field when Hetzner sends them", async () => {
@@ -950,7 +955,11 @@ describe("outputs from a sparse record", () => {
 			request({ productId: HETZNER_LOAD_BALANCER_PRODUCT_ID }),
 			always(json(200, { load_balancers: [{ id: 13, name: "thing" }] })),
 		);
-		expect(outcome?.outputs).toEqual({ name: "thing" });
+		expect(outcome?.outputs).toEqual({
+			name: "thing",
+			ready: false,
+			operationConfirmed: false,
+		});
 	});
 
 	it("omits volume fields Hetzner did not send", async () => {
@@ -958,7 +967,11 @@ describe("outputs from a sparse record", () => {
 			request({ productId: HETZNER_VOLUME_PRODUCT_ID }),
 			always(json(200, { volumes: [{ id: 14, name: "thing" }] })),
 		);
-		expect(outcome?.outputs).toEqual({ name: "thing" });
+		expect(outcome?.outputs).toEqual({
+			name: "thing",
+			ready: false,
+			operationConfirmed: false,
+		});
 	});
 
 	it("publishes the linux device when a volume is attached", async () => {
@@ -996,7 +1009,12 @@ describe("outputs from a sparse record", () => {
 			request({ productId: HETZNER_STORAGE_BOX_PRODUCT_ID }),
 			always(json(200, { storage_boxes: [{ id: 15, name: "thing" }] })),
 		);
-		expect(outcome?.outputs).toEqual({ name: "thing", status: "" });
+		expect(outcome?.outputs).toEqual({
+			name: "thing",
+			status: "",
+			ready: false,
+			operationConfirmed: false,
+		});
 	});
 
 	it("derives the mount endpoints from the server name", async () => {

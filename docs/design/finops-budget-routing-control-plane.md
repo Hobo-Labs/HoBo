@@ -15,6 +15,11 @@ The goal is not to rebuild the existing FinOps proofs. It is to add one public
 control-plane contract that composes the existing cost, metering, credit ledger,
 budget policy, degradation, spend breaker, showback, and attribution evidence.
 
+The execution contract is [Budgeted cloud hosting transitions](./hosting-budget-transitions.md):
+expected cost selects among feasible proposals, while a shared authority reserves bounded
+exposure. EffectSpec and ResilienceProfile declarations govern mutation, observation,
+recovery, retirement and settlement; unknown outcomes retain their financial commitments.
+
 ## Control-Plane Shape
 
 The canonical pipeline is:

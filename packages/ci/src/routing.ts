@@ -1,11 +1,18 @@
+import { evaluateBudgetPolicy } from "@hobo/core";
 import { createDispatcherRegistry, decideDispatch } from "@hobo/dispatcher";
 import type {
 	Account,
+	CiRoutingRefusal as CiRoutingRefusalWire,
 	Lease,
 	Offer,
 	SandboxAllowance,
 } from "./_generated/ci_pb.js";
 import { allocationQuote } from "./accounting.js";
+import {
+	ciBudgetIdentity,
+	ciBudgetPolicy,
+	ciRoutingObjective,
+} from "./policy.js";
 import { sandboxReservationQuote } from "./sandbox-pricing.js";
 
 export const ACTIVE_STATES = new Set([
@@ -17,18 +24,127 @@ export const ACTIVE_STATES = new Set([
 	"uncertain",
 ]);
 
+export interface CiRoutingCandidateCost {
+	paidMicros: number;
+	freeMinutes: number;
+	sandboxReservedAllowance?: SandboxAllowance | undefined;
+}
+export type CiRoutingRefusal = Pick<
+	CiRoutingRefusalWire,
+	"code" | "reason" | "offerId"
+>;
+export interface CiRoutingOptions {
+	/** A plan requiring a native bound is never execution authorization. */
+	phase?: "plan" | "admit";
+	attempt?: number;
+	queueDurationMs?: number;
+	onRefusal?: (refusal: CiRoutingRefusal) => void;
+}
+
+/** Shared by admission and pre-dispatch repricing. Negative means left wins.
+ * A partly free job can still cost more than an entirely paid alternative. */
+export function compareCiRoutingCandidates(
+	left: CiRoutingCandidateCost,
+	right: CiRoutingCandidateCost,
+	strategy = "min-cost",
+): number {
+	if (
+		![
+			"",
+			"min-cost",
+			"lowest-total-incremental-cost",
+			"maximize-credits",
+		].includes(strategy)
+	)
+		throw new Error("unsupported CI routing objective");
+	function consumesFree(candidate: CiRoutingCandidateCost): boolean {
+		const allowance = candidate.sandboxReservedAllowance;
+		return (
+			candidate.freeMinutes > 0 ||
+			(allowance !== undefined &&
+				[
+					allowance.cpuVcpuMs,
+					allowance.memoryMbMs,
+					allowance.egressBytes,
+					allowance.creations,
+					allowance.proxyBytes,
+					allowance.proxySessions,
+					allowance.proxyControlCalls,
+				].some((value) => value > 0))
+		);
+	}
+	const freeDifference =
+		Number(consumesFree(right)) - Number(consumesFree(left));
+	if (strategy === "maximize-credits" && freeDifference !== 0)
+		return freeDifference;
+	if (left.paidMicros !== right.paidMicros)
+		return left.paidMicros - right.paidMicros;
+	return freeDifference;
+}
+
+// Timestamp-only snapshots cannot prove that a later completion at the same
+// clock tick was included. Count equality (and unknown timestamps) until a
+// strictly newer observation establishes coverage.
+function shouldCountLocalUsage(lease: Lease, observedAt: string): boolean {
+	const completed = Date.parse(lease.usageCompletedAt || lease.settledAt);
+	return !Number.isFinite(completed) || completed >= Date.parse(observedAt);
+}
+
 /** Pure ranking input; availability is measured per customer-owned account. */
-export function route(account: Account, leases: readonly Lease[], now: string) {
+export function route(
+	account: Account,
+	leases: readonly Lease[],
+	now: string,
+	options: CiRoutingOptions = {},
+) {
+	const refuse = (code: string, reason: string, offerId = "") => {
+		options.onRefusal?.({ code, reason, offerId });
+	};
+	if (!Number.isFinite(Date.parse(now))) {
+		refuse(
+			"budget.invalid-time",
+			"CI routing requires an authoritative current time",
+		);
+		return undefined;
+	}
+	let common: ReturnType<typeof ciBudgetPolicy>;
+	try {
+		common = ciBudgetPolicy(account);
+		ciBudgetIdentity(account, now);
+		if (common && !common.workloads.includes("ci"))
+			throw new Error("budget policy does not cover CI");
+		ciRoutingObjective(account.routingStrategy);
+		if (
+			common &&
+			account.routingStrategy &&
+			ciRoutingObjective(account.routingStrategy) !== common.objective
+		)
+			throw new Error("CI routing objective disagrees with budget policy");
+	} catch (error) {
+		refuse(
+			"budget.invalid-policy",
+			error instanceof Error ? error.message : "invalid CI budget policy",
+		);
+		return undefined;
+	}
+	const strategy = common?.objective ?? account.routingStrategy;
 	if (
 		account.usageObservedAt &&
-		Date.parse(account.usageObservedAt) > Date.parse(now)
+		(!Number.isFinite(Date.parse(account.usageObservedAt)) ||
+			Date.parse(account.usageObservedAt) > Date.parse(now))
 	)
 		return undefined;
+	const financialScope = (lease: Lease) =>
+		common && lease.budgetId
+			? lease.budgetTenantId === common.tenantId &&
+				lease.budgetId === common.budgetId &&
+				lease.budgetPeriodId === common.periodId
+			: lease.accountId === account.id;
 	const active = leases.filter(
-		(lease) => lease.accountId === account.id && ACTIVE_STATES.has(lease.state),
+		(lease) => financialScope(lease) && ACTIVE_STATES.has(lease.state),
 	);
 	const settled = leases.filter(
-		(lease) => lease.accountId === account.id && lease.state === "completed",
+		(lease) => financialScope(lease) && lease.state === "completed",
 	);
 	const minutes = account.maxRuntimeMinutes + account.startupMinutes;
 	const held = active.reduce((sum, lease) => sum + lease.reservedPaidMicros, 0);
@@ -38,28 +154,61 @@ export function route(account: Account, leases: readonly Lease[], now: string) {
 			.filter(
 				(lease) =>
 					!account.usageObservedAt ||
-					Date.parse(lease.usageCompletedAt || lease.settledAt) >
-						Date.parse(account.usageObservedAt),
+					shouldCountLocalUsage(lease, account.usageObservedAt),
 			)
 			.reduce((sum, lease) => sum + lease.paidMicros, 0);
+	const providerAccounting = new Map(
+		account.offers.map((offer) => {
+			const same = (lease: Lease) =>
+				lease.providerAccountId
+					? lease.provider === offer.provider &&
+						lease.providerAccountId === offer.providerAccountId
+					: lease.accountId === account.id &&
+						(lease.offerId === offer.id || lease.provider === offer.provider);
+			const reserved = leases.filter(
+				(lease) => same(lease) && ACTIVE_STATES.has(lease.state),
+			);
+			const used = leases.filter(
+				(lease) => same(lease) && lease.state === "completed",
+			);
+			const providerSpent =
+				offer.spentMicros +
+				used
+					.filter((lease) => shouldCountLocalUsage(lease, offer.observedAt))
+					.reduce((sum, lease) => sum + lease.paidMicros, 0) +
+				reserved.reduce((sum, lease) => sum + lease.reservedPaidMicros, 0);
+			return [offer, { reserved, used, providerSpent }] as const;
+		}),
+	);
+	const providerExposures = new Map<string, number>();
+	const accounted = new Set<string>();
+	for (const [offer, accounting] of providerAccounting) {
+		const key = JSON.stringify([offer.provider, offer.providerAccountId]);
+		if (accounted.has(key)) continue;
+		accounted.add(key);
+		providerExposures.set(
+			offer.providerAccountId,
+			(providerExposures.get(offer.providerAccountId) ?? 0) +
+				accounting.providerSpent,
+		);
+	}
 	const candidates = account.offers.flatMap((offer) => {
 		if (
 			!offer.enabled ||
 			!offer.bridgeAcknowledged ||
+			!Number.isFinite(Date.parse(offer.observedAt)) ||
+			!Number.isFinite(Date.parse(offer.validUntil)) ||
 			Date.parse(offer.observedAt) > Date.parse(now) ||
 			Date.parse(offer.validUntil) <= Date.parse(now) ||
 			Date.parse(offer.validUntil) < Date.parse(now) + minutes * 60000
 		)
 			return [];
-		const reserved = active.filter((lease) => lease.offerId === offer.id);
+		const accounting = providerAccounting.get(offer);
+		if (!accounting) throw new Error("missing provider accounting");
+		const { reserved, used, providerSpent } = accounting;
 		if (reserved.length >= offer.concurrency) return [];
-		const used = settled.filter((lease) => lease.offerId === offer.id);
 		const usedFree = used
-			.filter(
-				(lease) =>
-					Date.parse(lease.usageCompletedAt || lease.settledAt) >
-					Date.parse(offer.observedAt),
-			)
+			.filter((lease) => shouldCountLocalUsage(lease, offer.observedAt))
 			.map((lease) => lease.billedFreeMinutes);
 		// Sandbox charges are multidimensional and cannot consume host-minute credits.
 		if (
@@ -84,8 +233,8 @@ export function route(account: Account, leases: readonly Lease[], now: string) {
 				(reserved.some((lease) => !lease.sandboxReservedAllowance) ||
 					used.some(
 						(lease) =>
-							Date.parse(lease.usageCompletedAt || lease.settledAt) >
-								Date.parse(offer.observedAt) && !lease.sandboxUsedAllowance,
+							shouldCountLocalUsage(lease, offer.observedAt) &&
+							!lease.sandboxUsedAllowance,
 					))
 			)
 				return [];
@@ -111,11 +260,7 @@ export function route(account: Account, leases: readonly Lease[], now: string) {
 								: [],
 						),
 						...used
-							.filter(
-								(lease) =>
-									Date.parse(lease.usageCompletedAt || lease.settledAt) >
-									Date.parse(offer.observedAt),
-							)
+							.filter((lease) => shouldCountLocalUsage(lease, offer.observedAt))
 							.flatMap((lease) =>
 								lease.sandboxUsedAllowance ? [lease.sandboxUsedAllowance] : [],
 							),
@@ -129,50 +274,91 @@ export function route(account: Account, leases: readonly Lease[], now: string) {
 			free = 0;
 			reservedFree = 0;
 		}
-		const providerSpent =
-			offer.spentMicros +
-			used
-				.filter(
-					(lease) =>
-						Date.parse(lease.usageCompletedAt || lease.settledAt) >
-						Date.parse(offer.observedAt),
-				)
-				.reduce((sum, lease) => sum + lease.paidMicros, 0) +
-			reserved.reduce((sum, lease) => sum + lease.reservedPaidMicros, 0);
 		if (
 			spent + held + paid > account.budgetMicros ||
 			providerSpent + paid > offer.budgetMicros
 		)
 			return [];
+		if (common) {
+			const durationMs =
+				minutes * 60000 +
+				(offer.sandboxPricing?.proxyVmRequired
+					? offer.sandboxPricing.proxyVmExtraMs
+					: 0);
+			if (
+				common.periodKind === "fixed-window" &&
+				(common.periodEndsAtMs === undefined ||
+					Date.parse(now) + durationMs > common.periodEndsAtMs)
+			) {
+				refuse(
+					"budget.period-uncovered",
+					"CI host duration extends beyond the funded period",
+					offer.id,
+				);
+				return [];
+			}
+			const measurements = [
+				{ key: "work.cost", unit: "USD.micros", value: paid },
+				{ key: "work.duration", unit: "ms", value: durationMs },
+				{ key: "work.concurrent", unit: "count", value: active.length + 1 },
+				...[...providerExposures].map(([target, value]) => ({
+					key: "provider.cost",
+					unit: "USD.micros",
+					target,
+					value: value + (target === offer.providerAccountId ? paid : 0),
+				})),
+				...(options.attempt !== undefined
+					? [{ key: "ci.attempts", unit: "count", value: options.attempt }]
+					: []),
+				...(options.queueDurationMs !== undefined
+					? [
+							{
+								key: "ci.queue.duration",
+								unit: "ms",
+								value: options.queueDurationMs,
+							},
+						]
+					: []),
+			];
+			const verdict = evaluateBudgetPolicy(common, {
+				workload: "ci",
+				tenantId: common.tenantId,
+				budgetId: common.budgetId,
+				periodId: common.periodId,
+				policyRevision: String(common.revision),
+				nowMs: Date.parse(now),
+				costBoundMicros: paid,
+				exposureMicros: spent + held,
+				boundKind: "conservative",
+				phase: options.phase ?? "admit",
+				measurements,
+			});
+			if (!verdict.ok) {
+				refuse(verdict.code, verdict.reason, offer.id);
+				return [];
+			}
+		}
 		return [{ offer, free, reservedFree, paid, sandboxReservedAllowance }];
 	});
-	// After concurrency and budget filters: an isolated box that still has a
-	// slot beats ARC, which beats GitHub-hosted. Other providers stay eligible.
-	const preferred = preferFleetCandidates(candidates);
-	// Prefer consuming available free allocation, then compare the full paid
-	// reservation within that group. A single job cannot split across offers.
+	// Legacy fleet routing prefers the box, then ARC, then GitHub overflow.
+	// An authored shared policy ranks every admitted offer by its objective.
+	const preferred = common ? candidates : preferFleetCandidates(candidates);
 	if (preferred.length === 0) return undefined;
-	const freeCandidates = preferred.filter((candidate) => {
-		const allowance = candidate.sandboxReservedAllowance;
-		return (
-			candidate.reservedFree > 0 ||
-			(allowance !== undefined &&
-				(allowance.cpuVcpuMs > 0 ||
-					allowance.memoryMbMs > 0 ||
-					allowance.egressBytes > 0 ||
-					allowance.creations > 0 ||
-					allowance.proxyBytes > 0 ||
-					allowance.proxySessions > 0 ||
-					allowance.proxyControlCalls > 0))
-		);
+	const cost = (
+		candidate: (typeof candidates)[number],
+	): CiRoutingCandidateCost => ({
+		paidMicros: candidate.paid,
+		freeMinutes: candidate.reservedFree,
+		sandboxReservedAllowance: candidate.sandboxReservedAllowance,
 	});
-	const prioritized = freeCandidates.length > 0 ? freeCandidates : preferred;
-	const lowestPaidMicros = prioritized.reduce(
-		(lowest, candidate) => Math.min(lowest, candidate.paid),
-		Number.POSITIVE_INFINITY,
+	const prioritized = [...preferred].sort((left, right) =>
+		compareCiRoutingCandidates(cost(left), cost(right), strategy),
 	);
+	const best = prioritized[0];
+	if (!best) return undefined;
 	const eligible = prioritized.filter(
-		(candidate) => candidate.paid === lowestPaidMicros,
+		(candidate) =>
+			compareCiRoutingCandidates(cost(candidate), cost(best), strategy) === 0,
 	);
 	// Dispatcher ranks the lowest-cost shortlist, retaining its native credit
 	// rationale and deterministic tie-breaking.
@@ -211,13 +397,14 @@ export function route(account: Account, leases: readonly Lease[], now: string) {
 		paidMicros: selected.paid,
 		sandboxReservedAllowance: selected.sandboxReservedAllowance,
 		decision: decision.dispatchEvent,
+		requiresNativeBound: common?.enforcement === "strict",
 	};
 }
 
 /**
  * 0 isolated box, 1 kubernetes gh-actions (ARC), 2 GitHub-hosted.
- * Unranked providers are kept. A worse fleet tier is dropped when a better
- * one remains, so a free GitHub offer cannot beat a box that still has a slot.
+ * For legacy accounts, unranked providers are kept and a worse fleet tier is
+ * dropped when a better one remains.
  */
 function fleetCandidateRank(offer: Offer): number | undefined {
 	if (

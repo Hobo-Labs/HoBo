@@ -1,5 +1,6 @@
 import { fromJsonString } from "@bufbuild/protobuf";
 import { type Configuration, ConfigurationSchema } from "./_generated/ci_pb.js";
+import { ciBudgetPolicy, ciRoutingObjective } from "./policy.js";
 import {
 	validateSandboxAllowance,
 	validateSandboxPricing,
@@ -15,13 +16,21 @@ export function parseConfiguration(json: string): Configuration {
 			throw new Error("invalid or duplicate account");
 		accountIds.add(account.id);
 		micros(account.budgetMicros, account.spentMicros);
+		const common = ciBudgetPolicy(account);
+		const objective = ciRoutingObjective(account.routingStrategy);
+		if (
+			common &&
+			(!common.workloads.includes("ci") ||
+				(account.routingStrategy && objective !== common.objective))
+		)
+			throw new Error("common budget policy does not match CI routing");
 		const signalKeys = Object.keys(account.routingSignalCycles);
 		if (
 			signalKeys.length !== Object.keys(account.routingSignalCrossed).length ||
 			signalKeys.some(
 				(key) =>
 					!key.startsWith("broker:") ||
-					key.length > 300 ||
+					key.length > (key.startsWith("broker:v2:") ? 12000 : 300) ||
 					!Object.hasOwn(account.routingSignalCrossed, key) ||
 					(account.routingSignalCycles[key] ?? 0) < 1,
 			)

@@ -1,5 +1,84 @@
 # @hobo/broker
 
+## Hosting budget admission
+
+`resolveBindleDeployment` ranks compatible Yards using trusted, normalized,
+whole-request hosting quotes. Capacity is never a substitute for price. A quote
+contains itemized expected cost and a separate conservative liability bound in
+integer USD microdollars. Unknown, stale, foreign, unbounded or unaffordable
+quotes are ineligible. The provider and tenant on every quote must match the
+selected Yard; residual resources stay within that Yard's provider.
+
+Funded hosting requires `hostingBudget: {authority, quotes, now}` and a bound
+`authorizeHosting` callback. The callback returns the existing `GateDecision`
+plus a generated `HostingPolicyProof` tied to request digest, quote, budget
+identity/revision and policy hash. Denials, pending approvals and unfulfilled
+obligations refuse admission. A successful receipt pins proof, quote and financial
+reservation. The zero-cost local host floor remains available; the local seed
+cannot impersonate a remote provider.
+
+`createSqliteBudgetAdmissionAuthority({path, snapshot, now})` is the concrete
+local durable adapter. Every operation reloads the authoritative journal under
+`BEGIN IMMEDIATE`; journal commit and acknowledgement are atomic. Separate local
+connections/processes share the same file. Reopen restores held and uncertain
+reservations and idempotent terminal records. Distributed hosts require a shared
+transactional database adapter to `BudgetAdmissionAuthority`; copying a SQLite
+file or creating one ledger per worker does not establish shared authority.
+The in-memory factory is explicitly marked `persistence: 'memory'` and cannot
+authorize funded Yard hosting.
+
+One transaction reserves global money, provider-account ceilings and each named
+free-allocation bucket. Quantities use integer normalized base units; unknown
+accounts, units, periods and expired allowance evidence refuse admission. Every
+entitlement must have one authoritative owner, including across budget scopes;
+independent ledgers may not duplicate a provider account's free allocation.
+`unresolvedMicros`, `externalCommittedMicros` and `recoveryReserveMicros` remain
+protected in every reserve calculation. `reservedMicros` is exclusively the
+authority's journal-derived holds; external commitments use their separate field.
+
+`settle` requires confirmed source retirement and authoritative usage evidence,
+including complete actual account charges and entitlement consumption when those
+dimensions were reserved. Actual overruns are recorded and consume remaining
+headroom. Unknown outcomes retain all holds. `release` requires positive evidence
+that the reservation was unused. Policy revisions cannot erase commitments, and
+period rollover refuses while journal-owned work remains outstanding. Reducing
+external unresolved/committed exposure requires reconciliation evidence.
+Zero-cash holds also block rollover: fully credited work still owns its allocation.
+Spent account watermarks cannot disappear within a financial period.
+
+`claimExecution` atomically binds a gateway's existing financial reservation to one
+transition digest. Replay of that same execution reuses the hold; another execution
+cannot claim it. This avoids reserving the same deployment twice while preserving
+the financial plan hash and pinned quote identity through crash recovery.
+Funded Yard generation claims its hold before calling the provider connector, so
+a concurrent unused cancellation cannot release in-flight provisioning liability.
+An identical claimed generation retry inspects the original operation instead of
+provisioning it again; unknown outcomes retain their financial exposure.
+
+Generated wire records live in `data-models/yard_placement.proto`; constraints
+live in `data-models/budget.cue`. The message Pact is hand-authored offline port
+evidence, not provider-verified billing evidence. Regression tests exercise the
+real SQLite adapter, competing connections, crash/reopen, policy changes,
+protected reserves, free-allocation exhaustion and quote selection.
+
+## Budget signal migration and metered preflight
+
+Versioned signal policies supply `identity: {tenantId,budgetId,periodId,policyRevision}`.
+Usage and credit facts must name the matching `budgetId` and `periodId`.
+`budget.StateReset` explicitly initializes each new identity; threshold cycle
+keys include the whole identity. Replays emit no duplicate resets or crossings.
+Changing a cap or threshold set requires a new revision. Unscoped legacy policies
+retain tenant/lifetime semantics for existing consumers and have no period rollover
+guarantee; new hosting controls use versioned identities.
+
+Zero USD budget or per-resolution cap means zero, never unlimited. Unlimited
+preflight behavior requires `budgetUnlimited` or `spendCapUnlimited` explicitly.
+`createMeteredBillingPlane` rereads a live event reader on each authorization and
+holds outstanding request identities atomically within that one plane. Consumable
+snapshot iterators are rejected. A finalized usage fact may retire a hold only by
+naming its reservation ID. This legacy preflight is single-writer and is not the
+durable financial authority for funded cloud hosting.
+
 The **HoBo Broker**: the policy-governed authority that actually brokers
 Bindle/Camp/Yard/Junction placements **across providers**, spins resources up
 and down, and hands accepted work to delivery — based on the configured

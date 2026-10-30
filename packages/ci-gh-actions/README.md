@@ -65,7 +65,8 @@ also runs the local zero-budget scenario without GitHub credentials.
 Stations exports `createCiBudgetRoutingBridge` over the typed relay client.
 Subscribe it to the existing Broker `budget.ThresholdCrossed` and
 `budget.Recovered` facts for the account's tenant. A profile chooses the eligible
-provider offers; CI prioritizes usable free allocation, then the lowest projected charge.
+provider offers; CI minimizes the complete incremental cost by default.
+The explicit `maximize-credits` objective prioritizes usable free allocation.
 The highest active configured threshold wins. Recovery restores the lower or
 normal profile, and an empty offer list pauses new admissions.
 
@@ -424,21 +425,26 @@ drain the existing hosts before rotating those identities. A connection revoked
 while webhook REST validation is awaiting cannot admit new demand under its old
 binding.
 
-By default, routing selects eligible offers that consume measured free allocation
-first, choosing the lowest projected paid charge among them. When no eligible offer
-can consume free allocation, routing selects the cheapest paid offer. A partial free
-balance can leave a paid remainder more expensive than a fully paid host. Pricing
+By default, `min-cost` selects the lowest complete projected paid charge. Explicit
+`maximize-credits` prefers offers that consume measured free allocation before
+comparing paid remainders. A partial free balance can leave a paid remainder more
+expensive than a fully paid host. Pricing
 and allocation evidence must cover the entire reserved host duration, including
 any extra Sandbox proxy VM duration. The relay
 reserves worst-case runtime plus startup, checks account/provider budgets and concurrency, and rechecks delayed
 launches. Original Actions jobs and portable native pipelines share the ledger.
 Prices use integer USD microdollars; allocations use normalized runner minutes.
+Both relays reprice held offers with their pinned attempt and queue context, retaining
+other payer measurements for all-of constraints. This preflight checks feasibility;
+the durable store must still claim the financial hold and revalidate strict native
+liability proof before dispatch. A feasible plan cannot authorize provider effects.
 
 Allocation snapshots are trusted platform/provider inputs, not discovered vendor
 entitlements. `Offer.freeMinutes` is remaining free allocation at `observedAt`;
-`Offer.spentMicros` already includes all completed usage through that inclusive
-watermark. `Account.spentMicros` uses the same semantics when `usageObservedAt`
-is supplied. Only later completed local usage is added. Settlement records actual
+`Offer.spentMicros` is the trusted usage total at that watermark.
+`Account.spentMicros` uses the same semantics when `usageObservedAt` is supplied.
+Local completion at the same timestamp remains conservatively counted until a
+strictly newer observation covers it. Settlement records actual
 usage completion separately from late reconciliation, preventing double charging
 when a refreshed snapshot already includes that work. Snapshots cannot move
 backward or place account usage in the future. Expired price/allocation evidence
@@ -497,6 +503,12 @@ GitHub matches labels, not a requested job ID; refusing provisioning for an even
 does not prevent another queued matching job from claiming an already registered
 runner. The host and nested runner share a provider machine, so the bridge cannot
 isolate untrusted workloads. See [GitHub's self-hosted runner security guidance](https://docs.github.com/en/actions/reference/security/secure-use#hardening-for-self-hosted-runners).
+
+Event/ref allowlists and `ci.attempts` constrain the original demand admitted to
+request a host. They do not constrain the actual matching job GitHub assigns to
+that shared-label runner. The reservation covers account and host liability.
+Use an independently verified isolated execution target when actual-job, ref,
+or attempt isolation is required.
 
 Public repositories and PR provisioning are refused, even when public repository
 acknowledgment is set. Drain registered runners before changing a private repository

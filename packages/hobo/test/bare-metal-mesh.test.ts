@@ -22,6 +22,7 @@
  * a string that is not a URL at all, and a mesh hostname belonging to a
  * *different* bindle — has to fall through to the previous fetch untouched.
  */
+import type { BindleDefinition, ProviderAnnotation } from "@hobo/bindles";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -40,7 +41,8 @@ import {
 const disposers: Array<() => void> = [];
 
 afterEach(() => {
-	for (const dispose of disposers.splice(0)) dispose();
+	// Nested process-wide overrides must unwind in reverse installation order.
+	for (const dispose of disposers.splice(0).reverse()) dispose();
 });
 
 /** Installs the mesh and guarantees the global fetch is restored. */
@@ -222,9 +224,27 @@ describe("applyHoboMeshEnvHeaders", () => {
 
 describe("collectBindleEnvInjections", () => {
 	function definition(
-		annotations: Array<{ option: string; config: Record<string, unknown> }>,
+		annotations: Array<Pick<ProviderAnnotation, "option" | "config">>,
 	) {
-		return { resources: { api: { annotations } } } as never;
+		return {
+			name: "fixture",
+			resources: {
+				api: {
+					kind: "api",
+					name: "api",
+					stableId: "api:api",
+					declaredAllow: [],
+					dependsOn: [],
+					annotations: annotations.map((annotation) => ({
+						provider: "fixture",
+						...annotation,
+					})),
+				},
+			},
+			edges: [],
+			requirements: { require: [], prefer: [], runtimes: [], labels: {} },
+			entrypoint: () => undefined,
+		} satisfies BindleDefinition;
 	}
 
 	it("collects string values from env annotations", () => {
@@ -276,21 +296,22 @@ describe("collectBindleEnvInjections", () => {
 
 	it("merges across resources, with later resources winning", () => {
 		const merged = collectBindleEnvInjections({
+			...definition([]),
 			resources: {
-				a: {
-					annotations: [{ option: "env", config: { A: "1", SHARED: "a" } }],
-				},
-				b: {
-					annotations: [{ option: "env", config: { B: "2", SHARED: "b" } }],
-				},
+				a: definition([{ option: "env", config: { A: "1", SHARED: "a" } }])
+					.resources.api,
+				b: definition([{ option: "env", config: { B: "2", SHARED: "b" } }])
+					.resources.api,
 			},
-		} as never);
+		});
 		expect(merged).toMatchObject({ A: "1", B: "2" });
 		expect(merged.SHARED).toBe("b");
 	});
 
 	it("returns an empty map for a bindle with no env at all", () => {
-		expect(collectBindleEnvInjections({ resources: {} } as never)).toEqual({});
+		expect(
+			collectBindleEnvInjections({ ...definition([]), resources: {} }),
+		).toEqual({});
 	});
 });
 
@@ -410,10 +431,13 @@ describe("installInternalMesh", () => {
 		// requests working while a host is serving.
 		let delegated = 0;
 		const previous = globalThis.fetch;
-		globalThis.fetch = (async () => {
+		globalThis.fetch = async () => {
 			delegated += 1;
 			return new Response("external");
-		}) as typeof fetch;
+		};
+		disposers.push(() => {
+			globalThis.fetch = previous;
+		});
 		try {
 			mesh({ api: echo().handler });
 			await fetch("https://example.com/thing");
@@ -429,10 +453,13 @@ describe("installInternalMesh", () => {
 		// break an unrelated caller with an error from code it never invoked.
 		let delegated = 0;
 		const previous = globalThis.fetch;
-		globalThis.fetch = (async () => {
+		globalThis.fetch = async () => {
 			delegated += 1;
 			return new Response("external");
-		}) as typeof fetch;
+		};
+		disposers.push(() => {
+			globalThis.fetch = previous;
+		});
 		try {
 			mesh({ api: echo().handler });
 			await fetch("not a url");
@@ -448,10 +475,13 @@ describe("installInternalMesh", () => {
 		// component of the same name — which would look like it worked.
 		let delegated = 0;
 		const previous = globalThis.fetch;
-		globalThis.fetch = (async () => {
+		globalThis.fetch = async () => {
 			delegated += 1;
 			return new Response("other bindle");
-		}) as typeof fetch;
+		};
+		disposers.push(() => {
+			globalThis.fetch = previous;
+		});
 		try {
 			mesh({ api: echo().handler }, { bindleName: "shop" });
 			await fetch(`http://other.${INTERNAL_MESH_HOST}/api`);

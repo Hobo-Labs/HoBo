@@ -67,6 +67,7 @@ describe("provider allocation conversion", () => {
 		});
 		const account = create(AccountSchema, {
 			id: "example",
+			routingStrategy: "maximize-credits",
 			budgetMicros: 100000,
 			maxRuntimeMinutes: 9,
 			startupMinutes: 1,

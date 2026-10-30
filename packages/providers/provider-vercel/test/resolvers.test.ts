@@ -11,6 +11,7 @@ import {
 	VERCEL_PROJECT_PRODUCT_ID,
 	VERCEL_RESOLVED_PRODUCT_IDS,
 	VERCEL_RESOLVER_TRANSPORT_POLICY,
+	VERCEL_STATIC_DEPLOY_PRODUCT_ID,
 	VERCEL_UNRESOLVED_PRODUCT_IDS,
 	vercelResolverRegistry,
 	vercelResolvers,
@@ -30,6 +31,12 @@ function options(
 	} = {},
 ) {
 	return {
+		mutationJournal: {
+			persistence: "durable-cas" as const,
+			claim: async () => ({ status: "claimed" as const }),
+			acknowledge: async () => {},
+			uncertain: async () => {},
+		},
 		resolveCredential:
 			overrides.resolveCredential ?? (async () => "vercel-api-token-value"),
 		...(overrides.teamId !== undefined
@@ -229,6 +236,7 @@ describe("vercel resolver registry", () => {
 		expect(registry.list().map((entry) => entry.productId)).toEqual([
 			VERCEL_EDGE_CONFIG_PRODUCT_ID,
 			VERCEL_PROJECT_PRODUCT_ID,
+			VERCEL_STATIC_DEPLOY_PRODUCT_ID,
 		]);
 		expect(registry.get(VERCEL_PROJECT_PRODUCT_ID)?.providerId).toBe("vercel");
 		for (const productId of VERCEL_UNRESOLVED_PRODUCT_IDS) {
@@ -354,17 +362,16 @@ describe("vercel.project/v1 resolver", () => {
 		const resolver = resolverFor(VERCEL_PROJECT_PRODUCT_ID);
 		await resolver.delete(projectRequest(), transport);
 		await resolver.delete(projectRequest(), transport);
-		expect(calls).toHaveLength(2);
-		expect(calls.every((call) => call.method === "DELETE")).toBe(true);
+		expect(calls.map((call) => call.method)).toEqual(["GET", "DELETE", "GET"]);
 	});
 
 	it("carries teamId onto every call when the token is team scoped", async () => {
 		const { transport, calls } = recorded(projectApi());
 		await resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
-			teamId: "team_abc",
+			teamId: "team_hobo",
 		}).reconcile(projectRequest(), transport);
 		for (const call of calls) {
-			expect(call.url).toContain("teamId=team_abc");
+			expect(call.url).toContain("teamId=team_hobo");
 		}
 	});
 
@@ -446,7 +453,12 @@ describe("vercel.edge-config/v1 resolver", () => {
 		const resolver = resolverFor(VERCEL_EDGE_CONFIG_PRODUCT_ID);
 		await resolver.delete(edgeConfigRequest(), transport);
 		await resolver.delete(edgeConfigRequest(), transport);
-		expect(calls.map((call) => call.method)).toEqual(["GET", "DELETE", "GET"]);
+		expect(calls.map((call) => call.method)).toEqual([
+			"GET",
+			"GET",
+			"DELETE",
+			"GET",
+		]);
 	});
 
 	it("treats a 404 on an explicitly named delete as success", async () => {

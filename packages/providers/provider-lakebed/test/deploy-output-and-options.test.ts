@@ -32,226 +32,116 @@ import { parseLakebedDeployOutput } from "../src/temporary-station.js";
 const STATION = "https://abc123.lakebed.app";
 const CLAIM = "https://lakebed.dev/claim/abc123";
 
-describe("parseLakebedDeployOutput — JSON lines", () => {
-	it("reads a JSON object anywhere in the output", () => {
-		// Not only the first or last line. A CLI interleaves progress text with
-		// its machine-readable line, and requiring a position would make the
-		// parser brittle against a harmless formatting change.
-		const result = parseLakebedDeployOutput(
-			`installing…\nbuilding…\n{"url":"${STATION}","deployId":"abc123"}\ndone\n`,
-		);
-		expect(result.stationUrl).toBe(STATION);
-		expect(result.deployId).toBe("abc123");
-		expect(result.claimUrl).toBe(CLAIM);
-	});
+const EXPIRES = "2030-01-01T00:00:00.000Z";
+const deployed = {
+	url: STATION,
+	deployId: "abc123",
+	claimUrl: CLAIM,
+	expiresAt: EXPIRES,
+};
 
-	it("accepts each spelling of the station URL field", () => {
-		// Three spellings because the upstream CLI has used all of them.
-		// Supporting one would make an upgrade silently fall through to the
-		// looser regex path below.
-		for (const field of ["url", "deployUrl", "primaryUrl"]) {
-			const result = parseLakebedDeployOutput(
-				`{"${field}":"${STATION}","deployId":"abc123"}`,
-			);
-			expect(result.stationUrl).toBe(STATION);
-		}
-	});
-
-	it("accepts each spelling of the deploy id", () => {
-		for (const field of ["deployId", "id"]) {
-			const result = parseLakebedDeployOutput(
-				`{"url":"${STATION}","${field}":"abc123"}`,
-			);
-			expect(result.deployId).toBe("abc123");
-		}
-	});
-
-	it("prefers an explicit claim URL over the derived one", () => {
-		// If the CLI states where to claim, that is authoritative — deriving one
-		// would send the user to a URL the service never issued.
-		const result = parseLakebedDeployOutput(
-			`{"url":"${STATION}","deployId":"abc123","claimUrl":"https://lakebed.dev/claim/other"}`,
-		);
-		expect(result.claimUrl).toBe("https://lakebed.dev/claim/other");
-	});
-
-	it("derives the claim URL from the deploy id when none is stated", () => {
+describe("parseLakebedDeployOutput", () => {
+	it("reads current pretty JSON and preserves the native expiry", () => {
 		expect(
-			parseLakebedDeployOutput(`{"url":"${STATION}","deployId":"abc123"}`)
-				.claimUrl,
-		).toBe(CLAIM);
+			parseLakebedDeployOutput(
+				JSON.stringify(
+					{ api: "https://api.lakebed.dev", ...deployed },
+					null,
+					2,
+				),
+			),
+		).toEqual({
+			deployId: "abc123",
+			stationUrl: STATION,
+			claimUrl: CLAIM,
+			expiresAt: EXPIRES,
+		});
 	});
-
-	it("falls back to the station hostname for a missing deploy id", () => {
-		// A JSON line with a URL and a claim link but no id still yields a usable
-		// result rather than an empty `deployId` nothing can correlate on.
-		const result = parseLakebedDeployOutput(
-			`{"url":"${STATION}","claimUrl":"${CLAIM}"}`,
-		);
-		expect(result.deployId).toBe("abc123.lakebed.app");
-	});
-
-	it("keeps scanning past a malformed JSON line", () => {
-		// The `catch` continues rather than aborting. A truncated line from an
-		// interleaved write must not make a later, complete line unreachable.
-		const result = parseLakebedDeployOutput(
-			`{"url":"broken\n{"url":"${STATION}","deployId":"abc123"}`,
-		);
-		expect(result.stationUrl).toBe(STATION);
-	});
-
-	it("keeps scanning past a JSON line missing the fields it needs", () => {
-		// `if (stationUrl && claimUrl)` — a well-formed but irrelevant JSON line
-		// (a progress record, say) is skipped rather than accepted as a result.
-		const result = parseLakebedDeployOutput(
-			`{"phase":"build","pct":50}\n{"url":"${STATION}","deployId":"abc123"}`,
-		);
-		expect(result.stationUrl).toBe(STATION);
-	});
-
-	it("ignores a non-string value in a URL field", () => {
-		// Each field is guarded by `typeof === "string"`, so a number or object
-		// falls through to the next spelling rather than becoming a URL.
-		const result = parseLakebedDeployOutput(
-			`{"url":7,"deployUrl":"${STATION}","deployId":"abc123"}`,
-		);
-		expect(result.stationUrl).toBe(STATION);
-	});
-});
-
-describe("parseLakebedDeployOutput — URL fallback", () => {
-	it("finds a bare URL when there is no JSON at all", () => {
-		const result = parseLakebedDeployOutput(
-			`Deployed! Visit ${STATION} to see it.`,
-		);
-		expect(result.stationUrl).toBe(STATION);
-		expect(result.deployId).toBe("abc123");
-		expect(result.claimUrl).toBe(CLAIM);
-	});
-
-	it("strips trailing punctuation from a prose-embedded URL", () => {
-		// `Visit https://abc.lakebed.app.` — the sentence's full stop is not part
-		// of the host, and leaving it on would make every derived claim link and
-		// hostname wrong.
-		for (const suffix of [".", ",", ")", ".)", ",,"]) {
-			const result = parseLakebedDeployOutput(
-				`Deployed to ${STATION}${suffix}`,
-			);
-			expect(result.stationUrl).toBe(STATION);
-		}
-	});
-
-	it("derives the deploy id from the first hostname label", () => {
+	it("reads a complete JSON line among progress and incomplete records", () => {
 		expect(
-			parseLakebedDeployOutput(`see https://my-app.lakebed.app now`).deployId,
-		).toBe("my-app");
+			parseLakebedDeployOutput(
+				`installing…\n{"phase":"build"}\n${JSON.stringify(deployed)}\ndone`,
+			).stationUrl,
+		).toBe(STATION);
 	});
-});
-
-describe("parseLakebedDeployOutput — refusals", () => {
-	it("refuses empty or whitespace-only output", () => {
-		// Fail closed. An empty result would be reported as a successful deploy
-		// with no station, and the user would be told to visit nothing.
-		for (const stdout of ["", "   ", "\n\n"]) {
-			expect(() => parseLakebedDeployOutput(stdout)).toThrow(
-				/produced empty output/u,
+	it("supports explicit historical URL and id field names", () => {
+		for (const urlField of ["url", "deployUrl", "primaryUrl"])
+			for (const idField of ["deployId", "id"]) {
+				expect(
+					parseLakebedDeployOutput(
+						JSON.stringify({
+							[urlField]: STATION,
+							[idField]: "abc123",
+							claimUrl: CLAIM,
+							expiresAt: EXPIRES,
+						}),
+					).deployId,
+				).toBe("abc123");
+			}
+	});
+	it("refuses to fabricate a claim URL or resource identity from a hostname", () => {
+		for (const value of [
+			{ url: STATION, deployId: "abc123" },
+			{ url: STATION, claimUrl: CLAIM },
+		])
+			expect(() => parseLakebedDeployOutput(JSON.stringify(value))).toThrow(
+				"provider-issued claim URL",
 			);
-		}
+		expect(() => parseLakebedDeployOutput(`Deployed: ${STATION}`)).toThrow(
+			"provider-issued claim URL",
+		);
 	});
-
-	it("refuses output with no URL in it at all", () => {
+	it("refuses a claim for a different deployment", () => {
 		expect(() =>
-			parseLakebedDeployOutput("error: something went wrong\nretrying…"),
-		).toThrow(/missing deploy URL/u);
+			parseLakebedDeployOutput(
+				JSON.stringify({
+					...deployed,
+					claimUrl: "https://lakebed.dev/claim/other",
+				}),
+			),
+		).toThrow("another deployment");
 	});
-
-	it("refuses a station URL on a foreign host", () => {
-		// The attack this guards. The output comes from a CLI fetched at run
-		// time; a poisoned package or an injected line could name any host, and
-		// the user would be sent there believing it was their station.
-		for (const bad of [
+	it("refuses missing and malformed native expiry", () => {
+		for (const expiresAt of [undefined, "not-a-date"])
+			expect(() =>
+				parseLakebedDeployOutput(JSON.stringify({ ...deployed, expiresAt })),
+			).toThrow("provider-reported expiry");
+	});
+	it("refuses untrusted, credential-bearing and plaintext station URLs", () => {
+		for (const url of [
 			"https://evil.com",
 			"https://lakebed.app.evil.com",
 			"https://notlakebed.app",
-		]) {
-			expect(() => parseLakebedDeployOutput(`Deployed to ${bad}`)).toThrow(
-				/unexpected host/u,
-			);
-		}
+			"https://user:password@abc123.lakebed.app",
+			"https://abc123.lakebed.app:444",
+			"http://abc123.lakebed.app",
+			"https://abc123.lakebed.app/?token=inline",
+		])
+			expect(() =>
+				parseLakebedDeployOutput(JSON.stringify({ ...deployed, url })),
+			).toThrow();
 	});
-
-	it("accepts the apex host and any subdomain of it", () => {
-		// The anchored `(?:^|\\.)lakebed\\.app$` allows both, which is what real
-		// deploy URLs look like, while still refusing a host that merely ends in
-		// those characters.
+	it("refuses untrusted and plaintext claims while admitting the current API host", () => {
+		for (const claimUrl of [
+			"https://evil.com/claim/abc123",
+			"http://lakebed.dev/claim/abc123",
+			"https://user:password@lakebed.dev/claim/abc123",
+		])
+			expect(() =>
+				parseLakebedDeployOutput(JSON.stringify({ ...deployed, claimUrl })),
+			).toThrow();
 		expect(
-			parseLakebedDeployOutput("Deployed to https://lakebed.app").stationUrl,
-		).toBe("https://lakebed.app");
-		expect(
-			parseLakebedDeployOutput("Deployed to https://a.b.lakebed.app")
-				.stationUrl,
-		).toBe("https://a.b.lakebed.app");
-	});
-
-	it("refuses a plaintext station URL", () => {
-		// The station is where a user's deployed app lives; handing them an
-		// http:// link would downgrade every subsequent interaction with it.
-		expect(() =>
-			parseLakebedDeployOutput("Deployed to http://abc123.lakebed.app"),
-		).toThrow(/must use https/u);
-	});
-
-	it("silently substitutes a safe claim URL rather than refusing a hostile one", () => {
-		// A finding, pinned rather than changed.
-		//
-		// `requireLakebedUrl` is called *inside* the `try` whose `catch` exists
-		// to skip malformed JSON lines. So when the CLI states a claim URL on a
-		// foreign host, the host check does throw — and the catch swallows it as
-		// though the line had merely failed to parse. The scan continues, the
-		// regex fallback finds the station URL in the same text, and a claim URL
-		// is derived from the deploy id instead.
-		//
-		// The security outcome is fail-safe: the caller ends up on
-		// `https://lakebed.dev/claim/<id>`, never on the attacker's host, which
-		// is why this is a wart and not a hole. But it is silent. A user is sent
-		// to a different claim URL than the CLI reported, with nothing said, and
-		// the "unexpected host" refusal an author would expect to see never
-		// surfaces. Narrowing the catch to `SyntaxError` — or hoisting the two
-		// `requireLakebedUrl` calls out of the try — would make the refusal real.
-		// That is a call for whoever owns this adapter's failure posture.
-		const result = parseLakebedDeployOutput(
-			`{"url":"${STATION}","deployId":"abc123","claimUrl":"https://evil.com/claim/abc"}`,
-		);
-		expect(result.claimUrl).toBe(CLAIM);
-		expect(result.claimUrl).not.toContain("evil.com");
-	});
-
-	it("does the same for a plaintext claim URL", () => {
-		const result = parseLakebedDeployOutput(
-			`{"url":"${STATION}","deployId":"abc123","claimUrl":"http://lakebed.dev/claim/abc"}`,
-		);
-		expect(result.claimUrl).toBe(CLAIM);
-		expect(result.claimUrl.startsWith("https:")).toBe(true);
-	});
-
-	it("still refuses a hostile station URL, because the fallback re-checks it", () => {
-		// The compensating path. A hostile `url` in the JSON is swallowed the
-		// same way, but the regex fallback then finds that same URL in the raw
-		// text and validates it *outside* the try — so there is no route by
-		// which a foreign station host reaches the caller.
-		expect(() =>
 			parseLakebedDeployOutput(
-				`{"url":"https://evil.com","deployId":"abc123","claimUrl":"${CLAIM}"}`,
-			),
-		).toThrow(/unexpected host/u);
+				JSON.stringify({
+					...deployed,
+					claimUrl: "https://api.lakebed.dev/claim/abc123/issued-token",
+				}),
+			).claimUrl,
+		).toContain("api.lakebed.dev");
 	});
-
-	it("refuses an unparseable URL rather than passing it through", () => {
-		expect(() =>
-			parseLakebedDeployOutput(
-				`{"url":"https://","claimUrl":"${CLAIM}"}\nno url here`,
-			),
-		).toThrow();
+	it("refuses empty or incomplete output", () => {
+		for (const text of ["", "  ", "not a result", '{"url":"https://'])
+			expect(() => parseLakebedDeployOutput(text)).toThrow();
 	});
 });
 

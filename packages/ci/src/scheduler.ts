@@ -1,7 +1,8 @@
-import { create, toJsonString } from "@bufbuild/protobuf";
+import { clone, create, toJsonString } from "@bufbuild/protobuf";
 import { stableHash } from "@hobo/dispatcher";
 import {
 	type Account,
+	type Lease,
 	type PipelineResult,
 	PipelineResultSchema,
 	PipelineSchema,
@@ -11,6 +12,8 @@ import {
 	executePipeline,
 	type ParsedPipeline,
 	type PipelineBackend,
+	type PipelineExecutionScope,
+	type PipelineUsageScope,
 	supportsPipeline,
 } from "./execution.js";
 import type { LeaseStore } from "./store.js";
@@ -23,6 +26,38 @@ export class PipelineScheduler {
 		private readonly bindings: ReadonlyMap<string, PipelineBackend>,
 		private readonly now: () => string = () => new Date().toISOString(),
 	) {}
+	private usageScope(lease: Lease): PipelineUsageScope {
+		return {
+			leaseId: lease.id,
+			pipelineId: lease.pipelineId,
+			pipelineDigest: lease.pipelineDigest,
+			provider: lease.provider,
+			providerAccountId: lease.providerAccountId,
+			externalOperationId: lease.externalOperationId,
+		};
+	}
+	/** Read-only provider reconciliation remains available after cancellation, restart and deadlines. */
+	async reconcile(leaseId: string): Promise<Lease | undefined> {
+		const lease = this.store.get(leaseId);
+		if (!lease?.pipelineId || lease.accountId !== this.accountId)
+			throw new Error("pipeline account mismatch");
+		if (
+			lease.state === "completed" &&
+			lease.usageProvenance === "provider-final"
+		)
+			return lease;
+		const backend = this.bindings.get(lease.offerId);
+		if (!backend?.observeFinalUsage)
+			throw new Error("native final usage observer unavailable");
+		const observed = await backend.observeFinalUsage(this.usageScope(lease));
+		if (!observed) return undefined;
+		return this.store.settlePipelineUsage(
+			lease.id,
+			observed,
+			this.now(),
+			lease.result,
+		);
+	}
 	async execute(
 		account: Account,
 		pipeline: ParsedPipeline,
@@ -94,7 +129,44 @@ export class PipelineScheduler {
 			if (!started) throw new Error("pipeline reservation lost");
 			const start = Date.parse(this.now());
 			try {
-				const result = await executePipeline(backend, pipeline, options);
+				const scope: PipelineExecutionScope = {
+					...this.usageScope(lease),
+					authorizeAllocation: () => {
+						if (
+							!this.store.authorizePipelineStart(
+								lease.id,
+								account,
+								pipeline,
+								this.now(),
+								"native-mutation",
+							)
+						)
+							throw new Error(
+								"durable policy revoked native mutation admission",
+							);
+					},
+					recordExternalOperationId: (id) =>
+						this.store.recordPipelineOperation(lease.id, id, this.now()),
+				};
+				const guardedBackend: PipelineBackend = {
+					kind: backend.kind,
+					capabilities: backend.capabilities,
+					open: (input, signal) => {
+						if (
+							!this.store.authorizePipelineStart(
+								lease.id,
+								account,
+								input,
+								this.now(),
+							)
+						)
+							throw new BackendUnavailableError(
+								"durable policy revoked pipeline admission",
+							);
+						return backend.open(input, signal, scope);
+					},
+				};
+				const result = await executePipeline(guardedBackend, pipeline, options);
 				if (result.status === "uncertain") {
 					this.store.transition(
 						lease.id,
@@ -109,11 +181,42 @@ export class PipelineScheduler {
 					return result;
 				}
 				const ended = this.now();
+				this.store.recordPipelineResult(lease.id, result, ended);
+				if (backend.observeFinalUsage) {
+					const current = this.store.get(lease.id);
+					if (!current) throw new Error("pipeline lease disappeared");
+					const observed = await backend.observeFinalUsage(
+						this.usageScope(current),
+					);
+					if (observed) {
+						this.store.settlePipelineUsage(
+							lease.id,
+							observed,
+							this.now(),
+							result,
+						);
+						return result;
+					}
+					this.store.transition(
+						lease.id,
+						["running"],
+						(entry) => {
+							entry.state = "uncertain";
+							entry.result = result;
+						},
+						"ci.UsagePending",
+						this.now(),
+					);
+					const pending = clone(PipelineResultSchema, result);
+					pending.status = "uncertain";
+					pending.error = "native usage finality is pending";
+					return pending;
+				}
 				const minutes = Math.max(
 					1,
 					Math.ceil((Date.parse(ended) - start) / 60000),
 				);
-				this.store.settle(
+				const settled = this.store.settle(
 					lease.id,
 					0,
 					minutes,
@@ -122,9 +225,18 @@ export class PipelineScheduler {
 					ended,
 					result,
 				);
+				if (settled?.state === "uncertain") {
+					const pending = clone(PipelineResultSchema, result);
+					pending.status = "uncertain";
+					pending.error = "native financial usage finality is pending";
+					return pending;
+				}
 				return result;
 			} catch (error) {
-				if (!(error instanceof BackendUnavailableError)) {
+				if (
+					!(error instanceof BackendUnavailableError) ||
+					this.store.get(lease.id)?.externalOperationId
+				) {
 					this.store.transition(
 						lease.id,
 						["running"],

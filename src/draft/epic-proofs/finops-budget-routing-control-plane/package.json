@@ -2,6 +2,10 @@
   "name": "@hobo/epic-proof-finops-budget-routing-control-plane",
   "private": true,
   "type": "module",
+  "dependencies": {
+    "@bufbuild/protobuf": "2.12.1",
+    "@hobo/contracts": "workspace:*"
+  },
   "scripts": {
     "test": "vitest run --root .",
     "simulate": "node --import tsx simulation/run-simulation.ts"

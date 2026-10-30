@@ -10,7 +10,44 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file temporary_redis.proto.
  */
 export const file_temporary_redis: GenFile = /*@__PURE__*/
-  fileDesc("ChV0ZW1wb3JhcnlfcmVkaXMucHJvdG8SGGhvYm8ucHJvdmlkZXIudXBzdGFzaC52MSKkAgoSU3RhcnRSZWRpc0RhdGFiYXNlEhAKCGNvbnRyYWN0GAEgASgJEhMKC2RhdGFiYXNlX2lkGAIgASgJEhoKEnJlc3RfZW5kcG9pbnRfaG9zdBgDIAEoCRIZChFyZXN0X2VuZHBvaW50X3VybBgEIAEoCRISCgpleHBpcmVzX29uGAUgASgJEhUKDWV4cGlyZXNfYXRfbXMYBiABKAMSFgoOZXhwaXJlc19hdF9pc28YByABKAkSEwoLZXhwaXJlc19yYXcYCCABKAkSFwoPc3RhdGVkX3R0bF9kYXlzGAkgASgNEhMKC21ldHJpY3NfdXJsGAogASgJEhUKDXRva2VuX3ByZXNlbnQYCyABKAgSEwoLY29uc29sZV91cmwYDCABKAkiTAoWVXBzdGFzaFVuY2xhaW1lZExpbWl0cxIfChdkb2N1bWVudGVkX2V4cGlyeV9ob3VycxgBIAEoDRIRCgl0cmFuc3BvcnQYAiABKAkiVgoYVXBzdGFzaE5vblNlY3JldEVuZHBvaW50EgwKBGhvc3QYASABKAkSDAoEcG9ydBgCIAEoDRILCgN0bHMYAyABKAgSEQoJdHJhbnNwb3J0GAQgASgJIoIBChJVcHN0YXNoQ2xhaW1BY3Rpb24SCgoCaWQYASABKAkSDAoEa2luZBgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRIQCghibG9ja2luZxgEIAEoCBIRCgljb21wbGV0ZWQYBSABKAgSEAoDdXJsGAYgASgJSACIAQFCBgoEX3VybCLuAQoQVXBzdGFzaENsYWltUGxhbhIQCghzdHJhdGVneRgBIAEoCRIQCghib3VuZGFyeRgCIAEoCRIVCg1yZXNvdXJjZV9raW5kGAMgASgJEhEKCWF0b21pY2l0eRgEIAEoCRIRCgljbGFpbV91cmwYBSABKAkSOgoFc3RhdGUYBiABKA4yKy5ob2JvLnByb3ZpZGVyLnVwc3Rhc2gudjEuVXBzdGFzaENsYWltU3RhdGUSPQoHYWN0aW9ucxgHIAMoCzIsLmhvYm8ucHJvdmlkZXIudXBzdGFzaC52MS5VcHN0YXNoQ2xhaW1BY3Rpb24iyAQKFVVwc3Rhc2hUZW1wb3JhcnlSZWRpcxIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRIVCg1kZWZpbml0aW9uX2lkGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEhQKDHJlc291cmNlX3JlZhgEIAEoCRITCgtkYXRhYmFzZV9pZBgFIAEoCRIaChJyZXN0X2VuZHBvaW50X2hvc3QYBiABKAkSGQoRcmVzdF9lbmRwb2ludF91cmwYByABKAkSGwoOY3JlZGVudGlhbF9yZWYYCCABKAlIAIgBARIZCgxyZXN0X3VybF9yZWYYCSABKAlIAYgBARIVCg1leHBpcmVzX2F0X21zGAogASgDEhYKDmV4cGlyZXNfYXRfaXNvGAsgASgJEhMKC2V4cGlyZXNfcmF3GAwgASgJEhcKD3N0YXRlZF90dGxfZGF5cxgNIAEoDRIVCg1leHBpcnlfc291cmNlGA4gASgJEhYKDm9ic2VydmVkX2F0X21zGA8gASgDEjkKBWNsYWltGBAgASgLMiouaG9iby5wcm92aWRlci51cHN0YXNoLnYxLlVwc3Rhc2hDbGFpbVBsYW4SEwoLbWV0cmljc191cmwYESABKAkSQAoGbGltaXRzGBIgASgLMjAuaG9iby5wcm92aWRlci51cHN0YXNoLnYxLlVwc3Rhc2hVbmNsYWltZWRMaW1pdHMSDwoHYWRvcHRlZBgTIAEoCEIRCg9fY3JlZGVudGlhbF9yZWZCDwoNX3Jlc3RfdXJsX3JlZiKmAQoTVXBzdGFzaENsYWltU3VtbWFyeRI6CgVzdGF0ZRgBIAEoDjIrLmhvYm8ucHJvdmlkZXIudXBzdGFzaC52MS5VcHN0YXNoQ2xhaW1TdGF0ZRIQCghib3VuZGFyeRgCIAEoCRIRCglhdG9taWNpdHkYAyABKAkSEQoJY2xhaW1fdXJsGAQgASgJEhsKE2Jsb2NraW5nX2FjdGlvbl9pZHMYBSADKAki+gQKF1Vwc3Rhc2hQcm92aXNpb25SZWNlaXB0EhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEhUKDWRlZmluaXRpb25faWQYAiABKAkSEwoLcHJvdmlkZXJfaWQYAyABKAkSFAoMcmVzb3VyY2VfcmVmGAQgASgJEhMKC2RhdGFiYXNlX2lkGAUgASgJEkQKCGVuZHBvaW50GAYgASgLMjIuaG9iby5wcm92aWRlci51cHN0YXNoLnYxLlVwc3Rhc2hOb25TZWNyZXRFbmRwb2ludBIbCg5jcmVkZW50aWFsX3JlZhgHIAEoCUgAiAEBEhkKDHJlc3RfdXJsX3JlZhgIIAEoCUgBiAEBEhYKDmV4cGlyZXNfYXRfaXNvGAkgASgJEhUKDWV4cGlyZXNfYXRfbXMYCiABKAMSFwoPc3RhdGVkX3R0bF9kYXlzGAsgASgNEhUKDWV4cGlyeV9zb3VyY2UYDCABKAkSFgoOb2JzZXJ2ZWRfYXRfbXMYDSABKAMSDwoHYWRvcHRlZBgOIAEoCBI8CgVjbGFpbRgPIAEoCzItLmhvYm8ucHJvdmlkZXIudXBzdGFzaC52MS5VcHN0YXNoQ2xhaW1TdW1tYXJ5EkAKBmxpbWl0cxgQIAEoCzIwLmhvYm8ucHJvdmlkZXIudXBzdGFzaC52MS5VcHN0YXNoVW5jbGFpbWVkTGltaXRzEhgKEGJpbmRpbmdfcHJvZmlsZXMYESADKAkSGgoSbWlncmF0aW9uX3Byb2ZpbGVzGBIgAygJEhAKCHRlYXJkb3duGBMgASgJQhEKD19jcmVkZW50aWFsX3JlZkIPCg1fcmVzdF91cmxfcmVmIpMCChNVcHN0YXNoUHJvdmlkZXJGYWN0Ej8KBGtpbmQYASABKA4yMS5ob2JvLnByb3ZpZGVyLnVwc3Rhc2gudjEuVXBzdGFzaFByb3ZpZGVyRmFjdEtpbmQSFgoOb2NjdXJyZWRfYXRfbXMYAiABKAMSFAoMcmVzb3VyY2VfcmVmGAMgASgJEhMKC2RhdGFiYXNlX2lkGAQgASgJEkkKBmRldGFpbBgFIAMoCzI5LmhvYm8ucHJvdmlkZXIudXBzdGFzaC52MS5VcHN0YXNoUHJvdmlkZXJGYWN0LkRldGFpbEVudHJ5Gi0KC0RldGFpbEVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEq0AEKEVVwc3Rhc2hDbGFpbVN0YXRlEiMKH1VQU1RBU0hfQ0xBSU1fU1RBVEVfVU5TUEVDSUZJRUQQABIhCh1VUFNUQVNIX0NMQUlNX1NUQVRFX1VOQ0xBSU1FRBABEjAKLFVQU1RBU0hfQ0xBSU1fU1RBVEVfQ0xBSU1FRF9QRU5ESU5HX1JPVEFUSU9OEAISIAocVVBTVEFTSF9DTEFJTV9TVEFURV9DT01QTEVURRADEh8KG1VQU1RBU0hfQ0xBSU1fU1RBVEVfRVhQSVJFRBAEKsACChdVcHN0YXNoUHJvdmlkZXJGYWN0S2luZBIqCiZVUFNUQVNIX1BST1ZJREVSX0ZBQ1RfS0lORF9VTlNQRUNJRklFRBAAEjMKL1VQU1RBU0hfUFJPVklERVJfRkFDVF9LSU5EX0RBVEFCQVNFX1BST1ZJU0lPTkVEEAESLworVVBTVEFTSF9QUk9WSURFUl9GQUNUX0tJTkRfREFUQUJBU0VfQURPUFRFRBACEjUKMVVQU1RBU0hfUFJPVklERVJfRkFDVF9LSU5EX0NMQUlNX1BFTkRJTkdfUk9UQVRJT04QAxIuCipVUFNUQVNIX1BST1ZJREVSX0ZBQ1RfS0lORF9DTEFJTV9DT01QTEVURUQQBBIsCihVUFNUQVNIX1BST1ZJREVSX0ZBQ1RfS0lORF9MRUFTRV9FWFBJUkVEEAViBnByb3RvMw");
+  fileDesc("ChV0ZW1wb3JhcnlfcmVkaXMucHJvdG8SGGhvYm8ucHJvdmlkZXIudXBzdGFzaC52MSLiAQoVVXBzdGFzaERlc3Ryb3lPdXRjb21lEhEKCWRlc3Ryb3llZBgBIAEoCBIOCgZyZWFzb24YAiABKAkSGgoNbWFudWFsX2FjdGlvbhgDIAEoCUgAiAEBEiQKF3JldGlyZW1lbnRfZXZpZGVuY2VfcmVmGAQgASgJSAGIAQESHwoSdXNhZ2VfZXZpZGVuY2VfcmVmGAUgASgJSAKIAQFCEAoOX21hbnVhbF9hY3Rpb25CGgoYX3JldGlyZW1lbnRfZXZpZGVuY2VfcmVmQhUKE191c2FnZV9ldmlkZW5jZV9yZWYipAIKElN0YXJ0UmVkaXNEYXRhYmFzZRIQCghjb250cmFjdBgBIAEoCRITCgtkYXRhYmFzZV9pZBgCIAEoCRIaChJyZXN0X2VuZHBvaW50X2hvc3QYAyABKAkSGQoRcmVzdF9lbmRwb2ludF91cmwYBCABKAkSEgoKZXhwaXJlc19vbhgFIAEoCRIVCg1leHBpcmVzX2F0X21zGAYgASgDEhYKDmV4cGlyZXNfYXRfaXNvGAcgASgJEhMKC2V4cGlyZXNfcmF3GAggASgJEhcKD3N0YXRlZF90dGxfZGF5cxgJIAEoDRITCgttZXRyaWNzX3VybBgKIAEoCRIVCg10b2tlbl9wcmVzZW50GAsgASgIEhMKC2NvbnNvbGVfdXJsGAwgASgJIkwKFlVwc3Rhc2hVbmNsYWltZWRMaW1pdHMSHwoXZG9jdW1lbnRlZF9leHBpcnlfaG91cnMYASABKA0SEQoJdHJhbnNwb3J0GAIgASgJIlYKGFVwc3Rhc2hOb25TZWNyZXRFbmRwb2ludBIMCgRob3N0GAEgASgJEgwKBHBvcnQYAiABKA0SCwoDdGxzGAMgASgIEhEKCXRyYW5zcG9ydBgEIAEoCSKCAQoSVXBzdGFzaENsYWltQWN0aW9uEgoKAmlkGAEgASgJEgwKBGtpbmQYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEAoIYmxvY2tpbmcYBCABKAgSEQoJY29tcGxldGVkGAUgASgIEhAKA3VybBgGIAEoCUgAiAEBQgYKBF91cmwi7gEKEFVwc3Rhc2hDbGFpbVBsYW4SEAoIc3RyYXRlZ3kYASABKAkSEAoIYm91bmRhcnkYAiABKAkSFQoNcmVzb3VyY2Vfa2luZBgDIAEoCRIRCglhdG9taWNpdHkYBCABKAkSEQoJY2xhaW1fdXJsGAUgASgJEjoKBXN0YXRlGAYgASgOMisuaG9iby5wcm92aWRlci51cHN0YXNoLnYxLlVwc3Rhc2hDbGFpbVN0YXRlEj0KB2FjdGlvbnMYByADKAsyLC5ob2JvLnByb3ZpZGVyLnVwc3Rhc2gudjEuVXBzdGFzaENsYWltQWN0aW9uIogFChVVcHN0YXNoVGVtcG9yYXJ5UmVkaXMSFgoOc2NoZW1hX3ZlcnNpb24YASABKAkSFQoNZGVmaW5pdGlvbl9pZBgCIAEoCRITCgtwcm92aWRlcl9pZBgDIAEoCRIUCgxyZXNvdXJjZV9yZWYYBCABKAkSEwoLZGF0YWJhc2VfaWQYBSABKAkSGgoScmVzdF9lbmRwb2ludF9ob3N0GAYgASgJEhkKEXJlc3RfZW5kcG9pbnRfdXJsGAcgASgJEhsKDmNyZWRlbnRpYWxfcmVmGAggASgJSACIAQESGQoMcmVzdF91cmxfcmVmGAkgASgJSAGIAQESFQoNZXhwaXJlc19hdF9tcxgKIAEoAxIWCg5leHBpcmVzX2F0X2lzbxgLIAEoCRITCgtleHBpcmVzX3JhdxgMIAEoCRIXCg9zdGF0ZWRfdHRsX2RheXMYDSABKA0SFQoNZXhwaXJ5X3NvdXJjZRgOIAEoCRIWCg5vYnNlcnZlZF9hdF9tcxgPIAEoAxI5CgVjbGFpbRgQIAEoCzIqLmhvYm8ucHJvdmlkZXIudXBzdGFzaC52MS5VcHN0YXNoQ2xhaW1QbGFuEhMKC21ldHJpY3NfdXJsGBEgASgJEkAKBmxpbWl0cxgSIAEoCzIwLmhvYm8ucHJvdmlkZXIudXBzdGFzaC52MS5VcHN0YXNoVW5jbGFpbWVkTGltaXRzEg8KB2Fkb3B0ZWQYEyABKAgSIwoWcmVkaXNfcHJvdG9jb2xfdXJsX3JlZhgUIAEoCUgCiAEBQhEKD19jcmVkZW50aWFsX3JlZkIPCg1fcmVzdF91cmxfcmVmQhkKF19yZWRpc19wcm90b2NvbF91cmxfcmVmIrcBChNVcHN0YXNoQ2xhaW1TdW1tYXJ5EjoKBXN0YXRlGAEgASgOMisuaG9iby5wcm92aWRlci51cHN0YXNoLnYxLlVwc3Rhc2hDbGFpbVN0YXRlEhAKCGJvdW5kYXJ5GAIgASgJEhEKCWF0b21pY2l0eRgDIAEoCRIRCgljbGFpbV9yZWYYBiABKAkSGwoTYmxvY2tpbmdfYWN0aW9uX2lkcxgFIAMoCUoECAQQBVIJY2xhaW1fdXJsIvEFChdVcHN0YXNoUHJvdmlzaW9uUmVjZWlwdBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRIVCg1kZWZpbml0aW9uX2lkGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEhQKDHJlc291cmNlX3JlZhgEIAEoCRJECghlbmRwb2ludBgGIAEoCzIyLmhvYm8ucHJvdmlkZXIudXBzdGFzaC52MS5VcHN0YXNoTm9uU2VjcmV0RW5kcG9pbnQSGwoOY3JlZGVudGlhbF9yZWYYByABKAlIAIgBARIZCgxyZXN0X3VybF9yZWYYCCABKAlIAYgBARIWCg5leHBpcmVzX2F0X2lzbxgJIAEoCRIVCg1leHBpcmVzX2F0X21zGAogASgDEhcKD3N0YXRlZF90dGxfZGF5cxgLIAEoDRIVCg1leHBpcnlfc291cmNlGAwgASgJEhYKDm9ic2VydmVkX2F0X21zGA0gASgDEg8KB2Fkb3B0ZWQYDiABKAgSPAoFY2xhaW0YDyABKAsyLS5ob2JvLnByb3ZpZGVyLnVwc3Rhc2gudjEuVXBzdGFzaENsYWltU3VtbWFyeRJACgZsaW1pdHMYECABKAsyMC5ob2JvLnByb3ZpZGVyLnVwc3Rhc2gudjEuVXBzdGFzaFVuY2xhaW1lZExpbWl0cxIYChBiaW5kaW5nX3Byb2ZpbGVzGBEgAygJEhoKEm1pZ3JhdGlvbl9wcm9maWxlcxgSIAMoCRIQCgh0ZWFyZG93bhgTIAEoCRIjChZyZWRpc19wcm90b2NvbF91cmxfcmVmGBQgASgJSAKIAQESGgoSb3BhcXVlX3BoeXNpY2FsX2lkGBUgASgJEhsKE25hdGl2ZV9pZGVudGl0eV9yZWYYFiABKAlCEQoPX2NyZWRlbnRpYWxfcmVmQg8KDV9yZXN0X3VybF9yZWZCGQoXX3JlZGlzX3Byb3RvY29sX3VybF9yZWZKBAgFEAZSC2RhdGFiYXNlX2lkIuICChNVcHN0YXNoUHJvdmlkZXJGYWN0Ej8KBGtpbmQYASABKA4yMS5ob2JvLnByb3ZpZGVyLnVwc3Rhc2gudjEuVXBzdGFzaFByb3ZpZGVyRmFjdEtpbmQSFgoOb2NjdXJyZWRfYXRfbXMYAiABKAMSFAoMcmVzb3VyY2VfcmVmGAMgASgJEkkKBmRldGFpbBgFIAMoCzI5LmhvYm8ucHJvdmlkZXIudXBzdGFzaC52MS5VcHN0YXNoUHJvdmlkZXJGYWN0LkRldGFpbEVudHJ5EhoKEm9wYXF1ZV9waHlzaWNhbF9pZBgGIAEoCRIbChNuYXRpdmVfaWRlbnRpdHlfcmVmGAcgASgJEhYKDnNjaGVtYV92ZXJzaW9uGAggASgJGi0KC0RldGFpbEVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAFKBAgEEAVSC2RhdGFiYXNlX2lkKtABChFVcHN0YXNoQ2xhaW1TdGF0ZRIjCh9VUFNUQVNIX0NMQUlNX1NUQVRFX1VOU1BFQ0lGSUVEEAASIQodVVBTVEFTSF9DTEFJTV9TVEFURV9VTkNMQUlNRUQQARIwCixVUFNUQVNIX0NMQUlNX1NUQVRFX0NMQUlNRURfUEVORElOR19ST1RBVElPThACEiAKHFVQU1RBU0hfQ0xBSU1fU1RBVEVfQ09NUExFVEUQAxIfChtVUFNUQVNIX0NMQUlNX1NUQVRFX0VYUElSRUQQBCrAAgoXVXBzdGFzaFByb3ZpZGVyRmFjdEtpbmQSKgomVVBTVEFTSF9QUk9WSURFUl9GQUNUX0tJTkRfVU5TUEVDSUZJRUQQABIzCi9VUFNUQVNIX1BST1ZJREVSX0ZBQ1RfS0lORF9EQVRBQkFTRV9QUk9WSVNJT05FRBABEi8KK1VQU1RBU0hfUFJPVklERVJfRkFDVF9LSU5EX0RBVEFCQVNFX0FET1BURUQQAhI1CjFVUFNUQVNIX1BST1ZJREVSX0ZBQ1RfS0lORF9DTEFJTV9QRU5ESU5HX1JPVEFUSU9OEAMSLgoqVVBTVEFTSF9QUk9WSURFUl9GQUNUX0tJTkRfQ0xBSU1fQ09NUExFVEVEEAQSLAooVVBTVEFTSF9QUk9WSURFUl9GQUNUX0tJTkRfTEVBU0VfRVhQSVJFRBAFYgZwcm90bzM");
+
+/**
+ * @generated from message hobo.provider.upstash.v1.UpstashDestroyOutcome
+ */
+export type UpstashDestroyOutcome = Message<"hobo.provider.upstash.v1.UpstashDestroyOutcome"> & {
+  /**
+   * @generated from field: bool destroyed = 1;
+   */
+  destroyed: boolean;
+
+  /**
+   * @generated from field: string reason = 2;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: optional string manual_action = 3;
+   */
+  manualAction?: string | undefined;
+
+  /**
+   * @generated from field: optional string retirement_evidence_ref = 4;
+   */
+  retirementEvidenceRef?: string | undefined;
+
+  /**
+   * @generated from field: optional string usage_evidence_ref = 5;
+   */
+  usageEvidenceRef?: string | undefined;
+};
+
+/**
+ * Describes the message hobo.provider.upstash.v1.UpstashDestroyOutcome.
+ * Use `create(UpstashDestroyOutcomeSchema)` to create a new message.
+ */
+export const UpstashDestroyOutcomeSchema: GenMessage<UpstashDestroyOutcome> = /*@__PURE__*/
+  messageDesc(file_temporary_redis, 0);
 
 /**
  * One parsed `POST https://upstash.com/start-redis` response. The provider
@@ -113,7 +150,7 @@ export type StartRedisDatabase = Message<"hobo.provider.upstash.v1.StartRedisDat
  * Use `create(StartRedisDatabaseSchema)` to create a new message.
  */
 export const StartRedisDatabaseSchema: GenMessage<StartRedisDatabase> = /*@__PURE__*/
-  messageDesc(file_temporary_redis, 0);
+  messageDesc(file_temporary_redis, 1);
 
 /**
  * What the unclaimed surface documents about itself, carried separately from
@@ -144,7 +181,7 @@ export type UpstashUnclaimedLimits = Message<"hobo.provider.upstash.v1.UpstashUn
  * Use `create(UpstashUnclaimedLimitsSchema)` to create a new message.
  */
 export const UpstashUnclaimedLimitsSchema: GenMessage<UpstashUnclaimedLimits> = /*@__PURE__*/
-  messageDesc(file_temporary_redis, 1);
+  messageDesc(file_temporary_redis, 2);
 
 /**
  * @generated from message hobo.provider.upstash.v1.UpstashNonSecretEndpoint
@@ -182,7 +219,7 @@ export type UpstashNonSecretEndpoint = Message<"hobo.provider.upstash.v1.Upstash
  * Use `create(UpstashNonSecretEndpointSchema)` to create a new message.
  */
 export const UpstashNonSecretEndpointSchema: GenMessage<UpstashNonSecretEndpoint> = /*@__PURE__*/
-  messageDesc(file_temporary_redis, 2);
+  messageDesc(file_temporary_redis, 3);
 
 /**
  * @generated from message hobo.provider.upstash.v1.UpstashClaimAction
@@ -233,7 +270,7 @@ export type UpstashClaimAction = Message<"hobo.provider.upstash.v1.UpstashClaimA
  * Use `create(UpstashClaimActionSchema)` to create a new message.
  */
 export const UpstashClaimActionSchema: GenMessage<UpstashClaimAction> = /*@__PURE__*/
-  messageDesc(file_temporary_redis, 3);
+  messageDesc(file_temporary_redis, 4);
 
 /**
  * @generated from message hobo.provider.upstash.v1.UpstashClaimPlan
@@ -288,7 +325,7 @@ export type UpstashClaimPlan = Message<"hobo.provider.upstash.v1.UpstashClaimPla
  * Use `create(UpstashClaimPlanSchema)` to create a new message.
  */
 export const UpstashClaimPlanSchema: GenMessage<UpstashClaimPlan> = /*@__PURE__*/
-  messageDesc(file_temporary_redis, 4);
+  messageDesc(file_temporary_redis, 5);
 
 /**
  * The durable record for one temporary database. `binding` is intentionally
@@ -404,6 +441,13 @@ export type UpstashTemporaryRedis = Message<"hobo.provider.upstash.v1.UpstashTem
    * @generated from field: bool adopted = 19;
    */
   adopted: boolean;
+
+  /**
+   * SecretRef locator; native URI is custody-only
+   *
+   * @generated from field: optional string redis_protocol_url_ref = 20;
+   */
+  redisProtocolUrlRef?: string | undefined;
 };
 
 /**
@@ -411,7 +455,7 @@ export type UpstashTemporaryRedis = Message<"hobo.provider.upstash.v1.UpstashTem
  * Use `create(UpstashTemporaryRedisSchema)` to create a new message.
  */
 export const UpstashTemporaryRedisSchema: GenMessage<UpstashTemporaryRedis> = /*@__PURE__*/
-  messageDesc(file_temporary_redis, 5);
+  messageDesc(file_temporary_redis, 6);
 
 /**
  * What the receipt says about the claim: the state plus the blocking actions
@@ -441,9 +485,9 @@ export type UpstashClaimSummary = Message<"hobo.provider.upstash.v1.UpstashClaim
   atomicity: string;
 
   /**
-   * @generated from field: string claim_url = 4;
+   * @generated from field: string claim_ref = 6;
    */
-  claimUrl: string;
+  claimRef: string;
 
   /**
    * @generated from field: repeated string blocking_action_ids = 5;
@@ -456,7 +500,7 @@ export type UpstashClaimSummary = Message<"hobo.provider.upstash.v1.UpstashClaim
  * Use `create(UpstashClaimSummarySchema)` to create a new message.
  */
 export const UpstashClaimSummarySchema: GenMessage<UpstashClaimSummary> = /*@__PURE__*/
-  messageDesc(file_temporary_redis, 6);
+  messageDesc(file_temporary_redis, 7);
 
 /**
  * @generated from message hobo.provider.upstash.v1.UpstashProvisionReceipt
@@ -481,11 +525,6 @@ export type UpstashProvisionReceipt = Message<"hobo.provider.upstash.v1.UpstashP
    * @generated from field: string resource_ref = 4;
    */
   resourceRef: string;
-
-  /**
-   * @generated from field: string database_id = 5;
-   */
-  databaseId: string;
 
   /**
    * @generated from field: hobo.provider.upstash.v1.UpstashNonSecretEndpoint endpoint = 6;
@@ -567,6 +606,21 @@ export type UpstashProvisionReceipt = Message<"hobo.provider.upstash.v1.UpstashP
    * @generated from field: string teardown = 19;
    */
   teardown: string;
+
+  /**
+   * @generated from field: optional string redis_protocol_url_ref = 20;
+   */
+  redisProtocolUrlRef?: string | undefined;
+
+  /**
+   * @generated from field: string opaque_physical_id = 21;
+   */
+  opaquePhysicalId: string;
+
+  /**
+   * @generated from field: string native_identity_ref = 22;
+   */
+  nativeIdentityRef: string;
 };
 
 /**
@@ -574,7 +628,7 @@ export type UpstashProvisionReceipt = Message<"hobo.provider.upstash.v1.UpstashP
  * Use `create(UpstashProvisionReceiptSchema)` to create a new message.
  */
 export const UpstashProvisionReceiptSchema: GenMessage<UpstashProvisionReceipt> = /*@__PURE__*/
-  messageDesc(file_temporary_redis, 7);
+  messageDesc(file_temporary_redis, 8);
 
 /**
  * An observation this package hands the claim plane. It is not a durable event
@@ -600,14 +654,24 @@ export type UpstashProviderFact = Message<"hobo.provider.upstash.v1.UpstashProvi
   resourceRef: string;
 
   /**
-   * @generated from field: string database_id = 4;
-   */
-  databaseId: string;
-
-  /**
    * @generated from field: map<string, string> detail = 5;
    */
   detail: { [key: string]: string };
+
+  /**
+   * @generated from field: string opaque_physical_id = 6;
+   */
+  opaquePhysicalId: string;
+
+  /**
+   * @generated from field: string native_identity_ref = 7;
+   */
+  nativeIdentityRef: string;
+
+  /**
+   * @generated from field: string schema_version = 8;
+   */
+  schemaVersion: string;
 };
 
 /**
@@ -615,7 +679,7 @@ export type UpstashProviderFact = Message<"hobo.provider.upstash.v1.UpstashProvi
  * Use `create(UpstashProviderFactSchema)` to create a new message.
  */
 export const UpstashProviderFactSchema: GenMessage<UpstashProviderFact> = /*@__PURE__*/
-  messageDesc(file_temporary_redis, 8);
+  messageDesc(file_temporary_redis, 9);
 
 /**
  * @generated from enum hobo.provider.upstash.v1.UpstashClaimState

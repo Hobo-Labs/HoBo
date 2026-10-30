@@ -38,6 +38,17 @@ HoBo's goal is a third path: **cloud portability without hiding the cloud**.
 
 ## Core ideas
 
+Core cloud hosting budget decisions and movement follow the
+[budgeted hosting transition contract](./docs/design/hosting-budget-transitions.md):
+effects and resilience are explicit, bounded commitments are reserved before activation,
+unknown provider outcomes retain their holds, and recovery/retirement require observations.
+The [provider production walkthrough](./docs/design/hosting-provider-production.md)
+records native execution support, enforceable operating bounds, credential custody,
+and actual anonymous acceptance separately from modeled provider tests.
+The [shared budget policy](./docs/design/shared-budget-policy.md) applies the same
+authored controls and financial authority to CI, with explicit routing objectives,
+required workload metrics and durable attempt/usage handling.
+
 | Idea | Meaning |
 |---|---|
 | **Bindle** | Application package/topology: services, resources, wiring, policies, and deployment intent. |
@@ -228,7 +239,7 @@ Important rules for agents and humans:
 - **Backlog mirror:** [`docs/implementation-plan.md`](./docs/implementation-plan.md); Linear is live operational source.
 - **Executable proof material:** `src/draft/<kind>/<slug>` packages and repo validation scripts.
 - **Primary command surface:** product `hobo` binary from [`packages/hobo/`](./packages/hobo/) (`@hobo/hobo`); shell/factories in [`packages/cli/`](./packages/cli/) (`@hobo/cli`). Spec: [`docs/design/cli-spec.md`](./docs/design/cli-spec.md). The same verb surface is served over MCP stdio by the `hobo-mcp` binary (`@hobo/hobo`), with verb/tool parity enforced by contract test.
-- **Behavior suite:** epic proofs carry executable Gherkin — `pnpm run test:behavior` runs the cucumber lane (feature files under `src/draft/`).
+- **Behavior suite:** epic proofs carry executable Gherkin — `pnpm run test:behavior` runs the offline cucumber lane (feature files under `src/draft/`, plus shipped core acceptance). Live Cloudflare provisioning is explicit: `pnpm run test:behavior -- --profile live-cloudflare`; it requires the local site, Playwright Chromium, network access and authorization to provision a public temporary worker.
 
 ## License
 

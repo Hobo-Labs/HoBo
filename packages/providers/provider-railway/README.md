@@ -2,13 +2,66 @@
 
 Railway as a HoBo `CloudProvider` for Examples out-of-the-box yards: an
 equivalence table, Matching answers over it, a driver program per plan, and a
-temporary Environment Station boundary that **refuses**.
+temporary Environment Station boundary that refuses anonymous provisioning, and
+an authenticated service-deployment lifecycle over Railway's public GraphQL API.
 
-Everything here is data and pure functions. There is no `fetch`, no
-`Date.now()`, no `process.env`, and no filesystem access in `src/`. This package
-talks to the Railway API not at all — it describes what Railway can be asked
-for, and the deploy driver named in the emitted program is what would do the
-asking.
+There is no ambient `fetch`, `Date.now()`, `process.env` or filesystem access in
+`src/`. The authenticated lifecycle uses an injected, guarded `HttpTransport` and
+a host-owned credential resolver. Declarations remain pure.
+
+## Authenticated hosting lifecycle
+
+`createRailwayDeploymentClient({ projectId, environmentId, resolveCredential })`
+uses project tokens through Railway's documented `Project-Access-Token` header.
+Before any mutation it verifies the token's project/environment scope and the
+existing service's project. Desired project/environment values must exactly match
+the host-bound scope. Credentials remain locators in requests and are never
+copied into results or provider error messages.
+
+- `deployOnce(request, transport)` deploys a pinned full Git commit to an existing,
+  repository-connected service through `serviceInstanceDeployV2`. It sends one
+  mutation and returns its deployment ID as accepted, with readiness unconfirmed.
+  The caller must persist a single-dispatch intent before calling; the API has no
+  documented idempotency key. A lost reply is uncertain and must not be retried.
+- `read(request, transport)` reads the exact deployment and verifies its deployment,
+  service, environment and project IDs. `SUCCESS` plus a credential-free HTTPS
+  endpoint establishes control-plane readiness. Application health and artifact
+  integrity require the independent hosting probe; they are not inferred here.
+- `stop(request, transport)` stops the pinned deployment and reads it again. Only
+  Railway's `deploymentStopped` flag, documented as all instances having stopped,
+  confirms retirement. A `REMOVED` history status alone does not. `serviceDelete`
+  is never used because it would delete deployments in other environments too.
+
+`railwayResolverRegistry(options)` creates and observes `railway.service/v1` deployments
+through a durable single-dispatch journal. Requests name explicit project,
+environment and parent `serviceId`; the physical resource is the billable native
+deployment ID. First creation requires a full pinned `commitSha`, stable `operationId`,
+`mutationJournal.persistence: "durable-cas"` and a host-supplied `deploymentStore`
+(DurableEventStore, tenant, actor, owner fence and clock). The acknowledged native ID
+is committed as generated `RailwayDeploymentIdentity` metadata before acknowledgement
+of the mutation journal. Reopening reads that same ID. A lost reply without a durable
+native ID remains uncertain and never triggers another deployment POST.
+
+Creation requires an approved fresh parent service instance whose native
+`latestDeployment` is null. Existing history is refused because a recent failed
+deployment does not prove older instances stopped. Source and target use distinct
+service parents; an in-place Railway rollout is not this staged transition protocol.
+Native `url` supplies `servingEndpoint` only after scoped readiness. Native Git
+`meta.commitHash` must be present, valid and match any requested pinned commit before
+readiness is reported. Missing or malformed metadata leaves the deployment unready.
+The observed commit is exposed as
+`observedCommitSha`, never invented as an OCI `artifactDigest`; independent artifact
+evidence remains required by production hosting admission. Missing history,
+GraphQL errors inside HTTP 200, rate limits and ambiguous transport responses do
+not manufacture readiness, absence or released financial exposure. Fixed plan,
+volume, overlap and actual usage charges remain in the shared financial authority.
+
+The API shapes were checked against Railway's official
+[service guide](https://docs.railway.com/integrations/api/manage-services),
+[deployment guide](https://docs.railway.com/integrations/api/manage-deployments),
+and [published CLI schema](https://github.com/railwayapp/cli/blob/master/src/gql/schema.json).
+Tests use hand-authored API responses; live Railway acceptance requires an isolated
+project token and a registered repository-connected service.
 
 ## What the provider actually claims
 
@@ -30,7 +83,7 @@ Absences here are load-bearing: a missing structured capability fails a
 | Not claimed | Why |
 |---|---|
 | Regions | `regions: ["global"]`. Railway does have regions; this package models none, so it will not promise one. |
-| Cost | `cost.facts` is empty and every `estimateCost` returns `marginalPrice: "0"`. That means **unpriced here**, not free. A real price needs dated `COST_SOURCE` provenance this package does not carry. |
+| Cost | `cost.facts` is empty and `estimateCost` explicitly marks `pricingStatus: "unknown"`. Its legacy `marginalPrice: "0"` placeholder cannot attest a free resource. Financial admission needs dated, scoped quotes. |
 | Temporary / agent Environment Stations | `supportsAnonymousTemporaryDeploy = false`. Railway publishes no password-free temporary-account or agent-provision API, so the call **fails closed** rather than reaching for a permanent token. |
 | IaC emission | `realize` returns a driver program (`hobo.driver-program/v1`), never a Pulumi/Terraform program. |
 
@@ -61,13 +114,15 @@ shapes and `data-models/provider_railway.cue` carries the invariants the parsers
 enforce (DNS-label names, the three-row equivalence table, a partial match that
 must name what is missing, `prefer`-only option blocks, an unpriced cost signal,
 and a refusal that cannot claim support). The parsed types above are the
-executable view of that pair. No buf codegen is wired for this package, so the
-two TypeScript declarations that share a proto message name are marked
-`domain-view:` where they are declared.
+executable catalog view of that pair. Buf generation also supplies the immutable
+deployment identity used by the authenticated resolver. The catalog's legacy
+string-spelled views remain marked `domain-view:` where declared.
 
 ## Event architecture
 
-This package is a strategy leaf: it owns no reducer, no stream, and no store.
+This package is an adapter leaf. Its only hosted durable stream is immutable
+`railway.DeploymentLocated` metadata in the host-supplied store. It owns no
+financial policy, control loop, or background service.
 The durable machinery is the yard placement plane in `@hobo/broker`
 (`src/yard-placement/`), and what this package contributes is one honest answer
 per question.
@@ -123,6 +178,16 @@ Fully offline.
 ```sh
 pnpm --filter @hobo/provider-railway test
 ```
+
+`test/resolvers.test.ts` exercises the shipped API client with scoped credentials,
+foreign identities, partial GraphQL errors, rate limits, lost mutation replies,
+readiness transitions and positive instance-stop evidence. This is consumer
+contract evidence, not a claim of live-provider verification.
+
+`test/deployment-journal.test.ts` uses actual SQLite stores and independent
+connections for create races, reopen, lost replies, acknowledgement crashes,
+changed-commit refusal and exact-deployment retirement. One case runs the shipped
+resolver through core's bounded fetch transport against a real loopback HTTP server.
 
 Gates protecting this package: TypeScript (`strict`,
 `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`), the consumer-driven

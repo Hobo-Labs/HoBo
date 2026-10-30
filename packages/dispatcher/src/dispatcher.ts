@@ -16,9 +16,11 @@ export const DISPATCH_EVENTS = Object.freeze({
 	DispatchDecided: "dispatch.Decided",
 	MatchDecided: "match.Decided",
 	ReservationReserved: "dispatch.ReservationReserved",
+	ReservationStarted: "dispatch.ReservationStarted",
 	ReservationConfirmed: "dispatch.ReservationConfirmed",
 	ReservationReleased: "dispatch.ReservationReleased",
 	ReservationExpired: "dispatch.ReservationExpired",
+	LedgerTimeAdvanced: "dispatch.LedgerTimeAdvanced",
 } as const);
 
 export type DispatchCategory = "runner" | "build-machine" | "traffic-backend";
@@ -58,6 +60,8 @@ export interface CreditAccount {
 	budgetCap?: number;
 	spendToDate?: number;
 	reservedUnits?: number;
+	/** Pending monetary exposure, in the same currency as budgetCap. */
+	reservedCost?: number;
 	credits?: CreditGrant[];
 }
 
@@ -78,18 +82,30 @@ export interface DispatchReservation {
 	units: number;
 	expectedSeq: number;
 	committedSeq: number;
-	status: "pending" | "confirmed" | "released" | "expired";
+	status: "pending" | "running" | "confirmed" | "released" | "expired";
 	expiresAt?: string | null;
 	confirmedSeq?: number;
 	releasedSeq?: number;
 	releaseReason?: string;
 	providerUsageSeq?: number;
+	startedSeq?: number;
 	consumption?: ReservedConsumption;
+	reservedCost?: number;
+	actualCost?: number;
+	commandHash?: string;
+	unitCost?: number;
+	switchingCost?: number;
+	dispatchRequestHash?: string;
+	decisionInputJson?: string;
+	estimatedCost?: number;
+	usageEvidenceRef?: string;
 }
 
 interface ReservedConsumption {
 	freeHeadroom: number;
 	credits: { creditId: string; units: number }[];
+	rateUnits?: number;
+	concurrencySlots?: number;
 }
 
 export interface DispatchProviderInput {
@@ -107,6 +123,9 @@ export interface HysteresisInput {
 	minimumSavings: number;
 	dwellWindow: string;
 	observedAt: string;
+	/** First continuously qualifying observation, bound to this challenger. */
+	savingsSince?: string;
+	challengerProviderId?: string;
 }
 
 export interface DispatchFact<T = unknown> {
@@ -143,7 +162,12 @@ export function createDispatcherRegistry(
 
 	const records = providers.map(parseDispatchProvider);
 	const byCategory = new Map<string, typeof records>();
+	const providerKeys = new Set<string>();
 	for (const record of records) {
+		const key = canonicalJson([record.category, record.providerId]);
+		if (providerKeys.has(key))
+			throw new TypeError("duplicate dispatcher provider in category");
+		providerKeys.add(key);
 		if (!record.registered) continue;
 		const bucket = byCategory.get(record.category) ?? [];
 		bucket.push(record);
@@ -189,8 +213,21 @@ export function decideDispatch(request) {
 		units,
 		incumbentProviderId,
 	});
-	const hysteresis = applyHysteresis(ranked, hysteresisInput);
-	const finalRanked = hysteresis.ranked;
+	const eligible = ranked.filter((candidate) => candidate.eligible);
+	if (eligible.length === 0) {
+		return {
+			...failedDecision({
+				objective,
+				reason: "no eligible candidates within budget and capacity",
+			}),
+			ranking: publicDispatchRanking(ranked),
+		};
+	}
+	const hysteresis = applyHysteresis(eligible, hysteresisInput);
+	const finalRanked = [
+		...hysteresis.ranked,
+		...ranked.filter((candidate) => !candidate.eligible),
+	];
 	const winner = finalRanked[0];
 	const dispatchEvent: DispatchFact<DispatchDecidedData> = {
 		type: DISPATCH_EVENTS.DispatchDecided,
@@ -229,7 +266,11 @@ export function decideDispatch(request) {
 			incumbentProviderId,
 			hysteresis: hysteresisInput,
 			reservationId,
-			ledgerView: clone(ledgerView),
+			ledgerView: {
+				...clone(ledgerView),
+				reservations: [],
+				balanceHash: ledgerBalanceHash(ledgerView),
+			},
 			candidates: registry.records.map((record) => clone(record.source)),
 		},
 	};
@@ -258,6 +299,19 @@ export function createReservationLedger(initialLedgerView) {
 		);
 		if (account) {
 			restoreReservedFreeHeadroom(account, reservation.consumption);
+			account.reservedCost = roundCost(
+				Math.max(
+					0,
+					(account.reservedCost ?? 0) - (reservation.reservedCost ?? 0),
+				),
+			);
+			if (account.rateHeadroom !== undefined)
+				account.rateHeadroom = roundQuantity(
+					account.rateHeadroom + (reservation.consumption?.rateUnits ?? 0),
+				);
+			if (account.concurrencyHeadroom !== undefined)
+				account.concurrencyHeadroom +=
+					reservation.consumption?.concurrencySlots ?? 0;
 			account.reservedUnits = roundQuantity(
 				Math.max(0, (account.reservedUnits ?? 0) - reservation.units),
 			);
@@ -310,6 +364,97 @@ export function createReservationLedger(initialLedgerView) {
 				"request.expectedSeq",
 			);
 			const expiresAt = optionalInstant(request.expiresAt, "request.expiresAt");
+			const accountAtRead = findLedgerAccount(current, providerId, dimension);
+			if (
+				accountAtRead?.budgetCap !== undefined &&
+				accountAtRead.listUnitCost === undefined &&
+				request.unitCost === undefined &&
+				request.estimatedCost === undefined
+			)
+				return {
+					ok: false as const,
+					status: "ineligible",
+					reason: "hard-budget-price-missing",
+					reservationId,
+					ledgerView: clone(current),
+				};
+			const unitCost = nonNegativeNumber(
+				request.unitCost ?? accountAtRead?.listUnitCost,
+				"request.unitCost",
+				0,
+			);
+			const switchingCost = nonNegativeNumber(
+				request.switchingCost,
+				"request.switchingCost",
+				0,
+			);
+			const estimatedCost = nonNegativeNumber(
+				request.estimatedCost,
+				"request.estimatedCost",
+				0,
+			);
+			const commandHash = stableHash({
+				providerId,
+				dimension,
+				units,
+				unitCost,
+				switchingCost,
+				estimatedCost,
+				expiresAt,
+			});
+			const existing = findReservation(current, reservationId);
+			if (existing) {
+				if (existing.commandHash !== commandHash)
+					return {
+						ok: false as const,
+						status: "reservation-id-conflict",
+						reservationId,
+						ledgerView: clone(current),
+					};
+				if (existing.status !== "pending")
+					return {
+						ok: false as const,
+						status: "reservation-terminal",
+						reservationId,
+						reservation: clone(existing),
+						ledgerView: clone(current),
+					};
+				if (
+					existing.expiresAt &&
+					current.asOf &&
+					Date.parse(existing.expiresAt) <= Date.parse(current.asOf)
+				)
+					return {
+						ok: false as const,
+						status: "reservation-expired",
+						reservationId,
+						ledgerView: clone(current),
+					};
+				return {
+					ok: true as const,
+					status: "reserved",
+					replayed: true,
+					reservationId,
+					providerId,
+					dimension,
+					units,
+					expectedSeq: existing.expectedSeq,
+					committedSeq: existing.committedSeq,
+					reservation: clone(existing),
+					ledgerView: clone(current),
+				};
+			}
+			if (
+				expiresAt &&
+				current.asOf &&
+				Date.parse(expiresAt) <= Date.parse(current.asOf)
+			)
+				return {
+					ok: false as const,
+					status: "reservation-expired",
+					reservationId,
+					ledgerView: clone(current),
+				};
 
 			if (expectedSeq !== current.seq) {
 				return {
@@ -326,9 +471,57 @@ export function createReservationLedger(initialLedgerView) {
 
 			const next = clone(current);
 			const account = findLedgerAccount(next, providerId, dimension);
+			const priced = rankCreditCandidate({
+				candidate: {
+					providerId,
+					dimension,
+					listUnitCost: unitCost,
+					switchingCost,
+				},
+				ledgerView: current,
+				units,
+				incumbentProviderId: undefined,
+				chargeSwitching: true,
+			});
+			if (!priced.eligible)
+				return {
+					ok: false as const,
+					status: "ineligible",
+					reason: priced.rejectionReason,
+					reservationId,
+					providerId,
+					dimension,
+					ledgerView: clone(current),
+				};
+			const reservedCost = Math.max(priced.totalCost, estimatedCost);
+			if (account && reservedCost > budgetHeadroomFor(account))
+				return {
+					ok: false as const,
+					status: "ineligible",
+					reason: "budget-cap-exceeded",
+					reservationId,
+					providerId,
+					dimension,
+					ledgerView: clone(current),
+				};
 			let consumption: ReservedConsumption = { freeHeadroom: 0, credits: [] };
 			if (account) {
-				consumption = consumeReservedFreeHeadroom(account, units);
+				consumption = consumeReservedFreeHeadroom(
+					account,
+					priced.freeUnits,
+					current.asOf,
+				);
+				if (account.rateHeadroom !== undefined) {
+					account.rateHeadroom = roundQuantity(account.rateHeadroom - units);
+					consumption.rateUnits = units;
+				}
+				if (account.concurrencyHeadroom !== undefined) {
+					account.concurrencyHeadroom -= 1;
+					consumption.concurrencySlots = 1;
+				}
+				account.reservedCost = roundCost(
+					(account.reservedCost ?? 0) + reservedCost,
+				);
 				account.reservedUnits = roundQuantity(
 					(account.reservedUnits ?? 0) + units,
 				);
@@ -344,7 +537,22 @@ export function createReservationLedger(initialLedgerView) {
 				status: "pending",
 				expiresAt,
 				consumption,
+				reservedCost,
+				estimatedCost,
+				unitCost,
+				switchingCost,
+				commandHash,
 			};
+			if (request.dispatchRequestHash !== undefined)
+				reservation.dispatchRequestHash = requireString(
+					request.dispatchRequestHash,
+					"request.dispatchRequestHash",
+				);
+			if (request.decisionInputJson !== undefined)
+				reservation.decisionInputJson = requireString(
+					request.decisionInputJson,
+					"request.decisionInputJson",
+				);
 			next.seq = committedSeq;
 			next.reservations = [
 				...(Array.isArray(next.reservations) ? next.reservations : []),
@@ -370,6 +578,70 @@ export function createReservationLedger(initialLedgerView) {
 				ledgerView: clone(current),
 			};
 		},
+		start(request) {
+			assertObject(request, "request");
+			const reservationId = requireString(
+				request.reservationId,
+				"request.reservationId",
+			);
+			const reservation = findReservation(current, reservationId);
+			if (
+				!reservation ||
+				(reservation.status !== "pending" && reservation.status !== "running")
+			)
+				return {
+					ok: false as const,
+					status: "not-startable",
+					reservationId,
+					ledgerView: clone(current),
+				};
+			if (
+				request.committedSeq !== undefined &&
+				request.committedSeq !== reservation.committedSeq
+			)
+				return {
+					ok: false as const,
+					status: "reservation-fence-mismatch",
+					reservationId,
+					ledgerView: clone(current),
+				};
+			if (reservation.status === "running")
+				return {
+					ok: true as const,
+					status: "running",
+					replayed: true,
+					reservation: clone(reservation),
+					ledgerView: clone(current),
+				};
+			if (
+				reservation.expiresAt &&
+				current.asOf &&
+				Date.parse(reservation.expiresAt) <= Date.parse(current.asOf)
+			)
+				return {
+					ok: false as const,
+					status: "reservation-expired",
+					reservationId,
+					ledgerView: clone(current),
+				};
+			const next = clone(current);
+			const started = findReservation(next, reservationId);
+			started.status = "running";
+			started.startedSeq = next.seq + 1;
+			next.seq += 1;
+			current = next;
+			eventLog.push(
+				reservationFact(DISPATCH_EVENTS.ReservationStarted, started, {
+					ledgerSeq: current.seq,
+				}),
+			);
+			return {
+				ok: true as const,
+				status: "running",
+				reservation: clone(started),
+				ledgerView: clone(current),
+			};
+		},
 		confirm(request) {
 			assertObject(request, "request");
 			const reservationId = requireString(
@@ -378,7 +650,10 @@ export function createReservationLedger(initialLedgerView) {
 			);
 			const next = clone(current);
 			const reservation = findReservation(next, reservationId);
-			if (reservation?.status !== "pending") {
+			if (
+				!reservation ||
+				(reservation.status !== "pending" && reservation.status !== "running")
+			) {
 				return {
 					ok: false as const,
 					status: "not-confirmable",
@@ -386,9 +661,67 @@ export function createReservationLedger(initialLedgerView) {
 					ledgerView: clone(current),
 				};
 			}
+			if (
+				reservation.status === "running" &&
+				(request.usageFinalized !== true ||
+					request.actualCost === undefined ||
+					!isJsonString(request.usageEvidenceRef) ||
+					request.usageEvidenceRef.length === 0)
+			)
+				return {
+					ok: false as const,
+					status: "usage-not-final",
+					reservationId,
+					ledgerView: clone(current),
+				};
+			if (
+				reservation.status === "pending" &&
+				reservation.expiresAt &&
+				current.asOf &&
+				Date.parse(reservation.expiresAt) <= Date.parse(current.asOf)
+			)
+				return {
+					ok: false as const,
+					status: "reservation-expired",
+					reservationId,
+					ledgerView: clone(current),
+				};
 
 			const committedSeq = next.seq + 1;
+			const actualCost = nonNegativeNumber(
+				request.actualCost,
+				"request.actualCost",
+				reservation.reservedCost ?? 0,
+			);
+			const account = findLedgerAccount(
+				next,
+				reservation.providerId,
+				reservation.dimension,
+			);
+			if (account) {
+				account.reservedCost = roundCost(
+					Math.max(
+						0,
+						(account.reservedCost ?? 0) - (reservation.reservedCost ?? 0),
+					),
+				);
+				account.spendToDate = roundCost(
+					(account.spendToDate ?? 0) + actualCost,
+				);
+				account.reservedUnits = roundQuantity(
+					Math.max(0, (account.reservedUnits ?? 0) - reservation.units),
+				);
+				if (account.concurrencyHeadroom !== undefined)
+					account.concurrencyHeadroom +=
+						reservation.consumption?.concurrencySlots ?? 0;
+			}
 			reservation.status = "confirmed";
+			reservation.actualCost = actualCost;
+			if (request.usageEvidenceRef !== undefined)
+				reservation.usageEvidenceRef = requireString(
+					request.usageEvidenceRef,
+					"request.usageEvidenceRef",
+				);
 			reservation.confirmedSeq = committedSeq;
 			if (request.providerUsageSeq !== undefined) {
 				reservation.providerUsageSeq = requireNonNegativeInteger(
@@ -411,6 +744,10 @@ export function createReservationLedger(initialLedgerView) {
 				reservationId,
 				committedSeq,
 				reservation: clone(reservation),
+				budgetExceeded:
+					account?.budgetCap !== undefined &&
+					(account.spendToDate ?? 0) + (account.reservedCost ?? 0) >
+						account.budgetCap,
 				ledgerView: clone(current),
 			};
 		},
@@ -433,6 +770,15 @@ export function createReservationLedger(initialLedgerView) {
 		expire(request) {
 			assertObject(request, "request");
 			const now = requireInstant(request.now, "request.now");
+			if (current.asOf && Date.parse(now) < Date.parse(current.asOf))
+				throw new TypeError("request.now must not precede ledger.asOf");
+			if (!current.asOf || Date.parse(now) > Date.parse(current.asOf)) {
+				current = { ...current, asOf: now, seq: current.seq + 1 };
+				eventLog.push({
+					type: DISPATCH_EVENTS.LedgerTimeAdvanced,
+					data: { asOf: now, ledgerSeq: current.seq },
+				});
+			}
 			const expiredIds = (current.reservations ?? [])
 				.filter((reservation) => reservation.status === "pending")
 				.filter(
@@ -478,6 +824,65 @@ export function decideAndReserveDispatch(request) {
 		"request.maxAttempts",
 	);
 	const registry = parseRegistry(request.registry);
+	const requestHash = stableHash({
+		category: requireCategory(request.category),
+		dispatchId: requireString(request.dispatchId, "request.dispatchId"),
+		objective: requireObjective(request.objective ?? "maximize-credits"),
+		units: requirePositiveNumber(request.units ?? 1, "request.units"),
+		estimatedCost: nonNegativeNumber(
+			request.estimatedCost,
+			"request.estimatedCost",
+			0,
+		),
+		incumbentProviderId: request.incumbentProviderId,
+		hysteresis: parseHysteresis(request.hysteresis),
+		reservationExpiresAt: optionalInstant(
+			request.reservationExpiresAt,
+			"request.reservationExpiresAt",
+		),
+		providers: registry.records.map((record) => record.source),
+	});
+	const existingSnapshot = reservationLedger.snapshot();
+	const existing = findReservation(
+		existingSnapshot,
+		request.reservationId ?? `reserve-${request.dispatchId}`,
+	);
+	if (existing) {
+		if (
+			existing.dispatchRequestHash !== requestHash ||
+			!existing.decisionInputJson
+		)
+			return failedDecision({
+				objective: request.objective ?? "maximize-credits",
+				reason: "reservation-id-conflict",
+			});
+		if (
+			existing.status !== "pending" ||
+			(existing.expiresAt &&
+				existingSnapshot.asOf &&
+				Date.parse(existing.expiresAt) <= Date.parse(existingSnapshot.asOf))
+		)
+			return failedDecision({
+				objective: request.objective ?? "maximize-credits",
+				reason: "reservation-terminal-or-expired",
+			});
+		const decision = replayDispatchDecision(
+			JSON.parse(existing.decisionInputJson),
+		);
+		return {
+			...decision,
+			reservation: {
+				ok: true,
+				status: "reserved",
+				replayed: true,
+				reservationId: existing.reservationId,
+				committedSeq: existing.committedSeq,
+				reservation: existing,
+				ledgerView: existingSnapshot,
+			},
+			attempts: [],
+		};
+	}
 	let ledgerView = request.ledgerView
 		? parseCreditLedgerView(request.ledgerView)
 		: reservationLedger.snapshot();
@@ -506,6 +911,9 @@ export function decideAndReserveDispatch(request) {
 		const selectedRecord = registry.records.find(
 			(record) => record.providerId === decision.selectedProvider,
 		);
+		const selectedCost = decision.ranking.find(
+			(candidate) => candidate.providerId === decision.selectedProvider,
+		);
 		const dimension =
 			selectedRecord?.dimension ??
 			CATEGORY_DIMENSIONS[decision.dispatchEvent.data.category];
@@ -516,6 +924,11 @@ export function decideAndReserveDispatch(request) {
 			expectedSeq: ledgerView.seq,
 			reservationId: decision.dispatchEvent.data.ledgerInput.reservationId,
 			expiresAt: request.reservationExpiresAt,
+			unitCost: selectedRecord?.listUnitCost,
+			switchingCost: selectedCost?.switchingCost ?? 0,
+			estimatedCost: request.estimatedCost,
+			dispatchRequestHash: requestHash,
+			decisionInputJson: JSON.stringify(decision.replayInput),
 		});
 		attempts.push({
 			attempt,
@@ -532,6 +945,15 @@ export function decideAndReserveDispatch(request) {
 				attempts,
 			};
 		}
+		if (reservation.status !== "cas-conflict")
+			return {
+				...failedDecision({
+					objective: decision.objective,
+					reason: `reservation refused: ${reservation.status}`,
+				}),
+				reservation,
+				attempts,
+			};
 
 		ledgerView = reservation.ledgerView;
 	}
@@ -600,7 +1022,16 @@ export function decidePlacement(request) {
 		units,
 		incumbentProviderId: request.incumbentProviderId,
 	});
-	const winner = ranked[0];
+	const winner = ranked.find((candidate) => candidate.eligible);
+	if (!winner)
+		return {
+			...failedDecision({
+				objective,
+				reason: "no eligible placement candidates within budget and capacity",
+				rejectedCandidates,
+			}),
+			ranking: publicPlacementRanking(ranked),
+		};
 	const tiedDefinitionIds = ranked
 		.filter((candidate) => compareDecisionVector(candidate, winner) === 0)
 		.map((candidate) => candidate.definitionId);
@@ -703,7 +1134,14 @@ function applyHysteresis(ranked, hysteresis: HysteresisInput | null) {
 	}
 
 	const savings = roundCost(incumbent.totalCost - rawWinner.totalCost);
-	if (savings >= hysteresis.minimumSavings) {
+	const durationMs = dwellDurationMs(hysteresis.dwellWindow);
+	const sustained =
+		durationMs === 0 ||
+		(hysteresis.challengerProviderId === rawWinner.providerId &&
+			hysteresis.savingsSince !== undefined &&
+			Date.parse(hysteresis.observedAt) - Date.parse(hysteresis.savingsSince) >=
+				durationMs);
+	if (savings >= hysteresis.minimumSavings && sustained) {
 		return {
 			ranked,
 			public: {
@@ -758,7 +1196,10 @@ function applyHysteresis(ranked, hysteresis: HysteresisInput | null) {
 			rawWinner: rawWinner.providerId,
 			incumbentProviderId: incumbent.providerId,
 			savings,
-			reason: "savings-below-threshold",
+			reason:
+				savings < hysteresis.minimumSavings
+					? "savings-below-threshold"
+					: "dwell-not-satisfied",
 		},
 	};
 }
@@ -768,13 +1209,14 @@ function rankCreditCandidate({
 	ledgerView,
 	units,
 	incumbentProviderId,
+	chargeSwitching = false,
 }) {
 	const account = findLedgerAccount(
 		ledgerView,
 		candidate.providerId,
 		candidate.dimension,
 	);
-	const credit = creditFactsFor(account, candidate);
+	const credit = creditFactsFor(account, candidate, ledgerView.asOf);
 	const listUnitCost = credit.listUnitCost;
 	const freeUnits = credit.valid
 		? Math.min(
@@ -786,16 +1228,38 @@ function rankCreditCandidate({
 		: 0;
 	const paidUnits = Math.max(0, units - freeUnits);
 	const switchingCost =
-		incumbentProviderId && candidate.providerId !== incumbentProviderId
+		chargeSwitching ||
+		(incumbentProviderId && candidate.providerId !== incumbentProviderId)
 			? nonNegativeNumber(candidate.switchingCost, "candidate.switchingCost", 0)
 			: 0;
 	const baseCost = roundCost(paidUnits * listUnitCost);
 	const totalCost = roundCost(baseCost + switchingCost);
 	const budgetExceeded = totalCost > credit.budgetHeadroom;
+	const hardBudgetInvalid =
+		account?.budgetCap !== undefined &&
+		(!credit.valid || !optionalNonNegativeNumber(account.reservedCost ?? 0));
+	const capacityExceeded =
+		account !== null &&
+		((account.rateHeadroom !== undefined &&
+			(!optionalNonNegativeNumber(account.rateHeadroom) ||
+				units > account.rateHeadroom)) ||
+			(account.concurrencyHeadroom !== undefined &&
+				(!Number.isInteger(account.concurrencyHeadroom) ||
+					account.concurrencyHeadroom < 1)));
+	const eligible = !budgetExceeded && !hardBudgetInvalid && !capacityExceeded;
+	const rejectionReason = hardBudgetInvalid
+		? "invalid-hard-budget-facts"
+		: budgetExceeded
+			? "budget-cap-exceeded"
+			: capacityExceeded
+				? "capacity-exceeded"
+				: undefined;
 	const effectiveMarginalCost = roundCost(totalCost / units);
 	const freeButNotDepletable =
 		credit.valid && credit.freeHeadroom > 0 && freeUnits === 0;
-	const nextCreditExpiresAt = credit.valid ? nextCreditExpiry(account) : null;
+	const nextCreditExpiresAt = credit.valid
+		? nextCreditExpiry(account, ledgerView.asOf)
+		: null;
 	const concurrencyScore = Number.isFinite(credit.concurrencyHeadroom)
 		? credit.concurrencyHeadroom
 		: LARGE_SCORE;
@@ -822,12 +1286,14 @@ function rankCreditCandidate({
 		paidUnits: roundQuantity(paidUnits),
 		switchingCost,
 		budgetExceeded,
+		eligible,
+		rejectionReason,
 		creditFacts: credit.status,
 		nextCreditExpiresAt,
 		objectiveScore: effectiveMarginalCost,
 		rationale,
 		decisionVector: [
-			budgetExceeded ? 1 : 0,
+			eligible ? 0 : 1,
 			effectiveMarginalCost,
 			expiryScore,
 			-concurrencyScore,
@@ -835,7 +1301,7 @@ function rankCreditCandidate({
 			switchingCost,
 		],
 		rankVector: [
-			budgetExceeded ? 1 : 0,
+			eligible ? 0 : 1,
 			effectiveMarginalCost,
 			expiryScore,
 			-concurrencyScore,
@@ -847,7 +1313,11 @@ function rankCreditCandidate({
 	};
 }
 
-function creditFactsFor(account: CreditAccount | null, candidate) {
+function creditFactsFor(
+	account: CreditAccount | null,
+	candidate,
+	asOf?: string,
+) {
 	if (!account) {
 		return {
 			// SAFETY: assertion required at this I/O or test boundary.
@@ -872,7 +1342,7 @@ function creditFactsFor(account: CreditAccount | null, candidate) {
 				"candidate.listUnitCost",
 				LARGE_SCORE,
 			);
-	const freeHeadroom = freeHeadroomFor(account);
+	const freeHeadroom = freeHeadroomFor(account, asOf);
 	const rateHeadroom =
 		account.rateHeadroom === undefined ? LARGE_SCORE : account.rateHeadroom;
 	const concurrencyHeadroom =
@@ -917,23 +1387,54 @@ function creditFactsFor(account: CreditAccount | null, candidate) {
 	};
 }
 
-function freeHeadroomFor(account: CreditAccount) {
-	if (account.freeHeadroom !== undefined) return account.freeHeadroom;
-	if (!Array.isArray(account.credits)) return 0;
-	return account.credits.reduce((total, credit) => {
+function freeHeadroomFor(account: CreditAccount, asOf?: string) {
+	if (
+		account.freeHeadroom !== undefined &&
+		!optionalNonNegativeNumber(account.freeHeadroom)
+	)
+		return Number.NaN;
+	if (!Array.isArray(account.credits) || account.credits.length === 0)
+		return account.freeHeadroom ?? 0;
+	let allGrants = 0;
+	let liveGrants = 0;
+	for (const credit of account.credits) {
 		if (!optionalNonNegativeNumber(credit?.freeHeadroom)) return Number.NaN;
-		return total + credit.freeHeadroom;
-	}, 0);
+		allGrants += credit.freeHeadroom;
+		if (grantIsLive(credit, asOf)) liveGrants += credit.freeHeadroom;
+	}
+	// Account headroom is an aggregate cap; grants describe its composition.
+	if (account.freeHeadroom === undefined) return liveGrants;
+	return Math.min(
+		account.freeHeadroom,
+		liveGrants + Math.max(0, account.freeHeadroom - allGrants),
+	);
 }
 
-function nextCreditExpiry(account: CreditAccount | null) {
+function grantIsLive(credit: CreditGrant, asOf?: string): boolean {
+	const expiry = grantExpiry(credit);
+	return (
+		expiry === undefined ||
+		(asOf !== undefined &&
+			!Number.isNaN(Date.parse(expiry)) &&
+			Date.parse(expiry) > Date.parse(asOf))
+	);
+}
+
+function grantExpiry(credit: CreditGrant): string | undefined {
+	return [credit.expiresAt, credit.windowEnd]
+		.filter((value) => value !== undefined)
+		.sort((left, right) => Date.parse(left) - Date.parse(right))[0];
+}
+
+function nextCreditExpiry(account: CreditAccount | null, asOf?: string) {
 	const expiries = (account?.credits ?? [])
 		.filter(
 			(credit) =>
 				optionalNonNegativeNumber(credit?.freeHeadroom) &&
-				credit.freeHeadroom > 0,
+				credit.freeHeadroom > 0 &&
+				grantIsLive(credit, asOf),
 		)
-		.map((credit) => credit.expiresAt ?? credit.windowEnd)
+		.map(grantExpiry)
 		.filter((value) => isJsonString(value) && !Number.isNaN(Date.parse(value)))
 		.sort(
 			(left, right) =>
@@ -956,7 +1457,9 @@ function budgetHeadroomFor(account: CreditAccount) {
 	) {
 		return Number.NaN;
 	}
-	return Math.max(0, budgetCap - spendToDate);
+	const reservedCost = account.reservedCost ?? 0;
+	if (!optionalNonNegativeNumber(reservedCost)) return Number.NaN;
+	return Math.max(0, budgetCap - spendToDate - reservedCost);
 }
 
 function compareRankedCandidates(left, right) {
@@ -1006,6 +1509,8 @@ function publicDispatchRanking(ranked) {
 		paidUnits: candidate.paidUnits,
 		switchingCost: candidate.switchingCost,
 		budgetExceeded: candidate.budgetExceeded,
+		eligible: candidate.eligible,
+		rejectionReason: candidate.rejectionReason,
 		creditFacts: candidate.creditFacts,
 		nextCreditExpiresAt: candidate.nextCreditExpiresAt,
 		rationale: candidate.rationale,
@@ -1166,13 +1671,106 @@ export function parseCreditLedgerView(ledgerView): CreditLedgerView {
 	if (!Array.isArray(ledgerView.accounts)) {
 		throw new TypeError("ledgerView.accounts must be an array");
 	}
+	if (ledgerView.asOf !== undefined)
+		requireInstant(ledgerView.asOf, "ledgerView.asOf");
+	const accountKeys = new Set<string>();
+	for (const account of ledgerView.accounts) {
+		assertObject(account, "ledgerView.account");
+		const key = canonicalJson([
+			requireString(account.providerId, "account.providerId"),
+			requireString(account.dimension, "account.dimension"),
+		]);
+		if (accountKeys.has(key)) throw new TypeError("duplicate ledger account");
+		accountKeys.add(key);
+		const grantIds = new Set<string>();
+		for (const grant of account.credits ?? []) {
+			assertObject(grant, "account.credit");
+			const id = requireString(grant.creditId, "credit.creditId");
+			if (grantIds.has(id)) throw new TypeError("duplicate credit grant id");
+			grantIds.add(id);
+			if (grant.expiresAt !== undefined)
+				requireInstant(grant.expiresAt, "credit.expiresAt");
+			if (grant.windowEnd !== undefined)
+				requireInstant(grant.windowEnd, "credit.windowEnd");
+		}
+	}
+	const reservationIds = new Set<string>();
+	for (const reservation of ledgerView.reservations ?? []) {
+		assertObject(reservation, "ledgerView.reservation");
+		const id = requireString(
+			reservation.reservationId,
+			"reservation.reservationId",
+		);
+		if (reservationIds.has(id)) throw new TypeError("duplicate reservation id");
+		reservationIds.add(id);
+		requireString(reservation.providerId, "reservation.providerId");
+		requireString(reservation.dimension, "reservation.dimension");
+		requirePositiveNumber(reservation.units, "reservation.units");
+		requireNonNegativeInteger(
+			reservation.expectedSeq,
+			"reservation.expectedSeq",
+		);
+		requireNonNegativeInteger(
+			reservation.committedSeq,
+			"reservation.committedSeq",
+		);
+		if (
+			!["pending", "running", "confirmed", "released", "expired"].includes(
+				reservation.status,
+			)
+		)
+			throw new TypeError("invalid reservation status");
+		if (reservation.reservedCost !== undefined)
+			nonNegativeNumber(
+				reservation.reservedCost,
+				"reservation.reservedCost",
+				0,
+			);
+	}
+	for (const account of ledgerView.accounts) {
+		const holds = (ledgerView.reservations ?? []).filter(
+			(reservation) =>
+				reservation.providerId === account.providerId &&
+				reservation.dimension === account.dimension &&
+				(reservation.status === "pending" || reservation.status === "running"),
+		);
+		if (
+			account.budgetCap !== undefined &&
+			holds.some((hold) => hold.reservedCost === undefined)
+		)
+			throw new TypeError(
+				"hard budget requires priced outstanding reservations",
+			);
+		const heldCost = holds.reduce(
+			(total, hold) => total + (hold.reservedCost ?? 0),
+			0,
+		);
+		if (holds.length > 0 && roundCost(heldCost) > (account.reservedCost ?? 0))
+			throw new TypeError(
+				"account reservedCost omits outstanding reservation exposure",
+			);
+	}
 	return clone(ledgerView);
 }
 
 function parseHysteresis(hysteresis): HysteresisInput | null {
 	if (hysteresis === undefined || hysteresis === null) return null;
 	assertObject(hysteresis, "request.hysteresis");
-	return {
+	dwellDurationMs(hysteresis.dwellWindow);
+	const observedAt = requireInstant(
+		hysteresis.observedAt,
+		"request.hysteresis.observedAt",
+	);
+	const savingsSince =
+		hysteresis.savingsSince === undefined
+			? undefined
+			: requireInstant(
+					hysteresis.savingsSince,
+					"request.hysteresis.savingsSince",
+				);
+	if (savingsSince && Date.parse(savingsSince) > Date.parse(observedAt))
+		throw new TypeError("savingsSince must not follow observedAt");
+	const parsed: HysteresisInput = {
 		incumbentProviderId: requireString(
 			hysteresis.incumbentProviderId,
 			"request.hysteresis.incumbentProviderId",
@@ -1186,11 +1784,32 @@ function parseHysteresis(hysteresis): HysteresisInput | null {
 			hysteresis.dwellWindow,
 			"request.hysteresis.dwellWindow",
 		),
-		observedAt: requireString(
-			hysteresis.observedAt,
-			"request.hysteresis.observedAt",
-		),
+		observedAt,
 	};
+	if (savingsSince) parsed.savingsSince = savingsSince;
+	if (hysteresis.challengerProviderId !== undefined)
+		parsed.challengerProviderId = requireString(
+			hysteresis.challengerProviderId,
+			"request.hysteresis.challengerProviderId",
+		);
+	return parsed;
+}
+
+function dwellDurationMs(value: string): number {
+	const match =
+		/^P(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(
+			requireString(value, "request.hysteresis.dwellWindow"),
+		);
+	if (!match?.slice(1).some((part) => part !== undefined))
+		throw new TypeError("dwellWindow must be an ISO-8601 duration");
+	const duration =
+		((Number(match[1] ?? 0) * 24 + Number(match[2] ?? 0)) * 3600 +
+			Number(match[3] ?? 0) * 60 +
+			Number(match[4] ?? 0)) *
+		1000;
+	if (!Number.isFinite(duration))
+		throw new TypeError("dwellWindow must be a finite duration");
+	return duration;
 }
 
 function findReservation(ledgerView: CreditLedgerView, reservationId: string) {
@@ -1213,36 +1832,38 @@ function reservationFact(
 	return {
 		type,
 		data: {
-			reservationId: reservation.reservationId,
-			providerId: reservation.providerId,
-			dimension: reservation.dimension,
-			units: reservation.units,
-			status: reservation.status,
+			...clone(reservation),
 			ledgerSeq: overrides.ledgerSeq,
-			expectedSeq: reservation.expectedSeq,
-			committedSeq: reservation.committedSeq,
 			reason: overrides.reason,
 			providerUsageSeq: overrides.providerUsageSeq,
 		},
 	};
 }
 
-function consumeReservedFreeHeadroom(account: CreditAccount, units: number) {
+function consumeReservedFreeHeadroom(
+	account: CreditAccount,
+	units: number,
+	asOf?: string,
+) {
 	let remaining = units;
 	const consumption: ReservedConsumption = {
 		freeHeadroom: 0,
 		credits: [],
 	};
 	if (optionalNonNegativeNumber(account.freeHeadroom)) {
-		const consumed = Math.min(account.freeHeadroom, remaining);
-		account.freeHeadroom = roundQuantity(account.freeHeadroom - consumed);
-		consumption.freeHeadroom = roundQuantity(
-			consumption.freeHeadroom + consumed,
-		);
-		remaining = roundQuantity(remaining - consumed);
+		consumption.freeHeadroom = units;
+		account.freeHeadroom = roundQuantity(account.freeHeadroom - units);
 	}
 	if (!Array.isArray(account.credits) || remaining <= 0) return consumption;
-	for (const credit of account.credits) {
+	const ordered = [...account.credits]
+		.filter((credit) => grantIsLive(credit, asOf))
+		.sort(
+			(left, right) =>
+				Date.parse(grantExpiry(left) ?? "9999-12-31") -
+					Date.parse(grantExpiry(right) ?? "9999-12-31") ||
+				left.creditId.localeCompare(right.creditId),
+		);
+	for (const credit of ordered) {
 		if (!optionalNonNegativeNumber(credit?.freeHeadroom)) continue;
 		const consumed = Math.min(credit.freeHeadroom, remaining);
 		credit.freeHeadroom = roundQuantity(credit.freeHeadroom - consumed);

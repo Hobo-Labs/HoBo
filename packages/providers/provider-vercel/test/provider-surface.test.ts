@@ -133,7 +133,10 @@ describe("estimateCost", () => {
 				capability.estimateCost({ port: capability.port }).marginalPrice,
 			).toBe("0");
 		}
-		expect(provider.capabilityManifest().cost).toEqual({ facts: [] });
+		expect(provider.capabilityManifest().cost).toEqual({
+			pricingStatus: "unknown",
+			facts: [],
+		});
 	});
 
 	it("gives each class its own SKU", () => {
@@ -179,7 +182,7 @@ describe("realize", () => {
 		const { driver } = provider.realize({
 			name: "web",
 			port: "compute",
-		} as never);
+		});
 		expect(driver.apiVersion).toBe("hobo.driver-program/v1");
 		expect(driver.driver).toBe("vercel-deploy");
 		expect(driver.resources[0]).toMatchObject({
@@ -193,8 +196,7 @@ describe("realize", () => {
 		// ports to one class would deploy the wrong product for one of them.
 		const classes = provider.capabilities.map(
 			(c) =>
-				provider.realize({ name: "r", port: c.port } as never).driver
-					.resources[0]?.type,
+				provider.realize({ name: "r", port: c.port }).driver.resources[0]?.type,
 		);
 		expect(new Set(classes).size).toBe(classes.length);
 	});
@@ -202,15 +204,15 @@ describe("realize", () => {
 	it("refuses a port it cannot realize, naming the port", () => {
 		// Named because a placement that reached here picked the wrong provider,
 		// and the reader needs to know which port did it.
-		expect(() =>
-			provider.realize({ name: "q", port: "queue" } as never),
-		).toThrow(/cannot realize port queue/u);
+		expect(() => provider.realize({ name: "q", port: "queue" })).toThrow(
+			/cannot realize port queue/u,
+		);
 	});
 });
 
 describe("client", () => {
 	it("carries the mapped class, service name, and bindings", () => {
-		const client = provider.client("kv" as never, { EDGE_CONFIG: "ec_1" });
+		const client = provider.client("kv", { EDGE_CONFIG: "ec_1" });
 		expect(client.port).toBe("kv");
 		expect(client.resourceClass.length).toBeGreaterThan(0);
 		expect(client.providerService.length).toBeGreaterThan(0);
@@ -221,12 +223,12 @@ describe("client", () => {
 		// A provider that matched a port but could not produce a client for it
 		// would fail after placement had already committed to it.
 		for (const capability of provider.capabilities) {
-			expect(() => provider.client(capability.port as never, {})).not.toThrow();
+			expect(() => provider.client(capability.port, {})).not.toThrow();
 		}
 	});
 
 	it("refuses a client for a port it has none for", () => {
-		expect(() => provider.client("queue" as never, {})).toThrow(
+		expect(() => provider.client("queue", {})).toThrow(
 			/no client for port queue/u,
 		);
 	});

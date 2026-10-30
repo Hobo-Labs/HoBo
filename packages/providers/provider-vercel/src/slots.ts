@@ -29,6 +29,7 @@
  */
 
 import { type SlotBinding, slotBinding } from "@hobo/core";
+import { VERCEL_STATIC_DEPLOY_PRODUCT_ID } from "./deployment-resolver.js";
 
 // public-contract: product ids the Vercel catalog registers for these offerings.
 export const VERCEL_PROJECT_PRODUCT_ID = "vercel.project/v1";
@@ -40,7 +41,19 @@ export const VERCEL_BLOB_PRODUCT_ID = "vercel.blob/v1";
 export const VERCEL_EDGE_CONFIG_PRODUCT_ID = "vercel.edge-config/v1";
 
 // public-contract: capability profiles these offerings claim to satisfy.
-export const VERCEL_PROJECT_PROFILE = "web.hosted/v1";
+export const VERCEL_PROJECT_PROFILE = "provider.project/v1";
+export const VERCEL_STATIC_DEPLOY_PROFILE = "web.hosted/v1";
+export type VercelStaticDeploySlotOptions = { readonly projectId?: string };
+export function staticDeployment(
+	options: VercelStaticDeploySlotOptions = {},
+): SlotBinding {
+	return slotBinding({
+		slot: "web",
+		profile: VERCEL_STATIC_DEPLOY_PROFILE,
+		productId: VERCEL_STATIC_DEPLOY_PRODUCT_ID,
+		properties: definedProperties(options),
+	});
+}
 // public-contract: capability profile this offering satisfies; changing it re-targets the slot.
 export const VERCEL_EDGE_FUNCTION_PROFILE = "service.worker/v1";
 // public-contract: capability profile this offering satisfies; changing it re-targets the slot.
@@ -83,6 +96,7 @@ export type VercelEdgeConfigSlotOptions = {
  */
 type AnySlotOptions =
 	| VercelProjectSlotOptions
+	| VercelStaticDeploySlotOptions
 	| VercelEdgeFunctionSlotOptions
 	| VercelBlobSlotOptions
 	| VercelEdgeConfigSlotOptions;
@@ -144,6 +158,7 @@ export function edgeConfig(
  * four bare names into their module scope.
  */
 export const vercelSlots = Object.freeze({
+	staticDeployment,
 	blob,
 	edgeConfig,
 	edgeFunction,

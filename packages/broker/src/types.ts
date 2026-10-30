@@ -65,6 +65,9 @@ export interface BillingPolicy {
 	quotaLimit: number;
 	budgetUsd: number;
 	spendCapUsd: number;
+	/** Explicit unlimited mode; numeric zero otherwise means no paid admission. */
+	budgetUnlimited?: boolean;
+	spendCapUnlimited?: boolean;
 }
 
 // domain-view: parsed delivery-plane policy; wire form is DeliveryPolicy in data-models/broker.proto.

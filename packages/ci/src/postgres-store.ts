@@ -6,6 +6,10 @@ import {
 	fromJsonString,
 	toJsonString,
 } from "@bufbuild/protobuf";
+import {
+	BudgetAdmissionDeniedError,
+	type BudgetSettlementEvidence,
+} from "@hobo/broker";
 import type { Pool, PoolClient } from "pg";
 import { z } from "zod";
 import {
@@ -18,6 +22,7 @@ import {
 	JobSchema,
 	type Lease,
 	LeaseSchema,
+	type Offer,
 	type PipelineResult,
 	type SandboxAllowance,
 	SandboxAllowanceSchema,
@@ -26,13 +31,27 @@ import {
 } from "./_generated/ci_pb.js";
 import { allocationQuote } from "./accounting.js";
 import { shouldAbortIsolatedFleetLease } from "./fleet-overflow.js";
-import { effectiveCiAccount, parseCiPolicy } from "./policy.js";
+import {
+	ciBudgetIdentity,
+	ciBudgetPolicy,
+	effectiveCiAccount,
+	parseCiPolicy,
+} from "./policy.js";
 import { ACTIVE_STATES, route } from "./routing.js";
 import {
 	sandboxProxyOnlyUsageQuote,
 	sandboxUsageQuote,
 } from "./sandbox-pricing.js";
-import { LeaseStore, type RateReattestation } from "./store.js";
+import type { CiAsyncSharedBudgetHooks } from "./shared-budget.js";
+import {
+	assertCiParentSettlement,
+	ciLeasePolicyMeasurements,
+	ciParentReleaseEvidenceRef,
+	LeaseStore,
+	leaseFinancialIdentity,
+	pinCiQueueDeadline,
+	type RateReattestation,
+} from "./store.js";
 import {
 	type ClaimedWebhook,
 	isWebhookDeliveryId,
@@ -48,6 +67,20 @@ import {
 } from "./webhook-inbox.js";
 
 export type { ClaimedWebhook, WebhookInput } from "./webhook-inbox.js";
+
+function isIsolatedCiOffer(offer: Offer | undefined): boolean {
+	return (
+		!!offer &&
+		((offer.provider === "vercel" &&
+			offer.backend === "sandbox" &&
+			offer.freeMinutes === 0) ||
+			((offer.provider === "kubernetes" ||
+				offer.provider === "hobo-box-worker") &&
+				offer.backend === "isolated-container" &&
+				offer.freeMinutes === 0 &&
+				offer.priceMicrosPerMinute === 0))
+	);
+}
 
 /** Validate provider-confirmed terminal usage before using it in accounting. */
 function measuredUsage(
@@ -93,6 +126,7 @@ export class PostgresCiStore {
 	constructor(
 		private readonly pool: Pool,
 		private readonly partition = "default",
+		private readonly options: { sharedBudget?: CiAsyncSharedBudgetHooks } = {},
 	) {
 		if (!/^[A-Za-z0-9_-]{1,80}$/.test(partition))
 			throw new Error("invalid partition");
@@ -559,13 +593,19 @@ export class PostgresCiStore {
 				db.prepare("INSERT INTO configuration_state(id,body) VALUES(1,?)").run(
 					toJsonString(ConfigurationStateSchema, previous),
 				);
-			for (const lease of await this.readActiveLeases(client))
-				if (ACTIVE_STATES.has(lease.state))
-					db.prepare("INSERT INTO leases(id,job_key,body) VALUES(?,?,?)").run(
-						lease.id,
-						this.key(lease),
-						toJsonString(LeaseSchema, lease),
-					);
+			for (const lease of await this.readLeases(client))
+				db.prepare("INSERT INTO leases(id,job_key,body) VALUES(?,?,?)").run(
+					lease.id,
+					this.key(lease),
+					toJsonString(LeaseSchema, lease),
+				);
+			for (const row of (
+				await client.query<{ body: string }>(
+					"SELECT body FROM hobo_ci_events WHERE partition_id=$1 AND body::jsonb ->> 'type'='ci.ConfigurationChanged' ORDER BY seq",
+					[this.partition],
+				)
+			).rows)
+				db.prepare("INSERT INTO events(body) VALUES(?)").run(row.body);
 			const state = store.configure(config, revision, at);
 			const body = toJsonString(ConfigurationStateSchema, state);
 			await this.event(client, "ci.ConfigurationChanged", at, body);
@@ -743,6 +783,123 @@ export class PostgresCiStore {
 	private jobKey(job: Job) {
 		return `${job.repositoryId}:${job.id}:${job.runAttempt}`;
 	}
+	private async pinnedQueuedJob(
+		client: PoolClient,
+		job: Job,
+		at: string,
+		account?: Account,
+	): Promise<Job> {
+		const prior = (
+			await client.query<{ body: string }>(
+				"SELECT body FROM hobo_ci_events WHERE partition_id=$1 AND body::jsonb ->> 'type'='ci.JobQueued' ORDER BY seq",
+				[this.partition],
+			)
+		).rows
+			.map((row) => fromJsonString(CiEventSchema, row.body))
+			.map((event) => ({
+				job: fromJsonString(JobSchema, event.detail),
+				at: event.at,
+			}))
+			.filter(
+				(entry) =>
+					entry.job.repositoryId === job.repositoryId &&
+					entry.job.id === job.id &&
+					entry.job.runAttempt === job.runAttempt,
+			);
+		const leases = await this.readJobLeases(client, this.jobKey(job));
+		const first = [
+			at,
+			...prior.map((entry) => entry.at),
+			...leases.map((lease) => lease.createdAt),
+		].reduce((earliest, value) =>
+			Date.parse(value) < Date.parse(earliest) ? value : earliest,
+		);
+		return pinCiQueueDeadline(job, first, account, [
+			...prior.map((entry) => entry.job.queueDeadlineAt),
+			...leases.map((lease) => lease.queueDeadlineAt),
+		]);
+	}
+	private async queueDurationMs(
+		client: PoolClient,
+		job: Job,
+		at: string,
+	): Promise<number> {
+		const prior = (
+			await client.query<{ body: string }>(
+				"SELECT body FROM hobo_ci_events WHERE partition_id=$1 AND body::jsonb ->> 'type'='ci.JobQueued' ORDER BY seq",
+				[this.partition],
+			)
+		).rows
+			.map((row) => fromJsonString(CiEventSchema, row.body))
+			.filter((event) => {
+				const queued = fromJsonString(JobSchema, event.detail);
+				return (
+					queued.repositoryId === job.repositoryId &&
+					queued.id === job.id &&
+					queued.runAttempt === job.runAttempt
+				);
+			})
+			.map((event) => Date.parse(event.at));
+		const leases = (await this.readJobLeases(client, this.jobKey(job))).map(
+			(lease) => Date.parse(lease.createdAt),
+		);
+		return Math.max(
+			0,
+			Date.parse(at) - Math.min(Date.parse(at), ...prior, ...leases),
+		);
+	}
+	expireQueued(job: Job, at: string, expectedRevision?: number) {
+		return this.tx(async (client) => {
+			await this.checkRevision(client, expectedRevision);
+			const key = this.jobKey(job);
+			const row = (
+				await client.query<{ body: string }>(
+					"SELECT body FROM hobo_ci_pending_jobs WHERE partition_id=$1 AND job_key=$2",
+					[this.partition, key],
+				)
+			).rows[0];
+			const pending = row ? fromJsonString(JobSchema, row.body) : job;
+			if (
+				!pending.queueDeadlineAt ||
+				!Number.isFinite(Date.parse(pending.queueDeadlineAt)) ||
+				!Number.isFinite(Date.parse(at)) ||
+				Date.parse(pending.queueDeadlineAt) > Date.parse(at)
+			)
+				return false;
+			const leases = (await this.readJobLeases(client, key)).filter((lease) =>
+				ACTIVE_STATES.has(lease.state),
+			);
+			if (leases.some((lease) => lease.state !== "reserved")) return false;
+			for (const lease of leases) {
+				lease.state = "cancelled";
+				await this.append(client, lease, "ci.LeaseExpired", at);
+			}
+			if (
+				(
+					await client.query(
+						"SELECT 1 FROM hobo_ci_terminal_jobs WHERE partition_id=$1 AND job_key=$2",
+						[this.partition, key],
+					)
+				).rowCount
+			)
+				return true;
+			await client.query(
+				"DELETE FROM hobo_ci_pending_jobs WHERE partition_id=$1 AND job_key=$2",
+				[this.partition, key],
+			);
+			await client.query(
+				"INSERT INTO hobo_ci_terminal_jobs(partition_id,job_key) VALUES($1,$2) ON CONFLICT DO NOTHING",
+				[this.partition, key],
+			);
+			await this.event(
+				client,
+				"ci.JobExpired",
+				at,
+				toJsonString(JobSchema, pending),
+			);
+			return true;
+		});
+	}
 	private async queueInside(c: PoolClient, job: Job, at: string) {
 		const key = this.jobKey(job);
 		if (
@@ -774,7 +931,36 @@ export class PostgresCiStore {
 			)
 		)
 			return;
-		const body = toJsonString(JobSchema, job);
+		const config = (await this.readConfiguration(c))?.configuration;
+		const binding = config?.connections.find(
+			(entry) =>
+				entry.repositoryId === job.repositoryId &&
+				entry.installationId === job.installationId &&
+				entry.repository.toLowerCase() === job.repository.toLowerCase(),
+		);
+		const account = config?.accounts.find(
+			(entry) => entry.id === binding?.accountId,
+		);
+		const desired =
+			account && (await this.readRecord(c, `ci-policy:${account.id}`));
+		const effective =
+			account &&
+			(desired
+				? effectiveCiAccount(account, parseCiPolicy(desired.bodyJson))
+				: account);
+		const pinned = await this.pinnedQueuedJob(c, job, at, effective);
+		const body = toJsonString(JobSchema, pinned);
+		if (
+			pinned.queueDeadlineAt &&
+			Date.parse(pinned.queueDeadlineAt) <= Date.parse(at)
+		) {
+			await this.event(c, "ci.JobExpired", at, body);
+			await c.query(
+				"INSERT INTO hobo_ci_terminal_jobs(partition_id,job_key) VALUES($1,$2) ON CONFLICT DO NOTHING",
+				[this.partition, key],
+			);
+			return;
+		}
 		await this.event(c, "ci.JobQueued", at, body);
 		await c.query(
 			"INSERT INTO hobo_ci_pending_jobs(partition_id,job_key,body) VALUES($1,$2,$3)",
@@ -967,6 +1153,14 @@ export class PostgresCiStore {
 			const effective = desired
 				? effectiveCiAccount(current, parseCiPolicy(desired.bodyJson))
 				: current;
+			if (ciBudgetPolicy(effective) && !this.options.sharedBudget)
+				return undefined;
+			const demand = await this.pinnedQueuedJob(c, job, at, effective);
+			if (
+				demand.queueDeadlineAt &&
+				Date.parse(demand.queueDeadlineAt) <= Date.parse(at)
+			)
+				return undefined;
 			const key = this.jobKey(job);
 			if (
 				(
@@ -986,7 +1180,7 @@ export class PostgresCiStore {
 				).rowCount
 			)
 				return undefined;
-			const leases = await this.readAccountLeases(c, effective.id);
+			const leases = await this.readLeases(c);
 			const existing = (await this.readJobLeases(c, key)).find(
 				(lease) =>
 					lease.repositoryId === job.repositoryId &&
@@ -996,12 +1190,12 @@ export class PostgresCiStore {
 					(lease.actualJobId === 0 || lease.actualJobId === job.id),
 			);
 			if (existing) {
-				if (
-					requiresIsolation &&
-					existing.provider !== "vercel" &&
-					existing.provider !== "kubernetes" &&
-					existing.provider !== "hobo-box-worker"
-				) {
+				const existingOffer = effective.offers.find(
+					(offer) =>
+						offer.id === existing.offerId &&
+						offer.provider === existing.provider,
+				);
+				if (requiresIsolation && !isIsolatedCiOffer(existingOffer)) {
 					if (existing.state === "reserved") {
 						existing.state = "cancelled";
 						await this.append(c, existing, "ci.LeaseCancelled", at);
@@ -1015,62 +1209,96 @@ export class PostgresCiStore {
 				);
 				return existing;
 			}
-			const selected = route(
-				{
-					...effective,
-					offers: effective.offers.filter((offer) =>
-						requiresIsolation
-							? (offer.provider === "vercel" &&
-									offer.backend === "sandbox" &&
-									offer.freeMinutes === 0) ||
-								((offer.provider === "kubernetes" ||
-									offer.provider === "hobo-box-worker") &&
-									offer.backend === "isolated-container" &&
-									offer.freeMinutes === 0 &&
-									offer.priceMicrosPerMinute === 0)
-							: !offer.backend || offer.backend === "gh-actions",
-					),
-				},
-				leases,
-				at,
-			);
-			if (!selected) return undefined;
-			const id = randomUUID();
-			const lease = create(LeaseSchema, {
-				id,
-				accountId: effective.id,
-				offerId: selected.offer.id,
-				provider: selected.offer.provider,
-				jobId: job.id,
-				originalRunId: job.runId,
-				runAttempt: job.runAttempt,
-				repositoryId: job.repositoryId,
-				repository: job.repository,
-				installationId: job.installationId,
-				jobName: job.name,
-				memoryClass: job.memoryClass,
-				memoryMb: job.memoryMb,
-				state: "reserved",
-				priceMicrosPerMinute: selected.offer.priceMicrosPerMinute,
-				freeValidUntil: selected.offer.validUntil,
-				sandboxPricing: selected.offer.sandboxPricing
-					? clone(SandboxPricingSchema, selected.offer.sandboxPricing)
-					: undefined,
-				sandboxReservedAllowance: selected.sandboxReservedAllowance
-					? clone(SandboxAllowanceSchema, selected.sandboxReservedAllowance)
-					: undefined,
-				reservedMinutes: selected.minutes,
-				reservedFreeMinutes: selected.freeMinutes,
-				reservedPaidMicros: selected.paidMicros,
-				runnerName: `hobo-${id}`,
-				createdAt: at,
-			});
-			await this.append(c, lease, "ci.LeaseReserved", at);
-			await c.query(
-				"DELETE FROM hobo_ci_pending_jobs WHERE partition_id=$1 AND job_key=$2",
-				[this.partition, key],
-			);
-			return lease;
+			const blockedOfferIds = new Set<string>();
+			while (blockedOfferIds.size < effective.offers.length) {
+				const selected = route(
+					{
+						...effective,
+						offers: effective.offers.map((offer) => ({
+							...offer,
+							enabled:
+								offer.enabled &&
+								!blockedOfferIds.has(offer.id) &&
+								(requiresIsolation
+									? isIsolatedCiOffer(offer)
+									: !offer.backend || offer.backend === "gh-actions"),
+						})),
+					},
+					leases,
+					at,
+					{
+						phase: this.options.sharedBudget ? "plan" : "admit",
+						attempt:
+							job.runAttempt +
+							leases.filter(
+								(lease) =>
+									lease.repositoryId === job.repositoryId &&
+									lease.jobId === job.id &&
+									lease.runAttempt === job.runAttempt,
+							).length,
+						queueDurationMs: await this.queueDurationMs(c, job, at),
+					},
+				);
+				if (!selected) return undefined;
+				const id = randomUUID();
+				const lease = create(LeaseSchema, {
+					id,
+					budgetAdmissionAttempt: (await this.readJobLeases(c, key)).length + 1,
+					accountId: effective.id,
+					offerId: selected.offer.id,
+					provider: selected.offer.provider,
+					providerAccountId: selected.offer.providerAccountId,
+					...ciBudgetIdentity(effective, at),
+					queueDeadlineAt: demand.queueDeadlineAt,
+					jobId: job.id,
+					originalRunId: job.runId,
+					runAttempt: job.runAttempt,
+					repositoryId: job.repositoryId,
+					repository: job.repository,
+					installationId: job.installationId,
+					jobName: job.name,
+					memoryClass: job.memoryClass,
+					memoryMb: job.memoryMb,
+					state: "reserved",
+					priceMicrosPerMinute: selected.offer.priceMicrosPerMinute,
+					freeValidUntil: selected.offer.validUntil,
+					sandboxPricing: selected.offer.sandboxPricing
+						? clone(SandboxPricingSchema, selected.offer.sandboxPricing)
+						: undefined,
+					sandboxReservedAllowance: selected.sandboxReservedAllowance
+						? clone(SandboxAllowanceSchema, selected.sandboxReservedAllowance)
+						: undefined,
+					reservedMinutes: selected.minutes,
+					reservedFreeMinutes: selected.freeMinutes,
+					reservedPaidMicros: selected.paidMicros,
+					runnerName: `hobo-${id}`,
+					createdAt: at,
+				});
+				if (lease.budgetId)
+					try {
+						await this.options.sharedBudget?.reserve(
+							lease,
+							ciLeasePolicyMeasurements(
+								lease,
+								leases,
+								await this.queueDurationMs(c, job, at),
+							),
+						);
+					} catch (error) {
+						if (error instanceof BudgetAdmissionDeniedError) {
+							blockedOfferIds.add(selected.offer.id);
+							continue;
+						}
+						throw error;
+					}
+				await this.append(c, lease, "ci.LeaseReserved", at);
+				await c.query(
+					"DELETE FROM hobo_ci_pending_jobs WHERE partition_id=$1 AND job_key=$2",
+					[this.partition, key],
+				);
+				return lease;
+			}
+			return undefined;
 		});
 	}
 	transition(
@@ -1085,12 +1313,123 @@ export class PostgresCiStore {
 			await this.checkRevision(c, expectedRevision);
 			const lease = await this.readLease(c, id);
 			if (!lease || !expected.includes(lease.state)) return undefined;
+			const identity = leaseFinancialIdentity(lease);
 			update(lease);
 			if (lease.state === "dispatching" && !lease.dispatchingAt)
 				lease.dispatchingAt = at;
+			if (leaseFinancialIdentity(lease) !== identity)
+				throw new Error("lease financial identity is immutable");
+			if (["dispatching", "claiming", "running"].includes(lease.state)) {
+				if (!(await this.authorizeHeldEffect(c, lease, at)))
+					throw new Error("durable policy revoked lease execution");
+				if (lease.budgetId) {
+					if (!this.options.sharedBudget)
+						throw new Error("shared CI budget authority unavailable");
+					await this.options.sharedBudget.claim(
+						lease,
+						ciLeasePolicyMeasurements(
+							lease,
+							await this.readLeases(c),
+							await this.queueDurationMs(
+								c,
+								create(JobSchema, {
+									id: lease.jobId,
+									repositoryId: lease.repositoryId,
+									runAttempt: lease.runAttempt,
+								}),
+								at,
+							),
+						),
+					);
+				}
+			} else if (lease.state === "uncertain" && lease.budgetId)
+				await this.options.sharedBudget?.uncertain(lease);
 			await this.append(c, lease, type, at);
 			return lease;
 		});
+	}
+	private async authorizeHeldEffect(
+		client: PoolClient,
+		lease: Lease,
+		at: string,
+	): Promise<boolean> {
+		if (
+			lease.queueDeadlineAt &&
+			Date.parse(lease.queueDeadlineAt) <= Date.parse(at)
+		)
+			return false;
+		const config = (await this.readConfiguration(client))?.configuration;
+		const account = config?.accounts.find(
+			(entry) => entry.id === lease.accountId,
+		);
+		if (!account) return false;
+		if (
+			!lease.pipelineId &&
+			!config?.connections.some(
+				(entry) =>
+					entry.accountId === lease.accountId &&
+					entry.repositoryId === lease.repositoryId &&
+					entry.installationId === lease.installationId &&
+					entry.repository.toLowerCase() === lease.repository.toLowerCase(),
+			)
+		)
+			return false;
+		const desired = await this.readRecord(client, `ci-policy:${account.id}`);
+		const effective = desired
+			? effectiveCiAccount(account, parseCiPolicy(desired.bodyJson))
+			: account;
+		const identity = ciBudgetIdentity(effective, at);
+		if (
+			identity.budgetTenantId !== lease.budgetTenantId ||
+			identity.budgetId !== lease.budgetId ||
+			identity.budgetPeriodId !== lease.budgetPeriodId ||
+			identity.budgetPolicyRevision !== lease.budgetPolicyRevision ||
+			identity.budgetPolicyDigest !== lease.budgetPolicyDigest ||
+			lease.reservedMinutes >
+				effective.maxRuntimeMinutes + effective.startupMinutes ||
+			lease.reservedMinutes < effective.startupMinutes
+		)
+			return false;
+		const selected = route(
+			{
+				...effective,
+				maxRuntimeMinutes: lease.reservedMinutes - effective.startupMinutes,
+				offers: effective.offers.map((offer) => ({
+					...offer,
+					enabled:
+						offer.enabled &&
+						offer.id === lease.offerId &&
+						offer.provider === lease.provider &&
+						(lease.providerAccountId
+							? offer.providerAccountId === lease.providerAccountId
+							: !lease.budgetId),
+				})),
+			},
+			(await this.readLeases(client)).filter((entry) => entry.id !== lease.id),
+			at,
+			{
+				phase: this.options.sharedBudget ? "plan" : "admit",
+				attempt: lease.pipelineId
+					? lease.budgetAdmissionAttempt || 1
+					: lease.runAttempt + (lease.budgetAdmissionAttempt || 1) - 1,
+				queueDurationMs: await this.queueDurationMs(
+					client,
+					create(JobSchema, {
+						id: lease.jobId,
+						repositoryId: lease.repositoryId,
+						runAttempt: lease.runAttempt,
+					}),
+					at,
+				),
+			},
+		);
+		return (
+			!!selected &&
+			selected.paidMicros <= lease.reservedPaidMicros &&
+			selected.freeMinutes >= lease.reservedFreeMinutes &&
+			selected.offer.priceMicrosPerMinute === lease.priceMicrosPerMinute &&
+			selected.offer.validUntil === lease.freeValidUntil
+		);
 	}
 	cancelAndRequeue(id: string, job: Job, at: string) {
 		return this.tx(async (c) => {
@@ -1138,6 +1477,7 @@ export class PostgresCiStore {
 		unmet?: Job,
 		completedAt = at,
 		result?: PipelineResult,
+		evidence?: BudgetSettlementEvidence,
 	) {
 		const lease = await this.readLease(c, id);
 		if (!lease || !ACTIVE_STATES.has(lease.state)) return undefined;
@@ -1168,8 +1508,31 @@ export class PostgresCiStore {
 		lease.paidMicros = quote.paid;
 		lease.settledAt = at;
 		lease.usageCompletedAt = completedAt;
+		lease.usageProvenance = evidence ? "provider-final" : "estimated";
+		lease.usageEvidenceRef = evidence?.usageEvidenceRef ?? "";
 		if (result) lease.result = result;
-		await this.append(c, lease, "ci.HostSettled", at);
+		if (lease.budgetId) {
+			if (!this.options.sharedBudget)
+				throw new Error("shared CI budget authority unavailable");
+			if (evidence)
+				assertCiParentSettlement(
+					lease,
+					await this.options.sharedBudget.settle(lease, evidence),
+					evidence,
+				);
+			else {
+				lease.state = "uncertain";
+				await this.options.sharedBudget.uncertain(lease);
+			}
+		}
+		await this.append(
+			c,
+			lease,
+			lease.state === "completed" ? "ci.HostSettled" : "ci.UsageEstimated",
+			at,
+		);
+		if (lease.paidMicros > lease.reservedPaidMicros)
+			await this.append(c, lease, "ci.BudgetOverrun", at);
 		if (unmet) await this.queueInside(c, unmet, at);
 		return lease;
 	}
@@ -1181,6 +1544,7 @@ export class PostgresCiStore {
 		unmet?: Job,
 		completedAt?: string,
 		result?: PipelineResult,
+		evidence?: BudgetSettlementEvidence,
 	) {
 		return this.tx((c) =>
 			this.settleInside(
@@ -1192,6 +1556,7 @@ export class PostgresCiStore {
 				unmet,
 				completedAt,
 				result,
+				evidence,
 			),
 		);
 	}
@@ -1203,6 +1568,7 @@ export class PostgresCiStore {
 		unmet: Job | undefined,
 		completedAt: string,
 		observed: Pick<Lease, "state" | "hostRunId" | "runnerId">,
+		evidence?: BudgetSettlementEvidence,
 	) {
 		return this.tx(async (c) => {
 			const current = await this.readLease(c, id);
@@ -1221,7 +1587,81 @@ export class PostgresCiStore {
 				at,
 				unmet,
 				completedAt,
+				undefined,
+				evidence,
 			);
+		});
+	}
+	reconcileSharedBudget(
+		id: string,
+		paidMicros: number,
+		evidence: BudgetSettlementEvidence,
+		at: string,
+	) {
+		return this.tx(async (client) => {
+			const lease = await this.readLease(client, id);
+			if (
+				!lease?.budgetId ||
+				!this.options.sharedBudget ||
+				!["reserved", "cancelled", "uncertain", "completed"].includes(
+					lease.state,
+				) ||
+				!Number.isSafeInteger(paidMicros) ||
+				paidMicros < 0
+			)
+				throw new Error(
+					"shared CI usage is not awaiting financial reconciliation",
+				);
+			if (
+				lease.state === "completed" &&
+				lease.usageProvenance === "provider-final"
+			) {
+				if (
+					lease.paidMicros !== paidMicros ||
+					lease.usageEvidenceRef !== evidence.usageEvidenceRef
+				)
+					throw new Error("final CI financial usage is immutable");
+				return lease;
+			}
+			lease.paidMicros = paidMicros;
+			lease.usageProvenance = "provider-final";
+			lease.usageEvidenceRef = evidence.usageEvidenceRef;
+			lease.state = "completed";
+			lease.settledAt = at;
+			assertCiParentSettlement(
+				lease,
+				await this.options.sharedBudget.settle(lease, evidence),
+				evidence,
+			);
+			await this.append(client, lease, "ci.HostSettled", at);
+			if (paidMicros > lease.reservedPaidMicros)
+				await this.append(client, lease, "ci.BudgetOverrun", at);
+			return lease;
+		});
+	}
+	releaseUnusedSharedBudget(
+		id: string,
+		evidenceRef: string,
+		at = new Date().toISOString(),
+	) {
+		return this.tx(async (client) => {
+			const lease = await this.readLease(client, id);
+			if (
+				!lease?.budgetId ||
+				!this.options.sharedBudget ||
+				lease.state !== "cancelled"
+			)
+				throw new Error("unused shared CI hold is not durably cancelled");
+			const receipt = await this.options.sharedBudget.releaseUnused(
+				lease,
+				evidenceRef,
+			);
+			lease.budgetReleaseEvidenceRef = ciParentReleaseEvidenceRef(
+				lease,
+				receipt,
+				evidenceRef,
+			);
+			await this.append(client, lease, "ci.ParentBudgetReleased", at);
 		});
 	}
 	/** Bind a quota to the verified lease and sandbox. The caller is the trusted control plane. */
@@ -1903,7 +2343,19 @@ export class PostgresCiStore {
 			lease.paidMicros = chargedMicros;
 			lease.settledAt = at;
 			lease.usageCompletedAt = completedAt;
-			await this.append(client, lease, "ci.HostSettled", at);
+			lease.usageProvenance = "estimated";
+			if (lease.budgetId) {
+				if (!this.options.sharedBudget)
+					throw new Error("shared CI budget authority unavailable");
+				lease.state = "uncertain";
+				await this.options.sharedBudget.uncertain(lease);
+			}
+			await this.append(
+				client,
+				lease,
+				lease.state === "completed" ? "ci.HostSettled" : "ci.UsageEstimated",
+				at,
+			);
 			if (
 				lease.runnerId &&
 				!lease.actualJobId &&

@@ -8,6 +8,8 @@ export default mergeConfig(
 	rootConfig,
 	defineConfig({
 		test: {
+			// Native compiler and process acceptance must fit a bounded runner.
+			fileParallelism: false,
 			exclude: ["e2e/**"],
 			// One worker per CPU, each with the CI 3GB heap, outgrows a shared runner
 			// box and the kernel OOM-kills the run (exit 137). Cap it in CI; the
@@ -24,7 +26,10 @@ export default mergeConfig(
 					// Load built workspace exports natively instead of re-transforming the
 					// dependency graph. The CLI stays inline: its dynamic bindle imports
 					// need Vite to resolve .js specifiers in TypeScript sources.
-					external: [/\/packages\/(?!cli\/).*\/dist\//u],
+					external: [
+						/\/packages\/(?!cli\/).*\/dist\//u,
+						/[/\\]node_modules[/\\]typescript[/\\]/,
+					],
 				},
 			},
 			// `include` stays per project: mergeConfig concatenates arrays, so a

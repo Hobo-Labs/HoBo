@@ -25,13 +25,15 @@ describe("Matching-honest target capability packs", () => {
 		expect(pack.preferDegrades.container).toMatch(/not native/);
 	});
 
-	it("vercel Drop is hostable temporary/agent path", () => {
-		expect(TARGET_CAPABILITY_PACKS.vercel.canHostNow).toBe(true);
+	it("does not advertise account-backed Vercel CLI as anonymous temporary hosting", () => {
+		expect(TARGET_CAPABILITY_PACKS.vercel.canHostNow).toBe(false);
+		expect("railway" in TARGET_CAPABILITY_PACKS).toBe(false);
 		expect(
 			TARGET_CAPABILITY_PACKS.vercel.supportsAnonymousTemporaryDeploy,
-		).toBe(true);
-		expect(TARGET_CAPABILITY_PACKS.vercel.environment).toMatch(/Drop/);
-		expect("railway" in TARGET_CAPABILITY_PACKS).toBe(false);
+		).toBe(false);
+		expect(TARGET_CAPABILITY_PACKS.vercel.unavailableReason).toMatch(
+			/anonymous temporary deployment API/,
+		);
 	});
 
 	it("preferDegradesFromNative mirrors Matching prefer lowers", () => {

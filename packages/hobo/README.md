@@ -48,6 +48,65 @@ Canonical verb list: **42** verbs in `@hobo/cli` (`packages/cli/src/shell/verbs.
 
 ## CLI verification and remote deployment safety
 
+### Budgeted cloud hosting
+
+`createHostingBudgetAuthorityBridge` connects `@hobo/cloud` planning and durable
+hosting transitions to the broker's shared SQLite budget authority. The host
+supplies tenant-scoped planning evidence, independent revalidation, a trusted
+clock, and final provider-account/entitlement settlement evidence. Paid charges
+and shared credits are reserved together before deployment facts are published.
+Each charge stays with its source or destination billing account; credit scope
+and cost class remain part of the pinned plan.
+
+Execution adopts the gateway's existing reservation through an atomic claim.
+Another transition cannot spend the same authorization. A lost provider response
+keeps the hold until observation establishes the outcome; settlement requires
+retirement and final usage evidence. The default offline runtime does not infer
+provider prices, billing bounds, or final invoices. A hosting integration must
+supply these trusted ports and the effects/resilience-aware execution adapter.
+
+`test/hosting-budget-authority.test.ts` composes the actual gateway, transition
+journal and two SQLite authority connections. It covers admission races, shared
+free allocation, tampering, restart, reservation adoption and final settlement.
+The wire contracts and CUE/PACT fixtures live with `@hobo/cloud` and
+`@hobo/broker`; these offline tests do not verify a live provider API. See the
+[hosting transition design](../../docs/design/hosting-budget-transitions.md).
+
+`createProductionYardRuntime` is the async production composition. It requires a
+caller-owned persistent directory and trusted clock. `configureHosting` receives
+the same SQLite event partition used by the gateway and returns the actual provider
+registry, authoritative budget bridge and execution configuration. Credential
+leases and signed native financial readers can be acquired asynchronously before
+any provider effect. The returned `hostingController` supports status, bounded
+resume, cancellation and explicit bounded mutation resumption; `close()` closes
+the event store without deleting its persistent directory.
+
+`createResolverHostingTransitionProvider` drives shipped provider resolvers and
+Station routing. Every source and destination resource requires independently
+verified provider-funded or native finite-term liability evidence before the first
+mutation. Soft quotas and local timers cannot prove a hard financial bound. A
+successful move cannot release its hold while destination liability remains open.
+A source or destination's native serving endpoint must also match the active
+Station backends. Health probes use the same endpoint origin and serving path;
+multiple routed endpoints require an explicit probe for each (`additionalUrls`).
+A healthy response from another service cannot authorize routing. Missing native
+ingress, including an IAM-only function without an observed HTTP ingress, refuses
+cutover. Stock resolver execution supports stateless moves with pinned data;
+state transfer requires a workload adapter that proves checkpoints, checksums and
+write fencing, and is refused before mutation when that adapter is absent.
+
+Final reconciliation remains available after a write deadline. Retirement requires
+positive terminal absence and final billing evidence, including the exact native
+physical identity; a 404 and a DELETE acknowledgement alone cannot settle a hold.
+
+Native target names and durable resource receipts include tenant, deployment and
+transition incarnation. Existing sources name their approved `sourceIncarnationId`;
+a decommission names the creation transition of the target it retires. This prevents
+an old delayed DELETE from destroying a newer deployment with identical content.
+App Platform sibling component writes also serialize on the whole native parent
+using a shared SQLite CAS lock. A lost response retains that lock; clock expiry
+never unlocks an unknown native write.
+
 ### Self-hosted control plane
 
 The embedded local broker is the default. Hosted brokers, hosting relays, and
@@ -85,9 +144,9 @@ origin and contain no URL credentials (`HOBO_BROKER_ENDPOINT_UNSAFE`). Anonymous
 session discovery may use a separate HTTPS host, but placement credentials and
 claim tokens cannot be forwarded there. Session, placement, and claim POSTs
 refuse redirects. `test/broker-remote-*.test.ts` pins this HTTP boundary.
-`HOBO_DEPLOY_RESOLVERS=1` opts credentialed Cloudflare/Vercel deployments into
-the resolver lane, unless an explicit Pulumi adapter or live Pulumi setting
-takes precedence. Other values do not opt in.
+Cloudflare/Vercel credentials select exact-resource resolvers unless an explicit
+Pulumi adapter or live Pulumi setting takes precedence. `HOBO_DEPLOY_RESOLVERS`
+is retained as a compatibility spelling and no longer selects fixture uploads.
 
 `identity agent discover|register|status|claim|poll|token|rotate|revoke` exposes
 `@hobo/auth-md` in the composed CLI. An explicitly selected broker can advertise
@@ -125,9 +184,8 @@ as a live deployment. IaC selection lives in `src/compose.ts`:
 | Persistent local Yard worker | Product default with a loadable source Bindle |
 | In-memory Pulumi stand-in | Explicitly injected library/test runtime |
 | Real Pulumi Automation/CLI | `HOBO_PULUMI_LIVE=1` (engine- and credential-gated); its programs and `file://` state go in `HOBO_PULUMI_WORKDIR`, which is kept, else in a `hobo-pulumi-live-*` directory removed when the process ends (one `hobo:` line on stderr names it), so set `HOBO_PULUMI_WORKDIR` to keep the state |
-| Direct-HTTP resolver plane | a cloud credential **plus** `HOBO_DEPLOY_RESOLVERS=1` (opt-in) |
-| Live Cloudflare Workers | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
-| Live Vercel | `VERCEL_TOKEN` |
+| Direct-HTTP Cloudflare resolver plane | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`; production hosting configuration required |
+| Direct-HTTP Vercel resolver plane | `VERCEL_TOKEN`; production hosting configuration required |
 
 **Credentials from OpenSesame (`HOBO_CREDENTIALS=opensesame`, [ADR-0170](../../docs/design/adr/02-identity-security.md#adr-0170)).**
 The composed `hobo` then relaunches itself once, before composing anything, as
@@ -308,15 +366,13 @@ become `ResolveRequest.desired`.
    lane (unchanged);
 2. no cloud credential at all → the library runtime's in-memory Pulumi backend;
    product `up` uses the persistent local source-Bindle path instead;
-3. a cloud credential **plus `HOBO_DEPLOY_RESOLVERS=1`** → the resolver plane
-   (Cloudflare when `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` are set,
-   else Vercel when `VERCEL_TOKEN` is);
-4. otherwise → today's Cloudflare Workers / Vercel deploy providers (unchanged).
+3. a cloud credential → the exact-resource resolver plane (Cloudflare when
+   `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` are set, else Vercel).
 
-The lane is **opt-in and sits inside the cred-gated bracket**: it can only
-replace the two bespoke deploy providers, never the Pulumi lanes and never the
-credential-free default. Silently swapping someone's deploy backend on an
-upgrade is a behaviour change nobody asked for, so the env switch is required.
+The committed hello-bindle upload helpers require explicit `fixtureArtifact:true`
+and are never selected by environment. Their teardown performs native deletion
+and an independent absence read; missing receipts and uncertain deletion refuse.
+Existence alone reports content drift rather than claiming verified artifact identity.
 
 ### Fail-closed refusals (`ResolverIacError`, each with a `remediation`)
 
@@ -388,7 +444,7 @@ refused rather than shadowed.
   here rather than re-redacted.
 - **Preflight reports the resolver lane separately from the backend.**
   `describeDeployTarget` returns `lane: "resolver"` for credentialed
-  Cloudflare/Vercel with `HOBO_DEPLOY_RESOLVERS=1`. It does not model explicit
+  Cloudflare/Vercel regardless of the deprecated `HOBO_DEPLOY_RESOLVERS` flag. It does not model explicit
   Pulumi adapter overrides or `HOBO_PULUMI_LIVE=1`; use `selectIacProvider`
   precedence above to determine those paths. Credential presence and a
   preflight `live` flag do not establish provider authorization or readiness.
