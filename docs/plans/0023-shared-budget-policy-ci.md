@@ -130,3 +130,40 @@ provider-native liability bound and rejects missing proof; authored policy or a
 timeout cannot manufacture that guarantee. Concurrency metrics cover the owning
 admission partition, and shared runner labels retain repository-wide financial
 exposure, as described in the design authority.
+
+## Final PR validation
+
+After integrating main and completing the independent review repairs, the normal
+commit hook passed **all 24 relevant checks**. The final affected workspace graph
+completed **120/120 Turbo tasks**. Package-scoped runs established successful
+results before the final hook reused their unchanged results.
+
+| Final affected scope | Passing tests |
+| --- | ---: |
+| Core, Broker, CI, CI GitHub Actions, Cloud, Bindles and Stations | 3,465 |
+| 18 provider SDK workspaces | 4,884 |
+| CLI | 546 |
+| HOBO composition | 1,628 |
+| Schema tools | 214 |
+| Dispatcher | 195 |
+| Site | 109 |
+| FinOps epic proof | 34 |
+| **31-workspace total** | **11,075** |
+
+Additional checks passed: **105 behavior scenarios / 486 steps**, 290 root tests,
+48 bounded property tests, 124 schema manifest/stage-gate tests, generated protobuf
+drift and CUE fixture validation, 922 CUE files across 870 package groups, Site
+typechecking, architecture, strict changed-source lint, proof artifacts/cascade,
+documentation/design, license and traceability checks. Frozen installation passed
+with pnpm 10.33.4. PostgreSQL 18.3 acceptance used an actual isolated local server.
+
+The final package runs used Node 24, `VITEST_MAX_WORKERS=2` and
+`HOBO_TEST_TIMEOUT=60000`. CLI/HOBO configuration bounds file-level compiler/process
+acceptance while retaining isolation and concurrent operations inside individual
+tests. Compiler acceptance kept its original 30/60/90-second limits. The complete
+CLI suite passed in 269.13 seconds; HOBO passed in 550.26 seconds. No paid provider
+operation was used for this validation.
+
+The exact staged public patch was also compared against 56 private values from
+anonymous acceptance evidence: **618 files checked, zero matches**. Private native
+credentials and bearer identities remain outside the checkout.
