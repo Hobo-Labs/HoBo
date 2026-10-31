@@ -885,6 +885,23 @@ describe("a refusal's text (scripted transport, no network)", () => {
 	});
 });
 
+describe("createVercelClient's teamId (scripted transport, no network)", () => {
+	it.each([
+		["blank", " ", ""],
+		["empty", "", ""],
+		["padded", " team_x ", "?teamId=team_x"],
+	])("takes a %s teamId as the provider does: trimmed, and blank as none", async (_case, teamId, query) => {
+		const { fetch, sent } = scripted({
+			[CREATE]: [reply(200, { id: "prj_fresh", name: "fresh" })],
+		});
+		const client = createVercelClient({ token: "tok", fetch, teamId });
+
+		await client.createProject("fresh");
+
+		expect(new URL(first(sent).url).search).toBe(query);
+	});
+});
+
 describe("createVercelClient.createProject (scripted transport, no network)", () => {
 	it("answers the project it created", async () => {
 		const { fetch } = scripted({

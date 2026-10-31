@@ -137,10 +137,8 @@ function asFetchHandler(
 }
 
 import type { VercelFetch } from "./vercel-client.js";
-import {
-	createVercelDeployProvider,
-	normalizeVercelTeamId,
-} from "./vercel-deploy-provider.js";
+import { normalizeVercelTeamId } from "./vercel-client.js";
+import { createVercelDeployProvider } from "./vercel-deploy-provider.js";
 
 // @hobo/hobo — the composition root (apps layer). It wires HoBo's default
 // runtimes so the composed `hobo` binary runs the cloud verbs end to end in the

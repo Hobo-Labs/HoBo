@@ -155,7 +155,8 @@ export interface VercelClientOptions {
 	// The transport. Defaults to the global `fetch`; injected in tests.
 	readonly fetch?: VercelFetch;
 	// The team id, sent as the `teamId` query parameter when the token is a team
-	// token (Vercel `teamId`).
+	// token (Vercel `teamId`). Trimmed, and blank taken as none
+	// (`normalizeVercelTeamId`).
 	readonly teamId?: string;
 	// The API base URL. Defaults to https://api.vercel.com (override for tests).
 	readonly baseUrl?: string;
@@ -390,6 +391,16 @@ async function payloadOf(response: VercelFetchResponse): Promise<JsonObject> {
 	return isJsonObject(parsed) ? parsed : {};
 }
 
+// A team id as every entry point takes it (`createVercelClient`'s and
+// `createVercelDeployProvider`'s `teamId`, and `selectIacProvider`'s
+// environment): trimmed, and empty or blank as none.
+export function normalizeVercelTeamId(
+	teamId: string | undefined,
+): string | undefined {
+	const trimmed = teamId?.trim();
+	return trimmed === undefined || trimmed === "" ? undefined : trimmed;
+}
+
 // Create the REAL Vercel deployment client. No network call happens at
 // construction; a request is formed and sent only by a method call.
 export function createVercelClient(options: VercelClientOptions): VercelClient {
@@ -400,10 +411,9 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 	const secrets = tokenPatterns(token);
 	const fetchImpl = options.fetch ?? globalFetch;
 	const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+	const teamId = normalizeVercelTeamId(options.teamId);
 	const query =
-		options.teamId !== undefined
-			? `?teamId=${encodeURIComponent(options.teamId)}`
-			: "";
+		teamId !== undefined ? `?teamId=${encodeURIComponent(teamId)}` : "";
 	// One JSON POST to `path` under the base URL, team-scoped like every other.
 	const post = (path: string, body: string): Promise<VercelFetchResponse> =>
 		fetchImpl(`${baseUrl}${path}${query}`, {

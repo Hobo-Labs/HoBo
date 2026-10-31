@@ -14,6 +14,7 @@ import {
 	afterConflict,
 	createVercelClient,
 	isProjectNotFound,
+	normalizeVercelTeamId,
 	VercelApiError,
 	type VercelDeploymentFile,
 	type VercelDeploymentResult,
@@ -86,15 +87,6 @@ function readVercelFileTree(rootDir: string): VercelDeploymentFile[] {
 	walk(rootDir);
 	files.sort((a, b) => a.file.localeCompare(b.file));
 	return files;
-}
-
-// A team id as both entry points take it (this provider's `teamId`, and
-// `selectIacProvider`'s environment): trimmed, and empty or blank as none.
-export function normalizeVercelTeamId(
-	teamId: string | undefined,
-): string | undefined {
-	const trimmed = teamId?.trim();
-	return trimmed === undefined || trimmed === "" ? undefined : trimmed;
 }
 
 export interface VercelDeployProviderOptions {
