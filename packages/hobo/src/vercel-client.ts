@@ -279,35 +279,76 @@ function refusalText(text: string, secrets: readonly RegExp[]): string {
 	return redactProviderText(withoutToken(text, secrets), REFUSAL_TEXT_LIMIT);
 }
 
+// A container of a JSON value being copied, and the copy it is filled into.
+type JsonCopy =
+	| { readonly from: readonly JsonValue[]; readonly to: JsonValue[] }
+	| { readonly from: JsonObject; readonly to: Record<string, JsonValue> };
+
+// `value` with the token taken out if it is a string, an empty copy of it
+// (queued on `pending`, to be filled) if it is an array or an object, else
+// `value` itself.
+function copyStep(
+	value: JsonValue,
+	secrets: readonly RegExp[],
+	pending: JsonCopy[],
+): JsonValue {
+	if (isJsonString(value)) return withoutToken(value, secrets);
+	if (isJsonArray(value)) {
+		const to: JsonValue[] = [];
+		pending.push({ from: value, to });
+		return to;
+	}
+	if (isJsonObject(value)) {
+		const to: Record<string, JsonValue> = {};
+		pending.push({ from: value, to });
+		return to;
+	}
+	return value;
+}
+
 // A JSON value with the token taken out of every string in it, keys included.
+// Walked with a queue of containers rather than by recursion, so a body nested
+// any depth cannot run the call stack out. Keys are defined, never assigned,
+// so a `__proto__` key stays a key.
 function withoutTokenInJson(
 	value: JsonValue,
 	secrets: readonly RegExp[],
 ): JsonValue {
-	if (isJsonString(value)) return withoutToken(value, secrets);
-	if (isJsonArray(value)) {
-		return value.map((item) => withoutTokenInJson(item, secrets));
+	const pending: JsonCopy[] = [];
+	const copy = copyStep(value, secrets, pending);
+	for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+		if (isJsonArray(next.to)) {
+			for (const item of Object.values(next.from)) {
+				next.to.push(copyStep(item, secrets, pending));
+			}
+			continue;
+		}
+		for (const [key, item] of Object.entries(next.from)) {
+			Object.defineProperty(next.to, withoutToken(key, secrets), {
+				value: copyStep(item, secrets, pending),
+				enumerable: true,
+				writable: true,
+				configurable: true,
+			});
+		}
 	}
-	if (isJsonObject(value)) {
-		return Object.fromEntries(
-			Object.entries(value).map(([key, item]) => [
-				withoutToken(key, secrets),
-				withoutTokenInJson(item, secrets),
-			]),
-		);
-	}
-	return value;
+	return copy;
 }
 
 // A body as `message` shows it: a JSON body parsed, which undoes its escapes (a
 // `\u`-escaped token, or a `\n` inside one, is then the token, or a real
 // newline in it), the token taken out of its strings, and written back out with
-// `JSON.stringify`; any other body as sent.
+// `JSON.stringify`; any other body as sent. A body too deep to write back out
+// (`JSON.stringify` throws RangeError some thousands of levels down) is also
+// kept as sent. Either way the text pass (`refusalText`) runs over the result.
 function bodyText(detail: string, secrets: readonly RegExp[]): string {
 	const parsed = parseJsonValue(detail);
-	return parsed === null
-		? detail
-		: JSON.stringify(withoutTokenInJson(parsed, secrets));
+	if (parsed === null) return detail;
+	try {
+		return JSON.stringify(withoutTokenInJson(parsed, secrets));
+	} catch {
+		return detail;
+	}
 }
 
 // Vercel's `error.code` is an identifier (`not_found`, `forbidden`). One that

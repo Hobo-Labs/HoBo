@@ -129,6 +129,27 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 		expect(deploy.project).toBe("hobo-hello-bindle");
 	});
 
+	// A 404 body nested thousands deep, as a proxy or a hostile peer could
+	// answer: too deep to walk recursively, or to write back out with
+	// `JSON.stringify` (plain node gives up near 3000 levels, a test worker
+	// further on). It is still Vercel's not_found, so the project is made.
+	it.each([
+		5000, 100_000,
+	])("on a missing project whose 404 body nests %i deep: create, deploy again", async (depth) => {
+		const deep = `${"[".repeat(depth)}"tok"${"]".repeat(depth)}`;
+		const body = `{"error":{"code":"not_found","message":"Project not found"},"trace":${deep}}`;
+		const { fetch, routes } = scripted({
+			[DEPLOY]: [plainReply(404, body), DEPLOYED],
+			[CREATE]: [CREATED],
+		});
+		const provider = createVercelDeployProvider({ token: "tok", fetch });
+
+		const outputs = await provider.apply(programFor("dep-1"));
+
+		expect(routes()).toEqual([DEPLOY, CREATE, DEPLOY]);
+		expect(outputs).toMatchObject({ projectCreated: "true" });
+	});
+
 	it("on a missing project: deploy 404, create the project, deploy again", async () => {
 		const { fetch, sent, routes } = scripted({
 			[DEPLOY]: [PROJECT_NOT_FOUND, DEPLOYED],
@@ -809,6 +830,33 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		expect(hostile.length).toBeGreaterThanOrEqual(100_000);
 		expect(error.message.length).toBeLessThanOrEqual(501);
 		expect(took).toBeLessThan(1000);
+	});
+
+	it.each([
+		5000, 100_000,
+	])("carries no token in a body nested %i deep", async (depth) => {
+		const deep = `${"[".repeat(depth)}"${TOKEN}"${"]".repeat(depth)}`;
+		const body = `{"echo":"you sent ${TOKEN}","error":{"code":"forbidden","message":"Not authorized: ${TOKEN}"},"trace":${deep}}`;
+		const error = await refusedBy(() => plainReply(403, body));
+
+		expectNoToken(error, TOKEN, []);
+		expect(error).toMatchObject({
+			status: 403,
+			code: "forbidden",
+			apiMessage: "Not authorized: [redacted]",
+		});
+		expect(error.message).toMatch(
+			/^vercel-client: create deployment failed \(HTTP 403\): \{"echo":"you sent \[redacted\]","error"/u,
+		);
+	});
+
+	it("keeps a __proto__ key in the body as a key, its token taken out", async () => {
+		const body = `{"__proto__":{"echo":"you sent ${TOKEN}"},"error":{"code":"forbidden","message":"Not authorized"}}`;
+		const error = await refusedBy(() => plainReply(403, body));
+
+		expect(error.message).toBe(
+			'vercel-client: create deployment failed (HTTP 403): {"__proto__":{"echo":"you sent [redacted]"},"error":{"code":"forbidden","message":"Not authorized"}}',
+		);
 	});
 
 	it("carries no token sent back JSON-escaped as the code", async () => {
