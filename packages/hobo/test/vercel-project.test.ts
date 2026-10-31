@@ -12,6 +12,7 @@ import {
 	VercelApiError,
 	type VercelFetch,
 	type VercelFetchResponse,
+	VercelTransportError,
 } from "../src/vercel-client.js";
 import { createVercelDeployProvider } from "../src/vercel-deploy-provider.js";
 
@@ -967,6 +968,222 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		);
 
 		expect(error.code).toBeUndefined();
+	});
+});
+
+describe("a transport failure (scripted transport, no network)", () => {
+	const TOKEN = "tok_SECRET_0123456789abcdef";
+	const OTHER_KEY = "sk_live_0123456789abcdef";
+	const base64 = (text: string) => Buffer.from(text).toString("base64");
+
+	// The deploy's error when the transport throws `thrown` (or answers 2xx
+	// with a body `json()` cannot read, when `answered` is set).
+	async function failedBy(fetch: VercelFetch): Promise<VercelTransportError> {
+		const provider = createVercelDeployProvider({ token: TOKEN, fetch });
+		try {
+			await provider.apply(programFor("dep-1"));
+		} catch (error) {
+			if (error instanceof VercelTransportError) return error;
+			throw error;
+		}
+		throw new Error("expected the deploy to fail");
+	}
+
+	const rejecting =
+		(thrown: Error | string | JsonObject): VercelFetch =>
+		async () => {
+			throw thrown;
+		};
+
+	// Nowhere the error is printed or kept holds the token, a form of it, or
+	// another credential, and it keeps nothing that was thrown.
+	function expectNothingLeaks(
+		error: VercelTransportError,
+		forms: readonly string[] = [],
+	): void {
+		expect(error).toBeInstanceOf(VercelTransportError);
+		expect(error.name).toBe("VercelTransportError");
+		expect(error.cause).toBeUndefined();
+		expect(Object.keys(error)).toEqual(["name"]);
+		const printed = [
+			error.message,
+			error.stack ?? "",
+			String(error),
+			inspect(error, { depth: 10, showHidden: true }),
+			JSON.stringify(error),
+			`executor.apply_failed: ${error.message}`,
+		];
+		for (const text of printed) {
+			for (const form of [TOKEN, OTHER_KEY, ...forms]) {
+				expect(text).not.toContain(form);
+			}
+		}
+	}
+
+	it("redacts what a rejected request says, and keeps nothing of it", async () => {
+		const error = await failedBy(
+			rejecting(
+				new Error(
+					`proxy refused: sent Bearer ${TOKEN} and api_key=${OTHER_KEY}`,
+				),
+			),
+		);
+
+		expectNothingLeaks(error);
+		expect(error.message).toBe(
+			"vercel-client: create deployment got no answer: Error: proxy refused: sent [redacted] and [redacted]",
+		);
+	});
+
+	it("redacts runtime's own refusal of the header, as undici words it", async () => {
+		const error = await failedBy(
+			rejecting(
+				new TypeError(
+					`Headers.append: "Bearer ${TOKEN}" is an invalid header value.`,
+				),
+			),
+		);
+
+		expectNothingLeaks(error);
+		expect(error.message).toMatch(
+			/^vercel-client: create deployment got no answer: TypeError: Headers\.append: /u,
+		);
+	});
+
+	it("reads down the cause chain, codes included, and redacts each link", async () => {
+		const refused = Object.assign(
+			new Error(`connect ECONNREFUSED 127.0.0.1:443 (as ${TOKEN})`, {
+				cause: `a string cause with ${base64(TOKEN)}`,
+			}),
+			{ code: "ECONNREFUSED" },
+		);
+		const error = await failedBy(
+			rejecting(new TypeError("fetch failed", { cause: refused })),
+		);
+
+		expectNothingLeaks(error, [base64(TOKEN)]);
+		expect(error.message).toBe(
+			"vercel-client: create deployment got no answer: TypeError: fetch failed; Error [ECONNREFUSED]: connect ECONNREFUSED 127.0.0.1:443 (as [redacted]); a string cause with [redacted]",
+		);
+	});
+
+	it("reads an AggregateError's errors, and redacts each", async () => {
+		const error = await failedBy(
+			rejecting(
+				new AggregateError(
+					[new Error(`first ${TOKEN}`), new Error(`second ${OTHER_KEY}`)],
+					"every address failed",
+				),
+			),
+		);
+
+		expectNothingLeaks(error);
+		expect(error.message).toBe(
+			"vercel-client: create deployment got no answer: AggregateError: every address failed; Error: first [redacted]; Error: second [redacted]",
+		);
+	});
+
+	it("ends on a cause chain that loops, and on one that runs long", async () => {
+		const looped = new Error(`one ${TOKEN}`);
+		looped.cause = new Error("two", { cause: looped });
+		let long = new Error("last");
+		for (let i = 0; i < 10_000; i++)
+			long = new Error(`link ${i}`, { cause: long });
+
+		const fromLoop = await failedBy(rejecting(looped));
+		const fromLong = await failedBy(rejecting(long));
+
+		expectNothingLeaks(fromLoop);
+		expect(fromLoop.message).toBe(
+			"vercel-client: create deployment got no answer: Error: one [redacted]; Error: two",
+		);
+		expectNothingLeaks(fromLong);
+		expect(fromLong.message.length).toBeLessThanOrEqual(501);
+	});
+
+	it.each([
+		["a string", `refused ${TOKEN}`, "refused [redacted]"],
+		["an object", { token: TOKEN }, "a thrown object"],
+	])("wraps %s thrown by the transport", async (_case, thrown, said) => {
+		const error = await failedBy(rejecting(thrown));
+
+		expectNothingLeaks(error);
+		expect(error.message).toBe(
+			`vercel-client: create deployment got no answer: ${said}`,
+		);
+	});
+
+	it("reads nothing of a thrown value whose getter throws", async () => {
+		const hostile = new Error("unread");
+		Object.defineProperty(hostile, "message", {
+			get() {
+				throw new Error(`a getter, ${TOKEN}`);
+			},
+		});
+
+		const error = await failedBy(rejecting(hostile));
+
+		expectNothingLeaks(error);
+		expect(error.message).toBe(
+			"vercel-client: create deployment got no answer: a thrown value that could not be read",
+		);
+	});
+
+	it("wraps a transport that throws before it returns a promise", async () => {
+		const error = await failedBy(() => {
+			throw new Error(`synchronously, ${TOKEN}`);
+		});
+
+		expectNothingLeaks(error);
+		expect(error.message).toBe(
+			"vercel-client: create deployment got no answer: Error: synchronously, [redacted]",
+		);
+	});
+
+	it("wraps a 2xx whose body cannot be read, as a runtime's JSON error quotes it", async () => {
+		const error = await failedBy(async () => ({
+			ok: true,
+			status: 200,
+			async text() {
+				return `<html>${TOKEN}</html>`;
+			},
+			async json() {
+				throw new SyntaxError(
+					`Unexpected token '<', "<html>${TOKEN}</html>" is not valid JSON`,
+				);
+			},
+		}));
+
+		expectNothingLeaks(error);
+		expect(error.message).toBe(
+			`vercel-client: create deployment answered HTTP 200, and its body could not be read: SyntaxError: Unexpected token '<', "<html>[redacted]</html>" is not valid JSON`,
+		);
+	});
+
+	it.each([
+		["LF", "\n"],
+		["CR", "\r"],
+		["NUL", "\u0000"],
+		["a tab", "\t"],
+		["a space", " "],
+		["a zero-width space", "\u200b"],
+	])("refuses a token holding %s before any request, not saying it", (_case, char) => {
+		const token = `${TOKEN.slice(0, 10)}${char}${TOKEN.slice(10)}`;
+		const { fetch, sent } = scripted({});
+
+		let refusal: unknown;
+		try {
+			createVercelDeployProvider({ token, fetch });
+		} catch (error) {
+			refusal = error;
+		}
+
+		expect(refusal).toBeInstanceOf(TypeError);
+		const message = refusal instanceof Error ? refusal.message : "";
+		expect(message).toMatch(/^createVercelClient: the token holds /u);
+		expect(message).not.toContain(TOKEN.slice(0, 10));
+		expect(message).not.toContain(TOKEN.slice(10));
+		expect(sent).toEqual([]);
 	});
 });
 

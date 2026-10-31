@@ -138,6 +138,19 @@ export class VercelApiError extends Error {
 	}
 }
 
+// A request that got no answer to read: the transport threw or rejected (a
+// refused connection, a header the runtime would not send), or a 2xx body could
+// not be read. `message` names the call and says what was thrown, read down its
+// `cause` chain and into an AggregateError's `errors` (`thrownText`), as refusal
+// text: redacted, and cut at 500 characters. What was thrown is not kept, so it
+// has no `cause`, and nothing unredacted is left to print.
+export class VercelTransportError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "VercelTransportError";
+	}
+}
+
 // Create Deployment's answer when the project it names does not exist: 404,
 // `{"error":{"code":"not_found","message":"Project not found"}}`.
 export function isProjectNotFound(error: Error): boolean {
@@ -351,6 +364,80 @@ function bodyText(detail: string, secrets: readonly RegExp[]): string {
 	}
 }
 
+// The most parts of what a transport threw `thrownText` reads.
+const THROWN_PARTS = 8;
+
+// What a transport threw, part by part: an Error's name, its `code` when it is
+// a string, and its message, then what it holds (an AggregateError's `errors`,
+// then its `cause`), each once; a thrown string as it is; anything else by its
+// type alone. At most THROWN_PARTS parts, so a chain that loops or runs long
+// ends. The caller makes it refusal text.
+function thrownText(cause: unknown): string {
+	const parts: string[] = [];
+	const queue: unknown[] = [cause];
+	const seen = new Set<unknown>();
+	while (queue.length > 0 && parts.length < THROWN_PARTS) {
+		const next = queue.shift();
+		if (seen.has(next)) continue;
+		seen.add(next);
+		if (next instanceof Error) {
+			const code =
+				"code" in next && isJsonString(next.code) ? ` [${next.code}]` : "";
+			parts.push(`${next.name}${code}: ${next.message}`);
+			if (next instanceof AggregateError && Array.isArray(next.errors)) {
+				queue.push(...next.errors.slice(0, THROWN_PARTS));
+			}
+			if (next.cause !== undefined) queue.push(next.cause);
+		} else if (isJsonString(next)) {
+			parts.push(next);
+		} else {
+			// `[object Null]` and the like: the type, never the value.
+			const tag = Object.prototype.toString.call(next).slice(8, -1);
+			parts.push(`a thrown ${tag.toLowerCase()}`);
+		}
+	}
+	return parts.join("; ");
+}
+
+// `what` and what a transport threw, as a VercelTransportError. A thrown value
+// whose own getters throw is not read at all.
+function transportError(
+	what: string,
+	cause: unknown,
+	secrets: readonly RegExp[],
+): VercelTransportError {
+	let said: string;
+	try {
+		said = thrownText(cause);
+	} catch {
+		said = "a thrown value that could not be read";
+	}
+	return new VercelTransportError(
+		refusalText(`vercel-client: ${what}: ${said}`, secrets),
+	);
+}
+
+// `step`'s result, or, when it throws or rejects, a VercelTransportError for
+// `what`.
+async function untilAnswered<T>(
+	what: string,
+	secrets: readonly RegExp[],
+	step: () => Promise<T>,
+): Promise<T> {
+	try {
+		return await step();
+	} catch (thrown) {
+		throw transportError(what, thrown, secrets);
+	}
+}
+
+// Whitespace, a control character or a format character: what a token cannot
+// hold. RFC 6750's b64token has none of them, a runtime refuses CR, LF and NUL
+// in a header, and the redaction's patterns (`tokenPatterns`) allow whitespace
+// between the token's characters, which stays linear only while the token
+// holds none.
+const TOKEN_BREAK = /[\s\p{Cc}\p{Cf}]/u;
+
 // Vercel's `error.code` is an identifier (`not_found`, `forbidden`). One that
 // is not (longer than 64 characters, any other character, or text the
 // redaction would change, such as the token itself) is not kept anywhere on the
@@ -449,26 +536,53 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 	if (!token) {
 		throw new TypeError("createVercelClient: token is required");
 	}
+	if (TOKEN_BREAK.test(token)) {
+		throw new TypeError(
+			"createVercelClient: the token holds whitespace, or a control or format character (CR, LF and NUL among them), which no Vercel token holds and an Authorization header cannot carry: nothing was sent. Set the token again without them",
+		);
+	}
 	const secrets = tokenPatterns(token);
 	const fetchImpl = options.fetch ?? globalFetch;
 	const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
 	const teamId = normalizeVercelTeamId(options.teamId);
 	const query =
 		teamId !== undefined ? `?teamId=${encodeURIComponent(teamId)}` : "";
-	// One JSON POST to `path` under the base URL, team-scoped like every other.
-	const post = (path: string, body: string): Promise<VercelFetchResponse> =>
-		fetchImpl(`${baseUrl}${path}${query}`, {
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${token}`,
-				"Content-Type": "application/json",
-			},
-			body,
-		});
+	// One JSON POST to `path` under the base URL, team-scoped like every other;
+	// a transport that throws is a VercelTransportError naming `what`.
+	const post = (
+		what: string,
+		path: string,
+		body: string,
+	): Promise<VercelFetchResponse> =>
+		untilAnswered(`${what} got no answer`, secrets, () =>
+			fetchImpl(`${baseUrl}${path}${query}`, {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${token}`,
+					"Content-Type": "application/json",
+				},
+				body,
+			}),
+		);
+	// The JSON object a 2xx answer to `what` carries; a body that cannot be read
+	// is a VercelTransportError.
+	const payloadFrom = (
+		what: string,
+		response: VercelFetchResponse,
+	): Promise<JsonObject> =>
+		untilAnswered(
+			`${what} answered HTTP ${response.status}, and its body could not be read`,
+			secrets,
+			() => payloadOf(response),
+		);
 
 	return {
 		async createProject(name: string): Promise<VercelProjectResult> {
-			const made = await post("/v9/projects", JSON.stringify({ name }));
+			const made = await post(
+				"create project",
+				"/v9/projects",
+				JSON.stringify({ name }),
+			);
 			if (!made.ok) {
 				const refusal = await failure("create project", made, secrets);
 				if (refusal.status !== 409 || refusal.code !== "conflict")
@@ -482,7 +596,7 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 						: undefined),
 				};
 			}
-			const payload = await payloadOf(made);
+			const payload = await payloadFrom("create project", made);
 			return {
 				id: isJsonString(payload.id) ? payload.id : "",
 				name: isJsonString(payload.name) ? payload.name : name,
@@ -505,13 +619,17 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 				projectSettings: input.projectSettings ?? { framework: null },
 			};
 
-			const response = await post("/v13/deployments", JSON.stringify(body));
+			const response = await post(
+				"create deployment",
+				"/v13/deployments",
+				JSON.stringify(body),
+			);
 
 			if (!response.ok) {
 				throw await failure("create deployment", response, secrets);
 			}
 
-			const payload = await payloadOf(response);
+			const payload = await payloadFrom("create deployment", response);
 			const id = isJsonString(payload.id) ? payload.id : "";
 			return {
 				url: normalizeUrl(payload.url),

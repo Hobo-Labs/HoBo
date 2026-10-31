@@ -445,6 +445,7 @@ export {
 	type VercelFetch,
 	type VercelFetchResponse,
 	type VercelProjectResult,
+	VercelTransportError,
 } from "./vercel-client.js";
 export {
 	createVercelDeployProvider,

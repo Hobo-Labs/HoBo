@@ -150,7 +150,14 @@ such as `Bearer token`), each whole or broken up by whitespace (a newline,
 `\r\n`, spaces, tabs) between any two of its characters. The error's `code` is
 kept only when it is a short identifier (letters, digits, `_`, `.` and `-`, at
 most 64 characters, and nothing the redaction would change), and is otherwise
-undefined. A credential binding's scope needs `POST` on `/v13/deployments`, and
+undefined. A request that gets no answer to read (the transport throws or
+rejects, or a 2xx body cannot be read) is a `VercelTransportError`: its
+`message` names the call and says what was thrown, down its `cause` chain and
+into an `AggregateError`'s `errors` (eight parts at most), redacted and cut the
+same way, and it keeps nothing of what was thrown, so it has no `cause`. A
+token that holds whitespace, or a control or format character (CR, LF and NUL
+among them), is refused when the client is made, before any request, by an
+error that does not quote it. A credential binding's scope needs `POST` on `/v13/deployments`, and
 `POST` on `/v9/projects` for that first deploy; it needs no `GET` on the
 project.
 
