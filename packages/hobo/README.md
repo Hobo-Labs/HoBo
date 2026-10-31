@@ -143,16 +143,23 @@ Vercel's status, `error.code` and `error.message`. A response body can echo the
 request, and the executor keeps an error's message, so the error's `message` and
 `apiMessage` have the token, and anything bearer- or credential-shaped, replaced
 by `[redacted]`, and each is cut at 500 characters (a `…` marks the cut). The
-token is found as sent, JSON-escaped (a JSON body is parsed, and searched string
-by string, before it is written back out), URL-encoded whole or byte by byte,
-and in base64 (alone, as a Basic header's `:token`, or inside a longer value
-such as `Bearer token`), each whole or broken up between any two of its
-characters by whitespace (a newline, `\r\n`, spaces, tabs), control characters
-(NUL, ESC, DEL, NEL) or format characters (a soft hyphen, a zero-width space or
-joiner, a word joiner), which a message shows as spaces or not at all. The
-token is looked for again after the rest of the redaction has run, so nothing
-it does brings the token back. The error's `code` is
-kept only when it is a short identifier (letters, digits, `_`, `.` and `-`, at
+token is looked for as sent; in base64, alone, as a Basic header's `:token`, and
+as the part of a longer base64 value (such as `Bearer token`'s) that depends on
+the token alone; as the base64 of its base64; and as the base64 of its
+percent-encoding (`%XX`, either case). In each of those, every character may be
+written as itself (a `/` also as JSON's `\/`), as a JSON escape `\uXXXX` (hex
+in either case, after one backslash or more, as in JSON inside a JSON string),
+percent-encoded byte by byte as `%XX` or, encoded twice, as `%25XX` (either
+case), or as an HTML numeric reference, `&#xNN;` or `&#NN;` (either case, any
+number of leading zeros, the `;` optional). A run of whitespace (a newline,
+`\r\n`, spaces, tabs), control characters (NUL, ESC, DEL, NEL) or format
+characters (a soft hyphen, a zero-width space or joiner, a word joiner), which a
+message shows as spaces or not at all, may sit anywhere in it, inside an
+encoding too. A JSON body is also parsed and its strings, keys included,
+searched before it is written back out; any other body, or one too deep to
+write back out, is searched as text. The token is looked for again after the
+rest of the redaction has run, so nothing it does brings the token back. The
+error's `code` is kept only when it is a short identifier (letters, digits, `_`, `.` and `-`, at
 most 64 characters, and nothing the redaction would change), and is otherwise
 undefined. A request that gets no answer to read (the transport throws or
 rejects, or a 2xx body cannot be read) is a `VercelTransportError`: its

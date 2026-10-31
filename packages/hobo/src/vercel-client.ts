@@ -30,6 +30,7 @@
 // A single file in the deployment payload. `data` is the file content; when
 // `encoding` is "base64" the content is base64-encoded (Vercel's inline-files
 // contract). `file` is the POSIX path within the deployment.
+import { at } from "@hobo/core/total-access";
 import { redactProviderText } from "@hobo/provider-vercel";
 
 import {
@@ -38,7 +39,6 @@ import {
 	isJsonString,
 	type JsonObject,
 	type JsonValue,
-	parseJsonObject,
 	parseJsonValue,
 } from "./json.js";
 
@@ -223,36 +223,39 @@ function normalizeUrl(raw: JsonValue | undefined): string {
 // each cut at this many characters, and a `…` marks the cut.
 const REFUSAL_TEXT_LIMIT = 500;
 
-// The client's own token in the forms a response body can echo it: as sent;
-// URL-encoded, whole (`encodeURIComponent`) or byte by byte (`%XX`, either
-// case); and in base64, whole (the token alone, or a Basic header's `:token`)
-// and as the part of any base64 that depends on the token's bytes alone, at
-// each of the three alignments (which covers `Bearer token` too). Longest
-// first, so a whole form goes before a part of it; a derived piece shorter than
-// four characters is left out.
+// The part of `bytes`' base64 that depends on `bytes` alone, wherever in a
+// longer value they sit: at each of the three alignments, the whole groups of
+// four that hold only their bits (which covers `Bearer token` too).
+function alignedBase64(bytes: Buffer): string[] {
+	return [0, 1, 2].map((offset) =>
+		Buffer.concat([Buffer.alloc(offset), bytes])
+			.toString("base64")
+			.slice(offset === 0 ? 0 : 4, 4 * Math.floor((offset + bytes.length) / 3)),
+	);
+}
+
+// The client's own token as the strings a response body can echo it as: the
+// token, and its base64 (whole, as a Basic header's `:token`, and the part of
+// a longer base64 that depends on the token alone), the base64 of that base64,
+// and the base64 of its percent-encoding (`%XX`, either case). How each of
+// their characters can be written (escaped, percent-encoded, an HTML
+// reference) is `charPattern`'s, not a form of its own. Longest first, so a
+// whole form goes before a part of it; a derived piece shorter than four
+// characters is left out.
 function tokenForms(token: string): readonly string[] {
 	const bytes = Buffer.from(token, "utf8");
 	const percent = [...bytes]
 		.map((byte) => `%${byte.toString(16).padStart(2, "0")}`)
 		.join("");
+	const base64 = (text: string) => Buffer.from(text, "utf8").toString("base64");
 	const derived = [
-		encodeURIComponent(token),
-		percent,
-		percent.toUpperCase(),
 		bytes.toString("base64"),
-		Buffer.from(`:${token}`, "utf8").toString("base64"),
+		base64(`:${token}`),
+		...alignedBase64(bytes),
+		base64(bytes.toString("base64")),
+		base64(percent),
+		base64(percent.toUpperCase()),
 	];
-	for (const offset of [0, 1, 2]) {
-		const encoded = Buffer.concat([Buffer.alloc(offset), bytes]).toString(
-			"base64",
-		);
-		derived.push(
-			encoded.slice(
-				offset === 0 ? 0 : 4,
-				4 * Math.floor((offset + bytes.length) / 3),
-			),
-		);
-	}
 	const forms = new Set([token, ...derived.filter((form) => form.length >= 4)]);
 	return [...forms].sort((a, b) => b.length - a.length);
 }
@@ -268,27 +271,153 @@ function literal(char: string): string {
 // joiner). A message shows a control character as a space, and a format
 // character not at all, so either leaves the token readable.
 const BREAK_CHAR = "[\\s\\p{Cc}\\p{Cf}]";
-const BREAK = `${BREAK_CHAR}*`;
 
-// Each form of the client's own token (`tokenForms`) as a pattern that also
-// finds it broken up by any run of BREAK between any two of its characters.
-// Built from the form's characters, each escaped, never from the token as a
-// pattern. No form holds such a character (a token that does is refused,
-// TOKEN_BREAK), so each run meets a literal it cannot match and gives back at
-// most its own length: a search is linear in the text for a token of bounded
-// length.
+// Patterns for the hex digits of `value`, at least `width` of them, one per
+// digit, each in either case.
+function hexDigits(value: number, width: number): string[] {
+	return Array.from(value.toString(16).padStart(width, "0"), (digit) => {
+		const upper = digit.toUpperCase();
+		return upper === digit ? digit : `[${digit}${upper}]`;
+	});
+}
+
+// One character of a form as a pattern, after OpenSesame's per-character
+// scrub (crates/invoke-through/src/scrub.rs): the character itself (a `/` also
+// as JSON's `\/`); a JSON escape `\uXXXX`, either case, after one backslash
+// or more (JSON inside a JSON string doubles them); each of its UTF-8 bytes
+// percent-encoded, `%XX` or, encoded twice, `%25XX`, either case; or an HTML
+// numeric reference, `&#xNN;` or `&#NN;`, either case, with leading zeros, the
+// `;` optional. A run of backslashes is entered only at its start (the
+// lookbehinds), and a run of zeros only after `&#`, so no run is scanned once
+// per character of it.
+function charPattern(char: string): string {
+	const point = char.codePointAt(0) ?? 0;
+	const units =
+		point > 0xffff
+			? [
+					0xd800 + ((point - 0x10000) >> 10),
+					0xdc00 + ((point - 0x10000) & 0x3ff),
+				]
+			: [point];
+	const json = units
+		.map((unit) => `(?<!\\\\)\\\\+u${hexDigits(unit, 4).join("")}`)
+		.join("");
+	const percent = [...Buffer.from(char, "utf8")]
+		.map((byte) => `%(?:25)?${hexDigits(byte, 2).join("")}`)
+		.join("");
+	const hexRef = `&#[xX]0*${hexDigits(point, 1).join("")};?`;
+	const decRef = `&#0*${point};?`;
+	const itself = char === "/" ? "(?<!\\\\)\\\\*\\/" : literal(char);
+	return `(?:${itself}|${json}|${percent}|${hexRef}|${decRef})`;
+}
+
+// Each form of the client's own token (`tokenForms`) as a pattern: each of its
+// characters written any way `charPattern` names. Built from the forms'
+// characters, never from the token as a pattern. They are matched against a
+// text with its breaks (BREAK_CHAR) taken out (`withoutToken`), so they have
+// none of their own, and an attempt runs no further than one form written out:
+// a search is linear in the text for a token of bounded length. One pattern
+// for each form, not one for them all: a single alternation of every form is
+// some hundred times slower to search.
 function tokenPatterns(token: string): readonly RegExp[] {
 	return tokenForms(token).map(
-		(form) => new RegExp(Array.from(form, literal).join(BREAK), "gu"),
+		(form) => new RegExp(Array.from(form, charPattern).join(""), "gu"),
 	);
 }
 
-// `text` with every form of the token, whole or broken up by whitespace, as
-// `[redacted]`.
+// One character that can sit unseen between two characters of a token.
+const ONE_BREAK = new RegExp(`^${BREAK_CHAR}$`, "u");
+
+// Whether `point` (the code point `char` holds) is a break: in ASCII, the
+// controls and the space (`\s` there is a subset of them); above it, whatever
+// BREAK_CHAR matches, astral format characters (the tag characters) included.
+function isBreak(point: number, char: string): boolean {
+	return point < 0x80 ? point <= 0x20 || point === 0x7f : ONE_BREAK.test(char);
+}
+
+// `text` with its breaks taken out, as `kept`, and where each piece of it
+// between two runs of breaks starts: `at[i]` in `text`, `from[i]` in `kept`.
+interface Unbroken {
+	readonly kept: string;
+	readonly at: readonly number[];
+	readonly from: readonly number[];
+}
+
+function unbroken(text: string): Unbroken {
+	const parts: string[] = [];
+	const at: number[] = [];
+	const from: number[] = [];
+	let length = 0;
+	let start = -1;
+	for (let index = 0; index < text.length; ) {
+		const point = text.codePointAt(index) ?? 0;
+		const width = point > 0xffff ? 2 : 1;
+		if (isBreak(point, text.slice(index, index + width))) {
+			if (start >= 0) {
+				parts.push(text.slice(start, index));
+				length += index - start;
+				start = -1;
+			}
+		} else if (start < 0) {
+			start = index;
+			at.push(index);
+			from.push(length);
+		}
+		index += width;
+	}
+	if (start >= 0) parts.push(text.slice(start));
+	return { kept: parts.join(""), at, from };
+}
+
+// A stretch of a text: its first character, and the one after its last.
+interface Span {
+	readonly start: number;
+	readonly end: number;
+}
+
+// `text` with every form of the token (`tokenPatterns`) as `[redacted]`, found
+// written any way `charPattern` names and broken up anywhere, inside an
+// encoding too, by runs of breaks (BREAK_CHAR). The patterns are matched
+// against `text` with its breaks taken out; the stretches they match are
+// joined where they meet or overlap, and each is redacted in `text` from its
+// first character to its last, breaks inside it and all.
 function withoutToken(text: string, secrets: readonly RegExp[]): string {
-	let out = text;
-	for (const secret of secrets) out = out.replace(secret, "[redacted]");
-	return out;
+	const { kept, at: pieceAt, from: pieceFrom } = unbroken(text);
+	const found: Span[] = [];
+	for (const secret of secrets) {
+		for (const match of kept.matchAll(secret)) {
+			found.push({ start: match.index, end: match.index + match[0].length });
+		}
+	}
+	if (found.length === 0) return text;
+	found.sort((a, b) => a.start - b.start || b.end - a.end);
+	// Where in `text` the character at `index` of `kept` is. The stretches come
+	// in order, so the pieces are walked once.
+	let piece = 0;
+	const inText = (index: number): number => {
+		while (piece + 1 < pieceFrom.length && at(pieceFrom, piece + 1) <= index)
+			piece++;
+		return at(pieceAt, piece) + index - at(pieceFrom, piece);
+	};
+	let out = "";
+	let copied = 0;
+	let open: Span | undefined;
+	const redact = (span: Span) => {
+		const start = inText(span.start);
+		const end = inText(span.end - 1) + 1;
+		out += `${text.slice(copied, start)}[redacted]`;
+		copied = end;
+	};
+	for (const span of found) {
+		if (open !== undefined && span.start <= open.end) {
+			open = { start: open.start, end: Math.max(open.end, span.end) };
+			continue;
+		}
+		if (open !== undefined) redact(open);
+		open = span;
+	}
+	if (open !== undefined) redact(open);
+	return `${out}${text.slice(copied)}`;
 }
 
 // A response body can echo the request, Authorization header included, and the
@@ -300,10 +429,16 @@ function withoutToken(text: string, secrets: readonly RegExp[]): string {
 // `redactProviderText` has changed the text (it turns control characters into
 // spaces, trims, and cuts), so nothing it does can bring the token back.
 function refusalText(text: string, secrets: readonly RegExp[]): string {
-	return withoutToken(
-		redactProviderText(withoutToken(text, secrets), REFUSAL_TEXT_LIMIT),
-		secrets,
-	);
+	return tokenFreeRefusalText(withoutToken(text, secrets), secrets);
+}
+
+// `refusalText` of a text the token has already been taken out of: the
+// credential shapes, the cut, and the token looked for once more.
+function tokenFreeRefusalText(
+	text: string,
+	secrets: readonly RegExp[],
+): string {
+	return withoutToken(redactProviderText(text, REFUSAL_TEXT_LIMIT), secrets);
 }
 
 // A container of a JSON value being copied, and the copy it is filled into.
@@ -362,20 +497,26 @@ function withoutTokenInJson(
 	return copy;
 }
 
-// A body as `message` shows it: a JSON body parsed, which undoes its escapes (a
-// `\u`-escaped token, or a `\n` inside one, is then the token, or a real
-// newline in it), the token taken out of its strings, and written back out with
-// `JSON.stringify`; any other body as sent. A body too deep to write back out
-// (`JSON.stringify` throws RangeError some thousands of levels down) is also
-// kept as sent. Either way the text pass (`refusalText`) runs over the result.
-function bodyText(detail: string, secrets: readonly RegExp[]): string {
-	const parsed = parseJsonValue(detail);
-	if (parsed === null) return detail;
-	try {
-		return JSON.stringify(withoutTokenInJson(parsed, secrets));
-	} catch {
-		return detail;
+// A body as `message` shows it, the token taken out: a JSON body as `json`,
+// that body parsed (which undoes its escapes) with the token taken out of its
+// strings, written back out with `JSON.stringify`; any other body as sent,
+// searched as text. Writing a body back out only escapes what its strings
+// hold, so it brings back no token the walk took out. A body too deep to write
+// back out (`JSON.stringify` throws RangeError some thousands of levels down)
+// is searched as text too.
+function bodyText(
+	detail: string,
+	json: JsonValue | undefined,
+	secrets: readonly RegExp[],
+): string {
+	if (json !== undefined) {
+		try {
+			return JSON.stringify(json);
+		} catch {
+			// Too deep to write back out: searched as text below.
+		}
 	}
+	return withoutToken(detail, secrets);
 }
 
 // The most parts of what a transport threw `thrownText` reads.
@@ -447,9 +588,8 @@ async function untilAnswered<T>(
 
 // Whitespace, a control character or a format character: what a token cannot
 // hold. RFC 6750's b64token has none of them, a runtime refuses CR, LF and NUL
-// in a header, and the redaction's patterns (`tokenPatterns`) allow these
-// between the token's characters (BREAK), which stays linear only while the
-// token holds none.
+// in a header, and the redaction takes these out of a text before it looks for
+// the token (`withoutToken`), so a token that held one could never be found.
 const TOKEN_BREAK = new RegExp(BREAK_CHAR, "u");
 
 // Vercel's `error.code` is an identifier (`not_found`, `forbidden`). One that
@@ -473,18 +613,23 @@ async function failure(
 	secrets: readonly RegExp[],
 ): Promise<VercelApiError> {
 	const detail = await response.text().catch(() => "");
-	const error = parseJsonObject(detail).error;
+	// Parsed once, and the token taken out of it once: `code`, `apiMessage` and
+	// `message` are each read from that.
+	const parsed = parseJsonValue(detail);
+	const json =
+		parsed === null ? undefined : withoutTokenInJson(parsed, secrets);
+	const error = isJsonObject(json) ? json.error : undefined;
 	const code =
 		isJsonObject(error) && isJsonString(error.code)
 			? refusalCode(error.code, secrets)
 			: undefined;
 	const apiMessage =
 		isJsonObject(error) && isJsonString(error.message)
-			? refusalText(error.message, secrets)
+			? tokenFreeRefusalText(error.message, secrets)
 			: undefined;
 	return new VercelApiError(
-		refusalText(
-			`vercel-client: ${what} failed (HTTP ${response.status})${detail ? `: ${bodyText(detail, secrets)}` : ""}`,
+		tokenFreeRefusalText(
+			`vercel-client: ${what} failed (HTTP ${response.status})${detail ? `: ${bodyText(detail, json, secrets)}` : ""}`,
 			secrets,
 		),
 		response.status,

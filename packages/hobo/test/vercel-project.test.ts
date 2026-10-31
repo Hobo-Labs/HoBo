@@ -856,17 +856,18 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		let hostile = "";
 		while (hostile.length < 1_000_000)
 			hostile += `${nearMiss}${" \u200b".repeat(32)}\n`;
-		const body = JSON.stringify({
+		const json = JSON.stringify({
 			error: { code: "not_found", message: hostile },
-			raw: hostile,
 		});
 
 		const started = performance.now();
-		const error = await refusedBy(() => plainReply(404, body));
+		const raw = await refusedBy(() => plainReply(404, hostile));
+		const inJson = await refusedBy(() => plainReply(404, json));
 		const took = performance.now() - started;
 
 		expect(hostile.length).toBeGreaterThanOrEqual(1_000_000);
-		expect(error.message.length).toBeLessThanOrEqual(501);
+		expect(raw.message.length).toBeLessThanOrEqual(501);
+		expect(inJson.apiMessage?.length).toBeLessThanOrEqual(501);
 		expect(took).toBeLessThan(1000);
 	});
 
@@ -987,25 +988,195 @@ describe("a refusal's text (scripted transport, no network)", () => {
 			`executor.apply_failed: ${error.message}`,
 		];
 		for (const text of printed) {
-			// JSON's escapes decoded, then whitespace and control and format
-			// characters taken out: a token broken up by any of them is still
-			// the token.
-			const squeezed = text
-				.replace(/\\u([0-9a-fA-F]{4})/gu, (_, hex: string) =>
-					String.fromCharCode(Number.parseInt(hex, 16)),
-				)
-				.replace(/\\[nrt]|[\s\p{Cc}\p{Cf}]/gu, "");
+			// What a body can encode the token's characters in, decoded, and
+			// the breaks taken out: the token written any of those ways is
+			// still the token.
+			const plain = decoded(text);
 			for (const form of [token, ...forms]) {
 				expect(text).not.toContain(form);
-				expect(squeezed).not.toContain(form);
+				expect(plain).not.toContain(form);
 			}
-			for (const run of text.match(/[A-Za-z0-9+/]{16,}={0,2}/gu) ?? []) {
-				expect(Buffer.from(run, "base64").toString("latin1")).not.toContain(
-					token.slice(2, -2),
-				);
+			// Nor anything base64, or base64 of base64, decodes to.
+			for (const inner of base64Inside(text)) {
+				expect(decoded(inner)).not.toContain(token.slice(2, -2));
 			}
 		}
 	}
+
+	// `text` with JSON's `\uXXXX` escapes (after any number of backslashes),
+	// percent-encoding (once or twice) and HTML numeric references decoded,
+	// then its whitespace, control and format characters, and JSON's escapes
+	// for them, taken out.
+	function decoded(text: string): string {
+		const code = (digits: string, radix: number, match: string) => {
+			const point = Number.parseInt(digits, radix);
+			return point <= 0x10ffff ? String.fromCodePoint(point) : match;
+		};
+		return text
+			.replace(/\\+u([0-9a-fA-F]{4})/gu, (match, hex: string) =>
+				code(hex, 16, match),
+			)
+			.replace(/%(?:25)?([0-9a-fA-F]{2})/gu, (match, hex: string) =>
+				code(hex, 16, match),
+			)
+			.replace(/&#[xX]0*([0-9a-fA-F]{1,6});?/gu, (match, hex: string) =>
+				code(hex, 16, match),
+			)
+			.replace(/&#0*([0-9]{1,7});?/gu, (match, dec: string) =>
+				code(dec, 10, match),
+			)
+			.replace(/\\+[nrt/]|[\s\p{Cc}\p{Cf}]/gu, "");
+	}
+
+	// What the base64 runs in `text` decode to, and the base64 runs in those.
+	function base64Inside(text: string, depth = 2): string[] {
+		if (depth === 0) return [];
+		return (text.match(/[A-Za-z0-9+/]{16,}={0,2}/gu) ?? []).flatMap((run) => {
+			const inner = Buffer.from(run, "base64").toString("latin1");
+			return [inner, ...base64Inside(inner, depth - 1)];
+		});
+	}
+
+	// The token's characters written as a body can carry them.
+	const hex = (char: string, width: number) =>
+		(char.codePointAt(0) ?? 0).toString(16).padStart(width, "0");
+	const jsonEscaped = (char: string, upper = false) =>
+		`\\u${upper ? hex(char, 4).toUpperCase() : hex(char, 4)}`;
+	const percentOf = (text: string, twice = false) =>
+		[...Buffer.from(text)]
+			.map((byte) => `%${twice ? "25" : ""}${byte.toString(16).toUpperCase()}`)
+			.join("");
+	const eachChar = (
+		text: string,
+		write: (char: string, at: number) => string,
+	) => Array.from(text, write).join("");
+	const fullPercent = percentOf(TOKEN);
+
+	it.each([
+		[
+			"JSON-escaped, every third character, in a JSON fragment in text",
+			`upstream said {"session":"${eachChar(TOKEN, (char, at) => (at % 3 === 0 ? jsonEscaped(char, at % 2 === 0) : char))}"} and gave up`,
+			[],
+		],
+		[
+			"with one character JSON-escaped",
+			`you sent ${TOKEN.slice(0, -1)}${jsonEscaped(TOKEN.slice(-1))}`,
+			[],
+		],
+		[
+			"JSON-escaped twice, as JSON inside a JSON string",
+			`{\\"auth\\":\\"${eachChar(TOKEN, (char) => `\\${jsonEscaped(char)}`)}\\"}`,
+			[],
+		],
+		[
+			"percent-encoded in part, either case",
+			eachChar(TOKEN, (char, at) =>
+				at % 2 === 0
+					? char
+					: at % 4 === 1
+						? percentOf(char)
+						: percentOf(char).toLowerCase(),
+			),
+			[],
+		],
+		["percent-encoded twice (%25XX)", percentOf(TOKEN, true), []],
+		[
+			"as HTML references, hex and decimal, leading zeros, either case",
+			eachChar(
+				TOKEN,
+				(char, at) =>
+					[
+						char,
+						`&#x${hex(char, 1)};`,
+						`&#${char.charCodeAt(0)};`,
+						`&#X00${hex(char, 1).toUpperCase()};`,
+						`&#000${char.charCodeAt(0)}`,
+					][at % 5] ?? char,
+			),
+			[],
+		],
+		["as base64 of its base64", base64(base64(TOKEN)), [base64(base64(TOKEN))]],
+		[
+			"as base64 of its percent-encoding",
+			base64(fullPercent),
+			[base64(fullPercent)],
+		],
+	])("carries no token written %s", async (_case, sent, forms) => {
+		const raw = await refusedBy(() => plainReply(404, `you sent ${sent} back`));
+		const inJson = await refusedBy(() =>
+			plainReply(
+				404,
+				JSON.stringify({
+					error: { code: "not_found", message: `you sent ${sent} back` },
+				}),
+			),
+		);
+
+		expectNoToken(raw, TOKEN, forms);
+		expectNoToken(inJson, TOKEN, forms);
+		expect(inJson.apiMessage).toMatch(/^you sent .*\[redacted\].* back$/u);
+	});
+
+	it.each([
+		[
+			"near-misses in every encoding",
+			eachChar(
+				TOKEN.slice(0, -1),
+				(char, at) =>
+					[
+						char,
+						`\\\\${jsonEscaped(char)}`,
+						percentOf(char, true),
+						`&#x000${hex(char, 1)}`,
+						`&#00${char.charCodeAt(0)} `,
+					][at % 5] ?? char,
+			),
+		],
+		["runs of backslashes", `${"\\".repeat(4096)}u00`],
+		["runs of %25", `${"%25".repeat(2048)}%2`],
+		[
+			"runs of zeros in references",
+			`&#x${"0 ".repeat(2048)}&#${"0".repeat(2048)}`,
+		],
+	])("stays linear on 1 MB of %s", async (_case, unit) => {
+		const hostile = unit.repeat(Math.ceil(1_000_000 / unit.length));
+		const json = JSON.stringify({
+			error: { code: "not_found", message: hostile },
+		});
+
+		const started = performance.now();
+		const raw = await refusedBy(() => plainReply(404, hostile));
+		const inJson = await refusedBy(() => plainReply(404, json));
+		const took = performance.now() - started;
+
+		expect(raw.message.length).toBeLessThanOrEqual(501);
+		expect(inJson.apiMessage?.length).toBeLessThanOrEqual(501);
+		expect(took).toBeLessThan(1000);
+	});
+
+	it.each([
+		["valid", "}"],
+		["cut off", ""],
+	])("carries no token in a JSON-escaped key, the JSON %s", async (_case, end) => {
+		const key = eachChar(TOKEN, (char, at) =>
+			at % 2 === 0 ? jsonEscaped(char) : char,
+		);
+		const body = `{"${key}":true,"error":{"code":"not_found","message":"Not found"}${end}`;
+		const error = await refusedBy(() => plainReply(404, body));
+
+		expectNoToken(error, TOKEN, [key]);
+		expect(error.message).toContain('{"[redacted]":true');
+	});
+
+	it("carries no token JSON-escaped in JSON a raw newline makes invalid", async () => {
+		const escapedToken = eachChar(TOKEN, (char) => jsonEscaped(char));
+		const body = `{"error":{"code":"not_found","message":"you sent ${escapedToken}\n back"}}`;
+		const error = await refusedBy(() => plainReply(404, body));
+
+		expectNoToken(error, TOKEN, [escapedToken]);
+		expect(error.apiMessage).toBeUndefined();
+		expect(error.message).toContain("you sent [redacted]  back");
+	});
 
 	it("is cut at 500 characters, message and apiMessage each", async () => {
 		const error = await refusedBy(() =>
