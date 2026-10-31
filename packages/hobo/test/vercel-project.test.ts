@@ -424,7 +424,10 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 		const pending = provider.apply(programFor("dep-1"));
 
 		await expect(pending).rejects.toBeInstanceOf(VercelApiError);
-		const message = await pending.catch((error: Error) => error.message);
+		const message = await pending.then(
+			() => "",
+			(error: Error) => error.message,
+		);
 		expect(message.endsWith(`… ${CONFLICT_NOTE}`)).toBe(true);
 		expect(message.length).toBeLessThanOrEqual(501);
 		expect(message).toMatch(
