@@ -48,7 +48,19 @@ export type ProviderErrorOptions = {
 	readonly cause?: Error;
 };
 
-/** Shapes that must never survive into an error message, log line, or receipt. */
+/**
+ * How much of a text the shapes below are searched in: its first
+ * REDACTION_WINDOW characters, or four times `maxLength` when that is more. An
+ * error message is cut far shorter than this, so a longer text only costs time:
+ * a hostile body of a megabyte is searched no further than this.
+ */
+export const REDACTION_WINDOW = 8192;
+
+/**
+ * Shapes that must never survive into an error message, log line, or receipt.
+ * Each is linear in the text: none can start again inside a run it has already
+ * scanned to its end.
+ */
 const CREDENTIAL_PATTERNS: readonly RegExp[] = [
 	// Prisma Postgres hands out prisma+postgres://…?api_key=… as well as a
 	// direct postgres:// string, so both shapes are stripped.
@@ -60,9 +72,31 @@ const CREDENTIAL_PATTERNS: readonly RegExp[] = [
 	// Vercel claim/transfer codes are bearer authority on this path.
 	/\bcode\s*[=:]\s*[A-Za-z0-9-]{8,}/giu,
 	/\b(?:sk|pk)[-_][A-Za-z0-9_-]{8,}/giu,
-	/\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.\S*/giu,
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/giu,
+	// A JWT starts only where a run of base64url characters starts, so
+	// `-ey-ey-ey…` is one search, not one from every `ey` to the end.
+	/(?<![A-Za-z0-9_-])ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.\S*/giu,
+	// A private key, from its BEGIN line to its END line, or to the next BEGIN or
+	// END line of any kind, or to the end of the text when there is none (as
+	// when the text was cut inside the key): never a search from every BEGIN to
+	// the end.
+	/-----BEGIN [A-Z ]*PRIVATE KEY-----(?:(?!-----(?:BEGIN|END) )[\s\S])*(?:-----END [A-Z ]*PRIVATE KEY-----)?/giu,
 ];
+
+/**
+ * `text` cut at `window` characters. A cut inside a run of non-whitespace drops
+ * that whole run: every shape above but the private key ends at whitespace, so
+ * a credential the cut runs through leaves nothing behind. A private key cut
+ * after its BEGIN line is redacted to the end of the window.
+ */
+function windowOf(text: string, window: number): string {
+	if (text.length <= window) return text;
+	const whitespace = /\s/u;
+	let end = window;
+	if (!whitespace.test(text.charAt(window))) {
+		while (end > 0 && !whitespace.test(text.charAt(end - 1))) end--;
+	}
+	return text.slice(0, end);
+}
 
 function flattenControlChars(text: string): string {
 	let out = "";
@@ -75,14 +109,18 @@ function flattenControlChars(text: string): string {
 
 /**
  * Replace anything credential-shaped with a marker and flatten control
- * characters so provider text cannot forge a log record.
+ * characters so provider text cannot forge a log record. Only the window
+ * (REDACTION_WINDOW) is searched and kept; a text longer than it is marked cut.
  */
 export function redactProviderText(text: string, maxLength = 256): string {
-	let out = text;
+	const window = Math.max(REDACTION_WINDOW, 4 * maxLength);
+	let out = windowOf(text, window);
 	for (const pattern of CREDENTIAL_PATTERNS)
 		out = out.replace(pattern, "[redacted]");
 	out = flattenControlChars(out).trim();
-	return out.length > maxLength ? `${out.slice(0, maxLength)}…` : out;
+	return out.length > maxLength || text.length > window
+		? `${out.slice(0, maxLength)}…`
+		: out;
 }
 
 function redactOptionalText(value: string | undefined): string | undefined {

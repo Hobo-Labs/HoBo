@@ -130,6 +130,12 @@ Typed `VercelProviderError` with stable codes: `PROVIDER_RATE_LIMITED`,
 `CLAIM_PARTIALLY_COMPLETED`, `BINDING_ROTATION_REQUIRED`,
 `SPONSOR_BUDGET_EXCEEDED`, `SECRET_CUSTODY_UNAVAILABLE`. `redactProviderText`
 strips credential shapes from anything that reaches a log or an error detail.
+It searches only the first `REDACTION_WINDOW` (8192) characters of a text, or
+four times its `maxLength` when that is more, and marks a longer text cut, so a
+hostile body of a megabyte costs no more than that; every shape is linear in
+the text besides. A cut that falls inside a run of non-whitespace drops the
+whole run, and a private key with a BEGIN line and no END line is redacted to
+the end of the text, so a credential the cut runs through leaves nothing.
 
 `createGuardedTransport` allows HTTPS only, to `api.vercel.com` only
 (`VERCEL_API_ALLOWED_HOSTS`), on allowlisted path prefixes, with no redirects

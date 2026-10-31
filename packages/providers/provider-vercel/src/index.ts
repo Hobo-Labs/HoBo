@@ -96,6 +96,7 @@ export {
 	type ProviderErrorOptions,
 	type ProviderStatusContext,
 	providerErrorForStatus,
+	REDACTION_WINDOW,
 	redactProviderText,
 	VercelProviderError,
 } from "./provider-errors.js";

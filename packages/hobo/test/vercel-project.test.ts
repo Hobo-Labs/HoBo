@@ -3,6 +3,7 @@ import { inspect } from "node:util";
 import type { IacProgram } from "@hobo/cloud";
 import type { EventStore } from "@hobo/core";
 import { at, first } from "@hobo/core/total-access";
+import { REDACTION_WINDOW } from "@hobo/provider-vercel";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { selectIacProvider } from "../src/compose.js";
@@ -858,6 +859,68 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		expect(error.message).toBe(
 			'vercel-client: create deployment failed (HTTP 403): {"__proto__":{"echo":"you sent [redacted]"},"error":{"code":"forbidden","message":"Not authorized"}}',
 		);
+	});
+
+	// Credential shapes are searched for in the first REDACTION_WINDOW
+	// characters only, each in linear time, so a hostile body cannot stall the
+	// deploy's error path.
+	const MB = 1_000_000;
+	it.each([
+		["-ey, over and over", "-ey"],
+		["BEGIN markers, over and over", "-----BEGIN PRIVATE KEY-----"],
+		[
+			"a mix of both, bearer and key shapes, and whitespace",
+			"-ey-ey eyAAAAAAAAAAAA.eyBBBBBBBBBBBB -----BEGIN PRIVATE KEY-----\n Bearer api_key= sk- \t",
+		],
+	])("stays linear on a 1 MB body of %s", async (_case, unit) => {
+		const hostile = unit.repeat(Math.ceil(MB / unit.length));
+		const json = JSON.stringify({
+			error: { code: "not_found", message: hostile },
+		});
+
+		const started = performance.now();
+		const raw = await refusedBy(() => plainReply(404, hostile));
+		const inJson = await refusedBy(() => plainReply(404, json));
+		const took = performance.now() - started;
+
+		expect(raw.message.length).toBeLessThanOrEqual(501);
+		expect(inJson.apiMessage?.length).toBeLessThanOrEqual(501);
+		expect(took).toBeLessThan(1000);
+	});
+
+	// A body redaction shrinks to almost nothing, so the window's end reaches
+	// the message: what the window cuts through leaves nothing behind.
+	const shrinking = (length: number) =>
+		`Bearer ${"A".repeat(400)} `.repeat(Math.floor(length / 408));
+	const keyBody = Array.from(
+		{ length: 40 },
+		(_, i) => `MIIK${String(i).padStart(4, "0")}${"q".repeat(56)}`,
+	).join("\n");
+
+	it.each([
+		[
+			"a private key",
+			`${shrinking(REDACTION_WINDOW - 200)}-----BEGIN PRIVATE KEY-----\n${keyBody}\n-----END PRIVATE KEY-----`,
+			["MIIK", "qqqq"],
+		],
+		[
+			"a JWT",
+			`${shrinking(REDACTION_WINDOW - 200)}token eyJ${"h".repeat(40)}.eyJ${"p".repeat(4000)}.sigsigsig`,
+			["eyJ", "hhhh", "pppp"],
+		],
+	])("leaves nothing of %s the window cuts through", async (_case, body, parts) => {
+		const raw = await refusedBy(() => plainReply(404, body));
+		const inJson = await refusedBy(() =>
+			plainReply(
+				404,
+				JSON.stringify({ error: { code: "not_found", message: body } }),
+			),
+		);
+
+		for (const text of [raw.message, inJson.message, inJson.apiMessage ?? ""]) {
+			for (const part of parts) expect(text).not.toContain(part);
+			expect(text.endsWith("…")).toBe(true);
+		}
 	});
 
 	it("carries no token sent back JSON-escaped as the code", async () => {
