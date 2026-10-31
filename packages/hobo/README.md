@@ -146,8 +146,12 @@ by `[redacted]`, and each is cut at 500 characters (a `…` marks the cut). The
 token is found as sent, JSON-escaped (a JSON body is parsed, and searched string
 by string, before it is written back out), URL-encoded whole or byte by byte,
 and in base64 (alone, as a Basic header's `:token`, or inside a longer value
-such as `Bearer token`), each whole or broken up by whitespace (a newline,
-`\r\n`, spaces, tabs) between any two of its characters. The error's `code` is
+such as `Bearer token`), each whole or broken up between any two of its
+characters by whitespace (a newline, `\r\n`, spaces, tabs), control characters
+(NUL, ESC, DEL, NEL) or format characters (a soft hyphen, a zero-width space or
+joiner, a word joiner), which a message shows as spaces or not at all. The
+token is looked for again after the rest of the redaction has run, so nothing
+it does brings the token back. The error's `code` is
 kept only when it is a short identifier (letters, digits, `_`, `.` and `-`, at
 most 64 characters, and nothing the redaction would change), and is otherwise
 undefined. A request that gets no answer to read (the transport throws or

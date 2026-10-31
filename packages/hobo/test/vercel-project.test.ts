@@ -813,13 +813,49 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		expect(inJson.apiMessage).toBe("you sent [redacted]");
 	});
 
-	it("stays linear on a long hostile body: 100 kB of whitespace and near-misses", async () => {
+	// The token broken up by a control or format character: invisible, or
+	// turned into a space on the way into the message, and so the token again.
+	const REPRO = "Zm9vYmFyQmF6UXV4MTIzNDU2";
+	it.each([
+		["NUL", "\u0000"],
+		["ESC", "\u001b"],
+		["DEL", "\u007f"],
+		["NEL (U+0085)", "\u0085"],
+		["a soft hyphen (U+00AD)", "\u00ad"],
+		["U+180E", "\u180e"],
+		["a zero-width space (U+200B)", "\u200b"],
+		["a zero-width non-joiner (U+200C)", "\u200c"],
+		["a zero-width joiner (U+200D)", "\u200d"],
+		["a word joiner (U+2060)", "\u2060"],
+	])("carries no token broken up by %s", async (_case, char) => {
+		const sent = split(REPRO, char);
+		const json = JSON.stringify({
+			error: { code: "not_found", message: `sent ${sent} back` },
+		});
+		const raw = await refusedBy(
+			() => plainReply(404, `sent ${sent} back`),
+			REPRO,
+		);
+		const inJson = await refusedBy(() => plainReply(404, json), REPRO);
+
+		expectNoToken(raw, REPRO, []);
+		expectNoToken(inJson, REPRO, []);
+		expect(raw.message).toBe(
+			"vercel-client: create deployment failed (HTTP 404): sent [redacted] back",
+		);
+		expect(inJson.apiMessage).toBe("sent [redacted] back");
+	});
+
+	it("stays linear on a long hostile body: 1 MB of breaks and near-misses", async () => {
 		// Every character of the token but the last, each followed by a run of
-		// whitespace, over and over: each try runs nearly to the end and fails.
-		const nearMiss = Array.from(TOKEN.slice(0, -1)).join(" \r\n\t ");
+		// whitespace, control and format characters, over and over: each try
+		// runs nearly to the end and fails.
+		const nearMiss = Array.from(TOKEN.slice(0, -1)).join(
+			" \r\n\t\u0000\u001b\u200b\u00ad ",
+		);
 		let hostile = "";
-		while (hostile.length < 100_000)
-			hostile += `${nearMiss}${" ".repeat(64)}\n`;
+		while (hostile.length < 1_000_000)
+			hostile += `${nearMiss}${" \u200b".repeat(32)}\n`;
 		const body = JSON.stringify({
 			error: { code: "not_found", message: hostile },
 			raw: hostile,
@@ -829,7 +865,7 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		const error = await refusedBy(() => plainReply(404, body));
 		const took = performance.now() - started;
 
-		expect(hostile.length).toBeGreaterThanOrEqual(100_000);
+		expect(hostile.length).toBeGreaterThanOrEqual(1_000_000);
 		expect(error.message.length).toBeLessThanOrEqual(501);
 		expect(took).toBeLessThan(1000);
 	});
@@ -951,9 +987,14 @@ describe("a refusal's text (scripted transport, no network)", () => {
 			`executor.apply_failed: ${error.message}`,
 		];
 		for (const text of printed) {
-			// Whitespace, and JSON's escapes for it, taken out: a token broken up
-			// by a newline or spaces is still the token.
-			const squeezed = text.replace(/\\[nrt]|\s/gu, "");
+			// JSON's escapes decoded, then whitespace and control and format
+			// characters taken out: a token broken up by any of them is still
+			// the token.
+			const squeezed = text
+				.replace(/\\u([0-9a-fA-F]{4})/gu, (_, hex: string) =>
+					String.fromCharCode(Number.parseInt(hex, 16)),
+				)
+				.replace(/\\[nrt]|[\s\p{Cc}\p{Cf}]/gu, "");
 			for (const form of [token, ...forms]) {
 				expect(text).not.toContain(form);
 				expect(squeezed).not.toContain(form);

@@ -262,15 +262,24 @@ function literal(char: string): string {
 	return /[\\^$.*+?()[\]{}|/]/u.test(char) ? `\\${char}` : char;
 }
 
+// What can sit unseen between two characters of a token: whitespace (a
+// newline, `\r\n`, spaces, tabs), a control character (NUL, ESC, DEL, NEL),
+// or a format character (a soft hyphen, a zero-width space or joiner, a word
+// joiner). A message shows a control character as a space, and a format
+// character not at all, so either leaves the token readable.
+const BREAK_CHAR = "[\\s\\p{Cc}\\p{Cf}]";
+const BREAK = `${BREAK_CHAR}*`;
+
 // Each form of the client's own token (`tokenForms`) as a pattern that also
-// finds it broken up by whitespace (`\s*`: a newline, `\r\n`, spaces, tabs)
-// between any two of its characters. Built from the form's characters, each
-// escaped, never from the token as a pattern. No form holds whitespace, so each
-// `\s*` meets a literal it cannot match and gives back at most its own run:
-// a search is linear in the text for a token of bounded length.
+// finds it broken up by any run of BREAK between any two of its characters.
+// Built from the form's characters, each escaped, never from the token as a
+// pattern. No form holds such a character (a token that does is refused,
+// TOKEN_BREAK), so each run meets a literal it cannot match and gives back at
+// most its own length: a search is linear in the text for a token of bounded
+// length.
 function tokenPatterns(token: string): readonly RegExp[] {
 	return tokenForms(token).map(
-		(form) => new RegExp(Array.from(form, literal).join("\\s*"), "gu"),
+		(form) => new RegExp(Array.from(form, literal).join(BREAK), "gu"),
 	);
 }
 
@@ -287,9 +296,14 @@ function withoutToken(text: string, secrets: readonly RegExp[]): string {
 // the client's own token (`tokenPatterns`), and anything bearer- or
 // credential-shaped, becomes `[redacted]` (`redactProviderText` is the
 // redaction @hobo/provider-vercel's resolvers use), and the text is cut at
-// REFUSAL_TEXT_LIMIT characters.
+// REFUSAL_TEXT_LIMIT characters. The token is looked for again once
+// `redactProviderText` has changed the text (it turns control characters into
+// spaces, trims, and cuts), so nothing it does can bring the token back.
 function refusalText(text: string, secrets: readonly RegExp[]): string {
-	return redactProviderText(withoutToken(text, secrets), REFUSAL_TEXT_LIMIT);
+	return withoutToken(
+		redactProviderText(withoutToken(text, secrets), REFUSAL_TEXT_LIMIT),
+		secrets,
+	);
 }
 
 // A container of a JSON value being copied, and the copy it is filled into.
@@ -433,10 +447,10 @@ async function untilAnswered<T>(
 
 // Whitespace, a control character or a format character: what a token cannot
 // hold. RFC 6750's b64token has none of them, a runtime refuses CR, LF and NUL
-// in a header, and the redaction's patterns (`tokenPatterns`) allow whitespace
-// between the token's characters, which stays linear only while the token
-// holds none.
-const TOKEN_BREAK = /[\s\p{Cc}\p{Cf}]/u;
+// in a header, and the redaction's patterns (`tokenPatterns`) allow these
+// between the token's characters (BREAK), which stays linear only while the
+// token holds none.
+const TOKEN_BREAK = new RegExp(BREAK_CHAR, "u");
 
 // Vercel's `error.code` is an identifier (`not_found`, `forbidden`). One that
 // is not (longer than 64 characters, any other character, or text the
