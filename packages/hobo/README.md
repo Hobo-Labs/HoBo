@@ -167,10 +167,13 @@ there too, and the Vercel CLI treats an `orgId` that starts with `team_` as a
 team and any other as the user (its `getOrgById`, in
 `packages/cli/src/util/projects/get-org-by-id.ts` of vercel/vercel); so does
 this, and a `VERCEL_ORG_ID` that does not start with `team_` is taken as no
-team. Both entry points take a team id trimmed, and take an empty or blank one
-as none: with none, the deploy and any create are in the token's own scope. The
-resolver plane (`HOBO_DEPLOY_RESOLVERS=1`) reads it the same way, and its
-project lookups and creates carry the same `teamId`. A run whose credentials
+team. A bare `team_`, with nothing after it, names neither, and is refused
+before anything is sent, with an error that names `VERCEL_ORG_ID`. Every entry
+point (`createVercelClient` and `createVercelDeployProvider` too) takes a team
+id trimmed, and takes an empty or blank one as none: with none, the deploy and
+any create are in the token's own scope. The resolver plane
+(`HOBO_DEPLOY_RESOLVERS=1`) reads it the same way, and its project lookups and
+creates carry the same `teamId`. A run whose credentials
 come from OpenSesame (`HOBO_CREDENTIALS=opensesame`) keeps them too: the
 relaunched `hobo` starts from `@hobo/adapter-opensesame`'s allowlisted
 environment, and `VERCEL_TEAM_ID` and `VERCEL_ORG_ID`, team or account ids and

@@ -465,9 +465,16 @@ function vercelTeamIdOf(
 // `orgId` that starts with `team_` as a team and any other as the user (its
 // `getOrgById`, packages/cli/src/util/projects/get-org-by-id.ts in
 // vercel/vercel). So does this: anything else is an account's, and an account
-// is not a team, so it is no `teamId` at all.
+// is not a team, so it is no `teamId` at all. A bare `team_` is neither, and is
+// refused here rather than sent as `?teamId=team_`. Read only when
+// `VERCEL_TEAM_ID` names no team.
 function vercelOrgTeamIdOf(orgId: string | undefined): string | undefined {
 	const id = normalizeVercelTeamId(orgId);
+	if (id === "team_") {
+		throw new Error(
+			'VERCEL_ORG_ID is "team_" with no id after it, so it names no team and no account: nothing was sent to Vercel. Set VERCEL_ORG_ID to the whole team id the Vercel CLI wrote (team_ and the rest), or set VERCEL_TEAM_ID',
+		);
+	}
 	return id?.startsWith("team_") ? id : undefined;
 }
 

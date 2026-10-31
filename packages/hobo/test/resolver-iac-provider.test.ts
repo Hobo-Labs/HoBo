@@ -908,6 +908,28 @@ describe("selectIacProvider: the Vercel resolver lane's team", () => {
 		expect([org.length, both.length]).toEqual([2, 2]);
 	});
 
+	it.each([
+		"team_",
+		" team_ ",
+	])("refuses a bare %j VERCEL_ORG_ID before any request", async (orgId) => {
+		const vercel = fakeVercel();
+		const store = await storeWithPlan([]);
+
+		expect(() =>
+			selectIacProvider({
+				store,
+				providers: [],
+				env: {
+					HOBO_DEPLOY_RESOLVERS: "1",
+					VERCEL_TOKEN: FAKE_TOKEN,
+					VERCEL_ORG_ID: orgId,
+				},
+				resolverTransport: vercel.transport,
+			}),
+		).toThrow(/^VERCEL_ORG_ID is "team_" with no id after it/u);
+		expect(vercel.urls).toEqual([]);
+	});
+
 	it("takes a VERCEL_ORG_ID that is not a team_ id (a personal account) as no team", async () => {
 		const requests = await reconcileWith({ VERCEL_ORG_ID: "u_abc" });
 

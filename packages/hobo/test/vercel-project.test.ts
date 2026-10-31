@@ -589,6 +589,43 @@ describe("the composed provider's team (selectIacProvider, scripted transport, n
 		expect(outputs.scope).toBe(teamId);
 	});
 
+	// A bare `team_` is no team id and no account id: refused here, naming the
+	// variable, rather than sent as `?teamId=team_`.
+	it.each([
+		["bare", { VERCEL_ORG_ID: "team_" }],
+		["bare, padded", { VERCEL_ORG_ID: " team_ " }],
+		[
+			"bare, VERCEL_TEAM_ID blank",
+			{ VERCEL_TEAM_ID: " ", VERCEL_ORG_ID: "team_" },
+		],
+	])("refuses a %s team_ VERCEL_ORG_ID before any request", (_case, team) => {
+		const { fetch, sent } = scripted({});
+
+		expect(() =>
+			selectIacProvider({
+				...deps,
+				env: { VERCEL_TOKEN: "tok", ...team },
+				vercelFetch: fetch,
+			}),
+		).toThrow(/^VERCEL_ORG_ID is "team_" with no id after it/u);
+		expect(sent).toEqual([]);
+	});
+
+	it("reads no VERCEL_ORG_ID, bare team_ or not, when VERCEL_TEAM_ID names the team", async () => {
+		const { outputs, queries } = await composedDeploy({
+			VERCEL_TOKEN: "tok",
+			VERCEL_TEAM_ID: "team_acme",
+			VERCEL_ORG_ID: "team_",
+		});
+
+		expect(queries).toEqual([
+			"?teamId=team_acme",
+			"?teamId=team_acme",
+			"?teamId=team_acme",
+		]);
+		expect(outputs.scope).toBe("team_acme");
+	});
+
 	it.each([
 		["unset", {}],
 		["empty", { VERCEL_TEAM_ID: "" }],
