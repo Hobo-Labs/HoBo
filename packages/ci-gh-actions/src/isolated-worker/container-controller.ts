@@ -8,6 +8,43 @@ import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
 import type { DockerDriver } from "./docker-driver.js";
 
+const JIT_PATH = "/tmp/hobo-ci-jit";
+
+/** Start the runner with its JIT config delivered over stdin to a 0600 file
+ * and handed to the runner via env, so the credential never appears in argv. */
+export async function startRunner(
+	docker: DockerDriver,
+	name: string,
+	containerId: string,
+	jitConfig: string,
+): Promise<void> {
+	// The JIT config is a runner credential: deliver it over stdin into a
+	// 0600 file and hand it to the runner via env, never via argv (ps).
+	if (!docker.writeSecret)
+		throw new Error("docker driver cannot deliver secrets");
+	await docker.writeSecret(name, containerId, JIT_PATH, jitConfig);
+	const runJob = docker.execDetached ?? docker.exec;
+	const prep = await runJob(name, containerId, [
+		"sh",
+		"-ec",
+		`set -eu
+if [ -x /opt/actions-runner/run.sh ]; then
+  cd /opt/actions-runner
+else
+  mkdir -m 700 /tmp/hobo-ci && cd /tmp/hobo-ci
+  curl -fsSL "$HOBO_CI_RUNNER_URL" -o runner.tar.gz
+  printf '%s  runner.tar.gz\\n' "$HOBO_CI_RUNNER_SHA256" | sha256sum --check --status
+  mkdir -m 700 runner && tar -xzf runner.tar.gz -C runner
+  cd runner
+fi
+ACTIONS_RUNNER_INPUT_JITCONFIG="$(cat ${JIT_PATH})"
+rm -f ${JIT_PATH}
+export ACTIONS_RUNNER_INPUT_JITCONFIG
+exec ./run.sh`,
+	]);
+	if (prep.exitCode !== 0) throw new Error("runner start failed");
+}
+
 const jitResponse = z.object({
 	encoded_jit_config: z.string().min(1),
 	runner: z.object({ id: z.number().int().positive() }),
@@ -292,27 +329,12 @@ export function createIsolatedContainerController(options: {
 					now(),
 				);
 				if (!registered) throw new Error("registration revoked");
-				const jitB64 = Buffer.from(jit.encoded_jit_config, "utf8").toString(
-					"base64",
+				await startRunner(
+					options.docker,
+					name,
+					containerId,
+					jit.encoded_jit_config,
 				);
-				const runJob = options.docker.execDetached ?? options.docker.exec;
-				const prep = await runJob(name, containerId, [
-					"sh",
-					"-ec",
-					`set -eu
-if [ -x /opt/actions-runner/run.sh ]; then
-  cd /opt/actions-runner
-else
-  mkdir -m 700 /tmp/hobo-ci && cd /tmp/hobo-ci
-  curl -fsSL "$HOBO_CI_RUNNER_URL" -o runner.tar.gz
-  printf '%s  runner.tar.gz\\n' "$HOBO_CI_RUNNER_SHA256" | sha256sum --check --status
-  mkdir -m 700 runner && tar -xzf runner.tar.gz -C runner
-  cd runner
-fi
-jit="$(printf '%s' '${jitB64}' | base64 -d)"
-exec ./run.sh --jitconfig "$jit"`,
-				]);
-				if (prep.exitCode !== 0) throw new Error("runner start failed");
 				// Get the next container ready while this job runs.
 				if ((await liveContainers("")) < slots)
 					void prewarm().catch(() => undefined);
@@ -355,6 +377,9 @@ exec ./run.sh --jitconfig "$jit"`,
 					lease.sandboxSessionId,
 				);
 			} catch {
+				// An inspect error (timeout under load, daemon hiccup) is not proof the
+				// job died: stopping here kills a live runner. Retry on the next tick.
+				if (!forceStop) return;
 				running = false;
 			}
 			if (!forceStop && lease.state === "running" && running) return;

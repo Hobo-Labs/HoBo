@@ -225,4 +225,38 @@ describe("isolated container controller reconcile", () => {
 			labels: ["hobo"],
 		});
 	});
+
+	it("does not abort a running lease when docker inspect fails", async () => {
+		const lease = runningLease({ jobId: 100, actualJobId: 0 });
+		const abortIsolatedAndRequeue = vi.fn(async () => undefined);
+		// SAFETY: non-forced reconcile only calls get() and abortIsolatedAndRequeue().
+		const relayStore = {
+			get: async (id: string) => (id === lease.id ? lease : undefined),
+			abortIsolatedAndRequeue,
+		} as PostgresCiStore & HostedRelayStore;
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop: vi.fn(async () => undefined),
+			remove: vi.fn(async () => undefined),
+			isRunning: vi.fn(async () => {
+				throw new Error("inspect timed out");
+			}),
+		};
+		// SAFETY: non-forced reconcile never touches GitHub.
+		const github = {} as GithubTransport;
+		const controller = createIsolatedContainerController({
+			store: relayStore,
+			github,
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "oracle-free-vm",
+			workerImage: "hobo-ci-worker:local",
+			now: () => "2026-10-26T12:02:00Z",
+		});
+		await controller.host.reconcile(lease.id);
+		expect(abortIsolatedAndRequeue).not.toHaveBeenCalled();
+		expect(docker.stop).not.toHaveBeenCalled();
+	});
 });

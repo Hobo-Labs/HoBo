@@ -8,7 +8,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { GithubTransport } from "../src/github.js";
 import type { HostedRelayStore } from "../src/hosted-relay.js";
 import { createCliDockerDriver } from "../src/isolated-worker/cli-docker-driver.js";
-import { createIsolatedContainerController } from "../src/isolated-worker/container-controller.js";
+import {
+	createIsolatedContainerController,
+	startRunner,
+} from "../src/isolated-worker/container-controller.js";
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
 import { NOW } from "./fixtures.js";
 
@@ -190,5 +193,54 @@ describe("cli docker driver parallel helpers", () => {
 				volumes: [{ source: "/a:/etc", target: "/b" }],
 			}),
 		).rejects.toThrow(/volume/);
+	});
+
+	it("never puts the runner JIT config in any docker argv", async () => {
+		const jit = "fake-jit-credential-value";
+		const b64 = Buffer.from(jit, "utf8").toString("base64");
+		const argvs: string[][] = [];
+		const written: string[] = [];
+		const docker = fakeDocker();
+		docker.execDetached = vi.fn(async (_n, _c, argv) => {
+			argvs.push([...argv]);
+			return { exitCode: 0 };
+		});
+		docker.writeSecret = vi.fn(async (_n, _c, _path, content) => {
+			written.push(content);
+		});
+		await startRunner(docker, "hobo-x", "c1", jit);
+		expect(written).toEqual([jit]);
+		const flat = argvs.flat().join("\n");
+		expect(flat).not.toContain(jit);
+		expect(flat).not.toContain(b64);
+		expect(flat).not.toContain("--jitconfig");
+		expect(flat).toContain("ACTIONS_RUNNER_INPUT_JITCONFIG");
+	});
+
+	it("refuses to start a runner when the driver cannot deliver secrets", async () => {
+		const docker = fakeDocker();
+		await expect(startRunner(docker, "hobo-x", "c1", "x")).rejects.toThrow(
+			/secrets/,
+		);
+		expect(docker.exec).not.toHaveBeenCalled();
+	});
+
+	it("CLI driver writes secrets through stdin, not argv", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-docker-"));
+		const bin = join(dir, "docker");
+		writeFileSync(
+			bin,
+			`#!/bin/sh\nprintf '%s\\n' "$@" > "${dir}/argv"\ncat > "${dir}/stdin"\n`,
+		);
+		chmodSync(bin, 0o755);
+		const driver = createCliDockerDriver({ binary: bin, env: {} });
+		await driver.writeSecret?.(
+			"hobo-x",
+			"c1",
+			"/tmp/hobo-ci-jit",
+			"s3cr3t-jit",
+		);
+		expect(readFileSync(join(dir, "stdin"), "utf8")).toBe("s3cr3t-jit");
+		expect(readFileSync(join(dir, "argv"), "utf8")).not.toContain("s3cr3t-jit");
 	});
 });

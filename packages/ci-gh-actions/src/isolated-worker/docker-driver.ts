@@ -30,6 +30,13 @@ export interface DockerDriver {
 		containerId: string,
 		argv: readonly string[],
 	): Promise<{ exitCode: number }>;
+	/** Write `content` to `path` inside the container via stdin (mode 0600), never argv. */
+	writeSecret?(
+		name: string,
+		containerId: string,
+		path: string,
+		content: string,
+	): Promise<void>;
 	/** Rename a pre-warmed container to the lease's identity. */
 	rename?(containerId: string, name: string): Promise<void>;
 	stop(name: string, containerId: string): Promise<void>;
