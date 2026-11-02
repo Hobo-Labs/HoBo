@@ -94,7 +94,6 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-          filter: blob:none
       - uses: ./.github/actions/ci-runner-preflight
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
@@ -178,7 +177,6 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
-          filter: blob:none
       - uses: ./.github/actions/ci-runner-preflight
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
@@ -214,7 +212,6 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-          filter: blob:none
       - uses: ./.github/actions/ci-runner-preflight
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
@@ -262,7 +259,6 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
-          filter: blob:none
       - uses: ./.github/actions/ci-runner-preflight
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Verify signed hello-bindle and refuse stripped signatures
@@ -278,7 +274,6 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
-          filter: blob:none
       - uses: ./.github/actions/ci-runner-preflight
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Cold hobo dev gate (network disabled)
@@ -304,7 +299,6 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
-          filter: blob:none
       - uses: ./.github/actions/ci-runner-preflight
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
@@ -323,7 +317,6 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-          filter: blob:none
       - uses: ./.github/actions/ci-runner-preflight
       - name: Scan git history for secrets
         run: |
