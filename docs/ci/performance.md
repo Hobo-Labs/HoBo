@@ -18,6 +18,8 @@ the box worker runbook is [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNN
 - `gh run view` job/step timings of the 43 HoBo CI Fabric runs between #1635/#1637 and 2026-11-02 20:30 UTC
   (25 `pull_request`, 8 `merge_group`, 7 `push`, plus dispatches).
 - Local reproductions on an aarch64 cloud VM (turbo summaries with `--summarize --force`).
+- After the box daemon was restarted on main `96b9b70e` (2 slots × 6 GiB, peak 11.6 of 15 GiB): the
+  `workflow_dispatch` run 41519610143 (1058 s) and the PR runs of #1639–#1645 on 2026-11-02 20:50–21:35 UTC.
 
 Wall time is measured from run creation to the last job's completion. Work is the sum of job run times.
 
@@ -43,12 +45,29 @@ The idle gap has a concrete cause. Job containers run `sleep infinity` as PID 1,
 tick reconciles leases serially, so that stop also delays launching the next job. Runner registration and
 boot account for the rest.
 
-Fixes: [#1641](https://github.com/Hobo-Labs/HoBo/pull/1641) (`docker create --init`). Needs a box redeploy.
+Fixes: [#1641](https://github.com/Hobo-Labs/HoBo/pull/1641) (`docker create --init`). Needs a box redeploy;
+the restart on `96b9b70e` predates it.
+
+Since the restart the box runs two slots in parallel, and queueing for them is the largest share of wall
+time. Between 21:02 and 21:35 UTC six runs (#1638's merge group and five PR runs) were queued at once, about
+forty jobs for two slots. #1642's PR impact gate waited 17 minutes for a slot and then ran in 41 s; its
+off-path job ran in 100 s. Fewer jobs per run is now worth more than faster jobs.
+
+**The wait does not count against `timeout-minutes`.** GitHub starts a job's timeout when a runner picks it
+up. Over 98 jobs the gap between `started_at` and the first step was at most 4 s, and in the last 40 runs no
+`artifact signing and install verification` job timed out: the longest waited 18 minutes before `started_at`
+(run 41523529717) and then passed in 39 s. A job that ends at its timeout was alive on a runner for that
+long, which is finding 6, not a slot wait.
 
 ## Finding 2: Main full gate holds a slot for 4–10 minutes and always fails
 
-Main full gate is not a required check, but it runs on every `merge_group` and `push` and occupies one of
+Main full gate is not a required check, but it ran on every `merge_group` and `push` and occupied one of
 the two slots for 244 s (median) to 600 s. Required jobs of the same run, and every PR run, queue behind it.
+On `merge_group` it gated nothing (the queue waits only for required checks), and the push to main then
+re-ran the same tree.
+
+Fixes: [#1645](https://github.com/Hobo-Labs/HoBo/pull/1645) runs it on push, schedule and dispatch only.
+If it is ever made a required check, `merge_group` has to come back first.
 
 Its steps on main (run 41517185031):
 
@@ -67,7 +86,9 @@ starts, Vitest output stops about 55 s in, and no `Process completed with exit c
 non-TTY Vitest reporter prints nothing per file, so the log cannot distinguish an early kill with orphaned
 fork workers still holding stdout from a late kill of a run that was still progressing. Locally the same
 758 files pass in 149 s (four forks, ~3.1 GB peak RSS). Nothing in the `test:unit` file set signals its
-process group or parent. The signal logging in #1638 is needed to name the sender.
+process group or parent. The signal logging in #1638 is needed to name the sender. The death recurred after
+the restart (dispatch run 41519610143: Main full gate failed after 7 minutes); #1638's own merge-group run
+41527261479 is the first that will print the signal.
 
 ## Finding 3: the turbo cache never saved on main
 
@@ -93,13 +114,14 @@ took 181 s of 332 s task time (87 tasks).
 - On a PR, restoring the 1.26 GB store archive takes 31 s and the install after it 16 s.
 - A cold registry install of the same lockfile (1997 packages) takes 21 s.
 - On main the seed save takes 71–146 s and then fails to reserve the cache key.
-- The box's pnpm store resolves to `/home/runner/.local/share/pnpm/store/v10`, so the box daemon is not
-  passing the shared host store from #1635 (`HOBO_CI_PNPM_STORE_MOUNTED`); it is still running older code.
-  GitHub's `env` context does not include the runner's process environment either, so the action's
+- Before the restart the box's pnpm store resolved to `/home/runner/.local/share/pnpm/store/v10`: the
+  daemon was not yet passing the shared host store from #1635 (`HOBO_CI_PNPM_STORE_MOUNTED`). GitHub's
+  `env` context does not include the runner's process environment either, so the action's
   `env.HOBO_CI_PNPM_STORE_MOUNTED` test could never see it.
 
 Fixes: [#1639](https://github.com/Hobo-Labs/HoBo/pull/1639) detects the mount in a shell step and skips the
-GitHub cache on self-hosted runners (restore and save).
+GitHub cache on self-hosted runners (restore and save). Verified on the restarted box: "pnpm store is
+host-mounted (/pnpm-store)", "reused 1997, downloaded 0", install 21–22 s with no archive restore.
 
 A pre-baked store in the runner image was considered and not done. It saves at most ~15 s per install, goes
 stale on every lockfile change, and adds the store to the image. The host-mounted store from #1635 gives the
@@ -122,14 +144,36 @@ Their own `timeout-minutes` (5 to 45) did not fire. GitHub failed them after abo
 contact from the runner, so the container or runner process died under a live job. That matches the bug
 #1637 fixed: the daemon force-stopped live job containers when `docker inspect` timed out under load. The
 box was still running older code (see finding 4). Each lost runner holds a slot for ten minutes and fails
-its run, which then needs a rerun. One happened again on #1640's run
-(CI fabric contract guard, hung in `pnpm install`).
+its run, which then needs a rerun.
+
+It is not only #1637's bug. Lost runners continued after the restart on `96b9b70e`, which includes #1637:
+
+- Dispatch run 41519610143, CI fabric contract guard (`hobo-a742da4d`): `pnpm install` started at 20:31:46
+  and never finished. The job's 10-minute timeout could not be delivered, and GitHub cancelled it at 15
+  minutes (timeout plus the 5-minute grace for an unresponsive runner). That one job is most of the run's
+  1058 s wall time.
+- #1640's run, CI fabric contract guard (`hobo-24695a3f`, 20:59–21:09): hung in `pnpm install` as well.
+
+Both stopped in `pnpm install` against the host-mounted store, and in both the runner stopped talking to
+GitHub rather than the step failing. A hung `pnpm` alone would still let the runner enforce the timeout and
+upload logs, so the container, or every process in it, stopped. Box-side evidence is needed to tell a kill
+from a stall: `docker events` and `docker inspect` (`State.OOMKilled`, exit code) for those two runner
+names, the daemon log for their leases, the container cgroup's `memory.events` (a container stalled
+reclaiming at its 6 GiB cap stops without being OOM-killed), and `dmesg` on the host. Whether the restart
+itself happened during 20:31–20:46 also matters for the first case.
 
 ## Finding 7: things that are not the bottleneck
 
 - **Checkout** is ~6 s per job (full clone; blobless was slower).
 - **Hermetic mise image**: `ci-runner-image` rebuilds only when `mise.toml`/`mise.lock` or the image inputs
-  change and pushes the result to GHCR. Otherwise it is a 10–17 s job, mostly checkout.
+  change and pushes the result to GHCR. Otherwise it is a 10–17 s job, mostly checkout. When it does
+  rebuild, it failed in 11 s on run 41519610143: Debian's `docker manifest inspect` rejects the pinned
+  `debian:bookworm-slim` digest ("unsupported manifest media type
+  application/vnd.oci.image.manifest.v1+json"), because that digest is an OCI index carrying attestation
+  manifests. [#1644](https://github.com/Hobo-Labs/HoBo/pull/1644) checks the digest against the registry
+  API instead. The in-container build still cannot finish: the worker image has no `skopeo`, and
+  `127.0.0.1:5000` inside a job container is the container's own loopback, not the box's registry. The
+  image is built on the box host (`packages/ci-gh-actions/deploy/ci-runner/build.sh`).
 - **wizer** (componentize-js) is bounded by `HOBO_RELEVANT_CHECK_CONCURRENCY=1` since #1636.
 - The non-test parts of `check:all` take ~23 s locally (`test:schema` 10.7 s, `lint:test-deps` 7 s).
 - `test:behavior` takes ~120 s locally, most of it one scenario waiting 120 s for `astro dev`.
@@ -137,8 +181,8 @@ its run, which then needs a rerun. One happened again on #1640's run
 ## Before and after
 
 Per-job medians (duration / wait for a slot) over the 43 runs before these changes. The after column comes
-from the runs of PRs #1639–#1642 on 2026-11-02, each of which measures only its own change. The box
-redeploy that #1641 needs has not happened yet.
+from the runs of PRs #1639–#1645 on 2026-11-02, each of which measures only its own change, on the box
+restarted at `96b9b70e` (shared store live; #1641's `--init` not yet deployed).
 
 | Job | Before: run | Before: wait | After (measured) | Change |
 |---|---:|---:|---|---|
@@ -146,14 +190,14 @@ redeploy that #1641 needs has not happened yet.
 | Secret scan | 14 s | 209 s | 9–11 s | #1640 drops the unused submodule checkout |
 | CI fabric contract guard | 40 s | 225 s | 36–45 s | — |
 | PR impact gate | 118 s (max 812 s) | 172 s | 41–43 s on small diffs | scales with the diff |
-| PR off-path checks | 106 s | 155 s | 100–150 s | — |
+| PR off-path checks | 106 s | 155 s | 100–150 s; seconds on an inert diff | #1645 skips install and builds when no package, pin or submodule changed |
 | artifact signing and install verification | 38 s | 310 s | 36–39 s, starts without waiting for `pr-gate` | #1640 |
 | hobo dev cold loop | 61 s | 192 s | 50 s, starts without waiting for `pr-gate` | #1640 |
-| Main full gate | 244 s (max 600 s), always failing | 150 s | seed-store save gone (#1639), build cached after one main push (#1642) | `test:unit` death open |
+| Main full gate | 244 s (max 600 s), always failing | 150 s | not run on `merge_group` (#1645); seed-store save gone (#1639); build cached after one main push (#1642) | `test:unit` death open |
 
 The waits are what keeps wall time above five minutes. They shrink when a slot is freed sooner (#1641),
-when Main full gate holds its slot for less time (#1639, #1642), and when PR jobs no longer wait on each
-other (#1640).
+when Main full gate holds its slot for less time or not at all (#1639, #1642, #1645), when PR jobs no
+longer wait on each other (#1640), and when an inert job frees its slot in seconds (#1645).
 
 ## What is left to reach five minutes
 
@@ -161,20 +205,27 @@ Projection for a PR run alone on the box: about 390 job-s of work on two slots i
 handoffs at ~15 s each with `--init` (48 s today), and the run lands near **4 minutes**. Under a typical load
 of two or three runs at once, queueing still pushes it past five. In order of expected gain:
 
-1. **Redeploy the box daemon** so #1635's shared pnpm store, #1637's inspect-error fix (lost runners,
-   finding 6) and #1641's `--init` take effect.
-2. **Fix the `test:unit` death on main** (#1638 logs the signal). Until it is fixed, Main full gate burns a
-   slot on every merge and push, and test results never reach the turbo cache.
-3. **Merge queue minimum wait.** The ruleset sets `min_entries_to_merge_wait_minutes: 5`, so a lone entry
+1. **Find what stops lost runners** (finding 6). Each one holds a slot for 10–15 minutes and fails its run;
+   one case alone made the 1058 s dispatch run. It needs the box-side evidence listed there.
+2. **Redeploy the box daemon** again once #1641 lands, so `--init` takes effect (the restart on `96b9b70e`
+   already brought the shared pnpm store and #1637).
+3. **Fix the `test:unit` death on main** (#1638 logs the signal). Until it is fixed, Main full gate burns a
+   slot on every push to main, and test results never reach the turbo cache.
+4. **Merge queue minimum wait.** The ruleset sets `min_entries_to_merge_wait_minutes: 5`, so a lone entry
    waits up to five minutes before its group is built. That alone is the whole budget; set it to 0–1. This is
    an admin setting, not a workflow change.
-4. **More slots.** Two slots of 6 GiB on a 15 GiB host. Most jobs (secret scan, runner image, ci-guard,
+5. **More slots.** Two slots of 6 GiB on a 15 GiB host. Most jobs (secret scan, runner image, ci-guard,
    artifact trust) need well under 1 GiB, but GitHub assigns any `hobo` job to any runner, so slots cannot
    be sized per job. A third slot needs either a larger host or a lower per-slot cap backed by the memory
    data from #1636.
-5. **Shard `@hobo/hobo#test`** (181 s, the longest test task) with `vitest --shard` once slots allow
+6. **Shard `@hobo/hobo#test`** (181 s, the longest test task) with `vitest --shard` once slots allow
    parallel shards. On two shared slots, sharding adds container overhead and slot contention for no gain.
-6. **`test:behavior`'s astro scenario** waits 120 s for `astro dev`; start it once per run or mock it.
+7. **`test:behavior`'s astro scenario** waits 120 s for `astro dev`; start it once per run or mock it.
+
+8. **Fewer jobs per run is capped by the required checks.** Secret scan, CI runner image and the CI fabric
+   contract guard each spend a container handoff on 10–40 s of work. Folding them into one job would cut
+   two handoffs per run, but each is a required check by name, so that needs the ruleset changed with it.
+   Not done here.
 
 Risk to keep in mind: the box's pnpm store is a read-write host mount shared by every job, fork PRs
 included (`forkPullRequestEnvironment: ci`). pnpm verifies tarball integrity against the lockfile on fetch,
