@@ -138,7 +138,9 @@ jobs:
       - name: Relevant checks only
         run: pnpm agent:check -- --base=origin/${{ github.base_ref }}
       - name: Dagger checks plan (native CI parity)
-        run: pnpm --filter @hobo/ci-dagger checks --plan --config .hobo/dagger.json
+        run: |
+          pnpm exec turbo run build --filter=@hobo/ci-dagger --output-logs=new-only --concurrency=1
+          pnpm --filter @hobo/ci-dagger checks --plan --config .hobo/dagger.json
       - name: Affected package lanes
         env:
           TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
