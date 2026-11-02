@@ -177,18 +177,44 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          # Depth 2 holds the PR merge commit and its first parent (the base tip).
+          fetch-depth: 2
       - uses: ./.github/actions/ci-runner-preflight
+      - name: Decide whether the diff reaches packages, pins or submodules
+        id: scope
+        run: |
+          set -euo pipefail
+          if ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then
+            echo "HEAD is not a PR merge commit; running every check"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED="$(git diff --name-only HEAD^1 HEAD)"
+          LANES="$(printf '%s\n' "$CHANGED" | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts)"
+          # ts-autocode surface and package-boundary inputs that live outside packages/.
+          PINS="$(printf '%s\n' "$CHANGED" | grep -E '^(external/|tools/pins/|\.gitmodules$|scripts/test/ts-autocode-|scripts/bootstrap-siblings\.mts$|scripts/check-package-boundaries)' || true)"
+          if [ -z "$LANES" ] && [ -z "$PINS" ]; then
+            echo "Only inert paths changed; skipping install, ts-autocode surface and production packages gate"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Turbo cache
+        if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/turbo-cache
         with:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
       - uses: ./.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+        if: steps.scope.outputs.run == 'true'
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Every name HoBo imports from ts-autocode exists at the pin, and its grounding fields are still checked
+        if: steps.scope.outputs.run == 'true'
         run: node --import tsx --test scripts/test/ts-autocode-consumer-surface.test.ts scripts/test/ts-autocode-grounding-drift.test.ts
       - name: Production packages gate
+        if: steps.scope.outputs.run == 'true'
         run: pnpm run build:packages
       - name: CI trace
         if: always()
@@ -196,8 +222,10 @@ jobs:
 
   main-gate:
     name: Main full gate
+    # Not a required check, so on merge_group it gated nothing while holding one
+    # of the box's two slots; the push to main re-runs the same tree. Add
+    # merge_group back here if this job ever becomes a required check.
     if: >-
-      github.event_name == 'merge_group' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch'

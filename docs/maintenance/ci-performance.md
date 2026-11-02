@@ -16,6 +16,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   not added yet: several packages carry pre-existing biome lint debt that a dependents sweep would surface.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
   from each job, so queue time and run time can be compared before and after a change.
+- **Slot budget.** The box has two runner slots, so a job that gates nothing still delays every other
+  run. Main full gate does not run on `merge_group` (it is not a required check, and the push to `main`
+  re-runs the same tree), and `pr-offpath` diffs the PR merge commit against its first parent: when
+  `affected-lanes.mts` prints nothing and no pin, submodule or package-boundary path changed, it skips
+  install, the ts-autocode surface tests and `build:packages` and frees its slot in seconds.
 
 ## Frozen proofs and live-repo tests
 

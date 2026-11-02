@@ -30,12 +30,14 @@ as the production `@hobo/ci-guard` package. Reviewable workflows:
 [`.github/workflows/hobo-ci.yml`](../../../../.github/workflows/hobo-ci.yml) and
 [`.github/workflows/examples-e2e.yml`](../../../../.github/workflows/examples-e2e.yml).
 The impact gate runs on `pull_request` for `main` (stack-aware base via
-`origin/<base-ref>`). The **Main full gate** runs on `merge_group`, direct
-`push` to `main`, the weekly schedule, and `workflow_dispatch`. Enable GitHub's
-native merge queue on `main` in the **Hobo-Labs/HoBo** org so landing PRs use
-`merge_group: checks_requested` with the same check names. PR runs use
-`pnpm agent:check -- --base=origin/<base-ref>`; merge-queue candidates run the
-full gate (`check:all`, architecture guard, full `turbo run test`). Event-aware
+`origin/<base-ref>`). The **Main full gate** runs on direct `push` to `main`,
+the weekly schedule, and `workflow_dispatch`. It is not a required check, so it
+no longer runs on `merge_group`: there it gated nothing while holding one of the
+box's two runner slots, and the push to `main` re-runs the same tree. Enable
+GitHub's native merge queue on `main` in the **Hobo-Labs/HoBo** org so landing
+PRs use `merge_group: checks_requested` with the required check names. PR runs
+use `pnpm agent:check -- --base=origin/<base-ref>`; the post-merge full gate
+runs `check:all`, the architecture guard and full `turbo run test`. Event-aware
 concurrency cancels stale PR runs but never cancels `merge_group` or `push` to
 `main`. Runs that stay **`queued`** with no runner name indicate missing JIT
 **`hobo`** registration—see [`packages/ci/RUNNER-QUEUE.md`](../../../../packages/ci/RUNNER-QUEUE.md).
