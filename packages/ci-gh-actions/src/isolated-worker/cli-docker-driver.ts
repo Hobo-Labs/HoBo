@@ -1,8 +1,25 @@
 import { execFile } from "node:child_process";
+import { statSync } from "node:fs";
 import { promisify } from "node:util";
 import type { DockerDriver, IsolatedContainerSpec } from "./docker-driver.js";
 
 const exec = promisify(execFile);
+
+/** `docker create` flags for the host engine socket (gid matches socket group inside container). */
+export function dockerSocketMountCreateArgs(
+	env: NodeJS.ProcessEnv,
+	stat: (path: string) => { gid: number } = (path) => statSync(path),
+): string[] {
+	if (env.HOBO_CI_MOUNT_DOCKER_SOCKET === "0") return [];
+	const socketPath = "/var/run/docker.sock";
+	const gid = stat(socketPath).gid;
+	return [
+		"-v",
+		`${socketPath}:${socketPath}`,
+		"--group-add",
+		String(gid),
+	];
+}
 
 /** Operator-owned Docker engine on a free VM; not invoked from Vercel serverless. */
 export function createCliDockerDriver(options: {
@@ -31,9 +48,7 @@ export function createCliDockerDriver(options: {
 					throw new Error("invalid container memory limit");
 				args.push("--memory", `${spec.memoryMb}m`, "--memory-swap", `${spec.memoryMb}m`);
 			}
-			if (env.HOBO_CI_MOUNT_DOCKER_SOCKET !== "0") {
-				args.push("-v", "/var/run/docker.sock:/var/run/docker.sock");
-			}
+			args.push(...dockerSocketMountCreateArgs(env));
 			for (const [key, value] of Object.entries(spec.env))
 				args.push("-e", `${key}=${value}`);
 			args.push(spec.image, ...spec.command);

@@ -243,10 +243,14 @@ jobs:
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Cold hobo dev gate (network disabled)
         run: |
-          docker run --rm --network=none \
-            -v "$PWD:/workspace" -w /workspace \
-            node:24-bookworm \
-            node --import tsx scripts/ci/dev-cold-loop-timing.mts
+          set -euo pipefail
+          image="hobo-ci-worker:local"
+          tar -c --exclude=./.git . | docker run -i --rm --network=none \
+            "$image" \
+            bash -c 'set -euo pipefail
+          mkdir -p /workspace && cd /workspace && tar -x
+          pnpm --filter "ts-autocode-*" run build
+          node --import tsx scripts/ci/dev-cold-loop-timing.mts'
 
   ci-guard:
     name: CI fabric contract guard
