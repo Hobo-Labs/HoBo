@@ -174,14 +174,16 @@ describe("GitHub job poller", () => {
 			runs: 2,
 			hoboJobs: 3,
 			accepted: 3,
+			failed: 0,
 			rateLimitRemaining: 4000,
 		});
-		expect(Object.keys(bodies).sort()).toEqual([
+		const ids = Object.keys(bodies).sort();
+		expect(ids).toEqual([
 			"poll-1-1-q",
-			"poll-2-1-p",
-			"poll-6-1-c",
+			expect.stringMatching(/^poll-2-1-p-[0-9a-f]{12}$/),
+			expect.stringMatching(/^poll-6-1-c-[0-9a-f]{12}$/),
 		]);
-		expect(bodies["poll-2-1-p"]).toEqual({
+		expect(bodies[ids[1] ?? ""]).toEqual({
 			action: "in_progress",
 			installation: { id: 10 },
 			repository: { id: 101, full_name: REPO },
@@ -216,6 +218,45 @@ describe("GitHub job poller", () => {
 		clock += 61_000;
 		expect((await poller.poll()).pausedUntil).toBe(undefined);
 		expect(github.calls.length).toBeGreaterThan(calls);
+	});
+
+	it("treats a runner (re)assignment as a new delivery and keeps polling past a refused job", async () => {
+		const github = new FakeGithub(
+			{ queued: [900], in_progress: [] },
+			{
+				900: [
+					{ id: 1, status: "queued", labels: ["hobo"], runner_name: null },
+					{ id: 2, status: "queued", labels: ["hobo"] },
+				],
+			},
+		);
+		const fingerprints = new Map<string, string>();
+		const errors: number[] = [];
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () => [CONNECTION],
+			// Same contract as the stores: one delivery id, one body.
+			ingest: async ({ deliveryId, rawBody }) => {
+				const body = Buffer.from(rawBody).toString();
+				if (deliveryId === "poll-2-1-q") throw new Error("inbox full");
+				const known = fingerprints.get(deliveryId);
+				if (known !== undefined && known !== body)
+					throw new Error("conflicting webhook delivery id");
+				fingerprints.set(deliveryId, body);
+				return known === undefined ? "accepted" : "duplicate";
+			},
+			onIngestError: (jobId) => errors.push(jobId),
+			now: () => NOW,
+		});
+		expect(await poller.poll()).toMatchObject({ accepted: 1, failed: 1 });
+		const [job1] = github.jobs[900] ?? [];
+		if (job1) job1.runner_name = "hobo-a742da4d";
+		expect(await poller.poll()).toMatchObject({ accepted: 1, failed: 1 });
+		expect(errors).toEqual([2, 2]);
+		expect([...fingerprints.keys()]).toEqual([
+			"poll-1-1-q",
+			expect.stringMatching(/^poll-1-1-q-[0-9a-f]{12}$/),
+		]);
 	});
 });
 

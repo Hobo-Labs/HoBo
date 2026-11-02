@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { GithubTransport } from "../github.js";
 
@@ -20,6 +21,8 @@ export interface GithubJobPollerOptions {
 		rawBody: Uint8Array;
 		receivedAt: string;
 	}) => Promise<string>;
+	/** Called when the inbox refuses one polled job; the poll carries on. */
+	onIngestError?: (jobId: number, error: unknown) => void;
 	now?: () => number;
 }
 
@@ -28,6 +31,8 @@ export interface GithubJobPollSummary {
 	readonly runs: number;
 	readonly hoboJobs: number;
 	readonly accepted: number;
+	/** Jobs the inbox refused this poll (see `onIngestError`). */
+	readonly failed: number;
 	readonly pausedUntil?: string;
 	readonly rateLimitRemaining?: number;
 }
@@ -107,6 +112,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 			runs: 0,
 			hoboJobs: 0,
 			accepted: 0,
+			failed: 0,
 		};
 		if (now() < pausedUntilMs)
 			return {
@@ -163,12 +169,26 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 								},
 							}),
 						);
-						const result = await options.ingest({
-							deliveryId: `poll-${job.id}-${job.run_attempt}-${STATUS_CODE[status.data]}`,
-							event: "workflow_job",
-							rawBody,
-							receivedAt: new Date(now()).toISOString(),
-						});
+						// The runner name is part of the body, so it is part of the id: a job
+						// GitHub reassigns to another runner is a new observation, not a
+						// conflicting replay of the old one.
+						const runnerKey = job.runner_name
+							? `-${createHash("sha256").update(job.runner_name).digest("hex").slice(0, 12)}`
+							: "";
+						let result: Awaited<ReturnType<typeof options.ingest>>;
+						try {
+							result = await options.ingest({
+								deliveryId: `poll-${job.id}-${job.run_attempt}-${STATUS_CODE[status.data]}${runnerKey}`,
+								event: "workflow_job",
+								rawBody,
+								receivedAt: new Date(now()).toISOString(),
+							});
+						} catch (error) {
+							// One job the inbox refuses must not starve every later job.
+							summary.failed++;
+							options.onIngestError?.(job.id, error);
+							continue;
+						}
 						if (result === "accepted") summary.accepted++;
 					}
 				}
