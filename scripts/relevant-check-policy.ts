@@ -514,8 +514,16 @@ export function selectRelevantChecks(
 		});
 		checks.push({
 			command: "pnpm",
-			args: ["run", "typecheck:root"],
-			reason: "root scripts/tests must stay type-clean",
+			args: [
+				"exec",
+				"turbo",
+				"run",
+				"typecheck:root",
+				"--output-logs=new-only",
+				turboConcurrencyArg(),
+			],
+			reason:
+				"root scripts/tests must stay type-clean (turbo builds workspace deps first)",
 		});
 	}
 

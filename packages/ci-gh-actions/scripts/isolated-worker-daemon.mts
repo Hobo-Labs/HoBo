@@ -3,6 +3,7 @@
 import { parseConfiguration } from "@hobo/ci";
 import { PostgresCiStore } from "@hobo/ci/postgres";
 import {
+	attachPostgresPoolErrorHandler,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createGithubAppTransport,
@@ -11,8 +12,6 @@ import {
 	createIsolatedContainerController,
 } from "@hobo/ci-gh-actions";
 import pg from "pg";
-
-import { attachPostgresPoolErrorHandler } from "../src/isolated-worker/postgres-pool.js";
 
 function required(name: string): string {
 	const value = process.env[name];

@@ -26,6 +26,11 @@ export {
 export { createCliDockerDriver } from "./isolated-worker/cli-docker-driver.js";
 export { createCompositeIsolatedHost } from "./isolated-worker/composite-host.js";
 export {
+	attachPostgresPoolErrorHandler,
+	formatPoolErrorLog,
+	redactPoolErrorMessage,
+} from "./isolated-worker/postgres-pool.js";
+export {
 	createIsolatedContainerController,
 	type IsolatedContainerController,
 } from "./isolated-worker/container-controller.js";
