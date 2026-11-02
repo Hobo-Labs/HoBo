@@ -313,6 +313,7 @@ Usage:
   hobo ci [global flags]
   hobo ci enable [--remote <name>] [--relay <https-origin>]
   hobo ci connect                  Alias of enable
+  hobo ci connect <provider>       Add a runner integration: blacksmith, depot, jog (usejog), boat
   hobo ci list|ls                  List GitHub Actions runs
   hobo ci inspect [run]            Inspect a run
   hobo ci logs [run]               Read run logs
@@ -336,6 +337,17 @@ Connection options:
   --accept-all-matching-jobs  Allow isolated runners for matching repository jobs
   -y, --yes                   Skip the connection confirmation
   --non-interactive           Never prompt (enable also requires --yes)
+
+Integration options (hobo ci connect <provider>):
+  --auth <method>             github-app | oidc | device | secret-ref (default: safest supported)
+  --runs-on <label>           Runner label (repeatable)
+  --org <github-org>          GitHub organization the provider app is installed on
+  --project-id <id>           Depot project for OIDC trust relationships
+  --secret-ref <ref>          github-secret:NAME or env:NAME (a reference, never a value)
+  --id <name>                 Integration id (default: provider)
+  --config <path>             Alternate ci.json path
+  --dry-run                   Print the entry without writing
+  --launch                    Run the provider CLI ceremony (boat ci connect)
 
 Serve options (hobo ci serve):
   --environment <name>        CI profile from .hobo/ci.json (default + overrides)

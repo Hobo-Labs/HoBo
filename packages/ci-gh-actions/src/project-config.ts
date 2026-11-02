@@ -14,6 +14,11 @@ import {
 	CiProjectDocumentSchema,
 	resolveCiProjectReferences,
 } from "./project-schema.js";
+import {
+	findRawSecrets,
+	type RunnerIntegration,
+	RunnerIntegrationsSchema,
+} from "./runner-integrations.js";
 
 const environmentName = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const ExplicitEnvironment = z.string().regex(environmentName);
@@ -265,6 +270,8 @@ export function parseCiProjectConfig(
 		if (organization && !validatedConfigs.has(organization))
 			throw new Error("organization configuration is not validated");
 		const authored = CiProjectDocumentSchema.parse(JSON.parse(json));
+		if (findRawSecrets(authored.integrations ?? []).length)
+			throw new Error("integrations must hold references, never secrets");
 		const { selection: _ignoredSelection, ...documentBody } = authored;
 		const input = ProjectInput.parse(resolveCiProjectReferences(documentBody));
 		const entries = Object.entries(input.environments ?? {});
@@ -491,4 +498,28 @@ export async function applyCiEnvironmentPolicy(
 		toJsonString(DesiredCiPolicySchema, selected.policy),
 	);
 	return client.putDesiredPolicy(policy, { revision: current.revision });
+}
+
+/**
+ * Read the runner-provider integrations from `.hobo/ci.json` text. Entries are
+ * references only; a credential-shaped value anywhere rejects the whole block
+ * with an error that never contains repository text.
+ */
+export function parseCiRunnerIntegrations(
+	json: string,
+): readonly RunnerIntegration[] {
+	try {
+		const document = z
+			.object({ integrations: z.unknown().optional() })
+			.loose()
+			.parse(JSON.parse(json));
+		const raw = document.integrations ?? [];
+		if (findRawSecrets(raw).length)
+			throw new Error("integrations must hold references, never secrets");
+		return Object.freeze(RunnerIntegrationsSchema.parse(raw));
+	} catch {
+		throw new Error(
+			"invalid CI runner integrations (references only; see hobo ci connect --help)",
+		);
+	}
 }

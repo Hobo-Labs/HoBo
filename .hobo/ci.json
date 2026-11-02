@@ -14,6 +14,40 @@
       }
     ]
   },
+  "integrations": [
+    {
+      "id": "blacksmith",
+      "provider": "blacksmith",
+      "enabled": false,
+      "organization": "Hobo-Labs",
+      "runsOn": ["blacksmith-2vcpu-ubuntu-2404"],
+      "auth": { "method": "github-app" }
+    },
+    {
+      "id": "depot",
+      "provider": "depot",
+      "enabled": false,
+      "organization": "Hobo-Labs",
+      "runsOn": ["depot-ubuntu-24.04"],
+      "auth": { "method": "github-app" }
+    },
+    {
+      "id": "jog",
+      "provider": "jog",
+      "enabled": false,
+      "organization": "Hobo-Labs",
+      "runsOn": ["jog"],
+      "auth": { "method": "github-app" }
+    },
+    {
+      "id": "boat",
+      "provider": "boat",
+      "enabled": false,
+      "organization": "Hobo-Labs",
+      "runsOn": ["boat"],
+      "auth": { "method": "device" }
+    }
+  ],
   "environments": {
     "local": {
       "relayOrigin": "http://127.0.0.1:8787",
