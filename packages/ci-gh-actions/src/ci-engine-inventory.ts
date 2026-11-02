@@ -11,6 +11,7 @@ export const CI_ENGINE_PACKAGE_IDS: Readonly<Record<string, string>> = Object.fr
 	"ci-ado": "ado",
 });
 
+// public-contract: default `/engines/<id>/` mount when a checkout omits an explicit engine id.
 export const DEFAULT_CI_ENGINE_ID = "gh-actions";
 
 const engineIdPattern = /^[a-z][a-z0-9-]{0,62}$/;

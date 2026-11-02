@@ -1,5 +1,6 @@
 import type { JsonValue } from "./json.js";
 
+// public-contract: top-level `$schema` identity for CI fabric JSON validated by ci-guard.
 export const CI_FABRIC_SCHEMA = "hobo.ciFabric/v1" as const;
 
 const REQUIRED_PR_CHECKS = [

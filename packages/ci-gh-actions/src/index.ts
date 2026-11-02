@@ -26,6 +26,10 @@ export {
 export { createCliDockerDriver } from "./isolated-worker/cli-docker-driver.js";
 export { createCompositeIsolatedHost } from "./isolated-worker/composite-host.js";
 export {
+	countInFlightWorkerLeases,
+	waitForIsolatedWorkerDrain,
+} from "./isolated-worker/daemon-shutdown.js";
+export {
 	attachPostgresPoolErrorHandler,
 	formatPoolErrorLog,
 	redactPoolErrorMessage,

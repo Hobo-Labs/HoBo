@@ -12,7 +12,9 @@ import {
 	selectCiEnvironment,
 } from "./project-config.js";
 
+// public-contract: default committed CI project path at repository root.
 export const DEFAULT_CI_PROJECT_PATH = ".hobo/ci.json";
+// public-contract: gitignored local overlay merged at load time.
 export const CI_PROJECT_LOCAL_OVERRIDE_PATH = ".hobo/ci.local.json";
 
 const environmentName = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;

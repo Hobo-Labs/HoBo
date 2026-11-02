@@ -86,6 +86,8 @@ export HOBO_CI_WORKER_IMAGE=hobo-ci-worker:local
 node --import tsx packages/ci-gh-actions/scripts/isolated-worker-daemon.mts
 ```
 
+**Graceful stop:** send **`SIGTERM`** (systemd/Kubernetes preStop). The daemon stops polling for new lease work, waits for in-flight container launches and runner registration on this worker account (default **`HOBO_CI_WORKER_DRAIN_TIMEOUT_MS=120000`**), then closes the Postgres pool and exits **`0`** when drained or **`1`** on timeout.
+
 **Memory:** each job container defaults to **`8192` MiB** (`docker create --memory`); override with **`HOBO_CI_WORKER_MEMORY_MB`**. Workflow sets **`HOBO_TURBO_CONCURRENCY=1`** so turbo **`test`** tasks stay serial on 8 GiB boxes; **`@hobo/cli`** also sets Vitest **`maxWorkers: 1`**. Keep **`NODE_OPTIONS=--max-old-space-size=3072`** (do not raise heap to compensate — RSS from subprocesses dominates).
 
 Legacy path `packages/ci-gh-actions/deploy/worker/Dockerfile` is deprecated; use **`build.sh`** above.
