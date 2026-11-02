@@ -1,14 +1,14 @@
 import type { z } from "zod";
-import type { CiProjectEnvironment } from "./project-config.js";
-import {
-	EnvironmentEngineRelaysSchema,
-	EnvironmentEnginesSchema,
-} from "./project-config.js";
 import {
 	DEFAULT_CI_ENGINE_ID,
 	isKnownCiEngineId,
 	normalizeCiEngineSelection,
 } from "./ci-engine-inventory.js";
+import type { CiProjectEnvironment } from "./project-config.js";
+import {
+	EnvironmentEngineRelaysSchema,
+	type EnvironmentEnginesSchema,
+} from "./project-config.js";
 
 export interface CiEngineRelayOverride {
 	readonly relayOrigin?: string;
@@ -39,7 +39,8 @@ export function parseEnvironmentEngineRelays(
 	const parsed = EnvironmentEngineRelaysSchema.parse(raw);
 	const result: Record<string, CiEngineRelayOverride> = {};
 	for (const [engine, value] of Object.entries(parsed)) {
-		if (!isKnownCiEngineId(engine)) throw new Error("invalid engine relay override");
+		if (!isKnownCiEngineId(engine))
+			throw new Error("invalid engine relay override");
 		const relayOrigin = value.relayOrigin;
 		if (relayOrigin !== undefined) {
 			result[engine] = Object.freeze({ relayOrigin });
@@ -51,10 +52,7 @@ export function parseEnvironmentEngineRelays(
 }
 
 export function resolveEnvironmentEngines(options: {
-	readonly environment: Pick<
-		CiProjectEnvironment,
-		"engines" | "engineRelays"
-	>;
+	readonly environment: Pick<CiProjectEnvironment, "engines" | "engineRelays">;
 	readonly inventory: readonly string[];
 	readonly cliEngines?: readonly string[] | undefined;
 }): readonly string[] {
@@ -90,10 +88,7 @@ export function resolveEngineRelayOrigin(
 }
 
 export function collectAllowedRelayOrigins(
-	environment: Pick<
-		CiProjectEnvironment,
-		"relayOrigin" | "engineRelays"
-	>,
+	environment: Pick<CiProjectEnvironment, "relayOrigin" | "engineRelays">,
 ): readonly string[] {
 	const origins = new Set<string>([environment.relayOrigin]);
 	for (const override of Object.values(environment.engineRelays ?? {}))

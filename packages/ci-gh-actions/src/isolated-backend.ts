@@ -1,7 +1,9 @@
 import type { Lease, Offer } from "@hobo/ci";
 
 /** Vercel Sandbox JIT isolation (metered). */
-export function isSandboxOffer(offer: Pick<Offer, "provider" | "backend">): boolean {
+export function isSandboxOffer(
+	offer: Pick<Offer, "provider" | "backend">,
+): boolean {
 	return offer.provider === "vercel" && offer.backend === "sandbox";
 }
 

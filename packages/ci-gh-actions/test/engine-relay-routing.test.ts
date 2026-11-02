@@ -1,23 +1,23 @@
-import { defineCiPolicy, DesiredCiPolicySchema } from "@hobo/ci";
+import { fileURLToPath } from "node:url";
 import { toJsonString } from "@bufbuild/protobuf";
+import { DesiredCiPolicySchema, defineCiPolicy } from "@hobo/ci";
 import { describe, expect, it } from "vitest";
-import { defineCiProjectConfig } from "../src/project-config.js";
-import {
-	collectAllowedRelayOrigins,
-	resolveEngineRelayOrigin,
-	resolveEnvironmentEngines,
-} from "../src/engine-relay-routing.js";
 import {
 	inventoryCiEnginesFromRepository,
 	normalizeCiEngineSelection,
 } from "../src/ci-engine-inventory.js";
 import {
+	collectAllowedRelayOrigins,
+	resolveEngineRelayOrigin,
+	resolveEnvironmentEngines,
+} from "../src/engine-relay-routing.js";
+import { defineCiProjectConfig } from "../src/project-config.js";
+import {
+	type CiWebhookRoutingContext,
 	parseCiProjectSelection,
 	relayWebhookPath,
 	resolveCiRelayRoute,
-	type CiWebhookRoutingContext,
 } from "../src/relay-routing.js";
-import { fileURLToPath } from "node:url";
 
 const basePolicy = () =>
 	JSON.parse(
@@ -80,10 +80,7 @@ describe("engine-aware CI routing", () => {
 			"https://vercel-relay.example.com",
 		);
 		expect([...collectAllowedRelayOrigins(env)].sort()).toEqual(
-			[
-				"https://relay.example.com",
-				"https://vercel-relay.example.com",
-			].sort(),
+			["https://relay.example.com", "https://vercel-relay.example.com"].sort(),
 		);
 	});
 

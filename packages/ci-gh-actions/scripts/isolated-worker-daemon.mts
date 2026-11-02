@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 /** Sidecar on an operator-owned free VM: launch kubernetes/isolated-container leases against the shared relay database. */
 import { parseConfiguration } from "@hobo/ci";
 import { PostgresCiStore } from "@hobo/ci/postgres";
@@ -12,9 +15,6 @@ import {
 	createIsolatedContainerController,
 	waitForIsolatedWorkerDrain,
 } from "@hobo/ci-gh-actions";
-import { mkdirSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import pg from "pg";
 
 function required(name: string): string {

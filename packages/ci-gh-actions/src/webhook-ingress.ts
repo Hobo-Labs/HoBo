@@ -6,13 +6,13 @@ import { getRun } from "./github.js";
 import { signIngressForward } from "./ingress-forward.js";
 import {
 	assertRelayOriginAllowed,
+	type CiWebhookRoutingContext,
 	isForkPullRequestRun,
 	loadCiProjectConfigDocument,
 	parseCiProjectSelection,
+	relayWebhookPath,
 	resolveCiConfigRefForRun,
 	resolveCiRelayRoute,
-	relayWebhookPath,
-	type CiWebhookRoutingContext,
 } from "./relay-routing.js";
 
 const JobWebhook = z.object({
@@ -62,7 +62,10 @@ export function createGithubCiProjectFetcher(
 	};
 }
 
-async function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
+async function readBody(
+	request: IncomingMessage,
+	limit: number,
+): Promise<Buffer> {
 	const chunks: Buffer[] = [];
 	let bytes = 0;
 	for await (const chunk of request) {
@@ -125,10 +128,7 @@ export function createWebhookIngressHandler(options: {
 			.digest();
 		if (
 			!/^sha256=[a-f0-9]{64}$/.test(signature) ||
-			!timingSafeEqual(
-				expectedGithub,
-				Buffer.from(signature.slice(7), "hex"),
-			)
+			!timingSafeEqual(expectedGithub, Buffer.from(signature.slice(7), "hex"))
 		) {
 			json(401, '{"error":"invalid signature"}');
 			return;
@@ -162,10 +162,7 @@ export function createWebhookIngressHandler(options: {
 				parsed.data.repository.full_name,
 				parsed.data.workflow_job.run_id,
 			);
-			const isFork = isForkPullRequestRun(
-				run,
-				parsed.data.repository.id,
-			);
+			const isFork = isForkPullRequestRun(run, parsed.data.repository.id);
 			const configRef = resolveCiConfigRefForRun(
 				run,
 				parsed.data.repository.id,
@@ -177,9 +174,7 @@ export function createWebhookIngressHandler(options: {
 				workflowRunId: parsed.data.workflow_job.run_id,
 				eventName: run.event,
 				headBranch: run.head_branch ?? undefined,
-				headRef: run.head_branch
-					? `refs/heads/${run.head_branch}`
-					: undefined,
+				headRef: run.head_branch ? `refs/heads/${run.head_branch}` : undefined,
 				isForkPullRequest: isFork,
 				configRef,
 			});
@@ -232,7 +227,13 @@ export function createWebhookIngressHandler(options: {
 		});
 		assertRelayOriginAllowed(route, config);
 		if (route.admission === "pull") {
-			json(202, JSON.stringify({ status: "poll-admission", environment: route.environment.name }));
+			json(
+				202,
+				JSON.stringify({
+					status: "poll-admission",
+					environment: route.environment.name,
+				}),
+			);
 			return;
 		}
 		const forward = signIngressForward(options.ingressForwardSecret, raw);
@@ -272,6 +273,12 @@ export function createWebhookIngressHandler(options: {
 			json(502, '{"error":"relay rejected forward"}');
 			return;
 		}
-		json(202, JSON.stringify({ status: "forwarded", environment: route.environment.name }));
+		json(
+			202,
+			JSON.stringify({
+				status: "forwarded",
+				environment: route.environment.name,
+			}),
+		);
 	};
 }

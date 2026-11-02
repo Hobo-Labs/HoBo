@@ -1,10 +1,10 @@
 import { z } from "zod";
-import type { GithubRun } from "./github.js";
 import {
 	collectAllowedRelayOrigins,
 	defaultCiWebhookEngine,
 	resolveEngineRelayOrigin,
 } from "./engine-relay-routing.js";
+import type { GithubRun } from "./github.js";
 import {
 	type CiProjectConfig,
 	type CiProjectEnvironment,
@@ -120,7 +120,9 @@ export function mergeCiProjectLocalOverlay(
 	committedJson: string,
 	localJson: string,
 ): string {
-	const committed = CiProjectJsonEnvelopeSchema.parse(JSON.parse(committedJson));
+	const committed = CiProjectJsonEnvelopeSchema.parse(
+		JSON.parse(committedJson),
+	);
 	const local = CiProjectJsonEnvelopeSchema.parse(JSON.parse(localJson));
 	const mergedEnvironments = mergeJsonObjects(
 		parseJsonObject(committed.environments),
@@ -134,7 +136,8 @@ export function mergeCiProjectLocalOverlay(
 		...committed,
 		...local,
 	};
-	if (Object.keys(mergedTemplates).length > 0) merged.templates = mergedTemplates;
+	if (Object.keys(mergedTemplates).length > 0)
+		merged.templates = mergedTemplates;
 	if (Object.keys(mergedEnvironments).length > 0)
 		merged.environments = mergedEnvironments;
 	return JSON.stringify(merged);
@@ -158,7 +161,10 @@ export function resolveExplicitCiEnvironmentName(
 ): string {
 	const fromEnv = fallbackEnv?.HOBO_CI_ENVIRONMENT?.trim();
 	const chosen = explicit ?? fromEnv ?? config.defaultEnvironment;
-	if (!environmentName.test(chosen) || !Object.hasOwn(config.environments, chosen))
+	if (
+		!environmentName.test(chosen) ||
+		!Object.hasOwn(config.environments, chosen)
+	)
 		throw new Error("unknown CI environment");
 	return chosen;
 }
@@ -221,7 +227,8 @@ function ruleMatches(
 	const ref =
 		context.headRef ??
 		(context.headBranch ? `refs/heads/${context.headBranch}` : undefined);
-	if (match.refPrefix && (!ref || !ref.startsWith(match.refPrefix))) return false;
+	if (match.refPrefix && (!ref || !ref.startsWith(match.refPrefix)))
+		return false;
 	if (match.branch) {
 		const branch = ref?.startsWith("refs/heads/")
 			? ref.slice("refs/heads/".length)
@@ -282,7 +289,8 @@ export function assertRelayOriginAllowed(
 	const allowed = new Set<string>();
 	for (const entry of Object.values(config.environments))
 		for (const origin of collectAllowedRelayOrigins(entry)) allowed.add(origin);
-	if (!allowed.has(route.relayOrigin)) throw new Error("relay origin not allowed");
+	if (!allowed.has(route.relayOrigin))
+		throw new Error("relay origin not allowed");
 }
 
 export function relayWebhookPath(engine: string): string {

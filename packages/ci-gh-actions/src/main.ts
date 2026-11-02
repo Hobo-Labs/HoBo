@@ -64,11 +64,11 @@ export async function startRelayFromEnvironment(
 	const authenticate = createControlAuthenticator(
 		readFileSync(required(env, "HOBO_CI_CONTROL_TOKENS_FILE"), "utf8"),
 	);
-		const webhookSecret = secret(env, "HOBO_CI_WEBHOOK_SECRET");
-		const ingressForwardSecret = env.HOBO_CI_INGRESS_FORWARD_SECRET
-			? secret(env, "HOBO_CI_INGRESS_FORWARD_SECRET")
-			: undefined;
-		const assets = relayInstallAssets();
+	const webhookSecret = secret(env, "HOBO_CI_WEBHOOK_SECRET");
+	const ingressForwardSecret = env.HOBO_CI_INGRESS_FORWARD_SECRET
+		? secret(env, "HOBO_CI_INGRESS_FORWARD_SECRET")
+		: undefined;
+	const assets = relayInstallAssets();
 	const database = required(env, "HOBO_CI_DB");
 	const lock = await acquirePartitionLock(database);
 	let store: LeaseStore;

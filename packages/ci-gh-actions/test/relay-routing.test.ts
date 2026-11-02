@@ -1,61 +1,63 @@
-import { defineCiPolicy } from "@hobo/ci";
 import { toJsonString } from "@bufbuild/protobuf";
-import { DesiredCiPolicySchema } from "@hobo/ci";
+import { DesiredCiPolicySchema, defineCiPolicy } from "@hobo/ci";
 import { describe, expect, it } from "vitest";
 import {
 	defineCiProjectConfig,
 	parseCiProjectConfig,
+	selectCiEnvironment,
 } from "../src/project-config.js";
 import {
 	assertRelayOriginAllowed,
+	type CiWebhookRoutingContext,
 	inferJobAdmission,
 	isForkPullRequestRun,
 	mergeCiProjectLocalOverlay,
 	parseCiProjectSelection,
 	resolveCiConfigRefForRun,
 	resolveCiRelayRoute,
-	type CiWebhookRoutingContext,
 } from "../src/relay-routing.js";
-import { selectCiEnvironment } from "../src/project-config.js";
 
 const basePolicy = () =>
 	JSON.parse(
-		toJsonString(DesiredCiPolicySchema, defineCiPolicy({
-			accountId: "ci",
-			tenantId: "ci",
-			pool: { label: "hobo", os: "linux", architecture: "x64" },
-			providers: [
-				{
-					id: "gh",
-					kind: "github",
-					connectionRef: "gh",
-					runsOn: "ubuntu-24.04",
+		toJsonString(
+			DesiredCiPolicySchema,
+			defineCiPolicy({
+				accountId: "ci",
+				tenantId: "ci",
+				pool: { label: "hobo", os: "linux", architecture: "x64" },
+				providers: [
+					{
+						id: "gh",
+						kind: "github",
+						connectionRef: "gh",
+						runsOn: "ubuntu-24.04",
+					},
+				],
+				budget: {
+					scope: "ci-account",
+					currency: "USD",
+					period: "manual",
+					timeZone: "UTC",
+					limitMicros: 1_000_000,
 				},
-			],
-			budget: {
-				scope: "ci-account",
-				currency: "USD",
-				period: "manual",
-				timeZone: "UTC",
-				limitMicros: 1_000_000,
-			},
-			routing: {
-				strategy: "lowest-total-incremental-cost",
-				noEligibleProvider: "queue",
-				unknownAllocation: "zero",
-			},
-			thresholds: [],
-		})),
+				routing: {
+					strategy: "lowest-total-incremental-cost",
+					noEligibleProvider: "queue",
+					unknownAllocation: "zero",
+				},
+				thresholds: [],
+			}),
+		),
 	);
 
 function projectDocument() {
 	return {
 		defaultEnvironment: "ci",
 		selection: {
-		rules: [
-			{ environment: "ci", match: { branch: "main" } },
-			{ environment: "production", match: { refPrefix: "refs/tags/" } },
-		],
+			rules: [
+				{ environment: "ci", match: { branch: "main" } },
+				{ environment: "production", match: { refPrefix: "refs/tags/" } },
+			],
 			forkPullRequestEnvironment: "ci",
 		},
 		environments: {

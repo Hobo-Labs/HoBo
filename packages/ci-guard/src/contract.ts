@@ -194,8 +194,7 @@ export function createHoboCiFabricContract(
 				audience: "hobo:sandbox-cloud",
 				tokenBroker: "https://sandbox.yard.example/.well-known/hobo/oidc/token",
 				forbidsStoredSecrets: true,
-				allowedTrustDomain:
-					"spiffe://sandbox.yard/ci/github/hobo-labs/hobo",
+				allowedTrustDomain: "spiffe://sandbox.yard/ci/github/hobo-labs/hobo",
 				cloudRole: {
 					name: "hobo-ci-hello-bindle-e2e",
 					allowedActions: [

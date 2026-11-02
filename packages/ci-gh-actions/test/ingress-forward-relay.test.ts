@@ -2,9 +2,9 @@ import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { signIngressForward } from "../src/ingress-forward.js";
-import { createRelayRequestHandler } from "../src/server.js";
 import { Relay } from "../src/relay.js";
-import { SECRET, harness } from "./fixtures.js";
+import { createRelayRequestHandler } from "../src/server.js";
+import { harness, SECRET } from "./fixtures.js";
 
 const ListenAddress = z.object({
 	address: z.string(),
@@ -12,7 +12,9 @@ const ListenAddress = z.object({
 	port: z.number().int().positive(),
 });
 
-function listenPort(address: ReturnType<ReturnType<typeof createServer>["address"]>): number {
+function listenPort(
+	address: ReturnType<ReturnType<typeof createServer>["address"]>,
+): number {
 	return ListenAddress.parse(address).port;
 }
 
@@ -25,7 +27,9 @@ describe("relay ingress forward intake", () => {
 			ingressForwardSecret: ingressSecret,
 		});
 		const server = createServer(createRelayRequestHandler(relay));
-		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		await new Promise<void>((resolve) =>
+			server.listen(0, "127.0.0.1", resolve),
+		);
 		const address = server.address();
 		const port = listenPort(address);
 		const body = Buffer.from(
@@ -38,18 +42,15 @@ describe("relay ingress forward intake", () => {
 		);
 		const forward = signIngressForward(ingressSecret, body);
 		try {
-			const response = await fetch(
-				`http://127.0.0.1:${port}/github/webhooks`,
-				{
-					method: "POST",
-					headers: {
-						"content-type": "application/json",
-						"x-github-event": "workflow_job",
-						"x-hobo-ingress-forward": forward,
-					},
-					body,
+			const response = await fetch(`http://127.0.0.1:${port}/github/webhooks`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-github-event": "workflow_job",
+					"x-hobo-ingress-forward": forward,
 				},
-			);
+				body,
+			});
 			expect(response.status).toBe(202);
 		} finally {
 			await new Promise<void>((resolve, reject) =>
@@ -61,21 +62,20 @@ describe("relay ingress forward intake", () => {
 	it("still requires github signature without ingress forward header", async () => {
 		const { relay } = harness();
 		const server = createServer(createRelayRequestHandler(relay));
-		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		await new Promise<void>((resolve) =>
+			server.listen(0, "127.0.0.1", resolve),
+		);
 		const address = server.address();
 		const port = listenPort(address);
 		try {
-			const response = await fetch(
-				`http://127.0.0.1:${port}/github/webhooks`,
-				{
-					method: "POST",
-					headers: {
-						"content-type": "application/json",
-						"x-github-event": "workflow_job",
-					},
-					body: "{}",
+			const response = await fetch(`http://127.0.0.1:${port}/github/webhooks`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-github-event": "workflow_job",
 				},
-			);
+				body: "{}",
+			});
 			expect(response.status).toBe(401);
 		} finally {
 			await new Promise<void>((resolve, reject) =>

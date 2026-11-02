@@ -25,11 +25,9 @@ import {
 	getJob,
 	getRun,
 } from "./github.js";
-import type { IdentityVerifier } from "./oidc.js";
-import {
-	isIsolatedHostOffer,
-} from "./isolated-backend.js";
 import { verifyIngressForward } from "./ingress-forward.js";
+import { isIsolatedHostOffer } from "./isolated-backend.js";
+import type { IdentityVerifier } from "./oidc.js";
 
 /** Isolated executions are supplied by the hosting runtime and must fail closed. */
 export interface IsolatedRunnerHost {

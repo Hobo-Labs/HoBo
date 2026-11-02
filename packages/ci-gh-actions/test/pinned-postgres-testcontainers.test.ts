@@ -3,7 +3,11 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
-import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
+import {
+	GenericContainer,
+	type StartedTestContainer,
+	Wait,
+} from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	parsePinnedImage,
