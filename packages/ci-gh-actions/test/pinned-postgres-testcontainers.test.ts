@@ -34,7 +34,8 @@ describe.runIf(docker)("pinned Postgres via Testcontainers", () => {
 				POSTGRES_PASSWORD: "local-contract-tests-only",
 			})
 			.withWaitStrategy(
-				Wait.forLogMessage(/database system is ready to accept connections/),
+				// The image logs readiness twice: once for the init server, then for the real one.
+				Wait.forLogMessage(/database system is ready to accept connections/, 2),
 			)
 			.withExposedPorts(5432)
 			.start();
