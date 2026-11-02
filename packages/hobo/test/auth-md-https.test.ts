@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { expect, it } from "vitest";
+import { cueBinary } from "../../stage-gate/test/helpers/cue-binary.js";
 import { createSelfHostedHttpsFixture } from "../../auth-md/test/https-fixture.js";
 import {
 	createComposedHoboCli,
@@ -22,19 +23,23 @@ import {
 } from "../src/index.js";
 import { isJsonObject, type JsonObject } from "../src/json.js";
 
+const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+
 function cueBinaryForRepo(): string {
-	const configured = process.env.HOBO_CUE_BIN;
-	if (configured !== undefined && configured !== "") return configured;
-	const mise = spawnSync("mise", ["which", "cue"], { encoding: "utf8" });
-	if (mise.status === 0) {
-		const resolved = mise.stdout.trim();
-		if (resolved !== "") return resolved;
+	try {
+		return cueBinary(process.env, repoRoot);
+	} catch {
+		const mise = spawnSync("mise", ["which", "cue"], { encoding: "utf8" });
+		if (mise.status === 0) {
+			const resolved = mise.stdout.trim();
+			if (resolved !== "") {
+				return cueBinary({ ...process.env, HOBO_CUE_BIN: resolved }, repoRoot);
+			}
+		}
+		throw new Error(
+			"cue v0.14.0 not found: set HOBO_CUE_BIN, run root test:schema, install cue via mise, or put cue on PATH",
+		);
 	}
-	const cached = fileURLToPath(
-		new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
-	);
-	if (existsSync(cached)) return cached;
-	return "cue";
 }
 
 it("executes auth.md discovery, registration, scoped proof, temporary placement, independent claims, rotation and revocation over self-hosted HTTPS", async () => {

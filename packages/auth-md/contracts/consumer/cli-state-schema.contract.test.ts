@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fromJson, toJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
+import { cueBinary } from "../../../stage-gate/test/helpers/cue-binary.js";
 import {
 	CliAuthMdStateRecordSchema,
 	StoredCliAuthMdStateRecordSchema,
@@ -11,8 +12,7 @@ import {
 
 const contracts = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const root = resolve(contracts, "../../..");
-const cached = join(root, ".tools/cue/v0.14.0/cue");
-const cue = existsSync(cached) ? cached : "cue";
+const cue = cueBinary(process.env, root);
 
 for (const [boundary, definition] of [
 	["public", "#CliAuthMdStateRecord"],
