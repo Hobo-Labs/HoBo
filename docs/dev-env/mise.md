@@ -128,3 +128,5 @@ bash scripts/bootstrap-dev.sh
 - [mise lockfile](https://mise.jdx.dev/dev-tools/mise-lock.html)
 - [mise-action](https://github.com/jdx/mise-action)
 - [mise bootstrap / dotfiles](https://mise.jdx.dev/mise/bootstrap.html)
+
+CI smoke: `.github/workflows/dev-env-smoke.yml` runs on `hobo` runners (docker-out-of-docker), so its clean-container job checks out submodules and tar-streams the checkout into `node:24-bookworm` instead of bind-mounting it.

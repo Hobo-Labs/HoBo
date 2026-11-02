@@ -71,7 +71,7 @@
 		"promotions:check": "node --import tsx scripts/check-promoted-proof-drift.mts",
 		"search": "node --import tsx scripts/search.mts",
 		"search:structure": "ast-grep scan",
-		"setup": "node --experimental-strip-types scripts/bootstrap-siblings.mts && corepack pnpm install --frozen-lockfile --config.confirmModulesPurge=false",
+		"setup": "node --experimental-strip-types scripts/bootstrap-siblings.mts && bash scripts/bootstrap-dev.sh --project-only && pnpm run install:check",
 		"ship:gap-closure": "node --import tsx scripts/check-ship-gap-closure.mts",
 		"site:deploy": "node --import tsx scripts/deploy-site.mts",
 		"skills:mirror-check": "node --import tsx scripts/check-skill-mirrors.ts",

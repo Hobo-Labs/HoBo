@@ -11,3 +11,5 @@ RUN --mount=type=secret,id=proxy_ca \
     libicu72 liblttng-ust1 libkrb5-3 libssl3 zlib1g util-linux \
     && rm -rf /var/lib/apt/lists/* /etc/apt/apt.conf.d/99-build-proxy-ca
 USER node
+RUN curl -fsSL https://mise.run | sh
+ENV PATH="/home/node/.local/bin:${PATH}"

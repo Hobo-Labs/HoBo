@@ -1,0 +1,64 @@
+name: Dev environment smoke
+
+on:
+  pull_request:
+    paths:
+      - mise.toml
+      - mise.lock
+      - scripts/bootstrap-dev.sh
+      - scripts/lib/mise-path.sh
+      - contrib/hobo-dotfiles-seed/**
+      - .devcontainer/**
+      - .cursor/Dockerfile
+      - .cursor/install.sh
+      - .github/workflows/dev-env-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mise-bootstrap:
+    name: mise install + build smoke
+    runs-on: hobo
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+      - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
+        with:
+          install: true
+          cache: true
+      - name: Bootstrap (project tools only)
+        run: bash scripts/bootstrap-dev.sh --project-only
+      - run: pnpm run install:check
+      - run: pnpm exec turbo run build --filter=@hobo/core --concurrency=100%
+
+  docker-bootstrap:
+    name: Clean container bootstrap
+    runs-on: hobo
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+      - name: Docker smoke (bootstrap-dev + install + core build)
+        run: |
+          set -euo pipefail
+          # hobo runners use the host engine (docker-out-of-docker); stream the checkout in
+          # instead of bind-mounting a path that only exists inside the runner container.
+          tar -c --exclude=./.git . | docker run -i --rm \
+            -e HOBO_SKIP_DOTFILES=1 \
+            node:24-bookworm \
+            bash -lc '
+              set -euo pipefail
+              mkdir -p /workspace
+              cd /workspace
+              tar -x
+              # node:24-bookworm already ships git, curl and ca-certificates.
+              bash scripts/bootstrap-dev.sh --project-only
+              export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
+              pnpm run install:check
+              pnpm exec turbo run build --filter=@hobo/core --concurrency=100%
+            '

@@ -119,7 +119,7 @@ Everything HoBo takes from a sibling repository (the `ts-autocode` submodule tod
 Install dependencies **first** (cold clones need this before most gates):
 
 ```sh
-corepack enable pnpm
+bash scripts/bootstrap-dev.sh --project-only
 pnpm run install:check
 pnpm run ci:preflight
 ```

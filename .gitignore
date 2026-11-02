@@ -110,3 +110,4 @@ reports/mutation/
 # as an embedded repository.
 /external/*.kept
 /external/*.kept.[0-9]*
+.mise/

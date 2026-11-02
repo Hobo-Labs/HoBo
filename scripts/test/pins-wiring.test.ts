@@ -37,11 +37,11 @@ describe("pins wiring", () => {
 	it("setup initialises the pins before it installs, so the submodule exists first", () => {
 		const parts = String(scripts.setup).split(" && ");
 		assert.equal(parts[0], BOOTSTRAP);
-		// The install runs through `corepack pnpm …` — the same command as
-		// install:check — instead of `corepack enable pnpm`, which hard-fails
-		// when the Node bin directory is not writable (EACCES on the shim
-		// symlink) even though corepack could run pnpm perfectly well.
-		assert.deepEqual(parts.slice(1), [`corepack ${scripts["install:check"]}`]);
+		// The install runs through bootstrap-dev + install:check (mise-provisioned pnpm).
+		assert.deepEqual(parts.slice(1), [
+			"bash scripts/bootstrap-dev.sh --project-only",
+			"pnpm run install:check",
+		]);
 	});
 
 	it("a missing submodule is remedied with pins:fetch, not a hand-typed git command", () => {

@@ -18,11 +18,15 @@ const errors: string[] = [];
 
 const acceptanceFile = "hobo-ci-acceptance.yml";
 /** Authoritative CI fabric (self-hosted hobo runners). */
-const activeCiFiles = new Set(["hobo-ci.yml", "examples-e2e.yml"]);
+const activeCiFiles = new Set([
+	"hobo-ci.yml",
+	"examples-e2e.yml",
+	"dev-env-smoke.yml",
+]);
 const allowedEnabled = new Set([acceptanceFile, ...activeCiFiles]);
 
 const acceptanceDigest =
-	"a0f0f50bf730e66791517884f8bc9ca5120825c50ba697ceb11802f367f3ddcb";
+	"d862e51e8506d228a6c16248871a1216d08925a154b1adcf30c5fd82e33638c2";
 
 function lintWorkflowYaml(
 	file: string,

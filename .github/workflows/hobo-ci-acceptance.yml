@@ -44,10 +44,11 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
         if: ${{ !inputs.jit_only }}
         with:
-          node-version: '24'
+          install: true
+          cache: true
       - name: Verify runner identity and checked-out revision
         if: ${{ !inputs.jit_only }}
         env:

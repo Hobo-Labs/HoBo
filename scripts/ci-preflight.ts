@@ -46,7 +46,7 @@ else
 
 const pnpm = run("pnpm", ["--version"]);
 if (pnpm.status === 0) ok(`pnpm ${pnpm.stdout.trim()}`);
-else fail("pnpm unavailable; run `corepack enable pnpm`");
+else fail("pnpm unavailable; run bash scripts/bootstrap-dev.sh --project-only");
 
 for (const [status, message] of checks) {
 	console.log(`${status === "ok" ? "ok  " : "ERR "} ${message}`);
