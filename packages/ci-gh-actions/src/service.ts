@@ -7,6 +7,11 @@ import type { Relay } from "./relay.js";
 import { createRelayRequestHandler } from "./server.js";
 import type { LeaseStore } from "./store.js";
 
+interface EngineReadyEntry {
+	readonly ready: boolean;
+}
+type EngineReadyMap = Record<string, EngineReadyEntry>;
+
 export type RelayServiceLog = Readonly<{
 	level: "info" | "error";
 	event:
@@ -29,6 +34,10 @@ export type RelayServiceOptions = {
 	store: Pick<LeaseStore, "all" | "recover" | "close">;
 	host?: string;
 	port: number;
+	engineId?: string;
+	mountPath?: string;
+	legacyRootPaths?: boolean;
+	stubEngines?: Readonly<Record<string, { ready: () => boolean }>>;
 	tickIntervalMs?: number;
 	probeIntervalMs?: number;
 	probeTimeoutMs?: number;
@@ -39,6 +48,7 @@ export type RelayServiceOptions = {
 		request: IncomingMessage,
 		response: ServerResponse,
 	) => boolean | Promise<boolean>;
+	trustProxy?: boolean;
 	logger?: (entry: RelayServiceLog) => void;
 };
 
@@ -83,6 +93,12 @@ export function createRelayService(options: RelayServiceOptions) {
 	const requests = new Set<Promise<void>>();
 	const responses = new Set<ServerResponse>();
 	const handler = createRelayRequestHandler(options.relay);
+	const engineId = options.engineId ?? "gh-actions";
+	const mountPath =
+		options.mountPath ??
+		(options.engineId ? `/engines/${options.engineId}` : undefined);
+	const stubEngines = options.stubEngines ?? {};
+	const legacyRootPaths = options.legacyRootPaths !== false;
 
 	function log(entry: RelayServiceLog): void {
 		try {
@@ -100,14 +116,82 @@ export function createRelayService(options: RelayServiceOptions) {
 		response.setHeader("Cache-Control", "no-store");
 		response.writeHead(status).end(result);
 	}
+	function engineSubPath(url: string, id: string): string | undefined {
+		const prefix = `/engines/${id}`;
+		if (url === prefix) return "/";
+		if (url.startsWith(`${prefix}/`)) return url.slice(prefix.length);
+		return undefined;
+	}
+	function aggregateReady() {
+		const engines = {
+			[engineId]: { ready: ready() },
+		};
+		for (const [id, stub] of Object.entries(stubEngines)) {
+			engines[id] = { ready: stub.ready() };
+		}
+		const allReady = Object.values(engines).every((entry) => entry.ready);
+		return { ready: allReady, engines } satisfies {
+			ready: boolean;
+			engines: EngineReadyMap;
+		};
+	}
 	async function handle(request: IncomingMessage, response: ServerResponse) {
-		if (request.method === "GET" && request.url === "/healthz") {
-			json(response, 200, '{"ok":true}');
+		const url = request.url ?? "/";
+		if (options.trustProxy) {
+			const proto = request.headers["x-forwarded-proto"];
+			if (proto !== undefined) {
+				const first = (Array.isArray(proto) ? proto[0] : proto)
+					?.split(",")[0]
+					?.trim()
+					.toLowerCase();
+				if (first && first !== "https") {
+					json(response, 403, '{"error":"insecure proxy forward"}');
+					return;
+				}
+			}
+		}
+		if (request.method === "GET" && url === "/healthz") {
+			const engines = {
+				[engineId]: { ok: true },
+			};
+			for (const id of Object.keys(stubEngines)) engines[id] = { ok: true };
+			json(response, 200, JSON.stringify({ ok: true, engines }));
 			return;
 		}
-		if (request.method === "GET" && request.url === "/readyz") {
-			json(response, ready() ? 200 : 503, JSON.stringify({ ready: ready() }));
+		if (request.method === "GET" && url === "/readyz") {
+			const status = aggregateReady();
+			json(response, status.ready ? 200 : 503, JSON.stringify(status));
 			return;
+		}
+		for (const [id, stub] of Object.entries(stubEngines)) {
+			const subPath = engineSubPath(url, id);
+			if (!subPath) continue;
+			if (request.method === "GET" && subPath === "/healthz") {
+				json(response, 200, JSON.stringify({ ok: true, engine: id }));
+				return;
+			}
+			if (request.method === "GET" && subPath === "/readyz") {
+				json(
+					response,
+					stub.ready() ? 200 : 503,
+					JSON.stringify({ ready: stub.ready(), engine: id }),
+				);
+				return;
+			}
+			json(response, 404, '{"error":"not found"}');
+			return;
+		}
+		if (mountPath) {
+			const mounted = engineSubPath(url, engineId);
+			if (mounted !== undefined) request.url = mounted;
+			else if (
+				!legacyRootPaths &&
+				url.startsWith("/engines/") &&
+				engineSubPath(url, engineId) === undefined
+			) {
+				json(response, 404, '{"error":"not found"}');
+				return;
+			}
 		}
 		if (stopping) {
 			json(response, 503, '{"error":"service unavailable"}');
@@ -117,7 +201,9 @@ export function createRelayService(options: RelayServiceOptions) {
 		if (
 			!ready() &&
 			(request.url === "/github/webhooks" ||
-				request.url?.startsWith("/v1/leases/"))
+				request.url?.startsWith("/v1/leases/") ||
+				(mountPath !== undefined &&
+					request.url?.startsWith(`${mountPath}/github/webhooks`)))
 		) {
 			json(response, 503, '{"error":"service unavailable"}');
 			return;

@@ -29,15 +29,25 @@ The executable proof lives in
 as the production `@hobo/ci-guard` package. Reviewable workflows:
 [`.github/workflows/hobo-ci.yml`](../../../../.github/workflows/hobo-ci.yml) and
 [`.github/workflows/examples-e2e.yml`](../../../../.github/workflows/examples-e2e.yml).
-The impact gate runs on `pull_request` and `merge_group: checks_requested` for the `main`
-base branch only, preserving the same job/check identity for merge-queue
-compatibility without spending CI on non-landing queues. PR runs use
-`pnpm agent:check -- --base=origin/<base-ref>`; merge-group runs compare against
-`origin/main` so queued candidates get the same change-impact gate before they
-can land. The workflow also uses event-aware concurrency so newer PR pushes
-cancel stale runs without sharing a concurrency group with merge queue runs.
-The `pr-gate` job fetches `origin/<base-ref>` and sets `TURBO_SCM_BASE` before
-Turbo impact lanes. Production package tasks derive `--filter=./packages/<name>`
+The impact gate runs on `pull_request` for `main` (stack-aware base via
+`origin/<base-ref>`). The **Main full gate** runs on `merge_group`, direct
+`push` to `main`, the weekly schedule, and `workflow_dispatch`. Enable GitHub's
+native merge queue on `main` in the **Hobo-Labs/HoBo** org so landing PRs use
+`merge_group: checks_requested` with the same check names. PR runs use
+`pnpm agent:check -- --base=origin/<base-ref>`; merge-queue candidates run the
+full gate (`check:all`, architecture guard, full `turbo run test`). Event-aware
+concurrency cancels stale PR runs but never cancels `merge_group` or `push` to
+`main`. Runs that stay **`queued`** with no runner name indicate missing JIT
+**`hobo`** registration—see [`packages/ci/RUNNER-QUEUE.md`](../../../../packages/ci/RUNNER-QUEUE.md).
+The `pr-gate` job resolves `TURBO_SCM_BASE` via
+[`scripts/ci/turbo-scm-base.mts`](../../../../scripts/ci/turbo-scm-base.mts):
+`merge_group.base_sha` for merge queue events, `origin/<base-ref>` on PRs (stack
+parent when using `gh stack`), otherwise `origin/main`. Gate jobs run on
+self-hosted **`hobo`** JIT runners registered to **Hobo-Labs/HoBo** (runners
+from the pre-transfer personal repo must be re-registered at org scope).
+Turbo uses Vercel remote cache when `TURBO_TOKEN` / `TURBO_TEAM` are configured
+(read-only on fork PRs), with `actions/cache` fallback on `.turbo/cache`.
+Production package tasks derive `--filter=./packages/<name>`
 and `--filter=./examples/<name>` from `git diff --name-only` so workspace-root
 edits (for example `pnpm-workspace.yaml`) do not fan out into every package;
 draft impact stays in `pnpm agent:check -- --base=...`.
@@ -50,9 +60,8 @@ live in [`fixtures.yml`](../../../../.github/workflows/fixtures.yml)
 instead of the whole PR gate, and `hobo-ci.yml` no longer retriggers on label
 events at all; the weekly schedule skips `pr-gate` (it exists for `main-gate`
 and the fixture sweeps); every job carries `timeout-minutes` instead of the
-360-minute default; and gate jobs persist `.turbo/cache` via `actions/cache`
-keyed by commit with an OS-scoped restore prefix so warm runs replay Turbo
-tasks instead of recomputing them.
+360-minute default; gate jobs use Turbo remote cache when configured, otherwise
+`actions/cache` on `.turbo/cache` keyed by commit with an OS-scoped restore prefix.
 
 This is a branch POC. It does not implement the runner/build-machine
 cost-routed CI fabric, full multi-cloud E2E matrix, or real provider IAM

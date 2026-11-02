@@ -1,0 +1,10 @@
+name: CI runner preflight
+description: Fail fast when the hobo runner image is missing pinned toolchains (mise.lock + system packages).
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        node --no-warnings scripts/ci-runner-preflight.mts
+        echo "HOBO_CUE_BIN=$(command -v cue)" >> "$GITHUB_ENV"

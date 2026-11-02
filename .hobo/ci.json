@@ -1,0 +1,119 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project.schema.json",
+  "defaultEnvironment": "ci",
+  "selection": {
+    "forkPullRequestEnvironment": "ci",
+    "rules": [
+      {
+        "environment": "ci",
+        "match": { "branch": "main" }
+      },
+      {
+        "environment": "production",
+        "match": { "refPrefix": "refs/tags/" }
+      }
+    ]
+  },
+  "environments": {
+    "local": {
+      "relayOrigin": "http://127.0.0.1:8787",
+      "allowInsecureLoopback": true,
+      "jobAdmission": "pull",
+      "engines": ["gh-actions"],
+      "policy": {
+        "accountId": "local-dev",
+        "tenantId": "local-dev",
+        "pool": { "label": "hobo", "os": "linux", "architecture": "x64" },
+        "providers": [
+          {
+            "id": "local-github",
+            "kind": "local",
+            "connectionRef": "local-github",
+            "runsOn": "hobo-local-host"
+          }
+        ],
+        "budget": {
+          "scope": "ci-account",
+          "currency": "USD",
+          "period": "manual",
+          "timeZone": "UTC",
+          "limitMicros": 1000000
+        },
+        "routing": {
+          "strategy": "lowest-total-incremental-cost",
+          "noEligibleProvider": "queue",
+          "unknownAllocation": "zero"
+        },
+        "thresholds": []
+      }
+    },
+    "ci": {
+      "relayOrigin": "https://hobo-ci.vercel.app",
+      "githubWebhookOrigin": "https://hobo-ci.vercel.app",
+      "jobAdmission": "push",
+      "engines": ["gh-actions"],
+      "policy": {
+        "accountId": "hobo-labs",
+        "tenantId": "hobo-labs",
+        "pool": { "label": "hobo", "os": "linux", "architecture": "x64" },
+        "providers": [
+          {
+            "id": "vercel-sandbox",
+            "kind": "vercel",
+            "connectionRef": "vercel-sandbox",
+            "runsOn": "sandbox"
+          },
+          {
+            "id": "oracle-free-isolated",
+            "kind": "hobo-box-worker",
+            "connectionRef": "oracle-free-vm",
+            "runsOn": "hobo-isolated-worker"
+          }
+        ],
+        "budget": {
+          "scope": "ci-account",
+          "currency": "USD",
+          "period": "manual",
+          "timeZone": "UTC",
+          "limitMicros": 5000000
+        },
+        "routing": {
+          "strategy": "lowest-total-incremental-cost",
+          "noEligibleProvider": "queue",
+          "unknownAllocation": "zero"
+        },
+        "thresholds": []
+      }
+    },
+    "production": {
+      "relayOrigin": "https://hobo-ci.vercel.app",
+      "jobAdmission": "push",
+      "policy": {
+        "accountId": "hobo-labs",
+        "tenantId": "hobo-labs",
+        "pool": { "label": "hobo", "os": "linux", "architecture": "x64" },
+        "providers": [
+          {
+            "id": "vercel-sandbox",
+            "kind": "vercel",
+            "connectionRef": "vercel-sandbox",
+            "runsOn": "sandbox"
+          }
+        ],
+        "budget": {
+          "scope": "ci-account",
+          "currency": "USD",
+          "period": "manual",
+          "timeZone": "UTC",
+          "limitMicros": 10000000
+        },
+        "routing": {
+          "strategy": "lowest-total-incremental-cost",
+          "noEligibleProvider": "queue",
+          "unknownAllocation": "zero"
+        },
+        "thresholds": []
+      }
+    }
+  }
+}

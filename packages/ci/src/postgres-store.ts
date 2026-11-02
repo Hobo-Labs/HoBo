@@ -996,7 +996,12 @@ export class PostgresCiStore {
 					ACTIVE_STATES.has(lease.state),
 			);
 			if (existing) {
-				if (requiresIsolation && existing.provider !== "vercel") {
+				if (
+					requiresIsolation &&
+					existing.provider !== "vercel" &&
+					existing.provider !== "kubernetes" &&
+					existing.provider !== "hobo-box-worker"
+				) {
 					if (existing.state === "reserved") {
 						existing.state = "cancelled";
 						await this.append(c, existing, "ci.LeaseCancelled", at);
@@ -1015,9 +1020,14 @@ export class PostgresCiStore {
 					...effective,
 					offers: effective.offers.filter((offer) =>
 						requiresIsolation
-							? offer.provider === "vercel" &&
-								offer.backend === "sandbox" &&
-								offer.freeMinutes === 0
+							? (offer.provider === "vercel" &&
+									offer.backend === "sandbox" &&
+									offer.freeMinutes === 0) ||
+								((offer.provider === "kubernetes" ||
+									offer.provider === "hobo-box-worker") &&
+									offer.backend === "isolated-container" &&
+									offer.freeMinutes === 0 &&
+									offer.priceMicrosPerMinute === 0)
 							: !offer.backend || offer.backend === "gh-actions",
 					),
 				},
@@ -1081,6 +1091,29 @@ export class PostgresCiStore {
 		return this.tx(async (c) => {
 			const lease = await this.readLease(c, id);
 			if (lease?.state !== "reserved") return;
+			lease.state = "cancelled";
+			await this.append(c, lease, "ci.LeaseCancelled", at);
+			await this.queueInside(c, job, at);
+		});
+	}
+	abortIsolatedAndRequeue(id: string, job: Job, at: string) {
+		const recoverable = new Set([
+			"reserved",
+			"dispatching",
+			"claiming",
+			"dispatched",
+			"running",
+			"uncertain",
+		]);
+		const isolatedProviders = new Set([
+			"vercel",
+			"kubernetes",
+			"hobo-box-worker",
+		]);
+		return this.tx(async (c) => {
+			const lease = await this.readLease(c, id);
+			if (!lease || !recoverable.has(lease.state)) return;
+			if (!isolatedProviders.has(lease.provider)) return;
 			lease.state = "cancelled";
 			await this.append(c, lease, "ci.LeaseCancelled", at);
 			await this.queueInside(c, job, at);

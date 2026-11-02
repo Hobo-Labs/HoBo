@@ -46,7 +46,7 @@ export function parseConfiguration(json: string): Configuration {
 				throw new Error("invalid or duplicate offer");
 			ids.add(offer.id);
 			if (
-				!["", "gh-actions", "dagger", "cf", "sandbox", "ado"].includes(
+				!["", "gh-actions", "dagger", "cf", "sandbox", "ado", "isolated-container"].includes(
 					offer.backend,
 				)
 			)
@@ -57,7 +57,13 @@ export function parseConfiguration(json: string): Configuration {
 				(offer.provider === "dagger" && offer.backend !== "dagger") ||
 				(offer.provider === "cloudflare" && offer.backend !== "cf") ||
 				(offer.provider === "vercel" && offer.backend !== "sandbox") ||
-				(offer.backend === "sandbox" && offer.provider !== "vercel")
+				(offer.backend === "sandbox" && offer.provider !== "vercel") ||
+				(((offer.provider === "kubernetes" ||
+					offer.provider === "hobo-box-worker") &&
+					offer.backend !== "isolated-container") ||
+				(offer.backend === "isolated-container" &&
+					offer.provider !== "kubernetes" &&
+					offer.provider !== "hobo-box-worker"))
 			)
 				throw new Error(
 					"native provider requires its matching execution backend",
@@ -69,6 +75,7 @@ export function parseConfiguration(json: string): Configuration {
 					"depot",
 					"warpbuild",
 					"kubernetes",
+					"hobo-box-worker",
 					"local",
 					"dagger",
 					"cloudflare",
@@ -88,6 +95,20 @@ export function parseConfiguration(json: string): Configuration {
 				throw new Error(
 					"local provider requires one zero-price gh-actions workstation on hobo-local-host without free-minute credits",
 				);
+			if (offer.backend === "isolated-container") {
+				if (
+					offer.provider !== "kubernetes" ||
+					offer.runsOn !== "hobo-isolated-worker" ||
+					offer.freeMinutes !== 0 ||
+					offer.priceMicrosPerMinute !== 0 ||
+					offer.budgetMicros !== 0 ||
+					offer.sandboxPricing ||
+					offer.sandboxAllowance
+				)
+					throw new Error(
+						"isolated-container requires a zero-price kubernetes worker offer without sandbox pricing",
+					);
+			}
 			if (offer.backend === "sandbox") {
 				if (!offer.sandboxPricing || offer.freeMinutes !== 0)
 					throw new Error(

@@ -24,6 +24,7 @@ import {
 	getRun,
 } from "./github.js";
 import type { IdentityVerifier } from "./oidc.js";
+import { verifyIngressForward } from "./ingress-forward.js";
 import type { LeaseStore } from "./store.js";
 
 const JobWebhook = z.object({
@@ -63,6 +64,7 @@ export class Relay {
 			github: GithubTransport;
 			identity: IdentityVerifier;
 			webhookSecret: string;
+			ingressForwardSecret?: string;
 			now?: () => string;
 		},
 	) {
@@ -137,7 +139,18 @@ export class Relay {
 		raw: Buffer,
 		signature: string,
 		event: string,
+		ingressForward?: string,
 	): Promise<string> {
+		if (
+			this.options.ingressForwardSecret &&
+			verifyIngressForward(
+				this.options.ingressForwardSecret,
+				raw,
+				ingressForward,
+			)
+		) {
+			return this.processWebhook(raw, event);
+		}
 		const expected = createHmac("sha256", this.options.webhookSecret)
 			.update(raw)
 			.digest();
@@ -146,6 +159,9 @@ export class Relay {
 			!timingSafeEqual(expected, Buffer.from(signature.slice(7), "hex"))
 		)
 			throw new Error("invalid webhook signature");
+		return this.processWebhook(raw, event);
+	}
+	async processWebhook(raw: Buffer, event: string): Promise<string> {
 		if (event === "workflow_run") {
 			const parsed = RunWebhook.safeParse(JSON.parse(raw.toString()));
 			if (!parsed.success) return "ignored";

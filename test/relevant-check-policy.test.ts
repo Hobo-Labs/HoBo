@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { afterAll, beforeAll, test, vi } from "vitest";
+
+beforeAll(() => {
+	vi.stubEnv("HOBO_TURBO_CONCURRENCY", "");
+});
+
+afterAll(() => {
+	vi.unstubAllEnvs();
+});
 
 import { findCaseCollisions } from "../scripts/check-case-collisions.js";
 import {
@@ -565,7 +573,12 @@ test("root script and test changes select the root typecheck lane", () => {
 	const { checks } = plan(["scripts/run-relevant-checks.ts"]);
 
 	assert.equal(
-		checks.some((check) => check.args.join(" ") === "run typecheck:root"),
+		checks.some(
+			(check) =>
+				check.command === "pnpm" &&
+				check.args.join(" ") ===
+					"exec turbo run typecheck:root --output-logs=new-only --concurrency=100%",
+		),
 		true,
 	);
 });

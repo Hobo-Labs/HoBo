@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { generateKeyPairSync, verify } from "node:crypto";
 import {
 	mkdir,
@@ -14,12 +14,32 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { expect, it } from "vitest";
+import { cueBinary } from "../../stage-gate/test/helpers/cue-binary.js";
 import { createSelfHostedHttpsFixture } from "../../auth-md/test/https-fixture.js";
 import {
 	createComposedHoboCli,
 	createDefaultYardRuntime,
 } from "../src/index.js";
 import { isJsonObject, type JsonObject } from "../src/json.js";
+
+const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+
+function cueBinaryForRepo(): string {
+	try {
+		return cueBinary(process.env, repoRoot);
+	} catch {
+		const mise = spawnSync("mise", ["which", "cue"], { encoding: "utf8" });
+		if (mise.status === 0) {
+			const resolved = mise.stdout.trim();
+			if (resolved !== "") {
+				return cueBinary({ ...process.env, HOBO_CUE_BIN: resolved }, repoRoot);
+			}
+		}
+		throw new Error(
+			"cue v0.14.0 not found: set HOBO_CUE_BIN, run root test:schema, install cue via mise, or put cue on PATH",
+		);
+	}
+}
 
 it("executes auth.md discovery, registration, scoped proof, temporary placement, independent claims, rotation and revocation over self-hosted HTTPS", async () => {
 	const home = await mkdtemp(join(tmpdir(), "hobo-authmd-product-"));
@@ -445,9 +465,7 @@ it("executes auth.md discovery, registration, scoped proof, temporary placement,
 		expect(advertisements).toBeGreaterThan(5);
 		expect(customReads).toBeGreaterThan(5);
 		execFileSync(
-			fileURLToPath(
-				new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
-			),
+			cueBinaryForRepo(),
 			[
 				"vet",
 				"-c",

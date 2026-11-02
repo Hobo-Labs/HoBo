@@ -54,6 +54,7 @@ function fixture(options: {
 		reserve: impossible,
 		transition: impossible,
 		cancelAndRequeue: impossible,
+		abortIsolatedAndRequeue: impossible,
 		settleObserved: impossible,
 		ready: async () => true,
 		latestLeaseIntents: async () => [],

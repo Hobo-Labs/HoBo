@@ -133,7 +133,7 @@ describe("pact: balancer-to-actions-variables", () => {
 		const pact = await loadPact("balancer-to-actions-variables.pact.json");
 		const calls: Array<{ method: string; url: string; body?: unknown }> = [];
 		const port = actionsVariables({
-			owner: "hobo-operator",
+			owner: "Hobo-Labs",
 			repo: "HoBo",
 			token: "pact-token",
 			fetchImpl: pactFetch(pact.interactions, calls),
@@ -146,7 +146,7 @@ describe("pact: balancer-to-actions-variables", () => {
 
 		const patch = calls.find((call) => call.method === "PATCH");
 		expect(patch?.url).toBe(
-			"/repos/hobo-operator/HoBo/actions/variables/HOBO_RUNNER_LINUX_SMALL",
+			"/repos/Hobo-Labs/HoBo/actions/variables/HOBO_RUNNER_LINUX_SMALL",
 		);
 		expect(patch?.body).toStrictEqual(
 			pact.interactions[1]?.request.body,
@@ -161,7 +161,7 @@ describe("pact: balancer-to-actions-variables", () => {
 		);
 		const calls: Array<{ method: string; url: string; body?: unknown }> = [];
 		const port = actionsVariables({
-			owner: "hobo-operator",
+			owner: "Hobo-Labs",
 			repo: "HoBo",
 			token: "pact-token",
 			fetchImpl: pactFetch(postOnly, calls),
@@ -169,7 +169,7 @@ describe("pact: balancer-to-actions-variables", () => {
 
 		await port.set("HOBO_RUNNER_LINUX_SMALL", "ubuntu-latest");
 		const post = calls.find((call) => call.method === "POST");
-		expect(post?.url).toBe("/repos/hobo-operator/HoBo/actions/variables");
+		expect(post?.url).toBe("/repos/Hobo-Labs/HoBo/actions/variables");
 		expect(post?.body).toStrictEqual(postOnly[0]?.request.body);
 	});
 });

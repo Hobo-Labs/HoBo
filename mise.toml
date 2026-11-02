@@ -1,0 +1,52 @@
+[tools]
+cue = "0.14.0"
+gitleaks = "8.22.1"
+node = "24"
+pnpm = "10.33.4"
+turbo = "2.11.10"
+
+[env]
+HOBO_MISE = "1"
+HOBO_CI_RUNNER = "1"
+
+# Hermetic CI runner image: tools above are packaged as one OCI layer each via `mise oci build`.
+# Base OS + system packages + Actions runner host deps live in deploy/ci-runner/base/Dockerfile only.
+[oci]
+from = "127.0.0.1:5000/hobo-ci-runner-base:local"
+tag = "hobo-ci-worker:local"
+workdir = "/home/runner"
+user = "1000:1000"
+user_id = 1000
+group_id = 1000
+mount_point = "/mise"
+cmd = ["sleep", "infinity"]
+
+[oci.labels]
+"org.opencontainers.image.title" = "hobo-ci-worker"
+"org.opencontainers.image.description" = "Hermetic HoBo self-hosted CI runner (mise oci + base image)"
+
+[oci.env]
+MISE_TRUSTED_CONFIG_PATHS = "/etc/mise/config.toml"
+
+[settings.oci]
+insecure_registries = ["127.0.0.1:5000"]
+
+[tasks.install]
+description = "Install workspace dependencies (frozen lockfile)"
+run = "pnpm install --frozen-lockfile --config.confirmModulesPurge=false"
+
+[tasks.build]
+description = "Build all production packages (turbo)"
+run = "pnpm run build"
+
+[tasks."test:unit"]
+description = "Unit test lane"
+run = "pnpm run test:unit"
+
+[tasks."agent:check"]
+description = "Impact-scoped agent validation"
+run = "pnpm run agent:check"
+
+[tasks.doctor]
+description = "Environment doctor"
+run = "pnpm run doctor"

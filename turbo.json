@@ -28,7 +28,8 @@
     "https_proxy",
     "no_proxy",
     "CELLD_BIN",
-    "CELLD_ESBUILD"
+    "CELLD_ESBUILD",
+    "NODE_OPTIONS"
   ],
   "tasks": {
     "build": {
@@ -52,16 +53,23 @@
     "@hobo/ci-guard#build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
     "typecheck": { "dependsOn": ["^build"], "outputs": [] },
     "lint": { "outputs": [] },
-    "test": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md"], "outputs": [] },
-    "@hobo/code#test": { "dependsOn": ["build", "@hobo/hobo#build", "@hobo/adapter-hono#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md"], "outputs": [] },
-    "@hobo/conformance#test": { "dependsOn": ["build", "@hobo/storage-sqlite#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md"], "outputs": [] },
-    "@hobo/hobo#test": { "dependsOn": ["build", "@hobo/adapter-hono#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md"], "outputs": [] },
-    "@hobo/runtime#test": { "dependsOn": ["build", "@hobo/runtime-local#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md"], "outputs": [] },
-    "test:unit": { "dependsOn": ["^build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md"], "outputs": [] },
-    "test:schema": { "inputs": ["$TURBO_DEFAULT$", "!**/*.md"], "outputs": [] },
-    "test:contract:consumer": { "dependsOn": ["^build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md"], "outputs": ["pacts/**"] },
-    "test:contract:provider": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md"], "outputs": [] },
+    "test": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "@hobo/code#test": { "dependsOn": ["build", "@hobo/hobo#build", "@hobo/adapter-hono#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "@hobo/conformance#test": { "dependsOn": ["build", "@hobo/storage-sqlite#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "@hobo/hobo#test": { "dependsOn": ["build", "@hobo/adapter-hono#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "@hobo/runtime#test": { "dependsOn": ["build", "@hobo/runtime-local#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "test:unit": { "dependsOn": ["^build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "test:schema": { "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "test:contract:consumer": { "dependsOn": ["^build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": ["pacts/**"] },
+    "test:contract:provider": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "//#typecheck:root": {
+      "dependsOn": [
+        "@hobo/bindles#build",
+        "@hobo/ci#build",
+        "@hobo/connectivity#build",
+        "@hobo/core#build",
+        "@hobo/dispatcher#build"
+      ],
       "inputs": ["tsconfig.json", "tsconfig.base.json", "scripts/**", "test/**", "!scripts/ci/**"],
       "outputs": []
     },

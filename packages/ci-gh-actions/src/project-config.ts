@@ -7,6 +7,10 @@ import {
 import { z } from "zod";
 import { createCiRelayClient } from "./client.js";
 import {
+	parseEnvironmentEngineList,
+	parseEnvironmentEngineRelays,
+} from "./engine-relay-routing.js";
+import {
 	CiProjectDocumentSchema,
 	resolveCiProjectReferences,
 } from "./project-schema.js";
@@ -29,11 +33,30 @@ const SecretDeclarations = z
 const JsonValue = z.json();
 const JsonObject = z.record(z.string(), JsonValue);
 type JsonData = z.infer<typeof JsonValue>;
+const JobAdmission = z.enum(["push", "pull"]);
+const CiEngineId = z.string().regex(/^[a-z][a-z0-9-]{0,62}$/);
+const EngineRelayOverride = z
+	.object({
+		relayOrigin: z.string().min(1).max(2048).optional(),
+	})
+	.strict();
+export const EnvironmentEngineRelaysSchema = z
+	.record(CiEngineId, EngineRelayOverride)
+	.refine((entries) => Object.keys(entries).length <= 16);
+export const EnvironmentEnginesSchema = z.union([
+	z.array(CiEngineId).max(16),
+	z
+		.record(CiEngineId, EngineRelayOverride.partial())
+		.refine((entries) => Object.keys(entries).length <= 16),
+]);
 const EnvironmentFields = z
 	.object({
 		relayOrigin: z.string().min(1).max(2048),
 		githubWebhookOrigin: z.string().min(1).max(2048).optional(),
 		allowInsecureLoopback: z.boolean().optional(),
+		jobAdmission: JobAdmission.optional(),
+		engines: EnvironmentEnginesSchema.optional(),
+		engineRelays: EnvironmentEngineRelaysSchema.optional(),
 		secrets: SecretDeclarations.optional(),
 		policy: JsonValue,
 	})
@@ -63,6 +86,14 @@ export interface CiProjectEnvironment {
 	/** Declared public GitHub ingress; reachability and registration are separate. */
 	readonly githubWebhookOrigin: string | undefined;
 	readonly allowInsecureLoopback: boolean;
+	/** Push accepts signed GitHub webhooks at the relay; pull polls GitHub for queued jobs. */
+	readonly jobAdmission: "push" | "pull" | undefined;
+	/** Engines served from this environment profile (defaults to repository inventory). */
+	readonly engines: readonly string[] | undefined;
+	/** Per-engine relay origin overrides (falls back to environment relayOrigin). */
+	readonly engineRelays:
+		| Readonly<Record<string, { readonly relayOrigin?: string }>>
+		| undefined;
 	/** Logical names and required phases only; secret values are never configured here. */
 	readonly secrets: Readonly<Record<string, CiSecretRequirement>>;
 	readonly policy: ParsedCiPolicy;
@@ -97,6 +128,7 @@ export interface CiProjectEnvironmentTemplate {
 	relayOrigin?: string;
 	githubWebhookOrigin?: string;
 	allowInsecureLoopback?: boolean;
+	jobAdmission?: "push" | "pull";
 	secrets?: Readonly<
 		Record<string, { readonly requiredFor: readonly CiSecretPhase[] }>
 	>;
@@ -150,9 +182,14 @@ function projectConfig(
 		throw new Error("invalid environment selection");
 	const targets = new Set<string>();
 	for (const entry of entries) {
-		const key = JSON.stringify([entry.relayOrigin, entry.policy.accountId]);
-		if (targets.has(key)) throw new Error("duplicate environment account");
-		targets.add(key);
+		const origins = [entry.relayOrigin];
+		for (const override of Object.values(entry.engineRelays ?? {}))
+			if (override.relayOrigin) origins.push(override.relayOrigin);
+		for (const origin of origins) {
+			const key = JSON.stringify([origin, entry.policy.accountId]);
+			if (targets.has(key)) throw new Error("duplicate environment account");
+			targets.add(key);
+		}
 	}
 	const config = Object.freeze({
 		defaultEnvironment,
@@ -228,7 +265,8 @@ export function parseCiProjectConfig(
 		if (organization && !validatedConfigs.has(organization))
 			throw new Error("organization configuration is not validated");
 		const authored = CiProjectDocumentSchema.parse(JSON.parse(json));
-		const input = ProjectInput.parse(resolveCiProjectReferences(authored));
+		const { selection: _ignoredSelection, ...documentBody } = authored;
+		const input = ProjectInput.parse(resolveCiProjectReferences(documentBody));
 		const entries = Object.entries(input.environments ?? {});
 		const environments = Object.fromEntries(
 			entries.map(([name, rawEntry]) => {
@@ -249,6 +287,9 @@ export function parseCiProjectConfig(
 							? githubWebhookOrigin(entry.githubWebhookOrigin)
 							: undefined,
 						allowInsecureLoopback,
+						jobAdmission: entry.jobAdmission,
+						engines: parseEnvironmentEngineList(entry.engines),
+						engineRelays: parseEnvironmentEngineRelays(entry.engineRelays),
 						secrets: Object.freeze(
 							Object.fromEntries(
 								Object.entries(entry.secrets ?? {}).map(

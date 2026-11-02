@@ -45,7 +45,30 @@ test("only the reviewed manual HoBo acceptance recipe is enabled", async () => {
 	);
 	const result = lint(await fixture({ [enabled]: actual }));
 	assert.equal(result.status, 0, result.stderr);
-	assert.match(result.stdout, /1 reviewed manual HoBo acceptance workflow/);
+	assert.match(result.stdout, /1 enabled workflow/);
+});
+test("authoritative CI workflows are an allowed enabled set", async () => {
+	const minimalHoboCi = `name: HoBo CI Fabric
+on:
+  push:
+    branches: [main]
+jobs:
+  pr-gate:
+    runs-on: hobo
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+`;
+	const result = lint(
+		await fixture({
+			[enabled]: template,
+			"hobo-ci.yml": minimalHoboCi,
+		}),
+	);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /2 enabled workflow/);
 });
 test("a checkout without enabled workflows still passes", async () => {
 	assert.equal(lint(await fixture()).status, 0);
@@ -56,7 +79,7 @@ test("every other recognized workflow filename remains forbidden", async () => {
 			await fixture({ [enabled]: template, [name]: template }),
 		);
 		assert.equal(result.status, 1);
-		assert.match(result.stderr, /not the approved manual HoBo acceptance/);
+		assert.match(result.stderr, /approved CI fabric set/);
 	}
 });
 for (const [name, original, changed] of [

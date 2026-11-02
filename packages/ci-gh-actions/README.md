@@ -77,6 +77,10 @@ Already running jobs retain their reservation and finish on their chosen host.
 
 ## Deploy the relay
 
+For **`hobo ci serve`** in a checkout (bind/public origin split, ingress HMAC,
+trust proxy) see [`REMOTE-RELAY-SERVE.md`](REMOTE-RELAY-SERVE.md). For the
+container image and Compose/Kubernetes manifests see [`deploy/README.md`](deploy/README.md).
+
 [Compose, Kubernetes, image build, TLS, backup and recovery](deploy/README.md)
 are included. The runtime uses Node 24, UID/GID 1000, a read-only root filesystem,
 a writable temporary directory and one persistent SQLite directory. A kernel
@@ -149,7 +153,15 @@ such as `https://hobo-ci.vercel.app` when that is the relay for its account.
 An optional `githubWebhookOrigin` records the separate public HTTPS origin
 used for GitHub delivery, such as a tunnel to the local container. It is
 configuration metadata: it neither registers the App nor proves the hostname is
-publicly reachable. Credentials are sent only to the trusted control origin.
+publicly reachable. **Production GitHub App webhooks should target a shared ingress
+front door** (`createWebhookIngressHandler`), which loads this file at the event
+commit and forwards `workflow_job` events to the matching `relayOrigin`. Set
+`jobAdmission: "pull"` (or use loopback defaults) for local environments so
+developers poll GitHub instead of exposing a relay URL. Override the selected
+environment with `HOBO_CI_ENVIRONMENT` or a gitignored `.hobo/ci.local.json`
+overlay. Fork pull requests resolve config at the **base branch** ref and honor
+`selection.forkPullRequestEnvironment` so untrusted head refs cannot aim webhooks
+at an attacker-controlled relay.
 Amounts are USD microdollars. Each policy still requires separately provisioned
 providers and a repository connection on its selected relay.
 

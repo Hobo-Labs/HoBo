@@ -118,6 +118,9 @@ function setup(
 		cancelAndRequeue: async (
 			...args: Parameters<typeof sync.cancelAndRequeue>
 		) => sync.cancelAndRequeue(...args),
+		abortIsolatedAndRequeue: async (
+			...args: Parameters<typeof sync.abortIsolatedAndRequeue>
+		) => sync.abortIsolatedAndRequeue(...args),
 		settle: async (...args: Parameters<typeof sync.settle>) =>
 			sync.settle(...args),
 	};

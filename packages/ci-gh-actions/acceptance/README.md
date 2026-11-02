@@ -53,7 +53,7 @@ A read-only permission probe uses the current `gh` authentication and fails on
 an inaccessible repository identity or Actions runners API:
 
 ```sh
-node --import tsx packages/ci-gh-actions/scripts/acceptance.ts --live-verify --repository Tyler-R-Kendrick/HoBo
+node --import tsx packages/ci-gh-actions/scripts/acceptance.ts --live-verify --repository Hobo-Labs/HoBo
 ```
 
 Success is only a permission probe, not a live workflow pass. A 403 is a failed

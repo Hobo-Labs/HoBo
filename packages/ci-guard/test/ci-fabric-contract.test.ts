@@ -27,7 +27,7 @@ jobs:
       - run: assert-ci-contract
   secret-scan:
     steps:
-      - uses: gitleaks/gitleaks-action@v2
+      - run: gitleaks git --redact --exit-code 1
 `,
 	},
 	{

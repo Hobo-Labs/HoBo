@@ -12,7 +12,7 @@ HoBo is a **reference implementation** for the portfolio DX baseline. The canoni
 - **Thin, affected, env-only CI** (cross-OS SHA-256 digest parity, offline `docker --network=none` gates, gitleaks). No deployment (design-phase).
 
 ## Residual improvements (Advanced)
-- [ ] Consider Turbo **remote** cache — currently local `.turbo/cache` via `actions/cache`.
+- [x] Turbo remote cache in CI when `TURBO_TOKEN` / `TURBO_TEAM` are set; `actions/cache` fallback on `.turbo/cache`.
 - [ ] Optional `commit-msg` lint (neither reference repo has one yet).
 
 See the playbook §12 for the full conformance checklist.

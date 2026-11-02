@@ -30,6 +30,8 @@ an image or commit them:
 | `HOBO_CI_GITHUB_APP_KEY_FILE` | `/run/secrets/github-app-key.pem` |
 | `HOBO_CI_WEBHOOK_SECRET_FILE` | `/run/secrets/webhook-secret` |
 | `HOBO_CI_CONTROL_TOKENS_FILE` | `/run/secrets/control-tokens.json` |
+| `HOBO_CI_INGRESS_FORWARD_SECRET_FILE` | Optional; required when a central ingress forwards webhooks with `X-Hobo-Ingress-Forward` |
+| `HOBO_CI_TRUST_PROXY` | Set `1` when TLS terminates at a reverse proxy that sets `X-Forwarded-Proto` |
 | `HOBO_CI_HOST` / `HOBO_CI_PORT` | `0.0.0.0` / `8787` inside the container |
 
 `HOBO_CI_CONFIG` seeds a new empty partition. An existing database retains its

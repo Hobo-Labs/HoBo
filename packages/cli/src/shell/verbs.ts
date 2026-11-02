@@ -319,6 +319,7 @@ Usage:
   hobo ci grep <text>              Search recent run logs
   hobo ci rerun [run]              Retry a completed run
   hobo ci status                  Inspect the relay connection
+  hobo ci serve                   Host the CI relay locally (see serve options)
 
 Role: ${verb.role}
 ${statusLine}
@@ -335,6 +336,23 @@ Connection options:
   --accept-all-matching-jobs  Allow isolated runners for matching repository jobs
   -y, --yes                   Skip the connection confirmation
   --non-interactive           Never prompt (enable also requires --yes)
+
+Serve options (hobo ci serve):
+  --environment <name>        CI profile from .hobo/ci.json (default + overrides)
+  --config <path>             Alternate ci.json path
+  --host <address>            Bind address (default 127.0.0.1; use 0.0.0.0 for containers)
+  --port <number>             Listen port (independent of public origin behind a proxy)
+  --origin, --base-url, --url, --endpoint <origin>
+                              Public HTTPS origin for webhooks and runner callbacks
+  --trust-proxy               Honor X-Forwarded-Proto from a TLS-terminating reverse proxy
+  --admission push|pull       Webhook push vs GitHub poll admission
+  --installation-id <id>      Required for pull admission polling
+  --allow-insecure            Allow non-loopback HTTP without TLS
+  --with-worker               Start isolated-container worker (needs DATABASE_URL)
+  --print-config              Print resolved config (secrets redacted) and exit
+  --db <path>                 SQLite relay store path
+  --engine <name>             Serve only this engine (repeatable; default: profile + repo inventory)
+  --home <path>               HOBO_HOME for serve state (credentials, db)
 
 Run options:
   --git-branch, --branch <name>  Filter list/grep by branch

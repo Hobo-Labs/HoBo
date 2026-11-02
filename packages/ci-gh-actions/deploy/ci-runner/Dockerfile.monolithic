@@ -1,0 +1,58 @@
+# syntax=docker/dockerfile:1.19
+# Hermetic HoBo CI runner: declared apt packages + mise.lock toolchains + pinned gitleaks.
+FROM debian:bookworm-slim@sha256:67badb485576cbaee9a5694920cb7efd013b6734612075350be5e1a7d8eac56f
+
+ARG GITLEAKS_VERSION=8.22.1
+ARG GITLEAKS_SHA256_X64=2f92ab3b8e08319ac30836c32b90818e01519c3a4982771e4f45a7f5607872f7
+ARG GITLEAKS_SHA256_ARM64=598a495a402aa31d10322df04c1deebcd73c586bf7dda1d6df53572280250a85
+ARG TARGETARCH
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+COPY packages/ci-gh-actions/deploy/ci-runner/system-packages.txt /tmp/system-packages.txt
+RUN apt-get update \
+  && grep -v '^#' /tmp/system-packages.txt | grep -v '^[[:space:]]*$' | xargs apt-get install -y --no-install-recommends \
+  && rm -rf /var/lib/apt/lists/* /tmp/system-packages.txt
+
+RUN curl -fsSL https://mise.run | sh
+
+ENV PATH="/root/.local/share/mise/shims:/root/.local/bin:${PATH}"
+
+WORKDIR /opt/hobo-toolchain
+COPY mise.toml mise.lock ./
+RUN mise trust ./mise.toml \
+  && mise install \
+  && mise exec -- node --version \
+  && mise exec -- pnpm --version \
+  && mise exec -- cue version \
+  && mise exec -- turbo --version
+
+RUN case "${TARGETARCH:-amd64}" in \
+      arm64) gitleaks_arch=arm64; digest="${GITLEAKS_SHA256_ARM64}" ;; \
+      amd64) gitleaks_arch=x64; digest="${GITLEAKS_SHA256_X64}" ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+  && archive="gitleaks_${GITLEAKS_VERSION}_linux_${gitleaks_arch}.tar.gz" \
+  && curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}" -o "/tmp/${archive}" \
+  && echo "${digest}  /tmp/${archive}" | sha256sum -c - \
+  && tar -xzf "/tmp/${archive}" -C /usr/local/bin gitleaks \
+  && rm "/tmp/${archive}" \
+  && gitleaks version
+
+RUN groupadd --gid 1000 hobo-ci 2>/dev/null || true \
+  && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash hobo-ci \
+  && mkdir -p /home/hobo-ci/.local/bin /home/hobo-ci/.local/share \
+  && cp -a /root/.local/share/mise /home/hobo-ci/.local/share/mise \
+  && cp /root/.local/bin/mise /home/hobo-ci/.local/bin/mise \
+  && chown -R hobo-ci:hobo-ci /home/hobo-ci /opt/hobo-toolchain
+
+USER hobo-ci
+WORKDIR /home/hobo-ci
+ENV PATH="/home/hobo-ci/.local/share/mise/shims:/home/hobo-ci/.local/bin:/usr/local/bin:${PATH}"
+ENV MISE_TRUSTED_CONFIG_PATHS="/opt/hobo-toolchain/mise.toml"
+ENV HOBO_CI_RUNNER=1
+
+LABEL org.opencontainers.image.title="hobo-ci-runner" \
+  org.opencontainers.image.description="Hermetic HoBo self-hosted CI runner (mise.lock + system packages)"
+
+CMD ["sleep", "infinity"]

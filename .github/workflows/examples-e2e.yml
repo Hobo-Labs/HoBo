@@ -3,8 +3,6 @@ name: HoBo Examples E2E
 on:
   pull_request:
     branches: [main]
-    # Both jobs are label-gated, so opened/synchronize/reopened runs were
-    # all-skip no-ops; only label additions can select a job here.
     types: [labeled]
   schedule:
     - cron: "17 3 * * 1"
@@ -16,9 +14,11 @@ permissions:
 jobs:
   hello-bindle-fixture:
     name: hello-bindle sandbox fixture (simulate)
-    # Hosted Actions runners are disabled until explicitly re-enabled.
-    if: ${{ false }}
-    runs-on: ${{ vars.HOBO_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      contains(github.event.pull_request.labels.*.name, 'hobo/e2e')
+    runs-on: hobo
     timeout-minutes: 20
     permissions:
       contents: read
@@ -29,11 +29,13 @@ jobs:
     env:
       HOBO_SANDBOX_CLOUD_AUDIENCE: hobo:sandbox-cloud
     steps:
-      - uses: actions/checkout@v4
-      - run: corepack enable pnpm
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          node-version: 24
+          submodules: recursive
+      - run: corepack enable pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
@@ -50,9 +52,10 @@ jobs:
 
   hello-bindle-fixture-quarantine:
     name: hello-bindle fixture quarantine (simulate)
-    # Hosted Actions runners are disabled until explicitly re-enabled.
-    if: ${{ false }}
-    runs-on: ${{ vars.HOBO_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    if: >-
+      github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')
+    runs-on: hobo
     timeout-minutes: 20
     continue-on-error: true
     permissions:
@@ -61,11 +64,13 @@ jobs:
     env:
       HOBO_SANDBOX_CLOUD_AUDIENCE: hobo:sandbox-cloud
     steps:
-      - uses: actions/checkout@v4
-      - run: corepack enable pnpm
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          node-version: 24
+          submodules: recursive
+      - run: corepack enable pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
