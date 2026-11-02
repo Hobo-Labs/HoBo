@@ -6,7 +6,7 @@ import {
 	route,
 } from "@hobo/ci";
 import type { PostgresCiStore } from "@hobo/ci/postgres";
-import type { GithubTransport } from "../github.js";
+import { type GithubTransport, getJob } from "../github.js";
 import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
 import { runnerDownloadFor } from "../bootstrap.js";
@@ -306,6 +306,16 @@ exec ./run.sh --jitconfig "$jit"`,
 			}
 			if (deadWhileRunning) return;
 			if (!forceStop) return;
+			const original = await getJob(
+				options.github,
+				lease.installationId,
+				lease.repository,
+				lease.jobId,
+			);
+			// Match hosted relay settlement: if the reserved job is still queued
+			// (including when GitHub assigned a different job to this runner), re-queue it.
+			const unmet =
+				original.status === "queued" ? requeueJob(lease) : undefined;
 			await options.store.settle(
 				id,
 				0,
@@ -316,6 +326,7 @@ exec ./run.sh --jitconfig "$jit"`,
 					),
 				),
 				now(),
+				unmet,
 			);
 		},
 	};

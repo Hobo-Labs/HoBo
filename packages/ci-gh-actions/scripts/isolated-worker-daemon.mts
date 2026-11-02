@@ -77,10 +77,17 @@ void parseConfiguration(required("HOBO_CI_CONFIG_JSON"));
 
 let draining = false;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
+let tickInFlight: Promise<void> | undefined;
 
-async function tick() {
-	if (draining) return;
-	await runtime.tick({ maxDeliveries: 0 });
+function runTick(): Promise<void> {
+	if (draining) return Promise.resolve();
+	const current = (async () => {
+		await runtime.tick({ maxDeliveries: 0 });
+	})();
+	tickInFlight = current.finally(() => {
+		if (tickInFlight === current) tickInFlight = undefined;
+	});
+	return tickInFlight;
 }
 
 log("hobo_ci_isolated_worker_started", {
@@ -91,7 +98,7 @@ log("hobo_ci_isolated_worker_started", {
 });
 
 pollTimer = setInterval(() => {
-	tick().catch((error) => {
+	void runTick().catch((error) => {
 		log("hobo_ci_isolated_worker_tick_failed", {
 			message: error instanceof Error ? error.message : "unknown",
 		});
@@ -106,6 +113,9 @@ async function shutdown(signal: string) {
 		draining = true;
 		if (pollTimer) clearInterval(pollTimer);
 		log("hobo_ci_isolated_worker_draining", { signal });
+		if (tickInFlight) {
+			await tickInFlight.catch(() => undefined);
+		}
 		const result = await waitForIsolatedWorkerDrain({
 			activeLeases: () => store.activeLeases(),
 			workerAccountId,
