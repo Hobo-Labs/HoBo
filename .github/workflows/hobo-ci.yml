@@ -248,7 +248,9 @@ jobs:
           tar -c --exclude=./.git . | docker run -i --rm --network=none \
             "$image" \
             bash -c 'set -euo pipefail
-          mkdir -p /workspace && cd /workspace && tar -x
+          work="$(mktemp -d)"
+          cd "$work"
+          tar -x
           pnpm --filter "ts-autocode-*" run build
           node --import tsx scripts/ci/dev-cold-loop-timing.mts'
 
