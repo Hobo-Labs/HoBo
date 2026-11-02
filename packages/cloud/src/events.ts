@@ -6,14 +6,15 @@
 // fact body's `resource`/`deploymentId` fields, never in the type string.
 
 import type { EventInput } from "@hobo/core";
-import { isJsonString, type JsonObject, type JsonValue } from "./json.js";
+
 import type {
 	DeploymentPlan,
 	MatchDecided,
 	PlanRemediation,
 } from "./plan-types.js";
+import { isJsonString, type JsonValue, type JsonObject } from "./json.js";
 
-// public-contract: schema version stamped on every emitted cloud fact; consumers key on it.
+
 export const CLOUD_EVENT_SCHEMA_VERSION = "hobo.cloud-events/v1";
 
 // Control-plane event catalog (control-plane.md + the epic reference

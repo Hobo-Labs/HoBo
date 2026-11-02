@@ -5,8 +5,15 @@ import { affectedLanes } from "../ci/affected-lanes.mts";
 
 const present = (): boolean => true;
 
-describe("affected-lanes (no false green)", () => {
-	it("skips only when every path is inert", () => {
+describe("affected-lanes", () => {
+	it("skips when no package-lane input changed", () => {
+		for (const path of [
+			".github/workflows/hobo-ci.yml",
+			".github/actions/setup-pnpm/action.yml",
+			"scripts/dx-preflight.mts",
+			"src/draft/technical-proofs/x/test/a.test.ts",
+		])
+			assert.equal(affectedLanes([path], present).mode, "skip");
 		assert.equal(
 			affectedLanes(["README.md", "docs/a.md"], present).mode,
 			"skip",
@@ -26,10 +33,6 @@ describe("affected-lanes (no false green)", () => {
 		"biome.json",
 		".npmrc",
 		"mise.toml",
-		".github/workflows/hobo-ci.yml",
-		".github/actions/setup-pnpm/action.yml",
-		"scripts/dx-preflight.mts",
-		"src/draft/technical-proofs/x/test/a.test.ts",
 		"vendor/ts-autocode",
 		"docs/../pnpm-lock.yaml",
 	]) {
@@ -49,17 +52,14 @@ describe("affected-lanes (no false green)", () => {
 		assert.equal(lanes.mode, "all");
 	});
 
-	it("filters changed packages together with their dependents", () => {
+	it("filters exactly the changed packages and examples", () => {
 		const lanes = affectedLanes(
 			["packages/ci/src/a.ts", "packages/ci/README.md", "examples/hello/x.ts"],
 			present,
 		);
 		assert.deepEqual(lanes, {
 			mode: "filtered",
-			filters: [
-				"--filter=...{./examples/hello}",
-				"--filter=...{./packages/ci}",
-			],
+			filters: ["--filter=./examples/hello", "--filter=./packages/ci"],
 		});
 	});
 
@@ -88,9 +88,6 @@ describe("affected-lanes (no false green)", () => {
 			);
 		assert.equal(run("pnpm-lock.yaml\n"), "--filter=*\n");
 		assert.equal(run("README.md\n"), "");
-		assert.equal(
-			run("packages/ci/src/a.ts\n"),
-			"--filter=...{./packages/ci}\n",
-		);
+		assert.equal(run("packages/ci/src/a.ts\n"), "--filter=./packages/ci\n");
 	});
 });

@@ -10,6 +10,8 @@ import {
 	type RuntimeLocalEventStore,
 } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
+import { isJsonObject, isJsonString } from "../src/json.js";
+
 import {
 	createInProcessCredentialBroker,
 	createInProcessExecutor,
@@ -26,7 +28,6 @@ import {
 	resourceActorKey,
 	runOrchestrator,
 } from "../src/index.js";
-import { isJsonObject, isJsonString } from "../src/json.js";
 
 // S2-03a/b: the provisioning path end to end. A DeploymentPlan DAG is choreographed
 // by ResourceActors reconciling desired→observed through a sandboxed Executor;

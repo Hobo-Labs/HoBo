@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { parseJsonValue, type JsonValue } from "../src/json.js";
 import { type ManifestV1, parseManifest } from "@hobo/bindles";
 import { createCloudflareProvider } from "@hobo/provider-cloudflare";
 import { describe, expect, it } from "vitest";
+
 import {
 	createRegistryFromProviders,
 	matchResource,
@@ -13,7 +15,6 @@ import {
 	type ResourceDefinition,
 	type ResourceIntent,
 } from "../src/index.js";
-import { type JsonValue, parseJsonValue } from "../src/json.js";
 
 // E19 placement-constraint vocabulary golden vectors (0015 §B deliverable 2):
 // property selectors, affinity/anti-affinity between resource classes, spread,

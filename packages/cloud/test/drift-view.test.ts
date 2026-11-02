@@ -21,15 +21,16 @@
  *     the three.
  */
 import { describe, expect, it } from "vitest";
-import { DEPLOYMENT_PLAN_SCHEMA } from "../src/plan-types.js";
-import type {
-	DeploymentViewRow,
-	ResourceLifecycle,
-} from "../src/projections/deployment-view.js";
+
 import {
 	computeDrift,
 	type DriftFinding,
 } from "../src/projections/drift-view.js";
+import type {
+	DeploymentViewRow,
+	ResourceLifecycle,
+} from "../src/projections/deployment-view.js";
+import { DEPLOYMENT_PLAN_SCHEMA } from "../src/plan-types.js";
 
 function row(overrides: Partial<DeploymentViewRow> = {}): DeploymentViewRow {
 	return {

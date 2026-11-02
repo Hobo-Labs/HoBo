@@ -30,7 +30,8 @@ import {
 	type ResourceDefinitionVNext,
 	type YardBindingContext,
 } from "../src/index.js";
-import type { JsonObject } from "../src/json.js";
+import { type JsonObject } from "../src/json.js";
+
 
 const NOW = Date.UTC(2026, 7, 8);
 

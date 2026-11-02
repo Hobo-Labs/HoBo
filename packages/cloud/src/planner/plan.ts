@@ -4,8 +4,7 @@ import type {
 	CapabilityRequirement,
 	TrustPolicy,
 } from "@hobo/capability-profiles";
-import { type LowerOptions, lowerManifest } from "../intent.js";
-import type { JsonObject } from "../json.js";
+import { lowerManifest, type LowerOptions } from "../intent.js";
 import {
 	DEPLOYMENT_PLAN_SCHEMA,
 	type DeploymentPlan,
@@ -25,6 +24,8 @@ import {
 	matchCapabilityRequirement,
 	type YardBindingContext,
 } from "./profile-matching.js";
+import { type JsonObject } from "../json.js";
+
 
 // The Planner: a pure function `plan(bindle, config, registry) -> DeploymentPlan`
 // (control-plane.md "The Planner"). Easy to test, replayable, deterministic. It
@@ -245,9 +246,7 @@ export function plan(
 			// `appliedRows` stays on the decision (the audit trail) and off the
 			// plan node: the plan is content-addressed, and which rows were
 			// consulted does not change what gets built.
-			...(bound?.productId !== undefined
-				? { productId: bound.productId }
-				: undefined),
+			...(bound?.productId !== undefined ? { productId: bound.productId } : undefined),
 			...(bound?.realizationParameters !== undefined
 				? { realizationParameters: bound.realizationParameters }
 				: undefined),

@@ -1,8 +1,9 @@
 import { defineProjection, type Projection } from "@hobo/data";
 
 import { CLOUD_EVENTS } from "../events.js";
-import type { JsonValue } from "../json.js";
 import type { DeploymentPlan, PlanRemediation } from "../plan-types.js";
+import { type JsonValue } from "../json.js";
+
 
 // The DeploymentView projection (control-plane.md "Choreography over
 // orchestration": a DeploymentView reconstructs the saga graph from events for

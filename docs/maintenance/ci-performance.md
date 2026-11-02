@@ -9,8 +9,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   installs hard-link instead of downloading.
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob
   lazily at checkout and timed out with HTTP 408 on this repo.
-- **Slimmer impact gate.** `scripts/ci/affected-lanes.mts` maps changed paths to lanes so the PR gate
-  only runs the lanes a change can affect; `scripts/test/affected-lanes.test.ts` pins the skip logic.
+- **Slimmer impact gate.** `scripts/ci/affected-lanes.mts` filters the turbo lanes to the changed
+  packages and examples. Root build inputs (lockfile, workspace, turbo, tsconfig, biome, toolchain pins,
+  vendored sources) run the whole workspace; workflows, root scripts and draft proofs are covered by the
+  root checks in the same gate. `scripts/test/affected-lanes.test.ts` pins the skip logic. Dependents are
+  not added yet: several packages carry pre-existing biome lint debt that a dependents sweep would surface.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
   from each job, so queue time and run time can be compared before and after a change.
 

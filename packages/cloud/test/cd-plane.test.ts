@@ -20,6 +20,7 @@ import {
 } from "../src/index.js";
 import { isJsonObject } from "../src/json.js";
 
+
 describe("Continuous Delivery plane (production path)", () => {
 	it("delivers resolved set under attested apply + progressive promote", async () => {
 		const fx = createContractAssertedCdFixtures({ tenant: "acme" });

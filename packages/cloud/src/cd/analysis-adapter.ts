@@ -4,7 +4,8 @@
  * Built-in analysis uses Harness health samples (SLO/Golden/guardrail).
  */
 import type { DeliveryHealthSignal } from "@hobo/identity";
-import type { JsonValue } from "../json.js";
+import { type JsonValue } from "../json.js";
+
 
 // public-contract: progressive analysis adapter schema.
 export const PROGRESSIVE_ANALYSIS_SCHEMA =
@@ -117,7 +118,7 @@ export function createResidualProgressiveAnalysis(options: {
 					method: "POST",
 					headers: {
 						"content-type": "application/json",
-						...options.headers,
+						...(options.headers),
 					},
 					body: JSON.stringify({
 						type: "io.hobo.progressive.analysis",

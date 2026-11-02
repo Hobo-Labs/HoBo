@@ -3,7 +3,8 @@
  * Self-heal never mutates baseline; successful fix is a proposed Delta only.
  */
 import { createHash, randomUUID } from "node:crypto";
-import type { JsonObject } from "../json.js";
+import { type JsonObject } from "../json.js";
+
 
 // public-contract: incident / A2H / self-heal schema.
 export const INCIDENT_CD_SCHEMA = "hobo.cd-incident/v1" as const;
@@ -148,7 +149,10 @@ export function decideFailurePath(
 	const incidentId = `inc_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 	const events: IncidentEvent[] = [];
 	let seq = 0;
-	const emit = (type: IncidentEvent["type"], data: Readonly<JsonObject>) => {
+	const emit = (
+		type: IncidentEvent["type"],
+		data: Readonly<JsonObject>,
+	) => {
 		seq += 1;
 		events.push(
 			Object.freeze({

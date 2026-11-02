@@ -1,11 +1,14 @@
 /**
  * Decide which turbo lanes the PR impact gate runs for a set of changed paths.
  *
- * The rule that keeps this from reporting a false green: a change may only skip
- * the lanes when every changed path is known to be inert (docs, changesets).
- * Anything unrecognised, any root-level build input, and any deleted package
- * runs the whole workspace. Changed packages are filtered with their
- * dependents (`...`), so a change to a shared package also tests its consumers.
+ * Package lanes run for changed packages and examples. Root build inputs that
+ * every turbo task hashes (lockfile, workspace, turbo, tsconfig and biome config,
+ * toolchain pins, vendored sources) and any deleted package run the whole
+ * workspace. Everything outside packages/ and examples/ (workflows, root
+ * scripts, root tests, draft proofs, docs) is not a package-lane input: the
+ * same gate covers it with test:root, the contract guard and agent:check, and
+ * the main full gate runs the whole workspace after merge. Dependents are not
+ * added, matching the previous rg-based filter.
  *
  * CLI: `git diff --name-only BASE...HEAD | node --import tsx scripts/ci/affected-lanes.mts`
  * prints one turbo argument per line (empty output = skip, `--filter=*`-free
@@ -19,13 +22,17 @@ export type AffectedLanes =
 	| { readonly mode: "all"; readonly reason: string }
 	| { readonly mode: "filtered"; readonly filters: readonly string[] };
 
-const INERT = [
-	/^docs\//,
-	/^\.changeset\/[^/]+\.md$/,
-	/^[^/]+\.md$/,
-	/^LICENSE[^/]*$/,
-	/^\.github\/ISSUE_TEMPLATE\//,
-	/^\.github\/[^/]+\.md$/,
+const GLOBAL_INPUTS = [
+	/^pnpm-lock\.yaml$/,
+	/^pnpm-workspace\.yaml$/,
+	/^package\.json$/,
+	/^turbo\.json$/,
+	/^tsconfig[^/]*\.json$/,
+	/^biome\.jsonc?$/,
+	/^\.npmrc$/,
+	/^mise\.toml$/,
+	/^\.node-version$/,
+	/^vendor\//,
 ];
 const WORKSPACE = /^(packages|examples)\/([^/]+)\//;
 
@@ -50,14 +57,14 @@ export function affectedLanes(
 			dirs.add(dir);
 			continue;
 		}
-		if (INERT.some((pattern) => pattern.test(path))) continue;
-		return { mode: "all", reason: `workspace-wide input changed: ${path}` };
+		if (GLOBAL_INPUTS.some((pattern) => pattern.test(path)))
+			return { mode: "all", reason: `workspace-wide input changed: ${path}` };
 	}
 	if (dirs.size === 0)
-		return { mode: "skip", reason: "only inert paths changed" };
+		return { mode: "skip", reason: "no package-lane inputs changed" };
 	return {
 		mode: "filtered",
-		filters: [...dirs].sort().map((dir) => `--filter=...{./${dir}}`),
+		filters: [...dirs].sort().map((dir) => `--filter=./${dir}`),
 	};
 }
 
