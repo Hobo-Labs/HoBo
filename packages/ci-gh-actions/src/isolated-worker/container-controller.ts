@@ -355,6 +355,9 @@ exec ./run.sh --jitconfig "$jit"`,
 					lease.sandboxSessionId,
 				);
 			} catch {
+				// An inspect error (timeout under load, daemon hiccup) is not proof the
+				// job died: stopping here kills a live runner. Retry on the next tick.
+				if (!forceStop) return;
 				running = false;
 			}
 			if (!forceStop && lease.state === "running" && running) return;
