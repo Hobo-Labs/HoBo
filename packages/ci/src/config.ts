@@ -46,9 +46,15 @@ export function parseConfiguration(json: string): Configuration {
 				throw new Error("invalid or duplicate offer");
 			ids.add(offer.id);
 			if (
-				!["", "gh-actions", "dagger", "cf", "sandbox", "ado", "isolated-container"].includes(
-					offer.backend,
-				)
+				![
+					"",
+					"gh-actions",
+					"dagger",
+					"cf",
+					"sandbox",
+					"ado",
+					"isolated-container",
+				].includes(offer.backend)
 			)
 				throw new Error("unsupported execution backend");
 			if (
@@ -58,12 +64,12 @@ export function parseConfiguration(json: string): Configuration {
 				(offer.provider === "cloudflare" && offer.backend !== "cf") ||
 				(offer.provider === "vercel" && offer.backend !== "sandbox") ||
 				(offer.backend === "sandbox" && offer.provider !== "vercel") ||
-				(((offer.provider === "kubernetes" ||
+				((offer.provider === "kubernetes" ||
 					offer.provider === "hobo-box-worker") &&
 					offer.backend !== "isolated-container") ||
 				(offer.backend === "isolated-container" &&
 					offer.provider !== "kubernetes" &&
-					offer.provider !== "hobo-box-worker"))
+					offer.provider !== "hobo-box-worker")
 			)
 				throw new Error(
 					"native provider requires its matching execution backend",

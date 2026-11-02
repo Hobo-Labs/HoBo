@@ -236,6 +236,10 @@ jobs:
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
           git fetch origin main
       - name: Full S0 gate set
+        env:
+          # One vitest fork at a time: four forks (default) with 3 GiB heaps plus
+          # componentize-js wizer exceed the 6 GiB job container and get OOM-killed.
+          HOBO_RELEVANT_CHECK_CONCURRENCY: "1"
         run: pnpm run check:all
       - name: Architecture guard (full repo)
         run: pnpm run architecture:guard:all
