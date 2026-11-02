@@ -212,6 +212,15 @@ try {
 			env: sanitizeNodeOptions(),
 		},
 	);
+	if (result.error) {
+		console.error(`run-tests: vitest failed to start: ${result.error.message}`);
+	}
+	if (result.signal) {
+		// A killed child has no exit status; name the signal so CI logs show why.
+		console.error(
+			`run-tests: vitest was killed by ${result.signal} (no exit status)`,
+		);
+	}
 	process.exitCode = result.status ?? 1;
 } finally {
 	rmSync(configDir, { force: true, recursive: true });
