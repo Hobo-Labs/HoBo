@@ -37,6 +37,7 @@ export interface GithubJobPollSummary {
 	readonly rateLimitRemaining?: number;
 }
 
+const COMPLETED_LOOKBACK_MS = 2 * 60 * 60 * 1000;
 const RUN_STATUSES = ["queued", "in_progress"] as const;
 const PolledStatus = z.enum(["queued", "in_progress", "completed"]);
 const STATUS_CODE = { queued: "q", in_progress: "p", completed: "c" } as const;
@@ -134,6 +135,16 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					);
 					for (const run of runs?.workflow_runs ?? []) runIds.add(run.id);
 				}
+				// A run that finished drops out of queued/in_progress before its last
+				// job's completion is seen; without it the runner's container is only
+				// reaped at max runtime and holds a slot. Recent completed runs close that.
+				const since = new Date(now() - COMPLETED_LOOKBACK_MS).toISOString();
+				const completed = await getJson(
+					connection.installationId,
+					`/repos/${connection.repository}/actions/runs?status=completed&created=%3E%3D${since}&per_page=50`,
+					Runs,
+				);
+				for (const run of completed?.workflow_runs ?? []) runIds.add(run.id);
 				summary.runs += runIds.size;
 				for (const runId of runIds) {
 					const jobs = await getJson(

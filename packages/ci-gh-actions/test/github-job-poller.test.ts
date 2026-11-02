@@ -49,7 +49,9 @@ class FakeGithub implements GithubTransport {
 	calls: string[] = [];
 	limited = false;
 	constructor(
-		readonly runs: Record<"queued" | "in_progress", number[]>,
+		readonly runs: Record<"queued" | "in_progress", number[]> & {
+			completed?: number[];
+		},
 		readonly jobs: Record<number, FakeJob[]>,
 	) {}
 	async request(installationId: number, path: string, method = "GET") {
@@ -74,6 +76,16 @@ class FakeGithub implements GithubTransport {
 				{ workflow_runs: this.runs[list[1]].map((id) => ({ id })) },
 				{ headers },
 			);
+		if (
+			/^\/repos\/Org\/Repo\/actions\/runs\?status=completed&created=%3E%3D[0-9T:.Z-]+&per_page=50$/.test(
+				path,
+			)
+		) {
+			return Response.json(
+				{ workflow_runs: (this.runs.completed ?? []).map((id) => ({ id })) },
+				{ headers },
+			);
+		}
 		const runJobs =
 			/^\/repos\/Org\/Repo\/actions\/runs\/(\d+)\/jobs\?filter=latest&per_page=100$/.exec(
 				path,
@@ -196,6 +208,38 @@ describe("GitHub job poller", () => {
 			},
 		});
 		expect((await poller.poll()).accepted).toBe(0);
+	});
+
+	it("sees the last job of a run that already finished, so its runner is reaped", async () => {
+		const github = new FakeGithub(
+			{ queued: [], in_progress: [], completed: [902] },
+			{
+				902: [
+					{
+						id: 7,
+						status: "completed",
+						labels: ["hobo"],
+						runner_name: "hobo-r7",
+					},
+				],
+			},
+		);
+		const ids: string[] = [];
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () => [CONNECTION],
+			ingest: async (delivery) => {
+				ids.push(delivery.deliveryId);
+				return "accepted";
+			},
+			now: () => NOW,
+		});
+		expect(await poller.poll()).toMatchObject({
+			runs: 1,
+			hoboJobs: 1,
+			accepted: 1,
+		});
+		expect(ids).toEqual([expect.stringMatching(/^poll-7-1-c-[0-9a-f]{12}$/)]);
 	});
 
 	it("pauses until the rate-limit reset instead of hammering GitHub", async () => {
