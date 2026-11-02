@@ -28,7 +28,8 @@
     "https_proxy",
     "no_proxy",
     "CELLD_BIN",
-    "CELLD_ESBUILD"
+    "CELLD_ESBUILD",
+    "NODE_OPTIONS"
   ],
   "tasks": {
     "build": {

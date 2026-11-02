@@ -16,11 +16,66 @@ on:
 permissions:
   contents: read
 
+env:
+  NODE_OPTIONS: --max-old-space-size=6144
+  HOBO_TURBO_CONCURRENCY: "2"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name != 'merge_group' && !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
 jobs:
+  ci-runner-image:
+    name: CI runner image (mise oci)
+    runs-on: hobo
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+      - name: Detect runner image inputs changed
+        id: rebuild
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}"
+            range="origin/${{ github.base_ref }}...HEAD"
+          else
+            range="HEAD~1..HEAD"
+          fi
+          if git diff --name-only "${range}" | rg -q \
+            '^(mise\.(toml|lock)|packages/ci-gh-actions/deploy/ci-runner/|scripts/(lib/ci-runner-contract\.mts|ci-runner-preflight\.mts|test/ci-runner-image-contract\.test\.ts))'; then
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build base + mise oci layers (native arch)
+        if: steps.rebuild.outputs.needed == 'true'
+        env:
+          MISE_EXPERIMENTAL: "1"
+        run: bash packages/ci-gh-actions/deploy/ci-runner/build.sh
+      - name: Push runner image to GHCR (optional)
+        if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo'
+        env:
+          MISE_EXPERIMENTAL: "1"
+        run: |
+          set -euo pipefail
+          version="$(node --import tsx scripts/ci-runner-image-version.mts)"
+          repo="${GITHUB_REPOSITORY,,}"
+          image="ghcr.io/${repo}/hobo-ci-worker:${version}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag "hobo-ci-worker:${version}" "$image"
+          docker push "$image"
+          docker tag "hobo-ci-worker:local" "ghcr.io/${repo}/hobo-ci-worker:latest"
+          docker push "ghcr.io/${repo}/hobo-ci-worker:latest"
+
   pr-gate:
     name: PR impact gate
     if: github.event_name == 'pull_request'
@@ -35,12 +90,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - uses: ./.github/actions/setup-pnpm
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: "24"
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+      - uses: ./.github/actions/ci-runner-preflight
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
         with:
@@ -62,9 +112,6 @@ jobs:
           BASE="$(node --import tsx scripts/ci/turbo-scm-base.mts)"
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
           git fetch origin "${{ github.base_ref }}"
-      - uses: cue-lang/setup-cue@1713281ae501e533ff06108005dffeab9e2e5203
-        with:
-          version: v0.14.0
       - name: DCO sign-off check
         continue-on-error: true
         env:
@@ -114,7 +161,7 @@ jobs:
           fi
           pnpm exec turbo run build typecheck lint test:unit test:schema test:contract:consumer \
             "${FILTERS[@]}" \
-            --continue=never --concurrency=100%
+            --continue=never --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
       - name: Production packages gate
         run: pnpm run build:packages
 
@@ -136,12 +183,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - uses: ./.github/actions/setup-pnpm
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: "24"
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+      - uses: ./.github/actions/ci-runner-preflight
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
         with:
@@ -166,7 +208,7 @@ jobs:
       - name: Full workspace tests
         env:
           TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
-        run: pnpm exec turbo run test --concurrency=100%
+        run: pnpm exec turbo run test --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
 
   artifact-trust:
     name: artifact signing and install verification
@@ -180,12 +222,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
-      - uses: ./.github/actions/setup-pnpm
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: "24"
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+      - uses: ./.github/actions/ci-runner-preflight
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Verify signed hello-bindle and refuse stripped signatures
         run: pnpm test:file src/draft/technical-proofs/componentize-artifact-trust-contract/test/publish-verify.test.ts
@@ -200,12 +237,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
-      - uses: ./.github/actions/setup-pnpm
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: "24"
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+      - uses: ./.github/actions/ci-runner-preflight
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Cold hobo dev gate (network disabled)
         run: |
@@ -224,13 +256,10 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
-      - uses: ./.github/actions/setup-pnpm
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: "24"
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+      - uses: ./.github/actions/ci-runner-preflight
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: CI runner image contract (manifest)
+        run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
       - name: Assert CI fabric contract
         run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
 
@@ -245,27 +274,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - name: Install gitleaks CLI (pinned release)
-        run: |
-          set -euo pipefail
-          read_pin() {
-            grep -E "^${1}=" .github/action-pins.env | head -1 | cut -d= -f2-
-          }
-          case "$(uname -m)" in
-            aarch64|arm64) arch=arm64 ;;
-            x86_64|amd64) arch=x64 ;;
-            *) echo "unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
-          esac
-          gitleaks_version="$(read_pin gitleaks-version)"
-          digest="$(read_pin "gitleaks-linux-${arch}-sha256")"
-          archive="gitleaks_${gitleaks_version}_linux_${arch}.tar.gz"
-          url="https://github.com/gitleaks/gitleaks/releases/download/v${gitleaks_version}/${archive}"
-          curl -fsSL "$url" -o "$archive"
-          echo "${digest}  ${archive}" | sha256sum -c -
-          tar -xzf "$archive" gitleaks
-          mkdir -p "$HOME/.local/bin"
-          install -m 0755 gitleaks "$HOME/.local/bin/gitleaks"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/ci-runner-preflight
       - name: Scan git history for secrets
         run: |
           set -euo pipefail

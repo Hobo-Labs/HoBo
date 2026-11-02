@@ -5,6 +5,7 @@ export type IsolatedContainerSpec = Readonly<{
 	env: Record<string, string>;
 	command: readonly string[];
 	runAsUser?: string;
+	memoryMb?: number;
 }>;
 
 export type IsolatedContainerHandle = Readonly<{

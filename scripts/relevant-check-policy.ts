@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 
 import { workspaceForDraftFile } from "./lib/proof-manifest.ts";
+import { turboConcurrencyArg } from "./lib/turbo-concurrency.ts";
 
 export type Check = {
 	command: string;
@@ -358,9 +359,9 @@ export function selectRelevantChecks(
 				...workspaces.map((workspace) => `--filter=./${workspace}`),
 				"--continue",
 				"--output-logs=new-only",
-				"--concurrency=100%",
+				turboConcurrencyArg(),
 			],
-			reason: `workspace tests for ${workspaces.length} changed package(s) via Turbo; strict env strips harness NODE_OPTIONS and warm runs replay from cache`,
+			reason: `workspace tests for ${workspaces.length} changed package(s) via Turbo; strict env passes HOBO_* and NODE_OPTIONS; warm runs replay from cache`,
 		});
 	}
 
@@ -374,7 +375,7 @@ export function selectRelevantChecks(
 				"typecheck",
 				"--filter=./site",
 				"--output-logs=new-only",
-				"--concurrency=100%",
+				turboConcurrencyArg(),
 			],
 			reason: "site browser code must stay type-clean",
 		});
@@ -615,7 +616,7 @@ export function selectRelevantChecks(
 				"lint",
 				"test",
 				"--filter=[HEAD^...HEAD]",
-				"--concurrency=100%",
+				turboConcurrencyArg(),
 			],
 			reason: "explicit build-impact check requested",
 		});

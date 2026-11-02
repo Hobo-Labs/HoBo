@@ -26,6 +26,14 @@ export function createCliDockerDriver(options: {
 				`hobo.ci/timeout-ms=${spec.timeoutMs}`,
 			];
 			if (spec.runAsUser) args.push("--user", spec.runAsUser);
+			if (spec.memoryMb !== undefined) {
+				if (!Number.isInteger(spec.memoryMb) || spec.memoryMb < 512)
+					throw new Error("invalid container memory limit");
+				args.push("--memory", `${spec.memoryMb}m`, "--memory-swap", `${spec.memoryMb}m`);
+			}
+			if (env.HOBO_CI_MOUNT_DOCKER_SOCKET !== "0") {
+				args.push("-v", "/var/run/docker.sock:/var/run/docker.sock");
+			}
 			for (const [key, value] of Object.entries(spec.env))
 				args.push("-e", `${key}=${value}`);
 			args.push(spec.image, ...spec.command);

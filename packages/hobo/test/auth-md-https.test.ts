@@ -1,5 +1,6 @@
-import { execFile, execFileSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { generateKeyPairSync, verify } from "node:crypto";
+import { existsSync } from "node:fs";
 import {
 	mkdir,
 	mkdtemp,
@@ -20,6 +21,21 @@ import {
 	createDefaultYardRuntime,
 } from "../src/index.js";
 import { isJsonObject, type JsonObject } from "../src/json.js";
+
+function cueBinaryForRepo(): string {
+	const configured = process.env.HOBO_CUE_BIN;
+	if (configured !== undefined && configured !== "") return configured;
+	const mise = spawnSync("mise", ["which", "cue"], { encoding: "utf8" });
+	if (mise.status === 0) {
+		const resolved = mise.stdout.trim();
+		if (resolved !== "") return resolved;
+	}
+	const cached = fileURLToPath(
+		new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
+	);
+	if (existsSync(cached)) return cached;
+	return "cue";
+}
 
 it("executes auth.md discovery, registration, scoped proof, temporary placement, independent claims, rotation and revocation over self-hosted HTTPS", async () => {
 	const home = await mkdtemp(join(tmpdir(), "hobo-authmd-product-"));
@@ -445,9 +461,7 @@ it("executes auth.md discovery, registration, scoped proof, temporary placement,
 		expect(advertisements).toBeGreaterThan(5);
 		expect(customReads).toBeGreaterThan(5);
 		execFileSync(
-			fileURLToPath(
-				new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
-			),
+			cueBinaryForRepo(),
 			[
 				"vet",
 				"-c",

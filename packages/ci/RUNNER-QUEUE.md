@@ -52,12 +52,41 @@ export HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID=oracle-free-vm
 node --import tsx packages/ci-gh-actions/scripts/isolated-worker-daemon.mts
 ```
 
-Each job runs in a **fresh Docker container** with the official Actions runner JIT (`labels: [hobo]`). Build the sidecar image once on the worker host (curl, git, ICU, UID 1000 — default tag `hobo-ci-worker:local`):
+Each job runs in a **fresh Docker container** with the official Actions runner JIT (`labels: [hobo]`). The container image is **hermetic**: OS + system packages + pinned Actions runner bundle in a digest-pinned base, then **one OCI layer per tool** from repo-root `mise.toml` / `mise.lock` via **`mise oci build`** (experimental). Workflows do not install Node, pnpm, cue, turbo, or gitleaks at job runtime.
+
+### Rebuild the runner image (box worker)
+
+Run on a **native-arch Linux** host (arm64 box builds arm64 only; amd64 builds amd64 — no cross-compile). Requires **Docker**, **skopeo**, and pinned **mise** (`packages/ci-gh-actions/deploy/ci-runner/mise-version.txt`). Set **`MISE_EXPERIMENTAL=1`** only for the build (the build script exports it).
 
 ```sh
-docker build -f packages/ci-gh-actions/deploy/worker/Dockerfile -t hobo-ci-worker:local .
-# optional: export HOBO_CI_WORKER_IMAGE=hobo-ci-worker:local
+# From repo root — exact command Tyler asked for:
+bash packages/ci-gh-actions/deploy/ci-runner/build.sh
 ```
+
+That script:
+
+1. `docker build` — `packages/ci-gh-actions/deploy/ci-runner/base/Dockerfile` → `hobo-ci-runner-base:local` (Debian digest pin, `system-packages.txt`, Docker CLI, UID **1000** user `runner`, pinned Actions runner under `/opt/actions-runner`).
+2. `mise install` + **`mise oci build`** — packages `cue`, `gitleaks`, `node`, `pnpm`, `turbo` from **`mise.lock`** onto the base (see `[oci]` in `mise.toml`).
+3. **`skopeo copy`** — `oci:packages/ci-gh-actions/deploy/ci-runner/oci-layout` → `docker-daemon:hobo-ci-worker:<version>` and `:local` (also tags `hobo-ci-worker:local` for the daemon default).
+
+Version tag: `node --import tsx scripts/ci-runner-image-version.mts` (hash of `mise.lock`, `mise.toml`, base Dockerfile, and `system-packages.txt`).
+
+**When to rebuild:** any change to `mise.toml`, `mise.lock`, `packages/ci-gh-actions/deploy/ci-runner/**`, or runner contract scripts. HoBo CI Fabric job **`CI runner image (mise oci)`** rebuilds affected-only on `hobo` when those paths change (needs host Docker socket — worker daemon mounts `/var/run/docker.sock` by default; set `HOBO_CI_MOUNT_DOCKER_SOCKET=0` to disable).
+
+**GHCR (optional, public repos):** the same workflow can push `ghcr.io/<owner>/<repo>/hobo-ci-worker:<version>` after `docker login`.
+
+**Preflight:** every `runs-on: hobo` job starts with `.github/actions/ci-runner-preflight` (`scripts/ci-runner-preflight.mts`). Failures mean the worker image is stale — rerun `build.sh` on the box.
+
+**Fallback:** if a tool cannot be packaged with `mise oci` (asdf backend, broken vfox hooks), use `Dockerfile.monolithic` and document why — see `packages/ci-gh-actions/deploy/ci-runner/README.md`.
+
+```sh
+export HOBO_CI_WORKER_IMAGE=hobo-ci-worker:local
+node --import tsx packages/ci-gh-actions/scripts/isolated-worker-daemon.mts
+```
+
+**Memory:** each job container defaults to **`8192` MiB** (`docker create --memory`); override with **`HOBO_CI_WORKER_MEMORY_MB`**. Workflow env: **`NODE_OPTIONS=--max-old-space-size=6144`**, **`HOBO_TURBO_CONCURRENCY=2`**.
+
+Legacy path `packages/ci-gh-actions/deploy/worker/Dockerfile` is deprecated; use **`build.sh`** above.
 
 This preserves PR isolation without Sandbox spend.
 

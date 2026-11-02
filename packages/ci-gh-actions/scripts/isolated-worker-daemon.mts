@@ -28,6 +28,9 @@ const github = createGithubAppTransport({
 	privateKey: required("HOBO_CI_GITHUB_APP_PRIVATE_KEY"),
 });
 const publicOrigin = required("HOBO_CI_PUBLIC_URL");
+const workerMemoryMb = Number(process.env.HOBO_CI_WORKER_MEMORY_MB ?? "8192");
+if (!Number.isInteger(workerMemoryMb) || workerMemoryMb < 512)
+	throw new Error("invalid HOBO_CI_WORKER_MEMORY_MB");
 const worker = createIsolatedContainerController({
 	store,
 	github,
@@ -35,6 +38,7 @@ const worker = createIsolatedContainerController({
 	docker: createCliDockerDriver({ env: process.env }),
 	workerAccountId: required("HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID"),
 	workerImage: process.env.HOBO_CI_WORKER_IMAGE ?? "hobo-ci-worker:local",
+	workerMemoryMb,
 });
 const host = createCompositeIsolatedHost({ store, worker: worker.host });
 if (!host) throw new Error("worker host unavailable");
@@ -63,6 +67,7 @@ console.error(
 		event: "hobo_ci_isolated_worker_started",
 		publicOrigin,
 		pollMs: intervalMs,
+		workerMemoryMb,
 	}),
 );
 setInterval(() => {

@@ -9,7 +9,7 @@ import type { PostgresCiStore } from "@hobo/ci/postgres";
 import type { GithubTransport } from "../github.js";
 import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
-import { RUNNER_SHA256, RUNNER_URL } from "../bootstrap.js";
+import { runnerDownloadFor } from "../bootstrap.js";
 import type { DockerDriver } from "./docker-driver.js";
 import { z } from "zod";
 
@@ -51,6 +51,7 @@ export function createIsolatedContainerController(options: {
 	docker: DockerDriver;
 	workerAccountId: string;
 	workerImage: string;
+	workerMemoryMb?: number;
 	now?: () => string;
 	/** Requeue uncertain leases that never got a container session. */
 	uncertainWithoutContainerRecoveryMs?: number;
@@ -58,6 +59,7 @@ export function createIsolatedContainerController(options: {
 	const now = options.now ?? (() => new Date().toISOString());
 	const uncertainWithoutContainerRecoveryMs =
 		options.uncertainWithoutContainerRecoveryMs ?? 5 * 60_000;
+	const workerMemoryMb = options.workerMemoryMb ?? 8192;
 	const authorize = async (leaseId: string) => {
 		const lease = await options.store.get(leaseId);
 		if (!lease?.state || lease.state === "completed") throw new Error("lease missing");
@@ -152,15 +154,17 @@ export function createIsolatedContainerController(options: {
 			if (!planned) return;
 			let containerId = "";
 			try {
+				const runner = runnerDownloadFor(process.arch);
 				const handle = await options.docker.create({
 					name,
 					image: options.workerImage,
 					timeoutMs: planned.reservedMinutes * 60_000,
 					runAsUser: "1000:1000",
+					memoryMb: workerMemoryMb,
 					env: {
 						HOBO_CI_RELAY_ORIGIN: options.publicOrigin,
-						HOBO_CI_RUNNER_SHA256: RUNNER_SHA256,
-						HOBO_CI_RUNNER_URL: RUNNER_URL,
+						HOBO_CI_RUNNER_SHA256: runner.sha256,
+						HOBO_CI_RUNNER_URL: runner.url,
 					},
 					command: ["sleep", "infinity"],
 				});
@@ -227,12 +231,17 @@ export function createIsolatedContainerController(options: {
 					"sh",
 					"-ec",
 					`set -eu
-mkdir -m 700 /tmp/hobo-ci && cd /tmp/hobo-ci
-curl -fsSL "$HOBO_CI_RUNNER_URL" -o runner.tar.gz
-printf '%s  runner.tar.gz\\n' "$HOBO_CI_RUNNER_SHA256" | sha256sum --check --status
-mkdir -m 700 runner && tar -xzf runner.tar.gz -C runner
+if [ -x /opt/actions-runner/run.sh ]; then
+  cd /opt/actions-runner
+else
+  mkdir -m 700 /tmp/hobo-ci && cd /tmp/hobo-ci
+  curl -fsSL "$HOBO_CI_RUNNER_URL" -o runner.tar.gz
+  printf '%s  runner.tar.gz\\n' "$HOBO_CI_RUNNER_SHA256" | sha256sum --check --status
+  mkdir -m 700 runner && tar -xzf runner.tar.gz -C runner
+  cd runner
+fi
 jit="$(printf '%s' '${jitB64}' | base64 -d)"
-exec ./runner/run.sh --jitconfig "$jit"`,
+exec ./run.sh --jitconfig "$jit"`,
 				]);
 				if (prep.exitCode !== 0) throw new Error("runner start failed");
 			} catch {
