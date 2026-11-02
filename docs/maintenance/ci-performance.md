@@ -16,6 +16,10 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   not added yet: several packages carry pre-existing biome lint debt that a dependents sweep would surface.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
   from each job, so queue time and run time can be compared before and after a change.
+- **No serial PR jobs.** `artifact-trust` and `dev-cold-loop-gate` do their own checkout and install and
+  read nothing from the PR impact gate, so they no longer `needs: pr-gate`. On a two-slot box that
+  dependency left a slot idle while the gate ran, then queued both behind it. `ci-runner-image` and
+  `secret-scan` skip the ts-autocode submodule checkout because neither installs packages.
 
 ## Frozen proofs and live-repo tests
 
