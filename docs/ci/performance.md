@@ -221,7 +221,6 @@ of two or three runs at once, queueing still pushes it past five. In order of ex
 6. **Shard `@hobo/hobo#test`** (181 s, the longest test task) with `vitest --shard` once slots allow
    parallel shards. On two shared slots, sharding adds container overhead and slot contention for no gain.
 7. **`test:behavior`'s astro scenario** waits 120 s for `astro dev`; start it once per run or mock it.
-
 8. **Fewer jobs per run is capped by the required checks.** Secret scan, CI runner image and the CI fabric
    contract guard each spend a container handoff on 10–40 s of work. Folding them into one job would cut
    two handoffs per run, but each is a required check by name, so that needs the ruleset changed with it.
