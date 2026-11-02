@@ -233,7 +233,7 @@ describe("isolated container controller reconcile", () => {
 		const relayStore = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			abortIsolatedAndRequeue,
-		} as unknown as PostgresCiStore & HostedRelayStore;
+		} as PostgresCiStore & HostedRelayStore;
 		const docker: DockerDriver = {
 			create: vi.fn(),
 			start: vi.fn(),
@@ -244,9 +244,11 @@ describe("isolated container controller reconcile", () => {
 				throw new Error("inspect timed out");
 			}),
 		};
+		// SAFETY: non-forced reconcile never touches GitHub.
+		const github = {} as GithubTransport;
 		const controller = createIsolatedContainerController({
 			store: relayStore,
-			github: {} as GithubTransport,
+			github,
 			publicOrigin: "https://ci.example.test",
 			docker,
 			workerAccountId: "oracle-free-vm",
