@@ -28,13 +28,16 @@
     "definitions": {
       "$ref": "#/$defs/Definitions"
     },
+    "integrations": {
+      "$ref": "#/$defs/RunnerIntegrations"
+    },
     "templates": {
       "type": "object",
       "propertyNames": {
         "$ref": "#/$defs/__schema0"
       },
       "additionalProperties": {
-        "$ref": "#/$defs/__schema27"
+        "$ref": "#/$defs/__schema34"
       },
       "maxProperties": 32
     },
@@ -44,7 +47,7 @@
         "$ref": "#/$defs/__schema0"
       },
       "additionalProperties": {
-        "$ref": "#/$defs/__schema49"
+        "$ref": "#/$defs/__schema56"
       },
       "maxProperties": 32
     }
@@ -373,72 +376,167 @@
         "execution"
       ]
     },
+    "RunnerIntegrations": {
+      "maxItems": 16,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RunnerIntegration"
+      }
+    },
+    "RunnerIntegration": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema27"
+        },
+        "provider": {
+          "$ref": "#/$defs/__schema28"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema29"
+        },
+        "organization": {
+          "$ref": "#/$defs/__schema30"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema31"
+        },
+        "auth": {
+          "$ref": "#/$defs/__schema33"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "runsOn",
+        "auth"
+      ],
+      "additionalProperties": false
+    },
     "__schema27": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+    },
+    "__schema28": {
+      "type": "string",
+      "enum": [
+        "blacksmith",
+        "depot",
+        "jog",
+        "boat"
+      ]
+    },
+    "__schema29": {
+      "type": "boolean"
+    },
+    "__schema30": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$"
+    },
+    "__schema31": {
+      "minItems": 1,
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema32"
+      }
+    },
+    "__schema32": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$"
+    },
+    "__schema33": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": [
+            "github-app",
+            "oidc",
+            "device",
+            "secret-ref"
+          ]
+        },
+        "secretRef": {
+          "type": "string",
+          "pattern": "^(?:github-secret|env):[A-Z][A-Z0-9_]{0,63}$"
+        },
+        "projectId": {
+          "type": "string",
+          "pattern": "^[a-z0-9]{6,32}$"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "additionalProperties": false
+    },
+    "__schema34": {
       "type": "object",
       "properties": {
         "relayOrigin": {
-          "$ref": "#/$defs/__schema28"
+          "$ref": "#/$defs/__schema35"
         },
         "githubWebhookOrigin": {
-          "$ref": "#/$defs/__schema30"
+          "$ref": "#/$defs/__schema37"
         },
         "allowInsecureLoopback": {
-          "$ref": "#/$defs/__schema32"
+          "$ref": "#/$defs/__schema39"
         },
         "jobAdmission": {
-          "$ref": "#/$defs/__schema34"
+          "$ref": "#/$defs/__schema41"
         },
         "engines": {
-          "$ref": "#/$defs/__schema36"
+          "$ref": "#/$defs/__schema43"
         },
         "engineRelays": {
-          "$ref": "#/$defs/__schema40"
+          "$ref": "#/$defs/__schema47"
         },
         "secrets": {
-          "$ref": "#/$defs/__schema42"
+          "$ref": "#/$defs/__schema49"
         },
         "policy": {
-          "$ref": "#/$defs/__schema44"
+          "$ref": "#/$defs/__schema51"
         }
       },
       "additionalProperties": false
     },
-    "__schema28": {
-      "$ref": "#/$defs/__schema29"
+    "__schema35": {
+      "$ref": "#/$defs/__schema36"
     },
-    "__schema29": {
+    "__schema36": {
       "type": "string",
       "minLength": 1,
       "maxLength": 2048
     },
-    "__schema30": {
-      "$ref": "#/$defs/__schema31"
+    "__schema37": {
+      "$ref": "#/$defs/__schema38"
     },
-    "__schema31": {
+    "__schema38": {
       "type": "string",
       "minLength": 1,
       "maxLength": 2048
     },
-    "__schema32": {
-      "$ref": "#/$defs/__schema33"
+    "__schema39": {
+      "$ref": "#/$defs/__schema40"
     },
-    "__schema33": {
+    "__schema40": {
       "type": "boolean"
     },
-    "__schema34": {
-      "$ref": "#/$defs/__schema35"
+    "__schema41": {
+      "$ref": "#/$defs/__schema42"
     },
-    "__schema35": {
+    "__schema42": {
       "type": "string",
       "enum": [
         "push",
         "pull"
       ]
     },
-    "__schema36": {
-      "$ref": "#/$defs/__schema37"
+    "__schema43": {
+      "$ref": "#/$defs/__schema44"
     },
-    "__schema37": {
+    "__schema44": {
       "anyOf": [
         {
           "maxItems": 16,
@@ -453,7 +551,7 @@
             "$ref": "#/$defs/CiEngineId"
           },
           "additionalProperties": {
-            "$ref": "#/$defs/__schema38"
+            "$ref": "#/$defs/__schema45"
           }
         }
       ]
@@ -462,24 +560,24 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,62}$"
     },
-    "__schema38": {
+    "__schema45": {
       "type": "object",
       "properties": {
         "relayOrigin": {
-          "$ref": "#/$defs/__schema39"
+          "$ref": "#/$defs/__schema46"
         }
       },
       "additionalProperties": false
     },
-    "__schema39": {
+    "__schema46": {
       "type": "string",
       "minLength": 1,
       "maxLength": 2048
     },
-    "__schema40": {
-      "$ref": "#/$defs/__schema41"
+    "__schema47": {
+      "$ref": "#/$defs/__schema48"
     },
-    "__schema41": {
+    "__schema48": {
       "type": "object",
       "propertyNames": {
         "$ref": "#/$defs/CiEngineId"
@@ -492,15 +590,15 @@
       "type": "object",
       "properties": {
         "relayOrigin": {
-          "$ref": "#/$defs/__schema39"
+          "$ref": "#/$defs/__schema46"
         }
       },
       "additionalProperties": false
     },
-    "__schema42": {
-      "$ref": "#/$defs/__schema43"
+    "__schema49": {
+      "$ref": "#/$defs/__schema50"
     },
-    "__schema43": {
+    "__schema50": {
       "anyOf": [
         {
           "$ref": "#/$defs/SecretRequirements"
@@ -520,7 +618,7 @@
         }
       ]
     },
-    "__schema44": {
+    "__schema51": {
       "type": "object",
       "properties": {
         "accountId": {
@@ -632,23 +730,23 @@
           ]
         },
         "providers": {
-          "$ref": "#/$defs/__schema45"
+          "$ref": "#/$defs/__schema52"
         },
         "thresholds": {
-          "$ref": "#/$defs/__schema47"
+          "$ref": "#/$defs/__schema54"
         }
       },
       "additionalProperties": false
     },
-    "__schema45": {
+    "__schema52": {
       "minItems": 1,
       "maxItems": 100,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema46"
+        "$ref": "#/$defs/__schema53"
       }
     },
-    "__schema46": {
+    "__schema53": {
       "anyOf": [
         {
           "$ref": "#/$defs/Provider"
@@ -668,14 +766,14 @@
         }
       ]
     },
-    "__schema47": {
+    "__schema54": {
       "maxItems": 100,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema48"
+        "$ref": "#/$defs/__schema55"
       }
     },
-    "__schema48": {
+    "__schema55": {
       "type": "object",
       "properties": {
         "fraction": {
@@ -696,31 +794,31 @@
       ],
       "additionalProperties": false
     },
-    "__schema49": {
+    "__schema56": {
       "anyOf": [
         {
           "type": "object",
           "properties": {
             "relayOrigin": {
-              "$ref": "#/$defs/__schema29"
+              "$ref": "#/$defs/__schema36"
             },
             "githubWebhookOrigin": {
-              "$ref": "#/$defs/__schema31"
+              "$ref": "#/$defs/__schema38"
             },
             "allowInsecureLoopback": {
-              "$ref": "#/$defs/__schema33"
+              "$ref": "#/$defs/__schema40"
             },
             "jobAdmission": {
-              "$ref": "#/$defs/__schema35"
+              "$ref": "#/$defs/__schema42"
             },
             "engines": {
-              "$ref": "#/$defs/__schema37"
+              "$ref": "#/$defs/__schema44"
             },
             "engineRelays": {
-              "$ref": "#/$defs/__schema41"
+              "$ref": "#/$defs/__schema48"
             },
             "secrets": {
-              "$ref": "#/$defs/__schema43"
+              "$ref": "#/$defs/__schema50"
             },
             "policy": {
               "$ref": "#/$defs/Policy"
@@ -736,28 +834,28 @@
           "type": "object",
           "properties": {
             "relayOrigin": {
-              "$ref": "#/$defs/__schema28"
+              "$ref": "#/$defs/__schema35"
             },
             "githubWebhookOrigin": {
-              "$ref": "#/$defs/__schema30"
+              "$ref": "#/$defs/__schema37"
             },
             "allowInsecureLoopback": {
-              "$ref": "#/$defs/__schema32"
+              "$ref": "#/$defs/__schema39"
             },
             "jobAdmission": {
-              "$ref": "#/$defs/__schema34"
+              "$ref": "#/$defs/__schema41"
             },
             "engines": {
-              "$ref": "#/$defs/__schema36"
+              "$ref": "#/$defs/__schema43"
             },
             "engineRelays": {
-              "$ref": "#/$defs/__schema40"
+              "$ref": "#/$defs/__schema47"
             },
             "secrets": {
-              "$ref": "#/$defs/__schema42"
+              "$ref": "#/$defs/__schema49"
             },
             "policy": {
-              "$ref": "#/$defs/__schema44"
+              "$ref": "#/$defs/__schema51"
             },
             "extends": {
               "$ref": "#/$defs/__schema0"
@@ -780,19 +878,19 @@
           "$ref": "#/$defs/__schema18"
         },
         "pool": {
-          "$ref": "#/$defs/__schema50"
+          "$ref": "#/$defs/__schema57"
         },
         "routing": {
-          "$ref": "#/$defs/__schema51"
+          "$ref": "#/$defs/__schema58"
         },
         "budget": {
-          "$ref": "#/$defs/__schema52"
+          "$ref": "#/$defs/__schema59"
         },
         "providers": {
-          "$ref": "#/$defs/__schema45"
+          "$ref": "#/$defs/__schema52"
         },
         "thresholds": {
-          "$ref": "#/$defs/__schema47"
+          "$ref": "#/$defs/__schema54"
         }
       },
       "required": [
@@ -805,7 +903,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema50": {
+    "__schema57": {
       "anyOf": [
         {
           "$ref": "#/$defs/Pool"
@@ -825,7 +923,7 @@
         }
       ]
     },
-    "__schema51": {
+    "__schema58": {
       "anyOf": [
         {
           "$ref": "#/$defs/Routing"
@@ -845,7 +943,7 @@
         }
       ]
     },
-    "__schema52": {
+    "__schema59": {
       "anyOf": [
         {
           "$ref": "#/$defs/Budget"

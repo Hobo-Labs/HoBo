@@ -25,6 +25,10 @@
       "types": "./dist/project-config.d.ts",
       "default": "./dist/project-config.js"
     },
+    "./runner-integrations": {
+      "types": "./dist/runner-integrations.d.ts",
+      "default": "./dist/runner-integrations.js"
+    },
     "./cli-serve": {
       "types": "./dist/cli-serve-entry.d.ts",
       "default": "./dist/cli-serve-entry.js"

@@ -213,3 +213,29 @@ evidence was refreshed through `PostgresCiStore.reattestRate` after checking the
 published rates, preserving the rate card, budgets, allowances and usage watermark.
 This verifies the reviewed acceptance workflow and configured Vercel path;
 other providers and arbitrary workflow dependencies require their own acceptance.
+
+## Runner provider integrations (`hobo ci connect <provider>`)
+
+`hobo ci connect` with no provider still sets up the HoBo relay (alias of `enable`); `hobo ci serve` still hosts the relay. With a provider, it records a third-party GitHub Actions runner integration in `.hobo/ci.json` under `integrations` and prints the provider's own sign-in step:
+
+```sh
+hobo ci connect blacksmith --org Hobo-Labs
+hobo ci connect depot                                   # GitHub App runners
+hobo ci connect depot --id depot-builds --auth oidc --project-id <project>
+hobo ci connect jog                                     # alias: usejog
+hobo ci connect boat --org Hobo-Labs --launch           # runs `boat ci connect`
+```
+
+| Provider | Auth (default first) | What the owner does | Labels |
+|---|---|---|---|
+| Blacksmith | `github-app` only. GitHub SSO; no API tokens or OIDC for runners | Install the Blacksmith GitHub App at app.blacksmith.sh (org owner; orgs only) | `blacksmith-<n>vcpu-ubuntu-<ver>` |
+| Depot | `github-app` (runners), `oidc` (builds), `secret-ref` fallback (`DEPOT_TOKEN`) | Connect GitHub Actions in the Depot dashboard (org owner); for OIDC add a trust relationship and grant `id-token: write` | `depot-ubuntu-24.04` … |
+| Jog (usejog) | `github-app` only; no tokens | Install the Jog GitHub App; private repos only; prepaid credits | `jog` |
+| Boat | `device` (`boat ci connect` browser ceremony), `secret-ref` fallback (`BOAT_API_KEY`) | Complete `boat ci connect [--org]`; paid plan | `boat`, `boat-small`, `boat-large`, `boat-xlarge` |
+
+Secrets never pass through HoBo:
+
+- The config holds **references only**. `auth.secretRef` must be `github-secret:NAME` or `env:NAME`. The JSON schema, the CUE model (`#RunnerIntegration`) and the loader reject anything else, including credential-shaped or high-entropy strings in any field, and their errors never echo the value.
+- The CLI never prompts for, reads or prints a credential. For `secret-ref` you store the value yourself (`gh secret set NAME` prompts).
+- `--launch` runs the provider CLI with credential-like environment variables (`*TOKEN*`, `*SECRET*`, `*API_KEY*` …) removed, and output is redacted.
+- `packages/hobo/test/ci-connect-leak.test.ts` generates synthetic, real-looking tokens at runtime (never written to disk) and asserts that none appear in CLI output, progress or the written config.

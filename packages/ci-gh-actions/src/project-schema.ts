@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RunnerIntegrationsSchema } from "./runner-integrations.js";
 
 const name = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
@@ -173,6 +174,8 @@ export const CiProjectDocumentSchema = z
 		defaultEnvironment: name.optional(),
 		selection: selection.optional(),
 		definitions: definitions.optional(),
+		/** Third-party runner providers. References only; never secret values. */
+		integrations: RunnerIntegrationsSchema.optional(),
 		templates: z
 			.record(name, template)
 			.refine((entries) => Object.keys(entries).length <= 32)
@@ -237,6 +240,11 @@ export function resolveCiProjectReferences(
 			]),
 		);
 	}
-	const { definitions: _definitions, $schema: _schema, ...document } = input;
+	const {
+		definitions: _definitions,
+		$schema: _schema,
+		integrations: _integrations,
+		...document
+	} = input;
 	return expand(z.json().parse(document), 0);
 }
