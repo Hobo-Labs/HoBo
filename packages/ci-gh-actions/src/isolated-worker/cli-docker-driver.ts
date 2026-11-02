@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { promisify } from "node:util";
 import type { DockerDriver, IsolatedContainerSpec } from "./docker-driver.js";
@@ -92,6 +92,28 @@ export function createCliDockerDriver(options: {
 				}
 				return { exitCode };
 			}
+		},
+		async writeSecret(_name, containerId, path, content) {
+			if (!/^\/[A-Za-z0-9_./-]+$/.test(path))
+				throw new Error("invalid secret path");
+			await new Promise<void>((resolve, reject) => {
+				const child = spawn(
+					docker,
+					["exec", "-i", containerId, "sh", "-c", `umask 077 && cat > ${path}`],
+					{ env, stdio: ["pipe", "ignore", "ignore"] },
+				);
+				const timer = setTimeout(() => child.kill("SIGKILL"), 60_000);
+				child.on("error", (error) => {
+					clearTimeout(timer);
+					reject(error);
+				});
+				child.on("close", (code) => {
+					clearTimeout(timer);
+					if (code === 0) resolve();
+					else reject(new Error("secret write failed"));
+				});
+				child.stdin.end(content);
+			});
 		},
 		async execDetached(_name, containerId, argv) {
 			try {
