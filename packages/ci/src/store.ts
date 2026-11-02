@@ -870,6 +870,29 @@ export class LeaseStore {
 			this.queueInside(job, at);
 		});
 	}
+	abortIsolatedAndRequeue(id: string, job: Job, at: string): void {
+		const recoverable = new Set([
+			"reserved",
+			"dispatching",
+			"claiming",
+			"dispatched",
+			"running",
+			"uncertain",
+		]);
+		const isolatedProviders = new Set([
+			"vercel",
+			"kubernetes",
+			"hobo-box-worker",
+		]);
+		this.transaction(() => {
+			const lease = this.get(id);
+			if (!lease || !recoverable.has(lease.state)) return;
+			if (!isolatedProviders.has(lease.provider)) return;
+			lease.state = "cancelled";
+			this.append(lease, "ci.LeaseCancelled", at);
+			this.queueInside(job, at);
+		});
+	}
 	recover(at: string): void {
 		for (const lease of this.all()) {
 			if (lease.pipelineId && lease.state === "reserved") {

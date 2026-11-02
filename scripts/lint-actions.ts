@@ -15,56 +15,53 @@ const files = existsSync(disabledWorkflowDir)
 			.sort()
 	: [];
 const errors: string[] = [];
-// User-authorized enabled workflows (pinned digests; update only after review).
-const enabledWorkflowDigests = {
-	"hobo-ci-acceptance.yml":
-		"5cc778af0c1e48827885fa94339d550023b36b47c8acb570da5c400e6740bbac",
-	"dev-env-smoke.yml":
-		"2fef570ecdc480da317e6af69bf7bb88db794d761ccfdc4d449c83669415c127",
-} as const satisfies Record<string, string>;
-for (const file of recognizedFiles) {
-	if (!(file in enabledWorkflowDigests)) {
-		errors.push(
-			`${file}: enabled workflow is not in the reviewed allowlist (${Object.keys(enabledWorkflowDigests).join(", ")})`,
-		);
-		continue;
-	}
-	const expected =
-		enabledWorkflowDigests[file as keyof typeof enabledWorkflowDigests];
-	const text = readFileSync(join(workflowDir, file), "utf8").replaceAll(
-		"\r\n",
-		"\n",
-	);
-	if (createHash("sha256").update(text).digest("hex") !== expected)
-		errors.push(`${file}: enabled workflow differs from its reviewed recipe`);
-}
 
-for (const file of files) {
-	const path = join(disabledWorkflowDir, file);
-	const text = readFileSync(path, "utf8");
+const acceptanceFile = "hobo-ci-acceptance.yml";
+/** Authoritative CI fabric (self-hosted hobo runners). */
+const activeCiFiles = new Set([
+	"hobo-ci.yml",
+	"examples-e2e.yml",
+	"dev-env-smoke.yml",
+]);
+const allowedEnabled = new Set([acceptanceFile, ...activeCiFiles]);
+
+const acceptanceDigest =
+	"d862e51e8506d228a6c16248871a1216d08925a154b1adcf30c5fd82e33638c2";
+
+function lintWorkflowYaml(
+	file: string,
+	text: string,
+	requireDisabledJobs: boolean,
+) {
 	const lines = text.split(/\r?\n/);
 	const jobsIndex = lines.findIndex((line) => line === "jobs:");
 	if (jobsIndex === -1) {
-		errors.push(file + ": missing jobs section");
-	} else {
-		const jobStarts = lines
-			.map((line, index) => ({ line, index }))
-			.filter(
-				(entry) =>
-					entry.index > jobsIndex && /^  [A-Za-z0-9_-]+:$/.test(entry.line),
-			)
-			.map((entry) => entry.index);
-		for (const [position, start] of jobStarts.entries()) {
-			const end = jobStarts[position + 1] ?? lines.length;
-			if (
-				!lines
-					.slice(start, end)
-					.some((line) => line.trim() === "if: ${{ false }}")
-			) {
-				errors.push(
-					file + ":" + (start + 1) + ": hosted Actions job is not disabled",
-				);
-			}
+		errors.push(`${file}: missing jobs section`);
+		return;
+	}
+	const jobStarts = lines
+		.map((line, index) => ({ line, index }))
+		.filter(
+			(entry) =>
+				entry.index > jobsIndex && /^  [A-Za-z0-9_-]+:$/.test(entry.line),
+		)
+		.map((entry) => entry.index);
+	for (const [position, start] of jobStarts.entries()) {
+		const end = jobStarts[position + 1] ?? lines.length;
+		const block = lines.slice(start, end);
+		if (
+			requireDisabledJobs &&
+			!block.some((line) => line.trim() === "if: ${{ false }}")
+		) {
+			errors.push(`${file}:${start + 1}: hosted Actions job is not disabled`);
+		}
+		if (
+			!requireDisabledJobs &&
+			block.some((line) => line.trim() === "if: ${{ false }}")
+		) {
+			errors.push(
+				`${file}:${start + 1}: authoritative CI job must not be permanently disabled`,
+			);
 		}
 	}
 	const firstCheckout = lines.findIndex((line) =>
@@ -73,7 +70,6 @@ for (const file of files) {
 	const firstSetupNode = lines.findIndex((line) =>
 		line.includes("actions/setup-node@"),
 	);
-
 	if (
 		firstSetupNode !== -1 &&
 		(firstCheckout === -1 || firstCheckout > firstSetupNode)
@@ -97,9 +93,54 @@ for (const file of files) {
 			`${file}: pnpm cache must set cache-dependency-path: pnpm-lock.yaml`,
 		);
 	}
-	if (firstSetupNode !== -1 && !/node-version:\s*24\b/.test(text)) {
+	if (firstSetupNode !== -1 && !/node-version:\s*['"]?24['"]?/.test(text)) {
 		errors.push(`${file}: Node version must be explicit and set to 24`);
 	}
+	if (activeCiFiles.has(file) && !/runs-on:\s*hobo\b/m.test(text)) {
+		errors.push(
+			`${file}: authoritative CI jobs must run on self-hosted hobo runners`,
+		);
+	}
+	if (!requireDisabledJobs) {
+		for (const [index, line] of lines.entries()) {
+			const match = line.match(/^\s*-?\s*uses:\s*([^@\s]+)@(\S+)\s*$/);
+			if (!match) continue;
+			const action = match[1];
+			const ref = match[2];
+			if (!action || !ref) continue;
+			if (ref.startsWith("./")) continue;
+			if (!/^[0-9a-f]{40}$/.test(ref)) {
+				errors.push(
+					`${file}:${index + 1}: ${action} must pin a full commit SHA, not @${ref}`,
+				);
+			}
+		}
+	}
+}
+
+for (const file of recognizedFiles) {
+	if (!allowedEnabled.has(file)) {
+		errors.push(
+			`${file}: enabled workflow is not in the approved CI fabric set (${[...allowedEnabled].join(", ")})`,
+		);
+		continue;
+	}
+	const path = join(workflowDir, file);
+	const text = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+	if (file === acceptanceFile) {
+		if (createHash("sha256").update(text).digest("hex") !== acceptanceDigest) {
+			errors.push(
+				`${file}: manual HoBo acceptance workflow differs from its reviewed recipe (update acceptanceDigest after review)`,
+			);
+		}
+	}
+	lintWorkflowYaml(file, text, false);
+}
+
+for (const file of files) {
+	const path = join(disabledWorkflowDir, file);
+	const text = readFileSync(path, "utf8");
+	lintWorkflowYaml(file, text, true);
 }
 
 if (errors.length > 0) {
@@ -107,5 +148,5 @@ if (errors.length > 0) {
 	process.exit(1);
 }
 console.log(
-	`actions lint ok: ${files.length} disabled workflow file(s); ${recognizedFiles.length} reviewed enabled workflow(s)`,
+	`actions lint ok: ${files.length} disabled workflow file(s); ${recognizedFiles.length} enabled workflow file(s)`,
 );

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/Tyler-R-Kendrick/HoBo/main/packages/ci-gh-actions/schema/ci-project.schema.json",
+  "$schema": "https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project.schema.json",
   "defaultEnvironment": "local",
   "definitions": {
     "pools": {

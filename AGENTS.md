@@ -784,7 +784,7 @@ Run the smallest sufficient lane through `pnpm agent:check`; no-arg mode validat
 
 ## Cursor Cloud specific instructions
 
-Durable, non-obvious notes for this environment. The startup update script runs `bash scripts/bootstrap-dev.sh --project-only` (mise installs pinned Node/pnpm/cue/turbo from `mise.toml`) and `pnpm install --frozen-lockfile`; do not re-add Corepack-only install steps here.
+Durable, non-obvious notes for this environment. The startup update script runs `bash scripts/bootstrap-dev.sh --project-only` (mise installs pinned Node/pnpm/cue/turbo from `mise.toml`) and `pnpm install --frozen-lockfile`; do not re-add Corepack-only install steps here. **HoBo CI Fabric** on self-hosted `hobo` runners uses the hermetic **`hobo-ci-worker:local`** image (mise OCI + base Dockerfile); jobs preflight with `.github/actions/ci-runner-preflight` — no workflow `setup-node` / `setup-cue`. Rebuild on the box with `bash packages/ci-gh-actions/deploy/ci-runner/build.sh` (see `packages/ci/RUNNER-QUEUE.md`). Workflow env: `NODE_OPTIONS=--max-old-space-size=3072`, `HOBO_TURBO_CONCURRENCY=1`.
 
 - **Dev tools via mise.** Project pins live in [`mise.toml`](mise.toml) + [`mise.lock`](mise.lock). Personal shell/agent prefs come from [`Hobo-Labs/dotfiles`](https://github.com/Hobo-Labs/dotfiles) via `bash scripts/bootstrap-dev.sh` (seed: [`contrib/hobo-dotfiles-seed/`](contrib/hobo-dotfiles-seed/)). See [`docs/dev-env/mise.md`](docs/dev-env/mise.md).
 

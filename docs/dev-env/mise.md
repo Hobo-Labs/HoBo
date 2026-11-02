@@ -98,6 +98,16 @@ pnpm run install:check
 
 Documented in [AGENTS.md](../../AGENTS.md) and [CLAUDE.md](../../CLAUDE.md). No sudo required; mise installs to `~/.local/bin`.
 
+## Hermetic CI runner (`mise oci`)
+
+Self-hosted **`runs-on: hobo`** jobs use a container built from this repo’s **`mise.toml` / `mise.lock`**, not workflow tool installers:
+
+- **Base image only in Docker** — [`packages/ci-gh-actions/deploy/ci-runner/base/Dockerfile`](../../packages/ci-gh-actions/deploy/ci-runner/base/Dockerfile): digest-pinned Debian, [`system-packages.txt`](../../packages/ci-gh-actions/deploy/ci-runner/system-packages.txt), Docker CLI, UID **1000**, pinned GitHub Actions runner bundle.
+- **Tool layers** — `[oci]` in [`mise.toml`](../../mise.toml); build with **`MISE_EXPERIMENTAL=1`** and pinned mise ([`mise-version.txt`](../../packages/ci-gh-actions/deploy/ci-runner/mise-version.txt)) on **native Linux** (arm64 or x64, no cross-build).
+- **Operator command** — `bash packages/ci-gh-actions/deploy/ci-runner/build.sh` (see [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md)).
+
+Preflight: `node --no-warnings scripts/ci-runner-preflight.mts` (Node 24 native TS; no `pnpm install` / tsx required before CI steps). Fallback monolithic Dockerfile: [`deploy/ci-runner/README.md`](../../packages/ci-gh-actions/deploy/ci-runner/README.md).
+
 ## Tasks vs package.json scripts
 
 `[tasks]` in `mise.toml` delegate to existing npm scripts so muscle memory stays (`pnpm run test:unit`). Prefer adding behavior once in `package.json` and wrapping with `mise run` for discoverability (`mise tasks`).

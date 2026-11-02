@@ -81,6 +81,9 @@ function setup() {
 		async cancelAndRequeue(id, job, at) {
 			h.store.cancelAndRequeue(id, job, at);
 		},
+		async abortIsolatedAndRequeue(id, job, at) {
+			h.store.abortIsolatedAndRequeue(id, job, at);
+		},
 		async settleObserved(id, host, minutes, at, unmet, complete, observed) {
 			const current = h.store.get(id);
 			if (

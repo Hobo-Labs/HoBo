@@ -68,8 +68,8 @@ describe("evaluateRegistrationGuard", () => {
 
 describe("repositoryPath", () => {
 	it("addresses the repository record used for the visibility check", () => {
-		expect(repositoryPath("Tyler-R-Kendrick", "HoBo")).toBe(
-			"/repos/Tyler-R-Kendrick/HoBo",
+		expect(repositoryPath("Hobo-Labs", "HoBo")).toBe(
+			"/repos/Hobo-Labs/HoBo",
 		);
 	});
 });

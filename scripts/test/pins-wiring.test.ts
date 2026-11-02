@@ -53,17 +53,14 @@ describe("pins wiring", () => {
 		);
 	});
 
-	it("the disabled PR gate checks the pins after checkout and before installing", () => {
-		const job = jobText(
-			read(".github/workflows-disabled/hobo-ci.yml"),
-			"pr-gate",
-		);
+	it("the PR gate checks the pins after checkout and before installing", () => {
+		const job = jobText(read(".github/workflows/hobo-ci.yml"), "pr-gate");
 		const checkout = job.indexOf("actions/checkout@");
 		const status = job.indexOf(`run: ${BOOTSTRAP} --status --offline`);
 		const install = job.indexOf("pnpm install");
 		assert.ok(checkout >= 0 && status > checkout, "status runs after checkout");
 		assert.ok(install > status, "status runs before pnpm install");
-		assert.match(job, /if: \$\{\{ false \}\}/u);
+		assert.match(job, /runs-on:\s*hobo\b/u);
 	});
 
 	it("the setup docs name the three verbs", () => {

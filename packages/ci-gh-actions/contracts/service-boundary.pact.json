@@ -6,13 +6,22 @@
       "description": "process liveness while provider permissions are unavailable",
       "providerStates": [{ "name": "provider readiness unavailable" }],
       "request": { "method": "GET", "path": "/healthz" },
-      "response": { "status": 200, "body": { "ok": true } }
+      "response": {
+        "status": 200,
+        "body": { "ok": true, "engines": { "gh-actions": { "ok": true } } }
+      }
     },
     {
       "description": "readiness fails closed without configured permissions",
       "providerStates": [{ "name": "provider readiness unavailable" }],
       "request": { "method": "GET", "path": "/readyz" },
-      "response": { "status": 503, "body": { "ready": false } }
+      "response": {
+        "status": 503,
+        "body": {
+          "ready": false,
+          "engines": { "gh-actions": { "ready": false } }
+        }
+      }
     },
     {
       "description": "unready webhook intake is retriable and receives no payload",
@@ -24,7 +33,13 @@
       "description": "readiness succeeds only after the injected permissions probe",
       "providerStates": [{ "name": "provider readiness available" }],
       "request": { "method": "GET", "path": "/readyz" },
-      "response": { "status": 200, "body": { "ready": true } }
+      "response": {
+        "status": 200,
+        "body": {
+          "ready": true,
+          "engines": { "gh-actions": { "ready": true } }
+        }
+      }
     }
   ],
   "metadata": {

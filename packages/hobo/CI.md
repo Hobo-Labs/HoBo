@@ -16,6 +16,46 @@ Human `hobo login` credentials do not authorize the CI account API.
 hobo ci connect --relay https://ci.example.com
 ```
 
+Prefer the committed **`.hobo/ci.json`** profile when present. It names each
+environment's `relayOrigin`, optional `jobAdmission` (`push` for hosted relays,
+`pull` for loopback laptops), and `selection` rules for branch/CD routing. Local
+overrides belong in gitignored **`.hobo/ci.local.json`** or `HOBO_CI_ENVIRONMENT`.
+`hobo ci enable` reads that file before `--relay` / `HOBO_CI_RELAY_URL`.
+
+## Host a local relay
+
+When the `local` environment (or any profile with loopback `relayOrigin` and
+`jobAdmission: "pull"`) should admit jobs without a public webhook URL, run the
+relay on your machine:
+
+```sh
+HOBO_CI_ENVIRONMENT=local hobo ci serve --installation-id <app-installation-id>
+```
+
+Defaults come from the resolved **`.hobo/ci.json`** environment: `relayOrigin`,
+`jobAdmission`, and `allowInsecureLoopback`. Flags override config. The command
+binds **127.0.0.1** by default; non-loopback binds require an explicit public
+**`--origin`** (HTTPS, matching `relayOrigin`) or **`--allow-insecure`**. Use
+**`--host 0.0.0.0`** and **`--port`** for containers; keep **`--origin`** on the
+public URL when a reverse proxy terminates TLS (**`--trust-proxy`** honors
+`X-Forwarded-Proto`). GitHub App credentials load from `HOBO_CI_GITHUB_APP_*` /
+`*_FILE` env vars (never printed). Optional **`HOBO_CI_INGRESS_FORWARD_SECRET`**
+verifies ingress-forwarded webhooks. **`--print-config`** shows the resolved
+plan with secrets redacted. **`--with-worker`** starts the isolated-container
+sidecar when `DATABASE_URL` matches the relay store. Graceful shutdown on
+SIGINT/SIGTERM.
+
+Remote relay deployment: [`../ci-gh-actions/REMOTE-RELAY-SERVE.md`](../ci-gh-actions/REMOTE-RELAY-SERVE.md).
+
+```sh
+hobo ci serve --environment production --host 0.0.0.0 --port 8787 \
+  --origin https://ci.example.com --trust-proxy
+hobo ci serve --environment local --port 8787 --admission pull --installation-id 12345
+hobo ci serve --print-config --environment local
+```
+
+See [`../ci/RUNNER-QUEUE.md`](../ci/RUNNER-QUEUE.md) for NAT/pull admission setup.
+
 `enable` and `connect` run the same setup. The CLI detects the sole Git remote,
 prompts when several exist, and asks before enabling isolated runners. Subsequent
 commands reuse a unique remote matching the saved repository. Use
@@ -131,7 +171,7 @@ pagination cursor, or single-task follow protocol; `--level`, `--next`, and
 
 ## Contracts and checks
 
-`test/ci-command.test.ts` and `test/ci-runs.test.ts` cover setup, target selection,
+`test/ci-command.test.ts`, `test/ci-serve.test.ts`, and `test/ci-runs.test.ts` cover setup, target selection,
 unattended consent, account continuity for equivalent saved relay origins, run
 selection and failure behavior. The CLI-to-relay consumer
 contract pins method, account authentication, protobuf body and revision header;

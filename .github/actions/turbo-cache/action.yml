@@ -1,0 +1,44 @@
+name: HoBo Turbo cache
+description: Vercel Turbo remote cache when configured; actions/cache fallback otherwise.
+inputs:
+  turbo-token:
+    description: TURBO_TOKEN secret (empty skips remote)
+    required: false
+    default: ""
+  turbo-team:
+    description: TURBO_TEAM variable
+    required: false
+    default: ""
+  remote-mode:
+    description: Turbo --cache remote mode (remote:rw or remote:ro)
+    required: false
+    default: remote:rw
+runs:
+  using: composite
+  steps:
+    - name: Configure Turbo remote cache
+      shell: bash
+      env:
+        INPUT_TOKEN: ${{ inputs.turbo-token }}
+        INPUT_TEAM: ${{ inputs.turbo-team }}
+        REMOTE_MODE: ${{ inputs.remote-mode }}
+      run: |
+        set -euo pipefail
+        if [ -n "${INPUT_TOKEN}" ] && [ -n "${INPUT_TEAM}" ]; then
+          {
+            echo "TURBO_TOKEN=${INPUT_TOKEN}"
+            echo "TURBO_TEAM=${INPUT_TEAM}"
+            echo "TURBO_CACHE=local:rw,${REMOTE_MODE}"
+          } >> "$GITHUB_ENV"
+          echo "Turbo remote cache enabled (${REMOTE_MODE})"
+        else
+          echo "Turbo remote cache not configured; using actions/cache fallback"
+        fi
+    - name: Restore Turbo local cache fallback
+      if: env.TURBO_TOKEN == ''
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: .turbo/cache
+        key: turbo-${{ runner.os }}-${{ github.sha }}
+        restore-keys: |
+          turbo-${{ runner.os }}-

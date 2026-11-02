@@ -1,0 +1,8 @@
+# Declared apt packages for hobo-ci-runner (one package per line; # comments allowed).
+ca-certificates
+curl
+git
+libicu72
+procps
+xz-utils
+docker.io

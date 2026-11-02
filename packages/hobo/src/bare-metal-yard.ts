@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { BindleDefinition } from "@hobo/bindles";
 import { bindleScope, descriptorFromHandle } from "@hobo/bindles/topology";
@@ -19,6 +18,7 @@ import {
 	BARE_METAL_PROVIDER_ID,
 	createBareMetalProvider,
 } from "./local-provider.js";
+import { defaultHoboHome } from "./hobo-home.js";
 
 // Local Yard: provider-specific control plane on the operator's machine
 // (glossary: Yard). `hobo yard init` installs it; `hobo dev` opens the Yard,
@@ -104,13 +104,7 @@ export interface BareMetalYard {
 	readonly close: () => void;
 }
 
-export function defaultHoboHome(env: NodeJS.ProcessEnv = process.env): string {
-	const fromEnv = env.HOBO_HOME;
-	if (isJsonString(fromEnv) && fromEnv.length > 0) {
-		return fromEnv;
-	}
-	return join(homedir(), ".hobo");
-}
+export { defaultHoboHome } from "./hobo-home.js";
 
 export function yardConfigPath(hoboHome: string): string {
 	return join(hoboHome, "yard.json");

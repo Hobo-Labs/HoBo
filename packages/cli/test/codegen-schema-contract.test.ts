@@ -5,11 +5,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fromJson, toJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
+import { cueBinary } from "../../stage-gate/test/helpers/cue-binary.js";
 import { GeneratedResourcePutSchema } from "../src/_generated/project_codegen_pb.js";
 import { parseFieldSchema, serializedSchema } from "../src/codegen/schema.js";
 
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
-const cue = join(repo, ".tools/cue/v0.14.0/cue");
+const cue = cueBinary(process.env, repo);
 const schemaFile = join(repo, "packages/cli/data-models/project_codegen.cue");
 
 describe("executed codegen Protobuf/CUE contracts", () => {

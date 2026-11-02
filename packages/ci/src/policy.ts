@@ -19,6 +19,7 @@ const providers = new Set([
 	"depot",
 	"warpbuild",
 	"kubernetes",
+	"hobo-box-worker",
 	"local",
 	"vercel",
 	"azure-devops",

@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
-FROM mcr.microsoft.com/devcontainers/javascript-node:24-bookworm
+# Digest pinned for reproducible devcontainer builds (Node 24 + corepack in post-create).
+FROM mcr.microsoft.com/devcontainers/javascript-node:24-bookworm@sha256:447fa75fbc7123952284b50229148e933ea756c40718601fa0ec46edd29fd0c6
 USER root
 # Official Actions runner runtime dependencies; no runtime sudo/install step.
 RUN --mount=type=secret,id=proxy_ca \

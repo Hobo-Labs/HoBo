@@ -52,4 +52,4 @@ Contracts: `contracts/pacts/kubectl-cluster.pact.json`, `contracts/pacts/runtime
 |----------|------|
 | `HOBO_KUBECTL_BIN` | kubectl binary (process transport) |
 | `KUBECONFIG` | cluster config |
-| `HOBO_OCI_RUNTIME_IMAGE` | pullable image for Deployments |
+| `HOBO_OCI_RUNTIME_IMAGE` | pullable image for Deployments (build [`deploy/Dockerfile`](deploy/Dockerfile)) |

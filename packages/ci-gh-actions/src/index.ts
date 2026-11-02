@@ -19,6 +19,26 @@ export { createHostedAppBootstrap } from "./hosted-app-bootstrap.js";
 export { createHostedAppOnboarding } from "./hosted-app-onboarding.js";
 export { createHostedControlPlane } from "./hosted-control.js";
 export {
+	isIsolatedContainerOffer,
+	isIsolatedHostOffer,
+	isSandboxOffer,
+} from "./isolated-backend.js";
+export { createCliDockerDriver } from "./isolated-worker/cli-docker-driver.js";
+export { createCompositeIsolatedHost } from "./isolated-worker/composite-host.js";
+export {
+	countInFlightWorkerLeases,
+	waitForIsolatedWorkerDrain,
+} from "./isolated-worker/daemon-shutdown.js";
+export {
+	attachPostgresPoolErrorHandler,
+	formatPoolErrorLog,
+	redactPoolErrorMessage,
+} from "./isolated-worker/postgres-pool.js";
+export {
+	createIsolatedContainerController,
+	type IsolatedContainerController,
+} from "./isolated-worker/container-controller.js";
+export {
 	HostedRelay,
 	type HostedRelayStore,
 	type IsolatedRunnerHost,
@@ -75,3 +95,38 @@ export {
 	createWebhookRepair,
 	PostgresWebhookRepairClaims,
 } from "./webhook-repair.js";
+export { signIngressForward, verifyIngressForward } from "./ingress-forward.js";
+export {
+	assertRelayOriginAllowed,
+	CI_PROJECT_LOCAL_OVERRIDE_PATH,
+	DEFAULT_CI_PROJECT_PATH,
+	type CiJobAdmission,
+	type CiWebhookRoutingContext,
+	type ResolvedCiRelayRoute,
+	inferJobAdmission,
+	isForkPullRequestRun,
+	loadCiProjectConfigDocument,
+	mergeCiProjectLocalOverlay,
+	parseCiProjectSelection,
+	relayWebhookPath,
+	resolveCiConfigRefForRun,
+	resolveCiRelayRoute,
+	resolveExplicitCiEnvironmentName,
+	selectEnvironmentForWebhook,
+} from "./relay-routing.js";
+export {
+	inventoryCiEnginesFromRepository,
+	knownEngineIds,
+} from "./ci-engine-inventory.js";
+export {
+	collectAllowedRelayOrigins,
+	resolveEngineRelayOrigin,
+	resolveEnvironmentEngines,
+} from "./engine-relay-routing.js";
+export { loadCiProjectFromDirectory } from "./project-config-loader.js";
+export {
+	createGithubCiProjectFetcher,
+	createWebhookIngressHandler,
+	type CiProjectContentFetcher,
+} from "./webhook-ingress.js";
+export { createJobPollAdmissionWorker } from "./job-poll-admission.js";

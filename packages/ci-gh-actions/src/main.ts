@@ -64,8 +64,11 @@ export async function startRelayFromEnvironment(
 	const authenticate = createControlAuthenticator(
 		readFileSync(required(env, "HOBO_CI_CONTROL_TOKENS_FILE"), "utf8"),
 	);
-	const webhookSecret = secret(env, "HOBO_CI_WEBHOOK_SECRET");
-	const assets = relayInstallAssets();
+		const webhookSecret = secret(env, "HOBO_CI_WEBHOOK_SECRET");
+		const ingressForwardSecret = env.HOBO_CI_INGRESS_FORWARD_SECRET
+			? secret(env, "HOBO_CI_INGRESS_FORWARD_SECRET")
+			: undefined;
+		const assets = relayInstallAssets();
 	const database = required(env, "HOBO_CI_DB");
 	const lock = await acquirePartitionLock(database);
 	let store: LeaseStore;
@@ -91,13 +94,18 @@ export async function startRelayFromEnvironment(
 			appId: required(env, "HOBO_CI_GITHUB_APP_ID"),
 			privateKey,
 		});
-		const relay = new Relay({
+		const relayBase = {
 			config: snapshot.configuration,
 			store,
 			github,
 			identity: createGithubOidcVerifier(publicUrl.origin),
 			webhookSecret,
-		});
+		};
+		const relay = new Relay(
+			ingressForwardSecret === undefined
+				? relayBase
+				: { ...relayBase, ingressForwardSecret },
+		);
 		const controlHandler = createControlPlane({
 			relay,
 			github,
@@ -105,12 +113,24 @@ export async function startRelayFromEnvironment(
 			publicOrigin: publicUrl.origin,
 			assets,
 		});
+		const stubEngineIds = (env.HOBO_CI_STUB_ENGINES ?? "")
+			.split(",")
+			.map((value) => value.trim())
+			.filter(Boolean);
+		const stubEngines = Object.fromEntries(
+			stubEngineIds.map((id) => [id, { ready: () => true }]),
+		);
 		const service = createRelayService({
 			relay,
 			store,
 			host,
 			port,
+			engineId: "gh-actions",
+			mountPath: "/engines/gh-actions",
+			legacyRootPaths: env.HOBO_CI_LEGACY_ROOT_PATHS !== "0",
+			stubEngines,
 			controlHandler,
+			trustProxy: env.HOBO_CI_TRUST_PROXY === "1",
 			// Deployment readiness is local partition integrity. A real runner acceptance
 			// workflow separately verifies external installation permissions and execution.
 			readinessProbe: async (signal) => {
