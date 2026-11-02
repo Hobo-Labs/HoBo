@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { afterAll, beforeAll, test, vi } from "vitest";
+
+beforeAll(() => {
+	vi.stubEnv("HOBO_TURBO_CONCURRENCY", "");
+});
+
+afterAll(() => {
+	vi.unstubAllEnvs();
+});
 
 import { findCaseCollisions } from "../scripts/check-case-collisions.js";
 import {

@@ -77,6 +77,8 @@ Version tag: `node --no-warnings scripts/ci-runner-image-version.mts` (hash of `
 
 **Preflight:** every `runs-on: hobo` job starts with `.github/actions/ci-runner-preflight` (`scripts/ci-runner-preflight.mts`). Failures mean the worker image is stale — rerun `build.sh` on the box.
 
+**CI fabric contract guard** (HoBo CI Fabric `ci-guard` job): `pnpm exec vitest run scripts/test/ci-runner-image-contract.test.ts` after install (not `node --test`).
+
 **Fallback:** if a tool cannot be packaged with `mise oci` (asdf backend, broken vfox hooks), use `Dockerfile.monolithic` and document why — see `packages/ci-gh-actions/deploy/ci-runner/README.md`.
 
 ```sh
@@ -84,7 +86,7 @@ export HOBO_CI_WORKER_IMAGE=hobo-ci-worker:local
 node --import tsx packages/ci-gh-actions/scripts/isolated-worker-daemon.mts
 ```
 
-**Memory:** each job container defaults to **`8192` MiB** (`docker create --memory`); override with **`HOBO_CI_WORKER_MEMORY_MB`**. Workflow sets **`HOBO_TURBO_CONCURRENCY=2`**. Set **`NODE_OPTIONS=--max-old-space-size`** to about **75% of `(HOBO_CI_WORKER_MEMORY_MB ÷ HOBO_TURBO_CONCURRENCY)`** in MiB (default **3072** at 8192 MiB ÷ 2) so parallel turbo test tasks do not OOM the cgroup.
+**Memory:** each job container defaults to **`8192` MiB** (`docker create --memory`); override with **`HOBO_CI_WORKER_MEMORY_MB`**. Workflow sets **`HOBO_TURBO_CONCURRENCY=1`** so turbo **`test`** tasks stay serial on 8 GiB boxes; **`@hobo/cli`** also sets Vitest **`maxWorkers: 1`**. Keep **`NODE_OPTIONS=--max-old-space-size=3072`** (do not raise heap to compensate — RSS from subprocesses dominates).
 
 Legacy path `packages/ci-gh-actions/deploy/worker/Dockerfile` is deprecated; use **`build.sh`** above.
 
