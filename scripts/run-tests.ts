@@ -124,8 +124,15 @@ if (!patterns) {
 // (their package.json test:contract:* scripts), so exclude them here; the
 // turbo part of the root lane still executes them under their owning engine.
 const nodeTestFiles = new Set<string>();
+// Frozen proofs cannot change after promotion (scripts/promotions.json), so a
+// frozen proof test that runs its stale code against the live repo would fail
+// forever. The promoted package carries the maintained copy of each test here.
+const frozenLiveRepoTests = new Set([
+	"src/draft/technical-proofs/s0-04-protobuf-cue-codegen/packages/schema-tools/test/codegen-pipeline.test.ts",
+]);
 const testFiles = gitLsFiles(patterns).filter((file) => {
 	if (file.endsWith(".feature")) return false;
+	if (frozenLiveRepoTests.has(file)) return false;
 	if (isNodeTestFile(file)) {
 		nodeTestFiles.add(file);
 		return false;

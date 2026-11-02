@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 /** Sidecar on an operator-owned free VM: launch kubernetes/isolated-container leases against the shared relay database. */
 import { parseConfiguration } from "@hobo/ci";
 import { PostgresCiStore } from "@hobo/ci/postgres";
@@ -42,6 +45,18 @@ const workerMemoryMb = Number(process.env.HOBO_CI_WORKER_MEMORY_MB ?? "8192");
 if (!Number.isInteger(workerMemoryMb) || workerMemoryMb < 512)
 	throw new Error("invalid HOBO_CI_WORKER_MEMORY_MB");
 const workerAccountId = required("HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID");
+// Concurrent job containers on this host. Size with memory: slots x HOBO_CI_WORKER_MEMORY_MB
+// should stay under host RAM (jobs run NODE_OPTIONS=--max-old-space-size=3072, turbo concurrency 1).
+const slots = Number(process.env.HOBO_CI_WORKER_SLOTS ?? "2");
+if (!Number.isInteger(slots) || slots < 1 || slots > 8)
+	throw new Error("invalid HOBO_CI_WORKER_SLOTS");
+// Shared pnpm content-addressable store, bind-mounted into every job container
+// (uid 1000 owns it). Empty string disables the mount.
+const pnpmStore =
+	process.env.HOBO_CI_PNPM_STORE_DIR ??
+	join(homedir(), ".cache", "hobo-ci", "pnpm-store");
+if (pnpmStore) mkdirSync(pnpmStore, { recursive: true, mode: 0o755 });
+const PNPM_STORE_TARGET = "/pnpm-store";
 const worker = createIsolatedContainerController({
 	store,
 	github,
@@ -50,6 +65,14 @@ const worker = createIsolatedContainerController({
 	workerAccountId,
 	workerImage: process.env.HOBO_CI_WORKER_IMAGE ?? "hobo-ci-worker:local",
 	workerMemoryMb,
+	slots,
+	volumes: pnpmStore ? [{ source: pnpmStore, target: PNPM_STORE_TARGET }] : [],
+	containerEnv: pnpmStore
+		? {
+				npm_config_store_dir: PNPM_STORE_TARGET,
+				HOBO_CI_PNPM_STORE_MOUNTED: "1",
+			}
+		: {},
 });
 const host = createCompositeIsolatedHost({ store, worker: worker.host });
 if (!host) throw new Error("worker host unavailable");
@@ -65,7 +88,7 @@ const runtime = createHostedRelayRuntime({
 	control: async () => undefined,
 });
 
-const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "5000");
+const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
 const drainTimeoutMs = Number(
@@ -94,6 +117,8 @@ log("hobo_ci_isolated_worker_started", {
 	publicOrigin,
 	pollMs: intervalMs,
 	workerMemoryMb,
+	slots,
+	pnpmStoreMounted: pnpmStore !== "",
 	drainTimeoutMs,
 });
 
@@ -112,6 +137,7 @@ async function shutdown(signal: string) {
 	shutdownOnce = (async () => {
 		draining = true;
 		if (pollTimer) clearInterval(pollTimer);
+		await worker.discardWarm().catch(() => undefined);
 		log("hobo_ci_isolated_worker_draining", { signal });
 		if (tickInFlight) {
 			await tickInFlight.catch(() => undefined);

@@ -1,5 +1,9 @@
 export { createActionsBackend } from "./actions-backend.js";
 export { relayInstallAssets } from "./assets.js";
+export {
+	inventoryCiEnginesFromRepository,
+	knownEngineIds,
+} from "./ci-engine-inventory.js";
 export { CiRelayClientError, createCiRelayClient } from "./client.js";
 export {
 	type ControlAuthenticator,
@@ -7,6 +11,11 @@ export {
 	createControlAuthenticator,
 	createControlPlane,
 } from "./control-plane.js";
+export {
+	collectAllowedRelayOrigins,
+	resolveEngineRelayOrigin,
+	resolveEnvironmentEngines,
+} from "./engine-relay-routing.js";
 export {
 	createGithubAppTransport,
 	type GithubAppTransport,
@@ -19,12 +28,26 @@ export { createHostedAppBootstrap } from "./hosted-app-bootstrap.js";
 export { createHostedAppOnboarding } from "./hosted-app-onboarding.js";
 export { createHostedControlPlane } from "./hosted-control.js";
 export {
+	HostedRelay,
+	type HostedRelayStore,
+	type IsolatedRunnerHost,
+} from "./hosted-relay.js";
+export {
+	createHostedRelayRuntime,
+	type HostedInboxStore,
+} from "./hosted-runtime.js";
+export { signIngressForward, verifyIngressForward } from "./ingress-forward.js";
+export {
 	isIsolatedContainerOffer,
 	isIsolatedHostOffer,
 	isSandboxOffer,
 } from "./isolated-backend.js";
 export { createCliDockerDriver } from "./isolated-worker/cli-docker-driver.js";
 export { createCompositeIsolatedHost } from "./isolated-worker/composite-host.js";
+export {
+	createIsolatedContainerController,
+	type IsolatedContainerController,
+} from "./isolated-worker/container-controller.js";
 export {
 	countInFlightWorkerLeases,
 	waitForIsolatedWorkerDrain,
@@ -34,19 +57,7 @@ export {
 	formatPoolErrorLog,
 	redactPoolErrorMessage,
 } from "./isolated-worker/postgres-pool.js";
-export {
-	createIsolatedContainerController,
-	type IsolatedContainerController,
-} from "./isolated-worker/container-controller.js";
-export {
-	HostedRelay,
-	type HostedRelayStore,
-	type IsolatedRunnerHost,
-} from "./hosted-relay.js";
-export {
-	createHostedRelayRuntime,
-	type HostedInboxStore,
-} from "./hosted-runtime.js";
+export { createJobPollAdmissionWorker } from "./job-poll-admission.js";
 export { startRelayFromEnvironment } from "./main.js";
 export {
 	createGithubOidcVerifier,
@@ -72,6 +83,7 @@ export {
 	requiredCiSecrets,
 	selectCiEnvironment,
 } from "./project-config.js";
+export { loadCiProjectFromDirectory } from "./project-config-loader.js";
 export {
 	type CiResolvedSecrets,
 	type CiSecretResolver,
@@ -84,6 +96,24 @@ export {
 	PostgresQueuedJobRepairClaims,
 } from "./queued-job-repair.js";
 export { Relay } from "./relay.js";
+export {
+	assertRelayOriginAllowed,
+	CI_PROJECT_LOCAL_OVERRIDE_PATH,
+	type CiJobAdmission,
+	type CiWebhookRoutingContext,
+	DEFAULT_CI_PROJECT_PATH,
+	inferJobAdmission,
+	isForkPullRequestRun,
+	loadCiProjectConfigDocument,
+	mergeCiProjectLocalOverlay,
+	parseCiProjectSelection,
+	type ResolvedCiRelayRoute,
+	relayWebhookPath,
+	resolveCiConfigRefForRun,
+	resolveCiRelayRoute,
+	resolveExplicitCiEnvironmentName,
+	selectEnvironmentForWebhook,
+} from "./relay-routing.js";
 export { createRelayRequestHandler, createRelayServer } from "./server.js";
 export {
 	createRelayService,
@@ -92,41 +122,11 @@ export {
 } from "./service.js";
 export { LeaseStore } from "./store.js";
 export {
+	type CiProjectContentFetcher,
+	createGithubCiProjectFetcher,
+	createWebhookIngressHandler,
+} from "./webhook-ingress.js";
+export {
 	createWebhookRepair,
 	PostgresWebhookRepairClaims,
 } from "./webhook-repair.js";
-export { signIngressForward, verifyIngressForward } from "./ingress-forward.js";
-export {
-	assertRelayOriginAllowed,
-	CI_PROJECT_LOCAL_OVERRIDE_PATH,
-	DEFAULT_CI_PROJECT_PATH,
-	type CiJobAdmission,
-	type CiWebhookRoutingContext,
-	type ResolvedCiRelayRoute,
-	inferJobAdmission,
-	isForkPullRequestRun,
-	loadCiProjectConfigDocument,
-	mergeCiProjectLocalOverlay,
-	parseCiProjectSelection,
-	relayWebhookPath,
-	resolveCiConfigRefForRun,
-	resolveCiRelayRoute,
-	resolveExplicitCiEnvironmentName,
-	selectEnvironmentForWebhook,
-} from "./relay-routing.js";
-export {
-	inventoryCiEnginesFromRepository,
-	knownEngineIds,
-} from "./ci-engine-inventory.js";
-export {
-	collectAllowedRelayOrigins,
-	resolveEngineRelayOrigin,
-	resolveEnvironmentEngines,
-} from "./engine-relay-routing.js";
-export { loadCiProjectFromDirectory } from "./project-config-loader.js";
-export {
-	createGithubCiProjectFetcher,
-	createWebhookIngressHandler,
-	type CiProjectContentFetcher,
-} from "./webhook-ingress.js";
-export { createJobPollAdmissionWorker } from "./job-poll-admission.js";

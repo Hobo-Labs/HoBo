@@ -3,10 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 const prefix = "sha256=";
 
 /** HMAC-SHA256 over the exact webhook bytes for ingress-to-relay forwarding. */
-export function signIngressForward(
-	secret: string,
-	body: Buffer,
-): string {
+export function signIngressForward(secret: string, body: Buffer): string {
 	if (Buffer.byteLength(secret, "utf8") < 32)
 		throw new Error("ingress forward secret too short");
 	return `${prefix}${createHmac("sha256", secret).update(body).digest("hex")}`;

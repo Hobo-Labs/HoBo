@@ -1,0 +1,32 @@
+name: HoBo pnpm store
+description: >-
+  Shared pnpm store. On the box worker the store is a host bind mount
+  (HOBO_CI_PNPM_STORE_MOUNTED=1) and this is a no-op. Elsewhere, PRs restore the
+  store that main last saved (keyed on pnpm-lock.yaml), and main saves it.
+inputs:
+  mode:
+    description: restore (PRs, merge queue) or save (push to main)
+    required: false
+    default: restore
+runs:
+  using: composite
+  steps:
+    - name: Resolve pnpm store path
+      id: store
+      if: env.HOBO_CI_PNPM_STORE_MOUNTED != '1'
+      shell: bash
+      run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+    - name: Restore pnpm store seeded by main
+      if: env.HOBO_CI_PNPM_STORE_MOUNTED != '1' && inputs.mode == 'restore'
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: ${{ steps.store.outputs.path }}
+        key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: |
+          pnpm-store-${{ runner.os }}-
+    - name: Save pnpm store from main
+      if: env.HOBO_CI_PNPM_STORE_MOUNTED != '1' && inputs.mode == 'save'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: ${{ steps.store.outputs.path }}
+        key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}

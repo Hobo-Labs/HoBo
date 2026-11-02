@@ -1,9 +1,9 @@
 import { create } from "@bufbuild/protobuf";
 import { LeaseSchema } from "@hobo/ci";
-import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PostgresCiStore } from "@hobo/ci/postgres";
-import * as githubModule from "../src/github.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GithubTransport } from "../src/github.js";
+import * as githubModule from "../src/github.js";
 import type { HostedRelayStore } from "../src/hosted-relay.js";
 import { createIsolatedContainerController } from "../src/isolated-worker/container-controller.js";
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";

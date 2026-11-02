@@ -43,7 +43,10 @@ export async function waitForIsolatedWorkerDrain(options: {
 	const deadline = now() + options.timeoutMs;
 	while (now() < deadline) {
 		const leases = await options.activeLeases();
-		const remaining = countInFlightWorkerLeases(leases, options.workerAccountId);
+		const remaining = countInFlightWorkerLeases(
+			leases,
+			options.workerAccountId,
+		);
 		if (remaining === 0) return { drained: true, remaining: 0 };
 		const waitMs = Math.min(options.pollMs, Math.max(0, deadline - now()));
 		if (waitMs > 0) await sleep(waitMs);

@@ -1,7 +1,6 @@
 import type { Pool, PoolClient } from "pg";
 
-const CONNECTION_STRING =
-	/(postgres(?:ql)?|mysql|redis):\/\/[^\s"'`]+/giu;
+const CONNECTION_STRING = /(postgres(?:ql)?|mysql|redis):\/\/[^\s"'`]+/giu;
 const BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]+/giu;
 
 /** Strip connection strings and bearer tokens from pool error text before logging. */

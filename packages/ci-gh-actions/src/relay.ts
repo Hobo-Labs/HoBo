@@ -23,8 +23,8 @@ import {
 	getJob,
 	getRun,
 } from "./github.js";
-import type { IdentityVerifier } from "./oidc.js";
 import { verifyIngressForward } from "./ingress-forward.js";
+import type { IdentityVerifier } from "./oidc.js";
 import type { LeaseStore } from "./store.js";
 
 const JobWebhook = z.object({

@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 import { defineCiProjectConfig } from "../src/project-config.js";
 import { CiProjectDocumentSchema } from "../src/project-schema.js";
 import {
+	type CiWebhookRoutingContext,
 	parseCiProjectSelection,
 	resolveCiRelayRoute,
-	type CiWebhookRoutingContext,
 } from "../src/relay-routing.js";
 
 describe("committed .hobo/ci.json routing", () => {

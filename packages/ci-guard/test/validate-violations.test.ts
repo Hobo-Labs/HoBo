@@ -120,8 +120,7 @@ describe("the pull-request gate", () => {
 		// lane stop mattering without anyone noticing.
 		const codes = codesFor(
 			broken((d) => {
-				object(object(d.workflow).pullRequestGate).requiredChecks =
-					[];
+				object(object(d.workflow).pullRequestGate).requiredChecks = [];
 			}),
 		);
 		expect(codes).toContain("pr-gate.missing-checks");
@@ -132,8 +131,7 @@ describe("the pull-request gate", () => {
 		// diff the contract against the source to find out what to add.
 		const report = validateCiFabricContract(
 			broken((d) => {
-				object(object(d.workflow).pullRequestGate).requiredChecks =
-					[];
+				object(object(d.workflow).pullRequestGate).requiredChecks = [];
 			}),
 			null,
 		);
@@ -149,10 +147,7 @@ describe("the pull-request gate", () => {
 		const codes = codesFor(
 			broken((d) => {
 				const gate = object(object(d.workflow).pullRequestGate);
-				gate.requiredChecks = [
-					...array(gate.requiredChecks),
-					"extra-lane",
-				];
+				gate.requiredChecks = [...array(gate.requiredChecks), "extra-lane"];
 			}),
 		);
 		expect(codes).not.toContain("pr-gate.missing-checks");
@@ -203,9 +198,7 @@ describe("E2E cost gating", () => {
 	function withoutGate(kind: string) {
 		return broken((d) => {
 			const e2e = object(d.e2e);
-			e2e.gatedBy = array(e2e.gatedBy).filter(
-				(g) => object(g).kind !== kind,
-			);
+			e2e.gatedBy = array(e2e.gatedBy).filter((g) => object(g).kind !== kind);
 		});
 	}
 
@@ -225,7 +218,9 @@ describe("E2E cost gating", () => {
 				broken((d) => {
 					const e2e = object(d.e2e);
 					e2e.gatedBy = array(e2e.gatedBy).map((g) =>
-						object(g).kind === "pull-request-label" ? { ...object(g), label: "" } : g,
+						object(g).kind === "pull-request-label"
+							? { ...object(g), label: "" }
+							: g,
 					);
 				}),
 			),
@@ -251,7 +246,7 @@ describe("E2E cost gating", () => {
 		expect(
 			codesFor(
 				broken((d) => {
-				object(object(d.workflow).triggers).schedule = "* * * * *";
+					object(object(d.workflow).triggers).schedule = "* * * * *";
 				}),
 			),
 		).toContain("e2e.cost-gate.missing");
@@ -514,8 +509,7 @@ describe("the schema version", () => {
 		const codes = codesFor(
 			broken((d) => {
 				d.schema = "hobo.ci-fabric/v999";
-				object(object(d.workflow).pullRequestGate).blocksPullRequest =
-					false;
+				object(object(d.workflow).pullRequestGate).blocksPullRequest = false;
 			}),
 		);
 		expect(codes).toContain("schema.unsupported");
@@ -530,8 +524,7 @@ describe("several violations at once", () => {
 		// arbitrarily long sequence of pushes.
 		const codes = codesFor(
 			broken((d) => {
-				object(object(d.workflow).pullRequestGate).blocksPullRequest =
-					false;
+				object(object(d.workflow).pullRequestGate).blocksPullRequest = false;
 				object(object(d.workflow).artifactCache).entries = [];
 				object(object(d.e2e).teardown).always = false;
 				object(object(d.e2e).auth).forbidsStoredSecrets = false;
@@ -548,8 +541,7 @@ describe("several violations at once", () => {
 		// A violation with an empty message is one a developer cannot act on.
 		const report = validateCiFabricContract(
 			broken((d) => {
-				object(object(d.workflow).pullRequestGate).requiredChecks =
-					[];
+				object(object(d.workflow).pullRequestGate).requiredChecks = [];
 				object(object(d.e2e).quarantine).continueOnError = false;
 			}),
 			null,

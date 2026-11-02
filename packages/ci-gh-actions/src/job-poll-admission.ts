@@ -18,7 +18,11 @@ export interface JobPollAdmissionOptions {
 /** Poll GitHub for queued `hobo` jobs and admit them without a public webhook URL. */
 export function createJobPollAdmissionWorker(options: JobPollAdmissionOptions) {
 	const intervalMs = options.intervalMs ?? 15_000;
-	if (!Number.isInteger(intervalMs) || intervalMs < 5_000 || intervalMs > 300_000)
+	if (
+		!Number.isInteger(intervalMs) ||
+		intervalMs < 5_000 ||
+		intervalMs > 300_000
+	)
 		throw new Error("invalid poll interval");
 	let timer: ReturnType<typeof setInterval> | undefined;
 	let running = false;

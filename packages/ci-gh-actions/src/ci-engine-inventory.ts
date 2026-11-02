@@ -1,15 +1,16 @@
-import { access, readdir } from "node:fs/promises";
 import { constants } from "node:fs";
+import { access, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 /** Package folder name under `packages/` → public engine id served at `/engines/<id>/`. */
-export const CI_ENGINE_PACKAGE_IDS: Readonly<Record<string, string>> = Object.freeze({
-	"ci-gh-actions": "gh-actions",
-	"ci-vercel": "vercel",
-	"ci-dagger": "dagger",
-	"ci-cf": "cf",
-	"ci-ado": "ado",
-});
+export const CI_ENGINE_PACKAGE_IDS: Readonly<Record<string, string>> =
+	Object.freeze({
+		"ci-gh-actions": "gh-actions",
+		"ci-vercel": "vercel",
+		"ci-dagger": "dagger",
+		"ci-cf": "cf",
+		"ci-ado": "ado",
+	});
 
 // public-contract: default `/engines/<id>/` mount when a checkout omits an explicit engine id.
 export const DEFAULT_CI_ENGINE_ID = "gh-actions";

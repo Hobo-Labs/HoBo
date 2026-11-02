@@ -1,17 +1,12 @@
 import { create } from "@bufbuild/protobuf";
-import {
-	effectiveCiAccount,
-	JobSchema,
-	parseCiPolicy,
-	route,
-} from "@hobo/ci";
+import { effectiveCiAccount, JobSchema, parseCiPolicy, route } from "@hobo/ci";
 import type { PostgresCiStore } from "@hobo/ci/postgres";
+import { z } from "zod";
+import { runnerDownloadFor } from "../bootstrap.js";
 import { type GithubTransport, getJob } from "../github.js";
 import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
-import { runnerDownloadFor } from "../bootstrap.js";
 import type { DockerDriver } from "./docker-driver.js";
-import { z } from "zod";
 
 const jitResponse = z.object({
 	encoded_jit_config: z.string().min(1),
@@ -42,7 +37,19 @@ function requeueJob(lease: {
 export type IsolatedContainerController = {
 	host: IsolatedRunnerHost;
 	ready: () => Promise<boolean>;
+	/** Create one idle container ahead of demand so the next launch skips `docker create`/`start`. */
+	prewarm: () => Promise<void>;
+	/** Remove the idle pre-warmed container (daemon shutdown). */
+	discardWarm: () => Promise<void>;
 };
+
+const LIVE_CONTAINER_STATES = new Set([
+	"dispatching",
+	"dispatched",
+	"claiming",
+	"running",
+	"uncertain",
+]);
 
 export function createIsolatedContainerController(options: {
 	store: PostgresCiStore & HostedRelayStore;
@@ -55,17 +62,74 @@ export function createIsolatedContainerController(options: {
 	now?: () => string;
 	/** Requeue uncertain leases that never got a container session. */
 	uncertainWithoutContainerRecoveryMs?: number;
+	/** Max job containers alive at once on this host (default 1: the old serial behaviour). */
+	slots?: number;
+	/** Shared volumes mounted into every job container (pnpm store). */
+	volumes?: readonly Readonly<{ source: string; target: string }>[];
+	/** Extra non-secret env for job containers (e.g. npm_config_store_dir). */
+	containerEnv?: Readonly<Record<string, string>>;
 }): IsolatedContainerController {
 	const now = options.now ?? (() => new Date().toISOString());
 	const uncertainWithoutContainerRecoveryMs =
 		options.uncertainWithoutContainerRecoveryMs ?? 5 * 60_000;
 	const workerMemoryMb = options.workerMemoryMb ?? 8192;
+	const slots = options.slots ?? 1;
+	if (!Number.isInteger(slots) || slots < 1 || slots > 8)
+		throw new Error("invalid worker slots");
+	const runner = runnerDownloadFor(process.arch);
+	const containerSpec = (name: string, timeoutMs: number) => ({
+		name,
+		image: options.workerImage,
+		timeoutMs,
+		runAsUser: "1000:1000",
+		memoryMb: workerMemoryMb,
+		volumes: options.volumes ?? [],
+		env: {
+			...options.containerEnv,
+			HOBO_CI_RELAY_ORIGIN: options.publicOrigin,
+			HOBO_CI_RUNNER_SHA256: runner.sha256,
+			HOBO_CI_RUNNER_URL: runner.url,
+		},
+		command: ["sleep", "infinity"],
+	});
+	let warm: Readonly<{ name: string; containerId: string }> | undefined;
+	let warming: Promise<void> | undefined;
+	const liveContainers = async (except: string) =>
+		(await options.store.activeLeases()).filter(
+			(lease) =>
+				lease.id !== except &&
+				(lease.provider === "kubernetes" ||
+					lease.provider === "hobo-box-worker") &&
+				LIVE_CONTAINER_STATES.has(lease.state),
+		).length;
+	const prewarm = async () => {
+		if (warm || warming || !options.docker.rename) return;
+		warming = (async () => {
+			const name = `hobo-warm-${Date.now().toString(36)}`;
+			const handle = await options.docker.create(
+				containerSpec(name, 6 * 60 * 60_000),
+			);
+			try {
+				await options.docker.start(name, handle.containerId);
+				warm = handle;
+			} catch {
+				await options.docker
+					.remove(name, handle.containerId)
+					.catch(() => undefined);
+			}
+		})().finally(() => {
+			warming = undefined;
+		});
+		await warming;
+	};
 	const authorize = async (leaseId: string) => {
 		const lease = await options.store.get(leaseId);
-		if (!lease?.state || lease.state === "completed") throw new Error("lease missing");
+		if (!lease?.state || lease.state === "completed")
+			throw new Error("lease missing");
 		const snapshot = await options.store.policySnapshot();
 		const configuration = snapshot.state?.configuration;
-		if (!configuration || !snapshot.state) throw new Error("configuration unavailable");
+		if (!configuration || !snapshot.state)
+			throw new Error("configuration unavailable");
 		const connection = configuration.connections.find(
 			(entry) =>
 				entry.accountId === lease.accountId &&
@@ -99,13 +163,16 @@ export function createIsolatedContainerController(options: {
 			offer.providerAccountId !== options.workerAccountId ||
 			offer.priceMicrosPerMinute !== 0 ||
 			offer.freeMinutes !== 0 ||
-			account.maxRuntimeMinutes + account.startupMinutes !== lease.reservedMinutes
+			account.maxRuntimeMinutes + account.startupMinutes !==
+				lease.reservedMinutes
 		)
 			throw new Error("worker offer changed");
 		const decision = route(
 			{
 				...account,
-				offers: account.offers.filter((entry) => isIsolatedContainerOffer(entry)),
+				offers: account.offers.filter((entry) =>
+					isIsolatedContainerOffer(entry),
+				),
 			},
 			(await options.store.accountLeases(lease.accountId)).filter(
 				(entry) => entry.id !== lease.id,
@@ -125,6 +192,8 @@ export function createIsolatedContainerController(options: {
 		async launch(id: string) {
 			const initial = await options.store.get(id);
 			if (initial?.state !== "reserved") return;
+			// Slot full: leave the lease reserved; the next relay tick retries it.
+			if ((await liveContainers(id)) >= slots) return;
 			let auth: Awaited<ReturnType<typeof authorize>>;
 			try {
 				auth = await authorize(id);
@@ -154,23 +223,20 @@ export function createIsolatedContainerController(options: {
 			if (!planned) return;
 			let containerId = "";
 			try {
-				const runner = runnerDownloadFor(process.arch);
-				const handle = await options.docker.create({
-					name,
-					image: options.workerImage,
-					timeoutMs: planned.reservedMinutes * 60_000,
-					runAsUser: "1000:1000",
-					memoryMb: workerMemoryMb,
-					env: {
-						HOBO_CI_RELAY_ORIGIN: options.publicOrigin,
-						HOBO_CI_RUNNER_SHA256: runner.sha256,
-						HOBO_CI_RUNNER_URL: runner.url,
-					},
-					command: ["sleep", "infinity"],
-				});
-				if (handle.name !== name) throw new Error("container identity mismatch");
-				containerId = handle.containerId;
-				await options.docker.start(name, containerId);
+				const spare = warm;
+				warm = undefined;
+				if (spare && options.docker.rename) {
+					await options.docker.rename(spare.containerId, name);
+					containerId = spare.containerId;
+				} else {
+					const handle = await options.docker.create(
+						containerSpec(name, planned.reservedMinutes * 60_000),
+					);
+					if (handle.name !== name)
+						throw new Error("container identity mismatch");
+					containerId = handle.containerId;
+					await options.docker.start(name, containerId);
+				}
 				const created = await options.store.transition(
 					id,
 					["dispatching"],
@@ -209,13 +275,15 @@ export function createIsolatedContainerController(options: {
 						work_folder: "_hobo_work",
 					}),
 				);
-				if (response.status !== 201) throw new Error("runner registration failed");
+				if (response.status !== 201)
+					throw new Error("runner registration failed");
 				const jit = jitResponse.parse(await response.json());
 				const registered = await options.store.transition(
 					id,
 					["claiming"],
 					(lease) => {
-						if (lease.sandboxSessionId !== containerId) throw new Error("container changed");
+						if (lease.sandboxSessionId !== containerId)
+							throw new Error("container changed");
 						lease.runnerId = jit.runner.id;
 						lease.sandboxStage = "running";
 						lease.state = "running";
@@ -227,7 +295,8 @@ export function createIsolatedContainerController(options: {
 				const jitB64 = Buffer.from(jit.encoded_jit_config, "utf8").toString(
 					"base64",
 				);
-				const prep = await options.docker.exec(name, containerId, [
+				const runJob = options.docker.execDetached ?? options.docker.exec;
+				const prep = await runJob(name, containerId, [
 					"sh",
 					"-ec",
 					`set -eu
@@ -244,6 +313,9 @@ jit="$(printf '%s' '${jitB64}' | base64 -d)"
 exec ./run.sh --jitconfig "$jit"`,
 				]);
 				if (prep.exitCode !== 0) throw new Error("runner start failed");
+				// Get the next container ready while this job runs.
+				if ((await liveContainers("")) < slots)
+					void prewarm().catch(() => undefined);
 			} catch {
 				if (containerId) {
 					try {
@@ -321,9 +393,7 @@ exec ./run.sh --jitconfig "$jit"`,
 				0,
 				Math.max(
 					1,
-					Math.ceil(
-						(Date.parse(now()) - Date.parse(lease.createdAt)) / 60_000,
-					),
+					Math.ceil((Date.parse(now()) - Date.parse(lease.createdAt)) / 60_000),
 				),
 				now(),
 				unmet,
@@ -334,5 +404,12 @@ exec ./run.sh --jitconfig "$jit"`,
 	return {
 		host,
 		ready: async () => !!options.workerImage && !!options.workerAccountId,
+		prewarm,
+		discardWarm: async () => {
+			await warming?.catch(() => undefined);
+			const spare = warm;
+			warm = undefined;
+			if (spare) await options.docker.remove(spare.name, spare.containerId);
+		},
 	};
 }
