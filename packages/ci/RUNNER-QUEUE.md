@@ -92,7 +92,7 @@ Job containers run as **`1000:1000`**; when the host Docker socket is mounted, *
 
 Force-stop settlement on the box worker **re-queues the reserved job** when GitHub still shows it **`queued`** (for example the ephemeral runner picked up a different workflow job first); the store dedupes pending demand.
 
-**Memory:** each job container defaults to **`8192` MiB** (`docker create --memory`); override with **`HOBO_CI_WORKER_MEMORY_MB`**. Workflow sets **`HOBO_TURBO_CONCURRENCY=1`** so turbo **`test`** tasks stay serial on 8 GiB boxes; **`@hobo/cli`** also sets Vitest **`maxWorkers: 1`**. Keep **`NODE_OPTIONS=--max-old-space-size=3072`** (do not raise heap to compensate — RSS from subprocesses dominates).
+**Memory:** each job container defaults to **`8192` MiB** (`docker create --memory`); override with **`HOBO_CI_WORKER_MEMORY_MB`**. Workflow sets **`HOBO_TURBO_CONCURRENCY=1`** so turbo **`test`** tasks stay serial on 8 GiB boxes; **`@hobo/cli`** also sets Vitest **`maxWorkers: 1`**. Keep **`NODE_OPTIONS=--max-old-space-size=3072`** (do not raise heap to compensate — RSS from subprocesses dominates). The Main full gate's `check:all` step sets **`HOBO_RELEVANT_CHECK_CONCURRENCY=1`** (one root Vitest fork): four forks plus componentize-js `wizer` were OOM-killed in the job container. The box daemon runs **`HOBO_CI_WORKER_SLOTS=2`** × **`HOBO_CI_WORKER_MEMORY_MB=6144`** on a 15 GiB host (peak ~12 GiB observed).
 
 Legacy path `packages/ci-gh-actions/deploy/worker/Dockerfile` is deprecated; use **`build.sh`** above.
 
