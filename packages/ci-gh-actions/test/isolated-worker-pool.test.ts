@@ -37,4 +37,22 @@ describe("isolated-worker postgres pool errors", () => {
 		const parsed: { event?: string } = JSON.parse(lines[0] ?? "");
 		assert.equal(parsed.event, "hobo_ci_isolated_worker_pool_error");
 	});
+
+	it("attachPostgresPoolErrorHandler logs checked-out client errors without throwing", () => {
+		const pool = new EventEmitter();
+		const client = new EventEmitter();
+		const lines: string[] = [];
+		attachPostgresPoolErrorHandler(pool, (line) => lines.push(line));
+		pool.emit("connect", client);
+		client.emit(
+			"error",
+			new Error("Connection terminated unexpectedly postgres://u:p@ep-neon/db"),
+		);
+		assert.equal(lines.length, 1);
+		const parsed: { event?: string; message?: string } = JSON.parse(
+			lines[0] ?? "",
+		);
+		assert.equal(parsed.event, "hobo_ci_isolated_worker_pool_error");
+		assert.match(parsed.message ?? "", /\[redacted-connection-string\]/);
+	});
 });

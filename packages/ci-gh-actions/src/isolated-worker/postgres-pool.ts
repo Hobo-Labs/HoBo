@@ -1,4 +1,4 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 
 const CONNECTION_STRING =
 	/(postgres(?:ql)?|mysql|redis):\/\/[^\s"'`]+/giu;
@@ -24,14 +24,19 @@ function poolErrorCause(cause: unknown): Error {
 }
 
 /**
- * Neon/serverless pools emit `error` on idle clients; without a listener Node exits.
- * Log and continue so the poll loop can reconnect on the next tick.
+ * Neon/serverless pools emit `error` on idle clients and on checked-out clients
+ * mid-query; without listeners Node exits. Log and continue so the poll loop can
+ * reconnect on the next tick.
  */
 export function attachPostgresPoolErrorHandler(
 	pool: Pick<Pool, "on">,
 	log: (line: string) => void = (line) => console.error(line),
 ): void {
-	pool.on("error", (cause) => {
+	const onError = (cause: unknown) => {
 		log(formatPoolErrorLog(poolErrorCause(cause)));
+	};
+	pool.on("error", onError);
+	pool.on("connect", (client: PoolClient) => {
+		client.on("error", onError);
 	});
 }

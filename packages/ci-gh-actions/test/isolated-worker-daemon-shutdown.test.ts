@@ -4,6 +4,12 @@ import {
 	waitForIsolatedWorkerDrain,
 } from "../src/isolated-worker/daemon-shutdown.js";
 
+type WorkerLeaseRow = {
+	accountId: string;
+	provider: string;
+	state: string;
+};
+
 describe("isolated worker daemon shutdown", () => {
 	it("counts in-flight leases for the worker account only", () => {
 		const leases = [
@@ -38,11 +44,11 @@ describe("isolated worker daemon shutdown", () => {
 
 	it("waits until in-flight leases drain or times out", async () => {
 		let clock = 0;
-		const leases = [
+		const leases: Array<WorkerLeaseRow> = [
 			{
 				accountId: "acct",
 				provider: "kubernetes",
-				state: "running" as string,
+				state: "running",
 			},
 		];
 		const activeLeases = vi
