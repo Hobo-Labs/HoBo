@@ -510,7 +510,7 @@ export function parseCiRunnerIntegrations(
 ): readonly RunnerIntegration[] {
 	try {
 		const document = z
-			.object({ integrations: z.unknown().optional() })
+			.object({ integrations: z.json().optional() })
 			.loose()
 			.parse(JSON.parse(json));
 		const raw = document.integrations ?? [];

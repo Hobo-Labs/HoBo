@@ -3,9 +3,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseCiRunnerIntegrations } from "@hobo/ci-gh-actions/project-config";
+import { createHoboCli } from "@hobo/cli";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCiCommand } from "../src/ci-command.js";
 import { runCiConnect } from "../src/ci-connect.js";
+import type { JsonObject } from "../src/json.js";
 
 // Synthetic, real-looking credentials generated per run. They live only in
 // memory: no fixture, snapshot or file ever contains them.
@@ -38,7 +40,7 @@ afterEach(async () => {
 	for (const dir of dirs.splice(0))
 		await rm(dir, { recursive: true, force: true });
 });
-async function repo(initial?: object) {
+async function repo(initial?: JsonObject) {
 	const dir = await mkdtemp(join(tmpdir(), "hobo-ci-connect-"));
 	dirs.push(dir);
 	if (initial) {
@@ -84,7 +86,7 @@ describe("hobo ci connect never leaks credentials", () => {
 				const result = await runCiConnect({
 					cwd: dir,
 					provider,
-					values: values as never,
+					values,
 					env: {},
 					emitProgress: (m) => out.push(m),
 				});
@@ -98,14 +100,16 @@ describe("hobo ci connect never leaks credentials", () => {
 	it("routes CLI argv through the command without leaking", async () => {
 		const secrets = syntheticSecrets();
 		const dir = await repo();
-		const command = createCiCommand({
-			env: {},
-			git: async () => dir,
+		const cli = createHoboCli({
+			commands: {
+				ci: createCiCommand({ env: {}, git: async () => dir }),
+			},
 		});
 		const out: string[] = [];
 		for (const secret of Object.values(secrets)) {
-			const result = await command.run({
-				args: [
+			const result = await cli.run(
+				[
+					"ci",
 					"connect",
 					"depot",
 					"--auth",
@@ -113,10 +117,10 @@ describe("hobo ci connect never leaks credentials", () => {
 					"--secret-ref",
 					secret,
 				],
-				flags: { cwd: dir } as never,
-				emitProgress: (m: string) => out.push(m),
-			} as never);
-			out.push(JSON.stringify(result));
+				{ cwd: dir },
+			);
+			expect(result.exitCode).not.toBe(0);
+			out.push(result.stdout, result.stderr);
 		}
 		assertNoLeak([...out, await config(dir)], secrets);
 	});
@@ -210,7 +214,7 @@ describe("hobo ci connect never leaks credentials", () => {
 			const result = await runCiConnect({
 				cwd: dir,
 				provider,
-				values: values as never,
+				values,
 				env,
 			});
 			expect(result.ok, JSON.stringify(result)).not.toBe(false);

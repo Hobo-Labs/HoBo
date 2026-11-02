@@ -12,11 +12,28 @@ import {
 	type RunnerIntegration,
 	type RunnerIntegrationAuthMethod,
 	type RunnerIntegrationProvider,
+	type RunnerProviderProfile,
 	redactSecrets,
 } from "@hobo/ci-gh-actions/runner-integrations";
 import type { CommandResult } from "@hobo/cli";
+import {
+	cloneAsJson,
+	isJsonString,
+	type JsonObject,
+	parseJsonObject,
+} from "./json.js";
 
 const execute = promisify(execFile);
+
+function invalidConfig(): CommandResult {
+	return {
+		ok: false,
+		status: "error",
+		code: "HOBO_CI_CONFIG_INVALID",
+		message:
+			"The CI config has invalid integrations or JSON. Fix it (references only) before connecting.",
+	};
+}
 
 export type CiConnectRunner = (
 	command: string,
@@ -27,15 +44,51 @@ export type CiConnectRunner = (
 export interface CiConnectOptions {
 	readonly cwd: string;
 	readonly provider: string;
-	readonly values: Record<string, string | boolean | string[] | undefined>;
+	readonly values: Readonly<{
+		auth?: ConnectValue;
+		id?: ConnectValue;
+		"secret-ref"?: ConnectValue;
+		"project-id"?: ConnectValue;
+		org?: ConnectValue;
+		config?: ConnectValue;
+		"runs-on"?: ConnectValue;
+		"dry-run"?: ConnectValue;
+		launch?: ConnectValue;
+	}>;
 	readonly env: NodeJS.ProcessEnv;
 	readonly run?: CiConnectRunner;
 	readonly emitProgress?: (message: string) => void;
 }
 
-const PROVIDER_ALIASES: Readonly<Record<string, RunnerIntegrationProvider>> = {
-	usejog: "jog",
-};
+/** `usejog` is the product's domain name; the provider id is `jog`. */
+function canonicalProvider(name: string): string {
+	const lowered = name.toLowerCase();
+	return lowered === "usejog" ? "jog" : lowered;
+}
+
+function isProvider(name: string): name is RunnerIntegrationProvider {
+	return RUNNER_INTEGRATION_PROVIDERS.some((provider) => provider === name);
+}
+
+function isAuthMethod(name: string): name is RunnerIntegrationAuthMethod {
+	return RUNNER_INTEGRATION_AUTH_METHODS.some((method) => method === name);
+}
+
+type ConnectValue = string | boolean | readonly string[] | undefined;
+
+/** CLI flag values arrive from parseArgs; only plain strings are meaningful here. */
+function flagText(value: ConnectValue): string | undefined {
+	return isJsonString(value) ? value : undefined;
+}
+
+function isMissingFile(error: Error | null | undefined): boolean {
+	return (
+		error !== null &&
+		error !== undefined &&
+		"code" in error &&
+		error.code === "ENOENT"
+	);
+}
 
 /** Environment variables a provider ceremony must never inherit. */
 const STRIPPED_ENV =
@@ -45,12 +98,9 @@ function usage(message: string): CommandResult {
 	return { ok: false, status: "usage", code: "HOBO_CLI_USAGE", message };
 }
 
-function string(value: unknown): string | undefined {
-	return typeof value === "string" ? value : undefined;
-}
-
 function nextSteps(entry: RunnerIntegration): string[] {
-	const profile = RUNNER_PROVIDER_PROFILES[entry.provider];
+	const profile: RunnerProviderProfile =
+		RUNNER_PROVIDER_PROFILES[entry.provider];
 	const org = entry.organization ? ` for ${entry.organization}` : "";
 	switch (entry.auth.method) {
 		case "github-app":
@@ -102,20 +152,13 @@ async function writeAtomic(path: string, text: string): Promise<void> {
 export async function runCiConnect(
 	options: CiConnectOptions,
 ): Promise<CommandResult> {
-	const requested = options.provider.toLowerCase();
-	const provider = (PROVIDER_ALIASES[requested] ??
-		requested) as RunnerIntegrationProvider;
-	if (!RUNNER_INTEGRATION_PROVIDERS.includes(provider))
+	const provider = canonicalProvider(options.provider);
+	if (!isProvider(provider))
 		return usage(
 			`Unknown runner provider. Choose one of: ${RUNNER_INTEGRATION_PROVIDERS.join(", ")}.`,
 		);
-	const auth = string(options.values.auth);
-	if (
-		auth &&
-		!RUNNER_INTEGRATION_AUTH_METHODS.includes(
-			auth as RunnerIntegrationAuthMethod,
-		)
-	)
+	const auth = flagText(options.values.auth);
+	if (auth !== undefined && !isAuthMethod(auth))
 		return usage(
 			`--auth must be one of: ${RUNNER_INTEGRATION_AUTH_METHODS.join(", ")}.`,
 		);
@@ -123,12 +166,18 @@ export async function runCiConnect(
 	let entry: RunnerIntegration;
 	try {
 		entry = buildRunnerIntegration(provider, {
-			id: string(options.values.id),
-			auth: auth as RunnerIntegrationAuthMethod | undefined,
-			secretRef: string(options.values["secret-ref"]),
-			projectId: string(options.values["project-id"]),
-			organization: string(options.values.org),
-			runsOn: Array.isArray(runsOn) ? runsOn : undefined,
+			id: flagText(options.values.id),
+			auth,
+			secretRef: flagText(options.values["secret-ref"]),
+			projectId: flagText(options.values["project-id"]),
+			organization: flagText(options.values.org),
+			runsOn:
+				runsOn === undefined ||
+				runsOn === true ||
+				runsOn === false ||
+				isJsonString(runsOn)
+					? undefined
+					: runsOn,
 		});
 	} catch (error) {
 		return usage(
@@ -139,40 +188,37 @@ export async function runCiConnect(
 	}
 	const path = resolve(
 		options.cwd,
-		string(options.values.config) ?? ".hobo/ci.json",
+		flagText(options.values.config) ?? ".hobo/ci.json",
 	);
-	let document: Record<string, unknown> = {};
+	let document: JsonObject = {};
+	let existing: readonly RunnerIntegration[] = [];
+	let source: string | undefined;
 	try {
-		document = JSON.parse(await readFile(path, "utf8")) as Record<
-			string,
-			unknown
-		>;
-		parseCiRunnerIntegrations(JSON.stringify(document));
+		source = await readFile(path, "utf8");
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-			return {
-				ok: false,
-				status: "error",
-				code: "HOBO_CI_CONFIG_INVALID",
-				message:
-					"The CI config has invalid integrations or JSON. Fix it (references only) before connecting.",
-			};
+		if (!(error instanceof Error) || !isMissingFile(error))
+			return invalidConfig();
 	}
-	const existing = Array.isArray(document.integrations)
-		? (document.integrations as RunnerIntegration[])
-		: [];
+	if (source !== undefined) {
+		try {
+			existing = parseCiRunnerIntegrations(source);
+		} catch {
+			return invalidConfig();
+		}
+		document = parseJsonObject(source);
+	}
 	const integrations = [
 		...existing.filter((item) => item.id !== entry.id),
 		entry,
 	];
-	const next = { ...document, integrations };
+	const next = { ...document, integrations: cloneAsJson(integrations) };
 	const text = `${JSON.stringify(next, null, 2)}\n`;
 	parseCiRunnerIntegrations(text);
 	const steps = nextSteps(entry);
 	const dryRun = options.values["dry-run"] === true;
 	if (!dryRun) await writeAtomic(path, text);
 	let ceremony: string | undefined;
-	const profile = RUNNER_PROVIDER_PROFILES[provider];
+	const profile: RunnerProviderProfile = RUNNER_PROVIDER_PROFILES[provider];
 	if (
 		options.values.launch === true &&
 		!dryRun &&
@@ -222,9 +268,9 @@ export async function runCiConnect(
 	return {
 		message,
 		data: {
-			integration: entry as unknown as Record<string, unknown>,
+			integration: entry,
 			path,
 			dryRun,
-		} as never,
+		},
 	};
 }

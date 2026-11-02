@@ -47,9 +47,7 @@ export interface RunnerProviderProfile {
 	readonly notes: string;
 }
 
-export const RUNNER_PROVIDER_PROFILES: Readonly<
-	Record<RunnerIntegrationProvider, RunnerProviderProfile>
-> = {
+export const RUNNER_PROVIDER_PROFILES = {
 	blacksmith: {
 		provider: "blacksmith",
 		displayName: "Blacksmith",
@@ -98,7 +96,7 @@ export const RUNNER_PROVIDER_PROFILES: Readonly<
 		notes:
 			"`boat ci connect` opens GitHub to install and authorize the Boat CI app; API key only as a secret reference.",
 	},
-};
+} satisfies Readonly<Record<RunnerIntegrationProvider, RunnerProviderProfile>>;
 
 /** Shapes that are credentials, never references. Never echo the match. */
 const SECRET_PATTERNS: readonly RegExp[] = [
@@ -188,7 +186,8 @@ export const RunnerIntegrationSchema = z
 	})
 	.strict()
 	.superRefine((value, ctx) => {
-		const profile = RUNNER_PROVIDER_PROFILES[value.provider];
+		const profile: RunnerProviderProfile =
+			RUNNER_PROVIDER_PROFILES[value.provider];
 		if (!profile.authMethods.includes(value.auth.method))
 			ctx.addIssue({
 				code: "custom",
@@ -240,15 +239,31 @@ export const RunnerIntegrationsSchema = z
  * Reject raw credentials anywhere in a config document before parsing, without
  * echoing them. Returns JSON-pointer-ish paths of offending values.
  */
-export function findRawSecrets(value: unknown, path = ""): string[] {
-	if (typeof value === "string")
-		return looksLikeSecret(value) ? [path || "/"] : [];
-	if (Array.isArray(value))
-		return value.flatMap((entry, index) =>
+const JsonStringSchema = z.string();
+const JsonArraySchema = z.array(z.json());
+const JsonObjectSchema = z.record(z.string(), z.json());
+
+/** Any JSON-shaped value a config document can carry, including absent fields. */
+export type SecretScanValue =
+	| string
+	| number
+	| boolean
+	| null
+	| undefined
+	| readonly SecretScanValue[]
+	| { readonly [key: string]: SecretScanValue };
+
+export function findRawSecrets(value: SecretScanValue, path = ""): string[] {
+	const text = JsonStringSchema.safeParse(value);
+	if (text.success) return looksLikeSecret(text.data) ? [path || "/"] : [];
+	const list = JsonArraySchema.safeParse(value);
+	if (list.success)
+		return list.data.flatMap((entry, index) =>
 			findRawSecrets(entry, `${path}/${index}`),
 		);
-	if (value && typeof value === "object")
-		return Object.entries(value).flatMap(([key, entry]) =>
+	const record = JsonObjectSchema.safeParse(value);
+	if (record.success)
+		return Object.entries(record.data).flatMap(([key, entry]) =>
 			findRawSecrets(entry, `${path}/${key}`),
 		);
 	return [];
@@ -268,32 +283,40 @@ export function buildRunnerIntegration(
 	provider: RunnerIntegrationProvider,
 	options: RunnerIntegrationOptions = {},
 ): RunnerIntegration {
-	const profile = RUNNER_PROVIDER_PROFILES[provider];
-	for (const [key, raw] of Object.entries(options))
-		for (const entry of [raw].flat())
-			if (typeof entry === "string" && looksLikeSecret(entry))
-				throw new Error(
-					`--${key} looks like a raw credential. Pass a reference such as github-secret:NAME; never a secret value.`,
-				);
+	const profile: RunnerProviderProfile = RUNNER_PROVIDER_PROFILES[provider];
+	const scalarOptions = [
+		["id", options.id],
+		["auth", options.auth],
+		["secret-ref", options.secretRef],
+		["project-id", options.projectId],
+		["org", options.organization],
+	] satisfies [string, string | undefined][];
+	const flagged = [
+		...scalarOptions,
+		...(options.runsOn ?? []).map(
+			(label) => ["runs-on", label] satisfies [string, string],
+		),
+	];
+	for (const [key, entry] of flagged)
+		if (entry !== undefined && looksLikeSecret(entry))
+			throw new Error(
+				`--${key} looks like a raw credential. Pass a reference such as github-secret:NAME; never a secret value.`,
+			);
 	const method = options.auth ?? profile.authMethods[0];
 	if (!method) throw new Error("provider has no auth method");
-	const entry = {
+	const auth: RunnerIntegration["auth"] = { method };
+	if (method === "secret-ref")
+		auth.secretRef =
+			options.secretRef ??
+			`github-secret:${profile.fallbackSecret ?? "PROVIDER_TOKEN"}`;
+	if (options.projectId) auth.projectId = options.projectId;
+	const entry: RunnerIntegration = {
 		id: options.id ?? provider,
 		provider,
 		runsOn: [...(options.runsOn ?? [profile.exampleLabel])],
-		...(options.organization ? { organization: options.organization } : {}),
-		auth: {
-			method,
-			...(method === "secret-ref"
-				? {
-						secretRef:
-							options.secretRef ??
-							`github-secret:${profile.fallbackSecret ?? "PROVIDER_TOKEN"}`,
-					}
-				: {}),
-			...(options.projectId ? { projectId: options.projectId } : {}),
-		},
+		auth,
 	};
+	if (options.organization) entry.organization = options.organization;
 	const parsed = RunnerIntegrationSchema.safeParse(entry);
 	if (!parsed.success)
 		throw new Error(
