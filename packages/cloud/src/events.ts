@@ -13,6 +13,7 @@ import type {
 	PlanRemediation,
 } from "./plan-types.js";
 
+// public-contract: schema version stamped on every emitted cloud fact; consumers key on it.
 export const CLOUD_EVENT_SCHEMA_VERSION = "hobo.cloud-events/v1";
 
 // Control-plane event catalog (control-plane.md + the epic reference
