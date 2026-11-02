@@ -1,6 +1,5 @@
 import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { generateKeyPairSync, verify } from "node:crypto";
-import { existsSync } from "node:fs";
 import {
 	mkdir,
 	mkdtemp,

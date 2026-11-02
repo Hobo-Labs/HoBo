@@ -12,6 +12,8 @@ import {
 } from "@hobo/ci-gh-actions";
 import pg from "pg";
 
+import { attachPostgresPoolErrorHandler } from "../src/isolated-worker/postgres-pool.js";
+
 function required(name: string): string {
 	const value = process.env[name];
 	if (!value) throw new Error(`missing ${name}`);
@@ -22,6 +24,7 @@ const pool = new pg.Pool({
 	connectionString: required("DATABASE_URL"),
 	max: 2,
 });
+attachPostgresPoolErrorHandler(pool);
 const store = new PostgresCiStore(pool);
 const github = createGithubAppTransport({
 	appId: required("HOBO_CI_GITHUB_APP_ID"),
