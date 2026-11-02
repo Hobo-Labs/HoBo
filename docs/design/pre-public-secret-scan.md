@@ -17,7 +17,7 @@ Before making the repository public, prove the full git history does not contain
 
 ## Tooling
 
-Prefer **gitleaks** CLI (HoBo CI `secret-scan` job on `runs-on: hobo` installs a pinned release for **linux x64 or arm64** from `.github/action-pins.env` and runs `gitleaks git --redact`).
+Prefer **gitleaks** CLI (HoBo CI `secret-scan` job on `runs-on: hobo` reads pin versions from `.github/action-pins.env` with `grep`/`cut` — keys are not shell-sourced — installs **linux x64 or arm64**, then runs `gitleaks git --redact`).
 
 ```sh
 # Install once (or use the binary from CI setup)

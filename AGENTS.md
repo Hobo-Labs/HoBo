@@ -784,7 +784,7 @@ Run the smallest sufficient lane through `pnpm agent:check`; no-arg mode validat
 
 ## Cursor Cloud specific instructions
 
-Durable, non-obvious notes for this environment. The startup update script already runs `corepack enable pnpm` + `pnpm install --frozen-lockfile`, so dependencies are ready; do not re-add install steps here.
+Durable, non-obvious notes for this environment. The startup update script already runs `corepack enable pnpm` + `pnpm install --frozen-lockfile`, so dependencies are ready; do not re-add install steps here. **HoBo CI Fabric** jobs on self-hosted `hobo` runners (UID 1000) use the composite action `.github/actions/setup-pnpm` (`corepack enable --install-directory "$HOME/.local/bin"`) instead of writing `/usr/local/bin`.
 
 - **No sudo.** `sudo` is never available and never allowed. Do not run it, do not ask the user to run it, do not suggest root apt/system Docker installs. Prefer `$HOME/.local/bin`, npx/pnpm, remote anon APIs. Host is **aarch64** — download ARM64 binaries only. No `/var/run/docker.sock` here.
 - **Examples Temporary = browser-only.** End users never run CLI setup (docker/wrangler/openpouch/crane). Ship is browser → same-origin `/api/cf-temp/*` → remote HTTPS APIs. Do not treat local CLI image push/deploy as a product fallback.

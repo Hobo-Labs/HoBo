@@ -35,7 +35,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - run: corepack enable pnpm
+      - uses: ./.github/actions/setup-pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "24"
@@ -136,7 +136,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - run: corepack enable pnpm
+      - uses: ./.github/actions/setup-pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "24"
@@ -180,7 +180,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
-      - run: corepack enable pnpm
+      - uses: ./.github/actions/setup-pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "24"
@@ -200,7 +200,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
-      - run: corepack enable pnpm
+      - uses: ./.github/actions/setup-pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "24"
@@ -224,7 +224,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
-      - run: corepack enable pnpm
+      - uses: ./.github/actions/setup-pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "24"
@@ -248,17 +248,18 @@ jobs:
       - name: Install gitleaks CLI (pinned release)
         run: |
           set -euo pipefail
-          set -a
-          # shellcheck disable=SC1091
-          source .github/action-pins.env
-          set +a
+          read_pin() {
+            grep -E "^${1}=" .github/action-pins.env | head -1 | cut -d= -f2-
+          }
           case "$(uname -m)" in
-            aarch64|arm64) arch=arm64; digest="${gitleaks-linux-arm64-sha256}" ;;
-            x86_64|amd64) arch=x64; digest="${gitleaks-linux-x64-sha256}" ;;
+            aarch64|arm64) arch=arm64 ;;
+            x86_64|amd64) arch=x64 ;;
             *) echo "unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
           esac
-          archive="gitleaks_${gitleaks-version}_linux_${arch}.tar.gz"
-          url="https://github.com/gitleaks/gitleaks/releases/download/v${gitleaks-version}/${archive}"
+          gitleaks_version="$(read_pin gitleaks-version)"
+          digest="$(read_pin "gitleaks-linux-${arch}-sha256")"
+          archive="gitleaks_${gitleaks_version}_linux_${arch}.tar.gz"
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${gitleaks_version}/${archive}"
           curl -fsSL "$url" -o "$archive"
           echo "${digest}  ${archive}" | sha256sum -c -
           tar -xzf "$archive" gitleaks

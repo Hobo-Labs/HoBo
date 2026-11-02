@@ -52,8 +52,12 @@ export function createIsolatedContainerController(options: {
 	workerAccountId: string;
 	workerImage: string;
 	now?: () => string;
+	/** Requeue uncertain leases that never got a container session. */
+	uncertainWithoutContainerRecoveryMs?: number;
 }): IsolatedContainerController {
 	const now = options.now ?? (() => new Date().toISOString());
+	const uncertainWithoutContainerRecoveryMs =
+		options.uncertainWithoutContainerRecoveryMs ?? 5 * 60_000;
 	const authorize = async (leaseId: string) => {
 		const lease = await options.store.get(leaseId);
 		if (!lease?.state || lease.state === "completed") throw new Error("lease missing");
@@ -249,7 +253,20 @@ exec ./runner/run.sh --jitconfig "$jit"`,
 		},
 		async reconcile(id: string, forceStop?: boolean) {
 			const lease = await options.store.get(id);
-			if (!lease?.sandboxSessionId || !lease.sandboxName) return;
+			if (!lease) return;
+			if (!lease.sandboxSessionId || !lease.sandboxName) {
+				if (lease.state === "uncertain") {
+					const ageMs = Date.parse(now()) - Date.parse(lease.createdAt);
+					if (ageMs >= uncertainWithoutContainerRecoveryMs) {
+						await options.store.abortIsolatedAndRequeue(
+							id,
+							requeueJob(lease),
+							now(),
+						);
+					}
+				}
+				return;
+			}
 			let running = false;
 			try {
 				running = await options.docker.isRunning(
