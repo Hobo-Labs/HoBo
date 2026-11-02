@@ -21,7 +21,7 @@
 		"check:relevant:staged": "node --experimental-strip-types scripts/dx-preflight.mts agent:check --staged",
 		"ci:local": "node --import tsx packages/ci-vercel/src/turbo-ci-cli.ts",
 		"ci:preflight": "node --import tsx scripts/ci-preflight.ts",
-		"ci:runner-preflight": "node --import tsx scripts/ci-runner-preflight.mts",
+		"ci:runner-preflight": "node --no-warnings scripts/ci-runner-preflight.mts",
 		"ci:verify-relay": "node --import tsx scripts/ci/verify-relay-dispatch.mts",
 		"codegen": "node --import tsx packages/schema-tools/src/cli.ts",
 		"codegen:check": "node --import tsx packages/schema-tools/src/cli.ts --check",

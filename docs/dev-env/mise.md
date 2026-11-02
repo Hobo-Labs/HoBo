@@ -106,7 +106,7 @@ Self-hosted **`runs-on: hobo`** jobs use a container built from this repo’s **
 - **Tool layers** — `[oci]` in [`mise.toml`](../../mise.toml); build with **`MISE_EXPERIMENTAL=1`** and pinned mise ([`mise-version.txt`](../../packages/ci-gh-actions/deploy/ci-runner/mise-version.txt)) on **native Linux** (arm64 or x64, no cross-build).
 - **Operator command** — `bash packages/ci-gh-actions/deploy/ci-runner/build.sh` (see [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md)).
 
-Preflight: `node --import tsx scripts/ci-runner-preflight.mts`. Fallback monolithic Dockerfile: [`deploy/ci-runner/README.md`](../../packages/ci-gh-actions/deploy/ci-runner/README.md).
+Preflight: `node --no-warnings scripts/ci-runner-preflight.mts` (Node 24 native TS; no `pnpm install` / tsx required before CI steps). Fallback monolithic Dockerfile: [`deploy/ci-runner/README.md`](../../packages/ci-gh-actions/deploy/ci-runner/README.md).
 
 ## Tasks vs package.json scripts
 

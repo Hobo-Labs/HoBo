@@ -12,6 +12,17 @@ export const CI_RUNNER_SYSTEM_PACKAGES =
 export const MISE_TOML = "mise.toml";
 export const MISE_LOCK = "mise.lock";
 
+/** Digest-pinned debian:bookworm-slim for the CI runner base layer (must match base/Dockerfile FROM). */
+export const CI_RUNNER_DEBIAN_BOOKWORM_SLIM =
+	"debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3";
+
+export const CI_RUNNER_TURBO_AUBE_LOCK_DIR = ".mise/locks/turbo/2.11.10";
+
+export const CI_RUNNER_PREFLIGHT_NODE_ARGS = [
+	"--no-warnings",
+	"scripts/ci-runner-preflight.mts",
+] as const;
+
 /** @deprecated use CI_RUNNER_BUILD_SCRIPT */
 export const CI_RUNNER_DOCKERFILE = CI_RUNNER_BASE_DOCKERFILE;
 
@@ -27,6 +38,54 @@ export function ciRunnerImageVersion(root: string): string {
 		.update(Buffer.concat(parts))
 		.digest("hex");
 	return `v${digest.slice(0, 12)}`;
+}
+
+export function readBaseDockerfileFrom(root: string): string {
+	return readFileSync(join(root, CI_RUNNER_BASE_DOCKERFILE), "utf8");
+}
+
+/** Ensures base/Dockerfile pins the canonical debian digest (single source of truth). */
+export function assertBaseDockerfileDigestPinned(root: string): void {
+	const dockerfile = readBaseDockerfileFrom(root);
+	if (!dockerfile.includes(CI_RUNNER_DEBIAN_BOOKWORM_SLIM)) {
+		throw new Error(
+			`${CI_RUNNER_BASE_DOCKERFILE} must FROM ${CI_RUNNER_DEBIAN_BOOKWORM_SLIM}`,
+		);
+	}
+}
+
+/** Verifies the pinned base image exists in a registry (docker manifest inspect). */
+export function verifyBaseImageDigestResolves(
+	imageRef: string = CI_RUNNER_DEBIAN_BOOKWORM_SLIM,
+): ContractCheck {
+	const result = spawnSync("docker", ["manifest", "inspect", imageRef], {
+		encoding: "utf8",
+	});
+	return {
+		ok: result.status === 0,
+		name: "base-image-digest",
+		detail:
+			result.status === 0
+				? imageRef
+				: `docker manifest inspect failed for ${imageRef}: ${result.stderr || result.stdout}`.trim(),
+	};
+}
+
+export function assertTurboLockSidecarsPresent(root: string): void {
+	const lockText = readFileSync(join(root, MISE_LOCK), "utf8");
+	const expectedDigest =
+		"sha256:98a66ba91c04476d3edfbbe6d7153fae49b3c4b1d174805797db67030dd35af2";
+	if (!lockText.includes(`digest = "${expectedDigest}"`)) {
+		throw new Error(
+			`${MISE_LOCK} turbo aube digest mismatch; run mise lock and commit ${CI_RUNNER_TURBO_AUBE_LOCK_DIR}`,
+		);
+	}
+	for (const name of ["aube-lock.yaml", "package.json"]) {
+		const path = join(root, CI_RUNNER_TURBO_AUBE_LOCK_DIR, name);
+		if (!existsSync(path)) {
+			throw new Error(`missing committed turbo lock sidecar: ${path}`);
+		}
+	}
 }
 
 export type ContractCheck = { ok: boolean; name: string; detail: string };
@@ -117,12 +176,13 @@ export function evaluateCiRunnerContract(root: string): ContractCheck[] {
 
 	for (const cmd of REQUIRED_COMMANDS) {
 		const which = run("sh", ["-c", `command -v ${cmd}`]);
+		const packageName = SYSTEM_COMMANDS[cmd];
 		checks.push({
 			ok: which.ok,
 			name: `system:${cmd}`,
 			detail: which.ok
 				? which.out
-				: `missing ${cmd} (install ${SYSTEM_COMMANDS[cmd as keyof typeof SYSTEM_COMMANDS] ?? cmd} via ${CI_RUNNER_SYSTEM_PACKAGES})`,
+				: `missing ${cmd} (install ${packageName} via ${CI_RUNNER_SYSTEM_PACKAGES})`,
 		});
 	}
 

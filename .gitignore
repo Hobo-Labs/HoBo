@@ -38,8 +38,10 @@ sandboxes/
 .tools/
 # Local `mise oci build` output (see packages/ci-gh-actions/deploy/ci-runner/build.sh)
 packages/ci-gh-actions/deploy/ci-runner/oci-layout/
-# Local mise install cache / lock sidecars (commit root mise.lock only)
-.mise/
+# Local mise install cache (commit turbo lock sidecars under .mise/locks/)
+.mise/*
+!.mise/locks/
+!.mise/locks/**
 # Local yard/broker tooling installs (prefer $HOBO_HOME; belt-and-suspenders)
 .hobo/*
 !.hobo/dagger.json

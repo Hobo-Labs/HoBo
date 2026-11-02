@@ -67,7 +67,7 @@ jobs:
           MISE_EXPERIMENTAL: "1"
         run: |
           set -euo pipefail
-          version="$(node --import tsx scripts/ci-runner-image-version.mts)"
+          version="$(node --no-warnings scripts/ci-runner-image-version.mts)"
           repo="${GITHUB_REPOSITORY,,}"
           image="ghcr.io/${repo}/hobo-ci-worker:${version}"
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin

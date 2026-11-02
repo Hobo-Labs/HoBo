@@ -6,5 +6,5 @@ runs:
     - shell: bash
       run: |
         set -euo pipefail
-        node --import tsx scripts/ci-runner-preflight.mts
+        node --no-warnings scripts/ci-runner-preflight.mts
         echo "HOBO_CUE_BIN=$(command -v cue)" >> "$GITHUB_ENV"

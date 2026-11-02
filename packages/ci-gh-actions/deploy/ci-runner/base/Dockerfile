@@ -1,10 +1,9 @@
 # syntax=docker/dockerfile:1.19
 # Digest-pinned OS layer for `mise oci build` ([oci].from). System packages + Actions runner
 # bundle only — Node/pnpm/cue/turbo/gitleaks come from mise.lock tool layers.
-# Build from repo root (native arch, no cross-compile):
-#   docker build -f packages/ci-gh-actions/deploy/ci-runner/base/Dockerfile \
-#     -t hobo-ci-runner-base:local .
-FROM debian:bookworm-slim@sha256:67badb485576cbaee9a5694920cb7efd013b6734612075350be5e1a7d8eac56f
+# Build from deploy/ci-runner (small context); see build.sh.
+#   docker build -f base/Dockerfile -t hobo-ci-runner-base:local .
+FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 
 ARG RUNNER_VERSION=2.338.2
 ARG RUNNER_SHA256_X64=baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40
@@ -13,7 +12,7 @@ ARG TARGETARCH
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-COPY packages/ci-gh-actions/deploy/ci-runner/system-packages.txt /tmp/system-packages.txt
+COPY system-packages.txt /tmp/system-packages.txt
 RUN apt-get update \
   && grep -v '^#' /tmp/system-packages.txt | grep -v '^[[:space:]]*$' | xargs apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/* /tmp/system-packages.txt

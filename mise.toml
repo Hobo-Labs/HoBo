@@ -12,7 +12,7 @@ HOBO_CI_RUNNER = "1"
 # Hermetic CI runner image: tools above are packaged as one OCI layer each via `mise oci build`.
 # Base OS + system packages + Actions runner host deps live in deploy/ci-runner/base/Dockerfile only.
 [oci]
-from = "hobo-ci-runner-base:local"
+from = "127.0.0.1:5000/hobo-ci-runner-base:local"
 tag = "hobo-ci-worker:local"
 workdir = "/home/runner"
 user = "1000:1000"
@@ -27,6 +27,9 @@ cmd = ["sleep", "infinity"]
 
 [oci.env]
 MISE_TRUSTED_CONFIG_PATHS = "/etc/mise/config.toml"
+
+[settings.oci]
+insecure_registries = ["127.0.0.1:5000"]
 
 [tasks.install]
 description = "Install workspace dependencies (frozen lockfile)"
