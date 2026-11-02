@@ -99,6 +99,18 @@ const partialPolicy = policy
 	})
 	.partial();
 const jobAdmission = z.enum(["push", "pull"]);
+/** Worker lease journal. Postgres names the env var holding its URL; never the URL itself. */
+const workerStore = z
+	.discriminatedUnion("kind", [
+		z.object({ kind: z.literal("sqlite") }).strict(),
+		z
+			.object({
+				kind: z.literal("postgres"),
+				urlEnv: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),
+			})
+			.strict(),
+	])
+	.meta({ id: "WorkerStore" });
 const ciEngineId = z
 	.string()
 	.regex(/^[a-z][a-z0-9-]{0,62}$/)
@@ -140,6 +152,7 @@ const fields = z
 		githubWebhookOrigin: z.string().min(1).max(2048).optional(),
 		allowInsecureLoopback: z.boolean().optional(),
 		jobAdmission: jobAdmission.optional(),
+		store: workerStore.optional(),
 		engines: environmentEngines.optional(),
 		engineRelays: z
 			.record(ciEngineId, engineRelayOverride)

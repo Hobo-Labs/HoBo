@@ -162,6 +162,11 @@ environment with `HOBO_CI_ENVIRONMENT` or a gitignored `.hobo/ci.local.json`
 overlay. Fork pull requests resolve config at the **base branch** ref and honor
 `selection.forkPullRequestEnvironment` so untrusted head refs cannot aim webhooks
 at an attacker-controlled relay.
+An optional `store` picks the isolated worker's lease journal for
+`hobo ci serve --with-worker`: `{ "kind": "sqlite" }` (the default, a local file
+that polls GitHub for `runs-on: hobo` jobs) or
+`{ "kind": "postgres", "urlEnv": "DATABASE_URL" }` for a shared relay partition.
+`urlEnv` names an environment variable; the schema refuses a connection string.
 Amounts are USD microdollars. Each policy still requires separately provisioned
 providers and a repository connection on its selected relay.
 

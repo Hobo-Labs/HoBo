@@ -97,4 +97,42 @@ describe("isolated-container budget fallback", () => {
 		expect(choice?.offer.id).toBe("free-worker");
 		expect(choice?.paidMicros).toBe(0);
 	});
+
+	it("accepts hobo-box-worker as the isolated-container provider id", () => {
+		const worker = (provider: string) =>
+			toJsonString(
+				ConfigurationSchema,
+				create(ConfigurationSchema, {
+					accounts: [
+						{
+							id: "hobo-labs",
+							maxRuntimeMinutes: 60,
+							startupMinutes: 5,
+							offers: [
+								create(OfferSchema, {
+									id: "box",
+									provider,
+									providerAccountId: "box",
+									enabled: true,
+									runsOn: "hobo-isolated-worker",
+									backend: "isolated-container",
+									concurrency: 2,
+									observedAt: now,
+									validUntil: "2026-11-03T12:00:00Z",
+									sourceUrl: "https://example.test/worker",
+									bridgeAcknowledged: true,
+								}),
+							],
+						},
+					],
+				}),
+			);
+		expect(
+			parseConfiguration(worker("hobo-box-worker")).accounts[0]?.offers[0]
+				?.provider,
+		).toBe("hobo-box-worker");
+		expect(() => parseConfiguration(worker("github"))).toThrow(
+			"native provider requires its matching execution backend",
+		);
+	});
 });

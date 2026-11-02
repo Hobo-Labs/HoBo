@@ -32,13 +32,21 @@ import {
 	sandboxUsageQuote,
 } from "./sandbox-pricing.js";
 import { LeaseStore, type RateReattestation } from "./store.js";
+import {
+	type ClaimedWebhook,
+	isWebhookDeliveryId,
+	MAX_OUTSTANDING_WEBHOOK_BYTES_PER_INSTALLATION,
+	MAX_OUTSTANDING_WEBHOOKS_PER_INSTALLATION,
+	MAX_WEBHOOK_ATTEMPTS,
+	MAX_WEBHOOKS_PER_INSTALLATION_WINDOW,
+	parseWebhookEnvelope,
+	WEBHOOK_BODY_REPLAY_WINDOW_MS,
+	WEBHOOK_RATE_WINDOW_MS,
+	type WebhookInput,
+	webhookRetryDelayMs,
+} from "./webhook-inbox.js";
 
-const MAX_WEBHOOK_BYTES = 1024 * 1024;
-const WEBHOOK_BODY_REPLAY_WINDOW_MS = 24 * 60 * 60 * 1000;
-const WEBHOOK_RATE_WINDOW_MS = 60 * 1000;
-const MAX_WEBHOOKS_PER_INSTALLATION_WINDOW = 600;
-const MAX_OUTSTANDING_WEBHOOKS_PER_INSTALLATION = 10000;
-const MAX_OUTSTANDING_WEBHOOK_BYTES_PER_INSTALLATION = 64 * 1024 * 1024;
+export type { ClaimedWebhook, WebhookInput } from "./webhook-inbox.js";
 
 /** Validate provider-confirmed terminal usage before using it in accounting. */
 function measuredUsage(
@@ -73,17 +81,6 @@ function measuredUsage(
 	)
 		throw new Error("sandbox usage resource mismatch");
 	return usage;
-}
-export interface WebhookInput {
-	deliveryId: string;
-	event: string;
-	installationId: number;
-	repositoryId: number;
-	rawBody: Uint8Array;
-	receivedAt: string;
-}
-export interface ClaimedWebhook extends WebhookInput {
-	token: string;
 }
 interface SnapshotDatabase extends DatabaseSync {
 	deserialize(data: Uint8Array): void;
@@ -1915,8 +1912,7 @@ export class PostgresCiStore {
 	}
 	/** A fingerprint tombstone remains after acknowledgement for delivery deduplication. */
 	hasWebhook(deliveryId: string): Promise<boolean> {
-		if (!/^[A-Za-z0-9-]{1,128}$/.test(deliveryId))
-			return Promise.resolve(false);
+		if (!isWebhookDeliveryId(deliveryId)) return Promise.resolve(false);
 		return this.tx(
 			async (client) =>
 				(
@@ -1940,30 +1936,11 @@ export class PostgresCiStore {
 		input: WebhookInput,
 		ignored: boolean,
 	): Promise<{ duplicate: boolean }> {
-		const at = Date.parse(input.receivedAt);
-		if (
-			!/^[A-Za-z0-9-]{1,128}$/.test(input.deliveryId) ||
-			!["workflow_job", "workflow_run"].includes(input.event) ||
-			!Number.isSafeInteger(input.installationId) ||
-			input.installationId <= 0 ||
-			!Number.isSafeInteger(input.repositoryId) ||
-			input.repositoryId <= 0 ||
-			input.rawBody.byteLength > MAX_WEBHOOK_BYTES ||
-			!Number.isSafeInteger(at)
-		)
-			throw new Error("invalid webhook envelope");
-		const fingerprint = createHash("sha256")
-			.update(input.event)
-			.update("\0")
-			.update(String(input.installationId))
-			.update("\0")
-			.update(String(input.repositoryId))
-			.update("\0")
-			.update(input.rawBody)
-			.digest("hex");
-		// GitHub signs body bytes only, not delivery ID or event headers. Exact
-		// signed-body replays have identical semantics and need no extra row.
-		const bodyHash = createHash("sha256").update(input.rawBody).digest("hex");
+		const {
+			receivedMs: at,
+			fingerprint,
+			bodyHash,
+		} = parseWebhookEnvelope(input);
 		return this.tx(async (client) => {
 			const existing = (
 				await client.query<{ fingerprint: string }>(
@@ -2113,14 +2090,14 @@ export class PostgresCiStore {
 				)
 			).rows[0];
 			if (!row) return "stale";
-			if (row.attempts >= 8) {
+			if (row.attempts >= MAX_WEBHOOK_ATTEMPTS) {
 				await c.query(
 					"UPDATE hobo_ci_inbox SET quarantined=true,claim_token=NULL WHERE partition_id=$1 AND delivery_id=$2 AND claim_token=$3",
 					[this.partition, deliveryId, token],
 				);
 				return "quarantined";
 			}
-			const delay = Math.min(300000, 1000 * 2 ** (row.attempts - 1));
+			const delay = webhookRetryDelayMs(row.attempts);
 			await c.query(
 				"UPDATE hobo_ci_inbox SET claim_token=NULL,claim_until=$4 WHERE partition_id=$1 AND delivery_id=$2 AND claim_token=$3",
 				[this.partition, deliveryId, token, at + delay],

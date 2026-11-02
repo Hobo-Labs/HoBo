@@ -17,6 +17,7 @@ import {
 	resolveEnvironmentEngines,
 	startRelayFromEnvironment,
 	type CiJobAdmission,
+	type CiWorkerStore,
 } from "@hobo/ci-gh-actions/cli-serve";
 import { defaultHoboHome } from "./hobo-home.js";
 import { ciRepositoryFromRemote } from "./ci-repository.js";
@@ -93,7 +94,38 @@ interface ResolvedServePlan {
 	readonly installationId?: number;
 	readonly engines: readonly string[];
 	readonly configPath: string;
+	readonly workerStore: CiWorkerStore;
 	readonly redacted: CiServeRedactedSnapshot;
+}
+
+/**
+ * Environment for the `--with-worker` sidecar. The worker keeps its own lease
+ * journal: SQLite under the serve state dir unless the CI config names a
+ * Postgres store, whose URL comes from the env var the config names.
+ */
+export function ciWorkerEnvironment(input: {
+	relayEnv: NodeJS.ProcessEnv;
+	store: CiWorkerStore;
+	stateDir: string;
+}): NodeJS.ProcessEnv {
+	const env: NodeJS.ProcessEnv = { ...input.relayEnv };
+	// HOBO_CI_DB is the relay's journal; a second writer must not open it.
+	delete env.HOBO_CI_DB;
+	if (input.store.kind === "postgres") {
+		if (!env[input.store.urlEnv])
+			throw new Error(
+				`--with-worker postgres store requires ${input.store.urlEnv}`,
+			);
+		env.HOBO_CI_STORE = "postgres";
+		env.HOBO_CI_STORE_URL_ENV = input.store.urlEnv;
+		delete env.HOBO_CI_WORKER_DB;
+	} else {
+		env.HOBO_CI_STORE = "sqlite";
+		env.HOBO_CI_WORKER_DB =
+			input.relayEnv.HOBO_CI_WORKER_DB ?? join(input.stateDir, "worker.sqlite");
+		delete env.HOBO_CI_STORE_URL_ENV;
+	}
+	return env;
 }
 
 function usage(message: string): CommandResult {
@@ -343,6 +375,7 @@ export async function resolveCiServePlan(input: {
 		repository,
 		engines,
 		configPath: project.configPath,
+		workerStore: project.environment.store ?? { kind: "sqlite" as const },
 		redacted,
 	};
 	if (installationId === undefined) return planBase;
@@ -566,8 +599,11 @@ export async function startCiServe(input: {
 		pollStop = () => poll.stop();
 	}
 	if (input.options.withWorker) {
-		if (!input.env.DATABASE_URL)
-			throw new Error("--with-worker requires DATABASE_URL");
+		const workerEnv = ciWorkerEnvironment({
+			relayEnv,
+			store: plan.workerStore,
+			stateDir,
+		});
 		const script = fileURLToPath(
 			new URL(
 				"../../ci-gh-actions/scripts/isolated-worker-daemon.mts",
@@ -575,7 +611,7 @@ export async function startCiServe(input: {
 			),
 		);
 		worker = spawn(process.execPath, ["--import", "tsx", script], {
-			env: { ...relayEnv, DATABASE_URL: input.env.DATABASE_URL },
+			env: workerEnv,
 			stdio: "inherit",
 		});
 	}

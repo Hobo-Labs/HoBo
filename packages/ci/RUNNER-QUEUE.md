@@ -38,19 +38,32 @@ Admission sets **`isolatedRequired`** when the repo is **public**, on **`pull_re
 
 **Paid path:** Vercel Sandbox (`provider: vercel`, `backend: sandbox`) on the hosted relay.
 
-**Free path (budget exhausted):** add a zero-price **`hobo-box-worker`** offer with **`backend: isolated-container`** and `runsOn: hobo-isolated-worker` (see [`packages/ci/data-models/fixtures/valid/isolated-container-offer.json`](../ci/data-models/fixtures/valid/isolated-container-offer.json)). The legacy provider id `kubernetes` is still accepted for the same backend. Routing picks it when Sandbox reservation would exceed **`offer.budgetMicros`**. Launch requires the **isolated worker sidecar** on an operator-owned free VM (Docker + the same `DATABASE_URL` as the relay):
+**Free path (budget exhausted):** add a zero-price **`hobo-box-worker`** offer with **`backend: isolated-container`** and `runsOn: hobo-isolated-worker` (see [`packages/ci/data-models/fixtures/valid/isolated-container-offer.json`](../ci/data-models/fixtures/valid/isolated-container-offer.json)). The legacy provider id `kubernetes` is still accepted for the same backend. Routing picks it when Sandbox reservation would exceed **`offer.budgetMicros`**. Launch requires the **isolated worker sidecar** on an operator-owned VM with Docker.
+
+**Box mode (default): local SQLite + GitHub job poller.** The daemon keeps its own lease journal and webhook inbox in a SQLite file (`node:sqlite`, `@hobo/ci/sqlite`) under the user data dir — **`${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`**, override with **`HOBO_CI_WORKER_DB`**, never inside the checkout. With SQLite, admission defaults to **pull**: every **`HOBO_CI_JOB_POLL_MS`** (default 15000) it lists queued and in-progress workflow runs for each connection's repository with the App installation token, keeps jobs whose only label is **`hobo`**, and enqueues a synthetic `workflow_job` delivery into the local inbox. The tick then processes those deliveries exactly like signed webhooks, including the REST re-check of run and job, and launches containers. No Vercel relay, webhook ingress, or shared database is needed. The poller pauses on GitHub rate limits (429, 403 with `x-ratelimit-remaining: 0`, or fewer than 300 calls left) until the reset time.
 
 ```sh
-# On Oracle Always Free / similar (not on Vercel serverless):
-export DATABASE_URL=… # same Postgres as hobo-ci.vercel.app
-export HOBO_CI_CONFIG_JSON=…
+export HOBO_CI_CONFIG=/etc/hobo-ci/config.json   # or HOBO_CI_CONFIG_JSON; offers + connections, no secrets
 export HOBO_CI_GITHUB_APP_ID=…
-export HOBO_CI_GITHUB_APP_PRIVATE_KEY=…
-export HOBO_CI_WEBHOOK_SECRET=…
-export HOBO_CI_PUBLIC_URL=https://hobo-ci.vercel.app
-export HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID=oracle-free-vm
+export HOBO_CI_GITHUB_APP_KEY_FILE=/etc/hobo-ci/app.pem
+export HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID=box     # = offer.providerAccountId
 node --import tsx packages/ci-gh-actions/scripts/isolated-worker-daemon.mts
 ```
+
+On start the daemon applies the config to the journal when it changed (a change refused because an active lease pins the provider identity keeps the stored policy and logs `hobo_ci_isolated_worker_configuration_kept`), and logs one `hobo_ci_isolated_worker_offer` line per offer with `launchable`, `enabled`, `concurrency`, `validUntil`, and `expired`. An expired `validUntil`, or one closer than `maxRuntimeMinutes + startupMinutes`, makes routing skip the offer.
+
+**Shared relay mode (opt-in): Postgres + webhooks.** A worker that serves a hosted relay's partition sets **`HOBO_CI_STORE=postgres`**; the URL is read from the env var named by **`HOBO_CI_STORE_URL_ENV`** (default `DATABASE_URL`) and admission defaults to **push** (the relay ingests signed webhooks into the shared inbox):
+
+```sh
+export HOBO_CI_STORE=postgres
+export DATABASE_URL=…            # same Postgres as the hosted relay
+export HOBO_CI_PUBLIC_URL=https://hobo-ci.vercel.app
+export HOBO_CI_WEBHOOK_SECRET=…
+# plus HOBO_CI_CONFIG, App id/key and HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID as above
+node --import tsx packages/ci-gh-actions/scripts/isolated-worker-daemon.mts
+```
+
+`HOBO_CI_JOB_ADMISSION=pull|push` overrides either default. `hobo ci serve --with-worker` reads the same choice from the CI project config: `"store": { "kind": "sqlite" }` (the default, at `<HOBO_HOME>/ci/serve/worker.sqlite`) or `"store": { "kind": "postgres", "urlEnv": "DATABASE_URL" }`. The config names an env var and never holds a connection string. The same contract suite (`packages/ci-gh-actions/test/ci-store-contract.test.ts`) runs against both stores.
 
 Each job runs in a **fresh Docker container** with the official Actions runner JIT (`labels: [hobo]`). The container image is **hermetic**: OS + system packages + pinned Actions runner bundle in a digest-pinned base, then **one OCI layer per tool** from repo-root `mise.toml` / `mise.lock` via **`mise oci build`** (experimental). Workflows do not install Node, pnpm, cue, turbo, or gitleaks at job runtime.
 
@@ -86,7 +99,7 @@ export HOBO_CI_WORKER_IMAGE=hobo-ci-worker:local
 node --import tsx packages/ci-gh-actions/scripts/isolated-worker-daemon.mts
 ```
 
-**Graceful stop:** send **`SIGTERM`** (systemd/Kubernetes preStop). The daemon stops polling for new lease work, **waits for any in-flight poll tick to finish**, then waits for in-flight container launches and runner registration on this worker account (default **`HOBO_CI_WORKER_DRAIN_TIMEOUT_MS=120000`**), then closes the Postgres pool and exits **`0`** when drained or **`1`** on timeout.
+**Graceful stop:** send **`SIGTERM`** (systemd/Kubernetes preStop). The daemon stops polling for new lease work, **waits for any in-flight poll tick to finish**, then waits for in-flight container launches and runner registration on this worker account (default **`HOBO_CI_WORKER_DRAIN_TIMEOUT_MS=120000`**), then closes the store (SQLite file or Postgres pool) and exits **`0`** when drained or **`1`** on timeout.
 
 Job containers run as **`1000:1000`**; when the host Docker socket is mounted, **`createCliDockerDriver`** adds **`--group-add`** for the socket’s gid so in-container **`docker`** can talk to the engine (see **`cli-docker-driver.ts`**).
 

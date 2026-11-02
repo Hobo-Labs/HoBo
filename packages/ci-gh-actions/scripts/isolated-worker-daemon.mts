@@ -1,26 +1,36 @@
 #!/usr/bin/env node
-import { mkdirSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
-/** Sidecar on an operator-owned free VM: launch kubernetes/isolated-container leases against the shared relay database. */
-import { parseConfiguration } from "@hobo/ci";
-import { PostgresCiStore } from "@hobo/ci/postgres";
+import { dirname, join } from "node:path";
+/** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
+import { toJsonString } from "@bufbuild/protobuf";
+import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createGithubAppTransport,
+	createGithubJobPoller,
 	createGithubOidcVerifier,
 	createHostedRelayRuntime,
 	createIsolatedContainerController,
+	type HostedInboxStore,
+	type IsolatedWorkerStore,
+	isIsolatedContainerOffer,
+	resolveWorkerStorePlan,
 	waitForIsolatedWorkerDrain,
 } from "@hobo/ci-gh-actions";
-import pg from "pg";
 
 function required(name: string): string {
 	const value = process.env[name];
 	if (!value) throw new Error(`missing ${name}`);
 	return value;
+}
+
+function secretOrFile(name: string): string {
+	const file = process.env[`${name}_FILE`];
+	return file ? readFileSync(file, "utf8").trimEnd() : required(name);
 }
 
 function log(
@@ -30,26 +40,110 @@ function log(
 	console.error(JSON.stringify({ event, ...fields }));
 }
 
-const pool = new pg.Pool({
-	connectionString: required("DATABASE_URL"),
-	max: 2,
-});
-attachPostgresPoolErrorHandler(pool);
-const store = new PostgresCiStore(pool);
-const github = createGithubAppTransport({
-	appId: required("HOBO_CI_GITHUB_APP_ID"),
-	privateKey: required("HOBO_CI_GITHUB_APP_PRIVATE_KEY"),
-});
-const publicOrigin = required("HOBO_CI_PUBLIC_URL");
+const plan = resolveWorkerStorePlan(process.env, homedir());
+const appId = required("HOBO_CI_GITHUB_APP_ID");
+const privateKey = process.env.HOBO_CI_GITHUB_APP_KEY_FILE
+	? readFileSync(process.env.HOBO_CI_GITHUB_APP_KEY_FILE, "utf8")
+	: secretOrFile("HOBO_CI_GITHUB_APP_PRIVATE_KEY");
+const configuration = parseConfiguration(
+	process.env.HOBO_CI_CONFIG
+		? readFileSync(process.env.HOBO_CI_CONFIG, "utf8")
+		: required("HOBO_CI_CONFIG_JSON"),
+);
+const workerAccountId = required("HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID");
+// No ingress in pull mode, so the origin is informational (runner container env).
+const publicOrigin =
+	plan.admission === "pull"
+		? (process.env.HOBO_CI_PUBLIC_URL ?? "http://127.0.0.1")
+		: required("HOBO_CI_PUBLIC_URL");
+// The secret only authenticates pushed webhooks; pull mode never verifies one.
+const webhookSecret =
+	plan.admission === "pull" && !process.env.HOBO_CI_WEBHOOK_SECRET
+		? randomBytes(32).toString("hex")
+		: required("HOBO_CI_WEBHOOK_SECRET");
 const workerMemoryMb = Number(process.env.HOBO_CI_WORKER_MEMORY_MB ?? "8192");
 if (!Number.isInteger(workerMemoryMb) || workerMemoryMb < 512)
 	throw new Error("invalid HOBO_CI_WORKER_MEMORY_MB");
-const workerAccountId = required("HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID");
 // Concurrent job containers on this host. Size with memory: slots x HOBO_CI_WORKER_MEMORY_MB
 // should stay under host RAM (jobs run NODE_OPTIONS=--max-old-space-size=3072, turbo concurrency 1).
 const slots = Number(process.env.HOBO_CI_WORKER_SLOTS ?? "2");
 if (!Number.isInteger(slots) || slots < 1 || slots > 8)
 	throw new Error("invalid HOBO_CI_WORKER_SLOTS");
+const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
+if (!Number.isFinite(intervalMs) || intervalMs < 1000)
+	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
+const drainTimeoutMs = Number(
+	process.env.HOBO_CI_WORKER_DRAIN_TIMEOUT_MS ?? "120000",
+);
+if (!Number.isFinite(drainTimeoutMs) || drainTimeoutMs < 1_000)
+	throw new Error("invalid HOBO_CI_WORKER_DRAIN_TIMEOUT_MS");
+
+let store: HostedInboxStore & IsolatedWorkerStore;
+let closeStore: () => Promise<void>;
+if (plan.store.kind === "sqlite") {
+	const { SqliteCiStore } = await import("@hobo/ci/sqlite");
+	mkdirSync(dirname(plan.store.path), { recursive: true, mode: 0o700 });
+	const sqlite = new SqliteCiStore(plan.store.path);
+	store = sqlite;
+	closeStore = async () => sqlite.close();
+	// This worker owns its journal, so the operator's config file is the policy
+	// source: apply it when it changed. A refused change (for example an active
+	// lease pinning a provider identity) keeps the stored policy and says why.
+	const current = await sqlite.configuration();
+	const desired = toJsonString(ConfigurationSchema, configuration);
+	if (
+		!current?.configuration ||
+		toJsonString(ConfigurationSchema, current.configuration) !== desired
+	) {
+		try {
+			const applied = await sqlite.configure(
+				configuration,
+				current?.revision ?? 0,
+				new Date().toISOString(),
+			);
+			log("hobo_ci_isolated_worker_configured", {
+				revision: applied.revision,
+			});
+		} catch (error) {
+			if (!current?.configuration) throw error;
+			log("hobo_ci_isolated_worker_configuration_kept", {
+				revision: current.revision,
+				message: error instanceof Error ? error.message : "unknown",
+			});
+		}
+	}
+} else {
+	const [{ PostgresCiStore }, { default: pg }] = await Promise.all([
+		import("@hobo/ci/postgres"),
+		import("pg"),
+	]);
+	const pool = new pg.Pool({
+		connectionString: required(plan.store.urlEnv),
+		max: 2,
+	});
+	attachPostgresPoolErrorHandler(pool);
+	store = new PostgresCiStore(pool);
+	closeStore = () => pool.end();
+}
+
+for (const account of configuration.accounts)
+	for (const offer of account.offers) {
+		const ours =
+			isIsolatedContainerOffer(offer) &&
+			offer.providerAccountId === workerAccountId;
+		log("hobo_ci_isolated_worker_offer", {
+			accountId: account.id,
+			offerId: offer.id,
+			provider: offer.provider,
+			launchable: ours,
+			enabled: offer.enabled,
+			concurrency: offer.concurrency,
+			validUntil: offer.validUntil,
+			expired: Date.parse(offer.validUntil) <= Date.now(),
+		});
+	}
+
+const github = createGithubAppTransport({ appId, privateKey });
 // Shared pnpm content-addressable store, bind-mounted into every job container
 // (uid 1000 owns it). Empty string disables the mount.
 const pnpmStore =
@@ -76,36 +170,37 @@ const worker = createIsolatedContainerController({
 });
 const host = createCompositeIsolatedHost({ store, worker: worker.host });
 if (!host) throw new Error("worker host unavailable");
-const identity = createGithubOidcVerifier(publicOrigin);
-const secret = required("HOBO_CI_WEBHOOK_SECRET");
 const runtime = createHostedRelayRuntime({
 	store,
 	github,
-	identity,
-	webhookSecret: secret,
+	identity: createGithubOidcVerifier(publicOrigin),
+	webhookSecret,
 	isolatedHost: host,
 	denyUnisolated: true,
 	control: async () => undefined,
 });
-
-const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
-if (!Number.isFinite(intervalMs) || intervalMs < 1000)
-	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
-const drainTimeoutMs = Number(
-	process.env.HOBO_CI_WORKER_DRAIN_TIMEOUT_MS ?? "120000",
-);
-if (!Number.isFinite(drainTimeoutMs) || drainTimeoutMs < 1_000)
-	throw new Error("invalid HOBO_CI_WORKER_DRAIN_TIMEOUT_MS");
-void parseConfiguration(required("HOBO_CI_CONFIG_JSON"));
+const poller =
+	plan.admission === "pull"
+		? createGithubJobPoller({
+				github,
+				connections: async () =>
+					(await store.configuration())?.configuration?.connections ?? [],
+				ingest: (delivery) => runtime.ingestWebhook(delivery),
+			})
+		: undefined;
 
 let draining = false;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
+let jobPollTimer: ReturnType<typeof setInterval> | undefined;
 let tickInFlight: Promise<void> | undefined;
+let jobPollInFlight: Promise<void> | undefined;
 
 function runTick(): Promise<void> {
 	if (draining) return Promise.resolve();
 	const current = (async () => {
-		await runtime.tick({ maxDeliveries: 0 });
+		// In push mode the hosted relay drains the shared inbox; in pull mode
+		// this worker is the only consumer of its own.
+		await runtime.tick({ maxDeliveries: poller ? 10 : 0 });
 	})();
 	tickInFlight = current.finally(() => {
 		if (tickInFlight === current) tickInFlight = undefined;
@@ -113,9 +208,30 @@ function runTick(): Promise<void> {
 	return tickInFlight;
 }
 
+function runJobPoll(): void {
+	if (draining || !poller || jobPollInFlight) return;
+	jobPollInFlight = poller
+		.poll()
+		.then((summary) => {
+			if (summary.accepted > 0 || summary.pausedUntil)
+				log("hobo_ci_isolated_worker_jobs_polled", { ...summary });
+		})
+		.catch((error) => {
+			log("hobo_ci_isolated_worker_job_poll_failed", {
+				message: error instanceof Error ? error.message : "unknown",
+			});
+		})
+		.finally(() => {
+			jobPollInFlight = undefined;
+		});
+}
+
 log("hobo_ci_isolated_worker_started", {
+	store: plan.store.kind,
+	admission: plan.admission,
 	publicOrigin,
 	pollMs: intervalMs,
+	jobPollMs: plan.jobPollMs,
 	workerMemoryMb,
 	slots,
 	pnpmStoreMounted: pnpmStore !== "",
@@ -129,6 +245,10 @@ pollTimer = setInterval(() => {
 		});
 	});
 }, intervalMs);
+if (poller) {
+	runJobPoll();
+	jobPollTimer = setInterval(runJobPoll, plan.jobPollMs);
+}
 
 let shutdownOnce: Promise<void> | undefined;
 
@@ -137,8 +257,10 @@ async function shutdown(signal: string) {
 	shutdownOnce = (async () => {
 		draining = true;
 		if (pollTimer) clearInterval(pollTimer);
+		if (jobPollTimer) clearInterval(jobPollTimer);
 		await worker.discardWarm().catch(() => undefined);
 		log("hobo_ci_isolated_worker_draining", { signal });
+		await jobPollInFlight;
 		if (tickInFlight) {
 			await tickInFlight.catch(() => undefined);
 		}
@@ -155,7 +277,7 @@ async function shutdown(signal: string) {
 				remaining: result.remaining,
 			});
 		}
-		await pool.end();
+		await closeStore();
 		process.exit(result.drained ? 0 : 1);
 	})().catch((error) => {
 		log("hobo_ci_isolated_worker_shutdown_failed", {
@@ -166,6 +288,7 @@ async function shutdown(signal: string) {
 	return shutdownOnce;
 }
 
-process.once("SIGTERM", () => {
-	void shutdown("SIGTERM");
-});
+for (const signal of ["SIGTERM", "SIGINT"] as const)
+	process.once(signal, () => {
+		void shutdown(signal);
+	});

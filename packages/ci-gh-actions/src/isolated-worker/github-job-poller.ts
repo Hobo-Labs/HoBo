@@ -1,0 +1,193 @@
+import { z } from "zod";
+import type { GithubTransport } from "../github.js";
+
+/** Pull-mode admission: GitHub REST stands in for webhook ingress, so a box
+ * needs no public URL, relay, or shared database to see `runs-on: hobo` work. */
+export interface GithubJobPollerOptions {
+	github: GithubTransport;
+	/** Repositories to watch; read every poll so connection changes apply live. */
+	connections: () => Promise<
+		readonly Readonly<{
+			installationId: number;
+			repositoryId: number;
+			repository: string;
+		}>[]
+	>;
+	/** Durable intake (the store's inbox); returns accepted/duplicate/ignored. */
+	ingest: (delivery: {
+		deliveryId: string;
+		event: "workflow_job";
+		rawBody: Uint8Array;
+		receivedAt: string;
+	}) => Promise<string>;
+	now?: () => number;
+}
+
+export interface GithubJobPollSummary {
+	readonly repositories: number;
+	readonly runs: number;
+	readonly hoboJobs: number;
+	readonly accepted: number;
+	readonly pausedUntil?: string;
+	readonly rateLimitRemaining?: number;
+}
+
+const RUN_STATUSES = ["queued", "in_progress"] as const;
+const PolledStatus = z.enum(["queued", "in_progress", "completed"]);
+const STATUS_CODE = { queued: "q", in_progress: "p", completed: "c" } as const;
+/** Leave headroom for the worker's own job/run lookups and runner registration. */
+const RATE_LIMIT_FLOOR = 300;
+const DEFAULT_PAUSE_MS = 60_000;
+
+const Runs = z.object({
+	workflow_runs: z.array(z.object({ id: z.number().int().positive() })),
+});
+const Jobs = z.object({
+	jobs: z.array(
+		z.object({
+			id: z.number().int().positive(),
+			run_id: z.number().int().positive(),
+			run_attempt: z.number().int().positive(),
+			status: z.string(),
+			labels: z.array(z.string()),
+			runner_name: z.string().nullable().optional(),
+		}),
+	),
+});
+
+class RateLimited extends Error {
+	constructor(readonly untilMs: number) {
+		super("github rate limited");
+	}
+}
+
+export function createGithubJobPoller(options: GithubJobPollerOptions) {
+	const now = options.now ?? Date.now;
+	let pausedUntilMs = 0;
+	let rateLimitRemaining: number | undefined;
+
+	function observeRateLimit(response: Response): void {
+		const remaining = Number(response.headers.get("x-ratelimit-remaining"));
+		const resetSeconds = Number(response.headers.get("x-ratelimit-reset"));
+		const retryAfter = Number(response.headers.get("retry-after"));
+		if (
+			Number.isFinite(remaining) &&
+			response.headers.has("x-ratelimit-remaining")
+		)
+			rateLimitRemaining = remaining;
+		const limited =
+			response.status === 429 ||
+			(response.status === 403 && (remaining === 0 || retryAfter > 0)) ||
+			(rateLimitRemaining !== undefined &&
+				rateLimitRemaining < RATE_LIMIT_FLOOR);
+		if (!limited) return;
+		const until =
+			retryAfter > 0
+				? now() + retryAfter * 1000
+				: resetSeconds > 0
+					? resetSeconds * 1000
+					: now() + DEFAULT_PAUSE_MS;
+		throw new RateLimited(Math.max(until, now() + 1000));
+	}
+
+	async function getJson<T>(
+		installationId: number,
+		path: string,
+		schema: z.ZodType<T>,
+	): Promise<T | undefined> {
+		const response = await options.github.request(installationId, path);
+		observeRateLimit(response);
+		if (!response.ok) return undefined;
+		return schema.parse(await response.json());
+	}
+
+	async function poll(): Promise<GithubJobPollSummary> {
+		const summary = {
+			repositories: 0,
+			runs: 0,
+			hoboJobs: 0,
+			accepted: 0,
+		};
+		if (now() < pausedUntilMs)
+			return {
+				...summary,
+				pausedUntil: new Date(pausedUntilMs).toISOString(),
+			};
+		const seen = new Set<number>();
+		try {
+			for (const connection of await options.connections()) {
+				if (seen.has(connection.repositoryId)) continue;
+				seen.add(connection.repositoryId);
+				summary.repositories++;
+				const runIds = new Set<number>();
+				for (const status of RUN_STATUSES) {
+					const runs = await getJson(
+						connection.installationId,
+						`/repos/${connection.repository}/actions/runs?status=${status}&per_page=50`,
+						Runs,
+					);
+					for (const run of runs?.workflow_runs ?? []) runIds.add(run.id);
+				}
+				summary.runs += runIds.size;
+				for (const runId of runIds) {
+					const jobs = await getJson(
+						connection.installationId,
+						`/repos/${connection.repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
+						Jobs,
+					);
+					for (const job of jobs?.jobs ?? []) {
+						const status = PolledStatus.safeParse(job.status);
+						if (
+							!status.success ||
+							job.labels.length !== 1 ||
+							job.labels[0]?.toLowerCase() !== "hobo"
+						)
+							continue;
+						// Assignment is only useful once GitHub names the runner.
+						if (status.data !== "queued" && !job.runner_name) continue;
+						summary.hoboJobs++;
+						const rawBody = Buffer.from(
+							JSON.stringify({
+								action: status.data,
+								installation: { id: connection.installationId },
+								repository: {
+									id: connection.repositoryId,
+									full_name: connection.repository,
+								},
+								workflow_job: {
+									id: job.id,
+									run_id: job.run_id,
+									run_attempt: job.run_attempt,
+									labels: job.labels,
+									runner_name: job.runner_name ?? null,
+								},
+							}),
+						);
+						const result = await options.ingest({
+							deliveryId: `poll-${job.id}-${job.run_attempt}-${STATUS_CODE[status.data]}`,
+							event: "workflow_job",
+							rawBody,
+							receivedAt: new Date(now()).toISOString(),
+						});
+						if (result === "accepted") summary.accepted++;
+					}
+				}
+			}
+		} catch (error) {
+			if (!(error instanceof RateLimited)) throw error;
+			pausedUntilMs = error.untilMs;
+			const paused: GithubJobPollSummary = {
+				...summary,
+				pausedUntil: new Date(pausedUntilMs).toISOString(),
+			};
+			return rateLimitRemaining === undefined
+				? paused
+				: { ...paused, rateLimitRemaining };
+		}
+		return rateLimitRemaining === undefined
+			? summary
+			: { ...summary, rateLimitRemaining };
+	}
+
+	return { poll };
+}

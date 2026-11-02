@@ -47,7 +47,19 @@ export { createCompositeIsolatedHost } from "./isolated-worker/composite-host.js
 export {
 	createIsolatedContainerController,
 	type IsolatedContainerController,
+	type IsolatedWorkerStore,
 } from "./isolated-worker/container-controller.js";
+export {
+	createGithubJobPoller,
+	type GithubJobPollerOptions,
+	type GithubJobPollSummary,
+} from "./isolated-worker/github-job-poller.js";
+export {
+	defaultWorkerDatabasePath,
+	resolveWorkerStorePlan,
+	type WorkerStoreChoice,
+	type WorkerStorePlan,
+} from "./isolated-worker/worker-store.js";
 export {
 	countInFlightWorkerLeases,
 	waitForIsolatedWorkerDrain,
@@ -74,6 +86,7 @@ export {
 	type CiProjectEnvironment,
 	type CiSecretPhase,
 	type CiSecretRequirement,
+	type CiWorkerStore,
 	type ConfiguredCiRelayOptions,
 	ciEnvironmentPolicySha256,
 	ciEnvironmentSecretsSha256,
