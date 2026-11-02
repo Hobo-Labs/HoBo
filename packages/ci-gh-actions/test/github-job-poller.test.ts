@@ -250,9 +250,12 @@ describe("GitHub job poller", () => {
 		});
 		expect(await poller.poll()).toMatchObject({ accepted: 1, failed: 1 });
 		const [job1] = github.jobs[900] ?? [];
+		// GitHub flips an unassigned runner_name between null and "".
+		if (job1) job1.runner_name = "";
+		expect(await poller.poll()).toMatchObject({ accepted: 0, failed: 1 });
 		if (job1) job1.runner_name = "hobo-a742da4d";
 		expect(await poller.poll()).toMatchObject({ accepted: 1, failed: 1 });
-		expect(errors).toEqual([2, 2]);
+		expect(errors).toEqual([2, 2, 2]);
 		expect([...fingerprints.keys()]).toEqual([
 			"poll-1-1-q",
 			expect.stringMatching(/^poll-1-1-q-[0-9a-f]{12}$/),

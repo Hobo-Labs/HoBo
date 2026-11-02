@@ -165,7 +165,8 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 									run_id: job.run_id,
 									run_attempt: job.run_attempt,
 									labels: job.labels,
-									runner_name: job.runner_name ?? null,
+									// GitHub reports an unassigned job as "" or null; one body for both.
+									runner_name: job.runner_name || null,
 								},
 							}),
 						);
