@@ -409,3 +409,5 @@ node --import tsx scripts/ci/verify-relay-dispatch.mts
 ```
 
 Native Dagger checks use [`.hobo/dagger.json`](../../.hobo/dagger.json); see [`@hobo/ci-dagger`](../ci-dagger/README.md). Manual runner acceptance: [`.github/workflows/hobo-ci-acceptance.yml`](../../.github/workflows/hobo-ci-acceptance.yml) (optional `dagger_acceptance` input).
+
+`#Offer` guards every `backend` comparison behind `backend != _|_`: CUE 0.14 rejects references to an absent optional field, so unguarded `if backend == …` clauses broke `cue vet` for offers without a backend.
