@@ -13,3 +13,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   only runs the lanes a change can affect; `scripts/test/affected-lanes.test.ts` pins the skip logic.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
   from each job, so queue time and run time can be compared before and after a change.
+
+## Frozen proofs and live-repo tests
+
+`scripts/run-tests.ts` skips a frozen proof test that scans the live repo when its promoted package keeps
+the maintained copy. The S0-04 codegen proof flagged ci-vercel's non-protobuf `src/_generated` files as
+drift; `packages/schema-tools` already handles them, and the frozen proof cannot be edited.
