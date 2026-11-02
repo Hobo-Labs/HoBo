@@ -26,8 +26,8 @@ describe.runIf(docker)("pinned Postgres via Testcontainers", () => {
 		const { repository, digest } = parsePinnedImage(
 			pinnedContainerImages.postgres17Alpine,
 		);
-		container = await new GenericContainer(repository)
-			.withDigest(digest)
+		// testcontainers 11 has no withDigest(); pin through the image reference.
+		container = await new GenericContainer(`${repository}@${digest}`)
 			.withEnvironment({
 				POSTGRES_DB: "pact",
 				POSTGRES_USER: "pact",
