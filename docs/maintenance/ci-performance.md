@@ -22,3 +22,12 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
 `scripts/run-tests.ts` skips a frozen proof test that scans the live repo when its promoted package keeps
 the maintained copy. The S0-04 codegen proof flagged ci-vercel's non-protobuf `src/_generated` files as
 drift; `packages/schema-tools` already handles them, and the frozen proof cannot be edited.
+
+## Runner image base digest
+
+`packages/ci-gh-actions/deploy/ci-runner/build.sh` checks the pinned `debian:bookworm-slim` digest with
+`scripts/ci-runner-verify-base-digest.mts` (anonymous Docker Hub registry API, digest compared against the
+`docker-content-digest` header). `docker manifest inspect` from the worker image's Debian `docker.io` CLI
+rejects that OCI index because its attestation children are OCI manifests, which failed the
+`CI runner image (mise oci)` job on every dispatch. `scripts/test/ci-runner-image-contract.test.ts` pins
+the check offline with a synthetic registry; `HOBO_CI_VERIFY_BASE_DIGEST=1` runs it live.
