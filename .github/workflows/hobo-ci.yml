@@ -21,6 +21,8 @@ env:
   NODE_OPTIONS: --max-old-space-size=3072
   # Serial turbo test tasks on 8 GiB workers (@hobo/cli vitest also caps maxWorkers: 1).
   HOBO_TURBO_CONCURRENCY: "1"
+  # Every turbo run writes .turbo/runs/<id>.json; ci-trace turns them into OTel spans.
+  TURBO_RUN_SUMMARY: "true"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -92,6 +94,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/ci-runner-preflight
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
@@ -101,9 +104,8 @@ jobs:
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
+      - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
-      - name: Every name HoBo imports from ts-autocode exists at the pin, and its grounding fields are still checked
-        run: node --import tsx --test scripts/test/ts-autocode-consumer-surface.test.ts scripts/test/ts-autocode-grounding-drift.test.ts
       - name: Resolve Turbo SCM base
         id: scm-base
         env:
@@ -146,28 +148,53 @@ jobs:
           TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
         run: |
           set -euo pipefail
-          mapfile -t PKG_FILTERS < <(
+          # scripts/ci/affected-lanes.mts: skips only when every changed path is inert,
+          # runs the whole workspace for root inputs, filters packages with dependents.
+          mapfile -t FILTERS < <(
             git diff --name-only "${TURBO_SCM_BASE}"...HEAD \
-              | rg '^packages/([^/]+)/' -or '$1' \
-              | sort -u \
-              | sed 's|^|--filter=./packages/|'
+              | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts
           )
-          mapfile -t EX_FILTERS < <(
-            git diff --name-only "${TURBO_SCM_BASE}"...HEAD \
-              | rg '^examples/([^/]+)/' -or '$1' \
-              | sort -u \
-              | sed 's|^|--filter=./examples/|'
-          )
-          FILTERS=("${PKG_FILTERS[@]}" "${EX_FILTERS[@]}")
           if [ "${#FILTERS[@]}" -eq 0 ]; then
-            echo "No production package or example paths changed; skipping turbo impact lanes"
+            echo "Only inert paths changed; skipping turbo impact lanes"
             exit 0
           fi
           pnpm exec turbo run build typecheck lint test:unit test:schema test:contract:consumer \
             "${FILTERS[@]}" \
-            --continue=never --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
+            --continue=never --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} \
+            --anon-profile=turbo-profile.json
+      - name: CI trace
+        if: always()
+        uses: ./.github/actions/ci-trace
+
+  pr-offpath:
+    # Off the critical path: these used to run inside the PR impact gate.
+    name: PR off-path checks (ts-autocode surface, production packages)
+    if: github.event_name == 'pull_request'
+    runs-on: hobo
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          filter: blob:none
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Turbo cache
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Every name HoBo imports from ts-autocode exists at the pin, and its grounding fields are still checked
+        run: node --import tsx --test scripts/test/ts-autocode-consumer-surface.test.ts scripts/test/ts-autocode-grounding-drift.test.ts
       - name: Production packages gate
         run: pnpm run build:packages
+      - name: CI trace
+        if: always()
+        uses: ./.github/actions/ci-trace
 
   main-gate:
     name: Main full gate
@@ -187,6 +214,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/ci-runner-preflight
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
@@ -195,6 +223,11 @@ jobs:
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: remote:rw
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Seed the pnpm store cache for PRs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: ./.github/actions/pnpm-store
+        with:
+          mode: save
       - name: Resolve Turbo SCM base
         id: scm-base
         env:
@@ -212,7 +245,10 @@ jobs:
       - name: Full workspace tests
         env:
           TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
-        run: pnpm exec turbo run test --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
+        run: pnpm exec turbo run test --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
+      - name: CI trace
+        if: always()
+        uses: ./.github/actions/ci-trace
 
   artifact-trust:
     name: artifact signing and install verification
@@ -226,6 +262,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          filter: blob:none
       - uses: ./.github/actions/ci-runner-preflight
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Verify signed hello-bindle and refuse stripped signatures
@@ -241,6 +278,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          filter: blob:none
       - uses: ./.github/actions/ci-runner-preflight
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Cold hobo dev gate (network disabled)
@@ -266,6 +304,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          filter: blob:none
       - uses: ./.github/actions/ci-runner-preflight
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
@@ -284,6 +323,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/ci-runner-preflight
       - name: Scan git history for secrets
         run: |

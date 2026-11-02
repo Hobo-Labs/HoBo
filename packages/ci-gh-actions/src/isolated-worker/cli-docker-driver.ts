@@ -13,12 +13,7 @@ export function dockerSocketMountCreateArgs(
 	if (env.HOBO_CI_MOUNT_DOCKER_SOCKET === "0") return [];
 	const socketPath = "/var/run/docker.sock";
 	const gid = stat(socketPath).gid;
-	return [
-		"-v",
-		`${socketPath}:${socketPath}`,
-		"--group-add",
-		String(gid),
-	];
+	return ["-v", `${socketPath}:${socketPath}`, "--group-add", String(gid)];
 }
 
 /** Operator-owned Docker engine on a free VM; not invoked from Vercel serverless. */
@@ -46,9 +41,22 @@ export function createCliDockerDriver(options: {
 			if (spec.memoryMb !== undefined) {
 				if (!Number.isInteger(spec.memoryMb) || spec.memoryMb < 512)
 					throw new Error("invalid container memory limit");
-				args.push("--memory", `${spec.memoryMb}m`, "--memory-swap", `${spec.memoryMb}m`);
+				args.push(
+					"--memory",
+					`${spec.memoryMb}m`,
+					"--memory-swap",
+					`${spec.memoryMb}m`,
+				);
 			}
 			args.push(...dockerSocketMountCreateArgs(env));
+			for (const volume of spec.volumes ?? []) {
+				if (
+					!/^[A-Za-z0-9][A-Za-z0-9_.-]*$|^\/[^:,]+$/.test(volume.source) ||
+					!/^\/[^:,]+$/.test(volume.target)
+				)
+					throw new Error("invalid volume mount");
+				args.push("-v", `${volume.source}:${volume.target}`);
+			}
 			for (const [key, value] of Object.entries(spec.env))
 				args.push("-e", `${key}=${value}`);
 			args.push(spec.image, ...spec.command);
@@ -67,21 +75,41 @@ export function createCliDockerDriver(options: {
 		},
 		async exec(_name, containerId, argv) {
 			try {
-				await exec(
-					docker,
-					["exec", containerId, ...argv],
-					{ env, timeout: 3_600_000, maxBuffer: 16 * 1024 * 1024 },
-				);
+				await exec(docker, ["exec", containerId, ...argv], {
+					env,
+					timeout: 3_600_000,
+					maxBuffer: 16 * 1024 * 1024,
+				});
 				return { exitCode: 0 };
 			} catch (error) {
 				let exitCode = 1;
 				if (error instanceof Error) {
-					const candidate = Object.getOwnPropertyDescriptor(error, "code")
-						?.value;
+					const candidate = Object.getOwnPropertyDescriptor(
+						error,
+						"code",
+					)?.value;
 					if (Number.isInteger(candidate)) exitCode = candidate;
 				}
 				return { exitCode };
 			}
+		},
+		async execDetached(_name, containerId, argv) {
+			try {
+				await exec(docker, ["exec", "-d", containerId, ...argv], {
+					env,
+					timeout: 60_000,
+					maxBuffer: 1024 * 1024,
+				});
+				return { exitCode: 0 };
+			} catch {
+				return { exitCode: 1 };
+			}
+		},
+		async rename(containerId, name) {
+			await exec(docker, ["rename", containerId, name], {
+				env,
+				timeout: 30_000,
+			});
 		},
 		async stop(_name, containerId) {
 			await exec(docker, ["stop", "-t", "30", containerId], {
