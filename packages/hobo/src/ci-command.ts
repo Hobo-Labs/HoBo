@@ -206,40 +206,35 @@ function parseCiArgs(args: readonly string[]) {
 }
 
 function ciServeOptions(values: CiOptions): CiServeOptions {
-	const engines = values.engine;
-	return {
-		...(values.host !== undefined ? { host: String(values.host) } : {}),
-		...(values.port !== undefined ? { port: String(values.port) } : {}),
-		...(values.url !== undefined ? { url: String(values.url) } : {}),
-		...(values.endpoint !== undefined
-			? { endpoint: String(values.endpoint) }
-			: {}),
-		...(values.origin !== undefined ? { origin: String(values.origin) } : {}),
-		...(values["base-url"] !== undefined
-			? { baseUrl: String(values["base-url"]) }
-			: {}),
-		...(values["trust-proxy"] === true ? { trustProxy: true } : {}),
-		...(values.environment !== undefined
-			? { environment: String(values.environment) }
-			: {}),
-		...(values.config !== undefined ? { config: String(values.config) } : {}),
-		...(values.admission !== undefined
-			? { admission: String(values.admission) }
-			: {}),
-		...(values["allow-insecure"] === true ? { allowInsecure: true } : {}),
-		...(values["with-worker"] === true ? { withWorker: true } : {}),
-		...(values["print-config"] === true ? { printConfig: true } : {}),
-		...(values.repo !== undefined ? { repo: String(values.repo) } : {}),
-		...(values.remote !== undefined ? { remote: String(values.remote) } : {}),
-		...(values["installation-id"] !== undefined
-			? { installationId: String(values["installation-id"]) }
-			: {}),
-		...(values.home !== undefined ? { home: String(values.home) } : {}),
-		...(values.db !== undefined ? { db: String(values.db) } : {}),
-		...(Array.isArray(engines) && engines.length > 0
-			? { engines: engines.map(String) }
-			: {}),
+	type MutableServeOptions = {
+		-readonly [K in keyof CiServeOptions]: CiServeOptions[K];
 	};
+	const engines = values.engine;
+	const options: MutableServeOptions = {};
+	if (values.host !== undefined) options.host = String(values.host);
+	if (values.port !== undefined) options.port = String(values.port);
+	if (values.url !== undefined) options.url = String(values.url);
+	if (values.endpoint !== undefined) options.endpoint = String(values.endpoint);
+	if (values.origin !== undefined) options.origin = String(values.origin);
+	if (values["base-url"] !== undefined)
+		options.baseUrl = String(values["base-url"]);
+	if (values["trust-proxy"] === true) options.trustProxy = true;
+	if (values.environment !== undefined)
+		options.environment = String(values.environment);
+	if (values.config !== undefined) options.config = String(values.config);
+	if (values.admission !== undefined) options.admission = String(values.admission);
+	if (values["allow-insecure"] === true) options.allowInsecure = true;
+	if (values["with-worker"] === true) options.withWorker = true;
+	if (values["print-config"] === true) options.printConfig = true;
+	if (values.repo !== undefined) options.repo = String(values.repo);
+	if (values.remote !== undefined) options.remote = String(values.remote);
+	if (values["installation-id"] !== undefined)
+		options.installationId = String(values["installation-id"]);
+	if (values.home !== undefined) options.home = String(values.home);
+	if (values.db !== undefined) options.db = String(values.db);
+	if (Array.isArray(engines) && engines.length > 0)
+		options.engines = engines.map(String);
+	return options;
 }
 
 export function createCiCommand(
@@ -484,10 +479,10 @@ export function createCiCommand(
 						const projectLoad: Parameters<
 							typeof loadCiProjectFromDirectory
 						>[0] = { repositoryRoot: root, env };
-						if (typeof values.config === "string")
-							projectLoad.configPath = values.config;
-						if (typeof values.environment === "string")
-							projectLoad.environment = values.environment;
+						if (values.config !== undefined)
+							projectLoad.configPath = String(values.config);
+						if (values.environment !== undefined)
+							projectLoad.environment = String(values.environment);
 						const project = await loadCiProjectFromDirectory(projectLoad);
 						selectedEnvironment = project.environmentName;
 						allowInsecureLoopback =

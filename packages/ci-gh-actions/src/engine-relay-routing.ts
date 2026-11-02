@@ -1,4 +1,9 @@
+import type { z } from "zod";
 import type { CiProjectEnvironment } from "./project-config.js";
+import {
+	EnvironmentEngineRelaysSchema,
+	EnvironmentEnginesSchema,
+} from "./project-config.js";
 import {
 	DEFAULT_CI_ENGINE_ID,
 	isKnownCiEngineId,
@@ -10,47 +15,37 @@ export interface CiEngineRelayOverride {
 }
 
 export function parseEnvironmentEngineList(
-	raw: unknown,
+	raw: z.input<typeof EnvironmentEnginesSchema> | undefined,
 ): readonly string[] | undefined {
 	if (raw === undefined) return undefined;
 	if (Array.isArray(raw)) {
-		const engines = raw.map(String);
+		const engines = [...raw];
 		for (const engine of engines) {
 			if (!isKnownCiEngineId(engine)) throw new Error("invalid engine list");
 		}
-		return Object.freeze([...engines]);
+		return Object.freeze(engines);
 	}
-	if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-		const engines = Object.keys(raw as Record<string, unknown>);
-		for (const engine of engines) {
-			if (!isKnownCiEngineId(engine)) throw new Error("invalid engine list");
-		}
-		return Object.freeze([...engines]);
+	const engines = Object.keys(raw);
+	for (const engine of engines) {
+		if (!isKnownCiEngineId(engine)) throw new Error("invalid engine list");
 	}
-	throw new Error("invalid engine list");
+	return Object.freeze([...engines]);
 }
 
 export function parseEnvironmentEngineRelays(
-	raw: unknown,
+	raw: z.input<typeof EnvironmentEngineRelaysSchema> | undefined,
 ): Readonly<Record<string, CiEngineRelayOverride>> | undefined {
 	if (raw === undefined) return undefined;
-	if (!raw || typeof raw !== "object" || Array.isArray(raw))
-		throw new Error("invalid engine relay overrides");
-	const entries = Object.entries(raw as Record<string, unknown>);
+	const parsed = EnvironmentEngineRelaysSchema.parse(raw);
 	const result: Record<string, CiEngineRelayOverride> = {};
-	for (const [engine, value] of entries) {
+	for (const [engine, value] of Object.entries(parsed)) {
 		if (!isKnownCiEngineId(engine)) throw new Error("invalid engine relay override");
-		if (!value || typeof value !== "object" || Array.isArray(value))
-			throw new Error("invalid engine relay override");
-		const relayOrigin = (value as { relayOrigin?: unknown }).relayOrigin;
-		if (
-			relayOrigin !== undefined &&
-			(typeof relayOrigin !== "string" || relayOrigin.length === 0)
-		)
-			throw new Error("invalid engine relay override");
-		result[engine] = Object.freeze({
-			...(relayOrigin !== undefined ? { relayOrigin: String(relayOrigin) } : {}),
-		});
+		const relayOrigin = value.relayOrigin;
+		if (relayOrigin !== undefined) {
+			result[engine] = Object.freeze({ relayOrigin });
+		} else {
+			result[engine] = Object.freeze({});
+		}
 	}
 	return Object.freeze(result);
 }
@@ -63,15 +58,24 @@ export function resolveEnvironmentEngines(options: {
 	readonly inventory: readonly string[];
 	readonly cliEngines?: readonly string[] | undefined;
 }): readonly string[] {
-	const selection: {
-		inventory: readonly string[];
-		configured?: readonly string[];
-		cli?: readonly string[];
-	} = { inventory: options.inventory };
-	if (options.environment.engines) selection.configured = options.environment.engines;
-	if (options.cliEngines && options.cliEngines.length > 0)
-		selection.cli = options.cliEngines;
-	return normalizeCiEngineSelection(selection);
+	const { inventory, environment, cliEngines } = options;
+	if (environment.engines && cliEngines && cliEngines.length > 0) {
+		return normalizeCiEngineSelection({
+			inventory,
+			configured: environment.engines,
+			cli: cliEngines,
+		});
+	}
+	if (environment.engines) {
+		return normalizeCiEngineSelection({
+			inventory,
+			configured: environment.engines,
+		});
+	}
+	if (cliEngines && cliEngines.length > 0) {
+		return normalizeCiEngineSelection({ inventory, cli: cliEngines });
+	}
+	return normalizeCiEngineSelection({ inventory });
 }
 
 export function resolveEngineRelayOrigin(

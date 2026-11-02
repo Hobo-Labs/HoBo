@@ -4,7 +4,14 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { resolveCiServePlan, startCiServe } from "../src/ci-serve.js";
+
+const ListenAddress = z.object({
+	address: z.string(),
+	family: z.string(),
+	port: z.number().int().positive(),
+});
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -94,12 +101,7 @@ describe("hobo ci serve multi-engine", () => {
 				import("node:net").then(({ createServer }) => {
 					const server = createServer();
 					server.listen(0, "127.0.0.1", () => {
-						const address = server.address();
-						if (!address || typeof address === "string") {
-							reject(new Error("no port"));
-							return;
-						}
-						const picked = address.port;
+						const picked = ListenAddress.parse(server.address()).port;
 						server.close((error) => (error ? reject(error) : resolve(picked)));
 					});
 				});

@@ -7,6 +7,14 @@ import { toJsonString } from "@bufbuild/protobuf";
 import { JitBootstrapResponseSchema } from "./_generated/jit_bootstrap_response_pb.js";
 import type { Relay } from "./relay.js";
 
+function headerString(
+	value: string | string[] | undefined,
+): string | undefined {
+	if (value === undefined) return undefined;
+	const single = Array.isArray(value) ? value[0] : value;
+	return single && single.length > 0 ? single : undefined;
+}
+
 async function body(request: IncomingMessage): Promise<Buffer> {
 	const chunks: Buffer[] = [];
 	let bytes = 0;
@@ -33,28 +41,20 @@ export function createRelayRequestHandler(
 			try {
 				const signature = request.headers["x-hub-signature-256"];
 				const ingressForward = request.headers["x-hobo-ingress-forward"];
-				const event = request.headers["x-github-event"];
-				const hasForward =
-					!Array.isArray(ingressForward) &&
-					typeof ingressForward === "string" &&
-					ingressForward.length > 0;
-				const hasGithubSignature =
-					!Array.isArray(signature) &&
-					typeof signature === "string" &&
-					signature.length > 0;
-				if (
-					Array.isArray(event) ||
-					!event ||
-					(!hasGithubSignature && !hasForward)
-				) {
+				const event = headerString(request.headers["x-github-event"]);
+				const forwardHeader = headerString(ingressForward);
+				const signatureHeader = headerString(signature);
+				const hasForward = forwardHeader !== undefined;
+				const hasGithubSignature = signatureHeader !== undefined;
+				if (!event || (!hasGithubSignature && !hasForward)) {
 					response.writeHead(401).end('{"error":"signature required"}');
 					return;
 				}
 				const result = await relay.webhook(
 					await body(request),
-					hasGithubSignature ? signature : "",
+					hasGithubSignature ? signatureHeader : "",
 					event,
-					hasForward ? ingressForward : undefined,
+					hasForward ? forwardHeader : undefined,
 				);
 				response.writeHead(202).end(JSON.stringify({ status: result }));
 			} catch (error) {

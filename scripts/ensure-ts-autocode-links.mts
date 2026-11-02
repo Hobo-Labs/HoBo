@@ -5,18 +5,26 @@ import { join } from "node:path";
 
 const exec = promisify(execFile);
 const root = new URL("..", import.meta.url).pathname;
-const marker = join(
+const trainingMarker = join(
 	root,
 	"external/ts-autocode/packages/training/node_modules/@agentv/core/package.json",
 );
+const groundingMarker = join(
+	root,
+	"node_modules/ts-autocode-grounding/package.json",
+);
 
-async function linked(): Promise<boolean> {
+async function exists(path: string): Promise<boolean> {
 	try {
-		await access(marker);
+		await access(path);
 		return true;
 	} catch {
 		return false;
 	}
+}
+
+async function linked(): Promise<boolean> {
+	return (await exists(trainingMarker)) && (await exists(groundingMarker));
 }
 
 if (!(await linked())) {
@@ -24,6 +32,8 @@ if (!(await linked())) {
 		"pnpm",
 		[
 			"install",
+			"--filter",
+			"ts-autocode-grounding...",
 			"--filter",
 			"ts-autocode-training...",
 			"--config.confirmModulesPurge=false",
@@ -33,7 +43,7 @@ if (!(await linked())) {
 	);
 	if (!(await linked())) {
 		throw new Error(
-			"ts-autocode-training dependencies are not linked; run pnpm install after pins:fetch",
+			"ts-autocode sibling packages are not linked (ts-autocode-grounding, ts-autocode-training); run pnpm install after pins:fetch",
 		);
 	}
 }

@@ -84,7 +84,7 @@ export HOBO_CI_WORKER_IMAGE=hobo-ci-worker:local
 node --import tsx packages/ci-gh-actions/scripts/isolated-worker-daemon.mts
 ```
 
-**Memory:** each job container defaults to **`8192` MiB** (`docker create --memory`); override with **`HOBO_CI_WORKER_MEMORY_MB`**. Workflow env: **`NODE_OPTIONS=--max-old-space-size=6144`**, **`HOBO_TURBO_CONCURRENCY=2`**.
+**Memory:** each job container defaults to **`8192` MiB** (`docker create --memory`); override with **`HOBO_CI_WORKER_MEMORY_MB`**. Workflow sets **`HOBO_TURBO_CONCURRENCY=2`**. Set **`NODE_OPTIONS=--max-old-space-size`** to about **75% of `(HOBO_CI_WORKER_MEMORY_MB ÷ HOBO_TURBO_CONCURRENCY)`** in MiB (default **3072** at 8192 MiB ÷ 2) so parallel turbo test tasks do not OOM the cgroup.
 
 Legacy path `packages/ci-gh-actions/deploy/worker/Dockerfile` is deprecated; use **`build.sh`** above.
 

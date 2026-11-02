@@ -7,6 +7,11 @@ import type { Relay } from "./relay.js";
 import { createRelayRequestHandler } from "./server.js";
 import type { LeaseStore } from "./store.js";
 
+interface EngineReadyEntry {
+	readonly ready: boolean;
+}
+type EngineReadyMap = Record<string, EngineReadyEntry>;
+
 export type RelayServiceLog = Readonly<{
 	level: "info" | "error";
 	event:
@@ -117,18 +122,17 @@ export function createRelayService(options: RelayServiceOptions) {
 		if (url.startsWith(`${prefix}/`)) return url.slice(prefix.length);
 		return undefined;
 	}
-	function aggregateReady(): {
-		ready: boolean;
-		engines: Record<string, { ready: boolean }>;
-	} {
-		const engines: Record<string, { ready: boolean }> = {
+	function aggregateReady() {
+		const engines = {
 			[engineId]: { ready: ready() },
 		};
-		for (const [id, stub] of Object.entries(stubEngines))
+		for (const [id, stub] of Object.entries(stubEngines)) {
 			engines[id] = { ready: stub.ready() };
-		return {
-			ready: Object.values(engines).every((entry) => entry.ready),
-			engines,
+		}
+		const allReady = Object.values(engines).every((entry) => entry.ready);
+		return { ready: allReady, engines } satisfies {
+			ready: boolean;
+			engines: EngineReadyMap;
 		};
 	}
 	async function handle(request: IncomingMessage, response: ServerResponse) {
@@ -147,7 +151,7 @@ export function createRelayService(options: RelayServiceOptions) {
 			}
 		}
 		if (request.method === "GET" && url === "/healthz") {
-			const engines: Record<string, { ok: boolean }> = {
+			const engines = {
 				[engineId]: { ok: true },
 			};
 			for (const id of Object.keys(stubEngines)) engines[id] = { ok: true };

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { defineCiProjectConfig } from "../src/project-config.js";
+import { CiProjectDocumentSchema } from "../src/project-schema.js";
 import {
 	parseCiProjectSelection,
 	resolveCiRelayRoute,
@@ -11,24 +12,19 @@ import {
 describe("committed .hobo/ci.json routing", () => {
 	const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 	const raw = readFileSync(`${repoRoot}/.hobo/ci.json`, "utf8");
-	const document = JSON.parse(raw) as Record<string, unknown>;
+	const document = CiProjectDocumentSchema.parse(JSON.parse(raw));
 	const selection = parseCiProjectSelection(document);
 	const config = defineCiProjectConfig({
 		defaultEnvironment: "ci",
 		environments: {
-			local: (document.environments as Record<string, unknown>).local,
-			ci: (document.environments as Record<string, unknown>).ci,
+			local: document.environments?.local,
+			ci: document.environments?.ci,
 		},
 	});
 
 	it("commits main-branch selection to ci, not local", () => {
-		const rules = (document.selection as { rules?: unknown[] })?.rules ?? [];
-		const mainRule = rules.find(
-			(rule) =>
-				rule &&
-				typeof rule === "object" &&
-				(rule as { match?: { branch?: string } }).match?.branch === "main",
-		) as { environment?: string } | undefined;
+		const rules = selection?.rules ?? [];
+		const mainRule = rules.find((rule) => rule.match?.branch === "main");
 		expect(mainRule?.environment).toBe("ci");
 	});
 

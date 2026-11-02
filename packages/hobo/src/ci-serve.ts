@@ -20,8 +20,37 @@ import {
 } from "@hobo/ci-gh-actions/cli-serve";
 import { defaultHoboHome } from "./hobo-home.js";
 import { ciRepositoryFromRemote } from "./ci-repository.js";
+import { isJsonNumber, isJsonObject } from "./json.js";
+import { z } from "zod";
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost"]);
+const JsonValue = z.json();
+const JsonObjectSchema = z.record(z.string(), JsonValue);
+
+export interface CiServeRedactedSnapshot {
+	readonly environment: string;
+	readonly relayOrigin: string;
+	readonly configRelayOrigin: string;
+	readonly admission: CiJobAdmission;
+	readonly bind: { readonly host: string; readonly port: number };
+	readonly trustProxy: boolean;
+	readonly repository: string;
+	readonly engines: readonly string[];
+	readonly project: z.infer<typeof JsonValue>;
+	readonly installationId?: number;
+}
+
+interface ServeLogEntry {
+	readonly ts: string;
+	readonly level: "info" | "error";
+	readonly event: string;
+	readonly environment?: string;
+	readonly publicOrigin?: string;
+	readonly bind?: { readonly host: string; readonly port: number };
+	readonly admission?: CiJobAdmission;
+	readonly trustProxy?: boolean;
+	readonly engines?: readonly string[];
+}
 
 export interface CiServeOptions {
 	readonly host?: string;
@@ -64,7 +93,7 @@ interface ResolvedServePlan {
 	readonly installationId?: number;
 	readonly engines: readonly string[];
 	readonly configPath: string;
-	readonly redacted: unknown;
+	readonly redacted: CiServeRedactedSnapshot;
 }
 
 function usage(message: string): CommandResult {
@@ -77,10 +106,15 @@ function parseAdmission(value: string | undefined): CiJobAdmission | undefined {
 	throw new Error("admission must be push or pull");
 }
 
+interface NormalizedRelayOrigin {
+	readonly origin: string;
+	readonly port: number;
+}
+
 function normalizeOrigin(
 	value: string,
 	allowInsecureLoopback: boolean,
-): { origin: string; port: number } {
+): NormalizedRelayOrigin {
 	const url = new URL(value);
 	const loopback =
 		allowInsecureLoopback &&
@@ -113,7 +147,7 @@ async function freePort(host: string): Promise<number> {
 		server.listen(0, host, resolve);
 	});
 	const address = server.address();
-	if (!address || typeof address === "string")
+	if (!address || !isJsonObject(address) || !isJsonNumber(address.port))
 		throw new Error("failed to allocate port");
 	const port = address.port;
 	await new Promise<void>((resolve, reject) =>
@@ -141,23 +175,29 @@ async function boundedText(path: string, limit: number): Promise<string> {
 	}
 }
 
-function redactProjectDocument(document: unknown): unknown {
-	const parsed =
-		document && typeof document === "object"
-			? structuredClone(document as Record<string, unknown>)
-			: document;
-	if (parsed && typeof parsed === "object") {
-		const record = parsed as Record<string, unknown>;
-		delete record.secrets;
-		const environments = record.environments;
-		if (environments && typeof environments === "object") {
-			for (const env of Object.values(environments as Record<string, unknown>)) {
-				if (env && typeof env === "object")
-					delete (env as Record<string, unknown>).secrets;
+function redactProjectDocument(
+	document: z.infer<typeof JsonValue>,
+): z.infer<typeof JsonValue> {
+	const parsed = JsonObjectSchema.safeParse(document);
+	if (!parsed.success) return document;
+	const clone = structuredClone(parsed.data);
+	delete clone.secrets;
+	const environments = JsonObjectSchema.safeParse(clone.environments);
+	if (environments.success) {
+		const nextEnvironments: z.infer<typeof JsonObjectSchema> = {
+			...environments.data,
+		};
+		for (const key of Object.keys(nextEnvironments)) {
+			const envObject = JsonObjectSchema.safeParse(nextEnvironments[key]);
+			if (envObject.success) {
+				const envClone = { ...envObject.data };
+				delete envClone.secrets;
+				nextEnvironments[key] = envClone;
 			}
 		}
+		clone.environments = nextEnvironments;
 	}
-	return parsed;
+	return clone;
 }
 
 async function resolveRepository(
@@ -265,19 +305,33 @@ export async function resolveCiServePlan(input: {
 	)
 		throw new Error("invalid installation id");
 	const committed = await readFile(project.configPath, "utf8");
-	const redacted: Record<string, unknown> = {
-		environment: project.environmentName,
-		relayOrigin: new URL(origin).origin,
-		configRelayOrigin,
-		admission,
-		bind: { host: bindHost, port },
-		trustProxy,
-		repository,
-		engines,
-		project: redactProjectDocument(JSON.parse(committed)),
-	};
-	if (installationId !== undefined) redacted.installationId = installationId;
-	return {
+	const projectDocument = JsonValue.parse(JSON.parse(committed));
+	const redacted: CiServeRedactedSnapshot =
+		installationId === undefined
+			? {
+					environment: project.environmentName,
+					relayOrigin: new URL(origin).origin,
+					configRelayOrigin,
+					admission,
+					bind: { host: bindHost, port },
+					trustProxy,
+					repository,
+					engines,
+					project: redactProjectDocument(projectDocument),
+				}
+			: {
+					environment: project.environmentName,
+					relayOrigin: new URL(origin).origin,
+					configRelayOrigin,
+					admission,
+					bind: { host: bindHost, port },
+					trustProxy,
+					repository,
+					engines,
+					project: redactProjectDocument(projectDocument),
+					installationId,
+				};
+	const planBase = {
 		environmentName: project.environmentName,
 		publicOrigin: new URL(origin).origin,
 		configRelayOrigin,
@@ -287,11 +341,12 @@ export async function resolveCiServePlan(input: {
 		allowInsecureLoopback,
 		trustProxy,
 		repository,
-		...(installationId !== undefined ? { installationId } : {}),
 		engines,
 		configPath: project.configPath,
 		redacted,
 	};
+	if (installationId === undefined) return planBase;
+	return { ...planBase, installationId };
 }
 
 async function readSecret(env: NodeJS.ProcessEnv, name: string): Promise<string> {
@@ -314,9 +369,9 @@ async function readOptionalSecret(
 
 function serveLog(
 	emit: ((message: string) => void) | undefined,
-	entry: Record<string, unknown>,
+	entry: ServeLogEntry,
 ): void {
-	emit?.(`${JSON.stringify({ ts: new Date().toISOString(), ...entry })}\n`);
+	emit?.(`${JSON.stringify(entry)}\n`);
 }
 
 async function ensureCredentials(
@@ -479,6 +534,7 @@ export async function startCiServe(input: {
 	if (!plan.engines.includes("gh-actions"))
 		throw new Error("gh-actions engine is required for local relay serve today");
 	serveLog(input.emitProgress, {
+		ts: new Date().toISOString(),
 		level: "info",
 		event: "serve.starting",
 		environment: plan.environmentName,
@@ -525,6 +581,7 @@ export async function startCiServe(input: {
 	}
 	await running.service.checkReadiness();
 	serveLog(input.emitProgress, {
+		ts: new Date().toISOString(),
 		level: "info",
 		event: "serve.ready",
 		publicOrigin: plan.publicOrigin,
@@ -555,7 +612,6 @@ export async function runCiServe(
 			const plan = await resolveCiServePlan(input);
 			return {
 				message: JSON.stringify(plan.redacted, null, 2),
-				data: plan.redacted as Readonly<Record<string, unknown>>,
 			};
 		}
 		const handle = await startCiServe(input);

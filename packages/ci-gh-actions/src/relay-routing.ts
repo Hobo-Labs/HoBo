@@ -38,6 +38,49 @@ export const CiProjectSelectionSchema = z
 	.strict()
 	.optional();
 
+const JsonValue = z.json();
+const JsonObjectSchema = z.record(z.string(), JsonValue);
+
+const CiProjectJsonEnvelopeSchema = z
+	.object({
+		environments: JsonObjectSchema.optional(),
+		templates: JsonObjectSchema.optional(),
+		selection: CiProjectSelectionSchema,
+	})
+	.passthrough();
+
+function parseJsonObject(
+	value: z.infer<typeof JsonValue> | undefined,
+): CiProjectJsonObject {
+	const parsed = JsonObjectSchema.safeParse(value);
+	return parsed.success ? parsed.data : {};
+}
+
+type CiProjectJsonObject = z.infer<typeof JsonObjectSchema>;
+
+function mergeJsonObjects(
+	base: CiProjectJsonObject,
+	override: CiProjectJsonObject,
+): CiProjectJsonObject {
+	const merged: z.infer<typeof JsonObjectSchema> = { ...base };
+	for (const key of Object.keys(override)) {
+		// SAFETY: override is a parsed JSON object; keys index JsonValue entries.
+		const value = override[key] as z.infer<typeof JsonValue>;
+		const inherited = merged[key];
+		const inheritedObject = JsonObjectSchema.safeParse(inherited);
+		const overrideObject = JsonObjectSchema.safeParse(value);
+		if (
+			inheritedObject.success &&
+			overrideObject.success &&
+			!Array.isArray(inheritedObject.data) &&
+			!Array.isArray(overrideObject.data)
+		)
+			merged[key] = mergeJsonObjects(inheritedObject.data, overrideObject.data);
+		else merged[key] = value;
+	}
+	return merged;
+}
+
 export type CiJobAdmission = "push" | "pull";
 
 export interface CiWebhookRoutingContext {
@@ -61,40 +104,13 @@ export interface ResolvedCiRelayRoute {
 	readonly isForkPullRequest: boolean;
 }
 
-export function parseCiProjectSelection(document: unknown): z.infer<
-	typeof CiProjectSelectionSchema
-> {
+export function parseCiProjectSelection(
+	document: z.infer<typeof JsonValue>,
+): z.infer<typeof CiProjectSelectionSchema> {
+	const envelope = CiProjectJsonEnvelopeSchema.safeParse(document);
 	return CiProjectSelectionSchema.parse(
-		document &&
-			typeof document === "object" &&
-			Object.hasOwn(document, "selection")
-			? (document as { selection: unknown }).selection
-			: undefined,
+		envelope.success ? envelope.data.selection : undefined,
 	);
-}
-
-function mergeJsonObjects(base: unknown, override: unknown): unknown {
-	const baseObject =
-		base && typeof base === "object" && !Array.isArray(base) ? base : {};
-	const overrideObject =
-		override && typeof override === "object" && !Array.isArray(override)
-			? override
-			: {};
-	const merged: Record<string, unknown> = { ...baseObject };
-	for (const [key, value] of Object.entries(overrideObject)) {
-		const inherited = merged[key];
-		if (
-			inherited &&
-			typeof inherited === "object" &&
-			!Array.isArray(inherited) &&
-			value &&
-			typeof value === "object" &&
-			!Array.isArray(value)
-		)
-			merged[key] = mergeJsonObjects(inherited, value);
-		else merged[key] = value;
-	}
-	return merged;
 }
 
 /** Merge a gitignored local overlay onto committed project JSON (environments only). */
@@ -102,26 +118,24 @@ export function mergeCiProjectLocalOverlay(
 	committedJson: string,
 	localJson: string,
 ): string {
-	const committed = JSON.parse(committedJson) as Record<string, unknown>;
-	const local = JSON.parse(localJson) as Record<string, unknown>;
+	const committed = CiProjectJsonEnvelopeSchema.parse(JSON.parse(committedJson));
+	const local = CiProjectJsonEnvelopeSchema.parse(JSON.parse(localJson));
 	const mergedEnvironments = mergeJsonObjects(
-		committed.environments,
-		local.environments,
+		parseJsonObject(committed.environments),
+		parseJsonObject(local.environments),
 	);
 	const mergedTemplates = mergeJsonObjects(
-		committed.templates,
-		local.templates,
+		parseJsonObject(committed.templates),
+		parseJsonObject(local.templates),
 	);
-	return JSON.stringify({
+	const merged: z.infer<typeof CiProjectJsonEnvelopeSchema> = {
 		...committed,
 		...local,
-		...(Object.keys(mergedTemplates as object).length
-			? { templates: mergedTemplates }
-			: {}),
-		...(Object.keys(mergedEnvironments as object).length
-			? { environments: mergedEnvironments }
-			: {}),
-	});
+	};
+	if (Object.keys(mergedTemplates).length > 0) merged.templates = mergedTemplates;
+	if (Object.keys(mergedEnvironments).length > 0)
+		merged.environments = mergedEnvironments;
+	return JSON.stringify(merged);
 }
 
 export function loadCiProjectConfigDocument(

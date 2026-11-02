@@ -17,7 +17,8 @@ permissions:
   contents: read
 
 env:
-  NODE_OPTIONS: --max-old-space-size=6144
+  # Per-job heap ≈ (HOBO_CI_WORKER_MEMORY_MB default 8192 / HOBO_TURBO_CONCURRENCY) × 0.75
+  NODE_OPTIONS: --max-old-space-size=3072
   HOBO_TURBO_CONCURRENCY: "2"
 
 concurrency:
@@ -259,7 +260,7 @@ jobs:
       - uses: ./.github/actions/ci-runner-preflight
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
-        run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
+        run: pnpm exec vitest run scripts/test/ci-runner-image-contract.test.ts
       - name: Assert CI fabric contract
         run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
 

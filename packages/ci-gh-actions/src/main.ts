@@ -94,16 +94,18 @@ export async function startRelayFromEnvironment(
 			appId: required(env, "HOBO_CI_GITHUB_APP_ID"),
 			privateKey,
 		});
-		const relay = new Relay({
+		const relayBase = {
 			config: snapshot.configuration,
 			store,
 			github,
 			identity: createGithubOidcVerifier(publicUrl.origin),
 			webhookSecret,
-			...(ingressForwardSecret !== undefined
-				? { ingressForwardSecret }
-				: {}),
-		});
+		};
+		const relay = new Relay(
+			ingressForwardSecret === undefined
+				? relayBase
+				: { ...relayBase, ingressForwardSecret },
+		);
 		const controlHandler = createControlPlane({
 			relay,
 			github,

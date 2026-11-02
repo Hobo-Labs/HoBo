@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 import type { GithubTransport } from "./github.js";
 import { getRun } from "./github.js";
-import { signIngressForward, verifyIngressForward } from "./ingress-forward.js";
+import { signIngressForward } from "./ingress-forward.js";
 import {
 	assertRelayOriginAllowed,
 	isForkPullRequestRun,
@@ -138,16 +138,17 @@ export function createWebhookIngressHandler(options: {
 			return;
 		}
 		const payload = JSON.parse(raw.toString("utf8"));
-		const repository =
-			payload?.repository?.full_name &&
-			typeof payload.repository.full_name === "string"
-				? payload.repository.full_name
-				: undefined;
-		const installationId = payload?.installation?.id;
-		if (!repository || typeof installationId !== "number") {
+		const PayloadIdentity = z.object({
+			repository: z.object({ full_name: z.string() }),
+			installation: z.object({ id: z.number().int().positive() }),
+		});
+		const identity = PayloadIdentity.safeParse(payload);
+		if (!identity.success) {
 			json(202, JSON.stringify({ status: "ignored" }));
 			return;
 		}
+		const repository = identity.data.repository.full_name;
+		const installationId = identity.data.installation.id;
 		let context: CiWebhookRoutingContext | undefined;
 		if (event === "workflow_job") {
 			const parsed = JobWebhook.safeParse(payload);
@@ -183,11 +184,24 @@ export function createWebhookIngressHandler(options: {
 				configRef,
 			});
 		} else {
+			const RunWebhook = z.object({
+				repository: z.object({
+					id: z.number().int().positive(),
+					full_name: z.string(),
+				}),
+				installation: z.object({ id: z.number().int().positive() }),
+				workflow_run: z.object({ id: z.number().int().positive() }),
+			});
+			const parsedRun = RunWebhook.safeParse(payload);
+			if (!parsedRun.success) {
+				json(202, JSON.stringify({ status: "ignored" }));
+				return;
+			}
 			context = Object.freeze({
-				repositoryFullName: repository,
-				repositoryId: payload.repository.id,
-				installationId,
-				workflowRunId: payload.workflow_run.id,
+				repositoryFullName: parsedRun.data.repository.full_name,
+				repositoryId: parsedRun.data.repository.id,
+				installationId: parsedRun.data.installation.id,
+				workflowRunId: parsedRun.data.workflow_run.id,
 				eventName: "workflow_run",
 				headBranch: undefined,
 				headRef: undefined,
@@ -208,7 +222,7 @@ export function createWebhookIngressHandler(options: {
 			json(503, '{"error":"missing project configuration"}');
 			return;
 		}
-		const document = JSON.parse(committed) as Record<string, unknown>;
+		const document = JSON.parse(committed);
 		const config = loadCiProjectConfigDocument(committed);
 		const selection = parseCiProjectSelection(document);
 		const route = resolveCiRelayRoute({

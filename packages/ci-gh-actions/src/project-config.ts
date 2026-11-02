@@ -40,7 +40,10 @@ const EngineRelayOverride = z
 		relayOrigin: z.string().min(1).max(2048).optional(),
 	})
 	.strict();
-const EnvironmentEngines = z.union([
+export const EnvironmentEngineRelaysSchema = z
+	.record(CiEngineId, EngineRelayOverride)
+	.refine((entries) => Object.keys(entries).length <= 16);
+export const EnvironmentEnginesSchema = z.union([
 	z.array(CiEngineId).max(16),
 	z
 		.record(CiEngineId, EngineRelayOverride.partial())
@@ -52,11 +55,8 @@ const EnvironmentFields = z
 		githubWebhookOrigin: z.string().min(1).max(2048).optional(),
 		allowInsecureLoopback: z.boolean().optional(),
 		jobAdmission: JobAdmission.optional(),
-		engines: EnvironmentEngines.optional(),
-		engineRelays: z
-			.record(CiEngineId, EngineRelayOverride)
-			.refine((entries) => Object.keys(entries).length <= 16)
-			.optional(),
+		engines: EnvironmentEnginesSchema.optional(),
+		engineRelays: EnvironmentEngineRelaysSchema.optional(),
 		secrets: SecretDeclarations.optional(),
 		policy: JsonValue,
 	})
