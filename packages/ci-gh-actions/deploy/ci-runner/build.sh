@@ -29,10 +29,15 @@ node --no-warnings scripts/ci-runner-image-version.mts >/tmp/hobo-ci-runner-vers
 version="$(tr -d '[:space:]' < /tmp/hobo-ci-runner-version.$$)"
 rm -f /tmp/hobo-ci-runner-version.$$
 
-base_image="$(node --no-warnings -e "import { CI_RUNNER_DEBIAN_BOOKWORM_SLIM } from './scripts/lib/ci-runner-contract.mts'; console.log(CI_RUNNER_DEBIAN_BOOKWORM_SLIM)")"
+# Registry API, not `docker manifest inspect`: the runner image's Debian docker.io
+# CLI rejects the pinned OCI index (its attestation children are OCI manifests).
+node --no-warnings scripts/ci-runner-verify-base-digest.mts
 
-echo "Verifying base image digest resolves: ${base_image}"
-docker manifest inspect "${base_image}" >/dev/null
+# Fail on missing prerequisites before the base build, not minutes after it.
+if ! command -v skopeo >/dev/null 2>&1; then
+  echo "skopeo is required to load the mise oci layout into docker-daemon:hobo-ci-worker" >&2
+  exit 1
+fi
 
 echo "Building base image (native $(uname -m)), tag hobo-ci-runner-base:local"
 docker build -f "${base_dockerfile}" -t hobo-ci-runner-base:local "${runner_ctx}"
@@ -64,11 +69,6 @@ docker push "${base_ref}"
 echo "Packaging mise.lock tools into OCI layout at ${oci_dir}"
 rm -rf "${oci_dir}"
 mise oci build -o "${oci_dir}" --from "${base_ref}"
-
-if ! command -v skopeo >/dev/null 2>&1; then
-  echo "skopeo is required to load oci:${oci_dir} into docker-daemon:hobo-ci-worker:${version}" >&2
-  exit 1
-fi
 
 echo "Loading image into Docker as hobo-ci-worker:${version} and hobo-ci-worker:local"
 skopeo copy "oci:${oci_dir}" "docker-daemon:hobo-ci-worker:${version}"

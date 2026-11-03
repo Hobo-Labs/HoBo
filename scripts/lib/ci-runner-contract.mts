@@ -54,21 +54,64 @@ export function assertBaseDockerfileDigestPinned(root: string): void {
 	}
 }
 
-/** Verifies the pinned base image exists in a registry (docker manifest inspect). */
-export function verifyBaseImageDigestResolves(
-	imageRef: string = CI_RUNNER_DEBIAN_BOOKWORM_SLIM,
-): ContractCheck {
-	const result = spawnSync("docker", ["manifest", "inspect", imageRef], {
-		encoding: "utf8",
-	});
+export type DockerHubDigestRef = { repository: string; digest: string };
+
+/** `debian:bookworm-slim@sha256:<hex>` → `{ repository: "library/debian", digest }`. */
+export function parseDockerHubDigestRef(imageRef: string): DockerHubDigestRef {
+	const match = imageRef.match(
+		/^([a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)?)(?::[\w][\w.-]*)?@(sha256:[a-f0-9]{64})$/,
+	);
+	if (!match)
+		throw new Error(`not a digest-pinned Docker Hub ref: ${imageRef}`);
+	const name = match[1]!;
 	return {
-		ok: result.status === 0,
-		name: "base-image-digest",
-		detail:
-			result.status === 0
-				? imageRef
-				: `docker manifest inspect failed for ${imageRef}: ${result.stderr || result.stdout}`.trim(),
+		repository: name.includes("/") ? name : `library/${name}`,
+		digest: match[2]!,
 	};
+}
+
+// Index and manifest types alike. The Debian `docker.io` CLI in the runner
+// image rejects an OCI index whose children are OCI manifests (attestations),
+// so `docker manifest inspect` cannot be the check.
+const MANIFEST_ACCEPT = [
+	"application/vnd.oci.image.index.v1+json",
+	"application/vnd.docker.distribution.manifest.list.v2+json",
+	"application/vnd.oci.image.manifest.v1+json",
+	"application/vnd.docker.distribution.manifest.v2+json",
+].join(", ");
+
+/** Verifies Docker Hub serves the pinned base image digest (anonymous registry API). */
+export async function verifyBaseImageDigestResolves(
+	imageRef: string = CI_RUNNER_DEBIAN_BOOKWORM_SLIM,
+	fetchImpl: typeof fetch = fetch,
+): Promise<ContractCheck> {
+	const fail = (detail: string): ContractCheck => ({
+		ok: false,
+		name: "base-image-digest",
+		detail: `${imageRef}: ${detail}`,
+	});
+	const { repository, digest } = parseDockerHubDigestRef(imageRef);
+	const tokenResponse = await fetchImpl(
+		`https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repository}:pull`,
+	);
+	if (!tokenResponse.ok)
+		return fail(`registry token request returned ${tokenResponse.status}`);
+	const token = (await tokenResponse.text()).match(
+		/"token"\s*:\s*"([^"]+)"/,
+	)?.[1];
+	if (!token) return fail("registry token response carried no token");
+	const manifest = await fetchImpl(
+		`https://registry-1.docker.io/v2/${repository}/manifests/${digest}`,
+		{
+			method: "HEAD",
+			headers: { authorization: `Bearer ${token}`, accept: MANIFEST_ACCEPT },
+		},
+	);
+	if (!manifest.ok) return fail(`manifest request returned ${manifest.status}`);
+	const served = manifest.headers.get("docker-content-digest");
+	if (served !== digest)
+		return fail(`registry served ${served ?? "no digest"}, expected ${digest}`);
+	return { ok: true, name: "base-image-digest", detail: imageRef };
 }
 
 export function assertTurboLockSidecarsPresent(root: string): void {
