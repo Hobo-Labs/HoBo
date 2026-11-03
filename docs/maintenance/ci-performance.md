@@ -15,6 +15,13 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   installs hard-link instead of downloading.
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob
   lazily at checkout and timed out with HTTP 408 on this repo.
+- **Turbo cache saves even when the job fails.** `.github/actions/turbo-cache` restores at job start and
+  saves in a separate `if: always()` step (`mode: save`). The combined `actions/cache` it replaced saved
+  only on job success, and the Main full gate kept failing, so main never seeded a cache and every run
+  rebuilt all 135 packages. Turbo caches only successful tasks, so a partial save is still correct.
+  `scripts/ci/turbo-cache-prune.mts` first drops entries no `.turbo/runs` summary from this job named,
+  so each save is the size of one run. Saves from PRs stay scoped to the PR ref (no cross-PR poisoning);
+  push-to-main saves are the ones every PR and merge group restores.
 - **Slimmer impact gate.** `scripts/ci/affected-lanes.mts` filters the turbo lanes to the changed
   packages and examples. Root build inputs (lockfile, workspace, turbo, tsconfig, biome, toolchain pins,
   vendored sources) run the whole workspace; workflows, root scripts and draft proofs are covered by the

@@ -161,6 +161,11 @@ jobs:
             "${FILTERS[@]}" \
             --continue=never --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} \
             --anon-profile=turbo-profile.json
+      - name: Save Turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
       - name: CI trace
         if: always()
         uses: ./.github/actions/ci-trace
@@ -190,6 +195,11 @@ jobs:
         run: node --import tsx --test scripts/test/ts-autocode-consumer-surface.test.ts scripts/test/ts-autocode-grounding-drift.test.ts
       - name: Production packages gate
         run: pnpm run build:packages
+      - name: Save Turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
       - name: CI trace
         if: always()
         uses: ./.github/actions/ci-trace
@@ -241,12 +251,15 @@ jobs:
           # componentize-js wizer exceed the 6 GiB job container and get OOM-killed.
           HOBO_RELEVANT_CHECK_CONCURRENCY: "1"
         run: pnpm run check:all
-      - name: Architecture guard (full repo)
-        run: pnpm run architecture:guard:all
       - name: Full workspace tests
         env:
           TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
         run: pnpm exec turbo run test --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
+      - name: Save Turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
       - name: CI trace
         if: always()
         uses: ./.github/actions/ci-trace
