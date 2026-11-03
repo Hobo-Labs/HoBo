@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
 	exportTarget,
+	planCommands,
 	planDependentTests,
 	type Repo,
 	type TestPlan,
@@ -218,5 +219,54 @@ describe("exportTarget", () => {
 			"./e.js",
 		);
 		assert.equal(exportTarget({}, "./deep/x.js"), "./deep/x.js");
+	});
+});
+
+describe("planCommands", () => {
+	const plan: TestPlan = {
+		mode: "scoped",
+		full: ["packages/lib"],
+		subsets: new Map([["packages/app", ["test/a.test.ts", "test/b.test.ts"]]]),
+		skipped: [],
+	};
+
+	it("runs every part as turbo's test task, so a subset gets the PR path's dependsOn", () => {
+		// A subset that built with `turbo run build` and then ran vitest itself
+		// skipped `@hobo/hobo#test`'s `@hobo/adapter-hono#build`, and main failed
+		// tests the PR run passed.
+		const commands = planCommands(plan, ["--anon-profile=p.json"], "1");
+		for (const command of commands)
+			assert.deepEqual(command.slice(0, 4), ["exec", "turbo", "run", "test"]);
+		assert.deepEqual(commands, [
+			[
+				"exec",
+				"turbo",
+				"run",
+				"test",
+				"--filter=./packages/lib",
+				"--continue",
+				"--concurrency=1",
+				"--anon-profile=p.json",
+			],
+			[
+				"exec",
+				"turbo",
+				"run",
+				"test",
+				"--filter=./packages/app",
+				"--concurrency=1",
+				"--",
+				"--passWithNoTests",
+				"test/a.test.ts",
+				"test/b.test.ts",
+			],
+		]);
+	});
+
+	it("runs the whole workspace as one test task", () => {
+		assert.deepEqual(
+			planCommands({ mode: "all", reason: "lockfile" }, [], "100%"),
+			[["exec", "turbo", "run", "test", "--concurrency=100%"]],
+		);
 	});
 });
