@@ -14,7 +14,7 @@ LABEL org.opencontainers.image.title="HoBo SDK artifact layer" \
 WORKDIR /sdk
 COPY --chown=1000:1000 artifacts /sdk/artifacts
 USER root
-RUN mkdir -p /sdk/out && chown -R 1000:1000 /sdk
+RUN mkdir -p /sdk/out && chown 1000:1000 /sdk/out
 VOLUME ["/sdk/out"]
 USER 1000:1000
 ENTRYPOINT ["/bin/sh"]

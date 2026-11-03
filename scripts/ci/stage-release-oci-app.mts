@@ -170,6 +170,19 @@ function stageSite(
 	);
 }
 
+export function releaseOciDockerignore(spec: ReleaseOciStageSpec): string {
+	switch (spec.kind) {
+		case "deploy":
+			return "*\n!.dockerignore\n!app/\n!app/**\n!app/bin/\n!app/bin/**\n";
+		case "sdk":
+			return "*\n!.dockerignore\n!artifacts/\n!artifacts/**\n";
+		case "site":
+			return "*\n!.dockerignore\n!dist/\n!dist/**\n!server.mjs\n";
+		case "mcp":
+			return `*\n!.dockerignore\n!${spec.markerPath}\n`;
+	}
+}
+
 export function stageReleaseOciApp(
 	imageId: string,
 	stagingRoot: string,
@@ -190,17 +203,18 @@ export function stageReleaseOciApp(
 	switch (spec.kind) {
 		case "deploy":
 			deployPackage(root, output, spec, options.skipBuild ?? false);
-			return;
+			break;
 		case "sdk":
 			stageSdk(root, output, spec, options.skipBuild ?? false);
-			return;
+			break;
 		case "site":
 			stageSite(root, output, spec, options.skipBuild ?? false);
-			return;
+			break;
 		case "mcp":
 			writeFileSync(join(output, spec.markerPath), "hobo-cli:candidate\n");
-			return;
+			break;
 	}
+	writeFileSync(join(output, ".dockerignore"), releaseOciDockerignore(spec));
 }
 
 function main(): void {

@@ -171,6 +171,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         image_id: ${{ fromJSON(needs.release-code-oci-affected.outputs.image_ids) }}
     steps:
@@ -242,12 +243,14 @@ jobs:
       - name: Build and push hobo-code release image
         run: |
           set -euo pipefail
-          node --no-warnings scripts/ci/build-release-oci-image.mts hobo-code --skip-build
+          node --no-warnings scripts/ci/build-release-oci-image.mts hobo-code --skip-build --keep-candidate
           repo="${GITHUB_REPOSITORY,,}"
           tag="ghcr.io/${repo}/hobo/hobo-code:${HOBO_RELEASE_VERSION}"
           docker tag hobo-code:candidate "$tag"
           docker push "$tag"
           docker inspect --format='{{index .RepoDigests 0}}' "$tag" > /tmp/hobo-code-release-digests.txt
+          docker rmi -f "$tag" || true
+          node --no-warnings scripts/ci/build-release-oci-image.mts hobo-code --cleanup-only
           cat /tmp/hobo-code-release-digests.txt
       - name: Upload digest list
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

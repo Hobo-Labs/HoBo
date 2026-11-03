@@ -42,6 +42,9 @@ describe("release OCI image contract (manifest)", () => {
 		it(`${image.id} has a runtime-only Dockerfile`, () => {
 			const dockerfile = readFileSync(join(root, image.dockerfile), "utf8");
 			expect(dockerfile).not.toMatch(/pnpm\s+install|turbo\s+run|AS build/);
+			expect(dockerfile).not.toMatch(
+				/chown\s+-R\s+.*\/(home\/hobo|work|sdk)\b/,
+			);
 		});
 	}
 

@@ -4,7 +4,7 @@
  * PR/CI: build + load locally. Release: push to GHCR with semver tag (digest recorded separately).
  */
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { ciRunnerImageVersion } from "../lib/ci-runner-contract.mts";
 import {
@@ -110,6 +110,43 @@ function ensureCliCandidate(): void {
 	}
 }
 
+export function cleanupReleaseOciBuild(
+	imageId: string,
+	localTag: string,
+	options: { keepCandidate?: boolean } = {},
+): void {
+	rmSync(join(root, "deploy/release-images/.staging", imageId), {
+		recursive: true,
+		force: true,
+	});
+	if (!options.keepCandidate) {
+		const image = spawnSync("docker", ["image", "inspect", localTag], {
+			cwd: root,
+			stdio: "ignore",
+		});
+		if (image.status === 0) {
+			spawnSync("docker", ["rmi", "-f", localTag], {
+				cwd: root,
+				stdio: "inherit",
+			});
+		}
+	}
+	spawnSync("docker", ["builder", "prune", "-f"], {
+		cwd: root,
+		stdio: "inherit",
+	});
+}
+
+function cleanupReleaseOciBuildChain(
+	imageId: string,
+	options: { keepCandidate?: boolean } = {},
+): void {
+	cleanupReleaseOciBuild(imageId, `${imageId}:candidate`, options);
+	if (imageId === "hobo-mcp") {
+		cleanupReleaseOciBuild("hobo-cli", "hobo-cli:candidate", options);
+	}
+}
+
 export type BuiltReleaseImage = { localTag: string; ghcrRepo: string };
 
 export function buildReleaseImage(options: {
@@ -117,6 +154,7 @@ export function buildReleaseImage(options: {
 	version?: string;
 	revision?: string;
 	skipBuild?: boolean;
+	keepCandidate?: boolean;
 }): BuiltReleaseImage {
 	const manifest = loadReleaseOciManifest(root);
 	const image = manifest.images.find((i) => i.id === options.imageId);
@@ -139,23 +177,42 @@ export function buildReleaseImage(options: {
 	stageReleaseOciApp(image.id, stagingDir, { skipBuild: options.skipBuild });
 	if (image.id === "hobo-mcp") ensureCliCandidate();
 	run("docker", buildArgs(image, toolchain, version, revision, stagingDir));
+	const localTag = `${image.name}:candidate`;
+	cleanupReleaseOciBuildChain(image.id, {
+		keepCandidate: options.keepCandidate,
+	});
 	return {
-		localTag: `${image.name}:candidate`,
+		localTag,
 		ghcrRepo: ghcrRepository(manifest, image),
 	};
 }
 
 function main(): void {
-	const [imageId, flag, extra] = process.argv.slice(2);
-	if (!imageId || extra || (flag && flag !== "--skip-build")) {
+	const [imageId, ...flags] = process.argv.slice(2);
+	const allowedFlags = ["--skip-build", "--keep-candidate", "--cleanup-only"];
+	const cleanupOnly = flags.includes("--cleanup-only");
+	if (
+		!imageId ||
+		flags.some((flag) => !allowedFlags.includes(flag)) ||
+		(cleanupOnly && flags.length !== 1)
+	) {
 		console.error(
-			"usage: node scripts/ci/build-release-oci-image.mts <image-id> [--skip-build]",
+			"usage: node scripts/ci/build-release-oci-image.mts <image-id> [--skip-build] [--keep-candidate | --cleanup-only]",
 		);
 		process.exit(2);
 	}
+	if (cleanupOnly) {
+		const manifest = loadReleaseOciManifest(root);
+		if (!manifest.images.some((image) => image.id === imageId)) {
+			throw new Error(`unknown release image id: ${imageId}`);
+		}
+		cleanupReleaseOciBuildChain(imageId);
+		return;
+	}
 	const { localTag, ghcrRepo } = buildReleaseImage({
 		imageId,
-		skipBuild: flag === "--skip-build",
+		skipBuild: flags.includes("--skip-build"),
+		keepCandidate: flags.includes("--keep-candidate"),
 	});
 	console.log(`built ${localTag} (${ghcrRepo})`);
 }

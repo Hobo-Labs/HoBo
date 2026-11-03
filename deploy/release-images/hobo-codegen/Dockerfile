@@ -14,9 +14,9 @@ LABEL org.opencontainers.image.title="HoBo schema-tools codegen" \
 WORKDIR /work
 COPY --chown=1000:1000 app /work/app
 USER root
-RUN mkdir -p /work && chown -R 1000:1000 /work
+RUN mkdir -p /work/out && chown 1000:1000 /work/out
 ENV PATH="/work/app/bin:${PATH}"
-VOLUME ["/work"]
+VOLUME ["/work/out"]
 USER 1000:1000
 ENTRYPOINT ["hobo-codegen"]
 CMD ["--help"]

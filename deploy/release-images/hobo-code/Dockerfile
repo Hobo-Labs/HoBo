@@ -15,7 +15,7 @@ LABEL org.opencontainers.image.title="HoBo Code" \
 WORKDIR /home/hobo
 COPY --chown=1000:1000 app /home/hobo/app
 USER root
-RUN mkdir -p /home/hobo/.hobo && chown -R 1000:1000 /home/hobo
+RUN mkdir -p /home/hobo/.hobo && chown 1000:1000 /home/hobo/.hobo
 ENV PATH="/home/hobo/app/bin:/home/hobo/app/node_modules/.bin:${PATH}"
 VOLUME ["/home/hobo/.hobo"]
 USER 1000:1000

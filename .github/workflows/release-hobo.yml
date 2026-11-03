@@ -96,6 +96,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         image_id: ${{ fromJSON(needs.release-oci-affected.outputs.image_ids) }}
     steps:
@@ -114,13 +115,13 @@ jobs:
         env:
           HOBO_RELEASE_VERSION: ${{ github.sha }}
           HOBO_RELEASE_REVISION: ${{ github.sha }}
-        run: node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli
+        run: node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --keep-candidate
       - name: Build release image
         env:
           HOBO_RELEASE_VERSION: pr-${{ github.event.pull_request.number || 'manual' }}
           HOBO_RELEASE_REVISION: ${{ github.sha }}
           HOBO_CI_WORKER_IMAGE: hobo-ci-worker:local
-        run: node --no-warnings scripts/ci/build-release-oci-image.mts ${{ matrix.image_id }}
+        run: node --no-warnings scripts/ci/build-release-oci-image.mts ${{ matrix.image_id }} --keep-candidate
       - name: Live OCI config contract
         env:
           HOBO_RELEASE_OCI_CONTRACT: live
@@ -128,6 +129,9 @@ jobs:
           HOBO_RELEASE_VERSION: pr-${{ github.event.pull_request.number || 'manual' }}
           HOBO_RELEASE_REVISION: ${{ github.sha }}
         run: pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts
+      - name: Clean up OCI build artifacts
+        if: always()
+        run: node --no-warnings scripts/ci/build-release-oci-image.mts ${{ matrix.image_id }} --cleanup-only
 
   release-publish:
     name: Publish npm + GHCR (tagged release)
@@ -166,9 +170,9 @@ jobs:
           repo="${GITHUB_REPOSITORY,,}"
           for id in hobo-sdk hobo-codegen hobo-cli hobo-mcp hobo-ci-serve hobo-site; do
             if [ "$id" = "hobo-mcp" ]; then
-              node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli
+              node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --keep-candidate
             fi
-            node --no-warnings scripts/ci/build-release-oci-image.mts "$id"
+            node --no-warnings scripts/ci/build-release-oci-image.mts "$id" --keep-candidate
             candidate="${id//-/_}"
             case "$id" in
               hobo-cli) candidate="hobo-cli" ;;
@@ -179,6 +183,8 @@ jobs:
             docker tag "${id}:candidate" "$tag"
             docker push "$tag"
             docker inspect --format='{{index .RepoDigests 0}}' "$tag" >> /tmp/hobo-release-digests.txt
+            docker rmi -f "$tag" || true
+            node --no-warnings scripts/ci/build-release-oci-image.mts "$id" --cleanup-only
           done
           cat /tmp/hobo-release-digests.txt
       - name: Upload digest list

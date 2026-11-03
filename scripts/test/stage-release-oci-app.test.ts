@@ -1,6 +1,12 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { RELEASE_OCI_STAGE_SPECS } from "../ci/stage-release-oci-app.mts";
+import {
+	RELEASE_OCI_STAGE_SPECS,
+	releaseOciDockerignore,
+	stageReleaseOciApp,
+} from "../ci/stage-release-oci-app.mts";
 import { SDK_PACKAGES } from "../ci/stage-sdk-artifacts.mts";
 import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 
@@ -61,6 +67,33 @@ describe("release OCI app staging", () => {
 			kind: "mcp",
 			markerPath: ".hobo-cli-candidate",
 		});
+	});
+
+	it("allowlists only staged artifacts in each docker context", () => {
+		expect(releaseOciDockerignore(RELEASE_OCI_STAGE_SPECS["hobo-cli"])).toBe(
+			"*\n!.dockerignore\n!app/\n!app/**\n!app/bin/\n!app/bin/**\n",
+		);
+		expect(releaseOciDockerignore(RELEASE_OCI_STAGE_SPECS["hobo-sdk"])).toBe(
+			"*\n!.dockerignore\n!artifacts/\n!artifacts/**\n",
+		);
+		expect(releaseOciDockerignore(RELEASE_OCI_STAGE_SPECS["hobo-site"])).toBe(
+			"*\n!.dockerignore\n!dist/\n!dist/**\n!server.mjs\n",
+		);
+		expect(releaseOciDockerignore(RELEASE_OCI_STAGE_SPECS["hobo-mcp"])).toBe(
+			"*\n!.dockerignore\n!.hobo-cli-candidate\n",
+		);
+	});
+
+	it("writes .dockerignore into the staged context", () => {
+		const stagingRoot = mkdtempSync(join(tmpdir(), "hobo-release-stage-"));
+		try {
+			stageReleaseOciApp("hobo-mcp", stagingRoot, { root });
+			expect(readFileSync(join(stagingRoot, ".dockerignore"), "utf8")).toBe(
+				releaseOciDockerignore(RELEASE_OCI_STAGE_SPECS["hobo-mcp"]),
+			);
+		} finally {
+			rmSync(stagingRoot, { recursive: true, force: true });
+		}
 	});
 
 	it("builds every allowlisted SDK package", () => {
