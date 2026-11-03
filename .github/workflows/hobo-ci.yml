@@ -442,8 +442,18 @@ jobs:
             | node --experimental-strip-types --no-warnings scripts/ci/job-scope.mts \
               scripts/ci/dev-cold-loop-timing.mts \
               >> "$GITHUB_OUTPUT"
+      # Only what scripts/ci/dev-cold-loop-timing.mts imports: every byte installed here
+      # is copied out of the store and then streamed into the offline container, and
+      # the full workspace (4.3 GB) made this job disk-bound on a loaded box. The root
+      # `prepare` only checks packages/runtime's ts-autocode links, which are not installed.
       - if: steps.scope.outputs.run == 'true'
-        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+        run: >-
+          pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
+          --filter .
+          --filter "./packages/cli..."
+          --filter "./src/draft/technical-proofs/hobo-612-dev-local-loop-poc..."
+          --filter "./src/draft/technical-proofs/hobo-new-scaffold-contract..."
+          --filter "ts-autocode-*..."
       - name: Cold hobo dev gate (network disabled)
         if: steps.scope.outputs.run == 'true'
         run: |
