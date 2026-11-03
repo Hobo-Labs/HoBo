@@ -64,6 +64,9 @@ export function ciRunnerImageVersion(root: string): string {
 		MISE_TOML,
 		CI_RUNNER_SYSTEM_PACKAGES,
 		CI_RUNNER_BASE_DOCKERFILE,
+		// build.sh skips the build when this version is already on the host, so
+		// how it assembles the image has to move the version too.
+		CI_RUNNER_BUILD_SCRIPT,
 	].map((rel) => readFileSync(join(root, rel)));
 	const digest = createHash("sha256")
 		.update(Buffer.concat(parts))
