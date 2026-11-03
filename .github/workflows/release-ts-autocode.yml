@@ -1,0 +1,55 @@
+name: ts-autocode release (HoBo pins cone)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "tools/pins/siblings.json"
+      - "scripts/bootstrap-siblings.mts"
+      - "scripts/test/ts-autocode-consumer-surface.test.ts"
+      - ".github/workflows/release-ts-autocode.yml"
+  push:
+    tags:
+      - "ts-autocode-v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ts-autocode-release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ts-autocode-release-contract:
+    name: ts-autocode pin cone + npm dry-run
+    runs-on: hobo
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            .github
+            scripts
+            tools/pins
+            external
+            package.json
+            pnpm-lock.yaml
+            pnpm-workspace.yaml
+            mise.toml
+            mise.lock
+          sparse-checkout-cone-mode: true
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode sparse cone
+        run: pnpm run pins:fetch ts-autocode
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Consumer surface contract
+        run: node --import tsx --test scripts/test/ts-autocode-consumer-surface.test.ts
+      - name: npm pack dry-run (grounding package)
+        run: |
+          set -euo pipefail
+          cd external/ts-autocode/packages/grounding
+          npm pack --dry-run --ignore-scripts

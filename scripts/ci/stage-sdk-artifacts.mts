@@ -58,12 +58,7 @@ function findPackageDir(name: string): string {
 	throw new Error(`package dir not found for ${name}`);
 }
 
-function main(): void {
-	const outDir = process.argv[2];
-	if (!outDir) {
-		console.error("usage: node scripts/ci/stage-sdk-artifacts.mts <out-dir>");
-		process.exit(2);
-	}
+export function stageSdkArtifactsDir(outDir: string): SdkArtifactManifest {
 	mkdirSync(outDir, { recursive: true });
 	const map = loadNpmScopeMap();
 	const manifest: SdkArtifactManifest = {
@@ -114,6 +109,16 @@ function main(): void {
 		join(outDir, "MANIFEST.json"),
 		`${JSON.stringify(manifest, null, 2)}\n`,
 	);
+	return manifest;
+}
+
+function main(): void {
+	const outDir = process.argv[2];
+	if (!outDir) {
+		console.error("usage: node scripts/ci/stage-sdk-artifacts.mts <out-dir>");
+		process.exit(2);
+	}
+	stageSdkArtifactsDir(outDir);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

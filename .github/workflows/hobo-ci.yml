@@ -108,7 +108,7 @@ jobs:
     needs: ci-runner-image
     if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     runs-on: hobo
-    timeout-minutes: 25
+    timeout-minutes: 20
     permissions:
       contents: read
     env:

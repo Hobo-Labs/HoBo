@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	cpSync,
+	mkdirSync,
+	readdirSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { join, parse, resolve } from "node:path";
 import { SDK_PACKAGES } from "./stage-sdk-artifacts.mts";
 
@@ -97,13 +104,27 @@ function run(root: string, command: string, args: readonly string[]): void {
 }
 
 function turboBuild(root: string, filters: readonly string[]): void {
-	run(root, "pnpm", [
-		"exec",
-		"turbo",
-		"run",
-		"build",
-		...filters.map((filter) => `--filter=${filter}`),
-	]);
+	const base = process.env.HOBO_RELEASE_TURBO_BASE?.trim();
+	const turboFilters =
+		base && base.length > 0
+			? filters.map((filter) => {
+					const packageRef = filter.endsWith("...")
+						? filter.slice(0, -3)
+						: filter;
+					return `--filter=${packageRef}[${base}...HEAD]`;
+				})
+			: filters.map((filter) => `--filter=${filter}`);
+	run(root, "pnpm", ["exec", "turbo", "run", "build", ...turboFilters]);
+}
+
+function installSdkTarballsIntoApp(appDir: string, artifactsDir: string): void {
+	const tarballs = readdirSync(artifactsDir)
+		.filter((name) => name.endsWith(".tgz"))
+		.map((name) => join(artifactsDir, name));
+	if (tarballs.length === 0) {
+		throw new Error(`no SDK tarballs under ${artifactsDir}`);
+	}
+	run(appDir, "npm", ["install", "--ignore-scripts", "--no-save", ...tarballs]);
 }
 
 function deployPackage(
@@ -111,8 +132,13 @@ function deployPackage(
 	stagingRoot: string,
 	spec: DeployStage,
 	skipBuild: boolean,
+	sdkArtifactsDir?: string,
 ): void {
-	if (!skipBuild) turboBuild(root, [spec.buildFilter]);
+	const buildFilter =
+		sdkArtifactsDir && spec.packageName === "@hobo/hobo"
+			? "@hobo/hobo"
+			: spec.buildFilter;
+	if (!skipBuild) turboBuild(root, [buildFilter]);
 	const appDir = join(stagingRoot, spec.appPath);
 	run(root, "pnpm", [
 		"--filter",
@@ -123,6 +149,9 @@ function deployPackage(
 		"--config.inject-workspace-packages=true",
 		appDir,
 	]);
+	if (sdkArtifactsDir) {
+		installSdkTarballsIntoApp(appDir, sdkArtifactsDir);
+	}
 	if (spec.wrappers?.length) {
 		const binDir = join(appDir, "bin");
 		mkdirSync(binDir, { recursive: true });
@@ -186,7 +215,11 @@ export function releaseOciDockerignore(spec: ReleaseOciStageSpec): string {
 export function stageReleaseOciApp(
 	imageId: string,
 	stagingRoot: string,
-	options: { root?: string; skipBuild?: boolean } = {},
+	options: {
+		root?: string;
+		skipBuild?: boolean;
+		sdkArtifactsDir?: string;
+	} = {},
 ): void {
 	const spec = Object.entries(RELEASE_OCI_STAGE_SPECS).find(
 		([id]) => id === imageId,
@@ -202,7 +235,14 @@ export function stageReleaseOciApp(
 
 	switch (spec.kind) {
 		case "deploy":
-			deployPackage(root, output, spec, options.skipBuild ?? false);
+			deployPackage(
+				root,
+				output,
+				spec,
+				options.skipBuild ?? false,
+				options.sdkArtifactsDir ??
+					(process.env.HOBO_SDK_ARTIFACTS_DIR?.trim() || undefined),
+			);
 			break;
 		case "sdk":
 			stageSdk(root, output, spec, options.skipBuild ?? false);

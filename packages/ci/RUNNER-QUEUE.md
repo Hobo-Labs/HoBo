@@ -9,6 +9,10 @@ GitHub shows **`queued`** (no steps, no runner name) when no self-hosted runner 
 
 A successful acceptance run on `main` or a feature branch only proves the relay worked **at that time**; org transfer or disabled providers can break dispatch without changing workflow YAML.
 
+### Fork pull requests (untrusted code)
+
+Release workflows (`release-hobo`, `release-code`, and related) **skip Docker socket work and secret-backed publish** when `github.event.pull_request.head.repo.fork` is true. A lightweight `fork-policy` job documents the skip; contract/static jobs may still run on `hobo` without pushing images or uploading build artifacts that carry workspace `dist/` trees. Require human approval for fork workflows in GitHub branch protection if your org policy demands it.
+
 ## Root cause checklist (operator)
 
 Work through these on **Hobo-Labs/HoBo** after an org/repo transfer:

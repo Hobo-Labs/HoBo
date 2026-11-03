@@ -19,8 +19,9 @@ local_registry=""
 registry_container="hobo-ci-registry"
 base_image="hobo-ci-runner-base"
 
-if ! command -v mise >/dev/null 2>&1 || [[ "$(mise --version | awk '{print $1}')" != "$mise_version" ]]; then
-  curl -fsSL https://mise.run | MISE_VERSION="$mise_version" sh
+	if (!command -v mise >/dev/null 2>&1 || [[ "$(mise --version | awk '{print $1}')" != "$mise_version" ]]; then
+  echo "pinned mise ${mise_version} required on the host (no runtime curl install in release path)" >&2
+  exit 1
 fi
 mise trust ./mise.toml
 mise install

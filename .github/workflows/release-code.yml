@@ -39,13 +39,37 @@ env:
   NODE_OPTIONS: --max-old-space-size=3072
 
 jobs:
+  fork-policy:
+    name: Fork PR policy (no Docker/secrets)
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+    runs-on: hobo
+    timeout-minutes: 5
+    steps:
+      - run: echo "Fork pull request skips code release docker jobs; see packages/ci/RUNNER-QUEUE.md"
+
   release-contract:
     name: HoBo Code release contract (static)
     runs-on: hobo
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          filter: blob:none
+          sparse-checkout-cone-mode: true
+          sparse-checkout: |
+            .github
+            scripts
+            packages
+            external
+            release
+            deploy/release-images/hobo-code
+            mise.toml
+            mise.lock
+            package.json
+            pnpm-lock.yaml
+            pnpm-workspace.yaml
+            turbo.json
+            tsconfig.base.json
           submodules: recursive
       - uses: ./.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
@@ -55,13 +79,31 @@ jobs:
       - name: npm scope map + OCI manifest contract
         run: pnpm exec vitest run scripts/test/code-test-build-artifact.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/stage-release-oci-app.test.ts
 
-  code-lint:
-    name: Lint @hobo/code
+  code-build-cone:
+    name: Lint + build @hobo/code test cone
+    needs: release-contract
+    if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
     runs-on: hobo
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          filter: blob:none
+          sparse-checkout-cone-mode: true
+          sparse-checkout: |
+            .github
+            scripts
+            packages
+            external
+            release
+            deploy/release-images/hobo-code
+            mise.toml
+            mise.lock
+            package.json
+            pnpm-lock.yaml
+            pnpm-workspace.yaml
+            turbo.json
+            tsconfig.base.json
           submodules: recursive
       - uses: ./.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
@@ -69,20 +111,6 @@ jobs:
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - run: pnpm --filter @hobo/code lint
-
-  code-build-cone:
-    name: Build shared @hobo/code test dependency cone
-    runs-on: hobo
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          submodules: recursive
-      - uses: ./.github/actions/ci-runner-preflight
-      - name: Fetch pinned ts-autocode
-        run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
         with:
@@ -90,10 +118,17 @@ jobs:
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
       - name: Build @hobo/code test dependency cone
-        run: pnpm exec turbo run build --filter=@hobo/code... --filter=@hobo/hobo... --filter=@hobo/adapter-hono... --concurrency=1
+        env:
+          HOBO_RELEASE_TURBO_BASE: origin/main
+        run: |
+          git fetch --no-tags origin main
+          pnpm exec turbo run build --filter=@hobo/code...[origin/main...HEAD] --filter=@hobo/hobo...[origin/main...HEAD] --filter=@hobo/adapter-hono...[origin/main...HEAD] --concurrency=1
       - name: Pack code test build artifact
+        env:
+          HOBO_CODE_RELEASE_ARTIFACT: "1"
         run: node --experimental-strip-types --no-warnings scripts/ci/pack-code-test-build-artifact.mts . /tmp/hobo-code-test-build.tar.gz
       - name: Upload code test build artifact
+        if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: hobo-code-test-build
@@ -112,10 +147,12 @@ jobs:
   code-test:
     name: Test @hobo/code (shard ${{ matrix.shard }}/4)
     needs: code-build-cone
+    if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
     runs-on: hobo
-    timeout-minutes: 45
+    timeout-minutes: 20
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         shard: [1, 2, 3, 4]
     steps:
@@ -139,7 +176,7 @@ jobs:
 
   release-code-oci-affected:
     name: Select affected hobo-code OCI image
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork
     needs: release-contract
     runs-on: hobo
     timeout-minutes: 10
@@ -167,7 +204,7 @@ jobs:
 
   release-code-oci-build:
     name: Build hobo-code OCI image (no push)
-    if: github.event_name == 'pull_request' && needs.release-code-oci-affected.outputs.image_ids != '[]'
+    if: github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && needs.release-code-oci-affected.outputs.image_ids != '[]'
     needs: [release-contract, release-code-oci-affected]
     runs-on: hobo
     timeout-minutes: 20
@@ -181,25 +218,21 @@ jobs:
         with:
           submodules: recursive
       - uses: ./.github/actions/ci-runner-preflight
-      - name: Ensure worker toolchain image
-        run: |
-          set -euo pipefail
-          if ! docker image inspect hobo-ci-worker:local >/dev/null 2>&1; then
-            bash packages/ci-gh-actions/deploy/ci-runner/build.sh
-          fi
+      - name: Ensure digest-pinned worker toolchain image
+        run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Build hobo-code release image
         env:
           HOBO_RELEASE_VERSION: pr-${{ github.event.pull_request.number }}
           HOBO_RELEASE_REVISION: ${{ github.sha }}
-          HOBO_CI_WORKER_IMAGE: hobo-ci-worker:local
         run: node --no-warnings scripts/ci/build-release-oci-image.mts ${{ matrix.image_id }}
 
   release-code-publish:
     name: Stage npm package + publish hobo-code GHCR image
     if: startsWith(github.ref, 'refs/tags/code-v') || github.event_name == 'workflow_dispatch'
-    needs: [release-contract, code-lint, code-build-cone, code-test]
+    needs: [release-contract, code-build-cone, code-test]
     runs-on: hobo
-    timeout-minutes: 60
+    timeout-minutes: 20
+    environment: release
     permissions:
       contents: read
       packages: write
@@ -234,12 +267,8 @@ jobs:
           node --no-warnings scripts/ci/npm-publish-scope.mts packages/code/package.json "$staging/package.json"
           grep -q '"name": "@hobo-labs/code"' "$staging/package.json"
           (cd "$staging" && npm pack --dry-run --ignore-scripts)
-      - name: Ensure worker toolchain image
-        run: |
-          set -euo pipefail
-          if ! docker image inspect hobo-ci-worker:local >/dev/null 2>&1; then
-            bash packages/ci-gh-actions/deploy/ci-runner/build.sh
-          fi
+      - name: Ensure digest-pinned worker toolchain image
+        run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: Build and push hobo-code release image

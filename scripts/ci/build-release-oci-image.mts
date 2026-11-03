@@ -12,6 +12,7 @@ import {
 	loadReleaseOciManifest,
 	type ReleaseOciImage,
 } from "../lib/release-oci-contract.mts";
+import { extractSdkArtifactsFromImage } from "./extract-sdk-artifacts.mts";
 import { stageReleaseOciApp } from "./stage-release-oci-app.mts";
 
 const root = join(import.meta.dirname, "..", "..");
@@ -97,6 +98,15 @@ function buildArgs(
 	return args;
 }
 
+function dockerImageExists(ref: string): boolean {
+	return (
+		spawnSync("docker", ["image", "inspect", ref], {
+			cwd: root,
+			stdio: "ignore",
+		}).status === 0
+	);
+}
+
 function ensureCliCandidate(): void {
 	const result = spawnSync(
 		"docker",
@@ -174,7 +184,14 @@ export function buildReleaseImage(options: {
 	const toolchain = resolveToolchainImage(manifest);
 	const stagingDir = join(root, "deploy/release-images/.staging", image.id);
 	ensureReleaseBuildHost();
-	stageReleaseOciApp(image.id, stagingDir, { skipBuild: options.skipBuild });
+	let sdkArtifactsDir: string | undefined;
+	if (image.id === "hobo-cli" && dockerImageExists("hobo-sdk:candidate")) {
+		sdkArtifactsDir = extractSdkArtifactsFromImage("hobo-sdk:candidate");
+	}
+	stageReleaseOciApp(image.id, stagingDir, {
+		skipBuild: options.skipBuild,
+		sdkArtifactsDir,
+	});
 	if (image.id === "hobo-mcp") ensureCliCandidate();
 	run("docker", buildArgs(image, toolchain, version, revision, stagingDir));
 	const localTag = `${image.name}:candidate`;

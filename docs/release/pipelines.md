@@ -9,7 +9,7 @@ tags: [hobo, release, ci, npm, oci, mise]
 
 Four release pipelines ship independently: **ts-autocode**, **HoBo SDK**, **HoBo Code**, and **HoBo CLI + PWA**. A release in one pipeline neither triggers nor requires a release in another. Versioning, tags, and release approval follow each pipeline's own cadence.
 
-Most release jobs have a **10-minute hard timeout** and a **5-minute target duration**; test shards and publishing jobs use their explicitly documented larger budgets. Jobs use **`runs-on: hobo`** and the hermetic worker image. Every third-party GitHub Action is pinned to a **full commit SHA**; mutable version tags are not sufficient.
+Most release jobs have a **20-minute hard timeout** (GitHub `timeout-minutes`) and a **5-minute target duration** where noted; test shards and publishing jobs use their explicitly documented larger budgets only when unavoidable. Jobs use **`runs-on: hobo`** and the hermetic worker image. Every third-party GitHub Action is pinned to a **full commit SHA**; mutable version tags are not sufficient.
 
 `release-hobo` and `release-code` jobs run `pnpm run pins:fetch ts-autocode` after checkout (`submodules: recursive`) and before `pnpm install`, matching HoBo CI's sibling-pin setup.
 
@@ -137,8 +137,9 @@ Multi-arch builds are **native-only** on `hobo` runners (amd64 or arm64 per box)
 
 ### Tags, digests, and pipeline references
 
-- CLI/SDK release tags: **`vX.Y.Z`** semver on git tag → image tag `vX.Y.Z` **and** immutable **`@sha256:…`** digest.
+- CLI/SDK release tags: **`vX.Y.Z`** semver on git tag → image tag `vX.Y.Z` **and** immutable **`@sha256:…`** digest. Independent trains also use **`sdk-vX.Y.Z`** (npm SDK + `hobo-sdk` GHCR) and **`cli-vX.Y.Z`** (`hobo-cli` + `hobo-mcp` GHCR; CLI staging consumes the SDK OCI artifact by digest, not a source rebuild).
 - HoBo Code release tags: **`code-vX.Y.Z`** → `hobo-code:code-vX.Y.Z` and an immutable digest, independent of CLI/SDK tags.
+- **`vX.Y.Z`** also runs the **`release-pages`** job (Astro `site/` → `gh-pages` branch via SHA-pinned `peaceiris/actions-gh-pages`).
 - Downstream pipelines (CLI + PWA) **pin the SDK image by digest**, never `:latest`.
 - PR workflows **build + contract-test** images locally; they **do not push** to GHCR.
 - Tag/`workflow_dispatch` releases push with **`GITHUB_TOKEN`** (`packages: write`); no new secrets.
@@ -167,6 +168,8 @@ node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --cleanup-onl
 ```
 
 Set `HOBO_RELEASE_OCI_IMAGE_ID` to each built image id, or omit it after building every manifest image to run all live contracts in one invocation. `HOBO_RELEASE_VERSION` and `HOBO_RELEASE_REVISION` must match the candidate build when supplied.
+
+[`release-ts-autocode.yml`](../../.github/workflows/release-ts-autocode.yml) verifies the pinned ts-autocode sparse cone on **`ts-autocode-v*.*.*`** tags (npm pack dry-run only; upstream owns publication).
 
 ## ts-autocode upstream migration
 
