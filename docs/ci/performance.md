@@ -258,10 +258,20 @@ and OS-assigned ports; the last two shared module-level directories set in `befo
 test and removed with `onTestFinished`. All four are `describe.concurrent`, with the test context's
 `expect`. Measured on a four-core VM with `CI=1` (two workers): the four files take 21 s, 15 s, 10 s
 and 6 s alone, and the whole suite went from 145 s to 116–120 s wall, test time from 177 s to 117 s.
-What remains is mostly import: hobo's config sets `isolate: true` (#1619 isolated product test
-modules and credential fixtures on purpose), so each of 111 files composes the CLI again, about 105 s
-of worker time. `--no-isolate` passes and runs in 68 s, but turning isolation off is a decision about
-those fixtures, not a speed setting, and is left out.
+What remained was mostly import. hobo's config set `isolate: true` for every file, so each of 111
+files composed the CLI again, about 105 s of worker time. In main run 41606568492 (204 s), that suite
+took 123 s of the 142 s S0 step. Isolation only matters for a file that changes process-wide state.
+Seven do: they set `process.env` or `globalThis.fetch` and restore it afterwards. None of the other
+104 uses a mock, spy, fake timer, stubbed global or `process.on`. The config now runs two vitest
+projects:
+- `isolated` holds the seven files listed in `test/support/isolated-test-files.ts`, each with its
+  own module graph as before.
+- `shared` holds everything else, with `isolate: false`.
+
+`test/isolated-test-files.test.ts` fails if a test file starts changing that state without being
+listed, or stays listed after it stops. The shared set passed three shuffled orders (seeds 11, 222 and
+3333). On a four-core VM with `CI=1` (two workers), the suite went from 130 s to 76 s wall, and import
+time from 104 s to 24 s.
 
 ## Finding 4: the pnpm store cache costs more than it saves on the box
 
