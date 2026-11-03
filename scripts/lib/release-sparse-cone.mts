@@ -154,6 +154,7 @@ export function tsAutocodeReleaseSparseCones(): readonly string[] {
 	return Object.freeze([
 		".github",
 		"scripts",
+		"packages",
 		...PINS_SPARSE_CONES,
 		...MISE_LOCK_SPARSE_CONES,
 		"external",
@@ -164,6 +165,13 @@ export function tsAutocodeReleaseSparseCones(): readonly string[] {
 		"mise.lock",
 	]);
 }
+
+/** Workspace paths root `pnpm install` needs so `ensure-ts-autocode-links` passes after pins:fetch. */
+export const TS_AUTOCODE_PNPM_PREPARE_REQUIRED = [
+	"packages/runtime/package.json",
+	"external/ts-autocode/packages/grounding/package.json",
+	"external/ts-autocode/packages/training/package.json",
+] as const;
 
 /** Vitest files run by HoBo / HoBo Code release contract jobs (static manifest checks). */
 export const RELEASE_CONTRACT_VITEST_FILES = [
@@ -247,7 +255,10 @@ export function requiredPathsForHoboCodeReleaseContract(
 }
 
 export function requiredPathsForTsAutocodeReleaseContract(): readonly string[] {
-	return Object.freeze([...PINS_FETCH_REQUIRED_FILES]);
+	return Object.freeze([
+		...PINS_FETCH_REQUIRED_FILES,
+		...TS_AUTOCODE_PNPM_PREPARE_REQUIRED,
+	]);
 }
 
 export function requiredPathsForHoboReleasePages(): readonly string[] {

@@ -36,6 +36,7 @@ jobs:
           sparse-checkout: |
             .github
             scripts
+            packages
             tools/pins
             external
             package.json
@@ -45,6 +46,7 @@ jobs:
             mise.toml
             mise.lock
           sparse-checkout-cone-mode: true
+          submodules: recursive
       - uses: ./.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode sparse cone
         run: pnpm run pins:fetch ts-autocode

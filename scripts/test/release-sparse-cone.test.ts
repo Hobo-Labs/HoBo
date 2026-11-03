@@ -131,6 +131,22 @@ describe("release sparse cone requirements", () => {
 	});
 });
 
+describe("release-ts-autocode workflow install order", () => {
+	const tsWorkflow = readFileSync(
+		join(root, ".github/workflows/release-ts-autocode.yml"),
+		"utf8",
+	);
+
+	it("runs pins:fetch before root pnpm install", () => {
+		const fetchIdx = tsWorkflow.indexOf("pnpm run pins:fetch ts-autocode");
+		const installIdx = tsWorkflow.indexOf(
+			"pnpm install --frozen-lockfile --config.confirmModulesPurge=false",
+		);
+		expect(fetchIdx).toBeGreaterThan(0);
+		expect(installIdx).toBeGreaterThan(fetchIdx);
+	});
+});
+
 describe("release workflow sparse-checkout sync", () => {
 	const hoboWorkflow = readFileSync(
 		join(root, ".github/workflows/release-hobo.yml"),
