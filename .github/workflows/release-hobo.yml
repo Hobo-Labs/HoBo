@@ -40,14 +40,18 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # One job, not three: on the shared two-slot box every extra job pays its own
+  # checkout and install (~2 min) and its own wait for a slot. hobo-code is
+  # built by release-code.yml, never here.
   release-contract:
-    name: Release manifests + OCI contract (static)
+    name: Release contract + affected OCI images
     runs-on: hobo
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          fetch-depth: 2
       - uses: ./.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
@@ -61,79 +65,88 @@ jobs:
           mkdir -p /tmp/hobo-release-staging
           node --no-warnings scripts/ci/npm-publish-scope.mts packages/core/package.json /tmp/hobo-release-staging/package.json
           grep -q '@hobo-labs/core' /tmp/hobo-release-staging/package.json
-
-  release-oci-affected:
-    name: Select affected OCI app images
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
-    needs: release-contract
-    runs-on: hobo
-    timeout-minutes: 10
-    outputs:
-      image_ids: ${{ steps.affected.outputs.image_ids }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/ci-runner-preflight
-      - name: Fetch default branch for diff base
-        run: git fetch --no-tags origin main
+      # A pull_request checkout is the merge commit, so HEAD^1 is the base tip and
+      # fetch-depth 2 is the whole history the diff needs.
       - name: Detect affected images
         id: affected
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
         env:
-          HOBO_CHECK_BASE: origin/main
+          HOBO_CHECK_BASE: HEAD^1
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            images="$(node --no-warnings scripts/ci/release-oci-affected.mts --all)"
+          # Editing this workflow edits how every image is built, so it builds them all.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+            || ! git diff --quiet HEAD^1 HEAD -- .github/workflows/release-hobo.yml; then
+            images="$(node --no-warnings scripts/ci/release-oci-affected.mts --all --exclude=hobo-code)"
           else
-            images="$(node --no-warnings scripts/ci/release-oci-affected.mts)"
+            images="$(node --no-warnings scripts/ci/release-oci-affected.mts --exclude=hobo-code --explain)"
           fi
-          echo "image_ids=${images}" >> "$GITHUB_OUTPUT"
-
-  release-oci-build:
-    name: Build OCI app images (no push)
-    if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && needs.release-oci-affected.outputs.image_ids != '[]'
-    needs: [release-contract, release-oci-affected]
-    runs-on: hobo
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        image_id: ${{ fromJSON(needs.release-oci-affected.outputs.image_ids) }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+          echo "affected: ${images}"
+          echo "image_ids=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).join(" "))' "$images")" >> "$GITHUB_OUTPUT"
+      - name: Turbo cache
+        if: steps.affected.outputs.image_ids != ''
+        uses: ./.github/actions/turbo-cache
         with:
-          submodules: recursive
-      - uses: ./.github/actions/ci-runner-preflight
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
       - name: Ensure worker toolchain image
+        if: steps.affected.outputs.image_ids != ''
         run: |
           set -euo pipefail
           if ! docker image inspect hobo-ci-worker:local >/dev/null 2>&1; then
             bash packages/ci-gh-actions/deploy/ci-runner/build.sh
           fi
-      - name: Build hobo-cli first (mcp layer)
-        if: matrix.image_id == 'hobo-mcp'
+      - name: Build affected images + live OCI config contract
+        if: steps.affected.outputs.image_ids != ''
         env:
-          HOBO_RELEASE_VERSION: ${{ github.sha }}
-          HOBO_RELEASE_REVISION: ${{ github.sha }}
-        run: node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --keep-candidate
-      - name: Build release image
-        env:
+          IMAGE_IDS: ${{ steps.affected.outputs.image_ids }}
           HOBO_RELEASE_VERSION: pr-${{ github.event.pull_request.number || 'manual' }}
           HOBO_RELEASE_REVISION: ${{ github.sha }}
           HOBO_CI_WORKER_IMAGE: hobo-ci-worker:local
-        run: node --no-warnings scripts/ci/build-release-oci-image.mts ${{ matrix.image_id }} --keep-candidate
-      - name: Live OCI config contract
-        env:
-          HOBO_RELEASE_OCI_CONTRACT: live
-          HOBO_RELEASE_OCI_IMAGE_ID: ${{ matrix.image_id }}
-          HOBO_RELEASE_VERSION: pr-${{ github.event.pull_request.number || 'manual' }}
-          HOBO_RELEASE_REVISION: ${{ github.sha }}
-        run: pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts
+        run: |
+          set -uo pipefail
+          build() { node --no-warnings scripts/ci/build-release-oci-image.mts "$@"; }
+          failed=()
+          for id in $IMAGE_IDS; do
+            echo "::group::${id}"
+            ok=1
+            if [ "$id" = "hobo-mcp" ] && ! docker image inspect hobo-cli:candidate >/dev/null 2>&1; then
+              build hobo-cli --keep-candidate || ok=0
+            fi
+            if [ "$ok" = 1 ]; then build "$id" --keep-candidate || ok=0; fi
+            if [ "$ok" = 1 ]; then
+              HOBO_RELEASE_OCI_CONTRACT=live HOBO_RELEASE_OCI_IMAGE_ID="$id" \
+                pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts || ok=0
+            fi
+            if [ "$id" != "hobo-cli" ] || [[ " $IMAGE_IDS " != *" hobo-mcp "* ]]; then
+              build "$id" --cleanup-only
+            fi
+            echo "::endgroup::"
+            if [ "$ok" = 0 ]; then failed+=("$id"); echo "::error::release image ${id} failed"; fi
+          done
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "failed images: ${failed[*]}"
+            exit 1
+          fi
       - name: Clean up OCI build artifacts
-        if: always()
-        run: node --no-warnings scripts/ci/build-release-oci-image.mts ${{ matrix.image_id }} --cleanup-only
+        if: always() && steps.affected.outputs.image_ids != ''
+        env:
+          IMAGE_IDS: ${{ steps.affected.outputs.image_ids }}
+        run: |
+          for id in $IMAGE_IDS hobo-cli; do
+            node --no-warnings scripts/ci/build-release-oci-image.mts "$id" --cleanup-only || true
+          done
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && steps.affected.outputs.image_ids != '' && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && steps.affected.outputs.image_ids != '' && steps.turbo-prune.outputs.save != 'false'
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
 
   release-publish:
     name: Publish npm + GHCR (tagged release)
