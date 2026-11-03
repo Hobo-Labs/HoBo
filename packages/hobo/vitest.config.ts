@@ -17,6 +17,12 @@ export default mergeConfig(
 					: process.env.CI
 						? 2
 						: undefined,
+			// Each concurrent case in the four `describe.concurrent` suites spawns a
+			// CLI child of ~450 MB (tsx from source, `codegen`, a served `up`). At the
+			// default of 5 per worker, two workers held ~14 of them and the run peaked
+			// at ~5.9 GB, past a 6 GiB job container (exit 137). Two per worker peaks
+			// at ~3.6 GB in the same wall time: the cases wait on the CLI, not the CPU.
+			maxConcurrency: 2,
 			// `include` stays per project: mergeConfig concatenates arrays, so a
 			// top-level include would put every file in both projects.
 			projects: [

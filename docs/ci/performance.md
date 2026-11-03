@@ -273,6 +273,18 @@ listed, or stays listed after it stops. The shared set passed three shuffled ord
 3333). On a four-core VM with `CI=1` (two workers), the suite went from 130 s to 76 s wall, and import
 time from 104 s to 24 s.
 
+The first PR run of that change (41611916800) was OOM-killed (exit 137) in the 6 GiB job container.
+Sampling the run's process tree (proportional set size) and the pod's `anon + shmem` from
+`memory.stat` shows where the memory went. The vitest process, with both worker threads, peaked at
+about 1.4 GB, only about 0.1 GB more than with `isolate: true`. The rest was CLI children: each
+concurrent case in the four suites above spawns one of about 450 MB (tsx from source, `codegen`, a
+served `up`), and at vitest's default `maxConcurrency` of 5 per worker about 14 were alive at once.
+Peak anon was 5.71 GB with main's config and 5.93 GB with the shared projects. Both leave less than
+the runner's own processes need under the 6.44 GB limit. hobo's config now sets `maxConcurrency: 2`.
+The `--maxConcurrency` CLI flag does not reach `projects`, so it has to be set in the config. With that
+setting, peak anon falls to 3.58 GB (about 4 children) and wall stays at 78 s, because the cases wait
+on their child, not on the CPU.
+
 ## Finding 4: the pnpm store cache costs more than it saves on the box
 
 - On a PR, restoring the 1.26 GB store archive takes 31 s and the install after it 16 s.
