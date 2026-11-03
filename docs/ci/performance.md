@@ -274,10 +274,21 @@ package, which bypassed turbo's `test` task. A package's `<pkg>#test` `dependsOn
 tests need beyond its own dependencies: `@hobo/hobo#test` adds `@hobo/adapter-hono#build`, because
 `examples/hello-bindle` imports it at test time. That build never ran on the main path, and main runs
 41616466379 and 41618937951 failed 13 hobo tests with `Failed to resolve entry for package
-"@hobo/adapter-hono"`. PR runs passed because the impact gate calls `turbo run test`. Every command
-the planner issues now goes through `turbo run test`, and a subset passes its files after `--`, so the
-two paths share one dependency graph and the strict environment. `planCommands` in the planner is
-what the test checks: every command it returns starts with `turbo run test`.
+"@hobo/adapter-hono"`. PR runs passed because the impact gate calls `turbo run test`.
+
+The second version (#1664) ran each subset as `turbo run test --filter=./<dir> -- <files>`. Turbo
+hands `--` arguments to every task of a run, dependency builds included, and hashes them in. Main run
+41632724009 (754 s) therefore rebuilt about 80 packages uncached for each of six subsets: Workspace
+tests took 8 minutes, `@hobo/code`'s subset 2m10s and `@hobo/hobo`'s 3m01s around 75 s of vitest.
+
+Now the planner reads turbo's own graph (`turbo run test --filter=… --dry=json`) once and makes one
+call with those task ids and no pass-through. That call runs the whole suites and every build the
+subsets' test tasks depend on, the `<pkg>#test` overrides included, with the same hashes as a plain
+`turbo run test`, so it shares the cache. Then each subset runs its test task alone:
+`turbo run test --filter=./<dir> --only -- --passWithNoTests <files>`. Replaying #1664's diff locally
+gives one 86-task build call and six subset calls, 120 s in all at `--concurrency=1`. The planner test
+pins the command shape on a fake graph, and checks against the real graph that `@hobo/hobo`'s subset
+gets `@hobo/adapter-hono#build` in the build call.
 
 **hobo's own suite runs its process-bound cases concurrently.** Four files held 133 s of the suite's
 177 s of test time, each case starting `hobo` or a composed binary and waiting on it:
