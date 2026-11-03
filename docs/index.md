@@ -14,6 +14,7 @@ This bundle follows Open Knowledge Format v0.1 conventions: `index.md` files pro
 | Lineage & credits | [`design/lineage.md`](./design/lineage.md) | The aggregate portrait: every influence with posture, what's borrowed, divergence, and capture link. |
 | Implementation backlog | [`implementation-plan.md`](./implementation-plan.md) | Durable mirror of Linear's subsystem decomposition and issue plan. Linear remains live status source. |
 | Agent tooling | [`agent-tooling.md`](./agent-tooling.md) | Local agent-tooling setup, trust boundaries, data-egress notes, and maintenance expectations. |
+| CI performance | [`ci/performance.md`](./ci/performance.md) | Where HoBo CI Fabric wall time goes on the self-hosted box, the fixes landed, and what is left for a five-minute run. |
 | Automations | [`automations/hobo-issue-worker.md`](./automations/hobo-issue-worker.md) | How issue-worker automation should interpret design docs and report changes. |
 
 ## Reference directories outside `docs/`
