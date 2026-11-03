@@ -461,6 +461,25 @@ rather than only for launches. The supervisor's stop timeout (systemd `TimeoutSt
   use. A stalled fetch now aborts after 30 s, and `actions/checkout` retries it. The same run's
   contract-guard `pnpm install` also sat for 130 s in linking with nothing to download. That points
   at disk contention on the box rather than the network, and is not addressed here.
+- **The cold dev loop is bound by disk, not by the loop.** In run 41663178224 the cold-loop job failed on
+  "No space left on device". In run 41667005120 its `pnpm install` took 3m51s (15:45:09 to 15:49:00),
+  and the gate step was cut off by the 5-minute job timeout. The loop itself boots in about 15 ms, and
+  the script runs in about 1 s. The job installed the whole workspace, copying 4.3 GB out of the store
+  (another filesystem, so no hardlinks), then streamed 4.6 GB into the offline container. Both jobs
+  that were slow in that run were writing gigabytes to the same disk. The job now installs only what
+  the script imports, with `--ignore-scripts`. The stream is 2.24 GB, and an install, unpack and run
+  rehearsal takes 12 s locally.
+- **The image job rebuilt an image the box already had.** In run 41667005120 a `build.sh`-only change
+  started a build that had not finished after 13 minutes. Earlier rebuilds on the same PR took 42–106 s.
+  That change also replaced the shared local registry with a per-build one, so the full base was
+  pushed again. That change has been dropped. The version tag hashes every image input, so `build.sh`
+  now skips the build when `hobo-ci-worker:<version>` is already on the host, and `build.sh` is one of
+  the hashed inputs. Preflight prunes only untagged images over a day old, so the layer cache survives.
+- **"duplicate" in the worker log is not a stuck dedupe.** The poller reports a queued job as
+  `duplicate` when its delivery id (`poll-<job>-<attempt>-q`) is already in the inbox, which is true of
+  every job waiting for a slot. With every slot full, `launch()` leaves the lease `reserved`, and the
+  next tick retries it. In that run, contract guard and secret scan waited because the two slow jobs
+  held the slots, and longest-first admission puts 8–12 s jobs at the back.
 - **Vitest inlined the TypeScript compiler.** `typescript/lib/typescript.js` is CJS, but es-module-lexer
   finds module syntax in it, so Vitest's externalization heuristic inlined it. Vite then transformed the
   9 MB file in each worker and logged `Failed to load source map for …/typescript.js` with an ENOENT
