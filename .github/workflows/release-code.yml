@@ -150,6 +150,8 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/ci-runner-preflight
+      - name: Fetch default branch for diff base
+        run: git fetch --no-tags origin main
       - name: Detect hobo-code image input changes
         id: affected
         env:
