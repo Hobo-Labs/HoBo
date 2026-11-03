@@ -28,7 +28,9 @@ stations routing control loop).
 Rejected, stale, partial, unpriced, or cross-currency quotes fail closed and
 never fall back to list price. `DispatchCostQuote` omits the advisory
 `allocatedEffective` field. V1 source and replay behavior remain untouched; a
-fixed-fixture SHA-256 golden pins the complete v1 decision.
+fixed-fixture SHA-256 golden pins the complete v1 decision. The
+`@hobo/dispatcher -> @hobo/pricing` dependency is a registered conformance edge;
+v2 does not import v1 ranking internals or CI.
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for evidence and
 [`contracts/`](./contracts) for the v1 and v2 PACT boundaries.

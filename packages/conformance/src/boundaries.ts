@@ -600,6 +600,7 @@ export const canonicalWorkspaceEdges: readonly WorkspaceEdge[] = [
 	{ from: "packages/junctions", to: "packages/yards" },
 	{ from: "packages/runtime", to: "packages/core" },
 	{ from: "packages/ci", to: "packages/pricing" },
+	{ from: "packages/dispatcher", to: "packages/pricing" },
 	{ from: "packages/cli", to: "packages/core" },
 	{ from: "packages/cli", to: "packages/runtime" },
 	{ from: "packages/componentize", to: "packages/core" },
