@@ -1,0 +1,109 @@
+{
+	"owner": "hobo-labs",
+	"repositoryPrefix": "ghcr.io/hobo-labs/hobo",
+	"toolchainImageEnv": "HOBO_RELEASE_TOOLCHAIN_IMAGE",
+	"defaultToolchainTag": "hobo-ci-worker:local",
+	"images": [
+		{
+			"id": "hobo-cli",
+			"name": "hobo-cli",
+			"title": "HoBo product CLI",
+			"description": "Composition-root hobo binary (cloud verbs, doctor, codegen hooks)",
+			"dockerfile": "deploy/release-images/hobo-cli/Dockerfile",
+			"workdir": "/home/hobo",
+			"user": "1000:1000",
+			"entrypoint": ["hobo"],
+			"cmd": ["--help"],
+			"versionProbe": ["hobo", "--help"],
+			"volumes": ["/home/hobo/.hobo"],
+			"envDoc": [
+				"HOBO_HOME — state directory (default under /home/hobo/.hobo)",
+				"HOBO_TENANT / HOBO_PROJECT / HOBO_BRANCH / HOBO_ENV — tenant context"
+			]
+		},
+		{
+			"id": "hobo-mcp",
+			"name": "hobo-mcp",
+			"title": "HoBo MCP server",
+			"description": "stdio MCP entrypoint backed by @hobo/mcp",
+			"dockerfile": "deploy/release-images/hobo-mcp/Dockerfile",
+			"workdir": "/home/hobo",
+			"user": "1000:1000",
+			"entrypoint": ["hobo-mcp"],
+			"cmd": [],
+			"versionProbe": ["sh", "-c", "hobo-mcp --help >/dev/null 2>&1 || hobo-mcp 2>&1 | head -1"],
+			"volumes": ["/home/hobo/.hobo"],
+			"envDoc": ["HOBO_HOME — MCP state and config root"]
+		},
+		{
+			"id": "hobo-codegen",
+			"name": "hobo-codegen",
+			"title": "HoBo schema-tools codegen",
+			"description": "Protobuf/CUE codegen CLI for CI and local containers",
+			"dockerfile": "deploy/release-images/hobo-codegen/Dockerfile",
+			"workdir": "/work",
+			"user": "1000:1000",
+			"entrypoint": ["hobo-codegen"],
+			"cmd": ["--help"],
+			"versionProbe": ["sh", "-c", "hobo-codegen --help >/dev/null"],
+			"volumes": ["/work"],
+			"envDoc": [
+				"HOBO_CODEGEN_PACKAGES_ROOT — repo or packages root (default /work)"
+			]
+		},
+		{
+			"id": "hobo-ci-serve",
+			"name": "hobo-ci-serve",
+			"title": "HoBo CI relay",
+			"description": "GitHub App relay partition (hobo ci serve)",
+			"dockerfile": "deploy/release-images/hobo-ci-serve/Dockerfile",
+			"workdir": "/app",
+			"user": "1000:1000",
+			"entrypoint": ["node", "--use-env-proxy", "dist/main.js"],
+			"cmd": [],
+			"expose": [8787],
+			"healthcheckPath": "/readyz",
+			"healthcheckPort": 8787,
+			"volumes": ["/var/lib/hobo-ci"],
+			"envDoc": [
+				"HOBO_CI_HOST / HOBO_CI_PORT — listen address",
+				"HOBO_CI_PUBLIC_URL — public HTTPS origin",
+				"HOBO_CI_CONFIG — mounted account config JSON",
+				"HOBO_CI_DB — SQLite path under /var/lib/hobo-ci"
+			]
+		},
+		{
+			"id": "hobo-site",
+			"name": "hobo-site",
+			"title": "HoBo docs PWA",
+			"description": "Static Astro site + preview server for hostable docs/PWA",
+			"dockerfile": "deploy/release-images/hobo-site/Dockerfile",
+			"workdir": "/site",
+			"user": "1000:1000",
+			"entrypoint": ["node", "server.mjs"],
+			"cmd": [],
+			"expose": [4321],
+			"healthcheckPath": "/",
+			"healthcheckPort": 4321,
+			"volumes": [],
+			"envDoc": [
+				"HOBO_SITE_PORT — listen port (default 4321)",
+				"HOBO_SITE_BASE — URL base path (default /HoBo/ for GitHub Pages parity)"
+			]
+		},
+		{
+			"id": "hobo-sdk",
+			"name": "hobo-sdk",
+			"title": "HoBo SDK artifact layer",
+			"description": "Pre-built allowlisted SDK tarballs consumed by CLI/PWA pipelines (by digest)",
+			"dockerfile": "deploy/release-images/hobo-sdk/Dockerfile",
+			"workdir": "/sdk",
+			"user": "1000:1000",
+			"entrypoint": ["/bin/sh"],
+			"cmd": ["-c", "echo hobo-sdk artifact image; ls -la /sdk/artifacts"],
+			"versionProbe": ["sh", "-c", "test -f /sdk/artifacts/MANIFEST.json && cat /sdk/artifacts/MANIFEST.json"],
+			"volumes": ["/sdk/out"],
+			"envDoc": ["HOBO_SDK_OUT — extract target for packaged tarballs"]
+		}
+	]
+}
