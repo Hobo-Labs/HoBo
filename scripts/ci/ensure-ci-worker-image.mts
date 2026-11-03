@@ -40,7 +40,14 @@ export function ensureCiWorkerImage(): string {
 	}
 
 	const repo = process.env.GITHUB_REPOSITORY?.toLowerCase();
-	if (repo) {
+	const event = process.env.GITHUB_EVENT_NAME ?? "";
+	const token = process.env.GITHUB_TOKEN?.trim() ?? "";
+	const mayPullFromGhcr =
+		Boolean(repo) &&
+		Boolean(token) &&
+		event !== "pull_request" &&
+		process.env.HOBO_CI_SKIP_GHCR_PULL !== "1";
+	if (mayPullFromGhcr) {
 		const remote = `ghcr.io/${repo}/hobo-ci-worker:${version}`;
 		if (run("docker", ["pull", remote], true) === 0) {
 			run("docker", ["tag", remote, candidate]);

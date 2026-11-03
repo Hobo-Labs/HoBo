@@ -58,6 +58,7 @@
 		"lint:code:fix": "biome format --write scripts/ test/",
 		"lint:slop": "oxlint --deny-warnings --no-error-on-unmatched-pattern .",
 		"lint:slop:changed": "node --import tsx scripts/lint-slop-changed.mts",
+		"lint:shell:changed": "node --import tsx scripts/lint-shell-changed.mts",
 		"lint:docs": "node --import tsx scripts/run-linters.ts --all",
 		"lint:docs:changed": "node --import tsx scripts/run-linters.ts",
 		"lint:docs:staged": "node --import tsx scripts/run-linters.ts --staged",

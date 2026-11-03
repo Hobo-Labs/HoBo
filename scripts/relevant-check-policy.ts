@@ -305,6 +305,22 @@ export function selectRelevantChecks(
 		});
 	}
 
+	const shellChanged =
+		automationChanged ||
+		files.some((file) => file.endsWith(".sh") || file.endsWith(".bash"));
+	if (shellChanged) {
+		checks.push({
+			command: "pnpm",
+			args: [
+				"run",
+				"lint:shell:changed",
+				"--",
+				staged ? "--staged" : `--base=${options.base}`,
+			],
+			reason: "changed shell scripts must pass bash -n and shellcheck in CI",
+		});
+	}
+
 	if (sourceChanged || automationChanged || konsistentConfigChanged) {
 		checks.push({
 			command: "pnpm",

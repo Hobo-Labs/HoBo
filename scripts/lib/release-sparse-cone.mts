@@ -4,6 +4,7 @@
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { loadReleaseOciManifest } from "./release-oci-contract.mts";
 
 /** Repo-root files listed explicitly in sparse cones (not directory cones). */
 export const RELEASE_ROOT_FILES = [
@@ -129,7 +130,7 @@ const CODE_RELEASE_DIR_CONES = [
 	"packages",
 	"external",
 	"release",
-	"deploy/release-images/hobo-code",
+	"deploy/release-images",
 ] as const;
 
 /** HoBo Code release jobs with sparse checkout. */
@@ -159,6 +160,62 @@ export function tsAutocodeReleaseSparseCones(): readonly string[] {
 	]);
 }
 
+/** Vitest files run by HoBo / HoBo Code release contract jobs (static manifest checks). */
+export const RELEASE_CONTRACT_VITEST_FILES = [
+	"scripts/test/release-oci-affected.test.ts",
+	"scripts/test/release-oci-image-contract.test.ts",
+	"scripts/test/release-version.test.ts",
+	"scripts/test/release-sparse-cone.test.ts",
+	"scripts/test/stage-release-oci-app.test.ts",
+] as const;
+
+export const CODE_RELEASE_CONTRACT_VITEST_FILES = [
+	"scripts/test/code-test-build-artifact.test.ts",
+	...RELEASE_CONTRACT_VITEST_FILES,
+] as const;
+
+/** Repo-relative paths those tests read via join(root, …) or loadReleaseOciManifest. */
+export function filePathsRequiredByReleaseOciContractTests(
+	repoRoot: string,
+): readonly string[] {
+	const paths = new Set<string>(["release/npm-scope-map.json"]);
+	const manifest = loadReleaseOciManifest(repoRoot);
+	paths.add(join("release", "oci-images.json").replace(/\\/g, "/"));
+	for (const image of manifest.images) {
+		paths.add(image.dockerfile.replace(/\\/g, "/"));
+	}
+	for (const rel of [
+		...RELEASE_CONTRACT_VITEST_FILES.filter(
+			(f) => f !== "scripts/test/release-sparse-cone.test.ts",
+		),
+		"release/npm-scope-map.json",
+	]) {
+		const src = readFileSync(join(repoRoot, rel), "utf8");
+		for (const match of src.matchAll(
+			/join\(\s*root\s*,\s*["'`]([^"'`]+)["'`]/g,
+		)) {
+			paths.add(match[1]!.replace(/\\/g, "/"));
+		}
+	}
+	return Object.freeze([...paths].sort());
+}
+
+export function filePathsRequiredByCodeReleaseContractTests(
+	repoRoot: string,
+): readonly string[] {
+	const paths = new Set(filePathsRequiredByReleaseOciContractTests(repoRoot));
+	for (const rel of CODE_RELEASE_CONTRACT_VITEST_FILES) {
+		if (rel === "scripts/test/release-sparse-cone.test.ts") continue;
+		const src = readFileSync(join(repoRoot, rel), "utf8");
+		for (const match of src.matchAll(
+			/join\(\s*root\s*,\s*["'`]([^"'`]+)["'`]/g,
+		)) {
+			paths.add(match[1]!.replace(/\\/g, "/"));
+		}
+	}
+	return Object.freeze([...paths].sort());
+}
+
 export function formatSparseCheckoutBlock(cones: readonly string[]): string {
 	return `${cones.join("\n")}\n`;
 }
@@ -170,8 +227,7 @@ export function requiredPathsForHoboReleaseContract(
 	return Object.freeze([
 		...rootVitestSetupFiles(repoRoot),
 		...PINS_FETCH_REQUIRED_FILES,
-		"release/npm-scope-map.json",
-		"release/oci-images.json",
+		...filePathsRequiredByReleaseOciContractTests(repoRoot),
 	]);
 }
 
@@ -181,8 +237,7 @@ export function requiredPathsForHoboCodeReleaseContract(
 	return Object.freeze([
 		...rootVitestSetupFiles(repoRoot),
 		...PINS_FETCH_REQUIRED_FILES,
-		"release/npm-scope-map.json",
-		"release/oci-images.json",
+		...filePathsRequiredByCodeReleaseContractTests(repoRoot),
 	]);
 }
 

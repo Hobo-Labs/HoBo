@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
 	assertConeCoversPaths,
 	coneCoversPath,
+	filePathsRequiredByCodeReleaseContractTests,
 	formatSparseCheckoutBlock,
 	hoboCodeReleaseSparseCones,
 	hoboReleasePagesSparseCones,
@@ -81,6 +82,18 @@ describe("release sparse cone requirements", () => {
 			cones,
 			requiredPathsForHoboCodeReleaseContract(root),
 		);
+	});
+
+	it("hobo code release contract cone covers OCI manifest dockerfiles", () => {
+		const required = filePathsRequiredByCodeReleaseContractTests(root);
+		const dockerfiles = required.filter((p) =>
+			p.startsWith("deploy/release-images/"),
+		);
+		expect(dockerfiles.length).toBeGreaterThan(1);
+		const cones = hoboCodeReleaseSparseCones(root);
+		for (const path of dockerfiles) {
+			expect(coneCoversPath(cones, path), path).toBe(true);
+		}
 	});
 
 	it("hobo release pages cone covers pins fetch", () => {

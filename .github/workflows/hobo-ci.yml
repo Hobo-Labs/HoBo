@@ -82,7 +82,11 @@ jobs:
         timeout-minutes: 15
         env:
           MISE_EXPERIMENTAL: "1"
-        run: bash packages/ci-gh-actions/deploy/ci-runner/build.sh
+        run: |
+          set -euo pipefail
+          bash -n packages/ci-gh-actions/deploy/ci-runner/build.sh
+          pnpm run lint:shell:changed -- --base=HEAD~1
+          bash packages/ci-gh-actions/deploy/ci-runner/build.sh
       # Published from main only; a pull request's image is tried on the box, not shipped.
       - name: Push runner image to GHCR (optional)
         if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
