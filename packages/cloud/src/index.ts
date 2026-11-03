@@ -278,6 +278,11 @@ export {
 	type DriftStatus,
 } from "./projections/drift-view.js";
 export {
+	capabilityCatalogHashFromCommercialRefs,
+	commercialProductRefsHash,
+	pricingCatalogHashFromCommercialRefs,
+} from "./commercial-pricing.js";
+export {
 	type TopologyEdge,
 	type TopologyEdgeKind,
 	type TopologyNode,

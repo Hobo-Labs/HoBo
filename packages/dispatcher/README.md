@@ -15,6 +15,9 @@ stations routing control loop).
   `dispatch.Reservation*` facts.
 - `replayDispatchDecision` replays identical inputs to a byte-identical
   decision fact.
+- **`decideDispatchV2`** (schema `hobo.dispatcher/v2`) ranks registered providers
+  by minimum incremental **billed** amount from `@hobo/pricing` quotes; v1
+  `decideDispatch` is unchanged for credit ranking.
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for evidence and
 [`contracts/`](./contracts) for the PACT boundary.
