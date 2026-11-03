@@ -31,6 +31,10 @@ concurrency:
 jobs:
   ci-runner-image:
     name: CI runner image (mise oci)
+    # Skipped (which satisfies the required check) on merge_group: the PR run already evaluated
+    # these inputs, and building here would retag the box's hobo-ci-worker:local from an unmerged
+    # group commit. The push to main covers the merged tree.
+    if: github.event_name != 'merge_group'
     runs-on: hobo
     timeout-minutes: 45
     permissions:
@@ -322,6 +326,10 @@ jobs:
 
   secret-scan:
     name: Secret scan
+    # Skipped (which satisfies the required check) on merge_group: the PR run scanned
+    # base..head, the squashed group commit adds no content beyond those commits, and the
+    # push to main rescans the full history.
+    if: github.event_name != 'merge_group'
     runs-on: hobo
     timeout-minutes: 10
     permissions:
