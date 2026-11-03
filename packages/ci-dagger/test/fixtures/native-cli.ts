@@ -10,7 +10,10 @@ import { fileURLToPath } from "node:url";
 // handed to the kernel.
 function announce(then: () => void = () => {}): void {
 	const probe = process.env.FIXTURE_PROBE;
-	if (!probe) return then();
+	if (!probe) {
+		then();
+		return;
+	}
 	const socket = connect(probe, () => {
 		socket.write(`${process.pid}\n`, then);
 	});
