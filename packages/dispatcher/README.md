@@ -19,5 +19,16 @@ stations routing control loop).
   by minimum incremental **billed** amount from `@hobo/pricing` quotes; v1
   `decideDispatch` is unchanged for credit ranking.
 
+## Dispatcher v2
+
+`decideDispatchV2` and `@hobo/dispatcher/v2` use schema
+`hobo.dispatcher/v2`. For each candidate's `QuoteScenario`, the adapter calls
+`@hobo/pricing` and ranks exact `incremental.billed` decimals under the
+`min-incremental-billed` objective. Provider ID breaks equal-cost ties.
+Rejected, stale, partial, unpriced, or cross-currency quotes fail closed and
+never fall back to list price. `DispatchCostQuote` omits the advisory
+`allocatedEffective` field. V1 source and replay behavior remain untouched; a
+fixed-fixture SHA-256 golden pins the complete v1 decision.
+
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for evidence and
-[`contracts/`](./contracts) for the PACT boundary.
+[`contracts/`](./contracts) for the v1 and v2 PACT boundaries.

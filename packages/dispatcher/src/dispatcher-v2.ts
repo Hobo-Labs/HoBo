@@ -1,225 +1,212 @@
-/**
- * Dispatcher v2 ranks registered providers by minimum incremental **billed** cost
- * from `@hobo/pricing`. v1 (`decideDispatch`) stays untouched for credit ranking.
- */
-import type { QuoteScenario } from "@hobo/pricing";
-import { isQuoteVector, quoteScenario } from "@hobo/pricing";
-
 import {
-	type DispatchCategory,
-	type DispatchProviderInput,
-	createDispatcherRegistry,
-	type DispatcherRegistry,
-	DISPATCH_EVENTS,
-	type DispatchFact,
-	type DispatchDecidedData,
-} from "./dispatcher.js";
-import { isJsonString, type JsonValue } from "./json.js";
+	compareDecimal,
+	isQuoteVector,
+	type Money,
+	parseDecimal,
+	QuoteEngine,
+	type QuoteScenario,
+	type QuoteVector,
+} from "@hobo/pricing";
 
 // public-contract: consumers pin the dispatcher v2 wire schema by this id.
 export const DISPATCHER_V2_SCHEMA_VERSION = "hobo.dispatcher/v2";
-// public-contract: v2 ranking objective identifier for dispatch.Decided facts.
-export const DISPATCH_V2_OBJECTIVE = "min-incremental-billed" as const;
+// public-contract: v2 ranks candidates by incremental billed cost only.
+export const DISPATCHER_V2_OBJECTIVE = "min-incremental-billed" as const;
 
-export type DispatchV2Objective = typeof DISPATCH_V2_OBJECTIVE;
+export type DispatchCategoryV2 = "runner" | "build-machine" | "traffic-backend";
+export type DispatchCostQuote = Omit<QuoteVector, "allocatedEffective">;
 
-export interface DispatchV2QuoteInput {
-	readonly providerId: string;
-	readonly scenario: QuoteScenario;
+export interface DispatchCandidateV2 {
+	providerId: string;
+	scenario: QuoteScenario;
 }
 
-export interface DecideDispatchV2Request {
-	readonly dispatchId: string;
-	readonly category: DispatchCategory;
-	readonly registry:
-		| DispatcherRegistry
-		| readonly DispatchProviderInput[];
-	readonly quotes: readonly DispatchV2QuoteInput[];
-	readonly reservationId?: string;
+export interface DispatchRequestV2 {
+	dispatchId: string;
+	category: DispatchCategoryV2;
+	objective?: typeof DISPATCHER_V2_OBJECTIVE;
+	candidates: readonly DispatchCandidateV2[];
 }
 
-export interface DispatchV2RankingEntry {
-	readonly providerId: string;
-	readonly incrementalBilled: string;
-	readonly currency: string;
-	readonly quoteHash: string;
-	readonly rationale: string;
+export interface DispatchRejectionV2 {
+	providerId: string;
+	code: string;
+	reason: string;
 }
 
-export type DecideDispatchV2Result =
+export interface DispatchRankingV2 {
+	providerId: string;
+	rank: number;
+	incrementalBilled: Money;
+	quote: DispatchCostQuote;
+}
+
+export type DispatchDecisionV2 =
 	| {
-			readonly ok: true;
-			readonly schema: typeof DISPATCHER_V2_SCHEMA_VERSION;
-			readonly objective: DispatchV2Objective;
-			readonly selectedProvider: string;
-			readonly ranking: readonly DispatchV2RankingEntry[];
-			readonly dispatchEvent: DispatchFact<DispatchDecidedData>;
+			ok: true;
+			schema: typeof DISPATCHER_V2_SCHEMA_VERSION;
+			objective: typeof DISPATCHER_V2_OBJECTIVE;
+			selectedProvider: string;
+			ranking: DispatchRankingV2[];
+			rejectedCandidates: DispatchRejectionV2[];
+			dispatchEvent: {
+				type: "dispatch.Decided";
+				data: {
+					dispatchId: string;
+					category: DispatchCategoryV2;
+					schema: typeof DISPATCHER_V2_SCHEMA_VERSION;
+					objective: typeof DISPATCHER_V2_OBJECTIVE;
+					selectedProvider: string;
+					ranking: DispatchRankingV2[];
+					rejectedCandidates: DispatchRejectionV2[];
+				};
+			};
 	  }
 	| {
-			readonly ok: false;
-			readonly schema: typeof DISPATCHER_V2_SCHEMA_VERSION;
-			readonly objective: DispatchV2Objective;
-			readonly reason: string;
-			readonly rejectedCandidates: readonly string[];
+			ok: false;
+			schema: typeof DISPATCHER_V2_SCHEMA_VERSION;
+			objective: typeof DISPATCHER_V2_OBJECTIVE;
+			reason: string;
+			ranking: [];
+			rejectedCandidates: DispatchRejectionV2[];
 	  };
 
-function requireString(value: JsonValue | undefined, path: string): string {
-	if (!isJsonString(value) || value.length === 0) {
-		throw new TypeError(`${path} must be a non-empty string`);
-	}
-	return value;
+function withoutAllocatedEffective(quote: QuoteVector): DispatchCostQuote {
+	const { allocatedEffective: _advisory, ...dispatchQuote } = quote;
+	return dispatchQuote;
 }
 
-interface IncrementalBilledQuote {
-	readonly billed: string;
-	readonly currency: string;
-	readonly quoteHash: string;
-}
-
-function parseRegistry(
-	registry: DecideDispatchV2Request["registry"],
-): DispatcherRegistry {
-	if (Array.isArray(registry)) {
-		return createDispatcherRegistry([...registry]);
-	}
-	// SAFETY: non-array registry inputs are always createDispatcherRegistry output.
-	return registry as DispatcherRegistry;
-}
-
-function incrementalBilled(scenario: QuoteScenario): IncrementalBilledQuote {
-	const result = quoteScenario(scenario);
-	if (!isQuoteVector(result)) {
-		throw new Error(`${result.code}: ${result.message}`);
-	}
-	const billed = result.incremental?.billed;
-	if (billed === undefined) {
-		throw new Error("quote missing incremental.billed");
-	}
-	return {
-		billed: billed.decimal,
-		currency: billed.currency,
-		quoteHash: result.quoteHash,
-	};
-}
-
-function compareDecimalStrings(left: string, right: string): number {
-	const a = left.split(".");
-	const b = right.split(".");
-	const scale = Math.max(a[1]?.length ?? 0, b[1]?.length ?? 0);
-	const leftInt = BigInt(`${a[0] ?? "0"}${(a[1] ?? "").padEnd(scale, "0")}`);
-	const rightInt = BigInt(`${b[0] ?? "0"}${(b[1] ?? "").padEnd(scale, "0")}`);
-	if (leftInt < rightInt) return -1;
-	if (leftInt > rightInt) return 1;
-	return 0;
+function reject(
+	candidate: DispatchCandidateV2,
+	code: string,
+	reason: string,
+): DispatchRejectionV2 {
+	return { providerId: candidate.providerId, code, reason };
 }
 
 export function decideDispatchV2(
-	request: DecideDispatchV2Request,
-): DecideDispatchV2Result {
-	const dispatchId = requireString(request.dispatchId, "request.dispatchId");
-	const category = request.category;
-	const registry = parseRegistry(request.registry);
-	const candidates = registry.byCategory.get(category) ?? [];
-	const registered = new Set(
-		candidates.filter((c) => c.registered).map((c) => c.providerId),
+	request: DispatchRequestV2,
+): DispatchDecisionV2 {
+	if (
+		request.objective !== undefined &&
+		request.objective !== DISPATCHER_V2_OBJECTIVE
+	) {
+		throw new TypeError("objective must be min-incremental-billed");
+	}
+	if (request.dispatchId.length === 0) {
+		throw new TypeError("dispatchId must be a non-empty string");
+	}
+	const objective = DISPATCHER_V2_OBJECTIVE;
+	const candidates = [...request.candidates].sort((left, right) =>
+		left.providerId.localeCompare(right.providerId),
 	);
-
-	if (registered.size === 0) {
-		return {
-			ok: false,
-			schema: DISPATCHER_V2_SCHEMA_VERSION,
-			objective: DISPATCH_V2_OBJECTIVE,
-			reason: `no registered ${category} candidates`,
-			rejectedCandidates: [],
-		};
+	if (
+		new Set(candidates.map((candidate) => candidate.providerId)).size !==
+		candidates.length
+	) {
+		throw new TypeError("candidate providerId values must be unique");
+	}
+	if (candidates.some((candidate) => candidate.providerId.length === 0)) {
+		throw new TypeError("candidate providerId must be a non-empty string");
 	}
 
-	const rejected: string[] = [];
-	const ranked: DispatchV2RankingEntry[] = [];
-
-	for (const quote of request.quotes ?? []) {
-		if (!registered.has(quote.providerId)) continue;
-		try {
-			const { billed, currency, quoteHash } = incrementalBilled(quote.scenario);
-			ranked.push({
-				providerId: quote.providerId,
-				incrementalBilled: billed,
-				currency,
-				quoteHash,
-				rationale: `min-incremental-billed=${billed} ${currency}`,
-			});
-		} catch {
-			rejected.push(quote.providerId);
+	const rejectedCandidates: DispatchRejectionV2[] = [];
+	const priced: {
+		candidate: DispatchCandidateV2;
+		quote: QuoteVector;
+		incrementalBilled: Money;
+	}[] = [];
+	for (const candidate of candidates) {
+		const result = QuoteEngine.quote(candidate.scenario);
+		if (!isQuoteVector(result)) {
+			rejectedCandidates.push(reject(candidate, result.code, result.message));
+			continue;
 		}
-	}
-
-	for (const providerId of registered) {
-		if (!ranked.some((entry) => entry.providerId === providerId)) {
-			rejected.push(providerId);
+		const billed = result.incremental?.billed;
+		const parsed =
+			billed === undefined ? undefined : parseDecimal(billed.decimal);
+		if (
+			billed === undefined ||
+			parsed === undefined ||
+			result.eligibility?.eligible === false ||
+			result.unpriced.length > 0
+		) {
+			rejectedCandidates.push(
+				reject(
+					candidate,
+					"INCOMPLETE_FINANCIAL_STATE",
+					"quote has no completely priced incremental billed amount",
+				),
+			);
+			continue;
 		}
+		priced.push({ candidate, quote: result, incrementalBilled: billed });
 	}
 
-	if (ranked.length === 0) {
-		return {
-			ok: false,
-			schema: DISPATCHER_V2_SCHEMA_VERSION,
-			objective: DISPATCH_V2_OBJECTIVE,
-			reason: "pricing quote unavailable for every candidate",
-			rejectedCandidates: rejected,
-		};
-	}
-
-	ranked.sort((left, right) => {
-		const byCost = compareDecimalStrings(
-			left.incrementalBilled,
-			right.incrementalBilled,
+	const currency = priced[0]?.incrementalBilled.currency;
+	const comparable = priced.filter((entry) => {
+		if (entry.incrementalBilled.currency === currency) return true;
+		rejectedCandidates.push(
+			reject(
+				entry.candidate,
+				"CROSS_CURRENCY",
+				"candidate quote currencies cannot be compared",
+			),
 		);
-		if (byCost !== 0) return byCost;
-		return left.providerId.localeCompare(right.providerId);
+		return false;
 	});
-
-	const winner = ranked[0];
-	if (!winner) {
+	comparable.sort((left, right) => {
+		const leftDecimal = parseDecimal(left.incrementalBilled.decimal);
+		const rightDecimal = parseDecimal(right.incrementalBilled.decimal);
+		if (leftDecimal === undefined || rightDecimal === undefined) {
+			throw new TypeError("priced quote returned an invalid decimal");
+		}
+		return (
+			compareDecimal(leftDecimal, rightDecimal) ||
+			left.candidate.providerId.localeCompare(right.candidate.providerId)
+		);
+	});
+	const ranking = comparable.map((entry, index) => ({
+		providerId: entry.candidate.providerId,
+		rank: index + 1,
+		incrementalBilled: entry.incrementalBilled,
+		quote: withoutAllocatedEffective(entry.quote),
+	}));
+	rejectedCandidates.sort((left, right) =>
+		left.providerId.localeCompare(right.providerId),
+	);
+	const winner = ranking[0];
+	if (winner === undefined) {
 		return {
 			ok: false,
 			schema: DISPATCHER_V2_SCHEMA_VERSION,
-			objective: DISPATCH_V2_OBJECTIVE,
-			reason: "pricing ranking produced no winner",
-			rejectedCandidates: rejected,
+			objective,
+			reason:
+				candidates.length === 0
+					? "no dispatch candidates"
+					: "no completely priced dispatch candidates",
+			ranking: [],
+			rejectedCandidates,
 		};
 	}
-
-	const reservationId =
-		request.reservationId ?? `reservation-intent-${dispatchId}`;
-
-	const dispatchEvent: DispatchFact<DispatchDecidedData> = {
-		type: DISPATCH_EVENTS.DispatchDecided,
-		data: {
-			dispatchId,
-			category,
-			selectedProvider: winner.providerId,
-			// SAFETY: v2 objective is a distinct ranking mode not present on v1 DispatchObjective.
-			objective: DISPATCH_V2_OBJECTIVE as never,
-			ledgerInput: {
-				view: "CreditLedgerView",
-				seq: 0,
-				reservationId,
-				balanceHash: `sha256:${"0".repeat(64)}`,
-			},
-			candidates: ranked.map((entry) => ({
-				provider: entry.providerId,
-				effectiveMarginalCost: Number.parseFloat(entry.incrementalBilled),
-				rationale: entry.rationale,
-			})),
-		},
-	};
-
 	return {
 		ok: true,
 		schema: DISPATCHER_V2_SCHEMA_VERSION,
-		objective: DISPATCH_V2_OBJECTIVE,
+		objective,
 		selectedProvider: winner.providerId,
-		ranking: ranked,
-		dispatchEvent,
+		ranking,
+		rejectedCandidates,
+		dispatchEvent: {
+			type: "dispatch.Decided",
+			data: {
+				dispatchId: request.dispatchId,
+				category: request.category,
+				schema: DISPATCHER_V2_SCHEMA_VERSION,
+				objective,
+				selectedProvider: winner.providerId,
+				ranking,
+				rejectedCandidates,
+			},
+		},
 	};
 }

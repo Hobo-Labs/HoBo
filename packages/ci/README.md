@@ -17,6 +17,11 @@ from changing that metadata.
 | [`@hobo/ci-cf`](../ci-cf/README.md) | Implemented native Cloudflare CI adapter |
 | [`@hobo/ci-ado`](../ci-ado/README.md) | Local command checks and self-hosted Azure Pipelines configuration |
 
+The legacy allocation and sandbox quote implementations live behind
+`@hobo/pricing/legacy`. The original `src/accounting.ts` and
+`src/sandbox-pricing.ts` imports remain as thin re-exports, preserving the CI
+public API and existing reservation/settlement behavior.
+
 A Sandbox offer requires a trusted current rate card for CPU, provisioned
 memory, creation, network, proxy, bootstrap and any host charges. The quote reserves
 resource usage for the maximum runtime using integer microdollars; optional

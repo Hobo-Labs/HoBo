@@ -588,12 +588,48 @@ package data_models
 	reconciliationHash: #Digest
 }
 
+#SandboxAllowance: {
+	cpuVcpuMs: int & >=0
+	memoryMbMs: int & >=0
+	egressBytes: int & >=0
+	creations: int & >=0
+	proxyBytes: int & >=0
+	proxySessions: int & >=0
+	proxyControlCalls?: int & >=0
+}
+
+#SandboxPricing: {
+	vcpus: int & >=1 & <=32
+	memoryMb: int & >=1 & <=1048576
+	cpuMicrosPerVcpuHour: int & >=1
+	memoryMicrosPerGbHour: int & >=1
+	creationMicros: int & >=1
+	egressMicrosPerGb: int & >=1
+	maxEgressBytes: int & >=1
+	proxyMicrosPerGb: int & >=1
+	proxyFixedMicros: int & >=1
+	networkHeadroomBytes: int & >=1
+	bootstrapFixedMicros: int & >=1
+	proxyVmRequired?: bool
+	proxyVmVcpus?: int & >=0 & <=32
+	proxyVmMemoryMb?: int & >=0 & <=1048576
+	proxyVmExtraMs?: int & >=0
+	proxyVmNetworkBytes?: int & >=0
+	proxyVmNetworkHeadroomBytes?: int & >=0
+	region?: string
+	proxyControlMaxCalls?: int & >=0
+	proxyControlCallMicros?: int & >=0
+	plan?: "" | "hobby" | "pro" | "enterprise"
+}
+
 #PricingFixture: {
 	catalog:   #PricingCatalog
 	state?:    #FinancialStateView
 	scenario?: #QuoteScenario
 	quote?:    #QuoteVector
 	externalQuotes?: [...#ExternalProviderQuote]
+	legacySandboxAllowance?: #SandboxAllowance
+	legacySandboxPricing?: #SandboxPricing
 }
 
 #Pricing: #PricingFixture

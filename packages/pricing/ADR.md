@@ -75,4 +75,6 @@ this record pins the package's contract and state architecture.
   stale or incomplete evidence fails closed and deterministic quote hashes are
   auditable.
 - Adding an actor, event-store adapter, or read-store adapter does not change
-  the quote boundary. Dispatcher integration remains a separate batch.
+  the quote boundary. Dispatcher v2 consumes the pure engine beside untouched
+  v1; legacy CI translation re-exports through `@hobo/pricing/legacy` without a
+  reverse CI dependency.

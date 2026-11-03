@@ -513,10 +513,22 @@ function applyCommitments(
 				continue;
 			}
 			if (
+				commitment.bucketGranularity === "hour" &&
+				Math.floor(Date.parse(scenario.at) / 3_600_000) !==
+					Math.floor(Date.parse(scenario.horizon) / 3_600_000)
+			) {
+				throw new PricingFault(
+					"PRICING_MODEL_UNSUPPORTED",
+					`commitment ${commitment.id} hour bucket does not cover the scenario horizon`,
+				);
+			}
+			if (
 				commitment.kind !== "spend" ||
 				commitment.amortization !== "provider-actual" ||
 				commitment.payment !== "upfront" ||
-				commitment.bucketGranularity !== "billing-period" ||
+				!new Set(["billing-period", "hour"]).has(
+					commitment.bucketGranularity,
+				) ||
 				scenario.options?.amortization !== "provider-actual"
 			) {
 				throw new PricingFault(

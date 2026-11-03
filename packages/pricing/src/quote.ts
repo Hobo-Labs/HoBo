@@ -241,6 +241,8 @@ export function quoteScenario(scenario: QuoteScenario): QuoteResult {
 	}
 }
 
+export const QuoteEngine = Object.freeze({ quote: quoteScenario });
+
 export function quoteScenarioJson(value: JsonValue | undefined): QuoteResult {
 	const scenario = value === undefined ? undefined : parseQuoteScenario(value);
 	if (scenario === undefined) {

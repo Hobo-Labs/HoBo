@@ -1,38 +1,37 @@
-import assert from "node:assert/strict";
 import { describe, expect, it } from "vitest";
-
 import {
-	canonicalJson,
 	createDispatcherRegistry,
 	decideDispatch,
 	stableHash,
 } from "../src/dispatcher.js";
 
-const V1_DISPATCH_DECIDED_BASELINE =
-	"sha256:e34ab9a5dbf0a42cd1305f1b6d36c8280d9057c60f49d736d21afbacf8bfcccd";
+const V1_BASELINE_HASH =
+	"sha256:303b4e1d7563d16efbbf25de1737aa10a494a27a0ec4691df5ef5d8919b373c9";
 
-describe("decideDispatch v1 stability", () => {
-	it("keeps a byte-identical dispatch.Decided fact for the pinned replay fixture", () => {
-		const registry = createDispatcherRegistry([
-			{
-				id: "github-hosted",
-				category: "runner",
-				dimension: "runner.minutes",
-				listUnitCost: 0.03,
-			},
-			{
-				id: "self-hosted",
-				category: "runner",
-				dimension: "runner.minutes",
-				listUnitCost: 0.01,
-			},
-		]);
+describe("dispatcher v1 compatibility", () => {
+	it("keeps the complete fixed-fixture decision byte-identical", () => {
 		const decision = decideDispatch({
-			registry,
+			registry: createDispatcherRegistry([
+				{
+					id: "github",
+					providerId: "github",
+					category: "runner",
+					listUnitCost: 0.03,
+					switchingCost: 0.01,
+				},
+				{
+					id: "self-hosted",
+					providerId: "self-hosted",
+					category: "runner",
+					listUnitCost: 0.01,
+				},
+			]),
 			category: "runner",
-			dispatchId: "ci-replay",
+			dispatchId: "v1-golden",
 			objective: "maximize-credits",
 			units: 5,
+			incumbentProviderId: "github",
+			reservationId: "reservation-v1-golden",
 			ledgerView: {
 				view: "CreditLedgerView",
 				seq: 91,
@@ -41,16 +40,18 @@ describe("decideDispatch v1 stability", () => {
 				asOf: "2026-06-27T00:00:00.000Z",
 				accounts: [
 					{
-						providerId: "github-hosted",
+						providerId: "github",
 						dimension: "runner.minutes",
 						currency: "USD",
 						listUnitCost: 0.03,
 						freeHeadroom: 10,
 						rateHeadroom: 100,
-						concurrencyHeadroom: 10,
+						concurrencyHeadroom: 2,
+						budgetCap: 10,
+						spendToDate: 1,
 						credits: [
 							{
-								creditId: "github-hosted-free",
+								creditId: "github-free",
 								freeHeadroom: 10,
 								expiresAt: "2026-07-01T00:00:00.000Z",
 							},
@@ -63,21 +64,15 @@ describe("decideDispatch v1 stability", () => {
 						listUnitCost: 0.01,
 						freeHeadroom: 0,
 						rateHeadroom: 100,
-						concurrencyHeadroom: 10,
-						credits: [
-							{
-								creditId: "self-hosted-free",
-								freeHeadroom: 0,
-								expiresAt: "2026-07-01T00:00:00.000Z",
-							},
-						],
+						concurrencyHeadroom: 4,
+						budgetCap: 10,
+						spendToDate: 0,
+						credits: [],
 					},
 				],
 			},
 		});
 
-		assert.equal(decision.ok, true);
-		const digest = stableHash(canonicalJson(decision.dispatchEvent));
-		expect(digest).toBe(V1_DISPATCH_DECIDED_BASELINE);
+		expect(stableHash(decision)).toBe(V1_BASELINE_HASH);
 	});
 });
