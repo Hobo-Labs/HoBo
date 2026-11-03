@@ -156,8 +156,6 @@
 				"current"
 			],
 			"cpu": [
-				"arm64",
-				"x64",
 				"current"
 			]
 		}
