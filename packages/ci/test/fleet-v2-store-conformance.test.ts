@@ -488,11 +488,12 @@ describe("strict fleet v2 state machine", () => {
 let container: StartedTestContainer | undefined;
 let pool: pg.Pool | undefined;
 const externalPostgres = process.env.HOBO_CI_TEST_POSTGRES;
-const postgresConformanceRequired =
+const postgresEnabled =
+	!!externalPostgres ||
+	!!process.env.TESTCONTAINERS ||
 	process.env.HOBO_FLEET_ENROLLMENT_CI === "1";
-const postgresAvailable = !!externalPostgres || dockerAvailable();
 
-describe.runIf(postgresAvailable || postgresConformanceRequired)(
+describe.runIf(postgresEnabled)(
 	"PostgreSQL strict fleet v2 contract (Testcontainers)",
 	() => {
 		beforeAll(async () => {

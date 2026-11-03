@@ -1069,7 +1069,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				"binding secret does not match slot",
 			);
 		const offer = this.offerInside(slot.offerId);
-		if (!offer || offer.state !== "active")
+		if (offer?.state !== "active")
 			rejectFleet(FleetRejectionCode.OFFER_REVOKED, "Offer is revoked");
 		const group = this.capacityInside(slot.capacityGroupId);
 		if (!group || ["paused", "revoked"].includes(group.state))
@@ -1083,7 +1083,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				"capacity group is quarantined",
 			);
 		const profile = this.profileInside(slot.profileId);
-		if (!profile || profile.guarantee !== "start-fenced")
+		if (profile?.guarantee !== "start-fenced")
 			rejectFleet(
 				FleetRejectionCode.GUARANTEE_REQUIRED,
 				"start binding requires a start-fenced profile",
