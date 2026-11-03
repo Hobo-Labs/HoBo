@@ -100,7 +100,7 @@ function context(
 		readonly stationId?: string | undefined;
 	} = {},
 ): ManagementContext {
-// oxlint-disable-next-line anti-slop/no-chained-type-assertions, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+	// oxlint-disable-next-line anti-slop/no-chained-type-assertions, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 	return {
 		hoboHome: "/nowhere",
 		resolveActor: () => ({
@@ -210,7 +210,7 @@ describe("what the projection reports", () => {
 describe("choosing a tenant", () => {
 	it("prefers an explicitly requested tenant", () => {
 		let asked = "";
-// oxlint-disable-next-line anti-slop/no-chained-type-assertions, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-chained-type-assertions, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		const ctx = {
 			...context({ state: state() }),
 			loadConnectionService: (tenant: string) => {
@@ -229,7 +229,7 @@ describe("choosing a tenant", () => {
 		// Connections are scoped by tenant, and reading the wrong one would show a
 		// user somebody else's credentials.
 		let asked = "";
-// oxlint-disable-next-line anti-slop/no-chained-type-assertions, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-chained-type-assertions, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		const ctx = {
 			...context({ state: state(), tenant: "acme" }),
 			loadConnectionService: (tenant: string) => {
@@ -245,7 +245,7 @@ describe("choosing a tenant", () => {
 		// A machine actor can be tenantless. Defaulting to "local" instead would
 		// silently read the wrong store on a multi-tenant station.
 		let asked = "";
-// oxlint-disable-next-line anti-slop/no-chained-type-assertions, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-chained-type-assertions, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		const ctx = {
 			...context({
 				state: state({
@@ -413,7 +413,7 @@ describe("connector activity", () => {
 
 describe("hazards", () => {
 	function hazardsFor(
-// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
 		stateOverrides: Record<string, unknown>,
 		connections: readonly Connection[] = [],
 	) {
@@ -513,12 +513,12 @@ describe("broker status", () => {
 		// unconfigured machine as a broken one.
 		const result = brokerStatus(context(), {});
 		expect(result.ok).toBe(true);
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		expect((result.data as { ok: boolean }).ok).toBe(false);
 	});
 
 	it("suggests the init command when no station is configured", () => {
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		const data = brokerStatus(context(), {}).data as { message: string };
 		expect(data.message).toContain("hobo station init");
 	});
@@ -526,14 +526,14 @@ describe("broker status", () => {
 	it("echoes the station id when the station is missing", () => {
 		// Distinguishing "no station configured" from "the configured station is
 		// gone" is the difference between setting one up and repairing one.
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		const data = brokerStatus(context(), { stationId: "station:ghost" })
 			.data as { stationId: string };
 		expect(data.stationId).toBe("station:ghost");
 	});
 
 	it("summarises a healthy station", () => {
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		const data = brokerStatus(
 			context({
 				state: state({
@@ -544,7 +544,7 @@ describe("broker status", () => {
 				}),
 			}),
 			{ stationId: "station:local" },
-// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
+			// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
 		).data as Record<string, unknown>;
 		expect(data).toMatchObject({
 			ok: true,

@@ -2,10 +2,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { type ManifestV1, parseManifest } from "@hobo/bindles";
-
+import type { JsonValue } from "../json.js";
 import { compileProjectManifest } from "./loader.js";
-import { type JsonValue } from "../json.js";
-
 
 // Resolve the Bindle manifest a project-scoped cloud verb operates on. The
 // committed `hobo.bindle.json` artifact wins when present (byte-stable,

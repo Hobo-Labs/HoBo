@@ -3,10 +3,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { PrincipalRef } from "@hobo/core";
-
-import type { YardSession } from "./yard-client.js";
 import { isJsonString } from "../json.js";
-
+import type { YardSession } from "./yard-client.js";
 
 // Mocked-lane session material. The Yard gateway (gateway.authorize) accepts any
 // attributable principal — a non-`system` kind with a non-empty id — so a

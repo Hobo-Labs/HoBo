@@ -10,8 +10,6 @@
  */
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- malformed fixtures require boundary casts. */
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../src/json.js";
-
 import {
 	activateIdentityContinuousFromMatching,
 	advanceIdentityTrailRamp,
@@ -19,13 +17,14 @@ import {
 	createHandsOffIdentityTrail,
 	IDENTITY_TRAIL_SCHEMA,
 } from "../src/index.js";
+import type { JsonObject } from "../src/json.js";
 
 function handle(overrides: JsonObject = {}) {
 	return createHandsOffIdentityTrail({
 		tenant: "acme",
 		now: () => "2026-08-08T00:00:00.000Z",
 		...overrides,
-	// SAFETY: override fixtures intentionally bypass the production parser.
+		// SAFETY: override fixtures intentionally bypass the production parser.
 	} /* SAFETY: override fixture intentionally bypasses the parser type. */ as never);
 }
 
@@ -181,7 +180,10 @@ describe("advanceIdentityTrailRamp", () => {
 	it("refuses a handle it did not create", () => {
 		expect(() =>
 			// SAFETY: forged handle fixture tests the private WeakMap boundary.
-			advanceIdentityTrailRamp({ ...handle() } /* SAFETY: forged handle fixture. */ as never, 10),
+			advanceIdentityTrailRamp(
+				{ ...handle() } /* SAFETY: forged handle fixture. */ as never,
+				10,
+			),
 		).toThrow();
 	});
 });
@@ -196,7 +198,7 @@ describe("assertIdentityContinuousHandsOff", () => {
 			assertIdentityContinuousHandsOff({
 				...handle(),
 				bindleConfigRequired: true,
-			// SAFETY: malformed handle fixture tests fail-closed validation.
+				// SAFETY: malformed handle fixture tests fail-closed validation.
 			} /* SAFETY: malformed handle fixture. */ as never);
 			expect.unreachable("a Bindle-requiring handle must be refused");
 		} catch (error) {
@@ -213,7 +215,7 @@ describe("assertIdentityContinuousHandsOff", () => {
 			assertIdentityContinuousHandsOff({
 				...base,
 				trail: { ...base.trail, recipeList: ["something.else"] },
-			// SAFETY: malformed handle fixture tests fail-closed validation.
+				// SAFETY: malformed handle fixture tests fail-closed validation.
 			} /* SAFETY: malformed handle fixture. */ as never);
 			expect.unreachable("a wrong recipe must be refused");
 		} catch (error) {
@@ -239,7 +241,7 @@ describe("assertIdentityContinuousHandsOff", () => {
 					...base.canMigrate,
 					evidence: { ...base.canMigrate.evidence, continuousDefault: false },
 				},
-			// SAFETY: malformed handle fixture tests fail-closed validation.
+				// SAFETY: malformed handle fixture tests fail-closed validation.
 			} /* SAFETY: malformed handle fixture. */ as never);
 			expect.unreachable("evidence without continuousDefault must be refused");
 		} catch (error) {
@@ -262,7 +264,7 @@ describe("assertIdentityContinuousHandsOff", () => {
 						bindleConfigRequired: true,
 					},
 				},
-			// SAFETY: malformed handle fixture tests fail-closed validation.
+				// SAFETY: malformed handle fixture tests fail-closed validation.
 			} /* SAFETY: malformed handle fixture. */ as never);
 			expect.unreachable("evidence requiring Bindle config must be refused");
 		} catch (error) {
@@ -283,7 +285,7 @@ describe("assertIdentityContinuousHandsOff", () => {
 						bindleConfigRequired: true,
 					},
 				},
-			// SAFETY: malformed handle fixture tests fail-closed validation.
+				// SAFETY: malformed handle fixture tests fail-closed validation.
 			} /* SAFETY: malformed handle fixture. */ as never);
 			expect.unreachable("expected a refusal");
 		} catch (error) {

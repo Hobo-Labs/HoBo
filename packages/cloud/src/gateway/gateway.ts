@@ -22,7 +22,6 @@ import type {
 import { type PlanConfig, plan } from "../planner/plan.js";
 import type { PlannerRegistry } from "../registry/catalog.js";
 
-
 // The Gateway (control-plane.md "Services"): command ingress. It authenticates
 // the principal, authorizes against tenant + scope, turns a command into events,
 // and serves read models. Commands are never stored — only past-tense facts are

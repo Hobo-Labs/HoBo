@@ -751,4 +751,5 @@ describe("compaction against the retention floor", () => {
 		expect(events).toHaveLength(2);
 	});
 });
+
 import type { JsonValue } from "../src/plan-types.js";

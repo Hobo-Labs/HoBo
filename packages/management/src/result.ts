@@ -20,7 +20,7 @@ export function okResult<T>(
 		ok: true,
 		code: opts?.code ?? "HOBO_OK",
 		message,
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 		...(opts?.status !== undefined ? { status: opts.status } : {}),
 		data,
 	});
@@ -32,7 +32,7 @@ export function errResult(
 		code?: string;
 		status?: string;
 		remediation?: readonly string[];
-// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
 		data?: Record<string, unknown>;
 	},
 ): ManagementResult {
@@ -40,13 +40,13 @@ export function errResult(
 		ok: false,
 		code: opts?.code ?? "HOBO_ERR",
 		message,
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 		...(opts?.status !== undefined ? { status: opts.status } : {}),
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 		...(opts?.remediation !== undefined
 			? { remediation: opts.remediation }
 			: {}),
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 		...(opts?.data !== undefined ? { data: opts.data } : {}),
 	});
 }

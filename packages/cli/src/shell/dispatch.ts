@@ -72,7 +72,7 @@ export function createHoboCli(options: CreateHoboCliOptions = {}): HoboCli {
 			plan: createPlanCommand(),
 			up: createUpCommand(),
 			down: createDownCommand(),
-			...(options.commands),
+			...options.commands,
 		});
 	const contextFactory = options.contextFactory ?? defaultContextFactory;
 

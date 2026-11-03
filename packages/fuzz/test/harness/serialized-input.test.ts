@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	type FuzzValue,
 	fuzzBindleManifest,
 	fuzzEventEnvelope,
 	fuzzPolicyDocument,
 	hasPrototypePollution,
 	MAX_HARNESS_BYTES,
 	sampleManifestRecord,
-	type FuzzValue,
 } from "../../src/index.js";
 
 function bytes(value: FuzzValue): Uint8Array {

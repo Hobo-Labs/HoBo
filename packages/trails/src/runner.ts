@@ -239,7 +239,9 @@ export class TrailRunner {
 					return this.result({
 						schemaResults,
 						dataResults,
-						...(identityProgress !== undefined ? { identityProgress } : undefined),
+						...(identityProgress !== undefined
+							? { identityProgress }
+							: undefined),
 						rampPercent,
 						aborted: true,
 						cutover: false,
@@ -255,7 +257,9 @@ export class TrailRunner {
 					return this.result({
 						schemaResults,
 						dataResults,
-						...(identityProgress !== undefined ? { identityProgress } : undefined),
+						...(identityProgress !== undefined
+							? { identityProgress }
+							: undefined),
 						rampPercent,
 						aborted: true,
 						cutover: false,
@@ -273,7 +277,9 @@ export class TrailRunner {
 					return this.result({
 						schemaResults,
 						dataResults,
-						...(identityProgress !== undefined ? { identityProgress } : undefined),
+						...(identityProgress !== undefined
+							? { identityProgress }
+							: undefined),
 						rampPercent,
 						aborted: true,
 						cutover: false,
@@ -305,7 +311,9 @@ export class TrailRunner {
 						return this.result({
 							schemaResults,
 							dataResults,
-							...(identityProgress !== undefined ? { identityProgress } : undefined),
+							...(identityProgress !== undefined
+								? { identityProgress }
+								: undefined),
 							rampPercent,
 							aborted: true,
 							cutover: false,
@@ -343,7 +351,7 @@ export class TrailRunner {
 		return this.result({
 			schemaResults,
 			dataResults,
-				...(identityProgress !== undefined ? { identityProgress } : undefined),
+			...(identityProgress !== undefined ? { identityProgress } : undefined),
 			rampPercent,
 			aborted: false,
 			cutover: this.service.snapshot()?.state === "cutover",

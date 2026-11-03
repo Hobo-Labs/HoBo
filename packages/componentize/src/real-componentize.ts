@@ -25,8 +25,7 @@ import {
 	type WasmComponentArtifact,
 	type WasmOciDescriptor,
 } from "./componentize.js";
-import { type JsonValue } from "./json.js";
-
+import type { JsonValue } from "./json.js";
 
 const COMPONENTIZE_JS_SPECIFIER = "@bytecodealliance/componentize-js";
 const REAL_CONTRACT_SCHEMA = "hobo.componentize.real/v1";

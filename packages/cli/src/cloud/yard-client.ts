@@ -159,7 +159,9 @@ function planConfig(
 ): PlanConfigInput {
 	return {
 		deploymentId,
-		...(config?.objective !== undefined ? { objective: config.objective } : undefined),
+		...(config?.objective !== undefined
+			? { objective: config.objective }
+			: undefined),
 		...(config?.region !== undefined ? { region: config.region } : undefined),
 	};
 }

@@ -4,8 +4,7 @@
  */
 import type { ProviderAnnotation } from "@hobo/bindles";
 import { COMPONENT_METADATA } from "@hobo/runtime";
-import { isJsonString, isJsonObject, type JsonValue } from "./json.js";
-
+import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
 
 export const CONVEX_WEBAPP_METADATA = Symbol.for("hobo.webapp.convex");
 /** Shared meta symbol — Bindle detects any `{ framework, root }` webApp. */

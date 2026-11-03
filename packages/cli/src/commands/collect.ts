@@ -11,9 +11,8 @@ import {
 } from "@hobo/bindles";
 
 import { stubResult } from "../cloud/stub.js";
+import type { JsonObject } from "../json.js";
 import type { CommandModule } from "../shell/registry.js";
-import { type JsonObject } from "../json.js";
-
 
 // The golden the `--check` drift gate compares the freshly collected manifest IR
 // against. Committed alongside the project so CI can assert the checked-in IR is

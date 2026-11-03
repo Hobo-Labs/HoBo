@@ -67,7 +67,6 @@ async function messageOf(fn: () => Promise<BuildResult>): Promise<string> {
 	return "<did not throw>";
 }
 
-
 function build(root: string, overrides: BuildOverrides = {}) {
 	// SAFETY: test overrides intentionally exercise missing and drifted toolchain fields.
 	return componentizeHelloBindle({
