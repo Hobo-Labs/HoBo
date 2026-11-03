@@ -45,6 +45,17 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   re-runs the same tree), and `pr-offpath` diffs the PR merge commit against its first parent: when
   `affected-lanes.mts` prints nothing and no pin, submodule or package-boundary path changed, it skips
   install, the ts-autocode surface tests and `build:packages` and frees its slot in seconds.
+- **PR jobs skip what the diff cannot reach.** `artifact-trust` and `dev-cold-loop-gate` each test a
+  fixed subject (the artifact trust proof's `publish-verify.test.ts` with the root `vitest.config.ts` and
+  its setup files; `scripts/ci/dev-cold-loop-timing.mts`). `scripts/ci/job-scope.mts` walks those
+  entries' relative imports and `new URL(…, import.meta.url)` references, adds every workspace package the walk
+  enters or names plus those packages' workspace dependencies, and prints `run=false` only when no path
+  in the PR merge commit's diff lands in that set. Workspace-wide inputs, `.github/`, pins, submodules,
+  the runner image and a computed or unresolvable import always run the check. A skipped step keeps the
+  required check green, as on `pr-offpath`, and the job frees its slot after checkout. The script imports
+  node builtins only, since it decides whether to install; `scripts/test/job-scope.test.ts` pins the walk
+  and checks that both real entries scope without giving up. #1652 (ci-gh-actions) and #1653
+  (`scripts/run-tests.ts`) would have skipped both jobs: 1–3 slot-minutes each per run, excluding stalls.
 
 ## Frozen proofs and live-repo tests
 

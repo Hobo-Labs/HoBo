@@ -359,9 +359,27 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          # Depth 2 holds the PR merge commit and its first parent (the base tip).
+          fetch-depth: 2
       - uses: ./.github/actions/ci-runner-preflight
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Decide whether the diff reaches the artifact trust proof
+        id: scope
+        run: |
+          set -euo pipefail
+          if ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then
+            echo "HEAD is not a PR merge commit; running the check"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only HEAD^1 HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/job-scope.mts \
+              vitest.config.ts \
+              src/draft/technical-proofs/componentize-artifact-trust-contract/test/publish-verify.test.ts \
+              >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Verify signed hello-bindle and refuse stripped signatures
+        if: steps.scope.outputs.run == 'true'
         run: pnpm test:file src/draft/technical-proofs/componentize-artifact-trust-contract/test/publish-verify.test.ts
 
   dev-cold-loop-gate:
@@ -373,9 +391,25 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          fetch-depth: 2
       - uses: ./.github/actions/ci-runner-preflight
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Decide whether the diff reaches the cold dev loop
+        id: scope
+        run: |
+          set -euo pipefail
+          if ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then
+            echo "HEAD is not a PR merge commit; running the check"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only HEAD^1 HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/job-scope.mts \
+              scripts/ci/dev-cold-loop-timing.mts \
+              >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Cold hobo dev gate (network disabled)
+        if: steps.scope.outputs.run == 'true'
         run: |
           set -euo pipefail
           image="hobo-ci-worker:local"
