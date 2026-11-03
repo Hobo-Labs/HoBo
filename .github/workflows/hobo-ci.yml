@@ -37,9 +37,8 @@ jobs:
       contents: read
       packages: write
     steps:
+      # No submodules: the diff only needs the gitlink, not ts-autocode's tree.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          submodules: recursive
       - name: Detect runner image inputs changed
         id: rebuild
         run: |
@@ -266,7 +265,6 @@ jobs:
 
   artifact-trust:
     name: artifact signing and install verification
-    needs: pr-gate
     if: github.event_name == 'pull_request'
     runs-on: hobo
     timeout-minutes: 10
@@ -283,7 +281,6 @@ jobs:
 
   dev-cold-loop-gate:
     name: hobo dev cold loop (offline <=60s)
-    needs: pr-gate
     if: github.event_name == 'pull_request'
     runs-on: hobo
     timeout-minutes: 5
@@ -330,9 +327,9 @@ jobs:
     permissions:
       contents: read
     steps:
+      # No submodules: gitleaks scans this repository's history, not ts-autocode's.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          submodules: recursive
           fetch-depth: 0
       - uses: ./.github/actions/ci-runner-preflight
       - name: Scan git history for secrets
