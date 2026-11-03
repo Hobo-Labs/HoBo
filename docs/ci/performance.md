@@ -377,6 +377,26 @@ and is retried on the next tick. Running jobs are never preempted, so a trunk jo
 first slot to free, but it no longer waits behind PR jobs that queued before it. The box daemon has to be
 redeployed on a main that includes this change.
 
+## Finding 10: the job poller spent the installation's rate limit on finished runs
+
+The worker reached the poller's floor (fewer than 300 calls left) and paused polling, so queued jobs
+waited for the reset. Each poll (every 15 s) made three run-list reads plus one jobs read per run, and the
+completed-runs list covers every workflow's runs from the last two hours, up to 50. With 50 completed runs
+that is about 53 counted reads a poll, or about 12,700 an hour against a 5,000-an-hour installation
+budget, almost all of it re-reading jobs that can no longer change. The lookback URL also embedded the
+current time, so no two polls asked the same question.
+
+`packages/ci-gh-actions/src/isolated-worker/github-job-poller.ts` now:
+
+- sends `If-None-Match` with the last ETag on every read and reuses the cached body on a 304, which does
+  not count against the limit;
+- rounds the `created>=` lookback down to 10 minutes, so the completed-runs URL is the same between polls;
+- stops reading a completed run attempt once every job in it was seen completed and ingested, and drops it
+  from memory once it leaves the lookback. A re-run is a new attempt and is read again.
+
+An idle poll now costs nothing, and a busy one costs one read per run whose jobs changed. The box daemon has
+to be redeployed on a main that includes this change.
+
 ## Before and after
 
 Per-job medians (duration / wait for a slot) over the 43 runs before these changes. The after column comes

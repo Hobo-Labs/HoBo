@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -47,14 +47,43 @@ interface FakeJob {
 /** Answers only the REST reads the poller and relay make; anything else is a contract violation. */
 class FakeGithub implements GithubTransport {
 	calls: string[] = [];
+	/** Calls GitHub would count against the rate limit (everything but a 304). */
+	counted: string[] = [];
 	limited = false;
+	/** Run attempt per run id; 1 when absent. */
+	attempts = new Map<number, number>();
 	constructor(
 		readonly runs: Record<"queued" | "in_progress", number[]> & {
 			completed?: number[];
 		},
 		readonly jobs: Record<number, FakeJob[]>,
 	) {}
-	async request(installationId: number, path: string, method = "GET") {
+	async request(
+		installationId: number,
+		path: string,
+		method = "GET",
+		_body?: string,
+		ifNoneMatch?: string,
+	) {
+		const response = await this.answer(installationId, path, method);
+		const etag = `W/"${createHash("sha256")
+			.update(await response.clone().text())
+			.digest("hex")
+			.slice(0, 16)}"`;
+		if (response.ok && ifNoneMatch === etag)
+			return new Response(null, {
+				status: 304,
+				headers: { etag, "x-ratelimit-remaining": "4000" },
+			});
+		this.counted.push(`${method} ${path}`);
+		const headers = new Headers(response.headers);
+		if (response.ok) headers.set("etag", etag);
+		return new Response(response.body, { status: response.status, headers });
+	}
+	private attempt(runId: number): number {
+		return this.attempts.get(runId) ?? 1;
+	}
+	private async answer(installationId: number, path: string, method: string) {
 		this.calls.push(`${method} ${path}`);
 		if (installationId !== 10 || method !== "GET")
 			throw new Error(`unexpected ${method} ${path}`);
@@ -73,7 +102,12 @@ class FakeGithub implements GithubTransport {
 			);
 		if (list?.[1] === "queued" || list?.[1] === "in_progress")
 			return Response.json(
-				{ workflow_runs: this.runs[list[1]].map((id) => ({ id })) },
+				{
+					workflow_runs: this.runs[list[1]].map((id) => ({
+						id,
+						run_attempt: this.attempt(id),
+					})),
+				},
 				{ headers },
 			);
 		if (
@@ -82,7 +116,12 @@ class FakeGithub implements GithubTransport {
 			)
 		) {
 			return Response.json(
-				{ workflow_runs: (this.runs.completed ?? []).map((id) => ({ id })) },
+				{
+					workflow_runs: (this.runs.completed ?? []).map((id) => ({
+						id,
+						run_attempt: this.attempt(id),
+					})),
+				},
 				{ headers },
 			);
 		}
@@ -97,7 +136,7 @@ class FakeGithub implements GithubTransport {
 					jobs: (this.jobs[runId] ?? []).map((job) => ({
 						...job,
 						run_id: runId,
-						run_attempt: 1,
+						run_attempt: this.attempt(runId),
 					})),
 				},
 				{ headers },
@@ -187,6 +226,8 @@ describe("GitHub job poller", () => {
 			hoboJobs: 3,
 			accepted: 3,
 			failed: 0,
+			settled: 0,
+			notModified: 0,
 			rateLimitRemaining: 4000,
 		});
 		const ids = Object.keys(bodies).sort();
@@ -240,6 +281,121 @@ describe("GitHub job poller", () => {
 			accepted: 1,
 		});
 		expect(ids).toEqual([expect.stringMatching(/^poll-7-1-c-[0-9a-f]{12}$/)]);
+	});
+
+	it("re-reads unchanged lists conditionally, so an idle poll costs no rate limit", async () => {
+		const github = new FakeGithub(
+			{ queued: [900], in_progress: [] },
+			{ 900: [{ id: 1, status: "queued", labels: ["hobo"] }] },
+		);
+		let clock = NOW;
+		const ids: string[] = [];
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () => [CONNECTION],
+			ingest: async (delivery) => {
+				ids.push(delivery.deliveryId);
+				return ids.indexOf(delivery.deliveryId) === ids.length - 1
+					? "accepted"
+					: "duplicate";
+			},
+			now: () => clock,
+		});
+		await poller.poll();
+		expect(github.counted).toHaveLength(4);
+		github.counted = [];
+		clock += 15_000;
+		// A 304 still hands the cached body on, so the job is observed again.
+		expect(await poller.poll()).toMatchObject({
+			hoboJobs: 1,
+			accepted: 0,
+			notModified: 4,
+		});
+		expect(github.counted).toEqual([]);
+		expect(ids).toEqual(["poll-1-1-q", "poll-1-1-q"]);
+		// A changed list is a 200 again, and only that read is counted.
+		github.jobs[900]?.push({ id: 2, status: "queued", labels: ["hobo"] });
+		expect(await poller.poll()).toMatchObject({ accepted: 1, notModified: 3 });
+		expect(github.counted).toEqual([
+			"GET /repos/Org/Repo/actions/runs/900/jobs?filter=latest&per_page=100",
+		]);
+	});
+
+	it("keeps the completed-runs URL still between polls in one ten-minute step", async () => {
+		const github = new FakeGithub({ queued: [], in_progress: [] }, {});
+		let clock = Date.parse("2026-11-02T12:00:30Z");
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () => [CONNECTION],
+			ingest: async () => "accepted",
+			now: () => clock,
+		});
+		const completedReads = () =>
+			github.calls.filter((call) => call.includes("status=completed"));
+		await poller.poll();
+		clock += 9 * 60_000;
+		await poller.poll();
+		clock += 60_000;
+		await poller.poll();
+		expect(completedReads()).toEqual([
+			expect.stringContaining("created=%3E%3D2026-11-02T10:00:00.000Z&"),
+			expect.stringContaining("created=%3E%3D2026-11-02T10:00:00.000Z&"),
+			expect.stringContaining("created=%3E%3D2026-11-02T10:10:00.000Z&"),
+		]);
+	});
+
+	it("reads a completed run's jobs until they are all seen completed, then not again until a re-run", async () => {
+		const github = new FakeGithub(
+			{ queued: [], in_progress: [], completed: [902, 903, 904] },
+			{
+				902: [
+					{ id: 7, status: "completed", labels: ["hobo"], runner_name: "r7" },
+					{ id: 8, status: "completed", labels: ["ubuntu-latest"] },
+				],
+				// GitHub can list a run as completed while a job still reads in_progress.
+				903: [
+					{ id: 9, status: "in_progress", labels: ["hobo"], runner_name: "r9" },
+				],
+				904: [
+					{ id: 10, status: "completed", labels: ["hobo"], runner_name: "r10" },
+				],
+			},
+		);
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () => [CONNECTION],
+			ingest: async (delivery) => {
+				if (delivery.deliveryId.startsWith("poll-10-1-"))
+					throw new Error("inbox full");
+				return "accepted";
+			},
+			now: () => NOW,
+		});
+		const jobReads = () =>
+			github.calls
+				.filter((call) => call.includes("/jobs?"))
+				.map((call) => Number(/runs\/(\d+)\/jobs/.exec(call)?.[1]));
+		expect(await poller.poll()).toMatchObject({ runs: 3, settled: 0 });
+		expect(jobReads()).toEqual([902, 903, 904]);
+		github.calls = [];
+		// 902 is settled; 903 had a job not yet completed; 904's job was refused.
+		expect(await poller.poll()).toMatchObject({ runs: 2, settled: 1 });
+		expect(jobReads()).toEqual([903, 904]);
+		github.calls = [];
+		// A re-run is a new attempt, read again while it runs and once it completes.
+		github.attempts.set(902, 2);
+		github.runs.in_progress.push(902);
+		github.runs.completed = [903, 904];
+		await poller.poll();
+		expect(jobReads()).toEqual([902, 903, 904]);
+		github.calls = [];
+		github.runs.in_progress = [];
+		github.runs.completed = [902];
+		expect(await poller.poll()).toMatchObject({ runs: 1, settled: 0 });
+		expect(jobReads()).toEqual([902]);
+		github.calls = [];
+		expect(await poller.poll()).toMatchObject({ runs: 0, settled: 1 });
+		expect(jobReads()).toEqual([]);
 	});
 
 	it("pauses until the rate-limit reset instead of hammering GitHub", async () => {
