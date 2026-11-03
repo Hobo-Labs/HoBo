@@ -18,6 +18,7 @@ import {
 	type JitBootstrapResponse,
 	JitBootstrapResponseSchema,
 } from "./_generated/jit_bootstrap_response_pb.js";
+import { createAdmissionOrder } from "./admission-order.js";
 import {
 	type GithubRun,
 	type GithubTransport,
@@ -116,6 +117,7 @@ const RunWebhook = z.object({
 
 export class HostedRelay {
 	readonly now: () => string;
+	private readonly admissionOrder: ReturnType<typeof createAdmissionOrder>;
 	constructor(
 		readonly options: {
 			config: Configuration;
@@ -133,6 +135,7 @@ export class HostedRelay {
 		if (options.webhookSecret.length < 32)
 			throw new Error("webhook secret must have at least 32 characters");
 		this.now = options.now ?? (() => new Date().toISOString());
+		this.admissionOrder = createAdmissionOrder(options.github);
 	}
 	private async refreshConfig(): Promise<number> {
 		const { state, policies } = await this.options.store.policySnapshot();
@@ -484,7 +487,18 @@ export class HostedRelay {
 	/** Durable outbox drain. A launch intent is committed before network I/O. */
 	async dispatchPending(): Promise<void> {
 		const reservationRevision = await this.refreshConfig();
-		for (const job of await this.options.store.pendingJobs()) {
+		// Both the reservation (offer concurrency) and the launch (host slots) hand
+		// out capacity in this order, so a freed slot goes to the queue's head.
+		const pending = await this.admissionOrder(
+			await this.options.store.pendingJobs(),
+			(job) => ({
+				installationId: job.installationId,
+				repository: job.repository,
+				runId: job.runId,
+				jobId: job.id,
+			}),
+		);
+		for (const job of pending) {
 			const connection = this.connection(
 				job.repositoryId,
 				job.installationId,
@@ -505,9 +519,18 @@ export class HostedRelay {
 				reservationRevision,
 			);
 		}
-		for (const candidate of (await this.options.store.activeLeases()).filter(
-			(lease) => lease.state === "reserved",
-		)) {
+		const reserved = await this.admissionOrder(
+			(await this.options.store.activeLeases()).filter(
+				(lease) => lease.state === "reserved",
+			),
+			(lease) => ({
+				installationId: lease.installationId,
+				repository: lease.repository,
+				runId: lease.originalRunId,
+				jobId: lease.jobId,
+			}),
+		);
+		for (const candidate of reserved) {
 			try {
 				this.binding(candidate);
 				const [currentJob, originalRun] = await Promise.all([
