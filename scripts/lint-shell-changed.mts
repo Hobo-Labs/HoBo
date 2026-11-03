@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
  * bash -n + shellcheck on changed shell scripts (release/CI paths).
+ * shellcheck is pinned in mise.toml / mise.lock and invoked via `mise exec`.
  *
  * Usage:
  *   node --import tsx scripts/lint-shell-changed.mts --staged
@@ -8,11 +9,13 @@
  */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import process from "node:process";
 
 import { reachRemedy } from "./lib/base-ref.ts";
 import { sanitizeNodeOptions } from "./lib/env.ts";
 
+const repoRoot = join(import.meta.dirname, "..");
 const SHELL = /\.sh$/u;
 
 function git(args: string[]): string | undefined {
@@ -41,12 +44,34 @@ function changedFiles(staged: boolean, base: string): string[] {
 	return listed.split(/\r?\n/).filter((file) => SHELL.test(file));
 }
 
-function run(cmd: string, args: string[]): number {
-	const result = spawnSync(cmd, args, { stdio: "inherit" });
+function run(cmd: string, args: string[], cwd = process.cwd()): number {
+	const result = spawnSync(cmd, args, { stdio: "inherit", cwd });
 	return result.status ?? 1;
 }
 
-function lintShell(file: string): void {
+function miseExec(args: string[]): number {
+	return run("mise", ["exec", "--", ...args], repoRoot);
+}
+
+function prepareMiseShellcheck(): boolean {
+	if (spawnSync("mise", ["--version"], { encoding: "utf8" }).status !== 0) {
+		return false;
+	}
+	if (run("mise", ["trust", "./mise.toml"], repoRoot) !== 0) {
+		return false;
+	}
+	if (run("mise", ["install", "shellcheck"], repoRoot) !== 0) {
+		return false;
+	}
+	return (
+		spawnSync("mise", ["exec", "--", "shellcheck", "--version"], {
+			cwd: repoRoot,
+			encoding: "utf8",
+		}).status === 0
+	);
+}
+
+function lintShell(file: string, shellcheckReady: boolean): void {
 	if (!existsSync(file)) {
 		console.error(`fail  lint:shell:changed — missing ${file}`);
 		process.exit(1);
@@ -55,22 +80,10 @@ function lintShell(file: string): void {
 		console.error(`fail  lint:shell:changed — bash -n ${file}`);
 		process.exit(1);
 	}
-	const shellcheck = spawnSync("shellcheck", ["--version"], {
-		encoding: "utf8",
-	});
-	if (shellcheck.status !== 0) {
-		if (process.env.CI || process.env.GITHUB_ACTIONS) {
-			console.error(
-				"fail  lint:shell:changed — shellcheck required in CI but not on PATH",
-			);
-			process.exit(1);
-		}
-		console.warn(
-			"warn  lint:shell:changed — shellcheck not installed; bash -n only",
-		);
+	if (!shellcheckReady) {
 		return;
 	}
-	if (run("shellcheck", ["-x", file]) !== 0) {
+	if (miseExec(["shellcheck", "-x", file]) !== 0) {
 		console.error(`fail  lint:shell:changed — shellcheck ${file}`);
 		process.exit(1);
 	}
@@ -88,7 +101,20 @@ if (files.length === 0) {
 	process.exit(0);
 }
 
+const shellcheckReady = prepareMiseShellcheck();
+if (!shellcheckReady) {
+	if (process.env.CI || process.env.GITHUB_ACTIONS) {
+		console.error(
+			"fail  lint:shell:changed — shellcheck required in CI (mise exec from mise.lock) but mise install failed",
+		);
+		process.exit(1);
+	}
+	console.warn(
+		"warn  lint:shell:changed — shellcheck not available via mise; bash -n only",
+	);
+}
+
 for (const file of files) {
-	lintShell(file);
+	lintShell(file, shellcheckReady);
 }
 console.log(`ok  lint:shell:changed — ${files.length} script(s)`);

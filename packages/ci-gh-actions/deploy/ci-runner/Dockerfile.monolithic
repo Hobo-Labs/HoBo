@@ -25,6 +25,7 @@ RUN mise trust ./mise.toml \
   && mise exec -- node --version \
   && mise exec -- pnpm --version \
   && mise exec -- cue version \
+  && mise exec -- shellcheck --version \
   && mise exec -- turbo --version
 
 RUN case "${TARGETARCH:-amd64}" in \

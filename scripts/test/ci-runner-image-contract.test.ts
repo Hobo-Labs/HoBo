@@ -51,6 +51,7 @@ describe("ci-runner image contract (repo manifests)", () => {
 		expect(toml).toContain("[oci]");
 		expect(toml).toContain('user = "1000:1000"');
 		expect(toml).toContain("gitleaks");
+		expect(toml).toContain("shellcheck");
 		expect(toml).toContain("127.0.0.1:5000");
 	});
 

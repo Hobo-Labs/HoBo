@@ -21,5 +21,10 @@ runs:
     - shell: bash
       run: |
         set -euo pipefail
+        export MISE_EXPERIMENTAL=1
+        if command -v mise >/dev/null 2>&1; then
+          mise trust ./mise.toml
+          mise install
+        fi
         node --no-warnings scripts/ci-runner-preflight.mts
         echo "HOBO_CUE_BIN=$(command -v cue)" >> "$GITHUB_ENV"

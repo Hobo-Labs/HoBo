@@ -15,12 +15,39 @@ function bashSyntaxOk(path: string): boolean {
 	return result.status === 0;
 }
 
+function shellcheckViaMiseOk(path: string): boolean {
+	if (spawnSync("mise", ["--version"], { encoding: "utf8" }).status !== 0) {
+		return true;
+	}
+	spawnSync("mise", ["trust", "./mise.toml"], { cwd: root });
+	if (
+		spawnSync("mise", ["install", "shellcheck"], { cwd: root }).status !== 0
+	) {
+		return false;
+	}
+	const result = spawnSync("mise", ["exec", "--", "shellcheck", "-x", path], {
+		cwd: root,
+		encoding: "utf8",
+	});
+	return result.status === 0;
+}
+
 describe("pinned shell scripts (bash -n)", () => {
 	for (const rel of PINNED_SHELL_SCRIPTS) {
 		it(`${rel} passes bash -n`, () => {
 			const path = join(root, rel);
 			expect(existsSync(path)).toBe(true);
 			expect(bashSyntaxOk(path)).toBe(true);
+		});
+	}
+});
+
+describe("pinned shell scripts (shellcheck via mise)", () => {
+	for (const rel of PINNED_SHELL_SCRIPTS) {
+		it(`${rel} passes mise exec shellcheck when mise is available`, () => {
+			const path = join(root, rel);
+			expect(existsSync(path)).toBe(true);
+			expect(shellcheckViaMiseOk(path)).toBe(true);
 		});
 	}
 });
