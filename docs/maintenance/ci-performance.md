@@ -31,7 +31,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   root checks in the same gate. `scripts/test/affected-lanes.test.ts` pins the skip logic. Dependents are
   not added yet: several packages carry pre-existing biome lint debt that a dependents sweep would surface.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
-  from each job, so queue time and run time can be compared before and after a change.
+  from each job, so queue time and run time can be compared before and after a change. The script
+  imports node builtins only, because the step also runs on jobs that skipped or failed `pnpm install`
+  (an inert PR diff skips install in the off-path job). With `zod` it failed `ERR_MODULE_NOT_FOUND`
+  there and turned a skipped job red (#1653's run 41583817166). `scripts/test/ci-trace.test.ts` pins
+  the import rule; the hand-written parser emits byte-identical spans and summaries.
 - **No serial PR jobs.** `artifact-trust` and `dev-cold-loop-gate` do their own checkout and install and
   read nothing from the PR impact gate, so they no longer `needs: pr-gate`. On a two-slot box that
   dependency left a slot idle while the gate ran, then queued both behind it. `ci-runner-image` and
