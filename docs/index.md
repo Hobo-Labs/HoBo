@@ -15,6 +15,7 @@ This bundle follows Open Knowledge Format v0.1 conventions: `index.md` files pro
 | Implementation backlog | [`implementation-plan.md`](./implementation-plan.md) | Durable mirror of Linear's subsystem decomposition and issue plan. Linear remains live status source. |
 | Agent tooling | [`agent-tooling.md`](./agent-tooling.md) | Local agent-tooling setup, trust boundaries, data-egress notes, and maintenance expectations. |
 | CI performance | [`ci/performance.md`](./ci/performance.md) | Where HoBo CI Fabric wall time goes on the self-hosted box, the fixes landed, and what is left for a five-minute run. |
+| CI layer plan | [`ci/oci-layer-plan.md`](./ci/oci-layer-plan.md) | Phased plan for hermetic, content-keyed checkout and install layers in GHCR plus a box git mirror, with per-job estimates and acceptance criteria. |
 | Automations | [`automations/hobo-issue-worker.md`](./automations/hobo-issue-worker.md) | How issue-worker automation should interpret design docs and report changes. |
 
 ## Reference directories outside `docs/`
