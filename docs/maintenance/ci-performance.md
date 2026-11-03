@@ -36,6 +36,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   read nothing from the PR impact gate, so they no longer `needs: pr-gate`. On a two-slot box that
   dependency left a slot idle while the gate ran, then queued both behind it. `ci-runner-image` and
   `secret-scan` skip the ts-autocode submodule checkout because neither installs packages.
+- **Slot budget.** The box has two runner slots, so a job that gates nothing still delays every other
+  run. Main full gate does not run on `merge_group` (it is not a required check, and the push to `main`
+  re-runs the same tree), and `pr-offpath` diffs the PR merge commit against its first parent: when
+  `affected-lanes.mts` prints nothing and no pin, submodule or package-boundary path changed, it skips
+  install, the ts-autocode surface tests and `build:packages` and frees its slot in seconds.
 
 ## Frozen proofs and live-repo tests
 

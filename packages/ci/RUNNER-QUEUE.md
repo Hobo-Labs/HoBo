@@ -130,7 +130,7 @@ Relay returns **`waiting-for-budget-or-capacity`** when account/provider budget 
 
 ### 6. Merge queue (landing, not pickup)
 
-**Merge queue** requires branch protection on `main` with merge queue enabled and required checks including **Main full gate**. That gates **merge** after jobs complete; it does not cause **`queued`** by itself.
+**Merge queue** requires branch protection on `main` with merge queue enabled and the required HoBo CI checks. **Main full gate** is not one of them and does not run on `merge_group` (it runs on the push to `main`), so a queue entry holds no slot for it. That gates **merge** after jobs complete; it does not cause **`queued`** by itself.
 
 Set repository variables **`TURBO_TEAM`** and secret **`TURBO_TOKEN`** for remote Turbo cache (fork PRs use read-only remote mode in workflow).
 
