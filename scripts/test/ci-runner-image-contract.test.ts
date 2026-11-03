@@ -1,6 +1,16 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import {
+	appendFileSync,
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -170,6 +180,33 @@ describe("ci-runner image contract (repo manifests)", () => {
 	it("derives a stable image version tag from lock + base inputs", () => {
 		const v = ciRunnerImageVersion(root);
 		expect(v).toMatch(/^v[0-9a-f]{12}$/);
+	});
+
+	it("moves the image version when any build input changes, build.sh included", () => {
+		const inputs = [
+			MISE_LOCK,
+			MISE_TOML,
+			CI_RUNNER_SYSTEM_PACKAGES,
+			CI_RUNNER_BASE_DOCKERFILE,
+			CI_RUNNER_BUILD_SCRIPT,
+		];
+		const copy = mkdtempSync(join(tmpdir(), "ci-runner-version-"));
+		try {
+			for (const rel of inputs) {
+				mkdirSync(dirname(join(copy, rel)), { recursive: true });
+				copyFileSync(join(root, rel), join(copy, rel));
+			}
+			const base = ciRunnerImageVersion(copy);
+			expect(base).toBe(ciRunnerImageVersion(root));
+			for (const rel of inputs) {
+				const original = readFileSync(join(copy, rel));
+				appendFileSync(join(copy, rel), "\n");
+				expect(ciRunnerImageVersion(copy), rel).not.toBe(base);
+				writeFileSync(join(copy, rel), original);
+			}
+		} finally {
+			rmSync(copy, { recursive: true, force: true });
+		}
 	});
 
 	it("evaluates live toolchain contract when running inside the runner image", () => {
