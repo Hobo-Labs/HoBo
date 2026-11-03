@@ -55,8 +55,12 @@ export {
 } from "./isolated-worker/daemon-shutdown.js";
 export {
 	createGithubJobPoller,
+	createPollLogFilter,
+	describeWaitingJobs,
 	type GithubJobPollerOptions,
 	type GithubJobPollSummary,
+	type GithubReadFailure,
+	type WaitingJob,
 } from "./isolated-worker/github-job-poller.js";
 export {
 	attachPostgresPoolErrorHandler,

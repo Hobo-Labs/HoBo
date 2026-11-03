@@ -466,6 +466,18 @@ current time, so no two polls asked the same question.
 An idle poll now costs nothing, and a busy one costs one read per run whose jobs changed. The box daemon has
 to be redeployed on a main that includes this change.
 
+The status filter itself turned out to be unreliable. For run 41622562414, `?status=queued` answered
+`total_count: 0` for more than 16 minutes while the unfiltered `/actions/runs?per_page=3` listed the run as
+queued, and nothing in the logs said so: a non-OK read came back as an empty list, and the daemon logged a
+poll only when it accepted a job or paused. The poller now also reads the newest 50 runs with no status filter
+(same ETag rule, so it costs nothing while the list holds still and one read a poll while runs move) and
+unions them with the filtered lists: a run not `completed` there has its jobs read, and a `completed` one joins
+the completed-runs lookback. Every read GitHub refuses is logged as `hobo_ci_isolated_worker_github_read_failed`
+with its path and status. Each poll summary also carries the queued `hobo` jobs it saw but did not newly
+accept (`waiting`, as `run/job:result`, where the result is `duplicate`, `ignored` or `failed`). The daemon
+logs a poll that accepted a job, refused one, failed a read or paused. It also logs one whose waiting jobs
+changed, and repeats that line once a minute while the same jobs keep waiting.
+
 ## Finding 11: a run's long pole was admitted last
 
 Main push run 41611050533 (149 s) queued four `hobo` jobs at once. They were admitted by ascending job

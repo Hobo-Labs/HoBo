@@ -16,6 +16,8 @@ import {
 	createHostedRelayRuntime,
 	createIsolatedContainerController,
 	createJobDurations,
+	createPollLogFilter,
+	describeWaitingJobs,
 	type HostedInboxStore,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
@@ -194,8 +196,11 @@ const poller =
 				ingest: (delivery) => runtime.ingestWebhook(delivery),
 				onIngestError: (jobId, message) =>
 					log("hobo_ci_isolated_worker_job_ingest_failed", { jobId, message }),
+				onGithubError: (failure) =>
+					log("hobo_ci_isolated_worker_github_read_failed", { ...failure }),
 			})
 		: undefined;
+const pollWorthLogging = createPollLogFilter();
 
 let draining = false;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
@@ -221,8 +226,13 @@ function runJobPoll(): void {
 	jobPollInFlight = poller
 		.poll()
 		.then((summary) => {
-			if (summary.accepted > 0 || summary.pausedUntil)
-				log("hobo_ci_isolated_worker_jobs_polled", { ...summary });
+			if (!pollWorthLogging(summary, Date.now())) return;
+			const { waiting, ...counts } = summary;
+			log("hobo_ci_isolated_worker_jobs_polled", {
+				...counts,
+				waitingJobs: waiting.length,
+				waiting: describeWaitingJobs(waiting),
+			});
 		})
 		.catch((error) => {
 			log("hobo_ci_isolated_worker_job_poll_failed", {
