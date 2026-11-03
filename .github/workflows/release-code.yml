@@ -14,8 +14,10 @@ on:
       - "scripts/ci/release-oci-affected.mts"
       - "scripts/ci/pack-code-test-build-artifact.mts"
       - "scripts/ci/unpack-code-test-build-artifact.mts"
+      - "scripts/lib/release-sparse-cone.mts"
       - "scripts/lib/release-oci-contract.mts"
       - "scripts/test/code-test-build-artifact.test.ts"
+      - "scripts/test/release-sparse-cone.test.ts"
       - "scripts/test/release-oci-affected.test.ts"
       - "scripts/test/release-oci-image-contract.test.ts"
       - "scripts/test/stage-release-oci-app.test.ts"
@@ -37,6 +39,22 @@ concurrency:
 env:
   HOBO_TURBO_CONCURRENCY: "1"
   NODE_OPTIONS: --max-old-space-size=3072
+  CODE_RELEASE_SPARSE_PATHS: |
+    .github
+    scripts
+    test/setup
+    packages
+    external
+    release
+    deploy/release-images/hobo-code
+    tools/pins
+    mise.toml
+    mise.lock
+    package.json
+    pnpm-lock.yaml
+    pnpm-workspace.yaml
+    turbo.json
+    tsconfig.base.json
 
 jobs:
   fork-policy:
@@ -56,20 +74,7 @@ jobs:
         with:
           filter: blob:none
           sparse-checkout-cone-mode: true
-          sparse-checkout: |
-            .github
-            scripts
-            packages
-            external
-            release
-            deploy/release-images/hobo-code
-            mise.toml
-            mise.lock
-            package.json
-            pnpm-lock.yaml
-            pnpm-workspace.yaml
-            turbo.json
-            tsconfig.base.json
+          sparse-checkout: ${{ env.CODE_RELEASE_SPARSE_PATHS }}
           submodules: recursive
       - uses: ./.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
@@ -77,7 +82,7 @@ jobs:
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: npm scope map + OCI manifest contract
-        run: pnpm exec vitest run scripts/test/code-test-build-artifact.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/stage-release-oci-app.test.ts
+        run: pnpm exec vitest run scripts/test/code-test-build-artifact.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/stage-release-oci-app.test.ts
 
   code-build-cone:
     name: Lint + build @hobo/code test cone
@@ -90,20 +95,7 @@ jobs:
         with:
           filter: blob:none
           sparse-checkout-cone-mode: true
-          sparse-checkout: |
-            .github
-            scripts
-            packages
-            external
-            release
-            deploy/release-images/hobo-code
-            mise.toml
-            mise.lock
-            package.json
-            pnpm-lock.yaml
-            pnpm-workspace.yaml
-            turbo.json
-            tsconfig.base.json
+          sparse-checkout: ${{ env.CODE_RELEASE_SPARSE_PATHS }}
           submodules: recursive
       - uses: ./.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
