@@ -22,8 +22,13 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   saves in a separate `if: always()` step (`mode: save`). The combined `actions/cache` it replaced saved
   only on job success, and the Main full gate kept failing, so main never seeded a cache and every run
   rebuilt all 135 packages. Turbo caches only successful tasks, so a partial save is still correct.
-  `scripts/ci/turbo-cache-prune.mts` first drops entries no `.turbo/runs` summary from this job named,
-  so each save is the size of one run. Saves from PRs stay scoped to the PR ref (no cross-PR poisoning);
+  `scripts/ci/turbo-cache-prune.mts` (node builtins only) runs first as a workflow step: it keeps every
+  entry a `.turbo/runs` summary from this job named and stamps it used, keeps other entries used within
+  `HOBO_TURBO_CACHE_KEEP_DAYS` (default 7), and drops the rest. It outputs `save=false` when no task
+  missed the cache and left an entry, and the save step is skipped, so a fully cached run never starts
+  the save composite (whose `actions/cache/save` resolve once timed out for 2 minutes). Keeping only the
+  entries one run touched shrank main's cache to an affected-only run's handful of packages, and the next
+  run rebuilt the rest cold. Saves from PRs stay scoped to the PR ref (no cross-PR poisoning);
   push-to-main saves are the ones every PR and merge group restores.
 - **Slimmer impact gate.** `scripts/ci/affected-lanes.mts` filters the turbo lanes to the changed
   packages and examples. Root build inputs (lockfile, workspace, turbo, tsconfig, biome, toolchain pins,

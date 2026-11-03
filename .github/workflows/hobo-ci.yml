@@ -171,8 +171,16 @@ jobs:
             "${FILTERS[@]}" \
             --continue=never --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} \
             --anon-profile=turbo-profile.json
+      # The prune decides whether the save runs at all. Skipped here, the save's
+      # composite never starts, so the runner never resolves actions/cache/save:
+      # that resolve once spent 2 minutes timing out against the GitHub API.
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
-        if: always()
+        if: always() && steps.turbo-prune.outputs.save != 'false'
         uses: ./.github/actions/turbo-cache
         with:
           mode: save
@@ -231,8 +239,13 @@ jobs:
       - name: Production packages gate
         if: steps.scope.outputs.run == 'true'
         run: pnpm run build:packages
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
-        if: always() && steps.scope.outputs.run == 'true'
+        if: always() && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
         uses: ./.github/actions/turbo-cache
         with:
           mode: save
@@ -339,8 +352,13 @@ jobs:
           echo "turbo test scope: ${scope[*]:-whole workspace}"
           pnpm exec turbo run test "${scope[@]}" \
             --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
-        if: always()
+        if: always() && steps.turbo-prune.outputs.save != 'false'
         uses: ./.github/actions/turbo-cache
         with:
           mode: save
