@@ -227,6 +227,25 @@ gate uses the same script.
 Where a test task does run, `@hobo/hobo#test` dominates. In an affected sweep for a four-package change it
 took 181 s of 332 s task time (87 tasks).
 
+**Dependents run only the test files that can see the change.** A package filter is still too coarse:
+`@hobo/hobo` depends on `@hobo/ci-gh-actions`, so every worker-daemon or poller edit ran all ~200 s of
+hobo's suite, though hobo imports only four of ci-gh-actions' entry points and none of them reaches the
+worker. `scripts/ci/dependent-tests.mts` now plans main's Workspace tests: packages with a changed file
+run whole through turbo, and each dependent runs only the test files whose import closure reaches a
+changed file. The walk follows imports, `resolve()` calls and path literals file by file, crosses
+packages through each manifest's `exports` (so `@hobo/ci-gh-actions/client` is `src/client.ts`, not the
+package), and reads a `dist/` path as the `src/` file built into it, which is how hobo's tests reach
+the CLI they spawn. A literal naming another package's file, such as `hobo ci serve --with-worker`
+spawning the daemon, is that one file: the daemon runs as its own process and ci-gh-actions' suite
+covers what it imports. It gives up, and runs the test, on a computed `import()` in a test or a relative
+import it cannot resolve; a dependent whose `test` script is more than `vitest run`, or whose vitest
+config reaches the change, runs whole. For a change to ci-gh-actions' `src/hosted-relay.ts`, hobo now
+runs 1 of its 111 test files (`cloudflare-worker-routes`, through its computed import; `e2e/ci.test.ts`
+imports the relay too but hobo's vitest config excludes `e2e/`) and `examples/self-host-yard` is
+skipped; `src/isolated-worker/github-job-poller.ts` gives the same. `src/client.ts` still runs most of
+hobo, because hobo's CLI entry imports it. `scripts/test/dependent-tests.test.ts` pins
+the rules on an in-memory tree.
+
 ## Finding 4: the pnpm store cache costs more than it saves on the box
 
 - On a PR, restoring the 1.26 GB store archive takes 31 s and the install after it 16 s.

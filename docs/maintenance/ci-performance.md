@@ -96,8 +96,10 @@ stopped inside `test:unit` when Vitest passed and a later command failed. Read t
 "unit test hang" on main turned out to be the live examples-console Cloudflare scenario failing in the
 offline `test:behavior` lane; it now runs only under cucumber's `live` profile. Main full gate has a
 20-minute job limit and step limits, `scripts/run-tests.ts` kills a Vitest run after
-`HOBO_TEST_RUN_TIMEOUT_MS` (default 600000), and main's workspace tests are affected-only
-(`--filter=...[<previous main commit>]`).
+`HOBO_TEST_RUN_TIMEOUT_MS` (default 600000), and main's workspace tests are affected-only:
+`scripts/ci/dependent-tests.mts` runs changed packages whole and, in each dependent, only the test
+files whose import closure reaches a changed file. Its first output line is the plan; to see why a
+dependent's file was picked, pipe the same diff into the script locally without `--run`.
 
 If Vitest's `Duration` is far below the wall time between its `Start at` and its summary line, the host
 paused: both of Vitest's numbers come from the monotonic clock, which a suspended box stops.

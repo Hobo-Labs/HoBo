@@ -347,11 +347,16 @@ jobs:
           BASE: ${{ steps.main-base.outputs.base }}
         run: |
           set -euo pipefail
-          scope=()
-          if [ "$TESTS" = "affected" ]; then scope=("--filter=...[${BASE}]"); fi
-          echo "turbo test scope: ${scope[*]:-whole workspace}"
-          pnpm exec turbo run test "${scope[@]}" \
-            --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
+          if [ "$TESTS" = "affected" ]; then
+            # Changed packages run whole; their dependents run only the test files whose
+            # import closure reaches a changed file (scripts/ci/dependent-tests.mts).
+            git diff --name-only "$BASE" HEAD |
+              node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
+                --run --anon-profile=turbo-profile.json
+          else
+            pnpm exec turbo run test \
+              --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
+          fi
       - name: Prune Turbo cache
         id: turbo-prune
         if: always() && env.TURBO_TOKEN == ''
