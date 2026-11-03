@@ -610,6 +610,7 @@ export const canonicalWorkspaceEdges: readonly WorkspaceEdge[] = [
 	{ from: "packages/data", to: "packages/core" },
 	{ from: "packages/events", to: "packages/core" },
 	{ from: "packages/events", to: "packages/data" },
+	{ from: "packages/events", to: "packages/pricing", dev: true },
 	{ from: "packages/identity", to: "packages/core" },
 	{ from: "packages/cloud", to: "packages/core" },
 	{ from: "packages/cloud", to: "packages/bindles" },

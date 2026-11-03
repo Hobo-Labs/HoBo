@@ -21,6 +21,8 @@
 		"@hobo/data": "workspace:*"
 	},
 	"devDependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/pricing": "workspace:*",
 		"@hobo/runtime-local": "workspace:*"
 	},
 	"scripts": {

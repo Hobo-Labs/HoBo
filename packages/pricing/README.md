@@ -50,8 +50,8 @@ hashes integrate without changing dispatcher v1 replay.
   the pinned replay fixture.
 - **Adversarial §13**: fixtures 10.1–10.11 (including stale observation,
   cross-currency, and zero-incremental tie cases).
-- **`pricing.*` events**: pinned v1 corpus entry for `pricing.QuoteCreated` in
-  `@hobo/events`.
+- **`pricing.*` events**: all eleven canonical v1 bodies have append-only
+  `@hobo/events` corpus entries with generated-protobuf compatibility tests.
 - **Broker / cloud**: `authorizeBillingSpend` prefers quote incremental USD;
   `pricingCatalogHashFromCommercialRefs` hashes commercial product refs without
   altering resource `catalogHashOf`.

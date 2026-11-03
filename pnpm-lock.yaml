@@ -1292,6 +1292,12 @@ importers:
         specifier: workspace:*
         version: link:../data
     devDependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/pricing':
+        specifier: workspace:*
+        version: link:../pricing
       '@hobo/runtime-local':
         specifier: workspace:*
         version: link:../runtimes/runtime-local

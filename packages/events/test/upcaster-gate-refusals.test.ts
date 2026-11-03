@@ -39,9 +39,12 @@ import {
 	type EventEvolutionContract,
 	encodeEventBody,
 	eventSchema,
+	messageField,
+	repeatedMessageField,
 	runCanDeployUpcasterGate,
 	stringField,
 	u32Field,
+	u64Field,
 	validateEventBody,
 } from "../src/upcaster.js";
 
@@ -638,6 +641,38 @@ describe("the wire codec", () => {
 			// SAFETY: roundTrip is intentionally given a schema-shaped test double.
 			expect(roundTrip(schema as never, { count })).toEqual({ count });
 		}
+	});
+
+	it("round-trips uint64 without losing precision", () => {
+		const schema = eventSchema("t", 1, [u64Field("sequence", 1)]);
+		for (const sequence of [0n, 127n, 128n, 2n ** 53n, 2n ** 64n - 1n]) {
+			// SAFETY: the shared roundTrip helper accepts the narrower V1 test shape.
+			expect(roundTrip(schema as never, { sequence })).toEqual({ sequence });
+		}
+		expect(validateEventBody(schema, { sequence: -1n }).ok).toBe(false);
+		expect(validateEventBody(schema, { sequence: 2n ** 64n }).ok).toBe(false);
+	});
+
+	it("round-trips nested and repeated nested message bytes", () => {
+		const schema = eventSchema("t", 1, [
+			messageField("message", 1),
+			repeatedMessageField("messages", 2),
+		]);
+		const body = {
+			message: Uint8Array.from([8, 1]),
+			messages: [Uint8Array.from([8, 2]), Uint8Array.from([8, 3])],
+		};
+		// SAFETY: the shared roundTrip helper accepts the narrower V1 test shape.
+		expect(roundTrip(schema as never, body)).toEqual(body);
+		expect(
+			validateEventBody(schema, { message: "not bytes", messages: [] }).ok,
+		).toBe(false);
+		expect(
+			validateEventBody(schema, {
+				message: Uint8Array.from([8, 1]),
+				messages: ["not bytes"],
+			}).ok,
+		).toBe(false);
 	});
 
 	it("encodes fields in tag order regardless of key order", () => {

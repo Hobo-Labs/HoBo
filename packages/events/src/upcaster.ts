@@ -19,7 +19,12 @@ export const CORPUS_ENTRY_SCHEMA = "hobo.golden-replay-corpus-entry/v1";
 // public-contract: corpus baseline schema id.
 export const CORPUS_BASELINE_SCHEMA = "hobo.golden-replay-corpus-baseline/v1";
 
-export type EventFieldType = "string" | "u32";
+export type EventFieldType =
+	| "string"
+	| "u32"
+	| "u64"
+	| "message"
+	| "repeated-message";
 
 export interface EventFieldSpec {
 	readonly name: string;
@@ -34,7 +39,13 @@ export interface EventBodySchema {
 	readonly fields: readonly EventFieldSpec[];
 }
 
-export type EventBodyValue = string | number | undefined;
+export type EventBodyValue =
+	| string
+	| number
+	| bigint
+	| Uint8Array
+	| readonly Uint8Array[]
+	| undefined;
 export type EventBody = Readonly<Record<string, EventBodyValue>>;
 
 export interface EventBodyUpcaster {
@@ -134,6 +145,44 @@ export function u32Field(
 		tag,
 		type: "u32" as const,
 		required: options.required !== false,
+	});
+}
+
+export function u64Field(
+	name: string,
+	tag: number,
+	options: { readonly required?: boolean } = {},
+): EventFieldSpec {
+	return Object.freeze({
+		name,
+		tag,
+		type: "u64" as const,
+		required: options.required !== false,
+	});
+}
+
+export function messageField(
+	name: string,
+	tag: number,
+	options: { readonly required?: boolean } = {},
+): EventFieldSpec {
+	return Object.freeze({
+		name,
+		tag,
+		type: "message" as const,
+		required: options.required !== false,
+	});
+}
+
+export function repeatedMessageField(
+	name: string,
+	tag: number,
+): EventFieldSpec {
+	return Object.freeze({
+		name,
+		tag,
+		type: "repeated-message" as const,
+		required: true,
 	});
 }
 
@@ -391,10 +440,34 @@ export function validateEventBody(
 		}
 		if (
 			field.type === "u32" &&
-			// SAFETY: Number.isInteger proves this schema-declared value is numeric.
-			(!Number.isInteger(value) || Number(value) < 0)
+			(!Number.isInteger(value) ||
+				Number(value) < 0 ||
+				Number(value) > 0xffffffff)
 		) {
-			errors.push(`${field.name} must be a non-negative integer`);
+			errors.push(`${field.name} must be an unsigned 32-bit integer`);
+			continue;
+		}
+		if (
+			field.type === "u64" &&
+			(value?.constructor !== BigInt ||
+				value < 0n ||
+				value > 0xffffffffffffffffn)
+		) {
+			errors.push(`${field.name} must be an unsigned 64-bit bigint`);
+			continue;
+		}
+		if (field.type === "message" && !(value instanceof Uint8Array)) {
+			errors.push(`${field.name} must be an encoded protobuf message`);
+			continue;
+		}
+		if (
+			field.type === "repeated-message" &&
+			(!Array.isArray(value) ||
+				!value.every((entry) => entry instanceof Uint8Array))
+		) {
+			errors.push(
+				`${field.name} must be an array of encoded protobuf messages`,
+			);
 		}
 	}
 	for (const key of Object.keys(record)) {
@@ -421,18 +494,37 @@ export function encodeEventBody(
 	)) {
 		const value = body[field.name];
 		if (value === undefined) continue;
-		if (field.type === "string") {
-			// SAFETY: schema validation immediately above accepts only string values here.
-			const bytes = Buffer.from(value as string, "utf8");
+		if (field.type === "string" || field.type === "message") {
+			const bytes =
+				field.type === "string"
+					? // SAFETY: schema validation accepts only strings for this field.
+						Buffer.from(value as string, "utf8")
+					: // SAFETY: schema validation accepts only message bytes for this field.
+						Buffer.from(value as Uint8Array);
 			chunks.push(
-				encodeVarint((field.tag << 3) | 2),
-				encodeVarint(bytes.length),
+				encodeVarint(BigInt((field.tag << 3) | 2)),
+				encodeVarint(BigInt(bytes.length)),
 				bytes,
 			);
 			continue;
 		}
-		// SAFETY: schema validation immediately above accepts only u32 values here.
-		chunks.push(encodeVarint(field.tag << 3), encodeVarint(value as number));
+		if (field.type === "repeated-message") {
+			// SAFETY: schema validation accepts only arrays of message bytes here.
+			for (const entry of value as readonly Uint8Array[]) {
+				const bytes = Buffer.from(entry);
+				chunks.push(
+					encodeVarint(BigInt((field.tag << 3) | 2)),
+					encodeVarint(BigInt(bytes.length)),
+					bytes,
+				);
+			}
+			continue;
+		}
+		// SAFETY: schema validation accepts only numeric values for varint fields.
+		chunks.push(
+			encodeVarint(BigInt(field.tag << 3)),
+			encodeVarint(BigInt(value as number | bigint)),
+		);
 	}
 	return Buffer.concat(chunks);
 }
@@ -444,25 +536,53 @@ export function decodeEventBody(schema: EventBodySchema, bytes: Buffer) {
 	while (offset < bytes.length) {
 		const key = readVarint(bytes, offset);
 		offset = key.offset;
-		const tag = key.value >> 3;
-		const wireType = key.value & 7;
+		const tag = Number(key.value >> 3n);
+		const wireType = Number(key.value & 7n);
 		const field = fieldsByTag.get(tag);
 		if (!field) {
 			throw new Error(`unknown protobuf field tag ${tag}`);
 		}
-		if (wireType === 2 && field.type === "string") {
-			const length = readVarint(bytes, offset);
+		if (
+			wireType === 2 &&
+			(field.type === "string" ||
+				field.type === "message" ||
+				field.type === "repeated-message")
+		) {
+			const length = readLength(bytes, offset);
 			offset = length.offset;
-			decoded[field.name] = Buffer.from(
+			const value = Uint8Array.from(
 				bytes.subarray(offset, offset + length.value),
-			).toString("utf8");
+			);
 			offset += length.value;
+			if (field.type === "string") {
+				decoded[field.name] = Buffer.from(value).toString("utf8");
+			} else if (field.type === "message") {
+				decoded[field.name] = value;
+			} else {
+				const previous = decoded[field.name];
+				decoded[field.name] = Array.isArray(previous)
+					? [...previous, value]
+					: [value];
+			}
 			continue;
 		}
-		if (wireType === 0 && field.type === "u32") {
+		if (
+			wireType === 0 &&
+			(field.type === "u32" || field.type === "u64")
+		) {
 			const value = readVarint(bytes, offset);
 			offset = value.offset;
-			decoded[field.name] = value.value;
+			if (field.type === "u32") {
+				if (value.value > 0xffffffffn) {
+					throw new Error(`${field.name} exceeds uint32`);
+				}
+				decoded[field.name] = Number(value.value);
+			} else {
+				if (value.value > 0xffffffffffffffffn) {
+					throw new Error(`${field.name} exceeds uint64`);
+				}
+				decoded[field.name] = value.value;
+			}
 			continue;
 		}
 		throw new Error(
@@ -472,36 +592,48 @@ export function decodeEventBody(schema: EventBodySchema, bytes: Buffer) {
 	return decoded;
 }
 
-function encodeVarint(value: number): Buffer {
-	if (!Number.isInteger(value) || value < 0) {
-		throw new Error(
-			`protobuf varint must be a non-negative integer: ${String(value)}`,
-		);
+function encodeVarint(value: bigint): Buffer {
+	if (value < 0n) {
+		throw new Error(`protobuf varint must be non-negative: ${String(value)}`);
 	}
 	const bytes: number[] = [];
 	let remaining = value;
 	do {
-		let byte = remaining & 0x7f;
-		remaining = Math.floor(remaining / 128);
-		if (remaining > 0) byte |= 0x80;
+		let byte = Number(remaining & 0x7fn);
+		remaining >>= 7n;
+		if (remaining > 0n) byte |= 0x80;
 		bytes.push(byte);
-	} while (remaining > 0);
+	} while (remaining > 0n);
 	return Buffer.from(bytes);
 }
 
 function readVarint(bytes: Buffer, startOffset: number) {
-	let value = 0;
-	let shift = 0;
+	let value = 0n;
+	let shift = 0n;
 	for (let offset = startOffset; offset < bytes.length; offset += 1) {
+		if (offset - startOffset >= 10) {
+			throw new Error("protobuf varint exceeds 10 bytes");
+		}
 		// SAFETY: the loop bound guarantees a byte exists at this offset.
 		const byte = bytes[offset] as number;
-		value += (byte & 0x7f) * 2 ** shift;
+		value |= BigInt(byte & 0x7f) << shift;
 		if ((byte & 0x80) === 0) {
 			return { value, offset: offset + 1 };
 		}
-		shift += 7;
+		shift += 7n;
 	}
 	throw new Error("unterminated protobuf varint");
+}
+
+function readLength(bytes: Buffer, startOffset: number) {
+	const length = readVarint(bytes, startOffset);
+	if (
+		length.value > BigInt(Number.MAX_SAFE_INTEGER) ||
+		length.value > BigInt(bytes.length - length.offset)
+	) {
+		throw new Error("protobuf length-delimited field is truncated");
+	}
+	return { value: Number(length.value), offset: length.offset };
 }
 
 function corpusKey(entry: CorpusEntry): string {
@@ -517,12 +649,13 @@ function message(error: ThrownValue): string {
 }
 
 function deepClone<T>(value: T): T {
-	// SAFETY: JSON round-tripping preserves the caller's cloneable T shape.
-	return JSON.parse(JSON.stringify(value)) as T;
+	return structuredClone(value);
 }
 
 function deepFreeze<T>(value: T): T {
-	if (!value || Object(value) !== value) return value;
+	if (!value || Object(value) !== value || value instanceof Uint8Array) {
+		return value;
+	}
 	Object.freeze(value);
 	for (const child of Object.values(Object(value))) {
 		deepFreeze(child);
@@ -531,6 +664,12 @@ function deepFreeze<T>(value: T): T {
 }
 
 function canonicalJson(value: CanonicalValue): string {
+	if (value?.constructor === BigInt) {
+		return JSON.stringify({ bigint: String(value) });
+	}
+	if (value instanceof Uint8Array) {
+		return JSON.stringify({ bytes: Buffer.from(value).toString("base64") });
+	}
 	if (Array.isArray(value)) {
 		return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
 	}

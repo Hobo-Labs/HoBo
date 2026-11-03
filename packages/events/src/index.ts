@@ -49,10 +49,13 @@ export {
 	type EventFieldType,
 	encodeEventBody,
 	eventSchema,
+	messageField,
+	repeatedMessageField,
 	runCanDeployUpcasterGate,
 	stringField,
 	type UpcasterGateReport,
 	u32Field,
+	u64Field,
 	validateEventBody,
 } from "./upcaster.js";
 export {

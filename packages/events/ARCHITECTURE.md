@@ -41,7 +41,9 @@ shared `EventEnvelope` is reused from [`@hobo/core`](../core).
 
 ## Boundary
 
-`@hobo/events` depends inward on `@hobo/data` and `@hobo/core` only. The
-`hobo:subscription/gateway` port ([`src/port.ts`](./src/port.ts)) is the transport
+`@hobo/events` depends inward on `@hobo/data` and `@hobo/core` only at runtime.
+The `hobo:subscription/gateway` port ([`src/port.ts`](./src/port.ts)) is the transport
 seam. PACT evidence in [`contracts/`](./contracts) pins the subscription-gateway
-boundary.
+boundary. A development-only `@hobo/pricing` edge verifies that all eleven
+`pricing.*` v1 corpus bodies replay byte-identically through their generated
+protobuf schemas; nested messages remain opaque bytes in the generic upcaster.
