@@ -158,6 +158,14 @@ cases: wait on events, or do no process work at all. The process-group tests now
 Unix socket the fixture holds until it dies. The contract tests that only read check names pass a
 stub `run` to `evaluateCiRunnerContract`, while the preflight case still runs the real probes.
 
+`test/hobo-home-isolation.test.ts` "stays set after a file's last test" failed the same way in #1664's
+second attempt: it expected one late write and saw none. Its probe file `a` leaves a 0 ms timer, and
+file `b` was meant to keep the worker alive with a 500 ms sleep. But vitest's default sequencer runs
+larger files first, so `b` always ran before `a`. The write then landed only when the timer beat the
+worker's shutdown. Delaying the timer to 200 ms fails that version every time. The probes now run in
+name order, `a`'s timer resolves a promise the worker shares (`isolate: false`), and `b` waits for that
+promise, so the test no longer depends on how fast the timer fires.
+
 Reproduced off the box under its conditions: two concurrent `pnpm run test:unit` jobs, each with the
 gate's environment (`CI=true`, `HOBO_RELEVANT_CHECK_CONCURRENCY=1`,
 `NODE_OPTIONS=--max-old-space-size=3072`), on a 4-CPU, 15 GiB host like the box's. Both passed
