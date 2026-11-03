@@ -73,12 +73,15 @@ export type MainGateScope =
 	| { readonly mode: "repo-wide"; readonly reason: string }
 	| { readonly mode: "affected" };
 
-const CI_INPUTS = /^(\.github\/|mise\.lock$)/;
+const CI_INPUTS = /^mise\.lock$/;
 
 /**
  * Whether Main full gate runs every gate (`check:all`) or only the affected ones
  * (`agent:check --base=<previous main commit>`). Repo-wide for root config, the
- * lockfile, toolchain pins and CI files; affected for everything else.
+ * lockfile and toolchain pins; affected for everything else. Workflow and action
+ * files are affected-only: the PR and merge-group runs already executed the
+ * changed workflow, agent:check selects the automation lanes for `.github/`, and
+ * the weekly schedule still runs the whole sweep.
  */
 export function mainGateScope(
 	paths: readonly string[],

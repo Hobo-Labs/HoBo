@@ -302,7 +302,7 @@ jobs:
           set -euo pipefail
           # The push's `before`, or HEAD~1 for a dispatch. The weekly schedule and an
           # unreachable base run repo-wide; otherwise scripts/ci/affected-lanes.mts
-          # --main-gate decides (repo-wide only for root config, lockfile, pins, CI files).
+          # --main-gate decides (repo-wide only for root config, lockfile, toolchain pins).
           base=""
           if [ "$EVENT_NAME" = "push" ]; then base="$PUSH_BEFORE"; fi
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then base="$(git rev-parse HEAD~1)"; fi

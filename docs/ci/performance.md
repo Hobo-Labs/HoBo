@@ -179,8 +179,12 @@ to about 5 s locally, and its longest case is the 2.9 s stall test instead of 16
 architecture guard, all 758 root unit files, behavior) whatever it touched. A step now resolves the
 previous main commit (the push's `before`, or `HEAD~1` for a dispatch) and runs
 `scripts/ci/affected-lanes.mts --main-gate` on the diff. Root config, the lockfile, toolchain pins
-(`mise.toml`, `mise.lock`), `.github/`, a deleted package, or an empty diff get `check:all`. Everything
+(`mise.toml`, `mise.lock`), a deleted package, or an empty diff get `check:all`. Everything
 else gets `agent:check --base=<previous main>`, the same impact-scoped policy the PR impact gate runs.
+`.github/` used to be on the repo-wide list too, and it is the one input CI-tuning PRs always touch: run
+41592443075 (4m48s) spent 3m24s of it in `check:all` for a workflow edit that the PR and
+merge-group runs had already executed. Workflow and action files are now affected-only; agent:check
+still selects the automation lanes (`scripts/relevant-check-policy.ts`) for them.
 Workspace tests use `turbo run test --filter=...[<previous main>]` unless an input turbo hashes into
 every task changed. A workflow edit cannot change a package test's result, so it alone does not widen
 them. The weekly schedule is the one whole-workspace sweep, with a 60-minute job limit; main pushes keep
