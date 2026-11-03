@@ -28,7 +28,10 @@ import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { runInteractiveShell } from "../src/interactive-shell.js";
+import {
+	runInteractiveShell,
+	type ShellHost,
+} from "../src/interactive-shell.js";
 
 const homes: string[] = [];
 
@@ -52,6 +55,9 @@ const ENTER = "\r";
 const BACKSPACE = "";
 const UP = "[A";
 const DOWN = "[B";
+
+/** CSI sequences (colour, cursor moves, modes), built from ESC so the regex holds no control byte. */
+const TERMINAL_ESCAPES = new RegExp(`${ESC}\\[[0-9;?]*[A-Za-z]`, "gu");
 
 /** A stdin that claims to be a terminal and accepts raw mode. */
 function fakeStdin() {
@@ -86,8 +92,7 @@ function fakeStdout(columns = 80, rows = 24) {
 			const text = String(chunk);
 			chunks.push(text);
 			// Anything left after stripping the escapes is content on screen.
-			// biome-ignore lint/suspicious/noControlCharactersInRegex: stripping the terminal's escape sequences is the point
-			if (text.replace(/\[[0-9;?]*[A-Za-z]/gu, "").trim().length > 0) {
+			if (text.replace(TERMINAL_ESCAPES, "").trim().length > 0) {
 				announcePainted?.();
 			}
 			done();
@@ -113,7 +118,7 @@ function fakeStdout(columns = 80, rows = 24) {
 async function live(
 	keys: readonly string[],
 	options: {
-		readonly host?: Record<string, unknown>;
+		readonly host?: Partial<ShellHost>;
 		readonly columns?: number;
 		readonly rows?: number;
 		readonly maxMs?: number;
@@ -147,8 +152,8 @@ async function live(
 	});
 
 	const code = await runInteractiveShell({
-		stdin: stdin as never,
-		stdout: stdout as never,
+		stdin,
+		stdout,
 		hoboHome: home(),
 		sidecars: false,
 		reducedMotion: true,
@@ -162,9 +167,9 @@ async function live(
 				prompts.push(prompt);
 				return `assistant: ${prompt}`;
 			},
-			...(options.host ?? {}),
+			...options.host,
 		},
-	} as never);
+	});
 
 	const output = stdout.text();
 	return {
@@ -173,8 +178,7 @@ async function live(
 		// The renderer paints with SGR and cursor moves interleaved, so a match
 		// against the raw stream would depend on where the escapes happened to
 		// fall rather than on what the user saw.
-		// biome-ignore lint/suspicious/noControlCharactersInRegex: stripping the terminal's escape sequences is the point
-		painted: output.replace(/\[[0-9;?]*[A-Za-z]/gu, ""),
+		painted: output.replace(TERMINAL_ESCAPES, ""),
 		prompts,
 		verbs,
 		stdin,
