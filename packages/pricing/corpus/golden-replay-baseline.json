@@ -1,0 +1,378 @@
+{
+  "schema": "hobo.pricing.golden-replay-corpus/v1",
+  "entries": [
+    {
+      "key": "pricing.QuoteCreated@v1#existing-subscription-overage",
+      "scenario": {
+        "action": "place",
+        "at": "2026-01-01T00:00:00Z",
+        "horizon": "2026-01-31T23:59:59Z",
+        "pricingCatalogHash": "sha256:e7d6d1ded5ea96d08b47239a7f52e9ce0d6436c9f15ce4fc151e9b51a7f33c56",
+        "catalog": {
+          "schema": "hobo.pricing.catalog/v1",
+          "catalogHash": "sha256:e7d6d1ded5ea96d08b47239a7f52e9ce0d6436c9f15ce4fc151e9b51a7f33c56",
+          "products": [
+            {
+              "id": "sandbox",
+              "providerId": "sandbox",
+              "meters": [
+                {
+                  "dimension": "minute",
+                  "unit": "minute",
+                  "aggregation": "sum"
+                }
+              ]
+            }
+          ],
+          "rateCards": [
+            {
+              "id": "card-v1",
+              "version": "1",
+              "currency": "USD",
+              "effective": {
+                "start": "2025-01-01T00:00:00Z",
+                "end": "2027-01-01T00:00:00Z"
+              },
+              "charges": [
+                {
+                  "base": {
+                    "id": "subscription",
+                    "selectors": {},
+                    "fallback": false,
+                    "invoiceBehavior": "itemized"
+                  },
+                  "fixed": {
+                    "cadence": "monthly",
+                    "timing": "advance",
+                    "amount": {
+                      "decimal": "20",
+                      "currency": "USD"
+                    },
+                    "proration": "none"
+                  }
+                },
+                {
+                  "base": {
+                    "id": "overage",
+                    "selectors": {},
+                    "fallback": false,
+                    "invoiceBehavior": "itemized"
+                  },
+                  "usage": {
+                    "dimension": "minute",
+                    "timing": "advance",
+                    "perUnit": {
+                      "decimal": "0.01",
+                      "currency": "USD"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "allowances": [],
+          "credits": [],
+          "commitments": []
+        },
+        "state": {
+          "schema": "hobo.pricing/v1",
+          "view": "commercial-state",
+          "tenantId": "tenant-a",
+          "seq": "1",
+          "stateHash": "sha256:bce0366e297bf2e708bf90384e88559f9f02db4be523e78b3a39f148af2f076e",
+          "asOf": "2026-01-01T00:00:00Z",
+          "agreements": [
+            {
+              "id": "agreement-a",
+              "tenantId": "tenant-a",
+              "providerAccountRef": "account-a",
+              "productId": "sandbox",
+              "rateSchedule": [
+                {
+                  "rateCardId": "card-v1",
+                  "effective": {
+                    "start": "2025-01-01T00:00:00Z",
+                    "end": "2027-01-01T00:00:00Z"
+                  }
+                }
+              ],
+              "status": "active",
+              "term": {
+                "start": "2025-01-01T00:00:00Z",
+                "end": "2027-01-01T00:00:00Z"
+              },
+              "billingPeriod": {
+                "interval": "monthly",
+                "anchor": "2026-01-01T00:00:00Z",
+                "timeZone": "UTC"
+              },
+              "quantities": {},
+              "cancellation": {
+                "allowed": false,
+                "refund": "none",
+                "fee": {
+                  "decimal": "0",
+                  "currency": "USD"
+                },
+                "notice": ""
+              },
+              "evidence": {
+                "source": "fixture://provider-commercial-terms",
+                "observedAt": "2026-01-01T00:00:00Z",
+                "validFrom": "2026-01-01T00:00:00Z",
+                "validUntil": "2027-01-01T00:00:00Z",
+                "evidenceHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              }
+            }
+          ],
+          "allowances": [
+            {
+              "grant": {
+                "id": "included-minutes",
+                "tenantId": "tenant-a",
+                "included": {
+                  "decimal": "1000",
+                  "unit": "minute"
+                },
+                "scope": {
+                  "productIds": [],
+                  "rateCardIds": [],
+                  "chargeIds": [],
+                  "dimensions": [
+                    "minute"
+                  ]
+                },
+                "recurrence": {
+                  "interval": "monthly"
+                },
+                "effective": {
+                  "start": "2025-01-01T00:00:00Z",
+                  "end": "2027-01-01T00:00:00Z"
+                },
+                "rollover": {
+                  "max": "0",
+                  "reset": true
+                },
+                "exhaustion": "bill-overage",
+                "priority": 0,
+                "evidence": {
+                  "source": "fixture://provider-commercial-terms",
+                  "observedAt": "2026-01-01T00:00:00Z",
+                  "validFrom": "2026-01-01T00:00:00Z",
+                  "validUntil": "2027-01-01T00:00:00Z",
+                  "evidenceHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                }
+              },
+              "remaining": {
+                "decimal": "50",
+                "unit": "minute"
+              },
+              "used": {
+                "decimal": "950",
+                "unit": "minute"
+              }
+            }
+          ],
+          "credits": [],
+          "commitments": [],
+          "periodActuals": [],
+          "completeness": "complete",
+          "observations": [
+            {
+              "source": "fixture://state",
+              "observedAt": "2026-01-01T00:00:00Z",
+              "validUntil": "2027-01-01T00:00:00Z",
+              "detail": "complete fixture"
+            }
+          ]
+        },
+        "baseline": [],
+        "candidate": [
+          {
+            "productRef": "sandbox",
+            "agreementRef": "agreement-a",
+            "direction": "add",
+            "quantities": {},
+            "usage": [
+              {
+                "dimension": "minute",
+                "quantity": {
+                  "decimal": "100",
+                  "unit": "minute"
+                },
+                "observedAt": "2026-01-01T00:00:00Z",
+                "uniqueValues": []
+              }
+            ],
+            "attributes": {}
+          }
+        ],
+        "sourceProviderAgreementIds": [],
+        "options": {
+          "allowNewProviderAgreement": false,
+          "allowCancellation": false,
+          "amortization": "provider-actual",
+          "allocationConvention": "marginal-consume",
+          "allocationForecast": []
+        }
+      },
+      "quote": {
+        "schema": "hobo.pricing.quote/v1",
+        "ratingAlgorithmVersion": "pricing-rating/v1",
+        "pricingCatalogHash": "sha256:e7d6d1ded5ea96d08b47239a7f52e9ce0d6436c9f15ce4fc151e9b51a7f33c56",
+        "capabilityCatalogHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "stateHash": "sha256:bce0366e297bf2e708bf90384e88559f9f02db4be523e78b3a39f148af2f076e",
+        "quoteHash": "sha256:c6e93d6664073bc44ed336821858c6c7f2dd3b0223c5cd87db65b0ff1acfd92e",
+        "baseline": {
+          "billed": {
+            "decimal": "20",
+            "currency": "USD"
+          },
+          "dueNow": {
+            "decimal": "20",
+            "currency": "USD"
+          },
+          "effective": {
+            "decimal": "20",
+            "currency": "USD"
+          }
+        },
+        "candidate": {
+          "billed": {
+            "decimal": "20.5",
+            "currency": "USD"
+          },
+          "dueNow": {
+            "decimal": "20.5",
+            "currency": "USD"
+          },
+          "effective": {
+            "decimal": "20.5",
+            "currency": "USD"
+          }
+        },
+        "incremental": {
+          "billed": {
+            "decimal": "0.5",
+            "currency": "USD"
+          },
+          "dueNow": {
+            "decimal": "0.5",
+            "currency": "USD"
+          },
+          "effective": {
+            "decimal": "0.5",
+            "currency": "USD"
+          }
+        },
+        "allocationConvention": "marginal-consume",
+        "allocatedEffective": {
+          "decimal": "0.5",
+          "currency": "USD"
+        },
+        "nominalAtListRate": {
+          "decimal": "1",
+          "currency": "USD"
+        },
+        "newObligations": [],
+        "migrationAndTermination": {
+          "decimal": "0",
+          "currency": "USD"
+        },
+        "lines": [
+          {
+            "chargeId": "subscription",
+            "agreementRef": "agreement-a",
+            "productRef": "sandbox",
+            "description": "agreement",
+            "quantity": {
+              "decimal": "1",
+              "unit": "agreement"
+            },
+            "unitPrice": {
+              "decimal": "20",
+              "currency": "USD"
+            },
+            "billed": {
+              "decimal": "20",
+              "currency": "USD"
+            },
+            "effective": {
+              "decimal": "20",
+              "currency": "USD"
+            },
+            "dueNow": {
+              "decimal": "20",
+              "currency": "USD"
+            },
+            "category": "purchase",
+            "grantIds": [],
+            "commitmentIds": []
+          },
+          {
+            "chargeId": "overage",
+            "agreementRef": "agreement-a",
+            "productRef": "sandbox",
+            "description": "minute",
+            "quantity": {
+              "decimal": "50",
+              "unit": "minute"
+            },
+            "unitPrice": {
+              "decimal": "0.01",
+              "currency": "USD"
+            },
+            "billed": {
+              "decimal": "0.5",
+              "currency": "USD"
+            },
+            "effective": {
+              "decimal": "0.5",
+              "currency": "USD"
+            },
+            "dueNow": {
+              "decimal": "0.5",
+              "currency": "USD"
+            },
+            "category": "usage",
+            "grantIds": [
+              "included-minutes"
+            ],
+            "commitmentIds": []
+          }
+        ],
+        "consumption": [
+          {
+            "sourceId": "included-minutes",
+            "kind": "allowance",
+            "dimension": "minute",
+            "quantity": {
+              "decimal": "50",
+              "unit": "minute"
+            }
+          }
+        ],
+        "remainingHeadroom": [
+          {
+            "sourceId": "included-minutes",
+            "dimension": "minute",
+            "quantity": {
+              "decimal": "0",
+              "unit": "minute"
+            }
+          }
+        ],
+        "projectedWaste": [],
+        "assumptions": [
+          "allocatedEffective is advisory and is not a dispatcher v1 input",
+          "external provider quotes are evidence only; no live provider call was made"
+        ],
+        "unpriced": [],
+        "eligibility": {
+          "eligible": true,
+          "rejectedCandidates": []
+        }
+      }
+    }
+  ]
+}

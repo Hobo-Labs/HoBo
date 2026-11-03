@@ -467,15 +467,16 @@ Pillars come from the founding intent recorded in [`vision.md`](./vision.md#inte
 | ADR-0172 | [portability-extensibility](./adr/07-portability-extensibility.md#adr-0172) | The ai-bdd release gate: HoBo runs ai-bdd as a process, replay-only, reads its report only after an exit code that writes one, and records infrastructure as "not run". | `packages/stage-gate` |
 | ADR-0173 | [architecture-core](./adr/01-architecture-core.md#adr-0173) | The vendored anti-slop plugin carries a SHA-256 manifest and an offline drift test; HoBo keeps its own rule lineage until OpenSesame's rules pass HoBo's recent working set. | — (anti-slop vendor pin) |
 | ADR-0175 | [portability-extensibility](./adr/07-portability-extensibility.md#adr-0175) | A resource the provider is deleting is reported, not hidden: a resolver's `read()` answers it with action `delete`, preview and drift show it, and apply of an AWS Secrets Manager secret scheduled for deletion fails closed unless the plan declares `restoreScheduled: true`. | — (`packages/providers/provider-aws/test/resolvers-secrets-deletion.test.ts`, `packages/hobo/test/resolver-iac-scheduled-deletion.test.ts`, `packages/hobo/test/resolver-iac-provider.test.ts`, `packages/core/test/resource-resolver.test.ts`) |
+| ADR-0176 | [provider-pricing](./adr/provider-pricing.md#adr-0176) | Provider commercial terms are rated by a pure, deterministic, fail-closed decimal quote engine; dispatcher v1 remains untouched. | `packages/pricing` |
 
 ## ADR Numbering and Status Audit
 
-- Counted ADRs: 145 numbered entries from [adr/README.md](./adr/index.md).
+- Counted ADRs: 146 numbered entries from [adr/README.md](./adr/index.md).
 - Status policy: every numbered ADR listed in the index is **Accepted / current** unless a future row
   explicitly marks it superseded; proposed decisions remain `ADR-Pn` and are not part of the
   monotonic accepted set.
-- Explicit numbering gaps through `ADR-0175`: ADR-0013, ADR-0016, ADR-0017, ADR-0020, ADR-0022,
-  ADR-0029, ADR-0030, ADR-0065, ADR-0066, ADR-0067, ADR-0068, ADR-0171, ADR-0174. (ADR-0118–ADR-0175 are contiguous except intentional historical gaps above; ADR-0171 was never assigned; ADR-0174, the mirror lane, lands with its own branch.)
+- Explicit numbering gaps through `ADR-0176`: ADR-0013, ADR-0016, ADR-0017, ADR-0020, ADR-0022,
+  ADR-0029, ADR-0030, ADR-0065, ADR-0066, ADR-0067, ADR-0068, ADR-0171, ADR-0174. (ADR-0118–ADR-0176 are contiguous except intentional historical gaps above; ADR-0171 was never assigned; ADR-0174, the mirror lane, lands with its own branch.)
 - Gap status: intentional unassigned IDs in the current consolidated suite; none is silently
   referenced from the index or theme docs as an accepted decision.
 

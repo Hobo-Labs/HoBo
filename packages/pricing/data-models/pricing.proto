@@ -1,0 +1,528 @@
+syntax = "proto3";
+
+package hobo.pricing.v1;
+
+message Money {
+  string decimal = 1;
+  string currency = 2;
+}
+
+message Quantity {
+  string decimal = 1;
+  string unit = 2;
+}
+
+message Rounding {
+  string scope = 1;
+  string multiple = 2;
+  string mode = 3;
+}
+
+message MeterDefinition {
+  string dimension = 1;
+  string unit = 2;
+  string aggregation = 3;
+  Rounding rounding = 4;
+}
+
+message ProviderProduct {
+  string id = 1;
+  string provider_id = 2;
+  repeated MeterDefinition meters = 3;
+}
+
+message EffectiveInterval {
+  string start = 1;
+  optional string end = 2;
+}
+
+message Evidence {
+  string source = 1;
+  string observed_at = 2;
+  string valid_from = 3;
+  string valid_until = 4;
+  string evidence_hash = 5;
+}
+
+message Tier {
+  string from = 1;
+  optional string to = 2;
+  Money flat_amount = 3;
+  Money unit_amount = 4;
+}
+
+message PackagePrice {
+  string package_size = 1;
+  Money package_amount = 2;
+  Rounding rounding = 3;
+}
+
+message TieredPrice {
+  repeated Tier tiers = 1;
+}
+
+message FixedCharge {
+  string cadence = 1;
+  string timing = 2;
+  Money amount = 3;
+  optional string quantity_dimension = 4;
+  string proration = 5;
+}
+
+message UsageCharge {
+  string dimension = 1;
+  string timing = 2;
+  oneof price {
+    Money per_unit = 3;
+    PackagePrice package = 4;
+    TieredPrice graduated = 5;
+    TieredPrice volume = 6;
+  }
+}
+
+message ChargeBase {
+  string id = 1;
+  map<string, string> selectors = 2;
+  optional string exclusive_group = 3;
+  bool fallback = 4;
+  string invoice_behavior = 5;
+}
+
+message ChargeComponent {
+  ChargeBase base = 1;
+  oneof variant {
+    FixedCharge fixed = 2;
+    UsageCharge usage = 3;
+  }
+}
+
+message RateCard {
+  string id = 1;
+  string version = 2;
+  string currency = 3;
+  EffectiveInterval effective = 4;
+  repeated ChargeComponent charges = 5;
+}
+
+message RateScheduleEntry {
+  string rate_card_id = 1;
+  EffectiveInterval effective = 2;
+}
+
+message BillingPeriod {
+  string interval = 1;
+  string anchor = 2;
+  string time_zone = 3;
+}
+
+message CancellationPolicy {
+  bool allowed = 1;
+  string refund = 2;
+  Money fee = 3;
+  string notice = 4;
+}
+
+message ProviderAgreement {
+  string id = 1;
+  string tenant_id = 2;
+  string provider_account_ref = 3;
+  string product_id = 4;
+  repeated RateScheduleEntry rate_schedule = 5;
+  string status = 6;
+  EffectiveInterval term = 7;
+  BillingPeriod billing_period = 8;
+  map<string, string> quantities = 9;
+  CancellationPolicy cancellation = 10;
+  Evidence evidence = 11;
+}
+
+message GrantScope {
+  repeated string product_ids = 1;
+  repeated string rate_card_ids = 2;
+  repeated string charge_ids = 3;
+  repeated string dimensions = 4;
+}
+
+message GrantRecurrence {
+  string interval = 1;
+  optional uint32 occurrences = 2;
+}
+
+message Rollover {
+  string max = 1;
+  bool reset = 2;
+}
+
+message AllowanceGrant {
+  string id = 1;
+  string tenant_id = 2;
+  Quantity included = 3;
+  GrantScope scope = 4;
+  optional string derived_from = 5;
+  GrantRecurrence recurrence = 6;
+  EffectiveInterval effective = 7;
+  Rollover rollover = 8;
+  string exhaustion = 9;
+  int32 priority = 10;
+  Evidence evidence = 11;
+}
+
+message CreditValue {
+  oneof value {
+    Money money = 1;
+    Quantity quantity = 2;
+  }
+}
+
+message EconomicBasis {
+  string kind = 1;
+  Money acquisition_amount = 2;
+}
+
+message CreditGrant {
+  string id = 1;
+  string tenant_id = 2;
+  string category = 3;
+  CreditValue face_value = 4;
+  EconomicBasis economic_basis = 5;
+  GrantScope scope = 6;
+  optional string derived_from = 7;
+  EffectiveInterval effective = 8;
+  GrantRecurrence recurrence = 9;
+  Rollover rollover = 10;
+  int32 priority = 11;
+  Evidence evidence = 12;
+}
+
+message CommitmentAmount {
+  oneof value {
+    Money money = 1;
+    Quantity quantity = 2;
+  }
+}
+
+message Commitment {
+  string id = 1;
+  string tenant_id = 2;
+  string kind = 3;
+  CommitmentAmount amount = 4;
+  string bucket_granularity = 5;
+  EffectiveInterval term = 6;
+  string payment = 7;
+  string underuse = 8;
+  string amortization = 9;
+  GrantScope scope = 10;
+  Evidence evidence = 11;
+}
+
+message PricingCatalog {
+  string schema = 1;
+  string catalog_hash = 2;
+  repeated ProviderProduct products = 3;
+  repeated RateCard rate_cards = 4;
+  repeated AllowanceGrant allowances = 5;
+  repeated CreditGrant credits = 6;
+  repeated Commitment commitments = 7;
+}
+
+message AllowanceState {
+  AllowanceGrant grant = 1;
+  Quantity remaining = 2;
+  Quantity used = 3;
+}
+
+message CreditState {
+  CreditGrant grant = 1;
+  CreditValue remaining = 2;
+  CreditValue used = 3;
+  Money remaining_basis = 4;
+  Money used_basis = 5;
+}
+
+message CommitmentState {
+  Commitment commitment = 1;
+  CommitmentAmount remaining = 2;
+  CommitmentAmount used = 3;
+}
+
+message ActualCharge {
+  string id = 1;
+  string agreement_id = 2;
+  string charge_id = 3;
+  Money billed_cost = 4;
+  Money effective_cost = 5;
+  Money list_cost = 6;
+  Money contracted_cost = 7;
+  string category = 8;
+  string commitment_status = 9;
+  string observed_at = 10;
+}
+
+message StateObservation {
+  string source = 1;
+  string observed_at = 2;
+  string valid_until = 3;
+  string detail = 4;
+}
+
+message FinancialStateView {
+  string schema = 1;
+  string view = 2;
+  string tenant_id = 3;
+  uint64 seq = 4;
+  string state_hash = 5;
+  string as_of = 6;
+  repeated ProviderAgreement agreements = 7;
+  repeated AllowanceState allowances = 8;
+  repeated CreditState credits = 9;
+  repeated CommitmentState commitments = 10;
+  repeated ActualCharge period_actuals = 11;
+  string completeness = 12;
+  repeated StateObservation observations = 13;
+}
+
+message UsageMeasurement {
+  string dimension = 1;
+  Quantity quantity = 2;
+  string observed_at = 3;
+  repeated string unique_values = 4;
+}
+
+message WorkloadDelta {
+  string product_ref = 1;
+  string agreement_ref = 2;
+  string direction = 3;
+  map<string, string> quantities = 4;
+  repeated UsageMeasurement usage = 5;
+  map<string, string> attributes = 6;
+}
+
+message QuoteOptions {
+  bool allow_new_provider_agreement = 1;
+  bool allow_cancellation = 2;
+  string amortization = 3;
+  string allocation_convention = 4;
+  repeated UsageMeasurement allocation_forecast = 5;
+}
+
+message QuoteScenario {
+  string action = 1;
+  string at = 2;
+  string horizon = 3;
+  string pricing_catalog_hash = 4;
+  PricingCatalog catalog = 5;
+  FinancialStateView state = 6;
+  repeated WorkloadDelta baseline = 7;
+  repeated WorkloadDelta candidate = 8;
+  repeated string source_provider_agreement_ids = 9;
+  QuoteOptions options = 10;
+}
+
+message QuoteAmounts {
+  Money billed = 1;
+  Money due_now = 2;
+  Money effective = 3;
+}
+
+message QuoteLine {
+  string charge_id = 1;
+  string agreement_ref = 2;
+  string product_ref = 3;
+  string description = 4;
+  Quantity quantity = 5;
+  Money unit_price = 6;
+  Money billed = 7;
+  Money effective = 8;
+  Money due_now = 9;
+  string category = 10;
+  repeated string grant_ids = 11;
+  repeated string commitment_ids = 12;
+}
+
+message Consumption {
+  string source_id = 1;
+  string kind = 2;
+  string dimension = 3;
+  Quantity quantity = 4;
+}
+
+message RemainingHeadroom {
+  string source_id = 1;
+  string dimension = 2;
+  Quantity quantity = 3;
+}
+
+message ProjectedWaste {
+  string commitment_id = 1;
+  string bucket_start = 2;
+  string bucket_end = 3;
+  CommitmentAmount amount = 4;
+}
+
+message NewObligation {
+  string agreement_ref = 1;
+  string commitment_id = 2;
+  CommitmentAmount amount = 3;
+  string due_at = 4;
+}
+
+message UnpricedItem {
+  string product_ref = 1;
+  string agreement_ref = 2;
+  string charge_id = 3;
+  string reason = 4;
+}
+
+message RejectedCandidate {
+  string candidate_ref = 1;
+  string code = 2;
+  string reason = 3;
+}
+
+message Eligibility {
+  bool eligible = 1;
+  repeated RejectedCandidate rejected_candidates = 2;
+}
+
+message PricingRejected {
+  string schema = 1;
+  string code = 2;
+  string message = 3;
+  repeated UnpricedItem unpriced = 4;
+  repeated RejectedCandidate rejected_candidates = 5;
+}
+
+message QuoteVector {
+  string schema = 1;
+  string rating_algorithm_version = 2;
+  string pricing_catalog_hash = 3;
+  string capability_catalog_hash = 4;
+  string state_hash = 5;
+  string quote_hash = 6;
+  QuoteAmounts baseline = 7;
+  QuoteAmounts candidate = 8;
+  QuoteAmounts incremental = 9;
+  string allocation_convention = 10;
+  Money allocated_effective = 11;
+  Money nominal_at_list_rate = 12;
+  repeated NewObligation new_obligations = 13;
+  Money migration_and_termination = 14;
+  repeated QuoteLine lines = 15;
+  repeated Consumption consumption = 16;
+  repeated RemainingHeadroom remaining_headroom = 17;
+  repeated ProjectedWaste projected_waste = 18;
+  repeated string assumptions = 19;
+  repeated UnpricedItem unpriced = 20;
+  Eligibility eligibility = 21;
+}
+
+message ExternalProviderQuote {
+  string id = 1;
+  string provider_account_ref = 2;
+  string product_id = 3;
+  string currency = 4;
+  EffectiveInterval effective = 5;
+  string observed_at = 6;
+  string payload_hash = 7;
+  Money total = 8;
+  repeated QuoteLine lines = 9;
+}
+
+message ReservationConsumption {
+  string source_id = 1;
+  string kind = 2;
+  CreditValue credit = 3;
+  Quantity allowance = 4;
+  CommitmentAmount commitment = 5;
+}
+
+message PricingReservation {
+  string id = 1;
+  string quote_hash = 2;
+  string pricing_catalog_hash = 3;
+  string capability_catalog_hash = 4;
+  string state_hash = 5;
+  uint64 state_seq = 6;
+  string created_at = 7;
+  string expires_at = 8;
+  string status = 9;
+  repeated ReservationConsumption consumption = 10;
+  FinancialStateView restore_state = 11;
+}
+
+message RateCardPublished {
+  string event_id = 1;
+  string occurred_at = 2;
+  RateCard rate_card = 3;
+}
+
+message ProviderAgreementObserved {
+  string event_id = 1;
+  string occurred_at = 2;
+  ProviderAgreement agreement = 3;
+}
+
+message GrantObserved {
+  string event_id = 1;
+  string occurred_at = 2;
+  oneof grant {
+    AllowanceGrant allowance = 3;
+    CreditGrant credit = 4;
+  }
+}
+
+message CommitmentObserved {
+  string event_id = 1;
+  string occurred_at = 2;
+  Commitment commitment = 3;
+}
+
+message QuoteCreated {
+  string event_id = 1;
+  string occurred_at = 2;
+  QuoteScenario scenario = 3;
+  QuoteVector quote = 4;
+}
+
+message ReservationCreated {
+  string event_id = 1;
+  string occurred_at = 2;
+  PricingReservation reservation = 3;
+}
+
+message ReservationConfirmed {
+  string event_id = 1;
+  string occurred_at = 2;
+  string reservation_id = 3;
+  uint64 state_seq = 4;
+}
+
+message ReservationReleased {
+  string event_id = 1;
+  string occurred_at = 2;
+  string reservation_id = 3;
+  uint64 state_seq = 4;
+  FinancialStateView restored_state = 5;
+}
+
+message ReservationExpired {
+  string event_id = 1;
+  string occurred_at = 2;
+  string reservation_id = 3;
+  uint64 state_seq = 4;
+  FinancialStateView restored_state = 5;
+}
+
+message ActualChargeObserved {
+  string event_id = 1;
+  string occurred_at = 2;
+  ActualCharge actual_charge = 3;
+}
+
+message ReconciliationRecorded {
+  string event_id = 1;
+  string occurred_at = 2;
+  string reservation_id = 3;
+  repeated ActualCharge actual_charges = 4;
+  string reconciliation_hash = 5;
+}

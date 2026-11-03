@@ -1,0 +1,65 @@
+# @hobo/pricing
+
+Pure provider-cost rating for HoBo routing and FinOps. It models provider
+commercial terms only; customer billing, payments, tax, and invoices are out of
+scope. The normative design is
+[`docs/design/provider-pricing-commercial-terms.md`](../../docs/design/provider-pricing-commercial-terms.md)
+and ADR-0176 records the package boundary.
+
+## Batch 1 surface
+
+`quoteScenario(scenario)` accepts the generated `QuoteScenario` protobuf type
+and returns `QuoteVector | PricingRejected`. It rates fixed and usage charges,
+allowances, paid/promotional credits, and provider-actual spend commitments.
+Baseline and candidate snapshots use the same pinned state; incremental amounts
+are `F(baseline + candidate) - F(baseline)`.
+
+- Exact decimal strings and scaled-integer arithmetic; no floating-point money.
+- Explicit unit identities/conversions; GB and GiB are never treated as aliases.
+- Complete, current evidence is required through the quote horizon.
+- Exclusive charge groups, currency mismatches, stale observations, unknown
+  terms, and unsupported external rating fail closed.
+- Credits sort by priority, earliest expiry, then grant ID. Derived credits have
+  zero additional economic basis; purchased-credit basis is allocated pro rata.
+- No wall clock, network, environment, locale, or live provider calls.
+- New agreements and cancellation are denied unless explicitly enabled.
+
+`ExternalProviderQuote` is an evidence record, not an executable pricing model.
+`external-quote.ts` always rejects attempts to turn one into a rating engine.
+Dispatcher v1 is unchanged; this package has no dispatcher, CI, broker, cloud,
+or adapter dependency.
+
+## Contracts and validation
+
+`data-models/pricing.proto` is the canonical record source. TypeScript messages
+under `src/_generated/` are generated, never hand-edited. `pricing.cue` pins
+decimal syntax, UTC billing periods, exclusive groups, and derived-grant basis;
+valid and invalid JSON fixtures exercise those constraints.
+
+```bash
+pnpm --filter @hobo/pricing run codegen
+pnpm --filter @hobo/pricing run test:schema
+pnpm --filter @hobo/pricing run test:contract:consumer
+pnpm --filter @hobo/pricing run test
+```
+
+`corpus/golden-replay-baseline.json` pins a complete quote output. The replay
+test parses its scenario through protobuf JSON, rerates it, and compares the
+stable JSON result, including the deterministic quote hash. The quote-boundary
+PACT is a hand-authored consumer expectation; no live provider accuracy is
+claimed.
+
+## Architecture boundaries
+
+Parse, don't validate starts at `parseJson` and `parseQuoteScenario`: untrusted
+JSON becomes a generated `QuoteScenario` before rating. `parseDecimal` derives
+the scaled-integer `Decimal` parsed type, and rating functions accept generated
+messages plus these derived domain types rather than raw DTOs.
+
+Batch 1 is a pure query kernel, so it has no command handler, actor, event-store
+write, materialized view projection, persisted snapshot, or read store.
+`rateSnapshot` builds only an ephemeral rating snapshot and never mutates a read
+model. The declared `pricing.*` events belong to later actor integrations; those
+integrations must consume commands, append events to an event store, and build
+materialized-view projections and snapshots in a read store outside this pure
+rating path.
