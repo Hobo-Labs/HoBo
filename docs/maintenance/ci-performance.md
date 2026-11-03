@@ -56,3 +56,14 @@ drift; `packages/schema-tools` already handles them, and the frozen proof cannot
 rejects that OCI index because its attestation children are OCI manifests, which failed the
 `CI runner image (mise oci)` job on every dispatch. `scripts/test/ci-runner-image-contract.test.ts` pins
 the check offline with a synthetic registry; `HOBO_CI_VERIFY_BASE_DIGEST=1` runs it live.
+
+## Reading a main failure
+
+`gh run view --log` and the web viewer can drop the tail of a long step, so a step can look as if it
+stopped inside `test:unit` when Vitest passed and a later command failed. Read the raw job log instead:
+`gh api --allow-escape-sequences repos/Hobo-Labs/HoBo/actions/jobs/<job-id>/logs`. That is how the
+"unit test hang" on main turned out to be the live examples-console Cloudflare scenario failing in the
+offline `test:behavior` lane; it now runs only under cucumber's `live` profile. Main full gate has a
+20-minute job limit and step limits, `scripts/run-tests.ts` kills a Vitest run after
+`HOBO_TEST_RUN_TIMEOUT_MS` (default 600000), and main's workspace tests are affected-only
+(`--filter=...[<previous main commit>]`).
