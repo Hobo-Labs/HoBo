@@ -988,7 +988,7 @@ it("durably records signed delivery before a bounded worker launches a host", as
 	expect(ignored).toBe(true);
 	expect(accepted).toBe(false);
 	expect(await runtime.ingestWebhook(input)).toBe("accepted");
-	expect(await runtime.ingestWebhook(input)).toBe("duplicate");
+	expect(await runtime.ingestWebhook(input)).toBe("requeued");
 	expect(h.api.dispatches).toBe(0);
 	h.api.strictLeaseId = false;
 	await runtime.tick();
