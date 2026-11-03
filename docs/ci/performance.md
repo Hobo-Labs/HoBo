@@ -378,6 +378,24 @@ names, the daemon log for their leases, the container cgroup's `memory.events` (
 reclaiming at its 6 GiB cap stops without being OOM-killed), and `dmesg` on the host. Whether the restart
 itself happened during 20:31–20:46 also matters for the first case.
 
+A daemon restart lost two more. The worker logged `hobo_ci_isolated_worker_drained` with `remaining: 0`
+while both jobs were still running, exited, and both jobs were lost. The drain had three defects:
+
+- It counted leases whose `accountId` equalled the worker's provider account id. A lease's `accountId` is
+  the customer account that owns the job, so nothing ever matched and the drain finished at once. A lease
+  belongs to the worker when its offer does: an isolated-container offer whose `providerAccountId` is the
+  worker (`workerOfferKeys`, keyed by account and offer id because offer ids are unique per account only).
+- Nothing reconciled during the drain. A lease leaves `running` only when a tick sees its runner exit, and
+  the drain had stopped ticking. Each check now runs `runtime.tick({ admit: false })` first, which inspects
+  leases but takes no inbox delivery and reserves or launches nothing.
+- The signal handlers were `process.once`. A supervisor that signals the whole process group, with
+  `hobo ci serve --with-worker` forwarding the same SIGTERM, delivers it twice, and the second one found no
+  listener and killed the process. They are `process.on` now; shutdown was already idempotent.
+
+The default `HOBO_CI_WORKER_DRAIN_TIMEOUT_MS` is now 30 minutes, since the drain waits for running jobs
+rather than only for launches. The supervisor's stop timeout (systemd `TimeoutStopSec`, Kubernetes
+`terminationGracePeriodSeconds`) has to be longer, or it kills the drain itself.
+
 ## Finding 7: things that are not the bottleneck
 
 - **Checkout** is ~6 s per job (full clone; blobless was slower).

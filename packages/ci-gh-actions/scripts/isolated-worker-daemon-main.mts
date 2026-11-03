@@ -7,6 +7,7 @@ import { toJsonString } from "@bufbuild/protobuf";
 import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
+	countInFlightWorkerLeases,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createGithubAppTransport,
@@ -22,6 +23,7 @@ import {
 	isIsolatedContainerOffer,
 	resolveWorkerStorePlan,
 	waitForIsolatedWorkerDrain,
+	workerOfferKeys,
 } from "@hobo/ci-gh-actions";
 
 function required(name: string): string {
@@ -74,8 +76,10 @@ if (!Number.isInteger(slots) || slots < 1 || slots > 8)
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
+// A stop waits for running jobs, so the default covers a long job; the
+// supervisor's own stop timeout must be longer than this.
 const drainTimeoutMs = Number(
-	process.env.HOBO_CI_WORKER_DRAIN_TIMEOUT_MS ?? "120000",
+	process.env.HOBO_CI_WORKER_DRAIN_TIMEOUT_MS ?? "1800000",
 );
 if (!Number.isFinite(drainTimeoutMs) || drainTimeoutMs < 1_000)
 	throw new Error("invalid HOBO_CI_WORKER_DRAIN_TIMEOUT_MS");
@@ -281,11 +285,31 @@ async function shutdown(signal: string) {
 		if (tickInFlight) {
 			await tickInFlight.catch(() => undefined);
 		}
+		// Running jobs count: a lease leaves `running` only when a reconcile sees
+		// its runner exit, so each check is a tick that admits nothing new.
+		const inFlight = async () =>
+			countInFlightWorkerLeases(
+				await store.activeLeases(),
+				workerOfferKeys(
+					(await store.configuration())?.configuration,
+					workerAccountId,
+				),
+			);
+		log("hobo_ci_isolated_worker_drain_started", {
+			inFlight: await inFlight(),
+			timeoutMs: drainTimeoutMs,
+		});
+		let reported = -1;
 		const result = await waitForIsolatedWorkerDrain({
-			activeLeases: () => store.activeLeases(),
-			workerAccountId,
+			inFlight,
+			reconcile: () => runtime.tick({ admit: false }),
 			pollMs: Math.min(intervalMs, 5_000),
 			timeoutMs: drainTimeoutMs,
+			onWaiting: (remaining) => {
+				if (remaining === reported) return;
+				reported = remaining;
+				log("hobo_ci_isolated_worker_drain_waiting", { remaining });
+			},
 		});
 		if (result.drained) {
 			log("hobo_ci_isolated_worker_drained", { remaining: 0 });
@@ -305,7 +329,10 @@ async function shutdown(signal: string) {
 	return shutdownOnce;
 }
 
+// `on`, not `once`: a supervisor that signals the whole process group (and a
+// parent that forwards the same signal) sends it twice, and a second signal
+// with no listener would kill the drain.
 for (const signal of ["SIGTERM", "SIGINT"] as const)
-	process.once(signal, () => {
+	process.on(signal, () => {
 		void shutdown(signal);
 	});

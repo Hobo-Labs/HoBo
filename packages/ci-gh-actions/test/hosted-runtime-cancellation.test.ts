@@ -117,7 +117,7 @@ function fixture(options: {
 		now: () => NOW,
 		isolatedHost: { launch: impossible, reconcile },
 	});
-	return { runtime, reconcile, request, lease };
+	return { runtime, reconcile, request, lease, store };
 }
 
 describe("isolated runner cancellation", () => {
@@ -137,5 +137,18 @@ describe("isolated runner cancellation", () => {
 		const h = fixture(options);
 		await h.runtime.tick();
 		expect(h.reconcile).toHaveBeenCalledWith(h.lease.id, false);
+	});
+	it("a draining tick reconciles running leases but takes no delivery and admits no job", async () => {
+		const h = fixture({ webhook: true, actualJobId: 1 });
+		const claimWebhook = vi.spyOn(h.store, "claimWebhook");
+		const pendingJobs = vi.spyOn(h.store, "pendingJobs");
+		await h.runtime.tick({ maxDeliveries: 10, admit: false });
+		expect(claimWebhook).not.toHaveBeenCalled();
+		expect(pendingJobs).not.toHaveBeenCalled();
+		expect(h.reconcile).toHaveBeenCalledWith(h.lease.id, true);
+
+		await h.runtime.tick();
+		expect(claimWebhook).toHaveBeenCalled();
+		expect(pendingJobs).toHaveBeenCalled();
 	});
 });

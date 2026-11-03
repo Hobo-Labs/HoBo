@@ -101,7 +101,7 @@ export HOBO_CI_WORKER_IMAGE=hobo-ci-worker:local
 node --import tsx packages/ci-gh-actions/scripts/isolated-worker-daemon.mts
 ```
 
-**Graceful stop:** send **`SIGTERM`** (systemd/Kubernetes preStop). The daemon stops polling for new lease work, **waits for any in-flight poll tick to finish**, then waits for in-flight container launches and runner registration on this worker account (default **`HOBO_CI_WORKER_DRAIN_TIMEOUT_MS=120000`**), then closes the store (SQLite file or Postgres pool) and exits **`0`** when drained or **`1`** on timeout.
+**Graceful stop:** send **`SIGTERM`** (systemd/Kubernetes preStop). The daemon stops polling for new lease work, **waits for any in-flight poll tick to finish**, then waits until no lease on this worker's offers is launching, registering or running a job, reconciling before each check without admitting new work (default **`HOBO_CI_WORKER_DRAIN_TIMEOUT_MS=1800000`**, 30 minutes; the supervisor's stop timeout, such as systemd `TimeoutStopSec`, must be longer). A repeated `SIGTERM` does not cut the drain short. It then closes the store (SQLite file or Postgres pool) and exits **`0`** when drained or **`1`** on timeout.
 
 Job containers run as **`1000:1000`**; when the host Docker socket is mounted, **`createCliDockerDriver`** adds **`--group-add`** for the socket’s gid so in-container **`docker`** can talk to the engine (see **`cli-docker-driver.ts`**).
 

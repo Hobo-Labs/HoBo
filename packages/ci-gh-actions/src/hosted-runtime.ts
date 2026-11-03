@@ -145,9 +145,14 @@ export function createHostedRelayRuntime(options: {
 				(await options.store.configuration())?.configuration !== undefined
 			);
 		},
-		/** Process a bounded inbox batch, then drain and inspect known leases. */
-		async tick(tickOptions: { maxDeliveries?: number } = {}) {
-			const limit = tickOptions.maxDeliveries ?? 10;
+		/**
+		 * Process a bounded inbox batch, then drain and inspect known leases.
+		 * With `admit: false` (a draining worker) it only inspects leases: no
+		 * delivery is taken and no pending job is reserved or launched.
+		 */
+		async tick(tickOptions: { maxDeliveries?: number; admit?: boolean } = {}) {
+			const admit = tickOptions.admit ?? true;
+			const limit = admit ? (tickOptions.maxDeliveries ?? 10) : 0;
 			if (!Number.isInteger(limit) || limit < 0 || limit > 50)
 				throw new Error("invalid delivery batch size");
 			// A function can die after committing intent and before recording the
@@ -290,7 +295,7 @@ export function createHostedRelayRuntime(options: {
 					/* Retain ambiguous reservations until a later verified reconciliation. */
 				}
 			}
-			await controller.dispatchPending();
+			if (admit) await controller.dispatchPending();
 			if (deliveryFailed)
 				throw new Error("one or more inbox deliveries failed");
 		},
