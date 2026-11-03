@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
-import { createBroker } from "../../src/broker.js";
+import { describe, expect, it, vi } from "vitest";
+import { createBroker, type HoboBrokerDeps } from "../../src/broker.js";
 import type { JsonObject } from "../../src/json.js";
 import type {
 	BrokerCatalog,
@@ -41,7 +41,10 @@ const catalog: BrokerCatalog = {
 	],
 };
 
-function brokerWith(policies: JsonObject) {
+function brokerWith(
+	policies: JsonObject,
+	billingPlaneV2?: HoboBrokerDeps["billingPlaneV2"],
+) {
 	return createBroker({
 		stationId: "station:test",
 		railHash:
@@ -60,6 +63,7 @@ function brokerWith(policies: JsonObject) {
 			...policies,
 		},
 		catalog,
+		...(billingPlaneV2 !== undefined ? { billingPlaneV2 } : undefined),
 	});
 }
 
@@ -128,6 +132,34 @@ describe("HoBo Broker resolution boundary (consumer side of the pact)", () => {
 		);
 		expect(result.rejection?.reasons[0]?.code).toBe(
 			interaction.response.body.rejection.reasons[0].code,
+		);
+	});
+
+	it("uses a stub BillingPlaneV2 and preserves quote pins for the V2 interaction", async () => {
+		const interaction = pact.interactions[3];
+		const authorize = vi.fn(() => ({ ok: true, reasons: [] }));
+		const broker = brokerWith(
+			{
+				placementPolicies: [
+					{ id: "pp-default", scopeKind: "bindle", objective: "min-cost" },
+				],
+			},
+			{ authorize },
+		);
+		const result = await broker.resolve(interaction.request.body);
+
+		expect(authorize).toHaveBeenCalledWith({
+			quoteHash: interaction.request.body.quoteHash,
+			pricingCatalogHash: interaction.request.body.pricingCatalogHash,
+			billing: expect.objectContaining({ spendCapUsd: 50 }),
+		});
+		expect(result.outcome).toBe(interaction.response.body.outcome);
+		expect(result.receipt).toMatchObject({
+			quoteHash: interaction.response.body.receipt.quoteHash,
+			pricingCatalogHash: interaction.response.body.receipt.pricingCatalogHash,
+		});
+		expect(result.events.at(-1)?.data).toMatchObject(
+			interaction.response.body.events[2].data,
 		);
 	});
 });

@@ -74,6 +74,18 @@ export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 			"the remaining budget (static or metered) cannot cover the estimate; adjust the budget or reduce scope",
 	},
 	{
+		code: "quote-authorization-failed",
+		plane: "billing",
+		remediation:
+			"supply an eligible, complete USD quote whose blanked-quote hash and pricing catalog hash match the request pins",
+	},
+	{
+		code: "quote-authorization-unavailable",
+		plane: "billing",
+		remediation:
+			"configure billingPlaneV2 for quote-pinned requests; the broker never falls back to the legacy spend estimate",
+	},
+	{
 		code: "environment-unapproved",
 		plane: "policy",
 		remediation:

@@ -119,6 +119,8 @@ export interface BrokerRequest {
 	scope: TopologyScope;
 	requirements: readonly ResourceRequirement[];
 	spendEstimateUsd: number;
+	quoteHash?: string;
+	pricingCatalogHash?: string;
 	/** Anonymous/pre-claim resolution inputs (ADR-0151); absent for an owned deployment. */
 	guest?: GuestResolutionInput;
 }
@@ -147,6 +149,8 @@ export interface ResolutionReceipt {
 	stationId: string;
 	/** Content-addressed active Rail hash — required on every receipt. */
 	railHash: string;
+	quoteHash?: string;
+	pricingCatalogHash?: string;
 	/** Claim-relevant evidence for a guest deployment (ADR-0151); never bearer material. */
 	guest?: GuestResolutionEvidence;
 }

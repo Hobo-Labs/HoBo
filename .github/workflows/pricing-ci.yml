@@ -56,9 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           pnpm exec turbo run build test \
-            --filter=@hobo/pricing \
-            --filter=@hobo/dispatcher \
-            --filter=@hobo/events \
+            --filter=@hobo/pricing... \
             --continue \
             --concurrency=1
       - name: Consumer contracts (pricing + dispatcher v2)

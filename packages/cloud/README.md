@@ -8,9 +8,11 @@ A coherent vertical: a **Deploy command** becomes past-tense **events**, the pur
 **Planner** resolves them to a content-addressed `DeploymentPlan` DAG, and a
 **materialized view** (projection) reconstructs deployment state from the log.
 
-Commercial provider pricing catalogs use `pricingCatalogHashFromCommercialRefs` in
-`src/commercial-pricing.ts` (sorted product-ref digest) without altering resource
-definition `catalogHashOf`.
+Resource definitions may carry `commercialProductRefs` through manifest
+registration and replay. `pricingCatalogHash` delegates to the actual
+`@hobo/pricing` catalog content hash; `capabilityCatalogHash` hashes a separate
+versioned capability document. Neither changes resource-definition
+`catalogHashOf`, and product-ref lists are never used as pricing catalog hashes.
 
 ## Continuous Delivery plane (attested apply)
 

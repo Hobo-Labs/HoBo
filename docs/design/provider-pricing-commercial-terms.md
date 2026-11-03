@@ -1,6 +1,6 @@
 # HoBo Provider Pricing And Commercial Terms
 
-> **Status:** Batch 2 contract, rating kernel, legacy CI translation, and dispatcher v2 (ADR-0176). All adversarial fixtures 10.1–10.11 are executable. Later batches cover reservations and provider integrations.
+> **Status:** Phases 2–5 (ADR-0176): rating kernel, legacy CI translation, dispatcher v2, broker/cloud hooks, CI, and all eleven pricing event corpus bodies. Adversarial fixtures 10.1–10.11 are executable. Reservation lifecycle hosting and live provider integrations remain future work.
 
 ## Purpose
 

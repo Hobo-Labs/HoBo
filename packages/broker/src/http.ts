@@ -7,7 +7,7 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "./json.js";
-import { BrokerParseError } from "./policies.js";
+import { BrokerParseError, parseQuoteAuthorizationPins } from "./policies.js";
 import { REJECTION_MATRIX } from "./rejections.js";
 import {
 	BROKER_SCHEMA_VERSION,
@@ -69,6 +69,7 @@ function parseHttpResolutionReceipt(value: JsonObject): ResolutionReceipt {
 		placements: [],
 		stationId: value.stationId,
 		railHash: value.railHash,
+		...parseQuoteAuthorizationPins(value, "invalid-receipt"),
 	};
 }
 

@@ -11,6 +11,7 @@ import {
 } from "./json.js";
 import {
 	type BillingPlane,
+	type BillingPlaneV2,
 	createBillingPlane,
 	createDeliveryPlane,
 	createGatekeeperGatePlane,
@@ -73,6 +74,7 @@ export interface HoboBrokerDeps {
 	gatePlane?: GatePlane;
 	gateOptions?: GatePlaneOptions;
 	billingPlane?: BillingPlane;
+	billingPlaneV2?: BillingPlaneV2;
 	deliveryPlane?: DeliveryPlane;
 	signingKey?: ResolutionSigningKey;
 	/**
@@ -308,11 +310,38 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				return reject(request, reasons, events);
 			}
 
-			// Plane 2 — billing enforcement beyond quota: budget + spend cap.
-			const billing = billingPlane.authorize({
-				spendEstimateUsd: request.spendEstimateUsd,
-				billing: policies.billing,
-			});
+			// Plane 2 — quote pins select V2 exclusively. Without pins, preserve the
+			// legacy spend-estimate call byte-for-byte at the plane boundary.
+			let billing: { ok: boolean; reasons: RejectionReason[] };
+			if (
+				request.quoteHash !== undefined &&
+				request.pricingCatalogHash !== undefined
+			) {
+				if (deps.billingPlaneV2 === undefined) {
+					return reject(
+						request,
+						[
+							{
+								plane: "billing",
+								code: "quote-authorization-unavailable",
+								message:
+									"quote-pinned requests require billingPlaneV2; spend estimates are not a fallback",
+							},
+						],
+						events,
+					);
+				}
+				billing = deps.billingPlaneV2.authorize({
+					quoteHash: request.quoteHash,
+					pricingCatalogHash: request.pricingCatalogHash,
+					billing: policies.billing,
+				});
+			} else {
+				billing = billingPlane.authorize({
+					spendEstimateUsd: request.spendEstimateUsd,
+					billing: policies.billing,
+				});
+			}
 			if (!billing.ok) {
 				return reject(request, billing.reasons, events);
 			}
@@ -343,6 +372,14 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				return reject(request, placementReasons, events);
 			}
 
+			const quotePins =
+				request.quoteHash !== undefined &&
+				request.pricingCatalogHash !== undefined
+					? {
+							quoteHash: request.quoteHash,
+							pricingCatalogHash: request.pricingCatalogHash,
+						}
+					: {};
 			const receipt: ResolutionReceipt = {
 				schemaVersion: BROKER_SCHEMA_VERSION,
 				requestId: request.requestId,
@@ -353,6 +390,7 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				placements,
 				stationId,
 				railHash,
+				...quotePins,
 			};
 			events.push(
 				brokerEvent(BROKER_EVENTS.Resolved, {
@@ -362,6 +400,7 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 					policyHash,
 					placementPolicyId: effective.id,
 					placements: placements.map((placement) => ({ ...placement })),
+					...quotePins,
 				}),
 			);
 			const signature = sign(receipt, events);

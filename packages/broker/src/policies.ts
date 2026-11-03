@@ -324,6 +324,29 @@ export function parseResourceRequirement(
 	};
 }
 
+const QUOTE_DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/u;
+
+export function parseQuoteAuthorizationPins(
+	raw: JsonObject,
+	errorCode: "invalid-request" | "invalid-receipt",
+): Pick<BrokerRequest, "quoteHash" | "pricingCatalogHash"> {
+	const quoteHash = raw.quoteHash ?? raw.quote_hash;
+	const pricingCatalogHash = raw.pricingCatalogHash ?? raw.pricing_catalog_hash;
+	if (quoteHash === undefined && pricingCatalogHash === undefined) return {};
+	if (
+		!isJsonString(quoteHash) ||
+		!QUOTE_DIGEST_PATTERN.test(quoteHash) ||
+		!isJsonString(pricingCatalogHash) ||
+		!QUOTE_DIGEST_PATTERN.test(pricingCatalogHash)
+	) {
+		throw new BrokerParseError(
+			errorCode,
+			`${errorCode}: quoteHash and pricingCatalogHash must be provided together as sha256 digests with 64 lowercase hex characters`,
+		);
+	}
+	return { quoteHash, pricingCatalogHash };
+}
+
 export function parseBrokerRequest(
 	input: JsonValue | undefined,
 ): BrokerRequest {
@@ -371,6 +394,7 @@ export function parseBrokerRequest(
 			"invalid-request",
 			"spendEstimateUsd",
 		),
+		...parseQuoteAuthorizationPins(raw, "invalid-request"),
 	};
 }
 

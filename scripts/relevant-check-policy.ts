@@ -356,7 +356,11 @@ export function selectRelevantChecks(
 				"turbo",
 				"run",
 				"test",
-				...workspaces.map((workspace) => `--filter=./${workspace}`),
+				...workspaces.map((workspace) =>
+					workspace === "packages/pricing"
+						? "--filter=...{./packages/pricing}"
+						: `--filter=./${workspace}`,
+				),
 				"--continue",
 				"--output-logs=new-only",
 				turboConcurrencyArg(),

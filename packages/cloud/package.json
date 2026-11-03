@@ -26,9 +26,11 @@
 		"@hobo/events": "workspace:*",
 		"@hobo/identity": "workspace:*",
 		"@hobo/manifest-declaration": "workspace:*",
-		"@hobo/manifest-plan": "workspace:*"
+		"@hobo/manifest-plan": "workspace:*",
+		"@hobo/pricing": "workspace:*"
 	},
 	"devDependencies": {
+		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/contract-harness": "workspace:*",
 		"@hobo/provider-cloudflare": "workspace:*",
 		"@hobo/runtime-local": "workspace:*"

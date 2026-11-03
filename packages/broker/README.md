@@ -22,7 +22,7 @@ be swapped without touching the brokering pipeline:
 |---|---|---|---|
 | Policy | `GatePlane` (OPA-shaped request/decision documents) | `@hobo/contracts` policy pack (imported and **run**, not reinvented) | **Rego** via `createOpaGatePlane` — OPA Data API decision at `hobo/broker/decision`, fail-closed (`policy-engine-unavailable`), pinned by `broker_policy_opa.pact.json` |
 | Contracts | `GatePlane` (can-deploy compatibility) | `@hobo/contracts` Gatekeeper (PACT-style boundary semantics) | an external Pact broker verification feed (port-compatible) |
-| Billing | `BillingPlane` | in-proc budget + spend-cap + quota checks | `createMeteredBillingPlane` — folds `meter.UsageRecorded` facts into observed spend and authorizes against the metered remaining budget; `authorizeBillingSpend` prefers `@hobo/pricing` incremental USD when supplied |
+| Billing | `BillingPlane`; optional `BillingPlaneV2` for quote-pinned requests | in-proc budget + spend-cap + quota checks | `createMeteredBillingPlane` folds `meter.UsageRecorded` facts into observed spend; `createPricingBillingPlaneV2` verifies `@hobo/pricing` quote/catalog hashes and compares exact incremental billed USD against limits |
 | Delivery | `DeliveryPlane` | `renderArgoApplication` → Argo CD Application documents; `in-proc` executor handoff | `createArgoCdDeliveryPlane` — live Argo CD applications API submission, token via the token broker, fail-closed, pinned by `broker_delivery_argocd.pact.json` |
 | Connectors | `ConnectorRegistry` | event-sourced registry of `github-app`, `pulumi`, `azure`, `vercel`, `cloudflare`, `custom` configs | an external connector catalog |
 
@@ -84,7 +84,14 @@ parsers apply the protobuf + CUE constraints from `data-models/broker.proto`
 and `data-models/broker.cue` and return refined **parsed domain types**
 (`src/types.ts`, including the branded `PolicyHash` derived type), so invalid
 values are unrepresentable past the boundary — core functions never re-check
-raw DTOs.
+raw DTOs. `quoteHash` and `pricingCatalogHash` (or their snake_case spellings)
+must be supplied together as full lowercase SHA-256 digests. Requests without
+the pair use only legacy `BillingPlane.authorize({ spendEstimateUsd, billing })`.
+Requests with the pair use only `BillingPlaneV2`; if it is not configured, the
+broker rejects with `quote-authorization-unavailable` rather than falling back
+to the estimate. Invalid or ineligible quotes reject with
+`quote-authorization-failed`. Accepted V2 receipts and `broker.Resolved` data
+carry both pins; legacy receipt and event shapes do not gain those fields.
 
 ## Policy semantics
 

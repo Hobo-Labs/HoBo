@@ -73,6 +73,9 @@ const broker = createBroker({
 		delivery: { engine: "in-proc", syncMode: "manual" },
 	},
 	catalog,
+	billingPlaneV2: {
+		authorize: () => ({ ok: true, reasons: [] }),
+	},
 });
 
 const handle = createBrokerHttpHandler(broker);
@@ -93,6 +96,12 @@ describe("HoBo Broker resolve surface — provider verification of the pact", ()
 				// SAFETY: assertion required at this I/O or test boundary.
 				const receipt = response.body.receipt as JsonObject;
 				expect(receipt.requestId).toBe(expectedReceipt.requestId);
+				if (expectedReceipt.quoteHash !== undefined) {
+					expect(receipt.quoteHash).toBe(expectedReceipt.quoteHash);
+					expect(receipt.pricingCatalogHash).toBe(
+						expectedReceipt.pricingCatalogHash,
+					);
+				}
 				// SAFETY: assertion required at this I/O or test boundary.
 				const placements = receipt.placements as Array<JsonObject>;
 				expect(placements[0]?.providerId).toBe(

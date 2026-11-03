@@ -56,6 +56,7 @@ package hobo
 	costSku:       string
 	costUnit:      string
 	marginalPrice: string
+	commercialProductRefs?: [...string & !=""]
 }
 
 #CapabilityVerdict: {

@@ -92,7 +92,13 @@ export function affectedLanes(
 		return { mode: "skip", reason: "no package-lane inputs changed" };
 	return {
 		mode: "filtered",
-		filters: [...dirs].sort().map((dir) => `--filter=./${dir}`),
+		filters: [...dirs]
+			.sort()
+			.map((dir) =>
+				dir === "packages/pricing"
+					? "--filter=...{./packages/pricing}"
+					: `--filter=./${dir}`,
+			),
 	};
 }
 

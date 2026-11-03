@@ -63,7 +63,7 @@ function isWorkspaceTurboTest(check: Check) {
 		check.args[1] === "turbo" &&
 		check.args[2] === "run" &&
 		check.args[3] === "test" &&
-		check.args.some((arg) => arg.startsWith("--filter=./"))
+		check.args.some((arg) => arg.startsWith("--filter="))
 	);
 }
 
@@ -502,6 +502,18 @@ test("fuzz package changes rely on workspace tests instead of a second property 
 		checks.some((check) => check.args.join(" ") === "run test:property"),
 		false,
 	);
+});
+
+test("pricing changes select pricing and every manifest dependent", () => {
+	const { checks, workspaces } = plan(["packages/pricing/src/quote.ts"], {
+		workspacePackageExists: () => true,
+	});
+
+	assert.deepEqual(workspaces, ["packages/pricing"]);
+	const turbo = checks.find(isWorkspaceTurboTest);
+	assert.ok(turbo);
+	assert.equal(turbo.args.includes("--filter=...{./packages/pricing}"), true);
+	assert.equal(turboTestSelects(checks, "packages/pricing"), false);
 });
 
 test("production package source changes select architecture guard and workspace tests", () => {

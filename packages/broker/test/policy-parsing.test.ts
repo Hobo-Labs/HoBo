@@ -425,6 +425,39 @@ describe("broker requests", () => {
 		expect(parsed.spendEstimateUsd).toBe(12.5);
 		expect(parsed.requirements[0]?.resourceId).toBe("db");
 	});
+
+	it("parses a quote pin pair in camelCase or snake_case", () => {
+		const quoteHash = `sha256:${"b".repeat(64)}`;
+		const pricingCatalogHash = `sha256:${"c".repeat(64)}`;
+		expect(
+			parseBrokerRequest(request({ quoteHash, pricingCatalogHash })),
+		).toMatchObject({ quoteHash, pricingCatalogHash });
+		expect(
+			parseBrokerRequest(
+				request({
+					quote_hash: quoteHash,
+					pricing_catalog_hash: pricingCatalogHash,
+				}),
+			),
+		).toMatchObject({ quoteHash, pricingCatalogHash });
+	});
+
+	it("refuses partial or malformed quote pin pairs", () => {
+		const quoteHash = `sha256:${"b".repeat(64)}`;
+		const pricingCatalogHash = `sha256:${"c".repeat(64)}`;
+		const invalidPairs = [
+			{ quoteHash },
+			{ pricingCatalogHash },
+			{ quoteHash, pricingCatalogHash: "sha256:not-a-digest" },
+			{ quoteHash: `sha256:${"B".repeat(64)}`, pricingCatalogHash },
+			{ quote_hash: quoteHash, pricing_catalog_hash: null },
+		];
+		for (const pins of invalidPairs) {
+			expect(codeOf(() => parseBrokerRequest(request(pins)))).toBe(
+				"invalid-request",
+			);
+		}
+	});
 });
 
 describe("topology scopes and requirements", () => {

@@ -79,6 +79,7 @@ export interface ResourceDefinition {
 	specificity: number;
 	priority: number;
 	cost: { sku: string; unit: string; marginalPrice: string };
+	commercialProductRefs?: readonly string[];
 	// Live capability negotiation delegated to the provider Capability.satisfies.
 	satisfies(req: { port: string; features?: string[] }): CapabilityVerdict;
 }
@@ -92,6 +93,8 @@ export interface HeldProvider {
 
 export interface PlannerRegistry {
 	catalogHash: string;
+	pricingCatalogHash?: string;
+	capabilityCatalogHash?: string;
 	definitions(): ResourceDefinition[];
 	providers(): string[];
 	// Optional live-view extensions (event-backed registries): re-fold the
@@ -152,8 +155,13 @@ export function definitionsFor(
 		const regions = Array.isArray(manifestEntry?.regions)
 			? manifestEntry.regions.filter(isJsonString)
 			: [...provider.regions];
+		const commercialProductRefs = Array.isArray(
+			manifestEntry?.commercialProductRefs,
+		)
+			? manifestEntry.commercialProductRefs.filter(isJsonString)
+			: [];
 
-		return {
+		const definition: ResourceDefinition = {
 			id: `${provider.id}:${capability.port}`,
 			providerId: provider.id,
 			port: capability.port,
@@ -174,35 +182,57 @@ export function definitionsFor(
 			},
 			satisfies: (req) => normalizeVerdict(capability.satisfies(req)),
 		};
+		if (commercialProductRefs.length > 0) {
+			definition.commercialProductRefs = commercialProductRefs;
+		}
+		return definition;
 	});
 }
 
 export function createRegistryFromProviders(
 	providers: RegistrableProvider[],
+	commercialPins: Pick<
+		PlannerRegistry,
+		"pricingCatalogHash" | "capabilityCatalogHash"
+	> = {},
 ): PlannerRegistry {
 	const definitions = providers.flatMap(definitionsFor);
 	const hash = catalogHashOf(definitions);
 	const providerIds = [...new Set(providers.map((p) => p.id))];
-	return {
+	const registry: PlannerRegistry = {
 		catalogHash: hash,
 		definitions: () => definitions.map((d) => ({ ...d })),
 		providers: () => [...providerIds],
 	};
+	if (commercialPins.pricingCatalogHash !== undefined) {
+		registry.pricingCatalogHash = commercialPins.pricingCatalogHash;
+	}
+	if (commercialPins.capabilityCatalogHash !== undefined) {
+		registry.capabilityCatalogHash = commercialPins.capabilityCatalogHash;
+	}
+	return registry;
 }
 
 // The command that registers a provider into the Registry catalog: it carries
 // the provider's Capability Manifest snapshot as the fact body.
 export function registerProviderFact(provider: RegistrableProvider) {
-	const definitions = definitionsFor(provider).map((d) => ({
-		id: d.id,
-		providerId: d.providerId,
-		port: d.port,
-		features: d.features,
-		regions: d.regions,
-		specificity: d.specificity,
-		priority: d.priority,
-		cost: d.cost,
-	}));
+	const definitions = definitionsFor(provider).map((d) => {
+		const definition = {
+			id: d.id,
+			providerId: d.providerId,
+			port: d.port,
+			features: d.features,
+			regions: d.regions,
+			specificity: d.specificity,
+			priority: d.priority,
+			cost: d.cost,
+		};
+		if (d.commercialProductRefs === undefined) return definition;
+		return {
+			...definition,
+			commercialProductRefs: [...d.commercialProductRefs],
+		};
+	});
 	const manifest = provider.capabilityManifest();
 	const indexDoc =
 		manifest.published["/.well-known/capability-manifest/index.json"] ?? "";
@@ -247,6 +277,7 @@ function negotiateFromEntry(
 // what it is. A `JsonValue` parameter would put a claim in front of the check
 // whose whole job is to establish it.
 export function parseRegisteredDefinitions(
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: this parameter is the parser boundary for untrusted event payloads.
 	data: unknown,
 ): ResourceDefinition[] {
 	if (data === null || !isJsonObject(data)) return [];
@@ -267,9 +298,14 @@ export function parseRegisteredDefinitions(
 		const regions = Array.isArray(rec.regions)
 			? rec.regions.filter((r): r is string => isJsonString(r))
 			: [];
+		const commercialProductRefs = Array.isArray(rec.commercialProductRefs)
+			? rec.commercialProductRefs.filter(
+					(ref): ref is string => isJsonString(ref) && ref.length > 0,
+				)
+			: [];
 		// SAFETY: `const cost = (rec.cost ?? {}) as JsonObject;` is required at this I/O or test boundary.
 		const cost = (rec.cost ?? {}) as JsonObject;
-		parsed.push({
+		const definition: ResourceDefinition = {
 			id:
 				isJsonString(rec.id) && rec.id.length > 0
 					? rec.id
@@ -290,7 +326,11 @@ export function parseRegisteredDefinitions(
 					: "0",
 			},
 			satisfies: negotiateFromEntry(rec.port, features),
-		});
+		};
+		if (commercialProductRefs.length > 0) {
+			definition.commercialProductRefs = commercialProductRefs;
+		}
+		parsed.push(definition);
 	}
 	return parsed;
 }

@@ -105,6 +105,50 @@
 					]
 				}
 			}
+		},
+		{
+			"description": "A quote-pinned request is authorized by BillingPlaneV2 and its receipt preserves both quote pins",
+			"request": {
+				"method": "POST",
+				"path": "/broker/resolve",
+				"body": {
+					"schemaVersion": "hobo.broker/v1",
+					"requestId": "req-checkout-4",
+					"scope": { "bindleId": "bindle:checkout" },
+					"requirements": [
+						{ "resourceId": "api", "port": "hobo:http-service" }
+					],
+					"spendEstimateUsd": 500,
+					"quoteHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+					"pricingCatalogHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"outcome": "resolved",
+					"receipt": {
+						"schemaVersion": "hobo.broker/v1",
+						"requestId": "req-checkout-4",
+						"quoteHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+						"pricingCatalogHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+						"placements": [
+							{ "resourceId": "api", "providerId": "@hobo/provider-cheap" }
+						]
+					},
+					"events": [
+						{ "type": "broker.Requested" },
+						{ "type": "policy.Decided" },
+						{
+							"type": "broker.Resolved",
+							"data": {
+								"quoteHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+								"pricingCatalogHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+							}
+						}
+					]
+				}
+			}
 		}
 	],
 	"metadata": {

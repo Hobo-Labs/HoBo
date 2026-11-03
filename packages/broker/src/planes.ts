@@ -58,6 +58,19 @@ export interface BillingPlane {
 	};
 }
 
+// Quote-pinned billing enforcement. Requests carrying quote hashes use this
+// plane exclusively; the legacy numeric spend estimate is not a fallback.
+export interface BillingPlaneV2 {
+	authorize(input: {
+		quoteHash: string;
+		pricingCatalogHash: string;
+		billing: BillingPolicy;
+	}): {
+		ok: boolean;
+		reasons: RejectionReason[];
+	};
+}
+
 // Argo-shaped delivery plane: hand an accepted receipt to the rollout engine.
 // Live engines submit over the network, so submit is allowed to be async.
 export interface DeliveryTicket {

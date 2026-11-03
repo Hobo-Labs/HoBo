@@ -84,6 +84,14 @@ package data_models
 	requirements: [...#ResourceRequirement] & [_, ...]
 	spend_estimate_usd: number & >=0
 	guest?:             #GuestResolutionInput
+	quote_hash?:         #Digest
+	pricing_catalog_hash?: #Digest
+	if quote_hash != _|_ {
+		pricing_catalog_hash: #Digest
+	}
+	if pricing_catalog_hash != _|_ {
+		quote_hash: #Digest
+	}
 }
 
 #Digest: string & =~"^sha256:[0-9a-f]{64}$"
@@ -191,6 +199,14 @@ package data_models
 	station_id?: string
 	rail_hash?:  string
 	guest?:      #GuestResolutionEvidence
+	quote_hash?: #Digest
+	pricing_catalog_hash?: #Digest
+	if quote_hash != _|_ {
+		pricing_catalog_hash: #Digest
+	}
+	if pricing_catalog_hash != _|_ {
+		quote_hash: #Digest
+	}
 }
 
 #RejectionPlane: "policy" | "contracts" | "billing" | "placement" | "connectors" | "residency"

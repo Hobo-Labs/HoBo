@@ -52,9 +52,10 @@ hashes integrate without changing dispatcher v1 replay.
   cross-currency, and zero-incremental tie cases).
 - **`pricing.*` events**: all eleven canonical v1 bodies have append-only
   `@hobo/events` corpus entries with generated-protobuf compatibility tests.
-- **Broker / cloud**: `authorizeBillingSpend` prefers quote incremental USD;
-  `pricingCatalogHashFromCommercialRefs` hashes commercial product refs without
-  altering resource `catalogHashOf`.
+- **Broker / cloud**: `BillingPlaneV2` authorizes verified incremental billed
+  quotes by hash while legacy spend estimates remain unchanged. Cloud maps
+  commercial product refs and uses actual pricing/capability content hashes
+  without altering resource `catalogHashOf`.
 
 ## Contracts and validation
 

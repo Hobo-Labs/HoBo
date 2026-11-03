@@ -68,6 +68,16 @@ describe("affected-lanes", () => {
 		});
 	});
 
+	it("includes every manifest dependent for pricing changes", () => {
+		assert.deepEqual(
+			affectedLanes(["packages/pricing/src/quote.ts"], present),
+			{
+				mode: "filtered",
+				filters: ["--filter=...{./packages/pricing}"],
+			},
+		);
+	});
+
 	it("filters a package inside a workspace group, not the whole workspace", () => {
 		const lanes = affectedLanes(
 			[

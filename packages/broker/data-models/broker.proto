@@ -90,6 +90,9 @@ message BrokerRequest {
   // Anonymous/claimable resolution inputs (ADR-0151). Absent on a request
   // from an authenticated owner deploying into an owned Yard.
   GuestResolutionInput guest = 6;
+  // Quote-pinned billing selects BillingPlaneV2; both digests or neither.
+  optional string quote_hash = 7;
+  optional string pricing_catalog_hash = 8;
 }
 
 // What an anonymous or pre-claim caller brings to resolution. Everything here
@@ -134,6 +137,9 @@ message ResolutionReceipt {
   string rail_hash = 9;
   // Anonymous/claimable evidence (ADR-0151). Absent for an owned deployment.
   GuestResolutionEvidence guest = 10;
+  // Present exactly when BillingPlaneV2 authorized the resolution.
+  optional string quote_hash = 11;
+  optional string pricing_catalog_hash = 12;
 }
 
 // The claim-relevant facts a receipt must pin so a deployment's ownership
