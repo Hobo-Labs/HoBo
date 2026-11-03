@@ -187,8 +187,11 @@ test("can-deploy: every migration.* contract replays clean against the pinned ba
 		readFileSync(baselinePath, "utf8"),
 	) as CorpusBaseline;
 
-	// The committed baseline must be exactly today's corpus (append-only pin).
-	assert.deepEqual(migrationCorpusBaseline(), pinned);
+	// Migration entries in the shared corpus file must match today's migration baseline.
+	const migrationEntries = pinned.entries.filter((entry) =>
+		entry.key.startsWith("migration."),
+	);
+	assert.deepEqual(migrationCorpusBaseline().entries, migrationEntries);
 
 	for (const contract of MIGRATION_EVENT_CONTRACTS) {
 		const report = runCanDeployUpcasterGate(contract, {

@@ -1,0 +1,72 @@
+name: HoBo Pricing CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/pricing/**"
+      - "packages/events/src/pricing-event-contracts.ts"
+      - "packages/events/test/pricing-upcaster-gate.test.ts"
+      - "packages/events/corpus/golden-replay-baseline.json"
+      - "packages/dispatcher/src/dispatcher-v2.ts"
+      - "packages/dispatcher/contracts/**"
+      - ".github/workflows/pricing-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/pricing/**"
+      - "packages/events/src/pricing-event-contracts.ts"
+      - "packages/events/corpus/golden-replay-baseline.json"
+      - "packages/dispatcher/src/dispatcher-v2.ts"
+      - "packages/dispatcher/contracts/**"
+      - ".github/workflows/pricing-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hobo-pricing-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  HOBO_TURBO_CONCURRENCY: "1"
+  NODE_OPTIONS: --max-old-space-size=3072
+
+jobs:
+  pricing-gate:
+    name: "@hobo/pricing affected gate"
+    runs-on: hobo
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: ./.github/actions/ci-runner-preflight
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Turbo cache
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      - name: Build and test pricing integration cone
+        run: |
+          set -euo pipefail
+          pnpm exec turbo run build test \
+            --filter=@hobo/pricing \
+            --filter=@hobo/dispatcher \
+            --filter=@hobo/events \
+            --continue \
+            --concurrency=1
+      - name: Consumer contracts (pricing + dispatcher v2)
+        run: |
+          pnpm --filter @hobo/pricing run test:contract:consumer
+          pnpm --filter @hobo/dispatcher run test:contract:consumer
+      - name: Save Turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save

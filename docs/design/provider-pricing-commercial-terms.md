@@ -99,7 +99,7 @@ CAS on state `seq`; pin quote/catalog/capability/state hashes; exact restore on 
 - **Broker**: BillingPlane v2 quote authorization; keep legacy `spendEstimateUsd`
 - **Events**: `pricing.RateCardPublished`, `ProviderAgreementObserved`, `GrantObserved`, `CommitmentObserved`, `QuoteCreated`, `Reservation*`, `ActualChargeObserved`, `ReconciliationRecorded`
 
-Implementation status: `@hobo/pricing` ships the quote engine and golden corpus; `@hobo/events` pins `pricing.QuoteCreated@v1` for replay gates. Remaining event bodies follow the same append-only corpus pattern when actors land.
+Implementation status: `@hobo/pricing` ships the quote engine, legacy CI sandbox translator, golden corpus, adversarial fixtures **10.1–10.11**, dispatcher v2 PACT, dedicated **`pricing-ci`** / **`release-pricing`** workflows, and `@hobo/events` pins the full **`pricing.*`** v1 family for replay gates.
 
 ## Section 13 — adversarial fixtures (10.1–10.11)
 

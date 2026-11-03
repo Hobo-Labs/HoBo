@@ -1,0 +1,6 @@
+{
+	"publicScope": "@hobo-labs",
+	"packages": {
+		"@hobo/pricing": "@hobo-labs/pricing"
+	}
+}

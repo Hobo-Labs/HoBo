@@ -36,6 +36,42 @@
 		{
 			"key": "migration.Imported@v1#migration-Imported-v1",
 			"bodyDigest": "sha256:bb0544b093f031bc195cd594eb2dc90c5e44e3138466942ac322d6a80641bdc9"
+		},
+		{
+			"key": "pricing.RateCardPublished@v1#pricing-RateCardPublished-v1",
+			"bodyDigest": "sha256:500e821e8ce2caee71b440165884e3a0c9729cfd934686d400e578b6c8a9f08f"
+		},
+		{
+			"key": "pricing.ProviderAgreementObserved@v1#pricing-ProviderAgreementObserved-v1",
+			"bodyDigest": "sha256:7dac55568d0a188ea8c13a99623a120cc4c792476c73e746831f1c256013416e"
+		},
+		{
+			"key": "pricing.GrantObserved@v1#pricing-GrantObserved-v1",
+			"bodyDigest": "sha256:f273ffa85149ebccf12e7836632ce8597cc5366af084e3a7aae039165cd57b70"
+		},
+		{
+			"key": "pricing.CommitmentObserved@v1#pricing-CommitmentObserved-v1",
+			"bodyDigest": "sha256:8100cdb8e791ed417ce9699a031eb3a4a347ed2847c59218034b303d83aac910"
+		},
+		{
+			"key": "pricing.QuoteCreated@v1#pricing-QuoteCreated-v1",
+			"bodyDigest": "sha256:35f0fb11f68aaee7df21459c47f8357b2f8c01cea26ebd46af317a29b299d0f4"
+		},
+		{
+			"key": "pricing.ReservationCreated@v1#pricing-ReservationCreated-v1",
+			"bodyDigest": "sha256:81035c9bc93ac26ea04b8c3030e1004977224860603f218c76f7f1dd74f03673"
+		},
+		{
+			"key": "pricing.ReservationReleased@v1#pricing-ReservationReleased-v1",
+			"bodyDigest": "sha256:a9498dc8a04310cfeff16b54e3e141d85433e92456be34348e91839583ac6cc0"
+		},
+		{
+			"key": "pricing.ActualChargeObserved@v1#pricing-ActualChargeObserved-v1",
+			"bodyDigest": "sha256:35ea049199e9d6df6bf7441fe695ec7dc9cb3750e1019d53740371533fc88517"
+		},
+		{
+			"key": "pricing.ReconciliationRecorded@v1#pricing-ReconciliationRecorded-v1",
+			"bodyDigest": "sha256:b43f709ab93050c0af3d3f3c8abd665d3936bf30aa152bb6dc65ad5d0a572063"
 		}
 	]
 }

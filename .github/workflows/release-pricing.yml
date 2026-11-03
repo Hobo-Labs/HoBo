@@ -1,0 +1,88 @@
+name: HoBo Pricing release (npm dry-run)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/pricing/**"
+      - "release/npm-scope-map.json"
+      - "scripts/ci/npm-publish-scope.mts"
+      - "scripts/test/npm-publish-scope.test.ts"
+      - ".github/workflows/release-pricing.yml"
+  push:
+    tags:
+      - "pricing-v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hobo-pricing-release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  HOBO_TURBO_CONCURRENCY: "1"
+  NODE_OPTIONS: --max-old-space-size=3072
+
+jobs:
+  pricing-release-contract:
+    name: Pricing release contract (static)
+    runs-on: hobo
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/ci-runner-preflight
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: npm scope map contract
+        run: pnpm exec vitest run scripts/test/npm-publish-scope.test.ts
+
+  pricing-release-build:
+    name: Build and test @hobo/pricing (release cone)
+    needs: pricing-release-contract
+    runs-on: hobo
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/ci-runner-preflight
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Turbo cache
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      - run: pnpm exec turbo run build test --filter=@hobo/pricing --concurrency=1
+      - name: Save Turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
+
+  pricing-release-pack:
+    name: npm pack dry-run (@hobo-labs/pricing)
+    needs: pricing-release-build
+    runs-on: hobo
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: ./.github/actions/ci-runner-preflight
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - run: pnpm exec turbo run build --filter=@hobo/pricing --concurrency=1
+      - name: npm pack dry-run (scoped staging)
+        run: |
+          set -euo pipefail
+          staging=/tmp/hobo-pricing-release-staging
+          rm -rf "$staging"
+          mkdir -p "$staging"
+          cp -a packages/pricing/. "$staging/"
+          node --no-warnings scripts/ci/npm-publish-scope.mts packages/pricing/package.json "$staging/package.json"
+          grep -q '"name": "@hobo-labs/pricing"' "$staging/package.json"
+          (cd "$staging" && npm pack --dry-run --ignore-scripts)

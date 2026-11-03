@@ -64,4 +64,5 @@ export {
 	pricingCorpusBaseline,
 } from "./pricing-event-contracts.js";
 
+// public-contract: the package identity consumers assert in boundary contracts.
 export const HOBO_EVENTS_PACKAGE = "@hobo/events";
