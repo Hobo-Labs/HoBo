@@ -73,8 +73,9 @@ if (!Number.isInteger(workerMemoryMb) || workerMemoryMb < 512)
 const slots = Number(process.env.HOBO_CI_WORKER_SLOTS ?? "2");
 if (!Number.isInteger(slots) || slots < 1 || slots > 8)
 	throw new Error("invalid HOBO_CI_WORKER_SLOTS");
-// Slots that only push, workflow_dispatch and merge_group jobs may take, so a trunk job never waits
-// for a pull request's job to finish. The offer's concurrency must equal the slot count.
+// Slots set aside for push, workflow_dispatch and merge_group jobs. Other runs borrow them while no
+// trunk job is pending; a pending one gets the next slot that frees. The offer's concurrency must
+// equal the slot count.
 const trunkSlots = Number(process.env.HOBO_CI_WORKER_TRUNK_SLOTS ?? "0");
 if (!Number.isInteger(trunkSlots) || trunkSlots < 0 || trunkSlots >= slots)
 	throw new Error("invalid HOBO_CI_WORKER_TRUNK_SLOTS");
