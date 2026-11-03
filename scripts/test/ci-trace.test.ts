@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { redact, secretValues, slimSummary, toOtlp } from "../ci/ci-trace.mts";
+import { fileURLToPath } from "node:url";
+import {
+	parseRunSummary,
+	redact,
+	secretValues,
+	toOtlp,
+} from "../ci/ci-trace.mts";
 
 const SYNTHETIC = "synthetic-ci-secret-9f8e7d6c5b4a";
 
@@ -39,21 +46,53 @@ describe("ci-trace", () => {
 
 	it("drops environment variable lists, commands and identity from summaries", () => {
 		const slim = JSON.stringify(
-			slimSummary({
+			parseRunSummary({
 				execution: { startTime: 1, endTime: 2 },
 				tasks: [
 					{
 						taskId: "a#b",
-						// @ts-expect-error extra turbo fields are stripped by the schema
 						environmentVariables: { configured: [`TOKEN=${SYNTHETIC}`] },
 						command: `echo ${SYNTHETIC}`,
+						execution: { startTime: 1, endTime: 2, exitCode: null },
 					},
+					{ command: "no task id" },
 				],
 				user: "someone",
 			}),
 		);
+		assert.equal(
+			slim,
+			'{"execution":{"startTime":1,"endTime":2},"tasks":[{"taskId":"a#b","execution":{"startTime":1,"endTime":2,"exitCode":null}}]}',
+		);
 		assert.ok(!slim.includes(SYNTHETIC));
 		assert.ok(!slim.includes("someone"));
+	});
+
+	it("skips a summary without execution timings instead of guessing them", () => {
+		assert.equal(
+			parseRunSummary({ execution: { startTime: 1 }, tasks: [] }),
+			undefined,
+		);
+		assert.equal(
+			parseRunSummary({ execution: { startTime: 1, endTime: 2 } }),
+			undefined,
+		);
+		assert.equal(parseRunSummary([]), undefined);
+	});
+
+	it("imports only node builtins, so it runs on a job that skipped install", () => {
+		const source = readFileSync(
+			fileURLToPath(new URL("../ci/ci-trace.mts", import.meta.url)),
+			"utf8",
+		);
+		const specifiers = [...source.matchAll(/^import[^"]*"([^"]+)"/gm)].map(
+			(match) => match[1],
+		);
+		assert.ok(specifiers.length > 0);
+		assert.deepEqual(
+			specifiers.filter((specifier) => !specifier?.startsWith("node:")),
+			[],
+		);
 	});
 
 	it("scrubs values of secret-named env vars and token shapes", () => {

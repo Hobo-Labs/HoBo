@@ -21,36 +21,121 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
-import { z } from "zod";
 
-const TaskSummary = z.object({
-	taskId: z.string(),
-	package: z.string().optional(),
-	task: z.string().optional(),
-	cache: z.object({ status: z.string().optional() }).partial().optional(),
-	execution: z
-		.object({
-			startTime: z.number(),
-			endTime: z.number(),
-			exitCode: z.number().nullable().optional(),
-		})
-		.optional(),
-});
-const RunSummary = z.object({
-	id: z.string().optional(),
-	turboVersion: z.string().optional(),
-	execution: z.object({
-		command: z.string().optional(),
-		startTime: z.number(),
-		endTime: z.number(),
-		exitCode: z.number().optional(),
-		attempted: z.number().optional(),
-		cached: z.number().optional(),
-		failed: z.number().optional(),
-	}),
-	tasks: z.array(TaskSummary),
-});
-type RunSummary = z.infer<typeof RunSummary>;
+// Node builtins only: the trace step runs on every job, including ones that
+// skipped or failed `pnpm install`, so it cannot import workspace packages.
+
+type Json =
+	| string
+	| number
+	| boolean
+	| null
+	| readonly Json[]
+	| { readonly [key: string]: Json };
+type JsonObject = { readonly [key: string]: Json };
+
+type TaskSummary = {
+	readonly taskId: string;
+	readonly package?: string | undefined;
+	readonly task?: string | undefined;
+	readonly cache?: { readonly status?: string | undefined } | undefined;
+	readonly execution?:
+		| {
+				readonly startTime: number;
+				readonly endTime: number;
+				readonly exitCode?: number | null | undefined;
+		  }
+		| undefined;
+};
+type RunSummary = {
+	readonly id?: string | undefined;
+	readonly turboVersion?: string | undefined;
+	readonly execution: {
+		readonly command?: string | undefined;
+		readonly startTime: number;
+		readonly endTime: number;
+		readonly exitCode?: number | undefined;
+		readonly attempted?: number | undefined;
+		readonly cached?: number | undefined;
+		readonly failed?: number | undefined;
+	};
+	readonly tasks: readonly TaskSummary[];
+};
+
+const tag = (value: Json | undefined): string =>
+	Object.prototype.toString.call(value);
+function isObject(value: Json | undefined): value is JsonObject {
+	return tag(value) === "[object Object]";
+}
+function isString(value: Json | undefined): value is string {
+	return tag(value) === "[object String]";
+}
+function isNumber(value: Json | undefined): value is number {
+	return Number.isFinite(value);
+}
+const text = (from: JsonObject, key: string): string | undefined => {
+	const value = from[key];
+	return isString(value) ? value : undefined;
+};
+const count = (from: JsonObject, key: string): number | undefined => {
+	const value = from[key];
+	return isNumber(value) ? value : undefined;
+};
+const child = (from: JsonObject, key: string): JsonObject | undefined => {
+	const value = from[key];
+	return isObject(value) ? value : undefined;
+};
+
+/** Keep only the fields the trace reads, so env lists, hashes, commands, user and SCM never reach the artifact. */
+function parseTask(value: Json): TaskSummary | undefined {
+	if (!isObject(value)) return undefined;
+	const taskId = text(value, "taskId");
+	if (taskId === undefined) return undefined;
+	const cache = child(value, "cache");
+	const execution = child(value, "execution");
+	const startTime = execution && count(execution, "startTime");
+	const endTime = execution && count(execution, "endTime");
+	return {
+		taskId,
+		package: text(value, "package"),
+		task: text(value, "task"),
+		cache: cache && { status: text(cache, "status") },
+		execution:
+			execution && startTime !== undefined && endTime !== undefined
+				? {
+						startTime,
+						endTime,
+						exitCode:
+							execution.exitCode === null ? null : count(execution, "exitCode"),
+					}
+				: undefined,
+	};
+}
+
+/** A turbo `--summarize` run, or undefined when its required timings are missing. */
+export function parseRunSummary(value: Json): RunSummary | undefined {
+	if (!isObject(value)) return undefined;
+	const execution = child(value, "execution");
+	const tasks = value.tasks;
+	if (!execution || !Array.isArray(tasks)) return undefined;
+	const startTime = count(execution, "startTime");
+	const endTime = count(execution, "endTime");
+	if (startTime === undefined || endTime === undefined) return undefined;
+	return {
+		id: text(value, "id"),
+		turboVersion: text(value, "turboVersion"),
+		execution: {
+			command: text(execution, "command"),
+			startTime,
+			endTime,
+			exitCode: count(execution, "exitCode"),
+			attempted: count(execution, "attempted"),
+			cached: count(execution, "cached"),
+			failed: count(execution, "failed"),
+		},
+		tasks: tasks.flatMap((task: Json) => parseTask(task) ?? []),
+	};
+}
 
 const SECRET_NAME =
 	/(TOKEN|SECRET|PASSWORD|PRIVATE|KEY|DATABASE_URL|CREDENTIAL)/i;
@@ -154,16 +239,6 @@ export function toOtlp(
 	};
 }
 
-/** Keep only what the trace needs; drops env lists, hashes, commands, user and SCM. */
-export function slimSummary(run: RunSummary): RunSummary {
-	return RunSummary.parse({
-		id: run.id,
-		turboVersion: run.turboVersion,
-		execution: run.execution,
-		tasks: run.tasks.map((task) => TaskSummary.parse(task)),
-	});
-}
-
 if (import.meta.url === `file://${process.argv[1]}`) {
 	const outDir = process.argv[2] ?? "ci-traces";
 	const job = process.argv[3] ?? process.env.GITHUB_JOB ?? "local";
@@ -175,12 +250,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 	} catch {
 		files = [];
 	}
-	const runs = files.flatMap((file) => {
-		const parsed = RunSummary.safeParse(
-			JSON.parse(readFileSync(join(dir, file), "utf8")),
-		);
-		return parsed.success ? [slimSummary(parsed.data)] : [];
-	});
+	const runs = files.flatMap(
+		(file) =>
+			parseRunSummary(JSON.parse(readFileSync(join(dir, file), "utf8"))) ?? [],
+	);
 	mkdirSync(outDir, { recursive: true });
 	const secrets = secretValues(process.env);
 	writeFileSync(
