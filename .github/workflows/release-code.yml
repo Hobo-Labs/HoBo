@@ -48,6 +48,7 @@ env:
     release
     deploy/release-images
     tools/pins
+    .mise/locks
     mise.toml
     mise.lock
     package.json

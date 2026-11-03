@@ -18,6 +18,7 @@ export const RELEASE_ROOT_FILES = [
 ] as const;
 
 export const PINS_SPARSE_CONES = ["tools/pins"] as const;
+export const MISE_LOCK_SPARSE_CONES = [".mise/locks"] as const;
 
 export const PINS_REQUIRED_FILES = ["tools/pins/siblings.json"] as const;
 
@@ -104,6 +105,7 @@ export function hoboReleaseSparseCones(repoRoot: string): readonly string[] {
 	return Object.freeze([
 		...HOBO_RELEASE_DIR_CONES,
 		...PINS_SPARSE_CONES,
+		...MISE_LOCK_SPARSE_CONES,
 		...rootVitestSparseCones(repoRoot),
 		...RELEASE_ROOT_FILES,
 	]);
@@ -120,6 +122,7 @@ export function hoboReleasePagesSparseCones(): readonly string[] {
 		"release",
 		"external",
 		...PINS_SPARSE_CONES,
+		...MISE_LOCK_SPARSE_CONES,
 		...RELEASE_ROOT_FILES,
 	]);
 }
@@ -140,6 +143,7 @@ export function hoboCodeReleaseSparseCones(
 	return Object.freeze([
 		...CODE_RELEASE_DIR_CONES,
 		...PINS_SPARSE_CONES,
+		...MISE_LOCK_SPARSE_CONES,
 		...rootVitestSparseCones(repoRoot),
 		...RELEASE_ROOT_FILES,
 	]);
@@ -151,6 +155,7 @@ export function tsAutocodeReleaseSparseCones(): readonly string[] {
 		".github",
 		"scripts",
 		...PINS_SPARSE_CONES,
+		...MISE_LOCK_SPARSE_CONES,
 		"external",
 		"package.json",
 		"pnpm-lock.yaml",

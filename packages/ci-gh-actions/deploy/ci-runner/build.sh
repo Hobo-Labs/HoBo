@@ -25,6 +25,7 @@ if ! command -v mise >/dev/null 2>&1 || [[ "$(mise --version | awk '{print $1}')
 fi
 mise trust ./mise.toml
 mise install
+mise exec -- shellcheck --version
 
 node --no-warnings scripts/ci-runner-image-version.mts >/tmp/hobo-ci-runner-version.$$
 version="$(tr -d '[:space:]' < /tmp/hobo-ci-runner-version.$$)"

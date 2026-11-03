@@ -38,6 +38,7 @@ jobs:
             package.json
             pnpm-lock.yaml
             pnpm-workspace.yaml
+            .mise/locks
             mise.toml
             mise.lock
           sparse-checkout-cone-mode: true

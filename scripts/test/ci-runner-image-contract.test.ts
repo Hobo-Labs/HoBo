@@ -89,6 +89,42 @@ describe("ci-runner image contract (repo manifests)", () => {
 		}
 	});
 
+	it("probes every mise tool through mise exec from the repo root", () => {
+		const calls: {
+			cmd: string;
+			args: string[];
+			cwd: string | undefined;
+		}[] = [];
+		const run: CommandRunner = (cmd, args, options) => {
+			calls.push({ cmd, args, cwd: options?.cwd });
+			return { ok: true, out: "stub 0.14.0" };
+		};
+		evaluateCiRunnerContract(root, { run });
+		const tools = ["cue", "gitleaks", "node", "pnpm", "shellcheck", "turbo"];
+		const miseCalls = calls.filter((call) => call.cmd === "mise");
+		expect(miseCalls.map((call) => call.args[2])).toEqual([...tools, "cue"]);
+		for (const call of miseCalls) {
+			const tool = call.args[2]!;
+			expect(call.args).toEqual([
+				"exec",
+				"--",
+				tool,
+				...(tool === "cue" || tool === "gitleaks"
+					? ["version"]
+					: ["--version"]),
+			]);
+			expect(call.cwd).toBe(root);
+		}
+		expect(calls.some((call) => tools.includes(call.cmd))).toBe(false);
+	});
+
+	it("verifies shellcheck through mise exec before building the OCI image", () => {
+		const build = readFileSync(join(root, CI_RUNNER_BUILD_SCRIPT), "utf8");
+		expect(build).toContain(
+			"mise install\nmise exec -- shellcheck --version\n",
+		);
+	});
+
 	it("bakes in the headless shell revision the installed Playwright resolves", () => {
 		const require = createRequire(join(root, "package.json"));
 		const playwrightCore = createRequire(require.resolve("playwright")).resolve(

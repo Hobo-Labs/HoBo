@@ -66,6 +66,24 @@ describe("release sparse cone requirements", () => {
 		}
 	});
 
+	it("every release cone includes turbo's mise lock sidecars", () => {
+		const sidecars = [
+			".mise/locks/turbo/2.11.10/aube-lock.yaml",
+			".mise/locks/turbo/2.11.10/package.json",
+		];
+		const cones = [
+			hoboReleaseSparseCones(root),
+			hoboReleasePagesSparseCones(),
+			hoboCodeReleaseSparseCones(root),
+			tsAutocodeReleaseSparseCones(),
+		];
+		for (const cone of cones) {
+			for (const sidecar of sidecars) {
+				expect(coneCoversPath(cone, sidecar), sidecar).toBe(true);
+			}
+		}
+	});
+
 	it("hobo release contract cone covers vitest setup and pins", () => {
 		const cones = hoboReleaseSparseCones(root);
 		assertConeCoversPaths(

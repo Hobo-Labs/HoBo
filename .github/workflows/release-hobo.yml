@@ -67,6 +67,7 @@ env:
     site
     external
     tools/pins
+    .mise/locks
     mise.toml
     mise.lock
     package.json
@@ -368,6 +369,7 @@ jobs:
             tsconfig.base.json
             external
             tools/pins
+            .mise/locks
           sparse-checkout-cone-mode: true
           submodules: recursive
       - uses: ./.github/actions/ci-runner-preflight

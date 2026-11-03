@@ -168,12 +168,31 @@ export function assertTurboLockSidecarsPresent(root: string): void {
 export type ContractCheck = { ok: boolean; name: string; detail: string };
 
 export type CommandResult = { ok: boolean; out: string };
-export type CommandRunner = (cmd: string, args: string[]) => CommandResult;
+export type CommandOptions = { readonly cwd?: string };
+export type CommandRunner = (
+	cmd: string,
+	args: string[],
+	options?: CommandOptions,
+) => CommandResult;
 
-function spawnCommand(cmd: string, args: string[]): CommandResult {
-	const r = spawnSync(cmd, args, { encoding: "utf8" });
+function spawnCommand(
+	cmd: string,
+	args: string[],
+	options: CommandOptions = {},
+): CommandResult {
+	const r = spawnSync(cmd, args, { encoding: "utf8", cwd: options.cwd });
 	const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
 	return { ok: r.status === 0, out: out || `(exit ${r.status})` };
+}
+
+function runMiseToolVersion(
+	run: CommandRunner,
+	root: string,
+	tool: string,
+): CommandResult {
+	const versionArgs =
+		tool === "cue" || tool === "gitleaks" ? ["version"] : ["--version"];
+	return run("mise", ["exec", "--", tool, ...versionArgs], { cwd: root });
 }
 
 function parseMiseToolNames(miseToml: string): string[] {
@@ -268,22 +287,7 @@ export function evaluateCiRunnerContract(
 
 	const miseToml = readFileSync(join(root, MISE_TOML), "utf8");
 	for (const tool of parseMiseToolNames(miseToml)) {
-		const which = run("sh", ["-c", `command -v ${tool} || true`]);
-		const path = which.out.split("\n")[0]?.trim() ?? "";
-		if (!path) {
-			checks.push({
-				ok: false,
-				name: `mise-tool:${tool}`,
-				detail: `${tool} not on PATH; run ${CI_RUNNER_BUILD_SCRIPT} after mise.lock changes`,
-			});
-			continue;
-		}
-		const ver =
-			tool === "cue"
-				? run("cue", ["version"])
-				: tool === "gitleaks"
-					? run("gitleaks", ["version"])
-					: run(tool, ["--version"]);
+		const ver = runMiseToolVersion(run, root, tool);
 		checks.push({
 			ok: ver.ok,
 			name: `mise-tool:${tool}`,
@@ -308,7 +312,7 @@ export function evaluateCiRunnerContract(
 
 	if (live) checks.push(checkHeadlessShell(run));
 
-	const cue = run("cue", ["version"]);
+	const cue = runMiseToolVersion(run, root, "cue");
 	if (cue.ok && !cue.out.includes("0.14.0")) {
 		checks.push({
 			ok: false,
