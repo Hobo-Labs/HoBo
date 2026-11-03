@@ -451,6 +451,16 @@ rather than only for launches. The supervisor's stop timeout (systemd `TimeoutSt
   no fixed gap, so a lost answer fails the test rather than being absorbed into a timeout. The git
   fixture is built once per file and copied per test, with `commit.gpgsign=false` in its own config.
   Both files ran 79 tests in 4.1 s locally, against about 600 s before.
+- **A checkout fetch hung for 11.5 minutes.** In run 41659338892 the off-path job's `git fetch
+  --depth=2` started at 15:08:41 and was still waiting when the run was cancelled at 15:20:12.
+  `git-remote-https` was still alive at cleanup, and the fetch in every other job of that run took
+  about 3 s. The step API showed checkout as done and `pnpm install` as running, which was wrong; the
+  job log is authoritative. Git has no default transfer timeout, so a stalled connection held one of
+  the box's two slots, and the PR impact gate queued for 8 minutes behind it. The workflow now sets
+  `GIT_HTTP_LOW_SPEED_LIMIT=1000` and `GIT_HTTP_LOW_SPEED_TIME=30`, the same bound the pins already
+  use. A stalled fetch now aborts after 30 s, and `actions/checkout` retries it. The same run's
+  contract-guard `pnpm install` also sat for 130 s in linking with nothing to download. That points
+  at disk contention on the box rather than the network, and is not addressed here.
 - **Vitest inlined the TypeScript compiler.** `typescript/lib/typescript.js` is CJS, but es-module-lexer
   finds module syntax in it, so Vitest's externalization heuristic inlined it. Vite then transformed the
   9 MB file in each worker and logged `Failed to load source map for …/typescript.js` with an ENOENT
