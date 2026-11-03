@@ -37,7 +37,8 @@ const GLOBAL_INPUTS = [
 	/^vendor\//,
 ];
 const WORKSPACE = /^(packages|examples)\/([^/]+)\//;
-const GROUP_GLOB = /^\s*-\s*["']?((?:packages|examples)\/[^/"'*]+)\/\*["']?\s*$/;
+const GROUP_GLOB =
+	/^\s*-\s*["']?((?:packages|examples)\/[^/"'*]+)\/\*["']?\s*$/;
 
 /**
  * Directories whose children are workspace packages (`packages/providers/*`),

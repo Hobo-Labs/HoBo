@@ -99,7 +99,10 @@ describe("affected-lanes", () => {
 
 	it("reads every packages/<group>/* entry of pnpm-workspace.yaml as a group", () => {
 		const groups = workspaceGroups(
-			readFileSync(new URL("../../pnpm-workspace.yaml", import.meta.url), "utf8"),
+			readFileSync(
+				new URL("../../pnpm-workspace.yaml", import.meta.url),
+				"utf8",
+			),
 		);
 		for (const group of [
 			"packages/adapters",
