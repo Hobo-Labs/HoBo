@@ -768,7 +768,8 @@ export class PostgresCiStore {
 					l.repositoryId === job.repositoryId &&
 					l.jobId === job.id &&
 					l.runAttempt === job.runAttempt &&
-					ACTIVE_STATES.has(l.state),
+					ACTIVE_STATES.has(l.state) &&
+					(l.actualJobId === 0 || l.actualJobId === job.id),
 			)
 		)
 			return;

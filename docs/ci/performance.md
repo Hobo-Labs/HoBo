@@ -630,20 +630,21 @@ box slots. The worker already admitted trunk first (finding 9), so two things de
 
 The fix is in three parts.
 
-- `push`, `workflow_dispatch` and `merge_group` jobs in `hobo-ci.yml` ask for `hobo-trunk`. They do this
-  once the repository variable `HOBO_CI_TRUNK_RUNNER` is `true`. The relay accepts exactly one label,
-  `hobo` or `hobo-trunk` (`src/runner-labels.ts`). It re-reads the job's label before launch and passes
-  it to the host. The box controller, the Vercel sandbox controller and the workflow bridge register the
-  JIT runner with that label, so a `hobo-trunk` runner can only take a trunk job. `scripts/lint-actions.ts`
-  allows `runs-on: hobo` and the one gated expression, so the variable can switch a job between the two
-  hobo labels but cannot point it at a hosted runner.
-- `HOBO_CI_WORKER_TRUNK_SLOTS` (default 0) caps the active leases of the other runs at
+- `push`, `workflow_dispatch` and `merge_group` jobs in `hobo-ci.yml` ask for `hobo-trunk`. They initially
+  did this only while the repository variable `HOBO_CI_TRUNK_RUNNER` was `true`; finding 15 describes the
+  default-on follow-up. The relay accepts exactly one label, `hobo` or `hobo-trunk`
+  (`src/runner-labels.ts`). It re-reads the job's label before launch and passes it to the host. The box
+  controller, the Vercel sandbox controller and the workflow bridge register the JIT runner with that
+  label, so a `hobo-trunk` runner can only take a trunk job. `scripts/lint-actions.ts` allows
+  `runs-on: hobo` and the one gated expression, so the variable can switch a job between the two hobo
+  labels but cannot point it at a hosted runner.
+- `HOBO_CI_WORKER_TRUNK_SLOTS` (then default 0) caps the active leases of the other runs at
   `HOBO_CI_WORKER_SLOTS − HOBO_CI_WORKER_TRUNK_SLOTS` (`generalLeaseLimit` on `HostedRelay`) while a
   trunk job waits; see the follow-up below for borrowing. Trunk is classified by the run's event, the same lookup the
-  admission order already caches. A run whose lookup fails counts as a PR. The hosted runtime now keeps
-  one admission order across ticks, because it rebuilds the relay every 2 s tick, and a per-relay cache
-  made the cap look up the run of every active lease on every tick. A run is looked up again only until
-  GitHub gives it a start time.
+  admission order already caches. Before the label-rank follow-up, a run whose lookup failed counted as
+  a PR. The hosted runtime now keeps one admission order across ticks, because it rebuilds the relay
+  every 2 s tick, and a per-relay cache made the cap look up the run of every active lease on every tick.
+  A run is looked up again only until GitHub gives it a start time.
 - Tests in `test/github-job-poller.test.ts` drive the poller, relay and container controller end to end:
   1. A trunk job queued after two PR jobs gets the first slot one of them frees, launched as `hobo-trunk`
      (see the follow-up below for why the PR jobs hold both slots first).
@@ -829,6 +830,18 @@ requeues their jobs, and retries its reservation in the same pass; a lease with 
 is never reclaimed. Strict and lending modes both retain the non-trunk cap after trunk misses capacity,
 and reserved leases launch in the same trunk-first admission order.
 
-Label separation is still required: redeploy the box daemon with `HOBO_CI_WORKER_TRUNK_SLOTS=1`, then set
-repository variable `HOBO_CI_TRUNK_RUNNER=true` so GitHub gives a `hobo-trunk` runner only to trunk work.
-The daemon change and `HOBO_CI_WORKER_TRUNK_LEND` setting take effect only after that box redeploy.
+At that stage, label separation still required redeploying the box daemon with
+`HOBO_CI_WORKER_TRUNK_SLOTS=1`, then setting repository variable `HOBO_CI_TRUNK_RUNNER=true` so GitHub
+gave a `hobo-trunk` runner only to trunk work. The daemon change and `HOBO_CI_WORKER_TRUNK_LEND` setting
+took effect only after that box redeploy.
+
+The GitHub API confirmed the label root cause: every job of run 41720899087 requested `labels=["hobo"]`
+because `HOBO_CI_TRUNK_RUNNER` was unset and the expression was opt-in. Trunk-capable CI and release jobs
+now request `hobo-trunk` unless the variable is explicitly `false`, the daemon reserves one trunk slot by
+default when it has at least two slots, and the trunk-only label proves trunk admission rank even when a
+run lookup fails. JIT runners still register with exactly the label their job requested.
+
+Merge-group run 41731777263 exposed the same swap after its runner took an older PR job: later queued
+polls were inbox duplicates. Direct swapped-job requeue bypasses that marker, and Postgres queue dedupe
+now also ignores the swapped lease, so the replacement launches with the original job's label while the
+old lease continues the other job.
