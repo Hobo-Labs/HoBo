@@ -12,7 +12,7 @@ import { compileProjectManifest } from "./loader.js";
 // project with neither surfaces as `null` so the caller can fall back to
 // the shell stub rather than throwing an internal error.
 
-export const BINDLE_MANIFEST_FILE = "hobo.bindle.json";
+export const BINDLE_MANIFEST_FILE = "hobo.bindle.json"; // public-contract: manifest file name read from user projects
 
 export async function loadProjectManifest(
 	projectDir: string,

@@ -13,7 +13,7 @@ import type {
 	PlanRemediation,
 } from "./plan-types.js";
 
-export const CLOUD_EVENT_SCHEMA_VERSION = "hobo.cloud-events/v1";
+export const CLOUD_EVENT_SCHEMA_VERSION = "hobo.cloud-events/v1"; // public-contract: schemaVersion stamped on every cloud fact body
 
 // Control-plane event catalog (control-plane.md + the epic reference
 // architecture). These are the only fact types the S2-01/S2-02 vertical emits.
