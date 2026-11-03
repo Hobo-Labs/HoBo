@@ -98,13 +98,13 @@ describe("main-gate scope", () => {
 			["packages/ci/src/a.ts"],
 			["scripts/run-tests.ts", "docs/a.md"],
 			["src/draft/epic-proofs/x/features/a.feature", "cucumber.yaml"],
+			[".github/workflows/hobo-ci.yml"],
+			[".github/actions/turbo-cache/action.yml", "docs/ci/performance.md"],
 		])
 			assert.deepEqual(mainGateScope(paths, present), { mode: "affected" });
 	});
 
 	for (const path of [
-		".github/workflows/hobo-ci.yml",
-		".github/actions/turbo-cache/action.yml",
 		"mise.lock",
 		"mise.toml",
 		"pnpm-lock.yaml",
@@ -140,7 +140,8 @@ describe("main-gate scope", () => {
 				{ encoding: "utf8", input, stdio: ["pipe", "pipe", "ignore"] },
 			);
 		assert.equal(run("packages/ci/src/a.ts\n"), "affected\n");
-		assert.equal(run(".github/workflows/hobo-ci.yml\n"), "repo-wide\n");
+		assert.equal(run(".github/workflows/hobo-ci.yml\n"), "affected\n");
+		assert.equal(run("mise.lock\n"), "repo-wide\n");
 	});
 
 	it("a scoped turbo run leaves an unrelated package out", () => {
