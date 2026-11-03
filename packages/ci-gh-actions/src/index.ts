@@ -69,6 +69,11 @@ export {
 	type WorkerStoreChoice,
 	type WorkerStorePlan,
 } from "./isolated-worker/worker-store.js";
+export {
+	createJobDurations,
+	type JobDurations,
+	type JobObservation,
+} from "./job-durations.js";
 export { createJobPollAdmissionWorker } from "./job-poll-admission.js";
 export { startRelayFromEnvironment } from "./main.js";
 export {

@@ -15,6 +15,7 @@ import { z } from "zod";
 import type { GithubTransport } from "../src/github.js";
 import { createHostedRelayRuntime } from "../src/hosted-runtime.js";
 import { createGithubJobPoller } from "../src/isolated-worker/github-job-poller.js";
+import { createJobDurations, type JobDurations } from "../src/job-durations.js";
 
 const NOW = Date.parse("2026-11-02T12:00:00Z");
 const REPO = "Org/Repo";
@@ -42,6 +43,10 @@ interface FakeJob {
 	status: string;
 	labels: string[];
 	runner_name?: string | null;
+	name?: string;
+	conclusion?: string | null;
+	started_at?: string | null;
+	completed_at?: string | null;
 }
 
 /** Answers only the REST reads the poller and relay make; anything else is a contract violation. */
@@ -472,7 +477,7 @@ describe("pull-mode box worker over SQLite", () => {
 		rmSync(root, { recursive: true, force: true });
 	});
 
-	it("admits a polled queued job into a reserved box lease and launches it, with no relay or webhook", async () => {
+	async function configuredStore(concurrency: number) {
 		const store = new SqliteCiStore(join(root, `${randomUUID()}.sqlite`));
 		await store.configure(
 			create(ConfigurationSchema, {
@@ -489,7 +494,7 @@ describe("pull-mode box worker over SQLite", () => {
 								enabled: true,
 								runsOn: "hobo-isolated-worker",
 								backend: "isolated-container",
-								concurrency: 2,
+								concurrency,
 								observedAt: "2026-11-02T00:00:00Z",
 								validUntil: "2026-12-31T23:59:59Z",
 								sourceUrl: "https://example.test/box-evidence",
@@ -513,12 +518,16 @@ describe("pull-mode box worker over SQLite", () => {
 			0,
 			new Date(NOW).toISOString(),
 		);
-		const github = new FakeGithub(
-			{ queued: [900], in_progress: [] },
-			{ 900: [{ id: 1, status: "queued", labels: ["hobo"] }] },
-		);
-		const launched: string[] = [];
-		const runtime = createHostedRelayRuntime({
+		return store;
+	}
+
+	function boxRuntime(
+		store: SqliteCiStore,
+		github: GithubTransport,
+		launched: string[],
+		jobDurations?: JobDurations,
+	) {
+		const options: Parameters<typeof createHostedRelayRuntime>[0] = {
 			store,
 			github,
 			identity: {
@@ -536,7 +545,19 @@ describe("pull-mode box worker over SQLite", () => {
 			denyUnisolated: true,
 			control: async () => undefined,
 			now: () => new Date(NOW).toISOString(),
-		});
+		};
+		if (jobDurations) options.jobDurations = jobDurations;
+		return createHostedRelayRuntime(options);
+	}
+
+	it("admits a polled queued job into a reserved box lease and launches it, with no relay or webhook", async () => {
+		const store = await configuredStore(2);
+		const github = new FakeGithub(
+			{ queued: [900], in_progress: [] },
+			{ 900: [{ id: 1, status: "queued", labels: ["hobo"] }] },
+		);
+		const launched: string[] = [];
+		const runtime = boxRuntime(store, github, launched);
 		const poller = createGithubJobPoller({
 			github,
 			connections: async () =>
@@ -553,6 +574,66 @@ describe("pull-mode box worker over SQLite", () => {
 			state: "reserved",
 		});
 		expect(launched).toEqual([lease?.id]);
+		store.close();
+	});
+
+	it("gives the one free slot to the queued job that took longest last time", async () => {
+		const store = await configuredStore(1);
+		const finished = (id: number, name: string, seconds: number) => ({
+			id,
+			name,
+			status: "completed",
+			conclusion: "success",
+			labels: ["hobo"],
+			runner_name: null,
+			started_at: "2026-11-02T11:00:00Z",
+			completed_at: new Date(
+				Date.parse("2026-11-02T11:00:00Z") + seconds * 1000,
+			).toISOString(),
+		});
+		const github = new FakeGithub(
+			{ queued: [900], in_progress: [], completed: [899] },
+			{
+				899: [
+					finished(1, "Secret scan", 14),
+					finished(2, "Main full gate", 85),
+					finished(3, "CI fabric contract guard", 32),
+				],
+				900: [
+					{ id: 11, name: "Secret scan", status: "queued", labels: ["hobo"] },
+					{
+						id: 12,
+						name: "Main full gate",
+						status: "queued",
+						labels: ["hobo"],
+					},
+					{
+						id: 13,
+						name: "CI fabric contract guard",
+						status: "queued",
+						labels: ["hobo"],
+					},
+				],
+			},
+		);
+		const durations = createJobDurations();
+		const launched: string[] = [];
+		const runtime = boxRuntime(store, github, launched, durations);
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			durations,
+			now: () => NOW,
+		});
+		expect((await poller.poll()).accepted).toBe(3);
+		await runtime.tick({ maxDeliveries: 10 });
+		const leases = await store.activeLeases();
+		// Ascending job id would have reserved job 11, the 14 s secret scan.
+		expect(leases).toHaveLength(1);
+		expect(leases[0]).toMatchObject({ jobId: 12, state: "reserved" });
+		expect(launched).toEqual([leases[0]?.id]);
 		store.close();
 	});
 });

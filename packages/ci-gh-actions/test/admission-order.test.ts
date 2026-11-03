@@ -76,6 +76,40 @@ it("looks each run up once and retries a failed lookup next tick", async () => {
 	expect(calls).toEqual([2, 1, 2]);
 });
 
+it("admits a run's longest expected job first, inside the rank and run order", async () => {
+	const { github } = transport(
+		new Map([
+			[1, { event: "push", startedAt: "2026-10-26T12:00:00Z" }],
+			[2, { event: "push", startedAt: "2026-10-26T12:05:00Z" }],
+			[3, { event: "pull_request", startedAt: "2026-10-26T11:00:00Z" }],
+		]),
+	);
+	const expected = new Map([
+		[11, 14_000],
+		[12, 85_000],
+		[13, 32_000],
+		[21, 600_000],
+		[31, 900_000],
+	]);
+	const order = createAdmissionOrder(github, {
+		expectedMs: (_repository, jobId) => expected.get(jobId) ?? 0,
+	});
+	const items = [
+		ref(3, 31),
+		ref(2, 21),
+		ref(1, 14),
+		ref(1, 11),
+		ref(1, 13),
+		ref(1, 12),
+	];
+	// Run 1 is older than run 2, and both are trunk runs ahead of the PR run,
+	// however long their jobs are. Inside run 1, the 85 s job leads and the
+	// job with no history (14) goes last.
+	expect(
+		(await order(items, (item) => item)).map((item) => item.jobId),
+	).toEqual([12, 13, 11, 14, 21, 31]);
+});
+
 it("puts a run with no start time behind started runs of the same rank", async () => {
 	const { github } = transport(
 		new Map([

@@ -8,6 +8,7 @@ import {
 	type HostedRelayStore,
 	type IsolatedRunnerHost,
 } from "./hosted-relay.js";
+import type { JobDurations } from "./job-durations.js";
 import type { IdentityVerifier } from "./oidc.js";
 
 /** The inbox stores only signature-verified GitHub delivery bytes. */
@@ -67,6 +68,8 @@ export function createHostedRelayRuntime(options: {
 	webhookSecret: string;
 	isolatedHost?: IsolatedRunnerHost;
 	denyUnisolated?: boolean;
+	/** Shared across ticks; a relay is rebuilt per tick and would forget it. */
+	jobDurations?: JobDurations;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
@@ -82,10 +85,13 @@ export function createHostedRelayRuntime(options: {
 			github: options.github,
 			identity: options.identity,
 			webhookSecret: options.webhookSecret,
+			// Every tick ends in `dispatchPending`, which reserves in admission order.
+			deferReservation: true,
 			now,
 		};
 		if (options.denyUnisolated) relayOptions.denyUnisolated = true;
 		if (options.isolatedHost) relayOptions.isolatedHost = options.isolatedHost;
+		if (options.jobDurations) relayOptions.jobDurations = options.jobDurations;
 		return new HostedRelay(relayOptions);
 	}
 	return {
