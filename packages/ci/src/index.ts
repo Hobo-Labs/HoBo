@@ -17,6 +17,7 @@ export {
 	shellQuote,
 	supportsPipeline,
 } from "./execution.js";
+export * from "./fleet-v2/index.js";
 export {
 	defineCiPolicy,
 	effectiveCiAccount,

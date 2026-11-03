@@ -1,0 +1,61 @@
+name: Fleet enrollment
+
+on:
+  pull_request:
+    paths:
+      - "packages/ci/**"
+      - "packages/ci-gh-actions/**"
+      - "docs/design/fleet-enrollment*"
+      - "test/fleet-enrollment-scorecard.eval.test.ts"
+      - "scripts/generate-fleet-enrollment-scorecard.mts"
+      - ".github/workflows/fleet-enrollment.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_OPTIONS: --max-old-space-size=3072
+  HOBO_TURBO_CONCURRENCY: "1"
+
+concurrency:
+  group: fleet-enrollment-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scorecard:
+    name: Scorecard eval
+    runs-on: hobo
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          sparse-checkout: |
+            docs/design
+            scripts/generate-fleet-enrollment-scorecard.mts
+            test/fleet-enrollment-scorecard.eval.test.ts
+            package.json
+            pnpm-lock.yaml
+            pnpm-workspace.yaml
+            mise.toml
+            mise.lock
+          sparse-checkout-cone-mode: false
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Regenerate scorecard
+        run: node --import tsx scripts/generate-fleet-enrollment-scorecard.mts
+      - name: Scorecard must be all pass
+        run: mise exec -- pnpm exec vitest run test/fleet-enrollment-scorecard.eval.test.ts
+
+  strict-store:
+    name: Strict v2 store + start fence
+    runs-on: hobo
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 2
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Affected tests
+        run: |
+          mise exec -- pnpm exec turbo run test --filter=@hobo/ci --filter=@hobo/ci-gh-actions \
+            -- --testPathPattern='fleet-v2'
