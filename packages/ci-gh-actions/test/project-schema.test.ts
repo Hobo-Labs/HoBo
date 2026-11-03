@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { toJson } from "@bufbuild/protobuf";
+import { DesiredCiPolicySchema } from "@hobo/ci";
 import { describe, expect, it } from "vitest";
 import {
 	ciEnvironmentPolicySha256,
@@ -38,11 +40,7 @@ describe("typed project component references", () => {
 				local: {
 					relayOrigin: selected.relayOrigin,
 					allowInsecureLoopback: true,
-					policy: JSON.parse(
-						JSON.stringify(selected.policy, (key, value) =>
-							key === "$typeName" ? undefined : value,
-						),
-					),
+					policy: toJson(DesiredCiPolicySchema, selected.policy),
 				},
 			},
 		};

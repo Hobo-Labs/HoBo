@@ -222,12 +222,26 @@ package ci
 // Desired policy does not contain runtime-owned balances, observations or leases.
 #CiPolicyProvider: {
  id: string & =~"^[A-Za-z0-9_-]{1,80}$"
- kind: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "local" | "vercel" | "azure-devops"
+ kind: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "vercel" | "azure-devops"
  connectionRef: string & !=""
  runsOn: string & =~"^[A-Za-z0-9_.-]{1,100}$"
  enabled?: bool
+ scaleSet?: #CiPolicyKubernetesScaleSet
+ engine?: #CiPolicyDaggerEngine
+ location?: "vercel" | "local" | "remote"
  if kind == "local" {runsOn: "hobo-local-host"}
+ if scaleSet != _|_ {kind: "kubernetes", engine?: _|_}
+ if engine != _|_ {kind: "kubernetes"}
+ if kind != "vercel" {location?: _|_}
 }
+#CiPolicyKubernetesScaleSet: {
+ name: string & =~"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
+ minRunners?: int & >=0 & <=1000
+ maxRunners: int & >=1 & <=1000
+ namespace: string & =~"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
+ if minRunners != _|_ {maxRunners: >=minRunners}
+}
+#CiPolicyDaggerEngine: {name: string & =~"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"}
 #CiPolicyPool: {label: "hobo", os: "linux", architecture: "x64"}
 #CiPolicyBudget: {scope: "ci-account", currency: "USD", limitMicros?: int & >=0 & <=9007199254740991, period: "manual", timeZone: "UTC"}
 #CiPolicyThreshold: {fraction: number & >0 & <=1, allow?: [...(string & =~"^[A-Za-z0-9_-]{1,80}$")]}

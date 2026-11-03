@@ -45,6 +45,7 @@
         "kind": "vercel",
         "connectionRef": "integration-vercel",
         "runsOn": "sandbox",
+        "location": "vercel",
         "enabled": true
       }
     },

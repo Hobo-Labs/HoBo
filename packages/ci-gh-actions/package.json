@@ -33,7 +33,8 @@
       "types": "./dist/cli-serve-entry.d.ts",
       "default": "./dist/cli-serve-entry.js"
     },
-    "./schema/ci-project.schema.json": "./schema/ci-project.schema.json"
+    "./schema/ci-project.schema.json": "./schema/ci-project.schema.json",
+    "./schema/ci-project-providers.schema.json": "./schema/ci-project-providers.schema.json"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
