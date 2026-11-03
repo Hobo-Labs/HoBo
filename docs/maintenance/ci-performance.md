@@ -57,6 +57,13 @@ rejects that OCI index because its attestation children are OCI manifests, which
 `CI runner image (mise oci)` job on every dispatch. `scripts/test/ci-runner-image-contract.test.ts` pins
 the check offline with a synthetic registry; `HOBO_CI_VERIFY_BASE_DIGEST=1` runs it live.
 
+The same job runs inside a `--network bridge` container, where `127.0.0.1:5000` is the container's own
+loopback rather than the host's local registry, so `mise oci build` failed after six seconds. `build.sh`
+now reaches the registry over the host port or the `hobo-ci-registry` container's bridge address, loads
+the OCI layout with skopeo (now in `system-packages.txt`) or `docker load`, and retags
+`hobo-ci-worker:local` only after the live preflight contract passes. Its change detection greps a
+depth-2 diff of `HEAD~1`; before, it used `rg`, which the worker does not ship, so it never fired.
+
 ## Reading a main failure
 
 `gh run view --log` and the web viewer can drop the tail of a long step, so a step can look as if it

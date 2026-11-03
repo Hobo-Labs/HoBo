@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Hermetic HoBo CI runner: base Dockerfile + `mise oci build` (experimental).
-# Run on a native-arch Linux host with Docker, skopeo, and pinned mise (see mise-version.txt).
+# Run on a native-arch Linux host with Docker and pinned mise (see mise-version.txt),
+# or inside a HoBo CI job container that mounts the host Docker socket.
 # From repo root:
 #   bash packages/ci-gh-actions/deploy/ci-runner/build.sh
 set -euo pipefail
@@ -14,10 +15,10 @@ export PATH="${HOME}/.local/bin:${PATH}"
 runner_ctx="${root}/packages/ci-gh-actions/deploy/ci-runner"
 base_dockerfile="${runner_ctx}/base/Dockerfile"
 oci_dir="${runner_ctx}/oci-layout"
+# The Docker daemon pushes here: loopback on the host, which it treats as plain HTTP.
 local_registry="127.0.0.1:5000"
 registry_container="hobo-ci-registry"
-base_repo="${local_registry}/hobo-ci-runner-base"
-base_ref="${base_repo}:local"
+base_image="hobo-ci-runner-base"
 
 if ! command -v mise >/dev/null 2>&1 || [[ "$(mise --version | awk '{print $1}')" != "$mise_version" ]]; then
   curl -fsSL https://mise.run | MISE_VERSION="$mise_version" sh
@@ -33,53 +34,91 @@ rm -f /tmp/hobo-ci-runner-version.$$
 # CLI rejects the pinned OCI index (its attestation children are OCI manifests).
 node --no-warnings scripts/ci-runner-verify-base-digest.mts
 
-# Fail on missing prerequisites before the base build, not minutes after it.
+# `docker load` reads an OCI image layout from Docker Engine 25 (API 1.44) on;
+# skopeo, when present, works with any engine. Refuse before the base build.
 if ! command -v skopeo >/dev/null 2>&1; then
-  echo "skopeo is required to load the mise oci layout into docker-daemon:hobo-ci-worker" >&2
-  exit 1
+  api="$(docker version --format '{{.Server.APIVersion}}')"
+  if [[ "$(printf '%s\n' "1.44" "$api" | sort -V | head -n1)" != "1.44" ]]; then
+    echo "need skopeo or a Docker Engine with API >= 1.44 (got ${api}) to load the mise oci layout" >&2
+    exit 1
+  fi
 fi
 
-echo "Building base image (native $(uname -m)), tag hobo-ci-runner-base:local"
-docker build -f "${base_dockerfile}" -t hobo-ci-runner-base:local "${runner_ctx}"
+case "$(uname -m)" in
+  x86_64) target_arch=amd64 ;;
+  aarch64 | arm64) target_arch=arm64 ;;
+  *) echo "unsupported host architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+echo "Building base image (native ${target_arch}), tag ${base_image}:local"
+# The legacy builder (Debian's docker.io CLI) does not set TARGETARCH.
+docker build --build-arg "TARGETARCH=${target_arch}" \
+  -f "${base_dockerfile}" -t "${base_image}:local" "${runner_ctx}"
 
-ensure_local_registry() {
+# Where this process reaches the registry. Inside a job container 127.0.0.1 is the
+# container's own loopback, so use the registry container's bridge address instead.
+registry_endpoint() {
   if curl -fsS "http://${local_registry}/v2/" >/dev/null 2>&1; then
+    echo "${local_registry}"
     return 0
   fi
-  if docker ps -a --format '{{.Names}}' | grep -qx "${registry_container}"; then
-    docker start "${registry_container}" >/dev/null
-  else
-    docker run -d -p 5000:5000 --name "${registry_container}" registry:2 >/dev/null
+  local ip
+  ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "${registry_container}" 2>/dev/null | awk '{print $1}')"
+  [[ -n "${ip}" ]] && echo "${ip}:5000"
+}
+
+ensure_local_registry() {
+  if ! docker ps --format '{{.Names}}' | grep -qx "${registry_container}"; then
+    if docker ps -a --format '{{.Names}}' | grep -qx "${registry_container}"; then
+      docker start "${registry_container}" >/dev/null
+    else
+      docker run -d -p 5000:5000 --name "${registry_container}" registry:2 >/dev/null
+    fi
   fi
   for _ in $(seq 1 30); do
-    if curl -fsS "http://${local_registry}/v2/" >/dev/null 2>&1; then
+    endpoint="$(registry_endpoint || true)"
+    if [[ -n "${endpoint}" ]] && curl -fsS "http://${endpoint}/v2/" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
   done
-  echo "local registry ${local_registry} did not become ready" >&2
+  echo "local registry ${registry_container} did not become ready" >&2
   exit 1
 }
 
-echo "Publishing base to local registry ${base_ref} (avoids Docker Hub 401 on mise oci --from)"
+echo "Publishing base to local registry (avoids Docker Hub 401 on mise oci --from)"
 ensure_local_registry
-docker tag hobo-ci-runner-base:local "${base_ref}"
-docker push "${base_ref}"
+docker tag "${base_image}:local" "${local_registry}/${base_image}:local"
+docker push "${local_registry}/${base_image}:local"
+export MISE_OCI_INSECURE_REGISTRIES="${endpoint}"
 
-echo "Packaging mise.lock tools into OCI layout at ${oci_dir}"
+candidate="hobo-ci-worker:${version}"
+echo "Packaging mise.lock tools into OCI layout at ${oci_dir} (base via ${endpoint})"
 rm -rf "${oci_dir}"
-mise oci build -o "${oci_dir}" --from "${base_ref}"
+# Tagged as the candidate, so loading the layout cannot move :local ahead of the contract.
+mise oci build -o "${oci_dir}" --from "${endpoint}/${base_image}:local" --tag "${candidate}"
 
-echo "Loading image into Docker as hobo-ci-worker:${version} and hobo-ci-worker:local"
-skopeo copy "oci:${oci_dir}" "docker-daemon:hobo-ci-worker:${version}"
-skopeo copy "oci:${oci_dir}" "docker-daemon:hobo-ci-worker:local"
+echo "Loading image into Docker as ${candidate}"
+if command -v skopeo >/dev/null 2>&1; then
+  skopeo copy "oci:${oci_dir}" "docker-daemon:${candidate}"
+else
+  loaded="$(tar -C "${oci_dir}" -cf - . | docker load)"
+  echo "${loaded}"
+  ref="$(printf '%s\n' "${loaded}" | sed -n 's/^Loaded image: //p; s/^Loaded image ID: //p' | tail -n1)"
+  if [[ -z "${ref}" ]]; then
+    echo "docker load reported no image" >&2
+    exit 1
+  fi
+  docker tag "${ref}" "${candidate}"
+fi
 
-echo "Runner image contract (inside container):"
-docker run --rm \
-  -v "${root}:/workspace:ro" -w /workspace \
-  -e HOBO_CI_RUNNER_CONTRACT=live \
-  hobo-ci-worker:local \
-  node --no-warnings scripts/ci-runner-preflight.mts
+# The contract runs in the candidate before it becomes :local, which new jobs use.
+# Its inputs are streamed in: a bind mount would name a host path, and inside a
+# job container the checkout is not on the host.
+echo "Runner image contract (inside ${candidate}):"
+tar -C "${root}" -cf - mise.toml mise.lock scripts/ci-runner-preflight.mts scripts/lib/ci-runner-contract.mts \
+  | docker run --rm -i -e HOBO_CI_RUNNER_CONTRACT=live "${candidate}" \
+    sh -c 'mkdir -p /tmp/contract && tar -xf - -C /tmp/contract && cd /tmp/contract && node --no-warnings scripts/ci-runner-preflight.mts'
+docker tag "${candidate}" hobo-ci-worker:local
 
 digest="$(docker inspect --format='{{index .RepoDigests 0}}' hobo-ci-worker:local 2>/dev/null || true)"
 echo "Done. ${digest:-hobo-ci-worker:local (daemon tag only)}"

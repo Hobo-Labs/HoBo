@@ -69,7 +69,7 @@ Each job runs in a **fresh Docker container** with the official Actions runner J
 
 ### Rebuild the runner image (box worker)
 
-Run on a **native-arch Linux** host (arm64 box builds arm64 only; amd64 builds amd64 — no cross-compile). Requires **Docker**, **skopeo**, and pinned **mise** (`packages/ci-gh-actions/deploy/ci-runner/mise-version.txt`). Set **`MISE_EXPERIMENTAL=1`** only for the build (the build script exports it).
+Run on a **native-arch Linux** host (arm64 box builds arm64 only; amd64 builds amd64 — no cross-compile). Requires **Docker** (Engine API ≥ 1.44, or **skopeo**) and pinned **mise** (`packages/ci-gh-actions/deploy/ci-runner/mise-version.txt`). Set **`MISE_EXPERIMENTAL=1`** only for the build (the build script exports it).
 
 ```sh
 # From repo root — exact command Tyler asked for:
@@ -78,13 +78,13 @@ bash packages/ci-gh-actions/deploy/ci-runner/build.sh
 
 That script:
 
-1. Checks that Docker Hub serves the pinned **`debian:bookworm-slim@sha256:…`** digest (`scripts/ci-runner-verify-base-digest.mts`, anonymous registry API; `docker manifest inspect` from the image's Debian `docker.io` CLI rejects that OCI index) and that `skopeo` is on `PATH`, then `docker build` with context **`packages/ci-gh-actions/deploy/ci-runner/`** (not repo root) → `hobo-ci-runner-base:local`.
+1. Checks that Docker Hub serves the pinned **`debian:bookworm-slim@sha256:…`** digest (`scripts/ci-runner-verify-base-digest.mts`, anonymous registry API; `docker manifest inspect` from the image's Debian `docker.io` CLI rejects that OCI index) and that `skopeo` is on `PATH` or the engine loads OCI layouts (API ≥ 1.44), then `docker build` with context **`packages/ci-gh-actions/deploy/ci-runner/`** (not repo root) → `hobo-ci-runner-base:local`.
 2. Push the base to **`127.0.0.1:5000/hobo-ci-runner-base:local`** (starts local **`registry:2`** on port 5000 if needed) so `mise oci build --from` does not pull from Docker Hub.
-3. `mise install` + **`mise oci build`** — tool layers from **`mise.lock`**; **`skopeo copy`** loads `oci:…/oci-layout` → `docker-daemon:hobo-ci-worker:<version>` and `:local`.
+3. `mise install` + **`mise oci build`** — tool layers from **`mise.lock`**; **`skopeo copy`** (or, without skopeo, `docker load` of the layout, Docker Engine API ≥ 1.44) loads it as `hobo-ci-worker:<version>`. The runner contract runs inside that candidate (inputs streamed in, no bind mount) before it is tagged `:local`.
 
 Version tag: `node --no-warnings scripts/ci-runner-image-version.mts` (hash of `mise.lock`, `mise.toml`, base Dockerfile, and `system-packages.txt`).
 
-**When to rebuild:** any change to `mise.toml`, `mise.lock`, `packages/ci-gh-actions/deploy/ci-runner/**`, or runner contract scripts. HoBo CI Fabric job **`CI runner image (mise oci)`** rebuilds affected-only on `hobo` when those paths change (needs host Docker socket — worker daemon mounts `/var/run/docker.sock` by default; set `HOBO_CI_MOUNT_DOCKER_SOCKET=0` to disable). Inside a job container that rebuild cannot finish yet: the worker image ships no `skopeo`, and `127.0.0.1:5000` is the job container's own loopback, not the host's registry. Until that changes, rebuild on the box host with the command above; the job now fails within seconds on the missing `skopeo` instead of after the base build. It is skipped on `merge_group`, so a queue entry never retags `hobo-ci-worker:local` from an unmerged group commit. Its change detection currently pipes to `rg`, which the worker image does not ship, so only `workflow_dispatch` rebuilds (see `docs/ci/performance.md`, finding 2).
+**When to rebuild:** any change to `mise.toml`, `mise.lock`, `packages/ci-gh-actions/deploy/ci-runner/**`, or runner contract scripts. HoBo CI Fabric job **`CI runner image (mise oci)`** rebuilds affected-only on `hobo` when those paths change (needs host Docker socket — worker daemon mounts `/var/run/docker.sock` by default; set `HOBO_CI_MOUNT_DOCKER_SOCKET=0` to disable). Inside a job container `build.sh` reaches the registry by the `hobo-ci-registry` container's bridge address (`127.0.0.1` there is the container's own loopback) and loads the layout with `docker load` when the image has no `skopeo`. Change detection diffs `HEAD~1..HEAD` on a depth-2 checkout (the previous main commit on push, the base on a pull request's merge commit) with `grep`. It is skipped on `merge_group`, so a queue entry never retags `hobo-ci-worker:local` from an unmerged group commit; a pull request that changes the image inputs does retag it, but only after the runner contract passes inside the candidate. GHCR publishing runs on main only.
 
 **GHCR (optional, public repos):** the same workflow can push `ghcr.io/<owner>/<repo>/hobo-ci-worker:<version>` after `docker login`.
 
