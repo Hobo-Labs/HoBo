@@ -47,16 +47,28 @@ export { createCompositeIsolatedHost } from "./isolated-worker/composite-host.js
 export {
 	createIsolatedContainerController,
 	type IsolatedContainerController,
+	type IsolatedWorkerStore,
 } from "./isolated-worker/container-controller.js";
 export {
 	countInFlightWorkerLeases,
 	waitForIsolatedWorkerDrain,
 } from "./isolated-worker/daemon-shutdown.js";
 export {
+	createGithubJobPoller,
+	type GithubJobPollerOptions,
+	type GithubJobPollSummary,
+} from "./isolated-worker/github-job-poller.js";
+export {
 	attachPostgresPoolErrorHandler,
 	formatPoolErrorLog,
 	redactPoolErrorMessage,
 } from "./isolated-worker/postgres-pool.js";
+export {
+	defaultWorkerDatabasePath,
+	resolveWorkerStorePlan,
+	type WorkerStoreChoice,
+	type WorkerStorePlan,
+} from "./isolated-worker/worker-store.js";
 export { createJobPollAdmissionWorker } from "./job-poll-admission.js";
 export { startRelayFromEnvironment } from "./main.js";
 export {
@@ -74,6 +86,7 @@ export {
 	type CiProjectEnvironment,
 	type CiSecretPhase,
 	type CiSecretRequirement,
+	type CiWorkerStore,
 	type ConfiguredCiRelayOptions,
 	ciEnvironmentPolicySha256,
 	ciEnvironmentSecretsSha256,

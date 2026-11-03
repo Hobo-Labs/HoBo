@@ -58,7 +58,11 @@ return {web: b.web(() => handler)};
 `,
 	);
 	initBareMetalYard({ hoboHome, componentHost: "local" });
-	const env: NodeJS.ProcessEnv = { ...process.env, HOBO_HOME: hoboHome, HOBO_PORTLESS: "0" };
+	const env: NodeJS.ProcessEnv = {
+		...process.env,
+		HOBO_HOME: hoboHome,
+		HOBO_PORTLESS: "0",
+	};
 	for (const key of [
 		"HOBO_BROKER",
 		"HOBO_BROKER_URI",

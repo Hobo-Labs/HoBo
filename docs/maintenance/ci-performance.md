@@ -5,6 +5,12 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
   runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, each capped by `HOBO_CI_WORKER_MEMORY_MB`. Raise the
   relay offer concurrency to match the slot count.
+- **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
+  SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
+  GitHub every `HOBO_CI_JOB_POLL_MS` for queued `runs-on: hobo` jobs, so CI does not stop when a hosted
+  Postgres quota or webhook relay does. `HOBO_CI_STORE=postgres` (or `"store": {"kind": "postgres",
+  "urlEnv": …}` in the CI project config) keeps the shared-relay path. `ci-store-contract.test.ts` runs
+  one suite against both stores; see `packages/ci/RUNNER-QUEUE.md` for the env vars.
 - **Shared pnpm store.** `.github/actions/pnpm-store` mounts one content-addressed store across jobs so
   installs hard-link instead of downloading.
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob

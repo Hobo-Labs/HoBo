@@ -42,8 +42,12 @@ public URL when a reverse proxy terminates TLS (**`--trust-proxy`** honors
 `*_FILE` env vars (never printed). Optional **`HOBO_CI_INGRESS_FORWARD_SECRET`**
 verifies ingress-forwarded webhooks. **`--print-config`** shows the resolved
 plan with secrets redacted. **`--with-worker`** starts the isolated-container
-sidecar when `DATABASE_URL` matches the relay store. Graceful shutdown on
-SIGINT/SIGTERM.
+sidecar with its own lease journal: local SQLite at
+`<HOBO_HOME>/ci/serve/worker.sqlite` (override `HOBO_CI_WORKER_DB`) that polls
+GitHub for `runs-on: hobo` jobs, unless the environment's
+`"store": { "kind": "postgres", "urlEnv": "<ENV_NAME>" }` points it at a shared
+relay partition (the config holds the env var name, never the URL). Graceful
+shutdown on SIGINT/SIGTERM.
 
 Remote relay deployment: [`../ci-gh-actions/REMOTE-RELAY-SERVE.md`](../ci-gh-actions/REMOTE-RELAY-SERVE.md).
 

@@ -6,6 +6,7 @@ import { camp } from "@hobo/camps";
 import type { YardRuntime } from "@hobo/cli";
 import { type Yard, yard } from "@hobo/yards";
 import { createDefaultYardRuntime } from "./compose.js";
+import { defaultHoboHome } from "./hobo-home.js";
 import {
 	isJsonNumber,
 	isJsonObject,
@@ -18,7 +19,6 @@ import {
 	BARE_METAL_PROVIDER_ID,
 	createBareMetalProvider,
 } from "./local-provider.js";
-import { defaultHoboHome } from "./hobo-home.js";
 
 // Local Yard: provider-specific control plane on the operator's machine
 // (glossary: Yard). `hobo yard init` installs it; `hobo dev` opens the Yard,
