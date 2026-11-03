@@ -16,7 +16,7 @@ COPY --chown=1000:1000 app /work/app
 USER root
 RUN mkdir -p /work/out && chown 1000:1000 /work/out
 ENV PATH="/work/app/bin:${PATH}"
-VOLUME ["/work/out"]
+VOLUME ["/work"]
 USER 1000:1000
 ENTRYPOINT ["hobo-codegen"]
 CMD ["--help"]

@@ -46,6 +46,18 @@ describe("release OCI image contract (manifest)", () => {
 				/chown\s+-R\s+.*\/(home\/hobo|work|sdk)\b/,
 			);
 		});
+
+		it(`${image.id} declares contract volumes in the Dockerfile`, () => {
+			const dockerfile = readFileSync(join(root, image.dockerfile), "utf8");
+			const volumeMatch = dockerfile.match(/^\s*VOLUME\s+\[(.*)\]/m);
+			const volumeList = volumeMatch?.[1];
+			const declared = volumeList
+				? volumeList
+						.split(",")
+						.map((part) => part.trim().replace(/^["']|["']$/g, ""))
+				: [];
+			expect([...declared].sort()).toEqual([...(image.volumes ?? [])].sort());
+		});
 	}
 
 	it("server images declare health checks and ports", () => {

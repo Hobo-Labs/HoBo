@@ -3,9 +3,11 @@
  *
  * Package lanes run for changed packages and examples, including packages one
  * level down in a pnpm-workspace group (`packages/providers/<name>`). Root build inputs that
- * every turbo task hashes (lockfile, workspace, turbo, tsconfig and biome config,
+ * every turbo task hashes (workspace, turbo, tsconfig and biome config,
  * toolchain pins, vendored sources) and any deleted package run the whole
- * workspace. Everything outside packages/ and examples/ (workflows, root
+ * workspace. `pnpm-lock.yaml` alone runs the whole workspace too; with changed
+ * package paths it only filters those packages (Turbo still hashes the lockfile).
+ * Everything outside packages/ and examples/ (workflows, root
  * scripts, root tests, draft proofs, docs) is not a package-lane input: the
  * same gate covers it with test:root, the contract guard and agent:check, and
  * the main full gate runs the whole workspace after merge. Dependents are not
@@ -25,7 +27,6 @@ export type AffectedLanes =
 	| { readonly mode: "filtered"; readonly filters: readonly string[] };
 
 const GLOBAL_INPUTS = [
-	/^pnpm-lock\.yaml$/,
 	/^pnpm-workspace\.yaml$/,
 	/^package\.json$/,
 	/^turbo\.json$/,
@@ -36,6 +37,8 @@ const GLOBAL_INPUTS = [
 	/^\.node-version$/,
 	/^vendor\//,
 ];
+/** Lockfile edits invalidate Turbo hashes but must not force a full-workspace PR test sweep when package-scoped paths are also present. */
+const LOCKFILE_ONLY_GLOBAL = /^pnpm-lock\.yaml$/;
 const WORKSPACE = /^(packages|examples)\/([^/]+)\//;
 const GROUP_GLOB =
 	/^\s*-\s*["']?((?:packages|examples)\/[^/"'*]+)\/\*["']?\s*$/;
@@ -68,6 +71,7 @@ export function affectedLanes(
 	if (changed.length === 0)
 		return { mode: "all", reason: "empty diff (base unresolved?)" };
 	const dirs = new Set<string>();
+	let lockfileChanged = false;
 	for (const path of changed) {
 		if (path.split("/").some((part) => part === ".." || part === "."))
 			return { mode: "all", reason: `unnormalised path: ${path}` };
@@ -87,9 +91,16 @@ export function affectedLanes(
 		}
 		if (GLOBAL_INPUTS.some((pattern) => pattern.test(path)))
 			return { mode: "all", reason: `workspace-wide input changed: ${path}` };
+		if (LOCKFILE_ONLY_GLOBAL.test(path)) {
+			lockfileChanged = true;
+			continue;
+		}
 	}
-	if (dirs.size === 0)
+	if (dirs.size === 0) {
+		if (lockfileChanged)
+			return { mode: "all", reason: "pnpm-lock.yaml changed" };
 		return { mode: "skip", reason: "no package-lane inputs changed" };
+	}
 	return {
 		mode: "filtered",
 		filters: [...dirs].sort().map((dir) => `--filter=./${dir}`),

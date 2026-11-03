@@ -30,7 +30,6 @@ describe("affected-lanes", () => {
 	});
 
 	for (const path of [
-		"pnpm-lock.yaml",
 		"pnpm-workspace.yaml",
 		"package.json",
 		"turbo.json",
@@ -55,6 +54,21 @@ describe("affected-lanes", () => {
 	it("runs everything when a changed package was deleted", () => {
 		const lanes = affectedLanes(["packages/gone/src/a.ts"], () => false);
 		assert.equal(lanes.mode, "all");
+	});
+
+	it("runs everything when only pnpm-lock.yaml changes", () => {
+		assert.equal(affectedLanes(["pnpm-lock.yaml"], present).mode, "all");
+	});
+
+	it("filters packages when pnpm-lock.yaml changes alongside them", () => {
+		const lanes = affectedLanes(
+			["pnpm-lock.yaml", "packages/ci/src/a.ts"],
+			present,
+		);
+		assert.deepEqual(lanes, {
+			mode: "filtered",
+			filters: ["--filter=./packages/ci"],
+		});
 	});
 
 	it("filters exactly the changed packages and examples", () => {
