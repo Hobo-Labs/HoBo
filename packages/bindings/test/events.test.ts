@@ -149,8 +149,8 @@ describe("bindingProjected", () => {
 		[{ bindingProfileRef: "  " }, "a whitespace-only binding profile ref"],
 	])("rejects %j — %s", (overrides) => {
 		expect(() =>
-				// SAFETY: each table row deliberately overrides one known fixture field.
-				bindingProjected({ ...projected, ...overrides } as typeof projected),
+			// SAFETY: each table row deliberately overrides one known fixture field.
+			bindingProjected({ ...projected, ...overrides } as typeof projected),
 		).toThrow(BindingRecordError);
 	});
 

@@ -142,7 +142,9 @@ export function parseSecretRef(input: string): ParsedSecretRef {
 			"secret reference scheme must be lowercase",
 		);
 	}
-	const typedScheme = SECRET_REF_SCHEMES.find((candidate) => candidate === scheme);
+	const typedScheme = SECRET_REF_SCHEMES.find(
+		(candidate) => candidate === scheme,
+	);
 	if (typedScheme === undefined) {
 		throw new SecretRefError(
 			"SECRET_REFERENCE_FORBIDDEN_SCHEME",

@@ -3,7 +3,7 @@
 // `data.Changed`). Plain fact bodies; a runtime wraps them in the shared
 // EventEnvelope from @hobo/core.
 
-export const EVENTS_EVENT_SCHEMA_VERSION = "hobo.reactive-events/v1";
+export const EVENTS_EVENT_SCHEMA_VERSION = "hobo.reactive-events/v1"; // public-contract: schemaVersion stamped on every reactive fact body
 
 type FactValue = string | number | readonly string[];
 type FactData = Record<string, FactValue>;
@@ -14,10 +14,7 @@ export interface ReactiveFact<T extends FactData = FactData> {
 	readonly data: Readonly<T>;
 }
 
-function fact<T extends FactData>(
-	type: string,
-	data: T,
-): ReactiveFact<T> {
+function fact<T extends FactData>(type: string, data: T): ReactiveFact<T> {
 	return Object.freeze({
 		type,
 		schemaVersion: EVENTS_EVENT_SCHEMA_VERSION,

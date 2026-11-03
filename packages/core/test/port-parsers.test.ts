@@ -787,8 +787,8 @@ describe("tenantContextFromEnv", () => {
 });
 
 describe("createUsageEvent", () => {
-		// SAFETY: this literal is the valid parsed tenant id used by the fixture.
-		const TENANT = "acme" as TenantId;
+	// SAFETY: this literal is the valid parsed tenant id used by the fixture.
+	const TENANT = "acme" as TenantId;
 
 	it("defaults quantity, unit and timestamp", () => {
 		vi.useFakeTimers();
@@ -879,9 +879,9 @@ describe("createMeteringBus", () => {
 		return { sink, seen };
 	}
 
-		const EVENT = createUsageEvent({
-			// SAFETY: this literal is the valid parsed tenant id used by the fixture.
-			tenantId: "acme" as TenantId,
+	const EVENT = createUsageEvent({
+		// SAFETY: this literal is the valid parsed tenant id used by the fixture.
+		tenantId: "acme" as TenantId,
 		eventType: "overlay.join",
 		resource: "node-1",
 		timestamp: INSTANT,
@@ -980,17 +980,17 @@ describe("policy decisions", () => {
 	const REQUEST: PolicyRequest = {
 		subject: {
 			identity: "svc:checkout",
-				// SAFETY: this literal is the valid parsed tenant id used by the fixture.
-				tenantId: "acme" as TenantId,
+			// SAFETY: this literal is the valid parsed tenant id used by the fixture.
+			tenantId: "acme" as TenantId,
 			tags: ["role:junction"],
 		},
 		action: "connect",
-			resource: {
-				kind: "junction",
-				id: "j-1",
-				// SAFETY: this literal is the valid parsed tenant id used by the fixture.
-				tenantId: "acme" as TenantId,
-			},
+		resource: {
+			kind: "junction",
+			id: "j-1",
+			// SAFETY: this literal is the valid parsed tenant id used by the fixture.
+			tenantId: "acme" as TenantId,
+		},
 	};
 
 	it("builds a deny decision with the caller's reasons", () => {

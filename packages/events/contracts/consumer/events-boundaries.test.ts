@@ -33,7 +33,7 @@ const ordersMaterialization = defineMaterialization<{ orderId: string }[]>({
 	initialState: [],
 	fold: (state, event) =>
 		event.type === "order.Placed"
-				? [...state, { orderId: (event.data as { orderId: string }).orderId }]
+			? [...state, { orderId: (event.data as { orderId: string }).orderId }]
 			: state,
 });
 

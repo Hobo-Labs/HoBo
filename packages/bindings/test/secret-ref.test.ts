@@ -81,8 +81,8 @@ describe("secret reference parsing", () => {
 				parseSecretRef(input);
 				return undefined;
 			} catch (caught) {
-			// SAFETY: parseSecretRef throws SecretRefError for this table's inputs.
-			return caught as SecretRefError;
+				// SAFETY: parseSecretRef throws SecretRefError for this table's inputs.
+				return caught as SecretRefError;
 			}
 		})();
 		expect(error?.code).toBe("SECRET_REFERENCE_EMBEDS_VALUE");

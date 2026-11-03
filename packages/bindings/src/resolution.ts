@@ -136,7 +136,10 @@ function isNumber(value: ParsedScalar): value is number {
 	return Number.isInteger(value) && value === Number(value);
 }
 
-export function assertNonSecretField(field: string, value: ParsedScalar): string {
+export function assertNonSecretField(
+	field: string,
+	value: ParsedScalar,
+): string {
 	if (!isString(value) || value.trim().length === 0) {
 		throw new BindingRecordError(
 			"BINDING_RECORD_INVALID",
@@ -293,11 +296,19 @@ type ResolutionInput = {
 
 type ResolutionBoundary = ResolutionInput | null | string | number | undefined;
 
-function isResolutionObject(value: ResolutionBoundary): value is ResolutionInput {
-	return value !== null && !Array.isArray(value) && Object.prototype.toString.call(value) === "[object Object]";
+function isResolutionObject(
+	value: ResolutionBoundary,
+): value is ResolutionInput {
+	return (
+		value !== null &&
+		!Array.isArray(value) &&
+		Object.prototype.toString.call(value) === "[object Object]"
+	);
 }
 
-export function parseBindingResolution(value: ResolutionBoundary): BindingResolution {
+export function parseBindingResolution(
+	value: ResolutionBoundary,
+): BindingResolution {
 	if (!isResolutionObject(value)) {
 		throw new BindingRecordError(
 			"BINDING_RECORD_INVALID",
@@ -313,7 +324,7 @@ export function parseBindingResolution(value: ResolutionBoundary): BindingResolu
 		realization,
 		appliedRows,
 		consideredCount,
-	// SAFETY: isResolutionObject establishes the object boundary; its fields are parsed below.
+		// SAFETY: isResolutionObject establishes the object boundary; its fields are parsed below.
 	} = value;
 
 	if (contract !== BINDING_RESOLUTION_CONTRACT) {

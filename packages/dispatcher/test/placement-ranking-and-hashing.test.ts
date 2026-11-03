@@ -45,7 +45,10 @@ function ledgerView(accounts: unknown[] = []) {
 	};
 }
 
-function account(providerId: string, overrides: Record<string, JsonValue> = {}) {
+function account(
+	providerId: string,
+	overrides: Record<string, JsonValue> = {},
+) {
 	return {
 		providerId,
 		dimension: "object-store.gib-month",
