@@ -595,6 +595,44 @@ a run like 41611050533, Main full gate and the contract guard start first. Secre
 image then follow on the freed slot while the gate runs. The run ends shortly after the gate's own finish, about 120 s
 instead of 149 s. The box daemon has to be redeployed on a main that includes this change.
 
+## Finding 13: GitHub gave the runner launched for main to an older PR job
+
+Main dispatch run 41672800885 queued its Main full gate at 10:22 CST and waited while PR jobs held both
+box slots. The worker already admitted trunk first (finding 9), so two things defeated it.
+
+- **Labels decide, not the worker.** Every job asked for `hobo` and every JIT runner registered `hobo`.
+  GitHub hands a new runner to a queued job whose labels it matches, and it picked older PR jobs. The
+  worker chose when to start a runner, not which job took it, and a runner launched for main ran a PR
+  job (`lease.actualJobId` records the swap).
+- **PR leases filled the offer's concurrency.** The offer's `concurrency` equals the slot count, so with
+  two PR leases active, a trunk job could not even be reserved until one finished.
+
+The fix is in three parts.
+
+- `push`, `workflow_dispatch` and `merge_group` jobs in `hobo-ci.yml` ask for `hobo-trunk`. They do this
+  once the repository variable `HOBO_CI_TRUNK_RUNNER` is `true`. The relay accepts exactly one label,
+  `hobo` or `hobo-trunk` (`src/runner-labels.ts`). It re-reads the job's label before launch and passes
+  it to the host. The box controller, the Vercel sandbox controller and the workflow bridge register the
+  JIT runner with that label, so a `hobo-trunk` runner can only take a trunk job. `scripts/lint-actions.ts`
+  allows `runs-on: hobo` and the one gated expression, so the variable can switch a job between the two
+  hobo labels but cannot point it at a hosted runner.
+- `HOBO_CI_WORKER_TRUNK_SLOTS` (default 0) caps the active leases of the other runs at
+  `HOBO_CI_WORKER_SLOTS − HOBO_CI_WORKER_TRUNK_SLOTS` (`generalLeaseLimit` on `HostedRelay`). The
+  remaining slots stay free for trunk, which is classified by the run's event, the same lookup the
+  admission order already caches. A run whose lookup fails counts as a PR. The hosted runtime now keeps
+  one admission order across ticks, because it rebuilds the relay every 2 s tick, and a per-relay cache
+  made the cap look up the run of every active lease on every tick. A run is looked up again only until
+  GitHub gives it a start time.
+- Tests in `test/github-job-poller.test.ts` drive the poller, relay and container controller end to end:
+  1. A trunk job queued after two PR jobs is reserved beside the first and launched as `hobo-trunk`.
+  2. Without the cap, the PR jobs hold both leases.
+  3. The real controller's JIT registration carries `hobo-trunk`.
+
+**Rollout.** Redeploy the box daemon on a main that includes this change with
+`HOBO_CI_WORKER_TRUNK_SLOTS=1`, then set `HOBO_CI_TRUNK_RUNNER=true`. Do them in that order: a daemon
+that does not serve `hobo-trunk` would leave main's jobs queued. With one of the two slots kept, PR runs
+share one slot, and a main push or merge group starts within a poll (15 s) instead of after a PR job.
+
 ## Before and after
 
 Per-job medians (duration / wait for a slot) over the 43 runs before these changes. The after column comes

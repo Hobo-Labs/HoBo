@@ -2,6 +2,7 @@ import { toJsonString } from "@bufbuild/protobuf";
 import type { CiEvent } from "@hobo/ci";
 import { z } from "zod";
 import { JitBootstrapResponseSchema } from "./_generated/jit_bootstrap_response_pb.js";
+import { createAdmissionOrder } from "./admission-order.js";
 import { type GithubTransport, getJob } from "./github.js";
 import {
 	HostedRelay,
@@ -70,12 +71,18 @@ export function createHostedRelayRuntime(options: {
 	denyUnisolated?: boolean;
 	/** Shared across ticks; a relay is rebuilt per tick and would forget it. */
 	jobDurations?: JobDurations;
+	/** See `HostedRelay`: leases runs that do not gate trunk may hold at once. */
+	generalLeaseLimit?: number;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
 	now?: () => string;
 }) {
 	const now = options.now ?? (() => new Date().toISOString());
+	const admissionOrder = createAdmissionOrder(
+		options.github,
+		options.jobDurations,
+	);
 	async function relay() {
 		const state = await options.store.configuration();
 		if (!state?.configuration) throw new Error("configuration unavailable");
@@ -87,11 +94,14 @@ export function createHostedRelayRuntime(options: {
 			webhookSecret: options.webhookSecret,
 			// Every tick ends in `dispatchPending`, which reserves in admission order.
 			deferReservation: true,
+			admissionOrder,
 			now,
 		};
 		if (options.denyUnisolated) relayOptions.denyUnisolated = true;
 		if (options.isolatedHost) relayOptions.isolatedHost = options.isolatedHost;
 		if (options.jobDurations) relayOptions.jobDurations = options.jobDurations;
+		if (options.generalLeaseLimit !== undefined)
+			relayOptions.generalLeaseLimit = options.generalLeaseLimit;
 		return new HostedRelay(relayOptions);
 	}
 	return {

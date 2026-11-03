@@ -122,3 +122,16 @@ it("puts a run with no start time behind started runs of the same rank", async (
 		(await order([ref(1), ref(2)], (item) => item)).map((item) => item.jobId),
 	).toEqual([2, 1]);
 });
+
+it("looks a run up again until GitHub gives it a start time", async () => {
+	const runs = new Map<number, RunEntry>([
+		[1, { event: "push", startedAt: null }],
+	]);
+	const { github, calls } = transport(runs);
+	const order = createAdmissionOrder(github);
+	expect(await order.rank(ref(1))).toBe(0);
+	runs.set(1, { event: "push", startedAt: "2026-10-26T12:10:00Z" });
+	expect(await order.rank(ref(1))).toBe(0);
+	expect(await order.rank(ref(1))).toBe(0);
+	expect(calls).toEqual([1, 1]);
+});

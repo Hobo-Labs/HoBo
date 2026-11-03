@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { GithubTransport } from "../github.js";
 import type { JobDurations } from "../job-durations.js";
+import { servedRunnerLabel } from "../runner-labels.js";
 
 /** Pull-mode admission: GitHub REST stands in for webhook ingress, so a box
  * needs no public URL, relay, or shared database to see `runs-on: hobo` work. */
@@ -281,12 +282,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					const failedBefore = summary.failed;
 					for (const job of jobs?.jobs ?? []) {
 						const status = PolledStatus.safeParse(job.status);
-						if (
-							!status.success ||
-							job.labels.length !== 1 ||
-							job.labels[0]?.toLowerCase() !== "hobo"
-						)
-							continue;
+						if (!status.success || !servedRunnerLabel(job.labels)) continue;
 						if (job.name !== undefined)
 							options.durations?.observe({
 								repository: connection.repository,

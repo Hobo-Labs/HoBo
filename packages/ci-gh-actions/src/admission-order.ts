@@ -4,6 +4,9 @@ import type { JobDurations } from "./job-durations.js";
 /** Where a job's run stands in line for a host: lower `rank` first, then the older run. */
 export type AdmissionKey = Readonly<{ rank: number; startedAtMs: number }>;
 
+/** The rank of merge_group, push and workflow_dispatch runs: the ones that gate trunk. */
+export const TRUNK_RANK = 0;
+
 /**
  * Merge-queue entries and trunk runs gate every other merge, so a shared host
  * admits them before pull-request work. A weekly sweep waits for both.
@@ -13,7 +16,7 @@ export function admissionRank(event: string): number {
 		case "merge_group":
 		case "push":
 		case "workflow_dispatch":
-			return 0;
+			return TRUNK_RANK;
 		case "schedule":
 			return 2;
 		default:
@@ -37,7 +40,8 @@ export type AdmissionRef = Readonly<{
 /**
  * Orders demand for a host. A run's event and start time never change for an
  * attempt, so each run is looked up once; a failed lookup ranks the job with
- * pull requests and behind them, and is retried on the next tick. Within one
+ * pull requests and behind them, and is retried on the next tick, as is a run
+ * GitHub has not given a start time yet. Within one
  * rank and run age, the job expected to take longest goes first, so the run's
  * long pole is not left to start last on a freed slot; a job with no history
  * expects 0 and the job id breaks remaining ties.
@@ -63,6 +67,7 @@ export function createAdmissionOrder(
 				? startedAtMs
 				: Number.POSITIVE_INFINITY,
 		};
+		if (!Number.isFinite(startedAtMs)) return key;
 		if (runs.size >= CACHE_LIMIT) {
 			const oldest = runs.keys().next();
 			if (!oldest.done) runs.delete(oldest.value);
@@ -70,7 +75,7 @@ export function createAdmissionOrder(
 		runs.set(ref.runId, key);
 		return key;
 	}
-	return async function order<T>(
+	async function order<T>(
 		items: readonly T[],
 		refOf: (item: T) => AdmissionRef,
 	): Promise<T[]> {
@@ -98,5 +103,10 @@ export function createAdmissionOrder(
 					a.jobId - b.jobId,
 			)
 			.map((entry) => entry.item);
-	};
+	}
+	return Object.assign(order, {
+		rank: async (ref: AdmissionRef) => (await keyFor(ref)).rank,
+	});
 }
+
+export type AdmissionOrder = ReturnType<typeof createAdmissionOrder>;
