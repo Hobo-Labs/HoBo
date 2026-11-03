@@ -141,6 +141,8 @@ export class ContractApi implements GithubTransport {
 		display_title: "",
 	};
 	jobStatus = "queued";
+	/** The one label the original job asks for; the JIT runner must register with it. */
+	jobLabel = "hobo";
 	dispatches = 0;
 	registrations = 0;
 	deletes = 0;
@@ -194,7 +196,7 @@ export class ContractApi implements GithubTransport {
 				run_id: 11,
 				run_attempt: 1,
 				status: this.jobStatus,
-				labels: ["hobo"],
+				labels: [this.jobLabel],
 			});
 		if (
 			method === "POST" &&
@@ -228,7 +230,7 @@ export class ContractApi implements GithubTransport {
 				JSON.stringify({
 					name: `hobo-${this.leaseId}`,
 					runner_group_id: 1,
-					labels: ["hobo"],
+					labels: [this.jobLabel],
 					work_folder: "_hobo_work",
 				}),
 			);

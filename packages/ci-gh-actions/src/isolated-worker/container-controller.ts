@@ -12,6 +12,7 @@ import { runnerDownloadFor } from "../bootstrap.js";
 import { type GithubTransport, getJob } from "../github.js";
 import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
+import { RUNNER_LABEL, type RunnerLabel } from "../runner-labels.js";
 import type { DockerDriver } from "./docker-driver.js";
 
 const JIT_PATH = "/tmp/hobo-ci-jit";
@@ -247,7 +248,7 @@ export function createIsolatedContainerController(options: {
 	};
 
 	const host: IsolatedRunnerHost = {
-		async launch(id: string) {
+		async launch(id: string, label: RunnerLabel = RUNNER_LABEL) {
 			const initial = await options.store.get(id);
 			if (initial?.state !== "reserved") return;
 			// Slot full: leave the lease reserved; the next relay tick retries it.
@@ -329,7 +330,7 @@ export function createIsolatedContainerController(options: {
 					JSON.stringify({
 						name: created.runnerName,
 						runner_group_id: auth.connection.runnerGroupId,
-						labels: ["hobo"],
+						labels: [label],
 						work_folder: "_hobo_work",
 					}),
 				);

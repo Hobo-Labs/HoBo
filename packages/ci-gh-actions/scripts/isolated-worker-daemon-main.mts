@@ -73,6 +73,11 @@ if (!Number.isInteger(workerMemoryMb) || workerMemoryMb < 512)
 const slots = Number(process.env.HOBO_CI_WORKER_SLOTS ?? "2");
 if (!Number.isInteger(slots) || slots < 1 || slots > 8)
 	throw new Error("invalid HOBO_CI_WORKER_SLOTS");
+// Slots that only push, workflow_dispatch and merge_group jobs may take, so a trunk job never waits
+// for a pull request's job to finish. The offer's concurrency must equal the slot count.
+const trunkSlots = Number(process.env.HOBO_CI_WORKER_TRUNK_SLOTS ?? "0");
+if (!Number.isInteger(trunkSlots) || trunkSlots < 0 || trunkSlots >= slots)
+	throw new Error("invalid HOBO_CI_WORKER_TRUNK_SLOTS");
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
@@ -187,6 +192,8 @@ const runtime = createHostedRelayRuntime({
 	isolatedHost: host,
 	denyUnisolated: true,
 	jobDurations,
+	// With no trunk slots this is the slot count, all the host could run anyway.
+	generalLeaseLimit: slots - trunkSlots,
 	control: async () => undefined,
 });
 const poller =
@@ -255,6 +262,7 @@ log("hobo_ci_isolated_worker_started", {
 	jobPollMs: plan.jobPollMs,
 	workerMemoryMb,
 	slots,
+	trunkSlots,
 	pnpmStoreMounted: pnpmStore !== "",
 	drainTimeoutMs,
 });
