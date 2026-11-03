@@ -433,9 +433,14 @@ rather than only for launches. The supervisor's stop timeout (systemd `TimeoutSt
   `ci-runner-image-contract.test.ts` fails when the pins drift from the installed Playwright or the
   Dockerfile. The helper searches both layouts under `PLAYWRIGHT_BROWSERS_PATH`, `/opt/pw-browsers` and
   `~/.cache/ms-playwright`, and throws with the fix when there is no browser rather than leaving the
-  test to whatever Playwright does. Because the gate jobs no longer wait on `ci-runner-image`, the
-  first run of the pull request that adds the browser starts its gate on the old `:local`; the gate is
-  meaningful once that run's image job has retagged it.
+  test to whatever Playwright does. The first run of #1673 showed the other half: its gate started at
+  13:53:25, before the image job retagged `:local` at 13:55:20, so it tested the old image (no browser,
+  and no `tmux`, which the `@hobo/code` git-terminal pane drives through the resident session runtime:
+  76 failures reading `tmux availability unknown`). The image now carries `tmux` too (live contract,
+  `IMAGE_CONTRACT_COMMANDS`), and `pr-gate` and `main-gate` declare `needs: ci-runner-image` with
+  `!cancelled()`, so a run that changes the image inputs tests on the image it built, and a failed image
+  build still runs the gate rather than skipping a required check. When the inputs are unchanged the
+  image job is a short no-op, which is what the gates now wait for.
 - **Vitest inlined the TypeScript compiler.** `typescript/lib/typescript.js` is CJS, but es-module-lexer
   finds module syntax in it, so Vitest's externalization heuristic inlined it. Vite then transformed the
   9 MB file in each worker and logged `Failed to load source map for …/typescript.js` with an ENOENT
