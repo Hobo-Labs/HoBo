@@ -28,8 +28,12 @@ if (process.argv[2] === "transport-child") {
 			savedLogin: existsSync(join(settings, "dagger", "credentials.json")),
 			configText: readFileSync(config, "utf8"),
 			keys: Object.keys(process.env),
-			proxyPreserved: process.env.HTTPS_PROXY === process.env.FIXTURE_PROXY,
-			caPreserved: process.env.NODE_EXTRA_CA_CERTS === process.env.FIXTURE_CA,
+			// The test passes "" for a variable the host does not set.
+			proxyPreserved:
+				(process.env.HTTPS_PROXY ?? "") === (process.env.FIXTURE_PROXY ?? ""),
+			caPreserved:
+				(process.env.NODE_EXTRA_CA_CERTS ?? "") ===
+				(process.env.FIXTURE_CA ?? ""),
 		})}\n`,
 	);
 	if (process.argv[2] === "version") {

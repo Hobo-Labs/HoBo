@@ -45,8 +45,11 @@ jobs:
       contents: read
       packages: write
     steps:
-      # No submodules: the diff only needs the gitlink, not ts-autocode's tree.
+      # No submodules: the diff only needs the gitlink, not ts-autocode's tree. Depth 2 gives
+      # HEAD~1: the previous main commit on push, the base on a pull request's merge commit.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 2
       - name: Detect runner image inputs changed
         id: rebuild
         run: |
@@ -55,25 +58,25 @@ jobs:
             echo "needed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch origin "${{ github.base_ref }}"
-            range="origin/${{ github.base_ref }}...HEAD"
-          else
-            range="HEAD~1..HEAD"
-          fi
-          if git diff --name-only "${range}" | rg -q \
-            '^(mise\.(toml|lock)|packages/ci-gh-actions/deploy/ci-runner/|scripts/(lib/ci-runner-contract\.mts|ci-runner-preflight\.mts|test/ci-runner-image-contract\.test\.ts))'; then
+          # grep, not rg (the worker image ships no rg), and on a variable rather than a pipe,
+          # where an early `grep -q` exit would fail the pipeline under pipefail.
+          changed="$(git diff --name-only HEAD~1 HEAD)"
+          if grep -qE \
+            '^(mise\.(toml|lock)|packages/ci-gh-actions/deploy/ci-runner/|scripts/(lib/ci-runner-contract\.mts|ci-runner-preflight\.mts|test/ci-runner-image-contract\.test\.ts))' \
+            <<<"${changed}"; then
             echo "needed=true" >> "$GITHUB_OUTPUT"
           else
             echo "needed=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Build base + mise oci layers (native arch)
         if: steps.rebuild.outputs.needed == 'true'
+        timeout-minutes: 15
         env:
           MISE_EXPERIMENTAL: "1"
         run: bash packages/ci-gh-actions/deploy/ci-runner/build.sh
+      # Published from main only; a pull request's image is tried on the box, not shipped.
       - name: Push runner image to GHCR (optional)
-        if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo'
+        if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
         env:
           MISE_EXPERIMENTAL: "1"
         run: |
@@ -247,7 +250,9 @@ jobs:
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch'
     runs-on: hobo
-    timeout-minutes: 40
+    # A main run past 20 minutes is a failure; the step timeouts below fail a hang sooner.
+    # The weekly schedule is the one whole-workspace sweep and gets an hour.
+    timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 20 }}
     permissions:
       contents: read
     # At most one Main full gate holds a box slot, whatever event started it, so the other slot
@@ -275,26 +280,65 @@ jobs:
         uses: ./.github/actions/pnpm-store
         with:
           mode: save
-      - name: Resolve Turbo SCM base
-        id: scm-base
+      - name: Resolve the previous main commit and the gate scope
+        id: main-base
         env:
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_BASE_REF: ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          BASE="$(node --import tsx scripts/ci/turbo-scm-base.mts)"
-          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
-          git fetch origin main
-      - name: Full S0 gate set
+          # The push's `before`, or HEAD~1 for a dispatch. The weekly schedule and an
+          # unreachable base run repo-wide; otherwise scripts/ci/affected-lanes.mts
+          # --main-gate decides (repo-wide only for root config, lockfile, pins, CI files).
+          base=""
+          if [ "$EVENT_NAME" = "push" ]; then base="$PUSH_BEFORE"; fi
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then base="$(git rev-parse HEAD~1)"; fi
+          if [ -n "$base" ] && ! git cat-file -e "${base}^{commit}" 2>/dev/null; then base=""; fi
+          # Package tests go repo-wide only for inputs turbo hashes into every task; a
+          # workflow edit cannot change a package's test result.
+          scope="repo-wide"
+          tests="all"
+          if [ -n "$base" ]; then
+            changed="$(git diff --name-only "$base" HEAD)"
+            scope="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --main-gate <<<"$changed")"
+            lanes="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts <<<"$changed")"
+            if [ "$lanes" != "--filter=*" ]; then tests="affected"; fi
+          fi
+          echo "main gate: ${scope}, workspace tests: ${tests} (base ${base:-none})"
+          {
+            echo "base=${base}"
+            echo "scope=${scope}"
+            echo "tests=${tests}"
+          } >> "$GITHUB_OUTPUT"
+      - name: S0 gate set
+        timeout-minutes: 12
         env:
           # One vitest fork at a time: four forks (default) with 3 GiB heaps plus
           # componentize-js wizer exceed the 6 GiB job container and get OOM-killed.
           HOBO_RELEVANT_CHECK_CONCURRENCY: "1"
-        run: pnpm run check:all
-      - name: Full workspace tests
+          SCOPE: ${{ steps.main-base.outputs.scope }}
+          BASE: ${{ steps.main-base.outputs.base }}
+        run: |
+          set -euo pipefail
+          if [ "$SCOPE" = "affected" ]; then
+            pnpm agent:check -- --base="$BASE"
+          else
+            pnpm run check:all
+          fi
+      - name: Workspace tests
+        # The whole-workspace sweep (weekly, or a lockfile/root-config change) is not held
+        # to the main-push budget.
+        timeout-minutes: ${{ steps.main-base.outputs.tests == 'affected' && 10 || 40 }}
         env:
-          TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
-        run: pnpm exec turbo run test --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
+          TESTS: ${{ steps.main-base.outputs.tests }}
+          BASE: ${{ steps.main-base.outputs.base }}
+        run: |
+          set -euo pipefail
+          scope=()
+          if [ "$TESTS" = "affected" ]; then scope=("--filter=...[${BASE}]"); fi
+          echo "turbo test scope: ${scope[*]:-whole workspace}"
+          pnpm exec turbo run test "${scope[@]}" \
+            --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
       - name: Save Turbo cache
         if: always()
         uses: ./.github/actions/turbo-cache

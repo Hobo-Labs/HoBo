@@ -13,6 +13,8 @@ const category = categoryArg?.slice("--category=".length) ?? "unit";
 const rootOnly = process.argv.includes("--root-only");
 const finalValidation = process.argv.includes("--final");
 const changedScope = process.argv.includes("--changed");
+const runTimeoutMs =
+	Number.parseInt(process.env.HOBO_TEST_RUN_TIMEOUT_MS ?? "", 10) || 600_000;
 const isAgent =
 	process.env.CI_AGENT === "true" ||
 	process.env.CODEX === "true" ||
@@ -195,6 +197,8 @@ try {
 		"vitest",
 		"vitest.mjs",
 	);
+	const wallStart = Date.now();
+	const monotonicStart = performance.now();
 	const result = spawnSync(
 		process.execPath,
 		[
@@ -210,15 +214,36 @@ try {
 			stdio: "inherit",
 			shell: false,
 			env: sanitizeNodeOptions(),
+			// Vitest bounds each test and hook, not a file or the run; a leaked handle
+			// or a stuck worker would otherwise hold the CI slot until the job timeout.
+			timeout: runTimeoutMs,
+			killSignal: "SIGKILL",
 		},
 	);
-	if (result.error) {
+	if (
+		result.error &&
+		"code" in result.error &&
+		result.error.code === "ETIMEDOUT"
+	) {
+		console.error(
+			`run-tests: vitest exceeded ${runTimeoutMs / 1000}s (HOBO_TEST_RUN_TIMEOUT_MS) and was killed`,
+		);
+	} else if (result.error) {
 		console.error(`run-tests: vitest failed to start: ${result.error.message}`);
 	}
 	if (result.signal) {
 		// A killed child has no exit status; name the signal so CI logs show why.
 		console.error(
 			`run-tests: vitest was killed by ${result.signal} (no exit status)`,
+		);
+	}
+	// Vitest's Duration and the watchdog both use the monotonic clock, which stops
+	// while the host is suspended; the wall clock does not.
+	const pausedMs =
+		Date.now() - wallStart - (performance.now() - monotonicStart);
+	if (pausedMs > 30_000) {
+		console.error(
+			`run-tests: the wall clock ran ${Math.round(pausedMs / 1000)}s ahead of the monotonic clock; the host was suspended or paused during this run`,
 		);
 	}
 	process.exitCode = result.status ?? 1;

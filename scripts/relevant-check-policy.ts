@@ -475,12 +475,29 @@ export function selectRelevantChecks(
 		});
 	}
 
-	if (behaviorChanged)
+	if (behaviorChanged) {
+		checks.push({
+			command: "pnpm",
+			args: [
+				"exec",
+				"turbo",
+				"run",
+				"build",
+				"--filter={./src/draft/epic-proofs/*}^...",
+				"--filter={./src/draft/projects/*}^...",
+				"--output-logs=new-only",
+				"--concurrency=100%",
+			],
+			reason:
+				"behavior steps import the proofs' workspace dependencies from dist, which a scoped run has not built",
+			serial: true,
+		});
 		checks.push({
 			command: "pnpm",
 			args: ["run", "test:behavior"],
 			reason: "browser-driven behavior specs; never full-stack E2E",
 		});
+	}
 	if (visualChanged)
 		checks.push({
 			command: "pnpm",

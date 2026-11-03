@@ -613,6 +613,17 @@ test("editing a step definition trips the behavior lane", () => {
 	assert.ok(checks.some(isBehaviorLane));
 });
 
+test("the behavior lane builds the proofs' dependencies first, serially", () => {
+	const { checks } = plan(["cucumber.yaml"]);
+	assert.ok(checks.some(isBehaviorLane));
+	const build = checks.find(
+		(check) =>
+			check.args.join(" ").startsWith("exec turbo run build") &&
+			check.args.includes("--filter={./src/draft/epic-proofs/*}^..."),
+	);
+	assert.equal(build?.serial, true);
+});
+
 test("pattern-catalog starter Gherkin is fixture data, not the repo behavior lane", () => {
 	const { checks } = plan([
 		"packages/patterns/patterns/starter/code/openui-astryx-bindle/project/features/visual.feature",

@@ -56,3 +56,30 @@ drift; `packages/schema-tools` already handles them, and the frozen proof cannot
 rejects that OCI index because its attestation children are OCI manifests, which failed the
 `CI runner image (mise oci)` job on every dispatch. `scripts/test/ci-runner-image-contract.test.ts` pins
 the check offline with a synthetic registry; `HOBO_CI_VERIFY_BASE_DIGEST=1` runs it live.
+
+The same job runs inside a `--network bridge` container, where `127.0.0.1:5000` is the container's own
+loopback rather than the host's local registry, so `mise oci build` failed after six seconds. `build.sh`
+publishes the `hobo-ci-registry` container on a free loopback port (the box already had something on
+5000, so a fixed `-p 5000:5000` failed with "port is already allocated"), pushes over that port, reads
+the registry at the container's bridge address from inside a job container, loads
+the OCI layout with skopeo (now in `system-packages.txt`) or, without it, pushes the layout to that
+registry with `mise oci push --image-dir` and has the daemon `docker pull` it (the box's classic image
+store cannot `docker load` an OCI layout), and retags
+`hobo-ci-worker:local` only after the live preflight contract passes. Its change detection greps a
+depth-2 diff of `HEAD~1`; before, it used `rg`, which the worker does not ship, so it never fired.
+
+## Reading a main failure
+
+`gh run view --log` and the web viewer can drop the tail of a long step, so a step can look as if it
+stopped inside `test:unit` when Vitest passed and a later command failed. Read the raw job log instead:
+`gh api --allow-escape-sequences repos/Hobo-Labs/HoBo/actions/jobs/<job-id>/logs`. That is how the
+"unit test hang" on main turned out to be the live examples-console Cloudflare scenario failing in the
+offline `test:behavior` lane; it now runs only under cucumber's `live` profile. Main full gate has a
+20-minute job limit and step limits, `scripts/run-tests.ts` kills a Vitest run after
+`HOBO_TEST_RUN_TIMEOUT_MS` (default 600000), and main's workspace tests are affected-only
+(`--filter=...[<previous main commit>]`).
+
+If Vitest's `Duration` is far below the wall time between its `Start at` and its summary line, the host
+paused: both of Vitest's numbers come from the monotonic clock, which a suspended box stops.
+`scripts/run-tests.ts` prints `the wall clock ran Ns ahead of the monotonic clock` when the gap passes
+30 s. Check the box's power and sleep settings before you tune Vitest.
