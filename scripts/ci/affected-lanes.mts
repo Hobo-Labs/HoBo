@@ -12,7 +12,8 @@
  *
  * CLI: `git diff --name-only BASE...HEAD | node --import tsx scripts/ci/affected-lanes.mts`
  * prints one turbo argument per line (empty output = skip, `--filter=*`-free
- * output with no args = run all).
+ * output with no args = run all). With `--main-gate` it prints `repo-wide` or
+ * `affected` instead (see mainGateScope).
  */
 import { existsSync } from "node:fs";
 import process from "node:process";
@@ -68,6 +69,31 @@ export function affectedLanes(
 	};
 }
 
+export type MainGateScope =
+	| { readonly mode: "repo-wide"; readonly reason: string }
+	| { readonly mode: "affected" };
+
+const CI_INPUTS = /^(\.github\/|mise\.lock$)/;
+
+/**
+ * Whether Main full gate runs every gate (`check:all`) or only the affected ones
+ * (`agent:check --base=<previous main commit>`). Repo-wide for root config, the
+ * lockfile, toolchain pins and CI files; affected for everything else.
+ */
+export function mainGateScope(
+	paths: readonly string[],
+	exists: (dir: string) => boolean = existsSync,
+): MainGateScope {
+	const ci = paths
+		.map((path) => path.trim())
+		.find((path) => CI_INPUTS.test(path));
+	if (ci) return { mode: "repo-wide", reason: `CI input changed: ${ci}` };
+	const lanes = affectedLanes(paths, exists);
+	return lanes.mode === "all"
+		? { mode: "repo-wide", reason: lanes.reason }
+		: { mode: "affected" };
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
 	const input = await new Promise<string>((resolve, reject) => {
 		let text = "";
@@ -78,6 +104,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 		process.stdin.on("end", () => resolve(text));
 		process.stdin.on("error", reject);
 	});
+	if (process.argv.includes("--main-gate")) {
+		const scope = mainGateScope(input.split("\n"));
+		if (scope.mode === "repo-wide")
+			console.error(`affected-lanes: repo-wide (${scope.reason})`);
+		process.stdout.write(`${scope.mode}\n`);
+		process.exit(0);
+	}
 	const lanes = affectedLanes(input.split("\n"));
 	if (lanes.mode === "filtered") {
 		process.stdout.write(`${lanes.filters.join("\n")}\n`);

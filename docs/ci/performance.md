@@ -128,6 +128,30 @@ only the changed packages, so the proofs' steps failed on `@hobo/code`'s missing
 policy now runs a serial `turbo run build --filter={./src/draft/epic-proofs/*}^...
 --filter={./src/draft/projects/*}^...` (32 tasks, cached) first.
 
+**Vitest wall time ≈ 3x its Duration happened once, and it was the box.** In run 41566469733, Vitest's
+own `Start at 02:33:20` and its summary line at 02:43:41 are 621 s apart, yet it reported `Duration
+192.60s`. Vitest's default reporter sets both `Start at` and the duration start in `onTestRunStart` and
+measures with `performance.now()`, so one process saw 192 s on the monotonic clock while 621 s passed on
+the wall clock. CPU contention, pool settings, or a teardown hang cannot do that, since all three still
+advance the monotonic clock. A suspended or paused host stops it. The job on the box's other slot
+(artifact signing, run 41566513729) logged nothing for 599 s over the same window, stuck at
+`Cloning into external/ts-autocode`, until it was cancelled. The three later main runs show no gap:
+`Start at 03:06:01`, summary at 03:08:43, `Duration 161.90s` (41569957464), and likewise 176.5 s and
+160.6 s. `scripts/run-tests.ts` now prints a line when the wall clock runs more than 30 s ahead of the
+monotonic clock, so the next pause reads as one.
+
+**Main full gate is affected-only.** Before this change, every main push ran `check:all` (repo-wide lint,
+architecture guard, all 758 root unit files, behavior) whatever it touched. A step now resolves the
+previous main commit (the push's `before`, or `HEAD~1` for a dispatch) and runs
+`scripts/ci/affected-lanes.mts --main-gate` on the diff. Root config, the lockfile, toolchain pins
+(`mise.toml`, `mise.lock`), `.github/`, a deleted package, or an empty diff get `check:all`. Everything
+else gets `agent:check --base=<previous main>`, the same impact-scoped policy the PR impact gate runs.
+Workspace tests use `turbo run test --filter=...[<previous main>]` unless an input turbo hashes into
+every task changed. A workflow edit cannot change a package test's result, so it alone does not widen
+them. The weekly schedule is the one whole-workspace sweep, with a 60-minute job limit; main pushes keep
+20. `scripts/test/affected-lanes.test.ts` pins both rules and dry-runs turbo to show that a scoped
+filter leaves an unrelated package (`@hobo/storage-sqlite`) out.
+
 The rest of this section is the analysis as it stood before the raw logs were read.
 
 The `test:unit` death has the same shape on all three main runs inspected. The step fails 380–395 s after it

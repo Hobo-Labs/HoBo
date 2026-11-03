@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { describe, it } from "node:test";
-import { affectedLanes } from "../ci/affected-lanes.mts";
+import { affectedLanes, mainGateScope } from "../ci/affected-lanes.mts";
 
 const present = (): boolean => true;
 
@@ -89,5 +89,70 @@ describe("affected-lanes", () => {
 		assert.equal(run("pnpm-lock.yaml\n"), "--filter=*\n");
 		assert.equal(run("README.md\n"), "");
 		assert.equal(run("packages/ci/src/a.ts\n"), "--filter=./packages/ci\n");
+	});
+});
+
+describe("main-gate scope", () => {
+	it("is affected-only for package, script, doc and proof changes", () => {
+		for (const paths of [
+			["packages/ci/src/a.ts"],
+			["scripts/run-tests.ts", "docs/a.md"],
+			["src/draft/epic-proofs/x/features/a.feature", "cucumber.yaml"],
+		])
+			assert.deepEqual(mainGateScope(paths, present), { mode: "affected" });
+	});
+
+	for (const path of [
+		".github/workflows/hobo-ci.yml",
+		".github/actions/turbo-cache/action.yml",
+		"mise.lock",
+		"mise.toml",
+		"pnpm-lock.yaml",
+		"package.json",
+		"turbo.json",
+	]) {
+		it(`is repo-wide when ${path} changes`, () => {
+			assert.equal(
+				mainGateScope(["README.md", path], present).mode,
+				"repo-wide",
+			);
+		});
+	}
+
+	it("is repo-wide for an empty diff or a deleted package", () => {
+		assert.equal(mainGateScope([], present).mode, "repo-wide");
+		assert.equal(
+			mainGateScope(["packages/gone/src/a.ts"], () => false).mode,
+			"repo-wide",
+		);
+	});
+
+	it("CLI prints the scope", () => {
+		const run = (input: string): string =>
+			execFileSync(
+				"node",
+				[
+					"--experimental-strip-types",
+					"--no-warnings",
+					"scripts/ci/affected-lanes.mts",
+					"--main-gate",
+				],
+				{ encoding: "utf8", input, stdio: ["pipe", "pipe", "ignore"] },
+			);
+		assert.equal(run("packages/ci/src/a.ts\n"), "affected\n");
+		assert.equal(run(".github/workflows/hobo-ci.yml\n"), "repo-wide\n");
+	});
+
+	it("a scoped turbo run leaves an unrelated package out", () => {
+		const plan = execFileSync(
+			"node_modules/.bin/turbo",
+			["run", "test", "--filter=...{./packages/ci-dagger}", "--dry=json"],
+			{ encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+		);
+		const tasks = [...plan.matchAll(/"taskId":\s*"([^"]+)"/g)].map(
+			(match) => match[1],
+		);
+		assert.ok(tasks.includes("@hobo/ci-dagger#test"));
+		assert.ok(!tasks.includes("@hobo/storage-sqlite#test"));
 	});
 });
