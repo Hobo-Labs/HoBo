@@ -16,6 +16,11 @@
  * With no summaries it deletes nothing and has nothing to save; with an
  * unreadable one it deletes nothing and saves.
  *
+ * On the box the cache is `TURBO_CACHE_DIR`, a host directory every job
+ * shares: the same 7-day rule bounds it, a file another job's prune removed
+ * mid-listing is skipped, and a read-only cache (`TURBO_CACHE=local:r`) is left
+ * alone.
+ *
  * Node builtins only: the step runs with `if: always()`, also on a job whose
  * `pnpm install` failed.
  */
@@ -130,6 +135,36 @@ function listDir(dir: string): string[] {
 	}
 }
 
+/**
+ * The cache Turbo wrote to: `TURBO_CACHE_DIR` when set (the box's shared host
+ * directory), else `<root>/.turbo/cache`.
+ */
+export function cacheDirOf(
+	root: string,
+	env: Readonly<Record<string, string | undefined>>,
+): string {
+	const dir = env.TURBO_CACHE_DIR;
+	return dir ? dir : join(root, ".turbo", "cache");
+}
+
+/** `TURBO_CACHE=local:r` (a fork's run on the shared cache): touch nothing. */
+export function localReadOnly(
+	env: Readonly<Record<string, string | undefined>>,
+): boolean {
+	return (env.TURBO_CACHE ?? "")
+		.split(",")
+		.some((part) => part.trim() === "local:r");
+}
+
+/** `undefined` when another job's prune deleted the file first. */
+function mtimeOf(path: string): number | undefined {
+	try {
+		return statSync(path).mtimeMs;
+	} catch {
+		return undefined;
+	}
+}
+
 function keepDays(): number {
 	const days = Number(process.env.HOBO_TURBO_CACHE_KEEP_DAYS ?? "7");
 	return Number.isFinite(days) && days >= 0 ? days : 7;
@@ -142,7 +177,15 @@ function output(save: boolean): void {
 
 function main(root: string): void {
 	const runsDir = join(root, ".turbo", "runs");
-	const cacheDir = join(root, ".turbo", "cache");
+	const cacheDir = cacheDirOf(root, process.env);
+	// The box keeps a shared cache on the host; there is nothing to upload.
+	const shared = process.env.HOBO_TURBO_CACHE_SHARED === "1";
+	const save = (worth: boolean) => output(worth && !shared);
+	if (localReadOnly(process.env)) {
+		output(false);
+		console.log("turbo-cache-prune: local cache is read-only; left as is");
+		return;
+	}
 	const tasks: RunTask[] = [];
 	for (const file of listDir(runsDir)) {
 		if (!file.endsWith(".json")) continue;
@@ -152,25 +195,32 @@ function main(root: string): void {
 			console.log(
 				`turbo-cache-prune: unreadable ${file}; cache left as restored`,
 			);
-			output(true);
+			save(true);
 			return;
 		}
 		tasks.push(...parsed);
 	}
-	const files = listDir(cacheDir).map((name) => ({
-		name,
-		mtimeMs: statSync(join(cacheDir, name)).mtimeMs,
-	}));
+	const files: CacheFile[] = [];
+	for (const name of listDir(cacheDir)) {
+		const mtimeMs = mtimeOf(join(cacheDir, name));
+		if (mtimeMs !== undefined) files.push({ name, mtimeMs });
+	}
 	const now = Date.now();
 	const plan = planPrune(files, tasks, now, keepDays());
 	const stamp = new Date(now);
-	for (const file of plan.keep) utimesSync(join(cacheDir, file), stamp, stamp);
+	for (const file of plan.keep) {
+		try {
+			utimesSync(join(cacheDir, file), stamp, stamp);
+		} catch {
+			// Deleted by another job's prune since the listing; nothing to stamp.
+		}
+	}
 	for (const file of plan.drop) rmSync(join(cacheDir, file), { force: true });
-	output(plan.save);
+	save(plan.save);
 	console.log(
 		tasks.length === 0
 			? "turbo-cache-prune: no run summaries; cache left as restored, nothing to save"
-			: `turbo-cache-prune: ${plan.keep.length} file(s) used by ${new Set(tasks.map((task) => task.hash)).size} task hash(es), ${files.length - plan.keep.length - plan.drop.length} kept from earlier runs, ${plan.drop.length} dropped; ${plan.save ? "new entries to save" : "no new entries, skipping the save"}`,
+			: `turbo-cache-prune: ${plan.keep.length} file(s) used by ${new Set(tasks.map((task) => task.hash)).size} task hash(es), ${files.length - plan.keep.length - plan.drop.length} kept from earlier runs, ${plan.drop.length} dropped; ${shared ? "shared host cache, no save" : plan.save ? "new entries to save" : "no new entries, skipping the save"}`,
 	);
 }
 

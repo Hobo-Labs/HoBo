@@ -1,9 +1,12 @@
 name: HoBo Turbo cache
 description: >-
-  Vercel Turbo remote cache when configured; otherwise a free actions/cache
-  fallback. `restore` (default) at job start; `save` as an `if: always()` step at
-  job end, because the combined actions/cache only saves when the job succeeds
-  and the Main full gate rarely did, so main never seeded a cache. Run
+  Vercel Turbo remote cache when configured. On the box worker the local cache
+  is a host directory every job shares (inside the bind-mounted pnpm store,
+  HOBO_CI_PNPM_STORE_MOUNTED=1), so main replays what a pull request already
+  ran on the same tree. Elsewhere a free actions/cache fallback: `restore`
+  (default) at job start; `save` as an `if: always()` step at job end, because
+  the combined actions/cache only saves when the job succeeds and the Main full
+  gate rarely did, so main never seeded a cache. Run
   scripts/ci/turbo-cache-prune.mts before `save` and skip it on `save=false`.
 inputs:
   mode:
@@ -19,13 +22,15 @@ inputs:
     required: false
     default: ""
   remote-mode:
-    description: Turbo --cache remote mode (remote:rw or remote:ro)
+    description: >-
+      Turbo --cache remote mode (remote:rw or remote:ro). remote:ro (a fork's
+      pull request) also makes the box's shared local cache read-only.
     required: false
     default: remote:rw
 runs:
   using: composite
   steps:
-    - name: Configure Turbo remote cache
+    - name: Configure Turbo cache
       if: inputs.mode == 'restore'
       shell: bash
       env:
@@ -34,21 +39,38 @@ runs:
         REMOTE_MODE: ${{ inputs.remote-mode }}
       run: |
         set -euo pipefail
+        # Read the process env here: an `if: env.X` expression only sees
+        # workflow-level and GITHUB_ENV values, never the variables the box
+        # worker sets on the job container.
+        local_mode="local:rw"
+        if [ "${HOBO_CI_PNPM_STORE_MOUNTED:-}" = "1" ] && [ -n "${npm_config_store_dir:-}" ]; then
+          # Entries are content-addressed and turbo stores only successful tasks;
+          # a truncated archive (two jobs writing one hash) reads as a miss.
+          shared="${npm_config_store_dir}/hobo-turbo-cache"
+          mkdir -p "${shared}"
+          if [ "${REMOTE_MODE}" = "remote:ro" ]; then local_mode="local:r"; fi
+          {
+            echo "TURBO_CACHE_DIR=${shared}"
+            echo "HOBO_TURBO_CACHE_SHARED=1"
+          } >> "$GITHUB_ENV"
+          echo "Turbo local cache: shared host directory ${shared} (${local_mode})"
+        fi
         if [ -n "${INPUT_TOKEN}" ] && [ -n "${INPUT_TEAM}" ]; then
           {
             echo "TURBO_TOKEN=${INPUT_TOKEN}"
             echo "TURBO_TEAM=${INPUT_TEAM}"
-            echo "TURBO_CACHE=local:rw,${REMOTE_MODE}"
+            echo "TURBO_CACHE=${local_mode},${REMOTE_MODE}"
           } >> "$GITHUB_ENV"
           echo "Turbo remote cache enabled (${REMOTE_MODE})"
         else
-          echo "Turbo remote cache not configured; using actions/cache fallback"
+          if [ "${local_mode}" != "local:rw" ]; then echo "TURBO_CACHE=${local_mode}" >> "$GITHUB_ENV"; fi
+          echo "Turbo remote cache not configured"
         fi
     # Entries are content-addressed, so any job's cache is valid for any other:
     # prefer this job's own last save, then the newest save of any job. PR
     # saves are scoped to the PR ref; only push-to-main saves reach every PR.
     - name: Restore Turbo local cache fallback
-      if: inputs.mode == 'restore' && env.TURBO_TOKEN == ''
+      if: inputs.mode == 'restore' && env.TURBO_TOKEN == '' && env.HOBO_TURBO_CACHE_SHARED != '1'
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
       with:
         path: .turbo/cache
@@ -61,7 +83,7 @@ runs:
     # The caller runs scripts/ci/turbo-cache-prune.mts first and skips this
     # whole action when it reports nothing new to save.
     - name: Save Turbo local cache fallback
-      if: always() && inputs.mode == 'save' && env.TURBO_TOKEN == ''
+      if: always() && inputs.mode == 'save' && env.TURBO_TOKEN == '' && env.HOBO_TURBO_CACHE_SHARED != '1'
       uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
       with:
         path: .turbo/cache
