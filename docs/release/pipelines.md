@@ -11,6 +11,8 @@ Three release pipelines ship independently: **ts-autocode**, **HoBo SDK**, and *
 
 Every pipeline has a **10-minute hard timeout** and a **5-minute target duration**. Jobs use **`runs-on: hobo`** and the hermetic worker image. Every third-party GitHub Action is pinned to a **full commit SHA**; mutable version tags are not sufficient.
 
+`release-hobo` jobs run `pnpm run pins:fetch ts-autocode` after checkout (`submodules: recursive`) and before `pnpm install`, matching HoBo CI's sibling-pin setup.
+
 Pull requests may build and inspect release artifacts, but the release check is **`npm pack --dry-run` only**. PRs never publish, never write to npm, and never receive publish credentials.
 
 PR OCI builds are **affected-only**: [`scripts/ci/release-oci-affected.mts`](../../scripts/ci/release-oci-affected.mts) diffs `origin/main...HEAD` (override with `HOBO_CHECK_BASE`) against each image's Dockerfile, image directory, source inputs, and shared toolchain or workspace inputs, then emits the build matrix. An empty result skips the build job; CLI changes also select the dependent MCP image, with `hobo-cli` ordered before `hobo-mcp`. Manual workflow dispatch retains the full image matrix.
