@@ -105,6 +105,24 @@ function sha256(text: string): string {
 	return createHash("sha256").update(text).digest("hex");
 }
 
+const gitTreeCache = new Map<string, RepoTree>();
+
+/** Drop cached git trees (tests that swap cwd/rev fixtures). */
+export function clearReleaseOciGitTreeCache(): void {
+	gitTreeCache.clear();
+}
+
+const lockfileParseCache = new Map<string, Lockfile>();
+
+function parseLockfileCached(text: string): Lockfile {
+	const key = sha256(text);
+	const cached = lockfileParseCache.get(key);
+	if (cached) return cached;
+	const parsed = parseLockfile(text);
+	lockfileParseCache.set(key, parsed);
+	return parsed;
+}
+
 function unquote(key: string): string {
 	return key.replace(/^(['"])(.*)\1$/, "$2");
 }
@@ -369,7 +387,7 @@ export function imageInputs(
 		OCI_IMAGES_MANIFEST,
 	);
 	if (!manifest) return new Map();
-	const lockfile = parseLockfile(roots.get("pnpm-lock.yaml") ?? "");
+	const lockfile = parseLockfileCached(roots.get("pnpm-lock.yaml") ?? "");
 	const turbo =
 		parseJson<TurboJson>(roots.get("turbo.json"), "turbo.json") ?? {};
 	const rootPackage = parseJson<RootPackageJson>(
@@ -411,15 +429,29 @@ export function imageInputs(
 		}
 	}
 
+	const neededDirs = new Set<string>();
+	for (const image of manifest.images) {
+		const rootDirs = packagesOf(image.id).map((name) => {
+			const dir = dirByName.get(name);
+			if (!dir)
+				throw new Error(
+					`release image ${image.id}: ${name} is not a pnpm-lock.yaml importer`,
+				);
+			return dir;
+		});
+		for (const dir of importerClosure(lockfile, [".", ...rootDirs]))
+			if (dir !== ".") neededDirs.add(dir);
+	}
+
 	const filesByDir = new Map<string, [string, string][]>();
 	for (const [path, oid] of tree.files) {
-		for (let dir = posix.dirname(path); dir !== "."; dir = posix.dirname(dir))
-			if (lockfile.importers.has(dir)) {
-				const list = filesByDir.get(dir) ?? [];
-				list.push([path, oid]);
-				filesByDir.set(dir, list);
-				break;
-			}
+		for (let dir = posix.dirname(path); dir !== "."; dir = posix.dirname(dir)) {
+			if (!neededDirs.has(dir) || !lockfile.importers.has(dir)) continue;
+			const list = filesByDir.get(dir) ?? [];
+			list.push([path, oid]);
+			filesByDir.set(dir, list);
+			break;
+		}
 	}
 
 	function packageFiles(dir: string): string[] {
@@ -525,6 +557,9 @@ function git(args: readonly string[], cwd: string, input?: string): Buffer {
 }
 
 export function gitTree(rev: string, cwd: string): RepoTree {
+	const cacheKey = `${cwd}\0${rev}`;
+	const cached = gitTreeCache.get(cacheKey);
+	if (cached) return cached;
 	const files = new Map<string, string>();
 	const gitlinks = new Map<string, string>();
 	for (const record of git(["ls-tree", "-r", "-z", "--full-tree", rev], cwd)
@@ -535,7 +570,7 @@ export function gitTree(rev: string, cwd: string): RepoTree {
 		else if (match?.[1] === "commit" && match[3])
 			gitlinks.set(match[3], match[2] ?? "");
 	}
-	return {
+	const tree: RepoTree = {
 		files,
 		gitlinks,
 		read(paths) {
@@ -565,6 +600,8 @@ export function gitTree(rev: string, cwd: string): RepoTree {
 			return contents;
 		},
 	};
+	gitTreeCache.set(cacheKey, tree);
+	return tree;
 }
 
 function listFlag(

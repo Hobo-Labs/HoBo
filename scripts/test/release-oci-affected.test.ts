@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 import {
 	affectedReleaseOciImages,
+	clearReleaseOciGitTreeCache,
 	gitTree,
 	imageInputs,
 	isBuildInput,
+	type ImageInputs,
 	type RepoTree,
 } from "../ci/release-oci-affected.mts";
 
@@ -221,7 +224,16 @@ function affected(
 
 const ALL = ["hobo-code", "hobo-cli", "hobo-mcp", "hobo-site"];
 
+/** One git ls-tree + imageInputs per file; ~1–3s on CI (measured on hobo runner). */
+const REPO_MANIFEST_INTEGRATION_TIMEOUT_MS = 30_000;
+
+let repoHeadImageInputs: ReadonlyMap<string, ImageInputs> | undefined;
+
 describe("affected release OCI images", () => {
+	beforeAll(() => {
+		clearReleaseOciGitTreeCache();
+		repoHeadImageInputs = imageInputs(gitTree("HEAD", root));
+	}, REPO_MANIFEST_INTEGRATION_TIMEOUT_MS);
 	it("builds nothing for an unchanged tree or files no image reads", () => {
 		expect(affected({})).toEqual([]);
 		expect(affected({ "docs/release/pipelines.md": "# changed\n" })).toEqual(
@@ -407,19 +419,17 @@ describe("affected release OCI images", () => {
 		expect(isBuildInput("lib/a.ts", ["src/**"])).toBe(false);
 	});
 
-	it("resolves every image of the repository's own manifest", () => {
-		const head = imageInputs(gitTree("HEAD", root));
-		expect([...head.keys()].sort()).toEqual(
-			[
-				"hobo-ci-serve",
-				"hobo-cli",
-				"hobo-code",
-				"hobo-codegen",
-				"hobo-mcp",
-				"hobo-sdk",
-				"hobo-site",
-			].sort(),
-		);
-		expect(affectedReleaseOciImages(head, head)).toEqual([]);
-	});
+	it(
+		"resolves every image of the repository's own manifest",
+		() => {
+			const head = repoHeadImageInputs;
+			if (!head) throw new Error("beforeAll did not resolve repo HEAD inputs");
+			const manifest = loadReleaseOciManifest(root);
+			expect([...head.keys()].sort()).toEqual(
+				manifest.images.map(({ id }) => id).sort(),
+			);
+			expect(affectedReleaseOciImages(head, head)).toEqual([]);
+		},
+		REPO_MANIFEST_INTEGRATION_TIMEOUT_MS,
+	);
 });
