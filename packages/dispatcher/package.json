@@ -16,6 +16,9 @@
 	"publishConfig": {
 		"access": "public"
 	},
+	"dependencies": {
+		"@hobo/pricing": "workspace:*"
+	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",
 		"vitest": "^4.1.9"

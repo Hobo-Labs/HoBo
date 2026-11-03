@@ -26,8 +26,25 @@ are `F(baseline + candidate) - F(baseline)`.
 
 `ExternalProviderQuote` is an evidence record, not an executable pricing model.
 `external-quote.ts` always rejects attempts to turn one into a rating engine.
-Dispatcher v1 is unchanged; this package has no dispatcher, CI, broker, cloud,
-or adapter dependency.
+Dispatcher v1 is unchanged; v2 lives in `@hobo/dispatcher` as
+`decideDispatchV2`. Legacy CI sandbox accounting re-exports from
+`@hobo/pricing/legacy`. Broker quote authorization and cloud commercial catalog
+hashes integrate without changing dispatcher v1 replay.
+
+## Phases 2–5 surface
+
+- **`@hobo/pricing/legacy`**: moved CI decimal accounting (`allocationQuote`,
+  `divideDecimalAtMost`); `@hobo/ci` re-exports preserve import paths.
+- **`decideDispatchV2`**: ranks registered providers by minimum incremental
+  billed amount from `quoteScenario`; v1 `decideDispatch` is byte-identical on
+  the pinned replay fixture.
+- **Adversarial §13**: fixtures 10.1–10.11 (including stale observation,
+  cross-currency, and zero-incremental tie cases).
+- **`pricing.*` events**: pinned v1 corpus entry for `pricing.QuoteCreated` in
+  `@hobo/events`.
+- **Broker / cloud**: `authorizeBillingSpend` prefers quote incremental USD;
+  `pricingCatalogHashFromCommercialRefs` hashes commercial product refs without
+  altering resource `catalogHashOf`.
 
 ## Contracts and validation
 

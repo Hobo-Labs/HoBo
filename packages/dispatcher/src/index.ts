@@ -26,3 +26,13 @@ export {
 	replayDispatchDecision,
 	stableHash,
 } from "./dispatcher.js";
+export {
+	DISPATCHER_V2_SCHEMA_VERSION,
+	DISPATCH_V2_OBJECTIVE,
+	decideDispatchV2,
+	type DecideDispatchV2Request,
+	type DecideDispatchV2Result,
+	type DispatchV2Objective,
+	type DispatchV2QuoteInput,
+	type DispatchV2RankingEntry,
+} from "./dispatcher-v2.js";
