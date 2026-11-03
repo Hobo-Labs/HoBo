@@ -158,6 +158,14 @@ cases: wait on events, or do no process work at all. The process-group tests now
 Unix socket the fixture holds until it dies. The contract tests that only read check names pass a
 stub `run` to `evaluateCiRunnerContract`, while the preflight case still runs the real probes.
 
+`test/hobo-home-isolation.test.ts` "stays set after a file's last test" failed the same way in #1664's
+second attempt: it expected one late write and saw none. Its probe file `a` leaves a 0 ms timer, and
+file `b` was meant to keep the worker alive with a 500 ms sleep. But vitest's default sequencer runs
+larger files first, so `b` always ran before `a`. The write then landed only when the timer beat the
+worker's shutdown. Delaying the timer to 200 ms fails that version every time. The probes now run in
+name order, `a`'s timer resolves a promise the worker shares (`isolate: false`), and `b` waits for that
+promise, so the test no longer depends on how fast the timer fires.
+
 Reproduced off the box under its conditions: two concurrent `pnpm run test:unit` jobs, each with the
 gate's environment (`CI=true`, `HOBO_RELEVANT_CHECK_CONCURRENCY=1`,
 `NODE_OPTIONS=--max-old-space-size=3072`), on a 4-CPU, 15 GiB host like the box's. Both passed
@@ -475,6 +483,18 @@ current time, so no two polls asked the same question.
 
 An idle poll now costs nothing, and a busy one costs one read per run whose jobs changed. The box daemon has
 to be redeployed on a main that includes this change.
+
+The status filter itself turned out to be unreliable. For run 41622562414, `?status=queued` answered
+`total_count: 0` for more than 16 minutes while the unfiltered `/actions/runs?per_page=3` listed the run as
+queued, and nothing in the logs said so: a non-OK read came back as an empty list, and the daemon logged a
+poll only when it accepted a job or paused. The poller now also reads the newest 50 runs with no status filter
+(same ETag rule, so it costs nothing while the list holds still and one read a poll while runs move) and
+unions them with the filtered lists: a run not `completed` there has its jobs read, and a `completed` one joins
+the completed-runs lookback. Every read GitHub refuses is logged as `hobo_ci_isolated_worker_github_read_failed`
+with its path and status. Each poll summary also carries the queued `hobo` jobs it saw but did not newly
+accept (`waiting`, as `run/job:result`, where the result is `duplicate`, `ignored` or `failed`). The daemon
+logs a poll that accepted a job, refused one, failed a read or paused. It also logs one whose waiting jobs
+changed, and repeats that line once a minute while the same jobs keep waiting.
 
 ## Finding 11: a run's long pole was admitted last
 
