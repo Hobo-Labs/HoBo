@@ -46,6 +46,7 @@ describe("affected release OCI images", () => {
 	it.each([
 		"release/oci-images.json",
 		"scripts/ci/build-release-oci-image.mts",
+		"scripts/ci/stage-release-oci-app.mts",
 		"scripts/ci/release-oci-affected.mts",
 		"scripts/lib/release-oci-contract.mts",
 	])("selects every image for release-wide input %s", (path) => {

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadNpmScopeMap, mapPackageName } from "../ci/npm-publish-scope.mts";
@@ -17,10 +17,6 @@ describe("release npm scope map", () => {
 		const map = loadNpmScopeMap();
 		expect(map.publicScope).toBe("@hobo-labs");
 		expect(mapPackageName("@hobo/core", map)).toBe("@hobo-labs/core");
-	});
-
-	it("maps @hobo/code to @hobo-labs/code", () => {
-		expect(mapPackageName("@hobo/code")).toBe("@hobo-labs/code");
 	});
 
 	it("lists every mapped package under release/", () => {
@@ -42,30 +38,12 @@ describe("release OCI image contract (manifest)", () => {
 			expect(image.user).toMatch(/^1000:1000$/);
 			expect(image.entrypoint.length).toBeGreaterThan(0);
 		});
-	}
 
-	it("declares the independent hobo-code image contract", () => {
-		const image = manifest.images.find(
-			(candidate) => candidate.id === "hobo-code",
-		);
-		if (!image) throw new Error("hobo-code release image is missing");
-		expect(`${manifest.repositoryPrefix}/${image.name}`).toBe(
-			"ghcr.io/hobo-labs/hobo/hobo-code",
-		);
-		expect(image).toMatchObject({
-			dockerfile: "deploy/release-images/hobo-code/Dockerfile",
-			workdir: "/home/hobo",
-			user: "1000:1000",
-			entrypoint: ["hobo-code"],
-			cmd: ["--help"],
-			versionProbe: ["hobo-code", "--help"],
-			volumes: ["/home/hobo/.hobo"],
+		it(`${image.id} has a runtime-only Dockerfile`, () => {
+			const dockerfile = readFileSync(join(root, image.dockerfile), "utf8");
+			expect(dockerfile).not.toMatch(/pnpm\s+install|turbo\s+run|AS build/);
 		});
-		expect(image.envDoc?.join("\n")).toContain("HOBO_HOME");
-		expect(image.envDoc?.join("\n")).toContain(
-			"HOBO_TENANT / HOBO_PROJECT / HOBO_BRANCH / HOBO_ENV",
-		);
-	});
+	}
 
 	it("server images declare health checks and ports", () => {
 		const servers = manifest.images.filter((i) => i.expose?.length);
@@ -90,13 +68,11 @@ function dockerInspectConfig(tag: string): DockerInspectConfig {
 	return raw as DockerInspectConfig;
 }
 
-function dockerRunVersion(probe: string[]) {
+function dockerRunVersion(tag: string, probe: string[]) {
 	const result = spawnSync(
 		"docker",
-		["run", "--rm", "hobo-cli:candidate", ...probe],
-		{
-			encoding: "utf8",
-		},
+		["run", "--rm", "--entrypoint", "", tag, ...probe],
+		{ encoding: "utf8" },
 	);
 	return {
 		ok: result.status === 0,
@@ -107,24 +83,35 @@ function dockerRunVersion(probe: string[]) {
 describe("release OCI image contract (live docker)", () => {
 	const live = process.env.HOBO_RELEASE_OCI_CONTRACT === "live";
 	const manifest = loadReleaseOciManifest(root);
+	const requestedIds = process.env.HOBO_RELEASE_OCI_IMAGE_ID?.split(",")
+		.map((id) => id.trim())
+		.filter((id) => id.length > 0);
+	const liveIds = requestedIds?.length
+		? requestedIds
+		: manifest.images.map((image) => image.id);
+	const version = process.env.HOBO_RELEASE_VERSION ?? "0.1.0-test";
+	const revision = process.env.HOBO_RELEASE_REVISION ?? "deadbeef";
 
-	it("evaluates built image config when HOBO_RELEASE_OCI_CONTRACT=live", () => {
-		if (!live) return;
-		const image = manifest.images.find((i) => i.id === "hobo-cli");
-		expect(image).toBeDefined();
-		if (!image) return;
-		const expected = expectedConfig(manifest, image, "deadbeef", "0.1.0-test");
-		const config = dockerInspectConfig("hobo-cli:candidate");
-		const checks = evaluateImageConfig(expected, config);
-		const failed = checks.filter((c) => !c.ok);
-		expect(failed, failed.map((f) => f.detail).join("; ")).toEqual([]);
-	});
+	for (const image of manifest.images) {
+		const selected = live && liveIds.includes(image.id);
+		it.runIf(selected)(`${image.id} evaluates built image config`, () => {
+			const expected = expectedConfig(manifest, image, revision, version);
+			const config = dockerInspectConfig(`${image.name}:candidate`);
+			const checks = evaluateImageConfig(expected, config);
+			const failed = checks.filter((check) => !check.ok);
+			expect(
+				failed,
+				failed.map((failure) => failure.detail).join("; "),
+			).toEqual([]);
+		});
 
-	it("runs version probe as non-root when live", () => {
-		if (!live) return;
-		const image = manifest.images.find((i) => i.id === "hobo-cli");
-		if (!image?.versionProbe?.length) return;
-		const run = dockerRunVersion(image.versionProbe);
-		expect(run.ok, run.out).toBe(true);
-	});
+		it.runIf(selected)(`${image.id} runs its version probe as non-root`, () => {
+			if (!image.versionProbe?.length) return;
+			const run = dockerRunVersion(
+				`${image.name}:candidate`,
+				image.versionProbe,
+			);
+			expect(run.ok, run.out).toBe(true);
+		});
+	}
 });

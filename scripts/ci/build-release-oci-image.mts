@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * Build one release OCI app image (toolchain layer + app Dockerfile).
+ * Build one release OCI app image from artifacts staged on the host runner.
  * PR/CI: build + load locally. Release: push to GHCR with semver tag (digest recorded separately).
  */
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { ciRunnerImageVersion } from "../lib/ci-runner-contract.mts";
 import {
@@ -11,6 +12,7 @@ import {
 	loadReleaseOciManifest,
 	type ReleaseOciImage,
 } from "../lib/release-oci-contract.mts";
+import { stageReleaseOciApp } from "./stage-release-oci-app.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 
@@ -21,13 +23,29 @@ function run(
 ): void {
 	const result = spawnSync(cmd, args, {
 		cwd: root,
-		env: { ...process.env, ...env },
+		env: { ...process.env, CI: "1", ...env },
 		encoding: "utf8",
 		stdio: "inherit",
 	});
 	if (result.status !== 0) {
 		throw new Error(`${cmd} ${args.join(" ")} failed (${result.status})`);
 	}
+}
+
+export function ensureReleaseBuildHost(): void {
+	if (
+		!existsSync(
+			join(root, "external/ts-autocode/packages/grounding/package.json"),
+		)
+	) {
+		run("pnpm", ["run", "pins:fetch", "ts-autocode"]);
+	}
+	run("pnpm", [
+		"install",
+		"--frozen-lockfile",
+		"--ignore-scripts",
+		"--config.confirmModulesPurge=false",
+	]);
 }
 
 function resolveToolchainImage(
@@ -45,6 +63,7 @@ function buildArgs(
 	toolchain: string,
 	version: string,
 	revision: string,
+	stagingDir: string,
 ): string[] {
 	const repo = ghcrRepository(loadReleaseOciManifest(root), image);
 	const labels = [
@@ -60,7 +79,7 @@ function buildArgs(
 	const args = [
 		"build",
 		"-f",
-		image.dockerfile,
+		join(root, image.dockerfile),
 		"--build-arg",
 		`HOBO_TOOLCHAIN_IMAGE=${toolchain}`,
 		"--build-arg",
@@ -74,8 +93,21 @@ function buildArgs(
 	if (image.id === "hobo-mcp") {
 		args.push("--build-arg", "HOBO_CLI_CANDIDATE=hobo-cli:candidate");
 	}
-	args.push("-t", `${image.name}:candidate`, root);
+	args.push("-t", `${image.name}:candidate`, stagingDir);
 	return args;
+}
+
+function ensureCliCandidate(): void {
+	const result = spawnSync(
+		"docker",
+		["image", "inspect", "hobo-cli:candidate"],
+		{ cwd: root, stdio: "ignore" },
+	);
+	if (result.status !== 0) {
+		throw new Error(
+			"hobo-mcp requires hobo-cli:candidate; build hobo-cli first",
+		);
+	}
 }
 
 export type BuiltReleaseImage = { localTag: string; ghcrRepo: string };
@@ -101,7 +133,11 @@ export function buildReleaseImage(options: {
 		process.env.GITHUB_SHA ??
 		"local";
 	const toolchain = resolveToolchainImage(manifest);
-	run("docker", buildArgs(image, toolchain, version, revision));
+	const stagingDir = join(root, "deploy/release-images/.staging", image.id);
+	ensureReleaseBuildHost();
+	stageReleaseOciApp(image.id, stagingDir);
+	if (image.id === "hobo-mcp") ensureCliCandidate();
+	run("docker", buildArgs(image, toolchain, version, revision, stagingDir));
 	return {
 		localTag: `${image.name}:candidate`,
 		ghcrRepo: ghcrRepository(manifest, image),

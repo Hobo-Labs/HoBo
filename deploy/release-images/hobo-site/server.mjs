@@ -1,9 +1,9 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { join, normalize } from "node:path";
+import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = join(fileURLToPath(import.meta.url), "dist");
+const root = join(dirname(fileURLToPath(import.meta.url)), "dist");
 const port = Number(process.env.HOBO_SITE_PORT ?? 4321);
 const base = (process.env.HOBO_SITE_BASE ?? "/HoBo/").replace(/\/$/, "") || "";
 

@@ -34,6 +34,7 @@ const SHARED_INPUTS = new Set([
 	"turbo.json",
 	"release/oci-images.json",
 	"scripts/ci/build-release-oci-image.mts",
+	"scripts/ci/stage-release-oci-app.mts",
 	"scripts/ci/release-oci-affected.mts",
 	"scripts/lib/release-oci-contract.mts",
 ]);

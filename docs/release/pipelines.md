@@ -110,6 +110,8 @@ These pipelines replace **`workflows-disabled/publish.yml`**; implementation mus
 
 Release pipelines publish **composable app images** on top of the same **mise OCI toolchain** as `hobo-ci-worker` (see [`packages/ci-gh-actions/deploy/ci-runner/build.sh`](../../packages/ci-gh-actions/deploy/ci-runner/build.sh)). Image definitions live in [`release/oci-images.json`](../../release/oci-images.json); build entrypoint is [`scripts/ci/build-release-oci-image.mts`](../../scripts/ci/build-release-oci-image.mts).
 
+Release OCI apps are staged on the runner by [`scripts/ci/stage-release-oci-app.mts`](../../scripts/ci/stage-release-oci-app.mts): the host installs the frozen workspace with lifecycle scripts disabled, builds the image's Turbo targets, and materializes production deploys, SDK tarballs, or site output under `deploy/release-images/.staging/<image-id>/`. That staged directory is the Docker build context. Unknown image IDs fail before the staging directory is replaced. Release Dockerfiles are runtime-only and copy staged artifacts; they never run `pnpm install` or Turbo.
+
 | Image | GHCR name | Role |
 |---|---|---|
 | `hobo-cli` | `ghcr.io/hobo-labs/hobo/hobo-cli` | Product `hobo` binary |
@@ -157,11 +159,13 @@ Multi-arch builds are **native-only** on `hobo` runners (amd64 or arm64 per box)
 Local:
 
 ```bash
-pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts
+pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts scripts/test/stage-release-oci-app.test.ts
 bash packages/ci-gh-actions/deploy/ci-runner/build.sh
 node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli
-HOBO_RELEASE_OCI_CONTRACT=live pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts
+HOBO_RELEASE_OCI_CONTRACT=live HOBO_RELEASE_OCI_IMAGE_ID=hobo-cli pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts
 ```
+
+Set `HOBO_RELEASE_OCI_IMAGE_ID` to each built image id, or omit it after building every manifest image to run all live contracts in one invocation. `HOBO_RELEASE_VERSION` and `HOBO_RELEASE_REVISION` must match the candidate build when supplied.
 
 ## ts-autocode upstream migration
 

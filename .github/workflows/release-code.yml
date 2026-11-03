@@ -9,11 +9,13 @@ on:
       - "release/oci-images.json"
       - "release/npm-scope-map.json"
       - "scripts/ci/build-release-oci-image.mts"
+      - "scripts/ci/stage-release-oci-app.mts"
       - "scripts/ci/npm-publish-scope.mts"
       - "scripts/ci/release-oci-affected.mts"
       - "scripts/lib/release-oci-contract.mts"
       - "scripts/test/release-oci-affected.test.ts"
       - "scripts/test/release-oci-image-contract.test.ts"
+      - "scripts/test/stage-release-oci-app.test.ts"
       - ".github/actions/release-oci-attest/**"
       - ".github/workflows/release-code.yml"
       - "docs/release/pipelines.md"
@@ -48,7 +50,7 @@ jobs:
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: npm scope map + OCI manifest contract
-        run: pnpm exec vitest run scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts
+        run: pnpm exec vitest run scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/stage-release-oci-app.test.ts
 
   code-lint:
     name: Lint @hobo/code

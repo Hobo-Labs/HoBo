@@ -12,7 +12,7 @@ import {
 import { join } from "node:path";
 import { applyScopeToManifest, loadNpmScopeMap } from "./npm-publish-scope.mts";
 
-const SDK_PACKAGES = [
+export const SDK_PACKAGES = [
 	"@hobo/core",
 	"@hobo/bindles",
 	"@hobo/contracts",
@@ -35,7 +35,15 @@ type SdkArtifactManifest = {
 
 type NpmPackLine = { filename: string };
 
+const SDK_PACKAGE_DIRS = {
+	"@hobo/runtime-local": "packages/runtimes/runtime-local",
+} satisfies Record<string, string>;
+
 function findPackageDir(name: string): string {
+	const nested = Object.entries(SDK_PACKAGE_DIRS).find(
+		([packageName]) => packageName === name,
+	)?.[1];
+	if (nested) return join(root, nested);
 	for (const rel of readdirSync(join(root, "packages"))) {
 		const pkgPath = join(root, "packages", rel, "package.json");
 		try {
