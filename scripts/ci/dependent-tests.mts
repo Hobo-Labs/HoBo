@@ -30,9 +30,10 @@
  * Node builtins only.
  *
  * CLI: `git diff --name-only BASE HEAD | node --experimental-strip-types scripts/ci/dependent-tests.mts [--run [turbo args…]]`
- * prints the plan; `--run` also runs it (turbo for whole suites, vitest for
- * subsets, the other arguments going to `turbo run test`) and exits non-zero
- * when any of it fails.
+ * prints the plan; `--run` also runs it (`turbo run test` for whole suites,
+ * and for each subset with its files passed through to vitest; the other
+ * arguments go to the whole-suite call) and exits non-zero when any of it
+ * fails.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -484,46 +485,55 @@ export function planDependentTests(
 	return { mode: "scoped", full: full.sort(), subsets, skipped };
 }
 
-function sh(command: string, args: readonly string[], cwd = "."): number {
-	console.log(
-		`$ ${[command, ...args].join(" ")}${cwd === "." ? "" : `  (in ${cwd})`}`,
-	);
-	const result = spawnSync(command, args, { cwd, stdio: "inherit" });
-	return result.status ?? 1;
-}
-
-/** Runs the plan; `turboArgs` go to the `turbo run test` call. Every part runs, so one failure hides no other. */
-function runPlan(plan: TestPlan, turboArgs: readonly string[]): number {
-	const turbo = ["exec", "turbo", "run"];
-	const concurrency = `--concurrency=${process.env.HOBO_TURBO_CONCURRENCY ?? "100%"}`;
-	if (plan.mode === "all")
-		return sh("pnpm", [...turbo, "test", concurrency, ...turboArgs]);
-	let status = 0;
+/**
+ * The `pnpm` argument lists that run a plan. Each one is `turbo run test`: a
+ * subset passes its files through to the package's `vitest run`, so it gets
+ * the same task graph as a PR's whole-suite run, including a `<pkg>#test`
+ * override's extra `dependsOn` (`@hobo/hobo#test` needs
+ * `@hobo/adapter-hono#build`), and the same strict env. `turboArgs` go to the
+ * whole-suite call only, since a pass-through would reach every test task.
+ */
+export function planCommands(
+	plan: TestPlan,
+	turboArgs: readonly string[],
+	concurrency: string,
+): readonly (readonly string[])[] {
+	const test = ["exec", "turbo", "run", "test"];
+	const parallel = `--concurrency=${concurrency}`;
+	if (plan.mode === "all") return [[...test, parallel, ...turboArgs]];
+	const commands: string[][] = [];
 	if (plan.full.length > 0)
-		status = sh("pnpm", [
-			...turbo,
-			"test",
+		commands.push([
+			...test,
 			...plan.full.map((dir) => `--filter=./${dir}`),
 			"--continue",
-			concurrency,
+			parallel,
 			...turboArgs,
 		]);
-	if (plan.subsets.size === 0) return status;
-	const build = sh("pnpm", [
-		...turbo,
-		"build",
-		...[...plan.subsets.keys()].map((dir) => `--filter=./${dir}`),
-		"--output-logs=errors-only",
-		concurrency,
-	]);
-	if (build !== 0) return build;
 	for (const [dir, files] of plan.subsets)
-		status =
-			sh(
-				"pnpm",
-				["exec", "vitest", "run", "--passWithNoTests", ...files],
-				dir,
-			) || status;
+		commands.push([
+			...test,
+			`--filter=./${dir}`,
+			parallel,
+			"--",
+			"--passWithNoTests",
+			...files,
+		]);
+	return commands;
+}
+
+/** Runs the plan. Every part runs, so one failure hides no other. */
+function runPlan(plan: TestPlan, turboArgs: readonly string[]): number {
+	let status = 0;
+	for (const args of planCommands(
+		plan,
+		turboArgs,
+		process.env.HOBO_TURBO_CONCURRENCY ?? "100%",
+	)) {
+		console.log(`$ pnpm ${args.join(" ")}`);
+		const exit = spawnSync("pnpm", args, { stdio: "inherit" }).status ?? 1;
+		if (exit !== 0) status = exit;
+	}
 	return status;
 }
 

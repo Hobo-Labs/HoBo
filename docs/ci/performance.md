@@ -261,6 +261,16 @@ skipped; `src/isolated-worker/github-job-poller.ts` gives the same. `src/client.
 hobo, because hobo's CLI entry imports it. `scripts/test/dependent-tests.test.ts` pins
 the rules on an in-memory tree.
 
+The first version ran each dependent's file subset as `turbo run build` and then `vitest run` in the
+package, which bypassed turbo's `test` task. A package's `<pkg>#test` `dependsOn` lists builds its
+tests need beyond its own dependencies: `@hobo/hobo#test` adds `@hobo/adapter-hono#build`, because
+`examples/hello-bindle` imports it at test time. That build never ran on the main path, and main runs
+41616466379 and 41618937951 failed 13 hobo tests with `Failed to resolve entry for package
+"@hobo/adapter-hono"`. PR runs passed because the impact gate calls `turbo run test`. Every command
+the planner issues now goes through `turbo run test`, and a subset passes its files after `--`, so the
+two paths share one dependency graph and the strict environment. `planCommands` in the planner is
+what the test checks: every command it returns starts with `turbo run test`.
+
 **hobo's own suite runs its process-bound cases concurrently.** Four files held 133 s of the suite's
 177 s of test time, each case starting `hobo` or a composed binary and waiting on it:
 `starter-deployment-end-to-end` (53.6 s), `persistent-local-deployment` (38.5 s), `bin-opensesame`
@@ -493,8 +503,8 @@ Three changes fix this.
 A job with no history expects 0 and keeps the job-id order. After a daemon restart, the first poll
 re-reads the completed runs in its two-hour lookback, which restores the history. Expected on the box: in
 a run like 41611050533, Main full gate and the contract guard start first. Secret scan and the runner
-image then follow on the freed slot while the gate runs, and the run ends near the gate's own finish,
-about 110 s instead of 149 s. The box daemon has to be redeployed on a main that includes this change.
+image then follow on the freed slot while the gate runs. The run ends shortly after the gate's own finish, about 120 s
+instead of 149 s. The box daemon has to be redeployed on a main that includes this change.
 
 ## Before and after
 
