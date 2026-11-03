@@ -167,12 +167,25 @@ const SYSTEM_COMMANDS = {
 	curl: "curl",
 	ps: "procps",
 	docker: "docker.io",
+	skopeo: "skopeo",
 } as const satisfies Record<string, string>;
 
 /** Minimum invocations the repo relies on beyond mise.toml (wasmtime tar extract, etc.). */
 export const REQUIRED_COMMANDS = ["xz", "git", "curl", "ps", "docker"] as const;
 
-export function evaluateCiRunnerContract(root: string): ContractCheck[] {
+/**
+ * Commands only the image build needs (build.sh loads the mise oci layout with skopeo).
+ * Checked when the contract runs inside a freshly built candidate
+ * (`HOBO_CI_RUNNER_CONTRACT=live`), so jobs on an older image are not refused for them.
+ */
+export const IMAGE_CONTRACT_COMMANDS = ["skopeo"] as const;
+
+export function evaluateCiRunnerContract(
+	root: string,
+	options: { readonly live?: boolean } = {
+		live: process.env.HOBO_CI_RUNNER_CONTRACT === "live",
+	},
+): ContractCheck[] {
 	const checks: ContractCheck[] = [];
 
 	if (!existsSync(join(root, MISE_TOML))) {
@@ -217,7 +230,10 @@ export function evaluateCiRunnerContract(root: string): ContractCheck[] {
 		});
 	}
 
-	for (const cmd of REQUIRED_COMMANDS) {
+	const commands = options.live
+		? [...REQUIRED_COMMANDS, ...IMAGE_CONTRACT_COMMANDS]
+		: REQUIRED_COMMANDS;
+	for (const cmd of commands) {
 		const which = run("sh", ["-c", `command -v ${cmd}`]);
 		const packageName = SYSTEM_COMMANDS[cmd];
 		checks.push({

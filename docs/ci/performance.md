@@ -253,7 +253,17 @@ itself happened during 20:31–20:46 also matters for the first case.
   because the classic image store reads only docker-save archives. It reaches the registry by its
   bridge address from inside a container, and streams the contract inputs into the candidate image.
   `:local` moves only after that contract passes. `skopeo` is also in `system-packages.txt` for the next
-  image.
+  image, and `evaluateCiRunnerContract` checks for it (`IMAGE_CONTRACT_COMMANDS`) only when it runs
+  inside a freshly built candidate (`HOBO_CI_RUNNER_CONTRACT=live`). Every job's preflight runs the same
+  contract, so requiring it there would refuse jobs on the image that predates it.
+  `scripts/test/ci-runner-image-contract.test.ts` pins both halves: the manifest declares it, and the
+  live contract checks it.
+- **Vitest inlined the TypeScript compiler.** `typescript/lib/typescript.js` is CJS, but es-module-lexer
+  finds module syntax in it, so Vitest's externalization heuristic inlined it. Vite then transformed the
+  9 MB file in each worker and logged `Failed to load source map for …/typescript.js` with an ENOENT
+  stack, because the `typescript.js.map` it names is not shipped. The root `vitest.config.ts` now lists it
+  under `server.deps.external`. `test:unit` locally (four forks): 69.2 s to 64.3 s, transform 31.4 s to
+  20.0 s, two warnings to none, with 758/758 files passing both ways.
 - **wizer** (componentize-js) is bounded by `HOBO_RELEVANT_CHECK_CONCURRENCY=1` since #1636.
 - The non-test parts of `check:all` take ~23 s locally (`test:schema` 10.7 s, `lint:test-deps` 7 s).
 - `test:behavior` takes ~120 s locally, most of it one scenario waiting 120 s for `astro dev`.
