@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { affectedLanes, mainGateScope } from "../ci/affected-lanes.mts";
+import {
+	affectedLanes,
+	mainGateScope,
+	workspaceGroups,
+} from "../ci/affected-lanes.mts";
 
 const present = (): boolean => true;
 
@@ -61,6 +66,53 @@ describe("affected-lanes", () => {
 			mode: "filtered",
 			filters: ["--filter=./examples/hello", "--filter=./packages/ci"],
 		});
+	});
+
+	it("filters a package inside a workspace group, not the whole workspace", () => {
+		const lanes = affectedLanes(
+			[
+				"packages/providers/provider-neon/test/a.test.ts",
+				"packages/iac/iac-pulumi/src/a.ts",
+			],
+			present,
+		);
+		assert.deepEqual(lanes, {
+			mode: "filtered",
+			filters: [
+				"--filter=./packages/iac/iac-pulumi",
+				"--filter=./packages/providers/provider-neon",
+			],
+		});
+	});
+
+	it("runs everything for a group-level file or a deleted grouped package", () => {
+		assert.equal(
+			affectedLanes(["packages/providers/README.md"], present).mode,
+			"all",
+		);
+		const gone = affectedLanes(
+			["packages/providers/provider-gone/src/a.ts"],
+			(path) => path !== "packages/providers/provider-gone/package.json",
+		);
+		assert.equal(gone.mode, "all");
+	});
+
+	it("reads every packages/<group>/* entry of pnpm-workspace.yaml as a group", () => {
+		const groups = workspaceGroups(
+			readFileSync(new URL("../../pnpm-workspace.yaml", import.meta.url), "utf8"),
+		);
+		for (const group of [
+			"packages/adapters",
+			"packages/connectors",
+			"packages/runtimes",
+			"packages/providers",
+			"packages/packs",
+			"packages/iac",
+		])
+			assert.ok(groups.has(group), group);
+		assert.ok(!groups.has("packages"));
+		assert.ok(!groups.has("examples"));
+		assert.ok(![...groups].some((group) => group.startsWith("src/")));
 	});
 
 	it("a package change is never dropped by an inert sibling", () => {

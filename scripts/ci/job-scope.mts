@@ -153,8 +153,8 @@ export function jobScope(
 		.filter((path) => path !== "");
 	if (changed.length === 0)
 		return { run: true, reason: "empty diff (base unresolved?)" };
-	// affected-lanes knows only top-level packages; a path in any workspace
-	// package is judged by the walk instead.
+	// A path in any workspace package is judged by the walk, not by
+	// affected-lanes.
 	const outside = changed.filter(
 		(path) => !tree.workspaces.some((ws) => path.startsWith(`${ws.dir}/`)),
 	);
