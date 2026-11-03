@@ -140,8 +140,23 @@ advance the monotonic clock. A suspended or paused host stops it. The job on the
 160.6 s. `scripts/run-tests.ts` now prints a line when the wall clock runs more than 30 s ahead of the
 monotonic clock, so the next pause reads as one. It fired on the first main run after that landed
 (41578806148): "the wall clock ran 484s ahead of the monotonic clock", with `Duration 233.52s` against
-a 13-minute job. That is two pauses in five main runs, both during a repo-wide `test:unit`, so the box's
-host (sleep, VM pause, or memory reclaim on the host) is the next thing to inspect. The same run's one
+a 13-minute job. Vitest's `Start at 04:34:42` and summary at 04:46:40 are 718 s apart, which is 233.5 s
+plus the 484 s gap. The workload did not stall. The whole box did: between 04:34:41 and 04:44:49 the
+box started no job for any branch, although main's Secret scan had been queued since 04:33:21 and a
+slot was free. A slow test file in one container cannot stop the other slot's runner from polling.
+That is two pauses in five main runs, both during a repo-wide `test:unit`, so the box's host (sleep, VM
+pause, or memory reclaim on the host) is the next thing to inspect.
+
+Reproduced off the box under its conditions: two concurrent `pnpm run test:unit` jobs, each with the
+gate's environment (`CI=true`, `HOBO_RELEVANT_CHECK_CONCURRENCY=1`,
+`NODE_OPTIONS=--max-old-space-size=3072`), on a 4-CPU, 15 GiB host like the box's. Both passed
+758/758 in 152 s and 154 s of wall time, with `Duration` 148 s and 150 s, so nothing paused. Peak RSS was
+2.58 and 2.51 GiB per job (process tree), against the 6 GiB container limit, and host
+`MemAvailable` never dropped below 9.9 GiB. The 6 GiB cap could not be imposed there (no Docker,
+no cgroup delegation), so it was checked against measured RSS rather than enforced. Three componentize
+proofs take 90 s of the 150 s (wizer: 57, 16 and 16 s). `scripts/lib/vitest-progress-reporter.ts` now
+prints a heartbeat naming the running files, marks host pauses where they happen, and lists the
+slowest files at the end of every `run-tests` lane. The same run's one
 failure was `hobo-wit-toolchain-contract`'s rerun test at the 10 s default. It runs the jco generator
 three times, about 1.3 s locally, so its two generator tests now carry a 30 s timeout.
 

@@ -185,9 +185,18 @@ const maxWorkers = Math.max(
 	1,
 	Number.parseInt(process.env.HOBO_RELEVANT_CHECK_CONCURRENCY ?? "4", 10) || 4,
 );
+const progressReporter = resolve(
+	process.cwd(),
+	"scripts",
+	"lib",
+	"vitest-progress-reporter.ts",
+);
+const baseReporters = quiet
+	? '["dot"]'
+	: '(baseConfig.test.reporters ?? ["default"])';
 writeFileSync(
 	configPath,
-	`import baseConfig from ${JSON.stringify(baseConfigUrl)};\nexport default { ...baseConfig, test: { ...baseConfig.test, include: ${JSON.stringify(testFiles)}, maxWorkers: ${maxWorkers}, pool: "forks", watch: false } };\n`,
+	`import baseConfig from ${JSON.stringify(baseConfigUrl)};\nexport default { ...baseConfig, test: { ...baseConfig.test, include: ${JSON.stringify(testFiles)}, maxWorkers: ${maxWorkers}, pool: "forks", watch: false, reporters: [...${baseReporters}, ${JSON.stringify(progressReporter)}, "hanging-process"] } };\n`,
 );
 
 try {
@@ -208,7 +217,7 @@ try {
 			process.cwd(),
 			"--config",
 			configPath,
-			...(quiet ? ["--silent", "--reporter=dot"] : []),
+			...(quiet ? ["--silent"] : []),
 		],
 		{
 			stdio: "inherit",
