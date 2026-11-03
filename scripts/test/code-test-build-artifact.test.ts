@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { packageDistTrees } from "../ci/pack-code-test-build-artifact.mts";
 
 const repoRoot = join(import.meta.dirname, "..", "..");
 const temporaryDirectories: string[] = [];
@@ -46,13 +47,29 @@ afterAll(() => {
 });
 
 describe("code test build artifact", () => {
-	it("roundtrips every package dist tree and no source files", () => {
+	it("roundtrips every workspace package dist tree and no source files", () => {
 		const source = temporaryDirectory();
 		const destination = temporaryDirectory();
 		const archive = join(temporaryDirectory(), "build.tar.gz");
+		write(
+			source,
+			"pnpm-workspace.yaml",
+			[
+				"packages:",
+				'  - "packages/*"',
+				'  - "packages/adapters/*"',
+				'  - "external/ts-autocode/packages/grounding"',
+				"",
+			].join("\n"),
+		);
 		write(source, "packages/code/dist/bin/hobo-code.js", "code\n");
 		write(source, "packages/hobo/dist/bin/hobo.js", "hobo\n");
 		write(source, "packages/adapters/hono/dist/index.js", "hono\n");
+		write(
+			source,
+			"external/ts-autocode/packages/grounding/dist/index.js",
+			"grounding\n",
+		);
 		write(source, "packages/code/src/index.ts", "not packed\n");
 		write(
 			source,
@@ -61,6 +78,9 @@ describe("code test build artifact", () => {
 		);
 		mkdirSync(join(source, "packages/empty/dist"), { recursive: true });
 
+		expect(packageDistTrees(source)).toContain(
+			"external/ts-autocode/packages/grounding/dist",
+		);
 		run("pack-code-test-build-artifact.mts", [source, archive]);
 		run("unpack-code-test-build-artifact.mts", [archive, destination]);
 
@@ -68,6 +88,7 @@ describe("code test build artifact", () => {
 			"packages/code/dist/bin/hobo-code.js",
 			"packages/hobo/dist/bin/hobo.js",
 			"packages/adapters/hono/dist/index.js",
+			"external/ts-autocode/packages/grounding/dist/index.js",
 		]) {
 			expect(readFileSync(join(destination, path), "utf8")).toBe(
 				readFileSync(join(source, path), "utf8"),

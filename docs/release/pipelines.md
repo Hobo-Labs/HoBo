@@ -85,7 +85,7 @@ The **CLI + PWA pipeline pulls the SDK's OCI artifact**. It never rebuilds the S
 
 - Pull requests trigger only for `packages/code/**`, the `hobo-code` image definition, release manifests and scope mapping, code-related release scripts and contract tests, the workflow and attestation action, or this document. Draft-proof paths under `src/draft/**` are not release inputs.
 - Static checks run the npm scope-map and OCI manifest contract tests. Lint is exactly `pnpm --filter @hobo/code lint`.
-- A single `code-build-cone` job builds the `@hobo/code...`, `@hobo/hobo...`, and `@hobo/adapter-hono...` cones and uploads their package dist trees; four Vitest shards restore that artifact instead of rebuilding, with **45 minutes per shard**, `HOBO_TURBO_CONCURRENCY=1`, and `fail-fast: false`.
+- A single `code-build-cone` job runs `turbo run build` with `...@hobo/code`, `...@hobo/hobo`, and `...@hobo/adapter-hono` (each package plus its full upstream dependency cone via `^build`) and uploads dist trees from every pnpm workspace member, including the sibling `external/ts-autocode` packages; four Vitest shards restore that artifact instead of rebuilding, with **45 minutes per shard**, `HOBO_TURBO_CONCURRENCY=1`, and `fail-fast: false`.
 - PR OCI work reuses affected-image selection but filters the matrix to **`hobo-code` only**, builds locally, and never pushes.
 - `code-v*` tags and manual dispatch restore the same build artifact, stage `@hobo/code` as **`@hobo-labs/code`** and run `npm pack --dry-run`, then push `hobo-code` to GHCR without rebuilding its dependency cone and attach provenance and SBOM attestations. Manual dispatch is a release operation, not a dry run.
 
