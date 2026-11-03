@@ -15,6 +15,7 @@ import {
 	createGithubOidcVerifier,
 	createHostedRelayRuntime,
 	createIsolatedContainerController,
+	createJobDurations,
 	type HostedInboxStore,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
@@ -170,6 +171,9 @@ const worker = createIsolatedContainerController({
 });
 const host = createCompositeIsolatedHost({ store, worker: worker.host });
 if (!host) throw new Error("worker host unavailable");
+// The poller learns job durations from the jobs lists it already reads; the
+// relay admits each run's longest expected job first.
+const jobDurations = createJobDurations();
 const runtime = createHostedRelayRuntime({
 	store,
 	github,
@@ -177,12 +181,14 @@ const runtime = createHostedRelayRuntime({
 	webhookSecret,
 	isolatedHost: host,
 	denyUnisolated: true,
+	jobDurations,
 	control: async () => undefined,
 });
 const poller =
 	plan.admission === "pull"
 		? createGithubJobPoller({
 				github,
+				durations: jobDurations,
 				connections: async () =>
 					(await store.configuration())?.configuration?.connections ?? [],
 				ingest: (delivery) => runtime.ingestWebhook(delivery),

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { GithubTransport } from "../github.js";
+import type { JobDurations } from "../job-durations.js";
 
 /** Pull-mode admission: GitHub REST stands in for webhook ingress, so a box
  * needs no public URL, relay, or shared database to see `runs-on: hobo` work. */
@@ -23,6 +24,8 @@ export interface GithubJobPollerOptions {
 	}) => Promise<string>;
 	/** Called when the inbox refuses one polled job; the poll carries on. */
 	onIngestError?: (jobId: number, message: string) => void;
+	/** Fed every `hobo` job the poll reads, so admission can put a run's longest job first. */
+	durations?: Pick<JobDurations, "observe">;
 	now?: () => number;
 }
 
@@ -68,6 +71,10 @@ const Jobs = z.object({
 			status: z.string(),
 			labels: z.array(z.string()),
 			runner_name: z.string().nullable().optional(),
+			name: z.string().optional(),
+			conclusion: z.string().nullable().optional(),
+			started_at: z.string().nullable().optional(),
+			completed_at: z.string().nullable().optional(),
 		}),
 	),
 });
@@ -229,6 +236,15 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 							job.labels[0]?.toLowerCase() !== "hobo"
 						)
 							continue;
+						if (job.name !== undefined)
+							options.durations?.observe({
+								repository: connection.repository,
+								id: job.id,
+								name: job.name,
+								conclusion: job.conclusion,
+								startedAt: job.started_at,
+								completedAt: job.completed_at,
+							});
 						// Assignment is only useful once GitHub names the runner.
 						if (status.data !== "queued" && !job.runner_name) continue;
 						summary.hoboJobs++;

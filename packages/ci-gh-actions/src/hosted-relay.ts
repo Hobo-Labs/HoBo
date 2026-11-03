@@ -28,6 +28,7 @@ import {
 } from "./github.js";
 import { verifyIngressForward } from "./ingress-forward.js";
 import { isIsolatedHostOffer } from "./isolated-backend.js";
+import type { JobDurations } from "./job-durations.js";
 import type { IdentityVerifier } from "./oidc.js";
 
 /** Isolated executions are supplied by the hosting runtime and must fail closed. */
@@ -129,13 +130,24 @@ export class HostedRelay {
 			isolatedHost?: IsolatedRunnerHost;
 			/** Deny workflow bridge use when repository-wide runner trust is not fenced. */
 			denyUnisolated?: boolean;
+			/** Recent job durations; the longest expected job of a run is admitted first. */
+			jobDurations?: Pick<JobDurations, "expectedMs">;
+			/**
+			 * Queue an admitted job without reserving it. For callers that run
+			 * `dispatchPending` after a batch, so the batch is reserved in admission
+			 * order rather than in the order its deliveries arrived.
+			 */
+			deferReservation?: boolean;
 			now?: () => string;
 		},
 	) {
 		if (options.webhookSecret.length < 32)
 			throw new Error("webhook secret must have at least 32 characters");
 		this.now = options.now ?? (() => new Date().toISOString());
-		this.admissionOrder = createAdmissionOrder(options.github);
+		this.admissionOrder = createAdmissionOrder(
+			options.github,
+			options.jobDurations,
+		);
 	}
 	private async refreshConfig(): Promise<number> {
 		const { state, policies } = await this.options.store.policySnapshot();
@@ -396,6 +408,7 @@ export class HostedRelay {
 		);
 		if (!account) throw new Error("account missing");
 		await this.options.store.queue(job, this.now(), admittedRevision);
+		if (this.options.deferReservation) return "queued";
 		const lease = await this.options.store.reserve(
 			account,
 			job,
