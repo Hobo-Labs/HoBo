@@ -204,7 +204,10 @@ function reachableDefinitions(
 ): ReadonlySet<string> {
 	const reachable = new Set<string>();
 	const visit = (value: JsonData): void => {
-		if (Array.isArray(value)) return value.forEach(visit);
+		if (Array.isArray(value)) {
+			for (const entry of value) visit(entry);
+			return;
+		}
 		const node = object.safeParse(value);
 		if (!node.success) return;
 		const ref = localDefinitionRef.safeParse(node.data);
