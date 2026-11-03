@@ -119,8 +119,8 @@ describe("capability binding", () => {
 			addressRef: { host: "ep-cool-pooler.neon.tech", port: 5432, tls: true },
 			role: "pooled",
 		};
-			// SAFETY: base declares one primary endpoint and the test does not mutate it.
-			const primary = base.endpoints[0] as (typeof base.endpoints)[number];
+		// SAFETY: base declares one primary endpoint and the test does not mutate it.
+		const primary = base.endpoints[0] as (typeof base.endpoints)[number];
 		const a = parseCapabilityBinding(
 			{ ...base, endpoints: [primary, pooled] },
 			parseSecretRef,

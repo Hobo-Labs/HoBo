@@ -82,7 +82,7 @@ const SEVERITY_BY_CODE = {
 	"expiring-evidence-cell": "warning",
 	// A claim nobody can check is not coverage.
 	"missing-conformance-ref": "error",
-	} as const;
+} as const;
 
 /** Verdicts that are, on their own, worth reporting — and why. */
 const VERDICT_FINDINGS = {

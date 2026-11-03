@@ -14,7 +14,6 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 import { asNullableText } from "../src/driver.js";
-import { isJsonString } from "../src/json.js";
 import {
 	asBigInt,
 	asBytes,
@@ -35,10 +34,11 @@ import {
 	encodeLegacyJsonText,
 	encodeMetadata,
 	encodePayload,
-	parseCodec,
 	type PayloadCodec,
+	parseCodec,
 	UnsupportedCodecError,
 } from "../src/index.js";
+import { isJsonString } from "../src/json.js";
 
 const temps: string[] = [];
 afterEach(() => {
@@ -262,7 +262,8 @@ describe("payload codecs", () => {
 		// column names something this build does not implement must fail loudly
 		// rather than be guessed at as JSON.
 		// SAFETY: `encodePayload("gzip-v1" as PayloadCodec, { a: 1 })` is required at this I/O or test boundary.
-		const encoding = (): Uint8Array => encodePayload("gzip-v1" as PayloadCodec, { a: 1 });
+		const encoding = (): Uint8Array =>
+			encodePayload("gzip-v1" as PayloadCodec, { a: 1 });
 		expect(encoding).toThrowError(UnsupportedCodecError);
 		try {
 			decodePayload("gzip-v1", new Uint8Array());

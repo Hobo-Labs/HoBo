@@ -46,9 +46,22 @@ export interface EventBodyUpcaster {
 	readonly upcast: (body: EventBody) => EventBody;
 }
 
-type EventBodyInput = EventBody | string | number | boolean | bigint | symbol | null | undefined;
+type EventBodyInput =
+	| EventBody
+	| string
+	| number
+	| boolean
+	| bigint
+	| symbol
+	| null
+	| undefined;
 type ThrownValue = EventBodyInput;
-type CanonicalValue = EventBodyValue | boolean | null | readonly CanonicalValue[] | { readonly [key: string]: CanonicalValue };
+type CanonicalValue =
+	| EventBodyValue
+	| boolean
+	| null
+	| readonly CanonicalValue[]
+	| { readonly [key: string]: CanonicalValue };
 
 export interface CorpusEntry {
 	readonly schema: typeof CORPUS_ENTRY_SCHEMA;
@@ -424,10 +437,7 @@ export function encodeEventBody(
 	return Buffer.concat(chunks);
 }
 
-export function decodeEventBody(
-	schema: EventBodySchema,
-	bytes: Buffer,
-) {
+export function decodeEventBody(schema: EventBodySchema, bytes: Buffer) {
 	const fieldsByTag = new Map(schema.fields.map((field) => [field.tag, field]));
 	const decoded: Record<string, EventBodyValue> = {};
 	let offset = 0;
@@ -479,10 +489,7 @@ function encodeVarint(value: number): Buffer {
 	return Buffer.from(bytes);
 }
 
-function readVarint(
-	bytes: Buffer,
-	startOffset: number,
-) {
+function readVarint(bytes: Buffer, startOffset: number) {
 	let value = 0;
 	let shift = 0;
 	for (let offset = startOffset; offset < bytes.length; offset += 1) {

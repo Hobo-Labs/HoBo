@@ -282,7 +282,9 @@ type UnparsedValue =
 type UnparsedRecord = { readonly [key: string]: UnparsedValue };
 type Mutable<T> = { -readonly [Key in keyof T]: T[Key] };
 type MutableParsedCriteria = Mutable<ParsedPlacementCriteria>;
-type MutableParsedIntent = Mutable<Omit<ParsedResourceIntent, typeof resourceIntentBrand>>;
+type MutableParsedIntent = Mutable<
+	Omit<ParsedResourceIntent, typeof resourceIntentBrand>
+>;
 type MutableIntentRecord = Mutable<ResourceIntentRecord>;
 type MutableCriteriaRecord = Mutable<PlacementCriteriaRecord>;
 type MutableSelectorRecord = Mutable<PlacementPropertySelectorRecord>;
@@ -356,7 +358,10 @@ function requireNonEmptyString(value: UnparsedValue, path: string): string {
 	return value as string;
 }
 
-function requireStringList(value: UnparsedValue, path: string): readonly string[] {
+function requireStringList(
+	value: UnparsedValue,
+	path: string,
+): readonly string[] {
 	if (!Array.isArray(value)) {
 		throw new ResourceIntentError(
 			path,
@@ -456,7 +461,10 @@ function parseAffinity(
 	});
 }
 
-function parseCriteria(value: UnparsedValue, path: string): ParsedPlacementCriteria {
+function parseCriteria(
+	value: UnparsedValue,
+	path: string,
+): ParsedPlacementCriteria {
 	const record = asObject(value, path);
 	rejectUnknownKeys(record, path, CRITERIA_KEYS);
 	if (!Array.isArray(record.selectors)) {
@@ -500,7 +508,10 @@ function parseCriteria(value: UnparsedValue, path: string): ParsedPlacementCrite
 		const nested = asObject(record.pickN, `${path}.pickN`);
 		rejectUnknownKeys(nested, `${path}.pickN`, ["count"]);
 		const count = nested.count;
-		if (objectTag.call(count) !== "[object Number]" || !Number.isInteger(count)) {
+		if (
+			objectTag.call(count) !== "[object Number]" ||
+			!Number.isInteger(count)
+		) {
 			throw new ResourceIntentError(
 				`${path}.pickN.count`,
 				`expected an integer, got ${JSON.stringify(count)}`,
@@ -620,7 +631,8 @@ export function encodeResourceIntent(
 	if (intent.prefer.length > 0) record.prefer = [...intent.prefer];
 	if (intent.deps.length > 0) record.deps = [...intent.deps];
 	if (intent.region !== undefined) record.region = intent.region;
-	if (intent.placement !== undefined) record.placement = encodeCriteria(intent.placement);
+	if (intent.placement !== undefined)
+		record.placement = encodeCriteria(intent.placement);
 	return record;
 }
 
@@ -645,8 +657,10 @@ function encodeCriteria(
 			scope: rule.scope,
 		}));
 	}
-	if (criteria.spread !== undefined) record.spread = { dimension: criteria.spread.dimension };
-	if (criteria.pickN !== undefined) record.pick_n = { count: criteria.pickN.count };
+	if (criteria.spread !== undefined)
+		record.spread = { dimension: criteria.spread.dimension };
+	if (criteria.pickN !== undefined)
+		record.pick_n = { count: criteria.pickN.count };
 	return record;
 }
 
@@ -761,7 +775,8 @@ export function toResourceIntent(intent: ParsedResourceIntent): ResourceIntent {
 		objective: intent.objective,
 	};
 	if (intent.region !== undefined) result.region = intent.region;
-	if (intent.placement !== undefined) result.placement = toPlacementCriteria(intent.placement);
+	if (intent.placement !== undefined)
+		result.placement = toPlacementCriteria(intent.placement);
 	return result;
 }
 
@@ -780,7 +795,9 @@ function toPlacementCriteria(
 			scope: rule.scope,
 		})),
 	};
-	if (criteria.spread !== undefined) result.spread = { dimension: criteria.spread.dimension };
-	if (criteria.pickN !== undefined) result.pickN = { count: criteria.pickN.count };
+	if (criteria.spread !== undefined)
+		result.spread = { dimension: criteria.spread.dimension };
+	if (criteria.pickN !== undefined)
+		result.pickN = { count: criteria.pickN.count };
 	return result;
 }

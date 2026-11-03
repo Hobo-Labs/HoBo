@@ -14,10 +14,7 @@ export interface ReactiveFact<T extends FactData = FactData> {
 	readonly data: Readonly<T>;
 }
 
-function fact<T extends FactData>(
-	type: string,
-	data: T,
-): ReactiveFact<T> {
+function fact<T extends FactData>(type: string, data: T): ReactiveFact<T> {
 	return Object.freeze({
 		type,
 		schemaVersion: EVENTS_EVENT_SCHEMA_VERSION,

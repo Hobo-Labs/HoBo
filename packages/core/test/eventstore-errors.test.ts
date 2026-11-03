@@ -152,15 +152,15 @@ describe("parseSubscriptionId / parsePartitionId", () => {
 				parseSubscriptionId(bad);
 				expect.unreachable("expected a refusal");
 			} catch (error) {
-					// SAFETY: parseSubscriptionId(bad) above establishes the parser error type.
-					expect((error as EventStoreParseError).path).toBe("subscriptionId");
+				// SAFETY: parseSubscriptionId(bad) above establishes the parser error type.
+				expect((error as EventStoreParseError).path).toBe("subscriptionId");
 			}
 			try {
 				parsePartitionId(bad);
 				expect.unreachable("expected a refusal");
 			} catch (error) {
-					// SAFETY: parsePartitionId(bad) above establishes the parser error type.
-					expect((error as EventStoreParseError).path).toBe("partitionId");
+				// SAFETY: parsePartitionId(bad) above establishes the parser error type.
+				expect((error as EventStoreParseError).path).toBe("partitionId");
 			}
 		}
 	});

@@ -12,7 +12,9 @@ const subscriptionGatewayPort = createPortDescriptor({
 	interface: SUBSCRIPTION_GATEWAY_INTERFACE,
 	stability: "preview",
 });
-function isProviderPort(descriptor: PortDescriptor): descriptor is ProviderPort {
+function isProviderPort(
+	descriptor: PortDescriptor,
+): descriptor is ProviderPort {
 	return descriptor.kind === "provider";
 }
 if (!isProviderPort(subscriptionGatewayPort)) {
