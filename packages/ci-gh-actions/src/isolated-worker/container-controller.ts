@@ -15,6 +15,9 @@ import { isIsolatedContainerOffer } from "../isolated-backend.js";
 import type { DockerDriver } from "./docker-driver.js";
 
 const JIT_PATH = "/tmp/hobo-ci-jit";
+/** Written when the one-job JIT runner exits; the container itself keeps running. */
+// public-contract: in-container marker path the start script writes and reconcile probes.
+export const RUNNER_EXITED_PATH = "/tmp/hobo-ci-runner-exited";
 
 /** Start the runner with its JIT config delivered over stdin to a 0600 file
  * and handed to the runner via env, so the credential never appears in argv. */
@@ -46,7 +49,8 @@ fi
 ACTIONS_RUNNER_INPUT_JITCONFIG="$(cat ${JIT_PATH})"
 rm -f ${JIT_PATH}
 export ACTIONS_RUNNER_INPUT_JITCONFIG
-exec ./run.sh`,
+./run.sh || true
+: > ${RUNNER_EXITED_PATH}`,
 	]);
 	if (prep.exitCode !== 0) throw new Error("runner start failed");
 }
@@ -399,9 +403,26 @@ export function createIsolatedContainerController(options: {
 				if (!forceStop) return;
 				running = false;
 			}
-			if (!forceStop && lease.state === "running" && running) return;
-			const deadWhileRunning =
-				!forceStop && lease.state === "running" && !running;
+			let stop = forceStop === true;
+			if (!stop && lease.state === "running" && running) {
+				// The runner takes one job and exits, so its marker frees the slot on this
+				// tick instead of after GitHub reports the job (a poll interval later). A
+				// runner that died without a job lands here too; settle requeues its job.
+				let exited = false;
+				try {
+					exited =
+						(await options.docker.exists?.(
+							lease.sandboxName,
+							lease.sandboxSessionId,
+							RUNNER_EXITED_PATH,
+						)) === true;
+				} catch {
+					// Same as a failed inspect: not proof of anything, retry next tick.
+				}
+				if (!exited) return;
+				stop = true;
+			}
+			const deadWhileRunning = !stop && lease.state === "running" && !running;
 			if (deadWhileRunning) {
 				await options.store.abortIsolatedAndRequeue(
 					id,
@@ -419,7 +440,7 @@ export function createIsolatedContainerController(options: {
 					throw new Error("container stop uncertain");
 			}
 			if (deadWhileRunning) return;
-			if (!forceStop) return;
+			if (!stop) return;
 			const original = await getJob(
 				options.github,
 				lease.installationId,

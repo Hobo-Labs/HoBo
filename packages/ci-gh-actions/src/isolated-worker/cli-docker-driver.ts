@@ -158,5 +158,24 @@ export function createCliDockerDriver(options: {
 			);
 			return stdout.trim() === "running";
 		},
+		async exists(_name, containerId, path) {
+			if (!/^\/[A-Za-z0-9_./-]+$/.test(path)) throw new Error("invalid path");
+			try {
+				await exec(docker, ["exec", containerId, "test", "-e", path], {
+					env,
+					timeout: 30_000,
+					maxBuffer: 4096,
+				});
+				return true;
+			} catch (error) {
+				// `test` exits 1 for a missing path; docker's own failures are 125-127.
+				if (
+					error instanceof Error &&
+					Object.getOwnPropertyDescriptor(error, "code")?.value === 1
+				)
+					return false;
+				throw error;
+			}
+		},
 	};
 }
