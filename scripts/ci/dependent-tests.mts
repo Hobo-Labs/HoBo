@@ -30,10 +30,10 @@
  * Node builtins only.
  *
  * CLI: `git diff --name-only BASE HEAD | node --experimental-strip-types scripts/ci/dependent-tests.mts [--run [turbo args…]]`
- * prints the plan; `--run` also runs it (`turbo run test` for whole suites,
- * and for each subset with its files passed through to vitest; the other
- * arguments go to the whole-suite call) and exits non-zero when any of it
- * fails.
+ * prints the plan; `--run` also runs it (one turbo call for the whole suites
+ * and every build the subsets need, then each subset's test task alone with
+ * its files passed through to vitest; the other arguments go to the first
+ * call) and exits non-zero when any of it fails.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -485,27 +485,65 @@ export function planDependentTests(
 	return { mode: "scoped", full: full.sort(), subsets, skipped };
 }
 
+/** One task of `turbo run test --dry=json`. */
+export type GraphTask = Readonly<{
+	taskId: string;
+	task: string;
+	/** Package dir, repository-relative. */
+	directory: string;
+}>;
+
+/** The task graph turbo would run for `turbo run test` over these dirs. */
+export type TestGraph = (dirs: readonly string[]) => readonly GraphTask[];
+
 /**
- * The `pnpm` argument lists that run a plan. Each one is `turbo run test`: a
- * subset passes its files through to the package's `vitest run`, so it gets
- * the same task graph as a PR's whole-suite run, including a `<pkg>#test`
- * override's extra `dependsOn` (`@hobo/hobo#test` needs
- * `@hobo/adapter-hono#build`), and the same strict env. `turboArgs` go to the
- * whole-suite call only, since a pass-through would reach every test task.
+ * The `pnpm` argument lists that run a plan.
+ *
+ * Turbo hands `--` arguments to every task of a run, its dependencies' builds
+ * included, and folds them into each task's hash. A subset that passed its
+ * files that way rebuilt its whole dependency graph uncached, once per subset.
+ * So the first call runs, by task id and with no pass-through, everything in
+ * turbo's own `test` graph for these packages except the subsets' test tasks:
+ * the whole suites and every build a subset's test depends on, including a
+ * `<pkg>#test` override's extra `dependsOn` (`@hobo/hobo#test` needs
+ * `@hobo/adapter-hono#build`). Its hashes match a plain `turbo run test`, so
+ * builds share the cache. Each subset then runs only its own test task
+ * (`--only`) with its files passed through to the package's `vitest run`.
+ * `turboArgs` go to the first call only.
  */
 export function planCommands(
 	plan: TestPlan,
 	turboArgs: readonly string[],
 	concurrency: string,
+	graph: TestGraph,
 ): readonly (readonly string[])[] {
 	const test = ["exec", "turbo", "run", "test"];
 	const parallel = `--concurrency=${concurrency}`;
 	if (plan.mode === "all") return [[...test, parallel, ...turboArgs]];
 	const commands: string[][] = [];
-	if (plan.full.length > 0)
+	if (plan.subsets.size === 0) {
+		if (plan.full.length > 0)
+			commands.push([
+				...test,
+				...plan.full.map((dir) => `--filter=./${dir}`),
+				"--continue",
+				parallel,
+				...turboArgs,
+			]);
+		return commands;
+	}
+	const subsetTests = new Set(
+		[...plan.subsets.keys()].map((dir) => `${dir}\0test`),
+	);
+	const tasks = graph([...plan.full, ...plan.subsets.keys()])
+		.filter((task) => !subsetTests.has(`${task.directory}\0${task.task}`))
+		.map((task) => task.taskId);
+	if (tasks.length > 0)
 		commands.push([
-			...test,
-			...plan.full.map((dir) => `--filter=./${dir}`),
+			"exec",
+			"turbo",
+			"run",
+			...tasks,
 			"--continue",
 			parallel,
 			...turboArgs,
@@ -514,12 +552,50 @@ export function planCommands(
 		commands.push([
 			...test,
 			`--filter=./${dir}`,
+			"--only",
 			parallel,
 			"--",
 			"--passWithNoTests",
 			...files,
 		]);
 	return commands;
+}
+
+/** Reads the `test` task graph from `turbo run test --dry=json`. */
+export function turboTestGraph(dirs: readonly string[]): readonly GraphTask[] {
+	const dry = spawnSync(
+		"pnpm",
+		[
+			"exec",
+			"turbo",
+			"run",
+			"test",
+			...dirs.map((dir) => `--filter=./${dir}`),
+			"--dry=json",
+		],
+		{ encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
+	);
+	if (dry.status !== 0)
+		throw new Error(`turbo --dry=json failed:\n${dry.stderr}`);
+	const parsed: Json = JSON.parse(dry.stdout);
+	if (!isObject(parsed) || !isList(parsed.tasks))
+		throw new Error("turbo --dry=json printed no task list");
+	const tasks: GraphTask[] = [];
+	for (const task of parsed.tasks) {
+		if (
+			!isObject(task) ||
+			!isString(task.taskId) ||
+			!isString(task.task) ||
+			!isString(task.directory)
+		)
+			throw new Error(`turbo --dry=json task without an id: ${tag(task)}`);
+		tasks.push({
+			taskId: task.taskId,
+			task: task.task,
+			directory: task.directory,
+		});
+	}
+	return tasks;
 }
 
 /** Runs the plan. Every part runs, so one failure hides no other. */
@@ -529,6 +605,7 @@ function runPlan(plan: TestPlan, turboArgs: readonly string[]): number {
 		plan,
 		turboArgs,
 		process.env.HOBO_TURBO_CONCURRENCY ?? "100%",
+		turboTestGraph,
 	)) {
 		console.log(`$ pnpm ${args.join(" ")}`);
 		const exit = spawnSync("pnpm", args, { stdio: "inherit" }).status ?? 1;

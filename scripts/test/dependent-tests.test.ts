@@ -5,7 +5,9 @@ import {
 	planCommands,
 	planDependentTests,
 	type Repo,
+	type TestGraph,
 	type TestPlan,
+	turboTestGraph,
 } from "../ci/dependent-tests.mts";
 
 const manifest = (name: string, test: string, extra = {}) =>
@@ -230,43 +232,103 @@ describe("planCommands", () => {
 		skipped: [],
 	};
 
-	it("runs every part as turbo's test task, so a subset gets the PR path's dependsOn", () => {
+	const graph: TestGraph = (dirs) => {
+		assert.deepEqual(dirs, ["packages/lib", "packages/app"]);
+		return [
+			{ taskId: "@t/lib#build", task: "build", directory: "packages/lib" },
+			{ taskId: "@t/lib#test", task: "test", directory: "packages/lib" },
+			{ taskId: "@t/app#build", task: "build", directory: "packages/app" },
+			{ taskId: "@t/extra#build", task: "build", directory: "packages/extra" },
+			{ taskId: "@t/app#test", task: "test", directory: "packages/app" },
+		];
+	};
+
+	it("builds once from turbo's test graph, then runs each subset's test task alone", () => {
 		// A subset that built with `turbo run build` and then ran vitest itself
 		// skipped `@hobo/hobo#test`'s `@hobo/adapter-hono#build`, and main failed
-		// tests the PR run passed.
-		const commands = planCommands(plan, ["--anon-profile=p.json"], "1");
-		for (const command of commands)
-			assert.deepEqual(command.slice(0, 4), ["exec", "turbo", "run", "test"]);
-		assert.deepEqual(commands, [
+		// tests the PR run passed. One that passed its files through `turbo run
+		// test` rebuilt its whole graph uncached, because turbo hashes the
+		// pass-through into every task of the run.
+		assert.deepEqual(
+			planCommands(plan, ["--anon-profile=p.json"], "1", graph),
 			[
-				"exec",
-				"turbo",
-				"run",
-				"test",
-				"--filter=./packages/lib",
-				"--continue",
-				"--concurrency=1",
-				"--anon-profile=p.json",
+				[
+					"exec",
+					"turbo",
+					"run",
+					"@t/lib#build",
+					"@t/lib#test",
+					"@t/app#build",
+					"@t/extra#build",
+					"--continue",
+					"--concurrency=1",
+					"--anon-profile=p.json",
+				],
+				[
+					"exec",
+					"turbo",
+					"run",
+					"test",
+					"--filter=./packages/app",
+					"--only",
+					"--concurrency=1",
+					"--",
+					"--passWithNoTests",
+					"test/a.test.ts",
+					"test/b.test.ts",
+				],
 			],
-			[
-				"exec",
-				"turbo",
-				"run",
-				"test",
-				"--filter=./packages/app",
-				"--concurrency=1",
-				"--",
-				"--passWithNoTests",
-				"test/a.test.ts",
-				"test/b.test.ts",
-			],
-		]);
+		);
 	});
 
-	it("runs the whole workspace as one test task", () => {
+	it("runs whole suites alone as one test task, without reading the graph", () => {
+		const unread: TestGraph = () => assert.fail("graph read");
 		assert.deepEqual(
-			planCommands({ mode: "all", reason: "lockfile" }, [], "100%"),
+			planCommands(
+				{
+					mode: "scoped",
+					full: ["packages/lib"],
+					subsets: new Map(),
+					skipped: [],
+				},
+				[],
+				"1",
+				unread,
+			),
+			[
+				[
+					"exec",
+					"turbo",
+					"run",
+					"test",
+					"--filter=./packages/lib",
+					"--continue",
+					"--concurrency=1",
+				],
+			],
+		);
+		assert.deepEqual(
+			planCommands({ mode: "all", reason: "lockfile" }, [], "100%", unread),
 			[["exec", "turbo", "run", "test", "--concurrency=100%"]],
 		);
+	});
+
+	it("the build-once call carries @hobo/hobo#test's extra dependsOn from the real turbo graph", () => {
+		const commands = planCommands(
+			{
+				mode: "scoped",
+				full: [],
+				subsets: new Map([["packages/hobo", ["test/a.test.ts"]]]),
+				skipped: [],
+			},
+			[],
+			"1",
+			turboTestGraph,
+		);
+		const build = commands[0] ?? [];
+		assert.ok(build.includes("@hobo/adapter-hono#build"));
+		assert.ok(build.includes("@hobo/hobo#build"));
+		assert.ok(!build.includes("@hobo/hobo#test"));
+		assert.ok(!build.includes("--"));
 	});
 });
