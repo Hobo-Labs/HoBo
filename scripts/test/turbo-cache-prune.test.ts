@@ -15,7 +15,9 @@ import { join } from "node:path";
 import { after, describe, it } from "node:test";
 
 import {
+	cacheDirOf,
 	entryHash,
+	localReadOnly,
 	parseRunTasks,
 	planPrune,
 } from "../ci/turbo-cache-prune.mts";
@@ -34,6 +36,16 @@ const files = (hash: string, ageDays: number) =>
 
 const hit = (hash: string) => ({ hash, missed: false });
 const miss = (hash: string) => ({ hash, missed: true });
+
+function withoutCacheEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const {
+		TURBO_CACHE: _cache,
+		TURBO_CACHE_DIR: _dir,
+		HOBO_TURBO_CACHE_SHARED: _shared,
+		...rest
+	} = env;
+	return rest;
+}
 
 describe("turbo-cache-prune", () => {
 	const dirs: string[] = [];
@@ -58,7 +70,10 @@ describe("turbo-cache-prune", () => {
 		return root;
 	}
 
-	function prune(root: string): string {
+	function prune(
+		root: string,
+		env: Readonly<Record<string, string>> = {},
+	): string {
 		const output = join(root, "github-output");
 		writeFileSync(output, "");
 		execFileSync(
@@ -69,7 +84,14 @@ describe("turbo-cache-prune", () => {
 				"scripts/ci/turbo-cache-prune.mts",
 				root,
 			],
-			{ stdio: "pipe", env: { ...process.env, GITHUB_OUTPUT: output } },
+			{
+				stdio: "pipe",
+				env: {
+					...withoutCacheEnv(process.env),
+					GITHUB_OUTPUT: output,
+					...env,
+				},
+			},
 		);
 		return readFileSync(output, "utf8");
 	}
@@ -195,6 +217,76 @@ describe("turbo-cache-prune", () => {
 		);
 		assert.equal(prune(root), "save=false\n");
 		assert.equal(readdirSync(join(root, ".turbo", "cache")).length, 3);
+	});
+
+	it("reads the cache Turbo wrote to: TURBO_CACHE_DIR, else .turbo/cache", () => {
+		assert.equal(cacheDirOf("/r", {}), join("/r", ".turbo", "cache"));
+		assert.equal(
+			cacheDirOf("/r", { TURBO_CACHE_DIR: "" }),
+			join("/r", ".turbo", "cache"),
+		);
+		assert.equal(
+			cacheDirOf("/r", { TURBO_CACHE_DIR: "/pnpm-store/hobo-turbo-cache" }),
+			"/pnpm-store/hobo-turbo-cache",
+		);
+	});
+
+	it("treats only a local:r cache as read-only", () => {
+		assert.equal(localReadOnly({ TURBO_CACHE: "local:r" }), true);
+		assert.equal(localReadOnly({ TURBO_CACHE: "local:r,remote:ro" }), true);
+		assert.equal(localReadOnly({ TURBO_CACHE: "local:rw,remote:r" }), false);
+		assert.equal(localReadOnly({ TURBO_CACHE: "local:rw" }), false);
+		assert.equal(localReadOnly({}), false);
+	});
+
+	it("prunes the shared host cache by the same rule and never asks to save it", () => {
+		const root = workspace(
+			[],
+			new Map([
+				[
+					"run.json",
+					JSON.stringify({
+						tasks: [{ hash: "aa", cache: { status: "MISS" } }],
+					}),
+				],
+			]),
+		);
+		const shared = join(root, "host-cache");
+		mkdirSync(shared);
+		for (const file of [...ENTRY("aa"), ...ENTRY("bb"), ...ENTRY("cc")])
+			writeFileSync(join(shared, file), "x");
+		const old = new Date(Date.now() - 30 * DAY_MS);
+		for (const file of [...ENTRY("aa"), ...ENTRY("cc")])
+			utimesSync(join(shared, file), old, old);
+		assert.equal(
+			prune(root, {
+				TURBO_CACHE_DIR: shared,
+				HOBO_TURBO_CACHE_SHARED: "1",
+			}),
+			"save=false\n",
+		);
+		assert.deepEqual(
+			readdirSync(shared).sort(),
+			[...ENTRY("aa"), ...ENTRY("bb")].sort(),
+		);
+		assert.equal(readdirSync(join(root, ".turbo", "cache")).length, 0);
+	});
+
+	it("leaves a read-only shared cache untouched", () => {
+		const root = workspace(
+			[],
+			new Map([["run.json", JSON.stringify({ tasks: [{ hash: "aa" }] })]]),
+		);
+		const shared = join(root, "host-cache");
+		mkdirSync(shared);
+		for (const file of ENTRY("cc")) writeFileSync(join(shared, file), "x");
+		const old = new Date(Date.now() - 30 * DAY_MS);
+		for (const file of ENTRY("cc")) utimesSync(join(shared, file), old, old);
+		assert.equal(
+			prune(root, { TURBO_CACHE_DIR: shared, TURBO_CACHE: "local:r" }),
+			"save=false\n",
+		);
+		assert.equal(readdirSync(shared).length, 3);
 	});
 
 	it("imports node builtins only, so it runs before install", () => {
