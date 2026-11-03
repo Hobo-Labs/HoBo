@@ -130,6 +130,8 @@ PR CI (**HoBo CI Fabric** on `pull_request`) is always in this bucket for a publ
 
 Relay returns **`waiting-for-budget-or-capacity`** when account/provider budget or concurrency is exhausted. Check relay logs and policy API; queued GitHub jobs will not start until a reservation succeeds.
 
+Capacity goes out in admission order, not arrival order: `merge_group`, `push` and `workflow_dispatch` jobs first, then pull-request jobs, then `schedule`, and within each the run that started first. A running job is never preempted, so a merge-queue job queued behind two busy PR jobs starts on the next free slot. See [finding 9](../../docs/ci/performance.md#finding-9-a-freed-slot-went-to-whichever-job-the-worker-saw-first).
+
 ### 6. Merge queue (landing, not pickup)
 
 **Merge queue** requires branch protection on `main` with merge queue enabled and the required HoBo CI checks. **Main full gate** is not one of them and does not run on `merge_group` (it runs on the push to `main`), so a queue entry holds no slot for it. That gates **merge** after jobs complete; it does not cause **`queued`** by itself.

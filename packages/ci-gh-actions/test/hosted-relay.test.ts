@@ -1266,3 +1266,58 @@ it("backs off a failed delivery and still processes subsequent accounts", async 
 	expect(failed).toEqual(["poison"]);
 	expect(acknowledged).toEqual(["valid"]);
 });
+
+function withPullRequestRun(h: ReturnType<typeof setup>, jobCalls: number[]) {
+	const request = h.api.request.bind(h.api);
+	h.api.request = async (installation, path, method, body) => {
+		const jobId = /\/actions\/jobs\/(\d+)$/.exec(path)?.[1];
+		if (jobId) jobCalls.push(Number(jobId));
+		if (path === "/repos/org/repo/actions/runs/12")
+			return Response.json({
+				...h.api.original,
+				id: 12,
+				event: "pull_request",
+				head_branch: "feature",
+				run_started_at: "2026-10-26T11:00:00Z",
+			});
+		return request(installation, path, method, body);
+	};
+}
+function pullRequestJob() {
+	const demand = job(2);
+	demand.runId = 12;
+	return demand;
+}
+
+it("reserves a trunk job before an older pull-request job queued ahead of it", async () => {
+	const h = setup();
+	withPullRequestRun(h, []);
+	h.store.queue(pullRequestJob(), NOW);
+	h.store.queue(job(1), NOW);
+	h.api.strictLeaseId = false;
+	await h.relay.dispatchPending();
+	expect(h.store.all().map((lease) => lease.jobId)).toEqual([1]);
+	expect(h.store.pendingJobs().map((demand) => demand.id)).toEqual([2]);
+});
+
+it("launches reserved trunk leases before pull-request leases", async () => {
+	const h = setup();
+	const offer = h.configuration.accounts[0]?.offers[0];
+	if (!offer) throw new Error("missing offer");
+	offer.concurrency = 2;
+	h.store.configure(h.configuration, 1, NOW);
+	const jobCalls: number[] = [];
+	withPullRequestRun(h, jobCalls);
+	h.store.queue(pullRequestJob(), NOW);
+	h.store.queue(job(1), NOW);
+	const activeLeases = h.asyncStore.activeLeases.bind(h.asyncStore);
+	// Lease ids are random, so pin the store's order to the unfavourable one.
+	h.asyncStore.activeLeases = async () =>
+		(await activeLeases()).sort((a, b) => b.jobId - a.jobId);
+	h.api.strictLeaseId = false;
+	await h.relay.dispatchPending();
+	expect(jobCalls).toEqual([1, 2]);
+	expect(h.store.all().find((lease) => lease.jobId === 1)?.state).toBe(
+		"dispatched",
+	);
+});
