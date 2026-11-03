@@ -22,7 +22,7 @@ export interface GithubJobPollerOptions {
 		receivedAt: string;
 	}) => Promise<string>;
 	/** Called when the inbox refuses one polled job; the poll carries on. */
-	onIngestError?: (jobId: number, error: unknown) => void;
+	onIngestError?: (jobId: number, message: string) => void;
 	now?: () => number;
 }
 
@@ -198,7 +198,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						} catch (error) {
 							// One job the inbox refuses must not starve every later job.
 							summary.failed++;
-							options.onIngestError?.(job.id, error);
+							options.onIngestError?.(
+								job.id,
+								error instanceof Error ? error.message : "unknown",
+							);
 							continue;
 						}
 						if (result === "accepted") summary.accepted++;

@@ -186,11 +186,8 @@ const poller =
 				connections: async () =>
 					(await store.configuration())?.configuration?.connections ?? [],
 				ingest: (delivery) => runtime.ingestWebhook(delivery),
-				onIngestError: (jobId, error) =>
-					log("hobo_ci_isolated_worker_job_ingest_failed", {
-						jobId,
-						message: error instanceof Error ? error.message : "unknown",
-					}),
+				onIngestError: (jobId, message) =>
+					log("hobo_ci_isolated_worker_job_ingest_failed", { jobId, message }),
 			})
 		: undefined;
 
