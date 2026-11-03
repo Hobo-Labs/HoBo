@@ -99,6 +99,8 @@ CAS on state `seq`; pin quote/catalog/capability/state hashes; exact restore on 
 - **Broker**: BillingPlane v2 quote authorization; keep legacy `spendEstimateUsd`
 - **Events**: `pricing.RateCardPublished`, `ProviderAgreementObserved`, `GrantObserved`, `CommitmentObserved`, `QuoteCreated`, `Reservation*`, `ActualChargeObserved`, `ReconciliationRecorded`
 
+Implementation status: `@hobo/pricing` ships the quote engine and golden corpus; `@hobo/events` pins `pricing.QuoteCreated@v1` for replay gates. Remaining event bodies follow the same append-only corpus pattern when actors land.
+
 ## Section 13 — adversarial fixtures (10.1–10.11)
 
 1. Existing vs new subscription $20/1000 min/$0.01 with 950 used → $0.50 incremental
