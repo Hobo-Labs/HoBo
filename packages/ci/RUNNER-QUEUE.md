@@ -78,13 +78,13 @@ bash packages/ci-gh-actions/deploy/ci-runner/build.sh
 
 That script:
 
-1. `docker manifest inspect` on the pinned **`debian:bookworm-slim@sha256:…`** digest, then `docker build` with context **`packages/ci-gh-actions/deploy/ci-runner/`** (not repo root) → `hobo-ci-runner-base:local`.
+1. Checks that Docker Hub serves the pinned **`debian:bookworm-slim@sha256:…`** digest (`scripts/ci-runner-verify-base-digest.mts`, anonymous registry API; `docker manifest inspect` from the image's Debian `docker.io` CLI rejects that OCI index) and that `skopeo` is on `PATH`, then `docker build` with context **`packages/ci-gh-actions/deploy/ci-runner/`** (not repo root) → `hobo-ci-runner-base:local`.
 2. Push the base to **`127.0.0.1:5000/hobo-ci-runner-base:local`** (starts local **`registry:2`** on port 5000 if needed) so `mise oci build --from` does not pull from Docker Hub.
 3. `mise install` + **`mise oci build`** — tool layers from **`mise.lock`**; **`skopeo copy`** loads `oci:…/oci-layout` → `docker-daemon:hobo-ci-worker:<version>` and `:local`.
 
 Version tag: `node --no-warnings scripts/ci-runner-image-version.mts` (hash of `mise.lock`, `mise.toml`, base Dockerfile, and `system-packages.txt`).
 
-**When to rebuild:** any change to `mise.toml`, `mise.lock`, `packages/ci-gh-actions/deploy/ci-runner/**`, or runner contract scripts. HoBo CI Fabric job **`CI runner image (mise oci)`** rebuilds affected-only on `hobo` when those paths change (needs host Docker socket — worker daemon mounts `/var/run/docker.sock` by default; set `HOBO_CI_MOUNT_DOCKER_SOCKET=0` to disable).
+**When to rebuild:** any change to `mise.toml`, `mise.lock`, `packages/ci-gh-actions/deploy/ci-runner/**`, or runner contract scripts. HoBo CI Fabric job **`CI runner image (mise oci)`** rebuilds affected-only on `hobo` when those paths change (needs host Docker socket — worker daemon mounts `/var/run/docker.sock` by default; set `HOBO_CI_MOUNT_DOCKER_SOCKET=0` to disable). Inside a job container that rebuild cannot finish yet: the worker image ships no `skopeo`, and `127.0.0.1:5000` is the job container's own loopback, not the host's registry. Until that changes, rebuild on the box host with the command above; the job now fails within seconds on the missing `skopeo` instead of after the base build.
 
 **GHCR (optional, public repos):** the same workflow can push `ghcr.io/<owner>/<repo>/hobo-ci-worker:<version>` after `docker login`.
 
