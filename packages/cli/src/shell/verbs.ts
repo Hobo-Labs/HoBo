@@ -360,7 +360,7 @@ Serve options (hobo ci serve):
   --admission push|pull       Webhook push vs GitHub poll admission
   --installation-id <id>      Required for pull admission polling
   --allow-insecure            Allow non-loopback HTTP without TLS
-  --with-worker               Start isolated-container worker (SQLite journal; config store selects Postgres)
+  --with-worker               Start isolated-container worker (needs DATABASE_URL)
   --print-config              Print resolved config (secrets redacted) and exit
   --db <path>                 SQLite relay store path
   --engine <name>             Serve only this engine (repeatable; default: profile + repo inventory)
