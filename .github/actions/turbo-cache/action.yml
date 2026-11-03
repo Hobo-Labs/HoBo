@@ -3,7 +3,8 @@ description: >-
   Vercel Turbo remote cache when configured; otherwise a free actions/cache
   fallback. `restore` (default) at job start; `save` as an `if: always()` step at
   job end, because the combined actions/cache only saves when the job succeeds
-  and the Main full gate rarely did, so main never seeded a cache.
+  and the Main full gate rarely did, so main never seeded a cache. Run
+  scripts/ci/turbo-cache-prune.mts before `save` and skip it on `save=false`.
 inputs:
   mode:
     description: restore (job start) or save (job end, run with if always())
@@ -56,12 +57,9 @@ runs:
           turbo-${{ runner.os }}-${{ github.job }}-
           turbo-${{ runner.os }}-
     # Inside a composite action a bare `if:` still implies the job's success(),
-    # so the save steps need always() or they skip exactly when the job failed.
-    - name: Prune Turbo cache to entries this job's runs touched
-      if: always() && inputs.mode == 'save' && env.TURBO_TOKEN == ''
-      continue-on-error: true
-      shell: bash
-      run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+    # so the save step needs always() or it skips exactly when the job failed.
+    # The caller runs scripts/ci/turbo-cache-prune.mts first and skips this
+    # whole action when it reports nothing new to save.
     - name: Save Turbo local cache fallback
       if: always() && inputs.mode == 'save' && env.TURBO_TOKEN == ''
       uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830

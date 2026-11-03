@@ -209,6 +209,15 @@ Fixes: [#1642](https://github.com/Hobo-Labs/HoBo/pull/1642) restores at job star
 tasks, so a partial save is correct. Pushes to main seed it; PRs and merge groups restore it. Test results
 reach it only after finding 2's `test:unit` death is fixed and "Full workspace tests" runs.
 
+Two follow-ups, measured on main. The prune kept only the entries the job's own runs touched, and main's
+runs are affected-only, so each save shrank the cache to a handful of packages and the next run built the
+rest cold: run 41587620284 (7m16s, green) spent about 60 s of its 4m56s "Workspace tests" on cold
+builds. And run 41580946041's "Save Turbo cache" took 2m00s, all of it `Getting action download info`
+for the composite's `actions/cache/save` timing out (100 s) and retrying; the save itself took a
+second. `scripts/ci/turbo-cache-prune.mts` now keeps entries used within 7 days, and runs as a workflow
+step that outputs `save=false` when no task missed the cache, so a fully cached run skips the save step
+and never resolves the action.
+
 Main's workspace tests are now scoped with `--filter=...[<previous main commit>]` (changed packages plus
 their dependents). A git-based filter sees only files git attributes to a package, so
 `scripts/ci/affected-lanes.mts` decides first: a workspace-wide input (lockfile, workspace, turbo,
