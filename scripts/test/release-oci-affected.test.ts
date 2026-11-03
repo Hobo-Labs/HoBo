@@ -8,6 +8,7 @@ const manifest = loadReleaseOciManifest(root);
 const allIds = [
 	"hobo-sdk",
 	"hobo-codegen",
+	"hobo-code",
 	"hobo-cli",
 	"hobo-mcp",
 	"hobo-ci-serve",
@@ -61,20 +62,30 @@ describe("affected release OCI images", () => {
 		]);
 	});
 
+	it("selects only hobo-code for a code-only diff", () => {
+		const selected = affected("packages/code/src/bin/hobo-code.ts");
+		expect(selected).toEqual(["hobo-code"]);
+		expect(selected).not.toContain("hobo-cli");
+		expect(selected).not.toContain("hobo-sdk");
+	});
+
 	it("maps package and site inputs to their consuming images", () => {
 		expect(affected("packages/core/src/index.ts")).toEqual([
 			"hobo-sdk",
 			"hobo-codegen",
+			"hobo-code",
 			"hobo-cli",
 			"hobo-mcp",
-			"hobo-site",
 		]);
 		expect(affected("packages/ci/src/server.ts")).toEqual([
-			"hobo-sdk",
+			"hobo-code",
 			"hobo-cli",
 			"hobo-mcp",
 			"hobo-ci-serve",
-			"hobo-site",
+		]);
+		expect(affected("packages/hobo/src/index.ts")).toEqual([
+			"hobo-cli",
+			"hobo-mcp",
 		]);
 		expect(affected("site/src/pages/index.astro")).toEqual(["hobo-site"]);
 	});

@@ -19,6 +19,10 @@ describe("release npm scope map", () => {
 		expect(mapPackageName("@hobo/core", map)).toBe("@hobo-labs/core");
 	});
 
+	it("maps @hobo/code to @hobo-labs/code", () => {
+		expect(mapPackageName("@hobo/code")).toBe("@hobo-labs/code");
+	});
+
 	it("lists every mapped package under release/", () => {
 		expect(existsSync(join(root, "release/npm-scope-map.json"))).toBe(true);
 	});
@@ -39,6 +43,29 @@ describe("release OCI image contract (manifest)", () => {
 			expect(image.entrypoint.length).toBeGreaterThan(0);
 		});
 	}
+
+	it("declares the independent hobo-code image contract", () => {
+		const image = manifest.images.find(
+			(candidate) => candidate.id === "hobo-code",
+		);
+		if (!image) throw new Error("hobo-code release image is missing");
+		expect(`${manifest.repositoryPrefix}/${image.name}`).toBe(
+			"ghcr.io/hobo-labs/hobo/hobo-code",
+		);
+		expect(image).toMatchObject({
+			dockerfile: "deploy/release-images/hobo-code/Dockerfile",
+			workdir: "/home/hobo",
+			user: "1000:1000",
+			entrypoint: ["hobo-code"],
+			cmd: ["--help"],
+			versionProbe: ["hobo-code", "--help"],
+			volumes: ["/home/hobo/.hobo"],
+		});
+		expect(image.envDoc?.join("\n")).toContain("HOBO_HOME");
+		expect(image.envDoc?.join("\n")).toContain(
+			"HOBO_TENANT / HOBO_PROJECT / HOBO_BRANCH / HOBO_ENV",
+		);
+	});
 
 	it("server images declare health checks and ports", () => {
 		const servers = manifest.images.filter((i) => i.expose?.length);

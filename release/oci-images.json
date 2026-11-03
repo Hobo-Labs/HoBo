@@ -22,6 +22,23 @@
 			]
 		},
 		{
+			"id": "hobo-code",
+			"name": "hobo-code",
+			"title": "HoBo Code",
+			"description": "Coding harness and hobo-code binary (TUI, sessions, and sidecars)",
+			"dockerfile": "deploy/release-images/hobo-code/Dockerfile",
+			"workdir": "/home/hobo",
+			"user": "1000:1000",
+			"entrypoint": ["hobo-code"],
+			"cmd": ["--help"],
+			"versionProbe": ["hobo-code", "--help"],
+			"volumes": ["/home/hobo/.hobo"],
+			"envDoc": [
+				"HOBO_HOME — state directory (default /home/hobo/.hobo)",
+				"HOBO_TENANT / HOBO_PROJECT / HOBO_BRANCH / HOBO_ENV — tenant context"
+			]
+		},
+		{
 			"id": "hobo-mcp",
 			"name": "hobo-mcp",
 			"title": "HoBo MCP server",
