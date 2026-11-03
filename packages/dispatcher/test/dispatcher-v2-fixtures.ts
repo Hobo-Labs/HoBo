@@ -1,6 +1,8 @@
 import {
 	catalogHashOf,
+	isJsonObject,
 	parseQuoteScenario,
+	quoteScenarioToJson,
 	type QuoteScenario,
 	stateHashOf,
 } from "@hobo/pricing";
@@ -147,6 +149,49 @@ export function staleDispatchQuoteScenario(
 	const observation = scenario.state?.observations[0];
 	if (observation === undefined) throw new Error("missing observation fixture");
 	observation.validUntil = "2026-01-01T00:00:00Z";
+	return rehash(scenario);
+}
+
+export function zeroCostCommitmentDispatchScenario(
+	agreementRef: string,
+	horizon: string,
+): QuoteScenario {
+	const base = dispatchQuoteScenario(agreementRef, "1");
+	const json = quoteScenarioToJson(base);
+	if (!isJsonObject(json)) {
+		throw new Error("invalid dispatch fixture json");
+	}
+	json.horizon = horizon;
+	const state = json.state;
+	if (!isJsonObject(state)) {
+		throw new Error("missing state fixture");
+	}
+	state.commitments = [
+		{
+			commitment: {
+				id: "commitment-a",
+				tenantId: "tenant-a",
+				kind: "spend",
+				amount: { money: { decimal: "100", currency: "USD" } },
+				bucketGranularity: "billing-period",
+				term: INTERVAL,
+				payment: "upfront",
+				underuse: "forfeit",
+				amortization: "provider-actual",
+				scope: {
+					productIds: [],
+					rateCardIds: [],
+					chargeIds: [],
+					dimensions: [],
+				},
+				evidence: EVIDENCE,
+			},
+			remaining: { money: { decimal: "60", currency: "USD" } },
+			used: { money: { decimal: "40", currency: "USD" } },
+		},
+	];
+	const scenario = parseQuoteScenario(json);
+	if (scenario === undefined) throw new Error("invalid commitment fixture");
 	return rehash(scenario);
 }
 

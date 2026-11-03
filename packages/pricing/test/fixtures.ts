@@ -64,6 +64,7 @@ export function perUnitCharge(
 	id: string,
 	dimension: string,
 	decimal: string,
+	timing: "advance" | "arrears" = "arrears",
 ): JsonValue {
 	return {
 		base: {
@@ -74,7 +75,7 @@ export function perUnitCharge(
 		},
 		usage: {
 			dimension,
-			timing: "advance",
+			timing,
 			perUnit: money(decimal),
 		},
 	};

@@ -22,13 +22,12 @@ const activeCiFiles = new Set([
 	"hobo-ci.yml",
 	"examples-e2e.yml",
 	"dev-env-smoke.yml",
+	"release-hobo.yml",
+	"release-code.yml",
 	"pricing-ci.yml",
-]);
-const allowedEnabled = new Set([
-	acceptanceFile,
-	...activeCiFiles,
 	"release-pricing.yml",
 ]);
+const allowedEnabled = new Set([acceptanceFile, ...activeCiFiles]);
 
 /** The one runner choice besides `hobo`: trunk events may ask for the box's trunk label. */
 const TRUNK_RUNS_ON =

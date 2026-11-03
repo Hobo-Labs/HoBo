@@ -303,6 +303,7 @@ message QuoteOptions {
   string amortization = 3;
   string allocation_convention = 4;
   repeated UsageMeasurement allocation_forecast = 5;
+  bool allow_partial_financial_state = 6;
 }
 
 message QuoteScenario {

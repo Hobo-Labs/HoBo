@@ -1,8 +1,11 @@
+import { parseDecimal } from "@hobo/pricing";
+
 import type { BillingPolicy, RejectionReason } from "./types.js";
 
 export interface BillingAuthorizationInput {
 	readonly spendEstimateUsd?: number;
 	readonly quoteIncrementalUsd?: number;
+	readonly quoteIncrementalDecimal?: string;
 	readonly billing: BillingPolicy;
 }
 
@@ -12,6 +15,16 @@ export interface BillingAuthorizationResult {
 	readonly authorizedUsd: number;
 }
 
+function resolveEstimateUsd(input: BillingAuthorizationInput): number {
+	if (input.quoteIncrementalDecimal !== undefined) {
+		const parsed = parseDecimal(input.quoteIncrementalDecimal);
+		if (parsed === undefined) return Number.NaN;
+		if (parsed.coefficient < 0n) return Number.NaN;
+		return Number(input.quoteIncrementalDecimal);
+	}
+	return input.quoteIncrementalUsd ?? input.spendEstimateUsd ?? Number.NaN;
+}
+
 /**
  * Authorizes placement spend using a pricing quote when present, otherwise the
  * legacy spend estimate path.
@@ -19,8 +32,7 @@ export interface BillingAuthorizationResult {
 export function authorizeBillingSpend(
 	input: BillingAuthorizationInput,
 ): BillingAuthorizationResult {
-	const estimate =
-		input.quoteIncrementalUsd ?? input.spendEstimateUsd ?? Number.NaN;
+	const estimate = resolveEstimateUsd(input);
 	if (!Number.isFinite(estimate) || estimate < 0) {
 		return {
 			ok: false,

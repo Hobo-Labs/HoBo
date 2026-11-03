@@ -16,10 +16,12 @@
 		"lint": "biome check .",
 		"test": "vitest run"
 	},
-	"devDependencies": {
+	"dependencies": {
 		"@bufbuild/buf": "1.71.0",
+		"@bufbuild/protoc-gen-es": "2.12.1"
+	},
+	"devDependencies": {
 		"@bufbuild/protobuf": "2.12.1",
-		"@bufbuild/protoc-gen-es": "2.12.1",
 		"@types/node": "^22.15.3",
 		"tsx": "^4.20.3",
 		"typescript": "^6.0.3",

@@ -243,9 +243,10 @@ and never resolves the action.
 
 Main's workspace tests are now scoped with `--filter=...[<previous main commit>]` (changed packages plus
 their dependents). A git-based filter sees only files git attributes to a package, so
-`scripts/ci/affected-lanes.mts` decides first: a workspace-wide input (lockfile, workspace, turbo,
-tsconfig, biome, toolchain pins) or an unreachable base runs the whole workspace instead. The PR impact
-gate uses the same script.
+`scripts/ci/affected-lanes.mts` decides first: a workspace-wide input (workspace, turbo,
+tsconfig, biome, toolchain pins) or an unreachable base runs the whole workspace instead; `pnpm-lock.yaml`
+alone does too, but a lockfile edit together with changed package paths only runs those packages (Turbo
+still hashes the lockfile). The PR impact gate uses the same script.
 
 Where a test task does run, `@hobo/hobo#test` dominates. In an affected sweep for a four-package change it
 took 181 s of 332 s task time (87 tasks).
