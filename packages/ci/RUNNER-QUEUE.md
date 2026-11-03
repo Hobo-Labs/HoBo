@@ -130,7 +130,7 @@ PR CI (**HoBo CI Fabric** on `pull_request`) is always in this bucket for a publ
 
 Relay returns **`waiting-for-budget-or-capacity`** when account/provider budget or concurrency is exhausted. Check relay logs and policy API; queued GitHub jobs will not start until a reservation succeeds.
 
-Capacity goes out in admission order, not arrival order: `merge_group`, `push` and `workflow_dispatch` jobs first, then pull-request jobs, then `schedule`, and within each the run that started first. A running job is never preempted, so a merge-queue job queued behind two busy PR jobs starts on the next free slot. See [finding 9](../../docs/ci/performance.md#finding-9-a-freed-slot-went-to-whichever-job-the-worker-saw-first).
+Capacity goes out in admission order, not arrival order: `merge_group`, `push` and `workflow_dispatch` jobs first, then pull-request jobs, then `schedule`, and within each the run that started first. Within a run, the box daemon admits the job expected to take longest first: the median of that job name's last five successful durations, which the job poller learns from the jobs lists it already reads. A job with no history counts as 0, and the job id breaks any remaining tie. The history lives in memory and is re-learned from the two-hour completed-runs lookback after a restart. A running job is never preempted, so a merge-queue job queued behind two busy PR jobs starts on the next free slot. See [finding 9](../../docs/ci/performance.md#finding-9-a-freed-slot-went-to-whichever-job-the-worker-saw-first) and [finding 11](../../docs/ci/performance.md#finding-11-a-runs-long-pole-was-admitted-last).
 
 ### 6. Merge queue (landing, not pickup)
 
