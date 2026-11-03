@@ -15,7 +15,18 @@ Most release jobs have a **10-minute hard timeout** and a **5-minute target dura
 
 Pull requests may build and inspect release artifacts, but any npm packaging is **`npm pack --dry-run` only**. PRs never publish, never write to npm, and never receive publish credentials.
 
-PR OCI builds are **affected-only**: [`scripts/ci/release-oci-affected.mts`](../../scripts/ci/release-oci-affected.mts) diffs `origin/main...HEAD` (override with `HOBO_CHECK_BASE`) against each image's Dockerfile, image directory, source inputs, and shared toolchain or workspace inputs, then emits the build matrix. Both affected-detection jobs fetch `main` from `origin` immediately before detection so `origin/main` exists on self-hosted PR runners. An empty result skips the build job; CLI changes also select the dependent MCP image, with `hobo-cli` ordered before `hobo-mcp`. Image inputs use package dependency cones rather than the broad `packages/` prefix: a `packages/code/**` diff selects only `hobo-code`, never the CLI or SDK images. `release-hobo` manual dispatch retains its full image matrix; `release-code` always restricts its PR matrix to `hobo-code`.
+PR OCI builds are **affected-only, keyed by build inputs**: [`scripts/ci/release-oci-affected.mts`](../../scripts/ci/release-oci-affected.mts) hashes an input key for every manifest image from the git trees of the merge base (`HOBO_CHECK_BASE`, default `origin/main`) and of HEAD, and prints the images whose key changed. The key covers:
+
+- the image's Dockerfile directory and manifest entry, plus the manifest's top-level fields;
+- the release build scripts (`build-release-oci-image.mts`, `stage-release-oci-app.mts`, `stage-sdk-artifacts.mts`, the contract libraries), `tsconfig.base.json`, `pnpm-workspace.yaml` and `.npmrc`;
+- the worker toolchain the Dockerfiles build `FROM`: `mise.toml`, `mise.lock` and `packages/ci-gh-actions/deploy/ci-runner/`;
+- the **Turbo build inputs** of every workspace package in the image's `pnpm-lock.yaml` importer closure (the root importer included, since packages build with its `tsc`), filtered by `turbo.json`'s `build` task inputs or the package's own `<name>#build` override, so tests, Markdown and contracts never rebuild an image; a closure package inside a submodule is keyed by the submodule commit;
+- the **lockfile slice** that closure resolves: its importer blocks and every snapshot and package entry they reach, plus the lockfile settings. A dependency bump rebuilds only the images that ship it;
+- the root `package.json` fields pnpm reads (`packageManager`, `pnpm`, `engines`) and the `turbo.json` build fields, so a script or test-task edit rebuilds nothing;
+- inputs the lockfile graph cannot see, listed per image: the SDK's scope map and publish script, and the site's `examples/try-site/`, `examples/browser-runtime/`, `packages/runtime/` and `packages/runtimes/runtime-wasm/`, which it reads by path;
+- for `hobo-mcp`, the key of `hobo-cli`, which it is built `FROM`.
+
+An image whose package is not a lockfile importer fails the detector rather than being skipped. `--explain` prints which group changed per image; `--only=` and `--exclude=` filter the result, and `--all` selects every image for manual dispatch. `release-code` builds only `hobo-code` and `release-hobo` builds every other image, so no image is built twice for one PR. `@hobo/hobo` depends on `@hobo/code` at runtime, so a `packages/code/**` change does select `hobo-cli` and `hobo-mcp` when `release-hobo` runs. Its PR trigger paths still cover release, toolchain and root inputs only, not package sources.
 
 ## Hermetic build model
 
