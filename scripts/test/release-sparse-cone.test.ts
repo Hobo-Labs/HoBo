@@ -147,6 +147,31 @@ describe("release-ts-autocode workflow install order", () => {
 	});
 });
 
+describe("release workflow shell lint diff base", () => {
+	const hoboWorkflow = readFileSync(
+		join(root, ".github/workflows/release-hobo.yml"),
+		"utf8",
+	);
+	const codeWorkflow = readFileSync(
+		join(root, ".github/workflows/release-code.yml"),
+		"utf8",
+	);
+
+	for (const [label, workflow] of [
+		["release-hobo", hoboWorkflow],
+		["release-code", codeWorkflow],
+	] as const) {
+		it(`${label} lint:shell:changed uses HEAD^1 (sparse checkout has no origin/main)`, () => {
+			expect(workflow).toContain(
+				"pnpm run lint:shell:changed -- --base=HEAD^1",
+			);
+			expect(workflow).not.toMatch(
+				/lint:shell:changed[^\n]*--base=origin\/main/,
+			);
+		});
+	}
+});
+
 describe("release workflow sparse-checkout sync", () => {
 	const hoboWorkflow = readFileSync(
 		join(root, ".github/workflows/release-hobo.yml"),
