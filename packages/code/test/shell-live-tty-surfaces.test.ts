@@ -86,6 +86,7 @@ function fakeStdout(columns = 80, rows = 24) {
 			const text = String(chunk);
 			chunks.push(text);
 			// Anything left after stripping the escapes is content on screen.
+			// biome-ignore lint/suspicious/noControlCharactersInRegex: stripping the terminal's escape sequences is the point
 			if (text.replace(/\[[0-9;?]*[A-Za-z]/gu, "").trim().length > 0) {
 				announcePainted?.();
 			}
@@ -172,6 +173,7 @@ async function live(
 		// The renderer paints with SGR and cursor moves interleaved, so a match
 		// against the raw stream would depend on where the escapes happened to
 		// fall rather than on what the user saw.
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: stripping the terminal's escape sequences is the point
 		painted: output.replace(/\[[0-9;?]*[A-Za-z]/gu, ""),
 		prompts,
 		verbs,
