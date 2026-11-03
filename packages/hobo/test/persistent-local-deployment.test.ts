@@ -93,7 +93,9 @@ return {web: b.web(() => handler)};
 	}
 }
 
-describe("product self-hosted deployment process lifecycle", () => {
+// Every case deploys its own temporary project with its own HOBO_HOME on an
+// OS-assigned port, and spends most of its time waiting on `hobo` processes.
+describe.concurrent("product self-hosted deployment process lifecycle", () => {
 	it("refuses an application returning 503 and tears down its worker", async () => {
 		await setup(async (project, _env, command) => {
 			const probedUrlFile = join(project, "probe-url.txt");

@@ -246,6 +246,19 @@ skipped; `src/isolated-worker/github-job-poller.ts` gives the same. `src/client.
 hobo, because hobo's CLI entry imports it. `scripts/test/dependent-tests.test.ts` pins
 the rules on an in-memory tree.
 
+**hobo's own suite runs its process-bound cases concurrently.** Four files held 133 s of the suite's
+177 s of test time, each case starting `hobo` or a composed binary and waiting on it:
+`starter-deployment-end-to-end` (53.6 s), `persistent-local-deployment` (38.5 s), `bin-opensesame`
+(24.6 s) and `composed-temp-dirs` (16.6 s). Their cases already used separate projects, `HOBO_HOME`s
+and OS-assigned ports; the last two shared module-level directories set in `beforeEach`, now made per
+test and removed with `onTestFinished`. All four are `describe.concurrent`, with the test context's
+`expect`. Measured on a four-core VM with `CI=1` (two workers): the four files take 21 s, 15 s, 10 s
+and 6 s alone, and the whole suite went from 145 s to 116–120 s wall, test time from 177 s to 117 s.
+What remains is mostly import: hobo's config sets `isolate: true` (#1619 isolated product test
+modules and credential fixtures on purpose), so each of 111 files composes the CLI again, about 105 s
+of worker time. `--no-isolate` passes and runs in 68 s, but turning isolation off is a decision about
+those fixtures, not a speed setting, and is left out.
+
 ## Finding 4: the pnpm store cache costs more than it saves on the box
 
 - On a PR, restoring the 1.26 GB store archive takes 31 s and the install after it 16 s.
