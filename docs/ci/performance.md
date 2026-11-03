@@ -248,7 +248,9 @@ itself happened during 20:31–20:46 also matters for the first case.
   API instead. The in-container build then stopped after 6 s on the missing `skopeo`. Behind that,
   `127.0.0.1:5000` inside a job container is the container's own loopback, not the box's registry, and
   the contract check bind-mounted a checkout path the host does not have. `build.sh` now loads the layout
-  with `docker load` when skopeo is absent (Docker Engine API ≥ 1.44). It reaches the registry by its
+  with skopeo, or without it pushes the layout to the local registry (`mise oci push --image-dir`) and
+  `docker pull`s it. The box's `docker load` rejected the layout (`open …/blobs/json: no such file`),
+  because the classic image store reads only docker-save archives. It reaches the registry by its
   bridge address from inside a container, and streams the contract inputs into the candidate image.
   `:local` moves only after that contract passes. `skopeo` is also in `system-packages.txt` for the next
   image.

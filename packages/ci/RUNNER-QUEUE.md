@@ -69,7 +69,7 @@ Each job runs in a **fresh Docker container** with the official Actions runner J
 
 ### Rebuild the runner image (box worker)
 
-Run on a **native-arch Linux** host (arm64 box builds arm64 only; amd64 builds amd64 — no cross-compile). Requires **Docker** (Engine API ≥ 1.44, or **skopeo**) and pinned **mise** (`packages/ci-gh-actions/deploy/ci-runner/mise-version.txt`). Set **`MISE_EXPERIMENTAL=1`** only for the build (the build script exports it).
+Run on a **native-arch Linux** host (arm64 box builds arm64 only; amd64 builds amd64 — no cross-compile). Requires **Docker** and pinned **mise** (`packages/ci-gh-actions/deploy/ci-runner/mise-version.txt`). Set **`MISE_EXPERIMENTAL=1`** only for the build (the build script exports it).
 
 ```sh
 # From repo root — exact command Tyler asked for:
@@ -80,7 +80,7 @@ That script:
 
 1. Checks that Docker Hub serves the pinned **`debian:bookworm-slim@sha256:…`** digest (`scripts/ci-runner-verify-base-digest.mts`, anonymous registry API; `docker manifest inspect` from the image's Debian `docker.io` CLI rejects that OCI index) and that `skopeo` is on `PATH` or the engine loads OCI layouts (API ≥ 1.44), then `docker build` with context **`packages/ci-gh-actions/deploy/ci-runner/`** (not repo root) → `hobo-ci-runner-base:local`.
 2. Push the base to the local **`registry:2`** container **`hobo-ci-registry`** (started if needed, published on a free `127.0.0.1` port so it cannot collide with anything already on 5000) so `mise oci build --from` does not pull from Docker Hub. The daemon pushes over the published loopback port; inside a job container the script reads the registry at its bridge address.
-3. `mise install` + **`mise oci build`** — tool layers from **`mise.lock`**; **`skopeo copy`** (or, without skopeo, `docker load` of the layout, Docker Engine API ≥ 1.44) loads it as `hobo-ci-worker:<version>`. The runner contract runs inside that candidate (inputs streamed in, no bind mount) before it is tagged `:local`.
+3. `mise install` + **`mise oci build`** — tool layers from **`mise.lock`**; **`skopeo copy`** loads it as `hobo-ci-worker:<version>`. Without skopeo, `mise oci push --image-dir` puts the layout in the local registry and the daemon `docker pull`s it, because the classic image store's `docker load` reads only docker-save archives. The runner contract runs inside that candidate (inputs streamed in, no bind mount) before it is tagged `:local`.
 
 Version tag: `node --no-warnings scripts/ci-runner-image-version.mts` (hash of `mise.lock`, `mise.toml`, base Dockerfile, and `system-packages.txt`).
 

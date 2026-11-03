@@ -62,7 +62,9 @@ loopback rather than the host's local registry, so `mise oci build` failed after
 publishes the `hobo-ci-registry` container on a free loopback port (the box already had something on
 5000, so a fixed `-p 5000:5000` failed with "port is already allocated"), pushes over that port, reads
 the registry at the container's bridge address from inside a job container, loads
-the OCI layout with skopeo (now in `system-packages.txt`) or `docker load`, and retags
+the OCI layout with skopeo (now in `system-packages.txt`) or, without it, pushes the layout to that
+registry with `mise oci push --image-dir` and has the daemon `docker pull` it (the box's classic image
+store cannot `docker load` an OCI layout), and retags
 `hobo-ci-worker:local` only after the live preflight contract passes. Its change detection greps a
 depth-2 diff of `HEAD~1`; before, it used `rg`, which the worker does not ship, so it never fired.
 

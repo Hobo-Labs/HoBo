@@ -33,16 +33,6 @@ rm -f /tmp/hobo-ci-runner-version.$$
 # CLI rejects the pinned OCI index (its attestation children are OCI manifests).
 node --no-warnings scripts/ci-runner-verify-base-digest.mts
 
-# `docker load` reads an OCI image layout from Docker Engine 25 (API 1.44) on;
-# skopeo, when present, works with any engine. Refuse before the base build.
-if ! command -v skopeo >/dev/null 2>&1; then
-  api="$(docker version --format '{{.Server.APIVersion}}')"
-  if [[ "$(printf '%s\n' "1.44" "$api" | sort -V | head -n1)" != "1.44" ]]; then
-    echo "need skopeo or a Docker Engine with API >= 1.44 (got ${api}) to load the mise oci layout" >&2
-    exit 1
-  fi
-fi
-
 case "$(uname -m)" in
   x86_64) target_arch=amd64 ;;
   aarch64 | arm64) target_arch=arm64 ;;
@@ -101,14 +91,11 @@ echo "Loading image into Docker as ${candidate}"
 if command -v skopeo >/dev/null 2>&1; then
   skopeo copy "oci:${oci_dir}" "docker-daemon:${candidate}"
 else
-  loaded="$(tar -C "${oci_dir}" -cf - . | docker load)"
-  echo "${loaded}"
-  ref="$(printf '%s\n' "${loaded}" | sed -n 's/^Loaded image: //p; s/^Loaded image ID: //p' | tail -n1)"
-  if [[ -z "${ref}" ]]; then
-    echo "docker load reported no image" >&2
-    exit 1
-  fi
-  docker tag "${ref}" "${candidate}"
+  # The classic image store's `docker load` reads only docker-save archives, not an
+  # OCI layout, so the layout goes through the registry and the daemon pulls it.
+  mise oci push --image-dir "${oci_dir}" "${endpoint}/${candidate}"
+  docker pull "${local_registry}/${candidate}"
+  docker tag "${local_registry}/${candidate}" "${candidate}"
 fi
 
 # The contract runs in the candidate before it becomes :local, which new jobs use.
