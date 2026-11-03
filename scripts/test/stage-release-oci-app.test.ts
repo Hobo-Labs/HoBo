@@ -1,10 +1,12 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	RELEASE_OCI_STAGE_SPECS,
+	releaseOciDeployArgs,
 	releaseOciDockerignore,
+	releaseOciStagingLocation,
 	stageReleaseOciApp,
 } from "../ci/stage-release-oci-app.mts";
 import { SDK_PACKAGES } from "../ci/stage-sdk-artifacts.mts";
@@ -35,6 +37,78 @@ describe("release OCI app staging", () => {
 			packageName,
 			buildFilter,
 			appPath: "app",
+		});
+	});
+
+	it("limits every deploy to the build host architecture", () => {
+		const specs = Object.values(RELEASE_OCI_STAGE_SPECS).filter(
+			(spec) => spec.kind === "deploy",
+		);
+		expect(specs).toHaveLength(4);
+		for (const spec of specs) {
+			const appDir = join("staging", spec.appPath);
+			expect(releaseOciDeployArgs(spec.packageName, appDir)).toEqual([
+				"--filter",
+				spec.packageName,
+				"deploy",
+				"--prod",
+				"--offline",
+				"--config.inject-workspace-packages=true",
+				"--cpu=current",
+				"--os=current",
+				"--libc=current",
+				appDir,
+			]);
+		}
+	});
+
+	it("stages on a same-device store with hardlinks", () => {
+		const storeDir = resolve("test-store");
+		const options = {
+			root,
+			env: {
+				npm_config_store_dir: storeDir,
+				GITHUB_RUN_ID: "123",
+				GITHUB_JOB: "release",
+				GITHUB_RUN_ATTEMPT: "2",
+			},
+			stat: () => ({ dev: 1 }),
+			mkdir: () => undefined,
+		};
+		const location = releaseOciStagingLocation("hobo-cli", options);
+		expect(location).toEqual({
+			stagingRoot: join(
+				storeDir,
+				".hobo-release-staging/hobo-cli/123-release-2",
+			),
+			hardlink: true,
+			storeDir,
+		});
+		expect(releaseOciStagingLocation("hobo-cli", options)).toEqual(location);
+		expect(
+			releaseOciDeployArgs("@hobo/hobo", "app", location.hardlink),
+		).toContain("--config.package-import-method=hardlink");
+	});
+
+	it("keeps in-repo staging and default imports without a store", () => {
+		expect(releaseOciStagingLocation("hobo-cli", { root, env: {} })).toEqual({
+			stagingRoot: join(root, "deploy/release-images/.staging/hobo-cli"),
+			hardlink: false,
+		});
+	});
+
+	it("keeps in-repo staging when the store is on another device", () => {
+		const storeDir = resolve("test-store");
+		expect(
+			releaseOciStagingLocation("hobo-cli", {
+				root,
+				env: { npm_config_store_dir: storeDir },
+				stat: (path) => ({ dev: path === storeDir ? 1 : 2 }),
+				mkdir: () => undefined,
+			}),
+		).toEqual({
+			stagingRoot: join(root, "deploy/release-images/.staging/hobo-cli"),
+			hardlink: false,
 		});
 	});
 

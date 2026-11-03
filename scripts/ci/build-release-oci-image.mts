@@ -4,17 +4,61 @@
  * PR/CI: build + load locally. Release: push to GHCR with semver tag (digest recorded separately).
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { ciRunnerImageVersion } from "../lib/ci-runner-contract.mts";
 import {
 	ghcrRepository,
 	loadReleaseOciManifest,
 	type ReleaseOciImage,
 } from "../lib/release-oci-contract.mts";
-import { stageReleaseOciApp } from "./stage-release-oci-app.mts";
+import {
+	type ReleaseOciStagingLocation,
+	releaseOciStagingLocation,
+	stageReleaseOciApp,
+} from "./stage-release-oci-app.mts";
 
 const root = join(import.meta.dirname, "..", "..");
+
+function inRepoStagingDir(imageId: string): string {
+	return join(root, "deploy/release-images/.staging", imageId);
+}
+
+function storeStagingRecordPath(imageId: string): string {
+	return join(root, "deploy/release-images/.staging", `${imageId}.store-path`);
+}
+
+function recordStoreStaging(
+	imageId: string,
+	location: ReleaseOciStagingLocation,
+): void {
+	const recordPath = storeStagingRecordPath(imageId);
+	rmSync(recordPath, { force: true });
+	if (!location.hardlink) return;
+	mkdirSync(dirname(recordPath), { recursive: true });
+	writeFileSync(recordPath, `${location.storeDir}\n${location.stagingRoot}\n`);
+}
+
+function recordedStoreStagingDir(imageId: string): string | undefined {
+	const recordPath = storeStagingRecordPath(imageId);
+	if (!existsSync(recordPath)) return undefined;
+	const [storeDir, stagingRoot] = readFileSync(recordPath, "utf8").split("\n");
+	if (
+		!storeDir ||
+		!stagingRoot ||
+		dirname(resolve(stagingRoot)) !==
+			join(resolve(storeDir), ".hobo-release-staging", imageId)
+	) {
+		throw new Error(`invalid store staging record: ${recordPath}`);
+	}
+	return stagingRoot;
+}
 
 function run(
 	cmd: string,
@@ -115,10 +159,10 @@ export function cleanupReleaseOciBuild(
 	localTag: string,
 	options: { keepCandidate?: boolean } = {},
 ): void {
-	rmSync(join(root, "deploy/release-images/.staging", imageId), {
-		recursive: true,
-		force: true,
-	});
+	const storeStaging = recordedStoreStagingDir(imageId);
+	rmSync(inRepoStagingDir(imageId), { recursive: true, force: true });
+	if (storeStaging) rmSync(storeStaging, { recursive: true, force: true });
+	rmSync(storeStagingRecordPath(imageId), { force: true });
 	if (!options.keepCandidate) {
 		const image = spawnSync("docker", ["image", "inspect", localTag], {
 			cwd: root,
@@ -172,11 +216,18 @@ export function buildReleaseImage(options: {
 		process.env.GITHUB_SHA ??
 		"local";
 	const toolchain = resolveToolchainImage(manifest);
-	const stagingDir = join(root, "deploy/release-images/.staging", image.id);
 	ensureReleaseBuildHost();
-	stageReleaseOciApp(image.id, stagingDir, { skipBuild: options.skipBuild });
+	const staging = releaseOciStagingLocation(image.id, { root });
+	recordStoreStaging(image.id, staging);
+	stageReleaseOciApp(image.id, staging.stagingRoot, {
+		skipBuild: options.skipBuild,
+		hardlink: staging.hardlink,
+	});
 	if (image.id === "hobo-mcp") ensureCliCandidate();
-	run("docker", buildArgs(image, toolchain, version, revision, stagingDir));
+	run(
+		"docker",
+		buildArgs(image, toolchain, version, revision, staging.stagingRoot),
+	);
 	const localTag = `${image.name}:candidate`;
 	cleanupReleaseOciBuildChain(image.id, {
 		keepCandidate: options.keepCandidate,
