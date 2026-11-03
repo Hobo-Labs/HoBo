@@ -30,7 +30,9 @@ candidate snapshots use the same pinned state; incremental amounts are
 `@hobo/pricing/legacy` exports the moved CI allocation and sandbox translators.
 Their function bodies are unchanged, and `legacy_ci.proto` mirrors the two
 CI-owned protobuf records with identical type names, fields, and wire numbers.
-The CI package preserves its original imports through thin re-exports.
+The CI package preserves its original imports through thin re-exports. The
+`@hobo/ci -> @hobo/pricing` workspace edge is registered in the conformance
+boundary catalog; pricing has no reverse dependency on CI.
 
 `ExternalProviderQuote` is an evidence record, not an executable pricing model.
 `external-quote.ts` always rejects attempts to turn one into a rating engine.
