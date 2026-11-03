@@ -57,6 +57,12 @@ function required(name: string): string {
 	if (!value) throw new Error(`missing ${name}`);
 	return value;
 }
+export type HostShutdownTimings = {
+	/** How long the process group gets to honour SIGTERM before SIGKILL. */
+	readonly graceMs?: number;
+	/** How long SIGKILL gets to empty the group before shutdown is unconfirmed. */
+	readonly confirmMs?: number;
+};
 export function runHostProcess(
 	command: string,
 	args: string[],
@@ -64,6 +70,7 @@ export function runHostProcess(
 	env: NodeJS.ProcessEnv,
 	timeout: number | undefined,
 	abortSignal?: AbortSignal,
+	{ graceMs = 10000, confirmMs = 2000 }: HostShutdownTimings = {},
 ): Promise<void> {
 	if (abortSignal?.aborted) return Promise.reject(abortSignal.reason);
 	return new Promise((resolve, reject) => {
@@ -113,10 +120,11 @@ export function runHostProcess(
 				try {
 					status = readFileSync(`/proc/${pid}/stat`, "utf8");
 				} catch (error) {
+					// A process reaped between readdir and read reports either code.
 					if (
 						error instanceof Error &&
 						"code" in error &&
-						error.code === "ENOENT"
+						(error.code === "ENOENT" || error.code === "ESRCH")
 					)
 						continue;
 					throw error;
@@ -163,13 +171,18 @@ export function runHostProcess(
 			stopping = true;
 			clearTimeout(timer);
 			signal("SIGTERM");
-			hardStop = setTimeout(() => signal("SIGKILL"), 10000);
-			deadline = setTimeout(() => {
+			hardStop = setTimeout(() => {
 				signal("SIGKILL");
-				finish(
-					new Error("runner process group shutdown could not be confirmed"),
-				);
-			}, 12000);
+				// Timed from the kill actually sent, never from SIGTERM: after an event-loop
+				// stall both timers would come due in one turn, before any check could see
+				// the killed group go.
+				deadline = setTimeout(() => {
+					check();
+					finish(
+						new Error("runner process group shutdown could not be confirmed"),
+					);
+				}, confirmMs);
+			}, graceMs);
 			poll = setInterval(check, 25);
 			check();
 		};

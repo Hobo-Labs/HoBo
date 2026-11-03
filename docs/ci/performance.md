@@ -160,6 +160,21 @@ slowest files at the end of every `run-tests` lane. The same run's one
 failure was `hobo-wit-toolchain-contract`'s rerun test at the 10 s default. It runs the jco generator
 three times, about 1.3 s locally, so its two generator tests now carry a 30 s timeout.
 
+The next main run (41580946041, about 6 minutes) failed one Workspace test: `@hobo/ci-gh-actions`
+`waits for TERM-ignoring descendants after parent timeout` got "runner process group shutdown could not
+be confirmed" after 16.6 s. That was a product bug that a stall exposes, not a different message on the
+box. `runHostProcess` sent `SIGKILL` 10 s after `SIGTERM` and gave up at 12 s, on two independent timers.
+If the event loop does not turn for more than 2 s across the 10 s mark, which a CPU-starved or paused host
+causes, both timers fire in the same turn. The group is killed and shutdown is declared unconfirmed before
+any check can see it go. 16.6 s against a nominal 11 s fits a stall of about 3.5 s. Busy-waiting the event
+loop for 4 s from 10.5 s reproduced the box message exactly on this VM. The confirmation window now starts when
+`SIGKILL` is sent, and a last check runs before giving up. A `/proc` read that races a reaped process
+(`ESRCH` as well as `ENOENT`) now counts as gone instead of as an unconfirmable shutdown. The 10 s grace and
+2 s confirmation stay the production defaults. `runHostProcess` takes them as an optional
+`HostShutdownTimings`, so the escalation tests use a 300 ms grace. A new test blocks the event loop across
+the kill and fails with the old timers. `test/bootstrap.test.ts` went from 28 s on the box (21 s locally)
+to about 5 s locally, and its longest case is the 2.9 s stall test instead of 16.6 s.
+
 **Main full gate is affected-only.** Before this change, every main push ran `check:all` (repo-wide lint,
 architecture guard, all 758 root unit files, behavior) whatever it touched. A step now resolves the
 previous main commit (the push's `before`, or `HEAD~1` for a dispatch) and runs
