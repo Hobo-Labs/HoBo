@@ -22,7 +22,9 @@ function normalize(coefficient: bigint, scale: number): Decimal {
 }
 
 export function parseDecimal(value: string): Decimal | undefined {
-	if (!DECIMAL_PATTERN.test(value)) return undefined;
+	if (!DECIMAL_PATTERN.test(value) || /^-0(\.0+)?$/.test(value)) {
+		return undefined;
+	}
 	const negative = value.startsWith("-");
 	const unsigned = negative ? value.slice(1) : value;
 	const [integer = "", fraction = ""] = unsigned.split(".");
