@@ -51,6 +51,7 @@ export function mapPackageName(
 
 type PackageJson = {
 	name: string;
+	version?: string;
 	dependencies?: Record<string, string>;
 	devDependencies?: Record<string, string>;
 	peerDependencies?: Record<string, string>;
@@ -77,11 +78,15 @@ function remapDeps(
 export function applyScopeToManifest(
 	manifest: PackageJson,
 	map: ScopeMap = loadNpmScopeMap(),
+	options?: { version?: string },
 ): PackageJson {
 	const out: PackageJson = {
 		...manifest,
 		name: mapPackageName(manifest.name, map),
 	};
+	if (options?.version) {
+		out.version = options.version;
+	}
 	const deps = remapDeps(manifest.dependencies, map);
 	const devDeps = remapDeps(manifest.devDependencies, map);
 	const peerDeps = remapDeps(manifest.peerDependencies, map);

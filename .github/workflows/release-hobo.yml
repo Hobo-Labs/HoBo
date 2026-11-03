@@ -18,20 +18,24 @@ on:
       - "scripts/ci/npm-publish-scope.mts"
       - "scripts/ci/stage-sdk-artifacts.mts"
       - "scripts/ci/publish-npm-sdk.mts"
+      - "scripts/ci/resolve-release-version.mts"
+      - "scripts/ci/push-release-ghcr-images.mts"
       - "scripts/ci/ensure-ci-worker-image.mts"
       - "scripts/ci/extract-sdk-artifacts.mts"
+      - "scripts/lib/release-version.mts"
       - "scripts/lib/release-oci-contract.mts"
       - "scripts/test/release-oci-affected.test.ts"
       - "scripts/test/release-oci-image-contract.test.ts"
+      - "scripts/test/release-version.test.ts"
       - "scripts/test/stage-release-oci-app.test.ts"
       - ".github/actions/release-oci-attest/**"
       - ".github/actions/hobo-checkout/**"
       - ".github/workflows/release-hobo.yml"
   push:
     tags:
-      - "v*.*.*"
-      - "sdk-v*.*.*"
-      - "cli-v*.*.*"
+      - "v*"
+      - "sdk-v*"
+      - "cli-v*"
   workflow_dispatch:
     inputs:
       push_images:
@@ -39,7 +43,7 @@ on:
         type: boolean
         default: false
       release_version:
-        description: "Semver tag name (e.g. v1.2.3) when push_images is true"
+        description: "Release tag (e.g. v0.0.0-alpha.0, sdk-v0.0.0-alpha.0) when push_images is true"
         type: string
         required: false
 
@@ -97,7 +101,7 @@ jobs:
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: npm scope map + OCI manifest contract
-        run: pnpm exec vitest run scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/stage-release-oci-app.test.ts
+        run: pnpm exec vitest run scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts
       - name: npm pack dry-run (allowlist staging)
         run: |
           set -euo pipefail
@@ -254,14 +258,8 @@ jobs:
           sparse-checkout-cone-mode: true
           submodules: recursive
       - uses: ./.github/actions/ci-runner-preflight
-      - name: Validate semver release version
-        run: |
-          set -euo pipefail
-          version="${HOBO_RELEASE_VERSION}"
-          if ! [[ "${version}" =~ ^(v|sdk-v|cli-v)[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
-            echo "::error::HOBO_RELEASE_VERSION must be a semver tag (v*, sdk-v*, cli-v*), got ${version}"
-            exit 1
-          fi
+      - name: Resolve and validate release version
+        run: node --no-warnings scripts/ci/resolve-release-version.mts "${HOBO_RELEASE_VERSION}" --github-env
       - run: pnpm run pins:fetch ts-autocode
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
@@ -269,33 +267,7 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: Build and push release images
-        run: |
-          set -euo pipefail
-          repo="${GITHUB_REPOSITORY,,}"
-          train="${HOBO_RELEASE_VERSION%%-*}"
-          images=(hobo-sdk hobo-codegen hobo-cli hobo-mcp hobo-ci-serve hobo-site)
-          if [[ "${HOBO_RELEASE_VERSION}" == sdk-v* ]]; then
-            images=(hobo-sdk)
-          elif [[ "${HOBO_RELEASE_VERSION}" == cli-v* ]]; then
-            images=(hobo-cli hobo-mcp)
-          fi
-          : > /tmp/hobo-release-digests.txt
-          for id in "${images[@]}"; do
-            if [ "$id" = "hobo-mcp" ]; then
-              node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --keep-candidate
-            fi
-            if [ "$id" = "hobo-cli" ] || [ "$id" = "hobo-mcp" ]; then
-              node --no-warnings scripts/ci/build-release-oci-image.mts hobo-sdk --keep-candidate
-            fi
-            node --no-warnings scripts/ci/build-release-oci-image.mts "$id" --keep-candidate
-            tag="ghcr.io/${repo}/hobo/${id}:${HOBO_RELEASE_VERSION}"
-            docker tag "${id}:candidate" "$tag"
-            docker push "$tag"
-            docker inspect --format='{{index .RepoDigests 0}}' "$tag" >> /tmp/hobo-release-digests.txt
-            docker rmi -f "$tag" || true
-            node --no-warnings scripts/ci/build-release-oci-image.mts "$id" --cleanup-only
-          done
-          cat /tmp/hobo-release-digests.txt
+        run: node --no-warnings scripts/ci/push-release-ghcr-images.mts /tmp/hobo-release-digests.txt
       - name: Upload digest list
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -350,14 +322,8 @@ jobs:
           sparse-checkout-cone-mode: true
           submodules: recursive
       - uses: ./.github/actions/ci-runner-preflight
-      - name: Validate semver release version
-        run: |
-          set -euo pipefail
-          version="${HOBO_RELEASE_VERSION}"
-          if ! [[ "${version}" =~ ^(v|sdk-v)[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
-            echo "::error::npm publish requires v* or sdk-v* semver tag, got ${version}"
-            exit 1
-          fi
+      - name: Resolve and validate release version
+        run: node --no-warnings scripts/ci/resolve-release-version.mts "${HOBO_RELEASE_VERSION}" --github-env
       - run: pnpm run pins:fetch ts-autocode
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false

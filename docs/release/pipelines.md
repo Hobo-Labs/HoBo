@@ -137,7 +137,8 @@ Multi-arch builds are **native-only** on `hobo` runners (amd64 or arm64 per box)
 
 ### Tags, digests, and pipeline references
 
-- CLI/SDK release tags: **`vX.Y.Z`** semver on git tag → image tag `vX.Y.Z` **and** immutable **`@sha256:…`** digest. Independent trains also use **`sdk-vX.Y.Z`** (npm SDK + `hobo-sdk` GHCR) and **`cli-vX.Y.Z`** (`hobo-cli` + `hobo-mcp` GHCR; CLI staging consumes the SDK OCI artifact by digest, not a source rebuild).
+- CLI/SDK release tags: **`vX.Y.Z`** or semver prereleases such as **`v0.0.0-alpha.0`** on the git tag → GHCR image tag equals the tag (e.g. `v0.0.0-alpha.0`) **and** immutable **`@sha256:…`** digest. Prerelease images **never** receive a `:latest` tag. Independent trains use **`sdk-v…`** (npm SDK + `hobo-sdk` GHCR) and **`cli-v…`** (`hobo-cli` + `hobo-mcp` GHCR; CLI staging consumes the SDK OCI artifact by digest, not a source rebuild). Semver parsing and train selection live in [`scripts/lib/release-version.mts`](../../scripts/lib/release-version.mts) (`resolve-release-version.mts` in CI).
+- npm: prerelease semver (e.g. `0.0.0-alpha.0` derived from the tag) publishes with **`npm publish --tag <prerelease-id>`** (`alpha` for `-alpha.0`), so **`latest`** stays reserved for stable `vX.Y.Z` releases without a prerelease segment. Staged `@hobo-labs/*` tarballs take their **`version`** field from `HOBO_RELEASE_SEMVER` / the parsed tag, not the workspace `0.0.1` dev versions.
 - HoBo Code release tags: **`code-vX.Y.Z`** → `hobo-code:code-vX.Y.Z` and an immutable digest, independent of CLI/SDK tags.
 - **`vX.Y.Z`** also runs the **`release-pages`** job (Astro `site/` → `gh-pages` branch via SHA-pinned `peaceiris/actions-gh-pages`).
 - Downstream pipelines (CLI + PWA) **pin the SDK image by digest**, never `:latest`.
@@ -151,16 +152,17 @@ Multi-arch builds are **native-only** on `hobo` runners (amd64 or arm64 per box)
 
 ### Contract tests
 
-[`scripts/test/release-oci-image-contract.test.ts`](../../scripts/test/release-oci-image-contract.test.ts) validates:
+[`scripts/test/release-oci-image-contract.test.ts`](../../scripts/test/release-oci-image-contract.test.ts) and [`scripts/test/release-version.test.ts`](../../scripts/test/release-version.test.ts) validate:
 
 1. Manifest + Dockerfile presence (always), including the explicit `hobo-code` entrypoint, state volume, and environment documentation
-2. **`docker inspect`** config vs expected `USER`, `WORKDIR`, `ENTRYPOINT`, `EXPOSE`, `VOLUME`, labels when **`HOBO_RELEASE_OCI_CONTRACT=live`**
-3. The declared help/version probe inside the candidate container as non-root
+2. Release ref parsing, npm dist-tag selection, and GHCR tag rules (no `:latest` on prereleases)
+3. **`docker inspect`** config vs expected `USER`, `WORKDIR`, `ENTRYPOINT`, `EXPOSE`, `VOLUME`, labels when **`HOBO_RELEASE_OCI_CONTRACT=live`**
+4. The declared help/version probe inside the candidate container as non-root
 
 Local:
 
 ```bash
-pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts scripts/test/stage-release-oci-app.test.ts
+pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts
 bash packages/ci-gh-actions/deploy/ci-runner/build.sh
 node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --keep-candidate
 HOBO_RELEASE_OCI_CONTRACT=live HOBO_RELEASE_OCI_IMAGE_ID=hobo-cli pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts

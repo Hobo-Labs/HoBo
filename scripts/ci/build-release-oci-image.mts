@@ -8,6 +8,10 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { ciRunnerImageVersion } from "../lib/ci-runner-contract.mts";
 import {
+	releaseSemverFromEnv,
+	tryParseReleaseRef,
+} from "../lib/release-version.mts";
+import {
 	ghcrRepository,
 	loadReleaseOciManifest,
 	type ReleaseOciImage,
@@ -159,6 +163,23 @@ function cleanupReleaseOciBuildChain(
 
 export type BuiltReleaseImage = { localTag: string; ghcrRepo: string };
 
+function resolveReleaseImageVersion(optionsVersion?: string): string {
+	if (optionsVersion) return optionsVersion;
+	if (process.env.HOBO_RELEASE_SEMVER?.trim()) {
+		return releaseSemverFromEnv();
+	}
+	const ref = process.env.HOBO_RELEASE_VERSION?.trim();
+	if (ref) {
+		const parsed = tryParseReleaseRef(ref);
+		if (parsed) return parsed.semver;
+	}
+	return (
+		process.env.HOBO_RELEASE_VERSION ??
+		process.env.GITHUB_REF_NAME ??
+		ciRunnerImageVersion(root)
+	);
+}
+
 export function buildReleaseImage(options: {
 	imageId: string;
 	version?: string;
@@ -171,11 +192,7 @@ export function buildReleaseImage(options: {
 	if (!image) {
 		throw new Error(`unknown release image id: ${options.imageId}`);
 	}
-	const version =
-		options.version ??
-		process.env.HOBO_RELEASE_VERSION ??
-		process.env.GITHUB_REF_NAME ??
-		ciRunnerImageVersion(root);
+	const version = resolveReleaseImageVersion(options.version);
 	const revision =
 		options.revision ??
 		process.env.HOBO_RELEASE_REVISION ??

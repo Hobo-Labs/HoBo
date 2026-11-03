@@ -10,6 +10,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { releaseSemverFromEnv } from "../lib/release-version.mts";
 import { applyScopeToManifest, loadNpmScopeMap } from "./npm-publish-scope.mts";
 
 export const SDK_PACKAGES = [
@@ -61,8 +62,9 @@ function findPackageDir(name: string): string {
 export function stageSdkArtifactsDir(outDir: string): SdkArtifactManifest {
 	mkdirSync(outDir, { recursive: true });
 	const map = loadNpmScopeMap();
+	const semver = releaseSemverFromEnv();
 	const manifest: SdkArtifactManifest = {
-		version: process.env.HOBO_RELEASE_VERSION ?? "dev",
+		version: semver,
 		packages: [],
 	};
 	const staging = join(outDir, ".staging");
@@ -73,7 +75,9 @@ export function stageSdkArtifactsDir(outDir: string): SdkArtifactManifest {
 			readFileSync(join(pkgDir, "package.json"), "utf8"),
 		);
 		// SAFETY: workspace package.json must declare `name` before pack staging.
-		const staged = applyScopeToManifest(rawPkg as WorkspaceManifest, map);
+		const staged = applyScopeToManifest(rawPkg as WorkspaceManifest, map, {
+			version: semver,
+		});
 		const pkgStaging = join(staging, workspaceName.replace("/", "_"));
 		rmSync(pkgStaging, { recursive: true, force: true });
 		cpSync(pkgDir, pkgStaging, { recursive: true });

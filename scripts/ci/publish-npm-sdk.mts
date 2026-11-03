@@ -6,6 +6,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { npmPublishArgs, parseReleaseRef } from "../lib/release-version.mts";
 import { stageSdkArtifactsDir } from "./stage-sdk-artifacts.mts";
 
 const root = join(import.meta.dirname, "..", "..");
@@ -47,8 +48,10 @@ function assertPublisher(token: string): void {
 export function publishNpmSdkArtifacts(options: {
 	stagingDir: string;
 	token: string;
+	releaseRef: string;
 }): void {
 	assertPublisher(options.token);
+	const parsed = parseReleaseRef(options.releaseRef);
 	stageSdkArtifactsDir(options.stagingDir);
 	const tarballs = readdirSync(options.stagingDir).filter((name) =>
 		name.endsWith(".tgz"),
@@ -57,12 +60,9 @@ export function publishNpmSdkArtifacts(options: {
 		throw new Error("no staged npm tarballs to publish");
 	}
 	for (const file of tarballs.sort()) {
-		run(
-			"npm",
-			["publish", file, "--provenance", "--access", "public"],
-			options.stagingDir,
-			{ NPM_TOKEN: options.token },
-		);
+		run("npm", npmPublishArgs(file, parsed), options.stagingDir, {
+			NPM_TOKEN: options.token,
+		});
 	}
 }
 
@@ -79,7 +79,11 @@ function main(): void {
 		console.error("::error::HOBO_RELEASE_VERSION required for npm publish");
 		process.exit(1);
 	}
-	publishNpmSdkArtifacts({ stagingDir, token });
+	publishNpmSdkArtifacts({
+		stagingDir,
+		token,
+		releaseRef: process.env.HOBO_RELEASE_VERSION,
+	});
 	const manifest = join(stagingDir, "MANIFEST.json");
 	if (existsSync(manifest)) {
 		console.log(readFileSync(manifest, "utf8"));
