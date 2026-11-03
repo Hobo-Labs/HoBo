@@ -33,11 +33,17 @@ export interface GithubJobPollSummary {
 	readonly accepted: number;
 	/** Jobs the inbox refused this poll (see `onIngestError`). */
 	readonly failed: number;
+	/** Completed run attempts whose jobs were all seen completed on an earlier poll. */
+	readonly settled: number;
+	/** Reads GitHub answered 304 to, which do not count against the rate limit. */
+	readonly notModified: number;
 	readonly pausedUntil?: string;
 	readonly rateLimitRemaining?: number;
 }
 
 const COMPLETED_LOOKBACK_MS = 2 * 60 * 60 * 1000;
+/** `created>=` is rounded down to this, so the completed-runs URL (and its ETag) holds still between polls. */
+const LOOKBACK_STEP_MS = 10 * 60 * 1000;
 const RUN_STATUSES = ["queued", "in_progress"] as const;
 const PolledStatus = z.enum(["queued", "in_progress", "completed"]);
 const STATUS_CODE = { queued: "q", in_progress: "p", completed: "c" } as const;
@@ -46,7 +52,12 @@ const RATE_LIMIT_FLOOR = 300;
 const DEFAULT_PAUSE_MS = 60_000;
 
 const Runs = z.object({
-	workflow_runs: z.array(z.object({ id: z.number().int().positive() })),
+	workflow_runs: z.array(
+		z.object({
+			id: z.number().int().positive(),
+			run_attempt: z.number().int().positive().optional(),
+		}),
+	),
 });
 const Jobs = z.object({
 	jobs: z.array(
@@ -96,15 +107,43 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 		throw new RateLimited(Math.max(until, now() + 1000));
 	}
 
+	// Last body and ETag per read, so an unchanged list costs a free 304. Only
+	// reads made by the last complete poll are kept.
+	let etags = new Map<string, Readonly<{ etag: string; body: string }>>();
+	let readThisPoll = new Map<
+		string,
+		Readonly<{ etag: string; body: string }>
+	>();
+	// Completed run attempts whose jobs were all completed when last read: they
+	// cannot change again (a re-run is a new attempt), so they are not re-read.
+	let settled = new Set<string>();
+
 	async function getJson<T>(
 		installationId: number,
 		path: string,
 		schema: z.ZodType<T>,
+		summary: { notModified: number },
 	): Promise<T | undefined> {
-		const response = await options.github.request(installationId, path);
+		const key = `${installationId} ${path}`;
+		const cached = etags.get(key);
+		const response = await options.github.request(
+			installationId,
+			path,
+			"GET",
+			undefined,
+			cached?.etag,
+		);
 		observeRateLimit(response);
+		if (response.status === 304 && cached) {
+			summary.notModified++;
+			readThisPoll.set(key, cached);
+			return schema.parse(JSON.parse(cached.body));
+		}
 		if (!response.ok) return undefined;
-		return schema.parse(await response.json());
+		const body = await response.text();
+		const etag = response.headers.get("etag");
+		if (etag) readThisPoll.set(key, { etag, body });
+		return schema.parse(JSON.parse(body));
 	}
 
 	async function poll(): Promise<GithubJobPollSummary> {
@@ -114,6 +153,8 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 			hoboJobs: 0,
 			accepted: 0,
 			failed: 0,
+			settled: 0,
+			notModified: 0,
 		};
 		if (now() < pausedUntilMs)
 			return {
@@ -121,6 +162,8 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 				pausedUntil: new Date(pausedUntilMs).toISOString(),
 			};
 		const seen = new Set<number>();
+		readThisPoll = new Map();
+		const stillSettled = new Set<string>();
 		try {
 			for (const connection of await options.connections()) {
 				if (seen.has(connection.repositoryId)) continue;
@@ -132,26 +175,52 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						connection.installationId,
 						`/repos/${connection.repository}/actions/runs?status=${status}&per_page=50`,
 						Runs,
+						summary,
 					);
 					for (const run of runs?.workflow_runs ?? []) runIds.add(run.id);
 				}
 				// A run that finished drops out of queued/in_progress before its last
 				// job's completion is seen; without it the runner's container is only
 				// reaped at max runtime and holds a slot. Recent completed runs close that.
-				const since = new Date(now() - COMPLETED_LOOKBACK_MS).toISOString();
+				const sinceMs =
+					Math.floor((now() - COMPLETED_LOOKBACK_MS) / LOOKBACK_STEP_MS) *
+					LOOKBACK_STEP_MS;
+				const since = new Date(sinceMs).toISOString();
 				const completed = await getJson(
 					connection.installationId,
 					`/repos/${connection.repository}/actions/runs?status=completed&created=%3E%3D${since}&per_page=50`,
 					Runs,
+					summary,
 				);
-				for (const run of completed?.workflow_runs ?? []) runIds.add(run.id);
+				const settling = new Map<
+					number,
+					Readonly<{ key: string; attempt: number }>
+				>();
+				for (const run of completed?.workflow_runs ?? []) {
+					if (runIds.has(run.id)) continue;
+					const key =
+						run.run_attempt === undefined
+							? undefined
+							: `${connection.repositoryId}:${run.id}:${run.run_attempt}`;
+					if (key !== undefined && settled.has(key)) {
+						stillSettled.add(key);
+						summary.settled++;
+						continue;
+					}
+					runIds.add(run.id);
+					if (key !== undefined && run.run_attempt !== undefined)
+						settling.set(run.id, { key, attempt: run.run_attempt });
+				}
 				summary.runs += runIds.size;
 				for (const runId of runIds) {
 					const jobs = await getJson(
 						connection.installationId,
 						`/repos/${connection.repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
 						Jobs,
+						summary,
 					);
+					const attempt = settling.get(runId);
+					const failedBefore = summary.failed;
 					for (const job of jobs?.jobs ?? []) {
 						const status = PolledStatus.safeParse(job.status);
 						if (
@@ -206,10 +275,26 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						}
 						if (result === "accepted") summary.accepted++;
 					}
+					if (
+						attempt !== undefined &&
+						jobs !== undefined &&
+						summary.failed === failedBefore &&
+						jobs.jobs.every(
+							(job) =>
+								job.status === "completed" &&
+								job.run_attempt === attempt.attempt,
+						)
+					)
+						stillSettled.add(attempt.key);
 				}
 			}
+			etags = readThisPoll;
+			settled = stillSettled;
 		} catch (error) {
 			if (!(error instanceof RateLimited)) throw error;
+			// A poll cut short keeps what it learned without forgetting the rest.
+			for (const [key, value] of readThisPoll) etags.set(key, value);
+			for (const attempt of stillSettled) settled.add(attempt);
 			pausedUntilMs = error.untilMs;
 			const paused: GithubJobPollSummary = {
 				...summary,
