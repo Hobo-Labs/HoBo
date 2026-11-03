@@ -15,8 +15,7 @@ export PATH="${HOME}/.local/bin:${PATH}"
 runner_ctx="${root}/packages/ci-gh-actions/deploy/ci-runner"
 base_dockerfile="${runner_ctx}/base/Dockerfile"
 oci_dir="${runner_ctx}/oci-layout"
-# The Docker daemon pushes here: loopback on the host, which it treats as plain HTTP.
-local_registry="127.0.0.1:5000"
+local_registry=""
 registry_container="hobo-ci-registry"
 base_image="hobo-ci-runner-base"
 
@@ -54,39 +53,40 @@ echo "Building base image (native ${target_arch}), tag ${base_image}:local"
 docker build --build-arg "TARGETARCH=${target_arch}" \
   -f "${base_dockerfile}" -t "${base_image}:local" "${runner_ctx}"
 
-# Where this process reaches the registry. Inside a job container 127.0.0.1 is the
-# container's own loopback, so use the registry container's bridge address instead.
-registry_endpoint() {
-  if curl -fsS "http://${local_registry}/v2/" >/dev/null 2>&1; then
-    echo "${local_registry}"
-    return 0
-  fi
-  local ip
-  ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "${registry_container}" 2>/dev/null | awk '{print $1}')"
-  [[ -n "${ip}" ]] && echo "${ip}:5000"
+start_registry() {
+  # Any free loopback port: a fixed 5000 collides with whatever else the host runs there.
+  docker run -d -p 127.0.0.1::5000 --name "${registry_container}" registry:2 >/dev/null
 }
 
+# Two addresses for one registry. The Docker daemon pushes from the host, over the
+# published loopback port, which it treats as plain HTTP. This process may be in a job
+# container, where 127.0.0.1 is its own loopback, so it falls back to the bridge address.
 ensure_local_registry() {
-  if ! docker ps --format '{{.Names}}' | grep -qx "${registry_container}"; then
-    if docker ps -a --format '{{.Names}}' | grep -qx "${registry_container}"; then
-      docker start "${registry_container}" >/dev/null
-    else
-      docker run -d -p 5000:5000 --name "${registry_container}" registry:2 >/dev/null
-    fi
+  if ! docker ps -a --format '{{.Names}}' | grep -qx "${registry_container}"; then
+    start_registry
+  elif ! docker start "${registry_container}" >/dev/null 2>&1; then
+    docker rm -f "${registry_container}" >/dev/null
+    start_registry
   fi
+  local published ip
+  published="$(docker port "${registry_container}" 5000/tcp | head -n1)"
+  local_registry="127.0.0.1:${published##*:}"
+  ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "${registry_container}" | awk '{print $1}')"
   for _ in $(seq 1 30); do
-    endpoint="$(registry_endpoint || true)"
-    if [[ -n "${endpoint}" ]] && curl -fsS "http://${endpoint}/v2/" >/dev/null 2>&1; then
-      return 0
-    fi
+    for endpoint in "${local_registry}" "${ip}:5000"; do
+      if curl -fsS "http://${endpoint}/v2/" >/dev/null 2>&1; then
+        return 0
+      fi
+    done
     sleep 1
   done
-  echo "local registry ${registry_container} did not become ready" >&2
+  echo "local registry ${registry_container} did not become ready (host ${local_registry}, bridge ${ip}:5000)" >&2
   exit 1
 }
 
 echo "Publishing base to local registry (avoids Docker Hub 401 on mise oci --from)"
 ensure_local_registry
+echo "registry: daemon pushes to ${local_registry}, this process reads ${endpoint}"
 docker tag "${base_image}:local" "${local_registry}/${base_image}:local"
 docker push "${local_registry}/${base_image}:local"
 export MISE_OCI_INSECURE_REGISTRIES="${endpoint}"
