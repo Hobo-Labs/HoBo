@@ -30,6 +30,7 @@
  */
 import { execFileSync } from "node:child_process";
 import {
+	cpSync,
 	existsSync,
 	mkdtempSync,
 	readFileSync,
@@ -39,7 +40,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { runGitTerminalPane } from "../src/git-terminal-pane.js";
 import {
 	createLocalSessionControl,
@@ -96,15 +97,33 @@ function git(cwd: string, args: readonly string[]): string {
  */
 function repository(): string {
 	const root = temp("hobo-git-pane-repo-");
-	git(root, ["init", "-q", "-b", "main"]);
-	git(root, ["config", "user.email", "test@example.com"]);
-	git(root, ["config", "user.name", "Test"]);
-	writeFileSync(join(root, "README.md"), "base\n");
-	writeFileSync(join(root, "tracked.txt"), "original\n");
-	git(root, ["add", "-A"]);
-	git(root, ["commit", "-qm", "base"]);
+	cpSync(template, root, { recursive: true });
 	return root;
 }
+
+/**
+ * Built once per file. Each test gets a copy, which costs a directory copy
+ * rather than four git subprocesses and a commit. Signing is off in the
+ * repository's own config so a developer's global `commit.gpgsign` cannot put
+ * a signing helper in front of the fixture or the pane's own commits.
+ */
+let template = "";
+
+beforeAll(() => {
+	template = mkdtempSync(join(tmpdir(), "hobo-git-pane-template-"));
+	git(template, ["init", "-q", "-b", "main"]);
+	git(template, ["config", "user.email", "test@example.com"]);
+	git(template, ["config", "user.name", "Test"]);
+	git(template, ["config", "commit.gpgsign", "false"]);
+	writeFileSync(join(template, "README.md"), "base\n");
+	writeFileSync(join(template, "tracked.txt"), "original\n");
+	git(template, ["add", "-A"]);
+	git(template, ["commit", "-qm", "base"]);
+});
+
+afterAll(() => {
+	rmSync(template, { recursive: true, force: true });
+});
 
 /** One modified tracked file and one untracked file, inside the worktree. */
 function dirty(worktree: string): void {
@@ -162,11 +181,17 @@ function fakeStdin() {
 function fakeStdout(columns = 100, rows = 30) {
 	const chunks: string[] = [];
 	let writes = 0;
+	const waiters: { readonly after: number; readonly resolve: () => void }[] =
+		[];
 	const stream = new Writable(
 		{
 			write(chunk, _encoding, done) {
 				chunks.push(String(chunk));
 				writes += 1;
+				for (const waiter of waiters.splice(0)) {
+					if (writes > waiter.after) waiter.resolve();
+					else waiters.push(waiter);
+				}
 				done();
 			},
 		},
@@ -180,6 +205,12 @@ function fakeStdout(columns = 100, rows = 30) {
 			text: () => chunks.join(""),
 			/** How many times the pane has written — a repaint or a prompt label. */
 			writes: () => writes,
+			/** Resolves on the first write past the `after`th, at once if it already happened. */
+			wroteAfter: (after: number) =>
+				new Promise<void>((resolve) => {
+					if (writes > after) resolve();
+					else waiters.push({ after, resolve });
+				}),
 		},
 		GIT_TIMEOUT_MS,
 	);
@@ -200,15 +231,14 @@ const GIT_TIMEOUT_MS = 90_000;
  * Open the pane on a session whose worktree is `repo`, feed `keys`, and return
  * what happened.
  *
- * Keys go in on a timer because each one may kick off a git subprocess, and a
- * burst written ahead of the reader is a burst the loop coalesces into a single
- * chunk — which is a different input than a person typing.
+ * Keys go in one at a time because each one may kick off a git subprocess, and
+ * a burst written ahead of the reader is a burst the loop coalesces into a
+ * single chunk — which is a different input than a person typing.
  */
 async function pane(
 	repo: string,
 	keys: readonly string[],
 	options: {
-		readonly gap?: number;
 		/** Runs against the session's worktree before the pane opens. */
 		readonly prepare?: (worktree: string) => void;
 	} = {},
@@ -239,33 +269,23 @@ async function pane(
 	const stdin = fakeStdin();
 	const stdout = fakeStdout();
 
-	// Keys are fed one at a time, each waiting for the pane to answer the last
-	// one. That is not politeness — the loop guards itself with a `busy` flag
-	// and *drops* a key that arrives mid-action, so a fixed-interval feed
-	// silently loses keys whenever a git subprocess runs slower than the guess.
-	// Under coverage instrumentation that is most of them, which is exactly the
-	// kind of test that passes locally and fails in CI while looking like a
-	// product bug. Waiting on output covers both cases the pane can produce: a
-	// repaint after a handled key, and a prompt label after one that asks.
-	const settled = async (): Promise<void> => {
-		const before = stdout.writes();
-		const deadline = Date.now() + 20_000;
-		while (stdout.writes() === before && Date.now() < deadline) {
-			await new Promise((resolve) => setTimeout(resolve, 10));
-		}
-		// A short settle so the write that woke us is fully applied before the
-		// next key lands on top of it.
-		await new Promise((resolve) => setTimeout(resolve, options.gap ?? 25));
-	};
-
-	// Wait *before* each key, never after. The last key is a quit, and a quit
-	// produces no repaint by design — waiting on one would burn the whole
-	// deadline on every test.
+	// Each key waits for the pane's answer to the one before it (the first
+	// paint, then a repaint or a prompt label), so none lands in the window
+	// where the loop is `busy` and drops keys. The count is taken before the key
+	// is written: a key that opens a prompt writes its label inside
+	// `stdin.write` itself, and a count taken afterwards waits for a write that
+	// has already happened. The tick after the answer lets the pane leave `busy`
+	// and attach a prompt's listener, both of which follow the write in the same
+	// turn of the event loop.
 	let done = false;
 	const feed = async (): Promise<void> => {
+		// Write 1 switches the terminal mode; write 2 is the first paint.
+		let answered = 1;
 		for (const key of keys) {
+			await stdout.wroteAfter(answered);
+			await new Promise<void>((resolve) => setImmediate(resolve));
 			if (done) return;
-			await settled();
+			answered = stdout.writes();
 			stdin.write(key);
 		}
 		// Then keep asking to leave until the pane actually leaves.
@@ -490,7 +510,6 @@ describe("staging", () => {
 			// file's own state — staging an already-staged file would be a no-op the
 			// operator reads as the pane ignoring them.
 			const session = await pane(repository(), ["2", " ", " ", QUIT], {
-				gap: 220,
 				prepare: dirty,
 			});
 			expect(session.code).toBe(0);
@@ -523,7 +542,6 @@ describe("the approval gate in front of anything destructive", () => {
 		"discards a file when the answer is yes",
 		async () => {
 			const session = await pane(repository(), ["2", "x", "yes\r", QUIT], {
-				gap: 250,
 				prepare: dirty,
 			});
 			const worktree = session.worktree;
@@ -548,7 +566,6 @@ describe("the approval gate in front of anything destructive", () => {
 			// answers a hurried operator gives, and neither is the deliberate
 			// confirmation this prompt is asking for.
 			const session = await pane(repository(), ["2", "x", answer, QUIT], {
-				gap: 250,
 				prepare: dirty,
 			});
 			expect(readFileSync(join(session.worktree, "tracked.txt"), "utf8")).toBe(
@@ -564,7 +581,6 @@ describe("the approval gate in front of anything destructive", () => {
 			// Esc cancels rather than answering, and a cancelled prompt must not read
 			// as an approval.
 			const session = await pane(repository(), ["2", "x", "", QUIT], {
-				gap: 250,
 				prepare: dirty,
 			});
 			expect(readFileSync(join(session.worktree, "tracked.txt"), "utf8")).toBe(
@@ -577,9 +593,7 @@ describe("the approval gate in front of anything destructive", () => {
 	it(
 		"asks before deleting a branch",
 		async () => {
-			const session = await pane(repository(), ["3", "j", "x", "no\r", QUIT], {
-				gap: 250,
-			});
+			const session = await pane(repository(), ["3", "j", "x", "no\r", QUIT]);
 			expect(session.output).toMatch(/type yes to approve/u);
 		},
 		GIT_TIMEOUT_MS,
@@ -591,7 +605,6 @@ describe("the approval gate in front of anything destructive", () => {
 			// "Are you sure?" with no object is a prompt operators learn to answer
 			// yes to reflexively.
 			const session = await pane(repository(), ["2", "x", "no\r", QUIT], {
-				gap: 250,
 				prepare: dirty,
 			});
 			expect(session.output).toMatch(/file-discard tracked\.txt/u);
@@ -604,7 +617,6 @@ describe("the approval gate in front of anything destructive", () => {
 		async () => {
 			// A question asked in raw mode gets one character and no echo.
 			const session = await pane(repository(), ["2", "x", "no\r", QUIT], {
-				gap: 250,
 				prepare: dirty,
 			});
 			expect(session.stdin.rawModeCalls).toEqual(
@@ -619,9 +631,7 @@ describe("prompts that create rather than destroy", () => {
 	it(
 		"creates a branch with the name that was typed",
 		async () => {
-			const session = await pane(repository(), ["n", "feature/x\r", QUIT], {
-				gap: 250,
-			});
+			const session = await pane(repository(), ["n", "feature/x\r", QUIT]);
 			expect(
 				git(session.worktree, ["branch", "--list", "feature/x"]),
 			).toContain("feature/x");
@@ -633,7 +643,7 @@ describe("prompts that create rather than destroy", () => {
 		"creates no branch when the name is left empty",
 		async () => {
 			// An empty answer is a cancel, not a branch named "".
-			const session = await pane(repository(), ["n", "\r", QUIT], { gap: 250 });
+			const session = await pane(repository(), ["n", "\r", QUIT]);
 			expect(session.code).toBe(0);
 		},
 		GIT_TIMEOUT_MS,
@@ -643,7 +653,7 @@ describe("prompts that create rather than destroy", () => {
 		"creates no branch when the prompt is cancelled",
 		async () => {
 			const before = repository();
-			const session = await pane(before, ["n", "", QUIT], { gap: 250 });
+			const session = await pane(before, ["n", "", QUIT]);
 			expect(session.code).toBe(0);
 		},
 		GIT_TIMEOUT_MS,
@@ -653,7 +663,6 @@ describe("prompts that create rather than destroy", () => {
 		"stashes with the message that was typed",
 		async () => {
 			const session = await pane(repository(), ["s", "wip here\r", QUIT], {
-				gap: 250,
 				prepare: dirty,
 			});
 			expect(git(session.worktree, ["stash", "list"])).toContain("wip here");
@@ -665,7 +674,6 @@ describe("prompts that create rather than destroy", () => {
 		"stashes nothing when the message is left empty",
 		async () => {
 			const session = await pane(repository(), ["s", "\r", QUIT], {
-				gap: 250,
 				prepare: dirty,
 			});
 			expect(git(session.worktree, ["stash", "list"])).toBe("");
@@ -678,11 +686,14 @@ describe("checking out", () => {
 	it(
 		"checks out the selected branch on enter",
 		async () => {
-			const session = await pane(
-				repository(),
-				["n", "other\r", "3", "j", "\r", QUIT],
-				{ gap: 250 },
-			);
+			const session = await pane(repository(), [
+				"n",
+				"other\r",
+				"3",
+				"j",
+				"\r",
+				QUIT,
+			]);
 			expect(session.code).toBe(0);
 		},
 		GIT_TIMEOUT_MS,
@@ -693,7 +704,7 @@ describe("checking out", () => {
 		async () => {
 			// Enter on the files panel has no branch to check out, and guessing one
 			// would move the operator's HEAD without being asked.
-			const session = await pane(repository(), ["2", "\r", QUIT], { gap: 250 });
+			const session = await pane(repository(), ["2", "\r", QUIT]);
 			expect(session.code).toBe(0);
 		},
 		GIT_TIMEOUT_MS,

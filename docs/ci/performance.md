@@ -441,6 +441,16 @@ rather than only for launches. The supervisor's stop timeout (systemd `TimeoutSt
   `!cancelled()`, so a run that changes the image inputs tests on the image it built, and a failed image
   build still runs the gate rather than skipping a required check. When the inputs are unchanged the
   image job is a short no-op, which is what the gates now wait for.
+- **The git-terminal pane suites waited out their own deadline.** With tmux in the image, run
+  41651600798 got past the old failures, but the pane suites ran for 427 s and 596 s, and two tests hit
+  the 90 s timeout. tmux was not the cost: the pane only runs `tmux has-session` and never starts a
+  server. The test harness read the pane's write count *after* sending a key. A key that opens a prompt
+  writes its label inside `stdin.write` itself, so the harness missed that write and polled out a 20 s
+  deadline, once per prompt key. The harness now takes the count before each key and resolves on the
+  write event, then waits one `setImmediate` tick so the pane can leave `busy`. It has no deadline and
+  no fixed gap, so a lost answer fails the test rather than being absorbed into a timeout. The git
+  fixture is built once per file and copied per test, with `commit.gpgsign=false` in its own config.
+  Both files ran 79 tests in 4.1 s locally, against about 600 s before.
 - **Vitest inlined the TypeScript compiler.** `typescript/lib/typescript.js` is CJS, but es-module-lexer
   finds module syntax in it, so Vitest's externalization heuristic inlined it. Vite then transformed the
   9 MB file in each worker and logged `Failed to load source map for …/typescript.js` with an ENOENT
