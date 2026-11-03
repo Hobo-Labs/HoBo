@@ -133,9 +133,10 @@ export function assertTurboLockSidecarsPresent(root: string): void {
 
 export type ContractCheck = { ok: boolean; name: string; detail: string };
 
-type CommandResult = { ok: boolean; out: string };
+export type CommandResult = { ok: boolean; out: string };
+export type CommandRunner = (cmd: string, args: string[]) => CommandResult;
 
-function run(cmd: string, args: string[]): CommandResult {
+function spawnCommand(cmd: string, args: string[]): CommandResult {
 	const r = spawnSync(cmd, args, { encoding: "utf8" });
 	const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
 	return { ok: r.status === 0, out: out || `(exit ${r.status})` };
@@ -180,12 +181,13 @@ export const REQUIRED_COMMANDS = ["xz", "git", "curl", "ps", "docker"] as const;
  */
 export const IMAGE_CONTRACT_COMMANDS = ["skopeo"] as const;
 
+/** `run` defaults to spawning each probe; tests that only need check names pass a stub. */
 export function evaluateCiRunnerContract(
 	root: string,
-	options: { readonly live?: boolean } = {
-		live: process.env.HOBO_CI_RUNNER_CONTRACT === "live",
-	},
+	options: { readonly live?: boolean; readonly run?: CommandRunner } = {},
 ): ContractCheck[] {
+	const live = options.live ?? process.env.HOBO_CI_RUNNER_CONTRACT === "live";
+	const run = options.run ?? spawnCommand;
 	const checks: ContractCheck[] = [];
 
 	if (!existsSync(join(root, MISE_TOML))) {
@@ -230,7 +232,7 @@ export function evaluateCiRunnerContract(
 		});
 	}
 
-	const commands = options.live
+	const commands = live
 		? [...REQUIRED_COMMANDS, ...IMAGE_CONTRACT_COMMANDS]
 		: REQUIRED_COMMANDS;
 	for (const cmd of commands) {

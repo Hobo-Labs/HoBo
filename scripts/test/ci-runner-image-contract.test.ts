@@ -9,6 +9,7 @@ import {
 	CI_RUNNER_BUILD_SCRIPT,
 	CI_RUNNER_PREFLIGHT_NODE_ARGS,
 	CI_RUNNER_SYSTEM_PACKAGES,
+	type CommandRunner,
 	ciRunnerImageVersion,
 	evaluateCiRunnerContract,
 	IMAGE_CONTRACT_COMMANDS,
@@ -20,6 +21,14 @@ import {
 } from "../lib/ci-runner-contract.mts";
 
 const root = join(import.meta.dirname, "..", "..");
+
+// Check names do not depend on what the host has installed, so these cases
+// skip the dozen sequential tool spawns a stalled runner box can stretch past
+// the test timeout. The preflight case below still runs the real probes.
+const present: CommandRunner = () => ({
+	ok: true,
+	out: "/usr/bin/stub 0.14.0",
+});
 
 describe("ci-runner image contract (repo manifests)", () => {
 	it("pins mise.toml and mise.lock at repo root", () => {
@@ -55,7 +64,11 @@ describe("ci-runner image contract (repo manifests)", () => {
 
 	it("checks the image-build commands only inside a built candidate", () => {
 		const names = (live: boolean) =>
-			new Set(evaluateCiRunnerContract(root, { live }).map((c) => c.name));
+			new Set(
+				evaluateCiRunnerContract(root, { live, run: present }).map(
+					(c) => c.name,
+				),
+			);
 		for (const cmd of IMAGE_CONTRACT_COMMANDS) {
 			expect(names(true).has(`system:${cmd}`)).toBe(true);
 			expect(names(false).has(`system:${cmd}`)).toBe(false);
@@ -91,7 +104,7 @@ describe("ci-runner image contract (repo manifests)", () => {
 
 describe("ci-runner image contract (host smoke)", () => {
 	it("documents required commands in system manifest", () => {
-		const checks = evaluateCiRunnerContract(root);
+		const checks = evaluateCiRunnerContract(root, { run: present });
 		const names = new Set(checks.map((c) => c.name));
 		for (const cmd of REQUIRED_COMMANDS) {
 			expect(names.has(`system:${cmd}`)).toBe(true);

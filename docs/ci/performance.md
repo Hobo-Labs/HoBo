@@ -147,6 +147,17 @@ slot was free. A slow test file in one container cannot stop the other slot's ru
 That is two pauses in five main runs, both during a repo-wide `test:unit`, so the box's host (sleep, VM
 pause, or memory reclaim on the host) is the next thing to inspect.
 
+Short stalls hit fixed-budget tests the same way. On 2026-11-03 two tests that take under a second
+anywhere else timed out within an hour of each other. The first was `@hobo/ci-dagger`'s
+process-group test, at 20 s in main run 41603401743. The second was
+`scripts/test/ci-runner-image-contract.test.ts` "documents required commands", at 10 s in PR run
+41607939139: its step normally takes 4–5 s and took 35 s there. Neither failure depended on what the
+test checked. Both waited on host timing: one on file and `/proc` polls under fixed budgets, the
+other on about 13 sequential tool spawns run just to read check names. The fix is the same in both
+cases: wait on events, or do no process work at all. The process-group tests now synchronise over a
+Unix socket the fixture holds until it dies. The contract tests that only read check names pass a
+stub `run` to `evaluateCiRunnerContract`, while the preflight case still runs the real probes.
+
 Reproduced off the box under its conditions: two concurrent `pnpm run test:unit` jobs, each with the
 gate's environment (`CI=true`, `HOBO_RELEVANT_CHECK_CONCURRENCY=1`,
 `NODE_OPTIONS=--max-old-space-size=3072`), on a 4-CPU, 15 GiB host like the box's. Both passed
