@@ -73,12 +73,16 @@ if (!Number.isInteger(workerMemoryMb) || workerMemoryMb < 512)
 const slots = Number(process.env.HOBO_CI_WORKER_SLOTS ?? "2");
 if (!Number.isInteger(slots) || slots < 1 || slots > 8)
 	throw new Error("invalid HOBO_CI_WORKER_SLOTS");
-// Slots set aside for push, workflow_dispatch and merge_group jobs. Other runs borrow them while no
-// trunk job is pending; a pending one gets the next slot that frees. The offer's concurrency must
-// equal the slot count.
+// Slots reserved for push, workflow_dispatch and merge_group jobs. Other runs never borrow them
+// unless HOBO_CI_WORKER_TRUNK_LEND=1, which lends them until a trunk job waits. The offer's
+// concurrency must equal the slot count.
 const trunkSlots = Number(process.env.HOBO_CI_WORKER_TRUNK_SLOTS ?? "0");
 if (!Number.isInteger(trunkSlots) || trunkSlots < 0 || trunkSlots >= slots)
 	throw new Error("invalid HOBO_CI_WORKER_TRUNK_SLOTS");
+const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
+if (trunkLend !== "0" && trunkLend !== "1")
+	throw new Error("invalid HOBO_CI_WORKER_TRUNK_LEND");
+const lendTrunkSlots = trunkLend === "1";
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
@@ -195,6 +199,7 @@ const runtime = createHostedRelayRuntime({
 	jobDurations,
 	// With no trunk slots this is the slot count, all the host could run anyway.
 	generalLeaseLimit: slots - trunkSlots,
+	lendTrunkSlots,
 	control: async () => undefined,
 });
 const poller =
@@ -202,6 +207,7 @@ const poller =
 		? createGithubJobPoller({
 				github,
 				durations: jobDurations,
+				admissionOrder: runtime.admissionOrder,
 				connections: async () =>
 					(await store.configuration())?.configuration?.connections ?? [],
 				ingest: (delivery) => runtime.ingestWebhook(delivery),
@@ -264,6 +270,7 @@ log("hobo_ci_isolated_worker_started", {
 	workerMemoryMb,
 	slots,
 	trunkSlots,
+	lendTrunkSlots,
 	pnpmStoreMounted: pnpmStore !== "",
 	drainTimeoutMs,
 });
