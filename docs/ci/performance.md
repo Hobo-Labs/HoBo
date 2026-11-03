@@ -461,6 +461,23 @@ rather than only for launches. The supervisor's stop timeout (systemd `TimeoutSt
   use. A stalled fetch now aborts after 30 s, and `actions/checkout` retries it. The same run's
   contract-guard `pnpm install` also sat for 130 s in linking with nothing to download. That points
   at disk contention on the box rather than the network, and is not addressed here.
+- **The box's disk filled, and four live-shell tests timed out with it.** In run 41663178224 the cold-loop
+  job failed on "No space left on device" while unpacking the workspace. In the same window, four tests
+  in four files (`render-budget`, `cli-verb-sweep`, `shell-live-tty-navigation`,
+  `shell-live-tty-surfaces`) hit the 20 s timeout, each file at about 248 s. Three of them run in
+  0.2–0.8 s and involve no tmux, pty, polling or deadline; they drive the shell over in-memory streams.
+  A 20 s timeout that fires after 248 s means the worker's event loop was not running, which fits a
+  stalled disk rather than the tests. Job containers take their own work dir and `/tmp` with them
+  (`--rm`, one job each). The space went to the host engine: each image rebuild left a candidate tag,
+  the images its retags moved off, and its base layers in the shared registry's volume.
+  `ci-runner-preflight` now prunes dangling images and stopped job containers first in every job, and
+  `build.sh` uses a per-build registry that it removes with its volume
+  ([RUNNER-QUEUE.md](../../packages/ci/RUNNER-QUEUE.md)). The fourth test, render-budget's
+  reduced-motion test, did have the pane suites' shape. It polled for 5 s and kept the shell alive for
+  a fixed 5.2 s. It now snapshots on the write that completes the first frame, then closes the shell
+  with a key after an idle window, in about 0.8 s. The window had been 200 ms, shorter than the idle
+  sprite's rest span, so the "no bytes while idle" check could not see motion. It is now eight ticks,
+  and turning reduced motion off makes it fail.
 - **Vitest inlined the TypeScript compiler.** `typescript/lib/typescript.js` is CJS, but es-module-lexer
   finds module syntax in it, so Vitest's externalization heuristic inlined it. Vite then transformed the
   9 MB file in each worker and logged `Failed to load source map for …/typescript.js` with an ENOENT

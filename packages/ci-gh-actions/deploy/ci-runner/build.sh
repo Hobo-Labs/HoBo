@@ -16,8 +16,23 @@ runner_ctx="${root}/packages/ci-gh-actions/deploy/ci-runner"
 base_dockerfile="${runner_ctx}/base/Dockerfile"
 oci_dir="${runner_ctx}/oci-layout"
 local_registry=""
-registry_container="hobo-ci-registry"
+# One registry per build, removed with its volume on exit. A shared one kept every
+# base layer ever pushed to it, and garbage-collecting it while a concurrent build
+# pushes is not safe.
+registry_container="hobo-ci-registry-${GITHUB_RUN_ID:-local}-$$"
 base_image="hobo-ci-runner-base"
+
+cleanup() {
+  docker rm -f -v "${registry_container}" >/dev/null 2>&1 || true
+  if [[ -n "${local_registry}" ]]; then
+    docker rmi "${local_registry}/${base_image}:local" >/dev/null 2>&1 || true
+    [[ -z "${candidate:-}" ]] || docker rmi "${local_registry}/${candidate}" >/dev/null 2>&1 || true
+  fi
+  rm -rf "${oci_dir}"
+}
+trap cleanup EXIT
+# The shared registry earlier builds used, with everything they pushed.
+docker rm -f -v hobo-ci-registry >/dev/null 2>&1 || true
 
 if ! command -v mise >/dev/null 2>&1 || [[ "$(mise --version | awk '{print $1}')" != "$mise_version" ]]; then
   curl -fsSL https://mise.run | MISE_VERSION="$mise_version" sh
@@ -52,12 +67,7 @@ start_registry() {
 # published loopback port, which it treats as plain HTTP. This process may be in a job
 # container, where 127.0.0.1 is its own loopback, so it falls back to the bridge address.
 ensure_local_registry() {
-  if ! docker ps -a --format '{{.Names}}' | grep -qx "${registry_container}"; then
-    start_registry
-  elif ! docker start "${registry_container}" >/dev/null 2>&1; then
-    docker rm -f "${registry_container}" >/dev/null
-    start_registry
-  fi
+  start_registry
   local published ip
   published="$(docker port "${registry_container}" 5000/tcp | head -n1)"
   local_registry="127.0.0.1:${published##*:}"
@@ -111,6 +121,14 @@ tar -C "${root}" -cf - mise.toml mise.lock scripts/ci-runner-preflight.mts scrip
   | docker run --rm -i -e HOBO_CI_RUNNER_CONTRACT=live "${candidate}" \
     sh -c 'mkdir -p /tmp/contract && tar -xf - -C /tmp/contract && cd /tmp/contract && node --no-warnings scripts/ci-runner-preflight.mts'
 docker tag "${candidate}" hobo-ci-worker:local
+
+# Earlier candidates and the images their tags moved off stay on the host disk
+# until removed; only :local and this candidate are ever started again. A tag a
+# container still uses is refused by rmi and kept.
+docker images hobo-ci-worker --format '{{.Tag}}' \
+  | { grep -vxF -e local -e "${version}" -e '<none>' || true; } \
+  | while read -r tag; do docker rmi "hobo-ci-worker:${tag}" >/dev/null 2>&1 || true; done
+docker image prune -f >/dev/null || true
 
 digest="$(docker inspect --format='{{index .RepoDigests 0}}' hobo-ci-worker:local 2>/dev/null || true)"
 echo "Done. ${digest:-hobo-ci-worker:local (daemon tag only)}"

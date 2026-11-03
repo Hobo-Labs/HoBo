@@ -3,6 +3,21 @@ description: Fail fast when the hobo runner image is missing pinned toolchains (
 runs:
   using: composite
   steps:
+    # A job's work dir and /tmp go with its --rm container. What outlives the job sits
+    # on the host engine behind the mounted socket: images a rebuild superseded and job
+    # containers that were never removed. Dangling images are in no container's use and
+    # only labelled job containers are touched; the age filters keep a build in flight
+    # (its newest layer is briefly dangling) and a warm spare between create and start.
+    - name: Prune what earlier jobs left on the host engine
+      shell: bash
+      run: |
+        set -uo pipefail
+        if command -v docker >/dev/null 2>&1 && [ -S /var/run/docker.sock ]; then
+          docker image prune -f --filter until=1h >/dev/null || echo "::warning::docker image prune failed"
+          docker container prune -f --filter label=hobo.ci/isolated=1 --filter until=10m >/dev/null \
+            || echo "::warning::docker container prune failed"
+          docker system df || true
+        fi
     - shell: bash
       run: |
         set -euo pipefail

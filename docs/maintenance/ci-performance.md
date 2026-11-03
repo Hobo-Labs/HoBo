@@ -81,7 +81,7 @@ the check offline with a synthetic registry; `HOBO_CI_VERIFY_BASE_DIGEST=1` runs
 
 The same job runs inside a `--network bridge` container, where `127.0.0.1:5000` is the container's own
 loopback rather than the host's local registry, so `mise oci build` failed after six seconds. `build.sh`
-publishes the `hobo-ci-registry` container on a free loopback port (the box already had something on
+publishes a per-build registry container (removed with its volume on exit; the shared `hobo-ci-registry` it replaced kept every pushed layer and filled the box's disk) on a free loopback port (the box already had something on
 5000, so a fixed `-p 5000:5000` failed with "port is already allocated"), pushes over that port, reads
 the registry at the container's bridge address from inside a job container, loads
 the OCI layout with skopeo (now in `system-packages.txt`) or, without it, pushes the layout to that
