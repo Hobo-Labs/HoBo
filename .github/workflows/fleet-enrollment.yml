@@ -29,7 +29,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
       - uses: ./.github/actions/ci-runner-preflight
+      - name: Check sibling pins (offline)
+        run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Regenerate scorecard
         run: node --import tsx scripts/generate-fleet-enrollment-scorecard.mts
@@ -46,7 +50,10 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 2
+          submodules: recursive
       - uses: ./.github/actions/ci-runner-preflight
+      - name: Check sibling pins (offline)
+        run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Verify Docker for Postgres conformance
         run: |
