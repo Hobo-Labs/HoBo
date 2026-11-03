@@ -197,6 +197,43 @@ describe("section 13 adversarial commercial-term fixtures", () => {
 	});
 });
 
+describe("section 13 adversarial fixtures (10.6–10.11)", () => {
+	it("10.8 rejects stale financial observations", () => {
+		const scenario = quoteScenarioFixture();
+		const observation = scenario.state?.observations[0];
+		if (observation === undefined) {
+			throw new Error("missing state observation");
+		}
+		observation.validUntil = "2026-01-15T00:00:00.000Z";
+		const result = quoteScenario(rehashScenario(scenario));
+		expect(result.$typeName).toBe("hobo.pricing.v1.PricingRejected");
+		if (result.$typeName === "hobo.pricing.v1.PricingRejected") {
+			expect(result.code).toBe("STALE_OBSERVATION");
+		}
+	});
+
+	it("10.9 rejects cross-currency catalogs", () => {
+		const scenario = makeScenario({
+			charges: [perUnitCharge("usage", "minute", "1")],
+			candidate: [workload("agreement-a", [usage("minute", "1", "minute")])],
+		});
+		scenario.catalog.currency = "USD";
+		scenario.catalog.rateCards[0]!.currency = "EUR";
+		const rehashed = rehashScenario(scenario);
+		const result = quoteScenario(rehashed);
+		expect(result.$typeName).toBe("hobo.pricing.v1.PricingRejected");
+	});
+
+	it("10.11 breaks ties deterministically at zero incremental billed", () => {
+		const scenario = makeScenario({
+			charges: [perUnitCharge("usage", "minute", "0")],
+			candidate: [workload("agreement-a", [usage("minute", "0", "minute")])],
+		});
+		const quote = successfulQuote(scenario);
+		expect(quote.incremental?.billed).toMatchObject({ decimal: "0" });
+	});
+});
+
 function quoteScenarioFixture(
 	overrides?: Partial<Parameters<typeof makeScenario>[0]>,
 ) {
