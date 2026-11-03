@@ -259,4 +259,84 @@ describe("isolated container controller reconcile", () => {
 		expect(abortIsolatedAndRequeue).not.toHaveBeenCalled();
 		expect(docker.stop).not.toHaveBeenCalled();
 	});
+
+	function markerScenario(exists: DockerDriver["exists"]) {
+		const lease = runningLease({ jobId: 100, actualJobId: 0 });
+		const settle = vi.fn(async () => lease);
+		const abortIsolatedAndRequeue = vi.fn(async () => undefined);
+		// SAFETY: reconcile() only calls get(), settle() and abortIsolatedAndRequeue().
+		const relayStore = {
+			get: async (id: string) => (id === lease.id ? lease : undefined),
+			settle,
+			abortIsolatedAndRequeue,
+		} as PostgresCiStore & HostedRelayStore;
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop: vi.fn(async () => undefined),
+			remove: vi.fn(async () => undefined),
+			isRunning: vi.fn(async () => true),
+			exists,
+		};
+		// SAFETY: settle after a stop uses getJob(), not github.request().
+		const github = {} as GithubTransport;
+		const controller = createIsolatedContainerController({
+			store: relayStore,
+			github,
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "oracle-free-vm",
+			workerImage: "hobo-ci-worker:local",
+			now: () => "2026-10-26T12:02:00Z",
+		});
+		return { lease, settle, abortIsolatedAndRequeue, docker, controller };
+	}
+
+	it("stops and settles a running lease once its runner wrote the exit marker", async () => {
+		const exists = vi.fn(async () => true);
+		const s = markerScenario(exists);
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
+		);
+		await s.controller.host.reconcile(s.lease.id);
+		expect(exists).toHaveBeenCalledWith(
+			s.lease.sandboxName,
+			s.lease.sandboxSessionId,
+			"/tmp/hobo-ci-runner-exited",
+		);
+		expect(s.docker.stop).toHaveBeenCalledTimes(1);
+		expect(s.docker.remove).toHaveBeenCalledTimes(1);
+		expect(s.settle).toHaveBeenCalledTimes(1);
+		expect(s.settle.mock.calls[0]?.[4]).toBeUndefined();
+		expect(s.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+	});
+
+	it("requeues the reserved job when the runner exited without taking it", async () => {
+		const s = markerScenario(vi.fn(async () => true));
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(s.lease.jobId, "queued"),
+		);
+		await s.controller.host.reconcile(s.lease.id);
+		expect(s.settle.mock.calls[0]?.[4]).toMatchObject({
+			id: s.lease.jobId,
+			action: "queued",
+			isolatedRequired: true,
+		});
+	});
+
+	it("leaves a running lease alone while the runner has not exited or the check fails", async () => {
+		for (const exists of [
+			vi.fn(async () => false),
+			vi.fn(async () => {
+				throw new Error("docker exec timed out");
+			}),
+		]) {
+			const s = markerScenario(exists);
+			await s.controller.host.reconcile(s.lease.id);
+			expect(s.docker.stop).not.toHaveBeenCalled();
+			expect(s.settle).not.toHaveBeenCalled();
+			expect(s.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+		}
+	});
 });

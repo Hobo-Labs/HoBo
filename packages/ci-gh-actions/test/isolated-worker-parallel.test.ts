@@ -1,4 +1,13 @@
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
@@ -10,6 +19,7 @@ import type { HostedRelayStore } from "../src/hosted-relay.js";
 import { createCliDockerDriver } from "../src/isolated-worker/cli-docker-driver.js";
 import {
 	createIsolatedContainerController,
+	RUNNER_EXITED_PATH,
 	startRunner,
 } from "../src/isolated-worker/container-controller.js";
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
@@ -262,5 +272,62 @@ describe("cli docker driver parallel helpers", () => {
 		);
 		expect(readFileSync(join(dir, "stdin"), "utf8")).toBe("s3cr3t-jit");
 		expect(readFileSync(join(dir, "argv"), "utf8")).not.toContain("s3cr3t-jit");
+	});
+
+	it("writes the exit marker after the runner exits, whatever its status", async () => {
+		const argvs: string[][] = [];
+		const docker = fakeDocker();
+		docker.writeSecret = vi.fn(async () => undefined);
+		docker.execDetached = vi.fn(async (_n, _c, argv) => {
+			argvs.push([...argv]);
+			return { exitCode: 0 };
+		});
+		await startRunner(docker, "hobo-x", "c1", "jit");
+		const script = argvs[0]?.at(-1) ?? "";
+		const dir = mkdtempSync(join(tmpdir(), "hobo-runner-"));
+		try {
+			for (const status of [0, 3]) {
+				const runner = join(dir, `runner-${status}`);
+				mkdirSync(runner);
+				writeFileSync(join(runner, "run.sh"), `#!/bin/sh\nexit ${status}\n`);
+				chmodSync(join(runner, "run.sh"), 0o755);
+				const marker = join(dir, `exited-${status}`);
+				const local = script
+					.replaceAll("/opt/actions-runner", runner)
+					.replaceAll(RUNNER_EXITED_PATH, marker)
+					.replaceAll("/tmp/hobo-ci-jit", join(dir, "jit"));
+				writeFileSync(join(dir, "jit"), "jit");
+				execFileSync("sh", ["-ec", local]);
+				expect(existsSync(marker)).toBe(true);
+			}
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("CLI driver reports a path's existence and rejects when docker fails", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-docker-"));
+		try {
+			const bin = join(dir, "docker");
+			// Fake docker: `exec <id> test -e <path>`; container "gone" fails like docker (125).
+			writeFileSync(
+				bin,
+				`#!/bin/sh\n[ "$2" = gone ] && exit 125\nshift 2\nexec "$@"\n`,
+			);
+			chmodSync(bin, 0o755);
+			const driver = createCliDockerDriver({ binary: bin, env: {} });
+			writeFileSync(join(dir, "present"), "");
+			await expect(
+				driver.exists?.("hobo-x", "c1", join(dir, "present")),
+			).resolves.toBe(true);
+			await expect(
+				driver.exists?.("hobo-x", "c1", join(dir, "absent")),
+			).resolves.toBe(false);
+			await expect(
+				driver.exists?.("hobo-x", "gone", join(dir, "present")),
+			).rejects.toThrow();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
