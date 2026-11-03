@@ -71,7 +71,7 @@ export function createHostedRelayRuntime(options: {
 	denyUnisolated?: boolean;
 	/** Shared across ticks; a relay is rebuilt per tick and would forget it. */
 	jobDurations?: JobDurations;
-	/** See `HostedRelay`: leases runs that do not gate trunk may hold at once. */
+	/** See `HostedRelay`: leases other runs may hold while a trunk job waits. */
 	generalLeaseLimit?: number;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;

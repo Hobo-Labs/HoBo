@@ -147,9 +147,10 @@ export class HostedRelay {
 			 */
 			deferReservation?: boolean;
 			/**
-			 * At most this many active leases may belong to runs that do not gate
-			 * trunk (anything but push, workflow_dispatch and merge_group), so the
-			 * rest of the offer's concurrency stays free for a trunk job. Unset: no cap.
+			 * While a trunk job (push, workflow_dispatch, merge_group) is pending
+			 * without a lease, at most this many active leases may belong to other
+			 * runs, so the next free capacity goes to trunk. With no trunk job
+			 * waiting, other runs borrow the rest. Unset: no cap.
 			 */
 			generalLeaseLimit?: number;
 			now?: () => string;
@@ -539,13 +540,17 @@ export class HostedRelay {
 			refOf,
 		);
 		const limit = this.options.generalLeaseLimit;
-		const general =
-			limit === undefined ? undefined : await this.generalLeaseIds();
+		let general: Set<string> | undefined;
+		// Admission order tries every trunk job before the first other job. One that
+		// got no lease means capacity is full now; the cap keeps a lease released
+		// later in this pass for that trunk job rather than a pull request's.
+		let trunkWaiting = false;
 		for (const job of pending) {
-			const capped =
-				general !== undefined &&
-				(await this.admissionOrder.rank(refOf(job))) !== TRUNK_RANK;
-			if (capped && general.size >= (limit ?? 0)) continue;
+			const trunk = (await this.admissionOrder.rank(refOf(job))) === TRUNK_RANK;
+			if (!trunk && trunkWaiting && limit !== undefined) {
+				general ??= await this.generalLeaseIds();
+				if (general.size >= limit) continue;
+			}
 			const connection = this.connection(
 				job.repositoryId,
 				job.installationId,
@@ -565,7 +570,8 @@ export class HostedRelay {
 				this.now(),
 				reservationRevision,
 			);
-			if (capped && lease) general.add(lease.id);
+			if (!lease) trunkWaiting ||= trunk;
+			else if (!trunk) general?.add(lease.id);
 		}
 		const reserved = await this.admissionOrder(
 			(await this.options.store.activeLeases()).filter(
