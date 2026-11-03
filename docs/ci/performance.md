@@ -421,6 +421,46 @@ rather than only for launches. The supervisor's stop timeout (systemd `TimeoutSt
   bookworm's skopeo pins Docker API 1.22 in its `docker-daemon:` transport, and the box's daemon
   refuses anything below 1.24. skopeo now writes a `docker-archive:` (docker-save format) and
   `docker load` reads that.
+- **The image had no browser.** Main push run 41642427527 failed 1 of 2554 tests after 12m44s:
+  `@hobo/code` `test/session-control-server.test.ts` launches Chromium, and Playwright looked for
+  `~/.cache/ms-playwright/chromium_headless_shell-1234`, which nothing installs. The test's
+  `resolveChromiumExecutable()` knew only the arm64 layout under one root and returned `undefined`
+  when it found nothing, so Playwright's download hint was the whole error. The base image now
+  downloads Playwright's pinned headless shell (revision and version from `playwright-core`'s
+  `browsers.json`, sha256 per architecture) into `/opt/pw-browsers`, sets `PLAYWRIGHT_BROWSERS_PATH`,
+  and installs the Debian libraries it needs. The live contract renders a page with it
+  (`--dump-dom`, which reaches the libraries Chromium opens at runtime, not only the linked ones), and
+  `ci-runner-image-contract.test.ts` fails when the pins drift from the installed Playwright or the
+  Dockerfile. The helper searches both layouts under `PLAYWRIGHT_BROWSERS_PATH`, `/opt/pw-browsers` and
+  `~/.cache/ms-playwright`, and throws with the fix when there is no browser rather than leaving the
+  test to whatever Playwright does. The first run of #1673 showed the other half: its gate started at
+  13:53:25, before the image job retagged `:local` at 13:55:20, so it tested the old image (no browser,
+  and no `tmux`, which the `@hobo/code` git-terminal pane drives through the resident session runtime:
+  76 failures reading `tmux availability unknown`). The image now carries `tmux` too (live contract,
+  `IMAGE_CONTRACT_COMMANDS`), and `pr-gate` and `main-gate` declare `needs: ci-runner-image` with
+  `!cancelled()`, so a run that changes the image inputs tests on the image it built, and a failed image
+  build still runs the gate rather than skipping a required check. When the inputs are unchanged the
+  image job is a short no-op, which is what the gates now wait for.
+- **The git-terminal pane suites waited out their own deadline.** With tmux in the image, run
+  41651600798 got past the old failures, but the pane suites ran for 427 s and 596 s, and two tests hit
+  the 90 s timeout. tmux was not the cost: the pane only runs `tmux has-session` and never starts a
+  server. The test harness read the pane's write count *after* sending a key. A key that opens a prompt
+  writes its label inside `stdin.write` itself, so the harness missed that write and polled out a 20 s
+  deadline, once per prompt key. The harness now takes the count before each key and resolves on the
+  write event, then waits one `setImmediate` tick so the pane can leave `busy`. It has no deadline and
+  no fixed gap, so a lost answer fails the test rather than being absorbed into a timeout. The git
+  fixture is built once per file and copied per test, with `commit.gpgsign=false` in its own config.
+  Both files ran 79 tests in 4.1 s locally, against about 600 s before.
+- **A checkout fetch hung for 11.5 minutes.** In run 41659338892 the off-path job's `git fetch
+  --depth=2` started at 15:08:41 and was still waiting when the run was cancelled at 15:20:12.
+  `git-remote-https` was still alive at cleanup, and the fetch in every other job of that run took
+  about 3 s. The step API showed checkout as done and `pnpm install` as running, which was wrong; the
+  job log is authoritative. Git has no default transfer timeout, so a stalled connection held one of
+  the box's two slots, and the PR impact gate queued for 8 minutes behind it. The workflow now sets
+  `GIT_HTTP_LOW_SPEED_LIMIT=1000` and `GIT_HTTP_LOW_SPEED_TIME=30`, the same bound the pins already
+  use. A stalled fetch now aborts after 30 s, and `actions/checkout` retries it. The same run's
+  contract-guard `pnpm install` also sat for 130 s in linking with nothing to download. That points
+  at disk contention on the box rather than the network, and is not addressed here.
 - **Vitest inlined the TypeScript compiler.** `typescript/lib/typescript.js` is CJS, but es-module-lexer
   finds module syntax in it, so Vitest's externalization heuristic inlined it. Vite then transformed the
   9 MB file in each worker and logged `Failed to load source map for …/typescript.js` with an ENOENT
