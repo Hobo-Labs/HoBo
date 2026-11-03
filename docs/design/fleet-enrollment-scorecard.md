@@ -1,6 +1,6 @@
 # Fleet enrollment scorecard
 
-Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eval rejects any row not marked `pass`.
+Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eval rejects `partial`, `fail`, and `deferred`; reports `blocked-on-credentials` separately from `pass`.
 
 | Section | Requirement | Status | Evidence |
 | --- | --- | --- | --- |
@@ -28,7 +28,7 @@ Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eva
 | 15 | Single-pass swarm plan artifacts | pass | docs/design/fleet-enrollment-design.md |
 | 17 | Deployment/operational requirements | pass | docs/design/fleet-enrollment-design.md |
 | 18 | Production-readiness gates | pass | docs/design/fleet-enrollment-design.md |
-| 20 | Final handoff vertical slice | pass | docs/design/fleet-enrollment-design.md |
+| 20 | Final handoff vertical slice | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
 | 21 | Primary references linked | pass | docs/design/fleet-enrollment-design.md |
 | 2.1 | One CiDemand per job identity | pass | docs/design/fleet-enrollment-design.md |
 | 2.1 | One ExecutionClaim per job identity | pass | docs/design/fleet-enrollment-design.md |
@@ -104,6 +104,16 @@ Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eva
 | 16.6 | Crash cut 13 | pass | packages/ci/test/fleet-v2-store-conformance.test.ts |
 | 16.6 | Crash cut 14 | pass | packages/ci/test/fleet-v2-store-conformance.test.ts |
 | 16.6 | Crash cut 15 | pass | packages/ci/test/fleet-v2-store-conformance.test.ts |
+| 18.9 | G9 live: Trusted-local job on enrolled worker (private test repo) | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
+| 18.9 | G9 live: Isolated-required job on isolated worker | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
+| 18.9 | G9 live: Queued jobs with assignment churn; unique execution markers at most once | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
+| 18.9 | G9 live: Duplicate webhook deliveries without duplicate execution | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
+| 18.9 | G9 live: Controller kill before start: no steps; manual rerun succeeds at most once | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
+| 18.9 | G9 live: Worker kill after JIT: reconcile without second runner for same slot | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
+| 18.9 | G9 live: Worker revocation blocks subsequent starts | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
+| 18.9 | G9 live: Kubernetes strict runner-Pod job on real cluster | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
+| 18.9 | G9 live: Operator Dagger engine strict portable-pipeline path | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
+| 18.9 | G9 live: Staging backup/restore and rollback drills without duplicate execution | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
 | 18 | G0 production gate | pass | .github/workflows/fleet-enrollment.yml |
 | 18 | G1 production gate | pass | .github/workflows/fleet-enrollment.yml |
 | 18 | G2 production gate | pass | .github/workflows/fleet-enrollment.yml |
@@ -113,7 +123,7 @@ Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eva
 | 18 | G6 production gate | pass | .github/workflows/fleet-enrollment.yml |
 | 18 | G7 production gate | pass | .github/workflows/fleet-enrollment.yml |
 | 18 | G8 production gate | pass | .github/workflows/fleet-enrollment.yml |
-| 18 | G9 production gate | pass | .github/workflows/fleet-enrollment.yml |
-| 18 | G10 production gate | pass | .github/workflows/fleet-enrollment.yml |
+| 18 | G9 production gate | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
+| 18 | G10 production gate | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
 
-Total rows: 111. All pass.
+Total rows: 121. Pass: 108. Blocked on credentials (G9 live staging): 13.

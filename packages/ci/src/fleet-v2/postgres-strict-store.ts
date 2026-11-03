@@ -165,12 +165,12 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			);
 			await client.query(
 				`CREATE OR REPLACE FUNCTION hobo_ci_fleet_v2_immutable_start_time() RETURNS trigger LANGUAGE plpgsql AS $$
-				 BEGIN IF OLD.start_authorized_at<>NEW.start_authorized_at THEN RAISE EXCEPTION 'start authorization time is immutable'; END IF; RETURN NEW; END $$`,
+				 BEGIN IF OLD.start_authorized_at<>NEW.start_authorized_at THEN RAISE EXCEPTION 'start authorization time is immutable'; END IF; RETURN NEW; END; $$`,
 			);
 			await client.query(
 				`DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='hobo_ci_fleet_v2_start_time_immutable') THEN
 				 CREATE TRIGGER hobo_ci_fleet_v2_start_time_immutable BEFORE UPDATE OF start_authorized_at
-				 ON hobo_ci_fleet_v2_execution_claims FOR EACH ROW EXECUTE FUNCTION hobo_ci_fleet_v2_immutable_start_time(); END IF; END $$`,
+				 ON hobo_ci_fleet_v2_execution_claims FOR EACH ROW EXECUTE FUNCTION hobo_ci_fleet_v2_immutable_start_time(); END IF; END; $$`,
 			);
 			await client.query(
 				`CREATE TABLE IF NOT EXISTS hobo_ci_fleet_v2_effects(
@@ -1245,7 +1245,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				"binding secret does not match slot",
 			);
 		const offer = await this.offerInside(client, slot.offerId);
-		if (!offer || offer.state !== "active")
+		if (offer?.state !== "active")
 			rejectFleet(FleetRejectionCode.OFFER_REVOKED, "Offer is revoked");
 		const group = await this.capacityInside(client, slot.capacityGroupId);
 		if (!group || ["paused", "revoked"].includes(group.state))
@@ -1259,7 +1259,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				"capacity group is quarantined",
 			);
 		const profile = await this.profileInside(client, slot.profileId);
-		if (!profile || profile.guarantee !== "start-fenced")
+		if (profile?.guarantee !== "start-fenced")
 			rejectFleet(
 				FleetRejectionCode.GUARANTEE_REQUIRED,
 				"start binding requires a start-fenced profile",

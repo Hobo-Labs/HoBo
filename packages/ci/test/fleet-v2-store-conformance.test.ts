@@ -1,4 +1,6 @@
+import { spawnSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -40,6 +42,12 @@ const QUOTE_HASH = "c".repeat(64);
 const CONTENT_HASH = "d".repeat(64);
 const POSTGRES_IMAGE =
 	"postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b";
+
+function dockerAvailable(): boolean {
+	if (process.env.HOBO_FUZZ_DOCKER === "0") return false;
+	if (!existsSync("/var/run/docker.sock")) return false;
+	return spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
+}
 
 type StoreHandle = {
 	store: StrictFleetStore;
@@ -476,10 +484,22 @@ describe("strict fleet v2 state machine", () => {
 
 let container: StartedTestContainer | undefined;
 let pool: pg.Pool | undefined;
-describe.runIf(!!process.env.TESTCONTAINERS)(
-	"PostgreSQL with Testcontainers",
+const externalPostgres = process.env.HOBO_CI_TEST_POSTGRES;
+const postgresConformanceRequired =
+	process.env.HOBO_FLEET_ENROLLMENT_CI === "1";
+const postgresAvailable = !!externalPostgres || dockerAvailable();
+
+describe.runIf(postgresAvailable || postgresConformanceRequired)(
+	"PostgreSQL strict fleet v2 contract (Testcontainers)",
 	() => {
 		beforeAll(async () => {
+			let connectionString = externalPostgres;
+			if (!connectionString) {
+				if (!dockerAvailable()) {
+					throw new Error(
+						"PostgreSQL store conformance requires Docker (/var/run/docker.sock + docker info) or HOBO_CI_TEST_POSTGRES; fleet-enrollment CI must not skip these cases.",
+					);
+				}
 			const password = randomUUID();
 			container = await new GenericContainer(POSTGRES_IMAGE)
 				.withEnvironment({
@@ -495,22 +515,21 @@ describe.runIf(!!process.env.TESTCONTAINERS)(
 				)
 				.withExposedPorts(5432)
 				.start();
-			pool = new pg.Pool({
-				connectionString: `postgresql://contract:${password}@${container.getHost()}:${container.getMappedPort(5432)}/contract`,
-				max: 8,
-			});
-		}, 180_000);
-		afterAll(async () => {
-			await pool?.end();
-			await container?.stop();
-		});
+			connectionString = `postgresql://contract:${password}@${container.getHost()}:${container.getMappedPort(5432)}/contract`;
+		}
+		pool = new pg.Pool({ connectionString, max: 8 });
+	}, 180_000);
+	afterAll(async () => {
+		await pool?.end();
+		await container?.stop();
+	});
 
-		storeContract("PostgreSQL", async () => {
-			if (!pool) throw new Error("postgres pool unavailable");
-			return {
-				store: new PostgresStrictFleetStore(pool, `contract-${randomUUID()}`),
-				close: async () => undefined,
-			};
-		});
+	storeContract("PostgreSQL", async () => {
+		if (!pool) throw new Error("postgres pool unavailable");
+		return {
+			store: new PostgresStrictFleetStore(pool, `contract-${randomUUID()}`),
+			close: async () => undefined,
+		};
+	});
 	},
 );

@@ -782,6 +782,8 @@ Frequent integration is required after each vertical slice: intake → reservati
 
 ### 16.2 Transaction and fencing
 
+`packages/ci/test/fleet-v2-store-conformance.test.ts` executes every case below against both SQLite and PostgreSQL. PostgreSQL uses a digest-pinned Testcontainers server; `HOBO_CI_TEST_POSTGRES` can name a disposable external server when no container runtime is available.
+
 | Case | Required result |
 | --- | --- |
 | Two admissions race for one capacity unit | Exactly one reservation commits |

@@ -41,10 +41,6 @@
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
       "default": "./dist/workspace-backend.js"
-    },
-    "./fleet-v2": {
-      "types": "./dist/fleet-v2/index.d.ts",
-      "default": "./dist/fleet-v2/index.js"
     }
   },
   "scripts": {

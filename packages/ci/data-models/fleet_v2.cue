@@ -136,7 +136,7 @@ package ci
  state: "active" | "revoked"
 }
 #FleetRejectionCode: int & >=0 & <=26
-#FleetEventType: int & >=1 & <=14
+#FleetEventType: int & >=1 & <=19
 
 #FleetEvent: {
  id: #FleetId

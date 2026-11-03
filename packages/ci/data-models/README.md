@@ -28,3 +28,11 @@ Portable Pipeline environment maps reject `__proto__` before protobuf JSON
 parsing can discard that declared binding. The CUE fixture and runtime constructor
 enforce the same rule across all backends; literal values and ordinary names such
 as `constructor` keep their normal meaning.
+
+`fleet_v2.proto` owns strict execution identity, profiles, demands, runner slots,
+claims, capacity, effects, outbox/delivery fences, observations, incarnations, and
+secret-free audit events. `fleet_v2.cue` closes states and execution classes;
+valid/invalid fleet fixtures cover positive attempts, fixed-capacity limits, Linux
+x64 profiles, and rejection of raw binding credentials. Store conformance protects
+the transactional boundary with SQLite and opt-in Testcontainers PostgreSQL lanes;
+these gates do not claim live-provider production readiness.

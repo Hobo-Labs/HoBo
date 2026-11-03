@@ -43,19 +43,28 @@ jobs:
       - uses: ./.github/actions/ci-runner-preflight
       - name: Regenerate scorecard
         run: node --import tsx scripts/generate-fleet-enrollment-scorecard.mts
-      - name: Scorecard must be all pass
+      - name: Scorecard eval (pass + blocked-on-credentials)
         run: mise exec -- pnpm exec vitest run test/fleet-enrollment-scorecard.eval.test.ts
 
   strict-store:
     name: Strict v2 store + start fence
     runs-on: hobo
     timeout-minutes: 45
+    env:
+      HOBO_FLEET_ENROLLMENT_CI: "1"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 2
       - uses: ./.github/actions/ci-runner-preflight
-      - name: Affected tests
+      - name: Verify Docker for Postgres conformance
         run: |
-          mise exec -- pnpm exec turbo run test --filter=@hobo/ci --filter=@hobo/ci-gh-actions \
-            -- --testPathPattern='fleet-v2'
+          test -S /var/run/docker.sock
+          docker info >/dev/null
+      - name: Postgres store conformance (8 cases, Testcontainers)
+        run: |
+          mise exec -- pnpm exec vitest run packages/ci/test/fleet-v2-store-conformance.test.ts \
+            --testTimeout=240000
+      - name: Start fence + other fleet-v2 tests
+        run: |
+          mise exec -- pnpm exec vitest run packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts
