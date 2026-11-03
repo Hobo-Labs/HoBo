@@ -143,7 +143,7 @@ Capacity goes out in admission order, not arrival order: `merge_group`, `push` a
 
 Set repository variables **`TURBO_TEAM`** and secret **`TURBO_TOKEN`** for remote Turbo cache (fork PRs use read-only remote mode in workflow).
 
-Without them, a box job's Turbo local cache is **`hobo-turbo-cache`** inside the host-mounted pnpm store (`TURBO_CACHE_DIR`, set by `.github/actions/turbo-cache` when `HOBO_CI_PNPM_STORE_MOUNTED=1`). PR, merge-group and main jobs share it, so a main push replays the test tasks its PR already passed on the same tree; fork PRs read it only (`TURBO_CACHE=local:r`). `scripts/ci/turbo-cache-prune.mts` drops entries unused for 7 days (`HOBO_TURBO_CACHE_KEEP_DAYS`). Runners without the mount keep the per-ref `actions/cache` fallback. See [finding 12](../../docs/ci/performance.md#finding-12-main-re-ran-the-tests-its-own-pr-had-just-passed).
+Without them, a box job's Turbo local cache is **`hobo-turbo-cache`** inside the host-mounted pnpm store (`TURBO_CACHE_DIR`, set by `.github/actions/turbo-cache` when `HOBO_CI_PNPM_STORE_MOUNTED=1`). Same-repository PR, merge-group, push, dispatch and schedule jobs share it, so a main push replays the test tasks its PR already passed on the same tree. A PR whose head repository is not this one (a fork, or a deleted fork) never gets `TURBO_CACHE_DIR` and keeps the per-ref `actions/cache` fallback. `scripts/ci/turbo-cache-prune.mts` drops entries unused for 7 days (`HOBO_TURBO_CACHE_KEEP_DAYS`). Runners without the mount keep the per-ref `actions/cache` fallback. See [finding 12](../../docs/ci/performance.md#finding-12-main-re-ran-the-tests-its-own-pr-had-just-passed).
 
 ## Verify end-to-end
 

@@ -1,9 +1,10 @@
 name: HoBo Turbo cache
 description: >-
   Vercel Turbo remote cache when configured. On the box worker the local cache
-  is a host directory every job shares (inside the bind-mounted pnpm store,
-  HOBO_CI_PNPM_STORE_MOUNTED=1), so main replays what a pull request already
-  ran on the same tree. Elsewhere a free actions/cache fallback: `restore`
+  is a host directory every same-repository job shares (inside the bind-mounted
+  pnpm store, HOBO_CI_PNPM_STORE_MOUNTED=1), so main replays what a pull request
+  already ran on the same tree. A pull request from another repository (a fork)
+  never uses it. Elsewhere a free actions/cache fallback: `restore`
   (default) at job start; `save` as an `if: always()` step at job end, because
   the combined actions/cache only saves when the job succeeds and the Main full
   gate rarely did, so main never seeded a cache. Run
@@ -22,9 +23,7 @@ inputs:
     required: false
     default: ""
   remote-mode:
-    description: >-
-      Turbo --cache remote mode (remote:rw or remote:ro). remote:ro (a fork's
-      pull request) also makes the box's shared local cache read-only.
+    description: Turbo --cache remote mode (remote:rw or remote:ro)
     required: false
     default: remote:rw
 runs:
@@ -37,33 +36,37 @@ runs:
         INPUT_TOKEN: ${{ inputs.turbo-token }}
         INPUT_TEAM: ${{ inputs.turbo-team }}
         REMOTE_MODE: ${{ inputs.remote-mode }}
+        # Same repository by name, not `head.repo.fork`: a deleted fork's head
+        # repo is null, and null.fork reads as "not a fork".
+        SAME_REPO: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
       run: |
         set -euo pipefail
         # Read the process env here: an `if: env.X` expression only sees
         # workflow-level and GITHUB_ENV values, never the variables the box
         # worker sets on the job container.
-        local_mode="local:rw"
         if [ "${HOBO_CI_PNPM_STORE_MOUNTED:-}" = "1" ] && [ -n "${npm_config_store_dir:-}" ]; then
-          # Entries are content-addressed and turbo stores only successful tasks;
-          # a truncated archive (two jobs writing one hash) reads as a miss.
-          shared="${npm_config_store_dir}/hobo-turbo-cache"
-          mkdir -p "${shared}"
-          if [ "${REMOTE_MODE}" = "remote:ro" ]; then local_mode="local:r"; fi
-          {
-            echo "TURBO_CACHE_DIR=${shared}"
-            echo "HOBO_TURBO_CACHE_SHARED=1"
-          } >> "$GITHUB_ENV"
-          echo "Turbo local cache: shared host directory ${shared} (${local_mode})"
+          if [ "${SAME_REPO}" = "true" ]; then
+            # Entries are content-addressed and turbo stores only successful tasks;
+            # a truncated archive (two jobs writing one hash) reads as a miss.
+            shared="${npm_config_store_dir}/hobo-turbo-cache"
+            mkdir -p "${shared}"
+            {
+              echo "TURBO_CACHE_DIR=${shared}"
+              echo "HOBO_TURBO_CACHE_SHARED=1"
+            } >> "$GITHUB_ENV"
+            echo "Turbo local cache: shared host directory ${shared}"
+          else
+            echo "Turbo local cache: per-ref actions/cache (pull request from another repository)"
+          fi
         fi
         if [ -n "${INPUT_TOKEN}" ] && [ -n "${INPUT_TEAM}" ]; then
           {
             echo "TURBO_TOKEN=${INPUT_TOKEN}"
             echo "TURBO_TEAM=${INPUT_TEAM}"
-            echo "TURBO_CACHE=${local_mode},${REMOTE_MODE}"
+            echo "TURBO_CACHE=local:rw,${REMOTE_MODE}"
           } >> "$GITHUB_ENV"
           echo "Turbo remote cache enabled (${REMOTE_MODE})"
         else
-          if [ "${local_mode}" != "local:rw" ]; then echo "TURBO_CACHE=${local_mode}" >> "$GITHUB_ENV"; fi
           echo "Turbo remote cache not configured"
         fi
     # Entries are content-addressed, so any job's cache is valid for any other:
