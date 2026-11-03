@@ -23,6 +23,11 @@ env:
   HOBO_TURBO_CONCURRENCY: "1"
   # Every turbo run writes .turbo/runs/<id>.json; ci-trace turns them into OTel spans.
   TURBO_RUN_SUMMARY: "true"
+  # A git transfer under 1 KB/s for 30 s aborts instead of hanging (the pins use the same bound).
+  # actions/checkout retries a failed fetch, so a stalled connection costs ~30 s, not the job's
+  # whole timeout while it holds one of the box's two slots.
+  GIT_HTTP_LOW_SPEED_LIMIT: "1000"
+  GIT_HTTP_LOW_SPEED_TIME: "30"
 
 # A newer push to main supersedes the in-progress one: its secret scan covers the full history and
 # its gates test the newer tree, while the older run would hold box slots the merge queue is waiting
