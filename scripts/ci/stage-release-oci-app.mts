@@ -110,8 +110,9 @@ function deployPackage(
 	root: string,
 	stagingRoot: string,
 	spec: DeployStage,
+	skipBuild: boolean,
 ): void {
-	turboBuild(root, [spec.buildFilter]);
+	if (!skipBuild) turboBuild(root, [spec.buildFilter]);
 	const appDir = join(stagingRoot, spec.appPath);
 	run(root, "pnpm", [
 		"--filter",
@@ -139,8 +140,13 @@ function deployPackage(
 	}
 }
 
-function stageSdk(root: string, stagingRoot: string, spec: SdkStage): void {
-	turboBuild(root, SDK_PACKAGES);
+function stageSdk(
+	root: string,
+	stagingRoot: string,
+	spec: SdkStage,
+	skipBuild: boolean,
+): void {
+	if (!skipBuild) turboBuild(root, SDK_PACKAGES);
 	run(root, "node", [
 		"--no-warnings",
 		join(root, "scripts/ci/stage-sdk-artifacts.mts"),
@@ -148,8 +154,13 @@ function stageSdk(root: string, stagingRoot: string, spec: SdkStage): void {
 	]);
 }
 
-function stageSite(root: string, stagingRoot: string, spec: SiteStage): void {
-	turboBuild(root, ["hobo-site..."]);
+function stageSite(
+	root: string,
+	stagingRoot: string,
+	spec: SiteStage,
+	skipBuild: boolean,
+): void {
+	if (!skipBuild) turboBuild(root, ["hobo-site..."]);
 	cpSync(join(root, "site/dist"), join(stagingRoot, spec.distPath), {
 		recursive: true,
 	});
@@ -162,7 +173,7 @@ function stageSite(root: string, stagingRoot: string, spec: SiteStage): void {
 export function stageReleaseOciApp(
 	imageId: string,
 	stagingRoot: string,
-	options: { root?: string } = {},
+	options: { root?: string; skipBuild?: boolean } = {},
 ): void {
 	const spec = Object.entries(RELEASE_OCI_STAGE_SPECS).find(
 		([id]) => id === imageId,
@@ -178,13 +189,13 @@ export function stageReleaseOciApp(
 
 	switch (spec.kind) {
 		case "deploy":
-			deployPackage(root, output, spec);
+			deployPackage(root, output, spec, options.skipBuild ?? false);
 			return;
 		case "sdk":
-			stageSdk(root, output, spec);
+			stageSdk(root, output, spec, options.skipBuild ?? false);
 			return;
 		case "site":
-			stageSite(root, output, spec);
+			stageSite(root, output, spec, options.skipBuild ?? false);
 			return;
 		case "mcp":
 			writeFileSync(join(output, spec.markerPath), "hobo-cli:candidate\n");

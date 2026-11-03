@@ -12,7 +12,10 @@ on:
       - "scripts/ci/stage-release-oci-app.mts"
       - "scripts/ci/npm-publish-scope.mts"
       - "scripts/ci/release-oci-affected.mts"
+      - "scripts/ci/pack-code-test-build-artifact.mts"
+      - "scripts/ci/unpack-code-test-build-artifact.mts"
       - "scripts/lib/release-oci-contract.mts"
+      - "scripts/test/code-test-build-artifact.test.ts"
       - "scripts/test/release-oci-affected.test.ts"
       - "scripts/test/release-oci-image-contract.test.ts"
       - "scripts/test/stage-release-oci-app.test.ts"
@@ -50,7 +53,7 @@ jobs:
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: npm scope map + OCI manifest contract
-        run: pnpm exec vitest run scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/stage-release-oci-app.test.ts
+        run: pnpm exec vitest run scripts/test/code-test-build-artifact.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/stage-release-oci-app.test.ts
 
   code-lint:
     name: Lint @hobo/code
@@ -67,8 +70,48 @@ jobs:
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - run: pnpm --filter @hobo/code lint
 
+  code-build-cone:
+    name: Build shared @hobo/code test dependency cone
+    runs-on: hobo
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode
+        run: pnpm run pins:fetch ts-autocode
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Turbo cache
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      - name: Build @hobo/code test dependency cone
+        run: pnpm exec turbo run build --filter=@hobo/code... --filter=@hobo/hobo... --filter=@hobo/adapter-hono... --concurrency=1
+      - name: Pack code test build artifact
+        run: node --experimental-strip-types --no-warnings scripts/ci/pack-code-test-build-artifact.mts . /tmp/hobo-code-test-build.tar.gz
+      - name: Upload code test build artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hobo-code-test-build
+          path: /tmp/hobo-code-test-build.tar.gz
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && steps.turbo-prune.outputs.save != 'false'
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
+
   code-test:
     name: Test @hobo/code (shard ${{ matrix.shard }}/4)
+    needs: code-build-cone
     runs-on: hobo
     timeout-minutes: 45
     strategy:
@@ -84,8 +127,13 @@ jobs:
         run: pnpm run pins:fetch ts-autocode
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
-      - name: Build @hobo/code dependency cone
-        run: pnpm exec turbo run build --filter=@hobo/code...
+      - name: Download code test build artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: hobo-code-test-build
+          path: /tmp/hobo-code-test-build
+      - name: Restore code test build artifact
+        run: node --experimental-strip-types --no-warnings scripts/ci/unpack-code-test-build-artifact.mts /tmp/hobo-code-test-build/hobo-code-test-build.tar.gz .
       - name: Run test shard
         run: pnpm --filter @hobo/code exec vitest run --shard=${{ matrix.shard }}/4
 
@@ -146,7 +194,7 @@ jobs:
   release-code-publish:
     name: Stage npm package + publish hobo-code GHCR image
     if: startsWith(github.ref, 'refs/tags/code-v') || github.event_name == 'workflow_dispatch'
-    needs: [release-contract, code-lint, code-test]
+    needs: [release-contract, code-lint, code-build-cone, code-test]
     runs-on: hobo
     timeout-minutes: 60
     permissions:
@@ -166,8 +214,13 @@ jobs:
         run: pnpm run pins:fetch ts-autocode
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
-      - name: Build @hobo/code dependency cone
-        run: pnpm exec turbo run build --filter=@hobo/code...
+      - name: Download code test build artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: hobo-code-test-build
+          path: /tmp/hobo-code-test-build
+      - name: Restore code test build artifact
+        run: node --experimental-strip-types --no-warnings scripts/ci/unpack-code-test-build-artifact.mts /tmp/hobo-code-test-build/hobo-code-test-build.tar.gz .
       - name: npm pack dry-run (scoped staging)
         run: |
           set -euo pipefail
@@ -189,7 +242,7 @@ jobs:
       - name: Build and push hobo-code release image
         run: |
           set -euo pipefail
-          node --no-warnings scripts/ci/build-release-oci-image.mts hobo-code
+          node --no-warnings scripts/ci/build-release-oci-image.mts hobo-code --skip-build
           repo="${GITHUB_REPOSITORY,,}"
           tag="ghcr.io/${repo}/hobo/hobo-code:${HOBO_RELEASE_VERSION}"
           docker tag hobo-code:candidate "$tag"

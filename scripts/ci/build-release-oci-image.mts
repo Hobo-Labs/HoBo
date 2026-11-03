@@ -116,6 +116,7 @@ export function buildReleaseImage(options: {
 	imageId: string;
 	version?: string;
 	revision?: string;
+	skipBuild?: boolean;
 }): BuiltReleaseImage {
 	const manifest = loadReleaseOciManifest(root);
 	const image = manifest.images.find((i) => i.id === options.imageId);
@@ -135,7 +136,7 @@ export function buildReleaseImage(options: {
 	const toolchain = resolveToolchainImage(manifest);
 	const stagingDir = join(root, "deploy/release-images/.staging", image.id);
 	ensureReleaseBuildHost();
-	stageReleaseOciApp(image.id, stagingDir);
+	stageReleaseOciApp(image.id, stagingDir, { skipBuild: options.skipBuild });
 	if (image.id === "hobo-mcp") ensureCliCandidate();
 	run("docker", buildArgs(image, toolchain, version, revision, stagingDir));
 	return {
@@ -145,14 +146,17 @@ export function buildReleaseImage(options: {
 }
 
 function main(): void {
-	const imageId = process.argv[2];
-	if (!imageId) {
+	const [imageId, flag, extra] = process.argv.slice(2);
+	if (!imageId || extra || (flag && flag !== "--skip-build")) {
 		console.error(
-			"usage: node scripts/ci/build-release-oci-image.mts <image-id>",
+			"usage: node scripts/ci/build-release-oci-image.mts <image-id> [--skip-build]",
 		);
 		process.exit(2);
 	}
-	const { localTag, ghcrRepo } = buildReleaseImage({ imageId });
+	const { localTag, ghcrRepo } = buildReleaseImage({
+		imageId,
+		skipBuild: flag === "--skip-build",
+	});
 	console.log(`built ${localTag} (${ghcrRepo})`);
 }
 
