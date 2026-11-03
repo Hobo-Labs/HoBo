@@ -90,7 +90,7 @@ jobs:
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
       - name: Build @hobo/code test dependency cone
-        run: pnpm exec turbo run build --filter=...@hobo/code --filter=...@hobo/hobo --filter=...@hobo/adapter-hono --concurrency=1
+        run: pnpm exec turbo run build --filter=@hobo/code... --filter=@hobo/hobo... --filter=@hobo/adapter-hono... --concurrency=1
       - name: Pack code test build artifact
         run: node --experimental-strip-types --no-warnings scripts/ci/pack-code-test-build-artifact.mts . /tmp/hobo-code-test-build.tar.gz
       - name: Upload code test build artifact
