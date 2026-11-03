@@ -50,6 +50,8 @@ export HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID=box     # = offer.providerAccountId
 node --import tsx packages/ci-gh-actions/scripts/isolated-worker-daemon.mts
 ```
 
+The daemon imports `@hobo/ci-gh-actions` and `@hobo/ci` from their built `dist`, so the start script first runs `pnpm exec turbo run build --filter=@hobo/ci-gh-actions` (a cache hit on a current tree, about 0.3 s) and refuses to start when that fails, logging `hobo_ci_isolated_worker_start_failed`. Before this, a checkout pulled past a new export started the daemon against the old `dist` and it crashed on a missing export (`createJobDurations` after #1663). Set `HOBO_CI_WORKER_BUILD=0` to skip the build when you build separately; a stale `dist` is then still reported with the rebuild command instead of a bare `SyntaxError`.
+
 On start the daemon applies the config to the journal when it changed (a change refused because an active lease pins the provider identity keeps the stored policy and logs `hobo_ci_isolated_worker_configuration_kept`), and logs one `hobo_ci_isolated_worker_offer` line per offer with `launchable`, `enabled`, `concurrency`, `validUntil`, and `expired`. An expired `validUntil`, or one closer than `maxRuntimeMinutes + startupMinutes`, makes routing skip the offer.
 
 **Shared relay mode (opt-in): Postgres + webhooks.** A worker that serves a hosted relay's partition sets **`HOBO_CI_STORE=postgres`**; the URL is read from the env var named by **`HOBO_CI_STORE_URL_ENV`** (default `DATABASE_URL`) and admission defaults to **push** (the relay ingests signed webhooks into the shared inbox):
