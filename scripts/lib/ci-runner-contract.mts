@@ -18,6 +18,37 @@ export const CI_RUNNER_DEBIAN_BOOKWORM_SLIM =
 
 export const CI_RUNNER_TURBO_AUBE_LOCK_DIR = ".mise/locks/turbo/2.11.10";
 
+/**
+ * Chromium headless shell baked into the base image. Revision and version must
+ * match playwright-core's browsers.json, or Playwright looks for a directory the
+ * image does not have; the digests are the release zips base/Dockerfile verifies.
+ */
+export const CI_RUNNER_PLAYWRIGHT_CHROMIUM = {
+	browsersPath: "/opt/pw-browsers",
+	revision: "1234",
+	browserVersion: "151.0.7922.34",
+	sha256: {
+		amd64: "3cfc2bd00d1bafcf8a68dc74c9c92bb7150ddc8d26ade948a776316e1cec4f14",
+		arm64: "b03443e1e1a60d06e07b6cdfe650b8c2bfcbb3db497d2b652f73dc6912f4ae15",
+	},
+} as const;
+
+/** Executable inside the revision directory, per Playwright's linux-x64 / linux-arm64 layouts. */
+export function playwrightHeadlessShellExecutables(
+	browsersPath: string = CI_RUNNER_PLAYWRIGHT_CHROMIUM.browsersPath,
+): readonly string[] {
+	const dir = join(
+		browsersPath,
+		`chromium_headless_shell-${CI_RUNNER_PLAYWRIGHT_CHROMIUM.revision}`,
+	);
+	return [
+		join(dir, "chrome-headless-shell-linux64", "chrome-headless-shell"),
+		join(dir, "chrome-linux", "headless_shell"),
+	];
+}
+
+const HEADLESS_SHELL_PROBE = "hobo-headless-shell-ok";
+
 export const CI_RUNNER_PREFLIGHT_NODE_ARGS = [
 	"--no-warnings",
 	"scripts/ci-runner-preflight.mts",
@@ -181,6 +212,30 @@ export const REQUIRED_COMMANDS = ["xz", "git", "curl", "ps", "docker"] as const;
  */
 export const IMAGE_CONTRACT_COMMANDS = ["skopeo"] as const;
 
+/**
+ * Renders a page rather than asking for `--version`: the dynamic loader resolves
+ * linked libraries for either, but only a render reaches the ones Chromium
+ * opens at runtime. Live-only, so jobs on an image built before the browser was
+ * baked in are not refused; the browser test names the missing path instead.
+ */
+function checkHeadlessShell(run: CommandRunner): ContractCheck {
+	const candidates = playwrightHeadlessShellExecutables()
+		.map((path) => `'${path}'`)
+		.join(" ");
+	const probe = run("sh", [
+		"-c",
+		`for exe in ${candidates}; do if [ -x "$exe" ]; then exec "$exe" --no-sandbox --disable-gpu --dump-dom 'data:text/html,<p>${HEADLESS_SHELL_PROBE}</p>'; fi; done; echo "no headless shell under ${CI_RUNNER_PLAYWRIGHT_CHROMIUM.browsersPath}" >&2; exit 1`,
+	]);
+	const ok = probe.ok && probe.out.includes(HEADLESS_SHELL_PROBE);
+	return {
+		ok,
+		name: "playwright:chromium-headless-shell",
+		detail: ok
+			? `revision ${CI_RUNNER_PLAYWRIGHT_CHROMIUM.revision} renders`
+			: `headless shell ${CI_RUNNER_PLAYWRIGHT_CHROMIUM.revision} did not render (install it via ${CI_RUNNER_BASE_DOCKERFILE}, libraries via ${CI_RUNNER_SYSTEM_PACKAGES}): ${probe.out.split("\n").slice(-3).join(" | ")}`,
+	};
+}
+
 /** `run` defaults to spawning each probe; tests that only need check names pass a stub. */
 export function evaluateCiRunnerContract(
 	root: string,
@@ -246,6 +301,8 @@ export function evaluateCiRunnerContract(
 				: `missing ${cmd} (install ${packageName} via ${CI_RUNNER_SYSTEM_PACKAGES})`,
 		});
 	}
+
+	if (live) checks.push(checkHeadlessShell(run));
 
 	const cue = run("cue", ["version"]);
 	if (cue.ok && !cue.out.includes("0.14.0")) {

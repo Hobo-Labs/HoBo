@@ -421,6 +421,21 @@ rather than only for launches. The supervisor's stop timeout (systemd `TimeoutSt
   bookworm's skopeo pins Docker API 1.22 in its `docker-daemon:` transport, and the box's daemon
   refuses anything below 1.24. skopeo now writes a `docker-archive:` (docker-save format) and
   `docker load` reads that.
+- **The image had no browser.** Main push run 41642427527 failed 1 of 2554 tests after 12m44s:
+  `@hobo/code` `test/session-control-server.test.ts` launches Chromium, and Playwright looked for
+  `~/.cache/ms-playwright/chromium_headless_shell-1234`, which nothing installs. The test's
+  `resolveChromiumExecutable()` knew only the arm64 layout under one root and returned `undefined`
+  when it found nothing, so Playwright's download hint was the whole error. The base image now
+  downloads Playwright's pinned headless shell (revision and version from `playwright-core`'s
+  `browsers.json`, sha256 per architecture) into `/opt/pw-browsers`, sets `PLAYWRIGHT_BROWSERS_PATH`,
+  and installs the Debian libraries it needs. The live contract renders a page with it
+  (`--dump-dom`, which reaches the libraries Chromium opens at runtime, not only the linked ones), and
+  `ci-runner-image-contract.test.ts` fails when the pins drift from the installed Playwright or the
+  Dockerfile. The helper searches both layouts under `PLAYWRIGHT_BROWSERS_PATH`, `/opt/pw-browsers` and
+  `~/.cache/ms-playwright`, and throws with the fix when there is no browser rather than leaving the
+  test to whatever Playwright does. Because the gate jobs no longer wait on `ci-runner-image`, the
+  first run of the pull request that adds the browser starts its gate on the old `:local`; the gate is
+  meaningful once that run's image job has retagged it.
 - **Vitest inlined the TypeScript compiler.** `typescript/lib/typescript.js` is CJS, but es-module-lexer
   finds module syntax in it, so Vitest's externalization heuristic inlined it. Vite then transformed the
   9 MB file in each worker and logged `Failed to load source map for …/typescript.js` with an ENOENT

@@ -8,7 +8,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { must } from "@hobo/core/total-access";
 import { chromium } from "playwright";
@@ -775,10 +775,9 @@ describe("resident session loopback server", () => {
 			"approved\n",
 		);
 
-		const executablePath = resolveChromiumExecutable();
 		const browser = await chromium.launch({
 			headless: true,
-			...(executablePath ? { executablePath } : undefined),
+			executablePath: resolveChromiumExecutable(),
 		});
 		try {
 			const page = await browser.newPage();
@@ -899,33 +898,64 @@ describe("resident session loopback server", () => {
  * Playwright resolves its browser by exact revision — `chromium_headless_shell-1234`
  * — and hard-fails with "run npx playwright install" when the host has a
  * different one. Plenty of hosts deliberately ship a pinned browser they do not
- * want re-downloaded (this repo's own container installs revision 1194 under
- * /opt/pw-browsers and sets PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD), so the pin makes
- * the test fail for a reason that has nothing to do with the code under test.
+ * want re-downloaded (the CI runner image bakes one under /opt/pw-browsers; dev
+ * containers often carry an older revision), so the pin makes the test fail for
+ * a reason that has nothing to do with the code under test.
  *
- * The previous escape hatch was an env var nobody sets, which is the same as no
- * escape hatch. This looks for whatever is on disk instead, preferring the
- * headless shell because that is what `headless: true` wants. An explicit
- * PLAYWRIGHT_CHROMIUM_PATH still wins, and finding nothing returns undefined so
- * Playwright's own resolution — and its own error message — still apply.
+ * This looks for whatever is on disk instead, preferring the headless shell
+ * because that is what `headless: true` wants, in both Playwright layouts
+ * (linux-x64 Chrome for Testing, linux-arm64 Chromium builds). An explicit
+ * PLAYWRIGHT_CHROMIUM_PATH wins. Finding nothing throws: a browser test that
+ * passes without a browser is not one.
  */
-function resolveChromiumExecutable(): string | undefined {
+function resolveChromiumExecutable(): string {
 	const override = process.env.PLAYWRIGHT_CHROMIUM_PATH;
-	if (override && existsSync(override)) return override;
+	if (override) {
+		if (existsSync(override)) return override;
+		throw new Error(`PLAYWRIGHT_CHROMIUM_PATH=${override} does not exist`);
+	}
 
-	const root = process.env.PLAYWRIGHT_BROWSERS_PATH ?? "/opt/pw-browsers";
-	if (!existsSync(root)) return undefined;
-
+	const roots = [
+		process.env.PLAYWRIGHT_BROWSERS_PATH,
+		"/opt/pw-browsers",
+		join(homedir(), ".cache", "ms-playwright"),
+	].filter(
+		(root): root is string =>
+			root !== undefined && root !== "" && existsSync(root),
+	);
+	const layouts = [
+		{
+			prefix: "chromium_headless_shell-",
+			paths: [
+				["chrome-headless-shell-linux64", "chrome-headless-shell"],
+				["chrome-linux", "headless_shell"],
+			],
+		},
+		{
+			prefix: "chromium-",
+			paths: [
+				["chrome-linux64", "chrome"],
+				["chrome-linux", "chrome"],
+			],
+		},
+	];
 	const candidates: string[] = [];
-	for (const entry of readdirSync(root).sort().reverse()) {
-		if (entry.startsWith("chromium_headless_shell")) {
-			candidates.push(join(root, entry, "chrome-linux", "headless_shell"));
+	for (const { prefix, paths } of layouts) {
+		for (const root of roots) {
+			for (const entry of readdirSync(root).sort().reverse()) {
+				if (!entry.startsWith(prefix)) continue;
+				for (const path of paths) candidates.push(join(root, entry, ...path));
+			}
 		}
 	}
-	for (const entry of readdirSync(root).sort().reverse()) {
-		if (entry.startsWith("chromium-")) {
-			candidates.push(join(root, entry, "chrome-linux", "chrome"));
-		}
-	}
-	return candidates.find((candidate) => existsSync(candidate));
+	const found = candidates.find((candidate) => existsSync(candidate));
+	if (found) return found;
+	throw new Error(
+		[
+			"no Chromium for the browser test.",
+			`searched: ${roots.length > 0 ? roots.join(", ") : "(no browser directory exists)"}`,
+			"CI: rebuild the runner image (packages/ci-gh-actions/deploy/ci-runner/build.sh bakes the headless shell into /opt/pw-browsers).",
+			"Local: pnpm exec playwright install chromium-headless-shell, or set PLAYWRIGHT_CHROMIUM_PATH.",
+		].join("\n"),
+	);
 }
