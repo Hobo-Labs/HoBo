@@ -263,7 +263,7 @@ async function pane(
 	// hash the session derives, and a hand-built path would start asserting
 	// against an empty directory the moment that derivation changed.
 	const worktree = created?.session?.worktreePath;
-	if (typeof worktree !== "string" || worktree.length === 0)
+	if (worktree === undefined || worktree === "")
 		throw new Error("the session reported no worktree path");
 
 	options.prepare?.(worktree);
@@ -304,8 +304,8 @@ async function pane(
 		const code = await runGitTerminalPane({
 			sessionId: "pane-session",
 			hoboHome,
-			input: stdin as never,
-			output: stdout as never,
+			input: stdin,
+			output: stdout,
 		});
 		return { code, output: stdout.text(), stdin, hoboHome, worktree };
 	} finally {

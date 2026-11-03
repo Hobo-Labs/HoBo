@@ -68,22 +68,17 @@ function temp(prefix: string): string {
 }
 
 function git(cwd: string, args: readonly string[]): string {
-	return execFileSync(
-		"git",
-		args,
-		{
-			cwd,
-			encoding: "utf8",
-			env: {
-				...process.env,
-				GIT_AUTHOR_NAME: "Test",
-				GIT_AUTHOR_EMAIL: "test@example.com",
-				GIT_COMMITTER_NAME: "Test",
-				GIT_COMMITTER_EMAIL: "test@example.com",
-			},
+	return execFileSync("git", args, {
+		cwd,
+		encoding: "utf8",
+		env: {
+			...process.env,
+			GIT_AUTHOR_NAME: "Test",
+			GIT_AUTHOR_EMAIL: "test@example.com",
+			GIT_COMMITTER_NAME: "Test",
+			GIT_COMMITTER_EMAIL: "test@example.com",
 		},
-		GIT_TIMEOUT_MS,
-	);
+	});
 }
 
 /**
@@ -163,19 +158,15 @@ function fakeTmux(): MuxRunner {
 function fakeStdin() {
 	const stream = new PassThrough();
 	const rawModeCalls: boolean[] = [];
-	return Object.assign(
-		stream,
-		{
-			isTTY: true as const,
-			isRaw: false,
-			rawModeCalls,
-			setRawMode(mode: boolean) {
-				rawModeCalls.push(mode);
-				return stream;
-			},
+	return Object.assign(stream, {
+		isTTY: true as const,
+		isRaw: false,
+		rawModeCalls,
+		setRawMode(mode: boolean) {
+			rawModeCalls.push(mode);
+			return stream;
 		},
-		GIT_TIMEOUT_MS,
-	);
+	});
 }
 
 function fakeStdout(columns = 100, rows = 30) {
@@ -183,37 +174,30 @@ function fakeStdout(columns = 100, rows = 30) {
 	let writes = 0;
 	const waiters: { readonly after: number; readonly resolve: () => void }[] =
 		[];
-	const stream = new Writable(
-		{
-			write(chunk, _encoding, done) {
-				chunks.push(String(chunk));
-				writes += 1;
-				for (const waiter of waiters.splice(0)) {
-					if (writes > waiter.after) waiter.resolve();
-					else waiters.push(waiter);
-				}
-				done();
-			},
+	const stream = new Writable({
+		write(chunk, _encoding, done) {
+			chunks.push(String(chunk));
+			writes += 1;
+			for (const waiter of waiters.splice(0)) {
+				if (writes > waiter.after) waiter.resolve();
+				else waiters.push(waiter);
+			}
+			done();
 		},
-		GIT_TIMEOUT_MS,
-	);
-	return Object.assign(
-		stream,
-		{
-			columns,
-			rows,
-			text: () => chunks.join(""),
-			/** How many times the pane has written — a repaint or a prompt label. */
-			writes: () => writes,
-			/** Resolves on the first write past the `after`th, at once if it already happened. */
-			wroteAfter: (after: number) =>
-				new Promise<void>((resolve) => {
-					if (writes > after) resolve();
-					else waiters.push({ after, resolve });
-				}),
-		},
-		GIT_TIMEOUT_MS,
-	);
+	});
+	return Object.assign(stream, {
+		columns,
+		rows,
+		text: () => chunks.join(""),
+		/** How many times the pane has written — a repaint or a prompt label. */
+		writes: () => writes,
+		/** Resolves on the first write past the `after`th, at once if it already happened. */
+		wroteAfter: (after: number) =>
+			new Promise<void>((resolve) => {
+				if (writes > after) resolve();
+				else waiters.push({ after, resolve });
+			}),
+	});
 }
 
 const QUIT = "q";
@@ -260,7 +244,7 @@ async function pane(
 	// silently, since every assertion here is about files that would then all
 	// be absent.
 	const worktree = created?.session?.worktreePath;
-	if (typeof worktree !== "string" || worktree.length === 0) {
+	if (worktree === undefined || worktree === "") {
 		throw new Error("the session reported no worktree path");
 	}
 
@@ -307,8 +291,8 @@ async function pane(
 		const code = await runGitTerminalPane({
 			sessionId: "pane-session",
 			hoboHome,
-			input: stdin as never,
-			output: stdout as never,
+			input: stdin,
+			output: stdout,
 		});
 		return { code, output: stdout.text(), stdin, hoboHome, worktree };
 	} finally {
@@ -326,8 +310,8 @@ describe("opening the pane", () => {
 				runGitTerminalPane({
 					sessionId: "any",
 					hoboHome: temp("hobo-git-pane-nontty-"),
-					input: new PassThrough() as never,
-					output: fakeStdout() as never,
+					input: new PassThrough(),
+					output: fakeStdout(),
 				}),
 			).rejects.toThrow(/requires a TTY/u);
 		},
@@ -344,8 +328,8 @@ describe("opening the pane", () => {
 				runGitTerminalPane({
 					sessionId: "any",
 					hoboHome: temp("hobo-git-pane-noraw-"),
-					input: input as never,
-					output: fakeStdout() as never,
+					input: input,
+					output: fakeStdout(),
 				}),
 			).rejects.toThrow(/requires a TTY/u);
 		},
@@ -361,8 +345,8 @@ describe("opening the pane", () => {
 				runGitTerminalPane({
 					sessionId: "no-such-session",
 					hoboHome: temp("hobo-git-pane-missing-"),
-					input: fakeStdin() as never,
-					output: fakeStdout() as never,
+					input: fakeStdin(),
+					output: fakeStdout(),
 				}),
 			).rejects.toThrow(/does not exist/u);
 		},
