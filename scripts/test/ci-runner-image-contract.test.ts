@@ -13,6 +13,7 @@ import {
 	evaluateCiRunnerContract,
 	MISE_LOCK,
 	MISE_TOML,
+	parseDockerHubDigestRef,
 	REQUIRED_COMMANDS,
 	verifyBaseImageDigestResolves,
 } from "../lib/ci-runner-contract.mts";
@@ -42,10 +43,10 @@ describe("ci-runner image contract (repo manifests)", () => {
 		}
 	});
 
-	it("pins a resolvable debian:bookworm-slim digest in the base Dockerfile", () => {
+	it("pins a resolvable debian:bookworm-slim digest in the base Dockerfile", async () => {
 		expect(() => assertBaseDockerfileDigestPinned(root)).not.toThrow();
 		if (process.env.HOBO_CI_VERIFY_BASE_DIGEST === "1") {
-			const check = verifyBaseImageDigestResolves();
+			const check = await verifyBaseImageDigestResolves();
 			expect(check.ok, check.detail).toBe(true);
 		}
 	});
@@ -123,5 +124,64 @@ describe("ci-runner image contract (host smoke)", () => {
 		expect(result.status).toBe(0);
 		expect(result.stdout.trim()).toMatch(/^v[0-9a-f]{12}$/);
 		expect(`${result.stdout}${result.stderr}`).not.toContain("tsx");
+	});
+});
+
+describe("ci-runner base digest check (registry API)", () => {
+	const digest = `sha256:${"a".repeat(64)}`;
+	const ref = `debian:bookworm-slim@${digest}`;
+	const registry = (served: string | null, status = 200) => {
+		const calls: { url: string; init: RequestInit | undefined }[] = [];
+		const fetchImpl: typeof fetch = async (input, init) => {
+			const url = String(input);
+			calls.push({ url, init });
+			if (url.startsWith("https://auth.docker.io/"))
+				return new Response(JSON.stringify({ token: "synthetic-token" }));
+			const headers = new Headers();
+			if (served) headers.set("docker-content-digest", served);
+			return new Response(null, { status, headers });
+		};
+		return { calls, fetchImpl };
+	};
+
+	it("maps official images to library/ and keeps the digest", () => {
+		expect(parseDockerHubDigestRef(ref)).toEqual({
+			repository: "library/debian",
+			digest,
+		});
+		expect(parseDockerHubDigestRef(`org/img@${digest}`).repository).toBe(
+			"org/img",
+		);
+		expect(() => parseDockerHubDigestRef("debian:bookworm-slim")).toThrow();
+	});
+
+	it("accepts an OCI index and passes when the registry serves the pinned digest", async () => {
+		const { calls, fetchImpl } = registry(digest);
+		const check = await verifyBaseImageDigestResolves(ref, fetchImpl);
+		expect(check.ok, check.detail).toBe(true);
+		const manifest = calls[1];
+		expect(manifest?.url).toBe(
+			`https://registry-1.docker.io/v2/library/debian/manifests/${digest}`,
+		);
+		const headers = new Headers(manifest?.init?.headers);
+		expect(headers.get("accept")).toContain(
+			"application/vnd.oci.image.index.v1+json",
+		);
+		expect(headers.get("authorization")).toBe("Bearer synthetic-token");
+	});
+
+	it("fails when the registry serves another digest or no manifest", async () => {
+		const other = await verifyBaseImageDigestResolves(
+			ref,
+			registry(`sha256:${"b".repeat(64)}`).fetchImpl,
+		);
+		expect(other.ok).toBe(false);
+		expect(other.detail).toContain("expected");
+		const missing = await verifyBaseImageDigestResolves(
+			ref,
+			registry(null, 404).fetchImpl,
+		);
+		expect(missing.ok).toBe(false);
+		expect(missing.detail).toContain("404");
 	});
 });

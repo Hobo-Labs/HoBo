@@ -28,8 +28,8 @@ import { createAuthMdIdentityCommand } from "./auth-md-command.js";
 import { createBrokerCommand } from "./broker-command.js";
 import { createBrokerAwareUpCommand } from "./broker-up-command.js";
 import { createCanDeployCommand } from "./can-deploy-command.js";
-import { createClaimCommand } from "./claim-command.js";
 import { createCiCommand } from "./ci-command.js";
+import { createClaimCommand } from "./claim-command.js";
 import {
 	createDefaultYardRuntime,
 	resolveProjectCollectionTarget,

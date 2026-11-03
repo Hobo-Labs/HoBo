@@ -14,8 +14,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { expect, it } from "vitest";
-import { cueBinary } from "../../stage-gate/test/helpers/cue-binary.js";
 import { createSelfHostedHttpsFixture } from "../../auth-md/test/https-fixture.js";
+import { cueBinary } from "../../stage-gate/test/helpers/cue-binary.js";
 import {
 	createComposedHoboCli,
 	createDefaultYardRuntime,

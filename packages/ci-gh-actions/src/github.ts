@@ -147,6 +147,7 @@ export function githubApiUrl(path: string): string {
 				"head",
 				"status",
 				"filter",
+				"created",
 			].includes(key) ||
 			!value ||
 			value.length > 200 ||
@@ -168,11 +169,21 @@ export function githubApiUrl(path: string): string {
 			throw new Error("invalid GitHub API event");
 		if (
 			key === "status" &&
-			!["queued", "in_progress", "waiting", "pending", "requested"].includes(
-				value,
-			)
+			![
+				"queued",
+				"in_progress",
+				"waiting",
+				"pending",
+				"requested",
+				"completed",
+			].includes(value)
 		)
 			throw new Error("invalid GitHub API status");
+		if (
+			key === "created" &&
+			!/^>=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(value)
+		)
+			throw new Error("invalid GitHub API created");
 		if (key === "filter" && value !== "latest")
 			throw new Error("invalid GitHub API filter");
 		if (key === "state" && !["all", "open", "closed"].includes(value))

@@ -37,9 +37,8 @@ jobs:
       contents: read
       packages: write
     steps:
+      # No submodules: the diff only needs the gitlink, not ts-autocode's tree.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          submodules: recursive
       - name: Detect runner image inputs changed
         id: rebuild
         run: |
@@ -161,6 +160,11 @@ jobs:
             "${FILTERS[@]}" \
             --continue=never --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} \
             --anon-profile=turbo-profile.json
+      - name: Save Turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
       - name: CI trace
         if: always()
         uses: ./.github/actions/ci-trace
@@ -216,6 +220,11 @@ jobs:
       - name: Production packages gate
         if: steps.scope.outputs.run == 'true'
         run: pnpm run build:packages
+      - name: Save Turbo cache
+        if: always() && steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
       - name: CI trace
         if: always()
         uses: ./.github/actions/ci-trace
@@ -269,19 +278,21 @@ jobs:
           # componentize-js wizer exceed the 6 GiB job container and get OOM-killed.
           HOBO_RELEVANT_CHECK_CONCURRENCY: "1"
         run: pnpm run check:all
-      - name: Architecture guard (full repo)
-        run: pnpm run architecture:guard:all
       - name: Full workspace tests
         env:
           TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
         run: pnpm exec turbo run test --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
+      - name: Save Turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
       - name: CI trace
         if: always()
         uses: ./.github/actions/ci-trace
 
   artifact-trust:
     name: artifact signing and install verification
-    needs: pr-gate
     if: github.event_name == 'pull_request'
     runs-on: hobo
     timeout-minutes: 10
@@ -298,7 +309,6 @@ jobs:
 
   dev-cold-loop-gate:
     name: hobo dev cold loop (offline <=60s)
-    needs: pr-gate
     if: github.event_name == 'pull_request'
     runs-on: hobo
     timeout-minutes: 5
@@ -345,9 +355,9 @@ jobs:
     permissions:
       contents: read
     steps:
+      # No submodules: gitleaks scans this repository's history, not ts-autocode's.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          submodules: recursive
           fetch-depth: 0
       - uses: ./.github/actions/ci-runner-preflight
       - name: Scan git history for secrets

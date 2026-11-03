@@ -82,6 +82,10 @@ export class LeaseStore {
 	close(): void {
 		this.db.close();
 	}
+	/** Run `fn` in this partition's write transaction (nested calls become savepoints). */
+	atomic<T>(fn: () => T): T {
+		return this.transaction(fn);
+	}
 	private transaction<T>(fn: () => T): T {
 		const nested = this.transactionDepth > 0;
 		const savepoint = `hobo_ci_${++this.savepointSequence}`;
@@ -108,7 +112,10 @@ export class LeaseStore {
 			.map((row) => fromJsonString(LeaseSchema, z.string().parse(row.body)));
 	}
 	get(id: string): Lease | undefined {
-		return this.all().find((lease) => lease.id === id);
+		const row = this.db.prepare("SELECT body FROM leases WHERE id=?").get(id);
+		return row
+			? fromJsonString(LeaseSchema, z.string().parse(row.body))
+			: undefined;
 	}
 	events() {
 		return this.db
