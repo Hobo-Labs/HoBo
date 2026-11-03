@@ -709,9 +709,12 @@ but a job can still write into the shared store. Since finding 12 the turbo cach
 It used to stay on `actions/cache` (scoped per ref) for this reason. That scoping kept PR results away from
 main, but it did not keep a fork away from main's inputs: every job container also gets the host docker
 socket (`HOBO_CI_MOUNT_DOCKER_SOCKET` defaults on), and with it a fork job can retag `hobo-ci-worker:local`,
-the image the Main full gate runs in, or write any host directory. Fork runs use the shared cache
-read-only (`TURBO_CACHE=local:r`), which keeps an honest fork from writing to it but stops nothing a
-malicious one does. The boundary that would matter is per-job socket and mount policy for fork PRs in the
+the image the Main full gate runs in, or write any host directory. The turbo-cache action now hands the
+shared cache only to same-repository jobs: a PR whose head repository is not this one (compared by
+`full_name`, so a deleted fork's null head repo also counts) gets no `TURBO_CACHE_DIR` and uses the
+per-ref `actions/cache` fallback, so no fork run reads main's entries or writes one main could replay.
+That keeps an honest fork off the shared cache but stops nothing a malicious one does through the socket
+or the store mount. The boundary that would matter is per-job socket and mount policy for fork PRs in the
 box daemon.
 
 ## Finding 12: main re-ran the tests its own PR had just passed

@@ -147,7 +147,7 @@ export function cacheDirOf(
 	return dir ? dir : join(root, ".turbo", "cache");
 }
 
-/** `TURBO_CACHE=local:r` (a fork's run on the shared cache): touch nothing. */
+/** `TURBO_CACHE=local:r` (a caller asked for a read-only cache): touch nothing. */
 export function localReadOnly(
 	env: Readonly<Record<string, string | undefined>>,
 ): boolean {
