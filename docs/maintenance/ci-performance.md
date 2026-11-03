@@ -83,3 +83,10 @@ If Vitest's `Duration` is far below the wall time between its `Start at` and its
 paused: both of Vitest's numbers come from the monotonic clock, which a suspended box stops.
 `scripts/run-tests.ts` prints `the wall clock ran Ns ahead of the monotonic clock` when the gap passes
 30 s. Check the box's power and sleep settings before you tune Vitest.
+
+Every `run-tests` lane also loads `scripts/lib/vitest-progress-reporter.ts` and Vitest's
+`hanging-process` reporter. Every 30 s (`HOBO_TEST_HEARTBEAT_MS`) it prints `vitest progress: N/M files
+done; running: <file> (<age>s)`, so a stuck file is named while it is stuck. A heartbeat that arrives
+late on the wall clock but not on the monotonic one prints `the host was paused for about Ns`, which
+places the pause in the log. The run ends with the ten slowest files. If the step dies with no summary,
+the last heartbeat names what was running. If the log just stops, the box itself stopped.
