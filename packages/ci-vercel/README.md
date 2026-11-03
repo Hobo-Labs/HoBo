@@ -89,6 +89,11 @@ cancellation and cloud-feature refusals. `test/turbo-ci-cli.test.ts` verifies em
 dry-run JSON and repeated interrupts against the real CLI. The CLI consumer PACT in
 `contracts/turbo-ci.consumer.test.ts` verifies the metadata contract against the
 installed binary without Vercel credentials. TypeScript covers the SDK and CLI.
+The runner hands the caller's environment, `TURBO_CACHE_DIR` and remote-cache
+settings included, to Turbo, so both runner suites drop inherited `TURBO_*`
+variables (`test/isolated-turbo-env.ts`): their fixtures hash identically in every
+temp dir, and the shared CI cache would otherwise replay a task instead of running
+the script the test observes.
 The plan uses generated [Protobuf](data-models/turbo_ci.proto), with independent
 [CUE constraints and fixtures](data-models/turbo-ci/plan.cue). Check codegen with
 `pnpm codegen:check --filter packages/ci-vercel`; run `cue vet -d '#TurboCiPlan'
