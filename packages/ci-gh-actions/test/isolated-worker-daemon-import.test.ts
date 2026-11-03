@@ -8,22 +8,33 @@ const repoRoot = join(packageRoot, "../..");
 const daemon = join(packageRoot, "scripts/isolated-worker-daemon.mts");
 
 describe("isolated-worker-daemon.mts startup imports", () => {
-	it("resolves @hobo/ci-gh-actions under node --experimental-strip-types", () => {
+	function run(env: Readonly<Record<string, string>>) {
+		const inherited = Object.fromEntries(
+			Object.entries(process.env).filter(
+				([name]) => !name.startsWith("HOBO_CI_") && name !== "DATABASE_URL",
+			),
+		);
 		const result = spawnSync(
 			process.execPath,
 			["--experimental-strip-types", daemon],
 			{
 				cwd: repoRoot,
 				encoding: "utf8",
-				env: {
-					...process.env,
-					NODE_OPTIONS: "",
-				},
+				env: { ...inherited, NODE_OPTIONS: "", ...env },
 			},
 		);
-		const combined = `${result.stdout}\n${result.stderr}`;
+		return `${result.stdout}\n${result.stderr}`;
+	}
+
+	it("resolves @hobo/ci-gh-actions under node --experimental-strip-types", () => {
+		const combined = run({});
 		expect(combined).not.toMatch(/ERR_MODULE_NOT_FOUND/u);
 		expect(combined).not.toMatch(/postgres-pool\.js/u);
-		expect(combined).toMatch(/missing DATABASE_URL/u);
+		// SQLite is the default store, so the first missing input is the GitHub App.
+		expect(combined).toMatch(/missing HOBO_CI_GITHUB_APP_ID/u);
+	});
+
+	it("still requires the named connection string when Postgres is chosen", () => {
+		expect(run({ HOBO_CI_STORE: "postgres" })).toMatch(/missing DATABASE_URL/u);
 	});
 });

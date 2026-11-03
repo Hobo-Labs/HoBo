@@ -103,7 +103,8 @@ export function parseConfiguration(json: string): Configuration {
 				);
 			if (offer.backend === "isolated-container") {
 				if (
-					offer.provider !== "kubernetes" ||
+					(offer.provider !== "kubernetes" &&
+						offer.provider !== "hobo-box-worker") ||
 					offer.runsOn !== "hobo-isolated-worker" ||
 					offer.freeMinutes !== 0 ||
 					offer.priceMicrosPerMinute !== 0 ||
@@ -112,7 +113,7 @@ export function parseConfiguration(json: string): Configuration {
 					offer.sandboxAllowance
 				)
 					throw new Error(
-						"isolated-container requires a zero-price kubernetes worker offer without sandbox pricing",
+						"isolated-container requires a zero-price hobo-box-worker or kubernetes offer without sandbox pricing",
 					);
 			}
 			if (offer.backend === "sandbox") {

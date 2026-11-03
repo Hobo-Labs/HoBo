@@ -47,7 +47,7 @@
         "$ref": "#/$defs/__schema0"
       },
       "additionalProperties": {
-        "$ref": "#/$defs/__schema56"
+        "$ref": "#/$defs/__schema60"
       },
       "maxProperties": 32
     }
@@ -486,17 +486,20 @@
         "jobAdmission": {
           "$ref": "#/$defs/__schema41"
         },
-        "engines": {
+        "store": {
           "$ref": "#/$defs/__schema43"
         },
-        "engineRelays": {
+        "engines": {
           "$ref": "#/$defs/__schema47"
         },
+        "engineRelays": {
+          "$ref": "#/$defs/__schema51"
+        },
         "secrets": {
-          "$ref": "#/$defs/__schema49"
+          "$ref": "#/$defs/__schema53"
         },
         "policy": {
-          "$ref": "#/$defs/__schema51"
+          "$ref": "#/$defs/__schema55"
         }
       },
       "additionalProperties": false
@@ -537,6 +540,53 @@
       "$ref": "#/$defs/__schema44"
     },
     "__schema44": {
+      "$ref": "#/$defs/WorkerStore"
+    },
+    "WorkerStore": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/__schema45"
+        },
+        {
+          "$ref": "#/$defs/__schema46"
+        }
+      ]
+    },
+    "__schema45": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "sqlite"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "__schema46": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "postgres"
+        },
+        "urlEnv": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+        }
+      },
+      "required": [
+        "kind",
+        "urlEnv"
+      ],
+      "additionalProperties": false
+    },
+    "__schema47": {
+      "$ref": "#/$defs/__schema48"
+    },
+    "__schema48": {
       "anyOf": [
         {
           "maxItems": 16,
@@ -551,7 +601,7 @@
             "$ref": "#/$defs/CiEngineId"
           },
           "additionalProperties": {
-            "$ref": "#/$defs/__schema45"
+            "$ref": "#/$defs/__schema49"
           }
         }
       ]
@@ -560,24 +610,24 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,62}$"
     },
-    "__schema45": {
+    "__schema49": {
       "type": "object",
       "properties": {
         "relayOrigin": {
-          "$ref": "#/$defs/__schema46"
+          "$ref": "#/$defs/__schema50"
         }
       },
       "additionalProperties": false
     },
-    "__schema46": {
+    "__schema50": {
       "type": "string",
       "minLength": 1,
       "maxLength": 2048
     },
-    "__schema47": {
-      "$ref": "#/$defs/__schema48"
+    "__schema51": {
+      "$ref": "#/$defs/__schema52"
     },
-    "__schema48": {
+    "__schema52": {
       "type": "object",
       "propertyNames": {
         "$ref": "#/$defs/CiEngineId"
@@ -590,15 +640,15 @@
       "type": "object",
       "properties": {
         "relayOrigin": {
-          "$ref": "#/$defs/__schema46"
+          "$ref": "#/$defs/__schema50"
         }
       },
       "additionalProperties": false
     },
-    "__schema49": {
-      "$ref": "#/$defs/__schema50"
+    "__schema53": {
+      "$ref": "#/$defs/__schema54"
     },
-    "__schema50": {
+    "__schema54": {
       "anyOf": [
         {
           "$ref": "#/$defs/SecretRequirements"
@@ -618,7 +668,7 @@
         }
       ]
     },
-    "__schema51": {
+    "__schema55": {
       "type": "object",
       "properties": {
         "accountId": {
@@ -730,23 +780,23 @@
           ]
         },
         "providers": {
-          "$ref": "#/$defs/__schema52"
+          "$ref": "#/$defs/__schema56"
         },
         "thresholds": {
-          "$ref": "#/$defs/__schema54"
+          "$ref": "#/$defs/__schema58"
         }
       },
       "additionalProperties": false
     },
-    "__schema52": {
+    "__schema56": {
       "minItems": 1,
       "maxItems": 100,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema53"
+        "$ref": "#/$defs/__schema57"
       }
     },
-    "__schema53": {
+    "__schema57": {
       "anyOf": [
         {
           "$ref": "#/$defs/Provider"
@@ -766,14 +816,14 @@
         }
       ]
     },
-    "__schema54": {
+    "__schema58": {
       "maxItems": 100,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema55"
+        "$ref": "#/$defs/__schema59"
       }
     },
-    "__schema55": {
+    "__schema59": {
       "type": "object",
       "properties": {
         "fraction": {
@@ -794,7 +844,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema56": {
+    "__schema60": {
       "anyOf": [
         {
           "type": "object",
@@ -811,14 +861,17 @@
             "jobAdmission": {
               "$ref": "#/$defs/__schema42"
             },
-            "engines": {
+            "store": {
               "$ref": "#/$defs/__schema44"
             },
-            "engineRelays": {
+            "engines": {
               "$ref": "#/$defs/__schema48"
             },
+            "engineRelays": {
+              "$ref": "#/$defs/__schema52"
+            },
             "secrets": {
-              "$ref": "#/$defs/__schema50"
+              "$ref": "#/$defs/__schema54"
             },
             "policy": {
               "$ref": "#/$defs/Policy"
@@ -845,17 +898,20 @@
             "jobAdmission": {
               "$ref": "#/$defs/__schema41"
             },
-            "engines": {
+            "store": {
               "$ref": "#/$defs/__schema43"
             },
-            "engineRelays": {
+            "engines": {
               "$ref": "#/$defs/__schema47"
             },
+            "engineRelays": {
+              "$ref": "#/$defs/__schema51"
+            },
             "secrets": {
-              "$ref": "#/$defs/__schema49"
+              "$ref": "#/$defs/__schema53"
             },
             "policy": {
-              "$ref": "#/$defs/__schema51"
+              "$ref": "#/$defs/__schema55"
             },
             "extends": {
               "$ref": "#/$defs/__schema0"
@@ -878,19 +934,19 @@
           "$ref": "#/$defs/__schema18"
         },
         "pool": {
-          "$ref": "#/$defs/__schema57"
+          "$ref": "#/$defs/__schema61"
         },
         "routing": {
-          "$ref": "#/$defs/__schema58"
+          "$ref": "#/$defs/__schema62"
         },
         "budget": {
-          "$ref": "#/$defs/__schema59"
+          "$ref": "#/$defs/__schema63"
         },
         "providers": {
-          "$ref": "#/$defs/__schema52"
+          "$ref": "#/$defs/__schema56"
         },
         "thresholds": {
-          "$ref": "#/$defs/__schema54"
+          "$ref": "#/$defs/__schema58"
         }
       },
       "required": [
@@ -903,7 +959,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema57": {
+    "__schema61": {
       "anyOf": [
         {
           "$ref": "#/$defs/Pool"
@@ -923,7 +979,7 @@
         }
       ]
     },
-    "__schema58": {
+    "__schema62": {
       "anyOf": [
         {
           "$ref": "#/$defs/Routing"
@@ -943,7 +999,7 @@
         }
       ]
     },
-    "__schema59": {
+    "__schema63": {
       "anyOf": [
         {
           "$ref": "#/$defs/Budget"

@@ -1,6 +1,12 @@
 import { create } from "@bufbuild/protobuf";
-import { effectiveCiAccount, JobSchema, parseCiPolicy, route } from "@hobo/ci";
-import type { PostgresCiStore } from "@hobo/ci/postgres";
+import {
+	effectiveCiAccount,
+	type Job,
+	JobSchema,
+	type Lease,
+	parseCiPolicy,
+	route,
+} from "@hobo/ci";
 import { z } from "zod";
 import { runnerDownloadFor } from "../bootstrap.js";
 import { type GithubTransport, getJob } from "../github.js";
@@ -88,8 +94,19 @@ const LIVE_CONTAINER_STATES = new Set([
 	"uncertain",
 ]);
 
+/** What the box worker needs from a lease store; `PostgresCiStore` and `SqliteCiStore` both qualify. */
+export interface IsolatedWorkerStore extends HostedRelayStore {
+	settle(
+		id: string,
+		hostRunId: number,
+		billedMinutes: number,
+		at: string,
+		unmet?: Job,
+	): Promise<Lease | undefined>;
+}
+
 export function createIsolatedContainerController(options: {
-	store: PostgresCiStore & HostedRelayStore;
+	store: IsolatedWorkerStore;
 	github: GithubTransport;
 	publicOrigin: string;
 	docker: DockerDriver;

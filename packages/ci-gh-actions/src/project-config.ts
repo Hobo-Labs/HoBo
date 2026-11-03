@@ -39,6 +39,15 @@ const JsonValue = z.json();
 const JsonObject = z.record(z.string(), JsonValue);
 type JsonData = z.infer<typeof JsonValue>;
 const JobAdmission = z.enum(["push", "pull"]);
+const WorkerStore = z.discriminatedUnion("kind", [
+	z.object({ kind: z.literal("sqlite") }).strict(),
+	z
+		.object({
+			kind: z.literal("postgres"),
+			urlEnv: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),
+		})
+		.strict(),
+]);
 const CiEngineId = z.string().regex(/^[a-z][a-z0-9-]{0,62}$/);
 const EngineRelayOverride = z
 	.object({
@@ -60,6 +69,7 @@ const EnvironmentFields = z
 		githubWebhookOrigin: z.string().min(1).max(2048).optional(),
 		allowInsecureLoopback: z.boolean().optional(),
 		jobAdmission: JobAdmission.optional(),
+		store: WorkerStore.optional(),
 		engines: EnvironmentEnginesSchema.optional(),
 		engineRelays: EnvironmentEngineRelaysSchema.optional(),
 		secrets: SecretDeclarations.optional(),
@@ -93,6 +103,8 @@ export interface CiProjectEnvironment {
 	readonly allowInsecureLoopback: boolean;
 	/** Push accepts signed GitHub webhooks at the relay; pull polls GitHub for queued jobs. */
 	readonly jobAdmission: "push" | "pull" | undefined;
+	/** Box worker lease journal; undefined means local SQLite. Postgres carries an env var name, never a URL. */
+	readonly store: CiWorkerStore | undefined;
 	/** Engines served from this environment profile (defaults to repository inventory). */
 	readonly engines: readonly string[] | undefined;
 	/** Per-engine relay origin overrides (falls back to environment relayOrigin). */
@@ -103,6 +115,10 @@ export interface CiProjectEnvironment {
 	readonly secrets: Readonly<Record<string, CiSecretRequirement>>;
 	readonly policy: ParsedCiPolicy;
 }
+
+export type CiWorkerStore =
+	| { readonly kind: "sqlite" }
+	| { readonly kind: "postgres"; readonly urlEnv: string };
 
 export type CiSecretPhase = "deployment" | "execution";
 export interface CiSecretRequirement {
@@ -134,6 +150,7 @@ export interface CiProjectEnvironmentTemplate {
 	githubWebhookOrigin?: string;
 	allowInsecureLoopback?: boolean;
 	jobAdmission?: "push" | "pull";
+	store?: CiWorkerStore;
 	secrets?: Readonly<
 		Record<string, { readonly requiredFor: readonly CiSecretPhase[] }>
 	>;
@@ -295,6 +312,7 @@ export function parseCiProjectConfig(
 							: undefined,
 						allowInsecureLoopback,
 						jobAdmission: entry.jobAdmission,
+						store: entry.store ? Object.freeze({ ...entry.store }) : undefined,
 						engines: parseEnvironmentEngineList(entry.engines),
 						engineRelays: parseEnvironmentEngineRelays(entry.engineRelays),
 						secrets: Object.freeze(

@@ -30,6 +30,10 @@
       "types": "./dist/postgres-store.d.ts",
       "default": "./dist/postgres-store.js"
     },
+    "./sqlite": {
+      "types": "./dist/sqlite-store.d.ts",
+      "default": "./dist/sqlite-store.js"
+    },
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
       "default": "./dist/workspace-backend.js"
