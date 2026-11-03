@@ -62,8 +62,8 @@ jobs:
       - name: Postgres store conformance (8 cases, Testcontainers)
         run: |
           mise exec -- pnpm exec turbo run test --filter=@hobo/ci --continue --output-logs=new-only --concurrency=100% -- \
-            packages/ci/test/fleet-v2-store-conformance.test.ts --testTimeout=240000
+            test/fleet-v2-store-conformance.test.ts --testTimeout=240000
       - name: Start fence + other fleet-v2 tests
         run: |
           mise exec -- pnpm exec turbo run test --filter=@hobo/ci-gh-actions --continue --output-logs=new-only --concurrency=100% -- \
-            packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts
+            test/fleet-v2-start-fence.test.ts
