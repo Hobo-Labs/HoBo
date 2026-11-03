@@ -13,6 +13,8 @@ Every pipeline has a **10-minute hard timeout** and a **5-minute target duration
 
 Pull requests may build and inspect release artifacts, but the release check is **`npm pack --dry-run` only**. PRs never publish, never write to npm, and never receive publish credentials.
 
+PR OCI builds are **affected-only**: [`scripts/ci/release-oci-affected.mts`](../../scripts/ci/release-oci-affected.mts) diffs `origin/main...HEAD` (override with `HOBO_CHECK_BASE`) against each image's Dockerfile, image directory, source inputs, and shared toolchain or workspace inputs, then emits the build matrix. An empty result skips the build job; CLI changes also select the dependent MCP image, with `hobo-cli` ordered before `hobo-mcp`. Manual workflow dispatch retains the full image matrix.
+
 ## Hermetic build model
 
 The worker image starts from a **digest-pinned base image**. Pinned `mise.toml` and `mise.lock` inputs produce **one OCI layer per tool** through `mise oci build`. Pipelines compose only the layers they need instead of installing tools during a job or maintaining separate monolithic images.

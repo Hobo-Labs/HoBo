@@ -4,13 +4,22 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "release/**"
       - "deploy/release-images/**"
+      - "release/**"
+      - "mise.toml"
+      - "mise.lock"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - "turbo.json"
+      - "scripts/ci/*release*"
       - "scripts/ci/npm-publish-scope.mts"
       - "scripts/ci/stage-sdk-artifacts.mts"
-      - "scripts/ci/build-release-oci-image.mts"
       - "scripts/lib/release-oci-contract.mts"
+      - "scripts/test/release-oci-affected.test.ts"
       - "scripts/test/release-oci-image-contract.test.ts"
+      - ".github/actions/release-oci-attest/**"
       - ".github/workflows/release-hobo.yml"
   push:
     tags:
@@ -40,7 +49,7 @@ jobs:
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: npm scope map + OCI manifest contract
-        run: pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts
+        run: pnpm exec vitest run scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts
       - name: npm pack dry-run (allowlist staging)
         run: |
           set -euo pipefail
@@ -48,22 +57,42 @@ jobs:
           node --no-warnings scripts/ci/npm-publish-scope.mts packages/core/package.json /tmp/hobo-release-staging/package.json
           grep -q '@hobo-labs/core' /tmp/hobo-release-staging/package.json
 
-  release-oci-build:
-    name: Build OCI app images (no push)
+  release-oci-affected:
+    name: Select affected OCI app images
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     needs: release-contract
     runs-on: hobo
-    timeout-minutes: 45
+    timeout-minutes: 10
+    outputs:
+      image_ids: ${{ steps.affected.outputs.image_ids }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Detect affected images
+        id: affected
+        env:
+          HOBO_CHECK_BASE: origin/main
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            images="$(node --no-warnings scripts/ci/release-oci-affected.mts --all)"
+          else
+            images="$(node --no-warnings scripts/ci/release-oci-affected.mts)"
+          fi
+          echo "image_ids=${images}" >> "$GITHUB_OUTPUT"
+
+  release-oci-build:
+    name: Build OCI app images (no push)
+    if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && needs.release-oci-affected.outputs.image_ids != '[]'
+    needs: [release-contract, release-oci-affected]
+    runs-on: hobo
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        image_id:
-          - hobo-sdk
-          - hobo-codegen
-          - hobo-cli
-          - hobo-mcp
-          - hobo-ci-serve
-          - hobo-site
+        image_id: ${{ fromJSON(needs.release-oci-affected.outputs.image_ids) }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
