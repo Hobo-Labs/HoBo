@@ -1,0 +1,58 @@
+{
+	"consumer": {
+		"name": "PricingRoutingControlLoopConsumer"
+	},
+	"provider": {
+		"name": "DispatcherDecisionBoundaryV2"
+	},
+	"interactions": [
+		{
+			"description": "dispatcher v2 selects the minimum incremental billed quote",
+			"request": {
+				"method": "POST",
+				"path": "/dispatcher/v2/decide",
+				"body": {
+					"category": "runner",
+					"objective": "min-incremental-billed"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": true,
+					"schema": "hobo.dispatcher/v2",
+					"objective": "min-incremental-billed",
+					"selectedProvider": "cheap",
+					"dispatchEvent": { "type": "dispatch.Decided" }
+				}
+			}
+		},
+		{
+			"description": "dispatcher v2 rejects stale quote evidence without a decision fact",
+			"request": {
+				"method": "POST",
+				"path": "/dispatcher/v2/decide",
+				"body": {
+					"category": "runner",
+					"objective": "min-incremental-billed"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": false,
+					"schema": "hobo.dispatcher/v2",
+					"reason": "no completely priced dispatch candidates",
+					"rejectedCandidates": [
+						{ "providerId": "stale", "code": "STALE_OBSERVATION" }
+					]
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

@@ -59,5 +59,10 @@ export {
 	MIGRATION_EVENT_CONTRACTS,
 	migrationCorpusBaseline,
 } from "./upcaster-corpus.js";
+export {
+	PRICING_EVENT_CONTRACTS,
+	pricingCorpusBaseline,
+} from "./pricing-event-contracts.js";
 
+// public-contract: the package identity consumers assert in boundary contracts.
 export const HOBO_EVENTS_PACKAGE = "@hobo/events";
