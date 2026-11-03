@@ -14,7 +14,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { GithubTransport } from "../src/github.js";
 import { createHostedRelayRuntime } from "../src/hosted-runtime.js";
-import { createGithubJobPoller } from "../src/isolated-worker/github-job-poller.js";
+import {
+	createGithubJobPoller,
+	createPollLogFilter,
+	describeWaitingJobs,
+	type GithubJobPollSummary,
+	type GithubReadFailure,
+} from "../src/isolated-worker/github-job-poller.js";
 import { createJobDurations, type JobDurations } from "../src/job-durations.js";
 
 const NOW = Date.parse("2026-11-02T12:00:00Z");
@@ -55,11 +61,15 @@ class FakeGithub implements GithubTransport {
 	/** Calls GitHub would count against the rate limit (everything but a 304). */
 	counted: string[] = [];
 	limited = false;
+	/** Paths answered 502, as GitHub does now and then. */
+	failing = new Set<string>();
 	/** Run attempt per run id; 1 when absent. */
 	attempts = new Map<number, number>();
 	constructor(
 		readonly runs: Record<"queued" | "in_progress", number[]> & {
 			completed?: number[];
+			/** Queued, but missing from `?status=queued` (run 41622562414). */
+			unlisted?: number[];
 		},
 		readonly jobs: Record<number, FakeJob[]>,
 	) {}
@@ -101,6 +111,30 @@ class FakeGithub implements GithubTransport {
 				},
 			});
 		const headers = { "x-ratelimit-remaining": "4000" };
+		if (this.failing.has(path))
+			return new Response('{"message":"Server Error"}', {
+				status: 502,
+				headers,
+			});
+		if (path === "/repos/Org/Repo/actions/runs?per_page=50") {
+			const listed = (ids: number[] | undefined, status: string) =>
+				(ids ?? []).map((id) => ({
+					id,
+					run_attempt: this.attempt(id),
+					status,
+				}));
+			return Response.json(
+				{
+					workflow_runs: [
+						...listed(this.runs.unlisted, "queued"),
+						...listed(this.runs.queued, "queued"),
+						...listed(this.runs.in_progress, "in_progress"),
+						...listed(this.runs.completed, "completed"),
+					],
+				},
+				{ headers },
+			);
+		}
 		const list =
 			/^\/repos\/Org\/Repo\/actions\/runs\?status=(queued|in_progress)&per_page=50$/.exec(
 				path,
@@ -233,6 +267,8 @@ describe("GitHub job poller", () => {
 			failed: 0,
 			settled: 0,
 			notModified: 0,
+			githubErrors: 0,
+			waiting: [],
 			rateLimitRemaining: 4000,
 		});
 		const ids = Object.keys(bodies).sort();
@@ -307,20 +343,20 @@ describe("GitHub job poller", () => {
 			now: () => clock,
 		});
 		await poller.poll();
-		expect(github.counted).toHaveLength(4);
+		expect(github.counted).toHaveLength(5);
 		github.counted = [];
 		clock += 15_000;
 		// A 304 still hands the cached body on, so the job is observed again.
 		expect(await poller.poll()).toMatchObject({
 			hoboJobs: 1,
 			accepted: 0,
-			notModified: 4,
+			notModified: 5,
 		});
 		expect(github.counted).toEqual([]);
 		expect(ids).toEqual(["poll-1-1-q", "poll-1-1-q"]);
 		// A changed list is a 200 again, and only that read is counted.
 		github.jobs[900]?.push({ id: 2, status: "queued", labels: ["hobo"] });
-		expect(await poller.poll()).toMatchObject({ accepted: 1, notModified: 3 });
+		expect(await poller.poll()).toMatchObject({ accepted: 1, notModified: 4 });
 		expect(github.counted).toEqual([
 			"GET /repos/Org/Repo/actions/runs/900/jobs?filter=latest&per_page=100",
 		]);
@@ -466,6 +502,87 @@ describe("GitHub job poller", () => {
 			expect.stringMatching(/^poll-1-1-q-[0-9a-f]{12}$/),
 		]);
 	});
+
+	it("reports the GitHub reads it could not make and the queued jobs it did not accept", async () => {
+		const github = new FakeGithub(
+			{ queued: [900], in_progress: [] },
+			{
+				900: [
+					{ id: 1, status: "queued", labels: ["hobo"] },
+					{ id: 2, status: "queued", labels: ["hobo"] },
+					{ id: 3, status: "queued", labels: ["hobo"] },
+				],
+			},
+		);
+		github.failing.add(
+			"/repos/Org/Repo/actions/runs?status=in_progress&per_page=50",
+		);
+		const failures: GithubReadFailure[] = [];
+		const results = new Map([
+			["poll-1-1-q", "accepted"],
+			["poll-2-1-q", "ignored"],
+		]);
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () => [CONNECTION],
+			ingest: async ({ deliveryId }) => {
+				const result = results.get(deliveryId);
+				if (result === undefined) throw new Error("inbox full");
+				results.set(deliveryId, result === "accepted" ? "duplicate" : result);
+				return result;
+			},
+			onGithubError: (failure) => failures.push(failure),
+			now: () => NOW,
+		});
+		expect(await poller.poll()).toMatchObject({
+			accepted: 1,
+			failed: 1,
+			githubErrors: 1,
+			waiting: [
+				{ jobId: 2, runId: 900, result: "ignored" },
+				{ jobId: 3, runId: 900, result: "failed" },
+			],
+		});
+		expect(failures).toEqual([
+			{
+				installationId: 10,
+				path: "/repos/Org/Repo/actions/runs?status=in_progress&per_page=50",
+				status: 502,
+			},
+		]);
+		github.failing.clear();
+		const second = await poller.poll();
+		expect(second).toMatchObject({ accepted: 0, githubErrors: 0 });
+		expect(describeWaitingJobs(second.waiting)).toBe(
+			"900/1:duplicate,900/2:ignored,900/3:failed",
+		);
+	});
+
+	it("logs a poll that admitted, failed or left jobs waiting, and stays quiet when idle", () => {
+		const worth = createPollLogFilter(60_000);
+		const poll = (fields: Partial<GithubJobPollSummary> = {}) => ({
+			repositories: 1,
+			runs: 0,
+			hoboJobs: 0,
+			accepted: 0,
+			failed: 0,
+			settled: 0,
+			notModified: 5,
+			githubErrors: 0,
+			waiting: [],
+			...fields,
+		});
+		const stuck = [{ jobId: 1, runId: 900, result: "duplicate" }];
+		expect(worth(poll(), NOW)).toBe(false);
+		expect(worth(poll({ githubErrors: 1 }), NOW + 15_000)).toBe(true);
+		expect(worth(poll({ accepted: 1 }), NOW + 30_000)).toBe(true);
+		expect(worth(poll({ waiting: stuck }), NOW + 45_000)).toBe(true);
+		// The same job still waiting is repeated once a minute, not every poll.
+		expect(worth(poll({ waiting: stuck }), NOW + 60_000)).toBe(false);
+		expect(worth(poll({ waiting: stuck }), NOW + 105_000)).toBe(true);
+		expect(worth(poll(), NOW + 120_000)).toBe(true);
+		expect(worth(poll(), NOW + 135_000)).toBe(false);
+	});
 });
 
 describe("pull-mode box worker over SQLite", () => {
@@ -573,6 +690,39 @@ describe("pull-mode box worker over SQLite", () => {
 			jobId: 1,
 			state: "reserved",
 		});
+		expect(launched).toEqual([lease?.id]);
+		store.close();
+	});
+
+	it("admits a queued run the status-filtered list leaves out", async () => {
+		const store = await configuredStore(2);
+		// GitHub's ?status=queued answered total_count 0 for run 41622562414 for
+		// over 16 minutes while the unfiltered list showed it queued.
+		const github = new FakeGithub(
+			{ queued: [], in_progress: [], unlisted: [905] },
+			{ 905: [{ id: 21, status: "queued", labels: ["hobo"] }] },
+		);
+		const launched: string[] = [];
+		const runtime = boxRuntime(store, github, launched);
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		expect(await poller.poll()).toMatchObject({
+			runs: 1,
+			hoboJobs: 1,
+			accepted: 1,
+			githubErrors: 0,
+		});
+		expect(github.calls).toContain(
+			"GET /repos/Org/Repo/actions/runs?per_page=50",
+		);
+		await runtime.tick({ maxDeliveries: 10 });
+		const [lease] = await store.activeLeases();
+		expect(lease).toMatchObject({ jobId: 21, state: "reserved" });
 		expect(launched).toEqual([lease?.id]);
 		store.close();
 	});

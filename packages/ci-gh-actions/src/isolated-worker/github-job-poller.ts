@@ -24,6 +24,8 @@ export interface GithubJobPollerOptions {
 	}) => Promise<string>;
 	/** Called when the inbox refuses one polled job; the poll carries on. */
 	onIngestError?: (jobId: number, message: string) => void;
+	/** Called for every GitHub read that answers neither 2xx nor a usable 304; the poll carries on without it. */
+	onGithubError?: (failure: GithubReadFailure) => void;
 	/** Fed every `hobo` job the poll reads, so admission can put a run's longest job first. */
 	durations?: Pick<JobDurations, "observe">;
 	now?: () => number;
@@ -40,14 +42,34 @@ export interface GithubJobPollSummary {
 	readonly settled: number;
 	/** Reads GitHub answered 304 to, which do not count against the rate limit. */
 	readonly notModified: number;
+	/** Reads GitHub refused (see `onGithubError`). */
+	readonly githubErrors: number;
+	/** Queued `hobo` jobs this poll saw but did not newly accept: already in the inbox, ignored, or refused. */
+	readonly waiting: readonly WaitingJob[];
 	readonly pausedUntil?: string;
 	readonly rateLimitRemaining?: number;
+}
+
+export interface GithubReadFailure {
+	readonly installationId: number;
+	readonly path: string;
+	readonly status: number;
+}
+
+export interface WaitingJob {
+	readonly jobId: number;
+	readonly runId: number;
+	readonly result: string;
 }
 
 const COMPLETED_LOOKBACK_MS = 2 * 60 * 60 * 1000;
 /** `created>=` is rounded down to this, so the completed-runs URL (and its ETag) holds still between polls. */
 const LOOKBACK_STEP_MS = 10 * 60 * 1000;
 const RUN_STATUSES = ["queued", "in_progress"] as const;
+/** GitHub's status-filtered list has gone on answering `total_count: 0` for a run the
+ * unfiltered list showed queued (41622562414, for over 16 minutes), so the newest runs
+ * are read without a filter too and the two are unioned. */
+const NEWEST_RUNS = 50;
 const PolledStatus = z.enum(["queued", "in_progress", "completed"]);
 const STATUS_CODE = { queued: "q", in_progress: "p", completed: "c" } as const;
 /** Leave headroom for the worker's own job/run lookups and runner registration. */
@@ -59,9 +81,11 @@ const Runs = z.object({
 		z.object({
 			id: z.number().int().positive(),
 			run_attempt: z.number().int().positive().optional(),
+			status: z.string().nullable().optional(),
 		}),
 	),
 });
+type Run = z.infer<typeof Runs>["workflow_runs"][number];
 const Jobs = z.object({
 	jobs: z.array(
 		z.object({
@@ -129,7 +153,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 		installationId: number,
 		path: string,
 		schema: z.ZodType<T>,
-		summary: { notModified: number },
+		summary: { notModified: number; githubErrors: number },
 	): Promise<T | undefined> {
 		const key = `${installationId} ${path}`;
 		const cached = etags.get(key);
@@ -146,7 +170,15 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 			readThisPoll.set(key, cached);
 			return schema.parse(JSON.parse(cached.body));
 		}
-		if (!response.ok) return undefined;
+		if (!response.ok) {
+			summary.githubErrors++;
+			options.onGithubError?.({
+				installationId,
+				path,
+				status: response.status,
+			});
+			return undefined;
+		}
 		const body = await response.text();
 		const etag = response.headers.get("etag");
 		if (etag) readThisPoll.set(key, { etag, body });
@@ -154,6 +186,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 	}
 
 	async function poll(): Promise<GithubJobPollSummary> {
+		const waiting: WaitingJob[] = [];
 		const summary = {
 			repositories: 0,
 			runs: 0,
@@ -162,6 +195,8 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 			failed: 0,
 			settled: 0,
 			notModified: 0,
+			githubErrors: 0,
+			waiting,
 		};
 		if (now() < pausedUntilMs)
 			return {
@@ -186,6 +221,17 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					);
 					for (const run of runs?.workflow_runs ?? []) runIds.add(run.id);
 				}
+				const newest = await getJson(
+					connection.installationId,
+					`/repos/${connection.repository}/actions/runs?per_page=${NEWEST_RUNS}`,
+					Runs,
+					summary,
+				);
+				const newestCompleted: Run[] = [];
+				for (const run of newest?.workflow_runs ?? []) {
+					if (run.status === "completed") newestCompleted.push(run);
+					else runIds.add(run.id);
+				}
 				// A run that finished drops out of queued/in_progress before its last
 				// job's completion is seen; without it the runner's container is only
 				// reaped at max runtime and holds a slot. Recent completed runs close that.
@@ -203,7 +249,12 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					number,
 					Readonly<{ key: string; attempt: number }>
 				>();
-				for (const run of completed?.workflow_runs ?? []) {
+				const completedRuns = new Map(
+					[...(completed?.workflow_runs ?? []), ...newestCompleted].map(
+						(run) => [run.id, run],
+					),
+				);
+				for (const run of completedRuns.values()) {
 					if (runIds.has(run.id)) continue;
 					const key =
 						run.run_attempt === undefined
@@ -287,9 +338,15 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 								job.id,
 								error instanceof Error ? error.message : "unknown",
 							);
-							continue;
+							result = "failed";
 						}
 						if (result === "accepted") summary.accepted++;
+						else if (status.data === "queued")
+							summary.waiting.push({
+								jobId: job.id,
+								runId: job.run_id,
+								result,
+							});
 					}
 					if (
 						attempt !== undefined &&
@@ -326,4 +383,32 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 	}
 
 	return { poll };
+}
+
+/** `run/job:result` per waiting job, the form a poll log line carries. */
+export function describeWaitingJobs(waiting: readonly WaitingJob[]): string {
+	return waiting
+		.map((job) => `${job.runId}/${job.jobId}:${job.result}`)
+		.join(",");
+}
+
+/** Which poll summaries are worth a log line: any that accepted, refused, paused or
+ * failed a GitHub read, and any whose waiting jobs changed or are still waiting
+ * `repeatMs` after they were last logged. An idle poll stays quiet; a stuck one does not. */
+export function createPollLogFilter(repeatMs = 60_000) {
+	let lastWaiting = "";
+	let lastLoggedMs = Number.NEGATIVE_INFINITY;
+	return (summary: GithubJobPollSummary, nowMs: number): boolean => {
+		const waiting = describeWaitingJobs(summary.waiting);
+		const worth =
+			summary.accepted > 0 ||
+			summary.failed > 0 ||
+			summary.githubErrors > 0 ||
+			summary.pausedUntil !== undefined ||
+			waiting !== lastWaiting ||
+			(waiting !== "" && nowMs - lastLoggedMs >= repeatMs);
+		lastWaiting = waiting;
+		if (worth) lastLoggedMs = nowMs;
+		return worth;
+	};
 }
