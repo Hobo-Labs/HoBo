@@ -197,6 +197,8 @@ try {
 		"vitest",
 		"vitest.mjs",
 	);
+	const wallStart = Date.now();
+	const monotonicStart = performance.now();
 	const result = spawnSync(
 		process.execPath,
 		[
@@ -233,6 +235,15 @@ try {
 		// A killed child has no exit status; name the signal so CI logs show why.
 		console.error(
 			`run-tests: vitest was killed by ${result.signal} (no exit status)`,
+		);
+	}
+	// Vitest's Duration and the watchdog both use the monotonic clock, which stops
+	// while the host is suspended; the wall clock does not.
+	const pausedMs =
+		Date.now() - wallStart - (performance.now() - monotonicStart);
+	if (pausedMs > 30_000) {
+		console.error(
+			`run-tests: the wall clock ran ${Math.round(pausedMs / 1000)}s ahead of the monotonic clock; the host was suspended or paused during this run`,
 		);
 	}
 	process.exitCode = result.status ?? 1;

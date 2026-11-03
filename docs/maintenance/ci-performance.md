@@ -76,3 +76,8 @@ offline `test:behavior` lane; it now runs only under cucumber's `live` profile. 
 20-minute job limit and step limits, `scripts/run-tests.ts` kills a Vitest run after
 `HOBO_TEST_RUN_TIMEOUT_MS` (default 600000), and main's workspace tests are affected-only
 (`--filter=...[<previous main commit>]`).
+
+If Vitest's `Duration` is far below the wall time between its `Start at` and its summary line, the host
+paused: both of Vitest's numbers come from the monotonic clock, which a suspended box stops.
+`scripts/run-tests.ts` prints `the wall clock ran Ns ahead of the monotonic clock` when the gap passes
+30 s. Check the box's power and sleep settings before you tune Vitest.
