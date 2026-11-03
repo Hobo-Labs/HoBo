@@ -1,5 +1,5 @@
+import { type ChildProcess, spawn } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { spawn, type ChildProcess } from "node:child_process";
 import { constants } from "node:fs";
 import { access, mkdir, open, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -7,8 +7,9 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { create, toJsonString } from "@bufbuild/protobuf";
 import { ConfigurationSchema } from "@hobo/ci";
-import type { CommandResult } from "@hobo/cli";
 import {
+	type CiJobAdmission,
+	type CiWorkerStore,
 	createGithubAppTransport,
 	createJobPollAdmissionWorker,
 	inferJobAdmission,
@@ -16,13 +17,12 @@ import {
 	loadCiProjectFromDirectory,
 	resolveEnvironmentEngines,
 	startRelayFromEnvironment,
-	type CiJobAdmission,
-	type CiWorkerStore,
 } from "@hobo/ci-gh-actions/cli-serve";
-import { defaultHoboHome } from "./hobo-home.js";
-import { ciRepositoryFromRemote } from "./ci-repository.js";
-import { isJsonNumber, isJsonObject } from "./json.js";
+import type { CommandResult } from "@hobo/cli";
 import { z } from "zod";
+import { ciRepositoryFromRemote } from "./ci-repository.js";
+import { defaultHoboHome } from "./hobo-home.js";
+import { isJsonNumber, isJsonObject } from "./json.js";
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost"]);
 const JsonValue = z.json();
@@ -241,11 +241,10 @@ async function resolveRepository(
 	const remotes = (await git(["remote"], cwd).catch(() => ""))
 		.split("\n")
 		.filter(Boolean);
-	const remote = options.remote ?? (remotes.length === 1 ? remotes[0]! : "origin");
+	const remote =
+		options.remote ?? (remotes.length === 1 ? remotes[0]! : "origin");
 	if (!remotes.includes(remote)) throw new Error("missing git remote");
-	return ciRepositoryFromRemote(
-		await git(["remote", "get-url", remote], cwd),
-	);
+	return ciRepositoryFromRemote(await git(["remote", "get-url", remote], cwd));
 }
 
 export async function resolveCiServePlan(input: {
@@ -296,15 +295,15 @@ export async function resolveCiServePlan(input: {
 	let publicOrigin = publicOriginInput ?? project.environment.relayOrigin;
 	const normalizedPublic = normalizeOrigin(publicOrigin, allowInsecureLoopback);
 	publicOrigin = normalizedPublic.origin;
-	if (
-		publicOriginInput &&
-		publicOrigin !== configRelayOrigin
-	)
+	if (publicOriginInput && publicOrigin !== configRelayOrigin)
 		throw new Error(
 			`public origin ${publicOrigin} does not match environment ${project.environmentName} relayOrigin ${configRelayOrigin}`,
 		);
 	let port = input.options.port ? Number(input.options.port) : undefined;
-	if (port !== undefined && (!Number.isInteger(port) || port < 1 || port > 65535))
+	if (
+		port !== undefined &&
+		(!Number.isInteger(port) || port < 1 || port > 65535)
+	)
 		throw new Error("invalid --port");
 	if (port === undefined) {
 		const loopbackPublic = LOOPBACK.has(new URL(publicOrigin).hostname);
@@ -324,9 +323,12 @@ export async function resolveCiServePlan(input: {
 	}
 	const origin = publicOrigin;
 	const trustProxy =
-		input.options.trustProxy === true ||
-		input.env.HOBO_CI_TRUST_PROXY === "1";
-	const repository = await resolveRepository(input.options, input.cwd, input.git);
+		input.options.trustProxy === true || input.env.HOBO_CI_TRUST_PROXY === "1";
+	const repository = await resolveRepository(
+		input.options,
+		input.cwd,
+		input.git,
+	);
 	const installationId =
 		input.options.installationId === undefined
 			? undefined
@@ -382,7 +384,10 @@ export async function resolveCiServePlan(input: {
 	return { ...planBase, installationId };
 }
 
-async function readSecret(env: NodeJS.ProcessEnv, name: string): Promise<string> {
+async function readSecret(
+	env: NodeJS.ProcessEnv,
+	name: string,
+): Promise<string> {
 	const file = env[`${name}_FILE`];
 	if (file) return boundedText(resolve(file), 65536);
 	const value = env[name];
@@ -510,7 +515,10 @@ export async function startCiServe(input: {
 	emitProgress?: (message: string) => void;
 }): Promise<CiServeHandle> {
 	const plan = await resolveCiServePlan(input);
-	const home = resolve(input.cwd, input.options.home ?? defaultHoboHome(input.env));
+	const home = resolve(
+		input.cwd,
+		input.options.home ?? defaultHoboHome(input.env),
+	);
 	const stateDir = join(home, "ci", "serve");
 	await mkdir(stateDir, { recursive: true, mode: 0o700 });
 	const requireRealCredentials =
@@ -541,7 +549,8 @@ export async function startCiServe(input: {
 	relayEnv.HOBO_CI_PUBLIC_URL = plan.publicOrigin;
 	relayEnv.HOBO_CI_HOST = plan.host;
 	relayEnv.HOBO_CI_PORT = String(plan.port);
-	if (plan.allowInsecureLoopback) relayEnv.HOBO_CI_ALLOW_INSECURE_LOOPBACK = "1";
+	if (plan.allowInsecureLoopback)
+		relayEnv.HOBO_CI_ALLOW_INSECURE_LOOPBACK = "1";
 	relayEnv.HOBO_CI_GITHUB_APP_ID = credentials.appId;
 	relayEnv.HOBO_CI_GITHUB_APP_KEY_FILE = credentials.keyPath;
 	relayEnv.HOBO_CI_CONTROL_TOKENS_FILE = credentials.tokenPath;
@@ -556,16 +565,21 @@ export async function startCiServe(input: {
 	);
 	if (ingressForward !== undefined) {
 		if (Buffer.byteLength(ingressForward, "utf8") < 32)
-			throw new Error("HOBO_CI_INGRESS_FORWARD_SECRET must be at least 32 bytes");
+			throw new Error(
+				"HOBO_CI_INGRESS_FORWARD_SECRET must be at least 32 bytes",
+			);
 		relayEnv.HOBO_CI_INGRESS_FORWARD_SECRET = ingressForward;
 	}
 	if (plan.trustProxy) relayEnv.HOBO_CI_TRUST_PROXY = "1";
 	relayEnv.HOBO_CI_DB = dbPath;
 	relayEnv.HOBO_CI_CONFIG = seedConfig;
 	const stubEngines = plan.engines.filter((engine) => engine !== "gh-actions");
-	if (stubEngines.length > 0) relayEnv.HOBO_CI_STUB_ENGINES = stubEngines.join(",");
+	if (stubEngines.length > 0)
+		relayEnv.HOBO_CI_STUB_ENGINES = stubEngines.join(",");
 	if (!plan.engines.includes("gh-actions"))
-		throw new Error("gh-actions engine is required for local relay serve today");
+		throw new Error(
+			"gh-actions engine is required for local relay serve today",
+		);
 	serveLog(input.emitProgress, {
 		ts: new Date().toISOString(),
 		level: "info",
@@ -633,16 +647,14 @@ export async function startCiServe(input: {
 	};
 }
 
-export async function runCiServe(
-	input: {
-		cwd: string;
-		options: CiServeOptions;
-		env: NodeJS.ProcessEnv;
-		git: (args: readonly string[], cwd: string) => Promise<string>;
-		emitProgress?: (message: string) => void;
-		waitUntilSignal?: boolean;
-	},
-): Promise<CommandResult> {
+export async function runCiServe(input: {
+	cwd: string;
+	options: CiServeOptions;
+	env: NodeJS.ProcessEnv;
+	git: (args: readonly string[], cwd: string) => Promise<string>;
+	emitProgress?: (message: string) => void;
+	waitUntilSignal?: boolean;
+}): Promise<CommandResult> {
 	try {
 		if (input.options.printConfig) {
 			const plan = await resolveCiServePlan(input);

@@ -50,25 +50,25 @@ export {
 	type IsolatedWorkerStore,
 } from "./isolated-worker/container-controller.js";
 export {
+	countInFlightWorkerLeases,
+	waitForIsolatedWorkerDrain,
+} from "./isolated-worker/daemon-shutdown.js";
+export {
 	createGithubJobPoller,
 	type GithubJobPollerOptions,
 	type GithubJobPollSummary,
 } from "./isolated-worker/github-job-poller.js";
+export {
+	attachPostgresPoolErrorHandler,
+	formatPoolErrorLog,
+	redactPoolErrorMessage,
+} from "./isolated-worker/postgres-pool.js";
 export {
 	defaultWorkerDatabasePath,
 	resolveWorkerStorePlan,
 	type WorkerStoreChoice,
 	type WorkerStorePlan,
 } from "./isolated-worker/worker-store.js";
-export {
-	countInFlightWorkerLeases,
-	waitForIsolatedWorkerDrain,
-} from "./isolated-worker/daemon-shutdown.js";
-export {
-	attachPostgresPoolErrorHandler,
-	formatPoolErrorLog,
-	redactPoolErrorMessage,
-} from "./isolated-worker/postgres-pool.js";
 export { createJobPollAdmissionWorker } from "./job-poll-admission.js";
 export { startRelayFromEnvironment } from "./main.js";
 export {

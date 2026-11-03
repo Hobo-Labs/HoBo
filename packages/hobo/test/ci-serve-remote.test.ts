@@ -1,8 +1,8 @@
-import { defineCiPolicy, DesiredCiPolicySchema } from "@hobo/ci";
-import { toJsonString } from "@bufbuild/protobuf";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { toJsonString } from "@bufbuild/protobuf";
+import { DesiredCiPolicySchema, defineCiPolicy } from "@hobo/ci";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveCiServePlan } from "../src/ci-serve.js";
 
@@ -64,7 +64,10 @@ async function projectRoot() {
 	const root = await mkdtemp(join(tmpdir(), "hobo-ci-serve-remote-"));
 	directories.push(root);
 	await mkdir(join(root, ".hobo"), { recursive: true });
-	await writeFile(join(root, ".hobo", "ci.json"), JSON.stringify(remoteProject));
+	await writeFile(
+		join(root, ".hobo", "ci.json"),
+		JSON.stringify(remoteProject),
+	);
 	return root;
 }
 

@@ -1,8 +1,8 @@
-import { defineCiPolicy, DesiredCiPolicySchema } from "@hobo/ci";
-import { toJsonString } from "@bufbuild/protobuf";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { toJsonString } from "@bufbuild/protobuf";
+import { DesiredCiPolicySchema, defineCiPolicy } from "@hobo/ci";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
