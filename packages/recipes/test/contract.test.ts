@@ -111,11 +111,17 @@ function requestFor(recipe: SolutionRecipe, realtime: string | undefined) {
 type JsonObject = { readonly [k: string]: Json };
 
 function isJsonObject(value: Json): value is JsonObject {
-	return value !== null && Object.prototype.toString.call(value) === "[object Object]";
+	return (
+		value !== null &&
+		Object.prototype.toString.call(value) === "[object Object]"
+	);
 }
 
 function matches(expected: Json, actual: Json, path: string): void {
-	if (Object.prototype.toString.call(expected) === "[object String]" && expected.endsWith("*")) {
+	if (
+		Object.prototype.toString.call(expected) === "[object String]" &&
+		expected.endsWith("*")
+	) {
 		expect(String(actual), path).toMatch(
 			new RegExp(
 				`^${expected.slice(0, -1).replace(/[.*+?^${}()|[\]\\/]/gu, "\\$&")}`,

@@ -597,12 +597,10 @@ function tenantFingerprint(blob: SnapshotBlob, tenantId: string): string {
 }
 
 function parseVerbs(raw: string | undefined): Verb[] {
-	return (raw ?? "")
-		.split(",")
-		.filter((verb): verb is Verb =>
-			// SAFETY: ALL_VERBS is the runtime source for the Verb union.
-			(ALL_VERBS as readonly string[]).includes(verb),
-		);
+	return (raw ?? "").split(",").filter((verb): verb is Verb =>
+		// SAFETY: ALL_VERBS is the runtime source for the Verb union.
+		(ALL_VERBS as readonly string[]).includes(verb),
+	);
 }
 
 export function verdict(

@@ -5,9 +5,8 @@ import {
 	DEV_COLD_BUDGET_MS,
 	type DevRuntime,
 } from "../dev/local-camp.js";
+import { isJsonNumber, isJsonString } from "../json.js";
 import type { CommandModule } from "../shell/registry.js";
-import { isJsonString, isJsonNumber } from "../json.js";
-
 
 export interface DevServeResult {
 	readonly primaryUrl: string;
@@ -121,7 +120,9 @@ export function createDevCommand(deps: DevCommandDeps = {}): CommandModule {
 				try {
 					const serve = await deps.serveProject({
 						projectDir,
-						...(port !== undefined && Number.isInteger(port) ? { port } : undefined),
+						...(port !== undefined && Number.isInteger(port)
+							? { port }
+							: undefined),
 						once,
 						emitProgress,
 					});

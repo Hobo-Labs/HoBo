@@ -15,7 +15,6 @@ import { basename, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isJsonString, type JsonValue } from "./json.js";
 
-
 export const PINNED_TOOLCHAIN = Object.freeze({
 	jco: "1.24.3",
 	componentizeJs: "0.21.0",

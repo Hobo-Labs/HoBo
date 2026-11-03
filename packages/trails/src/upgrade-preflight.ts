@@ -19,7 +19,12 @@
  *   belong to owning initiatives.
  */
 import { createHash } from "node:crypto";
-import { isJsonObject, isJsonString, type JsonObject, type JsonValue } from "./json.js";
+import {
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	type JsonValue,
+} from "./json.js";
 
 // public-contract: dry-run report schema id consumers pin.
 export const UPGRADE_DRY_RUN_SCHEMA = "hobo.upgrade-rollback-dry-run/v1";
@@ -157,7 +162,10 @@ function str(value: JsonValue | undefined, path: string): string {
 	return value.trim();
 }
 
-function nullableStr(value: JsonValue | undefined, path: string): string | null {
+function nullableStr(
+	value: JsonValue | undefined,
+	path: string,
+): string | null {
 	if (value === null || value === undefined) return null;
 	return str(value, path);
 }
@@ -395,7 +403,9 @@ const OUT_OF_SCOPE_PATTERN =
 	/\b(live migration|execute|runner|rollback executor|backup restore|provider state rewrite|support automation|support ticket|publish release notes)\b/i;
 
 /** Promoted scope guard: classify a decision as in/out of dry-run scope. */
-export function classifyUpgradeDryRunDecision(decision: string): UpgradeDryRunDecision {
+export function classifyUpgradeDryRunDecision(
+	decision: string,
+): UpgradeDryRunDecision {
 	if (OUT_OF_SCOPE_PATTERN.test(decision)) {
 		return { owner: "Out of scope", inScope: false };
 	}

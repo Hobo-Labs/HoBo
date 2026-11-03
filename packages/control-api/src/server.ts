@@ -104,7 +104,10 @@ type JsonObject = { [key: string]: JsonValue };
 type JsonBody =
 	| ManagementResult
 	| JsonObject
-	| { ok: boolean; data: { world: WorldState; demo: boolean; seed: number | null } };
+	| {
+			ok: boolean;
+			data: { world: WorldState; demo: boolean; seed: number | null };
+	  };
 
 /** Refuse bodies larger than this rather than buffering them into the heap. */
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
@@ -129,9 +132,7 @@ function pathParam(match: RegExpMatchArray): string {
 	return value;
 }
 
-async function readJson(
-	req: IncomingMessage,
-): Promise<JsonObject> {
+async function readJson(req: IncomingMessage): Promise<JsonObject> {
 	const chunks: Buffer[] = [];
 	let size = 0;
 	for await (const chunk of req) {
@@ -152,11 +153,7 @@ async function readJson(
 	return JSON.parse(raw) as JsonObject;
 }
 
-function sendJson(
-	res: ServerResponse,
-	status: number,
-	body: JsonBody,
-): void {
+function sendJson(res: ServerResponse, status: number, body: JsonBody): void {
 	const payload = JSON.stringify(body);
 	res.writeHead(status, {
 		"content-type": "application/json; charset=utf-8",
@@ -242,8 +239,8 @@ export async function createControlApiServer(
 			return;
 		}
 		const origin = req.headers.origin;
-	// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: Node's header union is normalized before the origin guard.
-	if (typeof origin === "string" && origin.length > 0) {
+		// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: Node's header union is normalized before the origin guard.
+		if (typeof origin === "string" && origin.length > 0) {
 			sendJson(res, 403, {
 				ok: false,
 				code: "cross-origin-write-refused",
@@ -372,8 +369,8 @@ export async function createControlApiServer(
 			const otlp = path.match(/^\/v1\/otlp\/v1\/(traces|logs|metrics)$/);
 			if (req.method === "POST" && otlp) {
 				await handleOtlpIngest(
-						// SAFETY: the route regexp contains exactly the three OTLP signal literals.
-						otlp[1] as "traces" | "logs" | "metrics",
+					// SAFETY: the route regexp contains exactly the three OTLP signal literals.
+					otlp[1] as "traces" | "logs" | "metrics",
 					req,
 					res,
 				);
@@ -467,8 +464,8 @@ async function dispatch(
 				name: str(body.name),
 				version: str(body.version),
 				docPath: str(body.docPath),
-					// SAFETY: the management adapter accepts the JSON object from the request body.
-					raw: body.raw as JsonObject | undefined,
+				// SAFETY: the management adapter accepts the JSON object from the request body.
+				raw: body.raw as JsonObject | undefined,
 			}),
 		);
 	}
@@ -643,7 +640,6 @@ function handleYardSse(
 	const timer = setInterval(tick, intervalMs);
 	res.on("close", () => clearInterval(timer));
 }
-
 
 function isStringValue(v: JsonValue | undefined): v is string {
 	return Object.prototype.toString.call(v) === "[object String]";

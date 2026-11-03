@@ -62,16 +62,13 @@ function digestsOf(input: CompileRecipeInput): readonly string[] {
  * to hand the compiler a value whose key order is deliberately wrong.
  */
 type JsonObject = { readonly [key: string]: JsonValue };
-type JsonValue =
-	| string
-	| number
-	| boolean
-	| null
-	| JsonValue[]
-	| JsonObject;
+type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
 
 function isJsonObject(value: JsonValue): value is JsonObject {
-	return value !== null && Object.prototype.toString.call(value) === "[object Object]";
+	return (
+		value !== null &&
+		Object.prototype.toString.call(value) === "[object Object]"
+	);
 }
 
 function reverseKeyOrder(value: JsonValue): JsonValue {

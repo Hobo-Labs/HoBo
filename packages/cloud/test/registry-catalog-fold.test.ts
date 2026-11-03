@@ -733,8 +733,9 @@ describe("the registration and approval facts", () => {
 		// exactly why the parse rebuilds the negotiation.
 		const fact = registerProviderFact(provider());
 		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
-		const first = (fact.data as { definitions: Array<Record<string, JsonValue>> })
-			.definitions[0];
+		const first = (
+			fact.data as { definitions: Array<Record<string, JsonValue>> }
+		).definitions[0];
 		expect(first && "satisfies" in first).toBe(false);
 	});
 
@@ -798,4 +799,5 @@ describe("the registration and approval facts", () => {
 		).toEqual({ kind: "full" });
 	});
 });
+
 import type { JsonValue } from "../src/plan-types.js";

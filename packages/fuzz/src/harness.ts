@@ -2,7 +2,11 @@
  * Jazzer.js-shaped entrypoints. PR smoke calls these with generated
  * buffers; a nightly Jazzer run can import the same functions.
  */
-import { hasPrototypePollution, parseOrReject, type FuzzValue } from "./manifest.js";
+import {
+	type FuzzValue,
+	hasPrototypePollution,
+	parseOrReject,
+} from "./manifest.js";
 
 export const MAX_HARNESS_BYTES = 65_536;
 

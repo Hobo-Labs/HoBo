@@ -327,7 +327,9 @@ export const credentialAuditProjection: Projection<CredentialAuditRow> =
 					{
 						seq: event.seq,
 						type: event.type,
-						...(data.grantId !== undefined ? { grantId: data.grantId } : undefined),
+						...(data.grantId !== undefined
+							? { grantId: data.grantId }
+							: undefined),
 					},
 				];
 				return next;
@@ -458,7 +460,9 @@ export const credentialAuditProjection: Projection<CredentialAuditRow> =
 					{
 						seq: event.seq,
 						type: event.type,
-						...(data.grantId !== undefined ? { grantId: data.grantId } : undefined),
+						...(data.grantId !== undefined
+							? { grantId: data.grantId }
+							: undefined),
 					},
 				];
 				return next;

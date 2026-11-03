@@ -380,7 +380,9 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 		}),
 		requirement: input.trustRequirement,
 		nowMs: input.nowMs,
-		...(input.verifier !== undefined ? { verifier: input.verifier } : undefined),
+		...(input.verifier !== undefined
+			? { verifier: input.verifier }
+			: undefined),
 	});
 	for (const reason of trustBundle.reasons) {
 		// The three trust-only reasons all mean the same thing to a compiler:

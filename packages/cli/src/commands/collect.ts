@@ -11,14 +11,13 @@ import {
 } from "@hobo/bindles";
 
 import { stubResult } from "../cloud/stub.js";
+import type { JsonObject } from "../json.js";
 import type { CommandModule } from "../shell/registry.js";
-import { type JsonObject } from "../json.js";
-
 
 // The golden the `--check` drift gate compares the freshly collected manifest IR
 // against. Committed alongside the project so CI can assert the checked-in IR is
 // still what run-to-collect emits.
-export const COLLECT_GOLDEN_FILE = "hobo.manifest.json";
+export const COLLECT_GOLDEN_FILE = "hobo.manifest.json"; // public-contract: golden manifest file name collect writes into the project
 
 export interface CollectCommandDeps {
 	// Injected collection target (tests / dev wiring): a fixed Bindle whose

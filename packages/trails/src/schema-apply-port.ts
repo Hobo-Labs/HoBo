@@ -87,8 +87,8 @@ export function createSqliteSchemaApplyPort(
 		},
 		verify(violationsSql) {
 			return Object.freeze(
-					// SAFETY: SQL result rows are JSON-shaped evidence records.
-					db.prepare(violationsSql).all() as JsonObject[],
+				// SAFETY: SQL result rows are JSON-shaped evidence records.
+				db.prepare(violationsSql).all() as JsonObject[],
 			);
 		},
 		restore(ref) {

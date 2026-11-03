@@ -30,8 +30,7 @@ import {
 	parseBuildRequestFromInvocation,
 	parseServiceDeclaration,
 } from "../src/build/parse.js";
-import { type JsonObject } from "../src/json.js";
-
+import type { JsonObject } from "../src/json.js";
 
 const DIGEST = `sha256:${"a".repeat(64)}`;
 

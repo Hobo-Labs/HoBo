@@ -1,13 +1,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { parseJsonValue, type JsonValue } from "../src/json.js";
 import { type ManifestV1, parseManifest } from "@hobo/bindles";
 import {
 	createCloudflareProvider,
 	realizeResourcePlans,
 } from "@hobo/provider-cloudflare";
 import { describe, expect, it } from "vitest";
-
 import {
 	canonicalPlanJson,
 	createRegistryFromProviders,
@@ -15,6 +13,7 @@ import {
 	hashDeploymentPlan,
 	plan,
 } from "../src/index.js";
+import { type JsonValue, parseJsonValue } from "../src/json.js";
 
 const HELLO_BINDLE_PLAN_HASH =
 	"sha256:30eb585558f0614fac037fa5ada935eaad03e86f35c39110af21b2c58bdaf5b6";

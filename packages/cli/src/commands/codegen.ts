@@ -5,9 +5,8 @@ import {
 	CodegenError,
 	CodegenReportSchema,
 } from "../codegen/types.js";
+import type { JsonObject } from "../json.js";
 import type { CommandModule } from "../shell/registry.js";
-import { type JsonObject } from "../json.js";
-
 
 export interface CodegenCommandOptions {
 	readonly engine?: CodegenEngine;

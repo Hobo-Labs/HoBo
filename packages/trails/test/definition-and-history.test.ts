@@ -10,8 +10,6 @@
  */
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- malformed fixtures require boundary casts. */
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../src/json.js";
-
 import {
 	defineTrail,
 	orderTrailSteps,
@@ -21,6 +19,7 @@ import {
 	TrailHistoryStore,
 	wireTrailPhaseDependencies,
 } from "../src/index.js";
+import type { JsonObject } from "../src/json.js";
 
 function step(id: string, kind: string, extra: JsonObject = {}) {
 	// SAFETY: test steps intentionally bypass the production parser.
@@ -38,7 +37,12 @@ function expectRejection(run: () => void, code: string): void {
 	} catch (error) {
 		// The code is how a caller distinguishes an authoring mistake from a
 		// runtime failure; both reach the same catch otherwise.
-		expect(codeOf(/* SAFETY: caught errors are parser failures. */ error as CodedError), error.message).toBe(code);
+		expect(
+			codeOf(
+				/* SAFETY: caught errors are parser failures. */ error as CodedError,
+			),
+			error.message,
+		).toBe(code);
 		return;
 	}
 	expect.unreachable(`expected a ${code} rejection`);
@@ -91,9 +95,9 @@ describe("defineTrail", () => {
 		]) {
 			// The pair identifies the trail in history; without both, two
 			// different migrations could share a history row.
-				expectRejection(
-					// SAFETY: malformed fixtures intentionally bypass the parser type.
-					() => defineTrail(input as never),
+			expectRejection(
+				// SAFETY: malformed fixtures intentionally bypass the parser type.
+				() => defineTrail(input as never),
 				"trail-definition-invalid",
 			);
 		}
@@ -434,7 +438,7 @@ describe("TrailHistoryStore", () => {
 			status: "applied",
 			appliedAt: "2026-08-08T00:00:00.000Z",
 			...overrides,
-		// SAFETY: override fixtures intentionally bypass the production parser.
+			// SAFETY: override fixtures intentionally bypass the production parser.
 		}) /* SAFETY: override fixture intentionally bypasses the parser type. */ as never;
 
 	it("records an entry and stamps the schema version", () => {
