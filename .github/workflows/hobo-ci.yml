@@ -24,9 +24,13 @@ env:
   # Every turbo run writes .turbo/runs/<id>.json; ci-trace turns them into OTel spans.
   TURBO_RUN_SUMMARY: "true"
 
+# A newer push to main supersedes the in-progress one: its secret scan covers the full history and
+# its gates test the newer tree, while the older run would hold box slots the merge queue is waiting
+# for. The event name keeps schedule and workflow_dispatch on main out of the pushes' group, so a
+# push never cancels them; merge_group runs are never cancelled.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'merge_group' && !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   ci-runner-image:
@@ -214,6 +218,11 @@ jobs:
     timeout-minutes: 40
     permissions:
       contents: read
+    # At most one Main full gate holds a box slot, whatever event started it, so the other slot
+    # stays free for the short required jobs. A newer waiting gate replaces an older waiting one.
+    concurrency:
+      group: ${{ github.workflow }}-main-gate
+      cancel-in-progress: false
     env:
       GITHUB_EVENT_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
     steps:
