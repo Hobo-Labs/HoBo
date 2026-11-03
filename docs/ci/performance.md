@@ -119,6 +119,14 @@ That is a live E2E inside the offline behavior lane, which `cucumber.yaml` and t
 out. It now runs only under cucumber's `live` profile. Its steps bind `astro dev` to the probed host, wait
 at most 60 s for it, and kill a Playwright run after 270 s. Without it, `test:behavior` passes 101/101 in
 about 3 s (it was 123 s and red). With the step's tail missing, the passing `test:unit` read as a hang.
+Reproduced off the box with the gate's own commands: `pnpm run test:unit` passed 758/758 in 146 s wall
+(144 s reported, so nothing held the process open), and `test:behavior` on a751e0a95's config failed the
+same scenario after 124 s.
+
+The PR impact gate selects `test:behavior` when a feature, step, or `cucumber.yaml` changes, but it builds
+only the changed packages, so the proofs' steps failed on `@hobo/code`'s missing `dist`. The relevant-check
+policy now runs a serial `turbo run build --filter={./src/draft/epic-proofs/*}^...
+--filter={./src/draft/projects/*}^...` (32 tasks, cached) first.
 
 The rest of this section is the analysis as it stood before the raw logs were read.
 
