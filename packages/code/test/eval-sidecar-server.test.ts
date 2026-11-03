@@ -8,8 +8,8 @@ import {
 	runEvalSidecarSuite,
 	startEvalSidecar,
 } from "../src/eval-sidecar-server.js";
-import { loopbackFetchUrl } from "../src/occupancy-endpoints.js";
 import { isJsonObject } from "../src/json.js";
+import { loopbackFetchUrl } from "../src/occupancy-endpoints.js";
 
 const roots: string[] = [];
 afterEach(() => {

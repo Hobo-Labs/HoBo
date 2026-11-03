@@ -23,6 +23,11 @@ env:
   HOBO_TURBO_CONCURRENCY: "1"
   # Every turbo run writes .turbo/runs/<id>.json; ci-trace turns them into OTel spans.
   TURBO_RUN_SUMMARY: "true"
+  # A git transfer under 1 KB/s for 30 s aborts instead of hanging (the pins use the same bound).
+  # actions/checkout retries a failed fetch, so a stalled connection costs ~30 s, not the job's
+  # whole timeout while it holds one of the box's two slots.
+  GIT_HTTP_LOW_SPEED_LIMIT: "1000"
+  GIT_HTTP_LOW_SPEED_TIME: "30"
 
 # A newer push to main supersedes the in-progress one: its secret scan covers the full history and
 # its gates test the newer tree, while the older run would hold box slots the merge queue is waiting
@@ -92,7 +97,12 @@ jobs:
 
   pr-gate:
     name: PR impact gate
-    if: github.event_name == 'pull_request'
+    # Waits for the image job: a pull request that changes the image inputs must test on the
+    # image it built (that job retags hobo-ci-worker:local, which this job's container starts
+    # from). When the inputs are unchanged that job is a short no-op. !cancelled() keeps this
+    # required check running, never skipped, when the image build fails.
+    needs: ci-runner-image
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     runs-on: hobo
     timeout-minutes: 25
     permissions:
@@ -258,10 +268,13 @@ jobs:
     # Not a required check, so on merge_group it gated nothing while holding one
     # of the box's two slots; the push to main re-runs the same tree. Add
     # merge_group back here if this job ever becomes a required check.
+    # Same reason as pr-gate: a push that changes the image inputs tests on the image it built.
+    needs: ci-runner-image
     if: >-
+      !cancelled() && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch'
+      github.event_name == 'workflow_dispatch')
     runs-on: hobo
     # A main run past 20 minutes is a failure; the step timeouts below fail a hang sooner.
     # The weekly schedule is the one whole-workspace sweep and gets an hour.

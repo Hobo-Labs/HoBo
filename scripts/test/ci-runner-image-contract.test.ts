@@ -1,12 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	assertBaseDockerfileDigestPinned,
 	assertTurboLockSidecarsPresent,
 	CI_RUNNER_BASE_DOCKERFILE,
 	CI_RUNNER_BUILD_SCRIPT,
+	CI_RUNNER_PLAYWRIGHT_CHROMIUM,
 	CI_RUNNER_PREFLIGHT_NODE_ARGS,
 	CI_RUNNER_SYSTEM_PACKAGES,
 	type CommandRunner,
@@ -16,6 +18,7 @@ import {
 	MISE_LOCK,
 	MISE_TOML,
 	parseDockerHubDigestRef,
+	playwrightHeadlessShellExecutables,
 	REQUIRED_COMMANDS,
 	verifyBaseImageDigestResolves,
 } from "../lib/ci-runner-contract.mts";
@@ -73,6 +76,83 @@ describe("ci-runner image contract (repo manifests)", () => {
 			expect(names(true).has(`system:${cmd}`)).toBe(true);
 			expect(names(false).has(`system:${cmd}`)).toBe(false);
 		}
+	});
+
+	it("bakes in the headless shell revision the installed Playwright resolves", () => {
+		const require = createRequire(join(root, "package.json"));
+		const playwrightCore = createRequire(require.resolve("playwright")).resolve(
+			"playwright-core/package.json",
+		);
+		const manifest: {
+			browsers: { name: string; revision: string; browserVersion: string }[];
+		} = JSON.parse(
+			readFileSync(join(dirname(playwrightCore), "browsers.json"), "utf8"),
+		);
+		const shell = manifest.browsers.find(
+			(b) => b.name === "chromium-headless-shell",
+		);
+		expect(shell?.revision).toBe(CI_RUNNER_PLAYWRIGHT_CHROMIUM.revision);
+		expect(shell?.browserVersion).toBe(
+			CI_RUNNER_PLAYWRIGHT_CHROMIUM.browserVersion,
+		);
+
+		const dockerfile = readFileSync(
+			join(root, CI_RUNNER_BASE_DOCKERFILE),
+			"utf8",
+		);
+		const pins = CI_RUNNER_PLAYWRIGHT_CHROMIUM;
+		expect(dockerfile).toContain(
+			`ARG PLAYWRIGHT_CHROMIUM_REVISION=${pins.revision}\n`,
+		);
+		expect(dockerfile).toContain(
+			`ARG PLAYWRIGHT_CHROMIUM_VERSION=${pins.browserVersion}\n`,
+		);
+		expect(dockerfile).toContain(
+			`ARG PLAYWRIGHT_HEADLESS_SHELL_SHA256_X64=${pins.sha256.amd64}\n`,
+		);
+		expect(dockerfile).toContain(
+			`ARG PLAYWRIGHT_HEADLESS_SHELL_SHA256_ARM64=${pins.sha256.arm64}\n`,
+		);
+		expect(dockerfile).toContain(
+			`ENV PLAYWRIGHT_BROWSERS_PATH=${pins.browsersPath}\n`,
+		);
+
+		const packages = readFileSync(join(root, CI_RUNNER_SYSTEM_PACKAGES), "utf8")
+			.split("\n")
+			.map((line) => line.replace(/#.*/, "").trim());
+		for (const pkg of ["unzip", "libnss3", "libgbm1", "libasound2"]) {
+			expect(packages, `${pkg} in system-packages.txt`).toContain(pkg);
+		}
+	});
+
+	it("probes the headless shell by rendering, only inside a built candidate", () => {
+		const probe =
+			(out: string): CommandRunner =>
+			(cmd, args) =>
+				cmd === "sh" && args[1]?.includes("--dump-dom")
+					? { ok: true, out }
+					: { ok: true, out: "/usr/bin/stub 0.14.0" };
+		const shellCheck = (live: boolean, out: string) =>
+			evaluateCiRunnerContract(root, { live, run: probe(out) }).find(
+				(c) => c.name === "playwright:chromium-headless-shell",
+			);
+		expect(shellCheck(false, "")).toBeUndefined();
+		expect(
+			shellCheck(
+				true,
+				"<html><body><p>hobo-headless-shell-ok</p></body></html>",
+			)?.ok,
+		).toBe(true);
+		expect(shellCheck(true, "error while loading shared libraries")?.ok).toBe(
+			false,
+		);
+		const [x64, arm64] = playwrightHeadlessShellExecutables("/b");
+		expect(x64).toBe(
+			"/b/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell",
+		);
+		expect(arm64).toBe(
+			"/b/chromium_headless_shell-1234/chrome-linux/headless_shell",
+		);
 	});
 
 	it("pins a resolvable debian:bookworm-slim digest in the base Dockerfile", async () => {

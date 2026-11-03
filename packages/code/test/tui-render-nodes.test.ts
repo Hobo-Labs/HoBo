@@ -405,7 +405,7 @@ describe("the status strap", () => {
 	it("fills the width", () => {
 		// The stripe is inverse-video, so the rendered string carries SGR codes
 		// on top of the 30 printed cells. Width is measured on the text alone.
-		const sgr = /\u001b\[[0-9;]*m/gu;
+		const sgr = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "gu");
 		const painted = lines(h("strap", null, text("ready")), 30)[0] ?? "";
 		expect([...painted.replace(sgr, "")]).toHaveLength(30);
 	});
