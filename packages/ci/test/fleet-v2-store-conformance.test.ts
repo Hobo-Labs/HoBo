@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
@@ -357,6 +356,10 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 				code: FleetRejectionCode.CAPACITY_CONFLICT,
 			});
 			expect(await store.runnerSlot(stale.input.slot.id)).toBeUndefined();
+			const reevaluated = reservation(parsedKey("2"), "second", 1);
+			await expect(
+				store.reserveCapacity(reevaluated.input),
+			).rejects.toMatchObject({ code: FleetRejectionCode.CAPACITY_EXHAUSTED });
 			expect(await store.capacityGroup("device-1")).toMatchObject({
 				reservedUnits: 1,
 				seq: 1,
@@ -500,36 +503,36 @@ describe.runIf(postgresAvailable || postgresConformanceRequired)(
 						"PostgreSQL store conformance requires Docker (/var/run/docker.sock + docker info) or HOBO_CI_TEST_POSTGRES; fleet-enrollment CI must not skip these cases.",
 					);
 				}
-			const password = randomUUID();
-			container = await new GenericContainer(POSTGRES_IMAGE)
-				.withEnvironment({
-					POSTGRES_DB: "contract",
-					POSTGRES_USER: "contract",
-					POSTGRES_PASSWORD: password,
-				})
-				.withWaitStrategy(
-					Wait.forLogMessage(
-						/database system is ready to accept connections/,
-						2,
-					),
-				)
-				.withExposedPorts(5432)
-				.start();
-			connectionString = `postgresql://contract:${password}@${container.getHost()}:${container.getMappedPort(5432)}/contract`;
-		}
-		pool = new pg.Pool({ connectionString, max: 8 });
-	}, 180_000);
-	afterAll(async () => {
-		await pool?.end();
-		await container?.stop();
-	});
+				const password = randomUUID();
+				container = await new GenericContainer(POSTGRES_IMAGE)
+					.withEnvironment({
+						POSTGRES_DB: "contract",
+						POSTGRES_USER: "contract",
+						POSTGRES_PASSWORD: password,
+					})
+					.withWaitStrategy(
+						Wait.forLogMessage(
+							/database system is ready to accept connections/,
+							2,
+						),
+					)
+					.withExposedPorts(5432)
+					.start();
+				connectionString = `postgresql://contract:${password}@${container.getHost()}:${container.getMappedPort(5432)}/contract`;
+			}
+			pool = new pg.Pool({ connectionString, max: 8 });
+		}, 180_000);
+		afterAll(async () => {
+			await pool?.end();
+			await container?.stop();
+		});
 
-	storeContract("PostgreSQL", async () => {
-		if (!pool) throw new Error("postgres pool unavailable");
-		return {
-			store: new PostgresStrictFleetStore(pool, `contract-${randomUUID()}`),
-			close: async () => undefined,
-		};
-	});
+		storeContract("PostgreSQL", async () => {
+			if (!pool) throw new Error("postgres pool unavailable");
+			return {
+				store: new PostgresStrictFleetStore(pool, `contract-${randomUUID()}`),
+				close: async () => undefined,
+			};
+		});
 	},
 );
