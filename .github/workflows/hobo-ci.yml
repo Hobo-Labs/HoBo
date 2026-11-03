@@ -286,15 +286,35 @@ jobs:
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
           git fetch origin main
       - name: Full S0 gate set
+        timeout-minutes: 12
         env:
           # One vitest fork at a time: four forks (default) with 3 GiB heaps plus
           # componentize-js wizer exceed the 6 GiB job container and get OOM-killed.
           HOBO_RELEVANT_CHECK_CONCURRENCY: "1"
         run: pnpm run check:all
-      - name: Full workspace tests
+      - name: Affected workspace tests
+        timeout-minutes: 10
         env:
-          TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
-        run: pnpm exec turbo run test --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          # Diff against the previous main commit: the push's `before`, or HEAD~1 for a
+          # dispatch. The weekly schedule, an unreachable base, and workspace-wide inputs
+          # (scripts/ci/affected-lanes.mts) test the whole workspace.
+          base=""
+          if [ "$EVENT_NAME" = "push" ]; then base="$PUSH_BEFORE"; fi
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then base="$(git rev-parse HEAD~1)"; fi
+          if [ -n "$base" ] && ! git cat-file -e "${base}^{commit}" 2>/dev/null; then base=""; fi
+          scope=()
+          if [ -n "$base" ]; then
+            lanes="$(git diff --name-only "$base" HEAD \
+              | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts)"
+            if [ "$lanes" != "--filter=*" ]; then scope=("--filter=...[${base}]"); fi
+          fi
+          echo "turbo test scope: ${scope[*]:-whole workspace}"
+          pnpm exec turbo run test "${scope[@]}" \
+            --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
       - name: Save Turbo cache
         if: always()
         uses: ./.github/actions/turbo-cache

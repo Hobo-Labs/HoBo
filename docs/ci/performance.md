@@ -87,9 +87,9 @@ already did:
 Both now skip on `merge_group`. A skipped job reports its check name as skipped, which the ruleset counts
 as passing, the same way `PR impact gate` already behaves in the queue. The CI fabric contract guard keeps
 running, because a group can combine two PRs that each passed it alone. With #1645 a group needs **one**
-`hobo` job (about 40 s), so five groups fit in three waves on two slots. Detection in the runner image job
-is still broken on `pull_request` and `push` and is left for its own change, because fixing it would start
-45-minute image builds on PRs that write the image every job on the box uses.
+`hobo` job (about 40 s), so five groups fit in three waves on two slots. Detection in the runner image job now
+works on `pull_request` and `push`: `grep` instead of `rg`, and `HEAD~1` on a depth-2 checkout. Only a change
+to the image inputs builds, and `:local` moves only after the runner contract passes in the candidate.
 
 Its steps on main (run 41517185031):
 
@@ -102,6 +102,25 @@ Its steps on main (run 41517185031):
 | `test:unit` (root + draft proofs, one fork) | ~295 s, then killed | ends with no Vitest summary and no exit-code line |
 | Architecture guard (full repo) | — | duplicate of the step inside `check:all` |
 | Full workspace tests (`turbo run test`, 789 tasks) | never reached | `check:all` failed first |
+
+**Update 2026-11-03: there was no `test:unit` death.** `gh run view --log` and the web log viewer drop the
+tail of these steps, so the log seemed to stop inside Vitest. The raw job log
+(`gh api --allow-escape-sequences repos/Hobo-Labs/HoBo/actions/jobs/<id>/logs`) shows otherwise for
+main runs 41566469733, 41569957464, 41571861478 and 41571888563:
+
+- `test:unit` passed (758 files, Vitest Duration 160–193 s).
+- `test:behavior` then failed one of 102 scenarios: `features/examples-console-cloudflare-station.feature`.
+  Its steps boot `astro dev` and wait 120 s for `http://127.0.0.1:4321/HoBo/api/cf-temp`. `astro dev` binds
+  `localhost`, which resolves to `::1` first, so the probe never connected. Behind that, the scenario
+  needs chromium and a live Cloudflare Temporary Accounts station (the script refuses a mocked
+  workers.dev URL).
+
+That is a live E2E inside the offline behavior lane, which `cucumber.yaml` and the repo testing policy rule
+out. It now runs only under cucumber's `live` profile. Its steps bind `astro dev` to the probed host, wait
+at most 60 s for it, and kill a Playwright run after 270 s. Without it, `test:behavior` passes 101/101 in
+about 3 s (it was 123 s and red). With the step's tail missing, the passing `test:unit` read as a hang.
+
+The rest of this section is the analysis as it stood before the raw logs were read.
 
 The `test:unit` death has the same shape on all three main runs inspected. The step fails 380–395 s after it
 starts, Vitest output stops about 55 s in, and no `Process completed with exit code` line is printed. The
@@ -123,10 +142,11 @@ Fixes: [#1642](https://github.com/Hobo-Labs/HoBo/pull/1642) restores at job star
 tasks, so a partial save is correct. Pushes to main seed it; PRs and merge groups restore it. Test results
 reach it only after finding 2's `test:unit` death is fixed and "Full workspace tests" runs.
 
-A full `turbo run test` over a warm cache replays unchanged packages by content hash, so main does not need
-git-based `--affected`. That would only see files git attributes to a package, while the turbo hash also
-covers global inputs and environment. The PR impact gate
-already filters by changed package through `scripts/ci/affected-lanes.mts`.
+Main's workspace tests are now scoped with `--filter=...[<previous main commit>]` (changed packages plus
+their dependents). A git-based filter sees only files git attributes to a package, so
+`scripts/ci/affected-lanes.mts` decides first: a workspace-wide input (lockfile, workspace, turbo,
+tsconfig, biome, toolchain pins) or an unreachable base runs the whole workspace instead. The PR impact
+gate uses the same script.
 
 Where a test task does run, `@hobo/hobo#test` dominates. In an affected sweep for a four-package change it
 took 181 s of 332 s task time (87 tasks).
@@ -193,9 +213,13 @@ itself happened during 20:31–20:46 also matters for the first case.
   `debian:bookworm-slim` digest ("unsupported manifest media type
   application/vnd.oci.image.manifest.v1+json"), because that digest is an OCI index carrying attestation
   manifests. [#1644](https://github.com/Hobo-Labs/HoBo/pull/1644) checks the digest against the registry
-  API instead. The in-container build still cannot finish: the worker image has no `skopeo`, and
-  `127.0.0.1:5000` inside a job container is the container's own loopback, not the box's registry. The
-  image is built on the box host (`packages/ci-gh-actions/deploy/ci-runner/build.sh`).
+  API instead. The in-container build then stopped after 6 s on the missing `skopeo`. Behind that,
+  `127.0.0.1:5000` inside a job container is the container's own loopback, not the box's registry, and
+  the contract check bind-mounted a checkout path the host does not have. `build.sh` now loads the layout
+  with `docker load` when skopeo is absent (Docker Engine API ≥ 1.44). It reaches the registry by its
+  bridge address from inside a container, and streams the contract inputs into the candidate image.
+  `:local` moves only after that contract passes. `skopeo` is also in `system-packages.txt` for the next
+  image.
 - **wizer** (componentize-js) is bounded by `HOBO_RELEVANT_CHECK_CONCURRENCY=1` since #1636.
 - The non-test parts of `check:all` take ~23 s locally (`test:schema` 10.7 s, `lint:test-deps` 7 s).
 - `test:behavior` takes ~120 s locally, most of it one scenario waiting 120 s for `astro dev`.
@@ -276,8 +300,11 @@ of two or three runs at once, queueing still pushes it past five. In order of ex
    one case alone made the 1058 s dispatch run. It needs the box-side evidence listed there.
 2. **Redeploy the box daemon** again once #1641 lands, so `--init` takes effect (the restart on `96b9b70e`
    already brought the shared pnpm store and #1637).
-3. **Fix the `test:unit` death on main** (#1638 logs the signal). Until it is fixed, Main full gate burns a
-   slot on every push to main, and test results never reach the turbo cache.
+3. **Main full gate green.** The "unit test death" was a live Cloudflare scenario failing in the offline
+   behavior lane (finding 2). Main now tests only packages affected since the previous main commit
+   (`turbo run test --filter=...[before]`), with the whole workspace on the weekly schedule or when a
+   workspace-wide input changes. The job has a 20-minute limit, and `check:all` and the tests have step
+   limits. `scripts/run-tests.ts` kills a Vitest run past `HOBO_TEST_RUN_TIMEOUT_MS` (default 600 s).
 4. **Merge queue minimum wait.** The ruleset sets `min_entries_to_merge_wait_minutes: 5`, so a lone entry
    waits up to five minutes before its group is built. That alone is the whole budget; set it to 0–1. This is
    an admin setting, not a workflow change.
@@ -287,7 +314,7 @@ of two or three runs at once, queueing still pushes it past five. In order of ex
    data from #1636.
 6. **Shard `@hobo/hobo#test`** (181 s, the longest test task) with `vitest --shard` once slots allow
    parallel shards. On two shared slots, sharding adds container overhead and slot contention for no gain.
-7. **`test:behavior`'s astro scenario** waits 120 s for `astro dev`; start it once per run or mock it.
+7. ~~`test:behavior`'s astro scenario~~ moved to cucumber's `live` profile (finding 2).
 8. **Fewer jobs per run is capped by the required checks.** Secret scan, CI runner image and the CI fabric
    contract guard each spend a container handoff on 10–40 s of work. Folding them into one job would cut
    two handoffs per run, but each is a required check by name, so that needs the ruleset changed with it.
