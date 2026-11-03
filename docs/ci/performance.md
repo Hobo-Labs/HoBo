@@ -257,7 +257,10 @@ itself happened during 20:31–20:46 also matters for the first case.
   inside a freshly built candidate (`HOBO_CI_RUNNER_CONTRACT=live`). Every job's preflight runs the same
   contract, so requiring it there would refuse jobs on the image that predates it.
   `scripts/test/ci-runner-image-contract.test.ts` pins both halves: the manifest declares it, and the
-  live contract checks it.
+  live contract checks it. Once the image had it, main run 41578806148 failed at the load:
+  bookworm's skopeo pins Docker API 1.22 in its `docker-daemon:` transport, and the box's daemon
+  refuses anything below 1.24. skopeo now writes a `docker-archive:` (docker-save format) and
+  `docker load` reads that.
 - **Vitest inlined the TypeScript compiler.** `typescript/lib/typescript.js` is CJS, but es-module-lexer
   finds module syntax in it, so Vitest's externalization heuristic inlined it. Vite then transformed the
   9 MB file in each worker and logged `Failed to load source map for …/typescript.js` with an ENOENT
