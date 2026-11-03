@@ -990,7 +990,8 @@ export class PostgresCiStore {
 					lease.repositoryId === job.repositoryId &&
 					lease.jobId === job.id &&
 					lease.runAttempt === job.runAttempt &&
-					ACTIVE_STATES.has(lease.state),
+					ACTIVE_STATES.has(lease.state) &&
+					(lease.actualJobId === 0 || lease.actualJobId === job.id),
 			);
 			if (existing) {
 				if (

@@ -580,7 +580,8 @@ export class LeaseStore {
 					lease.repositoryId === job.repositoryId &&
 					lease.jobId === job.id &&
 					lease.runAttempt === job.runAttempt &&
-					ACTIVE_STATES.has(lease.state),
+					ACTIVE_STATES.has(lease.state) &&
+					(lease.actualJobId === 0 || lease.actualJobId === job.id),
 			);
 			if (existing) {
 				this.db.prepare("DELETE FROM pending_jobs WHERE job_key=?").run(key);
@@ -652,7 +653,8 @@ export class LeaseStore {
 					lease.repositoryId === job.repositoryId &&
 					lease.jobId === job.id &&
 					lease.runAttempt === job.runAttempt &&
-					ACTIVE_STATES.has(lease.state),
+					ACTIVE_STATES.has(lease.state) &&
+					(lease.actualJobId === 0 || lease.actualJobId === job.id),
 			)
 		)
 			return;

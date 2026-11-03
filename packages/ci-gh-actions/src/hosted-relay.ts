@@ -146,13 +146,10 @@ export class HostedRelay {
 			 * order rather than in the order its deliveries arrived.
 			 */
 			deferReservation?: boolean;
-			/**
-			 * While a trunk job (push, workflow_dispatch, merge_group) is pending
-			 * without a lease, at most this many active leases may belong to other
-			 * runs, so the next free capacity goes to trunk. With no trunk job
-			 * waiting, other runs borrow the rest. Unset: no cap.
-			 */
+			/** Maximum active leases for non-trunk runs. Unset: no cap. */
 			generalLeaseLimit?: number;
+			/** Let non-trunk runs exceed the limit until a trunk job waits. */
+			lendTrunkSlots?: boolean;
 			now?: () => string;
 		},
 	) {
@@ -524,6 +521,86 @@ export class HostedRelay {
 		}
 		return ids;
 	}
+	/** A runner reassigned by GitHub no longer satisfies its original queued job. */
+	private async requeueSwappedJobs(
+		expectedRevision: number,
+		active: readonly Lease[],
+		pending: Job[],
+	): Promise<void> {
+		const keyOf = (repositoryId: number, jobId: number, runAttempt: number) =>
+			`${repositoryId}:${jobId}:${runAttempt}`;
+		const pendingKeys = new Set(
+			pending.map((job) => keyOf(job.repositoryId, job.id, job.runAttempt)),
+		);
+		const replacedKeys = new Set(
+			active
+				.filter(
+					(lease) =>
+						lease.actualJobId === 0 || lease.actualJobId === lease.jobId,
+				)
+				.map((lease) =>
+					keyOf(lease.repositoryId, lease.jobId, lease.runAttempt),
+				),
+		);
+		for (const lease of active) {
+			if (lease.actualJobId === 0 || lease.actualJobId === lease.jobId)
+				continue;
+			const key = keyOf(lease.repositoryId, lease.jobId, lease.runAttempt);
+			// Requeued or replaced demand must not cost a GitHub read on every tick.
+			if (pendingKeys.has(key) || replacedKeys.has(key)) continue;
+			try {
+				const current = await getJob(
+					this.options.github,
+					lease.installationId,
+					lease.repository,
+					lease.jobId,
+				);
+				if (
+					current.status !== "queued" ||
+					current.run_id !== lease.originalRunId ||
+					current.run_attempt !== lease.runAttempt
+				)
+					continue;
+				const demand = this.queuedDemand(lease);
+				demand.labels = current.labels;
+				await this.options.store.queue(demand, this.now(), expectedRevision);
+				pending.push(demand);
+				pendingKeys.add(key);
+			} catch {
+				/* An ambiguous original-job read must not block other demand. */
+			}
+		}
+	}
+	/** Reserved leases have no host to preempt, so lending can take them back. */
+	private async reclaimLentLeases(limit: number): Promise<number> {
+		const active = await this.options.store.activeLeases();
+		const general = await this.generalLeaseIds();
+		const reserved = active
+			.filter(
+				(lease) =>
+					lease.state === "reserved" &&
+					!lease.sandboxName &&
+					!lease.sandboxSessionId &&
+					lease.runnerId === 0 &&
+					lease.hostRunId === 0 &&
+					general.has(lease.id),
+			)
+			.sort(
+				(a, b) =>
+					b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id),
+			);
+		let reclaimed = 0;
+		for (const lease of reserved) {
+			if (general.size - reclaimed <= limit) break;
+			await this.options.store.cancelAndRequeue(
+				lease.id,
+				this.queuedDemand(lease),
+				this.now(),
+			);
+			reclaimed++;
+		}
+		return reclaimed;
+	}
 	/** Durable outbox drain. A launch intent is committed before network I/O. */
 	async dispatchPending(): Promise<void> {
 		const reservationRevision = await this.refreshConfig();
@@ -535,19 +612,22 @@ export class HostedRelay {
 			runId: job.runId,
 			jobId: job.id,
 		});
-		const pending = await this.admissionOrder(
-			await this.options.store.pendingJobs(),
-			refOf,
-		);
+		const active = await this.options.store.activeLeases();
+		const queued = await this.options.store.pendingJobs();
+		await this.requeueSwappedJobs(reservationRevision, active, queued);
+		const pending = await this.admissionOrder(queued, refOf);
 		const limit = this.options.generalLeaseLimit;
 		let general: Set<string> | undefined;
-		// Admission order tries every trunk job before the first other job. One that
-		// got no lease means capacity is full now; the cap keeps a lease released
-		// later in this pass for that trunk job rather than a pull request's.
+		// Strict reservation always caps non-trunk leases; lending applies the cap
+		// only after trunk misses a lease. Both keep capacity freed later in this pass.
 		let trunkWaiting = false;
 		for (const job of pending) {
 			const trunk = (await this.admissionOrder.rank(refOf(job))) === TRUNK_RANK;
-			if (!trunk && trunkWaiting && limit !== undefined) {
+			if (
+				!trunk &&
+				(this.options.lendTrunkSlots !== true || trunkWaiting) &&
+				limit !== undefined
+			) {
 				general ??= await this.generalLeaseIds();
 				if (general.size >= limit) continue;
 			}
@@ -564,12 +644,25 @@ export class HostedRelay {
 			// A policy can become stricter while demand is queued. Never reserve a
 			// bridge from a pending job admitted under the previous connection.
 			if (connection.isolatedOnly) job.isolatedRequired = true;
-			const lease = await this.options.store.reserve(
+			let lease = await this.options.store.reserve(
 				account,
 				job,
 				this.now(),
 				reservationRevision,
 			);
+			if (
+				!lease &&
+				trunk &&
+				this.options.lendTrunkSlots === true &&
+				limit !== undefined &&
+				(await this.reclaimLentLeases(limit)) > 0
+			)
+				lease = await this.options.store.reserve(
+					account,
+					job,
+					this.now(),
+					reservationRevision,
+				);
 			if (!lease) trunkWaiting ||= trunk;
 			else if (!trunk) general?.add(lease.id);
 		}
