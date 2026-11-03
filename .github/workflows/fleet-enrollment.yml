@@ -29,18 +29,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          sparse-checkout: |
-            docs/design
-            scripts/generate-fleet-enrollment-scorecard.mts
-            test/fleet-enrollment-scorecard.eval.test.ts
-            package.json
-            pnpm-lock.yaml
-            pnpm-workspace.yaml
-            mise.toml
-            mise.lock
-          sparse-checkout-cone-mode: false
       - uses: ./.github/actions/ci-runner-preflight
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Regenerate scorecard
         run: node --import tsx scripts/generate-fleet-enrollment-scorecard.mts
       - name: Scorecard eval (pass + blocked-on-credentials)
@@ -57,14 +47,16 @@ jobs:
         with:
           fetch-depth: 2
       - uses: ./.github/actions/ci-runner-preflight
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Verify Docker for Postgres conformance
         run: |
           test -S /var/run/docker.sock
           docker info >/dev/null
       - name: Postgres store conformance (8 cases, Testcontainers)
         run: |
-          mise exec -- pnpm exec vitest run packages/ci/test/fleet-v2-store-conformance.test.ts \
-            --testTimeout=240000
+          mise exec -- pnpm exec turbo run test --filter=@hobo/ci --continue --output-logs=new-only --concurrency=100% -- \
+            packages/ci/test/fleet-v2-store-conformance.test.ts --testTimeout=240000
       - name: Start fence + other fleet-v2 tests
         run: |
-          mise exec -- pnpm exec vitest run packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts
+          mise exec -- pnpm exec turbo run test --filter=@hobo/ci-gh-actions --continue --output-logs=new-only --concurrency=100% -- \
+            packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts
