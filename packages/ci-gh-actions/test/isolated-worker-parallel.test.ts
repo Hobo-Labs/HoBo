@@ -177,6 +177,26 @@ describe("cli docker driver parallel helpers", () => {
 		expect(lines[2]).toBe("rename c1 hobo-y");
 	});
 
+	it("gives job containers an init so docker stop does not wait out its timeout", async () => {
+		// `sleep infinity` as PID 1 ignores SIGTERM, so every finished lease held
+		// its slot for the whole `docker stop -t 30`.
+		const { bin, log } = fakeBinary();
+		const driver = createCliDockerDriver({
+			binary: bin,
+			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0", PATH: process.env.PATH },
+		});
+		await driver.create({
+			name: "hobo-x",
+			image: "img",
+			timeoutMs: 1,
+			env: {},
+			command: ["sleep", "infinity"],
+		});
+		const argv = readFileSync(log, "utf8").trim().split(" ");
+		expect(argv.indexOf("--init")).toBeGreaterThan(0);
+		expect(argv.indexOf("--init")).toBeLessThan(argv.indexOf("img"));
+	});
+
 	it("refuses volume specs that could smuggle extra mount options", async () => {
 		const { bin } = fakeBinary();
 		const driver = createCliDockerDriver({

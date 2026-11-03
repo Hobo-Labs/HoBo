@@ -28,6 +28,9 @@ export function createCliDockerDriver(options: {
 			const args = [
 				"create",
 				"--rm",
+				// `sleep infinity` as PID 1 ignores SIGTERM, so without an init every
+				// `docker stop` waited out its full timeout while the slot stayed held.
+				"--init",
 				"--name",
 				spec.name,
 				"--network",
