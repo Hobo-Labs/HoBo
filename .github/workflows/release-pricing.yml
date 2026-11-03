@@ -92,3 +92,41 @@ jobs:
           node --no-warnings scripts/ci/npm-publish-scope.mts packages/pricing/package.json "$staging/package.json"
           grep -q '"name": "@hobo-labs/pricing"' "$staging/package.json"
           (cd "$staging" && npm pack --dry-run --ignore-scripts)
+
+  pricing-release-publish:
+    name: npm publish @hobo-labs/pricing (tag only)
+    if: startsWith(github.ref, 'refs/tags/pricing-v')
+    needs: pricing-release-pack
+    runs-on: hobo
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode
+        run: pnpm run pins:fetch ts-autocode
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - run: pnpm exec turbo run build --filter=@hobo/pricing --concurrency=1
+      - name: npm publish with provenance (requires NPM_TOKEN)
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "::error::NPM_TOKEN is required to publish @hobo-labs/pricing from a pricing-v* tag"
+            exit 1
+          fi
+          staging=/tmp/hobo-pricing-release-publish
+          rm -rf "$staging"
+          mkdir -p "$staging"
+          cp -a packages/pricing/. "$staging/"
+          node --no-warnings scripts/ci/npm-publish-scope.mts packages/pricing/package.json "$staging/package.json"
+          grep -q '"name": "@hobo-labs/pricing"' "$staging/package.json"
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "$HOME/.npmrc"
+          cd "$staging"
+          npm publish --access public --provenance --ignore-scripts

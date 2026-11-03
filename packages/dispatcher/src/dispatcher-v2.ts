@@ -76,6 +76,29 @@ function withoutAllocatedEffective(quote: QuoteVector): DispatchCostQuote {
 	return dispatchQuote;
 }
 
+function wasteScore(quote: QuoteVector): number {
+	let total = 0n;
+	for (const waste of quote.projectedWaste) {
+		const amount = waste.amount?.value;
+		if (amount?.case === "money" && amount.value?.decimal !== undefined) {
+			const parsed = parseDecimal(amount.value.decimal);
+			if (parsed !== undefined) total += parsed.coefficient;
+		}
+	}
+	return total === 0n ? 0 : Number(total);
+}
+
+function earliestExpiryMs(quote: QuoteVector): number {
+	let earliest = Number.POSITIVE_INFINITY;
+	for (const waste of quote.projectedWaste) {
+		const end = waste.bucketEnd;
+		if (end.length === 0) continue;
+		const parsed = Date.parse(end);
+		if (Number.isFinite(parsed) && parsed < earliest) earliest = parsed;
+	}
+	return earliest;
+}
+
 function reject(
 	candidate: DispatchCandidateV2,
 	code: string,
@@ -161,10 +184,15 @@ export function decideDispatchV2(
 		if (leftDecimal === undefined || rightDecimal === undefined) {
 			throw new TypeError("priced quote returned an invalid decimal");
 		}
-		return (
-			compareDecimal(leftDecimal, rightDecimal) ||
-			left.candidate.providerId.localeCompare(right.candidate.providerId)
-		);
+		const billedCompare = compareDecimal(leftDecimal, rightDecimal);
+		if (billedCompare !== 0) return billedCompare;
+		const leftWaste = wasteScore(left.quote);
+		const rightWaste = wasteScore(right.quote);
+		if (leftWaste !== rightWaste) return leftWaste - rightWaste;
+		const leftExpiry = earliestExpiryMs(left.quote);
+		const rightExpiry = earliestExpiryMs(right.quote);
+		if (leftExpiry !== rightExpiry) return leftExpiry - rightExpiry;
+		return left.candidate.providerId.localeCompare(right.candidate.providerId);
 	});
 	const ranking = comparable.map((entry, index) => ({
 		providerId: entry.candidate.providerId,

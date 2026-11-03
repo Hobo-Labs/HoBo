@@ -16,8 +16,7 @@ import {
 	TERRAFORM_UNSUPPORTED_RESOURCE,
 	TerraformEngineUnavailableError,
 } from "../src/index.js";
-import { type JsonValue, type JsonObject } from "../src/json.js";
-
+import type { JsonObject, JsonValue } from "../src/json.js";
 
 // HOBO-717: the REAL binary lane. Pure renderers and the plan-JSON parser are
 // tested offline; binary-gated tests run the full real conformance smoke over

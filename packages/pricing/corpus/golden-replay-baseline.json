@@ -7,10 +7,10 @@
         "action": "place",
         "at": "2026-01-01T00:00:00Z",
         "horizon": "2026-01-31T23:59:59Z",
-        "pricingCatalogHash": "sha256:e7d6d1ded5ea96d08b47239a7f52e9ce0d6436c9f15ce4fc151e9b51a7f33c56",
+        "pricingCatalogHash": "sha256:5063d658902494d7fe3787743355ff3e728bdf4117fe133e938a41c587882e94",
         "catalog": {
           "schema": "hobo.pricing.catalog/v1",
-          "catalogHash": "sha256:e7d6d1ded5ea96d08b47239a7f52e9ce0d6436c9f15ce4fc151e9b51a7f33c56",
+          "catalogHash": "sha256:5063d658902494d7fe3787743355ff3e728bdf4117fe133e938a41c587882e94",
           "products": [
             {
               "id": "sandbox",
@@ -60,7 +60,7 @@
                   },
                   "usage": {
                     "dimension": "minute",
-                    "timing": "advance",
+                    "timing": "arrears",
                     "perUnit": {
                       "decimal": "0.01",
                       "currency": "USD"
@@ -213,16 +213,17 @@
           "allowCancellation": false,
           "amortization": "provider-actual",
           "allocationConvention": "marginal-consume",
-          "allocationForecast": []
+          "allocationForecast": [],
+          "allowPartialFinancialState": false
         }
       },
       "quote": {
         "schema": "hobo.pricing.quote/v1",
         "ratingAlgorithmVersion": "pricing-rating/v1",
-        "pricingCatalogHash": "sha256:e7d6d1ded5ea96d08b47239a7f52e9ce0d6436c9f15ce4fc151e9b51a7f33c56",
+        "pricingCatalogHash": "sha256:5063d658902494d7fe3787743355ff3e728bdf4117fe133e938a41c587882e94",
         "capabilityCatalogHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
         "stateHash": "sha256:bce0366e297bf2e708bf90384e88559f9f02db4be523e78b3a39f148af2f076e",
-        "quoteHash": "sha256:c6e93d6664073bc44ed336821858c6c7f2dd3b0223c5cd87db65b0ff1acfd92e",
+        "quoteHash": "sha256:1452ace74b12a4aee349ffe26ebc303c5b8077a1d4b0b1c8e6889490df71c102",
         "baseline": {
           "billed": {
             "decimal": "20",
@@ -243,7 +244,7 @@
             "currency": "USD"
           },
           "dueNow": {
-            "decimal": "20.5",
+            "decimal": "20",
             "currency": "USD"
           },
           "effective": {
@@ -257,7 +258,7 @@
             "currency": "USD"
           },
           "dueNow": {
-            "decimal": "0.5",
+            "decimal": "0",
             "currency": "USD"
           },
           "effective": {
@@ -331,7 +332,7 @@
               "currency": "USD"
             },
             "dueNow": {
-              "decimal": "0.5",
+              "decimal": "0",
               "currency": "USD"
             },
             "category": "usage",

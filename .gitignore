@@ -25,6 +25,13 @@ node_modules/
 # Turborepo local cache
 .turbo/
 
+# Host-staged release OCI build contexts
+deploy/release-images/.staging/
+
+# Local hello-bindle deployment test state
+examples/hello-bindle/.hobo/local-deployment-events/
+examples/hello-bindle/.hobo/local-deployment-lock.sqlite
+
 # Package build output
 dist/
 

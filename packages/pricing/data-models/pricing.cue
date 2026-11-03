@@ -349,6 +349,7 @@ package data_models
 	amortization:              "straight-line" | "provider-actual"
 	allocationConvention:      "marginal-consume" | "period-proportional"
 	allocationForecast: [...#UsageMeasurement]
+	allowPartialFinancialState?: bool
 }
 
 #QuoteScenario: {

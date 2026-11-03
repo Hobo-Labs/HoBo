@@ -55,6 +55,7 @@ export type RatedSnapshot = {
 	readonly currency: string;
 	readonly billed: Money;
 	readonly effective: Money;
+	readonly workloadAllocated: Money;
 	readonly dueNow: Money;
 	readonly nominalAtListRate: Money;
 	readonly lines: readonly QuoteLine[];
@@ -74,6 +75,7 @@ type MutableLine = {
 	unitPrice: Money;
 	billed: Decimal;
 	effective: Decimal;
+	workloadAllocated: Decimal;
 	dueNow: Decimal;
 	category: string;
 	grantIds: string[];
@@ -549,6 +551,7 @@ function applyCommitments(
 			const consumed = minDecimal(line.billed, available);
 			if (compareDecimal(consumed, DECIMAL_ZERO) === 0) continue;
 			line.billed = subtractDecimal(line.billed, consumed);
+			line.effective = subtractDecimal(line.effective, consumed);
 			line.dueNow = maxDecimal(
 				subtractDecimal(line.dueNow, consumed),
 				DECIMAL_ZERO,
@@ -568,7 +571,7 @@ function applyCommitments(
 					sourceId: commitment.id,
 					kind: "commitment",
 					dimension: line.dimension,
-					quantity: quantityOf(consumed, rateCard.currency),
+					quantity: quantityOf(consumed, line.quantity.unit),
 				}),
 			);
 		}
@@ -813,6 +816,7 @@ export function rateSnapshot(
 				unitPrice: unitPriceOf(charge, currency),
 				billed,
 				effective: billed,
+				workloadAllocated: billed,
 				dueNow:
 					charge.variant.value.timing === "advance" ? billed : DECIMAL_ZERO,
 				category: "purchase",
@@ -866,6 +870,7 @@ export function rateSnapshot(
 					unitPrice: unitPriceOf(charge, currency),
 					billed,
 					effective: billed,
+					workloadAllocated: billed,
 					dueNow:
 						charge.variant.value.timing === "advance" ? billed : DECIMAL_ZERO,
 					category: "usage",
@@ -948,6 +953,10 @@ export function rateSnapshot(
 		),
 		effective: moneyOf(
 			total((line) => line.effective),
+			currency,
+		),
+		workloadAllocated: moneyOf(
+			total((line) => line.workloadAllocated),
 			currency,
 		),
 		dueNow: moneyOf(

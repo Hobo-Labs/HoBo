@@ -6,6 +6,7 @@ import {
 import {
 	dispatchQuoteScenario,
 	staleDispatchQuoteScenario,
+	zeroCostCommitmentDispatchScenario,
 } from "./dispatcher-v2-fixtures.js";
 
 describe("dispatcher v2", () => {
@@ -41,19 +42,31 @@ describe("dispatcher v2", () => {
 		expect(decision.dispatchEvent.type).toBe("dispatch.Decided");
 	});
 
-	it("uses provider ID for deterministic zero-cost ties", () => {
+	it("uses sooner projected waste expiry for zero-cost ties (§10.11)", () => {
 		const decision = decideDispatchV2({
 			dispatchId: "dispatch-v2-tie",
 			category: "runner",
 			candidates: [
-				{ providerId: "zulu", scenario: dispatchQuoteScenario("zulu", "0") },
-				{ providerId: "alpha", scenario: dispatchQuoteScenario("alpha", "0") },
+				{
+					providerId: "provider-later",
+					scenario: zeroCostCommitmentDispatchScenario(
+						"provider-later",
+						"2026-01-31T23:59:59Z",
+					),
+				},
+				{
+					providerId: "provider-sooner",
+					scenario: zeroCostCommitmentDispatchScenario(
+						"provider-sooner",
+						"2026-01-15T00:00:00Z",
+					),
+				},
 			],
 		});
 
 		expect(decision.ok).toBe(true);
 		if (!decision.ok) throw new Error(decision.reason);
-		expect(decision.selectedProvider).toBe("alpha");
+		expect(decision.selectedProvider).toBe("provider-sooner");
 	});
 
 	it("fails closed instead of treating rejected pricing as zero", () => {

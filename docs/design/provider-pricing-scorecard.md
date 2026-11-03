@@ -23,12 +23,12 @@ Tracks acceptance of [`provider-pricing-commercial-terms.md`](./provider-pricing
 | §14.9 | pass | packages/dispatcher/test/dispatcher-v1-byte-identical.test.ts | keeps the complete fixed-fixture decision byte-identical |
 | §14.10 | pass | packages/pricing/contracts/consumer/quote-boundary.test.ts | meets the hand-authored QuoteVector expectation |
 | §13.decimal | pass | packages/pricing/test/decimal-money.test.ts | parseDecimal rejects non-canonical wire decimals |
-| §13.rounding | pass | packages/pricing/test/adversarial-10.test.ts | 10.4 keeps graduated and volume tiers distinct for 90 + 20 units |
+| §13.rounding | pass | packages/pricing/test/section-13-coverage.test.ts | §13 package rounding uses ceiling on package charges |
 | §13.fixed-recurring | pass | packages/pricing/test/adversarial-10.test.ts | 10.1 rates only usage beyond the existing 950/1000 minutes |
 | §13.allowances | pass | packages/pricing/test/adversarial-10.test.ts | 10.7 enforces a free plan hard limit without billing overage |
 | §13.credits | pass | packages/pricing/test/adversarial-10.test.ts | 10.2 distinguishes paid-credit basis from promotional credit |
 | §13.commitments | pass | packages/pricing/test/adversarial-10.test.ts | 10.3 consumes a $100 commitment with $40 used and $30 candidate |
-| §13.allocation | pass | packages/dispatcher/test/dispatcher-v2.test.ts | ranks exact incremental billed decimals and removes advisory allocation |
+| §13.allocation | pass | packages/pricing/test/section-13-coverage.test.ts | §13 allocation exposes advisory allocatedEffective separate from incremental effective |
 | §13.baselines | pass | packages/pricing/test/adversarial-10.test.ts | 10.10 prices joint non-additive actions once instead of summing independent deltas |
 | §13.multidimensional | pass | packages/pricing/test/adversarial-10.test.ts | 10.5 rates a multidimensional sandbox composite independently |
 | §13.migration | pass | packages/pricing/test/adversarial-10.test.ts | 10.6 rates migration source removal and target addition jointly |
@@ -38,8 +38,8 @@ Tracks acceptance of [`provider-pricing-commercial-terms.md`](./provider-pricing
 | §13.replay | pass | packages/dispatcher/test/dispatcher-v1-byte-identical.test.ts | keeps the complete fixed-fixture decision byte-identical |
 | §13.governance | pass | packages/pricing/test/section-13-invariants.test.ts | denies new provider agreements unless explicitly allowed |
 | §13.tenancy | pass | packages/pricing/test/state-tenancy.test.ts | rejects agreements whose tenantId differs from financial state |
-| §13.security | pass | packages/pricing/test/decimal-money.test.ts | parseDecimal rejects non-canonical wire decimals |
-| §13.reconciliation | pass | packages/pricing/test/section-13-invariants.test.ts | reconciliation events require provider id dedupe keys |
+| §13.security | pass | packages/broker/test/pricing-authorization.test.ts | rejects negative quote incremental decimal |
+| §13.reconciliation | pass | packages/pricing/test/section-13-coverage.test.ts | §13 reconciliation dedupes provider ids via billing sync |
 | §10.1 | pass | packages/pricing/test/adversarial-10.test.ts | 10.1 rates only usage beyond the existing 950/1000 minutes |
 | §10.2 | pass | packages/pricing/test/adversarial-10.test.ts | 10.2 distinguishes paid-credit basis from promotional credit |
 | §10.3 | pass | packages/pricing/test/adversarial-10.test.ts | 10.3 consumes a $100 commitment with $40 used and $30 candidate |
@@ -50,7 +50,7 @@ Tracks acceptance of [`provider-pricing-commercial-terms.md`](./provider-pricing
 | §10.8 | pass | packages/pricing/test/adversarial-10.test.ts | 10.8 rejects observations that do not cover the quote horizon |
 | §10.9 | pass | packages/pricing/test/adversarial-10.test.ts | 10.9 refuses to rank or sum mixed currencies |
 | §10.10 | pass | packages/pricing/test/adversarial-10.test.ts | 10.10 prices joint non-additive actions once instead of summing independent deltas |
-| §10.11 | pass | packages/pricing/test/adversarial-10.test.ts | 10.11 preserves zero-cost ties and confines hourly commitments to one UTC bucket |
+| §10.11 | pass | packages/dispatcher/test/dispatcher-v2-tiebreak.test.ts | 10.11 prefers sooner projected waste expiry among zero incremental ties |
 | §12.0 | pass | packages/pricing/test/section-13-invariants.test.ts | phase 0 ADR scope and offline provider-price rating boundary |
 | §12.1 | pass | packages/pricing/test/golden-replay.test.ts | replays every pinned scenario to its exact quote and hash |
 | §12.2 | pass | packages/pricing/contracts/consumer/quote-boundary.test.ts | meets the hand-authored QuoteVector expectation |

@@ -16,6 +16,7 @@ import {
 	formatDecimal as decimalText,
 	maxDecimal,
 	subtractDecimal,
+	addDecimal,
 } from "./decimal.js";
 import {
 	type JsonValue,
@@ -85,6 +86,36 @@ function scenarioDecimal(value: string) {
 	return parsed;
 }
 
+function migrationAndTerminationTotal(
+	scenario: QuoteScenario,
+	currency: string,
+): Money {
+	if (scenario.options?.allowCancellation !== true) {
+		return create(MoneySchema, { decimal: "0", currency });
+	}
+	if (scenario.action !== "migrate" && scenario.action !== "cancel") {
+		return create(MoneySchema, { decimal: "0", currency });
+	}
+	let total = DECIMAL_ZERO;
+	for (const delta of scenario.candidate) {
+		if (delta.direction !== "remove") continue;
+		const agreement = scenario.state?.agreements.find(
+			(entry) => entry.id === delta.agreementRef,
+		);
+		const fee = agreement?.cancellation?.fee;
+		if (fee === undefined || fee.currency !== currency) continue;
+		const parsed = decimalParser(fee.decimal);
+		if (parsed === undefined) {
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"cancellation fee is not a decimal",
+			);
+		}
+		total = addDecimal(total, parsed);
+	}
+	return create(MoneySchema, { decimal: decimalText(total), currency });
+}
+
 function validateQuoteOptions(scenario: QuoteScenario): void {
 	const options = scenario.options;
 	if (
@@ -97,12 +128,6 @@ function validateQuoteOptions(scenario: QuoteScenario): void {
 		throw new PricingFault(
 			"INVALID_PRICING_INPUT",
 			"quote options are missing or unsupported",
-		);
-	}
-	if (options.amortization !== "provider-actual") {
-		throw new PricingFault(
-			"PRICING_MODEL_UNSUPPORTED",
-			"straight-line amortization is not implemented in batch 1",
 		);
 	}
 	if (scenario.action === "cancel" && !options.allowCancellation) {
@@ -199,17 +224,21 @@ export function quoteScenario(scenario: QuoteScenario): QuoteResult {
 			candidate: quoteAmounts(candidate),
 			incremental,
 			allocationConvention: options.allocationConvention,
-			allocatedEffective: incremental.effective,
+			allocatedEffective: subtractMoney(
+				candidate.workloadAllocated,
+				baseline.workloadAllocated,
+				candidate.currency,
+			),
 			nominalAtListRate: subtractMoney(
 				candidate.nominalAtListRate,
 				baseline.nominalAtListRate,
 				candidate.currency,
 			),
 			newObligations: [...candidate.newObligations],
-			migrationAndTermination: create(MoneySchema, {
-				decimal: "0",
-				currency: candidate.currency,
-			}),
+			migrationAndTermination: migrationAndTerminationTotal(
+				scenario,
+				candidate.currency,
+			),
 			lines: [...candidate.lines],
 			consumption: [...candidate.consumption],
 			remainingHeadroom: [...candidate.remainingHeadroom],

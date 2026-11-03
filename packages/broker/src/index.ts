@@ -119,7 +119,12 @@ export {
 	parseTopologyScope,
 	policyHashOf,
 } from "./policies.js";
-export { createPricingBillingPlaneV2 } from "./pricing-authorization.js";
+export {
+	authorizeBillingSpend,
+	type BillingAuthorizationInput,
+	type BillingAuthorizationResult,
+	createPricingBillingPlaneV2,
+} from "./pricing-authorization.js";
 export {
 	isCatalogedRejectionCode,
 	REJECTION_MATRIX,

@@ -1,6 +1,7 @@
-import { clone } from "@bufbuild/protobuf";
+import { clone, create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
+	MoneySchema,
 	ProviderAgreementSchema,
 	type QuoteScenario,
 	type QuoteVector,
@@ -40,7 +41,7 @@ describe("section 13 adversarial commercial-term fixtures", () => {
 		expect(quote.candidate?.billed).toMatchObject({ decimal: "20.5" });
 		expect(quote.incremental).toMatchObject({
 			billed: { decimal: "0.5", currency: "USD" },
-			dueNow: { decimal: "0.5", currency: "USD" },
+			dueNow: { decimal: "0", currency: "USD" },
 			effective: { decimal: "0.5", currency: "USD" },
 		});
 		expect(quote.consumption).toHaveLength(1);
@@ -104,8 +105,9 @@ describe("section 13 adversarial commercial-term fixtures", () => {
 		expect(quote.incremental).toMatchObject({
 			billed: { decimal: "0" },
 			dueNow: { decimal: "0" },
-			effective: { decimal: "30" },
+			effective: { decimal: "0" },
 		});
+		expect(quote.allocatedEffective).toMatchObject({ decimal: "30" });
 		expect(quote.consumption[0]).toMatchObject({
 			sourceId: "commitment-a",
 			quantity: { decimal: "30" },
@@ -204,16 +206,43 @@ describe("section 13 adversarial commercial-term fixtures", () => {
 
 	it("10.6 rates migration source removal and target addition jointly", () => {
 		const scenario = quoteScenarioFixture({
-			charges: [perUnitCharge("usage", "minute", "0.02")],
+			meters: [
+				{ dimension: "minute", unit: "minute", aggregation: "sum" },
+				{ dimension: "egress-gib", unit: "GiB", aggregation: "sum" },
+				{
+					dimension: "dual-run-minute",
+					unit: "minute",
+					aggregation: "sum",
+				},
+			],
+			charges: [
+				perUnitCharge("usage", "minute", "0.02"),
+				perUnitCharge("egress", "egress-gib", "1"),
+				perUnitCharge("dual-run", "dual-run-minute", "0.05"),
+			],
 			baseline: [workload("agreement-a", [usage("minute", "100", "minute")])],
 			candidate: [
 				workload("agreement-a", [usage("minute", "100", "minute")]),
-				workload("agreement-b", [usage("minute", "100", "minute")]),
+				workload("agreement-b", [
+					usage("minute", "100", "minute"),
+					usage("egress-gib", "10", "GiB"),
+					usage("dual-run-minute", "50", "minute"),
+				]),
 			],
 			allowances: [],
 		});
 		scenario.action = "migrate";
 		scenario.sourceProviderAgreementIds = ["agreement-a"];
+		if (scenario.options === undefined) throw new Error("missing options");
+		scenario.options.allowCancellation = true;
+		const sourceAgreement = scenario.state?.agreements[0];
+		if (sourceAgreement?.cancellation === undefined) {
+			throw new Error("missing cancellation policy");
+		}
+		sourceAgreement.cancellation.fee = create(MoneySchema, {
+			decimal: "5",
+			currency: "USD",
+		});
 		const removal = scenario.candidate[0];
 		if (removal === undefined) throw new Error("missing migration source");
 		removal.direction = "remove";
@@ -222,8 +251,16 @@ describe("section 13 adversarial commercial-term fixtures", () => {
 		const quote = successfulQuote(rehashScenario(scenario));
 
 		expect(quote.baseline?.billed).toMatchObject({ decimal: "2" });
-		expect(quote.candidate?.billed).toMatchObject({ decimal: "1" });
-		expect(quote.incremental?.billed).toMatchObject({ decimal: "-1" });
+		expect(quote.migrationAndTermination).toMatchObject({ decimal: "5" });
+		expect(quote.lines.map((line) => line.chargeId)).toEqual(
+			expect.arrayContaining(["egress", "dual-run"]),
+		);
+		expect(
+			quote.lines.find((line) => line.chargeId === "egress")?.billed,
+		).toMatchObject({ decimal: "10" });
+		expect(
+			quote.lines.find((line) => line.chargeId === "dual-run")?.billed,
+		).toMatchObject({ decimal: "2.5" });
 		expect(quote.lines).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -334,7 +371,7 @@ describe("section 13 adversarial commercial-term fixtures", () => {
 		const quote = successfulQuote(hourly);
 		expect(quote.incremental).toMatchObject({
 			billed: { decimal: "0" },
-			effective: { decimal: "30" },
+			effective: { decimal: "0" },
 		});
 		expect(quote.consumption[0]).toMatchObject({
 			sourceId: "commitment-a",
@@ -385,7 +422,8 @@ function addSecondaryAgreement(
 			charge.variant.value.amount.currency = currency;
 		} else if (
 			charge.variant.case === "usage" &&
-			charge.variant.value.price.case === "perUnit"
+			charge.variant.value.price.case === "perUnit" &&
+			charge.base?.id === "usage"
 		) {
 			charge.variant.value.price.value.decimal = unitPrice;
 			charge.variant.value.price.value.currency = currency;

@@ -1359,6 +1359,9 @@ importers:
       '@hobo/capability-profiles':
         specifier: workspace:*
         version: link:../capability-profiles
+      '@hobo/ci':
+        specifier: workspace:*
+        version: link:../ci
       '@hobo/ci-gh-actions':
         specifier: workspace:*
         version: link:../ci-gh-actions
@@ -1503,10 +1506,10 @@ importers:
       tsx:
         specifier: 4.22.4
         version: 4.22.4
+      zod:
+        specifier: ^4.1.13
+        version: 4.4.3
     devDependencies:
-      '@hobo/ci':
-        specifier: workspace:*
-        version: link:../ci
       '@hobo/contract-harness':
         specifier: workspace:*
         version: link:../contract-harness
@@ -2371,16 +2374,17 @@ importers:
         version: 24.13.2
 
   packages/schema-tools:
-    devDependencies:
+    dependencies:
       '@bufbuild/buf':
         specifier: 1.71.0
         version: 1.71.0
-      '@bufbuild/protobuf':
-        specifier: 2.12.1
-        version: 2.12.1
       '@bufbuild/protoc-gen-es':
         specifier: 2.12.1
         version: 2.12.1(@bufbuild/protobuf@2.12.1)
+    devDependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
       '@types/node':
         specifier: ^22.15.3
         version: 22.20.0

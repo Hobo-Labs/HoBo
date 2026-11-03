@@ -128,7 +128,14 @@ export function validateScenarioState(scenario: QuoteScenario): void {
 			"scenario and catalog hashes differ",
 		);
 	}
-	if (state.schema !== "hobo.pricing/v1" || state.completeness !== "complete") {
+	if (state.schema !== "hobo.pricing/v1") {
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			"unknown financial state schema",
+		);
+	}
+	const allowPartial = scenario.options?.allowPartialFinancialState === true;
+	if (state.completeness !== "complete" && !allowPartial) {
 		throw new PricingFault(
 			"INCOMPLETE_FINANCIAL_STATE",
 			"financial state must be complete hobo.pricing/v1",

@@ -62,6 +62,12 @@ export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 			"the deployment quota is exhausted; wait for the quota window or raise the limit through billing governance",
 	},
 	{
+		code: "spend-estimate-invalid",
+		plane: "billing",
+		remediation:
+			"supply a non-negative finite legacy spend estimate or a valid non-negative exact decimal quote increment",
+	},
+	{
 		code: "spend-cap-exceeded",
 		plane: "billing",
 		remediation:
