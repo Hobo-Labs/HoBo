@@ -138,7 +138,12 @@ advance the monotonic clock. A suspended or paused host stops it. The job on the
 `Cloning into external/ts-autocode`, until it was cancelled. The three later main runs show no gap:
 `Start at 03:06:01`, summary at 03:08:43, `Duration 161.90s` (41569957464), and likewise 176.5 s and
 160.6 s. `scripts/run-tests.ts` now prints a line when the wall clock runs more than 30 s ahead of the
-monotonic clock, so the next pause reads as one.
+monotonic clock, so the next pause reads as one. It fired on the first main run after that landed
+(41578806148): "the wall clock ran 484s ahead of the monotonic clock", with `Duration 233.52s` against
+a 13-minute job. That is two pauses in five main runs, both during a repo-wide `test:unit`, so the box's
+host (sleep, VM pause, or memory reclaim on the host) is the next thing to inspect. The same run's one
+failure was `hobo-wit-toolchain-contract`'s rerun test at the 10 s default. It runs the jco generator
+three times, about 1.3 s locally, so its two generator tests now carry a 30 s timeout.
 
 **Main full gate is affected-only.** Before this change, every main push ran `check:all` (repo-wide lint,
 architecture guard, all 758 root unit files, behavior) whatever it touched. A step now resolves the

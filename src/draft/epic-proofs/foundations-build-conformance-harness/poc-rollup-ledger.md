@@ -23,3 +23,4 @@
 | Referenced proof | Change | Effect on this rollup |
 |---|---|---|
 | `src/draft/technical-proofs/slsa-provenance-certification-contract` | final validated leaf hardening | Build provenance and conformance evidence unchanged. |
+| `src/draft/technical-proofs/hobo-wit-toolchain-contract` | generator tests get a 30 s timeout (CI runner load) | WIT toolchain evidence unchanged. |
