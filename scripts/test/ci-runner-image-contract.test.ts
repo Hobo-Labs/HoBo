@@ -11,6 +11,7 @@ import {
 	CI_RUNNER_SYSTEM_PACKAGES,
 	ciRunnerImageVersion,
 	evaluateCiRunnerContract,
+	IMAGE_CONTRACT_COMMANDS,
 	MISE_LOCK,
 	MISE_TOML,
 	parseDockerHubDigestRef,
@@ -40,6 +41,24 @@ describe("ci-runner image contract (repo manifests)", () => {
 			if (cmd === "ps") expect(pkgList).toMatch(/procps/);
 			if (cmd === "xz") expect(pkgList).toMatch(/xz-utils/);
 			if (cmd === "docker") expect(pkgList).toMatch(/docker\.io/);
+		}
+		const packages = new Set(
+			pkgList
+				.split("\n")
+				.map((line) => line.replace(/#.*/, "").trim())
+				.filter(Boolean),
+		);
+		for (const cmd of IMAGE_CONTRACT_COMMANDS) {
+			expect(packages.has(cmd), `${cmd} in system-packages.txt`).toBe(true);
+		}
+	});
+
+	it("checks the image-build commands only inside a built candidate", () => {
+		const names = (live: boolean) =>
+			new Set(evaluateCiRunnerContract(root, { live }).map((c) => c.name));
+		for (const cmd of IMAGE_CONTRACT_COMMANDS) {
+			expect(names(true).has(`system:${cmd}`)).toBe(true);
+			expect(names(false).has(`system:${cmd}`)).toBe(false);
 		}
 	});
 

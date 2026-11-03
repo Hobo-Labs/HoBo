@@ -88,11 +88,16 @@ rm -rf "${oci_dir}"
 mise oci build -o "${oci_dir}" --from "${endpoint}/${base_image}:local" --tag "${candidate}"
 
 echo "Loading image into Docker as ${candidate}"
+# The classic image store's `docker load` reads only docker-save archives, not an OCI layout.
 if command -v skopeo >/dev/null 2>&1; then
-  skopeo copy "oci:${oci_dir}" "docker-daemon:${candidate}"
+  # Not skopeo's docker-daemon: transport, whose client pins Docker API 1.22; current
+  # daemons refuse anything below 1.24.
+  archive_dir="$(mktemp -d)"
+  skopeo copy "oci:${oci_dir}" "docker-archive:${archive_dir}/candidate.tar:${candidate}"
+  docker load -i "${archive_dir}/candidate.tar"
+  rm -rf "${archive_dir}"
 else
-  # The classic image store's `docker load` reads only docker-save archives, not an
-  # OCI layout, so the layout goes through the registry and the daemon pulls it.
+  # Without skopeo the layout goes through the registry and the daemon pulls it.
   mise oci push --image-dir "${oci_dir}" "${endpoint}/${candidate}"
   docker pull "${local_registry}/${candidate}"
   docker tag "${local_registry}/${candidate}" "${candidate}"

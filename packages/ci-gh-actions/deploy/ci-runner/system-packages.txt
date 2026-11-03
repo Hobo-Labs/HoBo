@@ -6,5 +6,5 @@ libicu72
 procps
 xz-utils
 docker.io
-# Copies the mise OCI layout into the Docker daemon (build.sh); build.sh falls back to `docker load` without it.
+# Copies the mise OCI layout into the Docker daemon (build.sh); without it build.sh goes through the local registry.
 skopeo

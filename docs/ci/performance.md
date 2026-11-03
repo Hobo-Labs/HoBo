@@ -138,7 +138,12 @@ advance the monotonic clock. A suspended or paused host stops it. The job on the
 `Cloning into external/ts-autocode`, until it was cancelled. The three later main runs show no gap:
 `Start at 03:06:01`, summary at 03:08:43, `Duration 161.90s` (41569957464), and likewise 176.5 s and
 160.6 s. `scripts/run-tests.ts` now prints a line when the wall clock runs more than 30 s ahead of the
-monotonic clock, so the next pause reads as one.
+monotonic clock, so the next pause reads as one. It fired on the first main run after that landed
+(41578806148): "the wall clock ran 484s ahead of the monotonic clock", with `Duration 233.52s` against
+a 13-minute job. That is two pauses in five main runs, both during a repo-wide `test:unit`, so the box's
+host (sleep, VM pause, or memory reclaim on the host) is the next thing to inspect. The same run's one
+failure was `hobo-wit-toolchain-contract`'s rerun test at the 10 s default. It runs the jco generator
+three times, about 1.3 s locally, so its two generator tests now carry a 30 s timeout.
 
 **Main full gate is affected-only.** Before this change, every main push ran `check:all` (repo-wide lint,
 architecture guard, all 758 root unit files, behavior) whatever it touched. A step now resolves the
@@ -253,7 +258,20 @@ itself happened during 20:31–20:46 also matters for the first case.
   because the classic image store reads only docker-save archives. It reaches the registry by its
   bridge address from inside a container, and streams the contract inputs into the candidate image.
   `:local` moves only after that contract passes. `skopeo` is also in `system-packages.txt` for the next
-  image.
+  image, and `evaluateCiRunnerContract` checks for it (`IMAGE_CONTRACT_COMMANDS`) only when it runs
+  inside a freshly built candidate (`HOBO_CI_RUNNER_CONTRACT=live`). Every job's preflight runs the same
+  contract, so requiring it there would refuse jobs on the image that predates it.
+  `scripts/test/ci-runner-image-contract.test.ts` pins both halves: the manifest declares it, and the
+  live contract checks it. Once the image had it, main run 41578806148 failed at the load:
+  bookworm's skopeo pins Docker API 1.22 in its `docker-daemon:` transport, and the box's daemon
+  refuses anything below 1.24. skopeo now writes a `docker-archive:` (docker-save format) and
+  `docker load` reads that.
+- **Vitest inlined the TypeScript compiler.** `typescript/lib/typescript.js` is CJS, but es-module-lexer
+  finds module syntax in it, so Vitest's externalization heuristic inlined it. Vite then transformed the
+  9 MB file in each worker and logged `Failed to load source map for …/typescript.js` with an ENOENT
+  stack, because the `typescript.js.map` it names is not shipped. The root `vitest.config.ts` now lists it
+  under `server.deps.external`. `test:unit` locally (four forks): 69.2 s to 64.3 s, transform 31.4 s to
+  20.0 s, two warnings to none, with 758/758 files passing both ways.
 - **wizer** (componentize-js) is bounded by `HOBO_RELEVANT_CHECK_CONCURRENCY=1` since #1636.
 - The non-test parts of `check:all` take ~23 s locally (`test:schema` 10.7 s, `lint:test-deps` 7 s).
 - `test:behavior` takes ~120 s locally, most of it one scenario waiting 120 s for `astro dev`.

@@ -58,6 +58,12 @@ export default defineConfig({
       "**/e2e/**",
       "**/*.spec.ts",
     ],
+    // typescript.js is CJS, but its source mentions module syntax, so Vitest
+    // inlines it: Vite transforms the whole compiler per worker and warns that
+    // the typescript.js.map it names is not shipped.
+    server: {
+      deps: { external: [/\/node_modules\/(?:.*\/)?typescript\/lib\/typescript\.js$/] },
+    },
     testTimeout: Number(process.env.HOBO_TEST_TIMEOUT ?? 10_000),
     hookTimeout: Number(process.env.HOBO_TEST_TIMEOUT ?? 10_000),
     coverage: { enabled: false },

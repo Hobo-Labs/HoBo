@@ -20,6 +20,9 @@ import {
 } from "../src/wit-toolchain-contract.js";
 
 const requireFromPackage = createRequire(join(PACKAGE_ROOT, "package.json"));
+// These tests run the jco generator up to three times: about 1 s alone, over the
+// 10 s default on a loaded CI runner.
+const GENERATOR_TIMEOUT = { timeout: 30_000 };
 
 test("hobo:sdk WIT package skeleton validates without filling downstream interfaces", async () => {
   const source = await readWitSource();
@@ -69,7 +72,7 @@ test("toolchain lock pins the canonical generator and vendored WIT dependencies"
   );
 });
 
-test("wit:gen produces byte-identical checked-in bindings on rerun", async (t) => {
+test("wit:gen produces byte-identical checked-in bindings on rerun", GENERATOR_TIMEOUT, async (t) => {
   if (!existsSync(JCO_PATH)) {
     t.skip("package-local @bytecodealliance/jco is not installed; run npm install in this draft package");
     return;
@@ -115,7 +118,7 @@ test("trivial guest imports the generated hobo:sdk world and builds", async () =
   });
 });
 
-test("uncommitted generator output drift fails closed", async (t) => {
+test("uncommitted generator output drift fails closed", GENERATOR_TIMEOUT, async (t) => {
   const driftedSource = (await readWitSource()).replace("interface data {\n}", "interface data {\n  query: func();\n}");
 
   assert.throws(() => parseHoboSdkSkeleton(driftedSource), /scope_creep_filled_interfaces/);
