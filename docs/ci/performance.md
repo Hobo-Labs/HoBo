@@ -69,6 +69,28 @@ re-ran the same tree.
 Fixes: [#1645](https://github.com/Hobo-Labs/HoBo/pull/1645) runs it on push, schedule and dispatch only.
 If it is ever made a required check, `merge_group` has to come back first.
 
+The rest of a merge group still asked for three slots. On 2026-11-03 at about 01:06 UTC the queue held six PRs
+and built up to five groups at once (`max_entries_to_build: 5`), and their `hobo` jobs sat queued for about 17 minutes. Each
+group ran Secret scan, CI runner image and the CI fabric contract guard, plus Main full gate until #1645:
+four jobs per group and about 20 for five groups. Two of the three remaining jobs repeat work the PR run
+already did:
+
+- **Secret scan** scanned the full history on `merge_group`. The PR run had already scanned
+  `base.sha..head`, the squashed group commit adds no lines beyond those commits, and the push to main
+  scans the full history again.
+- **CI runner image** checked `HEAD~1..HEAD` on a depth-1 clone and piped the diff to `rg`, which the
+  worker image does not ship. Under `set -o pipefail` the detect step printed `needed=false` for every event
+  except `workflow_dispatch` (run 41556540461 logs `rg: command not found`), so the job only held a slot.
+  If detection worked, building on a group commit would also retag the box's `hobo-ci-worker:local` from
+  an unmerged tree.
+
+Both now skip on `merge_group`. A skipped job reports its check name as skipped, which the ruleset counts
+as passing, the same way `PR impact gate` already behaves in the queue. The CI fabric contract guard keeps
+running, because a group can combine two PRs that each passed it alone. With #1645 a group needs **one**
+`hobo` job (about 40 s), so five groups fit in three waves on two slots. Detection in the runner image job
+is still broken on `pull_request` and `push` and is left for its own change, because fixing it would start
+45-minute image builds on PRs that write the image every job on the box uses.
+
 Its steps on main (run 41517185031):
 
 | Step | Time | Why |
@@ -186,8 +208,8 @@ restarted at `96b9b70e` (shared store live; #1641's `--init` not yet deployed).
 
 | Job | Before: run | Before: wait | After (measured) | Change |
 |---|---:|---:|---|---|
-| CI runner image (mise oci) | 14 s | 210 s | 12–17 s | #1640 drops the unused submodule checkout |
-| Secret scan | 14 s | 209 s | 9–11 s | #1640 drops the unused submodule checkout |
+| CI runner image (mise oci) | 14 s | 210 s | 12–17 s; skipped on `merge_group` | #1640 drops the unused submodule checkout |
+| Secret scan | 14 s | 209 s | 9–11 s; skipped on `merge_group` | #1640 drops the unused submodule checkout |
 | CI fabric contract guard | 40 s | 225 s | 36–45 s | — |
 | PR impact gate | 118 s (max 812 s) | 172 s | 41–43 s on small diffs | scales with the diff |
 | PR off-path checks | 106 s | 155 s | 100–150 s; seconds on an inert diff | #1645 skips install and builds when no package, pin or submodule changed |
