@@ -16,6 +16,7 @@ import type { DockerDriver } from "./docker-driver.js";
 
 const JIT_PATH = "/tmp/hobo-ci-jit";
 /** Written when the one-job JIT runner exits; the container itself keeps running. */
+// public-contract: in-container marker path the start script writes and reconcile probes.
 export const RUNNER_EXITED_PATH = "/tmp/hobo-ci-runner-exited";
 
 /** Start the runner with its JIT config delivered over stdin to a 0600 file
