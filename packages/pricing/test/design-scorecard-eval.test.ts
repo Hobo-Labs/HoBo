@@ -13,10 +13,15 @@ const rows = parseDesignScorecard(
 );
 
 describe("provider pricing acceptance scorecard", () => {
-	it("contains evidence rows and rejects partial or failed acceptance", () => {
+	it("contains evidence rows and rejects partial, fail, or deferred acceptance", () => {
 		expect(rows.length).toBeGreaterThan(0);
 		expect(
-			rows.filter((row) => row.status === "partial" || row.status === "fail"),
+			rows.filter(
+				(row) =>
+					row.status === "partial" ||
+					row.status === "fail" ||
+					row.status === "deferred",
+			),
 		).toEqual([]);
 	});
 
@@ -30,15 +35,6 @@ describe("provider pricing acceptance scorecard", () => {
 			const output = `${result.stdout}${result.stderr}`;
 			expect(result.error, output).toBeUndefined();
 			expect(result.status, `${row.id} evidence failed\n${output}`).toBe(0);
-		});
-	}
-
-	for (const row of rows.filter((entry) => entry.status === "deferred")) {
-		it(`${row.id} defers only live provider billing sync`, () => {
-			expect(row.id).toBe("§12.5");
-			expect(`${row.evidenceFile} ${row.evidenceTest}`).toMatch(
-				/live provider billing sync/i,
-			);
 		});
 	}
 });

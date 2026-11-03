@@ -16,6 +16,10 @@
 		"./legacy": {
 			"types": "./dist/legacy/index.d.ts",
 			"default": "./dist/legacy/index.js"
+		},
+		"./sync": {
+			"types": "./dist/sync/index.d.ts",
+			"default": "./dist/sync/index.js"
 		}
 	},
 	"scripts": {

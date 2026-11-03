@@ -1,6 +1,6 @@
 # Provider pricing acceptance scorecard
 
-Tracks acceptance of [`provider-pricing-commercial-terms.md`](./provider-pricing-commercial-terms.md) on branch `cursor/hobo-pricing-81a7`. The CI eval in `packages/pricing/test/design-scorecard-eval.test.ts` parses the table below: every row must be `pass` or `deferred` with evidence; `partial` and `fail` block merge.
+Tracks acceptance of [`provider-pricing-commercial-terms.md`](./provider-pricing-commercial-terms.md) on branch `cursor/hobo-pricing-81a7`. The CI eval in `packages/pricing/test/design-scorecard-eval.test.ts` parses the table below: every row must be `pass` with evidence; `partial`, `fail`, and `deferred` block merge.
 
 | id | status | evidence_file | evidence_test |
 | --- | --- | --- | --- |
@@ -56,4 +56,4 @@ Tracks acceptance of [`provider-pricing-commercial-terms.md`](./provider-pricing
 | §12.2 | pass | packages/pricing/contracts/consumer/quote-boundary.test.ts | meets the hand-authored QuoteVector expectation |
 | §12.3 | pass | packages/dispatcher/test/dispatcher-v1-byte-identical.test.ts | keeps the complete fixed-fixture decision byte-identical |
 | §12.4 | pass | packages/broker/test/pricing-authorization.test.ts | prefers quote incremental over legacy spend estimate |
-| §12.5 | deferred | docs/design/provider-pricing-commercial-terms.md §12 Phase 5 | Live provider billing sync remains a separate adapter initiative, never a pure-rating dependency (§12 Phase 5). |
+| §12.5 | pass | packages/pricing/test/billing-sync.test.ts | §12 Phase 5 live billing sync produces dated snapshot and variance against quote |

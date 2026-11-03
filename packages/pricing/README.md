@@ -53,6 +53,11 @@ hashes integrate without changing dispatcher v1 replay.
 - **Broker / cloud**: `authorizeBillingSpend` prefers quote incremental USD;
   `pricingCatalogHashFromCommercialRefs` hashes commercial product refs without
   altering resource `catalogHashOf`.
+- **`@hobo/pricing/sync`**: offline provider billing sync adapter (§12 Phase 5).
+  Imports FOCUS-shaped rows through a `ProviderBillingPort`, dedupes by provider
+  charge id, emits dated `hobo.pricing.billing-sync.snapshot/v1` snapshots,
+  variance facts, and `ReconciliationRecorded` events. Fail-closed on partial
+  provider data; never imported by the pure quote kernel.
 
 ## Contracts and validation
 
