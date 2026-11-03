@@ -356,10 +356,17 @@ export function selectRelevantChecks(
 				"turbo",
 				"run",
 				"test",
-				...workspaces.map((workspace) =>
+				...workspaces.flatMap((workspace) =>
 					workspace === "packages/pricing"
-						? "--filter=...{./packages/pricing}"
-						: `--filter=./${workspace}`,
+						? [
+								"packages/pricing",
+								"packages/broker",
+								"packages/ci",
+								"packages/cloud",
+								"packages/dispatcher",
+								"packages/events",
+							].map((integration) => `--filter=./${integration}`)
+						: [`--filter=./${workspace}`],
 				),
 				"--continue",
 				"--output-logs=new-only",

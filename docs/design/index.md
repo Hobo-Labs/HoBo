@@ -55,6 +55,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`reliability-observability-cost.md`](./reliability-observability-cost.md#plan-05) | Reliability/HA, observability & cost/FinOps | 05 |
 | [`finops-budget-routing-control-plane.md`](./finops-budget-routing-control-plane.md) | Post-core standards-first FinOps budget routing control plane: resource intent, metric contracts, Pareto routing, stability, decision graph, feedback governance, and DX/OpsX/FinX surfaces | — |
 | [`provider-pricing-commercial-terms.md`](./provider-pricing-commercial-terms.md) | Provider commercial terms and deterministic fail-closed quotes in `@hobo/pricing`; dispatcher v1 unchanged (ADR-0176) | — |
+| [`provider-pricing-scorecard.md`](./provider-pricing-scorecard.md) | Acceptance scorecard for provider pricing design (§1, §10, §12–§14); CI-enforced via `@hobo/pricing` design-scorecard eval | — |
 | [`ci-runner-balancing-example.md`](./ci-runner-balancing-example.md) | CI runner balancing reference example + dogfood record: credit-aware dispatch of this repo's CI across GitHub-hosted, self-hosted, and third-party runner providers (`examples/ci-runner-balancing/`) | — |
 | [`security-networking.md`](./security-networking.md#plan-12) | Security, networking & multi-tenant applications | 12, 50 |
 | [`developer-experience.md`](./developer-experience.md#plan-07) | Developer experience: dashboards, CLI, status pages & availability | 07, 49 |

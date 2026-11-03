@@ -68,12 +68,19 @@ describe("affected-lanes", () => {
 		});
 	});
 
-	it("includes every manifest dependent for pricing changes", () => {
+	it("includes the direct integration test cone for pricing changes", () => {
 		assert.deepEqual(
 			affectedLanes(["packages/pricing/src/quote.ts"], present),
 			{
 				mode: "filtered",
-				filters: ["--filter=...{./packages/pricing}"],
+				filters: [
+					"--filter=./packages/broker",
+					"--filter=./packages/ci",
+					"--filter=./packages/cloud",
+					"--filter=./packages/dispatcher",
+					"--filter=./packages/events",
+					"--filter=./packages/pricing",
+				],
 			},
 		);
 	});

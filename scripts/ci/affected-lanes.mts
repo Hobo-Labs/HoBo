@@ -94,10 +94,17 @@ export function affectedLanes(
 		mode: "filtered",
 		filters: [...dirs]
 			.sort()
-			.map((dir) =>
+			.flatMap((dir) =>
 				dir === "packages/pricing"
-					? "--filter=...{./packages/pricing}"
-					: `--filter=./${dir}`,
+					? [
+							"packages/broker",
+							"packages/ci",
+							"packages/cloud",
+							"packages/dispatcher",
+							"packages/events",
+							"packages/pricing",
+						].map((integration) => `--filter=./${integration}`)
+					: [`--filter=./${dir}`],
 			),
 	};
 }

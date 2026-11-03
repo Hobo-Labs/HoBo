@@ -36,9 +36,10 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   under a group read as a removed package and ran the whole workspace). Root build inputs (lockfile, workspace, turbo, tsconfig, biome, toolchain pins,
   vendored sources) run the whole workspace; workflows, root scripts and draft proofs are covered by the
   root checks in the same gate. `scripts/test/affected-lanes.test.ts` pins the skip logic. Pricing is the
-  bounded exception: `packages/pricing/**` selects `--filter=...{./packages/pricing}` so CI, dispatcher,
-  broker, cloud, and other manifest dependents run whenever the quote kernel changes. Other packages keep
-  exact filters because several carry pre-existing biome lint debt that a general dependents sweep would surface.
+  bounded exception: `packages/pricing/**` selects the direct integration cone (pricing, broker, CI, cloud,
+  dispatcher, events) without recursively pulling unrelated UI, tmux, or browser lanes into every pricing PR.
+  Other packages keep exact filters because several carry pre-existing biome lint debt that a general dependents
+  sweep would surface.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
   from each job, so queue time and run time can be compared before and after a change. The script
   imports node builtins only, because the step also runs on jobs that skipped or failed `pnpm install`

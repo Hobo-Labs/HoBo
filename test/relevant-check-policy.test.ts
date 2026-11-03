@@ -504,7 +504,7 @@ test("fuzz package changes rely on workspace tests instead of a second property 
 	);
 });
 
-test("pricing changes select pricing and every manifest dependent", () => {
+test("pricing changes select the direct integration test cone", () => {
 	const { checks, workspaces } = plan(["packages/pricing/src/quote.ts"], {
 		workspacePackageExists: () => true,
 	});
@@ -512,8 +512,18 @@ test("pricing changes select pricing and every manifest dependent", () => {
 	assert.deepEqual(workspaces, ["packages/pricing"]);
 	const turbo = checks.find(isWorkspaceTurboTest);
 	assert.ok(turbo);
-	assert.equal(turbo.args.includes("--filter=...{./packages/pricing}"), true);
-	assert.equal(turboTestSelects(checks, "packages/pricing"), false);
+	assert.deepEqual(
+		turbo.args.filter((arg) => arg.startsWith("--filter=")),
+		[
+			"--filter=./packages/pricing",
+			"--filter=./packages/broker",
+			"--filter=./packages/ci",
+			"--filter=./packages/cloud",
+			"--filter=./packages/dispatcher",
+			"--filter=./packages/events",
+		],
+	);
+	assert.equal(turboTestSelects(checks, "packages/pricing"), true);
 });
 
 test("production package source changes select architecture guard and workspace tests", () => {
