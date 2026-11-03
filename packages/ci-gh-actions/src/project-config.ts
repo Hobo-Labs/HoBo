@@ -1,5 +1,6 @@
-import { toJsonString } from "@bufbuild/protobuf";
+import { toJson, toJsonString } from "@bufbuild/protobuf";
 import {
+	CiPolicyProviderSchema,
 	DesiredCiPolicySchema,
 	type ParsedCiPolicy,
 	parseCiPolicy,
@@ -35,6 +36,9 @@ const SecretRequirement = z
 const SecretDeclarations = z
 	.record(z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/), SecretRequirement)
 	.refine((secrets) => Object.keys(secrets).length <= 64);
+const ProtobufPolicyProvider = z
+	.object({ $typeName: z.literal("hobo.ci.v1.CiPolicyProvider") })
+	.loose();
 const JsonValue = z.json();
 const JsonObject = z.record(z.string(), JsonValue);
 type JsonData = z.infer<typeof JsonValue>;
@@ -352,12 +356,18 @@ export function defineCiProjectConfig(
 ): CiProjectConfig {
 	try {
 		// `defineCiPolicy` returns frozen protobuf messages whose `$typeName`
-		// metadata is not part of the authored JSON schema. All other fields
-		// still pass through the strict policy parser below.
+		// metadata is not part of the authored JSON schema. Providers are
+		// written as protobuf JSON so an unset `capacity` oneof or an empty
+		// `location` never reach the closed authored provider shapes.
 		return parseCiProjectConfig(
-			JSON.stringify(input, (key, value) =>
-				key === "$typeName" ? undefined : value,
-			),
+			JSON.stringify(input, (key, value) => {
+				if (key === "$typeName") return undefined;
+				if (!ProtobufPolicyProvider.safeParse(value).success) return value;
+				const { location, ...provider } = JsonObject.parse(
+					toJson(CiPolicyProviderSchema, value, { alwaysEmitImplicit: true }),
+				);
+				return location ? { ...provider, location } : provider;
+			}),
 			organization,
 		);
 	} catch {

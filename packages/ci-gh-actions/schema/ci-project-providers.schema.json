@@ -1,0 +1,375 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/LocalProvider"
+    },
+    {
+      "$ref": "#/$defs/GithubProvider"
+    },
+    {
+      "$ref": "#/$defs/BlacksmithProvider"
+    },
+    {
+      "$ref": "#/$defs/DepotProvider"
+    },
+    {
+      "$ref": "#/$defs/WarpbuildProvider"
+    },
+    {
+      "$ref": "#/$defs/KubernetesProvider"
+    },
+    {
+      "$ref": "#/$defs/HoboBoxWorkerProvider"
+    },
+    {
+      "$ref": "#/$defs/VercelProvider"
+    }
+  ],
+  "$defs": {
+    "LocalProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema4"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "__schema0": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,80}$"
+    },
+    "__schema1": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:/-]{1,200}$"
+    },
+    "__schema2": {
+      "type": "string",
+      "pattern": "^(?![Hh][Oo][Bb][Oo]$)[A-Za-z0-9_.-]{1,100}$"
+    },
+    "__schema3": {
+      "type": "boolean"
+    },
+    "__schema4": {
+      "type": "string",
+      "const": "local"
+    },
+    "GithubProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema5"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "__schema5": {
+      "type": "string",
+      "const": "github"
+    },
+    "BlacksmithProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema6"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "__schema6": {
+      "type": "string",
+      "const": "blacksmith"
+    },
+    "DepotProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema7"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "__schema7": {
+      "type": "string",
+      "const": "depot"
+    },
+    "WarpbuildProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema8"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "__schema8": {
+      "type": "string",
+      "const": "warpbuild"
+    },
+    "KubernetesProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema9"
+        },
+        "scaleSet": {
+          "$ref": "#/$defs/__schema10"
+        },
+        "engine": {
+          "$ref": "#/$defs/__schema13"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "not": {
+        "required": [
+          "scaleSet",
+          "engine"
+        ]
+      }
+    },
+    "__schema9": {
+      "type": "string",
+      "const": "kubernetes"
+    },
+    "__schema10": {
+      "$ref": "#/$defs/KubernetesScaleSet"
+    },
+    "KubernetesScaleSet": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/KubernetesName"
+        },
+        "minRunners": {
+          "$ref": "#/$defs/__schema11"
+        },
+        "maxRunners": {
+          "$ref": "#/$defs/__schema12"
+        },
+        "namespace": {
+          "$ref": "#/$defs/KubernetesName"
+        }
+      },
+      "required": [
+        "name",
+        "maxRunners",
+        "namespace"
+      ],
+      "additionalProperties": false
+    },
+    "KubernetesName": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$"
+    },
+    "__schema11": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000
+    },
+    "__schema12": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "__schema13": {
+      "$ref": "#/$defs/DaggerEngine"
+    },
+    "DaggerEngine": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/KubernetesName"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "HoboBoxWorkerProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema14"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "__schema14": {
+      "type": "string",
+      "const": "hobo-box-worker"
+    },
+    "VercelProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema15"
+        },
+        "location": {
+          "$ref": "#/$defs/__schema16"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind",
+        "location"
+      ],
+      "additionalProperties": false
+    },
+    "__schema15": {
+      "type": "string",
+      "const": "vercel"
+    },
+    "__schema16": {
+      "type": "string",
+      "enum": [
+        "vercel",
+        "local",
+        "remote"
+      ]
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project-providers.schema.json",
+  "title": "HoBo CI provider"
+}

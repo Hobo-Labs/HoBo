@@ -25,6 +25,7 @@ function policy(accountId: string, limitMicros: number) {
 				kind: "vercel",
 				connectionRef: "team",
 				runsOn: "sandbox",
+				location: "vercel",
 				enabled: true,
 			},
 		],

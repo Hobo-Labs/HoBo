@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+	CI_PROJECT_PROVIDERS_SCHEMA_REF,
+	CiProjectProviderSchema,
+} from "./project-providers.js";
 import { RunnerIntegrationsSchema } from "./runner-integrations.js";
 
 const name = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
@@ -43,25 +47,7 @@ const budget = z
 	})
 	.strict()
 	.meta({ id: "Budget" });
-const provider = z
-	.object({
-		id,
-		kind: z.enum([
-			"github",
-			"blacksmith",
-			"depot",
-			"warpbuild",
-			"kubernetes",
-			"hobo-box-worker",
-			"local",
-			"vercel",
-		]),
-		connectionRef: z.string().regex(/^[A-Za-z0-9_.:/-]{1,200}$/),
-		runsOn: z.string().regex(/^(?![Hh][Oo][Bb][Oo]$)[A-Za-z0-9_.-]{1,100}$/),
-		enabled: z.boolean().optional(),
-	})
-	.strict()
-	.meta({ id: "Provider" });
+const provider = CiProjectProviderSchema;
 const threshold = z
 	.object({ fraction: z.number().gt(0).max(1), allow: z.array(id) })
 	.strict();
@@ -205,20 +191,60 @@ export const CiProjectDocumentSchema = z
 	})
 	.strict();
 
-/** The shipped editor schema and runtime parser share this authoring contract. */
+type JsonData = z.infer<ReturnType<typeof z.json>>;
+const object = z.record(z.string(), z.json());
+const localDefinitionRef = z
+	.object({ $ref: z.string().regex(/^#\/\$defs\/.+$/) })
+	.loose();
+
+/** `$defs` names reachable from `root` through local `#/$defs/` references. */
+function reachableDefinitions(
+	root: JsonData,
+	definitions: Readonly<Record<string, JsonData>>,
+): ReadonlySet<string> {
+	const reachable = new Set<string>();
+	const visit = (value: JsonData): void => {
+		if (Array.isArray(value)) return value.forEach(visit);
+		const node = object.safeParse(value);
+		if (!node.success) return;
+		const ref = localDefinitionRef.safeParse(node.data);
+		const name = ref.success ? ref.data.$ref.slice("#/$defs/".length) : "";
+		const target = definitions[name];
+		if (target !== undefined && !reachable.has(name)) {
+			reachable.add(name);
+			visit(target);
+		}
+		for (const [key, entry] of Object.entries(node.data))
+			if (key !== "$defs") visit(entry);
+	};
+	visit(root);
+	return reachable;
+}
+
+/**
+ * The shipped editor schema and runtime parser share this authoring contract.
+ * Provider shapes live in the sibling `ci-project-providers.schema.json`, so
+ * the inlined provider definitions are dropped once `Provider` points there.
+ */
 export function ciProjectJsonSchema() {
+	const { $defs, ...root } = z.toJSONSchema(CiProjectDocumentSchema, {
+		target: "draft-2020-12",
+		reused: "ref",
+	});
+	const definitions = {
+		...object.parse($defs ?? {}),
+		Provider: { $ref: CI_PROJECT_PROVIDERS_SCHEMA_REF },
+	};
+	const reachable = reachableDefinitions(z.json().parse(root), definitions);
 	return {
-		...z.toJSONSchema(CiProjectDocumentSchema, {
-			target: "draft-2020-12",
-			reused: "ref",
-		}),
+		...root,
+		$defs: Object.fromEntries(
+			Object.entries(definitions).filter(([name]) => reachable.has(name)),
+		),
 		$id: "https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project.schema.json",
 		title: "HoBo CI project configuration",
 	};
 }
-
-type JsonData = z.infer<ReturnType<typeof z.json>>;
-const object = z.record(z.string(), z.json());
 const referencePattern =
 	/^#\/definitions\/(pools|routing|budgets|providers|secrets)\/([A-Za-z][A-Za-z0-9_-]{0,63})$/;
 

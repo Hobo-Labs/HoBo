@@ -95,7 +95,8 @@
             "id": "vercel-sandbox",
             "kind": "vercel",
             "connectionRef": "vercel-sandbox",
-            "runsOn": "sandbox"
+            "runsOn": "sandbox",
+            "location": "vercel"
           },
           {
             "id": "oracle-free-isolated",
@@ -131,7 +132,8 @@
             "id": "vercel-sandbox",
             "kind": "vercel",
             "connectionRef": "vercel-sandbox",
-            "runsOn": "sandbox"
+            "runsOn": "sandbox",
+            "location": "vercel"
           }
         ],
         "budget": {

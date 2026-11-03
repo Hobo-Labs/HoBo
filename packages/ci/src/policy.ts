@@ -1,5 +1,6 @@
 import { type create, fromJsonString } from "@bufbuild/protobuf";
 import {
+	type CiPolicyProvider,
 	type DesiredCiPolicy,
 	DesiredCiPolicySchema,
 } from "./_generated/policy_pb.js";
@@ -24,6 +25,38 @@ const providers = new Set([
 	"vercel",
 	"azure-devops",
 ]);
+
+const kubernetesName = /^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$/;
+const vercelLocations = new Set(["vercel", "local", "remote"]);
+
+/**
+ * Kind-specific fields are closed: only kubernetes carries a scale set or an
+ * engine, only vercel carries a location. An empty vercel location is the
+ * protobuf default of policies persisted before locations existed; authored
+ * `.hobo/ci.json` requires it.
+ */
+function providerKindFieldsAllowed(provider: CiPolicyProvider): boolean {
+	const { capacity } = provider;
+	if (capacity.case !== undefined && provider.kind !== "kubernetes")
+		return false;
+	if (capacity.case === "scaleSet") {
+		const scaleSet = capacity.value;
+		if (
+			!kubernetesName.test(scaleSet.name) ||
+			!kubernetesName.test(scaleSet.namespace) ||
+			!Number.isInteger(scaleSet.maxRunners) ||
+			scaleSet.maxRunners < 1 ||
+			scaleSet.maxRunners > 1000 ||
+			scaleSet.minRunners > scaleSet.maxRunners
+		)
+			return false;
+	}
+	if (capacity.case === "engine" && !kubernetesName.test(capacity.value.name))
+		return false;
+	return provider.kind === "vercel"
+		? provider.location === "" || vercelLocations.has(provider.location)
+		: provider.location === "";
+}
 
 /** Parse a data manifest; provider/Station authority is resolved by the host. */
 export function parseCiPolicy(json: string): ParsedCiPolicy {
@@ -62,10 +95,13 @@ export function parseCiPolicy(json: string): ParsedCiPolicy {
 			!connectionPattern.test(provider.connectionRef) ||
 			!labelPattern.test(provider.runsOn) ||
 			provider.runsOn.toLowerCase() === "hobo" ||
-			(provider.kind === "local" && provider.runsOn !== "hobo-local-host")
+			(provider.kind === "local" && provider.runsOn !== "hobo-local-host") ||
+			!providerKindFieldsAllowed(provider)
 		)
 			throw new Error("invalid CI provider declaration");
 		ids.add(provider.id);
+		if (provider.capacity.value) Object.freeze(provider.capacity.value);
+		Object.freeze(provider.capacity);
 		Object.freeze(provider);
 	}
 	if (policy.thresholds.length > 100) throw new Error("too many CI thresholds");

@@ -176,6 +176,51 @@ editors to that schema, and the package exports it as
 `@hobo/ci-gh-actions/schema/ci-project.schema.json`. The parser uses its shipped
 schemas and never fetches the `$schema` URL while loading configuration.
 
+### Provider shapes
+
+A policy provider is one of eight closed, kind-specific shapes defined in the
+sibling [provider schema](schema/ci-project-providers.schema.json) (exported as
+`@hobo/ci-gh-actions/schema/ci-project-providers.schema.json`). The project
+schema's `Provider` is a relative `$ref` to that file, which is a `oneOf` with
+`additionalProperties: false` on every branch. Every kind carries the base
+fields `id`, `kind`, `connectionRef`, `runsOn` and optional `enabled`; existing
+five-field providers of every kind except `vercel` stay valid unchanged.
+
+| Kind | Extra fields |
+|---|---|
+| `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `hobo-box-worker` | none; `scaleSet`, `engine` and `location` are rejected |
+| `kubernetes` | optional `scaleSet` **or** optional `engine` (never both); neither keeps the existing disposable-pod path |
+| `vercel` | required `location`: `vercel`, `local` or `remote`; `scaleSet` and `engine` are rejected |
+
+`scaleSet` names an [ARC](https://github.com/actions/actions-runner-controller)
+`AutoscalingRunnerSet`: `{ "name", "namespace", "maxRunners", "minRunners"? }`.
+`name` is the set's `runnerScaleSetName` and must equal the provider's `runsOn`
+(checked when the policy is applied, not when the file is parsed); `name` and
+`namespace` are DNS labels and `minRunners` (default 0) may not exceed
+`maxRunners`. `engine` is `{ "name" }` of a Dagger Engine whose readiness HoBo
+checks. HoBo never installs or upgrades ARC or Dagger. Neither shape accepts a
+kubeconfig, token or `githubConfigSecret`: cluster and Vercel credentials stay
+out of `.hobo/ci.json` and resolve through the `connectionRef`.
+
+```json
+{
+  "id": "arc",
+  "kind": "kubernetes",
+  "connectionRef": "yard:build-cluster",
+  "runsOn": "hobo-arc",
+  "scaleSet": { "name": "hobo-arc", "namespace": "arc-runners", "maxRunners": 4 }
+}
+```
+
+The TypeScript types (`CiProjectProvider`, `CiKubernetesProvider`,
+`CiVercelProvider`, …) are inferred from the same discriminated union in
+`src/project-providers.ts`; `pnpm --filter @hobo/ci-gh-actions schema:check`
+fails when either shipped file drifts. The protobuf `CiPolicyProvider` carries
+the shapes as a `capacity` oneof (`scale_set` | `engine`) plus `location`, CUE
+constrains them in `@hobo/ci`'s `ci.cue`, and `parseCiPolicy` rejects a shape on
+the wrong kind. A relay keeps reading persisted vercel policies whose protobuf
+`location` is empty; only authored files require it.
+
 Put reusable values in the document's typed `definitions` registries. For
 example, define the Linux pool and routing strategy once, then use these policy
 fields in every environment that shares them:
