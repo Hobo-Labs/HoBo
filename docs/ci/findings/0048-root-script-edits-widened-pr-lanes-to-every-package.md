@@ -1,3 +1,10 @@
+---
+type: CI Performance Finding
+title: "Finding 48: root script edits widened PR lanes to every package"
+description: "Isolated HoBo CI Fabric performance finding."
+tags: [hobo, ci, performance]
+---
+
 # Finding 48: root script edits widened PR lanes to every package
 
 ## Evidence
