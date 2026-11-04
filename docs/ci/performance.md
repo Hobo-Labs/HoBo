@@ -1128,3 +1128,18 @@ The remaining multi-second non-cached steps are `test:schema` and `lint:test-dep
 Merge-group run **41828663878** timed out the browser-station catalog test after **45.773 s**. The catalog statically reaches `scanDeclaredTrainables` through `synthesize-try-runtime.ts`; its `ts-autocode-grounding` dependency imports the **9 MB** `typescript.js` compiler. The root Vitest config already externalizes that file (Finding 7), but the site's separate config did not inherit the rule, so Vite's SSR pipeline transformed the compiler and warned about its missing source map.
 
 The site config now applies the same `server.deps.external` rule, leaving the compiler on Node's native loader without changing catalog behavior. With four CPU hogs and the CI test environment, the catalog test fell from **4,735 ms to 740 ms**; its file fell from **5.19 s to 1.17 s** (transform **3.38 s to 235 ms**, import **223 ms to 191 ms**). The full 19-file site suite fell from **10.22 s to 3.89 s** (transform **11.04 s to 1.73 s**, import **18.67 s to 4.20 s**), with all 106 tests passing and the source-map warning gone.
+
+## Finding 36: a waiting trunk job did not stop lower-rank admission
+
+On 2026-11-04, #1709's merge-group **PR impact gate** queued at **14:10:50Z** and started at **14:16:03Z**, a **5 m 13 s** admission delay. Read-only GitHub API queries reconstructed these timestamps (all UTC):
+
+| Run / job | Runner | Created or queued | Started | Completed |
+|---|---|---|---|---|
+| #1709 PR run **41840794280**, **PR impact gate** job **126619584695** | `hobo-37829e08-3ed9-4bc1-8e3b-fac18009ee33` | 13:59:12 | 14:01:03 | 14:08:22 |
+| #1709 merge-group run **41844979849**, **PR impact gate** job **126626018847** | `hobo-c4bc7af4-6106-487c-9a59-692b4efc89d4` | 14:10:50 | 14:16:03 | 14:34:23 |
+
+The initial `actions/runs?created=2026-11-04T13:40..2026-11-04T14:20` query returned five runs. Reading each run's jobs, then widening the query to the newest 100 runs from the day's 00:00–14:20 window (reaching back to 06:58), found **no non-skipped HoBo PR job overlapping 14:10:50–14:16:03**. In particular, #1709's last PR gate ended **2 m 28 s before** its merge-group job queued. Thus the API confirms the delay but does **not** substantiate the initial supposition that PR jobs kept running throughout it; daemon lease and container logs are required to identify what local capacity remained occupied. Skipped jobs have timestamps but no runner and do not indicate occupancy.
+
+The admission defect was real independently of that occupancy question. Memory admission returned `blockRank` only after `HOBO_CI_WORKER_MEMORY_HOL_MS`, and the relay applied it only to the same rank within one pass. A rank-0 memory waiter therefore allowed lower-rank backfill before the timeout and did not block rank 1 afterward. Merge-group cap and slot-reservation waits had no lower-rank barrier either.
+
+Admission is now trunk-first while any feasible rank-0 job waits. A rank-0 memory wait blocks lower ranks immediately; merge-group cap and failed slot reservation do the same. The barrier is recomputed from pending demand every pass, so it persists until the rank-0 job is admitted, at which point lower ranks can use remaining capacity in that pass. Non-zero ranks retain the 60 s same-rank HOL backfill window, and trunk-label lending, strict slot reservation, and unlaunched-lease reclamation are unchanged. As an anti-starvation guard, a request larger than the entire memory budget never raises the rank-0 barrier: it cannot fit even on an idle host, so PR admission remains allowed. Regression coverage drives the real SQLite/relay path for memory, merge-group cap, and slot waits across repeated passes, plus the impossible-memory-request guard.

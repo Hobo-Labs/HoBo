@@ -115,7 +115,7 @@ describe("exact deps layer matches", () => {
 			);
 			expect(install.if).toContain("steps.deps-layer.outputs.match != 'true'");
 			expect(install.run).toBe(
-				"pnpm install --frozen-lockfile --config.confirmModulesPurge=false",
+				"node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false",
 			);
 		}
 	});
