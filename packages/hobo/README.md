@@ -179,7 +179,7 @@ Related execution paths:
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for layering and runtime assembly.
 
-Validate integration changes with `pnpm --filter @hobo/hobo run test`.
+Validate integration changes with `pnpm --filter @hobo/hobo run test`. Vitest loads workspace packages' built `dist` exports through Node rather than re-transforming that dependency graph through Vite; hobo's own source and tests still use the Vite loader. `@hobo/cli` stays on the Vite loader so dynamic bindle imports resolve `.js` specifiers in TypeScript sources.
 
 ## Local substrate auto-discovery (`src/local-substrates.ts`)
 

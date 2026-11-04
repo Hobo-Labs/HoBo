@@ -290,7 +290,8 @@ async function endTheShell(ending: Ending): Promise<Ended> {
 			// predicates do not apply there.
 			const skipRestore = !wantsRestore || settings("stty-before") === "";
 			const terminalBack = (): boolean =>
-				screen.lastIndexOf(`${ESC}[?1049l`) > screen.lastIndexOf(`${ESC}[?1049h`) &&
+				screen.lastIndexOf(`${ESC}[?1049l`) >
+					screen.lastIndexOf(`${ESC}[?1049h`) &&
 				screen.lastIndexOf(`${ESC}[?25h`) > screen.lastIndexOf(`${ESC}[?25l`) &&
 				existsSync(at("stty-after"));
 			const deadline = Date.now() + SIGNAL_GRACE_MS;
