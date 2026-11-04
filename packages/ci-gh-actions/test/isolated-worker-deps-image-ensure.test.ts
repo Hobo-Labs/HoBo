@@ -143,14 +143,41 @@ describe("worker-owned deps image ensure", () => {
 			`tag ${REMOTE} ${CANDIDATE}`,
 			`tag ${CANDIDATE} hobo-ci-deps:local`,
 		]);
-		expect(fake.processCalls).toHaveLength(1);
+		expect(fake.processCalls).toHaveLength(2);
 		expect(fake.processCalls[0]?.args).toEqual([
+			"--import",
+			"tsx",
+			"--test",
+			"scripts/test/ci-deps-image-mount.test.ts",
+		]);
+		expect(fake.processCalls[0]?.env).toMatchObject({
+			HOBO_CI_DEPS_MOUNT_CONTRACT: "1",
+			HOBO_CI_DEPS_IMAGE: CANDIDATE,
+			HOBO_CI_DEPS_LAYER: KEY,
+		});
+		expect(fake.processCalls[1]?.args).toEqual([
 			"--experimental-strip-types",
 			"--no-warnings",
 			"scripts/ci-runner-image-gc.mts",
 			CANDIDATE,
 		]);
 		ensured(fake.events, "pull");
+	});
+
+	it("does not promote when the mounted-job contract fails", async () => {
+		const fake = harness();
+		fake.options.processes.run.mockImplementation(async (request) => {
+			if (request.args.includes("scripts/test/ci-deps-image-mount.test.ts"))
+				throw new Error("mount contract failed");
+		});
+		expect(await createDepsImageEnsurer(fake.options).ensure()).toMatchObject({
+			status: "failed",
+			message: "mount contract failed",
+		});
+		expect(fake.images.has("hobo-ci-deps:local")).toBe(false);
+		expect(fake.dockerCalls).not.toContain(
+			`tag ${CANDIDATE} hobo-ci-deps:local`,
+		);
 	});
 
 	it("builds after a pull miss with memory and scheduling limits", async () => {

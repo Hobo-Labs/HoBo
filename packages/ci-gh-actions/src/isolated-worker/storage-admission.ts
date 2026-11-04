@@ -84,6 +84,7 @@ export function createNodeWorkerStorageFileSystem(
 			await operations.mkdir(checkout, { recursive: true, mode: 0o755 });
 			await operations.chown(repository, 1000, 1000);
 			await operations.chown(checkout, 1000, 1000);
+			await operations.chown(path, 1000, 1000);
 		},
 		async removeJobDirectory(path) {
 			if (!JOB_DIRECTORY.test(basename(path)))

@@ -105,10 +105,18 @@ describe("deps Dockerfile generation", () => {
 			"utf8",
 		);
 		assert.equal(syncDepsLayerDockerfile(dockerfile), dockerfile);
-		assert.equal(dockerfile.match(/^COPY --link --from=install/gm)?.length, 65);
+		assert.equal(dockerfile.match(/^COPY --link --from=install/gm)?.length, 64);
+		assert.equal(
+			dockerfile.match(
+				/^COPY --from=install --chown=1000:1000 \/opt\/hobo-deps\/ \/opt\/hobo-deps\/$/gm,
+			)?.length,
+			1,
+		);
 		for (let bucket = 0; bucket < DEPS_LAYER_BUCKET_COUNT; bucket += 1)
 			assert.ok(
-				dockerfile.includes(`deps-buckets/${String(bucket).padStart(2, "0")}/`),
+				dockerfile.includes(
+					`/opt/hobo-deps-buckets/${String(bucket).padStart(2, "0")}/`,
+				),
 			);
 	});
 });

@@ -16,9 +16,6 @@ export const DEPS_LAYER_DOCKERFILE_PATH =
 const begin =
 	"# BEGIN GENERATED DEPS BUCKET LAYERS: scripts/ci/deps-layer-buckets.mts";
 const end = "# END GENERATED DEPS BUCKET LAYERS";
-const installRoot = "/opt/actions-runner/_hobo_work";
-const workspace = `${installRoot}/HoBo/HoBo`;
-
 export function depsLayerBucket(entry: string): number {
 	if (
 		!entry ||
@@ -55,8 +52,8 @@ export function renderDepsLayerBucketCopies(): string {
 	for (let bucket = 0; bucket < DEPS_LAYER_BUCKET_COUNT; bucket += 1) {
 		lines.push(
 			"COPY --link --from=install --chown=1000:1000 \\",
-			`  ${installRoot}/deps-buckets/${String(bucket).padStart(2, "0")}/ \\`,
-			`  ${workspace}/`,
+			`  /opt/hobo-deps-buckets/${String(bucket).padStart(2, "0")}/ \\`,
+			"  /opt/hobo-deps/",
 		);
 	}
 	lines.push(end);

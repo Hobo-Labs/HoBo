@@ -61,6 +61,7 @@ function inputs(): DepsKeyInputs {
 			[DEPS_BUILD_RECIPE_PATHS[0]]: "fetch and install\n",
 			[DEPS_BUILD_RECIPE_PATHS[1]]: "build and verify\n",
 			[DEPS_BUILD_RECIPE_PATHS[2]]: "partition layers\n",
+			[DEPS_BUILD_RECIPE_PATHS[3]]: "link and verify\n",
 		},
 		miseLock,
 		platform: "linux/arm64",
@@ -157,6 +158,13 @@ describe("deps key", () => {
 				buildRecipe: {
 					...inputs().buildRecipe,
 					[DEPS_BUILD_RECIPE_PATHS[2]]: "changed partition\n",
+				},
+			}),
+			"deps link and check script": () => ({
+				...inputs(),
+				buildRecipe: {
+					...inputs().buildRecipe,
+					[DEPS_BUILD_RECIPE_PATHS[3]]: "changed link and check\n",
 				},
 			}),
 			node: () => ({

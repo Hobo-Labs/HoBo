@@ -18,7 +18,7 @@ function includes(text: string, expected: string): void {
 }
 
 describe("CI deps image build contract", () => {
-	it("reuses the host store and copies only node_modules and the git skeleton", () => {
+	it("reuses the host store and stages only node_modules outside the work dir", () => {
 		includes(dockerfile, "FROM ${TOOLCHAIN_IMAGE} AS fetch");
 		const cacheMount =
 			"--mount=type=cache,id=hobo-pnpm-store,target=/pnpm-store,uid=1000,gid=1000";
@@ -35,8 +35,9 @@ describe("CI deps image build contract", () => {
 			"pnpm rebuild @ast-grep/cli @bufbuild/buf esbuild protobufjs",
 		);
 		includes(dockerfile, "FROM ${TOOLCHAIN_IMAGE} AS final");
-		includes(dockerfile, "/opt/actions-runner/_hobo_work/deps/");
+		includes(dockerfile, 'target="/opt/hobo-deps/${source#./}"');
 		includes(dockerfile, "-type d -name node_modules -prune -exec");
+		assert.ok(!dockerfile.includes("git init"));
 		assert.ok(!dockerfile.includes("-delete"));
 		assert.ok(!dockerfile.includes("FETCH_IMAGE"));
 		assert.ok(!build.includes("hobo-ci-deps-fetch"));
@@ -52,10 +53,14 @@ describe("CI deps image build contract", () => {
 		assert.equal(
 			dockerfile.match(/^COPY --link --from=install --chown=1000:1000/gm)
 				?.length,
-			65,
+			64,
 		);
-		includes(dockerfile, "deps-buckets/00/");
-		includes(dockerfile, "deps-buckets/63/");
+		includes(dockerfile, "/opt/hobo-deps-buckets/00/");
+		includes(dockerfile, "/opt/hobo-deps-buckets/63/");
+		includes(
+			dockerfile,
+			"COPY --from=install --chown=1000:1000 /opt/hobo-deps/ /opt/hobo-deps/",
+		);
 		includes(
 			build,
 			"node --experimental-strip-types scripts/ci/deps-layer-buckets.mts --check",
@@ -70,17 +75,53 @@ describe("CI deps image build contract", () => {
 		includes(build, "grep -q -- '--rewrite-timestamp'");
 	});
 
-	it("records toolchain, key, workspace, git remote and reproducible epoch", () => {
+	it("creates the install payload as root before the uid-1000 install stage", () => {
+		const fetch = dockerfile.split("FROM fetch AS install")[0];
+		assert.ok(fetch);
+		const rootStep = fetch.indexOf("USER root");
+		const create = fetch.indexOf(
+			"RUN mkdir -p /pnpm-store /opt/actions-runner/_hobo_work/HoBo/HoBo /opt/hobo-deps /opt/hobo-deps-buckets \\",
+		);
+		const ownership = fetch.indexOf(
+			"&& chown -R 1000:1000 /pnpm-store /opt/actions-runner/_hobo_work /opt/hobo-deps /opt/hobo-deps-buckets",
+			create,
+		);
+		const installUser = fetch.indexOf("USER 1000:1000", ownership);
+		assert.ok(rootStep > -1);
+		assert.ok(create > rootStep);
+		assert.ok(ownership > create);
+		assert.ok(installUser > ownership);
+		includes(dockerfile, "'set -e; for source do");
+	});
+
+	it("creates an owned payload destination without creating a work dir", () => {
+		const final = dockerfile.split("FROM ${TOOLCHAIN_IMAGE} AS final")[1];
+		assert.ok(final);
+		const ownership = final.indexOf(
+			"RUN install -d -o 1000 -g 1000 /opt/hobo-deps",
+		);
+		const copy = final.indexOf(
+			"COPY --from=install --chown=1000:1000 /opt/hobo-deps/ /opt/hobo-deps/",
+		);
+		const chown = final.indexOf(
+			"RUN chown 1000:1000 /opt/hobo-deps /opt/hobo-deps/node_modules /opt/hobo-deps/node_modules/.pnpm",
+		);
+		assert.ok(ownership > -1);
+		assert.ok(copy > ownership);
+		assert.ok(chown > copy);
+		assert.ok(!final.includes("_hobo_work"));
+		assert.ok(!final.includes("WORKDIR"));
+		includes(final.slice(0, ownership), "USER root");
+	});
+
+	it("records toolchain, payload key and reproducible epoch without a git skeleton", () => {
 		includes(dockerfile, "LABEL hobo.ci.deps-key=${DEPS_KEY}");
 		includes(dockerfile, "hobo.ci.toolchain=${TOOLCHAIN_VERSION}");
 		includes(dockerfile, "ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}");
 		includes(dockerfile, "ENV npm_config_store_dir=/pnpm-store");
 		includes(dockerfile, "npm_config_package_import_method=copy");
-		includes(dockerfile, "git init --quiet");
-		includes(
-			dockerfile,
-			"git config remote.origin.url https://github.com/Hobo-Labs/HoBo",
-		);
+		includes(dockerfile, "/opt/hobo-deps/.hobo-ci-deps-key");
+		assert.ok(!dockerfile.includes("remote.origin.url"));
 		includes(build, "epoch=0");
 		includes(build, 'candidate="hobo-ci-deps:${key}"');
 	});
@@ -139,11 +180,14 @@ describe("CI deps image build contract", () => {
 		includes(build, "-e npm_config_ignore_scripts=true");
 		includes(build, "--tmpfs /pnpm-store:rw,uid=1000,gid=1000,mode=0755");
 		const contract = build.indexOf("grep -q 'Already up to date'");
+		const mount = build.lastIndexOf("verify_mount_contract");
 		const promote = build.lastIndexOf(
 			'docker tag "$candidate" hobo-ci-deps:local',
 		);
 		assert.ok(contract > -1);
-		assert.ok(promote > contract);
+		assert.ok(mount > contract);
+		assert.ok(promote > mount);
+		includes(build, "scripts/test/ci-deps-image-mount.test.ts");
 		includes(build, "--no-promote");
 	});
 
@@ -205,14 +249,21 @@ describe("CI deps workflow contract", () => {
 		includes(job, "needs.ci-runner-image.result != 'failure'");
 		includes(job, "packages/ci-gh-actions/deploy/ci-runner/deps");
 		includes(job, "scripts/ci/deps-layer-buckets.mts");
-		includes(job, "args=(--no-promote)");
+		includes(job, "build-deps.sh --no-promote");
 		includes(job, "Remove PR candidate tag");
 		assert.ok(!job.includes("docker push"));
 		assert.ok(!job.includes("--cache-to"));
 		assert.ok(!job.includes("packages: write"));
 		includes(job, "packages: read");
 		includes(job, "Login to GHCR for read-only cache");
-		includes(job, "env.GHCR_TOKEN != ''");
+		assert.ok(!job.includes("env.GHCR_TOKEN != ''"));
+		includes(job, "GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}");
+		const login = job.indexOf("- name: Login to GHCR for read-only cache");
+		const buildStep = job.indexOf(
+			"- name: Build deps image and verify offline install",
+		);
+		assert.ok(login > -1);
+		assert.ok(buildStep > login);
 	});
 
 	it("reuses local or GHCR hits on every event without building", () => {
@@ -228,7 +279,7 @@ describe("CI deps workflow contract", () => {
 		assert.ok(buildStep > pull);
 		includes(
 			job,
-			"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source != 'build'",
+			"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && github.event_name != 'pull_request'",
 		);
 		includes(
 			job,
@@ -237,6 +288,19 @@ describe("CI deps workflow contract", () => {
 		assert.ok(
 			!job.includes('if [ "${{ github.event_name }}" != "pull_request" ]'),
 		);
+	});
+
+	it("proves every candidate under a job mount before promotion", () => {
+		const buildStep = job.indexOf(
+			"- name: Build deps image and verify offline install",
+		);
+		const mount = job.indexOf("- name: Verify deps image under job mount");
+		const promote = job.indexOf("- name: Promote verified deps image");
+		assert.ok(buildStep > -1);
+		assert.ok(mount > buildStep);
+		assert.ok(promote > mount);
+		includes(job, "HOBO_CI_DEPS_MOUNT_CONTRACT: '1'");
+		includes(job, "scripts/test/ci-deps-image-mount.test.ts");
 	});
 
 	it("does not put the deps image on Main full gate's critical path", () => {

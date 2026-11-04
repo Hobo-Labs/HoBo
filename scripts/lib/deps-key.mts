@@ -9,6 +9,7 @@ export const DEPS_BUILD_RECIPE_PATHS = [
 	"packages/ci-gh-actions/deploy/ci-runner/deps/Dockerfile",
 	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
 	DEPS_LAYER_BUCKET_SCRIPT_PATH,
+	"scripts/ci/deps-layer.mts",
 ] as const;
 
 export type DepsKeyInputs = Readonly<{
@@ -275,6 +276,7 @@ export function depsContextPaths(root: string): string[] {
 	return [
 		"pnpm-lock.yaml",
 		"pnpm-workspace.yaml",
+		"scripts/ci/deps-layer.mts",
 		...listWorkspaceImporters(lockfile).map(importerManifestPath),
 		...(optionalFile(root, ".npmrc") === undefined ? [] : [".npmrc"]),
 		...(optionalFile(root, ".pnpmfile.cjs") === undefined

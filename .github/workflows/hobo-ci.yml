@@ -164,7 +164,9 @@ jobs:
               packages/ci-gh-actions/deploy/ci-runner/deps \
               scripts/ci/deps-key.mts \
               scripts/ci/deps-layer-buckets.mts \
-              scripts/lib/deps-key.mts)"
+              scripts/ci/deps-layer.mts \
+              scripts/lib/deps-key.mts \
+              scripts/test/ci-deps-image-mount.test.ts)"
             if [ -z "$changed" ]; then run=false; fi
           fi
           echo "run=${run}" >> "$GITHUB_OUTPUT"
@@ -197,26 +199,29 @@ jobs:
             source=ghcr
           fi
           echo "source=${source}" >> "$GITHUB_OUTPUT"
-      - name: Promote cached deps image and collect superseded images
-        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source != 'build'
-        run: |
-          set -euo pipefail
-          candidate="hobo-ci-deps:${{ steps.key.outputs.key }}"
-          docker tag "$candidate" hobo-ci-deps:local
-          node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
       - name: Login to GHCR for read-only cache
-        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && env.GHCR_TOKEN != ''
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: Build deps image and verify offline install
         if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'
         id: build
+        run: bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh --no-promote
+      - name: Verify deps image under job mount
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true'
+        env:
+          HOBO_CI_DEPS_MOUNT_CONTRACT: '1'
+          HOBO_CI_DEPS_IMAGE: hobo-ci-deps:${{ steps.key.outputs.key }}
+          HOBO_CI_DEPS_LAYER: ${{ steps.key.outputs.key }}
+        run: node --import tsx --test scripts/test/ci-deps-image-mount.test.ts
+      - name: Promote verified deps image
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && github.event_name != 'pull_request'
         run: |
           set -euo pipefail
-          args=()
-          if [ "${{ github.event_name }}" = "pull_request" ]; then args=(--no-promote); fi
-          bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh "${args[@]}"
+          candidate="hobo-ci-deps:${{ steps.key.outputs.key }}"
+          docker tag "$candidate" hobo-ci-deps:local
+          node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
       - name: Remove PR candidate tag (never a later local-hit promotion)
         if: always() && github.event_name == 'pull_request' && steps.source.outputs.source == 'build'
         run: docker image rm "hobo-ci-deps:${{ steps.key.outputs.key }}" >/dev/null 2>&1 || true
@@ -251,17 +256,11 @@ jobs:
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - uses: ./.github/actions/pnpm-store
+      - name: Link deps layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
       - name: Check deps layer match
         id: deps-layer
-        run: |
-          set -uo pipefail
-          expected="$(node --no-warnings scripts/ci/deps-key.mts 2>/dev/null)" || expected=unavailable
-          actual="${HOBO_CI_DEPS_LAYER:-none}"
-          match=false
-          if [ "$expected" != unavailable ] && [ "$actual" = "$expected" ]; then match=true; fi
-          if [ "$match" = true ]; then status=match; else status=miss; fi
-          echo "deps layer ${status}: job=${actual}, checkout=${expected}"
-          echo "match=${match}" >> "$GITHUB_OUTPUT"
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
       - name: Verify deps layer sibling links
         if: steps.deps-layer.outputs.match == 'true'
         run: node --import tsx scripts/ensure-ts-autocode-links.mts
@@ -534,17 +533,11 @@ jobs:
           turbo-token: ${{ secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: remote:rw
+      - name: Link deps layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
       - name: Check deps layer match
         id: deps-layer
-        run: |
-          set -uo pipefail
-          expected="$(node --no-warnings scripts/ci/deps-key.mts 2>/dev/null)" || expected=unavailable
-          actual="${HOBO_CI_DEPS_LAYER:-none}"
-          match=false
-          if [ "$expected" != unavailable ] && [ "$actual" = "$expected" ]; then match=true; fi
-          if [ "$match" = true ]; then status=match; else status=miss; fi
-          echo "deps layer ${status}: job=${actual}, checkout=${expected}"
-          echo "match=${match}" >> "$GITHUB_OUTPUT"
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
       - name: Verify deps layer sibling links
         if: steps.deps-layer.outputs.match == 'true'
         run: node --import tsx scripts/ensure-ts-autocode-links.mts

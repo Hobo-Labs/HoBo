@@ -40,8 +40,9 @@ describe("CI deps image push scope", () => {
 		expect(current.run).toContain('echo "current=${current}"');
 		for (const name of [
 			"Resolve local or GHCR deps image",
-			"Promote cached deps image and collect superseded images",
 			"Build deps image and verify offline install",
+			"Verify deps image under job mount",
+			"Promote verified deps image",
 		]) {
 			const step = depsJob.steps.find((candidate) => candidate.name === name);
 			expect(step.if).toContain("steps.current.outputs.current != 'true'");
@@ -64,7 +65,8 @@ describe("CI deps image push scope", () => {
 		const build = depsJob.steps.find(
 			(step) => step.name === "Build deps image and verify offline install",
 		);
-		expect(login.if).toContain("env.GHCR_TOKEN != ''");
+		expect(login.if).not.toContain("env.GHCR_TOKEN");
+		expect(login.if).toContain("steps.source.outputs.source == 'build'");
 		expect(login.env.GHCR_TOKEN).toBe("${{ secrets.GITHUB_TOKEN }}");
 		expect(login.run).toContain("docker login ghcr.io");
 		expect(login.run).toContain("--password-stdin");
@@ -103,6 +105,7 @@ describe("CI deps image push scope", () => {
 describe("exact deps layer matches", () => {
 	it("skips install in both gates, verifies sibling links, and installs on misses", () => {
 		for (const job of [prGate, mainGate]) {
+			const payload = job.steps.find((step) => step.name === "Link deps layer");
 			const report = job.steps.find(
 				(step) => step.name === "Check deps layer match",
 			);
@@ -112,9 +115,13 @@ describe("exact deps layer matches", () => {
 			const install = job.steps.find(
 				(step) => step.name === "Install dependencies",
 			);
+			expect(payload.run).toBe(
+				"node --experimental-strip-types scripts/ci/deps-layer.mts link",
+			);
 			expect(report.id).toBe("deps-layer");
-			expect(report.run).toContain('echo "match=${match}" >> "$GITHUB_OUTPUT"');
-			expect(report.run).toContain('"$expected" != unavailable');
+			expect(report.run).toBe(
+				"node --experimental-strip-types scripts/ci/deps-layer.mts check",
+			);
 			expect(links.if).toBe("steps.deps-layer.outputs.match == 'true'");
 			expect(links.run).toBe(
 				"node --import tsx scripts/ensure-ts-autocode-links.mts",
