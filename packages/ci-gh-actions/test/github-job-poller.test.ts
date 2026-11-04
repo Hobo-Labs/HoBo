@@ -1732,10 +1732,7 @@ describe("pull-mode box worker over SQLite", () => {
 				return fake.request(installationId, path, method, body, ifNoneMatch);
 			},
 		};
-		const containers = new Map<
-			string,
-			{ running: boolean; exited: boolean }
-		>();
+		const containers = new Map<string, { running: boolean; exited: boolean }>();
 		let containerId = 0;
 		const docker: DockerDriver = {
 			create: async (spec) => {

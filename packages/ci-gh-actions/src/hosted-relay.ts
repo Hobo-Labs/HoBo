@@ -127,10 +127,7 @@ const RunWebhook = z.object({
 });
 
 export type ServedRunnerLabelCache = Map<string, RunnerLabel | undefined>;
-export type TrunkWaitCache = Map<
-	string,
-	{ sinceMs: number; logged: boolean }
->;
+export type TrunkWaitCache = Map<string, { sinceMs: number; logged: boolean }>;
 
 export class HostedRelay {
 	readonly now: () => string;
