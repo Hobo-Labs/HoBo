@@ -34,8 +34,8 @@ is unknown here.
    `pnpm-lock.yaml` `integrity`, or a release asset with a pinned SHA-256. Every other build step runs with
    `--network=none`.
 4. **Reproducible outputs.** The same inputs produce the same layer digest:
-   - `SOURCE_DATE_EPOCH` is the input commit's time;
-   - BuildKit runs with `rewrite-timestamp=true`;
+   - `SOURCE_DATE_EPOCH` is fixed for the artifact family (`0` for deps buckets), not the commit's time, so unchanged content keeps its digest across commits;
+   - BuildKit runs with `rewrite-timestamp=true` when the installed builder supports it;
    - file order and ownership are fixed;
    - no build step embeds a clock, a hostname or a random value.
 
@@ -394,8 +394,8 @@ whole-build `--network=none` install/rebuild. Both stages reuse the persistent h
 BuildKit cache mount. The install stage separately stages `node_modules` and `.git`. The bucket generator assigns
 each content-keyed `.pnpm` entry to one of 64 buckets by SHA-256 of its name and emits the corresponding
 `COPY --link` section; its drift test requires the committed Dockerfile to match. One residual layer holds
-workspace links, pnpm metadata and `.git`. Sorted entries, fixed `--chown` and a fixed `SOURCE_DATE_EPOCH` on every
-copied path make unchanged buckets byte-stable inputs; buildx timestamp rewriting is optional and feature-detected.
+workspace links, pnpm metadata and `.git`. Sorted entries, fixed `--chown` and `SOURCE_DATE_EPOCH=0` on every
+copied path make unchanged buckets byte-stable across commits; buildx timestamp rewriting is optional and feature-detected.
 Equal-digest claims and actual compressed sizes remain box-side evidence. The offline `Already up to date`
 contract still runs before promoting a new build to `:local`. Every event reuses an exact local or GHCR hit without
 building. The worker selects that layer only for HoBo leases with a matching toolchain label, exports its full key,

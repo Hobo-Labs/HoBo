@@ -46,7 +46,7 @@ base="hobo-ci-worker:${toolchain}"
 echo "Using toolchain image $base"
 key="$(node --no-warnings scripts/ci/deps-key.mts --toolchain "${toolchain}" --stage "$context")"
 candidate="hobo-ci-deps:${key}"
-epoch="$(git log -1 --format=%ct)"
+epoch=0
 docker_memory_args=()
 if [[ -n "${HOBO_CI_DEPS_BUILD_MEMORY_MB:-}" ]]; then
   if [[ ! "${HOBO_CI_DEPS_BUILD_MEMORY_MB}" =~ ^[0-9]+$ ]] || (( HOBO_CI_DEPS_BUILD_MEMORY_MB < 512 )); then

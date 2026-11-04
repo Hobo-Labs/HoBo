@@ -77,7 +77,7 @@ describe("CI deps image build contract", () => {
 			dockerfile,
 			"git config remote.origin.url https://github.com/Hobo-Labs/HoBo",
 		);
-		includes(build, 'epoch="$(git log -1 --format=%ct)"');
+		includes(build, "epoch=0");
 		includes(build, 'candidate="hobo-ci-deps:${key}"');
 	});
 
