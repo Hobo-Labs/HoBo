@@ -259,7 +259,7 @@ independent of the service manager's working directory; set `HOBO_CI_DEPS_ROOT` 
 override it. The checkout needs the lockfile importer manifests, including the
 pinned ts-autocode submodule.
 
-The deps image splits `node_modules/.pnpm` into 64 stable entry-name hash buckets. `scripts/ci/deps-layer-buckets.mts` owns the assignment and generates the Dockerfile's `COPY --link` section; `--check` and `scripts/test/deps-layer-buckets.test.ts` reject drift. A residual layer holds workspace links, pnpm metadata and `.git`. Ownership and timestamps are normalized, and `build-deps.sh` opts into buildx timestamp rewriting only when supported. This preserves the workspace path while allowing unchanged bucket layers to be reused across deps keys.
+The install stage moves every repo-relative `node_modules` under `/opt/hobo-deps` and splits its `node_modules/.pnpm` into 64 stable entry-name hash buckets under `/opt/hobo-deps-buckets`. `scripts/ci/deps-layer-buckets.mts` owns the assignment and generates the Dockerfile's `COPY --link` section into `/opt/hobo-deps`; `--check` and `scripts/test/deps-layer-buckets.test.ts` reject drift. A residual layer holds workspace links and pnpm metadata, with no `.git` and no checkout path. A final root step chowns `/opt/hobo-deps`, its `node_modules` and `.pnpm` to uid 1000 so `--link` cannot leave them root-owned. Ownership and timestamps are normalized, and `build-deps.sh` opts into timestamp rewriting only when supported, so unchanged bucket layers are reused across deps keys.
 
 The daemon and `build-deps.sh` use the checkout's computed
 `hobo-ci-worker:<toolchain>` when that image exists. If it is absent, they use the
