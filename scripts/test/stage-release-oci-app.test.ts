@@ -8,6 +8,7 @@ import {
 	releaseOciDeployArgs,
 	releaseOciDockerignore,
 	releaseOciStagingLocation,
+	releaseOciTurboBuildArgs,
 	resolveReleaseTurboBase,
 	stageReleaseOciApp,
 } from "../ci/stage-release-oci-app.mts";
@@ -47,6 +48,19 @@ describe("release OCI app staging", () => {
 		} finally {
 			rmSync(repo, { recursive: true, force: true });
 		}
+	});
+
+	it("builds full requested filters without SCM ranges", () => {
+		expect(
+			releaseOciTurboBuildArgs(["@hobo/hobo...", "@hobo/ci-gh-actions"]),
+		).toEqual([
+			"exec",
+			"turbo",
+			"run",
+			"build",
+			"--filter=@hobo/hobo...",
+			"--filter=@hobo/ci-gh-actions",
+		]);
 	});
 
 	it("covers exactly the image ids in the release manifest", () => {
@@ -175,6 +189,20 @@ describe("release OCI app staging", () => {
 			kind: "mcp",
 			markerPath: ".hobo-cli-candidate",
 		});
+	});
+
+	it("fails clearly when the site build output is missing", () => {
+		const fixtureRoot = mkdtempSync(join(tmpdir(), "hobo-release-site-"));
+		try {
+			expect(() =>
+				stageReleaseOciApp("hobo-site", join(fixtureRoot, "staging"), {
+					root: join(fixtureRoot, "checkout"),
+					skipBuild: true,
+				}),
+			).toThrow(/site build output missing: .*site\/dist/);
+		} finally {
+			rmSync(fixtureRoot, { recursive: true, force: true });
+		}
 	});
 
 	it("allowlists only staged artifacts in each docker context", () => {

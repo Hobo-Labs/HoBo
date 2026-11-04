@@ -13,7 +13,7 @@ Most release jobs have a **10-minute hard timeout** and a **5-minute target dura
 
 `release-hobo` and `release-code` jobs run `pnpm run pins:fetch ts-autocode` after checkout (`submodules: recursive`) and before `pnpm install`, matching HoBo CI's sibling-pin setup.
 
-Pull requests may build and inspect release artifacts, but any npm packaging is **`npm pack --dry-run` only**. PRs never publish, never write to npm, and never receive publish credentials.
+Pull requests may build and inspect release artifacts, but any npm packaging is **`npm pack --dry-run` only**. PRs never publish, never write to npm, and never receive publish credentials. For npm staging, a PR `HOBO_RELEASE_VERSION=pr-N` maps to the valid semver `0.0.0-pr.N`; strict release-tag parsing still rejects `pr-*` refs.
 
 PR OCI builds are **affected-only, keyed by build inputs**: [`scripts/ci/release-oci-affected.mts`](../../scripts/ci/release-oci-affected.mts) hashes an input key for every manifest image from the git trees of the merge base (`HOBO_CHECK_BASE`, default `origin/main`) and of HEAD, and prints the images whose key changed. The detector uses scoped `releaseInputGitTree` pathspecs (not full-repo `ls-tree`), reads each blob batch through one `git archive` pack transfer instead of lazy per-blob promisor fetches, memoizes trees/`parseLockfile`, and indexes package blobs only within each image's lockfile closure (see [`scripts/test/release-oci-affected.test.ts`](../../scripts/test/release-oci-affected.test.ts)). The key covers:
 
@@ -35,7 +35,7 @@ The box has two `hobo` slots, and every job pays its own checkout (about 70 s ag
 - `release-hobo` / `release-contract` (30 minutes) runs the contract tests and the npm pack dry run, selects the affected images other than `hobo-code`, then builds them one after another through the Turbo cache, checking each with the live OCI config contract. A failing image does not stop the others; the job fails at the end and names them.
 - `release-code` / `code-release` (45 minutes) runs the contract tests, lint, the whole `@hobo/code` suite through `turbo run test --filter=@hobo/code`, and the `hobo-code` image build when its inputs changed.
 
-Both diff the PR merge commit against `HEAD^1`, its base tip, so the checkout needs `fetch-depth: 2` instead of the full history. PR Turbo affected-image builds also use `HEAD^1`; the staging helper validates its configured base and falls back to `HEAD^1` only when `origin/main` is absent. A PR that edits a pipeline's own workflow builds every image that pipeline owns, because the workflow is how they are built.
+Both diff the PR merge commit against `HEAD^1`, its base tip, so the checkout needs `fetch-depth: 2` instead of the full history. Affected-image selection uses `HEAD^1`, but OCI staging always runs the full Turbo build for every requested package filter, without an SCM range, so unchanged dependencies still provide required `dist` output. A PR that edits a pipeline's own workflow builds every image that pipeline owns, because the workflow is how they are built.
 
 ## Hermetic build model
 

@@ -98,6 +98,12 @@ describe("release semver from env (staging / OCI labels)", () => {
 			}),
 		).toBe(ALPHA);
 	});
+
+	it("maps a pull request ref to valid staging semver", () => {
+		expect(releaseSemverFromEnv({ HOBO_RELEASE_VERSION: "pr-1684" })).toBe(
+			"0.0.0-pr.1684",
+		);
+	});
 });
 
 describe("staged npm manifest version", () => {

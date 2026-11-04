@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	cpSync,
+	existsSync,
 	mkdirSync,
 	readdirSync,
 	rmSync,
@@ -129,17 +130,18 @@ export function resolveReleaseTurboBase(
 	);
 }
 
+export function releaseOciTurboBuildArgs(filters: readonly string[]): string[] {
+	return [
+		"exec",
+		"turbo",
+		"run",
+		"build",
+		...filters.map((filter) => `--filter=${filter}`),
+	];
+}
+
 function turboBuild(root: string, filters: readonly string[]): void {
-	const base = resolveReleaseTurboBase(root);
-	const turboFilters = base
-		? filters.map((filter) => {
-				const packageRef = filter.endsWith("...")
-					? filter.slice(0, -3)
-					: filter;
-				return `--filter=${packageRef}[${base}...HEAD]`;
-			})
-		: filters.map((filter) => `--filter=${filter}`);
-	run(root, "pnpm", ["exec", "turbo", "run", "build", ...turboFilters]);
+	run(root, "pnpm", releaseOciTurboBuildArgs(filters));
 }
 
 function installSdkTarballsIntoApp(appDir: string, artifactsDir: string): void {
@@ -245,11 +247,7 @@ function deployPackage(
 	hardlink: boolean,
 	sdkArtifactsDir?: string,
 ): void {
-	const buildFilter =
-		sdkArtifactsDir && spec.packageName === "@hobo/hobo"
-			? "@hobo/hobo"
-			: spec.buildFilter;
-	if (!skipBuild) turboBuild(root, [buildFilter]);
+	if (!skipBuild) turboBuild(root, [spec.buildFilter]);
 	const appDir = join(stagingRoot, spec.appPath);
 	run(root, "pnpm", releaseOciDeployArgs(spec.packageName, appDir, hardlink));
 	if (sdkArtifactsDir) {
@@ -294,7 +292,13 @@ function stageSite(
 	skipBuild: boolean,
 ): void {
 	if (!skipBuild) turboBuild(root, ["hobo-site..."]);
-	cpSync(join(root, "site/dist"), join(stagingRoot, spec.distPath), {
+	const siteDist = join(root, "site/dist");
+	if (!existsSync(siteDist)) {
+		throw new Error(
+			`site build output missing: ${siteDist}; run the full hobo-site Turbo build before staging`,
+		);
+	}
+	cpSync(siteDist, join(stagingRoot, spec.distPath), {
 		recursive: true,
 	});
 	cpSync(
