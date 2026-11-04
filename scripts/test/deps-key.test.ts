@@ -53,6 +53,7 @@ function inputs(): DepsKeyInputs {
 		buildRecipe: {
 			[DEPS_BUILD_RECIPE_PATHS[0]]: "fetch and install\n",
 			[DEPS_BUILD_RECIPE_PATHS[1]]: "build and verify\n",
+			[DEPS_BUILD_RECIPE_PATHS[2]]: "link and verify\n",
 		},
 		miseLock,
 		platform: "linux/arm64",

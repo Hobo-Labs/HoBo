@@ -1,4 +1,6 @@
+import { mkdtempSync, rmSync, statSync } from "node:fs";
 import type { chown, mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { WorkerImage } from "../src/isolated-worker/image-gc.js";
@@ -196,6 +198,26 @@ describe("worker storage admission", () => {
 		).toThrow("invalid worker job inode reservation");
 	});
 
+	it("prepares owned checkout directories inside each job mount", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-worker-prepare-"));
+		try {
+			const job = join(root, LIVE);
+			await createNodeWorkerStorageFileSystem().prepareJobDirectory(job);
+			for (const directory of [
+				job,
+				join(job, "HoBo"),
+				join(job, "HoBo", "HoBo"),
+			]) {
+				const metadata = statSync(directory);
+				expect(metadata.uid).toBe(1000);
+				expect(metadata.gid).toBe(1000);
+				expect(metadata.mode & 0o200).not.toBe(0);
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("prepares a job-owned checkout directory inside the lease root", async () => {
 		nodeFs.mkdir.mockResolvedValue(undefined);
 		nodeFs.chown.mockResolvedValue(undefined);
@@ -215,6 +237,7 @@ describe("worker storage admission", () => {
 		});
 		expect(nodeFs.chown).toHaveBeenNthCalledWith(1, repository, 1000, 1000);
 		expect(nodeFs.chown).toHaveBeenNthCalledWith(2, checkout, 1000, 1000);
+		expect(nodeFs.chown).toHaveBeenNthCalledWith(3, directory, 1000, 1000);
 	});
 
 	it("does not prune below either 85 percent threshold", async () => {

@@ -121,9 +121,23 @@ function isTrackedStillRunning(pid: number): boolean {
 	return false;
 }
 
-/** Sidecar outlived its HOBO_HOME directory (true leak), not a sibling parallel test. */
+function hasLiveTestParent(pid: number): boolean {
+	try {
+		const status = readFileSync(`/proc/${pid}/status`, "utf8");
+		const ppidLine = status
+			.split("\n")
+			.find((line) => line.startsWith("PPid:"));
+		if (ppidLine === undefined) return false;
+		const ppid = Number(ppidLine.slice("PPid:".length).trim());
+		return Number.isInteger(ppid) && ppid > 1 && _pidAlive(ppid);
+	} catch {
+		return false;
+	}
+}
+
+/** Sidecar outlived both its HOBO_HOME directory and its test parent. */
 function isOrphanedEphemeralEvidenceSidecar(pid: number): boolean {
-	if (isTrackedStillRunning(pid)) return false;
+	if (isTrackedStillRunning(pid) || hasLiveTestParent(pid)) return false;
 	const home = hoboHomeForPid(pid);
 	if (home === undefined || !isEphemeralEvidenceSidecar(pid)) return false;
 	return !existsSync(home);

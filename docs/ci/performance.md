@@ -62,6 +62,7 @@ unindexed new finding files as notices.
 - [Finding 41: every same-process auth.md lock waiter paid a 25 ms poll](./findings/0041-every-same-process-auth-md-lock-waiter-paid-a-25-ms-poll.md)
 - [Finding 42: equal CPU shares let PR jobs starve trunk tests](./findings/0042-equal-cpu-shares-let-pr-jobs-starve-trunk-tests.md)
 - [Finding 45: dead containers left 12288 MiB reserved and blocked trunk admission](./findings/0045-dead-containers-left-12288-mib-reserved-and-blocked-trunk-admission.md)
+- [Finding 49: the deps image build could not create its payload directory](./findings/0049-the-deps-image-build-could-not-create-its-payload-directory.md)
 - [Finding 58: two concurrent jobs exhausted inodes mid-run](./findings/0058-two-concurrent-jobs-exhausted-inodes-mid-run.md)
 <!-- findings-index:end -->
 

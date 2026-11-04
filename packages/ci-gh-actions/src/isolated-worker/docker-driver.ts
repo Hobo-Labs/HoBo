@@ -56,6 +56,11 @@ export type DockerImageInspection = Readonly<{
 /** Ephemeral container boundary for one JIT runner session. */
 export interface DockerDriver {
 	inspectImage?(image: string): Promise<DockerImageInspection>;
+	probeImage?(
+		image: string,
+		argv: readonly string[],
+		runAsUser: string,
+	): Promise<{ exitCode: number }>;
 	list?(label: string): Promise<readonly DockerContainer[]>;
 	create(spec: IsolatedContainerSpec): Promise<IsolatedContainerHandle>;
 	start(name: string, containerId: string): Promise<void>;

@@ -243,6 +243,35 @@ export function createCliDockerDriver(options: {
 				labels: parsed.Config.Labels ?? {},
 			};
 		},
+		async probeImage(image, argv, runAsUser) {
+			try {
+				await exec(
+					docker,
+					[
+						"run",
+						"--rm",
+						"--network",
+						"none",
+						"--user",
+						runAsUser,
+						image,
+						...argv,
+					],
+					{ env, timeout: 30_000, maxBuffer: 4096 },
+				);
+				return { exitCode: 0 };
+			} catch (error) {
+				let exitCode = 1;
+				if (error instanceof Error) {
+					const candidate = Object.getOwnPropertyDescriptor(
+						error,
+						"code",
+					)?.value;
+					if (Number.isInteger(candidate)) exitCode = candidate;
+				}
+				return { exitCode };
+			}
+		},
 		async list(label) {
 			if (label !== "hobo.ci/isolated=1")
 				throw new Error("invalid worker container label");
