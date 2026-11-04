@@ -156,7 +156,7 @@ Each Dockerfile sets:
 - **`USER 1000:1000`**, **`WORKDIR`**, **`ENTRYPOINT`/`CMD`**, documented **`ENV`** (see manifest `envDoc`)
 - **`EXPOSE` + `HEALTHCHECK`** for servers (`hobo-ci-serve`, `hobo-site`; non-server images omit them)
 - **`VOLUME`** for mutable state (`.hobo`, relay SQLite, `/work/out`, `/sdk/out`)
-- OCI labels: `org.opencontainers.image.source`, `version`, `revision`, `licenses`, plus `io.hobo.release.*`. **`org.opencontainers.image.version`** is the staging semver from **`releaseSemverFromEnv`** (e.g. `HOBO_RELEASE_VERSION=pr-1720` → `0.0.0-pr.1720`); the live config contract in [`scripts/test/release-oci-image-contract.test.ts`](../../scripts/test/release-oci-image-contract.test.ts) uses the same helper as the build.
+- OCI labels: `org.opencontainers.image.source`, `version`, `revision`, `licenses`, plus `io.hobo.release.*`. **`org.opencontainers.image.version`** is the staging semver from **`releaseSemverFromEnv`** (e.g. `HOBO_RELEASE_VERSION=pr-1720` → `0.0.0-pr.1720`; merge-queue `GITHUB_REF_NAME` like `gh-readonly-queue/main/pr-1720-<sha>` → `0.0.0-merge.pr-1720-<sha7>`). The live config contract reads **`HOBO_RELEASE_*` only** (not `GITHUB_REF_NAME` at module load).
 
 Multi-arch builds are **native-only** on `hobo` runners (amd64 or arm64 per box); no QEMU matrix unless a future runner pool adds it for free.
 

@@ -124,13 +124,24 @@ describe("release OCI image contract (live docker)", () => {
 	const liveIds = requestedIds?.length
 		? requestedIds
 		: manifest.images.map((image) => image.id);
-	const version = releaseOciLabelVersion(process.env);
 	const revision = process.env.HOBO_RELEASE_REVISION ?? "deadbeef";
+
+	function liveLabelVersion(): string {
+		return releaseOciLabelVersion({
+			HOBO_RELEASE_SEMVER: process.env.HOBO_RELEASE_SEMVER,
+			HOBO_RELEASE_VERSION: process.env.HOBO_RELEASE_VERSION,
+		});
+	}
 
 	for (const image of manifest.images) {
 		const selected = live && liveIds.includes(image.id);
 		it.runIf(selected)(`${image.id} evaluates built image config`, () => {
-			const expected = expectedConfig(manifest, image, revision, version);
+			const expected = expectedConfig(
+				manifest,
+				image,
+				revision,
+				liveLabelVersion(),
+			);
 			const config = dockerInspectConfig(`${image.name}:candidate`);
 			const checks = evaluateImageConfig(expected, config);
 			const failed = checks.filter((check) => !check.ok);

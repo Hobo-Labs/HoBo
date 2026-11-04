@@ -59,7 +59,10 @@ export type ImageConfigExpectation = {
 export function releaseOciLabelVersion(
 	env: NodeJS.ProcessEnv = process.env,
 ): string {
-	return releaseSemverFromEnv(env);
+	return releaseSemverFromEnv({
+		HOBO_RELEASE_SEMVER: env.HOBO_RELEASE_SEMVER,
+		HOBO_RELEASE_VERSION: env.HOBO_RELEASE_VERSION,
+	});
 }
 
 export function expectedConfig(

@@ -105,6 +105,19 @@ export function stagingSemverFromRef(ref: string): string | undefined {
 		assertSemver(version);
 		return version;
 	}
+	const mergeQueue = /^gh-readonly-queue\/[^/]+\/pr-(\d+)-([0-9a-f]+)$/i.exec(
+		trimmed,
+	);
+	if (mergeQueue) {
+		const prNumber = mergeQueue[1] ?? "";
+		const sha7 = (mergeQueue[2] ?? "").slice(0, 7).toLowerCase();
+		if (!/^[1-9]\d*$/.test(prNumber) || !/^[0-9a-f]{7}$/.test(sha7)) {
+			throw new Error(`invalid merge queue staging ref: ${ref}`);
+		}
+		const version = `0.0.0-merge.pr-${prNumber}-${sha7}`;
+		assertSemver(version);
+		return version;
+	}
 	return undefined;
 }
 
