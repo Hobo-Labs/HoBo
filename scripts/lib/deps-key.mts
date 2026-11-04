@@ -82,6 +82,33 @@ function updateHash(
 	hash.update(String(valueBytes.length)).update(":").update(valueBytes);
 }
 
+type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
+interface JsonObject {
+	readonly [key: string]: JsonValue;
+}
+
+function sortJsonObjectKeys(value: JsonValue): JsonValue {
+	if (value === null) return value;
+	if (Array.isArray(value)) return value.map(sortJsonObjectKeys);
+	if (Object.getPrototypeOf(value) !== Object.prototype) return value;
+	const sorted: JsonObject = Object.fromEntries(
+		Object.entries(value)
+			.sort(([left], [right]) => (left === right ? 0 : left < right ? -1 : 1))
+			.map(([key, entry]) => [key, sortJsonObjectKeys(entry)]),
+	);
+	return sorted;
+}
+
+export function normalizeDepsManifest(manifest: string): string {
+	const parsed: JsonObject = JSON.parse(manifest);
+	const installInputs: JsonObject = Object.fromEntries(
+		Object.entries(parsed)
+			.filter(([key]) => key !== "scripts")
+			.map(([key, value]) => [key, sortJsonObjectKeys(value)]),
+	);
+	return `${JSON.stringify(installInputs)}\n`;
+}
+
 export function depsKeyFromInputs(inputs: DepsKeyInputs): string {
 	if (!/^linux\/[a-z0-9]+$/.test(inputs.platform))
 		throw new Error(`invalid deps platform: ${inputs.platform}`);
@@ -99,7 +126,7 @@ export function depsKeyFromInputs(inputs: DepsKeyInputs): string {
 		const manifest = inputs.manifests[path];
 		if (manifest === undefined)
 			throw new Error(`missing importer manifest: ${path}`);
-		updateHash(hash, path, manifest);
+		updateHash(hash, path, normalizeDepsManifest(manifest));
 	}
 	for (const path of DEPS_BUILD_RECIPE_PATHS) {
 		const recipe = inputs.buildRecipe[path];
@@ -189,6 +216,24 @@ export function depsContextPaths(root: string): string[] {
 		...Object.keys(patchFiles(root)).sort(),
 		DEPS_LAYER_BUCKET_SCRIPT_PATH,
 	];
+}
+
+export function readDepsContextFiles(
+	root: string,
+): Readonly<Record<string, string>> {
+	const lockfile = readFileSync(join(root, "pnpm-lock.yaml"), "utf8");
+	const manifests = new Set(
+		listWorkspaceImporters(lockfile).map(importerManifestPath),
+	);
+	return Object.fromEntries(
+		depsContextPaths(root).map((path) => {
+			const contents = readFileSync(join(root, path), "utf8");
+			return [
+				path,
+				manifests.has(path) ? normalizeDepsManifest(contents) : contents,
+			];
+		}),
+	);
 }
 
 export function depsKeyForRoot(

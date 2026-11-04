@@ -13,7 +13,7 @@ Use `bash packages/ci-gh-actions/deploy/ci-runner/build.sh` on the box worker. I
 
 ## Lockfile-keyed deps image
 
-`scripts/ci/deps-key.mts` prints `<toolchainVersion>-<depsKey>`. The digest covers the lockfile, workspace config, optional root `.npmrc` and `patches/**`, every lockfile importer's `package.json`, the deps Dockerfile, build script and bucket generator, mise's Node and pnpm entries, and `linux/<arch>`. By default the toolchain comes from the checkout; `--toolchain <version>` selects it explicitly. The ts-autocode importer manifests must be present (`pnpm run pins:fetch ts-autocode`, or a recursive submodule checkout).
+`scripts/ci/deps-key.mts` prints `<toolchainVersion>-<depsKey>`. The digest covers the lockfile, workspace config, optional root `.npmrc` and `patches/**`, every lockfile importer's `package.json` except its top-level `scripts` field, the deps Dockerfile, build script and bucket generator, mise's Node and pnpm entries, and `linux/<arch>`. Manifests are parsed once, serialized with recursively sorted object keys, and staged in that same normalized form, so scripts-only edits change neither the key nor BuildKit's `COPY . .` input. Every other manifest field remains hashed. By default the toolchain comes from the checkout; `--toolchain <version>` selects it explicitly. The ts-autocode importer manifests must be present (`pnpm run pins:fetch ts-autocode`, or a recursive submodule checkout).
 
 Build and promote on the box:
 

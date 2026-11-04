@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import {
 	DEPS_BUILD_RECIPE_PATHS,
 	type DepsKeyInputs,
+	depsContextPaths,
 	depsKeyFromInputs,
 	listWorkspaceImporters,
 	readDepsInputs,
@@ -167,26 +174,68 @@ describe("deps key", () => {
 			assert.notEqual(depsKeyFromInputs(mutate()), base, name);
 	});
 
+	it("changes for every install-relevant manifest field", () => {
+		const base = depsKeyFromInputs(inputs());
+		const fields = {
+			dependencies: { "left-pad": "1.0.0" },
+			devDependencies: { typescript: "5.0.0" },
+			optionalDependencies: { esbuild: "0.25.0" },
+			peerDependencies: { react: "19.0.0" },
+			dependenciesMeta: { esbuild: { injected: true } },
+			peerDependenciesMeta: { react: { optional: true } },
+			bin: { hobo: "cli.js" },
+			name: "changed",
+			version: "1.0.0",
+			pnpm: { overrides: { esbuild: "0.25.0" } },
+			packageManager: "pnpm@10.0.0",
+			engines: { node: ">=22" },
+			os: ["linux"],
+			cpu: ["arm64"],
+			libc: ["glibc"],
+			workspaces: ["packages/*"],
+			publishConfig: { access: "public" },
+			unlistedField: { retained: true },
+		};
+		for (const [field, fieldValue] of Object.entries(fields)) {
+			const value = inputs();
+			assert.notEqual(
+				depsKeyFromInputs({
+					...value,
+					manifests: {
+						...value.manifests,
+						"package.json": `${JSON.stringify({ name: "root", [field]: fieldValue })}\n`,
+					},
+				}),
+				base,
+				field,
+			);
+		}
+	});
+
+	function writeFixture(root: string, value: DepsKeyInputs): void {
+		if (!value.npmrc) throw new Error("fixture npmrc missing");
+		if (!value.pnpmfile) throw new Error("fixture pnpmfile missing");
+		const files = {
+			"pnpm-lock.yaml": value.lockfile,
+			"pnpm-workspace.yaml": value.workspace,
+			"mise.lock": value.miseLock,
+			".npmrc": value.npmrc,
+			".pnpmfile.cjs": value.pnpmfile,
+			...value.patches,
+			...value.manifests,
+			...value.buildRecipe,
+		} satisfies Record<string, string>;
+		for (const [path, text] of Object.entries(files)) {
+			mkdirSync(dirname(join(root, path)), { recursive: true });
+			writeFileSync(join(root, path), text);
+		}
+	}
+
 	it("does not change for an unrelated file", () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-deps-key-"));
 		try {
 			const value = inputs();
-			if (!value.npmrc) throw new Error("fixture npmrc missing");
-			if (!value.pnpmfile) throw new Error("fixture pnpmfile missing");
-			const files = {
-				"pnpm-lock.yaml": value.lockfile,
-				"pnpm-workspace.yaml": value.workspace,
-				"mise.lock": value.miseLock,
-				".npmrc": value.npmrc,
-				".pnpmfile.cjs": value.pnpmfile,
-				...value.patches,
-				...value.manifests,
-				...value.buildRecipe,
-			} satisfies Record<string, string>;
-			for (const [path, text] of Object.entries(files)) {
-				mkdirSync(dirname(join(root, path)), { recursive: true });
-				writeFileSync(join(root, path), text);
-			}
+			writeFixture(root, value);
 			const key = () =>
 				depsKeyFromInputs({
 					...readDepsInputs(root, "linux/arm64"),
@@ -195,6 +244,53 @@ describe("deps key", () => {
 			const before = key();
 			writeFileSync(join(root, "README.md"), "unrelated\n");
 			assert.equal(key(), before);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps the key and staged context bytes stable for scripts-only edits", () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-deps-key-"));
+		try {
+			const value = inputs();
+			writeFixture(root, value);
+			const cli = join(import.meta.dirname, "..", "ci", "deps-key.mts");
+			const run = (stage: string) =>
+				execFileSync(
+					process.execPath,
+					[
+						"--no-warnings",
+						cli,
+						"--toolchain",
+						value.toolchainVersion,
+						"--stage",
+						stage,
+					],
+					{ cwd: root, encoding: "utf8" },
+				).trim();
+			const beforePaths = depsContextPaths(root);
+			const before = run(join(root, "stage-before"));
+
+			writeFileSync(
+				join(root, "package.json"),
+				`${JSON.stringify({ scripts: { prepare: "node prepare.js" }, name: "root" }, null, 2)}\n`,
+			);
+			writeFileSync(
+				join(root, "packages/a/package.json"),
+				`${JSON.stringify({ name: "a", scripts: { postinstall: "node install.js" } }, null, 2)}\n`,
+			);
+			const afterPaths = depsContextPaths(root);
+			const after = run(join(root, "stage-after"));
+
+			assert.equal(after, before);
+			assert.deepEqual(afterPaths, beforePaths);
+			for (const path of beforePaths) {
+				assert.deepEqual(
+					readFileSync(join(root, "stage-after", path)),
+					readFileSync(join(root, "stage-before", path)),
+					path,
+				);
+			}
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

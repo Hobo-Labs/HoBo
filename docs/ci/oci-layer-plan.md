@@ -171,8 +171,9 @@ The one Turbo-adjacent idea worth keeping is optional: an `oras` artifact that s
 
 The key is sha256 over, in fixed order:
 - `pnpm-lock.yaml` and `pnpm-workspace.yaml`;
-- every importer's `package.json`, because `bin`, `scripts` and `dependenciesMeta` change linking without
-  changing the lockfile;
+- every importer's `package.json`, because `bin`, `dependenciesMeta` and the other install-relevant fields change
+  linking without changing the lockfile. Only the top-level `scripts` field is omitted. One normalizer parses each
+  manifest, recursively sorts object keys, and supplies both the hash and the staged Docker context;
 - root `.npmrc`, `patches/**`, and optional `.pnpmfile.cjs`;
 - the `node` and `pnpm` entries of `mise.lock`, because native postinstalls are ABI-specific;
 - the platform (`linux/arm64` on the box);
@@ -180,9 +181,12 @@ The key is sha256 over, in fixed order:
   the runner build script.
 
 Main full gate and PR impact gate skip the install only when the worker's `HOBO_CI_DEPS_LAYER` exactly equals the
-checkout's computed key. Every miss runs `pnpm install --frozen-lockfile`, so a wrong key costs time, never
-correctness. The daily scheduled Main full gate always installs as the correctness verifier. Other jobs retain
-the ordinary install, which finds a matching layer's `.modules.yaml` current.
+checkout's computed key. Every miss runs `pnpm install --frozen-lockfile` against the full checkout, including its
+lifecycle scripts, so normalization never removes scripts from a fallback install. The image install uses
+`--ignore-scripts` followed by its explicit native-package rebuild list, and its `Already up to date` verification
+sets `npm_config_ignore_scripts=true`; importer lifecycle scripts therefore cannot affect the produced layer. The
+daily scheduled Main full gate always installs as the correctness verifier. Other jobs retain the ordinary install,
+which finds a matching layer's `.modules.yaml` current.
 
 Nix and Bazel have the same rule: the key is the full declared input set, outputs are immutable, and a cache hit
 is only a speed-up over a build you could have run. Adopt that discipline, not the tools.
@@ -420,7 +424,8 @@ acceptance boxes.
 - **Acceptance:**
   - install of 5 s or less on `main` for every job that installs;
   - a lockfile-changing PR passes on the fallback path;
-  - a package-manifest-only change gets a new key;
+  - an install-relevant package-manifest-only change gets a new key, while a scripts-only change preserves both the
+    key and every staged context byte;
   - the build stage runs with no network (a test greps the Dockerfile, and a buildx `--network=none` run passes).
 
 ### Phase 5: signing, fork safety, retention
