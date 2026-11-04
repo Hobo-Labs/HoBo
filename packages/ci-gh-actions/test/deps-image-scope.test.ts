@@ -88,8 +88,12 @@ describe("CI deps image push scope", () => {
 		expect(job["timeout-minutes"]).toBe(5);
 		expect(job["runs-on"]).toBe(depsJob["runs-on"]);
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
-		expect(job.if).toContain("github.event.workflow_run.conclusion == 'success'");
-		expect(job.steps[0].with.ref).toContain("github.event.workflow_run.head_sha");
+		expect(job.if).toContain(
+			"github.event.workflow_run.conclusion == 'success'",
+		);
+		expect(job.steps[0].with.ref).toContain(
+			"github.event.workflow_run.head_sha",
+		);
 		expect(job.steps[1].run).toBe(
 			"bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh",
 		);
