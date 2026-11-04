@@ -556,6 +556,85 @@ function git(args: readonly string[], cwd: string, input?: string): Buffer {
 	});
 }
 
+function lsTreeRecords(
+	rev: string,
+	cwd: string,
+	pathspecs: readonly string[],
+): { files: Map<string, string>; gitlinks: Map<string, string> } {
+	const files = new Map<string, string>();
+	const gitlinks = new Map<string, string>();
+	if (pathspecs.length === 0) return { files, gitlinks };
+	const args = ["ls-tree", "-r", "-z", "--full-tree", rev, "--", ...pathspecs];
+	for (const record of git(args, cwd).toString("utf8").split("\0")) {
+		const match = /^\d+ (blob|commit) ([0-9a-f]+)\t(.+)$/s.exec(record);
+		if (match?.[1] === "blob" && match[3]) files.set(match[3], match[2] ?? "");
+		else if (match?.[1] === "commit" && match[3])
+			gitlinks.set(match[3], match[2] ?? "");
+	}
+	return { files, gitlinks };
+}
+
+/** Pathspecs covering release OCI input hashing — not the whole repo (docs/tests/.github). */
+const RELEASE_INPUT_PATHSPECS = [
+	"packages",
+	"site",
+	"examples",
+	"external",
+	"src",
+	"release",
+	"deploy",
+	"scripts",
+	"mise.toml",
+	"mise.lock",
+	"tsconfig.base.json",
+	"pnpm-workspace.yaml",
+	".npmrc",
+	"package.json",
+	"pnpm-lock.yaml",
+	"turbo.json",
+	OCI_IMAGES_MANIFEST,
+] as const;
+
+/** Git tree scoped to release OCI inputs (fast on sparse CI checkouts). */
+export function releaseInputGitTree(rev: string, cwd: string): RepoTree {
+	const cacheKey = `${cwd}\0${rev}\0release-inputs`;
+	const cached = gitTreeCache.get(cacheKey);
+	if (cached) return cached;
+	const { files, gitlinks } = lsTreeRecords(rev, cwd, RELEASE_INPUT_PATHSPECS);
+	const tree: RepoTree = {
+		files,
+		gitlinks,
+		read(paths) {
+			const wanted = paths.filter((path) => files.has(path));
+			const contents = new Map<string, string>();
+			if (wanted.length === 0) return contents;
+			const output = git(
+				["cat-file", "--batch"],
+				cwd,
+				`${wanted.map((path) => files.get(path)).join("\n")}\n`,
+			);
+			let offset = 0;
+			for (const path of wanted) {
+				const newline = output.indexOf(10, offset);
+				const header = output.subarray(offset, newline).toString("utf8");
+				const size = Number(header.split(" ")[2]);
+				if (!Number.isInteger(size))
+					throw new Error(
+						`git cat-file: unexpected header ${header} for ${path}`,
+					);
+				contents.set(
+					path,
+					output.subarray(newline + 1, newline + 1 + size).toString("utf8"),
+				);
+				offset = newline + 1 + size + 1;
+			}
+			return contents;
+		},
+	};
+	gitTreeCache.set(cacheKey, tree);
+	return tree;
+}
+
 export function gitTree(rev: string, cwd: string): RepoTree {
 	const cacheKey = `${cwd}\0${rev}`;
 	const cached = gitTreeCache.get(cacheKey);
@@ -618,7 +697,7 @@ function main(): void {
 	const only = listFlag(argv, "--only");
 	const exclude = listFlag(argv, "--exclude") ?? new Set<string>();
 	const headRev = process.env.HOBO_CHECK_HEAD ?? "HEAD";
-	const head = imageInputs(gitTree(headRev, root));
+	const head = imageInputs(releaseInputGitTree(headRev, root));
 	let affected: AffectedImage[];
 	if (argv.includes("--all")) {
 		affected = orderedImageIds(head.keys()).map((id) => ({
@@ -632,7 +711,10 @@ function main(): void {
 		)
 			.toString("utf8")
 			.trim();
-		affected = affectedReleaseOciImages(imageInputs(gitTree(base, root)), head);
+		affected = affectedReleaseOciImages(
+			imageInputs(releaseInputGitTree(base, root)),
+			head,
+		);
 	}
 	const selected = affected.filter(
 		({ id }) => (!only || only.has(id)) && !exclude.has(id),

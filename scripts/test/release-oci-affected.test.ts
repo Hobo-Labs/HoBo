@@ -8,6 +8,7 @@ import {
 	gitTree,
 	imageInputs,
 	isBuildInput,
+	releaseInputGitTree,
 	type ImageInputs,
 	type RepoTree,
 } from "../ci/release-oci-affected.mts";
@@ -224,15 +225,15 @@ function affected(
 
 const ALL = ["hobo-code", "hobo-cli", "hobo-mcp", "hobo-site"];
 
-/** One git ls-tree + imageInputs per file; ~1–3s on CI (measured on hobo runner). */
-const REPO_MANIFEST_INTEGRATION_TIMEOUT_MS = 30_000;
+/** One scoped git ls-tree + imageInputs; ~1–15s on CI (was 30s+ full-tree ls-tree). */
+const REPO_MANIFEST_INTEGRATION_TIMEOUT_MS = 60_000;
 
 let repoHeadImageInputs: ReadonlyMap<string, ImageInputs> | undefined;
 
 describe("affected release OCI images", () => {
 	beforeAll(() => {
 		clearReleaseOciGitTreeCache();
-		repoHeadImageInputs = imageInputs(gitTree("HEAD", root));
+		repoHeadImageInputs = imageInputs(releaseInputGitTree("HEAD", root));
 	}, REPO_MANIFEST_INTEGRATION_TIMEOUT_MS);
 	it("builds nothing for an unchanged tree or files no image reads", () => {
 		expect(affected({})).toEqual([]);
