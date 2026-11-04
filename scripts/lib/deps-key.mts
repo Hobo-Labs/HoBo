@@ -3,9 +3,12 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ciRunnerImageVersion } from "./ci-runner-contract.mts";
 
+export const DEPS_LAYER_BUCKET_SCRIPT_PATH =
+	"scripts/ci/deps-layer-buckets.mts";
 export const DEPS_BUILD_RECIPE_PATHS = [
 	"packages/ci-gh-actions/deploy/ci-runner/deps/Dockerfile",
 	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
+	DEPS_LAYER_BUCKET_SCRIPT_PATH,
 ] as const;
 
 export type DepsKeyInputs = Readonly<{
@@ -184,6 +187,7 @@ export function depsContextPaths(root: string): string[] {
 			? []
 			: [".pnpmfile.cjs"]),
 		...Object.keys(patchFiles(root)).sort(),
+		DEPS_LAYER_BUCKET_SCRIPT_PATH,
 	];
 }
 

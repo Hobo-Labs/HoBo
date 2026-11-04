@@ -62,7 +62,7 @@ is unknown here.
 | `registry:2` is pulled by tag | `deploy/ci-runner/build.sh` | Deferred toolchain hardening: pin by digest |
 | `curl https://mise.run \| sh` runs an unpinned installer script (only the version is pinned) | `deploy/ci-runner/build.sh` | Deferred toolchain hardening: pinned mise release asset with its SHA-256 |
 | `pnpm install` on every job links every package even with a warm mounted store | every job | **Implemented Phase 4:** prebuilt `node_modules` layer; Main full gate and PR impact gate skip on an exact key match and install on every miss |
-| Legacy Docker records build times but cannot rewrite every file timestamp, so equal inputs do not yield byte-reproducible image digests | `deploy/ci-runner/deps/Dockerfile` and `build-deps.sh` | Phase 5: BuildKit `rewrite-timestamp=true` (the box's Debian `docker.io` legacy builder lacks it) |
+| Cache-off layer-digest equality and actual push savings still need box evidence | `deploy/ci-runner/deps/Dockerfile` and `build-deps.sh` | Phase 5 verification: all copied files have a fixed epoch; buildx `rewrite-timestamp=true` is enabled only when the installed builder advertises it |
 
 ## Why: the data from main run 41690661790 (237 s)
 
@@ -380,25 +380,27 @@ remaining toolchain pins are deferred hardening rather than claimed here.
   1. `pnpm fetch` from `pnpm-lock.yaml` only (network, integrity-pinned);
   2. `--network=none` copy of every importer's `package.json` and the workspace files, then
      `pnpm install --frozen-lockfile --offline`;
-  3. a final stage holding only the `node_modules` trees at the workspace path.
-- The image is pushed from `main` and from the scheduled PR-key builder.
+  3. a final stage holding only the `node_modules` trees at the workspace path, split into stable content-hash buckets.
+- A separate non-blocking workflow publishes a local main image only when GHCR lacks its tag.
 - The worker picks `hobo-ci-deps:<toolchain>-<depsKey>` per run, as in option 1 of the composition mechanism
   above.
 - Job install steps become `pnpm install --frozen-lockfile --offline`, with a fallback to the online install
   when no layer was used. The worker exports `HOBO_CI_DEPS_LAYER=<key>` to the job.
 
 **Implemented in this change (2026-11-04):** the pure key function hashes every declared input (including each
-lockfile importer manifest, the deps build recipe and the Node/pnpm mise entries) with mutation tests.
-`deps/build-deps.sh` stages only those manifests, runs the network-enabled `pnpm fetch` target, then a separate
+lockfile importer manifest, the deps build recipe, bucket generator and Node/pnpm mise entries) with mutation tests.
+`deps/build-deps.sh` stages only those inputs, runs the network-enabled `pnpm fetch` target, then a separate
 whole-build `--network=none` install/rebuild. Both stages reuse the persistent host store through the same
-BuildKit cache mount. The install stage separately stages `node_modules` and `.git`, so the final toolchain-based
-stage copies only those trees, with no deletion pass, fetch store or staged manifests. The candidate gets
-content/toolchain labels and the commit's `SOURCE_DATE_EPOCH`; the offline `Already up to date` contract runs
-before promoting a new build to `:local`. Every event reuses an exact local or GHCR hit without building. The
-worker selects that layer only for HoBo leases with a matching toolchain label, exports its full key, and refuses
-mismatched pre-warmed containers. Every default-path box checkout sets `clean: false` under a new lint rule.
-Main/schedule/dispatch can publish GHCR tags; PRs touching the deps-build inputs reuse a keyed hit or exercise
-build-only mode without promoting the new candidate or pushing.
+BuildKit cache mount. The install stage separately stages `node_modules` and `.git`. The bucket generator assigns
+each content-keyed `.pnpm` entry to one of 64 buckets by SHA-256 of its name and emits the corresponding
+`COPY --link` section; its drift test requires the committed Dockerfile to match. One residual layer holds
+workspace links, pnpm metadata and `.git`. Sorted entries, fixed `--chown` and a fixed `SOURCE_DATE_EPOCH` on every
+copied path make unchanged buckets byte-stable inputs; buildx timestamp rewriting is optional and feature-detected.
+Equal-digest claims and actual compressed sizes remain box-side evidence. The offline `Already up to date`
+contract still runs before promoting a new build to `:local`. Every event reuses an exact local or GHCR hit without
+building. The worker selects that layer only for HoBo leases with a matching toolchain label, exports its full key,
+and refuses mismatched pre-warmed containers. Every default-path box checkout sets `clean: false` under a lint rule.
+PRs touching the deps-build inputs reuse a keyed hit or exercise build-only mode without promoting or pushing.
 
 Main full gate and PR impact gate skip `pnpm install` on an exact `HOBO_CI_DEPS_LAYER` match and run the ordinary
 frozen install on every miss; the daily scheduled Main full gate always installs to verify correctness. The skip
@@ -408,10 +410,12 @@ remain dangling until `dist` is built. Other jobs keep their install-and-verify 
 
 Every main push runs `ci-deps-image`; an exact `hobo.ci.deps-key` label match on `hobo-ci-deps:local` exits after
 checkout, key computation, and one inspect, while a miss resolves or builds and promotes the layer. Schedule and
-workflow dispatch always run; PR scoping is unchanged. Neither gate depends on the deps-image job, so it adds no
-gate wait. GHCR retention and attestation verification stay Phase 5. Byte-reproducible digests are not claimed
-because the legacy builder has no BuildKit `rewrite-timestamp`; that gap is recorded above with its owner phase.
-Main-run timing evidence is still required before ticking the time-based acceptance boxes.
+workflow dispatch always run; PR scoping is unchanged. Neither gate depends on the deps-image job. The separate
+`ci-deps-publish.yml` workflow starts only after a successful main fabric run or manually, skips absent local and
+existing remote tags, cancels superseded publishes, and bounds both the job (five minutes) and `docker push`
+(240 seconds). Registry failure cannot fail or delay HoBo CI. GHCR retention and attestation verification stay
+Phase 5. Main-run timing, layer-digest and push-size evidence are still required before ticking time-based
+acceptance boxes.
 
 - **Acceptance:**
   - install of 5 s or less on `main` for every job that installs;

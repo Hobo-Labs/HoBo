@@ -151,6 +151,7 @@ jobs:
             changed="$(git diff --name-only "$base" HEAD -- \
               packages/ci-gh-actions/deploy/ci-runner/deps \
               scripts/ci/deps-key.mts \
+              scripts/ci/deps-layer-buckets.mts \
               scripts/lib/deps-key.mts)"
             if [ -z "$changed" ]; then run=false; fi
           fi

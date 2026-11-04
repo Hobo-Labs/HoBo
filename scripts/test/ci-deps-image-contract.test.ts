@@ -43,6 +43,29 @@ describe("CI deps image build contract", () => {
 		assert.ok(!dockerfile.split("AS final")[1]?.includes("RUN pnpm fetch"));
 	});
 
+	it("partitions the store into reproducible linked layers and a residual layer", () => {
+		includes(
+			dockerfile,
+			"node --experimental-strip-types scripts/ci/deps-layer-buckets.mts partition",
+		);
+		includes(dockerfile, '-exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +');
+		assert.equal(
+			dockerfile.match(/^COPY --link --from=install --chown=1000:1000/gm)
+				?.length,
+			65,
+		);
+		includes(dockerfile, "deps-buckets/00/");
+		includes(dockerfile, "deps-buckets/63/");
+		includes(
+			build,
+			"node --experimental-strip-types scripts/ci/deps-layer-buckets.mts --check",
+		);
+		includes(build, "build_command=(docker build)");
+		includes(build, "build_command=(docker buildx build --load)");
+		includes(build, "rewrite_args=(--rewrite-timestamp=true)");
+		includes(build, "grep -q -- '--rewrite-timestamp'");
+	});
+
 	it("records toolchain, key, workspace, git remote and reproducible epoch", () => {
 		includes(dockerfile, "LABEL hobo.ci.deps-key=${DEPS_KEY}");
 		includes(dockerfile, "hobo.ci.toolchain=${TOOLCHAIN_VERSION}");
@@ -78,7 +101,7 @@ describe("CI deps image build contract", () => {
 		const restore = build.indexOf('docker tag hobo-ci-deps:local "$candidate"');
 		const hit = build.indexOf('if docker image inspect "$candidate"', restore);
 		const exit = build.indexOf("exit 0", hit);
-		const buildCommand = build.indexOf("docker build \\");
+		const buildCommand = build.indexOf('"${build_command[@]}" \\');
 		assert.ok(localKey > -1);
 		assert.ok(restore > localKey);
 		assert.ok(hit > restore);
@@ -160,6 +183,7 @@ describe("CI deps workflow contract", () => {
 		includes(job, "needs: ci-runner-image");
 		includes(job, "needs.ci-runner-image.result != 'failure'");
 		includes(job, "packages/ci-gh-actions/deploy/ci-runner/deps");
+		includes(job, "scripts/ci/deps-layer-buckets.mts");
 		includes(job, "args=(--no-promote)");
 		includes(job, "Remove PR candidate tag");
 		assert.ok(!job.includes("docker push"));

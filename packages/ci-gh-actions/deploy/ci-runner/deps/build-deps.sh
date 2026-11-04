@@ -72,9 +72,18 @@ if docker image inspect "$candidate" >/dev/null 2>&1; then
   exit 0
 fi
 
+node --experimental-strip-types scripts/ci/deps-layer-buckets.mts --check
+build_command=(docker build)
+rewrite_args=()
+if buildx_help="$(docker buildx build --help 2>/dev/null)" && grep -q -- '--rewrite-timestamp' <<<"$buildx_help"; then
+  build_command=(docker buildx build --load)
+  rewrite_args=(--rewrite-timestamp=true)
+fi
+
 echo "Building $candidate (fetch network restricted to lockfile-verified downloads; install offline)"
-docker build \
+"${build_command[@]}" \
   "${docker_memory_args[@]}" \
+  "${rewrite_args[@]}" \
   --build-arg "TOOLCHAIN_IMAGE=${base}" \
   --build-arg "DEPS_KEY=${key}" \
   --build-arg "TOOLCHAIN_VERSION=${toolchain}" \
