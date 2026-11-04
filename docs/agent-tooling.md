@@ -366,6 +366,8 @@ The non-staged relevant-check runner forwards its selected `--base` into
 after install or generated-contract steps touch the local working tree.
 It also forwards `--staged` to `standards:check` only for staged validation;
 latest-commit and PR-base checks use standards' worktree/base mode.
+`docs:freshness` ignores every path under `node_modules`, including the
+deps-layer symlinks a CI job links into each workspace package.
 
 When merging `origin/main` into an active proof branch, recently merged draft
 workspaces may require fresh `pnpm-lock.yaml` importer entries. Keep those
