@@ -2,7 +2,11 @@ import { execFile, spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { promisify } from "node:util";
 import { z } from "zod";
-import type { DockerDriver, IsolatedContainerSpec } from "./docker-driver.js";
+import type {
+	ContainerResourceWeights,
+	DockerDriver,
+	IsolatedContainerSpec,
+} from "./docker-driver.js";
 import type { WorkerImage } from "./image-gc.js";
 import type { WorkerStorageDockerDriver } from "./storage-admission.js";
 
@@ -51,13 +55,83 @@ export function builderPruneArgs(keepStorage: string): string[] {
 	return ["builder", "prune", "--force", "--keep-storage", keepStorage];
 }
 
+function containerResourceArgs(
+	weights: Readonly<{ cpuShares?: number; blkioWeight?: number }>,
+	includeBlkio: boolean,
+): string[] {
+	const args: string[] = [];
+	if (weights.cpuShares !== undefined) {
+		if (
+			!Number.isInteger(weights.cpuShares) ||
+			weights.cpuShares < 2 ||
+			weights.cpuShares > 262_144
+		)
+			throw new Error("invalid container CPU shares");
+		args.push("--cpu-shares", String(weights.cpuShares));
+	}
+	if (includeBlkio && weights.blkioWeight !== undefined) {
+		if (
+			!Number.isInteger(weights.blkioWeight) ||
+			weights.blkioWeight < 10 ||
+			weights.blkioWeight > 1_000
+		)
+			throw new Error("invalid container block IO weight");
+		args.push("--blkio-weight", String(weights.blkioWeight));
+	}
+	return args;
+}
+
+function blkioWeightUnsupported(message: string): boolean {
+	return /blkio|block i\/o|io\.weight|unknown flag|not supported/iu.test(
+		message,
+	);
+}
+
 /** Operator-owned Docker engine on a free VM; not invoked from Vercel serverless. */
 export function createCliDockerDriver(options: {
 	env?: NodeJS.ProcessEnv;
 	binary?: string;
+	log?: (
+		event: "hobo_ci_blkio_weight_unsupported",
+		fields: Readonly<Record<string, string | number | boolean>>,
+	) => void;
 }): DockerDriver & WorkerStorageDockerDriver {
 	const docker = options.binary ?? "docker";
 	const env = options.env ?? process.env;
+	let blkioWeightSupported = true;
+	let blkioFailureLogged = false;
+	const withBlkioFallback = async <T>(
+		weights: Readonly<{ cpuShares?: number; blkioWeight?: number }>,
+		operation: (includeBlkio: boolean) => Promise<T>,
+	): Promise<T> => {
+		try {
+			return await operation(blkioWeightSupported);
+		} catch (error) {
+			if (
+				weights.blkioWeight === undefined ||
+				!blkioWeightSupported ||
+				!blkioWeightUnsupported(error instanceof Error ? error.message : "")
+			)
+				throw error;
+			blkioWeightSupported = false;
+			if (!blkioFailureLogged) {
+				blkioFailureLogged = true;
+				const fields = {
+					message: error instanceof Error ? error.message : "unknown",
+				};
+				if (options.log)
+					options.log("hobo_ci_blkio_weight_unsupported", fields);
+				else
+					console.error(
+						JSON.stringify({
+							event: "hobo_ci_blkio_weight_unsupported",
+							...fields,
+						}),
+					);
+			}
+			return operation(false);
+		}
+	};
 	return {
 		async dataRoot() {
 			const { stdout } = await exec(
@@ -195,53 +269,56 @@ export function createCliDockerDriver(options: {
 			});
 		},
 		async create(spec: IsolatedContainerSpec) {
-			const args = [
-				"create",
-				"--rm",
-				// `sleep infinity` as PID 1 ignores SIGTERM, so without an init every
-				// `docker stop` waited out its full timeout while the slot stayed held.
-				"--init",
-				"--name",
-				spec.name,
-				"--network",
-				"bridge",
-				"--label",
-				"hobo.ci/isolated=1",
-				"--label",
-				`hobo.ci/timeout-ms=${spec.timeoutMs}`,
-			];
-			if (spec.runAsUser) args.push("--user", spec.runAsUser);
-			if (spec.memoryMb !== undefined) {
-				if (!Number.isInteger(spec.memoryMb) || spec.memoryMb < 512)
-					throw new Error("invalid container memory limit");
-				args.push(
-					"--memory",
-					`${spec.memoryMb}m`,
-					"--memory-swap",
-					`${spec.memoryMb}m`,
-				);
-			}
-			args.push(...dockerSocketMountCreateArgs(env));
-			for (const volume of spec.volumes ?? []) {
-				if (
-					!/^[A-Za-z0-9][A-Za-z0-9_.-]*$|^\/[^:,]+$/.test(volume.source) ||
-					!/^\/[^:,]+$/.test(volume.target)
-				)
-					throw new Error("invalid volume mount");
-				args.push("-v", `${volume.source}:${volume.target}`);
-			}
-			for (const [key, value] of Object.entries(spec.env))
-				args.push("-e", `${key}=${value}`);
-			args.push(spec.image, ...spec.command);
-			const { stdout } = await exec(docker, args, {
-				env,
-				timeout: 120_000,
-				maxBuffer: 1024 * 1024,
+			return withBlkioFallback(spec, async (includeBlkio) => {
+				const args = [
+					"create",
+					"--rm",
+					// `sleep infinity` as PID 1 ignores SIGTERM, so without an init every
+					// `docker stop` waited out its full timeout while the slot stayed held.
+					"--init",
+					"--name",
+					spec.name,
+					"--network",
+					"bridge",
+					"--label",
+					"hobo.ci/isolated=1",
+					"--label",
+					`hobo.ci/timeout-ms=${spec.timeoutMs}`,
+				];
+				if (spec.runAsUser) args.push("--user", spec.runAsUser);
+				if (spec.memoryMb !== undefined) {
+					if (!Number.isInteger(spec.memoryMb) || spec.memoryMb < 512)
+						throw new Error("invalid container memory limit");
+					args.push(
+						"--memory",
+						`${spec.memoryMb}m`,
+						"--memory-swap",
+						`${spec.memoryMb}m`,
+					);
+				}
+				args.push(...containerResourceArgs(spec, includeBlkio));
+				args.push(...dockerSocketMountCreateArgs(env));
+				for (const volume of spec.volumes ?? []) {
+					if (
+						!/^[A-Za-z0-9][A-Za-z0-9_.-]*$|^\/[^:,]+$/.test(volume.source) ||
+						!/^\/[^:,]+$/.test(volume.target)
+					)
+						throw new Error("invalid volume mount");
+					args.push("-v", `${volume.source}:${volume.target}`);
+				}
+				for (const [key, value] of Object.entries(spec.env))
+					args.push("-e", `${key}=${value}`);
+				args.push(spec.image, ...spec.command);
+				const { stdout } = await exec(docker, args, {
+					env,
+					timeout: 120_000,
+					maxBuffer: 1024 * 1024,
+				});
+				const containerId = stdout.trim();
+				if (!/^[a-f0-9]{64}$/.test(containerId))
+					throw new Error("invalid container id");
+				return { name: spec.name, containerId };
 			});
-			const containerId = stdout.trim();
-			if (!/^[a-f0-9]{64}$/.test(containerId))
-				throw new Error("invalid container id");
-			return { name: spec.name, containerId };
 		},
 		async start(_name, containerId) {
 			await exec(docker, ["start", containerId], { env, timeout: 60_000 });
@@ -304,6 +381,19 @@ export function createCliDockerDriver(options: {
 			await exec(docker, ["rename", containerId, name], {
 				env,
 				timeout: 30_000,
+			});
+		},
+		async updateResources(containerId, weights: ContainerResourceWeights) {
+			await withBlkioFallback(weights, async (includeBlkio) => {
+				await exec(
+					docker,
+					[
+						"update",
+						...containerResourceArgs(weights, includeBlkio),
+						containerId,
+					],
+					{ env, timeout: 30_000, maxBuffer: 4096 },
+				);
 			});
 		},
 		async stop(_name, containerId) {
