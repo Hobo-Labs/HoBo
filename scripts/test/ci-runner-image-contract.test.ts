@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	assertBaseDockerfileDigestPinned,
@@ -41,15 +41,18 @@ const root = join(import.meta.dirname, "..", "..");
 // Check names do not depend on what the host has installed, so these cases
 // skip the dozen sequential tool spawns a stalled runner box can stretch past
 // the test timeout. The preflight case below still runs the real probes.
-const present: CommandRunner = () => ({
+const present: CommandRunner = (cmd, args) => ({
 	ok: true,
-	out: "/usr/bin/stub 0.14.0",
+	out:
+		cmd === "mise" && args.includes("which")
+			? "/usr/bin/stub"
+			: "/usr/bin/stub 0.14.0",
 });
 
 describe("ci-runner tool command diagnostics", () => {
 	const probeWith = (result: ReturnType<typeof spawnCommand>) =>
 		probeMiseTool("shellcheck", (cmd, args) =>
-			cmd === "sh" ? present(cmd, args) : result,
+			cmd === "sh" || cmd === "mise" ? present(cmd, args) : result,
 		);
 
 	it("reports ENOENT, the attempted command, and the remedy", () => {
@@ -85,28 +88,65 @@ describe("ci-runner tool command diagnostics", () => {
 		expect(check.detail).toContain("stderr tail: second | third | fourth");
 		expect(check.detail).not.toContain("stderr tail: first");
 	});
+
+	it("verifies the absolute executable resolved by mise which", () => {
+		const calls: { cmd: string; args: string[] }[] = [];
+		const executable = "/opt/mise/installs/shellcheck/0.10.0/bin/shellcheck";
+		const check = probeMiseTool(
+			"shellcheck",
+			(cmd, args) => {
+				calls.push({ cmd, args });
+				if (cmd === "sh") return { ok: true, out: "/usr/bin/shellcheck" };
+				if (cmd === "mise") return { ok: true, out: executable };
+				return { ok: true, out: "ShellCheck 0.10.0" };
+			},
+			root,
+		);
+		expect(check.ok).toBe(true);
+		expect(calls).toEqual([
+			{ cmd: "sh", args: ["-c", "command -v shellcheck || true"] },
+			{ cmd: "mise", args: ["--cd", root, "which", "shellcheck"] },
+			{ cmd: executable, args: ["--version"] },
+		]);
+	});
 });
 
 describe("ci-runner mise tool sync", () => {
-	it("installs only missing checkout tools with the lockfile and reports elapsed time", () => {
+	it("installs missing locked tools and exports their bin dirs to current and GitHub PATH", () => {
 		const calls: { cmd: string; args: string[] }[] = [];
+		const appended: { path: string; data: string }[] = [];
 		const times = [100, 175];
+		const executable = "/opt/mise/installs/shellcheck/0.10.0/bin/shellcheck";
+		const binDir = "/opt/mise/installs/shellcheck/0.10.0/bin";
+		const env = {
+			PATH: "/usr/bin",
+			GITHUB_ACTIONS: "true",
+			GITHUB_PATH: "/runner/github-path",
+		};
 		const result = syncMissingMiseTools(root, {
 			run: (cmd, args) => {
 				calls.push({ cmd, args });
 				return {
 					ok: true,
-					out: args.includes("ls")
-						? "shellcheck 0.10.0 (missing) /checkout/mise.toml 0.10.0\nnot-in-mise-toml 1 (missing)"
-						: "",
+					out: args.includes("which")
+						? executable
+						: args.includes("ls")
+							? "shellcheck 0.10.0 (missing) /checkout/mise.toml 0.10.0\nnot-in-mise-toml 1 (missing)"
+							: "",
 				};
 			},
 			now: () => times.shift() ?? 175,
+			env,
+			appendFile: (path, data) => appended.push({ path, data }),
 		});
 		expect(result.ok).toBe(true);
 		expect(result.installed).toEqual(["shellcheck"]);
 		expect(result.elapsedMs).toBe(75);
 		expect(result.detail).toContain("installed shellcheck");
+		expect(env.PATH).toBe([binDir, "/usr/bin"].join(delimiter));
+		expect(appended).toEqual([
+			{ path: "/runner/github-path", data: `${binDir}\n` },
+		]);
 		expect(calls).toEqual([
 			{ cmd: "mise", args: ["--cd", root, "trust", "./mise.toml"] },
 			{
@@ -117,7 +157,37 @@ describe("ci-runner mise tool sync", () => {
 				cmd: "mise",
 				args: ["--cd", root, "install", "--locked", "shellcheck"],
 			},
+			{ cmd: "mise", args: ["--cd", root, "which", "shellcheck"] },
 		]);
+	});
+
+	it("keeps resolver failure diagnostics when install succeeds without a usable binary", () => {
+		const result = syncMissingMiseTools(root, {
+			run: (_cmd, args) => {
+				if (args.includes("which")) {
+					return {
+						ok: false,
+						out: "no executable",
+						failure:
+							"mise which shellcheck: exited 1; stderr tail: no executable",
+					};
+				}
+				return {
+					ok: true,
+					out: args.includes("ls") ? "shellcheck 0.10.0 (missing)" : "",
+				};
+			},
+			env: {},
+			appendFile: () => {
+				throw new Error(
+					"GITHUB_PATH must not be written after resolution fails",
+				);
+			},
+		});
+		expect(result.ok).toBe(false);
+		expect(result.detail).toContain(
+			"mise which shellcheck: exited 1; stderr tail: no executable",
+		);
 	});
 
 	it("does not invoke the installer when no checkout tool is missing", () => {
@@ -218,6 +288,8 @@ describe("ci-runner image contract (repo manifests)", () => {
 		const build = readFileSync(join(root, CI_RUNNER_BUILD_SCRIPT), "utf8");
 		expect(build).toContain("mise install --locked\n");
 		expect(build).toContain("mise --locked oci build ");
+		expect(build).toContain("scripts/ci-runner-preflight.mts");
+		expect(build).toContain("HOBO_CI_RUNNER_CONTRACT=live");
 		const fallback = readFileSync(
 			join(
 				root,
@@ -226,15 +298,17 @@ describe("ci-runner image contract (repo manifests)", () => {
 			"utf8",
 		);
 		expect(fallback).toContain("mise install --locked");
-		for (const tool of [
-			"node --version",
-			"pnpm --version",
-			"cue version",
-			"gitleaks version",
-			"shellcheck --version",
-			"turbo --version",
-		]) {
-			expect(fallback).toContain(`mise exec -- ${tool}`);
+		const lock = readFileSync(join(root, MISE_LOCK), "utf8");
+		const lockedTools = [...lock.matchAll(/^\[\[tools\.([\w-]+)\]\]$/gm)].map(
+			(match) => match[1],
+		);
+		expect(lockedTools).toContain("shellcheck");
+		for (const tool of lockedTools) {
+			const versionArgs =
+				tool === "cue" || tool === "gitleaks" ? "version" : "--version";
+			expect(fallback, `${tool} in monolithic image`).toContain(
+				`mise exec -- ${tool} ${versionArgs}`,
+			);
 		}
 	});
 

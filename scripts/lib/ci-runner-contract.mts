@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { delimiter, dirname, isAbsolute, join } from "node:path";
 
 export const CI_RUNNER_BASE_DOCKERFILE =
 	"packages/ci-gh-actions/deploy/ci-runner/base/Dockerfile";
@@ -256,7 +256,11 @@ function parseMiseToolNames(miseToml: string): string[] {
 
 const MISE_TOOL_REMEDY = `Remedy: preflight installs missing tools with mise install --locked from the checkout's ${MISE_LOCK}; if the tool still fails, rebuild with bash ${CI_RUNNER_BUILD_SCRIPT}`;
 
-export function probeMiseTool(tool: string, run: CommandRunner): ContractCheck {
+export function probeMiseTool(
+	tool: string,
+	run: CommandRunner,
+	root: string = process.cwd(),
+): ContractCheck {
 	const whichArgs = ["-c", `command -v ${tool} || true`];
 	const which = run("sh", whichArgs);
 	const path = which.out.split("\n")[0]?.trim() ?? "";
@@ -267,18 +271,28 @@ export function probeMiseTool(tool: string, run: CommandRunner): ContractCheck {
 			detail: `${commandLine("sh", whichArgs)}: ${tool} not on PATH (not installed in runner image)\n    ${MISE_TOOL_REMEDY}`,
 		};
 	}
-	const ver =
-		tool === "cue"
-			? run("cue", ["version"])
-			: tool === "gitleaks"
-				? run("gitleaks", ["version"])
-				: run(tool, ["--version"]);
+	const resolveArgs = ["--cd", root, "which", tool];
+	const resolved = run("mise", resolveArgs);
+	const executable = resolved.out.split("\n")[0]?.trim() ?? "";
+	if (!resolved.ok || !isAbsolute(executable)) {
+		const failure = resolved.ok
+			? `${commandLine("mise", resolveArgs)}: expected an absolute executable path for ${tool}, got ${executable || "(empty)"}`
+			: commandFailure(resolved, commandLine("mise", resolveArgs));
+		return {
+			ok: false,
+			name: `mise-tool:${tool}`,
+			detail: `${failure}\n    ${MISE_TOOL_REMEDY}`,
+		};
+	}
+	const versionArgs =
+		tool === "cue" || tool === "gitleaks" ? ["version"] : ["--version"];
+	const ver = run(executable, versionArgs);
 	return {
 		ok: ver.ok,
 		name: `mise-tool:${tool}`,
 		detail: ver.ok
 			? (ver.out.split("\n")[0] ?? `${tool} reported success`)
-			: `${commandFailure(ver, commandLine(tool, ["--version"]))}\n    ${MISE_TOOL_REMEDY}`,
+			: `${commandFailure(ver, commandLine(executable, versionArgs))}\n    ${MISE_TOOL_REMEDY}`,
 	};
 }
 
@@ -294,10 +308,14 @@ export function syncMissingMiseTools(
 	options: {
 		readonly run?: CommandRunner;
 		readonly now?: () => number;
+		readonly env?: NodeJS.ProcessEnv;
+		readonly appendFile?: (path: string, data: string) => void;
 	} = {},
 ): MiseToolSyncResult {
 	const run = options.run ?? spawnCommand;
 	const now = options.now ?? Date.now;
+	const env = options.env ?? process.env;
+	const appendFile = options.appendFile ?? appendFileSync;
 	const started = now();
 	const finish = (
 		ok: boolean,
@@ -357,6 +375,24 @@ export function syncMissingMiseTools(
 			[],
 			`${commandFailure(install, installCommand)}\n    ${MISE_TOOL_REMEDY}`,
 		);
+	}
+	const binDirs: string[] = [];
+	for (const tool of missing) {
+		const resolveArgs = ["--cd", root, "which", tool];
+		const resolved = run("mise", resolveArgs);
+		const executable = resolved.out.split("\n")[0]?.trim() ?? "";
+		if (!resolved.ok || !isAbsolute(executable)) {
+			const failure = resolved.ok
+				? `${commandLine("mise", resolveArgs)}: expected an absolute executable path for ${tool}, got ${executable || "(empty)"}`
+				: commandFailure(resolved, commandLine("mise", resolveArgs));
+			return finish(false, missing, `${failure}\n    ${MISE_TOOL_REMEDY}`);
+		}
+		binDirs.push(dirname(executable));
+	}
+	const pathDirs = [...new Set(binDirs)];
+	env.PATH = [...pathDirs, ...(env.PATH ? [env.PATH] : [])].join(delimiter);
+	if (env.GITHUB_ACTIONS === "true" && env.GITHUB_PATH) {
+		appendFile(env.GITHUB_PATH, pathDirs.map((dir) => `${dir}\n`).join(""));
 	}
 	return finish(
 		true,
@@ -437,7 +473,7 @@ export function evaluateCiRunnerContract(
 
 	const miseToml = readFileSync(join(root, MISE_TOML), "utf8");
 	for (const tool of parseMiseToolNames(miseToml)) {
-		checks.push(probeMiseTool(tool, run));
+		checks.push(probeMiseTool(tool, run, root));
 	}
 
 	const commands = live

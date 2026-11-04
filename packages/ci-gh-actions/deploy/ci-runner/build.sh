@@ -122,6 +122,7 @@ export MISE_OCI_INSECURE_REGISTRIES="${endpoint}"
 echo "Packaging mise.lock tools into OCI layout at ${oci_dir} (base via ${endpoint})"
 rm -rf "${oci_dir}"
 # Tagged as the candidate, so loading the layout cannot move :local ahead of the contract.
+# Every locked tool gets an OCI layer and its install bin dir in the image ENV PATH.
 mise --locked oci build -o "${oci_dir}" --from "${endpoint}/${base_image}:local" --tag "${candidate}"
 
 echo "Loading image into Docker as ${candidate}"
