@@ -48,3 +48,8 @@ const validation = validateConnectivityPlan(plan);
 if (validation.ok === false) {
   throw new Error(validation.reason);
 }
+
+void validateConnectivityPlan({
+  schemaVersion: "hobo.connectivity-plan/v1",
+  tier: 0
+});

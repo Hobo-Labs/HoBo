@@ -49,10 +49,37 @@ export function parseOrderCommand(raw: JsonValue): OrderCommand {
 	return create(OrderCommandSchema, { orderId: orderId.trim() });
 }
 
-interface WriteOrderResult {
-	ok: boolean;
-	orderId: string;
-	tokenRef: string;
+type WriteOrderResult = JsonObject & {
+	readonly ok: true;
+	readonly orderId: string;
+	readonly tokenRef: string;
+};
+
+interface WriteOrderInput {
+	readonly orderId: string;
+	readonly tokenRef: string;
+}
+
+function parseWriteOrderInput(raw: JsonValue): WriteOrderInput {
+	if (!isJsonObject(raw)) {
+		throw new TypeError("writeOrder input must be a JSON object");
+	}
+	const { orderId, tokenRef } = raw;
+	if (!isJsonString(orderId) || !isJsonString(tokenRef)) {
+		throw new TypeError("writeOrder input requires string orderId and tokenRef");
+	}
+	return { orderId, tokenRef };
+}
+
+function parseWriteOrderResult(raw: JsonValue): WriteOrderResult {
+	if (!isJsonObject(raw)) {
+		throw new TypeError("writeOrder result must be a JSON object");
+	}
+	const { ok, orderId, tokenRef } = raw;
+	if (ok !== true || !isJsonString(orderId) || !isJsonString(tokenRef)) {
+		throw new TypeError("writeOrder result has an invalid shape");
+	}
+	return { ok, orderId, tokenRef };
 }
 
 /**
@@ -68,11 +95,7 @@ export const opsAgent = agent<OrderCommand, OrderReceipt>({
 		{
 			name: "writeOrder",
 			run(input) {
-				// SAFETY: assertion to `put as { orderId: string; tokenRef: string; }; ` is required at this boundary.
-				const { orderId, tokenRef } = input as {
-					orderId: string;
-					tokenRef: string;
-				};
+				const { orderId, tokenRef } = parseWriteOrderInput(input);
 				return { ok: true, orderId, tokenRef } satisfies WriteOrderResult;
 			},
 		},
@@ -83,11 +106,12 @@ export const opsAgent = agent<OrderCommand, OrderReceipt>({
 		const token = await ctx.step("mint-broker-token", () =>
 			ctx.token({ provider: TOKEN_PROVIDER, scope: TOKEN_SCOPE }),
 		);
-		// SAFETY: assertion to `wait ctx.tool("writeOrder", { orderId: command.orderId, tokenRef: token.ref, })) as WriteOrderResult; ` is required at this boundary.
-		const written = (await ctx.tool("writeOrder", {
-			orderId: command.orderId,
-			tokenRef: token.ref,
-		})) as WriteOrderResult;
+		const written = parseWriteOrderResult(
+			await ctx.tool("writeOrder", {
+				orderId: command.orderId,
+				tokenRef: token.ref,
+			}),
+		);
 		await ctx.emit("order.Written", written);
 		return create(OrderReceiptSchema, {
 			orderId: written.orderId,

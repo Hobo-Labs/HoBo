@@ -96,7 +96,7 @@ Its steps on main (run 41517185031):
 
 | Step | Time | Why |
 |---|---:|---|
-| pnpm install | ~21 s | cold registry install; fine |
+| pnpm install | ~21 s | copies the store into the container; finding 19 |
 | Seed the pnpm store cache for PRs | 71–146 s | tars a 1.26 GB store, then fails: "another job may be creating this cache" |
 | check:all lint/guard lanes | ~33 s | |
 | `pretest:unit` turbo build | ~50 s | 0/135 cached: the turbo cache never saved (finding 3) |
@@ -210,6 +210,14 @@ every task changed. A workflow edit cannot change a package test's result, so it
 them. The weekly schedule is the one whole-workspace sweep, with a 60-minute job limit; main pushes keep
 20. `scripts/test/affected-lanes.test.ts` pins both rules and dry-runs turbo to show that a scoped
 filter leaves an unrelated package (`@hobo/storage-sqlite`) out.
+
+Generated-output drift is the exception to affected scoping on main pushes. The `Generated-output drift`
+step always runs both `pnpm run codegen:check` and the frozen `s0-04-protobuf-cue-codegen` proof suite,
+even when neither appears in the affected diff. This closes the gap exposed when #1693 started running
+workspace tests on `merge_group`: #1597 had opted `@hobo/ci-vercel` into protobuf codegen while its relay
+and sandbox asset generators also wrote into `src/_generated/`. Production codegen ignored those
+non-protobuf files, but the frozen proof reported them as added drift. Their output now lives in
+`packages/ci-vercel/src/_generated-assets/`, leaving `src/_generated/` exclusively to protobuf codegen.
 
 The rest of this section is the analysis as it stood before the raw logs were read.
 
@@ -873,6 +881,39 @@ The gate was runnable at 00:33:12 but waited 33 s for one of two slots; the guar
 The guard now runs only on pull requests, while its two steps run after install in Main full gate and in PR impact gate on merge_group.
 The PR-only guard requests plain `hobo`.
 Expected saving: about 33–38 s of critical path on a main push and on merge_group.
+
+## Finding 19: every job installed both CPUs' agent CLIs
+
+`pnpm install --frozen-lockfile` takes 19–26 s per job on the box, and 44–46 s when both slots install at
+once. Nothing is downloaded ("reused 1997, downloaded 0"); the time goes to writing `node_modules`.
+
+- The store is the host mount `/pnpm-store` and the workspace is on the container's overlay, two
+  filesystems, so pnpm cannot hard-link and copies every file.
+- Root `package.json` set `pnpm.supportedArchitectures.cpu` to `["arm64", "x64", "current"]`, added with
+  the docs-portal contract in #510 without a stated reason. `@agentv/core` (used by `provider-agentv` and
+  ts-autocode's `training`) depends on `@openai/codex` and `@github/copilot`, whose native packages are
+  190–280 MB per platform. Every job copied both CPUs' builds, about 1.1 GB, and could run one of them.
+
+The setting is now `["current"]`. The lockfile does not change: it records every platform's optional
+packages either way, and the setting only decides which ones are installed. No workflow, Dockerfile or
+script uses another CPU's npm binary; the worker image installs inside its own build stage, on its own
+platform.
+
+Measured on an x86_64 cloud VM with the box's settings (`CI=1`, `package-import-method=copy`, no
+`node_modules`, warm store, same lockfile): 15.8–16.8 s before and 12.6–12.9 s after, with
+`node_modules/.pnpm` going from 4.5 GB to 3.4 GB.
+
+Considered and not done:
+
+- **Hard links from the shared store.** Putting the work directory on the store's filesystem would let
+  pnpm hard-link (14 s instead of 18.9 s in the same test). A hard link is the store's own file, so a job
+  that writes into `node_modules` would change it for every later job, fork PRs included. That widens the
+  risk noted at the end of this document.
+- **pnpm's global virtual store.** pnpm 10.33 ignores `enableGlobalVirtualStore` when `CI` is set; without
+  `CI`, a warm install still took 13–14 s.
+- **Skipping dependency build scripts.** `--ignore-scripts` saved about 4 s, though the scripts
+  themselves run in under 1 s. The four packages in `allowBuilds` (`@ast-grep/cli`, `@bufbuild/buf`,
+  `esbuild`, `protobufjs`) set up their native binaries in `postinstall`, and jobs run those tools.
 
 ## Finding 20: a workspace-wide change linted every package and failed on old findings
 

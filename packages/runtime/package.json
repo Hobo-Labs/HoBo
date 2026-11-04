@@ -35,7 +35,7 @@
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
-		"test": "vitest run",
+		"test": "tsc --noEmit -p tsconfig.test.json && vitest run",
 		"test:contract:consumer": "vitest run contracts/consumer"
 	}
 }

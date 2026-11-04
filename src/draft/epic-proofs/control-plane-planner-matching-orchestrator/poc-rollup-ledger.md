@@ -37,6 +37,7 @@
 |---|---|---|
 | `src/draft/technical-proofs/delta-set-apply-reconcile-contract` | latest validated leaf hardening | Delta/Set reconciliation simulation and Pact evidence unchanged. |
 | `src/draft/technical-proofs/deployment-view-saga-graph-contract` | latest validated leaf hardening | DeploymentView saga projection simulation and Pact evidence unchanged. |
+| `src/draft/technical-proofs/deployment-plan-ir-contract` | typed parse boundary accepts `DeploymentPlan \| JsonValue`; consumers resolve shipped declarations | DAG planning simulation, features, and Pact evidence unchanged. |
 
 | `src/draft/technical-proofs/region-objective-ranking-contract` | latest validated leaf hardening | Region-objective ranking and deterministic placement evidence unchanged. |
 

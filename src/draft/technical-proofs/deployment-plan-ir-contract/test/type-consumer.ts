@@ -1,5 +1,5 @@
-import type { DeploymentPlan, MatchContext, ResourcePlan, ValidationResult } from "../src/deployment-plan-ir.js";
-import { DEPLOYMENT_PLAN_IR_VERSION, outputPlaceholder } from "../src/deployment-plan-ir.js";
+import type { DeploymentPlan, MatchContext, ResourcePlan, ValidationResult } from "@hobo/draft-deployment-plan-ir-contract";
+import { DEPLOYMENT_PLAN_IR_VERSION, outputPlaceholder } from "@hobo/draft-deployment-plan-ir-contract";
 
 const context: MatchContext = {
   envType: "ephemeral",

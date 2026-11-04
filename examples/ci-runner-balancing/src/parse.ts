@@ -55,16 +55,100 @@ export type JsonValue =
 	| JsonValue[]
 	| JsonObject;
 
-export function isJsonObject(value: JsonValue): value is JsonObject {
+export function isJsonObject(value: JsonValue | undefined): value is JsonObject {
 	return (
+		value !== undefined &&
 		value !== null &&
 		!Array.isArray(value) &&
 		Object.prototype.toString.call(value) === "[object Object]"
 	);
 }
 
-export function isJsonString(value: JsonValue | undefined): value is string {
+export function isJsonString<T>(value: T): value is T & string {
 	return Object.prototype.toString.call(value) === "[object String]";
+}
+
+export function isJsonNumber<T>(value: T): value is T & number {
+	return (
+		Object.prototype.toString.call(value) === "[object Number]" &&
+		Number.isFinite(Number(value))
+	);
+}
+
+export function isJsonBoolean<T>(value: T): value is T & boolean {
+	return value === true || value === false;
+}
+
+export function isJsonValue(value: JsonValue): boolean {
+	if (
+		value === null ||
+		isJsonString(value) ||
+		isJsonNumber(value) ||
+		isJsonBoolean(value)
+	) {
+		return true;
+	}
+	if (Array.isArray(value)) return value.every(isJsonValue);
+	return isJsonObject(value) && Object.values(value).every(isJsonValue);
+}
+
+export function parseJsonValue(value: JsonValue): JsonValue {
+	if (!isJsonValue(value)) throw new TypeError("expected a JSON value");
+	return value;
+}
+
+export interface FixtureFailure {
+	providerId: string;
+	reason: string;
+}
+
+export interface FixtureDocument {
+	registryDocument?: JsonValue;
+	current?: { readonly [name: string]: string };
+	usage?: JsonValue;
+	failures?: FixtureFailure[];
+	seq?: string;
+}
+
+function parseFixtureCurrent(value: JsonValue) {
+	if (!isJsonObject(value)) return {};
+	const current: Record<string, string> = {};
+	for (const [name, entry] of Object.entries(value)) {
+		if (isJsonString(entry)) current[name] = entry;
+	}
+	return current;
+}
+
+function parseFixtureFailures(value: JsonValue): FixtureFailure[] {
+	if (!Array.isArray(value)) return [];
+	const failures: FixtureFailure[] = [];
+	for (const entry of value) {
+		if (!isJsonObject(entry) || !isJsonString(entry.providerId)) continue;
+		failures.push({
+			providerId: entry.providerId,
+			reason: isJsonString(entry.reason)
+				? entry.reason
+				: "fixture-declared failure",
+		});
+	}
+	return failures;
+}
+
+export function parseFixtureDocument(value: JsonValue): FixtureDocument {
+	if (!isJsonObject(value)) throw new TypeError("fixture document must be an object");
+	const fixture: FixtureDocument = {};
+	if (value.registryDocument !== undefined) {
+		fixture.registryDocument = value.registryDocument;
+	}
+	if (value.current !== undefined) {
+		fixture.current = parseFixtureCurrent(value.current);
+	}
+	if (value.usage !== undefined) fixture.usage = value.usage;
+	if (value.failures !== undefined) {
+		fixture.failures = parseFixtureFailures(value.failures);
+	}
+	if (isJsonString(value.seq)) fixture.seq = value.seq;
+	return fixture;
 }
 
 function asArray(value: JsonValue | undefined, field: string, problems: string[]): JsonValue[] {
