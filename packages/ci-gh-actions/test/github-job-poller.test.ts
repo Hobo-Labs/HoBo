@@ -900,6 +900,9 @@ describe("pull-mode box worker over SQLite", () => {
 		let allowed = false;
 		const storageAdmission: WorkerStorageAdmission = {
 			admit: vi.fn(async () => allowed),
+			release: vi.fn(),
+			reap: vi.fn(async () => undefined),
+			maintain: vi.fn(async () => undefined),
 		};
 		const runtime = boxRuntime(store, github, launched, undefined, {
 			labels: new Map(),
@@ -924,6 +927,42 @@ describe("pull-mode box worker over SQLite", () => {
 			1,
 		]);
 		expect(launched).toHaveLength(1);
+		store.close();
+	});
+
+	it("releases the storage grant when lease reservation returns null", async () => {
+		const store = await configuredStore(1);
+		const github = new FakeGithub(
+			{ queued: [900, 901], in_progress: [] },
+			{
+				900: [{ id: 1, status: "queued", labels: ["hobo"] }],
+				901: [{ id: 2, status: "queued", labels: ["hobo"] }],
+			},
+		);
+		const storageAdmission: WorkerStorageAdmission = {
+			admit: vi.fn(async () => true),
+			release: vi.fn(),
+			reap: vi.fn(async () => undefined),
+			maintain: vi.fn(async () => undefined),
+		};
+		const runtime = boxRuntime(store, github, [], undefined, {
+			labels: new Map(),
+			storageAdmission,
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(storageAdmission.admit).toHaveBeenCalledWith(expect.any(Array), "2");
+		expect(storageAdmission.release).toHaveBeenCalledWith("2");
+		expect(storageAdmission.release).not.toHaveBeenCalledWith("1");
+		expect((await store.activeLeases()).map((lease) => lease.jobId)).toEqual([1]);
 		store.close();
 	});
 

@@ -110,6 +110,8 @@ non-secret settings:
 | `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum active merge-group leases; zero and invalid values are rejected |
 | `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK` | `1` | Maximum new non-trunk leases while a trunk lease is active; strict integer 0–8; zero pauses them; uncapped when trunk is idle |
 | `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host per-job work mounts, teardown and pressure checks; same filesystem as pnpm store |
+| `HOBO_CI_WORKER_WORKDIR_INODES` | `200000` | Host-workdir inode growth reserved per job; digits only, `0` disables this root's reservation |
+| `HOBO_CI_WORKER_CONTAINER_INODES` | `170000` | Docker-writable-layer inode growth reserved per job; digits only, `0` disables this root's reservation |
 | `HOBO_CI_PNPM_STORE_DIR` | `~/.cache/hobo-ci/pnpm-store` | Shared store mounted read-write at `/pnpm-store`; empty disables it |
 | `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image/builder/store/dead-workdir GC interval; minimum 60000, capped at 300000 |
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cache cap with no age exemption; `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` remains a deprecated alias |
@@ -157,7 +159,10 @@ active job, and runs scheduled GC at least every five minutes for fetch intermed
 newest plus `local` and in-use images retained), old worker images (current and previous content keys plus
 `local` and in-use images retained), dangling images and builder cache. BuildKit has a hard 4 GB default cap
 with no age exemption. Byte or inode usage above **85%** triggers the same GC before admission. Usage still
-above **95%** blocks admission and logs `hobo_ci_inode_pressure` once per episode.
+above **95%** blocks admission and logs `hobo_ci_inode_pressure` once per episode. Admission additionally reserves
+**200000** workdir and **170000** container inodes per job, summed when both roots share a device and reduced by
+observed consumption. Insufficient reserved headroom triggers one GC/recheck, then logs `hobo_ci_inode_reserve_wait`
+once per episode while the job waits.
 See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for operations and admission logs.
 
 For a release, publish the tested image to your registry and replace

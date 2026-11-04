@@ -1,9 +1,10 @@
-import { chown, lstat, mkdir, readdir, rm, statfs } from "node:fs/promises";
+import { chown, lstat, mkdir, readdir, rm, stat, statfs } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { selectWorkerImagesForDeletion, type WorkerImage } from "./image-gc.js";
 
 const SOFT_LIMIT = 0.85;
 const HARD_LIMIT = 0.95;
+const INODE_GRANT_GRACE_MS = 60_000;
 const JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}$/u;
 
 export type WorkerFileSystemStats = Readonly<{
@@ -20,6 +21,7 @@ export type WorkerWorkDirectoryRemoval = Readonly<{
 
 export type WorkerStorageFileSystem = Readonly<{
 	statfs(path: string): Promise<WorkerFileSystemStats>;
+	device(path: string): Promise<number>;
 	jobDirectories(root: string): Promise<readonly string[]>;
 	prepareJobDirectory(path: string): Promise<void>;
 	removeJobDirectory(path: string): Promise<WorkerWorkDirectoryRemoval>;
@@ -41,11 +43,13 @@ export type WorkerStoragePnpmStore = Readonly<{
 export type WorkerStorageLease = Readonly<{
 	id: string;
 	sandboxName: string;
+	jobId: string;
 }>;
 
 export type WorkerStorageLog = (
 	event:
 		| "hobo_ci_inode_pressure"
+		| "hobo_ci_inode_reserve_wait"
 		| "hobo_ci_storage_admission_wait"
 		| "hobo_ci_storage_prune_failed",
 	fields: Readonly<Record<string, string | number | boolean>>,
@@ -66,6 +70,9 @@ export function createNodeWorkerStorageFileSystem(
 				files: stats.files,
 				ffree: stats.ffree,
 			};
+		},
+		async device(path) {
+			return (await stat(path)).dev;
 		},
 		async jobDirectories(root) {
 			const entries = await readdir(root, { withFileTypes: true });
@@ -141,6 +148,22 @@ function percent(value: number): number {
 	return Math.ceil(value * 1_000) / 10;
 }
 
+type StorageSample = Pressure &
+	Readonly<{ device: number; ffree: number; reserve: number; index: number }>;
+
+type InodeGrant = Readonly<{
+	grantedAtMs: number;
+	ffree: readonly number[];
+}>;
+
+type InodeReserveWait = Readonly<{
+	root: string;
+	freeInodes: number;
+	outstandingInodes: number;
+	requiredInodes: number;
+	activeGrants: number;
+}>;
+
 export function createWorkerStorageAdmission(options: {
 	dockerDataRoot: string;
 	workRoot: string;
@@ -150,21 +173,105 @@ export function createWorkerStorageAdmission(options: {
 	builderCacheCap?: string;
 	softLimit?: number;
 	hardLimit?: number;
+	jobInodes?: Readonly<{ workRoot: number; dockerDataRoot: number }>;
+	now?: () => number;
 	log?: WorkerStorageLog;
 }) {
 	const softLimit = options.softLimit ?? SOFT_LIMIT;
 	const hardLimit = options.hardLimit ?? HARD_LIMIT;
 	if (!(softLimit > 0) || !(hardLimit > softLimit) || !(hardLimit < 1))
 		throw new Error("invalid worker storage thresholds");
+	const jobInodes = options.jobInodes ?? {
+		workRoot: 200_000,
+		dockerDataRoot: 170_000,
+	};
+	for (const reserve of [jobInodes.workRoot, jobInodes.dockerDataRoot])
+		if (!Number.isSafeInteger(reserve) || reserve < 0)
+			throw new Error("invalid worker job inode reservation");
+	const reservations = [
+		{ root: options.dockerDataRoot, reserve: jobInodes.dockerDataRoot },
+		{ root: options.workRoot, reserve: jobInodes.workRoot },
+	];
+	const now = options.now ?? Date.now;
+	const grants = new Map<string, InodeGrant>();
 	let hardEpisode = false;
+	let reserveEpisode = false;
 	let unavailable = false;
 
-	async function sample(): Promise<Pressure[]> {
+	async function sample(): Promise<StorageSample[]> {
 		return Promise.all(
-			[options.dockerDataRoot, options.workRoot].map(async (root) =>
-				pressure(root, await options.fs.statfs(root)),
-			),
+			reservations.map(async (reservation, index) => {
+				const [stats, device] = await Promise.all([
+					options.fs.statfs(reservation.root),
+					options.fs.device(reservation.root),
+				]);
+				return {
+					...pressure(reservation.root, stats),
+					device,
+					ffree: stats.ffree,
+					reserve: reservation.reserve,
+					index,
+				};
+			}),
 		);
+	}
+
+	function reconcile(activeLeases: readonly WorkerStorageLease[]) {
+		const activeJobs = new Set(activeLeases.map((lease) => lease.jobId));
+		const nowMs = now();
+		for (const [jobId, grant] of grants)
+			if (
+				!activeJobs.has(jobId) &&
+				nowMs - grant.grantedAtMs > INODE_GRANT_GRACE_MS
+			)
+				grants.delete(jobId);
+	}
+
+	function reserveShortage(samples: readonly StorageSample[]) {
+		const groups = new Map<number, StorageSample[]>();
+		for (const entry of samples) {
+			const group = groups.get(entry.device) ?? [];
+			group.push(entry);
+			groups.set(entry.device, group);
+		}
+		let oldest: InodeGrant | undefined;
+		for (const grant of grants.values())
+			if (!oldest || grant.grantedAtMs < oldest.grantedAtMs) oldest = grant;
+		for (const group of groups.values()) {
+			const first = group[0];
+			if (!first) continue;
+			const requiredInodes = group.reduce(
+				(total, entry) => total + entry.reserve,
+				0,
+			);
+			const baseline = oldest?.ffree[first.index] ?? first.ffree;
+			// Consumption since the oldest grant belongs to all grants; freed inodes only increase conservatism.
+			const outstandingInodes = Math.max(
+				0,
+				requiredInodes * grants.size - (baseline - first.ffree),
+			);
+			if (
+				requiredInodes > 0 &&
+				first.ffree - outstandingInodes < requiredInodes
+			)
+				return {
+					root: first.root,
+					freeInodes: first.ffree,
+					outstandingInodes,
+					requiredInodes,
+					activeGrants: grants.size,
+				} satisfies InodeReserveWait;
+		}
+		return undefined;
+	}
+
+	function grant(jobId: string, samples: readonly StorageSample[]) {
+		grants.set(jobId, {
+			grantedAtMs: now(),
+			ffree: samples.map((entry) => entry.ffree),
+		});
+		reserveEpisode = false;
+		return true;
 	}
 
 	async function attempt(operation: string, run: () => Promise<void>) {
@@ -236,8 +343,15 @@ export function createWorkerStorageAdmission(options: {
 	return {
 		reap,
 		maintain,
-		async admit(activeLeases: readonly WorkerStorageLease[]): Promise<boolean> {
-			let before: Pressure[];
+		release(jobId: string) {
+			grants.delete(jobId);
+		},
+		async admit(
+			activeLeases: readonly WorkerStorageLease[],
+			jobId: string,
+		): Promise<boolean> {
+			reconcile(activeLeases);
+			let before: StorageSample[];
 			try {
 				before = await sample();
 				unavailable = false;
@@ -250,16 +364,15 @@ export function createWorkerStorageAdmission(options: {
 				}
 				return false;
 			}
-			if (
-				!before.some(
-					(entry) => Math.max(entry.diskUsage, entry.inodeUsage) > softLimit,
-				)
-			) {
+			const softPressure = before.some(
+				(entry) => Math.max(entry.diskUsage, entry.inodeUsage) > softLimit,
+			);
+			if (!softPressure && !reserveShortage(before)) {
 				hardEpisode = false;
-				return true;
+				return grant(jobId, before);
 			}
 			await maintain(activeLeases);
-			let after: Pressure[];
+			let after: StorageSample[];
 			try {
 				after = await sample();
 			} catch (error) {
@@ -270,16 +383,7 @@ export function createWorkerStorageAdmission(options: {
 			}
 			const inodeHard = after.some((entry) => entry.inodeUsage > hardLimit);
 			const diskHard = after.some((entry) => entry.diskUsage > hardLimit);
-			if (!inodeHard && !diskHard) {
-				if (
-					after.every(
-						(entry) => Math.max(entry.diskUsage, entry.inodeUsage) <= softLimit,
-					)
-				)
-					hardEpisode = false;
-				return true;
-			}
-			if (!hardEpisode) {
+			if ((inodeHard || diskHard) && !hardEpisode) {
 				hardEpisode = true;
 				const worst = after.reduce((current, entry) =>
 					Math.max(entry.diskUsage, entry.inodeUsage) >
@@ -296,6 +400,22 @@ export function createWorkerStorageAdmission(options: {
 					softLimitPercent: percent(softLimit),
 					hardLimitPercent: percent(hardLimit),
 				});
+			}
+			const shortage = reserveShortage(after);
+			if (shortage) {
+				if (!reserveEpisode)
+					options.log?.("hobo_ci_inode_reserve_wait", shortage);
+				reserveEpisode = true;
+				return false;
+			}
+			if (!inodeHard && !diskHard) {
+				if (
+					after.every(
+						(entry) => Math.max(entry.diskUsage, entry.inodeUsage) <= softLimit,
+					)
+				)
+					hardEpisode = false;
+				return grant(jobId, after);
 			}
 			return false;
 		},

@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
 import { toJsonString } from "@bufbuild/protobuf";
-import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
+import { ConfigurationSchema, type Lease, parseConfiguration } from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
 	createAdmissionOrder,
@@ -46,6 +46,25 @@ function required(name: string): string {
 	const value = process.env[name];
 	if (!value) throw new Error(`missing ${name}`);
 	return value;
+}
+
+function inodeReserve(name: string, fallback: number): number {
+	const value = process.env[name];
+	if (value === undefined) return fallback;
+	if (!/^\d+$/u.test(value))
+		throw new Error(`invalid ${name}: expected digits only`);
+	const reserve = Number(value);
+	if (!Number.isSafeInteger(reserve))
+		throw new Error(`invalid ${name}: exceeds safe integer range`);
+	return reserve;
+}
+
+function storageLeases(leases: readonly Lease[]) {
+	return leases.map((lease) => ({
+		id: lease.id,
+		sandboxName: lease.sandboxName,
+		jobId: String(lease.jobId),
+	}));
 }
 
 function secretOrFile(name: string): string {
@@ -280,9 +299,13 @@ const storageAdmission = createWorkerStorageAdmission({
 		process.env.HOBO_CI_WORKER_BUILDER_CACHE_CAP ??
 		process.env.HOBO_CI_WORKER_BUILDER_KEEP_STORAGE ??
 		"4GB",
+	jobInodes: {
+		workRoot: inodeReserve("HOBO_CI_WORKER_WORKDIR_INODES", 200_000),
+		dockerDataRoot: inodeReserve("HOBO_CI_WORKER_CONTAINER_INODES", 170_000),
+	},
 	log,
 });
-await storageAdmission.reap(await store.activeLeases());
+await storageAdmission.reap(storageLeases(await store.activeLeases()));
 const worker = createIsolatedContainerController({
 	store,
 	github,
@@ -488,7 +511,7 @@ function runGc(): void {
 	if (draining || gcInFlight || tickInFlight) return;
 	gcInFlight = store
 		.activeLeases()
-		.then((leases) => storageAdmission.maintain(leases))
+		.then((leases) => storageAdmission.maintain(storageLeases(leases)))
 		.catch((error) => {
 			log("hobo_ci_isolated_worker_gc_failed", {
 				message: error instanceof Error ? error.message : "unknown",

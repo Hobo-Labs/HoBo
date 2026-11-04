@@ -35,9 +35,12 @@ function harness(
 	input: {
 		before?: WorkerFileSystemStats;
 		after?: WorkerFileSystemStats;
+		devices?: Readonly<Record<string, number>>;
 		directories?: readonly string[];
 		existingContainers?: ReadonlySet<string>;
 		images?: readonly WorkerImage[];
+		jobInodes?: Readonly<{ workRoot: number; dockerDataRoot: number }>;
+		now?: () => number;
 		log?: ReturnType<typeof vi.fn>;
 	} = {},
 ) {
@@ -45,6 +48,7 @@ function harness(
 	const removed: string[] = [];
 	const fs: WorkerStorageFileSystem = {
 		statfs: vi.fn(async () => current),
+		device: vi.fn(async (path: string) => input.devices?.[path] ?? 1),
 		jobDirectories: vi.fn(async () => input.directories ?? []),
 		prepareJobDirectory: vi.fn(async () => undefined),
 		removeJobDirectory: vi.fn(async (path: string) => {
@@ -73,12 +77,125 @@ function harness(
 		fs,
 		docker,
 		pnpmStore,
+		jobInodes: input.jobInodes ?? { workRoot: 0, dockerDataRoot: 0 },
+		now: input.now,
 		log: input.log,
 	});
-	return { admission, docker, fs, pnpmStore, removed };
+	return {
+		admission,
+		docker,
+		fs,
+		pnpmStore,
+		removed,
+		setStats(stats: WorkerFileSystemStats) {
+			current = stats;
+		},
+	};
+}
+
+function freeInodes(ffree: number): WorkerFileSystemStats {
+	return { blocks: 100, bfree: 100, files: 1_000_000, ffree };
 }
 
 describe("worker storage admission", () => {
+	it("reserves both roots' inode growth on a shared device", async () => {
+		const log = vi.fn();
+		const h = harness({
+			before: freeInodes(500_000),
+			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+			log,
+		});
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
+		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
+		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
+		const waits = log.mock.calls.filter(
+			([event]) => event === "hobo_ci_inode_reserve_wait",
+		);
+		expect(waits).toHaveLength(1);
+		expect(waits[0]?.[1]).toEqual({
+			root: DOCKER_ROOT,
+			freeInodes: 500_000,
+			outstandingInodes: 370_000,
+			requiredInodes: 370_000,
+			activeGrants: 1,
+		});
+	});
+
+	it("subtracts consumption since the oldest grant from outstanding growth", async () => {
+		const h = harness({
+			before: freeInodes(870_000),
+			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+		});
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
+		h.setStats(freeInodes(500_000));
+		await expect(
+			h.admission.admit(
+				[{ id: "lease-1", sandboxName: "", jobId: "job-1" }],
+				"job-2",
+			),
+		).resolves.toBe(true);
+	});
+
+	it("checks reserves independently on different devices", async () => {
+		const h = harness({
+			before: freeInodes(500_000),
+			devices: { [DOCKER_ROOT]: 1, [WORK_ROOT]: 2 },
+			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+		});
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
+		await expect(
+			h.admission.admit(
+				[{ id: "lease-1", sandboxName: "", jobId: "job-1" }],
+				"job-2",
+			),
+		).resolves.toBe(true);
+	});
+
+	it("releases a grant when its reservation fails", async () => {
+		const h = harness({
+			before: freeInodes(500_000),
+			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+		});
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
+		h.admission.release("job-1");
+		await expect(h.admission.admit([], "job-2")).resolves.toBe(true);
+	});
+
+	it("expires a grant without an active lease after the grace period", async () => {
+		let nowMs = 0;
+		const h = harness({
+			before: freeInodes(500_000),
+			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+			now: () => nowMs,
+		});
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
+		nowMs = 60_000;
+		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
+		nowMs = 60_001;
+		await expect(h.admission.admit([], "job-2")).resolves.toBe(true);
+	});
+
+	it("allows zero to disable both inode reservations", async () => {
+		const h = harness({
+			before: { ...freeInodes(100), files: 1_000 },
+			jobInodes: { workRoot: 0, dockerDataRoot: 0 },
+		});
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
+		await expect(h.admission.admit([], "job-2")).resolves.toBe(true);
+	});
+
+	it("rejects invalid inode reserve configuration", () => {
+		for (const reserve of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, NaN])
+			expect(() =>
+				harness({
+					jobInodes: { workRoot: reserve, dockerDataRoot: 0 },
+				}),
+			).toThrow("invalid worker job inode reservation");
+		expect(() =>
+			harness({ jobInodes: { workRoot: 0, dockerDataRoot: -1 } }),
+		).toThrow("invalid worker job inode reservation");
+	});
+
 	it("prepares a job-owned checkout directory inside the lease root", async () => {
 		nodeFs.mkdir.mockResolvedValue(undefined);
 		nodeFs.chown.mockResolvedValue(undefined);
@@ -102,14 +219,14 @@ describe("worker storage admission", () => {
 
 	it("does not prune below either 85 percent threshold", async () => {
 		const h = harness({ before: usage(85) });
-		await expect(h.admission.admit([])).resolves.toBe(true);
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
 		expect(h.docker.pruneBuilder).not.toHaveBeenCalled();
 		expect(h.fs.jobDirectories).not.toHaveBeenCalled();
 	});
 
 	it("prunes above threshold, samples both roots again, and admits below the hard limit", async () => {
 		const h = harness({ before: usage(90), after: usage(80) });
-		await expect(h.admission.admit([])).resolves.toBe(true);
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
 		expect(h.docker.pruneBuilder).toHaveBeenCalledWith("4GB");
 		expect(h.fs.statfs).toHaveBeenCalledTimes(4);
 		expect(h.fs.statfs).toHaveBeenCalledWith(DOCKER_ROOT);
@@ -119,8 +236,8 @@ describe("worker storage admission", () => {
 	it("blocks still-high filesystems and logs one pressure event per episode", async () => {
 		const log = vi.fn();
 		const h = harness({ before: usage(96), after: usage(96), log });
-		await expect(h.admission.admit([])).resolves.toBe(false);
-		await expect(h.admission.admit([])).resolves.toBe(false);
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(false);
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(false);
 		expect(
 			log.mock.calls.filter(([event]) => event === "hobo_ci_inode_pressure"),
 		).toHaveLength(1);
@@ -142,12 +259,16 @@ describe("worker storage admission", () => {
 			existingContainers: new Set([STOPPED]),
 		});
 		await expect(
-			h.admission.admit([
-				{
-					id: LIVE.slice("hobo-".length),
-					sandboxName: LIVE,
-				},
-			]),
+			h.admission.admit(
+				[
+					{
+						id: LIVE.slice("hobo-".length),
+						sandboxName: LIVE,
+						jobId: "job-1",
+					},
+				],
+				"job-2",
+			),
 		).resolves.toBe(true);
 		expect(h.removed).toEqual([`${WORK_ROOT}/${DEAD}`]);
 		expect(h.docker.containerExists).not.toHaveBeenCalledWith(LIVE);
@@ -165,7 +286,7 @@ describe("worker storage admission", () => {
 	it("skips pnpm store pruning while any job holds an install lease", async () => {
 		const h = harness();
 		await h.admission.maintain([
-			{ id: LIVE.slice("hobo-".length), sandboxName: LIVE },
+			{ id: LIVE.slice("hobo-".length), sandboxName: LIVE, jobId: "job-1" },
 		]);
 		expect(h.pnpmStore.prune).not.toHaveBeenCalled();
 		await h.admission.maintain([]);
