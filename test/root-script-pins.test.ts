@@ -30,4 +30,8 @@ test("fast test script is root-only and full quiet unit lane remains explicit", 
 		packageJson.scripts["lint:slop:changed"],
 		"node --import tsx scripts/lint-slop-changed.mts",
 	);
+	assert.equal(
+		packageJson.scripts["typecheck"],
+		'turbo run typecheck --filter "./packages/*" --filter @hobo/draft-connectivity-tier-ir-contract --concurrency=100%',
+	);
 });
