@@ -7,6 +7,7 @@ import {
 	parseReleaseRef,
 	releaseImageIdsForTrain,
 	releaseSemverFromEnv,
+	stagingSemverFromRef,
 	tryParseReleaseRef,
 } from "../lib/release-version.mts";
 
@@ -102,6 +103,15 @@ describe("release semver from env (staging / OCI labels)", () => {
 	it("maps a pull request ref to valid staging semver", () => {
 		expect(releaseSemverFromEnv({ HOBO_RELEASE_VERSION: "pr-1684" })).toBe(
 			"0.0.0-pr.1684",
+		);
+	});
+
+	it("maps merge_queue manual and merge-* staging refs", () => {
+		expect(releaseSemverFromEnv({ HOBO_RELEASE_VERSION: "pr-manual" })).toBe(
+			"0.0.0-pr.manual",
+		);
+		expect(stagingSemverFromRef("merge-abc123deadbeef")).toBe(
+			"0.0.0-merge.abc123deadbeef",
 		);
 	});
 });
