@@ -1076,6 +1076,27 @@ For a trunk-labelled lease, reconcile now falls back to the original `jobId` whe
 The slot-accounting and admission-order candidates needed no change. A trunk job may already reserve a free general slot, while general work cannot borrow trunk capacity in strict mode. The incident regression now proves that Main launches while Pricing remains running as soon as a general runner exits. Prewarm remains lease-free and outside slot accounting.
 
 A trunk job that cannot obtain a lease for more than **10 s** now emits one structured `hobo_ci_trunk_wait` event per wait episode, with `reason: "lease-capacity"`, `waitedMs`, `repository`, `runId`, and `jobId`. Wait state is shared across relay ticks and cleared when the job reserves or leaves the queue. This distinguishes lease starvation from GitHub polling and container launch delays in daemon logs.
+## Finding 28: four @hobo/code TTY tests timed out under merge-queue load
+
+PR #1696 merge_group run 41772348951 hit the 20 s per-test timeout in `cli-verb-sweep` (`session renders without throwing`), live-TTY navigation (`leaves the catalog on escape`), live-TTY surfaces (`takes a second turn after the first one lands`), and scripted streaming (`marks a failure as failed`). The failures came from test scheduling and real side effects, not assertions that needed a larger budget:
+
+- `session` composed real dashboard/Evidence sidecars because `startCodeSession` read ambient `process.env` instead of the CLI's injected environment. The CLI now passes `sidecarsEnabled(env)`, and both verb-formatting sweeps disable them. Those sweeps also inject shared workspace allocation and a tmux runner: they check verb results and formatting, not rift/tmux provisioning. This removes subprocesses and the overlay probe that made baseline `mux` cleanup cases fail locally with EACCES.
+- Navigation paced keys with 30 ms timers. Surfaces used 150 ms gaps, increased to 400 ms for the second-turn case, plus 3–4 s delayed hosts. Both live harnesses now wait for the shell's ready event, acknowledged TUI input, settled turns, and stdout writes. Ctrl-C and Escape still interrupt active turns; delayed hosts are pending promises instead of timers. Every waiter also races shell completion, so the existing `maxMs` backstop cannot leave a helper stranded.
+- Scripted streaming yielded with `setTimeout(0)`, polled the turn flag every 10 ms against a 12 s deadline, then slept 40 ms for a final render. The shell now tracks the active turn promise and awaits it directly; the same 12 s `maxMs` remains only as an expiry backstop, and the final render flushes on `process.nextTick`. The 20 s test/hook timeouts are unchanged and no retries were added.
+
+Twelve tests across `review-command-surface`, `review-target-kinds`, `review`, `session-delivery-approval`, and `session-orchestrator` also hit the 20 s timeout during pre-commit. On clean main with a quiet box, global `commit.gpgsign=true` and an SSH signer reproduced 11 failures in 6.5 min wall time but only 8 s CPU time; `GIT_CONFIG_GLOBAL=/dev/null` passed 175/175 in 4 s. Real fixture commits were invoking the developer's signer and could inherit other global/system settings, so the shared Vitest setup now ignores both config sources while fixtures keep local git identities. A regression test checks the effective signing config in a real fixture repository; timeouts and retry policy remain unchanged.
+
+Five runs per file, sequentially, with four `node -e 'for(;;){}'` CPU hogs on the same 4-CPU worktree. Values are whole-process wall seconds in run order; the median is across the five runs. Baseline CLI runs each also reported the five unrelated `mux` EACCES failures; all 20 after runs passed every test.
+
+| File | Before: five runs | Before median | After: five runs | After median |
+|---|---|---:|---|---:|
+| `cli-verb-sweep.test.ts` | 17.90, 16.87, 17.19, 17.32, 17.78 | 17.32 | 9.20, 10.01, 9.28, 9.47, 8.66 | 9.28 |
+| `shell-live-tty-navigation.test.ts` | 19.64, 19.88, 13.96, 14.11, 19.75 | 19.64 | 11.90, 11.79, 12.31, 11.21, 11.74 | 11.79 |
+| `shell-live-tty-surfaces.test.ts` | 28.92, 29.27, 38.79, 31.57, 28.91 | 29.27 | 11.34, 11.75, 11.36, 11.30, 11.46 | 11.36 |
+| `shell-streaming-turn.test.ts` | 10.17, 10.64, 10.46, 10.47, 10.07 | 10.46 | 9.26, 9.60, 8.72, 8.90, 9.07 | 9.07 |
+
+The test-body reductions are larger than whole-process wall time: Vitest transform/import still costs about 7–10 s under this load. After test bodies were about 0.7 s CLI, 3.7 s navigation, 3.0–3.2 s surfaces, and 0.8 s streaming, with no individual case near the unchanged 20 s budget.
+
 ## Finding 29: the full-scope gate re-ran the whole unit suite while turbo was cached
 
 Main push run **41800198423** took **6m27s** (previously 97 s). Its S0 gate took **3m30s**, with about **180 s** in root `test:unit`: `pretest:unit` replayed the cached build graph, then `scripts/run-tests.ts --category=unit` executed the root and draft Vitest files again at `HOBO_RELEVANT_CHECK_CONCURRENCY=1`. Package build/test cache hits therefore did not make the full-scope S0 gate cheap.
@@ -1121,6 +1142,12 @@ The remaining multi-second non-cached steps are `test:schema` and `lint:test-dep
 Merge-group run **41828663878** timed out the browser-station catalog test after **45.773 s**. The catalog statically reaches `scanDeclaredTrainables` through `synthesize-try-runtime.ts`; its `ts-autocode-grounding` dependency imports the **9 MB** `typescript.js` compiler. The root Vitest config already externalizes that file (Finding 7), but the site's separate config did not inherit the rule, so Vite's SSR pipeline transformed the compiler and warned about its missing source map.
 
 The site config now applies the same `server.deps.external` rule, leaving the compiler on Node's native loader without changing catalog behavior. With four CPU hogs and the CI test environment, the catalog test fell from **4,735 ms to 740 ms**; its file fell from **5.19 s to 1.17 s** (transform **3.38 s to 235 ms**, import **223 ms to 191 ms**). The full 19-file site suite fell from **10.22 s to 3.89 s** (transform **11.04 s to 1.73 s**, import **18.67 s to 4.20 s**), with all 106 tests passing and the source-map warning gone.
+
+## Finding 32: hobo Vitest re-transformed its built workspace dependency graph
+
+Merge-group run **41833733901** timed out `test/mcp-stdio.test.ts` after **10 s**. Five loaded single-test runs showed a **40 ms** median test body but a **9.89 s** median file duration (transform **5.49 s**, import **9.50 s**). Temporary instrumentation measured composed-CLI construction at **15.4 ms**, project-target resolution at **1.3 ms**, and dispatch at **25.6 ms**; the full-suite dispatch took **11.6 ms**. No timer, poll, subprocess, or ambient-tool probe was on the collect path. The cost was Vite transforming hundreds of already-built workspace modules pulled in by the composed CLI.
+
+The package Vitest config now externalizes resolved `packages/**/dist/**` files so Node loads workspace exports natively while hobo's own source and tests still go through Vite. `@hobo/cli` stays inline because its dynamic bindle imports need Vite to resolve `.js` specifiers in TypeScript sources. Under the same four-hog load, five-run medians fell to **4.41 s** per file, **1.04 s** transform, and **3.88 s** import; the test body remained fast at **43 ms**. The composed-registry assertions and 10 s timeout are unchanged.
 
 ## Finding 35: neither deps-image producer could promote the layer jobs needed
 

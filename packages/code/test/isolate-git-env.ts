@@ -18,3 +18,6 @@ const LOCAL_REPO_ENV = [
 ] as const;
 
 for (const name of LOCAL_REPO_ENV) delete process.env[name];
+
+process.env.GIT_CONFIG_GLOBAL = "/dev/null";
+process.env.GIT_CONFIG_NOSYSTEM = "1";
