@@ -79,7 +79,7 @@ export const RELEASE_OCI_STAGE_SPECS = {
 	"hobo-ci-serve": {
 		kind: "deploy",
 		packageName: "@hobo/ci-gh-actions",
-		buildFilter: "@hobo/ci-gh-actions",
+		buildFilter: "@hobo/ci-gh-actions...",
 		appPath: "app",
 	},
 	"hobo-sdk": { kind: "sdk", artifactsPath: "artifacts" },
@@ -130,18 +130,23 @@ export function resolveReleaseTurboBase(
 	);
 }
 
-export function releaseOciTurboBuildArgs(filters: readonly string[]): string[] {
+export function releaseOciTurboBuildArgs(
+	root: string,
+	imageFilters: readonly string[],
+): string[] {
+	const base = resolveReleaseTurboBase(root);
 	return [
 		"exec",
 		"turbo",
 		"run",
 		"build",
-		...filters.map((filter) => `--filter=${filter}`),
+		...(base ? [`--filter=...[${base}...HEAD]`] : []),
+		...imageFilters.map((filter) => `--filter=${filter}`),
 	];
 }
 
 function turboBuild(root: string, filters: readonly string[]): void {
-	run(root, "pnpm", releaseOciTurboBuildArgs(filters));
+	run(root, "pnpm", releaseOciTurboBuildArgs(root, filters));
 }
 
 function installSdkTarballsIntoApp(appDir: string, artifactsDir: string): void {
@@ -320,6 +325,14 @@ export function releaseOciDockerignore(spec: ReleaseOciStageSpec): string {
 	}
 }
 
+export function releaseOciAffectedImageIds(
+	env: Readonly<Record<string, string | undefined>> = process.env,
+): readonly string[] | undefined {
+	const value = env.HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS;
+	if (value === undefined) return undefined;
+	return value.split(/\s+/).filter(Boolean);
+}
+
 export function stageReleaseOciApp(
 	imageId: string,
 	stagingRoot: string,
@@ -328,6 +341,7 @@ export function stageReleaseOciApp(
 		skipBuild?: boolean;
 		hardlink?: boolean;
 		sdkArtifactsDir?: string;
+		env?: Readonly<Record<string, string | undefined>>;
 	} = {},
 ): void {
 	const spec = Object.entries(RELEASE_OCI_STAGE_SPECS).find(
@@ -335,6 +349,12 @@ export function stageReleaseOciApp(
 	)?.[1];
 	if (!spec) throw new Error(`unknown release image id: ${imageId}`);
 	const root = options.root ?? defaultRoot;
+	const affectedImageIds = releaseOciAffectedImageIds(options.env);
+	if (affectedImageIds && !affectedImageIds.includes(imageId)) {
+		throw new Error(
+			`release image ${imageId} is not in HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS; refusing to stage an unaffected image`,
+		);
+	}
 	const output = resolve(stagingRoot);
 	if (output === parse(output).root || output === root) {
 		throw new Error(`refusing unsafe staging root: ${output}`);

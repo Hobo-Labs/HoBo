@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	RELEASE_OCI_STAGE_SPECS,
+	releaseOciAffectedImageIds,
 	releaseOciDeployArgs,
 	releaseOciDockerignore,
 	releaseOciStagingLocation,
@@ -50,17 +51,60 @@ describe("release OCI app staging", () => {
 		}
 	});
 
-	it("builds full requested filters without SCM ranges", () => {
-		expect(
-			releaseOciTurboBuildArgs(["@hobo/hobo...", "@hobo/ci-gh-actions"]),
-		).toEqual([
-			"exec",
-			"turbo",
-			"run",
-			"build",
-			"--filter=@hobo/hobo...",
-			"--filter=@hobo/ci-gh-actions",
-		]);
+	it("combines SCM-affected and requested image filters", () => {
+		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-filters-"));
+		const previousBase = process.env.HOBO_RELEASE_TURBO_BASE;
+		const git = (...args: string[]): void => {
+			const result = spawnSync("git", args, { cwd: repo, stdio: "ignore" });
+			expect(result.status).toBe(0);
+		};
+		try {
+			git("init", "--quiet");
+			for (const message of ["base", "head"]) {
+				git(
+					"-c",
+					"user.name=Release Test",
+					"-c",
+					"user.email=release@example.com",
+					"-c",
+					"commit.gpgsign=false",
+					"commit",
+					"--allow-empty",
+					"-m",
+					message,
+				);
+			}
+			process.env.HOBO_RELEASE_TURBO_BASE = "HEAD^1";
+			expect(
+				releaseOciTurboBuildArgs(repo, [
+					"@hobo/hobo...",
+					"@hobo/ci-gh-actions...",
+				]),
+			).toEqual([
+				"exec",
+				"turbo",
+				"run",
+				"build",
+				"--filter=...[HEAD^1...HEAD]",
+				"--filter=@hobo/hobo...",
+				"--filter=@hobo/ci-gh-actions...",
+			]);
+			delete process.env.HOBO_RELEASE_TURBO_BASE;
+			expect(releaseOciTurboBuildArgs(repo, ["hobo-site..."])).toEqual([
+				"exec",
+				"turbo",
+				"run",
+				"build",
+				"--filter=hobo-site...",
+			]);
+		} finally {
+			if (previousBase === undefined) {
+				delete process.env.HOBO_RELEASE_TURBO_BASE;
+			} else {
+				process.env.HOBO_RELEASE_TURBO_BASE = previousBase;
+			}
+			rmSync(repo, { recursive: true, force: true });
+		}
 	});
 
 	it("covers exactly the image ids in the release manifest", () => {
@@ -74,7 +118,7 @@ describe("release OCI app staging", () => {
 		["hobo-cli", "@hobo/hobo", "@hobo/hobo..."],
 		["hobo-code", "@hobo/code", "@hobo/code..."],
 		["hobo-codegen", "@hobo/schema-tools", "@hobo/schema-tools..."],
-		["hobo-ci-serve", "@hobo/ci-gh-actions", "@hobo/ci-gh-actions"],
+		["hobo-ci-serve", "@hobo/ci-gh-actions", "@hobo/ci-gh-actions..."],
 	])("stages %s as a deployed app", (imageId, packageName, buildFilter) => {
 		expect(
 			Object.entries(RELEASE_OCI_STAGE_SPECS).find(
@@ -189,6 +233,36 @@ describe("release OCI app staging", () => {
 			kind: "mcp",
 			markerPath: ".hobo-cli-candidate",
 		});
+	});
+
+	it("refuses to stage an image outside the affected allowlist", () => {
+		const fixtureRoot = mkdtempSync(join(tmpdir(), "hobo-release-affected-"));
+		try {
+			expect(releaseOciAffectedImageIds({})).toBeUndefined();
+			expect(
+				releaseOciAffectedImageIds({
+					HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS: " hobo-cli  hobo-mcp ",
+				}),
+			).toEqual(["hobo-cli", "hobo-mcp"]);
+			expect(() =>
+				stageReleaseOciApp("hobo-site", join(fixtureRoot, "blocked"), {
+					root,
+					skipBuild: true,
+					env: { HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS: "hobo-cli hobo-mcp" },
+				}),
+			).toThrow(
+				/release image hobo-site is not in HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS/,
+			);
+			stageReleaseOciApp("hobo-mcp", join(fixtureRoot, "allowed"), {
+				root,
+				env: { HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS: "hobo-cli hobo-mcp" },
+			});
+			expect(
+				readFileSync(join(fixtureRoot, "allowed/.hobo-cli-candidate"), "utf8"),
+			).toBe("hobo-cli:candidate\n");
+		} finally {
+			rmSync(fixtureRoot, { recursive: true, force: true });
+		}
 	});
 
 	it("fails clearly when the site build output is missing", () => {
