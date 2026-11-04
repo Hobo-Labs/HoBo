@@ -1,8 +1,8 @@
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseDesignScorecard } from "../src/design-scorecard.mts";
+import { checkDesignScorecardEvidence } from "./support/design-scorecard-evidence.mts";
 
 const repoRoot = resolve(import.meta.dirname, "../../..");
 const rows = parseDesignScorecard(
@@ -27,14 +27,13 @@ describe("provider pricing acceptance scorecard", () => {
 
 	for (const row of rows.filter((entry) => entry.status === "pass")) {
 		it(`${row.id}: ${row.evidenceTest}`, () => {
-			const result = spawnSync(
-				"pnpm",
-				["exec", "vitest", "run", row.evidenceFile, "-t", row.evidenceTest],
-				{ cwd: repoRoot, encoding: "utf8" },
-			);
-			const output = `${result.stdout}${result.stderr}`;
-			expect(result.error, output).toBeUndefined();
-			expect(result.status, `${row.id} evidence failed\n${output}`).toBe(0);
+			const result = checkDesignScorecardEvidence(repoRoot, row);
+			expect(
+				result.ok,
+				result.ok
+					? `${row.id} evidence check failed`
+					: `${row.id}: ${result.reason}`,
+			).toBe(true);
 		});
 	}
 });
