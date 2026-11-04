@@ -10,6 +10,7 @@
 
 import { execSync, spawnSync } from "node:child_process";
 import {
+	chmodSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -22,13 +23,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { must } from "@hobo/core/total-access";
 import { afterAll, describe, expect, it } from "vitest";
-import { parseJsonObject, type JsonBag, type JsonValue } from "../src/json.js";
-
+import { type JsonBag, type JsonValue, parseJsonObject } from "../src/json.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
 import { CowTier as CowTierPb } from "../src/_generated/rift_workspace_pb.js";
-import { detectCapability, probeOverlayfs } from "../src/capability.js";
+import {
+	detectCapability,
+	probeOverlayfs,
+	removeOverlayProbe,
+} from "../src/capability.js";
 import { projectWorkspaces, readEvents } from "../src/journal.js";
 import { parseWorkspaceName } from "../src/names.js";
 import {
@@ -55,7 +59,7 @@ import {
 
 const dirs: string[] = [];
 afterAll(() => {
-	for (const d of dirs) rmSync(d, { recursive: true, force: true });
+	for (const d of dirs) removeOverlayProbe(d);
 });
 
 function source(): string {
@@ -108,6 +112,18 @@ describe("capability ladder", () => {
 		});
 		expect(copy.tier).toBe("copy");
 		expect(copy.isolatesInPlaceWrites).toBe(true);
+	});
+
+	it("removes an overlay probe with an inaccessible kernel work directory", () => {
+		const probe = mkdtempSync(join(tmpdir(), "rift-ovl-cleanup-"));
+		dirs.push(probe);
+		const workWork = join(probe, "work", "work");
+		mkdirSync(workWork, { recursive: true });
+		chmodSync(workWork, 0o000);
+
+		removeOverlayProbe(probe);
+
+		expect(existsSync(probe)).toBe(false);
 	});
 });
 
@@ -681,7 +697,9 @@ describe("a root that predates event counting", () => {
 		const root = source();
 		createWorkspace({ root, name: "old" });
 		const snapshotPath = join(root, RIFT_DIR, "registry.json");
-		const snapshot: JsonBag = { ...parseJsonObject(readFileSync(snapshotPath, "utf8")) };
+		const snapshot: JsonBag = {
+			...parseJsonObject(readFileSync(snapshotPath, "utf8")),
+		};
 		writeFileSync(
 			snapshotPath,
 			JSON.stringify({
