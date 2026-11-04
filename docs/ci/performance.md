@@ -200,8 +200,9 @@ architecture guard, all 758 root unit files, behavior) whatever it touched. A st
 previous main commit (the push's `before`, or `HEAD~1` for a dispatch) and runs
 `scripts/ci/affected-lanes.mts --main-gate` on the diff. Behavior-changing root config, the lockfile,
 toolchain pins (`mise.toml`, `mise.lock`), a deleted package, or an empty diff get `check:all`.
-Scripts-only root manifest edits, root `//#` task edits, and `globalDependencies` edits do not widen
-scope; missing or invalid base content fails closed. Everything else gets
+Scripts-only root manifest edits and root `//#` task edits do not widen scope. Every
+`globalDependencies` addition or removal widens scope because those files are hash inputs for every
+task; missing or invalid base content also fails closed. Everything else gets
 `agent:check --base=<previous main>`, the same impact-scoped policy the PR impact gate runs.
 `.github/` used to be on the repo-wide list too, and it is the one input CI-tuning PRs always touch: run
 41592443075 (4m48s) spent 3m24s of it in `check:all` for a workflow edit that the PR and
@@ -256,10 +257,10 @@ Main's workspace tests are now scoped with `--filter=...[<previous main commit>]
 their dependents). A git-based filter sees only files git attributes to a package, so
 `scripts/ci/affected-lanes.mts` decides first: a workspace-wide input (workspace, behavior-changing
 Turbo config, tsconfig, biome, toolchain pins) or an unreachable base runs the whole workspace instead.
-Root scripts, root `//#` tasks, and `globalDependencies` are classified against base content and do not
-widen package lanes. `pnpm-lock.yaml` alone runs everything, but a lockfile edit together with changed
-package paths only runs those packages (Turbo still hashes the lockfile). The PR impact gate uses the
-same script and merge base.
+Root scripts and root `//#` tasks are classified against base content and do not widen package lanes;
+`globalDependencies` edits always widen them. `pnpm-lock.yaml` alone runs everything, but a lockfile
+edit together with changed package paths only runs those packages (Turbo still hashes the lockfile).
+The PR impact gate uses the same script and merge base.
 
 Where a test task does run, `@hobo/hobo#test` dominates. In an affected sweep for a four-package change it
 took 181 s of 332 s task time (87 tasks).
@@ -1192,7 +1193,7 @@ A detached clean-worktree experiment ran `pnpm exec turbo run build test --dry=j
 
 The four package tests unchanged by the generic-input edit were `@hobo/code`, `@hobo/conformance`, `@hobo/hobo`, and `@hobo/runtime`: their package-specific overrides replace generic inputs. The package override changed only `@hobo/code#test`. Thus unrelated root task edits stay local, while shared task and environment changes retain their required scope.
 
-`scripts/ci/affected-lanes.mts` now compares Turbo content with the diff base: root `//#` task and `globalDependencies` edits stay affected-only, while shared task and environment edits select the repo-wide main gate. `release-oci-affected.mts` continues hashing only build-relevant turbo settings, including the `globalDependencies` list and build task definitions; it deliberately does not rebuild images for test-only task edits. Its tests pin both behaviors.
+`scripts/ci/affected-lanes.mts` now compares Turbo content with the diff base: root `//#` task edits stay affected-only, while `globalDependencies`, shared task, and environment edits select the repo-wide main gate. `release-oci-affected.mts` continues hashing only build-relevant turbo settings, including the `globalDependencies` list and build task definitions; it deliberately does not rebuild images for test-only task edits. Its tests pin both behaviors.
 
 ## Finding 32: hobo Vitest re-transformed its built workspace dependency graph
 

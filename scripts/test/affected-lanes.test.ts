@@ -212,15 +212,38 @@ describe("affected-lanes", () => {
 		);
 	});
 
-	it("does not widen for a turbo.json globalDependencies change", () => {
-		const files = {
-			"turbo.json": {
-				base: JSON.stringify({ globalDependencies: ["turbo.json"] }),
-				head: JSON.stringify({ globalDependencies: [] }),
-			},
-		};
-		assert.equal(lanesWithRoots(["turbo.json"], files).mode, "skip");
-	});
+	for (const { change, base, head } of [
+		{
+			change: "added",
+			base: { globalDependencies: [] },
+			head: { globalDependencies: ["ci.json"] },
+		},
+		{
+			change: "removed",
+			base: { globalDependencies: ["turbo.json"] },
+			head: { globalDependencies: [] },
+		},
+	]) {
+		it(`runs everything when a turbo.json globalDependencies entry is ${change}`, () => {
+			const files = {
+				"turbo.json": {
+					base: JSON.stringify(base),
+					head: JSON.stringify(head),
+				},
+			};
+			assert.deepEqual(lanesWithRoots(["turbo.json"], files), {
+				mode: "all",
+				reason: "workspace-wide input changed: turbo.json",
+			});
+			assert.deepEqual(
+				mainGateScope(["turbo.json"], present, rootReader(files)),
+				{
+					mode: "repo-wide",
+					reason: "workspace-wide input changed: turbo.json",
+				},
+			);
+		});
+	}
 
 	it("runs everything when turbo.json globalEnv changes", () => {
 		const files = {
@@ -254,8 +277,18 @@ describe("affected-lanes", () => {
 		}
 	});
 
-	it("keeps this branch's root-script and root-task diff package-scoped", () => {
-		const files = {
+	const branchDiffPaths = [
+		"package.json",
+		"turbo.json",
+		"packages/cli/src/a.ts",
+		"packages/pricing/test/a.test.ts",
+	];
+
+	function branchDiffFiles(globalDependencies?: {
+		readonly base: readonly string[];
+		readonly head: readonly string[];
+	}) {
+		return {
 			"package.json": {
 				base: JSON.stringify({ scripts: { "test:unit:draft:0": "0/4" } }),
 				head: JSON.stringify({
@@ -264,14 +297,14 @@ describe("affected-lanes", () => {
 			},
 			"turbo.json": {
 				base: JSON.stringify({
-					globalDependencies: ["turbo.json"],
+					globalDependencies: globalDependencies?.base,
 					tasks: {
 						build: { dependsOn: ["^build"] },
 						"//#test:unit:draft:0": { inputs: ["src/draft/**"] },
 					},
 				}),
 				head: JSON.stringify({
-					globalDependencies: [],
+					globalDependencies: globalDependencies?.head,
 					tasks: {
 						build: { dependsOn: ["^build"] },
 						"//#test:unit:draft:0": { inputs: ["src/draft/epic-proofs/**"] },
@@ -280,21 +313,23 @@ describe("affected-lanes", () => {
 				}),
 			},
 		};
+	}
+
+	it("widens this branch's diff for its globalDependencies removal", () => {
 		assert.deepEqual(
 			lanesWithRoots(
-				[
-					"package.json",
-					"turbo.json",
-					"packages/cli/src/a.ts",
-					"packages/pricing/test/a.test.ts",
-				],
-				files,
+				branchDiffPaths,
+				branchDiffFiles({ base: ["turbo.json"], head: [] }),
 			),
-			{
-				mode: "filtered",
-				filters: ["--filter=./packages/cli", "--filter=./packages/pricing"],
-			},
+			{ mode: "all", reason: "workspace-wide input changed: turbo.json" },
 		);
+	});
+
+	it("keeps this branch's scripts and root tasks scoped without the globalDependencies edit", () => {
+		assert.deepEqual(lanesWithRoots(branchDiffPaths, branchDiffFiles()), {
+			mode: "filtered",
+			filters: ["--filter=./packages/cli", "--filter=./packages/pricing"],
+		});
 	});
 
 	it("CLI prints --filter=* for workspace-wide changes and nothing for inert ones", () => {

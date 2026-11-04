@@ -6,9 +6,9 @@
  * every turbo task hashes (workspace, tsconfig and biome config, toolchain pins,
  * vendored sources) and any deleted package run the whole workspace. Root
  * package.json and turbo.json edits are compared with their base: scripts-only
- * manifest edits, root `//#` task edits and globalDependencies edits do not
- * change workspace package tasks. Every other edit to those files, or a missing
- * or unparsable base/head, runs the whole workspace.
+ * manifest edits and root `//#` task edits do not change workspace package
+ * tasks. globalDependencies edits, every other edit to those files, or a missing
+ * or unparsable base/head run the whole workspace.
  * `pnpm-lock.yaml` alone runs the whole workspace too; with changed
  * package paths it only filters those packages (Turbo still hashes the lockfile).
  * Everything outside packages/ and examples/ (workflows, root
@@ -101,8 +101,6 @@ function rootConfigIsPackageLaneInput(
 	if (path === "package.json")
 		return differing.some((key) => key !== "scripts");
 	return differing.some((key) => {
-		// globalDependencies changes cache hashes, never task behavior or environment.
-		if (key === "globalDependencies") return false;
 		if (key !== "tasks") return true;
 		const baseTasks = base.tasks;
 		const headTasks = head.tasks;
@@ -212,7 +210,8 @@ const CI_INPUTS = /^mise\.lock$/;
 /**
  * Whether Main full gate runs every gate (`check:all`) or only the affected ones
  * (`agent:check --base=<previous main commit>`). Repo-wide for behavior-changing
- * root config, the lockfile and toolchain pins; affected for everything else.
+ * root config, globalDependencies edits, the lockfile and toolchain pins;
+ * affected for everything else.
  * Workflow and action files are affected-only: the PR and merge-group runs
  * already executed the changed workflow, agent:check selects the automation
  * lanes for `.github/`, and the weekly schedule still runs the whole sweep.

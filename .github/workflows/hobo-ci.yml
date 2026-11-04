@@ -313,8 +313,8 @@ jobs:
         run: |
           set -euo pipefail
           # Compare root package.json/turbo.json content at the same merge base:
-          # root scripts, //# tasks and globalDependencies stay package-scoped;
-          # behavior-changing root inputs still run the whole workspace.
+          # root scripts and //# tasks stay package-scoped; globalDependencies
+          # and other shared root inputs run the whole workspace.
           mapfile -t FILTERS < <(
             git diff --name-only "${TURBO_SCM_BASE}"...HEAD \
               | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base="${TURBO_SCM_BASE}"
@@ -334,8 +334,8 @@ jobs:
         run: |
           set -euo pipefail
           # An unreachable merge-group base runs repo-wide; otherwise
-          # scripts/ci/affected-lanes.mts --main-gate decides. Behavior-changing
-          # root inputs widen; root scripts, //# tasks and globalDependencies do not.
+          # scripts/ci/affected-lanes.mts --main-gate decides. Root scripts and
+          # //# tasks stay scoped; globalDependencies and other shared inputs widen.
           base="$GITHUB_EVENT_MERGE_GROUP_BASE_SHA"
           if [ -n "$base" ] && ! git cat-file -e "${base}^{commit}" 2>/dev/null; then base=""; fi
           # A workflow edit cannot change a package's test result.
@@ -560,8 +560,8 @@ jobs:
           set -euo pipefail
           # The push's `before`, or HEAD~1 for a dispatch. The daily schedule and an
           # unreachable base run repo-wide; otherwise scripts/ci/affected-lanes.mts
-          # compares root config at that base. Only behavior-changing inputs widen;
-          # root scripts, //# tasks and globalDependencies stay affected-only.
+          # compares root config at that base. Root scripts and //# tasks stay
+          # affected-only; globalDependencies and other shared inputs widen.
           base=""
           if [ "$EVENT_NAME" = "push" ]; then base="$PUSH_BEFORE"; fi
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then base="$(git rev-parse HEAD~1)"; fi
