@@ -40,6 +40,7 @@ export function selectWorkerImageTagsForDeletion(
 
 export function selectWorkerImagesForDeletion(
 	images: readonly WorkerImage[],
+	currentDepsTag?: string,
 ): readonly string[] {
 	const staleFetchImages = images
 		.filter(
@@ -54,9 +55,18 @@ export function selectWorkerImagesForDeletion(
 				!image.inUse,
 		)
 		.sort(newestFirst);
+	const retainedDepsTags = new Set(
+		currentDepsTag === undefined ? [] : [currentDepsTag],
+	);
+	for (const image of depsImages) {
+		if (retainedDepsTags.size === 2) break;
+		retainedDepsTags.add(image.tag);
+	}
 	return [
 		...staleFetchImages,
-		...depsImages.slice(2).map((image) => image.tag),
+		...depsImages
+			.filter((image) => !retainedDepsTags.has(image.tag))
+			.map((image) => image.tag),
 		...selectWorkerImageTagsForDeletion(images),
 	];
 }

@@ -1,7 +1,9 @@
+import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
 import { toJsonString } from "@bufbuild/protobuf";
 import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
@@ -11,6 +13,7 @@ import {
 	createAdmissionOrder,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
+	createDepsImageEnsurer,
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
@@ -22,6 +25,7 @@ import {
 	createPollLogFilter,
 	createWorkerMemoryAdmission,
 	createWorkerStorageAdmission,
+	type DepsImageProcessRequest,
 	describeWaitingJobs,
 	generalLeaseIdsFor,
 	type HostedInboxStore,
@@ -34,6 +38,9 @@ import {
 	waitForIsolatedWorkerDrain,
 	workerOfferKeys,
 } from "@hobo/ci-gh-actions";
+import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
+
+const exec = promisify(execFile);
 
 function required(name: string): string {
 	const value = process.env[name];
@@ -51,6 +58,43 @@ function log(
 	fields: Readonly<Record<string, string | number | boolean>> = {},
 ) {
 	console.error(JSON.stringify({ event, ...fields }));
+}
+
+async function output(
+	command: string,
+	args: readonly string[],
+	cwd: string,
+	timeout: number,
+): Promise<string> {
+	const { stdout } = await exec(command, args, {
+		cwd,
+		env: process.env,
+		timeout,
+		maxBuffer: 1024 * 1024,
+	});
+	return stdout;
+}
+
+function runDepsProcess(request: DepsImageProcessRequest): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const child = spawn(request.command, request.args, {
+			cwd: request.cwd,
+			env: request.env,
+			stdio: ["ignore", "inherit", "inherit"],
+			timeout: 45 * 60_000,
+			killSignal: "SIGKILL",
+		});
+		child.once("error", reject);
+		child.once("close", (code, signal) => {
+			if (code === 0) resolve();
+			else
+				reject(
+					new Error(
+						`deps image command failed (${code ?? signal ?? "unknown"})`,
+					),
+				);
+		});
+	});
 }
 
 const plan = resolveWorkerStorePlan(process.env, homedir());
@@ -109,6 +153,14 @@ const drainTimeoutMs = Number(
 );
 if (!Number.isFinite(drainTimeoutMs) || drainTimeoutMs < 1_000)
 	throw new Error("invalid HOBO_CI_WORKER_DRAIN_TIMEOUT_MS");
+const depsPollMs = Number(process.env.HOBO_CI_DEPS_POLL_MS ?? "300000");
+if (!Number.isFinite(depsPollMs) || depsPollMs < 1_000)
+	throw new Error("invalid HOBO_CI_DEPS_POLL_MS");
+const depsBuildMemoryMb = Number(
+	process.env.HOBO_CI_DEPS_BUILD_MEMORY_MB ?? "4096",
+);
+if (!Number.isInteger(depsBuildMemoryMb) || depsBuildMemoryMb < 512)
+	throw new Error("invalid HOBO_CI_DEPS_BUILD_MEMORY_MB");
 const configuredGcIntervalMs = Number(
 	process.env.HOBO_CI_WORKER_GC_MS ?? String(5 * 60_000),
 );
@@ -194,6 +246,9 @@ const pnpmStore =
 	join(homedir(), ".cache", "hobo-ci", "pnpm-store");
 if (pnpmStore) mkdirSync(pnpmStore, { recursive: true, mode: 0o755 });
 const PNPM_STORE_TARGET = "/pnpm-store";
+const depsRepository = process.env.HOBO_CI_DEPS_REPOSITORY ?? "Hobo-Labs/HoBo";
+const depsImage = process.env.HOBO_CI_DEPS_IMAGE ?? "hobo-ci-deps:local";
+const depsRoot = process.env.HOBO_CI_DEPS_ROOT ?? process.cwd();
 const workRoot =
 	process.env.HOBO_CI_WORKER_WORK_ROOT ??
 	join(
@@ -230,8 +285,8 @@ const worker = createIsolatedContainerController({
 	docker,
 	workerAccountId,
 	workerImage: process.env.HOBO_CI_WORKER_IMAGE ?? "hobo-ci-worker:local",
-	depsRepository: process.env.HOBO_CI_DEPS_REPOSITORY ?? "Hobo-Labs/HoBo",
-	depsImage: process.env.HOBO_CI_DEPS_IMAGE ?? "hobo-ci-deps:local",
+	depsRepository,
+	depsImage,
 	workerMemoryMb,
 	prewarmMemoryMb: memoryConfig.classes.standard,
 	memoryAdmission,
@@ -250,6 +305,46 @@ const worker = createIsolatedContainerController({
 	workRoot,
 	workFs,
 });
+let depsImageEnsurer: ReturnType<typeof createDepsImageEnsurer> | undefined;
+if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
+	depsImageEnsurer = createDepsImageEnsurer({
+		root: depsRoot,
+		repository: depsRepository,
+		buildMemoryMb: depsBuildMemoryMb,
+		git: {
+			defaultBranchHead: async (root) => {
+				const head = (
+					await output("git", ["-C", root, "rev-parse", "HEAD"], root, 30_000)
+				).trim();
+				if (!/^[0-9a-f]{40}$/u.test(head))
+					throw new Error("default branch head unavailable");
+				return head;
+			},
+		},
+		fs: {
+			depsKey: async (root) =>
+				depsKeyForRoot(
+					root,
+					`linux/${process.arch === "x64" ? "amd64" : process.arch}`,
+				),
+		},
+		docker: {
+			imageExists: (image) =>
+				output("docker", ["image", "inspect", image], depsRoot, 30_000).then(
+					() => true,
+					() => false,
+				),
+			pull: async (image) => {
+				await output("docker", ["pull", image], depsRoot, 45 * 60_000);
+			},
+			tag: async (source, target) => {
+				await output("docker", ["tag", source, target], depsRoot, 30_000);
+			},
+		},
+		processes: { run: runDepsProcess },
+		onEvent: ({ event, ...fields }) => log(event, fields),
+	});
+}
 const host = createCompositeIsolatedHost({ store, worker: worker.host });
 if (!host) throw new Error("worker host unavailable");
 const runtime = createHostedRelayRuntime({
@@ -330,6 +425,33 @@ function runJobPoll(): void {
 		});
 }
 
+let depsEnsureTimer: ReturnType<typeof setTimeout> | undefined;
+
+function runDepsImageEnsure(): void {
+	if (draining || !depsImageEnsurer) return;
+	void depsImageEnsurer
+		.ensure()
+		.then((result) => {
+			if (draining) return;
+			const delay =
+				result.status === "failed" || result.status === "backoff"
+					? result.retryMs
+					: depsPollMs;
+			depsEnsureTimer = setTimeout(runDepsImageEnsure, delay);
+		})
+		.catch((error) => {
+			log("hobo_ci_deps_image_ensure_failed", {
+				key: "unknown",
+				action: "hit",
+				ms: 0,
+				message: error instanceof Error ? error.message : "unknown",
+				retryMs: depsPollMs,
+			});
+			if (!draining)
+				depsEnsureTimer = setTimeout(runDepsImageEnsure, depsPollMs);
+		});
+}
+
 function runGc(): void {
 	if (draining || gcInFlight || tickInFlight) return;
 	gcInFlight = store
@@ -381,6 +503,7 @@ if (poller) {
 	runJobPoll();
 	jobPollTimer = setInterval(runJobPoll, plan.jobPollMs);
 }
+runDepsImageEnsure();
 
 let shutdownOnce: Promise<void> | undefined;
 
@@ -390,6 +513,7 @@ async function shutdown(signal: string) {
 		draining = true;
 		if (pollTimer) clearInterval(pollTimer);
 		if (jobPollTimer) clearInterval(jobPollTimer);
+		if (depsEnsureTimer) clearTimeout(depsEnsureTimer);
 		if (gcTimer) clearInterval(gcTimer);
 		await worker.discardWarm().catch(() => undefined);
 		log("hobo_ci_isolated_worker_draining", { signal });

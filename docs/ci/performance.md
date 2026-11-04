@@ -958,10 +958,17 @@ Run **41773556225** exposed the first implementation's miss and cleanup costs:
   no layer existed. Its checks also found the two readonly `deps-key.mts` assignments, now built immutably.
 
 The fetch and offline install now share the persistent host store through the same BuildKit
-`hobo-pnpm-store` cache mount. The install stage moves each `node_modules` tree and the `.git` skeleton to a
-separate staging directory; the final stage copies only that directory, with no deletion pass and no fetch store
-or staged manifests. A new build still must report `Already up to date` from
+`hobo-pnpm-store` cache mount. One multi-stage build performs both phases, with `RUN --network=none` on install,
+so no 6–10 GB `hobo-ci-deps-fetch:*` intermediate is tagged. The install stage moves each `node_modules` tree and
+the `.git` skeleton to a separate staging directory; the final stage copies only that directory, with no deletion
+pass and no fetch store or staged manifests. A new build still must report `Already up to date` from
 `pnpm install --frozen-lockfile --offline --config.confirmModulesPurge=false` before promotion.
+
+Each keyed `hobo-ci-deps:*` candidate is also 6–10 GB. Building one per lockfile hash without reaping old keys drove
+the box to **95% inode use twice**. After a successful build or promotion, the collector keeps at most two keyed
+images: the current key and newest previous key by creation time. It never removes `hobo-ci-deps:local`, the current
+key, or an image used by a running container; it deletes all unused legacy fetch tags and runs `docker image prune
+-f` for dangling layers. The workflow's cache-hit promotion path runs the same collector.
 
 Every event checks the exact local key first, then GHCR, and skips the build on either hit. A local hit only
 computes the key, inspects and tags the image. A GHCR-only hit confirms the manifest and materializes the
@@ -974,6 +981,17 @@ On main pushes, `ci-deps-image` runs only when a deps-key input changed or `ci-r
 file lists and forced pushes build fail-safe; schedule and workflow dispatch always run. PR build scoping is
 unchanged. Main full gate does not depend on `ci-deps-image`, so an unrelated push neither builds the layer nor
 adds a trunk-slot wait.
+
+That event-only producer left the box with **no `hobo-ci-deps:local` image** after #1700 landed: the main push had
+no deps input change, so `CI deps layer (pnpm)` skipped and nothing else promoted the image. Every job container
+logged `hobo_ci_deps_image_fallback` with `message=missing`, and the fallback `pnpm install` still took **21 s**.
+The isolated worker daemon now owns availability independently of workflow filtering. On startup and every five
+minutes it reads the head of its default-branch checkout, computes the same content key, and ensures the keyed
+local image. A miss tries the GHCR tag first, then builds locally; either path promotes `hobo-ci-deps:local` and
+runs keep-2 GC. An unchanged key is a no-op. Builds are single-flight and run outside admission under `nice` and
+`ionice`, with Docker memory limits (default 4096 MiB). `hobo_ci_deps_image_ensure` records `hit`, `pull`, or
+`build` and elapsed milliseconds; failures emit `hobo_ci_deps_image_ensure_failed` and retry with exponential
+backoff without stopping the daemon. Until promotion succeeds, jobs keep the same worker-image fallback.
 
 ## Finding 23: the trunk slot went to a runner a PR job could take
 
@@ -1119,6 +1137,12 @@ The package-hash follow-up forced both full graphs with `turbo run ... --force` 
 The serial file total stayed at 732 draft files and 758 files overall. The after run passed 150/150 tasks; the immediately following `pnpm run test:unit` was **150/150 cached (FULL TURBO)** in **574 ms** of turbo time. Adding one blank line to `registry-publish-flow-contract/test/registry-publish-flow.test.ts` then invalidated exactly one draft shard, draft 5, which ran its 68 files in **3.72 s**. Existing broad root inputs also reran root shards 0, 1, and 3; root shard 2 and the other eight draft shards stayed cached. Removing the line restored the original file.
 
 The cold critical path is still the isolated `componentize-js-determinism-spike/test/nondeterminism-spike.test.ts` at **79.0 s**, so this change does not claim a sub-60-second cold unit run. The measured warm full-scope unit graph remains well under 60 seconds.
+
+## Finding 30: the site Vitest config re-inlined the TypeScript compiler
+
+Merge-group run **41828663878** timed out the browser-station catalog test after **45.773 s**. The catalog statically reaches `scanDeclaredTrainables` through `synthesize-try-runtime.ts`; its `ts-autocode-grounding` dependency imports the **9 MB** `typescript.js` compiler. The root Vitest config already externalizes that file (Finding 7), but the site's separate config did not inherit the rule, so Vite's SSR pipeline transformed the compiler and warned about its missing source map.
+
+The site config now applies the same `server.deps.external` rule, leaving the compiler on Node's native loader without changing catalog behavior. With four CPU hogs and the CI test environment, the catalog test fell from **4,735 ms to 740 ms**; its file fell from **5.19 s to 1.17 s** (transform **3.38 s to 235 ms**, import **223 ms to 191 ms**). The full 19-file site suite fell from **10.22 s to 3.89 s** (transform **11.04 s to 1.73 s**, import **18.67 s to 4.20 s**), with all 106 tests passing and the source-map warning gone.
 
 ## Finding 31: turbo.json hashed itself into every task
 

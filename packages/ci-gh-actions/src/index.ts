@@ -57,6 +57,18 @@ export {
 	workerOfferKeys,
 } from "./isolated-worker/daemon-shutdown.js";
 export {
+	createDepsImageEnsurer,
+	type DepsImageAction,
+	type DepsImageDockerPort,
+	type DepsImageEnsureResult,
+	type DepsImageEnsurerOptions,
+	type DepsImageEvent,
+	type DepsImageFileSystemPort,
+	type DepsImageGitPort,
+	type DepsImageProcessPort,
+	type DepsImageProcessRequest,
+} from "./isolated-worker/deps-image.js";
+export {
 	createGithubJobPoller,
 	createPollLogFilter,
 	describeWaitingJobs,
