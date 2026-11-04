@@ -832,3 +832,12 @@ and reserved leases launch in the same trunk-first admission order.
 Label separation is still required: redeploy the box daemon with `HOBO_CI_WORKER_TRUNK_SLOTS=1`, then set
 repository variable `HOBO_CI_TRUNK_RUNNER=true` so GitHub gives a `hobo-trunk` runner only to trunk work.
 The daemon change and `HOBO_CI_WORKER_TRUNK_LEND` setting take effect only after that box redeploy.
+
+## Finding 16: merge_group skipped the gate that caught the red main
+
+Run 41736273918 went red after #1689 merged through the merge queue. Main full gate's Workspace tests
+caught a latent `@hobo/stations` fixture break introduced by #1631 and fixed by #1692. The PR impact gate
+ran only turbo `test:unit` lanes, while `merge_group` ran just the contract guard among the affected CI
+jobs; Main full gate neither ran on `merge_group` nor was required. Merge-group entries now run the same
+affected S0 and dependent workspace-test gate as Main full gate inside the required PR impact gate, using
+the merge group's base SHA.
