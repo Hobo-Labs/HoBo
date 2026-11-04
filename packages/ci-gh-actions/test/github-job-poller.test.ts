@@ -1696,6 +1696,179 @@ describe("pull-mode box worker over SQLite", () => {
 		expect(box.freed).toEqual([2, 3]);
 	});
 
+	it("admits queued trunk work on the tick after each runner exits in the 06:16 timeline", async () => {
+		const store = await configuredStore(3);
+		const fake = new FakeGithub(
+			{ queued: [700, 800], in_progress: [] },
+			{
+				700: [{ id: 1, status: "queued", labels: ["hobo-trunk"] }],
+				800: [
+					{ id: 2, status: "queued", labels: ["hobo"] },
+					{ id: 3, status: "queued", labels: ["hobo"] },
+				],
+			},
+		);
+		fake.started.set(700, {
+			event: "merge_group",
+			at: "2026-11-04T06:16:47Z",
+		});
+		fake.started.set(800, {
+			event: "pull_request",
+			at: "2026-11-04T06:16:40Z",
+		});
+		let runnerId = 0;
+		const github: GithubTransport = {
+			async request(installationId, path, method = "GET", body, ifNoneMatch) {
+				if (
+					method === "POST" &&
+					path === "/repos/Org/Repo/actions/runners/generate-jitconfig"
+				) {
+					runnerId += 1;
+					return Response.json(
+						{ encoded_jit_config: "c2VjcmV0", runner: { id: runnerId } },
+						{ status: 201 },
+					);
+				}
+				return fake.request(installationId, path, method, body, ifNoneMatch);
+			},
+		};
+		const containers = new Map<
+			string,
+			{ running: boolean; exited: boolean }
+		>();
+		let containerId = 0;
+		const docker: DockerDriver = {
+			create: async (spec) => {
+				containerId += 1;
+				const id = containerId.toString(16).padStart(64, "0");
+				containers.set(id, { running: false, exited: false });
+				return { name: spec.name, containerId: id };
+			},
+			start: async (_name, id) => {
+				const container = containers.get(id);
+				if (container) container.running = true;
+			},
+			exec: async () => ({ exitCode: 0 }),
+			execDetached: async () => ({ exitCode: 0 }),
+			writeSecret: async () => {},
+			stop: async (_name, id) => {
+				const container = containers.get(id);
+				if (container) container.running = false;
+			},
+			remove: async (_name, id) => {
+				containers.delete(id);
+			},
+			isRunning: async (_name, id) => containers.get(id)?.running ?? false,
+			exists: async (_name, id, path) =>
+				path === "/tmp/hobo-ci-runner-exited" &&
+				(containers.get(id)?.exited ?? false),
+		};
+		let clock = Date.parse("2026-11-04T06:16:47Z");
+		const now = () => new Date(clock).toISOString();
+		const worker = createIsolatedContainerController({
+			store,
+			github,
+			publicOrigin: "https://relay.example",
+			docker,
+			workerAccountId: "box",
+			workerImage: "hobo-ci-worker:local",
+			slots: 3,
+			now,
+		});
+		const runtime = createHostedRelayRuntime({
+			store,
+			github,
+			identity: {
+				async verify() {
+					throw new Error("pull mode never verifies OIDC");
+				},
+			},
+			webhookSecret: randomUUID() + randomUUID(),
+			isolatedHost: worker.host,
+			denyUnisolated: true,
+			generalLeaseLimit: 2,
+			control: async () => undefined,
+			now,
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => clock,
+		});
+		const leaseFor = async (jobId: number) => {
+			const lease = (await store.activeLeases()).find(
+				(entry) => entry.jobId === jobId,
+			);
+			if (!lease) throw new Error(`job ${jobId} holds no lease`);
+			return lease;
+		};
+		const finish = async (jobId: number, at: string, exitMarker = true) => {
+			const lease = await leaseFor(jobId);
+			const container = containers.get(lease.sandboxSessionId);
+			if (container && exitMarker) container.exited = true;
+			for (const jobs of Object.values(fake.jobs)) {
+				const job = jobs.find((entry) => entry.id === jobId);
+				if (job) {
+					job.status = "completed";
+					job.conclusion = "success";
+					job.runner_name = lease.runnerName;
+				}
+			}
+			clock = Date.parse(at);
+			await runtime.tick({ maxDeliveries: 10 });
+		};
+
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([1, 2, 3]);
+
+		await finish(1, "2026-11-04T06:17:50Z", false);
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([2, 3]);
+
+		clock = Date.parse("2026-11-04T06:18:26Z");
+		fake.runs.queued.push(900, 901);
+		fake.jobs[900] = [{ id: 4, status: "queued", labels: ["hobo-trunk"] }];
+		fake.jobs[901] = [{ id: 5, status: "queued", labels: ["hobo-trunk"] }];
+		fake.started.set(900, { event: "push", at: "2026-11-04T06:18:26Z" });
+		fake.started.set(901, { event: "push", at: "2026-11-04T06:18:26Z" });
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([2, 3, 4]);
+		expect((await store.get((await leaseFor(4)).id))?.state).toBe("running");
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([5]);
+
+		const log = vi.spyOn(console, "error").mockImplementation(() => {});
+		clock = Date.parse("2026-11-04T06:18:37Z");
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(log).toHaveBeenCalledWith(
+			JSON.stringify({
+				event: "hobo_ci_trunk_wait",
+				reason: "lease-capacity",
+				waitedMs: 11_000,
+				repository: REPO,
+				runId: 901,
+				jobId: 5,
+			}),
+		);
+		log.mockRestore();
+
+		await finish(2, "2026-11-04T06:21:34Z");
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([3, 4, 5]);
+		expect((await store.get((await leaseFor(5)).id))?.state).toBe("running");
+		store.close();
+	});
+
 	it("launches a trunk runner in a pre-warmed container under the trunk label", async () => {
 		const store = await configuredStore(2);
 		const fake = new FakeGithub(

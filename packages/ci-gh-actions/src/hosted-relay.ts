@@ -127,12 +127,17 @@ const RunWebhook = z.object({
 });
 
 export type ServedRunnerLabelCache = Map<string, RunnerLabel | undefined>;
+export type TrunkWaitCache = Map<
+	string,
+	{ sinceMs: number; logged: boolean }
+>;
 
 export class HostedRelay {
 	readonly now: () => string;
 	private readonly admissionOrder: AdmissionOrder;
 	private readonly sharedLabelTrunkJobs: Set<string>;
 	private readonly servedRunnerLabels: ServedRunnerLabelCache;
+	private readonly trunkWaits: TrunkWaitCache;
 	constructor(
 		readonly options: {
 			config: Configuration;
@@ -152,6 +157,8 @@ export class HostedRelay {
 			sharedLabelTrunkJobs?: Set<string>;
 			/** Immutable job labels, keyed by repository and job ID, shared across relays. */
 			servedRunnerLabels?: ServedRunnerLabelCache;
+			/** Shared across relays so a wait survives the next dispatch tick. */
+			trunkWaits?: TrunkWaitCache;
 			/**
 			 * Queue an admitted job without reserving it. For callers that run
 			 * `dispatchPending` after a batch, so the batch is reserved in admission
@@ -173,6 +180,7 @@ export class HostedRelay {
 			createAdmissionOrder(options.github, options.jobDurations);
 		this.sharedLabelTrunkJobs = options.sharedLabelTrunkJobs ?? new Set();
 		this.servedRunnerLabels = options.servedRunnerLabels ?? new Map();
+		this.trunkWaits = options.trunkWaits ?? new Map();
 	}
 	private async refreshConfig(): Promise<number> {
 		const { state, policies } = await this.options.store.policySnapshot();
@@ -658,6 +666,33 @@ export class HostedRelay {
 		);
 		return true;
 	}
+	private trunkWaitKey(job: Pick<Job, "repository" | "id" | "runAttempt">) {
+		return `${job.repository}:${job.id}:${job.runAttempt}`;
+	}
+	private reportTrunkWait(job: Job): string {
+		const key = this.trunkWaitKey(job);
+		const nowMs = Date.parse(this.now());
+		const wait = this.trunkWaits.get(key) ?? {
+			sinceMs: nowMs,
+			logged: false,
+		};
+		this.trunkWaits.set(key, wait);
+		const waitedMs = nowMs - wait.sinceMs;
+		if (waitedMs > 10_000 && !wait.logged) {
+			wait.logged = true;
+			console.error(
+				JSON.stringify({
+					event: "hobo_ci_trunk_wait",
+					reason: "lease-capacity",
+					waitedMs,
+					repository: job.repository,
+					runId: job.runId,
+					jobId: job.id,
+				}),
+			);
+		}
+		return key;
+	}
 	/** Durable outbox drain. A launch intent is committed before network I/O. */
 	async dispatchPending(): Promise<void> {
 		const reservationRevision = await this.refreshConfig();
@@ -679,6 +714,7 @@ export class HostedRelay {
 		// Strict reservation always caps shared-label leases; lending applies the cap
 		// only after trunk-label demand misses a lease. Both free capacity in this pass.
 		let trunkWaiting = false;
+		const waitingTrunk = new Set<string>();
 		for (const job of pending) {
 			const trunk = servedRunnerLabel(job.labels) === TRUNK_RUNNER_LABEL;
 			if (!trunk && (await this.admissionOrder.rank(refOf(job))) === TRUNK_RANK)
@@ -717,8 +753,10 @@ export class HostedRelay {
 					this.now(),
 					reservationRevision,
 				);
-			if (!lease) trunkWaiting ||= trunk;
-			else {
+			if (!lease) {
+				trunkWaiting ||= trunk;
+				if (trunk) waitingTrunk.add(this.reportTrunkWait(job));
+			} else {
 				this.servedRunnerLabels.set(
 					`${job.repository}:${job.id}`,
 					servedRunnerLabel(job.labels),
@@ -863,6 +901,8 @@ export class HostedRelay {
 				/* Isolate this account: retain reservation and process other candidates. */
 			}
 		}
+		for (const key of this.trunkWaits.keys())
+			if (!waitingTrunk.has(key)) this.trunkWaits.delete(key);
 	}
 	async claim(id: string, token: string): Promise<JitBootstrapResponse> {
 		const lease = await this.options.store.get(id);
