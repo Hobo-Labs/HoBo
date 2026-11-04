@@ -6,6 +6,7 @@ import {
 	mkdirSync,
 	readdirSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { join, parse, resolve } from "node:path";
@@ -127,11 +128,97 @@ function installSdkTarballsIntoApp(appDir: string, artifactsDir: string): void {
 	run(appDir, "npm", ["install", "--ignore-scripts", "--no-save", ...tarballs]);
 }
 
+export type ReleaseOciStagingLocation =
+	| { readonly stagingRoot: string; readonly hardlink: false }
+	| {
+			readonly stagingRoot: string;
+			readonly hardlink: true;
+			readonly storeDir: string;
+	  };
+
+type ReleaseOciStagingOptions = {
+	readonly root?: string;
+	readonly env?: Readonly<Record<string, string | undefined>>;
+	readonly stat?: (path: string) => { readonly dev: number };
+	readonly mkdir?: (path: string) => void;
+	readonly processId?: number;
+};
+
+function releaseOciRunId(
+	env: Readonly<Record<string, string | undefined>>,
+	processId: number,
+): string {
+	const githubRun =
+		env.GITHUB_RUN_ID && env.GITHUB_JOB
+			? `${env.GITHUB_RUN_ID}-${env.GITHUB_JOB}-${env.GITHUB_RUN_ATTEMPT ?? "1"}`
+			: undefined;
+	return (
+		env.HOBO_RELEASE_STAGING_ID ||
+		githubRun ||
+		`pid-${processId}`
+	).replace(/[^A-Za-z0-9._-]/g, "_");
+}
+
+export function releaseOciStagingLocation(
+	imageId: string,
+	options: ReleaseOciStagingOptions = {},
+): ReleaseOciStagingLocation {
+	const root = resolve(options.root ?? defaultRoot);
+	const fallback = {
+		stagingRoot: join(root, "deploy/release-images/.staging", imageId),
+		hardlink: false,
+	} as const;
+	const env = options.env ?? process.env;
+	if (!env.npm_config_store_dir) return fallback;
+	const storeDir = resolve(env.npm_config_store_dir);
+	const stat = options.stat ?? statSync;
+	const mkdir =
+		options.mkdir ?? ((path: string) => mkdirSync(path, { recursive: true }));
+	try {
+		const storeDevice = stat(storeDir).dev;
+		const storeStaging = join(storeDir, ".hobo-release-staging");
+		mkdir(storeStaging);
+		if (stat(storeStaging).dev !== storeDevice) return fallback;
+		return {
+			stagingRoot: join(
+				storeStaging,
+				imageId,
+				releaseOciRunId(env, options.processId ?? process.pid),
+			),
+			hardlink: true,
+			storeDir,
+		};
+	} catch {
+		return fallback;
+	}
+}
+
+export function releaseOciDeployArgs(
+	packageName: string,
+	appDir: string,
+	hardlink = false,
+): readonly string[] {
+	return [
+		"--filter",
+		packageName,
+		"deploy",
+		"--prod",
+		"--offline",
+		"--config.inject-workspace-packages=true",
+		"--cpu=current",
+		"--os=current",
+		"--libc=current",
+		...(hardlink ? ["--config.package-import-method=hardlink"] : []),
+		appDir,
+	];
+}
+
 function deployPackage(
 	root: string,
 	stagingRoot: string,
 	spec: DeployStage,
 	skipBuild: boolean,
+	hardlink: boolean,
 	sdkArtifactsDir?: string,
 ): void {
 	const buildFilter =
@@ -140,15 +227,7 @@ function deployPackage(
 			: spec.buildFilter;
 	if (!skipBuild) turboBuild(root, [buildFilter]);
 	const appDir = join(stagingRoot, spec.appPath);
-	run(root, "pnpm", [
-		"--filter",
-		spec.packageName,
-		"deploy",
-		"--prod",
-		"--offline",
-		"--config.inject-workspace-packages=true",
-		appDir,
-	]);
+	run(root, "pnpm", releaseOciDeployArgs(spec.packageName, appDir, hardlink));
 	if (sdkArtifactsDir) {
 		installSdkTarballsIntoApp(appDir, sdkArtifactsDir);
 	}
@@ -163,6 +242,7 @@ function deployPackage(
 			writeFileSync(
 				executable,
 				`#!/bin/sh\n${help}exec node "$(dirname "$0")/../${wrapper.entrypoint}" "$@"\n`,
+				{ flag: "wx" },
 			);
 			chmodSync(executable, 0o755);
 		}
@@ -218,6 +298,7 @@ export function stageReleaseOciApp(
 	options: {
 		root?: string;
 		skipBuild?: boolean;
+		hardlink?: boolean;
 		sdkArtifactsDir?: string;
 	} = {},
 ): void {
@@ -240,6 +321,7 @@ export function stageReleaseOciApp(
 				output,
 				spec,
 				options.skipBuild ?? false,
+				options.hardlink ?? false,
 				options.sdkArtifactsDir ??
 					(process.env.HOBO_SDK_ARTIFACTS_DIR?.trim() || undefined),
 			);
