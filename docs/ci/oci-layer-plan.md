@@ -171,9 +171,11 @@ The one Turbo-adjacent idea worth keeping is optional: an `oras` artifact that s
 
 The key is sha256 over, in fixed order:
 - `pnpm-lock.yaml` and `pnpm-workspace.yaml`;
-- every importer's `package.json`, because `bin`, `dependenciesMeta` and the other install-relevant fields change
-  linking without changing the lockfile. Only the top-level `scripts` field is omitted. One normalizer parses each
-  manifest, recursively sorts object keys, and supplies both the hash and the staged Docker context;
+- every importer's dependency-layout manifest fields: `name`, `version`, dependency and dependency-metadata fields,
+  `bundleDependencies`/`bundledDependencies`, `bin`, `directories.bin`, `publishConfig.directory`/`bin`/
+  `linkDirectory`, `os`, `cpu`, `libc`, `engines`, `devEngines`, `packageManager`, `workspaces`, `overrides`,
+  `resolutions`, and root-only `pnpm`. One normalizer parses each manifest, sorts the retained keys, and supplies both
+  the hash and the staged Docker context. Metadata such as scripts, exports, files and descriptions is excluded;
 - root `.npmrc`, `patches/**`, and optional `.pnpmfile.cjs`;
 - the `node` and `pnpm` entries of `mise.lock`, because native postinstalls are ABI-specific;
 - the platform (`linux/arm64` on the box);

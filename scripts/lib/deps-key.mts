@@ -99,12 +99,79 @@ function sortJsonObjectKeys(value: JsonValue): JsonValue {
 	return sorted;
 }
 
-export function normalizeDepsManifest(manifest: string): string {
+const DEPENDENCY_MANIFEST_FIELDS = new Set([
+	"name",
+	"version",
+	"dependencies",
+	"devDependencies",
+	"optionalDependencies",
+	"peerDependencies",
+	"peerDependenciesMeta",
+	"dependenciesMeta",
+	"bundleDependencies",
+	"bundledDependencies",
+	"bin",
+	"directories",
+	"publishConfig",
+	"os",
+	"cpu",
+	"libc",
+	"engines",
+	"devEngines",
+	"packageManager",
+	"workspaces",
+	"overrides",
+	"resolutions",
+]);
+const DIRECTORY_MANIFEST_FIELDS = new Set(["bin"]);
+const PUBLISH_CONFIG_MANIFEST_FIELDS = new Set([
+	"directory",
+	"bin",
+	"linkDirectory",
+]);
+
+function pickNestedManifestFields(
+	value: JsonValue,
+	fields: ReadonlySet<string>,
+): JsonObject {
+	if (
+		value === null ||
+		Array.isArray(value) ||
+		Object.getPrototypeOf(value) !== Object.prototype
+	)
+		return {};
+	return Object.fromEntries(
+		Object.entries(value).filter(([key]) => fields.has(key)),
+	);
+}
+
+export function normalizeDepsManifest(
+	manifest: string,
+	rootManifest = false,
+): string {
 	const parsed: JsonObject = JSON.parse(manifest);
 	const installInputs: JsonObject = Object.fromEntries(
 		Object.entries(parsed)
-			.filter(([key]) => key !== "scripts")
-			.map(([key, value]) => [key, sortJsonObjectKeys(value)]),
+			.filter(
+				([key]) =>
+					DEPENDENCY_MANIFEST_FIELDS.has(key) ||
+					(rootManifest && key === "pnpm"),
+			)
+			.flatMap(([key, value]): Array<[string, JsonValue]> => {
+				if (key === "directories" || key === "publishConfig") {
+					const nested = pickNestedManifestFields(
+						value,
+						key === "directories"
+							? DIRECTORY_MANIFEST_FIELDS
+							: PUBLISH_CONFIG_MANIFEST_FIELDS,
+					);
+					return Object.keys(nested).length === 0
+						? []
+						: [[key, sortJsonObjectKeys(nested)]];
+				}
+				return [[key, sortJsonObjectKeys(value)]];
+			})
+			.sort(([left], [right]) => (left === right ? 0 : left < right ? -1 : 1)),
 	);
 	return `${JSON.stringify(installInputs)}\n`;
 }
@@ -126,7 +193,7 @@ export function depsKeyFromInputs(inputs: DepsKeyInputs): string {
 		const manifest = inputs.manifests[path];
 		if (manifest === undefined)
 			throw new Error(`missing importer manifest: ${path}`);
-		updateHash(hash, path, normalizeDepsManifest(manifest));
+		updateHash(hash, path, normalizeDepsManifest(manifest, importer === "."));
 	}
 	for (const path of DEPS_BUILD_RECIPE_PATHS) {
 		const recipe = inputs.buildRecipe[path];
@@ -230,7 +297,9 @@ export function readDepsContextFiles(
 			const contents = readFileSync(join(root, path), "utf8");
 			return [
 				path,
-				manifests.has(path) ? normalizeDepsManifest(contents) : contents,
+				manifests.has(path)
+					? normalizeDepsManifest(contents, path === importerManifestPath("."))
+					: contents,
 			];
 		}),
 	);
