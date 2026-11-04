@@ -1,4 +1,12 @@
-import { chown, lstat, mkdir, readdir, rm, stat, statfs } from "node:fs/promises";
+import {
+	chown,
+	lstat,
+	mkdir,
+	readdir,
+	rm,
+	stat,
+	statfs,
+} from "node:fs/promises";
 import { basename, join } from "node:path";
 import { selectWorkerImagesForDeletion, type WorkerImage } from "./image-gc.js";
 

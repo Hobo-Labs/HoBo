@@ -962,7 +962,9 @@ describe("pull-mode box worker over SQLite", () => {
 		expect(storageAdmission.admit).toHaveBeenCalledWith(expect.any(Array), "2");
 		expect(storageAdmission.release).toHaveBeenCalledWith("2");
 		expect(storageAdmission.release).not.toHaveBeenCalledWith("1");
-		expect((await store.activeLeases()).map((lease) => lease.jobId)).toEqual([1]);
+		expect((await store.activeLeases()).map((lease) => lease.jobId)).toEqual([
+			1,
+		]);
 		store.close();
 	});
 
