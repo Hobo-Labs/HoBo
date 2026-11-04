@@ -20,6 +20,19 @@ const dockerImageInspection = z.object({
 		.object({ Labels: z.record(z.string(), z.string()).nullable().default({}) })
 		.default({ Labels: {} }),
 });
+const dockerContainer = z.object({
+	ID: z.string().regex(/^[a-f0-9]{64}$/u),
+	Names: z.string().regex(/^\/?[A-Za-z0-9][A-Za-z0-9_.-]*$/u),
+	State: z.enum([
+		"created",
+		"restarting",
+		"running",
+		"removing",
+		"paused",
+		"exited",
+		"dead",
+	]),
+});
 
 /** `docker create` flags for the host engine socket (gid matches socket group inside container). */
 export function dockerSocketMountCreateArgs(
@@ -184,6 +197,31 @@ export function createCliDockerDriver(options: {
 				}
 				return { exitCode };
 			}
+		},
+		async list(label) {
+			if (label !== "hobo.ci/isolated=1")
+				throw new Error("invalid worker container label");
+			const { stdout } = await exec(
+				docker,
+				[
+					"ps",
+					"-a",
+					"--no-trunc",
+					"--filter",
+					`label=${label}`,
+					"--format",
+					"json",
+				],
+				{ env, timeout: 30_000, maxBuffer: 16 * 1024 * 1024 },
+			);
+			return (stdout.trim() ? stdout.trim().split("\n") : []).map((line) => {
+				const parsed = dockerContainer.parse(JSON.parse(line));
+				return {
+					name: parsed.Names.replace(/^\//u, ""),
+					containerId: parsed.ID,
+					state: parsed.State,
+				};
+			});
 		},
 		async create(spec: IsolatedContainerSpec) {
 			const args = [

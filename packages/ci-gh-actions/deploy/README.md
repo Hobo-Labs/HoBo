@@ -118,6 +118,15 @@ The admitted request becomes the container's `--memory` and `--memory-swap` valu
 budget is **13941 MiB**. Heavy + standard + light = **13312 MiB** fits three slots; two heavy jobs leave
 **1653 MiB**, so a third light job waits; three heavy jobs need **18432 MiB** and never fit together.
 
+At startup and before every admission or drain check, the worker reconciles its lease journal against the strictly
+parsed `hobo.ci/isolated=1` Docker inventory. Running containers are never reaped; exited/dead containers settle;
+missing containers release after a two-minute reservation grace, or immediately during drain. Unleased worker
+containers are removed. A Docker listing failure releases nothing. Watch `hobo_ci_lease_orphan_released`,
+`hobo_ci_container_orphan_removed`, `hobo_ci_memory_without_containers` and
+`hobo_ci_lease_reconciliation_failed` when diagnosing stale admission memory. Drain waits only for live containers,
+up to the configured 30-minute bound. See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for the full state rules
+and event fields.
+
 Job preflight reserves 768 MiB for native/non-heap memory, then chooses
 `workers = max(1, min(cpuCount, floor((limit - 768) / 1280) - 1))` and
 `heap = min(3072, floor((limit - 768) / (workers + 1)))`. It exports that heap through `NODE_OPTIONS`,
