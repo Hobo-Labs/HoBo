@@ -715,8 +715,8 @@ of two or three runs at once, queueing still pushes it past five. In order of ex
 8. **Fewer jobs per run is capped by the required checks.** Secret scan, CI runner image and the CI fabric
    contract guard each spend a container handoff on 10–40 s of work. Folding them into one job would cut
    two handoffs per run, but each is a required check by name, so that needs the ruleset changed with it.
-   Not done here. On trunk runs, the secret scan now runs inside the CI runner image job in parallel with
-   the image build, so a main push needs one fewer slot. Pull requests keep the separate required "Secret scan" job.
+   Not done here. On trunk runs, the secret scan runs inside Main full gate in parallel with its checks,
+   so a main push needs one fewer slot. Pull requests keep the separate required "Secret scan" job.
 
 Risk to keep in mind: the box's pnpm store is a read-write host mount shared by every job, fork PRs
 included (`forkPullRequestEnvironment: ci`). pnpm verifies tarball integrity against the lockfile on fetch,
@@ -840,8 +840,8 @@ The GitHub API confirmed the label root cause: every job of run 41720899087 requ
 because `HOBO_CI_TRUNK_RUNNER` was unset and the expression was opt-in. Trunk-capable CI and release jobs
 now request `hobo-trunk` unless the variable is explicitly `false`, the daemon reserves one trunk slot by
 default when it has at least two slots, and the trunk-only label proves trunk admission rank even when a
-run lookup fails. PR-only jobs, including Secret scan since #1687 moved trunk history scanning into the CI
-runner image job, request plain `hobo`. JIT runners still register with exactly the label their job requested.
+run lookup fails. PR-only jobs, including Secret scan (trunk history scanning now runs in Main full gate),
+request plain `hobo`. JIT runners still register with exactly the label their job requested.
 
 Merge-group run 41731777263 exposed the same swap after its runner took an older PR job: later queued
 polls were inbox duplicates. Direct swapped-job requeue bypasses that marker, and Postgres queue dedupe
@@ -873,6 +873,15 @@ The gate was runnable at 00:33:12 but waited 33 s for one of two slots; the guar
 The guard now runs only on pull requests, while its two steps run after install in Main full gate and in PR impact gate on merge_group.
 The PR-only guard requests plain `hobo`.
 Expected saving: about 33–38 s of critical path on a main push and on merge_group.
+
+## Finding 21: Main full gate waited for an image job that had nothing to build
+
+Main push run 41762556455 took 107 s. The run was created at 02:43:10; CI runner image (mise oci) ran 02:43:28–02:43:40, spending 18 s waiting for a runner and then 12 s on a no-op because no image input changed. Main full gate ran 02:44:04–02:44:56.
+Its `needs: ci-runner-image` kept it queued until the image job ended, and the box then needed about 24 s more for its next 15 s poll, container start and JIT runner start. About 36 s of the critical path was therefore the no-op image job plus the second launch.
+
+The image job now skips a push when the payload's per-commit added, modified and removed file lists contain none of the image inputs; a skipped job satisfies `needs` immediately. Missing file lists and forced pushes fail open toward building, and a push that changes an input still builds and retags the image before Main full gate starts. The full-history secret scan moved from the image job to Main full gate so it still runs when the image job skips.
+
+Expected saving: about 36 s of critical path on a push that leaves the image inputs alone. The remaining 18 s before the first job is the box's 15 s poll interval plus container start, a separate target.
 
 ## Finding 23: the trunk slot went to a runner a PR job could take
 
