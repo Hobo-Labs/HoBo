@@ -13,6 +13,7 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
@@ -28,7 +29,7 @@ import { parseJsonObject, type JsonBag, type JsonValue } from "../src/json.js";
 const here = dirname(fileURLToPath(import.meta.url));
 
 import { CowTier as CowTierPb } from "../src/_generated/rift_workspace_pb.js";
-import { detectCapability, probeOverlayfs } from "../src/capability.js";
+import { detectCapability, probeOverlayfs, removeCopyOnWriteTree } from "../src/capability.js";
 import { projectWorkspaces, readEvents } from "../src/journal.js";
 import { parseWorkspaceName } from "../src/names.js";
 import {
@@ -55,7 +56,7 @@ import {
 
 const dirs: string[] = [];
 afterAll(() => {
-	for (const d of dirs) rmSync(d, { recursive: true, force: true });
+	for (const d of dirs) removeCopyOnWriteTree(d);
 });
 
 function source(): string {
@@ -279,6 +280,14 @@ describe("exec wrapper", () => {
 });
 
 describe("overlay availability is reported, not silently skipped", () => {
+	it("leaves no overlay probe debris under the probed directory", () => {
+		const root = source();
+		probeOverlayfs(root);
+		expect(
+			readdirSync(root).some((name) => name.startsWith(".rift-ovl-")),
+		).toBe(false);
+	});
+
 	it("says so when this machine cannot grant an unprivileged overlay", () => {
 		// runIf drops the property block below with no skip count in the report,
 		// so a CI box without user namespaces would print "all passed" while

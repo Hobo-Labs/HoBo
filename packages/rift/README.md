@@ -20,6 +20,11 @@ therefore silently degrading every agent to one shared checkout.
 |---|---|---|
 | `reflink` | `cp --reflink=always` (FICLONE) | yes |
 | `overlayfs` | `unshare -Urm` + unprivileged overlay mount | yes |
+
+Overlay capability probing creates a short-lived `.rift-ovl-*` tree under the
+probed directory; teardown runs `chmod -R u+rwx` before `rm` so a kernel `work/work`
+at mode `000` cannot block deleting `HOBO_HOME` in tests or first-run sweeps.
+
 | `hardlink` | `cp -al` | **no** |
 | `copy` | `cp -a` | yes |
 
