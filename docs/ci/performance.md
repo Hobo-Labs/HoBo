@@ -64,6 +64,7 @@ unindexed new finding files as notices.
 - [Finding 45: dead containers left 12288 MiB reserved and blocked trunk admission](./findings/0045-dead-containers-left-12288-mib-reserved-and-blocked-trunk-admission.md)
 - [Finding 49: the deps image build could not create its payload directory](./findings/0049-the-deps-image-build-could-not-create-its-payload-directory.md)
 - [Finding 59: the deps mount check needed tsx and misread the pnpm layout](./findings/0059-the-deps-mount-check-needed-tsx-and-misread-the-pnpm-layout.md)
+- [Finding 61: a worker restart drained jobs before handing off](./findings/0061-a-worker-restart-drained-jobs-before-handing-off.md)
 <!-- findings-index:end -->
 
 ## Data

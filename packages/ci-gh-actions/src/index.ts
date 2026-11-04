@@ -53,6 +53,9 @@ export {
 } from "./isolated-worker/container-controller.js";
 export {
 	countInFlightWorkerLeases,
+	parseWorkerStopMode,
+	stopIsolatedWorker,
+	type WorkerStopMode,
 	waitForIsolatedWorkerDrain,
 	workerOfferKeys,
 } from "./isolated-worker/daemon-shutdown.js";

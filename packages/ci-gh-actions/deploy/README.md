@@ -132,8 +132,8 @@ parsed `hobo.ci/isolated=1` Docker inventory. Running containers are never reape
 missing containers release after a two-minute reservation grace, or immediately during drain. Unleased worker
 containers are removed. A Docker listing failure releases nothing. Watch `hobo_ci_lease_orphan_released`,
 `hobo_ci_container_orphan_removed`, `hobo_ci_memory_without_containers` and
-`hobo_ci_lease_reconciliation_failed` when diagnosing stale admission memory. Drain waits only for live containers,
-up to the configured 30-minute bound. See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for the full state rules
+`hobo_ci_lease_reconciliation_failed` when diagnosing stale admission memory. Optional drain mode waits only for live
+containers, up to the configured 30-minute bound; the default handoff mode exits without that wait. See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for the full state rules
 and event fields.
 
 Job preflight reserves 768 MiB for native/non-heap memory, then chooses

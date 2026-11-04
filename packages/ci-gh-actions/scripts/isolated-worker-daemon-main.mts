@@ -31,11 +31,12 @@ import {
 	type HostedInboxStore,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
+	parseWorkerStopMode,
 	readHostMemory,
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
-	waitForIsolatedWorkerDrain,
+	stopIsolatedWorker,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
@@ -150,13 +151,12 @@ const lendTrunkSlots = trunkLend === "1";
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
-// A stop waits for running jobs, so the default covers a long job; the
-// supervisor's own stop timeout must be longer than this.
 const drainTimeoutMs = Number(
 	process.env.HOBO_CI_WORKER_DRAIN_TIMEOUT_MS ?? "1800000",
 );
 if (!Number.isFinite(drainTimeoutMs) || drainTimeoutMs < 1_000)
 	throw new Error("invalid HOBO_CI_WORKER_DRAIN_TIMEOUT_MS");
+const stopMode = parseWorkerStopMode(process.env.HOBO_CI_WORKER_STOP_MODE);
 const depsPollMs = Number(process.env.HOBO_CI_DEPS_POLL_MS ?? "300000");
 if (!Number.isFinite(depsPollMs) || depsPollMs < 1_000)
 	throw new Error("invalid HOBO_CI_DEPS_POLL_MS");
@@ -521,6 +521,7 @@ log("hobo_ci_isolated_worker_started", {
 	pnpmStoreMounted: pnpmStore !== "",
 	gcIntervalMs,
 	drainTimeoutMs,
+	stopMode,
 });
 
 gcTimer = setInterval(runGc, gcIntervalMs);
@@ -561,12 +562,14 @@ async function shutdown(signal: string) {
 		};
 		const inFlight = async () => liveWorkerLeaseIds.size;
 		await reconcileDrain();
-		log("hobo_ci_isolated_worker_drain_started", {
-			inFlight: await inFlight(),
-			timeoutMs: drainTimeoutMs,
-		});
+		if (stopMode === "drain")
+			log("hobo_ci_isolated_worker_drain_started", {
+				inFlight: await inFlight(),
+				timeoutMs: drainTimeoutMs,
+			});
 		let reported = -1;
-		const result = await waitForIsolatedWorkerDrain({
+		const result = await stopIsolatedWorker({
+			mode: stopMode,
 			inFlight,
 			reconcile: reconcileDrain,
 			pollMs: Math.min(intervalMs, 5_000),
@@ -577,7 +580,9 @@ async function shutdown(signal: string) {
 				log("hobo_ci_isolated_worker_drain_waiting", { remaining });
 			},
 		});
-		if (result.drained) {
+		if (result.mode === "handoff") {
+			log("hobo_ci_isolated_worker_handoff", { running: result.remaining });
+		} else if (result.drained) {
 			log("hobo_ci_isolated_worker_drained", { remaining: 0 });
 		} else {
 			log("hobo_ci_isolated_worker_drain_timeout", {
@@ -585,7 +590,7 @@ async function shutdown(signal: string) {
 			});
 		}
 		await closeStore();
-		process.exit(result.drained ? 0 : 1);
+		process.exit(result.mode === "handoff" || result.drained ? 0 : 1);
 	})().catch((error) => {
 		log("hobo_ci_isolated_worker_shutdown_failed", {
 			message: error instanceof Error ? error.message : "unknown",
