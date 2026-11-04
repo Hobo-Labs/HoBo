@@ -16,8 +16,7 @@ import {
 	VALKEY_PACK_ID,
 	VALKEY_PASSWORD_POLICY,
 } from "../src/index.js";
-import { type JsonValue } from "../src/json.js";
-
+import type { JsonValue } from "../src/json.js";
 
 type Recorded = {
 	readonly scope: PackSecretScope;

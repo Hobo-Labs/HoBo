@@ -12,9 +12,8 @@ import {
 	parsePostgresIdentifier,
 	runPostgresCommand,
 } from "../src/index.js";
+import type { JsonValue } from "../src/json.js";
 import { SUPERUSER_REF } from "./harness.js";
-import { type JsonValue } from "../src/json.js";
-
 
 const PASSWORD_REF = parseSecretRef(SUPERUSER_REF).ref;
 

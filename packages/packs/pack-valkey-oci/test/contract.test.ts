@@ -19,10 +19,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
-
+import { isJsonObject, isJsonString, type JsonValue } from "../src/json.js";
 import { type PactRequest, respond } from "./pact-replay.js";
-import { isJsonString, isJsonObject, type JsonValue } from "../src/json.js";
-
 
 type Json =
 	| string

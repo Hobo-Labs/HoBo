@@ -874,6 +874,13 @@ The guard now runs only on pull requests, while its two steps run after install 
 The PR-only guard requests plain `hobo`.
 Expected saving: about 33–38 s of critical path on a main push and on merge_group.
 
+## Finding 20: a workspace-wide change linted every package and failed on old findings
+
+PR #1667 changed root `package.json`, so affected-lanes selected all 795 packages; turbo ran every package's `lint` (`biome check .`) with `--continue=never` and failed on `@hobo/pack-postgres-oci` (7 errors in files the PR never touched).
+Main had 53 such errors across 9 packages because Main full gate never runs package lint.
+This cleanup fixes them; a follow-up commit in the same PR makes PRs and main lint only changed files.
+The rift debris test was host-tier-dependent and is now pinned to overlayfs, with a copy-tier sibling proving cloned files are parked.
+
 ## Finding 21: Main full gate waited for an image job that had nothing to build
 
 Main push run 41762556455 took 107 s. The run was created at 02:43:10; CI runner image (mise oci) ran 02:43:28–02:43:40, spending 18 s waiting for a runner and then 12 s on a no-op because no image input changed. Main full gate ran 02:44:04–02:44:56.

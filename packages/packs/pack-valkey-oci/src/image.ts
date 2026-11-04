@@ -75,9 +75,7 @@ export const VALKEY_CONFIG_PATH = "/etc/valkey/valkey.conf" as const;
 export const VALKEY_REQUIREPASS_INCLUDE_PATH =
 	"/run/secrets/valkey-requirepass.conf" as const;
 
-function valkeyImageDigest(
-	architecture: PackArchitecture,
-): string | undefined {
+function valkeyImageDigest(architecture: PackArchitecture): string | undefined {
 	switch (architecture) {
 		case "linux/amd64":
 			return VALKEY_IMAGE_DIGESTS["linux/amd64"];

@@ -11,7 +11,6 @@
 import { PackError } from "./errors.js";
 import { isJsonString } from "./json.js";
 
-
 declare const imageDigestBrand: unique symbol;
 declare const pinnedImageRefBrand: unique symbol;
 declare const repositoryBrand: unique symbol;

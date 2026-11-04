@@ -241,8 +241,8 @@ async function resolveRepository(
 	const remotes = (await git(["remote"], cwd).catch(() => ""))
 		.split("\n")
 		.filter(Boolean);
-	const remote =
-		options.remote ?? (remotes.length === 1 ? remotes[0]! : "origin");
+	const soleRemote = remotes.length === 1 ? remotes[0] : undefined;
+	const remote = options.remote ?? soleRemote ?? "origin";
 	if (!remotes.includes(remote)) throw new Error("missing git remote");
 	return ciRepositoryFromRemote(await git(["remote", "get-url", remote], cwd));
 }
@@ -334,8 +334,8 @@ export async function resolveCiServePlan(input: {
 			? undefined
 			: Number(input.options.installationId);
 	if (
-		input.options.installationId !== undefined &&
-		(!Number.isSafeInteger(installationId) || installationId! < 1)
+		installationId !== undefined &&
+		(!Number.isSafeInteger(installationId) || installationId < 1)
 	)
 		throw new Error("invalid installation id");
 	const committed = await readFile(project.configPath, "utf8");
@@ -425,9 +425,11 @@ async function ensureCredentials(
 	await mkdir(directory, { recursive: true, mode: 0o700 });
 	const keyPath = join(directory, "github-app.pem");
 	const tokenPath = join(directory, "control-tokens.json");
+	const configuredKeyPath = env.HOBO_CI_GITHUB_APP_KEY_FILE;
 	const hasKeyFile =
-		env.HOBO_CI_GITHUB_APP_KEY_FILE &&
-		(await access(env.HOBO_CI_GITHUB_APP_KEY_FILE, constants.R_OK).then(
+		configuredKeyPath !== undefined &&
+		configuredKeyPath.length > 0 &&
+		(await access(configuredKeyPath, constants.R_OK).then(
 			() => true,
 			() => false,
 		));
@@ -466,7 +468,7 @@ async function ensureCredentials(
 			controlPath = tokenPath;
 		}
 		return {
-			keyPath: env.HOBO_CI_GITHUB_APP_KEY_FILE!,
+			keyPath: configuredKeyPath,
 			tokenPath: controlPath,
 			webhookSecret,
 			appId: await readSecret(env, "HOBO_CI_GITHUB_APP_ID"),
