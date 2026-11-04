@@ -144,8 +144,10 @@ export function createDepsImageEnsurer(options: DepsImageEnsurerOptions) {
 			await options.processes.run({
 				command: process.execPath,
 				args: [
+					"--experimental-strip-types",
+					"--no-warnings",
 					"--import",
-					"tsx",
+					"./scripts/lib/ts-source-resolve.mts",
 					"--test",
 					"scripts/test/ci-deps-image-mount.test.ts",
 				],
