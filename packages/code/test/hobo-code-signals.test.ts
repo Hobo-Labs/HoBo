@@ -14,7 +14,14 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { killProcessGroup, trackChild } from "./subprocess-cleanup.js";
+import { readStationSidecars } from "../src/station-sidecars.js";
+import {
+	drainEvidenceSidecarsForHomes,
+	killProcessGroup,
+	listLeakedEvidenceSidecarPids,
+	readProcessHoboHome,
+	trackChild,
+} from "./subprocess-cleanup.js";
 
 // hobo-code composes HoBo in process: a `/hobo <verb>` in its shell loads
 // @hobo/hobo's composition, whose default runtime keeps its event store in a
@@ -41,7 +48,7 @@ const VERB_DEADLINE_MS = 150_000;
 const SIGNAL_GRACE_MS = 30_000;
 /** How long hobo-code's child gets to end once hobo-code has. */
 const CHILD_GRACE_MS = 20_000;
-const RUN_TIMEOUT_MS = 300_000;
+const RUN_TIMEOUT_MS = 120_000;
 
 /** Why the pseudo-terminal cases cannot run here, or false when they can. */
 function noUtilLinuxScript(): string | false {
@@ -91,14 +98,39 @@ async function until(done: () => boolean, ms: number): Promise<boolean> {
 const roots: string[] = [];
 /** Children of hobo-code a case looked at: none may outlive the case. */
 const children: number[] = [];
-afterEach(() => {
+afterEach(async () => {
 	for (const pid of children.splice(0)) {
 		if (running(pid)) killProcessGroup(pid);
 	}
 	for (const root of roots.splice(0)) {
+		const home = join(root, "home");
+		const pidFile = join(root, "evidence-sidecar.pid");
+		if (existsSync(pidFile)) {
+			const pid = Number(readFileSync(pidFile, "utf8").trim());
+			if (Number.isInteger(pid) && pid > 0) killProcessGroup(pid);
+		}
+		const evidencePid = readStationSidecars(home, "station:local")?.evidencePid;
+		if (evidencePid !== undefined) killProcessGroup(evidencePid);
 		rmSync(root, { recursive: true, force: true });
+		await drainEvidenceSidecarsForHomes([home]);
+		await until(
+			() =>
+				!listRunningSidecarsUnder(root).some((pid) => running(pid)),
+			3_000,
+		);
 	}
 });
+
+function listRunningSidecarsUnder(root: string): number[] {
+	return listLeakedEvidenceSidecarPids().filter((pid) => {
+		const home = hoboHomeForTestPid(pid);
+		return home !== undefined && home.startsWith(root);
+	});
+}
+
+function hoboHomeForTestPid(pid: number): string | undefined {
+	return readProcessHoboHome(pid);
+}
 
 /** How a case ends hobo-code once a `/hobo` verb has left its runtime holding a store. */
 type Ending =
@@ -171,7 +203,9 @@ async function endTheShell(ending: Ending): Promise<Ended> {
 		`stty -a > '${at("stty-after")}'`,
 		`while [ ! -e '${at("done")}' ]; do sleep 0.1; done`,
 	].join("; ");
+	const sidecarPidFile = at("evidence-sidecar.pid");
 	const script = spawn("script", ["-qfec", command, "/dev/null"], {
+		detached: true,
 		env: {
 			PATH: process.env.PATH ?? "",
 			HOME: root,
@@ -182,10 +216,12 @@ async function endTheShell(ending: Ending): Promise<Ended> {
 			HOBO_CODE_FROM_SOURCE: "0",
 			HOBO_CODE_SKIP_STALE_REBUILD: "1",
 			HOBO_CODE_REDUCED_MOTION: "1",
+			HOBO_CODE_SIDECAR_PIDFILE: sidecarPidFile,
 			// The shell's Station Evidence sidecar outlives it by design, until its
 			// HOBO_HOME is gone: the cleanup removes that, and the sidecar notices
 			// within a moment.
 			HOBO_CODE_SIDECAR_POLL_MS: "250",
+			HOBO_CODE_SIDECAR_MAX_MS: "120000",
 			NODE_NO_WARNINGS: "1",
 		},
 		stdio: ["pipe", "pipe", "pipe"],

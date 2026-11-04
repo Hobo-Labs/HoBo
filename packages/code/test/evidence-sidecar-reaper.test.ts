@@ -5,7 +5,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { killProcessGroup, trackChild } from "./subprocess-cleanup.js";
+import {
+	assertNoLeakedEvidenceSidecars,
+	killProcessGroup,
+	registerSidecarPid,
+	trackChild,
+} from "./subprocess-cleanup.js";
 
 /**
  * The Evidence worker is spawned `detached` + `unref`ed on purpose, so nothing
@@ -30,6 +35,7 @@ afterEach(() => {
 	children.length = 0;
 	for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 	dirs.length = 0;
+	assertNoLeakedEvidenceSidecars();
 });
 
 function tempDir(prefix: string): string {

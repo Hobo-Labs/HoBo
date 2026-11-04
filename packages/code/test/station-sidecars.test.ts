@@ -13,17 +13,21 @@ import {
 	startStationSidecars,
 	stopStationSidecars,
 } from "../src/station-sidecars.js";
-import { killProcessGroup } from "./subprocess-cleanup.js";
+import {
+	drainEvidenceSidecarsForHomes,
+	killProcessGroup,
+} from "./subprocess-cleanup.js";
 
 const homes: string[] = [];
 afterEach(async () => {
-	for (const home of homes) {
+	const batch = homes.splice(0);
+	for (const home of batch) {
 		const evidencePid = readStationSidecars(home, "station:local")?.evidencePid;
 		await stopStationSidecars(home, "station:local").catch(() => {});
 		if (evidencePid !== undefined) killProcessGroup(evidencePid);
 		rmSync(home, { recursive: true, force: true });
 	}
-	homes.length = 0;
+	await drainEvidenceSidecarsForHomes(batch);
 });
 
 function tempHome(): string {
@@ -172,7 +176,11 @@ describe("station occupancy sidecars", () => {
 			expect(evidence.status).toBe(200);
 		} finally {
 			await session.complete(true, ["sidecars"]);
+			const evidencePid =
+				readStationSidecars(hoboHome, "station:local")?.evidencePid;
 			await stopStationSidecars(hoboHome, "station:local");
+			if (evidencePid !== undefined) killProcessGroup(evidencePid);
+			await drainEvidenceSidecarsForHomes([hoboHome]);
 		}
 	}, 20_000);
 

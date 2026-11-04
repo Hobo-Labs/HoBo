@@ -1,7 +1,15 @@
-import { afterAll } from "vitest";
+import { afterEach } from "vitest";
 
-import { killTrackedSubprocesses } from "./subprocess-cleanup.js";
+import {
+	assertNoLeakedEvidenceSidecars,
+	drainOrphanedEvidenceSidecars,
+	killRegisteredSidecarGroups,
+	killTrackedSubprocesses,
+} from "./subprocess-cleanup.js";
 
-afterAll(() => {
+afterEach(async () => {
+	killRegisteredSidecarGroups();
 	killTrackedSubprocesses();
+	await drainOrphanedEvidenceSidecars();
+	assertNoLeakedEvidenceSidecars();
 });
