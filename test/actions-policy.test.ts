@@ -155,7 +155,11 @@ jobs:
 		"\n        with:\n          repository: Hobo-Labs/ts-autocode",
 	])
 		assert.equal(
-			lint(await fixture({ "hobo-ci.yml": workflow(inputs) })).status,
+			lint(
+				await fixture({
+					"hobo-ci.yml": workflow(inputs, trunkRunsOn),
+				}),
+			).status,
 			0,
 		);
 });

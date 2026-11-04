@@ -3,7 +3,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { CI_RUNNER_IMAGE_VERSION_INPUTS } from "../../../scripts/lib/ci-runner-contract.mts";
-import { depsContextPaths } from "../../../scripts/lib/deps-key.mts";
+import {
+	DEPS_BUILD_RECIPE_PATHS,
+	depsContextPaths,
+} from "../../../scripts/lib/deps-key.mts";
 
 const root = join(import.meta.dirname, "..", "..", "..");
 const workflow = parse(
@@ -57,6 +60,7 @@ describe("CI deps image push scope", () => {
 	it("covers every file read into the deps key", () => {
 		const inputs = new Set([
 			...depsContextPaths(root),
+			...DEPS_BUILD_RECIPE_PATHS,
 			".npmrc",
 			".pnpmfile.cjs",
 			"mise.lock",

@@ -10,16 +10,21 @@ WORKDIR /opt/actions-runner/_hobo_work/HoBo/HoBo
 ENV npm_config_store_dir=/pnpm-store \
   npm_config_package_import_method=copy
 COPY --chown=1000:1000 . .
-RUN pnpm fetch --frozen-lockfile
+RUN --mount=type=cache,id=hobo-pnpm-store,target=/pnpm-store,uid=1000,gid=1000 \
+  pnpm fetch --frozen-lockfile
 
 FROM ${FETCH_IMAGE} AS install
 ARG SOURCE_DATE_EPOCH=0
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 WORKDIR /opt/actions-runner/_hobo_work/HoBo/HoBo
-RUN pnpm install --frozen-lockfile --offline --ignore-scripts \
+RUN --mount=type=cache,id=hobo-pnpm-store,target=/pnpm-store,uid=1000,gid=1000 \
+  pnpm install --frozen-lockfile --offline --ignore-scripts \
   && pnpm rebuild @ast-grep/cli @bufbuild/buf esbuild protobufjs \
   && git init --quiet \
-  && git config remote.origin.url https://github.com/Hobo-Labs/HoBo
+  && git config remote.origin.url https://github.com/Hobo-Labs/HoBo \
+  && find . -type d -name node_modules -prune -exec sh -c \
+    'for source do target="/opt/actions-runner/_hobo_work/deps/${source#./}"; mkdir -p "$(dirname "$target")"; mv "$source" "$target"; done' sh {} + \
+  && mv .git /opt/actions-runner/_hobo_work/deps/.git
 
 FROM ${TOOLCHAIN_IMAGE} AS final
 ARG DEPS_KEY
@@ -31,12 +36,7 @@ ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} \
   npm_config_store_dir=/pnpm-store \
   npm_config_package_import_method=copy
 COPY --from=install --chown=1000:1000 \
-  /opt/actions-runner/_hobo_work/HoBo/HoBo \
-  /opt/actions-runner/_hobo_work/HoBo/HoBo
-USER root
-RUN find /opt/actions-runner/_hobo_work/HoBo/HoBo -mindepth 1 \
-    \( -name node_modules -o -name .git \) -prune -o -type f -delete \
-  && find /opt/actions-runner/_hobo_work/HoBo/HoBo -depth -mindepth 1 \
-    \( -name node_modules -o -name .git \) -prune -o -type d -empty -delete
+  /opt/actions-runner/_hobo_work/deps/ \
+  /opt/actions-runner/_hobo_work/HoBo/HoBo/
 USER 1000:1000
 WORKDIR /opt/actions-runner/_hobo_work/HoBo/HoBo

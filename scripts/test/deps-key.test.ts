@@ -1,8 +1,10 @@
+import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "node:test";
 import {
+	DEPS_BUILD_RECIPE_PATHS,
 	type DepsKeyInputs,
 	depsKeyFromInputs,
 	listWorkspaceImporters,
@@ -47,6 +49,10 @@ function inputs(): DepsKeyInputs {
 			"packages/a/package.json": '{"name":"a"}\n',
 			"packages/b/package.json": '{"name":"b"}\n',
 		},
+		buildRecipe: {
+			[DEPS_BUILD_RECIPE_PATHS[0]]: "fetch and install\n",
+			[DEPS_BUILD_RECIPE_PATHS[1]]: "build and verify\n",
+		},
 		miseLock,
 		platform: "linux/arm64",
 		toolchainVersion: "v0123456789ab",
@@ -55,12 +61,12 @@ function inputs(): DepsKeyInputs {
 
 describe("deps key", () => {
 	it("sorts importers and emits a toolchain-qualified short digest", () => {
-		expect(listWorkspaceImporters(lockfile)).toEqual([
+		assert.deepEqual(listWorkspaceImporters(lockfile), [
 			".",
 			"packages/a",
 			"packages/b",
 		]);
-		expect(depsKeyFromInputs(inputs())).toMatch(/^v0123456789ab-[0-9a-f]{16}$/);
+		assert.match(depsKeyFromInputs(inputs()), /^v0123456789ab-[0-9a-f]{16}$/);
 	});
 
 	it("changes for every declared input", () => {
@@ -112,6 +118,20 @@ describe("deps key", () => {
 					"packages/b/package.json": '{"name":"changed"}\n',
 				},
 			}),
+			"deps Dockerfile": () => ({
+				...inputs(),
+				buildRecipe: {
+					...inputs().buildRecipe,
+					[DEPS_BUILD_RECIPE_PATHS[0]]: "changed install\n",
+				},
+			}),
+			"deps build script": () => ({
+				...inputs(),
+				buildRecipe: {
+					...inputs().buildRecipe,
+					[DEPS_BUILD_RECIPE_PATHS[1]]: "changed build\n",
+				},
+			}),
 			node: () => ({
 				...inputs(),
 				miseLock: miseLock.replace("24.0.0", "24.0.1"),
@@ -124,7 +144,7 @@ describe("deps key", () => {
 			toolchain: () => ({ ...inputs(), toolchainVersion: "v1123456789ab" }),
 		} satisfies Record<string, () => DepsKeyInputs>;
 		for (const [name, mutate] of Object.entries(mutations))
-			expect(depsKeyFromInputs(mutate()), name).not.toBe(base);
+			assert.notEqual(depsKeyFromInputs(mutate()), base, name);
 	});
 
 	it("does not change for an unrelated file", () => {
@@ -141,6 +161,7 @@ describe("deps key", () => {
 				".pnpmfile.cjs": value.pnpmfile,
 				...value.patches,
 				...value.manifests,
+				...value.buildRecipe,
 			} satisfies Record<string, string>;
 			for (const [path, text] of Object.entries(files)) {
 				mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -153,7 +174,7 @@ describe("deps key", () => {
 				});
 			const before = key();
 			writeFileSync(join(root, "README.md"), "unrelated\n");
-			expect(key()).toBe(before);
+			assert.equal(key(), before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

@@ -388,14 +388,17 @@ remaining toolchain pins are deferred hardening rather than claimed here.
   when no layer was used. The worker exports `HOBO_CI_DEPS_LAYER=<key>` to the job.
 
 **Implemented in this change (2026-11-04):** the pure key function hashes every declared input (including each
-lockfile importer manifest and the Node/pnpm mise entries) with mutation tests. `deps/build-deps.sh` stages only
-those manifests, runs the network-enabled `pnpm fetch` target, then a separate whole-build `--network=none`
-install/rebuild. A final toolchain-based stage keeps only `node_modules` and `.git`, not the fetch store or staged manifests. The candidate gets
+lockfile importer manifest, the deps build recipe and the Node/pnpm mise entries) with mutation tests.
+`deps/build-deps.sh` stages only those manifests, runs the network-enabled `pnpm fetch` target, then a separate
+whole-build `--network=none` install/rebuild. Both stages reuse the persistent host store through the same
+BuildKit cache mount. The install stage separately stages `node_modules` and `.git`, so the final toolchain-based
+stage copies only those trees, with no deletion pass, fetch store or staged manifests. The candidate gets
 content/toolchain labels and the commit's `SOURCE_DATE_EPOCH`; the offline `Already up to date` contract runs
-before `:local` promotion. The worker selects that layer only for HoBo leases with a matching toolchain label,
-exports its full key, and refuses mismatched pre-warmed containers. Every default-path box checkout sets
-`clean: false` under a new lint rule. Main/schedule/dispatch can reuse or publish GHCR tags; PRs touching the
-deps-build inputs exercise build-only mode without promotion or push.
+before promoting a new build to `:local`. Every event reuses an exact local or GHCR hit without building. The
+worker selects that layer only for HoBo leases with a matching toolchain label, exports its full key, and refuses
+mismatched pre-warmed containers. Every default-path box checkout sets `clean: false` under a new lint rule.
+Main/schedule/dispatch can publish GHCR tags; PRs touching the deps-build inputs reuse a keyed hit or exercise
+build-only mode without promoting the new candidate or pushing.
 
 Main full gate and PR impact gate skip `pnpm install` on an exact `HOBO_CI_DEPS_LAYER` match and run the ordinary
 frozen install on every miss; the daily scheduled Main full gate always installs to verify correctness. The skip

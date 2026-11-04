@@ -34,7 +34,7 @@ const TRUNK_RUNS_ON =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
 
 const acceptanceDigest =
-	"479a086feeebf3453e59f784c13bcabbf3b88e73afb8a2a5930ed04823bc8f68";
+	"187c2c2f8690b0f278da4ce2e286229c54b02d169c8253f7ada9dfddc05b6bda";
 
 const TRUNK_EVENTS = new Set(["push", "workflow_dispatch", "merge_group"]);
 

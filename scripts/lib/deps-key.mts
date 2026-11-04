@@ -3,6 +3,11 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ciRunnerImageVersion } from "./ci-runner-contract.mts";
 
+export const DEPS_BUILD_RECIPE_PATHS = [
+	"packages/ci-gh-actions/deploy/ci-runner/deps/Dockerfile",
+	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
+] as const;
+
 export type DepsKeyInputs = Readonly<{
 	lockfile: string;
 	workspace: string;
@@ -10,6 +15,7 @@ export type DepsKeyInputs = Readonly<{
 	pnpmfile?: string;
 	patches: Readonly<Record<string, string>>;
 	manifests: Readonly<Record<string, string>>;
+	buildRecipe: Readonly<Record<string, string>>;
 	miseLock: string;
 	platform: string;
 	toolchainVersion: string;
@@ -92,6 +98,11 @@ export function depsKeyFromInputs(inputs: DepsKeyInputs): string {
 			throw new Error(`missing importer manifest: ${path}`);
 		updateHash(hash, path, manifest);
 	}
+	for (const path of DEPS_BUILD_RECIPE_PATHS) {
+		const recipe = inputs.buildRecipe[path];
+		if (recipe === undefined) throw new Error(`missing deps recipe: ${path}`);
+		updateHash(hash, path, recipe);
+	}
 	updateHash(
 		hash,
 		"mise.lock:node+pnpm",
@@ -137,11 +148,23 @@ export function readDepsInputs(
 	}
 	const npmrc = optionalFile(root, ".npmrc");
 	const pnpmfile = optionalFile(root, ".pnpmfile.cjs");
-	const inputs: Omit<DepsKeyInputs, "toolchainVersion"> = {
+	type MutableDepsKeyInputs = {
+		-readonly [Key in keyof Omit<DepsKeyInputs, "toolchainVersion">]: Omit<
+			DepsKeyInputs,
+			"toolchainVersion"
+		>[Key];
+	};
+	const inputs: MutableDepsKeyInputs = {
 		lockfile,
 		workspace: readFileSync(join(root, "pnpm-workspace.yaml"), "utf8"),
 		patches: patchFiles(root),
 		manifests,
+		buildRecipe: Object.fromEntries(
+			DEPS_BUILD_RECIPE_PATHS.map((path) => [
+				path,
+				readFileSync(join(root, path), "utf8"),
+			]),
+		),
 		miseLock: readFileSync(join(root, "mise.lock"), "utf8"),
 		platform,
 	};

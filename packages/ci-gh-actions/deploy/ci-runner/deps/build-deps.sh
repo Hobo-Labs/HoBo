@@ -25,6 +25,15 @@ fetch_image="hobo-ci-deps-fetch:${key}"
 candidate="hobo-ci-deps:${key}"
 epoch="$(git log -1 --format=%ct)"
 
+if docker image inspect "$candidate" >/dev/null 2>&1; then
+  echo "Reusing local $candidate"
+  if [ "$promote" = 1 ]; then
+    docker tag "$candidate" hobo-ci-deps:local
+    echo "Promoted $candidate to hobo-ci-deps:local"
+  fi
+  exit 0
+fi
+
 docker image inspect "$base" >/dev/null 2>&1 || {
   echo "missing toolchain image $base; run packages/ci-gh-actions/deploy/ci-runner/build.sh first" >&2
   exit 1
