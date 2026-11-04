@@ -50,7 +50,20 @@ function workspacePackageRoots(root: string): string[] {
 	return [...packageRoots];
 }
 
-export function packageDistTrees(root: string): string[] {
+/** Dist trees allowed in the HoBo Code release test artifact (fail closed on secret bleed). */
+export const CODE_RELEASE_BUILD_DIST_PREFIXES = [
+	"packages/code/dist",
+	"packages/hobo/dist",
+	"packages/adapters/hono/dist",
+	"external/ts-autocode/packages/grounding/dist",
+	"external/ts-autocode/packages/rewrite/dist",
+	"external/ts-autocode/packages/training/dist",
+] as const;
+
+export function packageDistTrees(
+	root: string,
+	options: { allowlist?: readonly string[] } = {},
+): string[] {
 	const distTrees = new Set<string>();
 	const walk = (directory: string): void => {
 		for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -67,16 +80,26 @@ export function packageDistTrees(root: string): string[] {
 	for (const packageRoot of workspacePackageRoots(root)) {
 		if (existsSync(packageRoot)) walk(packageRoot);
 	}
-	return [...distTrees].sort();
+	const sorted = [...distTrees].sort();
+	if (options.allowlist?.length) {
+		const allowed = new Set(options.allowlist);
+		return sorted.filter((path) =>
+			[...allowed].some(
+				(prefix) => path === prefix || path.startsWith(`${prefix}/`),
+			),
+		);
+	}
+	return sorted;
 }
 
 export function packCodeTestBuildArtifact(
 	repoRoot: string,
 	archivePath: string,
+	options: { allowlist?: readonly string[] } = {},
 ): void {
 	const root = resolve(repoRoot);
 	const archive = resolve(archivePath);
-	const distTrees = packageDistTrees(root);
+	const distTrees = packageDistTrees(root, options);
 	if (distTrees.length === 0) {
 		throw new Error("no package dist trees found in pnpm workspace members");
 	}
@@ -100,7 +123,11 @@ function main(): void {
 		);
 		process.exit(2);
 	}
-	packCodeTestBuildArtifact(repoRoot, archivePath);
+	const options =
+		process.env.HOBO_CODE_RELEASE_ARTIFACT === "1"
+			? { allowlist: CODE_RELEASE_BUILD_DIST_PREFIXES }
+			: {};
+	packCodeTestBuildArtifact(repoRoot, archivePath, options);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();

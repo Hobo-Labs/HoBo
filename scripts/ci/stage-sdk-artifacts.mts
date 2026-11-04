@@ -10,6 +10,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { releaseSemverFromEnv } from "../lib/release-version.mts";
 import { applyScopeToManifest, loadNpmScopeMap } from "./npm-publish-scope.mts";
 
 export const SDK_PACKAGES = [
@@ -58,16 +59,12 @@ function findPackageDir(name: string): string {
 	throw new Error(`package dir not found for ${name}`);
 }
 
-function main(): void {
-	const outDir = process.argv[2];
-	if (!outDir) {
-		console.error("usage: node scripts/ci/stage-sdk-artifacts.mts <out-dir>");
-		process.exit(2);
-	}
+export function stageSdkArtifactsDir(outDir: string): SdkArtifactManifest {
 	mkdirSync(outDir, { recursive: true });
 	const map = loadNpmScopeMap();
+	const semver = releaseSemverFromEnv();
 	const manifest: SdkArtifactManifest = {
-		version: process.env.HOBO_RELEASE_VERSION ?? "dev",
+		version: semver,
 		packages: [],
 	};
 	const staging = join(outDir, ".staging");
@@ -78,7 +75,9 @@ function main(): void {
 			readFileSync(join(pkgDir, "package.json"), "utf8"),
 		);
 		// SAFETY: workspace package.json must declare `name` before pack staging.
-		const staged = applyScopeToManifest(rawPkg as WorkspaceManifest, map);
+		const staged = applyScopeToManifest(rawPkg as WorkspaceManifest, map, {
+			version: semver,
+		});
 		const pkgStaging = join(staging, workspaceName.replace("/", "_"));
 		rmSync(pkgStaging, { recursive: true, force: true });
 		cpSync(pkgDir, pkgStaging, { recursive: true });
@@ -114,6 +113,16 @@ function main(): void {
 		join(outDir, "MANIFEST.json"),
 		`${JSON.stringify(manifest, null, 2)}\n`,
 	);
+	return manifest;
+}
+
+function main(): void {
+	const outDir = process.argv[2];
+	if (!outDir) {
+		console.error("usage: node scripts/ci/stage-sdk-artifacts.mts <out-dir>");
+		process.exit(2);
+	}
+	stageSdkArtifactsDir(outDir);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

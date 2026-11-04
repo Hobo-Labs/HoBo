@@ -1177,6 +1177,47 @@ describe("pull-mode box worker over SQLite", () => {
 		store.close();
 	});
 
+	it("caps newly admitted PR jobs while rank-0 trunk is active and removes the cap when it settles", async () => {
+		const store = await configuredStore(3);
+		const trunk = memoryJob(1, "PR impact gate");
+		const firstPr = memoryJob(2, "CI fabric contract guard");
+		const secondPr = memoryJob(3, "Secret scan");
+		const memoryAdmission = createWorkerMemoryAdmission(
+			resolveWorkerMemoryConfig(
+				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "14336" },
+				{ totalMemoryMb: 16_384, trunkSlots: 0 },
+			),
+			{ now: () => NOW, prCapWithTrunk: 1 },
+		);
+		const github = memoryGithub([trunk, firstPr, secondPr]);
+		github.started.set(trunk.runId, {
+			event: "push",
+			at: new Date(NOW).toISOString(),
+		});
+		const runtime = boxRuntime(store, github, [], undefined, {
+			labels: new Map(),
+			memoryAdmission,
+		});
+		for (const job of [trunk, firstPr, secondPr])
+			await store.queue(job, new Date(NOW).toISOString());
+		await runtime.tick({ maxDeliveries: 0 });
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([1, 2]);
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([3]);
+		const trunkLease = (await store.activeLeases()).find(
+			(lease) => lease.jobId === trunk.id,
+		);
+		if (!trunkLease) throw new Error("trunk lease missing");
+		await store.settle(trunkLease.id, 0, 1, new Date(NOW).toISOString());
+		await runtime.tick({ maxDeliveries: 0 });
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([2, 3]);
+		expect(await store.pendingJobs()).toEqual([]);
+		store.close();
+	});
+
 	it("admits a queued run the status-filtered list leaves out", async () => {
 		const store = await configuredStore(2);
 		// GitHub's ?status=queued answered total_count 0 for run 41622562414 for
@@ -2340,6 +2381,11 @@ describe("pull-mode box worker over SQLite", () => {
 			rename: async (_id, name) => {
 				dockerCalls.push(`rename ${name}`);
 			},
+			updateResources: async (containerId, weights) => {
+				dockerCalls.push(
+					`update ${containerId} ${weights.cpuShares} ${weights.blkioWeight ?? "off"}`,
+				);
+			},
 			stop: async () => {},
 			remove: async () => {},
 			isRunning: async () => true,
@@ -2385,6 +2431,7 @@ describe("pull-mode box worker over SQLite", () => {
 		const [lease] = await store.activeLeases();
 		expect(lease).toMatchObject({ jobId: 3, state: "running" });
 		expect(dockerCalls[0]).toMatch(/^create hobo-warm-/);
+		expect(dockerCalls).toContain(`update ${"c".repeat(64)} 8192 800`);
 		expect(dockerCalls).toContain(`rename hobo-${lease?.id}`);
 		store.close();
 	});

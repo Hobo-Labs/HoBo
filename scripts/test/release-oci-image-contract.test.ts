@@ -2,7 +2,11 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadNpmScopeMap, mapPackageName } from "../ci/npm-publish-scope.mts";
+import {
+	assertNpmScopeMapAllowlist,
+	loadNpmScopeMap,
+	mapPackageName,
+} from "../ci/npm-publish-scope.mts";
 import {
 	type DockerInspectConfig,
 	evaluateImageConfig,
@@ -17,6 +21,15 @@ describe("release npm scope map", () => {
 		const map = loadNpmScopeMap();
 		expect(map.publicScope).toBe("@hobo-labs");
 		expect(mapPackageName("@hobo/core", map)).toBe("@hobo-labs/core");
+	});
+
+	it("rejects invalid scope map shapes at load boundary", () => {
+		expect(() =>
+			assertNpmScopeMapAllowlist({
+				publicScope: "@hobo-labs",
+				packages: { bad: "@hobo-labs/x" },
+			}),
+		).toThrow(/invalid workspace key/);
 	});
 
 	it("lists every mapped package under release/", () => {

@@ -49,6 +49,7 @@ function fakeDocker() {
 		],
 	]);
 	let next = 0;
+	const resourceUpdates: { containerId: string; cpuShares: number }[] = [];
 	const driver: DockerDriver = {
 		inspectImage: vi.fn(async (image: string) => {
 			inspectCalls.push(image);
@@ -67,11 +68,14 @@ function fakeDocker() {
 		execDetached: vi.fn(async () => ({ exitCode: 0 })),
 		writeSecret: vi.fn(async () => undefined),
 		rename: vi.fn(async () => undefined),
+		updateResources: vi.fn(async (containerId, weights) => {
+			resourceUpdates.push({ containerId, cpuShares: weights.cpuShares });
+		}),
 		stop: vi.fn(async () => undefined),
 		remove: vi.fn(async () => undefined),
 		isRunning: vi.fn(async () => true),
 	};
-	return { driver, specs, inspectCalls, images };
+	return { driver, specs, resourceUpdates, inspectCalls, images };
 }
 
 const github: GithubTransport = {
@@ -191,6 +195,40 @@ describe("isolated worker deps image selection", () => {
 		expect(docker.specs).toHaveLength(1);
 		expect(docker.specs[0]?.image).toBe("hobo-ci-deps:local");
 		expect(docker.specs[0]?.env.HOBO_CI_DEPS_LAYER).toBe(DEPS_KEY);
+	});
+
+	it("gives trunk containers high CPU and IO weights and PR containers low weights", async () => {
+		const trunkLease = await reservedLease("Hobo-Labs/HoBo");
+		const trunkDocker = fakeDocker();
+		await controller(trunkDocker.driver).host.launch(trunkLease.id, "hobo", 0);
+		expect(trunkDocker.specs[0]).toMatchObject({
+			cpuShares: 8_192,
+			blkioWeight: 800,
+		});
+
+		const prLease = await reservedLease("Hobo-Labs/HoBo");
+		const prDocker = fakeDocker();
+		await controller(prDocker.driver).host.launch(prLease.id, "hobo", 1);
+		expect(prDocker.specs[0]).toMatchObject({
+			cpuShares: 512,
+			blkioWeight: 200,
+		});
+	});
+
+	it("starts a warm spare at PR weight and updates it for trunk assignment", async () => {
+		const lease = await reservedLease("Hobo-Labs/HoBo");
+		const docker = fakeDocker();
+		const ctl = controller(docker.driver);
+		await ctl.prewarm("Hobo-Labs/HoBo");
+		expect(docker.specs[0]).toMatchObject({
+			cpuShares: 512,
+			blkioWeight: 200,
+		});
+		await ctl.host.launch(lease.id, "hobo-trunk", 0);
+		expect(docker.specs).toHaveLength(1);
+		expect(docker.resourceUpdates).toEqual([
+			{ containerId: `${"0".repeat(63)}1`, cpuShares: 8_192 },
+		]);
 	});
 
 	it("does not claim the deps layer when a job directory hides it", async () => {

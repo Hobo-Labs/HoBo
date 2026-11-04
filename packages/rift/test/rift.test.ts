@@ -14,6 +14,7 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
@@ -295,6 +296,14 @@ describe("exec wrapper", () => {
 });
 
 describe("overlay availability is reported, not silently skipped", () => {
+	it("leaves no overlay probe debris under the probed directory", () => {
+		const root = source();
+		probeOverlayfs(root);
+		expect(
+			readdirSync(root).some((name) => name.startsWith(".rift-ovl-")),
+		).toBe(false);
+	});
+
 	it("says so when this machine cannot grant an unprivileged overlay", () => {
 		// runIf drops the property block below with no skip count in the report,
 		// so a CI box without user namespaces would print "all passed" while

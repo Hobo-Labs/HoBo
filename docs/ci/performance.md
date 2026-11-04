@@ -57,8 +57,10 @@ unindexed new finding files as notices.
 - [Finding 32: hobo Vitest re-transformed its built workspace dependency graph](./findings/0032-hobo-vitest-re-transformed-its-built-workspace-dependency-graph.md)
 - [Finding 35: neither deps-image producer could promote the layer jobs needed](./findings/0035-neither-deps-image-producer-could-promote-the-layer-jobs-needed.md)
 - [Finding 36: a waiting trunk job did not stop lower-rank admission](./findings/0036-a-waiting-trunk-job-did-not-stop-lower-rank-admission.md)
+- [Finding 39: the first deps image made checkout's work directory root-owned](./findings/0039-the-first-deps-image-made-checkouts-work-directory-root-owned.md)
 - [Finding 40: main regenerated every protobuf package on every push](./findings/0040-main-regenerated-every-protobuf-package-on-every-push.md)
 - [Finding 41: every same-process auth.md lock waiter paid a 25 ms poll](./findings/0041-every-same-process-auth-md-lock-waiter-paid-a-25-ms-poll.md)
+- [Finding 42: equal CPU shares let PR jobs starve trunk tests](./findings/0042-equal-cpu-shares-let-pr-jobs-starve-trunk-tests.md)
 - [Finding 45: dead containers left 12288 MiB reserved and blocked trunk admission](./findings/0045-dead-containers-left-12288-mib-reserved-and-blocked-trunk-admission.md)
 <!-- findings-index:end -->
 

@@ -76,6 +76,12 @@ function run(cmd: string, args: readonly string[]): number | null {
 	return r.status;
 }
 
+/** Overlay probe leaves `work/work` at mode 000; chmod before rm or HOBO_HOME teardown EACCES. */
+export function removeCopyOnWriteTree(dir: string): void {
+	run("chmod", ["-R", "u+rwx", dir]);
+	rmSync(dir, { recursive: true, force: true });
+}
+
 /** Can this directory take a FICLONE reflink? */
 export function probeReflink(dir: string): boolean {
 	const probe = mkdtempSync(join(dir, ".rift-probe-"));
@@ -107,8 +113,14 @@ function restoreOwnerAccess(dir: string): void {
 
 export function removeOverlayProbe(probe: string): void {
 	try {
+		const merged = join(probe, "merged");
+		run("umount", [merged]);
+	} catch {
+		// Probe may never have mounted.
+	}
+	try {
 		restoreOwnerAccess(probe);
-		rmSync(probe, { recursive: true, force: true });
+		removeCopyOnWriteTree(probe);
 	} catch {
 		// Cleanup failure must not change the probe result.
 	}

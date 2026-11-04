@@ -213,6 +213,7 @@ describe("ci-runner image contract (repo manifests)", () => {
 		expect(toml).toContain("[oci]");
 		expect(toml).toContain('user = "1000:1000"');
 		expect(toml).toContain("gitleaks");
+		expect(toml).toContain("shellcheck");
 		expect(toml).toContain("127.0.0.1:5000");
 	});
 
@@ -324,6 +325,48 @@ describe("ci-runner image contract (repo manifests)", () => {
 			expect(names(true).has(`system:${cmd}`)).toBe(true);
 			expect(names(false).has(`system:${cmd}`)).toBe(false);
 		}
+	});
+
+	it("resolves every mise tool from the repo root and probes cue through mise exec", () => {
+		const calls: {
+			cmd: string;
+			args: string[];
+			cwd: string | undefined;
+		}[] = [];
+		const run: CommandRunner = (cmd, args, options) => {
+			calls.push({ cmd, args, cwd: options?.cwd });
+			return {
+				ok: true,
+				out:
+					cmd === "mise" && args.includes("which")
+						? "/usr/bin/stub"
+						: "stub 0.14.0",
+			};
+		};
+		evaluateCiRunnerContract(root, { run });
+		const tools = ["cue", "gitleaks", "node", "pnpm", "shellcheck", "turbo"];
+		const resolveCalls = calls.filter(
+			(call) => call.cmd === "mise" && call.args[2] === "which",
+		);
+		expect(resolveCalls.map((call) => call.args[3])).toEqual(tools);
+		for (const call of resolveCalls) {
+			expect(call.args).toEqual(["--cd", root, "which", call.args[3]!]);
+		}
+		expect(
+			calls.find((call) => call.cmd === "mise" && call.args[0] === "exec"),
+		).toEqual({
+			cmd: "mise",
+			args: ["exec", "--", "cue", "version"],
+			cwd: root,
+		});
+		expect(calls.some((call) => tools.includes(call.cmd))).toBe(false);
+	});
+
+	it("verifies shellcheck through mise exec before building the OCI image", () => {
+		const build = readFileSync(join(root, CI_RUNNER_BUILD_SCRIPT), "utf8");
+		expect(build).toContain(
+			"mise install --locked\nmise exec -- shellcheck --version\n",
+		);
 	});
 
 	it("bakes in the headless shell revision the installed Playwright resolves", () => {
@@ -480,6 +523,20 @@ describe("ci-runner image contract (host smoke)", () => {
 		for (const cmd of REQUIRED_COMMANDS) {
 			expect(names.has(`system:${cmd}`)).toBe(true);
 		}
+	});
+
+	it("installs shell-lint dependencies without submodule lifecycle scripts", () => {
+		const workflow = readFileSync(
+			join(root, ".github/workflows/hobo-ci.yml"),
+			"utf8",
+		);
+		const install = workflow.indexOf(
+			"run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false",
+		);
+		expect(install).toBeGreaterThan(-1);
+		expect(
+			workflow.indexOf("pnpm run lint:shell:changed", install),
+		).toBeGreaterThan(install);
 	});
 
 	it("preflight composite action does not depend on tsx", () => {
