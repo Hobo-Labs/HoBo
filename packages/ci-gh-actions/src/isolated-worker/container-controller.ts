@@ -130,8 +130,15 @@ export interface IsolatedWorkerStore extends HostedRelayStore {
 }
 
 type JobImage = Readonly<{ image: string; depsKey?: string }>;
+type DepsImageFallbackLog = {
+	event: "hobo_ci_deps_image_fallback";
+	image: string;
+	reason: "inspect-failed" | "unwritable-workdir";
+	message?: string;
+};
 type JobContainerEnvironment = {
 	HOBO_CI_DEPS_LAYER?: string;
+	HOBO_CI_HOST_JOB_DIRECTORY?: string;
 	HOBO_CI_JOB_MEMORY_MB: string;
 	NODE_OPTIONS: string;
 	HOBO_CI_RELAY_ORIGIN: string;
@@ -198,7 +205,44 @@ export function createIsolatedContainerController(options: {
 	const depsImage = options.depsImage ?? "hobo-ci-deps:local";
 	const workerSelection: JobImage = { image: options.workerImage };
 	const selectionCache = new Map<string, JobImage>();
+	const probeCache = new Map<string, Promise<boolean>>();
 	const loggedFailures = new Set<string>();
+	const logDepsImageFallback = (
+		key: string,
+		reason: "inspect-failed" | "unwritable-workdir",
+		message?: string,
+	) => {
+		if (loggedFailures.has(key)) return;
+		loggedFailures.add(key);
+		const fields: DepsImageFallbackLog = {
+			event: "hobo_ci_deps_image_fallback",
+			image: depsImage,
+			reason,
+		};
+		if (message) fields.message = message;
+		console.error(JSON.stringify(fields));
+	};
+	const probeDepsImage = (imageId: string): Promise<boolean> => {
+		const cached = probeCache.get(imageId);
+		if (cached) return cached;
+		const probe = options.docker.probeImage;
+		const result = probe
+			? probe(
+					depsImage,
+					[
+						"sh",
+						"-c",
+						"test -w /opt/actions-runner && test -r /opt/hobo-deps/node_modules/.modules.yaml && test -r /opt/hobo-deps/.hobo-ci-deps-key",
+					],
+					"1000:1000",
+				).then(
+					({ exitCode }) => exitCode === 0,
+					() => false,
+				)
+			: Promise.resolve(false);
+		probeCache.set(imageId, result);
+		return result;
+	};
 	const selectImage = async (repository: string): Promise<JobImage> => {
 		const inspect = options.docker.inspectImage;
 		if (
@@ -217,24 +261,24 @@ export function createIsolatedContainerController(options: {
 				.map((tag) => tag.match(/^hobo-ci-worker:(v[0-9a-f]{12})$/)?.[1])
 				.find((tag) => tag !== undefined);
 			const depsKey = deps.labels["hobo.ci.deps-key"];
-			const selection =
+			const candidate =
 				toolchain && deps.labels["hobo.ci.toolchain"] === toolchain && depsKey
 					? { image: depsImage, depsKey }
-					: workerSelection;
+					: undefined;
+			let selection = workerSelection;
+			if (candidate) {
+				if (await probeDepsImage(deps.id)) selection = candidate;
+				else logDepsImageFallback(deps.id, "unwritable-workdir");
+			}
 			selectionCache.set(cacheKey, selection);
 			loggedFailures.delete(depsImage);
 			return selection;
 		} catch (error) {
-			if (!loggedFailures.has(depsImage)) {
-				loggedFailures.add(depsImage);
-				console.error(
-					JSON.stringify({
-						event: "hobo_ci_deps_image_fallback",
-						image: depsImage,
-						message: error instanceof Error ? error.message : "unknown",
-					}),
-				);
-			}
+			logDepsImageFallback(
+				depsImage,
+				"inspect-failed",
+				error instanceof Error ? error.message : "unknown",
+			);
 			return workerSelection;
 		}
 	};
@@ -258,8 +302,8 @@ export function createIsolatedContainerController(options: {
 			HOBO_CI_RUNNER_SHA256: runner.sha256,
 			HOBO_CI_RUNNER_URL: runner.url,
 		};
-		if (selection.depsKey && !jobDirectory)
-			env.HOBO_CI_DEPS_LAYER = selection.depsKey;
+		if (selection.depsKey) env.HOBO_CI_DEPS_LAYER = selection.depsKey;
+		if (jobDirectory) env.HOBO_CI_HOST_JOB_DIRECTORY = jobDirectory;
 		return {
 			name,
 			image: selection.image,

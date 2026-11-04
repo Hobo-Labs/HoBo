@@ -66,6 +66,7 @@ unindexed new finding files as notices.
 - [Finding 42: equal CPU shares let PR jobs starve trunk tests](./findings/0042-equal-cpu-shares-let-pr-jobs-starve-trunk-tests.md)
 - [Finding 45: dead containers left 12288 MiB reserved and blocked trunk admission](./findings/0045-dead-containers-left-12288-mib-reserved-and-blocked-trunk-admission.md)
 - [Finding 48: root script edits widened PR lanes to every package](./findings/0048-root-script-edits-widened-pr-lanes-to-every-package.md)
+- [Finding 49: the deps image build could not create its payload directory](./findings/0049-the-deps-image-build-could-not-create-its-payload-directory.md)
 <!-- findings-index:end -->
 
 ## Data

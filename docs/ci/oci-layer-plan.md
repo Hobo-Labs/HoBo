@@ -391,20 +391,26 @@ remaining toolchain pins are deferred hardening rather than claimed here.
 lockfile importer manifest, the deps build recipe and the Node/pnpm mise entries) with mutation tests.
 `deps/build-deps.sh` stages only those manifests, runs the network-enabled `pnpm fetch` target, then a separate
 whole-build `--network=none` install/rebuild. Both stages reuse the persistent host store through the same
-BuildKit cache mount. The install stage separately stages `node_modules` and `.git`, so the final toolchain-based
-stage copies only those trees, with no deletion pass, fetch store or staged manifests. The candidate gets
-content/toolchain labels and the commit's `SOURCE_DATE_EPOCH`; the offline `Already up to date` contract runs
-before promoting a new build to `:local`. Every event reuses an exact local or GHCR hit without building. The
-worker selects that layer only for HoBo leases with a matching toolchain label, exports its full key, and refuses
-mismatched pre-warmed containers. Every default-path box checkout sets `clean: false` under a new lint rule.
-Main/schedule/dispatch can publish GHCR tags; PRs touching the deps-build inputs reuse a keyed hit or exercise
-build-only mode without promoting the new candidate or pushing.
+BuildKit cache mount. The install stage separately stages every repo-relative `node_modules` under
+`/opt/hobo-deps`; the final toolchain-based stage copies only those trees and a deps-key marker, with no `.git`,
+checkout path, deletion pass, fetch store or staged manifests. The candidate gets content/toolchain labels and the
+commit's `SOURCE_DATE_EPOCH`. Both the offline `Already up to date` contract and a real uid-1000 job-mount contract
+run before promotion to `:local`; cached local/GHCR candidates pass the same mount contract. Every event reuses an
+exact local or GHCR hit without building. The worker selects that layer only for HoBo leases with a matching
+toolchain label and a successful payload/writability probe, exports its full key, and refuses mismatched pre-warmed
+containers. Every default-path box checkout sets `clean: false` under a new lint rule. Main/schedule/dispatch can
+publish GHCR tags; PRs touching the deps-build inputs reuse a keyed hit or exercise build-only mode without
+promoting the new candidate or pushing.
 
-Main full gate and PR impact gate skip `pnpm install` on an exact `HOBO_CI_DEPS_LAYER` match and run the ordinary
-frozen install on every miss; the daily scheduled Main full gate always installs to verify correctness. The skip
-path checks the ts-autocode links explicitly. CI already skips root hook installation, and the image's frozen
-offline install creates the same workspace bin links and pnpm state as the job install, including bin links that
-remain dangling until `dist` is built. Other jobs keep their install-and-verify behavior.
+After checkout, `scripts/ci/deps-layer.mts link` symlinks each payload `node_modules` into its repo-relative checkout
+path, so the per-lease `_hobo_work` mount no longer hides dependencies and pnpm's relative links keep working.
+`prepareJobDirectory` creates and chowns the job root, `HoBo`, and `HoBo/HoBo` to uid/gid 1000. Main full gate and PR
+impact gate skip `pnpm install` only when job, checkout, and payload keys match, linked `.modules.yaml` and the
+virtual store exist, root and workspace `tsx` resolve, and `pnpm exec tsx --version` succeeds. Every miss runs the
+ordinary frozen install; the daily scheduled Main full gate always installs to verify correctness. The skip path
+checks the ts-autocode links explicitly. CI already skips root hook installation, and the image's frozen offline
+install creates the same workspace bin links and pnpm state as the job install, including bin links that remain
+dangling until `dist` is built. Other jobs keep their install-and-verify behavior.
 
 Every main push runs `ci-deps-image`; an exact `hobo.ci.deps-key` label match on `hobo-ci-deps:local` exits after
 checkout, key computation, and one inspect, while a miss resolves or builds and promotes the layer. Schedule and

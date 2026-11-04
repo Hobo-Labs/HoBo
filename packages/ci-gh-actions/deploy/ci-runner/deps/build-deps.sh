@@ -56,9 +56,18 @@ if [[ -n "${HOBO_CI_DEPS_BUILD_MEMORY_MB:-}" ]]; then
   docker_memory_args=(--memory "${HOBO_CI_DEPS_BUILD_MEMORY_MB}m")
 fi
 
+verify_mount_contract() {
+  echo "Verifying $candidate under a real job-directory mount"
+  HOBO_CI_DEPS_MOUNT_CONTRACT=1 \
+    HOBO_CI_DEPS_IMAGE="$candidate" \
+    HOBO_CI_DEPS_LAYER="$key" \
+    node --import tsx --test scripts/test/ci-deps-image-mount.test.ts
+}
+
 if docker image inspect "$candidate" >/dev/null 2>&1; then
   echo "Reusing local $candidate"
   if [ "$promote" = 1 ]; then
+    verify_mount_contract
     docker tag "$candidate" hobo-ci-deps:local
     echo "Promoted $candidate to hobo-ci-deps:local"
   fi
@@ -84,8 +93,9 @@ tar -C "$context" -cf - . \
     --tmpfs /pnpm-store:rw,uid=1000,gid=1000,mode=0755 \
     -e npm_config_store_dir=/pnpm-store \
     -e npm_config_ignore_scripts=true \
+    -e HOBO_CI_DEPS_LAYER="$key" \
     "$candidate" \
-    sh -ec 'cd /opt/actions-runner/_hobo_work/HoBo/HoBo && tar -xf - && pnpm install --frozen-lockfile --offline --config.confirmModulesPurge=false' \
+    sh -ec 'mkdir -p /opt/actions-runner/_hobo_work/HoBo/HoBo && cd /opt/actions-runner/_hobo_work/HoBo/HoBo && tar -xf - && node --experimental-strip-types scripts/ci/deps-layer.mts link && pnpm install --frozen-lockfile --offline --config.confirmModulesPurge=false' \
   | tee "$contract_log"
 grep -q 'Already up to date' "$contract_log" || {
   echo "deps image contract failed: pnpm install was not already up to date" >&2
@@ -93,6 +103,7 @@ grep -q 'Already up to date' "$contract_log" || {
 }
 
 if [ "$promote" = 1 ]; then
+  verify_mount_contract
   docker tag "$candidate" hobo-ci-deps:local
   echo "Promoted $candidate to hobo-ci-deps:local"
 else
