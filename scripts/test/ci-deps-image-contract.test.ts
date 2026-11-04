@@ -73,6 +73,7 @@ describe("CI deps image build contract", () => {
 			"pnpm install --frozen-lockfile --offline --config.confirmModulesPurge=false",
 		);
 		includes(build, "-e npm_config_ignore_scripts=true");
+		includes(build, "--tmpfs /pnpm-store:rw,uid=1000,gid=1000,mode=0755");
 		const contract = build.indexOf("grep -q 'Already up to date'");
 		const promote = build.lastIndexOf(
 			'docker tag "$candidate" hobo-ci-deps:local',

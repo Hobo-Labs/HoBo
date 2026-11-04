@@ -61,6 +61,7 @@ echo "Verifying the job's offline install is already up to date"
 tar -C "$context" -cf - . \
   | docker run --rm -i --network=none \
     "${docker_memory_args[@]}" \
+    --tmpfs /pnpm-store:rw,uid=1000,gid=1000,mode=0755 \
     -e npm_config_store_dir=/pnpm-store \
     -e npm_config_ignore_scripts=true \
     "$candidate" \
