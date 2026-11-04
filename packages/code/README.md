@@ -51,6 +51,12 @@ Skip code rebuild with `HOBO_CODE_SKIP_STALE_REBUILD=1`. Force source with
 `HOBO_CODE_FROM_SOURCE=1`. If even src cannot load, run
 `pnpm exec turbo run build --filter=@hobo/code`.
 
+The Vitest config reuses the root `hobo-test-homes.ts` and
+`isolate-hobo-home.ts` setup. Every test file gets a throwaway `HOBO_HOME`
+inside a per-run temporary root, removed when the run ends; a `HOBO_HOME` set by
+the runner is preserved. This keeps package tests from writing `/tmp/.hobo`
+under turbo's strict environment or the developer's real `~/.hobo` outside it.
+
 The launcher runs `dist/bin/hobo-code.js` (or `src/` via tsx) as a child, in a
 session of its own except on Windows, so neither a signal sent to `hobo-code`
 nor the terminal's hangup reaches that child directly. The launcher passes
