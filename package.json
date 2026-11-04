@@ -25,6 +25,7 @@
 		"ci:verify-relay": "node --import tsx scripts/ci/verify-relay-dispatch.mts",
 		"codegen": "node --import tsx packages/schema-tools/src/cli.ts",
 		"codegen:check": "node --import tsx packages/schema-tools/src/cli.ts --check",
+		"codegen:check:affected": "node --import tsx scripts/ci/codegen-drift.mts",
 		"design:lint": "node --import tsx scripts/check-design-md.mts",
 		"docs:cli-lint": "node --import tsx scripts/check-cli-docs.ts",
 		"docs:competitors": "node --import tsx scripts/check-competitor-docs.ts",
