@@ -4,7 +4,9 @@ The production protobuf/CUE codegen orchestrator (ADR-0037). The `hobo-codegen`
 CLI wraps `buf generate` (protoc-gen-es) and `cue vet` over every package that
 opts in by giving its `data-models/` a `buf.yaml` module marker; generated
 TypeScript lands in each package's checked-in `src/_generated/`, and
-`hobo-codegen --check` is the drift gate CI runs. See [`ADR.md`](./ADR.md).
+`hobo-codegen --check` is the drift gate CI runs. That directory belongs only
+to protobuf codegen; other generators use a suffixed sibling such as
+`src/_generated-assets/` or `src/_generated-art/`. See [`ADR.md`](./ADR.md).
 
 ## Honest scope
 

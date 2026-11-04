@@ -211,6 +211,14 @@ them. The weekly schedule is the one whole-workspace sweep, with a 60-minute job
 20. `scripts/test/affected-lanes.test.ts` pins both rules and dry-runs turbo to show that a scoped
 filter leaves an unrelated package (`@hobo/storage-sqlite`) out.
 
+Generated-output drift is the exception to affected scoping on main pushes. The `Generated-output drift`
+step always runs both `pnpm run codegen:check` and the frozen `s0-04-protobuf-cue-codegen` proof suite,
+even when neither appears in the affected diff. This closes the gap exposed when #1693 started running
+workspace tests on `merge_group`: #1597 had opted `@hobo/ci-vercel` into protobuf codegen while its relay
+and sandbox asset generators also wrote into `src/_generated/`. Production codegen ignored those
+non-protobuf files, but the frozen proof reported them as added drift. Their output now lives in
+`packages/ci-vercel/src/_generated-assets/`, leaving `src/_generated/` exclusively to protobuf codegen.
+
 The rest of this section is the analysis as it stood before the raw logs were read.
 
 The `test:unit` death has the same shape on all three main runs inspected. The step fails 380–395 s after it
