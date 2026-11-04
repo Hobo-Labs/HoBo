@@ -132,6 +132,8 @@ export function hoboReleasePagesSparseCones(): readonly string[] {
 }
 
 const CODE_RELEASE_DIR_CONES = [
+	".agents",
+	".claude",
 	".github",
 	"scripts",
 	"packages",

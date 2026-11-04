@@ -35,7 +35,7 @@ The box has two `hobo` slots, and every job pays its own checkout (about 70 s ag
 - `release-hobo` / `release-contract` (30 minutes) runs the contract tests and the npm pack dry run, selects the affected images other than `hobo-code`, then builds them one after another through the Turbo cache, checking each with the live OCI config contract. A failing image does not stop the others; the job fails at the end and names them.
 - `release-code` / `code-release` (45 minutes) runs the contract tests, lint, the whole `@hobo/code` suite through `turbo run test --filter=@hobo/code`, and the `hobo-code` image build when its inputs changed.
 
-Both diff the PR merge commit against `HEAD^1`, its base tip, so the checkout needs `fetch-depth: 2` instead of the full history. A PR that edits a pipeline's own workflow builds every image that pipeline owns, because the workflow is how they are built.
+Both diff the PR merge commit against `HEAD^1`, its base tip, so the checkout needs `fetch-depth: 2` instead of the full history. PR Turbo affected-image builds also use `HEAD^1`; the staging helper validates its configured base and falls back to `HEAD^1` only when `origin/main` is absent. A PR that edits a pipeline's own workflow builds every image that pipeline owns, because the workflow is how they are built.
 
 ## Hermetic build model
 

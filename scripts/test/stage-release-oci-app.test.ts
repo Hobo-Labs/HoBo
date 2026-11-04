@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -7,6 +8,7 @@ import {
 	releaseOciDeployArgs,
 	releaseOciDockerignore,
 	releaseOciStagingLocation,
+	resolveReleaseTurboBase,
 	stageReleaseOciApp,
 } from "../ci/stage-release-oci-app.mts";
 import { SDK_PACKAGES } from "../ci/stage-sdk-artifacts.mts";
@@ -15,6 +17,38 @@ import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 const root = join(import.meta.dirname, "..", "..");
 
 describe("release OCI app staging", () => {
+	it("resolves the Turbo base on a sparse PR checkout", () => {
+		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-base-"));
+		const git = (...args: string[]): void => {
+			const result = spawnSync("git", args, { cwd: repo, stdio: "ignore" });
+			expect(result.status).toBe(0);
+		};
+		try {
+			git("init", "--quiet");
+			for (const message of ["base", "merge"]) {
+				git(
+					"-c",
+					"user.name=Release Test",
+					"-c",
+					"user.email=release@example.com",
+					"-c",
+					"commit.gpgsign=false",
+					"commit",
+					"--allow-empty",
+					"-m",
+					message,
+				);
+			}
+			expect(resolveReleaseTurboBase(repo, "origin/main")).toBe("HEAD^1");
+			expect(resolveReleaseTurboBase(repo, "HEAD")).toBe("HEAD");
+			expect(() => resolveReleaseTurboBase(repo, "refs/heads/missing")).toThrow(
+				/HOBO_RELEASE_TURBO_BASE=refs\/heads\/missing does not resolve/,
+			);
+		} finally {
+			rmSync(repo, { recursive: true, force: true });
+		}
+	});
+
 	it("covers exactly the image ids in the release manifest", () => {
 		const manifest = loadReleaseOciManifest(root);
 		expect(Object.keys(RELEASE_OCI_STAGE_SPECS).sort()).toEqual(

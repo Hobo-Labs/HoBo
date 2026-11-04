@@ -104,17 +104,41 @@ function run(root: string, command: string, args: readonly string[]): void {
 	}
 }
 
+export function resolveReleaseTurboBase(
+	root: string,
+	configuredBase = process.env.HOBO_RELEASE_TURBO_BASE,
+): string | undefined {
+	const base = configuredBase?.trim();
+	if (!base) return undefined;
+	const refExists = (ref: string): boolean =>
+		spawnSync(
+			"git",
+			[
+				"rev-parse",
+				"--verify",
+				"--quiet",
+				"--end-of-options",
+				`${ref}^{commit}`,
+			],
+			{ cwd: root, stdio: "ignore" },
+		).status === 0;
+	if (refExists(base)) return base;
+	if (base === "origin/main" && refExists("HEAD^1")) return "HEAD^1";
+	throw new Error(
+		`HOBO_RELEASE_TURBO_BASE=${base} does not resolve to a commit; fetch that ref or use HEAD^1 on a sparse pull-request checkout`,
+	);
+}
+
 function turboBuild(root: string, filters: readonly string[]): void {
-	const base = process.env.HOBO_RELEASE_TURBO_BASE?.trim();
-	const turboFilters =
-		base && base.length > 0
-			? filters.map((filter) => {
-					const packageRef = filter.endsWith("...")
-						? filter.slice(0, -3)
-						: filter;
-					return `--filter=${packageRef}[${base}...HEAD]`;
-				})
-			: filters.map((filter) => `--filter=${filter}`);
+	const base = resolveReleaseTurboBase(root);
+	const turboFilters = base
+		? filters.map((filter) => {
+				const packageRef = filter.endsWith("...")
+					? filter.slice(0, -3)
+					: filter;
+				return `--filter=${packageRef}[${base}...HEAD]`;
+			})
+		: filters.map((filter) => `--filter=${filter}`);
 	run(root, "pnpm", ["exec", "turbo", "run", "build", ...turboFilters]);
 }
 

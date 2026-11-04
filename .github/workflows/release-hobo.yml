@@ -150,6 +150,7 @@ jobs:
         if: steps.affected.outputs.image_ids != ''
         env:
           IMAGE_IDS: ${{ steps.affected.outputs.image_ids }}
+          HOBO_RELEASE_TURBO_BASE: HEAD^1
           HOBO_RELEASE_VERSION: pr-${{ github.event.pull_request.number || 'manual' }}
           HOBO_RELEASE_REVISION: ${{ github.sha }}
           HOBO_CI_WORKER_IMAGE: hobo-ci-worker:local

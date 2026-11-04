@@ -103,6 +103,14 @@ describe("release sparse cone requirements", () => {
 		);
 	});
 
+	it("hobo code release cone covers harness skill roots", () => {
+		assertConeCoversPaths(
+			"hobo-code-release-harness",
+			hoboCodeReleaseSparseCones(root),
+			[".agents/skills", ".claude/skills"],
+		);
+	});
+
 	it("hobo code release contract cone covers OCI input pathspec directories", () => {
 		const required = releaseOciInputSparseCones();
 		expect(required).toEqual(
