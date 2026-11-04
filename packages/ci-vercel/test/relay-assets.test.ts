@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
-import { bootstrap, workflow } from "../src/_generated/relay-assets.js";
+import { bootstrap, workflow } from "../src/_generated-assets/relay-assets.js";
 
 it("bundles the exact reviewed GitHub Actions host files", async () => {
 	expect(workflow).toBe(
