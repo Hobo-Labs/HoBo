@@ -1,3 +1,5 @@
+import { availableParallelism } from "node:os";
+import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
 	effectiveCiAccount,
@@ -14,8 +16,12 @@ import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
 import { RUNNER_LABEL, type RunnerLabel } from "../runner-labels.js";
 import type { DockerDriver } from "./docker-driver.js";
+import type { WorkerMemoryAdmission } from "./memory-admission.js";
+import { computeJobMemoryConfig } from "./memory-classes.js";
+import type { WorkerStorageFileSystem } from "./storage-admission.js";
 
 const JIT_PATH = "/tmp/hobo-ci-jit";
+const WORK_TARGET = "/opt/actions-runner/_hobo_work";
 /** Written when the one-job JIT runner exits; the container itself keeps running. */
 // public-contract: in-container marker path the start script writes and reconcile probes.
 export const RUNNER_EXITED_PATH = "/tmp/hobo-ci-runner-exited";
@@ -68,6 +74,8 @@ function requeueJob(lease: {
 	repositoryId: number;
 	installationId: number;
 	repository: string;
+	memoryClass: string;
+	memoryMb: number;
 }) {
 	return create(JobSchema, {
 		id: lease.jobId,
@@ -76,6 +84,8 @@ function requeueJob(lease: {
 		repositoryId: lease.repositoryId,
 		installationId: lease.installationId,
 		repository: lease.repository,
+		memoryClass: lease.memoryClass,
+		memoryMb: lease.memoryMb,
 		labels: ["hobo"],
 		action: "queued",
 		isolatedRequired: true,
@@ -113,6 +123,8 @@ export interface IsolatedWorkerStore extends HostedRelayStore {
 type JobImage = Readonly<{ image: string; depsKey?: string }>;
 type JobContainerEnvironment = {
 	HOBO_CI_DEPS_LAYER?: string;
+	HOBO_CI_JOB_MEMORY_MB: string;
+	NODE_OPTIONS: string;
 	HOBO_CI_RELAY_ORIGIN: string;
 	HOBO_CI_RUNNER_SHA256: string;
 	HOBO_CI_RUNNER_URL: string;
@@ -120,6 +132,7 @@ type JobContainerEnvironment = {
 type WarmContainer = Readonly<{
 	name: string;
 	containerId: string;
+	memoryMb: number;
 	selection: JobImage;
 }>;
 
@@ -131,6 +144,18 @@ export function createIsolatedContainerController(options: {
 	workerAccountId: string;
 	workerImage: string;
 	workerMemoryMb?: number;
+	prewarmMemoryMb?: number;
+	memoryAdmission?: WorkerMemoryAdmission;
+	generalLeaseIds?: (
+		activeLeases: readonly Lease[],
+	) => Promise<ReadonlySet<string>>;
+	log?: (
+		event:
+			| "hobo_ci_container_oom"
+			| "hobo_ci_work_dir_removed"
+			| "hobo_ci_work_dir_remove_failed",
+		fields: Readonly<Record<string, string | number | boolean>>,
+	) => void;
 	now?: () => string;
 	/** Requeue uncertain leases that never got a container session. */
 	uncertainWithoutContainerRecoveryMs?: number;
@@ -140,6 +165,8 @@ export function createIsolatedContainerController(options: {
 	volumes?: readonly Readonly<{ source: string; target: string }>[];
 	/** Extra non-secret env for job containers (e.g. npm_config_store_dir). */
 	containerEnv?: Readonly<Record<string, string>>;
+	workRoot?: string;
+	workFs?: WorkerStorageFileSystem;
 	/** Only this repository may use the HoBo deps layer; empty depsImage disables it. */
 	depsRepository?: string;
 	depsImage?: string;
@@ -151,7 +178,10 @@ export function createIsolatedContainerController(options: {
 	const slots = options.slots ?? 1;
 	if (!Number.isInteger(slots) || slots < 1 || slots > 8)
 		throw new Error("invalid worker slots");
+	if ((options.workRoot === undefined) !== (options.workFs === undefined))
+		throw new Error("worker work directory configuration incomplete");
 	const runner = runnerDownloadFor(process.arch);
+	const prewarmMemoryMb = options.prewarmMemoryMb ?? workerMemoryMb;
 	const depsRepository = options.depsRepository ?? "Hobo-Labs/HoBo";
 	const depsImage = options.depsImage ?? "hobo-ci-deps:local";
 	const workerSelection: JobImage = { image: options.workerImage };
@@ -199,10 +229,18 @@ export function createIsolatedContainerController(options: {
 	const containerSpec = (
 		name: string,
 		timeoutMs: number,
+		memoryMb: number,
 		selection: JobImage,
+		jobDirectory?: string,
 	) => {
+		const memory = computeJobMemoryConfig({
+			limitMb: memoryMb,
+			cpuCount: availableParallelism(),
+		});
 		const env: JobContainerEnvironment = {
 			...options.containerEnv,
+			HOBO_CI_JOB_MEMORY_MB: String(memoryMb),
+			NODE_OPTIONS: `--max-old-space-size=${memory.heapMb}`,
 			HOBO_CI_RELAY_ORIGIN: options.publicOrigin,
 			HOBO_CI_RUNNER_SHA256: runner.sha256,
 			HOBO_CI_RUNNER_URL: runner.url,
@@ -213,11 +251,37 @@ export function createIsolatedContainerController(options: {
 			image: selection.image,
 			timeoutMs,
 			runAsUser: "1000:1000",
-			memoryMb: workerMemoryMb,
-			volumes: options.volumes ?? [],
+			memoryMb,
+			volumes: [
+				...(options.volumes ?? []),
+				...(jobDirectory
+					? [{ source: jobDirectory, target: WORK_TARGET }]
+					: []),
+			],
 			env,
 			command: ["sleep", "infinity"],
 		};
+	};
+	const workDirectory = (leaseId: string) =>
+		options.workRoot ? join(options.workRoot, `hobo-${leaseId}`) : undefined;
+	const cleanupWorkDirectory = async (lease: Lease) => {
+		const directory = workDirectory(lease.id);
+		if (!directory || !options.workFs) return;
+		try {
+			const removed = await options.workFs.removeJobDirectory(directory);
+			options.log?.("hobo_ci_work_dir_removed", {
+				jobId: lease.jobId,
+				leaseId: lease.id,
+				bytes: removed.bytes,
+				entries: removed.entries,
+			});
+		} catch (error) {
+			options.log?.("hobo_ci_work_dir_remove_failed", {
+				jobId: lease.jobId,
+				leaseId: lease.id,
+				message: error instanceof Error ? error.message : "unknown",
+			});
+		}
 	};
 	let warm: WarmContainer | undefined;
 	let warming: Promise<void> | undefined;
@@ -230,28 +294,49 @@ export function createIsolatedContainerController(options: {
 				LIVE_CONTAINER_STATES.has(lease.state),
 		).length;
 	const prewarm = async (repository?: string) => {
-		if (warm || warming || !options.docker.rename) return;
+		if (warm || warming || !options.docker.rename || options.workRoot) return;
 		warming = (async () => {
-			const next = repository
-				? undefined
-				: (await options.store.activeLeases()).find(
-						(lease) => lease.state === "reserved",
-					);
-			const selection = await selectImage(
-				repository ?? next?.repository ?? depsRepository,
-			);
-			const name = `hobo-warm-${Date.now().toString(36)}`;
-			const handle = await options.docker.create(
-				containerSpec(name, 6 * 60 * 60_000, selection),
-			);
-			try {
-				await options.docker.start(name, handle.containerId);
-				warm = { ...handle, selection };
-			} catch {
-				await options.docker
-					.remove(name, handle.containerId)
-					.catch(() => undefined);
+			let reserved = false;
+			const activeLeases =
+				options.memoryAdmission || !repository
+					? await options.store.activeLeases()
+					: [];
+			if (options.memoryAdmission) {
+				const generalLeaseIds = options.generalLeaseIds
+					? await options.generalLeaseIds(activeLeases)
+					: new Set<string>();
+				reserved = options.memoryAdmission.reserveWarm(
+					activeLeases,
+					prewarmMemoryMb,
+					generalLeaseIds,
+				);
+				if (!reserved) return;
 			}
+			try {
+				const next = repository
+					? undefined
+					: activeLeases.find((lease) => lease.state === "reserved");
+				const selection = await selectImage(
+					repository ?? next?.repository ?? depsRepository,
+				);
+				const name = `hobo-warm-${Date.now().toString(36)}`;
+				const handle = await options.docker.create(
+					containerSpec(name, 6 * 60 * 60_000, prewarmMemoryMb, selection),
+				);
+				try {
+					await options.docker.start(name, handle.containerId);
+					warm = { ...handle, memoryMb: prewarmMemoryMb, selection };
+				} catch {
+					await options.docker
+						.remove(name, handle.containerId)
+						.catch(() => undefined);
+				}
+			} catch (error) {
+				if (reserved) options.memoryAdmission?.releaseWarm(prewarmMemoryMb);
+				throw error;
+			}
+			if (reserved && !warm)
+				options.memoryAdmission?.releaseWarm(prewarmMemoryMb);
 		})().finally(() => {
 			warming = undefined;
 		});
@@ -357,19 +442,31 @@ export function createIsolatedContainerController(options: {
 			);
 			if (!planned) return;
 			let containerId = "";
+			const memoryMb =
+				planned.memoryMb >= 512 ? planned.memoryMb : workerMemoryMb;
 			try {
 				const selection = await selectImage(planned.repository);
-				const spare = warm;
+				const directory = workDirectory(id);
+				if (directory && options.workFs)
+					await options.workFs.prepareJobDirectory(directory);
+				const spare = warm?.memoryMb === memoryMb ? warm : undefined;
 				const spareMatches =
 					spare?.selection.image === selection.image &&
 					spare.selection.depsKey === selection.depsKey;
 				if (spare && spareMatches && options.docker.rename) {
 					warm = undefined;
-					await options.docker.rename(spare.containerId, name);
+					options.memoryAdmission?.consumeWarm(spare.memoryMb);
 					containerId = spare.containerId;
+					await options.docker.rename(spare.containerId, name);
 				} else {
 					const handle = await options.docker.create(
-						containerSpec(name, planned.reservedMinutes * 60_000, selection),
+						containerSpec(
+							name,
+							planned.reservedMinutes * 60_000,
+							memoryMb,
+							selection,
+							directory,
+						),
 					);
 					if (handle.name !== name)
 						throw new Error("container identity mismatch");
@@ -441,19 +538,23 @@ export function createIsolatedContainerController(options: {
 				if ((await liveContainers("")) < slots)
 					void prewarm().catch(() => undefined);
 			} catch {
-				if (containerId) {
-					try {
-						await options.docker.stop(name, containerId);
-						await options.docker.remove(name, containerId);
-					} catch {
-						/* recovery will retry stop */
+				try {
+					if (containerId) {
+						try {
+							await options.docker.stop(name, containerId);
+							await options.docker.remove(name, containerId);
+						} catch {
+							/* recovery will retry stop */
+						}
 					}
+					await options.store.abortIsolatedAndRequeue(
+						id,
+						requeueJob(planned),
+						now(),
+					);
+				} finally {
+					await cleanupWorkDirectory(planned);
 				}
-				await options.store.abortIsolatedAndRequeue(
-					id,
-					requeueJob(planned),
-					now(),
-				);
 			}
 		},
 		async reconcile(id: string, forceStop?: boolean) {
@@ -484,6 +585,23 @@ export function createIsolatedContainerController(options: {
 				if (!forceStop) return;
 				running = false;
 			}
+			if (!running && options.docker.exitState) {
+				try {
+					const state = await options.docker.exitState(
+						lease.sandboxName,
+						lease.sandboxSessionId,
+					);
+					if (state.exitCode === 137 && state.oomKilled)
+						options.log?.("hobo_ci_container_oom", {
+							jobId: lease.jobId,
+							memoryClass: lease.memoryClass || "heavy",
+							memoryMb: lease.memoryMb || workerMemoryMb,
+							exitCode: state.exitCode,
+						});
+				} catch {
+					// OOM evidence is best-effort; reconcile still settles the dead container.
+				}
+			}
 			let stop = forceStop === true;
 			if (!stop && lease.state === "running" && running) {
 				// The runner takes one job and exits, so its marker frees the slot on this
@@ -504,44 +622,56 @@ export function createIsolatedContainerController(options: {
 				stop = true;
 			}
 			const deadWhileRunning = !stop && lease.state === "running" && !running;
-			if (deadWhileRunning) {
-				await options.store.abortIsolatedAndRequeue(
-					id,
-					requeueJob(lease),
-					now(),
-				);
-			}
 			try {
-				if (running) {
-					await options.docker.stop(lease.sandboxName, lease.sandboxSessionId);
+				if (deadWhileRunning) {
+					await options.store.abortIsolatedAndRequeue(
+						id,
+						requeueJob(lease),
+						now(),
+					);
 				}
-				await options.docker.remove(lease.sandboxName, lease.sandboxSessionId);
-			} catch {
-				if (!deadWhileRunning && !forceStop)
-					throw new Error("container stop uncertain");
+				try {
+					if (running) {
+						await options.docker.stop(
+							lease.sandboxName,
+							lease.sandboxSessionId,
+						);
+					}
+					await options.docker.remove(
+						lease.sandboxName,
+						lease.sandboxSessionId,
+					);
+				} catch {
+					if (!deadWhileRunning && !forceStop)
+						throw new Error("container stop uncertain");
+				}
+				if (deadWhileRunning) return;
+				if (!stop) return;
+				const original = await getJob(
+					options.github,
+					lease.installationId,
+					lease.repository,
+					lease.jobId,
+				);
+				// Match hosted relay settlement: if the reserved job is still queued
+				// (including when GitHub assigned a different job to this runner), re-queue it.
+				const unmet =
+					original.status === "queued" ? requeueJob(lease) : undefined;
+				await options.store.settle(
+					id,
+					0,
+					Math.max(
+						1,
+						Math.ceil(
+							(Date.parse(now()) - Date.parse(lease.createdAt)) / 60_000,
+						),
+					),
+					now(),
+					unmet,
+				);
+			} finally {
+				await cleanupWorkDirectory(lease);
 			}
-			if (deadWhileRunning) return;
-			if (!stop) return;
-			const original = await getJob(
-				options.github,
-				lease.installationId,
-				lease.repository,
-				lease.jobId,
-			);
-			// Match hosted relay settlement: if the reserved job is still queued
-			// (including when GitHub assigned a different job to this runner), re-queue it.
-			const unmet =
-				original.status === "queued" ? requeueJob(lease) : undefined;
-			await options.store.settle(
-				id,
-				0,
-				Math.max(
-					1,
-					Math.ceil((Date.parse(now()) - Date.parse(lease.createdAt)) / 60_000),
-				),
-				now(),
-				unmet,
-			);
 		},
 	};
 
@@ -553,7 +683,13 @@ export function createIsolatedContainerController(options: {
 			await warming?.catch(() => undefined);
 			const spare = warm;
 			warm = undefined;
-			if (spare) await options.docker.remove(spare.name, spare.containerId);
+			if (spare) {
+				try {
+					await options.docker.remove(spare.name, spare.containerId);
+				} finally {
+					options.memoryAdmission?.releaseWarm(spare.memoryMb);
+				}
+			}
 		},
 	};
 }

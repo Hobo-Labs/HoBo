@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { capVitestWorkers } from "../../scripts/ci/vitest-max-workers.mts";
 
 export default defineConfig({
 	test: {
@@ -16,9 +17,6 @@ export default defineConfig({
 		// hang still fails, it just fails for being a hang.
 		testTimeout: Number(process.env.HOBO_TEST_TIMEOUT ?? 20_000),
 		hookTimeout: Number(process.env.HOBO_TEST_TIMEOUT ?? 20_000),
-		maxWorkers:
-			process.env.HOBO_TEST_MAX_WORKERS === undefined
-				? undefined
-				: Number(process.env.HOBO_TEST_MAX_WORKERS),
+		maxWorkers: capVitestWorkers(undefined),
 	},
 });
