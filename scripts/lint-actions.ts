@@ -60,6 +60,55 @@ function isPullRequestOnlyJob(
 	);
 }
 
+function collectPinnedActionRefs(text: string): Map<string, Set<string>> {
+	const byRepo = new Map<string, Set<string>>();
+	for (const line of text.split(/\r?\n/)) {
+		const match = line.match(/^\s*-?\s*uses:\s*([^@\s]+)@([0-9a-f]{40})\s*$/);
+		if (!match) continue;
+		const action = match[1];
+		const sha = match[2];
+		if (!action || !sha || action.startsWith("./")) continue;
+		const segments = action.split("/");
+		const repo =
+			segments.length >= 2
+				? `${segments[0]}/${segments[1]}`
+				: `actions/${action}`;
+		const shas = byRepo.get(repo) ?? new Set<string>();
+		shas.add(sha);
+		byRepo.set(repo, shas);
+	}
+	return byRepo;
+}
+
+async function verifyPinnedActionShasExist(
+	file: string,
+	text: string,
+): Promise<void> {
+	const token = process.env.GITHUB_TOKEN?.trim();
+	const headers = new Headers({
+		Accept: "application/vnd.github+json",
+		"User-Agent": "hobo-lint-actions",
+	});
+	if (token) {
+		headers.set("Authorization", `Bearer ${token}`);
+	}
+	for (const [repo, shas] of collectPinnedActionRefs(text)) {
+		for (const sha of shas) {
+			const url = `https://api.github.com/repos/${repo}/commits/${sha}`;
+			const response = await fetch(url, { headers, redirect: "follow" });
+			if (response.status === 404) {
+				errors.push(
+					`${file}: pinned action ${repo}@${sha} does not exist on GitHub (404)`,
+				);
+			} else if (!response.ok) {
+				errors.push(
+					`${file}: could not verify ${repo}@${sha} (HTTP ${response.status})`,
+				);
+			}
+		}
+	}
+}
+
 function lintPinnedActionRefs(file: string, text: string): void {
 	const lines = text.split(/\r?\n/);
 	for (const [index, line] of lines.entries()) {
@@ -267,6 +316,43 @@ for (const file of files) {
 }
 
 lintCompositeActions();
+
+const verifyTargets: { file: string; text: string }[] = [];
+for (const file of recognizedFiles) {
+	if (!allowedEnabled.has(file)) continue;
+	verifyTargets.push({
+		file,
+		text: readFileSync(join(workflowDir, file), "utf8").replaceAll(
+			"\r\n",
+			"\n",
+		),
+	});
+}
+const actionsRoot = join(root, "actions");
+if (existsSync(actionsRoot)) {
+	const walkVerify = (directory: string): void => {
+		for (const name of readdirSync(directory)) {
+			const path = join(directory, name);
+			if (statSync(path).isDirectory()) {
+				walkVerify(path);
+				continue;
+			}
+			if (name !== "action.yml" && name !== "action.yaml") continue;
+			const rel = relative(join(process.cwd(), ".github"), path).replaceAll(
+				"\\",
+				"/",
+			);
+			verifyTargets.push({
+				file: rel,
+				text: readFileSync(path, "utf8").replaceAll("\r\n", "\n"),
+			});
+		}
+	};
+	walkVerify(actionsRoot);
+}
+for (const target of verifyTargets) {
+	await verifyPinnedActionShasExist(target.file, target.text);
+}
 
 if (errors.length > 0) {
 	for (const error of errors) console.error(`ERR ${error}`);
