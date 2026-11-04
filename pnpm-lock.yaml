@@ -301,6 +301,10 @@ importers:
       '@hobo/wasp':
         specifier: workspace:*
         version: link:../../packages/wasp
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.2
+        version: 24.13.2
 
   external/ts-autocode/packages/grounding:
     dependencies:

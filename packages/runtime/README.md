@@ -8,7 +8,8 @@ deterministic-replay library that backs them.
   contract-derived stub (`defineGrounding()` is the same function under the
   name the registrations call that `hobo stub` generates for an ambient
   `@trainable declare class`, in `src/_generated/declared/<Class>.ts`;
-  ADR-0128), the optional `@trainable` class-method decorator,
+  ADR-0128), the optional `@trainable` class decorator and `@intent` method
+  decorator (including projects using `exactOptionalPropertyTypes`),
   the `"use training"` grounding lint, and `applyTrainingArtifact()` for
   apply-at-load promotion. See `src/training/`. The JSON types this surface
   is typed in (`JsonValue`, `JsonObject`, `JsonBag`) are exported from the
