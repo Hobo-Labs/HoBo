@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { readStationSidecars } from "../src/station-sidecars.js";
+import { GIT_ISOLATED_ENV } from "./isolate-git-env.js";
 import {
 	drainEvidenceSidecarsForHomes,
 	killProcessGroup,
@@ -44,11 +45,11 @@ const SHELL_DRAWN = `${ESC}[?1049h`;
 const VERB_ENDED = "hobo recipes:";
 /** Terminal control sequences, left out of the screen a failure shows. */
 const CONTROL_SEQUENCES = new RegExp(`${ESC}\\[[0-9;?]*[a-zA-Z]`, "gu");
-const VERB_DEADLINE_MS = 150_000;
-const SIGNAL_GRACE_MS = 30_000;
+const VERB_DEADLINE_MS = 12_000;
+const SIGNAL_GRACE_MS = 5_000;
 /** How long hobo-code's child gets to end once hobo-code has. */
-const CHILD_GRACE_MS = 20_000;
-const RUN_TIMEOUT_MS = 120_000;
+const CHILD_GRACE_MS = 3_000;
+const RUN_TIMEOUT_MS = 15_000;
 
 /** Why the pseudo-terminal cases cannot run here, or false when they can. */
 function noUtilLinuxScript(): string | false {
@@ -206,6 +207,7 @@ async function endTheShell(ending: Ending): Promise<Ended> {
 	const script = spawn("script", ["-qfec", command, "/dev/null"], {
 		detached: true,
 		env: {
+			...GIT_ISOLATED_ENV,
 			PATH: process.env.PATH ?? "",
 			HOME: root,
 			HOBO_HOME: join(root, "home"),
