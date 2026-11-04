@@ -176,8 +176,10 @@ describe("station occupancy sidecars", () => {
 			expect(evidence.status).toBe(200);
 		} finally {
 			await session.complete(true, ["sidecars"]);
-			const evidencePid =
-				readStationSidecars(hoboHome, "station:local")?.evidencePid;
+			const evidencePid = readStationSidecars(
+				hoboHome,
+				"station:local",
+			)?.evidencePid;
 			await stopStationSidecars(hoboHome, "station:local");
 			if (evidencePid !== undefined) killProcessGroup(evidencePid);
 			await drainEvidenceSidecarsForHomes([hoboHome]);

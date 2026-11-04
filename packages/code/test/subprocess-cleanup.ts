@@ -46,7 +46,7 @@ export function killTrackedSubprocesses(): void {
 	trackedChildren.clear();
 }
 
-function pidAlive(pid: number): boolean {
+function _pidAlive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
@@ -59,7 +59,8 @@ export function readProcessHoboHome(pid: number): string | undefined {
 	try {
 		const raw = readFileSync(`/proc/${pid}/environ`);
 		for (const entry of raw.toString("binary").split("\0")) {
-			if (entry.startsWith("HOBO_HOME=")) return entry.slice("HOBO_HOME=".length);
+			if (entry.startsWith("HOBO_HOME="))
+				return entry.slice("HOBO_HOME=".length);
 		}
 	} catch {
 		// process exited
@@ -154,9 +155,7 @@ export async function drainEvidenceSidecarsForHomes(
 ): Promise<void> {
 	const matchesHome = (pid: number): boolean => {
 		const home = readProcessHoboHome(pid);
-		return (
-			home !== undefined && homes.some((candidate) => home === candidate)
-		);
+		return home !== undefined && homes.some((candidate) => home === candidate);
 	};
 	for (const pid of listLeakedEvidenceSidecarPids().filter(matchesHome)) {
 		killProcessGroup(pid);

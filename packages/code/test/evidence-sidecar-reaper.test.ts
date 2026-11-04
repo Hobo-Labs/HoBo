@@ -8,7 +8,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	assertNoLeakedEvidenceSidecars,
 	killProcessGroup,
-	registerSidecarPid,
 	trackChild,
 } from "./subprocess-cleanup.js";
 

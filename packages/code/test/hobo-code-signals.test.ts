@@ -114,8 +114,7 @@ afterEach(async () => {
 		rmSync(root, { recursive: true, force: true });
 		await drainEvidenceSidecarsForHomes([home]);
 		await until(
-			() =>
-				!listRunningSidecarsUnder(root).some((pid) => running(pid)),
+			() => !listRunningSidecarsUnder(root).some((pid) => running(pid)),
 			3_000,
 		);
 	}
@@ -124,7 +123,7 @@ afterEach(async () => {
 function listRunningSidecarsUnder(root: string): number[] {
 	return listLeakedEvidenceSidecarPids().filter((pid) => {
 		const home = hoboHomeForTestPid(pid);
-		return home !== undefined && home.startsWith(root);
+		return home?.startsWith(root);
 	});
 }
 
