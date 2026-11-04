@@ -20,6 +20,7 @@ const acceptanceFile = "hobo-ci-acceptance.yml";
 /** Authoritative CI fabric (self-hosted hobo runners). */
 const activeCiFiles = new Set([
 	"hobo-ci.yml",
+	"ci-deps-publish.yml",
 	"examples-e2e.yml",
 	"dev-env-smoke.yml",
 	"pricing-ci.yml",

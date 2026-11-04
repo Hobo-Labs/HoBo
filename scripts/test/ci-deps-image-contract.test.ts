@@ -44,15 +44,46 @@ describe("CI deps image build contract", () => {
 		assert.ok(!dockerfile.split("AS final")[1]?.includes("RUN pnpm fetch"));
 	});
 
+	it("partitions the store into reproducible linked layers and a residual layer", () => {
+		includes(
+			dockerfile,
+			"node --experimental-strip-types scripts/ci/deps-layer-buckets.mts partition",
+		);
+		includes(dockerfile, '-exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +');
+		assert.equal(
+			dockerfile.match(/^COPY --link --from=install --chown=1000:1000/gm)
+				?.length,
+			64,
+		);
+		includes(dockerfile, "/opt/hobo-deps-buckets/00/");
+		includes(dockerfile, "/opt/hobo-deps-buckets/63/");
+		includes(
+			dockerfile,
+			"COPY --from=install --chown=1000:1000 /opt/hobo-deps/ /opt/hobo-deps/",
+		);
+		includes(
+			build,
+			"node --experimental-strip-types scripts/ci/deps-layer-buckets.mts --check",
+		);
+		includes(build, "build_command=(docker build)");
+		includes(build, "prune_command=(docker builder prune)");
+		assert.ok(!build.includes("--load"));
+		assert.ok(!build.includes("docker buildx create"));
+		assert.ok(!build.includes("--builder"));
+		includes(build, "rewrite_args=(--rewrite-timestamp=true)");
+		includes(build, 'build_help="$(docker build --help 2>/dev/null)"');
+		includes(build, "grep -q -- '--rewrite-timestamp'");
+	});
+
 	it("creates the install payload as root before the uid-1000 install stage", () => {
 		const fetch = dockerfile.split("FROM fetch AS install")[0];
 		assert.ok(fetch);
 		const rootStep = fetch.indexOf("USER root");
 		const create = fetch.indexOf(
-			"RUN mkdir -p /pnpm-store /opt/actions-runner/_hobo_work/HoBo/HoBo /opt/hobo-deps \\",
+			"RUN mkdir -p /pnpm-store /opt/actions-runner/_hobo_work/HoBo/HoBo /opt/hobo-deps /opt/hobo-deps-buckets \\",
 		);
 		const ownership = fetch.indexOf(
-			"&& chown -R 1000:1000 /pnpm-store /opt/actions-runner/_hobo_work /opt/hobo-deps",
+			"&& chown -R 1000:1000 /pnpm-store /opt/actions-runner/_hobo_work /opt/hobo-deps /opt/hobo-deps-buckets",
 			create,
 		);
 		const installUser = fetch.indexOf("USER 1000:1000", ownership);
@@ -72,8 +103,12 @@ describe("CI deps image build contract", () => {
 		const copy = final.indexOf(
 			"COPY --from=install --chown=1000:1000 /opt/hobo-deps/ /opt/hobo-deps/",
 		);
+		const chown = final.indexOf(
+			"RUN chown 1000:1000 /opt/hobo-deps /opt/hobo-deps/node_modules /opt/hobo-deps/node_modules/.pnpm",
+		);
 		assert.ok(ownership > -1);
 		assert.ok(copy > ownership);
+		assert.ok(chown > copy);
 		assert.ok(!final.includes("_hobo_work"));
 		assert.ok(!final.includes("WORKDIR"));
 		includes(final.slice(0, ownership), "USER root");
@@ -87,7 +122,7 @@ describe("CI deps image build contract", () => {
 		includes(dockerfile, "npm_config_package_import_method=copy");
 		includes(dockerfile, "/opt/hobo-deps/.hobo-ci-deps-key");
 		assert.ok(!dockerfile.includes("remote.origin.url"));
-		includes(build, 'epoch="$(git log -1 --format=%ct)"');
+		includes(build, "epoch=0");
 		includes(build, 'candidate="hobo-ci-deps:${key}"');
 	});
 
@@ -106,13 +141,35 @@ describe("CI deps image build contract", () => {
 		includes(build, "Using toolchain image");
 	});
 
-	it("returns on a local keyed hit without building", () => {
-		const hit = build.indexOf('if docker image inspect "$candidate"');
+	it("returns on a keyed or matching-local hit without building", () => {
+		const localKey = build.indexOf("local_key=");
+		const restore = build.indexOf('docker tag hobo-ci-deps:local "$candidate"');
+		const hit = build.indexOf('if docker image inspect "$candidate"', restore);
 		const exit = build.indexOf("exit 0", hit);
-		const buildCommand = build.indexOf("docker build \\");
-		assert.ok(hit > -1);
+		const buildCommand = build.indexOf('"${build_command[@]}" \\');
+		assert.ok(localKey > -1);
+		assert.ok(restore > localKey);
+		assert.ok(hit > restore);
 		assert.ok(exit > hit);
 		assert.ok(buildCommand > exit);
+		includes(build, '[ "$local_key" = "$key" ]');
+	});
+
+	it("imports the registry cache only with the containerd image store", () => {
+		includes(build, "deps_uses_containerd_image_store()");
+		includes(build, "docker info --format '{{json .DriverStatus}}'");
+		includes(build, "*io.containerd.snapshotter*");
+		const detection = build.indexOf(
+			"if deps_uses_containerd_image_store; then",
+		);
+		const cacheImport = build.indexOf(
+			'cache_args=(--cache-from "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:buildcache")',
+		);
+		assert.ok(detection > -1);
+		assert.ok(cacheImport > detection);
+		includes(build, '"${cache_args[@]}"');
+		includes(build, "deps registry cache import skipped: classic image store");
+		assert.ok(!build.includes("--cache-to"));
 	});
 
 	it("requires an up-to-date offline contract before promoting a new build", () => {
@@ -193,12 +250,22 @@ describe("CI deps workflow contract", () => {
 		includes(job, "needs: ci-runner-image");
 		includes(job, "needs.ci-runner-image.result != 'failure'");
 		includes(job, "packages/ci-gh-actions/deploy/ci-runner/deps");
+		includes(job, "scripts/ci/deps-layer-buckets.mts");
 		includes(job, "build-deps.sh --no-promote");
 		includes(job, "Remove PR candidate tag");
-		includes(
-			job,
-			"steps.build.outcome == 'success' && github.repository == 'Hobo-Labs/HoBo'",
+		assert.ok(!job.includes("docker push"));
+		assert.ok(!job.includes("--cache-to"));
+		assert.ok(!job.includes("packages: write"));
+		includes(job, "packages: read");
+		includes(job, "Login to GHCR for read-only cache");
+		assert.ok(!job.includes("env.GHCR_TOKEN != ''"));
+		includes(job, "GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}");
+		const login = job.indexOf("- name: Login to GHCR for read-only cache");
+		const buildStep = job.indexOf(
+			"- name: Build deps image and verify offline install",
 		);
+		assert.ok(login > -1);
+		assert.ok(buildStep > login);
 	});
 
 	it("reuses local or GHCR hits on every event without building", () => {
@@ -249,5 +316,89 @@ describe("CI deps workflow contract", () => {
 		includes(main, "needs: ci-runner-image");
 		assert.ok(!main.includes("ci-deps-image"));
 		includes(workflow, "Check deps layer match");
+	});
+});
+
+describe("CI deps publisher contract", () => {
+	const workflow = read(".github/workflows/ci-deps-publish.yml");
+	const publish = read(
+		"packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh",
+	);
+
+	it("runs only after a successful main fabric run or manually", () => {
+		includes(workflow, 'workflows: ["HoBo CI Fabric"]');
+		includes(workflow, "types: [completed]");
+		includes(workflow, "branches: [main]");
+		includes(workflow, "workflow_dispatch:");
+		includes(workflow, "timeout-minutes: 5");
+		includes(workflow, "cancel-in-progress: true");
+		includes(workflow, "github.event.workflow_run.conclusion == 'success'");
+		includes(workflow, "github.event.workflow_run.head_sha");
+	});
+
+	it("skips absent local images and existing GHCR tags", () => {
+		includes(publish, 'key="$(node --no-warnings scripts/ci/deps-key.mts)"');
+		includes(publish, 'candidate="hobo-ci-deps:${key}"');
+		includes(publish, "docker image inspect hobo-ci-deps:local");
+		includes(publish, '{{ index .Config.Labels "hobo.ci.deps-key" }}');
+		includes(publish, 'source="hobo-ci-deps:local"');
+		const manifest = publish.indexOf('docker manifest inspect "$image"');
+		const tag = publish.indexOf('docker tag "$source" "$image"');
+		const push = publish.indexOf("docker push");
+		assert.ok(manifest > -1);
+		assert.ok(tag > manifest);
+		assert.ok(push > tag);
+		includes(publish, "GHCR already has ${image}; skipping push");
+	});
+
+	it("bounds the push and keeps the token on stdin", () => {
+		includes(
+			publish,
+			"timeout --signal=TERM --kill-after=15s 240s docker push",
+		);
+		includes(
+			publish,
+			'printf \'%s\' "$GHCR_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR:?GITHUB_ACTOR is required}" --password-stdin',
+		);
+		assert.ok(!publish.includes('echo "$GHCR_TOKEN"'));
+		assert.ok(!publish.includes('echo "${{ secrets.GITHUB_TOKEN }}'));
+	});
+
+	it("exports mode=min cache after the push only with the containerd image store", () => {
+		const push = publish.indexOf(
+			"timeout --signal=TERM --kill-after=15s 240s docker push",
+		);
+		const detection = publish.indexOf(
+			"if ! deps_uses_containerd_image_store; then",
+		);
+		const exportCache = publish.indexOf(
+			'--cache-to "type=registry,ref=${cache_image},mode=min"',
+		);
+		assert.ok(push > -1);
+		assert.ok(detection > push);
+		assert.ok(exportCache > detection);
+		includes(publish, "docker info --format '{{json .DriverStatus}}'");
+		includes(publish, "*io.containerd.snapshotter*");
+		includes(
+			publish,
+			"deps registry cache export skipped: classic image store",
+		);
+		includes(
+			publish,
+			"timeout --signal=TERM --kill-after=15s 120s docker buildx build",
+		);
+		includes(publish, '--cache-from "type=registry,ref=${cache_image}"');
+		includes(
+			publish,
+			"docker buildx is unavailable; skipping deps buildcache export",
+		);
+		includes(
+			publish,
+			"docker push uploads only blobs the registry lacks, so unchanged bucket layers are skipped",
+		);
+		assert.ok(!publish.includes("mode=max"));
+		assert.ok(!publish.includes("--load"));
+		assert.ok(!publish.includes("docker buildx create"));
+		assert.ok(!publish.includes("--builder"));
 	});
 });

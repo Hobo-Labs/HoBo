@@ -46,7 +46,7 @@ base="hobo-ci-worker:${toolchain}"
 echo "Using toolchain image $base"
 key="$(node --no-warnings scripts/ci/deps-key.mts --toolchain "${toolchain}" --stage "$context")"
 candidate="hobo-ci-deps:${key}"
-epoch="$(git log -1 --format=%ct)"
+epoch=0
 docker_memory_args=()
 if [[ -n "${HOBO_CI_DEPS_BUILD_MEMORY_MB:-}" ]]; then
   if [[ ! "${HOBO_CI_DEPS_BUILD_MEMORY_MB}" =~ ^[0-9]+$ ]] || (( HOBO_CI_DEPS_BUILD_MEMORY_MB < 512 )); then
@@ -54,6 +54,11 @@ if [[ -n "${HOBO_CI_DEPS_BUILD_MEMORY_MB:-}" ]]; then
     exit 2
   fi
   docker_memory_args=(--memory "${HOBO_CI_DEPS_BUILD_MEMORY_MB}m")
+fi
+
+local_key="$(docker image inspect hobo-ci-deps:local --format '{{ index .Config.Labels "hobo.ci.deps-key" }}' 2>/dev/null || true)"
+if [ "$local_key" = "$key" ] && ! docker image inspect "$candidate" >/dev/null 2>&1; then
+  docker tag hobo-ci-deps:local "$candidate"
 fi
 
 verify_mount_contract() {
@@ -77,9 +82,30 @@ if docker image inspect "$candidate" >/dev/null 2>&1; then
   exit 0
 fi
 
+node --experimental-strip-types scripts/ci/deps-layer-buckets.mts --check
+build_command=(docker build)
+prune_command=(docker builder prune)
+rewrite_args=()
+if build_help="$(docker build --help 2>/dev/null)" && grep -q -- '--rewrite-timestamp' <<<"$build_help"; then
+  rewrite_args=(--rewrite-timestamp=true)
+fi
+cache_args=()
+deps_uses_containerd_image_store() {
+  [[ "$(docker info --format '{{json .DriverStatus}}' 2>/dev/null)" == *io.containerd.snapshotter* ]]
+}
+if deps_uses_containerd_image_store; then
+  if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
+    cache_args=(--cache-from "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:buildcache")
+  fi
+else
+  echo "deps registry cache import skipped: classic image store"
+fi
+
 echo "Building $candidate (fetch network restricted to lockfile-verified downloads; install offline)"
-docker build \
+"${build_command[@]}" \
   "${docker_memory_args[@]}" \
+  "${rewrite_args[@]}" \
+  "${cache_args[@]}" \
   --build-arg "TOOLCHAIN_IMAGE=${base}" \
   --build-arg "DEPS_KEY=${key}" \
   --build-arg "TOOLCHAIN_VERSION=${toolchain}" \
@@ -111,4 +137,4 @@ else
   echo "Built and verified $candidate without promotion"
 fi
 node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
-docker builder prune -f --keep-storage "$cap"
+"${prune_command[@]}" -f --keep-storage "$cap"
