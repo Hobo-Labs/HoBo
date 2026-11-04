@@ -154,6 +154,9 @@ message Job {
   string action = 8;
   string runner_name = 9;
   bool isolated_required = 10;
+  string name = 11;
+  string memory_class = 12;
+  uint32 memory_mb = 13;
 }
 message Lease {
   string id = 1;
@@ -201,6 +204,8 @@ message Lease {
   SandboxMeasuredUsage proxy_stopped_usage = 42;
   string sandbox_stop_from_stage = 43;
   bool runner_deletion_confirmed = 44;
+  string memory_class = 45;
+  uint32 memory_mb = 46;
 }
 message CiEvent {
   string type = 1;

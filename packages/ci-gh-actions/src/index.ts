@@ -1,4 +1,5 @@
 export { createActionsBackend } from "./actions-backend.js";
+export { createAdmissionOrder } from "./admission-order.js";
 export { relayInstallAssets } from "./assets.js";
 export {
 	inventoryCiEnginesFromRepository,
@@ -28,6 +29,7 @@ export { createHostedAppBootstrap } from "./hosted-app-bootstrap.js";
 export { createHostedAppOnboarding } from "./hosted-app-onboarding.js";
 export { createHostedControlPlane } from "./hosted-control.js";
 export {
+	generalLeaseIdsFor,
 	HostedRelay,
 	type HostedRelayStore,
 	type IsolatedRunnerHost,
@@ -63,6 +65,20 @@ export {
 	type GithubReadFailure,
 	type WaitingJob,
 } from "./isolated-worker/github-job-poller.js";
+export {
+	createWorkerMemoryAdmission,
+	type MemoryAdmissionLog,
+	type WorkerMemoryAdmission,
+} from "./isolated-worker/memory-admission.js";
+export {
+	type JobMemoryRequest,
+	memoryClassForJob,
+	memoryRequestForJob,
+	readHostMemory,
+	resolveWorkerMemoryConfig,
+	type WorkerMemoryClassName,
+	type WorkerMemoryConfig,
+} from "./isolated-worker/memory-classes.js";
 export {
 	attachPostgresPoolErrorHandler,
 	formatPoolErrorLog,

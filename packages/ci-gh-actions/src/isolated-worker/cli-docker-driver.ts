@@ -158,6 +158,22 @@ export function createCliDockerDriver(options: {
 			);
 			return stdout.trim() === "running";
 		},
+		async exitState(_name, containerId) {
+			const { stdout } = await exec(
+				docker,
+				[
+					"inspect",
+					"--format",
+					"{{.State.ExitCode}} {{.State.OOMKilled}}",
+					containerId,
+				],
+				{ env, timeout: 30_000, maxBuffer: 4096 },
+			);
+			const match = /^(\d+) (true|false)$/.exec(stdout.trim());
+			if (!match?.[1] || !match[2])
+				throw new Error("invalid container exit state");
+			return { exitCode: Number(match[1]), oomKilled: match[2] === "true" };
+		},
 		async exists(_name, containerId, path) {
 			if (!/^\/[A-Za-z0-9_./-]+$/.test(path)) throw new Error("invalid path");
 			try {

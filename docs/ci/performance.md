@@ -616,6 +616,38 @@ a run like 41611050533, Main full gate and the contract guard start first. Secre
 image then follow on the freed slot while the gate runs. The run ends shortly after the gate's own finish, about 120 s
 instead of 149 s. The box daemon has to be redeployed on a main that includes this change.
 
+## Finding 12: main re-ran the tests its own PR had just passed
+
+Main push 41671509710 (merge of #1675, 407 s) spent 288 s in Main full gate:
+
+| Step | Time | What ran |
+|---|---:|---|
+| Checkout, preflight, cache restore | 10 s | |
+| `pnpm install` | 23 s | store host-mounted |
+| S0 gate set | 101 s | 14 `agent:check` lanes at concurrency 1; `turbo run test --filter=./packages/code` alone 79 s (78 of 82 tasks cached, `@hobo/code#test` a miss), `test:root` 13 s, `typecheck:root` 5 s, the other 11 under 5 s together |
+| Workspace tests | 146 s | `dependent-tests.mts`: 7 whole suites 41 s (84 of 90 cached; `@hobo/code#test` replayed from the S0 run), `@hobo/hobo` subset 92 s (75 files whose imports reach `packages/code/src/rubberhose.ts`), `examples/self-host-yard` subset 9 s, three cached subsets under 1 s |
+| Prune, save, trace | 8 s | |
+
+The run's critical path was image job 91 s (its inputs changed in #1675), then the gate. The scoping was
+right: the 75 `@hobo/hobo` files reach the changed source through real imports, and the docs-only edits
+in `packages/ci` and `packages/ci-gh-actions` cost nothing on their own (`*.md` is outside the `test`
+inputs). The waste was `@hobo/code#test`. #1675's PR impact gate (run 41669665020) ran the same lane on the
+same tree eight minutes earlier (73 s, its only miss), but its cache entry was saved under the PR's ref,
+and `actions/cache` never restores a PR ref's entries on main.
+
+Fix: on the box, `.github/actions/turbo-cache` points `TURBO_CACHE_DIR` at a directory inside the
+host-mounted pnpm store (`hobo-turbo-cache`), so every job (PR, merge group, main) reads and writes one
+content-addressed cache and the `actions/cache` restore and save are skipped. Turbo's task hash here is
+file content only (strict env mode, no task `env` keys), so a PR gate's result replays on main when the
+merged tree matches. `scripts/ci/turbo-cache-prune.mts` prunes the shared directory by the same 7-day rule
+and skips files another job's prune removed. Two jobs writing one hash can leave a truncated archive for
+an instant; turbo reads that as a miss and runs the task (checked by truncating a build entry). No daemon
+redeploy is needed: the pnpm store mount already exists.
+
+Expected for a push like 41671509710: S0 drops by about 77 s (the `@hobo/code#test` replay), and the image
+job is about 10 s once #1676's no-rebuild skip lands, so the run goes from 407 s to roughly 250 s. The
+`@hobo/hobo` subset (92 s) is the floor for a change to `@hobo/code` source; the PR gate does not run it.
+
 ## Finding 13: GitHub gave the runner launched for main to an older PR job
 
 Main dispatch run 41672800885 queued its Main full gate at 10:22 CST and waited while PR jobs held both
@@ -731,38 +763,6 @@ per-ref `actions/cache` fallback, so no fork run reads main's entries or writes 
 That keeps an honest fork off the shared cache but stops nothing a malicious one does through the socket
 or the store mount. The boundary that would matter is per-job socket and mount policy for fork PRs in the
 box daemon.
-
-## Finding 12: main re-ran the tests its own PR had just passed
-
-Main push 41671509710 (merge of #1675, 407 s) spent 288 s in Main full gate:
-
-| Step | Time | What ran |
-|---|---:|---|
-| Checkout, preflight, cache restore | 10 s | |
-| `pnpm install` | 23 s | store host-mounted |
-| S0 gate set | 101 s | 14 `agent:check` lanes at concurrency 1; `turbo run test --filter=./packages/code` alone 79 s (78 of 82 tasks cached, `@hobo/code#test` a miss), `test:root` 13 s, `typecheck:root` 5 s, the other 11 under 5 s together |
-| Workspace tests | 146 s | `dependent-tests.mts`: 7 whole suites 41 s (84 of 90 cached; `@hobo/code#test` replayed from the S0 run), `@hobo/hobo` subset 92 s (75 files whose imports reach `packages/code/src/rubberhose.ts`), `examples/self-host-yard` subset 9 s, three cached subsets under 1 s |
-| Prune, save, trace | 8 s | |
-
-The run's critical path was image job 91 s (its inputs changed in #1675), then the gate. The scoping was
-right: the 75 `@hobo/hobo` files reach the changed source through real imports, and the docs-only edits
-in `packages/ci` and `packages/ci-gh-actions` cost nothing on their own (`*.md` is outside the `test`
-inputs). The waste was `@hobo/code#test`. #1675's PR impact gate (run 41669665020) ran the same lane on the
-same tree eight minutes earlier (73 s, its only miss), but its cache entry was saved under the PR's ref,
-and `actions/cache` never restores a PR ref's entries on main.
-
-Fix: on the box, `.github/actions/turbo-cache` points `TURBO_CACHE_DIR` at a directory inside the
-host-mounted pnpm store (`hobo-turbo-cache`), so every job (PR, merge group, main) reads and writes one
-content-addressed cache and the `actions/cache` restore and save are skipped. Turbo's task hash here is
-file content only (strict env mode, no task `env` keys), so a PR gate's result replays on main when the
-merged tree matches. `scripts/ci/turbo-cache-prune.mts` prunes the shared directory by the same 7-day rule
-and skips files another job's prune removed. Two jobs writing one hash can leave a truncated archive for
-an instant; turbo reads that as a miss and runs the task (checked by truncating a build entry). No daemon
-redeploy is needed: the pnpm store mount already exists.
-
-Expected for a push like 41671509710: S0 drops by about 77 s (the `@hobo/code#test` replay), and the image
-job is about 10 s once #1676's no-rebuild skip lands, so the run goes from 407 s to roughly 250 s. The
-`@hobo/hobo` subset (92 s) is the floor for a change to `@hobo/code` source; the PR gate does not run it.
 
 ## Finding 14: release PRs fanned out to 18 jobs on two slots
 
@@ -903,3 +903,61 @@ A trunk-label job that cannot reserve now reclaims the newest general lease that
 To protect the GitHub App's 5,000-request/h installation budget, the relay now caches each immutable served runner label by repository and job ID, prunes entries when leases become inactive, and treats failed lookups as general while retrying them on the next tick.
 
 The target is a **~100 s main critical path** with the reserved slot going directly to a `hobo-trunk` runner rather than paying a PR job's full runtime. Regression tests drive the real relay and fake controller through the incident shape, strict preemption, running-job safety, and pre-warmed trunk launch.
+
+## Finding 24: slot-only admission let the host OOM killer choose a victim
+
+PR #1697's **CI fabric contract guard** died in `pnpm install` with exit 137 while neighbouring jobs ran.
+The box had 16 GiB RAM and no swap, but admitted three containers with an 8192 MiB Docker limit each:
+3 × 8192 = 24,576 MiB, already above physical RAM before the daemon, Docker and page cache. Docker's
+per-container limits therefore did not bound their sum. The host OOM killer picked `pnpm install`; the
+container-local limit was not the thing that saved its neighbours.
+
+Admission now has a second, independent budget. Its default is
+`min(os.totalmem(), /sys/fs/cgroup/memory.max when finite) - 2048 MiB`; the explicit
+`HOBO_CI_WORKER_MEMORY_BUDGET_MB` replaces that derived value and
+`HOBO_CI_WORKER_MEMORY_RESERVE_MB` changes the reserve. Startup fails closed unless
+`budget - trunkReservation >= max(light, standard, heavy)` and `budget >= heavy`. Thus every general
+class can start on an idle host without spending the trunk reservation, and a trunk heavy job can start
+too. The error names those numbers and the budget, reserve, class, legacy heavy and trunk-slot variables
+that can change them.
+
+| Class | Default hard `--memory` and `--memory-swap` | Exact-name assignments |
+|---|---:|---|
+| `light` | 3072 MiB | CI fabric contract guard, Secret scan, static release contracts and attest jobs |
+| `standard` | 4096 MiB | the default for every unlisted job |
+| `heavy` | 6144 MiB | turbo build/test gates, OCI image jobs, the pricing gate and clean/Dagger bootstraps |
+
+`HOBO_CI_WORKER_MEMORY_CLASS_<LIGHT|STANDARD|HEAVY>_MB` overrides a class; heavy can also be set with
+the legacy `HOBO_CI_WORKER_MEMORY_MB`. The same idle-host startup check applies to either override.
+Startup rejects a class below 3072 MiB so the workflow Node heap cannot exceed its container class. The
+class table is keyed by the exact GitHub job name, not a substring. The request is persisted on the lease
+and is also exported to the job as `HOBO_CI_JOB_MEMORY_MB`. Active and reserved leases, legacy leases
+(counted as heavy), and a pre-warmed container all consume the budget. The standard-sized warm container
+is reused only by a job with the same request. Warm admission uses the same real trunk/general lease
+classification as job admission and cannot spend the trunk reservation.
+
+The real 16 GiB box reports `totalMemoryMb = 15989`. With `HOBO_CI_WORKER_SLOTS=3`, one trunk slot and
+the 2048 MiB reserve, its arithmetic is:
+
+- budget: `15989 - 2048 = 13941 MiB`;
+- trunk heavy reservation plus one heavy PR job: `6144 + 6144 = 12288 MiB`, which fits;
+- remaining admission capacity: `13941 - 12288 = 1653 MiB`.
+
+The third slot is therefore usable only by a request of at most 1653 MiB. No class fits: light is already
+at the 3072 MiB minimum, so this box effectively runs **at most two concurrent heavy jobs** (including
+one trunk heavy and one PR heavy), not three. Three slots do not create memory. With three slots, making
+the third slot useful for a light job beside two heavy jobs needs at least `12288 + 3072 + 2048 = 17408
+MiB` of reported host memory (about 17 GiB); a third heavy job needs at least `3 * 6144 + 2048 = 20480
+MiB` (20 GiB), before any additional warm capacity. An active trunk lease replaces its reservation and
+trunk admission checks the full budget.
+
+The existing trunk/age ordering is unchanged. A smaller job may backfill behind a head-of-line job that
+does not fit for 60 seconds (`HOBO_CI_WORKER_MEMORY_HOL_MS`). After that, jobs behind it in the same rank
+wait too, preventing indefinite starvation. `hobo_ci_memory_admission_wait` and
+`hobo_ci_memory_admitted` expose the arithmetic; exit 137 triggers a Docker `OOMKilled` inspection and
+`hobo_ci_container_oom` names the job's class.
+
+Workflows keep `NODE_OPTIONS=--max-old-space-size=3072`. That is one Node process's old-space ceiling,
+not an RSS or container limit: native allocations, pnpm/turbo subprocesses and their own heaps must also
+fit the class. It fits numerically in every class, including light, but do not raise the heap to the class
+limit; leave room for non-heap work, and use standard/heavy for lanes with multiple subprocesses.

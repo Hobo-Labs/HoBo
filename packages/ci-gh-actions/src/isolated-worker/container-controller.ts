@@ -14,6 +14,7 @@ import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
 import { RUNNER_LABEL, type RunnerLabel } from "../runner-labels.js";
 import type { DockerDriver } from "./docker-driver.js";
+import type { WorkerMemoryAdmission } from "./memory-admission.js";
 
 const JIT_PATH = "/tmp/hobo-ci-jit";
 /** Written when the one-job JIT runner exits; the container itself keeps running. */
@@ -68,6 +69,8 @@ function requeueJob(lease: {
 	repositoryId: number;
 	installationId: number;
 	repository: string;
+	memoryClass: string;
+	memoryMb: number;
 }) {
 	return create(JobSchema, {
 		id: lease.jobId,
@@ -76,6 +79,8 @@ function requeueJob(lease: {
 		repositoryId: lease.repositoryId,
 		installationId: lease.installationId,
 		repository: lease.repository,
+		memoryClass: lease.memoryClass,
+		memoryMb: lease.memoryMb,
 		labels: ["hobo"],
 		action: "queued",
 		isolatedRequired: true,
@@ -118,6 +123,15 @@ export function createIsolatedContainerController(options: {
 	workerAccountId: string;
 	workerImage: string;
 	workerMemoryMb?: number;
+	prewarmMemoryMb?: number;
+	memoryAdmission?: WorkerMemoryAdmission;
+	generalLeaseIds?: (
+		activeLeases: readonly Lease[],
+	) => Promise<ReadonlySet<string>>;
+	log?: (
+		event: "hobo_ci_container_oom",
+		fields: Readonly<Record<string, string | number | boolean>>,
+	) => void;
 	now?: () => string;
 	/** Requeue uncertain leases that never got a container session. */
 	uncertainWithoutContainerRecoveryMs?: number;
@@ -136,22 +150,30 @@ export function createIsolatedContainerController(options: {
 	if (!Number.isInteger(slots) || slots < 1 || slots > 8)
 		throw new Error("invalid worker slots");
 	const runner = runnerDownloadFor(process.arch);
-	const containerSpec = (name: string, timeoutMs: number) => ({
+	const prewarmMemoryMb = options.prewarmMemoryMb ?? workerMemoryMb;
+	const containerSpec = (
+		name: string,
+		timeoutMs: number,
+		memoryMb: number,
+	) => ({
 		name,
 		image: options.workerImage,
 		timeoutMs,
 		runAsUser: "1000:1000",
-		memoryMb: workerMemoryMb,
+		memoryMb,
 		volumes: options.volumes ?? [],
 		env: {
 			...options.containerEnv,
+			HOBO_CI_JOB_MEMORY_MB: String(memoryMb),
 			HOBO_CI_RELAY_ORIGIN: options.publicOrigin,
 			HOBO_CI_RUNNER_SHA256: runner.sha256,
 			HOBO_CI_RUNNER_URL: runner.url,
 		},
 		command: ["sleep", "infinity"],
 	});
-	let warm: Readonly<{ name: string; containerId: string }> | undefined;
+	let warm:
+		| Readonly<{ name: string; containerId: string; memoryMb: number }>
+		| undefined;
 	let warming: Promise<void> | undefined;
 	const liveContainers = async (except: string) =>
 		(await options.store.activeLeases()).filter(
@@ -164,18 +186,38 @@ export function createIsolatedContainerController(options: {
 	const prewarm = async () => {
 		if (warm || warming || !options.docker.rename) return;
 		warming = (async () => {
-			const name = `hobo-warm-${Date.now().toString(36)}`;
-			const handle = await options.docker.create(
-				containerSpec(name, 6 * 60 * 60_000),
-			);
-			try {
-				await options.docker.start(name, handle.containerId);
-				warm = handle;
-			} catch {
-				await options.docker
-					.remove(name, handle.containerId)
-					.catch(() => undefined);
+			let reserved = false;
+			if (options.memoryAdmission) {
+				const activeLeases = await options.store.activeLeases();
+				const generalLeaseIds = options.generalLeaseIds
+					? await options.generalLeaseIds(activeLeases)
+					: new Set<string>();
+				reserved = options.memoryAdmission.reserveWarm(
+					activeLeases,
+					prewarmMemoryMb,
+					generalLeaseIds,
+				);
+				if (!reserved) return;
 			}
+			try {
+				const name = `hobo-warm-${Date.now().toString(36)}`;
+				const handle = await options.docker.create(
+					containerSpec(name, 6 * 60 * 60_000, prewarmMemoryMb),
+				);
+				try {
+					await options.docker.start(name, handle.containerId);
+					warm = { ...handle, memoryMb: prewarmMemoryMb };
+				} catch {
+					await options.docker
+						.remove(name, handle.containerId)
+						.catch(() => undefined);
+				}
+			} catch (error) {
+				if (reserved) options.memoryAdmission?.releaseWarm(prewarmMemoryMb);
+				throw error;
+			}
+			if (reserved && !warm)
+				options.memoryAdmission?.releaseWarm(prewarmMemoryMb);
 		})().finally(() => {
 			warming = undefined;
 		});
@@ -281,15 +323,18 @@ export function createIsolatedContainerController(options: {
 			);
 			if (!planned) return;
 			let containerId = "";
+			const memoryMb =
+				planned.memoryMb >= 512 ? planned.memoryMb : workerMemoryMb;
 			try {
-				const spare = warm;
-				warm = undefined;
+				const spare = warm?.memoryMb === memoryMb ? warm : undefined;
 				if (spare && options.docker.rename) {
-					await options.docker.rename(spare.containerId, name);
+					warm = undefined;
+					options.memoryAdmission?.consumeWarm(spare.memoryMb);
 					containerId = spare.containerId;
+					await options.docker.rename(spare.containerId, name);
 				} else {
 					const handle = await options.docker.create(
-						containerSpec(name, planned.reservedMinutes * 60_000),
+						containerSpec(name, planned.reservedMinutes * 60_000, memoryMb),
 					);
 					if (handle.name !== name)
 						throw new Error("container identity mismatch");
@@ -404,6 +449,23 @@ export function createIsolatedContainerController(options: {
 				if (!forceStop) return;
 				running = false;
 			}
+			if (!running && options.docker.exitState) {
+				try {
+					const state = await options.docker.exitState(
+						lease.sandboxName,
+						lease.sandboxSessionId,
+					);
+					if (state.exitCode === 137 && state.oomKilled)
+						options.log?.("hobo_ci_container_oom", {
+							jobId: lease.jobId,
+							memoryClass: lease.memoryClass || "heavy",
+							memoryMb: lease.memoryMb || workerMemoryMb,
+							exitCode: state.exitCode,
+						});
+				} catch {
+					// OOM evidence is best-effort; reconcile still settles the dead container.
+				}
+			}
 			let stop = forceStop === true;
 			if (!stop && lease.state === "running" && running) {
 				// The runner takes one job and exits, so its marker frees the slot on this
@@ -473,7 +535,13 @@ export function createIsolatedContainerController(options: {
 			await warming?.catch(() => undefined);
 			const spare = warm;
 			warm = undefined;
-			if (spare) await options.docker.remove(spare.name, spare.containerId);
+			if (spare) {
+				try {
+					await options.docker.remove(spare.name, spare.containerId);
+				} finally {
+					options.memoryAdmission?.releaseWarm(spare.memoryMb);
+				}
+			}
 		},
 	};
 }

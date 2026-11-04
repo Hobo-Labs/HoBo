@@ -207,6 +207,25 @@ describe("cli docker driver parallel helpers", () => {
 		expect(argv.indexOf("--init")).toBeLessThan(argv.indexOf("img"));
 	});
 
+	it("passes the per-job memory limit and job memory environment to docker create", async () => {
+		const { bin, log } = fakeBinary();
+		const driver = createCliDockerDriver({
+			binary: bin,
+			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0", PATH: process.env.PATH },
+		});
+		await driver.create({
+			name: "hobo-x",
+			image: "img",
+			timeoutMs: 1,
+			memoryMb: 3_072,
+			env: { HOBO_CI_JOB_MEMORY_MB: "3072" },
+			command: ["sleep", "infinity"],
+		});
+		const argv = readFileSync(log, "utf8").trim();
+		expect(argv).toContain("--memory 3072m --memory-swap 3072m");
+		expect(argv).toContain("-e HOBO_CI_JOB_MEMORY_MB=3072");
+	});
+
 	it("refuses volume specs that could smuggle extra mount options", async () => {
 		const { bin } = fakeBinary();
 		const driver = createCliDockerDriver({
