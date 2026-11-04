@@ -123,21 +123,7 @@ jobs:
     needs: ci-runner-image
     if: >-
       !cancelled() && needs.ci-runner-image.result != 'failure' && (
-      (github.event_name == 'push' && github.ref == 'refs/heads/main' && (
-      needs.ci-runner-image.result == 'success' ||
-      github.event.commits[0] == null ||
-      github.event.forced == true ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"pnpm-lock.yaml') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"pnpm-workspace.yaml') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '".npmrc') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '".pnpmfile.cjs') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), 'package.json"') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"patches/') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"mise.toml') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"mise.lock') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"packages/ci-gh-actions/deploy/ci-runner/deps/') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/ci/deps-key.mts') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/lib/deps-key.mts'))) ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request')
@@ -173,8 +159,17 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         id: key
         run: echo "key=$(node --no-warnings scripts/ci/deps-key.mts)" >> "$GITHUB_OUTPUT"
-      - name: Resolve local or GHCR deps image
+      - name: Check current local deps image
         if: steps.scope.outputs.run == 'true'
+        id: current
+        run: |
+          set -euo pipefail
+          actual="$(docker image inspect hobo-ci-deps:local --format '{{ index .Config.Labels "hobo.ci.deps-key" }}' 2>/dev/null || true)"
+          current=false
+          if [ "$actual" = "${{ steps.key.outputs.key }}" ]; then current=true; fi
+          echo "current=${current}" >> "$GITHUB_OUTPUT"
+      - name: Resolve local or GHCR deps image
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true'
         id: source
         run: |
           set -euo pipefail
@@ -190,14 +185,14 @@ jobs:
           fi
           echo "source=${source}" >> "$GITHUB_OUTPUT"
       - name: Promote cached deps image and collect superseded images
-        if: steps.scope.outputs.run == 'true' && steps.source.outputs.source != 'build'
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source != 'build'
         run: |
           set -euo pipefail
           candidate="hobo-ci-deps:${{ steps.key.outputs.key }}"
           docker tag "$candidate" hobo-ci-deps:local
           node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
       - name: Build deps image and verify offline install
-        if: steps.scope.outputs.run == 'true' && steps.source.outputs.source == 'build'
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'
         id: build
         run: |
           set -euo pipefail
@@ -205,7 +200,7 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then args=(--no-promote); fi
           bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh "${args[@]}"
       - name: Push deps image to GHCR
-        if: steps.scope.outputs.run == 'true' && github.event_name != 'pull_request' && steps.source.outputs.source == 'build' && steps.build.outcome == 'success' && github.repository == 'Hobo-Labs/HoBo'
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && github.event_name != 'pull_request' && steps.source.outputs.source == 'build' && steps.build.outcome == 'success' && github.repository == 'Hobo-Labs/HoBo'
         run: |
           set -euo pipefail
           image="ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:${{ steps.key.outputs.key }}"

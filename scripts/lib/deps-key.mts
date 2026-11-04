@@ -187,9 +187,13 @@ export function depsContextPaths(root: string): string[] {
 	];
 }
 
-export function depsKeyForRoot(root: string, platform: string): string {
+export function depsKeyForRoot(
+	root: string,
+	platform: string,
+	toolchainVersion = ciRunnerImageVersion(root),
+): string {
 	return depsKeyFromInputs({
 		...readDepsInputs(root, platform),
-		toolchainVersion: ciRunnerImageVersion(root),
+		toolchainVersion,
 	});
 }

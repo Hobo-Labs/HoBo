@@ -1,6 +1,17 @@
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+export function defaultDepsRoot(moduleUrl: string): string {
+	return resolve(dirname(fileURLToPath(moduleUrl)), "../../..");
+}
+
 export type DepsImageAction = "hit" | "pull" | "build";
 
 export type DepsImageEvent = Readonly<
+	| {
+			event: "hobo_ci_deps_image_ensure_started";
+			key: string;
+	  }
 	| {
 			event: "hobo_ci_deps_image_ensure";
 			key: string;
@@ -36,10 +47,11 @@ export interface DepsImageGitPort {
 }
 
 export interface DepsImageFileSystemPort {
-	depsKey(root: string): Promise<string>;
+	depsKey(root: string, toolchain: string): Promise<string>;
 }
 
 export interface DepsImageDockerPort {
+	toolchain(root: string): Promise<string>;
 	imageExists(image: string): Promise<boolean>;
 	pull(image: string): Promise<void>;
 	tag(source: string, target: string): Promise<void>;
@@ -91,11 +103,13 @@ export function createDepsImageEnsurer(options: DepsImageEnsurerOptions) {
 			const head = await options.git.defaultBranchHead(options.root);
 			if (head === lastHead && lastKey !== undefined)
 				return { status: "unchanged" };
-			key = await options.fs.depsKey(options.root);
+			const toolchain = await options.docker.toolchain(options.root);
+			key = await options.fs.depsKey(options.root, toolchain);
 			if (key === lastKey) {
 				lastHead = head;
 				return { status: "unchanged" };
 			}
+			options.onEvent?.({ event: "hobo_ci_deps_image_ensure_started", key });
 			const candidate = candidateFor(key);
 			if (!(await options.docker.imageExists(candidate))) {
 				const remote = remoteFor(key);
