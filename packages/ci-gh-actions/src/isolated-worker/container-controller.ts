@@ -130,8 +130,30 @@ export interface IsolatedWorkerStore extends HostedRelayStore {
 }
 
 type JobImage = Readonly<{ image: string; depsKey?: string }>;
+type DepsImageFallbackLog = {
+	event: "hobo_ci_deps_image_fallback";
+	image: string;
+	reason: DepsImageFallbackReason;
+	message?: string;
+};
+type DepsImageFallbackReason =
+	| "inspect-failed"
+	| "unwritable-workdir"
+	| "missing-payload"
+	| "probe-failed";
+const DEPS_IMAGE_PROBE =
+	"test -w /opt/actions-runner || exit 3; test -r /opt/hobo-deps/node_modules/.modules.yaml && test -r /opt/hobo-deps/.hobo-ci-deps-key || exit 4";
+const probeFailure = (exitCode: number): DepsImageFallbackReason | undefined =>
+	exitCode === 0
+		? undefined
+		: exitCode === 3
+			? "unwritable-workdir"
+			: exitCode === 4
+				? "missing-payload"
+				: "probe-failed";
 type JobContainerEnvironment = {
 	HOBO_CI_DEPS_LAYER?: string;
+	HOBO_CI_HOST_JOB_DIRECTORY?: string;
 	HOBO_CI_JOB_MEMORY_MB: string;
 	NODE_OPTIONS: string;
 	HOBO_CI_RELAY_ORIGIN: string;
@@ -198,7 +220,41 @@ export function createIsolatedContainerController(options: {
 	const depsImage = options.depsImage ?? "hobo-ci-deps:local";
 	const workerSelection: JobImage = { image: options.workerImage };
 	const selectionCache = new Map<string, JobImage>();
+	const probeCache = new Map<
+		string,
+		Promise<DepsImageFallbackReason | undefined>
+	>();
 	const loggedFailures = new Set<string>();
+	const logDepsImageFallback = (
+		key: string,
+		reason: DepsImageFallbackReason,
+		message?: string,
+	) => {
+		if (loggedFailures.has(key)) return;
+		loggedFailures.add(key);
+		const fields: DepsImageFallbackLog = {
+			event: "hobo_ci_deps_image_fallback",
+			image: depsImage,
+			reason,
+		};
+		if (message) fields.message = message;
+		console.error(JSON.stringify(fields));
+	};
+	const probeDepsImage = (
+		imageId: string,
+	): Promise<DepsImageFallbackReason | undefined> => {
+		const cached = probeCache.get(imageId);
+		if (cached) return cached;
+		const probe = options.docker.probeImage;
+		const result = probe
+			? probe(depsImage, ["sh", "-c", DEPS_IMAGE_PROBE], "1000:1000").then(
+					({ exitCode }) => probeFailure(exitCode),
+					(): DepsImageFallbackReason => "probe-failed",
+				)
+			: Promise.resolve<DepsImageFallbackReason>("probe-failed");
+		probeCache.set(imageId, result);
+		return result;
+	};
 	const selectImage = async (repository: string): Promise<JobImage> => {
 		const inspect = options.docker.inspectImage;
 		if (
@@ -217,24 +273,25 @@ export function createIsolatedContainerController(options: {
 				.map((tag) => tag.match(/^hobo-ci-worker:(v[0-9a-f]{12})$/)?.[1])
 				.find((tag) => tag !== undefined);
 			const depsKey = deps.labels["hobo.ci.deps-key"];
-			const selection =
+			const candidate =
 				toolchain && deps.labels["hobo.ci.toolchain"] === toolchain && depsKey
 					? { image: depsImage, depsKey }
-					: workerSelection;
+					: undefined;
+			let selection = workerSelection;
+			if (candidate) {
+				const failure = await probeDepsImage(deps.id);
+				if (failure) logDepsImageFallback(deps.id, failure);
+				else selection = candidate;
+			}
 			selectionCache.set(cacheKey, selection);
 			loggedFailures.delete(depsImage);
 			return selection;
 		} catch (error) {
-			if (!loggedFailures.has(depsImage)) {
-				loggedFailures.add(depsImage);
-				console.error(
-					JSON.stringify({
-						event: "hobo_ci_deps_image_fallback",
-						image: depsImage,
-						message: error instanceof Error ? error.message : "unknown",
-					}),
-				);
-			}
+			logDepsImageFallback(
+				depsImage,
+				"inspect-failed",
+				error instanceof Error ? error.message : "unknown",
+			);
 			return workerSelection;
 		}
 	};
@@ -258,8 +315,8 @@ export function createIsolatedContainerController(options: {
 			HOBO_CI_RUNNER_SHA256: runner.sha256,
 			HOBO_CI_RUNNER_URL: runner.url,
 		};
-		if (selection.depsKey && !jobDirectory)
-			env.HOBO_CI_DEPS_LAYER = selection.depsKey;
+		if (selection.depsKey) env.HOBO_CI_DEPS_LAYER = selection.depsKey;
+		if (jobDirectory) env.HOBO_CI_HOST_JOB_DIRECTORY = jobDirectory;
 		return {
 			name,
 			image: selection.image,

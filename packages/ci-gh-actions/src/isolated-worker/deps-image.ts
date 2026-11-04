@@ -141,6 +141,24 @@ export function createDepsImageEnsurer(options: DepsImageEnsurerOptions) {
 					});
 				}
 			}
+			await options.processes.run({
+				command: process.execPath,
+				args: [
+					"--experimental-strip-types",
+					"--no-warnings",
+					"--import",
+					"./scripts/lib/ts-source-resolve.mts",
+					"--test",
+					"scripts/test/ci-deps-image-mount.test.ts",
+				],
+				cwd: options.root,
+				env: {
+					...process.env,
+					HOBO_CI_DEPS_MOUNT_CONTRACT: "1",
+					HOBO_CI_DEPS_IMAGE: candidate,
+					HOBO_CI_DEPS_LAYER: key,
+				},
+			});
 			await options.docker.tag(candidate, "hobo-ci-deps:local");
 			await options.processes.run({
 				command: process.execPath,

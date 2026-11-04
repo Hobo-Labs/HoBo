@@ -49,6 +49,8 @@ function fakeDocker() {
 		],
 	]);
 	let next = 0;
+	let probeExitCode = 0;
+	const probeCalls: string[] = [];
 	const resourceUpdates: { containerId: string; cpuShares: number }[] = [];
 	const driver: DockerDriver = {
 		inspectImage: vi.fn(async (image: string) => {
@@ -57,6 +59,10 @@ function fakeDocker() {
 			if (inspection instanceof Error) throw inspection;
 			if (!inspection) throw new Error(`missing image ${image}`);
 			return inspection;
+		}),
+		probeImage: vi.fn(async (image: string) => {
+			probeCalls.push(image);
+			return { exitCode: probeExitCode };
 		}),
 		create: vi.fn(async (spec) => {
 			specs.push(spec);
@@ -75,7 +81,17 @@ function fakeDocker() {
 		remove: vi.fn(async () => undefined),
 		isRunning: vi.fn(async () => true),
 	};
-	return { driver, specs, resourceUpdates, inspectCalls, images };
+	return {
+		driver,
+		specs,
+		resourceUpdates,
+		inspectCalls,
+		probeCalls,
+		images,
+		setProbeExitCode: (exitCode: number) => {
+			probeExitCode = exitCode;
+		},
+	};
 }
 
 const github: GithubTransport = {
@@ -188,13 +204,73 @@ describe("isolated worker deps image selection", () => {
 		return createIsolatedContainerController(controllerOptions);
 	}
 
-	it("uses the deps image and exports its key for a HoBo lease", async () => {
+	it("uses the deps image and exports its key after a successful probe", async () => {
 		const lease = await reservedLease("hobo-labs/hobo");
 		const docker = fakeDocker();
 		await controller(docker.driver).host.launch(lease.id);
 		expect(docker.specs).toHaveLength(1);
 		expect(docker.specs[0]?.image).toBe("hobo-ci-deps:local");
 		expect(docker.specs[0]?.env.HOBO_CI_DEPS_LAYER).toBe(DEPS_KEY);
+		expect(docker.probeCalls).toEqual(["hobo-ci-deps:local"]);
+	});
+
+	it("probes once per deps image id", async () => {
+		await reservedLease("Hobo-Labs/HoBo");
+		const docker = fakeDocker();
+		const ctl = controller(docker.driver);
+		await ctl.prewarm("Hobo-Labs/HoBo");
+		await ctl.discardWarm();
+		await ctl.prewarm("Hobo-Labs/HoBo");
+		await ctl.discardWarm();
+		expect(docker.probeCalls).toEqual(["hobo-ci-deps:local"]);
+		const deps = docker.images.get("hobo-ci-deps:local");
+		if (!deps || deps instanceof Error) throw new Error("missing fixture");
+		docker.images.set("hobo-ci-deps:local", { ...deps, id: "next-deps-id" });
+		await ctl.prewarm("Hobo-Labs/HoBo");
+		await ctl.discardWarm();
+		expect(docker.probeCalls).toEqual([
+			"hobo-ci-deps:local",
+			"hobo-ci-deps:local",
+		]);
+	});
+
+	it("selects the off-workdir deps layer for a mounted job after a successful probe", async () => {
+		const lease = await reservedLease("Hobo-Labs/HoBo");
+		const docker = fakeDocker();
+		await controller(docker.driver, root).host.launch(lease.id);
+		expect(docker.specs[0]?.image).toBe("hobo-ci-deps:local");
+		expect(docker.specs[0]?.env.HOBO_CI_DEPS_LAYER).toBe(DEPS_KEY);
+		expect(docker.specs[0]?.env.HOBO_CI_HOST_JOB_DIRECTORY).toBe(
+			join(root, `hobo-${lease.id}`),
+		);
+		expect(docker.probeCalls).toEqual(["hobo-ci-deps:local"]);
+	});
+
+	it.each([
+		[3, "unwritable-workdir"],
+		[4, "missing-payload"],
+		[1, "probe-failed"],
+	])("falls back and logs probe exit %i as %s", async (exitCode, reason) => {
+		const lease = await reservedLease("Hobo-Labs/HoBo");
+		const docker = fakeDocker();
+		docker.setProbeExitCode(exitCode);
+		const error = vi
+			.spyOn(console, "error")
+			.mockImplementation(() => undefined);
+		try {
+			await controller(docker.driver).host.launch(lease.id);
+			expect(docker.specs[0]?.image).toBe("hobo-ci-worker:local");
+			expect(docker.specs[0]?.env.HOBO_CI_DEPS_LAYER).toBeUndefined();
+			expect(error).toHaveBeenCalledWith(
+				JSON.stringify({
+					event: "hobo_ci_deps_image_fallback",
+					image: "hobo-ci-deps:local",
+					reason,
+				}),
+			);
+		} finally {
+			error.mockRestore();
+		}
 	});
 
 	it("gives trunk containers high CPU and IO weights and PR containers low weights", async () => {
@@ -231,7 +307,7 @@ describe("isolated worker deps image selection", () => {
 		]);
 	});
 
-	it("does not claim the deps layer when a job directory hides it", async () => {
+	it("claims the layer on a job mount because the payload is outside it and probed", async () => {
 		const lease = await reservedLease("hobo-labs/hobo");
 		const docker = fakeDocker();
 		const workRoot = join(root, "work");
@@ -242,7 +318,8 @@ describe("isolated worker deps image selection", () => {
 			source: join(workRoot, `hobo-${lease.id}`),
 			target: "/opt/actions-runner/_hobo_work",
 		});
-		expect(docker.specs[0]?.env.HOBO_CI_DEPS_LAYER).toBeUndefined();
+		expect(docker.specs[0]?.env.HOBO_CI_DEPS_LAYER).toBe(DEPS_KEY);
+		expect(docker.probeCalls).toEqual(["hobo-ci-deps:local"]);
 	});
 
 	it("falls back when the deps toolchain does not match", async () => {
