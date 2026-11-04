@@ -131,6 +131,8 @@ describe("CI deps image build contract", () => {
 		assert.ok(mount > contract);
 		assert.ok(promote > mount);
 		includes(build, "scripts/test/ci-deps-image-mount.test.ts");
+		includes(build, "--import ./scripts/lib/ts-source-resolve.mts");
+		assert.doesNotMatch(build, /--import tsx/);
 		includes(build, "--no-promote");
 	});
 
@@ -233,7 +235,11 @@ describe("CI deps workflow contract", () => {
 		assert.ok(mount > buildStep);
 		assert.ok(promote > mount);
 		includes(job, "HOBO_CI_DEPS_MOUNT_CONTRACT: '1'");
-		includes(job, "scripts/test/ci-deps-image-mount.test.ts");
+		includes(
+			job,
+			"node --experimental-strip-types --no-warnings --import ./scripts/lib/ts-source-resolve.mts --test scripts/test/ci-deps-image-mount.test.ts",
+		);
+		assert.doesNotMatch(job, /--import tsx/);
 	});
 
 	it("does not put the deps image on Main full gate's critical path", () => {
