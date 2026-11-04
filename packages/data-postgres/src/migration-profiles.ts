@@ -84,9 +84,23 @@ function unsafe(
  * name, or a path, and that turn one into a command if the value ever reaches
  * a shell, a `CREATE SUBSCRIPTION` string, or a log line.
  */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is the point; a NUL truncates the argument the child actually receives and a CR/LF forges a log line.
-// eslint-disable-next-line no-control-regex
-const SHELL_METACHARACTERS = /[;&|`$(){}<>*?!#~\\'"\u0009\u000a\u000d\u0000-\u001f\u007f]/u;
+function hasControlCharacter(value: string): boolean {
+	for (let index = 0; index < value.length; index += 1) {
+		const code = value.charCodeAt(index);
+		if (code <= 0x1f || code === 0x7f) return true;
+	}
+	return false;
+}
+
+function hasNulOrNewline(value: string): boolean {
+	for (let index = 0; index < value.length; index += 1) {
+		const code = value.charCodeAt(index);
+		if (code === 0x00 || code === 0x0a || code === 0x0d) return true;
+	}
+	return false;
+}
+
+const SHELL_METACHARACTERS = /[;&|`$(){}<>*?!#~\\'"]/u;
 const WHITESPACE = /\s/u;
 
 const HOSTNAME =
@@ -111,7 +125,7 @@ function assertNotFlagLike(value: string, what: string): void {
 function assertNoInjection(value: string, what: string): string {
 	if (value.length === 0) unsafe(`${what} must not be empty`);
 	if (value.length > 255) unsafe(`${what} exceeds 255 characters`);
-	if (SHELL_METACHARACTERS.test(value)) {
+	if (hasControlCharacter(value) || SHELL_METACHARACTERS.test(value)) {
 		unsafe(
 			`${what} contains a shell metacharacter or control character and will not be placed in a command`,
 		);
@@ -176,11 +190,10 @@ export function parseArtifactPath(
 ): string {
 	if (value.length === 0) unsafe(`${what} must not be empty`);
 	if (value.length > 1024) unsafe(`${what} exceeds 1024 characters`);
-	// eslint-disable-next-line no-control-regex
-	if (/[\u0000-\u001f\u007f]/u.test(value)) {
+	if (hasControlCharacter(value)) {
 		unsafe(`${what} contains a control character`);
 	}
-	if (/[;&|`$(){}<>*?!\n\r"']/u.test(value)) {
+	if (/[;&|`$(){}<>*?!"']/u.test(value)) {
 		unsafe(`${what} contains a shell metacharacter`);
 	}
 	assertNotFlagLike(value, what);
@@ -213,8 +226,7 @@ export function assertArgvSafe(argv: readonly string[]): readonly string[] {
 	}
 	for (const element of argv) {
 		if (element.length > 1024) unsafe("argv element exceeds 1024 characters");
-		// eslint-disable-next-line no-control-regex
-		if (/[\u0000\n\r]/u.test(element)) {
+		if (hasNulOrNewline(element)) {
 			unsafe("argv element contains a NUL or newline");
 		}
 		for (const pattern of CREDENTIAL_PATTERNS) {

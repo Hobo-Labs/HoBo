@@ -71,8 +71,8 @@ if (!Number.isInteger(workerMemoryMb) || workerMemoryMb < 512)
 	throw new Error("invalid HOBO_CI_WORKER_MEMORY_MB");
 // Concurrent job containers on this host. Size with memory: slots x HOBO_CI_WORKER_MEMORY_MB
 // should stay under host RAM (jobs run NODE_OPTIONS=--max-old-space-size=3072, turbo concurrency 1).
-// One slot is reserved for push, workflow_dispatch and merge_group jobs by default when
-// there are at least two. Other runs never borrow it unless HOBO_CI_WORKER_TRUNK_LEND=1.
+// One slot is reserved for hobo-trunk jobs by default when there are at least two.
+// Shared-label jobs never borrow it unless HOBO_CI_WORKER_TRUNK_LEND=1.
 // The offer's concurrency must equal the slot count.
 const { slots, trunkSlots } = resolveWorkerSlotConfig(process.env);
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
@@ -170,6 +170,8 @@ const worker = createIsolatedContainerController({
 	docker: createCliDockerDriver({ env: process.env }),
 	workerAccountId,
 	workerImage: process.env.HOBO_CI_WORKER_IMAGE ?? "hobo-ci-worker:local",
+	depsRepository: process.env.HOBO_CI_DEPS_REPOSITORY ?? "Hobo-Labs/HoBo",
+	depsImage: process.env.HOBO_CI_DEPS_IMAGE ?? "hobo-ci-deps:local",
 	workerMemoryMb,
 	slots,
 	volumes: pnpmStore ? [{ source: pnpmStore, target: PNPM_STORE_TARGET }] : [],

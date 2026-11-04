@@ -30,9 +30,10 @@ import { declaredUsage } from "../adapters/declared-usage.js";
 import { githubActionsUsage } from "../adapters/github-billing.js";
 import { classifyFailedJobs } from "../classify.js";
 import {
-	isJsonObject,
-	isJsonString,
+	type FixtureDocument,
 	type JsonValue,
+	parseFixtureDocument,
+	parseJsonValue,
 	parseRegistryDocument,
 	parseUsageSnapshots,
 } from "../parse.js";
@@ -89,53 +90,25 @@ function parseArgs(argv: readonly string[]): CliArgs {
 	return args;
 }
 
-function parseJsonValue(text: string): JsonValue {
-	const parsed = JSON.parse(text);
-	// SAFETY: operator JSON files are untyped; parseRegistryDocument is the boundary.
-	return parsed as JsonValue;
+function parseJsonDocument(text: string): JsonValue {
+	return parseJsonValue(JSON.parse(text));
 }
 
 function loadRegistryDocument(args: CliArgs): JsonValue {
 	const inline = process.env.HOBO_RB_REGISTRY_JSON;
 	if (inline !== undefined && inline.trim() !== "") {
-		return parseJsonValue(inline);
+		return parseJsonDocument(inline);
 	}
 	if (args.registryPath !== undefined) {
-		return parseJsonValue(readFileSync(args.registryPath, "utf8"));
+		return parseJsonDocument(readFileSync(args.registryPath, "utf8"));
 	}
 	return DEFAULT_REGISTRY_DOCUMENT;
-}
-
-interface FixtureFailure {
-	providerId?: string;
-	reason?: string;
-}
-
-interface FixtureDocument {
-	registryDocument?: JsonValue;
-	current?: { readonly [name: string]: string };
-	usage?: JsonValue;
-	failures?: JsonValue;
-	seq?: string;
-}
-
-function fixtureFailures(value: JsonValue | undefined): FixtureFailure[] {
-	if (!Array.isArray(value)) return [];
-	const failures: FixtureFailure[] = [];
-	for (const entry of value) {
-		if (!isJsonObject(entry)) continue;
-		failures.push({
-			providerId: isJsonString(entry.providerId) ? entry.providerId : undefined,
-			reason: isJsonString(entry.reason) ? entry.reason : undefined,
-		});
-	}
-	return failures;
 }
 
 function fixtureDeps(fixture: FixtureDocument): RebalanceDeps {
 	const current = new Map(Object.entries(fixture.current ?? {}));
 	const snapshots = parseUsageSnapshots(fixture.usage ?? []);
-	const failures = fixtureFailures(fixture.failures);
+	const failures = fixture.failures ?? [];
 	return {
 		variables: {
 			get: (name) => Promise.resolve(current.get(name)),
@@ -152,19 +125,16 @@ function fixtureDeps(fixture: FixtureDocument): RebalanceDeps {
 		),
 		failureSignals: () =>
 			Promise.resolve(
-				failures
-					.filter((failure) => Object.prototype.toString.call(failure.providerId) === "[object String]")
-					.map(
-						(failure) =>
-							({
-								$typeName:
-									"hobo.examples.ci_runner_balancing.v1.HardBlockSignal",
-								// SAFETY: assertion to `ilure.providerId as string, ` is required at this boundary.
-								providerId: failure.providerId as string,
-								resource: "",
-								reason: failure.reason ?? "fixture-declared failure",
-							}) satisfies HardBlockSignal,
-					),
+				failures.map(
+					(failure) =>
+						({
+							$typeName:
+								"hobo.examples.ci_runner_balancing.v1.HardBlockSignal",
+							providerId: failure.providerId,
+							resource: "",
+							reason: failure.reason,
+						}) satisfies HardBlockSignal,
+				),
 			),
 	};
 }
@@ -301,9 +271,9 @@ async function main(): Promise<void> {
 	let seq = args.seq;
 
 	if (args.fixture !== undefined) {
-		const parsed = parseJsonValue(readFileSync(args.fixture, "utf8"));
-		// SAFETY: fixture files are operator JSON; fixtureDeps parses known keys.
-		const fixture = parsed as FixtureDocument;
+		const fixture = parseFixtureDocument(
+			parseJsonDocument(readFileSync(args.fixture, "utf8")),
+		);
 		registryDocument = fixture.registryDocument ?? loadRegistryDocument(args);
 		seq = fixture.seq ?? seq;
 		deps = fixtureDeps(fixture);

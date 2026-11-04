@@ -86,7 +86,7 @@ export type IsolatedContainerController = {
 	host: IsolatedRunnerHost;
 	ready: () => Promise<boolean>;
 	/** Create one idle container ahead of demand so the next launch skips `docker create`/`start`. */
-	prewarm: () => Promise<void>;
+	prewarm: (repository?: string) => Promise<void>;
 	/** Remove the idle pre-warmed container (daemon shutdown). */
 	discardWarm: () => Promise<void>;
 };
@@ -110,6 +110,19 @@ export interface IsolatedWorkerStore extends HostedRelayStore {
 	): Promise<Lease | undefined>;
 }
 
+type JobImage = Readonly<{ image: string; depsKey?: string }>;
+type JobContainerEnvironment = {
+	HOBO_CI_DEPS_LAYER?: string;
+	HOBO_CI_RELAY_ORIGIN: string;
+	HOBO_CI_RUNNER_SHA256: string;
+	HOBO_CI_RUNNER_URL: string;
+};
+type WarmContainer = Readonly<{
+	name: string;
+	containerId: string;
+	selection: JobImage;
+}>;
+
 export function createIsolatedContainerController(options: {
 	store: IsolatedWorkerStore;
 	github: GithubTransport;
@@ -127,6 +140,9 @@ export function createIsolatedContainerController(options: {
 	volumes?: readonly Readonly<{ source: string; target: string }>[];
 	/** Extra non-secret env for job containers (e.g. npm_config_store_dir). */
 	containerEnv?: Readonly<Record<string, string>>;
+	/** Only this repository may use the HoBo deps layer; empty depsImage disables it. */
+	depsRepository?: string;
+	depsImage?: string;
 }): IsolatedContainerController {
 	const now = options.now ?? (() => new Date().toISOString());
 	const uncertainWithoutContainerRecoveryMs =
@@ -136,22 +152,74 @@ export function createIsolatedContainerController(options: {
 	if (!Number.isInteger(slots) || slots < 1 || slots > 8)
 		throw new Error("invalid worker slots");
 	const runner = runnerDownloadFor(process.arch);
-	const containerSpec = (name: string, timeoutMs: number) => ({
-		name,
-		image: options.workerImage,
-		timeoutMs,
-		runAsUser: "1000:1000",
-		memoryMb: workerMemoryMb,
-		volumes: options.volumes ?? [],
-		env: {
+	const depsRepository = options.depsRepository ?? "Hobo-Labs/HoBo";
+	const depsImage = options.depsImage ?? "hobo-ci-deps:local";
+	const workerSelection: JobImage = { image: options.workerImage };
+	const selectionCache = new Map<string, JobImage>();
+	const loggedFailures = new Set<string>();
+	const selectImage = async (repository: string): Promise<JobImage> => {
+		const inspect = options.docker.inspectImage;
+		if (
+			!depsImage ||
+			repository.toLowerCase() !== depsRepository.toLowerCase() ||
+			!inspect
+		)
+			return workerSelection;
+		try {
+			const worker = await inspect(options.workerImage);
+			const deps = await inspect(depsImage);
+			const cacheKey = `${worker.id}\0${deps.id}`;
+			const cached = selectionCache.get(cacheKey);
+			if (cached) return cached;
+			const toolchain = worker.repoTags
+				.map((tag) => tag.match(/^hobo-ci-worker:(v[0-9a-f]{12})$/)?.[1])
+				.find((tag) => tag !== undefined);
+			const depsKey = deps.labels["hobo.ci.deps-key"];
+			const selection =
+				toolchain && deps.labels["hobo.ci.toolchain"] === toolchain && depsKey
+					? { image: depsImage, depsKey }
+					: workerSelection;
+			selectionCache.set(cacheKey, selection);
+			loggedFailures.delete(depsImage);
+			return selection;
+		} catch (error) {
+			if (!loggedFailures.has(depsImage)) {
+				loggedFailures.add(depsImage);
+				console.error(
+					JSON.stringify({
+						event: "hobo_ci_deps_image_fallback",
+						image: depsImage,
+						message: error instanceof Error ? error.message : "unknown",
+					}),
+				);
+			}
+			return workerSelection;
+		}
+	};
+	const containerSpec = (
+		name: string,
+		timeoutMs: number,
+		selection: JobImage,
+	) => {
+		const env: JobContainerEnvironment = {
 			...options.containerEnv,
 			HOBO_CI_RELAY_ORIGIN: options.publicOrigin,
 			HOBO_CI_RUNNER_SHA256: runner.sha256,
 			HOBO_CI_RUNNER_URL: runner.url,
-		},
-		command: ["sleep", "infinity"],
-	});
-	let warm: Readonly<{ name: string; containerId: string }> | undefined;
+		};
+		if (selection.depsKey) env.HOBO_CI_DEPS_LAYER = selection.depsKey;
+		return {
+			name,
+			image: selection.image,
+			timeoutMs,
+			runAsUser: "1000:1000",
+			memoryMb: workerMemoryMb,
+			volumes: options.volumes ?? [],
+			env,
+			command: ["sleep", "infinity"],
+		};
+	};
+	let warm: WarmContainer | undefined;
 	let warming: Promise<void> | undefined;
 	const liveContainers = async (except: string) =>
 		(await options.store.activeLeases()).filter(
@@ -161,16 +229,24 @@ export function createIsolatedContainerController(options: {
 					lease.provider === "hobo-box-worker") &&
 				LIVE_CONTAINER_STATES.has(lease.state),
 		).length;
-	const prewarm = async () => {
+	const prewarm = async (repository?: string) => {
 		if (warm || warming || !options.docker.rename) return;
 		warming = (async () => {
+			const next = repository
+				? undefined
+				: (await options.store.activeLeases()).find(
+						(lease) => lease.state === "reserved",
+					);
+			const selection = await selectImage(
+				repository ?? next?.repository ?? depsRepository,
+			);
 			const name = `hobo-warm-${Date.now().toString(36)}`;
 			const handle = await options.docker.create(
-				containerSpec(name, 6 * 60 * 60_000),
+				containerSpec(name, 6 * 60 * 60_000, selection),
 			);
 			try {
 				await options.docker.start(name, handle.containerId);
-				warm = handle;
+				warm = { ...handle, selection };
 			} catch {
 				await options.docker
 					.remove(name, handle.containerId)
@@ -282,14 +358,18 @@ export function createIsolatedContainerController(options: {
 			if (!planned) return;
 			let containerId = "";
 			try {
+				const selection = await selectImage(planned.repository);
 				const spare = warm;
-				warm = undefined;
-				if (spare && options.docker.rename) {
+				const spareMatches =
+					spare?.selection.image === selection.image &&
+					spare.selection.depsKey === selection.depsKey;
+				if (spare && spareMatches && options.docker.rename) {
+					warm = undefined;
 					await options.docker.rename(spare.containerId, name);
 					containerId = spare.containerId;
 				} else {
 					const handle = await options.docker.create(
-						containerSpec(name, planned.reservedMinutes * 60_000),
+						containerSpec(name, planned.reservedMinutes * 60_000, selection),
 					);
 					if (handle.name !== name)
 						throw new Error("container identity mismatch");

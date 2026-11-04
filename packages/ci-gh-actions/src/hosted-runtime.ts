@@ -8,6 +8,7 @@ import {
 	HostedRelay,
 	type HostedRelayStore,
 	type IsolatedRunnerHost,
+	type ServedRunnerLabelCache,
 } from "./hosted-relay.js";
 import type { JobDurations } from "./job-durations.js";
 import type { IdentityVerifier } from "./oidc.js";
@@ -78,9 +79,9 @@ export function createHostedRelayRuntime(options: {
 	denyUnisolated?: boolean;
 	/** Shared across ticks; a relay is rebuilt per tick and would forget it. */
 	jobDurations?: JobDurations;
-	/** See `HostedRelay`: maximum active leases for non-trunk runs. */
+	/** See `HostedRelay`: maximum active leases for shared-label runners. */
 	generalLeaseLimit?: number;
-	/** See `HostedRelay`: whether non-trunk runs may borrow trunk slots. */
+	/** See `HostedRelay`: whether shared-label runs may borrow trunk slots. */
 	lendTrunkSlots?: boolean;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
@@ -89,6 +90,8 @@ export function createHostedRelayRuntime(options: {
 }) {
 	const now = options.now ?? (() => new Date().toISOString());
 	const lastDuplicateRecheck = new Map<string, number>();
+	const sharedLabelTrunkJobs = new Set<string>();
+	const servedRunnerLabels: ServedRunnerLabelCache = new Map();
 	const admissionOrder = createAdmissionOrder(
 		options.github,
 		options.jobDurations,
@@ -105,6 +108,8 @@ export function createHostedRelayRuntime(options: {
 			// Every tick ends in `dispatchPending`, which reserves in admission order.
 			deferReservation: true,
 			admissionOrder,
+			sharedLabelTrunkJobs,
+			servedRunnerLabels,
 			now,
 		};
 		if (options.denyUnisolated) relayOptions.denyUnisolated = true;

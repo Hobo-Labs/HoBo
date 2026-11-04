@@ -3,7 +3,7 @@
  * The CD plane never re-renders raw Git/Helm under high privilege.
  */
 import { createHash } from "node:crypto";
-import { isJsonObject, type JsonObject } from "../json.js";
+import { cloneAsJson, isJsonObject, type JsonValue } from "../json.js";
 import {
 	DEPLOYMENT_PLAN_SCHEMA,
 	type DeploymentPlan,
@@ -100,8 +100,9 @@ export function createResolvedDeploymentSet(input: {
 			? { progressive: input.progressive }
 			: undefined),
 	};
-	const contentHash =
-		`sha256:${createHash("sha256").update(stableStringify(body)).digest("hex")}` as const;
+	const contentHash = `sha256:${createHash("sha256")
+		.update(stableStringify(cloneAsJson(body)))
+		.digest("hex")}` as const;
 	return Object.freeze({
 		...body,
 		matches: Object.freeze([...input.matches]),
@@ -127,17 +128,13 @@ export function listResources(
 	return set.plan.resources;
 }
 
-// Serializes opaque values for stable digests; callers pass JSON-shaped records.
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- hashing boundary accepts any JSON-serializable input
-function stableStringify(value: unknown): string {
+function stableStringify(value: JsonValue): string {
 	if (value === null || !isJsonObject(value)) {
 		return JSON.stringify(value);
 	}
 	if (Array.isArray(value)) {
 		return `[${value.map(stableStringify).join(",")}]`;
 	}
-	// SAFETY: `const obj = value as JsonObject;` is required at this I/O or test boundary.
-	const obj = value as JsonObject;
-	const keys = Object.keys(obj).sort();
-	return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
+	const keys = Object.keys(value).sort();
+	return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
 }

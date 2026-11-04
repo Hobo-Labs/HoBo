@@ -1,15 +1,12 @@
-import {
-  ConnectivityTier,
-  type ConnectivityTierValue
-} from "../../connectivity-tier-ir-contract/src/connectivity-tier-ir.js";
+import type { ConnectivityTierValue } from "../../connectivity-tier-ir-contract/src/connectivity-tier-ir.d.mts";
 import {
   projectYardManifest,
   validateYardManifest,
   type DeclaredYardTopology,
   type YardManifest
-} from "../src/yard-topology-manifest.js";
+} from "@hobo/draft-yard-topology-manifest-contract";
 
-const tier: ConnectivityTierValue = ConnectivityTier.CROSS_PROVIDER_PRIVATE_INTERCONNECT;
+const tier: ConnectivityTierValue = 3;
 
 const topology: DeclaredYardTopology = {
   yard: {
@@ -60,7 +57,7 @@ const topology: DeclaredYardTopology = {
       id: "force-overlay-mesh",
       kind: "connectivity-tier",
       linkId: "shop.api->shop.db",
-      requiredTier: ConnectivityTier.OVERLAY_MESH,
+      requiredTier: 4,
       reason: "regulated workload override"
     }
   ]

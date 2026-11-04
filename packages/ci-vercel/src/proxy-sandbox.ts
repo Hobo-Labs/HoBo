@@ -1,5 +1,5 @@
 import { Sandbox, type Session } from "@vercel/sandbox";
-import { sandboxProxyBundle } from "./_generated/sandbox-proxy-bundle.js";
+import { sandboxProxyBundle } from "./_generated-assets/sandbox-proxy-bundle.js";
 import {
 	discoverIsolatedSandbox,
 	stopIsolatedSandbox,

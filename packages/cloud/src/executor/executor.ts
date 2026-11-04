@@ -143,8 +143,9 @@ export interface InProcessExecutorOptions {
 	now?: () => string;
 }
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- hashes JSON serialization of provider program refs
-function hashRef(value: unknown): string {
+type HashRefInput = IacProgram | Readonly<Record<string, string>>;
+
+function hashRef(value: HashRefInput): string {
 	return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
 }
 

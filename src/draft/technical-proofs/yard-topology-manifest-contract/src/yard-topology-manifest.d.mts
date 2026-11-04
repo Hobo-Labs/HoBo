@@ -88,4 +88,4 @@ export type ValidationResult =
   | { ok: false; code: string; reason: string };
 
 export declare function projectYardManifest(topology: DeclaredYardTopology): YardManifest;
-export declare function validateYardManifest(manifest: JsonValue): ValidationResult;
+export declare function validateYardManifest(manifest: YardManifest | JsonValue): ValidationResult;

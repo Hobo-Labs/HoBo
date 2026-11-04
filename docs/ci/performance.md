@@ -96,7 +96,7 @@ Its steps on main (run 41517185031):
 
 | Step | Time | Why |
 |---|---:|---|
-| pnpm install | ~21 s | cold registry install; fine |
+| pnpm install | ~21 s | copies the store into the container; finding 19 |
 | Seed the pnpm store cache for PRs | 71–146 s | tars a 1.26 GB store, then fails: "another job may be creating this cache" |
 | check:all lint/guard lanes | ~33 s | |
 | `pretest:unit` turbo build | ~50 s | 0/135 cached: the turbo cache never saved (finding 3) |
@@ -210,6 +210,14 @@ every task changed. A workflow edit cannot change a package test's result, so it
 them. The weekly schedule is the one whole-workspace sweep, with a 60-minute job limit; main pushes keep
 20. `scripts/test/affected-lanes.test.ts` pins both rules and dry-runs turbo to show that a scoped
 filter leaves an unrelated package (`@hobo/storage-sqlite`) out.
+
+Generated-output drift is the exception to affected scoping on main pushes. The `Generated-output drift`
+step always runs both `pnpm run codegen:check` and the frozen `s0-04-protobuf-cue-codegen` proof suite,
+even when neither appears in the affected diff. This closes the gap exposed when #1693 started running
+workspace tests on `merge_group`: #1597 had opted `@hobo/ci-vercel` into protobuf codegen while its relay
+and sandbox asset generators also wrote into `src/_generated/`. Production codegen ignored those
+non-protobuf files, but the frozen proof reported them as added drift. Their output now lives in
+`packages/ci-vercel/src/_generated-assets/`, leaving `src/_generated/` exclusively to protobuf codegen.
 
 The rest of this section is the analysis as it stood before the raw logs were read.
 
@@ -874,6 +882,46 @@ The guard now runs only on pull requests, while its two steps run after install 
 The PR-only guard requests plain `hobo`.
 Expected saving: about 33–38 s of critical path on a main push and on merge_group.
 
+## Finding 19: every job installed both CPUs' agent CLIs
+
+`pnpm install --frozen-lockfile` takes 19–26 s per job on the box, and 44–46 s when both slots install at
+once. Nothing is downloaded ("reused 1997, downloaded 0"); the time goes to writing `node_modules`.
+
+- The store is the host mount `/pnpm-store` and the workspace is on the container's overlay, two
+  filesystems, so pnpm cannot hard-link and copies every file.
+- Root `package.json` set `pnpm.supportedArchitectures.cpu` to `["arm64", "x64", "current"]`, added with
+  the docs-portal contract in #510 without a stated reason. `@agentv/core` (used by `provider-agentv` and
+  ts-autocode's `training`) depends on `@openai/codex` and `@github/copilot`, whose native packages are
+  190–280 MB per platform. Every job copied both CPUs' builds, about 1.1 GB, and could run one of them.
+
+The setting is now `["current"]`. The lockfile does not change: it records every platform's optional
+packages either way, and the setting only decides which ones are installed. No workflow, Dockerfile or
+script uses another CPU's npm binary; the worker image installs inside its own build stage, on its own
+platform.
+
+Measured on an x86_64 cloud VM with the box's settings (`CI=1`, `package-import-method=copy`, no
+`node_modules`, warm store, same lockfile): 15.8–16.8 s before and 12.6–12.9 s after, with
+`node_modules/.pnpm` going from 4.5 GB to 3.4 GB.
+
+Considered and not done:
+
+- **Hard links from the shared store.** Putting the work directory on the store's filesystem would let
+  pnpm hard-link (14 s instead of 18.9 s in the same test). A hard link is the store's own file, so a job
+  that writes into `node_modules` would change it for every later job, fork PRs included. That widens the
+  risk noted at the end of this document.
+- **pnpm's global virtual store.** pnpm 10.33 ignores `enableGlobalVirtualStore` when `CI` is set; without
+  `CI`, a warm install still took 13–14 s.
+- **Skipping dependency build scripts.** `--ignore-scripts` saved about 4 s, though the scripts
+  themselves run in under 1 s. The four packages in `allowBuilds` (`@ast-grep/cli`, `@bufbuild/buf`,
+  `esbuild`, `protobufjs`) set up their native binaries in `postinstall`, and jobs run those tools.
+
+## Finding 20: a workspace-wide change linted every package and failed on old findings
+
+PR #1667 changed root `package.json`, so affected-lanes selected all 795 packages; turbo ran every package's `lint` (`biome check .`) with `--continue=never` and failed on `@hobo/pack-postgres-oci` (7 errors in files the PR never touched).
+Main had 53 such errors across 9 packages because Main full gate never runs package lint.
+This cleanup fixes them; a follow-up commit in the same PR makes PRs and main lint only changed files.
+The rift debris test was host-tier-dependent and is now pinned to overlayfs, with a copy-tier sibling proving cloned files are parked.
+
 ## Finding 21: Main full gate waited for an image job that had nothing to build
 
 Main push run 41762556455 took 107 s. The run was created at 02:43:10; CI runner image (mise oci) ran 02:43:28–02:43:40, spending 18 s waiting for a runner and then 12 s on a no-op because no image input changed. Main full gate ran 02:44:04–02:44:56.
@@ -882,6 +930,62 @@ Its `needs: ci-runner-image` kept it queued until the image job ended, and the b
 The image job now skips a push when the payload's per-commit added, modified and removed file lists contain none of the image inputs; a skipped job satisfies `needs` immediately. Missing file lists and forced pushes fail open toward building, and a push that changes an input still builds and retags the image before Main full gate starts. The full-history secret scan moved from the image job to Main full gate so it still runs when the image job skips.
 
 Expected saving: about 36 s of critical path on a push that leaves the image inputs alone. The remaining 18 s before the first job is the box's 15 s poll interval plus container start, a separate target.
+
+## Finding 22: install time is linking, so the job starts from a prebuilt node_modules layer
+
+Main run **41762556455** spent **19 s of the 52 s Main full gate** in
+`pnpm install --frozen-lockfile --config.confirmModulesPurge=false`. The host-mounted store at `/pnpm-store`
+was warm (`HOBO_CI_PNPM_STORE_MOUNTED=1`), so this downloaded nothing: the cost was copying and linking roughly
+2,000 packages and 796 workspace importers into `node_modules`. A store-only cache cannot remove that work.
+
+The deps layer builds those trees once per toolchain/deps key and starts eligible HoBo job containers with
+them already at `/opt/actions-runner/_hobo_work/HoBo/HoBo`. The key covers every importer manifest, pnpm and
+Node versions, platform, patches and config, and the deps Dockerfile/build script themselves. The build's fetch
+stage has network access under lockfile integrity pins; installation and native rebuilds run in a separate
+network-disabled build. A matching toolchain label selects the layer per lease, and `clean: false` keeps it
+through checkout. Main full gate and PR impact gate compare `HOBO_CI_DEPS_LAYER` with the checkout's computed
+key: an exact match skips `pnpm install`; every miss runs the ordinary frozen install. The daily scheduled Main
+full gate always installs as the ongoing correctness verifier.
+
+Run **41773556225** exposed the first implementation's miss and cleanup costs:
+
+- `CI deps layer (pnpm)` failed after **5m26s**. `RUN pnpm fetch --frozen-lockfile` took **164 s** from an empty
+  store, exporting the fetch-stage layers took **84 s**, and copying the install workspace took **21.8 s**.
+- The final `find … -prune … -delete` failed because `-delete` enables `-depth`, which makes `-prune` ineffective.
+- `PR impact gate` took **4m20s**, including **170 s** in its cold fallback `Install dependencies` step because
+  no layer existed. Its checks also found the two readonly `deps-key.mts` assignments, now built immutably.
+
+The fetch and offline install now share the persistent host store through the same BuildKit
+`hobo-pnpm-store` cache mount. The install stage moves each `node_modules` tree and the `.git` skeleton to a
+separate staging directory; the final stage copies only that directory, with no deletion pass and no fetch store
+or staged manifests. A new build still must report `Already up to date` from
+`pnpm install --frozen-lockfile --offline --config.confirmModulesPurge=false` before promotion.
+
+Every event checks the exact local key first, then GHCR, and skips the build on either hit. A local hit only
+computes the key, inspects and tags the image. A GHCR-only hit confirms the manifest and materializes the
+node_modules-only image once. Existing keyed hits can be promoted on PRs; new PR candidates remain unpromoted
+and unpublished. The gate's exact-match path runs only `scripts/ensure-ts-autocode-links.mts`, so its install
+step is skipped. Expected local-hit work is a few seconds in the deps job and no install step in the gate; a
+GHCR-only hit adds one registry pull but none of the 164 s fetch, 84 s fetch export or full build.
+
+On main pushes, `ci-deps-image` runs only when a deps-key input changed or `ci-runner-image` ran. Missing commit
+file lists and forced pushes build fail-safe; schedule and workflow dispatch always run. PR build scoping is
+unchanged. Main full gate does not depend on `ci-deps-image`, so an unrelated push neither builds the layer nor
+adds a trunk-slot wait.
+
+## Finding 23: the trunk slot went to a runner a PR job could take
+
+Main push 14f6dc03 (#1686) created **HoBo CI Fabric** run **41764685484** and **HoBo Pricing CI** run **41764685602** at 03:03:34Z. The fabric run's **CI runner image (mise oci)** job did not start until 03:05:39, a **2 m 04 s** wait. The pricing run's **@hobo/pricing affected gate** started at 03:07:26, a **3 m 52 s** wait. Both waited behind PR jobs despite `HOBO_CI_WORKER_SLOTS=3`, one strictly reserved trunk slot, and the trunk-label expression added by #1691.
+
+The relay classified trunk capacity by run event. A push job asking for shared `hobo` was therefore exempt from `generalLeaseLimit` and could take the reserved slot, but its JIT runner also registered as `hobo`. GitHub could give that runner to the oldest queued PR job, which then occupied the trunk slot for its whole run while `hobo-trunk` jobs waited. The incident workflows made this concrete: `pricing-ci.yml` used plain `hobo` on push, as did `release-pricing.yml`, `dev-env-smoke.yml`, `examples-e2e.yml`, and the manual acceptance workflow.
+
+The fix separates **ordering** from **capacity**. Run event still sorts push, dispatch, and merge-group work first, but only a job requesting `hobo-trunk` is exempt from the shared-label cap or eligible to reclaim an unlaunched general reservation. A trunk-event job on `hobo` is capped like PR work and logs `hobo_ci_trunk_job_on_shared_label` once, naming its repository, workflow, run, and job. Every trunk-capable box workflow now uses the same label expression as `hobo-ci.yml`; the `trunk-label-routing` Actions lint rejects shared `hobo` on trunk-capable jobs and rejects the expression on PR-only jobs. Other repositories served by the box must make the same workflow change.
+
+A trunk-label job that cannot reserve now reclaims the newest general lease that is still `reserved` with no container, runner, or host run, in strict mode as well as lending mode. This also lets excess trunk demand take general slots ahead of queued PR jobs. Running PR jobs are never stopped. Prewarm was not a second cause: an idle warm container has no lease, does not count against `slots`, and is renamed and reused for the trunk launch. Reservation and reserved-launch ordering were already trunk-first; swapped jobs re-enter that same ordering with their current labels, and deferred reservation reorders each poller batch independently of ingestion order.
+
+To protect the GitHub App's 5,000-request/h installation budget, the relay now caches each immutable served runner label by repository and job ID, prunes entries when leases become inactive, and treats failed lookups as general while retrying them on the next tick.
+
+The target is a **~100 s main critical path** with the reserved slot going directly to a `hobo-trunk` runner rather than paying a PR job's full runtime. Regression tests drive the real relay and fake controller through the incident shape, strict preemption, running-job safety, and pre-warmed trunk launch.
 
 ## Finding 26: four @hobo/code TTY tests timed out under merge-queue load
 
