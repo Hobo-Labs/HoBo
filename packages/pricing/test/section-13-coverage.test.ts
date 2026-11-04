@@ -2,16 +2,19 @@ import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { MoneySchema } from "../src/_generated/pricing_pb.js";
 import { quoteScenario } from "../src/quote.js";
-import { runBillingSync, fixtureProviderPort } from "../src/sync/billing-sync.js";
+import {
+	fixtureProviderPort,
+	runBillingSync,
+} from "../src/sync/billing-sync.js";
 import { createSyntheticProviderCredentials } from "../src/sync/provider-port.js";
 import { isQuoteVector } from "../src/types.js";
 import {
+	commitmentState,
 	makeScenario,
 	perUnitCharge,
 	rehashScenario,
 	usage,
 	workload,
-	commitmentState,
 } from "./fixtures.js";
 
 describe("section 13 extended coverage", () => {
@@ -22,9 +25,7 @@ describe("section 13 extended coverage", () => {
 				{ dimension: "storage", unit: "GiB", aggregation: "max" },
 			],
 			charges: [perUnitCharge("usage", "minute", "1")],
-			candidate: [
-				workload("agreement-a", [usage("storage", "1", "GiB")]),
-			],
+			candidate: [workload("agreement-a", [usage("storage", "1", "GiB")])],
 		});
 		const result = quoteScenario(scenario);
 		expect(isQuoteVector(result)).toBe(false);

@@ -3,15 +3,15 @@ import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import { expect, it } from "vitest";
 import { MoneySchema } from "../src/_generated/pricing_pb.js";
-import { isJsonObject, parseJson, type JsonValue } from "../src/json.js";
+import { isJsonObject, type JsonValue, parseJson } from "../src/json.js";
 import {
 	fixtureProviderPort,
 	runBillingSync,
 } from "../src/sync/billing-sync.js";
 import {
 	createSyntheticProviderCredentials,
-	parseFocusBillingRow,
 	type FocusBillingRow,
+	parseFocusBillingRow,
 } from "../src/sync/provider-port.js";
 
 const AT = "2026-02-01T12:00:00Z";
@@ -35,7 +35,8 @@ const fixtureRaw = parseJson(
 		"utf8",
 	),
 );
-if (!isJsonObject(fixtureRaw)) throw new Error("FOCUS fixture root must be object");
+if (!isJsonObject(fixtureRaw))
+	throw new Error("FOCUS fixture root must be object");
 const fixture = {
 	completeRows: parseFixtureRowList(fixtureRaw.completeRows),
 	partialRow: parseFixtureRow(fixtureRaw.partialRow),
@@ -100,10 +101,7 @@ it("§12 Phase 5 dedupes provider charge ids and appends reconciliation hash", a
 		reservationId: "reservation-1",
 		eventId: "evt-reconcile-3",
 		quotedIncrementalBilled: quotedIncremental("1.25"),
-		port: fixtureProviderPort([
-			fixture.completeRows[0]!,
-			fixture.duplicateRow,
-		]),
+		port: fixtureProviderPort([fixture.completeRows[0]!, fixture.duplicateRow]),
 		credentials: createSyntheticProviderCredentials(),
 		knownActualIds: new Set(["prov-charge-usage-1"]),
 	});

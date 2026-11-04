@@ -2,8 +2,8 @@ import {
 	catalogHashOf,
 	isJsonObject,
 	parseQuoteScenario,
-	quoteScenarioToJson,
 	type QuoteScenario,
+	quoteScenarioToJson,
 	stateHashOf,
 } from "@hobo/pricing";
 

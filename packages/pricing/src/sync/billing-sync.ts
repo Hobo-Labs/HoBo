@@ -12,14 +12,11 @@ import {
 	parseDecimal,
 	subtractDecimal,
 } from "../decimal.js";
-import { stableHash, type JsonValue } from "../json.js";
+import { type JsonValue, stableHash } from "../json.js";
+import { type FocusImportRejection, importFocusRow } from "./focus-import.js";
 import {
-	importFocusRow,
-	type FocusImportRejection,
-} from "./focus-import.js";
-import {
-	focusBillingRowsToJson,
 	type FocusBillingRow,
+	focusBillingRowsToJson,
 	type ProviderBillingFetchRequest,
 	type ProviderBillingPort,
 	type SyntheticProviderCredentials,
@@ -88,7 +85,9 @@ function reject(
 	return { code, message };
 }
 
-function sumBilled(actuals: readonly ActualCharge[]): Money | BillingSyncRejection {
+function sumBilled(
+	actuals: readonly ActualCharge[],
+): Money | BillingSyncRejection {
 	let currency: string | undefined;
 	let total = parseDecimal("0");
 	if (total === undefined) {
@@ -207,10 +206,7 @@ export async function runBillingSync(
 		imported.push(mapped);
 	}
 
-	if (
-		snapshotCompleteness === "partial" &&
-		!input.allowPartialSnapshot
-	) {
+	if (snapshotCompleteness === "partial" && !input.allowPartialSnapshot) {
 		return reject(
 			"INCOMPLETE_PROVIDER_BILLING",
 			"snapshot completeness is partial",

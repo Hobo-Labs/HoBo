@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { MoneySchema } from "../../src/_generated/pricing_pb.js";
-import { isJsonObject, parseJson, type JsonValue } from "../../src/json.js";
+import { isJsonObject, type JsonValue, parseJson } from "../../src/json.js";
 import {
 	fixtureProviderPort,
 	runBillingSync,
@@ -22,7 +22,10 @@ function object(value: JsonValue | undefined): Record<string, JsonValue> {
 const here = dirname(fileURLToPath(import.meta.url));
 const pact = object(
 	parseJson(
-		readFileSync(join(here, "../pacts/provider-billing-sync.pact.json"), "utf8"),
+		readFileSync(
+			join(here, "../pacts/provider-billing-sync.pact.json"),
+			"utf8",
+		),
 	),
 );
 

@@ -11,12 +11,12 @@ import {
 } from "./_generated/pricing_pb.js";
 import { catalogHashOf } from "./catalog.js";
 import {
+	addDecimal,
 	DECIMAL_ZERO,
 	parseDecimal as decimalParser,
 	formatDecimal as decimalText,
 	maxDecimal,
 	subtractDecimal,
-	addDecimal,
 } from "./decimal.js";
 import {
 	type JsonValue,
