@@ -94,8 +94,10 @@ test("authoritative CI workflows are an allowed enabled set", async () => {
 on:
   push:
     branches: [main]
+  pull_request:
 jobs:
   pr-gate:
+    if: github.event_name == 'pull_request'
     runs-on: hobo
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -163,8 +165,10 @@ test("authoritative CI jobs choose between hobo and the trunk label only", async
 on:
   push:
     branches: [main]
+  pull_request:
 jobs:
   pr-gate:
+    if: github.event_name == 'pull_request'
     runs-on: hobo
     steps:
       - run: true
@@ -175,14 +179,15 @@ jobs:
 `;
 	const accepted = lint(await fixture({ "hobo-ci.yml": hoboCi(trunkRunsOn) }));
 	assert.equal(accepted.status, 0, accepted.stderr);
-	const trunkOnly = hoboCi(trunkRunsOn).replace(
+	const trunkOnPr = hoboCi(trunkRunsOn).replace(
 		"runs-on: hobo",
 		`runs-on: ${trunkRunsOn}`,
 	);
-	const acceptedTrunkOnly = lint(
-		await fixture({ "release-hobo.yml": trunkOnly }),
+	const rejectedTrunkOnPr = lint(
+		await fixture({ "release-hobo.yml": trunkOnPr }),
 	);
-	assert.equal(acceptedTrunkOnly.status, 0, acceptedTrunkOnly.stderr);
+	assert.equal(rejectedTrunkOnPr.status, 1);
+	assert.match(rejectedTrunkOnPr.stderr, /PR-only jobs must use plain hobo/);
 	for (const runsOn of [
 		"${{ vars.HOBO_CI_TRUNK_RUNNER }}",
 		trunkRunsOn.replace("'hobo-trunk'", "'ubuntu-latest'"),
@@ -194,8 +199,79 @@ jobs:
 	}
 });
 
+test("trunk-label-routing rejects shared hobo on push, merge-group and dispatch jobs", async () => {
+	const workflow = (event: string, runsOn: string) => `name: Routing
+on:
+  ${event}:
+jobs:
+  build:
+    runs-on: ${runsOn}
+    steps:
+      - run: true
+`;
+	for (const event of ["push", "merge_group", "workflow_dispatch"]) {
+		const shared = lint(
+			await fixture({ "pricing-ci.yml": workflow(event, "hobo") }),
+		);
+		assert.equal(shared.status, 1, event);
+		assert.match(
+			shared.stderr,
+			/trunk-label-routing: push\/merge_group\/workflow_dispatch-capable jobs must use the trunk label expression/,
+		);
+		const trunk = lint(
+			await fixture({ "pricing-ci.yml": workflow(event, trunkRunsOn) }),
+		);
+		assert.equal(trunk.status, 0, trunk.stderr);
+	}
+});
+
+test("trunk-label-routing requires plain hobo on PR-only jobs, including folded conditions", async () => {
+	const workflow = (runsOn: string) => `name: Routing
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    if: >-
+      github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'hobo/e2e')
+    runs-on: ${runsOn}
+    steps:
+      - run: true
+`;
+	const shared = lint(await fixture({ "examples-e2e.yml": workflow("hobo") }));
+	assert.equal(shared.status, 0, shared.stderr);
+	const trunk = lint(
+		await fixture({ "examples-e2e.yml": workflow(trunkRunsOn) }),
+	);
+	assert.equal(trunk.status, 1);
+	assert.match(
+		trunk.stderr,
+		/trunk-label-routing: PR-only jobs must use plain hobo/,
+	);
+	const prOnlyWorkflow = lint(
+		await fixture({
+			"examples-e2e.yml": workflow(trunkRunsOn).replace(
+				"  workflow_dispatch:\n",
+				"",
+			),
+		}),
+	);
+	assert.equal(prOnlyWorkflow.status, 1);
+	assert.match(prOnlyWorkflow.stderr, /PR-only jobs must use plain hobo/);
+});
+
 test("every trunk-capable CI and release job requests the trunk label by default", async () => {
-	for (const file of ["hobo-ci.yml", "release-hobo.yml", "release-code.yml"]) {
+	for (const file of [
+		"hobo-ci.yml",
+		"hobo-ci-acceptance.yml",
+		"examples-e2e.yml",
+		"dev-env-smoke.yml",
+		"release-hobo.yml",
+		"release-code.yml",
+		"pricing-ci.yml",
+		"release-pricing.yml",
+	]) {
 		const text = await readFile(
 			new URL(`../.github/workflows/${file}`, import.meta.url),
 			"utf8",
@@ -217,9 +293,11 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				.join("\n");
 			const runsOn = block.match(/^    runs-on: (.*)$/m)?.[1];
 			assert.ok(runsOn, `${file}:${lines[start]} has no runs-on`);
+			const condition =
+				block.match(/^    if:([^\n]*(?:\n      [^\n]*)*)/m)?.[1] ?? "";
 			const prOnly =
-				/^    if:.*github\.event_name == 'pull_request'/m.test(block) &&
-				!/^    if:.*\|\|/m.test(block);
+				/github\.event_name == 'pull_request'/.test(condition) &&
+				!condition.includes("||");
 			assert.equal(
 				runsOn,
 				prOnly ? "hobo" : trunkRunsOn,
@@ -241,8 +319,16 @@ test("every other recognized workflow filename remains forbidden", async () => {
 	}
 });
 for (const [name, original, changed] of [
-	["hosted runner fallback", "runs-on: hobo", "runs-on: ubuntu-latest"],
-	["dynamic runner override", "runs-on: hobo", "runs-on: ${{ vars.RUNNER }}"],
+	[
+		"hosted runner fallback",
+		`runs-on: ${trunkRunsOn}`,
+		"runs-on: ubuntu-latest",
+	],
+	[
+		"dynamic runner override",
+		`runs-on: ${trunkRunsOn}`,
+		"runs-on: ${{ vars.RUNNER }}",
+	],
 	["automatic events", "  workflow_dispatch:", "  push:"],
 	[
 		"extra automatic event",
@@ -257,7 +343,7 @@ for (const [name, original, changed] of [
 	],
 	[
 		"disabled job",
-		"    runs-on: hobo",
+		`    runs-on: ${trunkRunsOn}`,
 		"    if: ${{ false }}\n    runs-on: hobo",
 	],
 	["unbounded timeout", "    timeout-minutes: 10\n", ""],

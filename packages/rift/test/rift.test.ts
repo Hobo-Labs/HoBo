@@ -22,8 +22,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { must } from "@hobo/core/total-access";
 import { afterAll, describe, expect, it } from "vitest";
-import { parseJsonObject, type JsonBag, type JsonValue } from "../src/json.js";
-
+import { type JsonBag, type JsonValue, parseJsonObject } from "../src/json.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -647,17 +646,41 @@ describe("repair distinguishes stale from truncated", () => {
 });
 
 describe("debris only accumulates when there is work to keep", () => {
-	it("does not park a skeleton with no files in it", () => {
+	it("does not park an overlayfs skeleton with no files in it", () => {
 		// The overlay tier always leaves an upper/work/merged skeleton, so a
 		// plain "is the directory empty" test never fires and every repeated
 		// run would leave another parked copy behind.
+		const capability = {
+			tier: "overlayfs",
+			available: ["overlayfs"],
+			reason: "forced",
+			isolatesInPlaceWrites: true,
+		} as const;
 		const root = source();
-		createWorkspace({ root, name: "claude" });
+		createWorkspace({ root, name: "claude", capability });
 		for (let i = 0; i < 3; i += 1) {
 			writeFileSync(join(root, RIFT_DIR, "events.jsonl"), "");
-			createWorkspace({ root, name: "claude" });
+			createWorkspace({ root, name: "claude", capability });
 		}
 		expect(listDebris(root)).toEqual([]);
+	});
+
+	it("parks a copy-tier workspace holding cloned files", () => {
+		const capability = {
+			tier: "copy",
+			available: ["copy"],
+			reason: "forced",
+			isolatesInPlaceWrites: true,
+		} as const;
+		const root = source();
+		createWorkspace({ root, name: "claude", capability });
+		writeFileSync(join(root, RIFT_DIR, "events.jsonl"), "");
+		const again = createWorkspace({ root, name: "claude", capability });
+		const parked = must(again.debris, "again.debris");
+		expect(listDebris(root)).toEqual([parked]);
+		expect(readFileSync(join(parked, "src", "app.ts"), "utf8")).toBe(
+			"original content\n",
+		);
 	});
 
 	it("parks — and can prune — a directory that holds work", () => {
@@ -681,7 +704,9 @@ describe("a root that predates event counting", () => {
 		const root = source();
 		createWorkspace({ root, name: "old" });
 		const snapshotPath = join(root, RIFT_DIR, "registry.json");
-		const snapshot: JsonBag = { ...parseJsonObject(readFileSync(snapshotPath, "utf8")) };
+		const snapshot: JsonBag = {
+			...parseJsonObject(readFileSync(snapshotPath, "utf8")),
+		};
 		writeFileSync(
 			snapshotPath,
 			JSON.stringify({

@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   smoke:
-    runs-on: hobo
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 10
     steps:
       - name: Verify HoBo JIT runner
@@ -96,7 +96,7 @@ jobs:
           retention-days: 7
   dagger-native:
     if: ${{ inputs.dagger_acceptance && !inputs.jit_only }}
-    runs-on: hobo
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683

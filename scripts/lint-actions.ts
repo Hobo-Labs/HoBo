@@ -34,7 +34,30 @@ const TRUNK_RUNS_ON =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
 
 const acceptanceDigest =
-	"44fd2433a3117900f68edad6b8f69e565c340745dd962a6d8cbb37f52b32e919";
+	"479a086feeebf3453e59f784c13bcabbf3b88e73afb8a2a5930ed04823bc8f68";
+
+const TRUNK_EVENTS = new Set(["push", "workflow_dispatch", "merge_group"]);
+
+function hasTrunkEvent(lines: readonly string[], jobsIndex: number): boolean {
+	return lines
+		.slice(0, jobsIndex)
+		.some((line) => TRUNK_EVENTS.has(/^  ([a-z_]+):/.exec(line)?.[1] ?? ""));
+}
+
+function isPullRequestOnlyJob(
+	block: readonly string[],
+	workflowHasTrunkEvent: boolean,
+): boolean {
+	if (!workflowHasTrunkEvent) return true;
+	const condition = /^    if:([^\n]*(?:\n      [^\n]*)*)/m.exec(
+		block.join("\n"),
+	)?.[1];
+	return (
+		condition !== undefined &&
+		/github\.event_name\s*==\s*['"]pull_request['"]/.test(condition) &&
+		!condition.includes("||")
+	);
+}
 
 function lintWorkflowYaml(
 	file: string,
@@ -54,6 +77,7 @@ function lintWorkflowYaml(
 				entry.index > jobsIndex && /^  [A-Za-z0-9_-]+:$/.test(entry.line),
 		)
 		.map((entry) => entry.index);
+	const workflowHasTrunkEvent = hasTrunkEvent(lines, jobsIndex);
 	for (const [position, start] of jobStarts.entries()) {
 		const end = jobStarts[position + 1] ?? lines.length;
 		const block = lines.slice(start, end);
@@ -97,6 +121,19 @@ function lintWorkflowYaml(
 						`${file}:${start + index + 1}: box checkout at the default path must set clean: false`,
 					);
 				}
+			}
+		}
+		if (allowedEnabled.has(file)) {
+			const prOnly = isPullRequestOnlyJob(block, workflowHasTrunkEvent);
+			if (!prOnly && runsOn === "hobo") {
+				errors.push(
+					`${file}:${start + 1}: trunk-label-routing: push/merge_group/workflow_dispatch-capable jobs must use the trunk label expression`,
+				);
+			}
+			if (prOnly && runsOn === TRUNK_RUNS_ON) {
+				errors.push(
+					`${file}:${start + 1}: trunk-label-routing: PR-only jobs must use plain hobo`,
+				);
 			}
 		}
 	}
