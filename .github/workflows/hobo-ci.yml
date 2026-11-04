@@ -54,11 +54,24 @@ jobs:
       contents: read
       packages: write
     steps:
-      # No submodules: the diff only needs the gitlink, not ts-autocode's tree. Depth 2 gives
-      # HEAD~1: the previous main commit on push, the base on a pull request's merge commit.
+      # No submodules: the diff only needs the gitlink, not ts-autocode's tree. Trunk runs fetch
+      # full history for the secret scan; depth 2 still gives HEAD~1 for the image-input diff.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          fetch-depth: 2
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
+      - name: Start secret scan (full history, background)
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          : > "$RUNNER_TEMP/gitleaks/log"
+          nohup bash -c '
+            gitleaks git --config .gitleaks.toml --redact --exit-code 1 > "$1/log" 2>&1
+            status=$?
+            printf "%s\n" "$status" > "$1/exit.tmp"
+            mv "$1/exit.tmp" "$1/exit"
+          ' _ "$RUNNER_TEMP/gitleaks" </dev/null >/dev/null 2>&1 &
       - name: Detect runner image inputs changed
         id: rebuild
         run: |
@@ -98,6 +111,31 @@ jobs:
           docker push "$image"
           docker tag "hobo-ci-worker:local" "ghcr.io/${repo}/hobo-ci-worker:latest"
           docker push "ghcr.io/${repo}/hobo-ci-worker:latest"
+      - name: Secret scan (full history)
+        if: always() && github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          scan_dir="$RUNNER_TEMP/gitleaks"
+          if [ ! -f "$scan_dir/exit" ] && [ ! -f "$scan_dir/log" ]; then
+            echo "::error::Secret scan did not start: exit file and log are both absent."
+            exit 1
+          fi
+          for ((attempt = 0; attempt < 300; attempt += 1)); do
+            if [ -f "$scan_dir/exit" ]; then
+              break
+            fi
+            sleep 1
+          done
+          if [ -f "$scan_dir/log" ]; then
+            cat "$scan_dir/log"
+          fi
+          if [ ! -f "$scan_dir/exit" ]; then
+            echo "::error::Timed out after 300 seconds waiting for the secret scan."
+            exit 1
+          fi
+          status="$(cat "$scan_dir/exit")"
+          exit "$status"
 
   pr-gate:
     name: PR impact gate
@@ -560,10 +598,9 @@ jobs:
 
   secret-scan:
     name: Secret scan
-    # Skipped (which satisfies the required check) on merge_group: the PR run scanned
-    # base..head, the squashed group commit adds no content beyond those commits, and the
-    # push to main rescans the full history.
-    if: github.event_name != 'merge_group'
+    # Skipped (which satisfies the required check) on merge_group and trunk events; trunk runs
+    # scan the full history inside ci-runner-image in parallel with the image build.
+    if: github.event_name == 'pull_request'
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 10
     permissions:
@@ -577,9 +614,5 @@ jobs:
       - name: Scan git history for secrets
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            gitleaks git --config .gitleaks.toml --redact --exit-code 1 \
-              --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.sha }}"
-          else
-            gitleaks git --config .gitleaks.toml --redact --exit-code 1
-          fi
+          gitleaks git --config .gitleaks.toml --redact --exit-code 1 \
+            --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.sha }}"

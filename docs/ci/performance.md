@@ -715,7 +715,8 @@ of two or three runs at once, queueing still pushes it past five. In order of ex
 8. **Fewer jobs per run is capped by the required checks.** Secret scan, CI runner image and the CI fabric
    contract guard each spend a container handoff on 10–40 s of work. Folding them into one job would cut
    two handoffs per run, but each is a required check by name, so that needs the ruleset changed with it.
-   Not done here.
+   Not done here. On trunk runs, the secret scan now runs inside the CI runner image job in parallel with
+   the image build, so a main push needs one fewer slot. Pull requests keep the separate required "Secret scan" job.
 
 Risk to keep in mind: the box's pnpm store is a read-write host mount shared by every job, fork PRs
 included (`forkPullRequestEnvironment: ci`). pnpm verifies tarball integrity against the lockfile on fetch,

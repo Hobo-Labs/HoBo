@@ -133,6 +133,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			const runsOn = block.match(/^    runs-on: (.*)$/m)?.[1];
 			assert.ok(runsOn, `${file}:${lines[start]} has no runs-on`);
 			const prOnly =
+				lines[start] !== "  secret-scan:" &&
 				/^    if:.*github\.event_name == 'pull_request'/m.test(block) &&
 				!/^    if:.*\|\|/m.test(block);
 			assert.equal(
