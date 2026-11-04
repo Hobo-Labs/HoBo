@@ -1181,6 +1181,14 @@ The admission defect was real independently of that occupancy question. Memory a
 
 Admission is now trunk-first while any feasible rank-0 job waits. A rank-0 memory wait blocks lower ranks immediately; merge-group cap and failed slot reservation do the same. The barrier is recomputed from pending demand every pass, so it persists until the rank-0 job is admitted, at which point lower ranks can use remaining capacity in that pass. Non-zero ranks retain the 60 s same-rank HOL backfill window, and trunk-label lending, strict slot reservation, and unlaunched-lease reclamation are unchanged. As an anti-starvation guard, a request larger than the entire memory budget never raises the rank-0 barrier: it cannot fit even on an idle host, so PR admission remains allowed. Regression coverage drives the real SQLite/relay path for memory, merge-group cap, and slot waits across repeated passes, plus the impossible-memory-request guard.
 
+## Finding 40: main regenerated every protobuf package on every push
+
+The main-only Generated-output drift step cost **17–20 s** even for a push with no generator-input change. It ran the exact `pnpm run codegen:check` over all 24 opted-in packages and ran the frozen S0-04 proof directly, outside Turbo's cache.
+
+`pnpm run codegen:check:affected` now hashes each package's `data-models/**` and checked-in `src/_generated/**`, together with the shared inputs the checker reads: `buf.gen.yaml`, `packages/schema-tools/src/**`, the resolved buf and protoc-gen-es versions in `pnpm-lock.yaml`, and the CUE pins in `mise.toml` and `mise.lock`. Only a package without a matching CLEAN stamp runs `checkCodegen`; drift and CUE failures write no stamp and retain the exact check's nonzero exit. Stamps are atomic and content-addressed, and missing or malformed stamps are misses. `HOBO_CODEGEN_CACHE_DIR` overrides the cache location; otherwise it lives beside `TURBO_CACHE_DIR` when set, or under `node_modules/.cache/hobo-codegen-check`. The full `pnpm run codegen:check` remains unchanged as the exact uncached gate.
+
+The workflow also runs the frozen proof through `turbo run test --filter=@hobo-draft/s0-04-protobuf-cue-codegen`, so Turbo hashes and caches its own inputs without editing the proof. Local wall-clock measurements were **12.72 s cold**, **0.63 s warm** (24 hits), and **1.15 s after one core data-model edit** (23 hits, one miss, 468 ms package check). The edit was reverted after measurement.
+
 ## Finding 41: every same-process auth.md lock waiter paid a 25 ms poll
 
 Merge-group run **41860035056** timed out `test/auth-md-state-concurrency.test.ts` after **10 s** under box load. The test runs three concurrent deployment bindings followed by three concurrent infrastructure claims. Every contender polled the SQLite `BEGIN EXCLUSIVE` lock every 25 ms, so releasing a same-process holder did not wake the next waiter directly.
