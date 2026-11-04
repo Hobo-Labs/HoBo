@@ -353,6 +353,13 @@ A pre-baked store in the runner image was considered and not done. It saves at m
 stale on every lockfile change, and adds the store to the image. The host-mounted store from #1635 gives the
 same hard-link install once the box is redeployed.
 
+Every `hobo-ci.yml` install now runs through `scripts/ci/pnpm-install.mts`. Each attempt has a **180 s**
+deadline by default (`HOBO_PNPM_INSTALL_TIMEOUT_S` accepts only a positive integer), leaving ample headroom
+over the measured 10–22 s warm installs. A timeout terminates the whole pnpm process group, with SIGKILL after
+a 2 s SIGTERM grace; either a timeout or another non-zero exit triggers exactly one immediate retry with
+`--prefer-offline`. Frozen-lockfile mismatches do not retry. Each attempt emits a JSON line containing its
+number, arguments, outcome and duration so CI traces show the retry and its result.
+
 ## Finding 5: serial job dependencies
 
 `artifact-trust` and `dev-cold-loop-gate` had `needs: pr-gate`, so they waited for the slowest PR job and then
@@ -1158,3 +1165,18 @@ PR run job **126567490837** proved the build itself was healthy: it built and ve
 Every main push now runs `CI deps layer (pnpm)`. Its first post-key step compares the local image's `hobo.ci.deps-key` label and skips resolution, promotion, build, and push on an exact match, making a no-op push cost checkout plus one inspect. The daemon derives its default checkout from `import.meta.url`, emits `hobo_ci_deps_image_ensure_started` with the selected key, and resolves the toolchain exactly as the build does: use the computed worker tag when present, otherwise use the `v[0-9a-f]{12}` tag on `hobo-ci-worker:local`. `deps-key.mts --toolchain` makes that selected version part of both the daemon lookup key and the built image key. PR build-only cleanup, merge-group exclusion, and gate independence are unchanged.
 
 Expected effect: the next main push or daemon poll pulls or builds and promotes the missing layer without operator intervention; a cold local build has the observed roughly 2-minute cost. Subsequent no-op pushes do only the fast label check, eligible job containers select the layer, `Check deps layer match` prints `deps layer match`, and `Install dependencies` is skipped, removing the roughly 20-second relinking cost.
+
+## Finding 36: a waiting trunk job did not stop lower-rank admission
+
+On 2026-11-04, #1709's merge-group **PR impact gate** queued at **14:10:50Z** and started at **14:16:03Z**, a **5 m 13 s** admission delay. Read-only GitHub API queries reconstructed these timestamps (all UTC):
+
+| Run / job | Runner | Created or queued | Started | Completed |
+|---|---|---|---|---|
+| #1709 PR run **41840794280**, **PR impact gate** job **126619584695** | `hobo-37829e08-3ed9-4bc1-8e3b-fac18009ee33` | 13:59:12 | 14:01:03 | 14:08:22 |
+| #1709 merge-group run **41844979849**, **PR impact gate** job **126626018847** | `hobo-c4bc7af4-6106-487c-9a59-692b4efc89d4` | 14:10:50 | 14:16:03 | 14:34:23 |
+
+The initial `actions/runs?created=2026-11-04T13:40..2026-11-04T14:20` query returned five runs. Reading each run's jobs, then widening the query to the newest 100 runs from the day's 00:00–14:20 window (reaching back to 06:58), found **no non-skipped HoBo PR job overlapping 14:10:50–14:16:03**. In particular, #1709's last PR gate ended **2 m 28 s before** its merge-group job queued. Thus the API confirms the delay but does **not** substantiate the initial supposition that PR jobs kept running throughout it; daemon lease and container logs are required to identify what local capacity remained occupied. Skipped jobs have timestamps but no runner and do not indicate occupancy.
+
+The admission defect was real independently of that occupancy question. Memory admission returned `blockRank` only after `HOBO_CI_WORKER_MEMORY_HOL_MS`, and the relay applied it only to the same rank within one pass. A rank-0 memory waiter therefore allowed lower-rank backfill before the timeout and did not block rank 1 afterward. Merge-group cap and slot-reservation waits had no lower-rank barrier either.
+
+Admission is now trunk-first while any feasible rank-0 job waits. A rank-0 memory wait blocks lower ranks immediately; merge-group cap and failed slot reservation do the same. The barrier is recomputed from pending demand every pass, so it persists until the rank-0 job is admitted, at which point lower ranks can use remaining capacity in that pass. Non-zero ranks retain the 60 s same-rank HOL backfill window, and trunk-label lending, strict slot reservation, and unlaunched-lease reclamation are unchanged. As an anti-starvation guard, a request larger than the entire memory budget never raises the rank-0 barrier: it cannot fit even on an idle host, so PR admission remains allowed. Regression coverage drives the real SQLite/relay path for memory, merge-group cap, and slot waits across repeated passes, plus the impossible-memory-request guard.
