@@ -119,7 +119,10 @@ export function createWorkerMemoryAdmission(
 			waiting.set(request.jobId, state);
 		}
 		const waitedMs = now() - state.sinceMs;
-		const blockRank = waitedMs > config.holMs;
+		const blockRank =
+			request.rank === 0
+				? request.memoryMb <= config.budgetMb
+				: waitedMs > config.holMs;
 		const reason = capBlocked ? "trunk-pr-cap" : "memory-budget";
 		const signature = `${reason}:${request.memoryClass}:${request.memoryMb}:${inUse}:${config.budgetMb}:${activeNonTrunk}:${blockRank}`;
 		if (signature !== state.signature) {

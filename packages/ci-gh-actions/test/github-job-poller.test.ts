@@ -853,6 +853,43 @@ describe("pull-mode box worker over SQLite", () => {
 		store.close();
 	});
 
+	it("blocks a pull request while a merge group waits for its lease cap", async () => {
+		const log = vi.spyOn(console, "error").mockImplementation(() => {});
+		const store = await configuredStore(2);
+		const first = memoryJob(1, "PR impact gate", ["hobo-trunk"]);
+		const waiting = memoryJob(2, "PR impact gate", ["hobo-trunk"]);
+		const pullRequest = memoryJob(3, "CI fabric contract guard");
+		const github = memoryGithub([first, waiting, pullRequest]);
+		for (const [job, at] of [
+			[first, "2026-11-02T11:55:00Z"],
+			[waiting, "2026-11-02T11:56:00Z"],
+		] as const)
+			github.started.set(job.runId, { event: "merge_group", at });
+		const runtime = boxRuntime(store, github, [], undefined, {
+			labels: new Map(),
+			mergeGroupLeaseLimit: 1,
+		});
+		for (const job of [first, waiting, pullRequest])
+			await store.queue(job, new Date(NOW).toISOString());
+		await runtime.tick({ maxDeliveries: 0 });
+		expect((await store.activeLeases()).map((lease) => lease.jobId)).toEqual([
+			1,
+		]);
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([2, 3]);
+		await runtime.tick({ maxDeliveries: 0 });
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([2, 3]);
+		const [lease] = await store.activeLeases();
+		if (!lease) throw new Error("first merge-group lease missing");
+		await store.settle(lease.id, 0, 1, new Date(NOW).toISOString());
+		await runtime.tick({ maxDeliveries: 0 });
+		expect(
+			(await store.activeLeases()).map((entry) => entry.jobId).sort(),
+		).toEqual([2, 3]);
+		expect(await store.pendingJobs()).toEqual([]);
+		log.mockRestore();
+		store.close();
+	});
+
 	it("leaves a job queued while storage admission blocks and admits after recovery", async () => {
 		const store = await configuredStore(1);
 		const github = new FakeGithub(
@@ -1052,6 +1089,57 @@ describe("pull-mode box worker over SQLite", () => {
 			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
 		).toEqual([1]);
 		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([2, 4]);
+		store.close();
+	});
+
+	it("blocks lower ranks until a memory-waiting trunk job is admitted", async () => {
+		const store = await configuredStore(3);
+		const running = memoryJob(1, "PR impact gate");
+		const trunk = memoryJob(2, "PR impact gate", ["hobo-trunk"]);
+		const pullRequest = memoryJob(3, "CI fabric contract guard");
+		let now = NOW;
+		const memoryAdmission = createWorkerMemoryAdmission(
+			resolveWorkerMemoryConfig(
+				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "10000" },
+				{ totalMemoryMb: 16_384, trunkSlots: 0 },
+			),
+			{ now: () => now },
+		);
+		const runtime = boxRuntime(
+			store,
+			memoryGithub([running, trunk, pullRequest]),
+			[],
+			undefined,
+			{ labels: new Map(), memoryAdmission },
+		);
+		await store.queue(running, new Date(NOW).toISOString());
+		await runtime.tick({ maxDeliveries: 0 });
+		runtime.admissionOrder.prime({
+			runId: trunk.runId,
+			event: "merge_group",
+			runStartedAt: new Date(NOW).toISOString(),
+		});
+		await store.queue(trunk, new Date(NOW).toISOString());
+		await store.queue(pullRequest, new Date(NOW).toISOString());
+		await runtime.tick({ maxDeliveries: 0 });
+		expect((await store.activeLeases()).map((lease) => lease.jobId)).toEqual([
+			1,
+		]);
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([2, 3]);
+		now += 60_001;
+		await runtime.tick({ maxDeliveries: 0 });
+		expect((await store.activeLeases()).map((lease) => lease.jobId)).toEqual([
+			1,
+		]);
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([2, 3]);
+		const [first] = await store.activeLeases();
+		if (!first) throw new Error("running PR lease missing");
+		await store.settle(first.id, 0, 1, new Date(now).toISOString());
+		await runtime.tick({ maxDeliveries: 0 });
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([2, 3]);
+		expect(await store.pendingJobs()).toEqual([]);
 		store.close();
 	});
 

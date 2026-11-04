@@ -125,6 +125,8 @@ Force-stop settlement on the box worker **re-queues the reserved job** when GitH
 
 **CPU/IO priority and trunk-active PR cap:** rank-0 trunk containers get `--cpu-shares 8192` and request `--blkio-weight 800`; other jobs get 512 and 200 respectively. The 16:1 CPU ratio gives one trunk container about 94.1% of the CPU shared with one PR container on the four-CPU box. IO weighting is optional: the first weighted create/update probes support, and rejection logs `hobo_ci_blkio_weight_unsupported` once and continues with CPU-only weights. Warm spares start at PR weight and are reweighted with `docker update` when assigned. While a trunk lease is active, **`HOBO_CI_WORKER_PR_CAP_WITH_TRUNK`** (default **1**) limits new non-trunk reservations; **0** pauses them. Existing PR jobs are not stopped, the cap disappears when trunk settles, and strict trunk-first ordering is unchanged. See [finding 42](../../docs/ci/performance.md#finding-42-equal-cpu-shares-let-pr-jobs-starve-trunk-tests). These settings take effect only after the box daemon is redeployed.
 
+A feasible rank-0 job waiting for memory, the merge-group lease cap, or a slot blocks every lower rank immediately and on later passes until it is admitted. Non-zero ranks retain the HOL backfill window below. A trunk request larger than the whole budget cannot fit even when idle, so it never raises that lower-rank barrier and cannot starve PRs forever. See [finding 36](../../docs/ci/performance.md#finding-36-a-waiting-trunk-job-did-not-stop-lower-rank-admission).
+
 | Daemon variable | Default | Meaning |
 |---|---|---|
 | `HOBO_CI_WORKER_MEMORY_BUDGET_MB` | host/cgroup memory minus reserve | Total admitted memory; an explicit value may not exceed that derived ceiling |
@@ -133,7 +135,7 @@ Force-stop settlement on the box worker **re-queues the reserved job** when GitH
 | `HOBO_CI_WORKER_MEMORY_CLASS_STANDARD_MB` | `4096` | Standard class and warm-container hard limit |
 | `HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB` | `HOBO_CI_WORKER_MEMORY_MB` or `6144` | Heavy class and trunk reservation |
 | `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; startup checks still apply |
-| `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Backfill window before a non-fitting head job blocks smaller jobs in the same rank |
+| `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Backfill window before a non-fitting head job blocks smaller jobs in the same non-zero rank; feasible rank-0 waits block lower ranks immediately |
 | `HOBO_CI_JOB_MEMORY_MB` | admitted class value | Per-container value exported to the runner; fallback when its cgroup limit cannot be read |
 | `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum active reserved/running merge-group leases; must be a positive integer |
 | `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK` | `1` | Maximum non-trunk leases admitted while any trunk lease is active; integer 0–8; no effect when trunk is idle |
