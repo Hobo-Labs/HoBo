@@ -593,6 +593,12 @@ jobs:
           else
             pnpm run check:all
           fi
+      - name: Generated-output drift
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        timeout-minutes: 8
+        run: >-
+          pnpm run codegen:check &&
+          pnpm --filter @hobo-draft/s0-04-protobuf-cue-codegen test
       - name: Workspace tests
         # The whole-workspace sweep (weekly, or a lockfile/root-config change) is not held
         # to the main-push budget.
