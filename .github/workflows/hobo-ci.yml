@@ -601,7 +601,7 @@ jobs:
     # Skipped (which satisfies the required check) on merge_group and trunk events; trunk runs
     # scan the full history inside ci-runner-image in parallel with the image build.
     if: github.event_name == 'pull_request'
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: hobo
     timeout-minutes: 10
     permissions:
       contents: read

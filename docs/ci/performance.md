@@ -840,7 +840,8 @@ The GitHub API confirmed the label root cause: every job of run 41720899087 requ
 because `HOBO_CI_TRUNK_RUNNER` was unset and the expression was opt-in. Trunk-capable CI and release jobs
 now request `hobo-trunk` unless the variable is explicitly `false`, the daemon reserves one trunk slot by
 default when it has at least two slots, and the trunk-only label proves trunk admission rank even when a
-run lookup fails. JIT runners still register with exactly the label their job requested.
+run lookup fails. PR-only jobs, including Secret scan since #1687 moved trunk history scanning into the CI
+runner image job, request plain `hobo`. JIT runners still register with exactly the label their job requested.
 
 Merge-group run 41731777263 exposed the same swap after its runner took an older PR job: later queued
 polls were inbox duplicates. Direct swapped-job requeue bypasses that marker, and Postgres queue dedupe
