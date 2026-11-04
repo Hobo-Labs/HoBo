@@ -842,3 +842,11 @@ ran only turbo `test:unit` lanes, while `merge_group` ran just the contract guar
 jobs; Main full gate neither ran on `merge_group` nor was required. Merge-group entries now run the same
 affected S0 and dependent workspace-test gate as Main full gate inside the required PR impact gate, using
 the merge group's base SHA.
+
+## Finding 17: a re-polled queued job was dropped as a duplicate
+
+The poller uses constant `poll-<job>-<attempt>-q` delivery ids for unassigned queued jobs.
+Once accepted, later polls returned `duplicate` without checking whether a pending job or active lease still covered the job.
+Run 41738569286 had five jobs queued for over 17 minutes and logged as duplicates while 22–24 jobs waited.
+The fix checks coverage locally and re-admits uncovered jobs through the relay at most once per minute per delivery id.
+The Vercel relay webhook answers 202 `requeued` for such a re-admitted delivery.
