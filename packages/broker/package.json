@@ -25,6 +25,7 @@
 	"dependencies": {
 		"@hobo/contracts": "workspace:*",
 		"@hobo/core": "workspace:*",
+		"@hobo/pricing": "workspace:*",
 		"@hobo/provider-cedar": "workspace:*",
 		"@hobo/provider-opa": "workspace:*"
 	},

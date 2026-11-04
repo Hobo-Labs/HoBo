@@ -8,6 +8,10 @@ A coherent vertical: a **Deploy command** becomes past-tense **events**, the pur
 **Planner** resolves them to a content-addressed `DeploymentPlan` DAG, and a
 **materialized view** (projection) reconstructs deployment state from the log.
 
+Commercial provider pricing catalogs use `pricingCatalogHashFromCommercialRefs` in
+`src/commercial-pricing.ts` (sorted product-ref digest) without altering resource
+definition `catalogHashOf`.
+
 ## Continuous Delivery plane (attested apply)
 
 `src/cd/` is the **workload-attested, secret-free-by-construction** apply path

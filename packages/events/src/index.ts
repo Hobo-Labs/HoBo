@@ -18,6 +18,10 @@ export {
 	SUBSCRIPTION_GATEWAY_PORT,
 } from "./port.js";
 export {
+	PRICING_EVENT_CONTRACTS,
+	pricingCorpusBaseline,
+} from "./pricing-event-contracts.js";
+export {
 	createReactor,
 	defineMaterialization,
 	type Materialization,
@@ -60,4 +64,5 @@ export {
 	migrationCorpusBaseline,
 } from "./upcaster-corpus.js";
 
+// public-contract: the package identity consumers assert in boundary contracts.
 export const HOBO_EVENTS_PACKAGE = "@hobo/events";

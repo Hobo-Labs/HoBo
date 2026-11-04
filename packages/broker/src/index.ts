@@ -119,6 +119,11 @@ export {
 	policyHashOf,
 } from "./policies.js";
 export {
+	authorizeBillingSpend,
+	type BillingAuthorizationInput,
+	type BillingAuthorizationResult,
+} from "./pricing-authorization.js";
+export {
 	isCatalogedRejectionCode,
 	REJECTION_MATRIX,
 	type RejectionMatrixRow,
