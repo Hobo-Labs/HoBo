@@ -25,6 +25,7 @@ import {
 	type GithubJobPollSummary,
 	type GithubReadFailure,
 } from "../src/isolated-worker/github-job-poller.js";
+import { createWorkerLeaseReconciler } from "../src/isolated-worker/lease-reconciler.js";
 import {
 	createWorkerMemoryAdmission,
 	type WorkerMemoryAdmission,
@@ -683,6 +684,7 @@ describe("pull-mode box worker over SQLite", () => {
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
 			assignmentHealth?: ReturnType<typeof createAssignmentHealth>;
+			workerAccountId?: string;
 			labels: Map<string, string | undefined>;
 		},
 	) {
@@ -731,6 +733,7 @@ describe("pull-mode box worker over SQLite", () => {
 			options.storageAdmission = trunk.storageAdmission;
 		if (trunk?.assignmentHealth)
 			options.assignmentHealth = trunk.assignmentHealth;
+		if (trunk?.workerAccountId) options.workerAccountId = trunk.workerAccountId;
 		return createHostedRelayRuntime(options);
 	}
 
@@ -767,6 +770,121 @@ describe("pull-mode box worker over SQLite", () => {
 			),
 		);
 	}
+
+	it("does not recreate phantom memory in the admission tick after reconciliation", async () => {
+		const store = await configuredStore(2);
+		const job = memoryJob(1, "PR impact gate");
+		job.memoryClass = "heavy";
+		job.memoryMb = 6_144;
+		const github = memoryGithub([job]);
+		github.runs.queued.push(job.runId);
+		const initialAt = new Date(NOW - 3_600_000).toISOString();
+		await store.queue(job, initialAt, 1);
+		const account = (await store.configuration())?.configuration?.accounts[0];
+		if (!account) throw new Error("fixture account");
+		expect(await store.reserve(account, job, initialAt, 1)).toBeDefined();
+		const memoryAdmission = createWorkerMemoryAdmission(
+			resolveWorkerMemoryConfig(
+				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "8000" },
+				{ totalMemoryMb: 32_768, trunkSlots: 0 },
+			),
+		);
+		const launched: string[] = [];
+		const runtime = boxRuntime(store, github, launched, undefined, {
+			skipLaunchFor: [job.id],
+			memoryAdmission,
+			labels: new Map(),
+		});
+		const log = vi.fn();
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => []),
+				stop: vi.fn(async () => undefined),
+				remove: vi.fn(async () => undefined),
+			},
+			workerAccountId: "box",
+			workerMemoryMb: 6_144,
+			orphanGraceMs: 1_000,
+			now: () => NOW,
+			log,
+		});
+
+		for (let tick = 0; tick < 2; tick++) {
+			await reconciler.reconcile();
+			await runtime.tick({ maxDeliveries: 10 });
+			const active = await store.activeLeases();
+			expect(active).toEqual([]);
+			expect(await store.pendingJobs()).toHaveLength(1);
+			expect((await store.pendingJobs())[0]?.requeueAfter).toBe(
+				new Date(NOW + 1_000).toISOString(),
+			);
+			expect(
+				memoryAdmission.admit({
+					jobId: 2,
+					memoryClass: "light",
+					memoryMb: 3_072,
+					rank: 1,
+					activeLeases: active,
+					generalLeaseIds: new Set(),
+				}).admitted,
+			).toBe(true);
+		}
+
+		expect(launched).toEqual([]);
+		expect(
+			log.mock.calls.filter(
+				([event]) => event === "hobo_ci_memory_without_containers",
+			),
+		).toHaveLength(1);
+		store.close();
+	});
+
+	it("does not charge another worker's leases to local memory admission", async () => {
+		const store = await configuredStore(2);
+		const first = memoryJob(1, "PR impact gate");
+		first.memoryClass = "heavy";
+		first.memoryMb = 6_144;
+		const second = memoryJob(2, "PR impact gate");
+		second.memoryClass = "heavy";
+		second.memoryMb = 6_144;
+		const github = memoryGithub([first, second]);
+		github.runs.queued.push(first.runId, second.runId);
+		const account = (await store.configuration())?.configuration?.accounts[0];
+		if (!account) throw new Error("fixture account");
+		expect(
+			await store.reserve(
+				account,
+				first,
+				new Date(NOW - 3_600_000).toISOString(),
+				1,
+			),
+		).toBeDefined();
+		await store.queue(second, new Date(NOW).toISOString(), 1);
+		const log = vi.fn();
+		const memoryAdmission = createWorkerMemoryAdmission(
+			resolveWorkerMemoryConfig(
+				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "8000" },
+				{ totalMemoryMb: 32_768, trunkSlots: 0 },
+			),
+			{ log },
+		);
+		const runtime = boxRuntime(store, github, [], undefined, {
+			skipLaunchFor: [first.id, second.id],
+			memoryAdmission,
+			workerAccountId: "another-box",
+			labels: new Map(),
+		});
+
+		await runtime.tick({ maxDeliveries: 10 });
+
+		expect(await store.activeLeases()).toHaveLength(2);
+		expect(log).toHaveBeenCalledWith(
+			"hobo_ci_memory_admitted",
+			expect.objectContaining({ jobId: second.id, inUseMb: 0 }),
+		);
+		store.close();
+	});
 
 	it("does not re-lease a never-assigned job repeatedly inside one backoff window", async () => {
 		const store = await configuredStore(1);

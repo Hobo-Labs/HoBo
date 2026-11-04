@@ -26,7 +26,11 @@ import {
 } from "./_generated/ci_pb.js";
 import { allocationQuote } from "./accounting.js";
 import { effectiveCiAccount, parseCiPolicy } from "./policy.js";
-import { ACTIVE_STATES, route } from "./routing.js";
+import {
+	ACTIVE_STATES,
+	isJobRequeueDelayed,
+	route,
+} from "./routing.js";
 import {
 	sandboxProxyOnlyUsageQuote,
 	sandboxUsageQuote,
@@ -972,6 +976,7 @@ export class PostgresCiStore {
 			const effective = desired
 				? effectiveCiAccount(current, parseCiPolicy(desired.bodyJson))
 				: current;
+			if (isJobRequeueDelayed(job, at)) return undefined;
 			if (
 				(
 					await c.query(

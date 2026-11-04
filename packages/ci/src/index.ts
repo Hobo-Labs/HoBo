@@ -24,7 +24,12 @@ export {
 	parseCiPolicy,
 } from "./policy.js";
 export { providerFreeRunnerMinutes } from "./provider-allocation.js";
-export { ACTIVE_STATES, providerOffer, route } from "./routing.js";
+export {
+	ACTIVE_STATES,
+	isJobRequeueDelayed,
+	providerOffer,
+	route,
+} from "./routing.js";
 export {
 	sandboxProxyOnlyUsageQuote,
 	sandboxReservationMicros,

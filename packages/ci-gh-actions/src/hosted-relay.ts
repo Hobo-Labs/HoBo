@@ -6,6 +6,7 @@ import {
 	ConfigurationSchema,
 	type Connection,
 	effectiveCiAccount,
+	isJobRequeueDelayed,
 	type Job,
 	JobSchema,
 	type Lease,
@@ -33,6 +34,10 @@ import {
 import { verifyIngressForward } from "./ingress-forward.js";
 import { isIsolatedHostOffer } from "./isolated-backend.js";
 import type { AssignmentHealth } from "./isolated-worker/assignment-health.js";
+import {
+	workerOfferKey,
+	workerOfferKeys,
+} from "./isolated-worker/daemon-shutdown.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
@@ -215,6 +220,7 @@ export class HostedRelay {
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
 			assignmentHealth?: AssignmentHealth;
+			workerAccountId?: string;
 			now?: () => string;
 		},
 	) {
@@ -749,8 +755,22 @@ export class HostedRelay {
 			labels: job.labels,
 		});
 		const active = await this.options.store.activeLeases();
+		const memoryWorkerOffers = this.options.workerAccountId
+			? workerOfferKeys(this.options.config, this.options.workerAccountId)
+			: undefined;
+		const memoryActive = memoryWorkerOffers
+			? active.filter((lease) =>
+					memoryWorkerOffers.has(
+						workerOfferKey(lease.accountId, lease.offerId),
+					),
+				)
+			: active;
 		const memoryGeneral = this.options.memoryAdmission
-			? await this.generalLeaseIds()
+			? await generalLeaseIdsFor(
+					memoryActive,
+					this.options.github,
+					this.servedRunnerLabels,
+				)
 			: undefined;
 		const memoryBlockedRanks = new Set<number>();
 		const queued = await this.options.store.pendingJobs();
@@ -776,6 +796,7 @@ export class HostedRelay {
 		let rankZeroWaiting = false;
 		const waitingTrunk = new Set<string>();
 		for (const job of pending) {
+			if (isJobRequeueDelayed(job, this.now())) continue;
 			const rank = await this.admissionOrder.rank(refOf(job));
 			const trunk = servedRunnerLabel(job.labels) === TRUNK_RUNNER_LABEL;
 			if (!trunk && rank === TRUNK_RANK) await this.logSharedLabelTrunkJob(job);
@@ -848,7 +869,7 @@ export class HostedRelay {
 					jobId: job.id,
 					...memory,
 					rank,
-					activeLeases: active,
+					activeLeases: memoryActive,
 					generalLeaseIds: memoryGeneral,
 				});
 				if (!decision.admitted) {
@@ -883,9 +904,16 @@ export class HostedRelay {
 					servedRunnerLabel(job.labels),
 				);
 				if (!active.some((entry) => entry.id === lease.id)) active.push(lease);
+				const memoryLease =
+					!memoryWorkerOffers ||
+					memoryWorkerOffers.has(
+						workerOfferKey(lease.accountId, lease.offerId),
+					);
+				if (memoryLease && !memoryActive.some((entry) => entry.id === lease.id))
+					memoryActive.push(lease);
 				if (!trunk) {
 					general?.add(lease.id);
-					memoryGeneral?.add(lease.id);
+					if (memoryLease) memoryGeneral?.add(lease.id);
 				}
 				if (mergeGroup) mergeGroupLeases++;
 			}

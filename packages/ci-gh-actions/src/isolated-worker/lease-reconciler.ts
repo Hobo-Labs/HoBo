@@ -26,7 +26,7 @@ export type WorkerLeaseReconciliationResult = Readonly<{
 	liveLeaseIds: ReadonlySet<string>;
 }>;
 
-function requeueJob(lease: Lease) {
+function requeueJob(lease: Lease, requeueAfter: string) {
 	return create(JobSchema, {
 		id: lease.jobId,
 		runId: lease.originalRunId,
@@ -39,6 +39,7 @@ function requeueJob(lease: Lease) {
 		labels: ["hobo"],
 		action: "queued",
 		isolatedRequired: true,
+		requeueAfter,
 	});
 }
 
@@ -132,7 +133,7 @@ export function createWorkerLeaseReconciler(options: {
 				if (!reconcileOptions.draining && ageMs < orphanGraceMs) continue;
 				await options.store.abortIsolatedAndRequeue(
 					lease.id,
-					requeueJob(lease),
+					requeueJob(lease, new Date(now() + orphanGraceMs).toISOString()),
 					new Date(now()).toISOString(),
 				);
 			}

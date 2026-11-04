@@ -434,6 +434,7 @@ const runtime = createHostedRelayRuntime({
 	memoryAdmission,
 	storageAdmission,
 	assignmentHealth,
+	workerAccountId,
 	control: async () => undefined,
 });
 const poller =

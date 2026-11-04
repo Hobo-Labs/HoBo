@@ -19,6 +19,7 @@ import {
 	type ControlRecord,
 	ControlRecordSchema,
 	effectiveCiAccount,
+	isJobRequeueDelayed,
 	type Job,
 	JobSchema,
 	type Lease,
@@ -567,6 +568,7 @@ export class LeaseStore {
 				? effectiveCiAccount(current, parseCiPolicy(desired.bodyJson))
 				: current;
 			const key = `${job.repositoryId}:${job.id}:${job.runAttempt}`;
+			if (isJobRequeueDelayed(job, at)) return undefined;
 			if (
 				this.db
 					.prepare("SELECT 1 FROM terminal_jobs WHERE job_key=?")

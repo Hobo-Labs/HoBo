@@ -93,6 +93,7 @@ export function createHostedRelayRuntime(options: {
 	memoryAdmission?: WorkerMemoryAdmission;
 	storageAdmission?: WorkerStorageAdmission;
 	assignmentHealth?: AssignmentHealth;
+	workerAccountId?: string;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
@@ -141,6 +142,8 @@ export function createHostedRelayRuntime(options: {
 			relayOptions.storageAdmission = options.storageAdmission;
 		if (options.assignmentHealth)
 			relayOptions.assignmentHealth = options.assignmentHealth;
+		if (options.workerAccountId)
+			relayOptions.workerAccountId = options.workerAccountId;
 		return new HostedRelay(relayOptions);
 	}
 	return {

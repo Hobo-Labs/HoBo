@@ -157,6 +157,7 @@ package ci
  name?: string
  memoryClass?: "" | "light" | "standard" | "heavy"
  memoryMb?: int & >=0
+ requeueAfter?: string
 }
 #Lease: {
  id: string & !="", accountId: string & !="", offerId: string & !=""

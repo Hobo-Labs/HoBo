@@ -9,7 +9,10 @@ Settled free consumption is recorded separately from reserved free minutes so a
 host finishing beyond the evidence window cannot be accounted as free. Jobs carry
 the exact GitHub job name and their admitted memory class/request; leases persist
 that request so active and reserved memory survives worker restarts. A legacy lease
-without a request is accounted at the heavy class by the box worker.
+without a request is accounted at the heavy class by the box worker. Requeued jobs
+may carry a durable `requeueAfter` fence so orphan recovery cannot recreate a
+reservation in the same admission tick; a retry after that fence starts a new
+reserve-to-create grace window.
 
 
 `policy.proto` defines SDK-authored desired policy separately from the runtime

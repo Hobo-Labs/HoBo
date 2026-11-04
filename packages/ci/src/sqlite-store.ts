@@ -22,7 +22,11 @@ import {
 	SandboxPricingSchema,
 } from "./_generated/ci_pb.js";
 import { effectiveCiAccount, parseCiPolicy } from "./policy.js";
-import { ACTIVE_STATES, route } from "./routing.js";
+import {
+	ACTIVE_STATES,
+	isJobRequeueDelayed,
+	route,
+} from "./routing.js";
 import { LeaseStore, type RateReattestation } from "./store.js";
 import {
 	type ClaimedWebhook,
@@ -329,6 +333,7 @@ export class SqliteCiStore {
 				? effectiveCiAccount(current, parseCiPolicy(desired.bodyJson))
 				: current;
 			const key = jobKey(job);
+			if (isJobRequeueDelayed(job, at)) return undefined;
 			if (
 				this.exists("terminal_jobs", key) ||
 				this.exists("assigned_jobs", key)

@@ -125,9 +125,12 @@ budget is **13941 MiB**. Heavy + standard + light = **13312 MiB** fits three slo
 
 At startup and before every admission or drain check, the worker reconciles its lease journal against the strictly
 parsed `hobo.ci/isolated=1` Docker inventory. Running containers are never reaped; exited/dead containers settle;
-missing containers release after a two-minute reservation grace, or immediately during drain. Unleased worker
-containers are removed. A Docker listing failure releases nothing. Watch `hobo_ci_lease_orphan_released`,
-`hobo_ci_container_orphan_removed`, `hobo_ci_memory_without_containers` and
+missing containers release after a two-minute reservation grace, or immediately during drain. Their requeued demand
+carries a durable `requeueAfter` fence for the same interval, so the admission tick that released memory cannot
+immediately create a replacement with a fresh grace window. A retry after the fence starts one new bounded grace
+window. Admission counts only leases owned by this worker's `providerAccountId`, not other workers or Vercel sandboxes.
+Unleased worker containers are removed. A Docker listing failure releases nothing. Watch
+`hobo_ci_lease_orphan_released`, `hobo_ci_container_orphan_removed`, `hobo_ci_memory_without_containers` and
 `hobo_ci_lease_reconciliation_failed` when diagnosing stale admission memory. Drain waits only for live containers,
 up to the configured 30-minute bound. See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for the full state rules
 and event fields.

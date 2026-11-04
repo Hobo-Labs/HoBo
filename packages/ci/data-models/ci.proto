@@ -157,6 +157,7 @@ message Job {
   string name = 11;
   string memory_class = 12;
   uint32 memory_mb = 13;
+  string requeue_after = 14;
 }
 message Lease {
   string id = 1;

@@ -310,6 +310,21 @@ function storeContract(
 			expect(await store.settle(second.id, 0, 3, LATER)).toBe(undefined);
 		});
 
+		it("holds requeued demand until its durable fence and then starts a fresh grace window", async () => {
+			const account = configuration().accounts[0];
+			if (!account) throw new Error("fixture account");
+			const requeued = job(1);
+			requeued.requeueAfter = LATER;
+			await store.queue(requeued, NOW, revision);
+
+			expect(await store.reserve(account, requeued, NOW, revision)).toBe(
+				undefined,
+			);
+			const retry = await store.reserve(account, requeued, LATER, revision);
+			expect(retry).toMatchObject({ jobId: 1, createdAt: LATER });
+			expect(await store.pendingJobs()).toEqual([]);
+		});
+
 		it("dedupes, claims, acknowledges and replays-guards webhook deliveries", async () => {
 			const body = '{"action":"queued","n":1}';
 			expect(await store.acceptWebhook(delivery("d-1", body))).toEqual({

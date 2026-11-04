@@ -1,6 +1,7 @@
 import { createDispatcherRegistry, decideDispatch } from "@hobo/dispatcher";
 import type {
 	Account,
+	Job,
 	Lease,
 	Offer,
 	SandboxAllowance,
@@ -16,6 +17,12 @@ export const ACTIVE_STATES = new Set([
 	"running",
 	"uncertain",
 ]);
+
+export function isJobRequeueDelayed(job: Job, at: string): boolean {
+	return (
+		job.requeueAfter !== "" && Date.parse(job.requeueAfter) > Date.parse(at)
+	);
+}
 
 /** Pure ranking input; availability is measured per customer-owned account. */
 export function route(account: Account, leases: readonly Lease[], now: string) {
