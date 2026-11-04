@@ -8,6 +8,7 @@ import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
 	countInFlightWorkerLeases,
+	createAdmissionOrder,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createGithubAppTransport,
@@ -17,10 +18,14 @@ import {
 	createIsolatedContainerController,
 	createJobDurations,
 	createPollLogFilter,
+	createWorkerMemoryAdmission,
 	describeWaitingJobs,
+	generalLeaseIdsFor,
 	type HostedInboxStore,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
+	readHostMemory,
+	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
 	waitForIsolatedWorkerDrain,
@@ -66,15 +71,20 @@ const webhookSecret =
 	plan.admission === "pull" && !process.env.HOBO_CI_WEBHOOK_SECRET
 		? randomBytes(32).toString("hex")
 		: required("HOBO_CI_WEBHOOK_SECRET");
-const workerMemoryMb = Number(process.env.HOBO_CI_WORKER_MEMORY_MB ?? "8192");
-if (!Number.isInteger(workerMemoryMb) || workerMemoryMb < 512)
-	throw new Error("invalid HOBO_CI_WORKER_MEMORY_MB");
-// Concurrent job containers on this host. Size with memory: slots x HOBO_CI_WORKER_MEMORY_MB
-// should stay under host RAM (jobs run NODE_OPTIONS=--max-old-space-size=3072, turbo concurrency 1).
+// Slots bound container count only. Memory admission also requires active + reserved
+// requests (including a warm container) to fit the host/cgroup budget, and reserves
+// the heavy class for trunk. The 3072 MiB Node heap is per process, not a container
+// budget: native code, pnpm/turbo children and page cache must fit in the class too.
 // One slot is reserved for push, workflow_dispatch and merge_group jobs by default when
 // there are at least two. Other runs never borrow it unless HOBO_CI_WORKER_TRUNK_LEND=1.
 // The offer's concurrency must equal the slot count.
 const { slots, trunkSlots } = resolveWorkerSlotConfig(process.env);
+const memoryConfig = resolveWorkerMemoryConfig(process.env, {
+	...readHostMemory(),
+	trunkSlots,
+});
+const workerMemoryMb = memoryConfig.classes.heavy;
+const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, { log });
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
 	throw new Error("invalid HOBO_CI_WORKER_TRUNK_LEND");
@@ -156,6 +166,10 @@ for (const account of configuration.accounts)
 	}
 
 const github = createGithubAppTransport({ appId, privateKey });
+// The poller learns job durations from the jobs lists it already reads; the
+// relay admits each run's longest expected job first.
+const jobDurations = createJobDurations();
+const admissionOrder = createAdmissionOrder(github, jobDurations);
 // Shared pnpm content-addressable store, bind-mounted into every job container
 // (uid 1000 owns it). Empty string disables the mount.
 const pnpmStore =
@@ -171,6 +185,11 @@ const worker = createIsolatedContainerController({
 	workerAccountId,
 	workerImage: process.env.HOBO_CI_WORKER_IMAGE ?? "hobo-ci-worker:local",
 	workerMemoryMb,
+	prewarmMemoryMb: memoryConfig.classes.standard,
+	memoryAdmission,
+	generalLeaseIds: (activeLeases) =>
+		generalLeaseIdsFor(activeLeases, admissionOrder),
+	log,
 	slots,
 	volumes: pnpmStore ? [{ source: pnpmStore, target: PNPM_STORE_TARGET }] : [],
 	containerEnv: pnpmStore
@@ -182,9 +201,6 @@ const worker = createIsolatedContainerController({
 });
 const host = createCompositeIsolatedHost({ store, worker: worker.host });
 if (!host) throw new Error("worker host unavailable");
-// The poller learns job durations from the jobs lists it already reads; the
-// relay admits each run's longest expected job first.
-const jobDurations = createJobDurations();
 const runtime = createHostedRelayRuntime({
 	store,
 	github,
@@ -193,9 +209,11 @@ const runtime = createHostedRelayRuntime({
 	isolatedHost: host,
 	denyUnisolated: true,
 	jobDurations,
+	admissionOrder,
 	// With no trunk slots this is the slot count, all the host could run anyway.
 	generalLeaseLimit: slots - trunkSlots,
 	lendTrunkSlots,
+	memoryAdmission,
 	control: async () => undefined,
 });
 const poller =
@@ -264,6 +282,12 @@ log("hobo_ci_isolated_worker_started", {
 	pollMs: intervalMs,
 	jobPollMs: plan.jobPollMs,
 	workerMemoryMb,
+	memoryBudgetMb: memoryConfig.budgetMb,
+	memoryReserveMb: memoryConfig.reserveMb,
+	memoryLightMb: memoryConfig.classes.light,
+	memoryStandardMb: memoryConfig.classes.standard,
+	memoryTrunkReservationMb: memoryConfig.trunkReservationMb,
+	memoryHolMs: memoryConfig.holMs,
 	slots,
 	trunkSlots,
 	lendTrunkSlots,

@@ -154,6 +154,9 @@ package ci
  repository: string & !="", labels: [...string]
  action: "queued" | "in_progress" | "completed", runnerName: string
  isolatedRequired?: bool
+ name?: string
+ memoryClass?: "" | "light" | "standard" | "heavy"
+ memoryMb?: int & >=0
 }
 #Lease: {
  id: string & !="", accountId: string & !="", offerId: string & !=""
@@ -179,6 +182,8 @@ package ci
  proxyStoppedUsage?: #SandboxMeasuredUsage
  sandboxStopFromStage?: "" | "pending" | "created" | "registering" | "starting" | "running"
  runnerDeletionConfirmed?: bool
+ memoryClass?: "" | "light" | "standard" | "heavy"
+ memoryMb?: int & >=0
 }
 #CiEvent: {type: string & !="", accountId: string, leaseId: string, at: string & !="", detail: string}
 #Snapshot: {leases: [...#Lease], events: [...#CiEvent]}

@@ -9,6 +9,7 @@ import {
 	type HostedRelayStore,
 	type IsolatedRunnerHost,
 } from "./hosted-relay.js";
+import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import type { JobDurations } from "./job-durations.js";
 import type { IdentityVerifier } from "./oidc.js";
 
@@ -82,6 +83,7 @@ export function createHostedRelayRuntime(options: {
 	generalLeaseLimit?: number;
 	/** See `HostedRelay`: whether non-trunk runs may borrow trunk slots. */
 	lendTrunkSlots?: boolean;
+	memoryAdmission?: WorkerMemoryAdmission;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
@@ -114,6 +116,8 @@ export function createHostedRelayRuntime(options: {
 			relayOptions.generalLeaseLimit = options.generalLeaseLimit;
 		if (options.lendTrunkSlots !== undefined)
 			relayOptions.lendTrunkSlots = options.lendTrunkSlots;
+		if (options.memoryAdmission)
+			relayOptions.memoryAdmission = options.memoryAdmission;
 		return new HostedRelay(relayOptions);
 	}
 	return {

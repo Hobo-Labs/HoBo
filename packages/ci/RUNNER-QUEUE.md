@@ -113,7 +113,21 @@ Force-stop settlement on the box worker **re-queues the reserved job** when GitH
 
 **Runner exit frees the slot.** The JIT runner takes one job and exits, but the container (`sleep infinity`) keeps running. `startRunner` therefore writes **`/tmp/hobo-ci-runner-exited`** once `run.sh` returns, whatever its status. Each tick, reconcile checks for the marker with `docker exec <id> test -e` (30 s timeout; a failed check is retried, never treated as an exit) and stops and settles the lease. A slot no longer waits for the job poll (`HOBO_CI_JOB_POLL_MS`) to report the job completed, and a runner that died without taking a job no longer holds its slot until the lease's maximum runtime. Settlement requeues the reserved job when GitHub still shows it `queued`. A job can create the marker itself, but that only ends its own container early.
 
-**Memory:** each job container defaults to **`8192` MiB** (`docker create --memory`); override with **`HOBO_CI_WORKER_MEMORY_MB`**. Workflow sets **`HOBO_TURBO_CONCURRENCY=1`** so turbo **`test`** tasks stay serial on 8 GiB boxes; **`@hobo/cli`** also sets Vitest **`maxWorkers: 1`**. Keep **`NODE_OPTIONS=--max-old-space-size=3072`** (do not raise heap to compensate — RSS from subprocesses dominates). The Main full gate's `check:all` step sets **`HOBO_RELEVANT_CHECK_CONCURRENCY=1`** (one root Vitest fork): four forks plus componentize-js `wizer` were OOM-killed in the job container. The box daemon runs **`HOBO_CI_WORKER_SLOTS=2`** × **`HOBO_CI_WORKER_MEMORY_MB=6144`** on a 15 GiB host (peak ~12 GiB observed). If `test:unit` ends with exit 1 and no Vitest summary, look for `run-tests: vitest was killed by <SIGNAL>` in the log: `scripts/run-tests.ts` names the signal when its Vitest child dies without an exit status.
+**Memory admission:** every job has a class-sized request used as its Docker `--memory` and `--memory-swap` limit. Active + reserved requests, the standard-sized warm container, and the heavy trunk reservation must fit the budget; otherwise the job stays queued. Exact GitHub job names select `light` (3072 MiB) for guard/lint/contract jobs, `standard` (4096 MiB, the unlisted default), or `heavy` (6144 MiB) for turbo build/test and image lanes. See [finding 24](../../docs/ci/performance.md#finding-24-slot-only-admission-let-the-host-oom-killer-choose-a-victim) for the real 16 GiB arithmetic and sizing examples.
+
+| Daemon variable | Default | Meaning |
+|---|---|---|
+| `HOBO_CI_WORKER_MEMORY_BUDGET_MB` | host/cgroup memory minus reserve | Total admitted memory; explicit override is not reduced by the reserve |
+| `HOBO_CI_WORKER_MEMORY_RESERVE_MB` | `2048` | Docker daemon, worker and page-cache headroom used by the derived budget |
+| `HOBO_CI_WORKER_MEMORY_CLASS_LIGHT_MB` | `3072` | Light class hard limit |
+| `HOBO_CI_WORKER_MEMORY_CLASS_STANDARD_MB` | `4096` | Standard class and warm-container hard limit |
+| `HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB` | `HOBO_CI_WORKER_MEMORY_MB` or `6144` | Heavy class and trunk reservation |
+| `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; the startup check still applies |
+| `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Backfill window before a non-fitting head job blocks smaller jobs in the same rank |
+
+Each job also receives **`HOBO_CI_JOB_MEMORY_MB`** with its admitted request. Startup fails unless every general class fits outside the trunk reservation and the heavy trunk class fits the full budget. Wait/admit decisions log `hobo_ci_memory_admission_wait` / `hobo_ci_memory_admitted`; Docker-confirmed exit-137 OOM kills log `hobo_ci_container_oom` with the class.
+
+Workflow sets **`HOBO_TURBO_CONCURRENCY=1`** so turbo **`test`** tasks stay serial; **`@hobo/cli`** also sets Vitest **`maxWorkers: 1`**. Keep **`NODE_OPTIONS=--max-old-space-size=3072`**: it fits in every class but is only one process's heap ceiling, not total RSS, so do not raise it to the class limit. The Main full gate's `check:all` step sets **`HOBO_RELEVANT_CHECK_CONCURRENCY=1`** (one root Vitest fork): four forks plus componentize-js `wizer` were OOM-killed in the job container. If `test:unit` ends with exit 1 and no Vitest summary, look for `run-tests: vitest was killed by <SIGNAL>` in the log: `scripts/run-tests.ts` names the signal when its Vitest child dies without an exit status.
 
 Legacy path `packages/ci-gh-actions/deploy/worker/Dockerfile` is deprecated; use **`build.sh`** above.
 

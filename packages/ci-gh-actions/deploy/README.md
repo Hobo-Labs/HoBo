@@ -89,6 +89,24 @@ HOBO_CI_DATA_VOLUME=hobo-ci-data
 HOBO_CI_IMAGE=hobo-ci-relay:local
 ```
 
+For an isolated box worker, size memory independently of `HOBO_CI_WORKER_SLOTS`. The worker refuses to
+start unless every general class fits outside the trunk reservation and the heavy trunk class fits the
+full budget. These are non-secret settings:
+
+| Worker variable | Default | Purpose |
+|---|---|---|
+| `HOBO_CI_WORKER_MEMORY_BUDGET_MB` | host/cgroup total minus reserve | Sum available to active, reserved and warm containers |
+| `HOBO_CI_WORKER_MEMORY_RESERVE_MB` | `2048` | Headroom subtracted only from the derived budget |
+| `HOBO_CI_WORKER_MEMORY_CLASS_LIGHT_MB` | `3072` | Exact-name guard/lint/contract jobs |
+| `HOBO_CI_WORKER_MEMORY_CLASS_STANDARD_MB` | `4096` | Unlisted jobs and the pre-warmed container |
+| `HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB` | `HOBO_CI_WORKER_MEMORY_MB` or `6144` | Turbo build/test and image jobs; trunk reservation |
+| `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; the startup check still applies |
+| `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Time smaller same-rank jobs may backfill behind a non-fitting head job |
+
+The admitted request becomes the container's `--memory` and `--memory-swap` value and its
+`HOBO_CI_JOB_MEMORY_MB` environment variable. See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for the
+16 GiB sizing example and admission logs.
+
 For a release, publish the tested image to your registry and replace
 `HOBO_CI_IMAGE` with its immutable `registry/image@sha256:...` reference. The local
 tag is for building and checking these assets, not a moving production release.

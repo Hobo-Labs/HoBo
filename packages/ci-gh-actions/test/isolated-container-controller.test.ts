@@ -260,7 +260,11 @@ describe("isolated container controller reconcile", () => {
 		expect(docker.stop).not.toHaveBeenCalled();
 	});
 
-	function markerScenario(exists: DockerDriver["exists"]) {
+	function markerScenario(
+		exists: DockerDriver["exists"],
+		stopped = false,
+		log?: ReturnType<typeof vi.fn>,
+	) {
 		const lease = runningLease({ jobId: 100, actualJobId: 0 });
 		const settle = vi.fn(async () => lease);
 		const abortIsolatedAndRequeue = vi.fn(async () => undefined);
@@ -276,8 +280,9 @@ describe("isolated container controller reconcile", () => {
 			exec: vi.fn(),
 			stop: vi.fn(async () => undefined),
 			remove: vi.fn(async () => undefined),
-			isRunning: vi.fn(async () => true),
+			isRunning: vi.fn(async () => !stopped),
 			exists,
+			exitState: vi.fn(async () => ({ exitCode: 137, oomKilled: true })),
 		};
 		// SAFETY: settle after a stop uses getJob(), not github.request().
 		const github = {} as GithubTransport;
@@ -289,9 +294,31 @@ describe("isolated container controller reconcile", () => {
 			workerAccountId: "oracle-free-vm",
 			workerImage: "hobo-ci-worker:local",
 			now: () => "2026-10-26T12:02:00Z",
+			log,
 		});
 		return { lease, settle, abortIsolatedAndRequeue, docker, controller };
 	}
+
+	it("logs the job memory class when docker reports an exit-137 OOM kill", async () => {
+		const log = vi.fn();
+		const s = markerScenario(undefined, true, log);
+		s.lease.memoryClass = "light";
+		s.lease.memoryMb = 3_072;
+		await s.controller.host.reconcile(s.lease.id);
+		expect(s.docker.exitState).toHaveBeenCalledWith(
+			s.lease.sandboxName,
+			s.lease.sandboxSessionId,
+		);
+		expect(log).toHaveBeenCalledWith(
+			"hobo_ci_container_oom",
+			expect.objectContaining({
+				jobId: s.lease.jobId,
+				memoryClass: "light",
+				memoryMb: 3_072,
+				exitCode: 137,
+			}),
+		);
+	});
 
 	it("stops and settles a running lease once its runner wrote the exit marker", async () => {
 		const exists = vi.fn(async () => true);

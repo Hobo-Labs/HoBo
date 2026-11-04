@@ -873,3 +873,61 @@ The gate was runnable at 00:33:12 but waited 33 s for one of two slots; the guar
 The guard now runs only on pull requests, while its two steps run after install in Main full gate and in PR impact gate on merge_group.
 The PR-only guard requests plain `hobo`.
 Expected saving: about 33–38 s of critical path on a main push and on merge_group.
+
+## Finding 24: slot-only admission let the host OOM killer choose a victim
+
+PR #1697's **CI fabric contract guard** died in `pnpm install` with exit 137 while neighbouring jobs ran.
+The box had 16 GiB RAM and no swap, but admitted three containers with an 8192 MiB Docker limit each:
+3 × 8192 = 24,576 MiB, already above physical RAM before the daemon, Docker and page cache. Docker's
+per-container limits therefore did not bound their sum. The host OOM killer picked `pnpm install`; the
+container-local limit was not the thing that saved its neighbours.
+
+Admission now has a second, independent budget. Its default is
+`min(os.totalmem(), /sys/fs/cgroup/memory.max when finite) - 2048 MiB`; the explicit
+`HOBO_CI_WORKER_MEMORY_BUDGET_MB` replaces that derived value and
+`HOBO_CI_WORKER_MEMORY_RESERVE_MB` changes the reserve. Startup fails closed unless
+`budget - trunkReservation >= max(light, standard, heavy)` and `budget >= heavy`. Thus every general
+class can start on an idle host without spending the trunk reservation, and a trunk heavy job can start
+too. The error names those numbers and the budget, reserve, class, legacy heavy and trunk-slot variables
+that can change them.
+
+| Class | Default hard `--memory` and `--memory-swap` | Exact-name assignments |
+|---|---:|---|
+| `light` | 3072 MiB | CI fabric contract guard, Secret scan, static release contracts and attest jobs |
+| `standard` | 4096 MiB | the default for every unlisted job |
+| `heavy` | 6144 MiB | turbo build/test gates, OCI image jobs, the pricing gate and clean/Dagger bootstraps |
+
+`HOBO_CI_WORKER_MEMORY_CLASS_<LIGHT|STANDARD|HEAVY>_MB` overrides a class; heavy can also be set with
+the legacy `HOBO_CI_WORKER_MEMORY_MB`. The same idle-host startup check applies to either override.
+Startup rejects a class below 3072 MiB so the workflow Node heap cannot exceed its container class. The
+class table is keyed by the exact GitHub job name, not a substring. The request is persisted on the lease
+and is also exported to the job as `HOBO_CI_JOB_MEMORY_MB`. Active and reserved leases, legacy leases
+(counted as heavy), and a pre-warmed container all consume the budget. The standard-sized warm container
+is reused only by a job with the same request. Warm admission uses the same real trunk/general lease
+classification as job admission and cannot spend the trunk reservation.
+
+The real 16 GiB box reports `totalMemoryMb = 15989`. With `HOBO_CI_WORKER_SLOTS=3`, one trunk slot and
+the 2048 MiB reserve, its arithmetic is:
+
+- budget: `15989 - 2048 = 13941 MiB`;
+- trunk heavy reservation plus one heavy PR job: `6144 + 6144 = 12288 MiB`, which fits;
+- remaining admission capacity: `13941 - 12288 = 1653 MiB`.
+
+The third slot is therefore usable only by a request of at most 1653 MiB. No class fits: light is already
+at the 3072 MiB minimum, so this box effectively runs **at most two concurrent heavy jobs** (including
+one trunk heavy and one PR heavy), not three. Three slots do not create memory. With three slots, making
+the third slot useful for a light job beside two heavy jobs needs at least `12288 + 3072 + 2048 = 17408
+MiB` of reported host memory (about 17 GiB); a third heavy job needs at least `3 * 6144 + 2048 = 20480
+MiB` (20 GiB), before any additional warm capacity. An active trunk lease replaces its reservation and
+trunk admission checks the full budget.
+
+The existing trunk/age ordering is unchanged. A smaller job may backfill behind a head-of-line job that
+does not fit for 60 seconds (`HOBO_CI_WORKER_MEMORY_HOL_MS`). After that, jobs behind it in the same rank
+wait too, preventing indefinite starvation. `hobo_ci_memory_admission_wait` and
+`hobo_ci_memory_admitted` expose the arithmetic; exit 137 triggers a Docker `OOMKilled` inspection and
+`hobo_ci_container_oom` names the job's class.
+
+Workflows keep `NODE_OPTIONS=--max-old-space-size=3072`. That is one Node process's old-space ceiling,
+not an RSS or container limit: native allocations, pnpm/turbo subprocesses and their own heaps must also
+fit the class. It fits numerically in every class, including light, but do not raise the heap to the class
+limit; leave room for non-heap work, and use standard/heavy for lanes with multiple subprocesses.
