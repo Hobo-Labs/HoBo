@@ -33,6 +33,48 @@ function lint(root: string) {
 	});
 }
 
+test("trunk gates run the CI fabric contract while the standalone guard is PR-only", async () => {
+	const workflow = await readFile(
+		new URL("../.github/workflows/hobo-ci.yml", import.meta.url),
+		"utf8",
+	);
+	const lines = workflow.split("\n");
+	const jobText = (job: string) => {
+		const start = lines.indexOf(`  ${job}:`);
+		assert.notEqual(start, -1, `${job} exists`);
+		const end = lines.findIndex(
+			(line, index) => index > start && /^ {2}[A-Za-z0-9_-]+:$/u.test(line),
+		);
+		return lines.slice(start, end === -1 ? lines.length : end).join("\n");
+	};
+
+	for (const job of ["main-gate", "pr-gate"]) {
+		const text = jobText(job);
+		assert.match(
+			text,
+			/- name: CI runner image contract \(manifest\)\n(?:[ \t]+if: [^\n]+\n)?[ \t]+run: pnpm exec vitest run scripts\/test\/ci-runner-image-contract\.test\.ts/u,
+			`${job} runs the runner image contract`,
+		);
+		assert.match(
+			text,
+			/- name: Assert CI fabric contract\n(?:[ \t]+if: [^\n]+\n)?[ \t]+run: node --import tsx packages\/ci-guard\/bin\/assert-ci-contract\.ts/u,
+			`${job} asserts the CI fabric contract`,
+		);
+	}
+	assert.match(
+		jobText("pr-gate"),
+		/- name: CI runner image contract \(manifest\)\n[ \t]+if: github\.event_name == 'merge_group'/u,
+	);
+	assert.match(
+		jobText("pr-gate"),
+		/- name: Assert CI fabric contract\n[ \t]+if: github\.event_name == 'merge_group'/u,
+	);
+	assert.match(
+		jobText("ci-guard"),
+		/^ {4}if: github\.event_name == 'pull_request'$/mu,
+	);
+});
+
 test("only the reviewed manual HoBo acceptance recipe is enabled", async () => {
 	const actual = await readFile(
 		new URL("../.github/workflows/hobo-ci-acceptance.yml", import.meta.url),

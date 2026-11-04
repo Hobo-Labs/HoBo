@@ -144,7 +144,7 @@ The target is for a main or merge-group job to take a slot within **30 seconds o
 
 ### 6. Merge queue (landing, not pickup)
 
-**Merge queue** requires branch protection on `main` with merge queue enabled and the required HoBo CI checks. **Main full gate** is not one of them and does not run on `merge_group` (it runs on the push to `main`), so a queue entry holds no slot for it. Instead, the required **PR impact gate** runs on `merge_group` and executes Main full gate's affected S0 and dependent workspace-test lanes against the merge group's base SHA. That gates **merge** after jobs complete; it does not cause **`queued`** by itself.
+**Merge queue** requires branch protection on `main` with merge queue enabled and the required HoBo CI checks. **Main full gate** is not one of them and does not run on `merge_group` (it runs on the push to `main`), so a queue entry holds no slot for it. Instead, the required **PR impact gate** runs on `merge_group` and executes Main full gate's affected S0 and dependent workspace-test lanes against the merge group's base SHA. That gates **merge** after jobs complete; it does not cause **`queued`** by itself. The required **CI fabric contract guard** runs only on `pull_request`; its two contract steps run inside **Main full gate** on push, schedule and dispatch, and inside **PR impact gate** on `merge_group`.
 
 Set repository variables **`TURBO_TEAM`** and secret **`TURBO_TOKEN`** for remote Turbo cache (fork PRs use read-only remote mode in workflow).
 
