@@ -86,47 +86,86 @@ async function expectedKey(): Promise<string> {
 	return depsKeyForRoot(root, platform);
 }
 
-async function matches(expected: string): Promise<boolean> {
+type Match =
+	| Readonly<{ match: true }>
+	| Readonly<{ match: false; reason: string }>;
+
+function miss(reason: string): Match {
+	return { match: false, reason };
+}
+
+// pnpm writes .modules.yaml as pretty-printed JSON.
+const PNPM_VIRTUAL_STORE = /"virtualStoreDir"\s*:\s*"\.pnpm"/;
+
+async function matches(expected: string): Promise<Match> {
 	const actual = process.env.HOBO_CI_DEPS_LAYER;
-	if (!actual || actual !== expected) return false;
-	try {
-		const modules = join(root, "node_modules");
-		const [
-			modulesRealpath,
-			payloadRealpath,
-			marker,
-			modulesState,
-			workspaceManifest,
-		] = await Promise.all([
-			realpath(modules),
-			realpath(join(payload, "node_modules")),
-			readFile(join(payload, ".hobo-ci-deps-key"), "utf8"),
-			readFile(join(modules, ".modules.yaml"), "utf8"),
-			realpath(join(modules, "@hobo", "ci-gh-actions", "package.json")),
-		]);
-		if (
-			modulesRealpath !== payloadRealpath ||
-			marker.trim() !== expected ||
-			!modulesState.includes('"virtualStoreDir":".pnpm"') ||
-			!(await stat(join(modules, ".pnpm"))).isDirectory() ||
-			workspaceManifest !==
-				join(root, "packages", "ci-gh-actions", "package.json")
-		)
-			return false;
+	if (!actual || actual !== expected) return miss("job-key-mismatch");
+	const step = async <T,>(reason: string, run: () => Promise<T> | T) => {
+		try {
+			return { ok: true as const, value: await run() };
+		} catch (error) {
+			const code =
+				error instanceof Error && "code" in error
+					? `: ${String(error.code)}`
+					: "";
+			return { ok: false as const, reason: `${reason}${code}` };
+		}
+	};
+	const modules = join(root, "node_modules");
+	const marker = await step("payload-key", () =>
+		readFile(join(payload, ".hobo-ci-deps-key"), "utf8"),
+	);
+	if (!marker.ok) return miss(marker.reason);
+	if (marker.value.trim() !== expected) return miss("payload-key-mismatch");
+	const linked = await step(
+		"modules-not-linked",
+		async () =>
+			(await realpath(modules)) ===
+			(await realpath(join(payload, "node_modules"))),
+	);
+	if (!linked.ok) return miss(linked.reason);
+	if (!linked.value) return miss("modules-not-linked");
+	const store = await step(
+		"virtual-store",
+		async () =>
+			PNPM_VIRTUAL_STORE.test(
+				await readFile(join(modules, ".modules.yaml"), "utf8"),
+			) && (await stat(join(modules, ".pnpm"))).isDirectory(),
+	);
+	if (!store.ok) return miss(store.reason);
+	if (!store.value) return miss("virtual-store");
+	// The root manifest declares no workspace dependency; packages do.
+	const workspaceLink = await step(
+		"workspace-link",
+		async () =>
+			(await realpath(
+				join(
+					root,
+					"packages",
+					"ci-gh-actions",
+					"node_modules",
+					"@hobo",
+					"ci",
+					"package.json",
+				),
+			)) === join(root, "packages", "ci", "package.json"),
+	);
+	if (!workspaceLink.ok) return miss(workspaceLink.reason);
+	if (!workspaceLink.value) return miss("workspace-link");
+	const tsx = await step("tsx-unresolved", () => {
 		createRequire(join(root, "package.json")).resolve("tsx");
 		createRequire(
 			join(root, "packages", "ci-gh-actions", "package.json"),
 		).resolve("tsx");
-		const executable = spawnSync("pnpm", ["exec", "tsx", "--version"], {
-			cwd: root,
-			env: process.env,
-			stdio: "ignore",
-			timeout: 30_000,
-		});
-		return executable.status === 0;
-	} catch {
-		return false;
-	}
+	});
+	if (!tsx.ok) return miss(tsx.reason);
+	const executable = spawnSync("pnpm", ["exec", "tsx", "--version"], {
+		cwd: root,
+		env: process.env,
+		stdio: "ignore",
+		timeout: 30_000,
+	});
+	return executable.status === 0 ? { match: true } : miss("pnpm-exec");
 }
 
 if (command === "link") {
@@ -144,10 +183,12 @@ if (command === "link") {
 	} catch {
 		// A missing or incomplete checkout key is an ordinary install fallback.
 	}
-	const match = expected !== "unavailable" && (await matches(expected));
+	const result =
+		expected === "unavailable" ? miss("checkout-key") : await matches(expected);
+	const match = result.match;
 	const actual = process.env.HOBO_CI_DEPS_LAYER ?? "none";
 	console.log(
-		`deps layer ${match ? "match" : "miss"}: job=${actual}, checkout=${expected}\nmatch=${match}`,
+		`deps layer ${result.match ? "match" : `miss (${result.reason})`}: job=${actual}, checkout=${expected}\nmatch=${match}`,
 	);
 	if (process.env.GITHUB_OUTPUT)
 		appendFileSync(process.env.GITHUB_OUTPUT, `match=${match}\n`);

@@ -294,7 +294,10 @@ workspace `tsx` resolution, and `pnpm exec`; any miss runs the normal install.
 `prepareJobDirectory` pre-creates and chowns the job root, `HoBo`, and `HoBo/HoBo`
 to uid/gid 1000. A once-per-image-id probe checks payload readability and runner
 writability before selection. Failure logs `hobo_ci_deps_image_fallback` with
-`reason=unwritable-workdir` and uses the worker image.
+`reason=unwritable-workdir` (runner directory not writable by uid 1000),
+`reason=missing-payload` (no `/opt/hobo-deps` payload or key marker, as in an
+image built before the off-workdir layout), or `reason=probe-failed`, and uses
+the worker image.
 
 For immediate recovery from an unwritable promoted image, stop the daemon, run
 `docker rmi hobo-ci-deps:local`, and restart it. Alternatively set

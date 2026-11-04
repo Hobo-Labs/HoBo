@@ -66,7 +66,8 @@ verify_mount_contract() {
   HOBO_CI_DEPS_MOUNT_CONTRACT=1 \
     HOBO_CI_DEPS_IMAGE="$candidate" \
     HOBO_CI_DEPS_LAYER="$key" \
-    node --import tsx --test scripts/test/ci-deps-image-mount.test.ts
+    node --experimental-strip-types --no-warnings --import ./scripts/lib/ts-source-resolve.mts \
+      --test scripts/test/ci-deps-image-mount.test.ts
 }
 
 if docker image inspect "$candidate" >/dev/null 2>&1; then

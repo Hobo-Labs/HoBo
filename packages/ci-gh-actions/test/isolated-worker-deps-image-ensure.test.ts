@@ -145,8 +145,10 @@ describe("worker-owned deps image ensure", () => {
 		]);
 		expect(fake.processCalls).toHaveLength(2);
 		expect(fake.processCalls[0]?.args).toEqual([
+			"--experimental-strip-types",
+			"--no-warnings",
 			"--import",
-			"tsx",
+			"./scripts/lib/ts-source-resolve.mts",
 			"--test",
 			"scripts/test/ci-deps-image-mount.test.ts",
 		]);
