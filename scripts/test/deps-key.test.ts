@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -67,6 +68,17 @@ describe("deps key", () => {
 			"packages/b",
 		]);
 		assert.match(depsKeyFromInputs(inputs()), /^v0123456789ab-[0-9a-f]{16}$/);
+	});
+
+	it("accepts an explicit toolchain for the CLI key", () => {
+		const root = join(import.meta.dirname, "..", "..");
+		const toolchain = "v1123456789ab";
+		const key = execFileSync(
+			process.execPath,
+			["--no-warnings", "scripts/ci/deps-key.mts", "--toolchain", toolchain],
+			{ cwd: root, encoding: "utf8" },
+		).trim();
+		assert.match(key, /^v1123456789ab-[0-9a-f]{16}$/);
 	});
 
 	it("changes for every declared input", () => {

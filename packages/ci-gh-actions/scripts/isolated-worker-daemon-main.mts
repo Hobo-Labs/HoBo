@@ -26,6 +26,7 @@ import {
 	createWorkerMemoryAdmission,
 	createWorkerStorageAdmission,
 	type DepsImageProcessRequest,
+	defaultDepsRoot,
 	describeWaitingJobs,
 	generalLeaseIdsFor,
 	type HostedInboxStore,
@@ -38,6 +39,7 @@ import {
 	waitForIsolatedWorkerDrain,
 	workerOfferKeys,
 } from "@hobo/ci-gh-actions";
+import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
 
 const exec = promisify(execFile);
@@ -248,7 +250,8 @@ if (pnpmStore) mkdirSync(pnpmStore, { recursive: true, mode: 0o755 });
 const PNPM_STORE_TARGET = "/pnpm-store";
 const depsRepository = process.env.HOBO_CI_DEPS_REPOSITORY ?? "Hobo-Labs/HoBo";
 const depsImage = process.env.HOBO_CI_DEPS_IMAGE ?? "hobo-ci-deps:local";
-const depsRoot = process.env.HOBO_CI_DEPS_ROOT ?? process.cwd();
+const depsRoot =
+	process.env.HOBO_CI_DEPS_ROOT ?? defaultDepsRoot(import.meta.url);
 const workRoot =
 	process.env.HOBO_CI_WORKER_WORK_ROOT ??
 	join(
@@ -322,13 +325,36 @@ if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
 			},
 		},
 		fs: {
-			depsKey: async (root) =>
+			depsKey: async (root, toolchain) =>
 				depsKeyForRoot(
 					root,
 					`linux/${process.arch === "x64" ? "amd64" : process.arch}`,
+					toolchain,
 				),
 		},
 		docker: {
+			toolchain: async (root) => {
+				const computed = ciRunnerImageVersion(root);
+				const computedExists = await output(
+					"docker",
+					["image", "inspect", `hobo-ci-worker:${computed}`],
+					root,
+					30_000,
+				).then(
+					() => true,
+					() => false,
+				);
+				if (computedExists) return computed;
+				if (!docker.inspectImage)
+					throw new Error("docker image inspection unavailable");
+				const worker = await docker.inspectImage("hobo-ci-worker:local");
+				const toolchain = worker.repoTags
+					.map((tag) => tag.match(/^hobo-ci-worker:(v[0-9a-f]{12})$/)?.[1])
+					.find((tag) => tag !== undefined);
+				if (!toolchain)
+					throw new Error("local worker toolchain tag unavailable");
+				return toolchain;
+			},
 			imageExists: (image) =>
 				output("docker", ["image", "inspect", image], depsRoot, 30_000).then(
 					() => true,

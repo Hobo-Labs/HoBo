@@ -67,6 +67,7 @@ export {
 	type DepsImageGitPort,
 	type DepsImageProcessPort,
 	type DepsImageProcessRequest,
+	defaultDepsRoot,
 } from "./isolated-worker/deps-image.js";
 export {
 	createGithubJobPoller,

@@ -23,9 +23,28 @@ cleanup() {
 }
 trap cleanup EXIT
 
-key="$(node --no-warnings scripts/ci/deps-key.mts --stage "$context")"
 toolchain="$(node --no-warnings scripts/ci-runner-image-version.mts)"
 base="hobo-ci-worker:${toolchain}"
+if ! docker image inspect "$base" >/dev/null 2>&1; then
+  computed_toolchain="$toolchain"
+  toolchain=""
+  if worker_tags="$(docker image inspect hobo-ci-worker:local --format '{{range .RepoTags}}{{println .}}{{end}}' 2>/dev/null)"; then
+    while IFS= read -r tag; do
+      if [[ "$tag" =~ ^hobo-ci-worker:(v[0-9a-f]{12})$ ]]; then
+        toolchain="${BASH_REMATCH[1]}"
+        break
+      fi
+    done <<< "$worker_tags"
+  fi
+  if [[ -z "$toolchain" ]]; then
+    echo "missing toolchain image hobo-ci-worker:${computed_toolchain} and no versioned tag on hobo-ci-worker:local; run packages/ci-gh-actions/deploy/ci-runner/build.sh first" >&2
+    exit 1
+  fi
+  echo "Computed toolchain image hobo-ci-worker:${computed_toolchain} is missing; using ${toolchain} from hobo-ci-worker:local"
+fi
+base="hobo-ci-worker:${toolchain}"
+echo "Using toolchain image $base"
+key="$(node --no-warnings scripts/ci/deps-key.mts --toolchain "${toolchain}" --stage "$context")"
 candidate="hobo-ci-deps:${key}"
 epoch="$(git log -1 --format=%ct)"
 docker_memory_args=()
@@ -47,11 +66,6 @@ if docker image inspect "$candidate" >/dev/null 2>&1; then
   docker builder prune -f --keep-storage "$cap"
   exit 0
 fi
-
-docker image inspect "$base" >/dev/null 2>&1 || {
-  echo "missing toolchain image $base; run packages/ci-gh-actions/deploy/ci-runner/build.sh first" >&2
-  exit 1
-}
 
 echo "Building $candidate (fetch network restricted to lockfile-verified downloads; install offline)"
 docker build \

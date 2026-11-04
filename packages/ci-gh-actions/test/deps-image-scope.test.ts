@@ -2,94 +2,53 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { CI_RUNNER_IMAGE_VERSION_INPUTS } from "../../../scripts/lib/ci-runner-contract.mts";
-import {
-	DEPS_BUILD_RECIPE_PATHS,
-	depsContextPaths,
-} from "../../../scripts/lib/deps-key.mts";
 
 const root = join(import.meta.dirname, "..", "..", "..");
 const workflow = parse(
 	readFileSync(join(root, ".github/workflows/hobo-ci.yml"), "utf8"),
 );
 const depsJob = workflow.jobs["ci-deps-image"];
-const imageJob = workflow.jobs["ci-runner-image"];
 const prGate = workflow.jobs["pr-gate"];
 const mainGate = workflow.jobs["main-gate"];
-const payload =
-	"format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed))";
-const depsInputFilters = [
-	'"pnpm-lock.yaml',
-	'"pnpm-workspace.yaml',
-	'".npmrc',
-	'".pnpmfile.cjs',
-	'package.json"',
-	'"patches/',
-	'"mise.toml',
-	'"mise.lock',
-	'"packages/ci-gh-actions/deploy/ci-runner/deps/',
-	'"scripts/ci/deps-key.mts',
-	'"scripts/lib/deps-key.mts',
-];
-
-function filtersFor(job: { if: string }): string[] {
-	return [...job.if.matchAll(/contains\(format\(.*?\), '([^']+)'\)/gu)].map(
-		(match) => match[1],
-	);
-}
-
-function matchesFilter(path: string, filter: string): boolean {
-	return JSON.stringify(path).includes(filter);
-}
 
 describe("CI deps image push scope", () => {
-	it("runs only for deps inputs, a runner image build, or a fail-safe push", () => {
-		expect(filtersFor(depsJob)).toEqual(depsInputFilters);
-		expect(depsJob.if.split(payload)).toHaveLength(depsInputFilters.length + 1);
+	it("runs on every main push without commit file-list filtering", () => {
 		expect(depsJob.if).toContain(
-			"(github.event_name == 'push' && github.ref == 'refs/heads/main' && (",
+			"(github.event_name == 'push' && github.ref == 'refs/heads/main') ||",
 		);
-		expect(depsJob.if).toContain("needs.ci-runner-image.result == 'success'");
-		expect(depsJob.if).toContain("github.event.commits[0] == null");
-		expect(depsJob.if).toContain("github.event.forced == true");
+		expect(depsJob.if).not.toContain("github.event.commits");
+		expect(depsJob.if).not.toContain("contains(format(");
 		expect(depsJob.if).toContain("github.event_name == 'schedule'");
 		expect(depsJob.if).toContain("github.event_name == 'workflow_dispatch'");
 		expect(depsJob.if).toContain("github.event_name == 'pull_request'");
+		expect(depsJob.if).not.toContain("github.event_name == 'merge_group'");
 	});
 
-	it("covers every file read into the deps key", () => {
-		const inputs = new Set([
-			...depsContextPaths(root),
-			...DEPS_BUILD_RECIPE_PATHS,
-			".npmrc",
-			".pnpmfile.cjs",
-			"mise.lock",
-		]);
-		for (const path of inputs) {
-			expect(
-				depsInputFilters.some((filter) => matchesFilter(path, filter)),
-				path,
-			).toBe(true);
-		}
-	});
-
-	it("covers every toolchain input directly or by running ci-runner-image", () => {
-		const imageFilters = filtersFor(imageJob);
-		for (const path of [
-			...CI_RUNNER_IMAGE_VERSION_INPUTS,
-			"scripts/lib/ci-runner-contract.mts",
+	it("skips resolution and promotion when the local label already matches", () => {
+		const names = depsJob.steps.map((step) => step.name);
+		expect(names.indexOf("Check current local deps image")).toBe(
+			names.indexOf("Compute deps key") + 1,
+		);
+		const current = depsJob.steps.find(
+			(step) => step.name === "Check current local deps image",
+		);
+		expect(current.run).toContain("docker image inspect hobo-ci-deps:local");
+		expect(current.run).toContain("hobo.ci.deps-key");
+		expect(current.run).toContain('echo "current=${current}"');
+		for (const name of [
+			"Resolve local or GHCR deps image",
+			"Promote cached deps image and collect superseded images",
+			"Build deps image and verify offline install",
+			"Push deps image to GHCR",
 		]) {
-			expect(
-				depsInputFilters.some((filter) => matchesFilter(path, filter)) ||
-					imageFilters.length === 0 ||
-					imageFilters.some((filter) => matchesFilter(path, filter)),
-				path,
-			).toBe(true);
+			const step = depsJob.steps.find((candidate) => candidate.name === name);
+			expect(step.if).toContain("steps.current.outputs.current != 'true'");
 		}
 	});
 
-	it("does not make Main full gate wait for the deps image", () => {
+	it("does not make either gate wait for the deps image", () => {
 		expect(mainGate.needs).toBe("ci-runner-image");
+		expect(prGate.needs).toBe("ci-runner-image");
 		expect(depsJob.needs).toBe("ci-runner-image");
 	});
 });
