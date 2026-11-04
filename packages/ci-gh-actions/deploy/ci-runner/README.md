@@ -5,7 +5,23 @@ The hermetic runner is built in two steps:
 1. **Base** — `base/Dockerfile` (Debian digest pin, `system-packages.txt`, Docker CLI, pinned GitHub Actions runner bundle, Playwright's pinned Chromium headless shell under `/opt/pw-browsers` with `PLAYWRIGHT_BROWSERS_PATH`, UID 1000). A Playwright bump that changes the `chromium-headless-shell` revision in `playwright-core/browsers.json` fails `scripts/test/ci-runner-image-contract.test.ts` until `CI_RUNNER_PLAYWRIGHT_CHROMIUM` and the Dockerfile ARGs move with it.
 2. **Toolchain** — `mise oci build` from repo-root `mise.toml` / `mise.lock` (one OCI layer per tool).
 
-Use `bash packages/ci-gh-actions/deploy/ci-runner/build.sh` on the box worker.
+Use `bash packages/ci-gh-actions/deploy/ci-runner/build.sh` on the box worker. If the content-keyed `hobo-ci-worker:<version>` is absent locally, the script first pulls `ghcr.io/<owner>/<repo>/hobo-ci-worker:<version>` (repository from lowercased `GITHUB_REPOSITORY`, default `Hobo-Labs/HoBo`). A pulled image becomes `:local` only after the same in-container runner contract as a native build; a pull miss or failed contract falls back to the native build.
+
+## Lockfile-keyed deps image
+
+`scripts/ci/deps-key.mts` prints `<toolchainVersion>-<depsKey>`. The digest covers the lockfile, workspace config, optional root `.npmrc` and `patches/**`, every lockfile importer's `package.json`, mise's Node and pnpm entries, and `linux/<arch>`. The ts-autocode importer manifests must be present (`pnpm run pins:fetch ts-autocode`, or a recursive submodule checkout).
+
+Build and promote on the box:
+
+```bash
+bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh
+```
+
+The build stages only those manifests into its Docker context. The `fetch` target runs `pnpm fetch --frozen-lockfile` with network access and lockfile integrity checks. A separate `docker build --network=none` installs offline as UID 1000 at `/opt/actions-runner/_hobo_work/HoBo/HoBo`, using `store-dir=/pnpm-store` and `package-import-method=copy`, then rebuilds only the `allowBuilds` packages. Root lifecycle scripts remain the job install's responsibility; the exact-match skip path runs `scripts/ensure-ts-autocode-links.mts` explicitly, while CI already skips root hook installation. The final stage starts again from the toolchain image and keeps only the `node_modules` trees and `.git` skeleton, so neither the fetch store nor staged manifests are in the shipped image. Labels `hobo.ci.deps-key` and `hobo.ci.toolchain` let the worker reject a stale layer. `SOURCE_DATE_EPOCH` comes from the checkout's commit time.
+
+Before `hobo-ci-deps:local` moves, the script streams the staged manifests into the candidate and requires `pnpm install --frozen-lockfile --offline --config.confirmModulesPurge=false` to print `Already up to date`. `--no-promote` builds and verifies a candidate without moving `:local`; the PR workflow uses that mode and never pushes GHCR. Trusted main/schedule/dispatch runs reuse a local or GHCR image, or build and publish it.
+
+The install stage leaves an unborn git repository whose `remote.origin.url` is `https://github.com/Hobo-Labs/HoBo`. This relies on the pinned `actions/checkout` implementation: [`prepareExistingDirectory`](https://github.com/actions/checkout/blob/11bd71901bbe5b1630ceea73d27597364c9af683/src/git-directory-helper.ts) keeps the directory when `.git` exists and that URL matches; an unborn `HEAD` is treated as detached by [`isDetached`](https://github.com/actions/checkout/blob/11bd71901bbe5b1630ceea73d27597364c9af683/src/git-command-manager.ts), and `clean: false` skips `git clean -ffdx` and reset. All default-path box checkouts therefore set `clean: false`, enforced by `scripts/lint-actions.ts`.
 
 ## Fallback Dockerfile (`Dockerfile.monolithic`)
 

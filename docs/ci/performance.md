@@ -873,3 +873,33 @@ The gate was runnable at 00:33:12 but waited 33 s for one of two slots; the guar
 The guard now runs only on pull requests, while its two steps run after install in Main full gate and in PR impact gate on merge_group.
 The PR-only guard requests plain `hobo`.
 Expected saving: about 33–38 s of critical path on a main push and on merge_group.
+
+## Finding 22: install time is linking, so the job starts from a prebuilt node_modules layer
+
+Main run **41762556455** spent **19 s of the 52 s Main full gate** in
+`pnpm install --frozen-lockfile --config.confirmModulesPurge=false`. The host-mounted store at `/pnpm-store`
+was warm (`HOBO_CI_PNPM_STORE_MOUNTED=1`), so this downloaded nothing: the cost was copying and linking roughly
+2,000 packages and 796 workspace importers into `node_modules`. A store-only cache cannot remove that work.
+
+The deps layer now builds those trees once per toolchain/deps key and starts eligible HoBo job containers with
+them already at `/opt/actions-runner/_hobo_work/HoBo/HoBo`. The build's fetch stage has network access under
+lockfile integrity pins; installation and native rebuilds run in a separate network-disabled build. The final
+image excludes the fetch store. A matching toolchain label selects the layer per lease, and `clean: false`
+keeps it through checkout. Main full gate and PR impact gate compare `HOBO_CI_DEPS_LAYER` with the checkout's
+computed key: an exact match skips `pnpm install`; every miss runs the ordinary frozen install. The daily
+scheduled Main full gate always installs as the ongoing correctness verifier, while other jobs retain their
+existing install-and-verify behavior.
+
+The skip preserves the non-linking work later steps need. CI already skips the root prepare hook installation;
+the exact-match path explicitly runs `scripts/ensure-ts-autocode-links.mts`. The image's frozen offline install
+creates the same workspace bin links and pnpm state (`.pnpm` and `.modules.yaml`) as a job install. Bin links
+that target `dist` dangle until the later build in both cases.
+
+On main pushes, `ci-deps-image` runs only when a deps-key input changed or `ci-runner-image` ran. Missing commit
+file lists and forced pushes build fail-safe; schedule and workflow dispatch always run. PR build scoping is
+unchanged. Main full gate does not depend on `ci-deps-image`, so an unrelated push neither builds the layer nor
+adds a trunk-slot wait.
+
+The image build itself requires `pnpm install --frozen-lockfile --offline --config.confirmModulesPurge=false`
+to report `Already up to date` before local promotion. The measured main-run result will be added here from
+main runs after merge; no post-merge timing is claimed yet.

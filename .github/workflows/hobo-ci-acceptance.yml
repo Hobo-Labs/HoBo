@@ -43,6 +43,7 @@ jobs:
         if: ${{ !inputs.jit_only }}
         with:
           ref: ${{ github.sha }}
+          clean: false
           persist-credentials: false
       - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
         if: ${{ !inputs.jit_only }}
@@ -101,6 +102,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.sha }}
+          clean: false
           submodules: recursive
           persist-credentials: false
       - run: corepack enable pnpm

@@ -26,6 +26,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          clean: false
       - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
         with:
           install: true
@@ -43,6 +44,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          clean: false
       - name: Docker smoke (bootstrap-dev + install + core build)
         run: |
           set -euo pipefail

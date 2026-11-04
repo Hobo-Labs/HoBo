@@ -7,8 +7,9 @@ tags: [hobo, ci, oci, mise, pnpm, ghcr, hermetic, performance]
 
 # HoBo CI: prebuilt checkout and install layers
 
-Status: **plan only**. Nothing here is implemented yet. It is written for **Kimi K3.1** to execute through the
-**Kimi Code CLI** (`kimi -m kimi-code/k3.1-pro`), one phase per signed-off squash PR on `main`.
+Status: **Phases 3 and 4 implemented in the reduced legacy-builder form described below**; the other phases
+remain planned. The implementation preserves the content-keyed, offline-verified design but does not claim the
+unmeasured acceptance targets or deferred hardening.
 
 Related: [`performance.md`](./performance.md) (where wall time goes),
 [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md) (box worker runbook),
@@ -57,10 +58,11 @@ is unknown here.
 
 | Gap | Where | Fixed in |
 |---|---|---|
-| `apt-get update && apt-get install` resolves today's Debian package versions | `deploy/ci-runner/base/Dockerfile` | Phase 3: `snapshot.debian.org` at a pinned date, or a version-pinned `system-packages.txt` |
-| `registry:2` is pulled by tag | `deploy/ci-runner/build.sh` | Phase 3: pin by digest |
-| `curl https://mise.run \| sh` runs an unpinned installer script (only the version is pinned) | `deploy/ci-runner/build.sh` | Phase 3: pinned mise release asset with its SHA-256 |
-| `pnpm install` on every job resolves against the registry when the store misses | every job | Phase 4: `pnpm fetch` layer plus `--offline` install |
+| `apt-get update && apt-get install` resolves today's Debian package versions | `deploy/ci-runner/base/Dockerfile` | Deferred toolchain hardening: `snapshot.debian.org` at a pinned date, or a version-pinned `system-packages.txt` |
+| `registry:2` is pulled by tag | `deploy/ci-runner/build.sh` | Deferred toolchain hardening: pin by digest |
+| `curl https://mise.run \| sh` runs an unpinned installer script (only the version is pinned) | `deploy/ci-runner/build.sh` | Deferred toolchain hardening: pinned mise release asset with its SHA-256 |
+| `pnpm install` on every job links every package even with a warm mounted store | every job | **Implemented Phase 4:** prebuilt `node_modules` layer; Main full gate and PR impact gate skip on an exact key match and install on every miss |
+| Legacy Docker records build times but cannot rewrite every file timestamp, so equal inputs do not yield byte-reproducible image digests | `deploy/ci-runner/deps/Dockerfile` and `build-deps.sh` | Phase 5: BuildKit `rewrite-timestamp=true` (the box's Debian `docker.io` legacy builder lacks it) |
 
 ## Why: the data from main run 41690661790 (237 s)
 
@@ -171,13 +173,16 @@ The key is sha256 over, in fixed order:
 - `pnpm-lock.yaml` and `pnpm-workspace.yaml`;
 - every importer's `package.json`, because `bin`, `scripts` and `dependenciesMeta` change linking without
   changing the lockfile;
-- root `.npmrc`, `patches/**`, and the `pnpmfile` if any;
+- root `.npmrc`, `patches/**`, and optional `.pnpmfile.cjs`;
 - the `node` and `pnpm` entries of `mise.lock`, because native postinstalls are ABI-specific;
-- the platform (`linux/arm64` on the box).
+- the platform (`linux/arm64` on the box);
+- `ciRunnerImageVersion`, which covers `mise.lock`, `mise.toml`, `system-packages.txt`, the base Dockerfile and
+  the runner build script.
 
-The job still runs `pnpm install --frozen-lockfile --offline` afterwards. It is the verifier: on a layer hit pnpm
-finds `node_modules/.modules.yaml` current and finishes in about 1–2 s. On a miss it installs normally from the
-mounted store, so a wrong key costs time, never correctness.
+Main full gate and PR impact gate skip the install only when the worker's `HOBO_CI_DEPS_LAYER` exactly equals the
+checkout's computed key. Every miss runs `pnpm install --frozen-lockfile`, so a wrong key costs time, never
+correctness. The daily scheduled Main full gate always installs as the correctness verifier. Other jobs retain
+the ordinary install, which finds a matching layer's `.modules.yaml` current.
 
 Nix and Bazel have the same rule: the key is the full declared input set, outputs are immutable, and a cache hit
 is only a speed-up over a build you could have run. Adopt that discipline, not the tools.
@@ -355,6 +360,13 @@ The runner image gets:
 - Publish the key function (`ciRunnerImageVersion`) as the shared toolchain key for ts-autocode, OpenSesame and
   OpenPacker.
 
+**Implemented in this change (2026-11-04):** `build.sh` now pulls the exact
+`ghcr.io/<lowercased GITHUB_REPOSITORY>/hobo-ci-worker:<version>` tag when the local version is missing (default
+repository `Hobo-Labs/HoBo`). It tags the pulled candidate and runs the existing in-container runner contract
+before promoting `:local`; a registry miss or failed contract takes the native-build path. This is the small
+GHCR-consumption slice. Attestation verification stays Phase 5, and zstd/buildx cache publishing plus the three
+remaining toolchain pins are deferred hardening rather than claimed here.
+
 - **Acceptance:**
   - a box with the image pruned gets back to `:local` in under 60 s;
   - the image job does no build when the version is in GHCR;
@@ -374,6 +386,29 @@ The runner image gets:
   above.
 - Job install steps become `pnpm install --frozen-lockfile --offline`, with a fallback to the online install
   when no layer was used. The worker exports `HOBO_CI_DEPS_LAYER=<key>` to the job.
+
+**Implemented in this change (2026-11-04):** the pure key function hashes every declared input (including each
+lockfile importer manifest and the Node/pnpm mise entries) with mutation tests. `deps/build-deps.sh` stages only
+those manifests, runs the network-enabled `pnpm fetch` target, then a separate whole-build `--network=none`
+install/rebuild. A final toolchain-based stage keeps only `node_modules` and `.git`, not the fetch store or staged manifests. The candidate gets
+content/toolchain labels and the commit's `SOURCE_DATE_EPOCH`; the offline `Already up to date` contract runs
+before `:local` promotion. The worker selects that layer only for HoBo leases with a matching toolchain label,
+exports its full key, and refuses mismatched pre-warmed containers. Every default-path box checkout sets
+`clean: false` under a new lint rule. Main/schedule/dispatch can reuse or publish GHCR tags; PRs touching the
+deps-build inputs exercise build-only mode without promotion or push.
+
+Main full gate and PR impact gate skip `pnpm install` on an exact `HOBO_CI_DEPS_LAYER` match and run the ordinary
+frozen install on every miss; the daily scheduled Main full gate always installs to verify correctness. The skip
+path checks the ts-autocode links explicitly. CI already skips root hook installation, and the image's frozen
+offline install creates the same workspace bin links and pnpm state as the job install, including bin links that
+remain dangling until `dist` is built. Other jobs keep their install-and-verify behavior.
+
+On main pushes, `ci-deps-image` is gated to deps-key input changes or a completed `ci-runner-image` build, with
+fail-safe builds for missing commit file lists and forced pushes. Schedule and workflow dispatch always run; PR
+scoping is unchanged. Main full gate does not depend on the deps-image job, so unrelated pushes add no trunk-slot
+wait. GHCR retention and attestation verification stay Phase 5. Byte-reproducible digests are not claimed because
+the legacy builder has no BuildKit `rewrite-timestamp`; that gap is recorded above with its owner phase. Main-run
+timing evidence is still required before ticking the time-based acceptance boxes.
 
 - **Acceptance:**
   - install of 5 s or less on `main` for every job that installs;
