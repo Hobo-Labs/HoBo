@@ -79,8 +79,14 @@ export function releaseSemverFromEnv(
 		return env.HOBO_RELEASE_SEMVER.trim();
 	}
 	const ref = env.HOBO_RELEASE_VERSION?.trim() ?? env.GITHUB_REF_NAME?.trim();
-	const prRef = ref ? /^pr-([1-9]\d*)$/.exec(ref) : undefined;
-	if (prRef) return `0.0.0-pr.${prRef[1]}`;
+	const prRef = ref
+		? /^pr-([1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)$/.exec(ref)
+		: undefined;
+	if (prRef) {
+		const semver = `0.0.0-pr.${prRef[1]}`;
+		assertSemver(semver);
+		return semver;
+	}
 	if (ref) return parseReleaseRef(ref).semver;
 	return "dev";
 }

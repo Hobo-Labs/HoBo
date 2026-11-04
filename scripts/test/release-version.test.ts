@@ -104,6 +104,24 @@ describe("release semver from env (staging / OCI labels)", () => {
 			"0.0.0-pr.1684",
 		);
 	});
+
+	it("maps a manual merge preview ref to valid staging semver", () => {
+		expect(releaseSemverFromEnv({ HOBO_RELEASE_VERSION: "pr-manual" })).toBe(
+			"0.0.0-pr.manual",
+		);
+	});
+
+	it.each(["pr-007", "pr-"])("rejects invalid preview ref %s", (ref) => {
+		expect(() => releaseSemverFromEnv({ HOBO_RELEASE_VERSION: ref })).toThrow(
+			/unrecognized release ref/,
+		);
+	});
+
+	it("derives semver from a real train release ref", () => {
+		expect(
+			releaseSemverFromEnv({ HOBO_RELEASE_VERSION: "sdk-v1.2.3-alpha.4" }),
+		).toBe("1.2.3-alpha.4");
+	});
 });
 
 describe("staged npm manifest version", () => {
