@@ -58,6 +58,21 @@ describe("CI deps image build contract", () => {
 		includes(build, 'candidate="hobo-ci-deps:${key}"');
 	});
 
+	it("falls back to the local worker toolchain and keys the candidate with it", () => {
+		const computed = build.indexOf(
+			'toolchain="$(node --no-warnings scripts/ci-runner-image-version.mts)"',
+		);
+		const fallback = build.indexOf(
+			"docker image inspect hobo-ci-worker:local --format",
+		);
+		const key = build.indexOf('--toolchain "${toolchain}"');
+		assert.ok(computed > -1);
+		assert.ok(fallback > computed);
+		assert.ok(key > fallback);
+		includes(build, "^hobo-ci-worker:(v[0-9a-f]{12})$");
+		includes(build, "Using toolchain image");
+	});
+
 	it("returns on a local keyed hit without building", () => {
 		const hit = build.indexOf('if docker image inspect "$candidate"');
 		const exit = build.indexOf("exit 0", hit);
@@ -153,7 +168,7 @@ describe("CI deps workflow contract", () => {
 		const manifest = job.indexOf('docker manifest inspect "$remote"');
 		const pull = job.indexOf('docker pull "$remote"');
 		const buildStep = job.indexOf(
-			"if: steps.scope.outputs.run == 'true' && steps.source.outputs.source == 'build'",
+			"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'",
 		);
 		assert.ok(local > -1);
 		assert.ok(manifest > local);
@@ -161,7 +176,7 @@ describe("CI deps workflow contract", () => {
 		assert.ok(buildStep > pull);
 		includes(
 			job,
-			"if: steps.scope.outputs.run == 'true' && steps.source.outputs.source != 'build'",
+			"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source != 'build'",
 		);
 		includes(
 			job,
