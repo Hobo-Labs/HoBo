@@ -2,6 +2,7 @@ import {
 	composeOptions,
 	finalizeTrainableClass as finalizeWithRegistry,
 	type GroundingOptions,
+	intent as groundingIntent,
 	granularOptionsFor as groundingOptionsFor,
 } from "ts-autocode-grounding";
 import type { JsonObject, JsonValue } from "../json.js";
@@ -20,12 +21,32 @@ import type { FieldDescription, Trainable, TrainingOptions } from "./types.js";
 
 export {
 	description,
-	intent,
 	PENDING_GROUNDINGS,
 	returns,
 } from "ts-autocode-grounding";
 
 export { composeOptions };
+
+interface GroundingMethodContext {
+	readonly name: string | symbol;
+	metadata?: DecoratorMetadataObject;
+}
+
+export function intent(text: string) {
+	return <This, Args extends unknown[], Result>(
+		method: (this: This, ...args: Args) => Result,
+		context: ClassMethodDecoratorContext<
+			This,
+			(this: This, ...args: Args) => Result
+		>,
+	): ((this: This, ...args: Args) => Result) => {
+		const groundingContext: GroundingMethodContext = { name: context.name };
+		if (context.metadata !== undefined) {
+			groundingContext.metadata = context.metadata;
+		}
+		return groundingIntent(text)(method, groundingContext);
+	};
+}
 
 /**
  * Register every granular-declared method of a class (bare `@trainable`).

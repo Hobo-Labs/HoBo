@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "vitest run test/",
-    "test:contract:consumer": "node --import tsx --test contracts/consumer/*.test.ts",
-    "test:contract:provider": "node --import tsx --test contracts/provider/*.test.ts"
+    "test:contract:consumer": "vitest run contracts/consumer/",
+    "test:contract:provider": "vitest run contracts/provider/"
   },
   "devDependencies": {
     "vitest": "^4.1.9"

@@ -29,3 +29,10 @@ This package ships the architecture-guard evidence required by
 - `architecture/` — protobuf data shapes and CUE constraints for Connectivity Tier Ir Contract.
 - `architecture/pacts/` — PACT contract for the package boundary.
 - `ADR.md` — parse-don't-validate and event-architecture evidence.
+
+## Gates
+
+- `pnpm --filter @hobo/draft-connectivity-tier-ir-contract run test` checks validation, tier decisions, and policy-widening rejection.
+- `pnpm --filter @hobo/draft-connectivity-tier-ir-contract run typecheck` checks the public declaration consumer with both typed plans and untrusted JSON input.
+- Root `pnpm run typecheck` explicitly includes this proof alongside `./packages/*`; `test/root-script-pins.test.ts` pins that filter so the declaration boundary cannot silently leave the main typecheck scope.
+- `pnpm run draft:artifacts -- src/draft/technical-proofs/connectivity-tier-ir-contract` executes the identity example and validates the bench declaration; `pnpm --filter @hobo/draft-connectivity-tier-ir-contract exec vitest bench --root .` executes the benchmark. `pnpm run draft:cascade` checks the networking epic rollup.
