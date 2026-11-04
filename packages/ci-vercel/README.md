@@ -194,7 +194,9 @@ installation; these three settings must be supplied together.
 
 The reviewed sibling `ci-gh-actions` workflow and bootstrap files are embedded
 into the build by `scripts/generate-assets.mts`; a contract test verifies their
-contents match the sources. A deployment must verify rewrites, the private queue
+contents match the sources. Both asset generators format their output with the
+repo-pinned Biome before writing, and the proxy bundle's `--check` mode compares
+against those formatted bytes. A deployment must verify rewrites, the private queue
 trigger and scheduler before production use. Contract tests run without live
 GitHub or Vercel credentials. The real-process proxy shutdown test uses a
 35-second Vitest deadline so cold TypeScript startup on slower filesystems is
