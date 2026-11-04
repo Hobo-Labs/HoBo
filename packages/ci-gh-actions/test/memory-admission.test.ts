@@ -301,6 +301,7 @@ describe("worker memory admission", () => {
 		});
 		const request = {
 			jobId: 42,
+			requestedJobId: 7,
 			memoryClass: "heavy",
 			memoryMb: 8_192,
 			rank: 1,
@@ -314,6 +315,7 @@ describe("worker memory admission", () => {
 			"hobo_ci_memory_admission_wait",
 			expect.objectContaining({
 				jobId: 42,
+				requestedJobId: 7,
 				memoryClass: "heavy",
 				requestMb: 8_192,
 				inUseMb: 0,
@@ -324,7 +326,11 @@ describe("worker memory admission", () => {
 		admission.admit({ ...request, memoryMb: 5_120 });
 		expect(log).toHaveBeenLastCalledWith(
 			"hobo_ci_memory_admitted",
-			expect.objectContaining({ jobId: 42, waitedMs: 0 }),
+			expect.objectContaining({
+				jobId: 42,
+				requestedJobId: 7,
+				waitedMs: 0,
+			}),
 		);
 	});
 });

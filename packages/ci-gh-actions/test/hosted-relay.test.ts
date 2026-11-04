@@ -1,11 +1,13 @@
 import { clone } from "@bufbuild/protobuf";
 import { ConfigurationSchema, OfferSchema } from "@hobo/ci";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { HostedRelay, type HostedRelayStore } from "../src/hosted-relay.js";
 import {
 	createHostedRelayRuntime,
 	type HostedInboxStore,
 } from "../src/hosted-runtime.js";
+import { createWorkerMemoryAdmission } from "../src/isolated-worker/memory-admission.js";
+import { resolveWorkerMemoryConfig } from "../src/isolated-worker/memory-classes.js";
 import { harness, job, NOW, queued, SECRET, signed } from "./fixtures.js";
 
 const fixtures: ReturnType<typeof harness>[] = [];
@@ -188,6 +190,34 @@ it("reserves newly measured free minutes on the same unlaunched host", async () 
 	await h.relay.dispatchPending();
 	expect(h.api.dispatches).toBe(1);
 	expect(h.store.get(replacement?.id ?? "")?.state).toBe("dispatched");
+});
+
+it("logs actual and requested job ids when memory admission knows a swap", async () => {
+	const h = setup();
+	const original = await reserve(h);
+	const actual = job();
+	actual.id = 2;
+	actual.action = "in_progress";
+	actual.runnerName = original.runnerName;
+	h.store.observe(actual, NOW);
+	actual.action = "queued";
+	actual.runnerName = "";
+	h.asyncStore.pendingJobs = async () => [actual];
+	const log = vi.fn();
+	h.relay.options.memoryAdmission = createWorkerMemoryAdmission(
+		resolveWorkerMemoryConfig(
+			{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "16384" },
+			{ totalMemoryMb: 32_768, trunkSlots: 0 },
+		),
+		{ log },
+	);
+
+	await h.relay.dispatchPending();
+
+	expect(log).toHaveBeenCalledWith(
+		"hobo_ci_memory_admitted",
+		expect.objectContaining({ jobId: 2, requestedJobId: 1 }),
+	);
 });
 
 function setIsolatedOnly(h: ReturnType<typeof setup>, duringLease = false) {

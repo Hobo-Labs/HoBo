@@ -1028,7 +1028,7 @@ export class LeaseStore {
 						.run(this.leaseKey(lease));
 				this.db
 					.prepare(
-						"INSERT INTO leases(id,job_key,body) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
+						"INSERT INTO leases(id,job_key,body) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET job_key=excluded.job_key,body=excluded.body",
 					)
 					.run(lease.id, this.leaseKey(lease), event.detail);
 			}

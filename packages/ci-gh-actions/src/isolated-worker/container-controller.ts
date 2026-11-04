@@ -19,6 +19,7 @@ import type { AssignmentLaunch } from "./assignment-health.js";
 import type { DockerDriver } from "./docker-driver.js";
 import {
 	createWorkerLeaseReconciler,
+	leaseJobLogFields,
 	type WorkerLeaseReconciler,
 	type WorkerLeaseReconciliationEvent,
 } from "./lease-reconciler.js";
@@ -176,6 +177,7 @@ export function createIsolatedContainerController(options: {
 		event:
 			| WorkerLeaseReconciliationEvent
 			| "hobo_ci_container_oom"
+			| "hobo_ci_lease_settled"
 			| "hobo_ci_work_dir_removed"
 			| "hobo_ci_work_dir_remove_failed",
 		fields: Readonly<Record<string, string | number | boolean>>,
@@ -303,14 +305,14 @@ export function createIsolatedContainerController(options: {
 		try {
 			const removed = await options.workFs.removeJobDirectory(directory);
 			options.log?.("hobo_ci_work_dir_removed", {
-				jobId: lease.jobId,
+				...leaseJobLogFields(lease),
 				leaseId: lease.id,
 				bytes: removed.bytes,
 				entries: removed.entries,
 			});
 		} catch (error) {
 			options.log?.("hobo_ci_work_dir_remove_failed", {
-				jobId: lease.jobId,
+				...leaseJobLogFields(lease),
 				leaseId: lease.id,
 				message: error instanceof Error ? error.message : "unknown",
 			});
@@ -633,7 +635,7 @@ export function createIsolatedContainerController(options: {
 					);
 					if (state.exitCode === 137 && state.oomKilled)
 						options.log?.("hobo_ci_container_oom", {
-							jobId: lease.jobId,
+							...leaseJobLogFields(lease),
 							memoryClass: lease.memoryClass || "heavy",
 							memoryMb: lease.memoryMb || workerMemoryMb,
 							exitCode: state.exitCode,
@@ -667,6 +669,7 @@ export function createIsolatedContainerController(options: {
 				}
 			}
 			const deadWhileRunning = !stop && lease.state === "running" && !running;
+			let settledLease = lease;
 			try {
 				if (deadWhileRunning) {
 					if (lease.actualJobId === 0)
@@ -708,7 +711,7 @@ export function createIsolatedContainerController(options: {
 						: undefined;
 				if (unmet && lease.actualJobId === 0)
 					notifyUnassigned(lease, original.labels);
-				await options.store.settle(
+				const settled = await options.store.settle(
 					id,
 					0,
 					Math.max(
@@ -720,8 +723,18 @@ export function createIsolatedContainerController(options: {
 					now(),
 					unmet,
 				);
+				if (settled) {
+					settledLease = settled;
+					options.log?.("hobo_ci_lease_settled", {
+						leaseId: settled.id,
+						...leaseJobLogFields(settled),
+						runId: settled.originalRunId,
+						state: settled.state,
+						billedMinutes: settled.billedMinutes,
+					});
+				}
 			} finally {
-				await cleanupWorkDirectory(lease);
+				await cleanupWorkDirectory(settledLease);
 			}
 		},
 	};

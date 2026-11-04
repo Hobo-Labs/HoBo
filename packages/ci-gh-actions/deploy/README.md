@@ -135,6 +135,11 @@ Unleased worker containers are removed. A Docker listing failure releases nothin
 up to the configured 30-minute bound. See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for the full state rules
 and event fields.
 
+Lease-scoped logs report `jobId` as the job GitHub actually assigned (`actualJobId || jobId`) and add
+`requestedJobId` when it differs. This includes memory admission with a known swap, work-directory cleanup,
+lease/container orphan removal, OOM and `hobo_ci_lease_settled`. Historical lease rows identify orphan containers
+when available. The durable requested `jobId` remains unchanged for original-job requeue and backoff.
+
 Unassigned runners are stopped at the idle deadline instead of holding heavy memory indefinitely. Relaunches use
 per-job exponential backoff with jitter, park after the configured consecutive-attempt limit until a GitHub state
 change or cap, and reset on assignment. A sustained queue-wide assignment stall permits one probe per label. Monitor

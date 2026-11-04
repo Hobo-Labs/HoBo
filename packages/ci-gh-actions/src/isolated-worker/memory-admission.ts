@@ -18,6 +18,7 @@ export type MemoryAdmissionDecision = Readonly<{
 }>;
 export type MemoryAdmissionRequest = Readonly<{
 	jobId: number;
+	requestedJobId?: number;
 	memoryClass: WorkerMemoryClassName;
 	memoryMb: number;
 	rank: number;
@@ -67,11 +68,17 @@ export function createWorkerMemoryAdmission(
 			request.rank !== 0,
 		);
 		const admitted = inUse + request.memoryMb <= config.budgetMb;
+		const identity =
+			request.requestedJobId === undefined ||
+			request.requestedJobId === request.jobId
+				? {}
+				: { requestedJobId: request.requestedJobId };
 		if (admitted) {
 			const previous = waiting.get(request.jobId);
 			waiting.delete(request.jobId);
 			options.log?.("hobo_ci_memory_admitted", {
 				jobId: request.jobId,
+				...identity,
 				memoryClass: request.memoryClass,
 				requestMb: request.memoryMb,
 				inUseMb: inUse,
@@ -99,6 +106,7 @@ export function createWorkerMemoryAdmission(
 			state.signature = signature;
 			options.log?.("hobo_ci_memory_admission_wait", {
 				jobId: request.jobId,
+				...identity,
 				memoryClass: request.memoryClass,
 				requestMb: request.memoryMb,
 				inUseMb: inUse,

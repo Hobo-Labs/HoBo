@@ -6,8 +6,17 @@ import type { DockerContainer, DockerDriver } from "./docker-driver.js";
 
 export type WorkerLeaseReconciliationStore = Pick<
 	HostedRelayStore,
-	"activeLeases" | "configuration" | "get" | "abortIsolatedAndRequeue"
+	"activeLeases" | "all" | "configuration" | "get" | "abortIsolatedAndRequeue"
 >;
+
+export function leaseJobLogFields(
+	lease: Pick<Lease, "jobId" | "actualJobId">,
+): Readonly<{ jobId: number; requestedJobId?: number }> {
+	const jobId = lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
+	return jobId === lease.jobId
+		? { jobId }
+		: { jobId, requestedJobId: lease.jobId };
+}
 
 export type WorkerLeaseReconciliationEvent =
 	| "hobo_ci_container_orphan_removed"
@@ -139,16 +148,18 @@ export function createWorkerLeaseReconciler(options: {
 			}
 			const current = await options.store.get(lease.id);
 			if (current && ACTIVE_STATES.has(current.state)) continue;
-			if (reason === "container-missing") await options.afterRelease?.(lease);
+			const released = current ?? lease;
+			if (reason === "container-missing")
+				await options.afterRelease?.(released);
 			options.log?.("hobo_ci_lease_orphan_released", {
-				leaseId: lease.id,
-				jobId: lease.jobId,
-				runId: lease.originalRunId,
-				state: lease.state,
+				leaseId: released.id,
+				...leaseJobLogFields(released),
+				runId: released.originalRunId,
+				state: released.state,
 				reason,
 				ageMs,
 				memoryMb:
-					lease.memoryMb >= 512 ? lease.memoryMb : options.workerMemoryMb,
+					released.memoryMb >= 512 ? released.memoryMb : options.workerMemoryMb,
 			});
 		}
 		const leasedNames = new Set(
@@ -161,6 +172,7 @@ export function createWorkerLeaseReconciler(options: {
 		);
 		const protectedNames =
 			options.protectedContainerNames?.() ?? new Set<string>();
+		let historicalLeases: readonly Lease[] | undefined;
 		for (const container of containers) {
 			if (
 				leasedNames.has(container.name) ||
@@ -168,6 +180,20 @@ export function createWorkerLeaseReconciler(options: {
 				protectedNames.has(container.name)
 			)
 				continue;
+			if (historicalLeases === undefined) {
+				try {
+					historicalLeases = await options.store.all();
+				} catch {
+					historicalLeases = [];
+				}
+			}
+			const orphanLease = historicalLeases.find(
+				(lease) =>
+					lease.sandboxName === container.name ||
+					(lease.sandboxSessionId !== "" &&
+						lease.sandboxSessionId === container.containerId),
+			);
+			const identity = orphanLease ? leaseJobLogFields(orphanLease) : {};
 			try {
 				if (container.state === "running")
 					await options.docker.stop(container.name, container.containerId);
@@ -176,11 +202,13 @@ export function createWorkerLeaseReconciler(options: {
 					name: container.name,
 					containerId: container.containerId,
 					state: container.state,
+					...identity,
 				});
 			} catch (error) {
 				options.log?.("hobo_ci_container_orphan_remove_failed", {
 					name: container.name,
 					containerId: container.containerId,
+					...identity,
 					message: error instanceof Error ? error.message : "unknown",
 				});
 			}

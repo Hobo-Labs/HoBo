@@ -865,13 +865,21 @@ export class HostedRelay {
 				const memory = memoryRequestForStoredJob(job, memoryAdmission.config);
 				job.memoryClass = memory.memoryClass;
 				job.memoryMb = memory.memoryMb;
-				const decision = memoryAdmission.admit({
+				const assigned = memoryActive.find(
+					(lease) => lease.actualJobId === job.id && lease.jobId !== job.id,
+				);
+				const admissionRequest = {
 					jobId: job.id,
 					...memory,
 					rank,
 					activeLeases: memoryActive,
 					generalLeaseIds: memoryGeneral,
-				});
+				};
+				if (assigned)
+					Object.assign(admissionRequest, {
+						requestedJobId: assigned.jobId,
+					});
+				const decision = memoryAdmission.admit(admissionRequest);
 				if (!decision.admitted) {
 					if (decision.blockRank) {
 						if (rank === TRUNK_RANK) rankZeroWaiting = true;

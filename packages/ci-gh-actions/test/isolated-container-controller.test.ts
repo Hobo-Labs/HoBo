@@ -366,6 +366,39 @@ describe("isolated container controller reconcile", () => {
 		expect(s.abortIsolatedAndRequeue).not.toHaveBeenCalled();
 	});
 
+	it("logs the assigned job for settlement and work-directory removal", async () => {
+		const log = vi.fn();
+		const s = markerScenario(
+			vi.fn(async () => true),
+			false,
+			log,
+			"/srv/hobo-ci/work",
+		);
+		s.lease.actualJobId = 999;
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
+		);
+
+		await s.controller.host.reconcile(s.lease.id);
+
+		expect(log).toHaveBeenCalledWith(
+			"hobo_ci_lease_settled",
+			expect.objectContaining({
+				leaseId: s.lease.id,
+				jobId: 999,
+				requestedJobId: 100,
+			}),
+		);
+		expect(log).toHaveBeenCalledWith(
+			"hobo_ci_work_dir_removed",
+			expect.objectContaining({
+				leaseId: s.lease.id,
+				jobId: 999,
+				requestedJobId: 100,
+			}),
+		);
+	});
+
 	it("requeues the reserved job when the runner exited without taking it", async () => {
 		const s = markerScenario(vi.fn(async () => true));
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(

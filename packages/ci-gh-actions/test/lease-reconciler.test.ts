@@ -88,6 +88,7 @@ function storeWith(leases: Lease[]): WorkerLeaseReconciliationStore {
 	const active = leases;
 	return {
 		activeLeases: async () => active,
+		all: async () => active,
 		configuration: async () =>
 			create(ConfigurationStateSchema, { revision: 1, configuration }),
 		get: async (id) => active.find((lease) => lease.id === id),
@@ -158,6 +159,74 @@ describe("worker lease reconciliation", () => {
 				reason: "container-missing",
 				ageMs: 3_600_000,
 				memoryMb: 6_144,
+			}),
+		);
+	});
+
+	it("logs the assigned job when releasing an orphan lease", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000001", 1);
+		lease.actualJobId = 999;
+		const store = storeWith([lease]);
+		const log = vi.fn();
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => []),
+				stop: vi.fn(async () => undefined),
+				remove: vi.fn(async () => undefined),
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			log,
+		});
+
+		await reconciler.reconcile();
+
+		expect(log).toHaveBeenCalledWith(
+			"hobo_ci_lease_orphan_released",
+			expect.objectContaining({
+				leaseId: lease.id,
+				jobId: 999,
+				requestedJobId: 1,
+			}),
+		);
+	});
+
+	it("logs the assigned job for a historical lease's orphan container", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000099", 1);
+		lease.actualJobId = 999;
+		lease.state = "cancelled";
+		const store = storeWith([]);
+		store.all = async () => [lease];
+		const log = vi.fn();
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => [
+					{
+						name: lease.sandboxName,
+						containerId: lease.sandboxSessionId,
+						state: "exited" as const,
+					},
+				]),
+				stop: vi.fn(async () => undefined),
+				remove: vi.fn(async () => undefined),
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			log,
+		});
+
+		await reconciler.reconcile();
+
+		expect(log).toHaveBeenCalledWith(
+			"hobo_ci_container_orphan_removed",
+			expect.objectContaining({
+				containerId: lease.sandboxSessionId,
+				jobId: 999,
+				requestedJobId: 1,
 			}),
 		);
 	});
