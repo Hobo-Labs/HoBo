@@ -32,6 +32,7 @@
 		"docs:competitors:fix": "node --import tsx scripts/check-competitor-docs.ts --fix",
 		"docs:coverage": "node --import tsx scripts/check-docs-coverage.ts",
 		"docs:design-lint": "node --import tsx scripts/check-design-docs.ts",
+		"docs:findings": "node --import tsx scripts/docs-findings-index.mts",
 		"docs:freshness": "node --import tsx scripts/check-docs-freshness.ts",
 		"docs:freshness:staged": "node --import tsx scripts/check-docs-freshness.ts --staged",
 		"docs:okf": "node --import tsx scripts/check-okf-docs.mts",
