@@ -610,6 +610,92 @@ export function releaseOciInputSparseCones(): readonly string[] {
 	);
 }
 
+const TAR_BLOCK_SIZE = 512;
+
+function tarString(header: Buffer, offset: number, length: number): string {
+	return header
+		.subarray(offset, offset + length)
+		.toString("utf8")
+		.replace(/\0.*$/s, "");
+}
+
+function paxValue(data: Buffer, key: string): string | undefined {
+	let offset = 0;
+	while (offset < data.length) {
+		const space = data.indexOf(32, offset);
+		const length = Number(data.toString("ascii", offset, space));
+		if (
+			!Number.isInteger(length) ||
+			length <= 0 ||
+			offset + length > data.length
+		)
+			throw new Error("git archive: malformed pax header");
+		const record = data.subarray(space + 1, offset + length);
+		const equals = record.indexOf(61);
+		if (record.subarray(0, equals).toString("utf8") === key)
+			return record.subarray(equals + 1, record.length - 1).toString("utf8");
+		offset += length;
+	}
+	return undefined;
+}
+
+function parseTarFiles(archive: Buffer): Map<string, string> {
+	const files = new Map<string, string>();
+	let extendedPath: string | undefined;
+	let longPath: string | undefined;
+	for (let offset = 0; offset + TAR_BLOCK_SIZE <= archive.length; ) {
+		const header = archive.subarray(offset, offset + TAR_BLOCK_SIZE);
+		if (header.every((byte) => byte === 0)) break;
+		const sizeText = tarString(header, 124, 12).trim();
+		const size = sizeText ? Number.parseInt(sizeText, 8) : 0;
+		if (!Number.isInteger(size) || size < 0)
+			throw new Error(`git archive: invalid tar entry size ${sizeText}`);
+		const dataStart = offset + TAR_BLOCK_SIZE;
+		const dataEnd = dataStart + size;
+		if (dataEnd > archive.length)
+			throw new Error("git archive: truncated tar entry");
+		const data = archive.subarray(dataStart, dataEnd);
+		const type = String.fromCharCode(header[156] ?? 0);
+		if (type === "x") {
+			extendedPath = paxValue(data, "path");
+		} else if (type === "L") {
+			longPath = data.toString("utf8").replace(/\0$/, "");
+		} else if (type !== "g") {
+			const prefix = tarString(header, 345, 155);
+			const name = tarString(header, 0, 100);
+			const path =
+				extendedPath ?? longPath ?? (prefix ? `${prefix}/${name}` : name);
+			if (type === "0" || type === "\0" || type === "2")
+				files.set(
+					path,
+					type === "2" ? tarString(header, 157, 200) : data.toString("utf8"),
+				);
+			extendedPath = undefined;
+			longPath = undefined;
+		}
+		offset = dataStart + Math.ceil(size / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
+	}
+	return files;
+}
+
+function readGitArchive(
+	rev: string,
+	cwd: string,
+	paths: readonly string[],
+): Map<string, string> {
+	const archived = parseTarFiles(
+		git(["archive", "--format=tar", rev, "--", ...paths], cwd),
+	);
+	const contents = new Map<string, string>();
+	for (const path of paths) {
+		const text = archived.get(path);
+		if (text === undefined)
+			throw new Error(`git archive: missing ${path} at ${rev}`);
+		contents.set(path, text);
+	}
+	return contents;
+}
+
 /** Git tree scoped to release OCI inputs (fast on sparse CI checkouts). */
 export function releaseInputGitTree(rev: string, cwd: string): RepoTree {
 	const cacheKey = `${cwd}\0${rev}\0release-inputs`;
@@ -621,29 +707,9 @@ export function releaseInputGitTree(rev: string, cwd: string): RepoTree {
 		gitlinks,
 		read(paths) {
 			const wanted = paths.filter((path) => files.has(path));
-			const contents = new Map<string, string>();
-			if (wanted.length === 0) return contents;
-			const output = git(
-				["cat-file", "--batch"],
-				cwd,
-				`${wanted.map((path) => files.get(path)).join("\n")}\n`,
-			);
-			let offset = 0;
-			for (const path of wanted) {
-				const newline = output.indexOf(10, offset);
-				const header = output.subarray(offset, newline).toString("utf8");
-				const size = Number(header.split(" ")[2]);
-				if (!Number.isInteger(size))
-					throw new Error(
-						`git cat-file: unexpected header ${header} for ${path}`,
-					);
-				contents.set(
-					path,
-					output.subarray(newline + 1, newline + 1 + size).toString("utf8"),
-				);
-				offset = newline + 1 + size + 1;
-			}
-			return contents;
+			return wanted.length === 0
+				? new Map<string, string>()
+				: readGitArchive(rev, cwd, wanted);
 		},
 	};
 	gitTreeCache.set(cacheKey, tree);
