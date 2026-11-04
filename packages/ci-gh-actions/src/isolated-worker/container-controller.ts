@@ -19,6 +19,11 @@ import {
 	containerResourceWeightsForRank,
 	type DockerDriver,
 } from "./docker-driver.js";
+import {
+	createWorkerLeaseReconciler,
+	type WorkerLeaseReconciler,
+	type WorkerLeaseReconciliationEvent,
+} from "./lease-reconciler.js";
 import type { WorkerMemoryAdmission } from "./memory-admission.js";
 import { computeJobMemoryConfig } from "./memory-classes.js";
 import type { WorkerStorageFileSystem } from "./storage-admission.js";
@@ -97,6 +102,7 @@ function requeueJob(lease: {
 
 export type IsolatedContainerController = {
 	host: IsolatedRunnerHost;
+	reconcileLeases: WorkerLeaseReconciler["reconcile"];
 	ready: () => Promise<boolean>;
 	/** Create one idle container ahead of demand so the next launch skips `docker create`/`start`. */
 	prewarm: (repository?: string) => Promise<void>;
@@ -154,12 +160,15 @@ export function createIsolatedContainerController(options: {
 	) => Promise<ReadonlySet<string>>;
 	log?: (
 		event:
+			| WorkerLeaseReconciliationEvent
 			| "hobo_ci_container_oom"
 			| "hobo_ci_work_dir_removed"
 			| "hobo_ci_work_dir_remove_failed",
 		fields: Readonly<Record<string, string | number | boolean>>,
 	) => void;
 	now?: () => string;
+	/** Grace for a reservation between its journal write and `docker create`. */
+	orphanGraceMs?: number;
 	/** Requeue uncertain leases that never got a container session. */
 	uncertainWithoutContainerRecoveryMs?: number;
 	/** Max job containers alive at once on this host (default 1: the old serial behaviour). */
@@ -291,6 +300,7 @@ export function createIsolatedContainerController(options: {
 	};
 	let warm: WarmContainer | undefined;
 	let warming: Promise<void> | undefined;
+	const protectedWarmNames = new Set<string>();
 	const liveContainers = async (except: string) =>
 		(await options.store.activeLeases()).filter(
 			(lease) =>
@@ -325,6 +335,8 @@ export function createIsolatedContainerController(options: {
 				);
 				if (!reserved) return;
 			}
+			const name = `hobo-warm-${Date.now().toString(36)}`;
+			protectedWarmNames.add(name);
 			try {
 				const next = repository
 					? undefined
@@ -332,7 +344,6 @@ export function createIsolatedContainerController(options: {
 				const selection = await selectImage(
 					repository ?? next?.repository ?? depsRepository,
 				);
-				const name = `hobo-warm-${Date.now().toString(36)}`;
 				const handle = await options.docker.create(
 					containerSpec(name, 6 * 60 * 60_000, prewarmMemoryMb, selection, 1),
 				);
@@ -347,6 +358,8 @@ export function createIsolatedContainerController(options: {
 			} catch (error) {
 				if (reserved) options.memoryAdmission?.releaseWarm(prewarmMemoryMb);
 				throw error;
+			} finally {
+				if (!warm || warm.name !== name) protectedWarmNames.delete(name);
 			}
 			if (reserved && !warm)
 				options.memoryAdmission?.releaseWarm(prewarmMemoryMb);
@@ -474,6 +487,7 @@ export function createIsolatedContainerController(options: {
 					options.docker.updateResources
 				) {
 					warm = undefined;
+					protectedWarmNames.delete(spare.name);
 					options.memoryAdmission?.consumeWarm(spare.memoryMb);
 					containerId = spare.containerId;
 					await options.docker.updateResources(spare.containerId, weights);
@@ -695,9 +709,24 @@ export function createIsolatedContainerController(options: {
 			}
 		},
 	};
+	const reconcilerOptions: Parameters<typeof createWorkerLeaseReconciler>[0] = {
+		store: options.store,
+		docker: options.docker,
+		workerAccountId: options.workerAccountId,
+		workerMemoryMb,
+		now: () => Date.parse(now()),
+		settleExited: async (lease) => host.reconcile(lease.id, true),
+		afterRelease: cleanupWorkDirectory,
+		protectedContainerNames: () => protectedWarmNames,
+	};
+	if (options.orphanGraceMs !== undefined)
+		reconcilerOptions.orphanGraceMs = options.orphanGraceMs;
+	if (options.log) reconcilerOptions.log = options.log;
+	const reconciler = createWorkerLeaseReconciler(reconcilerOptions);
 
 	return {
 		host,
+		reconcileLeases: reconciler.reconcile,
 		ready: async () => !!options.workerImage && !!options.workerAccountId,
 		prewarm,
 		discardWarm: async () => {
@@ -705,6 +734,7 @@ export function createIsolatedContainerController(options: {
 			const spare = warm;
 			warm = undefined;
 			if (spare) {
+				protectedWarmNames.delete(spare.name);
 				try {
 					await options.docker.remove(spare.name, spare.containerId);
 				} finally {

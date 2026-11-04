@@ -227,7 +227,7 @@ describe("isolated worker deps image selection", () => {
 		await ctl.host.launch(lease.id, "hobo-trunk", 0);
 		expect(docker.specs).toHaveLength(1);
 		expect(docker.resourceUpdates).toEqual([
-			{ containerId: "0".repeat(63) + "1", cpuShares: 8_192 },
+			{ containerId: `${"0".repeat(63)}1`, cpuShares: 8_192 },
 		]);
 	});
 
