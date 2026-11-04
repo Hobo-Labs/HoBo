@@ -245,7 +245,8 @@ export function createIsolatedContainerController(options: {
 			HOBO_CI_RUNNER_SHA256: runner.sha256,
 			HOBO_CI_RUNNER_URL: runner.url,
 		};
-		if (selection.depsKey) env.HOBO_CI_DEPS_LAYER = selection.depsKey;
+		if (selection.depsKey && !jobDirectory)
+			env.HOBO_CI_DEPS_LAYER = selection.depsKey;
 		return {
 			name,
 			image: selection.image,
