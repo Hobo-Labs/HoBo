@@ -271,7 +271,9 @@ its identity, termination and usage are proven.
 
 The managed relay embeds the reviewed Actions host workflow and standalone
 bootstrap from `@hobo/ci-gh-actions`. Its build regenerates
-`src/_generated/relay-assets.ts`; commit that snapshot whenever the shared host
+`src/_generated-assets/relay-assets.ts`; commit that snapshot whenever the shared host
 source changes. `test/relay-assets.test.ts` checks byte equality with the source.
+The sandbox proxy bundle also lives in `src/_generated-assets/`: this directory
+keeps non-protobuf generators out of the protobuf-owned `src/_generated/` tree.
 The local persistent listener can wait without an age-based deadline; the
 embedded hosted bridge still supplies and enforces its lease timeout.

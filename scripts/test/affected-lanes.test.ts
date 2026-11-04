@@ -213,6 +213,19 @@ describe("main-gate scope", () => {
 		assert.equal(run("mise.lock\n"), "repo-wide\n");
 	});
 
+	it("always checks generated-output drift on main pushes", () => {
+		const workflow = readFileSync(".github/workflows/hobo-ci.yml", "utf8");
+		const mainStart = workflow.indexOf("  main-gate:");
+		const main = workflow.slice(
+			mainStart,
+			workflow.indexOf("  artifact-trust:", mainStart),
+		);
+		assert.match(
+			main,
+			/- name: Generated-output drift\n\s+if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'\n\s+timeout-minutes: 8\n\s+run: >-\n\s+pnpm run codegen:check &&\n\s+pnpm --filter @hobo-draft\/s0-04-protobuf-cue-codegen test/u,
+		);
+	});
+
 	it("a scoped turbo run leaves an unrelated package out", () => {
 		const plan = execFileSync(
 			"node_modules/.bin/turbo",
