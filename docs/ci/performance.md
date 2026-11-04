@@ -865,3 +865,11 @@ Once accepted, later polls returned `duplicate` without checking whether a pendi
 Run 41738569286 had five jobs queued for over 17 minutes and logged as duplicates while 22–24 jobs waited.
 The fix checks coverage locally and re-admits uncovered jobs through the relay at most once per minute per delivery id.
 The Vercel relay webhook answers 202 `requeued` for such a re-admitted delivery.
+
+## Finding 18: the contract guard held the slot Main full gate needed
+
+Main push run 41747634569 took 109 s: image 00:33:06–00:33:12, contract guard 00:33:06–00:33:44, Secret scan 00:33:24–00:33:39, Main full gate 00:33:45–00:34:37.
+The gate was runnable at 00:33:12 but waited 33 s for one of two slots; the guard's real work was 2 s and its other ~33 s duplicated checkout, preflight and install.
+The guard now runs only on pull requests, while its two steps run after install in Main full gate and in PR impact gate on merge_group.
+The PR-only guard requests plain `hobo`.
+Expected saving: about 33–38 s of critical path on a main push and on merge_group.

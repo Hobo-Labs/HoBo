@@ -178,6 +178,12 @@ jobs:
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: CI runner image contract (manifest)
+        if: github.event_name == 'merge_group'
+        run: pnpm exec vitest run scripts/test/ci-runner-image-contract.test.ts
+      - name: Assert CI fabric contract
+        if: github.event_name == 'merge_group'
+        run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
       - name: Resolve Turbo SCM base
         if: github.event_name == 'pull_request'
         id: scm-base
@@ -423,6 +429,10 @@ jobs:
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: remote:rw
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: CI runner image contract (manifest)
+        run: pnpm exec vitest run scripts/test/ci-runner-image-contract.test.ts
+      - name: Assert CI fabric contract
+        run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
       - name: Seed the pnpm store cache for PRs
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: ./.github/actions/pnpm-store
@@ -592,7 +602,9 @@ jobs:
 
   ci-guard:
     name: CI fabric contract guard
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    # On other events, these steps run inside Main full gate or PR impact gate.
+    if: github.event_name == 'pull_request'
+    runs-on: hobo
     timeout-minutes: 10
     permissions:
       contents: read
