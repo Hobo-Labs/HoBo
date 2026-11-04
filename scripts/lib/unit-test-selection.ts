@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 export const ROOT_VITEST_SHARDS = 4;
-export const DRAFT_VITEST_SHARDS = 4;
+export const DRAFT_VITEST_SHARDS = 9;
 
 export const legacyUnitPatterns = [
 	"test/*test.ts",
@@ -90,28 +90,37 @@ export function readShard(args: string[]): TestShard | undefined {
 	return { index, count };
 }
 
-export function selectShard(files: string[], shard: TestShard): string[] {
-	return files.filter(
-		(file) =>
-			createHash("sha256").update(file).digest().readUInt32BE(0) %
-				shard.count ===
-			shard.index,
-	);
+function shardIndex(value: string, count: number): number {
+	return createHash("sha256").update(value).digest().readUInt32BE(0) % count;
 }
 
-const draftShardDirectories = [
-	"src/draft/technical-proofs/",
-	"src/draft/exp-proofs/",
-	"src/draft/epic-proofs/",
-	"src/draft/projects/",
-];
+export function selectShard(files: string[], shard: TestShard): string[] {
+	return files.filter((file) => shardIndex(file, shard.count) === shard.index);
+}
+
+export function draftProofDirectory(file: string): string {
+	const directory =
+		/^(src\/draft\/exp-proofs\/[^/]+\/[^/]+|src\/draft\/[^/]+\/[^/]+)\/tests?\//.exec(
+			file,
+		)?.[1];
+	if (directory === undefined) {
+		throw new Error(`draft test is not in a proof package: ${file}`);
+	}
+	return directory;
+}
 
 export function selectDraftShard(files: string[], shard: TestShard): string[] {
-	const directory = draftShardDirectories[shard.index];
-	if (directory === undefined || shard.count !== DRAFT_VITEST_SHARDS) {
+	if (
+		shard.index < 0 ||
+		shard.index >= shard.count ||
+		shard.count !== DRAFT_VITEST_SHARDS
+	) {
 		throw new Error(`invalid draft shard ${shard.index}/${shard.count}`);
 	}
-	return files.filter((file) => file.startsWith(directory));
+	return files.filter(
+		(file) =>
+			shardIndex(draftProofDirectory(file), shard.count) === shard.index,
+	);
 }
 
 export const rootUnitTaskNames = [
