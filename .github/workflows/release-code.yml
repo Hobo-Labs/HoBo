@@ -82,6 +82,7 @@ jobs:
           sparse-checkout-cone-mode: true
           sparse-checkout: ${{ env.CODE_RELEASE_SPARSE_PATHS }}
           submodules: recursive
+          clean: false
           fetch-depth: 2
       - uses: ./.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
@@ -176,6 +177,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          clean: false
       - uses: ./.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
@@ -233,6 +235,8 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          clean: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: hobo-code-release-digests

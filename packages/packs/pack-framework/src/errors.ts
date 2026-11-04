@@ -1,4 +1,3 @@
-import type { JsonValue } from "./json.js";
 /**
  * Stable error codes for pack mechanics.
  *
@@ -106,9 +105,7 @@ export class PackError extends Error {
 	}
 }
 
-// `unknown`, not `JsonValue`: a `PackError` is not JSON, so a predicate
-// narrowing between them has no overlap and cannot type-check. Testing a caught
-// value is the whole use.
-export function isPackError(value: unknown): value is PackError {
+// Preserve the caught value's type while narrowing it to PackError.
+export function isPackError<T>(value: T): value is T & PackError {
 	return value instanceof PackError;
 }

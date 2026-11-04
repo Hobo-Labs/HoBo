@@ -1,5 +1,5 @@
 {
-	"errors": 33,
-	"warnings": 502,
+	"errors": 2,
+	"warnings": 26,
 	"note": "Ratchet baseline for scripts/check-biome-budget.mts. Findings may fall, never rise. Lower it with --update after fixing some; the script refuses to raise it. Down from 1080 total; most of what remains is lint/style/noNonNullAssertion, deliberately not swept because biome fixes it by rewriting x!.y to x?.y, which turns a throw into an undefined."
 }

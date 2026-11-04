@@ -94,6 +94,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          clean: false
           fetch-depth: 2
           filter: blob:none
           sparse-checkout: ${{ env.RELEASE_SPARSE_PATHS }}
@@ -266,6 +267,7 @@ jobs:
           sparse-checkout: ${{ env.RELEASE_SPARSE_PATHS }}
           sparse-checkout-cone-mode: true
           submodules: recursive
+          clean: false
       - uses: ./.github/actions/ci-runner-preflight
       - name: Resolve and validate release version
         run: node --no-warnings scripts/ci/resolve-release-version.mts "${HOBO_RELEASE_VERSION}" --github-env
@@ -375,6 +377,7 @@ jobs:
             .mise/locks
           sparse-checkout-cone-mode: true
           submodules: recursive
+          clean: false
       - uses: ./.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
       - uses: ./.github/actions/pnpm-store

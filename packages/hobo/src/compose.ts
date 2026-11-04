@@ -127,7 +127,7 @@ import {
 import type { FetchHandler } from "./servable-entrypoints.js";
 
 function asFetchHandler(
-	value: Function | JsonValue | undefined,
+	value: FetchHandler | JsonValue | undefined,
 ): FetchHandler | null {
 	if (!(value instanceof Function)) {
 		return null;

@@ -56,6 +56,19 @@ if docker image inspect "${candidate}" >/dev/null 2>&1; then
   exit 0
 fi
 
+# Main publishes this exact content key. Reuse it after a box prune, but still
+# gate the local tag on the same runner contract as a native build.
+repository="${GITHUB_REPOSITORY:-Hobo-Labs/HoBo}"
+repository="${repository,,}"
+published="ghcr.io/${repository}/hobo-ci-worker:${version}"
+if docker pull "${published}"; then
+  docker tag "${published}" "${candidate}"
+  if promote_candidate; then
+    exit 0
+  fi
+  echo "Published runner image failed the local contract; building natively" >&2
+fi
+
 # Registry API, not `docker manifest inspect`: the runner image's Debian docker.io
 # CLI rejects the pinned OCI index (its attestation children are OCI manifests).
 node --no-warnings scripts/ci-runner-verify-base-digest.mts
