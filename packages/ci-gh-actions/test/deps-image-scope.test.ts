@@ -57,9 +57,7 @@ describe("CI deps image push scope", () => {
 describe("exact deps layer matches", () => {
 	it("skips install in both gates, verifies sibling links, and installs on misses", () => {
 		for (const job of [prGate, mainGate]) {
-			const payload = job.steps.find(
-				(step) => step.name === "Link deps layer",
-			);
+			const payload = job.steps.find((step) => step.name === "Link deps layer");
 			const report = job.steps.find(
 				(step) => step.name === "Check deps layer match",
 			);
