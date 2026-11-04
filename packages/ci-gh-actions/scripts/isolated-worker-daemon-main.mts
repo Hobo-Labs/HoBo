@@ -226,6 +226,8 @@ const worker = createIsolatedContainerController({
 	docker,
 	workerAccountId,
 	workerImage: process.env.HOBO_CI_WORKER_IMAGE ?? "hobo-ci-worker:local",
+	depsRepository: process.env.HOBO_CI_DEPS_REPOSITORY ?? "Hobo-Labs/HoBo",
+	depsImage: process.env.HOBO_CI_DEPS_IMAGE ?? "hobo-ci-deps:local",
 	workerMemoryMb,
 	prewarmMemoryMb: memoryConfig.classes.standard,
 	memoryAdmission,

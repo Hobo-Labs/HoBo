@@ -15,8 +15,15 @@ export type IsolatedContainerHandle = Readonly<{
 	containerId: string;
 }>;
 
+export type DockerImageInspection = Readonly<{
+	id: string;
+	repoTags: readonly string[];
+	labels: Readonly<Record<string, string>>;
+}>;
+
 /** Ephemeral container boundary for one JIT runner session. */
 export interface DockerDriver {
+	inspectImage?(image: string): Promise<DockerImageInspection>;
 	create(spec: IsolatedContainerSpec): Promise<IsolatedContainerHandle>;
 	start(name: string, containerId: string): Promise<void>;
 	exec(

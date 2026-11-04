@@ -94,7 +94,7 @@ export type IsolatedContainerController = {
 	host: IsolatedRunnerHost;
 	ready: () => Promise<boolean>;
 	/** Create one idle container ahead of demand so the next launch skips `docker create`/`start`. */
-	prewarm: () => Promise<void>;
+	prewarm: (repository?: string) => Promise<void>;
 	/** Remove the idle pre-warmed container (daemon shutdown). */
 	discardWarm: () => Promise<void>;
 };
@@ -117,6 +117,21 @@ export interface IsolatedWorkerStore extends HostedRelayStore {
 		unmet?: Job,
 	): Promise<Lease | undefined>;
 }
+
+type JobImage = Readonly<{ image: string; depsKey?: string }>;
+type JobContainerEnvironment = {
+	HOBO_CI_DEPS_LAYER?: string;
+	HOBO_CI_JOB_MEMORY_MB: string;
+	HOBO_CI_RELAY_ORIGIN: string;
+	HOBO_CI_RUNNER_SHA256: string;
+	HOBO_CI_RUNNER_URL: string;
+};
+type WarmContainer = Readonly<{
+	name: string;
+	containerId: string;
+	memoryMb: number;
+	selection: JobImage;
+}>;
 
 export function createIsolatedContainerController(options: {
 	store: IsolatedWorkerStore;
@@ -149,6 +164,9 @@ export function createIsolatedContainerController(options: {
 	containerEnv?: Readonly<Record<string, string>>;
 	workRoot?: string;
 	workFs?: WorkerStorageFileSystem;
+	/** Only this repository may use the HoBo deps layer; empty depsImage disables it. */
+	depsRepository?: string;
+	depsImage?: string;
 }): IsolatedContainerController {
 	const now = options.now ?? (() => new Date().toISOString());
 	const uncertainWithoutContainerRecoveryMs =
@@ -161,30 +179,79 @@ export function createIsolatedContainerController(options: {
 		throw new Error("worker work directory configuration incomplete");
 	const runner = runnerDownloadFor(process.arch);
 	const prewarmMemoryMb = options.prewarmMemoryMb ?? workerMemoryMb;
+	const depsRepository = options.depsRepository ?? "Hobo-Labs/HoBo";
+	const depsImage = options.depsImage ?? "hobo-ci-deps:local";
+	const workerSelection: JobImage = { image: options.workerImage };
+	const selectionCache = new Map<string, JobImage>();
+	const loggedFailures = new Set<string>();
+	const selectImage = async (repository: string): Promise<JobImage> => {
+		const inspect = options.docker.inspectImage;
+		if (
+			!depsImage ||
+			repository.toLowerCase() !== depsRepository.toLowerCase() ||
+			!inspect
+		)
+			return workerSelection;
+		try {
+			const worker = await inspect(options.workerImage);
+			const deps = await inspect(depsImage);
+			const cacheKey = `${worker.id}\0${deps.id}`;
+			const cached = selectionCache.get(cacheKey);
+			if (cached) return cached;
+			const toolchain = worker.repoTags
+				.map((tag) => tag.match(/^hobo-ci-worker:(v[0-9a-f]{12})$/)?.[1])
+				.find((tag) => tag !== undefined);
+			const depsKey = deps.labels["hobo.ci.deps-key"];
+			const selection =
+				toolchain && deps.labels["hobo.ci.toolchain"] === toolchain && depsKey
+					? { image: depsImage, depsKey }
+					: workerSelection;
+			selectionCache.set(cacheKey, selection);
+			loggedFailures.delete(depsImage);
+			return selection;
+		} catch (error) {
+			if (!loggedFailures.has(depsImage)) {
+				loggedFailures.add(depsImage);
+				console.error(
+					JSON.stringify({
+						event: "hobo_ci_deps_image_fallback",
+						image: depsImage,
+						message: error instanceof Error ? error.message : "unknown",
+					}),
+				);
+			}
+			return workerSelection;
+		}
+	};
 	const containerSpec = (
 		name: string,
 		timeoutMs: number,
 		memoryMb: number,
+		selection: JobImage,
 		jobDirectory?: string,
-	) => ({
-		name,
-		image: options.workerImage,
-		timeoutMs,
-		runAsUser: "1000:1000",
-		memoryMb,
-		volumes: [
-			...(options.volumes ?? []),
-			...(jobDirectory ? [{ source: jobDirectory, target: WORK_TARGET }] : []),
-		],
-		env: {
+	) => {
+		const env: JobContainerEnvironment = {
 			...options.containerEnv,
 			HOBO_CI_JOB_MEMORY_MB: String(memoryMb),
 			HOBO_CI_RELAY_ORIGIN: options.publicOrigin,
 			HOBO_CI_RUNNER_SHA256: runner.sha256,
 			HOBO_CI_RUNNER_URL: runner.url,
-		},
-		command: ["sleep", "infinity"],
-	});
+		};
+		if (selection.depsKey) env.HOBO_CI_DEPS_LAYER = selection.depsKey;
+		return {
+			name,
+			image: selection.image,
+			timeoutMs,
+			runAsUser: "1000:1000",
+			memoryMb,
+			volumes: [
+				...(options.volumes ?? []),
+				...(jobDirectory ? [{ source: jobDirectory, target: WORK_TARGET }] : []),
+			],
+			env,
+			command: ["sleep", "infinity"],
+		};
+	};
 	const workDirectory = (leaseId: string) =>
 		options.workRoot ? join(options.workRoot, `hobo-${leaseId}`) : undefined;
 	const cleanupWorkDirectory = async (lease: Lease) => {
@@ -206,9 +273,7 @@ export function createIsolatedContainerController(options: {
 			});
 		}
 	};
-	let warm:
-		| Readonly<{ name: string; containerId: string; memoryMb: number }>
-		| undefined;
+	let warm: WarmContainer | undefined;
 	let warming: Promise<void> | undefined;
 	const liveContainers = async (except: string) =>
 		(await options.store.activeLeases()).filter(
@@ -218,12 +283,15 @@ export function createIsolatedContainerController(options: {
 					lease.provider === "hobo-box-worker") &&
 				LIVE_CONTAINER_STATES.has(lease.state),
 		).length;
-	const prewarm = async () => {
+	const prewarm = async (repository?: string) => {
 		if (warm || warming || !options.docker.rename || options.workRoot) return;
 		warming = (async () => {
 			let reserved = false;
+			const activeLeases =
+				options.memoryAdmission || !repository
+					? await options.store.activeLeases()
+					: [];
 			if (options.memoryAdmission) {
-				const activeLeases = await options.store.activeLeases();
 				const generalLeaseIds = options.generalLeaseIds
 					? await options.generalLeaseIds(activeLeases)
 					: new Set<string>();
@@ -235,13 +303,19 @@ export function createIsolatedContainerController(options: {
 				if (!reserved) return;
 			}
 			try {
+				const next = repository
+					? undefined
+					: activeLeases.find((lease) => lease.state === "reserved");
+				const selection = await selectImage(
+					repository ?? next?.repository ?? depsRepository,
+				);
 				const name = `hobo-warm-${Date.now().toString(36)}`;
 				const handle = await options.docker.create(
-					containerSpec(name, 6 * 60 * 60_000, prewarmMemoryMb),
+					containerSpec(name, 6 * 60 * 60_000, prewarmMemoryMb, selection),
 				);
 				try {
 					await options.docker.start(name, handle.containerId);
-					warm = { ...handle, memoryMb: prewarmMemoryMb };
+					warm = { ...handle, memoryMb: prewarmMemoryMb, selection };
 				} catch {
 					await options.docker
 						.remove(name, handle.containerId)
@@ -361,11 +435,15 @@ export function createIsolatedContainerController(options: {
 			const memoryMb =
 				planned.memoryMb >= 512 ? planned.memoryMb : workerMemoryMb;
 			try {
+				const selection = await selectImage(planned.repository);
 				const directory = workDirectory(id);
 				if (directory && options.workFs)
 					await options.workFs.prepareJobDirectory(directory);
 				const spare = warm?.memoryMb === memoryMb ? warm : undefined;
-				if (spare && options.docker.rename) {
+				const spareMatches =
+					spare?.selection.image === selection.image &&
+					spare.selection.depsKey === selection.depsKey;
+				if (spare && spareMatches && options.docker.rename) {
 					warm = undefined;
 					options.memoryAdmission?.consumeWarm(spare.memoryMb);
 					containerId = spare.containerId;
@@ -376,6 +454,7 @@ export function createIsolatedContainerController(options: {
 							name,
 							planned.reservedMinutes * 60_000,
 							memoryMb,
+							selection,
 							directory,
 						),
 					);

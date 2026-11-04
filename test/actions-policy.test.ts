@@ -101,6 +101,8 @@ jobs:
     runs-on: hobo
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          clean: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "24"
@@ -116,6 +118,51 @@ jobs:
 });
 const trunkRunsOn =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+
+test("default-path checkouts on box runners keep the deps layer with clean false", async () => {
+	const workflow = (inputs: string, runsOn = "hobo") => `name: HoBo CI Fabric
+on:
+  push:
+    branches: [main]
+jobs:
+  pr-gate:
+    runs-on: ${runsOn}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683${inputs}
+`;
+	assert.equal(
+		lint(
+			await fixture({
+				"hobo-ci.yml": workflow(
+					"\n        with:\n          clean: false",
+					trunkRunsOn,
+				),
+			}),
+		).status,
+		0,
+	);
+	for (const inputs of [
+		"",
+		"\n        with:\n          clean: true",
+		"\n        with:\n          repository: Hobo-Labs/HoBo",
+	]) {
+		const result = lint(await fixture({ "hobo-ci.yml": workflow(inputs) }));
+		assert.equal(result.status, 1);
+		assert.match(result.stderr, /must set clean: false/);
+	}
+	for (const inputs of [
+		"\n        with:\n          path: elsewhere",
+		"\n        with:\n          repository: Hobo-Labs/ts-autocode",
+	])
+		assert.equal(
+			lint(
+				await fixture({
+					"hobo-ci.yml": workflow(inputs, trunkRunsOn),
+				}),
+			).status,
+			0,
+		);
+});
 
 test("authoritative CI jobs choose between hobo and the trunk label only", async () => {
 	const hoboCi = (runsOn: string) => `name: HoBo CI Fabric

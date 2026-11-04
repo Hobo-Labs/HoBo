@@ -12,6 +12,13 @@ const dockerImage = z.object({
 	Tag: z.string(),
 	CreatedAt: z.string(),
 });
+const dockerImageInspection = z.object({
+	Id: z.string().min(1),
+	RepoTags: z.array(z.string()).default([]),
+	Config: z
+		.object({ Labels: z.record(z.string(), z.string()).nullable().default({}) })
+		.default({ Labels: {} }),
+});
 
 /** `docker create` flags for the host engine socket (gid matches socket group inside container). */
 export function dockerSocketMountCreateArgs(
@@ -130,6 +137,23 @@ export function createCliDockerDriver(options: {
 					return false;
 				throw error;
 			}
+		},
+		async inspectImage(image) {
+			const { stdout } = await exec(docker, ["image", "inspect", image], {
+				env,
+				timeout: 30_000,
+				maxBuffer: 1024 * 1024,
+			});
+			const parsed = z
+				.array(dockerImageInspection)
+				.min(1)
+				.parse(JSON.parse(stdout))[0];
+			if (!parsed) throw new Error("docker returned no image inspection");
+			return {
+				id: parsed.Id,
+				repoTags: parsed.RepoTags,
+				labels: parsed.Config.Labels ?? {},
+			};
 		},
 		async create(spec: IsolatedContainerSpec) {
 			const args = [
