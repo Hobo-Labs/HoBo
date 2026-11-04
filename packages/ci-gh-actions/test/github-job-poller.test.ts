@@ -126,6 +126,8 @@ class FakeGithub implements GithubTransport {
 					id,
 					run_attempt: this.attempt(id),
 					status,
+					event: this.started.get(id)?.event ?? "pull_request",
+					run_started_at: this.started.get(id)?.at ?? null,
 				}));
 			return Response.json(
 				{
@@ -649,6 +651,8 @@ describe("pull-mode box worker over SQLite", () => {
 		jobDurations?: JobDurations,
 		trunk?: {
 			generalLeaseLimit?: number;
+			lendTrunkSlots?: boolean;
+			skipLaunchFor?: number;
 			labels: Map<string, string | undefined>;
 		},
 	) {
@@ -663,8 +667,25 @@ describe("pull-mode box worker over SQLite", () => {
 			webhookSecret: randomUUID() + randomUUID(),
 			isolatedHost: {
 				async launch(id, label) {
+					const lease = await store.get(id);
+					if (
+						!lease ||
+						lease.sandboxName ||
+						trunk?.skipLaunchFor === lease.jobId
+					)
+						return;
 					launched.push(id);
 					trunk?.labels.set(id, label);
+					await store.transition(
+						id,
+						["reserved"],
+						(entry) => {
+							entry.sandboxName = `hobo-${id}`;
+							entry.sandboxStage = "creating";
+						},
+						"ci.DispatchRequested",
+						new Date(NOW).toISOString(),
+					);
 				},
 				async reconcile() {},
 			},
@@ -675,6 +696,8 @@ describe("pull-mode box worker over SQLite", () => {
 		if (jobDurations) options.jobDurations = jobDurations;
 		if (trunk?.generalLeaseLimit !== undefined)
 			options.generalLeaseLimit = trunk.generalLeaseLimit;
+		if (trunk?.lendTrunkSlots !== undefined)
+			options.lendTrunkSlots = trunk.lendTrunkSlots;
 		return createHostedRelayRuntime(options);
 	}
 
@@ -802,7 +825,10 @@ describe("pull-mode box worker over SQLite", () => {
 	 * Two PR jobs queue, then a workflow_dispatch run's job asks for the trunk
 	 * label while a third PR job queues; then PR job 1 finishes.
 	 */
-	async function trunkAfterPullRequests(generalLeaseLimit?: number) {
+	async function trunkAfterPullRequests(
+		generalLeaseLimit?: number,
+		lendTrunkSlots?: boolean,
+	) {
 		const store = await configuredStore(2);
 		const github = new FakeGithub(
 			{ queued: [800], in_progress: [] },
@@ -819,13 +845,11 @@ describe("pull-mode box worker over SQLite", () => {
 		});
 		const launched: string[] = [];
 		const labels = new Map<string, string | undefined>();
-		const trunk =
-			generalLeaseLimit === undefined
-				? { labels }
-				: { labels, generalLeaseLimit };
+		const trunk = { labels, generalLeaseLimit, lendTrunkSlots };
 		const runtime = boxRuntime(store, github, launched, undefined, trunk);
 		const poller = createGithubJobPoller({
 			github,
+			admissionOrder: runtime.admissionOrder,
 			connections: async () =>
 				(await store.configuration())?.configuration?.connections ?? [],
 			ingest: (delivery) => runtime.ingestWebhook(delivery),
@@ -872,7 +896,7 @@ describe("pull-mode box worker over SQLite", () => {
 	}
 
 	it("lends the trunk slot to pull requests until a trunk job waits, then gives trunk the next free slot", async () => {
-		const box = await trunkAfterPullRequests(1);
+		const box = await trunkAfterPullRequests(1, true);
 		// With no trunk job queued the reserved slot is borrowed: PR jobs used to
 		// run one at a time on the single general slot.
 		expect(box.alone).toEqual([1, 2]);
@@ -883,6 +907,218 @@ describe("pull-mode box worker over SQLite", () => {
 		expect(box.freed).toEqual([2, 3]);
 		expect(box.labelOf(3)).toBe("hobo-trunk");
 		expect(box.labelOf(2)).toBe("hobo");
+	});
+
+	it.each([
+		false,
+		true,
+	])("admits a queued trunk job before any pull request when a slot frees", async (lendTrunkSlots) => {
+		const box = await trunkAfterPullRequests(2, lendTrunkSlots);
+		expect(box.alone).toEqual([1, 2]);
+		expect(box.busy).toEqual([1, 2]);
+		expect(box.freed).toEqual([2, 3]);
+		expect(box.labelOf(3)).toBe("hobo-trunk");
+	});
+
+	it("reserves the trunk job again after its runner takes a pull request", async () => {
+		const store = await configuredStore(2);
+		const github = new FakeGithub(
+			{ queued: [800, 900], in_progress: [] },
+			{
+				800: [{ id: 1, status: "queued", labels: ["hobo"] }],
+				900: [{ id: 3, status: "queued", labels: ["hobo"] }],
+			},
+		);
+		github.started.set(800, {
+			event: "pull_request",
+			at: "2026-11-02T11:50:00Z",
+		});
+		github.started.set(900, {
+			event: "push",
+			at: "2026-11-02T11:59:00Z",
+		});
+		const launched: string[] = [];
+		const runtime = boxRuntime(store, github, launched, undefined, {
+			labels: new Map(),
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		const initial = await store.activeLeases();
+		const first = initial.find((lease) => lease.jobId === 1);
+		const swapped = initial.find((lease) => lease.jobId === 3);
+		if (!first || !swapped) throw new Error("initial leases missing");
+		launched.length = 0;
+
+		github.jobs[800]?.push(
+			{
+				id: 2,
+				status: "in_progress",
+				labels: ["hobo"],
+				runner_name: swapped.runnerName,
+			},
+			{ id: 4, status: "queued", labels: ["hobo"] },
+		);
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		expect((await store.get(swapped.id))?.actualJobId).toBe(2);
+		expect((await store.pendingJobs()).map((job) => job.id)).toContain(3);
+		await store.transition(
+			swapped.id,
+			[swapped.state],
+			(lease) => {
+				lease.state = "running";
+			},
+			"ci.RunnerRegistered",
+			new Date(NOW).toISOString(),
+		);
+		const originalJobReads = () =>
+			github.calls.filter(
+				(call) => call === "GET /repos/Org/Repo/actions/jobs/3",
+			).length;
+		const afterRequeue = originalJobReads();
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(originalJobReads()).toBe(afterRequeue);
+
+		await store.transition(
+			first.id,
+			[first.state],
+			(lease) => {
+				lease.state = "completed";
+			},
+			"ci.LeaseCompleted",
+			new Date(NOW).toISOString(),
+		);
+		await runtime.tick({ maxDeliveries: 10 });
+		const trunkLeases = (await store.activeLeases()).filter(
+			(lease) => lease.jobId === 3,
+		);
+		const replacement = trunkLeases.find((lease) => lease.id !== swapped.id);
+		expect(replacement).toBeDefined();
+		expect(launched).toEqual([replacement?.id]);
+		expect(
+			(await store.activeLeases()).some((lease) => lease.jobId === 4),
+		).toBe(false);
+		store.close();
+	});
+
+	it("reclaims an unlaunched pull request reservation for a waiting trunk job", async () => {
+		const store = await configuredStore(2);
+		const github = new FakeGithub(
+			{ queued: [800], in_progress: [] },
+			{
+				800: [
+					{ id: 1, status: "queued", labels: ["hobo"] },
+					{ id: 2, status: "queued", labels: ["hobo"] },
+				],
+			},
+		);
+		github.started.set(800, {
+			event: "pull_request",
+			at: "2026-11-02T11:50:00Z",
+		});
+		const launched: string[] = [];
+		const runtime = boxRuntime(store, github, launched, undefined, {
+			labels: new Map(),
+			generalLeaseLimit: 1,
+			lendTrunkSlots: true,
+			skipLaunchFor: 2,
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		const general = await store.activeLeases();
+		const running = general.find((lease) => lease.jobId === 1);
+		const reserved = general.find((lease) => lease.jobId === 2);
+		if (!running || !reserved) throw new Error("PR leases missing");
+		await store.transition(
+			running.id,
+			[running.state],
+			(lease) => {
+				lease.state = "running";
+			},
+			"ci.RunnerRegistered",
+			new Date(NOW).toISOString(),
+		);
+		launched.length = 0;
+		github.runs.queued.push(900);
+		github.jobs[900] = [{ id: 3, status: "queued", labels: ["hobo-trunk"] }];
+		github.started.set(900, {
+			event: "push",
+			at: "2026-11-02T11:59:00Z",
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+
+		expect((await store.get(running.id))?.state).toBe("running");
+		expect((await store.get(reserved.id))?.state).toBe("cancelled");
+		expect((await store.pendingJobs()).map((job) => job.id)).toContain(2);
+		const trunk = (await store.activeLeases()).find(
+			(lease) => lease.jobId === 3,
+		);
+		expect(trunk).toBeDefined();
+		expect(launched).toEqual([trunk?.id]);
+		store.close();
+	});
+
+	it("keeps the reserved trunk slot free until a trunk job is queued", async () => {
+		const store = await configuredStore(2);
+		const github = new FakeGithub(
+			{ queued: [800], in_progress: [] },
+			{
+				800: [
+					{ id: 1, status: "queued", labels: ["hobo"] },
+					{ id: 2, status: "queued", labels: ["hobo"] },
+				],
+			},
+		);
+		github.started.set(800, {
+			event: "pull_request",
+			at: "2026-11-02T11:50:00Z",
+		});
+		const launched: string[] = [];
+		const runtime = boxRuntime(store, github, launched, undefined, {
+			labels: new Map(),
+			generalLeaseLimit: 1,
+		});
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		const general = await store.activeLeases();
+		expect(general.map((lease) => lease.jobId)).toEqual([1]);
+		expect(launched).toEqual([general[0]?.id]);
+
+		github.runs.queued.push(900);
+		github.jobs[900] = [{ id: 3, status: "queued", labels: ["hobo-trunk"] }];
+		github.started.set(900, { event: "push", at: "2026-11-02T11:59:00Z" });
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		const leases = await store.activeLeases();
+		const trunk = leases.find((lease) => lease.jobId === 3);
+		if (!trunk) throw new Error("trunk job holds no lease");
+		expect(leases.map((lease) => lease.jobId).sort()).toEqual([1, 3]);
+		expect(launched).toContain(trunk.id);
+		store.close();
 	});
 
 	it("keeps a lease released mid-pass for the trunk job that just missed one", async () => {
@@ -903,6 +1139,7 @@ describe("pull-mode box worker over SQLite", () => {
 		const runtime = boxRuntime(store, github, [], undefined, {
 			labels: new Map(),
 			generalLeaseLimit: 1,
+			lendTrunkSlots: true,
 		});
 		const poller = createGithubJobPoller({
 			github,

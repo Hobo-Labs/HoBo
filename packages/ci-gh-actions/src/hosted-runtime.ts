@@ -71,8 +71,10 @@ export function createHostedRelayRuntime(options: {
 	denyUnisolated?: boolean;
 	/** Shared across ticks; a relay is rebuilt per tick and would forget it. */
 	jobDurations?: JobDurations;
-	/** See `HostedRelay`: leases other runs may hold while a trunk job waits. */
+	/** See `HostedRelay`: maximum active leases for non-trunk runs. */
 	generalLeaseLimit?: number;
+	/** See `HostedRelay`: whether non-trunk runs may borrow trunk slots. */
+	lendTrunkSlots?: boolean;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
@@ -102,9 +104,12 @@ export function createHostedRelayRuntime(options: {
 		if (options.jobDurations) relayOptions.jobDurations = options.jobDurations;
 		if (options.generalLeaseLimit !== undefined)
 			relayOptions.generalLeaseLimit = options.generalLeaseLimit;
+		if (options.lendTrunkSlots !== undefined)
+			relayOptions.lendTrunkSlots = options.lendTrunkSlots;
 		return new HostedRelay(relayOptions);
 	}
 	return {
+		admissionOrder,
 		async ingestWebhook(input: {
 			deliveryId: string;
 			event: "workflow_job" | "workflow_run";
