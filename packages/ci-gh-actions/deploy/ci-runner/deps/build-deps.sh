@@ -74,16 +74,29 @@ fi
 
 node --experimental-strip-types scripts/ci/deps-layer-buckets.mts --check
 build_command=(docker build)
+prune_command=(docker builder prune)
 rewrite_args=()
-if buildx_help="$(docker buildx build --help 2>/dev/null)" && grep -q -- '--rewrite-timestamp' <<<"$buildx_help"; then
-  build_command=(docker buildx build --load)
-  rewrite_args=(--rewrite-timestamp=true)
+cache_args=()
+builder="hobo-ci-deps-cache"
+if buildx_help="$(docker buildx build --help 2>/dev/null)"; then
+  if ! docker buildx inspect "$builder" >/dev/null 2>&1; then
+    docker buildx create --name "$builder" --driver docker-container >/dev/null
+  fi
+  build_command=(docker buildx build --load --builder "$builder")
+  prune_command=(docker buildx prune --builder "$builder")
+  if grep -q -- '--rewrite-timestamp' <<<"$buildx_help"; then
+    rewrite_args=(--rewrite-timestamp=true)
+  fi
+  if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
+    cache_args=(--cache-from "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:buildcache")
+  fi
 fi
 
 echo "Building $candidate (fetch network restricted to lockfile-verified downloads; install offline)"
 "${build_command[@]}" \
   "${docker_memory_args[@]}" \
   "${rewrite_args[@]}" \
+  "${cache_args[@]}" \
   --build-arg "TOOLCHAIN_IMAGE=${base}" \
   --build-arg "DEPS_KEY=${key}" \
   --build-arg "TOOLCHAIN_VERSION=${toolchain}" \
@@ -113,4 +126,4 @@ else
   echo "Built and verified $candidate without promotion"
 fi
 node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
-docker builder prune -f --keep-storage "$cap"
+"${prune_command[@]}" -f --keep-storage "$cap"

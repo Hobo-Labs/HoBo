@@ -49,9 +49,26 @@ describe("CI deps image push scope", () => {
 	});
 
 	it("keeps all registry writes out of HoBo CI", () => {
-		expect(depsJob.permissions).toEqual({ contents: "read" });
+		expect(depsJob.permissions).toEqual({
+			contents: "read",
+			packages: "read",
+		});
 		expect(JSON.stringify(depsJob)).not.toContain("docker push");
-		expect(JSON.stringify(depsJob)).not.toContain("GHCR_TOKEN");
+		expect(JSON.stringify(depsJob)).not.toContain("--cache-to");
+	});
+
+	it("logs in for the read-only cache only when a token exists", () => {
+		const login = depsJob.steps.find(
+			(step) => step.name === "Login to GHCR for read-only cache",
+		);
+		const build = depsJob.steps.find(
+			(step) => step.name === "Build deps image and verify offline install",
+		);
+		expect(login.if).toContain("env.GHCR_TOKEN != ''");
+		expect(login.env.GHCR_TOKEN).toBe("${{ secrets.GITHUB_TOKEN }}");
+		expect(login.run).toContain("docker login ghcr.io");
+		expect(login.run).toContain("--password-stdin");
+		expect(depsJob.steps.indexOf(login)).toBe(depsJob.steps.indexOf(build) - 1);
 	});
 
 	it("publishes from a separate bounded workflow on the same runner labels", () => {

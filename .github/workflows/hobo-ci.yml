@@ -134,6 +134,7 @@ jobs:
     # separate workflow publishes local images without blocking this job.
     permissions:
       contents: read
+      packages: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -192,6 +193,11 @@ jobs:
           candidate="hobo-ci-deps:${{ steps.key.outputs.key }}"
           docker tag "$candidate" hobo-ci-deps:local
           node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
+      - name: Login to GHCR for read-only cache
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && env.GHCR_TOKEN != ''
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: Build deps image and verify offline install
         if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'
         id: build

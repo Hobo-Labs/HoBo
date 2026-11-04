@@ -31,3 +31,51 @@ fi
 
 docker tag "$source" "$image"
 timeout --signal=TERM --kill-after=15s 240s docker push "$image"
+
+cache_image="ghcr.io/${repository,,}/hobo-ci-deps:buildcache"
+builder="hobo-ci-deps-cache"
+if ! buildx_help="$(docker buildx build --help 2>/dev/null)"; then
+  echo "docker buildx is unavailable; skipping deps buildcache export"
+  exit 0
+fi
+if ! docker buildx inspect "$builder" >/dev/null 2>&1; then
+  docker buildx create --name "$builder" --driver docker-container >/dev/null
+fi
+
+context="$(mktemp -d)"
+trap 'rm -rf "$context"' EXIT
+toolchain="$(docker image inspect "$source" --format '{{ index .Config.Labels "hobo.ci.toolchain" }}')"
+if [[ ! "$toolchain" =~ ^v[0-9a-f]{12}$ ]]; then
+  echo "deps image has no valid toolchain label; cannot export buildcache" >&2
+  exit 1
+fi
+staged_key="$(node --no-warnings scripts/ci/deps-key.mts --toolchain "$toolchain" --stage "$context")"
+if [ "$staged_key" != "$key" ]; then
+  echo "staged deps key ${staged_key} does not match published key ${key}" >&2
+  exit 1
+fi
+
+rewrite_args=()
+if grep -q -- '--rewrite-timestamp' <<<"$buildx_help"; then
+  rewrite_args=(--rewrite-timestamp=true)
+fi
+docker_memory_args=()
+if [[ -n "${HOBO_CI_DEPS_BUILD_MEMORY_MB:-}" ]]; then
+  if [[ ! "${HOBO_CI_DEPS_BUILD_MEMORY_MB}" =~ ^[0-9]+$ ]] || (( HOBO_CI_DEPS_BUILD_MEMORY_MB < 512 )); then
+    echo "invalid HOBO_CI_DEPS_BUILD_MEMORY_MB" >&2
+    exit 2
+  fi
+  docker_memory_args=(--memory "${HOBO_CI_DEPS_BUILD_MEMORY_MB}m")
+fi
+
+timeout --signal=TERM --kill-after=15s 120s docker buildx build --builder "$builder" \
+  "${docker_memory_args[@]}" \
+  "${rewrite_args[@]}" \
+  --cache-from "type=registry,ref=${cache_image}" \
+  --cache-to "type=registry,ref=${cache_image},mode=max" \
+  --build-arg "TOOLCHAIN_IMAGE=hobo-ci-worker:${toolchain}" \
+  --build-arg "DEPS_KEY=${key}" \
+  --build-arg "TOOLCHAIN_VERSION=${toolchain}" \
+  --build-arg "SOURCE_DATE_EPOCH=0" \
+  -f packages/ci-gh-actions/deploy/ci-runner/deps/Dockerfile \
+  -t "$candidate" "$context"

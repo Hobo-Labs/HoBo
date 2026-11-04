@@ -61,7 +61,10 @@ describe("CI deps image build contract", () => {
 			"node --experimental-strip-types scripts/ci/deps-layer-buckets.mts --check",
 		);
 		includes(build, "build_command=(docker build)");
-		includes(build, "build_command=(docker buildx build --load)");
+		includes(
+			build,
+			'build_command=(docker buildx build --load --builder "$builder")',
+		);
 		includes(build, "rewrite_args=(--rewrite-timestamp=true)");
 		includes(build, "grep -q -- '--rewrite-timestamp'");
 	});
@@ -108,6 +111,24 @@ describe("CI deps image build contract", () => {
 		assert.ok(exit > hit);
 		assert.ok(buildCommand > exit);
 		includes(build, '[ "$local_key" = "$key" ]');
+	});
+
+	it("imports the registry cache read-only on a shared buildx builder", () => {
+		includes(build, 'builder="hobo-ci-deps-cache"');
+		includes(
+			build,
+			'docker buildx create --name "$builder" --driver docker-container',
+		);
+		includes(
+			build,
+			'build_command=(docker buildx build --load --builder "$builder")',
+		);
+		includes(
+			build,
+			'cache_args=(--cache-from "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:buildcache")',
+		);
+		includes(build, '"${cache_args[@]}"');
+		assert.ok(!build.includes("--cache-to"));
 	});
 
 	it("requires an up-to-date offline contract before promoting a new build", () => {
@@ -187,8 +208,11 @@ describe("CI deps workflow contract", () => {
 		includes(job, "args=(--no-promote)");
 		includes(job, "Remove PR candidate tag");
 		assert.ok(!job.includes("docker push"));
-		assert.ok(!job.includes("GHCR_TOKEN"));
+		assert.ok(!job.includes("--cache-to"));
 		assert.ok(!job.includes("packages: write"));
+		includes(job, "packages: read");
+		includes(job, "Login to GHCR for read-only cache");
+		includes(job, "env.GHCR_TOKEN != ''");
 	});
 
 	it("reuses local or GHCR hits on every event without building", () => {
@@ -268,5 +292,28 @@ describe("CI deps publisher contract", () => {
 		);
 		assert.ok(!publish.includes('echo "$GHCR_TOKEN"'));
 		assert.ok(!publish.includes('echo "${{ secrets.GITHUB_TOKEN }}'));
+	});
+
+	it("exports mode=max cache after the push with a bounded container-builder rebuild", () => {
+		const push = publish.indexOf("docker push");
+		const exportCache = publish.indexOf(
+			'--cache-to "type=registry,ref=${cache_image},mode=max"',
+		);
+		assert.ok(push > -1);
+		assert.ok(exportCache > push);
+		includes(publish, 'builder="hobo-ci-deps-cache"');
+		includes(
+			publish,
+			'docker buildx create --name "$builder" --driver docker-container',
+		);
+		includes(
+			publish,
+			"timeout --signal=TERM --kill-after=15s 120s docker buildx build",
+		);
+		includes(publish, '--cache-from "type=registry,ref=${cache_image}"');
+		includes(
+			publish,
+			"docker buildx is unavailable; skipping deps buildcache export",
+		);
 	});
 });

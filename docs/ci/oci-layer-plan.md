@@ -219,12 +219,15 @@ cannot be computed or the image is missing.
 - **GHCR** under `ghcr.io/hobo-labs`, with **public** packages. GitHub does not bill storage or bandwidth for
   public packages, so there is no paid infra.
   - Images: `hobo-ci-worker:<toolchain>`, `hobo-ci-deps:<toolchain>-<depsKey>`.
-  - BuildKit cache: `hobo-ci-cache:<name>`.
+  - BuildKit cache: `hobo-ci-deps:buildcache`.
 - **buildx registry cache:**
-  - pushes from `main`: `--cache-to type=registry,ref=ghcr.io/hobo-labs/hobo-ci-cache:<name>-main,mode=max,compression=zstd`;
-  - every build: `--cache-from type=registry,ref=…-main`;
-  - **PRs only read.** `mode=max` keeps intermediate stages, such as the `pnpm fetch` stage, so a manifest-only
-    change rebuilds just the link stage.
+  - every buildx deps build with `GITHUB_REPOSITORY` set reads `--cache-from
+    type=registry,ref=ghcr.io/<repo lowercase>/hobo-ci-deps:buildcache`; a missing cache is a no-op;
+  - after the bounded image push, the separate publisher exports `mode=max` to that ref through a bounded rebuild
+    on the shared `hobo-ci-deps-cache` `docker-container` builder;
+  - **PRs only read.** The deps job has `packages: read`, never `packages: write`, and only the publisher uses
+    `--cache-to`. `mode=max` retains intermediate stages, but never cache-mount contents: a lockfile change still
+    reruns fetch and install.
 - **zstd** layer compression (`compression=zstd,force-compression=true`) cuts pull time and size for the large
   deps layer. Docker 23+ pulls zstd natively.
 - **eStargz/SOCI lazy pulls: not now.** They need the containerd image store and the stargz snapshotter. The box
@@ -417,7 +420,8 @@ checkout, key computation, and one inspect, while a miss resolves or builds and 
 workflow dispatch always run; PR scoping is unchanged. Neither gate depends on the deps-image job. The separate
 `ci-deps-publish.yml` workflow starts only after a successful main fabric run or manually, skips absent local and
 existing remote tags, cancels superseded publishes, and bounds both the job (five minutes) and `docker push`
-(240 seconds). Registry failure cannot fail or delay HoBo CI. GHCR retention and attestation verification stay
+(240 seconds). After a push it exports `mode=max` buildcache through a 120-second bounded rebuild on the shared
+builder. Registry failure cannot fail or delay HoBo CI. GHCR retention and attestation verification stay
 Phase 5. Main-run timing, layer-digest and push-size evidence are still required before ticking time-based
 acceptance boxes.
 
