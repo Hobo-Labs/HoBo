@@ -32,10 +32,21 @@ describe("job memory environment", () => {
 			vitestMaxWorkers: 2,
 		});
 		expect(jobMemoryEnvLines(config)).toEqual([
-			"NODE_OPTIONS=--max-old-space-size=1293",
+			"HOBO_NODE_OPTIONS=--max-old-space-size=1293",
 			"HOBO_TURBO_CONCURRENCY=1",
 			"HOBO_TEST_MAX_WORKERS=2",
 		]);
+		const root = fileURLToPath(new URL("../..", import.meta.url));
+		for (const workflow of [
+			"hobo-ci.yml",
+			"pricing-ci.yml",
+			"release-code.yml",
+			"release-pricing.yml",
+		])
+			expect(
+				readFileSync(join(root, ".github/workflows", workflow), "utf8"),
+				workflow,
+			).not.toMatch(/^\s+NODE_OPTIONS:/mu);
 	});
 
 	it("keeps every single-worker Vitest pin at one under the CI environment", async () => {

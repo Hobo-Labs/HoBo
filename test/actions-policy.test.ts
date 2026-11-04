@@ -52,7 +52,7 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 		const text = jobText(job);
 		assert.match(
 			text,
-			/- name: CI runner image contract \(manifest\)\n(?:[ \t]+if: [^\n]+\n)?[ \t]+run: pnpm exec vitest run scripts\/test\/ci-runner-image-contract\.test\.ts/u,
+			/- name: CI runner image contract \(manifest\)\n(?:[ \t]+if: [^\n]+\n)?[ \t]+run: node --import tsx --test scripts\/test\/ci-runner-image-contract\.test\.ts/u,
 			`${job} runs the runner image contract`,
 		);
 		assert.match(

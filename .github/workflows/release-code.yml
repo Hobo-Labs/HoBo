@@ -36,7 +36,6 @@ concurrency:
 
 env:
   HOBO_TURBO_CONCURRENCY: "1"
-  NODE_OPTIONS: --max-old-space-size=3072
 
 jobs:
   # One job on the shared two-slot box: lint, the whole @hobo/code suite and the

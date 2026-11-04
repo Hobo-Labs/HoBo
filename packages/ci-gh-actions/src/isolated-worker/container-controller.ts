@@ -1,3 +1,4 @@
+import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -16,6 +17,7 @@ import { isIsolatedContainerOffer } from "../isolated-backend.js";
 import { RUNNER_LABEL, type RunnerLabel } from "../runner-labels.js";
 import type { DockerDriver } from "./docker-driver.js";
 import type { WorkerMemoryAdmission } from "./memory-admission.js";
+import { computeJobMemoryConfig } from "./memory-classes.js";
 import type { WorkerStorageFileSystem } from "./storage-admission.js";
 
 const JIT_PATH = "/tmp/hobo-ci-jit";
@@ -122,6 +124,7 @@ type JobImage = Readonly<{ image: string; depsKey?: string }>;
 type JobContainerEnvironment = {
 	HOBO_CI_DEPS_LAYER?: string;
 	HOBO_CI_JOB_MEMORY_MB: string;
+	NODE_OPTIONS: string;
 	HOBO_CI_RELAY_ORIGIN: string;
 	HOBO_CI_RUNNER_SHA256: string;
 	HOBO_CI_RUNNER_URL: string;
@@ -230,9 +233,14 @@ export function createIsolatedContainerController(options: {
 		selection: JobImage,
 		jobDirectory?: string,
 	) => {
+		const memory = computeJobMemoryConfig({
+			limitMb: memoryMb,
+			cpuCount: availableParallelism(),
+		});
 		const env: JobContainerEnvironment = {
 			...options.containerEnv,
 			HOBO_CI_JOB_MEMORY_MB: String(memoryMb),
+			NODE_OPTIONS: `--max-old-space-size=${memory.heapMb}`,
 			HOBO_CI_RELAY_ORIGIN: options.publicOrigin,
 			HOBO_CI_RUNNER_SHA256: runner.sha256,
 			HOBO_CI_RUNNER_URL: runner.url,
@@ -246,7 +254,9 @@ export function createIsolatedContainerController(options: {
 			memoryMb,
 			volumes: [
 				...(options.volumes ?? []),
-				...(jobDirectory ? [{ source: jobDirectory, target: WORK_TARGET }] : []),
+				...(jobDirectory
+					? [{ source: jobDirectory, target: WORK_TARGET }]
+					: []),
 			],
 			env,
 			command: ["sleep", "infinity"],

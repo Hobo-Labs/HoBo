@@ -185,7 +185,10 @@ describe("isolated worker parallel slots", () => {
 		expect(docker.create).toHaveBeenCalledWith(
 			expect.objectContaining({
 				memoryMb: 8192,
-				env: expect.objectContaining({ HOBO_CI_JOB_MEMORY_MB: "8192" }),
+				env: expect.objectContaining({
+					HOBO_CI_JOB_MEMORY_MB: "8192",
+					NODE_OPTIONS: expect.stringMatching(/^--max-old-space-size=\d+$/u),
+				}),
 			}),
 		);
 		await ctl.discardWarm();

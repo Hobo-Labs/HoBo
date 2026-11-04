@@ -92,7 +92,7 @@ Version tag: `node --no-warnings scripts/ci-runner-image-version.mts` (hash of `
 
 **Shared packages and daemon GC.** Every job mounts the host pnpm store read-write at `/pnpm-store` and installs with `npm_config_package_import_method=hardlink`. The store and work root must be on one filesystem; daemon startup refuses a cross-filesystem configuration. Only the daemon prunes the store, and only with no active job (the conservative install lease). At least every five minutes and on storage pressure it removes unused `hobo-ci-deps-fetch:*` intermediates, all but the two newest non-local `hobo-ci-deps:*` images, unused worker versions other than the current and previous keys, dangling images, and BuildKit entries beyond the hard 4 GB default cap regardless of age. Both `:local` tags and images used by running containers stay. The cold dev loop job installs only what its script imports (2.2 GB streamed into the offline container instead of 4.6 GB).
 
-**GHCR (optional, public repos):** the same workflow can push `ghcr.io/<owner>/<repo>/hobo-ci-worker:<version>` after `docker login`.
+**GHCR (optional, public repos):** when `GHCR_TOKEN` is non-empty, the build logs in and can reuse or push `ghcr.io/<owner>/<repo>/hobo-ci-worker:<version>`. With no token, pull and push are skipped and no interactive login is attempted.
 
 **Deps layer:** `CI deps layer (pnpm)` builds `hobo-ci-deps:<toolchain>-<depsKey>` from the staged lockfile/manifests, verifies an offline up-to-date install, and only then promotes `hobo-ci-deps:local`. The key also covers the deps Dockerfile and build script. Fetch and install reuse the persistent host pnpm store through BuildKit's `hobo-pnpm-store` cache mount; the final image contains only the `node_modules` trees and `.git` skeleton. Every event checks the exact local tag first and skips the build on a local or GHCR hit. Main pushes run the job only for deps-key input changes or a `ci-runner-image` build (fail-safe on forced pushes and missing commit file lists); schedule and dispatch always run. These events can pull/publish the same tag under `ghcr.io/<owner>/<repo>/hobo-ci-deps`. A PR whose diff touches `deploy/ci-runner/deps/**` or the deps-key scripts reuses an existing keyed image or runs the build and contract with `--no-promote`; it never pushes. Other PRs make that job a no-op. Main full gate does not depend on this job.
 
@@ -100,7 +100,7 @@ The worker selects the deps image only when the lease repository matches **`HOBO
 
 **Preflight:** every `runs-on: hobo` job starts with `.github/actions/ci-runner-preflight` (`scripts/ci-runner-preflight.mts`). Failures mean the worker image is stale — rerun `build.sh` on the box.
 
-**CI fabric contract guard** (HoBo CI Fabric `ci-guard` job): `pnpm exec vitest run scripts/test/ci-runner-image-contract.test.ts` after install (not `node --test`).
+**CI fabric contract guard** (HoBo CI Fabric `ci-guard` job): `node --import tsx --test scripts/test/ci-runner-image-contract.test.ts` after install. The file uses `node:test`, like its sibling script contract suites; Vitest cannot discover those suites.
 
 **Fallback:** if a tool cannot be packaged with `mise oci` (asdf backend, broken vfox hooks), use `Dockerfile.monolithic` and document why — see `packages/ci-gh-actions/deploy/ci-runner/README.md`.
 
@@ -139,7 +139,7 @@ Force-stop settlement on the box worker **re-queues the reserved job** when GitH
 
 Startup fails unless every general class fits outside the trunk reservation and the heavy trunk class fits the full budget. Wait/admit decisions log `hobo_ci_memory_admission_wait` / `hobo_ci_memory_admitted`; Docker-confirmed exit-137 OOM kills log `hobo_ci_container_oom` with the class.
 
-`ci-runner-preflight` runs `scripts/ci/memory-env.mts` before install. It reads the job cgroup limit and sets `NODE_OPTIONS`, **`HOBO_TURBO_CONCURRENCY=1`**, and the repo-owned `HOBO_TEST_MAX_WORKERS`. After a 768 MiB native/non-heap allowance, workers are `max(1, min(cpuCount, floor((limit - 768) / 1280) - 1))`; each Node process receives `min(3072, floor((limit - 768) / (workers + 1)))` MiB of heap. Thus `(workers + 1) × heap + 768 <= limit`: the turbo/Vitest parent and every worker fit the same container budget instead of each receiving an independent full-size heap.
+The daemon computes each job's heap from its admitted memory class and injects `NODE_OPTIONS=--max-old-space-size=<heap>` at container creation, so every Node process inherits it and no workflow-level value overrides it. `ci-runner-preflight` also runs `scripts/ci/memory-env.mts` before install. It reads the job cgroup limit and writes the non-blocked **`HOBO_NODE_OPTIONS`** (never `NODE_OPTIONS` through `$GITHUB_ENV`), **`HOBO_TURBO_CONCURRENCY=1`**, and the repo-owned `HOBO_TEST_MAX_WORKERS`. After a 768 MiB native/non-heap allowance, workers are `max(1, min(cpuCount, floor((limit - 768) / 1280) - 1))`; each Node process receives `min(3072, floor((limit - 768) / (workers + 1)))` MiB of heap. Thus `(workers + 1) × heap + 768 <= limit`: the turbo/Vitest parent and every worker fit the same container budget instead of each receiving an independent full-size heap.
 
 | Class | Container limit | Node heap per process | Max Vitest workers |
 |---|---:|---:|---:|

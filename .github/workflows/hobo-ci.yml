@@ -17,9 +17,8 @@ permissions:
   contents: read
 
 env:
-  # Conservative fallback if preflight is skipped; ci-runner-preflight replaces all three
-  # from the job's cgroup limit (heap, turbo concurrency, and Vitest worker cap).
-  NODE_OPTIONS: --max-old-space-size=1024
+  # ci-runner-preflight replaces these from the job's cgroup limit. The worker
+  # injects NODE_OPTIONS at container creation so every Node process gets its heap cap.
   HOBO_TURBO_CONCURRENCY: "1"
   HOBO_TEST_MAX_WORKERS: "1"
   # Every turbo run writes .turbo/runs/<id>.json; ci-trace turns them into OTel spans.
@@ -96,18 +95,20 @@ jobs:
         timeout-minutes: 15
         env:
           MISE_EXPERIMENTAL: "1"
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash packages/ci-gh-actions/deploy/ci-runner/build.sh
       # Published from main only; a pull request's image is tried on the box, not shipped.
       - name: Push runner image to GHCR (optional)
-        if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
+        if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request' && secrets.GITHUB_TOKEN != ''
         env:
           MISE_EXPERIMENTAL: "1"
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           version="$(node --no-warnings scripts/ci-runner-image-version.mts)"
           repo="${GITHUB_REPOSITORY,,}"
           image="ghcr.io/${repo}/hobo-ci-worker:${version}"
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker tag "hobo-ci-worker:${version}" "$image"
           docker push "$image"
           docker tag "hobo-ci-worker:local" "ghcr.io/${repo}/hobo-ci-worker:latest"
@@ -256,7 +257,7 @@ jobs:
         run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
         if: github.event_name == 'merge_group'
-        run: pnpm exec vitest run scripts/test/ci-runner-image-contract.test.ts
+        run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
       - name: Assert CI fabric contract
         if: github.event_name == 'merge_group'
         run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
@@ -538,7 +539,7 @@ jobs:
         if: steps.deps-layer.outputs.match != 'true' || github.event_name == 'schedule'
         run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
-        run: pnpm exec vitest run scripts/test/ci-runner-image-contract.test.ts
+        run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
       - name: Assert CI fabric contract
         run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
       - name: Seed the pnpm store cache for PRs
@@ -757,7 +758,7 @@ jobs:
       - uses: ./.github/actions/ci-runner-preflight
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
-        run: pnpm exec vitest run scripts/test/ci-runner-image-contract.test.ts
+        run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
       - name: Assert CI fabric contract
         run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
 

@@ -1,6 +1,13 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { availableParallelism, totalmem } from "node:os";
 import { pathToFileURL } from "node:url";
+import {
+	computeJobMemoryConfig,
+	type JobMemoryConfig,
+} from "../../packages/ci-gh-actions/src/isolated-worker/memory-classes.ts";
+
+export type { JobMemoryConfig };
+export { computeJobMemoryConfig };
 
 const MIB = 1024 * 1024;
 
@@ -9,31 +16,9 @@ export type JobMemoryHostSample = Readonly<{
 	cgroupMemoryMaxMb?: number | undefined;
 }>;
 
-export type JobMemoryConfig = Readonly<{
-	heapMb: number;
-	turboConcurrency: number;
-	vitestMaxWorkers: number;
-}>;
-
-export function computeJobMemoryConfig(input: {
-	limitMb: number;
-	cpuCount: number;
-}): JobMemoryConfig {
-	const heapBudgetMb = input.limitMb - 768;
-	const vitestMaxWorkers = Math.max(
-		1,
-		Math.min(input.cpuCount, Math.floor(heapBudgetMb / 1280) - 1),
-	);
-	return {
-		heapMb: Math.min(3072, Math.floor(heapBudgetMb / (vitestMaxWorkers + 1))),
-		turboConcurrency: 1,
-		vitestMaxWorkers,
-	};
-}
-
 export function jobMemoryEnvLines(config: JobMemoryConfig): string[] {
 	return [
-		`NODE_OPTIONS=--max-old-space-size=${config.heapMb}`,
+		`HOBO_NODE_OPTIONS=--max-old-space-size=${config.heapMb}`,
 		`HOBO_TURBO_CONCURRENCY=${config.turboConcurrency}`,
 		`HOBO_TEST_MAX_WORKERS=${config.vitestMaxWorkers}`,
 	];
