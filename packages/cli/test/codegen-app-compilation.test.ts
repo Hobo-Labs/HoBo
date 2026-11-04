@@ -245,7 +245,8 @@ describe("generated app declarations compile", () => {
 								artifacts ??= await selected.generate(root);
 								return artifacts.filter(
 									(artifact) =>
-										selected.layout.ownedFiles?.includes(artifact.path) === true ||
+										selected.layout.ownedFiles?.includes(artifact.path) ===
+											true ||
 										selected.layout.generatedRoots.some((generatedRoot) =>
 											artifact.path.startsWith(`${generatedRoot}/`),
 										),
