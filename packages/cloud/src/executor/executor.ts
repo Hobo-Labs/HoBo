@@ -143,9 +143,9 @@ export interface InProcessExecutorOptions {
 	now?: () => string;
 }
 
-// `unknown`: this hashes a serialization of the value and never reads a field
-// off it, so demanding `JsonValue` only moved work to the call sites.
-function hashRef(value: unknown): string {
+type HashRefInput = IacProgram | Readonly<Record<string, string>>;
+
+function hashRef(value: HashRefInput): string {
 	return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
 }
 

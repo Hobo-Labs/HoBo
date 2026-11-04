@@ -61,9 +61,96 @@ export interface PluginHostHooks {
 	) => void;
 }
 
-function asProviderFactory(value: object): () => RegistrableProvider {
-	// SAFETY: the export was checked with instanceof Function at the plugin boundary.
-	return value as () => RegistrableProvider;
+type ProviderFactory = () => RegistrableProvider;
+type ProviderCandidate = JsonValue | RegistrableProvider;
+
+function invalidProvider(
+	packageName: string,
+	declaration: PluginExtensionDeclaration,
+): never {
+	throw new PluginLoadError(
+		"HOBO_PLUGIN_PROVIDER_SHAPE",
+		`${packageName}: export "${declaration.export}" did not produce a CloudProvider (need id, regions[], capabilities[], capabilityManifest())`,
+	);
+}
+
+function parseRegistrableProvider(
+	packageName: string,
+	declaration: PluginExtensionDeclaration,
+	value: ProviderCandidate,
+): RegistrableProvider {
+	if (
+		!isJsonObject(value) ||
+		!isJsonString(value.id) ||
+		value.id.length === 0
+	) {
+		return invalidProvider(packageName, declaration);
+	}
+	if (!Array.isArray(value.regions)) {
+		return invalidProvider(packageName, declaration);
+	}
+	const regions: string[] = [];
+	for (const region of value.regions) {
+		if (!isJsonString(region)) return invalidProvider(packageName, declaration);
+		regions.push(region);
+	}
+	if (!Array.isArray(value.capabilities)) {
+		return invalidProvider(packageName, declaration);
+	}
+	const capabilities: RegistrableProvider["capabilities"] = [];
+	for (const capability of value.capabilities) {
+		if (!isJsonObject(capability) || !isJsonString(capability.port)) {
+			return invalidProvider(packageName, declaration);
+		}
+		const { estimateCost, satisfies } = capability;
+		if (
+			!(satisfies instanceof Function) ||
+			!(estimateCost instanceof Function)
+		) {
+			return invalidProvider(packageName, declaration);
+		}
+		capabilities.push({
+			port: capability.port,
+			satisfies: (request) => satisfies.apply(capability, [request]),
+			estimateCost: (request) => estimateCost.apply(capability, [request]),
+		});
+	}
+	const { capabilityManifest } = value;
+	if (!(capabilityManifest instanceof Function)) {
+		return invalidProvider(packageName, declaration);
+	}
+	return {
+		id: value.id,
+		regions,
+		capabilities,
+		capabilityManifest: () => {
+			const manifest = capabilityManifest.apply(value, []);
+			if (
+				!isJsonObject(manifest) ||
+				!isJsonString(manifest.providerId) ||
+				!isJsonObject(manifest.published) ||
+				!isJsonObject(manifest.capabilities) ||
+				!isJsonObject(manifest.cost)
+			) {
+				return invalidProvider(packageName, declaration);
+			}
+			const published: Record<string, string> = {};
+			for (const [documentPath, document] of Object.entries(
+				manifest.published,
+			)) {
+				if (!isJsonString(document)) {
+					return invalidProvider(packageName, declaration);
+				}
+				published[documentPath] = document;
+			}
+			return {
+				providerId: manifest.providerId,
+				published,
+				capabilities: manifest.capabilities,
+				cost: manifest.cost,
+			};
+		},
+	};
 }
 
 function providerFactoryFrom(
@@ -78,23 +165,13 @@ function providerFactoryFrom(
 			`${packageName}: declared export "${declaration.export}" for ${declaration.point} is not a function export of the plugin entry`,
 		);
 	}
-	const factory = asProviderFactory(candidate);
-	// Probe once, fail closed on shape: a provider factory must yield an
-	// id-bearing, capability-bearing, manifest-bearing provider.
-	const probe = factory();
-	if (
-		!probe ||
-		!isJsonObject(probe) ||
-		!isJsonString(probe.id) ||
-		probe.id.length === 0 ||
-		!Array.isArray(probe.capabilities) ||
-		!(probe.capabilityManifest instanceof Function)
-	) {
-		throw new PluginLoadError(
-			"HOBO_PLUGIN_PROVIDER_SHAPE",
-			`${packageName}: export "${declaration.export}" did not produce a CloudProvider (need id, capabilities[], capabilityManifest())`,
+	const factory: ProviderFactory = () =>
+		parseRegistrableProvider(
+			packageName,
+			declaration,
+			candidate.apply(undefined, []),
 		);
-	}
+	const probe = factory();
 	return { id: declaration.id ?? probe.id, factory };
 }
 
