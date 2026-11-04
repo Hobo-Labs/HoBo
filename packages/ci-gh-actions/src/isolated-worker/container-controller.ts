@@ -133,9 +133,24 @@ type JobImage = Readonly<{ image: string; depsKey?: string }>;
 type DepsImageFallbackLog = {
 	event: "hobo_ci_deps_image_fallback";
 	image: string;
-	reason: "inspect-failed" | "unwritable-workdir";
+	reason: DepsImageFallbackReason;
 	message?: string;
 };
+type DepsImageFallbackReason =
+	| "inspect-failed"
+	| "unwritable-workdir"
+	| "missing-payload"
+	| "probe-failed";
+const DEPS_IMAGE_PROBE =
+	"test -w /opt/actions-runner || exit 3; test -r /opt/hobo-deps/node_modules/.modules.yaml && test -r /opt/hobo-deps/.hobo-ci-deps-key || exit 4";
+const probeFailure = (exitCode: number): DepsImageFallbackReason | undefined =>
+	exitCode === 0
+		? undefined
+		: exitCode === 3
+			? "unwritable-workdir"
+			: exitCode === 4
+				? "missing-payload"
+				: "probe-failed";
 type JobContainerEnvironment = {
 	HOBO_CI_DEPS_LAYER?: string;
 	HOBO_CI_HOST_JOB_DIRECTORY?: string;
@@ -205,11 +220,14 @@ export function createIsolatedContainerController(options: {
 	const depsImage = options.depsImage ?? "hobo-ci-deps:local";
 	const workerSelection: JobImage = { image: options.workerImage };
 	const selectionCache = new Map<string, JobImage>();
-	const probeCache = new Map<string, Promise<boolean>>();
+	const probeCache = new Map<
+		string,
+		Promise<DepsImageFallbackReason | undefined>
+	>();
 	const loggedFailures = new Set<string>();
 	const logDepsImageFallback = (
 		key: string,
-		reason: "inspect-failed" | "unwritable-workdir",
+		reason: DepsImageFallbackReason,
 		message?: string,
 	) => {
 		if (loggedFailures.has(key)) return;
@@ -222,24 +240,18 @@ export function createIsolatedContainerController(options: {
 		if (message) fields.message = message;
 		console.error(JSON.stringify(fields));
 	};
-	const probeDepsImage = (imageId: string): Promise<boolean> => {
+	const probeDepsImage = (
+		imageId: string,
+	): Promise<DepsImageFallbackReason | undefined> => {
 		const cached = probeCache.get(imageId);
 		if (cached) return cached;
 		const probe = options.docker.probeImage;
 		const result = probe
-			? probe(
-					depsImage,
-					[
-						"sh",
-						"-c",
-						"test -w /opt/actions-runner && test -r /opt/hobo-deps/node_modules/.modules.yaml && test -r /opt/hobo-deps/.hobo-ci-deps-key",
-					],
-					"1000:1000",
-				).then(
-					({ exitCode }) => exitCode === 0,
-					() => false,
+			? probe(depsImage, ["sh", "-c", DEPS_IMAGE_PROBE], "1000:1000").then(
+					({ exitCode }) => probeFailure(exitCode),
+					(): DepsImageFallbackReason => "probe-failed",
 				)
-			: Promise.resolve(false);
+			: Promise.resolve<DepsImageFallbackReason>("probe-failed");
 		probeCache.set(imageId, result);
 		return result;
 	};
@@ -267,8 +279,9 @@ export function createIsolatedContainerController(options: {
 					: undefined;
 			let selection = workerSelection;
 			if (candidate) {
-				if (await probeDepsImage(deps.id)) selection = candidate;
-				else logDepsImageFallback(deps.id, "unwritable-workdir");
+				const failure = await probeDepsImage(deps.id);
+				if (failure) logDepsImageFallback(deps.id, failure);
+				else selection = candidate;
 			}
 			selectionCache.set(cacheKey, selection);
 			loggedFailures.delete(depsImage);

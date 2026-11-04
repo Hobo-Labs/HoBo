@@ -246,10 +246,14 @@ describe("isolated worker deps image selection", () => {
 		expect(docker.probeCalls).toEqual(["hobo-ci-deps:local"]);
 	});
 
-	it("falls back and logs when the deps work directory is unwritable", async () => {
+	it.each([
+		[3, "unwritable-workdir"],
+		[4, "missing-payload"],
+		[1, "probe-failed"],
+	])("falls back and logs probe exit %i as %s", async (exitCode, reason) => {
 		const lease = await reservedLease("Hobo-Labs/HoBo");
 		const docker = fakeDocker();
-		docker.setProbeExitCode(1);
+		docker.setProbeExitCode(exitCode);
 		const error = vi
 			.spyOn(console, "error")
 			.mockImplementation(() => undefined);
@@ -261,7 +265,7 @@ describe("isolated worker deps image selection", () => {
 				JSON.stringify({
 					event: "hobo_ci_deps_image_fallback",
 					image: "hobo-ci-deps:local",
-					reason: "unwritable-workdir",
+					reason,
 				}),
 			);
 		} finally {
