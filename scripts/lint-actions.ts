@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, relative } from "node:path";
+import { verifyPinnedActionSha } from "./lib/verify-action-pins.mts";
 
 const lintActionsRepoRoot = join(import.meta.dirname, "..");
 const requireFromRepo = createRequire(import.meta.url);
@@ -96,27 +97,10 @@ async function verifyPinnedActionShasExist(
 	file: string,
 	text: string,
 ): Promise<void> {
-	const token = process.env.GITHUB_TOKEN?.trim();
-	const headers = new Headers({
-		Accept: "application/vnd.github+json",
-		"User-Agent": "hobo-lint-actions",
-	});
-	if (token) {
-		headers.set("Authorization", `Bearer ${token}`);
-	}
 	for (const [repo, shas] of collectPinnedActionRefs(text)) {
 		for (const sha of shas) {
-			const url = `https://api.github.com/repos/${repo}/commits/${sha}`;
-			const response = await fetch(url, { headers, redirect: "follow" });
-			if (response.status === 404) {
-				errors.push(
-					`${file}: pinned action ${repo}@${sha} does not exist on GitHub (404)`,
-				);
-			} else if (!response.ok) {
-				errors.push(
-					`${file}: could not verify ${repo}@${sha} (HTTP ${response.status})`,
-				);
-			}
+			const message = await verifyPinnedActionSha(repo, sha, file, process.env);
+			if (message) errors.push(message);
 		}
 	}
 }
