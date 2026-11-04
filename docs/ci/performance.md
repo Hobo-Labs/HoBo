@@ -987,6 +987,8 @@ To protect the GitHub App's 5,000-request/h installation budget, the relay now c
 
 The target is a **~100 s main critical path** with the reserved slot going directly to a `hobo-trunk` runner rather than paying a PR job's full runtime. Regression tests drive the real relay and fake controller through the incident shape, strict preemption, running-job safety, and pre-warmed trunk launch.
 
+The stage-gate `scanGroup` regression test previously waited for Node's exec'd leader to keep the symlink name, but Node 24.22 names its main thread `MainThread` during startup, overwriting `/proc/<pid>/comm`; its 20-second lifetime could also expire before cleanup, making the group kill fail with ESRCH (runs 41796130401 and 41796132887). The test now sets `process.title` after startup, signals `ready` only after observing the spawned `sleep 0` in Z state, stays alive until killed, and treats an ESRCH group kill as already exited, making readiness event-driven and cleanup idempotent.
+
 ## Finding 24: a completed merge-group lease still occupied the trunk slot
 
 On 2026-11-04 the three-slot box ran one reserved trunk slot and two general slots (`generalLeaseLimit = 2`, strict `HOBO_CI_WORKER_TRUNK_LEND=0`). GitHub job timestamps showed this sequence (UTC):
