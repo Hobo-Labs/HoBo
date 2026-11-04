@@ -353,6 +353,13 @@ A pre-baked store in the runner image was considered and not done. It saves at m
 stale on every lockfile change, and adds the store to the image. The host-mounted store from #1635 gives the
 same hard-link install once the box is redeployed.
 
+Every `hobo-ci.yml` install now runs through `scripts/ci/pnpm-install.mts`. Each attempt has a **180 s**
+deadline by default (`HOBO_PNPM_INSTALL_TIMEOUT_S` accepts only a positive integer), leaving ample headroom
+over the measured 10–22 s warm installs. A timeout terminates the whole pnpm process group, with SIGKILL after
+a 2 s SIGTERM grace; either a timeout or another non-zero exit triggers exactly one immediate retry with
+`--prefer-offline`. Frozen-lockfile mismatches do not retry. Each attempt emits a JSON line containing its
+number, arguments, outcome and duration so CI traces show the retry and its result.
+
 ## Finding 5: serial job dependencies
 
 `artifact-trust` and `dev-cold-loop-gate` had `needs: pr-gate`, so they waited for the slowest PR job and then
