@@ -12,6 +12,7 @@ import {
 	evaluateImageConfig,
 	expectedConfig,
 	loadReleaseOciManifest,
+	releaseOciLabelVersion,
 } from "../lib/release-oci-contract.mts";
 
 const root = join(import.meta.dirname, "..", "..");
@@ -43,6 +44,12 @@ describe("release OCI image contract (manifest)", () => {
 	it("declares GHCR repository prefix under hobo-labs", () => {
 		expect(manifest.repositoryPrefix).toBe("ghcr.io/hobo-labs/hobo");
 		expect(manifest.images.length).toBeGreaterThanOrEqual(5);
+	});
+
+	it("OCI version label uses releaseSemverFromEnv (not raw HOBO_RELEASE_VERSION)", () => {
+		expect(releaseOciLabelVersion({ HOBO_RELEASE_VERSION: "pr-1720" })).toBe(
+			"0.0.0-pr.1720",
+		);
 	});
 
 	for (const image of manifest.images) {
@@ -117,7 +124,7 @@ describe("release OCI image contract (live docker)", () => {
 	const liveIds = requestedIds?.length
 		? requestedIds
 		: manifest.images.map((image) => image.id);
-	const version = process.env.HOBO_RELEASE_VERSION ?? "0.1.0-test";
+	const version = releaseOciLabelVersion(process.env);
 	const revision = process.env.HOBO_RELEASE_REVISION ?? "deadbeef";
 
 	for (const image of manifest.images) {

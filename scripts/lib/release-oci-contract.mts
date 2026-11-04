@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { releaseSemverFromEnv } from "./release-version.mts";
 
 export const OCI_IMAGES_MANIFEST = "release/oci-images.json";
 
@@ -54,10 +55,18 @@ export type ImageConfigExpectation = {
 	labels: string[];
 };
 
+/** Semver for `org.opencontainers.image.version` (matches `build-release-oci-image.mts`). */
+export function releaseOciLabelVersion(
+	env: NodeJS.ProcessEnv = process.env,
+): string {
+	return releaseSemverFromEnv(env);
+}
+
 export function expectedConfig(
 	manifest: ReleaseOciManifest,
 	image: ReleaseOciImage,
 	revision: string,
+	/** Semver label value — use `releaseOciLabelVersion()`, not raw `HOBO_RELEASE_VERSION`. */
 	version: string,
 ): ImageConfigExpectation {
 	const repo = ghcrRepository(manifest, image);
