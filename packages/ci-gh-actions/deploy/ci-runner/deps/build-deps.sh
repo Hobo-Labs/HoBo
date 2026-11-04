@@ -12,6 +12,7 @@ case "${1:-}" in
 esac
 
 context="$(mktemp -d)"
+verification="$(mktemp -d)"
 contract_log="$(mktemp)"
 cap="${HOBO_CI_WORKER_BUILDER_CACHE_CAP:-${HOBO_CI_WORKER_BUILDER_KEEP_STORAGE:-4GB}}"
 if [[ ! "$cap" =~ ^[0-9]+([.][0-9]+)?[KMGT]B$ ]]; then
@@ -19,7 +20,7 @@ if [[ ! "$cap" =~ ^[0-9]+([.][0-9]+)?[KMGT]B$ ]]; then
   exit 1
 fi
 cleanup() {
-  rm -rf "$context" "$contract_log"
+  rm -rf "$context" "$verification" "$contract_log"
 }
 trap cleanup EXIT
 
@@ -114,7 +115,10 @@ echo "Building $candidate (fetch network restricted to lockfile-verified downloa
   -t "$candidate" "$context"
 
 echo "Verifying the job's offline install is already up to date"
-tar -C "$context" -cf - . \
+cp -a "$context/." "$verification/"
+mkdir -p "$verification/scripts/ci"
+cp scripts/ci/deps-layer.mts "$verification/scripts/ci/deps-layer.mts"
+tar -C "$verification" -cf - . \
   | docker run --rm -i --network=none \
     "${docker_memory_args[@]}" \
     --tmpfs /pnpm-store:rw,uid=1000,gid=1000,mode=0755 \

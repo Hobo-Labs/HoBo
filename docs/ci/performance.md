@@ -66,6 +66,7 @@ unindexed new finding files as notices.
 - [Finding 56: the monolithic deps push held main after its gate passed](./findings/0056-the-monolithic-deps-push-held-main-after-its-gate-passed.md)
 - [Finding 57: deps manifest scripts and the registry layer cache](./findings/0057-deps-manifest-scripts-and-the-registry-layer-cache.md)
 - [Finding 59: the deps mount check needed tsx and misread the pnpm layout](./findings/0059-the-deps-mount-check-needed-tsx-and-misread-the-pnpm-layout.md)
+- [Finding 60: the deps key rebuilt on recipe churn](./findings/0060-the-deps-key-rebuilt-on-recipe-churn.md)
 <!-- findings-index:end -->
 
 ## Data

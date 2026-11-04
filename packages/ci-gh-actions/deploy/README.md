@@ -257,7 +257,13 @@ branch. The daemon reads that checkout's head on startup and every
 head changes. The checkout defaults to the repository containing the daemon script,
 independent of the service manager's working directory; set `HOBO_CI_DEPS_ROOT` to
 override it. The checkout needs the lockfile importer manifests, including the
-pinned ts-autocode submodule.
+pinned ts-autocode submodule. The deps key hashes the lockfile, workspace,
+normalized importer dependency fields, optional `.npmrc` and `.pnpmfile.cjs`,
+patches, platform, toolchain version, and `DEPS_LAYOUT.version`. Recipe edits
+update the pinned recipe digest but do not rebuild the image unless the layout
+version is deliberately bumped. Node and pnpm mise entries are covered by the
+toolchain version, and `scripts/ci/deps-layer.mts` is staged separately for
+offline verification rather than included in the Docker build context.
 
 The install stage moves every repo-relative `node_modules` under `/opt/hobo-deps` and splits its `node_modules/.pnpm` into 64 stable entry-name hash buckets under `/opt/hobo-deps-buckets`. `scripts/ci/deps-layer-buckets.mts` owns the assignment and generates the Dockerfile's `COPY --link` section into `/opt/hobo-deps`; `--check` and `scripts/test/deps-layer-buckets.test.ts` reject drift. A residual layer holds workspace links and pnpm metadata, with no `.git` and no checkout path. A final root step chowns `/opt/hobo-deps`, its `node_modules` and `.pnpm` to uid 1000 so `--link` cannot leave them root-owned. Ownership and timestamps are normalized, and `build-deps.sh` opts into timestamp rewriting only when supported, so unchanged bucket layers are reused across deps keys.
 
