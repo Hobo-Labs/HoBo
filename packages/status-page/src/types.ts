@@ -281,13 +281,14 @@ function expectEnum<T extends string>(
 	path: string,
 ): T {
 	const value = expectString(input, path);
-	if (!values.some((candidate) => candidate === value)) {
+	const match = values.find((candidate) => candidate === value);
+	if (match === undefined) {
 		throw new StatusPageParseError(
 			path,
 			`expected one of ${values.join(", ")} (got "${value}")`,
 		);
 	}
-	return values.find((candidate) => candidate === value) ?? values[0]!;
+	return match;
 }
 
 function expectStringArray(

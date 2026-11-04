@@ -94,6 +94,9 @@ it("§12 Phase 5 fails closed on incomplete provider billing data", async () => 
 });
 
 it("§12 Phase 5 dedupes provider charge ids and appends reconciliation hash", async () => {
+	const [completeRow] = fixture.completeRows;
+	if (completeRow === undefined)
+		throw new Error("fixture has no complete rows");
 	const result = await runBillingSync({
 		syncAt: AT,
 		periodStart: PERIOD_START,
@@ -101,7 +104,7 @@ it("§12 Phase 5 dedupes provider charge ids and appends reconciliation hash", a
 		reservationId: "reservation-1",
 		eventId: "evt-reconcile-3",
 		quotedIncrementalBilled: quotedIncremental("1.25"),
-		port: fixtureProviderPort([fixture.completeRows[0]!, fixture.duplicateRow]),
+		port: fixtureProviderPort([completeRow, fixture.duplicateRow]),
 		credentials: createSyntheticProviderCredentials(),
 		knownActualIds: new Set(["prov-charge-usage-1"]),
 	});

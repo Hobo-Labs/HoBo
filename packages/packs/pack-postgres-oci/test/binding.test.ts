@@ -7,13 +7,12 @@ import {
 	buildPostgresBinding,
 	POSTGRES_BINDING_PROFILE,
 } from "../src/index.js";
+import type { JsonValue } from "../src/json.js";
 import {
 	CERTIFICATE_REF,
 	SUPERUSER_REF,
 	verifiedPostgresPack,
 } from "./harness.js";
-import { type JsonValue } from "../src/json.js";
-
 
 const manifest = verifiedPostgresPack();
 

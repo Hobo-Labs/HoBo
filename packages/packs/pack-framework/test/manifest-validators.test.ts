@@ -249,11 +249,10 @@ describe("probes", () => {
 		...overrides,
 	});
 
-	const withProbe =
-		(probe: JsonObject) => (d: JsonObject) => ({
-			...d,
-			probes: { readiness: probe },
-		});
+	const withProbe = (probe: JsonObject) => (d: JsonObject) => ({
+		...d,
+		probes: { readiness: probe },
+	});
 
 	it.each([
 		"initialDelayMs",
@@ -394,11 +393,10 @@ describe("persistence", () => {
 		...overrides,
 	});
 
-	const withPersistence =
-		(persistence: JsonObject) => (d: JsonObject) => ({
-			...d,
-			persistence,
-		});
+	const withPersistence = (persistence: JsonObject) => (d: JsonObject) => ({
+		...d,
+		persistence,
+	});
 
 	it("requires a rationale when a pack declares no persistence", () => {
 		// The rationale turns an omission into a decision: without it, "no
