@@ -39,7 +39,7 @@ Both diff the PR merge commit against `HEAD^1`, its base tip, so the checkout ne
 
 ## Hermetic build model
 
-The worker image starts from a **digest-pinned base image**. Pinned `mise.toml` and `mise.lock` inputs produce **one OCI layer per tool** through `mise oci build`. Pipelines compose only the layers they need instead of installing tools during a job or maintaining separate monolithic images.
+The worker image starts from a **digest-pinned base image**. Pinned `mise.toml` and `mise.lock` inputs produce **one OCI layer per tool** through `mise --locked oci build`. Pipelines compose only the layers they need instead of maintaining separate monolithic images. Healthy jobs perform no tool installation; preflight can repair an older image by installing only missing tools from the checkout's lockfile before enforcing the contract.
 
 ```mermaid
 flowchart TB

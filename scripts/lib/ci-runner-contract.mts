@@ -170,13 +170,68 @@ export function assertTurboLockSidecarsPresent(root: string): void {
 
 export type ContractCheck = { ok: boolean; name: string; detail: string };
 
-export type CommandResult = { ok: boolean; out: string };
+export type CommandResult = {
+	readonly ok: boolean;
+	readonly out: string;
+	readonly command?: string;
+	readonly failure?: string;
+};
 export type CommandRunner = (cmd: string, args: string[]) => CommandResult;
 
-function spawnCommand(cmd: string, args: string[]): CommandResult {
+function commandLine(cmd: string, args: readonly string[]): string {
+	return [cmd, ...args]
+		.map((arg) =>
+			/^[\w./:@%+=,-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`,
+		)
+		.join(" ");
+}
+
+function outputTail(output: string | null): string {
+	const lines = (output ?? "").trim().split("\n").filter(Boolean);
+	return lines.slice(-3).join(" | ") || "(empty)";
+}
+
+function commandFailure(result: CommandResult, fallback: string): string {
+	return (
+		result.failure ?? `${result.command ?? fallback}: ${result.out || "failed"}`
+	);
+}
+
+export function spawnCommand(cmd: string, args: string[]): CommandResult {
 	const r = spawnSync(cmd, args, { encoding: "utf8" });
+	const command = commandLine(cmd, args);
 	const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
-	return { ok: r.status === 0, out: out || `(exit ${r.status})` };
+	if (r.error) {
+		const error: NodeJS.ErrnoException = r.error;
+		const code = error.code ?? "UNKNOWN";
+		const reason =
+			code === "ENOENT"
+				? "spawn error ENOENT (not installed in runner image)"
+				: `spawn error ${code}`;
+		return {
+			ok: false,
+			out,
+			command,
+			failure: `${command}: ${reason}: ${error.message}`,
+		};
+	}
+	if (r.signal) {
+		return {
+			ok: false,
+			out,
+			command,
+			failure: `${command}: terminated by signal ${r.signal} (no exit status)`,
+		};
+	}
+	if (r.status !== 0) {
+		return {
+			ok: false,
+			out,
+			command,
+			failure: `${command}: exited ${r.status ?? "with no status"}; stderr tail: ${outputTail(r.stderr)}`,
+		};
+	}
+	return { ok: true, out, command };
 }
 
 function parseMiseToolNames(miseToml: string): string[] {
@@ -197,6 +252,117 @@ function parseMiseToolNames(miseToml: string): string[] {
 		if (m) names.push(m[1]!);
 	}
 	return names;
+}
+
+const MISE_TOOL_REMEDY = `Remedy: preflight installs missing tools with mise install --locked from the checkout's ${MISE_LOCK}; if the tool still fails, rebuild with bash ${CI_RUNNER_BUILD_SCRIPT}`;
+
+export function probeMiseTool(tool: string, run: CommandRunner): ContractCheck {
+	const whichArgs = ["-c", `command -v ${tool} || true`];
+	const which = run("sh", whichArgs);
+	const path = which.out.split("\n")[0]?.trim() ?? "";
+	if (!path) {
+		return {
+			ok: false,
+			name: `mise-tool:${tool}`,
+			detail: `${commandLine("sh", whichArgs)}: ${tool} not on PATH (not installed in runner image)\n    ${MISE_TOOL_REMEDY}`,
+		};
+	}
+	const ver =
+		tool === "cue"
+			? run("cue", ["version"])
+			: tool === "gitleaks"
+				? run("gitleaks", ["version"])
+				: run(tool, ["--version"]);
+	return {
+		ok: ver.ok,
+		name: `mise-tool:${tool}`,
+		detail: ver.ok
+			? (ver.out.split("\n")[0] ?? `${tool} reported success`)
+			: `${commandFailure(ver, commandLine(tool, ["--version"]))}\n    ${MISE_TOOL_REMEDY}`,
+	};
+}
+
+export type MiseToolSyncResult = {
+	readonly ok: boolean;
+	readonly installed: readonly string[];
+	readonly elapsedMs: number;
+	readonly detail: string;
+};
+
+export function syncMissingMiseTools(
+	root: string,
+	options: {
+		readonly run?: CommandRunner;
+		readonly now?: () => number;
+	} = {},
+): MiseToolSyncResult {
+	const run = options.run ?? spawnCommand;
+	const now = options.now ?? Date.now;
+	const started = now();
+	const finish = (
+		ok: boolean,
+		installed: readonly string[],
+		detail: string,
+	): MiseToolSyncResult => ({
+		ok,
+		installed,
+		elapsedMs: now() - started,
+		detail,
+	});
+	const trustArgs = ["--cd", root, "trust", "./mise.toml"];
+	const trust = run("mise", trustArgs);
+	if (!trust.ok) {
+		return finish(
+			false,
+			[],
+			`${commandFailure(trust, commandLine("mise", trustArgs))}\n    ${MISE_TOOL_REMEDY}`,
+		);
+	}
+	const listArgs = [
+		"--cd",
+		root,
+		"ls",
+		"--current",
+		"--missing",
+		"--no-header",
+	];
+	const listing = run("mise", listArgs);
+	if (!listing.ok) {
+		return finish(
+			false,
+			[],
+			`${commandFailure(listing, commandLine("mise", listArgs))}\n    ${MISE_TOOL_REMEDY}`,
+		);
+	}
+	const configured = new Set(
+		parseMiseToolNames(readFileSync(join(root, MISE_TOML), "utf8")),
+	);
+	const missing = [
+		...new Set(
+			listing.out.split("\n").flatMap((line) => {
+				const [name] = line.trim().split(/\s+/);
+				return name && configured.has(name) ? [name] : [];
+			}),
+		),
+	];
+	if (missing.length === 0) {
+		return finish(true, [], "all mise.toml tools are already installed");
+	}
+	const installArgs = ["--cd", root, "install", "--locked", ...missing];
+	const install = run("mise", installArgs);
+	const installCommand = commandLine("mise", installArgs);
+	if (!install.ok) {
+		return finish(
+			false,
+			[],
+			`${commandFailure(install, installCommand)}\n    ${MISE_TOOL_REMEDY}`,
+		);
+	}
+	return finish(
+		true,
+		missing,
+		`installed ${missing.join(", ")} with ${installCommand}`,
+	);
 }
 
 const SYSTEM_COMMANDS = {
@@ -271,27 +437,7 @@ export function evaluateCiRunnerContract(
 
 	const miseToml = readFileSync(join(root, MISE_TOML), "utf8");
 	for (const tool of parseMiseToolNames(miseToml)) {
-		const which = run("sh", ["-c", `command -v ${tool} || true`]);
-		const path = which.out.split("\n")[0]?.trim() ?? "";
-		if (!path) {
-			checks.push({
-				ok: false,
-				name: `mise-tool:${tool}`,
-				detail: `${tool} not on PATH; run ${CI_RUNNER_BUILD_SCRIPT} after mise.lock changes`,
-			});
-			continue;
-		}
-		const ver =
-			tool === "cue"
-				? run("cue", ["version"])
-				: tool === "gitleaks"
-					? run("gitleaks", ["version"])
-					: run(tool, ["--version"]);
-		checks.push({
-			ok: ver.ok,
-			name: `mise-tool:${tool}`,
-			detail: ver.ok ? ver.out.split("\n")[0]! : ver.out,
-		});
+		checks.push(probeMiseTool(tool, run));
 	}
 
 	const commands = live

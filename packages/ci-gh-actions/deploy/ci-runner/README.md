@@ -3,9 +3,11 @@
 The hermetic runner is built in two steps:
 
 1. **Base** — `base/Dockerfile` (Debian digest pin, `system-packages.txt`, Docker CLI, pinned GitHub Actions runner bundle, Playwright's pinned Chromium headless shell under `/opt/pw-browsers` with `PLAYWRIGHT_BROWSERS_PATH`, UID 1000). A Playwright bump that changes the `chromium-headless-shell` revision in `playwright-core/browsers.json` fails `scripts/test/ci-runner-image-contract.test.ts` until `CI_RUNNER_PLAYWRIGHT_CHROMIUM` and the Dockerfile ARGs move with it.
-2. **Toolchain** — `mise oci build` from repo-root `mise.toml` / `mise.lock` (one OCI layer per tool).
+2. **Toolchain** — locked `mise install` plus `mise --locked oci build` from repo-root `mise.toml` / `mise.lock` (one OCI layer per tool), so every configured tool is installed from a lockfile URL and verified against its checksum.
 
 Shellcheck is pinned at 0.10.0 in `mise.toml` and locked for every supported platform in `mise.lock`. The runner image contract requires every toolchain entry to have checksums and URLs for the same complete platform set.
+
+Before checking the contract, `.github/actions/ci-runner-preflight` uses the checkout's `mise.toml` to discover requested tools absent from the running image. It installs only those tools with `mise --cd <checkout> install --locked <tool>...`, logs their names and elapsed time, and then runs the full contract. This repairs an older runner without unlocked downloads; a healthy image performs no install. Probe failures name the exact command and distinguish spawn errors (including `ENOENT`), terminating signals, and non-zero exits with a stderr tail. Persistent failures require the image rebuild below.
 
 Use `bash packages/ci-gh-actions/deploy/ci-runner/build.sh` on the box worker. If the content-keyed `hobo-ci-worker:<version>` is absent locally, the script first pulls `ghcr.io/<owner>/<repo>/hobo-ci-worker:<version>` (repository from lowercased `GITHUB_REPOSITORY`, default `Hobo-Labs/HoBo`). A pulled image becomes `:local` only after the same in-container runner contract as a native build; a pull miss or failed contract falls back to the native build.
 

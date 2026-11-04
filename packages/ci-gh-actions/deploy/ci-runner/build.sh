@@ -23,7 +23,7 @@ if ! command -v mise >/dev/null 2>&1 || [[ "$(mise --version | awk '{print $1}')
   curl -fsSL https://mise.run | MISE_VERSION="$mise_version" sh
 fi
 mise trust ./mise.toml
-mise install
+mise install --locked
 
 node --no-warnings scripts/ci-runner-image-version.mts >/tmp/hobo-ci-runner-version.$$
 version="$(tr -d '[:space:]' < /tmp/hobo-ci-runner-version.$$)"
@@ -122,7 +122,7 @@ export MISE_OCI_INSECURE_REGISTRIES="${endpoint}"
 echo "Packaging mise.lock tools into OCI layout at ${oci_dir} (base via ${endpoint})"
 rm -rf "${oci_dir}"
 # Tagged as the candidate, so loading the layout cannot move :local ahead of the contract.
-mise oci build -o "${oci_dir}" --from "${endpoint}/${base_image}:local" --tag "${candidate}"
+mise --locked oci build -o "${oci_dir}" --from "${endpoint}/${base_image}:local" --tag "${candidate}"
 
 echo "Loading image into Docker as ${candidate}"
 # The classic image store's `docker load` reads only docker-save archives, not an OCI layout.

@@ -29,7 +29,10 @@ import {
 	MISE_TOML,
 	parseDockerHubDigestRef,
 	playwrightHeadlessShellExecutables,
+	probeMiseTool,
 	REQUIRED_COMMANDS,
+	spawnCommand,
+	syncMissingMiseTools,
 	verifyBaseImageDigestResolves,
 } from "../lib/ci-runner-contract.mts";
 
@@ -41,6 +44,94 @@ const root = join(import.meta.dirname, "..", "..");
 const present: CommandRunner = () => ({
 	ok: true,
 	out: "/usr/bin/stub 0.14.0",
+});
+
+describe("ci-runner tool command diagnostics", () => {
+	const probeWith = (result: ReturnType<typeof spawnCommand>) =>
+		probeMiseTool("shellcheck", (cmd, args) =>
+			cmd === "sh" ? present(cmd, args) : result,
+		);
+
+	it("reports ENOENT, the attempted command, and the remedy", () => {
+		const missing = `hobo-shellcheck-not-installed-${process.pid}`;
+		const check = probeWith(spawnCommand(missing, ["--version"]));
+		expect(check.ok).toBe(false);
+		expect(check.name).toBe("mise-tool:shellcheck");
+		expect(check.detail).toContain(`${missing} --version`);
+		expect(check.detail).toContain("spawn error ENOENT");
+		expect(check.detail).toContain("not installed in runner image");
+		expect(check.detail).toContain("Remedy: preflight installs missing tools");
+		expect(check.detail).toContain("mise install --locked");
+	});
+
+	it("reports a terminating signal instead of a null exit", () => {
+		const check = probeWith(spawnCommand("sh", ["-c", "kill -TERM $$"]));
+		expect(check.ok).toBe(false);
+		expect(check.detail).toContain("sh -c 'kill -TERM $$'");
+		expect(check.detail).toContain("terminated by signal SIGTERM");
+		expect(check.detail).toContain("no exit status");
+		expect(check.detail).not.toContain("exit null");
+	});
+
+	it("reports a non-zero exit and only the stderr tail", () => {
+		const check = probeWith(
+			spawnCommand("sh", [
+				"-c",
+				"printf 'first\\nsecond\\nthird\\nfourth\\n' >&2; exit 7",
+			]),
+		);
+		expect(check.ok).toBe(false);
+		expect(check.detail).toContain("exited 7");
+		expect(check.detail).toContain("stderr tail: second | third | fourth");
+		expect(check.detail).not.toContain("stderr tail: first");
+	});
+});
+
+describe("ci-runner mise tool sync", () => {
+	it("installs only missing checkout tools with the lockfile and reports elapsed time", () => {
+		const calls: { cmd: string; args: string[] }[] = [];
+		const times = [100, 175];
+		const result = syncMissingMiseTools(root, {
+			run: (cmd, args) => {
+				calls.push({ cmd, args });
+				return {
+					ok: true,
+					out: args.includes("ls")
+						? "shellcheck 0.10.0 (missing) /checkout/mise.toml 0.10.0\nnot-in-mise-toml 1 (missing)"
+						: "",
+				};
+			},
+			now: () => times.shift() ?? 175,
+		});
+		expect(result.ok).toBe(true);
+		expect(result.installed).toEqual(["shellcheck"]);
+		expect(result.elapsedMs).toBe(75);
+		expect(result.detail).toContain("installed shellcheck");
+		expect(calls).toEqual([
+			{ cmd: "mise", args: ["--cd", root, "trust", "./mise.toml"] },
+			{
+				cmd: "mise",
+				args: ["--cd", root, "ls", "--current", "--missing", "--no-header"],
+			},
+			{
+				cmd: "mise",
+				args: ["--cd", root, "install", "--locked", "shellcheck"],
+			},
+		]);
+	});
+
+	it("does not invoke the installer when no checkout tool is missing", () => {
+		const calls: string[][] = [];
+		const result = syncMissingMiseTools(root, {
+			run: (_cmd, args) => {
+				calls.push(args);
+				return { ok: true, out: "" };
+			},
+		});
+		expect(result.ok).toBe(true);
+		expect(result.installed).toEqual([]);
+		expect(calls.some((args) => args.includes("install"))).toBe(false);
+	});
 });
 
 describe("ci-runner image contract (repo manifests)", () => {
@@ -120,6 +211,30 @@ describe("ci-runner image contract (repo manifests)", () => {
 		);
 		for (const cmd of IMAGE_CONTRACT_COMMANDS) {
 			expect(packages.has(cmd), `${cmd} in system-packages.txt`).toBe(true);
+		}
+	});
+
+	it("installs every tool from mise.lock in both runner image build paths", () => {
+		const build = readFileSync(join(root, CI_RUNNER_BUILD_SCRIPT), "utf8");
+		expect(build).toContain("mise install --locked\n");
+		expect(build).toContain("mise --locked oci build ");
+		const fallback = readFileSync(
+			join(
+				root,
+				"packages/ci-gh-actions/deploy/ci-runner/Dockerfile.monolithic",
+			),
+			"utf8",
+		);
+		expect(fallback).toContain("mise install --locked");
+		for (const tool of [
+			"node --version",
+			"pnpm --version",
+			"cue version",
+			"gitleaks version",
+			"shellcheck --version",
+			"turbo --version",
+		]) {
+			expect(fallback).toContain(`mise exec -- ${tool}`);
 		}
 	});
 
