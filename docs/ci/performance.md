@@ -714,7 +714,8 @@ of two or three runs at once, queueing still pushes it past five. In order of ex
 8. **Fewer jobs per run is capped by the required checks.** Secret scan, CI runner image and the CI fabric
    contract guard each spend a container handoff on 10–40 s of work. Folding them into one job would cut
    two handoffs per run, but each is a required check by name, so that needs the ruleset changed with it.
-   Not done here.
+   Not done here. On trunk runs, the secret scan now runs inside the CI runner image job in parallel with
+   the image build, so a main push needs one fewer slot. Pull requests keep the separate required "Secret scan" job.
 
 Risk to keep in mind: the box's pnpm store is a read-write host mount shared by every job, fork PRs
 included (`forkPullRequestEnvironment: ci`). pnpm verifies tarball integrity against the lockfile on fetch,
@@ -842,9 +843,18 @@ jobs; Main full gate neither ran on `merge_group` nor was required. Merge-group 
 affected S0 and dependent workspace-test gate as Main full gate inside the required PR impact gate, using
 the merge group's base SHA.
 
+## Finding 17: a re-polled queued job was dropped as a duplicate
+
+The poller uses constant `poll-<job>-<attempt>-q` delivery ids for unassigned queued jobs.
+Once accepted, later polls returned `duplicate` without checking whether a pending job or active lease still covered the job.
+Run 41738569286 had five jobs queued for over 17 minutes and logged as duplicates while 22–24 jobs waited.
+The fix checks coverage locally and re-admits uncovered jobs through the relay at most once per minute per delivery id.
+The Vercel relay webhook answers 202 `requeued` for such a re-admitted delivery.
+
 ## Finding 18: the contract guard held the slot Main full gate needed
 
 Main push run 41747634569 took 109 s: image 00:33:06–00:33:12, contract guard 00:33:06–00:33:44, Secret scan 00:33:24–00:33:39, Main full gate 00:33:45–00:34:37.
 The gate was runnable at 00:33:12 but waited 33 s for one of two slots; the guard's real work was 2 s and its other ~33 s duplicated checkout, preflight and install.
 The guard now runs only on pull requests, while its two steps run after install in Main full gate and in PR impact gate on merge_group.
+The PR-only guard requests plain `hobo`.
 Expected saving: about 33–38 s of critical path on a main push and on merge_group.

@@ -60,6 +60,13 @@ const DeliveryIdentity = z.object({
 		full_name: z.string().min(3),
 	}),
 });
+const QueuedJobDelivery = z.object({
+	action: z.literal("queued"),
+	workflow_job: z.object({
+		id: z.number().int().positive(),
+		run_attempt: z.number().int().positive().optional(),
+	}),
+});
 
 /** Public API and bounded worker share the durable inbox and lease authority. */
 export function createHostedRelayRuntime(options: {
@@ -81,6 +88,7 @@ export function createHostedRelayRuntime(options: {
 	now?: () => string;
 }) {
 	const now = options.now ?? (() => new Date().toISOString());
+	const lastDuplicateRecheck = new Map<string, number>();
 	const admissionOrder = createAdmissionOrder(
 		options.github,
 		options.jobDurations,
@@ -116,9 +124,8 @@ export function createHostedRelayRuntime(options: {
 			rawBody: Uint8Array;
 			receivedAt: string;
 		}) {
-			const identity = DeliveryIdentity.parse(
-				JSON.parse(Buffer.from(input.rawBody).toString("utf8")),
-			);
+			const body = JSON.parse(Buffer.from(input.rawBody).toString("utf8"));
+			const identity = DeliveryIdentity.parse(body);
 			const state = await options.store.configuration();
 			if (!state?.configuration) throw new Error("configuration unavailable");
 			if (
@@ -142,7 +149,54 @@ export function createHostedRelayRuntime(options: {
 				installationId: identity.installation.id,
 				repositoryId: identity.repository.id,
 			});
-			return result.duplicate ? ("duplicate" as const) : ("accepted" as const);
+			if (!result.duplicate) return "accepted" as const;
+			if (input.event !== "workflow_job") return "duplicate" as const;
+			const queued = QueuedJobDelivery.safeParse(body);
+			if (!queued.success) return "duplicate" as const;
+			const jobId = queued.data.workflow_job.id;
+			const runAttempt = queued.data.workflow_job.run_attempt;
+			const matchesAttempt = (attempt: number) =>
+				runAttempt === undefined || attempt === runAttempt;
+			const [pending, leases] = await Promise.all([
+				options.store.pendingJobs(),
+				options.store.activeLeases(),
+			]);
+			const covered =
+				pending.some(
+					(job) =>
+						job.repositoryId === identity.repository.id &&
+						job.id === jobId &&
+						matchesAttempt(job.runAttempt),
+				) ||
+				leases.some(
+					(lease) =>
+						lease.repositoryId === identity.repository.id &&
+						matchesAttempt(lease.runAttempt) &&
+						((lease.jobId === jobId &&
+							(lease.actualJobId === 0 || lease.actualJobId === jobId)) ||
+							lease.actualJobId === jobId),
+				);
+			if (covered) return "duplicate" as const;
+			const nowMs = Date.parse(now());
+			for (const [deliveryId, lastRecheckMs] of lastDuplicateRecheck) {
+				if (nowMs - lastRecheckMs >= 60_000)
+					lastDuplicateRecheck.delete(deliveryId);
+			}
+			const lastRecheckMs = lastDuplicateRecheck.get(input.deliveryId);
+			if (lastRecheckMs !== undefined && nowMs - lastRecheckMs < 60_000)
+				return "duplicate" as const;
+			lastDuplicateRecheck.set(input.deliveryId, nowMs);
+			try {
+				const recheck = await (await relay()).processWebhook(
+					Buffer.from(input.rawBody),
+					input.event,
+				);
+				return recheck === "queued"
+					? ("requeued" as const)
+					: ("duplicate" as const);
+			} catch {
+				return "duplicate" as const;
+			}
 		},
 		async claim(id: string, token: string): Promise<Response> {
 			const result = await (await relay()).claim(id, token);

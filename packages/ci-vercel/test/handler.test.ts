@@ -149,6 +149,13 @@ describe("Vercel HTTP boundary", () => {
 		expect(result.status).toBe(202);
 		expect(await result.json()).toEqual({ status: "duplicate" });
 	});
+	it("acknowledges a requeued delivery", async () => {
+		const result = await create(
+			application({ ingestWebhook: async () => "requeued" }),
+		)(webhook());
+		expect(result.status).toBe(202);
+		expect(await result.json()).toEqual({ status: "requeued" });
+	});
 	it("ignores signed unrelated GitHub events without enqueueing them", async () => {
 		let calls = 0;
 		const handle = create(

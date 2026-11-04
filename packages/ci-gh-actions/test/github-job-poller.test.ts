@@ -298,6 +298,20 @@ describe("GitHub job poller", () => {
 		expect((await poller.poll()).accepted).toBe(0);
 	});
 
+	it("counts a requeued job as accepted rather than waiting", async () => {
+		const github = new FakeGithub(
+			{ queued: [900], in_progress: [] },
+			{ 900: [{ id: 1, status: "queued", labels: ["hobo"] }] },
+		);
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () => [CONNECTION],
+			ingest: async () => "requeued",
+			now: () => NOW,
+		});
+		expect(await poller.poll()).toMatchObject({ accepted: 1, waiting: [] });
+	});
+
 	it("sees the last job of a run that already finished, so its runner is reaped", async () => {
 		const github = new FakeGithub(
 			{ queued: [], in_progress: [], completed: [902] },
