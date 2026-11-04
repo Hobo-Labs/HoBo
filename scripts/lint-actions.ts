@@ -1,7 +1,20 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join, relative } from "node:path";
+import { verifyPinnedActionSha } from "./lib/verify-action-pins.mts";
+
+const lintActionsRepoRoot = join(import.meta.dirname, "..");
+const requireFromRepo = createRequire(import.meta.url);
+const yamlModulePath = requireFromRepo.resolve("yaml", {
+	paths: [join(lintActionsRepoRoot, "packages/ci-gh-actions")],
+});
+const yamlMod = await import(yamlModulePath);
+const { parseDocument } = yamlMod;
+if (parseDocument === undefined) {
+	throw new Error("yaml package missing parseDocument");
+}
 
 const root = join(process.cwd(), ".github");
 const workflowDir = join(root, "workflows");
@@ -61,6 +74,38 @@ function isPullRequestOnlyJob(
 	);
 }
 
+function collectPinnedActionRefs(text: string): Map<string, Set<string>> {
+	const byRepo = new Map<string, Set<string>>();
+	for (const line of text.split(/\r?\n/)) {
+		const match = line.match(/^\s*-?\s*uses:\s*([^@\s]+)@([0-9a-f]{40})\s*$/);
+		if (!match) continue;
+		const action = match[1];
+		const sha = match[2];
+		if (!action || !sha || action.startsWith("./")) continue;
+		const segments = action.split("/");
+		const repo =
+			segments.length >= 2
+				? `${segments[0]}/${segments[1]}`
+				: `actions/${action}`;
+		const shas = byRepo.get(repo) ?? new Set<string>();
+		shas.add(sha);
+		byRepo.set(repo, shas);
+	}
+	return byRepo;
+}
+
+async function verifyPinnedActionShasExist(
+	file: string,
+	text: string,
+): Promise<void> {
+	for (const [repo, shas] of collectPinnedActionRefs(text)) {
+		for (const sha of shas) {
+			const message = await verifyPinnedActionSha(repo, sha, file, process.env);
+			if (message) errors.push(message);
+		}
+	}
+}
+
 function lintPinnedActionRefs(file: string, text: string): void {
 	const lines = text.split(/\r?\n/);
 	for (const [index, line] of lines.entries()) {
@@ -78,11 +123,62 @@ function lintPinnedActionRefs(file: string, text: string): void {
 	}
 }
 
+function lintWorkflowYamlStrict(file: string, text: string): void {
+	const doc = parseDocument(text, { uniqueKeys: true });
+	for (const error of doc.errors) {
+		errors.push(`${file}: invalid workflow YAML: ${error.message.trim()}`);
+	}
+}
+
+function lintLocalActionsNeedCheckoutFirst(
+	file: string,
+	block: readonly string[],
+	jobLine: number,
+): void {
+	const stepsIndex = block.findIndex((line) => line.trim() === "steps:");
+	if (stepsIndex === -1) return;
+	let seenCheckout = false;
+	for (let i = stepsIndex + 1; i < block.length; i++) {
+		const line = block[i] ?? "";
+		if (/^    [A-Za-z0-9_-]+:/.test(line)) break;
+		if (!/^\s+- /.test(line)) continue;
+		const indent = line.match(/^(\s*)-/)?.[1] ?? "      ";
+		let end = i + 1;
+		while (end < block.length && !block[end]?.startsWith(`${indent}- `)) {
+			end += 1;
+		}
+		const step = block.slice(i, end);
+		if (
+			step.some(
+				(entry) =>
+					/^\s+- uses: actions\/checkout@/.test(entry) ||
+					/^\s+uses: actions\/checkout@/.test(entry),
+			)
+		) {
+			seenCheckout = true;
+		}
+		const local = step
+			.map(
+				(entry) =>
+					entry.match(/^\s+- uses:\s+(\.\/[^\s#]+)\s*$/)?.[1] ??
+					entry.match(/^\s+uses:\s+(\.\/[^\s#]+)\s*$/)?.[1],
+			)
+			.find((value) => value !== undefined);
+		if (local && !seenCheckout) {
+			errors.push(
+				`${file}:${jobLine + i + 1}: repo-local action ${local} must follow a pinned actions/checkout step (self-hosted runners do not auto-fetch local actions)`,
+			);
+		}
+		i = end - 1;
+	}
+}
+
 function lintWorkflowYaml(
 	file: string,
 	text: string,
 	requireDisabledJobs: boolean,
 ) {
+	lintWorkflowYamlStrict(file, text);
 	const lines = text.split(/\r?\n/);
 	const jobsIndex = lines.findIndex((line) => line === "jobs:");
 	if (jobsIndex === -1) {
@@ -163,6 +259,7 @@ function lintWorkflowYaml(
 				);
 			}
 		}
+		lintLocalActionsNeedCheckoutFirst(file, block, start + 1);
 	}
 	const firstCheckout = lines.findIndex((line) =>
 		line.includes("actions/checkout@"),
@@ -268,6 +365,43 @@ for (const file of files) {
 }
 
 lintCompositeActions();
+
+const verifyTargets: { file: string; text: string }[] = [];
+for (const file of recognizedFiles) {
+	if (!allowedEnabled.has(file)) continue;
+	verifyTargets.push({
+		file,
+		text: readFileSync(join(workflowDir, file), "utf8").replaceAll(
+			"\r\n",
+			"\n",
+		),
+	});
+}
+const actionsRoot = join(root, "actions");
+if (existsSync(actionsRoot)) {
+	const walkVerify = (directory: string): void => {
+		for (const name of readdirSync(directory)) {
+			const path = join(directory, name);
+			if (statSync(path).isDirectory()) {
+				walkVerify(path);
+				continue;
+			}
+			if (name !== "action.yml" && name !== "action.yaml") continue;
+			const rel = relative(join(process.cwd(), ".github"), path).replaceAll(
+				"\\",
+				"/",
+			);
+			verifyTargets.push({
+				file: rel,
+				text: readFileSync(path, "utf8").replaceAll("\r\n", "\n"),
+			});
+		}
+	};
+	walkVerify(actionsRoot);
+}
+for (const target of verifyTargets) {
+	await verifyPinnedActionShasExist(target.file, target.text);
+}
 
 if (errors.length > 0) {
 	for (const error of errors) console.error(`ERR ${error}`);
