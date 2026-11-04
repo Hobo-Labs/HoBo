@@ -265,6 +265,20 @@ describe("ci-runner image contract (host smoke)", () => {
 		}
 	});
 
+	it("installs shell-lint dependencies without submodule lifecycle scripts", () => {
+		const workflow = readFileSync(
+			join(root, ".github/workflows/hobo-ci.yml"),
+			"utf8",
+		);
+		const install = workflow.indexOf(
+			"run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false",
+		);
+		expect(install).toBeGreaterThan(-1);
+		expect(
+			workflow.indexOf("pnpm run lint:shell:changed", install),
+		).toBeGreaterThan(install);
+	});
+
 	it("preflight composite action does not depend on tsx", () => {
 		const action = readFileSync(
 			join(root, ".github/actions/ci-runner-preflight/action.yml"),

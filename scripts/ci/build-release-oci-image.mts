@@ -250,16 +250,21 @@ export function buildReleaseImage(options: {
 	if (image.id === "hobo-cli" && dockerImageExists("hobo-sdk:candidate")) {
 		sdkArtifactsDir = extractSdkArtifactsFromImage("hobo-sdk:candidate");
 	}
-	stageReleaseOciApp(image.id, staging.stagingRoot, {
-		skipBuild: options.skipBuild,
-		hardlink: staging.hardlink,
-		sdkArtifactsDir,
-	});
-	if (image.id === "hobo-mcp") ensureCliCandidate();
-	run(
-		"docker",
-		buildArgs(image, toolchain, version, revision, staging.stagingRoot),
-	);
+	try {
+		stageReleaseOciApp(image.id, staging.stagingRoot, {
+			skipBuild: options.skipBuild,
+			hardlink: staging.hardlink,
+			sdkArtifactsDir,
+		});
+		if (image.id === "hobo-mcp") ensureCliCandidate();
+		run(
+			"docker",
+			buildArgs(image, toolchain, version, revision, staging.stagingRoot),
+		);
+	} finally {
+		if (sdkArtifactsDir)
+			rmSync(sdkArtifactsDir, { recursive: true, force: true });
+	}
 	const localTag = `${image.name}:candidate`;
 	cleanupReleaseOciBuildChain(image.id, {
 		keepCandidate: options.keepCandidate,

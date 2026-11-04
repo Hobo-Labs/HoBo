@@ -556,11 +556,16 @@ function git(args: readonly string[], cwd: string, input?: string): Buffer {
 	});
 }
 
+type LsTreeMaps = {
+	files: Map<string, string>;
+	gitlinks: Map<string, string>;
+};
+
 function lsTreeRecords(
 	rev: string,
 	cwd: string,
 	pathspecs: readonly string[],
-): { files: Map<string, string>; gitlinks: Map<string, string> } {
+): LsTreeMaps {
 	const files = new Map<string, string>();
 	const gitlinks = new Map<string, string>();
 	if (pathspecs.length === 0) return { files, gitlinks };
@@ -578,6 +583,7 @@ function lsTreeRecords(
 const RELEASE_INPUT_PATHSPECS = [
 	"packages",
 	"site",
+	"media",
 	"examples",
 	"external",
 	"src",

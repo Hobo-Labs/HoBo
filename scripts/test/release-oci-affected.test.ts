@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { performance } from "node:perf_hooks";
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 import {
 	affectedReleaseOciImages,
 	clearReleaseOciGitTreeCache,
-	gitTree,
 	imageInputs,
 	isBuildInput,
 	releaseInputGitTree,
@@ -235,6 +235,14 @@ describe("affected release OCI images", () => {
 		clearReleaseOciGitTreeCache();
 		repoHeadImageInputs = imageInputs(releaseInputGitTree("HEAD", root));
 	}, REPO_MANIFEST_INTEGRATION_TIMEOUT_MS);
+
+	it("loads the uncached scoped release input tree in under 20 seconds", () => {
+		clearReleaseOciGitTreeCache();
+		const startedAt = performance.now();
+		releaseInputGitTree("HEAD", root);
+		expect(performance.now() - startedAt).toBeLessThan(20_000);
+	}, 20_000);
+
 	it("builds nothing for an unchanged tree or files no image reads", () => {
 		expect(affected({})).toEqual([]);
 		expect(affected({ "docs/release/pipelines.md": "# changed\n" })).toEqual(
@@ -418,6 +426,12 @@ describe("affected release OCI images", () => {
 		expect(isBuildInput("anything", undefined)).toBe(true);
 		expect(isBuildInput("src/a.ts", ["src/**"])).toBe(true);
 		expect(isBuildInput("lib/a.ts", ["src/**"])).toBe(false);
+	});
+
+	it("keeps the media workspace in the scoped release input tree", () => {
+		expect(
+			releaseInputGitTree("HEAD", root).files.has("media/package.json"),
+		).toBe(true);
 	});
 
 	it(
