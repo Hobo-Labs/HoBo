@@ -588,6 +588,12 @@ export function selectRelevantChecks(
 			args: ["run", "docs:coverage"],
 			reason: "documentation coverage may be affected",
 		});
+		checks.push({
+			command: "pnpm",
+			args: ["run", "docs:findings", "--", "--check"],
+			reason:
+				"CI performance findings and their generated index must stay valid",
+		});
 	}
 
 	// Google DESIGN.md visual contract for every web UI package (site + future apps).
