@@ -21,6 +21,7 @@ import {
 	type HostedInboxStore,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
+	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
 	waitForIsolatedWorkerDrain,
 	workerOfferKeys,
@@ -70,15 +71,10 @@ if (!Number.isInteger(workerMemoryMb) || workerMemoryMb < 512)
 	throw new Error("invalid HOBO_CI_WORKER_MEMORY_MB");
 // Concurrent job containers on this host. Size with memory: slots x HOBO_CI_WORKER_MEMORY_MB
 // should stay under host RAM (jobs run NODE_OPTIONS=--max-old-space-size=3072, turbo concurrency 1).
-const slots = Number(process.env.HOBO_CI_WORKER_SLOTS ?? "2");
-if (!Number.isInteger(slots) || slots < 1 || slots > 8)
-	throw new Error("invalid HOBO_CI_WORKER_SLOTS");
-// Slots reserved for push, workflow_dispatch and merge_group jobs. Other runs never borrow them
-// unless HOBO_CI_WORKER_TRUNK_LEND=1, which lends them until a trunk job waits. The offer's
-// concurrency must equal the slot count.
-const trunkSlots = Number(process.env.HOBO_CI_WORKER_TRUNK_SLOTS ?? "0");
-if (!Number.isInteger(trunkSlots) || trunkSlots < 0 || trunkSlots >= slots)
-	throw new Error("invalid HOBO_CI_WORKER_TRUNK_SLOTS");
+// One slot is reserved for push, workflow_dispatch and merge_group jobs by default when
+// there are at least two. Other runs never borrow it unless HOBO_CI_WORKER_TRUNK_LEND=1.
+// The offer's concurrency must equal the slot count.
+const { slots, trunkSlots } = resolveWorkerSlotConfig(process.env);
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
 	throw new Error("invalid HOBO_CI_WORKER_TRUNK_LEND");

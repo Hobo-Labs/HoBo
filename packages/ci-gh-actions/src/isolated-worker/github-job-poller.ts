@@ -17,7 +17,7 @@ export interface GithubJobPollerOptions {
 			repository: string;
 		}>[]
 	>;
-	/** Durable intake (the store's inbox); returns accepted/duplicate/ignored. */
+	/** Durable intake (the store's inbox); returns accepted/requeued/duplicate/ignored. */
 	ingest: (delivery: {
 		deliveryId: string;
 		event: "workflow_job";
@@ -355,7 +355,8 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 							);
 							result = "failed";
 						}
-						if (result === "accepted") summary.accepted++;
+						if (result === "accepted" || result === "requeued")
+							summary.accepted++;
 						else if (status.data === "queued")
 							summary.waiting.push({
 								jobId: job.id,

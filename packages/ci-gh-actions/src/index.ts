@@ -68,6 +68,7 @@ export {
 	formatPoolErrorLog,
 	redactPoolErrorMessage,
 } from "./isolated-worker/postgres-pool.js";
+export { resolveWorkerSlotConfig } from "./isolated-worker/worker-slots.js";
 export {
 	defaultWorkerDatabasePath,
 	resolveWorkerStorePlan,

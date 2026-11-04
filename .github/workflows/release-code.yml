@@ -73,7 +73,7 @@ jobs:
   # suite runs unsharded through turbo, so an unchanged cone replays from cache.
   code-release:
     name: HoBo Code contract, lint, test + OCI image
-    runs-on: hobo
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -160,7 +160,7 @@ jobs:
     name: Stage npm package + publish hobo-code GHCR image
     if: startsWith(github.ref, 'refs/tags/code-v') || github.event_name == 'workflow_dispatch'
     needs: code-release
-    runs-on: hobo
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     environment: release
     permissions:
@@ -223,7 +223,7 @@ jobs:
     name: Attest hobo-code GHCR image
     if: startsWith(github.ref, 'refs/tags/code-v') || github.event_name == 'workflow_dispatch'
     needs: release-code-publish
-    runs-on: hobo
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
       contents: read

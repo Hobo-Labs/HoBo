@@ -30,7 +30,7 @@ const allowedEnabled = new Set([acceptanceFile, ...activeCiFiles]);
 
 /** The one runner choice besides `hobo`: trunk events may ask for the box's trunk label. */
 const TRUNK_RUNS_ON =
-	"${{ vars.HOBO_CI_TRUNK_RUNNER == 'true' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
 
 const acceptanceDigest =
 	"d862e51e8506d228a6c16248871a1216d08925a154b1adcf30c5fd82e33638c2";
@@ -120,7 +120,11 @@ function lintWorkflowYaml(
 	if (firstSetupNode !== -1 && !/node-version:\s*['"]?24['"]?/.test(text)) {
 		errors.push(`${file}: Node version must be explicit and set to 24`);
 	}
-	if (activeCiFiles.has(file) && !/runs-on:\s*hobo\b/m.test(text)) {
+	if (
+		activeCiFiles.has(file) &&
+		!/runs-on:\s*hobo\b/m.test(text) &&
+		!text.includes(TRUNK_RUNS_ON)
+	) {
 		errors.push(
 			`${file}: authoritative CI jobs must run on self-hosted hobo runners`,
 		);

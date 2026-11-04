@@ -89,7 +89,7 @@ jobs:
   # built by release-code.yml, never here.
   release-contract:
     name: Release contract + affected OCI images
-    runs-on: hobo
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -203,7 +203,7 @@ jobs:
     name: Build all OCI images on tag (gate publish)
     if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/sdk-v') || startsWith(github.ref, 'refs/tags/cli-v') || (github.event_name == 'workflow_dispatch' && inputs.push_images)
     needs: release-contract
-    runs-on: hobo
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -247,7 +247,7 @@ jobs:
     name: Publish GHCR images (tagged release)
     if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.push_images)
     needs: [release-contract, release-oci-build-tag]
-    runs-on: hobo
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     environment: release
     permissions:
@@ -287,7 +287,7 @@ jobs:
     name: Attest GHCR images
     if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.push_images)
     needs: release-publish
-    runs-on: hobo
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -314,7 +314,7 @@ jobs:
     name: npm publish train (SDK allowlist)
     if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/sdk-v') || (github.event_name == 'workflow_dispatch' && inputs.push_images)
     needs: [release-contract, release-oci-build-tag]
-    runs-on: hobo
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     environment: release
     permissions:
@@ -345,7 +345,7 @@ jobs:
     name: Publish GitHub Pages (site/)
     if: startsWith(github.ref, 'refs/tags/v')
     needs: release-contract
-    runs-on: hobo
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
       contents: write
