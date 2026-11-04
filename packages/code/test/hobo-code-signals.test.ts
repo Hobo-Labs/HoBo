@@ -14,6 +14,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { killProcessGroup, trackChild } from "./subprocess-cleanup.js";
+
 // hobo-code composes HoBo in process: a `/hobo <verb>` in its shell loads
 // @hobo/hobo's composition, whose default runtime keeps its event store in a
 // `hobo-yard-*` directory under TMPDIR. However hobo-code is ended, that store
@@ -91,7 +93,7 @@ const roots: string[] = [];
 const children: number[] = [];
 afterEach(() => {
 	for (const pid of children.splice(0)) {
-		if (running(pid)) process.kill(pid, "SIGKILL");
+		if (running(pid)) killProcessGroup(pid);
 	}
 	for (const root of roots.splice(0)) {
 		rmSync(root, { recursive: true, force: true });
@@ -188,6 +190,7 @@ async function endTheShell(ending: Ending): Promise<Ended> {
 		},
 		stdio: ["pipe", "pipe", "pipe"],
 	});
+	trackChild(script);
 	let screen = "";
 	const draw = (chunk: Buffer): void => {
 		screen = `${screen}${chunk.toString("utf8")}`.slice(-64 * 1024);
@@ -274,7 +277,10 @@ async function endTheShell(ending: Ending): Promise<Ended> {
 		};
 	} finally {
 		writeFileSync(at("done"), "");
-		if (!(await until(() => closed, SIGNAL_GRACE_MS))) script.kill("SIGKILL");
+		if (!(await until(() => closed, SIGNAL_GRACE_MS))) {
+			if (script.pid !== undefined) killProcessGroup(script.pid);
+			else script.kill("SIGKILL");
+		}
 		await close;
 	}
 }

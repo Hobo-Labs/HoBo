@@ -14,6 +14,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+import { killProcessGroup, trackChild } from "./subprocess-cleanup.js";
+
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const launcher = join(pkgRoot, "bin", "hobo-code.mjs");
 
@@ -165,6 +167,7 @@ process.on("SIGTERM", close);
 				},
 			},
 		);
+		trackChild(child);
 		try {
 			await new Promise<void>((resolve, reject) => {
 				const timeout = setTimeout(
@@ -188,7 +191,7 @@ process.on("SIGTERM", close);
 			];
 			expect(status).toBe(143);
 		} finally {
-			if (child.exitCode === null) child.kill("SIGKILL");
+			if (child.pid !== undefined) killProcessGroup(child.pid);
 			rmSync(root, { recursive: true, force: true });
 		}
 	}, 120_000);

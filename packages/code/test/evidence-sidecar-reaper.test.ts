@@ -5,6 +5,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { killProcessGroup, trackChild } from "./subprocess-cleanup.js";
+
 /**
  * The Evidence worker is spawned `detached` + `unref`ed on purpose, so nothing
  * in the OS collects it when the session that started it dies. These tests pin
@@ -23,13 +25,7 @@ const children: ChildProcess[] = [];
 
 afterEach(() => {
 	for (const child of children) {
-		if (child.exitCode === null && child.pid !== undefined) {
-			try {
-				process.kill(child.pid, "SIGKILL");
-			} catch {
-				// already gone
-			}
-		}
+		if (child.pid !== undefined) killProcessGroup(child.pid);
 	}
 	children.length = 0;
 	for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
@@ -49,6 +45,7 @@ async function startWorker(
 	const project = tempDir("hobo-evidence-reap-proj-");
 	const readyPath = join(tempDir("hobo-evidence-reap-ready-"), "ready.json");
 	const child = spawn(process.execPath, [MAIN], {
+		detached: true,
 		stdio: "ignore",
 		env: {
 			...process.env,
@@ -60,7 +57,9 @@ async function startWorker(
 			...env,
 		},
 	});
+	trackChild(child);
 	children.push(child);
+	child.unref();
 	const deadline = Date.now() + 15_000;
 	while (Date.now() < deadline) {
 		if (existsSync(readyPath)) return { child, home };

@@ -101,7 +101,8 @@ jobs:
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
       - name: Test @hobo/code (builds its dependency cone first)
-        run: pnpm exec turbo run test --filter=@hobo/code --concurrency=${HOBO_TURBO_CONCURRENCY}
+        timeout-minutes: 20
+        run: timeout -k 30s 20m pnpm exec turbo run test --filter=@hobo/code --concurrency=${HOBO_TURBO_CONCURRENCY}
       - name: Pack code test build artifact
         if: github.event_name != 'pull_request'
         run: node --experimental-strip-types --no-warnings scripts/ci/pack-code-test-build-artifact.mts . /tmp/hobo-code-test-build.tar.gz
