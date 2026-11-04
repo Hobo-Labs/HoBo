@@ -160,9 +160,20 @@ describe("isolated worker deps image selection", () => {
 		return lease;
 	}
 
-	function controller(driver: DockerDriver) {
+	function controller(driver: DockerDriver, workRoot?: string) {
 		if (!store) throw new Error("fixture store not initialized");
-		return createIsolatedContainerController({
+		const workFs = {
+			statfs: vi.fn(async () => ({
+				blocks: 100,
+				bfree: 100,
+				files: 100,
+				ffree: 100,
+			})),
+			jobDirectories: vi.fn(async () => []),
+			prepareJobDirectory: vi.fn(async () => undefined),
+			removeJobDirectory: vi.fn(async () => ({ bytes: 0, entries: 0 })),
+		};
+		const controllerOptions = {
 			store,
 			github,
 			publicOrigin: "https://relay.example",
@@ -171,7 +182,10 @@ describe("isolated worker deps image selection", () => {
 			workerImage: "hobo-ci-worker:local",
 			slots: 1,
 			now: () => NOW,
-		});
+		};
+		if (workRoot !== undefined)
+			Object.assign(controllerOptions, { workRoot, workFs });
+		return createIsolatedContainerController(controllerOptions);
 	}
 
 	it("uses the deps image and exports its key for a HoBo lease", async () => {
@@ -215,6 +229,20 @@ describe("isolated worker deps image selection", () => {
 		expect(docker.resourceUpdates).toEqual([
 			{ containerId: "0".repeat(63) + "1", cpuShares: 8_192 },
 		]);
+	});
+
+	it("does not claim the deps layer when a job directory hides it", async () => {
+		const lease = await reservedLease("hobo-labs/hobo");
+		const docker = fakeDocker();
+		const workRoot = join(root, "work");
+		await controller(docker.driver, workRoot).host.launch(lease.id);
+		expect(docker.specs).toHaveLength(1);
+		expect(docker.specs[0]?.image).toBe("hobo-ci-deps:local");
+		expect(docker.specs[0]?.volumes).toContainEqual({
+			source: join(workRoot, `hobo-${lease.id}`),
+			target: "/opt/actions-runner/_hobo_work",
+		});
+		expect(docker.specs[0]?.env.HOBO_CI_DEPS_LAYER).toBeUndefined();
 	});
 
 	it("falls back when the deps toolchain does not match", async () => {
