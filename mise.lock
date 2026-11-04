@@ -169,6 +169,46 @@ checksum_source = "mise-versions"
 url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-win-x64.exe"
 url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/413534378"
 
+[[tools.shellcheck]]
+version = "0.10.0"
+backend = "aqua:koalaman/shellcheck"
+specifiers = ["0.10.0"]
+
+[tools.shellcheck."platforms.linux-arm64"]
+checksum = "sha256:324a7e89de8fa2aed0d0c28f3dab59cf84c6d74264022c00c22af665ed1a09bb"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.aarch64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/155543216"
+
+[tools.shellcheck."platforms.linux-arm64-musl"]
+checksum = "sha256:324a7e89de8fa2aed0d0c28f3dab59cf84c6d74264022c00c22af665ed1a09bb"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.aarch64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/155543216"
+
+[tools.shellcheck."platforms.linux-x64"]
+checksum = "sha256:6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/155543215"
+
+[tools.shellcheck."platforms.linux-x64-musl"]
+checksum = "sha256:6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/155543215"
+
+[tools.shellcheck."platforms.macos-arm64"]
+checksum = "sha256:bbd2f14826328eee7679da7221f2bc3afb011f6a928b848c80c321f6046ddf81"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.darwin.aarch64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/155543213"
+
+[tools.shellcheck."platforms.macos-x64"]
+checksum = "sha256:ef27684f23279d112d8ad84e0823642e43f838993bbb8c0963db9b58a90464c2"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.darwin.x86_64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/155543214"
+
+[tools.shellcheck."platforms.windows-x64"]
+checksum = "sha256:eb6cd53a54ea97a56540e9d296ce7e2fa68715aa507ff23574646c1e12b2e143"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.zip"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/155543220"
+
 [[tools.turbo]]
 version = "2.11.10"
 aube = { path = ".mise/locks/turbo/2.11.10", digest = "sha256:98a66ba91c04476d3edfbbe6d7153fae49b3c4b1d174805797db67030dd35af2" }

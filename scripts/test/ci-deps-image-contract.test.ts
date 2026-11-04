@@ -21,10 +21,11 @@ describe("CI deps image build contract", () => {
 	it("reuses the host store and copies only node_modules and the git skeleton", () => {
 		includes(dockerfile, "FROM ${TOOLCHAIN_IMAGE} AS fetch");
 		const cacheMount =
-			"RUN --mount=type=cache,id=hobo-pnpm-store,target=/pnpm-store,uid=1000,gid=1000";
+			"--mount=type=cache,id=hobo-pnpm-store,target=/pnpm-store,uid=1000,gid=1000";
 		assert.equal(dockerfile.split(cacheMount).length, 3);
 		includes(dockerfile, "pnpm fetch --frozen-lockfile");
-		includes(dockerfile, "FROM ${FETCH_IMAGE} AS install");
+		includes(dockerfile, "FROM fetch AS install");
+		includes(dockerfile, `RUN --network=none ${cacheMount}`);
 		includes(
 			dockerfile,
 			"pnpm install --frozen-lockfile --offline --ignore-scripts",
@@ -33,11 +34,12 @@ describe("CI deps image build contract", () => {
 			dockerfile,
 			"pnpm rebuild @ast-grep/cli @bufbuild/buf esbuild protobufjs",
 		);
-		includes(build, "docker build --network=none");
 		includes(dockerfile, "FROM ${TOOLCHAIN_IMAGE} AS final");
 		includes(dockerfile, "/opt/actions-runner/_hobo_work/deps/");
 		includes(dockerfile, "-type d -name node_modules -prune -exec");
 		assert.ok(!dockerfile.includes("-delete"));
+		assert.ok(!dockerfile.includes("FETCH_IMAGE"));
+		assert.ok(!build.includes("hobo-ci-deps-fetch"));
 		assert.ok(!dockerfile.split("AS final")[1]?.includes("RUN pnpm fetch"));
 	});
 
@@ -59,10 +61,10 @@ describe("CI deps image build contract", () => {
 	it("returns on a local keyed hit without building", () => {
 		const hit = build.indexOf('if docker image inspect "$candidate"');
 		const exit = build.indexOf("exit 0", hit);
-		const fetch = build.indexOf("docker build --target fetch");
+		const buildCommand = build.indexOf("docker build \\");
 		assert.ok(hit > -1);
 		assert.ok(exit > hit);
-		assert.ok(fetch > exit);
+		assert.ok(buildCommand > exit);
 	});
 
 	it("requires an up-to-date offline contract before promoting a new build", () => {
@@ -78,6 +80,20 @@ describe("CI deps image build contract", () => {
 		assert.ok(contract > -1);
 		assert.ok(promote > contract);
 		includes(build, "--no-promote");
+	});
+
+	it("collects old keyed and fetch images through the tested selection helper", () => {
+		const gc = read("scripts/ci/deps-image-gc.mts");
+		const command =
+			'node --no-warnings scripts/ci/deps-image-gc.mts "$candidate"';
+		assert.equal(build.split(command).length, 3);
+		includes(gc, "selectDepsImageTagsForDeletion(images, currentTag)");
+		includes(gc, '"{{.Image}}"');
+		includes(gc, '["image", "prune", "-f"]');
+		const promote = build.lastIndexOf(
+			'docker tag "$candidate" hobo-ci-deps:local',
+		);
+		assert.ok(build.lastIndexOf(command) > promote);
 	});
 
 	it("tries GHCR before building a missing toolchain and revalidates it", () => {
@@ -128,6 +144,10 @@ describe("CI deps workflow contract", () => {
 		includes(
 			job,
 			"if: steps.scope.outputs.run == 'true' && steps.source.outputs.source != 'build'",
+		);
+		includes(
+			job,
+			'node --no-warnings scripts/ci/deps-image-gc.mts "$candidate"',
 		);
 		assert.ok(
 			!job.includes('if [ "${{ github.event_name }}" != "pull_request" ]'),

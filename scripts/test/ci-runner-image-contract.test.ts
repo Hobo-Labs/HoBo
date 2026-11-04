@@ -54,6 +54,54 @@ describe("ci-runner image contract (repo manifests)", () => {
 		expect(toml).toContain("127.0.0.1:5000");
 	});
 
+	it("locks every toolchain entry on every supported platform", () => {
+		const toml = readFileSync(join(root, MISE_TOML), "utf8");
+		const lock = readFileSync(join(root, MISE_LOCK), "utf8");
+		const toolsSection = toml.split("[tools]")[1]?.split("\n[")[0] ?? "";
+		const tools = [...toolsSection.matchAll(/^([\w-]+)\s*=/gm)].map(
+			(match) => match[1],
+		);
+		expect(tools).toEqual([
+			"cue",
+			"gitleaks",
+			"node",
+			"pnpm",
+			"shellcheck",
+			"turbo",
+		]);
+		const platforms = [
+			...new Set(
+				[...lock.matchAll(/^\[tools\.[\w-]+\."platforms\.([^"]+)"\]$/gm)].map(
+					(match) => match[1],
+				),
+			),
+		];
+		expect(platforms).toEqual([
+			"linux-arm64",
+			"linux-arm64-musl",
+			"linux-x64",
+			"linux-x64-musl",
+			"macos-arm64",
+			"macos-x64",
+			"windows-x64",
+		]);
+		for (const tool of tools) {
+			const toolEntry = lock.split(`[[tools.${tool}]]`)[1]?.split("\n[")[0];
+			expect(toolEntry, `${tool} lock entry`).toBeDefined();
+			if (toolEntry?.includes("aube =")) {
+				expect(toolEntry).toContain('digest = "sha256:');
+				continue;
+			}
+			for (const platform of platforms) {
+				const entry = lock
+					.split(`[tools.${tool}."platforms.${platform}"]`)[1]
+					?.split("\n[")[0];
+				expect(entry, `${tool} on ${platform}`).toContain("checksum = ");
+				expect(entry, `${tool} on ${platform}`).toContain("url = ");
+			}
+		}
+	});
+
 	it("declares system packages, base Dockerfile, and oci build script", () => {
 		expect(existsSync(join(root, CI_RUNNER_BASE_DOCKERFILE))).toBe(true);
 		expect(existsSync(join(root, CI_RUNNER_SYSTEM_PACKAGES))).toBe(true);

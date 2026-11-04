@@ -1,5 +1,5 @@
+# syntax=docker/dockerfile:1.19
 ARG TOOLCHAIN_IMAGE=hobo-ci-worker:local
-ARG FETCH_IMAGE=hobo-ci-deps-fetch:local
 
 FROM ${TOOLCHAIN_IMAGE} AS fetch
 USER root
@@ -13,11 +13,11 @@ COPY --chown=1000:1000 . .
 RUN --mount=type=cache,id=hobo-pnpm-store,target=/pnpm-store,uid=1000,gid=1000 \
   pnpm fetch --frozen-lockfile
 
-FROM ${FETCH_IMAGE} AS install
+FROM fetch AS install
 ARG SOURCE_DATE_EPOCH=0
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 WORKDIR /opt/actions-runner/_hobo_work/HoBo/HoBo
-RUN --mount=type=cache,id=hobo-pnpm-store,target=/pnpm-store,uid=1000,gid=1000 \
+RUN --network=none --mount=type=cache,id=hobo-pnpm-store,target=/pnpm-store,uid=1000,gid=1000 \
   pnpm install --frozen-lockfile --offline --ignore-scripts \
   && pnpm rebuild @ast-grep/cli @bufbuild/buf esbuild protobufjs \
   && git init --quiet \
