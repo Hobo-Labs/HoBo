@@ -2,6 +2,7 @@ export type WorkerSlotConfig = Readonly<{
 	slots: number;
 	trunkSlots: number;
 	mergeGroupLeases: number;
+	prCapWithTrunk: number;
 }>;
 
 export function resolveWorkerSlotConfig(
@@ -18,5 +19,11 @@ export function resolveWorkerSlotConfig(
 	const mergeGroupLeases = Number(env.HOBO_CI_WORKER_MERGE_GROUP_LEASES ?? "1");
 	if (!Number.isInteger(mergeGroupLeases) || mergeGroupLeases < 1)
 		throw new Error("invalid HOBO_CI_WORKER_MERGE_GROUP_LEASES");
-	return { slots, trunkSlots, mergeGroupLeases };
+	const prCapValue = env.HOBO_CI_WORKER_PR_CAP_WITH_TRUNK ?? "1";
+	if (!/^(?:0|[1-9]\d*)$/u.test(prCapValue))
+		throw new Error("invalid HOBO_CI_WORKER_PR_CAP_WITH_TRUNK");
+	const prCapWithTrunk = Number(prCapValue);
+	if (prCapWithTrunk > 8)
+		throw new Error("invalid HOBO_CI_WORKER_PR_CAP_WITH_TRUNK");
+	return { slots, trunkSlots, mergeGroupLeases, prCapWithTrunk };
 }

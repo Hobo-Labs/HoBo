@@ -176,7 +176,12 @@ export type CommandResult = {
 	readonly command?: string;
 	readonly failure?: string;
 };
-export type CommandRunner = (cmd: string, args: string[]) => CommandResult;
+export type CommandOptions = { readonly cwd?: string };
+export type CommandRunner = (
+	cmd: string,
+	args: string[],
+	options?: CommandOptions,
+) => CommandResult;
 
 function commandLine(cmd: string, args: readonly string[]): string {
 	return [cmd, ...args]
@@ -197,8 +202,12 @@ function commandFailure(result: CommandResult, fallback: string): string {
 	);
 }
 
-export function spawnCommand(cmd: string, args: string[]): CommandResult {
-	const r = spawnSync(cmd, args, { encoding: "utf8" });
+export function spawnCommand(
+	cmd: string,
+	args: string[],
+	options: CommandOptions = {},
+): CommandResult {
+	const r = spawnSync(cmd, args, { encoding: "utf8", cwd: options.cwd });
 	const command = commandLine(cmd, args);
 	const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
 	if (r.error) {
@@ -232,6 +241,16 @@ export function spawnCommand(cmd: string, args: string[]): CommandResult {
 		};
 	}
 	return { ok: true, out, command };
+}
+
+function runMiseToolVersion(
+	run: CommandRunner,
+	root: string,
+	tool: string,
+): CommandResult {
+	const versionArgs =
+		tool === "cue" || tool === "gitleaks" ? ["version"] : ["--version"];
+	return run("mise", ["exec", "--", tool, ...versionArgs], { cwd: root });
 }
 
 function parseMiseToolNames(miseToml: string): string[] {
@@ -493,7 +512,7 @@ export function evaluateCiRunnerContract(
 
 	if (live) checks.push(checkHeadlessShell(run));
 
-	const cue = run("cue", ["version"]);
+	const cue = runMiseToolVersion(run, root, "cue");
 	if (cue.ok && !cue.out.includes("0.14.0")) {
 		checks.push({
 			ok: false,

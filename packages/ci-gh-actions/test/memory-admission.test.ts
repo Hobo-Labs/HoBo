@@ -293,6 +293,56 @@ describe("worker memory admission", () => {
 		).toBe(false);
 	});
 
+	it("caps PR leases only while a trunk lease is active", () => {
+		const log = vi.fn();
+		const admission = createWorkerMemoryAdmission(config(14_336), { log });
+		const activeLeases = [lease("trunk", 3_072, "light")];
+		const generalLeaseIds = new Set<string>();
+		const request = (jobId: number, rank = 1) =>
+			({
+				jobId,
+				memoryClass: "light",
+				memoryMb: 3_072,
+				rank,
+				activeLeases,
+				generalLeaseIds,
+			}) as const;
+		expect(admission.admit(request(1)).admitted).toBe(true);
+		activeLeases.push(lease("pr-1", 3_072, "light"));
+		generalLeaseIds.add("pr-1");
+		expect(admission.admit(request(2))).toMatchObject({
+			admitted: false,
+			blockRank: false,
+		});
+		expect(log).toHaveBeenLastCalledWith(
+			"hobo_ci_memory_admission_wait",
+			expect.objectContaining({
+				reason: "trunk-pr-cap",
+				activeGeneral: 1,
+				prCapWithTrunk: 1,
+			}),
+		);
+		expect(admission.admit(request(3, 0)).admitted).toBe(true);
+		activeLeases.splice(0, 1);
+		expect(admission.admit(request(2)).admitted).toBe(true);
+	});
+
+	it("can pause all new PR leases while trunk is active", () => {
+		const admission = createWorkerMemoryAdmission(config(14_336), {
+			prCapWithTrunk: 0,
+		});
+		expect(
+			admission.admit({
+				jobId: 1,
+				memoryClass: "light",
+				memoryMb: 3_072,
+				rank: 1,
+				activeLeases: [lease("trunk", 3_072, "light")],
+				generalLeaseIds: new Set<string>(),
+			}).admitted,
+		).toBe(false);
+	});
+
 	it("logs each distinct wait state once and logs admission", () => {
 		const log = vi.fn();
 		const admission = createWorkerMemoryAdmission(config(6_144), {

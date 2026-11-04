@@ -10,7 +10,7 @@ mise replaces ad hoc **Corepack-only** Node/pnpm setup, **cue-lang/setup-cue**, 
 
 | Section | HoBo usage |
 | --- | --- |
-| `[tools]` | `node@24`, `pnpm@10.33.4` (matches `package.json#packageManager`), `cue@0.14.0` (schema lane), `turbo@2.11.10` (matches root devDependency). |
+| `[tools]` | `node@24`, `pnpm@10.33.4` (matches `package.json#packageManager`), `cue@0.14.0` (schema lane), `shellcheck@0.10.0` (shell lint via `mise exec`), `turbo@2.11.10` (matches root devDependency), `gitleaks@8.22.1`. |
 | `[env]` | Optional project env vars (keep secrets out; use `mise env` + `.env` locally). |
 | `[tasks]` | Thin wrappers around existing `pnpm` / Turbo scripts so `mise run build` matches `pnpm run build`. |
 | `[settings]` | `experimental = true` only when needed; prefer stable flags. |
@@ -106,7 +106,7 @@ Self-hosted **`runs-on: hobo`** jobs use a container built from this repo’s **
 - **Tool layers** — `[oci]` in [`mise.toml`](../../mise.toml); build with **`MISE_EXPERIMENTAL=1`** and pinned mise ([`mise-version.txt`](../../packages/ci-gh-actions/deploy/ci-runner/mise-version.txt)) on **native Linux** (arm64 or x64, no cross-build).
 - **Operator command** — `bash packages/ci-gh-actions/deploy/ci-runner/build.sh` (see [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md)).
 
-Preflight: `node --no-warnings scripts/ci-runner-preflight.mts` (Node 24 native TS; no `pnpm install` / tsx required before CI steps). Fallback monolithic Dockerfile: [`deploy/ci-runner/README.md`](../../packages/ci-gh-actions/deploy/ci-runner/README.md).
+Preflight: `node --no-warnings scripts/ci-runner-preflight.mts` (Node 24 native TS; no `pnpm install` / tsx required before CI steps). Runner contract probes invoke every tool with `mise exec -- <tool> …` from the repo root rather than executing mise shims directly; `build.sh` also verifies `mise exec -- shellcheck --version` before the OCI build. Release sparse checkouts include `.mise/locks` so backend sidecars such as turbo's aube lock remain available. After `mise.lock` changes, rebuild `hobo-ci-worker:local` on the box so the OCI layer ships new tools. Fallback monolithic Dockerfile: [`deploy/ci-runner/README.md`](../../packages/ci-gh-actions/deploy/ci-runner/README.md).
 
 ## Tasks vs package.json scripts
 

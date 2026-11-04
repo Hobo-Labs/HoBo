@@ -14,10 +14,15 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { ciRunnerImageVersion } from "../lib/ci-runner-contract.mts";
 import {
+	releaseSemverFromEnv,
+	tryParseReleaseRef,
+} from "../lib/release-version.mts";
+import {
 	ghcrRepository,
 	loadReleaseOciManifest,
 	type ReleaseOciImage,
 } from "../lib/release-oci-contract.mts";
+import { extractSdkArtifactsFromImage } from "./extract-sdk-artifacts.mts";
 import {
 	type ReleaseOciStagingLocation,
 	releaseOciStagingLocation,
@@ -141,6 +146,15 @@ function buildArgs(
 	return args;
 }
 
+function dockerImageExists(ref: string): boolean {
+	return (
+		spawnSync("docker", ["image", "inspect", ref], {
+			cwd: root,
+			stdio: "ignore",
+		}).status === 0
+	);
+}
+
 function ensureCliCandidate(): void {
 	const result = spawnSync(
 		"docker",
@@ -193,6 +207,23 @@ function cleanupReleaseOciBuildChain(
 
 export type BuiltReleaseImage = { localTag: string; ghcrRepo: string };
 
+function resolveReleaseImageVersion(optionsVersion?: string): string {
+	if (optionsVersion) return optionsVersion;
+	if (process.env.HOBO_RELEASE_SEMVER?.trim()) {
+		return releaseSemverFromEnv();
+	}
+	const ref = process.env.HOBO_RELEASE_VERSION?.trim();
+	if (ref) {
+		const parsed = tryParseReleaseRef(ref);
+		if (parsed) return parsed.semver;
+	}
+	return (
+		process.env.HOBO_RELEASE_VERSION ??
+		process.env.GITHUB_REF_NAME ??
+		ciRunnerImageVersion(root)
+	);
+}
+
 export function buildReleaseImage(options: {
 	imageId: string;
 	version?: string;
@@ -205,11 +236,7 @@ export function buildReleaseImage(options: {
 	if (!image) {
 		throw new Error(`unknown release image id: ${options.imageId}`);
 	}
-	const version =
-		options.version ??
-		process.env.HOBO_RELEASE_VERSION ??
-		process.env.GITHUB_REF_NAME ??
-		ciRunnerImageVersion(root);
+	const version = resolveReleaseImageVersion(options.version);
 	const revision =
 		options.revision ??
 		process.env.HOBO_RELEASE_REVISION ??
@@ -219,15 +246,25 @@ export function buildReleaseImage(options: {
 	ensureReleaseBuildHost();
 	const staging = releaseOciStagingLocation(image.id, { root });
 	recordStoreStaging(image.id, staging);
-	stageReleaseOciApp(image.id, staging.stagingRoot, {
-		skipBuild: options.skipBuild,
-		hardlink: staging.hardlink,
-	});
-	if (image.id === "hobo-mcp") ensureCliCandidate();
-	run(
-		"docker",
-		buildArgs(image, toolchain, version, revision, staging.stagingRoot),
-	);
+	let sdkArtifactsDir: string | undefined;
+	if (image.id === "hobo-cli" && dockerImageExists("hobo-sdk:candidate")) {
+		sdkArtifactsDir = extractSdkArtifactsFromImage("hobo-sdk:candidate");
+	}
+	try {
+		stageReleaseOciApp(image.id, staging.stagingRoot, {
+			skipBuild: options.skipBuild,
+			hardlink: staging.hardlink,
+			sdkArtifactsDir,
+		});
+		if (image.id === "hobo-mcp") ensureCliCandidate();
+		run(
+			"docker",
+			buildArgs(image, toolchain, version, revision, staging.stagingRoot),
+		);
+	} finally {
+		if (sdkArtifactsDir)
+			rmSync(sdkArtifactsDir, { recursive: true, force: true });
+	}
 	const localTag = `${image.name}:candidate`;
 	cleanupReleaseOciBuildChain(image.id, {
 		keepCandidate: options.keepCandidate,

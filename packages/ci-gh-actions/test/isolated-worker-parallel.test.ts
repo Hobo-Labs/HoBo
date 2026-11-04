@@ -60,6 +60,11 @@ function fakeDocker(): DockerDriver & { calls: string[] } {
 		rename: vi.fn(async (_id: string, name: string) => {
 			calls.push(`rename ${name}`);
 		}),
+		updateResources: vi.fn(async (containerId, weights) => {
+			calls.push(
+				`update ${weights.cpuShares} ${weights.blkioWeight ?? "off"} ${containerId}`,
+			);
+		}),
 		stop: vi.fn(async () => {}),
 		remove: vi.fn(async (name: string) => {
 			calls.push(`remove ${name}`);
@@ -289,6 +294,100 @@ describe("cli docker driver parallel helpers", () => {
 		const argv = readFileSync(log, "utf8").trim();
 		expect(argv).toContain("--memory 3072m --memory-swap 3072m");
 		expect(argv).toContain("-e HOBO_CI_JOB_MEMORY_MB=3072");
+	});
+
+	it("passes ranked CPU and IO weights to create and warm-container updates", async () => {
+		const { bin, log } = fakeBinary();
+		const driver = createCliDockerDriver({
+			binary: bin,
+			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0", PATH: process.env.PATH },
+		});
+		await driver.create({
+			name: "hobo-trunk",
+			image: "img",
+			timeoutMs: 1,
+			env: {},
+			command: ["sleep", "infinity"],
+			cpuShares: 8_192,
+			blkioWeight: 800,
+		});
+		await driver.updateResources?.("c1", {
+			cpuShares: 512,
+			blkioWeight: 200,
+		});
+		const lines = readFileSync(log, "utf8").trim().split("\n");
+		expect(lines[0]).toContain("--cpu-shares 8192 --blkio-weight 800");
+		expect(lines[1]).toBe("update --cpu-shares 512 --blkio-weight 200 c1");
+	});
+
+	it("falls back to CPU-only weights once the engine rejects block IO weights", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "fake-docker-no-blkio-"));
+		try {
+			const log = join(dir, "log");
+			const bin = join(dir, "docker");
+			writeFileSync(
+				bin,
+				`#!/bin/sh\necho "$*" >> "${log}"\ncase " $* " in *" --blkio-weight "*) echo "Block I/O weight is not supported" >&2; exit 125;; esac\nprintf '%064d\\n' 7\n`,
+			);
+			chmodSync(bin, 0o755);
+			const logEvent = vi.fn();
+			const driver = createCliDockerDriver({
+				binary: bin,
+				env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0", PATH: process.env.PATH },
+				log: logEvent,
+			});
+			const spec = {
+				name: "hobo-x",
+				image: "img",
+				timeoutMs: 1,
+				env: {},
+				command: ["sleep", "infinity"],
+				cpuShares: 8_192,
+				blkioWeight: 800,
+			} as const;
+			await driver.create(spec);
+			await driver.create({ ...spec, name: "hobo-y" });
+			await driver.updateResources?.("c1", {
+				cpuShares: 512,
+				blkioWeight: 200,
+			});
+			const lines = readFileSync(log, "utf8").trim().split("\n");
+			expect(lines).toHaveLength(4);
+			expect(lines[0]).toContain("--blkio-weight 800");
+			expect(lines.slice(1).join("\n")).not.toContain("--blkio-weight");
+			expect(lines[1]).toContain("--cpu-shares 8192");
+			expect(lines[3]).toBe("update --cpu-shares 512 c1");
+			expect(logEvent).toHaveBeenCalledOnce();
+			expect(logEvent).toHaveBeenCalledWith(
+				"hobo_ci_blkio_weight_unsupported",
+				expect.objectContaining({
+					message: expect.stringContaining("Block I/O weight"),
+				}),
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it.each([
+		{ cpuShares: 1, blkioWeight: 800 },
+		{ cpuShares: 512, blkioWeight: 9 },
+	])("rejects invalid container resource weights %o", async (weights) => {
+		const { bin } = fakeBinary();
+		const driver = createCliDockerDriver({
+			binary: bin,
+			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0" },
+		});
+		await expect(
+			driver.create({
+				name: "hobo-x",
+				image: "img",
+				timeoutMs: 1,
+				env: {},
+				command: [],
+				...weights,
+			}),
+		).rejects.toThrow(/invalid container/u);
 	});
 
 	it("refuses volume specs that could smuggle extra mount options", async () => {

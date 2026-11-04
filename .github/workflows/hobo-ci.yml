@@ -90,13 +90,24 @@ jobs:
           else
             echo "needed=false" >> "$GITHUB_OUTPUT"
           fi
+      - uses: ./.github/actions/ci-runner-preflight
+        if: steps.rebuild.outputs.needed == 'true'
+      - uses: ./.github/actions/pnpm-store
+        if: steps.rebuild.outputs.needed == 'true'
+      - name: Install root deps for shell lint
+        if: steps.rebuild.outputs.needed == 'true'
+        run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
       - name: Build base + mise oci layers (native arch)
         if: steps.rebuild.outputs.needed == 'true'
         timeout-minutes: 15
         env:
           MISE_EXPERIMENTAL: "1"
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash packages/ci-gh-actions/deploy/ci-runner/build.sh
+        run: |
+          set -euo pipefail
+          bash -n packages/ci-gh-actions/deploy/ci-runner/build.sh
+          pnpm run lint:shell:changed -- --base=HEAD~1
+          bash packages/ci-gh-actions/deploy/ci-runner/build.sh
       # Published from main only; a pull request's image is tried on the box, not shipped.
       - name: Push runner image to GHCR (optional)
         if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'

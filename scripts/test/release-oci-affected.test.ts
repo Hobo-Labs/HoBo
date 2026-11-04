@@ -1,11 +1,24 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { performance } from "node:perf_hooks";
+import { beforeAll, describe, expect, it } from "vitest";
+import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 import {
 	affectedReleaseOciImages,
-	gitTree,
+	clearReleaseOciGitTreeCache,
 	imageInputs,
 	isBuildInput,
+	releaseInputGitTree,
+	type ImageInputs,
 	type RepoTree,
 } from "../ci/release-oci-affected.mts";
 
@@ -221,7 +234,24 @@ function affected(
 
 const ALL = ["hobo-code", "hobo-cli", "hobo-mcp", "hobo-site"];
 
+/** One scoped git ls-tree + imageInputs; ~1–15s on CI (was 30s+ full-tree ls-tree). */
+const REPO_MANIFEST_INTEGRATION_TIMEOUT_MS = 60_000;
+
+let repoHeadImageInputs: ReadonlyMap<string, ImageInputs> | undefined;
+
 describe("affected release OCI images", () => {
+	beforeAll(() => {
+		clearReleaseOciGitTreeCache();
+		repoHeadImageInputs = imageInputs(releaseInputGitTree("HEAD", root));
+	}, REPO_MANIFEST_INTEGRATION_TIMEOUT_MS);
+
+	it("loads the uncached scoped release input tree in under 20 seconds", () => {
+		clearReleaseOciGitTreeCache();
+		const startedAt = performance.now();
+		releaseInputGitTree("HEAD", root);
+		expect(performance.now() - startedAt).toBeLessThan(20_000);
+	}, 20_000);
+
 	it("builds nothing for an unchanged tree or files no image reads", () => {
 		expect(affected({})).toEqual([]);
 		expect(affected({ "docs/release/pipelines.md": "# changed\n" })).toEqual(
@@ -415,19 +445,91 @@ describe("affected release OCI images", () => {
 		expect(isBuildInput("lib/a.ts", ["src/**"])).toBe(false);
 	});
 
-	it("resolves every image of the repository's own manifest", () => {
-		const head = imageInputs(gitTree("HEAD", root));
-		expect([...head.keys()].sort()).toEqual(
-			[
-				"hobo-ci-serve",
-				"hobo-cli",
-				"hobo-code",
-				"hobo-codegen",
-				"hobo-mcp",
-				"hobo-sdk",
-				"hobo-site",
-			].sort(),
-		);
-		expect(affectedReleaseOciImages(head, head)).toEqual([]);
+	it("keeps the media workspace in the scoped release input tree", () => {
+		expect(
+			releaseInputGitTree("HEAD", root).files.has("media/package.json"),
+		).toBe(true);
+	});
+
+	it(
+		"resolves every image of the repository's own manifest",
+		() => {
+			const head = repoHeadImageInputs;
+			if (!head) throw new Error("beforeAll did not resolve repo HEAD inputs");
+			const manifest = loadReleaseOciManifest(root);
+			expect([...head.keys()].sort()).toEqual(
+				manifest.images.map(({ id }) => id).sort(),
+			);
+			expect(affectedReleaseOciImages(head, head)).toEqual([]);
+		},
+		REPO_MANIFEST_INTEGRATION_TIMEOUT_MS,
+	);
+});
+
+describe("release input trees in a partial clone", () => {
+	it("batch-reads base and HEAD blobs without one lazy fetch per blob", () => {
+		const scratch = mkdtempSync(join(tmpdir(), "release-oci-partial-"));
+		const previousTrace = process.env.GIT_TRACE;
+		const git = (cwd: string, args: readonly string[]) =>
+			execFileSync("git", args, {
+				cwd,
+				stdio: ["ignore", "pipe", "pipe"],
+			})
+				.toString("utf8")
+				.trim();
+		try {
+			const origin = join(scratch, "origin");
+			mkdirSync(origin);
+			git(origin, ["init", "--quiet"]);
+			git(origin, ["config", "user.email", "test@example.com"]);
+			git(origin, ["config", "user.name", "Test"]);
+			git(origin, ["config", "uploadpack.allowFilter", "true"]);
+			const files = {
+				"package.json": '{"packageManager":"pnpm@10"}\n',
+				"pnpm-lock.yaml": "lockfileVersion: 9\n",
+				"turbo.json": "{}\n",
+				"release/oci-images.json": '{"images":[]}\n',
+			};
+			for (const [path, text] of Object.entries(files)) {
+				const destination = join(origin, path);
+				mkdirSync(dirname(destination), { recursive: true });
+				writeFileSync(destination, text);
+			}
+			git(origin, ["add", "."]);
+			git(origin, ["commit", "--quiet", "-m", "base"]);
+			const headPackage = '{"packageManager":"pnpm@11"}\n';
+			writeFileSync(join(origin, "package.json"), headPackage);
+			git(origin, ["commit", "--quiet", "-am", "head"]);
+			const base = git(origin, ["rev-parse", "HEAD^"]);
+			const head = git(origin, ["rev-parse", "HEAD"]);
+			const clone = join(scratch, "clone");
+			git(scratch, [
+				"clone",
+				"--quiet",
+				"--filter=blob:none",
+				"--no-checkout",
+				`file://${origin}`,
+				clone,
+			]);
+
+			const trace = join(scratch, "trace.log");
+			process.env.GIT_TRACE = trace;
+			const paths = Object.keys(files);
+			expect([...releaseInputGitTree(base, clone).read(paths)]).toEqual(
+				Object.entries(files),
+			);
+			expect(releaseInputGitTree(head, clone).read(paths)).toEqual(
+				new Map(Object.entries({ ...files, "package.json": headPackage })),
+			);
+			const fetches = readFileSync(trace, "utf8")
+				.split("\n")
+				.filter((line) => line.includes("git fetch"));
+			expect(fetches.length).toBeLessThanOrEqual(2);
+		} finally {
+			if (previousTrace === undefined) delete process.env.GIT_TRACE;
+			else process.env.GIT_TRACE = previousTrace;
+			clearReleaseOciGitTreeCache();
+			rmSync(scratch, { recursive: true, force: true });
+		}
 	});
 });

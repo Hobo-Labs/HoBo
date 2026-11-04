@@ -105,6 +105,24 @@ function sha256(text: string): string {
 	return createHash("sha256").update(text).digest("hex");
 }
 
+const gitTreeCache = new Map<string, RepoTree>();
+
+/** Drop cached git trees (tests that swap cwd/rev fixtures). */
+export function clearReleaseOciGitTreeCache(): void {
+	gitTreeCache.clear();
+}
+
+const lockfileParseCache = new Map<string, Lockfile>();
+
+function parseLockfileCached(text: string): Lockfile {
+	const key = sha256(text);
+	const cached = lockfileParseCache.get(key);
+	if (cached) return cached;
+	const parsed = parseLockfile(text);
+	lockfileParseCache.set(key, parsed);
+	return parsed;
+}
+
 function unquote(key: string): string {
 	return key.replace(/^(['"])(.*)\1$/, "$2");
 }
@@ -369,7 +387,7 @@ export function imageInputs(
 		OCI_IMAGES_MANIFEST,
 	);
 	if (!manifest) return new Map();
-	const lockfile = parseLockfile(roots.get("pnpm-lock.yaml") ?? "");
+	const lockfile = parseLockfileCached(roots.get("pnpm-lock.yaml") ?? "");
 	const turbo =
 		parseJson<TurboJson>(roots.get("turbo.json"), "turbo.json") ?? {};
 	const rootPackage = parseJson<RootPackageJson>(
@@ -411,15 +429,29 @@ export function imageInputs(
 		}
 	}
 
+	const neededDirs = new Set<string>();
+	for (const image of manifest.images) {
+		const rootDirs = packagesOf(image.id).map((name) => {
+			const dir = dirByName.get(name);
+			if (!dir)
+				throw new Error(
+					`release image ${image.id}: ${name} is not a pnpm-lock.yaml importer`,
+				);
+			return dir;
+		});
+		for (const dir of importerClosure(lockfile, [".", ...rootDirs]))
+			if (dir !== ".") neededDirs.add(dir);
+	}
+
 	const filesByDir = new Map<string, [string, string][]>();
 	for (const [path, oid] of tree.files) {
-		for (let dir = posix.dirname(path); dir !== "."; dir = posix.dirname(dir))
-			if (lockfile.importers.has(dir)) {
-				const list = filesByDir.get(dir) ?? [];
-				list.push([path, oid]);
-				filesByDir.set(dir, list);
-				break;
-			}
+		for (let dir = posix.dirname(path); dir !== "."; dir = posix.dirname(dir)) {
+			if (!neededDirs.has(dir) || !lockfile.importers.has(dir)) continue;
+			const list = filesByDir.get(dir) ?? [];
+			list.push([path, oid]);
+			filesByDir.set(dir, list);
+			break;
+		}
 	}
 
 	function packageFiles(dir: string): string[] {
@@ -524,7 +556,170 @@ function git(args: readonly string[], cwd: string, input?: string): Buffer {
 	});
 }
 
+type LsTreeMaps = {
+	files: Map<string, string>;
+	gitlinks: Map<string, string>;
+};
+
+function lsTreeRecords(
+	rev: string,
+	cwd: string,
+	pathspecs: readonly string[],
+): LsTreeMaps {
+	const files = new Map<string, string>();
+	const gitlinks = new Map<string, string>();
+	if (pathspecs.length === 0) return { files, gitlinks };
+	const args = ["ls-tree", "-r", "-z", "--full-tree", rev, "--", ...pathspecs];
+	for (const record of git(args, cwd).toString("utf8").split("\0")) {
+		const match = /^\d+ (blob|commit) ([0-9a-f]+)\t(.+)$/s.exec(record);
+		if (match?.[1] === "blob" && match[3]) files.set(match[3], match[2] ?? "");
+		else if (match?.[1] === "commit" && match[3])
+			gitlinks.set(match[3], match[2] ?? "");
+	}
+	return { files, gitlinks };
+}
+
+/** Pathspecs covering release OCI input hashing — not the whole repo (docs/tests/.github). */
+const RELEASE_INPUT_PATHSPECS = [
+	"packages/",
+	"site/",
+	"media/",
+	"examples/",
+	"external/",
+	"src/",
+	"release/",
+	"deploy/",
+	"scripts/",
+	"mise.toml",
+	"mise.lock",
+	"tsconfig.base.json",
+	"pnpm-workspace.yaml",
+	".npmrc",
+	"package.json",
+	"pnpm-lock.yaml",
+	"turbo.json",
+	OCI_IMAGES_MANIFEST,
+] as const;
+
+/** Directory cones a sparse checkout needs for every scoped release input blob. */
+export function releaseOciInputSparseCones(): readonly string[] {
+	return Object.freeze(
+		RELEASE_INPUT_PATHSPECS.filter((pathspec) => pathspec.endsWith("/")).map(
+			(pathspec) => pathspec.slice(0, -1),
+		),
+	);
+}
+
+const TAR_BLOCK_SIZE = 512;
+
+function tarString(header: Buffer, offset: number, length: number): string {
+	return header
+		.subarray(offset, offset + length)
+		.toString("utf8")
+		.replace(/\0.*$/s, "");
+}
+
+function paxValue(data: Buffer, key: string): string | undefined {
+	let offset = 0;
+	while (offset < data.length) {
+		const space = data.indexOf(32, offset);
+		const length = Number(data.toString("ascii", offset, space));
+		if (
+			!Number.isInteger(length) ||
+			length <= 0 ||
+			offset + length > data.length
+		)
+			throw new Error("git archive: malformed pax header");
+		const record = data.subarray(space + 1, offset + length);
+		const equals = record.indexOf(61);
+		if (record.subarray(0, equals).toString("utf8") === key)
+			return record.subarray(equals + 1, record.length - 1).toString("utf8");
+		offset += length;
+	}
+	return undefined;
+}
+
+function parseTarFiles(archive: Buffer): Map<string, string> {
+	const files = new Map<string, string>();
+	let extendedPath: string | undefined;
+	let longPath: string | undefined;
+	for (let offset = 0; offset + TAR_BLOCK_SIZE <= archive.length; ) {
+		const header = archive.subarray(offset, offset + TAR_BLOCK_SIZE);
+		if (header.every((byte) => byte === 0)) break;
+		const sizeText = tarString(header, 124, 12).trim();
+		const size = sizeText ? Number.parseInt(sizeText, 8) : 0;
+		if (!Number.isInteger(size) || size < 0)
+			throw new Error(`git archive: invalid tar entry size ${sizeText}`);
+		const dataStart = offset + TAR_BLOCK_SIZE;
+		const dataEnd = dataStart + size;
+		if (dataEnd > archive.length)
+			throw new Error("git archive: truncated tar entry");
+		const data = archive.subarray(dataStart, dataEnd);
+		const type = String.fromCharCode(header[156] ?? 0);
+		if (type === "x") {
+			extendedPath = paxValue(data, "path");
+		} else if (type === "L") {
+			longPath = data.toString("utf8").replace(/\0$/, "");
+		} else if (type !== "g") {
+			const prefix = tarString(header, 345, 155);
+			const name = tarString(header, 0, 100);
+			const path =
+				extendedPath ?? longPath ?? (prefix ? `${prefix}/${name}` : name);
+			if (type === "0" || type === "\0" || type === "2")
+				files.set(
+					path,
+					type === "2" ? tarString(header, 157, 200) : data.toString("utf8"),
+				);
+			extendedPath = undefined;
+			longPath = undefined;
+		}
+		offset = dataStart + Math.ceil(size / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
+	}
+	return files;
+}
+
+function readGitArchive(
+	rev: string,
+	cwd: string,
+	paths: readonly string[],
+): Map<string, string> {
+	const archived = parseTarFiles(
+		git(["archive", "--format=tar", rev, "--", ...paths], cwd),
+	);
+	const contents = new Map<string, string>();
+	for (const path of paths) {
+		const text = archived.get(path);
+		if (text === undefined)
+			throw new Error(`git archive: missing ${path} at ${rev}`);
+		contents.set(path, text);
+	}
+	return contents;
+}
+
+/** Git tree scoped to release OCI inputs (fast on sparse CI checkouts). */
+export function releaseInputGitTree(rev: string, cwd: string): RepoTree {
+	const cacheKey = `${cwd}\0${rev}\0release-inputs`;
+	const cached = gitTreeCache.get(cacheKey);
+	if (cached) return cached;
+	const { files, gitlinks } = lsTreeRecords(rev, cwd, RELEASE_INPUT_PATHSPECS);
+	const tree: RepoTree = {
+		files,
+		gitlinks,
+		read(paths) {
+			const wanted = paths.filter((path) => files.has(path));
+			return wanted.length === 0
+				? new Map<string, string>()
+				: readGitArchive(rev, cwd, wanted);
+		},
+	};
+	gitTreeCache.set(cacheKey, tree);
+	return tree;
+}
+
 export function gitTree(rev: string, cwd: string): RepoTree {
+	const cacheKey = `${cwd}\0${rev}`;
+	const cached = gitTreeCache.get(cacheKey);
+	if (cached) return cached;
 	const files = new Map<string, string>();
 	const gitlinks = new Map<string, string>();
 	for (const record of git(["ls-tree", "-r", "-z", "--full-tree", rev], cwd)
@@ -535,7 +730,7 @@ export function gitTree(rev: string, cwd: string): RepoTree {
 		else if (match?.[1] === "commit" && match[3])
 			gitlinks.set(match[3], match[2] ?? "");
 	}
-	return {
+	const tree: RepoTree = {
 		files,
 		gitlinks,
 		read(paths) {
@@ -565,6 +760,8 @@ export function gitTree(rev: string, cwd: string): RepoTree {
 			return contents;
 		},
 	};
+	gitTreeCache.set(cacheKey, tree);
+	return tree;
 }
 
 function listFlag(
@@ -581,7 +778,7 @@ function main(): void {
 	const only = listFlag(argv, "--only");
 	const exclude = listFlag(argv, "--exclude") ?? new Set<string>();
 	const headRev = process.env.HOBO_CHECK_HEAD ?? "HEAD";
-	const head = imageInputs(gitTree(headRev, root));
+	const head = imageInputs(releaseInputGitTree(headRev, root));
 	let affected: AffectedImage[];
 	if (argv.includes("--all")) {
 		affected = orderedImageIds(head.keys()).map((id) => ({
@@ -595,7 +792,10 @@ function main(): void {
 		)
 			.toString("utf8")
 			.trim();
-		affected = affectedReleaseOciImages(imageInputs(gitTree(base, root)), head);
+		affected = affectedReleaseOciImages(
+			imageInputs(releaseInputGitTree(base, root)),
+			head,
+		);
 	}
 	const selected = affected.filter(
 		({ id }) => (!only || only.has(id)) && !exclude.has(id),

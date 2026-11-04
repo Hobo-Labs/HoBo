@@ -208,6 +208,7 @@ task; missing or invalid base content also fails closed. Everything else gets
 41592443075 (4m48s) spent 3m24s of it in `check:all` for a workflow edit that the PR and
 merge-group runs had already executed. Workflow and action files are now affected-only; agent:check
 still selects the automation lanes (`scripts/relevant-check-policy.ts`) for them.
+Staged pre-commit with only `test/` edits in a workspace runs `vitest run` on those files (package-relative paths) instead of the full turbo workspace suite, unless `vitest.config.*` or `test/subprocess-teardown.ts` also changed.
 Workspace tests use `turbo run test --filter=...[<previous main>]` unless an input turbo hashes into
 every task changed. A workflow edit cannot change a package test's result, so it alone does not widen
 them. The weekly schedule is the one whole-workspace sweep, with a 60-minute job limit; main pushes keep
@@ -1226,7 +1227,6 @@ PR run job **126567490837** proved the build itself was healthy: it built and ve
 Every main push now runs `CI deps layer (pnpm)`. Its first post-key step compares the local image's `hobo.ci.deps-key` label and skips resolution, promotion, build, and push on an exact match, making a no-op push cost checkout plus one inspect. The daemon derives its default checkout from `import.meta.url`, emits `hobo_ci_deps_image_ensure_started` with the selected key, and resolves the toolchain exactly as the build does: use the computed worker tag when present, otherwise use the `v[0-9a-f]{12}` tag on `hobo-ci-worker:local`. `deps-key.mts --toolchain` makes that selected version part of both the daemon lookup key and the built image key. PR build-only cleanup, merge-group exclusion, and gate independence are unchanged.
 
 Expected effect: the next main push or daemon poll pulls or builds and promotes the missing layer without operator intervention; a cold local build has the observed roughly 2-minute cost. Subsequent no-op pushes do only the fast label check, eligible job containers select the layer, `Check deps layer match` prints `deps layer match`, and `Install dependencies` is skipped, removing the roughly 20-second relinking cost.
-
 ## Finding 36: a waiting trunk job did not stop lower-rank admission
 
 On 2026-11-04, #1709's merge-group **PR impact gate** queued at **14:10:50Z** and started at **14:16:03Z**, a **5 m 13 s** admission delay. Read-only GitHub API queries reconstructed these timestamps (all UTC):
@@ -1279,6 +1279,17 @@ The full local baseline passed **540/540 tests in 39 files**, with **258.27 s** 
 
 The package typecheck, focused cache test, full package suite, and changed-scope standards/lint gates protect the change. No protobuf, CUE, or PACT contract changed. The package README documents test coverage rather than test cost, so this finding carries the timing note without adding stale performance numbers to that README.
 
+## Finding 39: the first deps image made checkout's work directory root-owned
+
+At **15:06:56Z**, main push run **41853973126** promoted `hobo-ci-deps:local` for the first time (#1712). Every subsequently launched isolated-worker job failed in `actions/checkout` when `git init` could not write `.git`; PR run **41856608057** lost all six jobs. Merge-group run **41853511063** at **15:01Z** was the last good run before promotion.
+
+The final deps stage copied into `/opt/actions-runner/_hobo_work/HoBo/HoBo`, but the worker base image had never created that path. BuildKit created the missing destination and parent directories root-owned; `COPY --chown=1000:1000` covered copied files, not those directories. A warm container without a host work mount exposed that image path directly, so its uid-1000 runner could neither replace the shipped repository contents nor initialize `.git`. The final stage now creates `_hobo_work`, `HoBo`, and `HoBo/HoBo` with owner and group 1000 before the copy, then returns to uid/gid 1000.
+
+Selection also fails closed. Before using an otherwise matching deps image, the daemon runs a network-disabled probe as 1000:1000 once per image id, checking writability of the work root, repository, and shipped `.git`. A failed or unavailable probe emits `hobo_ci_deps_image_fallback` with `reason=unwritable-workdir` and selects the plain worker image. The normal per-lease bind mount has a second, independent consequence: mounting the empty host job directory over `_hobo_work` hides the image's `.git` and every shipped `node_modules`. Deps selection is therefore disabled whenever that work root is configured, preventing a false exact-key match from skipping install with no dependencies visible. The Dockerfile contract pins directory ownership and ordering; unit tests cover probe success, failure, per-id caching, the Docker CLI probe, and mounted-job fallback.
+
+Immediate operator mitigation is to stop the daemon, remove the bad tag with `docker rmi hobo-ci-deps:local`, and restart; alternatively set `HOBO_CI_DEPS_IMAGE=` (empty) and restart to disable selection and the ensure loop. Redeploy the fixed daemon and rebuild the deps image before re-enabling it.
+
+
 ## Finding 40: main regenerated every protobuf package on every push
 
 The main-only Generated-output drift step cost **17–20 s** even for a push with no generator-input change. It ran the exact `pnpm run codegen:check` over all 24 opted-in packages and ran the frozen S0-04 proof directly, outside Turbo's cache.
@@ -1305,6 +1316,18 @@ Temporary instrumentation on the idle path attributed about **105 ms** to four 2
 `acquireLocalStateLockQueued` now keeps an in-process FIFO keyed by resolved lock path. Only its head contends for SQLite; the other callers wait on promises without timers. Release synchronously starts the next head. A head contending with another process retains the bounded 120 s deadline and 25 ms retry, including the existing `LocalStateLockBusyError` deadline behavior. The synchronous local-deployment lock caller is unchanged. Registration-directory mkdir/chmod now happens once during lock preparation rather than in every save; owner-only modes and atomic temporary-file-plus-rename writes remain unchanged.
 
 Unit coverage proves FIFO handoff without timer scheduling, release after a holder throws, and single-head cross-process retry/deadline behavior with an injected clock, lock, and scheduler. The original concurrency test remains unchanged and its test body stays well below 1 s under all three measured conditions.
+
+## Finding 42: equal CPU shares let PR jobs starve trunk tests
+
+On 2026-11-04, #1710's merge-group **PR impact gate** ran from **15:39:44Z to 15:42:55Z**. At **15:40:54Z**, eight #1709 PR jobs started on the same four-CPU box: **Release contract**, **CI fabric guard**, **CI runner image**, **off-path checks**, **secret scan**, **artifact signing**, **cold loop**, and **HoBo Code**. The merge-queue/main failures included **@hobo/pricing design-scorecard**, **@hobo/cli codegen-app-compilation starter cases**, and **@hobo/hobo auth-md-state-concurrency** at its unchanged 10 s test timeout. The last test's body takes about **115 ms locally even under six CPU hogs**, so a test-code timeout increase would hide host contention rather than fix it.
+
+Admission already ordered waiting jobs trunk-first, but every running container received equal CPU and IO scheduling. The relay now passes the planned job's admission rank to the isolated host and Docker spec. Rank 0 (`merge_group`, `push`, and `workflow_dispatch`, including the trunk-label fallback) creates containers with **`--cpu-shares 8192`**; other ranks use **512**. Docker maps these relative shares to cgroup v2 `cpu.weight` where applicable. With one trunk and one PR container on the four-CPU box, the 16:1 ratio gives trunk about **94.1%** of their combined CPU allocation instead of 50%, while still allowing the PR to make progress. These are relative weights, not CPU quotas.
+
+The same classes request **`--blkio-weight 800`** for trunk and **200** for other jobs, a 4:1 IO preference within Docker's valid 10–1000 range. The first weighted create or update probes engine support once per daemon process. If the engine or cgroup rejects block IO weighting, the driver emits one `hobo_ci_blkio_weight_unsupported` event, disables only that flag for later operations, and retries with the validated CPU weight. IO weighting is therefore best-effort and never blocks a job launch. Warm containers start at PR weight because their lease is unknown; assignment now calls `docker update --cpu-shares … --blkio-weight …` before the rename, so a trunk job cannot inherit the warm container's low weight.
+
+While any trunk lease is active, admission also allows at most **`HOBO_CI_WORKER_PR_CAP_WITH_TRUNK=1`** active non-trunk lease by default. This bound applies to new reservations, never stops running PR work, and disappears completely when no trunk lease is active. On the four-CPU box, one PR alongside trunk avoids splitting the PR share across another flood of jobs; zero pauses new PR admissions during trunk work, and values through eight are accepted as strict decimal integers. Existing trunk-first ordering, memory classes, merge-group caps, and slot lending remain unchanged. Cap waits log `hobo_ci_memory_admission_wait` with `reason=trunk-pr-cap`.
+
+Unit coverage uses the memory GitHub/store and fake Docker drivers to pin high trunk and low PR weights, warm-spare reweighting, one-time IO fallback, strict environment parsing, and the capped/uncapped admission transition. The scheduling effect is observable only on the box **after the worker daemon is redeployed and launches or reassigns containers**; this change does not claim a live-box timing result by itself.
 
 ## Finding 45: dead containers left 12288 MiB reserved and blocked trunk admission
 

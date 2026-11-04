@@ -313,7 +313,7 @@ describe("selectIacProvider env-gated selection (Cloudflare + Vercel + fallback)
 
 	let savedCfToken: string | undefined;
 	let savedCfAccount: string | undefined;
-	let savedVercel = process.env.VERCEL_TOKEN;
+	const savedVercel = process.env.VERCEL_TOKEN;
 
 	afterEach(() => {
 		const restore = (key: string, value: string | undefined): void => {

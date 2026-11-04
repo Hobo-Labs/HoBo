@@ -9,6 +9,10 @@ GitHub shows **`queued`** (no steps, no runner name) when no self-hosted runner 
 
 A successful acceptance run on `main` or a feature branch only proves the relay worked **at that time**; org transfer or disabled providers can break dispatch without changing workflow YAML.
 
+### Fork pull requests (untrusted code)
+
+Release workflows (`release-hobo`, `release-code`, and related) **skip Docker socket work and secret-backed publish** when `github.event.pull_request.head.repo.fork` is true. A lightweight `fork-policy` job documents the skip; contract/static jobs may still run on `hobo` without pushing images or uploading build artifacts that carry workspace `dist/` trees. Require human approval for fork workflows in GitHub branch protection if your org policy demands it.
+
 ## Root cause checklist (operator)
 
 Work through these on **Hobo-Labs/HoBo** after an org/repo transfer:
@@ -125,6 +129,8 @@ Force-stop settlement on the box worker **re-queues the reserved job** when GitH
 
 **Memory admission:** every job has a class-sized request used as its Docker `--memory` and `--memory-swap` limit. Active + reserved requests, the standard-sized warm container, and the heavy trunk reservation must fit the budget; otherwise the job stays queued. Exact GitHub job names select `light` (3072 MiB) for guard/lint/contract jobs, `standard` (4096 MiB, the unlisted default), or `heavy` (6144 MiB) for turbo build/test and image lanes. On the 15989 MiB box, the default budget is `15989 - 2048 = 13941 MiB`: heavy + standard + light = 13312 MiB fits three slots, while two heavy jobs leave only 1653 MiB and three heavy jobs cannot fit. See [finding 24](../../docs/ci/performance.md#finding-24-slot-only-admission-let-the-host-oom-killer-choose-a-victim).
 
+**CPU/IO priority and trunk-active PR cap:** rank-0 trunk containers get `--cpu-shares 8192` and request `--blkio-weight 800`; other jobs get 512 and 200 respectively. The 16:1 CPU ratio gives one trunk container about 94.1% of the CPU shared with one PR container on the four-CPU box. IO weighting is optional: the first weighted create/update probes support, and rejection logs `hobo_ci_blkio_weight_unsupported` once and continues with CPU-only weights. Warm spares start at PR weight and are reweighted with `docker update` when assigned. While a trunk lease is active, **`HOBO_CI_WORKER_PR_CAP_WITH_TRUNK`** (default **1**) limits new non-trunk reservations; **0** pauses them. Existing PR jobs are not stopped, the cap disappears when trunk settles, and strict trunk-first ordering is unchanged. See [finding 42](../../docs/ci/performance.md#finding-42-equal-cpu-shares-let-pr-jobs-starve-trunk-tests). These settings take effect only after the box daemon is redeployed.
+
 **Lease/container reconciliation:** at startup, before every admission tick, at drain start and on every drain poll, the daemon lists `docker ps -a --no-trunc --filter label=hobo.ci/isolated=1 --format json` and strictly parses the inventory. A lease with a running, starting or paused container is kept and is never reaped. An exited/dead container is settled through the normal runner-exit/job-completion semantics. A missing container releases the lease after a **two-minute grace** measured from the lease's `createdAt`, protecting reservations between reserve and `docker create`; once the in-flight tick has finished, drain releases missing-container leases without that wait. Each release logs `hobo_ci_lease_orphan_released` with `leaseId`, `jobId`, `runId`, `state`, `reason`, `ageMs` and `memoryMb`. Admission therefore recomputes memory only from leases that survived the same tick's reconciliation. If the journal still reports memory but there are no worker containers, `hobo_ci_memory_without_containers` records the journal `inUseMb` and lease count.
 
 Worker-labelled containers with no active lease are stopped when running, removed and logged as `hobo_ci_container_orphan_removed`; the currently protected pre-warmed container is not treated as an orphan. Removal failures log `hobo_ci_container_orphan_remove_failed`. A failed or timed-out Docker listing logs `hobo_ci_lease_reconciliation_failed`, skips the runtime reconciliation/admission pass and releases/removes **nothing** that tick: unknown inventory is never treated as gone, and drain retains conservative in-flight counts until Docker can be read.
@@ -142,6 +148,7 @@ A feasible rank-0 job waiting for memory, the merge-group lease cap, or a slot b
 | `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Backfill window before a non-fitting head job blocks smaller jobs in the same non-zero rank; feasible rank-0 waits block lower ranks immediately |
 | `HOBO_CI_JOB_MEMORY_MB` | admitted class value | Per-container value exported to the runner; fallback when its cgroup limit cannot be read |
 | `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum active reserved/running merge-group leases; must be a positive integer |
+| `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK` | `1` | Maximum non-trunk leases admitted while any trunk lease is active; integer 0–8; no effect when trunk is idle |
 | `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host root for per-job work mounts, teardown and byte/inode pressure checks; same filesystem as pnpm store |
 | `HOBO_CI_PNPM_STORE_DIR` | `~/.cache/hobo-ci/pnpm-store` | Shared content-addressed store mounted at `/pnpm-store`; empty disables it |
 | `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image, builder, store and dead-workdir GC interval; minimum 60000, capped at 300000 |

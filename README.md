@@ -139,7 +139,7 @@ Lint workflow/package-manager wiring before pushing CI changes:
 pnpm run actions:lint
 ```
 
-General hosted GitHub Actions CI remains disabled to prevent unbudgeted spend. The sole active exception is the manually dispatched [HoBo runner acceptance workflow](./.github/workflows/hobo-ci-acceptance.yml), whose literal `runs-on: hobo` requires the budgeted relay. `pnpm run actions:lint` permits only that reviewed recipe and checks that every preserved legacy job remains disabled.
+General hosted GitHub Actions CI uses the **HoBo CI Fabric** on self-hosted `hobo` runners (see [`.github/workflows/hobo-ci.yml`](./.github/workflows/hobo-ci.yml)). Release pipelines ([`release-hobo.yml`](./.github/workflows/release-hobo.yml), [`release-code.yml`](./.github/workflows/release-code.yml), [`release-ts-autocode.yml`](./.github/workflows/release-ts-autocode.yml)) and the manual [HoBo runner acceptance workflow](./.github/workflows/hobo-ci-acceptance.yml) are registered in `scripts/lint-actions.ts`. Run `pnpm run actions:lint` before changing workflow YAML; it enforces SHA-pinned third-party actions, `runs-on: hobo` on active fabric workflows, and composite action pinning under `.github/actions/**`.
 
 For a local release-quality verification pass, use `pnpm run verify:full`. The opt-in `pnpm run verify:extended` adds coverage, mutation, property, and fuzz testing.
 
@@ -199,7 +199,7 @@ Run the verification lanes locally:
 - `pnpm run verify:extended` adds coverage, mutation, property, and fuzz testing.
 
 
-The website is **not** CI-deployed: [`site/`](./site/README.md) is built locally and pushed to the `gh-pages` branch directly (GitHub Pages serves that branch), so publishing works even when Actions runs are unavailable.
+The website is published from **`v*.*.*` release tags** via the `release-pages` job in [`.github/workflows/release-hobo.yml`](./.github/workflows/release-hobo.yml) (Astro build → `gh-pages` branch). Manual fallback commands remain in [`site/README.md`](./site/README.md).
 
 Core checks are intentionally ordinary Node scripts so they run locally, in CI, and inside agent sessions. `docs:coverage` also checks that required GitHub community-health and maintenance docs stay present.
 
