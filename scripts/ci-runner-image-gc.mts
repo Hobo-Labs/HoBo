@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
+	selectWorkerImagesForDeletion,
 	selectWorkerImageTagsForDeletion,
 	type WorkerImage,
 } from "../packages/ci-gh-actions/src/isolated-worker/image-gc.ts";
@@ -44,11 +45,19 @@ function parseDockerImage(line: string): DockerImage {
 	return image;
 }
 
-const version = process.argv[2];
-if (version === "--help") {
-	console.log("Usage: node scripts/ci-runner-image-gc.mts [v<12 hex digits>]");
+const requested = process.argv[2];
+if (requested === "--help") {
+	console.log(
+		"Usage: node scripts/ci-runner-image-gc.mts [v<12 hex digits>|hobo-ci-deps:<key>]",
+	);
 	process.exit(0);
 }
+const currentDepsTag = requested?.startsWith("hobo-ci-deps:")
+	? requested
+	: undefined;
+const version = currentDepsTag === undefined ? requested : undefined;
+if (currentDepsTag === "hobo-ci-deps:local")
+	throw new Error("current deps image must be keyed");
 if (version !== undefined && !/^v[0-9a-f]{12}$/u.test(version))
 	throw new Error("invalid runner image version");
 
@@ -92,13 +101,19 @@ const inventoryWithUsage = images.map((image) => ({
 	...image,
 	inUse: runningIds.has(image.id),
 }));
-for (const tag of selectWorkerImageTagsForDeletion(
-	inventoryWithUsage,
-	version,
-)) {
+const tagsForDeletion =
+	currentDepsTag === undefined
+		? selectWorkerImageTagsForDeletion(inventoryWithUsage, version)
+		: selectWorkerImagesForDeletion(inventoryWithUsage, currentDepsTag);
+for (const tag of tagsForDeletion) {
 	await exec("docker", ["image", "rm", "--no-prune", tag], {
 		timeout: 120_000,
 		maxBuffer: 1024 * 1024,
 	});
-	console.log(`Removed stale runner image ${tag}`);
+	console.log(`Removed stale image ${tag}`);
 }
+if (currentDepsTag !== undefined)
+	await exec("docker", ["image", "prune", "-f"], {
+		timeout: 120_000,
+		maxBuffer: 1024 * 1024,
+	});

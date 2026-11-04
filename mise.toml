@@ -3,6 +3,7 @@ cue = "0.14.0"
 gitleaks = "8.22.1"
 node = "24"
 pnpm = "10.33.4"
+shellcheck = "0.10.0"
 turbo = "2.11.10"
 
 [env]

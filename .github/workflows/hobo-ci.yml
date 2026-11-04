@@ -189,9 +189,13 @@ jobs:
             source=ghcr
           fi
           echo "source=${source}" >> "$GITHUB_OUTPUT"
-      - name: Promote cached deps image
+      - name: Promote cached deps image and collect superseded images
         if: steps.scope.outputs.run == 'true' && steps.source.outputs.source != 'build'
-        run: docker tag "hobo-ci-deps:${{ steps.key.outputs.key }}" hobo-ci-deps:local
+        run: |
+          set -euo pipefail
+          candidate="hobo-ci-deps:${{ steps.key.outputs.key }}"
+          docker tag "$candidate" hobo-ci-deps:local
+          node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
       - name: Build deps image and verify offline install
         if: steps.scope.outputs.run == 'true' && steps.source.outputs.source == 'build'
         id: build
