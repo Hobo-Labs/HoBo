@@ -841,3 +841,10 @@ ran only turbo `test:unit` lanes, while `merge_group` ran just the contract guar
 jobs; Main full gate neither ran on `merge_group` nor was required. Merge-group entries now run the same
 affected S0 and dependent workspace-test gate as Main full gate inside the required PR impact gate, using
 the merge group's base SHA.
+
+## Finding 18: the contract guard held the slot Main full gate needed
+
+Main push run 41747634569 took 109 s: image 00:33:06–00:33:12, contract guard 00:33:06–00:33:44, Secret scan 00:33:24–00:33:39, Main full gate 00:33:45–00:34:37.
+The gate was runnable at 00:33:12 but waited 33 s for one of two slots; the guard's real work was 2 s and its other ~33 s duplicated checkout, preflight and install.
+The guard now runs only on pull requests, while its two steps run after install in Main full gate and in PR impact gate on merge_group.
+Expected saving: about 33–38 s of critical path on a main push and on merge_group.
