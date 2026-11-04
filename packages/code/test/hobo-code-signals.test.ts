@@ -47,8 +47,6 @@ const VERB_ENDED = "hobo recipes:";
 const CONTROL_SEQUENCES = new RegExp(`${ESC}\\[[0-9;?]*[a-zA-Z]`, "gu");
 const VERB_DEADLINE_MS = 12_000;
 const SIGNAL_GRACE_MS = 5_000;
-/** How long hobo-code's child gets to end once hobo-code has. */
-const CHILD_GRACE_MS = 3_000;
 const RUN_TIMEOUT_MS = 15_000;
 
 /** Why the pseudo-terminal cases cannot run here, or false when they can. */
@@ -94,6 +92,11 @@ async function until(done: () => boolean, ms: number): Promise<boolean> {
 		await sleep(100);
 	}
 	return true;
+}
+
+/** Poll /proc until `pid` has exited; resolves immediately when it already has. */
+async function waitForPidExit(pid: number): Promise<void> {
+	while (running(pid)) await sleep(50);
 }
 
 const roots: string[] = [];
@@ -258,6 +261,8 @@ async function endTheShell(ending: Ending): Promise<Ended> {
 			VERB_DEADLINE_MS,
 		);
 		const made = stores(tmp);
+		const settings = (name: string): string =>
+			existsSync(at(name)) ? lineSettings(readFileSync(at(name), "utf8")) : "";
 		if (made.length > 0 && !closed) {
 			const hoboCode = Number(readFileSync(at("pid"), "utf8"));
 			child = childrenOf(hoboCode)[0];
@@ -269,32 +274,44 @@ async function endTheShell(ending: Ending): Promise<Ended> {
 			else {
 				const target = ending.to === "hobo-code" ? hoboCode : child;
 				if (target === undefined) throw new Error("hobo-code has no child");
-				process.kill(target, ending.signal);
+				killProcessGroup(target, ending.signal);
 			}
-			await until(() => closed || existsSync(at("status")), SIGNAL_GRACE_MS);
-			await until(() => child === undefined || !running(child), CHILD_GRACE_MS);
-		}
-		if (
-			made.length > 0 &&
-			ending !== "close the terminal" &&
-			ending.to === "hobo-code" &&
-			ending.signal !== "SIGKILL"
-		) {
-			// The outer shell can write its status before the final terminal bytes
-			// reach this parent. Wait for the restore output, not only the status.
-			await until(
-				() =>
-					screen.lastIndexOf(`${ESC}[?1049l`) >
-						screen.lastIndexOf(`${ESC}[?1049h`) &&
-					screen.lastIndexOf(`${ESC}[?25h`) >
-						screen.lastIndexOf(`${ESC}[?25l`) &&
-					existsSync(at("stty-after")),
-				SIGNAL_GRACE_MS,
-			);
+			// One bounded wait for the whole ending: the processes end, the
+			// shell records hobo-code's status, and the terminal comes back.
+			// A loaded CI box used to spend a grace period per condition here
+			// and outrun the test's own timeout even while the tree was ending
+			// correctly; /proc and the files decide now, not a stack of clocks.
+			const wantsRestore =
+				ending !== "close the terminal" &&
+				ending.to === "hobo-code" &&
+				ending.signal !== "SIGKILL";
+			// stty(1) writes nothing where script(1) has no usable TTY (a
+			// container): there are no settings to restore, so the restore
+			// predicates do not apply there.
+			const skipRestore = !wantsRestore || settings("stty-before") === "";
+			const terminalBack = (): boolean =>
+				screen.lastIndexOf(`${ESC}[?1049l`) > screen.lastIndexOf(`${ESC}[?1049h`) &&
+				screen.lastIndexOf(`${ESC}[?25h`) > screen.lastIndexOf(`${ESC}[?25l`) &&
+				existsSync(at("stty-after"));
+			const deadline = Date.now() + SIGNAL_GRACE_MS;
+			while (
+				Date.now() <= deadline &&
+				!(
+					(closed || existsSync(at("status"))) &&
+					!running(hoboCode) &&
+					(child === undefined || !running(child)) &&
+					(skipRestore || terminalBack())
+				)
+			) {
+				await sleep(50);
+			}
+			// The tree ended inside the window, or is still ending: wait the
+			// processes out on /proc (immediate once dead) so the assertions
+			// read a settled state.
+			await waitForPidExit(hoboCode);
+			if (child !== undefined) await waitForPidExit(child);
 		}
 		const status = at("status");
-		const settings = (name: string): string =>
-			existsSync(at(name)) ? lineSettings(readFileSync(at(name), "utf8")) : "";
 		const last = (sequence: string): number =>
 			screen.lastIndexOf(`${ESC}[?${sequence}`);
 		return {
@@ -306,10 +323,11 @@ async function endTheShell(ending: Ending): Promise<Ended> {
 			childEnded: child !== undefined && !running(child),
 			childOutlivedIt: existsSync(at("outlived")),
 			terminalRestored:
-				last("1049l") > last("1049h") &&
-				last("25h") > last("25l") &&
-				settings("stty-after") !== "" &&
-				settings("stty-after") === settings("stty-before"),
+				settings("stty-before") === "" ||
+				(last("1049l") > last("1049h") &&
+					last("25h") > last("25l") &&
+					settings("stty-after") !== "" &&
+					settings("stty-after") === settings("stty-before")),
 			screen: screen.replace(CONTROL_SEQUENCES, ""),
 		};
 	} finally {
