@@ -205,6 +205,7 @@ else gets `agent:check --base=<previous main>`, the same impact-scoped policy th
 41592443075 (4m48s) spent 3m24s of it in `check:all` for a workflow edit that the PR and
 merge-group runs had already executed. Workflow and action files are now affected-only; agent:check
 still selects the automation lanes (`scripts/relevant-check-policy.ts`) for them.
+Staged pre-commit with only `test/` edits in a workspace runs `vitest run` on those files (package-relative paths) instead of the full turbo workspace suite, unless `vitest.config.*` or `test/subprocess-teardown.ts` also changed.
 Workspace tests use `turbo run test --filter=...[<previous main>]` unless an input turbo hashes into
 every task changed. A workflow edit cannot change a package test's result, so it alone does not widen
 them. The weekly schedule is the one whole-workspace sweep, with a 60-minute job limit; main pushes keep
