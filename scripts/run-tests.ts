@@ -122,9 +122,8 @@ if (!patterns) {
 }
 
 // Category lanes run under Vitest, which cannot load node:test-style files.
-// Files that import node:test belong to package-level `node --test` lanes
-// (their package.json test:contract:* scripts), so exclude them here; the
-// turbo part of the root lane still executes them under their owning engine.
+// Package files belong to their package-level `node --test` contract lanes;
+// root test/ files run under Node below after the Vitest process finishes.
 const nodeTestFiles = new Set<string>();
 // Frozen proofs cannot change after promotion (scripts/promotions.json), so a
 // frozen proof test that runs its stale code against the live repo would fail
@@ -181,10 +180,19 @@ const configPath = join(configDir, "vitest.config.mjs");
 const baseConfigUrl = pathToFileURL(
 	resolve(process.cwd(), "vitest.config.ts"),
 ).href;
-const maxWorkers = Math.max(
+const configuredMaxWorkers = Math.max(
 	1,
 	Number.parseInt(process.env.HOBO_RELEVANT_CHECK_CONCURRENCY ?? "4", 10) || 4,
 );
+const parsedMemoryMaxWorkers = Number.parseInt(
+	process.env.HOBO_TEST_MAX_WORKERS ?? "",
+	10,
+);
+const memoryMaxWorkers =
+	Number.isInteger(parsedMemoryMaxWorkers) && parsedMemoryMaxWorkers > 0
+		? parsedMemoryMaxWorkers
+		: configuredMaxWorkers;
+const maxWorkers = Math.min(configuredMaxWorkers, memoryMaxWorkers);
 const progressReporter = resolve(
 	process.cwd(),
 	"scripts",
@@ -222,7 +230,10 @@ try {
 		{
 			stdio: "inherit",
 			shell: false,
-			env: sanitizeNodeOptions(),
+			env: {
+				...sanitizeNodeOptions(),
+				HOBO_TEST_MAX_WORKERS: String(maxWorkers),
+			},
 			// Vitest bounds each test and hook, not a file or the run; a leaked handle
 			// or a stuck worker would otherwise hold the CI slot until the job timeout.
 			timeout: runTimeoutMs,
@@ -255,7 +266,29 @@ try {
 			`run-tests: the wall clock ran ${Math.round(pausedMs / 1000)}s ahead of the monotonic clock; the host was suspended or paused during this run`,
 		);
 	}
-	process.exitCode = result.status ?? 1;
+	let exitCode = result.status ?? 1;
+	const rootNodeTestFiles = [...nodeTestFiles].filter((file) =>
+		file.startsWith("test/"),
+	);
+	if (exitCode === 0 && rootNodeTestFiles.length > 0) {
+		const nodeResult = spawnSync(
+			process.execPath,
+			["--import", "tsx", "--test", ...rootNodeTestFiles],
+			{
+				stdio: "inherit",
+				shell: false,
+				env: sanitizeNodeOptions(),
+				timeout: runTimeoutMs,
+				killSignal: "SIGKILL",
+			},
+		);
+		if (nodeResult.error)
+			console.error(
+				`run-tests: node --test failed: ${nodeResult.error.message}`,
+			);
+		exitCode = nodeResult.status ?? 1;
+	}
+	process.exitCode = exitCode;
 } finally {
 	rmSync(configDir, { force: true, recursive: true });
 }

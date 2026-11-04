@@ -2,6 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { promisify } from "node:util";
 import type { DockerDriver, IsolatedContainerSpec } from "./docker-driver.js";
+import type { WorkerStorageDockerDriver } from "./storage-admission.js";
 
 const exec = promisify(execFile);
 
@@ -20,10 +21,47 @@ export function dockerSocketMountCreateArgs(
 export function createCliDockerDriver(options: {
 	env?: NodeJS.ProcessEnv;
 	binary?: string;
-}): DockerDriver {
+}): DockerDriver & WorkerStorageDockerDriver {
 	const docker = options.binary ?? "docker";
 	const env = options.env ?? process.env;
 	return {
+		async dataRoot() {
+			const { stdout } = await exec(
+				docker,
+				["info", "--format", "{{.DockerRootDir}}"],
+				{ env, timeout: 30_000, maxBuffer: 4096 },
+			);
+			const root = stdout.trim();
+			if (!/^\/[^:\r\n]+$/u.test(root))
+				throw new Error("invalid docker data root");
+			return root;
+		},
+		async pruneBuilder(until) {
+			if (!/^\d+[smhd]$/u.test(until))
+				throw new Error("invalid prune interval");
+			await exec(
+				docker,
+				["builder", "prune", "--force", "--filter", `until=${until}`],
+				{ env, timeout: 300_000, maxBuffer: 1024 * 1024 },
+			);
+		},
+		async containerExists(name) {
+			try {
+				await exec(docker, ["container", "inspect", name], {
+					env,
+					timeout: 30_000,
+					maxBuffer: 1024 * 1024,
+				});
+				return true;
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					Object.getOwnPropertyDescriptor(error, "code")?.value === 1
+				)
+					return false;
+				throw error;
+			}
+		},
 		async create(spec: IsolatedContainerSpec) {
 			const args = [
 				"create",

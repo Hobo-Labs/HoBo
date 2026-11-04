@@ -17,8 +17,10 @@ import {
 	createHostedRelayRuntime,
 	createIsolatedContainerController,
 	createJobDurations,
+	createNodeWorkerStorageFileSystem,
 	createPollLogFilter,
 	createWorkerMemoryAdmission,
+	createWorkerStorageAdmission,
 	describeWaitingJobs,
 	generalLeaseIdsFor,
 	type HostedInboxStore,
@@ -73,16 +75,23 @@ const webhookSecret =
 		: required("HOBO_CI_WEBHOOK_SECRET");
 // Slots bound container count only. Memory admission also requires active + reserved
 // requests (including a warm container) to fit the host/cgroup budget, and reserves
-// the heavy class for trunk. The 3072 MiB Node heap is per process, not a container
-// budget: native code, pnpm/turbo children and page cache must fit in the class too.
+// the heavy class for trunk. The job heap is per process, not a container budget:
+// native code, pnpm/turbo children and page cache must fit in the class too.
 // One slot is reserved for hobo-trunk jobs by default when there are at least two.
 // Shared-label jobs never borrow it unless HOBO_CI_WORKER_TRUNK_LEND=1.
 // The offer's concurrency must equal the slot count.
-const { slots, trunkSlots } = resolveWorkerSlotConfig(process.env);
+const { slots, trunkSlots, mergeGroupLeases } = resolveWorkerSlotConfig(
+	process.env,
+);
+const hostMemorySample = readHostMemory();
 const memoryConfig = resolveWorkerMemoryConfig(process.env, {
-	...readHostMemory(),
+	...hostMemorySample,
 	trunkSlots,
 });
+const hostMemMb = Math.min(
+	hostMemorySample.totalMemoryMb,
+	hostMemorySample.cgroupMemoryLimitMb ?? Number.MAX_SAFE_INTEGER,
+);
 const workerMemoryMb = memoryConfig.classes.heavy;
 const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, { log });
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
@@ -178,11 +187,27 @@ const pnpmStore =
 	join(homedir(), ".cache", "hobo-ci", "pnpm-store");
 if (pnpmStore) mkdirSync(pnpmStore, { recursive: true, mode: 0o755 });
 const PNPM_STORE_TARGET = "/pnpm-store";
+const workRoot =
+	process.env.HOBO_CI_WORKER_WORK_ROOT ??
+	join(
+		process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
+		"hobo-ci",
+		"work",
+	);
+mkdirSync(workRoot, { recursive: true, mode: 0o755 });
+const docker = createCliDockerDriver({ env: process.env });
+const storageAdmission = createWorkerStorageAdmission({
+	dockerDataRoot: await docker.dataRoot(),
+	workRoot,
+	fs: createNodeWorkerStorageFileSystem(),
+	docker,
+	log,
+});
 const worker = createIsolatedContainerController({
 	store,
 	github,
 	publicOrigin,
-	docker: createCliDockerDriver({ env: process.env }),
+	docker,
 	workerAccountId,
 	workerImage: process.env.HOBO_CI_WORKER_IMAGE ?? "hobo-ci-worker:local",
 	workerMemoryMb,
@@ -213,8 +238,10 @@ const runtime = createHostedRelayRuntime({
 	admissionOrder,
 	// With no trunk slots this is the slot count, all the host could run anyway.
 	generalLeaseLimit: slots - trunkSlots,
+	mergeGroupLeaseLimit: mergeGroupLeases,
 	lendTrunkSlots,
 	memoryAdmission,
+	storageAdmission,
 	control: async () => undefined,
 });
 const poller =
@@ -282,6 +309,7 @@ log("hobo_ci_isolated_worker_started", {
 	publicOrigin,
 	pollMs: intervalMs,
 	jobPollMs: plan.jobPollMs,
+	hostMemMb,
 	workerMemoryMb,
 	memoryBudgetMb: memoryConfig.budgetMb,
 	memoryReserveMb: memoryConfig.reserveMb,
@@ -291,7 +319,9 @@ log("hobo_ci_isolated_worker_started", {
 	memoryHolMs: memoryConfig.holMs,
 	slots,
 	trunkSlots,
+	mergeGroupLeases,
 	lendTrunkSlots,
+	workRoot,
 	pnpmStoreMounted: pnpmStore !== "",
 	drainTimeoutMs,
 });

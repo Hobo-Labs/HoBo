@@ -135,6 +135,37 @@ describe("worker memory admission", () => {
 		).toBe(true);
 	});
 
+	it("fits three mixed slots inside 15989 MiB with a 2048 MiB host reserve", () => {
+		const admission = createWorkerMemoryAdmission(
+			resolveWorkerMemoryConfig({}, { totalMemoryMb: 15_989, trunkSlots: 0 }),
+		);
+		const activeLeases: MemoryLease[] = [];
+		const generalLeaseIds = new Set<string>();
+		const requests = [
+			{ memoryClass: "heavy", memoryMb: 6_144 },
+			{ memoryClass: "standard", memoryMb: 4_096 },
+			{ memoryClass: "light", memoryMb: 3_072 },
+		] as const;
+		for (const [index, request] of requests.entries()) {
+			expect(
+				admission.admit({
+					jobId: index + 1,
+					...request,
+					rank: 1,
+					activeLeases,
+					generalLeaseIds,
+				}).admitted,
+			).toBe(true);
+			activeLeases.push(
+				lease(String(index + 1), request.memoryMb, request.memoryClass),
+			);
+			generalLeaseIds.add(String(index + 1));
+		}
+		expect(activeLeases.reduce((sum, entry) => sum + entry.memoryMb, 0)).toBe(
+			13_312,
+		);
+	});
+
 	it("keeps heavy trunk memory reserved and admits trunk against the full budget", () => {
 		const admission = createWorkerMemoryAdmission(config(12_288, 1));
 		const activeLeases: MemoryLease[] = [];

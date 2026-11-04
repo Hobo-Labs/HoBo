@@ -34,6 +34,11 @@ an image or commit them:
 | `HOBO_CI_TRUST_PROXY` | Set `1` when TLS terminates at a reverse proxy that sets `X-Forwarded-Proto` |
 | `HOBO_CI_HOST` / `HOBO_CI_PORT` | `0.0.0.0` / `8787` inside the container |
 
+Box-worker resource settings are resolved once at daemon startup. The class limits, aggregate admission
+budget, merge-group lease cap, job-side caps and storage-pressure settings are documented with the other
+non-secret worker settings below. Excess merge-group jobs remain queued without blocking push jobs; each
+waiting job logs `hobo_ci_merge_group_cap_wait` once.
+
 `HOBO_CI_CONFIG` seeds a new empty partition. An existing database retains its
 revisioned configuration; replacing the seed file does not override it on restart.
 Use the authenticated account policy API described in the [relay README](../README.md)
@@ -89,23 +94,44 @@ HOBO_CI_DATA_VOLUME=hobo-ci-data
 HOBO_CI_IMAGE=hobo-ci-relay:local
 ```
 
-For an isolated box worker, size memory independently of `HOBO_CI_WORKER_SLOTS`. The worker refuses to
-start unless every general class fits outside the trunk reservation and the heavy trunk class fits the
-full budget. These are non-secret settings:
+For an isolated box worker, class limits and admission share one budget. The worker refuses to start unless every
+general class fits outside the trunk reservation and the heavy trunk class fits the full budget. These are
+non-secret settings:
 
 | Worker variable | Default | Purpose |
 |---|---|---|
-| `HOBO_CI_WORKER_MEMORY_BUDGET_MB` | host/cgroup total minus reserve | Sum available to active, reserved and warm containers |
-| `HOBO_CI_WORKER_MEMORY_RESERVE_MB` | `2048` | Headroom subtracted only from the derived budget |
+| `HOBO_CI_WORKER_MEMORY_BUDGET_MB` | host/cgroup total minus reserve | Sum available to active, reserved and warm containers; explicit values cannot exceed this ceiling |
+| `HOBO_CI_WORKER_MEMORY_RESERVE_MB` | `2048`, minimum `2048` | Host, daemon, Docker and page-cache headroom subtracted from the budget ceiling |
 | `HOBO_CI_WORKER_MEMORY_CLASS_LIGHT_MB` | `3072` | Exact-name guard/lint/contract jobs |
 | `HOBO_CI_WORKER_MEMORY_CLASS_STANDARD_MB` | `4096` | Unlisted jobs and the pre-warmed container |
 | `HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB` | `HOBO_CI_WORKER_MEMORY_MB` or `6144` | Turbo build/test and image jobs; trunk reservation |
 | `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; the startup check still applies |
 | `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Time smaller same-rank jobs may backfill behind a non-fitting head job |
+| `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum active merge-group leases; zero and invalid values are rejected |
+| `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Work root checked for byte/inode pressure and dead job directories |
 
 The admitted request becomes the container's `--memory` and `--memory-swap` value and its
-`HOBO_CI_JOB_MEMORY_MB` environment variable. See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for the
-16 GiB sizing example and admission logs.
+`HOBO_CI_JOB_MEMORY_MB` environment variable. On the 15989 MiB box with a 2048 MiB reserve, the admission
+budget is **13941 MiB**. Heavy + standard + light = **13312 MiB** fits three slots; two heavy jobs leave
+**1653 MiB**, so a third light job waits; three heavy jobs need **18432 MiB** and never fit together.
+
+Job preflight reserves 768 MiB for native/non-heap memory, then chooses
+`workers = max(1, min(cpuCount, floor((limit - 768) / 1280) - 1))` and
+`heap = min(3072, floor((limit - 768) / (workers + 1)))`. It exports that heap through `NODE_OPTIONS`,
+always exports `HOBO_TURBO_CONCURRENCY=1`, and exports the worker count through `HOBO_TEST_MAX_WORKERS`.
+This keeps `(workers + 1) × heap + 768 <= limit`, including the turbo/Vitest parent's heap. It never exports
+`VITEST_MAX_WORKERS`, preserving configs that pin one worker or disable file parallelism.
+
+| Class | Container limit | Node heap per process | Max Vitest workers |
+|---|---:|---:|---:|
+| `light` | 3072 MiB | 1152 MiB | 1 |
+| `standard` | 4096 MiB | 1664 MiB | 1 |
+| `heavy` | 6144 MiB | 1344 MiB | 3 |
+
+Before each reservation, byte or inode usage above **85%** on Docker's data root or the work root triggers
+builder-cache pruning older than 24 hours and deletion of work dirs only when both their lease is inactive
+and their container is absent. Usage still above **95%** blocks admission and logs `hobo_ci_inode_pressure`
+once per episode. See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for operations and admission logs.
 
 For a release, publish the tested image to your registry and replace
 `HOBO_CI_IMAGE` with its immutable `registry/image@sha256:...` reference. The local

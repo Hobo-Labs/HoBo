@@ -84,6 +84,11 @@ export {
 	formatPoolErrorLog,
 	redactPoolErrorMessage,
 } from "./isolated-worker/postgres-pool.js";
+export {
+	createNodeWorkerStorageFileSystem,
+	createWorkerStorageAdmission,
+	type WorkerStorageAdmission,
+} from "./isolated-worker/storage-admission.js";
 export { resolveWorkerSlotConfig } from "./isolated-worker/worker-slots.js";
 export {
 	defaultWorkerDatabasePath,

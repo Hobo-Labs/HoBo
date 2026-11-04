@@ -92,21 +92,26 @@ export function resolveWorkerMemoryConfig(
 		env.HOBO_CI_WORKER_MEMORY_RESERVE_MB,
 		2_048,
 		"HOBO_CI_WORKER_MEMORY_RESERVE_MB",
-		0,
+		2_048,
 	);
-	const availableMb = Math.min(
-		host.totalMemoryMb,
-		host.cgroupMemoryLimitMb ?? Number.MAX_SAFE_INTEGER,
-	);
+	const availableMb =
+		Math.min(
+			host.totalMemoryMb,
+			host.cgroupMemoryLimitMb ?? Number.MAX_SAFE_INTEGER,
+		) - reserveMb;
 	const budgetMb =
 		env.HOBO_CI_WORKER_MEMORY_BUDGET_MB === undefined
-			? availableMb - reserveMb
+			? availableMb
 			: integer(
 					env.HOBO_CI_WORKER_MEMORY_BUDGET_MB,
 					0,
 					"HOBO_CI_WORKER_MEMORY_BUDGET_MB",
 					1,
 				);
+	if (budgetMb > availableMb)
+		throw new Error(
+			`worker memory budget ${budgetMb} MiB exceeds host/cgroup memory minus reserve ${availableMb} MiB`,
+		);
 	const classes = {
 		light: integer(
 			env.HOBO_CI_WORKER_MEMORY_CLASS_LIGHT_MB,

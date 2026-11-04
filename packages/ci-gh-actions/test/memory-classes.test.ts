@@ -32,7 +32,7 @@ describe("worker memory config", () => {
 		const config = resolveWorkerMemoryConfig(
 			{
 				HOBO_CI_WORKER_MEMORY_BUDGET_MB: "20000",
-				HOBO_CI_WORKER_MEMORY_RESERVE_MB: "1024",
+				HOBO_CI_WORKER_MEMORY_RESERVE_MB: "3072",
 				HOBO_CI_WORKER_MEMORY_CLASS_LIGHT_MB: "4096",
 				HOBO_CI_WORKER_MEMORY_CLASS_STANDARD_MB: "4096",
 				HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB: "7000",
@@ -43,7 +43,7 @@ describe("worker memory config", () => {
 		);
 		expect(config).toMatchObject({
 			budgetMb: 20_000,
-			reserveMb: 1_024,
+			reserveMb: 3_072,
 			classes: { light: 4_096, standard: 4_096, heavy: 7_000 },
 			trunkReservationMb: 7_000,
 			holMs: 5_000,
@@ -83,6 +83,23 @@ describe("worker memory config", () => {
 				{ totalMemoryMb: 16_384, trunkSlots: 1 },
 			),
 		).toThrow(`invalid ${name}`);
+	});
+
+	it("moved from worker-memory: refuses an explicit budget that oversubscribes the host", () => {
+		expect(() =>
+			resolveWorkerMemoryConfig(
+				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "13942" },
+				{ totalMemoryMb: 15_989, trunkSlots: 0 },
+			),
+		).toThrow(
+			"worker memory budget 13942 MiB exceeds host/cgroup memory minus reserve 13941 MiB",
+		);
+		expect(() =>
+			resolveWorkerMemoryConfig(
+				{ HOBO_CI_WORKER_MEMORY_RESERVE_MB: "2047" },
+				{ totalMemoryMb: 15_989, trunkSlots: 0 },
+			),
+		).toThrow("invalid HOBO_CI_WORKER_MEMORY_RESERVE_MB");
 	});
 
 	it("fails closed when the 16 GiB box cannot admit the largest general class", () => {

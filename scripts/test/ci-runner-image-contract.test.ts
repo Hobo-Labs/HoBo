@@ -12,7 +12,8 @@ import {
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "node:test";
+import { expect } from "vitest";
 import {
 	assertBaseDockerfileDigestPinned,
 	assertTurboLockSidecarsPresent,
@@ -235,6 +236,9 @@ describe("ci-runner image contract (host smoke)", () => {
 		);
 		expect(action).toContain(
 			"node --no-warnings scripts/ci-runner-preflight.mts",
+		);
+		expect(action).toContain(
+			"node --experimental-strip-types scripts/ci/memory-env.mts",
 		);
 		expect(action).not.toContain("tsx");
 	});

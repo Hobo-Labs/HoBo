@@ -34,6 +34,7 @@ import { verifyIngressForward } from "./ingress-forward.js";
 import { isIsolatedHostOffer } from "./isolated-backend.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
+import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
 import type { JobDurations } from "./job-durations.js";
 import type { IdentityVerifier } from "./oidc.js";
 import {
@@ -171,6 +172,7 @@ export class HostedRelay {
 	readonly now: () => string;
 	private readonly admissionOrder: AdmissionOrder;
 	private readonly sharedLabelTrunkJobs: Set<string>;
+	private readonly mergeGroupCapWaitJobs: Set<string>;
 	private readonly servedRunnerLabels: ServedRunnerLabelCache;
 	constructor(
 		readonly options: {
@@ -189,6 +191,8 @@ export class HostedRelay {
 			admissionOrder?: AdmissionOrder;
 			/** Shared across relays so each mislabelled job is logged once. */
 			sharedLabelTrunkJobs?: Set<string>;
+			/** Shared across relays so each capped merge-group job is logged once. */
+			mergeGroupCapWaitJobs?: Set<string>;
 			/** Immutable job labels, keyed by repository and job ID, shared across relays. */
 			servedRunnerLabels?: ServedRunnerLabelCache;
 			/**
@@ -199,9 +203,12 @@ export class HostedRelay {
 			deferReservation?: boolean;
 			/** Maximum active leases for shared-label runners. Unset: no cap. */
 			generalLeaseLimit?: number;
+			/** Maximum active leases for merge-queue runs. Unset: no cap. */
+			mergeGroupLeaseLimit?: number;
 			/** Let shared-label runs exceed the limit until a trunk-label job waits. */
 			lendTrunkSlots?: boolean;
 			memoryAdmission?: WorkerMemoryAdmission;
+			storageAdmission?: WorkerStorageAdmission;
 			now?: () => string;
 		},
 	) {
@@ -212,6 +219,7 @@ export class HostedRelay {
 			options.admissionOrder ??
 			createAdmissionOrder(options.github, options.jobDurations);
 		this.sharedLabelTrunkJobs = options.sharedLabelTrunkJobs ?? new Set();
+		this.mergeGroupCapWaitJobs = options.mergeGroupCapWaitJobs ?? new Set();
 		this.servedRunnerLabels = options.servedRunnerLabels ?? new Map();
 	}
 	private async refreshConfig(): Promise<number> {
@@ -706,6 +714,18 @@ export class HostedRelay {
 		await this.requeueSwappedJobs(reservationRevision, active, queued);
 		const pending = await this.admissionOrder(queued, refOf);
 		const limit = this.options.generalLeaseLimit;
+		const mergeGroupLimit = this.options.mergeGroupLeaseLimit;
+		let mergeGroupLeases = 0;
+		if (mergeGroupLimit !== undefined)
+			for (const lease of active) {
+				const event = await this.admissionOrder.event({
+					installationId: lease.installationId,
+					repository: lease.repository,
+					runId: lease.originalRunId,
+					jobId: lease.jobId,
+				});
+				if (event === "merge_group") mergeGroupLeases++;
+			}
 		let general: Set<string> | undefined;
 		// Strict reservation always caps shared-label leases; lending applies the cap
 		// only after trunk-label demand misses a lease. Both free capacity in this pass.
@@ -713,9 +733,27 @@ export class HostedRelay {
 		for (const job of pending) {
 			const rank = await this.admissionOrder.rank(refOf(job));
 			const trunk = servedRunnerLabel(job.labels) === TRUNK_RUNNER_LABEL;
-			if (!trunk && rank === TRUNK_RANK)
-				await this.logSharedLabelTrunkJob(job);
+			if (!trunk && rank === TRUNK_RANK) await this.logSharedLabelTrunkJob(job);
 			if (memoryBlockedRanks.has(rank)) continue;
+			const mergeGroup =
+				mergeGroupLimit !== undefined &&
+				(await this.admissionOrder.event(refOf(job))) === "merge_group";
+			if (mergeGroup && mergeGroupLeases >= mergeGroupLimit) {
+				const key = `${job.repositoryId}:${job.runId}:${job.id}:${job.runAttempt}`;
+				if (!this.mergeGroupCapWaitJobs.has(key)) {
+					this.mergeGroupCapWaitJobs.add(key);
+					console.error(
+						JSON.stringify({
+							event: "hobo_ci_merge_group_cap_wait",
+							repository: job.repository,
+							runId: job.runId,
+							jobId: job.id,
+							limit: mergeGroupLimit,
+						}),
+					);
+				}
+				continue;
+			}
 			if (
 				!trunk &&
 				(this.options.lendTrunkSlots !== true || trunkWaiting) &&
@@ -737,6 +775,11 @@ export class HostedRelay {
 			// A policy can become stricter while demand is queued. Never reserve a
 			// bridge from a pending job admitted under the previous connection.
 			if (connection.isolatedOnly) job.isolatedRequired = true;
+			if (
+				this.options.storageAdmission &&
+				!(await this.options.storageAdmission.admit(active))
+			)
+				continue;
 			const memoryAdmission = this.options.memoryAdmission;
 			if (memoryAdmission && memoryGeneral) {
 				const memory = memoryRequestForStoredJob(job, memoryAdmission.config);
@@ -778,6 +821,7 @@ export class HostedRelay {
 					general?.add(lease.id);
 					memoryGeneral?.add(lease.id);
 				}
+				if (mergeGroup) mergeGroupLeases++;
 			}
 		}
 		const reserved = await this.admissionOrder(

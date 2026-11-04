@@ -906,58 +906,35 @@ The target is a **~100 s main critical path** with the reserved slot going direc
 
 ## Finding 24: slot-only admission let the host OOM killer choose a victim
 
-PR #1697's **CI fabric contract guard** died in `pnpm install` with exit 137 while neighbouring jobs ran.
-The box had 16 GiB RAM and no swap, but admitted three containers with an 8192 MiB Docker limit each:
-3 × 8192 = 24,576 MiB, already above physical RAM before the daemon, Docker and page cache. Docker's
-per-container limits therefore did not bound their sum. The host OOM killer picked `pnpm install`; the
-container-local limit was not the thing that saved its neighbours.
+PR #1697's **CI fabric contract guard** died in `pnpm install` with exit 137 while neighbouring jobs ran; #1696's merge-queue run died in **Workspace tests**. The 16 GiB, no-swap box admitted three containers with an 8192 MiB Docker limit each: `3 × 8192 = 24576 MiB`, already above physical RAM before the daemon, Docker and page cache. Per-container limits did not bound their sum, and workflow heap settings did not bound the number of Vitest forks.
 
-Admission now has a second, independent budget. Its default is
-`min(os.totalmem(), /sys/fs/cgroup/memory.max when finite) - 2048 MiB`; the explicit
-`HOBO_CI_WORKER_MEMORY_BUDGET_MB` replaces that derived value and
-`HOBO_CI_WORKER_MEMORY_RESERVE_MB` changes the reserve. Startup fails closed unless
-`budget - trunkReservation >= max(light, standard, heavy)` and `budget >= heavy`. Thus every general
-class can start on an idle host without spending the trunk reservation, and a trunk heavy job can start
-too. The error names those numbers and the budget, reserve, class, legacy heavy and trunk-slot variables
-that can change them.
+One class model now supplies both the admission request and the container's hard `--memory` and `--memory-swap` values. The default budget is `min(os.totalmem(), numeric /sys/fs/cgroup/memory.max) - HOBO_CI_WORKER_MEMORY_RESERVE_MB`. The reserve is at least 2048 MiB. An explicit `HOBO_CI_WORKER_MEMORY_BUDGET_MB` may lower, but never exceed, host/cgroup memory minus that reserve. Startup fails closed unless every general class fits outside the trunk reservation and the heavy trunk class fits the full budget.
 
-| Class | Default hard `--memory` and `--memory-swap` | Exact-name assignments |
-|---|---:|---|
-| `light` | 3072 MiB | CI fabric contract guard, Secret scan, static release contracts and attest jobs |
-| `standard` | 4096 MiB | the default for every unlisted job |
-| `heavy` | 6144 MiB | turbo build/test gates, OCI image jobs, the pricing gate and clean/Dagger bootstraps |
+| Class | Default hard memory and memory-swap | Node heap per process | Max Vitest workers | Exact-name assignments |
+|---|---:|---:|---:|---|
+| `light` | 3072 MiB | 1152 MiB | 1 | CI fabric contract guard, Secret scan, static release contracts and attest jobs |
+| `standard` | 4096 MiB | 1664 MiB | 1 | the default for every unlisted job and the pre-warmed container |
+| `heavy` | 6144 MiB | 1344 MiB | 3 | turbo build/test gates, OCI image jobs, the pricing gate and clean/Dagger bootstraps |
 
-`HOBO_CI_WORKER_MEMORY_CLASS_<LIGHT|STANDARD|HEAVY>_MB` overrides a class; heavy can also be set with
-the legacy `HOBO_CI_WORKER_MEMORY_MB`. The same idle-host startup check applies to either override.
-Startup rejects a class below 3072 MiB so the workflow Node heap cannot exceed its container class. The
-class table is keyed by the exact GitHub job name, not a substring. The request is persisted on the lease
-and is also exported to the job as `HOBO_CI_JOB_MEMORY_MB`. Active and reserved leases, legacy leases
-(counted as heavy), and a pre-warmed container all consume the budget. The standard-sized warm container
-is reused only by a job with the same request. Warm admission uses the same real trunk/general lease
-classification as job admission and cannot spend the trunk reservation.
+`HOBO_CI_WORKER_MEMORY_CLASS_<LIGHT|STANDARD|HEAVY>_MB` overrides a class; heavy also accepts the legacy `HOBO_CI_WORKER_MEMORY_MB` alias. Classes below 3072 MiB are rejected. The exact GitHub job name selects the class, and the admitted request is persisted on the lease and exported as `HOBO_CI_JOB_MEMORY_MB`. Active and reserved leases, legacy leases counted as heavy, and the warm container all consume the same budget. An active trunk lease replaces its reservation; warm admission cannot spend that reservation.
 
-The real 16 GiB box reports `totalMemoryMb = 15989`. With `HOBO_CI_WORKER_SLOTS=3`, one trunk slot and
-the 2048 MiB reserve, its arithmetic is:
+The incident box reports **15989 MiB**. With three slots and the default 2048 MiB host reserve:
 
-- budget: `15989 - 2048 = 13941 MiB`;
-- trunk heavy reservation plus one heavy PR job: `6144 + 6144 = 12288 MiB`, which fits;
-- remaining admission capacity: `13941 - 12288 = 1653 MiB`.
+- admission budget: `15989 - 2048 = 13941 MiB`;
+- one heavy, one standard and one light container: `6144 + 4096 + 3072 = 13312 MiB`, leaving `629 MiB` of admission budget, so three mixed slots fit;
+- two heavy containers: `2 × 6144 = 12288 MiB`, leaving `1653 MiB`, so even a 3072 MiB light third job waits;
+- three heavy containers would need `18432 MiB`, exceeding the budget by `4491 MiB` before the host reserve.
 
-The third slot is therefore usable only by a request of at most 1653 MiB. No class fits: light is already
-at the 3072 MiB minimum, so this box effectively runs **at most two concurrent heavy jobs** (including
-one trunk heavy and one PR heavy), not three. Three slots do not create memory. With three slots, making
-the third slot useful for a light job beside two heavy jobs needs at least `12288 + 3072 + 2048 = 17408
-MiB` of reported host memory (about 17 GiB); a third heavy job needs at least `3 * 6144 + 2048 = 20480
-MiB` (20 GiB), before any additional warm capacity. An active trunk lease replaces its reservation and
-trunk admission checks the full budget.
+Thus three slots never admit a set whose summed hard limits exceeds **13941 MiB**. The box can run three mixed-class jobs, but not three heavy jobs. A smaller job may backfill behind a non-fitting head job for 60 seconds (`HOBO_CI_WORKER_MEMORY_HOL_MS`) before the same rank waits behind it too. `hobo_ci_memory_admission_wait` / `hobo_ci_memory_admitted` expose the arithmetic; Docker-confirmed exit-137 OOM kills log `hobo_ci_container_oom` with the class.
 
-The existing trunk/age ordering is unchanged. A smaller job may backfill behind a head-of-line job that
-does not fit for 60 seconds (`HOBO_CI_WORKER_MEMORY_HOL_MS`). After that, jobs behind it in the same rank
-wait too, preventing indefinite starvation. `hobo_ci_memory_admission_wait` and
-`hobo_ci_memory_admitted` expose the arithmetic; exit 137 triggers a Docker `OOMKilled` inspection and
-`hobo_ci_container_oom` names the job's class.
+Before install, `scripts/ci/memory-env.mts` reads the job cgroup limit, then `HOBO_CI_JOB_MEMORY_MB`, then host RAM. It writes `NODE_OPTIONS=--max-old-space-size=<heap>`, `HOBO_TURBO_CONCURRENCY=1`, and the repo-owned `HOBO_TEST_MAX_WORKERS`. A 768 MiB native/non-heap allowance leaves `limit - 768` for the turbo/Vitest parent and its workers: `workers = max(1, min(cpuCount, floor((limit - 768) / 1280) - 1))`, then `heap = min(3072, floor((limit - 768) / (workers + 1)))`. Therefore `(workers + 1) × heap + 768 <= limit`, including the parent heap. CI does **not** export `VITEST_MAX_WORKERS`: Vitest applies that variable after config, including after `fileParallelism: false`, overriding correctness-critical single-worker pins. `scripts/ci/vitest-max-workers.mts` instead resolves `min(configured cap, HOBO_TEST_MAX_WORKERS)`, and a config scan executes every single-worker config under the CI environment.
 
-Workflows keep `NODE_OPTIONS=--max-old-space-size=3072`. That is one Node process's old-space ceiling,
-not an RSS or container limit: native allocations, pnpm/turbo subprocesses and their own heaps must also
-fit the class. It fits numerically in every class, including light, but do not raise the heap to the class
-limit; leave room for non-heap work, and use standard/heavy for lanes with multiple subprocesses.
+The daemon also defaults **`HOBO_CI_WORKER_MERGE_GROUP_LEASES=1`** and rejects zero or invalid values. It counts reserved and running merge-group leases by cached run event, leaves excess jobs queued with one `hobo_ci_merge_group_cap_wait` log per job, and admits them in order as capacity frees. Set the repository merge queue's **maximum pull requests to build** to **1** as the outer bound as well.
+
+## Finding 25: inode exhaustion made PR installs fail with ENOSPC
+
+The box reached **95% inode usage**, after which PR installs failed with `ENOSPC` despite disk-space cleanup. Byte-free space alone could not predict that failure. Worker admission now samples `statfs` on both Docker's data root and `HOBO_CI_WORKER_WORK_ROOT`, checking `(blocks - bfree) / blocks` and the `df -i` equivalent `(files - ffree) / files`.
+
+When either usage on either root exceeds **85%**, the next admission first runs `docker builder prune --force --filter until=24h`, retaining cache from the last 24 hours, and removes dead `hobo-<lease-id>` work directories. A directory is eligible only when its lease is no longer active **and** Docker confirms that its container no longer exists. Live job directories, directories with an existing container, symlinks and unrelated directory names are never removed; inspection errors fail closed for that directory.
+
+After pruning, usage above **95%** for either bytes or inodes keeps the job queued. One structured `hobo_ci_inode_pressure` event per pressure episode records the root, usage percentages and whether bytes, inodes or both are above the hard limit. Sampling errors also refuse admission rather than risking another ENOSPC failure. The work root defaults to `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work`; the Docker root comes from `docker info --format '{{.DockerRootDir}}'`.

@@ -150,6 +150,19 @@ describe("isolated worker parallel slots", () => {
 		await ctl.discardWarm();
 		expect(docker.calls.at(-1)).toMatch(/^remove hobo-warm-/);
 	});
+
+	it("exports the container memory limit to the runner environment", async () => {
+		const docker = fakeDocker();
+		const { ctl } = controller(docker, [], 2);
+		await ctl.prewarm();
+		expect(docker.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				memoryMb: 8192,
+				env: expect.objectContaining({ HOBO_CI_JOB_MEMORY_MB: "8192" }),
+			}),
+		);
+		await ctl.discardWarm();
+	});
 });
 
 describe("cli docker driver parallel helpers", () => {
