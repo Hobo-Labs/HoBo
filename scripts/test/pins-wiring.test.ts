@@ -60,7 +60,10 @@ describe("pins wiring", () => {
 		const install = job.indexOf("pnpm install");
 		assert.ok(checkout >= 0 && status > checkout, "status runs after checkout");
 		assert.ok(install > status, "status runs before pnpm install");
-		assert.match(job, /runs-on:\s*hobo\b/u);
+		assert.match(
+			job,
+			/runs-on:\s*\$\{\{ vars\.HOBO_CI_TRUNK_RUNNER != 'false' && contains\(fromJSON\('\["push","workflow_dispatch","merge_group"\]'\), github\.event_name\) && 'hobo-trunk' \|\| 'hobo' \}\}/u,
+		);
 	});
 
 	it("the setup docs name the three verbs", () => {

@@ -128,7 +128,7 @@ PR CI (**HoBo CI Fabric** on `pull_request`) is always in this bucket for a publ
 ### 4. JIT label contract
 
 - Workflows must use exactly one runner label: **`hobo`**, or **`hobo-trunk`** for the jobs of `push`, `workflow_dispatch` and `merge_group` runs. The relay rejects jobs with extra runner labels. Each JIT runner registers with the one label its lease's job asked for (`packages/ci-gh-actions/src/runner-labels.ts`).
-- Trunk-capable jobs in `hobo-ci.yml`, `release-hobo.yml` and `release-code.yml` ask for **`hobo-trunk` by default**. Setting repository variable **`HOBO_CI_TRUNK_RUNNER=false`** is the kill switch that returns them to `hobo`; pull-request-only jobs always use `hobo`. `scripts/lint-actions.ts` allows that one expression and `runs-on: hobo`, nothing else.
+- Trunk-capable jobs in `hobo-ci.yml`, `release-hobo.yml` and `release-code.yml` ask for **`hobo-trunk` by default**. This includes **PR impact gate** on `merge_group`; its `pull_request` runs use `hobo`. Setting repository variable **`HOBO_CI_TRUNK_RUNNER=false`** is the kill switch that returns trunk runs to `hobo`; pull-request-only jobs always use `hobo`. `scripts/lint-actions.ts` allows that one expression and `runs-on: hobo`, nothing else.
 - **Rollout:** the box daemon must run a main at or after **#1678**, which serves `hobo-trunk`. The default trunk slot also needs a daemon redeploy. Until both are deployed, set **`HOBO_CI_TRUNK_RUNNER=false`** on an older box; otherwise trunk jobs would wait for a runner nobody launches.
 - Registered JIT runners must match **`hobo-{uuid}`** name pattern (see acceptance workflow).
 
@@ -144,7 +144,7 @@ The target is for a main or merge-group job to take a slot within **30 seconds o
 
 ### 6. Merge queue (landing, not pickup)
 
-**Merge queue** requires branch protection on `main` with merge queue enabled and the required HoBo CI checks. **Main full gate** is not one of them and does not run on `merge_group` (it runs on the push to `main`), so a queue entry holds no slot for it. That gates **merge** after jobs complete; it does not cause **`queued`** by itself.
+**Merge queue** requires branch protection on `main` with merge queue enabled and the required HoBo CI checks. **Main full gate** is not one of them and does not run on `merge_group` (it runs on the push to `main`), so a queue entry holds no slot for it. Instead, the required **PR impact gate** runs on `merge_group` and executes Main full gate's affected S0 and dependent workspace-test lanes against the merge group's base SHA. That gates **merge** after jobs complete; it does not cause **`queued`** by itself.
 
 Set repository variables **`TURBO_TEAM`** and secret **`TURBO_TOKEN`** for remote Turbo cache (fork PRs use read-only remote mode in workflow).
 

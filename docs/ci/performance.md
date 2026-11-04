@@ -845,3 +845,13 @@ Merge-group run 41731777263 exposed the same swap after its runner took an older
 polls were inbox duplicates. Direct swapped-job requeue bypasses that marker, and Postgres queue dedupe
 now also ignores the swapped lease, so the replacement launches with the original job's label while the
 old lease continues the other job.
+
+## Finding 16: merge_group skipped the gate that caught the red main
+
+Run 41736273918 went red after #1689 merged through the merge queue. Main full gate's Workspace tests
+caught a latent `@hobo/stations` fixture break introduced by #1631 and fixed by #1692. The PR impact gate
+ran only turbo `test:unit` lanes, while `merge_group` ran just the contract guard among the affected CI
+jobs; Main full gate neither ran on `merge_group` nor was required. Merge-group entries now run the same
+affected S0 and dependent workspace-test gate as Main full gate inside the required PR impact gate, using
+the merge group's base SHA. The PR impact gate requests `hobo-trunk` by default on `merge_group`, while
+its `pull_request` runs continue to request `hobo`.
