@@ -17,6 +17,11 @@ from changing that metadata.
 | [`@hobo/ci-cf`](../ci-cf/README.md) | Implemented native Cloudflare CI adapter |
 | [`@hobo/ci-ado`](../ci-ado/README.md) | Local command checks and self-hosted Azure Pipelines configuration |
 
+The legacy allocation and sandbox quote implementations live behind
+`@hobo/pricing/legacy`. The original `src/accounting.ts` and
+`src/sandbox-pricing.ts` imports remain as thin re-exports, preserving the CI
+public API and existing reservation/settlement behavior.
+
 A Sandbox offer requires a trusted current rate card for CPU, provisioned
 memory, creation, network, proxy, bootstrap and any host charges. The quote reserves
 resource usage for the maximum runtime using integer microdollars; optional
@@ -104,7 +109,9 @@ since that observation. Each lease freezes its reserved quantities; settlement
 records measured consumption no greater than those quantities, so a later job
 cannot reuse the same credits. Missing allowance evidence counts as zero free
 units. An observation is only as reliable as its publisher; this accounting
-alone does not verify vendor entitlements or billed usage.
+alone does not verify vendor entitlements or billed usage. Exact decimal
+allocation helpers (`allocationQuote`, `divideDecimalAtMost`) are implemented in
+`@hobo/pricing/legacy` and re-exported from this package for compatibility.
 
 Run the real PostgreSQL integration contract against a disposable local database
 by setting `HOBO_CI_TEST_POSTGRES` and executing

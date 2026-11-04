@@ -1,0 +1,155 @@
+{
+  "catalog": {
+    "schema": "hobo.pricing.catalog/v1",
+    "catalogHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "products": [
+      {
+        "id": "product-compute",
+        "providerId": "provider-example",
+        "meters": [
+          {
+            "dimension": "requests",
+            "unit": "request",
+            "aggregation": "sum",
+            "rounding": {
+              "scope": "period",
+              "multiple": "1",
+              "mode": "ceil"
+            }
+          }
+        ]
+      }
+    ],
+    "rateCards": [
+      {
+        "id": "rate-compute-2026-11",
+        "version": "2026.11",
+        "currency": "USD",
+        "effective": {
+          "start": "2026-11-01T00:00:00Z"
+        },
+        "charges": [
+          {
+            "base": {
+              "id": "subscription",
+              "selectors": {
+                "plan": "standard"
+              },
+              "fallback": false,
+              "invoiceBehavior": "separate-line"
+            },
+            "fixed": {
+              "cadence": "monthly",
+              "timing": "advance",
+              "amount": {
+                "decimal": "20.00",
+                "currency": "USD"
+              },
+              "quantityDimension": "seats",
+              "proration": "calendar-day"
+            }
+          },
+          {
+            "base": {
+              "id": "requests-graduated",
+              "selectors": {
+                "plan": "standard"
+              },
+              "exclusiveGroup": "request-price",
+              "fallback": false,
+              "invoiceBehavior": "separate-line"
+            },
+            "usage": {
+              "dimension": "requests",
+              "timing": "arrears",
+              "graduated": {
+                "tiers": [
+                  {
+                    "from": "0",
+                    "to": "1000",
+                    "flatAmount": {
+                      "decimal": "0",
+                      "currency": "USD"
+                    },
+                    "unitAmount": {
+                      "decimal": "0.00",
+                      "currency": "USD"
+                    }
+                  },
+                  {
+                    "from": "1000",
+                    "flatAmount": {
+                      "decimal": "0",
+                      "currency": "USD"
+                    },
+                    "unitAmount": {
+                      "decimal": "0.01",
+                      "currency": "USD"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "base": {
+              "id": "requests-volume-fallback",
+              "selectors": {},
+              "exclusiveGroup": "request-price",
+              "fallback": true,
+              "invoiceBehavior": "separate-line"
+            },
+            "usage": {
+              "dimension": "requests",
+              "timing": "arrears",
+              "volume": {
+                "tiers": [
+                  {
+                    "from": "0",
+                    "flatAmount": {
+                      "decimal": "0",
+                      "currency": "USD"
+                    },
+                    "unitAmount": {
+                      "decimal": "0.02",
+                      "currency": "USD"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "base": {
+              "id": "requests-package",
+              "selectors": {
+                "plan": "package"
+              },
+              "fallback": false,
+              "invoiceBehavior": "separate-line"
+            },
+            "usage": {
+              "dimension": "requests",
+              "timing": "arrears",
+              "package": {
+                "packageSize": "1000",
+                "packageAmount": {
+                  "decimal": "8.00",
+                  "currency": "USD"
+                },
+                "rounding": {
+                  "scope": "period",
+                  "multiple": "1",
+                  "mode": "ceil"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "allowances": [],
+    "credits": [],
+    "commitments": []
+  }
+}

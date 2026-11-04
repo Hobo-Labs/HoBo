@@ -1,0 +1,122 @@
+{
+  "catalog": {
+    "schema": "hobo.pricing.catalog/v1",
+    "catalogHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "products": [
+      {
+        "id": "product-compute",
+        "providerId": "provider-example",
+        "meters": [
+          {
+            "dimension": "requests",
+            "unit": "request",
+            "aggregation": "sum",
+            "rounding": {
+              "scope": "period",
+              "multiple": "1",
+              "mode": "ceil"
+            }
+          }
+        ]
+      }
+    ],
+    "rateCards": [
+      {
+        "id": "rate-compute-2026-11",
+        "version": "2026.11",
+        "currency": "USD",
+        "effective": {
+          "start": "2026-11-01T00:00:00Z"
+        },
+        "charges": [
+          {
+            "base": {
+              "id": "subscription",
+              "selectors": {},
+              "fallback": false,
+              "invoiceBehavior": "separate-line"
+            },
+            "fixed": {
+              "cadence": "monthly",
+              "timing": "advance",
+              "amount": {
+                "decimal": "20.00",
+                "currency": "USD"
+              },
+              "proration": "calendar-day"
+            }
+          }
+        ]
+      }
+    ],
+    "allowances": [],
+    "credits": [],
+    "commitments": []
+  },
+  "state": {
+    "schema": "hobo.pricing/v1",
+    "view": "provider-commercial-state",
+    "tenantId": "tenant-example",
+    "seq": 7,
+    "stateHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "asOf": "2026-11-03T00:00:00Z",
+    "agreements": [
+      {
+        "id": "agreement-compute",
+        "tenantId": "tenant-example",
+        "providerAccountRef": "provider-account-ref-1",
+        "productId": "product-compute",
+        "rateSchedule": [
+          {
+            "rateCardId": "rate-compute-2026-11",
+            "effective": {
+              "start": "2026-11-01T00:00:00Z"
+            }
+          }
+        ],
+        "status": "active",
+        "term": {
+          "start": "2026-11-01T00:00:00Z",
+          "end": "2027-11-01T00:00:00Z"
+        },
+        "billingPeriod": {
+          "interval": "monthly",
+          "anchor": "2026-11-01T00:00:00Z",
+          "timeZone": "UTC"
+        },
+        "quantities": {
+          "seats": "1"
+        },
+        "cancellation": {
+          "allowed": false,
+          "refund": "none",
+          "fee": {
+            "decimal": "0",
+            "currency": "USD"
+          },
+          "notice": "P30D"
+        },
+        "evidence": {
+          "source": "provider-observation",
+          "observedAt": "2026-11-03T00:00:00Z",
+          "validFrom": "2026-11-01T00:00:00Z",
+          "validUntil": "2026-12-01T00:00:00Z",
+          "evidenceHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      }
+    ],
+    "allowances": [],
+    "credits": [],
+    "commitments": [],
+    "periodActuals": [],
+    "completeness": "complete",
+    "observations": [
+      {
+        "source": "provider-observation",
+        "observedAt": "2026-11-03T00:00:00Z",
+        "validUntil": "2026-12-01T00:00:00Z",
+        "detail": "Complete agreement observation"
+      }
+    ]
+  }
+}

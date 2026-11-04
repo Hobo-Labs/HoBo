@@ -22,7 +22,7 @@ be swapped without touching the brokering pipeline:
 |---|---|---|---|
 | Policy | `GatePlane` (OPA-shaped request/decision documents) | `@hobo/contracts` policy pack (imported and **run**, not reinvented) | **Rego** via `createOpaGatePlane` — OPA Data API decision at `hobo/broker/decision`, fail-closed (`policy-engine-unavailable`), pinned by `broker_policy_opa.pact.json` |
 | Contracts | `GatePlane` (can-deploy compatibility) | `@hobo/contracts` Gatekeeper (PACT-style boundary semantics) | an external Pact broker verification feed (port-compatible) |
-| Billing | `BillingPlane` | in-proc budget + spend-cap + quota checks | `createMeteredBillingPlane` — folds `meter.UsageRecorded` facts into observed spend and authorizes against the metered remaining budget |
+| Billing | `BillingPlane` | in-proc budget + spend-cap + quota checks | `createMeteredBillingPlane` — folds `meter.UsageRecorded` facts into observed spend and authorizes against the metered remaining budget; `authorizeBillingSpend` prefers `@hobo/pricing` incremental USD when supplied |
 | Delivery | `DeliveryPlane` | `renderArgoApplication` → Argo CD Application documents; `in-proc` executor handoff | `createArgoCdDeliveryPlane` — live Argo CD applications API submission, token via the token broker, fail-closed, pinned by `broker_delivery_argocd.pact.json` |
 | Connectors | `ConnectorRegistry` | event-sourced registry of `github-app`, `pulumi`, `azure`, `vercel`, `cloudflare`, `custom` configs | an external connector catalog |
 

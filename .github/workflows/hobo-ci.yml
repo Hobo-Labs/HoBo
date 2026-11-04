@@ -43,7 +43,19 @@ jobs:
     # Skipped (which satisfies the required check) on merge_group: the PR run already evaluated
     # these inputs, and building here would retag the box's hobo-ci-worker:local from an unmerged
     # group commit. The push to main covers the merged tree.
-    if: github.event_name != 'merge_group'
+    # A push whose per-commit file lists contain no image input also skips, satisfying needs at
+    # once so Main full gate does not wait for a no-op. Missing file lists and forced pushes build.
+    if: >-
+      github.event_name != 'merge_group' && (
+      github.event_name != 'push' ||
+      github.event.commits[0] == null ||
+      github.event.forced == true ||
+      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"mise.toml') ||
+      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"mise.lock') ||
+      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"packages/ci-gh-actions/deploy/ci-runner/') ||
+      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/lib/ci-runner-contract.mts') ||
+      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/ci-runner-preflight.mts') ||
+      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/test/ci-runner-image-contract.test.ts'))
     # Trunk runs ask for their own label by default; HOBO_CI_TRUNK_RUNNER=false is the
     # kill switch for a box daemon too old to serve it. GitHub hands a runner to the oldest queued job its labels match,
     # so under the shared `hobo` label the runner the box launched for a main job went to an older
@@ -54,25 +66,12 @@ jobs:
       contents: read
       packages: write
     steps:
-      # No submodules: the diff only needs the gitlink, not ts-autocode's tree. Trunk runs fetch
-      # full history for the secret scan; depth 2 still gives HEAD~1 for the image-input diff.
+      # No submodules: the diff only needs the gitlink, not ts-autocode's tree. Depth 2 gives
+      # HEAD~1 for the image-input diff; the full-history secret scan lives in main-gate.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           clean: false
-          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
-      - name: Start secret scan (full history, background)
-        if: github.event_name != 'pull_request'
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/gitleaks"
-          : > "$RUNNER_TEMP/gitleaks/log"
-          nohup bash -c '
-            gitleaks git --config .gitleaks.toml --redact --exit-code 1 > "$1/log" 2>&1
-            status=$?
-            printf "%s\n" "$status" > "$1/exit.tmp"
-            mv "$1/exit.tmp" "$1/exit"
-          ' _ "$RUNNER_TEMP/gitleaks" </dev/null >/dev/null 2>&1 &
+          fetch-depth: 2
       - name: Detect runner image inputs changed
         id: rebuild
         run: |
@@ -112,31 +111,6 @@ jobs:
           docker push "$image"
           docker tag "hobo-ci-worker:local" "ghcr.io/${repo}/hobo-ci-worker:latest"
           docker push "ghcr.io/${repo}/hobo-ci-worker:latest"
-      - name: Secret scan (full history)
-        if: always() && github.event_name != 'pull_request'
-        shell: bash
-        run: |
-          set -euo pipefail
-          scan_dir="$RUNNER_TEMP/gitleaks"
-          if [ ! -f "$scan_dir/exit" ] && [ ! -f "$scan_dir/log" ]; then
-            echo "::error::Secret scan did not start: exit file and log are both absent."
-            exit 1
-          fi
-          for ((attempt = 0; attempt < 300; attempt += 1)); do
-            if [ -f "$scan_dir/exit" ]; then
-              break
-            fi
-            sleep 1
-          done
-          if [ -f "$scan_dir/log" ]; then
-            cat "$scan_dir/log"
-          fi
-          if [ ! -f "$scan_dir/exit" ]; then
-            echo "::error::Timed out after 300 seconds waiting for the secret scan."
-            exit 1
-          fi
-          status="$(cat "$scan_dir/exit")"
-          exit "$status"
 
   ci-deps-image:
     name: CI deps layer (pnpm)
@@ -499,7 +473,8 @@ jobs:
     # Not a required check and not run on merge_group: merge_group now runs the same
     # affected gate inside the required PR impact gate instead.
     # pr-gate's merge-group affected steps mirror this job's main-base, S0 gate set and Workspace tests steps.
-    # Same reason as pr-gate: a push that changes the image inputs tests on the image it built.
+    # A push that changes the image inputs tests on the image it built; an unchanged push skips
+    # the image job, which satisfies this dependency immediately.
     needs: ci-runner-image
     if: >-
       !cancelled() && (
@@ -525,6 +500,18 @@ jobs:
           submodules: recursive
           clean: false
           fetch-depth: 0
+      - name: Start secret scan (full history, background)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          : > "$RUNNER_TEMP/gitleaks/log"
+          nohup bash -c '
+            gitleaks git --config .gitleaks.toml --redact --exit-code 1 > "$1/log" 2>&1
+            status=$?
+            printf "%s\n" "$status" > "$1/exit.tmp"
+            mv "$1/exit.tmp" "$1/exit"
+          ' _ "$RUNNER_TEMP/gitleaks" </dev/null >/dev/null 2>&1 &
       - uses: ./.github/actions/ci-runner-preflight
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
@@ -622,6 +609,31 @@ jobs:
             pnpm exec turbo run test \
               --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
           fi
+      - name: Secret scan (full history)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          scan_dir="$RUNNER_TEMP/gitleaks"
+          if [ ! -f "$scan_dir/exit" ] && [ ! -f "$scan_dir/log" ]; then
+            echo "::error::Secret scan did not start: exit file and log are both absent."
+            exit 1
+          fi
+          for ((attempt = 0; attempt < 300; attempt += 1)); do
+            if [ -f "$scan_dir/exit" ]; then
+              break
+            fi
+            sleep 1
+          done
+          if [ -f "$scan_dir/log" ]; then
+            cat "$scan_dir/log"
+          fi
+          if [ ! -f "$scan_dir/exit" ]; then
+            echo "::error::Timed out after 300 seconds waiting for the secret scan."
+            exit 1
+          fi
+          status="$(cat "$scan_dir/exit")"
+          exit "$status"
       - name: Prune Turbo cache
         id: turbo-prune
         if: always() && env.TURBO_TOKEN == ''
@@ -745,7 +757,7 @@ jobs:
   secret-scan:
     name: Secret scan
     # Skipped (which satisfies the required check) on merge_group and trunk events; trunk runs
-    # scan the full history inside ci-runner-image in parallel with the image build.
+    # scan the full history inside Main full gate in parallel with its checks.
     if: github.event_name == 'pull_request'
     runs-on: hobo
     timeout-minutes: 10

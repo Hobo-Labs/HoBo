@@ -23,6 +23,8 @@ Before `hobo-ci-deps:local` moves, the script streams the staged manifests into 
 
 The install stage leaves an unborn git repository whose `remote.origin.url` is `https://github.com/Hobo-Labs/HoBo`. This relies on the pinned `actions/checkout` implementation: [`prepareExistingDirectory`](https://github.com/actions/checkout/blob/11bd71901bbe5b1630ceea73d27597364c9af683/src/git-directory-helper.ts) keeps the directory when `.git` exists and that URL matches; an unborn `HEAD` is treated as detached by [`isDetached`](https://github.com/actions/checkout/blob/11bd71901bbe5b1630ceea73d27597364c9af683/src/git-command-manager.ts), and `clean: false` skips `git clean -ffdx` and reset. All default-path box checkouts therefore set `clean: false`, enforced by `scripts/lint-actions.ts`.
 
+On a push whose commit file lists contain no runner image input, the workflow skips `CI runner image (mise oci)` so Main full gate can start immediately. Missing file lists and forced pushes still run the job; a push with an image input builds it before either gate that needs it. The image job checks out at depth 2 for its `HEAD~1` diff. Full-history secret scans run in Main full gate, while pull requests keep their separate Secret scan job.
+
 ## Fallback Dockerfile (`Dockerfile.monolithic`)
 
 Use only when `mise oci` cannot package a required tool (for example an **asdf** backend, a vfox plugin whose hooks write outside the install dir, or **rust** from a non-mise rustup). HoBo’s pinned set (`cue`, `gitleaks`, `node`, `pnpm`, `turbo`) uses aqua/core backends and is intended to stay on the OCI path.
