@@ -51,7 +51,7 @@ describe("CI deps image mounted-job contract", () => {
 				"node --experimental-strip-types scripts/ci/deps-layer.mts check --require",
 				`git init ${workTarget}/HoBo/HoBo-check`,
 				"node -e 'require.resolve(\"tsx\")'",
-				"test -f node_modules/@hobo/core/package.json",
+				"test -f packages/ci-gh-actions/node_modules/@hobo/ci/package.json",
 				"test -f packages/runtime/node_modules/ts-autocode-grounding/package.json",
 				"test -f external/ts-autocode/packages/training/node_modules/@agentv/core/package.json",
 				"cd packages/ci-gh-actions",

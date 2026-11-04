@@ -55,10 +55,14 @@ describe("deps layer linking", () => {
 				join(checkout, "packages", "ci-gh-actions", "package.json"),
 				'{"name":"@hobo/ci-gh-actions","private":true}\n',
 			);
+			write(
+				join(checkout, "packages", "ci", "package.json"),
+				'{"name":"@hobo/ci","private":true}\n',
+			);
 			write(join(payload, ".hobo-ci-deps-key"), `${key}\n`);
 			write(
 				join(payload, "node_modules", ".modules.yaml"),
-				'{"virtualStoreDir":".pnpm"}\n',
+				`${JSON.stringify({ storeDir: "/pnpm-store/v10", virtualStoreDir: ".pnpm" }, null, 2)}\n`,
 			);
 			write(
 				join(payload, "node_modules", ".pnpm", "tsx", "package.json"),
@@ -75,8 +79,15 @@ describe("deps layer linking", () => {
 			link(join(payload, "node_modules", "tsx"), ".pnpm/tsx");
 			link(join(payload, "node_modules", ".bin", "tsx"), "../tsx/index.js");
 			link(
-				join(payload, "node_modules", "@hobo", "ci-gh-actions"),
-				"../../packages/ci-gh-actions",
+				join(
+					payload,
+					"packages",
+					"ci-gh-actions",
+					"node_modules",
+					"@hobo",
+					"ci",
+				),
+				"../../../ci",
 			);
 			link(
 				join(payload, "packages", "ci-gh-actions", "node_modules", "tsx"),
@@ -95,6 +106,7 @@ describe("deps layer linking", () => {
 				env,
 			);
 			assert.equal(missing.status, 0, missing.stderr);
+			assert.match(missing.stdout, /miss \(modules-not-linked/);
 			assert.match(missing.stdout, /match=false/);
 
 			const linked = run(
@@ -109,8 +121,17 @@ describe("deps layer linking", () => {
 				true,
 			);
 			assert.equal(
-				readlinkSync(join(checkout, "node_modules", "@hobo", "ci-gh-actions")),
-				join(checkout, "packages", "ci-gh-actions"),
+				readlinkSync(
+					join(
+						checkout,
+						"packages",
+						"ci-gh-actions",
+						"node_modules",
+						"@hobo",
+						"ci",
+					),
+				),
+				join(checkout, "packages", "ci"),
 			);
 			const checked = run(
 				process.execPath,
@@ -120,6 +141,13 @@ describe("deps layer linking", () => {
 			);
 			assert.equal(checked.status, 0, checked.stderr);
 			assert.match(checked.stdout, /match=true/);
+			const otherJob = run(
+				process.execPath,
+				["--experimental-strip-types", script, "check"],
+				checkout,
+				{ ...env, HOBO_CI_DEPS_LAYER: "v0123456789ab-fedcba9876543210" },
+			);
+			assert.match(otherJob.stdout, /miss \(job-key-mismatch\)/);
 			for (const cwd of [
 				checkout,
 				join(checkout, "packages", "ci-gh-actions"),
