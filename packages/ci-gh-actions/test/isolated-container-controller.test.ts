@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GithubTransport } from "../src/github.js";
 import * as githubModule from "../src/github.js";
 import type { HostedRelayStore } from "../src/hosted-relay.js";
+import type { AssignmentLaunch } from "../src/isolated-worker/assignment-health.js";
 import { createIsolatedContainerController } from "../src/isolated-worker/container-controller.js";
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
 import type { WorkerStorageFileSystem } from "../src/isolated-worker/storage-admission.js";
@@ -282,6 +283,8 @@ describe("isolated container controller reconcile", () => {
 		stopped = false,
 		log?: ReturnType<typeof vi.fn>,
 		workRoot?: string,
+		unassignedIdleMs = 300_000,
+		onUnassigned?: (job: AssignmentLaunch) => void,
 	) {
 		const lease = runningLease({ jobId: 100, actualJobId: 0 });
 		const settle = vi.fn(async () => lease);
@@ -313,8 +316,10 @@ describe("isolated container controller reconcile", () => {
 			workerAccountId: "oracle-free-vm",
 			workerImage: "hobo-ci-worker:local",
 			now: () => "2026-10-26T12:02:00Z",
+			unassignedIdleMs,
 			log,
 		};
+		if (onUnassigned) Object.assign(controllerOptions, { onUnassigned });
 		if (workRoot && work)
 			Object.assign(controllerOptions, { workRoot, workFs: work.fs });
 		const controller = createIsolatedContainerController(controllerOptions);
@@ -427,5 +432,57 @@ describe("isolated container controller reconcile", () => {
 			expect(s.abortIsolatedAndRequeue).not.toHaveBeenCalled();
 			expect(s.work?.removeJobDirectory).not.toHaveBeenCalled();
 		}
+	});
+
+	it("releases a heavy runner that remains unassigned past the idle deadline", async () => {
+		const onUnassigned = vi.fn();
+		const s = markerScenario(
+			vi.fn(async () => false),
+			false,
+			undefined,
+			undefined,
+			60_000,
+			onUnassigned,
+		);
+		s.lease.memoryClass = "heavy";
+		s.lease.memoryMb = 6_144;
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(s.lease.jobId, "queued"),
+		);
+
+		await s.controller.host.reconcile(s.lease.id);
+
+		expect(s.docker.stop).toHaveBeenCalledTimes(1);
+		expect(s.docker.remove).toHaveBeenCalledTimes(1);
+		expect(s.settle).toHaveBeenCalledTimes(1);
+		expect(s.settle.mock.calls[0]?.[4]).toMatchObject({
+			id: s.lease.jobId,
+			memoryClass: "heavy",
+			memoryMb: 6_144,
+		});
+		expect(onUnassigned).toHaveBeenCalledWith(
+			expect.objectContaining({ jobId: s.lease.jobId, runId: 11 }),
+		);
+	});
+
+	it("does not count a mismatched assignment as an unassigned attempt", async () => {
+		const onUnassigned = vi.fn();
+		const s = markerScenario(
+			vi.fn(async () => true),
+			false,
+			undefined,
+			undefined,
+			60_000,
+			onUnassigned,
+		);
+		s.lease.actualJobId = 999;
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(s.lease.jobId, "queued"),
+		);
+
+		await s.controller.host.reconcile(s.lease.id);
+
+		expect(s.settle).toHaveBeenCalledTimes(1);
+		expect(onUnassigned).not.toHaveBeenCalled();
 	});
 });

@@ -15,6 +15,7 @@ import { type GithubTransport, getJob } from "../github.js";
 import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
 import { RUNNER_LABEL, type RunnerLabel } from "../runner-labels.js";
+import type { AssignmentLaunch } from "./assignment-health.js";
 import type { DockerDriver } from "./docker-driver.js";
 import {
 	createWorkerLeaseReconciler,
@@ -72,16 +73,19 @@ const jitResponse = z.object({
 	runner: z.object({ id: z.number().int().positive() }),
 });
 
-function requeueJob(lease: {
-	jobId: number;
-	originalRunId: number;
-	runAttempt: number;
-	repositoryId: number;
-	installationId: number;
-	repository: string;
-	memoryClass: string;
-	memoryMb: number;
-}) {
+function requeueJob(
+	lease: {
+		jobId: number;
+		originalRunId: number;
+		runAttempt: number;
+		repositoryId: number;
+		installationId: number;
+		repository: string;
+		memoryClass: string;
+		memoryMb: number;
+	},
+	labels: readonly string[] = ["hobo"],
+) {
 	return create(JobSchema, {
 		id: lease.jobId,
 		runId: lease.originalRunId,
@@ -91,10 +95,23 @@ function requeueJob(lease: {
 		repository: lease.repository,
 		memoryClass: lease.memoryClass,
 		memoryMb: lease.memoryMb,
-		labels: ["hobo"],
+		labels: [...labels],
 		action: "queued",
 		isolatedRequired: true,
 	});
+}
+
+function assignmentLaunchFor(
+	lease: Lease,
+	labels: readonly string[],
+): AssignmentLaunch {
+	return {
+		repositoryId: lease.repositoryId,
+		jobId: lease.jobId,
+		runId: lease.originalRunId,
+		runAttempt: lease.runAttempt,
+		labels,
+	};
 }
 
 export type IsolatedContainerController = {
@@ -166,6 +183,9 @@ export function createIsolatedContainerController(options: {
 	now?: () => string;
 	/** Grace for a reservation between its journal write and `docker create`. */
 	orphanGraceMs?: number;
+	/** Maximum full-memory hold for a runner GitHub has not assigned. */
+	unassignedIdleMs?: number;
+	onUnassigned?: (job: AssignmentLaunch) => void;
 	/** Requeue uncertain leases that never got a container session. */
 	uncertainWithoutContainerRecoveryMs?: number;
 	/** Max job containers alive at once on this host (default 1: the old serial behaviour). */
@@ -181,6 +201,9 @@ export function createIsolatedContainerController(options: {
 	depsImage?: string;
 }): IsolatedContainerController {
 	const now = options.now ?? (() => new Date().toISOString());
+	const unassignedIdleMs = options.unassignedIdleMs ?? 60_000;
+	if (!Number.isInteger(unassignedIdleMs) || unassignedIdleMs < 1_000)
+		throw new Error("invalid unassigned idle deadline");
 	const uncertainWithoutContainerRecoveryMs =
 		options.uncertainWithoutContainerRecoveryMs ?? 5 * 60_000;
 	const workerMemoryMb = options.workerMemoryMb ?? 8192;
@@ -421,6 +444,8 @@ export function createIsolatedContainerController(options: {
 			throw new Error("worker quote unavailable or changed");
 		return { revision: snapshot.state.revision, connection, lease };
 	};
+	const notifyUnassigned = (lease: Lease, labels: readonly string[]) =>
+		options.onUnassigned?.(assignmentLaunchFor(lease, labels));
 
 	const host: IsolatedRunnerHost = {
 		async launch(id: string, label: RunnerLabel = RUNNER_LABEL) {
@@ -619,26 +644,33 @@ export function createIsolatedContainerController(options: {
 			}
 			let stop = forceStop === true;
 			if (!stop && lease.state === "running" && running) {
-				// The runner takes one job and exits, so its marker frees the slot on this
-				// tick instead of after GitHub reports the job (a poll interval later). A
-				// runner that died without a job lands here too; settle requeues its job.
-				let exited = false;
-				try {
-					exited =
-						(await options.docker.exists?.(
-							lease.sandboxName,
-							lease.sandboxSessionId,
-							RUNNER_EXITED_PATH,
-						)) === true;
-				} catch {
-					// Same as a failed inspect: not proof of anything, retry next tick.
+				const idleMs = Date.parse(now()) - Date.parse(lease.createdAt);
+				if (lease.actualJobId === 0 && idleMs >= unassignedIdleMs) {
+					stop = true;
+				} else {
+					// The runner takes one job and exits, so its marker frees the slot on this
+					// tick instead of after GitHub reports the job (a poll interval later). A
+					// runner that died without a job lands here too; settle requeues its job.
+					let exited = false;
+					try {
+						exited =
+							(await options.docker.exists?.(
+								lease.sandboxName,
+								lease.sandboxSessionId,
+								RUNNER_EXITED_PATH,
+							)) === true;
+					} catch {
+						// Same as a failed inspect: not proof of anything, retry next tick.
+					}
+					if (!exited) return;
+					stop = true;
 				}
-				if (!exited) return;
-				stop = true;
 			}
 			const deadWhileRunning = !stop && lease.state === "running" && !running;
 			try {
 				if (deadWhileRunning) {
+					if (lease.actualJobId === 0)
+						notifyUnassigned(lease, requeueJob(lease).labels);
 					await options.store.abortIsolatedAndRequeue(
 						id,
 						requeueJob(lease),
@@ -671,7 +703,11 @@ export function createIsolatedContainerController(options: {
 				// Match hosted relay settlement: if the reserved job is still queued
 				// (including when GitHub assigned a different job to this runner), re-queue it.
 				const unmet =
-					original.status === "queued" ? requeueJob(lease) : undefined;
+					original.status === "queued"
+						? requeueJob(lease, original.labels)
+						: undefined;
+				if (unmet && lease.actualJobId === 0)
+					notifyUnassigned(lease, original.labels);
 				await options.store.settle(
 					id,
 					0,
@@ -696,7 +732,11 @@ export function createIsolatedContainerController(options: {
 		workerMemoryMb,
 		now: () => Date.parse(now()),
 		settleExited: async (lease) => host.reconcile(lease.id, true),
-		afterRelease: cleanupWorkDirectory,
+		afterRelease: async (lease) => {
+			if (lease.actualJobId === 0)
+				notifyUnassigned(lease, requeueJob(lease).labels);
+			await cleanupWorkDirectory(lease);
+		},
 		protectedContainerNames: () => protectedWarmNames,
 	};
 	if (options.orphanGraceMs !== undefined)

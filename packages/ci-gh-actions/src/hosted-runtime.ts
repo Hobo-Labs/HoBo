@@ -11,6 +11,7 @@ import {
 	type ServedRunnerLabelCache,
 	type TrunkWaitCache,
 } from "./hosted-relay.js";
+import type { AssignmentHealth } from "./isolated-worker/assignment-health.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
 import type { JobDurations } from "./job-durations.js";
@@ -91,6 +92,7 @@ export function createHostedRelayRuntime(options: {
 	lendTrunkSlots?: boolean;
 	memoryAdmission?: WorkerMemoryAdmission;
 	storageAdmission?: WorkerStorageAdmission;
+	assignmentHealth?: AssignmentHealth;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
@@ -137,6 +139,8 @@ export function createHostedRelayRuntime(options: {
 			relayOptions.memoryAdmission = options.memoryAdmission;
 		if (options.storageAdmission)
 			relayOptions.storageAdmission = options.storageAdmission;
+		if (options.assignmentHealth)
+			relayOptions.assignmentHealth = options.assignmentHealth;
 		return new HostedRelay(relayOptions);
 	}
 	return {

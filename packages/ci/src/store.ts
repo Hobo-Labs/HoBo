@@ -464,7 +464,7 @@ export class LeaseStore {
 	private leaseKey(lease: Lease): string {
 		return lease.pipelineId
 			? `pipeline:${lease.accountId}:${lease.pipelineId}`
-			: `${lease.repositoryId}:${lease.jobId}:${lease.runAttempt}`;
+			: `${lease.repositoryId}:${lease.actualJobId || lease.jobId}:${lease.runAttempt}`;
 	}
 	reservePipeline(
 		account: Account,
@@ -536,7 +536,7 @@ export class LeaseStore {
 		);
 		this.db
 			.prepare(
-				"INSERT INTO leases(id, job_key, body) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
+				"INSERT INTO leases(id, job_key, body) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET job_key=excluded.job_key, body=excluded.body",
 			)
 			.run(lease.id, this.leaseKey(lease), body);
 	}
@@ -578,10 +578,11 @@ export class LeaseStore {
 			const existing = leases.find(
 				(lease) =>
 					lease.repositoryId === job.repositoryId &&
-					lease.jobId === job.id &&
 					lease.runAttempt === job.runAttempt &&
 					ACTIVE_STATES.has(lease.state) &&
-					(lease.actualJobId === 0 || lease.actualJobId === job.id),
+					(lease.actualJobId === job.id ||
+						(lease.jobId === job.id &&
+							(lease.actualJobId === 0 || lease.actualJobId === job.id))),
 			);
 			if (existing) {
 				this.db.prepare("DELETE FROM pending_jobs WHERE job_key=?").run(key);
@@ -653,10 +654,11 @@ export class LeaseStore {
 			this.all().some(
 				(lease) =>
 					lease.repositoryId === job.repositoryId &&
-					lease.jobId === job.id &&
 					lease.runAttempt === job.runAttempt &&
 					ACTIVE_STATES.has(lease.state) &&
-					(lease.actualJobId === 0 || lease.actualJobId === job.id),
+					(lease.actualJobId === job.id ||
+						(lease.jobId === job.id &&
+							(lease.actualJobId === 0 || lease.actualJobId === job.id))),
 			)
 		)
 			return;

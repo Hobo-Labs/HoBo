@@ -502,7 +502,7 @@ export class PostgresCiStore {
 	private key(lease: Lease) {
 		return lease.pipelineId
 			? `pipeline:${lease.accountId}:${lease.pipelineId}`
-			: `${lease.repositoryId}:${lease.jobId}:${lease.runAttempt}`;
+			: `${lease.repositoryId}:${lease.actualJobId || lease.jobId}:${lease.runAttempt}`;
 	}
 	private async append(
 		client: PoolClient,
@@ -513,7 +513,7 @@ export class PostgresCiStore {
 		const body = toJsonString(LeaseSchema, lease);
 		await this.event(client, type, at, body, lease.accountId, lease.id);
 		await client.query(
-			"INSERT INTO hobo_ci_leases(partition_id,id,job_key,body) VALUES($1,$2,$3,$4) ON CONFLICT(partition_id,id) DO UPDATE SET body=EXCLUDED.body",
+			"INSERT INTO hobo_ci_leases(partition_id,id,job_key,body) VALUES($1,$2,$3,$4) ON CONFLICT(partition_id,id) DO UPDATE SET job_key=EXCLUDED.job_key,body=EXCLUDED.body",
 			[this.partition, lease.id, this.key(lease), body],
 		);
 	}
@@ -766,10 +766,11 @@ export class PostgresCiStore {
 			(await this.readJobLeases(c, key)).some(
 				(l) =>
 					l.repositoryId === job.repositoryId &&
-					l.jobId === job.id &&
 					l.runAttempt === job.runAttempt &&
 					ACTIVE_STATES.has(l.state) &&
-					(l.actualJobId === 0 || l.actualJobId === job.id),
+					(l.actualJobId === job.id ||
+						(l.jobId === job.id &&
+							(l.actualJobId === 0 || l.actualJobId === job.id))),
 			)
 		)
 			return;
@@ -947,6 +948,11 @@ export class PostgresCiStore {
 	}
 	reserve(account: Account, job: Job, at: string, expectedRevision?: number) {
 		return this.tx(async (c) => {
+			const key = this.jobKey(job);
+			await c.query("SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))", [
+				this.partition,
+				`reserve:${key}`,
+			]);
 			await this.checkRevision(c, expectedRevision);
 			const config = (await this.readConfiguration(c))?.configuration;
 			const binding = config?.connections.find(
@@ -966,7 +972,6 @@ export class PostgresCiStore {
 			const effective = desired
 				? effectiveCiAccount(current, parseCiPolicy(desired.bodyJson))
 				: current;
-			const key = this.jobKey(job);
 			if (
 				(
 					await c.query(
@@ -989,10 +994,11 @@ export class PostgresCiStore {
 			const existing = (await this.readJobLeases(c, key)).find(
 				(lease) =>
 					lease.repositoryId === job.repositoryId &&
-					lease.jobId === job.id &&
 					lease.runAttempt === job.runAttempt &&
 					ACTIVE_STATES.has(lease.state) &&
-					(lease.actualJobId === 0 || lease.actualJobId === job.id),
+					(lease.actualJobId === job.id ||
+						(lease.jobId === job.id &&
+							(lease.actualJobId === 0 || lease.actualJobId === job.id))),
 			);
 			if (existing) {
 				if (

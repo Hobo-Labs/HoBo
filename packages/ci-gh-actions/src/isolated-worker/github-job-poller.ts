@@ -4,6 +4,7 @@ import type { AdmissionOrder } from "../admission-order.js";
 import type { GithubTransport } from "../github.js";
 import type { JobDurations } from "../job-durations.js";
 import { servedRunnerLabel } from "../runner-labels.js";
+import type { AssignmentHealth } from "./assignment-health.js";
 
 /** Pull-mode admission: GitHub REST stands in for webhook ingress, so a box
  * needs no public URL, relay, or shared database to see `runs-on: hobo` work. */
@@ -32,6 +33,7 @@ export interface GithubJobPollerOptions {
 	durations?: Pick<JobDurations, "observe">;
 	/** Primed from the run lists already read here, at no extra GitHub request. */
 	admissionOrder?: Pick<AdmissionOrder, "prime">;
+	assignmentHealth?: Pick<AssignmentHealth, "observe">;
 	now?: () => number;
 }
 
@@ -105,6 +107,7 @@ const Jobs = z.object({
 			conclusion: z.string().nullable().optional(),
 			started_at: z.string().nullable().optional(),
 			completed_at: z.string().nullable().optional(),
+			updated_at: z.string().optional(),
 		}),
 	),
 });
@@ -311,6 +314,15 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 								startedAt: job.started_at,
 								completedAt: job.completed_at,
 							});
+						options.assignmentHealth?.observe({
+							repositoryId: connection.repositoryId,
+							jobId: job.id,
+							runId: job.run_id,
+							runAttempt: job.run_attempt,
+							status: status.data,
+							updatedAt: job.updated_at,
+							runnerName: job.runner_name,
+						});
 						// Assignment is only useful once GitHub names the runner.
 						if (status.data !== "queued" && !job.runner_name) continue;
 						summary.hoboJobs++;

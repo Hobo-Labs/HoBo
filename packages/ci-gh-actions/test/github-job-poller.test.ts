@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { GithubTransport } from "../src/github.js";
 import { createHostedRelayRuntime } from "../src/hosted-runtime.js";
+import { createAssignmentHealth } from "../src/isolated-worker/assignment-health.js";
 import { createIsolatedContainerController } from "../src/isolated-worker/container-controller.js";
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
 import {
@@ -681,6 +682,7 @@ describe("pull-mode box worker over SQLite", () => {
 			skipLaunchFor?: readonly number[];
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
+			assignmentHealth?: ReturnType<typeof createAssignmentHealth>;
 			labels: Map<string, string | undefined>;
 		},
 	) {
@@ -727,6 +729,8 @@ describe("pull-mode box worker over SQLite", () => {
 		if (trunk?.memoryAdmission) options.memoryAdmission = trunk.memoryAdmission;
 		if (trunk?.storageAdmission)
 			options.storageAdmission = trunk.storageAdmission;
+		if (trunk?.assignmentHealth)
+			options.assignmentHealth = trunk.assignmentHealth;
 		return createHostedRelayRuntime(options);
 	}
 
@@ -763,6 +767,229 @@ describe("pull-mode box worker over SQLite", () => {
 			),
 		);
 	}
+
+	it("does not re-lease a never-assigned job repeatedly inside one backoff window", async () => {
+		const store = await configuredStore(1);
+		const job = memoryJob(1, "PR impact gate");
+		const github = memoryGithub([job]);
+		github.runs.queued.push(job.runId);
+		const launched: string[] = [];
+		const assignmentHealth = createAssignmentHealth({
+			now: () => NOW,
+			jitter: () => 0.5,
+		});
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop: vi.fn(async () => undefined),
+			remove: vi.fn(async () => undefined),
+			isRunning: vi.fn(async () => true),
+			exists: vi.fn(async () => true),
+		};
+		const controller = createIsolatedContainerController({
+			store,
+			github,
+			publicOrigin: "https://relay.example",
+			docker,
+			workerAccountId: "box",
+			workerImage: "hobo-ci-worker:local",
+			now: () => new Date(NOW).toISOString(),
+			onUnassigned: assignmentHealth.unassigned,
+		});
+		const runtime = createHostedRelayRuntime({
+			store,
+			github,
+			identity: {
+				async verify() {
+					throw new Error("pull mode never verifies OIDC");
+				},
+			},
+			webhookSecret: randomUUID() + randomUUID(),
+			isolatedHost: {
+				async launch(id) {
+					launched.push(id);
+					await store.transition(
+						id,
+						["reserved"],
+						(lease) => {
+							lease.sandboxName = `hobo-${id}`;
+							lease.sandboxSessionId = "a".repeat(64);
+							lease.state = "running";
+						},
+						"ci.RunnerRegistered",
+						new Date(NOW).toISOString(),
+					);
+				},
+				reconcile: (id, forceStop) => controller.host.reconcile(id, forceStop),
+			},
+			denyUnisolated: true,
+			assignmentHealth,
+			memoryAdmission: createWorkerMemoryAdmission(
+				resolveWorkerMemoryConfig({}, { totalMemoryMb: 15_989, trunkSlots: 0 }),
+			),
+			control: async () => undefined,
+			now: () => new Date(NOW).toISOString(),
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			assignmentHealth,
+			now: () => NOW,
+		});
+
+		await poller.poll();
+		for (let tick = 0; tick < 4; tick++) {
+			await runtime.tick({ maxDeliveries: 10 });
+			await poller.poll();
+		}
+
+		expect(launched).toHaveLength(1);
+		expect(await store.all()).toHaveLength(1);
+		expect((await store.all())[0]?.memoryMb).toBe(6_144);
+		store.close();
+	});
+
+	it("keeps one lease when poller and webhook intake deliver the same job", async () => {
+		const store = await configuredStore(1);
+		const job = memoryJob(1, "PR impact gate");
+		const github = memoryGithub([job]);
+		github.runs.queued.push(job.runId);
+		const launched: string[] = [];
+		const runtime = boxRuntime(store, github, launched, undefined, {
+			labels: new Map(),
+			memoryAdmission: createWorkerMemoryAdmission(
+				resolveWorkerMemoryConfig({}, { totalMemoryMb: 15_989, trunkSlots: 0 }),
+			),
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		const input = {
+			deliveryId: `poll-${job.id}-1-q`,
+			event: "workflow_job",
+			rawBody: Buffer.from(
+				JSON.stringify({
+					action: "queued",
+					installation: { id: CONNECTION.installationId },
+					repository: { id: CONNECTION.repositoryId, full_name: REPO },
+					workflow_job: {
+						id: job.id,
+						run_id: job.runId,
+						run_attempt: 1,
+						labels: job.labels,
+						name: job.name,
+						runner_name: null,
+					},
+				}),
+			),
+			receivedAt: new Date(NOW).toISOString(),
+		} as const;
+
+		expect(await runtime.ingestWebhook(input)).toBe("duplicate");
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+
+		expect(launched).toHaveLength(1);
+		expect(await store.activeLeases()).toHaveLength(1);
+		expect(await store.all()).toHaveLength(1);
+		store.close();
+	});
+
+	it("pauses same-label launches to one probe during a stall and recovers on assignment", async () => {
+		const store = await configuredStore(1);
+		const jobs = [
+			memoryJob(1, "PR impact gate"),
+			memoryJob(2, "PR impact gate"),
+			memoryJob(3, "PR impact gate"),
+		];
+		const github = memoryGithub(jobs);
+		for (const job of jobs) github.runs.queued.push(job.runId);
+		let now = NOW;
+		const log = vi.fn();
+		const assignmentHealth = createAssignmentHealth({
+			now: () => now,
+			jitter: () => 0.5,
+			stallAfterMs: 1_000,
+			log,
+		});
+		const launched: string[] = [];
+		const runtime = boxRuntime(store, github, launched, undefined, {
+			assignmentHealth,
+			labels: new Map(),
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			assignmentHealth,
+			now: () => now,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(launched).toHaveLength(1);
+		const first = (await store.activeLeases())[0];
+		if (!first) throw new Error("first lease missing");
+		await store.abortIsolatedAndRequeue(
+			first.id,
+			memoryJob(first.jobId, "PR impact gate"),
+			new Date(now).toISOString(),
+		);
+		assignmentHealth.unassigned({
+			repositoryId: first.repositoryId,
+			jobId: first.jobId,
+			runId: first.originalRunId,
+			runAttempt: first.runAttempt,
+			labels: ["hobo"],
+		});
+		now += 1_000;
+
+		await runtime.tick({ maxDeliveries: 10 });
+
+		expect(launched).toHaveLength(2);
+		expect((await store.activeLeases())[0]?.jobId).toBe(2);
+		expect(
+			log.mock.calls.filter(
+				([event]) => event === "hobo_ci_github_assignment_stall",
+			),
+		).toHaveLength(1);
+		const probe = (await store.activeLeases())[0];
+		if (!probe) throw new Error("probe lease missing");
+		assignmentHealth.observe({
+			repositoryId: probe.repositoryId,
+			jobId: probe.jobId,
+			runId: probe.originalRunId,
+			runAttempt: probe.runAttempt,
+			status: "in_progress",
+			updatedAt: new Date(now).toISOString(),
+			runnerName: probe.runnerName,
+		});
+		await store.settle(probe.id, 0, 1, new Date(now).toISOString());
+
+		await runtime.tick({ maxDeliveries: 10 });
+
+		expect((await store.activeLeases())[0]?.jobId).toBe(3);
+		expect(launched).toHaveLength(3);
+		expect(
+			log.mock.calls.filter(
+				([event]) => event === "hobo_ci_github_assignment_stall",
+			),
+		).toHaveLength(1);
+		store.close();
+	});
+
 	it("caps merge groups without blocking a push, then admits the waiter in order", async () => {
 		const log = vi.spyOn(console, "error").mockImplementation(() => {});
 		const store = await configuredStore(3);

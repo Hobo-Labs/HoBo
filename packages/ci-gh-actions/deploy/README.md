@@ -107,6 +107,11 @@ non-secret settings:
 | `HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB` | `HOBO_CI_WORKER_MEMORY_MB` or `6144` | Turbo build/test and image jobs; trunk reservation |
 | `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; the startup check still applies |
 | `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Time smaller same-rank jobs may backfill behind a non-fitting head job |
+| `HOBO_CI_WORKER_UNASSIGNED_IDLE_MS` | `60000`, minimum `1000` | Full-memory hold limit before an unassigned runner is stopped and settled |
+| `HOBO_CI_WORKER_RELAUNCH_BACKOFF_MS` | `30000`, minimum `1000` | Initial unassigned relaunch delay before exponential growth and jitter |
+| `HOBO_CI_WORKER_RELAUNCH_BACKOFF_CAP_MS` | `300000`, at least the base delay | Maximum relaunch delay and post-K park duration |
+| `HOBO_CI_WORKER_UNASSIGNED_PARK_ATTEMPTS` | `3`, positive integer | Consecutive unassigned leases before parking until state change or cap |
+| `HOBO_CI_WORKER_ASSIGNMENT_STALL_MS` | `120000`, minimum `1000` | Zero-assignment period before one-probe-per-label mode |
 | `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum active merge-group leases; zero and invalid values are rejected |
 | `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host per-job work mounts, teardown and pressure checks; same filesystem as pnpm store |
 | `HOBO_CI_PNPM_STORE_DIR` | `~/.cache/hobo-ci/pnpm-store` | Shared store mounted read-write at `/pnpm-store`; empty disables it |
@@ -126,6 +131,12 @@ containers are removed. A Docker listing failure releases nothing. Watch `hobo_c
 `hobo_ci_lease_reconciliation_failed` when diagnosing stale admission memory. Drain waits only for live containers,
 up to the configured 30-minute bound. See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for the full state rules
 and event fields.
+
+Unassigned runners are stopped at the idle deadline instead of holding heavy memory indefinitely. Relaunches use
+per-job exponential backoff with jitter, park after the configured consecutive-attempt limit until a GitHub state
+change or cap, and reset on assignment. A sustained queue-wide assignment stall permits one probe per label. Monitor
+`hobo_ci_job_relaunch_backoff`, `hobo_ci_job_unassigned_parked` and `hobo_ci_github_assignment_stall`; the last is
+emitted once per stall episode and clears on the first observed assignment.
 
 Job preflight reserves 768 MiB for native/non-heap memory, then chooses
 `workers = max(1, min(cpuCount, floor((limit - 768) / 1280) - 1))` and

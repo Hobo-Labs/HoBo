@@ -10,6 +10,7 @@ import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
 	createAdmissionOrder,
+	createAssignmentHealth,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createDepsImageEnsurer,
@@ -51,6 +52,17 @@ function required(name: string): string {
 function secretOrFile(name: string): string {
 	const file = process.env[`${name}_FILE`];
 	return file ? readFileSync(file, "utf8").trimEnd() : required(name);
+}
+
+function integerSetting(
+	name: string,
+	fallback: number,
+	minimum: number,
+): number {
+	const value = Number(process.env[name] ?? fallback);
+	if (!Number.isInteger(value) || value < minimum)
+		throw new Error(`invalid ${name}`);
+	return value;
 }
 
 function log(
@@ -139,6 +151,38 @@ const hostMemMb = Math.min(
 );
 const workerMemoryMb = memoryConfig.classes.heavy;
 const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, { log });
+const unassignedIdleMs = integerSetting(
+	"HOBO_CI_WORKER_UNASSIGNED_IDLE_MS",
+	60_000,
+	1_000,
+);
+const relaunchBackoffMs = integerSetting(
+	"HOBO_CI_WORKER_RELAUNCH_BACKOFF_MS",
+	30_000,
+	1_000,
+);
+const relaunchBackoffCapMs = integerSetting(
+	"HOBO_CI_WORKER_RELAUNCH_BACKOFF_CAP_MS",
+	5 * 60_000,
+	relaunchBackoffMs,
+);
+const unassignedParkAttempts = integerSetting(
+	"HOBO_CI_WORKER_UNASSIGNED_PARK_ATTEMPTS",
+	3,
+	1,
+);
+const assignmentStallMs = integerSetting(
+	"HOBO_CI_WORKER_ASSIGNMENT_STALL_MS",
+	2 * 60_000,
+	1_000,
+);
+const assignmentHealth = createAssignmentHealth({
+	baseBackoffMs: relaunchBackoffMs,
+	maxBackoffMs: relaunchBackoffCapMs,
+	parkAttempts: unassignedParkAttempts,
+	stallAfterMs: assignmentStallMs,
+	log,
+});
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
 	throw new Error("invalid HOBO_CI_WORKER_TRUNK_LEND");
@@ -291,6 +335,8 @@ const worker = createIsolatedContainerController({
 	workerMemoryMb,
 	prewarmMemoryMb: memoryConfig.classes.standard,
 	memoryAdmission,
+	unassignedIdleMs,
+	onUnassigned: assignmentHealth.unassigned,
 	generalLeaseIds: (activeLeases) =>
 		generalLeaseIdsFor(activeLeases, github, workerRunnerLabels),
 	log,
@@ -387,6 +433,7 @@ const runtime = createHostedRelayRuntime({
 	lendTrunkSlots,
 	memoryAdmission,
 	storageAdmission,
+	assignmentHealth,
 	control: async () => undefined,
 });
 const poller =
@@ -398,6 +445,7 @@ const poller =
 				connections: async () =>
 					(await store.configuration())?.configuration?.connections ?? [],
 				ingest: (delivery) => runtime.ingestWebhook(delivery),
+				assignmentHealth,
 				onIngestError: (jobId, message) =>
 					log("hobo_ci_isolated_worker_job_ingest_failed", { jobId, message }),
 				onGithubError: (failure) =>
@@ -509,6 +557,11 @@ log("hobo_ci_isolated_worker_started", {
 	memoryStandardMb: memoryConfig.classes.standard,
 	memoryTrunkReservationMb: memoryConfig.trunkReservationMb,
 	memoryHolMs: memoryConfig.holMs,
+	unassignedIdleMs,
+	relaunchBackoffMs,
+	relaunchBackoffCapMs,
+	unassignedParkAttempts,
+	assignmentStallMs,
 	slots,
 	trunkSlots,
 	mergeGroupLeases,

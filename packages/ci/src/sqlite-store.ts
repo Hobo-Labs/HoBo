@@ -152,13 +152,13 @@ export class SqliteCiStore {
 		);
 		this.db
 			.prepare(
-				"INSERT INTO leases(id, job_key, body) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
+				"INSERT INTO leases(id, job_key, body) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET job_key=excluded.job_key, body=excluded.body",
 			)
 			.run(
 				lease.id,
 				lease.pipelineId
 					? `pipeline:${lease.accountId}:${lease.pipelineId}`
-					: `${lease.repositoryId}:${lease.jobId}:${lease.runAttempt}`,
+					: `${lease.repositoryId}:${lease.actualJobId || lease.jobId}:${lease.runAttempt}`,
 				body,
 			);
 	}
@@ -341,10 +341,11 @@ export class SqliteCiStore {
 			const existing = this.leasesWhere("job_key=?", key).find(
 				(lease) =>
 					lease.repositoryId === job.repositoryId &&
-					lease.jobId === job.id &&
 					lease.runAttempt === job.runAttempt &&
 					ACTIVE_STATES.has(lease.state) &&
-					(lease.actualJobId === 0 || lease.actualJobId === job.id),
+					(lease.actualJobId === job.id ||
+						(lease.jobId === job.id &&
+							(lease.actualJobId === 0 || lease.actualJobId === job.id))),
 			);
 			if (existing) {
 				if (requiresIsolation && !ISOLATED_PROVIDERS.has(existing.provider)) {

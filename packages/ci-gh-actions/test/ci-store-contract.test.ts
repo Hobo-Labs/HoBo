@@ -262,6 +262,31 @@ function storeContract(
 			expect(await store.pendingJobs()).toEqual([]);
 		});
 
+		it("re-keys a mismatched assignment without creating a second live lease for the actual job", async () => {
+			const account = configuration().accounts[0];
+			if (!account) throw new Error("fixture account");
+			const original = await store.reserve(account, job(1), NOW, revision);
+			const duplicate = await store.reserve(account, job(2), NOW, revision);
+			if (!original || !duplicate) throw new Error("reservations");
+			const assigned = job(2, "in_progress");
+			assigned.runnerName = original.runnerName;
+
+			await store.observe(assigned, NOW, revision);
+
+			expect((await store.get(original.id))?.actualJobId).toBe(2);
+			expect((await store.get(duplicate.id))?.state).toBe("cancelled");
+			expect((await store.assignedJob(job(2)))?.leaseId).toBe(original.id);
+			expect(
+				await store.reserve(account, job(2), LATER, revision),
+			).toBeUndefined();
+			expect(await store.activeLeases()).toHaveLength(1);
+			expect((await store.activeLeases())[0]).toMatchObject({
+				id: original.id,
+				actualJobId: 2,
+			});
+			expect(await store.all()).toHaveLength(2);
+		});
+
 		it("requeues aborted isolated leases and settles box leases", async () => {
 			const account = configuration().accounts[0];
 			if (!account) throw new Error("fixture account");

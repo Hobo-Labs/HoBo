@@ -44,6 +44,13 @@ export {
 	isIsolatedHostOffer,
 	isSandboxOffer,
 } from "./isolated-backend.js";
+export {
+	type AssignmentHealth,
+	type AssignmentHealthEvent,
+	type AssignmentLaunch,
+	type AssignmentObservation,
+	createAssignmentHealth,
+} from "./isolated-worker/assignment-health.js";
 export { createCliDockerDriver } from "./isolated-worker/cli-docker-driver.js";
 export { createCompositeIsolatedHost } from "./isolated-worker/composite-host.js";
 export {

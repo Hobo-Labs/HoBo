@@ -112,6 +112,31 @@ it("requeues a duplicate whose lease runner was taken by another job", async () 
 	expect(h.request).toHaveBeenCalledTimes(2);
 });
 
+it("re-admits a re-polled queued job after its earlier lease is terminal", async () => {
+	const h = await fixture();
+	const account = (await h.store.configuration())?.configuration?.accounts[0];
+	if (!account) throw new Error("missing fixture account");
+	const earlier = await h.store.reserve(account, job(), NOW);
+	if (!earlier) throw new Error("missing earlier lease");
+	await h.store.transition(
+		earlier.id,
+		["reserved"],
+		(entry) => {
+			entry.state = "cancelled";
+		},
+		"ci.LeaseCancelled",
+		NOW,
+	);
+
+	expect(await h.runtime.ingestWebhook(h.input)).toBe("accepted");
+	await h.runtime.tick({ maxDeliveries: 1 });
+
+	const active = await h.store.activeLeases();
+	expect(active).toHaveLength(1);
+	expect(active[0]).toMatchObject({ jobId: 1 });
+	expect(active[0]?.id).not.toBe(earlier.id);
+});
+
 it("limits an uncovered duplicate to one GitHub re-check per minute", async () => {
 	const h = await fixture();
 	vi.spyOn(h.store, "pendingJobs").mockResolvedValue([]);

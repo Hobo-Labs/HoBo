@@ -32,6 +32,7 @@ import {
 } from "./github.js";
 import { verifyIngressForward } from "./ingress-forward.js";
 import { isIsolatedHostOffer } from "./isolated-backend.js";
+import type { AssignmentHealth } from "./isolated-worker/assignment-health.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
@@ -213,6 +214,7 @@ export class HostedRelay {
 			lendTrunkSlots?: boolean;
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
+			assignmentHealth?: AssignmentHealth;
 			now?: () => string;
 		},
 	) {
@@ -431,6 +433,15 @@ export class HostedRelay {
 			job.memoryClass = memory.memoryClass;
 			job.memoryMb = memory.memoryMb;
 		}
+		this.options.assignmentHealth?.observe({
+			repositoryId: job.repositoryId,
+			jobId: job.id,
+			runId: job.runId,
+			runAttempt: job.runAttempt,
+			status: currentJob.status,
+			updatedAt: currentJob.updated_at,
+			runnerName: currentJob.runner_name,
+		});
 		// Webhook delivery can be delayed or reordered. Assignment and terminal
 		// fences must reflect the fresh GitHub job state, not an older event action.
 		if (
@@ -811,6 +822,18 @@ export class HostedRelay {
 			// A policy can become stricter while demand is queued. Never reserve a
 			// bridge from a pending job admitted under the previous connection.
 			if (connection.isolatedOnly) job.isolatedRequired = true;
+			const assignment = {
+				repositoryId: job.repositoryId,
+				jobId: job.id,
+				runId: job.runId,
+				runAttempt: job.runAttempt,
+				labels: job.labels,
+			};
+			if (
+				this.options.assignmentHealth &&
+				!this.options.assignmentHealth.canLaunch(assignment, queued.length)
+			)
+				continue;
 			if (
 				this.options.storageAdmission &&
 				!(await this.options.storageAdmission.admit(active))
@@ -854,6 +877,7 @@ export class HostedRelay {
 				trunkWaiting ||= trunk;
 				if (trunk) waitingTrunk.add(this.reportTrunkWait(job));
 			} else {
+				this.options.assignmentHealth?.noteLaunch(assignment, queued.length);
 				this.servedRunnerLabels.set(
 					`${job.repository}:${job.id}`,
 					servedRunnerLabel(job.labels),
