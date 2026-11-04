@@ -73,27 +73,21 @@ function fakeStdin() {
 	});
 }
 
-/**
- * A stdout that claims to be a terminal, records what was painted, and says
- * when the first real frame arrived.
- *
- * "Real" excludes the setup escapes the shell emits before it has anything to
- * show — entering the alternate screen, hiding the cursor. Waiting on those
- * would be waiting on nothing.
- */
+/** A stdout that claims to be a terminal and records write events. */
 function fakeStdout(columns = 80, rows = 24) {
 	const chunks: string[] = [];
-	let announcePainted: (() => void) | undefined;
-	const painted = new Promise<void>((resolve) => {
-		announcePainted = resolve;
-	});
+	let version = 0;
+	const waiters: Array<{
+		readonly after: number;
+		readonly resolve: (version: number) => void;
+	}> = [];
 	const stream = new Writable({
 		write(chunk, _encoding, done) {
-			const text = String(chunk);
-			chunks.push(text);
-			// Anything left after stripping the escapes is content on screen.
-			if (text.replace(TERMINAL_ESCAPES, "").trim().length > 0) {
-				announcePainted?.();
+			chunks.push(String(chunk));
+			version += 1;
+			for (const waiter of waiters.splice(0)) {
+				if (version > waiter.after) waiter.resolve(version);
+				else waiters.push(waiter);
 			}
 			done();
 		},
@@ -103,18 +97,15 @@ function fakeStdout(columns = 80, rows = 24) {
 		columns,
 		rows,
 		text: () => chunks.join(""),
-		firstPaint: painted,
+		writeVersion: () => version,
+		waitForWrite(after: number): Promise<number> {
+			if (version > after) return Promise.resolve(version);
+			return new Promise((resolve) => waiters.push({ after, resolve }));
+		},
 	});
 }
 
-/**
- * Run the shell against a fake terminal, feeding `keys` on a timer once the
- * loop is listening.
- *
- * The keys go in one at a time on a delay because that is how a keyboard
- * delivers them, and because a burst written before the listener attaches is a
- * burst nothing reads — which would make every test here silently vacuous.
- */
+/** Run the shell against a fake terminal, sequencing keys by shell events. */
 async function live(
 	keys: readonly string[],
 	options: {
@@ -122,42 +113,62 @@ async function live(
 		readonly columns?: number;
 		readonly rows?: number;
 		readonly maxMs?: number;
-		/**
-		 * Milliseconds between keys. The default is a keyboard's cadence; a test
-		 * whose keys straddle an async turn needs longer, because a key that
-		 * arrives while the previous turn is still running is a different case
-		 * than the one being tested.
-		 */
-		readonly gap?: number;
 	} = {},
 ) {
 	const stdin = fakeStdin();
 	const stdout = fakeStdout(options.columns ?? 80, options.rows ?? 24);
 	const prompts: string[] = [];
 	const verbs: string[][] = [];
+	let handledKeys = 0;
+	const keyWaiters: Array<{
+		readonly target: number;
+		readonly resolve: () => void;
+	}> = [];
+	const settledWriteVersions: number[] = [];
+	const turnWaiters: Array<{
+		readonly target: number;
+		readonly resolve: (writeVersion: number) => void;
+	}> = [];
+	const waitForKey = (target: number): Promise<void> => {
+		if (handledKeys >= target) return Promise.resolve();
+		return new Promise((resolve) => keyWaiters.push({ target, resolve }));
+	};
+	const waitForTurn = (target: number): Promise<number> => {
+		const existing = settledWriteVersions[target - 1];
+		if (existing !== undefined) return Promise.resolve(existing);
+		return new Promise((resolve) => turnWaiters.push({ target, resolve }));
+	};
 
-	// Keys start after the first frame is actually on screen, not after a fixed
-	// delay. A key that lands before the shell has painted tests a shell the
-	// user never meets, and for the assertions that read what was painted it
-	// would compare against an empty terminal — passing vacuously. Waiting on
-	// the paint itself is also what keeps this file honest under the coverage
-	// lane, where instrumentation makes every startup slower than a guess.
-	const gap = options.gap ?? 150;
-	void stdout.firstPaint.then(() => {
-		let delay = 0;
-		for (const key of keys) {
-			setTimeout(() => stdin.write(key), delay);
-			delay += gap;
-		}
+	let announceReady: ((writeVersion: number) => void) | undefined;
+	const ready = new Promise<number>((resolve) => {
+		announceReady = resolve;
 	});
-
-	const code = await runInteractiveShell({
+	const running = runInteractiveShell({
 		stdin,
 		stdout,
 		hoboHome: home(),
 		sidecars: false,
 		reducedMotion: true,
 		maxMs: options.maxMs ?? 10_000,
+		onReady: () => announceReady?.(stdout.writeVersion()),
+		onKeyHandled: () => {
+			handledKeys += 1;
+			for (const waiter of keyWaiters.splice(0)) {
+				if (handledKeys >= waiter.target) waiter.resolve();
+				else keyWaiters.push(waiter);
+			}
+		},
+		onTurnSettled: () => {
+			const writeVersion = stdout.writeVersion();
+			settledWriteVersions.push(writeVersion);
+			for (const waiter of turnWaiters.splice(0)) {
+				if (settledWriteVersions.length >= waiter.target) {
+					waiter.resolve(writeVersion);
+				} else {
+					turnWaiters.push(waiter);
+				}
+			}
+		},
 		host: {
 			runVerb: async (argv: readonly string[]) => {
 				verbs.push([...argv]);
@@ -170,6 +181,37 @@ async function live(
 			...options.host,
 		},
 	});
+	let finished = false;
+	const completed = running.then((exitCode) => {
+		finished = true;
+		return exitCode;
+	});
+
+	const initialWrites = await Promise.race([ready, completed]);
+	if (!finished) {
+		await Promise.race([stdout.waitForWrite(initialWrites), completed]);
+	}
+	for (const [index, key] of keys.entries()) {
+		if (finished) break;
+		const promptCount = prompts.length;
+		const turnTarget = settledWriteVersions.length + 1;
+		const handled = waitForKey(handledKeys + 1);
+		stdin.write(key);
+		await Promise.race([handled, completed]);
+		if (finished) break;
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		const nextKey = keys[index + 1];
+		if (prompts.length > promptCount && nextKey !== CTRL_C && nextKey !== ESC) {
+			const settledAt = await Promise.race([
+				waitForTurn(turnTarget),
+				completed,
+			]);
+			if (!finished) {
+				await Promise.race([stdout.waitForWrite(settledAt), completed]);
+			}
+		}
+	}
+	const code = await completed;
 
 	const output = stdout.text();
 	return {
@@ -324,7 +366,6 @@ describe("typing", () => {
 		// One turn working proves the wiring; two proves the loop resets.
 		const session = await live(["one", ENTER, "two", ENTER, CTRL_C], {
 			maxMs: 12_000,
-			gap: 400,
 		});
 		expect(session.prompts).toEqual(["one", "two"]);
 	});
@@ -382,10 +423,7 @@ describe("the global keys", () => {
 				cancelTurn: async () => {
 					cancelled += 1;
 				},
-				complete: async () =>
-					await new Promise<string>((resolve) => {
-						setTimeout(() => resolve("late"), 4_000);
-					}),
+				complete: () => new Promise<string>(() => {}),
 			},
 		});
 		expect(cancelled).toBeGreaterThan(0);
@@ -461,10 +499,7 @@ describe("a turn that goes wrong", () => {
 		// shell, and the one where teardown is easiest to skip.
 		const session = await live(["slow", ENTER, CTRL_C], {
 			host: {
-				complete: async () =>
-					await new Promise<string>((resolve) => {
-						setTimeout(() => resolve("late"), 3_000);
-					}),
+				complete: () => new Promise<string>(() => {}),
 			},
 		});
 		expectCleanExit(session);

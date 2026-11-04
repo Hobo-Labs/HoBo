@@ -762,16 +762,19 @@ export class HostedRelay {
 		// Strict reservation always caps shared-label leases; lending applies the cap
 		// only after trunk-label demand misses a lease. Both free capacity in this pass.
 		let trunkWaiting = false;
+		let rankZeroWaiting = false;
 		const waitingTrunk = new Set<string>();
 		for (const job of pending) {
 			const rank = await this.admissionOrder.rank(refOf(job));
 			const trunk = servedRunnerLabel(job.labels) === TRUNK_RUNNER_LABEL;
 			if (!trunk && rank === TRUNK_RANK) await this.logSharedLabelTrunkJob(job);
+			if (rank > TRUNK_RANK && rankZeroWaiting) continue;
 			if (memoryBlockedRanks.has(rank)) continue;
 			const mergeGroup =
 				mergeGroupLimit !== undefined &&
 				(await this.admissionOrder.event(refOf(job))) === "merge_group";
 			if (mergeGroup && mergeGroupLeases >= mergeGroupLimit) {
+				if (rank === TRUNK_RANK) rankZeroWaiting = true;
 				const key = `${job.repositoryId}:${job.runId}:${job.id}:${job.runAttempt}`;
 				if (!this.mergeGroupCapWaitJobs.has(key)) {
 					this.mergeGroupCapWaitJobs.add(key);
@@ -826,7 +829,10 @@ export class HostedRelay {
 					generalLeaseIds: memoryGeneral,
 				});
 				if (!decision.admitted) {
-					if (decision.blockRank) memoryBlockedRanks.add(rank);
+					if (decision.blockRank) {
+						if (rank === TRUNK_RANK) rankZeroWaiting = true;
+						else memoryBlockedRanks.add(rank);
+					}
 					continue;
 				}
 			}
@@ -844,6 +850,7 @@ export class HostedRelay {
 					reservationRevision,
 				);
 			if (!lease) {
+				rankZeroWaiting ||= rank === TRUNK_RANK;
 				trunkWaiting ||= trunk;
 				if (trunk) waitingTrunk.add(this.reportTrunkWait(job));
 			} else {

@@ -250,7 +250,7 @@ jobs:
         run: node --import tsx scripts/ensure-ts-autocode-links.mts
       - name: Install dependencies
         if: steps.deps-layer.outputs.match != 'true'
-        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
         if: github.event_name == 'merge_group'
         run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
@@ -445,7 +445,7 @@ jobs:
       - uses: ./.github/actions/pnpm-store
         if: steps.scope.outputs.run == 'true'
       - if: steps.scope.outputs.run == 'true'
-        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
       - name: Every name HoBo imports from ts-autocode exists at the pin, and its grounding fields are still checked
         if: steps.scope.outputs.run == 'true'
         run: node --import tsx --test scripts/test/ts-autocode-consumer-surface.test.ts scripts/test/ts-autocode-grounding-drift.test.ts
@@ -533,7 +533,7 @@ jobs:
         run: node --import tsx scripts/ensure-ts-autocode-links.mts
       - name: Install dependencies
         if: steps.deps-layer.outputs.match != 'true' || github.event_name == 'schedule'
-        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
         run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
       - name: Assert CI fabric contract
@@ -592,8 +592,8 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         timeout-minutes: 8
         run: >-
-          pnpm run codegen:check &&
-          pnpm --filter @hobo-draft/s0-04-protobuf-cue-codegen test
+          pnpm run codegen:check:affected &&
+          pnpm exec turbo run test --filter=@hobo-draft/s0-04-protobuf-cue-codegen --concurrency=100%
       - name: Workspace tests
         # The whole-workspace sweep (weekly, or a lockfile/root-config change) is not held
         # to the main-push budget.
@@ -682,7 +682,7 @@ jobs:
               src/draft/technical-proofs/componentize-artifact-trust-contract/test/publish-verify.test.ts \
               >> "$GITHUB_OUTPUT"
       - if: steps.scope.outputs.run == 'true'
-        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
       - name: Verify signed hello-bindle and refuse stripped signatures
         if: steps.scope.outputs.run == 'true'
         run: pnpm test:file src/draft/technical-proofs/componentize-artifact-trust-contract/test/publish-verify.test.ts
@@ -718,7 +718,7 @@ jobs:
       # `prepare` only checks packages/runtime's ts-autocode links, which are not installed.
       - if: steps.scope.outputs.run == 'true'
         run: >-
-          pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
+          node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
           --filter .
           --filter "./packages/cli..."
           --filter "./src/draft/technical-proofs/hobo-612-dev-local-loop-poc..."
@@ -752,7 +752,7 @@ jobs:
           submodules: recursive
           clean: false
       - uses: ./.github/actions/ci-runner-preflight
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
         run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
       - name: Assert CI fabric contract

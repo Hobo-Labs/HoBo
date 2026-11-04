@@ -48,12 +48,11 @@ const message = (text: string): ShellMessage => ({
 	at: 1,
 });
 
-// SAFETY: the fixture stands in for the gate the host builds.
-const approval = {
+const approval: PendingApproval = {
 	runId: "run-7",
 	sandboxRoot: "/tmp/sandbox",
 	changes: [{ status: "M", path: "src/thing.ts" }],
-} as unknown as PendingApproval;
+};
 
 /**
  * The title the tree was built with. It lives on a nested node rather than the
@@ -176,15 +175,19 @@ describe("what the first frame starts with", () => {
 		// An accessibility setting: someone who set it in their shell profile
 		// should not also have to pass a flag.
 		expect(
-			createInitialShellState({ env: { HOBO_CODE_REDUCED_MOTION: "1" } })
-				.reducedMotion,
+			createInitialShellState({
+				hoboHome: process.env.HOBO_HOME,
+				env: { HOBO_CODE_REDUCED_MOTION: "1" },
+			}).reducedMotion,
 		).toBe(true);
 	});
 
 	it("accepts the word true as well as the digit", () => {
 		expect(
-			createInitialShellState({ env: { HOBO_CODE_REDUCED_MOTION: "true" } })
-				.reducedMotion,
+			createInitialShellState({
+				hoboHome: process.env.HOBO_HOME,
+				env: { HOBO_CODE_REDUCED_MOTION: "true" },
+			}).reducedMotion,
 		).toBe(true);
 	});
 
@@ -192,14 +195,20 @@ describe("what the first frame starts with", () => {
 		// `0`, `false`, and anything else mean off. Treating a non-empty string
 		// as truthy would enable it for someone who explicitly turned it off.
 		expect(
-			createInitialShellState({ env: { HOBO_CODE_REDUCED_MOTION: "0" } })
-				.reducedMotion,
+			createInitialShellState({
+				hoboHome: process.env.HOBO_HOME,
+				env: { HOBO_CODE_REDUCED_MOTION: "0" },
+			}).reducedMotion,
 		).toBe(false);
 	});
 
 	it("takes the explicit option over the environment", () => {
 		expect(
-			createInitialShellState({ reducedMotion: true, env: {} }).reducedMotion,
+			createInitialShellState({
+				reducedMotion: true,
+				env: {},
+				hoboHome: process.env.HOBO_HOME,
+			}).reducedMotion,
 		).toBe(true);
 	});
 });

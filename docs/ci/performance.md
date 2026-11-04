@@ -353,6 +353,13 @@ A pre-baked store in the runner image was considered and not done. It saves at m
 stale on every lockfile change, and adds the store to the image. The host-mounted store from #1635 gives the
 same hard-link install once the box is redeployed.
 
+Every `hobo-ci.yml` install now runs through `scripts/ci/pnpm-install.mts`. Each attempt has a **180 s**
+deadline by default (`HOBO_PNPM_INSTALL_TIMEOUT_S` accepts only a positive integer), leaving ample headroom
+over the measured 10–22 s warm installs. A timeout terminates the whole pnpm process group, with SIGKILL after
+a 2 s SIGTERM grace; either a timeout or another non-zero exit triggers exactly one immediate retry with
+`--prefer-offline`. Frozen-lockfile mismatches do not retry. Each attempt emits a JSON line containing its
+number, arguments, outcome and duration so CI traces show the retry and its result.
+
 ## Finding 5: serial job dependencies
 
 `artifact-trust` and `dev-cold-loop-gate` had `needs: pr-gate`, so they waited for the slowest PR job and then
@@ -1076,6 +1083,27 @@ For a trunk-labelled lease, reconcile now falls back to the original `jobId` whe
 The slot-accounting and admission-order candidates needed no change. A trunk job may already reserve a free general slot, while general work cannot borrow trunk capacity in strict mode. The incident regression now proves that Main launches while Pricing remains running as soon as a general runner exits. Prewarm remains lease-free and outside slot accounting.
 
 A trunk job that cannot obtain a lease for more than **10 s** now emits one structured `hobo_ci_trunk_wait` event per wait episode, with `reason: "lease-capacity"`, `waitedMs`, `repository`, `runId`, and `jobId`. Wait state is shared across relay ticks and cleared when the job reserves or leaves the queue. This distinguishes lease starvation from GitHub polling and container launch delays in daemon logs.
+## Finding 28: four @hobo/code TTY tests timed out under merge-queue load
+
+PR #1696 merge_group run 41772348951 hit the 20 s per-test timeout in `cli-verb-sweep` (`session renders without throwing`), live-TTY navigation (`leaves the catalog on escape`), live-TTY surfaces (`takes a second turn after the first one lands`), and scripted streaming (`marks a failure as failed`). The failures came from test scheduling and real side effects, not assertions that needed a larger budget:
+
+- `session` composed real dashboard/Evidence sidecars because `startCodeSession` read ambient `process.env` instead of the CLI's injected environment. The CLI now passes `sidecarsEnabled(env)`, and both verb-formatting sweeps disable them. Those sweeps also inject shared workspace allocation and a tmux runner: they check verb results and formatting, not rift/tmux provisioning. This removes subprocesses and the overlay probe that made baseline `mux` cleanup cases fail locally with EACCES.
+- Navigation paced keys with 30 ms timers. Surfaces used 150 ms gaps, increased to 400 ms for the second-turn case, plus 3–4 s delayed hosts. Both live harnesses now wait for the shell's ready event, acknowledged TUI input, settled turns, and stdout writes. Ctrl-C and Escape still interrupt active turns; delayed hosts are pending promises instead of timers. Every waiter also races shell completion, so the existing `maxMs` backstop cannot leave a helper stranded.
+- Scripted streaming yielded with `setTimeout(0)`, polled the turn flag every 10 ms against a 12 s deadline, then slept 40 ms for a final render. The shell now tracks the active turn promise and awaits it directly; the same 12 s `maxMs` remains only as an expiry backstop, and the final render flushes on `process.nextTick`. The 20 s test/hook timeouts are unchanged and no retries were added.
+
+Twelve tests across `review-command-surface`, `review-target-kinds`, `review`, `session-delivery-approval`, and `session-orchestrator` also hit the 20 s timeout during pre-commit. On clean main with a quiet box, global `commit.gpgsign=true` and an SSH signer reproduced 11 failures in 6.5 min wall time but only 8 s CPU time; `GIT_CONFIG_GLOBAL=/dev/null` passed 175/175 in 4 s. Real fixture commits were invoking the developer's signer and could inherit other global/system settings, so the shared Vitest setup now ignores both config sources while fixtures keep local git identities. A regression test checks the effective signing config in a real fixture repository; timeouts and retry policy remain unchanged.
+
+Five runs per file, sequentially, with four `node -e 'for(;;){}'` CPU hogs on the same 4-CPU worktree. Values are whole-process wall seconds in run order; the median is across the five runs. Baseline CLI runs each also reported the five unrelated `mux` EACCES failures; all 20 after runs passed every test.
+
+| File | Before: five runs | Before median | After: five runs | After median |
+|---|---|---:|---|---:|
+| `cli-verb-sweep.test.ts` | 17.90, 16.87, 17.19, 17.32, 17.78 | 17.32 | 9.20, 10.01, 9.28, 9.47, 8.66 | 9.28 |
+| `shell-live-tty-navigation.test.ts` | 19.64, 19.88, 13.96, 14.11, 19.75 | 19.64 | 11.90, 11.79, 12.31, 11.21, 11.74 | 11.79 |
+| `shell-live-tty-surfaces.test.ts` | 28.92, 29.27, 38.79, 31.57, 28.91 | 29.27 | 11.34, 11.75, 11.36, 11.30, 11.46 | 11.36 |
+| `shell-streaming-turn.test.ts` | 10.17, 10.64, 10.46, 10.47, 10.07 | 10.46 | 9.26, 9.60, 8.72, 8.90, 9.07 | 9.07 |
+
+The test-body reductions are larger than whole-process wall time: Vitest transform/import still costs about 7–10 s under this load. After test bodies were about 0.7 s CLI, 3.7 s navigation, 3.0–3.2 s surfaces, and 0.8 s streaming, with no individual case near the unchanged 20 s budget.
+
 ## Finding 29: the full-scope gate re-ran the whole unit suite while turbo was cached
 
 Main push run **41800198423** took **6m27s** (previously 97 s). Its S0 gate took **3m30s**, with about **180 s** in root `test:unit`: `pretest:unit` replayed the cached build graph, then `scripts/run-tests.ts --category=unit` executed the root and draft Vitest files again at `HOBO_RELEVANT_CHECK_CONCURRENCY=1`. Package build/test cache hits therefore did not make the full-scope S0 gate cheap.
@@ -1122,6 +1150,12 @@ Merge-group run **41828663878** timed out the browser-station catalog test after
 
 The site config now applies the same `server.deps.external` rule, leaving the compiler on Node's native loader without changing catalog behavior. With four CPU hogs and the CI test environment, the catalog test fell from **4,735 ms to 740 ms**; its file fell from **5.19 s to 1.17 s** (transform **3.38 s to 235 ms**, import **223 ms to 191 ms**). The full 19-file site suite fell from **10.22 s to 3.89 s** (transform **11.04 s to 1.73 s**, import **18.67 s to 4.20 s**), with all 106 tests passing and the source-map warning gone.
 
+## Finding 32: hobo Vitest re-transformed its built workspace dependency graph
+
+Merge-group run **41833733901** timed out `test/mcp-stdio.test.ts` after **10 s**. Five loaded single-test runs showed a **40 ms** median test body but a **9.89 s** median file duration (transform **5.49 s**, import **9.50 s**). Temporary instrumentation measured composed-CLI construction at **15.4 ms**, project-target resolution at **1.3 ms**, and dispatch at **25.6 ms**; the full-suite dispatch took **11.6 ms**. No timer, poll, subprocess, or ambient-tool probe was on the collect path. The cost was Vite transforming hundreds of already-built workspace modules pulled in by the composed CLI.
+
+The package Vitest config now externalizes resolved `packages/**/dist/**` files so Node loads workspace exports natively while hobo's own source and tests still go through Vite. `@hobo/cli` stays inline because its dynamic bindle imports need Vite to resolve `.js` specifiers in TypeScript sources. Under the same four-hog load, five-run medians fell to **4.41 s** per file, **1.04 s** transform, and **3.88 s** import; the test body remained fast at **43 ms**. The composed-registry assertions and 10 s timeout are unchanged.
+
 ## Finding 35: neither deps-image producer could promote the layer jobs needed
 
 The box had never had `hobo-ci-deps:local`, so every job container logged `hobo_ci_deps_image_fallback` with `message=missing` and PR impact gate paid about **20 s** in `pnpm install`. The workflow producer skipped all of the last 40 main pushes because their commit file lists had no deps input, and its nightly schedule had not fired since **2026-07-27**. The daemon runs with cwd `packages/ci-gh-actions`, so `depsRoot = process.cwd()` made `depsKeyForRoot` read `packages/ci-gh-actions/pnpm-lock.yaml`, which does not exist; the lockfile is at the repo root. The ensure loop therefore could never compute a key or build the image. `defaultDepsRoot(import.meta.url)` now resolves the repo root. Both the daemon and `build-deps.sh` also required the checkout-computed toolchain even when jobs were actually running the different version tagged `hobo-ci-worker:local`.
@@ -1131,6 +1165,21 @@ PR run job **126567490837** proved the build itself was healthy: it built and ve
 Every main push now runs `CI deps layer (pnpm)`. Its first post-key step compares the local image's `hobo.ci.deps-key` label and skips resolution, promotion, build, and push on an exact match, making a no-op push cost checkout plus one inspect. The daemon derives its default checkout from `import.meta.url`, emits `hobo_ci_deps_image_ensure_started` with the selected key, and resolves the toolchain exactly as the build does: use the computed worker tag when present, otherwise use the `v[0-9a-f]{12}` tag on `hobo-ci-worker:local`. `deps-key.mts --toolchain` makes that selected version part of both the daemon lookup key and the built image key. PR build-only cleanup, merge-group exclusion, and gate independence are unchanged.
 
 Expected effect: the next main push or daemon poll pulls or builds and promotes the missing layer without operator intervention; a cold local build has the observed roughly 2-minute cost. Subsequent no-op pushes do only the fast label check, eligible job containers select the layer, `Check deps layer match` prints `deps layer match`, and `Install dependencies` is skipped, removing the roughly 20-second relinking cost.
+
+## Finding 36: a waiting trunk job did not stop lower-rank admission
+
+On 2026-11-04, #1709's merge-group **PR impact gate** queued at **14:10:50Z** and started at **14:16:03Z**, a **5 m 13 s** admission delay. Read-only GitHub API queries reconstructed these timestamps (all UTC):
+
+| Run / job | Runner | Created or queued | Started | Completed |
+|---|---|---|---|---|
+| #1709 PR run **41840794280**, **PR impact gate** job **126619584695** | `hobo-37829e08-3ed9-4bc1-8e3b-fac18009ee33` | 13:59:12 | 14:01:03 | 14:08:22 |
+| #1709 merge-group run **41844979849**, **PR impact gate** job **126626018847** | `hobo-c4bc7af4-6106-487c-9a59-692b4efc89d4` | 14:10:50 | 14:16:03 | 14:34:23 |
+
+The initial `actions/runs?created=2026-11-04T13:40..2026-11-04T14:20` query returned five runs. Reading each run's jobs, then widening the query to the newest 100 runs from the day's 00:00–14:20 window (reaching back to 06:58), found **no non-skipped HoBo PR job overlapping 14:10:50–14:16:03**. In particular, #1709's last PR gate ended **2 m 28 s before** its merge-group job queued. Thus the API confirms the delay but does **not** substantiate the initial supposition that PR jobs kept running throughout it; daemon lease and container logs are required to identify what local capacity remained occupied. Skipped jobs have timestamps but no runner and do not indicate occupancy.
+
+The admission defect was real independently of that occupancy question. Memory admission returned `blockRank` only after `HOBO_CI_WORKER_MEMORY_HOL_MS`, and the relay applied it only to the same rank within one pass. A rank-0 memory waiter therefore allowed lower-rank backfill before the timeout and did not block rank 1 afterward. Merge-group cap and slot-reservation waits had no lower-rank barrier either.
+
+Admission is now trunk-first while any feasible rank-0 job waits. A rank-0 memory wait blocks lower ranks immediately; merge-group cap and failed slot reservation do the same. The barrier is recomputed from pending demand every pass, so it persists until the rank-0 job is admitted, at which point lower ranks can use remaining capacity in that pass. Non-zero ranks retain the 60 s same-rank HOL backfill window, and trunk-label lending, strict slot reservation, and unlaunched-lease reclamation are unchanged. As an anti-starvation guard, a request larger than the entire memory budget never raises the rank-0 barrier: it cannot fit even on an idle host, so PR admission remains allowed. Regression coverage drives the real SQLite/relay path for memory, merge-group cap, and slot waits across repeated passes, plus the impossible-memory-request guard.
 
 ## Finding 38: the monolithic deps push held main after its gate passed
 
@@ -1143,3 +1192,39 @@ The final image now has **64 independent bucket layers plus one residual layer**
 A clean offline install also tested `pnpm.supportedArchitectures.libc: ["glibc"]`. It did **not** exclude `@rivetkit/engine-cli-linux-x64-musl` (**85 MB**): that package declares `os` and `cpu` but no `libc`, and its static musl binary can be intentional on a glibc host. The architecture setting was therefore left unchanged rather than claiming a size cut that did not occur or dropping a runtime package without evidence.
 
 Expected effect: main's critical path contains no registry push, and later dependency changes push only changed buckets. This sandbox has no Docker daemon, so cache-off layer-digest equality, actual per-bucket compression and push sizes, and end-to-end offline-install verification must still be confirmed on the self-hosted box.
+
+## Finding 40: main regenerated every protobuf package on every push
+
+The main-only Generated-output drift step cost **17–20 s** even for a push with no generator-input change. It ran the exact `pnpm run codegen:check` over all 24 opted-in packages and ran the frozen S0-04 proof directly, outside Turbo's cache.
+
+`pnpm run codegen:check:affected` now hashes each package's `data-models/**` and checked-in `src/_generated/**`, together with the shared inputs the checker reads: `buf.gen.yaml`, `packages/schema-tools/src/**`, the resolved buf and protoc-gen-es versions in `pnpm-lock.yaml`, and the CUE pins in `mise.toml` and `mise.lock`. Only a package without a matching CLEAN stamp runs `checkCodegen`; drift and CUE failures write no stamp and retain the exact check's nonzero exit. Stamps are atomic and content-addressed, and missing or malformed stamps are misses. `HOBO_CODEGEN_CACHE_DIR` overrides the cache location; otherwise it lives beside `TURBO_CACHE_DIR` when set, or under `node_modules/.cache/hobo-codegen-check`. The full `pnpm run codegen:check` remains unchanged as the exact uncached gate.
+
+The workflow also runs the frozen proof through `turbo run test --filter=@hobo-draft/s0-04-protobuf-cue-codegen`, so Turbo hashes and caches its own inputs without editing the proof. Local wall-clock measurements were **12.72 s cold**, **0.63 s warm** (24 hits), and **1.15 s after one core data-model edit** (23 hits, one miss, 468 ms package check). The edit was reverted after measurement.
+
+## Finding 41: every same-process auth.md lock waiter paid a 25 ms poll
+
+Merge-group run **41860035056** timed out `test/auth-md-state-concurrency.test.ts` after **10 s** under box load. The test runs three concurrent deployment bindings followed by three concurrent infrastructure claims. Every contender polled the SQLite `BEGIN EXCLUSIVE` lock every 25 ms, so releasing a same-process holder did not wake the next waiter directly.
+
+Three-run medians from `packages/hobo` used `pnpm exec vitest run test/auth-md-state-concurrency.test.ts --reporter=dot`. CPU load was six busy loops; IO load repeatedly wrote and fsynced a 2,000 MiB temporary file. Wall time includes Vite transform/import and therefore remains host-sensitive; the test body isolates the lock and file operations.
+
+| Load | Before test body | After test body | Before wall | After wall |
+|---|---:|---:|---:|---:|
+| Idle | **112 ms** | **12 ms** | 2.148 s | 2.662 s |
+| Six CPU hogs | **116 ms** | **19 ms** | 4.121 s | 5.432 s |
+| IO writer | **124 ms** | **22 ms** | 2.835 s | 2.545 s |
+
+Temporary instrumentation on the idle path attributed about **105 ms** to four 25 ms sleeps, **11 ms** to the six locked file-operation sections, and **0.1–0.3 ms** to each SQLite open plus `BEGIN EXCLUSIVE`. The remaining wall time was module transform/import, not lock acquisition.
+
+`acquireLocalStateLockQueued` now keeps an in-process FIFO keyed by resolved lock path. Only its head contends for SQLite; the other callers wait on promises without timers. Release synchronously starts the next head. A head contending with another process retains the bounded 120 s deadline and 25 ms retry, including the existing `LocalStateLockBusyError` deadline behavior. The synchronous local-deployment lock caller is unchanged. Registration-directory mkdir/chmod now happens once during lock preparation rather than in every save; owner-only modes and atomic temporary-file-plus-rename writes remain unchanged.
+
+Unit coverage proves FIFO handoff without timer scheduling, release after a holder throws, and single-head cross-process retry/deadline behavior with an injected clock, lock, and scheduler. The original concurrency test remains unchanged and its test body stays well below 1 s under all three measured conditions.
+
+## Finding 45: dead containers left 12288 MiB reserved and blocked trunk admission
+
+On 2026-11-04 the box daemon reported **`inUseMb 12288 of 13954`** while **no job containers were running**. Two stale heavy leases therefore continued to consume `2 × 6144 = 12288 MiB`; only 1666 MiB remained, so new work repeatedly logged `hobo_ci_memory_admission_wait` and trunk could not start. The same stale journal state could make SIGTERM drain wait up to 30 minutes for containers that no longer existed.
+
+Per-lease reconciliation could not clear these leases reliably. `docker inspect` failures, including a missing container, were deliberately treated as ambiguous and retained the lease; an exited container in a pre-running state also had no settlement path. Admission summed the active/reserved lease journal, while drain counted in-flight journal states rather than containers actually alive. Crashes, daemon restarts, externally stopped containers and failures after reservation could therefore leave permanent memory and slot reservations. The reverse case also leaked host resources: a worker-labelled container without a lease had no reconciliation owner.
+
+The daemon now performs one strictly parsed `docker ps -a --no-trunc --filter label=hobo.ci/isolated=1 --format json` inventory reconciliation at startup, before every admission tick, at drain start and on every drain poll. Running/starting/paused containers are never reaped. Exited/dead containers settle through the existing job-completion and runner-exit semantics. Missing containers release after a two-minute grace from the lease timestamp so a reserve-to-create window cannot be reaped; drain bypasses that grace only after the in-flight tick finishes. Every release emits `hobo_ci_lease_orphan_released` with lease/job/run identity, state, reason, age and memory. Unleased worker containers are stopped when necessary and removed. A listing error or timeout releases and removes nothing, because unknown is not gone. `hobo_ci_memory_without_containers` exposes future journal/Docker accounting mismatches.
+
+Admission now reads only leases surviving the same tick's reconciliation. Drain releases missing-container leases immediately and completes when no lease has a live container; the 30-minute bound remains only for genuinely running work (or conservative waits while Docker inventory is unavailable). Regression coverage uses fake Docker and an injected clock for stale-memory admission, running leases, reservation grace, exited containers, listing failure, reverse orphans and both drain outcomes. A real SQLite close/reopen test also proves that a journal full of stale leases is requeued and releases its reservations on the first reconciliation.
