@@ -40,6 +40,7 @@
 |---|---|---|
 | `src/draft/technical-proofs/dns-validation-gate-threat-model` | latest validated leaf hardening | DNS validation simulation and Pact evidence unchanged. |
 | `src/draft/technical-proofs/domain-event-body-contract` | latest validated leaf hardening | Domain validation event sequence and evidence unchanged. |
+| `src/draft/technical-proofs/yard-topology-manifest-contract` | typed parse boundary accepts `YardManifest \| JsonValue`; consumers resolve shipped declarations | Yard topology simulation, features, and Pact evidence unchanged. |
 
 ## Cascade absorptions (83d9b5c92)
 

@@ -474,7 +474,7 @@ export function classifySupportDebugRequest(request: JsonValue): ScopeClassifica
   return { owner: "Support & Debug Tools", inScope: true };
 }
 
-export function validateSupportDebugToolsScope(scope: JsonValue): ScopeValidation {
+export function validateSupportDebugToolsScope(scope: SupportDebugToolsScope | JsonValue): ScopeValidation {
   const errors: string[] = [];
 
   if (!scope || !isJsonObject(scope)) {

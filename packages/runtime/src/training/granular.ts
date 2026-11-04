@@ -2,8 +2,8 @@ import {
 	composeOptions,
 	finalizeTrainableClass as finalizeWithRegistry,
 	type GroundingOptions,
-	granularOptionsFor as groundingOptionsFor,
 	intent as groundingIntent,
+	granularOptionsFor as groundingOptionsFor,
 } from "ts-autocode-grounding";
 import type { JsonObject, JsonValue } from "../json.js";
 import { getTrainable, resolveTrainable, training } from "./training.js";
