@@ -80,14 +80,17 @@ repository="${GITHUB_REPOSITORY:-Hobo-Labs/HoBo}"
 repository="${repository,,}"
 published="ghcr.io/${repository}/hobo-ci-worker:${version}"
 if [[ -n "${GHCR_TOKEN:-}" ]]; then
-  printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR:-github-actions}" --password-stdin
-  if docker pull "${published}"; then
-    docker tag "${published}" "${candidate}"
-    if promote_candidate; then
-      finish
-      exit 0
+  if printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR:-github-actions}" --password-stdin; then
+    if docker pull "${published}"; then
+      docker tag "${published}" "${candidate}"
+      if promote_candidate; then
+        finish
+        exit 0
+      fi
+      echo "Published runner image failed the local contract; building natively" >&2
     fi
-    echo "Published runner image failed the local contract; building natively" >&2
+  else
+    echo "GHCR login failed; building natively" >&2
   fi
 else
   echo "GHCR_TOKEN is unavailable; skipping published runner image pull"

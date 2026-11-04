@@ -183,6 +183,22 @@ describe("ci-runner image contract (repo manifests)", () => {
 		expect(v).toMatch(/^v[0-9a-f]{12}$/);
 	});
 
+	it("pulls a published runner image only after a successful GHCR login", () => {
+		const script = readFileSync(join(root, CI_RUNNER_BUILD_SCRIPT), "utf8");
+		const start = script.indexOf('if [[ -n "${GHCR_TOKEN:-}" ]]; then');
+		const end = script.indexOf("# Registry API", start);
+		expect(start).toBeGreaterThanOrEqual(0);
+		expect(end).toBeGreaterThan(start);
+		const ghcr = script.slice(start, end);
+		expect(ghcr).toContain(
+			'if printf \'%s\' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR:-github-actions}" --password-stdin; then\n    if docker pull "${published}"; then',
+		);
+		expect(ghcr).toContain('echo "GHCR login failed; building natively" >&2');
+		expect(ghcr).toContain(
+			'echo "GHCR_TOKEN is unavailable; skipping published runner image pull"',
+		);
+	});
+
 	it("moves the image version when any build input changes, build.sh included", () => {
 		const inputs = [
 			MISE_LOCK,

@@ -99,12 +99,16 @@ jobs:
         run: bash packages/ci-gh-actions/deploy/ci-runner/build.sh
       # Published from main only; a pull request's image is tried on the box, not shipped.
       - name: Push runner image to GHCR (optional)
-        if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request' && secrets.GITHUB_TOKEN != ''
+        if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
         env:
           MISE_EXPERIMENTAL: "1"
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "$GHCR_TOKEN" ]; then
+            echo "GHCR_TOKEN is unavailable; skipping runner image push"
+            exit 0
+          fi
           version="$(node --no-warnings scripts/ci-runner-image-version.mts)"
           repo="${GITHUB_REPOSITORY,,}"
           image="ghcr.io/${repo}/hobo-ci-worker:${version}"

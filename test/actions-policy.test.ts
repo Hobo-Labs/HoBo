@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readFile,
+	readdir,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -73,6 +80,38 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 		jobText("ci-guard"),
 		/^ {4}if: github\.event_name == 'pull_request'$/mu,
 	);
+});
+
+test("workflow conditions never read the secrets context", async () => {
+	const directory = new URL("../.github/workflows/", import.meta.url);
+	const files = (await readdir(directory)).filter((name) =>
+		/\.ya?ml$/u.test(name),
+	);
+	assert.ok(files.length > 0);
+	for (const name of files) {
+		const lines = (await readFile(new URL(name, directory), "utf8")).split(
+			"\n",
+		);
+		for (const [index, line] of lines.entries()) {
+			const match = /^(\s*)if:\s*(.*)$/u.exec(line);
+			if (!match) continue;
+			const indent = match[1]?.length ?? 0;
+			const condition = [match[2] ?? ""];
+			if (/^[>|][+-]?$/u.test(condition[0] ?? "")) {
+				for (let next = index + 1; next < lines.length; next += 1) {
+					const continuation = lines[next] ?? "";
+					const leading = /^\s*/u.exec(continuation)?.[0].length ?? 0;
+					if (continuation.trim() && leading <= indent) break;
+					condition.push(continuation.trim());
+				}
+			}
+			assert.doesNotMatch(
+				condition.join(" "),
+				/\bsecrets\./u,
+				`${name}:${index + 1}`,
+			);
+		}
+	}
 });
 
 test("only the reviewed manual HoBo acceptance recipe is enabled", async () => {
