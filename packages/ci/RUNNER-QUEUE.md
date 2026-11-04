@@ -147,7 +147,7 @@ Label separation is still required for GitHub to hand a trunk runner to the trun
 
 ### 6. Merge queue (landing, not pickup)
 
-**Merge queue** requires branch protection on `main` with merge queue enabled and the required HoBo CI checks. **Main full gate** is not one of them and does not run on `merge_group` (it runs on the push to `main`), so a queue entry holds no slot for it. That gates **merge** after jobs complete; it does not cause **`queued`** by itself.
+**Merge queue** requires branch protection on `main` with merge queue enabled and the required HoBo CI checks. **Main full gate** is not one of them and does not run on `merge_group` (it runs on the push to `main`), so a queue entry holds no slot for it. Instead, the required **PR impact gate** runs on `merge_group` and executes Main full gate's affected S0 and dependent workspace-test lanes against the merge group's base SHA. That gates **merge** after jobs complete; it does not cause **`queued`** by itself.
 
 Set repository variables **`TURBO_TEAM`** and secret **`TURBO_TOKEN`** for remote Turbo cache (fork PRs use read-only remote mode in workflow).
 
