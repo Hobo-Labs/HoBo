@@ -56,6 +56,11 @@ if [[ -n "${HOBO_CI_DEPS_BUILD_MEMORY_MB:-}" ]]; then
   docker_memory_args=(--memory "${HOBO_CI_DEPS_BUILD_MEMORY_MB}m")
 fi
 
+local_key="$(docker image inspect hobo-ci-deps:local --format '{{ index .Config.Labels "hobo.ci.deps-key" }}' 2>/dev/null || true)"
+if [ "$local_key" = "$key" ] && ! docker image inspect "$candidate" >/dev/null 2>&1; then
+  docker tag hobo-ci-deps:local "$candidate"
+fi
+
 if docker image inspect "$candidate" >/dev/null 2>&1; then
   echo "Reusing local $candidate"
   if [ "$promote" = 1 ]; then

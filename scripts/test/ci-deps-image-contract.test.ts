@@ -73,13 +73,18 @@ describe("CI deps image build contract", () => {
 		includes(build, "Using toolchain image");
 	});
 
-	it("returns on a local keyed hit without building", () => {
-		const hit = build.indexOf('if docker image inspect "$candidate"');
+	it("returns on a keyed or matching-local hit without building", () => {
+		const localKey = build.indexOf("local_key=");
+		const restore = build.indexOf('docker tag hobo-ci-deps:local "$candidate"');
+		const hit = build.indexOf('if docker image inspect "$candidate"', restore);
 		const exit = build.indexOf("exit 0", hit);
 		const buildCommand = build.indexOf("docker build \\");
-		assert.ok(hit > -1);
+		assert.ok(localKey > -1);
+		assert.ok(restore > localKey);
+		assert.ok(hit > restore);
 		assert.ok(exit > hit);
 		assert.ok(buildCommand > exit);
+		includes(build, '[ "$local_key" = "$key" ]');
 	});
 
 	it("requires an up-to-date offline contract before promoting a new build", () => {
@@ -157,10 +162,9 @@ describe("CI deps workflow contract", () => {
 		includes(job, "packages/ci-gh-actions/deploy/ci-runner/deps");
 		includes(job, "args=(--no-promote)");
 		includes(job, "Remove PR candidate tag");
-		includes(
-			job,
-			"steps.build.outcome == 'success' && github.repository == 'Hobo-Labs/HoBo'",
-		);
+		assert.ok(!job.includes("docker push"));
+		assert.ok(!job.includes("GHCR_TOKEN"));
+		assert.ok(!job.includes("packages: write"));
 	});
 
 	it("reuses local or GHCR hits on every event without building", () => {
@@ -194,5 +198,51 @@ describe("CI deps workflow contract", () => {
 		includes(main, "needs: ci-runner-image");
 		assert.ok(!main.includes("ci-deps-image"));
 		includes(workflow, "Check deps layer match");
+	});
+});
+
+describe("CI deps publisher contract", () => {
+	const workflow = read(".github/workflows/ci-deps-publish.yml");
+	const publish = read(
+		"packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh",
+	);
+
+	it("runs only after a successful main fabric run or manually", () => {
+		includes(workflow, 'workflows: ["HoBo CI Fabric"]');
+		includes(workflow, "types: [completed]");
+		includes(workflow, "branches: [main]");
+		includes(workflow, "workflow_dispatch:");
+		includes(workflow, "timeout-minutes: 5");
+		includes(workflow, "cancel-in-progress: true");
+		includes(workflow, "github.event.workflow_run.conclusion == 'success'");
+		includes(workflow, "github.event.workflow_run.head_sha");
+	});
+
+	it("skips absent local images and existing GHCR tags", () => {
+		includes(publish, 'key="$(node --no-warnings scripts/ci/deps-key.mts)"');
+		includes(publish, 'candidate="hobo-ci-deps:${key}"');
+		includes(publish, "docker image inspect hobo-ci-deps:local");
+		includes(publish, '{{ index .Config.Labels "hobo.ci.deps-key" }}');
+		includes(publish, 'source="hobo-ci-deps:local"');
+		const manifest = publish.indexOf('docker manifest inspect "$image"');
+		const tag = publish.indexOf('docker tag "$source" "$image"');
+		const push = publish.indexOf("docker push");
+		assert.ok(manifest > -1);
+		assert.ok(tag > manifest);
+		assert.ok(push > tag);
+		includes(publish, "GHCR already has ${image}; skipping push");
+	});
+
+	it("bounds the push and keeps the token on stdin", () => {
+		includes(
+			publish,
+			"timeout --signal=TERM --kill-after=15s 240s docker push",
+		);
+		includes(
+			publish,
+			'printf \'%s\' "$GHCR_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR:?GITHUB_ACTOR is required}" --password-stdin',
+		);
+		assert.ok(!publish.includes('echo "$GHCR_TOKEN"'));
+		assert.ok(!publish.includes('echo "${{ secrets.GITHUB_TOKEN }}'));
 	});
 });

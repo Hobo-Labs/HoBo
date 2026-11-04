@@ -7,6 +7,9 @@ const root = join(import.meta.dirname, "..", "..", "..");
 const workflow = parse(
 	readFileSync(join(root, ".github/workflows/hobo-ci.yml"), "utf8"),
 );
+const publisher = parse(
+	readFileSync(join(root, ".github/workflows/ci-deps-publish.yml"), "utf8"),
+);
 const depsJob = workflow.jobs["ci-deps-image"];
 const prGate = workflow.jobs["pr-gate"];
 const mainGate = workflow.jobs["main-gate"];
@@ -24,7 +27,7 @@ describe("CI deps image push scope", () => {
 		expect(depsJob.if).not.toContain("github.event_name == 'merge_group'");
 	});
 
-	it("skips resolution and promotion when the local label already matches", () => {
+	it("skips resolution, promotion and building when the local label already matches", () => {
 		const names = depsJob.steps.map((step) => step.name);
 		expect(names.indexOf("Check current local deps image")).toBe(
 			names.indexOf("Compute deps key") + 1,
@@ -39,11 +42,38 @@ describe("CI deps image push scope", () => {
 			"Resolve local or GHCR deps image",
 			"Promote cached deps image and collect superseded images",
 			"Build deps image and verify offline install",
-			"Push deps image to GHCR",
 		]) {
 			const step = depsJob.steps.find((candidate) => candidate.name === name);
 			expect(step.if).toContain("steps.current.outputs.current != 'true'");
 		}
+	});
+
+	it("keeps all registry writes out of HoBo CI", () => {
+		expect(depsJob.permissions).toEqual({ contents: "read" });
+		expect(JSON.stringify(depsJob)).not.toContain("docker push");
+		expect(JSON.stringify(depsJob)).not.toContain("GHCR_TOKEN");
+	});
+
+	it("publishes from a separate bounded workflow on the same runner labels", () => {
+		expect(publisher.on.workflow_run).toEqual({
+			workflows: ["HoBo CI Fabric"],
+			types: ["completed"],
+			branches: ["main"],
+		});
+		expect(publisher.on.workflow_dispatch).toBeNull();
+		expect(publisher.concurrency).toEqual({
+			group: "ci-deps-publish-${{ github.repository }}",
+			"cancel-in-progress": true,
+		});
+		const job = publisher.jobs.publish;
+		expect(job["timeout-minutes"]).toBe(5);
+		expect(job["runs-on"]).toBe(depsJob["runs-on"]);
+		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
+		expect(job.if).toContain("github.event.workflow_run.conclusion == 'success'");
+		expect(job.steps[0].with.ref).toContain("github.event.workflow_run.head_sha");
+		expect(job.steps[1].run).toBe(
+			"bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh",
+		);
 	});
 
 	it("does not make either gate wait for the deps image", () => {

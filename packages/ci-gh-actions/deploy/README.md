@@ -255,6 +255,8 @@ Docker build and its offline verification container. A successful local, pulled,
 or built candidate is tagged `hobo-ci-deps:local` and passed to keep-2 GC.
 `HOBO_CI_DEPS_IMAGE=` disables both selection and this ensure loop.
 
+GHCR publication is deliberately outside HoBo CI. `ci-deps-publish.yml` starts after a successful main fabric run (or manually), recomputes the key at that run's commit, and skips unless the keyed local image or a matching `:local` is present. It also skips an existing remote manifest. Only a genuine miss is tagged and pushed, with a five-minute workflow budget and a 240-second command timeout. A stalled registry therefore fails or cancels only the publisher; it cannot make the fabric run red.
+
 Look for `hobo_ci_deps_image_ensure_started` with the selected key before local,
 registry, or build work, then `hobo_ci_deps_image_ensure` with
 `action=hit|pull|build` after success, and `hobo_ci_deps_image_ensure_failed` with
