@@ -35,7 +35,8 @@ is unknown here.
    `--network=none`.
 4. **Reproducible outputs.** The same inputs produce the same layer digest:
    - `SOURCE_DATE_EPOCH` is fixed for the artifact family (`0` for deps buckets), not the commit's time, so unchanged content keeps its digest across commits;
-   - BuildKit runs with `rewrite-timestamp=true` when the installed builder supports it;
+   - the deps build uses `rewrite-timestamp=true` only when the default `docker build` invocation advertises it;
+     otherwise the fixed epoch and explicit Dockerfile `touch` provide the timestamps;
    - file order and ownership are fixed;
    - no build step embeds a clock, a hostname or a random value.
 
@@ -62,7 +63,7 @@ is unknown here.
 | `registry:2` is pulled by tag | `deploy/ci-runner/build.sh` | Deferred toolchain hardening: pin by digest |
 | `curl https://mise.run \| sh` runs an unpinned installer script (only the version is pinned) | `deploy/ci-runner/build.sh` | Deferred toolchain hardening: pinned mise release asset with its SHA-256 |
 | `pnpm install` on every job links every package even with a warm mounted store | every job | **Implemented Phase 4:** prebuilt `node_modules` layer; Main full gate and PR impact gate skip on an exact key match and install on every miss |
-| Cache-off layer-digest equality and actual push savings still need box evidence | `deploy/ci-runner/deps/Dockerfile` and `build-deps.sh` | Phase 5 verification: all copied files have a fixed epoch; buildx `rewrite-timestamp=true` is enabled only when the installed builder advertises it |
+| Cache-off layer-digest equality and actual push savings still need box evidence | `deploy/ci-runner/deps/Dockerfile` and `build-deps.sh` | Phase 5 verification: all copied files have a fixed epoch; the default `docker build` enables `rewrite-timestamp=true` only when its help advertises it |
 
 ## Why: the data from main run 41690661790 (237 s)
 
@@ -222,14 +223,17 @@ cannot be computed or the image is missing.
   public packages, so there is no paid infra.
   - Images: `hobo-ci-worker:<toolchain>`, `hobo-ci-deps:<toolchain>-<depsKey>`.
   - BuildKit cache: `hobo-ci-deps:buildcache`.
-- **buildx registry cache:**
-  - every buildx deps build with `GITHUB_REPOSITORY` set reads `--cache-from
-    type=registry,ref=ghcr.io/<repo lowercase>/hobo-ci-deps:buildcache`; a missing cache is a no-op;
-  - after the bounded image push, the separate publisher exports `mode=max` to that ref through a bounded rebuild
-    on the shared `hobo-ci-deps-cache` `docker-container` builder;
+- **default-builder registry cache:**
+  - deps builds always use the default builder without `--load`; with `GITHUB_REPOSITORY` set they read
+    `--cache-from type=registry,ref=ghcr.io/<repo lowercase>/hobo-ci-deps:buildcache` only when `docker info`
+    reports the containerd image store. Classic stores log and skip the import; a missing remote cache is a no-op;
+  - after the bounded image push, which uploads only blobs the registry lacks, the separate publisher uses the same
+    detection to export `mode=min` through a 120-second bounded rebuild on the default builder. Classic stores and
+    unavailable buildx log and skip the export;
   - **PRs only read.** The deps job has `packages: read`, never `packages: write`, and only the publisher uses
-    `--cache-to`. `mode=max` retains intermediate stages, but never cache-mount contents: a lockfile change still
-    reruns fetch and install.
+    `--cache-to`. `mode=min` exports final-image bucket layers already uploaded by the image push, adding only a
+    cache manifest; it does not export the install stage or cache-mount contents, so a lockfile change still reruns
+    fetch and install. Box-side cache hits and timings remain unverified here.
 - **zstd** layer compression (`compression=zstd,force-compression=true`) cuts pull time and size for the large
   deps layer. Docker 23+ pulls zstd natively.
 - **eStargz/SOCI lazy pulls: not now.** They need the containerd image store and the stargz snapshotter. The box
@@ -404,7 +408,8 @@ BuildKit cache mount. The install stage separately stages `node_modules` and `.g
 each content-keyed `.pnpm` entry to one of 64 buckets by SHA-256 of its name and emits the corresponding
 `COPY --link` section; its drift test requires the committed Dockerfile to match. One residual layer holds
 workspace links, pnpm metadata and `.git`. Sorted entries, fixed `--chown` and `SOURCE_DATE_EPOCH=0` on every
-copied path make unchanged buckets byte-stable across commits; buildx timestamp rewriting is optional and feature-detected.
+copied path make unchanged buckets byte-stable across commits; default-`docker build` timestamp rewriting is optional
+and feature-detected, with the explicit Dockerfile `touch` as the fallback.
 Equal-digest claims and actual compressed sizes remain box-side evidence. The offline `Already up to date`
 contract still runs before promoting a new build to `:local`. Every event reuses an exact local or GHCR hit without
 building. The worker selects that layer only for HoBo leases with a matching toolchain label, exports its full key,
@@ -422,9 +427,11 @@ checkout, key computation, and one inspect, while a miss resolves or builds and 
 workflow dispatch always run; PR scoping is unchanged. Neither gate depends on the deps-image job. The separate
 `ci-deps-publish.yml` workflow starts only after a successful main fabric run or manually, skips absent local and
 existing remote tags, cancels superseded publishes, and bounds both the job (five minutes) and `docker push`
-(240 seconds). After a push it exports `mode=max` buildcache through a 120-second bounded rebuild on the shared
-builder. Registry failure cannot fail or delay HoBo CI. GHCR retention and attestation verification stay
-Phase 5. Main-run timing, layer-digest and push-size evidence are still required before ticking time-based
+(240 seconds). Builds and cache exports use the default builder without `--load`; registry cache import and export
+are gated on the containerd image store. After a push, the publisher exports `mode=min` buildcache through a
+120-second bounded default-builder rebuild, or logs and skips it on classic stores or without buildx. Registry
+failure cannot fail or delay HoBo CI. GHCR retention and attestation verification stay Phase 5. Main-run timing,
+default-builder cache hits, layer-digest and push-size evidence are still required before ticking time-based
 acceptance boxes.
 
 - **Acceptance:**

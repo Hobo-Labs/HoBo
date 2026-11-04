@@ -30,16 +30,20 @@ if docker manifest inspect "$image" >/dev/null 2>&1; then
 fi
 
 docker tag "$source" "$image"
+# docker push uploads only blobs the registry lacks, so unchanged bucket layers are skipped.
 timeout --signal=TERM --kill-after=15s 240s docker push "$image"
 
 cache_image="ghcr.io/${repository,,}/hobo-ci-deps:buildcache"
-builder="hobo-ci-deps-cache"
+deps_uses_containerd_image_store() {
+  [[ "$(docker info --format '{{json .DriverStatus}}' 2>/dev/null)" == *io.containerd.snapshotter* ]]
+}
+if ! deps_uses_containerd_image_store; then
+  echo "deps registry cache export skipped: classic image store"
+  exit 0
+fi
 if ! buildx_help="$(docker buildx build --help 2>/dev/null)"; then
   echo "docker buildx is unavailable; skipping deps buildcache export"
   exit 0
-fi
-if ! docker buildx inspect "$builder" >/dev/null 2>&1; then
-  docker buildx create --name "$builder" --driver docker-container >/dev/null
 fi
 
 context="$(mktemp -d)"
@@ -68,11 +72,11 @@ if [[ -n "${HOBO_CI_DEPS_BUILD_MEMORY_MB:-}" ]]; then
   docker_memory_args=(--memory "${HOBO_CI_DEPS_BUILD_MEMORY_MB}m")
 fi
 
-timeout --signal=TERM --kill-after=15s 120s docker buildx build --builder "$builder" \
+timeout --signal=TERM --kill-after=15s 120s docker buildx build \
   "${docker_memory_args[@]}" \
   "${rewrite_args[@]}" \
   --cache-from "type=registry,ref=${cache_image}" \
-  --cache-to "type=registry,ref=${cache_image},mode=max" \
+  --cache-to "type=registry,ref=${cache_image},mode=min" \
   --build-arg "TOOLCHAIN_IMAGE=hobo-ci-worker:${toolchain}" \
   --build-arg "DEPS_KEY=${key}" \
   --build-arg "TOOLCHAIN_VERSION=${toolchain}" \

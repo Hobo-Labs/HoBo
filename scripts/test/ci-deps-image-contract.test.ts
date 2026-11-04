@@ -61,11 +61,12 @@ describe("CI deps image build contract", () => {
 			"node --experimental-strip-types scripts/ci/deps-layer-buckets.mts --check",
 		);
 		includes(build, "build_command=(docker build)");
-		includes(
-			build,
-			'build_command=(docker buildx build --load --builder "$builder")',
-		);
+		includes(build, "prune_command=(docker builder prune)");
+		assert.ok(!build.includes("--load"));
+		assert.ok(!build.includes("docker buildx create"));
+		assert.ok(!build.includes("--builder"));
 		includes(build, "rewrite_args=(--rewrite-timestamp=true)");
+		includes(build, 'build_help="$(docker build --help 2>/dev/null)"');
 		includes(build, "grep -q -- '--rewrite-timestamp'");
 	});
 
@@ -113,21 +114,20 @@ describe("CI deps image build contract", () => {
 		includes(build, '[ "$local_key" = "$key" ]');
 	});
 
-	it("imports the registry cache read-only on a shared buildx builder", () => {
-		includes(build, 'builder="hobo-ci-deps-cache"');
-		includes(
-			build,
-			'docker buildx create --name "$builder" --driver docker-container',
+	it("imports the registry cache only with the containerd image store", () => {
+		includes(build, "deps_uses_containerd_image_store()");
+		includes(build, "docker info --format '{{json .DriverStatus}}'");
+		includes(build, "*io.containerd.snapshotter*");
+		const detection = build.indexOf(
+			"if deps_uses_containerd_image_store; then",
 		);
-		includes(
-			build,
-			'build_command=(docker buildx build --load --builder "$builder")',
-		);
-		includes(
-			build,
+		const cacheImport = build.indexOf(
 			'cache_args=(--cache-from "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:buildcache")',
 		);
+		assert.ok(detection > -1);
+		assert.ok(cacheImport > detection);
 		includes(build, '"${cache_args[@]}"');
+		includes(build, "deps registry cache import skipped: classic image store");
 		assert.ok(!build.includes("--cache-to"));
 	});
 
@@ -294,17 +294,24 @@ describe("CI deps publisher contract", () => {
 		assert.ok(!publish.includes('echo "${{ secrets.GITHUB_TOKEN }}'));
 	});
 
-	it("exports mode=max cache after the push with a bounded container-builder rebuild", () => {
-		const push = publish.indexOf("docker push");
+	it("exports mode=min cache after the push only with the containerd image store", () => {
+		const push = publish.indexOf(
+			"timeout --signal=TERM --kill-after=15s 240s docker push",
+		);
+		const detection = publish.indexOf(
+			"if ! deps_uses_containerd_image_store; then",
+		);
 		const exportCache = publish.indexOf(
-			'--cache-to "type=registry,ref=${cache_image},mode=max"',
+			'--cache-to "type=registry,ref=${cache_image},mode=min"',
 		);
 		assert.ok(push > -1);
-		assert.ok(exportCache > push);
-		includes(publish, 'builder="hobo-ci-deps-cache"');
+		assert.ok(detection > push);
+		assert.ok(exportCache > detection);
+		includes(publish, "docker info --format '{{json .DriverStatus}}'");
+		includes(publish, "*io.containerd.snapshotter*");
 		includes(
 			publish,
-			'docker buildx create --name "$builder" --driver docker-container',
+			"deps registry cache export skipped: classic image store",
 		);
 		includes(
 			publish,
@@ -315,5 +322,13 @@ describe("CI deps publisher contract", () => {
 			publish,
 			"docker buildx is unavailable; skipping deps buildcache export",
 		);
+		includes(
+			publish,
+			"docker push uploads only blobs the registry lacks, so unchanged bucket layers are skipped",
+		);
+		assert.ok(!publish.includes("mode=max"));
+		assert.ok(!publish.includes("--load"));
+		assert.ok(!publish.includes("docker buildx create"));
+		assert.ok(!publish.includes("--builder"));
 	});
 });

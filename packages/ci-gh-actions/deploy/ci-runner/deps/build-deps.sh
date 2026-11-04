@@ -76,20 +76,19 @@ node --experimental-strip-types scripts/ci/deps-layer-buckets.mts --check
 build_command=(docker build)
 prune_command=(docker builder prune)
 rewrite_args=()
+if build_help="$(docker build --help 2>/dev/null)" && grep -q -- '--rewrite-timestamp' <<<"$build_help"; then
+  rewrite_args=(--rewrite-timestamp=true)
+fi
 cache_args=()
-builder="hobo-ci-deps-cache"
-if buildx_help="$(docker buildx build --help 2>/dev/null)"; then
-  if ! docker buildx inspect "$builder" >/dev/null 2>&1; then
-    docker buildx create --name "$builder" --driver docker-container >/dev/null
-  fi
-  build_command=(docker buildx build --load --builder "$builder")
-  prune_command=(docker buildx prune --builder "$builder")
-  if grep -q -- '--rewrite-timestamp' <<<"$buildx_help"; then
-    rewrite_args=(--rewrite-timestamp=true)
-  fi
+deps_uses_containerd_image_store() {
+  [[ "$(docker info --format '{{json .DriverStatus}}' 2>/dev/null)" == *io.containerd.snapshotter* ]]
+}
+if deps_uses_containerd_image_store; then
   if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
     cache_args=(--cache-from "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:buildcache")
   fi
+else
+  echo "deps registry cache import skipped: classic image store"
 fi
 
 echo "Building $candidate (fetch network restricted to lockfile-verified downloads; install offline)"
