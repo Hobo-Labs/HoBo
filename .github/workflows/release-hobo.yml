@@ -41,6 +41,42 @@ on:
       - "v*"
       - "sdk-v*"
       - "cli-v*"
+  merge_group:
+    branches: [main]
+    types: [checks_requested]
+    paths:
+      - "deploy/release-images/**"
+      - "release/**"
+      - "mise.toml"
+      - "mise.lock"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - "turbo.json"
+      - "site/**"
+      - "scripts/ci/*release*"
+      - "scripts/ci/npm-publish-scope.mts"
+      - "scripts/ci/stage-sdk-artifacts.mts"
+      - "scripts/ci/publish-npm-sdk.mts"
+      - "scripts/ci/resolve-release-version.mts"
+      - "scripts/ci/push-release-ghcr-images.mts"
+      - "scripts/ci/ensure-ci-worker-image.mts"
+      - "scripts/ci/extract-sdk-artifacts.mts"
+      - "scripts/lib/release-sparse-cone.mts"
+      - "scripts/lib/ci-runner-contract.mts"
+      - "scripts/ci-runner-preflight.mts"
+      - ".github/actions/ci-runner-preflight/**"
+      - "scripts/lib/release-version.mts"
+      - "scripts/lib/release-oci-contract.mts"
+      - "scripts/test/release-oci-affected.test.ts"
+      - "scripts/test/release-oci-image-contract.test.ts"
+      - "scripts/test/release-sparse-cone.test.ts"
+      - "scripts/test/release-version.test.ts"
+      - "scripts/test/stage-release-oci-app.test.ts"
+      - ".github/actions/release-oci-attest/**"
+      - ".github/actions/hobo-checkout/**"
+      - ".github/workflows/release-hobo.yml"
   workflow_dispatch:
     inputs:
       push_images:
@@ -100,7 +136,6 @@ jobs:
           sparse-checkout: ${{ env.RELEASE_SPARSE_PATHS }}
           sparse-checkout-cone-mode: true
           submodules: recursive
-          clean: false
       - uses: ./.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
@@ -120,7 +155,7 @@ jobs:
       # fetch-depth 2 is the whole history the diff needs.
       - name: Detect affected images
         id: affected
-        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
         env:
           HOBO_CHECK_BASE: HEAD^1
         run: |

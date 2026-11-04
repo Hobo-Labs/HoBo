@@ -139,6 +139,14 @@ function lintWorkflowYaml(
 						`${file}:${start + index + 1}: box checkout at the default path must set clean: false`,
 					);
 				}
+				const cleanCount = step.filter(
+					(entry) => entry.trim() === "clean: false",
+				).length;
+				if (cleanCount > 1) {
+					errors.push(
+						`${file}:${start + index + 1}: checkout must set clean: false once (duplicate keys break workflow parsing)`,
+					);
+				}
 			}
 		}
 		if (allowedEnabled.has(file)) {

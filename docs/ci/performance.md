@@ -1181,3 +1181,21 @@ The initial `actions/runs?created=2026-11-04T13:40..2026-11-04T14:20` query retu
 The admission defect was real independently of that occupancy question. Memory admission returned `blockRank` only after `HOBO_CI_WORKER_MEMORY_HOL_MS`, and the relay applied it only to the same rank within one pass. A rank-0 memory waiter therefore allowed lower-rank backfill before the timeout and did not block rank 1 afterward. Merge-group cap and slot-reservation waits had no lower-rank barrier either.
 
 Admission is now trunk-first while any feasible rank-0 job waits. A rank-0 memory wait blocks lower ranks immediately; merge-group cap and failed slot reservation do the same. The barrier is recomputed from pending demand every pass, so it persists until the rank-0 job is admitted, at which point lower ranks can use remaining capacity in that pass. Non-zero ranks retain the 60 s same-rank HOL backfill window, and trunk-label lending, strict slot reservation, and unlaunched-lease reclamation are unchanged. As an anti-starvation guard, a request larger than the entire memory budget never raises the rank-0 barrier: it cannot fit even on an idle host, so PR admission remains allowed. Regression coverage drives the real SQLite/relay path for memory, merge-group cap, and slot waits across repeated passes, plus the impossible-memory-request guard.
+
+## Finding 41: every same-process auth.md lock waiter paid a 25 ms poll
+
+Merge-group run **41860035056** timed out `test/auth-md-state-concurrency.test.ts` after **10 s** under box load. The test runs three concurrent deployment bindings followed by three concurrent infrastructure claims. Every contender polled the SQLite `BEGIN EXCLUSIVE` lock every 25 ms, so releasing a same-process holder did not wake the next waiter directly.
+
+Three-run medians from `packages/hobo` used `pnpm exec vitest run test/auth-md-state-concurrency.test.ts --reporter=dot`. CPU load was six busy loops; IO load repeatedly wrote and fsynced a 2,000 MiB temporary file. Wall time includes Vite transform/import and therefore remains host-sensitive; the test body isolates the lock and file operations.
+
+| Load | Before test body | After test body | Before wall | After wall |
+|---|---:|---:|---:|---:|
+| Idle | **112 ms** | **12 ms** | 2.148 s | 2.662 s |
+| Six CPU hogs | **116 ms** | **19 ms** | 4.121 s | 5.432 s |
+| IO writer | **124 ms** | **22 ms** | 2.835 s | 2.545 s |
+
+Temporary instrumentation on the idle path attributed about **105 ms** to four 25 ms sleeps, **11 ms** to the six locked file-operation sections, and **0.1–0.3 ms** to each SQLite open plus `BEGIN EXCLUSIVE`. The remaining wall time was module transform/import, not lock acquisition.
+
+`acquireLocalStateLockQueued` now keeps an in-process FIFO keyed by resolved lock path. Only its head contends for SQLite; the other callers wait on promises without timers. Release synchronously starts the next head. A head contending with another process retains the bounded 120 s deadline and 25 ms retry, including the existing `LocalStateLockBusyError` deadline behavior. The synchronous local-deployment lock caller is unchanged. Registration-directory mkdir/chmod now happens once during lock preparation rather than in every save; owner-only modes and atomic temporary-file-plus-rename writes remain unchanged.
+
+Unit coverage proves FIFO handoff without timer scheduling, release after a holder throws, and single-head cross-process retry/deadline behavior with an injected clock, lock, and scheduler. The original concurrency test remains unchanged and its test body stays well below 1 s under all three measured conditions.

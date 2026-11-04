@@ -233,7 +233,7 @@ async function runRealComponentize(
 	input: RealComponentizeInput,
 	options: RealComponentizeOptions,
 ): Promise<RealComponentizeResult> {
-	const epochSeconds = parseSourceDateEpoch(input.sourceDateEpoch);
+	const epochSeconds = sourceDateEpochToUnixSeconds(input.sourceDateEpoch);
 	const entry = options.entry ?? DEFAULT_ENTRY;
 	const wit = options.wit ?? {
 		source: DEFAULT_WIT_SOURCE,
@@ -312,13 +312,7 @@ function parseComponentBytes(output: { component: Uint8Array }): Uint8Array {
 	return output.component;
 }
 
-function parseSourceDateEpoch(sourceDateEpoch: string): string {
-	const parsed = Date.parse(sourceDateEpoch);
-	if (!sourceDateEpoch || Number.isNaN(parsed)) {
-		throw new Error("componentize.invalid_source_date_epoch");
-	}
-	return Math.floor(parsed / 1000).toString();
-}
+import { sourceDateEpochToUnixSeconds } from "./source-date-epoch.js";
 
 function sha256Text(text: string): string {
 	return `sha256:${createHash("sha256").update(text).digest("hex")}`;
