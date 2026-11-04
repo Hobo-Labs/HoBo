@@ -94,8 +94,7 @@ export function createWorkerMemoryAdmission(
 		).length;
 		const capBlocked =
 			request.rank !== 0 && trunkActive && activeNonTrunk >= prCapWithTrunk;
-		const admitted =
-			!capBlocked && inUse + request.memoryMb <= config.budgetMb;
+		const admitted = !capBlocked && inUse + request.memoryMb <= config.budgetMb;
 		if (admitted) {
 			const previous = waiting.get(request.jobId);
 			waiting.delete(request.jobId);

@@ -298,14 +298,15 @@ describe("worker memory admission", () => {
 		const admission = createWorkerMemoryAdmission(config(14_336), { log });
 		const activeLeases = [lease("trunk", 3_072, "light")];
 		const generalLeaseIds = new Set<string>();
-		const request = (jobId: number, rank = 1) => ({
-			jobId,
-			memoryClass: "light",
-			memoryMb: 3_072,
-			rank,
-			activeLeases,
-			generalLeaseIds,
-		}) as const;
+		const request = (jobId: number, rank = 1) =>
+			({
+				jobId,
+				memoryClass: "light",
+				memoryMb: 3_072,
+				rank,
+				activeLeases,
+				generalLeaseIds,
+			}) as const;
 		expect(admission.admit(request(1)).admitted).toBe(true);
 		activeLeases.push(lease("pr-1", 3_072, "light"));
 		generalLeaseIds.add("pr-1");

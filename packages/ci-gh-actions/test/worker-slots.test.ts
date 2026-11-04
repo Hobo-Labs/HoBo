@@ -56,14 +56,18 @@ describe("resolveWorkerSlotConfig", () => {
 		).toThrow("invalid HOBO_CI_WORKER_MERGE_GROUP_LEASES");
 	});
 
-	it.each(["", "-1", "1.5", "1e0", "nope", "9"])(
-		"rejects invalid PR cap with trunk %s",
-		(value) => {
-			expect(() =>
-				resolveWorkerSlotConfig({
-					HOBO_CI_WORKER_PR_CAP_WITH_TRUNK: value,
-				}),
-			).toThrow("invalid HOBO_CI_WORKER_PR_CAP_WITH_TRUNK");
-		},
-	);
+	it.each([
+		"",
+		"-1",
+		"1.5",
+		"1e0",
+		"nope",
+		"9",
+	])("rejects invalid PR cap with trunk %s", (value) => {
+		expect(() =>
+			resolveWorkerSlotConfig({
+				HOBO_CI_WORKER_PR_CAP_WITH_TRUNK: value,
+			}),
+		).toThrow("invalid HOBO_CI_WORKER_PR_CAP_WITH_TRUNK");
+	});
 });
