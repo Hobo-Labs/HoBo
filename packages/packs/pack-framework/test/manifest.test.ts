@@ -23,9 +23,7 @@ import { fixtureManifest } from "./harness.js";
 type Patch = Partial<Omit<PackManifestInput, "signature">>;
 
 const manifest = (patch: Patch = {}) =>
-	parsePackManifest(
-		fixtureManifest((draft) => ({ ...draft, ...patch })),
-	);
+	parsePackManifest(fixtureManifest((draft) => ({ ...draft, ...patch })));
 
 describeConcern("pack manifest", {
 	cases: `${import.meta.dirname}/manifest.cases.jsonl`,

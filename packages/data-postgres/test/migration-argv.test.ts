@@ -124,6 +124,36 @@ describe("pg_dump / pg_restore argv", () => {
 		});
 	}
 
+	for (const control of ["\u0000", "\t", "\n", "\r", "\u001f", "\u007f"]) {
+		it(`rejects control character ${JSON.stringify(control)} in a dump path`, () => {
+			expect(() =>
+				buildPgDumpArgv({
+					target,
+					filePath: `/tmp/dump${control}.pgc`,
+					format: "custom",
+				}),
+			).toThrow(/control character/u);
+		});
+	}
+
+	it("rejects NUL and newlines in directly supplied argv", () => {
+		for (const control of ["\u0000", "\n", "\r"]) {
+			expect(() => assertArgvSafe(["pg_dump", `dump${control}.pgc`])).toThrow(
+				/NUL or newline/u,
+			);
+		}
+	});
+
+	it("accepts normal paths and argv", () => {
+		const argv = buildPgDumpArgv({
+			target,
+			filePath: "/tmp/normal dump.pgc",
+			format: "custom",
+		});
+		expect(argv).toContain("--file=/tmp/normal dump.pgc");
+		expect(assertArgvSafe(argv)).toBe(argv);
+	});
+
 	it("rejects a dump path that escapes its directory", () => {
 		expect(() =>
 			buildPgDumpArgv({

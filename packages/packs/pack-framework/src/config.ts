@@ -12,9 +12,8 @@
 import { parseSecretRef, type SecretRef } from "@hobo/bindings";
 
 import { PackError } from "./errors.js";
+import { isJsonBoolean, isJsonNumber, isJsonString } from "./json.js";
 import type { PackConfigField, ParsedPackManifest } from "./manifest.js";
-import { isJsonString, isJsonNumber, isJsonBoolean } from "./json.js";
-
 
 export type PackConfigurationInputValue = string | number | boolean;
 

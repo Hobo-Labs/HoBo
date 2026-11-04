@@ -4,7 +4,7 @@
  */
 import type { ProviderAnnotation } from "@hobo/bindles";
 import { COMPONENT_METADATA } from "@hobo/runtime";
-import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
+import { isJsonString, type JsonValue } from "./json.js";
 
 export const CONVEX_WEBAPP_METADATA = Symbol.for("hobo.webapp.convex");
 /** Shared meta symbol — Bindle detects any `{ framework, root }` webApp. */
@@ -16,6 +16,8 @@ export type ConvexWebAppMeta = {
 	readonly framework: "convex";
 	readonly root: string;
 };
+
+const convexWebAppMetadata = new WeakMap<object, ConvexWebAppMeta>();
 
 const METADATA_SYMBOL =
 	// SAFETY: `(Symbol as { metadata?: symbol }).metadata ?? Symbol.for("Symbol.metadata");` is required at this I/O or test boundary.
@@ -33,6 +35,7 @@ export function convexApp(root: string): new () => object {
 	});
 
 	class ConvexApp {}
+	convexWebAppMetadata.set(ConvexApp, meta);
 	Object.defineProperty(ConvexApp, CONVEX_WEBAPP_METADATA, {
 		value: meta,
 		enumerable: false,
@@ -56,15 +59,7 @@ export function convexApp(root: string): new () => object {
 
 export function convexMetaOf(binding: JsonValue): ConvexWebAppMeta | undefined {
 	if (!(binding instanceof Function)) return undefined;
-	// SAFETY: `const holder = binding as Function & { [CONVEX_WEBAPP_METADATA]?: JsonValue };` is required at this I/O or test boundary.
-	const holder = binding as Function & { [CONVEX_WEBAPP_METADATA]?: JsonValue };
-	const meta = holder[CONVEX_WEBAPP_METADATA];
-	if (!meta || !isJsonObject(meta)) return undefined;
-	// SAFETY: `const m = meta as Partial<ConvexWebAppMeta>;` is required at this I/O or test boundary.
-	const m = meta as Partial<ConvexWebAppMeta>;
-	if (m.framework !== "convex" || !isJsonString(m.root)) return undefined;
-	// SAFETY: `return meta as ConvexWebAppMeta;` is required at this I/O or test boundary.
-	return meta as ConvexWebAppMeta;
+	return convexWebAppMetadata.get(binding);
 }
 
 export function convexAnnotation(meta: ConvexWebAppMeta): ProviderAnnotation {
