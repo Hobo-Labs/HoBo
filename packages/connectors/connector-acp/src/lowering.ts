@@ -47,7 +47,10 @@ export function acpConnector(
 		declaredAllow?: readonly string[];
 	},
 ): AcpConnectorBinding {
-	if (Object.prototype.toString.call(name) !== "[object String]" || name.length === 0) {
+	if (
+		Object.prototype.toString.call(name) !== "[object String]" ||
+		name.length === 0
+	) {
 		throw new Error("connector name must be a non-empty string");
 	}
 	for (const [operation, scope] of Object.entries(options.operations)) {

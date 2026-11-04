@@ -3,7 +3,7 @@
  * The CD plane never re-renders raw Git/Helm under high privilege.
  */
 import { createHash } from "node:crypto";
-import { isJsonObject, type JsonObject, type JsonValue } from "../json.js";
+import { isJsonObject, type JsonObject } from "../json.js";
 import {
 	DEPLOYMENT_PLAN_SCHEMA,
 	type DeploymentPlan,

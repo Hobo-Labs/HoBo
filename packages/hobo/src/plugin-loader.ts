@@ -61,7 +61,7 @@ export interface PluginHostHooks {
 	) => void;
 }
 
-function asProviderFactory(value: Function): () => RegistrableProvider {
+function asProviderFactory(value: object): () => RegistrableProvider {
 	// SAFETY: the export was checked with instanceof Function at the plugin boundary.
 	return value as () => RegistrableProvider;
 }

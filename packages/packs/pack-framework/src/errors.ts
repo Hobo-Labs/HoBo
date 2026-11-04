@@ -1,4 +1,3 @@
-import type { JsonValue } from "./json.js";
 /**
  * Stable error codes for pack mechanics.
  *

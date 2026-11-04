@@ -56,9 +56,7 @@ export function convexApp(root: string): new () => object {
 
 export function convexMetaOf(binding: JsonValue): ConvexWebAppMeta | undefined {
 	if (!(binding instanceof Function)) return undefined;
-	// SAFETY: `const holder = binding as Function & { [CONVEX_WEBAPP_METADATA]?: JsonValue };` is required at this I/O or test boundary.
-	const holder = binding as Function & { [CONVEX_WEBAPP_METADATA]?: JsonValue };
-	const meta = holder[CONVEX_WEBAPP_METADATA];
+	const meta: unknown = Reflect.get(binding, CONVEX_WEBAPP_METADATA);
 	if (!meta || !isJsonObject(meta)) return undefined;
 	// SAFETY: `const m = meta as Partial<ConvexWebAppMeta>;` is required at this I/O or test boundary.
 	const m = meta as Partial<ConvexWebAppMeta>;

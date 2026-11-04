@@ -17,7 +17,6 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-
 export const PACK_SIGNATURE_ALGORITHMS = [
 	"ed25519",
 	"ecdsa-p256-sha256",

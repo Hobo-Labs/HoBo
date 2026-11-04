@@ -84,9 +84,10 @@ function unsafe(
  * name, or a path, and that turn one into a command if the value ever reaches
  * a shell, a `CREATE SUBSCRIPTION` string, or a log line.
  */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is the point; a NUL truncates the argument the child actually receives and a CR/LF forges a log line.
-// eslint-disable-next-line no-control-regex
-const SHELL_METACHARACTERS = /[;&|`$(){}<>*?!#~\\'"\u0009\u000a\u000d\u0000-\u001f\u007f]/u;
+const SHELL_METACHARACTERS =
+	// eslint-disable-next-line no-control-regex
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: control-character matching intentionally sanitises process arguments and log lines.
+	/[;&|`$(){}<>*?!#~\\'"\u0009\u000a\u000d\u0000-\u001f\u007f]/u;
 const WHITESPACE = /\s/u;
 
 const HOSTNAME =
@@ -177,6 +178,7 @@ export function parseArtifactPath(
 	if (value.length === 0) unsafe(`${what} must not be empty`);
 	if (value.length > 1024) unsafe(`${what} exceeds 1024 characters`);
 	// eslint-disable-next-line no-control-regex
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters in artifact paths are intentionally rejected.
 	if (/[\u0000-\u001f\u007f]/u.test(value)) {
 		unsafe(`${what} contains a control character`);
 	}
@@ -214,6 +216,7 @@ export function assertArgvSafe(argv: readonly string[]): readonly string[] {
 	for (const element of argv) {
 		if (element.length > 1024) unsafe("argv element exceeds 1024 characters");
 		// eslint-disable-next-line no-control-regex
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: NUL and newline matching intentionally rejects unsafe argv elements.
 		if (/[\u0000\n\r]/u.test(element)) {
 			unsafe("argv element contains a NUL or newline");
 		}

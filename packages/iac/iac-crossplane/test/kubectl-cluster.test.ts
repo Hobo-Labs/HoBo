@@ -63,19 +63,18 @@ describe("createKubectlCrossplaneCluster gating", () => {
 
 // The live lane: a real kind/k3d cluster with Crossplane installed and the
 // platform XRD/Compositions applied (CI installs them; dev machines may not).
-describe.runIf(process.env.HOBO_RUN_LIVE_CROSSPLANE === "1" && clusterReachable())(
-	"real Crossplane cluster conformance",
-	() => {
-		it("passes the shared conformance smoke against live claims", async () => {
-			const adapter = createCrossplaneIacAdapter({
-				cluster: createKubectlCrossplaneCluster(),
-				readyPollLimit: 30,
-			});
-			const result = await runIacBackendConformance({
-				adapter,
-				program: createFixtureIacProgram(),
-			});
-			expect(result.passed).toBe(true);
-		}, 300_000);
-	},
-);
+describe.runIf(
+	process.env.HOBO_RUN_LIVE_CROSSPLANE === "1" && clusterReachable(),
+)("real Crossplane cluster conformance", () => {
+	it("passes the shared conformance smoke against live claims", async () => {
+		const adapter = createCrossplaneIacAdapter({
+			cluster: createKubectlCrossplaneCluster(),
+			readyPollLimit: 30,
+		});
+		const result = await runIacBackendConformance({
+			adapter,
+			program: createFixtureIacProgram(),
+		});
+		expect(result.passed).toBe(true);
+	}, 300_000);
+});

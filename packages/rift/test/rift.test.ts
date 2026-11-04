@@ -22,8 +22,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { must } from "@hobo/core/total-access";
 import { afterAll, describe, expect, it } from "vitest";
-import { parseJsonObject, type JsonBag, type JsonValue } from "../src/json.js";
-
+import { type JsonBag, type JsonValue, parseJsonObject } from "../src/json.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -681,7 +680,9 @@ describe("a root that predates event counting", () => {
 		const root = source();
 		createWorkspace({ root, name: "old" });
 		const snapshotPath = join(root, RIFT_DIR, "registry.json");
-		const snapshot: JsonBag = { ...parseJsonObject(readFileSync(snapshotPath, "utf8")) };
+		const snapshot: JsonBag = {
+			...parseJsonObject(readFileSync(snapshotPath, "utf8")),
+		};
 		writeFileSync(
 			snapshotPath,
 			JSON.stringify({

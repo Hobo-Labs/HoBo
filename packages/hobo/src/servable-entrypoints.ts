@@ -85,7 +85,7 @@ export function isExternalComponent(
 }
 
 function asFetchHandler(
-	value: JsonValue | undefined | Function,
+	value: JsonValue | undefined | ((...args: never[]) => unknown),
 ): FetchHandler | null {
 	if (!(value instanceof Function)) {
 		return null;

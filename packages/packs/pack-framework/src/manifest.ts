@@ -20,13 +20,13 @@ import {
 	type PackArchitecture,
 	parsePackArchitecture,
 } from "./architecture.js";
+import { containsControlChar } from "./argv.js";
 import {
 	type ImageDigest,
 	type ImageRepository,
 	type ParsedPinnedImageRef,
 	parsePinnedImageRef,
 } from "./digest.js";
-import { containsControlChar } from "./argv.js";
 import { PackError } from "./errors.js";
 import {
 	canonicalizeForSigning,
@@ -382,7 +382,9 @@ function parseImages(
 			reference,
 			digest: reference.digest,
 			repository: reference.repository,
-			...(input.sizeBytes !== undefined ? { sizeBytes: input.sizeBytes } : undefined),
+			...(input.sizeBytes !== undefined
+				? { sizeBytes: input.sizeBytes }
+				: undefined),
 		});
 	}
 	// One repository per pack: a manifest whose arm64 image comes from a

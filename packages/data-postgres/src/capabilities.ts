@@ -121,11 +121,11 @@ const descriptor = (
 	} = {},
 ): PostgresCapabilityDescriptor => {
 	const result: MutablePostgresCapabilityDescriptor = {
-	key,
-	axis,
-	valueKind,
-	description,
-	declaredByProfile: options.declaredByProfile ?? false,
+		key,
+		axis,
+		valueKind,
+		description,
+		declaredByProfile: options.declaredByProfile ?? false,
 	};
 	if (options.domain !== undefined) result.domain = options.domain;
 	return result;

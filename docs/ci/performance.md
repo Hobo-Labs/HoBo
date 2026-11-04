@@ -865,3 +865,9 @@ Once accepted, later polls returned `duplicate` without checking whether a pendi
 Run 41738569286 had five jobs queued for over 17 minutes and logged as duplicates while 22–24 jobs waited.
 The fix checks coverage locally and re-admits uncovered jobs through the relay at most once per minute per delivery id.
 The Vercel relay webhook answers 202 `requeued` for such a re-admitted delivery.
+
+## Finding 20: a workspace-wide change linted every package and failed on old findings
+
+PR #1667 changed root `package.json`, so affected-lanes selected all 795 packages; turbo ran every package's `lint` (`biome check .`) with `--continue=never` and failed on `@hobo/pack-postgres-oci` (7 errors in files the PR never touched).
+Main had 53 such errors across 9 packages because Main full gate never runs package lint.
+This cleanup fixes them; a follow-up commit in the same PR makes PRs and main lint only changed files.

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isJsonString, type JsonObject, type JsonValue } from "../json.js";
+import { isJsonString, type JsonObject } from "../json.js";
 
 // The Executor (control-plane.md "Executor sandbox model"): the sandboxed apply
 // step. IaC apply runs untrusted-ish provider code, so it is isolated — no
