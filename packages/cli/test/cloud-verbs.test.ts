@@ -27,8 +27,7 @@ import {
 	createUpCommand,
 	type YardRuntime,
 } from "../src/index.js";
-import { isJsonString, parseJsonObject, type JsonValue } from "../src/json.js";
-
+import { isJsonString, type JsonValue, parseJsonObject } from "../src/json.js";
 
 // S2-08: the cloud verbs (login/plan/up/down) wired to the @hobo/cloud Yard
 // through the shared yard-client seam. The mocked lane drives the gateway +

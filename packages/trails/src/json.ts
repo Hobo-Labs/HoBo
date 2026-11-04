@@ -10,10 +10,15 @@ export type JsonValue =
 
 export type JsonObject = { readonly [key: string]: JsonValue };
 
-export function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+export function isJsonObject(
+	value: JsonValue | undefined,
+): value is JsonObject {
 	return value !== null && Object(value) === value && !Array.isArray(value);
 }
 
 export function isJsonString(value: JsonValue | undefined): value is string {
-	return value !== undefined && Object.prototype.toString.call(value) === "[object String]";
+	return (
+		value !== undefined &&
+		Object.prototype.toString.call(value) === "[object String]"
+	);
 }

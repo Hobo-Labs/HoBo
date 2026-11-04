@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import type { AdmissionOrder } from "../admission-order.js";
 import type { GithubTransport } from "../github.js";
 import type { JobDurations } from "../job-durations.js";
+import { servedRunnerLabel } from "../runner-labels.js";
 
 /** Pull-mode admission: GitHub REST stands in for webhook ingress, so a box
  * needs no public URL, relay, or shared database to see `runs-on: hobo` work. */
@@ -28,6 +30,8 @@ export interface GithubJobPollerOptions {
 	onGithubError?: (failure: GithubReadFailure) => void;
 	/** Fed every `hobo` job the poll reads, so admission can put a run's longest job first. */
 	durations?: Pick<JobDurations, "observe">;
+	/** Primed from the run lists already read here, at no extra GitHub request. */
+	admissionOrder?: Pick<AdmissionOrder, "prime">;
 	now?: () => number;
 }
 
@@ -82,6 +86,8 @@ const Runs = z.object({
 			id: z.number().int().positive(),
 			run_attempt: z.number().int().positive().optional(),
 			status: z.string().nullable().optional(),
+			event: z.string().optional(),
+			run_started_at: z.string().nullable().optional(),
 		}),
 	),
 });
@@ -185,6 +191,17 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 		return schema.parse(JSON.parse(body));
 	}
 
+	function primeRuns(runs: readonly Run[] | undefined): void {
+		for (const run of runs ?? []) {
+			if (run.event !== undefined)
+				options.admissionOrder?.prime({
+					runId: run.id,
+					event: run.event,
+					runStartedAt: run.run_started_at,
+				});
+		}
+	}
+
 	async function poll(): Promise<GithubJobPollSummary> {
 		const waiting: WaitingJob[] = [];
 		const summary = {
@@ -219,6 +236,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						Runs,
 						summary,
 					);
+					primeRuns(runs?.workflow_runs);
 					for (const run of runs?.workflow_runs ?? []) runIds.add(run.id);
 				}
 				const newest = await getJson(
@@ -227,6 +245,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					Runs,
 					summary,
 				);
+				primeRuns(newest?.workflow_runs);
 				const newestCompleted: Run[] = [];
 				for (const run of newest?.workflow_runs ?? []) {
 					if (run.status === "completed") newestCompleted.push(run);
@@ -245,6 +264,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					Runs,
 					summary,
 				);
+				primeRuns(completed?.workflow_runs);
 				const settling = new Map<
 					number,
 					Readonly<{ key: string; attempt: number }>
@@ -281,12 +301,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					const failedBefore = summary.failed;
 					for (const job of jobs?.jobs ?? []) {
 						const status = PolledStatus.safeParse(job.status);
-						if (
-							!status.success ||
-							job.labels.length !== 1 ||
-							job.labels[0]?.toLowerCase() !== "hobo"
-						)
-							continue;
+						if (!status.success || !servedRunnerLabel(job.labels)) continue;
 						if (job.name !== undefined)
 							options.durations?.observe({
 								repository: connection.repository,

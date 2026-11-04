@@ -29,13 +29,11 @@
  * whole list. Getting that wrong truncates every full-list read by one.
  */
 import { describe, expect, it } from "vitest";
-
+import type { JsonObject } from "../src/json.js";
 import {
 	createReferenceRedisStore,
 	createTimelessReferenceStore,
 } from "../src/reference-store.js";
-import { type JsonObject } from "../src/json.js";
-
 
 const store = (options: JsonObject = {}) =>
 	// SAFETY: `createReferenceRedisStore(options as never);` is required at this I/O or test boundary.

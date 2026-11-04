@@ -24,7 +24,9 @@ export function createLoginCommand(deps: LoginCommandDeps = {}): CommandModule {
 				deps.session ??
 				createFixtureSession({
 					...(deps.tenant !== undefined ? { tenant: deps.tenant } : undefined),
-					...(deps.subject !== undefined ? { subject: deps.subject } : undefined),
+					...(deps.subject !== undefined
+						? { subject: deps.subject }
+						: undefined),
 				});
 
 			let sessionFile: string | null = null;

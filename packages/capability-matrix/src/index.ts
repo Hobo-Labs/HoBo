@@ -48,9 +48,9 @@ export {
 
 export {
 	CAPABILITY_MATRIX_ERROR_CODES,
+	type CapabilityMatrixDocument,
 	CapabilityMatrixError,
 	type CapabilityMatrixErrorCode,
-	type CapabilityMatrixDocument,
 	parseCapabilityMatrix,
 	tryParseCapabilityMatrix,
 } from "./parse.js";

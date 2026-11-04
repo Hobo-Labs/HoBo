@@ -33,6 +33,7 @@
 		"@hobo/broker": "workspace:*",
 		"@hobo/camps": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
+		"@hobo/ci": "workspace:*",
 		"@hobo/claims": "workspace:*",
 		"@hobo/ci-gh-actions": "workspace:*",
 		"@hobo/cli": "workspace:*",
@@ -80,10 +81,10 @@
 		"@hobo/trust": "workspace:*",
 		"@hobo/yards": "workspace:*",
 		"esbuild": "^0.25.0",
-		"tsx": "4.22.4"
+		"tsx": "4.22.4",
+		"zod": "^4.1.13"
 	},
 	"devDependencies": {
-		"@hobo/ci": "workspace:*",
 		"@hobo/contract-harness": "workspace:*",
 		"@hobo/testing": "workspace:*",
 		"@types/pg": "8.15.5",

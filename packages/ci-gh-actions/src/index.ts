@@ -52,6 +52,7 @@ export {
 export {
 	countInFlightWorkerLeases,
 	waitForIsolatedWorkerDrain,
+	workerOfferKeys,
 } from "./isolated-worker/daemon-shutdown.js";
 export {
 	createGithubJobPoller,

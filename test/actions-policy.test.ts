@@ -70,6 +70,35 @@ jobs:
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /2 enabled workflow/);
 });
+test("authoritative CI jobs choose between hobo and the trunk label only", async () => {
+	const trunk =
+		"${{ vars.HOBO_CI_TRUNK_RUNNER == 'true' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+	const hoboCi = (runsOn: string) => `name: HoBo CI Fabric
+on:
+  push:
+    branches: [main]
+jobs:
+  pr-gate:
+    runs-on: hobo
+    steps:
+      - run: true
+  main-gate:
+    runs-on: ${runsOn}
+    steps:
+      - run: true
+`;
+	const accepted = lint(await fixture({ "hobo-ci.yml": hoboCi(trunk) }));
+	assert.equal(accepted.status, 0, accepted.stderr);
+	for (const runsOn of [
+		"${{ vars.HOBO_CI_TRUNK_RUNNER }}",
+		trunk.replace("'hobo-trunk'", "'ubuntu-latest'"),
+		"ubuntu-latest",
+	]) {
+		const result = lint(await fixture({ "hobo-ci.yml": hoboCi(runsOn) }));
+		assert.equal(result.status, 1, runsOn);
+		assert.match(result.stderr, /runs-on must be hobo or the trunk label/);
+	}
+});
 test("a checkout without enabled workflows still passes", async () => {
 	assert.equal(lint(await fixture()).status, 0);
 });

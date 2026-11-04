@@ -12,6 +12,7 @@ import {
 	observeToolOutput,
 	type ToolDecision,
 } from "./auth.js";
+import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
 import {
 	createRateLimiter,
 	createThrottleEvent,
@@ -20,7 +21,6 @@ import {
 	type RateLimiter,
 	type RateLimitPolicy,
 } from "./rate-limit.js";
-import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
 import {
 	assertToolSurfaceParity,
 	findTool,

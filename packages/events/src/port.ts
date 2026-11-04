@@ -4,7 +4,7 @@ import { createPortDescriptor } from "@hobo/core";
 // The subscription-gateway port a transport (WebSocket/SSE, backed by the
 // Streamer) satisfies to carry reactive pushes to clients (data-plane.md Plan 32
 // §Transport). The kernel depends inward on the @hobo/core port vocabulary only.
-export const SUBSCRIPTION_GATEWAY_INTERFACE = "hobo:subscription/gateway";
+export const SUBSCRIPTION_GATEWAY_INTERFACE = "hobo:subscription/gateway"; // public-contract: port interface id a subscription transport declares
 
 const subscriptionGatewayPort = createPortDescriptor({
 	kind: "provider",
@@ -12,7 +12,9 @@ const subscriptionGatewayPort = createPortDescriptor({
 	interface: SUBSCRIPTION_GATEWAY_INTERFACE,
 	stability: "preview",
 });
-function isProviderPort(descriptor: PortDescriptor): descriptor is ProviderPort {
+function isProviderPort(
+	descriptor: PortDescriptor,
+): descriptor is ProviderPort {
 	return descriptor.kind === "provider";
 }
 if (!isProviderPort(subscriptionGatewayPort)) {

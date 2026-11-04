@@ -18,21 +18,18 @@
 import type { EventEnvelope } from "@hobo/core";
 import { defineProjection, type Projection } from "@hobo/data";
 
-import {
-	STATUS_PAGE_EVENTS,
-	STATUS_SIGNAL_EVENTS,
-} from "./events.js";
+import { STATUS_PAGE_EVENTS, STATUS_SIGNAL_EVENTS } from "./events.js";
 import {
 	advanceIncidentState,
 	advanceMaintenanceState,
 	type ComponentStatus,
 	type IncidentRecord,
 	type IncidentState,
-	type MaintenanceRecord,
 	isRecordValue,
 	isStringValue,
 	type JsonObject,
 	type JsonValue,
+	type MaintenanceRecord,
 	type Mutable,
 	worstComponentStatus,
 } from "./types.js";
@@ -97,10 +94,14 @@ function isFiniteNumber(value: JsonValue | undefined): value is number {
 
 function eventData(event: EventEnvelope): JsonObject | undefined {
 	// SAFETY: EventEnvelope data is JSON at the event-store boundary.
-	return isRecordValue(event.data as JsonValue) ? event.data as JsonObject : undefined;
+	return isRecordValue(event.data as JsonValue)
+		? (event.data as JsonObject)
+		: undefined;
 }
 
-function isContentHash(value: JsonValue | undefined): value is `sha256:${string}` {
+function isContentHash(
+	value: JsonValue | undefined,
+): value is `sha256:${string}` {
 	return isStringValue(value) && value.startsWith("sha256:");
 }
 
@@ -233,7 +234,9 @@ function applySloMeasured(
 		id: data.componentId,
 		label: data.componentLabel ?? existing?.label ?? data.componentId,
 		status: isLate ? (existing?.status ?? status) : status,
-		lastSignalAt: isLate ? existing?.lastSignalAt ?? data.measuredAt : data.measuredAt,
+		lastSignalAt: isLate
+			? (existing?.lastSignalAt ?? data.measuredAt)
+			: data.measuredAt,
 		attainment: isLate ? (existing?.attainment ?? attainment) : attainment,
 		target: isLate ? (existing?.target ?? data.target) : data.target,
 		history:
@@ -294,7 +297,7 @@ function applyIncidentOpened(
 			incidents: { ...base.incidents, [incident.id]: incident },
 		});
 	}
-		const incident: Mutable<IncidentRecord> = {
+	const incident: Mutable<IncidentRecord> = {
 		id: data.incidentId,
 		title:
 			isStringValue(data.title) && data.title.length > 0
@@ -337,7 +340,7 @@ function applyIncidentProgress(
 		title: data.incidentId,
 		state: nextState,
 		impact: "minor" as const,
-		affectedComponents: Object.freeze(new Array<string>()),
+		affectedComponents: Object.freeze([]),
 		openedAt: event.ts,
 		updatedAt: event.ts,
 		updates: Object.freeze([]),
@@ -389,14 +392,13 @@ function applyIncidentResolved(
 		title: data.incidentId,
 		state: "resolved" as const,
 		impact: "minor" as const,
-		affectedComponents: Object.freeze(new Array<string>()),
+		affectedComponents: Object.freeze([]),
 		openedAt: event.ts,
 		updatedAt: event.ts,
 		updates: Object.freeze([]),
 	};
 	const summary =
-		isStringValue(data.resolutionSummary) &&
-		data.resolutionSummary.length > 0
+		isStringValue(data.resolutionSummary) && data.resolutionSummary.length > 0
 			? data.resolutionSummary
 			: undefined;
 	const incident: Mutable<IncidentRecord> = {
@@ -460,8 +462,9 @@ function applyMaintenanceScheduled(
 					)
 				: [],
 		),
-		expectedImpact:
-			isStringValue(data.expectedImpact) ? data.expectedImpact : "",
+		expectedImpact: isStringValue(data.expectedImpact)
+			? data.expectedImpact
+			: "",
 	};
 	return touch(base, event, {
 		maintenances: { ...base.maintenances, [maintenance.id]: maintenance },
@@ -474,10 +477,7 @@ function applyMaintenanceUpdated(
 ): StatusPageRow {
 	const base = row ?? emptyRow(defaultScopeKey(event), event);
 	const data = eventData(event);
-	if (
-		!isStringValue(data?.maintenanceId) ||
-		data.maintenanceId.length === 0
-	) {
+	if (!isStringValue(data?.maintenanceId) || data.maintenanceId.length === 0) {
 		return touch(base, event, {});
 	}
 	const existing = base.maintenances[data.maintenanceId];
@@ -504,9 +504,7 @@ function applyPublished(
 ): StatusPageRow {
 	const base = row ?? emptyRow(defaultScopeKey(event), event);
 	const data = eventData(event);
-	if (
-		!isContentHash(data?.contentHash)
-	) {
+	if (!isContentHash(data?.contentHash)) {
 		return touch(base, event, {});
 	}
 	return touch(base, event, {

@@ -26,6 +26,7 @@ import {
 import { cellWidth } from "../src/rubberhose.js";
 import { createDefaultShellHost } from "../src/shell-host.js";
 import { StreamTerminal } from "../src/shell-terminal.js";
+import { BO_IDLE_TICK_MS } from "../src/splash.js";
 
 const WIDTH = 80;
 const HEIGHT = 24;
@@ -43,11 +44,12 @@ function temp(prefix: string): string {
 	return d;
 }
 
-function collector() {
+function collector(onWrite?: () => void) {
 	let total = 0;
 	const stream = new Writable({
 		write(chunk, _enc, cb) {
 			total += chunk.length;
+			onWrite?.();
 			cb();
 		},
 	});
@@ -65,6 +67,10 @@ interface RunOptions {
 	readonly reducedMotion?: boolean;
 	readonly host?: ShellHost;
 	readonly onTerminal?: (t: StreamTerminal) => void;
+	/** Feeds the shell keys after it starts, where `scriptedKeys` are fixed up front. */
+	readonly stdin?: PassThrough;
+	/** Called on every write to stdout, after the terminal has counted it. */
+	readonly onWrite?: () => void;
 }
 
 async function runShell(options: RunOptions): Promise<{
@@ -72,8 +78,8 @@ async function runShell(options: RunOptions): Promise<{
 	readonly bytes: number;
 	readonly terminal: StreamTerminal;
 }> {
-	const stdin = new PassThrough();
-	const out = collector();
+	const stdin = options.stdin ?? new PassThrough();
+	const out = collector(options.onWrite);
 	let terminal!: StreamTerminal;
 	const exitCode = await runInteractiveShell({
 		stdin,
@@ -146,37 +152,39 @@ describe("InteractiveShell render budget (differential rendering)", () => {
 	});
 
 	it("reduced motion: zero writes while idle after the first paint", async () => {
+		// The idle window is the property under test, so it is the one timer here.
+		// It starts on the write that completes the first paint rather than on a
+		// polled guess, and a key closes the shell once it has elapsed, rather
+		// than a fixed lifetime that every run pays in full. Eight ticks reach
+		// past the idle sprite's first bounce (ticks 6–15 of its cycle), so the
+		// window would see a frame if reduced motion stopped holding it still.
+		const idleWindowMs = BO_IDLE_TICK_MS * 8;
+		const stdin = new PassThrough();
+		let terminalRef: StreamTerminal | undefined;
+		let painting = false;
 		let afterPaint = 0;
 		let beforeQuit = 0;
-		let terminalRef: StreamTerminal | undefined;
-		const snapshots = new Promise<void>((resolve, reject) => {
-			const started = Date.now();
-			const waitForPaint = (): void => {
-				const written = terminalRef?.bytesWritten ?? 0;
-				if (written > 64) {
-					afterPaint = written;
-					setTimeout(() => {
-						beforeQuit = terminalRef?.bytesWritten ?? -1;
-						resolve();
-					}, 200);
-					return;
-				}
-				if (Date.now() - started > 5_000) {
-					reject(new Error("first paint never landed"));
-					return;
-				}
-				setTimeout(waitForPaint, 40);
-			};
-			setTimeout(waitForPaint, 40);
-		});
 		const { terminal } = await runShell({
 			reducedMotion: true,
-			maxMs: 5_200,
+			// A backstop only: the test ends on the key.
+			maxMs: 15_000,
+			stdin,
 			onTerminal: (t) => {
 				terminalRef = t;
 			},
+			onWrite: () => {
+				if (painting || (terminalRef?.bytesWritten ?? 0) <= 64) return;
+				painting = true;
+				// A frame is several writes in one turn; snapshot once it is whole.
+				setImmediate(() => {
+					afterPaint = terminalRef?.bytesWritten ?? 0;
+					setTimeout(() => {
+						beforeQuit = terminalRef?.bytesWritten ?? -1;
+						stdin.write("\u0003");
+					}, idleWindowMs);
+				});
+			},
 		});
-		await snapshots;
 		expect(afterPaint).toBeGreaterThan(0);
 		// No animation, no input — not a single byte between the two snapshots.
 		expect(beforeQuit).toBe(afterPaint);

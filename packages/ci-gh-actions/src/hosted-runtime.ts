@@ -2,6 +2,7 @@ import { toJsonString } from "@bufbuild/protobuf";
 import type { CiEvent } from "@hobo/ci";
 import { z } from "zod";
 import { JitBootstrapResponseSchema } from "./_generated/jit_bootstrap_response_pb.js";
+import { createAdmissionOrder } from "./admission-order.js";
 import { type GithubTransport, getJob } from "./github.js";
 import {
 	HostedRelay,
@@ -70,12 +71,20 @@ export function createHostedRelayRuntime(options: {
 	denyUnisolated?: boolean;
 	/** Shared across ticks; a relay is rebuilt per tick and would forget it. */
 	jobDurations?: JobDurations;
+	/** See `HostedRelay`: maximum active leases for non-trunk runs. */
+	generalLeaseLimit?: number;
+	/** See `HostedRelay`: whether non-trunk runs may borrow trunk slots. */
+	lendTrunkSlots?: boolean;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
 	now?: () => string;
 }) {
 	const now = options.now ?? (() => new Date().toISOString());
+	const admissionOrder = createAdmissionOrder(
+		options.github,
+		options.jobDurations,
+	);
 	async function relay() {
 		const state = await options.store.configuration();
 		if (!state?.configuration) throw new Error("configuration unavailable");
@@ -87,14 +96,20 @@ export function createHostedRelayRuntime(options: {
 			webhookSecret: options.webhookSecret,
 			// Every tick ends in `dispatchPending`, which reserves in admission order.
 			deferReservation: true,
+			admissionOrder,
 			now,
 		};
 		if (options.denyUnisolated) relayOptions.denyUnisolated = true;
 		if (options.isolatedHost) relayOptions.isolatedHost = options.isolatedHost;
 		if (options.jobDurations) relayOptions.jobDurations = options.jobDurations;
+		if (options.generalLeaseLimit !== undefined)
+			relayOptions.generalLeaseLimit = options.generalLeaseLimit;
+		if (options.lendTrunkSlots !== undefined)
+			relayOptions.lendTrunkSlots = options.lendTrunkSlots;
 		return new HostedRelay(relayOptions);
 	}
 	return {
+		admissionOrder,
 		async ingestWebhook(input: {
 			deliveryId: string;
 			event: "workflow_job" | "workflow_run";
@@ -145,9 +160,14 @@ export function createHostedRelayRuntime(options: {
 				(await options.store.configuration())?.configuration !== undefined
 			);
 		},
-		/** Process a bounded inbox batch, then drain and inspect known leases. */
-		async tick(tickOptions: { maxDeliveries?: number } = {}) {
-			const limit = tickOptions.maxDeliveries ?? 10;
+		/**
+		 * Process a bounded inbox batch, then drain and inspect known leases.
+		 * With `admit: false` (a draining worker) it only inspects leases: no
+		 * delivery is taken and no pending job is reserved or launched.
+		 */
+		async tick(tickOptions: { maxDeliveries?: number; admit?: boolean } = {}) {
+			const admit = tickOptions.admit ?? true;
+			const limit = admit ? (tickOptions.maxDeliveries ?? 10) : 0;
 			if (!Number.isInteger(limit) || limit < 0 || limit > 50)
 				throw new Error("invalid delivery batch size");
 			// A function can die after committing intent and before recording the
@@ -290,7 +310,7 @@ export function createHostedRelayRuntime(options: {
 					/* Retain ambiguous reservations until a later verified reconciliation. */
 				}
 			}
-			await controller.dispatchPending();
+			if (admit) await controller.dispatchPending();
 			if (deliveryFailed)
 				throw new Error("one or more inbox deliveries failed");
 		},

@@ -252,7 +252,7 @@ describe("scoreRubric", () => {
 
 	it("rejects malformed observations with typed ObservationParseError", () => {
 		const rubric = sampleRubric();
-			const cases = [
+		const cases = [
 			// missing observation for a criterion
 			passingObservations().slice(0, 2),
 			// unknown criterion
@@ -309,9 +309,9 @@ describe("matchGolden / canonicalJson", () => {
 	});
 
 	it("does not crash on circular or bigint values", () => {
-			const left: CircularRecord = { label: "billing" };
+		const left: CircularRecord = { label: "billing" };
 		left.self = left;
-			const right: CircularRecord = { label: "billing" };
+		const right: CircularRecord = { label: "billing" };
 		right.self = right;
 		expect(() => canonicalJson(left)).not.toThrow();
 		expect(canonicalJson(left)).toBe(canonicalJson(right));
@@ -328,7 +328,7 @@ describe("matchGolden / canonicalJson", () => {
 });
 
 describe("evaluatePromotionGate", () => {
-		function reports(): ReportPair {
+	function reports(): ReportPair {
 		const rubric = sampleRubric();
 		const failingObservations = [
 			{ criterionId: "category-correct", score: 0.2 },
@@ -393,13 +393,13 @@ describe("evaluatePromotionGate", () => {
 
 	it("rejects malformed inputs with typed PromotionGateParseError", () => {
 		const { passing } = reports();
-			// SAFETY: undefined is deliberate malformed input for parser coverage.
-			expect(() => evaluatePromotionGate(undefined as never)).toThrow(
+		// SAFETY: undefined is deliberate malformed input for parser coverage.
+		expect(() => evaluatePromotionGate(undefined as never)).toThrow(
 			PromotionGateParseError,
 		);
 		expect(() =>
-				// SAFETY: this deliberately bypasses the parsed report boundary.
-				evaluatePromotionGate({ rubricReport: { ok: true } as never }),
+			// SAFETY: this deliberately bypasses the parsed report boundary.
+			evaluatePromotionGate({ rubricReport: { ok: true } as never }),
 		).toThrow(PromotionGateParseError);
 		expect(() =>
 			evaluatePromotionGate({

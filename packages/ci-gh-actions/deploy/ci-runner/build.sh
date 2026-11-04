@@ -28,6 +28,31 @@ mise install
 node --no-warnings scripts/ci-runner-image-version.mts >/tmp/hobo-ci-runner-version.$$
 version="$(tr -d '[:space:]' < /tmp/hobo-ci-runner-version.$$)"
 rm -f /tmp/hobo-ci-runner-version.$$
+candidate="hobo-ci-worker:${version}"
+
+# The contract runs in the candidate before it becomes :local, which new jobs use.
+# Its inputs are streamed in: a bind mount would name a host path, and inside a
+# job container the checkout is not on the host.
+promote_candidate() {
+  echo "Runner image contract (inside ${candidate}):"
+  tar -C "${root}" -cf - mise.toml mise.lock scripts/ci-runner-preflight.mts scripts/lib/ci-runner-contract.mts \
+    | docker run --rm -i -e HOBO_CI_RUNNER_CONTRACT=live "${candidate}" \
+      sh -c 'mkdir -p /tmp/contract && tar -xf - -C /tmp/contract && cd /tmp/contract && node --no-warnings scripts/ci-runner-preflight.mts'
+  docker tag "${candidate}" hobo-ci-worker:local
+  local digest
+  digest="$(docker inspect --format='{{index .RepoDigests 0}}' hobo-ci-worker:local 2>/dev/null || true)"
+  echo "Done. ${digest:-hobo-ci-worker:local (daemon tag only)}"
+}
+
+# The version is a hash of every input the image is built from, so an image already
+# tagged with it is this build's output: a re-run, or main after the pull request
+# that built these inputs. Rebuilding it would only repeat the base build, the
+# registry push and the layer load.
+if docker image inspect "${candidate}" >/dev/null 2>&1; then
+  echo "${candidate} is already on this host; skipping the build"
+  promote_candidate
+  exit 0
+fi
 
 # Registry API, not `docker manifest inspect`: the runner image's Debian docker.io
 # CLI rejects the pinned OCI index (its attestation children are OCI manifests).
@@ -81,7 +106,6 @@ docker tag "${base_image}:local" "${local_registry}/${base_image}:local"
 docker push "${local_registry}/${base_image}:local"
 export MISE_OCI_INSECURE_REGISTRIES="${endpoint}"
 
-candidate="hobo-ci-worker:${version}"
 echo "Packaging mise.lock tools into OCI layout at ${oci_dir} (base via ${endpoint})"
 rm -rf "${oci_dir}"
 # Tagged as the candidate, so loading the layout cannot move :local ahead of the contract.
@@ -103,14 +127,4 @@ else
   docker tag "${local_registry}/${candidate}" "${candidate}"
 fi
 
-# The contract runs in the candidate before it becomes :local, which new jobs use.
-# Its inputs are streamed in: a bind mount would name a host path, and inside a
-# job container the checkout is not on the host.
-echo "Runner image contract (inside ${candidate}):"
-tar -C "${root}" -cf - mise.toml mise.lock scripts/ci-runner-preflight.mts scripts/lib/ci-runner-contract.mts \
-  | docker run --rm -i -e HOBO_CI_RUNNER_CONTRACT=live "${candidate}" \
-    sh -c 'mkdir -p /tmp/contract && tar -xf - -C /tmp/contract && cd /tmp/contract && node --no-warnings scripts/ci-runner-preflight.mts'
-docker tag "${candidate}" hobo-ci-worker:local
-
-digest="$(docker inspect --format='{{index .RepoDigests 0}}' hobo-ci-worker:local 2>/dev/null || true)"
-echo "Done. ${digest:-hobo-ci-worker:local (daemon tag only)}"
+promote_candidate

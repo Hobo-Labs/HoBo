@@ -17,13 +17,20 @@ import {
 } from "../src/index.js";
 import { matrixInput } from "./fixtures.js";
 
-type JsonValue = string | number | boolean | null | undefined | JsonValue[] | JsonObject;
+type JsonValue =
+	| string
+	| number
+	| boolean
+	| null
+	| undefined
+	| JsonValue[]
+	| JsonObject;
 type JsonObject = Record<string, JsonValue>;
 
 // SAFETY: JSON.stringify/parse round-trips the generated matrix as JSON.
 const VALID = JSON.parse(
 	JSON.stringify(generateCapabilityMatrix(matrixInput())),
-	) as JsonObject;
+) as JsonObject;
 
 /** A deep clone of the valid matrix, so each test mutates in isolation. */
 function clone(): JsonObject {

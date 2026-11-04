@@ -250,10 +250,7 @@ export class TrailRunService {
 		return this.record;
 	}
 
-	private emit(
-		type: TrailEvent["type"],
-	data: JsonObject,
-	): void {
+	private emit(type: TrailEvent["type"], data: JsonObject): void {
 		const rec = this.require();
 		this.seq += 1;
 		this.events.push(

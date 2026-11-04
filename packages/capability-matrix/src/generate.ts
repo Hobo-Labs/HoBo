@@ -370,8 +370,10 @@ export function generateCapabilityMatrix(
 					conformance: implementation.conformance,
 					unavailability,
 				};
-				if (evidence !== undefined) candidate.evidenceExpiresAtMs = evidence.expiresAt;
-				if (conformanceRef !== undefined) candidate.conformanceRef = conformanceRef;
+				if (evidence !== undefined)
+					candidate.evidenceExpiresAtMs = evidence.expiresAt;
+				if (conformanceRef !== undefined)
+					candidate.conformanceRef = conformanceRef;
 				byCell.get(cellKey(profile.primitive, runtime))?.push(candidate);
 			}
 		}

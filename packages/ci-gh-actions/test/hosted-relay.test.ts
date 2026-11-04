@@ -711,6 +711,27 @@ it("runs a durable async reservation through provider dispatch, JIT and settleme
 	expect(h.api.registrations).toBe(1);
 	expect(h.api.deletes).toBe(1);
 });
+it("registers a bridge runner under the trunk label its job asks for", async () => {
+	const h = setup();
+	h.api.jobLabel = "hobo-trunk";
+	const lease = await reserve(h);
+	await h.relay.dispatchPending();
+	expect(await h.relay.claim(lease.id, "valid")).toMatchObject({
+		encodedJitConfig: "c2VjcmV0",
+	});
+	expect(h.api.registrations).toBe(1);
+	expect(h.api.violations).toEqual([]);
+});
+it("refuses a bridge claim once its job asks for a label no hobo runner serves", async () => {
+	const h = setup();
+	const lease = await reserve(h);
+	await h.relay.dispatchPending();
+	h.api.jobLabel = "ubuntu-latest";
+	await expect(h.relay.claim(lease.id, "valid")).rejects.toThrow(
+		"original job no longer asks for a hobo runner",
+	);
+	expect(h.api.registrations).toBe(0);
+});
 it("preserves ambiguous dispatch reservations and never repeats the provider request", async () => {
 	const h = setup();
 	const lease = await reserve(h);

@@ -15,6 +15,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { SecretSourceRank } from "../src/config-types.js";
+import type { JsonValue } from "../src/json.js";
 import {
 	asHoboSecretsStore,
 	createAwsSecretsManagerPort,
@@ -27,7 +28,6 @@ import {
 	type ResolutionLadderInput,
 	resolveConfigEntry,
 } from "../src/secrets-port.js";
-import type { JsonValue } from "../src/json.js";
 
 const ALL_RANKS: readonly SecretSourceRank[] = [
 	"bound-resource",

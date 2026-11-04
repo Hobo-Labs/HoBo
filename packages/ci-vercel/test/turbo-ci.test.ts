@@ -7,7 +7,9 @@ import { join, resolve } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import type { z } from "zod";
 import { planTurboCi, runTurboCi } from "../src/turbo-ci.js";
+import { isolateTurboEnv } from "./isolated-turbo-env.js";
 
+isolateTurboEnv();
 const turboPath = createRequire(import.meta.url).resolve("turbo/bin/turbo");
 const roots: string[] = [];
 afterEach(async () => {

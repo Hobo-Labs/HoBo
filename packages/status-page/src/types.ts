@@ -174,7 +174,13 @@ export interface MaintenanceRecord {
 }
 
 export type JsonObject = { readonly [key: string]: JsonValue };
-export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+export type JsonValue =
+	| string
+	| number
+	| boolean
+	| null
+	| JsonValue[]
+	| JsonObject;
 export type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 type ParsedComponent = {
 	id: string;
@@ -284,7 +290,10 @@ function expectEnum<T extends string>(
 	return values.find((candidate) => candidate === value) ?? values[0]!;
 }
 
-function expectStringArray(input: JsonValue | undefined, path: string): readonly string[] {
+function expectStringArray(
+	input: JsonValue | undefined,
+	path: string,
+): readonly string[] {
 	if (!Array.isArray(input)) {
 		throw new StatusPageParseError(path, "expected an array of strings");
 	}

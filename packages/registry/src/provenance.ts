@@ -1,8 +1,12 @@
 import { verifyJwtWithJwks } from "@hobo/identity";
 
 import { type BundleManifest, bundleManifestDigest } from "./ingest.js";
-import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
-
+import {
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	type JsonValue,
+} from "./json.js";
 
 // Signature/provenance verification (docs/plans/0017 F24), reusing the
 // @hobo/identity issuer/verify surface: a bundle attestation is a JWT signed
@@ -64,7 +68,9 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
 // Parse an untrusted in-toto/SLSA provenance document (parse, don't validate):
 // unsupported envelope or predicate types, malformed subjects, and builder-less
 // predicates all reject — nothing partial survives.
-export function parseProvenanceStatement(raw: JsonValue): ProvenanceParseResult {
+export function parseProvenanceStatement(
+	raw: JsonValue,
+): ProvenanceParseResult {
 	if (raw === null || !isJsonObject(raw) || Array.isArray(raw)) {
 		return {
 			ok: false,
@@ -146,8 +152,9 @@ export function parseProvenanceStatement(raw: JsonValue): ProvenanceParseResult 
 			predicate: {
 				// SAFETY: `builderId: builderId as string,` is required at this I/O or test boundary.
 				builderId: builderId as string,
-				buildType:
-					isJsonString(predicate?.buildType) ? predicate.buildType : "",
+				buildType: isJsonString(predicate?.buildType)
+					? predicate.buildType
+					: "",
 			},
 		},
 	};

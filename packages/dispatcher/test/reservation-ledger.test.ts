@@ -24,8 +24,8 @@ import {
 	DISPATCH_EVENTS,
 	parseCreditLedgerView,
 } from "../src/dispatcher.js";
-import { isJsonObject } from "../src/json.js";
 import type { JsonValue } from "../src/json.js";
+import { isJsonObject } from "../src/json.js";
 
 const DIGEST =
 	"sha256:1111111111111111111111111111111111111111111111111111111111111111";
@@ -180,10 +180,10 @@ describe("reserve", () => {
 		reserveOn(ledger, {
 			reservationId: "r-2",
 			units: 5,
-				expectedSeq: ledger.snapshot().seq,
-			});
+			expectedSeq: ledger.snapshot().seq,
+		});
 		// SAFETY: the parsed account exposes the reservation accounting field.
-			expect(
+		expect(
 			(ledger.snapshot().accounts[0] as { reservedUnits: number })
 				.reservedUnits,
 		).toBe(15);

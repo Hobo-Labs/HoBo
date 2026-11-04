@@ -31,8 +31,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   run rebuilt the rest cold. Saves from PRs stay scoped to the PR ref (no cross-PR poisoning);
   push-to-main saves are the ones every PR and merge group restores.
 - **Slimmer impact gate.** `scripts/ci/affected-lanes.mts` filters the turbo lanes to the changed
-  packages and examples. Root build inputs (lockfile, workspace, turbo, tsconfig, biome, toolchain pins,
-  vendored sources) run the whole workspace; workflows, root scripts and draft proofs are covered by the
+  packages and examples, including the packages inside a pnpm-workspace group such as
+  `packages/providers/<name>` (the groups are read from `pnpm-workspace.yaml`; before that, any change
+  under a group read as a removed package and ran the whole workspace). Root build inputs (workspace, turbo, tsconfig, biome, toolchain pins,
+  vendored sources) run the whole workspace; a lockfile-only diff does too, but lockfile plus package
+  paths stay scoped to those packages. Workflows, root scripts and draft proofs are covered by the
   root checks in the same gate. `scripts/test/affected-lanes.test.ts` pins the skip logic. Dependents are
   not added yet: several packages carry pre-existing biome lint debt that a dependents sweep would surface.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings

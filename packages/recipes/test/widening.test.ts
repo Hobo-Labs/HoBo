@@ -13,10 +13,10 @@ import { describeConcern } from "@hobo/contract-harness";
 import {
 	buildDeploymentOffer,
 	compileRecipe,
+	type DeploymentRequest,
 	findStandardRecipe,
 	parseDeploymentRequest,
 	parseSolutionRecipe,
-	type DeploymentRequest,
 	type RecipePolicyInput,
 	type RecipeSemantics,
 	type SolutionRecipe,

@@ -43,7 +43,7 @@ const PACT_SOURCE = JSON.parse(
 		),
 		"utf8",
 	),
-	);
+);
 
 // SAFETY: PACT_SOURCE is the repository-owned Pact schema under test.
 const PACT = PACT_SOURCE as {

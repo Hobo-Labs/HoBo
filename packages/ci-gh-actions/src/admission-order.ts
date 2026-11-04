@@ -4,6 +4,9 @@ import type { JobDurations } from "./job-durations.js";
 /** Where a job's run stands in line for a host: lower `rank` first, then the older run. */
 export type AdmissionKey = Readonly<{ rank: number; startedAtMs: number }>;
 
+/** The rank of merge_group, push and workflow_dispatch runs: the ones that gate trunk. */
+export const TRUNK_RANK = 0;
+
 /**
  * Merge-queue entries and trunk runs gate every other merge, so a shared host
  * admits them before pull-request work. A weekly sweep waits for both.
@@ -13,7 +16,7 @@ export function admissionRank(event: string): number {
 		case "merge_group":
 		case "push":
 		case "workflow_dispatch":
-			return 0;
+			return TRUNK_RANK;
 		case "schedule":
 			return 2;
 		default:
@@ -36,8 +39,9 @@ export type AdmissionRef = Readonly<{
 
 /**
  * Orders demand for a host. A run's event and start time never change for an
- * attempt, so each run is looked up once; a failed lookup ranks the job with
- * pull requests and behind them, and is retried on the next tick. Within one
+ * attempt, so a complete entry is looked up once. The rank is remembered before
+ * the start time arrives; a failed lookup keeps it, while an unseen run ranks
+ * behind pull requests and retries next tick. Within one
  * rank and run age, the job expected to take longest goes first, so the run's
  * long pole is not left to start last on a freed slot; a job with no history
  * expects 0 and the job id breaks remaining ties.
@@ -47,30 +51,42 @@ export function createAdmissionOrder(
 	durations?: Pick<JobDurations, "expectedMs">,
 ) {
 	const runs = new Map<number, AdmissionKey>();
-	async function keyFor(ref: AdmissionRef): Promise<AdmissionKey> {
-		const cached = runs.get(ref.runId);
-		if (cached) return cached;
-		let run: Awaited<ReturnType<typeof getRun>>;
-		try {
-			run = await getRun(github, ref.installationId, ref.repository, ref.runId);
-		} catch {
-			return UNKNOWN;
-		}
-		const startedAtMs = Date.parse(run.run_started_at ?? "");
+	function remember(
+		runId: number,
+		event: string,
+		runStartedAt: string | null | undefined,
+	): AdmissionKey {
+		const parsed = Date.parse(runStartedAt ?? "");
+		const cached = runs.get(runId);
 		const key = {
-			rank: admissionRank(run.event),
-			startedAtMs: Number.isFinite(startedAtMs)
-				? startedAtMs
-				: Number.POSITIVE_INFINITY,
+			rank: admissionRank(event),
+			startedAtMs: Number.isFinite(parsed)
+				? parsed
+				: (cached?.startedAtMs ?? Number.POSITIVE_INFINITY),
 		};
-		if (runs.size >= CACHE_LIMIT) {
+		if (!runs.has(runId) && runs.size >= CACHE_LIMIT) {
 			const oldest = runs.keys().next();
 			if (!oldest.done) runs.delete(oldest.value);
 		}
-		runs.set(ref.runId, key);
+		runs.set(runId, key);
 		return key;
 	}
-	return async function order<T>(
+	async function keyFor(ref: AdmissionRef): Promise<AdmissionKey> {
+		const cached = runs.get(ref.runId);
+		if (cached && Number.isFinite(cached.startedAtMs)) return cached;
+		try {
+			const run = await getRun(
+				github,
+				ref.installationId,
+				ref.repository,
+				ref.runId,
+			);
+			return remember(ref.runId, run.event, run.run_started_at);
+		} catch {
+			return cached ?? UNKNOWN;
+		}
+	}
+	async function order<T>(
 		items: readonly T[],
 		refOf: (item: T) => AdmissionRef,
 	): Promise<T[]> {
@@ -98,5 +114,17 @@ export function createAdmissionOrder(
 					a.jobId - b.jobId,
 			)
 			.map((entry) => entry.item);
-	};
+	}
+	return Object.assign(order, {
+		prime: (run: {
+			runId: number;
+			event: string;
+			runStartedAt?: string | null | undefined;
+		}) => {
+			remember(run.runId, run.event, run.runStartedAt);
+		},
+		rank: async (ref: AdmissionRef) => (await keyFor(ref)).rank,
+	});
 }
+
+export type AdmissionOrder = ReturnType<typeof createAdmissionOrder>;

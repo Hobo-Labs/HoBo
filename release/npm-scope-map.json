@@ -1,0 +1,28 @@
+{
+	"publicScope": "@hobo-labs",
+	"packages": {
+		"@hobo/core": "@hobo-labs/core",
+		"@hobo/bindles": "@hobo-labs/bindles",
+		"@hobo/contracts": "@hobo-labs/contracts",
+		"@hobo/contract-harness": "@hobo-labs/contract-harness",
+		"@hobo/runtime": "@hobo-labs/runtime",
+		"@hobo/runtime-local": "@hobo-labs/runtime-local",
+		"@hobo/storage-sqlite": "@hobo-labs/storage-sqlite",
+		"@hobo/wit": "@hobo-labs/wit",
+		"@hobo/cli": "@hobo-labs/cli",
+		"@hobo/code": "@hobo-labs/code",
+		"@hobo/hobo": "@hobo-labs/hobo",
+		"@hobo/mcp": "@hobo-labs/mcp",
+		"@hobo/conformance": "@hobo-labs/conformance",
+		"@hobo/identity": "@hobo-labs/identity",
+		"@hobo/policy": "@hobo-labs/policy",
+		"@hobo/connectivity": "@hobo-labs/connectivity",
+		"@hobo/events": "@hobo-labs/events",
+		"@hobo/data": "@hobo-labs/data",
+		"@hobo/stations": "@hobo-labs/stations",
+		"@hobo/trails": "@hobo-labs/trails",
+		"@hobo/replay": "@hobo-labs/replay",
+		"@hobo/adapter-hono": "@hobo-labs/adapter-hono",
+		"@hobo/schema-tools": "@hobo-labs/schema-tools"
+	}
+}

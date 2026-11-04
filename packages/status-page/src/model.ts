@@ -7,6 +7,7 @@
  * `unknown` ("status delayed / unknown"), never a stale `operational`.
  */
 import type { ComponentRow, StatusPageRow } from "./projection.js";
+import type { Mutable } from "./types.js";
 import {
 	type ComponentSpec,
 	type ComponentStatus,
@@ -20,7 +21,6 @@ import {
 	type StatusScope,
 	worstComponentStatus,
 } from "./types.js";
-import type { Mutable } from "./types.js";
 
 /** Default freshness budget: 15 minutes without a signal → delayed/unknown. */
 export const DEFAULT_FRESHNESS_BUDGET_MS = 15 * 60 * 1000;

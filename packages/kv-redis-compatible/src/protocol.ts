@@ -7,8 +7,7 @@
  * transport, a RESP socket, and an in-memory fake without the cases changing.
  */
 import { KvRedisCompatibleError } from "./errors.js";
-import { isJsonString, isJsonNumber } from "./json.js";
-
+import { isJsonNumber, isJsonString } from "./json.js";
 
 /** A Redis reply value, in the shape a client surfaces it. */
 export type RedisValue = string | number | null | readonly RedisValue[];
@@ -203,12 +202,11 @@ export function evaluateExpectation(
 						detail: `got ${summarize(reply.value)}, which is not an accepted form`,
 					};
 		case "integer-between": {
-			const numeric =
-				isJsonNumber(reply.value)
-					? reply.value
-					: isJsonString(reply.value) && /^-?\d+$/u.test(reply.value)
-						? Number(reply.value)
-						: undefined;
+			const numeric = isJsonNumber(reply.value)
+				? reply.value
+				: isJsonString(reply.value) && /^-?\d+$/u.test(reply.value)
+					? Number(reply.value)
+					: undefined;
 			if (numeric === undefined) {
 				return {
 					ok: false,

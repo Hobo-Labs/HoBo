@@ -18,7 +18,11 @@ import {
 	type JitBootstrapResponse,
 	JitBootstrapResponseSchema,
 } from "./_generated/jit_bootstrap_response_pb.js";
-import { createAdmissionOrder } from "./admission-order.js";
+import {
+	type AdmissionOrder,
+	createAdmissionOrder,
+	TRUNK_RANK,
+} from "./admission-order.js";
 import {
 	type GithubRun,
 	type GithubTransport,
@@ -30,10 +34,12 @@ import { verifyIngressForward } from "./ingress-forward.js";
 import { isIsolatedHostOffer } from "./isolated-backend.js";
 import type { JobDurations } from "./job-durations.js";
 import type { IdentityVerifier } from "./oidc.js";
+import { type RunnerLabel, servedRunnerLabel } from "./runner-labels.js";
 
 /** Isolated executions are supplied by the hosting runtime and must fail closed. */
 export interface IsolatedRunnerHost {
-	launch(id: string): Promise<void>;
+	/** `label` is the one runner label the lease's job asked for; the runner registers with it. */
+	launch(id: string, label?: RunnerLabel): Promise<void>;
 	reconcile(id: string, forceStop?: boolean): Promise<void>;
 }
 
@@ -118,7 +124,7 @@ const RunWebhook = z.object({
 
 export class HostedRelay {
 	readonly now: () => string;
-	private readonly admissionOrder: ReturnType<typeof createAdmissionOrder>;
+	private readonly admissionOrder: AdmissionOrder;
 	constructor(
 		readonly options: {
 			config: Configuration;
@@ -132,22 +138,27 @@ export class HostedRelay {
 			denyUnisolated?: boolean;
 			/** Recent job durations; the longest expected job of a run is admitted first. */
 			jobDurations?: Pick<JobDurations, "expectedMs">;
+			/** Shared across relays so each run is looked up once, not once per relay. */
+			admissionOrder?: AdmissionOrder;
 			/**
 			 * Queue an admitted job without reserving it. For callers that run
 			 * `dispatchPending` after a batch, so the batch is reserved in admission
 			 * order rather than in the order its deliveries arrived.
 			 */
 			deferReservation?: boolean;
+			/** Maximum active leases for non-trunk runs. Unset: no cap. */
+			generalLeaseLimit?: number;
+			/** Let non-trunk runs exceed the limit until a trunk job waits. */
+			lendTrunkSlots?: boolean;
 			now?: () => string;
 		},
 	) {
 		if (options.webhookSecret.length < 32)
 			throw new Error("webhook secret must have at least 32 characters");
 		this.now = options.now ?? (() => new Date().toISOString());
-		this.admissionOrder = createAdmissionOrder(
-			options.github,
-			options.jobDurations,
-		);
+		this.admissionOrder =
+			options.admissionOrder ??
+			createAdmissionOrder(options.github, options.jobDurations);
 	}
 	private async refreshConfig(): Promise<number> {
 		const { state, policies } = await this.options.store.policySnapshot();
@@ -371,8 +382,7 @@ export class HostedRelay {
 			currentJob.run_attempt !== run.run_attempt ||
 			!trusted ||
 			currentJob.status !== "queued" ||
-			currentJob.labels.length !== 1 ||
-			currentJob.labels[0]?.toLowerCase() !== "hobo"
+			!servedRunnerLabel(currentJob.labels)
 		)
 			return "ignored";
 		// Clear a stale assignment only after GitHub verifies the job is queued,
@@ -497,21 +507,130 @@ export class HostedRelay {
 				cheapest.paidMicros < current.paidMicros)
 		);
 	}
+	/** Active leases held by runs that do not gate trunk; an unknown run counts as one. */
+	private async generalLeaseIds(): Promise<Set<string>> {
+		const ids = new Set<string>();
+		for (const lease of await this.options.store.activeLeases()) {
+			const rank = await this.admissionOrder.rank({
+				installationId: lease.installationId,
+				repository: lease.repository,
+				runId: lease.originalRunId,
+				jobId: lease.jobId,
+			});
+			if (rank !== TRUNK_RANK) ids.add(lease.id);
+		}
+		return ids;
+	}
+	/** A runner reassigned by GitHub no longer satisfies its original queued job. */
+	private async requeueSwappedJobs(
+		expectedRevision: number,
+		active: readonly Lease[],
+		pending: Job[],
+	): Promise<void> {
+		const keyOf = (repositoryId: number, jobId: number, runAttempt: number) =>
+			`${repositoryId}:${jobId}:${runAttempt}`;
+		const pendingKeys = new Set(
+			pending.map((job) => keyOf(job.repositoryId, job.id, job.runAttempt)),
+		);
+		const replacedKeys = new Set(
+			active
+				.filter(
+					(lease) =>
+						lease.actualJobId === 0 || lease.actualJobId === lease.jobId,
+				)
+				.map((lease) =>
+					keyOf(lease.repositoryId, lease.jobId, lease.runAttempt),
+				),
+		);
+		for (const lease of active) {
+			if (lease.actualJobId === 0 || lease.actualJobId === lease.jobId)
+				continue;
+			const key = keyOf(lease.repositoryId, lease.jobId, lease.runAttempt);
+			// Requeued or replaced demand must not cost a GitHub read on every tick.
+			if (pendingKeys.has(key) || replacedKeys.has(key)) continue;
+			try {
+				const current = await getJob(
+					this.options.github,
+					lease.installationId,
+					lease.repository,
+					lease.jobId,
+				);
+				if (
+					current.status !== "queued" ||
+					current.run_id !== lease.originalRunId ||
+					current.run_attempt !== lease.runAttempt
+				)
+					continue;
+				const demand = this.queuedDemand(lease);
+				demand.labels = current.labels;
+				await this.options.store.queue(demand, this.now(), expectedRevision);
+				pending.push(demand);
+				pendingKeys.add(key);
+			} catch {
+				/* An ambiguous original-job read must not block other demand. */
+			}
+		}
+	}
+	/** Reserved leases have no host to preempt, so lending can take them back. */
+	private async reclaimLentLeases(limit: number): Promise<number> {
+		const active = await this.options.store.activeLeases();
+		const general = await this.generalLeaseIds();
+		const reserved = active
+			.filter(
+				(lease) =>
+					lease.state === "reserved" &&
+					!lease.sandboxName &&
+					!lease.sandboxSessionId &&
+					lease.runnerId === 0 &&
+					lease.hostRunId === 0 &&
+					general.has(lease.id),
+			)
+			.sort(
+				(a, b) =>
+					b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id),
+			);
+		let reclaimed = 0;
+		for (const lease of reserved) {
+			if (general.size - reclaimed <= limit) break;
+			await this.options.store.cancelAndRequeue(
+				lease.id,
+				this.queuedDemand(lease),
+				this.now(),
+			);
+			reclaimed++;
+		}
+		return reclaimed;
+	}
 	/** Durable outbox drain. A launch intent is committed before network I/O. */
 	async dispatchPending(): Promise<void> {
 		const reservationRevision = await this.refreshConfig();
 		// Both the reservation (offer concurrency) and the launch (host slots) hand
 		// out capacity in this order, so a freed slot goes to the queue's head.
-		const pending = await this.admissionOrder(
-			await this.options.store.pendingJobs(),
-			(job) => ({
-				installationId: job.installationId,
-				repository: job.repository,
-				runId: job.runId,
-				jobId: job.id,
-			}),
-		);
+		const refOf = (job: Job) => ({
+			installationId: job.installationId,
+			repository: job.repository,
+			runId: job.runId,
+			jobId: job.id,
+		});
+		const active = await this.options.store.activeLeases();
+		const queued = await this.options.store.pendingJobs();
+		await this.requeueSwappedJobs(reservationRevision, active, queued);
+		const pending = await this.admissionOrder(queued, refOf);
+		const limit = this.options.generalLeaseLimit;
+		let general: Set<string> | undefined;
+		// Strict reservation always caps non-trunk leases; lending applies the cap
+		// only after trunk misses a lease. Both keep capacity freed later in this pass.
+		let trunkWaiting = false;
 		for (const job of pending) {
+			const trunk = (await this.admissionOrder.rank(refOf(job))) === TRUNK_RANK;
+			if (
+				!trunk &&
+				(this.options.lendTrunkSlots !== true || trunkWaiting) &&
+				limit !== undefined
+			) {
+				general ??= await this.generalLeaseIds();
+				if (general.size >= limit) continue;
+			}
 			const connection = this.connection(
 				job.repositoryId,
 				job.installationId,
@@ -525,12 +644,27 @@ export class HostedRelay {
 			// A policy can become stricter while demand is queued. Never reserve a
 			// bridge from a pending job admitted under the previous connection.
 			if (connection.isolatedOnly) job.isolatedRequired = true;
-			await this.options.store.reserve(
+			let lease = await this.options.store.reserve(
 				account,
 				job,
 				this.now(),
 				reservationRevision,
 			);
+			if (
+				!lease &&
+				trunk &&
+				this.options.lendTrunkSlots === true &&
+				limit !== undefined &&
+				(await this.reclaimLentLeases(limit)) > 0
+			)
+				lease = await this.options.store.reserve(
+					account,
+					job,
+					this.now(),
+					reservationRevision,
+				);
+			if (!lease) trunkWaiting ||= trunk;
+			else if (!trunk) general?.add(lease.id);
 		}
 		const reserved = await this.admissionOrder(
 			(await this.options.store.activeLeases()).filter(
@@ -565,6 +699,7 @@ export class HostedRelay {
 				const connection = this.binding(candidate);
 				const offer = providerOffer(this.account(candidate), candidate);
 				const isolatedHost = isIsolatedHostOffer(offer);
+				const label = servedRunnerLabel(currentJob.labels);
 				if (connection.isolatedOnly && !isolatedHost) {
 					const demand = this.queuedDemand(candidate);
 					demand.isolatedRequired = true;
@@ -582,8 +717,7 @@ export class HostedRelay {
 					!(isolatedHost
 						? this.trustedSandboxOriginal(originalRun, connection)
 						: this.trustedOriginal(originalRun, connection)) ||
-					currentJob.labels.length !== 1 ||
-					currentJob.labels[0]?.toLowerCase() !== "hobo"
+					!label
 				) {
 					await this.options.store.transition(
 						candidate.id,
@@ -600,7 +734,7 @@ export class HostedRelay {
 				if (isolatedHost) {
 					if (!this.options.isolatedHost)
 						throw new Error("isolated runner unavailable");
-					await this.options.isolatedHost.launch(candidate.id);
+					await this.options.isolatedHost.launch(candidate.id, label);
 					continue;
 				}
 				if (
@@ -677,7 +811,7 @@ export class HostedRelay {
 		)
 			throw new Error("identity does not own lease");
 		const runId = Number(claims.run_id);
-		const [run, originalRun] = await Promise.all([
+		const [run, originalRun, originalJob] = await Promise.all([
 			getRun(
 				this.options.github,
 				lease.installationId,
@@ -690,7 +824,16 @@ export class HostedRelay {
 				lease.repository,
 				lease.originalRunId,
 			),
+			getJob(
+				this.options.github,
+				lease.installationId,
+				lease.repository,
+				lease.jobId,
+			),
 		]);
+		const label = servedRunnerLabel(originalJob.labels);
+		if (!label)
+			throw new Error("original job no longer asks for a hobo runner");
 		const host = await getHostJob(
 			this.options.github,
 			lease.installationId,
@@ -745,7 +888,7 @@ export class HostedRelay {
 				JSON.stringify({
 					name: lease.runnerName,
 					runner_group_id: connection.runnerGroupId,
-					labels: ["hobo"],
+					labels: [label],
 					work_folder: "_hobo_work",
 				}),
 			);

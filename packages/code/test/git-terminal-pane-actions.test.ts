@@ -36,11 +36,17 @@
  * and a forgotten quit would hang the suite rather than fail it.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	cpSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { runGitTerminalPane } from "../src/git-terminal-pane.js";
 import {
@@ -100,15 +106,33 @@ function git(cwd: string, args: readonly string[]): string {
  */
 function repository(): string {
 	const root = temp("hobo-git-actions-repo-");
-	git(root, ["init", "-q", "-b", "main"]);
-	git(root, ["config", "user.email", "test@example.com"]);
-	git(root, ["config", "user.name", "Test"]);
-	writeFileSync(join(root, "README.md"), "base\n");
-	writeFileSync(join(root, "tracked.txt"), "original\n");
-	git(root, ["add", "-A"]);
-	git(root, ["commit", "-qm", "base"]);
+	cpSync(template, root, { recursive: true });
 	return root;
 }
+
+/**
+ * Built once per file. Each test gets a copy, which costs a directory copy
+ * rather than four git subprocesses and a commit. Signing is off in the
+ * repository's own config so a developer's global `commit.gpgsign` cannot put
+ * a signing helper in front of the fixture or the pane's own commits.
+ */
+let template = "";
+
+beforeAll(() => {
+	template = mkdtempSync(join(tmpdir(), "hobo-git-actions-template-"));
+	git(template, ["init", "-q", "-b", "main"]);
+	git(template, ["config", "user.email", "test@example.com"]);
+	git(template, ["config", "user.name", "Test"]);
+	git(template, ["config", "commit.gpgsign", "false"]);
+	writeFileSync(join(template, "README.md"), "base\n");
+	writeFileSync(join(template, "tracked.txt"), "original\n");
+	git(template, ["add", "-A"]);
+	git(template, ["commit", "-qm", "base"]);
+});
+
+afterAll(() => {
+	rmSync(template, { recursive: true, force: true });
+});
 
 /** One modified tracked file and one untracked file, inside the worktree. */
 function dirty(worktree: string): void {
@@ -166,10 +190,16 @@ function fakeStdin() {
 function fakeStdout(columns = 100, rows = 30) {
 	const chunks: string[] = [];
 	let writes = 0;
+	const waiters: { readonly after: number; readonly resolve: () => void }[] =
+		[];
 	const stream = new Writable({
 		write(chunk, _encoding, done) {
 			chunks.push(String(chunk));
 			writes += 1;
+			for (const waiter of waiters.splice(0)) {
+				if (writes > waiter.after) waiter.resolve();
+				else waiters.push(waiter);
+			}
 			done();
 		},
 	});
@@ -179,6 +209,12 @@ function fakeStdout(columns = 100, rows = 30) {
 		text: () => chunks.join(""),
 		/** How many times the pane has written — a repaint or a prompt label. */
 		writes: () => writes,
+		/** Resolves on the first write past the `after`th, at once if it already happened. */
+		wroteAfter: (after: number) =>
+			new Promise<void>((resolve) => {
+				if (writes > after) resolve();
+				else waiters.push({ after, resolve });
+			}),
 	});
 }
 
@@ -208,7 +244,6 @@ async function pane(
 	repo: string,
 	keys: readonly string[],
 	options: {
-		readonly gap?: number;
 		/** Runs against the session's worktree before the pane opens. */
 		readonly prepare?: (worktree: string) => void;
 	} = {},
@@ -228,7 +263,7 @@ async function pane(
 	// hash the session derives, and a hand-built path would start asserting
 	// against an empty directory the moment that derivation changed.
 	const worktree = created?.session?.worktreePath;
-	if (typeof worktree !== "string" || worktree.length === 0)
+	if (worktree === undefined || worktree === "")
 		throw new Error("the session reported no worktree path");
 
 	options.prepare?.(worktree);
@@ -236,21 +271,23 @@ async function pane(
 	const stdin = fakeStdin();
 	const stdout = fakeStdout();
 
-	const settled = async (): Promise<void> => {
-		const before = stdout.writes();
-		const deadline = Date.now() + 20_000;
-		while (stdout.writes() === before && Date.now() < deadline)
-			await new Promise((resolve) => setTimeout(resolve, 10));
-		await new Promise((resolve) => setTimeout(resolve, options.gap ?? 25));
-	};
-
-	// Wait *before* each key, never after: the last key is a quit, and a quit
-	// produces no repaint by design.
+	// Each key waits for the pane's answer to the one before it (the first
+	// paint, then a repaint or a prompt label), so none lands in the window
+	// where the loop is `busy` and drops keys. The count is taken before the key
+	// is written: a key that opens a prompt writes its label inside
+	// `stdin.write` itself, and a count taken afterwards waits for a write that
+	// has already happened. The tick after the answer lets the pane leave `busy`
+	// and attach a prompt's listener, both of which follow the write in the same
+	// turn of the event loop.
 	let done = false;
 	const feed = async (): Promise<void> => {
+		// Write 1 switches the terminal mode; write 2 is the first paint.
+		let answered = 1;
 		for (const key of keys) {
+			await stdout.wroteAfter(answered);
+			await new Promise<void>((resolve) => setImmediate(resolve));
 			if (done) return;
-			await settled();
+			answered = stdout.writes();
 			stdin.write(key);
 		}
 		// Then keep asking to leave until the pane actually leaves — a single
@@ -267,8 +304,8 @@ async function pane(
 		const code = await runGitTerminalPane({
 			sessionId: "pane-session",
 			hoboHome,
-			input: stdin as never,
-			output: stdout as never,
+			input: stdin,
+			output: stdout,
 		});
 		return { code, output: stdout.text(), stdin, hoboHome, worktree };
 	} finally {
@@ -287,7 +324,7 @@ describe("focusing a panel", () => {
 		async (key, title) => {
 			// The active panel is marked in its own heading; without the marker the
 			// operator has no way to tell which list the arrow keys move.
-			const session = await pane(repository(), [key, QUIT], { gap: 250 });
+			const session = await pane(repository(), [key, QUIT]);
 			expect(session.output).toContain(`▸ ${title}`);
 		},
 		GIT_TIMEOUT_MS,
@@ -299,7 +336,7 @@ describe("focusing a panel", () => {
 			// An unrecognised key repaints and does nothing. A pane that treated
 			// unknown input as an error would fill its status line with noise the
 			// first time someone leaned on the keyboard.
-			const session = await pane(repository(), ["Z", QUIT], { gap: 250 });
+			const session = await pane(repository(), ["Z", QUIT]);
 			expect(session.code).toBe(0);
 		},
 		GIT_TIMEOUT_MS,
@@ -310,7 +347,7 @@ describe("focusing a panel", () => {
 		async () => {
 			// The footer has room for the common verbs; `?` is where the rest live,
 			// and a verb documented nowhere is a verb nobody uses.
-			const session = await pane(repository(), ["?", QUIT], { gap: 250 });
+			const session = await pane(repository(), ["?", QUIT]);
 			expect(session.output).toMatch(/n branch · i ignore · x discard/u);
 		},
 		GIT_TIMEOUT_MS,
@@ -327,7 +364,7 @@ describe("verbs that reach for a remote", () => {
 			// The pane's answer to a failed verb is a status line, not an exit.
 			// Closing on the first failure would drop the operator back to a shell
 			// with no explanation of what went wrong.
-			const session = await pane(repository(), [key, QUIT], { gap: 250 });
+			const session = await pane(repository(), [key, QUIT]);
 			expect(session.code).toBe(0);
 		},
 		GIT_TIMEOUT_MS,
@@ -340,7 +377,7 @@ describe("verbs that reach for a remote", () => {
 			// nothing to fetch, which is not an error. Recorded because it reads
 			// like it ought to fail, and a test written on that assumption passes
 			// for the wrong reason on the *pull* case next door.
-			const session = await pane(repository(), ["f", QUIT], { gap: 250 });
+			const session = await pane(repository(), ["f", QUIT]);
 			expect(session.output).not.toMatch(/fetch failed/u);
 		},
 		GIT_TIMEOUT_MS,
@@ -352,7 +389,7 @@ describe("verbs that reach for a remote", () => {
 			// Pull does fail here, and the reason git gives is the useful half:
 			// "git pull failed" alone would leave the operator guessing between no
 			// remote, no upstream, and a rejected fast-forward.
-			const session = await pane(repository(), ["P", QUIT], { gap: 250 });
+			const session = await pane(repository(), ["P", QUIT]);
 			expect(session.output).toMatch(/no tracking information/u);
 		},
 		GIT_TIMEOUT_MS,
@@ -382,7 +419,6 @@ describe("ignoring a file", () => {
 		"hides the file from status when the answer is yes",
 		async () => {
 			const session = await pane(repository(), ["2", "j", "i", "yes\r", QUIT], {
-				gap: 250,
 				prepare: dirty,
 			});
 			expect(untrackedIsListed(session.worktree)).toBe(false);
@@ -396,7 +432,6 @@ describe("ignoring a file", () => {
 			// Ignoring hides a file from every later status; an operator who said no
 			// must not find it gone from the list anyway.
 			const session = await pane(repository(), ["2", "j", "i", "no\r", QUIT], {
-				gap: 250,
 				prepare: dirty,
 			});
 			expect(untrackedIsListed(session.worktree)).toBe(true);
@@ -408,7 +443,6 @@ describe("ignoring a file", () => {
 		"names the file in the question",
 		async () => {
 			const session = await pane(repository(), ["2", "j", "i", "no\r", QUIT], {
-				gap: 250,
 				prepare: dirty,
 			});
 			expect(session.output).toMatch(/ignore untracked\.txt/u);
@@ -423,7 +457,6 @@ describe("ignoring a file", () => {
 			// modification while the operator believes it is hidden. Refusing is the
 			// honest answer to a request that cannot mean what it looks like.
 			const session = await pane(repository(), ["2", "i", "yes\r", QUIT], {
-				gap: 250,
 				prepare: dirty,
 			});
 			expect(session.output).toMatch(/only untracked files can be ignored/u);
@@ -436,7 +469,7 @@ describe("ignoring a file", () => {
 		async () => {
 			// There is no file selected on the branches panel, and guessing one
 			// would ignore a path the operator never pointed at.
-			const session = await pane(repository(), ["3", "i", QUIT], { gap: 250 });
+			const session = await pane(repository(), ["3", "i", QUIT]);
 			expect(session.output).not.toMatch(/ignore /u);
 		},
 		GIT_TIMEOUT_MS,
@@ -449,7 +482,6 @@ describe("the stash panel", () => {
 		async () => {
 			// Apply restores the edit and keeps the entry.
 			const session = await pane(repository(), ["5", "a", QUIT], {
-				gap: 250,
 				prepare: stashed,
 			});
 			expect(readFileSync(join(session.worktree, "tracked.txt"), "utf8")).toBe(
@@ -465,7 +497,6 @@ describe("the stash panel", () => {
 			// Pop removes the entry as well as restoring it: if the restore
 			// conflicts, the parked work has nowhere left to be.
 			const session = await pane(repository(), ["5", "O", "no\r", QUIT], {
-				gap: 250,
 				prepare: stashed,
 			});
 			expect(session.output).toMatch(/pop stash@\{0\} — type yes to approve/u);
@@ -477,7 +508,6 @@ describe("the stash panel", () => {
 		"keeps the stash when the pop is refused",
 		async () => {
 			const session = await pane(repository(), ["5", "O", "no\r", QUIT], {
-				gap: 250,
 				prepare: stashed,
 			});
 			expect(git(session.worktree, ["stash", "list"])).toContain("parked");
@@ -489,7 +519,6 @@ describe("the stash panel", () => {
 		"drops the selected stash when the answer is yes",
 		async () => {
 			const session = await pane(repository(), ["5", "x", "yes\r", QUIT], {
-				gap: 250,
 				prepare: stashed,
 			});
 			expect(git(session.worktree, ["stash", "list"])).toBe("");
@@ -501,7 +530,6 @@ describe("the stash panel", () => {
 		"keeps the stash when the drop is refused",
 		async () => {
 			const session = await pane(repository(), ["5", "x", "no\r", QUIT], {
-				gap: 250,
 				prepare: stashed,
 			});
 			expect(git(session.worktree, ["stash", "list"])).toContain("parked");
@@ -514,7 +542,7 @@ describe("the stash panel", () => {
 		async () => {
 			// Nothing is selected, so there is nothing to apply — and no message,
 			// because the operator asked for a no-op and got one.
-			const session = await pane(repository(), ["5", "a", QUIT], { gap: 250 });
+			const session = await pane(repository(), ["5", "a", QUIT]);
 			expect(session.code).toBe(0);
 		},
 		GIT_TIMEOUT_MS,
@@ -533,7 +561,6 @@ describe("the approval digest in front of anything that leaves the machine", () 
 				repository(),
 				["c", "a message\r", ESC, QUIT],
 				{
-					gap: 250,
 					prepare: dirty,
 				},
 			);
@@ -551,7 +578,6 @@ describe("the approval digest in front of anything that leaves the machine", () 
 				repository(),
 				["c", "a message\r", ESC, QUIT],
 				{
-					gap: 250,
 					prepare: dirty,
 				},
 			);
@@ -567,7 +593,6 @@ describe("the approval digest in front of anything that leaves the machine", () 
 				repository(),
 				["c", "a message\r", ESC, QUIT],
 				{
-					gap: 250,
 					prepare: dirty,
 				},
 			);
@@ -585,7 +610,7 @@ describe("the approval digest in front of anything that leaves the machine", () 
 			const session = await pane(
 				repository(),
 				["c", "a message\r", "not-the-digest\r", QUIT],
-				{ gap: 250, prepare: dirty },
+				{ prepare: dirty },
 			);
 			expect(git(session.worktree, ["log", "--oneline"])).not.toContain(
 				"a message",
@@ -599,7 +624,6 @@ describe("the approval digest in front of anything that leaves the machine", () 
 		async () => {
 			// An empty answer is a cancel, not a commit with no subject.
 			const session = await pane(repository(), ["c", "\r", QUIT], {
-				gap: 250,
 				prepare: dirty,
 			});
 			expect(session.output).not.toContain("Exact effect:");
@@ -612,7 +636,7 @@ describe("the approval digest in front of anything that leaves the machine", () 
 		async () => {
 			// Push has nothing to collect: the branch and the remote are already
 			// decided, so the digest is the whole of the interaction.
-			const session = await pane(repository(), ["p", ESC, QUIT], { gap: 250 });
+			const session = await pane(repository(), ["p", ESC, QUIT]);
 			expect(session.output).toContain("push current branch to origin");
 		},
 		GIT_TIMEOUT_MS,
@@ -621,7 +645,7 @@ describe("the approval digest in front of anything that leaves the machine", () 
 	it(
 		"asks for a pull request title before describing one",
 		async () => {
-			const session = await pane(repository(), ["o", ESC, QUIT], { gap: 250 });
+			const session = await pane(repository(), ["o", ESC, QUIT]);
 			expect(session.output).toContain("Pull request title");
 		},
 		GIT_TIMEOUT_MS,
@@ -630,7 +654,7 @@ describe("the approval digest in front of anything that leaves the machine", () 
 	it(
 		"opens no pull request when the title is left empty",
 		async () => {
-			const session = await pane(repository(), ["o", "\r", QUIT], { gap: 250 });
+			const session = await pane(repository(), ["o", "\r", QUIT]);
 			expect(session.output).not.toContain("open pull request");
 		},
 		GIT_TIMEOUT_MS,
@@ -641,11 +665,13 @@ describe("the approval digest in front of anything that leaves the machine", () 
 		async () => {
 			// Both answers are collected before anything is attempted: a stacked PR
 			// is meaningless without the branch it stacks onto.
-			const session = await pane(
-				repository(),
-				["S", "main\r", "on top\r", ESC, QUIT],
-				{ gap: 250 },
-			);
+			const session = await pane(repository(), [
+				"S",
+				"main\r",
+				"on top\r",
+				ESC,
+				QUIT,
+			]);
 			expect(session.output).toContain("Parent branch");
 			expect(session.output).toContain("Pull request title");
 		},
@@ -659,11 +685,12 @@ describe("the approval digest in front of anything that leaves the machine", () 
 			// repository with no forge that read fails — so no approval is ever
 			// created. The pane reports that and stays open. Asserting the approval
 			// text here would be asserting a string this environment cannot produce.
-			const session = await pane(
-				repository(),
-				["S", "main\r", "on top\r", QUIT],
-				{ gap: 250 },
-			);
+			const session = await pane(repository(), [
+				"S",
+				"main\r",
+				"on top\r",
+				QUIT,
+			]);
 			expect(session.output).toMatch(
 				/cannot establish pre-effect pull request state/u,
 			);
@@ -676,7 +703,7 @@ describe("the approval digest in front of anything that leaves the machine", () 
 		async () => {
 			// No parent means no stack, and asking for a title afterwards would be
 			// collecting an answer it has already decided to throw away.
-			const session = await pane(repository(), ["S", "\r", QUIT], { gap: 250 });
+			const session = await pane(repository(), ["S", "\r", QUIT]);
 			expect(session.output).not.toContain("Pull request title");
 		},
 		GIT_TIMEOUT_MS,
@@ -685,9 +712,7 @@ describe("the approval digest in front of anything that leaves the machine", () 
 	it(
 		"asks for the pull request number before merging",
 		async () => {
-			const session = await pane(repository(), ["M", "42\r", ESC, QUIT], {
-				gap: 250,
-			});
+			const session = await pane(repository(), ["M", "42\r", ESC, QUIT]);
 			expect(session.output).toContain("Pull request number");
 		},
 		GIT_TIMEOUT_MS,
@@ -700,9 +725,7 @@ describe("the approval digest in front of anything that leaves the machine", () 
 			// before any approval exists. The failure names the tool — an operator
 			// who reads "merge failed" learns nothing they can act on, while
 			// "spawn gh ENOENT" tells them what to install.
-			const session = await pane(repository(), ["M", "42\r", QUIT], {
-				gap: 250,
-			});
+			const session = await pane(repository(), ["M", "42\r", QUIT]);
 			expect(session.output).toMatch(/gh pr failed/u);
 		},
 		GIT_TIMEOUT_MS,
@@ -719,9 +742,7 @@ describe("the approval digest in front of anything that leaves the machine", () 
 			// `Number("")` is 0 and `Number("x")` is NaN; neither is a pull request,
 			// and a merge aimed at #0 is a merge aimed at whatever the forge decides
 			// that means.
-			const session = await pane(repository(), ["M", answer, QUIT], {
-				gap: 250,
-			});
+			const session = await pane(repository(), ["M", answer, QUIT]);
 			expect(session.output).not.toContain("squash merge pull request");
 		},
 		GIT_TIMEOUT_MS,

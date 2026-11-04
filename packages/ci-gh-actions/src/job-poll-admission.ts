@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { GithubTransport } from "./github.js";
 import { getJob, getRun } from "./github.js";
+import { servedRunnerLabel } from "./runner-labels.js";
 
 const QueuedRun = z.object({
 	id: z.number().int().positive(),
@@ -63,11 +64,7 @@ export function createJobPollAdmissionWorker(options: JobPollAdmissionOptions) {
 					})
 					.parse(await jobsResponse.json()).jobs;
 				for (const job of jobs) {
-					if (
-						job.status !== "queued" ||
-						job.labels.length !== 1 ||
-						job.labels[0]?.toLowerCase() !== "hobo"
-					)
+					if (job.status !== "queued" || !servedRunnerLabel(job.labels))
 						continue;
 					const current = await getJob(
 						options.github,

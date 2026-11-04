@@ -67,7 +67,7 @@ describe("fixture provenance", () => {
 				`${REPO_ROOT}packages/cloud/test/fixtures/hello-bindle.manifest.json`,
 				"utf8",
 			),
-		// SAFETY: this fixture is the repository-owned manifest shape under test.
+			// SAFETY: this fixture is the repository-owned manifest shape under test.
 		) as { resources: Record<string, { bind?: string[] }> };
 
 		const helloBindle = EXISTING_INTENTS.filter((entry) =>

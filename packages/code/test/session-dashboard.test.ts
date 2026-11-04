@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { authLogin } from "../src/auth.js";
+import { isJsonString } from "../src/json.js";
 import { loopbackFetchUrl } from "../src/occupancy-endpoints.js";
 import { startLocalDashboard } from "../src/session-dashboard.js";
 import { persistOccupancyRun } from "../src/session-resource-control.js";
@@ -12,7 +13,6 @@ import {
 	recordDevDeployment,
 	recordSessionResources,
 } from "../src/session-resources.js";
-import { isJsonString } from "../src/json.js";
 
 const homes: string[] = [];
 const servers: Server[] = [];

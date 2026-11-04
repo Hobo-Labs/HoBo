@@ -10,7 +10,8 @@ tags: [hobo, ci, performance]
 Goal: PR, merge-queue and main runs of **HoBo CI Fabric** (`.github/workflows/hobo-ci.yml`) finish in under
 five minutes of wall time. This note records what the data says, what has been changed, and what is still in
 the way. Day-to-day tuning knobs live in [`../maintenance/ci-performance.md`](../maintenance/ci-performance.md);
-the box worker runbook is [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
+the box worker runbook is [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md). The plan for
+prebuilt checkout and install layers is [`oci-layer-plan.md`](./oci-layer-plan.md).
 
 ## Data
 
@@ -95,7 +96,7 @@ Its steps on main (run 41517185031):
 
 | Step | Time | Why |
 |---|---:|---|
-| pnpm install | ~21 s | copies the store into the container; finding 12 |
+| pnpm install | ~21 s | copies the store into the container; finding 19 |
 | Seed the pnpm store cache for PRs | 71–146 s | tars a 1.26 GB store, then fails: "another job may be creating this cache" |
 | check:all lint/guard lanes | ~33 s | |
 | `pretest:unit` turbo build | ~50 s | 0/135 cached: the turbo cache never saved (finding 3) |
@@ -243,9 +244,10 @@ and never resolves the action.
 
 Main's workspace tests are now scoped with `--filter=...[<previous main commit>]` (changed packages plus
 their dependents). A git-based filter sees only files git attributes to a package, so
-`scripts/ci/affected-lanes.mts` decides first: a workspace-wide input (lockfile, workspace, turbo,
-tsconfig, biome, toolchain pins) or an unreachable base runs the whole workspace instead. The PR impact
-gate uses the same script.
+`scripts/ci/affected-lanes.mts` decides first: a workspace-wide input (workspace, turbo,
+tsconfig, biome, toolchain pins) or an unreachable base runs the whole workspace instead; `pnpm-lock.yaml`
+alone does too, but a lockfile edit together with changed package paths only runs those packages (Turbo
+still hashes the lockfile). The PR impact gate uses the same script.
 
 Where a test task does run, `@hobo/hobo#test` dominates. In an affected sweep for a four-package change it
 took 181 s of 332 s task time (87 tasks).
@@ -274,10 +276,21 @@ package, which bypassed turbo's `test` task. A package's `<pkg>#test` `dependsOn
 tests need beyond its own dependencies: `@hobo/hobo#test` adds `@hobo/adapter-hono#build`, because
 `examples/hello-bindle` imports it at test time. That build never ran on the main path, and main runs
 41616466379 and 41618937951 failed 13 hobo tests with `Failed to resolve entry for package
-"@hobo/adapter-hono"`. PR runs passed because the impact gate calls `turbo run test`. Every command
-the planner issues now goes through `turbo run test`, and a subset passes its files after `--`, so the
-two paths share one dependency graph and the strict environment. `planCommands` in the planner is
-what the test checks: every command it returns starts with `turbo run test`.
+"@hobo/adapter-hono"`. PR runs passed because the impact gate calls `turbo run test`.
+
+The second version (#1664) ran each subset as `turbo run test --filter=./<dir> -- <files>`. Turbo
+hands `--` arguments to every task of a run, dependency builds included, and hashes them in. Main run
+41632724009 (754 s) therefore rebuilt about 80 packages uncached for each of six subsets: Workspace
+tests took 8 minutes, `@hobo/code`'s subset 2m10s and `@hobo/hobo`'s 3m01s around 75 s of vitest.
+
+Now the planner reads turbo's own graph (`turbo run test --filter=… --dry=json`) once and makes one
+call with those task ids and no pass-through. That call runs the whole suites and every build the
+subsets' test tasks depend on, the `<pkg>#test` overrides included, with the same hashes as a plain
+`turbo run test`, so it shares the cache. Then each subset runs its test task alone:
+`turbo run test --filter=./<dir> --only -- --passWithNoTests <files>`. Replaying #1664's diff locally
+gives one 86-task build call and six subset calls, 120 s in all at `--concurrency=1`. The planner test
+pins the command shape on a fake graph, and checks against the real graph that `@hobo/hobo`'s subset
+gets `@hobo/adapter-hono#build` in the build call.
 
 **hobo's own suite runs its process-bound cases concurrently.** Four files held 133 s of the suite's
 177 s of test time, each case starting `hobo` or a composed binary and waiting on it:
@@ -367,6 +380,24 @@ names, the daemon log for their leases, the container cgroup's `memory.events` (
 reclaiming at its 6 GiB cap stops without being OOM-killed), and `dmesg` on the host. Whether the restart
 itself happened during 20:31–20:46 also matters for the first case.
 
+A daemon restart lost two more. The worker logged `hobo_ci_isolated_worker_drained` with `remaining: 0`
+while both jobs were still running, exited, and both jobs were lost. The drain had three defects:
+
+- It counted leases whose `accountId` equalled the worker's provider account id. A lease's `accountId` is
+  the customer account that owns the job, so nothing ever matched and the drain finished at once. A lease
+  belongs to the worker when its offer does: an isolated-container offer whose `providerAccountId` is the
+  worker (`workerOfferKeys`, keyed by account and offer id because offer ids are unique per account only).
+- Nothing reconciled during the drain. A lease leaves `running` only when a tick sees its runner exit, and
+  the drain had stopped ticking. Each check now runs `runtime.tick({ admit: false })` first, which inspects
+  leases but takes no inbox delivery and reserves or launches nothing.
+- The signal handlers were `process.once`. A supervisor that signals the whole process group, with
+  `hobo ci serve --with-worker` forwarding the same SIGTERM, delivers it twice, and the second one found no
+  listener and killed the process. They are `process.on` now; shutdown was already idempotent.
+
+The default `HOBO_CI_WORKER_DRAIN_TIMEOUT_MS` is now 30 minutes, since the drain waits for running jobs
+rather than only for launches. The supervisor's stop timeout (systemd `TimeoutStopSec`, Kubernetes
+`terminationGracePeriodSeconds`) has to be longer, or it kills the drain itself.
+
 ## Finding 7: things that are not the bottleneck
 
 - **Checkout** is ~6 s per job (full clone; blobless was slower).
@@ -392,6 +423,65 @@ itself happened during 20:31–20:46 also matters for the first case.
   bookworm's skopeo pins Docker API 1.22 in its `docker-daemon:` transport, and the box's daemon
   refuses anything below 1.24. skopeo now writes a `docker-archive:` (docker-save format) and
   `docker load` reads that.
+- **The image had no browser.** Main push run 41642427527 failed 1 of 2554 tests after 12m44s:
+  `@hobo/code` `test/session-control-server.test.ts` launches Chromium, and Playwright looked for
+  `~/.cache/ms-playwright/chromium_headless_shell-1234`, which nothing installs. The test's
+  `resolveChromiumExecutable()` knew only the arm64 layout under one root and returned `undefined`
+  when it found nothing, so Playwright's download hint was the whole error. The base image now
+  downloads Playwright's pinned headless shell (revision and version from `playwright-core`'s
+  `browsers.json`, sha256 per architecture) into `/opt/pw-browsers`, sets `PLAYWRIGHT_BROWSERS_PATH`,
+  and installs the Debian libraries it needs. The live contract renders a page with it
+  (`--dump-dom`, which reaches the libraries Chromium opens at runtime, not only the linked ones), and
+  `ci-runner-image-contract.test.ts` fails when the pins drift from the installed Playwright or the
+  Dockerfile. The helper searches both layouts under `PLAYWRIGHT_BROWSERS_PATH`, `/opt/pw-browsers` and
+  `~/.cache/ms-playwright`, and throws with the fix when there is no browser rather than leaving the
+  test to whatever Playwright does. The first run of #1673 showed the other half: its gate started at
+  13:53:25, before the image job retagged `:local` at 13:55:20, so it tested the old image (no browser,
+  and no `tmux`, which the `@hobo/code` git-terminal pane drives through the resident session runtime:
+  76 failures reading `tmux availability unknown`). The image now carries `tmux` too (live contract,
+  `IMAGE_CONTRACT_COMMANDS`), and `pr-gate` and `main-gate` declare `needs: ci-runner-image` with
+  `!cancelled()`, so a run that changes the image inputs tests on the image it built, and a failed image
+  build still runs the gate rather than skipping a required check. When the inputs are unchanged the
+  image job is a short no-op, which is what the gates now wait for.
+- **The git-terminal pane suites waited out their own deadline.** With tmux in the image, run
+  41651600798 got past the old failures, but the pane suites ran for 427 s and 596 s, and two tests hit
+  the 90 s timeout. tmux was not the cost: the pane only runs `tmux has-session` and never starts a
+  server. The test harness read the pane's write count *after* sending a key. A key that opens a prompt
+  writes its label inside `stdin.write` itself, so the harness missed that write and polled out a 20 s
+  deadline, once per prompt key. The harness now takes the count before each key and resolves on the
+  write event, then waits one `setImmediate` tick so the pane can leave `busy`. It has no deadline and
+  no fixed gap, so a lost answer fails the test rather than being absorbed into a timeout. The git
+  fixture is built once per file and copied per test, with `commit.gpgsign=false` in its own config.
+  Both files ran 79 tests in 4.1 s locally, against about 600 s before.
+- **A checkout fetch hung for 11.5 minutes.** In run 41659338892 the off-path job's `git fetch
+  --depth=2` started at 15:08:41 and was still waiting when the run was cancelled at 15:20:12.
+  `git-remote-https` was still alive at cleanup, and the fetch in every other job of that run took
+  about 3 s. The step API showed checkout as done and `pnpm install` as running, which was wrong; the
+  job log is authoritative. Git has no default transfer timeout, so a stalled connection held one of
+  the box's two slots, and the PR impact gate queued for 8 minutes behind it. The workflow now sets
+  `GIT_HTTP_LOW_SPEED_LIMIT=1000` and `GIT_HTTP_LOW_SPEED_TIME=30`, the same bound the pins already
+  use. A stalled fetch now aborts after 30 s, and `actions/checkout` retries it. The same run's
+  contract-guard `pnpm install` also sat for 130 s in linking with nothing to download. That points
+  at disk contention on the box rather than the network, and is not addressed here.
+- **The cold dev loop is bound by disk, not by the loop.** In run 41663178224 the cold-loop job failed on
+  "No space left on device". In run 41667005120 its `pnpm install` took 3m51s (15:45:09 to 15:49:00),
+  and the gate step was cut off by the 5-minute job timeout. The loop itself boots in about 15 ms, and
+  the script runs in about 1 s. The job installed the whole workspace, copying 4.3 GB out of the store
+  (another filesystem, so no hardlinks), then streamed 4.6 GB into the offline container. Both jobs
+  that were slow in that run were writing gigabytes to the same disk. The job now installs only what
+  the script imports, with `--ignore-scripts`. The stream is 2.24 GB, and an install, unpack and run
+  rehearsal takes 12 s locally.
+- **The image job rebuilt an image the box already had.** In run 41667005120 a `build.sh`-only change
+  started a build that had not finished after 13 minutes. Earlier rebuilds on the same PR took 42–106 s.
+  That change also replaced the shared local registry with a per-build one, so the full base was
+  pushed again. That change has been dropped. The version tag hashes every image input, so `build.sh`
+  now skips the build when `hobo-ci-worker:<version>` is already on the host, and `build.sh` is one of
+  the hashed inputs. Preflight prunes only untagged images over a day old, so the layer cache survives.
+- **"duplicate" in the worker log is not a stuck dedupe.** The poller reports a queued job as
+  `duplicate` when its delivery id (`poll-<job>-<attempt>-q`) is already in the inbox, which is true of
+  every job waiting for a slot. With every slot full, `launch()` leaves the lease `reserved`, and the
+  next tick retries it. In that run, contract guard and secret scan waited because the two slow jobs
+  held the slots, and longest-first admission puts 8–12 s jobs at the back.
 - **Vitest inlined the TypeScript compiler.** `typescript/lib/typescript.js` is CJS, but es-module-lexer
   finds module syntax in it, so Vitest's externalization heuristic inlined it. Vite then transformed the
   9 MB file in each worker and logged `Failed to load source map for …/typescript.js` with an ENOENT
@@ -526,38 +616,54 @@ a run like 41611050533, Main full gate and the contract guard start first. Secre
 image then follow on the freed slot while the gate runs. The run ends shortly after the gate's own finish, about 120 s
 instead of 149 s. The box daemon has to be redeployed on a main that includes this change.
 
-## Finding 12: every job installed both CPUs' agent CLIs
+## Finding 13: GitHub gave the runner launched for main to an older PR job
 
-`pnpm install --frozen-lockfile` takes 19–26 s per job on the box, and 44–46 s when both slots install at
-once. Nothing is downloaded ("reused 1997, downloaded 0"); the time goes to writing `node_modules`.
+Main dispatch run 41672800885 queued its Main full gate at 10:22 CST and waited while PR jobs held both
+box slots. The worker already admitted trunk first (finding 9), so two things defeated it.
 
-- The store is the host mount `/pnpm-store` and the workspace is on the container's overlay, two
-  filesystems, so pnpm cannot hard-link and copies every file.
-- Root `package.json` set `pnpm.supportedArchitectures.cpu` to `["arm64", "x64", "current"]`, added with
-  the docs-portal contract in #510 without a stated reason. `@agentv/core` (used by `provider-agentv` and
-  ts-autocode's `training`) depends on `@openai/codex` and `@github/copilot`, whose native packages are
-  190–280 MB per platform. Every job copied both CPUs' builds, about 1.1 GB, and could run one of them.
+- **Labels decide, not the worker.** Every job asked for `hobo` and every JIT runner registered `hobo`.
+  GitHub hands a new runner to a queued job whose labels it matches, and it picked older PR jobs. The
+  worker chose when to start a runner, not which job took it, and a runner launched for main ran a PR
+  job (`lease.actualJobId` records the swap).
+- **PR leases filled the offer's concurrency.** The offer's `concurrency` equals the slot count, so with
+  two PR leases active, a trunk job could not even be reserved until one finished.
 
-The setting is now `["current"]`. The lockfile does not change: it records every platform's optional
-packages either way, and the setting only decides which ones are installed. No workflow, Dockerfile or
-script uses another CPU's npm binary; the worker image installs inside its own build stage, on its own
-platform.
+The fix is in three parts.
 
-Measured on an x86_64 cloud VM with the box's settings (`CI=1`, `package-import-method=copy`, no
-`node_modules`, warm store, same lockfile): 15.8–16.8 s before and 12.6–12.9 s after, with
-`node_modules/.pnpm` going from 4.5 GB to 3.4 GB.
+- `push`, `workflow_dispatch` and `merge_group` jobs in `hobo-ci.yml` ask for `hobo-trunk`. They do this
+  once the repository variable `HOBO_CI_TRUNK_RUNNER` is `true`. The relay accepts exactly one label,
+  `hobo` or `hobo-trunk` (`src/runner-labels.ts`). It re-reads the job's label before launch and passes
+  it to the host. The box controller, the Vercel sandbox controller and the workflow bridge register the
+  JIT runner with that label, so a `hobo-trunk` runner can only take a trunk job. `scripts/lint-actions.ts`
+  allows `runs-on: hobo` and the one gated expression, so the variable can switch a job between the two
+  hobo labels but cannot point it at a hosted runner.
+- `HOBO_CI_WORKER_TRUNK_SLOTS` (default 0) caps the active leases of the other runs at
+  `HOBO_CI_WORKER_SLOTS − HOBO_CI_WORKER_TRUNK_SLOTS` (`generalLeaseLimit` on `HostedRelay`) while a
+  trunk job waits; see the follow-up below for borrowing. Trunk is classified by the run's event, the same lookup the
+  admission order already caches. A run whose lookup fails counts as a PR. The hosted runtime now keeps
+  one admission order across ticks, because it rebuilds the relay every 2 s tick, and a per-relay cache
+  made the cap look up the run of every active lease on every tick. A run is looked up again only until
+  GitHub gives it a start time.
+- Tests in `test/github-job-poller.test.ts` drive the poller, relay and container controller end to end:
+  1. A trunk job queued after two PR jobs gets the first slot one of them frees, launched as `hobo-trunk`
+     (see the follow-up below for why the PR jobs hold both slots first).
+  2. A slot released mid-pass stays with the trunk job that just missed one.
+  3. The real controller's JIT registration carries `hobo-trunk`.
 
-Considered and not done:
+**Rollout.** Redeploy the box daemon on a main that includes this change with
+`HOBO_CI_WORKER_TRUNK_SLOTS=1`, then set `HOBO_CI_TRUNK_RUNNER=true`. Do them in that order: a daemon
+that does not serve `hobo-trunk` would leave main's jobs queued.
 
-- **Hard links from the shared store.** Putting the work directory on the store's filesystem would let
-  pnpm hard-link (14 s instead of 18.9 s in the same test). A hard link is the store's own file, so a job
-  that writes into `node_modules` would change it for every later job, fork PRs included. That widens the
-  risk noted at the end of this document.
-- **pnpm's global virtual store.** pnpm 10.33 ignores `enableGlobalVirtualStore` when `CI` is set; without
-  `CI`, a warm install still took 13–14 s.
-- **Skipping dependency build scripts.** `--ignore-scripts` saved about 4 s, though the scripts
-  themselves run in under 1 s. The four packages in `allowBuilds` (`@ast-grep/cli`, `@bufbuild/buf`,
-  `esbuild`, `protobufjs`) set up their native binaries in `postinstall`, and jobs run those tools.
+**Follow-up: the kept slot is lent.** Keeping a slot idle serialized every PR run on the other one:
+about six jobs each, one at a time, which put PR runs near the 20-minute line. The cap now applies only
+while a trunk job is pending without a lease. With no trunk job waiting, PR jobs may take every slot. A
+trunk job that arrives then waits for the first PR job to finish (running jobs are never preempted). It
+is first in admission order, so it gets that freed slot ahead of any newer PR job. It also holds the
+cap, so a lease released later in the same pass is not handed to a PR job either. The trade is at most
+one PR job's runtime of trunk wait, only when both slots are busy with PR jobs, in exchange for PR runs
+using both slots. Tests: `lends the trunk slot to pull requests until a trunk job waits…`, `keeps a lease
+released mid-pass for the trunk job that just missed one`, and the uncapped variant, where admission
+order alone still gives trunk the freed slot.
 
 ## Before and after
 
@@ -608,9 +714,164 @@ of two or three runs at once, queueing still pushes it past five. In order of ex
 8. **Fewer jobs per run is capped by the required checks.** Secret scan, CI runner image and the CI fabric
    contract guard each spend a container handoff on 10–40 s of work. Folding them into one job would cut
    two handoffs per run, but each is a required check by name, so that needs the ruleset changed with it.
-   Not done here.
+   Not done here. On trunk runs, the secret scan now runs inside the CI runner image job in parallel with
+   the image build, so a main push needs one fewer slot. Pull requests keep the separate required "Secret scan" job.
 
 Risk to keep in mind: the box's pnpm store is a read-write host mount shared by every job, fork PRs
 included (`forkPullRequestEnvironment: ci`). pnpm verifies tarball integrity against the lockfile on fetch,
-but a job can still write into the shared store. The turbo cache deliberately stays on `actions/cache`
-(scoped per ref) for this reason rather than becoming a shared host directory.
+but a job can still write into the shared store. Since finding 12 the turbo cache lives in that mount too.
+It used to stay on `actions/cache` (scoped per ref) for this reason. That scoping kept PR results away from
+main, but it did not keep a fork away from main's inputs: every job container also gets the host docker
+socket (`HOBO_CI_MOUNT_DOCKER_SOCKET` defaults on), and with it a fork job can retag `hobo-ci-worker:local`,
+the image the Main full gate runs in, or write any host directory. The turbo-cache action now hands the
+shared cache only to same-repository jobs: a PR whose head repository is not this one (compared by
+`full_name`, so a deleted fork's null head repo also counts) gets no `TURBO_CACHE_DIR` and uses the
+per-ref `actions/cache` fallback, so no fork run reads main's entries or writes one main could replay.
+That keeps an honest fork off the shared cache but stops nothing a malicious one does through the socket
+or the store mount. The boundary that would matter is per-job socket and mount policy for fork PRs in the
+box daemon.
+
+## Finding 12: main re-ran the tests its own PR had just passed
+
+Main push 41671509710 (merge of #1675, 407 s) spent 288 s in Main full gate:
+
+| Step | Time | What ran |
+|---|---:|---|
+| Checkout, preflight, cache restore | 10 s | |
+| `pnpm install` | 23 s | store host-mounted |
+| S0 gate set | 101 s | 14 `agent:check` lanes at concurrency 1; `turbo run test --filter=./packages/code` alone 79 s (78 of 82 tasks cached, `@hobo/code#test` a miss), `test:root` 13 s, `typecheck:root` 5 s, the other 11 under 5 s together |
+| Workspace tests | 146 s | `dependent-tests.mts`: 7 whole suites 41 s (84 of 90 cached; `@hobo/code#test` replayed from the S0 run), `@hobo/hobo` subset 92 s (75 files whose imports reach `packages/code/src/rubberhose.ts`), `examples/self-host-yard` subset 9 s, three cached subsets under 1 s |
+| Prune, save, trace | 8 s | |
+
+The run's critical path was image job 91 s (its inputs changed in #1675), then the gate. The scoping was
+right: the 75 `@hobo/hobo` files reach the changed source through real imports, and the docs-only edits
+in `packages/ci` and `packages/ci-gh-actions` cost nothing on their own (`*.md` is outside the `test`
+inputs). The waste was `@hobo/code#test`. #1675's PR impact gate (run 41669665020) ran the same lane on the
+same tree eight minutes earlier (73 s, its only miss), but its cache entry was saved under the PR's ref,
+and `actions/cache` never restores a PR ref's entries on main.
+
+Fix: on the box, `.github/actions/turbo-cache` points `TURBO_CACHE_DIR` at a directory inside the
+host-mounted pnpm store (`hobo-turbo-cache`), so every job (PR, merge group, main) reads and writes one
+content-addressed cache and the `actions/cache` restore and save are skipped. Turbo's task hash here is
+file content only (strict env mode, no task `env` keys), so a PR gate's result replays on main when the
+merged tree matches. `scripts/ci/turbo-cache-prune.mts` prunes the shared directory by the same 7-day rule
+and skips files another job's prune removed. Two jobs writing one hash can leave a truncated archive for
+an instant; turbo reads that as a miss and runs the task (checked by truncating a build entry). No daemon
+redeploy is needed: the pnpm store mount already exists.
+
+Expected for a push like 41671509710: S0 drops by about 77 s (the `@hobo/code#test` replay), and the image
+job is about 10 s once #1676's no-rebuild skip lands, so the run goes from 407 s to roughly 250 s. The
+`@hobo/hobo` subset (92 s) is the floor for a change to `@hobo/code` source; the PR gate does not run it.
+
+## Finding 14: release PRs fanned out to 18 jobs on two slots
+
+#1674 added the release pipelines. Its PR queued 18 `hobo` jobs between them:
+- `release-code` queued contract, lint, a build cone, four Vitest shards, affected-image selection, and one image job.
+- `release-hobo` queued contract, affected-image selection, and seven image jobs. `hobo-code` was again among them, so it was built in both pipelines.
+
+Every job paid about 70 s of checkout and 20 to 40 s of install before its real work. That work was 13 to 18 s of tests per shard and 20 to 65 s per image. The old detector also selected every image on any lockfile, root `package.json` or `turbo.json` change.
+
+| #1674 (before) | wait for a slot | run |
+|---|---:|---:|
+| release-code lint / contract / cone | 153 / 198 / 502 s | 96 / 105 / 112 s |
+| release-code shards 1 and 4 | 130 and 295 s | 115 and 121 s |
+| release-code shard 2 | — | 6.5 min in checkout, cancelled |
+| release-code shard 3 and image | never got a slot | cancelled |
+| release-hobo contract / affected | — | 122 / 58 s |
+| release-hobo sdk / codegen | 397 / 746 s | 132 / 101 s |
+| release-hobo remaining images | — | cancelled at about 1316 s |
+| merge-queue contract guard (run 41711566157) | 636 s | 119 s |
+
+Fix (#1685):
+- **Affected images keyed by build inputs.** `scripts/ci/release-oci-affected.mts` hashes, for each image:
+  - the tracked build files of its package's workspace closure, read from `pnpm-lock.yaml`, with tests and docs excluded;
+  - that closure's slice of the lockfile;
+  - the shared release and toolchain inputs;
+  - its own manifest entry and any extra path-read inputs;
+  - the key of its `FROM` image.
+- **One PR job per pipeline.**
+  - `release-hobo` builds its affected images in sequence, running the live OCI contract on each.
+  - `release-code` runs lint, the unsharded `@hobo/code` suite through turbo, and the `hobo-code` image.
+  - `hobo-code` is built only by `release-code`.
+
+| #1685 (after; its workflow edits force every image) | wait for a slot | run | jobs |
+|---|---:|---:|---:|
+| release-code (`code-release`) | 12 s | 145 s: install 21 s, full suite 70 s (204 files, 5,990 tests), image 25 s | 1 |
+| release-hobo (`release-contract`) | 253 s | 229 s: 6 images and 6 live contracts in 176 s | 1 |
+
+Slot-time for the same work dropped from more than 1,100 job-s, much of it never finished, to 374 s. The job count dropped from 18 to 2. Both runs finished, in 158 s and 483 s of wall time, where #1674's were cancelled after more than 20 minutes. A PR that changes no image inputs now runs the contract tests and the suite only. The suite's turbo entry lands in the shared cache, so main's S0 lane can replay it. The 253 s wait was for slots held by other PRs' fabric jobs. That PR's own fabric run still waited 82 to 937 s, so slot count remains the next limit. More slots are not free: the host has 15 GiB, runs 2 slots × 6 GiB, and has peaked near 12 GiB (item 5 of "What is left to reach five minutes").
+
+## Finding 15: trunk jobs starved for 16 minutes
+
+Main push run 41720899087 queued three jobs at 21:20:26Z. None started until 21:36:36Z. Meanwhile every
+slot that freed on the two-slot `hobo` box went to a pull-request job: starts at 21:21:48, 21:21:55,
+21:23:17, 21:25:06, 21:26:17, 21:26:40, 21:27:58, 21:28:24, 21:29:20, 21:31:01, 21:35:59 and 21:36:08Z.
+Trunk admission order alone therefore did not protect the next free slot.
+
+Three mechanisms confirmed in the relay and stores explain it:
+
+- `createAdmissionOrder` remembered a run only after `run_started_at` arrived. A later failed `getRun`
+  returned `UNKNOWN` (pull-request rank, infinite start time), even when an earlier lookup had identified
+  the run as trunk. The poller also discarded the `event` and `run_started_at` already present in its run
+  lists.
+- Under the shared `hobo` label, GitHub could assign the runner launched for trunk job T to PR job P. The
+  store recorded `actualJobId = P` and removed P's pending row, but T's pending row had been removed when
+  its original lease was reserved. `reserve` also returned that active lease for T, so T could not get a
+  replacement until P finished and settlement requeued it.
+- Lent-slot enforcement only refused new non-trunk reservations after trunk missed a lease. It did not
+  reclaim non-trunk leases still in `reserved`, even though those had launched no host and could be
+  cancelled safely.
+
+The fix primes admission from the run lists without another GitHub request, remembers rank independently
+of start time, and retains it across failed lookups. A swapped lease now makes its still-queued original
+job pending and reservable again while the borrowed runner continues untouched. With
+`HOBO_CI_WORKER_TRUNK_LEND=1`, a waiting trunk job cancels excess non-trunk `reserved` leases newest first,
+requeues their jobs, and retries its reservation in the same pass; a lease with any host or runner evidence
+is never reclaimed. Strict and lending modes both retain the non-trunk cap after trunk misses capacity,
+and reserved leases launch in the same trunk-first admission order.
+
+Label separation is still required: redeploy the box daemon with `HOBO_CI_WORKER_TRUNK_SLOTS=1`, then set
+repository variable `HOBO_CI_TRUNK_RUNNER=true` so GitHub gives a `hobo-trunk` runner only to trunk work.
+The daemon change and `HOBO_CI_WORKER_TRUNK_LEND` setting take effect only after that box redeploy.
+
+## Finding 16: merge_group skipped the gate that caught the red main
+
+Run 41736273918 went red after #1689 merged through the merge queue. Main full gate's Workspace tests
+caught a latent `@hobo/stations` fixture break introduced by #1631 and fixed by #1692. The PR impact gate
+ran only turbo `test:unit` lanes, while `merge_group` ran just the contract guard among the affected CI
+jobs; Main full gate neither ran on `merge_group` nor was required. Merge-group entries now run the same
+affected S0 and dependent workspace-test gate as Main full gate inside the required PR impact gate, using
+the merge group's base SHA.
+
+## Finding 19: every job installed both CPUs' agent CLIs
+
+`pnpm install --frozen-lockfile` takes 19–26 s per job on the box, and 44–46 s when both slots install at
+once. Nothing is downloaded ("reused 1997, downloaded 0"); the time goes to writing `node_modules`.
+
+- The store is the host mount `/pnpm-store` and the workspace is on the container's overlay, two
+  filesystems, so pnpm cannot hard-link and copies every file.
+- Root `package.json` set `pnpm.supportedArchitectures.cpu` to `["arm64", "x64", "current"]`, added with
+  the docs-portal contract in #510 without a stated reason. `@agentv/core` (used by `provider-agentv` and
+  ts-autocode's `training`) depends on `@openai/codex` and `@github/copilot`, whose native packages are
+  190–280 MB per platform. Every job copied both CPUs' builds, about 1.1 GB, and could run one of them.
+
+The setting is now `["current"]`. The lockfile does not change: it records every platform's optional
+packages either way, and the setting only decides which ones are installed. No workflow, Dockerfile or
+script uses another CPU's npm binary; the worker image installs inside its own build stage, on its own
+platform.
+
+Measured on an x86_64 cloud VM with the box's settings (`CI=1`, `package-import-method=copy`, no
+`node_modules`, warm store, same lockfile): 15.8–16.8 s before and 12.6–12.9 s after, with
+`node_modules/.pnpm` going from 4.5 GB to 3.4 GB.
+
+Considered and not done:
+
+- **Hard links from the shared store.** Putting the work directory on the store's filesystem would let
+  pnpm hard-link (14 s instead of 18.9 s in the same test). A hard link is the store's own file, so a job
+  that writes into `node_modules` would change it for every later job, fork PRs included. That widens the
+  risk noted at the end of this document.
+- **pnpm's global virtual store.** pnpm 10.33 ignores `enableGlobalVirtualStore` when `CI` is set; without
+  `CI`, a warm install still took 13–14 s.
+- **Skipping dependency build scripts.** `--ignore-scripts` saved about 4 s, though the scripts
+  themselves run in under 1 s. The four packages in `allowBuilds` (`@ast-grep/cli`, `@bufbuild/buf`,
+  `esbuild`, `protobufjs`) set up their native binaries in `postinstall`, and jobs run those tools.

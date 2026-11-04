@@ -7,6 +7,7 @@ import { toJsonString } from "@bufbuild/protobuf";
 import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
+	countInFlightWorkerLeases,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createGithubAppTransport,
@@ -22,6 +23,7 @@ import {
 	isIsolatedContainerOffer,
 	resolveWorkerStorePlan,
 	waitForIsolatedWorkerDrain,
+	workerOfferKeys,
 } from "@hobo/ci-gh-actions";
 
 function required(name: string): string {
@@ -71,11 +73,23 @@ if (!Number.isInteger(workerMemoryMb) || workerMemoryMb < 512)
 const slots = Number(process.env.HOBO_CI_WORKER_SLOTS ?? "2");
 if (!Number.isInteger(slots) || slots < 1 || slots > 8)
 	throw new Error("invalid HOBO_CI_WORKER_SLOTS");
+// Slots reserved for push, workflow_dispatch and merge_group jobs. Other runs never borrow them
+// unless HOBO_CI_WORKER_TRUNK_LEND=1, which lends them until a trunk job waits. The offer's
+// concurrency must equal the slot count.
+const trunkSlots = Number(process.env.HOBO_CI_WORKER_TRUNK_SLOTS ?? "0");
+if (!Number.isInteger(trunkSlots) || trunkSlots < 0 || trunkSlots >= slots)
+	throw new Error("invalid HOBO_CI_WORKER_TRUNK_SLOTS");
+const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
+if (trunkLend !== "0" && trunkLend !== "1")
+	throw new Error("invalid HOBO_CI_WORKER_TRUNK_LEND");
+const lendTrunkSlots = trunkLend === "1";
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
+// A stop waits for running jobs, so the default covers a long job; the
+// supervisor's own stop timeout must be longer than this.
 const drainTimeoutMs = Number(
-	process.env.HOBO_CI_WORKER_DRAIN_TIMEOUT_MS ?? "120000",
+	process.env.HOBO_CI_WORKER_DRAIN_TIMEOUT_MS ?? "1800000",
 );
 if (!Number.isFinite(drainTimeoutMs) || drainTimeoutMs < 1_000)
 	throw new Error("invalid HOBO_CI_WORKER_DRAIN_TIMEOUT_MS");
@@ -183,6 +197,9 @@ const runtime = createHostedRelayRuntime({
 	isolatedHost: host,
 	denyUnisolated: true,
 	jobDurations,
+	// With no trunk slots this is the slot count, all the host could run anyway.
+	generalLeaseLimit: slots - trunkSlots,
+	lendTrunkSlots,
 	control: async () => undefined,
 });
 const poller =
@@ -190,6 +207,7 @@ const poller =
 		? createGithubJobPoller({
 				github,
 				durations: jobDurations,
+				admissionOrder: runtime.admissionOrder,
 				connections: async () =>
 					(await store.configuration())?.configuration?.connections ?? [],
 				ingest: (delivery) => runtime.ingestWebhook(delivery),
@@ -251,6 +269,8 @@ log("hobo_ci_isolated_worker_started", {
 	jobPollMs: plan.jobPollMs,
 	workerMemoryMb,
 	slots,
+	trunkSlots,
+	lendTrunkSlots,
 	pnpmStoreMounted: pnpmStore !== "",
 	drainTimeoutMs,
 });
@@ -281,11 +301,31 @@ async function shutdown(signal: string) {
 		if (tickInFlight) {
 			await tickInFlight.catch(() => undefined);
 		}
+		// Running jobs count: a lease leaves `running` only when a reconcile sees
+		// its runner exit, so each check is a tick that admits nothing new.
+		const inFlight = async () =>
+			countInFlightWorkerLeases(
+				await store.activeLeases(),
+				workerOfferKeys(
+					(await store.configuration())?.configuration,
+					workerAccountId,
+				),
+			);
+		log("hobo_ci_isolated_worker_drain_started", {
+			inFlight: await inFlight(),
+			timeoutMs: drainTimeoutMs,
+		});
+		let reported = -1;
 		const result = await waitForIsolatedWorkerDrain({
-			activeLeases: () => store.activeLeases(),
-			workerAccountId,
+			inFlight,
+			reconcile: () => runtime.tick({ admit: false }),
 			pollMs: Math.min(intervalMs, 5_000),
 			timeoutMs: drainTimeoutMs,
+			onWaiting: (remaining) => {
+				if (remaining === reported) return;
+				reported = remaining;
+				log("hobo_ci_isolated_worker_drain_waiting", { remaining });
+			},
 		});
 		if (result.drained) {
 			log("hobo_ci_isolated_worker_drained", { remaining: 0 });
@@ -305,7 +345,10 @@ async function shutdown(signal: string) {
 	return shutdownOnce;
 }
 
+// `on`, not `once`: a supervisor that signals the whole process group (and a
+// parent that forwards the same signal) sends it twice, and a second signal
+// with no listener would kill the drain.
 for (const signal of ["SIGTERM", "SIGINT"] as const)
-	process.once(signal, () => {
+	process.on(signal, () => {
 		void shutdown(signal);
 	});

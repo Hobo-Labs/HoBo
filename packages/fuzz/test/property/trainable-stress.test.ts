@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { fuzzTrainable, type FuzzValue } from "../../src/index.js";
+import { type FuzzValue, fuzzTrainable } from "../../src/index.js";
 
 describe("trainable gold/silver stress", () => {
 	it("survives deep, wide, and polluted garbage without crashing", () => {
@@ -44,9 +44,9 @@ describe("trainable gold/silver stress", () => {
 			const text =
 				input && Object(input) === input && "text" in input
 					? String(
-						// SAFETY: the object branch establishes a property-bearing input.
-						(input as { text?: unknown }).text ?? "",
-					)
+							// SAFETY: the object branch establishes a property-bearing input.
+							(input as { text?: unknown }).text ?? "",
+						)
 					: "";
 			return { label: text.includes("invoice") ? "billing" : "other" };
 		};

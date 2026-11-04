@@ -122,3 +122,48 @@ it("puts a run with no start time behind started runs of the same rank", async (
 		(await order([ref(1), ref(2)], (item) => item)).map((item) => item.jobId),
 	).toEqual([2, 1]);
 });
+
+it("looks a run up again until GitHub gives it a start time", async () => {
+	const runs = new Map<number, RunEntry>([
+		[1, { event: "push", startedAt: null }],
+	]);
+	const { github, calls } = transport(runs);
+	const order = createAdmissionOrder(github);
+	expect(await order.rank(ref(1))).toBe(0);
+	runs.set(1, { event: "push", startedAt: "2026-10-26T12:10:00Z" });
+	expect(await order.rank(ref(1))).toBe(0);
+	expect(await order.rank(ref(1))).toBe(0);
+	expect(calls).toEqual([1, 1]);
+});
+
+it("keeps a seen trunk rank when the next lookup fails", async () => {
+	const runs = new Map<number, RunEntry>([
+		[1, { event: "push", startedAt: null }],
+		[2, { event: "pull_request", startedAt: "2026-10-26T12:00:00Z" }],
+	]);
+	const { github } = transport(runs);
+	const order = createAdmissionOrder(github);
+	expect(await order.rank(ref(1))).toBe(0);
+	runs.delete(1);
+	expect(
+		(await order([ref(2), ref(1)], (item) => item)).map((item) => item.jobId),
+	).toEqual([1, 2]);
+});
+
+it("uses primed run data without another GitHub request", async () => {
+	const { github, calls } = transport(
+		new Map([
+			[2, { event: "pull_request", startedAt: "2026-10-26T12:00:00Z" }],
+		]),
+	);
+	const order = createAdmissionOrder(github);
+	order.prime({
+		runId: 1,
+		event: "push",
+		runStartedAt: "2026-10-26T12:10:00Z",
+	});
+	expect(
+		(await order([ref(2), ref(1)], (item) => item)).map((item) => item.jobId),
+	).toEqual([1, 2]);
+	expect(calls).toEqual([2]);
+});
