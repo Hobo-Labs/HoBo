@@ -1,0 +1,45 @@
+{
+	"name": "@hobo/pricing",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist",
+		"LICENSE"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./legacy": {
+			"types": "./dist/legacy/index.d.ts",
+			"default": "./dist/legacy/index.js"
+		},
+		"./sync": {
+			"types": "./dist/sync/index.d.ts",
+			"default": "./dist/sync/index.js"
+		}
+	},
+	"scripts": {
+		"codegen": "pnpm --dir ../.. exec node --import tsx packages/schema-tools/src/cli.ts --packages-root packages --filter packages/pricing",
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"test:contract:consumer": "vitest run contracts/consumer",
+		"test:contract:provider": "vitest run contracts/provider --passWithNoTests",
+		"test:schema": "pnpm --dir ../.. exec node --import tsx packages/schema-tools/src/cli.ts --check --packages-root packages --filter packages/pricing"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.9"
+	},
+	"description": "Deterministic, fail-closed provider commercial terms and pure quote rating."
+}

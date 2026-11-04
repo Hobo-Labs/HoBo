@@ -22,8 +22,10 @@ const activeCiFiles = new Set([
 	"hobo-ci.yml",
 	"examples-e2e.yml",
 	"dev-env-smoke.yml",
+	"pricing-ci.yml",
 	"release-hobo.yml",
 	"release-code.yml",
+	"release-pricing.yml",
 	"release-ts-autocode.yml",
 ]);
 const allowedEnabled = new Set([acceptanceFile, ...activeCiFiles]);
