@@ -9,9 +9,13 @@ import {
 	type HostedRelayStore,
 	type IsolatedRunnerHost,
 	type ServedRunnerLabelCache,
+	type TrunkWaitCache,
 } from "./hosted-relay.js";
+import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
+import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
 import type { JobDurations } from "./job-durations.js";
 import type { IdentityVerifier } from "./oidc.js";
+import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
 /** The inbox stores only signature-verified GitHub delivery bytes. */
 export interface HostedInboxStore extends HostedRelayStore {
@@ -81,8 +85,12 @@ export function createHostedRelayRuntime(options: {
 	jobDurations?: JobDurations;
 	/** See `HostedRelay`: maximum active leases for shared-label runners. */
 	generalLeaseLimit?: number;
+	/** See `HostedRelay`: maximum active leases for merge-queue runs. */
+	mergeGroupLeaseLimit?: number;
 	/** See `HostedRelay`: whether shared-label runs may borrow trunk slots. */
 	lendTrunkSlots?: boolean;
+	memoryAdmission?: WorkerMemoryAdmission;
+	storageAdmission?: WorkerStorageAdmission;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
@@ -91,7 +99,9 @@ export function createHostedRelayRuntime(options: {
 	const now = options.now ?? (() => new Date().toISOString());
 	const lastDuplicateRecheck = new Map<string, number>();
 	const sharedLabelTrunkJobs = new Set<string>();
+	const mergeGroupCapWaitJobs = new Set<string>();
 	const servedRunnerLabels: ServedRunnerLabelCache = new Map();
+	const trunkWaits: TrunkWaitCache = new Map();
 	const admissionOrder = createAdmissionOrder(
 		options.github,
 		options.jobDurations,
@@ -109,7 +119,9 @@ export function createHostedRelayRuntime(options: {
 			deferReservation: true,
 			admissionOrder,
 			sharedLabelTrunkJobs,
+			mergeGroupCapWaitJobs,
 			servedRunnerLabels,
+			trunkWaits,
 			now,
 		};
 		if (options.denyUnisolated) relayOptions.denyUnisolated = true;
@@ -117,8 +129,14 @@ export function createHostedRelayRuntime(options: {
 		if (options.jobDurations) relayOptions.jobDurations = options.jobDurations;
 		if (options.generalLeaseLimit !== undefined)
 			relayOptions.generalLeaseLimit = options.generalLeaseLimit;
+		if (options.mergeGroupLeaseLimit !== undefined)
+			relayOptions.mergeGroupLeaseLimit = options.mergeGroupLeaseLimit;
 		if (options.lendTrunkSlots !== undefined)
 			relayOptions.lendTrunkSlots = options.lendTrunkSlots;
+		if (options.memoryAdmission)
+			relayOptions.memoryAdmission = options.memoryAdmission;
+		if (options.storageAdmission)
+			relayOptions.storageAdmission = options.storageAdmission;
 		return new HostedRelay(relayOptions);
 	}
 	return {
@@ -335,18 +353,23 @@ export function createHostedRelayRuntime(options: {
 							if (
 								options.isolatedHost &&
 								lease.state !== "uncertain" &&
-								lease.actualJobId > 0 &&
-								lease.runnerName
+								lease.runnerName &&
+								(lease.actualJobId > 0 ||
+									servedRunnerLabels.get(
+										`${lease.repository}:${lease.jobId}`,
+									) === TRUNK_RUNNER_LABEL)
 							) {
+								const jobId =
+									lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
 								try {
 									const job = await getJob(
 										options.github,
 										lease.installationId,
 										lease.repository,
-										lease.actualJobId,
+										jobId,
 									);
 									assignedJobCompleted =
-										job.id === lease.actualJobId &&
+										job.id === jobId &&
 										job.status === "completed" &&
 										job.runner_name === lease.runnerName;
 								} catch {

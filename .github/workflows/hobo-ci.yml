@@ -17,10 +17,10 @@ permissions:
   contents: read
 
 env:
-  # Per-job heap ≈ (HOBO_CI_WORKER_MEMORY_MB default 8192 / HOBO_TURBO_CONCURRENCY) × 0.75
-  NODE_OPTIONS: --max-old-space-size=3072
-  # Serial turbo test tasks on 8 GiB workers (@hobo/cli vitest also caps maxWorkers: 1).
+  # ci-runner-preflight replaces these from the job's cgroup limit. The worker
+  # injects NODE_OPTIONS at container creation so every Node process gets its heap cap.
   HOBO_TURBO_CONCURRENCY: "1"
+  HOBO_TEST_MAX_WORKERS: "1"
   # Every turbo run writes .turbo/runs/<id>.json; ci-trace turns them into OTel spans.
   TURBO_RUN_SUMMARY: "true"
   # A git transfer under 1 KB/s for 30 s aborts instead of hanging (the pins use the same bound).
@@ -102,6 +102,7 @@ jobs:
         timeout-minutes: 15
         env:
           MISE_EXPERIMENTAL: "1"
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           bash -n packages/ci-gh-actions/deploy/ci-runner/build.sh
@@ -112,12 +113,17 @@ jobs:
         if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
         env:
           MISE_EXPERIMENTAL: "1"
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "$GHCR_TOKEN" ]; then
+            echo "GHCR_TOKEN is unavailable; skipping runner image push"
+            exit 0
+          fi
           version="$(node --no-warnings scripts/ci-runner-image-version.mts)"
           repo="${GITHUB_REPOSITORY,,}"
           image="ghcr.io/${repo}/hobo-ci-worker:${version}"
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker tag "hobo-ci-worker:${version}" "$image"
           docker push "$image"
           docker tag "hobo-ci-worker:local" "ghcr.io/${repo}/hobo-ci-worker:latest"
@@ -128,21 +134,7 @@ jobs:
     needs: ci-runner-image
     if: >-
       !cancelled() && needs.ci-runner-image.result != 'failure' && (
-      (github.event_name == 'push' && github.ref == 'refs/heads/main' && (
-      needs.ci-runner-image.result == 'success' ||
-      github.event.commits[0] == null ||
-      github.event.forced == true ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"pnpm-lock.yaml') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"pnpm-workspace.yaml') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '".npmrc') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '".pnpmfile.cjs') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), 'package.json"') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"patches/') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"mise.toml') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"mise.lock') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"packages/ci-gh-actions/deploy/ci-runner/deps/') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/ci/deps-key.mts') ||
-      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/lib/deps-key.mts'))) ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request')
@@ -178,8 +170,17 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         id: key
         run: echo "key=$(node --no-warnings scripts/ci/deps-key.mts)" >> "$GITHUB_OUTPUT"
-      - name: Resolve local or GHCR deps image
+      - name: Check current local deps image
         if: steps.scope.outputs.run == 'true'
+        id: current
+        run: |
+          set -euo pipefail
+          actual="$(docker image inspect hobo-ci-deps:local --format '{{ index .Config.Labels "hobo.ci.deps-key" }}' 2>/dev/null || true)"
+          current=false
+          if [ "$actual" = "${{ steps.key.outputs.key }}" ]; then current=true; fi
+          echo "current=${current}" >> "$GITHUB_OUTPUT"
+      - name: Resolve local or GHCR deps image
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true'
         id: source
         run: |
           set -euo pipefail
@@ -194,11 +195,15 @@ jobs:
             source=ghcr
           fi
           echo "source=${source}" >> "$GITHUB_OUTPUT"
-      - name: Promote cached deps image
-        if: steps.scope.outputs.run == 'true' && steps.source.outputs.source != 'build'
-        run: docker tag "hobo-ci-deps:${{ steps.key.outputs.key }}" hobo-ci-deps:local
+      - name: Promote cached deps image and collect superseded images
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source != 'build'
+        run: |
+          set -euo pipefail
+          candidate="hobo-ci-deps:${{ steps.key.outputs.key }}"
+          docker tag "$candidate" hobo-ci-deps:local
+          node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
       - name: Build deps image and verify offline install
-        if: steps.scope.outputs.run == 'true' && steps.source.outputs.source == 'build'
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'
         id: build
         run: |
           set -euo pipefail
@@ -206,7 +211,7 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then args=(--no-promote); fi
           bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh "${args[@]}"
       - name: Push deps image to GHCR
-        if: steps.scope.outputs.run == 'true' && github.event_name != 'pull_request' && steps.source.outputs.source == 'build' && steps.build.outcome == 'success' && github.repository == 'Hobo-Labs/HoBo'
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && github.event_name != 'pull_request' && steps.source.outputs.source == 'build' && steps.build.outcome == 'success' && github.repository == 'Hobo-Labs/HoBo'
         run: |
           set -euo pipefail
           image="ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:${{ steps.key.outputs.key }}"
@@ -266,7 +271,7 @@ jobs:
         run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
         if: github.event_name == 'merge_group'
-        run: pnpm exec vitest run scripts/test/ci-runner-image-contract.test.ts
+        run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
       - name: Assert CI fabric contract
         if: github.event_name == 'merge_group'
         run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
@@ -383,6 +388,7 @@ jobs:
         env:
           TESTS: ${{ steps.merge-group-base.outputs.tests }}
           BASE: ${{ steps.merge-group-base.outputs.base }}
+          HOBO_TURBO_CONCURRENCY: "1"
         run: |
           set -euo pipefail
           if [ "$TESTS" = "affected" ]; then
@@ -547,7 +553,7 @@ jobs:
         if: steps.deps-layer.outputs.match != 'true' || github.event_name == 'schedule'
         run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
-        run: pnpm exec vitest run scripts/test/ci-runner-image-contract.test.ts
+        run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
       - name: Assert CI fabric contract
         run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
       - name: Seed the pnpm store cache for PRs
@@ -600,6 +606,12 @@ jobs:
           else
             pnpm run check:all
           fi
+      - name: Generated-output drift
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        timeout-minutes: 8
+        run: >-
+          pnpm run codegen:check &&
+          pnpm --filter @hobo-draft/s0-04-protobuf-cue-codegen test
       - name: Workspace tests
         # The whole-workspace sweep (weekly, or a lockfile/root-config change) is not held
         # to the main-push budget.
@@ -760,7 +772,7 @@ jobs:
       - uses: ./.github/actions/ci-runner-preflight
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
-        run: pnpm exec vitest run scripts/test/ci-runner-image-contract.test.ts
+        run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
       - name: Assert CI fabric contract
         run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
 

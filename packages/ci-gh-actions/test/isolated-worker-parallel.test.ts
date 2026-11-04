@@ -72,6 +72,10 @@ function controller(
 	docker: DockerDriver,
 	active: ReturnType<typeof lease>[],
 	slots: number,
+	container: Readonly<{
+		volumes?: readonly Readonly<{ source: string; target: string }>[];
+		containerEnv?: Readonly<Record<string, string>>;
+	}> = {},
 ) {
 	const transition = vi.fn(async () => undefined);
 	const stub: Pick<
@@ -102,6 +106,7 @@ function controller(
 			workerAccountId: "box",
 			workerImage: "hobo-ci-worker:local",
 			slots,
+			...container,
 		}),
 	};
 }
@@ -149,6 +154,44 @@ describe("isolated worker parallel slots", () => {
 		).toHaveLength(1);
 		await ctl.discardWarm();
 		expect(docker.calls.at(-1)).toMatch(/^remove hobo-warm-/);
+	});
+
+	it("mounts the shared store and selects hardlink imports", async () => {
+		const docker = fakeDocker();
+		const { ctl } = controller(docker, [], 2, {
+			volumes: [{ source: "/srv/pnpm-store", target: "/pnpm-store" }],
+			containerEnv: {
+				npm_config_store_dir: "/pnpm-store",
+				npm_config_package_import_method: "hardlink",
+			},
+		});
+		await ctl.prewarm();
+		expect(docker.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				volumes: [{ source: "/srv/pnpm-store", target: "/pnpm-store" }],
+				env: expect.objectContaining({
+					npm_config_store_dir: "/pnpm-store",
+					npm_config_package_import_method: "hardlink",
+				}),
+			}),
+		);
+		await ctl.discardWarm();
+	});
+
+	it("exports the container memory limit to the runner environment", async () => {
+		const docker = fakeDocker();
+		const { ctl } = controller(docker, [], 2);
+		await ctl.prewarm();
+		expect(docker.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				memoryMb: 8192,
+				env: expect.objectContaining({
+					HOBO_CI_JOB_MEMORY_MB: "8192",
+					NODE_OPTIONS: expect.stringMatching(/^--max-old-space-size=\d+$/u),
+				}),
+			}),
+		);
+		await ctl.discardWarm();
 	});
 });
 
@@ -227,6 +270,25 @@ describe("cli docker driver parallel helpers", () => {
 		const argv = readFileSync(log, "utf8").trim().split(" ");
 		expect(argv.indexOf("--init")).toBeGreaterThan(0);
 		expect(argv.indexOf("--init")).toBeLessThan(argv.indexOf("img"));
+	});
+
+	it("passes the per-job memory limit and job memory environment to docker create", async () => {
+		const { bin, log } = fakeBinary();
+		const driver = createCliDockerDriver({
+			binary: bin,
+			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0", PATH: process.env.PATH },
+		});
+		await driver.create({
+			name: "hobo-x",
+			image: "img",
+			timeoutMs: 1,
+			memoryMb: 3_072,
+			env: { HOBO_CI_JOB_MEMORY_MB: "3072" },
+			command: ["sleep", "infinity"],
+		});
+		const argv = readFileSync(log, "utf8").trim();
+		expect(argv).toContain("--memory 3072m --memory-swap 3072m");
+		expect(argv).toContain("-e HOBO_CI_JOB_MEMORY_MB=3072");
 	});
 
 	it("refuses volume specs that could smuggle extra mount options", async () => {

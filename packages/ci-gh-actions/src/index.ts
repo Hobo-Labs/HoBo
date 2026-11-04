@@ -1,4 +1,5 @@
 export { createActionsBackend } from "./actions-backend.js";
+export { createAdmissionOrder } from "./admission-order.js";
 export { relayInstallAssets } from "./assets.js";
 export {
 	inventoryCiEnginesFromRepository,
@@ -28,6 +29,7 @@ export { createHostedAppBootstrap } from "./hosted-app-bootstrap.js";
 export { createHostedAppOnboarding } from "./hosted-app-onboarding.js";
 export { createHostedControlPlane } from "./hosted-control.js";
 export {
+	generalLeaseIdsFor,
 	HostedRelay,
 	type HostedRelayStore,
 	type IsolatedRunnerHost,
@@ -55,6 +57,19 @@ export {
 	workerOfferKeys,
 } from "./isolated-worker/daemon-shutdown.js";
 export {
+	createDepsImageEnsurer,
+	type DepsImageAction,
+	type DepsImageDockerPort,
+	type DepsImageEnsureResult,
+	type DepsImageEnsurerOptions,
+	type DepsImageEvent,
+	type DepsImageFileSystemPort,
+	type DepsImageGitPort,
+	type DepsImageProcessPort,
+	type DepsImageProcessRequest,
+	defaultDepsRoot,
+} from "./isolated-worker/deps-image.js";
+export {
 	createGithubJobPoller,
 	createPollLogFilter,
 	describeWaitingJobs,
@@ -64,10 +79,35 @@ export {
 	type WaitingJob,
 } from "./isolated-worker/github-job-poller.js";
 export {
+	selectWorkerImagesForDeletion,
+	selectWorkerImageTagsForDeletion,
+	type WorkerImage,
+} from "./isolated-worker/image-gc.js";
+export {
+	createWorkerMemoryAdmission,
+	type MemoryAdmissionLog,
+	type WorkerMemoryAdmission,
+} from "./isolated-worker/memory-admission.js";
+export {
+	type JobMemoryRequest,
+	memoryClassForJob,
+	memoryRequestForJob,
+	readHostMemory,
+	resolveWorkerMemoryConfig,
+	type WorkerMemoryClassName,
+	type WorkerMemoryConfig,
+} from "./isolated-worker/memory-classes.js";
+export { createPnpmStoreMaintenance } from "./isolated-worker/pnpm-store.js";
+export {
 	attachPostgresPoolErrorHandler,
 	formatPoolErrorLog,
 	redactPoolErrorMessage,
 } from "./isolated-worker/postgres-pool.js";
+export {
+	createNodeWorkerStorageFileSystem,
+	createWorkerStorageAdmission,
+	type WorkerStorageAdmission,
+} from "./isolated-worker/storage-admission.js";
 export { resolveWorkerSlotConfig } from "./isolated-worker/worker-slots.js";
 export {
 	defaultWorkerDatabasePath,

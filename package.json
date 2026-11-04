@@ -106,13 +106,21 @@
 		"test:ship-gap-closure": "node --import tsx --test scripts/test/check-ship-gap-closure.test.ts",
 		"test:smoke": "vitest run --no-isolate --passWithNoTests",
 		"test:types": "node --import tsx scripts/run-tests.ts --category=types",
-		"pretest:unit": "turbo run build --filter \"./packages/**\" --filter \"./src/draft/**\" --concurrency=100%",
-		"test:unit": "node --import tsx scripts/run-tests.ts --category=unit",
-		"test:unit:quiet": "node --import tsx scripts/run-tests.ts --category=unit --quiet --no-artifacts",
+		"test:unit": "node --import tsx scripts/run-unit-tests.ts",
+		"test:unit:quiet": "node --import tsx scripts/run-unit-tests.ts --quiet",
+		"test:unit:dependencies": "node -e \"\"",
+		"test:unit:root:0": "node --import tsx scripts/run-tests.ts --category=unit --root-only --quiet --final --shard=0/4",
+		"test:unit:root:1": "node --import tsx scripts/run-tests.ts --category=unit --root-only --quiet --final --shard=1/4",
+		"test:unit:root:2": "node --import tsx scripts/run-tests.ts --category=unit --root-only --quiet --final --shard=2/4",
+		"test:unit:root:3": "node --import tsx scripts/run-tests.ts --category=unit --root-only --quiet --final --shard=3/4",
+		"test:unit:draft:0": "node --import tsx scripts/run-tests.ts --category=draft --quiet --final --shard=0/4",
+		"test:unit:draft:1": "node --import tsx scripts/run-tests.ts --category=draft --quiet --final --shard=1/4",
+		"test:unit:draft:2": "node --import tsx scripts/run-tests.ts --category=draft --quiet --final --shard=2/4",
+		"test:unit:draft:3": "node --import tsx scripts/run-tests.ts --category=draft --quiet --final --shard=3/4",
 		"test:visual": "node --import tsx scripts/run-tests.ts --category=visual",
 		"typecheck": "turbo run typecheck --filter \"./packages/*\" --filter @hobo/draft-connectivity-tier-ir-contract --concurrency=100%",
 		"typecheck:root": "tsc -p tsconfig.json",
-		"validate:final": "pnpm run standards:check -- --base=origin/main && node --import tsx scripts/run-tests.ts --final",
+		"validate:final": "pnpm run standards:check -- --base=origin/main && pnpm run test:unit",
 		"validate:local": "node --import tsx scripts/validate-local.mts",
 		"lint:budget": "node --experimental-strip-types scripts/check-biome-budget.mts"
 	},
@@ -157,8 +165,6 @@
 				"current"
 			],
 			"cpu": [
-				"arm64",
-				"x64",
 				"current"
 			]
 		}

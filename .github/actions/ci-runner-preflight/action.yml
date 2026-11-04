@@ -3,11 +3,11 @@ description: Fail fast when the hobo runner image is missing pinned toolchains (
 runs:
   using: composite
   steps:
-    # A job's work dir and /tmp go with its --rm container. What outlives the job is on
-    # the host engine behind the mounted socket. Only untagged images over a day old
-    # are pruned: the base build's layer cache and every tagged image stay, and so does
-    # a build in flight. Stopped containers are pruned only when they carry the job
-    # label and are past the moment a warm spare sits between create and start.
+    # The daemon deletes the host-mounted work dir at job teardown; /tmp goes with
+    # the --rm container. Only untagged images over a day old are pruned here: the
+    # base build's layer cache and every tagged image stay, and so does a build in
+    # flight. Stopped containers are pruned only when they carry the job label and
+    # are past the moment a warm spare sits between create and start.
     - name: Prune stale untagged images and stopped job containers
       shell: bash
       run: |
@@ -27,4 +27,5 @@ runs:
           mise install
         fi
         node --no-warnings scripts/ci-runner-preflight.mts
+        node --experimental-strip-types scripts/ci/memory-env.mts
         echo "HOBO_CUE_BIN=$(command -v cue)" >> "$GITHUB_ENV"

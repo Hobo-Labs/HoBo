@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a lockfile-keyed node_modules layer. Only the fetch build has network access.
+# Build a lockfile-keyed node_modules layer. Only the fetch stage has network access.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../../../../.." && pwd)"
 cd "$root"
@@ -13,17 +13,48 @@ esac
 
 context="$(mktemp -d)"
 contract_log="$(mktemp)"
+cap="${HOBO_CI_WORKER_BUILDER_CACHE_CAP:-${HOBO_CI_WORKER_BUILDER_KEEP_STORAGE:-4GB}}"
+if [[ ! "$cap" =~ ^[0-9]+([.][0-9]+)?[KMGT]B$ ]]; then
+  echo "invalid BuildKit cache cap: ${cap}" >&2
+  exit 1
+fi
 cleanup() {
   rm -rf "$context" "$contract_log"
 }
 trap cleanup EXIT
 
-key="$(node --no-warnings scripts/ci/deps-key.mts --stage "$context")"
 toolchain="$(node --no-warnings scripts/ci-runner-image-version.mts)"
 base="hobo-ci-worker:${toolchain}"
-fetch_image="hobo-ci-deps-fetch:${key}"
+if ! docker image inspect "$base" >/dev/null 2>&1; then
+  computed_toolchain="$toolchain"
+  toolchain=""
+  if worker_tags="$(docker image inspect hobo-ci-worker:local --format '{{range .RepoTags}}{{println .}}{{end}}' 2>/dev/null)"; then
+    while IFS= read -r tag; do
+      if [[ "$tag" =~ ^hobo-ci-worker:(v[0-9a-f]{12})$ ]]; then
+        toolchain="${BASH_REMATCH[1]}"
+        break
+      fi
+    done <<< "$worker_tags"
+  fi
+  if [[ -z "$toolchain" ]]; then
+    echo "missing toolchain image hobo-ci-worker:${computed_toolchain} and no versioned tag on hobo-ci-worker:local; run packages/ci-gh-actions/deploy/ci-runner/build.sh first" >&2
+    exit 1
+  fi
+  echo "Computed toolchain image hobo-ci-worker:${computed_toolchain} is missing; using ${toolchain} from hobo-ci-worker:local"
+fi
+base="hobo-ci-worker:${toolchain}"
+echo "Using toolchain image $base"
+key="$(node --no-warnings scripts/ci/deps-key.mts --toolchain "${toolchain}" --stage "$context")"
 candidate="hobo-ci-deps:${key}"
 epoch="$(git log -1 --format=%ct)"
+docker_memory_args=()
+if [[ -n "${HOBO_CI_DEPS_BUILD_MEMORY_MB:-}" ]]; then
+  if [[ ! "${HOBO_CI_DEPS_BUILD_MEMORY_MB}" =~ ^[0-9]+$ ]] || (( HOBO_CI_DEPS_BUILD_MEMORY_MB < 512 )); then
+    echo "invalid HOBO_CI_DEPS_BUILD_MEMORY_MB" >&2
+    exit 2
+  fi
+  docker_memory_args=(--memory "${HOBO_CI_DEPS_BUILD_MEMORY_MB}m")
+fi
 
 if docker image inspect "$candidate" >/dev/null 2>&1; then
   echo "Reusing local $candidate"
@@ -31,24 +62,15 @@ if docker image inspect "$candidate" >/dev/null 2>&1; then
     docker tag "$candidate" hobo-ci-deps:local
     echo "Promoted $candidate to hobo-ci-deps:local"
   fi
+  node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
+  docker builder prune -f --keep-storage "$cap"
   exit 0
 fi
 
-docker image inspect "$base" >/dev/null 2>&1 || {
-  echo "missing toolchain image $base; run packages/ci-gh-actions/deploy/ci-runner/build.sh first" >&2
-  exit 1
-}
-
-echo "Fetching dependencies for $candidate (network restricted to lockfile-verified downloads)"
-docker build --target fetch \
+echo "Building $candidate (fetch network restricted to lockfile-verified downloads; install offline)"
+docker build \
+  "${docker_memory_args[@]}" \
   --build-arg "TOOLCHAIN_IMAGE=${base}" \
-  -f packages/ci-gh-actions/deploy/ci-runner/deps/Dockerfile \
-  -t "$fetch_image" "$context"
-
-echo "Installing node_modules for $candidate with the network disabled"
-docker build --network=none \
-  --build-arg "TOOLCHAIN_IMAGE=${base}" \
-  --build-arg "FETCH_IMAGE=${fetch_image}" \
   --build-arg "DEPS_KEY=${key}" \
   --build-arg "TOOLCHAIN_VERSION=${toolchain}" \
   --build-arg "SOURCE_DATE_EPOCH=${epoch}" \
@@ -58,6 +80,8 @@ docker build --network=none \
 echo "Verifying the job's offline install is already up to date"
 tar -C "$context" -cf - . \
   | docker run --rm -i --network=none \
+    "${docker_memory_args[@]}" \
+    --tmpfs /pnpm-store:rw,uid=1000,gid=1000,mode=0755 \
     -e npm_config_store_dir=/pnpm-store \
     -e npm_config_ignore_scripts=true \
     "$candidate" \
@@ -74,3 +98,5 @@ if [ "$promote" = 1 ]; then
 else
   echo "Built and verified $candidate without promotion"
 fi
+node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
+docker builder prune -f --keep-storage "$cap"

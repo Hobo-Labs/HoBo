@@ -41,7 +41,6 @@ concurrency:
 
 env:
   HOBO_TURBO_CONCURRENCY: "1"
-  NODE_OPTIONS: --max-old-space-size=3072
   CODE_RELEASE_SPARSE_PATHS: |
     .agents
     .claude
@@ -134,9 +133,7 @@ jobs:
         if: steps.affected.outputs.build == 'true'
         run: |
           set -euo pipefail
-          if ! docker image inspect hobo-ci-worker:local >/dev/null 2>&1; then
-            bash packages/ci-gh-actions/deploy/ci-runner/build.sh
-          fi
+          bash packages/ci-gh-actions/deploy/ci-runner/build.sh
       - name: Build hobo-code release image (no push)
         if: steps.affected.outputs.build == 'true'
         env:
@@ -200,7 +197,7 @@ jobs:
           node --no-warnings scripts/ci/npm-publish-scope.mts packages/code/package.json "$staging/package.json"
           grep -q '"name": "@hobo-labs/code"' "$staging/package.json"
           (cd "$staging" && npm pack --dry-run --ignore-scripts)
-      - name: Ensure digest-pinned worker toolchain image
+      - name: Ensure digest-pinned content-keyed worker toolchain image
         run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin

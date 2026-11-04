@@ -100,6 +100,7 @@ jobs:
           sparse-checkout: ${{ env.RELEASE_SPARSE_PATHS }}
           sparse-checkout-cone-mode: true
           submodules: recursive
+          clean: false
       - uses: ./.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
@@ -144,9 +145,7 @@ jobs:
         if: steps.affected.outputs.image_ids != ''
         run: |
           set -euo pipefail
-          if ! docker image inspect hobo-ci-worker:local >/dev/null 2>&1; then
-            bash packages/ci-gh-actions/deploy/ci-runner/build.sh
-          fi
+          bash packages/ci-gh-actions/deploy/ci-runner/build.sh
       - name: Build affected images + live OCI config contract
         if: steps.affected.outputs.image_ids != ''
         env:
@@ -219,6 +218,7 @@ jobs:
           sparse-checkout: ${{ env.RELEASE_SPARSE_PATHS }}
           sparse-checkout-cone-mode: true
           submodules: recursive
+          clean: false
       - uses: ./.github/actions/ci-runner-preflight
       - run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Build hobo-sdk before CLI/MCP
@@ -274,7 +274,8 @@ jobs:
       - run: pnpm run pins:fetch ts-autocode
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
-      - run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+      - name: Ensure digest-pinned content-keyed toolchain image
+        run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: Build and push release images
@@ -303,6 +304,8 @@ jobs:
         image_id: [hobo-sdk, hobo-codegen, hobo-cli, hobo-mcp, hobo-ci-serve, hobo-site]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          clean: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: hobo-release-digests
@@ -332,6 +335,7 @@ jobs:
           sparse-checkout: ${{ env.RELEASE_SPARSE_PATHS }}
           sparse-checkout-cone-mode: true
           submodules: recursive
+          clean: false
       - uses: ./.github/actions/ci-runner-preflight
       - name: Resolve and validate release version
         run: node --no-warnings scripts/ci/resolve-release-version.mts "${HOBO_RELEASE_VERSION}" --github-env

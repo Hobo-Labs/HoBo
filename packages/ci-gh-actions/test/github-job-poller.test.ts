@@ -7,6 +7,7 @@ import {
 	AccountSchema,
 	ConfigurationSchema,
 	ConnectionSchema,
+	JobSchema,
 	OfferSchema,
 } from "@hobo/ci";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
@@ -23,6 +24,12 @@ import {
 	type GithubJobPollSummary,
 	type GithubReadFailure,
 } from "../src/isolated-worker/github-job-poller.js";
+import {
+	createWorkerMemoryAdmission,
+	type WorkerMemoryAdmission,
+} from "../src/isolated-worker/memory-admission.js";
+import { resolveWorkerMemoryConfig } from "../src/isolated-worker/memory-classes.js";
+import type { WorkerStorageAdmission } from "../src/isolated-worker/storage-admission.js";
 import { createJobDurations, type JobDurations } from "../src/job-durations.js";
 
 const NOW = Date.parse("2026-11-02T12:00:00Z");
@@ -40,6 +47,7 @@ const PolledBody = z
 				run_id: z.number(),
 				run_attempt: z.number(),
 				labels: z.array(z.string()),
+				name: z.string().optional(),
 				runner_name: z.string().nullable(),
 			})
 			.strict(),
@@ -614,8 +622,11 @@ describe("pull-mode box worker over SQLite", () => {
 		rmSync(root, { recursive: true, force: true });
 	});
 
-	async function configuredStore(concurrency: number) {
-		const store = new SqliteCiStore(join(root, `${randomUUID()}.sqlite`));
+	async function configuredStore(
+		concurrency: number,
+		path = join(root, `${randomUUID()}.sqlite`),
+	) {
+		const store = new SqliteCiStore(path);
 		await store.configure(
 			create(ConfigurationSchema, {
 				accounts: [
@@ -665,8 +676,11 @@ describe("pull-mode box worker over SQLite", () => {
 		jobDurations?: JobDurations,
 		trunk?: {
 			generalLeaseLimit?: number;
+			mergeGroupLeaseLimit?: number;
 			lendTrunkSlots?: boolean;
 			skipLaunchFor?: readonly number[];
+			memoryAdmission?: WorkerMemoryAdmission;
+			storageAdmission?: WorkerStorageAdmission;
 			labels: Map<string, string | undefined>;
 		},
 	) {
@@ -706,10 +720,175 @@ describe("pull-mode box worker over SQLite", () => {
 		if (jobDurations) options.jobDurations = jobDurations;
 		if (trunk?.generalLeaseLimit !== undefined)
 			options.generalLeaseLimit = trunk.generalLeaseLimit;
+		if (trunk?.mergeGroupLeaseLimit !== undefined)
+			options.mergeGroupLeaseLimit = trunk.mergeGroupLeaseLimit;
 		if (trunk?.lendTrunkSlots !== undefined)
 			options.lendTrunkSlots = trunk.lendTrunkSlots;
+		if (trunk?.memoryAdmission) options.memoryAdmission = trunk.memoryAdmission;
+		if (trunk?.storageAdmission)
+			options.storageAdmission = trunk.storageAdmission;
 		return createHostedRelayRuntime(options);
 	}
+
+	function memoryJob(id: number, name: string, labels = ["hobo"]) {
+		return create(JobSchema, {
+			id,
+			runId: 900 + id,
+			runAttempt: 1,
+			repositoryId: CONNECTION.repositoryId,
+			installationId: CONNECTION.installationId,
+			repository: REPO,
+			labels,
+			name,
+			action: "queued",
+			isolatedRequired: true,
+		});
+	}
+
+	function memoryGithub(jobs: readonly ReturnType<typeof memoryJob>[]) {
+		return new FakeGithub(
+			{ queued: [], in_progress: [] },
+			Object.fromEntries(
+				jobs.map((job) => [
+					job.runId,
+					[
+						{
+							id: job.id,
+							status: "queued",
+							labels: [...job.labels],
+							name: job.name,
+						},
+					],
+				]),
+			),
+		);
+	}
+	it("caps merge groups without blocking a push, then admits the waiter in order", async () => {
+		const log = vi.spyOn(console, "error").mockImplementation(() => {});
+		const store = await configuredStore(3);
+		const github = new FakeGithub(
+			{ queued: [900, 901, 902], in_progress: [] },
+			{
+				900: [{ id: 1, status: "queued", labels: ["hobo-trunk"] }],
+				901: [{ id: 2, status: "queued", labels: ["hobo-trunk"] }],
+				902: [{ id: 3, status: "queued", labels: ["hobo-trunk"] }],
+			},
+		);
+		github.started.set(900, {
+			event: "merge_group",
+			at: "2026-11-02T11:55:00Z",
+		});
+		github.started.set(901, {
+			event: "merge_group",
+			at: "2026-11-02T11:56:00Z",
+		});
+		github.started.set(902, {
+			event: "push",
+			at: "2026-11-02T11:57:00Z",
+		});
+		const launched: string[] = [];
+		const runtime = boxRuntime(store, github, launched, undefined, {
+			labels: new Map(),
+			generalLeaseLimit: 2,
+			mergeGroupLeaseLimit: 1,
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+
+		const initial = await store.activeLeases();
+		expect(initial.map((lease) => lease.jobId).sort()).toEqual([1, 3]);
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([2]);
+		const first = initial.find((lease) => lease.jobId === 1);
+		if (!first) throw new Error("first merge-group lease missing");
+		for (const lease of initial)
+			await store.transition(
+				lease.id,
+				["reserved"],
+				(entry) => {
+					entry.state = "running";
+				},
+				"ci.RunnerRegistered",
+				new Date(NOW).toISOString(),
+			);
+
+		github.calls.length = 0;
+		await runtime.tick({ maxDeliveries: 10 });
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([2]);
+		expect(
+			github.calls.filter((call) =>
+				/^GET \/repos\/Org\/Repo\/actions\/runs\/\d+$/u.test(call),
+			),
+		).toEqual([]);
+		const waitLogs = () =>
+			log.mock.calls.filter(([line]) =>
+				line.includes("hobo_ci_merge_group_cap_wait"),
+			);
+		expect(waitLogs()).toHaveLength(1);
+		expect(waitLogs()[0]?.[0]).toContain('"jobId":2');
+
+		await store.transition(
+			first.id,
+			["running"],
+			(lease) => {
+				lease.state = "completed";
+			},
+			"ci.LeaseCompleted",
+			new Date(NOW).toISOString(),
+		);
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([2, 3]);
+		expect(launched).toHaveLength(3);
+		expect(waitLogs()).toHaveLength(1);
+		log.mockRestore();
+		store.close();
+	});
+
+	it("leaves a job queued while storage admission blocks and admits after recovery", async () => {
+		const store = await configuredStore(1);
+		const github = new FakeGithub(
+			{ queued: [900], in_progress: [] },
+			{ 900: [{ id: 1, status: "queued", labels: ["hobo"] }] },
+		);
+		const launched: string[] = [];
+		let allowed = false;
+		const storageAdmission: WorkerStorageAdmission = {
+			admit: vi.fn(async () => allowed),
+		};
+		const runtime = boxRuntime(store, github, launched, undefined, {
+			labels: new Map(),
+			storageAdmission,
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([1]);
+		expect(await store.activeLeases()).toEqual([]);
+		expect(launched).toEqual([]);
+		allowed = true;
+		await runtime.tick({ maxDeliveries: 10 });
+		expect((await store.activeLeases()).map((lease) => lease.jobId)).toEqual([
+			1,
+		]);
+		expect(launched).toHaveLength(1);
+		store.close();
+	});
 
 	it("admits a polled queued job into a reserved box lease and launches it, with no relay or webhook", async () => {
 		const store = await configuredStore(2);
@@ -735,6 +914,178 @@ describe("pull-mode box worker over SQLite", () => {
 			state: "reserved",
 		});
 		expect(launched).toEqual([lease?.id]);
+		store.close();
+	});
+
+	it("persists the exact-name memory request across a store reload", async () => {
+		const path = join(root, "memory-reload.sqlite");
+		const store = await configuredStore(3, path);
+		const github = new FakeGithub(
+			{ queued: [901], in_progress: [] },
+			{
+				901: [
+					{
+						id: 2,
+						status: "queued",
+						labels: ["hobo"],
+						name: "CI fabric contract guard",
+					},
+				],
+			},
+		);
+		const memoryAdmission = createWorkerMemoryAdmission(
+			resolveWorkerMemoryConfig(
+				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "14336" },
+				{ totalMemoryMb: 16_384, trunkSlots: 0 },
+			),
+			{ now: () => NOW },
+		);
+		const runtime = boxRuntime(store, github, [], undefined, {
+			labels: new Map(),
+			memoryAdmission,
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		const [lease] = await store.activeLeases();
+		if (!lease) throw new Error("memory-classified lease missing");
+		expect(lease).toMatchObject({ memoryClass: "light", memoryMb: 3_072 });
+		store.close();
+		const reopened = new SqliteCiStore(path);
+		expect(await reopened.get(lease.id)).toMatchObject({
+			memoryClass: "light",
+			memoryMb: 3_072,
+		});
+		reopened.close();
+	});
+
+	it("queues heavy jobs over the memory budget and admits the next after settlement", async () => {
+		const store = await configuredStore(3);
+		const jobs = [1, 2, 3].map((id) => memoryJob(id, "PR impact gate"));
+		const memoryAdmission = createWorkerMemoryAdmission(
+			resolveWorkerMemoryConfig(
+				{
+					HOBO_CI_WORKER_MEMORY_BUDGET_MB: "14336",
+					HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB: "8192",
+				},
+				{ totalMemoryMb: 16_384, trunkSlots: 0 },
+			),
+			{ now: () => NOW },
+		);
+		const runtime = boxRuntime(store, memoryGithub(jobs), [], undefined, {
+			labels: new Map(),
+			memoryAdmission,
+		});
+		for (const job of jobs) await store.queue(job, new Date(NOW).toISOString());
+		await runtime.tick({ maxDeliveries: 0 });
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([1]);
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([2, 3]);
+		const [first] = await store.activeLeases();
+		if (!first) throw new Error("first heavy lease missing");
+		await store.settle(first.id, 0, 1, new Date(NOW).toISOString());
+		await runtime.tick({ maxDeliveries: 0 });
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([2]);
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([3]);
+		store.close();
+	});
+
+	it("backfills light jobs before HOL timeout but not after it", async () => {
+		const store = await configuredStore(3);
+		const jobs = [
+			memoryJob(1, "unclassified standard job"),
+			memoryJob(2, "PR impact gate"),
+			memoryJob(3, "CI fabric contract guard"),
+		];
+		let now = NOW;
+		const memoryAdmission = createWorkerMemoryAdmission(
+			resolveWorkerMemoryConfig(
+				{
+					HOBO_CI_WORKER_MEMORY_BUDGET_MB: "8500",
+					HOBO_CI_WORKER_MEMORY_CLASS_LIGHT_MB: "3072",
+					HOBO_CI_WORKER_MEMORY_CLASS_STANDARD_MB: "5120",
+					HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB: "4000",
+				},
+				{ totalMemoryMb: 16_384, trunkSlots: 0 },
+			),
+			{ now: () => now },
+		);
+		const github = memoryGithub(jobs);
+		const runtime = boxRuntime(store, github, [], undefined, {
+			labels: new Map(),
+			memoryAdmission,
+		});
+		for (const job of jobs) await store.queue(job, new Date(NOW).toISOString());
+		await runtime.tick({ maxDeliveries: 0 });
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([1, 3]);
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([2]);
+		const backfilled = (await store.activeLeases()).find(
+			(lease) => lease.jobId === 3,
+		);
+		if (!backfilled) throw new Error("backfilled lease missing");
+		await store.settle(backfilled.id, 0, 1, new Date(NOW).toISOString());
+		const laterLight = memoryJob(4, "CI fabric contract guard");
+		github.jobs[laterLight.runId] = [
+			{
+				id: laterLight.id,
+				status: "queued",
+				labels: laterLight.labels,
+				name: laterLight.name,
+			},
+		];
+		await store.queue(laterLight, new Date(NOW).toISOString());
+		now += 60_001;
+		await runtime.tick({ maxDeliveries: 0 });
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([1]);
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([2, 4]);
+		store.close();
+	});
+
+	it("admits trunk heavy alongside a light PR within the full budget", async () => {
+		const store = await configuredStore(3);
+		const pullRequest = memoryJob(1, "CI fabric contract guard");
+		const trunk = memoryJob(2, "PR impact gate", ["hobo-trunk"]);
+		const memoryAdmission = createWorkerMemoryAdmission(
+			resolveWorkerMemoryConfig(
+				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "12288" },
+				{ totalMemoryMb: 16_384, trunkSlots: 1 },
+			),
+			{ now: () => NOW },
+		);
+		const runtime = boxRuntime(
+			store,
+			memoryGithub([pullRequest, trunk]),
+			[],
+			undefined,
+			{ labels: new Map(), memoryAdmission },
+		);
+		await store.queue(pullRequest, new Date(NOW).toISOString());
+		await runtime.tick({ maxDeliveries: 0 });
+		runtime.admissionOrder.prime({
+			runId: trunk.runId,
+			event: "workflow_dispatch",
+			runStartedAt: new Date(NOW).toISOString(),
+		});
+		await store.queue(trunk, new Date(NOW).toISOString());
+		await runtime.tick({ maxDeliveries: 0 });
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([1, 2]);
+		expect(await store.pendingJobs()).toEqual([]);
 		store.close();
 	});
 
@@ -1696,6 +2047,176 @@ describe("pull-mode box worker over SQLite", () => {
 		expect(box.freed).toEqual([2, 3]);
 	});
 
+	it("admits queued trunk work on the tick after each runner exits in the 06:16 timeline", async () => {
+		const store = await configuredStore(3);
+		const fake = new FakeGithub(
+			{ queued: [700, 800], in_progress: [] },
+			{
+				700: [{ id: 1, status: "queued", labels: ["hobo-trunk"] }],
+				800: [
+					{ id: 2, status: "queued", labels: ["hobo"] },
+					{ id: 3, status: "queued", labels: ["hobo"] },
+				],
+			},
+		);
+		fake.started.set(700, {
+			event: "merge_group",
+			at: "2026-11-04T06:16:47Z",
+		});
+		fake.started.set(800, {
+			event: "pull_request",
+			at: "2026-11-04T06:16:40Z",
+		});
+		let runnerId = 0;
+		const github: GithubTransport = {
+			async request(installationId, path, method = "GET", body, ifNoneMatch) {
+				if (
+					method === "POST" &&
+					path === "/repos/Org/Repo/actions/runners/generate-jitconfig"
+				) {
+					runnerId += 1;
+					return Response.json(
+						{ encoded_jit_config: "c2VjcmV0", runner: { id: runnerId } },
+						{ status: 201 },
+					);
+				}
+				return fake.request(installationId, path, method, body, ifNoneMatch);
+			},
+		};
+		const containers = new Map<string, { running: boolean; exited: boolean }>();
+		let containerId = 0;
+		const docker: DockerDriver = {
+			create: async (spec) => {
+				containerId += 1;
+				const id = containerId.toString(16).padStart(64, "0");
+				containers.set(id, { running: false, exited: false });
+				return { name: spec.name, containerId: id };
+			},
+			start: async (_name, id) => {
+				const container = containers.get(id);
+				if (container) container.running = true;
+			},
+			exec: async () => ({ exitCode: 0 }),
+			execDetached: async () => ({ exitCode: 0 }),
+			writeSecret: async () => {},
+			stop: async (_name, id) => {
+				const container = containers.get(id);
+				if (container) container.running = false;
+			},
+			remove: async (_name, id) => {
+				containers.delete(id);
+			},
+			isRunning: async (_name, id) => containers.get(id)?.running ?? false,
+			exists: async (_name, id, path) =>
+				path === "/tmp/hobo-ci-runner-exited" &&
+				(containers.get(id)?.exited ?? false),
+		};
+		let clock = Date.parse("2026-11-04T06:16:47Z");
+		const now = () => new Date(clock).toISOString();
+		const worker = createIsolatedContainerController({
+			store,
+			github,
+			publicOrigin: "https://relay.example",
+			docker,
+			workerAccountId: "box",
+			workerImage: "hobo-ci-worker:local",
+			slots: 3,
+			now,
+		});
+		const runtime = createHostedRelayRuntime({
+			store,
+			github,
+			identity: {
+				async verify() {
+					throw new Error("pull mode never verifies OIDC");
+				},
+			},
+			webhookSecret: randomUUID() + randomUUID(),
+			isolatedHost: worker.host,
+			denyUnisolated: true,
+			generalLeaseLimit: 2,
+			control: async () => undefined,
+			now,
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => clock,
+		});
+		const leaseFor = async (jobId: number) => {
+			const lease = (await store.activeLeases()).find(
+				(entry) => entry.jobId === jobId,
+			);
+			if (!lease) throw new Error(`job ${jobId} holds no lease`);
+			return lease;
+		};
+		const finish = async (jobId: number, at: string, exitMarker = true) => {
+			const lease = await leaseFor(jobId);
+			const container = containers.get(lease.sandboxSessionId);
+			if (container && exitMarker) container.exited = true;
+			for (const jobs of Object.values(fake.jobs)) {
+				const job = jobs.find((entry) => entry.id === jobId);
+				if (job) {
+					job.status = "completed";
+					job.conclusion = "success";
+					job.runner_name = lease.runnerName;
+				}
+			}
+			clock = Date.parse(at);
+			await runtime.tick({ maxDeliveries: 10 });
+		};
+
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([1, 2, 3]);
+
+		await finish(1, "2026-11-04T06:17:50Z", false);
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([2, 3]);
+
+		clock = Date.parse("2026-11-04T06:18:26Z");
+		fake.runs.queued.push(900, 901);
+		fake.jobs[900] = [{ id: 4, status: "queued", labels: ["hobo-trunk"] }];
+		fake.jobs[901] = [{ id: 5, status: "queued", labels: ["hobo-trunk"] }];
+		fake.started.set(900, { event: "push", at: "2026-11-04T06:18:26Z" });
+		fake.started.set(901, { event: "push", at: "2026-11-04T06:18:26Z" });
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([2, 3, 4]);
+		expect((await store.get((await leaseFor(4)).id))?.state).toBe("running");
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([5]);
+
+		const log = vi.spyOn(console, "error").mockImplementation(() => {});
+		clock = Date.parse("2026-11-04T06:18:37Z");
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(log).toHaveBeenCalledWith(
+			JSON.stringify({
+				event: "hobo_ci_trunk_wait",
+				reason: "lease-capacity",
+				waitedMs: 11_000,
+				repository: REPO,
+				runId: 901,
+				jobId: 5,
+			}),
+		);
+		log.mockRestore();
+
+		await finish(2, "2026-11-04T06:21:34Z");
+		expect(
+			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
+		).toEqual([3, 4, 5]);
+		expect((await store.get((await leaseFor(5)).id))?.state).toBe("running");
+		store.close();
+	});
+
 	it("launches a trunk runner in a pre-warmed container under the trunk label", async () => {
 		const store = await configuredStore(2);
 		const fake = new FakeGithub(
@@ -1777,6 +2298,75 @@ describe("pull-mode box worker over SQLite", () => {
 		expect(lease).toMatchObject({ jobId: 3, state: "running" });
 		expect(dockerCalls[0]).toMatch(/^create hobo-warm-/);
 		expect(dockerCalls).toContain(`rename hobo-${lease?.id}`);
+		store.close();
+	});
+
+	it("creates the job container with its admitted memory request and environment", async () => {
+		const store = await configuredStore(1);
+		const state = await store.configuration();
+		const account = state?.configuration.accounts[0];
+		if (!account) throw new Error("worker account missing");
+		const lease = await store.reserve(
+			account,
+			create(JobSchema, {
+				id: 77,
+				runId: 977,
+				runAttempt: 1,
+				repositoryId: CONNECTION.repositoryId,
+				installationId: CONNECTION.installationId,
+				repository: REPO,
+				labels: ["hobo"],
+				name: "CI fabric contract guard",
+				memoryClass: "light",
+				memoryMb: 3_072,
+				action: "queued",
+				isolatedRequired: true,
+			}),
+			new Date(NOW).toISOString(),
+		);
+		if (!lease) throw new Error("reserved lease missing");
+		const github: GithubTransport = {
+			async request(_installationId, path, method = "GET") {
+				if (
+					method === "POST" &&
+					path === "/repos/Org/Repo/actions/runners/generate-jitconfig"
+				)
+					return Response.json(
+						{ encoded_jit_config: "c2VjcmV0", runner: { id: 42 } },
+						{ status: 201 },
+					);
+				throw new Error(`unexpected ${method} ${path}`);
+			},
+		};
+		const specs: Parameters<DockerDriver["create"]>[0][] = [];
+		const docker: DockerDriver = {
+			create: async (spec) => {
+				specs.push(spec);
+				return { name: spec.name, containerId: "c".repeat(64) };
+			},
+			start: async () => {},
+			exec: async () => ({ exitCode: 0 }),
+			writeSecret: async () => {},
+			stop: async () => {},
+			remove: async () => {},
+			isRunning: async () => true,
+		};
+		const worker = createIsolatedContainerController({
+			store,
+			github,
+			publicOrigin: "https://relay.example",
+			docker,
+			workerAccountId: "box",
+			workerImage: "hobo-ci-worker:local",
+			now: () => new Date(NOW).toISOString(),
+		});
+		await worker.host.launch(lease.id, "hobo");
+		expect(specs).toEqual([
+			expect.objectContaining({
+				memoryMb: 3_072,
+				env: expect.objectContaining({ HOBO_CI_JOB_MEMORY_MB: "3072" }),
+			}),
+		]);
 		store.close();
 	});
 });

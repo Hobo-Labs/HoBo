@@ -406,12 +406,12 @@ path checks the ts-autocode links explicitly. CI already skips root hook install
 offline install creates the same workspace bin links and pnpm state as the job install, including bin links that
 remain dangling until `dist` is built. Other jobs keep their install-and-verify behavior.
 
-On main pushes, `ci-deps-image` is gated to deps-key input changes or a completed `ci-runner-image` build, with
-fail-safe builds for missing commit file lists and forced pushes. Schedule and workflow dispatch always run; PR
-scoping is unchanged. Main full gate does not depend on the deps-image job, so unrelated pushes add no trunk-slot
-wait. GHCR retention and attestation verification stay Phase 5. Byte-reproducible digests are not claimed because
-the legacy builder has no BuildKit `rewrite-timestamp`; that gap is recorded above with its owner phase. Main-run
-timing evidence is still required before ticking the time-based acceptance boxes.
+Every main push runs `ci-deps-image`; an exact `hobo.ci.deps-key` label match on `hobo-ci-deps:local` exits after
+checkout, key computation, and one inspect, while a miss resolves or builds and promotes the layer. Schedule and
+workflow dispatch always run; PR scoping is unchanged. Neither gate depends on the deps-image job, so it adds no
+gate wait. GHCR retention and attestation verification stay Phase 5. Byte-reproducible digests are not claimed
+because the legacy builder has no BuildKit `rewrite-timestamp`; that gap is recorded above with its owner phase.
+Main-run timing evidence is still required before ticking the time-based acceptance boxes.
 
 - **Acceptance:**
   - install of 5 s or less on `main` for every job that installs;

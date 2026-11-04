@@ -293,10 +293,12 @@ them.
 ## Building before a repo-wide test run
 
 `pnpm run build` covers `./packages/**` — every nested package, not just direct
-children of `packages/`. `pnpm run test` builds first via `pretest:unit` (~14s
-warm) because the repo-wide vitest sweep imports built dists from workspace
-packages, and without it a suite fails on whichever package happened to be
-stale rather than on anything real.
+children of `packages/`. `pnpm run test` / `test:unit` is one turbo graph over
+exactly the legacy root `test/` and `src/draft/**` Vitest set: four root shards
+and four draft-directory shards, with a shared turbo dependency on the builds
+the legacy pretest supplied. Production `packages/**` suites stay in Workspace
+tests, and `scripts/test/` stays in `test:scripts`. An unchanged unit run pays
+only turbo's hashing and log replay.
 
 ### One build graph, not two
 
@@ -329,8 +331,11 @@ too.
 is the single exception and carries its own task override — so editing a test
 can no longer invalidate 124 builds and everything downstream of them.
 
-Every turbo invocation in this repo passes `--concurrency=100%` — one task per
-logical CPU. This is a **memory** limit, not a speed one, and the difference
+Turbo invocations default to `--concurrency=100%` — one task per logical CPU —
+and CI overrides that through `HOBO_TURBO_CONCURRENCY`. Root test shards honor
+`HOBO_TEST_MAX_WORKERS`, then `HOBO_RELEVANT_CHECK_CONCURRENCY`; package configs
+keep their own `maxWorkers` / `fileParallelism` limits. This is a **memory**
+limit, not a speed one, and the difference
 matters: on a fixed 224-task set, turbo's default of 10 and a cap of 4 finish
 within noise of each other (5m49s vs 5m36s on a four-core box), so capping costs
 nothing. What it buys is that a fully-cold 902-task sweep at the default OOM-kills
@@ -685,10 +690,14 @@ Non-negotiables for either lane:
 
 ### Which command is the repo-wide gate
 
-`pnpm run test:all` (turbo, one vitest config per package) is the only command
-that runs every suite the way its own package intends — with that package's
-environment, setup files and process isolation. `pnpm run test:unit` is the
-category runner and the default PR lane.
+`pnpm run test:all` runs every package suite the way its own package intends —
+with that package's environment, setup files and process isolation. `pnpm run
+test:unit` is the S0 lane for exactly the legacy root/draft Vitest set; it does
+not run production package suites or `scripts/test/`. Per-package `test:unit`
+scripts remain the narrower affected-PR lane where they exist.
+`scripts/test/unit-test-coverage.test.ts` requires exact equality between the
+legacy selection and the root/draft shard union, rejecting extras as well as
+missing files.
 
 `test:smoke` and `test:file` share one command (`vitest run --no-isolate`) and
 one root config. **They are single-target tools, not a full-repo gate.** Run bare
@@ -791,7 +800,7 @@ Durable, non-obvious notes for this environment. The startup update script runs 
 - **No sudo.** `sudo` is never available and never allowed. Do not run it, do not ask the user to run it, do not suggest root apt/system Docker installs. Prefer `$HOME/.local/bin`, npx/pnpm, remote anon APIs. Host is **aarch64** — download ARM64 binaries only. No `/var/run/docker.sock` here.
 - **Examples Temporary = browser-only.** End users never run CLI setup (docker/wrangler/openpouch/crane). Ship is browser → same-origin `/api/cf-temp/*` → remote HTTPS APIs. Do not treat local CLI image push/deploy as a product fallback.
 - **No server/GUI.** This is a design-docs + executable proof/contract repo (see README "Current state"). "Running the app" means the validation/lint/test tooling, not a web/backend service. Verify the environment with `pnpm run doctor`, `pnpm run lint`, `pnpm run standards:check`, `pnpm test`, and the doc validators listed in `README.md` "How to work in this repo".
-- **Node version.** Local Node 22 satisfies `engines` (`>=22`); CI uses Node 24. Optional Windows bins are not fetched on Linux (`pnpm.supportedArchitectures.os` is `current`).
+- **Node version.** Local Node 22 satisfies `engines` (`>=22`); CI uses Node 24. Optional native packages are installed for the current OS and CPU only (`pnpm.supportedArchitectures` is `current` for both; see `docs/ci/performance.md` finding 19).
 - **Developer inner loop for a single proof package:** `pnpm exec turbo run test --filter ./src/draft/<kind>/<slug>` (see `src/draft/AGENTS.md`). The turbo "no output files found" warning on `test` is expected (no build outputs) and not a failure.
 - **`test:smoke` runs Vitest** (`vitest run --no-isolate`), same engine as `test:file`; there is no bun dependency. Both are single-target tools — see "Which command is the repo-wide gate" above before reading a bare root run as a regression.
 - **`tgrep` is not installed**, so `pnpm run search` falls back to `rg`. Always pass explicit path args (e.g. `pnpm run search "pattern" src docs`); running it with no path scope over the full worktree can be very slow.
