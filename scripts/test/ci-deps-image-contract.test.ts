@@ -82,6 +82,15 @@ describe("CI deps image build contract", () => {
 		includes(build, "--no-promote");
 	});
 
+	it("lets the worker cap build and verification memory", () => {
+		includes(
+			build,
+			'docker_memory_args=(--memory "${HOBO_CI_DEPS_BUILD_MEMORY_MB}m")',
+		);
+		assert.equal(build.split('"${docker_memory_args[@]}"').length, 3);
+		includes(build, "invalid HOBO_CI_DEPS_BUILD_MEMORY_MB");
+	});
+
 	it("collects old keyed and fetch images through the tested selection helper", () => {
 		const gc = read("scripts/ci/deps-image-gc.mts");
 		const command =

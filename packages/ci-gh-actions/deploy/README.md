@@ -178,6 +178,29 @@ and becomes unavailable while draining. Recreate updates deliberately incur a
 brief availability gap. Kubernetes secrets, ingress/certificate provisioning,
 registry access and storage lifecycle remain operator-managed infrastructure.
 
+## Box worker deps image
+
+Run `scripts/isolated-worker-daemon.mts` from a checkout that tracks HoBo's default
+branch. The daemon reads that checkout's head on startup and every
+`HOBO_CI_DEPS_POLL_MS` (default `300000`), recomputing the deps key only when the
+head changes. Set `HOBO_CI_DEPS_ROOT` when the checkout is elsewhere. It needs the
+lockfile importer manifests, including the pinned ts-autocode submodule.
+
+For a new key, the daemon checks `hobo-ci-deps:<key>`, tries the corresponding
+`ghcr.io/<owner>/<repo>/hobo-ci-deps:<key>` pull, then builds a registry miss with
+`build-deps.sh --no-promote`. Builds are single-flight and asynchronous: they do
+not block admission or hold a job slot. The process runs under `nice` and `ionice`,
+and `HOBO_CI_DEPS_BUILD_MEMORY_MB` (default `4096`, minimum `512`) caps both the
+Docker build and its offline verification container. A successful local, pulled,
+or built candidate is tagged `hobo-ci-deps:local` and passed to keep-2 GC.
+`HOBO_CI_DEPS_IMAGE=` disables both selection and this ensure loop.
+
+Look for `hobo_ci_deps_image_ensure` with `action=hit|pull|build` after success,
+and `hobo_ci_deps_image_ensure_failed` with `retryMs` after failure. Failures are
+fail-open and retry with one-minute exponential backoff capped at 15 minutes.
+Jobs keep using `hobo-ci-worker:local` until deps promotion succeeds; an image
+build never prevents the daemon from admitting other work.
+
 ## Backup, restore and stop
 
 The SQLite database, WAL and shared-memory files live together in the persistent

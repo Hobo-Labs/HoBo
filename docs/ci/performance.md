@@ -939,6 +939,17 @@ file lists and forced pushes build fail-safe; schedule and workflow dispatch alw
 unchanged. Main full gate does not depend on `ci-deps-image`, so an unrelated push neither builds the layer nor
 adds a trunk-slot wait.
 
+That event-only producer left the box with **no `hobo-ci-deps:local` image** after #1700 landed: the main push had
+no deps input change, so `CI deps layer (pnpm)` skipped and nothing else promoted the image. Every job container
+logged `hobo_ci_deps_image_fallback` with `message=missing`, and the fallback `pnpm install` still took **21 s**.
+The isolated worker daemon now owns availability independently of workflow filtering. On startup and every five
+minutes it reads the head of its default-branch checkout, computes the same content key, and ensures the keyed
+local image. A miss tries the GHCR tag first, then builds locally; either path promotes `hobo-ci-deps:local` and
+runs keep-2 GC. An unchanged key is a no-op. Builds are single-flight and run outside admission under `nice` and
+`ionice`, with Docker memory limits (default 4096 MiB). `hobo_ci_deps_image_ensure` records `hit`, `pull`, or
+`build` and elapsed milliseconds; failures emit `hobo_ci_deps_image_ensure_failed` and retry with exponential
+backoff without stopping the daemon. Until promotion succeeds, jobs keep the same worker-image fallback.
+
 ## Finding 23: the trunk slot went to a runner a PR job could take
 
 Main push 14f6dc03 (#1686) created **HoBo CI Fabric** run **41764685484** and **HoBo Pricing CI** run **41764685602** at 03:03:34Z. The fabric run's **CI runner image (mise oci)** job did not start until 03:05:39, a **2 m 04 s** wait. The pricing run's **@hobo/pricing affected gate** started at 03:07:26, a **3 m 52 s** wait. Both waited behind PR jobs despite `HOBO_CI_WORKER_SLOTS=3`, one strictly reserved trunk slot, and the trunk-label expression added by #1691.
