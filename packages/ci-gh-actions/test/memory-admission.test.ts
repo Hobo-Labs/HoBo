@@ -95,6 +95,46 @@ describe("worker memory admission", () => {
 		});
 	});
 
+	it("blocks a waiting trunk rank immediately instead of waiting for HOL timeout", () => {
+		const admission = createWorkerMemoryAdmission(config(8_192), {
+			now: () => 0,
+		});
+		expect(
+			admission.admit({
+				jobId: 1,
+				memoryClass: "heavy",
+				memoryMb: 4_000,
+				rank: 0,
+				activeLeases: [lease("running", 5_000, "standard")],
+				generalLeaseIds: new Set(["running"]),
+			}),
+		).toMatchObject({ admitted: false, blockRank: true });
+	});
+
+	it("never blocks lower ranks for a trunk request that exceeds the whole budget", () => {
+		let now = 0;
+		const admission = createWorkerMemoryAdmission(config(6_144), {
+			now: () => now,
+		});
+		const impossible = {
+			jobId: 1,
+			memoryClass: "heavy",
+			memoryMb: 8_192,
+			rank: 0,
+			activeLeases: [],
+			generalLeaseIds: new Set<string>(),
+		} as const;
+		expect(admission.admit(impossible)).toMatchObject({
+			admitted: false,
+			blockRank: false,
+		});
+		now = 60_001;
+		expect(admission.admit(impossible)).toMatchObject({
+			admitted: false,
+			blockRank: false,
+		});
+	});
+
 	it("admits one heavy PR and trunk heavy on the 16 GiB box while a second PR waits", () => {
 		const admission = createWorkerMemoryAdmission(
 			resolveWorkerMemoryConfig({}, { totalMemoryMb: 15_989, trunkSlots: 1 }),
