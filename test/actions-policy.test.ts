@@ -33,6 +33,48 @@ function lint(root: string) {
 	});
 }
 
+test("trunk gates run the CI fabric contract while the standalone guard is PR-only", async () => {
+	const workflow = await readFile(
+		new URL("../.github/workflows/hobo-ci.yml", import.meta.url),
+		"utf8",
+	);
+	const lines = workflow.split("\n");
+	const jobText = (job: string) => {
+		const start = lines.indexOf(`  ${job}:`);
+		assert.notEqual(start, -1, `${job} exists`);
+		const end = lines.findIndex(
+			(line, index) => index > start && /^ {2}[A-Za-z0-9_-]+:$/u.test(line),
+		);
+		return lines.slice(start, end === -1 ? lines.length : end).join("\n");
+	};
+
+	for (const job of ["main-gate", "pr-gate"]) {
+		const text = jobText(job);
+		assert.match(
+			text,
+			/- name: CI runner image contract \(manifest\)\n(?:[ \t]+if: [^\n]+\n)?[ \t]+run: pnpm exec vitest run scripts\/test\/ci-runner-image-contract\.test\.ts/u,
+			`${job} runs the runner image contract`,
+		);
+		assert.match(
+			text,
+			/- name: Assert CI fabric contract\n(?:[ \t]+if: [^\n]+\n)?[ \t]+run: node --import tsx packages\/ci-guard\/bin\/assert-ci-contract\.ts/u,
+			`${job} asserts the CI fabric contract`,
+		);
+	}
+	assert.match(
+		jobText("pr-gate"),
+		/- name: CI runner image contract \(manifest\)\n[ \t]+if: github\.event_name == 'merge_group'/u,
+	);
+	assert.match(
+		jobText("pr-gate"),
+		/- name: Assert CI fabric contract\n[ \t]+if: github\.event_name == 'merge_group'/u,
+	);
+	assert.match(
+		jobText("ci-guard"),
+		/^ {4}if: github\.event_name == 'pull_request'$/mu,
+	);
+});
+
 test("only the reviewed manual HoBo acceptance recipe is enabled", async () => {
 	const actual = await readFile(
 		new URL("../.github/workflows/hobo-ci-acceptance.yml", import.meta.url),
@@ -70,9 +112,10 @@ jobs:
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /2 enabled workflow/);
 });
+const trunkRunsOn =
+	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+
 test("authoritative CI jobs choose between hobo and the trunk label only", async () => {
-	const trunk =
-		"${{ vars.HOBO_CI_TRUNK_RUNNER == 'true' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
 	const hoboCi = (runsOn: string) => `name: HoBo CI Fabric
 on:
   push:
@@ -87,16 +130,59 @@ jobs:
     steps:
       - run: true
 `;
-	const accepted = lint(await fixture({ "hobo-ci.yml": hoboCi(trunk) }));
+	const accepted = lint(await fixture({ "hobo-ci.yml": hoboCi(trunkRunsOn) }));
 	assert.equal(accepted.status, 0, accepted.stderr);
+	const trunkOnly = hoboCi(trunkRunsOn).replace(
+		"runs-on: hobo",
+		`runs-on: ${trunkRunsOn}`,
+	);
+	const acceptedTrunkOnly = lint(
+		await fixture({ "release-hobo.yml": trunkOnly }),
+	);
+	assert.equal(acceptedTrunkOnly.status, 0, acceptedTrunkOnly.stderr);
 	for (const runsOn of [
 		"${{ vars.HOBO_CI_TRUNK_RUNNER }}",
-		trunk.replace("'hobo-trunk'", "'ubuntu-latest'"),
+		trunkRunsOn.replace("'hobo-trunk'", "'ubuntu-latest'"),
 		"ubuntu-latest",
 	]) {
 		const result = lint(await fixture({ "hobo-ci.yml": hoboCi(runsOn) }));
 		assert.equal(result.status, 1, runsOn);
 		assert.match(result.stderr, /runs-on must be hobo or the trunk label/);
+	}
+});
+
+test("every trunk-capable CI and release job requests the trunk label by default", async () => {
+	for (const file of ["hobo-ci.yml", "release-hobo.yml", "release-code.yml"]) {
+		const text = await readFile(
+			new URL(`../.github/workflows/${file}`, import.meta.url),
+			"utf8",
+		);
+		const lines = text.split("\n");
+		const jobsIndex = lines.indexOf("jobs:");
+		assert.notEqual(jobsIndex, -1, file);
+		const starts = lines
+			.map((line, index) => ({ line, index }))
+			.filter(
+				({ line, index }) =>
+					index > jobsIndex && /^  [A-Za-z0-9_-]+:$/.test(line),
+			)
+			.map(({ index }) => index);
+		assert.ok(starts.length > 0, file);
+		for (const [position, start] of starts.entries()) {
+			const block = lines
+				.slice(start, starts[position + 1] ?? lines.length)
+				.join("\n");
+			const runsOn = block.match(/^    runs-on: (.*)$/m)?.[1];
+			assert.ok(runsOn, `${file}:${lines[start]} has no runs-on`);
+			const prOnly =
+				/^    if:.*github\.event_name == 'pull_request'/m.test(block) &&
+				!/^    if:.*\|\|/m.test(block);
+			assert.equal(
+				runsOn,
+				prOnly ? "hobo" : trunkRunsOn,
+				`${file}:${lines[start]}`,
+			);
+		}
 	}
 });
 test("a checkout without enabled workflows still passes", async () => {

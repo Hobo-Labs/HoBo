@@ -44,11 +44,11 @@ jobs:
     # these inputs, and building here would retag the box's hobo-ci-worker:local from an unmerged
     # group commit. The push to main covers the merged tree.
     if: github.event_name != 'merge_group'
-    # Trunk runs ask for their own label once the box serves it (repository variable
-    # HOBO_CI_TRUNK_RUNNER=true). GitHub hands a runner to the oldest queued job its labels match,
+    # Trunk runs ask for their own label by default; HOBO_CI_TRUNK_RUNNER=false is the
+    # kill switch for a box daemon too old to serve it. GitHub hands a runner to the oldest queued job its labels match,
     # so under the shared `hobo` label the runner the box launched for a main job went to an older
     # PR job instead. scripts/lint-actions.ts allows this expression and `hobo`, nothing else.
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER == 'true' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 45
     permissions:
       contents: read
@@ -145,7 +145,7 @@ jobs:
     # required check running, never skipped, when the image build fails.
     needs: ci-runner-image
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER == 'true' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 25
     permissions:
       contents: read
@@ -167,6 +167,12 @@ jobs:
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: CI runner image contract (manifest)
+        if: github.event_name == 'merge_group'
+        run: pnpm exec vitest run scripts/test/ci-runner-image-contract.test.ts
+      - name: Assert CI fabric contract
+        if: github.event_name == 'merge_group'
+        run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
       - name: Resolve Turbo SCM base
         if: github.event_name == 'pull_request'
         id: scm-base
@@ -386,7 +392,7 @@ jobs:
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER == 'true' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     # A main run past 20 minutes is a failure; the step timeouts below fail a hang sooner.
     # The weekly schedule is the one whole-workspace sweep and gets an hour.
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 20 }}
@@ -412,6 +418,10 @@ jobs:
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: remote:rw
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: CI runner image contract (manifest)
+        run: pnpm exec vitest run scripts/test/ci-runner-image-contract.test.ts
+      - name: Assert CI fabric contract
+        run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
       - name: Seed the pnpm store cache for PRs
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: ./.github/actions/pnpm-store
@@ -581,7 +591,9 @@ jobs:
 
   ci-guard:
     name: CI fabric contract guard
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER == 'true' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    # On other events, these steps run inside Main full gate or PR impact gate.
+    if: github.event_name == 'pull_request'
+    runs-on: hobo
     timeout-minutes: 10
     permissions:
       contents: read
@@ -601,7 +613,7 @@ jobs:
     # Skipped (which satisfies the required check) on merge_group and trunk events; trunk runs
     # scan the full history inside ci-runner-image in parallel with the image build.
     if: github.event_name == 'pull_request'
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER == 'true' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: hobo
     timeout-minutes: 10
     permissions:
       contents: read

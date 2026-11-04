@@ -630,20 +630,21 @@ box slots. The worker already admitted trunk first (finding 9), so two things de
 
 The fix is in three parts.
 
-- `push`, `workflow_dispatch` and `merge_group` jobs in `hobo-ci.yml` ask for `hobo-trunk`. They do this
-  once the repository variable `HOBO_CI_TRUNK_RUNNER` is `true`. The relay accepts exactly one label,
-  `hobo` or `hobo-trunk` (`src/runner-labels.ts`). It re-reads the job's label before launch and passes
-  it to the host. The box controller, the Vercel sandbox controller and the workflow bridge register the
-  JIT runner with that label, so a `hobo-trunk` runner can only take a trunk job. `scripts/lint-actions.ts`
-  allows `runs-on: hobo` and the one gated expression, so the variable can switch a job between the two
-  hobo labels but cannot point it at a hosted runner.
-- `HOBO_CI_WORKER_TRUNK_SLOTS` (default 0) caps the active leases of the other runs at
+- `push`, `workflow_dispatch` and `merge_group` jobs in `hobo-ci.yml` ask for `hobo-trunk`. They initially
+  did this only while the repository variable `HOBO_CI_TRUNK_RUNNER` was `true`; finding 15 describes the
+  default-on follow-up. The relay accepts exactly one label, `hobo` or `hobo-trunk`
+  (`src/runner-labels.ts`). It re-reads the job's label before launch and passes it to the host. The box
+  controller, the Vercel sandbox controller and the workflow bridge register the JIT runner with that
+  label, so a `hobo-trunk` runner can only take a trunk job. `scripts/lint-actions.ts` allows
+  `runs-on: hobo` and the one gated expression, so the variable can switch a job between the two hobo
+  labels but cannot point it at a hosted runner.
+- `HOBO_CI_WORKER_TRUNK_SLOTS` (then default 0) caps the active leases of the other runs at
   `HOBO_CI_WORKER_SLOTS − HOBO_CI_WORKER_TRUNK_SLOTS` (`generalLeaseLimit` on `HostedRelay`) while a
   trunk job waits; see the follow-up below for borrowing. Trunk is classified by the run's event, the same lookup the
-  admission order already caches. A run whose lookup fails counts as a PR. The hosted runtime now keeps
-  one admission order across ticks, because it rebuilds the relay every 2 s tick, and a per-relay cache
-  made the cap look up the run of every active lease on every tick. A run is looked up again only until
-  GitHub gives it a start time.
+  admission order already caches. Before the label-rank follow-up, a run whose lookup failed counted as
+  a PR. The hosted runtime now keeps one admission order across ticks, because it rebuilds the relay
+  every 2 s tick, and a per-relay cache made the cap look up the run of every active lease on every tick.
+  A run is looked up again only until GitHub gives it a start time.
 - Tests in `test/github-job-poller.test.ts` drive the poller, relay and container controller end to end:
   1. A trunk job queued after two PR jobs gets the first slot one of them frees, launched as `hobo-trunk`
      (see the follow-up below for why the PR jobs hold both slots first).
@@ -830,9 +831,22 @@ requeues their jobs, and retries its reservation in the same pass; a lease with 
 is never reclaimed. Strict and lending modes both retain the non-trunk cap after trunk misses capacity,
 and reserved leases launch in the same trunk-first admission order.
 
-Label separation is still required: redeploy the box daemon with `HOBO_CI_WORKER_TRUNK_SLOTS=1`, then set
-repository variable `HOBO_CI_TRUNK_RUNNER=true` so GitHub gives a `hobo-trunk` runner only to trunk work.
-The daemon change and `HOBO_CI_WORKER_TRUNK_LEND` setting take effect only after that box redeploy.
+At that stage, label separation still required redeploying the box daemon with
+`HOBO_CI_WORKER_TRUNK_SLOTS=1`, then setting repository variable `HOBO_CI_TRUNK_RUNNER=true` so GitHub
+gave a `hobo-trunk` runner only to trunk work. The daemon change and `HOBO_CI_WORKER_TRUNK_LEND` setting
+took effect only after that box redeploy.
+
+The GitHub API confirmed the label root cause: every job of run 41720899087 requested `labels=["hobo"]`
+because `HOBO_CI_TRUNK_RUNNER` was unset and the expression was opt-in. Trunk-capable CI and release jobs
+now request `hobo-trunk` unless the variable is explicitly `false`, the daemon reserves one trunk slot by
+default when it has at least two slots, and the trunk-only label proves trunk admission rank even when a
+run lookup fails. PR-only jobs, including Secret scan since #1687 moved trunk history scanning into the CI
+runner image job, request plain `hobo`. JIT runners still register with exactly the label their job requested.
+
+Merge-group run 41731777263 exposed the same swap after its runner took an older PR job: later queued
+polls were inbox duplicates. Direct swapped-job requeue bypasses that marker, and Postgres queue dedupe
+now also ignores the swapped lease, so the replacement launches with the original job's label while the
+old lease continues the other job.
 
 ## Finding 16: merge_group skipped the gate that caught the red main
 
@@ -841,7 +855,8 @@ caught a latent `@hobo/stations` fixture break introduced by #1631 and fixed by 
 ran only turbo `test:unit` lanes, while `merge_group` ran just the contract guard among the affected CI
 jobs; Main full gate neither ran on `merge_group` nor was required. Merge-group entries now run the same
 affected S0 and dependent workspace-test gate as Main full gate inside the required PR impact gate, using
-the merge group's base SHA.
+the merge group's base SHA. The PR impact gate requests `hobo-trunk` by default on `merge_group`, while
+its `pull_request` runs continue to request `hobo`.
 
 ## Finding 17: a re-polled queued job was dropped as a duplicate
 
@@ -850,6 +865,14 @@ Once accepted, later polls returned `duplicate` without checking whether a pendi
 Run 41738569286 had five jobs queued for over 17 minutes and logged as duplicates while 22–24 jobs waited.
 The fix checks coverage locally and re-admits uncovered jobs through the relay at most once per minute per delivery id.
 The Vercel relay webhook answers 202 `requeued` for such a re-admitted delivery.
+
+## Finding 18: the contract guard held the slot Main full gate needed
+
+Main push run 41747634569 took 109 s: image 00:33:06–00:33:12, contract guard 00:33:06–00:33:44, Secret scan 00:33:24–00:33:39, Main full gate 00:33:45–00:34:37.
+The gate was runnable at 00:33:12 but waited 33 s for one of two slots; the guard's real work was 2 s and its other ~33 s duplicated checkout, preflight and install.
+The guard now runs only on pull requests, while its two steps run after install in Main full gate and in PR impact gate on merge_group.
+The PR-only guard requests plain `hobo`.
+Expected saving: about 33–38 s of critical path on a main push and on merge_group.
 
 ## Finding 19: every job installed both CPUs' agent CLIs
 

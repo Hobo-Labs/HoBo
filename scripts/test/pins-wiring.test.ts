@@ -62,7 +62,7 @@ describe("pins wiring", () => {
 		assert.ok(install > status, "status runs before pnpm install");
 		assert.match(
 			job,
-			/runs-on:\s*\$\{\{ vars\.HOBO_CI_TRUNK_RUNNER .*&& 'hobo-trunk' \|\| 'hobo' \}\}/u,
+			/runs-on:\s*\$\{\{ vars\.HOBO_CI_TRUNK_RUNNER != 'false' && contains\(fromJSON\('\["push","workflow_dispatch","merge_group"\]'\), github\.event_name\) && 'hobo-trunk' \|\| 'hobo' \}\}/u,
 		);
 	});
 

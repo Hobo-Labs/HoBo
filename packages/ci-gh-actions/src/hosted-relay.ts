@@ -611,6 +611,7 @@ export class HostedRelay {
 			repository: job.repository,
 			runId: job.runId,
 			jobId: job.id,
+			labels: job.labels,
 		});
 		const active = await this.options.store.activeLeases();
 		const queued = await this.options.store.pendingJobs();
