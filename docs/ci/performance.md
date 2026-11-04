@@ -419,9 +419,11 @@ rather than only for launches. The supervisor's stop timeout (systemd `TimeoutSt
   `127.0.0.1:5000` inside a job container is the container's own loopback, not the box's registry, and
   the contract check bind-mounted a checkout path the host does not have. `build.sh` now loads the layout
   with skopeo, or without it pushes the layout to the local registry (`mise oci push --image-dir`) and
-  `docker pull`s it. The box's `docker load` rejected the layout (`open …/blobs/json: no such file`),
-  because the classic image store reads only docker-save archives. It reaches the registry by its
-  bridge address from inside a container, and streams the contract inputs into the candidate image.
+  `docker pull`s it. A missing GHCR token skips the published-image pull, and a failed GHCR login falls
+  back to the native build instead of aborting it. The box's `docker load` rejected the layout
+  (`open …/blobs/json: no such file`), because the classic image store reads only docker-save archives.
+  It reaches the registry by its bridge address from inside a container, and streams the contract inputs
+  into the candidate image.
   `:local` moves only after that contract passes. `skopeo` is also in `system-packages.txt` for the next
   image, and `evaluateCiRunnerContract` checks for it (`IMAGE_CONTRACT_COMMANDS`) only when it runs
   inside a freshly built candidate (`HOBO_CI_RUNNER_CONTRACT=live`). Every job's preflight runs the same
@@ -624,6 +626,38 @@ a run like 41611050533, Main full gate and the contract guard start first. Secre
 image then follow on the freed slot while the gate runs. The run ends shortly after the gate's own finish, about 120 s
 instead of 149 s. The box daemon has to be redeployed on a main that includes this change.
 
+## Finding 12: main re-ran the tests its own PR had just passed
+
+Main push 41671509710 (merge of #1675, 407 s) spent 288 s in Main full gate:
+
+| Step | Time | What ran |
+|---|---:|---|
+| Checkout, preflight, cache restore | 10 s | |
+| `pnpm install` | 23 s | store host-mounted |
+| S0 gate set | 101 s | 14 `agent:check` lanes at concurrency 1; `turbo run test --filter=./packages/code` alone 79 s (78 of 82 tasks cached, `@hobo/code#test` a miss), `test:root` 13 s, `typecheck:root` 5 s, the other 11 under 5 s together |
+| Workspace tests | 146 s | `dependent-tests.mts`: 7 whole suites 41 s (84 of 90 cached; `@hobo/code#test` replayed from the S0 run), `@hobo/hobo` subset 92 s (75 files whose imports reach `packages/code/src/rubberhose.ts`), `examples/self-host-yard` subset 9 s, three cached subsets under 1 s |
+| Prune, save, trace | 8 s | |
+
+The run's critical path was image job 91 s (its inputs changed in #1675), then the gate. The scoping was
+right: the 75 `@hobo/hobo` files reach the changed source through real imports, and the docs-only edits
+in `packages/ci` and `packages/ci-gh-actions` cost nothing on their own (`*.md` is outside the `test`
+inputs). The waste was `@hobo/code#test`. #1675's PR impact gate (run 41669665020) ran the same lane on the
+same tree eight minutes earlier (73 s, its only miss), but its cache entry was saved under the PR's ref,
+and `actions/cache` never restores a PR ref's entries on main.
+
+Fix: on the box, `.github/actions/turbo-cache` points `TURBO_CACHE_DIR` at a directory inside the
+host-mounted pnpm store (`hobo-turbo-cache`), so every job (PR, merge group, main) reads and writes one
+content-addressed cache and the `actions/cache` restore and save are skipped. Turbo's task hash here is
+file content only (strict env mode, no task `env` keys), so a PR gate's result replays on main when the
+merged tree matches. `scripts/ci/turbo-cache-prune.mts` prunes the shared directory by the same 7-day rule
+and skips files another job's prune removed. Two jobs writing one hash can leave a truncated archive for
+an instant; turbo reads that as a miss and runs the task (checked by truncating a build entry). No daemon
+redeploy is needed: the pnpm store mount already exists.
+
+Expected for a push like 41671509710: S0 drops by about 77 s (the `@hobo/code#test` replay), and the image
+job is about 10 s once #1676's no-rebuild skip lands, so the run goes from 407 s to roughly 250 s. The
+`@hobo/hobo` subset (92 s) is the floor for a change to `@hobo/code` source; the PR gate does not run it.
+
 ## Finding 13: GitHub gave the runner launched for main to an older PR job
 
 Main dispatch run 41672800885 queued its Main full gate at 10:22 CST and waited while PR jobs held both
@@ -739,38 +773,6 @@ per-ref `actions/cache` fallback, so no fork run reads main's entries or writes 
 That keeps an honest fork off the shared cache but stops nothing a malicious one does through the socket
 or the store mount. The boundary that would matter is per-job socket and mount policy for fork PRs in the
 box daemon.
-
-## Finding 12: main re-ran the tests its own PR had just passed
-
-Main push 41671509710 (merge of #1675, 407 s) spent 288 s in Main full gate:
-
-| Step | Time | What ran |
-|---|---:|---|
-| Checkout, preflight, cache restore | 10 s | |
-| `pnpm install` | 23 s | store host-mounted |
-| S0 gate set | 101 s | 14 `agent:check` lanes at concurrency 1; `turbo run test --filter=./packages/code` alone 79 s (78 of 82 tasks cached, `@hobo/code#test` a miss), `test:root` 13 s, `typecheck:root` 5 s, the other 11 under 5 s together |
-| Workspace tests | 146 s | `dependent-tests.mts`: 7 whole suites 41 s (84 of 90 cached; `@hobo/code#test` replayed from the S0 run), `@hobo/hobo` subset 92 s (75 files whose imports reach `packages/code/src/rubberhose.ts`), `examples/self-host-yard` subset 9 s, three cached subsets under 1 s |
-| Prune, save, trace | 8 s | |
-
-The run's critical path was image job 91 s (its inputs changed in #1675), then the gate. The scoping was
-right: the 75 `@hobo/hobo` files reach the changed source through real imports, and the docs-only edits
-in `packages/ci` and `packages/ci-gh-actions` cost nothing on their own (`*.md` is outside the `test`
-inputs). The waste was `@hobo/code#test`. #1675's PR impact gate (run 41669665020) ran the same lane on the
-same tree eight minutes earlier (73 s, its only miss), but its cache entry was saved under the PR's ref,
-and `actions/cache` never restores a PR ref's entries on main.
-
-Fix: on the box, `.github/actions/turbo-cache` points `TURBO_CACHE_DIR` at a directory inside the
-host-mounted pnpm store (`hobo-turbo-cache`), so every job (PR, merge group, main) reads and writes one
-content-addressed cache and the `actions/cache` restore and save are skipped. Turbo's task hash here is
-file content only (strict env mode, no task `env` keys), so a PR gate's result replays on main when the
-merged tree matches. `scripts/ci/turbo-cache-prune.mts` prunes the shared directory by the same 7-day rule
-and skips files another job's prune removed. Two jobs writing one hash can leave a truncated archive for
-an instant; turbo reads that as a miss and runs the task (checked by truncating a build entry). No daemon
-redeploy is needed: the pnpm store mount already exists.
-
-Expected for a push like 41671509710: S0 drops by about 77 s (the `@hobo/code#test` replay), and the image
-job is about 10 s once #1676's no-rebuild skip lands, so the run goes from 407 s to roughly 250 s. The
-`@hobo/hobo` subset (92 s) is the floor for a change to `@hobo/code` source; the PR gate does not run it.
 
 ## Finding 14: release PRs fanned out to 18 jobs on two slots
 
@@ -987,7 +989,52 @@ To protect the GitHub App's 5,000-request/h installation budget, the relay now c
 
 The target is a **~100 s main critical path** with the reserved slot going directly to a `hobo-trunk` runner rather than paying a PR job's full runtime. Regression tests drive the real relay and fake controller through the incident shape, strict preemption, running-job safety, and pre-warmed trunk launch.
 
-## Finding 26: four @hobo/code TTY tests timed out under merge-queue load
+The stage-gate `scanGroup` regression test previously waited for Node's exec'd leader to keep the symlink name, but Node 24.22 names its main thread `MainThread` during startup, overwriting `/proc/<pid>/comm`; its 20-second lifetime could also expire before cleanup, making the group kill fail with ESRCH (runs 41796130401 and 41796132887). The test now sets `process.title` after startup, signals `ready` only after observing the spawned `sleep 0` in Z state, stays alive until killed, and treats an ESRCH group kill as already exited, making readiness event-driven and cleanup idempotent.
+
+## Finding 24: slot-only admission let the host OOM killer choose a victim
+
+PR #1697's **CI fabric contract guard** died in `pnpm install` with exit 137 while neighbouring jobs ran; #1696's merge-queue run died in **Workspace tests**. The 16 GiB, no-swap box admitted three containers with an 8192 MiB Docker limit each: `3 × 8192 = 24576 MiB`, already above physical RAM before the daemon, Docker and page cache. Per-container limits did not bound their sum, and workflow heap settings did not bound the number of Vitest forks.
+
+One class model now supplies both the admission request and the container's hard `--memory` and `--memory-swap` values. The default budget is `min(os.totalmem(), numeric /sys/fs/cgroup/memory.max) - HOBO_CI_WORKER_MEMORY_RESERVE_MB`. The reserve is at least 2048 MiB. An explicit `HOBO_CI_WORKER_MEMORY_BUDGET_MB` may lower, but never exceed, host/cgroup memory minus that reserve. Startup fails closed unless every general class fits outside the trunk reservation and the heavy trunk class fits the full budget.
+
+| Class | Default hard memory and memory-swap | Node heap per process | Max Vitest workers | Exact-name assignments |
+|---|---:|---:|---:|---|
+| `light` | 3072 MiB | 1152 MiB | 1 | CI fabric contract guard, Secret scan, static release contracts and attest jobs |
+| `standard` | 4096 MiB | 1664 MiB | 1 | the default for every unlisted job and the pre-warmed container |
+| `heavy` | 6144 MiB | 1344 MiB | 3 | turbo build/test gates, OCI image jobs, the pricing gate and clean/Dagger bootstraps |
+
+`HOBO_CI_WORKER_MEMORY_CLASS_<LIGHT|STANDARD|HEAVY>_MB` overrides a class; heavy also accepts the legacy `HOBO_CI_WORKER_MEMORY_MB` alias. Classes below 3072 MiB are rejected. The exact GitHub job name selects the class, and the admitted request is persisted on the lease and exported as `HOBO_CI_JOB_MEMORY_MB`. Active and reserved leases, legacy leases counted as heavy, and the warm container all consume the same budget. An active trunk lease replaces its reservation; warm admission cannot spend that reservation.
+
+The incident box reports **15989 MiB**. With three slots and the default 2048 MiB host reserve:
+
+- admission budget: `15989 - 2048 = 13941 MiB`;
+- one heavy, one standard and one light container: `6144 + 4096 + 3072 = 13312 MiB`, leaving `629 MiB` of admission budget, so three mixed slots fit;
+- two heavy containers: `2 × 6144 = 12288 MiB`, leaving `1653 MiB`, so even a 3072 MiB light third job waits;
+- three heavy containers would need `18432 MiB`, exceeding the budget by `4491 MiB` before the host reserve.
+
+Thus three slots never admit a set whose summed hard limits exceeds **13941 MiB**. The box can run three mixed-class jobs, but not three heavy jobs. A smaller job may backfill behind a non-fitting head job for 60 seconds (`HOBO_CI_WORKER_MEMORY_HOL_MS`) before the same rank waits behind it too. `hobo_ci_memory_admission_wait` / `hobo_ci_memory_admitted` expose the arithmetic; Docker-confirmed exit-137 OOM kills log `hobo_ci_container_oom` with the class.
+
+Before install, `scripts/ci/memory-env.mts` reads the job cgroup limit, then `HOBO_CI_JOB_MEMORY_MB`, then host RAM. It writes `HOBO_NODE_OPTIONS=--max-old-space-size=<heap>` (GitHub blocks `NODE_OPTIONS` in `$GITHUB_ENV`), `HOBO_TURBO_CONCURRENCY=1`, and the repo-owned `HOBO_TEST_MAX_WORKERS`. The daemon independently computes the same heap from the admitted memory class and injects `NODE_OPTIONS` at container creation, so it reaches every Node process; workflows do not override it with a static value. A 768 MiB native/non-heap allowance leaves `limit - 768` for the turbo/Vitest parent and its workers: `workers = max(1, min(cpuCount, floor((limit - 768) / 1280) - 1))`, then `heap = min(3072, floor((limit - 768) / (workers + 1)))`. Therefore `(workers + 1) × heap + 768 <= limit`, including the parent heap. CI does **not** export `VITEST_MAX_WORKERS`: Vitest applies that variable after config, including after `fileParallelism: false`, overriding correctness-critical single-worker pins. `scripts/ci/vitest-max-workers.mts` instead resolves `min(configured cap, HOBO_TEST_MAX_WORKERS)`, and a config scan executes every single-worker config under the CI environment.
+
+The daemon also defaults **`HOBO_CI_WORKER_MERGE_GROUP_LEASES=1`** and rejects zero or invalid values. It counts reserved and running merge-group leases by cached run event, leaves excess jobs queued with one `hobo_ci_merge_group_cap_wait` log per job, and admits them in order as capacity frees. Set the repository merge queue's **maximum pull requests to build** to **1** as the outer bound as well.
+
+## Finding 25: inode exhaustion made PR installs fail with ENOSPC
+
+The box reached **95% inode usage**, after which PR installs failed with `ENOSPC` despite disk-space cleanup. Byte-free space alone could not predict that failure. The third incident established the rate: every gate job left a fresh roughly 2,000-package `node_modules` in its per-job work directory, exhausting the box's inodes in about **30 minutes**. Worker admission now samples `statfs` on both Docker's data root and `HOBO_CI_WORKER_WORK_ROOT`, checking `(blocks - bfree) / blocks` and the `df -i` equivalent `(files - ffree) / files`.
+
+Each job now bind-mounts `hobo-<lease-id>` under the work root as its Actions work folder. Container teardown removes that host directory, including `node_modules`, in a `finally` path after pass, failure, cancellation, runner/container crash or timeout. Startup invokes the same dead-work-directory reaper for crash recovery. A directory is eligible only when its lease is no longer active **and** Docker confirms that its container no longer exists. Live job directories, directories with an existing container, symlinks and unrelated directory names are never removed; inspection errors fail closed for that directory. `hobo_ci_work_dir_removed` records bytes and entries removed.
+
+All jobs share the daemon's read-write, content-addressed pnpm store at `/pnpm-store`; jobs may add content but never prune it. `npm_config_package_import_method=hardlink` makes installs link rather than copy packages. Startup refuses a store and work root on different filesystems, because hardlinks cannot cross filesystems. The daemon runs `pnpm store prune` only when no active job holds the conservative whole-job install lease, so a prune cannot race an install.
+
+When either usage on either root exceeds **85%**, and on scheduled GC at least every five minutes (`HOBO_CI_WORKER_GC_MS`, capped at 300000), the daemon removes every unused `hobo-ci-deps-fetch:*` intermediate, keeps only the two newest `hobo-ci-deps:<key>` images plus `hobo-ci-deps:local` and images used by running containers, prunes dangling images, and enforces the BuildKit cap regardless of age. Dead work directories are reaped by the same pass. After pruning, usage above **95%** for either bytes or inodes keeps the job queued. One structured `hobo_ci_inode_pressure` event per pressure episode records the root, usage percentages and whether bytes, inodes or both are above the hard limit. Sampling errors also refuse admission rather than risking another ENOSPC failure. The work root defaults to `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work`; the Docker root comes from `docker info --format '{{.DockerRootDir}}'`.
+
+## Finding 26: image tags and young BuildKit entries defeated storage GC
+
+Two redeploy-time leaks kept filling the box. Each changed runner content key left another roughly **2 GB** `hobo-ci-worker:v*` image, including temporary registry/OCI artifacts, and `docker builder prune --filter until=24h --keep-storage 10GB` exempted every cache entry newer than a day. The cache could therefore grow **13 GB between prunes** despite the nominal bound.
+
+All runner build and release entry points now reuse the content-keyed tag. Worker GC retains only the current and previous keys, always protecting `:local` and images used by running containers; the build helper registry is ephemeral and its layout/archive artifacts are deleted. The daemon applies the same worker selection on every scheduled GC and under pressure. BuildKit pruning now uses `HOBO_CI_WORKER_BUILDER_CACHE_CAP` (default **4 GB**, legacy keep-storage variable accepted as an alias) with no `until` filter on scheduled/pressure GC and at the end of runner and deps builds.
+
+## Finding 28: four @hobo/code TTY tests timed out under merge-queue load
 
 PR #1696 merge_group run 41772348951 hit the 20 s per-test timeout in `cli-verb-sweep` (`session renders without throwing`), live-TTY navigation (`leaves the catalog on escape`), live-TTY surfaces (`takes a second turn after the first one lands`), and scripted streaming (`marks a failure as failed`). The failures came from test scheduling and real side effects, not assertions that needed a larger budget:
 

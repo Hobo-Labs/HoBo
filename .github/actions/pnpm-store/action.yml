@@ -25,7 +25,8 @@ runs:
         # worker sets on the job container.
         if [ "${HOBO_CI_PNPM_STORE_MOUNTED:-}" = "1" ]; then
           echo "use-cache=false" >> "$GITHUB_OUTPUT"
-          echo "pnpm store is host-mounted (${npm_config_store_dir:-unset}); skipping actions/cache"
+          echo "npm_config_package_import_method=hardlink" >> "$GITHUB_ENV"
+          echo "pnpm store is host-mounted (${npm_config_store_dir:-unset}); using hardlinks, skipping actions/cache"
         elif [ "${RUNNER_ENVIRONMENT}" != "github-hosted" ]; then
           echo "use-cache=false" >> "$GITHUB_OUTPUT"
           echo "self-hosted runner without a mounted store; installing from the registry"

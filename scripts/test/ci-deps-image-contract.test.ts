@@ -90,6 +90,11 @@ describe("CI deps image build contract", () => {
 			'repository="${GITHUB_REPOSITORY:-Hobo-Labs/HoBo}"',
 		);
 		includes(toolchainBuild, "if promote_candidate; then");
+		includes(toolchainBuild, 'if [[ -n "${GHCR_TOKEN:-}" ]]; then');
+		includes(
+			toolchainBuild,
+			"GHCR_TOKEN is unavailable; skipping published runner image pull",
+		);
 	});
 });
 

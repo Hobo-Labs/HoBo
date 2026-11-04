@@ -3,7 +3,11 @@ import type { JobDurations } from "./job-durations.js";
 import { servedRunnerLabel, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
 /** Where a job's run stands in line for a host: lower `rank` first, then the older run. */
-export type AdmissionKey = Readonly<{ rank: number; startedAtMs: number }>;
+export type AdmissionKey = Readonly<{
+	rank: number;
+	startedAtMs: number;
+	event: string;
+}>;
 
 /** The rank of merge_group, push and workflow_dispatch runs: the ones that gate trunk. */
 export const TRUNK_RANK = 0;
@@ -28,6 +32,7 @@ export function admissionRank(event: string): number {
 const UNKNOWN: AdmissionKey = {
 	rank: 1,
 	startedAtMs: Number.POSITIVE_INFINITY,
+	event: "unknown",
 };
 const CACHE_LIMIT = 1000;
 
@@ -66,6 +71,7 @@ export function createAdmissionOrder(
 			startedAtMs: Number.isFinite(parsed)
 				? parsed
 				: (cached?.startedAtMs ?? Number.POSITIVE_INFINITY),
+			event,
 		};
 		if (!runs.has(runId) && runs.size >= CACHE_LIMIT) {
 			const oldest = runs.keys().next();
@@ -132,6 +138,7 @@ export function createAdmissionOrder(
 			remember(run.runId, run.event, run.runStartedAt);
 		},
 		rank: async (ref: AdmissionRef) => (await keyFor(ref)).rank,
+		event: async (ref: AdmissionRef) => (await keyFor(ref)).event,
 	});
 }
 
