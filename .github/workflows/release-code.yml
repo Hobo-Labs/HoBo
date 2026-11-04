@@ -99,9 +99,7 @@ jobs:
         if: steps.affected.outputs.build == 'true'
         run: |
           set -euo pipefail
-          if ! docker image inspect hobo-ci-worker:local >/dev/null 2>&1; then
-            bash packages/ci-gh-actions/deploy/ci-runner/build.sh
-          fi
+          bash packages/ci-gh-actions/deploy/ci-runner/build.sh
       - name: Build hobo-code release image (no push)
         if: steps.affected.outputs.build == 'true'
         env:
@@ -167,9 +165,7 @@ jobs:
       - name: Ensure worker toolchain image
         run: |
           set -euo pipefail
-          if ! docker image inspect hobo-ci-worker:local >/dev/null 2>&1; then
-            bash packages/ci-gh-actions/deploy/ci-runner/build.sh
-          fi
+          bash packages/ci-gh-actions/deploy/ci-runner/build.sh
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: Build and push hobo-code release image

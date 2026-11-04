@@ -27,7 +27,7 @@ export type WorkerStorageFileSystem = Readonly<{
 
 export type WorkerStorageDockerDriver = Readonly<{
 	dataRoot(): Promise<string>;
-	pruneBuilder(until: string, keepStorage: string): Promise<void>;
+	pruneBuilder(keepStorage: string): Promise<void>;
 	containerExists(name: string): Promise<boolean>;
 	listImages(): Promise<readonly WorkerImage[]>;
 	removeImage(tag: string): Promise<void>;
@@ -137,7 +137,7 @@ export function createWorkerStorageAdmission(options: {
 	fs: WorkerStorageFileSystem;
 	docker: WorkerStorageDockerDriver;
 	pnpmStore?: WorkerStoragePnpmStore;
-	builderKeepStorage?: string;
+	builderCacheCap?: string;
 	softLimit?: number;
 	hardLimit?: number;
 	log?: WorkerStorageLog;
@@ -202,7 +202,7 @@ export function createWorkerStorageAdmission(options: {
 
 	async function maintain(activeLeases: readonly WorkerStorageLease[]) {
 		await attempt("builder", () =>
-			options.docker.pruneBuilder("24h", options.builderKeepStorage ?? "10GB"),
+			options.docker.pruneBuilder(options.builderCacheCap ?? "4GB"),
 		);
 		try {
 			const images = await options.docker.listImages();

@@ -81,7 +81,7 @@ describe("worker storage admission", () => {
 	it("prunes above threshold, samples both roots again, and admits below the hard limit", async () => {
 		const h = harness({ before: usage(90), after: usage(80) });
 		await expect(h.admission.admit([])).resolves.toBe(true);
-		expect(h.docker.pruneBuilder).toHaveBeenCalledWith("24h", "10GB");
+		expect(h.docker.pruneBuilder).toHaveBeenCalledWith("4GB");
 		expect(h.fs.statfs).toHaveBeenCalledTimes(4);
 		expect(h.fs.statfs).toHaveBeenCalledWith(DOCKER_ROOT);
 		expect(h.fs.statfs).toHaveBeenCalledWith(WORK_ROOT);
@@ -146,19 +146,66 @@ describe("worker storage admission", () => {
 	it("collects deps images, builder cache and dangling images on maintenance", async () => {
 		const h = harness({
 			images: [
-				{ tag: "hobo-ci-deps-fetch:old", created: "2026-01-01", inUse: false },
-				{ tag: "hobo-ci-deps:new", created: "2026-04-01", inUse: false },
-				{ tag: "hobo-ci-deps:middle", created: "2026-03-01", inUse: false },
-				{ tag: "hobo-ci-deps:old", created: "2026-02-01", inUse: false },
+				{
+					id: "fetch",
+					tag: "hobo-ci-deps-fetch:old",
+					created: "2026-01-01",
+					inUse: false,
+				},
+				{
+					id: "new",
+					tag: "hobo-ci-deps:new",
+					created: "2026-04-01",
+					inUse: false,
+				},
+				{
+					id: "middle",
+					tag: "hobo-ci-deps:middle",
+					created: "2026-03-01",
+					inUse: false,
+				},
+				{
+					id: "old",
+					tag: "hobo-ci-deps:old",
+					created: "2026-02-01",
+					inUse: false,
+				},
+				{
+					id: "worker-old",
+					tag: "hobo-ci-worker:v000000000001",
+					created: "2026-01-01",
+					inUse: false,
+				},
+				{
+					id: "worker-previous",
+					tag: "hobo-ci-worker:v000000000002",
+					created: "2026-02-01",
+					inUse: false,
+				},
+				{
+					id: "worker-current",
+					tag: "hobo-ci-worker:v000000000003",
+					created: "2026-03-01",
+					inUse: false,
+				},
+				{
+					id: "worker-current",
+					tag: "hobo-ci-worker:local",
+					created: "2026-03-01",
+					inUse: false,
+				},
 			],
 		});
 		await h.admission.maintain([]);
 		expect(h.docker.removeImage).toHaveBeenCalledWith("hobo-ci-deps-fetch:old");
 		expect(h.docker.removeImage).toHaveBeenCalledWith("hobo-ci-deps:old");
+		expect(h.docker.removeImage).toHaveBeenCalledWith(
+			"hobo-ci-worker:v000000000001",
+		);
 		expect(h.docker.removeImage).not.toHaveBeenCalledWith(
 			"hobo-ci-deps:middle",
 		);
-		expect(h.docker.pruneBuilder).toHaveBeenCalledWith("24h", "10GB");
+		expect(h.docker.pruneBuilder).toHaveBeenCalledWith("4GB");
 		expect(h.docker.pruneDanglingImages).toHaveBeenCalledOnce();
 	});
 });

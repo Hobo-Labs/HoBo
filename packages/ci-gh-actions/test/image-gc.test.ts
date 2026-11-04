@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
 	selectWorkerImagesForDeletion,
+	selectWorkerImageTagsForDeletion,
 	type WorkerImage,
 } from "../src/isolated-worker/image-gc.js";
 
-function image(tag: string, created: string, inUse = false): WorkerImage {
-	return { tag, created, inUse };
+function image(
+	tag: string,
+	created: string,
+	inUse = false,
+	id = tag,
+): WorkerImage {
+	return { id, tag, created, inUse };
 }
 
 describe("worker image garbage collection", () => {
@@ -47,6 +53,58 @@ describe("worker image garbage collection", () => {
 		expect(selectWorkerImagesForDeletion([...images].reverse())).toEqual([
 			"hobo-ci-deps:charlie",
 			"hobo-ci-deps:delta",
+		]);
+	});
+
+	it("keeps the current and previous worker versions plus local and running images", () => {
+		const images = [
+			image("hobo-ci-worker:v000000000001", "2026-01-02T00:00:00Z"),
+			image("hobo-ci-worker:v000000000002", "2026-01-03T00:00:00Z"),
+			image(
+				"hobo-ci-worker:v000000000003",
+				"2026-01-04T00:00:00Z",
+				false,
+				"current",
+			),
+			image("hobo-ci-worker:local", "2026-01-04T00:00:00Z", false, "current"),
+			image("hobo-ci-worker:v000000000000", "2026-01-01T00:00:00Z", true),
+		];
+
+		expect(selectWorkerImageTagsForDeletion(images, "v000000000003")).toEqual([
+			"hobo-ci-worker:v000000000001",
+		]);
+	});
+
+	it("infers the current worker version from the image behind local during daemon GC", () => {
+		const images = [
+			image("hobo-ci-worker:v000000000001", "2026-01-01T00:00:00Z"),
+			image("hobo-ci-worker:v000000000002", "2026-01-02T00:00:00Z"),
+			image(
+				"hobo-ci-worker:v000000000003",
+				"2026-01-03T00:00:00Z",
+				false,
+				"current",
+			),
+			image("hobo-ci-worker:local", "2026-01-03T00:00:00Z", false, "current"),
+		];
+
+		expect(selectWorkerImageTagsForDeletion(images)).toEqual([
+			"hobo-ci-worker:v000000000001",
+		]);
+		expect(selectWorkerImagesForDeletion(images)).toEqual([
+			"hobo-ci-worker:v000000000001",
+		]);
+	});
+
+	it("retains two versions when no current worker image can be identified", () => {
+		const images = [
+			image("hobo-ci-worker:v000000000001", "2026-01-01T00:00:00Z"),
+			image("hobo-ci-worker:v000000000002", "2026-01-02T00:00:00Z"),
+			image("hobo-ci-worker:v000000000003", "2026-01-03T00:00:00Z"),
+		];
+
+		expect(selectWorkerImageTagsForDeletion(images)).toEqual([
+			"hobo-ci-worker:v000000000001",
 		]);
 	});
 });

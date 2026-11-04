@@ -110,8 +110,8 @@ non-secret settings:
 | `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum active merge-group leases; zero and invalid values are rejected |
 | `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host per-job work mounts, teardown and pressure checks; same filesystem as pnpm store |
 | `HOBO_CI_PNPM_STORE_DIR` | `~/.cache/hobo-ci/pnpm-store` | Shared store mounted read-write at `/pnpm-store`; empty disables it |
-| `HOBO_CI_WORKER_GC_MS` | `900000` | Scheduled image/builder/store/dead-workdir GC interval; minimum 60000 |
-| `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` | `10GB` | Storage retained by builder prune in addition to 24-hour retention |
+| `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image/builder/store/dead-workdir GC interval; minimum 60000, capped at 300000 |
+| `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cache cap with no age exemption; `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` remains a deprecated alias |
 
 The admitted request becomes the container's `--memory` and `--memory-swap` value and its
 `HOBO_CI_JOB_MEMORY_MB` environment variable. On the 15989 MiB box with a 2048 MiB reserve, the admission
@@ -135,9 +135,11 @@ Each job bind-mounts its host work directory and teardown deletes it, including 
 failure, cancellation, crash or timeout. Startup reaps only directories with no active lease or container.
 All jobs install from the shared `/pnpm-store` with `npm_config_package_import_method=hardlink`; cross-filesystem
 store/work-root configurations fail startup. Jobs never prune the store. The daemon prunes it only with no
-active job, and runs scheduled GC for fetch intermediates, old deps images (two newest plus `local` and in-use
-images retained), dangling images and builder cache. Byte or inode usage above **85%** triggers the same GC
-before admission. Usage still above **95%** blocks admission and logs `hobo_ci_inode_pressure` once per episode.
+active job, and runs scheduled GC at least every five minutes for fetch intermediates, old deps images (two
+newest plus `local` and in-use images retained), old worker images (current and previous content keys plus
+`local` and in-use images retained), dangling images and builder cache. BuildKit has a hard 4 GB default cap
+with no age exemption. Byte or inode usage above **85%** triggers the same GC before admission. Usage still
+above **95%** blocks admission and logs `hobo_ci_inode_pressure` once per episode.
 See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for operations and admission logs.
 
 For a release, publish the tested image to your registry and replace

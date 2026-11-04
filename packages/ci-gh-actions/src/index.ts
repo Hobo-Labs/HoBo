@@ -67,6 +67,7 @@ export {
 } from "./isolated-worker/github-job-poller.js";
 export {
 	selectWorkerImagesForDeletion,
+	selectWorkerImageTagsForDeletion,
 	type WorkerImage,
 } from "./isolated-worker/image-gc.js";
 export {

@@ -8,6 +8,7 @@ import type { WorkerStorageDockerDriver } from "./storage-admission.js";
 
 const exec = promisify(execFile);
 const dockerImage = z.object({
+	ID: z.string().min(1),
 	Repository: z.string(),
 	Tag: z.string(),
 	CreatedAt: z.string(),
@@ -31,6 +32,12 @@ export function dockerSocketMountCreateArgs(
 	return ["-v", `${socketPath}:${socketPath}`, "--group-add", String(gid)];
 }
 
+export function builderPruneArgs(keepStorage: string): string[] {
+	if (!/^\d+(?:\.\d+)?[KMGT]B$/u.test(keepStorage))
+		throw new Error("invalid builder keep-storage");
+	return ["builder", "prune", "--force", "--keep-storage", keepStorage];
+}
+
 /** Operator-owned Docker engine on a free VM; not invoked from Vercel serverless. */
 export function createCliDockerDriver(options: {
 	env?: NodeJS.ProcessEnv;
@@ -50,33 +57,21 @@ export function createCliDockerDriver(options: {
 				throw new Error("invalid docker data root");
 			return root;
 		},
-		async pruneBuilder(until, keepStorage) {
-			if (!/^\d+[smhd]$/u.test(until))
-				throw new Error("invalid prune interval");
-			if (!/^\d+(?:\.\d+)?[KMGT]B$/u.test(keepStorage))
-				throw new Error("invalid builder keep-storage");
-			await exec(
-				docker,
-				[
-					"builder",
-					"prune",
-					"--force",
-					"--filter",
-					`until=${until}`,
-					"--keep-storage",
-					keepStorage,
-				],
-				{ env, timeout: 300_000, maxBuffer: 1024 * 1024 },
-			);
+		async pruneBuilder(keepStorage) {
+			await exec(docker, builderPruneArgs(keepStorage), {
+				env,
+				timeout: 300_000,
+				maxBuffer: 1024 * 1024,
+			});
 		},
 		async listImages(): Promise<readonly WorkerImage[]> {
 			const [{ stdout }, { stdout: running }] = await Promise.all([
-				exec(docker, ["image", "ls", "--format", "{{json .}}"], {
+				exec(docker, ["image", "ls", "--no-trunc", "--format", "{{json .}}"], {
 					env,
 					timeout: 30_000,
 					maxBuffer: 16 * 1024 * 1024,
 				}),
-				exec(docker, ["ps", "--format", "{{.Image}}"], {
+				exec(docker, ["ps", "--no-trunc", "--format", "{{.Image}}"], {
 					env,
 					timeout: 30_000,
 					maxBuffer: 1024 * 1024,
@@ -89,25 +84,31 @@ export function createCliDockerDriver(options: {
 						.split("\n")
 						.map((line) => dockerImage.parse(JSON.parse(line)))
 				: [];
-			return images
+			const tagged = images
 				.filter(
 					(image) => image.Repository !== "<none>" && image.Tag !== "<none>",
 				)
-				.map((image) => {
-					const tag = `${image.Repository}:${image.Tag}`;
-					return {
-						tag,
-						created: image.CreatedAt.replace(" ", "T").replace(
-							/ ([+-]\d{2})(\d{2}) UTC$/u,
-							"$1:$2",
-						),
-						inUse: inUse.has(tag),
-					};
-				});
+				.map((image) => ({
+					id: image.ID,
+					tag: `${image.Repository}:${image.Tag}`,
+					created: image.CreatedAt.replace(" ", "T").replace(
+						/ ([+-]\d{2})(\d{2}) UTC$/u,
+						"$1:$2",
+					),
+				}));
+			const inUseIds = new Set(
+				tagged
+					.filter((image) => inUse.has(image.tag) || inUse.has(image.id))
+					.map((image) => image.id),
+			);
+			return tagged.map((image) => ({
+				...image,
+				inUse: inUseIds.has(image.id),
+			}));
 		},
 		async removeImage(tag) {
-			if (!/^hobo-ci-deps(?:-fetch)?:[A-Za-z0-9_.-]+$/u.test(tag))
-				throw new Error("invalid deps image tag");
+			if (!/^hobo-ci-(?:deps(?:-fetch)?|worker):[A-Za-z0-9_.-]+$/u.test(tag))
+				throw new Error("invalid worker image tag");
 			await exec(docker, ["image", "rm", "--no-prune", tag], {
 				env,
 				timeout: 120_000,

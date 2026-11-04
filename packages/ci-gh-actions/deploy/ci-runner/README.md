@@ -5,7 +5,7 @@ The hermetic runner is built in two steps:
 1. **Base** — `base/Dockerfile` (Debian digest pin, `system-packages.txt`, Docker CLI, pinned GitHub Actions runner bundle, Playwright's pinned Chromium headless shell under `/opt/pw-browsers` with `PLAYWRIGHT_BROWSERS_PATH`, UID 1000). A Playwright bump that changes the `chromium-headless-shell` revision in `playwright-core/browsers.json` fails `scripts/test/ci-runner-image-contract.test.ts` until `CI_RUNNER_PLAYWRIGHT_CHROMIUM` and the Dockerfile ARGs move with it.
 2. **Toolchain** — `mise oci build` from repo-root `mise.toml` / `mise.lock` (one OCI layer per tool).
 
-Use `bash packages/ci-gh-actions/deploy/ci-runner/build.sh` on the box worker. If the content-keyed `hobo-ci-worker:<version>` is absent locally, the script first pulls `ghcr.io/<owner>/<repo>/hobo-ci-worker:<version>` (repository from lowercased `GITHUB_REPOSITORY`, default `Hobo-Labs/HoBo`). A pulled image becomes `:local` only after the same in-container runner contract as a native build; a pull miss or failed contract falls back to the native build.
+Use `bash packages/ci-gh-actions/deploy/ci-runner/build.sh` on the box worker. If the content-keyed `hobo-ci-worker:<version>` is absent locally, the script first pulls `ghcr.io/<owner>/<repo>/hobo-ci-worker:<version>` (repository from lowercased `GITHUB_REPOSITORY`, default `Hobo-Labs/HoBo`). A pulled image becomes `:local` only after the same in-container runner contract as a native build; a pull miss or failed contract falls back to the native build. Every reuse or build removes the OCI layout and temporary archives, uses an ephemeral local registry, prunes BuildKit to `HOBO_CI_WORKER_BUILDER_CACHE_CAP` (default `4GB`), and retains only the current and previous unused `hobo-ci-worker:v*` tags plus `:local` and images used by running containers. The daemon applies the same retention on its scheduled GC.
 
 ## Lockfile-keyed deps image
 
@@ -32,8 +32,16 @@ Use only when `mise oci` cannot package a required tool (for example an **asdf**
 If you must fall back:
 
 ```bash
-docker build -f packages/ci-gh-actions/deploy/ci-runner/Dockerfile.monolithic \
-  -t hobo-ci-worker:local .
+version="$(node --no-warnings scripts/ci-runner-image-version.mts)"
+candidate="hobo-ci-worker:${version}"
+if ! docker image inspect "${candidate}" >/dev/null 2>&1; then
+  docker build -f packages/ci-gh-actions/deploy/ci-runner/Dockerfile.monolithic \
+    -t "${candidate}" .
+fi
+docker tag "${candidate}" hobo-ci-worker:local
+node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "${version}"
+cap="${HOBO_CI_WORKER_BUILDER_CACHE_CAP:-${HOBO_CI_WORKER_BUILDER_KEEP_STORAGE:-4GB}}"
+docker builder prune -f --keep-storage "$cap"
 ```
 
 Document the tool and backend in a PR note and open a follow-up to restore the OCI layer split.

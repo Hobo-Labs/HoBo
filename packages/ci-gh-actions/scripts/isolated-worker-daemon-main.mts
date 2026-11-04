@@ -109,11 +109,12 @@ const drainTimeoutMs = Number(
 );
 if (!Number.isFinite(drainTimeoutMs) || drainTimeoutMs < 1_000)
 	throw new Error("invalid HOBO_CI_WORKER_DRAIN_TIMEOUT_MS");
-const gcIntervalMs = Number(
-	process.env.HOBO_CI_WORKER_GC_MS ?? String(15 * 60_000),
+const configuredGcIntervalMs = Number(
+	process.env.HOBO_CI_WORKER_GC_MS ?? String(5 * 60_000),
 );
-if (!Number.isFinite(gcIntervalMs) || gcIntervalMs < 60_000)
+if (!Number.isFinite(configuredGcIntervalMs) || configuredGcIntervalMs < 60_000)
 	throw new Error("invalid HOBO_CI_WORKER_GC_MS");
+const gcIntervalMs = Math.min(configuredGcIntervalMs, 5 * 60_000);
 
 let store: HostedInboxStore & IsolatedWorkerStore;
 let closeStore: () => Promise<void>;
@@ -215,7 +216,10 @@ const storageAdmission = createWorkerStorageAdmission({
 	pnpmStore: pnpmStore
 		? createPnpmStoreMaintenance({ path: pnpmStore, env: process.env })
 		: undefined,
-	builderKeepStorage: process.env.HOBO_CI_WORKER_BUILDER_KEEP_STORAGE ?? "10GB",
+	builderCacheCap:
+		process.env.HOBO_CI_WORKER_BUILDER_CACHE_CAP ??
+		process.env.HOBO_CI_WORKER_BUILDER_KEEP_STORAGE ??
+		"4GB",
 	log,
 });
 await storageAdmission.reap(await store.activeLeases());
