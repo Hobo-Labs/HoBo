@@ -20,6 +20,7 @@ import {
 	MIGRATION_EVENT_CONTRACTS,
 	migrationCorpusBaseline,
 } from "../src/upcaster-corpus.js";
+
 /** The promoted three-version evolution fixture (summary→title→requesterRef). */
 function ticketContract(): EventEvolutionContract {
 	const type = "ticket.Opened";

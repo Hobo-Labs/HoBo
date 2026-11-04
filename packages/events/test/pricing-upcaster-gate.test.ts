@@ -3,11 +3,14 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "vitest";
 
-import { type CorpusBaseline, runCanDeployUpcasterGate } from "../src/upcaster.js";
 import {
 	PRICING_EVENT_CONTRACTS,
 	pricingCorpusBaseline,
 } from "../src/pricing-event-contracts.js";
+import {
+	type CorpusBaseline,
+	runCanDeployUpcasterGate,
+} from "../src/upcaster.js";
 
 test("pricing.* golden corpus passes the upcaster gate", () => {
 	const baseline = pricingCorpusBaseline();
