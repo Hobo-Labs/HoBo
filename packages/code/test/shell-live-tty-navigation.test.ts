@@ -71,12 +71,22 @@ function fakeStdin() {
 	});
 }
 
-/** A stdout that claims to be a terminal and records what was painted. */
+/** A stdout that claims to be a terminal and records write events. */
 function fakeStdout(columns = 80, rows = 24) {
 	const chunks: string[] = [];
+	let version = 0;
+	const waiters: Array<{
+		readonly after: number;
+		readonly resolve: (version: number) => void;
+	}> = [];
 	const stream = new Writable({
 		write(chunk, _encoding, done) {
 			chunks.push(String(chunk));
+			version += 1;
+			for (const waiter of waiters.splice(0)) {
+				if (version > waiter.after) waiter.resolve(version);
+				else waiters.push(waiter);
+			}
 			done();
 		},
 	});
@@ -85,10 +95,15 @@ function fakeStdout(columns = 80, rows = 24) {
 		columns,
 		rows,
 		text: () => chunks.join(""),
+		writeVersion: () => version,
+		waitForWrite(after: number): Promise<number> {
+			if (version > after) return Promise.resolve(version);
+			return new Promise((resolve) => waiters.push({ after, resolve }));
+		},
 	});
 }
 
-/** Run the shell against a fake terminal, feeding `keys` on a timer. */
+/** Run the shell against a fake terminal, sequencing keys by shell events. */
 async function live(
 	keys: readonly string[],
 	options: { readonly host?: JsonObject; readonly rows?: number } = {},
@@ -97,21 +112,57 @@ async function live(
 	const stdout = fakeStdout(80, options.rows ?? 24);
 	const prompts: string[] = [];
 	const verbs: string[][] = [];
+	let handledKeys = 0;
+	const keyWaiters: Array<{
+		readonly target: number;
+		readonly resolve: () => void;
+	}> = [];
+	const settledWriteVersions: number[] = [];
+	const turnWaiters: Array<{
+		readonly target: number;
+		readonly resolve: (writeVersion: number) => void;
+	}> = [];
+	const waitForKey = (target: number): Promise<void> => {
+		if (handledKeys >= target) return Promise.resolve();
+		return new Promise((resolve) => keyWaiters.push({ target, resolve }));
+	};
+	const waitForTurn = (target: number): Promise<number> => {
+		const existing = settledWriteVersions[target - 1];
+		if (existing !== undefined) return Promise.resolve(existing);
+		return new Promise((resolve) => turnWaiters.push({ target, resolve }));
+	};
 
-	let delay = 30;
-	for (const key of keys) {
-		setTimeout(() => stdin.write(key), delay);
-		delay += 30;
-	}
-
+	let announceReady: ((writeVersion: number) => void) | undefined;
+	const ready = new Promise<number>((resolve) => {
+		announceReady = resolve;
+	});
 	// SAFETY: the shell reads only the stream contract these fakes implement.
-	const code = await runInteractiveShell({
+	const running = runInteractiveShell({
 		stdin: stdin as never,
 		stdout: stdout as never,
 		hoboHome: home(),
 		sidecars: false,
 		reducedMotion: true,
 		maxMs: 6_000,
+		onReady: () => announceReady?.(stdout.writeVersion()),
+		onKeyHandled: () => {
+			handledKeys += 1;
+			for (const waiter of keyWaiters.splice(0)) {
+				if (handledKeys >= waiter.target) waiter.resolve();
+				else keyWaiters.push(waiter);
+			}
+		},
+		onTurnSettled: () => {
+			const writeVersion = stdout.writeVersion();
+			settledWriteVersions.push(writeVersion);
+			for (const waiter of turnWaiters.splice(0)) {
+				if (settledWriteVersions.length >= waiter.target) {
+					waiter.resolve(writeVersion);
+				} else {
+					turnWaiters.push(waiter);
+				}
+			}
+		},
 		host: {
 			runVerb: async (argv: readonly string[]) => {
 				verbs.push([...argv]);
@@ -124,6 +175,37 @@ async function live(
 			...options.host,
 		},
 	} as never);
+	let finished = false;
+	const completed = running.then((exitCode) => {
+		finished = true;
+		return exitCode;
+	});
+
+	const initialWrites = await Promise.race([ready, completed]);
+	if (!finished) {
+		await Promise.race([stdout.waitForWrite(initialWrites), completed]);
+	}
+	for (const [index, key] of keys.entries()) {
+		if (finished) break;
+		const promptCount = prompts.length;
+		const turnTarget = settledWriteVersions.length + 1;
+		const handled = waitForKey(handledKeys + 1);
+		stdin.write(key);
+		await Promise.race([handled, completed]);
+		if (finished) break;
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		const nextKey = keys[index + 1];
+		if (prompts.length > promptCount && nextKey !== CTRL_C && nextKey !== ESC) {
+			const settledAt = await Promise.race([
+				waitForTurn(turnTarget),
+				completed,
+			]);
+			if (!finished) {
+				await Promise.race([stdout.waitForWrite(settledAt), completed]);
+			}
+		}
+	}
+	const code = await completed;
 
 	return { code, output: stdout.text(), prompts, verbs, stdin, stdout };
 }
@@ -153,10 +235,8 @@ describe("scrolling the transcript", () => {
 	it("scrolls up through a filled transcript", async () => {
 		const session = await live([...filler, PAGE_UP, CTRL_C]);
 		expect(session.code).toBe(0);
-		// Turns still landed — scrolling must not eat input. Not all five: keys
-		// arrive on a fixed timer while a turn is still in flight, so the shell
-		// coalesces some of them. That is the harness's pacing, not a shell
-		// behaviour worth pinning a count to.
+		// Turns still landed — scrolling must not eat input. Each turn settles
+		// before the next key, so the assertion does not depend on key pacing.
 		expect(session.prompts.length).toBeGreaterThan(0);
 		expect(session.prompts.every((p) => filler.includes(`${p}\r`))).toBe(true);
 	});

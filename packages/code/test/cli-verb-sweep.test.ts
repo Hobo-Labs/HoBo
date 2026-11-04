@@ -61,8 +61,21 @@ async function run(
 	return await runHoboCodeCli([...argv], {
 		hoboHome,
 		cwd: hoboHome,
-		env: { HOBO_HOME: hoboHome, HOBO_ENV: "local-dev" },
+		env: {
+			HOBO_HOME: hoboHome,
+			HOBO_ENV: "local-dev",
+			HOBO_CODE_SIDECARS: "0",
+		},
 		json: false,
+		allocateWorkspaces: async ({ workspaceRoot, agentIds }) => ({
+			backend: "shared",
+			workspaces: agentIds.map((agentId) => ({
+				agentId,
+				path: workspaceRoot,
+				backend: "shared",
+			})),
+		}),
+		muxRunner: { run: async () => ({ code: 0, stdout: "hobo\n" }) },
 		...(input !== undefined ? { input } : undefined),
 	});
 }

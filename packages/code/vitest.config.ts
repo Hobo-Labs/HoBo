@@ -1,9 +1,20 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { capVitestWorkers } from "../../scripts/ci/vitest-max-workers.mts";
 
 export default defineConfig({
 	test: {
-		setupFiles: ["test/isolate-git-env.ts"],
+		globalSetup: [
+			fileURLToPath(
+				new URL("../../test/setup/hobo-test-homes.ts", import.meta.url),
+			),
+		],
+		setupFiles: [
+			"test/isolate-git-env.ts",
+			fileURLToPath(
+				new URL("../../test/setup/isolate-hobo-home.ts", import.meta.url),
+			),
+		],
 		// Optimizexp feature binding tests live under .optimizexp/ and run via root test:file
 		exclude: ["**/node_modules/**", "**/dist/**", "**/.optimizexp/**"],
 		// This suite drives real subprocesses — `git init`, commit, `worktree
