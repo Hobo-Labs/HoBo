@@ -1,5 +1,6 @@
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
+import type { chown, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { WorkerImage } from "../src/isolated-worker/image-gc.js";
@@ -11,6 +12,11 @@ import {
 	type WorkerStorageFileSystem,
 	type WorkerStoragePnpmStore,
 } from "../src/isolated-worker/storage-admission.js";
+
+const nodeFs = {
+	chown: vi.fn<typeof chown>(),
+	mkdir: vi.fn<typeof mkdir>(),
+};
 
 const DOCKER_ROOT = "/var/lib/docker";
 const WORK_ROOT = "/srv/hobo-ci/work";
@@ -93,6 +99,28 @@ describe("worker storage admission", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+
+	it("prepares a job-owned checkout directory inside the lease root", async () => {
+		nodeFs.mkdir.mockResolvedValue(undefined);
+		nodeFs.chown.mockResolvedValue(undefined);
+		const directory = join(WORK_ROOT, LIVE);
+		const repository = join(directory, "HoBo");
+		const checkout = join(repository, "HoBo");
+		await createNodeWorkerStorageFileSystem(nodeFs).prepareJobDirectory(
+			directory,
+		);
+		expect(nodeFs.mkdir).toHaveBeenNthCalledWith(1, directory, {
+			recursive: true,
+			mode: 0o755,
+		});
+		expect(nodeFs.mkdir).toHaveBeenNthCalledWith(2, checkout, {
+			recursive: true,
+			mode: 0o755,
+		});
+		expect(nodeFs.chown).toHaveBeenNthCalledWith(1, repository, 1000, 1000);
+		expect(nodeFs.chown).toHaveBeenNthCalledWith(2, checkout, 1000, 1000);
+		expect(nodeFs.chown).toHaveBeenNthCalledWith(3, directory, 1000, 1000);
 	});
 
 	it("does not prune below either 85 percent threshold", async () => {
