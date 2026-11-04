@@ -108,6 +108,7 @@ non-secret settings:
 | `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; the startup check still applies |
 | `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Time smaller same-rank jobs may backfill behind a non-fitting head job |
 | `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum active merge-group leases; zero and invalid values are rejected |
+| `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK` | `1` | Maximum new non-trunk leases while a trunk lease is active; strict integer 0–8; zero pauses them; uncapped when trunk is idle |
 | `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host per-job work mounts, teardown and pressure checks; same filesystem as pnpm store |
 | `HOBO_CI_PNPM_STORE_DIR` | `~/.cache/hobo-ci/pnpm-store` | Shared store mounted read-write at `/pnpm-store`; empty disables it |
 | `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image/builder/store/dead-workdir GC interval; minimum 60000, capped at 300000 |
@@ -117,6 +118,14 @@ The admitted request becomes the container's `--memory` and `--memory-swap` valu
 `HOBO_CI_JOB_MEMORY_MB` environment variable. On the 15989 MiB box with a 2048 MiB reserve, the admission
 budget is **13941 MiB**. Heavy + standard + light = **13312 MiB** fits three slots; two heavy jobs leave
 **1653 MiB**, so a third light job waits; three heavy jobs need **18432 MiB** and never fit together.
+
+Rank-0 trunk containers also receive `--cpu-shares 8192` and request `--blkio-weight 800`; other ranks use
+512 and 200. These fixed 16:1 CPU and 4:1 IO preferences need no environment setting. The first weighted
+create/update probes block-IO support once per daemon process. An unsupported engine or cgroup logs
+`hobo_ci_blkio_weight_unsupported` once and retries with CPU-only weighting, so IO support never gates
+admission. Warm spares start at PR weight and are updated to their lease's weights on assignment. The
+trunk-active PR cap leaves running PRs untouched and preserves strict trunk-first ordering. All of these
+scheduling changes require a box daemon redeploy before their effect is observable.
 
 At startup and before every admission or drain check, the worker reconciles its lease journal against the strictly
 parsed `hobo.ci/isolated=1` Docker inventory. Running containers are never reaped; exited/dead containers settle;

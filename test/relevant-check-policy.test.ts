@@ -75,6 +75,21 @@ function turboTestSelects(checks: Check[], workspace: string) {
 	);
 }
 
+function narrowVitestCheck(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args[0] === "--filter" &&
+		check.args[2] === "exec" &&
+		check.args[3] === "vitest" &&
+		check.args[4] === "run"
+	);
+}
+
+function narrowVitestPaths(checks: Check[]) {
+	const check = checks.find(narrowVitestCheck);
+	return check ? check.args.slice(5) : [];
+}
+
 function standardsCheck(check: Check) {
 	return (
 		check.command === "pnpm" &&
@@ -512,6 +527,19 @@ test("production package source changes select architecture guard and workspace 
 	assert.deepEqual(workspaces, ["packages/core"]);
 	assert.equal(checks.some(architectureGuardCheck), true);
 	assert.equal(turboTestSelects(checks, "packages/core"), true);
+});
+
+test("staged test-only @hobo/code changes run vitest on package-relative paths", () => {
+	const { checks } = plan(["packages/code/test/hobo-code-signals.test.ts"], {
+		staged: true,
+		workspacePackageExists: () => true,
+	});
+
+	assert.ok(checks.some(narrowVitestCheck));
+	assert.deepEqual(narrowVitestPaths(checks), [
+		"test/hobo-code-signals.test.ts",
+	]);
+	assert.equal(turboTestSelects(checks, "packages/code"), false);
 });
 
 test("examples package source changes select architecture guard and workspace tests", () => {

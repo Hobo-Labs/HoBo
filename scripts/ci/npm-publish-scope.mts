@@ -14,10 +14,26 @@ type ScopeMap = {
 	packages: Record<string, string>;
 };
 
+export function assertNpmScopeMapAllowlist(map: ScopeMap): void {
+	if (!map.publicScope.startsWith("@hobo-labs")) {
+		throw new Error("npm-scope-map: publicScope must be @hobo-labs");
+	}
+	for (const [workspace, published] of Object.entries(map.packages)) {
+		if (!workspace.startsWith("@hobo/")) {
+			throw new Error(`npm-scope-map: invalid workspace key ${workspace}`);
+		}
+		if (!published.startsWith("@hobo-labs/")) {
+			throw new Error(`npm-scope-map: invalid public name for ${workspace}`);
+		}
+	}
+}
+
 export function loadNpmScopeMap(): ScopeMap {
-	const raw: unknown = JSON.parse(readFileSync(mapPath, "utf8"));
-	// SAFETY: `release/npm-scope-map.json` is repo-owned release metadata, validated in contract tests.
-	return raw as ScopeMap;
+	const parsed: unknown = JSON.parse(readFileSync(mapPath, "utf8"));
+	// SAFETY: `release/npm-scope-map.json` is repo-owned release metadata; contract tests pin every row.
+	const map = parsed as ScopeMap;
+	assertNpmScopeMapAllowlist(map);
+	return map;
 }
 
 export function mapPackageName(
@@ -35,6 +51,7 @@ export function mapPackageName(
 
 type PackageJson = {
 	name: string;
+	version?: string;
 	dependencies?: Record<string, string>;
 	devDependencies?: Record<string, string>;
 	peerDependencies?: Record<string, string>;
@@ -61,11 +78,15 @@ function remapDeps(
 export function applyScopeToManifest(
 	manifest: PackageJson,
 	map: ScopeMap = loadNpmScopeMap(),
+	options?: { version?: string },
 ): PackageJson {
 	const out: PackageJson = {
 		...manifest,
 		name: mapPackageName(manifest.name, map),
 	};
+	if (options?.version) {
+		out.version = options.version;
+	}
 	const deps = remapDeps(manifest.dependencies, map);
 	const devDeps = remapDeps(manifest.devDependencies, map);
 	const peerDeps = remapDeps(manifest.peerDependencies, map);

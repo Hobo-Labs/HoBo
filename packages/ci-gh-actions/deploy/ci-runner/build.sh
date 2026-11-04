@@ -35,10 +35,12 @@ cleanup() {
 trap cleanup EXIT
 
 if ! command -v mise >/dev/null 2>&1 || [[ "$(mise --version | awk '{print $1}')" != "$mise_version" ]]; then
-  curl -fsSL https://mise.run | MISE_VERSION="$mise_version" sh
+  echo "pinned mise ${mise_version} required on the host (no runtime curl install in release path)" >&2
+  exit 1
 fi
 mise trust ./mise.toml
 mise install --locked
+mise exec -- shellcheck --version
 
 node --no-warnings scripts/ci-runner-image-version.mts >/tmp/hobo-ci-runner-version.$$
 version="$(tr -d '[:space:]' < /tmp/hobo-ci-runner-version.$$)"

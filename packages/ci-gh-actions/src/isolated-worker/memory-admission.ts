@@ -23,13 +23,26 @@ export type MemoryAdmissionRequest = Readonly<{
 	rank: number;
 	activeLeases: readonly MemoryLease[];
 	generalLeaseIds: ReadonlySet<string>;
+	/** Rank-0 active leases; label-based general IDs remain a fallback for direct callers. */
+	trunkLeaseIds?: ReadonlySet<string>;
 }>;
 
 export function createWorkerMemoryAdmission(
 	config: WorkerMemoryConfig,
-	options: { now?: () => number; log?: MemoryAdmissionLog } = {},
+	options: {
+		now?: () => number;
+		log?: MemoryAdmissionLog;
+		prCapWithTrunk?: number;
+	} = {},
 ) {
 	const now = options.now ?? Date.now;
+	const prCapWithTrunk = options.prCapWithTrunk ?? 1;
+	if (
+		!Number.isInteger(prCapWithTrunk) ||
+		prCapWithTrunk < 0 ||
+		prCapWithTrunk > 8
+	)
+		throw new Error("invalid PR cap with trunk");
 	const waiting = new Map<number, { sinceMs: number; signature: string }>();
 	let warmMb = 0;
 
@@ -66,7 +79,22 @@ export function createWorkerMemoryAdmission(
 			request.generalLeaseIds,
 			request.rank !== 0,
 		);
-		const admitted = inUse + request.memoryMb <= config.budgetMb;
+		const trunkLeaseIds =
+			request.trunkLeaseIds ??
+			new Set(
+				request.activeLeases
+					.filter((lease) => !request.generalLeaseIds.has(lease.id))
+					.map((lease) => lease.id),
+			);
+		const trunkActive = request.activeLeases.some((lease) =>
+			trunkLeaseIds.has(lease.id),
+		);
+		const activeNonTrunk = request.activeLeases.filter(
+			(lease) => !trunkLeaseIds.has(lease.id),
+		).length;
+		const capBlocked =
+			request.rank !== 0 && trunkActive && activeNonTrunk >= prCapWithTrunk;
+		const admitted = !capBlocked && inUse + request.memoryMb <= config.budgetMb;
 		if (admitted) {
 			const previous = waiting.get(request.jobId);
 			waiting.delete(request.jobId);
@@ -94,7 +122,8 @@ export function createWorkerMemoryAdmission(
 			request.rank === 0
 				? request.memoryMb <= config.budgetMb
 				: waitedMs > config.holMs;
-		const signature = `${request.memoryClass}:${request.memoryMb}:${inUse}:${config.budgetMb}:${blockRank}`;
+		const reason = capBlocked ? "trunk-pr-cap" : "memory-budget";
+		const signature = `${reason}:${request.memoryClass}:${request.memoryMb}:${inUse}:${config.budgetMb}:${activeNonTrunk}:${blockRank}`;
 		if (signature !== state.signature) {
 			state.signature = signature;
 			options.log?.("hobo_ci_memory_admission_wait", {
@@ -104,6 +133,9 @@ export function createWorkerMemoryAdmission(
 				inUseMb: inUse,
 				budgetMb: config.budgetMb,
 				waitedMs,
+				reason,
+				activeGeneral: activeNonTrunk,
+				prCapWithTrunk,
 			});
 		}
 		return { admitted: false, blockRank };

@@ -1,3 +1,8 @@
+export type ContainerResourceWeights = Readonly<{
+	cpuShares: number;
+	blkioWeight?: number;
+}>;
+
 export type IsolatedContainerSpec = Readonly<{
 	name: string;
 	image: string;
@@ -6,9 +11,21 @@ export type IsolatedContainerSpec = Readonly<{
 	command: readonly string[];
 	runAsUser?: string;
 	memoryMb?: number;
+	cpuShares?: number;
+	blkioWeight?: number;
 	/** Extra `-v src:dst` mounts (e.g. a shared pnpm store volume). */
 	volumes?: readonly Readonly<{ source: string; target: string }>[];
 }>;
+
+export function containerResourceWeightsForRank(
+	rank: number,
+): ContainerResourceWeights {
+	if (!Number.isInteger(rank) || rank < 0 || rank > 2)
+		throw new Error("invalid admission rank");
+	return rank === 0
+		? { cpuShares: 8_192, blkioWeight: 800 }
+		: { cpuShares: 512, blkioWeight: 200 };
+}
 
 export type IsolatedContainerHandle = Readonly<{
 	name: string;
@@ -62,6 +79,11 @@ export interface DockerDriver {
 	): Promise<void>;
 	/** Rename a pre-warmed container to the lease's identity. */
 	rename?(containerId: string, name: string): Promise<void>;
+	/** Re-weight a warm container for the lease that consumes it. */
+	updateResources?(
+		containerId: string,
+		weights: ContainerResourceWeights,
+	): Promise<void>;
 	stop(name: string, containerId: string): Promise<void>;
 	remove(name: string, containerId: string): Promise<void>;
 	isRunning(name: string, containerId: string): Promise<boolean>;

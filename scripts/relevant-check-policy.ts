@@ -70,6 +70,17 @@ function defaultWorkspacePackageExists(workspace: string) {
 	return existsSync(`${workspace}/package.json`);
 }
 
+function defaultWorkspacePackageName(workspace: string): string | undefined {
+	try {
+		const manifest: { name?: string } = JSON.parse(
+			readFileSync(`${workspace}/package.json`, "utf8"),
+		);
+		return manifest.name;
+	} catch {
+		return undefined;
+	}
+}
+
 const PACKAGE_TYPESCRIPT = /^packages\/.+\.(?:[cm]?ts|tsx)$/u;
 /** In any quote, a template literal's included: the surface test scans those too. */
 const TS_AUTOCODE_SPECIFIER =
@@ -305,6 +316,22 @@ export function selectRelevantChecks(
 		});
 	}
 
+	const shellChanged =
+		automationChanged ||
+		files.some((file) => file.endsWith(".sh") || file.endsWith(".bash"));
+	if (shellChanged) {
+		checks.push({
+			command: "pnpm",
+			args: [
+				"run",
+				"lint:shell:changed",
+				"--",
+				staged ? "--staged" : `--base=${options.base}`,
+			],
+			reason: "changed shell scripts must pass bash -n and shellcheck in CI",
+		});
+	}
+
 	if (sourceChanged || automationChanged || konsistentConfigChanged) {
 		checks.push({
 			command: "pnpm",
@@ -348,20 +375,58 @@ export function selectRelevantChecks(
 		});
 	}
 
+	const narrowWorkspaceTests = workspaces.flatMap((workspace) => {
+		if (!staged) return [];
+		const relevantFiles = workspaceTestFiles.filter(
+			(file) => workspaceTestRelevant(file) && workspaceFor(file) === workspace,
+		);
+		const testFiles = relevantFiles.filter((file) =>
+			file.startsWith(`${workspace}/test/`),
+		);
+		const vitestPaths = testFiles
+			.filter((file) => /\.(?:test|spec)\./u.test(file))
+			.map((file) => file.slice(`${workspace}/`.length));
+		const requiresFullWorkspaceTest =
+			relevantFiles.length !== testFiles.length ||
+			testFiles.includes(`${workspace}/test/subprocess-teardown.ts`) ||
+			files.some((file) => file.startsWith(`${workspace}/vitest.config.`)) ||
+			(testFiles.length > 0 && vitestPaths.length === 0);
+		if (requiresFullWorkspaceTest) return [];
+		const packageName = defaultWorkspacePackageName(workspace);
+		if (!packageName) return [];
+		return [{ workspace, packageName, vitestPaths }];
+	});
+	const narrowWorkspaces = new Set(
+		narrowWorkspaceTests.map(({ workspace }) => workspace),
+	);
+
 	if (workspaces.length > 0) {
+		const turboWorkspaces = workspaces.filter(
+			(workspace) => !narrowWorkspaces.has(workspace),
+		);
+		if (turboWorkspaces.length > 0) {
+			checks.push({
+				command: "pnpm",
+				args: [
+					"exec",
+					"turbo",
+					"run",
+					"test",
+					...turboWorkspaces.map((workspace) => `--filter=./${workspace}`),
+					"--continue",
+					"--output-logs=new-only",
+					turboConcurrencyArg(),
+				],
+				reason: `workspace tests for ${turboWorkspaces.length} changed package(s) via Turbo; strict env passes HOBO_* and NODE_OPTIONS; warm runs replay from cache`,
+			});
+		}
+	}
+
+	for (const { packageName, vitestPaths } of narrowWorkspaceTests) {
 		checks.push({
 			command: "pnpm",
-			args: [
-				"exec",
-				"turbo",
-				"run",
-				"test",
-				...workspaces.map((workspace) => `--filter=./${workspace}`),
-				"--continue",
-				"--output-logs=new-only",
-				turboConcurrencyArg(),
-			],
-			reason: `workspace tests for ${workspaces.length} changed package(s) via Turbo; strict env passes HOBO_* and NODE_OPTIONS; warm runs replay from cache`,
+			args: ["--filter", packageName, "exec", "vitest", "run", ...vitestPaths],
+			reason: `staged changes are test-only; run ${vitestPaths.length} changed test file(s) directly`,
 		});
 	}
 
@@ -587,6 +652,12 @@ export function selectRelevantChecks(
 			command: "pnpm",
 			args: ["run", "docs:coverage"],
 			reason: "documentation coverage may be affected",
+		});
+		checks.push({
+			command: "pnpm",
+			args: ["run", "docs:findings", "--", "--check"],
+			reason:
+				"CI performance findings and their generated index must stay valid",
 		});
 	}
 

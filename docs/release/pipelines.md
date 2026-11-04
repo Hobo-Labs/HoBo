@@ -9,13 +9,13 @@ tags: [hobo, release, ci, npm, oci, mise]
 
 Four release pipelines ship independently: **ts-autocode**, **HoBo SDK**, **HoBo Code**, and **HoBo CLI + PWA**. A release in one pipeline neither triggers nor requires a release in another. Versioning, tags, and release approval follow each pipeline's own cadence.
 
-Most release jobs have a **10-minute hard timeout** and a **5-minute target duration**; the pull-request jobs that build images or run the HoBo Code suite, and the publishing jobs, use their explicitly documented larger budgets. Jobs use **`runs-on: hobo`** and the hermetic worker image. Every third-party GitHub Action is pinned to a **full commit SHA**; mutable version tags are not sufficient.
+Most release jobs have a **10-minute hard timeout** and a **5-minute target duration**; the pull-request jobs that build images or run the HoBo Code suite, and the publishing jobs, use their explicitly documented larger budgets (for example **30 minutes** for `release-hobo` / `release-contract` and **45 minutes** for `release-code` / `code-release`). Jobs use **`runs-on: hobo`** and the hermetic worker image. Every third-party GitHub Action is pinned to a **full commit SHA**; mutable version tags are not sufficient.
 
-`release-hobo` and `release-code` jobs run `pnpm run pins:fetch ts-autocode` after checkout (`submodules: recursive`) and before `pnpm install`, matching HoBo CI's sibling-pin setup.
+`release-hobo` and `release-code` jobs run `pnpm run pins:fetch ts-autocode` after checkout (`submodules: recursive`) and before `pnpm install`, matching HoBo CI's sibling-pin setup. `release-hobo` also listens on **`merge_group`** (same path filters as pull requests) so merge-queue checks run the contract job; checkout steps must not duplicate YAML keys under `actions/checkout` `with:` (GitHub rejects the workflow with zero jobs). CI and the deps image export **`SOURCE_DATE_EPOCH` as Unix seconds**; `@hobo/componentize` accepts seconds or ISO timestamps before determinism guards run.
 
-Pull requests may build and inspect release artifacts, but any npm packaging is **`npm pack --dry-run` only**. PRs never publish, never write to npm, and never receive publish credentials.
+Pull requests may build and inspect release artifacts, but any npm packaging is **`npm pack --dry-run` only**. PRs never publish, never write to npm, and never receive publish credentials. For npm staging, a PR `HOBO_RELEASE_VERSION=pr-N` maps to the valid semver `0.0.0-pr.N`; strict release-tag parsing still rejects `pr-*` refs.
 
-PR OCI builds are **affected-only, keyed by build inputs**: [`scripts/ci/release-oci-affected.mts`](../../scripts/ci/release-oci-affected.mts) hashes an input key for every manifest image from the git trees of the merge base (`HOBO_CHECK_BASE`, default `origin/main`) and of HEAD, and prints the images whose key changed. The key covers:
+PR OCI builds are **affected-only, keyed by build inputs**: [`scripts/ci/release-oci-affected.mts`](../../scripts/ci/release-oci-affected.mts) hashes an input key for every manifest image from the git trees of the merge base (`HOBO_CHECK_BASE`, default `origin/main`) and of HEAD, and prints the images whose key changed. The detector uses scoped `releaseInputGitTree` pathspecs (not full-repo `ls-tree`), reads each blob batch through one `git archive` pack transfer instead of lazy per-blob promisor fetches, memoizes trees/`parseLockfile`, and indexes package blobs only within each image's lockfile closure (see [`scripts/test/release-oci-affected.test.ts`](../../scripts/test/release-oci-affected.test.ts)). The key covers:
 
 - the image's Dockerfile directory and manifest entry, plus the manifest's top-level fields;
 - the release build scripts (`build-release-oci-image.mts`, `stage-release-oci-app.mts`, `stage-sdk-artifacts.mts`, the contract libraries), `tsconfig.base.json`, `pnpm-workspace.yaml` and `.npmrc`;
@@ -33,9 +33,9 @@ An image whose package is not a lockfile importer fails the detector rather than
 The box has two `hobo` slots, and every job pays its own checkout (about 70 s against GitHub's git endpoint) and install (20 to 40 s) before it does any work, then waits for a slot. A PR that touched both pipelines used to queue 13 jobs, among them four Vitest shards of 13 to 18 s of tests each and one job per image. So each pipeline now runs **one PR job**:
 
 - `release-hobo` / `release-contract` (30 minutes) runs the contract tests and the npm pack dry run, selects the affected images other than `hobo-code`, then builds them one after another through the Turbo cache, checking each with the live OCI config contract. A failing image does not stop the others; the job fails at the end and names them.
-- `release-code` / `code-release` (45 minutes) runs the contract tests, lint, the whole `@hobo/code` suite through `turbo run test --filter=@hobo/code`, and the `hobo-code` image build when its inputs changed.
+- `release-code` / `code-release` (45 minutes) runs the contract tests, lint, the whole `@hobo/code` suite through `turbo run test --filter=@hobo/code`, and the `hobo-code` image build when its inputs changed. The test step has a 20-minute hard timeout (`timeout -k 30s 20m`), Vitest `testTimeout` / `hookTimeout` default to two minutes per test (`HOBO_TEST_TIMEOUT`), and the package teardown kills tracked subprocess groups plus orphaned `evidence-sidecar-main.js` workers whose `HOBO_HOME` dir is already gone so a hung PTY or sidecar cannot hold a runner for 14+ minutes.
 
-Both diff the PR merge commit against `HEAD^1`, its base tip, so the checkout needs `fetch-depth: 2` instead of the full history. A PR that edits a pipeline's own workflow builds every image that pipeline owns, because the workflow is how they are built.
+Both diff the PR merge commit against `HEAD^1`, its base tip, so the checkout needs `fetch-depth: 2` instead of the full history. OCI staging combines the SCM-affected Turbo filter `--filter=...[HEAD^1...HEAD]` (changed packages plus dependents) with each requested image's build filter and dependency cone. The image filter keeps an unchanged image package scheduled so Turbo cache hits restore its required `dist` output without rebuilding the full repository; tag and local builds without a resolved base use only the image filters. The affected-image allowlist also prevents staging an image the workflow did not select. A PR that edits a pipeline's own workflow builds every image that pipeline owns, because the workflow is how they are built.
 
 ## Hermetic build model
 
@@ -104,6 +104,9 @@ The **CLI + PWA pipeline pulls the SDK's OCI artifact**. It never rebuilds the S
 [`.github/workflows/release-code.yml`](../../.github/workflows/release-code.yml) owns the fourth pipeline. Its independent release cadence uses **`code-vX.Y.Z`** tags; the shared **`vX.Y.Z`** CLI/SDK tag does not publish HoBo Code.
 
 - Pull requests trigger only for `packages/code/**`, the `hobo-code` image definition, release manifests and scope mapping, code-related release scripts and contract tests, the workflow and attestation action, or this document. Draft-proof paths under `src/draft/**` are not release inputs.
+- Sparse checkout cones are canonical in [`scripts/lib/release-sparse-cone.mts`](../../scripts/lib/release-sparse-cone.mts); [`scripts/test/release-sparse-cone.test.ts`](../../scripts/test/release-sparse-cone.test.ts) fails when a workflow cone omits root vitest setup files (`test/setup/`), pins inputs (`tools/pins/siblings.json`), OCI contract paths derived from `release/oci-images.json` and the release contract vitest suite, or directory cones from `releaseOciInputSparseCones()` required by the OCI detector's scoped git reads. HoBo Code sparse jobs use the full `deploy/` cone, not only `hobo-code`.
+- Release workflow `pull_request` path filters include runner contract scripts (`scripts/lib/ci-runner-contract.mts`, `scripts/ci-runner-preflight.mts`, `.github/actions/ci-runner-preflight/`) so preflight fixes re-run the static contract jobs.
+- Changed shell scripts in release/CI paths must pass `bash -n` and `shellcheck` via `pnpm run lint:shell:changed` (shellcheck is pinned in `mise.lock` and invoked with `mise exec`, not the host PATH; release contract preflight runs `mise install` before the runner contract). Sparse PR checkouts use `fetch-depth: 2` and diff shell changes with `--base=HEAD^1` (the merge base tip already in the clone), not `origin/main`. The HoBo CI Fabric `CI runner image (mise oci)` job runs `ci-runner-preflight`, then `pnpm-store` + root `pnpm install --ignore-scripts` (the checkout has no ts-autocode submodule), then `lint:shell:changed --base=HEAD~1` before `build.sh`.
 - One `code-release` job runs the npm scope-map and OCI manifest contract tests, then lint, which is exactly `pnpm --filter @hobo/code lint`.
 - The same job runs the whole suite unsharded as `turbo run test --filter=@hobo/code` with `HOBO_TURBO_CONCURRENCY=1` and a **45-minute** budget. `@hobo/code#test` depends on its own build and on `@hobo/hobo#build` and `@hobo/adapter-hono#build`, so Turbo builds that cone first and replays it, and an unchanged suite, from cache. Outside pull requests it then packs dist trees from every pnpm workspace member, including the sibling `external/ts-autocode` packages, for the publish job.
 - PR OCI work runs `release-oci-affected.mts --only=hobo-code`, builds the image locally from the cone already built, and never pushes.
@@ -159,8 +162,10 @@ Multi-arch builds are **native-only** on `hobo` runners (amd64 or arm64 per box)
 
 ### Tags, digests, and pipeline references
 
-- CLI/SDK release tags: **`vX.Y.Z`** semver on git tag → image tag `vX.Y.Z` **and** immutable **`@sha256:…`** digest.
+- CLI/SDK release tags: **`vX.Y.Z`** or semver prereleases such as **`v0.0.0-alpha.0`** on the git tag → GHCR image tag equals the tag (e.g. `v0.0.0-alpha.0`) **and** immutable **`@sha256:…`** digest. Prerelease images **never** receive a `:latest` tag. Independent trains use **`sdk-v…`** (npm SDK + `hobo-sdk` GHCR) and **`cli-v…`** (`hobo-cli` + `hobo-mcp` GHCR; CLI staging consumes the SDK OCI artifact by digest, not a source rebuild). Semver parsing and train selection live in [`scripts/lib/release-version.mts`](../../scripts/lib/release-version.mts) (`resolve-release-version.mts` in CI).
+- npm: prerelease semver (e.g. `0.0.0-alpha.0` derived from the tag) publishes with **`npm publish --tag <prerelease-id>`** (`alpha` for `-alpha.0`), so **`latest`** stays reserved for stable `vX.Y.Z` releases without a prerelease segment. Staged `@hobo-labs/*` tarballs take their **`version`** field from `HOBO_RELEASE_SEMVER` / the parsed tag, not the workspace `0.0.1` dev versions.
 - HoBo Code release tags: **`code-vX.Y.Z`** → `hobo-code:code-vX.Y.Z` and an immutable digest, independent of CLI/SDK tags.
+- **`vX.Y.Z`** also runs the **`release-pages`** job (Astro `site/` → `gh-pages` branch via SHA-pinned `peaceiris/actions-gh-pages`).
 - Downstream pipelines (CLI + PWA) **pin the SDK image by digest**, never `:latest`.
 - PR workflows **build + contract-test** images locally; they **do not push** to GHCR.
 - Tag/`workflow_dispatch` releases push with **`GITHUB_TOKEN`** (`packages: write`); no new secrets.
@@ -172,16 +177,17 @@ Multi-arch builds are **native-only** on `hobo` runners (amd64 or arm64 per box)
 
 ### Contract tests
 
-[`scripts/test/release-oci-image-contract.test.ts`](../../scripts/test/release-oci-image-contract.test.ts) validates:
+[`scripts/test/release-oci-image-contract.test.ts`](../../scripts/test/release-oci-image-contract.test.ts) and [`scripts/test/release-version.test.ts`](../../scripts/test/release-version.test.ts) validate:
 
 1. Manifest + Dockerfile presence (always), including the explicit `hobo-code` entrypoint, state volume, and environment documentation
-2. **`docker inspect`** config vs expected `USER`, `WORKDIR`, `ENTRYPOINT`, `EXPOSE`, `VOLUME`, labels when **`HOBO_RELEASE_OCI_CONTRACT=live`**
-3. The declared help/version probe inside the candidate container as non-root
+2. Release ref parsing, npm dist-tag selection, and GHCR tag rules (no `:latest` on prereleases)
+3. **`docker inspect`** config vs expected `USER`, `WORKDIR`, `ENTRYPOINT`, `EXPOSE`, `VOLUME`, labels when **`HOBO_RELEASE_OCI_CONTRACT=live`**
+4. The declared help/version probe inside the candidate container as non-root
 
 Local:
 
 ```bash
-pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts scripts/test/stage-release-oci-app.test.ts
+pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts
 bash packages/ci-gh-actions/deploy/ci-runner/build.sh
 node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --keep-candidate
 HOBO_RELEASE_OCI_CONTRACT=live HOBO_RELEASE_OCI_IMAGE_ID=hobo-cli pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts
@@ -189,6 +195,8 @@ node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --cleanup-onl
 ```
 
 Set `HOBO_RELEASE_OCI_IMAGE_ID` to each built image id, or omit it after building every manifest image to run all live contracts in one invocation. `HOBO_RELEASE_VERSION` and `HOBO_RELEASE_REVISION` must match the candidate build when supplied.
+
+[`release-ts-autocode.yml`](../../.github/workflows/release-ts-autocode.yml) verifies the pinned ts-autocode sparse cone on **`ts-autocode-v*.*.*`** tags (npm pack dry-run only; upstream owns publication). Its sparse checkout includes the HoBo **`packages/`** cone so root `pnpm install` can link `ts-autocode-grounding` into `@hobo/runtime` after `pnpm run pins:fetch ts-autocode`; contract tests in [`scripts/test/release-sparse-cone.test.ts`](../../scripts/test/release-sparse-cone.test.ts) gate the cone and step order.
 
 ## ts-autocode upstream migration
 
