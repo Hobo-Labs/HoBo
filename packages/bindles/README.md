@@ -77,3 +77,4 @@ The `hello-bindle` Hono example and `multi-cloud-shop` function-handler example
 are checked with their own `typecheck` scripts as well as runtime tests.
 This adjusts the TypeScript behavior surface, not the manifest Protobuf/CUE
 records; the existing SDK-lowering PACT tests remain the manifest boundary.
+Declared component constructors accept ordinary class instances; entrypoint result typing remains unchanged.

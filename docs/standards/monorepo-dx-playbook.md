@@ -146,6 +146,7 @@ Four things make the cache both **correct** and **fast**:
 - One **`tsconfig.base.json`** with the strict flags, ideally exported from the shared config package (§10). Every workspace extends it and sets only `rootDir`/`outDir`/`references`.
 - **Use project references + `tsc -b`** for incremental typecheck. monorepo's pattern: each app `tsconfig.json` has `"files": []` + `"references": [...]` and the script is `"typecheck": "tsc -b"`. This reuses `.tsbuildinfo` across the graph instead of cold-checking every package (the gap in `epoch`, `universal-token-killer`).
 - Run it through the turbo `typecheck` task (`dependsOn: ["^build"]` or `["^typecheck"]`) so it's cached and topological.
+- HoBo's root `pnpm run typecheck` covers `./packages/*` and explicitly adds `@hobo/draft-connectivity-tier-ir-contract`, whose public declaration consumer guards the typed-plan/untrusted-JSON parse boundary. Other draft proofs remain outside the root filter until their own typechecks pass; `test/root-script-pins.test.ts` pins the explicit inclusion.
 - *Advanced:* the native TS compiler preview (`tsgo`, `@typescript/native-preview`) is a large speedup HoBo/epoch experiment with — adopt once it's stable enough for your risk tolerance.
 
 ---
