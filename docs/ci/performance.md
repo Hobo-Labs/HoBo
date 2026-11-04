@@ -1162,6 +1162,12 @@ The four package tests unchanged by the generic-input edit were `@hobo/code`, `@
 
 `scripts/ci/affected-lanes.mts` still treats a turbo edit as selecting the repo-wide main gate, but unchanged tasks now hit cache. `release-oci-affected.mts` continues hashing only build-relevant turbo settings, including the `globalDependencies` list and build task definitions; it deliberately does not rebuild images for test-only task edits. Its tests pin both behaviors.
 
+## Finding 32: hobo Vitest re-transformed its built workspace dependency graph
+
+Merge-group run **41833733901** timed out `test/mcp-stdio.test.ts` after **10 s**. Five loaded single-test runs showed a **40 ms** median test body but a **9.89 s** median file duration (transform **5.49 s**, import **9.50 s**). Temporary instrumentation measured composed-CLI construction at **15.4 ms**, project-target resolution at **1.3 ms**, and dispatch at **25.6 ms**; the full-suite dispatch took **11.6 ms**. No timer, poll, subprocess, or ambient-tool probe was on the collect path. The cost was Vite transforming hundreds of already-built workspace modules pulled in by the composed CLI.
+
+The package Vitest config now externalizes resolved `packages/**/dist/**` files so Node loads workspace exports natively while hobo's own source and tests still go through Vite. `@hobo/cli` stays inline because its dynamic bindle imports need Vite to resolve `.js` specifiers in TypeScript sources. Under the same four-hog load, five-run medians fell to **4.41 s** per file, **1.04 s** transform, and **3.88 s** import; the test body remained fast at **43 ms**. The composed-registry assertions and 10 s timeout are unchanged.
+
 ## Finding 34: the pricing scorecard launched a root Vitest process per row
 
 Merge-queue run **41844979849** timed out `test/design-scorecard-eval.test.ts > §1.1` after **10 s**, with the file taking **93 s**. Each of the 53 `pass` rows synchronously spawned `pnpm exec vitest run <evidence> -t <name>` from the package test worker. Those tests already execute in their owning packages' test tasks, so the scorecard paid 53 root-runner startups and blocked its event loop without adding behavioral coverage.
@@ -1176,6 +1182,7 @@ Three runs of `pnpm --filter @hobo/pricing exec vitest run test/design-scorecard
 | **Median file duration** | **50.69 s** | **0.480 s** |
 | Shell wall durations | 51.106 s, 51.484 s, 51.326 s | 1.124 s, 1.085 s, 1.095 s |
 | **Median wall duration** | **51.326 s** | **1.095 s** |
+
 
 ## Finding 35: neither deps-image producer could promote the layer jobs needed
 
