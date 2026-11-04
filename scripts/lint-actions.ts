@@ -34,7 +34,7 @@ const TRUNK_RUNS_ON =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
 
 const acceptanceDigest =
-	"479a086feeebf3453e59f784c13bcabbf3b88e73afb8a2a5930ed04823bc8f68";
+	"187c2c2f8690b0f278da4ce2e286229c54b02d169c8253f7ada9dfddc05b6bda";
 
 const TRUNK_EVENTS = new Set(["push", "workflow_dispatch", "merge_group"]);
 
@@ -95,8 +95,35 @@ function lintWorkflowYaml(
 				`${file}:${start + 1}: authoritative CI job must not be permanently disabled`,
 			);
 		}
+		const runsOn = block
+			.map((line) => line.match(/^\s*runs-on:\s*(.*?)\s*$/)?.[1])
+			.find((value) => value !== undefined);
+		if (runsOn === "hobo" || runsOn === TRUNK_RUNS_ON) {
+			for (const [index, line] of block.entries()) {
+				if (!/^\s*- uses: actions\/checkout@/.test(line)) continue;
+				const indent = line.match(/^(\s*)-/)?.[1] ?? "      ";
+				let end = index + 1;
+				while (end < block.length && !block[end]?.startsWith(`${indent}- `))
+					end += 1;
+				const step = block.slice(index, end);
+				if (step.some((entry) => /^\s+path:/.test(entry))) continue;
+				const repository = step
+					.map((entry) => entry.match(/^\s+repository:\s*(.*?)\s*$/)?.[1])
+					.find((value) => value !== undefined);
+				if (
+					repository &&
+					repository.toLowerCase() !== "hobo-labs/hobo" &&
+					repository !== "${{ github.repository }}"
+				)
+					continue;
+				if (!step.some((entry) => entry.trim() === "clean: false")) {
+					errors.push(
+						`${file}:${start + index + 1}: box checkout at the default path must set clean: false`,
+					);
+				}
+			}
+		}
 		if (allowedEnabled.has(file)) {
-			const runsOn = /^    runs-on:\s*(.*?)\s*$/m.exec(block.join("\n"))?.[1];
 			const prOnly = isPullRequestOnlyJob(block, workflowHasTrunkEvent);
 			if (!prOnly && runsOn === "hobo") {
 				errors.push(

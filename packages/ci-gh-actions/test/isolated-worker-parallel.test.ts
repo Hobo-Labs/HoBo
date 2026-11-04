@@ -165,6 +165,28 @@ describe("cli docker driver parallel helpers", () => {
 		return { bin, log };
 	}
 
+	it("parses image ids, repo tags and labels from docker inspect", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "fake-docker-inspect-"));
+		try {
+			const bin = join(dir, "docker");
+			writeFileSync(
+				bin,
+				`#!/bin/sh\nprintf '%s\\n' '[{"Id":"sha256:abc","RepoTags":["hobo-ci-worker:local","hobo-ci-worker:v0123456789ab"],"Config":{"Labels":{"hobo.ci.toolchain":"v0123456789ab"}}}]'\n`,
+			);
+			chmodSync(bin, 0o755);
+			const driver = createCliDockerDriver({ binary: bin, env: {} });
+			await expect(
+				driver.inspectImage?.("hobo-ci-worker:local"),
+			).resolves.toEqual({
+				id: "sha256:abc",
+				repoTags: ["hobo-ci-worker:local", "hobo-ci-worker:v0123456789ab"],
+				labels: { "hobo.ci.toolchain": "v0123456789ab" },
+			});
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("bind-mounts shared volumes and runs the runner detached", async () => {
 		const { bin, log } = fakeBinary();
 		const driver = createCliDockerDriver({

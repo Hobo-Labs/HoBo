@@ -11,6 +11,13 @@ export const CI_RUNNER_SYSTEM_PACKAGES =
 	"packages/ci-gh-actions/deploy/ci-runner/system-packages.txt";
 export const MISE_TOML = "mise.toml";
 export const MISE_LOCK = "mise.lock";
+export const CI_RUNNER_IMAGE_VERSION_INPUTS = [
+	MISE_LOCK,
+	MISE_TOML,
+	CI_RUNNER_SYSTEM_PACKAGES,
+	CI_RUNNER_BASE_DOCKERFILE,
+	CI_RUNNER_BUILD_SCRIPT,
+] as const;
 
 /** Digest-pinned debian:bookworm-slim for the CI runner base layer (must match base/Dockerfile FROM). */
 export const CI_RUNNER_DEBIAN_BOOKWORM_SLIM =
@@ -59,15 +66,11 @@ export const CI_RUNNER_DOCKERFILE = CI_RUNNER_BASE_DOCKERFILE;
 
 /** Version tag derived from toolchain lock + base manifest (reproducible rebuild key). */
 export function ciRunnerImageVersion(root: string): string {
-	const parts = [
-		MISE_LOCK,
-		MISE_TOML,
-		CI_RUNNER_SYSTEM_PACKAGES,
-		CI_RUNNER_BASE_DOCKERFILE,
-		// build.sh skips the build when this version is already on the host, so
-		// how it assembles the image has to move the version too.
-		CI_RUNNER_BUILD_SCRIPT,
-	].map((rel) => readFileSync(join(root, rel)));
+	// build.sh skips the build when this version is already on the host, so
+	// how it assembles the image has to move the version too.
+	const parts = CI_RUNNER_IMAGE_VERSION_INPUTS.map((rel) =>
+		readFileSync(join(root, rel)),
+	);
 	const digest = createHash("sha256")
 		.update(Buffer.concat(parts))
 		.digest("hex");
