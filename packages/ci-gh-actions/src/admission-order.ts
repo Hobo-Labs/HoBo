@@ -1,5 +1,6 @@
 import { type GithubTransport, getRun } from "./github.js";
 import type { JobDurations } from "./job-durations.js";
+import { servedRunnerLabel, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
 /** Where a job's run stands in line for a host: lower `rank` first, then the older run. */
 export type AdmissionKey = Readonly<{ rank: number; startedAtMs: number }>;
@@ -35,16 +36,18 @@ export type AdmissionRef = Readonly<{
 	repository: string;
 	runId: number;
 	jobId: number;
+	labels?: readonly string[];
 }>;
 
 /**
  * Orders demand for a host. A run's event and start time never change for an
  * attempt, so a complete entry is looked up once. The rank is remembered before
  * the start time arrives; a failed lookup keeps it, while an unseen run ranks
- * behind pull requests and retries next tick. Within one
- * rank and run age, the job expected to take longest goes first, so the run's
- * long pole is not left to start last on a freed slot; a job with no history
- * expects 0 and the job id breaks remaining ties.
+ * behind pull requests and retries next tick. The trunk-only label proves trunk
+ * rank even without run metadata. Within one rank and run age, the job expected
+ * to take longest goes first, so the run's long pole is not left to start last
+ * on a freed slot; a job with no history expects 0 and the job id breaks
+ * remaining ties.
  */
 export function createAdmissionOrder(
 	github: GithubTransport,
@@ -73,7 +76,12 @@ export function createAdmissionOrder(
 	}
 	async function keyFor(ref: AdmissionRef): Promise<AdmissionKey> {
 		const cached = runs.get(ref.runId);
-		if (cached && Number.isFinite(cached.startedAtMs)) return cached;
+		const withLabelRank = (key: AdmissionKey): AdmissionKey =>
+			servedRunnerLabel(ref.labels ?? []) === TRUNK_RUNNER_LABEL
+				? { ...key, rank: TRUNK_RANK }
+				: key;
+		if (cached && Number.isFinite(cached.startedAtMs))
+			return withLabelRank(cached);
 		try {
 			const run = await getRun(
 				github,
@@ -81,9 +89,9 @@ export function createAdmissionOrder(
 				ref.repository,
 				ref.runId,
 			);
-			return remember(ref.runId, run.event, run.run_started_at);
+			return withLabelRank(remember(ref.runId, run.event, run.run_started_at));
 		} catch {
-			return cached ?? UNKNOWN;
+			return withLabelRank(cached ?? UNKNOWN);
 		}
 	}
 	async function order<T>(
