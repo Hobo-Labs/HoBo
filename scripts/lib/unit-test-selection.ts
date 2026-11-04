@@ -61,16 +61,16 @@ function selectVitestFiles(patterns: string[]): string[] {
 	);
 }
 
-export function legacyUnitTestFiles(): string[] {
-	return selectVitestFiles(legacyUnitPatterns);
-}
-
 export function rootUnitTestFiles(): string[] {
-	return selectVitestFiles(rootUnitPatterns);
+	return gitLsFiles(rootUnitPatterns);
 }
 
 export function draftUnitTestFiles(): string[] {
 	return selectVitestFiles(draftUnitPatterns);
+}
+
+export function legacyUnitTestFiles(): string[] {
+	return [...rootUnitTestFiles(), ...draftUnitTestFiles()];
 }
 
 export function readShard(args: string[]): TestShard | undefined {

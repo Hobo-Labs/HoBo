@@ -3,8 +3,13 @@
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
-  runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, each capped by `HOBO_CI_WORKER_MEMORY_MB`. Raise the
-  relay offer concurrency to match the slot count.
+  runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, subject to both slot and memory admission. Exact job names
+  select light/standard/heavy hard container limits (3072/4096/6144 MiB); active, reserved and warm requests
+  must sum within host/cgroup memory minus at least 2048 MiB reserve. On the 15989 MiB box that budget is
+  13941 MiB, so three mixed classes can fit but three heavy jobs cannot. Job preflight derives the Node heap,
+  serial turbo and `HOBO_TEST_MAX_WORKERS` from the admitted container limit; CI never exports
+  `VITEST_MAX_WORKERS`, preserving single-worker config pins. Byte or inode usage above 85% triggers safe
+  pruning before admission, and usage above 95% after pruning leaves the job queued.
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
   SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
   GitHub every `HOBO_CI_JOB_POLL_MS` for queued `runs-on: hobo` jobs, so CI does not stop when a hosted

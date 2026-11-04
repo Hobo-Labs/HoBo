@@ -7,7 +7,24 @@ import * as githubModule from "../src/github.js";
 import type { HostedRelayStore } from "../src/hosted-relay.js";
 import { createIsolatedContainerController } from "../src/isolated-worker/container-controller.js";
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
+import type { WorkerStorageFileSystem } from "../src/isolated-worker/storage-admission.js";
 import { NOW } from "./fixtures.js";
+
+function workDirectory() {
+	const removeJobDirectory = vi.fn(async () => ({ bytes: 128, entries: 4 }));
+	const fs: WorkerStorageFileSystem = {
+		statfs: vi.fn(async () => ({
+			blocks: 100,
+			bfree: 100,
+			files: 100,
+			ffree: 100,
+		})),
+		jobDirectories: vi.fn(async () => []),
+		prepareJobDirectory: vi.fn(async () => undefined),
+		removeJobDirectory,
+	};
+	return { fs, removeJobDirectory };
+}
 
 function githubJob(
 	id: number,
@@ -260,10 +277,16 @@ describe("isolated container controller reconcile", () => {
 		expect(docker.stop).not.toHaveBeenCalled();
 	});
 
-	function markerScenario(exists: DockerDriver["exists"]) {
+	function markerScenario(
+		exists: DockerDriver["exists"],
+		stopped = false,
+		log?: ReturnType<typeof vi.fn>,
+		workRoot?: string,
+	) {
 		const lease = runningLease({ jobId: 100, actualJobId: 0 });
 		const settle = vi.fn(async () => lease);
 		const abortIsolatedAndRequeue = vi.fn(async () => undefined);
+		const work = workRoot ? workDirectory() : undefined;
 		// SAFETY: reconcile() only calls get(), settle() and abortIsolatedAndRequeue().
 		const relayStore = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
@@ -276,12 +299,13 @@ describe("isolated container controller reconcile", () => {
 			exec: vi.fn(),
 			stop: vi.fn(async () => undefined),
 			remove: vi.fn(async () => undefined),
-			isRunning: vi.fn(async () => true),
+			isRunning: vi.fn(async () => !stopped),
 			exists,
+			exitState: vi.fn(async () => ({ exitCode: 137, oomKilled: true })),
 		};
 		// SAFETY: settle after a stop uses getJob(), not github.request().
 		const github = {} as GithubTransport;
-		const controller = createIsolatedContainerController({
+		const controllerOptions = {
 			store: relayStore,
 			github,
 			publicOrigin: "https://ci.example.test",
@@ -289,9 +313,34 @@ describe("isolated container controller reconcile", () => {
 			workerAccountId: "oracle-free-vm",
 			workerImage: "hobo-ci-worker:local",
 			now: () => "2026-10-26T12:02:00Z",
-		});
-		return { lease, settle, abortIsolatedAndRequeue, docker, controller };
+			log,
+		};
+		if (workRoot && work)
+			Object.assign(controllerOptions, { workRoot, workFs: work.fs });
+		const controller = createIsolatedContainerController(controllerOptions);
+		return { lease, settle, abortIsolatedAndRequeue, docker, controller, work };
 	}
+
+	it("logs the job memory class when docker reports an exit-137 OOM kill", async () => {
+		const log = vi.fn();
+		const s = markerScenario(undefined, true, log);
+		s.lease.memoryClass = "light";
+		s.lease.memoryMb = 3_072;
+		await s.controller.host.reconcile(s.lease.id);
+		expect(s.docker.exitState).toHaveBeenCalledWith(
+			s.lease.sandboxName,
+			s.lease.sandboxSessionId,
+		);
+		expect(log).toHaveBeenCalledWith(
+			"hobo_ci_container_oom",
+			expect.objectContaining({
+				jobId: s.lease.jobId,
+				memoryClass: "light",
+				memoryMb: 3_072,
+				exitCode: 137,
+			}),
+		);
+	});
 
 	it("stops and settles a running lease once its runner wrote the exit marker", async () => {
 		const exists = vi.fn(async () => true);
@@ -325,18 +374,58 @@ describe("isolated container controller reconcile", () => {
 		});
 	});
 
-	it("leaves a running lease alone while the runner has not exited or the check fails", async () => {
+	it.each([
+		"pass",
+		"fail",
+	])("removes the work directory after a job %s", async () => {
+		const s = markerScenario(
+			vi.fn(async () => true),
+			false,
+			undefined,
+			"/srv/hobo-ci/work",
+		);
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
+		);
+		await s.controller.host.reconcile(s.lease.id);
+		expect(s.work?.removeJobDirectory).toHaveBeenCalledWith(
+			`/srv/hobo-ci/work/${s.lease.sandboxName}`,
+		);
+	});
+
+	it("removes the work directory after cancellation", async () => {
+		const s = markerScenario(undefined, false, undefined, "/srv/hobo-ci/work");
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
+		);
+		await s.controller.host.reconcile(s.lease.id, true);
+		expect(s.work?.removeJobDirectory).toHaveBeenCalledWith(
+			`/srv/hobo-ci/work/${s.lease.sandboxName}`,
+		);
+	});
+
+	it("removes the work directory after a container crash", async () => {
+		const s = markerScenario(undefined, true, undefined, "/srv/hobo-ci/work");
+		await s.controller.host.reconcile(s.lease.id);
+		expect(s.abortIsolatedAndRequeue).toHaveBeenCalledOnce();
+		expect(s.work?.removeJobDirectory).toHaveBeenCalledWith(
+			`/srv/hobo-ci/work/${s.lease.sandboxName}`,
+		);
+	});
+
+	it("leaves a running lease and its work directory alone while the runner has not exited or the check fails", async () => {
 		for (const exists of [
 			vi.fn(async () => false),
 			vi.fn(async () => {
 				throw new Error("docker exec timed out");
 			}),
 		]) {
-			const s = markerScenario(exists);
+			const s = markerScenario(exists, false, undefined, "/srv/hobo-ci/work");
 			await s.controller.host.reconcile(s.lease.id);
 			expect(s.docker.stop).not.toHaveBeenCalled();
 			expect(s.settle).not.toHaveBeenCalled();
 			expect(s.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+			expect(s.work?.removeJobDirectory).not.toHaveBeenCalled();
 		}
 	});
 });

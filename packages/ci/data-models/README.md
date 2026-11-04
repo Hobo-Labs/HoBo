@@ -6,7 +6,10 @@ executed by schema-tools. Generated records live under `src/_generated`.
 
 Lease prices and free-allocation validity are pinned when capacity is reserved.
 Settled free consumption is recorded separately from reserved free minutes so a
-host finishing beyond the evidence window cannot be accounted as free.
+host finishing beyond the evidence window cannot be accounted as free. Jobs carry
+the exact GitHub job name and their admitted memory class/request; leases persist
+that request so active and reserved memory survives worker restarts. A legacy lease
+without a request is accounted at the heavy class by the box worker.
 
 
 `policy.proto` defines SDK-authored desired policy separately from the runtime
