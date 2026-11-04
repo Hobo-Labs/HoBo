@@ -23,6 +23,7 @@
 		"@hobo/trails": "@hobo-labs/trails",
 		"@hobo/replay": "@hobo-labs/replay",
 		"@hobo/adapter-hono": "@hobo-labs/adapter-hono",
-		"@hobo/schema-tools": "@hobo-labs/schema-tools"
+		"@hobo/schema-tools": "@hobo-labs/schema-tools",
+		"@hobo/pricing": "@hobo-labs/pricing"
 	}
 }
