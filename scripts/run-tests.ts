@@ -1,10 +1,19 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { sanitizeNodeOptions } from "./lib/env.ts";
+import {
+	draftUnitPatterns,
+	gitLsFiles,
+	isNodeTestFile,
+	legacyUnitPatterns,
+	readShard,
+	selectDraftShard,
+	selectShard,
+} from "./lib/unit-test-selection.ts";
 
 const args = new Set(process.argv.slice(2));
 const quiet = args.has("--quiet");
@@ -29,20 +38,8 @@ const broadAgentCategories = new Set([
 ]);
 
 const categories = {
-	unit: rootOnly
-		? ["test/*test.ts", "test/*test.mjs"]
-		: [
-				"test/*test.ts",
-				"test/*test.mjs",
-				"src/draft/*/*/test/*test.ts",
-				"src/draft/exp-proofs/*/*/test/*test.ts",
-				"src/draft/*/*/test/*test.mjs",
-				"src/draft/exp-proofs/*/*/test/*test.mjs",
-				"src/draft/*/*/tests/*test.ts",
-				"src/draft/exp-proofs/*/*/tests/*test.ts",
-				"src/draft/*/*/tests/*test.mjs",
-				"src/draft/exp-proofs/*/*/tests/*test.mjs",
-			],
+	unit: rootOnly ? ["test/*test.ts", "test/*test.mjs"] : legacyUnitPatterns,
+	draft: draftUnitPatterns,
 	types: [
 		"src/draft/*/*/type-tests/*.ts",
 		"src/draft/exp-proofs/*/*/type-tests/*.ts",
@@ -131,7 +128,7 @@ const nodeTestFiles = new Set<string>();
 const frozenLiveRepoTests = new Set([
 	"src/draft/technical-proofs/s0-04-protobuf-cue-codegen/packages/schema-tools/test/codegen-pipeline.test.ts",
 ]);
-const testFiles = gitLsFiles(patterns).filter((file) => {
+const selectedFiles = gitLsFiles(patterns).filter((file) => {
 	if (file.endsWith(".feature")) return false;
 	if (frozenLiveRepoTests.has(file)) return false;
 	if (isNodeTestFile(file)) {
@@ -140,9 +137,23 @@ const testFiles = gitLsFiles(patterns).filter((file) => {
 	}
 	return true;
 });
+const shard = readShard(process.argv.slice(2));
+const testFiles =
+	shard === undefined
+		? selectedFiles
+		: category === "draft"
+			? selectDraftShard(selectedFiles, shard)
+			: selectShard(selectedFiles, shard);
+const rootNodeTestFiles = [...nodeTestFiles].filter((file) =>
+	file.startsWith("test/"),
+);
+const shardedRootNodeTestFiles =
+	shard === undefined
+		? rootNodeTestFiles
+		: selectShard(rootNodeTestFiles, shard);
 if (nodeTestFiles.size > 0) {
 	console.log(
-		`Skipping ${nodeTestFiles.size} node:test-style file(s) covered by package lanes:`,
+		`Skipping ${nodeTestFiles.size} node:test-style file(s) covered by node:test lanes:`,
 	);
 	for (const file of nodeTestFiles) console.log(`  ${file}`);
 }
@@ -167,7 +178,7 @@ if (isAgent && testFiles.length > 3 && !changedScope && !finalValidation) {
 	);
 }
 
-if (testFiles.length === 0) {
+if (testFiles.length === 0 && shardedRootNodeTestFiles.length === 0) {
 	console.log(`No ${category} tests found; lane skipped.`);
 	process.exit(0);
 }
@@ -182,7 +193,12 @@ const baseConfigUrl = pathToFileURL(
 ).href;
 const configuredMaxWorkers = Math.max(
 	1,
-	Number.parseInt(process.env.HOBO_RELEVANT_CHECK_CONCURRENCY ?? "4", 10) || 4,
+	Number.parseInt(
+		process.env.HOBO_TEST_MAX_WORKERS ??
+			process.env.HOBO_RELEVANT_CHECK_CONCURRENCY ??
+			"4",
+		10,
+	) || 4,
 );
 const parsedMemoryMaxWorkers = Number.parseInt(
 	process.env.HOBO_TEST_MAX_WORKERS ?? "",
@@ -267,13 +283,10 @@ try {
 		);
 	}
 	let exitCode = result.status ?? 1;
-	const rootNodeTestFiles = [...nodeTestFiles].filter((file) =>
-		file.startsWith("test/"),
-	);
-	if (exitCode === 0 && rootNodeTestFiles.length > 0) {
+	if (exitCode === 0 && shardedRootNodeTestFiles.length > 0) {
 		const nodeResult = spawnSync(
 			process.execPath,
-			["--import", "tsx", "--test", ...rootNodeTestFiles],
+			["--import", "tsx", "--test", ...shardedRootNodeTestFiles],
 			{
 				stdio: "inherit",
 				shell: false,
@@ -291,27 +304,4 @@ try {
 	process.exitCode = exitCode;
 } finally {
 	rmSync(configDir, { force: true, recursive: true });
-}
-
-function isNodeTestFile(file: string): boolean {
-	const source = readFileSync(file, "utf8");
-	return /from\s+["']node:test["']|require\(\s*["']node:test["']\s*\)|import\s+["']node:test["']/.test(
-		source,
-	);
-}
-
-function gitLsFiles(globPatterns: string[]): string[] {
-	const result = spawnSync("git", ["ls-files", ...globPatterns], {
-		encoding: "utf8",
-		shell: false,
-		maxBuffer: 32 * 1024 * 1024,
-	});
-	if (result.error || result.status !== 0) {
-		process.stderr.write(result.stderr || result.error?.message || "");
-		process.exit(result.status ?? 1);
-	}
-	return result.stdout
-		.split(/\r?\n/)
-		.map((line) => line.trim())
-		.filter(Boolean);
 }

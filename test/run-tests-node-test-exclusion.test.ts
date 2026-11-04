@@ -75,6 +75,7 @@ test("run-tests.ts preserves the canonical Vitest execution settings", () => {
 	expect(source).toContain('"vitest.config.ts"');
 	expect(source).toContain("...baseConfig.test");
 	expect(source).toContain('pool: "forks"');
+	expect(source).toContain("HOBO_TEST_MAX_WORKERS");
 	expect(source).toContain("HOBO_RELEVANT_CHECK_CONCURRENCY");
 	expect(source).toContain("Math.min(configuredMaxWorkers, memoryMaxWorkers)");
 	expect(source).toContain("HOBO_TEST_MAX_WORKERS: String(maxWorkers)");
