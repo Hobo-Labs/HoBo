@@ -66,6 +66,10 @@ export {
 	type WaitingJob,
 } from "./isolated-worker/github-job-poller.js";
 export {
+	selectWorkerImagesForDeletion,
+	type WorkerImage,
+} from "./isolated-worker/image-gc.js";
+export {
 	createWorkerMemoryAdmission,
 	type MemoryAdmissionLog,
 	type WorkerMemoryAdmission,
@@ -79,6 +83,7 @@ export {
 	type WorkerMemoryClassName,
 	type WorkerMemoryConfig,
 } from "./isolated-worker/memory-classes.js";
+export { createPnpmStoreMaintenance } from "./isolated-worker/pnpm-store.js";
 export {
 	attachPostgresPoolErrorHandler,
 	formatPoolErrorLog,

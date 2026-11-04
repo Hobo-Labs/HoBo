@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 /** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
@@ -18,6 +18,7 @@ import {
 	createIsolatedContainerController,
 	createJobDurations,
 	createNodeWorkerStorageFileSystem,
+	createPnpmStoreMaintenance,
 	createPollLogFilter,
 	createWorkerMemoryAdmission,
 	createWorkerStorageAdmission,
@@ -108,6 +109,11 @@ const drainTimeoutMs = Number(
 );
 if (!Number.isFinite(drainTimeoutMs) || drainTimeoutMs < 1_000)
 	throw new Error("invalid HOBO_CI_WORKER_DRAIN_TIMEOUT_MS");
+const gcIntervalMs = Number(
+	process.env.HOBO_CI_WORKER_GC_MS ?? String(15 * 60_000),
+);
+if (!Number.isFinite(gcIntervalMs) || gcIntervalMs < 60_000)
+	throw new Error("invalid HOBO_CI_WORKER_GC_MS");
 
 let store: HostedInboxStore & IsolatedWorkerStore;
 let closeStore: () => Promise<void>;
@@ -195,14 +201,24 @@ const workRoot =
 		"work",
 	);
 mkdirSync(workRoot, { recursive: true, mode: 0o755 });
+if (pnpmStore && statSync(pnpmStore).dev !== statSync(workRoot).dev)
+	throw new Error(
+		"pnpm store and work root must share a filesystem for hardlinks",
+	);
 const docker = createCliDockerDriver({ env: process.env });
+const workFs = createNodeWorkerStorageFileSystem();
 const storageAdmission = createWorkerStorageAdmission({
 	dockerDataRoot: await docker.dataRoot(),
 	workRoot,
-	fs: createNodeWorkerStorageFileSystem(),
+	fs: workFs,
 	docker,
+	pnpmStore: pnpmStore
+		? createPnpmStoreMaintenance({ path: pnpmStore, env: process.env })
+		: undefined,
+	builderKeepStorage: process.env.HOBO_CI_WORKER_BUILDER_KEEP_STORAGE ?? "10GB",
 	log,
 });
+await storageAdmission.reap(await store.activeLeases());
 const worker = createIsolatedContainerController({
 	store,
 	github,
@@ -221,9 +237,12 @@ const worker = createIsolatedContainerController({
 	containerEnv: pnpmStore
 		? {
 				npm_config_store_dir: PNPM_STORE_TARGET,
+				npm_config_package_import_method: "hardlink",
 				HOBO_CI_PNPM_STORE_MOUNTED: "1",
 			}
 		: {},
+	workRoot,
+	workFs,
 });
 const host = createCompositeIsolatedHost({ store, worker: worker.host });
 if (!host) throw new Error("worker host unavailable");
@@ -264,11 +283,13 @@ const pollWorthLogging = createPollLogFilter();
 let draining = false;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let jobPollTimer: ReturnType<typeof setInterval> | undefined;
+let gcTimer: ReturnType<typeof setInterval> | undefined;
 let tickInFlight: Promise<void> | undefined;
 let jobPollInFlight: Promise<void> | undefined;
+let gcInFlight: Promise<void> | undefined;
 
 function runTick(): Promise<void> {
-	if (draining) return Promise.resolve();
+	if (draining || gcInFlight) return Promise.resolve();
 	const current = (async () => {
 		// In push mode the hosted relay drains the shared inbox; in pull mode
 		// this worker is the only consumer of its own.
@@ -303,6 +324,21 @@ function runJobPoll(): void {
 		});
 }
 
+function runGc(): void {
+	if (draining || gcInFlight || tickInFlight) return;
+	gcInFlight = store
+		.activeLeases()
+		.then((leases) => storageAdmission.maintain(leases))
+		.catch((error) => {
+			log("hobo_ci_isolated_worker_gc_failed", {
+				message: error instanceof Error ? error.message : "unknown",
+			});
+		})
+		.finally(() => {
+			gcInFlight = undefined;
+		});
+}
+
 log("hobo_ci_isolated_worker_started", {
 	store: plan.store.kind,
 	admission: plan.admission,
@@ -323,9 +359,11 @@ log("hobo_ci_isolated_worker_started", {
 	lendTrunkSlots,
 	workRoot,
 	pnpmStoreMounted: pnpmStore !== "",
+	gcIntervalMs,
 	drainTimeoutMs,
 });
 
+gcTimer = setInterval(runGc, gcIntervalMs);
 pollTimer = setInterval(() => {
 	void runTick().catch((error) => {
 		log("hobo_ci_isolated_worker_tick_failed", {
@@ -346,9 +384,11 @@ async function shutdown(signal: string) {
 		draining = true;
 		if (pollTimer) clearInterval(pollTimer);
 		if (jobPollTimer) clearInterval(jobPollTimer);
+		if (gcTimer) clearInterval(gcTimer);
 		await worker.discardWarm().catch(() => undefined);
 		log("hobo_ci_isolated_worker_draining", { signal });
 		await jobPollInFlight;
+		await gcInFlight;
 		if (tickInFlight) {
 			await tickInFlight.catch(() => undefined);
 		}

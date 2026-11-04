@@ -1,5 +1,6 @@
-import { readdir, rm, statfs } from "node:fs/promises";
+import { lstat, mkdir, readdir, rm, statfs } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { selectWorkerImagesForDeletion, type WorkerImage } from "./image-gc.js";
 
 const SOFT_LIMIT = 0.85;
 const HARD_LIMIT = 0.95;
@@ -12,16 +13,29 @@ export type WorkerFileSystemStats = Readonly<{
 	ffree: number;
 }>;
 
+export type WorkerWorkDirectoryRemoval = Readonly<{
+	bytes: number;
+	entries: number;
+}>;
+
 export type WorkerStorageFileSystem = Readonly<{
 	statfs(path: string): Promise<WorkerFileSystemStats>;
 	jobDirectories(root: string): Promise<readonly string[]>;
-	removeJobDirectory(path: string): Promise<void>;
+	prepareJobDirectory(path: string): Promise<void>;
+	removeJobDirectory(path: string): Promise<WorkerWorkDirectoryRemoval>;
 }>;
 
 export type WorkerStorageDockerDriver = Readonly<{
 	dataRoot(): Promise<string>;
-	pruneBuilder(until: string): Promise<void>;
+	pruneBuilder(until: string, keepStorage: string): Promise<void>;
 	containerExists(name: string): Promise<boolean>;
+	listImages(): Promise<readonly WorkerImage[]>;
+	removeImage(tag: string): Promise<void>;
+	pruneDanglingImages(): Promise<void>;
+}>;
+
+export type WorkerStoragePnpmStore = Readonly<{
+	prune(): Promise<void>;
 }>;
 
 export type WorkerStorageLease = Readonly<{
@@ -56,10 +70,32 @@ export function createNodeWorkerStorageFileSystem(): WorkerStorageFileSystem {
 				)
 				.map((entry) => join(root, entry.name));
 		},
+		async prepareJobDirectory(path) {
+			if (!JOB_DIRECTORY.test(basename(path)))
+				throw new Error("invalid worker job directory");
+			await mkdir(path, { recursive: true, mode: 0o755 });
+		},
 		async removeJobDirectory(path) {
 			if (!JOB_DIRECTORY.test(basename(path)))
 				throw new Error("invalid worker job directory");
+			const measure = async (
+				entryPath: string,
+			): Promise<WorkerWorkDirectoryRemoval> => {
+				const metadata = await lstat(entryPath);
+				if (!metadata.isDirectory())
+					return { bytes: metadata.size, entries: 1 };
+				let bytes = 0;
+				let entries = 1;
+				for (const entry of await readdir(entryPath)) {
+					const child = await measure(join(entryPath, entry));
+					bytes += child.bytes;
+					entries += child.entries;
+				}
+				return { bytes, entries };
+			};
+			const removed = await measure(path);
 			await rm(path, { recursive: true, force: false });
+			return removed;
 		},
 	};
 }
@@ -100,6 +136,8 @@ export function createWorkerStorageAdmission(options: {
 	workRoot: string;
 	fs: WorkerStorageFileSystem;
 	docker: WorkerStorageDockerDriver;
+	pnpmStore?: WorkerStoragePnpmStore;
+	builderKeepStorage?: string;
 	softLimit?: number;
 	hardLimit?: number;
 	log?: WorkerStorageLog;
@@ -119,15 +157,18 @@ export function createWorkerStorageAdmission(options: {
 		);
 	}
 
-	async function prune(activeLeases: readonly WorkerStorageLease[]) {
+	async function attempt(operation: string, run: () => Promise<void>) {
 		try {
-			await options.docker.pruneBuilder("24h");
+			await run();
 		} catch (error) {
 			options.log?.("hobo_ci_storage_prune_failed", {
-				operation: "builder",
+				operation,
 				message: error instanceof Error ? error.message : "unknown",
 			});
 		}
+	}
+
+	async function reap(activeLeases: readonly WorkerStorageLease[]) {
 		const liveNames = new Set(
 			activeLeases.flatMap((lease) => [
 				`hobo-${lease.id}`,
@@ -159,7 +200,32 @@ export function createWorkerStorageAdmission(options: {
 		}
 	}
 
+	async function maintain(activeLeases: readonly WorkerStorageLease[]) {
+		await attempt("builder", () =>
+			options.docker.pruneBuilder("24h", options.builderKeepStorage ?? "10GB"),
+		);
+		try {
+			const images = await options.docker.listImages();
+			for (const tag of selectWorkerImagesForDeletion(images))
+				await attempt(`image:${tag}`, () => options.docker.removeImage(tag));
+		} catch (error) {
+			options.log?.("hobo_ci_storage_prune_failed", {
+				operation: "list-images",
+				message: error instanceof Error ? error.message : "unknown",
+			});
+		}
+		await attempt("dangling-images", () =>
+			options.docker.pruneDanglingImages(),
+		);
+		const pnpmStore = options.pnpmStore;
+		if (pnpmStore && activeLeases.length === 0)
+			await attempt("pnpm-store", () => pnpmStore.prune());
+		await reap(activeLeases);
+	}
+
 	return {
+		reap,
+		maintain,
 		async admit(activeLeases: readonly WorkerStorageLease[]): Promise<boolean> {
 			let before: Pressure[];
 			try {
@@ -182,7 +248,7 @@ export function createWorkerStorageAdmission(options: {
 				hardEpisode = false;
 				return true;
 			}
-			await prune(activeLeases);
+			await maintain(activeLeases);
 			let after: Pressure[];
 			try {
 				after = await sample();

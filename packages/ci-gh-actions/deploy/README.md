@@ -108,7 +108,10 @@ non-secret settings:
 | `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; the startup check still applies |
 | `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Time smaller same-rank jobs may backfill behind a non-fitting head job |
 | `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum active merge-group leases; zero and invalid values are rejected |
-| `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Work root checked for byte/inode pressure and dead job directories |
+| `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host per-job work mounts, teardown and pressure checks; same filesystem as pnpm store |
+| `HOBO_CI_PNPM_STORE_DIR` | `~/.cache/hobo-ci/pnpm-store` | Shared store mounted read-write at `/pnpm-store`; empty disables it |
+| `HOBO_CI_WORKER_GC_MS` | `900000` | Scheduled image/builder/store/dead-workdir GC interval; minimum 60000 |
+| `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` | `10GB` | Storage retained by builder prune in addition to 24-hour retention |
 
 The admitted request becomes the container's `--memory` and `--memory-swap` value and its
 `HOBO_CI_JOB_MEMORY_MB` environment variable. On the 15989 MiB box with a 2048 MiB reserve, the admission
@@ -128,10 +131,14 @@ This keeps `(workers + 1) × heap + 768 <= limit`, including the turbo/Vitest pa
 | `standard` | 4096 MiB | 1664 MiB | 1 |
 | `heavy` | 6144 MiB | 1344 MiB | 3 |
 
-Before each reservation, byte or inode usage above **85%** on Docker's data root or the work root triggers
-builder-cache pruning older than 24 hours and deletion of work dirs only when both their lease is inactive
-and their container is absent. Usage still above **95%** blocks admission and logs `hobo_ci_inode_pressure`
-once per episode. See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for operations and admission logs.
+Each job bind-mounts its host work directory and teardown deletes it, including `node_modules`, after pass,
+failure, cancellation, crash or timeout. Startup reaps only directories with no active lease or container.
+All jobs install from the shared `/pnpm-store` with `npm_config_package_import_method=hardlink`; cross-filesystem
+store/work-root configurations fail startup. Jobs never prune the store. The daemon prunes it only with no
+active job, and runs scheduled GC for fetch intermediates, old deps images (two newest plus `local` and in-use
+images retained), dangling images and builder cache. Byte or inode usage above **85%** triggers the same GC
+before admission. Usage still above **95%** blocks admission and logs `hobo_ci_inode_pressure` once per episode.
+See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for operations and admission logs.
 
 For a release, publish the tested image to your registry and replace
 `HOBO_CI_IMAGE` with its immutable `registry/image@sha256:...` reference. The local

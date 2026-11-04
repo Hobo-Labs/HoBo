@@ -1,10 +1,17 @@
 import { execFile, spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { promisify } from "node:util";
+import { z } from "zod";
 import type { DockerDriver, IsolatedContainerSpec } from "./docker-driver.js";
+import type { WorkerImage } from "./image-gc.js";
 import type { WorkerStorageDockerDriver } from "./storage-admission.js";
 
 const exec = promisify(execFile);
+const dockerImage = z.object({
+	Repository: z.string(),
+	Tag: z.string(),
+	CreatedAt: z.string(),
+});
 
 /** `docker create` flags for the host engine socket (gid matches socket group inside container). */
 export function dockerSocketMountCreateArgs(
@@ -36,14 +43,76 @@ export function createCliDockerDriver(options: {
 				throw new Error("invalid docker data root");
 			return root;
 		},
-		async pruneBuilder(until) {
+		async pruneBuilder(until, keepStorage) {
 			if (!/^\d+[smhd]$/u.test(until))
 				throw new Error("invalid prune interval");
+			if (!/^\d+(?:\.\d+)?[KMGT]B$/u.test(keepStorage))
+				throw new Error("invalid builder keep-storage");
 			await exec(
 				docker,
-				["builder", "prune", "--force", "--filter", `until=${until}`],
+				[
+					"builder",
+					"prune",
+					"--force",
+					"--filter",
+					`until=${until}`,
+					"--keep-storage",
+					keepStorage,
+				],
 				{ env, timeout: 300_000, maxBuffer: 1024 * 1024 },
 			);
+		},
+		async listImages(): Promise<readonly WorkerImage[]> {
+			const [{ stdout }, { stdout: running }] = await Promise.all([
+				exec(docker, ["image", "ls", "--format", "{{json .}}"], {
+					env,
+					timeout: 30_000,
+					maxBuffer: 16 * 1024 * 1024,
+				}),
+				exec(docker, ["ps", "--format", "{{.Image}}"], {
+					env,
+					timeout: 30_000,
+					maxBuffer: 1024 * 1024,
+				}),
+			]);
+			const inUse = new Set(running.split("\n").map((line) => line.trim()));
+			const images = stdout.trim()
+				? stdout
+						.trim()
+						.split("\n")
+						.map((line) => dockerImage.parse(JSON.parse(line)))
+				: [];
+			return images
+				.filter(
+					(image) => image.Repository !== "<none>" && image.Tag !== "<none>",
+				)
+				.map((image) => {
+					const tag = `${image.Repository}:${image.Tag}`;
+					return {
+						tag,
+						created: image.CreatedAt.replace(" ", "T").replace(
+							/ ([+-]\d{2})(\d{2}) UTC$/u,
+							"$1:$2",
+						),
+						inUse: inUse.has(tag),
+					};
+				});
+		},
+		async removeImage(tag) {
+			if (!/^hobo-ci-deps(?:-fetch)?:[A-Za-z0-9_.-]+$/u.test(tag))
+				throw new Error("invalid deps image tag");
+			await exec(docker, ["image", "rm", "--no-prune", tag], {
+				env,
+				timeout: 120_000,
+				maxBuffer: 1024 * 1024,
+			});
+		},
+		async pruneDanglingImages() {
+			await exec(docker, ["image", "prune", "--force"], {
+				env,
+				timeout: 300_000,
+				maxBuffer: 1024 * 1024,
+			});
 		},
 		async containerExists(name) {
 			try {

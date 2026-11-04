@@ -72,6 +72,10 @@ function controller(
 	docker: DockerDriver,
 	active: ReturnType<typeof lease>[],
 	slots: number,
+	container: Readonly<{
+		volumes?: readonly Readonly<{ source: string; target: string }>[];
+		containerEnv?: Readonly<Record<string, string>>;
+	}> = {},
 ) {
 	const transition = vi.fn(async () => undefined);
 	const stub: Pick<
@@ -102,6 +106,7 @@ function controller(
 			workerAccountId: "box",
 			workerImage: "hobo-ci-worker:local",
 			slots,
+			...container,
 		}),
 	};
 }
@@ -149,6 +154,28 @@ describe("isolated worker parallel slots", () => {
 		).toHaveLength(1);
 		await ctl.discardWarm();
 		expect(docker.calls.at(-1)).toMatch(/^remove hobo-warm-/);
+	});
+
+	it("mounts the shared store and selects hardlink imports", async () => {
+		const docker = fakeDocker();
+		const { ctl } = controller(docker, [], 2, {
+			volumes: [{ source: "/srv/pnpm-store", target: "/pnpm-store" }],
+			containerEnv: {
+				npm_config_store_dir: "/pnpm-store",
+				npm_config_package_import_method: "hardlink",
+			},
+		});
+		await ctl.prewarm();
+		expect(docker.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				volumes: [{ source: "/srv/pnpm-store", target: "/pnpm-store" }],
+				env: expect.objectContaining({
+					npm_config_store_dir: "/pnpm-store",
+					npm_config_package_import_method: "hardlink",
+				}),
+			}),
+		);
+		await ctl.discardWarm();
 	});
 
 	it("exports the container memory limit to the runner environment", async () => {
