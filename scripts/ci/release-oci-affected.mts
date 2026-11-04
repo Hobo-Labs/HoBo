@@ -581,15 +581,15 @@ function lsTreeRecords(
 
 /** Pathspecs covering release OCI input hashing — not the whole repo (docs/tests/.github). */
 const RELEASE_INPUT_PATHSPECS = [
-	"packages",
-	"site",
-	"media",
-	"examples",
-	"external",
-	"src",
-	"release",
-	"deploy",
-	"scripts",
+	"packages/",
+	"site/",
+	"media/",
+	"examples/",
+	"external/",
+	"src/",
+	"release/",
+	"deploy/",
+	"scripts/",
 	"mise.toml",
 	"mise.lock",
 	"tsconfig.base.json",
@@ -600,6 +600,15 @@ const RELEASE_INPUT_PATHSPECS = [
 	"turbo.json",
 	OCI_IMAGES_MANIFEST,
 ] as const;
+
+/** Directory cones a sparse checkout needs for every scoped release input blob. */
+export function releaseOciInputSparseCones(): readonly string[] {
+	return Object.freeze(
+		RELEASE_INPUT_PATHSPECS.filter((pathspec) => pathspec.endsWith("/")).map(
+			(pathspec) => pathspec.slice(0, -1),
+		),
+	);
+}
 
 /** Git tree scoped to release OCI inputs (fast on sparse CI checkouts). */
 export function releaseInputGitTree(rev: string, cwd: string): RepoTree {

@@ -4,6 +4,7 @@
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { releaseOciInputSparseCones } from "../ci/release-oci-affected.mts";
 import { loadReleaseOciManifest } from "./release-oci-contract.mts";
 
 /** Repo-root files listed explicitly in sparse cones (not directory cones). */
@@ -103,11 +104,14 @@ const HOBO_RELEASE_DIR_CONES = [
 /** HoBo release (npm + GHCR) jobs using RELEASE_SPARSE_PATHS. */
 export function hoboReleaseSparseCones(repoRoot: string): readonly string[] {
 	return Object.freeze([
-		...HOBO_RELEASE_DIR_CONES,
-		...PINS_SPARSE_CONES,
-		...MISE_LOCK_SPARSE_CONES,
-		...rootVitestSparseCones(repoRoot),
-		...RELEASE_ROOT_FILES,
+		...new Set([
+			...HOBO_RELEASE_DIR_CONES,
+			...releaseOciInputSparseCones(),
+			...PINS_SPARSE_CONES,
+			...MISE_LOCK_SPARSE_CONES,
+			...rootVitestSparseCones(repoRoot),
+			...RELEASE_ROOT_FILES,
+		]),
 	]);
 }
 
@@ -141,11 +145,14 @@ export function hoboCodeReleaseSparseCones(
 	repoRoot: string,
 ): readonly string[] {
 	return Object.freeze([
-		...CODE_RELEASE_DIR_CONES,
-		...PINS_SPARSE_CONES,
-		...MISE_LOCK_SPARSE_CONES,
-		...rootVitestSparseCones(repoRoot),
-		...RELEASE_ROOT_FILES,
+		...new Set([
+			...CODE_RELEASE_DIR_CONES,
+			...releaseOciInputSparseCones(),
+			...PINS_SPARSE_CONES,
+			...MISE_LOCK_SPARSE_CONES,
+			...rootVitestSparseCones(repoRoot),
+			...RELEASE_ROOT_FILES,
+		]),
 	]);
 }
 

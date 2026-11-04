@@ -69,6 +69,9 @@ env:
     deploy
     site
     external
+    media
+    examples
+    src
     tools/pins
     .mise/locks
     mise.toml

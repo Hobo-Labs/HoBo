@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { releaseOciInputSparseCones } from "../ci/release-oci-affected.mts";
 import {
 	assertConeCoversPaths,
 	coneCoversPath,
@@ -99,6 +100,19 @@ describe("release sparse cone requirements", () => {
 			"hobo-code-release-contract",
 			cones,
 			requiredPathsForHoboCodeReleaseContract(root),
+		);
+	});
+
+	it("hobo code release contract cone covers OCI input pathspec directories", () => {
+		const required = releaseOciInputSparseCones();
+		expect(required).toEqual(
+			expect.arrayContaining(["examples", "media", "site", "src"]),
+		);
+		expect(required).not.toContain("package.json");
+		assertConeCoversPaths(
+			"hobo-code-release-oci-inputs",
+			hoboCodeReleaseSparseCones(root),
+			required,
 		);
 	});
 

@@ -50,6 +50,11 @@ env:
     external
     release
     deploy/release-images
+    site
+    media
+    examples
+    src
+    deploy
     tools/pins
     .mise/locks
     mise.toml
