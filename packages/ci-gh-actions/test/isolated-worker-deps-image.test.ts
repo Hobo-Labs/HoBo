@@ -223,13 +223,16 @@ describe("isolated worker deps image selection", () => {
 		]);
 	});
 
-	it("uses the worker image when a job mount hides the deps layer", async () => {
+	it("selects the off-workdir deps layer for a mounted job", async () => {
 		const lease = await reservedLease("Hobo-Labs/HoBo");
 		const docker = fakeDocker();
 		await controller(docker.driver, true).host.launch(lease.id);
-		expect(docker.specs[0]?.image).toBe("hobo-ci-worker:local");
-		expect(docker.specs[0]?.env.HOBO_CI_DEPS_LAYER).toBeUndefined();
-		expect(docker.probeCalls).toEqual([]);
+		expect(docker.specs[0]?.image).toBe("hobo-ci-deps:local");
+		expect(docker.specs[0]?.env.HOBO_CI_DEPS_LAYER).toBe(DEPS_KEY);
+		expect(docker.specs[0]?.env.HOBO_CI_HOST_JOB_DIRECTORY).toBe(
+			join(root, `hobo-${lease.id}`),
+		);
+		expect(docker.probeCalls).toEqual(["hobo-ci-deps:local"]);
 	});
 
 	it("falls back and logs when the deps work directory is unwritable", async () => {

@@ -252,8 +252,9 @@ neither toolchain is available. For a new key, the daemon checks
 not block admission or hold a job slot. The process runs under `nice` and `ionice`,
 and `HOBO_CI_DEPS_BUILD_MEMORY_MB` (default `4096`, minimum `512`) caps both the
 Docker build and its offline verification container. A successful local, pulled,
-or built candidate is tagged `hobo-ci-deps:local` and passed to keep-2 GC.
-`HOBO_CI_DEPS_IMAGE=` disables both selection and this ensure loop.
+or built candidate is tagged `hobo-ci-deps:local` only after the real mounted-job
+contract passes, then passed to keep-2 GC. `HOBO_CI_DEPS_IMAGE=` disables both
+selection and this ensure loop.
 
 Look for `hobo_ci_deps_image_ensure_started` with the selected key before local,
 registry, or build work, then `hobo_ci_deps_image_ensure` with
@@ -263,12 +264,15 @@ exponential backoff capped at 15 minutes. Jobs keep using
 `hobo-ci-worker:local` until deps promotion succeeds; an image build never
 prevents the daemon from admitting other work.
 
-A matching image must also pass a once-per-image-id writability probe as uid/gid
-1000 before selection. Failure logs `hobo_ci_deps_image_fallback` with
-`reason=unwritable-workdir` and uses the worker image. Selection is disabled when
-`HOBO_CI_WORKER_WORK_ROOT` is configured: its per-job bind mount covers
-`_hobo_work`, hiding the image's `.git` and `node_modules`, so exporting the deps
-key would incorrectly let jobs skip installation.
+The final image mirrors repo-relative `node_modules` trees under
+`/opt/hobo-deps`, not the mounted work directory. After checkout,
+`scripts/ci/deps-layer.mts link` links them into the checkout. The matching check
+validates the checkout and payload keys, `.modules.yaml`, virtual store, root and
+workspace `tsx` resolution, and `pnpm exec`; any miss runs the normal install.
+`prepareJobDirectory` pre-creates and chowns the job root, `HoBo`, and `HoBo/HoBo`
+to uid/gid 1000. A once-per-image-id probe checks payload readability and runner
+writability before selection. Failure logs `hobo_ci_deps_image_fallback` with
+`reason=unwritable-workdir` and uses the worker image.
 
 For immediate recovery from an unwritable promoted image, stop the daemon, run
 `docker rmi hobo-ci-deps:local`, and restart it. Alternatively set

@@ -1,6 +1,10 @@
+import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { WorkerImage } from "../src/isolated-worker/image-gc.js";
 import {
+	createNodeWorkerStorageFileSystem,
 	createWorkerStorageAdmission,
 	type WorkerFileSystemStats,
 	type WorkerStorageDockerDriver,
@@ -71,6 +75,26 @@ function harness(
 }
 
 describe("worker storage admission", () => {
+	it("prepares owned checkout directories inside each job mount", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-worker-prepare-"));
+		try {
+			const job = join(root, LIVE);
+			await createNodeWorkerStorageFileSystem().prepareJobDirectory(job);
+			for (const directory of [
+				job,
+				join(job, "HoBo"),
+				join(job, "HoBo", "HoBo"),
+			]) {
+				const metadata = statSync(directory);
+				expect(metadata.uid).toBe(1000);
+				expect(metadata.gid).toBe(1000);
+				expect(metadata.mode & 0o200).not.toBe(0);
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("does not prune below either 85 percent threshold", async () => {
 		const h = harness({ before: usage(85) });
 		await expect(h.admission.admit([])).resolves.toBe(true);

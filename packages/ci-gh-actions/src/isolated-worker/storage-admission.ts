@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, rm, statfs } from "node:fs/promises";
+import { chown, lstat, mkdir, readdir, rm, statfs } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { selectWorkerImagesForDeletion, type WorkerImage } from "./image-gc.js";
 
@@ -73,7 +73,10 @@ export function createNodeWorkerStorageFileSystem(): WorkerStorageFileSystem {
 		async prepareJobDirectory(path) {
 			if (!JOB_DIRECTORY.test(basename(path)))
 				throw new Error("invalid worker job directory");
-			await mkdir(path, { recursive: true, mode: 0o755 });
+			const checkout = join(path, "HoBo", "HoBo");
+			await mkdir(checkout, { recursive: true, mode: 0o755 });
+			for (const directory of [path, join(path, "HoBo"), checkout])
+				await chown(directory, 1000, 1000);
 		},
 		async removeJobDirectory(path) {
 			if (!JOB_DIRECTORY.test(basename(path)))

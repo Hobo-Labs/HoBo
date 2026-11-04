@@ -129,6 +129,7 @@ type DepsImageFallbackLog = {
 };
 type JobContainerEnvironment = {
 	HOBO_CI_DEPS_LAYER?: string;
+	HOBO_CI_HOST_JOB_DIRECTORY?: string;
 	HOBO_CI_JOB_MEMORY_MB: string;
 	NODE_OPTIONS: string;
 	HOBO_CI_RELAY_ORIGIN: string;
@@ -219,7 +220,7 @@ export function createIsolatedContainerController(options: {
 					[
 						"sh",
 						"-c",
-						`test -w ${WORK_TARGET}/HoBo/HoBo && test -w ${WORK_TARGET}/HoBo/HoBo/.git && test -w ${WORK_TARGET}`,
+						"test -w /opt/actions-runner && test -r /opt/hobo-deps/node_modules/.modules.yaml && test -r /opt/hobo-deps/.hobo-ci-deps-key",
 					],
 					"1000:1000",
 				).then(
@@ -234,7 +235,6 @@ export function createIsolatedContainerController(options: {
 		const inspect = options.docker.inspectImage;
 		if (
 			!depsImage ||
-			options.workRoot ||
 			repository.toLowerCase() !== depsRepository.toLowerCase() ||
 			!inspect
 		)
@@ -290,6 +290,7 @@ export function createIsolatedContainerController(options: {
 			HOBO_CI_RUNNER_URL: runner.url,
 		};
 		if (selection.depsKey) env.HOBO_CI_DEPS_LAYER = selection.depsKey;
+		if (jobDirectory) env.HOBO_CI_HOST_JOB_DIRECTORY = jobDirectory;
 		return {
 			name,
 			image: selection.image,
