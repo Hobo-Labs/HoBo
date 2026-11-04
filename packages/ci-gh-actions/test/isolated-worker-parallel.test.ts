@@ -230,6 +230,21 @@ describe("cli docker driver parallel helpers", () => {
 		}
 	});
 
+	it("runs image probes as the requested user without network access", async () => {
+		const { bin, log } = fakeBinary();
+		const driver = createCliDockerDriver({ binary: bin, env: {} });
+		await expect(
+			driver.probeImage?.(
+				"hobo-ci-deps:local",
+				["sh", "-c", "test -w /opt/actions-runner/_hobo_work"],
+				"1000:1000",
+			),
+		).resolves.toEqual({ exitCode: 0 });
+		expect(readFileSync(log, "utf8").trim()).toBe(
+			"run --rm --network none --user 1000:1000 hobo-ci-deps:local sh -c test -w /opt/actions-runner/_hobo_work",
+		);
+	});
+
 	it("bind-mounts shared volumes and runs the runner detached", async () => {
 		const { bin, log } = fakeBinary();
 		const driver = createCliDockerDriver({

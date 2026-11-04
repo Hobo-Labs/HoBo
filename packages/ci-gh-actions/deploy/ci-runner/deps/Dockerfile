@@ -35,6 +35,11 @@ LABEL hobo.ci.deps-key=${DEPS_KEY} \
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} \
   npm_config_store_dir=/pnpm-store \
   npm_config_package_import_method=copy
+USER root
+RUN install -d -o 1000 -g 1000 \
+  /opt/actions-runner/_hobo_work \
+  /opt/actions-runner/_hobo_work/HoBo \
+  /opt/actions-runner/_hobo_work/HoBo/HoBo
 COPY --from=install --chown=1000:1000 \
   /opt/actions-runner/_hobo_work/deps/ \
   /opt/actions-runner/_hobo_work/HoBo/HoBo/

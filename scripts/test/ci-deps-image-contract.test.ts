@@ -43,6 +43,20 @@ describe("CI deps image build contract", () => {
 		assert.ok(!dockerfile.split("AS final")[1]?.includes("RUN pnpm fetch"));
 	});
 
+	it("creates uid-1000-writable work directories before copying dependencies", () => {
+		const final = dockerfile.split("FROM ${TOOLCHAIN_IMAGE} AS final")[1];
+		assert.ok(final);
+		const ownership = final.indexOf(
+			"RUN install -d -o 1000 -g 1000 \\\n  /opt/actions-runner/_hobo_work \\\n  /opt/actions-runner/_hobo_work/HoBo \\\n  /opt/actions-runner/_hobo_work/HoBo/HoBo",
+		);
+		const copy = final.indexOf("COPY --from=install --chown=1000:1000");
+		const user = final.indexOf("USER 1000:1000", copy);
+		assert.ok(ownership > -1);
+		assert.ok(copy > ownership);
+		assert.ok(user > copy);
+		includes(final.slice(0, ownership), "USER root");
+	});
+
 	it("records toolchain, key, workspace, git remote and reproducible epoch", () => {
 		includes(dockerfile, "LABEL hobo.ci.deps-key=${DEPS_KEY}");
 		includes(dockerfile, "hobo.ci.toolchain=${TOOLCHAIN_VERSION}");

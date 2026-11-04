@@ -19,6 +19,7 @@ import type {
 	DockerImageInspection,
 	IsolatedContainerSpec,
 } from "../src/isolated-worker/docker-driver.js";
+import { createNodeWorkerStorageFileSystem } from "../src/isolated-worker/storage-admission.js";
 
 const NOW = "2026-11-02T12:00:00Z";
 const TOOLCHAIN = "v0123456789ab";
@@ -49,6 +50,8 @@ function fakeDocker() {
 		],
 	]);
 	let next = 0;
+	let probeExitCode = 0;
+	const probeCalls: string[] = [];
 	const driver: DockerDriver = {
 		inspectImage: vi.fn(async (image: string) => {
 			inspectCalls.push(image);
@@ -56,6 +59,10 @@ function fakeDocker() {
 			if (inspection instanceof Error) throw inspection;
 			if (!inspection) throw new Error(`missing image ${image}`);
 			return inspection;
+		}),
+		probeImage: vi.fn(async (image: string) => {
+			probeCalls.push(image);
+			return { exitCode: probeExitCode };
 		}),
 		create: vi.fn(async (spec) => {
 			specs.push(spec);
@@ -71,7 +78,16 @@ function fakeDocker() {
 		remove: vi.fn(async () => undefined),
 		isRunning: vi.fn(async () => true),
 	};
-	return { driver, specs, inspectCalls, images };
+	return {
+		driver,
+		specs,
+		inspectCalls,
+		probeCalls,
+		images,
+		setProbeExitCode: (exitCode: number) => {
+			probeExitCode = exitCode;
+		},
+	};
 }
 
 const github: GithubTransport = {
@@ -156,9 +172,9 @@ describe("isolated worker deps image selection", () => {
 		return lease;
 	}
 
-	function controller(driver: DockerDriver) {
+	function controller(driver: DockerDriver, mountWorkRoot = false) {
 		if (!store) throw new Error("fixture store not initialized");
-		return createIsolatedContainerController({
+		const common = {
 			store,
 			github,
 			publicOrigin: "https://relay.example",
@@ -167,16 +183,76 @@ describe("isolated worker deps image selection", () => {
 			workerImage: "hobo-ci-worker:local",
 			slots: 1,
 			now: () => NOW,
-		});
+		};
+		if (mountWorkRoot)
+			return createIsolatedContainerController({
+				...common,
+				workRoot: root,
+				workFs: createNodeWorkerStorageFileSystem(),
+			});
+		return createIsolatedContainerController(common);
 	}
 
-	it("uses the deps image and exports its key for a HoBo lease", async () => {
+	it("uses the deps image and exports its key after a successful probe", async () => {
 		const lease = await reservedLease("hobo-labs/hobo");
 		const docker = fakeDocker();
 		await controller(docker.driver).host.launch(lease.id);
 		expect(docker.specs).toHaveLength(1);
 		expect(docker.specs[0]?.image).toBe("hobo-ci-deps:local");
 		expect(docker.specs[0]?.env.HOBO_CI_DEPS_LAYER).toBe(DEPS_KEY);
+		expect(docker.probeCalls).toEqual(["hobo-ci-deps:local"]);
+	});
+
+	it("probes once per deps image id", async () => {
+		await reservedLease("Hobo-Labs/HoBo");
+		const docker = fakeDocker();
+		const ctl = controller(docker.driver);
+		await ctl.prewarm("Hobo-Labs/HoBo");
+		await ctl.discardWarm();
+		await ctl.prewarm("Hobo-Labs/HoBo");
+		await ctl.discardWarm();
+		expect(docker.probeCalls).toEqual(["hobo-ci-deps:local"]);
+		const deps = docker.images.get("hobo-ci-deps:local");
+		if (!deps || deps instanceof Error) throw new Error("missing fixture");
+		docker.images.set("hobo-ci-deps:local", { ...deps, id: "next-deps-id" });
+		await ctl.prewarm("Hobo-Labs/HoBo");
+		await ctl.discardWarm();
+		expect(docker.probeCalls).toEqual([
+			"hobo-ci-deps:local",
+			"hobo-ci-deps:local",
+		]);
+	});
+
+	it("uses the worker image when a job mount hides the deps layer", async () => {
+		const lease = await reservedLease("Hobo-Labs/HoBo");
+		const docker = fakeDocker();
+		await controller(docker.driver, true).host.launch(lease.id);
+		expect(docker.specs[0]?.image).toBe("hobo-ci-worker:local");
+		expect(docker.specs[0]?.env.HOBO_CI_DEPS_LAYER).toBeUndefined();
+		expect(docker.probeCalls).toEqual([]);
+	});
+
+	it("falls back and logs when the deps work directory is unwritable", async () => {
+		const lease = await reservedLease("Hobo-Labs/HoBo");
+		const docker = fakeDocker();
+		docker.setProbeExitCode(1);
+		const error = vi
+			.spyOn(console, "error")
+			.mockImplementation(() => undefined);
+		try {
+			await controller(docker.driver).host.launch(lease.id);
+			expect(docker.specs[0]?.image).toBe("hobo-ci-worker:local");
+			expect(docker.specs[0]?.env.HOBO_CI_DEPS_LAYER).toBeUndefined();
+			expect(error).toHaveBeenCalledWith(
+				JSON.stringify({
+					event: "hobo_ci_deps_image_fallback",
+					image: "hobo-ci-deps:local",
+					reason: "unwritable-workdir",
+				}),
+			);
+		} finally {
+			error.mockRestore();
+		}
 	});
 
 	it("falls back when the deps toolchain does not match", async () => {

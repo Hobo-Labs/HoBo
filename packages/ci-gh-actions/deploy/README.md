@@ -263,6 +263,18 @@ exponential backoff capped at 15 minutes. Jobs keep using
 `hobo-ci-worker:local` until deps promotion succeeds; an image build never
 prevents the daemon from admitting other work.
 
+A matching image must also pass a once-per-image-id writability probe as uid/gid
+1000 before selection. Failure logs `hobo_ci_deps_image_fallback` with
+`reason=unwritable-workdir` and uses the worker image. Selection is disabled when
+`HOBO_CI_WORKER_WORK_ROOT` is configured: its per-job bind mount covers
+`_hobo_work`, hiding the image's `.git` and `node_modules`, so exporting the deps
+key would incorrectly let jobs skip installation.
+
+For immediate recovery from an unwritable promoted image, stop the daemon, run
+`docker rmi hobo-ci-deps:local`, and restart it. Alternatively set
+`HOBO_CI_DEPS_IMAGE=` (empty) and restart to disable selection and the ensure
+loop. Redeploy the fixed daemon and rebuild the image before re-enabling it.
+
 ## Backup, restore and stop
 
 The SQLite database, WAL and shared-memory files live together in the persistent
