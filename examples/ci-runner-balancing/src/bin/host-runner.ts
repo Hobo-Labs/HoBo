@@ -29,12 +29,20 @@ import {
 	queuedRunsPath,
 	registrationTokenPath,
 	repositoryPath,
+	type RepositoryVisibility,
 	type RunnerAsset,
 	runnerConfigArgs,
 	runnerDownloadsPath,
 	shouldServeAnotherJob,
 } from "../host-runner.js";
-import type { JsonValue } from "../parse.js";
+import {
+	isJsonBoolean,
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	type JsonValue,
+	parseJsonValue,
+} from "../parse.js";
 
 const API_BASE = process.env.HOBO_RB_API_BASE ?? "https://api.github.com";
 
@@ -110,9 +118,30 @@ async function api(pathname: string, method = "GET"): Promise<JsonValue> {
 	if (!response.ok) {
 		throw new Error(`${method} ${pathname} failed with ${response.status}`);
 	}
-	const body = await response.json();
-	// SAFETY: GitHub JSON is untyped; callers narrow the documented response shape.
-	return body as JsonValue;
+	return parseJsonValue(await response.json());
+}
+
+function parseRunnerAssets(value: JsonValue): RunnerAsset[] {
+	if (!Array.isArray(value)) {
+		throw new TypeError("runner downloads response must be an array");
+	}
+	return value.map((entry, index) => {
+		if (
+			!isJsonObject(entry) ||
+			!isJsonString(entry.os) ||
+			!isJsonString(entry.architecture) ||
+			!isJsonString(entry.download_url) ||
+			!isJsonString(entry.filename)
+		) {
+			throw new TypeError(`runner download ${index} has an invalid shape`);
+		}
+		return {
+			os: entry.os,
+			architecture: entry.architecture,
+			download_url: entry.download_url,
+			filename: entry.filename,
+		};
+	});
 }
 
 function run(
@@ -151,15 +180,10 @@ async function ensureRunnerInstalled(
 			"last-resort host runner supports linux and macOS only (the Windows runner uses a different bootstrap)",
 		);
 	}
-	// SAFETY: assertion to `wait api(runnerDownloadsPath(owner, repo))) as | RunnerAsset[] | undefined; ` is required at this boundary.
-	const downloads = (await api(runnerDownloadsPath(owner, repo))) as
-		| RunnerAsset[]
-		| undefined;
-	const asset = pickRunnerAsset(
-		downloads ?? [],
-		process.platform,
-		process.arch,
+	const downloads = parseRunnerAssets(
+		await api(runnerDownloadsPath(owner, repo)),
 	);
+	const asset = pickRunnerAsset(downloads, process.platform, process.arch);
 	if (asset === undefined) {
 		throw new Error(
 			`no actions/runner build for ${process.platform}/${process.arch}`,
@@ -179,11 +203,10 @@ async function ensureRunnerInstalled(
 
 async function queuedRunCount(owner: string, repo: string): Promise<number> {
 	try {
-		// SAFETY: assertion to `wait api(queuedRunsPath(owner, repo))) as { total_count?: number; }; ` is required at this boundary.
-		const body = (await api(queuedRunsPath(owner, repo))) as {
-			total_count?: number;
-		};
-		return Object.prototype.toString.call(body.total_count) === "[object Number]" ? body.total_count : 0;
+		const body = await api(queuedRunsPath(owner, repo));
+		return isJsonObject(body) && isJsonNumber(body.total_count)
+			? body.total_count
+			: 0;
 	} catch {
 		return 0;
 	}
@@ -198,10 +221,9 @@ async function assertSafeToRegister(
 	repo: string,
 	allowPublic: boolean,
 ): Promise<void> {
-	let repository: { private?: boolean; fork_pr_workflows_enabled?: boolean };
+	let body: JsonValue;
 	try {
-		// SAFETY: assertion to `wait api(repositoryPath(owner, repo))) as typeof repository; ` is required at this boundary.
-		repository = (await api(repositoryPath(owner, repo))) as typeof repository;
+		body = await api(repositoryPath(owner, repo));
 	} catch (error) {
 		throw new Error(
 			`HOST_RUNNER_VISIBILITY_UNKNOWN: could not read ${owner}/${repo} to confirm it is private, ` +
@@ -209,17 +231,18 @@ async function assertSafeToRegister(
 				`(${error instanceof Error ? error.message : String(error)})`,
 		);
 	}
-	if (Object.prototype.toString.call(repository.private) !== "[object Boolean]") {
+	if (!isJsonObject(body) || !isJsonBoolean(body.private)) {
 		throw new Error(
 			`HOST_RUNNER_VISIBILITY_UNKNOWN: ${owner}/${repo} did not report its visibility, so registration is refused.`,
 		);
 	}
+	const repository: RepositoryVisibility = { private: body.private };
+	if (isJsonBoolean(body.fork_pr_workflows_enabled)) {
+		repository.forkPullRequestWorkflows = body.fork_pr_workflows_enabled;
+	}
 
 	const verdict = evaluateRegistrationGuard({
-		repository: {
-			private: repository.private,
-			forkPullRequestWorkflows: repository.fork_pr_workflows_enabled,
-		},
+		repository,
 		allowPublic,
 	});
 	if (!verdict.allowed) {
@@ -258,12 +281,11 @@ async function main(): Promise<void> {
 			return;
 		}
 
-		// SAFETY: assertion to `wait api( registrationTokenPath(owner, repo), "POST", )) as { token?: string }; ` is required at this boundary.
-		const registration = (await api(
+		const registration = await api(
 			registrationTokenPath(owner, repo),
 			"POST",
-		)) as { token?: string };
-		if (Object.prototype.toString.call(registration.token) !== "[object String]") {
+		);
+		if (!isJsonObject(registration) || !isJsonString(registration.token)) {
 			throw new Error("registration-token response had no token");
 		}
 		const name = `hobo-last-resort-${hostname()}-${process.pid}-${iteration}`;
