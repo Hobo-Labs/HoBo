@@ -128,6 +128,14 @@ jobs:
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 30
     steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
       - uses: ./.github/actions/hobo-checkout
         with:
           fetch-depth: 2
@@ -246,6 +254,14 @@ jobs:
       matrix:
         image_id: [hobo-sdk, hobo-codegen, hobo-cli, hobo-mcp, hobo-ci-serve, hobo-site]
     steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
       - uses: ./.github/actions/hobo-checkout
         with:
           fetch-depth: 1
@@ -293,6 +309,14 @@ jobs:
       HOBO_RELEASE_VERSION: ${{ github.ref_name || inputs.release_version }}
       HOBO_RELEASE_REVISION: ${{ github.sha }}
     steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
       - uses: ./.github/actions/hobo-checkout
         with:
           fetch-depth: 1
@@ -359,6 +383,14 @@ jobs:
       HOBO_RELEASE_TURBO_BASE: ""
       HOBO_RELEASE_VERSION: ${{ github.ref_name || inputs.release_version }}
     steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
       - uses: ./.github/actions/hobo-checkout
         with:
           fetch-depth: 1
@@ -386,6 +418,14 @@ jobs:
       pages: write
       id-token: write
     steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
       - uses: ./.github/actions/hobo-checkout
         with:
           fetch-depth: 1

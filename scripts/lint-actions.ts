@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { createRequire } from "node:module";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join, relative } from "node:path";
 
 const lintActionsRepoRoot = join(import.meta.dirname, "..");
@@ -145,6 +145,49 @@ function lintWorkflowYamlStrict(file: string, text: string): void {
 	}
 }
 
+function lintLocalActionsNeedCheckoutFirst(
+	file: string,
+	block: readonly string[],
+	jobLine: number,
+): void {
+	const stepsIndex = block.findIndex((line) => line.trim() === "steps:");
+	if (stepsIndex === -1) return;
+	let seenCheckout = false;
+	for (let i = stepsIndex + 1; i < block.length; i++) {
+		const line = block[i] ?? "";
+		if (/^    [A-Za-z0-9_-]+:/.test(line)) break;
+		if (!/^\s+- /.test(line)) continue;
+		const indent = line.match(/^(\s*)-/)?.[1] ?? "      ";
+		let end = i + 1;
+		while (end < block.length && !block[end]?.startsWith(`${indent}- `)) {
+			end += 1;
+		}
+		const step = block.slice(i, end);
+		if (
+			step.some(
+				(entry) =>
+					/^\s+- uses: actions\/checkout@/.test(entry) ||
+					/^\s+uses: actions\/checkout@/.test(entry),
+			)
+		) {
+			seenCheckout = true;
+		}
+		const local = step
+			.map(
+				(entry) =>
+					entry.match(/^\s+- uses:\s+(\.\/[^\s#]+)\s*$/)?.[1] ??
+					entry.match(/^\s+uses:\s+(\.\/[^\s#]+)\s*$/)?.[1],
+			)
+			.find((value) => value !== undefined);
+		if (local && !seenCheckout) {
+			errors.push(
+				`${file}:${jobLine + i + 1}: repo-local action ${local} must follow a pinned actions/checkout step (self-hosted runners do not auto-fetch local actions)`,
+			);
+		}
+		i = end - 1;
+	}
+}
+
 function lintWorkflowYaml(
 	file: string,
 	text: string,
@@ -231,6 +274,7 @@ function lintWorkflowYaml(
 				);
 			}
 		}
+		lintLocalActionsNeedCheckoutFirst(file, block, start + 1);
 	}
 	const firstCheckout = lines.findIndex((line) =>
 		line.includes("actions/checkout@"),
