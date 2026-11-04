@@ -53,7 +53,17 @@
     "typecheck": { "dependsOn": ["^build"], "outputs": [] },
     "lint": { "outputs": [] },
     "test": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
-    "@hobo/code#test": { "dependsOn": ["build", "@hobo/hobo#build", "@hobo/adapter-hono#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "@hobo/code#test": {
+      "dependsOn": ["build", "@hobo/hobo#build", "@hobo/adapter-hono#build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../test/setup/hobo-test-homes.ts",
+        "../../test/setup/isolate-hobo-home.ts",
+        "!**/*.md",
+        "!**/__snapshots__/**"
+      ],
+      "outputs": []
+    },
     "@hobo/conformance#test": { "dependsOn": ["build", "@hobo/storage-sqlite#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/hobo#test": { "dependsOn": ["build", "@hobo/adapter-hono#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/runtime#test": { "dependsOn": ["build", "@hobo/runtime-local#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },

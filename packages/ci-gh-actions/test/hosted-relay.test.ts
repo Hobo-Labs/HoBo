@@ -1321,6 +1321,39 @@ it("reserves a trunk job before an older pull-request job queued ahead of it", a
 	expect(h.store.pendingJobs().map((demand) => demand.id)).toEqual([2]);
 });
 
+it("keeps lower ranks queued while a trunk job cannot reserve a slot", async () => {
+	const h = setup();
+	const offer = h.configuration.accounts[0]?.offers[0];
+	const connection = h.configuration.connections[0];
+	if (!offer || !connection) throw new Error("missing offer or connection");
+	offer.concurrency = 2;
+	connection.allowedEvents = ["push", "pull_request"];
+	connection.allowedRefs = ["refs/heads/main", "refs/heads/feature"];
+	h.store.configure(h.configuration, 1, NOW);
+	withPullRequestRun(h, []);
+	const reserve = h.asyncStore.reserve.bind(h.asyncStore);
+	h.asyncStore.reserve = async (account, demand, at, expected) =>
+		demand.id === 1 ? undefined : reserve(account, demand, at, expected);
+	h.store.queue(job(1), NOW);
+	h.store.queue(pullRequestJob(), NOW);
+	h.api.strictLeaseId = false;
+	await h.relay.dispatchPending();
+	expect(h.store.all()).toEqual([]);
+	expect(h.store.pendingJobs().map((demand) => demand.id)).toEqual([1, 2]);
+	await h.relay.dispatchPending();
+	expect(h.store.all()).toEqual([]);
+	expect(h.store.pendingJobs().map((demand) => demand.id)).toEqual([1, 2]);
+	h.asyncStore.reserve = reserve;
+	await h.relay.dispatchPending();
+	expect(
+		h.store
+			.all()
+			.map((lease) => lease.jobId)
+			.sort(),
+	).toEqual([1, 2]);
+	expect(h.store.pendingJobs()).toEqual([]);
+});
+
 it("launches reserved trunk leases before pull-request leases", async () => {
 	const h = setup();
 	const offer = h.configuration.accounts[0]?.offers[0];
