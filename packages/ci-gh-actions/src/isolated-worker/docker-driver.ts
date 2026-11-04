@@ -49,6 +49,10 @@ export interface DockerDriver {
 	stop(name: string, containerId: string): Promise<void>;
 	remove(name: string, containerId: string): Promise<void>;
 	isRunning(name: string, containerId: string): Promise<boolean>;
+	exitState?(
+		name: string,
+		containerId: string,
+	): Promise<Readonly<{ exitCode: number; oomKilled: boolean }>>;
 	/** Whether `path` exists inside the running container; rejects when docker cannot say. */
 	exists?(name: string, containerId: string, path: string): Promise<boolean>;
 }

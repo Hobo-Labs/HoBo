@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { capVitestWorkers } from "../../../scripts/ci/vitest-max-workers.mts";
 
 // The real lane: the real `opensesame`, the plugin's test build, a sealed
 // store, a recording TLS upstream. It needs HOBO_OPENSESAME_KIT (see
@@ -11,6 +12,6 @@ export default defineConfig({
 		testTimeout: 180_000,
 		hookTimeout: 120_000,
 		fileParallelism: false,
-		maxWorkers: 1,
+		maxWorkers: capVitestWorkers(1),
 	},
 });
