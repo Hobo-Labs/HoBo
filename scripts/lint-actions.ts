@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
 
 const root = join(process.cwd(), ".github");
 const workflowDir = join(root, "workflows");
@@ -22,10 +22,11 @@ const activeCiFiles = new Set([
 	"hobo-ci.yml",
 	"examples-e2e.yml",
 	"dev-env-smoke.yml",
+	"pricing-ci.yml",
 	"release-hobo.yml",
 	"release-code.yml",
-	"pricing-ci.yml",
 	"release-pricing.yml",
+	"release-ts-autocode.yml",
 ]);
 const allowedEnabled = new Set([acceptanceFile, ...activeCiFiles]);
 
@@ -57,6 +58,23 @@ function isPullRequestOnlyJob(
 		/github\.event_name\s*==\s*['"]pull_request['"]/.test(condition) &&
 		!condition.includes("||")
 	);
+}
+
+function lintPinnedActionRefs(file: string, text: string): void {
+	const lines = text.split(/\r?\n/);
+	for (const [index, line] of lines.entries()) {
+		const match = line.match(/^\s*-?\s*uses:\s*([^@\s]+)@(\S+)\s*$/);
+		if (!match) continue;
+		const action = match[1];
+		const ref = match[2];
+		if (!action || !ref) continue;
+		if (ref.startsWith("./")) continue;
+		if (!/^[0-9a-f]{40}$/.test(ref)) {
+			errors.push(
+				`${file}:${index + 1}: ${action} must pin a full commit SHA, not @${ref}`,
+			);
+		}
+	}
 }
 
 function lintWorkflowYaml(
@@ -119,6 +137,14 @@ function lintWorkflowYaml(
 				if (!step.some((entry) => entry.trim() === "clean: false")) {
 					errors.push(
 						`${file}:${start + index + 1}: box checkout at the default path must set clean: false`,
+					);
+				}
+				const cleanCount = step.filter(
+					(entry) => entry.trim() === "clean: false",
+				).length;
+				if (cleanCount > 1) {
+					errors.push(
+						`${file}:${start + index + 1}: checkout must set clean: false once (duplicate keys break workflow parsing)`,
 					);
 				}
 			}
@@ -188,20 +214,31 @@ function lintWorkflowYaml(
 		}
 	}
 	if (!requireDisabledJobs) {
-		for (const [index, line] of lines.entries()) {
-			const match = line.match(/^\s*-?\s*uses:\s*([^@\s]+)@(\S+)\s*$/);
-			if (!match) continue;
-			const action = match[1];
-			const ref = match[2];
-			if (!action || !ref) continue;
-			if (ref.startsWith("./")) continue;
-			if (!/^[0-9a-f]{40}$/.test(ref)) {
-				errors.push(
-					`${file}:${index + 1}: ${action} must pin a full commit SHA, not @${ref}`,
-				);
-			}
-		}
+		lintPinnedActionRefs(file, text);
 	}
+}
+
+function lintCompositeActions(): void {
+	const actionsRoot = join(root, "actions");
+	if (!existsSync(actionsRoot)) return;
+	const walk = (directory: string): void => {
+		for (const name of readdirSync(directory)) {
+			const path = join(directory, name);
+			const stat = statSync(path);
+			if (stat.isDirectory()) {
+				walk(path);
+				continue;
+			}
+			if (name !== "action.yml" && name !== "action.yaml") continue;
+			const rel = relative(join(process.cwd(), ".github"), path).replaceAll(
+				"\\",
+				"/",
+			);
+			const text = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+			lintPinnedActionRefs(rel, text);
+		}
+	};
+	walk(actionsRoot);
 }
 
 for (const file of recognizedFiles) {
@@ -228,6 +265,8 @@ for (const file of files) {
 	const text = readFileSync(path, "utf8");
 	lintWorkflowYaml(file, text, true);
 }
+
+lintCompositeActions();
 
 if (errors.length > 0) {
 	for (const error of errors) console.error(`ERR ${error}`);

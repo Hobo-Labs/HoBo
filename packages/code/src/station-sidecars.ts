@@ -354,6 +354,10 @@ async function spawnPersistentEvidence(
 						// ready file is best-effort
 					}
 					const pid = parsed.pid;
+					const pidFile = options.env?.HOBO_CODE_SIDECAR_PIDFILE?.trim();
+					if (pidFile) {
+						writeFileSync(pidFile, `${String(pid)}\n`, { mode: 0o600 });
+					}
 					return {
 						url: parsed.url,
 						reportUrl: parsed.reportUrl,
@@ -374,20 +378,31 @@ async function spawnPersistentEvidence(
 		await new Promise((resolve) => setTimeout(resolve, 50));
 	}
 	try {
-		process.kill(child.pid, "SIGTERM");
+		killProcessGroup(child.pid, "SIGTERM");
 	} catch {
 		// already gone
 	}
 	throw new Error("Station Evidence sidecar did not become ready");
 }
 
+function killProcessGroup(
+	pid: number,
+	signal: NodeJS.Signals = "SIGTERM",
+): void {
+	try {
+		process.kill(-pid, signal);
+	} catch {
+		try {
+			process.kill(pid, signal);
+		} catch {
+			// occupancy teardown is best-effort
+		}
+	}
+}
+
 function killEvidencePid(pid: number | undefined): void {
 	if (!pidAlive(pid) || pid === undefined) return;
-	try {
-		process.kill(pid, "SIGTERM");
-	} catch {
-		// occupancy teardown is best-effort
-	}
+	killProcessGroup(pid, "SIGTERM");
 }
 
 async function waitForEvidenceDown(
@@ -401,11 +416,7 @@ async function waitForEvidenceDown(
 		await new Promise((resolve) => setTimeout(resolve, 40));
 	}
 	if (pidAlive(pid) && pid !== undefined) {
-		try {
-			process.kill(pid, "SIGKILL");
-		} catch {
-			// last resort
-		}
+		killProcessGroup(pid, "SIGKILL");
 	}
 }
 

@@ -3,7 +3,9 @@ import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	cpSync,
+	existsSync,
 	mkdirSync,
+	readdirSync,
 	rmSync,
 	statSync,
 	writeFileSync,
@@ -77,7 +79,7 @@ export const RELEASE_OCI_STAGE_SPECS = {
 	"hobo-ci-serve": {
 		kind: "deploy",
 		packageName: "@hobo/ci-gh-actions",
-		buildFilter: "@hobo/ci-gh-actions",
+		buildFilter: "@hobo/ci-gh-actions...",
 		appPath: "app",
 	},
 	"hobo-sdk": { kind: "sdk", artifactsPath: "artifacts" },
@@ -103,14 +105,58 @@ function run(root: string, command: string, args: readonly string[]): void {
 	}
 }
 
-function turboBuild(root: string, filters: readonly string[]): void {
-	run(root, "pnpm", [
+export function resolveReleaseTurboBase(
+	root: string,
+	configuredBase = process.env.HOBO_RELEASE_TURBO_BASE,
+): string | undefined {
+	const base = configuredBase?.trim();
+	if (!base) return undefined;
+	const refExists = (ref: string): boolean =>
+		spawnSync(
+			"git",
+			[
+				"rev-parse",
+				"--verify",
+				"--quiet",
+				"--end-of-options",
+				`${ref}^{commit}`,
+			],
+			{ cwd: root, stdio: "ignore" },
+		).status === 0;
+	if (refExists(base)) return base;
+	if (base === "origin/main" && refExists("HEAD^1")) return "HEAD^1";
+	throw new Error(
+		`HOBO_RELEASE_TURBO_BASE=${base} does not resolve to a commit; fetch that ref or use HEAD^1 on a sparse pull-request checkout`,
+	);
+}
+
+export function releaseOciTurboBuildArgs(
+	root: string,
+	imageFilters: readonly string[],
+): string[] {
+	const base = resolveReleaseTurboBase(root);
+	return [
 		"exec",
 		"turbo",
 		"run",
 		"build",
-		...filters.map((filter) => `--filter=${filter}`),
-	]);
+		...(base ? [`--filter=...[${base}...HEAD]`] : []),
+		...imageFilters.map((filter) => `--filter=${filter}`),
+	];
+}
+
+function turboBuild(root: string, filters: readonly string[]): void {
+	run(root, "pnpm", releaseOciTurboBuildArgs(root, filters));
+}
+
+function installSdkTarballsIntoApp(appDir: string, artifactsDir: string): void {
+	const tarballs = readdirSync(artifactsDir)
+		.filter((name) => name.endsWith(".tgz"))
+		.map((name) => join(artifactsDir, name));
+	if (tarballs.length === 0) {
+		throw new Error(`no SDK tarballs under ${artifactsDir}`);
+	}
+	run(appDir, "npm", ["install", "--ignore-scripts", "--no-save", ...tarballs]);
 }
 
 export type ReleaseOciStagingLocation =
@@ -204,10 +250,14 @@ function deployPackage(
 	spec: DeployStage,
 	skipBuild: boolean,
 	hardlink: boolean,
+	sdkArtifactsDir?: string,
 ): void {
 	if (!skipBuild) turboBuild(root, [spec.buildFilter]);
 	const appDir = join(stagingRoot, spec.appPath);
 	run(root, "pnpm", releaseOciDeployArgs(spec.packageName, appDir, hardlink));
+	if (sdkArtifactsDir) {
+		installSdkTarballsIntoApp(appDir, sdkArtifactsDir);
+	}
 	if (spec.wrappers?.length) {
 		const binDir = join(appDir, "bin");
 		mkdirSync(binDir, { recursive: true });
@@ -247,7 +297,13 @@ function stageSite(
 	skipBuild: boolean,
 ): void {
 	if (!skipBuild) turboBuild(root, ["hobo-site..."]);
-	cpSync(join(root, "site/dist"), join(stagingRoot, spec.distPath), {
+	const siteDist = join(root, "site/dist");
+	if (!existsSync(siteDist)) {
+		throw new Error(
+			`site build output missing: ${siteDist}; run the full hobo-site Turbo build before staging`,
+		);
+	}
+	cpSync(siteDist, join(stagingRoot, spec.distPath), {
 		recursive: true,
 	});
 	cpSync(
@@ -269,16 +325,36 @@ export function releaseOciDockerignore(spec: ReleaseOciStageSpec): string {
 	}
 }
 
+export function releaseOciAffectedImageIds(
+	env: Readonly<Record<string, string | undefined>> = process.env,
+): readonly string[] | undefined {
+	const value = env.HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS;
+	if (value === undefined) return undefined;
+	return value.split(/\s+/).filter(Boolean);
+}
+
 export function stageReleaseOciApp(
 	imageId: string,
 	stagingRoot: string,
-	options: { root?: string; skipBuild?: boolean; hardlink?: boolean } = {},
+	options: {
+		root?: string;
+		skipBuild?: boolean;
+		hardlink?: boolean;
+		sdkArtifactsDir?: string;
+		env?: Readonly<Record<string, string | undefined>>;
+	} = {},
 ): void {
 	const spec = Object.entries(RELEASE_OCI_STAGE_SPECS).find(
 		([id]) => id === imageId,
 	)?.[1];
 	if (!spec) throw new Error(`unknown release image id: ${imageId}`);
 	const root = options.root ?? defaultRoot;
+	const affectedImageIds = releaseOciAffectedImageIds(options.env);
+	if (affectedImageIds && !affectedImageIds.includes(imageId)) {
+		throw new Error(
+			`release image ${imageId} is not in HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS; refusing to stage an unaffected image`,
+		);
+	}
 	const output = resolve(stagingRoot);
 	if (output === parse(output).root || output === root) {
 		throw new Error(`refusing unsafe staging root: ${output}`);
@@ -294,6 +370,8 @@ export function stageReleaseOciApp(
 				spec,
 				options.skipBuild ?? false,
 				options.hardlink ?? false,
+				options.sdkArtifactsDir ??
+					(process.env.HOBO_SDK_ARTIFACTS_DIR?.trim() || undefined),
 			);
 			break;
 		case "sdk":

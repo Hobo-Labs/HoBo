@@ -143,6 +143,12 @@ describe("SOURCE_DATE_EPOCH", () => {
 		}
 	});
 
+	test("Unix epoch seconds from CI deps image are accepted", async () => {
+		await expect(
+			build(sourceRoot(), { sourceDateEpoch: "1704067200" }),
+		).resolves.toBeDefined();
+	});
+
 	test("the epoch reaches the recorded metadata", async () => {
 		// It is an input to the digest; recording it is what lets someone
 		// reproduce the build later.

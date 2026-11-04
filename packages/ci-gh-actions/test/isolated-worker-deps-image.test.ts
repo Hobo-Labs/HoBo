@@ -51,6 +51,7 @@ function fakeDocker() {
 	let next = 0;
 	let probeExitCode = 0;
 	const probeCalls: string[] = [];
+	const resourceUpdates: { containerId: string; cpuShares: number }[] = [];
 	const driver: DockerDriver = {
 		inspectImage: vi.fn(async (image: string) => {
 			inspectCalls.push(image);
@@ -73,6 +74,9 @@ function fakeDocker() {
 		execDetached: vi.fn(async () => ({ exitCode: 0 })),
 		writeSecret: vi.fn(async () => undefined),
 		rename: vi.fn(async () => undefined),
+		updateResources: vi.fn(async (containerId, weights) => {
+			resourceUpdates.push({ containerId, cpuShares: weights.cpuShares });
+		}),
 		stop: vi.fn(async () => undefined),
 		remove: vi.fn(async () => undefined),
 		isRunning: vi.fn(async () => true),
@@ -80,6 +84,7 @@ function fakeDocker() {
 	return {
 		driver,
 		specs,
+		resourceUpdates,
 		inspectCalls,
 		probeCalls,
 		images,
@@ -262,6 +267,40 @@ describe("isolated worker deps image selection", () => {
 		} finally {
 			error.mockRestore();
 		}
+	});
+
+	it("gives trunk containers high CPU and IO weights and PR containers low weights", async () => {
+		const trunkLease = await reservedLease("Hobo-Labs/HoBo");
+		const trunkDocker = fakeDocker();
+		await controller(trunkDocker.driver).host.launch(trunkLease.id, "hobo", 0);
+		expect(trunkDocker.specs[0]).toMatchObject({
+			cpuShares: 8_192,
+			blkioWeight: 800,
+		});
+
+		const prLease = await reservedLease("Hobo-Labs/HoBo");
+		const prDocker = fakeDocker();
+		await controller(prDocker.driver).host.launch(prLease.id, "hobo", 1);
+		expect(prDocker.specs[0]).toMatchObject({
+			cpuShares: 512,
+			blkioWeight: 200,
+		});
+	});
+
+	it("starts a warm spare at PR weight and updates it for trunk assignment", async () => {
+		const lease = await reservedLease("Hobo-Labs/HoBo");
+		const docker = fakeDocker();
+		const ctl = controller(docker.driver);
+		await ctl.prewarm("Hobo-Labs/HoBo");
+		expect(docker.specs[0]).toMatchObject({
+			cpuShares: 512,
+			blkioWeight: 200,
+		});
+		await ctl.host.launch(lease.id, "hobo-trunk", 0);
+		expect(docker.specs).toHaveLength(1);
+		expect(docker.resourceUpdates).toEqual([
+			{ containerId: `${"0".repeat(63)}1`, cpuShares: 8_192 },
+		]);
 	});
 
 	it("claims the layer on a job mount because the payload is outside it and probed", async () => {
