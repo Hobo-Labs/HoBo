@@ -19,6 +19,14 @@ export default mergeConfig(
 			// at ~5.9 GB, past a 6 GiB job container (exit 137). Two per worker peaks
 			// at ~3.6 GB in the same wall time: the cases wait on the CLI, not the CPU.
 			maxConcurrency: 2,
+			server: {
+				deps: {
+					// Load built workspace exports natively instead of re-transforming the
+					// dependency graph. The CLI stays inline: its dynamic bindle imports
+					// need Vite to resolve .js specifiers in TypeScript sources.
+					external: [/\/packages\/(?!cli\/).*\/dist\//u],
+				},
+			},
 			// `include` stays per project: mergeConfig concatenates arrays, so a
 			// top-level include would put every file in both projects.
 			projects: [

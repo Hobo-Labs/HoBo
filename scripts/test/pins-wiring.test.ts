@@ -57,7 +57,7 @@ describe("pins wiring", () => {
 		const job = jobText(read(".github/workflows/hobo-ci.yml"), "pr-gate");
 		const checkout = job.indexOf("actions/checkout@");
 		const status = job.indexOf(`run: ${BOOTSTRAP} --status --offline`);
-		const install = job.indexOf("pnpm install");
+		const install = job.indexOf("scripts/ci/pnpm-install.mts");
 		assert.ok(checkout >= 0 && status > checkout, "status runs after checkout");
 		assert.ok(install > status, "status runs before pnpm install");
 		assert.match(

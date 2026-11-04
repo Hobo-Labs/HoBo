@@ -22,7 +22,13 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdtempSync,
+	readdirSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -85,6 +91,29 @@ export function probeReflink(dir: string): boolean {
 	}
 }
 
+function restoreOwnerAccess(dir: string): void {
+	try {
+		chmodSync(dir, 0o700);
+		for (const entry of readdirSync(dir, { withFileTypes: true })) {
+			if (entry.isDirectory()) restoreOwnerAccess(join(dir, entry.name));
+		}
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+			return;
+		}
+		throw error;
+	}
+}
+
+export function removeOverlayProbe(probe: string): void {
+	try {
+		restoreOwnerAccess(probe);
+		rmSync(probe, { recursive: true, force: true });
+	} catch {
+		// Cleanup failure must not change the probe result.
+	}
+}
+
 /**
  * Can we mount an overlay in an unprivileged user namespace **on this
  * filesystem**?
@@ -122,7 +151,7 @@ export function probeOverlayfs(dir: string = tmpdir()): boolean {
 	} catch {
 		return false;
 	} finally {
-		rmSync(probe, { recursive: true, force: true });
+		removeOverlayProbe(probe);
 	}
 }
 
