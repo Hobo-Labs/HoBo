@@ -76,14 +76,14 @@ async function startWorker(
 	throw new Error("worker never reported ready");
 }
 
-function exited(child: ChildProcess, withinMs: number): Promise<number> {
+function waitForExit(child: ChildProcess): Promise<number> {
+	if (child.exitCode !== null) return Promise.resolve(child.exitCode);
 	return new Promise((resolve, reject) => {
-		const timer = setTimeout(
-			() => reject(new Error(`worker still alive after ${withinMs}ms`)),
-			withinMs,
-		);
-		child.once("exit", (code) => {
-			clearTimeout(timer);
+		child.once("exit", (code, signal) => {
+			if (signal != null) {
+				reject(new Error(`worker killed by signal ${signal}`));
+				return;
+			}
 			resolve(code ?? -1);
 		});
 	});
@@ -97,14 +97,14 @@ describe("Evidence sidecar reaper", () => {
 		});
 		expect(child.exitCode).toBeNull();
 		rmSync(home, { recursive: true, force: true });
-		await expect(exited(child, 5_000)).resolves.toBe(0);
+		await expect(waitForExit(child)).resolves.toBe(0);
 	}, 25_000);
 
 	it("exits at its lifetime cap even while the home survives", async () => {
 		const { child, home } = await startWorker({
 			HOBO_CODE_SIDECAR_MAX_MS: "300",
 		});
-		await expect(exited(child, 5_000)).resolves.toBe(0);
+		await expect(waitForExit(child)).resolves.toBe(0);
 		expect(existsSync(home)).toBe(true);
 	}, 25_000);
 

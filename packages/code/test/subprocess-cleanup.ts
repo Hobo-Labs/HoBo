@@ -107,8 +107,23 @@ function isEphemeralEvidenceSidecar(pid: number): boolean {
 	);
 }
 
+/** Still-running child of this vitest worker: a sibling test owns its teardown. */
+function isTrackedStillRunning(pid: number): boolean {
+	for (const child of trackedChildren) {
+		if (
+			child.pid === pid &&
+			child.exitCode === null &&
+			child.signalCode === null
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
 /** Sidecar outlived its HOBO_HOME directory (true leak), not a sibling parallel test. */
 function isOrphanedEphemeralEvidenceSidecar(pid: number): boolean {
+	if (isTrackedStillRunning(pid)) return false;
 	const home = hoboHomeForPid(pid);
 	if (home === undefined || !isEphemeralEvidenceSidecar(pid)) return false;
 	return !existsSync(home);
