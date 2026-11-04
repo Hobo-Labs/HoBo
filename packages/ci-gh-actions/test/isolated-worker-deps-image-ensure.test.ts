@@ -4,9 +4,11 @@ import {
 	type DepsImageAction,
 	type DepsImageEvent,
 	type DepsImageProcessRequest,
+	defaultDepsRoot,
 } from "../src/isolated-worker/deps-image.js";
 
-const KEY = "v0123456789ab-0123456789abcdef";
+const TOOLCHAIN = "v0123456789ab";
+const KEY = `${TOOLCHAIN}-0123456789abcdef`;
 const CANDIDATE = `hobo-ci-deps:${KEY}`;
 const REMOTE = `ghcr.io/hobo-labs/hobo/hobo-ci-deps:${KEY}`;
 
@@ -42,6 +44,7 @@ function harness() {
 		git: { defaultBranchHead: vi.fn(async () => head) },
 		fs: { depsKey: vi.fn(async () => key) },
 		docker: {
+			toolchain: vi.fn(async (_root: string) => TOOLCHAIN),
 			imageExists: vi.fn(async (image: string) => images.has(image)),
 			pull: vi.fn(async (image: string) => {
 				dockerCalls.push(`pull ${image}`);
@@ -97,6 +100,7 @@ function harness() {
 
 function ensured(events: readonly DepsImageEvent[], action: DepsImageAction) {
 	expect(events).toEqual([
+		{ event: "hobo_ci_deps_image_ensure_started", key: KEY },
 		{
 			event: "hobo_ci_deps_image_ensure",
 			key: KEY,
@@ -107,6 +111,24 @@ function ensured(events: readonly DepsImageEvent[], action: DepsImageAction) {
 }
 
 describe("worker-owned deps image ensure", () => {
+	it("defaults the deps root from the daemon module instead of its service cwd", () => {
+		expect(
+			defaultDepsRoot(
+				"file:///srv/HoBo/packages/ci-gh-actions/scripts/isolated-worker-daemon-main.mts",
+			),
+		).toBe("/srv/HoBo");
+	});
+
+	it("computes the candidate key from the resolved worker toolchain", async () => {
+		const fake = harness();
+		await createDepsImageEnsurer(fake.options).ensure();
+		expect(fake.options.docker.toolchain).toHaveBeenCalledWith("/checkout");
+		expect(fake.options.fs.depsKey).toHaveBeenCalledWith(
+			"/checkout",
+			TOOLCHAIN,
+		);
+	});
+
 	it("pulls a missing image, promotes it, and runs keep-2 GC", async () => {
 		const fake = harness();
 		const result = await createDepsImageEnsurer(fake.options).ensure();
@@ -200,7 +222,11 @@ describe("worker-owned deps image ensure", () => {
 			message: "build failed",
 			retryMs: 100,
 		});
-		expect(fake.events[0]).toMatchObject({
+		expect(fake.events[0]).toEqual({
+			event: "hobo_ci_deps_image_ensure_started",
+			key: KEY,
+		});
+		expect(fake.events[1]).toMatchObject({
 			event: "hobo_ci_deps_image_ensure_failed",
 			retryMs: 100,
 		});
