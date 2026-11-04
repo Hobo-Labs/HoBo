@@ -417,7 +417,9 @@ let gcInFlight: Promise<void> | undefined;
 function runTick(): Promise<void> {
 	if (draining || gcInFlight) return Promise.resolve();
 	const current = (async () => {
-		liveWorkerLeaseIds = (await worker.reconcileLeases()).liveLeaseIds;
+		const reconciliation = await worker.reconcileLeases();
+		liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+		if (!reconciliation.inventoryKnown) return;
 		// In push mode the hosted relay drains the shared inbox; in pull mode
 		// this worker is the only consumer of its own.
 		await runtime.tick({ maxDeliveries: poller ? 10 : 0 });
@@ -549,9 +551,9 @@ async function shutdown(signal: string) {
 			await tickInFlight.catch(() => undefined);
 		}
 		const reconcileDrain = async () => {
-			liveWorkerLeaseIds = (await worker.reconcileLeases({ draining: true }))
-				.liveLeaseIds;
-			await runtime.tick({ admit: false });
+			const reconciliation = await worker.reconcileLeases({ draining: true });
+			liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+			if (reconciliation.inventoryKnown) await runtime.tick({ admit: false });
 		};
 		const inFlight = async () => liveWorkerLeaseIds.size;
 		await reconcileDrain();
