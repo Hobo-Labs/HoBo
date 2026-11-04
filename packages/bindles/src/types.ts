@@ -273,7 +273,7 @@ export interface BindleDefinition {
 	entrypoint(name: string): BindleEntrypoint | undefined;
 }
 
-export type DeclaredComponent = new () => BindleHandlerObject;
+export type DeclaredComponent = new () => object;
 
 export interface BindleHandlerObject {
 	readonly [key: string]: JsonValue | undefined;

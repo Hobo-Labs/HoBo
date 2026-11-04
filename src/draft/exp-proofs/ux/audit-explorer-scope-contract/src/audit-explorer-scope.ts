@@ -448,7 +448,7 @@ export function classifyAuditExplorerRequest(request: JsonValue): ScopeClassific
   return { owner: "Audit Explorer", inScope: true };
 }
 
-export function validateAuditExplorerScope(scope: JsonValue): ScopeValidation {
+export function validateAuditExplorerScope(scope: AuditExplorerScope | JsonValue): ScopeValidation {
   const errors: string[] = [];
 
   if (!scope || !isJsonObject(scope)) {

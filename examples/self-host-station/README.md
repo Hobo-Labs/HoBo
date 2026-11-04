@@ -51,3 +51,7 @@ hobo doctor
 ```sh
 pnpm --filter @hobo/example-self-host-station test
 ```
+
+## Maintenance
+
+Station initialization builds its options immutably so readonly configuration remains type-safe.
