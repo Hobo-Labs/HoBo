@@ -915,10 +915,17 @@ Run **41773556225** exposed the first implementation's miss and cleanup costs:
   no layer existed. Its checks also found the two readonly `deps-key.mts` assignments, now built immutably.
 
 The fetch and offline install now share the persistent host store through the same BuildKit
-`hobo-pnpm-store` cache mount. The install stage moves each `node_modules` tree and the `.git` skeleton to a
-separate staging directory; the final stage copies only that directory, with no deletion pass and no fetch store
-or staged manifests. A new build still must report `Already up to date` from
+`hobo-pnpm-store` cache mount. One multi-stage build performs both phases, with `RUN --network=none` on install,
+so no 6–10 GB `hobo-ci-deps-fetch:*` intermediate is tagged. The install stage moves each `node_modules` tree and
+the `.git` skeleton to a separate staging directory; the final stage copies only that directory, with no deletion
+pass and no fetch store or staged manifests. A new build still must report `Already up to date` from
 `pnpm install --frozen-lockfile --offline --config.confirmModulesPurge=false` before promotion.
+
+Each keyed `hobo-ci-deps:*` candidate is also 6–10 GB. Building one per lockfile hash without reaping old keys drove
+the box to **95% inode use twice**. After a successful build or promotion, the collector keeps at most two keyed
+images: the current key and newest previous key by creation time. It never removes `hobo-ci-deps:local`, the current
+key, or an image used by a running container; it deletes all unused legacy fetch tags and runs `docker image prune
+-f` for dangling layers. The workflow's cache-hit promotion path runs the same collector.
 
 Every event checks the exact local key first, then GHCR, and skips the build on either hit. A local hit only
 computes the key, inspects and tags the image. A GHCR-only hit confirms the manifest and materializes the
