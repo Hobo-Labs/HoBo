@@ -7,7 +7,7 @@ describe("resolveWorkerSlotConfig", () => {
 	])("reserves one trunk slot by default with %i slots", (slots) => {
 		expect(
 			resolveWorkerSlotConfig({ HOBO_CI_WORKER_SLOTS: String(slots) }),
-		).toEqual({ slots, trunkSlots: 1, mergeGroupLeases: 1 });
+		).toEqual({ slots, trunkSlots: 1, mergeGroupLeases: 1, prCapWithTrunk: 1 });
 	});
 
 	it("reserves no trunk slot by default on a single-slot worker", () => {
@@ -15,6 +15,7 @@ describe("resolveWorkerSlotConfig", () => {
 			slots: 1,
 			trunkSlots: 0,
 			mergeGroupLeases: 1,
+			prCapWithTrunk: 1,
 		});
 	});
 
@@ -24,8 +25,14 @@ describe("resolveWorkerSlotConfig", () => {
 				HOBO_CI_WORKER_SLOTS: "3",
 				HOBO_CI_WORKER_TRUNK_SLOTS: "2",
 				HOBO_CI_WORKER_MERGE_GROUP_LEASES: "2",
+				HOBO_CI_WORKER_PR_CAP_WITH_TRUNK: "0",
 			}),
-		).toEqual({ slots: 3, trunkSlots: 2, mergeGroupLeases: 2 });
+		).toEqual({
+			slots: 3,
+			trunkSlots: 2,
+			mergeGroupLeases: 2,
+			prCapWithTrunk: 0,
+		});
 		expect(() =>
 			resolveWorkerSlotConfig({
 				HOBO_CI_WORKER_SLOTS: "2",
@@ -48,4 +55,15 @@ describe("resolveWorkerSlotConfig", () => {
 			}),
 		).toThrow("invalid HOBO_CI_WORKER_MERGE_GROUP_LEASES");
 	});
+
+	it.each(["", "-1", "1.5", "1e0", "nope", "9"])(
+		"rejects invalid PR cap with trunk %s",
+		(value) => {
+			expect(() =>
+				resolveWorkerSlotConfig({
+					HOBO_CI_WORKER_PR_CAP_WITH_TRUNK: value,
+				}),
+			).toThrow("invalid HOBO_CI_WORKER_PR_CAP_WITH_TRUNK");
+		},
+	);
 });

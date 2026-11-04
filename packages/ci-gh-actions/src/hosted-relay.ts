@@ -46,7 +46,7 @@ import {
 /** Isolated executions are supplied by the hosting runtime and must fail closed. */
 export interface IsolatedRunnerHost {
 	/** `label` is the one runner label the lease's job asked for; the runner registers with it. */
-	launch(id: string, label?: RunnerLabel): Promise<void>;
+	launch(id: string, label?: RunnerLabel, rank?: number): Promise<void>;
 	reconcile(id: string, forceStop?: boolean): Promise<void>;
 }
 
@@ -622,6 +622,25 @@ export class HostedRelay {
 			this.servedRunnerLabels,
 		);
 	}
+	private async trunkLeaseIds(active: readonly Lease[]): Promise<Set<string>> {
+		const ids = new Set<string>();
+		for (const lease of active) {
+			const label = this.servedRunnerLabels.get(
+				`${lease.repository}:${lease.jobId}`,
+			);
+			const ref = {
+				installationId: lease.installationId,
+				repository: lease.repository,
+				runId: lease.originalRunId,
+				jobId: lease.jobId,
+			};
+			const rank = await this.admissionOrder.rank(
+				label ? { ...ref, labels: [label] } : ref,
+			);
+			if (rank === TRUNK_RANK) ids.add(lease.id);
+		}
+		return ids;
+	}
 	/** A runner reassigned by GitHub no longer satisfies its original queued job. */
 	private async requeueSwappedJobs(
 		expectedRevision: number,
@@ -741,6 +760,9 @@ export class HostedRelay {
 		const memoryGeneral = this.options.memoryAdmission
 			? await this.generalLeaseIds()
 			: undefined;
+		const memoryTrunk = this.options.memoryAdmission
+			? await this.trunkLeaseIds(active)
+			: undefined;
 		const memoryBlockedRanks = new Set<number>();
 		const queued = await this.options.store.pendingJobs();
 		await this.requeueSwappedJobs(reservationRevision, active, queued);
@@ -814,7 +836,7 @@ export class HostedRelay {
 			)
 				continue;
 			const memoryAdmission = this.options.memoryAdmission;
-			if (memoryAdmission && memoryGeneral) {
+			if (memoryAdmission && memoryGeneral && memoryTrunk) {
 				const memory = memoryRequestForStoredJob(job, memoryAdmission.config);
 				job.memoryClass = memory.memoryClass;
 				job.memoryMb = memory.memoryMb;
@@ -824,6 +846,7 @@ export class HostedRelay {
 					rank,
 					activeLeases: active,
 					generalLeaseIds: memoryGeneral,
+					trunkLeaseIds: memoryTrunk,
 				});
 				if (!decision.admitted) {
 					if (decision.blockRank) memoryBlockedRanks.add(rank);
@@ -852,6 +875,7 @@ export class HostedRelay {
 					servedRunnerLabel(job.labels),
 				);
 				if (!active.some((entry) => entry.id === lease.id)) active.push(lease);
+				if (rank === TRUNK_RANK) memoryTrunk?.add(lease.id);
 				if (!trunk) {
 					general?.add(lease.id);
 					memoryGeneral?.add(lease.id);
@@ -931,7 +955,14 @@ export class HostedRelay {
 				if (isolatedHost) {
 					if (!this.options.isolatedHost)
 						throw new Error("isolated runner unavailable");
-					await this.options.isolatedHost.launch(candidate.id, label);
+					const rank = await this.admissionOrder.rank({
+						installationId: candidate.installationId,
+						repository: candidate.repository,
+						runId: candidate.originalRunId,
+						jobId: candidate.jobId,
+						labels: currentJob.labels,
+					});
+					await this.options.isolatedHost.launch(candidate.id, label, rank);
 					continue;
 				}
 				if (

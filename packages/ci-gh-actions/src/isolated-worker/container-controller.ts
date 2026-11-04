@@ -15,7 +15,10 @@ import { type GithubTransport, getJob } from "../github.js";
 import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
 import { RUNNER_LABEL, type RunnerLabel } from "../runner-labels.js";
-import type { DockerDriver } from "./docker-driver.js";
+import {
+	containerResourceWeightsForRank,
+	type DockerDriver,
+} from "./docker-driver.js";
 import type { WorkerMemoryAdmission } from "./memory-admission.js";
 import { computeJobMemoryConfig } from "./memory-classes.js";
 import type { WorkerStorageFileSystem } from "./storage-admission.js";
@@ -231,6 +234,7 @@ export function createIsolatedContainerController(options: {
 		timeoutMs: number,
 		memoryMb: number,
 		selection: JobImage,
+		rank: number,
 		jobDirectory?: string,
 	) => {
 		const memory = computeJobMemoryConfig({
@@ -252,6 +256,7 @@ export function createIsolatedContainerController(options: {
 			timeoutMs,
 			runAsUser: "1000:1000",
 			memoryMb,
+			...containerResourceWeightsForRank(rank),
 			volumes: [
 				...(options.volumes ?? []),
 				...(jobDirectory
@@ -294,7 +299,14 @@ export function createIsolatedContainerController(options: {
 				LIVE_CONTAINER_STATES.has(lease.state),
 		).length;
 	const prewarm = async (repository?: string) => {
-		if (warm || warming || !options.docker.rename || options.workRoot) return;
+		if (
+			warm ||
+			warming ||
+			!options.docker.rename ||
+			!options.docker.updateResources ||
+			options.workRoot
+		)
+			return;
 		warming = (async () => {
 			let reserved = false;
 			const activeLeases =
@@ -321,7 +333,7 @@ export function createIsolatedContainerController(options: {
 				);
 				const name = `hobo-warm-${Date.now().toString(36)}`;
 				const handle = await options.docker.create(
-					containerSpec(name, 6 * 60 * 60_000, prewarmMemoryMb, selection),
+					containerSpec(name, 6 * 60 * 60_000, prewarmMemoryMb, selection, 1),
 				);
 				try {
 					await options.docker.start(name, handle.containerId);
@@ -409,7 +421,8 @@ export function createIsolatedContainerController(options: {
 	};
 
 	const host: IsolatedRunnerHost = {
-		async launch(id: string, label: RunnerLabel = RUNNER_LABEL) {
+		async launch(id: string, label: RunnerLabel = RUNNER_LABEL, rank = 1) {
+			const weights = containerResourceWeightsForRank(rank);
 			const initial = await options.store.get(id);
 			if (initial?.state !== "reserved") return;
 			// Slot full: leave the lease reserved; the next relay tick retries it.
@@ -453,10 +466,16 @@ export function createIsolatedContainerController(options: {
 				const spareMatches =
 					spare?.selection.image === selection.image &&
 					spare.selection.depsKey === selection.depsKey;
-				if (spare && spareMatches && options.docker.rename) {
+				if (
+					spare &&
+					spareMatches &&
+					options.docker.rename &&
+					options.docker.updateResources
+				) {
 					warm = undefined;
 					options.memoryAdmission?.consumeWarm(spare.memoryMb);
 					containerId = spare.containerId;
+					await options.docker.updateResources(spare.containerId, weights);
 					await options.docker.rename(spare.containerId, name);
 				} else {
 					const handle = await options.docker.create(
@@ -465,6 +484,7 @@ export function createIsolatedContainerController(options: {
 							planned.reservedMinutes * 60_000,
 							memoryMb,
 							selection,
+							rank,
 							directory,
 						),
 					);

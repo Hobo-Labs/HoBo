@@ -123,6 +123,8 @@ Force-stop settlement on the box worker **re-queues the reserved job** when GitH
 
 **Memory admission:** every job has a class-sized request used as its Docker `--memory` and `--memory-swap` limit. Active + reserved requests, the standard-sized warm container, and the heavy trunk reservation must fit the budget; otherwise the job stays queued. Exact GitHub job names select `light` (3072 MiB) for guard/lint/contract jobs, `standard` (4096 MiB, the unlisted default), or `heavy` (6144 MiB) for turbo build/test and image lanes. On the 15989 MiB box, the default budget is `15989 - 2048 = 13941 MiB`: heavy + standard + light = 13312 MiB fits three slots, while two heavy jobs leave only 1653 MiB and three heavy jobs cannot fit. See [finding 24](../../docs/ci/performance.md#finding-24-slot-only-admission-let-the-host-oom-killer-choose-a-victim).
 
+**CPU/IO priority and trunk-active PR cap:** rank-0 trunk containers get `--cpu-shares 8192` and request `--blkio-weight 800`; other jobs get 512 and 200 respectively. The 16:1 CPU ratio gives one trunk container about 94.1% of the CPU shared with one PR container on the four-CPU box. IO weighting is optional: the first weighted create/update probes support, and rejection logs `hobo_ci_blkio_weight_unsupported` once and continues with CPU-only weights. Warm spares start at PR weight and are reweighted with `docker update` when assigned. While a trunk lease is active, **`HOBO_CI_WORKER_PR_CAP_WITH_TRUNK`** (default **1**) limits new non-trunk reservations; **0** pauses them. Existing PR jobs are not stopped, the cap disappears when trunk settles, and strict trunk-first ordering is unchanged. See [finding 42](../../docs/ci/performance.md#finding-42-equal-cpu-shares-let-pr-jobs-starve-trunk-tests). These settings take effect only after the box daemon is redeployed.
+
 | Daemon variable | Default | Meaning |
 |---|---|---|
 | `HOBO_CI_WORKER_MEMORY_BUDGET_MB` | host/cgroup memory minus reserve | Total admitted memory; an explicit value may not exceed that derived ceiling |
@@ -134,6 +136,7 @@ Force-stop settlement on the box worker **re-queues the reserved job** when GitH
 | `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Backfill window before a non-fitting head job blocks smaller jobs in the same rank |
 | `HOBO_CI_JOB_MEMORY_MB` | admitted class value | Per-container value exported to the runner; fallback when its cgroup limit cannot be read |
 | `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum active reserved/running merge-group leases; must be a positive integer |
+| `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK` | `1` | Maximum non-trunk leases admitted while any trunk lease is active; integer 0–8; no effect when trunk is idle |
 | `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host root for per-job work mounts, teardown and byte/inode pressure checks; same filesystem as pnpm store |
 | `HOBO_CI_PNPM_STORE_DIR` | `~/.cache/hobo-ci/pnpm-store` | Shared content-addressed store mounted at `/pnpm-store`; empty disables it |
 | `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image, builder, store and dead-workdir GC interval; minimum 60000, capped at 300000 |

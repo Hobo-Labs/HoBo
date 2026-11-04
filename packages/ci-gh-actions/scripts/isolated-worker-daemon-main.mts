@@ -122,14 +122,15 @@ const webhookSecret =
 		: required("HOBO_CI_WEBHOOK_SECRET");
 // Slots bound container count only. Memory admission also requires active + reserved
 // requests (including a warm container) to fit the host/cgroup budget, and reserves
-// the heavy class for trunk. The job heap is per process, not a container budget:
-// native code, pnpm/turbo children and page cache must fit in the class too.
+// the heavy class for trunk. While a trunk lease is active, prCapWithTrunk limits
+// new non-trunk reservations; the cap disappears with the trunk lease. The job heap
+// is per process, not a container budget: native code, pnpm/turbo children and page
+// cache must fit in the class too.
 // One slot is reserved for hobo-trunk jobs by default when there are at least two.
 // Shared-label jobs never borrow it unless HOBO_CI_WORKER_TRUNK_LEND=1.
 // The offer's concurrency must equal the slot count.
-const { slots, trunkSlots, mergeGroupLeases } = resolveWorkerSlotConfig(
-	process.env,
-);
+const { slots, trunkSlots, mergeGroupLeases, prCapWithTrunk } =
+	resolveWorkerSlotConfig(process.env);
 const hostMemorySample = readHostMemory();
 const memoryConfig = resolveWorkerMemoryConfig(process.env, {
 	...hostMemorySample,
@@ -140,7 +141,10 @@ const hostMemMb = Math.min(
 	hostMemorySample.cgroupMemoryLimitMb ?? Number.MAX_SAFE_INTEGER,
 );
 const workerMemoryMb = memoryConfig.classes.heavy;
-const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, { log });
+const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, {
+	log,
+	prCapWithTrunk,
+});
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
 	throw new Error("invalid HOBO_CI_WORKER_TRUNK_LEND");
@@ -264,7 +268,7 @@ if (pnpmStore && statSync(pnpmStore).dev !== statSync(workRoot).dev)
 	throw new Error(
 		"pnpm store and work root must share a filesystem for hardlinks",
 	);
-const docker = createCliDockerDriver({ env: process.env });
+const docker = createCliDockerDriver({ env: process.env, log });
 const workFs = createNodeWorkerStorageFileSystem();
 const storageAdmission = createWorkerStorageAdmission({
 	dockerDataRoot: await docker.dataRoot(),
