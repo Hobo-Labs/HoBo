@@ -1,7 +1,19 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+
+const lintActionsRepoRoot = join(import.meta.dirname, "..");
+const requireFromRepo = createRequire(import.meta.url);
+const yamlModulePath = requireFromRepo.resolve("yaml", {
+	paths: [join(lintActionsRepoRoot, "packages/ci-gh-actions")],
+});
+const yamlMod = await import(yamlModulePath);
+const { parseDocument } = yamlMod;
+if (parseDocument === undefined) {
+	throw new Error("yaml package missing parseDocument");
+}
 
 const root = join(process.cwd(), ".github");
 const workflowDir = join(root, "workflows");
@@ -126,11 +138,19 @@ function lintPinnedActionRefs(file: string, text: string): void {
 	}
 }
 
+function lintWorkflowYamlStrict(file: string, text: string): void {
+	const doc = parseDocument(text, { uniqueKeys: true });
+	for (const error of doc.errors) {
+		errors.push(`${file}: invalid workflow YAML: ${error.message.trim()}`);
+	}
+}
+
 function lintWorkflowYaml(
 	file: string,
 	text: string,
 	requireDisabledJobs: boolean,
 ) {
+	lintWorkflowYamlStrict(file, text);
 	const lines = text.split(/\r?\n/);
 	const jobsIndex = lines.findIndex((line) => line === "jobs:");
 	if (jobsIndex === -1) {
