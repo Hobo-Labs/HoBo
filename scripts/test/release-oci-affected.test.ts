@@ -328,6 +328,14 @@ describe("affected release OCI images", () => {
 				}),
 			}),
 		).toEqual(ALL);
+		expect(
+			affected({
+				"turbo.json": json({
+					...TURBO,
+					globalDependencies: ["tsconfig.base.json"],
+				}),
+			}),
+		).toEqual(ALL);
 	});
 
 	it.each([

@@ -1119,3 +1119,21 @@ The package-hash follow-up forced both full graphs with `turbo run ... --force` 
 The serial file total stayed at 732 draft files and 758 files overall. The after run passed 150/150 tasks; the immediately following `pnpm run test:unit` was **150/150 cached (FULL TURBO)** in **574 ms** of turbo time. Adding one blank line to `registry-publish-flow-contract/test/registry-publish-flow.test.ts` then invalidated exactly one draft shard, draft 5, which ran its 68 files in **3.72 s**. Existing broad root inputs also reran root shards 0, 1, and 3; root shard 2 and the other eight draft shards stayed cached. Removing the line restored the original file.
 
 The cold critical path is still the isolated `componentize-js-determinism-spike/test/nondeterminism-spike.test.ts` at **79.0 s**, so this change does not claim a sub-60-second cold unit run. The measured warm full-scope unit graph remains well under 60 seconds.
+
+## Finding 31: turbo.json hashed itself into every task
+
+`turbo.json` appeared in `globalDependencies` from the original Turborepo migration, so every task-definition edit also invalidated every build and test hash. That turned #1707's first merge-group run into a cold repo-wide sweep that could not fit the 25-minute PR impact gate. Turbo 2.11 already includes each resolved task definition in that task's own hash; global environment settings have their own global hash. The file is no longer its own global dependency.
+
+A detached clean-worktree experiment ran `pnpm exec turbo run build test --dry=json` over **792 package builds and 792 package tests**, then compared each successive edit with the immediately preceding dry run:
+
+| Edit | Build hashes changed | Test hashes changed |
+|---|---:|---:|
+| Remove `turbo.json` from `globalDependencies` (one-time migration) | 792 / 792 | 792 / 792 |
+| Edit only `//#test:unit:draft:0` inputs | **0 / 792** | **0 / 792** |
+| Add `!package.json` to generic `test` inputs | 0 / 792 | **788 / 792** |
+| Add `!package.json` to `@hobo/code#test` inputs | 0 / 792 | **1 / 792** |
+| Add `globalEnv` | **792 / 792** | **792 / 792** |
+
+The four package tests unchanged by the generic-input edit were `@hobo/code`, `@hobo/conformance`, `@hobo/hobo`, and `@hobo/runtime`: their package-specific overrides replace generic inputs. The package override changed only `@hobo/code#test`. Thus unrelated root task edits stay local, while shared task and environment changes retain their required scope.
+
+`scripts/ci/affected-lanes.mts` still treats a turbo edit as selecting the repo-wide main gate, but unchanged tasks now hit cache. `release-oci-affected.mts` continues hashing only build-relevant turbo settings, including the `globalDependencies` list and build task definitions; it deliberately does not rebuild images for test-only task edits. Its tests pin both behaviors.

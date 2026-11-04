@@ -3,7 +3,6 @@
   "globalDependencies": [
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
-    "turbo.json",
     "tsconfig.base.json"
   ],
   "envMode": "strict",
