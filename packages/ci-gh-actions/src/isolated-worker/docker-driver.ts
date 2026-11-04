@@ -15,6 +15,21 @@ export type IsolatedContainerHandle = Readonly<{
 	containerId: string;
 }>;
 
+export type DockerContainerState =
+	| "created"
+	| "restarting"
+	| "running"
+	| "removing"
+	| "paused"
+	| "exited"
+	| "dead";
+
+export type DockerContainer = Readonly<{
+	name: string;
+	containerId: string;
+	state: DockerContainerState;
+}>;
+
 export type DockerImageInspection = Readonly<{
 	id: string;
 	repoTags: readonly string[];
@@ -24,6 +39,7 @@ export type DockerImageInspection = Readonly<{
 /** Ephemeral container boundary for one JIT runner session. */
 export interface DockerDriver {
 	inspectImage?(image: string): Promise<DockerImageInspection>;
+	list?(label: string): Promise<readonly DockerContainer[]>;
 	create(spec: IsolatedContainerSpec): Promise<IsolatedContainerHandle>;
 	start(name: string, containerId: string): Promise<void>;
 	exec(

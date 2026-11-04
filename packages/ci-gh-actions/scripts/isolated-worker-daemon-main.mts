@@ -9,7 +9,6 @@ import { toJsonString } from "@bufbuild/protobuf";
 import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
-	countInFlightWorkerLeases,
 	createAdmissionOrder,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
@@ -37,7 +36,6 @@ import {
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
 	waitForIsolatedWorkerDrain,
-	workerOfferKeys,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
@@ -308,6 +306,7 @@ const worker = createIsolatedContainerController({
 	workRoot,
 	workFs,
 });
+let liveWorkerLeaseIds = (await worker.reconcileLeases()).liveLeaseIds;
 let depsImageEnsurer: ReturnType<typeof createDepsImageEnsurer> | undefined;
 if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
 	depsImageEnsurer = createDepsImageEnsurer({
@@ -418,6 +417,7 @@ let gcInFlight: Promise<void> | undefined;
 function runTick(): Promise<void> {
 	if (draining || gcInFlight) return Promise.resolve();
 	const current = (async () => {
+		liveWorkerLeaseIds = (await worker.reconcileLeases()).liveLeaseIds;
 		// In push mode the hosted relay drains the shared inbox; in pull mode
 		// this worker is the only consumer of its own.
 		await runtime.tick({ maxDeliveries: poller ? 10 : 0 });
@@ -548,16 +548,13 @@ async function shutdown(signal: string) {
 		if (tickInFlight) {
 			await tickInFlight.catch(() => undefined);
 		}
-		// Running jobs count: a lease leaves `running` only when a reconcile sees
-		// its runner exit, so each check is a tick that admits nothing new.
-		const inFlight = async () =>
-			countInFlightWorkerLeases(
-				await store.activeLeases(),
-				workerOfferKeys(
-					(await store.configuration())?.configuration,
-					workerAccountId,
-				),
-			);
+		const reconcileDrain = async () => {
+			liveWorkerLeaseIds = (await worker.reconcileLeases({ draining: true }))
+				.liveLeaseIds;
+			await runtime.tick({ admit: false });
+		};
+		const inFlight = async () => liveWorkerLeaseIds.size;
+		await reconcileDrain();
 		log("hobo_ci_isolated_worker_drain_started", {
 			inFlight: await inFlight(),
 			timeoutMs: drainTimeoutMs,
@@ -565,7 +562,7 @@ async function shutdown(signal: string) {
 		let reported = -1;
 		const result = await waitForIsolatedWorkerDrain({
 			inFlight,
-			reconcile: () => runtime.tick({ admit: false }),
+			reconcile: reconcileDrain,
 			pollMs: Math.min(intervalMs, 5_000),
 			timeoutMs: drainTimeoutMs,
 			onWaiting: (remaining) => {
