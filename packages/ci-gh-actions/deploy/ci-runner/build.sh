@@ -18,6 +18,21 @@ oci_dir="${runner_ctx}/oci-layout"
 local_registry=""
 registry_container="hobo-ci-registry"
 base_image="hobo-ci-runner-base"
+archive_dir=""
+registry_started=0
+cap="${HOBO_CI_WORKER_BUILDER_CACHE_CAP:-${HOBO_CI_WORKER_BUILDER_KEEP_STORAGE:-4GB}}"
+if [[ ! "$cap" =~ ^[0-9]+([.][0-9]+)?[KMGT]B$ ]]; then
+  echo "invalid BuildKit cache cap: ${cap}" >&2
+  exit 1
+fi
+cleanup() {
+  rm -rf "${oci_dir}"
+  if [[ -n "${archive_dir}" ]]; then rm -rf "${archive_dir}"; fi
+  if [[ "${registry_started}" = 1 ]]; then
+    docker rm -f "${registry_container}" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
 
 if ! command -v mise >/dev/null 2>&1 || [[ "$(mise --version | awk '{print $1}')" != "$mise_version" ]]; then
   curl -fsSL https://mise.run | MISE_VERSION="$mise_version" sh
@@ -39,6 +54,10 @@ promote_candidate() {
     | docker run --rm -i -e HOBO_CI_RUNNER_CONTRACT=live "${candidate}" \
       sh -c 'mkdir -p /tmp/contract && tar -xf - -C /tmp/contract && cd /tmp/contract && node --no-warnings scripts/ci-runner-preflight.mts'
   docker tag "${candidate}" hobo-ci-worker:local
+}
+finish() {
+  docker builder prune -f --keep-storage "$cap"
+  node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "${version}"
   local digest
   digest="$(docker inspect --format='{{index .RepoDigests 0}}' hobo-ci-worker:local 2>/dev/null || true)"
   echo "Done. ${digest:-hobo-ci-worker:local (daemon tag only)}"
@@ -51,6 +70,7 @@ promote_candidate() {
 if docker image inspect "${candidate}" >/dev/null 2>&1; then
   echo "${candidate} is already on this host; skipping the build"
   promote_candidate
+  finish
   exit 0
 fi
 
@@ -59,12 +79,21 @@ fi
 repository="${GITHUB_REPOSITORY:-Hobo-Labs/HoBo}"
 repository="${repository,,}"
 published="ghcr.io/${repository}/hobo-ci-worker:${version}"
-if docker pull "${published}"; then
-  docker tag "${published}" "${candidate}"
-  if promote_candidate; then
-    exit 0
+if [[ -n "${GHCR_TOKEN:-}" ]]; then
+  if printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR:-github-actions}" --password-stdin; then
+    if docker pull "${published}"; then
+      docker tag "${published}" "${candidate}"
+      if promote_candidate; then
+        finish
+        exit 0
+      fi
+      echo "Published runner image failed the local contract; building natively" >&2
+    fi
+  else
+    echo "GHCR login failed; building natively" >&2
   fi
-  echo "Published runner image failed the local contract; building natively" >&2
+else
+  echo "GHCR_TOKEN is unavailable; skipping published runner image pull"
 fi
 
 # Registry API, not `docker manifest inspect`: the runner image's Debian docker.io
@@ -83,19 +112,17 @@ docker build --build-arg "TARGETARCH=${target_arch}" \
 
 start_registry() {
   # Any free loopback port: a fixed 5000 collides with whatever else the host runs there.
-  docker run -d -p 127.0.0.1::5000 --name "${registry_container}" registry:2 >/dev/null
+  # The registry is a per-build staging area; tmpfs and --rm leave no pushed base copies.
+  docker run -d --rm --tmpfs /var/lib/registry:rw -p 127.0.0.1::5000 --name "${registry_container}" registry:2 >/dev/null
+  registry_started=1
 }
 
 # Two addresses for one registry. The Docker daemon pushes from the host, over the
 # published loopback port, which it treats as plain HTTP. This process may be in a job
 # container, where 127.0.0.1 is its own loopback, so it falls back to the bridge address.
 ensure_local_registry() {
-  if ! docker ps -a --format '{{.Names}}' | grep -qx "${registry_container}"; then
-    start_registry
-  elif ! docker start "${registry_container}" >/dev/null 2>&1; then
-    docker rm -f "${registry_container}" >/dev/null
-    start_registry
-  fi
+  docker rm -f "${registry_container}" >/dev/null 2>&1 || true
+  start_registry
   local published ip
   published="$(docker port "${registry_container}" 5000/tcp | head -n1)"
   local_registry="127.0.0.1:${published##*:}"
@@ -134,11 +161,17 @@ if command -v skopeo >/dev/null 2>&1; then
   skopeo copy "oci:${oci_dir}" "docker-archive:${archive_dir}/candidate.tar:${candidate}"
   docker load -i "${archive_dir}/candidate.tar"
   rm -rf "${archive_dir}"
+  archive_dir=""
 else
   # Without skopeo the layout goes through the registry and the daemon pulls it.
   mise oci push --image-dir "${oci_dir}" "${endpoint}/${candidate}"
   docker pull "${local_registry}/${candidate}"
   docker tag "${local_registry}/${candidate}" "${candidate}"
 fi
+rm -rf "${oci_dir}"
+docker image rm --no-prune "${local_registry}/${base_image}:local" "${local_registry}/${candidate}" >/dev/null 2>&1 || true
+docker rm -f "${registry_container}" >/dev/null 2>&1 || true
+registry_started=0
 
 promote_candidate
+finish

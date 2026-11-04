@@ -95,9 +95,7 @@ jobs:
         if: steps.affected.outputs.image_ids != ''
         run: |
           set -euo pipefail
-          if ! docker image inspect hobo-ci-worker:local >/dev/null 2>&1; then
-            bash packages/ci-gh-actions/deploy/ci-runner/build.sh
-          fi
+          bash packages/ci-gh-actions/deploy/ci-runner/build.sh
       - name: Build affected images + live OCI config contract
         if: steps.affected.outputs.image_ids != ''
         env:
@@ -173,12 +171,10 @@ jobs:
         run: pnpm run pins:fetch ts-autocode
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
-      - name: Build toolchain image if missing
+      - name: Ensure content-keyed toolchain image
         run: |
           set -euo pipefail
-          if ! docker image inspect hobo-ci-worker:local >/dev/null 2>&1; then
-            bash packages/ci-gh-actions/deploy/ci-runner/build.sh
-          fi
+          bash packages/ci-gh-actions/deploy/ci-runner/build.sh
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: Build and push release images

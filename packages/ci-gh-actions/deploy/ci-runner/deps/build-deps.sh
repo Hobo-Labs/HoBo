@@ -13,6 +13,11 @@ esac
 
 context="$(mktemp -d)"
 contract_log="$(mktemp)"
+cap="${HOBO_CI_WORKER_BUILDER_CACHE_CAP:-${HOBO_CI_WORKER_BUILDER_KEEP_STORAGE:-4GB}}"
+if [[ ! "$cap" =~ ^[0-9]+([.][0-9]+)?[KMGT]B$ ]]; then
+  echo "invalid BuildKit cache cap: ${cap}" >&2
+  exit 1
+fi
 cleanup() {
   rm -rf "$context" "$contract_log"
 }
@@ -38,7 +43,8 @@ if docker image inspect "$candidate" >/dev/null 2>&1; then
     docker tag "$candidate" hobo-ci-deps:local
     echo "Promoted $candidate to hobo-ci-deps:local"
   fi
-  node --no-warnings scripts/ci/deps-image-gc.mts "$candidate"
+  node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
+  docker builder prune -f --keep-storage "$cap"
   exit 0
 fi
 
@@ -78,4 +84,5 @@ if [ "$promote" = 1 ]; then
 else
   echo "Built and verified $candidate without promotion"
 fi
-node --no-warnings scripts/ci/deps-image-gc.mts "$candidate"
+node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
+docker builder prune -f --keep-storage "$cap"

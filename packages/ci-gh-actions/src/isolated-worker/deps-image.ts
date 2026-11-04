@@ -130,7 +130,12 @@ export function createDepsImageEnsurer(options: DepsImageEnsurerOptions) {
 			await options.docker.tag(candidate, "hobo-ci-deps:local");
 			await options.processes.run({
 				command: process.execPath,
-				args: ["--no-warnings", "scripts/ci/deps-image-gc.mts", candidate],
+				args: [
+					"--experimental-strip-types",
+					"--no-warnings",
+					"scripts/ci-runner-image-gc.mts",
+					candidate,
+				],
 				cwd: options.root,
 				env: process.env,
 			});

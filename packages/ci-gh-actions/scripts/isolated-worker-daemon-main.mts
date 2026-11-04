@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -10,6 +10,7 @@ import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
 	countInFlightWorkerLeases,
+	createAdmissionOrder,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createDepsImageEnsurer,
@@ -19,12 +20,19 @@ import {
 	createHostedRelayRuntime,
 	createIsolatedContainerController,
 	createJobDurations,
+	createNodeWorkerStorageFileSystem,
+	createPnpmStoreMaintenance,
 	createPollLogFilter,
+	createWorkerMemoryAdmission,
+	createWorkerStorageAdmission,
 	type DepsImageProcessRequest,
 	describeWaitingJobs,
+	generalLeaseIdsFor,
 	type HostedInboxStore,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
+	readHostMemory,
+	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
 	waitForIsolatedWorkerDrain,
@@ -110,15 +118,27 @@ const webhookSecret =
 	plan.admission === "pull" && !process.env.HOBO_CI_WEBHOOK_SECRET
 		? randomBytes(32).toString("hex")
 		: required("HOBO_CI_WEBHOOK_SECRET");
-const workerMemoryMb = Number(process.env.HOBO_CI_WORKER_MEMORY_MB ?? "8192");
-if (!Number.isInteger(workerMemoryMb) || workerMemoryMb < 512)
-	throw new Error("invalid HOBO_CI_WORKER_MEMORY_MB");
-// Concurrent job containers on this host. Size with memory: slots x HOBO_CI_WORKER_MEMORY_MB
-// should stay under host RAM (jobs run NODE_OPTIONS=--max-old-space-size=3072, turbo concurrency 1).
+// Slots bound container count only. Memory admission also requires active + reserved
+// requests (including a warm container) to fit the host/cgroup budget, and reserves
+// the heavy class for trunk. The job heap is per process, not a container budget:
+// native code, pnpm/turbo children and page cache must fit in the class too.
 // One slot is reserved for hobo-trunk jobs by default when there are at least two.
 // Shared-label jobs never borrow it unless HOBO_CI_WORKER_TRUNK_LEND=1.
 // The offer's concurrency must equal the slot count.
-const { slots, trunkSlots } = resolveWorkerSlotConfig(process.env);
+const { slots, trunkSlots, mergeGroupLeases } = resolveWorkerSlotConfig(
+	process.env,
+);
+const hostMemorySample = readHostMemory();
+const memoryConfig = resolveWorkerMemoryConfig(process.env, {
+	...hostMemorySample,
+	trunkSlots,
+});
+const hostMemMb = Math.min(
+	hostMemorySample.totalMemoryMb,
+	hostMemorySample.cgroupMemoryLimitMb ?? Number.MAX_SAFE_INTEGER,
+);
+const workerMemoryMb = memoryConfig.classes.heavy;
+const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, { log });
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
 	throw new Error("invalid HOBO_CI_WORKER_TRUNK_LEND");
@@ -141,6 +161,12 @@ const depsBuildMemoryMb = Number(
 );
 if (!Number.isInteger(depsBuildMemoryMb) || depsBuildMemoryMb < 512)
 	throw new Error("invalid HOBO_CI_DEPS_BUILD_MEMORY_MB");
+const configuredGcIntervalMs = Number(
+	process.env.HOBO_CI_WORKER_GC_MS ?? String(5 * 60_000),
+);
+if (!Number.isFinite(configuredGcIntervalMs) || configuredGcIntervalMs < 60_000)
+	throw new Error("invalid HOBO_CI_WORKER_GC_MS");
+const gcIntervalMs = Math.min(configuredGcIntervalMs, 5 * 60_000);
 
 let store: HostedInboxStore & IsolatedWorkerStore;
 let closeStore: () => Promise<void>;
@@ -208,6 +234,11 @@ for (const account of configuration.accounts)
 	}
 
 const github = createGithubAppTransport({ appId, privateKey });
+// The poller learns job durations from the jobs lists it already reads; the
+// relay admits each run's longest expected job first.
+const jobDurations = createJobDurations();
+const admissionOrder = createAdmissionOrder(github, jobDurations);
+const workerRunnerLabels: Parameters<typeof generalLeaseIdsFor>[2] = new Map();
 // Shared pnpm content-addressable store, bind-mounted into every job container
 // (uid 1000 owns it). Empty string disables the mount.
 const pnpmStore =
@@ -218,24 +249,61 @@ const PNPM_STORE_TARGET = "/pnpm-store";
 const depsRepository = process.env.HOBO_CI_DEPS_REPOSITORY ?? "Hobo-Labs/HoBo";
 const depsImage = process.env.HOBO_CI_DEPS_IMAGE ?? "hobo-ci-deps:local";
 const depsRoot = process.env.HOBO_CI_DEPS_ROOT ?? process.cwd();
+const workRoot =
+	process.env.HOBO_CI_WORKER_WORK_ROOT ??
+	join(
+		process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
+		"hobo-ci",
+		"work",
+	);
+mkdirSync(workRoot, { recursive: true, mode: 0o755 });
+if (pnpmStore && statSync(pnpmStore).dev !== statSync(workRoot).dev)
+	throw new Error(
+		"pnpm store and work root must share a filesystem for hardlinks",
+	);
+const docker = createCliDockerDriver({ env: process.env });
+const workFs = createNodeWorkerStorageFileSystem();
+const storageAdmission = createWorkerStorageAdmission({
+	dockerDataRoot: await docker.dataRoot(),
+	workRoot,
+	fs: workFs,
+	docker,
+	pnpmStore: pnpmStore
+		? createPnpmStoreMaintenance({ path: pnpmStore, env: process.env })
+		: undefined,
+	builderCacheCap:
+		process.env.HOBO_CI_WORKER_BUILDER_CACHE_CAP ??
+		process.env.HOBO_CI_WORKER_BUILDER_KEEP_STORAGE ??
+		"4GB",
+	log,
+});
+await storageAdmission.reap(await store.activeLeases());
 const worker = createIsolatedContainerController({
 	store,
 	github,
 	publicOrigin,
-	docker: createCliDockerDriver({ env: process.env }),
+	docker,
 	workerAccountId,
 	workerImage: process.env.HOBO_CI_WORKER_IMAGE ?? "hobo-ci-worker:local",
 	depsRepository,
 	depsImage,
 	workerMemoryMb,
+	prewarmMemoryMb: memoryConfig.classes.standard,
+	memoryAdmission,
+	generalLeaseIds: (activeLeases) =>
+		generalLeaseIdsFor(activeLeases, github, workerRunnerLabels),
+	log,
 	slots,
 	volumes: pnpmStore ? [{ source: pnpmStore, target: PNPM_STORE_TARGET }] : [],
 	containerEnv: pnpmStore
 		? {
 				npm_config_store_dir: PNPM_STORE_TARGET,
+				npm_config_package_import_method: "hardlink",
 				HOBO_CI_PNPM_STORE_MOUNTED: "1",
 			}
 		: {},
+	workRoot,
+	workFs,
 });
 let depsImageEnsurer: ReturnType<typeof createDepsImageEnsurer> | undefined;
 if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
@@ -279,9 +347,6 @@ if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
 }
 const host = createCompositeIsolatedHost({ store, worker: worker.host });
 if (!host) throw new Error("worker host unavailable");
-// The poller learns job durations from the jobs lists it already reads; the
-// relay admits each run's longest expected job first.
-const jobDurations = createJobDurations();
 const runtime = createHostedRelayRuntime({
 	store,
 	github,
@@ -290,9 +355,13 @@ const runtime = createHostedRelayRuntime({
 	isolatedHost: host,
 	denyUnisolated: true,
 	jobDurations,
+	admissionOrder,
 	// With no trunk slots this is the slot count, all the host could run anyway.
 	generalLeaseLimit: slots - trunkSlots,
+	mergeGroupLeaseLimit: mergeGroupLeases,
 	lendTrunkSlots,
+	memoryAdmission,
+	storageAdmission,
 	control: async () => undefined,
 });
 const poller =
@@ -315,11 +384,13 @@ const pollWorthLogging = createPollLogFilter();
 let draining = false;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let jobPollTimer: ReturnType<typeof setInterval> | undefined;
+let gcTimer: ReturnType<typeof setInterval> | undefined;
 let tickInFlight: Promise<void> | undefined;
 let jobPollInFlight: Promise<void> | undefined;
+let gcInFlight: Promise<void> | undefined;
 
 function runTick(): Promise<void> {
-	if (draining) return Promise.resolve();
+	if (draining || gcInFlight) return Promise.resolve();
 	const current = (async () => {
 		// In push mode the hosted relay drains the shared inbox; in pull mode
 		// this worker is the only consumer of its own.
@@ -381,20 +452,46 @@ function runDepsImageEnsure(): void {
 		});
 }
 
+function runGc(): void {
+	if (draining || gcInFlight || tickInFlight) return;
+	gcInFlight = store
+		.activeLeases()
+		.then((leases) => storageAdmission.maintain(leases))
+		.catch((error) => {
+			log("hobo_ci_isolated_worker_gc_failed", {
+				message: error instanceof Error ? error.message : "unknown",
+			});
+		})
+		.finally(() => {
+			gcInFlight = undefined;
+		});
+}
+
 log("hobo_ci_isolated_worker_started", {
 	store: plan.store.kind,
 	admission: plan.admission,
 	publicOrigin,
 	pollMs: intervalMs,
 	jobPollMs: plan.jobPollMs,
+	hostMemMb,
 	workerMemoryMb,
+	memoryBudgetMb: memoryConfig.budgetMb,
+	memoryReserveMb: memoryConfig.reserveMb,
+	memoryLightMb: memoryConfig.classes.light,
+	memoryStandardMb: memoryConfig.classes.standard,
+	memoryTrunkReservationMb: memoryConfig.trunkReservationMb,
+	memoryHolMs: memoryConfig.holMs,
 	slots,
 	trunkSlots,
+	mergeGroupLeases,
 	lendTrunkSlots,
+	workRoot,
 	pnpmStoreMounted: pnpmStore !== "",
+	gcIntervalMs,
 	drainTimeoutMs,
 });
 
+gcTimer = setInterval(runGc, gcIntervalMs);
 pollTimer = setInterval(() => {
 	void runTick().catch((error) => {
 		log("hobo_ci_isolated_worker_tick_failed", {
@@ -417,9 +514,11 @@ async function shutdown(signal: string) {
 		if (pollTimer) clearInterval(pollTimer);
 		if (jobPollTimer) clearInterval(jobPollTimer);
 		if (depsEnsureTimer) clearTimeout(depsEnsureTimer);
+		if (gcTimer) clearInterval(gcTimer);
 		await worker.discardWarm().catch(() => undefined);
 		log("hobo_ci_isolated_worker_draining", { signal });
 		await jobPollInFlight;
+		await gcInFlight;
 		if (tickInFlight) {
 			await tickInFlight.catch(() => undefined);
 		}

@@ -1,6 +1,7 @@
 export type WorkerSlotConfig = Readonly<{
 	slots: number;
 	trunkSlots: number;
+	mergeGroupLeases: number;
 }>;
 
 export function resolveWorkerSlotConfig(
@@ -14,5 +15,8 @@ export function resolveWorkerSlotConfig(
 	);
 	if (!Number.isInteger(trunkSlots) || trunkSlots < 0 || trunkSlots >= slots)
 		throw new Error("invalid HOBO_CI_WORKER_TRUNK_SLOTS");
-	return { slots, trunkSlots };
+	const mergeGroupLeases = Number(env.HOBO_CI_WORKER_MERGE_GROUP_LEASES ?? "1");
+	if (!Number.isInteger(mergeGroupLeases) || mergeGroupLeases < 1)
+		throw new Error("invalid HOBO_CI_WORKER_MERGE_GROUP_LEASES");
+	return { slots, trunkSlots, mergeGroupLeases };
 }

@@ -58,3 +58,7 @@ To add an example:
 5. Run `pnpm --prefix examples/try-site test` and the site tests/build.
 
 GitHub Pages never receives provider credentials.
+
+## Maintenance
+
+App definitions use typed component constructors, parsed dynamic modules, explicit Node types, and decorator metadata compatible with exact optional properties.

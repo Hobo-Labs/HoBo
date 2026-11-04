@@ -1,27 +1,28 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-	type DepsImage,
-	selectDepsImageTagsForDeletion,
-} from "../lib/deps-image-gc.mts";
+	selectWorkerImagesForDeletion,
+	type WorkerImage,
+} from "../../packages/ci-gh-actions/src/isolated-worker/image-gc.ts";
 
 const current = "hobo-ci-deps:current";
-const image = (tag: string, created: number, inUse = false): DepsImage => ({
+const image = (tag: string, created: number, inUse = false): WorkerImage => ({
+	id: tag,
 	tag,
-	created,
+	created: new Date(created).toISOString(),
 	inUse,
 });
 
 describe("deps image garbage collection", () => {
 	it("keeps only the current and newest previous keyed images", () => {
 		const images = [
-			image("hobo-ci-deps:oldest", 100),
-			image(current, 400),
-			image("hobo-ci-deps:previous", 300),
-			image("hobo-ci-deps:older", 200),
+			image("hobo-ci-deps:oldest", 200),
+			image(current, 100),
+			image("hobo-ci-deps:previous", 400),
+			image("hobo-ci-deps:older", 300),
 			image("hobo-ci-deps:local", 50),
 		];
-		assert.deepEqual(selectDepsImageTagsForDeletion(images, current), [
+		assert.deepEqual(selectWorkerImagesForDeletion(images, current), [
 			"hobo-ci-deps:older",
 			"hobo-ci-deps:oldest",
 		]);
@@ -35,7 +36,7 @@ describe("deps image garbage collection", () => {
 			image("hobo-ci-deps:local", 50),
 			image("hobo-ci-deps:expired", 200),
 		];
-		assert.deepEqual(selectDepsImageTagsForDeletion(images, current), [
+		assert.deepEqual(selectWorkerImagesForDeletion(images, current), [
 			"hobo-ci-deps:expired",
 		]);
 	});
@@ -50,7 +51,7 @@ describe("deps image garbage collection", () => {
 			image("ghcr.io/hobo-labs/hobo/hobo-ci-deps:old", 100),
 			image("hobo-ci-worker:old", 100),
 		];
-		assert.deepEqual(selectDepsImageTagsForDeletion(images, current), [
+		assert.deepEqual(selectWorkerImagesForDeletion(images, current), [
 			"hobo-ci-deps-fetch:new",
 			"hobo-ci-deps-fetch:old",
 		]);

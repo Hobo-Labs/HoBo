@@ -123,8 +123,9 @@ describe("worker-owned deps image ensure", () => {
 		]);
 		expect(fake.processCalls).toHaveLength(1);
 		expect(fake.processCalls[0]?.args).toEqual([
+			"--experimental-strip-types",
 			"--no-warnings",
-			"scripts/ci/deps-image-gc.mts",
+			"scripts/ci-runner-image-gc.mts",
 			CANDIDATE,
 		]);
 		ensured(fake.events, "pull");

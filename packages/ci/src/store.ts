@@ -610,6 +610,8 @@ export class LeaseStore {
 				repositoryId: job.repositoryId,
 				repository: job.repository,
 				installationId: job.installationId,
+				memoryClass: job.memoryClass,
+				memoryMb: job.memoryMb,
 				state: "reserved",
 				priceMicrosPerMinute: selected.offer.priceMicrosPerMinute,
 				freeValidUntil: selected.offer.validUntil,

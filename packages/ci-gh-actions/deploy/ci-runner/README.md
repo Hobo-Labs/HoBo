@@ -9,7 +9,7 @@ Shellcheck is pinned at 0.10.0 in `mise.toml` and locked for every supported pla
 
 Before checking the contract, `.github/actions/ci-runner-preflight` uses the checkout's `mise.toml` to discover requested tools absent from the running image. It installs only those tools with `mise --cd <checkout> install --locked <tool>...`, logs their names and elapsed time, and then runs the full contract. After installation, `mise which <tool>` supplies the absolute executable for the version probe; its bin directory is prepended to the current process `PATH` and appended to `$GITHUB_PATH` on GitHub Actions for later steps. This repairs an older runner without unlocked downloads; a healthy image performs no install. Probe failures name the exact command and distinguish spawn errors (including `ENOENT`), terminating signals, and non-zero exits with a stderr tail. Persistent failures require the image rebuild below.
 
-Use `bash packages/ci-gh-actions/deploy/ci-runner/build.sh` on the box worker. If the content-keyed `hobo-ci-worker:<version>` is absent locally, the script first pulls `ghcr.io/<owner>/<repo>/hobo-ci-worker:<version>` (repository from lowercased `GITHUB_REPOSITORY`, default `Hobo-Labs/HoBo`). A pulled image becomes `:local` only after the same in-container runner contract as a native build; a pull miss or failed contract falls back to the native build.
+Use `bash packages/ci-gh-actions/deploy/ci-runner/build.sh` on the box worker. If the content-keyed `hobo-ci-worker:<version>` is absent locally and `GHCR_TOKEN` is non-empty, the script logs in and pulls `ghcr.io/<owner>/<repo>/hobo-ci-worker:<version>` (repository from lowercased `GITHUB_REPOSITORY`, default `Hobo-Labs/HoBo`). Without a token it skips GHCR and builds natively without prompting. A pulled image becomes `:local` only after the same in-container runner contract as a native build; a pull miss or failed contract falls back to the native build. Every reuse or build removes the OCI layout and temporary archives, uses an ephemeral local registry, prunes BuildKit to `HOBO_CI_WORKER_BUILDER_CACHE_CAP` (default `4GB`), and retains only the current and previous unused `hobo-ci-worker:v*` tags plus `:local` and images used by running containers. `scripts/ci-runner-image-gc.mts` uses only Node builtins and the dependency-free selector, so this cleanup also runs before `pnpm install`. The daemon applies the same retention on its scheduled GC.
 
 ## Lockfile-keyed deps image
 
@@ -25,7 +25,7 @@ The build stages only those manifests into its Docker context. One BuildKit buil
 
 An exact local hit returns before the build and can promote the existing image immediately. Before a new build moves `hobo-ci-deps:local`, the script streams the staged manifests into the candidate and requires `pnpm install --frozen-lockfile --offline --config.confirmModulesPurge=false` to print `Already up to date`. The verification container uses an empty, UID-1000-owned tmpfs at `/pnpm-store` instead of mounting the host store. Every event can reuse a local or GHCR hit; `--no-promote` builds and verifies a new PR candidate without moving `:local`, and PRs never push GHCR. Trusted main/schedule/dispatch runs build and publish misses. Set `HOBO_CI_DEPS_BUILD_MEMORY_MB` to an integer of at least 512 to pass Docker's `--memory` limit to both the build and offline verification container; the isolated worker daemon sets this to 4096 by default and runs the script under `nice`/`ionice`.
 
-Each keyed deps image is **6–10 GB**; the old tagged fetch intermediates were another 6–10 GB each and drove the box to 95% inode use twice. After every successful build or promotion, `scripts/ci/deps-image-gc.mts` keeps at most the current key and newest previous `hobo-ci-deps:*` key by creation time. It never removes `hobo-ci-deps:local`, the current key, or an image used by a running container; it removes every unused legacy `hobo-ci-deps-fetch:*` tag and then runs `docker image prune -f` for dangling build layers. Cache-hit promotion in the workflow runs the same collector.
+Each keyed deps image is **6–10 GB**; the old tagged fetch intermediates were another 6–10 GB each and drove the box to 95% inode use twice. After every successful build or promotion, `scripts/ci-runner-image-gc.mts` uses the daemon's shared selector to keep at most the current key and newest previous `hobo-ci-deps:*` key by creation time. It never removes `hobo-ci-deps:local`, the current key, or an image used by a running container; it removes every unused legacy `hobo-ci-deps-fetch:*` tag and then runs `docker image prune -f` for dangling build layers. Cache-hit promotion in the workflow runs the same collector.
 
 The install stage leaves an unborn git repository whose `remote.origin.url` is `https://github.com/Hobo-Labs/HoBo`. This relies on the pinned `actions/checkout` implementation: [`prepareExistingDirectory`](https://github.com/actions/checkout/blob/11bd71901bbe5b1630ceea73d27597364c9af683/src/git-directory-helper.ts) keeps the directory when `.git` exists and that URL matches; an unborn `HEAD` is treated as detached by [`isDetached`](https://github.com/actions/checkout/blob/11bd71901bbe5b1630ceea73d27597364c9af683/src/git-command-manager.ts), and `clean: false` skips `git clean -ffdx` and reset. All default-path box checkouts therefore set `clean: false`, enforced by `scripts/lint-actions.ts`.
 
@@ -38,8 +38,16 @@ Use only when `mise oci` cannot package a required tool (for example an **asdf**
 If you must fall back:
 
 ```bash
-docker build -f packages/ci-gh-actions/deploy/ci-runner/Dockerfile.monolithic \
-  -t hobo-ci-worker:local .
+version="$(node --no-warnings scripts/ci-runner-image-version.mts)"
+candidate="hobo-ci-worker:${version}"
+if ! docker image inspect "${candidate}" >/dev/null 2>&1; then
+  docker build -f packages/ci-gh-actions/deploy/ci-runner/Dockerfile.monolithic \
+    -t "${candidate}" .
+fi
+docker tag "${candidate}" hobo-ci-worker:local
+node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "${version}"
+cap="${HOBO_CI_WORKER_BUILDER_CACHE_CAP:-${HOBO_CI_WORKER_BUILDER_KEEP_STORAGE:-4GB}}"
+docker builder prune -f --keep-storage "$cap"
 ```
 
 Document the tool and backend in a PR note and open a follow-up to restore the OCI layer split.

@@ -93,11 +93,14 @@ describe("CI deps image build contract", () => {
 	});
 
 	it("collects old keyed and fetch images through the tested selection helper", () => {
-		const gc = read("scripts/ci/deps-image-gc.mts");
+		const gc = read("scripts/ci-runner-image-gc.mts");
 		const command =
-			'node --no-warnings scripts/ci/deps-image-gc.mts "$candidate"';
+			'node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"';
 		assert.equal(build.split(command).length, 3);
-		includes(gc, "selectDepsImageTagsForDeletion(images, currentTag)");
+		includes(
+			gc,
+			"selectWorkerImagesForDeletion(inventoryWithUsage, currentDepsTag)",
+		);
 		includes(gc, '"{{.Image}}"');
 		includes(gc, '["image", "prune", "-f"]');
 		const promote = build.lastIndexOf(
@@ -116,6 +119,11 @@ describe("CI deps image build contract", () => {
 			'repository="${GITHUB_REPOSITORY:-Hobo-Labs/HoBo}"',
 		);
 		includes(toolchainBuild, "if promote_candidate; then");
+		includes(toolchainBuild, 'if [[ -n "${GHCR_TOKEN:-}" ]]; then');
+		includes(
+			toolchainBuild,
+			"GHCR_TOKEN is unavailable; skipping published runner image pull",
+		);
 	});
 });
 
@@ -157,7 +165,7 @@ describe("CI deps workflow contract", () => {
 		);
 		includes(
 			job,
-			'node --no-warnings scripts/ci/deps-image-gc.mts "$candidate"',
+			'node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"',
 		);
 		assert.ok(
 			!job.includes('if [ "${{ github.event_name }}" != "pull_request" ]'),

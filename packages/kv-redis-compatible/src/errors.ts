@@ -1,4 +1,5 @@
 import type { JsonValue } from "./json.js";
+
 /**
  * Errors raised by the provider-neutral Redis-compatible layer.
  *
@@ -30,11 +31,8 @@ export class KvRedisCompatibleError extends Error {
 	}
 }
 
-// `unknown`, not `JsonValue`: an Error is not JSON, so a predicate narrowing
-// from `JsonValue` to `KvRedisCompatibleError` cannot type-check -- the two have
-// no overlap. A caller testing an unknown catch binding is the whole use.
 export function isKvRedisCompatibleError(
-	value: unknown,
+	value: JsonValue | KvRedisCompatibleError,
 ): value is KvRedisCompatibleError {
 	return value instanceof KvRedisCompatibleError;
 }

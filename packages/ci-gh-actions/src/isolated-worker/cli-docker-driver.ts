@@ -3,8 +3,16 @@ import { statSync } from "node:fs";
 import { promisify } from "node:util";
 import { z } from "zod";
 import type { DockerDriver, IsolatedContainerSpec } from "./docker-driver.js";
+import type { WorkerImage } from "./image-gc.js";
+import type { WorkerStorageDockerDriver } from "./storage-admission.js";
 
 const exec = promisify(execFile);
+const dockerImage = z.object({
+	ID: z.string().min(1),
+	Repository: z.string(),
+	Tag: z.string(),
+	CreatedAt: z.string(),
+});
 const dockerImageInspection = z.object({
 	Id: z.string().min(1),
 	RepoTags: z.array(z.string()).default([]),
@@ -24,14 +32,113 @@ export function dockerSocketMountCreateArgs(
 	return ["-v", `${socketPath}:${socketPath}`, "--group-add", String(gid)];
 }
 
+export function builderPruneArgs(keepStorage: string): string[] {
+	if (!/^\d+(?:\.\d+)?[KMGT]B$/u.test(keepStorage))
+		throw new Error("invalid builder keep-storage");
+	return ["builder", "prune", "--force", "--keep-storage", keepStorage];
+}
+
 /** Operator-owned Docker engine on a free VM; not invoked from Vercel serverless. */
 export function createCliDockerDriver(options: {
 	env?: NodeJS.ProcessEnv;
 	binary?: string;
-}): DockerDriver {
+}): DockerDriver & WorkerStorageDockerDriver {
 	const docker = options.binary ?? "docker";
 	const env = options.env ?? process.env;
 	return {
+		async dataRoot() {
+			const { stdout } = await exec(
+				docker,
+				["info", "--format", "{{.DockerRootDir}}"],
+				{ env, timeout: 30_000, maxBuffer: 4096 },
+			);
+			const root = stdout.trim();
+			if (!/^\/[^:\r\n]+$/u.test(root))
+				throw new Error("invalid docker data root");
+			return root;
+		},
+		async pruneBuilder(keepStorage) {
+			await exec(docker, builderPruneArgs(keepStorage), {
+				env,
+				timeout: 300_000,
+				maxBuffer: 1024 * 1024,
+			});
+		},
+		async listImages(): Promise<readonly WorkerImage[]> {
+			const [{ stdout }, { stdout: running }] = await Promise.all([
+				exec(docker, ["image", "ls", "--no-trunc", "--format", "{{json .}}"], {
+					env,
+					timeout: 30_000,
+					maxBuffer: 16 * 1024 * 1024,
+				}),
+				exec(docker, ["ps", "--no-trunc", "--format", "{{.Image}}"], {
+					env,
+					timeout: 30_000,
+					maxBuffer: 1024 * 1024,
+				}),
+			]);
+			const inUse = new Set(running.split("\n").map((line) => line.trim()));
+			const images = stdout.trim()
+				? stdout
+						.trim()
+						.split("\n")
+						.map((line) => dockerImage.parse(JSON.parse(line)))
+				: [];
+			const tagged = images
+				.filter(
+					(image) => image.Repository !== "<none>" && image.Tag !== "<none>",
+				)
+				.map((image) => ({
+					id: image.ID,
+					tag: `${image.Repository}:${image.Tag}`,
+					created: image.CreatedAt.replace(" ", "T").replace(
+						/ ([+-]\d{2})(\d{2}) UTC$/u,
+						"$1:$2",
+					),
+				}));
+			const inUseIds = new Set(
+				tagged
+					.filter((image) => inUse.has(image.tag) || inUse.has(image.id))
+					.map((image) => image.id),
+			);
+			return tagged.map((image) => ({
+				...image,
+				inUse: inUseIds.has(image.id),
+			}));
+		},
+		async removeImage(tag) {
+			if (!/^hobo-ci-(?:deps(?:-fetch)?|worker):[A-Za-z0-9_.-]+$/u.test(tag))
+				throw new Error("invalid worker image tag");
+			await exec(docker, ["image", "rm", "--no-prune", tag], {
+				env,
+				timeout: 120_000,
+				maxBuffer: 1024 * 1024,
+			});
+		},
+		async pruneDanglingImages() {
+			await exec(docker, ["image", "prune", "--force"], {
+				env,
+				timeout: 300_000,
+				maxBuffer: 1024 * 1024,
+			});
+		},
+		async containerExists(name) {
+			try {
+				await exec(docker, ["container", "inspect", name], {
+					env,
+					timeout: 30_000,
+					maxBuffer: 1024 * 1024,
+				});
+				return true;
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					Object.getOwnPropertyDescriptor(error, "code")?.value === 1
+				)
+					return false;
+				throw error;
+			}
+		},
 		async inspectImage(image) {
 			const { stdout } = await exec(docker, ["image", "inspect", image], {
 				env,
@@ -182,6 +289,22 @@ export function createCliDockerDriver(options: {
 				{ env, timeout: 30_000, maxBuffer: 4096 },
 			);
 			return stdout.trim() === "running";
+		},
+		async exitState(_name, containerId) {
+			const { stdout } = await exec(
+				docker,
+				[
+					"inspect",
+					"--format",
+					"{{.State.ExitCode}} {{.State.OOMKilled}}",
+					containerId,
+				],
+				{ env, timeout: 30_000, maxBuffer: 4096 },
+			);
+			const match = /^(\d+) (true|false)$/.exec(stdout.trim());
+			if (!match?.[1] || !match[2])
+				throw new Error("invalid container exit state");
+			return { exitCode: Number(match[1]), oomKilled: match[2] === "true" };
 		},
 		async exists(_name, containerId, path) {
 			if (!/^\/[A-Za-z0-9_./-]+$/.test(path)) throw new Error("invalid path");
