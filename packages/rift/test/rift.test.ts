@@ -10,6 +10,7 @@
 
 import { execSync, spawnSync } from "node:child_process";
 import {
+	chmodSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -28,7 +29,11 @@ import { type JsonBag, type JsonValue, parseJsonObject } from "../src/json.js";
 const here = dirname(fileURLToPath(import.meta.url));
 
 import { CowTier as CowTierPb } from "../src/_generated/rift_workspace_pb.js";
-import { detectCapability, probeOverlayfs, removeCopyOnWriteTree } from "../src/capability.js";
+import {
+	detectCapability,
+	probeOverlayfs,
+	removeOverlayProbe,
+} from "../src/capability.js";
 import { projectWorkspaces, readEvents } from "../src/journal.js";
 import { parseWorkspaceName } from "../src/names.js";
 import {
@@ -55,7 +60,7 @@ import {
 
 const dirs: string[] = [];
 afterAll(() => {
-	for (const d of dirs) removeCopyOnWriteTree(d);
+	for (const d of dirs) removeOverlayProbe(d);
 });
 
 function source(): string {
@@ -108,6 +113,18 @@ describe("capability ladder", () => {
 		});
 		expect(copy.tier).toBe("copy");
 		expect(copy.isolatesInPlaceWrites).toBe(true);
+	});
+
+	it("removes an overlay probe with an inaccessible kernel work directory", () => {
+		const probe = mkdtempSync(join(tmpdir(), "rift-ovl-cleanup-"));
+		dirs.push(probe);
+		const workWork = join(probe, "work", "work");
+		mkdirSync(workWork, { recursive: true });
+		chmodSync(workWork, 0o000);
+
+		removeOverlayProbe(probe);
+
+		expect(existsSync(probe)).toBe(false);
 	});
 });
 

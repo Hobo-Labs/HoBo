@@ -38,6 +38,8 @@ tier has to **copy** entries, unless you pass `--copy-all`. The overlay tier
 copies nothing — the source is the lower layer — so the exclusion does not
 apply to it and `node_modules` is simply visible at no cost.
 
+Overlay probe cleanup restores owner access to kernel-created mode-000 work directories before removal, and cleanup failures never change the reported capability.
+
 ## Entering a workspace
 
 Directory-backed tiers are ordinary paths — `cd` into them. The overlay tier is

@@ -22,7 +22,13 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdtempSync,
+	readdirSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -76,12 +82,6 @@ export function removeCopyOnWriteTree(dir: string): void {
 	rmSync(dir, { recursive: true, force: true });
 }
 
-function removeOverlayProbe(probe: string): void {
-	const merged = join(probe, "merged");
-	run("umount", [merged]);
-	removeCopyOnWriteTree(probe);
-}
-
 /** Can this directory take a FICLONE reflink? */
 export function probeReflink(dir: string): boolean {
 	const probe = mkdtempSync(join(dir, ".rift-probe-"));
@@ -94,6 +94,35 @@ export function probeReflink(dir: string): boolean {
 		return false;
 	} finally {
 		rmSync(probe, { recursive: true, force: true });
+	}
+}
+
+function restoreOwnerAccess(dir: string): void {
+	try {
+		chmodSync(dir, 0o700);
+		for (const entry of readdirSync(dir, { withFileTypes: true })) {
+			if (entry.isDirectory()) restoreOwnerAccess(join(dir, entry.name));
+		}
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+			return;
+		}
+		throw error;
+	}
+}
+
+export function removeOverlayProbe(probe: string): void {
+	try {
+		const merged = join(probe, "merged");
+		run("umount", [merged]);
+	} catch {
+		// Probe may never have mounted.
+	}
+	try {
+		restoreOwnerAccess(probe);
+		removeCopyOnWriteTree(probe);
+	} catch {
+		// Cleanup failure must not change the probe result.
 	}
 }
 

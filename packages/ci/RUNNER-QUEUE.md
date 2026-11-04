@@ -127,6 +127,8 @@ Force-stop settlement on the box worker **re-queues the reserved job** when GitH
 
 **Memory admission:** every job has a class-sized request used as its Docker `--memory` and `--memory-swap` limit. Active + reserved requests, the standard-sized warm container, and the heavy trunk reservation must fit the budget; otherwise the job stays queued. Exact GitHub job names select `light` (3072 MiB) for guard/lint/contract jobs, `standard` (4096 MiB, the unlisted default), or `heavy` (6144 MiB) for turbo build/test and image lanes. On the 15989 MiB box, the default budget is `15989 - 2048 = 13941 MiB`: heavy + standard + light = 13312 MiB fits three slots, while two heavy jobs leave only 1653 MiB and three heavy jobs cannot fit. See [finding 24](../../docs/ci/performance.md#finding-24-slot-only-admission-let-the-host-oom-killer-choose-a-victim).
 
+A feasible rank-0 job waiting for memory, the merge-group lease cap, or a slot blocks every lower rank immediately and on later passes until it is admitted. Non-zero ranks retain the HOL backfill window below. A trunk request larger than the whole budget cannot fit even when idle, so it never raises that lower-rank barrier and cannot starve PRs forever. See [finding 36](../../docs/ci/performance.md#finding-36-a-waiting-trunk-job-did-not-stop-lower-rank-admission).
+
 | Daemon variable | Default | Meaning |
 |---|---|---|
 | `HOBO_CI_WORKER_MEMORY_BUDGET_MB` | host/cgroup memory minus reserve | Total admitted memory; an explicit value may not exceed that derived ceiling |
@@ -135,7 +137,7 @@ Force-stop settlement on the box worker **re-queues the reserved job** when GitH
 | `HOBO_CI_WORKER_MEMORY_CLASS_STANDARD_MB` | `4096` | Standard class and warm-container hard limit |
 | `HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB` | `HOBO_CI_WORKER_MEMORY_MB` or `6144` | Heavy class and trunk reservation |
 | `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; startup checks still apply |
-| `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Backfill window before a non-fitting head job blocks smaller jobs in the same rank |
+| `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Backfill window before a non-fitting head job blocks smaller jobs in the same non-zero rank; feasible rank-0 waits block lower ranks immediately |
 | `HOBO_CI_JOB_MEMORY_MB` | admitted class value | Per-container value exported to the runner; fallback when its cgroup limit cannot be read |
 | `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum active reserved/running merge-group leases; must be a positive integer |
 | `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host root for per-job work mounts, teardown and byte/inode pressure checks; same filesystem as pnpm store |
