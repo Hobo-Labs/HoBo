@@ -3,7 +3,7 @@
  * The CD plane never re-renders raw Git/Helm under high privilege.
  */
 import { createHash } from "node:crypto";
-import { isJsonObject, type JsonObject, type JsonValue } from "../json.js";
+import { isJsonObject, type JsonObject } from "../json.js";
 import {
 	DEPLOYMENT_PLAN_SCHEMA,
 	type DeploymentPlan,
@@ -127,9 +127,8 @@ export function listResources(
 	return set.plan.resources;
 }
 
-// `unknown`: this serializes, it does not inspect. A `JsonValue` parameter is a
-// promise the function neither needs nor checks, paid for by callers converting
-// perfectly good domain records before handing them over to be stringified.
+// Serializes opaque values for stable digests; callers pass JSON-shaped records.
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- hashing boundary accepts any JSON-serializable input
 function stableStringify(value: unknown): string {
 	if (value === null || !isJsonObject(value)) {
 		return JSON.stringify(value);

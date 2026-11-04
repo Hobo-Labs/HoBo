@@ -62,6 +62,11 @@ export {
 	toSecretFreeOutputs,
 } from "./cd/index.js";
 export {
+	capabilityCatalogHashFromCommercialRefs,
+	commercialProductRefsHash,
+	pricingCatalogHashFromCommercialRefs,
+} from "./commercial-pricing.js";
+export {
 	CLOUD_EVENT_SCHEMA_VERSION,
 	CLOUD_EVENTS,
 	type DeploymentDeployedData,

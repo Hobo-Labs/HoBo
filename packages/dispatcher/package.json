@@ -11,10 +11,17 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./v2": {
+			"types": "./dist/dispatcher-v2.d.ts",
+			"default": "./dist/dispatcher-v2.js"
 		}
 	},
 	"publishConfig": {
 		"access": "public"
+	},
+	"dependencies": {
+		"@hobo/pricing": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",
