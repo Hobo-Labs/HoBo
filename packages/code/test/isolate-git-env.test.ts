@@ -17,11 +17,10 @@ describe("test git isolation", () => {
 			});
 			if (initialized.status !== 0) throw new Error(initialized.stderr);
 
-			const signing = spawnSync(
-				"git",
-				["config", "--get", "commit.gpgsign"],
-				{ cwd: root, encoding: "utf8" },
-			);
+			const signing = spawnSync("git", ["config", "--get", "commit.gpgsign"], {
+				cwd: root,
+				encoding: "utf8",
+			});
 			expect(signing.error).toBeUndefined();
 			expect(signing.stdout.trim()).not.toBe("true");
 		} finally {
