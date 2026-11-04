@@ -44,6 +44,25 @@ describe("CI deps image build contract", () => {
 		assert.ok(!dockerfile.split("AS final")[1]?.includes("RUN pnpm fetch"));
 	});
 
+	it("creates the install payload as root before the uid-1000 install stage", () => {
+		const fetch = dockerfile.split("FROM fetch AS install")[0];
+		assert.ok(fetch);
+		const rootStep = fetch.indexOf("USER root");
+		const create = fetch.indexOf(
+			"RUN mkdir -p /pnpm-store /opt/actions-runner/_hobo_work/HoBo/HoBo /opt/hobo-deps \\",
+		);
+		const ownership = fetch.indexOf(
+			"&& chown -R 1000:1000 /pnpm-store /opt/actions-runner/_hobo_work /opt/hobo-deps",
+			create,
+		);
+		const installUser = fetch.indexOf("USER 1000:1000", ownership);
+		assert.ok(rootStep > -1);
+		assert.ok(create > rootStep);
+		assert.ok(ownership > create);
+		assert.ok(installUser > ownership);
+		includes(dockerfile, "'set -e; for source do");
+	});
+
 	it("creates an owned payload destination without creating a work dir", () => {
 		const final = dockerfile.split("FROM ${TOOLCHAIN_IMAGE} AS final")[1];
 		assert.ok(final);

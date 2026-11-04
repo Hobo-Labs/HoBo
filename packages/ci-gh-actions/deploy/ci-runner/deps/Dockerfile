@@ -3,8 +3,8 @@ ARG TOOLCHAIN_IMAGE=hobo-ci-worker:local
 
 FROM ${TOOLCHAIN_IMAGE} AS fetch
 USER root
-RUN mkdir -p /pnpm-store /opt/actions-runner/_hobo_work/HoBo/HoBo \
-  && chown -R 1000:1000 /pnpm-store /opt/actions-runner/_hobo_work
+RUN mkdir -p /pnpm-store /opt/actions-runner/_hobo_work/HoBo/HoBo /opt/hobo-deps \
+  && chown -R 1000:1000 /pnpm-store /opt/actions-runner/_hobo_work /opt/hobo-deps
 USER 1000:1000
 WORKDIR /opt/actions-runner/_hobo_work/HoBo/HoBo
 ENV npm_config_store_dir=/pnpm-store \
@@ -21,7 +21,7 @@ RUN --network=none --mount=type=cache,id=hobo-pnpm-store,target=/pnpm-store,uid=
   pnpm install --frozen-lockfile --offline --ignore-scripts \
   && pnpm rebuild @ast-grep/cli @bufbuild/buf esbuild protobufjs \
   && find . -type d -name node_modules -prune -exec sh -c \
-    'for source do target="/opt/hobo-deps/${source#./}"; mkdir -p "$(dirname "$target")"; mv "$source" "$target"; done' sh {} +
+    'set -e; for source do target="/opt/hobo-deps/${source#./}"; mkdir -p "$(dirname "$target")"; mv "$source" "$target"; done' sh {} +
 
 FROM ${TOOLCHAIN_IMAGE} AS final
 ARG DEPS_KEY
