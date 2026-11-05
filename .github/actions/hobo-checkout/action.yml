@@ -173,7 +173,26 @@ runs:
       run: |
         set -euo pipefail
         mapfile -t paths <<< "$ROOT_FILES"
-        git checkout HEAD -- "${paths[@]}"
+        root=()
+        nested=()
+        for path in "${paths[@]}"; do
+          [ -z "$path" ] && continue
+          case "$path" in
+            */*) nested+=("$path") ;;
+            *) root+=("$path") ;;
+          esac
+        done
+        if [ "${#root[@]}" -gt 0 ]; then
+          git checkout HEAD -- "${root[@]}"
+        fi
+        # Cone mode only tracks directories. A nested file (media/package.json)
+        # is not in any cone, so `git checkout HEAD --` says pathspec did not
+        # match (Main Fabric 42054416861). --skip-checks adds the file pattern
+        # without pulling the sibling asset tree.
+        for path in "${nested[@]}"; do
+          git sparse-checkout add --skip-checks -- "$path"
+          git checkout HEAD -- "$path"
+        done
     - name: Initialize submodules (sparse cone via pins:fetch in job)
       if: inputs.submodules == 'true'
       shell: bash
