@@ -328,6 +328,10 @@ const storageAdmission = createWorkerStorageAdmission({
 	log,
 });
 await storageAdmission.reap(storageLeases(await store.activeLeases()));
+const jobPickupMetadata = new Map<
+	string,
+	{ event?: string; jobCreatedAt?: string }
+>();
 const worker = createIsolatedContainerController({
 	store,
 	github,
@@ -342,6 +346,7 @@ const worker = createIsolatedContainerController({
 	memoryAdmission,
 	generalLeaseIds: (activeLeases) =>
 		generalLeaseIdsFor(activeLeases, github, workerRunnerLabels),
+	jobPickupMetadata,
 	log,
 	slots,
 	volumes: pnpmStore ? [{ source: pnpmStore, target: PNPM_STORE_TARGET }] : [],
@@ -434,6 +439,7 @@ const runtime = createHostedRelayRuntime({
 	// With no trunk slots this is the slot count, all the host could run anyway.
 	generalLeaseLimit: slots - trunkSlots,
 	mergeGroupLeaseLimit: mergeGroupLeases,
+	jobPickupMetadata,
 	lendTrunkSlots,
 	memoryAdmission,
 	storageAdmission,
