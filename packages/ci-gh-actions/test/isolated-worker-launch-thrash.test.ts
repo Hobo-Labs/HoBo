@@ -122,6 +122,7 @@ async function launchFixture() {
 		workerImage: "hobo-ci-worker:local",
 		workRoot: join(root, "work"),
 		workFs,
+		scheduleRetiredSweep: vi.fn(),
 		now: () => clock.now,
 		log,
 	});
