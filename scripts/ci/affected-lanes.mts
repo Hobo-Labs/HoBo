@@ -247,6 +247,9 @@ export function cliRootFileReader(baseRef: string): ReadRootFile {
 	}
 	if (mergeBase === "") mergeBase = baseRef;
 	return (path, side) => {
+		// An empty ref would make `git show :path` read the index, which
+		// matches a clean tree and would narrow. No base means widen.
+		if (side === "base" && mergeBase === "") return undefined;
 		try {
 			return side === "head"
 				? readFileSync(new URL(`../../${path}`, import.meta.url), "utf8")

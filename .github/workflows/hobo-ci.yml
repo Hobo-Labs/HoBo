@@ -300,9 +300,10 @@ jobs:
           TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
           HOBO_IMPACT_GATE: ${{ vars.HOBO_IMPACT_GATE || 'shadow' }}
         run: |
+          set -euo pipefail
           git diff --name-only "${TURBO_SCM_BASE}"...HEAD \
             | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base="${TURBO_SCM_BASE}" \
-            > impact-plan.json || true
+            > "$RUNNER_TEMP/impact-plan.json"
       - name: DCO sign-off check
         if: github.event_name == 'pull_request'
         continue-on-error: true
@@ -389,9 +390,10 @@ jobs:
           BASE: ${{ steps.merge-group-base.outputs.base }}
           HOBO_IMPACT_GATE: ${{ vars.HOBO_IMPACT_GATE || 'shadow' }}
         run: |
+          set -euo pipefail
           git diff --name-only "$BASE" HEAD \
-            | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base="$BASE" --meaningful-out=impact-meaningful.txt \
-            > impact-plan.json || true
+            | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base="$BASE" --meaningful-out="$RUNNER_TEMP/impact-meaningful.txt" \
+            > "$RUNNER_TEMP/impact-plan.json"
       - name: S0 gate set
         if: github.event_name == 'merge_group'
         timeout-minutes: 12
