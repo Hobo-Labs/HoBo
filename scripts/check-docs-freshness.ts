@@ -92,7 +92,9 @@ function matchesAny(file: string, patterns: RegExp[]) {
 	return patterns.some((pattern) => pattern.test(file));
 }
 
-const files = changedFiles();
+const files = changedFiles().filter(
+	(file) => !/(^|\/)node_modules(\/|$)/u.test(file),
+);
 const codeFiles = files.filter(
 	(file) =>
 		matchesAny(file, CODE_PATTERNS) &&

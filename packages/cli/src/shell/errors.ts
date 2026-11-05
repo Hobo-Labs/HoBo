@@ -1,4 +1,3 @@
-import type { JsonValue } from "../json.js";
 export class CliError extends Error {
 	readonly exitCode: number;
 	readonly code: string;

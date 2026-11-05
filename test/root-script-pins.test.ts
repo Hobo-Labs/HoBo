@@ -20,6 +20,20 @@ test("fast test script is root-only and full quiet unit lane remains explicit", 
 		packageJson.scripts["test:unit:quiet"],
 		"node --import tsx scripts/run-unit-tests.ts --quiet",
 	);
+	assert.equal(
+		packageJson.scripts["test:unit:shards"],
+		"node --import tsx scripts/generate-unit-test-shards.ts",
+	);
+	assert.equal(
+		packageJson.scripts["test:unit:shards:check"],
+		"node --import tsx scripts/generate-unit-test-shards.ts --check",
+	);
+	for (let index = 0; index < 9; index += 1) {
+		assert.equal(
+			packageJson.scripts[`test:unit:draft:${index}`],
+			`node --import tsx scripts/run-tests.ts --category=draft --quiet --final --shard=${index}/9`,
+		);
+	}
 	// The whole-repository lane denies warnings, as the changed-file lane
 	// does (5ff4548a); the bare `oxlint` this pinned let warnings through.
 	assert.equal(

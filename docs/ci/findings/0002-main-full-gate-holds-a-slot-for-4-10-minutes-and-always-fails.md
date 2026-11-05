@@ -143,9 +143,12 @@ to about 5 s locally, and its longest case is the 2.9 s stall test instead of 16
 **Main full gate is affected-only.** Before this change, every main push ran `check:all` (repo-wide lint,
 architecture guard, all 758 root unit files, behavior) whatever it touched. A step now resolves the
 previous main commit (the push's `before`, or `HEAD~1` for a dispatch) and runs
-`scripts/ci/affected-lanes.mts --main-gate` on the diff. Root config, the lockfile, toolchain pins
-(`mise.toml`, `mise.lock`), a deleted package, or an empty diff get `check:all`. Everything
-else gets `agent:check --base=<previous main>`, the same impact-scoped policy the PR impact gate runs.
+`scripts/ci/affected-lanes.mts --main-gate` on the diff. Behavior-changing root config, the lockfile,
+toolchain pins (`mise.toml`, `mise.lock`), a deleted package, or an empty diff get `check:all`.
+Scripts-only root manifest edits and root `//#` task edits do not widen scope. Every
+`globalDependencies` addition or removal widens scope because those files are hash inputs for every
+task; missing or invalid base content also fails closed. Everything else gets
+`agent:check --base=<previous main>`, the same impact-scoped policy the PR impact gate runs.
 `.github/` used to be on the repo-wide list too, and it is the one input CI-tuning PRs always touch: run
 41592443075 (4m48s) spent 3m24s of it in `check:all` for a workflow edit that the PR and
 merge-group runs had already executed. Workflow and action files are now affected-only; agent:check

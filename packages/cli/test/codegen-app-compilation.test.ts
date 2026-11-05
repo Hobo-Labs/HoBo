@@ -12,9 +12,13 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { writeFixtureProject } from "../src/codegen/fixture.js";
+import { selectProjectCodegenEngine } from "../src/codegen/project-engine.js";
 import { runCodegen } from "../src/codegen/run-codegen.js";
 import { scannedSources } from "../src/codegen/source-files.js";
-import { defaultCodegenLayout } from "../src/codegen/types.js";
+import {
+	type CodegenArtifact,
+	defaultCodegenLayout,
+} from "../src/codegen/types.js";
 import { createHoboCli } from "../src/index.js";
 
 describe("generated app declarations compile", () => {
@@ -229,16 +233,37 @@ describe("generated app declarations compile", () => {
 			await writeFile(neighbor, neighborSource);
 			const authored = `${await readFile(app, "utf8")}\nexport { otherGeneratorValue } from "./src/_generated/other-generator/model.js";\n`;
 			await writeFile(app, authored);
-			await runCodegen({ projectRoot, check: false });
-			await expect(
-				runCodegen({ projectRoot, check: true }),
-			).resolves.toMatchObject({ mode: "check" });
+			let artifacts: readonly CodegenArtifact[] | undefined;
+			const regenerate = async (check: boolean) => {
+				const selected = await selectProjectCodegenEngine(projectRoot);
+				return runCodegen(
+					{ projectRoot, check },
+					{
+						engine: {
+							...selected,
+							async generate(root) {
+								artifacts ??= await selected.generate(root);
+								return artifacts.filter(
+									(artifact) =>
+										selected.layout.ownedFiles?.includes(artifact.path) ===
+											true ||
+										selected.layout.generatedRoots.some((generatedRoot) =>
+											artifact.path.startsWith(`${generatedRoot}/`),
+										),
+								);
+							},
+						},
+					},
+				);
+			};
+			await regenerate(false);
+			await expect(regenerate(true)).resolves.toMatchObject({ mode: "check" });
 			expect(await readFile(seed, "utf8")).toBe(before);
 			await writeFile(seed, "stale seed");
-			await expect(
-				runCodegen({ projectRoot, check: true }),
-			).rejects.toMatchObject({ code: "HOBO_CODEGEN_DRIFT" });
-			await runCodegen({ projectRoot, check: false });
+			await expect(regenerate(true)).rejects.toMatchObject({
+				code: "HOBO_CODEGEN_DRIFT",
+			});
+			await regenerate(false);
 			expect(await readFile(seed, "utf8")).toBe(before);
 			expect(await readFile(app, "utf8")).toBe(authored);
 			expect(await readFile(neighbor, "utf8")).toBe(neighborSource);
@@ -247,9 +272,7 @@ describe("generated app declarations compile", () => {
 				metadata,
 				(await readFile(metadata, "utf8")).replace("app.ts", "custom.ts"),
 			);
-			await expect(
-				runCodegen({ projectRoot, check: false }),
-			).resolves.toMatchObject({ mode: "write" });
+			await expect(regenerate(false)).resolves.toMatchObject({ mode: "write" });
 			expect(await readFile(seed, "utf8")).toBe(before);
 		} finally {
 			await rm(root, { recursive: true, force: true });
