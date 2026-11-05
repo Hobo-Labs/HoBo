@@ -72,6 +72,7 @@ unindexed new finding files as notices.
 - [Finding 62: memory reservations were guesses held as hard limits](./findings/0062-memory-reservations-were-guesses-held-as-hard-limits.md)
 - [Finding 63: a dead runner left its GitHub job in progress](./findings/0063-a-dead-runner-left-its-github-job-in-progress.md)
 - [Finding 64: containerless launch failures thrashed worker leases](./findings/0064-containerless-launch-failures-thrashed-worker-leases.md)
+- [Finding 65: merge-group jobs serialized behind the release job](./findings/0065-merge-group-jobs-serialized-behind-the-release-job.md)
 - [Finding 67: Unbounded pnpm store prunes froze the box](./findings/0067-unbounded-pnpm-store-prunes-froze-the-box.md)
 - [Finding 70: a test fixture depended on the job container umask](./findings/0070-a-test-fixture-depended-on-the-job-container-umask.md)
 <!-- findings-index:end -->

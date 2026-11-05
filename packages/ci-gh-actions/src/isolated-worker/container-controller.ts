@@ -14,6 +14,10 @@ import { runnerDownloadFor } from "../bootstrap.js";
 import { type GithubTransport, getJob } from "../github.js";
 import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
+import {
+	type JobPickupMetadataCache,
+	jobPickupMetadataKey,
+} from "../job-pickup.js";
 import { RUNNER_LABEL, type RunnerLabel } from "../runner-labels.js";
 import {
 	containerResourceWeightsForRank,
@@ -185,6 +189,20 @@ type WarmContainer = Readonly<{
 	memoryMb: number;
 	selection: JobImage;
 }>;
+type JobPickupLogFields = {
+	jobId: number;
+	runId: number;
+	runEvent?: string;
+	label?: string;
+	jobCreatedAt?: string;
+	admittedAt?: string;
+	containerStartedAt?: string;
+	runnerRegisteredAt?: string;
+	jobCreatedToAdmittedMs?: number;
+	admittedToContainerStartedMs?: number;
+	containerStartedToRunnerRegisteredMs?: number;
+	pickupMs?: number;
+};
 
 export function createIsolatedContainerController(options: {
 	store: IsolatedWorkerStore;
@@ -201,12 +219,14 @@ export function createIsolatedContainerController(options: {
 	generalLeaseIds?: (
 		activeLeases: readonly Lease[],
 	) => Promise<ReadonlySet<string>>;
+	jobPickupMetadata?: Readonly<JobPickupMetadataCache>;
 	log?: (
 		event:
 			| WorkerLeaseReconciliationEvent
 			| OrphanJobEvent
 			| "hobo_ci_container_oom"
 			| "hobo_ci_container_memory_peak"
+			| "hobo_ci_job_pickup"
 			| "hobo_ci_launch_failed"
 			| "hobo_ci_launch_parked"
 			| "hobo_ci_work_dir_removed"
@@ -731,6 +751,7 @@ export function createIsolatedContainerController(options: {
 					return;
 				}
 				let containerId = "";
+				let containerStartedAt = "";
 				const memoryMb = classMemoryMb(planned);
 				let stage: LaunchStage = "image";
 				try {
@@ -773,6 +794,7 @@ export function createIsolatedContainerController(options: {
 						stage = "start";
 						await options.docker.start(name, containerId);
 					}
+					containerStartedAt = now();
 					stage = "transition";
 					const created = await options.store.transition(
 						id,
@@ -785,7 +807,7 @@ export function createIsolatedContainerController(options: {
 							lease.state = "dispatched";
 						},
 						"ci.SandboxCreated",
-						now(),
+						containerStartedAt,
 					);
 					if (!created) throw new Error("reservation changed");
 					await options.store.transition(
@@ -817,6 +839,7 @@ export function createIsolatedContainerController(options: {
 						throw new Error("runner registration failed");
 					const jit = jitResponse.parse(await response.json());
 					stage = "transition";
+					const runnerRegisteredAt = now();
 					const registered = await options.store.transition(
 						id,
 						["claiming"],
@@ -828,9 +851,39 @@ export function createIsolatedContainerController(options: {
 							lease.state = "running";
 						},
 						"ci.RunnerRegistered",
-						now(),
+						runnerRegisteredAt,
 					);
 					if (!registered) throw new Error("registration revoked");
+					const fields: JobPickupLogFields = {
+						jobId: registered.jobId,
+						runId: registered.originalRunId,
+					};
+					const metadata = options.jobPickupMetadata?.get(
+						jobPickupMetadataKey({
+							repositoryId: registered.repositoryId,
+							id: registered.jobId,
+							runAttempt: registered.runAttempt,
+						}),
+					);
+					if (metadata?.event !== undefined) fields.runEvent = metadata.event;
+					fields.label = label;
+					if (metadata?.jobCreatedAt !== undefined)
+						fields.jobCreatedAt = metadata.jobCreatedAt;
+					fields.admittedAt = registered.createdAt;
+					fields.containerStartedAt = containerStartedAt;
+					fields.runnerRegisteredAt = runnerRegisteredAt;
+					const jobCreatedMs = Date.parse(metadata?.jobCreatedAt ?? "");
+					const admittedMs = Date.parse(registered.createdAt);
+					const containerStartedMs = Date.parse(containerStartedAt);
+					const runnerRegisteredMs = Date.parse(runnerRegisteredAt);
+					if (Number.isFinite(jobCreatedMs))
+						fields.jobCreatedToAdmittedMs = admittedMs - jobCreatedMs;
+					fields.admittedToContainerStartedMs = containerStartedMs - admittedMs;
+					fields.containerStartedToRunnerRegisteredMs =
+						runnerRegisteredMs - containerStartedMs;
+					if (Number.isFinite(jobCreatedMs))
+						fields.pickupMs = runnerRegisteredMs - jobCreatedMs;
+					options.log?.("hobo_ci_job_pickup", fields);
 					stage = "runner";
 					await startRunner(
 						options.docker,
