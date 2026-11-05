@@ -111,6 +111,7 @@ export {
 	createWorkerStorageAdmission,
 	type WorkerStorageAdmission,
 } from "./isolated-worker/storage-admission.js";
+export { createTickTrigger } from "./isolated-worker/tick-trigger.js";
 export { resolveWorkerSlotConfig } from "./isolated-worker/worker-slots.js";
 export {
 	defaultWorkerDatabasePath,

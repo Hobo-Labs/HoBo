@@ -22,6 +22,7 @@ import {
 	createNodeWorkerStorageFileSystem,
 	createPnpmStoreMaintenance,
 	createPollLogFilter,
+	createTickTrigger,
 	createWorkerMemoryAdmission,
 	createWorkerStorageAdmission,
 	type DepsImageProcessRequest,
@@ -455,7 +456,7 @@ function runTick(): Promise<void> {
 		if (!reconciliation.inventoryKnown) return;
 		// In push mode the hosted relay drains the shared inbox; in pull mode
 		// this worker is the only consumer of its own.
-		await runtime.tick({ maxDeliveries: poller ? 10 : 0 });
+		await runtime.tick({ maxDeliveries: poller ? 50 : 0 });
 	})();
 	tickInFlight = current.finally(() => {
 		if (tickInFlight === current) tickInFlight = undefined;
@@ -463,11 +464,21 @@ function runTick(): Promise<void> {
 	return tickInFlight;
 }
 
+const tickTrigger = createTickTrigger({
+	run: runTick,
+	onError: (error) => {
+		log("hobo_ci_isolated_worker_tick_failed", {
+			message: error instanceof Error ? error.message : "unknown",
+		});
+	},
+});
+
 function runJobPoll(): void {
 	if (draining || !poller || jobPollInFlight) return;
 	jobPollInFlight = poller
 		.poll()
 		.then((summary) => {
+			if (summary.accepted > 0) tickTrigger.trigger();
 			if (!pollWorthLogging(summary, Date.now())) return;
 			const { waiting, ...counts } = summary;
 			log("hobo_ci_isolated_worker_jobs_polled", {
@@ -554,13 +565,7 @@ log("hobo_ci_isolated_worker_started", {
 });
 
 gcTimer = setInterval(runGc, gcIntervalMs);
-pollTimer = setInterval(() => {
-	void runTick().catch((error) => {
-		log("hobo_ci_isolated_worker_tick_failed", {
-			message: error instanceof Error ? error.message : "unknown",
-		});
-	});
-}, intervalMs);
+pollTimer = setInterval(tickTrigger.trigger, intervalMs);
 if (poller) {
 	runJobPoll();
 	jobPollTimer = setInterval(runJobPoll, plan.jobPollMs);

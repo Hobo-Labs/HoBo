@@ -32,6 +32,8 @@ export interface GithubJobPollerOptions {
 	durations?: Pick<JobDurations, "observe">;
 	/** Primed from the run lists already read here, at no extra GitHub request. */
 	admissionOrder?: Pick<AdmissionOrder, "prime">;
+	/** Maximum concurrent per-run job-list reads. */
+	jobReadConcurrency?: number;
 	now?: () => number;
 }
 
@@ -117,8 +119,43 @@ class RateLimited extends Error {
 	}
 }
 
+async function waitForReads<T>(reads: readonly Promise<T>[]): Promise<T[]> {
+	const outcomes = await Promise.allSettled(reads);
+	const values: T[] = [];
+	for (const outcome of outcomes) {
+		if (outcome.status === "rejected") throw outcome.reason;
+		values.push(outcome.value);
+	}
+	return values;
+}
+
+async function readBounded<T, R>(
+	values: readonly T[],
+	concurrency: number,
+	read: (value: T) => Promise<R>,
+): Promise<R[]> {
+	const results = Array.from<R>({ length: values.length });
+	const entries = values.entries();
+	const worker = async () => {
+		for (const [index, value] of entries) results[index] = await read(value);
+	};
+	await waitForReads(
+		Array.from({ length: Math.min(concurrency, values.length) }, () =>
+			worker(),
+		),
+	);
+	return results;
+}
+
 export function createGithubJobPoller(options: GithubJobPollerOptions) {
 	const now = options.now ?? Date.now;
+	const jobReadConcurrency = options.jobReadConcurrency ?? 8;
+	if (
+		!Number.isInteger(jobReadConcurrency) ||
+		jobReadConcurrency < 1 ||
+		jobReadConcurrency > 32
+	)
+		throw new Error("invalid jobReadConcurrency");
 	let pausedUntilMs = 0;
 	let rateLimitRemaining: number | undefined;
 
@@ -232,28 +269,6 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 				seen.add(connection.repositoryId);
 				summary.repositories++;
 				const runIds = new Set<number>();
-				for (const status of RUN_STATUSES) {
-					const runs = await getJson(
-						connection.installationId,
-						`/repos/${connection.repository}/actions/runs?status=${status}&per_page=50`,
-						Runs,
-						summary,
-					);
-					primeRuns(runs?.workflow_runs);
-					for (const run of runs?.workflow_runs ?? []) runIds.add(run.id);
-				}
-				const newest = await getJson(
-					connection.installationId,
-					`/repos/${connection.repository}/actions/runs?per_page=${NEWEST_RUNS}`,
-					Runs,
-					summary,
-				);
-				primeRuns(newest?.workflow_runs);
-				const newestCompleted: Run[] = [];
-				for (const run of newest?.workflow_runs ?? []) {
-					if (run.status === "completed") newestCompleted.push(run);
-					else runIds.add(run.id);
-				}
 				// A run that finished drops out of queued/in_progress before its last
 				// job's completion is seen; without it the runner's container is only
 				// reaped at max runtime and holds a slot. Recent completed runs close that.
@@ -261,12 +276,38 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					Math.floor((now() - COMPLETED_LOOKBACK_MS) / LOOKBACK_STEP_MS) *
 					LOOKBACK_STEP_MS;
 				const since = new Date(sinceMs).toISOString();
-				const completed = await getJson(
-					connection.installationId,
-					`/repos/${connection.repository}/actions/runs?status=completed&created=%3E%3D${since}&per_page=50`,
-					Runs,
-					summary,
-				);
+				const [queued, inProgress, newest, completed] = await waitForReads([
+					...RUN_STATUSES.map((status) =>
+						getJson(
+							connection.installationId,
+							`/repos/${connection.repository}/actions/runs?status=${status}&per_page=50`,
+							Runs,
+							summary,
+						),
+					),
+					getJson(
+						connection.installationId,
+						`/repos/${connection.repository}/actions/runs?per_page=${NEWEST_RUNS}`,
+						Runs,
+						summary,
+					),
+					getJson(
+						connection.installationId,
+						`/repos/${connection.repository}/actions/runs?status=completed&created=%3E%3D${since}&per_page=50`,
+						Runs,
+						summary,
+					),
+				]);
+				for (const runs of [queued, inProgress]) {
+					primeRuns(runs?.workflow_runs);
+					for (const run of runs?.workflow_runs ?? []) runIds.add(run.id);
+				}
+				primeRuns(newest?.workflow_runs);
+				const newestCompleted: Run[] = [];
+				for (const run of newest?.workflow_runs ?? []) {
+					if (run.status === "completed") newestCompleted.push(run);
+					else runIds.add(run.id);
+				}
 				primeRuns(completed?.workflow_runs);
 				const settling = new Map<
 					number,
@@ -293,13 +334,20 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						settling.set(run.id, { key, attempt: run.run_attempt });
 				}
 				summary.runs += runIds.size;
-				for (const runId of runIds) {
-					const jobs = await getJson(
-						connection.installationId,
-						`/repos/${connection.repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
-						Jobs,
-						summary,
-					);
+				const orderedRunIds = [...runIds];
+				const jobLists = await readBounded(
+					orderedRunIds,
+					jobReadConcurrency,
+					(runId) =>
+						getJson(
+							connection.installationId,
+							`/repos/${connection.repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
+							Jobs,
+							summary,
+						),
+				);
+				for (const [index, runId] of orderedRunIds.entries()) {
+					const jobs = jobLists[index];
 					const attempt = settling.get(runId);
 					const failedBefore = summary.failed;
 					for (const job of jobs?.jobs ?? []) {

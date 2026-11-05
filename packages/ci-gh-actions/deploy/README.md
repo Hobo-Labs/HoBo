@@ -118,6 +118,12 @@ non-secret settings:
 | `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image/builder/store/dead-workdir GC interval; minimum 60000, capped at 300000 |
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cache cap with no age exemption; `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` remains a deprecated alias |
 
+Each pull poll issues its four run-list reads concurrently and reads per-run job lists with bounded concurrency
+(default eight), while keeping inbox ingestion sequential in run-id order. Accepted deliveries trigger an immediate
+relay tick rather than waiting for the next two-second timer; a tick in flight coalesces these kicks into one
+follow-up. Pull-mode ticks drain up to 50 inbox deliveries so one poll's queued and in-progress burst does not
+require several ticks.
+
 One `hobo_ci_job_pickup` log per lease records job/run identity, workflow event, runner label, admission,
 container-start and registration timestamps, and their millisecond deltas. Polled job creation time and total
 pickup delay are included when known. The metadata comes from existing GitHub reads; no additional API calls

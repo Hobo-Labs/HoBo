@@ -36,6 +36,14 @@ const NOW = Date.parse("2026-11-02T12:00:00Z");
 const REPO = "Org/Repo";
 const CONNECTION = { installationId: 10, repositoryId: 101, repository: REPO };
 
+function deferred() {
+	let resolve = () => {};
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
+
 const PolledBody = z
 	.object({
 		action: z.string(),
@@ -471,6 +479,186 @@ describe("GitHub job poller", () => {
 		github.calls = [];
 		expect(await poller.poll()).toMatchObject({ runs: 0, settled: 1 });
 		expect(jobReads()).toEqual([]);
+	});
+
+	it("overlaps job-list reads up to jobReadConcurrency", async () => {
+		const fake = new FakeGithub(
+			{ queued: [900, 901, 902], in_progress: [] },
+			{
+				900: [{ id: 1, status: "queued", labels: ["hobo"] }],
+				901: [{ id: 2, status: "queued", labels: ["hobo"] }],
+				902: [{ id: 3, status: "queued", labels: ["hobo"] }],
+			},
+		);
+		const releases = new Map<number, () => void>();
+		const firstTwoStarted = deferred();
+		const thirdStarted = deferred();
+		let inFlight = 0;
+		let maxInFlight = 0;
+		const github: GithubTransport = {
+			async request(installationId, path, method = "GET", body, ifNoneMatch) {
+				const runJobs = /actions\/runs\/(\d+)\/jobs\?/.exec(path);
+				if (runJobs?.[1]) {
+					const runId = Number(runJobs[1]);
+					inFlight++;
+					maxInFlight = Math.max(maxInFlight, inFlight);
+					await new Promise<void>((resolve) => {
+						releases.set(runId, () => {
+							inFlight--;
+							resolve();
+						});
+						if (releases.size === 2) firstTwoStarted.resolve();
+						if (runId === 902) thirdStarted.resolve();
+					});
+				}
+				return fake.request(installationId, path, method, body, ifNoneMatch);
+			},
+		};
+		const poller = createGithubJobPoller({
+			github,
+			jobReadConcurrency: 2,
+			connections: async () => [CONNECTION],
+			ingest: async () => "accepted",
+			now: () => NOW,
+		});
+		const polling = poller.poll();
+		await firstTwoStarted.promise;
+		expect(maxInFlight).toBe(2);
+		releases.get(900)?.();
+		releases.delete(900);
+		await thirdStarted.promise;
+		expect(maxInFlight).toBeGreaterThan(1);
+		expect(maxInFlight).toBeLessThanOrEqual(2);
+		for (const release of releases.values()) release();
+		releases.clear();
+		expect((await polling).accepted).toBe(3);
+	});
+
+	it("ingests in run-id order when job reads resolve out of order", async () => {
+		const fake = new FakeGithub(
+			{ queued: [900, 901, 902], in_progress: [] },
+			{
+				900: [{ id: 1, status: "queued", labels: ["hobo"] }],
+				901: [{ id: 2, status: "queued", labels: ["hobo"] }],
+				902: [{ id: 3, status: "queued", labels: ["hobo"] }],
+			},
+		);
+		const releases = new Map<number, () => void>();
+		const allStarted = deferred();
+		const resolved: number[] = [];
+		const github: GithubTransport = {
+			async request(installationId, path, method = "GET", body, ifNoneMatch) {
+				const runJobs = /actions\/runs\/(\d+)\/jobs\?/.exec(path);
+				if (runJobs?.[1]) {
+					const runId = Number(runJobs[1]);
+					await new Promise<void>((resolve) => {
+						releases.set(runId, resolve);
+						if (releases.size === 3) allStarted.resolve();
+					});
+				}
+				return fake.request(installationId, path, method, body, ifNoneMatch);
+			},
+		};
+		const ingested: number[] = [];
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () => [CONNECTION],
+			ingest: async ({ rawBody }) => {
+				ingested.push(
+					PolledBody.parse(JSON.parse(Buffer.from(rawBody).toString()))
+						.workflow_job.run_id,
+				);
+				return "accepted";
+			},
+			now: () => NOW,
+		});
+		const polling = poller.poll();
+		await allStarted.promise;
+		for (const runId of [902, 901, 900]) {
+			resolved.push(runId);
+			releases.get(runId)?.();
+			releases.delete(runId);
+		}
+		await polling;
+		expect(resolved).toEqual([902, 901, 900]);
+		expect(ingested).toEqual([900, 901, 902]);
+	});
+
+	it("settles in-flight job reads before pausing for a rate limit", async () => {
+		const fake = new FakeGithub(
+			{ queued: [900, 901], in_progress: [] },
+			{
+				900: [{ id: 1, status: "queued", labels: ["hobo"] }],
+				901: [{ id: 2, status: "queued", labels: ["hobo"] }],
+			},
+		);
+		const release = deferred();
+		const allStarted = deferred();
+		let jobReads = 0;
+		const github: GithubTransport = {
+			async request(installationId, path, method = "GET", body, ifNoneMatch) {
+				if (path.includes("/actions/runs/900/jobs?")) {
+					jobReads++;
+					if (jobReads === 2) allStarted.resolve();
+					return new Response("{}", {
+						status: 403,
+						headers: {
+							"x-ratelimit-remaining": "0",
+							"x-ratelimit-reset": String(NOW / 1000 + 120),
+						},
+					});
+				}
+				if (path.includes("/actions/runs/901/jobs?")) {
+					jobReads++;
+					if (jobReads === 2) allStarted.resolve();
+					await release.promise;
+				}
+				return fake.request(installationId, path, method, body, ifNoneMatch);
+			},
+		};
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () => [CONNECTION],
+			ingest: async () => "accepted",
+			now: () => NOW,
+		});
+		const unhandled: Error[] = [];
+		const onUnhandled = (reason: Error) => unhandled.push(reason);
+		process.on("unhandledRejection", onUnhandled);
+		try {
+			let pollSettled = false;
+			const polling = poller.poll().then((summary) => {
+				pollSettled = true;
+				return summary;
+			});
+			await allStarted.promise;
+			await Promise.resolve();
+			expect(pollSettled).toBe(false);
+			release.resolve();
+			const summary = await polling;
+			expect(summary.pausedUntil).toBe(new Date(NOW + 120_000).toISOString());
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(unhandled).toEqual([]);
+		} finally {
+			process.off("unhandledRejection", onUnhandled);
+		}
+	});
+
+	it.each([
+		0,
+		-1,
+		1.5,
+		33,
+		Number.NaN,
+	])("rejects invalid jobReadConcurrency %s", (jobReadConcurrency) => {
+		expect(() =>
+			createGithubJobPoller({
+				github: new FakeGithub({ queued: [], in_progress: [] }, {}),
+				jobReadConcurrency,
+				connections: async () => [CONNECTION],
+				ingest: async () => "accepted",
+			}),
+		).toThrow("invalid jobReadConcurrency");
 	});
 
 	it("pauses until the rate-limit reset instead of hammering GitHub", async () => {
