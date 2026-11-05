@@ -19,6 +19,7 @@ import {
 	createHostedRelayRuntime,
 	createIsolatedContainerController,
 	createJobDurations,
+	createMemoryPeaks,
 	createNodeWorkerStorageFileSystem,
 	createPnpmStoreMaintenance,
 	createPollLogFilter,
@@ -31,6 +32,7 @@ import {
 	type HostedInboxStore,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
+	readAvailableMemoryMb,
 	readHostMemory,
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
@@ -129,11 +131,27 @@ const webhookSecret =
 // The offer's concurrency must equal the slot count.
 const { slots, trunkSlots, mergeGroupLeases, prCapWithTrunk } =
 	resolveWorkerSlotConfig(process.env);
-const hostMemorySample = readHostMemory();
-const memoryConfig = resolveWorkerMemoryConfig(process.env, {
-	...hostMemorySample,
-	trunkSlots,
+const workRoot =
+	process.env.HOBO_CI_WORKER_WORK_ROOT ??
+	join(
+		process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
+		"hobo-ci",
+		"work",
+	);
+mkdirSync(workRoot, { recursive: true, mode: 0o755 });
+const memoryPeaks = createMemoryPeaks({
+	path: join(workRoot, "memory-peaks.json"),
+	log,
 });
+const hostMemorySample = readHostMemory();
+const memoryConfig = resolveWorkerMemoryConfig(
+	process.env,
+	{
+		...hostMemorySample,
+		trunkSlots,
+	},
+	memoryPeaks.history,
+);
 const hostMemMb = Math.min(
 	hostMemorySample.totalMemoryMb,
 	hostMemorySample.cgroupMemoryLimitMb ?? Number.MAX_SAFE_INTEGER,
@@ -142,6 +160,7 @@ const workerMemoryMb = memoryConfig.classes.heavy;
 const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, {
 	log,
 	prCapWithTrunk,
+	availableMemoryMb: readAvailableMemoryMb,
 });
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
@@ -254,14 +273,6 @@ const depsRepository = process.env.HOBO_CI_DEPS_REPOSITORY ?? "Hobo-Labs/HoBo";
 const depsImage = process.env.HOBO_CI_DEPS_IMAGE ?? "hobo-ci-deps:local";
 const depsRoot =
 	process.env.HOBO_CI_DEPS_ROOT ?? defaultDepsRoot(import.meta.url);
-const workRoot =
-	process.env.HOBO_CI_WORKER_WORK_ROOT ??
-	join(
-		process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
-		"hobo-ci",
-		"work",
-	);
-mkdirSync(workRoot, { recursive: true, mode: 0o755 });
 if (pnpmStore && statSync(pnpmStore).dev !== statSync(workRoot).dev)
 	throw new Error(
 		"pnpm store and work root must share a filesystem for hardlinks",
@@ -294,6 +305,8 @@ const worker = createIsolatedContainerController({
 	depsImage,
 	workerMemoryMb,
 	prewarmMemoryMb: memoryConfig.classes.standard,
+	memoryClasses: memoryConfig.classes,
+	memoryPeaks,
 	memoryAdmission,
 	generalLeaseIds: (activeLeases) =>
 		generalLeaseIdsFor(activeLeases, github, workerRunnerLabels),

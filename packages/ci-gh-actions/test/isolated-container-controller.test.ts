@@ -7,6 +7,7 @@ import * as githubModule from "../src/github.js";
 import type { HostedRelayStore } from "../src/hosted-relay.js";
 import { createIsolatedContainerController } from "../src/isolated-worker/container-controller.js";
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
+import type { MemoryPeaks } from "../src/isolated-worker/memory-peaks.js";
 import type { WorkerStorageFileSystem } from "../src/isolated-worker/storage-admission.js";
 import { NOW } from "./fixtures.js";
 
@@ -54,6 +55,9 @@ function runningLease(overrides: {
 		repositoryId: 101,
 		installationId: 10,
 		jobId: overrides.jobId ?? 100,
+		jobName: "PR impact gate",
+		memoryClass: "heavy",
+		memoryMb: 6_144,
 		actualJobId: overrides.actualJobId ?? 0,
 		originalRunId: 11,
 		runAttempt: 1,
@@ -282,6 +286,7 @@ describe("isolated container controller reconcile", () => {
 		stopped = false,
 		log?: ReturnType<typeof vi.fn>,
 		workRoot?: string,
+		memory?: { peak: DockerDriver["memoryPeak"]; peaks: MemoryPeaks },
 	) {
 		const lease = runningLease({ jobId: 100, actualJobId: 0 });
 		const settle = vi.fn(async () => lease);
@@ -303,9 +308,12 @@ describe("isolated container controller reconcile", () => {
 			exists,
 			exitState: vi.fn(async () => ({ exitCode: 137, oomKilled: true })),
 		};
+		if (memory?.peak) docker.memoryPeak = memory.peak;
 		// SAFETY: settle after a stop uses getJob(), not github.request().
 		const github = {} as GithubTransport;
-		const controllerOptions = {
+		const controllerOptions: Parameters<
+			typeof createIsolatedContainerController
+		>[0] = {
 			store: relayStore,
 			github,
 			publicOrigin: "https://ci.example.test",
@@ -315,6 +323,14 @@ describe("isolated container controller reconcile", () => {
 			now: () => "2026-10-26T12:02:00Z",
 			log,
 		};
+		if (memory) {
+			controllerOptions.memoryClasses = {
+				light: 3_072,
+				standard: 4_096,
+				heavy: 6_144,
+			};
+			controllerOptions.memoryPeaks = memory.peaks;
+		}
 		if (workRoot && work)
 			Object.assign(controllerOptions, { workRoot, workFs: work.fs });
 		const controller = createIsolatedContainerController(controllerOptions);
@@ -340,6 +356,99 @@ describe("isolated container controller reconcile", () => {
 				exitCode: 137,
 			}),
 		);
+	});
+
+	it("records and logs a running container's peak before stopping it", async () => {
+		const order: string[] = [];
+		const record = vi.fn();
+		const peaks: MemoryPeaks = {
+			history: {},
+			record,
+			recordOom: vi.fn(),
+		};
+		const log = vi.fn();
+		const peak = vi.fn(async () => {
+			order.push("peak");
+			return 2_049;
+		});
+		const s = markerScenario(
+			vi.fn(async () => true),
+			false,
+			log,
+			undefined,
+			{
+				peak,
+				peaks,
+			},
+		);
+		s.lease.memoryMb = 1_536;
+		s.docker.stop = vi.fn(async () => {
+			order.push("stop");
+		});
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
+		);
+
+		await s.controller.host.reconcile(s.lease.id);
+
+		expect(order).toEqual(["peak", "stop"]);
+		expect(record).toHaveBeenCalledWith("PR impact gate", 2_049);
+		expect(log).toHaveBeenCalledWith("hobo_ci_container_memory_peak", {
+			jobId: s.lease.jobId,
+			jobName: "PR impact gate",
+			memoryClass: "heavy",
+			limitMb: 6_144,
+			reservedMb: 1_536,
+			peakMb: 2_049,
+		});
+		expect(s.settle).toHaveBeenCalledOnce();
+	});
+
+	it("settles when peak measurement fails", async () => {
+		const peaks: MemoryPeaks = {
+			history: {},
+			record: vi.fn(),
+			recordOom: vi.fn(),
+		};
+		const s = markerScenario(
+			vi.fn(async () => true),
+			false,
+			undefined,
+			undefined,
+			{
+				peak: vi.fn(async () => {
+					throw new Error("cgroup unavailable");
+				}),
+				peaks,
+			},
+		);
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
+		);
+
+		await s.controller.host.reconcile(s.lease.id);
+
+		expect(s.docker.stop).toHaveBeenCalledOnce();
+		expect(s.settle).toHaveBeenCalledOnce();
+		expect(peaks.record).not.toHaveBeenCalled();
+	});
+
+	it("resets learned history when docker reports an OOM kill", async () => {
+		const peaks: MemoryPeaks = {
+			history: {},
+			record: vi.fn(),
+			recordOom: vi.fn(),
+		};
+		const peak = vi.fn(async () => 2_049);
+		const s = markerScenario(undefined, true, undefined, undefined, {
+			peak,
+			peaks,
+		});
+
+		await s.controller.host.reconcile(s.lease.id);
+
+		expect(peaks.recordOom).toHaveBeenCalledWith("PR impact gate");
+		expect(peak).not.toHaveBeenCalled();
 	});
 
 	it("stops and settles a running lease once its runner wrote the exit marker", async () => {

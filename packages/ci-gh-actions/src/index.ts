@@ -92,11 +92,20 @@ export {
 	type JobMemoryRequest,
 	memoryClassForJob,
 	memoryRequestForJob,
+	parseAvailableMemoryMb,
+	readAvailableMemoryMb,
 	readHostMemory,
 	resolveWorkerMemoryConfig,
 	type WorkerMemoryClassName,
 	type WorkerMemoryConfig,
 } from "./isolated-worker/memory-classes.js";
+export {
+	createMemoryPeaks,
+	learnedReservationMb,
+	type MemoryPeakHistories,
+	type MemoryPeakHistory,
+	type MemoryPeaks,
+} from "./isolated-worker/memory-peaks.js";
 export { createPnpmStoreMaintenance } from "./isolated-worker/pnpm-store.js";
 export {
 	attachPostgresPoolErrorHandler,

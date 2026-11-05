@@ -390,6 +390,7 @@ export class SqliteCiStore {
 				repositoryId: job.repositoryId,
 				repository: job.repository,
 				installationId: job.installationId,
+				jobName: job.name,
 				memoryClass: job.memoryClass,
 				memoryMb: job.memoryMb,
 				state: "reserved",

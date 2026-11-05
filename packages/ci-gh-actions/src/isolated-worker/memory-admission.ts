@@ -2,6 +2,7 @@ import type {
 	WorkerMemoryClassName,
 	WorkerMemoryConfig,
 } from "./memory-classes.js";
+import { learnedReservationMb } from "./memory-peaks.js";
 
 export type MemoryLease = Readonly<{
 	id: string;
@@ -12,6 +13,20 @@ export type MemoryAdmissionLog = (
 	event: "hobo_ci_memory_admission_wait" | "hobo_ci_memory_admitted",
 	fields: Readonly<Record<string, string | number | boolean>>,
 ) => void;
+type MemoryAdmissionWaitFields = {
+	jobId: number;
+	memoryClass: WorkerMemoryClassName;
+	requestMb: number;
+	classMb: number;
+	learned: boolean;
+	inUseMb: number;
+	budgetMb: number;
+	availableMb?: number;
+	waitedMs: number;
+	reason: "trunk-pr-cap" | "memory-budget" | "host-available";
+	activeGeneral: number;
+	prCapWithTrunk: number;
+};
 export type MemoryAdmissionDecision = Readonly<{
 	admitted: boolean;
 	blockRank: boolean;
@@ -33,6 +48,7 @@ export function createWorkerMemoryAdmission(
 		now?: () => number;
 		log?: MemoryAdmissionLog;
 		prCapWithTrunk?: number;
+		availableMemoryMb?: () => number | undefined;
 	} = {},
 ) {
 	const now = options.now ?? Date.now;
@@ -52,6 +68,17 @@ export function createWorkerMemoryAdmission(
 			: config.classes.heavy;
 	}
 
+	function trunkReservationMb(): number {
+		if (!config.learn || config.trunkReservationMb === 0)
+			return config.trunkReservationMb;
+		return learnedReservationMb(
+			config.memoryPeaks?.["Main full gate"],
+			config.classes.heavy,
+			config.unmeasured.heavy,
+			now(),
+		);
+	}
+
 	function inUseMb(
 		activeLeases: readonly MemoryLease[],
 		generalLeaseIds: ReadonlySet<string>,
@@ -68,7 +95,7 @@ export function createWorkerMemoryAdmission(
 			leasesMb +
 			warmMb +
 			(includeTrunkReservation
-				? Math.max(0, config.trunkReservationMb - trunkMb)
+				? Math.max(0, trunkReservationMb() - trunkMb)
 				: 0)
 		);
 	}
@@ -94,7 +121,14 @@ export function createWorkerMemoryAdmission(
 		).length;
 		const capBlocked =
 			request.rank !== 0 && trunkActive && activeNonTrunk >= prCapWithTrunk;
-		const admitted = !capBlocked && inUse + request.memoryMb <= config.budgetMb;
+		const classMb = config.classes[request.memoryClass];
+		const learned = config.learn && request.memoryMb < classMb;
+		const availableMb = options.availableMemoryMb?.();
+		const budgetFits = inUse + request.memoryMb <= config.budgetMb;
+		const hostFits =
+			availableMb === undefined ||
+			availableMb - request.memoryMb >= config.reserveMb;
+		const admitted = !capBlocked && budgetFits && hostFits;
 		if (admitted) {
 			const previous = waiting.get(request.jobId);
 			waiting.delete(request.jobId);
@@ -102,6 +136,8 @@ export function createWorkerMemoryAdmission(
 				jobId: request.jobId,
 				memoryClass: request.memoryClass,
 				requestMb: request.memoryMb,
+				classMb,
+				learned,
 				inUseMb: inUse,
 				budgetMb: config.budgetMb,
 				waitedMs: previous ? now() - previous.sinceMs : 0,
@@ -122,21 +158,33 @@ export function createWorkerMemoryAdmission(
 			request.rank === 0
 				? request.memoryMb <= config.budgetMb
 				: waitedMs > config.holMs;
-		const reason = capBlocked ? "trunk-pr-cap" : "memory-budget";
-		const signature = `${reason}:${request.memoryClass}:${request.memoryMb}:${inUse}:${config.budgetMb}:${activeNonTrunk}:${blockRank}`;
+		const reason = capBlocked
+			? "trunk-pr-cap"
+			: !budgetFits
+				? "memory-budget"
+				: "host-available";
+		const availabilitySignature =
+			reason === "host-available" && availableMb !== undefined
+				? `:${Math.floor(availableMb / 512) * 512}`
+				: "";
+		const signature = `${reason}:${request.memoryClass}:${request.memoryMb}:${inUse}:${config.budgetMb}:${activeNonTrunk}:${blockRank}${availabilitySignature}`;
 		if (signature !== state.signature) {
 			state.signature = signature;
-			options.log?.("hobo_ci_memory_admission_wait", {
+			const fields: MemoryAdmissionWaitFields = {
 				jobId: request.jobId,
 				memoryClass: request.memoryClass,
 				requestMb: request.memoryMb,
+				classMb,
+				learned,
 				inUseMb: inUse,
 				budgetMb: config.budgetMb,
 				waitedMs,
 				reason,
 				activeGeneral: activeNonTrunk,
 				prCapWithTrunk,
-			});
+			};
+			if (availableMb !== undefined) fields.availableMb = availableMb;
+			options.log?.("hobo_ci_memory_admission_wait", fields);
 		}
 		return { admitted: false, blockRank };
 	}
@@ -154,8 +202,13 @@ export function createWorkerMemoryAdmission(
 			requestMb: number,
 			generalLeaseIds: ReadonlySet<string>,
 		) {
-			if (inUseMb(activeLeases, generalLeaseIds) + requestMb > config.budgetMb)
-				return false;
+			const availableMb = options.availableMemoryMb?.();
+			const budgetFits =
+				inUseMb(activeLeases, generalLeaseIds) + requestMb <= config.budgetMb;
+			const hostFits =
+				availableMb === undefined ||
+				availableMb - requestMb >= config.reserveMb;
+			if (!budgetFits || !hostFits) return false;
 			warmMb += requestMb;
 			return true;
 		},

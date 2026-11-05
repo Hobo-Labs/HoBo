@@ -518,6 +518,7 @@ export class HostedRelay {
 			repositoryId: lease.repositoryId,
 			repository: lease.repository,
 			installationId: lease.installationId,
+			name: lease.jobName,
 			memoryClass: lease.memoryClass,
 			memoryMb: lease.memoryMb,
 			labels: ["hobo"],
