@@ -9,10 +9,19 @@ tags: [hobo, ci, performance, checkout, sparse, pins]
 
 ## Symptom
 
-Main Fabric [42011481177](https://github.com/Hobo-Labs/HoBo/actions/runs/42011481177) at `6464a491` (#1743) failed
-**Install dependencies**: `ensure-ts-autocode-links.mts` reported the ts-autocode sibling packages were not
-linked. The background secret scan then timed out after 300 s (cascade). Sparse S0 checkout itself was about
-**6 s**.
+Main Fabric [42011481177](https://github.com/Hobo-Labs/HoBo/actions/runs/42011481177) job
+[127191339479](https://github.com/Hobo-Labs/HoBo/actions/runs/42011481177/job/127191339479) at `6464a491`
+(#1743) failed **Install dependencies** (10:32:51–10:33:07Z, ~16 s):
+
+```
+. prepare: Error: ts-autocode sibling packages are not linked
+(packages/runtime/node_modules/ts-autocode-grounding and ts-autocode-training cone);
+run `pnpm run pins:fetch` then `pnpm install`
+```
+
+Missing checkout material: `external/ts-autocode/packages/{grounding,training,rewrite}/package.json`.
+Lockfile, root `package.json`, and `pnpm-workspace.yaml` were already in the cone. Secret scan then timed
+out after 300 s (cascade; `if: always()`). Sparse S0 checkout itself was about **6 s**. Job wall ~333 s.
 
 ## Cause
 

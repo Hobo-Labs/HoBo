@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
 	formatSparseCheckoutBlock,
 	RELEASE_ROOT_FILES,
+	TS_AUTOCODE_PNPM_PREPARE_REQUIRED,
 } from "../lib/release-sparse-cone.mts";
 
 export const S0_DIRECTORY_CONES = [
@@ -77,22 +78,30 @@ export const S0_SPARSE_CONES = Object.freeze([
 	...S0_ROOT_FILES,
 ]);
 
+/** Paths `pnpm install` / `prepare` need after sparse S0. Pin cone files are
+ * gitlinks until `pins:fetch`; the directory cone still has to cover them. */
+export const S0_INSTALL_REQUIRED_PATHS = [
+	"package.json",
+	"pnpm-lock.yaml",
+	"pnpm-workspace.yaml",
+	"scripts/ensure-ts-autocode-links.mts",
+	...TS_AUTOCODE_PNPM_PREPARE_REQUIRED,
+] as const;
+
 export const S0_REQUIRED_PATHS = [
 	".gitleaks.toml",
 	".github/actions/hobo-checkout/action.yml",
 	"docs/ci/oci-layer-plan.md",
 	"mise.toml",
 	"mise.lock",
-	"package.json",
 	"packages/stage-gate/package.json",
-	"pnpm-lock.yaml",
-	"pnpm-workspace.yaml",
 	"scripts/bootstrap-siblings.mts",
 	"scripts/ci/checkout-cone.mts",
 	"scripts/run-relevant-checks.ts",
 	"test/setup/hobo-test-homes.ts",
 	"tools/pins/siblings.json",
 	"turbo.json",
+	...S0_INSTALL_REQUIRED_PATHS,
 ] as const;
 
 export function s0SparseCones(repoRoot: string): readonly string[] {
