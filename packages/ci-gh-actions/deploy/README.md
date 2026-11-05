@@ -139,6 +139,13 @@ containers are removed. A Docker listing failure releases nothing. Watch `hobo_c
 containers, up to the configured 30-minute bound; the default handoff mode exits without that wait. See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for the full state rules
 and event fields.
 
+Orphaned GitHub job recovery uses the installation's existing `actions: write` permission. It logs
+`hobo_ci_orphan_job_detected`, `hobo_ci_orphan_job_dropped` with a `reason`,
+`hobo_ci_orphan_job_confirmed`, `hobo_ci_orphan_runner_delete` with a `status`,
+`hobo_ci_orphan_run_force_cancel` with a `status`, and either `hobo_ci_orphan_run_rerun` with a `status` or
+`hobo_ci_orphan_run_rerun_skipped` with the run `event`. The recovery sequence, rerun policy, and restart
+limits are documented in [the runner queue guide](../../ci/RUNNER-QUEUE.md).
+
 Job preflight reserves 768 MiB for native/non-heap memory, then chooses
 `workers = max(1, min(cpuCount, floor((limit - 768) / 1280) - 1))` and
 `heap = min(3072, floor((limit - 768) / (workers + 1)))`. It exports that heap through `NODE_OPTIONS`,

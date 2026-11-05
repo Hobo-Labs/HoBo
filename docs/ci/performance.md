@@ -69,9 +69,12 @@ unindexed new finding files as notices.
 - [Finding 59: the deps mount check needed tsx and misread the pnpm layout](./findings/0059-the-deps-mount-check-needed-tsx-and-misread-the-pnpm-layout.md)
 - [Finding 60: the deps key rebuilt on recipe churn](./findings/0060-the-deps-key-rebuilt-on-recipe-churn.md)
 - [Finding 61: a worker restart drained jobs before handing off](./findings/0061-a-worker-restart-drained-jobs-before-handing-off.md)
+- [Finding 63: a dead runner left its GitHub job in progress](./findings/0063-a-dead-runner-left-its-github-job-in-progress.md)
+- [Finding 64: containerless launch failures thrashed worker leases](./findings/0064-containerless-launch-failures-thrashed-worker-leases.md)
 - [Finding 67: Unbounded pnpm store prunes froze the box](./findings/0067-unbounded-pnpm-store-prunes-froze-the-box.md)
 - [Finding 68: Finished jobs held trunk slots while their work dirs were deleted](./findings/0068-finished-jobs-held-trunk-slots-while-their-work-dirs-were-deleted.md)
 - [Finding 69: Reap retired a work dir before its container existed](./findings/0069-reap-retired-a-work-dir-before-its-container-existed.md)
+- [Finding 70: a test fixture depended on the job container umask](./findings/0070-a-test-fixture-depended-on-the-job-container-umask.md)
 <!-- findings-index:end -->
 
 ## Data
