@@ -443,6 +443,7 @@ describe("cli docker driver parallel helpers", () => {
 		expect(flat).not.toContain(b64);
 		expect(flat).not.toContain("--jitconfig");
 		expect(flat).toContain("ACTIONS_RUNNER_INPUT_JITCONFIG");
+		expect(flat).toContain("set -eu\numask 022\n");
 	});
 
 	it("refuses to start a runner when the driver cannot deliver secrets", async () => {
