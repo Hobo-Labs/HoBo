@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 79: box bare git mirror was probed but never mounted"
+title: "Finding 79: box git mirror not mounted"
 description: "Main full gate checkout stayed at ~6 s because hobo-checkout always missed the Phase 2 mirror."
 tags: [hobo, ci, performance, checkout, git, worker]
 ---
 
-# Finding 79: box bare git mirror was probed but never mounted
+# Finding 79: box git mirror not mounted
 
 ## Symptom
 
