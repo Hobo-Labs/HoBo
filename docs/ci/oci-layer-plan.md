@@ -180,7 +180,8 @@ The key is sha256 over, in fixed order:
 - root `.npmrc`, `patches/**`, and optional `.pnpmfile.cjs`;
 - the platform (`linux/arm64` on the box);
 - the explicit `DEPS_LAYOUT.version`. Bump it when a layout recipe changes image contents or paths; otherwise only its
-  pinned `recipeSha256` changes. The job-side `scripts/ci/deps-layer.mts` is not a key or build-context input;
+  pinned `recipeSha256` changes. The job-side `scripts/ci/deps-layer.mts` is staged into the deps context
+  so mount verify can run `link`, but it is not hashed into the key;
 - `ciRunnerImageVersion`, which covers `mise.lock`, `mise.toml`, `system-packages.txt`, the base Dockerfile and
   the runner build script, including the Node and pnpm versions.
 

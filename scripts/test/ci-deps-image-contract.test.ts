@@ -187,6 +187,20 @@ describe("CI deps image build contract", () => {
 		assert.ok(!build.includes("--cache-to"));
 	});
 
+	it("stages the link verification script in the deps context for mount verify", () => {
+		const key = read("scripts/lib/deps-key.mts");
+		includes(
+			key,
+			'export const DEPS_LAYER_SCRIPT_PATH = "scripts/ci/deps-layer.mts"',
+		);
+		includes(key, "DEPS_LAYER_BUCKET_SCRIPT_PATH,");
+		includes(key, "DEPS_LAYER_SCRIPT_PATH,");
+		const bucket = key.indexOf("DEPS_LAYER_BUCKET_SCRIPT_PATH,");
+		const link = key.lastIndexOf("DEPS_LAYER_SCRIPT_PATH,");
+		assert.ok(bucket > -1);
+		assert.ok(link > bucket);
+	});
+
 	it("stages the link verification script outside the Docker build context", () => {
 		includes(build, 'verification="$(mktemp -d)"');
 		includes(build, 'rm -rf "$context" "$verification" "$contract_log"');
