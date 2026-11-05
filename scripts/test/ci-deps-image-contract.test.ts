@@ -189,7 +189,10 @@ describe("CI deps image build contract", () => {
 
 	it("stages the link verification script in the deps context for mount verify", () => {
 		const key = read("scripts/lib/deps-key.mts");
-		includes(key, 'export const DEPS_LAYER_SCRIPT_PATH = "scripts/ci/deps-layer.mts"');
+		includes(
+			key,
+			'export const DEPS_LAYER_SCRIPT_PATH = "scripts/ci/deps-layer.mts"',
+		);
 		includes(key, "DEPS_LAYER_BUCKET_SCRIPT_PATH,");
 		includes(key, "DEPS_LAYER_SCRIPT_PATH,");
 		const bucket = key.indexOf("DEPS_LAYER_BUCKET_SCRIPT_PATH,");
