@@ -100,6 +100,25 @@ function sortedPaths(paths: readonly string[]): string[] {
 	return [...paths].sort();
 }
 
+function parseReleaseJobBlock(workflowText: string, jobId: string): string {
+	const jobRe = new RegExp(`^  ${jobId}:`, "m");
+	const match = jobRe.exec(workflowText);
+	if (!match) {
+		throw new Error(`workflow missing job ${jobId}`);
+	}
+	const start = match.index;
+	const rest = workflowText.slice(start + 1);
+	const nextJob = rest.search(/^  [a-z][a-z0-9-]+:/m);
+	return nextJob === -1
+		? workflowText.slice(start)
+		: workflowText.slice(start, start + 1 + nextJob);
+}
+
+const ROOT_PNPM_INSTALL =
+	"pnpm install --frozen-lockfile --config.confirmModulesPurge=false";
+const MATERIALIZE_RELEASE_VERSION =
+	"node --no-warnings scripts/ci/materialize-release-version.mts";
+
 describe("release sparse cone requirements", () => {
 	it("derives root vitest setup paths from vitest.config.ts", () => {
 		const files = rootVitestSetupFiles(root);
@@ -212,6 +231,55 @@ describe("release-ts-autocode workflow install order", () => {
 	});
 });
 
+describe("release-hobo publish jobs install order", () => {
+	const hoboWorkflow = readFileSync(
+		join(root, ".github/workflows/release-hobo.yml"),
+		"utf8",
+	);
+
+	for (const jobId of ["release-publish", "release-npm"] as const) {
+		it(`${jobId} runs materialize-release-version after pnpm install`, () => {
+			const block = parseReleaseJobBlock(hoboWorkflow, jobId);
+			const installIdx = block.indexOf(ROOT_PNPM_INSTALL);
+			const materializeIdx = block.indexOf(MATERIALIZE_RELEASE_VERSION);
+			expect(installIdx).toBeGreaterThan(0);
+			expect(materializeIdx).toBeGreaterThan(installIdx);
+		});
+	}
+
+	it("materialize-release-version stays node-builtin-only (safe to reorder-check)", () => {
+		const source = readFileSync(
+			join(root, "scripts/ci/materialize-release-version.mts"),
+			"utf8",
+		);
+		const specifiers = [...source.matchAll(/from "([^"]+)"/gu)].map(
+			(match) => match[1],
+		);
+		for (const specifier of specifiers) {
+			expect(specifier ?? "", source).toMatch(/^node:/u);
+		}
+	});
+
+	it("compute-release-version imports npm deps and must run only after install", () => {
+		const source = readFileSync(
+			join(root, "scripts/ci/compute-release-version.mts"),
+			"utf8",
+		);
+		expect(source).toMatch(/from "\.\.\/lib\/nbgv-release-version\.mts"/u);
+		const lib = readFileSync(
+			join(root, "scripts/lib/nbgv-release-version.mts"),
+			"utf8",
+		);
+		expect(lib).toMatch(/from "zod"/u);
+		for (const jobId of ["release-publish", "release-npm"] as const) {
+			const block = parseReleaseJobBlock(hoboWorkflow, jobId);
+			expect(block.indexOf(MATERIALIZE_RELEASE_VERSION)).toBeGreaterThan(
+				block.indexOf(ROOT_PNPM_INSTALL),
+			);
+		}
+	});
+});
+
 describe("release-hobo affected image job", () => {
 	const hoboWorkflow = readFileSync(
 		join(root, ".github/workflows/release-hobo.yml"),
@@ -312,13 +380,18 @@ describe("release workflow sparse-checkout sync", () => {
 	});
 
 	it("release-hobo pages job sparse-paths matches canonical cone", () => {
-		const inWorkflow = parseJobHoboCheckoutSparsePaths(
+		const inWorkflow = parseWorkflowEnvMultiline(
 			hoboWorkflow,
-			"release-pages",
+			"RELEASE_PAGES_SPARSE_PATHS",
 		);
 		expect(sortedPaths(inWorkflow)).toEqual(
 			sortedPaths(hoboReleasePagesSparseCones()),
 		);
+		const inJob = parseJobHoboCheckoutSparsePaths(
+			hoboWorkflow,
+			"release-pages",
+		);
+		expect(sortedPaths(inJob)).toEqual(sortedPaths(inWorkflow));
 	});
 
 	it("release-code CODE_RELEASE_SPARSE_PATHS matches canonical cone", () => {
