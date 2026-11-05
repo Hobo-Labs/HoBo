@@ -176,6 +176,8 @@ Startup fails unless every general class fits outside the trunk reservation and 
 
 The daemon computes each job's heap from its admitted memory class and injects `NODE_OPTIONS=--max-old-space-size=<heap>` at container creation, so every Node process inherits it and no workflow-level value overrides it. `ci-runner-preflight` also runs `scripts/ci/memory-env.mts` before install (heap math lives in `packages/ci-gh-actions/src/isolated-worker/job-memory-config.ts` so preflight does not load worker peak history). It reads the job cgroup limit and writes the non-blocked **`HOBO_NODE_OPTIONS`** (never `NODE_OPTIONS` through `$GITHUB_ENV`), **`HOBO_TURBO_CONCURRENCY=1`**, and the repo-owned `HOBO_TEST_MAX_WORKERS`. After a 768 MiB native/non-heap allowance, workers are `max(1, min(cpuCount, floor((limit - 768) / 1280) - 1))`; each Node process receives `min(3072, floor((limit - 768) / (workers + 1)))` MiB of heap. Thus `(workers + 1) × heap + 768 <= limit`: the turbo/Vitest parent and every worker fit the same container budget instead of each receiving an independent full-size heap.
 
+The memory-class re-export is blank-line separated from the memory-peaks import for Biome `organizeImports`.
+
 | Class | Container limit | Node heap per process | Max Vitest workers |
 |---|---:|---:|---:|
 | `light` | 3072 MiB | 1152 MiB | 1 |
