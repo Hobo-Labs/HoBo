@@ -14,14 +14,14 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { ciRunnerImageVersion } from "../lib/ci-runner-contract.mts";
 import {
-	releaseSemverFromEnv,
-	tryParseReleaseRef,
-} from "../lib/release-version.mts";
-import {
 	ghcrRepository,
 	loadReleaseOciManifest,
 	type ReleaseOciImage,
 } from "../lib/release-oci-contract.mts";
+import {
+	releaseSemverFromEnv,
+	tryParseReleaseRef,
+} from "../lib/release-version.mts";
 import { extractSdkArtifactsFromImage } from "./extract-sdk-artifacts.mts";
 import {
 	type ReleaseOciStagingLocation,
@@ -184,7 +184,11 @@ function ensureCliCandidate(): void {
 export function cleanupReleaseOciBuild(
 	imageId: string,
 	localTag: string,
-	options: { keepCandidate?: boolean } = {},
+	options: {
+		keepCandidate?: boolean;
+		/** When true, skip builder prune (chain runs one prune after all tags). */
+		deferBuilderPrune?: boolean;
+	} = {},
 ): void {
 	const storeStaging = recordedStoreStagingDir(imageId);
 	rmSync(inRepoStagingDir(imageId), { recursive: true, force: true });
@@ -202,19 +206,34 @@ export function cleanupReleaseOciBuild(
 			});
 		}
 	}
-	spawnSync("docker", ["builder", "prune", "-f"], {
-		cwd: root,
-		stdio: "inherit",
-	});
+	if (!options.keepCandidate && !options.deferBuilderPrune) {
+		spawnSync("docker", ["builder", "prune", "-f"], {
+			cwd: root,
+			stdio: "inherit",
+		});
+	}
 }
 
 function cleanupReleaseOciBuildChain(
 	imageId: string,
 	options: { keepCandidate?: boolean } = {},
 ): void {
-	cleanupReleaseOciBuild(imageId, `${imageId}:candidate`, options);
+	const deferBuilderPrune = true;
+	cleanupReleaseOciBuild(imageId, `${imageId}:candidate`, {
+		...options,
+		deferBuilderPrune,
+	});
 	if (imageId === "hobo-mcp") {
-		cleanupReleaseOciBuild("hobo-cli", "hobo-cli:candidate", options);
+		cleanupReleaseOciBuild("hobo-cli", "hobo-cli:candidate", {
+			...options,
+			deferBuilderPrune,
+		});
+	}
+	if (!options.keepCandidate) {
+		spawnSync("docker", ["builder", "prune", "-f"], {
+			cwd: root,
+			stdio: "inherit",
+		});
 	}
 }
 

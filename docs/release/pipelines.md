@@ -205,6 +205,8 @@ node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --cleanup-onl
 
 Set `HOBO_RELEASE_OCI_IMAGE_ID` to each built image id, or omit it after building every manifest image to run all live contracts in one invocation. `HOBO_RELEASE_VERSION` and `HOBO_RELEASE_REVISION` must match the candidate build when supplied.
 
+`--keep-candidate` must not run `docker builder prune` before the live contract step: pruning after `docker build -t …:candidate` can drop the tag on the self-hosted store before `release-oci-image-contract.test.ts` calls `docker image inspect`. Builder prune runs only on `--cleanup-only` (or a build without `--keep-candidate`).
+
 [`release-ts-autocode.yml`](../../.github/workflows/release-ts-autocode.yml) verifies the pinned ts-autocode sparse cone on **`ts-autocode-v*.*.*`** tags (npm pack dry-run only; upstream owns publication). Its sparse checkout includes the HoBo **`packages/`** cone so root `pnpm install` can link `ts-autocode-grounding` into `@hobo/runtime` after `pnpm run pins:fetch ts-autocode`; contract tests in [`scripts/test/release-sparse-cone.test.ts`](../../scripts/test/release-sparse-cone.test.ts) gate the cone and step order.
 
 ## ts-autocode upstream migration
