@@ -28,6 +28,7 @@ on:
       - "scripts/ci/stage-sdk-artifacts.mts"
       - "scripts/ci/build-release-site-prebuild.mts"
       - "scripts/ci/publish-npm-sdk.mts"
+      - "scripts/test/publish-npm-sdk.test.ts"
       - "scripts/ci/resolve-release-version.mts"
       - "scripts/ci/compute-release-version.mts"
       - "scripts/ci/check-release-relevant-push.mts"
@@ -80,6 +81,7 @@ on:
       - "scripts/ci/stage-sdk-artifacts.mts"
       - "scripts/ci/build-release-site-prebuild.mts"
       - "scripts/ci/publish-npm-sdk.mts"
+      - "scripts/test/publish-npm-sdk.test.ts"
       - "scripts/ci/resolve-release-version.mts"
       - "scripts/ci/compute-release-version.mts"
       - "scripts/ci/check-release-relevant-push.mts"
@@ -146,6 +148,25 @@ env:
     turbo.json
     tsconfig.base.json
   HOBO_RELEASE_TURBO_BASE: origin/main
+  RELEASE_PAGES_SPARSE_PATHS: |
+    .github
+    scripts
+    site
+    packages
+    docs
+    release
+    external
+    examples
+    media
+    tools/pins
+    .mise/locks
+    mise.toml
+    mise.lock
+    package.json
+    pnpm-lock.yaml
+    pnpm-workspace.yaml
+    turbo.json
+    tsconfig.base.json
 
 jobs:
   release-main-train-gate:
@@ -206,7 +227,7 @@ jobs:
   release-contract:
     name: Release contract + affected OCI images
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - name: Bootstrap repo-local composite actions
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -459,13 +480,13 @@ jobs:
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
       - uses: ./.github/actions/ci-runner-preflight
+      - run: pnpm run pins:fetch ts-autocode
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Resolve and validate release version
         env:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
         run: node --no-warnings scripts/ci/materialize-release-version.mts
-      - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Ensure digest-pinned content-keyed toolchain image
         run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Log in to GHCR
@@ -530,8 +551,9 @@ jobs:
         needs.release-contract.result == 'success'
       )
     needs: [release-main-train-gate, release-contract, release-oci-build-tag]
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 20
+    # npm trusted publishing (OIDC) requires GitHub-hosted runners — not self-hosted hobo.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     environment: release
     permissions:
       contents: read
@@ -555,15 +577,15 @@ jobs:
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
+      - run: pnpm run pins:fetch ts-autocode
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Resolve and validate release version
         env:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
         run: node --no-warnings scripts/ci/materialize-release-version.mts
-      - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
-      - name: npm publish (@hobo-labs via hobodev + provenance)
+      - name: npm publish (@hobo-labs via OIDC or hobodev token + provenance)
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node --no-warnings scripts/ci/publish-npm-sdk.mts /tmp/hobo-npm-release
@@ -597,30 +619,13 @@ jobs:
         with:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
-          sparse-paths: |
-            .github
-            scripts
-            site
-            packages
-            docs
-            release
-            examples
-            mise.toml
-            mise.lock
-            package.json
-            pnpm-lock.yaml
-            pnpm-workspace.yaml
-            turbo.json
-            tsconfig.base.json
-            external
-            tools/pins
-            .mise/locks
+          sparse-paths: ${{ env.RELEASE_PAGES_SPARSE_PATHS }}
           submodules: "false"
       - uses: ./.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
-      - name: Build ts-autocode-grounding for site prebuild
+      - name: Build hobo-site workspace deps for prebuild
         run: node --no-warnings scripts/ci/build-release-site-prebuild.mts
       - name: Build Astro site
         run: pnpm --filter hobo-site run build
