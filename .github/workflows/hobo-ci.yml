@@ -141,10 +141,11 @@ jobs:
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 45
     # Any event can reuse an existing content-keyed image. New PR candidates only
-    # build and run the contract; only push/schedule/dispatch can promote or push them.
+    # build and run the contract; push/schedule/dispatch can promote them. A
+    # separate workflow publishes local images without blocking this job.
     permissions:
       contents: read
-      packages: write
+      packages: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -162,6 +163,7 @@ jobs:
             changed="$(git diff --name-only "$base" HEAD -- \
               packages/ci-gh-actions/deploy/ci-runner/deps \
               scripts/ci/deps-key.mts \
+              scripts/ci/deps-layer-buckets.mts \
               scripts/ci/deps-layer.mts \
               scripts/lib/deps-key.mts \
               scripts/lib/ts-source-resolve.mts \
@@ -198,6 +200,11 @@ jobs:
             source=ghcr
           fi
           echo "source=${source}" >> "$GITHUB_OUTPUT"
+      - name: Login to GHCR for read-only cache
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: Build deps image and verify offline install
         if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'
         id: build
@@ -216,14 +223,6 @@ jobs:
           candidate="hobo-ci-deps:${{ steps.key.outputs.key }}"
           docker tag "$candidate" hobo-ci-deps:local
           node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
-      - name: Push deps image to GHCR
-        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && github.event_name != 'pull_request' && steps.source.outputs.source == 'build' && steps.build.outcome == 'success' && github.repository == 'Hobo-Labs/HoBo'
-        run: |
-          set -euo pipefail
-          image="ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:${{ steps.key.outputs.key }}"
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker tag "hobo-ci-deps:${{ steps.key.outputs.key }}" "$image"
-          docker push "$image"
       - name: Remove PR candidate tag (never a later local-hit promotion)
         if: always() && github.event_name == 'pull_request' && steps.source.outputs.source == 'build'
         run: docker image rm "hobo-ci-deps:${{ steps.key.outputs.key }}" >/dev/null 2>&1 || true

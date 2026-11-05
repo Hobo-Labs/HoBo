@@ -1,0 +1,39 @@
+name: CI deps image publisher
+
+on:
+  workflow_run:
+    workflows: ["HoBo CI Fabric"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-deps-publish-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Publish local deps image (non-blocking)
+    if: >-
+      github.repository == 'Hobo-Labs/HoBo' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+          submodules: recursive
+          clean: false
+          fetch-depth: 1
+      - name: Publish missing deps tag with a bounded wall clock
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh

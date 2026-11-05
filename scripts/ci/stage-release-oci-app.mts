@@ -105,6 +105,36 @@ function run(root: string, command: string, args: readonly string[]): void {
 	}
 }
 
+export function tryShallowFetchOriginMain(root: string): boolean {
+	const remote = spawnSync("git", ["remote", "get-url", "origin"], {
+		cwd: root,
+		encoding: "utf8",
+	});
+	if (remote.status !== 0 || !remote.stdout.trim()) {
+		return false;
+	}
+	const result = spawnSync(
+		"git",
+		[
+			"-c",
+			"http.version=HTTP/1.1",
+			"fetch",
+			"--depth=1",
+			"--filter=blob:none",
+			"origin",
+			"main:refs/remotes/origin/main",
+		],
+		{ cwd: root, stdio: "ignore" },
+	);
+	return result.status === 0;
+}
+
+function releaseTagOrDispatchCheckout(): boolean {
+	const ref = process.env.GITHUB_REF ?? "";
+	if (ref.startsWith("refs/tags/")) return true;
+	return process.env.GITHUB_EVENT_NAME === "workflow_dispatch";
+}
+
 export function resolveReleaseTurboBase(
 	root: string,
 	configuredBase = process.env.HOBO_RELEASE_TURBO_BASE,
@@ -124,7 +154,12 @@ export function resolveReleaseTurboBase(
 			{ cwd: root, stdio: "ignore" },
 		).status === 0;
 	if (refExists(base)) return base;
-	if (base === "origin/main" && refExists("HEAD^1")) return "HEAD^1";
+	if (base === "origin/main") {
+		tryShallowFetchOriginMain(root);
+		if (refExists("origin/main")) return "origin/main";
+		if (refExists("HEAD^1")) return "HEAD^1";
+		if (releaseTagOrDispatchCheckout()) return undefined;
+	}
 	throw new Error(
 		`HOBO_RELEASE_TURBO_BASE=${base} does not resolve to a commit; fetch that ref or use HEAD^1 on a sparse pull-request checkout`,
 	);

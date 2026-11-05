@@ -67,6 +67,8 @@ unindexed new finding files as notices.
 - [Finding 45: dead containers left 12288 MiB reserved and blocked trunk admission](./findings/0045-dead-containers-left-12288-mib-reserved-and-blocked-trunk-admission.md)
 - [Finding 48: root script edits widened PR lanes to every package](./findings/0048-root-script-edits-widened-pr-lanes-to-every-package.md)
 - [Finding 49: the deps image build could not create its payload directory](./findings/0049-the-deps-image-build-could-not-create-its-payload-directory.md)
+- [Finding 56: the monolithic deps push held main after its gate passed](./findings/0056-the-monolithic-deps-push-held-main-after-its-gate-passed.md)
+- [Finding 57: deps manifest scripts and the registry layer cache](./findings/0057-deps-manifest-scripts-and-the-registry-layer-cache.md)
 - [Finding 59: the deps mount check needed tsx and misread the pnpm layout](./findings/0059-the-deps-mount-check-needed-tsx-and-misread-the-pnpm-layout.md)
 <!-- findings-index:end -->
 

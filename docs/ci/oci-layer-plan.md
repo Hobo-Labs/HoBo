@@ -34,8 +34,9 @@ is unknown here.
    `pnpm-lock.yaml` `integrity`, or a release asset with a pinned SHA-256. Every other build step runs with
    `--network=none`.
 4. **Reproducible outputs.** The same inputs produce the same layer digest:
-   - `SOURCE_DATE_EPOCH` is the input commit's time;
-   - BuildKit runs with `rewrite-timestamp=true`;
+   - `SOURCE_DATE_EPOCH` is fixed for the artifact family (`0` for deps buckets), not the commit's time, so unchanged content keeps its digest across commits;
+   - the deps build uses `rewrite-timestamp=true` only when the default `docker build` invocation advertises it;
+     otherwise the fixed epoch and explicit Dockerfile `touch` provide the timestamps;
    - file order and ownership are fixed;
    - no build step embeds a clock, a hostname or a random value.
 
@@ -62,7 +63,7 @@ is unknown here.
 | `registry:2` is pulled by tag | `deploy/ci-runner/build.sh` | Deferred toolchain hardening: pin by digest |
 | `curl https://mise.run \| sh` runs an unpinned installer script (only the version is pinned) | `deploy/ci-runner/build.sh` | Deferred toolchain hardening: pinned mise release asset with its SHA-256 |
 | `pnpm install` on every job links every package even with a warm mounted store | every job | **Implemented Phase 4:** prebuilt `node_modules` layer; Main full gate and PR impact gate skip on an exact key match and install on every miss |
-| Legacy Docker records build times but cannot rewrite every file timestamp, so equal inputs do not yield byte-reproducible image digests | `deploy/ci-runner/deps/Dockerfile` and `build-deps.sh` | Phase 5: BuildKit `rewrite-timestamp=true` (the box's Debian `docker.io` legacy builder lacks it) |
+| Cache-off layer-digest equality and actual push savings still need box evidence | `deploy/ci-runner/deps/Dockerfile` and `build-deps.sh` | Phase 5 verification: all copied files have a fixed epoch; the default `docker build` enables `rewrite-timestamp=true` only when its help advertises it |
 
 ## Why: the data from main run 41690661790 (237 s)
 
@@ -171,8 +172,11 @@ The one Turbo-adjacent idea worth keeping is optional: an `oras` artifact that s
 
 The key is sha256 over, in fixed order:
 - `pnpm-lock.yaml` and `pnpm-workspace.yaml`;
-- every importer's `package.json`, because `bin`, `scripts` and `dependenciesMeta` change linking without
-  changing the lockfile;
+- every importer's dependency-layout manifest fields: `name`, `version`, dependency and dependency-metadata fields,
+  `bundleDependencies`/`bundledDependencies`, `bin`, `directories.bin`, `publishConfig.directory`/`bin`/
+  `linkDirectory`, `os`, `cpu`, `libc`, `engines`, `devEngines`, `packageManager`, `workspaces`, `overrides`,
+  `resolutions`, and root-only `pnpm`. One normalizer parses each manifest, sorts the retained keys, and supplies both
+  the hash and the staged Docker context. Metadata such as scripts, exports, files and descriptions is excluded;
 - root `.npmrc`, `patches/**`, and optional `.pnpmfile.cjs`;
 - the `node` and `pnpm` entries of `mise.lock`, because native postinstalls are ABI-specific;
 - the platform (`linux/arm64` on the box);
@@ -180,9 +184,12 @@ The key is sha256 over, in fixed order:
   the runner build script.
 
 Main full gate and PR impact gate skip the install only when the worker's `HOBO_CI_DEPS_LAYER` exactly equals the
-checkout's computed key. Every miss runs `pnpm install --frozen-lockfile`, so a wrong key costs time, never
-correctness. The daily scheduled Main full gate always installs as the correctness verifier. Other jobs retain
-the ordinary install, which finds a matching layer's `.modules.yaml` current.
+checkout's computed key. Every miss runs `pnpm install --frozen-lockfile` against the full checkout, including its
+lifecycle scripts, so normalization never removes scripts from a fallback install. The image install uses
+`--ignore-scripts` followed by its explicit native-package rebuild list, and its `Already up to date` verification
+sets `npm_config_ignore_scripts=true`; importer lifecycle scripts therefore cannot affect the produced layer. The
+daily scheduled Main full gate always installs as the correctness verifier. Other jobs retain the ordinary install,
+which finds a matching layer's `.modules.yaml` current.
 
 Nix and Bazel have the same rule: the key is the full declared input set, outputs are immutable, and a cache hit
 is only a speed-up over a build you could have run. Adopt that discipline, not the tools.
@@ -215,12 +222,18 @@ cannot be computed or the image is missing.
 - **GHCR** under `ghcr.io/hobo-labs`, with **public** packages. GitHub does not bill storage or bandwidth for
   public packages, so there is no paid infra.
   - Images: `hobo-ci-worker:<toolchain>`, `hobo-ci-deps:<toolchain>-<depsKey>`.
-  - BuildKit cache: `hobo-ci-cache:<name>`.
-- **buildx registry cache:**
-  - pushes from `main`: `--cache-to type=registry,ref=ghcr.io/hobo-labs/hobo-ci-cache:<name>-main,mode=max,compression=zstd`;
-  - every build: `--cache-from type=registry,ref=…-main`;
-  - **PRs only read.** `mode=max` keeps intermediate stages, such as the `pnpm fetch` stage, so a manifest-only
-    change rebuilds just the link stage.
+  - BuildKit cache: `hobo-ci-deps:buildcache`.
+- **default-builder registry cache:**
+  - deps builds always use the default builder without `--load`; with `GITHUB_REPOSITORY` set they read
+    `--cache-from type=registry,ref=ghcr.io/<repo lowercase>/hobo-ci-deps:buildcache` only when `docker info`
+    reports the containerd image store. Classic stores log and skip the import; a missing remote cache is a no-op;
+  - after the bounded image push, which uploads only blobs the registry lacks, the separate publisher uses the same
+    detection to export `mode=min` through a 120-second bounded rebuild on the default builder. Classic stores and
+    unavailable buildx log and skip the export;
+  - **PRs only read.** The deps job has `packages: read`, never `packages: write`, and only the publisher uses
+    `--cache-to`. `mode=min` exports final-image bucket layers already uploaded by the image push, adding only a
+    cache manifest; it does not export the install stage or cache-mount contents, so a lockfile change still reruns
+    fetch and install. Box-side cache hits and timings remain unverified here.
 - **zstd** layer compression (`compression=zstd,force-compression=true`) cuts pull time and size for the large
   deps layer. Docker 23+ pulls zstd natively.
 - **eStargz/SOCI lazy pulls: not now.** They need the containerd image store and the stargz snapshotter. The box
@@ -380,27 +393,28 @@ remaining toolchain pins are deferred hardening rather than claimed here.
   1. `pnpm fetch` from `pnpm-lock.yaml` only (network, integrity-pinned);
   2. `--network=none` copy of every importer's `package.json` and the workspace files, then
      `pnpm install --frozen-lockfile --offline`;
-  3. a final stage holding only the `node_modules` trees at the workspace path.
-- The image is pushed from `main` and from the scheduled PR-key builder.
+  3. a final stage holding only the `node_modules` trees and deps-key marker under `/opt/hobo-deps`, split into
+     stable content-hash buckets.
+- A separate non-blocking workflow publishes a local main image only when GHCR lacks its tag.
 - The worker picks `hobo-ci-deps:<toolchain>-<depsKey>` per run, as in option 1 of the composition mechanism
   above.
 - Job install steps become `pnpm install --frozen-lockfile --offline`, with a fallback to the online install
   when no layer was used. The worker exports `HOBO_CI_DEPS_LAYER=<key>` to the job.
 
 **Implemented in this change (2026-11-04):** the pure key function hashes every declared input (including each
-lockfile importer manifest, the deps build recipe and the Node/pnpm mise entries) with mutation tests.
-`deps/build-deps.sh` stages only those manifests, runs the network-enabled `pnpm fetch` target, then a separate
+lockfile importer manifest, the deps build recipe, bucket generator and Node/pnpm mise entries) with mutation tests.
+`deps/build-deps.sh` stages only those inputs, runs the network-enabled `pnpm fetch` target, then a separate
 whole-build `--network=none` install/rebuild. Both stages reuse the persistent host store through the same
-BuildKit cache mount. The install stage separately stages every repo-relative `node_modules` under
-`/opt/hobo-deps`; the final toolchain-based stage copies only those trees and a deps-key marker, with no `.git`,
-checkout path, deletion pass, fetch store or staged manifests. The candidate gets content/toolchain labels and the
-commit's `SOURCE_DATE_EPOCH`. Both the offline `Already up to date` contract and a real uid-1000 job-mount contract
-run before promotion to `:local`; cached local/GHCR candidates pass the same mount contract. Every event reuses an
-exact local or GHCR hit without building. The worker selects that layer only for HoBo leases with a matching
-toolchain label and a successful payload/writability probe, exports its full key, and refuses mismatched pre-warmed
-containers. Every default-path box checkout sets `clean: false` under a new lint rule. Main/schedule/dispatch can
-publish GHCR tags; PRs touching the deps-build inputs reuse a keyed hit or exercise build-only mode without
-promoting the new candidate or pushing.
+BuildKit cache mount. The install stage stages every repo-relative `node_modules` under `/opt/hobo-deps`; the final
+toolchain-based stage adds a deps-key marker, with no `.git`, checkout path, deletion pass, fetch store or staged
+manifests. The bucket generator assigns each `.pnpm` entry to one of 64 stable SHA-256 buckets and emits generated
+`COPY --link` layers; one residual layer holds workspace links and pnpm metadata. Sorted entries, fixed ownership and
+`SOURCE_DATE_EPOCH=0` make unchanged buckets reproducible. The offline `Already up to date` contract and a real
+uid-1000 job-mount contract run before promotion to `:local`; cached local/GHCR candidates pass the same mount
+contract. Every event reuses an exact local or GHCR hit without building. The worker selects that layer only for HoBo
+leases with a matching toolchain label and a successful payload/writability probe, exports its full key, and refuses
+mismatched pre-warmed containers. PRs touching the deps-build inputs reuse a keyed hit or exercise build-only mode
+without promoting or pushing.
 
 After checkout, `scripts/ci/deps-layer.mts link` symlinks each payload `node_modules` into its repo-relative checkout
 path, so the per-lease `_hobo_work` mount no longer hides dependencies and pnpm's relative links keep working.
@@ -414,15 +428,21 @@ dangling until `dist` is built. Other jobs keep their install-and-verify behavio
 
 Every main push runs `ci-deps-image`; an exact `hobo.ci.deps-key` label match on `hobo-ci-deps:local` exits after
 checkout, key computation, and one inspect, while a miss resolves or builds and promotes the layer. Schedule and
-workflow dispatch always run; PR scoping is unchanged. Neither gate depends on the deps-image job, so it adds no
-gate wait. GHCR retention and attestation verification stay Phase 5. Byte-reproducible digests are not claimed
-because the legacy builder has no BuildKit `rewrite-timestamp`; that gap is recorded above with its owner phase.
-Main-run timing evidence is still required before ticking the time-based acceptance boxes.
+workflow dispatch always run; PR scoping is unchanged. Neither gate depends on the deps-image job. The separate
+`ci-deps-publish.yml` workflow starts only after a successful main fabric run or manually, skips absent local and
+existing remote tags, cancels superseded publishes, and bounds both the job (five minutes) and `docker push`
+(240 seconds). Builds and cache exports use the default builder without `--load`; registry cache import and export
+are gated on the containerd image store. After a push, the publisher exports `mode=min` buildcache through a
+120-second bounded default-builder rebuild, or logs and skips it on classic stores or without buildx. Registry
+failure cannot fail or delay HoBo CI. GHCR retention and attestation verification stay Phase 5. Main-run timing,
+default-builder cache hits, layer-digest and push-size evidence are still required before ticking time-based
+acceptance boxes.
 
 - **Acceptance:**
   - install of 5 s or less on `main` for every job that installs;
   - a lockfile-changing PR passes on the fallback path;
-  - a package-manifest-only change gets a new key;
+  - an install-relevant package-manifest-only change gets a new key, while a scripts-only change preserves both the
+    key and every staged context byte;
   - the build stage runs with no network (a test greps the Dockerfile, and a buildx `--network=none` run passes).
 
 ### Phase 5: signing, fork safety, retention
