@@ -191,7 +191,15 @@ function installSdkTarballsIntoApp(appDir: string, artifactsDir: string): void {
 	if (tarballs.length === 0) {
 		throw new Error(`no SDK tarballs under ${artifactsDir}`);
 	}
-	run(appDir, "npm", ["install", "--ignore-scripts", "--no-save", ...tarballs]);
+	for (const tarball of tarballs.sort()) {
+		run(appDir, "npm", [
+			"install",
+			"--ignore-scripts",
+			"--no-save",
+			"--legacy-peer-deps",
+			tarball,
+		]);
+	}
 }
 
 export type ReleaseOciStagingLocation =

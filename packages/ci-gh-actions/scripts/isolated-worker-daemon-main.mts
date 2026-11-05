@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
 import { toJsonString } from "@bufbuild/protobuf";
-import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
+import { ConfigurationSchema, type Lease, parseConfiguration } from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
 	createAdmissionOrder,
@@ -31,11 +31,12 @@ import {
 	type HostedInboxStore,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
+	parseWorkerStopMode,
 	readHostMemory,
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
-	waitForIsolatedWorkerDrain,
+	stopIsolatedWorker,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
@@ -46,6 +47,25 @@ function required(name: string): string {
 	const value = process.env[name];
 	if (!value) throw new Error(`missing ${name}`);
 	return value;
+}
+
+function inodeReserve(name: string, fallback: number): number {
+	const value = process.env[name];
+	if (value === undefined) return fallback;
+	if (!/^\d+$/u.test(value))
+		throw new Error(`invalid ${name}: expected digits only`);
+	const reserve = Number(value);
+	if (!Number.isSafeInteger(reserve))
+		throw new Error(`invalid ${name}: exceeds safe integer range`);
+	return reserve;
+}
+
+function storageLeases(leases: readonly Lease[]) {
+	return leases.map((lease) => ({
+		id: lease.id,
+		sandboxName: lease.sandboxName,
+		jobId: String(lease.jobId),
+	}));
 }
 
 function secretOrFile(name: string): string {
@@ -150,13 +170,12 @@ const lendTrunkSlots = trunkLend === "1";
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
-// A stop waits for running jobs, so the default covers a long job; the
-// supervisor's own stop timeout must be longer than this.
 const drainTimeoutMs = Number(
 	process.env.HOBO_CI_WORKER_DRAIN_TIMEOUT_MS ?? "1800000",
 );
 if (!Number.isFinite(drainTimeoutMs) || drainTimeoutMs < 1_000)
 	throw new Error("invalid HOBO_CI_WORKER_DRAIN_TIMEOUT_MS");
+const stopMode = parseWorkerStopMode(process.env.HOBO_CI_WORKER_STOP_MODE);
 const depsPollMs = Number(process.env.HOBO_CI_DEPS_POLL_MS ?? "300000");
 if (!Number.isFinite(depsPollMs) || depsPollMs < 1_000)
 	throw new Error("invalid HOBO_CI_DEPS_POLL_MS");
@@ -280,9 +299,13 @@ const storageAdmission = createWorkerStorageAdmission({
 		process.env.HOBO_CI_WORKER_BUILDER_CACHE_CAP ??
 		process.env.HOBO_CI_WORKER_BUILDER_KEEP_STORAGE ??
 		"4GB",
+	jobInodes: {
+		workRoot: inodeReserve("HOBO_CI_WORKER_WORKDIR_INODES", 200_000),
+		dockerDataRoot: inodeReserve("HOBO_CI_WORKER_CONTAINER_INODES", 170_000),
+	},
 	log,
 });
-await storageAdmission.reap(await store.activeLeases());
+await storageAdmission.reap(storageLeases(await store.activeLeases()));
 const worker = createIsolatedContainerController({
 	store,
 	github,
@@ -488,7 +511,7 @@ function runGc(): void {
 	if (draining || gcInFlight || tickInFlight) return;
 	gcInFlight = store
 		.activeLeases()
-		.then((leases) => storageAdmission.maintain(leases))
+		.then((leases) => storageAdmission.maintain(storageLeases(leases)))
 		.catch((error) => {
 			log("hobo_ci_isolated_worker_gc_failed", {
 				message: error instanceof Error ? error.message : "unknown",
@@ -521,6 +544,7 @@ log("hobo_ci_isolated_worker_started", {
 	pnpmStoreMounted: pnpmStore !== "",
 	gcIntervalMs,
 	drainTimeoutMs,
+	stopMode,
 });
 
 gcTimer = setInterval(runGc, gcIntervalMs);
@@ -561,12 +585,14 @@ async function shutdown(signal: string) {
 		};
 		const inFlight = async () => liveWorkerLeaseIds.size;
 		await reconcileDrain();
-		log("hobo_ci_isolated_worker_drain_started", {
-			inFlight: await inFlight(),
-			timeoutMs: drainTimeoutMs,
-		});
+		if (stopMode === "drain")
+			log("hobo_ci_isolated_worker_drain_started", {
+				inFlight: await inFlight(),
+				timeoutMs: drainTimeoutMs,
+			});
 		let reported = -1;
-		const result = await waitForIsolatedWorkerDrain({
+		const result = await stopIsolatedWorker({
+			mode: stopMode,
 			inFlight,
 			reconcile: reconcileDrain,
 			pollMs: Math.min(intervalMs, 5_000),
@@ -577,7 +603,9 @@ async function shutdown(signal: string) {
 				log("hobo_ci_isolated_worker_drain_waiting", { remaining });
 			},
 		});
-		if (result.drained) {
+		if (result.mode === "handoff") {
+			log("hobo_ci_isolated_worker_handoff", { running: result.remaining });
+		} else if (result.drained) {
 			log("hobo_ci_isolated_worker_drained", { remaining: 0 });
 		} else {
 			log("hobo_ci_isolated_worker_drain_timeout", {
@@ -585,7 +613,7 @@ async function shutdown(signal: string) {
 			});
 		}
 		await closeStore();
-		process.exit(result.drained ? 0 : 1);
+		process.exit(result.mode === "handoff" || result.drained ? 0 : 1);
 	})().catch((error) => {
 		log("hobo_ci_isolated_worker_shutdown_failed", {
 			message: error instanceof Error ? error.message : "unknown",
