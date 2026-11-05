@@ -36,6 +36,10 @@ import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.j
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
 import type { JobDurations } from "./job-durations.js";
+import {
+	type JobPickupMetadataCache,
+	observeJobPickupMetadata,
+} from "./job-pickup.js";
 import type { IdentityVerifier } from "./oidc.js";
 import {
 	type RunnerLabel,
@@ -47,6 +51,7 @@ import {
 export interface IsolatedRunnerHost {
 	/** `label` is the one runner label the lease's job asked for; the runner registers with it. */
 	launch(id: string, label?: RunnerLabel, rank?: number): Promise<void>;
+	isLaunchParked?(job: Job): Promise<boolean>;
 	reconcile(id: string, forceStop?: boolean): Promise<void>;
 }
 
@@ -114,6 +119,7 @@ const JobWebhook = z.object({
 		run_attempt: z.number().int().positive().optional(),
 		labels: z.array(z.string()),
 		name: z.string().optional(),
+		created_at: z.string().optional(),
 		runner_name: z.string().nullable().optional(),
 	}),
 });
@@ -207,8 +213,9 @@ export class HostedRelay {
 			deferReservation?: boolean;
 			/** Maximum active leases for shared-label runners. Unset: no cap. */
 			generalLeaseLimit?: number;
-			/** Maximum active leases for merge-queue runs. Unset: no cap. */
+			/** Maximum distinct merge groups with active leases. Unset: no cap. */
 			mergeGroupLeaseLimit?: number;
+			jobPickupMetadata?: JobPickupMetadataCache;
 			/** Let shared-label runs exceed the limit until a trunk-label job waits. */
 			lendTrunkSlots?: boolean;
 			memoryAdmission?: WorkerMemoryAdmission;
@@ -423,6 +430,14 @@ export class HostedRelay {
 		job.runAttempt = currentJob.run_attempt;
 		job.runnerName = currentJob.runner_name ?? "";
 		job.name = currentJob.name ?? job.name;
+		if (this.options.jobPickupMetadata)
+			observeJobPickupMetadata(this.options.jobPickupMetadata, {
+				repositoryId: job.repositoryId,
+				id: job.id,
+				runAttempt: job.runAttempt,
+				event: run.event,
+				jobCreatedAt: currentJob.created_at ?? payload.workflow_job.created_at,
+			});
 		if (this.options.memoryAdmission) {
 			const memory = memoryRequestForStoredJob(
 				job,
@@ -662,6 +677,35 @@ export class HostedRelay {
 					keyOf(lease.repositoryId, lease.jobId, lease.runAttempt),
 				),
 		);
+		const idleRunnerExists = async (label: RunnerLabel) => {
+			for (const candidate of active) {
+				if (
+					candidate.state !== "running" ||
+					candidate.actualJobId !== 0 ||
+					candidate.runnerId === 0
+				)
+					continue;
+				try {
+					const response = await this.options.github.request(
+						candidate.installationId,
+						`/repos/${candidate.repository}/actions/runners/${candidate.runnerId}`,
+					);
+					if (!response.ok) continue;
+					const runner = z
+						.object({
+							busy: z.boolean(),
+							labels: z.array(z.object({ name: z.string() })),
+						})
+						.parse(await response.json());
+					if (
+						!runner.busy &&
+						runner.labels.some((runnerLabel) => runnerLabel.name === label)
+					)
+						return true;
+				} catch {}
+			}
+			return false;
+		};
 		for (const lease of active) {
 			if (lease.actualJobId === 0 || lease.actualJobId === lease.jobId)
 				continue;
@@ -681,6 +725,8 @@ export class HostedRelay {
 					current.run_attempt !== lease.runAttempt
 				)
 					continue;
+				const label = servedRunnerLabel(current.labels);
+				if (label && (await idleRunnerExists(label))) continue;
 				const demand = this.queuedDemand(lease);
 				demand.labels = current.labels;
 				await this.options.store.queue(demand, this.now(), expectedRevision);
@@ -757,6 +803,9 @@ export class HostedRelay {
 			labels: job.labels,
 		});
 		const active = await this.options.store.activeLeases();
+		const memoryActive = active.filter(
+			(lease) => lease.state !== "reserved" || (lease.sandboxName ?? "") !== "",
+		);
 		const memoryGeneral = this.options.memoryAdmission
 			? await this.generalLeaseIds()
 			: undefined;
@@ -769,16 +818,16 @@ export class HostedRelay {
 		const pending = await this.admissionOrder(queued, refOf);
 		const limit = this.options.generalLeaseLimit;
 		const mergeGroupLimit = this.options.mergeGroupLeaseLimit;
-		let mergeGroupLeases = 0;
+		const activeMergeGroups = new Set<string>();
 		if (mergeGroupLimit !== undefined)
 			for (const lease of active) {
-				const event = await this.admissionOrder.event({
+				const groupKey = await this.admissionOrder.mergeGroupKey({
 					installationId: lease.installationId,
 					repository: lease.repository,
 					runId: lease.originalRunId,
 					jobId: lease.jobId,
 				});
-				if (event === "merge_group") mergeGroupLeases++;
+				if (groupKey !== undefined) activeMergeGroups.add(groupKey);
 			}
 		let general: Set<string> | undefined;
 		// Strict reservation always caps shared-label leases; lending applies the cap
@@ -787,15 +836,23 @@ export class HostedRelay {
 		let rankZeroWaiting = false;
 		const waitingTrunk = new Set<string>();
 		for (const job of pending) {
+			if ((await this.options.isolatedHost?.isLaunchParked?.(job)) === true)
+				continue;
 			const rank = await this.admissionOrder.rank(refOf(job));
 			const trunk = servedRunnerLabel(job.labels) === TRUNK_RUNNER_LABEL;
 			if (!trunk && rank === TRUNK_RANK) await this.logSharedLabelTrunkJob(job);
 			if (rank > TRUNK_RANK && rankZeroWaiting) continue;
 			if (memoryBlockedRanks.has(rank)) continue;
-			const mergeGroup =
+			const mergeGroupKey =
+				mergeGroupLimit === undefined
+					? undefined
+					: await this.admissionOrder.mergeGroupKey(refOf(job));
+			if (
 				mergeGroupLimit !== undefined &&
-				(await this.admissionOrder.event(refOf(job))) === "merge_group";
-			if (mergeGroup && mergeGroupLeases >= mergeGroupLimit) {
+				mergeGroupKey !== undefined &&
+				!activeMergeGroups.has(mergeGroupKey) &&
+				activeMergeGroups.size >= mergeGroupLimit
+			) {
 				if (rank === TRUNK_RANK) rankZeroWaiting = true;
 				const key = `${job.repositoryId}:${job.runId}:${job.id}:${job.runAttempt}`;
 				if (!this.mergeGroupCapWaitJobs.has(key)) {
@@ -806,6 +863,7 @@ export class HostedRelay {
 							repository: job.repository,
 							runId: job.runId,
 							jobId: job.id,
+							groupKey: mergeGroupKey,
 							limit: mergeGroupLimit,
 						}),
 					);
@@ -858,7 +916,7 @@ export class HostedRelay {
 						jobId: job.id,
 						...memory,
 						rank,
-						activeLeases: active,
+						activeLeases: memoryActive,
 						generalLeaseIds: memoryGeneral,
 						trunkLeaseIds: memoryTrunk,
 					});
@@ -895,13 +953,16 @@ export class HostedRelay {
 					`${job.repository}:${job.id}`,
 					servedRunnerLabel(job.labels),
 				);
-				if (!active.some((entry) => entry.id === lease.id)) active.push(lease);
+				if (!active.some((entry) => entry.id === lease.id)) {
+					active.push(lease);
+					memoryActive.push({ ...lease, state: "dispatching" });
+				}
 				if (rank === TRUNK_RANK) memoryTrunk?.add(lease.id);
 				if (!trunk) {
 					general?.add(lease.id);
 					memoryGeneral?.add(lease.id);
 				}
-				if (mergeGroup) mergeGroupLeases++;
+				if (mergeGroupKey !== undefined) activeMergeGroups.add(mergeGroupKey);
 			}
 		}
 		const reserved = await this.admissionOrder(
