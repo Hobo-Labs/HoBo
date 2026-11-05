@@ -5,13 +5,15 @@ import {
 	cpSync,
 	existsSync,
 	mkdirSync,
-	readdirSync,
 	rmSync,
 	statSync,
 	writeFileSync,
 } from "node:fs";
 import { join, parse, resolve } from "node:path";
-import { SDK_PACKAGES } from "./stage-sdk-artifacts.mts";
+import {
+	orderedSdkTarballPaths,
+	SDK_PACKAGES,
+} from "./stage-sdk-artifacts.mts";
 
 const defaultRoot = join(import.meta.dirname, "..", "..");
 
@@ -185,21 +187,14 @@ function turboBuild(root: string, filters: readonly string[]): void {
 }
 
 function installSdkTarballsIntoApp(appDir: string, artifactsDir: string): void {
-	const tarballs = readdirSync(artifactsDir)
-		.filter((name) => name.endsWith(".tgz"))
-		.map((name) => join(artifactsDir, name));
-	if (tarballs.length === 0) {
-		throw new Error(`no SDK tarballs under ${artifactsDir}`);
-	}
-	for (const tarball of tarballs.sort()) {
-		run(appDir, "npm", [
-			"install",
-			"--ignore-scripts",
-			"--no-save",
-			"--legacy-peer-deps",
-			tarball,
-		]);
-	}
+	const tarballs = orderedSdkTarballPaths(artifactsDir);
+	run(appDir, "npm", [
+		"install",
+		"--ignore-scripts",
+		"--no-save",
+		"--legacy-peer-deps",
+		...tarballs,
+	]);
 }
 
 export type ReleaseOciStagingLocation =

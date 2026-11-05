@@ -4,10 +4,12 @@
  * Requires NPM_TOKEN (hobodev publisher) and fails closed when missing on release.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { npmPublishArgs, parseReleaseRef } from "../lib/release-version.mts";
-import { stageSdkArtifactsDir } from "./stage-sdk-artifacts.mts";
+import {
+	orderedSdkTarballPaths,
+	stageSdkArtifactsDir,
+} from "./stage-sdk-artifacts.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 const EXPECTED_PUBLISHER = "hobodev";
@@ -52,14 +54,13 @@ export function publishNpmSdkArtifacts(options: {
 }): void {
 	assertPublisher(options.token);
 	const parsed = parseReleaseRef(options.releaseRef);
-	stageSdkArtifactsDir(options.stagingDir);
-	const tarballs = readdirSync(options.stagingDir).filter((name) =>
-		name.endsWith(".tgz"),
-	);
-	if (tarballs.length === 0) {
-		throw new Error("no staged npm tarballs to publish");
+	const manifest = stageSdkArtifactsDir(options.stagingDir);
+	const tarballs = orderedSdkTarballPaths(options.stagingDir);
+	if (tarballs.length !== manifest.packages.length) {
+		throw new Error("SDK tarball manifest count mismatch");
 	}
-	for (const file of tarballs.sort()) {
+	for (const tarball of tarballs) {
+		const file = tarball.slice(tarball.lastIndexOf("/") + 1);
 		run("npm", npmPublishArgs(file, parsed), options.stagingDir, {
 			NPM_TOKEN: options.token,
 		});

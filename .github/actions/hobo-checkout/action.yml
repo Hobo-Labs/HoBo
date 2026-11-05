@@ -12,21 +12,69 @@ inputs:
     description: Whether to fetch submodules after sparse checkout
     required: false
     default: "false"
+  ref:
+    description: Optional git ref to checkout (defaults to the triggering commit)
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
     - name: Stabilize partial-clone HTTP (HTTP/1.1)
       shell: bash
       run: git config --global http.version HTTP/1.1
+    - name: Split sparse directory cones and root files
+      id: sparse
+      shell: bash
+      env:
+        SPARSE_PATHS: ${{ inputs.sparse-paths }}
+      run: |
+        set -euo pipefail
+        root_files=(
+          mise.toml
+          mise.lock
+          package.json
+          pnpm-lock.yaml
+          pnpm-workspace.yaml
+          turbo.json
+          tsconfig.base.json
+        )
+        is_root_file() {
+          local candidate="$1"
+          for f in "${root_files[@]}"; do
+            if [ "$f" = "$candidate" ]; then
+              return 0
+            fi
+          done
+          return 1
+        }
+        dir_cones=()
+        checkout_root=()
+        while IFS= read -r path; do
+          [ -z "$path" ] && continue
+          if is_root_file "$path"; then
+            checkout_root+=("$path")
+          else
+            dir_cones+=("$path")
+          fi
+        done <<< "$SPARSE_PATHS"
+        {
+          printf 'dir_cones<<EOF\n'
+          printf '%s\n' "${dir_cones[@]}"
+          printf 'EOF\n'
+          printf 'root_files<<EOF\n'
+          printf '%s\n' "${checkout_root[@]}"
+          printf 'EOF\n'
+        } >> "$GITHUB_OUTPUT"
     - name: Sparse checkout (attempt 1)
       id: checkout1
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       continue-on-error: true
       with:
         clean: false
+        ref: ${{ inputs.ref }}
         fetch-depth: ${{ inputs.fetch-depth }}
         filter: blob:none
-        sparse-checkout: ${{ inputs.sparse-paths }}
+        sparse-checkout: ${{ steps.sparse.outputs.dir_cones }}
         sparse-checkout-cone-mode: true
     - name: Reset partial clone after failed checkout
       if: steps.checkout1.outcome != 'success'
@@ -39,9 +87,10 @@ runs:
       continue-on-error: true
       with:
         clean: false
+        ref: ${{ inputs.ref }}
         fetch-depth: ${{ inputs.fetch-depth }}
         filter: blob:none
-        sparse-checkout: ${{ inputs.sparse-paths }}
+        sparse-checkout: ${{ steps.sparse.outputs.dir_cones }}
         sparse-checkout-cone-mode: true
     - name: Reset partial clone after failed checkout (attempt 2)
       if: steps.checkout1.outcome != 'success' && steps.checkout2.outcome != 'success'
@@ -53,9 +102,10 @@ runs:
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       with:
         clean: false
+        ref: ${{ inputs.ref }}
         fetch-depth: ${{ inputs.fetch-depth }}
         filter: blob:none
-        sparse-checkout: ${{ inputs.sparse-paths }}
+        sparse-checkout: ${{ steps.sparse.outputs.dir_cones }}
         sparse-checkout-cone-mode: true
     - name: Require successful sparse checkout
       shell: bash
@@ -68,6 +118,12 @@ runs:
         fi
         echo "::error::sparse checkout failed after 3 attempts (partial clone / promisor fetch)"
         exit 1
+    - name: Checkout sparse root files (non-cone)
+      if: steps.sparse.outputs.root_files != ''
+      shell: bash
+      run: |
+        set -euo pipefail
+        git checkout HEAD -- ${{ steps.sparse.outputs.root_files }}
     - name: Initialize submodules (sparse cone via pins:fetch in job)
       if: inputs.submodules == 'true'
       shell: bash
