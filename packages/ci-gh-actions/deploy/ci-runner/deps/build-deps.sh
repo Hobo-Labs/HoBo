@@ -19,6 +19,54 @@ if [[ ! "$cap" =~ ^[0-9]+([.][0-9]+)?[KMGT]B$ ]]; then
   echo "invalid BuildKit cache cap: ${cap}" >&2
   exit 1
 fi
+inode_headroom="${HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-400000}"
+byte_headroom="${HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-8589934592}"
+if [[ ! "$inode_headroom" =~ ^[0-9]+$ ]]; then
+  echo "invalid HOBO_CI_DEPS_BUILD_INODE_HEADROOM" >&2
+  exit 1
+fi
+if [[ ! "$byte_headroom" =~ ^[0-9]+$ ]]; then
+  echo "invalid HOBO_CI_DEPS_BUILD_BYTE_HEADROOM" >&2
+  exit 1
+fi
+
+sample_docker_headroom() {
+  local docker_root="$1"
+  local iavail avail
+  iavail="$(df -P --output=iavail "$docker_root" | tail -n1 | tr -d '[:space:]')"
+  avail="$(df -B1 --output=avail "$docker_root" | tail -n1 | tr -d '[:space:]')"
+  if [[ ! "$iavail" =~ ^[0-9]+$ || ! "$avail" =~ ^[0-9]+$ ]]; then
+    echo "invalid Docker data root df sample for ${docker_root}" >&2
+    exit 1
+  fi
+  printf '%s %s\n' "$iavail" "$avail"
+}
+
+# A keyed miss runs pnpm install and mv into /opt/hobo-deps inside BuildKit.
+# That overlay can exhaust the box and red concurrent main jobs. Prune only
+# the builder cache (never an unfiltered image prune) and refuse the rebuild
+# if headroom is still short.
+ensure_deps_build_headroom() {
+  local docker_root iavail avail
+  docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+  if [[ -z "$docker_root" || ! -d "$docker_root" ]]; then
+    echo "cannot sample Docker data root for deps build headroom" >&2
+    exit 1
+  fi
+  read -r iavail avail < <(sample_docker_headroom "$docker_root")
+  if (( iavail >= inode_headroom && avail >= byte_headroom )); then
+    return 0
+  fi
+  echo "deps rebuild headroom low (dockerRoot=${docker_root} inodes=${iavail} bytes=${avail}); pruning BuildKit cache"
+  docker builder prune -f --keep-storage "$cap"
+  read -r iavail avail < <(sample_docker_headroom "$docker_root")
+  if (( iavail >= inode_headroom && avail >= byte_headroom )); then
+    echo "deps rebuild headroom recovered after builder prune (inodes=${iavail} bytes=${avail})"
+    return 0
+  fi
+  echo "refusing deps rebuild: Docker data root still below headroom after builder prune (inodes=${iavail} need ${inode_headroom}; bytes=${avail} need ${byte_headroom})" >&2
+  exit 1
+}
 cleanup() {
   rm -rf "$context" "$verification" "$contract_log"
 }
@@ -103,6 +151,7 @@ else
 fi
 
 echo "Building $candidate (fetch network restricted to lockfile-verified downloads; install offline)"
+ensure_deps_build_headroom
 "${build_command[@]}" \
   "${docker_memory_args[@]}" \
   "${rewrite_args[@]}" \

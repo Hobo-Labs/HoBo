@@ -118,6 +118,8 @@ non-secret settings:
 | `HOBO_CI_PNPM_STORE_PRUNE_INTERVAL_MS` | `21600000` | Minimum interval between idle-only store prunes; integer at least 60000, persisted across failures and restarts |
 | `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image/builder/store/dead-workdir GC interval; minimum 60000, capped at 300000 |
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cache cap with no age exemption; `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` remains a deprecated alias |
+| `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | `400000` | Free inodes required on Docker's data root before a deps rebuild; digits only |
+| `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | `8589934592` | Free bytes required on Docker's data root before a deps rebuild; digits only |
 
 One `hobo_ci_job_pickup` log per lease records job/run identity, workflow event, runner label, admission,
 container-start and registration timestamps, and their millisecond deltas. Polled job creation time and total
@@ -302,7 +304,11 @@ selected toolchain prefixes the deps key and labels the image. They fail only wh
 neither toolchain is available. For a new key, the daemon checks
 `hobo-ci-deps:<key>`, tries the corresponding
 `ghcr.io/<owner>/<repo>/hobo-ci-deps:<key>` pull, then builds a registry miss with
-`build-deps.sh --no-promote`. Builds are single-flight and asynchronous: they do
+`build-deps.sh --no-promote`. Before that build's `pnpm install`/`mv` into
+`/opt/hobo-deps`, the script samples Docker's data root and, if free inodes or
+bytes are below headroom, prunes only the BuildKit cache (`docker builder prune`);
+it never runs `docker image prune -af`. A remaining shortage refuses the rebuild
+so a key miss cannot `ENOSPC` a concurrent main job. Builds are single-flight and asynchronous: they do
 not block admission or hold a job slot. The process runs under `nice` and `ionice`,
 and `HOBO_CI_DEPS_BUILD_MEMORY_MB` (default `4096`, minimum `512`) caps both the
 Docker build and its offline verification container. A successful local, pulled,
