@@ -126,6 +126,7 @@ export function hoboReleasePagesSparseCones(): readonly string[] {
 		"release",
 		"external",
 		"examples",
+		"media",
 		...PINS_SPARSE_CONES,
 		...MISE_LOCK_SPARSE_CONES,
 		...RELEASE_ROOT_FILES,
@@ -302,6 +303,9 @@ export function requiredPathsForHoboReleasePages(): readonly string[] {
 	return Object.freeze([
 		...PINS_FETCH_REQUIRED_FILES,
 		"site/package.json",
+		"site/scripts/build-browser-wit-runtime.mts",
 		"examples/try-site/yards.json",
+		"examples/browser-runtime/wit/station.wit",
+		"packages/runtimes/runtime-wasm/package.json",
 	]);
 }
