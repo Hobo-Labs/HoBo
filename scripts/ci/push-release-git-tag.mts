@@ -65,10 +65,30 @@ function configureSshTagSigning(env: NodeJS.ProcessEnv): void {
 		[
 			"config",
 			"core.sshCommand",
-			`ssh -i ${keyPath} -o StrictHostKeyChecking=accept-new`,
+			`ssh -i ${keyPath} -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes`,
 		],
 		{ cwd: root },
 	);
+}
+
+function pushTagOverHttps(tag: string, env: NodeJS.ProcessEnv): void {
+	const token = env.GITHUB_TOKEN?.trim();
+	const repository = env.GITHUB_REPOSITORY?.trim();
+	if (!token || !repository) {
+		throw new Error(
+			"GITHUB_TOKEN and GITHUB_REPOSITORY are required to push tags over HTTPS (deploy keys cannot push)",
+		);
+	}
+	const url = `https://x-access-token:${token}@github.com/${repository}.git`;
+	const result = spawnSync("git", ["push", url, `refs/tags/${tag}`], {
+		cwd: root,
+		encoding: "utf8",
+	});
+	if (result.status !== 0) {
+		throw new Error(
+			`git push (HTTPS) failed: ${result.stderr || result.stdout}`,
+		);
+	}
 }
 
 function main(): void {
@@ -106,8 +126,8 @@ function main(): void {
 	if (sign.status !== 0) {
 		throw new Error(`git tag failed: ${sign.stderr || sign.stdout}`);
 	}
-	runGit(["push", "origin", tag]);
-	console.log(`pushed signed tag ${tag} -> ${commitSha}`);
+	pushTagOverHttps(tag, process.env);
+	console.log(`pushed signed tag ${tag} -> ${commitSha} (HTTPS)`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

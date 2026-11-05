@@ -177,7 +177,7 @@ Multi-arch builds are **native-only** on `hobo` runners (amd64 or arm64 per box)
 - Downstream pipelines (CLI + PWA) **pin the SDK image by digest**, never `:latest`.
 - PR workflows **build + contract-test** images locally; they **do not push** to GHCR.
 - Tag/`workflow_dispatch` releases push with **`GITHUB_TOKEN`** (`packages: write`); no new secrets.
-- **Main train signed tags** require repository secrets **`HOBO_RELEASE_TAG_SSH_PRIVATE_KEY`** and **`HOBO_RELEASE_TAG_SSH_SIGNING_KEY`** (SSH commit-signing key comment, e.g. `ssh-ed25519 …`); the **`release-tag`** job refuses to move an existing tag.
+- **Main train signed tags** use **`environment: production`** secrets **`HOBO_RELEASE_TAG_SSH_PRIVATE_KEY`** (private key material for SSH signing) and **`HOBO_RELEASE_TAG_SSH_SIGNING_KEY`** (public **`user.signingkey`** for `gpg.format=ssh`, e.g. `ssh-ed25519 AAAA… comment`). Deploy keys are disabled: **`release-tag`** signs with SSH but **pushes the tag over HTTPS** with the job’s **`GITHUB_TOKEN`** (`contents: write`). The job refuses to move an existing tag.
 
 ### Signing, SBOM, and provenance
 

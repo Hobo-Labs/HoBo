@@ -11,6 +11,10 @@ on:
       - "version.json"
       - "deploy/release-images/**"
       - "release/**"
+      - "release/mise.toml"
+      - "release/mise.lock"
+      - "scripts/lib/nbgv-toolchain.mts"
+      - "scripts/test/nbgv-toolchain.test.ts"
       - "mise.toml"
       - "mise.lock"
       - "package.json"
@@ -59,6 +63,10 @@ on:
     paths:
       - "deploy/release-images/**"
       - "release/**"
+      - "release/mise.toml"
+      - "release/mise.lock"
+      - "scripts/lib/nbgv-toolchain.mts"
+      - "scripts/test/nbgv-toolchain.test.ts"
       - "mise.toml"
       - "mise.lock"
       - "package.json"
@@ -188,7 +196,7 @@ jobs:
           set -euo pipefail
           head_sha='${{ github.event.workflow_run.head_sha }}'
           pnpm install --frozen-lockfile --config.confirmModulesPurge=false
-          pnpm exec vitest run scripts/test/nbgv-release-version.test.ts
+          pnpm exec vitest run scripts/test/nbgv-release-version.test.ts scripts/test/nbgv-toolchain.test.ts
           node --no-warnings scripts/ci/compute-release-version.mts "$head_sha" --github-env --github-output "$GITHUB_OUTPUT"
 
   # One job, not three: on the shared two-slot box every extra job pays its own
@@ -626,6 +634,7 @@ jobs:
     if: needs.release-main-train-gate.outputs.run == 'true'
     needs: [release-main-train-gate, release-publish, release-npm, release-attest, release-pages]
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    environment: production
     timeout-minutes: 10
     permissions:
       contents: write
@@ -635,9 +644,9 @@ jobs:
           clean: false
           ref: ${{ needs.release-main-train-gate.outputs.release_sha }}
           fetch-depth: 0
-      - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
       - name: Push signed release tag (idempotent)
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           HOBO_RELEASE_TAG_SSH_PRIVATE_KEY: ${{ secrets.HOBO_RELEASE_TAG_SSH_PRIVATE_KEY }}
           HOBO_RELEASE_TAG_SSH_SIGNING_KEY: ${{ secrets.HOBO_RELEASE_TAG_SSH_SIGNING_KEY }}
         run: |
