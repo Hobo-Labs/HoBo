@@ -353,7 +353,10 @@ checkouts. This S0 slice deliberately adds neither the per-job derivation nor th
 `GITHUB_SHA` commit. It writes both GitHub URL forms as `url.file://<mirror>.insteadOf` entries in the
 `GIT_CONFIG_SYSTEM` file under `RUNNER_TEMP`, so checkout's pack and lazy blob fetches stay local without changing
 the checkout `repository:` or stored `origin`. A miss only logs `hobo_ci_git_mirror=miss` and keeps GitHub as the
-remote. The Phase 2 worker fetch, mount, and job-started hook are **not implemented** here.
+remote. The Phase 2 worker fetch and read-only mount are implemented in `@hobo/ci-gh-actions`
+(`createBoxGitMirror`, daemon `HOBO_CI_GIT_MIRROR_ROOT`). The in-image
+`ACTIONS_RUNNER_HOOK_JOB_STARTED` hook is still not required: `hobo-checkout` already
+probes `HOBO_CI_GIT_MIRROR` and the mounted path.
 
 - **Acceptance for this slice:** `scripts/test/s0-checkout-cone.test.ts` keeps the workflow and cone synchronized,
   and `scripts/test/box-git-mirror.test.ts` proves hit, miss, missing-commit, path-rejection, and CLI behavior.
@@ -361,26 +364,26 @@ remote. The Phase 2 worker fetch, mount, and job-started hook are **not implemen
 
 ### Phase 2: box bare mirror
 
-The worker (`packages/ci-gh-actions` isolated worker) owns `/var/lib/hobo-ci/git/<owner>/<repo>.git`:
+**Status (2026-11-05): worker fetch + read-only mount.** The isolated worker owns
+`/var/lib/hobo-ci/git/<owner>/<repo>.git` (`HOBO_CI_GIT_MIRROR_ROOT`, disable with
+`HOBO_CI_GIT_MIRROR=0`):
 - It creates the mirror with `git clone --bare --filter=blob:none` once, then backfills blobs for `main`.
-- It runs `git fetch` for each admitted run's refs before launching the run's jobs, through one queue per
-  repository. That gives one writer, and keeps `gc.auto` off during jobs.
-- It runs `git maintenance run --task=gc` weekly.
-- The mirror is mounted read-only into job containers.
+- It runs `git fetch --no-filter origin <sha>:refs/hobo/sha/<sha>` for each admitted run's `head_sha` before
+  `docker create`, through one queue per repository. `gc.auto` is off. Fork / PR objects never land on
+  `refs/heads/*`.
+- The mirror is mounted read-only at the same path and `HOBO_CI_GIT_MIRROR` is set so `hobo-checkout` hits
+  without a job-started hook. A miss logs `hobo_ci_git_mirror` and the job still checkouts from GitHub.
+- Weekly `git maintenance run --task=gc` is still outstanding.
 
-The runner image gets:
-- `ACTIONS_RUNNER_HOOK_JOB_STARTED=/opt/hobo/ci/job-started.sh`. If the mirror has `GITHUB_SHA`, the hook writes
-  `url.file:///mirror/<repo>.git.insteadOf=https://github.com/<repo>` into a system gitconfig named by
-  `GIT_CONFIG_SYSTEM`. `actions/checkout` overrides `HOME`, so global config would be lost. Otherwise the hook
-  leaves GitHub as the remote.
-- Secret scan clones the mirror blobless and scans `before..sha` on push, or `base..head` on a PR. The weekly
-  schedule scans full history.
+The runner image hook remains optional. Secret scan still uses blobless checkout + `before..sha` (finding 75).
 
 - **Acceptance:**
-  - checkout of 2 s or less at p90 on `main` for every job;
-  - a test that a mirror miss falls back to GitHub and the job still passes;
-  - a test that a job cannot write the mirror;
-  - fork PR objects fetched into the mirror are never resolved by a branch name.
+  - checkout of 2 s or less at p90 on `main` for every job that hits the mirror (measured on the next green Main
+    full gate after this lands);
+  - `packages/ci-gh-actions/test/git-mirror.test.ts` proves hit, miss, and SHA-only refs;
+  - `isolated-worker-parallel` proves the `:ro` mount and `HOBO_CI_GIT_MIRROR`;
+  - `isolated-worker-launch-thrash` proves ensure-before-create and that a create failure still happens after a
+    hit (the job is not blocked by a miss).
 
 ### Phase 3: toolchain layers in GHCR
 

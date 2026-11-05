@@ -145,6 +145,7 @@ export function createAdmissionOrder(
 		},
 		rank: async (ref: AdmissionRef) => (await keyFor(ref)).rank,
 		event: async (ref: AdmissionRef) => (await keyFor(ref)).event,
+		headSha: async (ref: AdmissionRef) => (await keyFor(ref)).headSha,
 		mergeGroupKey: async (ref: AdmissionRef) => {
 			const key = await keyFor(ref);
 			if (key.event !== "merge_group") return undefined;

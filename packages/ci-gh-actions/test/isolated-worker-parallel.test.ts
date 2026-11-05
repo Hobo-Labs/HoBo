@@ -80,6 +80,9 @@ function controller(
 	container: Readonly<{
 		volumes?: readonly Readonly<{ source: string; target: string }>[];
 		containerEnv?: Readonly<Record<string, string>>;
+		gitMirror?: {
+			pathFor(repository: string): string | undefined;
+		};
 	}> = {},
 ) {
 	const transition = vi.fn(async () => undefined);
@@ -181,6 +184,23 @@ describe("isolated worker parallel slots", () => {
 			}),
 		);
 		await ctl.discardWarm();
+	});
+
+	it("mounts an existing box git mirror read-only and names it for checkout", async () => {
+		const mirror = mkdtempSync(join(tmpdir(), "hobo-git-mirror-mount-"));
+		const docker = fakeDocker();
+		const { ctl } = controller(docker, [], 2, {
+			gitMirror: { pathFor: () => mirror },
+		});
+		await ctl.prewarm("Hobo-Labs/HoBo");
+		expect(docker.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				volumes: [{ source: mirror, target: mirror, readonly: true }],
+				env: expect.objectContaining({ HOBO_CI_GIT_MIRROR: mirror }),
+			}),
+		);
+		await ctl.discardWarm();
+		rmSync(mirror, { recursive: true, force: true });
 	});
 
 	it("exports the container memory limit to the runner environment", async () => {
@@ -403,6 +423,31 @@ describe("cli docker driver parallel helpers", () => {
 				...weights,
 			}),
 		).rejects.toThrow(/invalid container/u);
+	});
+
+	it("appends :ro only from the typed readonly flag", async () => {
+		const { bin, log } = fakeBinary();
+		const driver = createCliDockerDriver({
+			binary: bin,
+			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0" },
+		});
+		await driver.create({
+			name: "hobo-x",
+			image: "img",
+			timeoutMs: 1,
+			env: {},
+			command: [],
+			volumes: [
+				{
+					source: "/var/lib/hobo-ci/git/Hobo-Labs/HoBo.git",
+					target: "/var/lib/hobo-ci/git/Hobo-Labs/HoBo.git",
+					readonly: true,
+				},
+			],
+		});
+		expect(readFileSync(log, "utf8")).toContain(
+			"-v /var/lib/hobo-ci/git/Hobo-Labs/HoBo.git:/var/lib/hobo-ci/git/Hobo-Labs/HoBo.git:ro",
+		);
 	});
 
 	it("refuses volume specs that could smuggle extra mount options", async () => {

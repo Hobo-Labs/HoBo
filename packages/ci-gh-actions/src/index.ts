@@ -74,6 +74,12 @@ export {
 	defaultDepsRoot,
 } from "./isolated-worker/deps-image.js";
 export {
+	type BoxGitMirror,
+	type BoxGitMirrorEnsureResult,
+	boxGitMirrorPath,
+	createBoxGitMirror,
+} from "./isolated-worker/git-mirror.js";
+export {
 	createGithubJobPoller,
 	createPollLogFilter,
 	describeWaitingJobs,

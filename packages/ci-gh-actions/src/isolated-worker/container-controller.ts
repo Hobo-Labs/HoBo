@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
@@ -220,6 +221,15 @@ export function createIsolatedContainerController(options: {
 		activeLeases: readonly Lease[],
 	) => Promise<ReadonlySet<string>>;
 	jobPickupMetadata?: Readonly<JobPickupMetadataCache>;
+	/** Host bare mirror mounted read-only at the same path the job-side probe uses. */
+	gitMirror?: {
+		pathFor(repository: string): string | undefined;
+		ensure?(
+			repository: string,
+			sha: string,
+		): Promise<{ status: "hit" | "miss"; reason?: string; mirror?: string }>;
+	};
+	headShaFor?(lease: Lease): Promise<string | undefined>;
 	log?: (
 		event:
 			| WorkerLeaseReconciliationEvent
@@ -231,7 +241,8 @@ export function createIsolatedContainerController(options: {
 			| "hobo_ci_launch_parked"
 			| "hobo_ci_work_dir_retired"
 			| "hobo_ci_work_dir_removed"
-			| "hobo_ci_work_dir_remove_failed",
+			| "hobo_ci_work_dir_remove_failed"
+			| "hobo_ci_git_mirror",
 		fields: Readonly<Record<string, string | number | boolean>>,
 	) => void;
 	now?: () => string;
@@ -368,6 +379,35 @@ export function createIsolatedContainerController(options: {
 			return workerSelection;
 		}
 	};
+	type GitMirrorMount = {
+		volumes: readonly Readonly<{
+			source: string;
+			target: string;
+			readonly?: boolean;
+		}>[];
+		env: Record<string, string>;
+	};
+	type GitMirrorLogFields = {
+		status: "hit" | "miss";
+		repository: string;
+		mirror?: string;
+		reason?: string;
+	};
+	const gitMirrorMount = (repository: string | undefined): GitMirrorMount => {
+		const path =
+			repository && options.gitMirror
+				? options.gitMirror.pathFor(repository)
+				: undefined;
+		if (!path || !existsSync(path))
+			return {
+				volumes: [],
+				env: {},
+			};
+		return {
+			volumes: [{ source: path, target: path, readonly: true }],
+			env: { HOBO_CI_GIT_MIRROR: path },
+		};
+	};
 	const containerSpec = (
 		name: string,
 		timeoutMs: number,
@@ -375,13 +415,16 @@ export function createIsolatedContainerController(options: {
 		selection: JobImage,
 		rank: number,
 		jobDirectory?: string,
+		repository?: string,
 	) => {
 		const memory = computeJobMemoryConfig({
 			limitMb: memoryMb,
 			cpuCount: availableParallelism(),
 		});
+		const mirror = gitMirrorMount(repository);
 		const env: JobContainerEnvironment = {
 			...options.containerEnv,
+			...mirror.env,
 			HOBO_CI_JOB_MEMORY_MB: String(memoryMb),
 			NODE_OPTIONS: `--max-old-space-size=${memory.heapMb}`,
 			HOBO_CI_RELAY_ORIGIN: options.publicOrigin,
@@ -399,6 +442,7 @@ export function createIsolatedContainerController(options: {
 			...containerResourceWeightsForRank(rank),
 			volumes: [
 				...(options.volumes ?? []),
+				...mirror.volumes,
 				...(jobDirectory
 					? [{ source: jobDirectory, target: WORK_TARGET }]
 					: []),
@@ -475,11 +519,19 @@ export function createIsolatedContainerController(options: {
 				const next = repository
 					? undefined
 					: activeLeases.find((lease) => lease.state === "reserved");
-				const selection = await selectImage(
-					repository ?? next?.repository ?? depsRepository,
-				);
+				const selectedRepository =
+					repository ?? next?.repository ?? depsRepository;
+				const selection = await selectImage(selectedRepository);
 				const handle = await options.docker.create(
-					containerSpec(name, 6 * 60 * 60_000, prewarmMemoryMb, selection, 1),
+					containerSpec(
+						name,
+						6 * 60 * 60_000,
+						prewarmMemoryMb,
+						selection,
+						1,
+						undefined,
+						selectedRepository,
+					),
 				);
 				try {
 					await options.docker.start(name, handle.containerId);
@@ -769,6 +821,28 @@ export function createIsolatedContainerController(options: {
 					const directory = workDirectory(id);
 					if (directory && options.workFs)
 						await options.workFs.prepareJobDirectory(directory);
+					const sha = await options.headShaFor?.(planned);
+					if (sha && options.gitMirror?.ensure) {
+						try {
+							const resolved = await options.gitMirror.ensure(
+								planned.repository,
+								sha,
+							);
+							const fields: GitMirrorLogFields = {
+								status: resolved.status,
+								repository: planned.repository,
+							};
+							if (resolved.mirror) fields.mirror = resolved.mirror;
+							if (resolved.reason) fields.reason = resolved.reason;
+							options.log?.("hobo_ci_git_mirror", fields);
+						} catch (error) {
+							options.log?.("hobo_ci_git_mirror", {
+								status: "miss",
+								repository: planned.repository,
+								reason: error instanceof Error ? error.message : "unknown",
+							});
+						}
+					}
 					stage = "create";
 					const spare = warm?.memoryMb === memoryMb ? warm : undefined;
 					const spareMatches =
@@ -795,6 +869,7 @@ export function createIsolatedContainerController(options: {
 								selection,
 								rank,
 								directory,
+								planned.repository,
 							),
 						);
 						if (handle.name !== name)

@@ -167,6 +167,8 @@ A feasible rank-0 job waiting for memory, the distinct-merge-group cap, or a slo
 | `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host root for per-job work mounts, teardown and byte/inode pressure checks; same filesystem as pnpm store |
 | `HOBO_CI_WORKER_WORKDIR_INODES` | `200000` | Expected host-workdir inode growth reserved per admitted job; digits only, `0` disables this root's reservation |
 | `HOBO_CI_WORKER_CONTAINER_INODES` | `170000` | Expected Docker-writable-layer inode growth reserved per admitted job; digits only, `0` disables this root's reservation |
+| `HOBO_CI_GIT_MIRROR_ROOT` | `/var/lib/hobo-ci/git` | Host root for per-repo bare mirrors (`<root>/<owner>/<repo>.git`); mounted read-only into job containers |
+| `HOBO_CI_GIT_MIRROR` | unset | `0` disables the box git mirror (jobs fetch GitHub as today); any other value or unset keeps Phase 2 on |
 | `HOBO_CI_PNPM_STORE_DIR` | `~/.cache/hobo-ci/pnpm-store` | Shared content-addressed store mounted at `/pnpm-store`; empty disables it |
 | `HOBO_CI_PNPM_STORE_PRUNE_INTERVAL_MS` | `21600000` | Minimum interval between idle-only store prunes; integer at least 60000, persisted across failures and restarts |
 | `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image, builder, store and dead-workdir GC interval; minimum 60000, capped at 300000 |
