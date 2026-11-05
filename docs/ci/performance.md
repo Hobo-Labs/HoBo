@@ -69,6 +69,7 @@ unindexed new finding files as notices.
 - [Finding 59: the deps mount check needed tsx and misread the pnpm layout](./findings/0059-the-deps-mount-check-needed-tsx-and-misread-the-pnpm-layout.md)
 - [Finding 61: a worker restart drained jobs before handing off](./findings/0061-a-worker-restart-drained-jobs-before-handing-off.md)
 - [Finding 65: merge-group jobs serialized behind the release job](./findings/0065-merge-group-jobs-serialized-behind-the-release-job.md)
+- [Finding 70: a test fixture depended on the job container umask](./findings/0070-a-test-fixture-depended-on-the-job-container-umask.md)
 <!-- findings-index:end -->
 
 ## Data
