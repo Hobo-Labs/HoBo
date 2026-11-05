@@ -76,8 +76,11 @@ function dirsFor({ onTestFinished }: TestContext): Dirs {
 		binDir: join(root, "bin"),
 		scratch: join(root, "tmp"),
 	};
-	for (const dir of [dirs.work, dirs.elsewhere, dirs.binDir, dirs.scratch])
-		mkdirSync(dir);
+	// OpenSesame refuses group/other-writable bin dirs, so the fixture must not depend on umask.
+	for (const dir of [dirs.work, dirs.elsewhere, dirs.binDir, dirs.scratch]) {
+		mkdirSync(dir, { mode: 0o755 });
+		chmodSync(dir, 0o755);
+	}
 	writeFileSync(
 		join(dirs.work, CREDENTIAL_BINDINGS_FILE),
 		JSON.stringify(BINDINGS),

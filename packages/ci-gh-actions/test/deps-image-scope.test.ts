@@ -62,15 +62,18 @@ describe("CI deps image push scope", () => {
 		const login = depsJob.steps.find(
 			(step) => step.name === "Login to GHCR for read-only cache",
 		);
-		const build = depsJob.steps.find(
-			(step) => step.name === "Build deps image and verify offline install",
-		);
 		expect(login.if).not.toContain("env.GHCR_TOKEN");
-		expect(login.if).toContain("steps.source.outputs.source == 'build'");
+		expect(login.if).toContain("steps.scope.outputs.run == 'true'");
+		expect(login.if).toContain("steps.current.outputs.current != 'true'");
+		const resolve = depsJob.steps.find(
+			(step) => step.name === "Resolve local or GHCR deps image",
+		);
 		expect(login.env.GHCR_TOKEN).toBe("${{ secrets.GITHUB_TOKEN }}");
 		expect(login.run).toContain("docker login ghcr.io");
 		expect(login.run).toContain("--password-stdin");
-		expect(depsJob.steps.indexOf(login)).toBe(depsJob.steps.indexOf(build) - 1);
+		expect(depsJob.steps.indexOf(login)).toBe(
+			depsJob.steps.indexOf(resolve) - 1,
+		);
 	});
 
 	it("publishes from a separate bounded workflow on the same runner labels", () => {
@@ -85,7 +88,7 @@ describe("CI deps image push scope", () => {
 			"cancel-in-progress": true,
 		});
 		const job = publisher.jobs.publish;
-		expect(job["timeout-minutes"]).toBe(5);
+		expect(job["timeout-minutes"]).toBe(20);
 		expect(job["runs-on"]).toBe(depsJob["runs-on"]);
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
 		expect(job.if).toContain(

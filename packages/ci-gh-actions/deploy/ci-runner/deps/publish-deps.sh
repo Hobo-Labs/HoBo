@@ -1,22 +1,11 @@
 #!/usr/bin/env bash
-# Publish an already-built deps image without making HoBo CI wait for GHCR.
+# Publish a keyed deps image without making HoBo CI wait for GHCR.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../../../../.." && pwd)"
 cd "$root"
 
 key="$(node --no-warnings scripts/ci/deps-key.mts)"
 candidate="hobo-ci-deps:${key}"
-local_key="$(docker image inspect hobo-ci-deps:local --format '{{ index .Config.Labels "hobo.ci.deps-key" }}' 2>/dev/null || true)"
-source="$candidate"
-if ! docker image inspect "$candidate" >/dev/null 2>&1; then
-  if [ "$local_key" = "$key" ]; then
-    source="hobo-ci-deps:local"
-  else
-    echo "No local deps image for ${key}; skipping GHCR publish"
-    exit 0
-  fi
-fi
-
 repository="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 image="ghcr.io/${repository,,}/hobo-ci-deps:${key}"
 if [ -z "${GHCR_TOKEN:-}" ]; then
@@ -27,6 +16,17 @@ printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR:?GITHUB_ACTO
 if docker manifest inspect "$image" >/dev/null 2>&1; then
   echo "GHCR already has ${image}; skipping push"
   exit 0
+fi
+
+local_key="$(docker image inspect hobo-ci-deps:local --format '{{ index .Config.Labels "hobo.ci.deps-key" }}' 2>/dev/null || true)"
+source="$candidate"
+if ! docker image inspect "$candidate" >/dev/null 2>&1; then
+  if [ "$local_key" = "$key" ]; then
+    source="hobo-ci-deps:local"
+  else
+    echo "No local deps image for ${key}; building before GHCR publish"
+    bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh
+  fi
 fi
 
 docker tag "$source" "$image"
@@ -41,10 +41,11 @@ if ! deps_uses_containerd_image_store; then
   echo "deps registry cache export skipped: classic image store"
   exit 0
 fi
-if ! buildx_help="$(docker buildx build --help 2>/dev/null)"; then
+if ! docker buildx version >/dev/null 2>&1; then
   echo "docker buildx is unavailable; skipping deps buildcache export"
   exit 0
 fi
+buildx_help="$(docker buildx build --help 2>&1 || true)"
 
 context="$(mktemp -d)"
 trap 'rm -rf "$context"' EXIT

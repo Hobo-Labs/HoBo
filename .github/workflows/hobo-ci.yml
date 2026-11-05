@@ -29,9 +29,10 @@ env:
   GIT_HTTP_LOW_SPEED_LIMIT: "1000"
   GIT_HTTP_LOW_SPEED_TIME: "30"
 
-# A newer push to main supersedes the in-progress one: its secret scan covers the full history and
-# its gates test the newer tree, while the older run would hold box slots the merge queue is waiting
-# for. The event name keeps schedule and workflow_dispatch on main out of the pushes' group, so a
+# A newer push to main supersedes the in-progress one: its secret scan covers the landed
+# range (schedule still does full history after a blob backfill) and its gates test the
+# newer tree, while the older run would hold box slots the merge queue is waiting for.
+# The event name keeps schedule and workflow_dispatch on main out of the pushes' group, so a
 # push never cancels them; merge_group runs are never cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
@@ -140,9 +141,9 @@ jobs:
       github.event_name == 'pull_request')
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 45
-    # Any event can reuse an existing content-keyed image. New PR candidates only
-    # build and run the contract; push/schedule/dispatch can promote them. A
-    # separate workflow publishes local images without blocking this job.
+    # Any event can reuse an existing content-keyed image. Only PR misses build
+    # and run the contract; non-PR misses defer to the publisher and daemon.
+    # Local and GHCR candidates verify before non-PR promotion.
     permissions:
       contents: read
       packages: read
@@ -184,6 +185,11 @@ jobs:
           current=false
           if [ "$actual" = "${{ steps.key.outputs.key }}" ]; then current=true; fi
           echo "current=${current}" >> "$GITHUB_OUTPUT"
+      - name: Login to GHCR for read-only cache
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: Resolve local or GHCR deps image
         if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true'
         id: source
@@ -200,24 +206,22 @@ jobs:
             source=ghcr
           fi
           echo "source=${source}" >> "$GITHUB_OUTPUT"
-      - name: Login to GHCR for read-only cache
-        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: Build deps image and verify offline install
-        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name == 'pull_request'
         id: build
         run: bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh --no-promote
+      - name: Defer non-PR deps image miss
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name != 'pull_request'
+        run: echo "Key miss deferred to CI deps image publisher and the daemon ensure loop; skipping Fabric rebuild"
       - name: Verify deps image under job mount
-        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true'
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && (steps.source.outputs.source != 'build' || github.event_name == 'pull_request')
         env:
           HOBO_CI_DEPS_MOUNT_CONTRACT: '1'
           HOBO_CI_DEPS_IMAGE: hobo-ci-deps:${{ steps.key.outputs.key }}
           HOBO_CI_DEPS_LAYER: ${{ steps.key.outputs.key }}
         run: node --experimental-strip-types --no-warnings --import ./scripts/lib/ts-source-resolve.mts --test scripts/test/ci-deps-image-mount.test.ts
       - name: Promote verified deps image
-        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && github.event_name != 'pull_request'
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source != 'build' && github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           candidate="hobo-ci-deps:${{ steps.key.outputs.key }}"
@@ -510,25 +514,119 @@ jobs:
       cancel-in-progress: false
     env:
       GITHUB_EVENT_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+      S0_SPARSE_PATHS: |
+        .agents
+        .changeset
+        .claude
+        .codex
+        .cursor
+        .devcontainer
+        .githooks
+        .github
+        .hobo
+        .impeccable
+        .mise
+        .optimizexp
+        .repo
+        ast-grep
+        contrib
+        deploy
+        docs
+        examples
+        external
+        features
+        packages
+        plans
+        release
+        scripts
+        site
+        src
+        test
+        tools
+        workflows
+        mise.toml
+        mise.lock
+        package.json
+        pnpm-lock.yaml
+        pnpm-workspace.yaml
+        turbo.json
+        tsconfig.base.json
+        .env.example
+        .gitattributes
+        .gitignore
+        .gitleaks.toml
+        .gitmodules
+        .mcp.json
+        AGENTS.md
+        AUTH.md
+        CLAUDE.md
+        CODE_OF_CONDUCT.md
+        CONTRIBUTING.md
+        DX.md
+        GAPS.md
+        LICENSE
+        NOTES.md
+        PRODUCT.md
+        README.md
+        SECURITY.md
+        SUPPORT.md
+        biome.json
+        buf.gen.yaml
+        cucumber.yaml
+        konsistent.json
+        oxlint.config.ts
+        sgconfig.yml
+        skills-lock.json
+        stryker.scripts.conf.json
+        tsconfig.json
+        vitest.config.ts
+        vitest.coverage.config.ts
+        vitest.mutation.config.ts
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          submodules: recursive
           clean: false
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - name: Checkout (sparse S0, full history)
+        uses: ./.github/actions/hobo-checkout
+        with:
           fetch-depth: 0
+          sparse-paths: ${{ env.S0_SPARSE_PATHS }}
+          submodules: "false"
+      - uses: ./.github/actions/ci-runner-preflight
       - name: Start secret scan (full history, background)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          SCAN_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/gitleaks"
           : > "$RUNNER_TEMP/gitleaks/log"
-          nohup bash -c '
-            gitleaks git --config .gitleaks.toml --redact --exit-code 1 > "$1/log" 2>&1
-            status=$?
-            printf "%s\n" "$status" > "$1/exit.tmp"
-            mv "$1/exit.tmp" "$1/exit"
-          ' _ "$RUNNER_TEMP/gitleaks" </dev/null >/dev/null 2>&1 &
-      - uses: ./.github/actions/ci-runner-preflight
+          nohup node --experimental-strip-types --no-warnings \
+            scripts/ci/gitleaks-main-scan.mts --background \
+            --dir "$RUNNER_TEMP/gitleaks" \
+            </dev/null >/dev/null 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/gitleaks/nohup.pid"
+      - name: Fetch pinned ts-autocode
+        run: |
+          set -euo pipefail
+          # Sparse S0 keeps the gitlink only. pins:fetch materializes the pin's
+          # grounding/training/rewrite cone so deps-key and pnpm prepare can see
+          # the workspace importers. Skip when the cone is already present.
+          if [ -f external/ts-autocode/packages/grounding/package.json ] \
+            && [ -f external/ts-autocode/packages/training/package.json ] \
+            && [ -f external/ts-autocode/packages/rewrite/package.json ]; then
+            echo "ts-autocode pin cone already present"
+            exit 0
+          fi
+          pnpm run pins:fetch ts-autocode
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
         with:
@@ -630,26 +728,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          scan_dir="$RUNNER_TEMP/gitleaks"
-          if [ ! -f "$scan_dir/exit" ] && [ ! -f "$scan_dir/log" ]; then
-            echo "::error::Secret scan did not start: exit file and log are both absent."
-            exit 1
-          fi
-          for ((attempt = 0; attempt < 300; attempt += 1)); do
-            if [ -f "$scan_dir/exit" ]; then
-              break
-            fi
-            sleep 1
-          done
-          if [ -f "$scan_dir/log" ]; then
-            cat "$scan_dir/log"
-          fi
-          if [ ! -f "$scan_dir/exit" ]; then
-            echo "::error::Timed out after 300 seconds waiting for the secret scan."
-            exit 1
-          fi
-          status="$(cat "$scan_dir/exit")"
-          exit "$status"
+          node --experimental-strip-types --no-warnings \
+            scripts/ci/gitleaks-main-scan.mts --wait \
+            --dir "$RUNNER_TEMP/gitleaks"
       - name: Prune Turbo cache
         id: turbo-prune
         if: always() && env.TURBO_TOKEN == ''

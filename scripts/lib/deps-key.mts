@@ -5,12 +5,19 @@ import { ciRunnerImageVersion } from "./ci-runner-contract.mts";
 
 export const DEPS_LAYER_BUCKET_SCRIPT_PATH =
 	"scripts/ci/deps-layer-buckets.mts";
-export const DEPS_BUILD_RECIPE_PATHS = [
+/** Staged for mount verify (`node scripts/ci/deps-layer.mts link`); not hashed into the deps key. */
+export const DEPS_LAYER_SCRIPT_PATH = "scripts/ci/deps-layer.mts";
+export const DEPS_LAYOUT_RECIPE_PATHS = [
 	"packages/ci-gh-actions/deploy/ci-runner/deps/Dockerfile",
 	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
 	DEPS_LAYER_BUCKET_SCRIPT_PATH,
-	"scripts/ci/deps-layer.mts",
 ] as const;
+/** Bump version when a recipe edit changes image contents or paths (payload paths, install flags, rebuilt packages, or bucket assignment); otherwise update only recipeSha256. */
+export const DEPS_LAYOUT = {
+	version: 1,
+	recipeSha256:
+		"3119b39e30e012710d3dc0e4a706866a4395a235fa5ea99ba7e31c04bf29e6c0",
+} as const;
 
 export type DepsKeyInputs = Readonly<{
 	lockfile: string;
@@ -19,8 +26,6 @@ export type DepsKeyInputs = Readonly<{
 	pnpmfile?: string;
 	patches: Readonly<Record<string, string>>;
 	manifests: Readonly<Record<string, string>>;
-	buildRecipe: Readonly<Record<string, string>>;
-	miseLock: string;
 	platform: string;
 	toolchainVersion: string;
 }>;
@@ -57,21 +62,6 @@ export function importerManifestPath(importer: string): string {
 	return importer === "." ? "package.json" : `${importer}/package.json`;
 }
 
-function miseToolEntries(miseLock: string): string[] {
-	const entries: string[] = [];
-	let selected = false;
-	for (const line of miseLock.split(/\r?\n/)) {
-		const tool = line.match(/^\[\[tools\.([A-Za-z0-9_-]+)\]\]\s*$/)?.[1];
-		if (tool !== undefined) selected = tool === "node" || tool === "pnpm";
-		if (selected) entries.push(line);
-	}
-	for (const tool of ["node", "pnpm"]) {
-		if (!entries.some((line) => line === `[[tools.${tool}]]`))
-			throw new Error(`mise.lock has no ${tool} entry`);
-	}
-	return entries;
-}
-
 function updateHash(
 	hash: ReturnType<typeof createHash>,
 	name: string,
@@ -81,6 +71,13 @@ function updateHash(
 	const valueBytes = Buffer.from(value);
 	hash.update(String(nameBytes.length)).update(":").update(nameBytes);
 	hash.update(String(valueBytes.length)).update(":").update(valueBytes);
+}
+
+export function depsLayoutRecipeSha256(root: string): string {
+	const hash = createHash("sha256");
+	for (const path of DEPS_LAYOUT_RECIPE_PATHS)
+		updateHash(hash, path, readFileSync(join(root, path), "utf8"));
+	return hash.digest("hex");
 }
 
 type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
@@ -187,8 +184,11 @@ export function depsKeyFromInputs(inputs: DepsKeyInputs): string {
 	if (inputs.npmrc !== undefined) updateHash(hash, ".npmrc", inputs.npmrc);
 	if (inputs.pnpmfile !== undefined)
 		updateHash(hash, ".pnpmfile.cjs", inputs.pnpmfile);
-	for (const path of Object.keys(inputs.patches).sort())
-		updateHash(hash, path, inputs.patches[path]!);
+	for (const path of Object.keys(inputs.patches).sort()) {
+		const patch = inputs.patches[path];
+		if (patch === undefined) throw new Error(`missing deps patch: ${path}`);
+		updateHash(hash, path, patch);
+	}
 	for (const importer of listWorkspaceImporters(inputs.lockfile)) {
 		const path = importerManifestPath(importer);
 		const manifest = inputs.manifests[path];
@@ -196,16 +196,7 @@ export function depsKeyFromInputs(inputs: DepsKeyInputs): string {
 			throw new Error(`missing importer manifest: ${path}`);
 		updateHash(hash, path, normalizeDepsManifest(manifest, importer === "."));
 	}
-	for (const path of DEPS_BUILD_RECIPE_PATHS) {
-		const recipe = inputs.buildRecipe[path];
-		if (recipe === undefined) throw new Error(`missing deps recipe: ${path}`);
-		updateHash(hash, path, recipe);
-	}
-	updateHash(
-		hash,
-		"mise.lock:node+pnpm",
-		`${miseToolEntries(inputs.miseLock).join("\n")}\n`,
-	);
+	updateHash(hash, "deps-layout", String(DEPS_LAYOUT.version));
 	updateHash(hash, "platform", inputs.platform);
 	return `${inputs.toolchainVersion}-${hash.digest("hex").slice(0, 16)}`;
 }
@@ -257,13 +248,6 @@ export function readDepsInputs(
 		workspace: readFileSync(join(root, "pnpm-workspace.yaml"), "utf8"),
 		patches: patchFiles(root),
 		manifests,
-		buildRecipe: Object.fromEntries(
-			DEPS_BUILD_RECIPE_PATHS.map((path) => [
-				path,
-				readFileSync(join(root, path), "utf8"),
-			]),
-		),
-		miseLock: readFileSync(join(root, "mise.lock"), "utf8"),
 		platform,
 	};
 	if (npmrc !== undefined) inputs.npmrc = npmrc;
@@ -276,7 +260,6 @@ export function depsContextPaths(root: string): string[] {
 	return [
 		"pnpm-lock.yaml",
 		"pnpm-workspace.yaml",
-		"scripts/ci/deps-layer.mts",
 		...listWorkspaceImporters(lockfile).map(importerManifestPath),
 		...(optionalFile(root, ".npmrc") === undefined ? [] : [".npmrc"]),
 		...(optionalFile(root, ".pnpmfile.cjs") === undefined
@@ -284,6 +267,7 @@ export function depsContextPaths(root: string): string[] {
 			: [".pnpmfile.cjs"]),
 		...Object.keys(patchFiles(root)).sort(),
 		DEPS_LAYER_BUCKET_SCRIPT_PATH,
+		DEPS_LAYER_SCRIPT_PATH,
 	];
 }
 

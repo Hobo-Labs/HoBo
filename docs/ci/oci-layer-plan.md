@@ -156,7 +156,7 @@ targeted fetch by the worker.
 | `pnpm fetch` (store only) | hash of `pnpm-lock.yaml` plus `.npmrc` plus the pnpm version | About 0 s; the store is mounted and warm | High: makes `--offline` installs possible anywhere |
 | **Post-install `node_modules`** | depsKey, see below | **About 17 s per job** | Medium. The image is large: whole-workspace `node_modules` is about 4.3 GB uncompressed. Use zstd |
 | Source | commit | Low, given the mirror | Low |
-| Post-build (`dist/`) | commit, or a hash of every package's inputs | Low: Turbo already replays tasks content-addressed and affected-only | Low for CI. Release images in #1674 are the right home for build outputs |
+| Post-build (`dist/`) | commit, or a hash of every package's inputs | Low: Turbo already replays tasks content-addressed and affected-only | Low for CI. Release images in #1674 are the right home for build outputs. Layer keys skip markdown, tests, and scripts/ci files that are not the image build recipes so a docs or deps-layer edit does not rebuild all six product images. |
 
 **Decision:** toolchain layers in GHCR (Phase 3), a lockfile-keyed fetch-plus-install layer in GHCR
 (Phase 4), the mirror for source (Phase 2), and **no post-build layer**.
@@ -178,10 +178,12 @@ The key is sha256 over, in fixed order:
   `resolutions`, and root-only `pnpm`. One normalizer parses each manifest, sorts the retained keys, and supplies both
   the hash and the staged Docker context. Metadata such as scripts, exports, files and descriptions is excluded;
 - root `.npmrc`, `patches/**`, and optional `.pnpmfile.cjs`;
-- the `node` and `pnpm` entries of `mise.lock`, because native postinstalls are ABI-specific;
 - the platform (`linux/arm64` on the box);
+- the explicit `DEPS_LAYOUT.version`. Bump it when a layout recipe changes image contents or paths; otherwise only its
+  pinned `recipeSha256` changes. The job-side `scripts/ci/deps-layer.mts` is staged into the deps context
+  so mount verify can run `link`, but it is not hashed into the key;
 - `ciRunnerImageVersion`, which covers `mise.lock`, `mise.toml`, `system-packages.txt`, the base Dockerfile and
-  the runner build script.
+  the runner build script, including the Node and pnpm versions.
 
 Main full gate and PR impact gate skip the install only when the worker's `HOBO_CI_DEPS_LAYER` exactly equals the
 checkout's computed key. Every miss runs `pnpm install --frozen-lockfile` against the full checkout, including its
@@ -325,18 +327,37 @@ time, read with `gh run view --json jobs` over the 5 runs before merge and the 5
 
 ### Phase 1: sparse, blobless checkouts
 
-Finish `cursor/ci-sparse-checkout-4453`. Every `actions/checkout` uses:
+**Status (2026-11-05): started for Main full gate S0 only.** `hobo-ci.yml` bootstraps `.github/actions`, then uses
+`hobo-checkout` with `filter: blob:none`, `fetch-tags: false`, the canonical cone in
+`scripts/ci/checkout-cone.mts`, and `submodules: "false"`. The cone covers S0, `check:all`, and `agent:check`
+inputs but not `media/`. History remains (`fetch-depth: 0`). A main push runs bounded
+`gitleaks git --log-opts=before..sha` so the blobless clone does not walk every historical blob
+through the promisor (finding 75). The daily schedule and `workflow_dispatch` still run
+full-history gitleaks after `git fetch --refetch --no-filter`. Recursive ts-autocode clone stays
+off; after preflight the job runs `pnpm run pins:fetch ts-autocode` when the pin cone manifests
+are missing so deps-key and `pnpm prepare` can see the workspace importers (finding 74).
+Other jobs, including `pr-gate` and the image jobs, are unchanged.
+
+The eventual Phase 1 target remains that every `actions/checkout` uses:
 - `filter: blob:none`;
 - a `sparse-checkout` cone;
 - `fetch-tags: false`;
 - a minimal `fetch-depth`;
 - no `submodules`.
 
-`scripts/ci/checkout-cone.mts` derives each job's cone from the diff and the `pnpm-lock.yaml` importer graph. A
-`lint-actions.ts` rule fails on any non-sparse checkout.
+A later Phase 1 change will derive each remaining job's cone and add the `lint-actions.ts` rule for non-sparse
+checkouts. This S0 slice deliberately adds neither the per-job derivation nor that global lint rule.
 
-- **Acceptance:** the lint rule and its test. Affected-only Turbo detection gives the same filters as a full
-  checkout for the last 25 `main` commits (scripted comparison in the PR). The merge queue stays green.
+`hobo-checkout` now also probes a job-side bare mirror named by `HOBO_CI_GIT_MIRROR`, then
+`/var/lib/hobo-ci/git/<owner>/<repo>.git` and `/opt/hobo/ci/git/<owner>/<repo>.git`. A hit must contain the exact
+`GITHUB_SHA` commit. It writes both GitHub URL forms as `url.file://<mirror>.insteadOf` entries in the
+`GIT_CONFIG_SYSTEM` file under `RUNNER_TEMP`, so checkout's pack and lazy blob fetches stay local without changing
+the checkout `repository:` or stored `origin`. A miss only logs `hobo_ci_git_mirror=miss` and keeps GitHub as the
+remote. The Phase 2 worker fetch, mount, and job-started hook are **not implemented** here.
+
+- **Acceptance for this slice:** `scripts/test/s0-checkout-cone.test.ts` keeps the workflow and cone synchronized,
+  and `scripts/test/box-git-mirror.test.ts` proves hit, miss, missing-commit, path-rejection, and CLI behavior.
+  The full-repo sparse lint rule and the remaining acceptance comparisons stay with the later Phase 1 work.
 
 ### Phase 2: box bare mirror
 
@@ -401,10 +422,12 @@ remaining toolchain pins are deferred hardening rather than claimed here.
 - Job install steps become `pnpm install --frozen-lockfile --offline`, with a fallback to the online install
   when no layer was used. The worker exports `HOBO_CI_DEPS_LAYER=<key>` to the job.
 
-**Implemented in this change (2026-11-04):** the pure key function hashes every declared input (including each
-lockfile importer manifest, the deps build recipe, bucket generator and Node/pnpm mise entries) with mutation tests.
-`deps/build-deps.sh` stages only those inputs, runs the network-enabled `pnpm fetch` target, then a separate
-whole-build `--network=none` install/rebuild. Both stages reuse the persistent host store through the same
+**Implemented in this change (2026-11-04):** the pure key function hashes every installed-dependency input, including
+each normalized lockfile importer manifest, plus an explicit layout version. Mutation tests prove that recipe,
+link/check script, and Node/pnpm mise edits do not change it; the toolchain prefix already covers `mise.lock`.
+`deps/build-deps.sh` stages only the dependency inputs and bucket generator, runs the network-enabled `pnpm fetch`
+target, then a separate whole-build `--network=none` install/rebuild. It adds the link/check script only to a separate
+offline-verification directory. Both stages reuse the persistent host store through the same
 BuildKit cache mount. The install stage stages every repo-relative `node_modules` under `/opt/hobo-deps`; the final
 toolchain-based stage adds a deps-key marker, with no `.git`, checkout path, deletion pass, fetch store or staged
 manifests. The bucket generator assigns each `.pnpm` entry to one of 64 stable SHA-256 buckets and emits generated

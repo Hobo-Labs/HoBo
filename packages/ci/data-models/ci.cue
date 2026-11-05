@@ -184,6 +184,8 @@ package ci
  runnerDeletionConfirmed?: bool
  memoryClass?: "" | "light" | "standard" | "heavy"
  memoryMb?: int & >=0
+ jobName?: string
+ dispatchingAt?: string
 }
 #CiEvent: {type: string & !="", accountId: string, leaseId: string, at: string & !="", detail: string}
 #Snapshot: {leases: [...#Lease], events: [...#CiEvent]}

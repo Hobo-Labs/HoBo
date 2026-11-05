@@ -48,6 +48,7 @@ const PolledBody = z
 				run_attempt: z.number(),
 				labels: z.array(z.string()),
 				name: z.string().optional(),
+				created_at: z.string().optional(),
 				runner_name: z.string().nullable(),
 			})
 			.strict(),
@@ -61,6 +62,7 @@ interface FakeJob {
 	runner_name?: string | null;
 	name?: string;
 	conclusion?: string | null;
+	created_at?: string;
 	started_at?: string | null;
 	completed_at?: string | null;
 }
@@ -75,8 +77,8 @@ class FakeGithub implements GithubTransport {
 	failing = new Set<string>();
 	/** Run attempt per run id; 1 when absent. */
 	attempts = new Map<number, number>();
-	/** Event and start time per run id; a pull request that has not started when absent. */
-	started = new Map<number, { event: string; at: string }>();
+	/** Event, start time and head SHA per run id; a pull request when absent. */
+	started = new Map<number, { event: string; at: string; headSha?: string }>();
 	constructor(
 		readonly runs: Record<"queued" | "in_progress", number[]> & {
 			completed?: number[];
@@ -135,6 +137,8 @@ class FakeGithub implements GithubTransport {
 					run_attempt: this.attempt(id),
 					status,
 					event: this.started.get(id)?.event ?? "pull_request",
+					head_sha:
+						this.started.get(id)?.headSha ?? id.toString(16).padStart(40, "0"),
 					run_started_at: this.started.get(id)?.at ?? null,
 				}));
 			return Response.json(
@@ -201,7 +205,9 @@ class FakeGithub implements GithubTransport {
 				id: Number(run[1]),
 				run_attempt: 1,
 				event: this.started.get(Number(run[1]))?.event ?? "pull_request",
-				head_sha: "a".repeat(40),
+				head_sha:
+					this.started.get(Number(run[1]))?.headSha ??
+					Number(run[1]).toString(16).padStart(40, "0"),
 				head_branch: "feature",
 				path: ".github/workflows/ci.yml",
 				display_title: "CI",
@@ -681,6 +687,7 @@ describe("pull-mode box worker over SQLite", () => {
 			skipLaunchFor?: readonly number[];
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
+			now?: () => string;
 			labels: Map<string, string | undefined>;
 		},
 	) {
@@ -715,7 +722,7 @@ describe("pull-mode box worker over SQLite", () => {
 			},
 			denyUnisolated: true,
 			control: async () => undefined,
-			now: () => new Date(NOW).toISOString(),
+			now: trunk?.now ?? (() => new Date(NOW).toISOString()),
 		};
 		if (jobDurations) options.jobDurations = jobDurations;
 		if (trunk?.generalLeaseLimit !== undefined)
@@ -763,33 +770,41 @@ describe("pull-mode box worker over SQLite", () => {
 			),
 		);
 	}
-	it("caps merge groups without blocking a push, then admits the waiter in order", async () => {
+	it("admits one merge group's jobs together, caps other groups, and frees the cap when the group finishes", async () => {
 		const log = vi.spyOn(console, "error").mockImplementation(() => {});
-		const store = await configuredStore(3);
+		const store = await configuredStore(4);
 		const github = new FakeGithub(
-			{ queued: [900, 901, 902], in_progress: [] },
+			{ queued: [900, 901, 902, 903], in_progress: [] },
 			{
 				900: [{ id: 1, status: "queued", labels: ["hobo-trunk"] }],
 				901: [{ id: 2, status: "queued", labels: ["hobo-trunk"] }],
 				902: [{ id: 3, status: "queued", labels: ["hobo-trunk"] }],
+				903: [{ id: 4, status: "queued", labels: ["hobo-trunk"] }],
 			},
 		);
 		github.started.set(900, {
 			event: "merge_group",
 			at: "2026-11-02T11:55:00Z",
+			headSha: "a".repeat(40),
 		});
 		github.started.set(901, {
 			event: "merge_group",
-			at: "2026-11-02T11:56:00Z",
+			at: "2026-11-02T11:55:30Z",
+			headSha: "a".repeat(40),
 		});
 		github.started.set(902, {
+			event: "merge_group",
+			at: "2026-11-02T11:56:00Z",
+			headSha: "b".repeat(40),
+		});
+		github.started.set(903, {
 			event: "push",
 			at: "2026-11-02T11:57:00Z",
 		});
 		const launched: string[] = [];
 		const runtime = boxRuntime(store, github, launched, undefined, {
 			labels: new Map(),
-			generalLeaseLimit: 2,
+			generalLeaseLimit: 3,
 			mergeGroupLeaseLimit: 1,
 		});
 		const poller = createGithubJobPoller({
@@ -804,10 +819,10 @@ describe("pull-mode box worker over SQLite", () => {
 		await runtime.tick({ maxDeliveries: 10 });
 
 		const initial = await store.activeLeases();
-		expect(initial.map((lease) => lease.jobId).sort()).toEqual([1, 3]);
-		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([2]);
-		const first = initial.find((lease) => lease.jobId === 1);
-		if (!first) throw new Error("first merge-group lease missing");
+		expect(initial.map((lease) => lease.jobId).sort()).toEqual([1, 2, 4]);
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([3]);
+		const firstGroup = initial.filter((lease) => lease.jobId !== 4);
+		expect(firstGroup).toHaveLength(2);
 		for (const lease of initial)
 			await store.transition(
 				lease.id,
@@ -821,7 +836,7 @@ describe("pull-mode box worker over SQLite", () => {
 
 		github.calls.length = 0;
 		await runtime.tick({ maxDeliveries: 10 });
-		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([2]);
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([3]);
 		expect(
 			github.calls.filter((call) =>
 				/^GET \/repos\/Org\/Repo\/actions\/runs\/\d+$/u.test(call),
@@ -832,22 +847,24 @@ describe("pull-mode box worker over SQLite", () => {
 				line.includes("hobo_ci_merge_group_cap_wait"),
 			);
 		expect(waitLogs()).toHaveLength(1);
-		expect(waitLogs()[0]?.[0]).toContain('"jobId":2');
+		expect(waitLogs()[0]?.[0]).toContain('"jobId":3');
+		expect(waitLogs()[0]?.[0]).toContain(`"groupKey":"${"b".repeat(40)}"`);
 
-		await store.transition(
-			first.id,
-			["running"],
-			(lease) => {
-				lease.state = "completed";
-			},
-			"ci.LeaseCompleted",
-			new Date(NOW).toISOString(),
-		);
+		for (const lease of firstGroup)
+			await store.transition(
+				lease.id,
+				["running"],
+				(entry) => {
+					entry.state = "completed";
+				},
+				"ci.LeaseCompleted",
+				new Date(NOW).toISOString(),
+			);
 		await runtime.tick({ maxDeliveries: 10 });
 		expect(
 			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
-		).toEqual([2, 3]);
-		expect(launched).toHaveLength(3);
+		).toEqual([3, 4]);
+		expect(launched).toHaveLength(4);
 		expect(waitLogs()).toHaveLength(1);
 		log.mockRestore();
 		store.close();
@@ -927,6 +944,109 @@ describe("pull-mode box worker over SQLite", () => {
 			1,
 		]);
 		expect(launched).toHaveLength(1);
+		store.close();
+	});
+
+	it("calls storage admission only until the first refusal in a dispatch pass", async () => {
+		const store = await configuredStore(2);
+		const github = new FakeGithub(
+			{ queued: [900], in_progress: [] },
+			{
+				900: [
+					{ id: 1, status: "queued", labels: ["hobo"] },
+					{ id: 2, status: "queued", labels: ["hobo"] },
+				],
+			},
+		);
+		const storageAdmission: WorkerStorageAdmission = {
+			admit: vi.fn(async () => false),
+			release: vi.fn(),
+			reap: vi.fn(async () => undefined),
+			maintain: vi.fn(async () => undefined),
+		};
+		const runtime = boxRuntime(store, github, [], undefined, {
+			labels: new Map(),
+			storageAdmission,
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+
+		expect(storageAdmission.admit).toHaveBeenCalledOnce();
+		expect((await store.pendingJobs()).map((job) => job.id).sort()).toEqual([
+			1, 2,
+		]);
+		expect(await store.activeLeases()).toEqual([]);
+		store.close();
+	});
+
+	it("blocks lower ranks and reports storage when a trunk job is refused", async () => {
+		const store = await configuredStore(2);
+		const github = new FakeGithub(
+			{ queued: [900, 901], in_progress: [] },
+			{
+				900: [{ id: 1, status: "queued", labels: ["hobo-trunk"] }],
+				901: [{ id: 2, status: "queued", labels: ["hobo"] }],
+			},
+		);
+		github.started.set(900, {
+			event: "push",
+			at: "2026-11-02T11:00:00Z",
+		});
+		github.started.set(901, {
+			event: "pull_request",
+			at: "2026-11-02T11:01:00Z",
+		});
+		const storageAdmission: WorkerStorageAdmission = {
+			admit: vi.fn(async () => false),
+			release: vi.fn(),
+			reap: vi.fn(async () => undefined),
+			maintain: vi.fn(async () => undefined),
+		};
+		let nowMs = NOW;
+		const runtime = boxRuntime(store, github, [], undefined, {
+			labels: new Map(),
+			storageAdmission,
+			now: () => new Date(nowMs).toISOString(),
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(storageAdmission.admit).toHaveBeenCalledOnce();
+		expect(await store.activeLeases()).toEqual([]);
+
+		nowMs += 11_000;
+		const log = vi.spyOn(console, "error").mockImplementation(() => {});
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(storageAdmission.admit).toHaveBeenCalledTimes(2);
+		expect((await store.pendingJobs()).map((job) => job.id).sort()).toEqual([
+			1, 2,
+		]);
+		expect(log).toHaveBeenCalledWith(
+			JSON.stringify({
+				event: "hobo_ci_trunk_wait",
+				reason: "storage",
+				waitedMs: 11_000,
+				repository: REPO,
+				runId: 900,
+				jobId: 1,
+			}),
+		);
+		log.mockRestore();
 		store.close();
 	});
 
@@ -1034,12 +1154,12 @@ describe("pull-mode box worker over SQLite", () => {
 		await runtime.tick({ maxDeliveries: 10 });
 		const [lease] = await store.activeLeases();
 		if (!lease) throw new Error("memory-classified lease missing");
-		expect(lease).toMatchObject({ memoryClass: "light", memoryMb: 3_072 });
+		expect(lease).toMatchObject({ memoryClass: "light", memoryMb: 1_024 });
 		store.close();
 		const reopened = new SqliteCiStore(path);
 		expect(await reopened.get(lease.id)).toMatchObject({
 			memoryClass: "light",
-			memoryMb: 3_072,
+			memoryMb: 1_024,
 		});
 		reopened.close();
 	});
@@ -1052,6 +1172,7 @@ describe("pull-mode box worker over SQLite", () => {
 				{
 					HOBO_CI_WORKER_MEMORY_BUDGET_MB: "14336",
 					HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB: "8192",
+					HOBO_CI_WORKER_MEMORY_LEARN: "0",
 				},
 				{ totalMemoryMb: 16_384, trunkSlots: 0 },
 			),
@@ -1093,6 +1214,8 @@ describe("pull-mode box worker over SQLite", () => {
 					HOBO_CI_WORKER_MEMORY_CLASS_LIGHT_MB: "3072",
 					HOBO_CI_WORKER_MEMORY_CLASS_STANDARD_MB: "5120",
 					HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB: "4000",
+					HOBO_CI_WORKER_MEMORY_HEAVY_RESERVE_MB: "3072",
+					HOBO_CI_WORKER_MEMORY_LEARN: "0",
 				},
 				{ totalMemoryMb: 16_384, trunkSlots: 0 },
 			),
@@ -1141,7 +1264,10 @@ describe("pull-mode box worker over SQLite", () => {
 		let now = NOW;
 		const memoryAdmission = createWorkerMemoryAdmission(
 			resolveWorkerMemoryConfig(
-				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "10000" },
+				{
+					HOBO_CI_WORKER_MEMORY_BUDGET_MB: "10000",
+					HOBO_CI_WORKER_MEMORY_LEARN: "0",
+				},
 				{ totalMemoryMb: 16_384, trunkSlots: 0 },
 			),
 			{ now: () => now },
@@ -2222,7 +2348,14 @@ describe("pull-mode box worker over SQLite", () => {
 		const fake = new FakeGithub(
 			{ queued: [700, 800], in_progress: [] },
 			{
-				700: [{ id: 1, status: "queued", labels: ["hobo-trunk"] }],
+				700: [
+					{
+						id: 1,
+						status: "queued",
+						labels: ["hobo-trunk"],
+						created_at: "2026-11-04T06:16:45Z",
+					},
+				],
 				800: [
 					{ id: 2, status: "queued", labels: ["hobo"] },
 					{ id: 3, status: "queued", labels: ["hobo"] },
@@ -2283,6 +2416,10 @@ describe("pull-mode box worker over SQLite", () => {
 		};
 		let clock = Date.parse("2026-11-04T06:16:47Z");
 		const now = () => new Date(clock).toISOString();
+		const jobPickupMetadata = new Map<
+			string,
+			{ event?: string; jobCreatedAt?: string }
+		>();
 		const worker = createIsolatedContainerController({
 			store,
 			github,
@@ -2290,6 +2427,9 @@ describe("pull-mode box worker over SQLite", () => {
 			docker,
 			workerAccountId: "box",
 			workerImage: "hobo-ci-worker:local",
+			jobPickupMetadata,
+			log: (event, fields) =>
+				console.error(JSON.stringify({ event, ...fields })),
 			slots: 3,
 			now,
 		});
@@ -2305,6 +2445,7 @@ describe("pull-mode box worker over SQLite", () => {
 			isolatedHost: worker.host,
 			denyUnisolated: true,
 			generalLeaseLimit: 2,
+			jobPickupMetadata,
 			control: async () => undefined,
 			now,
 		});
@@ -2339,11 +2480,36 @@ describe("pull-mode box worker over SQLite", () => {
 			await runtime.tick({ maxDeliveries: 10 });
 		};
 
+		const registrationLog = vi
+			.spyOn(console, "error")
+			.mockImplementation(() => {});
 		await poller.poll();
 		await runtime.tick({ maxDeliveries: 10 });
 		expect(
 			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
 		).toEqual([1, 2, 3]);
+		const pickupLogs = registrationLog.mock.calls
+			.map(([line]) => line)
+			.filter((line) => line.includes("hobo_ci_job_pickup"));
+		expect(pickupLogs).toHaveLength(3);
+		expect(pickupLogs).toContain(
+			JSON.stringify({
+				event: "hobo_ci_job_pickup",
+				jobId: 1,
+				runId: 700,
+				runEvent: "merge_group",
+				label: "hobo-trunk",
+				jobCreatedAt: "2026-11-04T06:16:45Z",
+				admittedAt: "2026-11-04T06:16:47.000Z",
+				containerStartedAt: "2026-11-04T06:16:47.000Z",
+				runnerRegisteredAt: "2026-11-04T06:16:47.000Z",
+				jobCreatedToAdmittedMs: 2000,
+				admittedToContainerStartedMs: 0,
+				containerStartedToRunnerRegisteredMs: 0,
+				pickupMs: 2000,
+			}),
+		);
+		registrationLog.mockRestore();
 
 		await finish(1, "2026-11-04T06:17:50Z", false);
 		expect(
@@ -2477,7 +2643,7 @@ describe("pull-mode box worker over SQLite", () => {
 		store.close();
 	});
 
-	it("creates the job container with its admitted memory request and environment", async () => {
+	it("uses the class limit rather than the learned lease reservation", async () => {
 		const store = await configuredStore(1);
 		const state = await store.configuration();
 		const account = state?.configuration.accounts[0];
@@ -2494,13 +2660,14 @@ describe("pull-mode box worker over SQLite", () => {
 				labels: ["hobo"],
 				name: "CI fabric contract guard",
 				memoryClass: "light",
-				memoryMb: 3_072,
+				memoryMb: 1_536,
 				action: "queued",
 				isolatedRequired: true,
 			}),
 			new Date(NOW).toISOString(),
 		);
 		if (!lease) throw new Error("reserved lease missing");
+		expect(lease.jobName).toBe("CI fabric contract guard");
 		const github: GithubTransport = {
 			async request(_installationId, path, method = "GET") {
 				if (
@@ -2534,6 +2701,7 @@ describe("pull-mode box worker over SQLite", () => {
 			docker,
 			workerAccountId: "box",
 			workerImage: "hobo-ci-worker:local",
+			memoryClasses: { light: 3_072, standard: 4_096, heavy: 6_144 },
 			now: () => new Date(NOW).toISOString(),
 		});
 		await worker.host.launch(lease.id, "hobo");

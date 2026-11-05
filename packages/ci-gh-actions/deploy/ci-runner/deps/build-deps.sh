@@ -12,14 +12,109 @@ case "${1:-}" in
 esac
 
 context="$(mktemp -d)"
+verification="$(mktemp -d)"
 contract_log="$(mktemp)"
 cap="${HOBO_CI_WORKER_BUILDER_CACHE_CAP:-${HOBO_CI_WORKER_BUILDER_KEEP_STORAGE:-4GB}}"
 if [[ ! "$cap" =~ ^[0-9]+([.][0-9]+)?[KMGT]B$ ]]; then
   echo "invalid BuildKit cache cap: ${cap}" >&2
   exit 1
 fi
+inode_headroom="${HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-400000}"
+byte_headroom="${HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-8589934592}"
+if [[ ! "$inode_headroom" =~ ^[0-9]+$ ]]; then
+  echo "invalid HOBO_CI_DEPS_BUILD_INODE_HEADROOM" >&2
+  exit 1
+fi
+if [[ ! "$byte_headroom" =~ ^[0-9]+$ ]]; then
+  echo "invalid HOBO_CI_DEPS_BUILD_BYTE_HEADROOM" >&2
+  exit 1
+fi
+
+sample_docker_headroom() {
+  local sample_path="$1"
+  local iavail avail
+  iavail="$(df --output=iavail "$sample_path" | tail -n1 | tr -d '[:space:]')"
+  avail="$(df -B1 --output=avail "$sample_path" | tail -n1 | tr -d '[:space:]')"
+  if [[ ! "$iavail" =~ ^[0-9]+$ || ! "$avail" =~ ^[0-9]+$ ]]; then
+    echo "invalid Docker data root df sample for ${sample_path}" >&2
+    exit 1
+  fi
+  printf '%s %s\n' "$iavail" "$avail"
+}
+
+docker_data_root_device() {
+  local docker_root="$1"
+  local image="$2"
+  if [[ -z "$docker_root" || -z "$image" ]]; then
+    return 0
+  fi
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    return 0
+  fi
+  docker run --rm --network=none -v /:/host:ro "$image" \
+    stat -c '%d' "/host${docker_root}" 2>/dev/null || true
+}
+
+resolve_deps_headroom_sample_path() {
+  local docker_root="$1"
+  local image="$2"
+  if [[ -n "$docker_root" && -d "$docker_root" ]]; then
+    printf '%s\n' "$docker_root"
+    return 0
+  fi
+  local docker_dev candidate cand_dev
+  docker_dev="$(docker_data_root_device "$docker_root" "$image")"
+  local candidates=()
+  if [[ -n "${HOBO_CI_HOST_JOB_DIRECTORY:-}" && -d "${HOBO_CI_HOST_JOB_DIRECTORY}" ]]; then
+    candidates+=("${HOBO_CI_HOST_JOB_DIRECTORY}")
+  fi
+  if [[ -n "${GITHUB_WORKSPACE:-}" && -d "${GITHUB_WORKSPACE}" ]]; then
+    candidates+=("${GITHUB_WORKSPACE}")
+  fi
+  if [[ -d /pnpm-store ]]; then
+    candidates+=("/pnpm-store")
+  fi
+  candidates+=("/")
+  for candidate in "${candidates[@]}"; do
+    if [[ -n "$docker_dev" ]]; then
+      cand_dev="$(stat -c '%d' "$candidate" 2>/dev/null || true)"
+      if [[ -z "$cand_dev" || "$cand_dev" != "$docker_dev" ]]; then
+        continue
+      fi
+    fi
+    if sample_docker_headroom "$candidate" >/dev/null 2>&1; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  echo "cannot sample Docker data root for deps build headroom" >&2
+  return 1
+}
+
+# A keyed miss runs pnpm install and mv into /opt/hobo-deps inside BuildKit.
+# That overlay can exhaust the box and red concurrent main jobs. Prune only
+# the builder cache (never an unfiltered image prune) and refuse the rebuild
+# if headroom is still short.
+ensure_deps_build_headroom() {
+  local docker_root sample_path iavail avail
+  docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+  sample_path="$(resolve_deps_headroom_sample_path "$docker_root" "$base")" || exit 1
+  read -r iavail avail < <(sample_docker_headroom "$sample_path")
+  if (( iavail >= inode_headroom && avail >= byte_headroom )); then
+    return 0
+  fi
+  echo "deps rebuild headroom low (dockerRoot=${docker_root} samplePath=${sample_path} inodes=${iavail} bytes=${avail}); pruning BuildKit cache"
+  docker builder prune -f --keep-storage "$cap"
+  read -r iavail avail < <(sample_docker_headroom "$sample_path")
+  if (( iavail >= inode_headroom && avail >= byte_headroom )); then
+    echo "deps rebuild headroom recovered after builder prune (inodes=${iavail} bytes=${avail})"
+    return 0
+  fi
+  echo "refusing deps rebuild: Docker data root still below headroom after builder prune (inodes=${iavail} need ${inode_headroom}; bytes=${avail} need ${byte_headroom})" >&2
+  exit 1
+}
 cleanup() {
-  rm -rf "$context" "$contract_log"
+  rm -rf "$context" "$verification" "$contract_log"
 }
 trap cleanup EXIT
 
@@ -102,6 +197,7 @@ else
 fi
 
 echo "Building $candidate (fetch network restricted to lockfile-verified downloads; install offline)"
+ensure_deps_build_headroom
 "${build_command[@]}" \
   "${docker_memory_args[@]}" \
   "${rewrite_args[@]}" \
@@ -114,7 +210,10 @@ echo "Building $candidate (fetch network restricted to lockfile-verified downloa
   -t "$candidate" "$context"
 
 echo "Verifying the job's offline install is already up to date"
-tar -C "$context" -cf - . \
+cp -a "$context/." "$verification/"
+mkdir -p "$verification/scripts/ci"
+cp scripts/ci/deps-layer.mts "$verification/scripts/ci/deps-layer.mts"
+tar -C "$verification" -cf - . \
   | docker run --rm -i --network=none \
     "${docker_memory_args[@]}" \
     --tmpfs /pnpm-store:rw,uid=1000,gid=1000,mode=0755 \

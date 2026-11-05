@@ -610,6 +610,7 @@ export class LeaseStore {
 				repositoryId: job.repositoryId,
 				repository: job.repository,
 				installationId: job.installationId,
+				jobName: job.name,
 				memoryClass: job.memoryClass,
 				memoryMb: job.memoryMb,
 				state: "reserved",
@@ -637,6 +638,8 @@ export class LeaseStore {
 			const lease = this.get(id);
 			if (!lease || !expected.includes(lease.state)) return undefined;
 			update(lease);
+			if (lease.state === "dispatching" && !lease.dispatchingAt)
+				lease.dispatchingAt = at;
 			this.append(lease, type, at);
 			return lease;
 		});

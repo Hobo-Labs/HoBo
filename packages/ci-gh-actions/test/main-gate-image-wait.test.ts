@@ -68,10 +68,25 @@ describe("Main full gate image dependency", () => {
 	it("runs full-history secret scans in main-gate, never the image job", () => {
 		const mainNames = mainGate.steps.map((step) => step.name);
 		const imageNames = imageJob.steps.map((step) => step.name);
+		const checkout = "Checkout (sparse S0, full history)";
 		const start = "Start secret scan (full history, background)";
 		const wait = "Secret scan (full history)";
-		expect(mainNames[1]).toBe(start);
+		const checkoutIndex = mainGate.steps.findIndex(
+			(step) =>
+				step.name === checkout &&
+				step.uses === "./.github/actions/hobo-checkout",
+		);
+		const preflightIndex = mainGate.steps.findIndex(
+			(step) => step.uses === "./.github/actions/ci-runner-preflight",
+		);
+		expect(checkoutIndex).toBeGreaterThanOrEqual(0);
+		expect(preflightIndex).toBe(checkoutIndex + 1);
+		expect(mainNames).toContain(start);
 		expect(mainNames).toContain(wait);
+		expect(mainNames.indexOf(start)).toBe(preflightIndex + 1);
+		expect(mainGate.steps[preflightIndex + 1].run).toContain(
+			"gitleaks-main-scan.mts --background",
+		);
 		expect(imageNames).not.toContain(start);
 		expect(imageNames).not.toContain(wait);
 

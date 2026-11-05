@@ -3,17 +3,23 @@ import {
 	lstat,
 	mkdir,
 	readdir,
+	rename,
 	rm,
+	rmdir,
 	stat,
 	statfs,
 } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { z } from "zod";
 import { selectWorkerImagesForDeletion, type WorkerImage } from "./image-gc.js";
 
 const SOFT_LIMIT = 0.85;
 const HARD_LIMIT = 0.95;
 const INODE_GRANT_GRACE_MS = 60_000;
 const JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}$/u;
+const RETIRED_JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}-[0-9a-z]+$/u;
+const RETIRED_ROOT = ".retired";
+const ErrnoCode = z.object({ code: z.string() });
 
 export type WorkerFileSystemStats = Readonly<{
 	blocks: number;
@@ -31,7 +37,9 @@ export type WorkerStorageFileSystem = Readonly<{
 	statfs(path: string): Promise<WorkerFileSystemStats>;
 	device(path: string): Promise<number>;
 	jobDirectories(root: string): Promise<readonly string[]>;
+	retiredDirectories(root: string): Promise<readonly string[]>;
 	prepareJobDirectory(path: string): Promise<void>;
+	retireJobDirectory(path: string): Promise<string | undefined>;
 	removeJobDirectory(path: string): Promise<WorkerWorkDirectoryRemoval>;
 }>;
 
@@ -39,13 +47,27 @@ export type WorkerStorageDockerDriver = Readonly<{
 	dataRoot(): Promise<string>;
 	pruneBuilder(keepStorage: string): Promise<void>;
 	containerExists(name: string): Promise<boolean>;
+	containersUsingVolume(source: string): Promise<number>;
 	listImages(): Promise<readonly WorkerImage[]>;
 	removeImage(tag: string): Promise<void>;
 	pruneDanglingImages(): Promise<void>;
 }>;
 
+export type PnpmStorePruneResult =
+	| "pruned"
+	| "in-flight"
+	| "locked"
+	| "rate-limited"
+	| "busy"
+	| "failed";
+
+export type PnpmStorePruneOutcome = Readonly<{
+	result: PnpmStorePruneResult;
+	ms: number;
+}>;
+
 export type WorkerStoragePnpmStore = Readonly<{
-	prune(): Promise<void>;
+	prune(idle: () => Promise<boolean>): Promise<PnpmStorePruneOutcome>;
 }>;
 
 export type WorkerStorageLease = Readonly<{
@@ -58,6 +80,7 @@ export type WorkerStorageLog = (
 	event:
 		| "hobo_ci_inode_pressure"
 		| "hobo_ci_inode_reserve_wait"
+		| "hobo_ci_pnpm_store_prune"
 		| "hobo_ci_storage_admission_wait"
 		| "hobo_ci_storage_prune_failed",
 	fields: Readonly<Record<string, string | number | boolean>>,
@@ -67,8 +90,20 @@ export function createNodeWorkerStorageFileSystem(
 	operations: Readonly<{
 		chown: typeof chown;
 		mkdir: typeof mkdir;
+		lstat?: typeof lstat;
+		readdir?: typeof readdir;
+		rename?: typeof rename;
+		rm?: typeof rm;
+		rmdir?: typeof rmdir;
 	}> = { chown, mkdir },
 ): WorkerStorageFileSystem {
+	const io = {
+		lstat: operations.lstat ?? lstat,
+		readdir: operations.readdir ?? readdir,
+		rename: operations.rename ?? rename,
+		rm: operations.rm ?? rm,
+		rmdir: operations.rmdir ?? rmdir,
+	};
 	return {
 		async statfs(path) {
 			const stats = await statfs(path);
@@ -83,12 +118,29 @@ export function createNodeWorkerStorageFileSystem(
 			return (await stat(path)).dev;
 		},
 		async jobDirectories(root) {
-			const entries = await readdir(root, { withFileTypes: true });
+			const entries = await io.readdir(root, { withFileTypes: true });
 			return entries
 				.filter(
 					(entry) => entry.isDirectory() && JOB_DIRECTORY.test(entry.name),
 				)
 				.map((entry) => join(root, entry.name));
+		},
+		async retiredDirectories(root) {
+			try {
+				const entries = await io.readdir(join(root, RETIRED_ROOT), {
+					withFileTypes: true,
+				});
+				return entries
+					.filter(
+						(entry) =>
+							entry.isDirectory() && RETIRED_JOB_DIRECTORY.test(entry.name),
+					)
+					.map((entry) => join(root, RETIRED_ROOT, entry.name));
+			} catch (error) {
+				const parsed = ErrnoCode.safeParse(error);
+				if (parsed.success && parsed.data.code === "ENOENT") return [];
+				throw error;
+			}
 		},
 		async prepareJobDirectory(path) {
 			if (!JOB_DIRECTORY.test(basename(path)))
@@ -101,27 +153,48 @@ export function createNodeWorkerStorageFileSystem(
 			await operations.chown(checkout, 1000, 1000);
 			await operations.chown(path, 1000, 1000);
 		},
-		async removeJobDirectory(path) {
-			if (!JOB_DIRECTORY.test(basename(path)))
+		async retireJobDirectory(path) {
+			const name = basename(path);
+			if (!JOB_DIRECTORY.test(name))
 				throw new Error("invalid worker job directory");
-			const measure = async (
+			const retiredRoot = join(dirname(path), RETIRED_ROOT);
+			await operations.mkdir(retiredRoot, { recursive: true, mode: 0o700 });
+			const retired = join(retiredRoot, `${name}-${Date.now().toString(36)}`);
+			try {
+				await io.rename(path, retired);
+				return retired;
+			} catch (error) {
+				const parsed = ErrnoCode.safeParse(error);
+				if (parsed.success && parsed.data.code === "ENOENT") return undefined;
+				throw error;
+			}
+		},
+		async removeJobDirectory(path) {
+			const name = basename(path);
+			const valid =
+				basename(dirname(path)) === RETIRED_ROOT
+					? RETIRED_JOB_DIRECTORY.test(name)
+					: JOB_DIRECTORY.test(name);
+			if (!valid) throw new Error("invalid worker job directory");
+			const remove = async (
 				entryPath: string,
 			): Promise<WorkerWorkDirectoryRemoval> => {
-				const metadata = await lstat(entryPath);
-				if (!metadata.isDirectory())
+				const metadata = await io.lstat(entryPath);
+				if (!metadata.isDirectory()) {
+					await io.rm(entryPath, { force: false });
 					return { bytes: metadata.size, entries: 1 };
+				}
 				let bytes = 0;
 				let entries = 1;
-				for (const entry of await readdir(entryPath)) {
-					const child = await measure(join(entryPath, entry));
+				for (const entry of await io.readdir(entryPath)) {
+					const child = await remove(join(entryPath, entry));
 					bytes += child.bytes;
 					entries += child.entries;
 				}
+				await io.rmdir(entryPath);
 				return { bytes, entries };
 			};
-			const removed = await measure(path);
-			await rm(path, { recursive: true, force: false });
-			return removed;
+			return remove(path);
 		},
 	};
 }
@@ -178,11 +251,15 @@ export function createWorkerStorageAdmission(options: {
 	workRoot: string;
 	fs: WorkerStorageFileSystem;
 	docker: WorkerStorageDockerDriver;
+	activeLeases: () => Promise<readonly WorkerStorageLease[]>;
 	pnpmStore?: WorkerStoragePnpmStore;
+	pnpmStoreIdle?: () => Promise<boolean>;
 	builderCacheCap?: string;
 	softLimit?: number;
 	hardLimit?: number;
 	jobInodes?: Readonly<{ workRoot: number; dockerDataRoot: number }>;
+	admitMaintainIntervalMs?: number;
+	scheduleRetiredSweep?: () => void;
 	now?: () => number;
 	log?: WorkerStorageLog;
 }) {
@@ -202,10 +279,14 @@ export function createWorkerStorageAdmission(options: {
 		{ root: options.workRoot, reserve: jobInodes.workRoot },
 	];
 	const now = options.now ?? Date.now;
+	const admitMaintainIntervalMs = options.admitMaintainIntervalMs ?? 60_000;
 	const grants = new Map<string, InodeGrant>();
+	let lastAdmitMaintainMs: number | undefined;
 	let hardEpisode = false;
 	let reserveEpisode = false;
 	let unavailable = false;
+	let pnpmPruneInFlight = false;
+	let pnpmPruneWaitLogged = false;
 
 	async function sample(): Promise<StorageSample[]> {
 		return Promise.all(
@@ -294,13 +375,7 @@ export function createWorkerStorageAdmission(options: {
 		}
 	}
 
-	async function reap(activeLeases: readonly WorkerStorageLease[]) {
-		const liveNames = new Set(
-			activeLeases.flatMap((lease) => [
-				`hobo-${lease.id}`,
-				...(lease.sandboxName ? [lease.sandboxName] : []),
-			]),
-		);
+	async function reap() {
 		let directories: readonly string[];
 		try {
 			directories = await options.fs.jobDirectories(options.workRoot);
@@ -311,12 +386,29 @@ export function createWorkerStorageAdmission(options: {
 			});
 			return;
 		}
+		let activeLeases: readonly WorkerStorageLease[];
+		try {
+			activeLeases = await options.activeLeases();
+		} catch (error) {
+			options.log?.("hobo_ci_storage_prune_failed", {
+				operation: "read-leases",
+				message: error instanceof Error ? error.message : "unknown",
+			});
+			return;
+		}
+		const liveNames = new Set(
+			activeLeases.flatMap((lease) => [
+				`hobo-${lease.id}`,
+				...(lease.sandboxName ? [lease.sandboxName] : []),
+			]),
+		);
 		for (const directory of directories) {
 			const name = basename(directory);
 			if (liveNames.has(name)) continue;
 			try {
 				if (await options.docker.containerExists(name)) continue;
-				await options.fs.removeJobDirectory(directory);
+				const retired = await options.fs.retireJobDirectory(directory);
+				if (retired) options.scheduleRetiredSweep?.();
 			} catch (error) {
 				options.log?.("hobo_ci_storage_prune_failed", {
 					operation: "remove-work-dir",
@@ -326,7 +418,10 @@ export function createWorkerStorageAdmission(options: {
 		}
 	}
 
-	async function maintain(activeLeases: readonly WorkerStorageLease[]) {
+	async function maintain(
+		activeLeases: readonly WorkerStorageLease[],
+		maintenance: Readonly<{ pnpmStore?: boolean }> = {},
+	) {
 		await attempt("builder", () =>
 			options.docker.pruneBuilder(options.builderCacheCap ?? "4GB"),
 		);
@@ -344,9 +439,29 @@ export function createWorkerStorageAdmission(options: {
 			options.docker.pruneDanglingImages(),
 		);
 		const pnpmStore = options.pnpmStore;
-		if (pnpmStore && activeLeases.length === 0)
-			await attempt("pnpm-store", () => pnpmStore.prune());
-		await reap(activeLeases);
+		if (
+			pnpmStore &&
+			maintenance.pnpmStore === true &&
+			activeLeases.length === 0
+		) {
+			pnpmPruneInFlight = true;
+			try {
+				const { result, ms } = await pnpmStore.prune(
+					options.pnpmStoreIdle ?? (async () => false),
+				);
+				if (result !== "rate-limited")
+					options.log?.("hobo_ci_pnpm_store_prune", { result, ms });
+			} catch (error) {
+				options.log?.("hobo_ci_storage_prune_failed", {
+					operation: "pnpm-store",
+					message: error instanceof Error ? error.message : "unknown",
+				});
+			} finally {
+				pnpmPruneInFlight = false;
+				pnpmPruneWaitLogged = false;
+			}
+		}
+		await reap();
 	}
 
 	return {
@@ -359,6 +474,14 @@ export function createWorkerStorageAdmission(options: {
 			activeLeases: readonly WorkerStorageLease[],
 			jobId: string,
 		): Promise<boolean> {
+			if (pnpmPruneInFlight) {
+				if (!pnpmPruneWaitLogged)
+					options.log?.("hobo_ci_storage_admission_wait", {
+						message: "pnpm store prune in progress",
+					});
+				pnpmPruneWaitLogged = true;
+				return false;
+			}
 			reconcile(activeLeases);
 			let before: StorageSample[];
 			try {
@@ -380,7 +503,14 @@ export function createWorkerStorageAdmission(options: {
 				hardEpisode = false;
 				return grant(jobId, before);
 			}
-			await maintain(activeLeases);
+			const nowMs = now();
+			if (
+				lastAdmitMaintainMs === undefined ||
+				nowMs - lastAdmitMaintainMs >= admitMaintainIntervalMs
+			) {
+				lastAdmitMaintainMs = nowMs;
+				await maintain(activeLeases);
+			}
 			let after: StorageSample[];
 			try {
 				after = await sample();

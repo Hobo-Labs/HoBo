@@ -7,11 +7,14 @@ import * as githubModule from "../src/github.js";
 import type { HostedRelayStore } from "../src/hosted-relay.js";
 import { createIsolatedContainerController } from "../src/isolated-worker/container-controller.js";
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
+import type { MemoryPeaks } from "../src/isolated-worker/memory-peaks.js";
 import type { WorkerStorageFileSystem } from "../src/isolated-worker/storage-admission.js";
 import { NOW } from "./fixtures.js";
 
 function workDirectory() {
+	const retireJobDirectory = vi.fn(async (path: string) => `${path}-retired`);
 	const removeJobDirectory = vi.fn(async () => ({ bytes: 128, entries: 4 }));
+	const scheduleRetiredSweep = vi.fn();
 	const fs: WorkerStorageFileSystem = {
 		statfs: vi.fn(async () => ({
 			blocks: 100,
@@ -21,10 +24,12 @@ function workDirectory() {
 		})),
 		device: vi.fn(async () => 1),
 		jobDirectories: vi.fn(async () => []),
+		retiredDirectories: vi.fn(async () => []),
 		prepareJobDirectory: vi.fn(async () => undefined),
+		retireJobDirectory,
 		removeJobDirectory,
 	};
-	return { fs, removeJobDirectory };
+	return { fs, retireJobDirectory, removeJobDirectory, scheduleRetiredSweep };
 }
 
 function githubJob(
@@ -55,6 +60,9 @@ function runningLease(overrides: {
 		repositoryId: 101,
 		installationId: 10,
 		jobId: overrides.jobId ?? 100,
+		jobName: "PR impact gate",
+		memoryClass: "heavy",
+		memoryMb: 6_144,
 		actualJobId: overrides.actualJobId ?? 0,
 		originalRunId: 11,
 		runAttempt: 1,
@@ -283,6 +291,7 @@ describe("isolated container controller reconcile", () => {
 		stopped = false,
 		log?: ReturnType<typeof vi.fn>,
 		workRoot?: string,
+		memory?: { peak: DockerDriver["memoryPeak"]; peaks: MemoryPeaks },
 	) {
 		const lease = runningLease({ jobId: 100, actualJobId: 0 });
 		const settle = vi.fn(async () => lease);
@@ -304,9 +313,12 @@ describe("isolated container controller reconcile", () => {
 			exists,
 			exitState: vi.fn(async () => ({ exitCode: 137, oomKilled: true })),
 		};
+		if (memory?.peak) docker.memoryPeak = memory.peak;
 		// SAFETY: settle after a stop uses getJob(), not github.request().
 		const github = {} as GithubTransport;
-		const controllerOptions = {
+		const controllerOptions: Parameters<
+			typeof createIsolatedContainerController
+		>[0] = {
 			store: relayStore,
 			github,
 			publicOrigin: "https://ci.example.test",
@@ -316,8 +328,20 @@ describe("isolated container controller reconcile", () => {
 			now: () => "2026-10-26T12:02:00Z",
 			log,
 		};
+		if (memory) {
+			controllerOptions.memoryClasses = {
+				light: 3_072,
+				standard: 4_096,
+				heavy: 6_144,
+			};
+			controllerOptions.memoryPeaks = memory.peaks;
+		}
 		if (workRoot && work)
-			Object.assign(controllerOptions, { workRoot, workFs: work.fs });
+			Object.assign(controllerOptions, {
+				workRoot,
+				workFs: work.fs,
+				scheduleRetiredSweep: work.scheduleRetiredSweep,
+			});
 		const controller = createIsolatedContainerController(controllerOptions);
 		return { lease, settle, abortIsolatedAndRequeue, docker, controller, work };
 	}
@@ -343,9 +367,104 @@ describe("isolated container controller reconcile", () => {
 		);
 	});
 
+	it("records and logs a running container's peak before stopping it", async () => {
+		const order: string[] = [];
+		const record = vi.fn();
+		const peaks: MemoryPeaks = {
+			history: {},
+			record,
+			recordOom: vi.fn(),
+		};
+		const log = vi.fn();
+		const peak = vi.fn(async () => {
+			order.push("peak");
+			return 2_049;
+		});
+		const s = markerScenario(
+			vi.fn(async () => true),
+			false,
+			log,
+			undefined,
+			{
+				peak,
+				peaks,
+			},
+		);
+		s.lease.memoryMb = 1_536;
+		s.docker.stop = vi.fn(async () => {
+			order.push("stop");
+		});
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
+		);
+
+		await s.controller.host.reconcile(s.lease.id);
+
+		expect(order).toEqual(["peak", "stop"]);
+		expect(record).toHaveBeenCalledWith("PR impact gate", 2_049);
+		expect(log).toHaveBeenCalledWith("hobo_ci_container_memory_peak", {
+			jobId: s.lease.jobId,
+			jobName: "PR impact gate",
+			memoryClass: "heavy",
+			limitMb: 6_144,
+			reservedMb: 1_536,
+			peakMb: 2_049,
+		});
+		expect(s.settle).toHaveBeenCalledOnce();
+	});
+
+	it("settles when peak measurement fails", async () => {
+		const peaks: MemoryPeaks = {
+			history: {},
+			record: vi.fn(),
+			recordOom: vi.fn(),
+		};
+		const s = markerScenario(
+			vi.fn(async () => true),
+			false,
+			undefined,
+			undefined,
+			{
+				peak: vi.fn(async () => {
+					throw new Error("cgroup unavailable");
+				}),
+				peaks,
+			},
+		);
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
+		);
+
+		await s.controller.host.reconcile(s.lease.id);
+
+		expect(s.docker.stop).toHaveBeenCalledOnce();
+		expect(s.settle).toHaveBeenCalledOnce();
+		expect(peaks.record).not.toHaveBeenCalled();
+	});
+
+	it("resets learned history when docker reports an OOM kill", async () => {
+		const peaks: MemoryPeaks = {
+			history: {},
+			record: vi.fn(),
+			recordOom: vi.fn(),
+		};
+		const peak = vi.fn(async () => 2_049);
+		const s = markerScenario(undefined, true, undefined, undefined, {
+			peak,
+			peaks,
+		});
+
+		await s.controller.host.reconcile(s.lease.id);
+
+		expect(peaks.recordOom).toHaveBeenCalledWith("PR impact gate");
+		expect(peak).not.toHaveBeenCalled();
+	});
+
 	it("stops and settles a running lease once its runner wrote the exit marker", async () => {
 		const exists = vi.fn(async () => true);
-		const s = markerScenario(exists);
+		const log = vi.fn();
+		const s = markerScenario(exists, false, log);
+		s.lease.runnerId = 42;
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
 		);
@@ -360,6 +479,10 @@ describe("isolated container controller reconcile", () => {
 		expect(s.settle).toHaveBeenCalledTimes(1);
 		expect(s.settle.mock.calls[0]?.[4]).toBeUndefined();
 		expect(s.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+		expect(log).not.toHaveBeenCalledWith(
+			"hobo_ci_orphan_job_detected",
+			expect.anything(),
+		);
 	});
 
 	it("requeues the reserved job when the runner exited without taking it", async () => {
@@ -378,7 +501,7 @@ describe("isolated container controller reconcile", () => {
 	it.each([
 		"pass",
 		"fail",
-	])("removes the work directory after a job %s", async () => {
+	])("retires and schedules the work directory after a job %s", async () => {
 		const s = markerScenario(
 			vi.fn(async () => true),
 			false,
@@ -389,29 +512,69 @@ describe("isolated container controller reconcile", () => {
 			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
 		);
 		await s.controller.host.reconcile(s.lease.id);
-		expect(s.work?.removeJobDirectory).toHaveBeenCalledWith(
+		expect(s.work?.retireJobDirectory).toHaveBeenCalledWith(
 			`/srv/hobo-ci/work/${s.lease.sandboxName}`,
 		);
+		expect(s.work?.scheduleRetiredSweep).toHaveBeenCalledOnce();
+		expect(s.work?.removeJobDirectory).not.toHaveBeenCalled();
 	});
 
-	it("removes the work directory after cancellation", async () => {
+	it("does not await background removal when reconciling a finished lease", async () => {
+		const s = markerScenario(
+			vi.fn(async () => true),
+			false,
+			undefined,
+			"/srv/hobo-ci/work",
+		);
+		if (!s.work) throw new Error("missing work directory fixture");
+		s.work.removeJobDirectory.mockImplementation(
+			() => new Promise<{ bytes: number; entries: number }>(() => {}),
+		);
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
+		);
+
+		await s.controller.host.reconcile(s.lease.id);
+		expect(s.work.retireJobDirectory).toHaveBeenCalledOnce();
+		expect(s.work.scheduleRetiredSweep).toHaveBeenCalledOnce();
+		expect(s.work.removeJobDirectory).not.toHaveBeenCalled();
+	});
+
+	it("retires the work directory after cancellation", async () => {
 		const s = markerScenario(undefined, false, undefined, "/srv/hobo-ci/work");
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
 		);
 		await s.controller.host.reconcile(s.lease.id, true);
-		expect(s.work?.removeJobDirectory).toHaveBeenCalledWith(
+		expect(s.work?.retireJobDirectory).toHaveBeenCalledWith(
 			`/srv/hobo-ci/work/${s.lease.sandboxName}`,
 		);
 	});
 
-	it("removes the work directory after a container crash", async () => {
+	it("retires the work directory after a container crash", async () => {
 		const s = markerScenario(undefined, true, undefined, "/srv/hobo-ci/work");
 		await s.controller.host.reconcile(s.lease.id);
 		expect(s.abortIsolatedAndRequeue).toHaveBeenCalledOnce();
-		expect(s.work?.removeJobDirectory).toHaveBeenCalledWith(
+		expect(s.work?.retireJobDirectory).toHaveBeenCalledWith(
 			`/srv/hobo-ci/work/${s.lease.sandboxName}`,
 		);
+	});
+
+	it("detects a GitHub orphan when a registered runner's container crashes", async () => {
+		const log = vi.fn();
+		const s = markerScenario(undefined, true, log);
+		s.lease.runnerId = 42;
+
+		await s.controller.host.reconcile(s.lease.id);
+
+		expect(s.abortIsolatedAndRequeue).toHaveBeenCalledOnce();
+		expect(log).toHaveBeenCalledWith("hobo_ci_orphan_job_detected", {
+			repository: s.lease.repository,
+			runId: s.lease.originalRunId,
+			jobId: s.lease.jobId,
+			runnerId: 42,
+			runnerName: s.lease.runnerName,
+		});
 	});
 
 	it("leaves a running lease and its work directory alone while the runner has not exited or the check fails", async () => {
@@ -426,6 +589,8 @@ describe("isolated container controller reconcile", () => {
 			expect(s.docker.stop).not.toHaveBeenCalled();
 			expect(s.settle).not.toHaveBeenCalled();
 			expect(s.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+			expect(s.work?.retireJobDirectory).not.toHaveBeenCalled();
+			expect(s.work?.scheduleRetiredSweep).not.toHaveBeenCalled();
 			expect(s.work?.removeJobDirectory).not.toHaveBeenCalled();
 		}
 	});

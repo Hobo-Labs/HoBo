@@ -19,9 +19,11 @@ import {
 	createHostedRelayRuntime,
 	createIsolatedContainerController,
 	createJobDurations,
+	createMemoryPeaks,
 	createNodeWorkerStorageFileSystem,
 	createPnpmStoreMaintenance,
 	createPollLogFilter,
+	createRetiredWorkDirectorySweeper,
 	createWorkerMemoryAdmission,
 	createWorkerStorageAdmission,
 	type DepsImageProcessRequest,
@@ -32,10 +34,12 @@ import {
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
 	parseWorkerStopMode,
+	readAvailableMemoryMb,
 	readHostMemory,
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
+	singleFlight,
 	stopIsolatedWorker,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
@@ -149,11 +153,27 @@ const webhookSecret =
 // The offer's concurrency must equal the slot count.
 const { slots, trunkSlots, mergeGroupLeases, prCapWithTrunk } =
 	resolveWorkerSlotConfig(process.env);
-const hostMemorySample = readHostMemory();
-const memoryConfig = resolveWorkerMemoryConfig(process.env, {
-	...hostMemorySample,
-	trunkSlots,
+const workRoot =
+	process.env.HOBO_CI_WORKER_WORK_ROOT ??
+	join(
+		process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
+		"hobo-ci",
+		"work",
+	);
+mkdirSync(workRoot, { recursive: true, mode: 0o755 });
+const memoryPeaks = createMemoryPeaks({
+	path: join(workRoot, "memory-peaks.json"),
+	log,
 });
+const hostMemorySample = readHostMemory();
+const memoryConfig = resolveWorkerMemoryConfig(
+	process.env,
+	{
+		...hostMemorySample,
+		trunkSlots,
+	},
+	memoryPeaks.history,
+);
 const hostMemMb = Math.min(
 	hostMemorySample.totalMemoryMb,
 	hostMemorySample.cgroupMemoryLimitMb ?? Number.MAX_SAFE_INTEGER,
@@ -162,6 +182,7 @@ const workerMemoryMb = memoryConfig.classes.heavy;
 const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, {
 	log,
 	prCapWithTrunk,
+	availableMemoryMb: readAvailableMemoryMb,
 });
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
@@ -190,6 +211,14 @@ const configuredGcIntervalMs = Number(
 if (!Number.isFinite(configuredGcIntervalMs) || configuredGcIntervalMs < 60_000)
 	throw new Error("invalid HOBO_CI_WORKER_GC_MS");
 const gcIntervalMs = Math.min(configuredGcIntervalMs, 5 * 60_000);
+const pnpmStorePruneIntervalMs = Number(
+	process.env.HOBO_CI_PNPM_STORE_PRUNE_INTERVAL_MS ?? "21600000",
+);
+if (
+	!Number.isSafeInteger(pnpmStorePruneIntervalMs) ||
+	pnpmStorePruneIntervalMs < 60_000
+)
+	throw new Error("invalid HOBO_CI_PNPM_STORE_PRUNE_INTERVAL_MS");
 
 let store: HostedInboxStore & IsolatedWorkerStore;
 let closeStore: () => Promise<void>;
@@ -273,28 +302,41 @@ const depsRepository = process.env.HOBO_CI_DEPS_REPOSITORY ?? "Hobo-Labs/HoBo";
 const depsImage = process.env.HOBO_CI_DEPS_IMAGE ?? "hobo-ci-deps:local";
 const depsRoot =
 	process.env.HOBO_CI_DEPS_ROOT ?? defaultDepsRoot(import.meta.url);
-const workRoot =
-	process.env.HOBO_CI_WORKER_WORK_ROOT ??
-	join(
-		process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
-		"hobo-ci",
-		"work",
-	);
-mkdirSync(workRoot, { recursive: true, mode: 0o755 });
 if (pnpmStore && statSync(pnpmStore).dev !== statSync(workRoot).dev)
 	throw new Error(
 		"pnpm store and work root must share a filesystem for hardlinks",
 	);
 const docker = createCliDockerDriver({ env: process.env, log });
 const workFs = createNodeWorkerStorageFileSystem();
+const retiredSweep = createRetiredWorkDirectorySweeper({
+	fs: workFs,
+	workRoot,
+	log,
+});
+retiredSweep.trigger();
 const storageAdmission = createWorkerStorageAdmission({
 	dockerDataRoot: await docker.dataRoot(),
 	workRoot,
 	fs: workFs,
 	docker,
+	activeLeases: async () => storageLeases(await store.activeLeases()),
+	scheduleRetiredSweep: retiredSweep.trigger,
 	pnpmStore: pnpmStore
-		? createPnpmStoreMaintenance({ path: pnpmStore, env: process.env })
+		? createPnpmStoreMaintenance({
+				path: pnpmStore,
+				env: process.env,
+				minIntervalMs: pnpmStorePruneIntervalMs,
+			})
 		: undefined,
+	pnpmStoreIdle: async () => {
+		if (!pnpmStore) return false;
+		try {
+			if ((await store.activeLeases()).length !== 0) return false;
+			return (await docker.containersUsingVolume(pnpmStore)) === 0;
+		} catch {
+			return false;
+		}
+	},
 	builderCacheCap:
 		process.env.HOBO_CI_WORKER_BUILDER_CACHE_CAP ??
 		process.env.HOBO_CI_WORKER_BUILDER_KEEP_STORAGE ??
@@ -306,6 +348,10 @@ const storageAdmission = createWorkerStorageAdmission({
 	log,
 });
 await storageAdmission.reap(storageLeases(await store.activeLeases()));
+const jobPickupMetadata = new Map<
+	string,
+	{ event?: string; jobCreatedAt?: string }
+>();
 const worker = createIsolatedContainerController({
 	store,
 	github,
@@ -317,9 +363,12 @@ const worker = createIsolatedContainerController({
 	depsImage,
 	workerMemoryMb,
 	prewarmMemoryMb: memoryConfig.classes.standard,
+	memoryClasses: memoryConfig.classes,
+	memoryPeaks,
 	memoryAdmission,
 	generalLeaseIds: (activeLeases) =>
 		generalLeaseIdsFor(activeLeases, github, workerRunnerLabels),
+	jobPickupMetadata,
 	log,
 	slots,
 	volumes: pnpmStore ? [{ source: pnpmStore, target: PNPM_STORE_TARGET }] : [],
@@ -332,8 +381,10 @@ const worker = createIsolatedContainerController({
 		: {},
 	workRoot,
 	workFs,
+	scheduleRetiredSweep: retiredSweep.trigger,
 });
 let liveWorkerLeaseIds = (await worker.reconcileLeases()).liveLeaseIds;
+await worker.reconcileOrphanJobs();
 let depsImageEnsurer: ReturnType<typeof createDepsImageEnsurer> | undefined;
 if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
 	depsImageEnsurer = createDepsImageEnsurer({
@@ -399,6 +450,7 @@ if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
 }
 const host = createCompositeIsolatedHost({ store, worker: worker.host });
 if (!host) throw new Error("worker host unavailable");
+let workerReconcileMs = 0;
 const runtime = createHostedRelayRuntime({
 	store,
 	github,
@@ -411,10 +463,16 @@ const runtime = createHostedRelayRuntime({
 	// With no trunk slots this is the slot count, all the host could run anyway.
 	generalLeaseLimit: slots - trunkSlots,
 	mergeGroupLeaseLimit: mergeGroupLeases,
+	jobPickupMetadata,
 	lendTrunkSlots,
 	memoryAdmission,
 	storageAdmission,
 	control: async () => undefined,
+	onTickTiming: (timing) =>
+		log("hobo_ci_isolated_worker_tick_slow", {
+			...timing,
+			workerReconcileMs,
+		}),
 });
 const poller =
 	plan.admission === "pull"
@@ -441,20 +499,27 @@ let tickInFlight: Promise<void> | undefined;
 let jobPollInFlight: Promise<void> | undefined;
 let gcInFlight: Promise<void> | undefined;
 
+const reconcileAndLaunch = singleFlight(async () => {
+	const workerReconcileStartedAt = Date.now();
+	const reconciliation = await worker.reconcileLeases();
+	workerReconcileMs = Date.now() - workerReconcileStartedAt;
+	liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+	await worker.reconcileOrphanJobs();
+	if (!reconciliation.inventoryKnown) return;
+	// In push mode the hosted relay drains the shared inbox; in pull mode
+	// this worker is the only consumer of its own.
+	await runtime.tick({ maxDeliveries: poller ? 10 : 0 });
+});
+
 function runTick(): Promise<void> {
+	if (tickInFlight) return tickInFlight;
 	if (draining || gcInFlight) return Promise.resolve();
-	const current = (async () => {
-		const reconciliation = await worker.reconcileLeases();
-		liveWorkerLeaseIds = reconciliation.liveLeaseIds;
-		if (!reconciliation.inventoryKnown) return;
-		// In push mode the hosted relay drains the shared inbox; in pull mode
-		// this worker is the only consumer of its own.
-		await runtime.tick({ maxDeliveries: poller ? 10 : 0 });
-	})();
-	tickInFlight = current.finally(() => {
-		if (tickInFlight === current) tickInFlight = undefined;
+	const current = reconcileAndLaunch();
+	const tracked = current.finally(() => {
+		if (tickInFlight === tracked) tickInFlight = undefined;
 	});
-	return tickInFlight;
+	tickInFlight = tracked;
+	return tracked;
 }
 
 function runJobPoll(): void {
@@ -508,10 +573,13 @@ function runDepsImageEnsure(): void {
 }
 
 function runGc(): void {
+	retiredSweep.trigger();
 	if (draining || gcInFlight || tickInFlight) return;
 	gcInFlight = store
 		.activeLeases()
-		.then((leases) => storageAdmission.maintain(storageLeases(leases)))
+		.then((leases) =>
+			storageAdmission.maintain(storageLeases(leases), { pnpmStore: true }),
+		)
 		.catch((error) => {
 			log("hobo_ci_isolated_worker_gc_failed", {
 				message: error instanceof Error ? error.message : "unknown",
@@ -542,6 +610,7 @@ log("hobo_ci_isolated_worker_started", {
 	lendTrunkSlots,
 	workRoot,
 	pnpmStoreMounted: pnpmStore !== "",
+	pnpmStorePruneIntervalMs,
 	gcIntervalMs,
 	drainTimeoutMs,
 	stopMode,
@@ -579,8 +648,11 @@ async function shutdown(signal: string) {
 			await tickInFlight.catch(() => undefined);
 		}
 		const reconcileDrain = async () => {
+			const workerReconcileStartedAt = Date.now();
 			const reconciliation = await worker.reconcileLeases({ draining: true });
+			workerReconcileMs = Date.now() - workerReconcileStartedAt;
 			liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+			await worker.reconcileOrphanJobs();
 			if (reconciliation.inventoryKnown) await runtime.tick({ admit: false });
 		};
 		const inFlight = async () => liveWorkerLeaseIds.size;
@@ -612,6 +684,7 @@ async function shutdown(signal: string) {
 				remaining: result.remaining,
 			});
 		}
+		if (stopMode === "drain") await retiredSweep.drain();
 		await closeStore();
 		process.exit(result.mode === "handoff" || result.drained ? 0 : 1);
 	})().catch((error) => {

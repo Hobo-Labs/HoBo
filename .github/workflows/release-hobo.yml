@@ -149,12 +149,21 @@ jobs:
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
       - uses: ./.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if [ -n "${HOBO_CI_DEPS_LAYER:-}" ] \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       - name: Shell syntax (changed scripts)
         if: github.event_name != 'push'
         run: pnpm run lint:shell:changed -- --base=HEAD^1
       - name: npm scope map + OCI manifest contract
-        run: pnpm exec vitest run scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/build-release-site-prebuild.test.ts
+        run: pnpm exec vitest run scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/stage-sdk-artifacts.test.ts scripts/test/build-release-site-prebuild.test.ts
       - name: npm pack dry-run (allowlist staging)
         run: |
           set -euo pipefail
@@ -203,10 +212,10 @@ jobs:
         run: |
           set -uo pipefail
           build() { node --no-warnings scripts/ci/build-release-oci-image.mts "$@"; }
-          failed=()
-          for id in $IMAGE_IDS; do
+          build_one() {
+            local id="$1"
             echo "::group::${id}"
-            ok=1
+            local ok=1
             if [ "$id" = "hobo-mcp" ] && ! docker image inspect hobo-cli:candidate >/dev/null 2>&1; then
               build hobo-cli --keep-candidate || ok=0
             fi
@@ -219,8 +228,26 @@ jobs:
               build "$id" --cleanup-only
             fi
             echo "::endgroup::"
-            if [ "$ok" = 0 ]; then failed+=("$id"); echo "::error::release image ${id} failed"; fi
+            if [ "$ok" = 0 ]; then
+              echo "::error::release image ${id} failed"
+              return 1
+            fi
+          }
+          failed=()
+          pids=()
+          ids=()
+          for id in $IMAGE_IDS; do
+            if [ "$id" = "hobo-mcp" ]; then continue; fi
+            build_one "$id" &
+            pids+=("$!")
+            ids+=("$id")
           done
+          for i in "${!pids[@]}"; do
+            if ! wait "${pids[$i]}"; then failed+=("${ids[$i]}"); fi
+          done
+          if [[ " $IMAGE_IDS " == *" hobo-mcp "* ]]; then
+            if ! build_one hobo-mcp; then failed+=("hobo-mcp"); fi
+          fi
           if [ "${#failed[@]}" -gt 0 ]; then
             echo "failed images: ${failed[*]}"
             exit 1
@@ -490,3 +517,25 @@ jobs:
           args=(release create "${{ github.ref_name }}" --generate-notes --title "${{ github.ref_name }}")
           if [ "$dist_tag" != "latest" ]; then args+=(--prerelease); fi
           gh "${args[@]}"
+
+  release-pr-gate:
+    name: HoBo release PR gate (required)
+    if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+    needs: [release-contract]
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 5
+    steps:
+      - name: Fail closed when release contract is red
+        run: |
+          set -euo pipefail
+          case "${{ needs.release-contract.result }}" in
+            success) exit 0 ;;
+            skipped)
+              echo "::warning::release-contract skipped; not treating as merge blocker"
+              exit 0
+              ;;
+            *)
+              echo "::error::Release contract + affected OCI images must pass (result=${{ needs.release-contract.result }})"
+              exit 1
+              ;;
+          esac

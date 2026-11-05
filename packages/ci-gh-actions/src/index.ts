@@ -37,6 +37,7 @@ export {
 export {
 	createHostedRelayRuntime,
 	type HostedInboxStore,
+	type HostedRelayTickTiming,
 } from "./hosted-runtime.js";
 export { signIngressForward, verifyIngressForward } from "./ingress-forward.js";
 export {
@@ -95,17 +96,28 @@ export {
 	type JobMemoryRequest,
 	memoryClassForJob,
 	memoryRequestForJob,
+	parseAvailableMemoryMb,
+	readAvailableMemoryMb,
 	readHostMemory,
 	resolveWorkerMemoryConfig,
 	type WorkerMemoryClassName,
 	type WorkerMemoryConfig,
 } from "./isolated-worker/memory-classes.js";
+export {
+	createMemoryPeaks,
+	learnedReservationMb,
+	type MemoryPeakHistories,
+	type MemoryPeakHistory,
+	type MemoryPeaks,
+} from "./isolated-worker/memory-peaks.js";
 export { createPnpmStoreMaintenance } from "./isolated-worker/pnpm-store.js";
 export {
 	attachPostgresPoolErrorHandler,
 	formatPoolErrorLog,
 	redactPoolErrorMessage,
 } from "./isolated-worker/postgres-pool.js";
+export { createRetiredWorkDirectorySweeper } from "./isolated-worker/retired-work-directory-sweeper.js";
+export { singleFlight } from "./isolated-worker/single-flight.js";
 export {
 	createNodeWorkerStorageFileSystem,
 	createWorkerStorageAdmission,

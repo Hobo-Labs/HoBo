@@ -180,6 +180,7 @@ export const TS_AUTOCODE_PNPM_PREPARE_REQUIRED = [
 	"packages/runtime/package.json",
 	"external/ts-autocode/packages/grounding/package.json",
 	"external/ts-autocode/packages/training/package.json",
+	"external/ts-autocode/packages/rewrite/package.json",
 ] as const;
 
 /** Vitest files run by HoBo / HoBo Code release contract jobs (static manifest checks). */
@@ -240,6 +241,32 @@ export function filePathsRequiredByCodeReleaseContractTests(
 
 export function formatSparseCheckoutBlock(cones: readonly string[]): string {
 	return `${cones.join("\n")}\n`;
+}
+
+/** Git cone mode treats each pattern as a directory; root manifests are checked out separately. */
+export function splitSparseCheckoutPaths(
+	all: readonly string[],
+	rootFileNames: readonly string[] = RELEASE_ROOT_FILES,
+): {
+	readonly directoryCones: readonly string[];
+	readonly rootFiles: readonly string[];
+} {
+	const rootFileSet = new Set<string>(rootFileNames);
+	const directoryCones: string[] = [];
+	const rootFiles: string[] = [];
+	for (const path of all) {
+		const normalized = path.trim();
+		if (!normalized) continue;
+		if (rootFileSet.has(normalized)) {
+			rootFiles.push(normalized);
+			continue;
+		}
+		directoryCones.push(normalized);
+	}
+	return Object.freeze({
+		directoryCones: Object.freeze([...directoryCones]),
+		rootFiles: Object.freeze([...rootFiles]),
+	});
 }
 
 /** Required on-disk paths per release sparse job (contract gate). */

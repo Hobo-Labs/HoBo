@@ -87,6 +87,7 @@ const Runs = z.object({
 			run_attempt: z.number().int().positive().optional(),
 			status: z.string().nullable().optional(),
 			event: z.string().optional(),
+			head_sha: z.string().optional(),
 			run_started_at: z.string().nullable().optional(),
 		}),
 	),
@@ -103,6 +104,7 @@ const Jobs = z.object({
 			runner_name: z.string().nullable().optional(),
 			name: z.string().optional(),
 			conclusion: z.string().nullable().optional(),
+			created_at: z.string().optional(),
 			started_at: z.string().nullable().optional(),
 			completed_at: z.string().nullable().optional(),
 		}),
@@ -198,6 +200,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					runId: run.id,
 					event: run.event,
 					runStartedAt: run.run_started_at,
+					headSha: run.head_sha,
 				});
 		}
 	}
@@ -328,6 +331,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 									run_attempt: job.run_attempt,
 									labels: job.labels,
 									name: job.name,
+									created_at: job.created_at,
 									// GitHub reports an unassigned job as "" or null; one body for both.
 									runner_name: job.runner_name || null,
 								},

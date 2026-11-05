@@ -15,6 +15,7 @@ import {
 	requiredPathsForHoboReleasePages,
 	requiredPathsForTsAutocodeReleaseContract,
 	rootVitestSetupFiles,
+	splitSparseCheckoutPaths,
 	tsAutocodeReleaseSparseCones,
 } from "../lib/release-sparse-cone.mts";
 
@@ -211,6 +212,34 @@ describe("release-ts-autocode workflow install order", () => {
 	});
 });
 
+describe("release-hobo affected image job", () => {
+	const hoboWorkflow = readFileSync(
+		join(root, ".github/workflows/release-hobo.yml"),
+		"utf8",
+	);
+
+	it("reuses the Fabric deps layer instead of always installing", () => {
+		expect(hoboWorkflow).toContain("Link deps layer or install");
+		expect(hoboWorkflow).toContain("deps-layer.mts check --require");
+		expect(hoboWorkflow).toContain(
+			"reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install",
+		);
+		expect(hoboWorkflow).toContain(
+			"pnpm install --frozen-lockfile --config.confirmModulesPurge=false",
+		);
+	});
+
+	it("builds independent images in parallel and mcp after cli", () => {
+		expect(hoboWorkflow).toContain(
+			'if [ "$id" = "hobo-mcp" ]; then continue; fi',
+		);
+		expect(hoboWorkflow).toContain("build_one");
+		expect(hoboWorkflow).toContain(
+			'if [[ " $IMAGE_IDS " == *" hobo-mcp "* ]]; then',
+		);
+	});
+});
+
 describe("release workflow shell lint diff base", () => {
 	const hoboWorkflow = readFileSync(
 		join(root, ".github/workflows/release-hobo.yml"),
@@ -290,5 +319,31 @@ describe("release workflow sparse-checkout sync", () => {
 	it("formatSparseCheckoutBlock is stable newline-separated paths", () => {
 		const block = formatSparseCheckoutBlock(["scripts", "test/setup"]);
 		expect(block).toBe("scripts\ntest/setup\n");
+	});
+
+	it("splitSparseCheckoutPaths separates root files from directory cones", () => {
+		const split = splitSparseCheckoutPaths([
+			"scripts",
+			"mise.toml",
+			"packages",
+			"package.json",
+		]);
+		expect([...split.directoryCones].sort()).toEqual(["packages", "scripts"]);
+		expect([...split.rootFiles].sort()).toEqual(["mise.toml", "package.json"]);
+	});
+
+	it("hobo-checkout checks out sparse root files after cone clone", () => {
+		const action = readFileSync(
+			join(root, ".github/actions/hobo-checkout/action.yml"),
+			"utf8",
+		);
+		expect(action).toMatch(/Checkout sparse root files \(non-cone\)/);
+		expect(action).toMatch(
+			/ROOT_FILES: \$\{\{ steps\.sparse\.outputs\.root_files \}\}/,
+		);
+		expect(action).not.toMatch(
+			/git checkout HEAD -- \$\{\{ steps\.sparse\.outputs\.root_files \}\}/,
+		);
+		expect(action).toMatch(/git checkout HEAD -- "\$\{paths\[@\]\}"/);
 	});
 });
