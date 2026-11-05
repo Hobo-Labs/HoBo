@@ -459,9 +459,19 @@ describe("CI deps publisher contract", () => {
 			"timeout --signal=TERM --kill-after=15s 120s docker buildx build",
 		);
 		includes(publish, '--cache-from "type=registry,ref=${cache_image}"');
+		includes(publish, "if ! docker buildx version >/dev/null 2>&1; then");
+		includes(
+			publish,
+			'buildx_help="$(docker buildx build --help 2>&1 || true)"',
+		);
 		includes(
 			publish,
 			"docker buildx is unavailable; skipping deps buildcache export",
+		);
+		assert.ok(
+			!publish.includes(
+				'if ! buildx_help="$(docker buildx build --help 2>/dev/null)"',
+			),
 		);
 		includes(
 			publish,
