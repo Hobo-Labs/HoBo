@@ -227,8 +227,7 @@ function ruleMatches(
 	const ref =
 		context.headRef ??
 		(context.headBranch ? `refs/heads/${context.headBranch}` : undefined);
-	if (match.refPrefix && (!ref || !ref.startsWith(match.refPrefix)))
-		return false;
+	if (match.refPrefix && !ref?.startsWith(match.refPrefix)) return false;
 	if (match.branch) {
 		const branch = ref?.startsWith("refs/heads/")
 			? ref.slice("refs/heads/".length)

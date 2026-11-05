@@ -27,6 +27,8 @@ Work through these on **Hobo-Labs/HoBo** after an org/repo transfer:
 
 See [`packages/ci-gh-actions/ONBOARDING.md`](../ci-gh-actions/ONBOARDING.md) and [`packages/ci-gh-actions/deploy/README.md`](../ci-gh-actions/deploy/README.md).
 
+The `@hobo/ci-gh-actions` Biome lint now keeps engine-inventory lookups assertion-free, uses optional chaining for relay ref-prefix checks, explicitly guards test environments before use, and imports Zod as types only where only `z.infer` and `typeof z.json` are needed.
+
 ### 2. Repository connection (policy)
 
 Runners tied to **`tyler-r-kendrick/HoBo` do not follow a transfer** to **Hobo-Labs/HoBo**. Re-run isolated repository onboarding:
