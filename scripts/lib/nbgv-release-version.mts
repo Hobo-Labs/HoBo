@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { ensureNbgvToolchain, nbgvMiseConfigPath } from "./nbgv-toolchain.mts";
+import { ensureNbgvToolchain, nbgvMiseExecEnv } from "./nbgv-toolchain.mts";
 import {
 	npmDistTagFromSemver,
 	type ParsedReleaseRef,
@@ -89,12 +89,9 @@ export type NbgvRunner = (variable: string, commitIsh?: string) => string;
 
 export function defaultNbgvRunner(repoRoot: string): NbgvRunner {
 	ensureNbgvToolchain(repoRoot);
-	const config = nbgvMiseConfigPath(repoRoot);
 	return (variable, commitIsh = "HEAD") => {
 		const args = [
 			"exec",
-			"--config",
-			config,
 			"--",
 			"pnpm",
 			"exec",
@@ -107,7 +104,7 @@ export function defaultNbgvRunner(repoRoot: string): NbgvRunner {
 		const result = spawnSync("mise", args, {
 			cwd: repoRoot,
 			encoding: "utf8",
-			env: process.env,
+			env: nbgvMiseExecEnv(repoRoot),
 		});
 		if (result.status !== 0) {
 			throw new Error(
