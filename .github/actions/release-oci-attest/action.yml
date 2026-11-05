@@ -54,6 +54,7 @@ runs:
         SUBJECT_DIGEST: ${{ steps.meta.outputs.subject-digest }}
       run: |
         set -euo pipefail
+        mise trust ./mise.toml
         sbom_path="${RUNNER_TEMP}/oci-sbom.cdx.json"
         image_ref="${SUBJECT_NAME}@${SUBJECT_DIGEST}"
         mise exec -- syft "docker:${image_ref}" -o "cyclonedx-json=${sbom_path}"
