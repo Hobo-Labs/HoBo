@@ -15,13 +15,16 @@ import {
 } from "@hobo/ci";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { describe, expect, it, vi } from "vitest";
+import type { GithubTransport } from "../src/github.js";
 import { waitForIsolatedWorkerDrain } from "../src/isolated-worker/daemon-shutdown.js";
+import type { DockerContainer } from "../src/isolated-worker/docker-driver.js";
 import {
 	createWorkerLeaseReconciler,
 	type WorkerLeaseReconciliationStore,
 } from "../src/isolated-worker/lease-reconciler.js";
 import { createWorkerMemoryAdmission } from "../src/isolated-worker/memory-admission.js";
 import { resolveWorkerMemoryConfig } from "../src/isolated-worker/memory-classes.js";
+import { createOrphanJobTracker } from "../src/isolated-worker/orphan-jobs.js";
 
 const NOW = Date.parse("2026-11-04T12:00:00.000Z");
 const configuration: Configuration = create(ConfigurationSchema, {
@@ -162,11 +165,191 @@ describe("worker lease reconciliation", () => {
 		);
 	});
 
-	it("settles an exited container instead of retaining its lease", async () => {
+	it("enqueues a missing-container orphan by actual job for a registered runner", async () => {
+		const registered = staleLease("00000000-0000-4000-8000-000000000001", 1);
+		registered.runnerId = 42;
+		registered.actualJobId = 200;
+		const unregistered = staleLease("00000000-0000-4000-8000-000000000002", 2);
+		const active = [registered, unregistered];
+		const store = storeWith(active);
+		const onOrphanJob = vi.fn();
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => []),
+				stop: vi.fn(async () => undefined),
+				remove: vi.fn(async () => undefined),
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			onOrphanJob,
+		});
+
+		await reconciler.reconcile();
+
+		expect(onOrphanJob).toHaveBeenCalledOnce();
+		expect(onOrphanJob).toHaveBeenCalledWith({
+			repository: "Org/Repo",
+			installationId: 10,
+			runId: 900,
+			jobId: 200,
+			runnerId: 42,
+			runnerName: registered.runnerName,
+			detectedAtMs: NOW,
+		});
+	});
+
+	it("sweeps an active lease's in-progress job without a container and releases it after the grace", async () => {
+		let clock = NOW;
+		const lease = staleLease("00000000-0000-4000-8000-000000000001", 100);
+		lease.runnerId = 42;
+		lease.actualJobId = 200;
+		const store = storeWith([lease]);
+		const calls: string[] = [];
+		const github: GithubTransport = {
+			request: async (_installationId, path, method = "GET") => {
+				calls.push(`${method} ${path}`);
+				if (path.endsWith("/actions/jobs/200"))
+					return Response.json({
+						id: 200,
+						run_id: 900,
+						status: "in_progress",
+						labels: ["hobo"],
+						runner_name: lease.runnerName,
+						run_attempt: 1,
+					});
+				if (method === "DELETE") return new Response(null, { status: 422 });
+				if (path.endsWith("/force-cancel"))
+					return new Response(null, { status: 202 });
+				if (path.endsWith("/actions/runs/900"))
+					return Response.json({
+						id: 900,
+						run_attempt: 1,
+						event: "pull_request",
+						head_sha: "a".repeat(40),
+						head_branch: "branch",
+						path: ".github/workflows/ci.yml",
+						display_title: "CI",
+						status: "in_progress",
+						conclusion: null,
+						run_started_at: "2026-11-04T11:00:00.000Z",
+						updated_at: "2026-11-04T12:00:00.000Z",
+						actor: { id: 1 },
+						repository: { id: 101, private: false },
+						head_repository: { id: 101 },
+						pull_requests: [],
+					});
+				return new Response(null, { status: 500 });
+			},
+		};
+		const log = vi.fn();
+		const tracker = createOrphanJobTracker({
+			github,
+			now: () => clock,
+			log,
+		});
+		const list = vi.fn(async () => []);
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list,
+				stop: vi.fn(async () => undefined),
+				remove: vi.fn(async () => undefined),
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => clock,
+			onOrphanJob: tracker.enqueue,
+		});
+
+		await reconciler.reconcile();
+		await tracker.reconcile();
+		expect(calls).toEqual(["GET /repos/Org/Repo/actions/jobs/200"]);
+
+		clock += 60_000;
+		await reconciler.reconcile();
+		await tracker.reconcile();
+
+		expect(calls).toContain("DELETE /repos/Org/Repo/actions/runners/42");
+		expect(calls).toContain(
+			"POST /repos/Org/Repo/actions/runs/900/force-cancel",
+		);
+		expect(calls.some((call) => call.includes("/jobs/100"))).toBe(false);
+		expect(list).toHaveBeenCalledTimes(2);
+		expect(
+			log.mock.calls.filter(
+				([event]) => event === "hobo_ci_orphan_job_detected",
+			),
+		).toHaveLength(1);
+	});
+
+	it("sweep ignores runners not named for this worker's leases", async () => {
+		const wrongName = staleLease("00000000-0000-4000-8000-000000000001", 100);
+		wrongName.runnerId = 42;
+		wrongName.actualJobId = 200;
+		wrongName.runnerName = "hobo-someone-else";
+		const otherWorker = staleLease("00000000-0000-4000-8000-000000000002", 101);
+		otherWorker.runnerId = 43;
+		otherWorker.actualJobId = 201;
+		otherWorker.offerId = "other-box";
+		const store = storeWith([wrongName, otherWorker]);
+		const onOrphanJob = vi.fn();
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => []),
+				stop: vi.fn(async () => undefined),
+				remove: vi.fn(async () => undefined),
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			onOrphanJob,
+		});
+
+		await reconciler.reconcile();
+
+		expect(onOrphanJob).not.toHaveBeenCalled();
+	});
+
+	it("sweep does not enqueue while the lease container is running", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000001", 100);
+		lease.runnerId = 42;
+		lease.actualJobId = 200;
+		const store = storeWith([lease]);
+		const onOrphanJob = vi.fn();
+		const container: DockerContainer = {
+			name: lease.sandboxName,
+			containerId: lease.sandboxSessionId,
+			state: "running",
+		};
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => [container]),
+				stop: vi.fn(async () => undefined),
+				remove: vi.fn(async () => undefined),
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			onOrphanJob,
+		});
+
+		await reconciler.reconcile();
+
+		expect(onOrphanJob).not.toHaveBeenCalled();
+	});
+
+	it("settles an exited container without enqueueing an orphan", async () => {
 		const active = [staleLease("00000000-0000-4000-8000-000000000001", 1)];
 		const lease = active[0];
 		if (!lease) throw new Error("fixture lease");
+		lease.runnerId = 42;
+		lease.actualJobId = 200;
 		const store = storeWith(active);
+		const onOrphanJob = vi.fn();
 		const settleExited = vi.fn(async (settled: Lease) => {
 			active.splice(
 				active.findIndex((entry) => entry.id === settled.id),
@@ -190,12 +373,51 @@ describe("worker lease reconciliation", () => {
 			workerMemoryMb: 6_144,
 			now: () => NOW,
 			settleExited,
+			onOrphanJob,
 		});
 
 		const result = await reconciler.reconcile();
 
 		expect(settleExited).toHaveBeenCalledWith(lease);
+		expect(onOrphanJob).not.toHaveBeenCalled();
 		expect(result.liveLeaseIds.size).toBe(0);
+	});
+
+	it("enqueues a dead container by actual job", async () => {
+		const active = [staleLease("00000000-0000-4000-8000-000000000001", 100)];
+		const lease = active[0];
+		if (!lease) throw new Error("fixture lease");
+		lease.runnerId = 42;
+		lease.actualJobId = 200;
+		const store = storeWith(active);
+		const onOrphanJob = vi.fn();
+		const container: DockerContainer = {
+			name: lease.sandboxName,
+			containerId: lease.sandboxSessionId,
+			state: "dead",
+		};
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => [container]),
+				stop: vi.fn(async () => undefined),
+				remove: vi.fn(async () => undefined),
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			settleExited: async () => {
+				active.splice(0, 1);
+			},
+			onOrphanJob,
+		});
+
+		await reconciler.reconcile();
+
+		expect(onOrphanJob).toHaveBeenCalledOnce();
+		expect(onOrphanJob).toHaveBeenCalledWith(
+			expect.objectContaining({ jobId: 200, runnerId: 42 }),
+		);
 	});
 
 	it("stops and removes a worker container that has no lease", async () => {

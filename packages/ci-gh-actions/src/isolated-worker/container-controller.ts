@@ -26,6 +26,11 @@ import {
 } from "./lease-reconciler.js";
 import type { WorkerMemoryAdmission } from "./memory-admission.js";
 import { computeJobMemoryConfig } from "./memory-classes.js";
+import {
+	createOrphanJobTracker,
+	type OrphanJobEvent,
+	orphanJobCandidateForLease,
+} from "./orphan-jobs.js";
 import type { WorkerStorageFileSystem } from "./storage-admission.js";
 
 const JIT_PATH = "/tmp/hobo-ci-jit";
@@ -103,6 +108,7 @@ function requeueJob(lease: {
 export type IsolatedContainerController = {
 	host: IsolatedRunnerHost;
 	reconcileLeases: WorkerLeaseReconciler["reconcile"];
+	reconcileOrphanJobs: () => Promise<void>;
 	ready: () => Promise<boolean>;
 	/** Create one idle container ahead of demand so the next launch skips `docker create`/`start`. */
 	prewarm: (repository?: string) => Promise<void>;
@@ -183,6 +189,7 @@ export function createIsolatedContainerController(options: {
 	log?: (
 		event:
 			| WorkerLeaseReconciliationEvent
+			| OrphanJobEvent
 			| "hobo_ci_container_oom"
 			| "hobo_ci_work_dir_removed"
 			| "hobo_ci_work_dir_remove_failed",
@@ -206,6 +213,15 @@ export function createIsolatedContainerController(options: {
 	depsImage?: string;
 }): IsolatedContainerController {
 	const now = options.now ?? (() => new Date().toISOString());
+	const orphanJobs = createOrphanJobTracker({
+		github: options.github,
+		now: () => Date.parse(now()),
+		log: (event, fields) => options.log?.(event, fields),
+	});
+	const detectOrphanJob = (lease: Lease) => {
+		const candidate = orphanJobCandidateForLease(lease, Date.parse(now()));
+		if (candidate) orphanJobs.enqueue(candidate);
+	};
 	const uncertainWithoutContainerRecoveryMs =
 		options.uncertainWithoutContainerRecoveryMs ?? 5 * 60_000;
 	const workerMemoryMb = options.workerMemoryMb ?? 8192;
@@ -661,6 +677,7 @@ export function createIsolatedContainerController(options: {
 							requeueJob(lease),
 							now(),
 						);
+						detectOrphanJob(lease);
 					}
 				}
 				return;
@@ -677,12 +694,14 @@ export function createIsolatedContainerController(options: {
 				if (!forceStop) return;
 				running = false;
 			}
+			let containerFailed = false;
 			if (!running && options.docker.exitState) {
 				try {
 					const state = await options.docker.exitState(
 						lease.sandboxName,
 						lease.sandboxSessionId,
 					);
+					containerFailed = state.exitCode !== 0 || state.oomKilled;
 					if (state.exitCode === 137 && state.oomKilled)
 						options.log?.("hobo_ci_container_oom", {
 							jobId: lease.jobId,
@@ -721,6 +740,7 @@ export function createIsolatedContainerController(options: {
 						requeueJob(lease),
 						now(),
 					);
+					detectOrphanJob(lease);
 				}
 				try {
 					if (running) {
@@ -761,6 +781,7 @@ export function createIsolatedContainerController(options: {
 					now(),
 					unmet,
 				);
+				if (containerFailed) detectOrphanJob(lease);
 			} finally {
 				await cleanupWorkDirectory(lease);
 			}
@@ -774,6 +795,7 @@ export function createIsolatedContainerController(options: {
 		now: () => Date.parse(now()),
 		settleExited: async (lease) => host.reconcile(lease.id, true),
 		afterRelease: cleanupWorkDirectory,
+		onOrphanJob: orphanJobs.enqueue,
 		protectedContainerNames: () => protectedWarmNames,
 	};
 	if (options.orphanGraceMs !== undefined)
@@ -784,6 +806,7 @@ export function createIsolatedContainerController(options: {
 	return {
 		host,
 		reconcileLeases: reconciler.reconcile,
+		reconcileOrphanJobs: orphanJobs.reconcile,
 		ready: async () => !!options.workerImage && !!options.workerAccountId,
 		prewarm,
 		discardWarm: async () => {

@@ -344,7 +344,9 @@ describe("isolated container controller reconcile", () => {
 
 	it("stops and settles a running lease once its runner wrote the exit marker", async () => {
 		const exists = vi.fn(async () => true);
-		const s = markerScenario(exists);
+		const log = vi.fn();
+		const s = markerScenario(exists, false, log);
+		s.lease.runnerId = 42;
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
 		);
@@ -359,6 +361,10 @@ describe("isolated container controller reconcile", () => {
 		expect(s.settle).toHaveBeenCalledTimes(1);
 		expect(s.settle.mock.calls[0]?.[4]).toBeUndefined();
 		expect(s.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+		expect(log).not.toHaveBeenCalledWith(
+			"hobo_ci_orphan_job_detected",
+			expect.anything(),
+		);
 	});
 
 	it("requeues the reserved job when the runner exited without taking it", async () => {
@@ -411,6 +417,23 @@ describe("isolated container controller reconcile", () => {
 		expect(s.work?.removeJobDirectory).toHaveBeenCalledWith(
 			`/srv/hobo-ci/work/${s.lease.sandboxName}`,
 		);
+	});
+
+	it("detects a GitHub orphan when a registered runner's container crashes", async () => {
+		const log = vi.fn();
+		const s = markerScenario(undefined, true, log);
+		s.lease.runnerId = 42;
+
+		await s.controller.host.reconcile(s.lease.id);
+
+		expect(s.abortIsolatedAndRequeue).toHaveBeenCalledOnce();
+		expect(log).toHaveBeenCalledWith("hobo_ci_orphan_job_detected", {
+			repository: s.lease.repository,
+			runId: s.lease.originalRunId,
+			jobId: s.lease.jobId,
+			runnerId: 42,
+			runnerName: s.lease.runnerName,
+		});
 	});
 
 	it("leaves a running lease and its work directory alone while the runner has not exited or the check fails", async () => {
