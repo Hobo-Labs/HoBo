@@ -46,6 +46,22 @@ runs:
         digest="${ref#*@}"
         echo "subject-name=${name}" >> "$GITHUB_OUTPUT"
         echo "subject-digest=${digest}" >> "$GITHUB_OUTPUT"
+    - name: Generate CycloneDX SBOM for pushed digest
+      id: sbom
+      shell: bash
+      env:
+        SUBJECT_NAME: ${{ steps.meta.outputs.subject-name }}
+        SUBJECT_DIGEST: ${{ steps.meta.outputs.subject-digest }}
+      run: |
+        set -euo pipefail
+        sbom_path="${RUNNER_TEMP}/oci-sbom.cdx.json"
+        image_ref="${SUBJECT_NAME}@${SUBJECT_DIGEST}"
+        mise exec -- syft "docker:${image_ref}" -o "cyclonedx-json=${sbom_path}"
+        if [ ! -s "${sbom_path}" ]; then
+          echo "::error::syft produced empty SBOM at ${sbom_path}"
+          exit 1
+        fi
+        echo "path=${sbom_path}" >> "$GITHUB_OUTPUT"
     - name: Provenance attestation
       uses: actions/attest-build-provenance@520d128f165991a6c774bcb264f323e3d70747f4
       with:
@@ -57,4 +73,5 @@ runs:
       with:
         subject-name: ${{ steps.meta.outputs.subject-name }}
         subject-digest: ${{ steps.meta.outputs.subject-digest }}
+        sbom-path: ${{ steps.sbom.outputs.path }}
         push-to-registry: true

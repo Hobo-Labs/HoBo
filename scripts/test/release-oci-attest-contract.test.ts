@@ -53,6 +53,22 @@ describe("release-oci-attest composite action", () => {
 	it("fails fast when digest list file is missing", () => {
 		expect(actionYml).toMatch(/digest list not found/u);
 	});
+
+	it("generates a CycloneDX SBOM with syft before attest-sbom", () => {
+		const syftIdx = actionYml.indexOf("mise exec -- syft");
+		const sbomAttestIdx = actionYml.indexOf("attest-sbom");
+		expect(syftIdx).toBeGreaterThan(0);
+		expect(sbomAttestIdx).toBeGreaterThan(syftIdx);
+		expect(actionYml).toMatch(/cyclonedx-json=/u);
+	});
+
+	it("passes sbom-path into attest-sbom", () => {
+		const sbomAttestIdx = actionYml.indexOf("attest-sbom");
+		const block = actionYml.slice(sbomAttestIdx);
+		expect(block).toMatch(
+			/sbom-path:\s*\$\{\{\s*steps\.sbom\.outputs\.path\s*\}\}/u,
+		);
+	});
 });
 
 describe("release attest workflow jobs", () => {
