@@ -63,6 +63,8 @@ unindexed new finding files as notices.
 - [Finding 42: equal CPU shares let PR jobs starve trunk tests](./findings/0042-equal-cpu-shares-let-pr-jobs-starve-trunk-tests.md)
 - [Finding 45: dead containers left 12288 MiB reserved and blocked trunk admission](./findings/0045-dead-containers-left-12288-mib-reserved-and-blocked-trunk-admission.md)
 - [Finding 49: the deps image build could not create its payload directory](./findings/0049-the-deps-image-build-could-not-create-its-payload-directory.md)
+- [Finding 56: the monolithic deps push held main after its gate passed](./findings/0056-the-monolithic-deps-push-held-main-after-its-gate-passed.md)
+- [Finding 57: deps manifest scripts and the registry layer cache](./findings/0057-deps-manifest-scripts-and-the-registry-layer-cache.md)
 - [Finding 59: the deps mount check needed tsx and misread the pnpm layout](./findings/0059-the-deps-mount-check-needed-tsx-and-misread-the-pnpm-layout.md)
 - [Finding 61: a worker restart drained jobs before handing off](./findings/0061-a-worker-restart-drained-jobs-before-handing-off.md)
 <!-- findings-index:end -->
