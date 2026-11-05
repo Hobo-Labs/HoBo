@@ -379,22 +379,32 @@ export function createIsolatedContainerController(options: {
 			return workerSelection;
 		}
 	};
-	const gitMirrorMount = (repository: string | undefined) => {
+	type GitMirrorMount = {
+		volumes: readonly Readonly<{
+			source: string;
+			target: string;
+			readonly?: boolean;
+		}>[];
+		env: Record<string, string>;
+	};
+	type GitMirrorLogFields = {
+		status: "hit" | "miss";
+		repository: string;
+		mirror?: string;
+		reason?: string;
+	};
+	const gitMirrorMount = (repository: string | undefined): GitMirrorMount => {
 		const path =
 			repository && options.gitMirror
 				? options.gitMirror.pathFor(repository)
 				: undefined;
 		if (!path || !existsSync(path))
 			return {
-				volumes: [] as readonly Readonly<{
-					source: string;
-					target: string;
-					readonly?: boolean;
-				}>[],
-				env: {} as Record<string, string>,
+				volumes: [],
+				env: {},
 			};
 		return {
-			volumes: [{ source: path, target: path, readonly: true as const }],
+			volumes: [{ source: path, target: path, readonly: true }],
 			env: { HOBO_CI_GIT_MIRROR: path },
 		};
 	};
@@ -818,18 +828,18 @@ export function createIsolatedContainerController(options: {
 								planned.repository,
 								sha,
 							);
-							options.log?.("hobo_ci_git_mirror", {
+							const fields: GitMirrorLogFields = {
 								status: resolved.status,
 								repository: planned.repository,
-								...(resolved.mirror ? { mirror: resolved.mirror } : {}),
-								...(resolved.reason ? { reason: resolved.reason } : {}),
-							});
+							};
+							if (resolved.mirror) fields.mirror = resolved.mirror;
+							if (resolved.reason) fields.reason = resolved.reason;
+							options.log?.("hobo_ci_git_mirror", fields);
 						} catch (error) {
 							options.log?.("hobo_ci_git_mirror", {
 								status: "miss",
 								repository: planned.repository,
-								reason:
-									error instanceof Error ? error.message : "unknown",
+								reason: error instanceof Error ? error.message : "unknown",
 							});
 						}
 					}

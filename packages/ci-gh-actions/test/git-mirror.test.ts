@@ -20,7 +20,13 @@ function git(cwd: string, args: readonly string[]): string {
 	return execFileSync("git", [...args], { cwd, encoding: "utf8" }).trim();
 }
 
-function commitSource(root: string): { source: string; first: string; second: string } {
+type CommitSource = {
+	source: string;
+	first: string;
+	second: string;
+};
+
+function commitSource(root: string): CommitSource {
 	const source = join(root, "source");
 	mkdirSync(source);
 	git(source, ["init", "-b", "main"]);
@@ -112,7 +118,8 @@ describe("createBoxGitMirror", () => {
 		const missing = "0".repeat(40);
 		const result = await mirror.ensure(missing);
 		expect(result.status).toBe("miss");
-		if (result.status === "miss") expect(result.reason).toMatch(/fetch failed|does not contain/);
+		if (result.status === "miss")
+			expect(result.reason).toMatch(/fetch failed|does not contain/);
 		const refs = git(root, [
 			"--git-dir",
 			mirror.path,
