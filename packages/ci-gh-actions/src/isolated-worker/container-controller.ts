@@ -52,6 +52,7 @@ export async function startRunner(
 		"sh",
 		"-ec",
 		`set -eu
+umask 022
 if [ -x /opt/actions-runner/run.sh ]; then
   cd /opt/actions-runner
 else
