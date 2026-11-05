@@ -57,12 +57,15 @@ const adapterSchema = z.object({
 function redactOperationError(error: Error): never {
 	// Preserve the original typed precommit denial so another offer may be tried.
 	if (error instanceof BudgetAdmissionDeniedError) {
-		const parsed = denialCode.safeParse(error.code);
-		if (parsed.success)
-			throw new BudgetAdmissionDeniedError(
-				parsed.data,
-				"CI budget admission denied",
-			);
+		let code: z.infer<typeof denialCode> | undefined;
+		try {
+			const parsed = denialCode.safeParse(error.code);
+			if (parsed.success) code = parsed.data;
+		} catch {
+			// An adapter-provided accessor is not a safe error message.
+		}
+		if (code)
+			throw new BudgetAdmissionDeniedError(code, "CI budget admission denied");
 	}
 	throw new Error("trusted CI budget operation failed");
 }

@@ -357,6 +357,17 @@ export function createCiWorkerBudgetAdapter() {
 			);
 			expect(error instanceof Error ? error.cause : undefined).toBeUndefined();
 		}
+		Object.defineProperty(denied, "code", {
+			get: () => {
+				throw new Error("secret-getter-token");
+			},
+		});
+		expect(() => denialAdapter.hooks.reserve(second)).toThrow(
+			"trusted CI budget operation failed",
+		);
+		expect(() => denialAdapter.hooks.reserve(second)).not.toThrow(
+			"secret-getter-token",
+		);
 		await denialAdapter.close();
 		await adapter.close();
 		expect(closed).toBe(1);
