@@ -181,7 +181,7 @@ Multi-arch builds are **native-only** on `hobo` runners (amd64 or arm64 per box)
 
 ### Signing, SBOM, and provenance
 
-- **GitHub artifact attestations** (keyless, no cosign secret): `actions/attest-build-provenance` + `actions/attest-sbom` after push, one attestation per image digest (pinned SHAs in [`.github/workflows/release-hobo.yml`](../../.github/workflows/release-hobo.yml) and [`.github/workflows/release-code.yml`](../../.github/workflows/release-code.yml)).
+- **GitHub artifact attestations** (keyless, no cosign secret): `actions/attest-build-provenance` + `actions/attest-sbom` after push, one attestation per image digest (pinned SHAs in [`.github/workflows/release-hobo.yml`](../../.github/workflows/release-hobo.yml) and [`.github/workflows/release-code.yml`](../../.github/workflows/release-code.yml)). The shared [`.github/actions/release-oci-attest`](../../.github/actions/release-oci-attest/action.yml) composite **docker-logs into GHCR first** (`~/.docker/config.json`) because `push-to-registry: true` on self-hosted **`hobo`** runners does not inherit login from the publish job; attest jobs use **`packages: write`**.
 - npm packages continue to use **`npm publish --provenance`** (OIDC) on the same release train.
 
 ### Contract tests
