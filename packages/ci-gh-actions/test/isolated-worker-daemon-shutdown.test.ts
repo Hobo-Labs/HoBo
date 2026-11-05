@@ -3,6 +3,8 @@ import { ConfigurationSchema } from "@hobo/ci";
 import { describe, expect, it, vi } from "vitest";
 import {
 	countInFlightWorkerLeases,
+	parseWorkerStopMode,
+	stopIsolatedWorker,
 	waitForIsolatedWorkerDrain,
 	workerOfferKey,
 	workerOfferKeys,
@@ -121,5 +123,108 @@ describe("isolated worker daemon shutdown", () => {
 			now: () => clock,
 		});
 		expect(result).toEqual({ drained: false, remaining: 1 });
+	});
+
+	it("defaults an unset or empty stop mode to handoff", () => {
+		expect(parseWorkerStopMode(undefined)).toBe("handoff");
+		expect(parseWorkerStopMode("")).toBe("handoff");
+	});
+
+	it("accepts both explicit stop modes", () => {
+		expect(parseWorkerStopMode("handoff")).toBe("handoff");
+		expect(parseWorkerStopMode("drain")).toBe("drain");
+	});
+
+	it("rejects an invalid stop mode", () => {
+		expect(() => parseWorkerStopMode("wait")).toThrow(
+			"invalid HOBO_CI_WORKER_STOP_MODE",
+		);
+	});
+
+	it("hands off running containers after one reconcile and no waiting", async () => {
+		const order: string[] = [];
+		const reconcile = vi.fn(async () => {
+			order.push("reconcile");
+		});
+		const inFlight = vi.fn(async () => {
+			order.push("count");
+			return 2;
+		});
+		const sleep = vi.fn(async () => undefined);
+		const now = vi.fn(() => 0);
+		const result = await stopIsolatedWorker({
+			mode: "handoff",
+			inFlight,
+			reconcile,
+			pollMs: 100,
+			timeoutMs: 1_000,
+			sleep,
+			now,
+		});
+		expect(result).toEqual({
+			mode: "handoff",
+			drained: false,
+			remaining: 2,
+		});
+		expect(order).toEqual(["reconcile", "count"]);
+		expect(reconcile).toHaveBeenCalledTimes(1);
+		expect(inFlight).toHaveBeenCalledTimes(1);
+		expect(sleep).not.toHaveBeenCalled();
+		expect(now).not.toHaveBeenCalled();
+	});
+
+	it("hands off even when reconciliation fails", async () => {
+		const result = await stopIsolatedWorker({
+			mode: "handoff",
+			inFlight: async () => 3,
+			reconcile: async () => {
+				throw new Error("docker unavailable");
+			},
+			pollMs: 100,
+			timeoutMs: 1_000,
+		});
+		expect(result).toEqual({
+			mode: "handoff",
+			drained: false,
+			remaining: 3,
+		});
+	});
+
+	it("drain mode waits until in-flight work reaches zero", async () => {
+		let clock = 0;
+		let running = 1;
+		const sleep = vi.fn(async (ms: number) => {
+			clock += ms;
+		});
+		const result = await stopIsolatedWorker({
+			mode: "drain",
+			inFlight: async () => running,
+			reconcile: async () => {
+				if (clock > 0) running = 0;
+			},
+			pollMs: 100,
+			timeoutMs: 1_000,
+			sleep,
+			now: () => clock,
+		});
+		expect(result).toEqual({ mode: "drain", drained: true, remaining: 0 });
+		expect(sleep).toHaveBeenCalledTimes(1);
+	});
+
+	it("drain mode reports the remaining work on timeout", async () => {
+		let clock = 0;
+		const result = await stopIsolatedWorker({
+			mode: "drain",
+			inFlight: async () => 1,
+			reconcile: async () => undefined,
+			pollMs: 100,
+			timeoutMs: 250,
+			sleep: async (ms) => {
+				clock += ms;
+			},
+			now: () => clock,
+		});
+		expect(result).toEqual({ mode: "drain", drained: false, remaining: 1 });
+		expect(clock).toBe(250);
 	});
 });
