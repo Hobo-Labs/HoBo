@@ -308,6 +308,7 @@ const storageAdmission = createWorkerStorageAdmission({
 	workRoot,
 	fs: workFs,
 	docker,
+	activeLeases: async () => storageLeases(await store.activeLeases()),
 	scheduleRetiredSweep: retiredSweep.trigger,
 	pnpmStore: pnpmStore
 		? createPnpmStoreMaintenance({
@@ -335,7 +336,7 @@ const storageAdmission = createWorkerStorageAdmission({
 	},
 	log,
 });
-await storageAdmission.reap(storageLeases(await store.activeLeases()));
+await storageAdmission.reap();
 const worker = createIsolatedContainerController({
 	store,
 	github,

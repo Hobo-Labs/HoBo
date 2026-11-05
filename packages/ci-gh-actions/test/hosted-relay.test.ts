@@ -1,11 +1,12 @@
-import { clone } from "@bufbuild/protobuf";
-import { ConfigurationSchema, OfferSchema } from "@hobo/ci";
+import { clone, create } from "@bufbuild/protobuf";
+import { ConfigurationSchema, LeaseSchema, OfferSchema } from "@hobo/ci";
 import { afterEach, expect, it } from "vitest";
 import { HostedRelay, type HostedRelayStore } from "../src/hosted-relay.js";
 import {
 	createHostedRelayRuntime,
 	type HostedInboxStore,
 } from "../src/hosted-runtime.js";
+import type { WorkerStorageLease } from "../src/isolated-worker/storage-admission.js";
 import { harness, job, NOW, queued, SECRET, signed } from "./fixtures.js";
 
 const fixtures: ReturnType<typeof harness>[] = [];
@@ -246,6 +247,51 @@ it("rechecks isolation for demand queued before the connection changed", async (
 	await h.relay.dispatchPending();
 	expect(h.store.all()).toEqual([]);
 	expect(h.api.dispatches).toBe(0);
+});
+
+it("reads active leases immediately before storage admission", async () => {
+	const h = setup();
+	h.store.queue(job(), NOW);
+	setIsolatedOnly(h);
+	h.relay.options.isolatedHost = { async launch() {}, async reconcile() {} };
+	const activeLeases = h.asyncStore.activeLeases.bind(h.asyncStore);
+	let reads = 0;
+	h.asyncStore.activeLeases = async () => {
+		reads++;
+		const leases = await activeLeases();
+		if (reads !== 2) return leases;
+		return [
+			...leases,
+			create(LeaseSchema, {
+				id: "fresh-lease",
+				sandboxName: "hobo-fresh-lease",
+				jobId: 99,
+				state: "dispatching",
+			}),
+		];
+	};
+	const admissions: (readonly WorkerStorageLease[])[] = [];
+	h.relay.options.storageAdmission = {
+		admit: async (leases) => {
+			admissions.push(leases);
+			return true;
+		},
+		release() {},
+		reap: async () => undefined,
+		maintain: async () => undefined,
+	};
+
+	await h.relay.dispatchPending();
+
+	expect(admissions).toEqual([
+		[
+			{
+				id: "fresh-lease",
+				sandboxName: "hobo-fresh-lease",
+				jobId: "99",
+			},
+		],
+	]);
 });
 
 it("cancels and requeues a bridge reservation after isolation becomes required", async () => {

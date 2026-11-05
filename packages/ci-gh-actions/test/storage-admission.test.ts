@@ -25,6 +25,7 @@ import {
 	type WorkerFileSystemStats,
 	type WorkerStorageDockerDriver,
 	type WorkerStorageFileSystem,
+	type WorkerStorageLease,
 	type WorkerStoragePnpmStore,
 } from "../src/isolated-worker/storage-admission.js";
 
@@ -60,6 +61,8 @@ function harness(
 		after?: WorkerFileSystemStats;
 		devices?: Readonly<Record<string, number>>;
 		directories?: readonly string[];
+		jobDirectories?: WorkerStorageFileSystem["jobDirectories"];
+		activeLeases?: () => Promise<readonly WorkerStorageLease[]>;
 		existingContainers?: ReadonlySet<string>;
 		images?: readonly WorkerImage[];
 		jobInodes?: Readonly<{ workRoot: number; dockerDataRoot: number }>;
@@ -75,7 +78,9 @@ function harness(
 	const fs: WorkerStorageFileSystem = {
 		statfs: vi.fn(async () => current),
 		device: vi.fn(async (path: string) => input.devices?.[path] ?? 1),
-		jobDirectories: vi.fn(async () => input.directories ?? []),
+		jobDirectories: vi.fn(
+			input.jobDirectories ?? (async () => input.directories ?? []),
+		),
 		retiredDirectories: vi.fn(async () => []),
 		prepareJobDirectory: vi.fn(async () => undefined),
 		retireJobDirectory: vi.fn(async (path: string) => {
@@ -110,6 +115,7 @@ function harness(
 		workRoot: WORK_ROOT,
 		fs,
 		docker,
+		activeLeases: input.activeLeases ?? (async () => []),
 		pnpmStore,
 		pnpmStoreIdle: input.pnpmStoreIdle,
 		jobInodes: input.jobInodes ?? { workRoot: 0, dockerDataRoot: 0 },
@@ -377,24 +383,21 @@ describe("worker storage admission", () => {
 	});
 
 	it("never deletes a live job directory or one whose container still exists", async () => {
+		const activeLeases = [
+			{
+				id: LIVE.slice("hobo-".length),
+				sandboxName: LIVE,
+				jobId: "job-1",
+			},
+		];
 		const h = harness({
 			before: usage(90),
 			after: usage(80),
 			directories: [LIVE, DEAD, STOPPED].map((name) => `${WORK_ROOT}/${name}`),
+			activeLeases: async () => activeLeases,
 			existingContainers: new Set([STOPPED]),
 		});
-		await expect(
-			h.admission.admit(
-				[
-					{
-						id: LIVE.slice("hobo-".length),
-						sandboxName: LIVE,
-						jobId: "job-1",
-					},
-				],
-				"job-2",
-			),
-		).resolves.toBe(true);
+		await expect(h.admission.admit(activeLeases, "job-2")).resolves.toBe(true);
 		expect(h.retired).toEqual([`${WORK_ROOT}/.retired/${DEAD}-test`]);
 		expect(h.fs.removeJobDirectory).not.toHaveBeenCalled();
 		expect(h.scheduleRetiredSweep).toHaveBeenCalledOnce();
@@ -402,9 +405,74 @@ describe("worker storage admission", () => {
 		expect(h.docker.containerExists).toHaveBeenCalledWith(STOPPED);
 	});
 
+	it("reads leases after listing directories before reaping", async () => {
+		let activeLeases: readonly WorkerStorageLease[] = [];
+		const h = harness({
+			activeLeases: async () => activeLeases,
+			jobDirectories: async () => {
+				activeLeases = [
+					{
+						id: LIVE.slice("hobo-".length),
+						sandboxName: LIVE,
+						jobId: "job-1",
+					},
+				];
+				return [LIVE, DEAD].map((name) => `${WORK_ROOT}/${name}`);
+			},
+		});
+
+		await h.admission.reap();
+
+		expect(h.retired).toEqual([`${WORK_ROOT}/.retired/${DEAD}-test`]);
+		expect(h.docker.containerExists).not.toHaveBeenCalledWith(LIVE);
+	});
+
+	it("keeps dispatching and claiming directories before their containers exist", async () => {
+		const h = harness({
+			directories: [LIVE, STOPPED].map((name) => `${WORK_ROOT}/${name}`),
+			activeLeases: async () => [
+				{
+					id: LIVE.slice("hobo-".length),
+					sandboxName: LIVE,
+					jobId: "dispatching-job",
+				},
+				{
+					id: STOPPED.slice("hobo-".length),
+					sandboxName: STOPPED,
+					jobId: "claiming-job",
+				},
+			],
+		});
+
+		await h.admission.reap();
+
+		expect(h.retired).toEqual([]);
+		expect(h.docker.containerExists).not.toHaveBeenCalled();
+	});
+
+	it("retires nothing when the fresh lease read fails", async () => {
+		const log = vi.fn();
+		const h = harness({
+			directories: [`${WORK_ROOT}/${DEAD}`],
+			activeLeases: async () => {
+				throw new Error("store unavailable");
+			},
+			log,
+		});
+
+		await h.admission.reap();
+
+		expect(h.retired).toEqual([]);
+		expect(h.docker.containerExists).not.toHaveBeenCalled();
+		expect(log).toHaveBeenCalledWith("hobo_ci_storage_prune_failed", {
+			operation: "read-leases",
+			message: "store unavailable",
+		});
+	});
+
 	it("retires dead work directories on startup without running the full GC", async () => {
 		const h = harness({ directories: [`${WORK_ROOT}/${DEAD}`] });
-		await h.admission.reap([]);
+		await h.admission.reap();
 		expect(h.retired).toEqual([`${WORK_ROOT}/.retired/${DEAD}-test`]);
 		expect(h.fs.removeJobDirectory).not.toHaveBeenCalled();
 		expect(h.scheduleRetiredSweep).toHaveBeenCalledOnce();

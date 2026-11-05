@@ -841,8 +841,9 @@ export class HostedRelay {
 			const storageJobId = String(job.id);
 			if (storageAdmission) {
 				if (storageRefused) continue;
+				const storageLeases = await this.options.store.activeLeases();
 				const admitted = await storageAdmission.admit(
-					active.map((lease) => ({
+					storageLeases.map((lease) => ({
 						id: lease.id,
 						sandboxName: lease.sandboxName,
 						jobId: String(lease.jobId),

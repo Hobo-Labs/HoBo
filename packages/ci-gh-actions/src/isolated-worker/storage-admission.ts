@@ -251,6 +251,7 @@ export function createWorkerStorageAdmission(options: {
 	workRoot: string;
 	fs: WorkerStorageFileSystem;
 	docker: WorkerStorageDockerDriver;
+	activeLeases: () => Promise<readonly WorkerStorageLease[]>;
 	pnpmStore?: WorkerStoragePnpmStore;
 	pnpmStoreIdle?: () => Promise<boolean>;
 	builderCacheCap?: string;
@@ -374,13 +375,7 @@ export function createWorkerStorageAdmission(options: {
 		}
 	}
 
-	async function reap(activeLeases: readonly WorkerStorageLease[]) {
-		const liveNames = new Set(
-			activeLeases.flatMap((lease) => [
-				`hobo-${lease.id}`,
-				...(lease.sandboxName ? [lease.sandboxName] : []),
-			]),
-		);
+	async function reap() {
 		let directories: readonly string[];
 		try {
 			directories = await options.fs.jobDirectories(options.workRoot);
@@ -391,6 +386,22 @@ export function createWorkerStorageAdmission(options: {
 			});
 			return;
 		}
+		let activeLeases: readonly WorkerStorageLease[];
+		try {
+			activeLeases = await options.activeLeases();
+		} catch (error) {
+			options.log?.("hobo_ci_storage_prune_failed", {
+				operation: "read-leases",
+				message: error instanceof Error ? error.message : "unknown",
+			});
+			return;
+		}
+		const liveNames = new Set(
+			activeLeases.flatMap((lease) => [
+				`hobo-${lease.id}`,
+				...(lease.sandboxName ? [lease.sandboxName] : []),
+			]),
+		);
 		for (const directory of directories) {
 			const name = basename(directory);
 			if (liveNames.has(name)) continue;
@@ -450,7 +461,7 @@ export function createWorkerStorageAdmission(options: {
 				pnpmPruneWaitLogged = false;
 			}
 		}
-		await reap(activeLeases);
+		await reap();
 	}
 
 	return {
