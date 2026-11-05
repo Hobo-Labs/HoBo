@@ -9,6 +9,7 @@ import {
 	type Lease,
 	parseCiPolicy,
 	providerOffer,
+	queuedDemandLabels,
 	route,
 } from "@hobo/ci";
 import { z } from "zod";
@@ -245,6 +246,7 @@ export class Relay {
 		return lease ? `reserved:${lease.id}` : "waiting-for-budget-or-capacity";
 	}
 	private queuedDemand(lease: Lease): Job {
+		const offer = providerOffer(this.account(lease), lease);
 		return create(JobSchema, {
 			id: lease.jobId,
 			runId: lease.originalRunId,
@@ -255,7 +257,9 @@ export class Relay {
 			name: lease.jobName,
 			memoryClass: lease.memoryClass,
 			memoryMb: lease.memoryMb,
-			labels: ["hobo"],
+			labels: queuedDemandLabels(lease.provider, offer.backend, offer.runsOn, [
+				"hobo",
+			]),
 			action: "queued",
 		});
 	}

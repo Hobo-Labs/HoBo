@@ -229,7 +229,18 @@ A trunk job that cannot reserve for more than **10 s** logs one **`hobo_ci_trunk
 
 The daemon change and its `HOBO_CI_WORKER_TRUNK_*` settings take effect only after a box redeploy. See [finding 9](../../docs/ci/findings/0009-a-freed-slot-went-to-whichever-job-the-worker-saw-first.md), [finding 11](../../docs/ci/findings/0011-a-runs-long-pole-was-admitted-last.md), [finding 15](../../docs/ci/findings/0015-trunk-jobs-starved-for-16-minutes.md), and [finding 23](../../docs/ci/findings/0023-the-trunk-slot-went-to-a-runner-a-pr-job-could-take.md).
 
-### 6. Merge queue (landing, not pickup)
+### 6. Optional overflow (Hostinger ARC, GitHub-hosted)
+
+Overflow is off until you enable it. While the hobo fleet has a free slot, jobs stay there. When overflow members are enabled and hobo is full, admission spills to Hostinger ARC (`runsOn: hobo-arc`), then GitHub-hosted (`runsOn: ubuntu-24.04`). Policy rejects `ubuntu-latest`.
+
+`.hobo/ci.json` `environments.ci.policy.providers` ships both disabled:
+
+- `github-hosted`: `kind: github`, `connectionRef: github-hosted`, `runsOn: ubuntu-24.04`, `enabled: false`.
+- `hostinger-arc`: `kind: kubernetes`, `connectionRef: hostinger-arc`, `runsOn: hobo-arc`, `enabled: false`, and `scaleSet` with `name`, `namespace`, `minRunners`, and `maxRunners`. The runtime offer uses backend `gh-actions`. `isolated-container` stays paired with `runsOn: hobo-isolated-worker` on the box worker.
+
+Anti-loop: a job already labeled `ubuntu-24.04` or `hobo-arc` stays on that member and is not sent back to hobo. Queued demand for a GitHub-hosted or ARC offer keeps that concrete label instead of `hobo`. Isolated abort covers Vercel Sandbox, `hobo-box-worker`, and kubernetes `isolated-container` on `hobo-isolated-worker`. It does not cancel kubernetes `gh-actions` ARC leases, and it skips kubernetes when the offer backend is unknown.
+
+### 7. Merge queue (landing, not pickup)
 
 **Merge queue** requires branch protection on `main` with merge queue enabled and the required HoBo CI checks. **Main full gate** is not one of them and does not run on `merge_group` (it runs on the push to `main`), so a queue entry holds no slot for it. Instead, the required **PR impact gate** runs on `merge_group` and executes Main full gate's affected S0 and dependent workspace-test lanes against the merge group's base SHA. That gates **merge** after jobs complete; it does not cause **`queued`** by itself. The required **CI fabric contract guard** runs only on `pull_request`; its two contract steps run inside **Main full gate** on push, schedule and dispatch, and inside **PR impact gate** on `merge_group`.
 

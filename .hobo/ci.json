@@ -103,6 +103,26 @@
             "kind": "hobo-box-worker",
             "connectionRef": "oracle-free-vm",
             "runsOn": "hobo-isolated-worker"
+          },
+          {
+            "id": "github-hosted",
+            "kind": "github",
+            "connectionRef": "github-hosted",
+            "runsOn": "ubuntu-24.04",
+            "enabled": false
+          },
+          {
+            "id": "hostinger-arc",
+            "kind": "kubernetes",
+            "connectionRef": "hostinger-arc",
+            "runsOn": "hobo-arc",
+            "enabled": false,
+            "scaleSet": {
+              "name": "hobo-arc",
+              "namespace": "arc-runners",
+              "minRunners": 0,
+              "maxRunners": 4
+            }
           }
         ],
         "budget": {

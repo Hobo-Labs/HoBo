@@ -18,6 +18,18 @@ export {
 	supportsPipeline,
 } from "./execution.js";
 export {
+	DEFAULT_GITHUB_MACHINE_TYPE,
+	type FleetBackend,
+	type FleetMember,
+	type FleetSelection,
+	isGithubLatestLabel,
+	isIsolatedFleetProvider,
+	isOverflowRunnerLabel,
+	queuedDemandLabels,
+	selectFleetBackend,
+	shouldAbortIsolatedFleetLease,
+} from "./fleet-overflow.js";
+export {
 	defineCiPolicy,
 	effectiveCiAccount,
 	type ParsedCiPolicy,
