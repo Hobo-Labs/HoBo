@@ -11,9 +11,7 @@ import type { WorkerStorageFileSystem } from "../src/isolated-worker/storage-adm
 import { NOW } from "./fixtures.js";
 
 function workDirectory() {
-	const retireJobDirectory = vi.fn(async (path: string) => `${path}-retired`);
 	const removeJobDirectory = vi.fn(async () => ({ bytes: 128, entries: 4 }));
-	const scheduleRetiredSweep = vi.fn();
 	const fs: WorkerStorageFileSystem = {
 		statfs: vi.fn(async () => ({
 			blocks: 100,
@@ -23,12 +21,10 @@ function workDirectory() {
 		})),
 		device: vi.fn(async () => 1),
 		jobDirectories: vi.fn(async () => []),
-		retiredDirectories: vi.fn(async () => []),
 		prepareJobDirectory: vi.fn(async () => undefined),
-		retireJobDirectory,
 		removeJobDirectory,
 	};
-	return { fs, retireJobDirectory, removeJobDirectory, scheduleRetiredSweep };
+	return { fs, removeJobDirectory };
 }
 
 function githubJob(
@@ -321,11 +317,7 @@ describe("isolated container controller reconcile", () => {
 			log,
 		};
 		if (workRoot && work)
-			Object.assign(controllerOptions, {
-				workRoot,
-				workFs: work.fs,
-				scheduleRetiredSweep: work.scheduleRetiredSweep,
-			});
+			Object.assign(controllerOptions, { workRoot, workFs: work.fs });
 		const controller = createIsolatedContainerController(controllerOptions);
 		return { lease, settle, abortIsolatedAndRequeue, docker, controller, work };
 	}
@@ -386,7 +378,7 @@ describe("isolated container controller reconcile", () => {
 	it.each([
 		"pass",
 		"fail",
-	])("retires and schedules the work directory after a job %s", async () => {
+	])("removes the work directory after a job %s", async () => {
 		const s = markerScenario(
 			vi.fn(async () => true),
 			false,
@@ -397,50 +389,27 @@ describe("isolated container controller reconcile", () => {
 			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
 		);
 		await s.controller.host.reconcile(s.lease.id);
-		expect(s.work?.retireJobDirectory).toHaveBeenCalledWith(
+		expect(s.work?.removeJobDirectory).toHaveBeenCalledWith(
 			`/srv/hobo-ci/work/${s.lease.sandboxName}`,
 		);
-		expect(s.work?.scheduleRetiredSweep).toHaveBeenCalledOnce();
-		expect(s.work?.removeJobDirectory).not.toHaveBeenCalled();
 	});
 
-	it("does not await background removal when reconciling a finished lease", async () => {
-		const s = markerScenario(
-			vi.fn(async () => true),
-			false,
-			undefined,
-			"/srv/hobo-ci/work",
-		);
-		if (!s.work) throw new Error("missing work directory fixture");
-		s.work.removeJobDirectory.mockImplementation(
-			() => new Promise<{ bytes: number; entries: number }>(() => {}),
-		);
-		vi.spyOn(githubModule, "getJob").mockResolvedValue(
-			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
-		);
-
-		await s.controller.host.reconcile(s.lease.id);
-		expect(s.work.retireJobDirectory).toHaveBeenCalledOnce();
-		expect(s.work.scheduleRetiredSweep).toHaveBeenCalledOnce();
-		expect(s.work.removeJobDirectory).not.toHaveBeenCalled();
-	});
-
-	it("retires the work directory after cancellation", async () => {
+	it("removes the work directory after cancellation", async () => {
 		const s = markerScenario(undefined, false, undefined, "/srv/hobo-ci/work");
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(s.lease.jobId, "completed", s.lease.runnerName),
 		);
 		await s.controller.host.reconcile(s.lease.id, true);
-		expect(s.work?.retireJobDirectory).toHaveBeenCalledWith(
+		expect(s.work?.removeJobDirectory).toHaveBeenCalledWith(
 			`/srv/hobo-ci/work/${s.lease.sandboxName}`,
 		);
 	});
 
-	it("retires the work directory after a container crash", async () => {
+	it("removes the work directory after a container crash", async () => {
 		const s = markerScenario(undefined, true, undefined, "/srv/hobo-ci/work");
 		await s.controller.host.reconcile(s.lease.id);
 		expect(s.abortIsolatedAndRequeue).toHaveBeenCalledOnce();
-		expect(s.work?.retireJobDirectory).toHaveBeenCalledWith(
+		expect(s.work?.removeJobDirectory).toHaveBeenCalledWith(
 			`/srv/hobo-ci/work/${s.lease.sandboxName}`,
 		);
 	});
@@ -457,8 +426,6 @@ describe("isolated container controller reconcile", () => {
 			expect(s.docker.stop).not.toHaveBeenCalled();
 			expect(s.settle).not.toHaveBeenCalled();
 			expect(s.abortIsolatedAndRequeue).not.toHaveBeenCalled();
-			expect(s.work?.retireJobDirectory).not.toHaveBeenCalled();
-			expect(s.work?.scheduleRetiredSweep).not.toHaveBeenCalled();
 			expect(s.work?.removeJobDirectory).not.toHaveBeenCalled();
 		}
 	});

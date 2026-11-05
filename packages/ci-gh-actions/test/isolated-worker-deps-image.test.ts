@@ -185,11 +185,8 @@ describe("isolated worker deps image selection", () => {
 				files: 100,
 				ffree: 100,
 			})),
-			device: vi.fn(async () => 1),
 			jobDirectories: vi.fn(async () => []),
-			retiredDirectories: vi.fn(async () => []),
 			prepareJobDirectory: vi.fn(async () => undefined),
-			retireJobDirectory: vi.fn(async () => undefined),
 			removeJobDirectory: vi.fn(async () => ({ bytes: 0, entries: 0 })),
 		};
 		const controllerOptions = {
@@ -203,11 +200,7 @@ describe("isolated worker deps image selection", () => {
 			now: () => NOW,
 		};
 		if (workRoot !== undefined)
-			Object.assign(controllerOptions, {
-				workRoot,
-				workFs,
-				scheduleRetiredSweep: vi.fn(),
-			});
+			Object.assign(controllerOptions, { workRoot, workFs });
 		return createIsolatedContainerController(controllerOptions);
 	}
 

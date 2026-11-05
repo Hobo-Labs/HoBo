@@ -1,11 +1,10 @@
 import { create } from "@bufbuild/protobuf";
 import { ConfigurationStateSchema, LeaseSchema } from "@hobo/ci";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { GithubTransport } from "../src/github.js";
 import {
 	createHostedRelayRuntime,
 	type HostedInboxStore,
-	type HostedRelayTickTiming,
 } from "../src/hosted-runtime.js";
 import { config, NOW, run, SECRET } from "./fixtures.js";
 
@@ -15,7 +14,6 @@ function fixture(options: {
 	status?: string;
 	responseRunner?: string | null;
 	jobReadFails?: boolean;
-	onTickTiming?: (timing: HostedRelayTickTiming) => void;
 }) {
 	const name = "hobo-00000000-0000-4000-8000-000000000001";
 	const lease = create(LeaseSchema, {
@@ -110,7 +108,7 @@ function fixture(options: {
 		},
 	);
 	const reconcile = vi.fn(async (_id: string, _forceStop?: boolean) => {});
-	const runtimeOptions: Parameters<typeof createHostedRelayRuntime>[0] = {
+	const runtime = createHostedRelayRuntime({
 		store,
 		github: { request },
 		identity: { verify: impossible },
@@ -118,17 +116,11 @@ function fixture(options: {
 		control: async () => undefined,
 		now: () => NOW,
 		isolatedHost: { launch: impossible, reconcile },
-	};
-	if (options.onTickTiming) runtimeOptions.onTickTiming = options.onTickTiming;
-	const runtime = createHostedRelayRuntime(runtimeOptions);
+	});
 	return { runtime, reconcile, request, lease, store };
 }
 
 describe("isolated runner cancellation", () => {
-	afterEach(() => {
-		vi.restoreAllMocks();
-	});
-
 	it("stops the verified assigned runner in the same wakeup as its completed event", async () => {
 		const h = fixture({ webhook: true });
 		await h.runtime.tick();
@@ -158,28 +150,5 @@ describe("isolated runner cancellation", () => {
 		await h.runtime.tick();
 		expect(claimWebhook).toHaveBeenCalled();
 		expect(pendingJobs).toHaveBeenCalled();
-	});
-
-	it("reports phase timings for a slow tick", async () => {
-		const onTickTiming = vi.fn();
-		const h = fixture({ onTickTiming });
-		vi.spyOn(Date, "now")
-			.mockReturnValueOnce(0)
-			.mockReturnValueOnce(1_000)
-			.mockReturnValueOnce(1_000)
-			.mockReturnValueOnce(4_000)
-			.mockReturnValueOnce(4_000)
-			.mockReturnValueOnce(6_000)
-			.mockReturnValueOnce(6_000);
-
-		await h.runtime.tick();
-		expect(onTickTiming).toHaveBeenCalledWith({
-			totalMs: 6_000,
-			deliveriesMs: 1_000,
-			leaseReconcileMs: 3_000,
-			dispatchMs: 2_000,
-			leaseCount: 1,
-			pendingCount: 0,
-		});
 	});
 });

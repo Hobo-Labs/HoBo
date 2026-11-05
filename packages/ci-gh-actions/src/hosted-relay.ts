@@ -720,10 +720,7 @@ export class HostedRelay {
 	private trunkWaitKey(job: Pick<Job, "repository" | "id" | "runAttempt">) {
 		return `${job.repository}:${job.id}:${job.runAttempt}`;
 	}
-	private reportTrunkWait(
-		job: Job,
-		reason: "lease-capacity" | "storage",
-	): string {
+	private reportTrunkWait(job: Job): string {
 		const key = this.trunkWaitKey(job);
 		const nowMs = Date.parse(this.now());
 		const wait = this.trunkWaits.get(key) ?? {
@@ -737,7 +734,7 @@ export class HostedRelay {
 			console.error(
 				JSON.stringify({
 					event: "hobo_ci_trunk_wait",
-					reason,
+					reason: "lease-capacity",
 					waitedMs,
 					repository: job.repository,
 					runId: job.runId,
@@ -748,7 +745,7 @@ export class HostedRelay {
 		return key;
 	}
 	/** Durable outbox drain. A launch intent is committed before network I/O. */
-	async dispatchPending(): Promise<number> {
+	async dispatchPending(): Promise<void> {
 		const reservationRevision = await this.refreshConfig();
 		// Both the reservation (offer concurrency) and the launch (host slots) hand
 		// out capacity in this order, so a freed slot goes to the queue's head.
@@ -788,7 +785,6 @@ export class HostedRelay {
 		// only after trunk-label demand misses a lease. Both free capacity in this pass.
 		let trunkWaiting = false;
 		let rankZeroWaiting = false;
-		let storageRefused = false;
 		const waitingTrunk = new Set<string>();
 		for (const job of pending) {
 			const rank = await this.admissionOrder.rank(refOf(job));
@@ -839,24 +835,18 @@ export class HostedRelay {
 			if (connection.isolatedOnly) job.isolatedRequired = true;
 			const storageAdmission = this.options.storageAdmission;
 			const storageJobId = String(job.id);
-			if (storageAdmission) {
-				if (storageRefused) continue;
-				const admitted = await storageAdmission.admit(
+			if (
+				storageAdmission &&
+				!(await storageAdmission.admit(
 					active.map((lease) => ({
 						id: lease.id,
 						sandboxName: lease.sandboxName,
 						jobId: String(lease.jobId),
 					})),
 					storageJobId,
-				);
-				if (!admitted) {
-					storageRefused = true;
-					rankZeroWaiting ||= rank === TRUNK_RANK;
-					trunkWaiting ||= trunk;
-					if (trunk) waitingTrunk.add(this.reportTrunkWait(job, "storage"));
-					continue;
-				}
-			}
+				))
+			)
+				continue;
 			let lease: Lease | undefined;
 			try {
 				const memoryAdmission = this.options.memoryAdmission;
@@ -899,8 +889,7 @@ export class HostedRelay {
 			if (!lease) {
 				rankZeroWaiting ||= rank === TRUNK_RANK;
 				trunkWaiting ||= trunk;
-				if (trunk)
-					waitingTrunk.add(this.reportTrunkWait(job, "lease-capacity"));
+				if (trunk) waitingTrunk.add(this.reportTrunkWait(job));
 			} else {
 				this.servedRunnerLabels.set(
 					`${job.repository}:${job.id}`,
@@ -1061,7 +1050,6 @@ export class HostedRelay {
 		}
 		for (const key of this.trunkWaits.keys())
 			if (!waitingTrunk.has(key)) this.trunkWaits.delete(key);
-		return pending.length;
 	}
 	async claim(id: string, token: string): Promise<JitBootstrapResponse> {
 		const lease = await this.options.store.get(id);

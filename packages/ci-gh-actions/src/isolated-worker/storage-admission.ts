@@ -3,23 +3,17 @@ import {
 	lstat,
 	mkdir,
 	readdir,
-	rename,
 	rm,
-	rmdir,
 	stat,
 	statfs,
 } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
-import { z } from "zod";
+import { basename, join } from "node:path";
 import { selectWorkerImagesForDeletion, type WorkerImage } from "./image-gc.js";
 
 const SOFT_LIMIT = 0.85;
 const HARD_LIMIT = 0.95;
 const INODE_GRANT_GRACE_MS = 60_000;
 const JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}$/u;
-const RETIRED_JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}-[0-9a-z]+$/u;
-const RETIRED_ROOT = ".retired";
-const ErrnoCode = z.object({ code: z.string() });
 
 export type WorkerFileSystemStats = Readonly<{
 	blocks: number;
@@ -37,9 +31,7 @@ export type WorkerStorageFileSystem = Readonly<{
 	statfs(path: string): Promise<WorkerFileSystemStats>;
 	device(path: string): Promise<number>;
 	jobDirectories(root: string): Promise<readonly string[]>;
-	retiredDirectories(root: string): Promise<readonly string[]>;
 	prepareJobDirectory(path: string): Promise<void>;
-	retireJobDirectory(path: string): Promise<string | undefined>;
 	removeJobDirectory(path: string): Promise<WorkerWorkDirectoryRemoval>;
 }>;
 
@@ -90,20 +82,8 @@ export function createNodeWorkerStorageFileSystem(
 	operations: Readonly<{
 		chown: typeof chown;
 		mkdir: typeof mkdir;
-		lstat?: typeof lstat;
-		readdir?: typeof readdir;
-		rename?: typeof rename;
-		rm?: typeof rm;
-		rmdir?: typeof rmdir;
 	}> = { chown, mkdir },
 ): WorkerStorageFileSystem {
-	const io = {
-		lstat: operations.lstat ?? lstat,
-		readdir: operations.readdir ?? readdir,
-		rename: operations.rename ?? rename,
-		rm: operations.rm ?? rm,
-		rmdir: operations.rmdir ?? rmdir,
-	};
 	return {
 		async statfs(path) {
 			const stats = await statfs(path);
@@ -118,29 +98,12 @@ export function createNodeWorkerStorageFileSystem(
 			return (await stat(path)).dev;
 		},
 		async jobDirectories(root) {
-			const entries = await io.readdir(root, { withFileTypes: true });
+			const entries = await readdir(root, { withFileTypes: true });
 			return entries
 				.filter(
 					(entry) => entry.isDirectory() && JOB_DIRECTORY.test(entry.name),
 				)
 				.map((entry) => join(root, entry.name));
-		},
-		async retiredDirectories(root) {
-			try {
-				const entries = await io.readdir(join(root, RETIRED_ROOT), {
-					withFileTypes: true,
-				});
-				return entries
-					.filter(
-						(entry) =>
-							entry.isDirectory() && RETIRED_JOB_DIRECTORY.test(entry.name),
-					)
-					.map((entry) => join(root, RETIRED_ROOT, entry.name));
-			} catch (error) {
-				const parsed = ErrnoCode.safeParse(error);
-				if (parsed.success && parsed.data.code === "ENOENT") return [];
-				throw error;
-			}
 		},
 		async prepareJobDirectory(path) {
 			if (!JOB_DIRECTORY.test(basename(path)))
@@ -153,48 +116,27 @@ export function createNodeWorkerStorageFileSystem(
 			await operations.chown(checkout, 1000, 1000);
 			await operations.chown(path, 1000, 1000);
 		},
-		async retireJobDirectory(path) {
-			const name = basename(path);
-			if (!JOB_DIRECTORY.test(name))
-				throw new Error("invalid worker job directory");
-			const retiredRoot = join(dirname(path), RETIRED_ROOT);
-			await operations.mkdir(retiredRoot, { recursive: true, mode: 0o700 });
-			const retired = join(retiredRoot, `${name}-${Date.now().toString(36)}`);
-			try {
-				await io.rename(path, retired);
-				return retired;
-			} catch (error) {
-				const parsed = ErrnoCode.safeParse(error);
-				if (parsed.success && parsed.data.code === "ENOENT") return undefined;
-				throw error;
-			}
-		},
 		async removeJobDirectory(path) {
-			const name = basename(path);
-			const valid =
-				basename(dirname(path)) === RETIRED_ROOT
-					? RETIRED_JOB_DIRECTORY.test(name)
-					: JOB_DIRECTORY.test(name);
-			if (!valid) throw new Error("invalid worker job directory");
-			const remove = async (
+			if (!JOB_DIRECTORY.test(basename(path)))
+				throw new Error("invalid worker job directory");
+			const measure = async (
 				entryPath: string,
 			): Promise<WorkerWorkDirectoryRemoval> => {
-				const metadata = await io.lstat(entryPath);
-				if (!metadata.isDirectory()) {
-					await io.rm(entryPath, { force: false });
+				const metadata = await lstat(entryPath);
+				if (!metadata.isDirectory())
 					return { bytes: metadata.size, entries: 1 };
-				}
 				let bytes = 0;
 				let entries = 1;
-				for (const entry of await io.readdir(entryPath)) {
-					const child = await remove(join(entryPath, entry));
+				for (const entry of await readdir(entryPath)) {
+					const child = await measure(join(entryPath, entry));
 					bytes += child.bytes;
 					entries += child.entries;
 				}
-				await io.rmdir(entryPath);
 				return { bytes, entries };
 			};
-			return remove(path);
+			const removed = await measure(path);
+			await rm(path, { recursive: true, force: false });
+			return removed;
 		},
 	};
 }
@@ -257,8 +199,6 @@ export function createWorkerStorageAdmission(options: {
 	softLimit?: number;
 	hardLimit?: number;
 	jobInodes?: Readonly<{ workRoot: number; dockerDataRoot: number }>;
-	admitMaintainIntervalMs?: number;
-	scheduleRetiredSweep?: () => void;
 	now?: () => number;
 	log?: WorkerStorageLog;
 }) {
@@ -278,9 +218,7 @@ export function createWorkerStorageAdmission(options: {
 		{ root: options.workRoot, reserve: jobInodes.workRoot },
 	];
 	const now = options.now ?? Date.now;
-	const admitMaintainIntervalMs = options.admitMaintainIntervalMs ?? 60_000;
 	const grants = new Map<string, InodeGrant>();
-	let lastAdmitMaintainMs: number | undefined;
 	let hardEpisode = false;
 	let reserveEpisode = false;
 	let unavailable = false;
@@ -396,8 +334,7 @@ export function createWorkerStorageAdmission(options: {
 			if (liveNames.has(name)) continue;
 			try {
 				if (await options.docker.containerExists(name)) continue;
-				const retired = await options.fs.retireJobDirectory(directory);
-				if (retired) options.scheduleRetiredSweep?.();
+				await options.fs.removeJobDirectory(directory);
 			} catch (error) {
 				options.log?.("hobo_ci_storage_prune_failed", {
 					operation: "remove-work-dir",
@@ -492,14 +429,7 @@ export function createWorkerStorageAdmission(options: {
 				hardEpisode = false;
 				return grant(jobId, before);
 			}
-			const nowMs = now();
-			if (
-				lastAdmitMaintainMs === undefined ||
-				nowMs - lastAdmitMaintainMs >= admitMaintainIntervalMs
-			) {
-				lastAdmitMaintainMs = nowMs;
-				await maintain(activeLeases);
-			}
+			await maintain(activeLeases);
 			let after: StorageSample[];
 			try {
 				after = await sample();
