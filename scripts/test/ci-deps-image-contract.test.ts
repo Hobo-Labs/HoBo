@@ -246,14 +246,19 @@ describe("CI deps image build contract", () => {
 		);
 		includes(build, "invalid HOBO_CI_DEPS_BUILD_INODE_HEADROOM");
 		includes(build, "invalid HOBO_CI_DEPS_BUILD_BYTE_HEADROOM");
-		includes(build, "df -P --output=iavail");
+		includes(build, "df --output=iavail");
 		includes(build, "df -B1 --output=avail");
+		assert.ok(!build.includes("df -P --output"));
+		includes(build, "resolve_deps_headroom_sample_path");
+		includes(build, "HOBO_CI_HOST_JOB_DIRECTORY");
+		includes(build, "docker_data_root_device");
 		includes(build, "ensure_deps_build_headroom");
 		includes(build, "docker builder prune -f --keep-storage");
 		includes(
 			build,
 			"refusing deps rebuild: Docker data root still below headroom after builder prune",
 		);
+		includes(build, "cannot sample Docker data root for deps build headroom");
 		assert.ok(!build.includes("docker image prune -af"));
 		assert.ok(!build.includes("docker image prune -a"));
 		const guard = build.indexOf("ensure_deps_build_headroom");

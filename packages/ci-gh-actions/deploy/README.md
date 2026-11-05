@@ -305,8 +305,10 @@ neither toolchain is available. For a new key, the daemon checks
 `hobo-ci-deps:<key>`, tries the corresponding
 `ghcr.io/<owner>/<repo>/hobo-ci-deps:<key>` pull, then builds a registry miss with
 `build-deps.sh --no-promote`. Before that build's `pnpm install`/`mv` into
-`/opt/hobo-deps`, the script samples Docker's data root and, if free inodes or
-bytes are below headroom, prunes only the BuildKit cache (`docker builder prune`);
+`/opt/hobo-deps`, the script samples free inodes and bytes on Docker's data root.
+Inside a job container the daemon-reported `DockerRootDir` path is usually not
+mounted; the script then `df`s a host bind mount on the same device (`HOBO_CI_HOST_JOB_DIRECTORY`,
+`GITHUB_WORKSPACE`, `/pnpm-store`, or `/`). If free inodes or bytes are below headroom, it prunes only the BuildKit cache (`docker builder prune`);
 it never runs `docker image prune -af`. A remaining shortage refuses the rebuild
 so a key miss cannot `ENOSPC` a concurrent main job. Builds are single-flight and asynchronous: they do
 not block admission or hold a job slot. The process runs under `nice` and `ionice`,

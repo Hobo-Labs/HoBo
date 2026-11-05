@@ -65,13 +65,20 @@ describe("Main full gate S0 sparse checkout", () => {
 		);
 	});
 
-	it("starts the full-history secret scan immediately after S0 checkout", () => {
+	it("starts the secret scan after preflight through gitleaks-main-scan", () => {
 		const checkout = mainGate.indexOf(
 			"name: Checkout (sparse S0, full history)",
+		);
+		const preflight = mainGate.indexOf(
+			"uses: ./.github/actions/ci-runner-preflight",
 		);
 		const start = mainGate.indexOf(
 			"name: Start secret scan (full history, background)",
 		);
+		expect(preflight).toBeGreaterThan(checkout);
+		expect(start).toBeGreaterThan(preflight);
+		expect(mainGate).toContain("gitleaks-main-scan.mts --background");
+		expect(mainGate).toContain("gitleaks-main-scan.mts --wait");
 		const wait = mainGate.indexOf("name: Secret scan (full history)");
 		const workspace = mainGate.indexOf("name: Workspace tests");
 		const prune = mainGate.indexOf("name: Prune Turbo cache");

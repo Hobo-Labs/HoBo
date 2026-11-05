@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 73: scripts/ci and docs rebuilt every release image"
+title: "Finding 76: scripts/ci and docs rebuilt every release image"
 description: "Isolated HoBo CI Fabric performance finding."
 tags: [hobo, ci, performance]
 ---
 
-# Finding 73: scripts/ci and docs rebuilt every release image
+# Finding 76: scripts/ci and docs rebuilt every release image
 
 ## Symptom
 
