@@ -188,6 +188,35 @@ describe("planDependentTests", () => {
 		assert.equal(planDependentTests(["pnpm-lock.yaml"], repo).mode, "all");
 		assert.equal(planDependentTests([""], repo).mode, "all");
 	});
+
+	it("keeps a scripts-only root package.json edit scoped with a root reader", () => {
+		const scriptsOnly = (path: string, side: "base" | "head") =>
+			path === "package.json"
+				? JSON.stringify({ scripts: { test: side } })
+				: undefined;
+		const plan = planDependentTests(
+			["package.json", "docs/guide.md"],
+			repo,
+			scriptsOnly,
+		);
+		assert.equal(plan.mode, "scoped");
+		// Without the reader the same diff widens, as it did in merge groups.
+		assert.equal(
+			planDependentTests(["package.json", "docs/guide.md"], repo).mode,
+			"all",
+		);
+	});
+
+	it("still widens for a root dependency edit with a root reader", () => {
+		const dependencyEdit = (path: string, side: "base" | "head") =>
+			path === "package.json"
+				? JSON.stringify({ devDependencies: { tsx: side } })
+				: undefined;
+		assert.equal(
+			planDependentTests(["package.json"], repo, dependencyEdit).mode,
+			"all",
+		);
+	});
 });
 
 describe("exportTarget", () => {

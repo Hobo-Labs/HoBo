@@ -289,6 +289,20 @@ jobs:
           BASE="$(node --import tsx scripts/ci/turbo-scm-base.mts)"
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
           git fetch origin "${{ github.base_ref }}"
+      # Shadow only: classifies non-meaningful (inert) paths and reports
+      # the lanes they would drop. Execution below is unchanged in every
+      # mode; HOBO_IMPACT_GATE=off disables the report.
+      - name: Impact classification (shadow)
+        if: github.event_name == 'pull_request' && vars.HOBO_IMPACT_GATE != 'off'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
+          HOBO_IMPACT_GATE: ${{ vars.HOBO_IMPACT_GATE || 'shadow' }}
+        run: |
+          git diff --name-only "${TURBO_SCM_BASE}"...HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base="${TURBO_SCM_BASE}" \
+            > impact-plan.json || true
       - name: DCO sign-off check
         if: github.event_name == 'pull_request'
         continue-on-error: true
@@ -367,6 +381,17 @@ jobs:
             echo "scope=${scope}"
             echo "tests=${tests}"
           } >> "$GITHUB_OUTPUT"
+      - name: Impact classification (shadow)
+        if: github.event_name == 'merge_group' && steps.merge-group-base.outputs.base != '' && vars.HOBO_IMPACT_GATE != 'off'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          BASE: ${{ steps.merge-group-base.outputs.base }}
+          HOBO_IMPACT_GATE: ${{ vars.HOBO_IMPACT_GATE || 'shadow' }}
+        run: |
+          git diff --name-only "$BASE" HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base="$BASE" --meaningful-out=impact-meaningful.txt \
+            > impact-plan.json || true
       - name: S0 gate set
         if: github.event_name == 'merge_group'
         timeout-minutes: 12
@@ -397,9 +422,12 @@ jobs:
           if [ "$TESTS" = "affected" ]; then
             # Changed packages run whole; their dependents run only the test files whose
             # import closure reaches a changed file (scripts/ci/dependent-tests.mts).
+            # --base keeps the planner's root-config scoping identical to the
+            # lane decision above. The impact classification is shadow-only:
+            # nothing consumes impact-meaningful.txt yet.
             git diff --name-only "$BASE" HEAD |
               node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
-                --run --anon-profile=turbo-profile.json
+                --base="$BASE" --run --anon-profile=turbo-profile.json
           else
             pnpm exec turbo run test \
               --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
@@ -717,9 +745,11 @@ jobs:
           if [ "$TESTS" = "affected" ]; then
             # Changed packages run whole; their dependents run only the test files whose
             # import closure reaches a changed file (scripts/ci/dependent-tests.mts).
+            # --base keeps the planner's root-config scoping identical to the
+            # lane decision above.
             git diff --name-only "$BASE" HEAD |
               node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
-                --run --anon-profile=turbo-profile.json
+                --base="$BASE" --run --anon-profile=turbo-profile.json
           else
             pnpm exec turbo run test \
               --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json

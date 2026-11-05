@@ -231,7 +231,11 @@ export function mainGateScope(
 		: { mode: "affected" };
 }
 
-function cliRootFileReader(baseRef: string): ReadRootFile {
+/**
+ * Root-config reader for CLI callers: base contents come from the merge
+ * base with `baseRef`, head contents from the working tree.
+ */
+export function cliRootFileReader(baseRef: string): ReadRootFile {
 	let mergeBase = baseRef;
 	try {
 		mergeBase = execFileSync("git", ["merge-base", baseRef, "HEAD"], {
