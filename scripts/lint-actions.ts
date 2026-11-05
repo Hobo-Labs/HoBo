@@ -48,6 +48,20 @@ const allowedEnabled = new Set([acceptanceFile, ...activeCiFiles]);
 const TRUNK_RUNS_ON =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
 
+/** npm trusted publishing requires GitHub-hosted runners (release-hobo release-npm only). */
+function isNpmOidcHostedReleaseJob(
+	file: string,
+	jobLine: string,
+	runsOn: string | undefined,
+): boolean {
+	const jobId = /^  ([a-z][a-z0-9-]+):/.exec(jobLine)?.[1];
+	return (
+		file === "release-hobo.yml" &&
+		jobId === "release-npm" &&
+		runsOn === "ubuntu-24.04"
+	);
+}
+
 const acceptanceDigest =
 	"d130e672fa517fb41465b742cf0b47e921849f73fadbe886f26f34e8aa9faaf6";
 
@@ -218,6 +232,8 @@ function lintWorkflowYaml(
 		const runsOn = block
 			.map((line) => line.match(/^\s*runs-on:\s*(.*?)\s*$/)?.[1])
 			.find((value) => value !== undefined);
+		const jobLine = lines[start] ?? "";
+		const npmOidcHosted = isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
 		if (runsOn === "hobo" || runsOn === TRUNK_RUNS_ON) {
 			for (const [index, line] of block.entries()) {
 				if (!/^\s*- uses: actions\/checkout@/.test(line)) continue;
@@ -253,7 +269,7 @@ function lintWorkflowYaml(
 		}
 		if (allowedEnabled.has(file)) {
 			const prOnly = isPullRequestOnlyJob(block, workflowHasTrunkEvent);
-			if (!prOnly && runsOn === "hobo") {
+			if (!npmOidcHosted && !prOnly && runsOn === "hobo") {
 				errors.push(
 					`${file}:${start + 1}: trunk-label-routing: push/merge_group/workflow_dispatch-capable jobs must use the trunk label expression`,
 				);
