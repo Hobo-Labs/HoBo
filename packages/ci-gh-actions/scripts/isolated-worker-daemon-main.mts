@@ -9,7 +9,9 @@ import { toJsonString } from "@bufbuild/protobuf";
 import { ConfigurationSchema, type Lease, parseConfiguration } from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
+	boxGitMirrorPath,
 	createAdmissionOrder,
+	createBoxGitMirror,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createDepsImageEnsurer,
@@ -352,6 +354,21 @@ const jobPickupMetadata = new Map<
 	string,
 	{ event?: string; jobCreatedAt?: string }
 >();
+const gitMirrorRoot =
+	process.env.HOBO_CI_GIT_MIRROR_ROOT ?? "/var/lib/hobo-ci/git";
+const gitMirrorEnabled = process.env.HOBO_CI_GIT_MIRROR !== "0";
+const gitMirrors = new Map<string, ReturnType<typeof createBoxGitMirror>>();
+function gitMirrorFor(repository: string) {
+	const key = repository.toLowerCase();
+	const existing = gitMirrors.get(key);
+	if (existing) return existing;
+	const created = createBoxGitMirror({
+		root: gitMirrorRoot,
+		repository,
+	});
+	gitMirrors.set(key, created);
+	return created;
+}
 const worker = createIsolatedContainerController({
 	store,
 	github,
@@ -369,6 +386,25 @@ const worker = createIsolatedContainerController({
 	generalLeaseIds: (activeLeases) =>
 		generalLeaseIdsFor(activeLeases, github, workerRunnerLabels),
 	jobPickupMetadata,
+	gitMirror: gitMirrorEnabled
+		? {
+				pathFor: (repository) => {
+					try {
+						return boxGitMirrorPath(gitMirrorRoot, repository);
+					} catch {
+						return undefined;
+					}
+				},
+				ensure: (repository, sha) => gitMirrorFor(repository).ensure(sha),
+			}
+		: undefined,
+	headShaFor: async (lease) =>
+		admissionOrder.headSha({
+			installationId: lease.installationId,
+			repository: lease.repository,
+			runId: lease.originalRunId,
+			jobId: lease.jobId,
+		}),
 	log,
 	slots,
 	volumes: pnpmStore ? [{ source: pnpmStore, target: PNPM_STORE_TARGET }] : [],

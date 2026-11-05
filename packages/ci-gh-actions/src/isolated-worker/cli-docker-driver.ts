@@ -349,7 +349,10 @@ export function createCliDockerDriver(options: {
 						!/^\/[^:,]+$/.test(volume.target)
 					)
 						throw new Error("invalid volume mount");
-					args.push("-v", `${volume.source}:${volume.target}`);
+					args.push(
+						"-v",
+						`${volume.source}:${volume.target}${volume.readonly ? ":ro" : ""}`,
+					);
 				}
 				for (const [key, value] of Object.entries(spec.env))
 					args.push("-e", `${key}=${value}`);

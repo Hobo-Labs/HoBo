@@ -1,0 +1,174 @@
+import { spawn } from "node:child_process";
+import { existsSync, mkdirSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+
+const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const SHA = /^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/;
+
+export type BoxGitMirrorEnsureResult =
+	| { readonly status: "hit"; readonly mirror: string }
+	| { readonly status: "miss"; readonly reason: string };
+
+export type BoxGitMirror = {
+	readonly path: string;
+	ensure(sha: string): Promise<BoxGitMirrorEnsureResult>;
+};
+
+export type GitRunner = (
+	args: readonly string[],
+	cwd?: string,
+) => Promise<{ status: number; stdout: string; stderr: string }>;
+
+export function boxGitMirrorPath(root: string, repository: string): string {
+	if (
+		!isAbsolute(root) ||
+		root.includes("\0") ||
+		root.split(/[\\/]+/).includes("..")
+	)
+		throw new Error("git mirror root must be absolute and contain no '..' segments");
+	if (!REPOSITORY.test(repository))
+		throw new Error("repository must have the form owner/name");
+	return join(resolve(root), `${repository}.git`);
+}
+
+export function shaRef(sha: string): string {
+	if (!SHA.test(sha)) throw new Error("invalid git object name");
+	return `refs/hobo/sha/${sha.toLowerCase()}`;
+}
+
+export function runGit(
+	args: readonly string[],
+	cwd?: string,
+): Promise<{ status: number; stdout: string; stderr: string }> {
+	return new Promise((resolveResult) => {
+		const child = spawn("git", [...args], {
+			cwd,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		let stdout = "";
+		let stderr = "";
+		child.stdout.on("data", (chunk: Buffer) => {
+			stdout += chunk.toString("utf8");
+		});
+		child.stderr.on("data", (chunk: Buffer) => {
+			stderr += chunk.toString("utf8");
+		});
+		child.on("error", (error) => {
+			resolveResult({ status: 1, stdout, stderr: error.message });
+		});
+		child.on("close", (code) => {
+			resolveResult({ status: code ?? 1, stdout, stderr });
+		});
+	});
+}
+
+function originUrl(repository: string): string {
+	return `https://github.com/${repository}.git`;
+}
+
+export function createBoxGitMirror(options: {
+	readonly root: string;
+	readonly repository: string;
+	readonly originUrl?: string;
+	readonly git?: GitRunner;
+}): BoxGitMirror {
+	const path = boxGitMirrorPath(options.root, options.repository);
+	const remote = options.originUrl ?? originUrl(options.repository);
+	const git = options.git ?? runGit;
+	let chain: Promise<unknown> = Promise.resolve();
+
+	function enqueue<T>(work: () => Promise<T>): Promise<T> {
+		const next = chain.then(work, work);
+		chain = next.then(
+			() => undefined,
+			() => undefined,
+		);
+		return next;
+	}
+
+	async function hasCommit(sha: string): Promise<boolean> {
+		const checked = await git(
+			[`--git-dir=${path}`, "cat-file", "-e", `${sha}^{commit}`],
+		);
+		return checked.status === 0;
+	}
+
+	async function ensureMirror(): Promise<BoxGitMirrorEnsureResult | undefined> {
+		if (existsSync(path)) {
+			await git([`--git-dir=${path}`, "config", "gc.auto", "0"]);
+			return undefined;
+		}
+		mkdirSync(dirname(path), { recursive: true, mode: 0o755 });
+		const cloned = await git([
+			"clone",
+			"--bare",
+			"--filter=blob:none",
+			"--origin",
+			"origin",
+			remote,
+			path,
+		]);
+		if (cloned.status !== 0) {
+			return {
+				status: "miss",
+				reason: `clone failed: ${cloned.stderr.replace(/[\r\n]+/g, " ").trim()}`,
+			};
+		}
+		await git([`--git-dir=${path}`, "config", "gc.auto", "0"]);
+		await git([
+			`--git-dir=${path}`,
+			"-c",
+			"gc.auto=0",
+			"fetch",
+			"--no-tags",
+			"--no-filter",
+			"origin",
+			"HEAD:refs/heads/main",
+		]);
+		return undefined;
+	}
+
+	async function fetchSha(sha: string): Promise<BoxGitMirrorEnsureResult> {
+		const prepared = await ensureMirror();
+		if (prepared) return prepared;
+		if (!(await hasCommit(sha))) {
+			const fetched = await git([
+				`--git-dir=${path}`,
+				"-c",
+				"gc.auto=0",
+				"fetch",
+				"--no-tags",
+				"--no-filter",
+				"origin",
+				`${sha}:${shaRef(sha)}`,
+			]);
+			if (fetched.status !== 0) {
+				return {
+					status: "miss",
+					reason: `fetch failed: ${fetched.stderr.replace(/[\r\n]+/g, " ").trim()}`,
+				};
+			}
+		}
+		if (!(await hasCommit(sha))) {
+			return {
+				status: "miss",
+				reason: `mirror does not contain the triggering commit: ${path}`,
+			};
+		}
+		await git([`--git-dir=${path}`, "update-ref", shaRef(sha), sha]);
+		return { status: "hit", mirror: path };
+	}
+
+	return {
+		path,
+		ensure(sha) {
+			if (!SHA.test(sha)) {
+				return Promise.resolve({
+					status: "miss",
+					reason: "invalid or missing GITHUB_SHA",
+				});
+			}
+			return enqueue(() => fetchSha(sha.toLowerCase()));
+		},
+	};
+}

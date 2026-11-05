@@ -48,6 +48,12 @@ export {
 export { createCliDockerDriver } from "./isolated-worker/cli-docker-driver.js";
 export { createCompositeIsolatedHost } from "./isolated-worker/composite-host.js";
 export {
+	boxGitMirrorPath,
+	createBoxGitMirror,
+	type BoxGitMirror,
+	type BoxGitMirrorEnsureResult,
+} from "./isolated-worker/git-mirror.js";
+export {
 	createIsolatedContainerController,
 	type IsolatedContainerController,
 	type IsolatedWorkerStore,

@@ -14,7 +14,11 @@ export type IsolatedContainerSpec = Readonly<{
 	cpuShares?: number;
 	blkioWeight?: number;
 	/** Extra `-v src:dst` mounts (e.g. a shared pnpm store volume). */
-	volumes?: readonly Readonly<{ source: string; target: string }>[];
+	volumes?: readonly Readonly<{
+		source: string;
+		target: string;
+		readonly?: boolean;
+	}>[];
 }>;
 
 export function containerResourceWeightsForRank(

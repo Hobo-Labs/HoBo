@@ -27,7 +27,16 @@ afterEach(() => {
 		rmSync(root, { recursive: true, force: true });
 });
 
-async function launchFixture() {
+async function launchFixture(extras?: {
+	gitMirror?: {
+		pathFor(repository: string): string | undefined;
+		ensure?(
+			repository: string,
+			sha: string,
+		): Promise<{ status: "hit" | "miss"; reason?: string; mirror?: string }>;
+	};
+	headShaFor?: (lease: { originalRunId: number }) => Promise<string | undefined>;
+}) {
 	const root = mkdtempSync(join(tmpdir(), "hobo-ci-launch-thrash-"));
 	roots.push(root);
 	const store = new SqliteCiStore(join(root, "worker.sqlite"));
@@ -119,6 +128,8 @@ async function launchFixture() {
 	const log = vi.fn();
 	const github = githubFixture();
 	const clock = { now: NOW };
+	const gitMirror = extras?.gitMirror;
+	const headShaFor = extras?.headShaFor;
 	const controller = createIsolatedContainerController({
 		store,
 		github,
@@ -131,6 +142,8 @@ async function launchFixture() {
 		scheduleRetiredSweep,
 		now: () => clock.now,
 		log,
+		gitMirror,
+		headShaFor,
 	});
 	return {
 		clock,
@@ -190,6 +203,32 @@ function githubFixture(): GithubTransport {
 }
 
 describe("isolated worker launch failure handling", () => {
+	it("fetches the run head into the box mirror before docker create", async () => {
+		const ensure = vi.fn(async () => ({
+			status: "hit" as const,
+			mirror: "/var/lib/hobo-ci/git/Org/Repo.git",
+		}));
+		const f = await launchFixture({
+			gitMirror: {
+				pathFor: () => "/var/lib/hobo-ci/git/Org/Repo.git",
+				ensure,
+			},
+			headShaFor: async () => "a".repeat(40),
+		});
+
+		await f.controller.host.launch(f.lease.id);
+
+		expect(ensure).toHaveBeenCalledWith("Org/Repo", "a".repeat(40));
+		expect(f.log).toHaveBeenCalledWith(
+			"hobo_ci_git_mirror",
+			expect.objectContaining({
+				status: "hit",
+				repository: "Org/Repo",
+				mirror: "/var/lib/hobo-ci/git/Org/Repo.git",
+			}),
+		);
+	});
+
 	it("logs the failed launch stage and job identity", async () => {
 		const f = await launchFixture();
 

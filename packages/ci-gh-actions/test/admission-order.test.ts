@@ -80,6 +80,18 @@ it("looks each run up once and retries a failed lookup next tick", async () => {
 	expect(calls).toEqual([2, 1, 2]);
 });
 
+it("exposes the primed head sha for a run", async () => {
+	const { github } = transport(new Map());
+	const order = createAdmissionOrder(github);
+	order.prime({
+		runId: 9,
+		event: "push",
+		runStartedAt: "2026-10-26T12:00:00Z",
+		headSha: "a".repeat(40),
+	});
+	expect(await order.headSha(ref(9))).toBe("a".repeat(40));
+});
+
 it("ranks the trunk-only label ahead of pull requests when run lookups fail", async () => {
 	const { github } = transport(
 		new Map([
