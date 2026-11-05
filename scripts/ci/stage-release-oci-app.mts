@@ -186,11 +186,6 @@ function turboBuild(root: string, filters: readonly string[]): void {
 	run(root, "pnpm", releaseOciTurboBuildArgs(root, filters));
 }
 
-/** Turbo-build every allowlisted SDK package before `npm pack` staging. */
-export function buildReleaseSdkPackages(root: string = defaultRoot): void {
-	turboBuild(root, SDK_PACKAGES);
-}
-
 function installSdkTarballsIntoApp(appDir: string, artifactsDir: string): void {
 	const tarballs = orderedSdkTarballPaths(artifactsDir);
 	run(appDir, "npm", [

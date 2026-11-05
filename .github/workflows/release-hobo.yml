@@ -291,6 +291,9 @@ jobs:
             local id="$1"
             echo "::group::${id}"
             local ok=1
+            if [ "$id" = "hobo-cli" ] || [ "$id" = "hobo-mcp" ]; then
+              build hobo-sdk --keep-candidate || ok=0
+            fi
             if [ "$id" = "hobo-mcp" ] && ! docker image inspect hobo-cli:candidate >/dev/null 2>&1; then
               build hobo-cli --keep-candidate || ok=0
             fi
@@ -312,7 +315,7 @@ jobs:
           pids=()
           ids=()
           for id in $IMAGE_IDS; do
-            if [ "$id" = "hobo-mcp" ]; then continue; fi
+            if [ "$id" = "hobo-mcp" ] || [ "$id" = "hobo-cli" ]; then continue; fi
             build_one "$id" &
             pids+=("$!")
             ids+=("$id")
@@ -320,6 +323,9 @@ jobs:
           for i in "${!pids[@]}"; do
             if ! wait "${pids[$i]}"; then failed+=("${ids[$i]}"); fi
           done
+          if [[ " $IMAGE_IDS " == *" hobo-cli "* ]]; then
+            if ! build_one hobo-cli; then failed+=("hobo-cli"); fi
+          fi
           if [[ " $IMAGE_IDS " == *" hobo-mcp "* ]]; then
             if ! build_one hobo-mcp; then failed+=("hobo-mcp"); fi
           fi
