@@ -84,3 +84,38 @@ export async function waitForIsolatedWorkerDrain(options: {
 	const remaining = await count();
 	return { drained: remaining === 0, remaining };
 }
+
+export type WorkerStopMode = "handoff" | "drain";
+
+export function parseWorkerStopMode(value: string | undefined): WorkerStopMode {
+	if (value === undefined || value === "" || value === "handoff")
+		return "handoff";
+	if (value === "drain") return "drain";
+	throw new Error("invalid HOBO_CI_WORKER_STOP_MODE");
+}
+
+export async function stopIsolatedWorker(options: {
+	mode: WorkerStopMode;
+	inFlight: () => Promise<number>;
+	reconcile: () => Promise<void>;
+	pollMs: number;
+	timeoutMs: number;
+	onWaiting?: (remaining: number) => void;
+	sleep?: (ms: number) => Promise<void>;
+	now?: () => number;
+}): Promise<{
+	mode: WorkerStopMode;
+	drained: boolean;
+	remaining: number;
+}> {
+	if (options.mode === "handoff") {
+		await options.reconcile().catch(() => undefined);
+		return {
+			mode: "handoff",
+			drained: false,
+			remaining: await options.inFlight(),
+		};
+	}
+	const result = await waitForIsolatedWorkerDrain(options);
+	return { mode: "drain", ...result };
+}

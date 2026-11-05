@@ -71,6 +71,56 @@ export function tryParseReleaseRef(ref: string): ParsedReleaseRef | undefined {
 	}
 }
 
+/** CI staging refs (PR / merge queue / dispatch) → valid semver for npm pack + OCI labels. */
+export function stagingSemverFromRef(ref: string): string | undefined {
+	const trimmed = ref.trim();
+	const pr = /^pr-(.+)$/.exec(trimmed);
+	if (pr) {
+		const suffix = pr[1] ?? "";
+		if (/^[1-9]\d*$/.test(suffix)) {
+			return `0.0.0-pr.${suffix}`;
+		}
+		const slug = suffix
+			.toLowerCase()
+			.replace(/[^0-9a-z-]+/g, "-")
+			.replace(/^-+|-+$/g, "");
+		if (!slug) {
+			throw new Error(`invalid pr staging ref: ${ref}`);
+		}
+		const version = `0.0.0-pr.${slug}`;
+		assertSemver(version);
+		return version;
+	}
+	const merge = /^merge-(.+)$/.exec(trimmed);
+	if (merge) {
+		const slug = (merge[1] ?? "")
+			.toLowerCase()
+			.replace(/[^0-9a-z-]+/g, "-")
+			.replace(/^-+|-+$/g, "")
+			.slice(0, 40);
+		if (!slug) {
+			throw new Error(`invalid merge staging ref: ${ref}`);
+		}
+		const version = `0.0.0-merge.${slug}`;
+		assertSemver(version);
+		return version;
+	}
+	const mergeQueue = /^gh-readonly-queue\/[^/]+\/pr-(\d+)-([0-9a-f]+)$/i.exec(
+		trimmed,
+	);
+	if (mergeQueue) {
+		const prNumber = mergeQueue[1] ?? "";
+		const sha7 = (mergeQueue[2] ?? "").slice(0, 7).toLowerCase();
+		if (!/^[1-9]\d*$/.test(prNumber) || !/^[0-9a-f]{7}$/.test(sha7)) {
+			throw new Error(`invalid merge queue staging ref: ${ref}`);
+		}
+		const version = `0.0.0-merge.pr-${prNumber}-${sha7}`;
+		assertSemver(version);
+		return version;
+	}
+	return undefined;
+}
+
 export function releaseSemverFromEnv(
 	env: NodeJS.ProcessEnv = process.env,
 ): string {
@@ -79,8 +129,8 @@ export function releaseSemverFromEnv(
 		return env.HOBO_RELEASE_SEMVER.trim();
 	}
 	const ref = env.HOBO_RELEASE_VERSION?.trim() ?? env.GITHUB_REF_NAME?.trim();
-	const prRef = ref ? /^pr-([1-9]\d*)$/.exec(ref) : undefined;
-	if (prRef) return `0.0.0-pr.${prRef[1]}`;
+	const staged = ref ? stagingSemverFromRef(ref) : undefined;
+	if (staged) return staged;
 	if (ref) return parseReleaseRef(ref).semver;
 	return "dev";
 }

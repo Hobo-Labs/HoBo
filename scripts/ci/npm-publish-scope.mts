@@ -74,6 +74,29 @@ function remapDeps(
 	return out;
 }
 
+const WORKSPACE_RANGE = /^workspace:/;
+
+/** Replace workspace ranges with the release semver for published @hobo-labs deps. */
+function pinReleaseDependencyRanges(
+	deps: Record<string, string> | undefined,
+	map: ScopeMap,
+	version: string,
+): Record<string, string> | undefined {
+	if (!deps) return deps;
+	const published = new Set(Object.values(map.packages));
+	const out: Record<string, string> = {};
+	for (const [name, range] of Object.entries(deps)) {
+		if (WORKSPACE_RANGE.test(range)) {
+			if (published.has(name)) {
+				out[name] = version;
+			}
+			continue;
+		}
+		out[name] = range;
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /** Returns a publish-ready manifest object (caller writes to staging dir). */
 export function applyScopeToManifest(
 	manifest: PackageJson,
@@ -87,10 +110,16 @@ export function applyScopeToManifest(
 	if (options?.version) {
 		out.version = options.version;
 	}
-	const deps = remapDeps(manifest.dependencies, map);
-	const devDeps = remapDeps(manifest.devDependencies, map);
-	const peerDeps = remapDeps(manifest.peerDependencies, map);
-	const optDeps = remapDeps(manifest.optionalDependencies, map);
+	let deps = remapDeps(manifest.dependencies, map);
+	let devDeps = remapDeps(manifest.devDependencies, map);
+	let peerDeps = remapDeps(manifest.peerDependencies, map);
+	let optDeps = remapDeps(manifest.optionalDependencies, map);
+	if (options?.version) {
+		deps = pinReleaseDependencyRanges(deps, map, options.version);
+		devDeps = pinReleaseDependencyRanges(devDeps, map, options.version);
+		peerDeps = pinReleaseDependencyRanges(peerDeps, map, options.version);
+		optDeps = pinReleaseDependencyRanges(optDeps, map, options.version);
+	}
 	if (deps) out.dependencies = deps;
 	else delete out.dependencies;
 	if (devDeps) out.devDependencies = devDeps;

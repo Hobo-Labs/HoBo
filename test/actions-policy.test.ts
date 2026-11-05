@@ -3,8 +3,8 @@ import { spawnSync } from "node:child_process";
 import {
 	mkdir,
 	mkdtemp,
-	readFile,
 	readdir,
+	readFile,
 	rm,
 	writeFile,
 } from "node:fs/promises";
@@ -25,12 +25,22 @@ const template = await readFile(
 );
 const enabled = "hobo-ci-acceptance.yml";
 
-async function fixture(workflows: Record<string, string> = {}) {
+async function fixture(
+	workflows: Record<string, string> = {},
+	disabled: Record<string, string> = {},
+) {
 	const root = await mkdtemp(join(tmpdir(), "hobo-actions-policy-"));
 	onTestFinished(() => rm(root, { recursive: true, force: true }));
 	await mkdir(join(root, ".github/workflows"), { recursive: true });
 	for (const [name, text] of Object.entries(workflows))
 		await writeFile(join(root, ".github/workflows", name), text);
+	if (Object.keys(disabled).length > 0) {
+		await mkdir(join(root, ".github/workflows-disabled"), {
+			recursive: true,
+		});
+		for (const [name, text] of Object.entries(disabled))
+			await writeFile(join(root, ".github/workflows-disabled", name), text);
+	}
 	return root;
 }
 function lint(root: string) {
@@ -157,6 +167,44 @@ jobs:
 });
 const trunkRunsOn =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+
+test("repo-local composite actions require a prior pinned actions/checkout step", async () => {
+	const disabledBad = `name: x
+on:
+  workflow_dispatch:
+jobs:
+  job:
+    if: \${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/hobo-checkout
+`;
+	const disabledGood = `name: x
+on:
+  workflow_dispatch:
+jobs:
+  job:
+    if: \${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/hobo-checkout
+`;
+	const badResult = lint(
+		await fixture({}, { "local-action-guard.yml": disabledBad }),
+	);
+	assert.equal(badResult.status, 1);
+	assert.match(
+		badResult.stderr,
+		/repo-local action \.\/\.github\/actions\/hobo-checkout must follow a pinned actions\/checkout step/,
+	);
+	assert.equal(
+		lint(await fixture({}, { "local-action-guard.yml": disabledGood })).status,
+		0,
+	);
+});
 
 test("default-path checkouts on box runners keep the deps layer with clean false", async () => {
 	const workflow = (inputs: string, runsOn = "hobo") => `name: HoBo CI Fabric

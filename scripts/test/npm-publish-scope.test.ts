@@ -21,4 +21,21 @@ describe("npm-publish-scope", () => {
 		);
 		assert.equal(staged.name, "@hobo-labs/pricing");
 	});
+
+	it("pins mapped workspace deps to the release semver for npm pack", () => {
+		const map = loadNpmScopeMap();
+		const staged = applyScopeToManifest(
+			{
+				name: "@hobo/cli",
+				dependencies: {
+					"@hobo/core": "workspace:*",
+					"@hobo/cloud": "workspace:*",
+				},
+			},
+			map,
+			{ version: "0.0.0-alpha.1" },
+		);
+		assert.equal(staged.dependencies?.["@hobo-labs/core"], "0.0.0-alpha.1");
+		assert.equal(staged.dependencies?.["@hobo/cloud"], undefined);
+	});
 });

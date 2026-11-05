@@ -3,9 +3,12 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ciRunnerImageVersion } from "./ci-runner-contract.mts";
 
+export const DEPS_LAYER_BUCKET_SCRIPT_PATH =
+	"scripts/ci/deps-layer-buckets.mts";
 export const DEPS_BUILD_RECIPE_PATHS = [
 	"packages/ci-gh-actions/deploy/ci-runner/deps/Dockerfile",
 	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
+	DEPS_LAYER_BUCKET_SCRIPT_PATH,
 	"scripts/ci/deps-layer.mts",
 ] as const;
 
@@ -80,6 +83,100 @@ function updateHash(
 	hash.update(String(valueBytes.length)).update(":").update(valueBytes);
 }
 
+type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
+interface JsonObject {
+	readonly [key: string]: JsonValue;
+}
+
+function sortJsonObjectKeys(value: JsonValue): JsonValue {
+	if (value === null) return value;
+	if (Array.isArray(value)) return value.map(sortJsonObjectKeys);
+	if (Object.getPrototypeOf(value) !== Object.prototype) return value;
+	const sorted: JsonObject = Object.fromEntries(
+		Object.entries(value)
+			.sort(([left], [right]) => (left === right ? 0 : left < right ? -1 : 1))
+			.map(([key, entry]) => [key, sortJsonObjectKeys(entry)]),
+	);
+	return sorted;
+}
+
+const DEPENDENCY_MANIFEST_FIELDS = new Set([
+	"name",
+	"version",
+	"dependencies",
+	"devDependencies",
+	"optionalDependencies",
+	"peerDependencies",
+	"peerDependenciesMeta",
+	"dependenciesMeta",
+	"bundleDependencies",
+	"bundledDependencies",
+	"bin",
+	"directories",
+	"publishConfig",
+	"os",
+	"cpu",
+	"libc",
+	"engines",
+	"devEngines",
+	"packageManager",
+	"workspaces",
+	"overrides",
+	"resolutions",
+]);
+const DIRECTORY_MANIFEST_FIELDS = new Set(["bin"]);
+const PUBLISH_CONFIG_MANIFEST_FIELDS = new Set([
+	"directory",
+	"bin",
+	"linkDirectory",
+]);
+
+function pickNestedManifestFields(
+	value: JsonValue,
+	fields: ReadonlySet<string>,
+): JsonObject {
+	if (
+		value === null ||
+		Array.isArray(value) ||
+		Object.getPrototypeOf(value) !== Object.prototype
+	)
+		return {};
+	return Object.fromEntries(
+		Object.entries(value).filter(([key]) => fields.has(key)),
+	);
+}
+
+export function normalizeDepsManifest(
+	manifest: string,
+	rootManifest = false,
+): string {
+	const parsed: JsonObject = JSON.parse(manifest);
+	const installInputs: JsonObject = Object.fromEntries(
+		Object.entries(parsed)
+			.filter(
+				([key]) =>
+					DEPENDENCY_MANIFEST_FIELDS.has(key) ||
+					(rootManifest && key === "pnpm"),
+			)
+			.flatMap(([key, value]): Array<[string, JsonValue]> => {
+				if (key === "directories" || key === "publishConfig") {
+					const nested = pickNestedManifestFields(
+						value,
+						key === "directories"
+							? DIRECTORY_MANIFEST_FIELDS
+							: PUBLISH_CONFIG_MANIFEST_FIELDS,
+					);
+					return Object.keys(nested).length === 0
+						? []
+						: [[key, sortJsonObjectKeys(nested)]];
+				}
+				return [[key, sortJsonObjectKeys(value)]];
+			})
+			.sort(([left], [right]) => (left === right ? 0 : left < right ? -1 : 1)),
+	);
+	return `${JSON.stringify(installInputs)}\n`;
+}
+
 export function depsKeyFromInputs(inputs: DepsKeyInputs): string {
 	if (!/^linux\/[a-z0-9]+$/.test(inputs.platform))
 		throw new Error(`invalid deps platform: ${inputs.platform}`);
@@ -97,7 +194,7 @@ export function depsKeyFromInputs(inputs: DepsKeyInputs): string {
 		const manifest = inputs.manifests[path];
 		if (manifest === undefined)
 			throw new Error(`missing importer manifest: ${path}`);
-		updateHash(hash, path, manifest);
+		updateHash(hash, path, normalizeDepsManifest(manifest, importer === "."));
 	}
 	for (const path of DEPS_BUILD_RECIPE_PATHS) {
 		const recipe = inputs.buildRecipe[path];
@@ -186,7 +283,28 @@ export function depsContextPaths(root: string): string[] {
 			? []
 			: [".pnpmfile.cjs"]),
 		...Object.keys(patchFiles(root)).sort(),
+		DEPS_LAYER_BUCKET_SCRIPT_PATH,
 	];
+}
+
+export function readDepsContextFiles(
+	root: string,
+): Readonly<Record<string, string>> {
+	const lockfile = readFileSync(join(root, "pnpm-lock.yaml"), "utf8");
+	const manifests = new Set(
+		listWorkspaceImporters(lockfile).map(importerManifestPath),
+	);
+	return Object.fromEntries(
+		depsContextPaths(root).map((path) => {
+			const contents = readFileSync(join(root, path), "utf8");
+			return [
+				path,
+				manifests.has(path)
+					? normalizeDepsManifest(contents, path === importerManifestPath("."))
+					: contents,
+			];
+		}),
+	);
 }
 
 export function depsKeyForRoot(

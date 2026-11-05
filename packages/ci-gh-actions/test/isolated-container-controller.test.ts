@@ -19,6 +19,7 @@ function workDirectory() {
 			files: 100,
 			ffree: 100,
 		})),
+		device: vi.fn(async () => 1),
 		jobDirectories: vi.fn(async () => []),
 		prepareJobDirectory: vi.fn(async () => undefined),
 		removeJobDirectory,
