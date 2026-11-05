@@ -36,6 +36,7 @@ import {
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
+	singleFlight,
 	stopIsolatedWorker,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
@@ -190,6 +191,14 @@ const configuredGcIntervalMs = Number(
 if (!Number.isFinite(configuredGcIntervalMs) || configuredGcIntervalMs < 60_000)
 	throw new Error("invalid HOBO_CI_WORKER_GC_MS");
 const gcIntervalMs = Math.min(configuredGcIntervalMs, 5 * 60_000);
+const pnpmStorePruneIntervalMs = Number(
+	process.env.HOBO_CI_PNPM_STORE_PRUNE_INTERVAL_MS ?? "21600000",
+);
+if (
+	!Number.isSafeInteger(pnpmStorePruneIntervalMs) ||
+	pnpmStorePruneIntervalMs < 60_000
+)
+	throw new Error("invalid HOBO_CI_PNPM_STORE_PRUNE_INTERVAL_MS");
 
 let store: HostedInboxStore & IsolatedWorkerStore;
 let closeStore: () => Promise<void>;
@@ -293,8 +302,21 @@ const storageAdmission = createWorkerStorageAdmission({
 	fs: workFs,
 	docker,
 	pnpmStore: pnpmStore
-		? createPnpmStoreMaintenance({ path: pnpmStore, env: process.env })
+		? createPnpmStoreMaintenance({
+				path: pnpmStore,
+				env: process.env,
+				minIntervalMs: pnpmStorePruneIntervalMs,
+			})
 		: undefined,
+	pnpmStoreIdle: async () => {
+		if (!pnpmStore) return false;
+		try {
+			if ((await store.activeLeases()).length !== 0) return false;
+			return (await docker.containersUsingVolume(pnpmStore)) === 0;
+		} catch {
+			return false;
+		}
+	},
 	builderCacheCap:
 		process.env.HOBO_CI_WORKER_BUILDER_CACHE_CAP ??
 		process.env.HOBO_CI_WORKER_BUILDER_KEEP_STORAGE ??
@@ -441,20 +463,24 @@ let tickInFlight: Promise<void> | undefined;
 let jobPollInFlight: Promise<void> | undefined;
 let gcInFlight: Promise<void> | undefined;
 
+const reconcileAndLaunch = singleFlight(async () => {
+	const reconciliation = await worker.reconcileLeases();
+	liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+	if (!reconciliation.inventoryKnown) return;
+	// In push mode the hosted relay drains the shared inbox; in pull mode
+	// this worker is the only consumer of its own.
+	await runtime.tick({ maxDeliveries: poller ? 10 : 0 });
+});
+
 function runTick(): Promise<void> {
+	if (tickInFlight) return tickInFlight;
 	if (draining || gcInFlight) return Promise.resolve();
-	const current = (async () => {
-		const reconciliation = await worker.reconcileLeases();
-		liveWorkerLeaseIds = reconciliation.liveLeaseIds;
-		if (!reconciliation.inventoryKnown) return;
-		// In push mode the hosted relay drains the shared inbox; in pull mode
-		// this worker is the only consumer of its own.
-		await runtime.tick({ maxDeliveries: poller ? 10 : 0 });
-	})();
-	tickInFlight = current.finally(() => {
-		if (tickInFlight === current) tickInFlight = undefined;
+	const current = reconcileAndLaunch();
+	const tracked = current.finally(() => {
+		if (tickInFlight === tracked) tickInFlight = undefined;
 	});
-	return tickInFlight;
+	tickInFlight = tracked;
+	return tracked;
 }
 
 function runJobPoll(): void {
@@ -511,7 +537,9 @@ function runGc(): void {
 	if (draining || gcInFlight || tickInFlight) return;
 	gcInFlight = store
 		.activeLeases()
-		.then((leases) => storageAdmission.maintain(storageLeases(leases)))
+		.then((leases) =>
+			storageAdmission.maintain(storageLeases(leases), { pnpmStore: true }),
+		)
 		.catch((error) => {
 			log("hobo_ci_isolated_worker_gc_failed", {
 				message: error instanceof Error ? error.message : "unknown",
@@ -542,6 +570,7 @@ log("hobo_ci_isolated_worker_started", {
 	lendTrunkSlots,
 	workRoot,
 	pnpmStoreMounted: pnpmStore !== "",
+	pnpmStorePruneIntervalMs,
 	gcIntervalMs,
 	drainTimeoutMs,
 	stopMode,

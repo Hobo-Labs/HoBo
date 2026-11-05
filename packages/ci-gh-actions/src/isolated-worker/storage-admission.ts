@@ -39,13 +39,27 @@ export type WorkerStorageDockerDriver = Readonly<{
 	dataRoot(): Promise<string>;
 	pruneBuilder(keepStorage: string): Promise<void>;
 	containerExists(name: string): Promise<boolean>;
+	containersUsingVolume(source: string): Promise<number>;
 	listImages(): Promise<readonly WorkerImage[]>;
 	removeImage(tag: string): Promise<void>;
 	pruneDanglingImages(): Promise<void>;
 }>;
 
+export type PnpmStorePruneResult =
+	| "pruned"
+	| "in-flight"
+	| "locked"
+	| "rate-limited"
+	| "busy"
+	| "failed";
+
+export type PnpmStorePruneOutcome = Readonly<{
+	result: PnpmStorePruneResult;
+	ms: number;
+}>;
+
 export type WorkerStoragePnpmStore = Readonly<{
-	prune(): Promise<void>;
+	prune(idle: () => Promise<boolean>): Promise<PnpmStorePruneOutcome>;
 }>;
 
 export type WorkerStorageLease = Readonly<{
@@ -58,6 +72,7 @@ export type WorkerStorageLog = (
 	event:
 		| "hobo_ci_inode_pressure"
 		| "hobo_ci_inode_reserve_wait"
+		| "hobo_ci_pnpm_store_prune"
 		| "hobo_ci_storage_admission_wait"
 		| "hobo_ci_storage_prune_failed",
 	fields: Readonly<Record<string, string | number | boolean>>,
@@ -179,6 +194,7 @@ export function createWorkerStorageAdmission(options: {
 	fs: WorkerStorageFileSystem;
 	docker: WorkerStorageDockerDriver;
 	pnpmStore?: WorkerStoragePnpmStore;
+	pnpmStoreIdle?: () => Promise<boolean>;
 	builderCacheCap?: string;
 	softLimit?: number;
 	hardLimit?: number;
@@ -206,6 +222,8 @@ export function createWorkerStorageAdmission(options: {
 	let hardEpisode = false;
 	let reserveEpisode = false;
 	let unavailable = false;
+	let pnpmPruneInFlight = false;
+	let pnpmPruneWaitLogged = false;
 
 	async function sample(): Promise<StorageSample[]> {
 		return Promise.all(
@@ -326,7 +344,10 @@ export function createWorkerStorageAdmission(options: {
 		}
 	}
 
-	async function maintain(activeLeases: readonly WorkerStorageLease[]) {
+	async function maintain(
+		activeLeases: readonly WorkerStorageLease[],
+		maintenance: Readonly<{ pnpmStore?: boolean }> = {},
+	) {
 		await attempt("builder", () =>
 			options.docker.pruneBuilder(options.builderCacheCap ?? "4GB"),
 		);
@@ -344,8 +365,28 @@ export function createWorkerStorageAdmission(options: {
 			options.docker.pruneDanglingImages(),
 		);
 		const pnpmStore = options.pnpmStore;
-		if (pnpmStore && activeLeases.length === 0)
-			await attempt("pnpm-store", () => pnpmStore.prune());
+		if (
+			pnpmStore &&
+			maintenance.pnpmStore === true &&
+			activeLeases.length === 0
+		) {
+			pnpmPruneInFlight = true;
+			try {
+				const { result, ms } = await pnpmStore.prune(
+					options.pnpmStoreIdle ?? (async () => false),
+				);
+				if (result !== "rate-limited")
+					options.log?.("hobo_ci_pnpm_store_prune", { result, ms });
+			} catch (error) {
+				options.log?.("hobo_ci_storage_prune_failed", {
+					operation: "pnpm-store",
+					message: error instanceof Error ? error.message : "unknown",
+				});
+			} finally {
+				pnpmPruneInFlight = false;
+				pnpmPruneWaitLogged = false;
+			}
+		}
 		await reap(activeLeases);
 	}
 
@@ -359,6 +400,14 @@ export function createWorkerStorageAdmission(options: {
 			activeLeases: readonly WorkerStorageLease[],
 			jobId: string,
 		): Promise<boolean> {
+			if (pnpmPruneInFlight) {
+				if (!pnpmPruneWaitLogged)
+					options.log?.("hobo_ci_storage_admission_wait", {
+						message: "pnpm store prune in progress",
+					});
+				pnpmPruneWaitLogged = true;
+				return false;
+			}
 			reconcile(activeLeases);
 			let before: StorageSample[];
 			try {
