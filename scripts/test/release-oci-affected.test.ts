@@ -17,6 +17,7 @@ import {
 	clearReleaseOciGitTreeCache,
 	imageInputs,
 	isBuildInput,
+	isReleaseOciLayerNoise,
 	releaseInputGitTree,
 	type ImageInputs,
 	type RepoTree,
@@ -260,6 +261,29 @@ describe("affected release OCI images", () => {
 		expect(
 			affected({ "scripts/ci/release-oci-affected.mts": "// detector\n" }),
 		).toEqual([]);
+		expect(
+			affected({
+				"packages/ci-gh-actions/deploy/ci-runner/README.md": "# docs\n",
+			}),
+		).toEqual([]);
+		expect(
+			affected({ "scripts/lib/deps-key.mts": "export const x = 1;\n" }),
+		).toEqual([]);
+		expect(
+			affected({ "scripts/ci/deps-layer.mts": "export const x = 1;\n" }),
+		).toEqual([]);
+		expect(
+			affected({ "scripts/test/ci-deps-image-contract.test.ts": "it(1);\n" }),
+		).toEqual([]);
+		expect(
+			isReleaseOciLayerNoise(
+				"packages/ci-gh-actions/deploy/ci-runner/README.md",
+			),
+		).toBe(true);
+		expect(isReleaseOciLayerNoise("scripts/ci/deps-layer.mts")).toBe(true);
+		expect(
+			isReleaseOciLayerNoise("scripts/ci/build-release-oci-image.mts"),
+		).toBe(false);
 	});
 
 	it("follows the lockfile closure, including runtime dependents", () => {
