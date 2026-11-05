@@ -65,14 +65,14 @@ describe("Main full gate S0 sparse checkout", () => {
 		);
 	});
 
-	it("starts the full-history secret scan immediately after S0 checkout", () => {
+	it("starts the gate-range secret scan immediately after S0 checkout", () => {
 		const checkout = mainGate.indexOf(
 			"name: Checkout (sparse S0, full history)",
 		);
 		const start = mainGate.indexOf(
-			"name: Start secret scan (full history, background)",
+			"name: Start secret scan (gate range, background)",
 		);
-		const wait = mainGate.indexOf("name: Secret scan (full history)");
+		const wait = mainGate.indexOf("name: Secret scan (gate range)");
 		const workspace = mainGate.indexOf("name: Workspace tests");
 		const prune = mainGate.indexOf("name: Prune Turbo cache");
 		expect(checkout).toBeGreaterThan(-1);
@@ -84,9 +84,9 @@ describe("Main full gate S0 sparse checkout", () => {
 			workflow.indexOf("\n  main-gate:"),
 		);
 		expect(imageJob).not.toContain(
-			"Start secret scan (full history, background)",
+			"Start secret scan (gate range, background)",
 		);
-		expect(imageJob).not.toContain("Secret scan (full history)");
+		expect(imageJob).not.toContain("Secret scan (gate range)");
 	});
 
 	it("covers every required S0 input", () => {

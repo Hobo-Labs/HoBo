@@ -69,8 +69,8 @@ describe("Main full gate image dependency", () => {
 		const mainNames = mainGate.steps.map((step) => step.name);
 		const imageNames = imageJob.steps.map((step) => step.name);
 		const checkout = "Checkout (sparse S0, full history)";
-		const start = "Start secret scan (full history, background)";
-		const wait = "Secret scan (full history)";
+		const start = "Start secret scan (gate range, background)";
+		const wait = "Secret scan (gate range)";
 		const checkoutIndex = mainGate.steps.findIndex(
 			(step) =>
 				step.name === checkout &&
