@@ -25,6 +25,7 @@ import {
 	SandboxPricingSchema,
 } from "./_generated/ci_pb.js";
 import { allocationQuote } from "./accounting.js";
+import { shouldAbortIsolatedFleetLease } from "./fleet-overflow.js";
 import { effectiveCiAccount, parseCiPolicy } from "./policy.js";
 import { ACTIVE_STATES, route } from "./routing.js";
 import {
@@ -1109,15 +1110,20 @@ export class PostgresCiStore {
 			"running",
 			"uncertain",
 		]);
-		const isolatedProviders = new Set([
-			"vercel",
-			"kubernetes",
-			"hobo-box-worker",
-		]);
 		return this.tx(async (c) => {
 			const lease = await this.readLease(c, id);
 			if (!lease || !recoverable.has(lease.state)) return;
-			if (!isolatedProviders.has(lease.provider)) return;
+			const configuration = (await this.readConfiguration(c))?.configuration;
+			const offer = configuration?.accounts
+				.find((account) => account.id === lease.accountId)
+				?.offers.find((candidate) => candidate.id === lease.offerId);
+			if (
+				!shouldAbortIsolatedFleetLease(
+					lease.provider,
+					offer ? { backend: offer.backend, runsOn: offer.runsOn } : undefined,
+				)
+			)
+				return;
 			lease.state = "cancelled";
 			await this.append(c, lease, "ci.LeaseCancelled", at);
 			await this.queueInside(c, job, at);

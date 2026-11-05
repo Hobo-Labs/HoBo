@@ -42,6 +42,7 @@ describe("kind-specific CI policy provider shapes", () => {
 		"desired-policy-scale-set-wrong-kind",
 		"desired-policy-scale-set-and-engine",
 		"desired-policy-location-wrong-kind",
+		"desired-policy-github-latest",
 	])("rejects %s", (name) => {
 		expect(() => parseCiPolicy(fixture("invalid", name))).toThrow();
 	});
