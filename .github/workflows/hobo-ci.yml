@@ -509,12 +509,90 @@ jobs:
       cancel-in-progress: false
     env:
       GITHUB_EVENT_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+      S0_SPARSE_PATHS: |
+        .agents
+        .changeset
+        .claude
+        .codex
+        .cursor
+        .devcontainer
+        .githooks
+        .github
+        .hobo
+        .impeccable
+        .mise
+        .optimizexp
+        .repo
+        ast-grep
+        contrib
+        deploy
+        docs
+        examples
+        external
+        features
+        packages
+        plans
+        release
+        scripts
+        site
+        src
+        test
+        tools
+        workflows
+        mise.toml
+        mise.lock
+        package.json
+        pnpm-lock.yaml
+        pnpm-workspace.yaml
+        turbo.json
+        tsconfig.base.json
+        .env.example
+        .gitattributes
+        .gitignore
+        .gitleaks.toml
+        .gitmodules
+        .mcp.json
+        AGENTS.md
+        AUTH.md
+        CLAUDE.md
+        CODE_OF_CONDUCT.md
+        CONTRIBUTING.md
+        DX.md
+        GAPS.md
+        LICENSE
+        NOTES.md
+        PRODUCT.md
+        README.md
+        SECURITY.md
+        SUPPORT.md
+        biome.json
+        buf.gen.yaml
+        cucumber.yaml
+        konsistent.json
+        oxlint.config.ts
+        sgconfig.yml
+        skills-lock.json
+        stryker.scripts.conf.json
+        tsconfig.json
+        vitest.config.ts
+        vitest.coverage.config.ts
+        vitest.mutation.config.ts
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          submodules: recursive
           clean: false
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - name: Checkout (sparse S0, full history)
+        uses: ./.github/actions/hobo-checkout
+        with:
           fetch-depth: 0
+          sparse-paths: ${{ env.S0_SPARSE_PATHS }}
+          submodules: "false"
       - name: Start secret scan (full history, background)
         shell: bash
         run: |
