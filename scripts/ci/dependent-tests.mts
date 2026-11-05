@@ -29,7 +29,10 @@
  *
  * Node builtins only.
  *
- * CLI: `git diff --name-only BASE HEAD | node --experimental-strip-types scripts/ci/dependent-tests.mts [--run [turbo args…]]`
+ * CLI: `git diff --name-only BASE HEAD | node --experimental-strip-types scripts/ci/dependent-tests.mts [--base=BASE] [--run [turbo args…]]`
+ * `--base` compares root package.json/turbo.json against the merge base, so
+ * scripts-only manifest edits and `//#` task edits stay scoped exactly as
+ * the workflow's affected-lanes step scoped them; omitting it widens.
  * prints the plan; `--run` also runs it (one turbo call for the whole suites
  * and every build the subsets need, then each subset's test task alone with
  * its files passed through to vitest; the other arguments go to the first
@@ -39,7 +42,11 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { posix } from "node:path";
 import process from "node:process";
-import { affectedLanes } from "./affected-lanes.mts";
+import {
+	affectedLanes,
+	cliRootFileReader,
+	type ReadRootFile,
+} from "./affected-lanes.mts";
 import { readWorkspaces, type Workspace } from "./job-scope.mts";
 
 /** Repository access, injectable so tests can describe a tree in memory. */
@@ -390,6 +397,7 @@ export function createWalker(repo: Repo) {
 export function planDependentTests(
 	changedPaths: readonly string[],
 	repo: Repo,
+	readRootFile?: ReadRootFile,
 ): TestPlan {
 	const changed = changedPaths
 		.map((path) => path.trim())
@@ -397,7 +405,15 @@ export function planDependentTests(
 	const outside = changed.filter(
 		(path) => !repo.workspaces.some((ws) => path.startsWith(`${ws.dir}/`)),
 	);
-	const lanes = affectedLanes(changed, (path) => repo.files.has(path));
+	// The root reader keeps this planner consistent with the workflow's
+	// lane decision: without it a scripts-only root package.json edit the
+	// workflow scoped still widens here to the whole workspace.
+	const lanes = affectedLanes(
+		changed,
+		(path) => repo.files.has(path),
+		undefined,
+		readRootFile,
+	);
 	if (lanes.mode === "all" && (outside.length > 0 || changed.length === 0))
 		return { mode: "all", reason: lanes.reason };
 	const walker = createWalker(repo);
@@ -651,14 +667,21 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 		},
 		workspaces: readWorkspaces(),
 	};
-	const plan = planDependentTests(input.split("\n"), repo);
-	console.log(describePlan(plan));
 	const args = process.argv.slice(2);
+	const baseArgument = args.find((arg) => arg.startsWith("--base="));
+	const plan = planDependentTests(
+		input.split("\n"),
+		repo,
+		baseArgument === undefined
+			? undefined
+			: cliRootFileReader(baseArgument.slice("--base=".length)),
+	);
+	console.log(describePlan(plan));
 	if (args.includes("--run"))
 		process.exit(
 			runPlan(
 				plan,
-				args.filter((arg) => arg !== "--run"),
+				args.filter((arg) => arg !== "--run" && arg !== baseArgument),
 			),
 		);
 }

@@ -15,7 +15,7 @@ Ship-remediation WP-D ([`docs/plans/0012-ship-remediation-plan.md`](../plans/001
 |---|---|
 | Trigger | **Manual only** — [`.github/workflows/publish.yml`](../../.github/workflows/publish.yml) is `workflow_dispatch` only. **Never** on `pull_request`. |
 | CI gate | Real publish requires **green** main CI (including artifact-trust when that job is restored). Until runners/secrets are healthy, the workflow dry-runs only. |
-| Secret | `NPM_TOKEN` repository secret. Workflow **fails closed** when absent (no publish path opens). Do not commit tokens. |
+| Secret | Optional **`NPM_TOKEN`** on the protected **`release`** environment. Empty → OIDC trusted publishing on GitHub-hosted **`release-npm`**; non-empty → **`NODE_AUTH_TOKEN`** + **`hobodev`** check. Do not commit tokens. |
 | Prerelease versions | First public line is **`0.1.0-alpha.<n>`** (semver prerelease). Do not jump to `1.0.0` without a separate go/no-go. Workspace packages may still carry `0.0.1` until the first publish bump. |
 | Allowlist freeze | Only packages listed below may leave `private: false` *and* be published. Immature packages stay `"private": true`. |
 | Dual bin | Product CLI binary is **`@hobo/hobo`** (`bin.hobo` + `bin.hobo-mcp`). **`@hobo/cli` is library-only** (no `bin`) to avoid npm bin name collisions. |

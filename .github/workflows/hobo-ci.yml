@@ -62,7 +62,7 @@ jobs:
     # so under the shared `hobo` label the runner the box launched for a main job went to an older
     # PR job instead. scripts/lint-actions.ts allows this expression and `hobo`, nothing else.
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 45
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -140,7 +140,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request')
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 45
+    timeout-minutes: 20
     # Any event can reuse an existing content-keyed image. Only PR misses build
     # and run the contract; non-PR misses defer to the publisher and daemon.
     # Local and GHCR candidates verify before non-PR promotion.
@@ -240,7 +240,8 @@ jobs:
     needs: ci-runner-image
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 25
+    # Target wall ~2–3 min; hard cap stays within the 20-minute workflow babysitter.
+    timeout-minutes: 12
     permissions:
       contents: read
     env:
@@ -289,6 +290,21 @@ jobs:
           BASE="$(node --import tsx scripts/ci/turbo-scm-base.mts)"
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
           git fetch origin "${{ github.base_ref }}"
+      # Shadow only: classifies non-meaningful (inert) paths and reports
+      # the lanes they would drop. Execution below is unchanged in every
+      # mode; HOBO_IMPACT_GATE=off disables the report.
+      - name: Impact classification (shadow)
+        if: github.event_name == 'pull_request' && vars.HOBO_IMPACT_GATE != 'off'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
+          HOBO_IMPACT_GATE: ${{ vars.HOBO_IMPACT_GATE || 'shadow' }}
+        run: |
+          set -euo pipefail
+          git diff --name-only "${TURBO_SCM_BASE}"...HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base="${TURBO_SCM_BASE}" \
+            > "$RUNNER_TEMP/impact-plan.json"
       - name: DCO sign-off check
         if: github.event_name == 'pull_request'
         continue-on-error: true
@@ -367,6 +383,18 @@ jobs:
             echo "scope=${scope}"
             echo "tests=${tests}"
           } >> "$GITHUB_OUTPUT"
+      - name: Impact classification (shadow)
+        if: github.event_name == 'merge_group' && steps.merge-group-base.outputs.base != '' && vars.HOBO_IMPACT_GATE != 'off'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          BASE: ${{ steps.merge-group-base.outputs.base }}
+          HOBO_IMPACT_GATE: ${{ vars.HOBO_IMPACT_GATE || 'shadow' }}
+        run: |
+          set -euo pipefail
+          git diff --name-only "$BASE" HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base="$BASE" --meaningful-out="$RUNNER_TEMP/impact-meaningful.txt" \
+            > "$RUNNER_TEMP/impact-plan.json"
       - name: S0 gate set
         if: github.event_name == 'merge_group'
         timeout-minutes: 12
@@ -385,9 +413,7 @@ jobs:
           fi
       - name: Workspace tests
         if: github.event_name == 'merge_group'
-        # The whole-workspace sweep (a lockfile/root-config change) is not held
-        # to the merge-group budget.
-        timeout-minutes: ${{ steps.merge-group-base.outputs.tests == 'affected' && 10 || 40 }}
+        timeout-minutes: ${{ steps.merge-group-base.outputs.tests == 'affected' && 10 || 20 }}
         env:
           TESTS: ${{ steps.merge-group-base.outputs.tests }}
           BASE: ${{ steps.merge-group-base.outputs.base }}
@@ -397,9 +423,12 @@ jobs:
           if [ "$TESTS" = "affected" ]; then
             # Changed packages run whole; their dependents run only the test files whose
             # import closure reaches a changed file (scripts/ci/dependent-tests.mts).
+            # --base keeps the planner's root-config scoping identical to the
+            # lane decision above. The impact classification is shadow-only:
+            # nothing consumes impact-meaningful.txt yet.
             git diff --name-only "$BASE" HEAD |
               node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
-                --run --anon-profile=turbo-profile.json
+                --base="$BASE" --run --anon-profile=turbo-profile.json
           else
             pnpm exec turbo run test \
               --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
@@ -426,7 +455,7 @@ jobs:
     name: PR off-path checks (ts-autocode surface, production packages)
     if: github.event_name == 'pull_request'
     runs-on: hobo
-    timeout-minutes: 25
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -706,9 +735,8 @@ jobs:
           pnpm run codegen:check:affected &&
           pnpm exec turbo run test --filter=@hobo-draft/s0-04-protobuf-cue-codegen --concurrency=100%
       - name: Workspace tests
-        # The whole-workspace sweep (weekly, or a lockfile/root-config change) is not held
-        # to the main-push budget.
-        timeout-minutes: ${{ steps.main-base.outputs.tests == 'affected' && 10 || 40 }}
+        # Weekly schedule gets the hour-long job budget; push/dispatch repo-wide sweeps stay ≤20.
+        timeout-minutes: ${{ github.event_name == 'schedule' && (steps.main-base.outputs.tests == 'affected' && 10 || 55) || (steps.main-base.outputs.tests == 'affected' && 10 || 20) }}
         env:
           TESTS: ${{ steps.main-base.outputs.tests }}
           BASE: ${{ steps.main-base.outputs.base }}
@@ -717,9 +745,11 @@ jobs:
           if [ "$TESTS" = "affected" ]; then
             # Changed packages run whole; their dependents run only the test files whose
             # import closure reaches a changed file (scripts/ci/dependent-tests.mts).
+            # --base keeps the planner's root-config scoping identical to the
+            # lane decision above.
             git diff --name-only "$BASE" HEAD |
               node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
-                --run --anon-profile=turbo-profile.json
+                --base="$BASE" --run --anon-profile=turbo-profile.json
           else
             pnpm exec turbo run test \
               --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
