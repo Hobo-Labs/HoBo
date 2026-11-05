@@ -65,6 +65,7 @@ unindexed new finding files as notices.
 - [Finding 49: the deps image build could not create its payload directory](./findings/0049-the-deps-image-build-could-not-create-its-payload-directory.md)
 - [Finding 59: the deps mount check needed tsx and misread the pnpm layout](./findings/0059-the-deps-mount-check-needed-tsx-and-misread-the-pnpm-layout.md)
 - [Finding 63: a dead runner left its GitHub job in progress](./findings/0063-a-dead-runner-left-its-github-job-in-progress.md)
+- [Finding 64: containerless launch failures thrashed worker leases](./findings/0064-containerless-launch-failures-thrashed-worker-leases.md)
 <!-- findings-index:end -->
 
 ## Data

@@ -494,13 +494,14 @@ describe("worker lease reconciliation", () => {
 		expect(remove).not.toHaveBeenCalled();
 	});
 
-	it("keeps a reservation inside its grace and releases it after the grace", async () => {
+	it("keeps a dispatching lease inside its grace and releases it after the grace", async () => {
 		let clock = NOW;
 		const lease = staleLease("00000000-0000-4000-8000-000000000001", 1);
-		lease.state = "reserved";
+		lease.state = "dispatching";
 		lease.sandboxName = "";
 		lease.sandboxSessionId = "";
-		lease.createdAt = new Date(NOW - 500).toISOString();
+		lease.createdAt = new Date(NOW - 20 * 60_000).toISOString();
+		lease.dispatchingAt = new Date(NOW - 500).toISOString();
 		const active = [lease];
 		const store = storeWith(active);
 		const reconciler = createWorkerLeaseReconciler({
@@ -563,10 +564,11 @@ describe("worker lease reconciliation", () => {
 
 	it("drains immediately when no lease has a live container", async () => {
 		const lease = staleLease("00000000-0000-4000-8000-000000000001", 1);
-		lease.state = "reserved";
+		lease.state = "dispatching";
 		lease.sandboxName = "";
 		lease.sandboxSessionId = "";
-		lease.createdAt = new Date(NOW).toISOString();
+		lease.createdAt = new Date(NOW - 20 * 60_000).toISOString();
+		lease.dispatchingAt = new Date(NOW).toISOString();
 		const active = [lease];
 		const store = storeWith(active);
 		const reconciler = createWorkerLeaseReconciler({
@@ -672,7 +674,18 @@ describe("worker lease reconciliation", () => {
 				});
 				const at = new Date(NOW - 3_600_000).toISOString();
 				await store.queue(job, at, 1);
-				expect(await store.reserve(account, job, at, 1)).toBeDefined();
+				const reserved = await store.reserve(account, job, at, 1);
+				if (!reserved) throw new Error("fixture reservation");
+				await store.transition(
+					reserved.id,
+					["reserved"],
+					(lease) => {
+						lease.state = "dispatching";
+					},
+					"ci.DispatchRequested",
+					at,
+					1,
+				);
 			}
 			expect(await store.activeLeases()).toHaveLength(2);
 			store.close();

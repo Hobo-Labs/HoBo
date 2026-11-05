@@ -58,6 +58,7 @@ export function createWorkerLeaseReconciler(options: {
 	afterRelease?: (lease: Lease) => Promise<void>;
 	onOrphanJob?: (candidate: OrphanJobCandidate) => void;
 	protectedContainerNames?: () => ReadonlySet<string>;
+	protectedLeaseIds?: () => ReadonlySet<string>;
 }) {
 	const now = options.now ?? Date.now;
 	const orphanGraceMs = options.orphanGraceMs ?? 2 * 60_000;
@@ -115,7 +116,10 @@ export function createWorkerLeaseReconciler(options: {
 				options.onOrphanJob?.(orphan);
 			}
 		}
-		const journalInUseMb = owned.reduce(
+		const launching = owned.filter(
+			(lease) => lease.state !== "reserved" || lease.sandboxName !== "",
+		);
+		const journalInUseMb = launching.reduce(
 			(total, lease) =>
 				total +
 				(lease.memoryMb >= 512 ? lease.memoryMb : options.workerMemoryMb),
@@ -124,14 +128,26 @@ export function createWorkerLeaseReconciler(options: {
 		if (containers.length === 0 && journalInUseMb > 0)
 			options.log?.("hobo_ci_memory_without_containers", {
 				inUseMb: journalInUseMb,
-				activeLeaseCount: owned.length,
+				activeLeaseCount: launching.length,
 			});
 		const liveLeaseIds = new Set<string>();
+		const protectedLeaseIds =
+			options.protectedLeaseIds?.() ?? new Set<string>();
 		for (const lease of owned) {
+			if (lease.state === "reserved" || protectedLeaseIds.has(lease.id)) {
+				liveLeaseIds.add(lease.id);
+				continue;
+			}
 			const container = containerFor(lease);
 			const createdMs = Date.parse(lease.createdAt);
-			const ageMs = Number.isFinite(createdMs)
-				? Math.max(0, now() - createdMs)
+			const dispatchingMs = Date.parse(lease.dispatchingAt);
+			const ageBaseMs =
+				["dispatching", "dispatched", "claiming"].includes(lease.state) &&
+				Number.isFinite(dispatchingMs)
+					? dispatchingMs
+					: createdMs;
+			const ageMs = Number.isFinite(ageBaseMs)
+				? Math.max(0, now() - ageBaseMs)
 				: 0;
 			let reason: string;
 			if (container?.state === "exited" || container?.state === "dead") {

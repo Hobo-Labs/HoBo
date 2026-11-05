@@ -136,6 +136,14 @@ export interface IsolatedWorkerStore extends HostedRelayStore {
 }
 
 type JobImage = Readonly<{ image: string; depsKey?: string }>;
+type LaunchStage =
+	| "prepare"
+	| "image"
+	| "create"
+	| "start"
+	| "transition"
+	| "jit"
+	| "runner";
 type DepsImageFallbackLog = {
 	event: "hobo_ci_deps_image_fallback";
 	image: string;
@@ -191,6 +199,8 @@ export function createIsolatedContainerController(options: {
 			| WorkerLeaseReconciliationEvent
 			| OrphanJobEvent
 			| "hobo_ci_container_oom"
+			| "hobo_ci_launch_failed"
+			| "hobo_ci_launch_parked"
 			| "hobo_ci_work_dir_removed"
 			| "hobo_ci_work_dir_remove_failed",
 		fields: Readonly<Record<string, string | number | boolean>>,
@@ -374,6 +384,7 @@ export function createIsolatedContainerController(options: {
 	let warm: WarmContainer | undefined;
 	let warming: Promise<void> | undefined;
 	const protectedWarmNames = new Set<string>();
+	const inFlightLaunchIds = new Set<string>();
 	const liveContainers = async (except: string) =>
 		(await options.store.activeLeases()).filter(
 			(lease) =>
@@ -507,146 +518,291 @@ export function createIsolatedContainerController(options: {
 		return { revision: snapshot.state.revision, connection, lease };
 	};
 
-	const host: IsolatedRunnerHost = {
-		async launch(id: string, label: RunnerLabel = RUNNER_LABEL, rank = 1) {
-			const weights = containerResourceWeightsForRank(rank);
-			const initial = await options.store.get(id);
-			if (initial?.state !== "reserved") return;
-			// Slot full: leave the lease reserved; the next relay tick retries it.
-			if ((await liveContainers(id)) >= slots) return;
-			let auth: Awaited<ReturnType<typeof authorize>>;
-			try {
-				auth = await authorize(id);
-			} catch {
+	const launchFailureWindowMs = 30 * 60_000;
+	const launchParkMs = 10 * 60_000;
+	type LaunchFailure = Readonly<{
+		atMs: number;
+		stage: LaunchStage;
+		message: string;
+	}>;
+	type LaunchLoopState = {
+		failures: LaunchFailure[];
+		parkedAtMs?: number;
+	};
+	const launchLoops = new Map<string, LaunchLoopState>();
+	const launchKey = (repositoryId: number, jobId: number, runAttempt: number) =>
+		`${repositoryId}:${jobId}:${runAttempt}`;
+	const logLaunch = (
+		event: "hobo_ci_launch_failed" | "hobo_ci_launch_parked",
+		fields: Readonly<Record<string, string | number | boolean>>,
+	) => {
+		if (options.log) options.log(event, fields);
+		else console.error(JSON.stringify({ event, ...fields }));
+	};
+	const failLaunch = async (lease: Lease, stage: LaunchStage, error: Error) => {
+		const at = now();
+		const atMs = Date.parse(at);
+		const key = launchKey(lease.repositoryId, lease.jobId, lease.runAttempt);
+		const previous = launchLoops.get(key);
+		const failures = (previous?.failures ?? []).filter(
+			(failure) => atMs - failure.atMs <= launchFailureWindowMs,
+		);
+		const message = error.message;
+		failures.push({ atMs, stage, message });
+		const state: LaunchLoopState = { failures };
+		if (previous?.parkedAtMs !== undefined)
+			state.parkedAtMs = previous.parkedAtMs;
+		const attempt = failures.length;
+		const newlyParked = attempt >= 3 && state.parkedAtMs === undefined;
+		if (newlyParked) state.parkedAtMs = atMs;
+		launchLoops.set(key, state);
+		logLaunch("hobo_ci_launch_failed", {
+			stage,
+			message,
+			leaseId: lease.id,
+			jobId: lease.jobId,
+			actualJobId: lease.actualJobId,
+			attempt,
+		});
+		if (newlyParked)
+			logLaunch("hobo_ci_launch_parked", {
+				stage,
+				message,
+				leaseId: lease.id,
+				jobId: lease.jobId,
+				actualJobId: lease.actualJobId,
+				attempt,
+				failureCount: attempt,
+				parkMs: launchParkMs,
+				windowMs: launchFailureWindowMs,
+			});
+		try {
+			if (state.parkedAtMs === undefined) {
 				await options.store.abortIsolatedAndRequeue(
-					id,
-					requeueJob(initial),
-					now(),
+					lease.id,
+					requeueJob(lease),
+					at,
 				);
-				return;
-			}
-			const name = `hobo-${id}`;
-			const planned = await options.store.transition(
-				id,
-				["reserved"],
-				(lease) => {
-					if (lease.sandboxName || lease.runnerId || lease.hostRunId)
-						throw new Error("lease already launched");
-					lease.sandboxName = name;
-					lease.sandboxStage = "creating";
-					lease.state = "dispatching";
-				},
-				"ci.DispatchRequested",
-				now(),
-				auth.revision,
-			);
-			if (!planned) return;
-			let containerId = "";
-			const memoryMb =
-				planned.memoryMb >= 512 ? planned.memoryMb : workerMemoryMb;
-			try {
-				const selection = await selectImage(planned.repository);
-				const directory = workDirectory(id);
-				if (directory && options.workFs)
-					await options.workFs.prepareJobDirectory(directory);
-				const spare = warm?.memoryMb === memoryMb ? warm : undefined;
-				const spareMatches =
-					spare?.selection.image === selection.image &&
-					spare.selection.depsKey === selection.depsKey;
-				if (
-					spare &&
-					spareMatches &&
-					options.docker.rename &&
-					options.docker.updateResources
-				) {
-					warm = undefined;
-					protectedWarmNames.delete(spare.name);
-					options.memoryAdmission?.consumeWarm(spare.memoryMb);
-					containerId = spare.containerId;
-					await options.docker.updateResources(spare.containerId, weights);
-					await options.docker.rename(spare.containerId, name);
-				} else {
-					const handle = await options.docker.create(
-						containerSpec(
-							name,
-							planned.reservedMinutes * 60_000,
-							memoryMb,
-							selection,
-							rank,
-							directory,
-						),
+			} else {
+				const cancelled = await options.store.transition(
+					lease.id,
+					[
+						"reserved",
+						"dispatching",
+						"dispatched",
+						"claiming",
+						"running",
+						"uncertain",
+					],
+					(entry) => {
+						entry.state = "cancelled";
+					},
+					"ci.LeaseCancelled",
+					at,
+				);
+				if (!cancelled)
+					await options.store.abortIsolatedAndRequeue(
+						lease.id,
+						requeueJob(lease),
+						at,
 					);
-					if (handle.name !== name)
-						throw new Error("container identity mismatch");
-					containerId = handle.containerId;
-					await options.docker.start(name, containerId);
+			}
+		} finally {
+			await cleanupWorkDirectory(lease);
+		}
+	};
+
+	const host: IsolatedRunnerHost = {
+		async isLaunchParked(job: Job) {
+			const key = launchKey(job.repositoryId, job.id, job.runAttempt);
+			const state = launchLoops.get(key);
+			if (state?.parkedAtMs === undefined) return false;
+			if (Date.parse(now()) - state.parkedAtMs >= launchParkMs) {
+				launchLoops.delete(key);
+				return false;
+			}
+			try {
+				const current = await getJob(
+					options.github,
+					job.installationId,
+					job.repository,
+					job.id,
+				);
+				if (
+					current.status !== "queued" ||
+					current.run_id !== job.runId ||
+					current.run_attempt !== job.runAttempt
+				) {
+					launchLoops.delete(key);
+					return false;
 				}
-				const created = await options.store.transition(
-					id,
-					["dispatching"],
-					(lease) => {
-						if (lease.sandboxName !== name || lease.sandboxSessionId)
-							throw new Error("container state mismatch");
-						lease.sandboxSessionId = containerId;
-						lease.sandboxStage = "created";
-						lease.state = "dispatched";
-					},
-					"ci.SandboxCreated",
-					now(),
-				);
-				if (!created) throw new Error("reservation changed");
-				await options.store.transition(
-					id,
-					["dispatched"],
-					(lease) => {
-						if (lease.sandboxSessionId !== containerId || lease.runnerId)
-							throw new Error("container state mismatch");
-						lease.sandboxStage = "registering";
-						lease.state = "claiming";
-					},
-					"ci.RunnerClaimed",
-					now(),
-					auth.revision,
-				);
-				const response = await options.github.request(
-					created.installationId,
-					`/repos/${created.repository}/actions/runners/generate-jitconfig`,
-					"POST",
-					JSON.stringify({
-						name: created.runnerName,
-						runner_group_id: auth.connection.runnerGroupId,
-						labels: [label],
-						work_folder: "_hobo_work",
-					}),
-				);
-				if (response.status !== 201)
-					throw new Error("runner registration failed");
-				const jit = jitResponse.parse(await response.json());
-				const registered = await options.store.transition(
-					id,
-					["claiming"],
-					(lease) => {
-						if (lease.sandboxSessionId !== containerId)
-							throw new Error("container changed");
-						lease.runnerId = jit.runner.id;
-						lease.sandboxStage = "running";
-						lease.state = "running";
-					},
-					"ci.RunnerRegistered",
-					now(),
-				);
-				if (!registered) throw new Error("registration revoked");
-				await startRunner(
-					options.docker,
-					name,
-					containerId,
-					jit.encoded_jit_config,
-				);
-				// Get the next container ready while this job runs.
-				if ((await liveContainers("")) < slots)
-					void prewarm().catch(() => undefined);
 			} catch {
+				return true;
+			}
+			return true;
+		},
+		async launch(id: string, label: RunnerLabel = RUNNER_LABEL, rank = 1) {
+			inFlightLaunchIds.add(id);
+			try {
+				const weights = containerResourceWeightsForRank(rank);
+				const initial = await options.store.get(id);
+				if (initial?.state !== "reserved") return;
+				// Slot full: leave the lease reserved; the next relay tick retries it.
+				if ((await liveContainers(id)) >= slots) return;
+				let auth: Awaited<ReturnType<typeof authorize>>;
 				try {
+					auth = await authorize(id);
+				} catch (error) {
+					await failLaunch(
+						initial,
+						"prepare",
+						error instanceof Error ? error : new Error("unknown"),
+					);
+					return;
+				}
+				const name = `hobo-${id}`;
+				let planned: Lease;
+				try {
+					const transitioned = await options.store.transition(
+						id,
+						["reserved"],
+						(lease) => {
+							if (lease.sandboxName || lease.runnerId || lease.hostRunId)
+								throw new Error("lease already launched");
+							lease.sandboxName = name;
+							lease.sandboxStage = "creating";
+							lease.state = "dispatching";
+						},
+						"ci.DispatchRequested",
+						now(),
+						auth.revision,
+					);
+					if (!transitioned) return;
+					planned = transitioned;
+				} catch (error) {
+					await failLaunch(
+						initial,
+						"transition",
+						error instanceof Error ? error : new Error("unknown"),
+					);
+					return;
+				}
+				let containerId = "";
+				const memoryMb =
+					planned.memoryMb >= 512 ? planned.memoryMb : workerMemoryMb;
+				let stage: LaunchStage = "image";
+				try {
+					const selection = await selectImage(planned.repository);
+					stage = "prepare";
+					const directory = workDirectory(id);
+					if (directory && options.workFs)
+						await options.workFs.prepareJobDirectory(directory);
+					stage = "create";
+					const spare = warm?.memoryMb === memoryMb ? warm : undefined;
+					const spareMatches =
+						spare?.selection.image === selection.image &&
+						spare.selection.depsKey === selection.depsKey;
+					if (
+						spare &&
+						spareMatches &&
+						options.docker.rename &&
+						options.docker.updateResources
+					) {
+						warm = undefined;
+						protectedWarmNames.delete(spare.name);
+						options.memoryAdmission?.consumeWarm(spare.memoryMb);
+						containerId = spare.containerId;
+						await options.docker.updateResources(spare.containerId, weights);
+						await options.docker.rename(spare.containerId, name);
+					} else {
+						const handle = await options.docker.create(
+							containerSpec(
+								name,
+								planned.reservedMinutes * 60_000,
+								memoryMb,
+								selection,
+								rank,
+								directory,
+							),
+						);
+						if (handle.name !== name)
+							throw new Error("container identity mismatch");
+						containerId = handle.containerId;
+						stage = "start";
+						await options.docker.start(name, containerId);
+					}
+					stage = "transition";
+					const created = await options.store.transition(
+						id,
+						["dispatching"],
+						(lease) => {
+							if (lease.sandboxName !== name || lease.sandboxSessionId)
+								throw new Error("container state mismatch");
+							lease.sandboxSessionId = containerId;
+							lease.sandboxStage = "created";
+							lease.state = "dispatched";
+						},
+						"ci.SandboxCreated",
+						now(),
+					);
+					if (!created) throw new Error("reservation changed");
+					await options.store.transition(
+						id,
+						["dispatched"],
+						(lease) => {
+							if (lease.sandboxSessionId !== containerId || lease.runnerId)
+								throw new Error("container state mismatch");
+							lease.sandboxStage = "registering";
+							lease.state = "claiming";
+						},
+						"ci.RunnerClaimed",
+						now(),
+						auth.revision,
+					);
+					stage = "jit";
+					const response = await options.github.request(
+						created.installationId,
+						`/repos/${created.repository}/actions/runners/generate-jitconfig`,
+						"POST",
+						JSON.stringify({
+							name: created.runnerName,
+							runner_group_id: auth.connection.runnerGroupId,
+							labels: [label],
+							work_folder: "_hobo_work",
+						}),
+					);
+					if (response.status !== 201)
+						throw new Error("runner registration failed");
+					const jit = jitResponse.parse(await response.json());
+					stage = "transition";
+					const registered = await options.store.transition(
+						id,
+						["claiming"],
+						(lease) => {
+							if (lease.sandboxSessionId !== containerId)
+								throw new Error("container changed");
+							lease.runnerId = jit.runner.id;
+							lease.sandboxStage = "running";
+							lease.state = "running";
+						},
+						"ci.RunnerRegistered",
+						now(),
+					);
+					if (!registered) throw new Error("registration revoked");
+					stage = "runner";
+					await startRunner(
+						options.docker,
+						name,
+						containerId,
+						jit.encoded_jit_config,
+					);
+					launchLoops.delete(
+						launchKey(planned.repositoryId, planned.jobId, planned.runAttempt),
+					);
+					// Get the next container ready while this job runs.
+					if ((await liveContainers("")) < slots)
+						void prewarm().catch(() => undefined);
+				} catch (error) {
 					if (containerId) {
 						try {
 							await options.docker.stop(name, containerId);
@@ -655,14 +811,14 @@ export function createIsolatedContainerController(options: {
 							/* recovery will retry stop */
 						}
 					}
-					await options.store.abortIsolatedAndRequeue(
-						id,
-						requeueJob(planned),
-						now(),
+					await failLaunch(
+						planned,
+						stage,
+						error instanceof Error ? error : new Error("unknown"),
 					);
-				} finally {
-					await cleanupWorkDirectory(planned);
 				}
+			} finally {
+				inFlightLaunchIds.delete(id);
 			}
 		},
 		async reconcile(id: string, forceStop?: boolean) {
@@ -797,6 +953,7 @@ export function createIsolatedContainerController(options: {
 		afterRelease: cleanupWorkDirectory,
 		onOrphanJob: orphanJobs.enqueue,
 		protectedContainerNames: () => protectedWarmNames,
+		protectedLeaseIds: () => inFlightLaunchIds,
 	};
 	if (options.orphanGraceMs !== undefined)
 		reconcilerOptions.orphanGraceMs = options.orphanGraceMs;
