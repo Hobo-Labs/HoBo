@@ -247,7 +247,7 @@ describe("release-hobo publish jobs install order", () => {
 		});
 	}
 
-	it("materialize-release-version stays node-builtin-only (safe to reorder-check)", () => {
+	it("materialize-release-version avoids npm deps (gate-trust or tag-ref parse)", () => {
 		const source = readFileSync(
 			join(root, "scripts/ci/materialize-release-version.mts"),
 			"utf8",
@@ -256,8 +256,26 @@ describe("release-hobo publish jobs install order", () => {
 			(match) => match[1],
 		);
 		for (const specifier of specifiers) {
-			expect(specifier ?? "", source).toMatch(/^node:/u);
+			expect(specifier ?? "", source).toMatch(
+				/^node:|^\.\.\/lib\/release-version\.mts$/u,
+			);
 		}
+		expect(source).toMatch(/shouldTrustGateReleaseVersion/u);
+	});
+
+	it("publish jobs keep nbgv mode but materialize trusts gate HOBO_RELEASE_VERSION", () => {
+		for (const jobId of ["release-publish", "release-npm"] as const) {
+			const block = parseReleaseJobBlock(hoboWorkflow, jobId);
+			expect(block).toMatch(/HOBO_RELEASE_VERSION_MODE:.*nbgv/u);
+			expect(block.indexOf(MATERIALIZE_RELEASE_VERSION)).toBeGreaterThan(
+				block.indexOf(ROOT_PNPM_INSTALL),
+			);
+		}
+		const materialize = readFileSync(
+			join(root, "scripts/ci/materialize-release-version.mts"),
+			"utf8",
+		);
+		expect(materialize).toMatch(/shouldTrustGateReleaseVersion/u);
 	});
 
 	it("compute-release-version imports npm deps and must run only after install", () => {
