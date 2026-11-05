@@ -37,6 +37,7 @@ export {
 export {
 	createHostedRelayRuntime,
 	type HostedInboxStore,
+	type HostedRelayTickTiming,
 } from "./hosted-runtime.js";
 export { signIngressForward, verifyIngressForward } from "./ingress-forward.js";
 export {
@@ -115,6 +116,7 @@ export {
 	formatPoolErrorLog,
 	redactPoolErrorMessage,
 } from "./isolated-worker/postgres-pool.js";
+export { createRetiredWorkDirectorySweeper } from "./isolated-worker/retired-work-directory-sweeper.js";
 export { singleFlight } from "./isolated-worker/single-flight.js";
 export {
 	createNodeWorkerStorageFileSystem,

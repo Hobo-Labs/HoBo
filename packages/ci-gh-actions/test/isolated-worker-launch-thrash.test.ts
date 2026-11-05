@@ -99,6 +99,9 @@ async function launchFixture() {
 		isRunning: vi.fn(async () => false),
 		list: vi.fn(async () => []),
 	};
+	const retireJobDirectory = vi.fn(async (path: string) => `${path}-retired`);
+	const removeJobDirectory = vi.fn(async () => ({ bytes: 128, entries: 4 }));
+	const scheduleRetiredSweep = vi.fn();
 	const workFs: WorkerStorageFileSystem = {
 		statfs: vi.fn(async () => ({
 			blocks: 100,
@@ -106,9 +109,12 @@ async function launchFixture() {
 			files: 100,
 			ffree: 100,
 		})),
+		device: vi.fn(async () => 1),
 		jobDirectories: vi.fn(async () => []),
+		retiredDirectories: vi.fn(async () => []),
 		prepareJobDirectory: vi.fn(async () => undefined),
-		removeJobDirectory: vi.fn(async () => ({ bytes: 128, entries: 4 })),
+		retireJobDirectory,
+		removeJobDirectory,
 	};
 	const log = vi.fn();
 	const github = githubFixture();
@@ -122,6 +128,7 @@ async function launchFixture() {
 		workerImage: "hobo-ci-worker:local",
 		workRoot: join(root, "work"),
 		workFs,
+		scheduleRetiredSweep,
 		now: () => clock.now,
 		log,
 	});
@@ -134,6 +141,7 @@ async function launchFixture() {
 		job,
 		lease,
 		log,
+		scheduleRetiredSweep,
 		store,
 		workFs,
 	};
@@ -216,6 +224,7 @@ describe("isolated worker launch failure handling", () => {
 		await f.controller.reconcileLeases();
 
 		expect(await f.store.get(f.lease.id)).toMatchObject({ state: "reserved" });
+		expect(f.workFs.retireJobDirectory).not.toHaveBeenCalled();
 		expect(f.workFs.removeJobDirectory).not.toHaveBeenCalled();
 	});
 
@@ -250,6 +259,7 @@ describe("isolated worker launch failure handling", () => {
 			dispatchingAt: NOW,
 		});
 		expect(abort).not.toHaveBeenCalled();
+		expect(f.workFs.retireJobDirectory).not.toHaveBeenCalled();
 		expect(f.workFs.removeJobDirectory).not.toHaveBeenCalled();
 		rejectCreate?.(new Error("finish launch"));
 		await launching;
@@ -276,7 +286,9 @@ describe("isolated worker launch failure handling", () => {
 		expect(f.docker.create).toHaveBeenCalledTimes(3);
 		expect(f.docker.start).not.toHaveBeenCalled();
 		expect(f.workFs.prepareJobDirectory).toHaveBeenCalledTimes(3);
-		expect(f.workFs.removeJobDirectory).toHaveBeenCalledTimes(3);
+		expect(f.workFs.retireJobDirectory).toHaveBeenCalledTimes(3);
+		expect(f.scheduleRetiredSweep).toHaveBeenCalledTimes(3);
+		expect(f.workFs.removeJobDirectory).not.toHaveBeenCalled();
 		expect(f.log).toHaveBeenCalledWith(
 			"hobo_ci_launch_parked",
 			expect.objectContaining({

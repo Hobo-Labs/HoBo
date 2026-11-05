@@ -74,6 +74,8 @@ unindexed new finding files as notices.
 - [Finding 64: containerless launch failures thrashed worker leases](./findings/0064-containerless-launch-failures-thrashed-worker-leases.md)
 - [Finding 65: merge-group jobs serialized behind the release job](./findings/0065-merge-group-jobs-serialized-behind-the-release-job.md)
 - [Finding 67: Unbounded pnpm store prunes froze the box](./findings/0067-unbounded-pnpm-store-prunes-froze-the-box.md)
+- [Finding 68: Finished jobs held trunk slots while their work dirs were deleted](./findings/0068-finished-jobs-held-trunk-slots-while-their-work-dirs-were-deleted.md)
+- [Finding 69: Reap retired a work dir before its container existed](./findings/0069-reap-retired-a-work-dir-before-its-container-existed.md)
 - [Finding 70: a test fixture depended on the job container umask](./findings/0070-a-test-fixture-depended-on-the-job-container-umask.md)
 - [Finding 71: a deps key miss rebuilt without inode headroom](./findings/0071-a-deps-key-miss-rebuilt-without-inode-headroom.md)
 - [Finding 72: deps mount verify missed the link script](./findings/0072-deps-mount-verify-missed-the-link-script.md)
