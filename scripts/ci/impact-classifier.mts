@@ -1,21 +1,28 @@
 /**
  * Which changed paths are non-meaningful ("inert") for package lanes.
  *
- * A path is inert only under a named rule whose comparison cannot hide a
- * behavior change: identical bytes, canonical-JSON equality, whitespace-only
- * markdown, or a TypeScript token stream unchanged once trivia is dropped
- * (directive comments, JSDoc, shebangs and ASI-significant newlines stay in
- * the stream). Everything else — added/deleted files, unparsable input, a
- * missing base or tokenizer, more than 300 changed paths — is meaningful.
+ * A path is inert only under a named rule: identical bytes, format-only
+ * JSON, whitespace-only markdown, or a TypeScript token stream unchanged
+ * once trivia is dropped (directive comments, JSDoc, shebangs and
+ * ASI-significant newlines stay in the stream). The token-stream rule is
+ * syntactic, not semantic, and has known false-inert classes (council R2):
+ * the bare scanner never rescans `/` into regex literals or tokenizes JSX
+ * children, so whitespace inside a regex, `/*` inside a regex class, JSX
+ * text, and a newline hidden inside a multiline comment after `return`
+ * can hash equal across a real behavior change. Shadow numbers are
+ * therefore optimistic and are not enforcement evidence. Everything else
+ * — added/deleted files, unparsable input, a missing base or tokenizer,
+ * more than 300 changed paths — is meaningful.
  * Uncertainty always widens to today's behavior: feeding `meaningfulPaths`
  * to `affectedLanes`/`planDependentTests` can only narrow by inert paths,
  * and the workflow runs this in shadow mode (`HOBO_IMPACT_GATE=shadow`,
  * the default) where the classification changes nothing and only reports.
  * Shadow-only is load-bearing: some suites scan raw source text (design
  * lint, redaction walks), so a token-inert change can still fail them.
- * Enforcement needs those scan roots modeled first; until then nothing
- * consumes this output. A change to the classifier or its wiring always
- * classifies every path meaningful.
+ * Enforcement is blocked on both: those scan roots modeled, and the
+ * tokenizer made parser-driven (or failed closed on slash tokens and
+ * JSX). Until then nothing consumes this output. A change to the
+ * classifier or its wiring always classifies every path meaningful.
  *
  * Node builtins only. The token-stream rule needs the `typescript` package
  * (already a root dependency); when it cannot be loaded — the pre-install
@@ -229,7 +236,7 @@ type TypescriptLike = Readonly<{
 }>;
 
 const DIRECTIVE_COMMENT =
-	/@ts-(?:ignore|expect-error|nocheck)|biome-ignore|eslint|oxlint|prettier-ignore|istanbul ignore|c8 ignore|@__PURE__|@__NO_SIDE_EFFECTS__|vite-ignore|webpackIgnore|sourceMappingURL|^\/{2,}\s*<reference/u;
+	/@ts-(?:ignore|expect-error|nocheck|check)|biome-ignore|eslint|oxlint|prettier-ignore|istanbul ignore|c8 ignore|v8 ignore|@__PURE__|@__NO_SIDE_EFFECTS__|vite-ignore|webpackIgnore|sourceMappingURL|^\/{2,}\s*<reference/u;
 
 /**
  * Paths whose own change must run under today's behavior, never under a
