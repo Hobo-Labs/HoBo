@@ -229,11 +229,14 @@ describe("release-hobo affected image job", () => {
 		);
 	});
 
-	it("builds independent images in parallel and mcp after cli", () => {
+	it("builds independent images in parallel and serializes cli and mcp", () => {
 		expect(hoboWorkflow).toContain(
-			'if [ "$id" = "hobo-mcp" ]; then continue; fi',
+			'if [ "$id" = "hobo-mcp" ] || [ "$id" = "hobo-cli" ]; then continue; fi',
 		);
 		expect(hoboWorkflow).toContain("build_one");
+		expect(hoboWorkflow).toContain(
+			'if [[ " $IMAGE_IDS " == *" hobo-cli "* ]]; then',
+		);
 		expect(hoboWorkflow).toContain(
 			'if [[ " $IMAGE_IDS " == *" hobo-mcp "* ]]; then',
 		);
