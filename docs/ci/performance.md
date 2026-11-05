@@ -76,6 +76,10 @@ unindexed new finding files as notices.
 - [Finding 68: Finished jobs held trunk slots while their work dirs were deleted](./findings/0068-finished-jobs-held-trunk-slots-while-their-work-dirs-were-deleted.md)
 - [Finding 69: Reap retired a work dir before its container existed](./findings/0069-reap-retired-a-work-dir-before-its-container-existed.md)
 - [Finding 70: a test fixture depended on the job container umask](./findings/0070-a-test-fixture-depended-on-the-job-container-umask.md)
+- [Finding 71: a deps key miss rebuilt without inode headroom](./findings/0071-a-deps-key-miss-rebuilt-without-inode-headroom.md)
+- [Finding 72: deps mount verify missed the link script](./findings/0072-deps-mount-verify-missed-the-link-script.md)
+- [Finding 73: Main S0 checkout fetched unused trees](./findings/0073-main-s0-checkout-fetched-unused-trees.md)
+- [Finding 74: sparse S0 skipped the ts-autocode pin](./findings/0074-sparse-s0-skipped-the-ts-autocode-pin.md)
 <!-- findings-index:end -->
 
 ## Data
