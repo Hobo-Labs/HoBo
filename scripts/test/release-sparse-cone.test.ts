@@ -345,9 +345,7 @@ describe("release workflow sparse-checkout sync", () => {
 			/git checkout HEAD -- \$\{\{ steps\.sparse\.outputs\.root_files \}\}/,
 		);
 		expect(action).toMatch(/git checkout HEAD -- "\$\{root\[@\]\}"/);
-		expect(action).toMatch(
-			/git sparse-checkout add --skip-checks -- "\$path"/,
-		);
+		expect(action).toMatch(/git sparse-checkout add --skip-checks -- "\$path"/);
 		expect(action).not.toMatch(/git checkout HEAD -- "\$\{paths\[@\]\}"/);
 	});
 });

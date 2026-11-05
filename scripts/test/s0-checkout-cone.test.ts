@@ -178,13 +178,11 @@ describe("Main full gate S0 sparse checkout", () => {
 		expect(checkoutRoot).toBeGreaterThan(-1);
 		const materialize = action.slice(checkoutRoot);
 		expect(materialize).toContain('case "$path" in');
-		expect(materialize).toContain("*/*) nested+=(\"$path\")");
+		expect(materialize).toContain('*/*) nested+=("$path")');
 		expect(materialize).toContain(
-			"git sparse-checkout add --skip-checks -- \"$path\"",
+			'git sparse-checkout add --skip-checks -- "$path"',
 		);
-		expect(materialize).not.toMatch(
-			/git checkout HEAD -- "\$\{paths\[@\]\}"/,
-		);
+		expect(materialize).not.toMatch(/git checkout HEAD -- "\$\{paths\[@\]\}"/);
 	});
 
 	it("splits every S0 file path out of the directory cones", () => {
