@@ -62,7 +62,7 @@ jobs:
     # so under the shared `hobo` label the runner the box launched for a main job went to an older
     # PR job instead. scripts/lint-actions.ts allows this expression and `hobo`, nothing else.
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 45
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -140,7 +140,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request')
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 45
+    timeout-minutes: 20
     # Any event can reuse an existing content-keyed image. Only PR misses build
     # and run the contract; non-PR misses defer to the publisher and daemon.
     # Local and GHCR candidates verify before non-PR promotion.
@@ -240,7 +240,8 @@ jobs:
     needs: ci-runner-image
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 25
+    # Target wall ~2–3 min; hard cap stays within the 20-minute workflow babysitter.
+    timeout-minutes: 12
     permissions:
       contents: read
     env:
@@ -412,9 +413,7 @@ jobs:
           fi
       - name: Workspace tests
         if: github.event_name == 'merge_group'
-        # The whole-workspace sweep (a lockfile/root-config change) is not held
-        # to the merge-group budget.
-        timeout-minutes: ${{ steps.merge-group-base.outputs.tests == 'affected' && 10 || 40 }}
+        timeout-minutes: ${{ steps.merge-group-base.outputs.tests == 'affected' && 10 || 20 }}
         env:
           TESTS: ${{ steps.merge-group-base.outputs.tests }}
           BASE: ${{ steps.merge-group-base.outputs.base }}
@@ -456,7 +455,7 @@ jobs:
     name: PR off-path checks (ts-autocode surface, production packages)
     if: github.event_name == 'pull_request'
     runs-on: hobo
-    timeout-minutes: 25
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -736,9 +735,8 @@ jobs:
           pnpm run codegen:check:affected &&
           pnpm exec turbo run test --filter=@hobo-draft/s0-04-protobuf-cue-codegen --concurrency=100%
       - name: Workspace tests
-        # The whole-workspace sweep (weekly, or a lockfile/root-config change) is not held
-        # to the main-push budget.
-        timeout-minutes: ${{ steps.main-base.outputs.tests == 'affected' && 10 || 40 }}
+        # Weekly schedule gets the hour-long job budget; push/dispatch repo-wide sweeps stay ≤20.
+        timeout-minutes: ${{ github.event_name == 'schedule' && (steps.main-base.outputs.tests == 'affected' && 10 || 55) || (steps.main-base.outputs.tests == 'affected' && 10 || 20) }}
         env:
           TESTS: ${{ steps.main-base.outputs.tests }}
           BASE: ${{ steps.main-base.outputs.base }}
