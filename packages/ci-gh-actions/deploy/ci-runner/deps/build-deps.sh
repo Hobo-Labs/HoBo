@@ -31,15 +31,64 @@ if [[ ! "$byte_headroom" =~ ^[0-9]+$ ]]; then
 fi
 
 sample_docker_headroom() {
-  local docker_root="$1"
+  local sample_path="$1"
   local iavail avail
-  iavail="$(df -P --output=iavail "$docker_root" | tail -n1 | tr -d '[:space:]')"
-  avail="$(df -B1 --output=avail "$docker_root" | tail -n1 | tr -d '[:space:]')"
+  iavail="$(df --output=iavail "$sample_path" | tail -n1 | tr -d '[:space:]')"
+  avail="$(df -B1 --output=avail "$sample_path" | tail -n1 | tr -d '[:space:]')"
   if [[ ! "$iavail" =~ ^[0-9]+$ || ! "$avail" =~ ^[0-9]+$ ]]; then
-    echo "invalid Docker data root df sample for ${docker_root}" >&2
+    echo "invalid Docker data root df sample for ${sample_path}" >&2
     exit 1
   fi
   printf '%s %s\n' "$iavail" "$avail"
+}
+
+docker_data_root_device() {
+  local docker_root="$1"
+  local image="$2"
+  if [[ -z "$docker_root" || -z "$image" ]]; then
+    return 0
+  fi
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    return 0
+  fi
+  docker run --rm --network=none -v /:/host:ro "$image" \
+    stat -c '%d' "/host${docker_root}" 2>/dev/null || true
+}
+
+resolve_deps_headroom_sample_path() {
+  local docker_root="$1"
+  local image="$2"
+  if [[ -n "$docker_root" && -d "$docker_root" ]]; then
+    printf '%s\n' "$docker_root"
+    return 0
+  fi
+  local docker_dev candidate cand_dev
+  docker_dev="$(docker_data_root_device "$docker_root" "$image")"
+  local candidates=()
+  if [[ -n "${HOBO_CI_HOST_JOB_DIRECTORY:-}" && -d "${HOBO_CI_HOST_JOB_DIRECTORY}" ]]; then
+    candidates+=("${HOBO_CI_HOST_JOB_DIRECTORY}")
+  fi
+  if [[ -n "${GITHUB_WORKSPACE:-}" && -d "${GITHUB_WORKSPACE}" ]]; then
+    candidates+=("${GITHUB_WORKSPACE}")
+  fi
+  if [[ -d /pnpm-store ]]; then
+    candidates+=("/pnpm-store")
+  fi
+  candidates+=("/")
+  for candidate in "${candidates[@]}"; do
+    if [[ -n "$docker_dev" ]]; then
+      cand_dev="$(stat -c '%d' "$candidate" 2>/dev/null || true)"
+      if [[ -z "$cand_dev" || "$cand_dev" != "$docker_dev" ]]; then
+        continue
+      fi
+    fi
+    if sample_docker_headroom "$candidate" >/dev/null 2>&1; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  echo "cannot sample Docker data root for deps build headroom" >&2
+  return 1
 }
 
 # A keyed miss runs pnpm install and mv into /opt/hobo-deps inside BuildKit.
@@ -47,19 +96,16 @@ sample_docker_headroom() {
 # the builder cache (never an unfiltered image prune) and refuse the rebuild
 # if headroom is still short.
 ensure_deps_build_headroom() {
-  local docker_root iavail avail
+  local docker_root sample_path iavail avail
   docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
-  if [[ -z "$docker_root" || ! -d "$docker_root" ]]; then
-    echo "cannot sample Docker data root for deps build headroom" >&2
-    exit 1
-  fi
-  read -r iavail avail < <(sample_docker_headroom "$docker_root")
+  sample_path="$(resolve_deps_headroom_sample_path "$docker_root" "$base")" || exit 1
+  read -r iavail avail < <(sample_docker_headroom "$sample_path")
   if (( iavail >= inode_headroom && avail >= byte_headroom )); then
     return 0
   fi
-  echo "deps rebuild headroom low (dockerRoot=${docker_root} inodes=${iavail} bytes=${avail}); pruning BuildKit cache"
+  echo "deps rebuild headroom low (dockerRoot=${docker_root} samplePath=${sample_path} inodes=${iavail} bytes=${avail}); pruning BuildKit cache"
   docker builder prune -f --keep-storage "$cap"
-  read -r iavail avail < <(sample_docker_headroom "$docker_root")
+  read -r iavail avail < <(sample_docker_headroom "$sample_path")
   if (( iavail >= inode_headroom && avail >= byte_headroom )); then
     echo "deps rebuild headroom recovered after builder prune (inodes=${iavail} bytes=${avail})"
     return 0

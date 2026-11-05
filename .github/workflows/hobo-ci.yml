@@ -29,9 +29,10 @@ env:
   GIT_HTTP_LOW_SPEED_LIMIT: "1000"
   GIT_HTTP_LOW_SPEED_TIME: "30"
 
-# A newer push to main supersedes the in-progress one: its secret scan covers the full history and
-# its gates test the newer tree, while the older run would hold box slots the merge queue is waiting
-# for. The event name keeps schedule and workflow_dispatch on main out of the pushes' group, so a
+# A newer push to main supersedes the in-progress one: its secret scan covers the landed
+# range (schedule still does full history after a blob backfill) and its gates test the
+# newer tree, while the older run would hold box slots the merge queue is waiting for.
+# The event name keeps schedule and workflow_dispatch on main out of the pushes' group, so a
 # push never cancels them; merge_group runs are never cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
@@ -593,19 +594,22 @@ jobs:
           fetch-depth: 0
           sparse-paths: ${{ env.S0_SPARSE_PATHS }}
           submodules: "false"
+      - uses: ./.github/actions/ci-runner-preflight
       - name: Start secret scan (full history, background)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          SCAN_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/gitleaks"
           : > "$RUNNER_TEMP/gitleaks/log"
-          nohup bash -c '
-            gitleaks git --config .gitleaks.toml --redact --exit-code 1 > "$1/log" 2>&1
-            status=$?
-            printf "%s\n" "$status" > "$1/exit.tmp"
-            mv "$1/exit.tmp" "$1/exit"
-          ' _ "$RUNNER_TEMP/gitleaks" </dev/null >/dev/null 2>&1 &
-      - uses: ./.github/actions/ci-runner-preflight
+          nohup node --experimental-strip-types --no-warnings \
+            scripts/ci/gitleaks-main-scan.mts --background \
+            --dir "$RUNNER_TEMP/gitleaks" \
+            </dev/null >/dev/null 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/gitleaks/nohup.pid"
       - name: Fetch pinned ts-autocode
         run: |
           set -euo pipefail
@@ -720,26 +724,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          scan_dir="$RUNNER_TEMP/gitleaks"
-          if [ ! -f "$scan_dir/exit" ] && [ ! -f "$scan_dir/log" ]; then
-            echo "::error::Secret scan did not start: exit file and log are both absent."
-            exit 1
-          fi
-          for ((attempt = 0; attempt < 300; attempt += 1)); do
-            if [ -f "$scan_dir/exit" ]; then
-              break
-            fi
-            sleep 1
-          done
-          if [ -f "$scan_dir/log" ]; then
-            cat "$scan_dir/log"
-          fi
-          if [ ! -f "$scan_dir/exit" ]; then
-            echo "::error::Timed out after 300 seconds waiting for the secret scan."
-            exit 1
-          fi
-          status="$(cat "$scan_dir/exit")"
-          exit "$status"
+          node --experimental-strip-types --no-warnings \
+            scripts/ci/gitleaks-main-scan.mts --wait \
+            --dir "$RUNNER_TEMP/gitleaks"
       - name: Prune Turbo cache
         id: turbo-prune
         if: always() && env.TURBO_TOKEN == ''
