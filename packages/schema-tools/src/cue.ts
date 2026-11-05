@@ -152,12 +152,15 @@ async function vetFixture(
 	pkg: DataModelPackage,
 	expectValid: boolean,
 ): Promise<CueViolation[]> {
-	const schemaArg = join(pkg.dataModelsDir, schemaPath);
+	const schemaArgs =
+		pkg.cueSchemas.length > 0
+			? pkg.cueSchemas
+			: [join(pkg.dataModelsDir, schemaPath)];
 	const definition = cueDefinitionName(schemaPath);
 	const absoluteFixture = join(pkg.dataModelsDir, fixturePath);
 	const result = await runCommand(
 		cueBinary,
-		["vet", "-d", definition, schemaArg, absoluteFixture],
+		["vet", "-d", definition, ...schemaArgs, absoluteFixture],
 		pkg.dataModelsDir,
 	);
 	const passed = result.code === 0;

@@ -34,6 +34,10 @@
       "types": "./dist/sqlite-store.d.ts",
       "default": "./dist/sqlite-store.js"
     },
+    "./fleet-v2": {
+      "types": "./dist/fleet-v2/index.d.ts",
+      "default": "./dist/fleet-v2/index.js"
+    },
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
       "default": "./dist/workspace-backend.js"
@@ -53,6 +57,7 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
-    "@types/pg": "8.15.5"
+    "@types/pg": "8.15.5",
+    "testcontainers": "11.8.1"
   }
 }

@@ -1,0 +1,69 @@
+name: Fleet enrollment
+
+on:
+  pull_request:
+    paths:
+      - "packages/ci/**"
+      - "packages/ci-gh-actions/**"
+      - "docs/design/fleet-enrollment*"
+      - "test/fleet-enrollment-scorecard.eval.test.ts"
+      - "scripts/generate-fleet-enrollment-scorecard.mts"
+      - ".github/workflows/fleet-enrollment.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_OPTIONS: --max-old-space-size=3072
+  HOBO_TURBO_CONCURRENCY: "1"
+
+concurrency:
+  group: fleet-enrollment-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scorecard:
+    name: Scorecard eval
+    runs-on: hobo
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Check sibling pins (offline)
+        run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Regenerate scorecard
+        run: node --import tsx scripts/generate-fleet-enrollment-scorecard.mts
+      - name: Scorecard eval (pass + blocked-on-credentials)
+        run: mise exec -- pnpm exec vitest run test/fleet-enrollment-scorecard.eval.test.ts
+
+  strict-store:
+    name: Strict v2 store + start fence
+    runs-on: hobo
+    timeout-minutes: 45
+    env:
+      HOBO_FLEET_ENROLLMENT_CI: "1"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 2
+          submodules: recursive
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Check sibling pins (offline)
+        run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Verify Docker for Postgres conformance
+        run: |
+          test -S /var/run/docker.sock
+          docker info >/dev/null
+      - name: Postgres store conformance (8 cases, Testcontainers)
+        run: |
+          mise exec -- pnpm exec turbo run test --filter=@hobo/ci --continue --output-logs=new-only --concurrency=100% -- \
+            test/fleet-v2-store-conformance.test.ts --testTimeout=240000
+      - name: Start fence + other fleet-v2 tests
+        run: |
+          mise exec -- pnpm exec turbo run test --filter=@hobo/ci-gh-actions --continue --output-logs=new-only --concurrency=100% -- \
+            test/fleet-v2-start-fence.test.ts
