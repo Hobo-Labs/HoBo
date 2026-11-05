@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import {
 	DEPS_LAYER_BUCKET_SCRIPT_PATH,
+	DEPS_LAYER_SCRIPT_PATH,
 	DEPS_LAYOUT,
 	DEPS_LAYOUT_RECIPE_PATHS,
 	type DepsKeyInputs,
@@ -371,15 +372,15 @@ describe("deps key", () => {
 		}
 	});
 
-	it("stages the bucket script without the link verification script", () => {
+	it("stages the bucket script and the link verification script", () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-deps-key-"));
 		try {
 			writeFixture(root, inputs());
 			const paths = depsContextPaths(root);
 			const files = readDepsContextFiles(root);
-			assert.ok(!paths.includes("scripts/ci/deps-layer.mts"));
+			assert.ok(paths.includes(DEPS_LAYER_SCRIPT_PATH));
 			assert.ok(paths.includes(DEPS_LAYER_BUCKET_SCRIPT_PATH));
-			assert.equal(files["scripts/ci/deps-layer.mts"], undefined);
+			assert.equal(files[DEPS_LAYER_SCRIPT_PATH], "link and verify\n");
 			assert.equal(files[DEPS_LAYER_BUCKET_SCRIPT_PATH], "partition layers\n");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
