@@ -439,6 +439,26 @@ other payer measurements for all-of constraints. This preflight checks feasibili
 the durable store must still claim the financial hold and revalidate strict native
 liability proof before dispatch. A feasible plan cannot authorize provider effects.
 
+The isolated-worker daemon accepts `HOBO_CI_TRUSTED_BUDGET_ADAPTER` as an
+operator-controlled absolute path to a local `.js` or `.mjs` module. This is
+trusted host code, never a repository or job setting. Its exported
+`createCiWorkerBudgetAdapter({ kind })` returns `{ kind, options, close? }`,
+where `kind` matches the daemon store (`sqlite` or `postgres`) and `options`
+is the corresponding `@hobo/ci` shared-budget options object. The options must
+provide the same durable Broker authority used by hosting and a trusted quote
+publisher that binds the full provider account, price and execution plan. For
+PostgreSQL workers the parent authority must be shared PostgreSQL; a local
+SQLite authority cannot coordinate distributed hosts. For SQLite workers the
+parent authority must use a separate database file from the worker journal.
+
+Strict policies additionally require a provider-native liability verifier;
+credit allocations, settlement and unused holds require their respective trusted
+coverage, final-usage and cancelled-before-claim verifiers. Missing proof refuses
+the effect or keeps the hold. The daemon validates the adapter through the common
+hook factory, redacts adapter errors, and closes it during shutdown or failed
+startup. With no adapter, common-policy admission remains fail-closed. Supplying
+an adapter is an operator integration and does not certify provider billing.
+
 Allocation snapshots are trusted platform/provider inputs, not discovered vendor
 entitlements. `Offer.freeMinutes` is remaining free allocation at `observedAt`;
 `Offer.spentMicros` is the trusted usage total at that watermark.

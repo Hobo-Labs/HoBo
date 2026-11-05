@@ -10,7 +10,6 @@ import { ConfigurationSchema, type Lease, parseConfiguration } from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
 	boxGitMirrorPath,
-	createAdmissionOrder,
 	createBoxGitMirror,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
@@ -46,6 +45,7 @@ import {
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
+import { loadWorkerBudgetAdapter } from "./worker-budget-adapter.mts";
 
 const exec = promisify(execFile);
 
@@ -223,519 +223,562 @@ if (
 	throw new Error("invalid HOBO_CI_PNPM_STORE_PRUNE_INTERVAL_MS");
 
 let store: HostedInboxStore & IsolatedWorkerStore;
-let closeStore: () => Promise<void>;
-if (plan.store.kind === "sqlite") {
-	const { SqliteCiStore } = await import("@hobo/ci/sqlite");
-	mkdirSync(dirname(plan.store.path), { recursive: true, mode: 0o700 });
-	const sqlite = new SqliteCiStore(plan.store.path);
-	store = sqlite;
-	closeStore = async () => sqlite.close();
-	// This worker owns its journal, so the operator's config file is the policy
-	// source: apply it when it changed. A refused change (for example an active
-	// lease pinning a provider identity) keeps the stored policy and says why.
-	const current = await sqlite.configuration();
-	const desired = toJsonString(ConfigurationSchema, configuration);
-	if (
-		!current?.configuration ||
-		toJsonString(ConfigurationSchema, current.configuration) !== desired
-	) {
-		try {
-			const applied = await sqlite.configure(
-				configuration,
-				current?.revision ?? 0,
-				new Date().toISOString(),
-			);
-			log("hobo_ci_isolated_worker_configured", {
-				revision: applied.revision,
-			});
-		} catch (error) {
-			if (!current?.configuration) throw error;
-			log("hobo_ci_isolated_worker_configuration_kept", {
-				revision: current.revision,
-				message: error instanceof Error ? error.message : "unknown",
-			});
-		}
-	}
-} else {
-	const [{ PostgresCiStore }, { default: pg }] = await Promise.all([
-		import("@hobo/ci/postgres"),
-		import("pg"),
-	]);
-	const pool = new pg.Pool({
-		connectionString: required(plan.store.urlEnv),
-		max: 2,
-	});
-	attachPostgresPoolErrorHandler(pool);
-	store = new PostgresCiStore(pool);
-	closeStore = () => pool.end();
-}
-
-for (const account of configuration.accounts)
-	for (const offer of account.offers) {
-		const ours =
-			isIsolatedContainerOffer(offer) &&
-			offer.providerAccountId === workerAccountId;
-		log("hobo_ci_isolated_worker_offer", {
-			accountId: account.id,
-			offerId: offer.id,
-			provider: offer.provider,
-			launchable: ours,
-			enabled: offer.enabled,
-			concurrency: offer.concurrency,
-			validUntil: offer.validUntil,
-			expired: Date.parse(offer.validUntil) <= Date.now(),
-		});
-	}
-
-const github = createGithubAppTransport({ appId, privateKey });
-// The poller learns job durations from the jobs lists it already reads; the
-// relay admits each run's longest expected job first.
-const jobDurations = createJobDurations();
-const admissionOrder = createAdmissionOrder(github, jobDurations);
-const workerRunnerLabels: Parameters<typeof generalLeaseIdsFor>[2] = new Map();
-// Shared pnpm content-addressable store, bind-mounted into every job container
-// (uid 1000 owns it). Empty string disables the mount.
-const pnpmStore =
-	process.env.HOBO_CI_PNPM_STORE_DIR ??
-	join(homedir(), ".cache", "hobo-ci", "pnpm-store");
-if (pnpmStore) mkdirSync(pnpmStore, { recursive: true, mode: 0o755 });
-const PNPM_STORE_TARGET = "/pnpm-store";
-const depsRepository = process.env.HOBO_CI_DEPS_REPOSITORY ?? "Hobo-Labs/HoBo";
-const depsImage = process.env.HOBO_CI_DEPS_IMAGE ?? "hobo-ci-deps:local";
-const depsRoot =
-	process.env.HOBO_CI_DEPS_ROOT ?? defaultDepsRoot(import.meta.url);
-if (pnpmStore && statSync(pnpmStore).dev !== statSync(workRoot).dev)
-	throw new Error(
-		"pnpm store and work root must share a filesystem for hardlinks",
-	);
-const docker = createCliDockerDriver({ env: process.env, log });
-const workFs = createNodeWorkerStorageFileSystem();
-const retiredSweep = createRetiredWorkDirectorySweeper({
-	fs: workFs,
-	workRoot,
-	log,
-});
-retiredSweep.trigger();
-const storageAdmission = createWorkerStorageAdmission({
-	dockerDataRoot: await docker.dataRoot(),
-	workRoot,
-	fs: workFs,
-	docker,
-	activeLeases: async () => storageLeases(await store.activeLeases()),
-	scheduleRetiredSweep: retiredSweep.trigger,
-	pnpmStore: pnpmStore
-		? createPnpmStoreMaintenance({
-				path: pnpmStore,
-				env: process.env,
-				minIntervalMs: pnpmStorePruneIntervalMs,
-			})
-		: undefined,
-	pnpmStoreIdle: async () => {
-		if (!pnpmStore) return false;
-		try {
-			if ((await store.activeLeases()).length !== 0) return false;
-			return (await docker.containersUsingVolume(pnpmStore)) === 0;
-		} catch {
-			return false;
-		}
-	},
-	builderCacheCap:
-		process.env.HOBO_CI_WORKER_BUILDER_CACHE_CAP ??
-		process.env.HOBO_CI_WORKER_BUILDER_KEEP_STORAGE ??
-		"4GB",
-	jobInodes: {
-		workRoot: inodeReserve("HOBO_CI_WORKER_WORKDIR_INODES", 200_000),
-		dockerDataRoot: inodeReserve("HOBO_CI_WORKER_CONTAINER_INODES", 170_000),
-	},
-	log,
-});
-await storageAdmission.reap(storageLeases(await store.activeLeases()));
-const jobPickupMetadata = new Map<
-	string,
-	{ event?: string; jobCreatedAt?: string }
->();
-const gitMirrorRoot =
-	process.env.HOBO_CI_GIT_MIRROR_ROOT ?? "/var/lib/hobo-ci/git";
-const gitMirrorEnabled = process.env.HOBO_CI_GIT_MIRROR !== "0";
-const gitMirrors = new Map<string, ReturnType<typeof createBoxGitMirror>>();
-function gitMirrorFor(repository: string) {
-	const key = repository.toLowerCase();
-	const existing = gitMirrors.get(key);
-	if (existing) return existing;
-	const created = createBoxGitMirror({
-		root: gitMirrorRoot,
-		repository,
-	});
-	gitMirrors.set(key, created);
-	return created;
-}
-const worker = createIsolatedContainerController({
-	store,
-	github,
-	publicOrigin,
-	docker,
-	workerAccountId,
-	workerImage: process.env.HOBO_CI_WORKER_IMAGE ?? "hobo-ci-worker:local",
-	depsRepository,
-	depsImage,
-	workerMemoryMb,
-	prewarmMemoryMb: memoryConfig.classes.standard,
-	memoryClasses: memoryConfig.classes,
-	memoryPeaks,
-	memoryAdmission,
-	generalLeaseIds: (activeLeases) =>
-		generalLeaseIdsFor(activeLeases, github, workerRunnerLabels),
-	jobPickupMetadata,
-	gitMirror: gitMirrorEnabled
-		? {
-				pathFor: (repository) => {
-					try {
-						return boxGitMirrorPath(gitMirrorRoot, repository);
-					} catch {
-						return undefined;
-					}
-				},
-				ensure: (repository, sha) => gitMirrorFor(repository).ensure(sha),
-			}
-		: undefined,
-	headShaFor: async (lease) =>
-		admissionOrder.headSha({
-			installationId: lease.installationId,
-			repository: lease.repository,
-			runId: lease.originalRunId,
-			jobId: lease.jobId,
-		}),
-	log,
-	slots,
-	volumes: pnpmStore ? [{ source: pnpmStore, target: PNPM_STORE_TARGET }] : [],
-	containerEnv: pnpmStore
-		? {
-				npm_config_store_dir: PNPM_STORE_TARGET,
-				npm_config_package_import_method: "hardlink",
-				HOBO_CI_PNPM_STORE_MOUNTED: "1",
-			}
-		: {},
-	workRoot,
-	workFs,
-	scheduleRetiredSweep: retiredSweep.trigger,
-});
-let liveWorkerLeaseIds = (await worker.reconcileLeases()).liveLeaseIds;
-await worker.reconcileOrphanJobs();
-let depsImageEnsurer: ReturnType<typeof createDepsImageEnsurer> | undefined;
-if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
-	depsImageEnsurer = createDepsImageEnsurer({
-		root: depsRoot,
-		repository: depsRepository,
-		buildMemoryMb: depsBuildMemoryMb,
-		git: {
-			defaultBranchHead: async (root) => {
-				const head = (
-					await output("git", ["-C", root, "rev-parse", "HEAD"], root, 30_000)
-				).trim();
-				if (!/^[0-9a-f]{40}$/u.test(head))
-					throw new Error("default branch head unavailable");
-				return head;
-			},
-		},
-		fs: {
-			depsKey: async (root, toolchain) =>
-				depsKeyForRoot(
-					root,
-					`linux/${process.arch === "x64" ? "amd64" : process.arch}`,
-					toolchain,
-				),
-		},
-		docker: {
-			toolchain: async (root) => {
-				const computed = ciRunnerImageVersion(root);
-				const computedExists = await output(
-					"docker",
-					["image", "inspect", `hobo-ci-worker:${computed}`],
-					root,
-					30_000,
-				).then(
-					() => true,
-					() => false,
+let closeStore: () => Promise<void> = async () => {};
+const budgetAdapter = await loadWorkerBudgetAdapter(
+	process.env.HOBO_CI_TRUSTED_BUDGET_ADAPTER,
+	plan.store.kind,
+);
+try {
+	if (plan.store.kind === "sqlite") {
+		const { SqliteCiStore } = await import("@hobo/ci/sqlite");
+		mkdirSync(dirname(plan.store.path), { recursive: true, mode: 0o700 });
+		const sqlite = new SqliteCiStore(
+			plan.store.path,
+			budgetAdapter?.kind === "sqlite"
+				? { sharedBudget: budgetAdapter.hooks }
+				: {},
+		);
+		store = sqlite;
+		closeStore = async () => sqlite.close();
+		// This worker owns its journal, so the operator's config file is the policy
+		// source: apply it when it changed. A refused change (for example an active
+		// lease pinning a provider identity) keeps the stored policy and says why.
+		const current = await sqlite.configuration();
+		const desired = toJsonString(ConfigurationSchema, configuration);
+		if (
+			!current?.configuration ||
+			toJsonString(ConfigurationSchema, current.configuration) !== desired
+		) {
+			try {
+				const applied = await sqlite.configure(
+					configuration,
+					current?.revision ?? 0,
+					new Date().toISOString(),
 				);
-				if (computedExists) return computed;
-				if (!docker.inspectImage)
-					throw new Error("docker image inspection unavailable");
-				const worker = await docker.inspectImage("hobo-ci-worker:local");
-				const toolchain = worker.repoTags
-					.map((tag) => tag.match(/^hobo-ci-worker:(v[0-9a-f]{12})$/)?.[1])
-					.find((tag) => tag !== undefined);
-				if (!toolchain)
-					throw new Error("local worker toolchain tag unavailable");
-				return toolchain;
-			},
-			imageExists: (image) =>
-				output("docker", ["image", "inspect", image], depsRoot, 30_000).then(
-					() => true,
-					() => false,
-				),
-			pull: async (image) => {
-				await output("docker", ["pull", image], depsRoot, 45 * 60_000);
-			},
-			tag: async (source, target) => {
-				await output("docker", ["tag", source, target], depsRoot, 30_000);
-			},
-		},
-		processes: { run: runDepsProcess },
-		onEvent: ({ event, ...fields }) => log(event, fields),
-	});
-}
-const host = createCompositeIsolatedHost({ store, worker: worker.host });
-if (!host) throw new Error("worker host unavailable");
-let workerReconcileMs = 0;
-const runtime = createHostedRelayRuntime({
-	store,
-	github,
-	identity: createGithubOidcVerifier(publicOrigin),
-	webhookSecret,
-	isolatedHost: host,
-	denyUnisolated: true,
-	jobDurations,
-	admissionOrder,
-	// With no trunk slots this is the slot count, all the host could run anyway.
-	generalLeaseLimit: slots - trunkSlots,
-	mergeGroupLeaseLimit: mergeGroupLeases,
-	jobPickupMetadata,
-	lendTrunkSlots,
-	memoryAdmission,
-	storageAdmission,
-	control: async () => undefined,
-	onTickTiming: (timing) =>
-		log("hobo_ci_isolated_worker_tick_slow", {
-			...timing,
-			workerReconcileMs,
-		}),
-});
-const poller =
-	plan.admission === "pull"
-		? createGithubJobPoller({
-				github,
-				durations: jobDurations,
-				admissionOrder: runtime.admissionOrder,
-				connections: async () =>
-					(await store.configuration())?.configuration?.connections ?? [],
-				ingest: (delivery) => runtime.ingestWebhook(delivery),
-				onIngestError: (jobId, message) =>
-					log("hobo_ci_isolated_worker_job_ingest_failed", { jobId, message }),
-				onGithubError: (failure) =>
-					log("hobo_ci_isolated_worker_github_read_failed", { ...failure }),
-			})
-		: undefined;
-const pollWorthLogging = createPollLogFilter();
-
-let draining = false;
-let pollTimer: ReturnType<typeof setInterval> | undefined;
-let jobPollTimer: ReturnType<typeof setInterval> | undefined;
-let gcTimer: ReturnType<typeof setInterval> | undefined;
-let tickInFlight: Promise<void> | undefined;
-let jobPollInFlight: Promise<void> | undefined;
-let gcInFlight: Promise<void> | undefined;
-
-const reconcileAndLaunch = singleFlight(async () => {
-	const workerReconcileStartedAt = Date.now();
-	const reconciliation = await worker.reconcileLeases();
-	workerReconcileMs = Date.now() - workerReconcileStartedAt;
-	liveWorkerLeaseIds = reconciliation.liveLeaseIds;
-	await worker.reconcileOrphanJobs();
-	if (!reconciliation.inventoryKnown) return;
-	// In push mode the hosted relay drains the shared inbox; in pull mode
-	// this worker is the only consumer of its own.
-	await runtime.tick({ maxDeliveries: poller ? 10 : 0 });
-});
-
-function runTick(): Promise<void> {
-	if (tickInFlight) return tickInFlight;
-	if (draining || gcInFlight) return Promise.resolve();
-	const current = reconcileAndLaunch();
-	const tracked = current.finally(() => {
-		if (tickInFlight === tracked) tickInFlight = undefined;
-	});
-	tickInFlight = tracked;
-	return tracked;
-}
-
-function runJobPoll(): void {
-	if (draining || !poller || jobPollInFlight) return;
-	jobPollInFlight = poller
-		.poll()
-		.then((summary) => {
-			if (!pollWorthLogging(summary, Date.now())) return;
-			const { waiting, ...counts } = summary;
-			log("hobo_ci_isolated_worker_jobs_polled", {
-				...counts,
-				waitingJobs: waiting.length,
-				waiting: describeWaitingJobs(waiting),
-			});
-		})
-		.catch((error) => {
-			log("hobo_ci_isolated_worker_job_poll_failed", {
-				message: error instanceof Error ? error.message : "unknown",
-			});
-		})
-		.finally(() => {
-			jobPollInFlight = undefined;
-		});
-}
-
-let depsEnsureTimer: ReturnType<typeof setTimeout> | undefined;
-
-function runDepsImageEnsure(): void {
-	if (draining || !depsImageEnsurer) return;
-	void depsImageEnsurer
-		.ensure()
-		.then((result) => {
-			if (draining) return;
-			const delay =
-				result.status === "failed" || result.status === "backoff"
-					? result.retryMs
-					: depsPollMs;
-			depsEnsureTimer = setTimeout(runDepsImageEnsure, delay);
-		})
-		.catch((error) => {
-			log("hobo_ci_deps_image_ensure_failed", {
-				key: "unknown",
-				action: "hit",
-				ms: 0,
-				message: error instanceof Error ? error.message : "unknown",
-				retryMs: depsPollMs,
-			});
-			if (!draining)
-				depsEnsureTimer = setTimeout(runDepsImageEnsure, depsPollMs);
-		});
-}
-
-function runGc(): void {
-	retiredSweep.trigger();
-	if (draining || gcInFlight || tickInFlight) return;
-	gcInFlight = store
-		.activeLeases()
-		.then((leases) =>
-			storageAdmission.maintain(storageLeases(leases), { pnpmStore: true }),
-		)
-		.catch((error) => {
-			log("hobo_ci_isolated_worker_gc_failed", {
-				message: error instanceof Error ? error.message : "unknown",
-			});
-		})
-		.finally(() => {
-			gcInFlight = undefined;
-		});
-}
-
-log("hobo_ci_isolated_worker_started", {
-	store: plan.store.kind,
-	admission: plan.admission,
-	publicOrigin,
-	pollMs: intervalMs,
-	jobPollMs: plan.jobPollMs,
-	hostMemMb,
-	workerMemoryMb,
-	memoryBudgetMb: memoryConfig.budgetMb,
-	memoryReserveMb: memoryConfig.reserveMb,
-	memoryLightMb: memoryConfig.classes.light,
-	memoryStandardMb: memoryConfig.classes.standard,
-	memoryTrunkReservationMb: memoryConfig.trunkReservationMb,
-	memoryHolMs: memoryConfig.holMs,
-	slots,
-	trunkSlots,
-	mergeGroupLeases,
-	lendTrunkSlots,
-	workRoot,
-	pnpmStoreMounted: pnpmStore !== "",
-	pnpmStorePruneIntervalMs,
-	gcIntervalMs,
-	drainTimeoutMs,
-	stopMode,
-});
-
-gcTimer = setInterval(runGc, gcIntervalMs);
-pollTimer = setInterval(() => {
-	void runTick().catch((error) => {
-		log("hobo_ci_isolated_worker_tick_failed", {
-			message: error instanceof Error ? error.message : "unknown",
-		});
-	});
-}, intervalMs);
-if (poller) {
-	runJobPoll();
-	jobPollTimer = setInterval(runJobPoll, plan.jobPollMs);
-}
-runDepsImageEnsure();
-
-let shutdownOnce: Promise<void> | undefined;
-
-async function shutdown(signal: string) {
-	if (shutdownOnce) return shutdownOnce;
-	shutdownOnce = (async () => {
-		draining = true;
-		if (pollTimer) clearInterval(pollTimer);
-		if (jobPollTimer) clearInterval(jobPollTimer);
-		if (depsEnsureTimer) clearTimeout(depsEnsureTimer);
-		if (gcTimer) clearInterval(gcTimer);
-		await worker.discardWarm().catch(() => undefined);
-		log("hobo_ci_isolated_worker_draining", { signal });
-		await jobPollInFlight;
-		await gcInFlight;
-		if (tickInFlight) {
-			await tickInFlight.catch(() => undefined);
+				log("hobo_ci_isolated_worker_configured", {
+					revision: applied.revision,
+				});
+			} catch (error) {
+				if (!current?.configuration) throw error;
+				log("hobo_ci_isolated_worker_configuration_kept", {
+					revision: current.revision,
+					message: error instanceof Error ? error.message : "unknown",
+				});
+			}
 		}
-		const reconcileDrain = async () => {
-			const workerReconcileStartedAt = Date.now();
-			const reconciliation = await worker.reconcileLeases({ draining: true });
-			workerReconcileMs = Date.now() - workerReconcileStartedAt;
-			liveWorkerLeaseIds = reconciliation.liveLeaseIds;
-			await worker.reconcileOrphanJobs();
-			if (reconciliation.inventoryKnown) await runtime.tick({ admit: false });
-		};
-		const inFlight = async () => liveWorkerLeaseIds.size;
-		await reconcileDrain();
-		if (stopMode === "drain")
-			log("hobo_ci_isolated_worker_drain_started", {
-				inFlight: await inFlight(),
-				timeoutMs: drainTimeoutMs,
-			});
-		let reported = -1;
-		const result = await stopIsolatedWorker({
-			mode: stopMode,
-			inFlight,
-			reconcile: reconcileDrain,
-			pollMs: Math.min(intervalMs, 5_000),
-			timeoutMs: drainTimeoutMs,
-			onWaiting: (remaining) => {
-				if (remaining === reported) return;
-				reported = remaining;
-				log("hobo_ci_isolated_worker_drain_waiting", { remaining });
-			},
+	} else {
+		const [{ PostgresCiStore }, { default: pg }] = await Promise.all([
+			import("@hobo/ci/postgres"),
+			import("pg"),
+		]);
+		const pool = new pg.Pool({
+			connectionString: required(plan.store.urlEnv),
+			max: 2,
 		});
-		if (result.mode === "handoff") {
-			log("hobo_ci_isolated_worker_handoff", { running: result.remaining });
-		} else if (result.drained) {
-			log("hobo_ci_isolated_worker_drained", { remaining: 0 });
-		} else {
-			log("hobo_ci_isolated_worker_drain_timeout", {
-				remaining: result.remaining,
-			});
-		}
-		if (stopMode === "drain") await retiredSweep.drain();
+		attachPostgresPoolErrorHandler(pool);
+		closeStore = () => pool.end();
+		store = new PostgresCiStore(
+			pool,
+			"default",
+			budgetAdapter?.kind === "postgres"
+				? { sharedBudget: budgetAdapter.hooks }
+				: {},
+		);
+	}
+} catch (error) {
+	try {
 		await closeStore();
-		process.exit(result.mode === "handoff" || result.drained ? 0 : 1);
-	})().catch((error) => {
-		log("hobo_ci_isolated_worker_shutdown_failed", {
-			message: error instanceof Error ? error.message : "unknown",
-		});
-		process.exit(1);
-	});
-	return shutdownOnce;
+	} finally {
+		await budgetAdapter?.close?.();
+	}
+	throw error;
 }
+const closeUnderlyingStore = closeStore;
+let storeClosed = false;
+closeStore = async () => {
+	if (storeClosed) return;
+	storeClosed = true;
+	try {
+		await closeUnderlyingStore();
+	} finally {
+		await budgetAdapter?.close?.();
+	}
+};
 
-// `on`, not `once`: a supervisor that signals the whole process group (and a
-// parent that forwards the same signal) sends it twice, and a second signal
-// with no listener would kill the drain.
-for (const signal of ["SIGTERM", "SIGINT"] as const)
-	process.on(signal, () => {
-		void shutdown(signal);
+try {
+	for (const account of configuration.accounts)
+		for (const offer of account.offers) {
+			const ours =
+				isIsolatedContainerOffer(offer) &&
+				offer.providerAccountId === workerAccountId;
+			log("hobo_ci_isolated_worker_offer", {
+				accountId: account.id,
+				offerId: offer.id,
+				provider: offer.provider,
+				launchable: ours,
+				enabled: offer.enabled,
+				concurrency: offer.concurrency,
+				validUntil: offer.validUntil,
+				expired: Date.parse(offer.validUntil) <= Date.now(),
+			});
+		}
+
+	const github = createGithubAppTransport({ appId, privateKey });
+	// The poller learns job durations from the jobs lists it already reads; the
+	// relay admits each run's longest expected job first.
+	const jobDurations = createJobDurations();
+	const workerRunnerLabels: Parameters<typeof generalLeaseIdsFor>[2] =
+		new Map();
+	// Shared pnpm content-addressable store, bind-mounted into every job container
+	// (uid 1000 owns it). Empty string disables the mount.
+	const pnpmStore =
+		process.env.HOBO_CI_PNPM_STORE_DIR ??
+		join(homedir(), ".cache", "hobo-ci", "pnpm-store");
+	if (pnpmStore) mkdirSync(pnpmStore, { recursive: true, mode: 0o755 });
+	const PNPM_STORE_TARGET = "/pnpm-store";
+	const depsRepository =
+		process.env.HOBO_CI_DEPS_REPOSITORY ?? "Hobo-Labs/HoBo";
+	const depsImage = process.env.HOBO_CI_DEPS_IMAGE ?? "hobo-ci-deps:local";
+	const depsRoot =
+		process.env.HOBO_CI_DEPS_ROOT ?? defaultDepsRoot(import.meta.url);
+	if (pnpmStore && statSync(pnpmStore).dev !== statSync(workRoot).dev)
+		throw new Error(
+			"pnpm store and work root must share a filesystem for hardlinks",
+		);
+	const docker = createCliDockerDriver({ env: process.env, log });
+	const workFs = createNodeWorkerStorageFileSystem();
+	const retiredSweep = createRetiredWorkDirectorySweeper({
+		fs: workFs,
+		workRoot,
+		log,
 	});
+	retiredSweep.trigger();
+	const storageAdmission = createWorkerStorageAdmission({
+		dockerDataRoot: await docker.dataRoot(),
+		workRoot,
+		fs: workFs,
+		docker,
+		activeLeases: async () => storageLeases(await store.activeLeases()),
+		scheduleRetiredSweep: retiredSweep.trigger,
+		pnpmStore: pnpmStore
+			? createPnpmStoreMaintenance({
+					path: pnpmStore,
+					env: process.env,
+					minIntervalMs: pnpmStorePruneIntervalMs,
+				})
+			: undefined,
+		pnpmStoreIdle: async () => {
+			if (!pnpmStore) return false;
+			try {
+				if ((await store.activeLeases()).length !== 0) return false;
+				return (await docker.containersUsingVolume(pnpmStore)) === 0;
+			} catch {
+				return false;
+			}
+		},
+		builderCacheCap:
+			process.env.HOBO_CI_WORKER_BUILDER_CACHE_CAP ??
+			process.env.HOBO_CI_WORKER_BUILDER_KEEP_STORAGE ??
+			"4GB",
+		jobInodes: {
+			workRoot: inodeReserve("HOBO_CI_WORKER_WORKDIR_INODES", 200_000),
+			dockerDataRoot: inodeReserve("HOBO_CI_WORKER_CONTAINER_INODES", 170_000),
+		},
+		log,
+	});
+	await storageAdmission.reap();
+	const jobPickupMetadata = new Map<
+		string,
+		{ event?: string; jobCreatedAt?: string }
+	>();
+	const gitMirrorRoot =
+		process.env.HOBO_CI_GIT_MIRROR_ROOT ?? "/var/lib/hobo-ci/git";
+	const gitMirrorEnabled = process.env.HOBO_CI_GIT_MIRROR !== "0";
+	const gitMirrors = new Map<string, ReturnType<typeof createBoxGitMirror>>();
+	function gitMirrorFor(repository: string) {
+		const key = repository.toLowerCase();
+		const existing = gitMirrors.get(key);
+		if (existing) return existing;
+		const created = createBoxGitMirror({ root: gitMirrorRoot, repository });
+		gitMirrors.set(key, created);
+		return created;
+	}
+	const worker = createIsolatedContainerController({
+		store,
+		github,
+		publicOrigin,
+		docker,
+		workerAccountId,
+		workerImage: process.env.HOBO_CI_WORKER_IMAGE ?? "hobo-ci-worker:local",
+		depsRepository,
+		depsImage,
+		workerMemoryMb,
+		prewarmMemoryMb: memoryConfig.classes.standard,
+		memoryClasses: memoryConfig.classes,
+		memoryPeaks,
+		memoryAdmission,
+		generalLeaseIds: (activeLeases) =>
+			generalLeaseIdsFor(activeLeases, github, workerRunnerLabels),
+		jobPickupMetadata,
+		gitMirror: gitMirrorEnabled
+			? {
+					pathFor: (repository) => {
+						try {
+							return boxGitMirrorPath(gitMirrorRoot, repository);
+						} catch {
+							return undefined;
+						}
+					},
+					ensure: (repository, sha) => gitMirrorFor(repository).ensure(sha),
+				}
+			: undefined,
+		headShaFor: async (lease): Promise<string | undefined> =>
+			runtime.admissionOrder.headSha({
+				installationId: lease.installationId,
+				repository: lease.repository,
+				runId: lease.originalRunId,
+				jobId: lease.jobId,
+			}),
+		log,
+		slots,
+		volumes: pnpmStore
+			? [{ source: pnpmStore, target: PNPM_STORE_TARGET }]
+			: [],
+		containerEnv: pnpmStore
+			? {
+					npm_config_store_dir: PNPM_STORE_TARGET,
+					npm_config_package_import_method: "hardlink",
+					HOBO_CI_PNPM_STORE_MOUNTED: "1",
+				}
+			: {},
+		workRoot,
+		workFs,
+		scheduleRetiredSweep: retiredSweep.trigger,
+	});
+	let liveWorkerLeaseIds = (await worker.reconcileLeases()).liveLeaseIds;
+	await worker.reconcileOrphanJobs();
+	let depsImageEnsurer: ReturnType<typeof createDepsImageEnsurer> | undefined;
+	if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
+		depsImageEnsurer = createDepsImageEnsurer({
+			root: depsRoot,
+			repository: depsRepository,
+			buildMemoryMb: depsBuildMemoryMb,
+			git: {
+				defaultBranchHead: async (root) => {
+					const head = (
+						await output("git", ["-C", root, "rev-parse", "HEAD"], root, 30_000)
+					).trim();
+					if (!/^[0-9a-f]{40}$/u.test(head))
+						throw new Error("default branch head unavailable");
+					return head;
+				},
+			},
+			fs: {
+				depsKey: async (root, toolchain) =>
+					depsKeyForRoot(
+						root,
+						`linux/${process.arch === "x64" ? "amd64" : process.arch}`,
+						toolchain,
+					),
+			},
+			docker: {
+				toolchain: async (root) => {
+					const computed = ciRunnerImageVersion(root);
+					const computedExists = await output(
+						"docker",
+						["image", "inspect", `hobo-ci-worker:${computed}`],
+						root,
+						30_000,
+					).then(
+						() => true,
+						() => false,
+					);
+					if (computedExists) return computed;
+					if (!docker.inspectImage)
+						throw new Error("docker image inspection unavailable");
+					const worker = await docker.inspectImage("hobo-ci-worker:local");
+					const toolchain = worker.repoTags
+						.map((tag) => tag.match(/^hobo-ci-worker:(v[0-9a-f]{12})$/)?.[1])
+						.find((tag) => tag !== undefined);
+					if (!toolchain)
+						throw new Error("local worker toolchain tag unavailable");
+					return toolchain;
+				},
+				imageExists: (image) =>
+					output("docker", ["image", "inspect", image], depsRoot, 30_000).then(
+						() => true,
+						() => false,
+					),
+				pull: async (image) => {
+					await output("docker", ["pull", image], depsRoot, 45 * 60_000);
+				},
+				tag: async (source, target) => {
+					await output("docker", ["tag", source, target], depsRoot, 30_000);
+				},
+			},
+			processes: { run: runDepsProcess },
+			onEvent: ({ event, ...fields }) => log(event, fields),
+		});
+	}
+	const host = createCompositeIsolatedHost({ store, worker: worker.host });
+	if (!host) throw new Error("worker host unavailable");
+	let workerReconcileMs = 0;
+	const runtime = createHostedRelayRuntime({
+		store,
+		github,
+		identity: createGithubOidcVerifier(publicOrigin),
+		webhookSecret,
+		isolatedHost: host,
+		denyUnisolated: true,
+		jobDurations,
+		// With no trunk slots this is the slot count, all the host could run anyway.
+		generalLeaseLimit: slots - trunkSlots,
+		mergeGroupLeaseLimit: mergeGroupLeases,
+		jobPickupMetadata,
+		lendTrunkSlots,
+		memoryAdmission,
+		storageAdmission,
+		control: async () => undefined,
+		onTickTiming: (timing) =>
+			log("hobo_ci_isolated_worker_tick_slow", {
+				...timing,
+				workerReconcileMs,
+			}),
+	});
+	const poller =
+		plan.admission === "pull"
+			? createGithubJobPoller({
+					github,
+					durations: jobDurations,
+					admissionOrder: runtime.admissionOrder,
+					connections: async () =>
+						(await store.configuration())?.configuration?.connections ?? [],
+					ingest: (delivery) => runtime.ingestWebhook(delivery),
+					onIngestError: (jobId, message) =>
+						log("hobo_ci_isolated_worker_job_ingest_failed", {
+							jobId,
+							message,
+						}),
+					onGithubError: (failure) =>
+						log("hobo_ci_isolated_worker_github_read_failed", { ...failure }),
+				})
+			: undefined;
+	const pollWorthLogging = createPollLogFilter();
+
+	let draining = false;
+	let pollTimer: ReturnType<typeof setInterval> | undefined;
+	let jobPollTimer: ReturnType<typeof setInterval> | undefined;
+	let gcTimer: ReturnType<typeof setInterval> | undefined;
+	let tickInFlight: Promise<void> | undefined;
+	let jobPollInFlight: Promise<void> | undefined;
+	let gcInFlight: Promise<void> | undefined;
+
+	const reconcileAndLaunch = singleFlight(async () => {
+		const workerReconcileStartedAt = Date.now();
+		const reconciliation = await worker.reconcileLeases();
+		workerReconcileMs = Date.now() - workerReconcileStartedAt;
+		liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+		await worker.reconcileOrphanJobs();
+		if (!reconciliation.inventoryKnown) return;
+		// In push mode the hosted relay drains the shared inbox; in pull mode
+		// this worker is the only consumer of its own.
+		await runtime.tick({ maxDeliveries: poller ? 10 : 0 });
+	});
+
+	function runTick(): Promise<void> {
+		if (tickInFlight) return tickInFlight;
+		if (draining || gcInFlight) return Promise.resolve();
+		const current = reconcileAndLaunch();
+		const tracked = current.finally(() => {
+			if (tickInFlight === tracked) tickInFlight = undefined;
+		});
+		tickInFlight = tracked;
+		return tracked;
+	}
+
+	function runJobPoll(): void {
+		if (draining || !poller || jobPollInFlight) return;
+		jobPollInFlight = poller
+			.poll()
+			.then((summary) => {
+				if (!pollWorthLogging(summary, Date.now())) return;
+				const { waiting, ...counts } = summary;
+				log("hobo_ci_isolated_worker_jobs_polled", {
+					...counts,
+					waitingJobs: waiting.length,
+					waiting: describeWaitingJobs(waiting),
+				});
+			})
+			.catch((error) => {
+				log("hobo_ci_isolated_worker_job_poll_failed", {
+					message: error instanceof Error ? error.message : "unknown",
+				});
+			})
+			.finally(() => {
+				jobPollInFlight = undefined;
+			});
+	}
+
+	let depsEnsureTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function runDepsImageEnsure(): void {
+		if (draining || !depsImageEnsurer) return;
+		void depsImageEnsurer
+			.ensure()
+			.then((result) => {
+				if (draining) return;
+				const delay =
+					result.status === "failed" || result.status === "backoff"
+						? result.retryMs
+						: depsPollMs;
+				depsEnsureTimer = setTimeout(runDepsImageEnsure, delay);
+			})
+			.catch((error) => {
+				log("hobo_ci_deps_image_ensure_failed", {
+					key: "unknown",
+					action: "hit",
+					ms: 0,
+					message: error instanceof Error ? error.message : "unknown",
+					retryMs: depsPollMs,
+				});
+				if (!draining)
+					depsEnsureTimer = setTimeout(runDepsImageEnsure, depsPollMs);
+			});
+	}
+
+	function runGc(): void {
+		retiredSweep.trigger();
+		if (draining || gcInFlight || tickInFlight) return;
+		gcInFlight = store
+			.activeLeases()
+			.then((leases) =>
+				storageAdmission.maintain(storageLeases(leases), { pnpmStore: true }),
+			)
+			.catch((error) => {
+				log("hobo_ci_isolated_worker_gc_failed", {
+					message: error instanceof Error ? error.message : "unknown",
+				});
+			})
+			.finally(() => {
+				gcInFlight = undefined;
+			});
+	}
+
+	log("hobo_ci_isolated_worker_started", {
+		store: plan.store.kind,
+		admission: plan.admission,
+		publicOrigin,
+		pollMs: intervalMs,
+		jobPollMs: plan.jobPollMs,
+		hostMemMb,
+		workerMemoryMb,
+		memoryBudgetMb: memoryConfig.budgetMb,
+		memoryReserveMb: memoryConfig.reserveMb,
+		memoryLightMb: memoryConfig.classes.light,
+		memoryStandardMb: memoryConfig.classes.standard,
+		memoryTrunkReservationMb: memoryConfig.trunkReservationMb,
+		memoryHolMs: memoryConfig.holMs,
+		slots,
+		trunkSlots,
+		mergeGroupLeases,
+		lendTrunkSlots,
+		workRoot,
+		pnpmStoreMounted: pnpmStore !== "",
+		pnpmStorePruneIntervalMs,
+		gcIntervalMs,
+		drainTimeoutMs,
+		stopMode,
+	});
+
+	gcTimer = setInterval(runGc, gcIntervalMs);
+	pollTimer = setInterval(() => {
+		void runTick().catch((error) => {
+			log("hobo_ci_isolated_worker_tick_failed", {
+				message: error instanceof Error ? error.message : "unknown",
+			});
+		});
+	}, intervalMs);
+	if (poller) {
+		runJobPoll();
+		jobPollTimer = setInterval(runJobPoll, plan.jobPollMs);
+	}
+	runDepsImageEnsure();
+
+	let shutdownOnce: Promise<void> | undefined;
+
+	async function shutdown(signal: string) {
+		if (shutdownOnce) return shutdownOnce;
+		shutdownOnce = (async () => {
+			draining = true;
+			if (pollTimer) clearInterval(pollTimer);
+			if (jobPollTimer) clearInterval(jobPollTimer);
+			if (depsEnsureTimer) clearTimeout(depsEnsureTimer);
+			if (gcTimer) clearInterval(gcTimer);
+			await worker.discardWarm().catch(() => undefined);
+			log("hobo_ci_isolated_worker_draining", { signal });
+			await jobPollInFlight;
+			await gcInFlight;
+			if (tickInFlight) {
+				await tickInFlight.catch(() => undefined);
+			}
+			const reconcileDrain = async () => {
+				const workerReconcileStartedAt = Date.now();
+				const reconciliation = await worker.reconcileLeases({ draining: true });
+				workerReconcileMs = Date.now() - workerReconcileStartedAt;
+				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+				await worker.reconcileOrphanJobs();
+				if (reconciliation.inventoryKnown) await runtime.tick({ admit: false });
+			};
+			const inFlight = async () => liveWorkerLeaseIds.size;
+			await reconcileDrain();
+			if (stopMode === "drain")
+				log("hobo_ci_isolated_worker_drain_started", {
+					inFlight: await inFlight(),
+					timeoutMs: drainTimeoutMs,
+				});
+			let reported = -1;
+			const result = await stopIsolatedWorker({
+				mode: stopMode,
+				inFlight,
+				reconcile: reconcileDrain,
+				pollMs: Math.min(intervalMs, 5_000),
+				timeoutMs: drainTimeoutMs,
+				onWaiting: (remaining) => {
+					if (remaining === reported) return;
+					reported = remaining;
+					log("hobo_ci_isolated_worker_drain_waiting", { remaining });
+				},
+			});
+			if (result.mode === "handoff") {
+				log("hobo_ci_isolated_worker_handoff", { running: result.remaining });
+			} else if (result.drained) {
+				log("hobo_ci_isolated_worker_drained", { remaining: 0 });
+			} else {
+				log("hobo_ci_isolated_worker_drain_timeout", {
+					remaining: result.remaining,
+				});
+			}
+			if (stopMode === "drain") await retiredSweep.drain();
+			await closeStore();
+			process.exit(result.mode === "handoff" || result.drained ? 0 : 1);
+		})().catch(async (error) => {
+			await closeStore().catch(() => undefined);
+			log("hobo_ci_isolated_worker_shutdown_failed", {
+				message: error instanceof Error ? error.message : "unknown",
+			});
+			process.exit(1);
+		});
+		return shutdownOnce;
+	}
+
+	// `on`, not `once`: a supervisor that signals the whole process group (and a
+	// parent that forwards the same signal) sends it twice, and a second signal
+	// with no listener would kill the drain.
+	for (const signal of ["SIGTERM", "SIGINT"] as const)
+		process.on(signal, () => {
+			void shutdown(signal);
+		});
+} catch (error) {
+	await closeStore().catch(() => undefined);
+	throw error;
+}

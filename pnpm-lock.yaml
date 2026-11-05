@@ -663,6 +663,9 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
+      '@hobo/broker':
+        specifier: workspace:*
+        version: link:../broker
       '@hobo/ci':
         specifier: workspace:*
         version: link:../ci
@@ -682,9 +685,6 @@ importers:
       '@dagger.io/dagger':
         specifier: 0.21.11
         version: 0.21.11
-      '@hobo/broker':
-        specifier: workspace:*
-        version: link:../broker
       '@hobo/ci-cf':
         specifier: workspace:*
         version: link:../ci-cf

@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import { runnerDownloadFor } from "../bootstrap.js";
 import { type GithubTransport, getJob } from "../github.js";
+import { heldRoutingOptions } from "../held-routing.js";
 import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
 import {
@@ -55,12 +56,14 @@ export async function startRunner(
 	name: string,
 	containerId: string,
 	jitConfig: string,
+	beforeRun?: () => void,
 ): Promise<void> {
 	// The JIT config is a runner credential: deliver it over stdin into a
 	// 0600 file and hand it to the runner via env, never via argv (ps).
 	if (!docker.writeSecret)
 		throw new Error("docker driver cannot deliver secrets");
 	await docker.writeSecret(name, containerId, JIT_PATH, jitConfig);
+	beforeRun?.();
 	const runJob = docker.execDetached ?? docker.exec;
 	const prep = await runJob(name, containerId, [
 		"sh",
@@ -154,6 +157,20 @@ type LaunchStage =
 	| "transition"
 	| "jit"
 	| "runner";
+
+class QueueDeadlineExpired extends Error {
+	constructor() {
+		super("CI queue deadline expired before isolated runner effect");
+	}
+}
+
+function assertQueueDeadline(lease: Lease, at: string): void {
+	if (!lease.queueDeadlineAt) return;
+	const deadline = Date.parse(lease.queueDeadlineAt);
+	const now = Date.parse(at);
+	if (!Number.isFinite(deadline) || !Number.isFinite(now) || deadline <= now)
+		throw new QueueDeadlineExpired();
+}
 type DepsImageFallbackLog = {
 	event: "hobo_ci_deps_image_fallback";
 	image: string;
@@ -189,6 +206,7 @@ type WarmContainer = Readonly<{
 	containerId: string;
 	memoryMb: number;
 	selection: JobImage;
+	mirrorPath: string;
 }>;
 type JobPickupLogFields = {
 	jobId: number;
@@ -522,6 +540,8 @@ export function createIsolatedContainerController(options: {
 				const selectedRepository =
 					repository ?? next?.repository ?? depsRepository;
 				const selection = await selectImage(selectedRepository);
+				const mirrorPath =
+					gitMirrorMount(selectedRepository).env.HOBO_CI_GIT_MIRROR ?? "";
 				const handle = await options.docker.create(
 					containerSpec(
 						name,
@@ -535,7 +555,12 @@ export function createIsolatedContainerController(options: {
 				);
 				try {
 					await options.docker.start(name, handle.containerId);
-					warm = { ...handle, memoryMb: prewarmMemoryMb, selection };
+					warm = {
+						...handle,
+						memoryMb: prewarmMemoryMb,
+						selection,
+						mirrorPath,
+					};
 				} catch {
 					await options.docker
 						.remove(name, handle.containerId)
@@ -599,17 +624,20 @@ export function createIsolatedContainerController(options: {
 				lease.reservedMinutes
 		)
 			throw new Error("worker offer changed");
+		const at = now();
 		const decision = route(
 			{
 				...account,
-				offers: account.offers.filter((entry) =>
-					isIsolatedContainerOffer(entry),
-				),
+				offers: account.offers.map((entry) => ({
+					...entry,
+					enabled: entry.enabled && isIsolatedContainerOffer(entry),
+				})),
 			},
 			(await options.store.accountLeases(lease.accountId)).filter(
 				(entry) => entry.id !== lease.id,
 			),
-			now(),
+			at,
+			heldRoutingOptions(account, lease, at),
 		);
 		if (
 			!decision ||
@@ -813,6 +841,8 @@ export function createIsolatedContainerController(options: {
 				}
 				let containerId = "";
 				let containerStartedAt = "";
+				let createInFlight = false;
+				let registrationAttempted = false;
 				const memoryMb = classMemoryMb(planned);
 				let stage: LaunchStage = "image";
 				try {
@@ -843,11 +873,15 @@ export function createIsolatedContainerController(options: {
 							});
 						}
 					}
+					assertQueueDeadline(planned, now());
 					stage = "create";
 					const spare = warm?.memoryMb === memoryMb ? warm : undefined;
+					const mirrorPath =
+						gitMirrorMount(planned.repository).env.HOBO_CI_GIT_MIRROR ?? "";
 					const spareMatches =
 						spare?.selection.image === selection.image &&
-						spare.selection.depsKey === selection.depsKey;
+						spare.selection.depsKey === selection.depsKey &&
+						spare.mirrorPath === mirrorPath;
 					if (
 						spare &&
 						spareMatches &&
@@ -859,8 +893,10 @@ export function createIsolatedContainerController(options: {
 						options.memoryAdmission?.consumeWarm(spare.memoryMb);
 						containerId = spare.containerId;
 						await options.docker.updateResources(spare.containerId, weights);
+						assertQueueDeadline(planned, now());
 						await options.docker.rename(spare.containerId, name);
 					} else {
+						createInFlight = true;
 						const handle = await options.docker.create(
 							containerSpec(
 								name,
@@ -874,8 +910,10 @@ export function createIsolatedContainerController(options: {
 						);
 						if (handle.name !== name)
 							throw new Error("container identity mismatch");
+						createInFlight = false;
 						containerId = handle.containerId;
 						stage = "start";
+						assertQueueDeadline(planned, now());
 						await options.docker.start(name, containerId);
 					}
 					containerStartedAt = now();
@@ -894,7 +932,7 @@ export function createIsolatedContainerController(options: {
 						containerStartedAt,
 					);
 					if (!created) throw new Error("reservation changed");
-					await options.store.transition(
+					const claiming = await options.store.transition(
 						id,
 						["dispatched"],
 						(lease) => {
@@ -907,7 +945,11 @@ export function createIsolatedContainerController(options: {
 						now(),
 						auth.revision,
 					);
+					if (!claiming)
+						throw new Error("reservation changed before runner registration");
 					stage = "jit";
+					assertQueueDeadline(planned, now());
+					registrationAttempted = true;
 					const response = await options.github.request(
 						created.installationId,
 						`/repos/${created.repository}/actions/runners/generate-jitconfig`,
@@ -922,6 +964,22 @@ export function createIsolatedContainerController(options: {
 					if (response.status !== 201)
 						throw new Error("runner registration failed");
 					const jit = jitResponse.parse(await response.json());
+					try {
+						assertQueueDeadline(planned, now());
+					} catch (error) {
+						if (error instanceof QueueDeadlineExpired)
+							await options.store.transition(
+								id,
+								["claiming"],
+								(lease) => {
+									lease.runnerId = jit.runner.id;
+									lease.state = "uncertain";
+								},
+								"ci.LeaseUncertain",
+								now(),
+							);
+						throw error;
+					}
 					stage = "transition";
 					const runnerRegisteredAt = now();
 					const registered = await options.store.transition(
@@ -938,6 +996,7 @@ export function createIsolatedContainerController(options: {
 						runnerRegisteredAt,
 					);
 					if (!registered) throw new Error("registration revoked");
+					assertQueueDeadline(planned, now());
 					const fields: JobPickupLogFields = {
 						jobId: registered.jobId,
 						runId: registered.originalRunId,
@@ -974,6 +1033,7 @@ export function createIsolatedContainerController(options: {
 						name,
 						containerId,
 						jit.encoded_jit_config,
+						() => assertQueueDeadline(planned, now()),
 					);
 					launchLoops.delete(
 						launchKey(planned.repositoryId, planned.jobId, planned.runAttempt),
@@ -982,13 +1042,50 @@ export function createIsolatedContainerController(options: {
 					if ((await liveContainers("")) < slots)
 						void prewarm().catch(() => undefined);
 				} catch (error) {
+					let cleanupConfirmed = !containerId;
 					if (containerId) {
 						try {
 							await options.docker.stop(name, containerId);
 							await options.docker.remove(name, containerId);
+							cleanupConfirmed = true;
 						} catch {
 							/* recovery will retry stop */
 						}
+					}
+					if (
+						error instanceof QueueDeadlineExpired ||
+						createInFlight ||
+						registrationAttempted ||
+						!cleanupConfirmed
+					) {
+						logLaunch("hobo_ci_launch_failed", {
+							stage,
+							message: error instanceof Error ? error.message : "unknown",
+							leaseId: planned.id,
+							jobId: planned.jobId,
+							actualJobId: planned.actualJobId,
+							attempt:
+								(launchLoops.get(
+									launchKey(
+										planned.repositoryId,
+										planned.jobId,
+										planned.runAttempt,
+									),
+								)?.failures.length ?? 0) + 1,
+						});
+						await options.store.transition(
+							id,
+							["dispatching", "dispatched", "claiming", "running"],
+							(entry) => {
+								entry.state = "uncertain";
+							},
+							"ci.LeaseUncertain",
+							now(),
+						);
+						if (cleanupConfirmed && !createInFlight)
+							await cleanupWorkDirectory(planned);
+						// Keep the claimed financial hold until verified settlement.
+						return;
 					}
 					await failLaunch(
 						planned,
@@ -1005,6 +1102,9 @@ export function createIsolatedContainerController(options: {
 			if (!lease) return;
 			if (!lease.sandboxSessionId || !lease.sandboxName) {
 				if (lease.state === "uncertain") {
+					// A named create may still complete after a lost reply. Time alone
+					// cannot prove absence or fence a second container with that identity.
+					if (lease.sandboxName) return;
 					const ageMs = Date.parse(now()) - Date.parse(lease.createdAt);
 					if (ageMs >= uncertainWithoutContainerRecoveryMs) {
 						await options.store.abortIsolatedAndRequeue(
