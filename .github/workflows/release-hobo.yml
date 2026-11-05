@@ -559,7 +559,7 @@ jobs:
     needs: [release-main-train-gate, release-contract, release-oci-build-tag]
     # npm trusted publishing (OIDC) requires GitHub-hosted runners — not self-hosted hobo.
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     environment: release
     permissions:
       contents: read

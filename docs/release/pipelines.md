@@ -130,7 +130,7 @@ Public packages publish under **`@hobo-labs/*`** through the **`hobodev`** npm p
 
 Real publication requires:
 
-- **GitHub-hosted `release-npm` job** on **`ubuntu-24.04`** with **`environment: release`**, **`permissions.id-token: write`**, and **`npm publish --provenance`**. When **`NPM_TOKEN`** is empty, npm **trusted publishing** (OIDC) is used — [npm does not support trusted publishing on self-hosted runners](https://docs.npmjs.com/trusted-publishers). Optional **`NPM_TOKEN`** on the **`release`** environment still maps to **`NODE_AUTH_TOKEN`** + **`hobodev`** `whoami` (OpenSesame-style dual path; see Tyler-R-Kendrick/OpenSesame `.github/actions/publish-npm-package`).
+- **GitHub-hosted `release-npm` job** on **`ubuntu-24.04`** (`timeout-minutes: 20`, same overall 20-minute fail budget) with **`environment: release`**, **`permissions.id-token: write`**, and **`npm publish --provenance`**. When **`NPM_TOKEN`** is empty, npm **trusted publishing** (OIDC) is used — [npm does not support trusted publishing on self-hosted runners](https://docs.npmjs.com/trusted-publishers). Optional **`NPM_TOKEN`** on the **`release`** environment still maps to **`NODE_AUTH_TOKEN`** + **`hobodev`** `whoami` (OpenSesame-style dual path; see Tyler-R-Kendrick/OpenSesame `.github/actions/publish-npm-package`).
 - Each **`@hobo-labs/*`** package on npmjs needs a **trusted publisher**: org **`Hobo-Labs`**, repo **`HoBo`**, workflow **`release-hobo.yml`**, environment **`release`**. First publish may require a one-time bootstrap (manual package create or token) before OIDC can attach.
 - **Unmapped public package** or failed pack/provenance precondition still fails closed. PR dry runs receive neither token nor OIDC publishing permission.
 
