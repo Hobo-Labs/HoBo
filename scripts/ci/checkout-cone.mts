@@ -87,9 +87,11 @@ export const S0_REQUIRED_PATHS = [
 	"packages/stage-gate/package.json",
 	"pnpm-lock.yaml",
 	"pnpm-workspace.yaml",
+	"scripts/bootstrap-siblings.mts",
 	"scripts/ci/checkout-cone.mts",
 	"scripts/run-relevant-checks.ts",
 	"test/setup/hobo-test-homes.ts",
+	"tools/pins/siblings.json",
 	"turbo.json",
 ] as const;
 

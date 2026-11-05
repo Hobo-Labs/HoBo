@@ -606,6 +606,19 @@ jobs:
             mv "$1/exit.tmp" "$1/exit"
           ' _ "$RUNNER_TEMP/gitleaks" </dev/null >/dev/null 2>&1 &
       - uses: ./.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode
+        run: |
+          set -euo pipefail
+          # Sparse S0 keeps the gitlink only. pins:fetch materializes the pin's
+          # grounding/training/rewrite cone so deps-key and pnpm prepare can see
+          # the workspace importers. Skip when the cone is already present.
+          if [ -f external/ts-autocode/packages/grounding/package.json ] \
+            && [ -f external/ts-autocode/packages/training/package.json ] \
+            && [ -f external/ts-autocode/packages/rewrite/package.json ]; then
+            echo "ts-autocode pin cone already present"
+            exit 0
+          fi
+          pnpm run pins:fetch ts-autocode
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
         with:

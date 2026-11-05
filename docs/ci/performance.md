@@ -74,8 +74,10 @@ unindexed new finding files as notices.
 - [Finding 65: merge-group jobs serialized behind the release job](./findings/0065-merge-group-jobs-serialized-behind-the-release-job.md)
 - [Finding 67: Unbounded pnpm store prunes froze the box](./findings/0067-unbounded-pnpm-store-prunes-froze-the-box.md)
 - [Finding 70: a test fixture depended on the job container umask](./findings/0070-a-test-fixture-depended-on-the-job-container-umask.md)
+- [Finding 71: a deps key miss rebuilt without inode headroom](./findings/0071-a-deps-key-miss-rebuilt-without-inode-headroom.md)
 - [Finding 72: deps mount verify missed the link script](./findings/0072-deps-mount-verify-missed-the-link-script.md)
 - [Finding 73: Main S0 checkout fetched unused trees](./findings/0073-main-s0-checkout-fetched-unused-trees.md)
+- [Finding 74: sparse S0 skipped the ts-autocode pin](./findings/0074-sparse-s0-skipped-the-ts-autocode-pin.md)
 <!-- findings-index:end -->
 
 ## Data

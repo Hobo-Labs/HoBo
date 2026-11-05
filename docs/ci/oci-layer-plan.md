@@ -330,9 +330,10 @@ time, read with `gh run view --json jobs` over the 5 runs before merge and the 5
 **Status (2026-11-05): started for Main full gate S0 only.** `hobo-ci.yml` bootstraps `.github/actions`, then uses
 `hobo-checkout` with `filter: blob:none`, `fetch-tags: false`, the canonical cone in
 `scripts/ci/checkout-cone.mts`, and `submodules: "false"`. The cone covers S0, `check:all`, and `agent:check`
-inputs but not `media/`. Full history remains (`fetch-depth: 0`) because the same job runs `gitleaks git`; the deps
-layer's existing ts-autocode links replace the recursive submodule fetch. Other jobs, including `pr-gate` and the
-image jobs, are unchanged.
+inputs but not `media/`. Full history remains (`fetch-depth: 0`) because the same job runs `gitleaks git`.
+Recursive ts-autocode clone stays off; after preflight the job runs `pnpm run pins:fetch ts-autocode` when the
+pin cone manifests are missing so deps-key and `pnpm prepare` can see the workspace importers (finding 74).
+Other jobs, including `pr-gate` and the image jobs, are unchanged.
 
 The eventual Phase 1 target remains that every `actions/checkout` uses:
 - `filter: blob:none`;
