@@ -345,6 +345,7 @@ describe("release OCI app staging", () => {
 	it("builds every allowlisted SDK package", () => {
 		expect(SDK_PACKAGES).toEqual([
 			"@hobo/core",
+			"@hobo/policy",
 			"@hobo/bindles",
 			"@hobo/contracts",
 			"@hobo/contract-harness",

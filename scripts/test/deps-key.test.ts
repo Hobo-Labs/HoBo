@@ -11,12 +11,16 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import {
-	DEPS_BUILD_RECIPE_PATHS,
+	DEPS_LAYER_BUCKET_SCRIPT_PATH,
+	DEPS_LAYOUT,
+	DEPS_LAYOUT_RECIPE_PATHS,
 	type DepsKeyInputs,
 	depsContextPaths,
+	depsKeyForRoot,
 	depsKeyFromInputs,
+	depsLayoutRecipeSha256,
 	listWorkspaceImporters,
-	readDepsInputs,
+	readDepsContextFiles,
 } from "../lib/deps-key.mts";
 
 const lockfile = `lockfileVersion: '9.0'
@@ -57,13 +61,6 @@ function inputs(): DepsKeyInputs {
 			"packages/a/package.json": '{"name":"a"}\n',
 			"packages/b/package.json": '{"name":"b"}\n',
 		},
-		buildRecipe: {
-			[DEPS_BUILD_RECIPE_PATHS[0]]: "fetch and install\n",
-			[DEPS_BUILD_RECIPE_PATHS[1]]: "build and verify\n",
-			[DEPS_BUILD_RECIPE_PATHS[2]]: "partition layers\n",
-			[DEPS_BUILD_RECIPE_PATHS[3]]: "link and verify\n",
-		},
-		miseLock,
 		platform: "linux/arm64",
 		toolchainVersion: "v0123456789ab",
 	};
@@ -138,42 +135,6 @@ describe("deps key", () => {
 					...inputs().manifests,
 					"packages/b/package.json": '{"name":"changed"}\n',
 				},
-			}),
-			"deps Dockerfile": () => ({
-				...inputs(),
-				buildRecipe: {
-					...inputs().buildRecipe,
-					[DEPS_BUILD_RECIPE_PATHS[0]]: "changed install\n",
-				},
-			}),
-			"deps build script": () => ({
-				...inputs(),
-				buildRecipe: {
-					...inputs().buildRecipe,
-					[DEPS_BUILD_RECIPE_PATHS[1]]: "changed build\n",
-				},
-			}),
-			"deps bucket generator": () => ({
-				...inputs(),
-				buildRecipe: {
-					...inputs().buildRecipe,
-					[DEPS_BUILD_RECIPE_PATHS[2]]: "changed partition\n",
-				},
-			}),
-			"deps link and check script": () => ({
-				...inputs(),
-				buildRecipe: {
-					...inputs().buildRecipe,
-					[DEPS_BUILD_RECIPE_PATHS[3]]: "changed link and check\n",
-				},
-			}),
-			node: () => ({
-				...inputs(),
-				miseLock: miseLock.replace("24.0.0", "24.0.1"),
-			}),
-			pnpm: () => ({
-				...inputs(),
-				miseLock: miseLock.replace("10.0.0", "10.0.1"),
 			}),
 			platform: () => ({ ...inputs(), platform: "linux/amd64" }),
 			toolchain: () => ({ ...inputs(), toolchainVersion: "v1123456789ab" }),
@@ -281,12 +242,15 @@ describe("deps key", () => {
 		const files = {
 			"pnpm-lock.yaml": value.lockfile,
 			"pnpm-workspace.yaml": value.workspace,
-			"mise.lock": value.miseLock,
+			"mise.lock": miseLock,
 			".npmrc": value.npmrc,
 			".pnpmfile.cjs": value.pnpmfile,
+			[DEPS_LAYOUT_RECIPE_PATHS[0]]: "fetch and install\n",
+			[DEPS_LAYOUT_RECIPE_PATHS[1]]: "build and verify\n",
+			[DEPS_LAYOUT_RECIPE_PATHS[2]]: "partition layers\n",
+			"scripts/ci/deps-layer.mts": "link and verify\n",
 			...value.patches,
 			...value.manifests,
-			...value.buildRecipe,
 		} satisfies Record<string, string>;
 		for (const [path, text] of Object.entries(files)) {
 			mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -294,22 +258,141 @@ describe("deps key", () => {
 		}
 	}
 
+	function fixtureKey(
+		root: string,
+		platform = "linux/arm64",
+		toolchainVersion = "v0123456789ab",
+	): string {
+		return depsKeyForRoot(root, platform, toolchainVersion);
+	}
+
 	it("does not change for an unrelated file", () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-deps-key-"));
 		try {
-			const value = inputs();
-			writeFixture(root, value);
-			const key = () =>
-				depsKeyFromInputs({
-					...readDepsInputs(root, "linux/arm64"),
-					toolchainVersion: "v0123456789ab",
-				});
-			const before = key();
+			writeFixture(root, inputs());
+			const before = fixtureKey(root);
 			writeFileSync(join(root, "README.md"), "unrelated\n");
-			assert.equal(key(), before);
+			assert.equal(fixtureKey(root), before);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+
+	it("does not change for layout recipes, link verification, or mise tool edits", () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-deps-key-"));
+		try {
+			writeFixture(root, inputs());
+			const before = fixtureKey(root);
+			const mutations = [
+				{
+					name: "deps Dockerfile",
+					path: DEPS_LAYOUT_RECIPE_PATHS[0],
+					contents: "changed install\n",
+				},
+				{
+					name: "deps build script",
+					path: DEPS_LAYOUT_RECIPE_PATHS[1],
+					contents: "changed build\n",
+				},
+				{
+					name: "deps bucket generator",
+					path: DEPS_LAYOUT_RECIPE_PATHS[2],
+					contents: "changed partition\n",
+				},
+				{
+					name: "deps link and check script",
+					path: "scripts/ci/deps-layer.mts",
+					contents: "changed link and check\n",
+				},
+				{
+					name: "node mise entry",
+					path: "mise.lock",
+					contents: miseLock.replace("24.0.0", "24.0.1"),
+				},
+				{
+					name: "pnpm mise entry",
+					path: "mise.lock",
+					contents: miseLock.replace("10.0.0", "10.0.1"),
+				},
+			];
+			for (const mutation of mutations) {
+				writeFileSync(join(root, mutation.path), mutation.contents);
+				assert.equal(fixtureKey(root), before, mutation.name);
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("changes for dependency, platform, and toolchain edits on disk", () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-deps-key-"));
+		try {
+			const value = inputs();
+			const assertChanges = (name: string, mutate: () => void): void => {
+				writeFixture(root, value);
+				const before = fixtureKey(root);
+				mutate();
+				assert.notEqual(fixtureKey(root), before, name);
+			};
+			assertChanges("dependency field", () => {
+				writeFileSync(
+					join(root, "package.json"),
+					'{"name":"root","dependencies":{"left-pad":"1.0.0"}}\n',
+				);
+			});
+			assertChanges("lockfile", () => {
+				writeFileSync(join(root, "pnpm-lock.yaml"), `# changed\n${lockfile}`);
+			});
+			assertChanges("workspace", () => {
+				writeFileSync(
+					join(root, "pnpm-workspace.yaml"),
+					`${workspace}# changed\n`,
+				);
+			});
+			assertChanges("npmrc", () => {
+				writeFileSync(join(root, ".npmrc"), "fetch-retries=1\n");
+			});
+			assertChanges("patch", () => {
+				writeFileSync(join(root, "patches/a.patch"), "patch b\n");
+			});
+			writeFixture(root, value);
+			assert.notEqual(
+				fixtureKey(root, "linux/amd64"),
+				fixtureKey(root),
+				"platform",
+			);
+			assert.notEqual(
+				fixtureKey(root, "linux/arm64", "v1123456789ab"),
+				fixtureKey(root),
+				"toolchainVersion",
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("stages the bucket script without the link verification script", () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-deps-key-"));
+		try {
+			writeFixture(root, inputs());
+			const paths = depsContextPaths(root);
+			const files = readDepsContextFiles(root);
+			assert.ok(!paths.includes("scripts/ci/deps-layer.mts"));
+			assert.ok(paths.includes(DEPS_LAYER_BUCKET_SCRIPT_PATH));
+			assert.equal(files["scripts/ci/deps-layer.mts"], undefined);
+			assert.equal(files[DEPS_LAYER_BUCKET_SCRIPT_PATH], "partition layers\n");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("pins the layout recipe digest and its bump-or-update rule", () => {
+		const root = join(import.meta.dirname, "..", "..");
+		assert.equal(
+			depsLayoutRecipeSha256(root),
+			DEPS_LAYOUT.recipeSha256,
+			"Layout recipe changed: bump DEPS_LAYOUT.version when the edit changes image contents or paths (payload paths, install flags, rebuilt packages, or bucket assignment); otherwise update only DEPS_LAYOUT.recipeSha256.",
+		);
 	});
 
 	it("keeps the key and staged context bytes stable for metadata edits", () => {

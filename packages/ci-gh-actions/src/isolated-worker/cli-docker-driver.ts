@@ -217,6 +217,14 @@ export function createCliDockerDriver(options: {
 				maxBuffer: 1024 * 1024,
 			});
 		},
+		async containersUsingVolume(source) {
+			const { stdout } = await exec(
+				docker,
+				["ps", "-q", "--filter", `volume=${source}`],
+				{ env, timeout: 30_000, maxBuffer: 1024 * 1024 },
+			);
+			return stdout.trim() ? stdout.trim().split("\n").length : 0;
+		},
 		async containerExists(name) {
 			try {
 				await exec(docker, ["container", "inspect", name], {

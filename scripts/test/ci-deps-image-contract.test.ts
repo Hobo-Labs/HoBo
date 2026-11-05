@@ -187,6 +187,19 @@ describe("CI deps image build contract", () => {
 		assert.ok(!build.includes("--cache-to"));
 	});
 
+	it("stages the link verification script outside the Docker build context", () => {
+		includes(build, 'verification="$(mktemp -d)"');
+		includes(build, 'rm -rf "$context" "$verification" "$contract_log"');
+		includes(build, 'cp -a "$context/." "$verification/"');
+		includes(build, 'mkdir -p "$verification/scripts/ci"');
+		includes(
+			build,
+			'cp scripts/ci/deps-layer.mts "$verification/scripts/ci/deps-layer.mts"',
+		);
+		includes(build, 'tar -C "$verification" -cf - .');
+		assert.ok(!build.includes('tar -C "$context" -cf - .'));
+	});
+
 	it("requires an up-to-date offline contract before promoting a new build", () => {
 		includes(
 			build,

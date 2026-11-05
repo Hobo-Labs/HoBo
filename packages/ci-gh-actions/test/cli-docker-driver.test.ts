@@ -98,6 +98,29 @@ describe("cli docker container inventory", () => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+
+	it("counts running containers that mount the pnpm store", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "fake-docker-volume-"));
+		try {
+			const bin = join(dir, "docker");
+			const log = join(dir, "args");
+			writeFileSync(
+				bin,
+				`#!/bin/sh\nprintf '%s' "$*" > "${log}"\nprintf '%s\\n' abc def\n`,
+			);
+			chmodSync(bin, 0o755);
+			const driver = createCliDockerDriver({ binary: bin, env: {} });
+
+			await expect(
+				driver.containersUsingVolume("/srv/pnpm-store"),
+			).resolves.toBe(2);
+			expect(readFileSync(log, "utf8")).toBe(
+				"ps -q --filter volume=/srv/pnpm-store",
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("cli docker memory peaks", () => {

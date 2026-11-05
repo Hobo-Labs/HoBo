@@ -67,8 +67,10 @@ unindexed new finding files as notices.
 - [Finding 57: deps manifest scripts and the registry layer cache](./findings/0057-deps-manifest-scripts-and-the-registry-layer-cache.md)
 - [Finding 58: two concurrent jobs exhausted inodes mid-run](./findings/0058-two-concurrent-jobs-exhausted-inodes-mid-run.md)
 - [Finding 59: the deps mount check needed tsx and misread the pnpm layout](./findings/0059-the-deps-mount-check-needed-tsx-and-misread-the-pnpm-layout.md)
+- [Finding 60: the deps key rebuilt on recipe churn](./findings/0060-the-deps-key-rebuilt-on-recipe-churn.md)
 - [Finding 61: a worker restart drained jobs before handing off](./findings/0061-a-worker-restart-drained-jobs-before-handing-off.md)
 - [Finding 62: memory reservations were guesses held as hard limits](./findings/0062-memory-reservations-were-guesses-held-as-hard-limits.md)
+- [Finding 67: Unbounded pnpm store prunes froze the box](./findings/0067-unbounded-pnpm-store-prunes-froze-the-box.md)
 <!-- findings-index:end -->
 
 ## Data
