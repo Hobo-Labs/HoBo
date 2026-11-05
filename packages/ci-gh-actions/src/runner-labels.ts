@@ -13,7 +13,10 @@ export const TRUNK_RUNNER_LABEL = "hobo-trunk";
 
 export type RunnerLabel = typeof RUNNER_LABEL | typeof TRUNK_RUNNER_LABEL;
 
-/** The runner label a job asked for, if HoBo serves it; exactly one label, never more. */
+/**
+ * The runner label a job asked for, if HoBo serves it; exactly one label, never more.
+ * Overflow machine labels (`ubuntu-24.04`, `hobo-arc`) stay unserved.
+ */
 export function servedRunnerLabel(
 	labels: readonly string[],
 ): RunnerLabel | undefined {

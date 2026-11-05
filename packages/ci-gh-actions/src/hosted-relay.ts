@@ -11,6 +11,7 @@ import {
 	type Lease,
 	parseCiPolicy,
 	providerOffer,
+	queuedDemandLabels,
 	route,
 } from "@hobo/ci";
 import { z } from "zod";
@@ -536,7 +537,9 @@ export class HostedRelay {
 			name: lease.jobName,
 			memoryClass: lease.memoryClass,
 			memoryMb: lease.memoryMb,
-			labels: ["hobo"],
+			labels: queuedDemandLabels(lease.provider, offer.backend, offer.runsOn, [
+				"hobo",
+			]),
 			action: "queued",
 			isolatedRequired: isIsolatedHostOffer(offer),
 		});
