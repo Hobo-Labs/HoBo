@@ -7,9 +7,24 @@ inputs:
   image-id:
     description: Image id to select from the digest list (e.g. hobo-cli)
     required: true
+  ghcr-username:
+    description: GHCR docker login user (github.actor)
+    required: true
+  ghcr-token:
+    description: GHCR docker login password (GITHUB_TOKEN)
+    required: true
 runs:
   using: composite
   steps:
+    - name: Log in to GHCR for attestation push
+      shell: bash
+      env:
+        GHCR_USERNAME: ${{ inputs.ghcr-username }}
+        GHCR_TOKEN: ${{ inputs.ghcr-token }}
+      run: |
+        set -euo pipefail
+        mkdir -p "${HOME}/.docker"
+        echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
     - name: Resolve digest for image
       id: meta
       shell: bash
@@ -18,8 +33,12 @@ runs:
         IMAGE_ID: ${{ inputs.image-id }}
       run: |
         set -euo pipefail
-        ref="$(grep "/${IMAGE_ID}@" "$DIGEST_LIST" | head -n1)"
-        if [ -z "$ref" ]; then
+        if [ ! -f "${DIGEST_LIST}" ]; then
+          echo "::error::digest list not found: ${DIGEST_LIST}"
+          exit 1
+        fi
+        ref="$(grep -F "/${IMAGE_ID}@" "${DIGEST_LIST}" | head -n1 || true)"
+        if [ -z "${ref}" ]; then
           echo "::error::no digest for ${IMAGE_ID} in ${DIGEST_LIST}"
           exit 1
         fi

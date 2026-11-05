@@ -227,7 +227,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      packages: read
+      packages: write
       id-token: write
       attestations: write
     steps:
@@ -242,3 +242,5 @@ jobs:
         with:
           digest-list-path: /tmp/hobo-code-release-attest/hobo-code-release-digests.txt
           image-id: hobo-code
+          ghcr-username: ${{ github.actor }}
+          ghcr-token: ${{ secrets.GITHUB_TOKEN }}
