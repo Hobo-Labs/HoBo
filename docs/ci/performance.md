@@ -67,6 +67,7 @@ unindexed new finding files as notices.
 - [Finding 57: deps manifest scripts and the registry layer cache](./findings/0057-deps-manifest-scripts-and-the-registry-layer-cache.md)
 - [Finding 58: two concurrent jobs exhausted inodes mid-run](./findings/0058-two-concurrent-jobs-exhausted-inodes-mid-run.md)
 - [Finding 59: the deps mount check needed tsx and misread the pnpm layout](./findings/0059-the-deps-mount-check-needed-tsx-and-misread-the-pnpm-layout.md)
+- [Finding 60: the deps key rebuilt on recipe churn](./findings/0060-the-deps-key-rebuilt-on-recipe-churn.md)
 - [Finding 61: a worker restart drained jobs before handing off](./findings/0061-a-worker-restart-drained-jobs-before-handing-off.md)
 - [Finding 63: a dead runner left its GitHub job in progress](./findings/0063-a-dead-runner-left-its-github-job-in-progress.md)
 - [Finding 64: containerless launch failures thrashed worker leases](./findings/0064-containerless-launch-failures-thrashed-worker-leases.md)
