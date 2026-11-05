@@ -318,8 +318,16 @@ describe("CI deps workflow contract", () => {
 	const start = workflow.indexOf("  ci-deps-image:");
 	const end = workflow.indexOf("  pr-gate:", start);
 	const job = workflow.slice(start, end);
+	const buildCondition =
+		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name == 'pull_request'";
+	const deferCondition =
+		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name != 'pull_request'";
+	const verifyCondition =
+		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && (steps.source.outputs.source != 'build' || github.event_name == 'pull_request')";
+	const promoteCondition =
+		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source != 'build' && github.event_name != 'pull_request'";
 
-	it("builds PR misses without promoting the new candidate or writing GHCR", () => {
+	it("logs in before resolving and builds PR misses without writing GHCR", () => {
 		assert.ok(start > -1);
 		assert.ok(end > start);
 		includes(job, "name: CI deps layer (pnpm)");
@@ -327,7 +335,11 @@ describe("CI deps workflow contract", () => {
 		includes(job, "needs.ci-runner-image.result != 'failure'");
 		includes(job, "packages/ci-gh-actions/deploy/ci-runner/deps");
 		includes(job, "scripts/ci/deps-layer-buckets.mts");
-		includes(job, "build-deps.sh --no-promote");
+		includes(
+			job,
+			"run: bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh --no-promote",
+		);
+		includes(job, buildCondition);
 		includes(job, "Remove PR candidate tag");
 		assert.ok(!job.includes("docker push"));
 		assert.ok(!job.includes("--cache-to"));
@@ -337,11 +349,13 @@ describe("CI deps workflow contract", () => {
 		assert.ok(!job.includes("env.GHCR_TOKEN != ''"));
 		includes(job, "GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}");
 		const login = job.indexOf("- name: Login to GHCR for read-only cache");
+		const resolve = job.indexOf("- name: Resolve local or GHCR deps image");
 		const buildStep = job.indexOf(
 			"- name: Build deps image and verify offline install",
 		);
 		assert.ok(login > -1);
-		assert.ok(buildStep > login);
+		assert.ok(resolve > login);
+		assert.ok(buildStep > resolve);
 	});
 
 	it("reuses local or GHCR hits on every event without building", () => {
@@ -349,16 +363,13 @@ describe("CI deps workflow contract", () => {
 		const manifest = job.indexOf('docker manifest inspect "$remote"');
 		const pull = job.indexOf('docker pull "$remote"');
 		const buildStep = job.indexOf(
-			"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'",
+			"- name: Build deps image and verify offline install",
 		);
 		assert.ok(local > -1);
 		assert.ok(manifest > local);
 		assert.ok(pull > manifest);
 		assert.ok(buildStep > pull);
-		includes(
-			job,
-			"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && github.event_name != 'pull_request'",
-		);
+		includes(job, promoteCondition);
 		includes(
 			job,
 			'node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"',
@@ -366,6 +377,23 @@ describe("CI deps workflow contract", () => {
 		assert.ok(
 			!job.includes('if [ "${{ github.event_name }}" != "pull_request" ]'),
 		);
+	});
+
+	it("defers a non-PR miss without building, verifying, or promoting", () => {
+		const defer = job.indexOf("- name: Defer non-PR deps image miss");
+		const verify = job.indexOf("- name: Verify deps image under job mount");
+		assert.ok(defer > -1);
+		assert.ok(verify > defer);
+		const deferredStep = job.slice(defer, verify);
+		includes(deferredStep, deferCondition);
+		includes(
+			deferredStep,
+			"Key miss deferred to CI deps image publisher and the daemon ensure loop; skipping Fabric rebuild",
+		);
+		assert.ok(!deferredStep.includes("build-deps.sh"));
+		includes(job, buildCondition);
+		includes(job, verifyCondition);
+		includes(job, promoteCondition);
 	});
 
 	it("proves every candidate under a job mount before promotion", () => {
@@ -377,6 +405,7 @@ describe("CI deps workflow contract", () => {
 		assert.ok(buildStep > -1);
 		assert.ok(mount > buildStep);
 		assert.ok(promote > mount);
+		includes(job, verifyCondition);
 		includes(job, "HOBO_CI_DEPS_MOUNT_CONTRACT: '1'");
 		includes(
 			job,
@@ -406,25 +435,38 @@ describe("CI deps publisher contract", () => {
 		includes(workflow, "types: [completed]");
 		includes(workflow, "branches: [main]");
 		includes(workflow, "workflow_dispatch:");
-		includes(workflow, "timeout-minutes: 5");
+		includes(workflow, "timeout-minutes: 20");
 		includes(workflow, "cancel-in-progress: true");
 		includes(workflow, "github.event.workflow_run.conclusion == 'success'");
 		includes(workflow, "github.event.workflow_run.head_sha");
 	});
 
-	it("skips absent local images and existing GHCR tags", () => {
+	it("skips an existing GHCR tag and builds only after a confirmed miss", () => {
 		includes(publish, 'key="$(node --no-warnings scripts/ci/deps-key.mts)"');
 		includes(publish, 'candidate="hobo-ci-deps:${key}"');
 		includes(publish, "docker image inspect hobo-ci-deps:local");
 		includes(publish, '{{ index .Config.Labels "hobo.ci.deps-key" }}');
 		includes(publish, 'source="hobo-ci-deps:local"');
+		const login = publish.indexOf("docker login ghcr.io");
 		const manifest = publish.indexOf('docker manifest inspect "$image"');
+		const local = publish.indexOf("docker image inspect hobo-ci-deps:local");
+		const build = publish.indexOf(
+			"bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
+		);
 		const tag = publish.indexOf('docker tag "$source" "$image"');
 		const push = publish.indexOf("docker push");
-		assert.ok(manifest > -1);
-		assert.ok(tag > manifest);
+		assert.ok(login > -1);
+		assert.ok(manifest > login);
+		assert.ok(local > manifest);
+		assert.ok(build > local);
+		assert.ok(tag > build);
 		assert.ok(push > tag);
 		includes(publish, "GHCR already has ${image}; skipping push");
+		assert.ok(
+			!publish.includes(
+				"No local deps image for ${key}; skipping GHCR publish",
+			),
+		);
 	});
 
 	it("bounds the push and keeps the token on stdin", () => {
