@@ -180,8 +180,11 @@ if (command === "link") {
 	let expected = "unavailable";
 	try {
 		expected = await expectedKey();
-	} catch {
-		// A missing or incomplete checkout key is an ordinary install fallback.
+	} catch (error) {
+		// A missing importer (sparse S0 used to omit media/package.json) is an
+		// ordinary install fallback. Name the path so the next miss is diagnosable.
+		const detail = error instanceof Error ? error.message : String(error);
+		console.error(`deps layer checkout-key unavailable: ${detail}`);
 	}
 	const result =
 		expected === "unavailable" ? miss("checkout-key") : await matches(expected);

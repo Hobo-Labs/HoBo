@@ -73,9 +73,19 @@ export const S0_ROOT_FILES = [
 	"vitest.mutation.config.ts",
 ] as const;
 
+/** Workspace importer manifests outside the directory cones. Cone-mode
+ * `sparse-checkout set media` would fetch media assets; the file is enough
+ * for `depsKeyForRoot` (Fabric 42038895458 missed checkout-key without it). */
+export const S0_NESTED_FILES = ["media/package.json"] as const;
+
+export const S0_FILE_PATHS = Object.freeze([
+	...S0_ROOT_FILES,
+	...S0_NESTED_FILES,
+]);
+
 export const S0_SPARSE_CONES = Object.freeze([
 	...S0_DIRECTORY_CONES,
-	...S0_ROOT_FILES,
+	...S0_FILE_PATHS,
 ]);
 
 /** Paths `pnpm install` / `prepare` need after sparse S0. Pin cone files are
@@ -84,6 +94,7 @@ export const S0_INSTALL_REQUIRED_PATHS = [
 	"package.json",
 	"pnpm-lock.yaml",
 	"pnpm-workspace.yaml",
+	"media/package.json",
 	"scripts/ensure-ts-autocode-links.mts",
 	...TS_AUTOCODE_PNPM_PREPARE_REQUIRED,
 ] as const;

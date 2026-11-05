@@ -172,4 +172,27 @@ describe("deps layer linking", () => {
 			rmSync(temporary, { recursive: true, force: true });
 		}
 	});
+
+	it("names the missing checkout file when the sparse tree cannot hash", () => {
+		const temporary = mkdtempSync(join(tmpdir(), "hobo-deps-layer-miss-"));
+		try {
+			const checkout = join(temporary, "checkout");
+			mkdirSync(checkout);
+			const checked = run(
+				process.execPath,
+				["--experimental-strip-types", script, "check"],
+				checkout,
+				{ ...process.env, HOBO_CI_DEPS_LAYER: key },
+			);
+			assert.equal(checked.status, 0, checked.stderr);
+			assert.match(checked.stdout, /miss \(checkout-key\)/);
+			assert.match(checked.stdout, /checkout=unavailable/);
+			assert.match(
+				checked.stderr,
+				/deps layer checkout-key unavailable:.*ENOENT|no such file/i,
+			);
+		} finally {
+			rmSync(temporary, { recursive: true, force: true });
+		}
+	});
 });

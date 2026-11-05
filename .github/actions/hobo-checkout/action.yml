@@ -80,6 +80,7 @@ runs:
           vitest.config.ts
           vitest.coverage.config.ts
           vitest.mutation.config.ts
+          media/package.json
         )
         is_root_file() {
           local candidate="$1"

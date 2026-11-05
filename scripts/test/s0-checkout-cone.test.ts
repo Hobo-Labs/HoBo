@@ -3,9 +3,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	S0_DIRECTORY_CONES,
+	S0_FILE_PATHS,
 	S0_INSTALL_REQUIRED_PATHS,
+	S0_NESTED_FILES,
 	S0_REQUIRED_PATHS,
-	S0_ROOT_FILES,
 	s0SparseCones,
 	s0SparsePathsBlock,
 } from "../ci/checkout-cone.mts";
@@ -159,21 +160,26 @@ describe("Main full gate S0 sparse checkout", () => {
 		expect(mainGate).not.toContain("submodules: recursive");
 	});
 
-	it("does not check out media", () => {
+	it("checks out media/package.json without the media asset tree", () => {
 		expect(coneCoversPath(s0SparseCones(root), "media/package.json")).toBe(
+			true,
+		);
+		expect(coneCoversPath(s0SparseCones(root), "media/src/index.ts")).toBe(
 			false,
 		);
+		expect(S0_NESTED_FILES).toEqual(["media/package.json"]);
+		expect(S0_INSTALL_REQUIRED_PATHS).toContain("media/package.json");
 	});
 
-	it("splits every S0 root file out of the directory cones", () => {
-		const split = splitSparseCheckoutPaths(s0SparseCones(root), S0_ROOT_FILES);
+	it("splits every S0 file path out of the directory cones", () => {
+		const split = splitSparseCheckoutPaths(s0SparseCones(root), S0_FILE_PATHS);
 		expect(split.directoryCones).toEqual(S0_DIRECTORY_CONES);
-		expect(split.rootFiles).toEqual(S0_ROOT_FILES);
+		expect(split.rootFiles).toEqual(S0_FILE_PATHS);
 		const actionRootFiles = action.match(
 			/root_files=\(\n((?:          .+\n)+?)        \)/,
 		);
 		expect(actionRootFiles?.[1]).toBe(
-			`${S0_ROOT_FILES.map((path) => `          ${path}\n`).join("")}`,
+			`${S0_FILE_PATHS.map((path) => `          ${path}\n`).join("")}`,
 		);
 	});
 });
