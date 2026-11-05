@@ -448,9 +448,11 @@ export function createRoutingControlLoop(
 			});
 			return { action: "denied", reasons, facts };
 		}
+		// Dispatcher v1 omits `eligible` for eligible entries; only an explicit
+		// false represents a budget or capacity refusal.
 		const incumbentEligible = decision.ranking.some(
 			(c: { providerId: string; eligible?: boolean }) =>
-				c.providerId === state.incumbentBackendId && c.eligible === true,
+				c.providerId === state.incumbentBackendId && c.eligible !== false,
 		);
 		const forced = mandatoryRecovery || !incumbentEligible;
 		const synthesis = synthesizeRoutingPlan({

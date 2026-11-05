@@ -752,6 +752,7 @@ test("budget-invalid incumbent bypasses optimization cooldown", async () => {
 	let budgetCap = 100;
 	let priceA = 0.05;
 	let priceB = 0.01;
+	const reasons: string[] = [];
 	const ledgerView = () => ({
 		view: "CreditLedgerView" as const,
 		seq: 1,
@@ -778,6 +779,9 @@ test("budget-invalid incumbent bypasses optimization cooldown", async () => {
 		...loopOptions(),
 		clock: () => now,
 		ledgerView,
+		beforeApply: async (_plan, _phase, _percent, reason) => {
+			reasons.push(reason);
+		},
 	});
 	assert.equal((await loop.handleSignal(signal)).action, "reapplied");
 	now = "2026-10-29T12:00:05Z";
@@ -786,6 +790,7 @@ test("budget-invalid incumbent bypasses optimization cooldown", async () => {
 	priceB = 0.05;
 	assert.equal((await loop.handleSignal(signal)).action, "reapplied");
 	assert.equal(loop.incumbent(), "a");
+	assert.deepEqual(reasons, ["optimization", "recovery"]);
 });
 
 test("foreign incumbent status cannot authorize a cutover", async () => {
