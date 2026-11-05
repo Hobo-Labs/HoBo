@@ -141,9 +141,9 @@ jobs:
       github.event_name == 'pull_request')
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 45
-    # Any event can reuse an existing content-keyed image. New PR candidates only
-    # build and run the contract; push/schedule/dispatch can promote them. A
-    # separate workflow publishes local images without blocking this job.
+    # Any event can reuse an existing content-keyed image. Only PR misses build
+    # and run the contract; non-PR misses defer to the publisher and daemon.
+    # Local and GHCR candidates verify before non-PR promotion.
     permissions:
       contents: read
       packages: read
@@ -185,6 +185,11 @@ jobs:
           current=false
           if [ "$actual" = "${{ steps.key.outputs.key }}" ]; then current=true; fi
           echo "current=${current}" >> "$GITHUB_OUTPUT"
+      - name: Login to GHCR for read-only cache
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: Resolve local or GHCR deps image
         if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true'
         id: source
@@ -201,24 +206,22 @@ jobs:
             source=ghcr
           fi
           echo "source=${source}" >> "$GITHUB_OUTPUT"
-      - name: Login to GHCR for read-only cache
-        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: Build deps image and verify offline install
-        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name == 'pull_request'
         id: build
         run: bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh --no-promote
+      - name: Defer non-PR deps image miss
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name != 'pull_request'
+        run: echo "Key miss deferred to CI deps image publisher and the daemon ensure loop; skipping Fabric rebuild"
       - name: Verify deps image under job mount
-        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true'
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && (steps.source.outputs.source != 'build' || github.event_name == 'pull_request')
         env:
           HOBO_CI_DEPS_MOUNT_CONTRACT: '1'
           HOBO_CI_DEPS_IMAGE: hobo-ci-deps:${{ steps.key.outputs.key }}
           HOBO_CI_DEPS_LAYER: ${{ steps.key.outputs.key }}
         run: node --experimental-strip-types --no-warnings --import ./scripts/lib/ts-source-resolve.mts --test scripts/test/ci-deps-image-mount.test.ts
       - name: Promote verified deps image
-        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && github.event_name != 'pull_request'
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source != 'build' && github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           candidate="hobo-ci-deps:${{ steps.key.outputs.key }}"

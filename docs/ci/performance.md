@@ -82,6 +82,7 @@ unindexed new finding files as notices.
 - [Finding 74: sparse S0 skipped the ts-autocode pin](./findings/0074-sparse-s0-skipped-the-ts-autocode-pin.md)
 - [Finding 75: blobless gitleaks never wrote an exit file](./findings/0075-blobless-gitleaks-never-wrote-an-exit-file.md)
 - [Finding 76: scripts/ci and docs rebuilt every release image](./findings/0076-scripts-ci-and-docs-rebuilt-every-release-image.md)
+- [Finding 77: Fabric rebuilt deps on an unauthenticated GHCR miss](./findings/0077-fabric-rebuilt-deps-on-an-unauthenticated-ghcr-miss.md)
 <!-- findings-index:end -->
 
 ## Data
