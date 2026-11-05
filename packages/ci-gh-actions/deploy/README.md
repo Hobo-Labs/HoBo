@@ -264,6 +264,8 @@ independent of the service manager's working directory; set `HOBO_CI_DEPS_ROOT` 
 override it. The checkout needs the lockfile importer manifests, including the
 pinned ts-autocode submodule.
 
+The install stage moves every repo-relative `node_modules` under `/opt/hobo-deps` and splits its `node_modules/.pnpm` into 64 stable entry-name hash buckets under `/opt/hobo-deps-buckets`. `scripts/ci/deps-layer-buckets.mts` owns the assignment and generates the Dockerfile's `COPY --link` section into `/opt/hobo-deps`; `--check` and `scripts/test/deps-layer-buckets.test.ts` reject drift. A residual layer holds workspace links and pnpm metadata, with no `.git` and no checkout path. A final root step chowns `/opt/hobo-deps`, its `node_modules` and `.pnpm` to uid 1000 so `--link` cannot leave them root-owned. Ownership and timestamps are normalized, and `build-deps.sh` opts into timestamp rewriting only when supported, so unchanged bucket layers are reused across deps keys.
+
 The daemon and `build-deps.sh` use the checkout's computed
 `hobo-ci-worker:<toolchain>` when that image exists. If it is absent, they use the
 `hobo-ci-worker:v[0-9a-f]{12}` tag carried by `hobo-ci-worker:local`; the same
@@ -278,6 +280,8 @@ Docker build and its offline verification container. A successful local, pulled,
 or built candidate is tagged `hobo-ci-deps:local` only after the real mounted-job
 contract passes, then passed to keep-2 GC. `HOBO_CI_DEPS_IMAGE=` disables both
 selection and this ensure loop.
+
+GHCR publication is deliberately outside HoBo CI. `ci-deps-publish.yml` starts after a successful main fabric run (or manually), recomputes the key at that run's commit, and skips unless the keyed local image or a matching `:local` is present. It also skips an existing remote manifest. Only a genuine miss is tagged and pushed, with a five-minute workflow budget and a 240-second command timeout. A stalled registry therefore fails or cancels only the publisher; it cannot make the fabric run red.
 
 Look for `hobo_ci_deps_image_ensure_started` with the selected key before local,
 registry, or build work, then `hobo_ci_deps_image_ensure` with
