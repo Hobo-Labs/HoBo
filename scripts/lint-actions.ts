@@ -46,12 +46,17 @@ const allowedEnabled = new Set([acceptanceFile, ...activeCiFiles]);
 
 /** The one runner choice besides `hobo`: trunk events may ask for the box's trunk label. */
 const TRUNK_RUNS_ON =
-	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
 
 const acceptanceDigest =
-	"187c2c2f8690b0f278da4ce2e286229c54b02d169c8253f7ada9dfddc05b6bda";
+	"3eb20584b6a1b51166474570b5f7c0118a1baafa8050f12319e092106dc852dd";
 
-const TRUNK_EVENTS = new Set(["push", "workflow_dispatch", "merge_group"]);
+const TRUNK_EVENTS = new Set([
+	"push",
+	"workflow_dispatch",
+	"merge_group",
+	"workflow_run",
+]);
 
 function hasTrunkEvent(lines: readonly string[], jobsIndex: number): boolean {
 	return lines

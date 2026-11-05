@@ -1,5 +1,6 @@
 [tools]
 cue = "0.14.0"
+dotnet = "10.0.100"
 gitleaks = "8.22.1"
 node = "24"
 pnpm = "10.33.4"
