@@ -21,9 +21,8 @@ RUN --network=none --mount=type=cache,id=hobo-pnpm-store,target=/pnpm-store,uid=
   pnpm install --frozen-lockfile --offline --ignore-scripts \
   && pnpm rebuild @ast-grep/cli @bufbuild/buf esbuild protobufjs \
   && find . -type d -name node_modules -prune -exec sh -c \
-    'set -e; for source do target="/opt/hobo-deps/${source#./}"; mkdir -p "$(dirname "$target")"; mv "$source" "$target"; done' sh {} +
-RUN --network=none \
-  node --experimental-strip-types scripts/ci/deps-layer-buckets.mts partition \
+    'set -e; for source do target="/opt/hobo-deps/${source#./}"; mkdir -p "$(dirname "$target")"; mv "$source" "$target"; done' sh {} + \
+  && node --experimental-strip-types scripts/ci/deps-layer-buckets.mts partition \
     /opt/hobo-deps \
     /opt/hobo-deps-buckets \
   && find /opt/hobo-deps /opt/hobo-deps-buckets \

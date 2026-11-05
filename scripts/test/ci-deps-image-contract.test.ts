@@ -44,12 +44,27 @@ describe("CI deps image build contract", () => {
 		assert.ok(!dockerfile.split("AS final")[1]?.includes("RUN pnpm fetch"));
 	});
 
-	it("partitions the store into reproducible linked layers and a residual layer", () => {
+	it("partitions the store in the install RUN into reproducible linked layers and a residual layer", () => {
+		assert.equal(dockerfile.match(/^RUN --network=none/gm)?.length, 1);
+		const installRun = dockerfile.slice(
+			dockerfile.indexOf("RUN --network=none"),
+			dockerfile.indexOf("FROM ${TOOLCHAIN_IMAGE} AS final"),
+		);
 		includes(
-			dockerfile,
+			installRun,
 			"node --experimental-strip-types scripts/ci/deps-layer-buckets.mts partition",
 		);
-		includes(dockerfile, '-exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +');
+		includes(installRun, '-exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +');
+		const move = installRun.indexOf("'set -e; for source do");
+		const partition = installRun.indexOf(
+			"node --experimental-strip-types scripts/ci/deps-layer-buckets.mts partition",
+		);
+		const touch = installRun.indexOf(
+			'-exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +',
+		);
+		assert.ok(move > -1);
+		assert.ok(partition > move);
+		assert.ok(touch > partition);
 		assert.equal(
 			dockerfile.match(/^COPY --link --from=install --chown=1000:1000/gm)
 				?.length,

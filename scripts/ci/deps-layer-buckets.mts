@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import {
 	mkdirSync,
-	readFileSync,
 	readdirSync,
+	readFileSync,
 	renameSync,
 	writeFileSync,
 } from "node:fs";
@@ -68,7 +68,11 @@ export function syncDepsLayerDockerfile(source: string): string {
 	return `${source.slice(0, start)}${renderDepsLayerBucketCopies()}${source.slice(finish + end.length)}`;
 }
 
-function partitionDirectory(depsRoot: string, bucketRoot: string): void {
+export function partitionDirectory(
+	depsRoot: string,
+	bucketRoot: string,
+	rename: (source: string, destination: string) => void = renameSync,
+): void {
 	const store = join(depsRoot, "node_modules", ".pnpm");
 	const entries = readdirSync(store, { withFileTypes: true })
 		.filter((entry) => entry.isDirectory())
@@ -82,8 +86,19 @@ function partitionDirectory(depsRoot: string, bucketRoot: string): void {
 			".pnpm",
 		);
 		mkdirSync(destination, { recursive: true });
-		for (const entry of bucket)
-			renameSync(join(store, entry), join(destination, entry));
+		for (const entry of bucket) {
+			const source = join(store, entry);
+			try {
+				rename(source, join(destination, entry));
+			} catch (error) {
+				if (error instanceof Error && "code" in error && error.code === "EXDEV")
+					throw new Error(
+						`EXDEV while renaming ${source}: overlayfs requires deps layer partitioning in the same RUN as pnpm install and the node_modules moves so every renamed directory is in one upper layer`,
+						{ cause: error },
+					);
+				throw error;
+			}
+		}
 	}
 }
 
