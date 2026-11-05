@@ -35,9 +35,10 @@ S0 is **2 s**; this finding is the install arm only.
 
 ## Fix
 
-Sparse S0 checks out `media/package.json` as a nested file (same `git checkout HEAD --`
-path as root manifests). The `media/` asset tree stays out of the cone. `check` logs the
-thrown path on stderr so the next miss is diagnosable.
+Sparse S0 lists `media/package.json` as a nested file so `depsKeyForRoot` can
+hash it. The `media/` asset tree stays out of the cone. `check` logs the thrown
+path on stderr so the next miss is diagnosable. Finding 80 covers materializing
+that nested file under cone-mode sparse-checkout (`--skip-checks`).
 
 ## Residual
 

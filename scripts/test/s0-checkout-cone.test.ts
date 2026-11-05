@@ -171,6 +171,20 @@ describe("Main full gate S0 sparse checkout", () => {
 		expect(S0_INSTALL_REQUIRED_PATHS).toContain("media/package.json");
 	});
 
+	it("materializes nested S0 files with sparse-checkout --skip-checks", () => {
+		const checkoutRoot = action.indexOf(
+			"Checkout sparse root files (non-cone)",
+		);
+		expect(checkoutRoot).toBeGreaterThan(-1);
+		const materialize = action.slice(checkoutRoot);
+		expect(materialize).toContain('case "$path" in');
+		expect(materialize).toContain('*/*) nested+=("$path")');
+		expect(materialize).toContain(
+			'git sparse-checkout add --skip-checks -- "$path"',
+		);
+		expect(materialize).not.toMatch(/git checkout HEAD -- "\$\{paths\[@\]\}"/);
+	});
+
 	it("splits every S0 file path out of the directory cones", () => {
 		const split = splitSparseCheckoutPaths(s0SparseCones(root), S0_FILE_PATHS);
 		expect(split.directoryCones).toEqual(S0_DIRECTORY_CONES);
