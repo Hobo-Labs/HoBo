@@ -35,7 +35,9 @@ async function launchFixture(extras?: {
 			sha: string,
 		): Promise<{ status: "hit" | "miss"; reason?: string; mirror?: string }>;
 	};
-	headShaFor?: (lease: { originalRunId: number }) => Promise<string | undefined>;
+	headShaFor?: (lease: {
+		originalRunId: number;
+	}) => Promise<string | undefined>;
 }) {
 	const root = mkdtempSync(join(tmpdir(), "hobo-ci-launch-thrash-"));
 	roots.push(root);

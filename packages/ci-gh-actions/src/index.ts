@@ -48,12 +48,6 @@ export {
 export { createCliDockerDriver } from "./isolated-worker/cli-docker-driver.js";
 export { createCompositeIsolatedHost } from "./isolated-worker/composite-host.js";
 export {
-	boxGitMirrorPath,
-	createBoxGitMirror,
-	type BoxGitMirror,
-	type BoxGitMirrorEnsureResult,
-} from "./isolated-worker/git-mirror.js";
-export {
 	createIsolatedContainerController,
 	type IsolatedContainerController,
 	type IsolatedWorkerStore,
@@ -79,6 +73,12 @@ export {
 	type DepsImageProcessRequest,
 	defaultDepsRoot,
 } from "./isolated-worker/deps-image.js";
+export {
+	type BoxGitMirror,
+	type BoxGitMirrorEnsureResult,
+	boxGitMirrorPath,
+	createBoxGitMirror,
+} from "./isolated-worker/git-mirror.js";
 export {
 	createGithubJobPoller,
 	createPollLogFilter,

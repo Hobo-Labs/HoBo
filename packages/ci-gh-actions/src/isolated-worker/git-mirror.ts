@@ -25,7 +25,9 @@ export function boxGitMirrorPath(root: string, repository: string): string {
 		root.includes("\0") ||
 		root.split(/[\\/]+/).includes("..")
 	)
-		throw new Error("git mirror root must be absolute and contain no '..' segments");
+		throw new Error(
+			"git mirror root must be absolute and contain no '..' segments",
+		);
 	if (!REPOSITORY.test(repository))
 		throw new Error("repository must have the form owner/name");
 	return join(resolve(root), `${repository}.git`);
@@ -87,9 +89,12 @@ export function createBoxGitMirror(options: {
 	}
 
 	async function hasCommit(sha: string): Promise<boolean> {
-		const checked = await git(
-			[`--git-dir=${path}`, "cat-file", "-e", `${sha}^{commit}`],
-		);
+		const checked = await git([
+			`--git-dir=${path}`,
+			"cat-file",
+			"-e",
+			`${sha}^{commit}`,
+		]);
 		return checked.status === 0;
 	}
 
