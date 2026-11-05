@@ -8,6 +8,7 @@ import {
 } from "@bufbuild/protobuf";
 import { z } from "zod";
 import { allocationQuote } from "./accounting.js";
+import { shouldAbortIsolatedFleetLease } from "./fleet-overflow.js";
 import {
 	ACTIVE_STATES,
 	type Account,
@@ -893,15 +894,20 @@ export class LeaseStore {
 			"running",
 			"uncertain",
 		]);
-		const isolatedProviders = new Set([
-			"vercel",
-			"kubernetes",
-			"hobo-box-worker",
-		]);
 		this.transaction(() => {
 			const lease = this.get(id);
 			if (!lease || !recoverable.has(lease.state)) return;
-			if (!isolatedProviders.has(lease.provider)) return;
+			const configuration = this.configuration()?.configuration;
+			const offer = configuration?.accounts
+				.find((account) => account.id === lease.accountId)
+				?.offers.find((candidate) => candidate.id === lease.offerId);
+			if (
+				!shouldAbortIsolatedFleetLease(
+					lease.provider,
+					offer ? { backend: offer.backend, runsOn: offer.runsOn } : undefined,
+				)
+			)
+				return;
 			lease.state = "cancelled";
 			this.append(lease, "ci.LeaseCancelled", at);
 			this.queueInside(job, at);

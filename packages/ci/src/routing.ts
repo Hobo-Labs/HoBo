@@ -146,10 +146,13 @@ export function route(account: Account, leases: readonly Lease[], now: string) {
 			return [];
 		return [{ offer, free, reservedFree, paid, sandboxReservedAllowance }];
 	});
+	// After concurrency and budget filters: an isolated box that still has a
+	// slot beats ARC, which beats GitHub-hosted. Other providers stay eligible.
+	const preferred = preferFleetCandidates(candidates);
 	// Prefer consuming available free allocation, then compare the full paid
 	// reservation within that group. A single job cannot split across offers.
-	if (candidates.length === 0) return undefined;
-	const freeCandidates = candidates.filter((candidate) => {
+	if (preferred.length === 0) return undefined;
+	const freeCandidates = preferred.filter((candidate) => {
 		const allowance = candidate.sandboxReservedAllowance;
 		return (
 			candidate.reservedFree > 0 ||
@@ -163,7 +166,7 @@ export function route(account: Account, leases: readonly Lease[], now: string) {
 					allowance.proxyControlCalls > 0))
 		);
 	});
-	const prioritized = freeCandidates.length > 0 ? freeCandidates : candidates;
+	const prioritized = freeCandidates.length > 0 ? freeCandidates : preferred;
 	const lowestPaidMicros = prioritized.reduce(
 		(lowest, candidate) => Math.min(lowest, candidate.paid),
 		Number.POSITIVE_INFINITY,
@@ -209,6 +212,39 @@ export function route(account: Account, leases: readonly Lease[], now: string) {
 		sandboxReservedAllowance: selected.sandboxReservedAllowance,
 		decision: decision.dispatchEvent,
 	};
+}
+
+/**
+ * 0 isolated box, 1 kubernetes gh-actions (ARC), 2 GitHub-hosted.
+ * Unranked providers are kept. A worse fleet tier is dropped when a better
+ * one remains, so a free GitHub offer cannot beat a box that still has a slot.
+ */
+function fleetCandidateRank(offer: Offer): number | undefined {
+	if (
+		offer.provider === "hobo-box-worker" ||
+		offer.backend === "isolated-container"
+	)
+		return 0;
+	if (offer.provider === "kubernetes" && offer.backend === "gh-actions")
+		return 1;
+	if (offer.provider === "github") return 2;
+	return undefined;
+}
+
+function preferFleetCandidates<T extends { offer: Offer }>(
+	candidates: readonly T[],
+): T[] {
+	let best: number | undefined;
+	for (const candidate of candidates) {
+		const rank = fleetCandidateRank(candidate.offer);
+		if (rank === undefined) continue;
+		if (best === undefined || rank < best) best = rank;
+	}
+	if (best === undefined) return [...candidates];
+	return candidates.filter((candidate) => {
+		const rank = fleetCandidateRank(candidate.offer);
+		return rank === undefined || rank === best;
+	});
 }
 
 export function providerOffer(account: Account, lease: Lease): Offer {
