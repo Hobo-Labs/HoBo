@@ -69,6 +69,7 @@ unindexed new finding files as notices.
 - [Finding 59: the deps mount check needed tsx and misread the pnpm layout](./findings/0059-the-deps-mount-check-needed-tsx-and-misread-the-pnpm-layout.md)
 - [Finding 61: a worker restart drained jobs before handing off](./findings/0061-a-worker-restart-drained-jobs-before-handing-off.md)
 - [Finding 67: Unbounded pnpm store prunes froze the box](./findings/0067-unbounded-pnpm-store-prunes-froze-the-box.md)
+- [Finding 68: Finished jobs held trunk slots while their work dirs were deleted](./findings/0068-finished-jobs-held-trunk-slots-while-their-work-dirs-were-deleted.md)
 <!-- findings-index:end -->
 
 ## Data
