@@ -166,7 +166,7 @@ jobs:
 	assert.match(result.stdout, /2 enabled workflow/);
 });
 const trunkRunsOn =
-	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
 
 test("repo-local composite actions require a prior pinned actions/checkout step", async () => {
 	const disabledBad = `name: x
@@ -300,7 +300,12 @@ jobs:
     steps:
       - run: true
 `;
-	for (const event of ["push", "merge_group", "workflow_dispatch"]) {
+	for (const event of [
+		"push",
+		"merge_group",
+		"workflow_dispatch",
+		"workflow_run",
+	]) {
 		const shared = lint(
 			await fixture({ "pricing-ci.yml": workflow(event, "hobo") }),
 		);

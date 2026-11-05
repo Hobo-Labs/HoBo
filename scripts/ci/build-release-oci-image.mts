@@ -14,14 +14,14 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { ciRunnerImageVersion } from "../lib/ci-runner-contract.mts";
 import {
-	releaseSemverFromEnv,
-	tryParseReleaseRef,
-} from "../lib/release-version.mts";
-import {
 	ghcrRepository,
 	loadReleaseOciManifest,
 	type ReleaseOciImage,
 } from "../lib/release-oci-contract.mts";
+import {
+	releaseSemverFromEnv,
+	tryParseReleaseRef,
+} from "../lib/release-version.mts";
 import { extractSdkArtifactsFromImage } from "./extract-sdk-artifacts.mts";
 import {
 	type ReleaseOciStagingLocation,
@@ -169,22 +169,44 @@ function dockerImageExists(ref: string): boolean {
 }
 
 function ensureCliCandidate(): void {
-	const result = spawnSync(
-		"docker",
-		["image", "inspect", "hobo-cli:candidate"],
-		{ cwd: root, stdio: "ignore" },
-	);
-	if (result.status !== 0) {
-		throw new Error(
-			"hobo-mcp requires hobo-cli:candidate; build hobo-cli first",
-		);
-	}
+	if (dockerImageExists(releaseImageCandidateRef("hobo-cli"))) return;
+	throw new Error("hobo-mcp requires hobo-cli:candidate; build hobo-cli first");
+}
+
+function releaseImageCandidateRef(imageId: string): string {
+	const manifest = loadReleaseOciManifest(root);
+	const dep = manifest.images.find((entry) => entry.id === imageId);
+	if (!dep) throw new Error(`unknown release image id: ${imageId}`);
+	return `${dep.name}:candidate`;
+}
+
+function ensureReleaseImageCandidate(
+	dependencyId: string,
+	options: {
+		imageId: string;
+		version?: string;
+		revision?: string;
+		skipBuild?: boolean;
+		keepCandidate?: boolean;
+	},
+): void {
+	const ref = releaseImageCandidateRef(dependencyId);
+	if (dockerImageExists(ref)) return;
+	buildReleaseImage({
+		...options,
+		imageId: dependencyId,
+		keepCandidate: true,
+	});
 }
 
 export function cleanupReleaseOciBuild(
 	imageId: string,
 	localTag: string,
-	options: { keepCandidate?: boolean } = {},
+	options: {
+		keepCandidate?: boolean;
+		/** When true, skip builder prune (chain runs one prune after all tags). */
+		deferBuilderPrune?: boolean;
+	} = {},
 ): void {
 	const storeStaging = recordedStoreStagingDir(imageId);
 	rmSync(inRepoStagingDir(imageId), { recursive: true, force: true });
@@ -202,19 +224,34 @@ export function cleanupReleaseOciBuild(
 			});
 		}
 	}
-	spawnSync("docker", ["builder", "prune", "-f"], {
-		cwd: root,
-		stdio: "inherit",
-	});
+	if (!options.keepCandidate && !options.deferBuilderPrune) {
+		spawnSync("docker", ["builder", "prune", "-f"], {
+			cwd: root,
+			stdio: "inherit",
+		});
+	}
 }
 
 function cleanupReleaseOciBuildChain(
 	imageId: string,
 	options: { keepCandidate?: boolean } = {},
 ): void {
-	cleanupReleaseOciBuild(imageId, `${imageId}:candidate`, options);
+	const deferBuilderPrune = true;
+	cleanupReleaseOciBuild(imageId, `${imageId}:candidate`, {
+		...options,
+		deferBuilderPrune,
+	});
 	if (imageId === "hobo-mcp") {
-		cleanupReleaseOciBuild("hobo-cli", "hobo-cli:candidate", options);
+		cleanupReleaseOciBuild("hobo-cli", "hobo-cli:candidate", {
+			...options,
+			deferBuilderPrune,
+		});
+	}
+	if (!options.keepCandidate) {
+		spawnSync("docker", ["builder", "prune", "-f"], {
+			cwd: root,
+			stdio: "inherit",
+		});
 	}
 }
 
@@ -256,8 +293,15 @@ export function buildReleaseImage(options: {
 	const staging = releaseOciStagingLocation(image.id, { root });
 	recordStoreStaging(image.id, staging);
 	let sdkArtifactsDir: string | undefined;
-	if (image.id === "hobo-cli" && dockerImageExists("hobo-sdk:candidate")) {
-		sdkArtifactsDir = extractSdkArtifactsFromImage("hobo-sdk:candidate");
+	if (image.id === "hobo-cli") {
+		ensureReleaseImageCandidate("hobo-sdk", options);
+		sdkArtifactsDir = extractSdkArtifactsFromImage(
+			releaseImageCandidateRef("hobo-sdk"),
+		);
+	}
+	if (image.id === "hobo-mcp") {
+		ensureReleaseImageCandidate("hobo-sdk", options);
+		ensureReleaseImageCandidate("hobo-cli", options);
 	}
 	try {
 		stageReleaseOciApp(image.id, staging.stagingRoot, {

@@ -14,6 +14,8 @@ import { join } from "node:path";
 import { releaseSemverFromEnv } from "../lib/release-version.mts";
 import { applyScopeToManifest, loadNpmScopeMap } from "./npm-publish-scope.mts";
 
+const root = join(import.meta.dirname, "..", "..");
+
 export const SDK_PACKAGES = [
 	"@hobo/core",
 	"@hobo/policy",
@@ -27,14 +29,25 @@ export const SDK_PACKAGES = [
 	"@hobo/cli",
 ] as const;
 
+/** Turbo-build every allowlisted SDK package before `npm pack` staging. */
+export function buildReleaseSdkPackages(): void {
+	const filters = SDK_PACKAGES.map((pkg) => `--filter=${pkg}`);
+	const result = spawnSync(
+		"pnpm",
+		["exec", "turbo", "run", "build", ...filters],
+		{ cwd: root, stdio: "inherit" },
+	);
+	if (result.status !== 0) {
+		throw new Error("turbo build failed for SDK allowlist before npm pack");
+	}
+}
+
 export type SdkArtifactManifest = {
 	version: string;
 	packages: { workspace: string; public: string; file: string }[];
 };
 
 type NpmPackLine = { filename: string };
-
-const root = join(import.meta.dirname, "..", "..");
 
 type WorkspaceManifest = { name: string };
 
@@ -84,6 +97,7 @@ function findPackageDir(name: string): string {
 }
 
 export function stageSdkArtifactsDir(outDir: string): SdkArtifactManifest {
+	buildReleaseSdkPackages();
 	mkdirSync(outDir, { recursive: true });
 	const map = loadNpmScopeMap();
 	const semver = releaseSemverFromEnv();

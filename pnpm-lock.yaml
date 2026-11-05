@@ -58,6 +58,9 @@ importers:
       konsistent:
         specifier: 1.0.0-beta.1
         version: 1.0.0-beta.1
+      nerdbank-gitversioning:
+        specifier: 3.10.94
+        version: 3.10.94
       oxlint:
         specifier: 1.79.0
         version: 1.79.0
@@ -11991,6 +11994,10 @@ packages:
     resolution: {integrity: sha512-Z4SmBUweYa09+o6pG+eASabEpP6QkQ70yHj351pQoEXIs8uHbaU2DWVmzBANKgflPa47A50PtB2+NgRpQvr7vA==}
     engines: {node: '>= 10'}
 
+  nerdbank-gitversioning@3.10.94:
+    resolution: {integrity: sha512-P2Hu93wiRPw2w81K6pQ1zdw15lqdevvp5x/U3p3Z1yZu5H+08pQiaz5uyQwKJChebREuVqb/e8zO1cKLIcsbNQ==}
+    hasBin: true
+
   nice-try@1.0.5:
     resolution: {integrity: sha512-1nh45deeb5olNY7eX82BkPO7SSxR5SSYJiPTrTdFUVYwAl8CKMA5N9PjTYkHiRjisVcxcQ1HXdLhx2qxxJzLNQ==}
 
@@ -15634,30 +15641,9 @@ snapshots:
       es-module-lexer: 1.7.0
       oxc-parser: 0.76.0
 
-  '@bytecodealliance/componentize-js@0.19.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
-    dependencies:
-      '@bytecodealliance/jco': 1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
-      '@bytecodealliance/wizer': 10.0.0
-      es-module-lexer: 1.7.0
-      oxc-parser: 0.76.0
-    transitivePeerDependencies:
-      - '@emnapi/core'
-      - '@emnapi/runtime'
-
-  '@bytecodealliance/componentize-js@0.21.0':
-    dependencies:
-      '@bytecodealliance/jco': 1.24.3
-      '@bytecodealliance/weval': 0.4.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
-      '@bytecodealliance/wizer': 10.0.0
-      es-module-lexer: 1.7.0
-      oxc-parser: 0.76.0
-    transitivePeerDependencies:
-      - '@emnapi/core'
-      - '@emnapi/runtime'
-
   '@bytecodealliance/componentize-js@0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
     dependencies:
-      '@bytecodealliance/jco': 1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
+      '@bytecodealliance/jco': 1.24.3
       '@bytecodealliance/weval': 0.4.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
       '@bytecodealliance/wizer': 10.0.0
       es-module-lexer: 1.7.0
@@ -15674,24 +15660,8 @@ snapshots:
 
   '@bytecodealliance/jco@1.24.3':
     dependencies:
-      '@bytecodealliance/componentize-js': 0.21.0
-      '@bytecodealliance/componentize-js-0-19-3': '@bytecodealliance/componentize-js@0.19.3'
-      '@bytecodealliance/jco-transpile': 0.3.9
-      '@bytecodealliance/preview2-shim': 0.17.9
-      '@bytecodealliance/preview3-shim': 0.1.2
-      binaryen: 130.0.0
-      commander: 14.0.3
-      mkdirp: 3.0.1
-      ora: 8.2.0
-      terser: 5.48.0
-    transitivePeerDependencies:
-      - '@emnapi/core'
-      - '@emnapi/runtime'
-
-  '@bytecodealliance/jco@1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
-    dependencies:
       '@bytecodealliance/componentize-js': 0.21.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
-      '@bytecodealliance/componentize-js-0-19-3': '@bytecodealliance/componentize-js@0.19.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)'
+      '@bytecodealliance/componentize-js-0-19-3': '@bytecodealliance/componentize-js@0.19.3'
       '@bytecodealliance/jco-transpile': 0.3.9
       '@bytecodealliance/preview2-shim': 0.17.9
       '@bytecodealliance/preview3-shim': 0.1.2
@@ -23436,6 +23406,8 @@ snapshots:
   negotiator@1.0.0: {}
 
   neotraverse@0.6.18: {}
+
+  nerdbank-gitversioning@3.10.94: {}
 
   nice-try@1.0.5: {}
 
