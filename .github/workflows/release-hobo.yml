@@ -603,6 +603,7 @@ jobs:
             packages
             docs
             release
+            examples
             mise.toml
             mise.lock
             package.json

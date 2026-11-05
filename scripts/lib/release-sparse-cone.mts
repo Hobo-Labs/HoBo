@@ -125,6 +125,7 @@ export function hoboReleasePagesSparseCones(): readonly string[] {
 		"docs",
 		"release",
 		"external",
+		"examples",
 		...PINS_SPARSE_CONES,
 		...MISE_LOCK_SPARSE_CONES,
 		...RELEASE_ROOT_FILES,
@@ -298,5 +299,9 @@ export function requiredPathsForTsAutocodeReleaseContract(): readonly string[] {
 }
 
 export function requiredPathsForHoboReleasePages(): readonly string[] {
-	return Object.freeze([...PINS_FETCH_REQUIRED_FILES, "site/package.json"]);
+	return Object.freeze([
+		...PINS_FETCH_REQUIRED_FILES,
+		"site/package.json",
+		"examples/try-site/yards.json",
+	]);
 }

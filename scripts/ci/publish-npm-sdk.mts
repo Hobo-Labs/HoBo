@@ -6,6 +6,7 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { npmPublishArgs, parseReleaseRef } from "../lib/release-version.mts";
+import { buildReleaseSdkPackages } from "./stage-release-oci-app.mts";
 import {
 	orderedSdkTarballPaths,
 	stageSdkArtifactsDir,
@@ -54,6 +55,7 @@ export function publishNpmSdkArtifacts(options: {
 }): void {
 	assertPublisher(options.token);
 	const parsed = parseReleaseRef(options.releaseRef);
+	buildReleaseSdkPackages(root);
 	const manifest = stageSdkArtifactsDir(options.stagingDir);
 	const tarballs = orderedSdkTarballPaths(options.stagingDir);
 	if (tarballs.length !== manifest.packages.length) {
