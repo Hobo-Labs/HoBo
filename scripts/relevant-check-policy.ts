@@ -504,6 +504,27 @@ export function selectRelevantChecks(
 	if (
 		files.some(
 			(file) =>
+				file === "scripts/ci/gitleaks-main-scan.mts" ||
+				file === "scripts/test/gitleaks-main-scan.test.ts" ||
+				file === ".github/workflows/hobo-ci.yml",
+		)
+	) {
+		checks.push({
+			command: "node",
+			args: [
+				"--import",
+				"tsx",
+				"--test",
+				"scripts/test/gitleaks-main-scan.test.ts",
+			],
+			reason:
+				"blobless main-gate gitleaks must write an exit file and bound the wait (finding 75)",
+		});
+	}
+
+	if (
+		files.some(
+			(file) =>
 				file === "external/ts-autocode" ||
 				file === "pnpm-workspace.yaml" ||
 				file === "tools/pins/siblings.json" ||
