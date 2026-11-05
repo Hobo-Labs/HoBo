@@ -121,9 +121,12 @@ runs:
     - name: Checkout sparse root files (non-cone)
       if: steps.sparse.outputs.root_files != ''
       shell: bash
+      env:
+        ROOT_FILES: ${{ steps.sparse.outputs.root_files }}
       run: |
         set -euo pipefail
-        git checkout HEAD -- ${{ steps.sparse.outputs.root_files }}
+        mapfile -t paths <<< "$ROOT_FILES"
+        git checkout HEAD -- "${paths[@]}"
     - name: Initialize submodules (sparse cone via pins:fetch in job)
       if: inputs.submodules == 'true'
       shell: bash
