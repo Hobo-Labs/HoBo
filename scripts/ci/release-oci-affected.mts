@@ -337,6 +337,7 @@ export function isReleaseOciLayerNoise(path: string): boolean {
 	if (path.includes("/test/") || path.endsWith(".test.ts")) return true;
 	if (path.startsWith("docs/")) return true;
 	if (path.startsWith("scripts/test/")) return true;
+	// SAFETY: RELEASE_BUILD_INPUTS is a const string tuple; Array.includes requires readonly string[] to accept a general path.
 	const layerScripts = RELEASE_BUILD_INPUTS as readonly string[];
 	if (path.startsWith("scripts/ci/") && !layerScripts.includes(path))
 		return true;

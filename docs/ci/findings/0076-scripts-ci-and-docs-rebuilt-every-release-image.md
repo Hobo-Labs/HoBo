@@ -22,3 +22,5 @@ Directory layer inputs now skip markdown, tests, `docs/`, and scripts that are n
 ## Verification
 
 `scripts/test/release-oci-affected.test.ts`: ci-runner README, `scripts/ci/deps-layer.mts`, `scripts/lib/deps-key.mts`, and `scripts/test/*` mark no product images; a ci-runner Dockerfile still marks all of them. This sandbox has no Docker daemon, so live parallel builds were not timed.
+
+`isReleaseOciLayerNoise` widens `RELEASE_BUILD_INPUTS` to `readonly string[]` for `Array.includes` and carries a `SAFETY` comment immediately above that assertion (anti-slop).
