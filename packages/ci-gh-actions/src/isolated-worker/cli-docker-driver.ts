@@ -55,6 +55,14 @@ export function builderPruneArgs(keepStorage: string): string[] {
 	return ["builder", "prune", "--force", "--keep-storage", keepStorage];
 }
 
+function memoryPeakMb(output: string): number | undefined {
+	const text = output.trim();
+	if (!/^\d+$/u.test(text)) return undefined;
+	const bytes = Number(text);
+	if (!Number.isSafeInteger(bytes)) return undefined;
+	return Math.ceil(bytes / 1024 / 1024);
+}
+
 function containerResourceArgs(
 	weights: Readonly<{ cpuShares?: number; blkioWeight?: number }>,
 	includeBlkio: boolean,
@@ -432,6 +440,22 @@ export function createCliDockerDriver(options: {
 					{ env, timeout: 30_000, maxBuffer: 4096 },
 				);
 			});
+		},
+		async memoryPeak(_name, containerId) {
+			for (const path of [
+				"/sys/fs/cgroup/memory.peak",
+				"/sys/fs/cgroup/memory/memory.max_usage_in_bytes",
+			]) {
+				const output = await exec(docker, ["exec", containerId, "cat", path], {
+					env,
+					timeout: 30_000,
+					maxBuffer: 4096,
+				})
+					.then(({ stdout }) => stdout)
+					.catch(() => undefined);
+				if (output !== undefined) return memoryPeakMb(output);
+			}
+			return undefined;
 		},
 		async stop(_name, containerId) {
 			await exec(docker, ["stop", "-t", "30", containerId], {

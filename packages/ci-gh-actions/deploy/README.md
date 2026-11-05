@@ -103,10 +103,14 @@ non-secret settings:
 |---|---|---|
 | `HOBO_CI_WORKER_MEMORY_BUDGET_MB` | host/cgroup total minus reserve | Sum available to active, reserved and warm containers; explicit values cannot exceed this ceiling |
 | `HOBO_CI_WORKER_MEMORY_RESERVE_MB` | `2048`, minimum `2048` | Host, daemon, Docker and page-cache headroom subtracted from the budget ceiling |
-| `HOBO_CI_WORKER_MEMORY_CLASS_LIGHT_MB` | `3072` | Exact-name guard/lint/contract jobs |
-| `HOBO_CI_WORKER_MEMORY_CLASS_STANDARD_MB` | `4096` | Unlisted jobs and the pre-warmed container |
-| `HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB` | `HOBO_CI_WORKER_MEMORY_MB` or `6144` | Turbo build/test and image jobs; trunk reservation |
+| `HOBO_CI_WORKER_MEMORY_CLASS_LIGHT_MB` | `3072` | Exact-name guard/lint/contract job hard limits |
+| `HOBO_CI_WORKER_MEMORY_LIGHT_RESERVE_MB` | `1024` | Unmeasured light reservation; integer 512 through the light class limit |
+| `HOBO_CI_WORKER_MEMORY_CLASS_STANDARD_MB` | `4096` | Unlisted jobs and the pre-warmed container hard limit |
+| `HOBO_CI_WORKER_MEMORY_STANDARD_RESERVE_MB` | `2048` | Unmeasured standard reservation; integer 512 through the standard class limit |
+| `HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB` | `HOBO_CI_WORKER_MEMORY_MB` or `6144` | Turbo build/test and image job hard limits; OOM/rollback reservation |
+| `HOBO_CI_WORKER_MEMORY_HEAVY_RESERVE_MB` | `4096` | Unmeasured heavy and trunk reservation; integer 512 through the heavy class limit |
 | `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; the startup check still applies |
+| `HOBO_CI_WORKER_MEMORY_LEARN` | `1` | `0` disables unmeasured and learned reservations, restoring full class admission |
 | `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Time smaller same-rank jobs may backfill behind a non-fitting head job |
 | `HOBO_CI_JOB_POLL_MS` | `5000` | GitHub list-poll interval; minimum 5000, maximum 300000; every list uses its cached ETag and unchanged 304 responses do not consume primary rate limit |
 | `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum distinct merge groups with active leases, grouped by `head_sha`; zero and invalid values are rejected |
@@ -126,10 +130,26 @@ container-start and registration timestamps, and their millisecond deltas. Polle
 pickup delay are included when known. The metadata comes from existing GitHub reads; no additional API calls
 are made.
 
-The admitted request becomes the container's `--memory` and `--memory-swap` value and its
-`HOBO_CI_JOB_MEMORY_MB` environment variable. On the 15989 MiB box with a 2048 MiB reserve, the admission
-budget is **13941 MiB**. Heavy + standard + light = **13312 MiB** fits three slots; two heavy jobs leave
-**1653 MiB**, so a third light job waits; three heavy jobs need **18432 MiB** and never fit together.
+The class size remains the container's `--memory` and `--memory-swap` hard limit and its
+`HOBO_CI_JOB_MEMORY_MB` environment variable. Unmeasured jobs reserve 1024 MiB light, 2048 MiB standard,
+or 4096 MiB heavy. After three measured peaks for a job name, the last 20 peaks in
+`${HOBO_CI_WORKER_WORK_ROOT}/memory-peaks.json` produce `ceil256(max(peak) × 1.25 + 256)` clamped to
+1024 MiB through the class size. An OOM forces the class reservation for seven days. The unmeasured idle
+trunk reservation is 4096 MiB before it learns from **Main full gate**. Warm-container matching still uses
+the class limit.
+
+Each job and warm admission samples `/proc/meminfo` once and requires the reservation to leave the
+configured host reserve after subtracting it from `MemAvailable`. Missing host data uses the budget-only
+check. A live-host block logs `reason=host-available` with `availableMb`. With a 13954 MiB budget and the
+unmeasured trunk reservation, the PR share is about 9858 MiB: up to nine light, four standard, or two heavy
+unmeasured PR reservations fit before slot and live-host limits.
+
+Settlement reads the running container's cgroup peak before stopping it and logs
+`hobo_ci_container_memory_peak` with `jobId`, `jobName`, `memoryClass`, `limitMb`, `reservedMb`, and
+`peakMb`. Missing or corrupt history starts empty. Admission wait/admit logs include `classMb` and
+`learned`. Setting `HOBO_CI_WORKER_MEMORY_LEARN=0` rolls admission back to class sizes without lowering
+container hard limits. On the 15989 MiB box with a 2048 MiB reserve, the admission budget is
+**13941 MiB**.
 
 Rank-0 trunk containers also receive `--cpu-shares 8192` and request `--blkio-weight 800`; other ranks use
 512 and 200. These fixed 16:1 CPU and 4:1 IO preferences need no environment setting. The first weighted

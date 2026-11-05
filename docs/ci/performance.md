@@ -69,6 +69,7 @@ unindexed new finding files as notices.
 - [Finding 59: the deps mount check needed tsx and misread the pnpm layout](./findings/0059-the-deps-mount-check-needed-tsx-and-misread-the-pnpm-layout.md)
 - [Finding 60: the deps key rebuilt on recipe churn](./findings/0060-the-deps-key-rebuilt-on-recipe-churn.md)
 - [Finding 61: a worker restart drained jobs before handing off](./findings/0061-a-worker-restart-drained-jobs-before-handing-off.md)
+- [Finding 62: memory reservations were guesses held as hard limits](./findings/0062-memory-reservations-were-guesses-held-as-hard-limits.md)
 - [Finding 63: a dead runner left its GitHub job in progress](./findings/0063-a-dead-runner-left-its-github-job-in-progress.md)
 - [Finding 64: containerless launch failures thrashed worker leases](./findings/0064-containerless-launch-failures-thrashed-worker-leases.md)
 - [Finding 65: merge-group jobs serialized behind the release job](./findings/0065-merge-group-jobs-serialized-behind-the-release-job.md)

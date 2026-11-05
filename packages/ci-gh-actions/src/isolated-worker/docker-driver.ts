@@ -89,6 +89,7 @@ export interface DockerDriver {
 		containerId: string,
 		weights: ContainerResourceWeights,
 	): Promise<void>;
+	memoryPeak?(name: string, containerId: string): Promise<number | undefined>;
 	stop(name: string, containerId: string): Promise<void>;
 	remove(name: string, containerId: string): Promise<void>;
 	isRunning(name: string, containerId: string): Promise<boolean>;

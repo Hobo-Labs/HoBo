@@ -38,6 +38,7 @@ function requeueJob(lease: Lease) {
 		repositoryId: lease.repositoryId,
 		installationId: lease.installationId,
 		repository: lease.repository,
+		name: lease.jobName,
 		memoryClass: lease.memoryClass,
 		memoryMb: lease.memoryMb,
 		labels: ["hobo"],

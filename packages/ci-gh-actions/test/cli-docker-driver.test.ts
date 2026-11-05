@@ -122,3 +122,40 @@ describe("cli docker container inventory", () => {
 		}
 	});
 });
+
+describe("cli docker memory peaks", () => {
+	async function measure(script: string): Promise<number | undefined> {
+		const dir = mkdtempSync(join(tmpdir(), "fake-docker-memory-peak-"));
+		try {
+			const bin = join(dir, "docker");
+			writeFileSync(bin, script);
+			chmodSync(bin, 0o755);
+			const driver = createCliDockerDriver({ binary: bin, env: {} });
+			return await driver.memoryPeak?.("hobo-job", "container-1");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	}
+
+	it("parses cgroup v2 bytes and rounds up to MiB", async () => {
+		await expect(
+			measure(
+				"#!/bin/sh\nif [ \"$4\" = /sys/fs/cgroup/memory.peak ]; then printf '2147483649\\n'; exit 0; fi\nexit 1\n",
+			),
+		).resolves.toBe(2_049);
+	});
+
+	it("falls back to the cgroup v1 peak", async () => {
+		await expect(
+			measure(
+				'#!/bin/sh\nif [ "$4" = /sys/fs/cgroup/memory.peak ]; then exit 1; fi\nif [ "$4" = /sys/fs/cgroup/memory/memory.max_usage_in_bytes ]; then printf \'1073741824\\n\'; exit 0; fi\nexit 1\n',
+			),
+		).resolves.toBe(1_024);
+	});
+
+	it("returns undefined for non-numeric output", async () => {
+		await expect(
+			measure("#!/bin/sh\nprintf 'not-a-number\\n'\n"),
+		).resolves.toBeUndefined();
+	});
+});

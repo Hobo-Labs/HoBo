@@ -1154,12 +1154,12 @@ describe("pull-mode box worker over SQLite", () => {
 		await runtime.tick({ maxDeliveries: 10 });
 		const [lease] = await store.activeLeases();
 		if (!lease) throw new Error("memory-classified lease missing");
-		expect(lease).toMatchObject({ memoryClass: "light", memoryMb: 3_072 });
+		expect(lease).toMatchObject({ memoryClass: "light", memoryMb: 1_024 });
 		store.close();
 		const reopened = new SqliteCiStore(path);
 		expect(await reopened.get(lease.id)).toMatchObject({
 			memoryClass: "light",
-			memoryMb: 3_072,
+			memoryMb: 1_024,
 		});
 		reopened.close();
 	});
@@ -1172,6 +1172,7 @@ describe("pull-mode box worker over SQLite", () => {
 				{
 					HOBO_CI_WORKER_MEMORY_BUDGET_MB: "14336",
 					HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB: "8192",
+					HOBO_CI_WORKER_MEMORY_LEARN: "0",
 				},
 				{ totalMemoryMb: 16_384, trunkSlots: 0 },
 			),
@@ -1213,6 +1214,8 @@ describe("pull-mode box worker over SQLite", () => {
 					HOBO_CI_WORKER_MEMORY_CLASS_LIGHT_MB: "3072",
 					HOBO_CI_WORKER_MEMORY_CLASS_STANDARD_MB: "5120",
 					HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB: "4000",
+					HOBO_CI_WORKER_MEMORY_HEAVY_RESERVE_MB: "3072",
+					HOBO_CI_WORKER_MEMORY_LEARN: "0",
 				},
 				{ totalMemoryMb: 16_384, trunkSlots: 0 },
 			),
@@ -1261,7 +1264,10 @@ describe("pull-mode box worker over SQLite", () => {
 		let now = NOW;
 		const memoryAdmission = createWorkerMemoryAdmission(
 			resolveWorkerMemoryConfig(
-				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "10000" },
+				{
+					HOBO_CI_WORKER_MEMORY_BUDGET_MB: "10000",
+					HOBO_CI_WORKER_MEMORY_LEARN: "0",
+				},
 				{ totalMemoryMb: 16_384, trunkSlots: 0 },
 			),
 			{ now: () => now },
@@ -2637,7 +2643,7 @@ describe("pull-mode box worker over SQLite", () => {
 		store.close();
 	});
 
-	it("creates the job container with its admitted memory request and environment", async () => {
+	it("uses the class limit rather than the learned lease reservation", async () => {
 		const store = await configuredStore(1);
 		const state = await store.configuration();
 		const account = state?.configuration.accounts[0];
@@ -2654,13 +2660,14 @@ describe("pull-mode box worker over SQLite", () => {
 				labels: ["hobo"],
 				name: "CI fabric contract guard",
 				memoryClass: "light",
-				memoryMb: 3_072,
+				memoryMb: 1_536,
 				action: "queued",
 				isolatedRequired: true,
 			}),
 			new Date(NOW).toISOString(),
 		);
 		if (!lease) throw new Error("reserved lease missing");
+		expect(lease.jobName).toBe("CI fabric contract guard");
 		const github: GithubTransport = {
 			async request(_installationId, path, method = "GET") {
 				if (
@@ -2694,6 +2701,7 @@ describe("pull-mode box worker over SQLite", () => {
 			docker,
 			workerAccountId: "box",
 			workerImage: "hobo-ci-worker:local",
+			memoryClasses: { light: 3_072, standard: 4_096, heavy: 6_144 },
 			now: () => new Date(NOW).toISOString(),
 		});
 		await worker.host.launch(lease.id, "hobo");

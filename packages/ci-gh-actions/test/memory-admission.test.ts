@@ -3,7 +3,11 @@ import {
 	createWorkerMemoryAdmission,
 	type MemoryLease,
 } from "../src/isolated-worker/memory-admission.js";
-import { resolveWorkerMemoryConfig } from "../src/isolated-worker/memory-classes.js";
+import {
+	memoryRequestForJob,
+	resolveWorkerMemoryConfig,
+} from "../src/isolated-worker/memory-classes.js";
+import type { MemoryPeakHistories } from "../src/isolated-worker/memory-peaks.js";
 
 function config(budgetMb: number, trunkSlots = 0) {
 	return resolveWorkerMemoryConfig(
@@ -226,8 +230,8 @@ describe("worker memory admission", () => {
 		expect(
 			admission.admit({
 				jobId: 2,
-				memoryClass: "light",
-				memoryMb: 3_072,
+				memoryClass: "heavy",
+				memoryMb: 6_144,
 				rank: 1,
 				activeLeases,
 				generalLeaseIds,
@@ -259,7 +263,7 @@ describe("worker memory admission", () => {
 		expect(
 			createWorkerMemoryAdmission(resolved).reserveWarm(
 				[],
-				8_192,
+				10_000,
 				new Set<string>(),
 			),
 		).toBe(false);
@@ -377,6 +381,205 @@ describe("worker memory admission", () => {
 			"hobo_ci_memory_admitted",
 			expect.objectContaining({ jobId: 42, waitedMs: 0 }),
 		);
+	});
+
+	it("admits two PR jobs whose learned reservations fit where class sizes do not", () => {
+		const peaks: MemoryPeakHistories = {
+			"PR impact gate": { peaksMb: [100, 100, 100] },
+			"PR off-path checks (ts-autocode surface, production packages)": {
+				peaksMb: [100, 100, 100],
+			},
+		};
+		const resolved = resolveWorkerMemoryConfig(
+			{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "8000" },
+			{ totalMemoryMb: 32_768, trunkSlots: 0 },
+			peaks,
+		);
+		const log = vi.fn();
+		const admission = createWorkerMemoryAdmission(resolved, { log });
+		const activeLeases: MemoryLease[] = [];
+		const generalLeaseIds = new Set<string>();
+		const names = [
+			"PR impact gate",
+			"PR off-path checks (ts-autocode surface, production packages)",
+		];
+
+		for (const [index, name] of names.entries()) {
+			const request = memoryRequestForJob(name, resolved);
+			expect(request.memoryMb).toBe(1_024);
+			expect(
+				admission.admit({
+					jobId: index + 1,
+					...request,
+					rank: 1,
+					activeLeases,
+					generalLeaseIds,
+				}).admitted,
+			).toBe(true);
+			activeLeases.push(lease(String(index + 1), request.memoryMb));
+			generalLeaseIds.add(String(index + 1));
+		}
+		expect(6_144 * 2).toBeGreaterThan(resolved.budgetMb);
+		expect(log).toHaveBeenLastCalledWith(
+			"hobo_ci_memory_admitted",
+			expect.objectContaining({ learned: true, classMb: 6_144 }),
+		);
+	});
+
+	it("restores class-sized reservations when learning is disabled", () => {
+		const peaks: MemoryPeakHistories = {
+			"PR impact gate": { peaksMb: [100, 100, 100] },
+		};
+		const resolved = resolveWorkerMemoryConfig(
+			{
+				HOBO_CI_WORKER_MEMORY_BUDGET_MB: "8000",
+				HOBO_CI_WORKER_MEMORY_LEARN: "0",
+			},
+			{ totalMemoryMb: 32_768, trunkSlots: 0 },
+			peaks,
+		);
+		const request = memoryRequestForJob("PR impact gate", resolved);
+		const log = vi.fn();
+		const admission = createWorkerMemoryAdmission(resolved, { log });
+		const activeLeases: MemoryLease[] = [];
+		const generalLeaseIds = new Set<string>();
+
+		expect(request).toEqual({ memoryClass: "heavy", memoryMb: 6_144 });
+		expect(
+			admission.admit({
+				jobId: 1,
+				...request,
+				rank: 1,
+				activeLeases,
+				generalLeaseIds,
+			}).admitted,
+		).toBe(true);
+		activeLeases.push(lease("1", request.memoryMb));
+		generalLeaseIds.add("1");
+		expect(
+			admission.admit({
+				jobId: 2,
+				...request,
+				rank: 1,
+				activeLeases,
+				generalLeaseIds,
+			}).admitted,
+		).toBe(false);
+		expect(log).toHaveBeenLastCalledWith(
+			"hobo_ci_memory_admission_wait",
+			expect.objectContaining({ learned: false, classMb: 6_144 }),
+		);
+	});
+
+	it("recomputes the idle trunk reservation from new peaks", () => {
+		const peaks = {
+			"Main full gate": { peaksMb: [1_000, 1_000, 1_000] },
+		} satisfies MemoryPeakHistories;
+		const resolved = resolveWorkerMemoryConfig(
+			{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "8000" },
+			{ totalMemoryMb: 32_768, trunkSlots: 1 },
+			peaks,
+		);
+		const admission = createWorkerMemoryAdmission(resolved);
+		const request = {
+			jobId: 1,
+			memoryClass: "standard",
+			memoryMb: 4_096,
+			rank: 1,
+			activeLeases: [],
+			generalLeaseIds: new Set<string>(),
+		} as const;
+		expect(resolved.trunkReservationMb).toBe(1_536);
+		expect(admission.admit(request).admitted).toBe(true);
+		const trunk = peaks["Main full gate"];
+		if (!trunk) throw new Error("trunk history missing");
+		trunk.peaksMb = [3_000, 3_000, 3_000];
+		expect(admission.admit(request).admitted).toBe(false);
+	});
+
+	it("dedupes memory-budget waits across small host availability changes", () => {
+		let availableMb = 2_500;
+		const log = vi.fn();
+		const admission = createWorkerMemoryAdmission(config(6_144), {
+			log,
+			now: () => 0,
+			availableMemoryMb: () => availableMb,
+		});
+		const request = {
+			jobId: 42,
+			memoryClass: "heavy",
+			memoryMb: 8_192,
+			rank: 1,
+			activeLeases: [],
+			generalLeaseIds: new Set<string>(),
+		} as const;
+
+		expect(admission.admit(request).admitted).toBe(false);
+		availableMb = 2_600;
+		expect(admission.admit(request).admitted).toBe(false);
+		expect(log).toHaveBeenCalledOnce();
+		expect(log).toHaveBeenCalledWith(
+			"hobo_ci_memory_admission_wait",
+			expect.objectContaining({
+				reason: "memory-budget",
+				availableMb: 2_500,
+			}),
+		);
+	});
+
+	it("blocks admission below the live host reserve and logs host-available", () => {
+		const log = vi.fn();
+		const availableMemoryMb = vi.fn(() => 2_500);
+		const admission = createWorkerMemoryAdmission(config(8_000), {
+			log,
+			availableMemoryMb,
+		});
+		const request = {
+			jobId: 1,
+			memoryClass: "light",
+			memoryMb: 1_024,
+			rank: 1,
+			activeLeases: [],
+			generalLeaseIds: new Set<string>(),
+		} as const;
+
+		expect(admission.admit(request).admitted).toBe(false);
+		expect(availableMemoryMb).toHaveBeenCalledOnce();
+		expect(log).toHaveBeenCalledWith(
+			"hobo_ci_memory_admission_wait",
+			expect.objectContaining({
+				reason: "host-available",
+				availableMb: 2_500,
+			}),
+		);
+	});
+
+	it("uses only the budget when host availability is unavailable", () => {
+		const admission = createWorkerMemoryAdmission(config(6_144), {
+			availableMemoryMb: () => undefined,
+		});
+		expect(
+			admission.admit({
+				jobId: 1,
+				memoryClass: "heavy",
+				memoryMb: 6_144,
+				rank: 1,
+				activeLeases: [],
+				generalLeaseIds: new Set<string>(),
+			}).admitted,
+		).toBe(true);
+	});
+
+	it("applies the live host guard to warm reservations", () => {
+		let availableMb = 2_500;
+		const availableMemoryMb = vi.fn(() => availableMb);
+		const admission = createWorkerMemoryAdmission(config(8_000), {
+			availableMemoryMb,
+		});
+		expect(admission.reserveWarm([], 1_024, new Set<string>())).toBe(false);
+		availableMb = 3_072;
+		expect(admission.reserveWarm([], 1_024, new Set<string>())).toBe(true);
+		expect(availableMemoryMb).toHaveBeenCalledTimes(2);
 	});
 
 	it("does not reserve memory for a lease waiting for a launch slot", () => {

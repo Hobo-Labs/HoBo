@@ -29,7 +29,11 @@ import {
 	type WorkerLeaseReconciliationEvent,
 } from "./lease-reconciler.js";
 import type { WorkerMemoryAdmission } from "./memory-admission.js";
-import { computeJobMemoryConfig } from "./memory-classes.js";
+import {
+	computeJobMemoryConfig,
+	type WorkerMemoryClasses,
+} from "./memory-classes.js";
+import type { MemoryPeaks } from "./memory-peaks.js";
 import {
 	createOrphanJobTracker,
 	type OrphanJobEvent,
@@ -209,6 +213,8 @@ export function createIsolatedContainerController(options: {
 	workerImage: string;
 	workerMemoryMb?: number;
 	prewarmMemoryMb?: number;
+	memoryClasses?: WorkerMemoryClasses;
+	memoryPeaks?: MemoryPeaks;
 	memoryAdmission?: WorkerMemoryAdmission;
 	generalLeaseIds?: (
 		activeLeases: readonly Lease[],
@@ -219,6 +225,7 @@ export function createIsolatedContainerController(options: {
 			| WorkerLeaseReconciliationEvent
 			| OrphanJobEvent
 			| "hobo_ci_container_oom"
+			| "hobo_ci_container_memory_peak"
 			| "hobo_ci_job_pickup"
 			| "hobo_ci_launch_failed"
 			| "hobo_ci_launch_parked"
@@ -258,6 +265,19 @@ export function createIsolatedContainerController(options: {
 	const uncertainWithoutContainerRecoveryMs =
 		options.uncertainWithoutContainerRecoveryMs ?? 5 * 60_000;
 	const workerMemoryMb = options.workerMemoryMb ?? 8192;
+	const classMemoryMb = (
+		lease: Readonly<{ memoryClass: string; memoryMb: number }>,
+	): number => {
+		if (
+			options.memoryClasses &&
+			(lease.memoryClass === "light" ||
+				lease.memoryClass === "standard" ||
+				lease.memoryClass === "heavy")
+		)
+			return options.memoryClasses[lease.memoryClass];
+		if (options.memoryClasses) return options.memoryClasses.heavy;
+		return lease.memoryMb >= 512 ? lease.memoryMb : workerMemoryMb;
+	};
 	const slots = options.slots ?? 1;
 	if (!Number.isInteger(slots) || slots < 1 || slots > 8)
 		throw new Error("invalid worker slots");
@@ -642,6 +662,28 @@ export function createIsolatedContainerController(options: {
 		}
 	};
 
+	const measureMemoryPeak = async (lease: Lease): Promise<void> => {
+		try {
+			const peakMb = await options.docker.memoryPeak?.(
+				lease.sandboxName,
+				lease.sandboxSessionId,
+			);
+			if (peakMb === undefined) return;
+			options.log?.("hobo_ci_container_memory_peak", {
+				jobId: lease.jobId,
+				jobName: lease.jobName,
+				memoryClass: lease.memoryClass || "heavy",
+				limitMb: classMemoryMb(lease),
+				reservedMb:
+					lease.memoryMb >= 512 ? lease.memoryMb : classMemoryMb(lease),
+				peakMb,
+			});
+			if (peakMb > 0) options.memoryPeaks?.record(lease.jobName, peakMb);
+		} catch {
+			return;
+		}
+	};
+
 	const host: IsolatedRunnerHost = {
 		async isLaunchParked(job: Job) {
 			const key = launchKey(job.repositoryId, job.id, job.runAttempt);
@@ -719,8 +761,7 @@ export function createIsolatedContainerController(options: {
 				}
 				let containerId = "";
 				let containerStartedAt = "";
-				const memoryMb =
-					planned.memoryMb >= 512 ? planned.memoryMb : workerMemoryMb;
+				const memoryMb = classMemoryMb(planned);
 				let stage: LaunchStage = "image";
 				try {
 					const selection = await selectImage(planned.repository);
@@ -921,13 +962,16 @@ export function createIsolatedContainerController(options: {
 						lease.sandboxSessionId,
 					);
 					containerFailed = state.exitCode !== 0 || state.oomKilled;
-					if (state.exitCode === 137 && state.oomKilled)
+					if (state.exitCode === 137 && state.oomKilled) {
+						options.memoryPeaks?.recordOom(lease.jobName);
 						options.log?.("hobo_ci_container_oom", {
 							jobId: lease.jobId,
+							jobName: lease.jobName,
 							memoryClass: lease.memoryClass || "heavy",
 							memoryMb: lease.memoryMb || workerMemoryMb,
 							exitCode: state.exitCode,
 						});
+					}
 				} catch {
 					// OOM evidence is best-effort; reconcile still settles the dead container.
 				}
@@ -951,6 +995,7 @@ export function createIsolatedContainerController(options: {
 				if (!exited) return;
 				stop = true;
 			}
+			if (running && stop) await measureMemoryPeak(lease);
 			const deadWhileRunning = !stop && lease.state === "running" && !running;
 			try {
 				if (deadWhileRunning) {
