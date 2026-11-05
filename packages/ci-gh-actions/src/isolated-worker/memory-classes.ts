@@ -4,6 +4,10 @@ import {
 	learnedReservationMb,
 	type MemoryPeakHistories,
 } from "./memory-peaks.js";
+export {
+	computeJobMemoryConfig,
+	type JobMemoryConfig,
+} from "./job-memory-config.js";
 
 export type WorkerMemoryClassName = "light" | "standard" | "heavy";
 export type WorkerMemoryClasses = Readonly<
@@ -29,27 +33,6 @@ export type JobMemoryRequest = Readonly<{
 	memoryClass: WorkerMemoryClassName;
 	memoryMb: number;
 }>;
-export type JobMemoryConfig = Readonly<{
-	heapMb: number;
-	turboConcurrency: number;
-	vitestMaxWorkers: number;
-}>;
-
-export function computeJobMemoryConfig(input: {
-	limitMb: number;
-	cpuCount: number;
-}): JobMemoryConfig {
-	const heapBudgetMb = input.limitMb - 768;
-	const vitestMaxWorkers = Math.max(
-		1,
-		Math.min(input.cpuCount, Math.floor(heapBudgetMb / 1280) - 1),
-	);
-	return {
-		heapMb: Math.min(3072, Math.floor(heapBudgetMb / (vitestMaxWorkers + 1))),
-		turboConcurrency: 1,
-		vitestMaxWorkers,
-	};
-}
 
 const JOB_CLASSES = {
 	"CI fabric contract guard": "light",

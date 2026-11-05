@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import {
 	computeJobMemoryConfig,
 	type JobMemoryConfig,
-} from "../../packages/ci-gh-actions/src/isolated-worker/memory-classes.ts";
+} from "../../packages/ci-gh-actions/src/isolated-worker/job-memory-config.ts";
 
 export type { JobMemoryConfig };
 export { computeJobMemoryConfig };
