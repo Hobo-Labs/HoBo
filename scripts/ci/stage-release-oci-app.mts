@@ -12,7 +12,6 @@ import {
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { basename, dirname, join, parse, resolve } from "node:path";
 import {
 	orderedSdkTarballPaths,
@@ -209,6 +208,40 @@ export function nodeModulesPathForPackageName(
 
 type TarballManifest = { readonly name: string };
 
+type MovePackageDirDeps = {
+	readonly renameSync: typeof renameSync;
+	readonly cpSync: typeof cpSync;
+	readonly rmSync: typeof rmSync;
+};
+
+/** Move extracted `package/` into `node_modules`; copy+rm when rename crosses devices. */
+export function moveExtractedPackageDir(
+	pkgDir: string,
+	target: string,
+	deps: MovePackageDirDeps = { renameSync, cpSync, rmSync },
+): void {
+	deps.rmSync(target, { recursive: true, force: true });
+	mkdirSync(dirname(target), { recursive: true });
+	try {
+		deps.renameSync(pkgDir, target);
+	} catch (error) {
+		if (
+			!(error instanceof Error) ||
+			!("code" in error) ||
+			error.code !== "EXDEV"
+		) {
+			throw error;
+		}
+		deps.cpSync(pkgDir, target, { recursive: true });
+		deps.rmSync(pkgDir, { recursive: true, force: true });
+	}
+}
+
+/** Temp dir for tarball extract; must sit on the same device as `appDir` (pnpm store staging). */
+export function sdkOverlayExtractRoot(appDir: string): string {
+	return mkdtempSync(join(appDir, ".sdk-overlay-"));
+}
+
 /**
  * Lay staged `@hobo-labs/*` tarballs into a pnpm-deploy app without `npm install`.
  * npm's arborist crashes (Node 24) when reconciling tarballs against pnpm's
@@ -219,7 +252,7 @@ export function installSdkTarballsIntoApp(
 	artifactsDir: string,
 ): void {
 	const tarballs = orderedSdkTarballPaths(artifactsDir);
-	const extractRoot = mkdtempSync(join(tmpdir(), "hobo-sdk-overlay-"));
+	const extractRoot = sdkOverlayExtractRoot(appDir);
 	try {
 		for (const tarball of tarballs) {
 			const slot = join(extractRoot, basename(tarball, ".tgz"));
@@ -235,9 +268,7 @@ export function installSdkTarballsIntoApp(
 				throw new Error(`SDK tarball missing name: ${tarball}`);
 			}
 			const target = nodeModulesPathForPackageName(appDir, manifest.name);
-			rmSync(target, { recursive: true, force: true });
-			mkdirSync(dirname(target), { recursive: true });
-			renameSync(pkgDir, target);
+			moveExtractedPackageDir(pkgDir, target);
 		}
 	} finally {
 		rmSync(extractRoot, { recursive: true, force: true });

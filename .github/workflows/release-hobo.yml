@@ -284,6 +284,7 @@ jobs:
           HOBO_RELEASE_VERSION: pr-${{ github.event.pull_request.number || 'manual' }}
           HOBO_RELEASE_REVISION: ${{ github.sha }}
           HOBO_CI_WORKER_IMAGE: hobo-ci-worker:local
+          HOBO_TURBO_CONCURRENCY: "1"
         run: |
           set -uo pipefail
           build() { node --no-warnings scripts/ci/build-release-oci-image.mts "$@"; }
@@ -312,16 +313,9 @@ jobs:
             fi
           }
           failed=()
-          pids=()
-          ids=()
           for id in $IMAGE_IDS; do
             if [ "$id" = "hobo-mcp" ] || [ "$id" = "hobo-cli" ]; then continue; fi
-            build_one "$id" &
-            pids+=("$!")
-            ids+=("$id")
-          done
-          for i in "${!pids[@]}"; do
-            if ! wait "${pids[$i]}"; then failed+=("${ids[$i]}"); fi
+            if ! build_one "$id"; then failed+=("$id"); fi
           done
           if [[ " $IMAGE_IDS " == *" hobo-cli "* ]]; then
             if ! build_one hobo-cli; then failed+=("hobo-cli"); fi
