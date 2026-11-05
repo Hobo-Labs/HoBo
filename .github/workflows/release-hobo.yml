@@ -37,6 +37,8 @@ on:
       - "scripts/lib/release-hobo-path-filters.mts"
       - "scripts/test/nbgv-release-version.test.ts"
       - "scripts/ci/push-release-ghcr-images.mts"
+      - "scripts/lib/docker-registry-push.mts"
+      - "scripts/test/push-release-ghcr-images.test.ts"
       - "scripts/ci/ensure-ci-worker-image.mts"
       - "scripts/ci/extract-sdk-artifacts.mts"
       - "scripts/lib/release-sparse-cone.mts"
@@ -90,6 +92,8 @@ on:
       - "scripts/lib/release-hobo-path-filters.mts"
       - "scripts/test/nbgv-release-version.test.ts"
       - "scripts/ci/push-release-ghcr-images.mts"
+      - "scripts/lib/docker-registry-push.mts"
+      - "scripts/test/push-release-ghcr-images.test.ts"
       - "scripts/ci/ensure-ci-worker-image.mts"
       - "scripts/ci/extract-sdk-artifacts.mts"
       - "scripts/lib/release-sparse-cone.mts"
@@ -515,7 +519,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      packages: read
+      packages: write
       id-token: write
       attestations: write
     strategy:
@@ -535,6 +539,8 @@ jobs:
         with:
           digest-list-path: /tmp/hobo-release-digests/hobo-release-digests.txt
           image-id: ${{ matrix.image_id }}
+          ghcr-username: ${{ github.actor }}
+          ghcr-token: ${{ secrets.GITHUB_TOKEN }}
 
   release-npm:
     name: npm publish train (SDK allowlist)

@@ -176,11 +176,12 @@ Multi-arch builds are **native-only** on `hobo` runners (amd64 or arm64 per box)
 - Downstream pipelines (CLI + PWA) **pin the SDK image by digest**, never `:latest`.
 - PR workflows **build + contract-test** images locally; they **do not push** to GHCR.
 - Tag/`workflow_dispatch` releases push with **`GITHUB_TOKEN`** (`packages: write`); no new secrets.
+- **`release-publish`** rebuilds each image on the self-hosted runner and pushes tags sequentially via [`push-release-ghcr-images.mts`](../../scripts/ci/push-release-ghcr-images.mts) (the **`release-oci-build-tag`** matrix is a **gate**, not a digest artifact handoff). Registry **`unknown blob`** / transient HTTP failures retry with exponential backoff before failing the train.
 - **Main train signed tags** use **`environment: production`** secrets **`HOBO_RELEASE_TAG_SSH_PRIVATE_KEY`** (private key material for SSH signing) and **`HOBO_RELEASE_TAG_SSH_SIGNING_KEY`** (public **`user.signingkey`** for `gpg.format=ssh`, e.g. `ssh-ed25519 AAAA… comment`). Deploy keys are disabled: **`release-tag`** signs with SSH but **pushes the tag over HTTPS** with the job’s **`GITHUB_TOKEN`** (`contents: write`). The job refuses to move an existing tag.
 
 ### Signing, SBOM, and provenance
 
-- **GitHub artifact attestations** (keyless, no cosign secret): `actions/attest-build-provenance` + `actions/attest-sbom` after push, one attestation per image digest (pinned SHAs in [`.github/workflows/release-hobo.yml`](../../.github/workflows/release-hobo.yml) and [`.github/workflows/release-code.yml`](../../.github/workflows/release-code.yml)).
+- **GitHub artifact attestations** (keyless, no cosign secret): `actions/attest-build-provenance` + `actions/attest-sbom` after push, one attestation per image digest (pinned SHAs in [`.github/workflows/release-hobo.yml`](../../.github/workflows/release-hobo.yml) and [`.github/workflows/release-code.yml`](../../.github/workflows/release-code.yml)). The shared [`.github/actions/release-oci-attest`](../../.github/actions/release-oci-attest/action.yml) composite **docker-logs into GHCR first** (`~/.docker/config.json`) because `push-to-registry: true` on self-hosted **`hobo`** runners does not inherit login from the publish job; attest jobs use **`packages: write`**.
 - npm packages continue to use **`npm publish --provenance`** (OIDC) on the same release train.
 
 ### Contract tests

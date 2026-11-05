@@ -8,6 +8,7 @@ import {
 	parseReleaseRef,
 	releaseImageIdsForTrain,
 } from "../lib/release-version.mts";
+import { runDockerPushWithRetry } from "../lib/docker-registry-push.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 
@@ -66,7 +67,7 @@ export function pushReleaseGhcrImages(options: {
 		}
 		const tag = tags[0]!;
 		run("docker", ["tag", `${id}:candidate`, tag]);
-		run("docker", ["push", tag]);
+		runDockerPushWithRetry({ tag });
 		const inspect = spawnSync(
 			"docker",
 			["inspect", "--format={{index .RepoDigests 0}}", tag],
