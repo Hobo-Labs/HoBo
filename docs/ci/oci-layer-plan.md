@@ -178,10 +178,11 @@ The key is sha256 over, in fixed order:
   `resolutions`, and root-only `pnpm`. One normalizer parses each manifest, sorts the retained keys, and supplies both
   the hash and the staged Docker context. Metadata such as scripts, exports, files and descriptions is excluded;
 - root `.npmrc`, `patches/**`, and optional `.pnpmfile.cjs`;
-- the `node` and `pnpm` entries of `mise.lock`, because native postinstalls are ABI-specific;
 - the platform (`linux/arm64` on the box);
+- the explicit `DEPS_LAYOUT.version`. Bump it when a layout recipe changes image contents or paths; otherwise only its
+  pinned `recipeSha256` changes. The job-side `scripts/ci/deps-layer.mts` is not a key or build-context input;
 - `ciRunnerImageVersion`, which covers `mise.lock`, `mise.toml`, `system-packages.txt`, the base Dockerfile and
-  the runner build script.
+  the runner build script, including the Node and pnpm versions.
 
 Main full gate and PR impact gate skip the install only when the worker's `HOBO_CI_DEPS_LAYER` exactly equals the
 checkout's computed key. Every miss runs `pnpm install --frozen-lockfile` against the full checkout, including its
@@ -401,10 +402,12 @@ remaining toolchain pins are deferred hardening rather than claimed here.
 - Job install steps become `pnpm install --frozen-lockfile --offline`, with a fallback to the online install
   when no layer was used. The worker exports `HOBO_CI_DEPS_LAYER=<key>` to the job.
 
-**Implemented in this change (2026-11-04):** the pure key function hashes every declared input (including each
-lockfile importer manifest, the deps build recipe, bucket generator and Node/pnpm mise entries) with mutation tests.
-`deps/build-deps.sh` stages only those inputs, runs the network-enabled `pnpm fetch` target, then a separate
-whole-build `--network=none` install/rebuild. Both stages reuse the persistent host store through the same
+**Implemented in this change (2026-11-04):** the pure key function hashes every installed-dependency input, including
+each normalized lockfile importer manifest, plus an explicit layout version. Mutation tests prove that recipe,
+link/check script, and Node/pnpm mise edits do not change it; the toolchain prefix already covers `mise.lock`.
+`deps/build-deps.sh` stages only the dependency inputs and bucket generator, runs the network-enabled `pnpm fetch`
+target, then a separate whole-build `--network=none` install/rebuild. It adds the link/check script only to a separate
+offline-verification directory. Both stages reuse the persistent host store through the same
 BuildKit cache mount. The install stage stages every repo-relative `node_modules` under `/opt/hobo-deps`; the final
 toolchain-based stage adds a deps-key marker, with no `.git`, checkout path, deletion pass, fetch store or staged
 manifests. The bucket generator assigns each `.pnpm` entry to one of 64 stable SHA-256 buckets and emits generated
