@@ -221,6 +221,29 @@ describe("CI deps image build contract", () => {
 		includes(build, "--no-promote");
 	});
 
+	it("guards Docker inode and disk headroom before a deps rebuild", () => {
+		includes(build, 'inode_headroom="${HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-400000}"');
+		includes(build, 'byte_headroom="${HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-8589934592}"');
+		includes(build, "invalid HOBO_CI_DEPS_BUILD_INODE_HEADROOM");
+		includes(build, "invalid HOBO_CI_DEPS_BUILD_BYTE_HEADROOM");
+		includes(build, "df -P --output=iavail");
+		includes(build, "df -B1 --output=avail");
+		includes(build, "ensure_deps_build_headroom");
+		includes(build, "docker builder prune -f --keep-storage");
+		includes(
+			build,
+			"refusing deps rebuild: Docker data root still below headroom after builder prune",
+		);
+		assert.ok(!build.includes("docker image prune -af"));
+		assert.ok(!build.includes("docker image prune -a"));
+		const guard = build.indexOf("ensure_deps_build_headroom");
+		const call = build.lastIndexOf("ensure_deps_build_headroom");
+		const buildCommand = build.indexOf('"${build_command[@]}" \\');
+		assert.ok(guard > -1);
+		assert.ok(call > guard);
+		assert.ok(buildCommand > call);
+	});
+
 	it("lets the worker cap build and verification memory", () => {
 		includes(
 			build,
