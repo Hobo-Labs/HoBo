@@ -22,6 +22,7 @@ import {
 	createNodeWorkerStorageFileSystem,
 	createPnpmStoreMaintenance,
 	createPollLogFilter,
+	createRetiredWorkDirectorySweeper,
 	createWorkerMemoryAdmission,
 	createWorkerStorageAdmission,
 	type DepsImageProcessRequest,
@@ -296,11 +297,19 @@ if (pnpmStore && statSync(pnpmStore).dev !== statSync(workRoot).dev)
 	);
 const docker = createCliDockerDriver({ env: process.env, log });
 const workFs = createNodeWorkerStorageFileSystem();
+const retiredSweep = createRetiredWorkDirectorySweeper({
+	fs: workFs,
+	workRoot,
+	log,
+});
+retiredSweep.trigger();
 const storageAdmission = createWorkerStorageAdmission({
 	dockerDataRoot: await docker.dataRoot(),
 	workRoot,
 	fs: workFs,
 	docker,
+	activeLeases: async () => storageLeases(await store.activeLeases()),
+	scheduleRetiredSweep: retiredSweep.trigger,
 	pnpmStore: pnpmStore
 		? createPnpmStoreMaintenance({
 				path: pnpmStore,
@@ -359,6 +368,7 @@ const worker = createIsolatedContainerController({
 		: {},
 	workRoot,
 	workFs,
+	scheduleRetiredSweep: retiredSweep.trigger,
 });
 let liveWorkerLeaseIds = (await worker.reconcileLeases()).liveLeaseIds;
 await worker.reconcileOrphanJobs();
@@ -427,6 +437,7 @@ if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
 }
 const host = createCompositeIsolatedHost({ store, worker: worker.host });
 if (!host) throw new Error("worker host unavailable");
+let workerReconcileMs = 0;
 const runtime = createHostedRelayRuntime({
 	store,
 	github,
@@ -444,6 +455,11 @@ const runtime = createHostedRelayRuntime({
 	memoryAdmission,
 	storageAdmission,
 	control: async () => undefined,
+	onTickTiming: (timing) =>
+		log("hobo_ci_isolated_worker_tick_slow", {
+			...timing,
+			workerReconcileMs,
+		}),
 });
 const poller =
 	plan.admission === "pull"
@@ -471,7 +487,9 @@ let jobPollInFlight: Promise<void> | undefined;
 let gcInFlight: Promise<void> | undefined;
 
 const reconcileAndLaunch = singleFlight(async () => {
+	const workerReconcileStartedAt = Date.now();
 	const reconciliation = await worker.reconcileLeases();
+	workerReconcileMs = Date.now() - workerReconcileStartedAt;
 	liveWorkerLeaseIds = reconciliation.liveLeaseIds;
 	await worker.reconcileOrphanJobs();
 	if (!reconciliation.inventoryKnown) return;
@@ -542,6 +560,7 @@ function runDepsImageEnsure(): void {
 }
 
 function runGc(): void {
+	retiredSweep.trigger();
 	if (draining || gcInFlight || tickInFlight) return;
 	gcInFlight = store
 		.activeLeases()
@@ -616,7 +635,9 @@ async function shutdown(signal: string) {
 			await tickInFlight.catch(() => undefined);
 		}
 		const reconcileDrain = async () => {
+			const workerReconcileStartedAt = Date.now();
 			const reconciliation = await worker.reconcileLeases({ draining: true });
+			workerReconcileMs = Date.now() - workerReconcileStartedAt;
 			liveWorkerLeaseIds = reconciliation.liveLeaseIds;
 			await worker.reconcileOrphanJobs();
 			if (reconciliation.inventoryKnown) await runtime.tick({ admit: false });
@@ -650,6 +671,7 @@ async function shutdown(signal: string) {
 				remaining: result.remaining,
 			});
 		}
+		if (stopMode === "drain") await retiredSweep.drain();
 		await closeStore();
 		process.exit(result.mode === "handoff" || result.drained ? 0 : 1);
 	})().catch((error) => {
