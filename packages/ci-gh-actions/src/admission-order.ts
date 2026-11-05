@@ -7,6 +7,7 @@ export type AdmissionKey = Readonly<{
 	rank: number;
 	startedAtMs: number;
 	event: string;
+	headSha?: string | undefined;
 }>;
 
 /** The rank of merge_group, push and workflow_dispatch runs: the ones that gate trunk. */
@@ -63,6 +64,7 @@ export function createAdmissionOrder(
 		runId: number,
 		event: string,
 		runStartedAt: string | null | undefined,
+		runHeadSha?: string,
 	): AdmissionKey {
 		const parsed = Date.parse(runStartedAt ?? "");
 		const cached = runs.get(runId);
@@ -72,6 +74,7 @@ export function createAdmissionOrder(
 				? parsed
 				: (cached?.startedAtMs ?? Number.POSITIVE_INFINITY),
 			event,
+			headSha: runHeadSha ?? cached?.headSha,
 		};
 		if (!runs.has(runId) && runs.size >= CACHE_LIMIT) {
 			const oldest = runs.keys().next();
@@ -95,7 +98,9 @@ export function createAdmissionOrder(
 				ref.repository,
 				ref.runId,
 			);
-			return withLabelRank(remember(ref.runId, run.event, run.run_started_at));
+			return withLabelRank(
+				remember(ref.runId, run.event, run.run_started_at, run.head_sha),
+			);
 		} catch {
 			return withLabelRank(cached ?? UNKNOWN);
 		}
@@ -134,11 +139,17 @@ export function createAdmissionOrder(
 			runId: number;
 			event: string;
 			runStartedAt?: string | null | undefined;
+			headSha?: string | undefined;
 		}) => {
-			remember(run.runId, run.event, run.runStartedAt);
+			remember(run.runId, run.event, run.runStartedAt, run.headSha);
 		},
 		rank: async (ref: AdmissionRef) => (await keyFor(ref)).rank,
 		event: async (ref: AdmissionRef) => (await keyFor(ref)).event,
+		mergeGroupKey: async (ref: AdmissionRef) => {
+			const key = await keyFor(ref);
+			if (key.event !== "merge_group") return undefined;
+			return key.headSha ?? `run:${ref.runId}`;
+		},
 	});
 }
 

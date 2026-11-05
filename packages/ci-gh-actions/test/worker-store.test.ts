@@ -17,7 +17,7 @@ describe("worker store plan", () => {
 				path: join("/home/box", ".local", "share", "hobo-ci", "worker.sqlite"),
 			},
 			admission: "pull",
-			jobPollMs: 15_000,
+			jobPollMs: 5_000,
 		});
 		expect(
 			defaultWorkerDatabasePath({ XDG_DATA_HOME: "/data" }, "/home/box"),
@@ -52,7 +52,7 @@ describe("worker store plan", () => {
 		).toEqual({
 			store: { kind: "postgres", urlEnv: "SHARED_DB" },
 			admission: "push",
-			jobPollMs: 15_000,
+			jobPollMs: 5_000,
 		});
 		expect(() =>
 			resolveWorkerStorePlan(
