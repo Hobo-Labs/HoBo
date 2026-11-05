@@ -242,19 +242,21 @@ export function formatSparseCheckoutBlock(cones: readonly string[]): string {
 	return `${cones.join("\n")}\n`;
 }
 
-const RELEASE_ROOT_FILE_SET = new Set<string>(RELEASE_ROOT_FILES);
-
 /** Git cone mode treats each pattern as a directory; root manifests are checked out separately. */
-export function splitSparseCheckoutPaths(all: readonly string[]): {
+export function splitSparseCheckoutPaths(
+	all: readonly string[],
+	rootFileNames: readonly string[] = RELEASE_ROOT_FILES,
+): {
 	readonly directoryCones: readonly string[];
 	readonly rootFiles: readonly string[];
 } {
+	const rootFileSet = new Set<string>(rootFileNames);
 	const directoryCones: string[] = [];
 	const rootFiles: string[] = [];
 	for (const path of all) {
 		const normalized = path.trim();
 		if (!normalized) continue;
-		if (RELEASE_ROOT_FILE_SET.has(normalized)) {
+		if (rootFileSet.has(normalized)) {
 			rootFiles.push(normalized);
 			continue;
 		}

@@ -73,6 +73,8 @@ unindexed new finding files as notices.
 - [Finding 64: containerless launch failures thrashed worker leases](./findings/0064-containerless-launch-failures-thrashed-worker-leases.md)
 - [Finding 67: Unbounded pnpm store prunes froze the box](./findings/0067-unbounded-pnpm-store-prunes-froze-the-box.md)
 - [Finding 70: a test fixture depended on the job container umask](./findings/0070-a-test-fixture-depended-on-the-job-container-umask.md)
+- [Finding 72: deps mount verify missed the link script](./findings/0072-deps-mount-verify-missed-the-link-script.md)
+- [Finding 73: Main S0 checkout fetched unused trees](./findings/0073-main-s0-checkout-fetched-unused-trees.md)
 <!-- findings-index:end -->
 
 ## Data

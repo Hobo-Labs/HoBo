@@ -327,18 +327,33 @@ time, read with `gh run view --json jobs` over the 5 runs before merge and the 5
 
 ### Phase 1: sparse, blobless checkouts
 
-Finish `cursor/ci-sparse-checkout-4453`. Every `actions/checkout` uses:
+**Status (2026-11-05): started for Main full gate S0 only.** `hobo-ci.yml` bootstraps `.github/actions`, then uses
+`hobo-checkout` with `filter: blob:none`, `fetch-tags: false`, the canonical cone in
+`scripts/ci/checkout-cone.mts`, and `submodules: "false"`. The cone covers S0, `check:all`, and `agent:check`
+inputs but not `media/`. Full history remains (`fetch-depth: 0`) because the same job runs `gitleaks git`; the deps
+layer's existing ts-autocode links replace the recursive submodule fetch. Other jobs, including `pr-gate` and the
+image jobs, are unchanged.
+
+The eventual Phase 1 target remains that every `actions/checkout` uses:
 - `filter: blob:none`;
 - a `sparse-checkout` cone;
 - `fetch-tags: false`;
 - a minimal `fetch-depth`;
 - no `submodules`.
 
-`scripts/ci/checkout-cone.mts` derives each job's cone from the diff and the `pnpm-lock.yaml` importer graph. A
-`lint-actions.ts` rule fails on any non-sparse checkout.
+A later Phase 1 change will derive each remaining job's cone and add the `lint-actions.ts` rule for non-sparse
+checkouts. This S0 slice deliberately adds neither the per-job derivation nor that global lint rule.
 
-- **Acceptance:** the lint rule and its test. Affected-only Turbo detection gives the same filters as a full
-  checkout for the last 25 `main` commits (scripted comparison in the PR). The merge queue stays green.
+`hobo-checkout` now also probes a job-side bare mirror named by `HOBO_CI_GIT_MIRROR`, then
+`/var/lib/hobo-ci/git/<owner>/<repo>.git` and `/opt/hobo/ci/git/<owner>/<repo>.git`. A hit must contain the exact
+`GITHUB_SHA` commit. It writes both GitHub URL forms as `url.file://<mirror>.insteadOf` entries in the
+`GIT_CONFIG_SYSTEM` file under `RUNNER_TEMP`, so checkout's pack and lazy blob fetches stay local without changing
+the checkout `repository:` or stored `origin`. A miss only logs `hobo_ci_git_mirror=miss` and keeps GitHub as the
+remote. The Phase 2 worker fetch, mount, and job-started hook are **not implemented** here.
+
+- **Acceptance for this slice:** `scripts/test/s0-checkout-cone.test.ts` keeps the workflow and cone synchronized,
+  and `scripts/test/box-git-mirror.test.ts` proves hit, miss, missing-commit, path-rejection, and CLI behavior.
+  The full-repo sparse lint rule and the remaining acceptance comparisons stay with the later Phase 1 work.
 
 ### Phase 2: box bare mirror
 
