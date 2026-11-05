@@ -58,8 +58,32 @@ describe("Main full gate S0 sparse checkout", () => {
 
 	it("retains full history but skips submodules", () => {
 		expect(mainGate).toMatch(
-			/uses: \.\/\.github\/actions\/hobo-checkout\n        with:\n          fetch-depth: 0\n          sparse-paths: \$\{\{ env\.S0_SPARSE_PATHS \}\}\n          submodules: "false"/,
+			/name: Checkout \(sparse S0, full history\)\n        uses: \.\/\.github\/actions\/hobo-checkout\n        with:\n          fetch-depth: 0\n          sparse-paths: \$\{\{ env\.S0_SPARSE_PATHS \}\}\n          submodules: "false"/,
 		);
+	});
+
+	it("starts the full-history secret scan immediately after S0 checkout", () => {
+		const checkout = mainGate.indexOf(
+			"name: Checkout (sparse S0, full history)",
+		);
+		const start = mainGate.indexOf(
+			"name: Start secret scan (full history, background)",
+		);
+		const wait = mainGate.indexOf("name: Secret scan (full history)");
+		const workspace = mainGate.indexOf("name: Workspace tests");
+		const prune = mainGate.indexOf("name: Prune Turbo cache");
+		expect(checkout).toBeGreaterThan(-1);
+		expect(start).toBeGreaterThan(checkout);
+		expect(wait).toBeGreaterThan(workspace);
+		expect(prune).toBeGreaterThan(wait);
+		const imageJob = workflow.slice(
+			workflow.indexOf("\n  ci-runner-image:"),
+			workflow.indexOf("\n  main-gate:"),
+		);
+		expect(imageJob).not.toContain(
+			"Start secret scan (full history, background)",
+		);
+		expect(imageJob).not.toContain("Secret scan (full history)");
 	});
 
 	it("covers every required S0 input", () => {

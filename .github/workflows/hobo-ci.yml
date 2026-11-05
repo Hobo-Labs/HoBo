@@ -587,7 +587,8 @@ jobs:
           fetch-tags: false
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - name: Checkout (sparse S0, full history)
+        uses: ./.github/actions/hobo-checkout
         with:
           fetch-depth: 0
           sparse-paths: ${{ env.S0_SPARSE_PATHS }}

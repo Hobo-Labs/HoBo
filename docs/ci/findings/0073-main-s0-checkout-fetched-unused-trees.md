@@ -28,7 +28,10 @@ remain Phase 2.
 ## Verification and expectation
 
 `scripts/test/s0-checkout-cone.test.ts`, `scripts/test/box-git-mirror.test.ts`, and the existing release-cone
-contract cover the workflow, cone, mirror fallback, missing-SHA refusal, and executable probe.
+contract cover the workflow, cone, mirror fallback, missing-SHA refusal, and executable probe. The
+`main-gate-image-wait` contract asserts the full-history gitleaks start/wait steps by name and adjacency
+(immediately after the named sparse checkout; wait after Workspace tests), not by a numeric step index —
+bootstrap plus `hobo-checkout` shifted the old unnamed-checkout `mainNames[1]` slot.
 
 The target for an affected main push is **S0 about 10–12 s** once checkout is sparse and blobless. A mirror hit
 also makes the checkout pack local. This is an estimate, not a measured post-change run: the S0 commands can still
