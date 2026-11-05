@@ -28,6 +28,7 @@ on:
       - "scripts/ci/stage-sdk-artifacts.mts"
       - "scripts/ci/build-release-site-prebuild.mts"
       - "scripts/ci/publish-npm-sdk.mts"
+      - "scripts/test/publish-npm-sdk.test.ts"
       - "scripts/ci/resolve-release-version.mts"
       - "scripts/ci/compute-release-version.mts"
       - "scripts/ci/check-release-relevant-push.mts"
@@ -82,6 +83,7 @@ on:
       - "scripts/ci/stage-sdk-artifacts.mts"
       - "scripts/ci/build-release-site-prebuild.mts"
       - "scripts/ci/publish-npm-sdk.mts"
+      - "scripts/test/publish-npm-sdk.test.ts"
       - "scripts/ci/resolve-release-version.mts"
       - "scripts/ci/compute-release-version.mts"
       - "scripts/ci/check-release-relevant-push.mts"
@@ -553,8 +555,9 @@ jobs:
         needs.release-contract.result == 'success'
       )
     needs: [release-main-train-gate, release-contract, release-oci-build-tag]
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 20
+    # npm trusted publishing (OIDC) requires GitHub-hosted runners — not self-hosted hobo.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     environment: release
     permissions:
       contents: read
@@ -578,7 +581,7 @@ jobs:
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
       - run: pnpm run pins:fetch ts-autocode
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
@@ -586,7 +589,7 @@ jobs:
         env:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
         run: node --no-warnings scripts/ci/materialize-release-version.mts
-      - name: npm publish (@hobo-labs via hobodev + provenance)
+      - name: npm publish (@hobo-labs via OIDC or hobodev token + provenance)
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node --no-warnings scripts/ci/publish-npm-sdk.mts /tmp/hobo-npm-release

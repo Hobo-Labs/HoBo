@@ -389,6 +389,17 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				.join("\n");
 			const runsOn = block.match(/^    runs-on: (.*)$/m)?.[1];
 			assert.ok(runsOn, `${file}:${lines[start]} has no runs-on`);
+			if (
+				file === "release-hobo.yml" &&
+				(lines[start] ?? "").startsWith("  release-npm:")
+			) {
+				assert.equal(
+					runsOn,
+					"ubuntu-24.04",
+					`${file}:${lines[start]} release-npm must use GitHub-hosted runners for npm OIDC`,
+				);
+				continue;
+			}
 			const condition =
 				block.match(/^    if:([^\n]*(?:\n      [^\n]*)*)/m)?.[1] ?? "";
 			const prOnly =
