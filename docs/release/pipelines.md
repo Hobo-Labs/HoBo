@@ -128,12 +128,11 @@ Public packages publish under **`@hobo-labs/*`** through the **`hobodev`** npm p
 
 [`release/npm-scope-map.json`](../../release/npm-scope-map.json) is the explicit source-to-public package mapping. [`scripts/ci/npm-publish-scope.mts`](../../scripts/ci/npm-publish-scope.mts) applies that mapping to the release manifest **at the publish boundary only**, in the packaging/publish staging area. It must not rewrite checked-in workspace manifests, source imports, or the workspace lockfile. Dry-run packing exercises the same staged manifest transformation without publishing so the inspected tarball matches the public package name and mapped dependencies.
 
-Real publication requires both:
+Real publication requires:
 
-- **`NPM_TOKEN`** for the `hobodev` publisher, supplied only to the protected release job; and
-- **GitHub OIDC npm provenance**, using `npm publish --provenance` so the published package links to the source and builder identity.
-
-Missing credentials, an unmapped public package, or a failed pack/provenance precondition fails closed. PR dry runs receive neither token nor OIDC publishing permission.
+- **GitHub-hosted `release-npm` job** on **`ubuntu-24.04`** with **`environment: release`**, **`permissions.id-token: write`**, and **`npm publish --provenance`**. When **`NPM_TOKEN`** is empty, npm **trusted publishing** (OIDC) is used — [npm does not support trusted publishing on self-hosted runners](https://docs.npmjs.com/trusted-publishers). Optional **`NPM_TOKEN`** on the **`release`** environment still maps to **`NODE_AUTH_TOKEN`** + **`hobodev`** `whoami` (OpenSesame-style dual path; see Tyler-R-Kendrick/OpenSesame `.github/actions/publish-npm-package`).
+- Each **`@hobo-labs/*`** package on npmjs needs a **trusted publisher**: org **`Hobo-Labs`**, repo **`HoBo`**, workflow **`release-hobo.yml`**, environment **`release`**. First publish may require a one-time bootstrap (manual package create or token) before OIDC can attach.
+- **Unmapped public package** or failed pack/provenance precondition still fails closed. PR dry runs receive neither token nor OIDC publishing permission.
 
 These pipelines replace **`workflows-disabled/publish.yml`**; implementation must not leave that disabled workflow as a second, divergent publish path.
 
