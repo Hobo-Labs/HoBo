@@ -16,6 +16,7 @@ import {
 	DEPS_LAYER_DOCKERFILE_PATH,
 	depsLayerBucket,
 	partitionDepsLayerEntries,
+	partitionDirectory,
 	syncDepsLayerDockerfile,
 } from "../ci/deps-layer-buckets.mts";
 
@@ -91,6 +92,26 @@ describe("deps layer bucket partition", () => {
 			assert.equal(
 				readFileSync(join(store, "lock.yaml"), "utf8"),
 				"lockfileVersion: 9\n",
+			);
+		} finally {
+			rmSync(fixture, { recursive: true, force: true });
+		}
+	});
+
+	it("explains the overlayfs same-layer requirement when rename returns EXDEV", () => {
+		const fixture = mkdtempSync(join(tmpdir(), "hobo-deps-buckets-exdev-"));
+		try {
+			const deps = join(fixture, "deps");
+			const store = join(deps, "node_modules", ".pnpm");
+			mkdirSync(join(store, "a"), { recursive: true });
+			assert.throws(
+				() =>
+					partitionDirectory(deps, join(fixture, "buckets"), () => {
+						throw Object.assign(new Error("injected EXDEV"), {
+							code: "EXDEV",
+						});
+					}),
+				/EXDEV.*overlayfs requires deps layer partitioning in the same RUN as pnpm install/,
 			);
 		} finally {
 			rmSync(fixture, { recursive: true, force: true });
