@@ -19,6 +19,18 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Probe box git mirror
+      shell: bash
+      run: |
+        set -euo pipefail
+        cfg="${RUNNER_TEMP}/hobo-git-system.config"
+        rm -f "$cfg"
+        node --experimental-strip-types --no-warnings \
+          "${{ github.action_path }}/box-git-mirror.mts" --write-config "$cfg"
+        if [ -f "$cfg" ]; then
+          echo "GIT_CONFIG_SYSTEM=$cfg" >> "$GITHUB_ENV"
+          export GIT_CONFIG_SYSTEM="$cfg"
+        fi
     - name: Stabilize partial-clone HTTP (HTTP/1.1)
       shell: bash
       run: git config --global http.version HTTP/1.1
@@ -37,6 +49,37 @@ runs:
           pnpm-workspace.yaml
           turbo.json
           tsconfig.base.json
+          .env.example
+          .gitattributes
+          .gitignore
+          .gitleaks.toml
+          .gitmodules
+          .mcp.json
+          AGENTS.md
+          AUTH.md
+          CLAUDE.md
+          CODE_OF_CONDUCT.md
+          CONTRIBUTING.md
+          DX.md
+          GAPS.md
+          LICENSE
+          NOTES.md
+          PRODUCT.md
+          README.md
+          SECURITY.md
+          SUPPORT.md
+          biome.json
+          buf.gen.yaml
+          cucumber.yaml
+          konsistent.json
+          oxlint.config.ts
+          sgconfig.yml
+          skills-lock.json
+          stryker.scripts.conf.json
+          tsconfig.json
+          vitest.config.ts
+          vitest.coverage.config.ts
+          vitest.mutation.config.ts
         )
         is_root_file() {
           local candidate="$1"
@@ -74,6 +117,7 @@ runs:
         ref: ${{ inputs.ref }}
         fetch-depth: ${{ inputs.fetch-depth }}
         filter: blob:none
+        fetch-tags: false
         sparse-checkout: ${{ steps.sparse.outputs.dir_cones }}
         sparse-checkout-cone-mode: true
     - name: Reset partial clone after failed checkout
@@ -90,6 +134,7 @@ runs:
         ref: ${{ inputs.ref }}
         fetch-depth: ${{ inputs.fetch-depth }}
         filter: blob:none
+        fetch-tags: false
         sparse-checkout: ${{ steps.sparse.outputs.dir_cones }}
         sparse-checkout-cone-mode: true
     - name: Reset partial clone after failed checkout (attempt 2)
@@ -105,6 +150,7 @@ runs:
         ref: ${{ inputs.ref }}
         fetch-depth: ${{ inputs.fetch-depth }}
         filter: blob:none
+        fetch-tags: false
         sparse-checkout: ${{ steps.sparse.outputs.dir_cones }}
         sparse-checkout-cone-mode: true
     - name: Require successful sparse checkout
