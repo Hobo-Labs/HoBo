@@ -89,6 +89,19 @@ export function ensureReleaseBuildHost(): void {
 	) {
 		run("pnpm", ["run", "pins:fetch", "ts-autocode"]);
 	}
+	if (process.env.HOBO_CI_DEPS_LAYER) {
+		const check = spawnSync(
+			process.execPath,
+			[
+				"--experimental-strip-types",
+				"scripts/ci/deps-layer.mts",
+				"check",
+				"--require",
+			],
+			{ cwd: root, stdio: "inherit" },
+		);
+		if (check.status === 0) return;
+	}
 	run("pnpm", [
 		"install",
 		"--frozen-lockfile",
