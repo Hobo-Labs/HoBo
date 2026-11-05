@@ -46,7 +46,8 @@ export async function inventoryCiEnginesFromRepository(
 				name !== "ci-guard" &&
 				Object.hasOwn(CI_ENGINE_PACKAGE_IDS, name),
 		)
-		.map((name) => CI_ENGINE_PACKAGE_IDS[name]!);
+		.map((name) => CI_ENGINE_PACKAGE_IDS[name])
+		.filter((id): id is string => id !== undefined);
 	const unique = [...new Set(discovered)].sort();
 	return unique.length > 0 ? unique : [DEFAULT_CI_ENGINE_ID];
 }
