@@ -331,15 +331,31 @@ function parseJson<T>(text: string | undefined, path: string): T | undefined {
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 type RootPackageJson = { packageManager?: string; pnpm?: Json; engines?: Json };
 
+/** Docs, tests, and detector-only scripts never change a product image. */
+export function isReleaseOciLayerNoise(path: string): boolean {
+	if (path.endsWith(".md")) return true;
+	if (path.includes("/test/") || path.endsWith(".test.ts")) return true;
+	if (path.startsWith("docs/")) return true;
+	if (path.startsWith("scripts/test/")) return true;
+	const layerScripts = RELEASE_BUILD_INPUTS as readonly string[];
+	if (path.startsWith("scripts/ci/") && !layerScripts.includes(path))
+		return true;
+	if (path.startsWith("scripts/lib/") && !layerScripts.includes(path))
+		return true;
+	return false;
+}
+
 function pathInputs(tree: RepoTree, inputs: readonly string[]): string[] {
 	const lines: string[] = [];
 	for (const input of [...inputs].sort()) {
 		if (input.endsWith("/")) {
 			for (const [path, oid] of tree.files)
-				if (path.startsWith(input)) lines.push(`${path} ${oid}`);
+				if (path.startsWith(input) && !isReleaseOciLayerNoise(path))
+					lines.push(`${path} ${oid}`);
 			for (const [path, oid] of tree.gitlinks)
-				if (path.startsWith(input)) lines.push(`${path} commit ${oid}`);
-		} else {
+				if (path.startsWith(input) && !isReleaseOciLayerNoise(path))
+					lines.push(`${path} commit ${oid}`);
+		} else if (!isReleaseOciLayerNoise(input)) {
 			lines.push(`${input} ${tree.files.get(input) ?? "absent"}`);
 		}
 	}

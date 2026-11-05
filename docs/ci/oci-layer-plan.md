@@ -156,7 +156,7 @@ targeted fetch by the worker.
 | `pnpm fetch` (store only) | hash of `pnpm-lock.yaml` plus `.npmrc` plus the pnpm version | About 0 s; the store is mounted and warm | High: makes `--offline` installs possible anywhere |
 | **Post-install `node_modules`** | depsKey, see below | **About 17 s per job** | Medium. The image is large: whole-workspace `node_modules` is about 4.3 GB uncompressed. Use zstd |
 | Source | commit | Low, given the mirror | Low |
-| Post-build (`dist/`) | commit, or a hash of every package's inputs | Low: Turbo already replays tasks content-addressed and affected-only | Low for CI. Release images in #1674 are the right home for build outputs |
+| Post-build (`dist/`) | commit, or a hash of every package's inputs | Low: Turbo already replays tasks content-addressed and affected-only | Low for CI. Release images in #1674 are the right home for build outputs. Layer keys skip markdown, tests, and scripts/ci files that are not the image build recipes so a docs or deps-layer edit does not rebuild all six product images. |
 
 **Decision:** toolchain layers in GHCR (Phase 3), a lockfile-keyed fetch-plus-install layer in GHCR
 (Phase 4), the mirror for source (Phase 2), and **no post-build layer**.

@@ -149,7 +149,16 @@ jobs:
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
       - uses: ./.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if [ -n "${HOBO_CI_DEPS_LAYER:-}" ] \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       - name: Shell syntax (changed scripts)
         if: github.event_name != 'push'
         run: pnpm run lint:shell:changed -- --base=HEAD^1
@@ -203,10 +212,10 @@ jobs:
         run: |
           set -uo pipefail
           build() { node --no-warnings scripts/ci/build-release-oci-image.mts "$@"; }
-          failed=()
-          for id in $IMAGE_IDS; do
+          build_one() {
+            local id="$1"
             echo "::group::${id}"
-            ok=1
+            local ok=1
             if [ "$id" = "hobo-mcp" ] && ! docker image inspect hobo-cli:candidate >/dev/null 2>&1; then
               build hobo-cli --keep-candidate || ok=0
             fi
@@ -219,8 +228,26 @@ jobs:
               build "$id" --cleanup-only
             fi
             echo "::endgroup::"
-            if [ "$ok" = 0 ]; then failed+=("$id"); echo "::error::release image ${id} failed"; fi
+            if [ "$ok" = 0 ]; then
+              echo "::error::release image ${id} failed"
+              return 1
+            fi
+          }
+          failed=()
+          pids=()
+          ids=()
+          for id in $IMAGE_IDS; do
+            if [ "$id" = "hobo-mcp" ]; then continue; fi
+            build_one "$id" &
+            pids+=("$!")
+            ids+=("$id")
           done
+          for i in "${!pids[@]}"; do
+            if ! wait "${pids[$i]}"; then failed+=("${ids[$i]}"); fi
+          done
+          if [[ " $IMAGE_IDS " == *" hobo-mcp "* ]]; then
+            if ! build_one hobo-mcp; then failed+=("hobo-mcp"); fi
+          fi
           if [ "${#failed[@]}" -gt 0 ]; then
             echo "failed images: ${failed[*]}"
             exit 1
