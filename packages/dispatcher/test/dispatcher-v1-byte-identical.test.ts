@@ -75,4 +75,32 @@ describe("dispatcher v1 compatibility", () => {
 
 		expect(stableHash(decision)).toBe(V1_BASELINE_HASH);
 	});
+
+	it("retains legacy reservations in replay inputs when they contain no nested decisions", () => {
+		const ledgerView = {
+			view: "CreditLedgerView",
+			seq: 1,
+			accounts: [{ providerId: "runner", dimension: "runner.minutes" }],
+			reservations: [
+				{
+					reservationId: "legacy",
+					providerId: "runner",
+					dimension: "runner.minutes",
+					units: 1,
+					expectedSeq: 0,
+					committedSeq: 1,
+					status: "pending",
+				},
+			],
+		};
+		const decision = decideDispatch({
+			registry: createDispatcherRegistry([
+				{ providerId: "runner", category: "runner", listUnitCost: 1 },
+			]),
+			category: "runner",
+			dispatchId: "legacy-reservation",
+			ledgerView,
+		});
+		expect(decision.replayInput.ledgerView).toEqual(ledgerView);
+	});
 });

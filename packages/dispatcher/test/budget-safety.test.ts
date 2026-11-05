@@ -6,6 +6,7 @@ import {
 	decideAndReserveDispatch,
 	decideDispatch,
 	decidePlacement,
+	replayDispatchDecision,
 } from "../src/dispatcher.js";
 
 const NOW = "2026-07-01T00:00:00.000Z";
@@ -152,6 +153,31 @@ describe("reservation financial and occupancy invariants", () => {
 		expect(replay.dispatchEvent).toEqual(first.dispatchEvent);
 		expect(replay.reservation.replayed).toBe(true);
 		expect(ledger.snapshot().seq).toBe(1);
+	});
+	it("bounds nested replay inputs without releasing outstanding budget exposure", () => {
+		const ledger = createReservationLedger(
+			snapshot([account({ budgetCap: 2 })]),
+		);
+		const request = {
+			registry: providers,
+			category: "traffic-backend",
+			reservationLedger: ledger,
+		};
+		const first = decideAndReserveDispatch({ ...request, dispatchId: "one" });
+		const second = decideAndReserveDispatch({ ...request, dispatchId: "two" });
+		expect(first.ok).toBe(true);
+		expect(second.ok).toBe(true);
+		expect(second.replayInput.ledgerView.reservations).toEqual([]);
+		expect(second.replayInput.ledgerView.accounts[0].reservedCost).toBe(1);
+		expect(replayDispatchDecision(second.replayInput).dispatchEvent).toEqual(
+			second.dispatchEvent,
+		);
+		const retry = decideAndReserveDispatch({ ...request, dispatchId: "two" });
+		expect(retry.dispatchEvent).toEqual(second.dispatchEvent);
+		expect(retry.reservation.replayed).toBe(true);
+		expect(
+			decideAndReserveDispatch({ ...request, dispatchId: "three" }).ok,
+		).toBe(false);
 	});
 	it("reserves all-in exposure and records overruns truthfully on settlement", () => {
 		const ledger = createReservationLedger(

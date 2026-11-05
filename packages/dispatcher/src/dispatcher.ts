@@ -266,13 +266,26 @@ export function decideDispatch(request) {
 			incumbentProviderId,
 			hysteresis: hysteresisInput,
 			reservationId,
-			ledgerView: {
-				...clone(ledgerView),
-				reservations: [],
-				balanceHash: ledgerBalanceHash(ledgerView),
-			},
+			ledgerView: replayLedgerView(ledgerView),
 			candidates: registry.records.map((record) => clone(record.source)),
 		},
+	};
+}
+
+// Snapshots produced by dispatch-and-reserve can contain prior replay inputs.
+// Exclude those nested inputs to bound growth, while keeping legacy snapshots
+// byte-identical and retaining the original ledger identity in the decision.
+function replayLedgerView(ledgerView: CreditLedgerView): CreditLedgerView {
+	if (
+		!ledgerView.reservations?.some(
+			(reservation) => reservation.decisionInputJson !== undefined,
+		)
+	)
+		return clone(ledgerView);
+	return {
+		...clone(ledgerView),
+		reservations: [],
+		balanceHash: ledgerBalanceHash(ledgerView),
 	};
 }
 
@@ -1509,8 +1522,9 @@ function publicDispatchRanking(ranked) {
 		paidUnits: candidate.paidUnits,
 		switchingCost: candidate.switchingCost,
 		budgetExceeded: candidate.budgetExceeded,
-		eligible: candidate.eligible,
-		rejectionReason: candidate.rejectionReason,
+		...(!candidate.eligible
+			? { eligible: false, rejectionReason: candidate.rejectionReason }
+			: undefined),
 		creditFacts: candidate.creditFacts,
 		nextCreditExpiresAt: candidate.nextCreditExpiresAt,
 		rationale: candidate.rationale,
