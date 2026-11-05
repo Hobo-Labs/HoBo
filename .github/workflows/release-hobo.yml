@@ -195,6 +195,7 @@ jobs:
         run: |
           set -euo pipefail
           head_sha='${{ github.event.workflow_run.head_sha }}'
+          pnpm run pins:fetch ts-autocode
           pnpm install --frozen-lockfile --config.confirmModulesPurge=false
           pnpm exec vitest run scripts/test/nbgv-release-version.test.ts scripts/test/nbgv-toolchain.test.ts
           node --no-warnings scripts/ci/compute-release-version.mts "$head_sha" --github-env --github-output "$GITHUB_OUTPUT"
