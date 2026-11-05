@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 78: sparse S0 omitted media/package.json so the deps layer never matched"
+title: "Finding 78: sparse S0 omitted media/package.json"
 description: "Main full gate Install stayed at ~10 s after #1748 because checkout-key was unavailable."
 tags: [hobo, ci, performance, checkout, sparse, deps]
 ---
 
-# Finding 78: sparse S0 omitted media/package.json so the deps layer never matched
+# Finding 78: sparse S0 omitted media/package.json
 
 ## Symptom
 
