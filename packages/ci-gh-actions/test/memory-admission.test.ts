@@ -20,8 +20,9 @@ function lease(
 	id: string,
 	memoryMb: number,
 	memoryClass: "light" | "standard" | "heavy" = "heavy",
+	state = "running",
 ): MemoryLease {
-	return { id, memoryMb, memoryClass };
+	return { id, memoryMb, memoryClass, state };
 }
 
 describe("worker memory admission", () => {
@@ -579,5 +580,21 @@ describe("worker memory admission", () => {
 		availableMb = 3_072;
 		expect(admission.reserveWarm([], 1_024, new Set<string>())).toBe(true);
 		expect(availableMemoryMb).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not reserve memory for a lease waiting for a launch slot", () => {
+		const admission = createWorkerMemoryAdmission(config(6_144));
+		const reserved = { ...lease("reserved", 6_144), state: "reserved" };
+
+		expect(
+			admission.admit({
+				jobId: 1,
+				memoryClass: "light",
+				memoryMb: 3_072,
+				rank: 1,
+				activeLeases: [reserved],
+				generalLeaseIds: new Set(["reserved"]),
+			}),
+		).toMatchObject({ admitted: true });
 	});
 });

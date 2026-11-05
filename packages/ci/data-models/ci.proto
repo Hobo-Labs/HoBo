@@ -207,6 +207,7 @@ message Lease {
   string memory_class = 45;
   uint32 memory_mb = 46;
   string job_name = 47;
+  string dispatching_at = 48;
 }
 message CiEvent {
   string type = 1;

@@ -369,6 +369,7 @@ const worker = createIsolatedContainerController({
 	workFs,
 });
 let liveWorkerLeaseIds = (await worker.reconcileLeases()).liveLeaseIds;
+await worker.reconcileOrphanJobs();
 let depsImageEnsurer: ReturnType<typeof createDepsImageEnsurer> | undefined;
 if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
 	depsImageEnsurer = createDepsImageEnsurer({
@@ -479,6 +480,7 @@ let gcInFlight: Promise<void> | undefined;
 const reconcileAndLaunch = singleFlight(async () => {
 	const reconciliation = await worker.reconcileLeases();
 	liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+	await worker.reconcileOrphanJobs();
 	if (!reconciliation.inventoryKnown) return;
 	// In push mode the hosted relay drains the shared inbox; in pull mode
 	// this worker is the only consumer of its own.
@@ -623,6 +625,7 @@ async function shutdown(signal: string) {
 		const reconcileDrain = async () => {
 			const reconciliation = await worker.reconcileLeases({ draining: true });
 			liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+			await worker.reconcileOrphanJobs();
 			if (reconciliation.inventoryKnown) await runtime.tick({ admit: false });
 		};
 		const inFlight = async () => liveWorkerLeaseIds.size;

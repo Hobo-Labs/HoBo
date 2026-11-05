@@ -8,6 +8,8 @@ export type MemoryLease = Readonly<{
 	id: string;
 	memoryMb: number;
 	memoryClass: string;
+	state: string;
+	sandboxName?: string;
 }>;
 export type MemoryAdmissionLog = (
 	event: "hobo_ci_memory_admission_wait" | "hobo_ci_memory_admitted",
@@ -79,16 +81,23 @@ export function createWorkerMemoryAdmission(
 		);
 	}
 
+	function launchingLeases(activeLeases: readonly MemoryLease[]) {
+		return activeLeases.filter(
+			(lease) => lease.state !== "reserved" || (lease.sandboxName ?? "") !== "",
+		);
+	}
+
 	function inUseMb(
 		activeLeases: readonly MemoryLease[],
 		generalLeaseIds: ReadonlySet<string>,
 		includeTrunkReservation = true,
 	): number {
-		const leasesMb = activeLeases.reduce(
+		const launching = launchingLeases(activeLeases);
+		const leasesMb = launching.reduce(
 			(total, lease) => total + leaseMemoryMb(lease),
 			0,
 		);
-		const trunkMb = activeLeases
+		const trunkMb = launching
 			.filter((lease) => !generalLeaseIds.has(lease.id))
 			.reduce((total, lease) => total + leaseMemoryMb(lease), 0);
 		return (
@@ -101,22 +110,23 @@ export function createWorkerMemoryAdmission(
 	}
 
 	function admit(request: MemoryAdmissionRequest): MemoryAdmissionDecision {
+		const activeLeases = launchingLeases(request.activeLeases);
 		const inUse = inUseMb(
-			request.activeLeases,
+			activeLeases,
 			request.generalLeaseIds,
 			request.rank !== 0,
 		);
 		const trunkLeaseIds =
 			request.trunkLeaseIds ??
 			new Set(
-				request.activeLeases
+				activeLeases
 					.filter((lease) => !request.generalLeaseIds.has(lease.id))
 					.map((lease) => lease.id),
 			);
-		const trunkActive = request.activeLeases.some((lease) =>
+		const trunkActive = activeLeases.some((lease) =>
 			trunkLeaseIds.has(lease.id),
 		);
-		const activeNonTrunk = request.activeLeases.filter(
+		const activeNonTrunk = activeLeases.filter(
 			(lease) => !trunkLeaseIds.has(lease.id),
 		).length;
 		const capBlocked =

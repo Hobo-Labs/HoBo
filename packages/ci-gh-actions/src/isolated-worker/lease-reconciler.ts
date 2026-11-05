@@ -3,6 +3,10 @@ import { ACTIVE_STATES, JobSchema, type Lease } from "@hobo/ci";
 import type { HostedRelayStore } from "../hosted-relay.js";
 import { workerOfferKey, workerOfferKeys } from "./daemon-shutdown.js";
 import type { DockerContainer, DockerDriver } from "./docker-driver.js";
+import {
+	type OrphanJobCandidate,
+	orphanJobCandidateForLease,
+} from "./orphan-jobs.js";
 
 export type WorkerLeaseReconciliationStore = Pick<
 	HostedRelayStore,
@@ -53,7 +57,9 @@ export function createWorkerLeaseReconciler(options: {
 	log?: WorkerLeaseReconciliationLog;
 	settleExited?: (lease: Lease) => Promise<void>;
 	afterRelease?: (lease: Lease) => Promise<void>;
+	onOrphanJob?: (candidate: OrphanJobCandidate) => void;
 	protectedContainerNames?: () => ReadonlySet<string>;
+	protectedLeaseIds?: () => ReadonlySet<string>;
 }) {
 	const now = options.now ?? Date.now;
 	const orphanGraceMs = options.orphanGraceMs ?? 2 * 60_000;
@@ -89,7 +95,32 @@ export function createWorkerLeaseReconciler(options: {
 				liveLeaseIds: new Set(owned.map((lease) => lease.id)),
 			};
 		}
-		const journalInUseMb = owned.reduce(
+		const containerFor = (lease: Lease) => {
+			const expectedName = lease.sandboxName || `hobo-${lease.id}`;
+			return containers.find(
+				(candidate) =>
+					candidate.name === expectedName ||
+					(!!lease.sandboxSessionId &&
+						candidate.containerId === lease.sandboxSessionId),
+			);
+		};
+		const detectedAtMs = now();
+		const sweptLeaseIds = new Set<string>();
+		for (const lease of owned) {
+			if (lease.actualJobId === 0 || lease.runnerName !== `hobo-${lease.id}`)
+				continue;
+			const container = containerFor(lease);
+			if (container && container.state !== "dead") continue;
+			const orphan = orphanJobCandidateForLease(lease, detectedAtMs);
+			if (orphan) {
+				sweptLeaseIds.add(lease.id);
+				options.onOrphanJob?.(orphan);
+			}
+		}
+		const launching = owned.filter(
+			(lease) => lease.state !== "reserved" || lease.sandboxName !== "",
+		);
+		const journalInUseMb = launching.reduce(
 			(total, lease) =>
 				total +
 				(lease.memoryMb >= 512 ? lease.memoryMb : options.workerMemoryMb),
@@ -98,20 +129,26 @@ export function createWorkerLeaseReconciler(options: {
 		if (containers.length === 0 && journalInUseMb > 0)
 			options.log?.("hobo_ci_memory_without_containers", {
 				inUseMb: journalInUseMb,
-				activeLeaseCount: owned.length,
+				activeLeaseCount: launching.length,
 			});
 		const liveLeaseIds = new Set<string>();
+		const protectedLeaseIds =
+			options.protectedLeaseIds?.() ?? new Set<string>();
 		for (const lease of owned) {
-			const expectedName = lease.sandboxName || `hobo-${lease.id}`;
-			const container = containers.find(
-				(candidate) =>
-					candidate.name === expectedName ||
-					(!!lease.sandboxSessionId &&
-						candidate.containerId === lease.sandboxSessionId),
-			);
+			if (lease.state === "reserved" || protectedLeaseIds.has(lease.id)) {
+				liveLeaseIds.add(lease.id);
+				continue;
+			}
+			const container = containerFor(lease);
 			const createdMs = Date.parse(lease.createdAt);
-			const ageMs = Number.isFinite(createdMs)
-				? Math.max(0, now() - createdMs)
+			const dispatchingMs = Date.parse(lease.dispatchingAt);
+			const ageBaseMs =
+				["dispatching", "dispatched", "claiming"].includes(lease.state) &&
+				Number.isFinite(dispatchingMs)
+					? dispatchingMs
+					: createdMs;
+			const ageMs = Number.isFinite(ageBaseMs)
+				? Math.max(0, now() - ageBaseMs)
 				: 0;
 			let reason: string;
 			if (container?.state === "exited" || container?.state === "dead") {
@@ -140,6 +177,11 @@ export function createWorkerLeaseReconciler(options: {
 			const current = await options.store.get(lease.id);
 			if (current && ACTIVE_STATES.has(current.state)) continue;
 			if (reason === "container-missing") await options.afterRelease?.(lease);
+			const orphan =
+				reason !== "container-exited" && lease.runnerName === `hobo-${lease.id}`
+					? orphanJobCandidateForLease(lease, now())
+					: undefined;
+			if (orphan && !sweptLeaseIds.has(lease.id)) options.onOrphanJob?.(orphan);
 			options.log?.("hobo_ci_lease_orphan_released", {
 				leaseId: lease.id,
 				jobId: lease.jobId,
