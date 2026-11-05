@@ -180,6 +180,7 @@ export const TS_AUTOCODE_PNPM_PREPARE_REQUIRED = [
 	"packages/runtime/package.json",
 	"external/ts-autocode/packages/grounding/package.json",
 	"external/ts-autocode/packages/training/package.json",
+	"external/ts-autocode/packages/rewrite/package.json",
 ] as const;
 
 /** Vitest files run by HoBo / HoBo Code release contract jobs (static manifest checks). */

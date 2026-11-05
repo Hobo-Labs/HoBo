@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	S0_DIRECTORY_CONES,
+	S0_INSTALL_REQUIRED_PATHS,
 	S0_REQUIRED_PATHS,
 	S0_ROOT_FILES,
 	s0SparseCones,
@@ -11,7 +12,9 @@ import {
 import {
 	assertConeCoversPaths,
 	coneCoversPath,
+	PINS_FETCH_REQUIRED_FILES,
 	splitSparseCheckoutPaths,
+	TS_AUTOCODE_PNPM_PREPARE_REQUIRED,
 } from "../lib/release-sparse-cone.mts";
 
 const root = join(import.meta.dirname, "..", "..");
@@ -92,6 +95,61 @@ describe("Main full gate S0 sparse checkout", () => {
 			s0SparseCones(root),
 			S0_REQUIRED_PATHS,
 		);
+		assertConeCoversPaths("main-gate-s0-pins", s0SparseCones(root), [
+			...PINS_FETCH_REQUIRED_FILES,
+			...TS_AUTOCODE_PNPM_PREPARE_REQUIRED,
+		]);
+	});
+
+	it("would have failed job 127191339479 without the pin cone + pins:fetch", () => {
+		// Exact prepare error from Main Fabric 42011481177 / job 127191339479:
+		// ". prepare: Error: ts-autocode sibling packages are not linked
+		//  (packages/runtime/node_modules/ts-autocode-grounding and
+		//  ts-autocode-training cone); run `pnpm run pins:fetch` then `pnpm install`"
+		const linker = readFileSync(
+			join(root, "scripts/ensure-ts-autocode-links.mts"),
+			"utf8",
+		);
+		expect(linker).toContain("ts-autocode sibling packages are not linked");
+		expect(linker).toContain("pnpm run pins:fetch");
+		assertConeCoversPaths(
+			"main-gate-s0-install",
+			s0SparseCones(root),
+			S0_INSTALL_REQUIRED_PATHS,
+		);
+		for (const path of [
+			"external/ts-autocode/packages/grounding/package.json",
+			"external/ts-autocode/packages/training/package.json",
+			"external/ts-autocode/packages/rewrite/package.json",
+		]) {
+			expect(S0_INSTALL_REQUIRED_PATHS).toContain(path);
+			expect(coneCoversPath(s0SparseCones(root), path)).toBe(true);
+		}
+		expect(mainGate.indexOf("pnpm run pins:fetch ts-autocode")).toBeGreaterThan(
+			-1,
+		);
+	});
+
+	it("fetches the ts-autocode pin before deps-layer or install", () => {
+		const fetch = mainGate.indexOf("pnpm run pins:fetch ts-autocode");
+		const preflight = mainGate.indexOf(
+			"uses: ./.github/actions/ci-runner-preflight",
+		);
+		const link = mainGate.indexOf("name: Link deps layer");
+		const install = mainGate.indexOf("name: Install dependencies");
+		expect(fetch).toBeGreaterThan(preflight);
+		expect(link).toBeGreaterThan(fetch);
+		expect(install).toBeGreaterThan(fetch);
+		expect(mainGate).toContain(
+			"external/ts-autocode/packages/grounding/package.json",
+		);
+		expect(mainGate).toContain(
+			"external/ts-autocode/packages/training/package.json",
+		);
+		expect(mainGate).toContain(
+			"external/ts-autocode/packages/rewrite/package.json",
+		);
+		expect(mainGate).not.toContain("submodules: recursive");
 	});
 
 	it("does not check out media", () => {
