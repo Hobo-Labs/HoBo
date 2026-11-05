@@ -152,8 +152,13 @@ This keeps `(workers + 1) × heap + 768 <= limit`, including the turbo/Vitest pa
 | `standard` | 4096 MiB | 1664 MiB | 1 |
 | `heavy` | 6144 MiB | 1344 MiB | 3 |
 
-Each job bind-mounts its host work directory and teardown deletes it, including `node_modules`, after pass,
-failure, cancellation, crash or timeout. Startup reaps only directories with no active lease or container.
+Each job bind-mounts its host work directory. After pass, failure, cancellation, crash or timeout, teardown
+atomically renames it into the work root's `.retired` directory and triggers a single-flight background sweeper;
+recursive deletion no longer blocks lease reconciliation or admission. Startup reaps only directories with no
+active lease or container and retires them through the same path. Startup and scheduled GC trigger the sweeper,
+drain-mode shutdown awaits it, and handoff mode leaves it for the successor. Watch `hobo_ci_work_dir_retired`,
+`hobo_ci_work_dir_removed` and `hobo_ci_work_dir_remove_failed`. Ticks over five seconds also log
+`hobo_ci_isolated_worker_tick_slow` with delivery, worker/lease reconciliation and dispatch timings.
 All jobs install from the shared `/pnpm-store` with `npm_config_package_import_method=hardlink`; cross-filesystem
 store/work-root configurations fail startup. Jobs and admission-pressure maintenance never prune the store. Only
 scheduled GC requests pnpm pruning, and only with no active leases and no running container mounting the store;
@@ -165,11 +170,13 @@ once with `message=pnpm store prune in progress`; other non-rate-limited outcome
 Scheduled GC runs at least every five minutes for fetch intermediates, old deps images (two newest plus `local`
 and in-use images retained), old worker images (current and previous content keys plus `local` and in-use images
 retained), dangling images and builder cache. BuildKit has a hard 4 GB default cap with no age exemption. Byte or
-inode usage above **85%** triggers non-pnpm GC before admission. Usage still above **95%** blocks admission and
-logs `hobo_ci_inode_pressure` once per episode. Admission additionally reserves **200000** workdir and **170000**
-container inodes per job, summed when both roots share a device and reduced by observed consumption. Insufficient
-reserved headroom triggers one non-pnpm GC/recheck, then logs `hobo_ci_inode_reserve_wait` once per episode while
-the job waits.
+inode usage above **85%** triggers non-pnpm GC before admission, at most once per 60 seconds; every admission
+decision still takes a fresh sample. Usage still above **95%** blocks admission and logs `hobo_ci_inode_pressure`
+once per episode. A dispatch pass stops storage admission after its first refusal because pressure is host-wide.
+A refused trunk-label job blocks lower ranks and logs `hobo_ci_trunk_wait` with `reason: "storage"`.
+Admission additionally reserves **200000** workdir and **170000** container inodes per granted job, summed when
+both roots share a device and reduced by observed consumption. Insufficient reserved headroom uses the same
+rate-limited GC/recheck, then logs `hobo_ci_inode_reserve_wait` once per episode while the job waits.
 See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for operations and admission logs.
 
 For a release, publish the tested image to your registry and replace

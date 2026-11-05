@@ -681,6 +681,7 @@ describe("pull-mode box worker over SQLite", () => {
 			skipLaunchFor?: readonly number[];
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
+			now?: () => string;
 			labels: Map<string, string | undefined>;
 		},
 	) {
@@ -715,7 +716,7 @@ describe("pull-mode box worker over SQLite", () => {
 			},
 			denyUnisolated: true,
 			control: async () => undefined,
-			now: () => new Date(NOW).toISOString(),
+			now: trunk?.now ?? (() => new Date(NOW).toISOString()),
 		};
 		if (jobDurations) options.jobDurations = jobDurations;
 		if (trunk?.generalLeaseLimit !== undefined)
@@ -927,6 +928,109 @@ describe("pull-mode box worker over SQLite", () => {
 			1,
 		]);
 		expect(launched).toHaveLength(1);
+		store.close();
+	});
+
+	it("calls storage admission only until the first refusal in a dispatch pass", async () => {
+		const store = await configuredStore(2);
+		const github = new FakeGithub(
+			{ queued: [900], in_progress: [] },
+			{
+				900: [
+					{ id: 1, status: "queued", labels: ["hobo"] },
+					{ id: 2, status: "queued", labels: ["hobo"] },
+				],
+			},
+		);
+		const storageAdmission: WorkerStorageAdmission = {
+			admit: vi.fn(async () => false),
+			release: vi.fn(),
+			reap: vi.fn(async () => undefined),
+			maintain: vi.fn(async () => undefined),
+		};
+		const runtime = boxRuntime(store, github, [], undefined, {
+			labels: new Map(),
+			storageAdmission,
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+
+		expect(storageAdmission.admit).toHaveBeenCalledOnce();
+		expect((await store.pendingJobs()).map((job) => job.id).sort()).toEqual([
+			1, 2,
+		]);
+		expect(await store.activeLeases()).toEqual([]);
+		store.close();
+	});
+
+	it("blocks lower ranks and reports storage when a trunk job is refused", async () => {
+		const store = await configuredStore(2);
+		const github = new FakeGithub(
+			{ queued: [900, 901], in_progress: [] },
+			{
+				900: [{ id: 1, status: "queued", labels: ["hobo-trunk"] }],
+				901: [{ id: 2, status: "queued", labels: ["hobo"] }],
+			},
+		);
+		github.started.set(900, {
+			event: "push",
+			at: "2026-11-02T11:00:00Z",
+		});
+		github.started.set(901, {
+			event: "pull_request",
+			at: "2026-11-02T11:01:00Z",
+		});
+		const storageAdmission: WorkerStorageAdmission = {
+			admit: vi.fn(async () => false),
+			release: vi.fn(),
+			reap: vi.fn(async () => undefined),
+			maintain: vi.fn(async () => undefined),
+		};
+		let nowMs = NOW;
+		const runtime = boxRuntime(store, github, [], undefined, {
+			labels: new Map(),
+			storageAdmission,
+			now: () => new Date(nowMs).toISOString(),
+		});
+		const poller = createGithubJobPoller({
+			github,
+			admissionOrder: runtime.admissionOrder,
+			connections: async () =>
+				(await store.configuration())?.configuration?.connections ?? [],
+			ingest: (delivery) => runtime.ingestWebhook(delivery),
+			now: () => NOW,
+		});
+		await poller.poll();
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(storageAdmission.admit).toHaveBeenCalledOnce();
+		expect(await store.activeLeases()).toEqual([]);
+
+		nowMs += 11_000;
+		const log = vi.spyOn(console, "error").mockImplementation(() => {});
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(storageAdmission.admit).toHaveBeenCalledTimes(2);
+		expect((await store.pendingJobs()).map((job) => job.id).sort()).toEqual([
+			1, 2,
+		]);
+		expect(log).toHaveBeenCalledWith(
+			JSON.stringify({
+				event: "hobo_ci_trunk_wait",
+				reason: "storage",
+				waitedMs: 11_000,
+				repository: REPO,
+				runId: 900,
+				jobId: 1,
+			}),
+		);
+		log.mockRestore();
 		store.close();
 	});
 

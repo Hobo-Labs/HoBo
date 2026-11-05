@@ -184,7 +184,7 @@ export function createIsolatedContainerController(options: {
 		event:
 			| WorkerLeaseReconciliationEvent
 			| "hobo_ci_container_oom"
-			| "hobo_ci_work_dir_removed"
+			| "hobo_ci_work_dir_retired"
 			| "hobo_ci_work_dir_remove_failed",
 		fields: Readonly<Record<string, string | number | boolean>>,
 	) => void;
@@ -201,6 +201,7 @@ export function createIsolatedContainerController(options: {
 	containerEnv?: Readonly<Record<string, string>>;
 	workRoot?: string;
 	workFs?: WorkerStorageFileSystem;
+	scheduleRetiredSweep?: () => void;
 	/** Only this repository may use the HoBo deps layer; empty depsImage disables it. */
 	depsRepository?: string;
 	depsImage?: string;
@@ -212,7 +213,11 @@ export function createIsolatedContainerController(options: {
 	const slots = options.slots ?? 1;
 	if (!Number.isInteger(slots) || slots < 1 || slots > 8)
 		throw new Error("invalid worker slots");
-	if ((options.workRoot === undefined) !== (options.workFs === undefined))
+	if (
+		(options.workRoot === undefined) !== (options.workFs === undefined) ||
+		(options.workRoot !== undefined &&
+			options.scheduleRetiredSweep === undefined)
+	)
 		throw new Error("worker work directory configuration incomplete");
 	const runner = runnerDownloadFor(process.arch);
 	const prewarmMemoryMb = options.prewarmMemoryMb ?? workerMemoryMb;
@@ -338,21 +343,24 @@ export function createIsolatedContainerController(options: {
 		options.workRoot ? join(options.workRoot, `hobo-${leaseId}`) : undefined;
 	const cleanupWorkDirectory = async (lease: Lease) => {
 		const directory = workDirectory(lease.id);
-		if (!directory || !options.workFs) return;
+		if (!directory || !options.workFs || !options.scheduleRetiredSweep) return;
+		const startedAt = Date.now();
 		try {
-			const removed = await options.workFs.removeJobDirectory(directory);
-			options.log?.("hobo_ci_work_dir_removed", {
-				jobId: lease.jobId,
-				leaseId: lease.id,
-				bytes: removed.bytes,
-				entries: removed.entries,
-			});
+			const retired = await options.workFs.retireJobDirectory(directory);
+			if (retired)
+				options.log?.("hobo_ci_work_dir_retired", {
+					jobId: lease.jobId,
+					leaseId: lease.id,
+					ms: Date.now() - startedAt,
+				});
 		} catch (error) {
 			options.log?.("hobo_ci_work_dir_remove_failed", {
 				jobId: lease.jobId,
 				leaseId: lease.id,
 				message: error instanceof Error ? error.message : "unknown",
 			});
+		} finally {
+			options.scheduleRetiredSweep();
 		}
 	};
 	let warm: WarmContainer | undefined;
