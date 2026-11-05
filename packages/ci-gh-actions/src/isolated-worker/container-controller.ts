@@ -837,8 +837,7 @@ export function createIsolatedContainerController(options: {
 					const runnerRegisteredMs = Date.parse(runnerRegisteredAt);
 					if (Number.isFinite(jobCreatedMs))
 						fields.jobCreatedToAdmittedMs = admittedMs - jobCreatedMs;
-					fields.admittedToContainerStartedMs =
-						containerStartedMs - admittedMs;
+					fields.admittedToContainerStartedMs = containerStartedMs - admittedMs;
 					fields.containerStartedToRunnerRegisteredMs =
 						runnerRegisteredMs - containerStartedMs;
 					if (Number.isFinite(jobCreatedMs))
