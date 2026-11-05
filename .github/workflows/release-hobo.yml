@@ -319,10 +319,14 @@ jobs:
             echo "::group::${id}"
             local ok=1
             if [ "$id" = "hobo-cli" ] || [ "$id" = "hobo-mcp" ]; then
-              build hobo-sdk --keep-candidate || ok=0
+              # Prerequisite base image: allow staging it even when only the
+              # dependent image is affected (stage guard checks this list).
+              HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS="${HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS} hobo-sdk" \
+                build hobo-sdk --keep-candidate || ok=0
             fi
             if [ "$id" = "hobo-mcp" ] && ! docker image inspect hobo-cli:candidate >/dev/null 2>&1; then
-              build hobo-cli --keep-candidate || ok=0
+              HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS="${HOBO_RELEASE_OCI_AFFECTED_IMAGE_IDS} hobo-cli" \
+                build hobo-cli --keep-candidate || ok=0
             fi
             if [ "$ok" = 1 ]; then build "$id" --keep-candidate || ok=0; fi
             if [ "$ok" = 1 ]; then
