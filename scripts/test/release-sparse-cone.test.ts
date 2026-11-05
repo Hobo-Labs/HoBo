@@ -218,6 +218,23 @@ describe("release-hobo affected image job", () => {
 		"utf8",
 	);
 
+	it("nbgv gate fetches ts-autocode before install in Resolve fixed alpha train version", () => {
+		const stepMarker = "name: Resolve fixed alpha train version";
+		const stepStart = hoboWorkflow.indexOf(stepMarker);
+		expect(stepStart).toBeGreaterThan(0);
+		const nextStep = hoboWorkflow.indexOf("\n      - name:", stepStart + 1);
+		const stepBody = hoboWorkflow.slice(
+			stepStart,
+			nextStep === -1 ? undefined : nextStep,
+		);
+		const fetchIdx = stepBody.indexOf("pnpm run pins:fetch ts-autocode");
+		const installIdx = stepBody.indexOf(
+			"pnpm install --frozen-lockfile --config.confirmModulesPurge=false",
+		);
+		expect(fetchIdx).toBeGreaterThan(0);
+		expect(installIdx).toBeGreaterThan(fetchIdx);
+	});
+
 	it("reuses the Fabric deps layer instead of always installing", () => {
 		expect(hoboWorkflow).toContain("Link deps layer or install");
 		expect(hoboWorkflow).toContain("deps-layer.mts check --require");
