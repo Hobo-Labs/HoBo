@@ -14,6 +14,7 @@ import {
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
 import type { JobDurations } from "./job-durations.js";
+import type { JobPickupMetadataCache } from "./job-pickup.js";
 import type { IdentityVerifier } from "./oidc.js";
 import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
@@ -94,8 +95,9 @@ export function createHostedRelayRuntime(options: {
 	jobDurations?: JobDurations;
 	/** See `HostedRelay`: maximum active leases for shared-label runners. */
 	generalLeaseLimit?: number;
-	/** See `HostedRelay`: maximum active leases for merge-queue runs. */
+	/** See `HostedRelay`: maximum distinct merge groups with active leases. */
 	mergeGroupLeaseLimit?: number;
+	jobPickupMetadata?: JobPickupMetadataCache;
 	/** See `HostedRelay`: whether shared-label runs may borrow trunk slots. */
 	lendTrunkSlots?: boolean;
 	memoryAdmission?: WorkerMemoryAdmission;
@@ -112,6 +114,8 @@ export function createHostedRelayRuntime(options: {
 	const mergeGroupCapWaitJobs = new Set<string>();
 	const servedRunnerLabels: ServedRunnerLabelCache = new Map();
 	const trunkWaits: TrunkWaitCache = new Map();
+	const jobPickupMetadata: JobPickupMetadataCache =
+		options.jobPickupMetadata ?? new Map();
 	const admissionOrder = createAdmissionOrder(
 		options.github,
 		options.jobDurations,
@@ -132,6 +136,7 @@ export function createHostedRelayRuntime(options: {
 			mergeGroupCapWaitJobs,
 			servedRunnerLabels,
 			trunkWaits,
+			jobPickupMetadata,
 			now,
 		};
 		if (options.denyUnisolated) relayOptions.denyUnisolated = true;

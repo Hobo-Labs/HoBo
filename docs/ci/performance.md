@@ -71,6 +71,7 @@ unindexed new finding files as notices.
 - [Finding 61: a worker restart drained jobs before handing off](./findings/0061-a-worker-restart-drained-jobs-before-handing-off.md)
 - [Finding 63: a dead runner left its GitHub job in progress](./findings/0063-a-dead-runner-left-its-github-job-in-progress.md)
 - [Finding 64: containerless launch failures thrashed worker leases](./findings/0064-containerless-launch-failures-thrashed-worker-leases.md)
+- [Finding 65: merge-group jobs serialized behind the release job](./findings/0065-merge-group-jobs-serialized-behind-the-release-job.md)
 - [Finding 67: Unbounded pnpm store prunes froze the box](./findings/0067-unbounded-pnpm-store-prunes-froze-the-box.md)
 - [Finding 68: Finished jobs held trunk slots while their work dirs were deleted](./findings/0068-finished-jobs-held-trunk-slots-while-their-work-dirs-were-deleted.md)
 - [Finding 69: Reap retired a work dir before its container existed](./findings/0069-reap-retired-a-work-dir-before-its-container-existed.md)

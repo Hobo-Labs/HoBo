@@ -35,9 +35,10 @@ an image or commit them:
 | `HOBO_CI_HOST` / `HOBO_CI_PORT` | `0.0.0.0` / `8787` inside the container |
 
 Box-worker resource settings are resolved once at daemon startup. The class limits, aggregate admission
-budget, merge-group lease cap, job-side caps and storage-pressure settings are documented with the other
-non-secret worker settings below. Excess merge-group jobs remain queued without blocking push jobs; each
-waiting job logs `hobo_ci_merge_group_cap_wait` once.
+budget, distinct-merge-group cap, job-side caps and storage-pressure settings are documented with the other
+non-secret worker settings below. Jobs in an already admitted merge group share its capacity; jobs in excess
+merge groups remain queued without blocking push jobs, and each waiting job logs
+`hobo_ci_merge_group_cap_wait` once with its `groupKey`.
 
 `HOBO_CI_CONFIG` seeds a new empty partition. An existing database retains its
 revisioned configuration; replacing the seed file does not override it on restart.
@@ -107,7 +108,8 @@ non-secret settings:
 | `HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB` | `HOBO_CI_WORKER_MEMORY_MB` or `6144` | Turbo build/test and image jobs; trunk reservation |
 | `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; the startup check still applies |
 | `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Time smaller same-rank jobs may backfill behind a non-fitting head job |
-| `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum active merge-group leases; zero and invalid values are rejected |
+| `HOBO_CI_JOB_POLL_MS` | `5000` | GitHub list-poll interval; minimum 5000, maximum 300000; every list uses its cached ETag and unchanged 304 responses do not consume primary rate limit |
+| `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum distinct merge groups with active leases, grouped by `head_sha`; zero and invalid values are rejected |
 | `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK` | `1` | Maximum new non-trunk leases while a trunk lease is active; strict integer 0–8; zero pauses them; uncapped when trunk is idle |
 | `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host per-job work mounts, teardown and pressure checks; same filesystem as pnpm store |
 | `HOBO_CI_WORKER_WORKDIR_INODES` | `200000` | Host-workdir inode growth reserved per job; digits only, `0` disables this root's reservation |
@@ -116,6 +118,13 @@ non-secret settings:
 | `HOBO_CI_PNPM_STORE_PRUNE_INTERVAL_MS` | `21600000` | Minimum interval between idle-only store prunes; integer at least 60000, persisted across failures and restarts |
 | `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image/builder/store/dead-workdir GC interval; minimum 60000, capped at 300000 |
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cache cap with no age exemption; `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` remains a deprecated alias |
+| `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | `400000` | Free inodes required on Docker's data root before a deps rebuild; digits only |
+| `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | `8589934592` | Free bytes required on Docker's data root before a deps rebuild; digits only |
+
+One `hobo_ci_job_pickup` log per lease records job/run identity, workflow event, runner label, admission,
+container-start and registration timestamps, and their millisecond deltas. Polled job creation time and total
+pickup delay are included when known. The metadata comes from existing GitHub reads; no additional API calls
+are made.
 
 The admitted request becomes the container's `--memory` and `--memory-swap` value and its
 `HOBO_CI_JOB_MEMORY_MB` environment variable. On the 15989 MiB box with a 2048 MiB reserve, the admission
@@ -302,7 +311,11 @@ selected toolchain prefixes the deps key and labels the image. They fail only wh
 neither toolchain is available. For a new key, the daemon checks
 `hobo-ci-deps:<key>`, tries the corresponding
 `ghcr.io/<owner>/<repo>/hobo-ci-deps:<key>` pull, then builds a registry miss with
-`build-deps.sh --no-promote`. Builds are single-flight and asynchronous: they do
+`build-deps.sh --no-promote`. Before that build's `pnpm install`/`mv` into
+`/opt/hobo-deps`, the script samples Docker's data root and, if free inodes or
+bytes are below headroom, prunes only the BuildKit cache (`docker builder prune`);
+it never runs `docker image prune -af`. A remaining shortage refuses the rebuild
+so a key miss cannot `ENOSPC` a concurrent main job. Builds are single-flight and asynchronous: they do
 not block admission or hold a job slot. The process runs under `nice` and `ionice`,
 and `HOBO_CI_DEPS_BUILD_MEMORY_MB` (default `4096`, minimum `512`) caps both the
 Docker build and its offline verification container. A successful local, pulled,

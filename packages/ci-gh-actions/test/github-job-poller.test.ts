@@ -48,6 +48,7 @@ const PolledBody = z
 				run_attempt: z.number(),
 				labels: z.array(z.string()),
 				name: z.string().optional(),
+				created_at: z.string().optional(),
 				runner_name: z.string().nullable(),
 			})
 			.strict(),
@@ -61,6 +62,7 @@ interface FakeJob {
 	runner_name?: string | null;
 	name?: string;
 	conclusion?: string | null;
+	created_at?: string;
 	started_at?: string | null;
 	completed_at?: string | null;
 }
@@ -75,8 +77,8 @@ class FakeGithub implements GithubTransport {
 	failing = new Set<string>();
 	/** Run attempt per run id; 1 when absent. */
 	attempts = new Map<number, number>();
-	/** Event and start time per run id; a pull request that has not started when absent. */
-	started = new Map<number, { event: string; at: string }>();
+	/** Event, start time and head SHA per run id; a pull request when absent. */
+	started = new Map<number, { event: string; at: string; headSha?: string }>();
 	constructor(
 		readonly runs: Record<"queued" | "in_progress", number[]> & {
 			completed?: number[];
@@ -135,6 +137,8 @@ class FakeGithub implements GithubTransport {
 					run_attempt: this.attempt(id),
 					status,
 					event: this.started.get(id)?.event ?? "pull_request",
+					head_sha:
+						this.started.get(id)?.headSha ?? id.toString(16).padStart(40, "0"),
 					run_started_at: this.started.get(id)?.at ?? null,
 				}));
 			return Response.json(
@@ -201,7 +205,9 @@ class FakeGithub implements GithubTransport {
 				id: Number(run[1]),
 				run_attempt: 1,
 				event: this.started.get(Number(run[1]))?.event ?? "pull_request",
-				head_sha: "a".repeat(40),
+				head_sha:
+					this.started.get(Number(run[1]))?.headSha ??
+					Number(run[1]).toString(16).padStart(40, "0"),
 				head_branch: "feature",
 				path: ".github/workflows/ci.yml",
 				display_title: "CI",
@@ -764,33 +770,41 @@ describe("pull-mode box worker over SQLite", () => {
 			),
 		);
 	}
-	it("caps merge groups without blocking a push, then admits the waiter in order", async () => {
+	it("admits one merge group's jobs together, caps other groups, and frees the cap when the group finishes", async () => {
 		const log = vi.spyOn(console, "error").mockImplementation(() => {});
-		const store = await configuredStore(3);
+		const store = await configuredStore(4);
 		const github = new FakeGithub(
-			{ queued: [900, 901, 902], in_progress: [] },
+			{ queued: [900, 901, 902, 903], in_progress: [] },
 			{
 				900: [{ id: 1, status: "queued", labels: ["hobo-trunk"] }],
 				901: [{ id: 2, status: "queued", labels: ["hobo-trunk"] }],
 				902: [{ id: 3, status: "queued", labels: ["hobo-trunk"] }],
+				903: [{ id: 4, status: "queued", labels: ["hobo-trunk"] }],
 			},
 		);
 		github.started.set(900, {
 			event: "merge_group",
 			at: "2026-11-02T11:55:00Z",
+			headSha: "a".repeat(40),
 		});
 		github.started.set(901, {
 			event: "merge_group",
-			at: "2026-11-02T11:56:00Z",
+			at: "2026-11-02T11:55:30Z",
+			headSha: "a".repeat(40),
 		});
 		github.started.set(902, {
+			event: "merge_group",
+			at: "2026-11-02T11:56:00Z",
+			headSha: "b".repeat(40),
+		});
+		github.started.set(903, {
 			event: "push",
 			at: "2026-11-02T11:57:00Z",
 		});
 		const launched: string[] = [];
 		const runtime = boxRuntime(store, github, launched, undefined, {
 			labels: new Map(),
-			generalLeaseLimit: 2,
+			generalLeaseLimit: 3,
 			mergeGroupLeaseLimit: 1,
 		});
 		const poller = createGithubJobPoller({
@@ -805,10 +819,10 @@ describe("pull-mode box worker over SQLite", () => {
 		await runtime.tick({ maxDeliveries: 10 });
 
 		const initial = await store.activeLeases();
-		expect(initial.map((lease) => lease.jobId).sort()).toEqual([1, 3]);
-		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([2]);
-		const first = initial.find((lease) => lease.jobId === 1);
-		if (!first) throw new Error("first merge-group lease missing");
+		expect(initial.map((lease) => lease.jobId).sort()).toEqual([1, 2, 4]);
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([3]);
+		const firstGroup = initial.filter((lease) => lease.jobId !== 4);
+		expect(firstGroup).toHaveLength(2);
 		for (const lease of initial)
 			await store.transition(
 				lease.id,
@@ -822,7 +836,7 @@ describe("pull-mode box worker over SQLite", () => {
 
 		github.calls.length = 0;
 		await runtime.tick({ maxDeliveries: 10 });
-		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([2]);
+		expect((await store.pendingJobs()).map((job) => job.id)).toEqual([3]);
 		expect(
 			github.calls.filter((call) =>
 				/^GET \/repos\/Org\/Repo\/actions\/runs\/\d+$/u.test(call),
@@ -833,22 +847,24 @@ describe("pull-mode box worker over SQLite", () => {
 				line.includes("hobo_ci_merge_group_cap_wait"),
 			);
 		expect(waitLogs()).toHaveLength(1);
-		expect(waitLogs()[0]?.[0]).toContain('"jobId":2');
+		expect(waitLogs()[0]?.[0]).toContain('"jobId":3');
+		expect(waitLogs()[0]?.[0]).toContain(`"groupKey":"${"b".repeat(40)}"`);
 
-		await store.transition(
-			first.id,
-			["running"],
-			(lease) => {
-				lease.state = "completed";
-			},
-			"ci.LeaseCompleted",
-			new Date(NOW).toISOString(),
-		);
+		for (const lease of firstGroup)
+			await store.transition(
+				lease.id,
+				["running"],
+				(entry) => {
+					entry.state = "completed";
+				},
+				"ci.LeaseCompleted",
+				new Date(NOW).toISOString(),
+			);
 		await runtime.tick({ maxDeliveries: 10 });
 		expect(
 			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
-		).toEqual([2, 3]);
-		expect(launched).toHaveLength(3);
+		).toEqual([3, 4]);
+		expect(launched).toHaveLength(4);
 		expect(waitLogs()).toHaveLength(1);
 		log.mockRestore();
 		store.close();
@@ -2326,7 +2342,14 @@ describe("pull-mode box worker over SQLite", () => {
 		const fake = new FakeGithub(
 			{ queued: [700, 800], in_progress: [] },
 			{
-				700: [{ id: 1, status: "queued", labels: ["hobo-trunk"] }],
+				700: [
+					{
+						id: 1,
+						status: "queued",
+						labels: ["hobo-trunk"],
+						created_at: "2026-11-04T06:16:45Z",
+					},
+				],
 				800: [
 					{ id: 2, status: "queued", labels: ["hobo"] },
 					{ id: 3, status: "queued", labels: ["hobo"] },
@@ -2387,6 +2410,10 @@ describe("pull-mode box worker over SQLite", () => {
 		};
 		let clock = Date.parse("2026-11-04T06:16:47Z");
 		const now = () => new Date(clock).toISOString();
+		const jobPickupMetadata = new Map<
+			string,
+			{ event?: string; jobCreatedAt?: string }
+		>();
 		const worker = createIsolatedContainerController({
 			store,
 			github,
@@ -2394,6 +2421,9 @@ describe("pull-mode box worker over SQLite", () => {
 			docker,
 			workerAccountId: "box",
 			workerImage: "hobo-ci-worker:local",
+			jobPickupMetadata,
+			log: (event, fields) =>
+				console.error(JSON.stringify({ event, ...fields })),
 			slots: 3,
 			now,
 		});
@@ -2409,6 +2439,7 @@ describe("pull-mode box worker over SQLite", () => {
 			isolatedHost: worker.host,
 			denyUnisolated: true,
 			generalLeaseLimit: 2,
+			jobPickupMetadata,
 			control: async () => undefined,
 			now,
 		});
@@ -2443,11 +2474,36 @@ describe("pull-mode box worker over SQLite", () => {
 			await runtime.tick({ maxDeliveries: 10 });
 		};
 
+		const registrationLog = vi
+			.spyOn(console, "error")
+			.mockImplementation(() => {});
 		await poller.poll();
 		await runtime.tick({ maxDeliveries: 10 });
 		expect(
 			(await store.activeLeases()).map((lease) => lease.jobId).sort(),
 		).toEqual([1, 2, 3]);
+		const pickupLogs = registrationLog.mock.calls
+			.map(([line]) => line)
+			.filter((line) => line.includes("hobo_ci_job_pickup"));
+		expect(pickupLogs).toHaveLength(3);
+		expect(pickupLogs).toContain(
+			JSON.stringify({
+				event: "hobo_ci_job_pickup",
+				jobId: 1,
+				runId: 700,
+				runEvent: "merge_group",
+				label: "hobo-trunk",
+				jobCreatedAt: "2026-11-04T06:16:45Z",
+				admittedAt: "2026-11-04T06:16:47.000Z",
+				containerStartedAt: "2026-11-04T06:16:47.000Z",
+				runnerRegisteredAt: "2026-11-04T06:16:47.000Z",
+				jobCreatedToAdmittedMs: 2000,
+				admittedToContainerStartedMs: 0,
+				containerStartedToRunnerRegisteredMs: 0,
+				pickupMs: 2000,
+			}),
+		);
+		registrationLog.mockRestore();
 
 		await finish(1, "2026-11-04T06:17:50Z", false);
 		expect(

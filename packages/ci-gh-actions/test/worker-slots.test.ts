@@ -48,7 +48,7 @@ describe("resolveWorkerSlotConfig", () => {
 		"0",
 		"1.5",
 		"nope",
-	])("rejects invalid merge-group lease cap %s", (value) => {
+	])("rejects invalid merge-group cap %s", (value) => {
 		expect(() =>
 			resolveWorkerSlotConfig({
 				HOBO_CI_WORKER_MERGE_GROUP_LEASES: value,

@@ -109,6 +109,7 @@ export async function getJob(
 			name: z.string().optional(),
 			runner_name: z.string().nullable().optional(),
 			run_attempt: z.number().int().positive().optional(),
+			created_at: z.string().optional(),
 		})
 		.parse(await response.json());
 }
