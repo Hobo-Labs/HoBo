@@ -5,6 +5,8 @@ import { ciRunnerImageVersion } from "./ci-runner-contract.mts";
 
 export const DEPS_LAYER_BUCKET_SCRIPT_PATH =
 	"scripts/ci/deps-layer-buckets.mts";
+/** Staged for mount verify (`node scripts/ci/deps-layer.mts link`); not hashed into the deps key. */
+export const DEPS_LAYER_SCRIPT_PATH = "scripts/ci/deps-layer.mts";
 export const DEPS_LAYOUT_RECIPE_PATHS = [
 	"packages/ci-gh-actions/deploy/ci-runner/deps/Dockerfile",
 	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
@@ -265,6 +267,7 @@ export function depsContextPaths(root: string): string[] {
 			: [".pnpmfile.cjs"]),
 		...Object.keys(patchFiles(root)).sort(),
 		DEPS_LAYER_BUCKET_SCRIPT_PATH,
+		DEPS_LAYER_SCRIPT_PATH,
 	];
 }
 
