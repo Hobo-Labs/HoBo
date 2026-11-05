@@ -242,6 +242,30 @@ export function formatSparseCheckoutBlock(cones: readonly string[]): string {
 	return `${cones.join("\n")}\n`;
 }
 
+const RELEASE_ROOT_FILE_SET = new Set<string>(RELEASE_ROOT_FILES);
+
+/** Git cone mode treats each pattern as a directory; root manifests are checked out separately. */
+export function splitSparseCheckoutPaths(all: readonly string[]): {
+	readonly directoryCones: readonly string[];
+	readonly rootFiles: readonly string[];
+} {
+	const directoryCones: string[] = [];
+	const rootFiles: string[] = [];
+	for (const path of all) {
+		const normalized = path.trim();
+		if (!normalized) continue;
+		if (RELEASE_ROOT_FILE_SET.has(normalized)) {
+			rootFiles.push(normalized);
+			continue;
+		}
+		directoryCones.push(normalized);
+	}
+	return Object.freeze({
+		directoryCones: Object.freeze([...directoryCones]),
+		rootFiles: Object.freeze([...rootFiles]),
+	});
+}
+
 /** Required on-disk paths per release sparse job (contract gate). */
 export function requiredPathsForHoboReleaseContract(
 	repoRoot: string,

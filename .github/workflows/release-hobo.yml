@@ -154,7 +154,7 @@ jobs:
         if: github.event_name != 'push'
         run: pnpm run lint:shell:changed -- --base=HEAD^1
       - name: npm scope map + OCI manifest contract
-        run: pnpm exec vitest run scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/build-release-site-prebuild.test.ts
+        run: pnpm exec vitest run scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/stage-sdk-artifacts.test.ts scripts/test/build-release-site-prebuild.test.ts
       - name: npm pack dry-run (allowlist staging)
         run: |
           set -euo pipefail
@@ -490,3 +490,25 @@ jobs:
           args=(release create "${{ github.ref_name }}" --generate-notes --title "${{ github.ref_name }}")
           if [ "$dist_tag" != "latest" ]; then args+=(--prerelease); fi
           gh "${args[@]}"
+
+  release-pr-gate:
+    name: HoBo release PR gate (required)
+    if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+    needs: [release-contract]
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 5
+    steps:
+      - name: Fail closed when release contract is red
+        run: |
+          set -euo pipefail
+          case "${{ needs.release-contract.result }}" in
+            success) exit 0 ;;
+            skipped)
+              echo "::warning::release-contract skipped; not treating as merge blocker"
+              exit 0
+              ;;
+            *)
+              echo "::error::Release contract + affected OCI images must pass (result=${{ needs.release-contract.result }})"
+              exit 1
+              ;;
+          esac

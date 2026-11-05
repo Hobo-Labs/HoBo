@@ -3,6 +3,7 @@
 import { spawnSync } from "node:child_process";
 import {
 	cpSync,
+	existsSync,
 	mkdirSync,
 	readdirSync,
 	readFileSync,
@@ -15,6 +16,7 @@ import { applyScopeToManifest, loadNpmScopeMap } from "./npm-publish-scope.mts";
 
 export const SDK_PACKAGES = [
 	"@hobo/core",
+	"@hobo/policy",
 	"@hobo/bindles",
 	"@hobo/contracts",
 	"@hobo/contract-harness",
@@ -23,18 +25,40 @@ export const SDK_PACKAGES = [
 	"@hobo/storage-sqlite",
 	"@hobo/wit",
 	"@hobo/cli",
-];
+] as const;
 
-const root = join(import.meta.dirname, "..", "..");
-
-type WorkspaceManifest = { name: string };
-
-type SdkArtifactManifest = {
+export type SdkArtifactManifest = {
 	version: string;
 	packages: { workspace: string; public: string; file: string }[];
 };
 
 type NpmPackLine = { filename: string };
+
+const root = join(import.meta.dirname, "..", "..");
+
+type WorkspaceManifest = { name: string };
+
+/** Install order for SDK tarballs (MANIFEST.json pack order, not lexical). */
+export function orderedSdkTarballPaths(artifactsDir: string): string[] {
+	const manifestPath = join(artifactsDir, "MANIFEST.json");
+	if (!existsSync(manifestPath)) {
+		throw new Error(
+			`missing ${manifestPath}; extract SDK artifacts before overlay install`,
+		);
+	}
+	const parsed: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
+	// SAFETY: stageSdkArtifactsDir writes MANIFEST.json from SdkArtifactManifest.
+	const manifest = parsed as SdkArtifactManifest;
+	const paths = manifest.packages.map((entry) =>
+		join(artifactsDir, entry.file),
+	);
+	for (const path of paths) {
+		if (!existsSync(path)) {
+			throw new Error(`SDK tarball missing from artifacts dir: ${path}`);
+		}
+	}
+	return paths;
+}
 
 const SDK_PACKAGE_DIRS = {
 	"@hobo/runtime-local": "packages/runtimes/runtime-local",
