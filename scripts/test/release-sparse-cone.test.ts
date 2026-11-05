@@ -41,12 +41,54 @@ function parseInlineSparseCheckout(workflowText: string): string[] {
 	if (start < 0) {
 		throw new Error("workflow missing sparse-checkout block");
 	}
-	const after = workflowText.slice(start + marker.length);
+	return parseMultilineBlockAfterMarker(
+		workflowText.slice(start + marker.length),
+		"            ",
+	);
+}
+
+/** Paths from a job's hobo-checkout `sparse-paths:` (inline block or env ref). */
+function parseJobHoboCheckoutSparsePaths(
+	workflowText: string,
+	jobName: string,
+): string[] {
+	const jobStart = workflowText.indexOf(`${jobName}:`);
+	if (jobStart < 0) {
+		throw new Error(`workflow missing job ${jobName}`);
+	}
+	const jobBlock = workflowText.slice(jobStart);
+	const checkoutMarker = "./.github/actions/hobo-checkout";
+	const checkoutIdx = jobBlock.indexOf(checkoutMarker);
+	if (checkoutIdx < 0) {
+		throw new Error(`${jobName} missing hobo-checkout step`);
+	}
+	const stepBlock = jobBlock.slice(checkoutIdx);
+	const inlineMarker = "sparse-paths: |";
+	const inlineStart = stepBlock.indexOf(inlineMarker);
+	if (inlineStart >= 0) {
+		return parseMultilineBlockAfterMarker(
+			stepBlock.slice(inlineStart + inlineMarker.length),
+			"            ",
+		);
+	}
+	const envRef = stepBlock.match(
+		/sparse-paths:\s*\$\{\{\s*env\.([A-Z0-9_]+)\s*\}\}/,
+	);
+	if (!envRef?.[1]) {
+		throw new Error(`${jobName} hobo-checkout missing sparse-paths`);
+	}
+	return parseWorkflowEnvMultiline(workflowText, envRef[1]);
+}
+
+function parseMultilineBlockAfterMarker(
+	afterMarker: string,
+	linePrefix: string,
+): string[] {
 	const lines: string[] = [];
-	for (const line of after.split("\n")) {
-		if (!line.startsWith("            ") && lines.length > 0) break;
-		if (line.startsWith("            ")) {
-			const path = line.replace(/^            /, "").trimEnd();
+	for (const line of afterMarker.split("\n")) {
+		if (!line.startsWith(linePrefix) && lines.length > 0) break;
+		if (line.startsWith(linePrefix)) {
+			const path = line.slice(linePrefix.length).trimEnd();
 			if (path) lines.push(path);
 		}
 	}
@@ -218,11 +260,11 @@ describe("release workflow sparse-checkout sync", () => {
 		);
 	});
 
-	it("release-hobo pages job sparse-checkout matches canonical cone", () => {
-		const pagesBlock = hoboWorkflow.slice(
-			hoboWorkflow.indexOf("release-pages:"),
+	it("release-hobo pages job sparse-paths matches canonical cone", () => {
+		const inWorkflow = parseJobHoboCheckoutSparsePaths(
+			hoboWorkflow,
+			"release-pages",
 		);
-		const inWorkflow = parseInlineSparseCheckout(pagesBlock);
 		expect(sortedPaths(inWorkflow)).toEqual(
 			sortedPaths(hoboReleasePagesSparseCones()),
 		);

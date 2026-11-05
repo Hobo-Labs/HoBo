@@ -15,12 +15,59 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+    - name: Stabilize partial-clone HTTP (HTTP/1.1)
+      shell: bash
+      run: git config --global http.version HTTP/1.1
+    - name: Sparse checkout (attempt 1)
+      id: checkout1
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      continue-on-error: true
       with:
+        clean: false
         fetch-depth: ${{ inputs.fetch-depth }}
         filter: blob:none
         sparse-checkout: ${{ inputs.sparse-paths }}
         sparse-checkout-cone-mode: true
+    - name: Reset partial clone after failed checkout
+      if: steps.checkout1.outcome != 'success'
+      shell: bash
+      run: rm -rf .git
+    - name: Sparse checkout (attempt 2)
+      id: checkout2
+      if: steps.checkout1.outcome != 'success'
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      continue-on-error: true
+      with:
+        clean: false
+        fetch-depth: ${{ inputs.fetch-depth }}
+        filter: blob:none
+        sparse-checkout: ${{ inputs.sparse-paths }}
+        sparse-checkout-cone-mode: true
+    - name: Reset partial clone after failed checkout (attempt 2)
+      if: steps.checkout1.outcome != 'success' && steps.checkout2.outcome != 'success'
+      shell: bash
+      run: rm -rf .git
+    - name: Sparse checkout (attempt 3)
+      id: checkout3
+      if: steps.checkout1.outcome != 'success' && steps.checkout2.outcome != 'success'
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      with:
+        clean: false
+        fetch-depth: ${{ inputs.fetch-depth }}
+        filter: blob:none
+        sparse-checkout: ${{ inputs.sparse-paths }}
+        sparse-checkout-cone-mode: true
+    - name: Require successful sparse checkout
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ "${{ steps.checkout1.outcome }}" = "success" ] \
+          || [ "${{ steps.checkout2.outcome }}" = "success" ] \
+          || [ "${{ steps.checkout3.outcome }}" = "success" ]; then
+          exit 0
+        fi
+        echo "::error::sparse checkout failed after 3 attempts (partial clone / promisor fetch)"
+        exit 1
     - name: Initialize submodules (sparse cone via pins:fetch in job)
       if: inputs.submodules == 'true'
       shell: bash

@@ -51,6 +51,42 @@ describe("release OCI app staging", () => {
 		}
 	});
 
+	it("builds the full importer closure on tag release when origin/main is absent", () => {
+		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-tag-"));
+		const previousRef = process.env.GITHUB_REF;
+		const previousEvent = process.env.GITHUB_EVENT_NAME;
+		const git = (...args: string[]): void => {
+			const result = spawnSync("git", args, { cwd: repo, stdio: "ignore" });
+			expect(result.status).toBe(0);
+		};
+		try {
+			git("init", "--quiet");
+			git(
+				"-c",
+				"user.name=Release Test",
+				"-c",
+				"user.email=release@example.com",
+				"-c",
+				"commit.gpgsign=false",
+				"commit",
+				"--allow-empty",
+				"-m",
+				"tag",
+			);
+			process.env.GITHUB_REF = "refs/tags/v0.0.0-alpha.0";
+			delete process.env.GITHUB_EVENT_NAME;
+			expect(resolveReleaseTurboBase(repo, "origin/main")).toBeUndefined();
+			process.env.GITHUB_EVENT_NAME = "workflow_dispatch";
+			expect(resolveReleaseTurboBase(repo, "origin/main")).toBeUndefined();
+		} finally {
+			if (previousRef === undefined) delete process.env.GITHUB_REF;
+			else process.env.GITHUB_REF = previousRef;
+			if (previousEvent === undefined) delete process.env.GITHUB_EVENT_NAME;
+			else process.env.GITHUB_EVENT_NAME = previousEvent;
+			rmSync(repo, { recursive: true, force: true });
+		}
+	});
+
 	it("combines SCM-affected and requested image filters", () => {
 		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-filters-"));
 		const previousBase = process.env.HOBO_RELEASE_TURBO_BASE;

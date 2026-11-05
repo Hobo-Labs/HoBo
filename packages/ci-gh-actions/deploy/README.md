@@ -114,6 +114,8 @@ non-secret settings:
 | `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum active merge-group leases; zero and invalid values are rejected |
 | `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK` | `1` | Maximum new non-trunk leases while a trunk lease is active; strict integer 0–8; zero pauses them; uncapped when trunk is idle |
 | `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host per-job work mounts, teardown and pressure checks; same filesystem as pnpm store |
+| `HOBO_CI_WORKER_WORKDIR_INODES` | `200000` | Host-workdir inode growth reserved per job; digits only, `0` disables this root's reservation |
+| `HOBO_CI_WORKER_CONTAINER_INODES` | `170000` | Docker-writable-layer inode growth reserved per job; digits only, `0` disables this root's reservation |
 | `HOBO_CI_PNPM_STORE_DIR` | `~/.cache/hobo-ci/pnpm-store` | Shared store mounted read-write at `/pnpm-store`; empty disables it |
 | `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image/builder/store/dead-workdir GC interval; minimum 60000, capped at 300000 |
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cache cap with no age exemption; `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` remains a deprecated alias |
@@ -152,8 +154,8 @@ parsed `hobo.ci/isolated=1` Docker inventory. Running containers are never reape
 missing containers release after a two-minute reservation grace, or immediately during drain. Unleased worker
 containers are removed. A Docker listing failure releases nothing. Watch `hobo_ci_lease_orphan_released`,
 `hobo_ci_container_orphan_removed`, `hobo_ci_memory_without_containers` and
-`hobo_ci_lease_reconciliation_failed` when diagnosing stale admission memory. Drain waits only for live containers,
-up to the configured 30-minute bound. See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for the full state rules
+`hobo_ci_lease_reconciliation_failed` when diagnosing stale admission memory. Optional drain mode waits only for live
+containers, up to the configured 30-minute bound; the default handoff mode exits without that wait. See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for the full state rules
 and event fields.
 
 Job preflight reserves 768 MiB for native/non-heap memory, then chooses
@@ -177,7 +179,10 @@ active job, and runs scheduled GC at least every five minutes for fetch intermed
 newest plus `local` and in-use images retained), old worker images (current and previous content keys plus
 `local` and in-use images retained), dangling images and builder cache. BuildKit has a hard 4 GB default cap
 with no age exemption. Byte or inode usage above **85%** triggers the same GC before admission. Usage still
-above **95%** blocks admission and logs `hobo_ci_inode_pressure` once per episode.
+above **95%** blocks admission and logs `hobo_ci_inode_pressure` once per episode. Admission additionally reserves
+**200000** workdir and **170000** container inodes per job, summed when both roots share a device and reduced by
+observed consumption. Insufficient reserved headroom triggers one GC/recheck, then logs `hobo_ci_inode_reserve_wait`
+once per episode while the job waits.
 See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for operations and admission logs.
 
 For a release, publish the tested image to your registry and replace
@@ -279,6 +284,8 @@ independent of the service manager's working directory; set `HOBO_CI_DEPS_ROOT` 
 override it. The checkout needs the lockfile importer manifests, including the
 pinned ts-autocode submodule.
 
+The install stage moves every repo-relative `node_modules` under `/opt/hobo-deps` and splits its `node_modules/.pnpm` into 64 stable entry-name hash buckets under `/opt/hobo-deps-buckets`. `scripts/ci/deps-layer-buckets.mts` owns the assignment and generates the Dockerfile's `COPY --link` section into `/opt/hobo-deps`; `--check` and `scripts/test/deps-layer-buckets.test.ts` reject drift. A residual layer holds workspace links and pnpm metadata, with no `.git` and no checkout path. A final root step chowns `/opt/hobo-deps`, its `node_modules` and `.pnpm` to uid 1000 so `--link` cannot leave them root-owned. Ownership and timestamps are normalized, and `build-deps.sh` opts into timestamp rewriting only when supported, so unchanged bucket layers are reused across deps keys.
+
 The daemon and `build-deps.sh` use the checkout's computed
 `hobo-ci-worker:<toolchain>` when that image exists. If it is absent, they use the
 `hobo-ci-worker:v[0-9a-f]{12}` tag carried by `hobo-ci-worker:local`; the same
@@ -293,6 +300,8 @@ Docker build and its offline verification container. A successful local, pulled,
 or built candidate is tagged `hobo-ci-deps:local` only after the real mounted-job
 contract passes, then passed to keep-2 GC. `HOBO_CI_DEPS_IMAGE=` disables both
 selection and this ensure loop.
+
+GHCR publication is deliberately outside HoBo CI. `ci-deps-publish.yml` starts after a successful main fabric run (or manually), recomputes the key at that run's commit, and skips unless the keyed local image or a matching `:local` is present. It also skips an existing remote manifest. Only a genuine miss is tagged and pushed, with a five-minute workflow budget and a 240-second command timeout. A stalled registry therefore fails or cancels only the publisher; it cannot make the fabric run red.
 
 Look for `hobo_ci_deps_image_ensure_started` with the selected key before local,
 registry, or build work, then `hobo_ci_deps_image_ensure` with

@@ -834,45 +834,59 @@ export class HostedRelay {
 			// A policy can become stricter while demand is queued. Never reserve a
 			// bridge from a pending job admitted under the previous connection.
 			if (connection.isolatedOnly) job.isolatedRequired = true;
+			const storageAdmission = this.options.storageAdmission;
+			const storageJobId = String(job.id);
 			if (
-				this.options.storageAdmission &&
-				!(await this.options.storageAdmission.admit(active))
+				storageAdmission &&
+				!(await storageAdmission.admit(
+					active.map((lease) => ({
+						id: lease.id,
+						sandboxName: lease.sandboxName,
+						jobId: String(lease.jobId),
+					})),
+					storageJobId,
+				))
 			)
 				continue;
-			const memoryAdmission = this.options.memoryAdmission;
-			if (memoryAdmission && memoryGeneral && memoryTrunk) {
-				const memory = memoryRequestForStoredJob(job, memoryAdmission.config);
-				job.memoryClass = memory.memoryClass;
-				job.memoryMb = memory.memoryMb;
-				const decision = memoryAdmission.admit({
-					jobId: job.id,
-					...memory,
-					rank,
-					activeLeases: active,
-					generalLeaseIds: memoryGeneral,
-					trunkLeaseIds: memoryTrunk,
-				});
-				if (!decision.admitted) {
-					if (decision.blockRank) {
-						if (rank === TRUNK_RANK) rankZeroWaiting = true;
-						else memoryBlockedRanks.add(rank);
+			let lease: Lease | undefined;
+			try {
+				const memoryAdmission = this.options.memoryAdmission;
+				if (memoryAdmission && memoryGeneral && memoryTrunk) {
+					const memory = memoryRequestForStoredJob(job, memoryAdmission.config);
+					job.memoryClass = memory.memoryClass;
+					job.memoryMb = memory.memoryMb;
+					const decision = memoryAdmission.admit({
+						jobId: job.id,
+						...memory,
+						rank,
+						activeLeases: active,
+						generalLeaseIds: memoryGeneral,
+						trunkLeaseIds: memoryTrunk,
+					});
+					if (!decision.admitted) {
+						if (decision.blockRank) {
+							if (rank === TRUNK_RANK) rankZeroWaiting = true;
+							else memoryBlockedRanks.add(rank);
+						}
+						continue;
 					}
-					continue;
 				}
-			}
-			let lease = await this.options.store.reserve(
-				account,
-				job,
-				this.now(),
-				reservationRevision,
-			);
-			if (!lease && trunk && (await this.reclaimUnlaunchedGeneralLease()))
 				lease = await this.options.store.reserve(
 					account,
 					job,
 					this.now(),
 					reservationRevision,
 				);
+				if (!lease && trunk && (await this.reclaimUnlaunchedGeneralLease()))
+					lease = await this.options.store.reserve(
+						account,
+						job,
+						this.now(),
+						reservationRevision,
+					);
+			} finally {
+				if (!lease) storageAdmission?.release(storageJobId);
+			}
 			if (!lease) {
 				rankZeroWaiting ||= rank === TRUNK_RANK;
 				trunkWaiting ||= trunk;
