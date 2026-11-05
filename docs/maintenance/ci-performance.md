@@ -38,8 +38,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
 - **Slimmer impact gate.** `scripts/ci/affected-lanes.mts` filters the turbo lanes to the changed
   packages and examples, including the packages inside a pnpm-workspace group such as
   `packages/providers/<name>` (the groups are read from `pnpm-workspace.yaml`; before that, any change
-  under a group read as a removed package and ran the whole workspace). Root build inputs (workspace, turbo, tsconfig, biome, toolchain pins,
-  vendored sources) run the whole workspace; a lockfile-only diff does too, but lockfile plus package
+  under a group read as a removed package and ran the whole workspace). Root build inputs (workspace, behavior-changing turbo config, tsconfig, biome, toolchain pins,
+  vendored sources) run the whole workspace. Scripts-only root manifest edits and root `//#` task edits
+  stay scoped by comparing root files with the diff base; `globalDependencies` additions and removals
+  run the whole workspace because they change every task's hash inputs. Missing or invalid base content
+  fails closed. A lockfile-only diff runs everything, but lockfile plus package
   paths stay scoped to those packages. Workflows, root scripts and draft proofs are covered by the
   root checks in the same gate. `scripts/test/affected-lanes.test.ts` pins the skip logic. Dependents are
   not added yet: several packages carry pre-existing biome lint debt that a dependents sweep would surface.

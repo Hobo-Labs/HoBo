@@ -326,11 +326,12 @@ jobs:
           TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
         run: |
           set -euo pipefail
-          # scripts/ci/affected-lanes.mts: skips only when every changed path is inert,
-          # runs the whole workspace for root inputs, filters packages with dependents.
+          # Compare root package.json/turbo.json content at the same merge base:
+          # root scripts and //# tasks stay package-scoped; globalDependencies
+          # and other shared root inputs run the whole workspace.
           mapfile -t FILTERS < <(
             git diff --name-only "${TURBO_SCM_BASE}"...HEAD \
-              | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts
+              | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base="${TURBO_SCM_BASE}"
           )
           if [ "${#FILTERS[@]}" -eq 0 ]; then
             echo "Only inert paths changed; skipping turbo impact lanes"
@@ -347,18 +348,17 @@ jobs:
         run: |
           set -euo pipefail
           # An unreachable merge-group base runs repo-wide; otherwise
-          # scripts/ci/affected-lanes.mts --main-gate decides (repo-wide only for
-          # root config, lockfile, toolchain pins).
+          # scripts/ci/affected-lanes.mts --main-gate decides. Root scripts and
+          # //# tasks stay scoped; globalDependencies and other shared inputs widen.
           base="$GITHUB_EVENT_MERGE_GROUP_BASE_SHA"
           if [ -n "$base" ] && ! git cat-file -e "${base}^{commit}" 2>/dev/null; then base=""; fi
-          # Package tests go repo-wide only for inputs turbo hashes into every task; a
-          # workflow edit cannot change a package's test result.
+          # A workflow edit cannot change a package's test result.
           scope="repo-wide"
           tests="all"
           if [ -n "$base" ]; then
             changed="$(git diff --name-only "$base" HEAD)"
-            scope="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --main-gate <<<"$changed")"
-            lanes="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts <<<"$changed")"
+            scope="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --main-gate --base="$base" <<<"$changed")"
+            lanes="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base="$base" <<<"$changed")"
             if [ "$lanes" != "--filter=*" ]; then tests="affected"; fi
           fi
           echo "merge group gate: ${scope}, workspace tests: ${tests} (base ${base:-none})"
@@ -446,8 +446,9 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Read root config at HEAD^1 too, so root-only edits stay off-path.
           CHANGED="$(git diff --name-only HEAD^1 HEAD)"
-          LANES="$(printf '%s\n' "$CHANGED" | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts)"
+          LANES="$(printf '%s\n' "$CHANGED" | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=HEAD^1)"
           # ts-autocode surface and package-boundary inputs that live outside packages/.
           PINS="$(printf '%s\n' "$CHANGED" | grep -E '^(external/|tools/pins/|\.gitmodules$|scripts/test/ts-autocode-|scripts/bootstrap-siblings\.mts$|scripts/check-package-boundaries)' || true)"
           if [ -z "$LANES" ] && [ -z "$PINS" ]; then
@@ -661,19 +662,19 @@ jobs:
           set -euo pipefail
           # The push's `before`, or HEAD~1 for a dispatch. The daily schedule and an
           # unreachable base run repo-wide; otherwise scripts/ci/affected-lanes.mts
-          # --main-gate decides (repo-wide only for root config, lockfile, toolchain pins).
+          # compares root config at that base. Root scripts and //# tasks stay
+          # affected-only; globalDependencies and other shared inputs widen.
           base=""
           if [ "$EVENT_NAME" = "push" ]; then base="$PUSH_BEFORE"; fi
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then base="$(git rev-parse HEAD~1)"; fi
           if [ -n "$base" ] && ! git cat-file -e "${base}^{commit}" 2>/dev/null; then base=""; fi
-          # Package tests go repo-wide only for inputs turbo hashes into every task; a
-          # workflow edit cannot change a package's test result.
+          # A workflow edit cannot change a package's test result.
           scope="repo-wide"
           tests="all"
           if [ -n "$base" ]; then
             changed="$(git diff --name-only "$base" HEAD)"
-            scope="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --main-gate <<<"$changed")"
-            lanes="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts <<<"$changed")"
+            scope="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --main-gate --base="$base" <<<"$changed")"
+            lanes="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base="$base" <<<"$changed")"
             if [ "$lanes" != "--filter=*" ]; then tests="affected"; fi
           fi
           echo "main gate: ${scope}, workspace tests: ${tests} (base ${base:-none})"

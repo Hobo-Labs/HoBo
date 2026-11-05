@@ -295,8 +295,8 @@ them.
 `pnpm run build` covers `./packages/**` — every nested package, not just direct
 children of `packages/`. `pnpm run test` / `test:unit` is one turbo graph over
 exactly the legacy root `test/` and `src/draft/**` Vitest set: four root shards
-and four draft-directory shards, with a shared turbo dependency on the builds
-the legacy pretest supplied. Production `packages/**` suites stay in Workspace
+and nine draft shards hashed by proof package directory, with a shared turbo
+dependency on the builds the legacy pretest supplied. Production `packages/**` suites stay in Workspace
 tests, and `scripts/test/` stays in `test:scripts`. An unchanged unit run pays
 only turbo's hashing and log replay.
 

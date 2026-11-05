@@ -5,5 +5,10 @@ import { capVitestWorkers } from "../../scripts/ci/vitest-max-workers.mts";
 export default defineConfig({
 	test: {
 		maxWorkers: capVitestWorkers(1),
+		server: {
+			deps: {
+				external: [/\/node_modules\/(?:.*\/)?typescript\/lib\/typescript\.js$/],
+			},
+		},
 	},
 });

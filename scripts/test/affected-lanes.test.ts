@@ -5,10 +5,32 @@ import { describe, it } from "node:test";
 import {
 	affectedLanes,
 	mainGateScope,
+	type ReadRootFile,
 	workspaceGroups,
 } from "../ci/affected-lanes.mts";
 
 const present = (): boolean => true;
+const noGroups: ReadonlySet<string> = new Set();
+type RootVersions = {
+	readonly base?: string;
+	readonly head: string;
+};
+
+function rootReader(
+	files: Readonly<Record<string, RootVersions>>,
+): ReadRootFile {
+	return (path, side) => {
+		const versions = files[path];
+		return side === "base" ? versions?.base : versions?.head;
+	};
+}
+
+function lanesWithRoots(
+	paths: readonly string[],
+	files: Readonly<Record<string, RootVersions>>,
+) {
+	return affectedLanes(paths, present, noGroups, rootReader(files));
+}
 
 describe("affected-lanes", () => {
 	it("skips when no package-lane input changed", () => {
@@ -140,6 +162,176 @@ describe("affected-lanes", () => {
 		assert.equal(lanes.mode, "filtered");
 	});
 
+	it("filters a package alongside a scripts-only package.json change", () => {
+		const files = {
+			"package.json": {
+				base: JSON.stringify({ name: "hobo", scripts: { "test:unit": "old" } }),
+				head: JSON.stringify({ name: "hobo", scripts: { "test:unit": "new" } }),
+			},
+		};
+		assert.deepEqual(
+			lanesWithRoots(["package.json", "packages/cli/src/a.ts"], files),
+			{ mode: "filtered", filters: ["--filter=./packages/cli"] },
+		);
+	});
+
+	it("skips a scripts-only package.json change without package paths", () => {
+		const files = {
+			"package.json": {
+				base: JSON.stringify({ scripts: { "test:unit:draft:0": "old" } }),
+				head: JSON.stringify({ scripts: { "test:unit:draft:0": "new" } }),
+			},
+		};
+		assert.equal(lanesWithRoots(["package.json"], files).mode, "skip");
+	});
+
+	it("runs everything when package.json devDependencies change", () => {
+		const files = {
+			"package.json": {
+				base: JSON.stringify({ devDependencies: { tsx: "1" } }),
+				head: JSON.stringify({ devDependencies: { tsx: "2" } }),
+			},
+		};
+		assert.equal(lanesWithRoots(["package.json"], files).mode, "all");
+	});
+
+	it("does not widen for a turbo.json root task change", () => {
+		const files = {
+			"turbo.json": {
+				base: JSON.stringify({
+					tasks: { build: {}, "//#test:unit:root:0": { inputs: ["old"] } },
+				}),
+				head: JSON.stringify({
+					tasks: { build: {}, "//#test:unit:root:0": { inputs: ["new"] } },
+				}),
+			},
+		};
+		assert.deepEqual(
+			lanesWithRoots(["turbo.json", "packages/cli/src/a.ts"], files),
+			{ mode: "filtered", filters: ["--filter=./packages/cli"] },
+		);
+	});
+
+	for (const { change, base, head } of [
+		{
+			change: "added",
+			base: { globalDependencies: [] },
+			head: { globalDependencies: ["ci.json"] },
+		},
+		{
+			change: "removed",
+			base: { globalDependencies: ["turbo.json"] },
+			head: { globalDependencies: [] },
+		},
+	]) {
+		it(`runs everything when a turbo.json globalDependencies entry is ${change}`, () => {
+			const files = {
+				"turbo.json": {
+					base: JSON.stringify(base),
+					head: JSON.stringify(head),
+				},
+			};
+			assert.deepEqual(lanesWithRoots(["turbo.json"], files), {
+				mode: "all",
+				reason: "workspace-wide input changed: turbo.json",
+			});
+			assert.deepEqual(
+				mainGateScope(["turbo.json"], present, rootReader(files)),
+				{
+					mode: "repo-wide",
+					reason: "workspace-wide input changed: turbo.json",
+				},
+			);
+		});
+	}
+
+	it("runs everything when turbo.json globalEnv changes", () => {
+		const files = {
+			"turbo.json": {
+				base: JSON.stringify({ globalEnv: [] }),
+				head: JSON.stringify({ globalEnv: ["CI"] }),
+			},
+		};
+		assert.equal(lanesWithRoots(["turbo.json"], files).mode, "all");
+	});
+
+	it("runs everything when a non-root turbo.json task changes", () => {
+		const files = {
+			"turbo.json": {
+				base: JSON.stringify({ tasks: { test: { inputs: ["old"] } } }),
+				head: JSON.stringify({ tasks: { test: { inputs: ["new"] } } }),
+			},
+		};
+		assert.equal(lanesWithRoots(["turbo.json"], files).mode, "all");
+	});
+
+	it("runs everything for missing or unparsable root versions", () => {
+		const cases: Readonly<Record<string, RootVersions>>[] = [
+			{ "package.json": { head: JSON.stringify({ scripts: {} }) } },
+			{ "package.json": { base: "{", head: JSON.stringify({ scripts: {} }) } },
+			{ "turbo.json": { base: JSON.stringify({ tasks: {} }), head: "{" } },
+		];
+		for (const [index, files] of cases.entries()) {
+			const path = index === 2 ? "turbo.json" : "package.json";
+			assert.equal(lanesWithRoots([path], files).mode, "all");
+		}
+	});
+
+	const branchDiffPaths = [
+		"package.json",
+		"turbo.json",
+		"packages/cli/src/a.ts",
+		"packages/pricing/test/a.test.ts",
+	];
+
+	function branchDiffFiles(globalDependencies?: {
+		readonly base: readonly string[];
+		readonly head: readonly string[];
+	}) {
+		return {
+			"package.json": {
+				base: JSON.stringify({ scripts: { "test:unit:draft:0": "0/4" } }),
+				head: JSON.stringify({
+					scripts: { "test:unit:draft:0": "0/9", "test:unit:draft:8": "8/9" },
+				}),
+			},
+			"turbo.json": {
+				base: JSON.stringify({
+					globalDependencies: globalDependencies?.base,
+					tasks: {
+						build: { dependsOn: ["^build"] },
+						"//#test:unit:draft:0": { inputs: ["src/draft/**"] },
+					},
+				}),
+				head: JSON.stringify({
+					globalDependencies: globalDependencies?.head,
+					tasks: {
+						build: { dependsOn: ["^build"] },
+						"//#test:unit:draft:0": { inputs: ["src/draft/epic-proofs/**"] },
+						"//#test:unit:draft:8": { inputs: ["src/draft/projects/**"] },
+					},
+				}),
+			},
+		};
+	}
+
+	it("widens this branch's diff for its globalDependencies removal", () => {
+		assert.deepEqual(
+			lanesWithRoots(
+				branchDiffPaths,
+				branchDiffFiles({ base: ["turbo.json"], head: [] }),
+			),
+			{ mode: "all", reason: "workspace-wide input changed: turbo.json" },
+		);
+	});
+
+	it("keeps this branch's scripts and root tasks scoped without the globalDependencies edit", () => {
+		assert.deepEqual(lanesWithRoots(branchDiffPaths, branchDiffFiles()), {
+			mode: "filtered",
+			filters: ["--filter=./packages/cli", "--filter=./packages/pricing"],
+		});
+	});
+
 	it("CLI prints --filter=* for workspace-wide changes and nothing for inert ones", () => {
 		const run = (input: string): string =>
 			execFileSync(
@@ -156,6 +348,8 @@ describe("affected-lanes", () => {
 				},
 			);
 		assert.equal(run("pnpm-lock.yaml\n"), "--filter=*\n");
+		assert.equal(run("package.json\n"), "--filter=*\n");
+		assert.equal(run("turbo.json\n"), "--filter=*\n");
 		assert.equal(run("README.md\n"), "");
 		assert.equal(run("packages/ci/src/a.ts\n"), "--filter=./packages/ci\n");
 	});
@@ -171,6 +365,19 @@ describe("main-gate scope", () => {
 			[".github/actions/turbo-cache/action.yml", "docs/ci/performance.md"],
 		])
 			assert.deepEqual(mainGateScope(paths, present), { mode: "affected" });
+	});
+
+	it("passes root readers through to affected-lane scoping", () => {
+		const files = {
+			"package.json": {
+				base: JSON.stringify({ scripts: { "test:unit": "old" } }),
+				head: JSON.stringify({ scripts: { "test:unit": "new" } }),
+			},
+		};
+		assert.deepEqual(
+			mainGateScope(["package.json"], present, rootReader(files)),
+			{ mode: "affected" },
+		);
 	});
 
 	for (const path of [
