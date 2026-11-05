@@ -1,8 +1,23 @@
-import { mkdtempSync, rmSync, statSync } from "node:fs";
-import type { chown, mkdir } from "node:fs/promises";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
+import {
+	chown,
+	lstat,
+	mkdir,
+	readdir,
+	rename,
+	rm,
+	rmdir,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { basename, dirname, join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkerImage } from "../src/isolated-worker/image-gc.js";
 import {
 	createNodeWorkerStorageFileSystem,
@@ -10,6 +25,7 @@ import {
 	type WorkerFileSystemStats,
 	type WorkerStorageDockerDriver,
 	type WorkerStorageFileSystem,
+	type WorkerStorageLease,
 	type WorkerStoragePnpmStore,
 } from "../src/isolated-worker/storage-admission.js";
 
@@ -23,6 +39,12 @@ const WORK_ROOT = "/srv/hobo-ci/work";
 const LIVE = "hobo-00000000-0000-4000-8000-000000000001";
 const DEAD = "hobo-00000000-0000-4000-8000-000000000002";
 const STOPPED = "hobo-00000000-0000-4000-8000-000000000003";
+const temporaryRoots: string[] = [];
+
+afterEach(() => {
+	for (const root of temporaryRoots.splice(0))
+		rmSync(root, { recursive: true, force: true });
+});
 
 function usage(percent: number): WorkerFileSystemStats {
 	return {
@@ -39,6 +61,8 @@ function harness(
 		after?: WorkerFileSystemStats;
 		devices?: Readonly<Record<string, number>>;
 		directories?: readonly string[];
+		jobDirectories?: WorkerStorageFileSystem["jobDirectories"];
+		activeLeases?: () => Promise<readonly WorkerStorageLease[]>;
 		existingContainers?: ReadonlySet<string>;
 		images?: readonly WorkerImage[];
 		jobInodes?: Readonly<{ workRoot: number; dockerDataRoot: number }>;
@@ -49,16 +73,26 @@ function harness(
 	} = {},
 ) {
 	let current = input.before ?? usage(20);
-	const removed: string[] = [];
+	const retired: string[] = [];
+	const scheduleRetiredSweep = vi.fn();
 	const fs: WorkerStorageFileSystem = {
 		statfs: vi.fn(async () => current),
 		device: vi.fn(async (path: string) => input.devices?.[path] ?? 1),
-		jobDirectories: vi.fn(async () => input.directories ?? []),
+		jobDirectories: vi.fn(
+			input.jobDirectories ?? (async () => input.directories ?? []),
+		),
+		retiredDirectories: vi.fn(async () => []),
 		prepareJobDirectory: vi.fn(async () => undefined),
-		removeJobDirectory: vi.fn(async (path: string) => {
-			removed.push(path);
-			return { bytes: 128, entries: 4 };
+		retireJobDirectory: vi.fn(async (path: string) => {
+			const retiredPath = join(
+				dirname(path),
+				".retired",
+				`${basename(path)}-test`,
+			);
+			retired.push(retiredPath);
+			return retiredPath;
 		}),
+		removeJobDirectory: vi.fn(async () => ({ bytes: 128, entries: 4 })),
 	};
 	const docker: WorkerStorageDockerDriver = {
 		dataRoot: vi.fn(async () => DOCKER_ROOT),
@@ -81,9 +115,11 @@ function harness(
 		workRoot: WORK_ROOT,
 		fs,
 		docker,
+		activeLeases: input.activeLeases ?? (async () => []),
 		pnpmStore,
 		pnpmStoreIdle: input.pnpmStoreIdle,
 		jobInodes: input.jobInodes ?? { workRoot: 0, dockerDataRoot: 0 },
+		scheduleRetiredSweep,
 		now: input.now,
 		log: input.log,
 	});
@@ -92,7 +128,8 @@ function harness(
 		docker,
 		fs,
 		pnpmStore,
-		removed,
+		retired,
+		scheduleRetiredSweep,
 		setStats(stats: WorkerFileSystemStats) {
 			current = stats;
 		},
@@ -244,6 +281,57 @@ describe("worker storage admission", () => {
 		expect(nodeFs.chown).toHaveBeenNthCalledWith(3, directory, 1000, 1000);
 	});
 
+	it("retires a job directory atomically and returns undefined when it is absent", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-worker-retire-"));
+		temporaryRoots.push(root);
+		const job = join(root, LIVE);
+		mkdirSync(job);
+		writeFileSync(join(job, "artifact"), "content");
+		const fs = createNodeWorkerStorageFileSystem();
+
+		const retired = await fs.retireJobDirectory(job);
+		if (!retired) throw new Error("job directory was not retired");
+		expect(dirname(retired)).toBe(join(root, ".retired"));
+		expect(basename(retired)).toMatch(/^hobo-[0-9a-f-]{36}-[0-9a-z]+$/u);
+		expect(existsSync(job)).toBe(false);
+		expect(existsSync(retired)).toBe(true);
+		expect(statSync(join(root, ".retired")).mode & 0o777).toBe(0o700);
+		expect(await fs.retiredDirectories(root)).toEqual([retired]);
+		await expect(fs.retireJobDirectory(job)).resolves.toBeUndefined();
+	});
+
+	it("deletes a retired tree bottom-up with one traversal and counts as it goes", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-worker-remove-"));
+		temporaryRoots.push(root);
+		const job = join(root, LIVE);
+		const nested = join(job, "nested");
+		mkdirSync(nested, { recursive: true });
+		writeFileSync(join(job, "first"), "abc");
+		writeFileSync(join(nested, "second"), "12345");
+		const operations = {
+			chown,
+			mkdir,
+			lstat: vi.fn<typeof lstat>(lstat),
+			readdir: vi.fn<typeof readdir>(readdir),
+			rename: vi.fn<typeof rename>(rename),
+			rm: vi.fn<typeof rm>(rm),
+			rmdir: vi.fn<typeof rmdir>(rmdir),
+		};
+		const fs = createNodeWorkerStorageFileSystem(operations);
+		const retired = await fs.retireJobDirectory(job);
+		if (!retired) throw new Error("job directory was not retired");
+
+		await expect(fs.removeJobDirectory(retired)).resolves.toEqual({
+			bytes: 8,
+			entries: 4,
+		});
+		expect(operations.lstat).toHaveBeenCalledTimes(4);
+		expect(operations.readdir).toHaveBeenCalledTimes(2);
+		expect(operations.rm).toHaveBeenCalledTimes(2);
+		expect(operations.rmdir).toHaveBeenCalledTimes(2);
+		expect(existsSync(retired)).toBe(false);
+	});
+
 	it("does not prune below either 85 percent threshold", async () => {
 		const h = harness({ before: usage(85) });
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
@@ -258,6 +346,22 @@ describe("worker storage admission", () => {
 		expect(h.fs.statfs).toHaveBeenCalledTimes(4);
 		expect(h.fs.statfs).toHaveBeenCalledWith(DOCKER_ROOT);
 		expect(h.fs.statfs).toHaveBeenCalledWith(WORK_ROOT);
+	});
+
+	it("runs admission maintenance at most once per interval", async () => {
+		let nowMs = 1_000;
+		const h = harness({
+			before: usage(96),
+			after: usage(96),
+			now: () => nowMs,
+		});
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(false);
+		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
+		expect(h.docker.pruneBuilder).toHaveBeenCalledOnce();
+
+		nowMs += 60_000;
+		await expect(h.admission.admit([], "job-3")).resolves.toBe(false);
+		expect(h.docker.pruneBuilder).toHaveBeenCalledTimes(2);
 	});
 
 	it("blocks still-high filesystems and logs one pressure event per episode", async () => {
@@ -279,33 +383,99 @@ describe("worker storage admission", () => {
 	});
 
 	it("never deletes a live job directory or one whose container still exists", async () => {
+		const activeLeases = [
+			{
+				id: LIVE.slice("hobo-".length),
+				sandboxName: LIVE,
+				jobId: "job-1",
+			},
+		];
 		const h = harness({
 			before: usage(90),
 			after: usage(80),
 			directories: [LIVE, DEAD, STOPPED].map((name) => `${WORK_ROOT}/${name}`),
+			activeLeases: async () => activeLeases,
 			existingContainers: new Set([STOPPED]),
 		});
-		await expect(
-			h.admission.admit(
-				[
+		await expect(h.admission.admit(activeLeases, "job-2")).resolves.toBe(true);
+		expect(h.retired).toEqual([`${WORK_ROOT}/.retired/${DEAD}-test`]);
+		expect(h.fs.removeJobDirectory).not.toHaveBeenCalled();
+		expect(h.scheduleRetiredSweep).toHaveBeenCalledOnce();
+		expect(h.docker.containerExists).not.toHaveBeenCalledWith(LIVE);
+		expect(h.docker.containerExists).toHaveBeenCalledWith(STOPPED);
+	});
+
+	it("reads leases after listing directories before reaping", async () => {
+		let activeLeases: readonly WorkerStorageLease[] = [];
+		const h = harness({
+			activeLeases: async () => activeLeases,
+			jobDirectories: async () => {
+				activeLeases = [
 					{
 						id: LIVE.slice("hobo-".length),
 						sandboxName: LIVE,
 						jobId: "job-1",
 					},
-				],
-				"job-2",
-			),
-		).resolves.toBe(true);
-		expect(h.removed).toEqual([`${WORK_ROOT}/${DEAD}`]);
+				];
+				return [LIVE, DEAD].map((name) => `${WORK_ROOT}/${name}`);
+			},
+		});
+
+		await h.admission.reap();
+
+		expect(h.retired).toEqual([`${WORK_ROOT}/.retired/${DEAD}-test`]);
 		expect(h.docker.containerExists).not.toHaveBeenCalledWith(LIVE);
-		expect(h.docker.containerExists).toHaveBeenCalledWith(STOPPED);
 	});
 
-	it("reaps dead work directories on startup without running the full GC", async () => {
+	it("keeps dispatching and claiming directories before their containers exist", async () => {
+		const h = harness({
+			directories: [LIVE, STOPPED].map((name) => `${WORK_ROOT}/${name}`),
+			activeLeases: async () => [
+				{
+					id: LIVE.slice("hobo-".length),
+					sandboxName: LIVE,
+					jobId: "dispatching-job",
+				},
+				{
+					id: STOPPED.slice("hobo-".length),
+					sandboxName: STOPPED,
+					jobId: "claiming-job",
+				},
+			],
+		});
+
+		await h.admission.reap();
+
+		expect(h.retired).toEqual([]);
+		expect(h.docker.containerExists).not.toHaveBeenCalled();
+	});
+
+	it("retires nothing when the fresh lease read fails", async () => {
+		const log = vi.fn();
+		const h = harness({
+			directories: [`${WORK_ROOT}/${DEAD}`],
+			activeLeases: async () => {
+				throw new Error("store unavailable");
+			},
+			log,
+		});
+
+		await h.admission.reap();
+
+		expect(h.retired).toEqual([]);
+		expect(h.docker.containerExists).not.toHaveBeenCalled();
+		expect(log).toHaveBeenCalledWith("hobo_ci_storage_prune_failed", {
+			operation: "read-leases",
+			message: "store unavailable",
+		});
+	});
+
+	it("retires dead work directories on startup without running the full GC", async () => {
 		const h = harness({ directories: [`${WORK_ROOT}/${DEAD}`] });
-		await h.admission.reap([]);
-		expect(h.removed).toEqual([`${WORK_ROOT}/${DEAD}`]);
+		await h.admission.reap();
+		expect(h.retired).toEqual([`${WORK_ROOT}/.retired/${DEAD}-test`]);
+		expect(h.fs.removeJobDirectory).not.toHaveBeenCalled();
+		expect(h.scheduleRetiredSweep).toHaveBeenCalledOnce();
 		expect(h.docker.pruneBuilder).not.toHaveBeenCalled();
 		expect(h.docker.listImages).not.toHaveBeenCalled();
 	});

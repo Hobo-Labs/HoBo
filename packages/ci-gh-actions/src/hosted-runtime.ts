@@ -74,6 +74,15 @@ const QueuedJobDelivery = z.object({
 	}),
 });
 
+export type HostedRelayTickTiming = Readonly<{
+	totalMs: number;
+	deliveriesMs: number;
+	leaseReconcileMs: number;
+	dispatchMs: number;
+	leaseCount: number;
+	pendingCount: number;
+}>;
+
 /** Public API and bounded worker share the durable inbox and lease authority. */
 export function createHostedRelayRuntime(options: {
 	store: HostedInboxStore;
@@ -96,6 +105,7 @@ export function createHostedRelayRuntime(options: {
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
+	onTickTiming?: (timing: HostedRelayTickTiming) => void;
 	now?: () => string;
 }) {
 	const now = options.now ?? (() => new Date().toISOString());
@@ -248,6 +258,7 @@ export function createHostedRelayRuntime(options: {
 		 * delivery is taken and no pending job is reserved or launched.
 		 */
 		async tick(tickOptions: { maxDeliveries?: number; admit?: boolean } = {}) {
+			const tickStartedAt = Date.now();
 			const admit = tickOptions.admit ?? true;
 			const limit = admit ? (tickOptions.maxDeliveries ?? 10) : 0;
 			if (!Number.isInteger(limit) || limit < 0 || limit > 50)
@@ -332,8 +343,11 @@ export function createHostedRelayRuntime(options: {
 					deliveryFailed = true;
 				}
 			}
+			const deliveriesMs = Date.now() - tickStartedAt;
 			const controller = await relay();
-			for (const lease of await options.store.activeLeases()) {
+			const leaseReconcileStartedAt = Date.now();
+			const activeLeases = await options.store.activeLeases();
+			for (const lease of activeLeases) {
 				if (
 					!["running", "dispatched", "uncertain"].includes(lease.state) &&
 					!(
@@ -397,7 +411,20 @@ export function createHostedRelayRuntime(options: {
 					/* Retain ambiguous reservations until a later verified reconciliation. */
 				}
 			}
-			if (admit) await controller.dispatchPending();
+			const leaseReconcileMs = Date.now() - leaseReconcileStartedAt;
+			const dispatchStartedAt = Date.now();
+			const pendingCount = admit ? await controller.dispatchPending() : 0;
+			const dispatchMs = Date.now() - dispatchStartedAt;
+			const totalMs = Date.now() - tickStartedAt;
+			if (totalMs > 5_000)
+				options.onTickTiming?.({
+					totalMs,
+					deliveriesMs,
+					leaseReconcileMs,
+					dispatchMs,
+					leaseCount: activeLeases.length,
+					pendingCount,
+				});
 			if (deliveryFailed)
 				throw new Error("one or more inbox deliveries failed");
 		},
