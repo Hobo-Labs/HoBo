@@ -42,6 +42,8 @@ function harness(
 		existingContainers?: ReadonlySet<string>;
 		images?: readonly WorkerImage[];
 		jobInodes?: Readonly<{ workRoot: number; dockerDataRoot: number }>;
+		pnpmStoreIdle?: () => Promise<boolean>;
+		prune?: WorkerStoragePnpmStore["prune"];
 		now?: () => number;
 		log?: ReturnType<typeof vi.fn>;
 	} = {},
@@ -66,12 +68,13 @@ function harness(
 		containerExists: vi.fn(
 			async (name: string) => input.existingContainers?.has(name) ?? false,
 		),
+		containersUsingVolume: vi.fn(async () => 0),
 		listImages: vi.fn(async () => input.images ?? []),
 		removeImage: vi.fn(async () => undefined),
 		pruneDanglingImages: vi.fn(async () => undefined),
 	};
 	const pnpmStore: WorkerStoragePnpmStore = {
-		prune: vi.fn(async () => undefined),
+		prune: vi.fn(input.prune ?? (async () => ({ result: "pruned", ms: 1 }))),
 	};
 	const admission = createWorkerStorageAdmission({
 		dockerDataRoot: DOCKER_ROOT,
@@ -79,6 +82,7 @@ function harness(
 		fs,
 		docker,
 		pnpmStore,
+		pnpmStoreIdle: input.pnpmStoreIdle,
 		jobInodes: input.jobInodes ?? { workRoot: 0, dockerDataRoot: 0 },
 		now: input.now,
 		log: input.log,
@@ -306,14 +310,77 @@ describe("worker storage admission", () => {
 		expect(h.docker.listImages).not.toHaveBeenCalled();
 	});
 
-	it("skips pnpm store pruning while any job holds an install lease", async () => {
-		const h = harness();
-		await h.admission.maintain([
-			{ id: LIVE.slice("hobo-".length), sandboxName: LIVE, jobId: "job-1" },
-		]);
+	it("never prunes the pnpm store from admission, even with a reserve shortage", async () => {
+		const h = harness({
+			before: freeInodes(0),
+			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+		});
+
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(false);
 		expect(h.pnpmStore.prune).not.toHaveBeenCalled();
+	});
+
+	it("prunes pnpm only for explicit idle GC maintenance", async () => {
+		const pnpmStoreIdle = vi.fn(async () => true);
+		const log = vi.fn();
+		const h = harness({ pnpmStoreIdle, log });
 		await h.admission.maintain([]);
-		expect(h.pnpmStore.prune).toHaveBeenCalledOnce();
+		expect(h.pnpmStore.prune).not.toHaveBeenCalled();
+
+		await h.admission.maintain(
+			[{ id: LIVE.slice("hobo-".length), sandboxName: LIVE, jobId: "job-1" }],
+			{ pnpmStore: true },
+		);
+		expect(h.pnpmStore.prune).not.toHaveBeenCalled();
+
+		await h.admission.maintain([], { pnpmStore: true });
+		expect(h.pnpmStore.prune).toHaveBeenCalledWith(pnpmStoreIdle);
+		expect(log).toHaveBeenCalledWith("hobo_ci_pnpm_store_prune", {
+			result: "pruned",
+			ms: 1,
+		});
+	});
+
+	it("defaults the pnpm idle check to busy", async () => {
+		const prune = vi.fn<WorkerStoragePnpmStore["prune"]>(async (idle) => ({
+			result: (await idle()) ? "pruned" : "busy",
+			ms: 1,
+		}));
+		const h = harness({ prune });
+
+		await h.admission.maintain([], { pnpmStore: true });
+		await expect(prune.mock.results[0]?.value).resolves.toMatchObject({
+			result: "busy",
+		});
+	});
+
+	it("blocks admission and logs once while a pnpm prune is in flight", async () => {
+		let finish: (() => void) | undefined;
+		const prune = vi.fn<WorkerStoragePnpmStore["prune"]>(
+			() =>
+				new Promise((resolve) => {
+					finish = () => resolve({ result: "pruned", ms: 1 });
+				}),
+		);
+		const log = vi.fn();
+		const h = harness({ prune, pnpmStoreIdle: async () => true, log });
+		const maintenance = h.admission.maintain([], { pnpmStore: true });
+		await vi.waitFor(() => expect(prune).toHaveBeenCalledOnce());
+
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(false);
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(false);
+		expect(
+			log.mock.calls.filter(
+				([event]) => event === "hobo_ci_storage_admission_wait",
+			),
+		).toEqual([
+			[
+				"hobo_ci_storage_admission_wait",
+				{ message: "pnpm store prune in progress" },
+			],
+		]);
+		finish?.();
+		await maintenance;
 	});
 
 	it("collects deps images, builder cache and dangling images on maintenance", async () => {

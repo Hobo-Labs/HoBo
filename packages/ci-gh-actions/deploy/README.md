@@ -113,6 +113,7 @@ non-secret settings:
 | `HOBO_CI_WORKER_WORKDIR_INODES` | `200000` | Host-workdir inode growth reserved per job; digits only, `0` disables this root's reservation |
 | `HOBO_CI_WORKER_CONTAINER_INODES` | `170000` | Docker-writable-layer inode growth reserved per job; digits only, `0` disables this root's reservation |
 | `HOBO_CI_PNPM_STORE_DIR` | `~/.cache/hobo-ci/pnpm-store` | Shared store mounted read-write at `/pnpm-store`; empty disables it |
+| `HOBO_CI_PNPM_STORE_PRUNE_INTERVAL_MS` | `21600000` | Minimum interval between idle-only store prunes; integer at least 60000, persisted across failures and restarts |
 | `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image/builder/store/dead-workdir GC interval; minimum 60000, capped at 300000 |
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cache cap with no age exemption; `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` remains a deprecated alias |
 
@@ -161,15 +162,21 @@ This keeps `(workers + 1) × heap + 768 <= limit`, including the turbo/Vitest pa
 Each job bind-mounts its host work directory and teardown deletes it, including `node_modules`, after pass,
 failure, cancellation, crash or timeout. Startup reaps only directories with no active lease or container.
 All jobs install from the shared `/pnpm-store` with `npm_config_package_import_method=hardlink`; cross-filesystem
-store/work-root configurations fail startup. Jobs never prune the store. The daemon prunes it only with no
-active job, and runs scheduled GC at least every five minutes for fetch intermediates, old deps images (two
-newest plus `local` and in-use images retained), old worker images (current and previous content keys plus
-`local` and in-use images retained), dangling images and builder cache. BuildKit has a hard 4 GB default cap
-with no age exemption. Byte or inode usage above **85%** triggers the same GC before admission. Usage still
-above **95%** blocks admission and logs `hobo_ci_inode_pressure` once per episode. Admission additionally reserves
-**200000** workdir and **170000** container inodes per job, summed when both roots share a device and reduced by
-observed consumption. Insufficient reserved headroom triggers one GC/recheck, then logs `hobo_ci_inode_reserve_wait`
-once per episode while the job waits.
+store/work-root configurations fail startup. Jobs and admission-pressure maintenance never prune the store. Only
+scheduled GC requests pnpm pruning, and only with no active leases and no running container mounting the store;
+a failed Docker inventory check treats it as busy. Pruning is single-flight per daemon and across processes through
+`pnpm-store-prune.lock` beside the store. `pnpm-store-prune.stamp` records each start before spawn and rate-limits
+prunes to one per **6 hours** by default, including failed prunes and daemon restarts. The detached prune's whole
+process group is killed on timeout. Admission waits while a prune runs, logging `hobo_ci_storage_admission_wait`
+once with `message=pnpm store prune in progress`; other non-rate-limited outcomes log `hobo_ci_pnpm_store_prune`.
+Scheduled GC runs at least every five minutes for fetch intermediates, old deps images (two newest plus `local`
+and in-use images retained), old worker images (current and previous content keys plus `local` and in-use images
+retained), dangling images and builder cache. BuildKit has a hard 4 GB default cap with no age exemption. Byte or
+inode usage above **85%** triggers non-pnpm GC before admission. Usage still above **95%** blocks admission and
+logs `hobo_ci_inode_pressure` once per episode. Admission additionally reserves **200000** workdir and **170000**
+container inodes per job, summed when both roots share a device and reduced by observed consumption. Insufficient
+reserved headroom triggers one non-pnpm GC/recheck, then logs `hobo_ci_inode_reserve_wait` once per episode while
+the job waits.
 See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for operations and admission logs.
 
 For a release, publish the tested image to your registry and replace
