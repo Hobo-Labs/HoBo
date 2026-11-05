@@ -7,6 +7,7 @@ import {
 	parseReleaseRef,
 	releaseImageIdsForTrain,
 	releaseSemverFromEnv,
+	stagingSemverFromRef,
 	tryParseReleaseRef,
 } from "../lib/release-version.mts";
 
@@ -99,10 +100,55 @@ describe("release semver from env (staging / OCI labels)", () => {
 		).toBe(ALPHA);
 	});
 
-	it("maps a pull request ref to valid staging semver", () => {
+	it("maps pull_request HOBO_RELEASE_VERSION to staging semver", () => {
 		expect(releaseSemverFromEnv({ HOBO_RELEASE_VERSION: "pr-1684" })).toBe(
 			"0.0.0-pr.1684",
 		);
+	});
+
+	it("maps merge_group manual and merge-* staging refs", () => {
+		expect(releaseSemverFromEnv({ HOBO_RELEASE_VERSION: "pr-manual" })).toBe(
+			"0.0.0-pr.manual",
+		);
+		expect(stagingSemverFromRef("merge-abc123deadbeef")).toBe(
+			"0.0.0-merge.abc123deadbeef",
+		);
+	});
+});
+
+describe("stagingSemverFromRef (CI ref shapes)", () => {
+	it.each([
+		["pr-1684", "0.0.0-pr.1684", "pull_request"],
+		[
+			"pr-manual",
+			"0.0.0-pr.manual",
+			"workflow_dispatch / merge_group fallback",
+		],
+		["merge-abc123deadbeef", "0.0.0-merge.abc123deadbeef", "merge_group slug"],
+		[
+			"gh-readonly-queue/main/pr-1720-fcafbf0291a703b82b4700dcad16f917024dd3",
+			"0.0.0-merge.pr-1720-fcafbf0",
+			"merge queue GITHUB_REF_NAME",
+		],
+	])("%s → %s (%s)", (ref, semver) => {
+		expect(stagingSemverFromRef(ref)).toBe(semver);
+	});
+
+	it.each([
+		["v0.0.0-alpha.0", ALPHA, "tag push GITHUB_REF_NAME"],
+		["sdk-v0.0.0-alpha.0", ALPHA, "sdk tag via HOBO_RELEASE_VERSION"],
+	])("releaseSemverFromEnv handles %s (%s)", (ref, semver, _label) => {
+		const env: NodeJS.ProcessEnv =
+			ref === "v0.0.0-alpha.0"
+				? { GITHUB_REF_NAME: ref }
+				: { HOBO_RELEASE_VERSION: ref };
+		expect(releaseSemverFromEnv(env)).toBe(semver);
+	});
+
+	it("maps workflow_dispatch release_version via HOBO_RELEASE_VERSION", () => {
+		expect(
+			releaseSemverFromEnv({ HOBO_RELEASE_VERSION: "v0.0.0-alpha.0" }),
+		).toBe(ALPHA);
 	});
 });
 

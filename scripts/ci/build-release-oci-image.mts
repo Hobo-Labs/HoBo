@@ -209,19 +209,15 @@ export type BuiltReleaseImage = { localTag: string; ghcrRepo: string };
 
 function resolveReleaseImageVersion(optionsVersion?: string): string {
 	if (optionsVersion) return optionsVersion;
-	if (process.env.HOBO_RELEASE_SEMVER?.trim()) {
+	if (
+		process.env.HOBO_RELEASE_SEMVER?.trim() ||
+		process.env.HOBO_RELEASE_VERSION?.trim()
+	) {
 		return releaseSemverFromEnv();
 	}
-	const ref = process.env.HOBO_RELEASE_VERSION?.trim();
-	if (ref) {
-		const parsed = tryParseReleaseRef(ref);
-		if (parsed) return parsed.semver;
-	}
-	return (
-		process.env.HOBO_RELEASE_VERSION ??
-		process.env.GITHUB_REF_NAME ??
-		ciRunnerImageVersion(root)
-	);
+	const parsed = tryParseReleaseRef(process.env.GITHUB_REF_NAME?.trim() ?? "");
+	if (parsed) return parsed.semver;
+	return process.env.GITHUB_REF_NAME ?? ciRunnerImageVersion(root);
 }
 
 export function buildReleaseImage(options: {
