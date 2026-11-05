@@ -5,11 +5,15 @@ import {
 	cpSync,
 	existsSync,
 	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	renameSync,
 	rmSync,
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { join, parse, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, parse, resolve } from "node:path";
 import {
 	orderedSdkTarballPaths,
 	SDK_PACKAGES,
@@ -186,15 +190,58 @@ function turboBuild(root: string, filters: readonly string[]): void {
 	run(root, "pnpm", releaseOciTurboBuildArgs(root, filters));
 }
 
-function installSdkTarballsIntoApp(appDir: string, artifactsDir: string): void {
+/** `node_modules` path for a package name (supports scoped packages). */
+export function nodeModulesPathForPackageName(
+	appDir: string,
+	packageName: string,
+): string {
+	if (packageName.startsWith("@")) {
+		const parts = packageName.split("/");
+		const scope = parts[0];
+		const unscoped = parts[1];
+		if (parts.length !== 2 || !scope || !unscoped) {
+			throw new Error(`invalid scoped package name: ${packageName}`);
+		}
+		return join(appDir, "node_modules", scope, unscoped);
+	}
+	return join(appDir, "node_modules", packageName);
+}
+
+type TarballManifest = { readonly name: string };
+
+/**
+ * Lay staged `@hobo-labs/*` tarballs into a pnpm-deploy app without `npm install`.
+ * npm's arborist crashes (Node 24) when reconciling tarballs against pnpm's
+ * `file:` workspace layout; direct extract preserves deploy `node_modules`.
+ */
+export function installSdkTarballsIntoApp(
+	appDir: string,
+	artifactsDir: string,
+): void {
 	const tarballs = orderedSdkTarballPaths(artifactsDir);
-	run(appDir, "npm", [
-		"install",
-		"--ignore-scripts",
-		"--no-save",
-		"--legacy-peer-deps",
-		...tarballs,
-	]);
+	const extractRoot = mkdtempSync(join(tmpdir(), "hobo-sdk-overlay-"));
+	try {
+		for (const tarball of tarballs) {
+			const slot = join(extractRoot, basename(tarball, ".tgz"));
+			mkdirSync(slot, { recursive: true });
+			run(appDir, "tar", ["-xzf", resolve(tarball), "-C", slot]);
+			const pkgDir = join(slot, "package");
+			const raw: unknown = JSON.parse(
+				readFileSync(join(pkgDir, "package.json"), "utf8"),
+			);
+			// SAFETY: npm pack always includes `name` in package/package.json.
+			const manifest = raw as TarballManifest;
+			if (!manifest.name) {
+				throw new Error(`SDK tarball missing name: ${tarball}`);
+			}
+			const target = nodeModulesPathForPackageName(appDir, manifest.name);
+			rmSync(target, { recursive: true, force: true });
+			mkdirSync(dirname(target), { recursive: true });
+			renameSync(pkgDir, target);
+		}
+	} finally {
+		rmSync(extractRoot, { recursive: true, force: true });
+	}
 }
 
 export type ReleaseOciStagingLocation =
