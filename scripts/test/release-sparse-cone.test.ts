@@ -212,6 +212,34 @@ describe("release-ts-autocode workflow install order", () => {
 	});
 });
 
+describe("release-hobo affected image job", () => {
+	const hoboWorkflow = readFileSync(
+		join(root, ".github/workflows/release-hobo.yml"),
+		"utf8",
+	);
+
+	it("reuses the Fabric deps layer instead of always installing", () => {
+		expect(hoboWorkflow).toContain("Link deps layer or install");
+		expect(hoboWorkflow).toContain("deps-layer.mts check --require");
+		expect(hoboWorkflow).toContain(
+			"reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install",
+		);
+		expect(hoboWorkflow).toContain(
+			"pnpm install --frozen-lockfile --config.confirmModulesPurge=false",
+		);
+	});
+
+	it("builds independent images in parallel and mcp after cli", () => {
+		expect(hoboWorkflow).toContain(
+			'if [ "$id" = "hobo-mcp" ]; then continue; fi',
+		);
+		expect(hoboWorkflow).toContain("build_one");
+		expect(hoboWorkflow).toContain(
+			'if [[ " $IMAGE_IDS " == *" hobo-mcp "* ]]; then',
+		);
+	});
+});
+
 describe("release workflow shell lint diff base", () => {
 	const hoboWorkflow = readFileSync(
 		join(root, ".github/workflows/release-hobo.yml"),
