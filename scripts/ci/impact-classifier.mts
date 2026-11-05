@@ -283,9 +283,13 @@ export function typescriptTokenizer(ts: TypescriptLike): CodeTokenizer {
 	const minusMinus = kind("MinusMinusToken");
 	return (path, text) => {
 		try {
-			const scriptKind = path.endsWith("x")
+			const scriptKind = path.endsWith(".tsx")
 				? (ts.ScriptKind.TSX ?? 0)
-				: (ts.ScriptKind.TS ?? 0);
+				: path.endsWith(".jsx")
+					? (ts.ScriptKind.JSX ?? 0)
+					: /\.[cm]?js$/u.test(path)
+						? (ts.ScriptKind.JS ?? 0)
+						: (ts.ScriptKind.TS ?? 0);
 			const parsed = ts.createSourceFile(
 				path,
 				text,
@@ -305,11 +309,16 @@ export function typescriptTokenizer(ts: TypescriptLike): CodeTokenizer {
 			const parts: string[] = [];
 			let previous = -1;
 			let sawNewline = false;
-			for (let guard = text.length + 16; guard > 0; guard--) {
+			let lastPos = -1;
+			// Every scan must advance; a stuck scanner proves nothing.
+			for (let guard = text.length * 2 + 100; guard > 0; guard--) {
 				const token = scanner.scan();
 				if (token === endOfFile)
 					return createHash("sha256").update(parts.join("\0")).digest("hex");
 				if (token === conflict) return undefined;
+				const pos = scanner.getTextPos();
+				if (pos <= lastPos) return undefined;
+				lastPos = pos;
 				const tokenText = scanner.getTokenText();
 				if (token === newline) sawNewline = true;
 				if (trivia.has(token)) {
