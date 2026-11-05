@@ -76,10 +76,17 @@ describe("Main full gate image dependency", () => {
 				step.name === checkout &&
 				step.uses === "./.github/actions/hobo-checkout",
 		);
+		const preflightIndex = mainGate.steps.findIndex(
+			(step) => step.uses === "./.github/actions/ci-runner-preflight",
+		);
 		expect(checkoutIndex).toBeGreaterThanOrEqual(0);
+		expect(preflightIndex).toBe(checkoutIndex + 1);
 		expect(mainNames).toContain(start);
 		expect(mainNames).toContain(wait);
-		expect(mainNames.indexOf(start)).toBe(checkoutIndex + 1);
+		expect(mainNames.indexOf(start)).toBe(preflightIndex + 1);
+		expect(mainGate.steps[preflightIndex + 1].run).toContain(
+			"gitleaks-main-scan.mts --background",
+		);
 		expect(imageNames).not.toContain(start);
 		expect(imageNames).not.toContain(wait);
 
