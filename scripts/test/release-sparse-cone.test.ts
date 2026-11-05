@@ -311,7 +311,11 @@ describe("release workflow sparse-checkout sync", () => {
 		);
 		expect(action).toMatch(/Checkout sparse root files \(non-cone\)/);
 		expect(action).toMatch(
+			/ROOT_FILES: \$\{\{ steps\.sparse\.outputs\.root_files \}\}/,
+		);
+		expect(action).not.toMatch(
 			/git checkout HEAD -- \$\{\{ steps\.sparse\.outputs\.root_files \}\}/,
 		);
+		expect(action).toMatch(/git checkout HEAD -- "\$\{paths\[@\]\}"/);
 	});
 });
