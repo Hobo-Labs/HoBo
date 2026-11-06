@@ -77,7 +77,8 @@
         "@hobo/ci#build",
         "@hobo/connectivity#build",
         "@hobo/core#build",
-        "@hobo/dispatcher#build"
+        "@hobo/dispatcher#build",
+        "@hobo/kv-redis-compatible#build"
       ],
       "inputs": ["tsconfig.json", "tsconfig.base.json", "scripts/**", "test/**", "!scripts/ci/**"],
       "outputs": []

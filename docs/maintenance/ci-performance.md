@@ -48,6 +48,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   not added yet: several packages carry pre-existing biome lint debt that a dependents sweep would surface.
   The impact job and its merge-group S0 step have a 20-minute limit so large affected sets can finish
   on a cold worker; a timeout cancels the gate and does not count as a passing check.
+  Root typechecking builds the Redis-compatible package first because the Upstash provider sources
+  referenced by root tests resolve its declarations from `dist` on a clean worker.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
   from each job, so queue time and run time can be compared before and after a change. The script
   imports node builtins only, because the step also runs on jobs that skipped or failed `pnpm install`
