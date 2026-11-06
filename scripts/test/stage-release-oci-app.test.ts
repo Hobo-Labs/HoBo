@@ -19,6 +19,7 @@ import {
 	releaseOciDockerignore,
 	releaseOciStagingLocation,
 	releaseOciTurboBuildArgs,
+	releasePnpmStore,
 	resolveReleaseTurboBase,
 	sdkOverlayExtractRoot,
 	stageReleaseOciApp,
@@ -190,13 +191,14 @@ describe("release OCI app staging", () => {
 	});
 
 	it("limits every deploy to the build host architecture", () => {
+		const storeDir = resolve("test-store/v10");
 		const specs = Object.values(RELEASE_OCI_STAGE_SPECS).filter(
 			(spec) => spec.kind === "deploy",
 		);
 		expect(specs).toHaveLength(4);
 		for (const spec of specs) {
 			const appDir = join("staging", spec.appPath);
-			expect(releaseOciDeployArgs(spec.packageName, appDir)).toEqual([
+			expect(releaseOciDeployArgs(spec.packageName, appDir, storeDir)).toEqual([
 				"--filter",
 				spec.packageName,
 				"deploy",
@@ -206,6 +208,8 @@ describe("release OCI app staging", () => {
 				"--cpu=current",
 				"--os=current",
 				"--libc=current",
+				"--store-dir",
+				storeDir,
 				appDir,
 			]);
 		}
@@ -235,8 +239,30 @@ describe("release OCI app staging", () => {
 		});
 		expect(releaseOciStagingLocation("hobo-cli", options)).toEqual(location);
 		expect(
-			releaseOciDeployArgs("@hobo/hobo", "app", location.hardlink),
+			releaseOciDeployArgs("@hobo/hobo", "app", storeDir, location.hardlink),
 		).toContain("--config.package-import-method=hardlink");
+	});
+
+	it("pins the workspace store for a deployment on another filesystem", () => {
+		const storeDir = releasePnpmStore(root);
+		const target = mkdtempSync(join(tmpdir(), "hobo-release-store-"));
+		try {
+			const result = spawnSync("pnpm", ["store", "path", "--silent"], {
+				cwd: target,
+				encoding: "utf8",
+				env: { ...process.env, npm_config_store_dir: storeDir },
+			});
+			expect(result.status, result.stderr).toBe(0);
+			expect(result.stdout.trim()).toBe(storeDir);
+			expect(releaseOciDeployArgs("@hobo/hobo", target, storeDir)).toContain(
+				storeDir,
+			);
+			expect(() =>
+				releaseOciDeployArgs("@hobo/hobo", target, "relative"),
+			).toThrow();
+		} finally {
+			rmSync(target, { recursive: true, force: true });
+		}
 	});
 
 	it("keeps in-repo staging and default imports without a store", () => {
@@ -386,7 +412,11 @@ describe("release OCI app staging", () => {
 		try {
 			process.env.HOBO_RELEASE_SEMVER = "0.0.0-pr.test";
 			mkdirSync(appDir, { recursive: true });
-			runQuiet(root, "pnpm", releaseOciDeployArgs("@hobo/hobo", appDir));
+			runQuiet(
+				root,
+				"pnpm",
+				releaseOciDeployArgs("@hobo/hobo", appDir, releasePnpmStore(root)),
+			);
 			stageSdkArtifactsDir(artifactsDir);
 			installSdkTarballsIntoApp(appDir, artifactsDir);
 			const cliPath = nodeModulesPathForPackageName(appDir, "@hobo-labs/cli");

@@ -12,7 +12,7 @@ import {
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, parse, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, resolve } from "node:path";
 import {
 	orderedSdkTarballPaths,
 	SDK_PACKAGES,
@@ -340,11 +340,29 @@ export function releaseOciStagingLocation(
 	}
 }
 
+/** Resolve from the workspace: pnpm otherwise chooses a different store for
+ * a deployment target on another filesystem, breaking offline deployment. */
+export function releasePnpmStore(root: string): string {
+	const result = spawnSync("pnpm", ["store", "path", "--silent"], {
+		cwd: root,
+		encoding: "utf8",
+		timeout: 30_000,
+		maxBuffer: 4_096,
+	});
+	const path = result.stdout?.trim() ?? "";
+	if (result.status !== 0 || !isAbsolute(path) || /[\r\n\0]/u.test(path))
+		throw new Error("cannot resolve the workspace pnpm store");
+	return path;
+}
+
 export function releaseOciDeployArgs(
 	packageName: string,
 	appDir: string,
+	storeDir: string,
 	hardlink = false,
 ): readonly string[] {
+	if (!isAbsolute(storeDir) || /[\r\n\0]/u.test(storeDir))
+		throw new Error("invalid workspace pnpm store");
 	return [
 		"--filter",
 		packageName,
@@ -355,6 +373,8 @@ export function releaseOciDeployArgs(
 		"--cpu=current",
 		"--os=current",
 		"--libc=current",
+		"--store-dir",
+		storeDir,
 		...(hardlink ? ["--config.package-import-method=hardlink"] : []),
 		appDir,
 	];
@@ -370,7 +390,16 @@ function deployPackage(
 ): void {
 	if (!skipBuild) turboBuild(root, [spec.buildFilter]);
 	const appDir = join(stagingRoot, spec.appPath);
-	run(root, "pnpm", releaseOciDeployArgs(spec.packageName, appDir, hardlink));
+	run(
+		root,
+		"pnpm",
+		releaseOciDeployArgs(
+			spec.packageName,
+			appDir,
+			releasePnpmStore(root),
+			hardlink,
+		),
+	);
 	if (sdkArtifactsDir) {
 		installSdkTarballsIntoApp(appDir, sdkArtifactsDir);
 	}

@@ -30,8 +30,9 @@ lost remains reserved when inventory is empty, since the create may still finish
 A uniquely observed, unregistered session can be bound and retired; a stopped
 session can resume settlement after a restart without charging the retry delay.
 Shared-budget liabilities with estimated usage remain uncertain until supported
-by final provider evidence. Release OCI staging tests include subprocess output
-when offline deployment fails so runner-specific failures can be diagnosed.
+by final provider evidence. Release OCI staging resolves the pnpm store from the
+workspace and pins it for offline deployment, including when the staging target
+is on another filesystem. Staging tests include subprocess output on failure.
 
 ## Executable scenario ledger
 
