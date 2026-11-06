@@ -126,6 +126,24 @@ describe("operator trusted worker budget adapter", () => {
 		const opened = join(root, "opened");
 		const marker = join(root, "closed");
 		const adapter = join(root, "adapter.mjs");
+		const memoryFixture = join(root, "memory-fixture.mjs");
+		// This test never launches a worker. Make the daemon's preflight independent
+		// of the test runner's cgroup limit so it reaches the intended Docker failure.
+		writeFileSync(
+			memoryFixture,
+			`
+import fs from "node:fs";
+import os from "node:os";
+import { syncBuiltinESMExports } from "node:module";
+const readFileSync = fs.readFileSync;
+fs.readFileSync = function (path, ...args) {
+  if (path === "/sys/fs/cgroup/memory.max") return "8589934592";
+  return readFileSync.call(this, path, ...args);
+};
+os.totalmem = () => 8589934592;
+syncBuiltinESMExports();
+`,
+		);
 		writeFileSync(
 			adapter,
 			`
@@ -153,7 +171,7 @@ export function createCiWorkerBudgetAdapter() {
 		);
 		const result = spawnSync(
 			process.execPath,
-			["--experimental-strip-types", daemon],
+			["--import", memoryFixture, "--experimental-strip-types", daemon],
 			{
 				cwd: root,
 				encoding: "utf8",

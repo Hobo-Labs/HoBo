@@ -46,6 +46,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   paths stay scoped to those packages. Workflows, root scripts and draft proofs are covered by the
   root checks in the same gate. `scripts/test/affected-lanes.test.ts` pins the skip logic. Dependents are
   not added yet: several packages carry pre-existing biome lint debt that a dependents sweep would surface.
+  The impact job has a 20-minute limit so large affected sets can finish on a cold worker; a timeout
+  cancels the gate and does not count as a passing check.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
   from each job, so queue time and run time can be compared before and after a change. The script
   imports node builtins only, because the step also runs on jobs that skipped or failed `pnpm install`

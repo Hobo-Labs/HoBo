@@ -240,8 +240,8 @@ jobs:
     needs: ci-runner-image
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    # Target wall ~2–3 min; hard cap stays within the 20-minute workflow babysitter.
-    timeout-minutes: 12
+    # Large affected sets can need a cold-cache run; retain the workflow-wide cap.
+    timeout-minutes: 20
     permissions:
       contents: read
     env:
