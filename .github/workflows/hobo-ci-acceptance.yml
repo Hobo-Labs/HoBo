@@ -2,9 +2,34 @@
 # Runner identity and checkout evidence do not attest to provider routing;
 # reconcile this run with the account relay's lease/provider records separately.
 name: HoBo runner acceptance
+run-name: hobo-bootstrap-${{ inputs.role }}-${{ inputs.lease_id }}
 on:
   workflow_dispatch:
     inputs:
+      role:
+        required: false
+        type: choice
+        options: [acceptance, controller, worker]
+        default: acceptance
+      lease_id:
+        required: false
+        type: string
+      image_ref:
+        required: false
+        type: string
+      control_branch:
+        required: false
+        type: string
+      signing_public_key:
+        required: false
+        type: string
+      lifetime_ms:
+        required: false
+        type: string
+      timeout_minutes:
+        required: false
+        default: '40'
+        type: string
       jit_only:
         description: Verify runner registration without checkout or artifacts
         required: false
@@ -23,10 +48,11 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: hobo-ci-acceptance-${{ github.ref }}
+  group: hobo-ci-acceptance-${{ github.ref }}-${{ inputs.role }}-${{ inputs.lease_id }}
   cancel-in-progress: false
 jobs:
   smoke:
+    if: ${{ inputs.role == 'acceptance' || inputs.role == '' }}
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 10
     steps:
@@ -95,7 +121,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   dagger-native:
-    if: ${{ inputs.dagger_acceptance && !inputs.jit_only }}
+    if: ${{ (inputs.role == 'acceptance' || inputs.role == '') && inputs.dagger_acceptance && !inputs.jit_only }}
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     steps:
@@ -126,3 +152,81 @@ jobs:
           path: ${{ runner.temp }}/ci-dagger-acceptance.md
           if-no-files-found: error
           retention-days: 7
+  bootstrap-controller:
+    if: ${{ inputs.role == 'controller' && github.event.repository.private == false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      contents: write
+    env:
+      HOBO_BOOTSTRAP_CONTROL_BRANCH: ${{ inputs.control_branch }}
+      HOBO_BOOTSTRAP_SIGNING_PUBLIC_KEY: ${{ inputs.signing_public_key }}
+      HOBO_BOOTSTRAP_LIFETIME_MS: ${{ inputs.lifetime_ms }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install locked bootstrap schema dependencies
+        run: corepack pnpm install --filter hobo-design --frozen-lockfile --ignore-scripts
+      - name: Prepare first-party controller public key
+        run: node --experimental-strip-types scripts/ci-bootstrap/controller-main.mts prepare
+      - name: Publish controller public-key artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hobo-controller-ready-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .hobo-bootstrap-public/controller.json
+          if-no-files-found: error
+          retention-days: 1
+      - name: Run scoped GitHub App controller
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types scripts/ci-bootstrap/controller-main.mts run
+  bootstrap-worker:
+    if: ${{ inputs.role == 'worker' && github.event.repository.private == false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ fromJSON(inputs.timeout_minutes) }}
+    permissions:
+      contents: read
+    env:
+      HOBO_BOOTSTRAP_LEASE_ID: ${{ inputs.lease_id }}
+      HOBO_BOOTSTRAP_IMAGE_REF: ${{ inputs.image_ref }}
+      HOBO_BOOTSTRAP_CONTROL_BRANCH: ${{ inputs.control_branch }}
+      HOBO_BOOTSTRAP_SIGNING_PUBLIC_KEY: ${{ inputs.signing_public_key }}
+      HOBO_BOOTSTRAP_LIFETIME_MS: ${{ inputs.lifetime_ms }}
+      HOBO_BOOTSTRAP_TIMEOUT_MINUTES: ${{ inputs.timeout_minutes }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install locked bootstrap schema dependencies
+        run: corepack pnpm install --filter hobo-design --frozen-lockfile --ignore-scripts
+      - name: Verify pinned worker image and prepare public key
+        run: node --experimental-strip-types scripts/ci-bootstrap/worker-main.mts prepare
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hobo-worker-ready-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .hobo-bootstrap-public/ready.json
+          if-no-files-found: error
+          retention-days: 1
+      - name: Execute one admitted original GitHub job
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types scripts/ci-bootstrap/worker-main.mts run
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() }}
+        with:
+          name: hobo-worker-complete-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .hobo-bootstrap-public/complete.json
+          if-no-files-found: ignore
+          retention-days: 1
+      - name: Keep the disposable VM alive until verified cleanup
+        if: ${{ success() }}
+        run: node --experimental-strip-types scripts/ci-bootstrap/worker-main.mts idle

@@ -24,6 +24,154 @@ const template = await readFile(
 	"utf8",
 );
 const enabled = "hobo-ci-acceptance.yml";
+const repositoryAcceptance = await readFile(
+	new URL("../.github/workflows/hobo-ci-acceptance.yml", import.meta.url),
+	"utf8",
+);
+
+function repositoryBootstrapJob(text: string, job: string): string {
+	const lines = text.split("\n");
+	const start = lines.indexOf(`  ${job}:`);
+	assert.notEqual(start, -1, `${job} exists`);
+	const end = lines.findIndex(
+		(line, index) => index > start && /^ {2}[A-Za-z0-9_-]+:$/u.test(line),
+	);
+	return lines.slice(start, end === -1 ? lines.length : end).join("\n");
+}
+
+function assertRepositoryBootstrapBoundary(text: string): void {
+	const eventHeader = text.slice(
+		text.indexOf("\non:\n"),
+		text.indexOf("\npermissions:\n"),
+	);
+	assert.deepEqual(
+		Array.from(eventHeader.matchAll(/^  ([a-z_]+):$/gmu), (match) => match[1]),
+		["workflow_dispatch"],
+		"operator bootstrap has no automatic event",
+	);
+	assert.deepEqual(
+		Array.from(
+			eventHeader.matchAll(/^      ([a-z_]+):$/gmu),
+			(match) => match[1],
+		),
+		[
+			"role",
+			"lease_id",
+			"image_ref",
+			"control_branch",
+			"signing_public_key",
+			"lifetime_ms",
+			"timeout_minutes",
+			"jit_only",
+			"dagger_acceptance",
+			"dagger_bin",
+		],
+		"bootstrap and SDK inputs fit GitHub's ten-input dispatch limit",
+	);
+	assert.match(
+		eventHeader,
+		/role:\n\s+required: false\n\s+type: choice\n\s+options: \[acceptance, controller, worker\]\n\s+default: acceptance/u,
+	);
+	assert.deepEqual(
+		Array.from(
+			text.slice(text.indexOf("\njobs:\n")).matchAll(/^  ([a-z-]+):$/gmu),
+			(match) => match[1],
+		),
+		["smoke", "dagger-native", "bootstrap-controller", "bootstrap-worker"],
+	);
+	for (const role of ["controller", "worker"]) {
+		const block = repositoryBootstrapJob(text, `bootstrap-${role}`);
+		assert.match(block, /^    runs-on: ubuntu-24\.04$/mu);
+		assert.equal(
+			block.split("\n").find((line) => line.startsWith("    if:")),
+			`    if: \${{ inputs.role == '${role}' && github.event.repository.private == false }}`,
+		);
+		assert.match(block, /^    permissions:\n      contents: (?:read|write)$/mu);
+		assert.doesNotMatch(block, /id-token:|secrets\./u);
+		assert.equal((block.match(/persist-credentials: false/gu) ?? []).length, 1);
+		assert.equal(
+			(block.match(/ref: \$\{\{ github\.sha \}\}/gu) ?? []).length,
+			1,
+		);
+		assert.doesNotMatch(block, /^\s+repository:/mu);
+		assert.doesNotMatch(block, /^      GITHUB_TOKEN:/mu);
+		assert.equal(
+			(
+				block.match(/^          GITHUB_TOKEN: \$\{\{ github\.token \}\}$/gmu) ??
+				[]
+			).length,
+			1,
+			"the API token is scoped to the run step, outside dependency installation",
+		);
+		const dependencyInstall =
+			"        run: corepack pnpm install --filter hobo-design --frozen-lockfile --ignore-scripts";
+		assert.ok(block.includes(dependencyInstall));
+		assert.ok(
+			block.indexOf(dependencyInstall) < block.indexOf(".mts prepare"),
+			"locked dependency installation finishes before creating a bootstrap key",
+		);
+		for (const action of block.matchAll(/uses: ([^\s]+)$/gmu))
+			assert.match(action[1] ?? "", /^[^@]+@[a-f0-9]{40}$/u);
+		if (role === "controller") {
+			assert.match(block, /^      contents: write$/mu);
+			assert.match(block, /^    timeout-minutes: 180$/mu);
+			assert.ok(block.includes("name: Publish controller public-key artifact"));
+		} else {
+			assert.match(block, /^      contents: read$/mu);
+			assert.match(
+				block,
+				/^    timeout-minutes: \$\{\{ fromJSON\(inputs\.timeout_minutes\) \}\}$/mu,
+			);
+			assert.ok(
+				block.includes(
+					"      HOBO_BOOTSTRAP_LIFETIME_MS: ${{ inputs.lifetime_ms }}",
+				),
+			);
+			assert.ok(
+				block.includes(
+					"      HOBO_BOOTSTRAP_TIMEOUT_MINUTES: ${{ inputs.timeout_minutes }}",
+				),
+			);
+			assert.ok(
+				block.includes(
+					"name: Keep the disposable VM alive until verified cleanup\n        if: ${{ success() }}",
+				),
+			);
+		}
+	}
+}
+
+/** Remove only the reviewed repository-only additions, retaining SDK job bytes. */
+function sdkAcceptanceProjection(text: string): string {
+	assertRepositoryBootstrapBoundary(text);
+	const operatorStart = text.indexOf("  bootstrap-controller:\n");
+	assert.ok(operatorStart > 0);
+	let projected = text.slice(0, operatorStart);
+	const inputsStart = projected.indexOf("      role:\n");
+	const sdkInputsStart = projected.indexOf("      jit_only:\n");
+	assert.ok(inputsStart > 0 && sdkInputsStart > inputsStart);
+	projected = projected.slice(0, inputsStart) + projected.slice(sdkInputsStart);
+	const reviewedChanges: readonly [string, string][] = [
+		[
+			"run-name: hobo-bootstrap-${{ inputs.role }}-${{ inputs.lease_id }}\n",
+			"",
+		],
+		[
+			"group: hobo-ci-acceptance-${{ github.ref }}-${{ inputs.role }}-${{ inputs.lease_id }}",
+			"group: hobo-ci-acceptance-${{ github.ref }}",
+		],
+		["    if: ${{ inputs.role == 'acceptance' || inputs.role == '' }}\n", ""],
+		[
+			"if: ${{ (inputs.role == 'acceptance' || inputs.role == '') && inputs.dagger_acceptance && !inputs.jit_only }}",
+			"if: ${{ inputs.dagger_acceptance && !inputs.jit_only }}",
+		],
+	];
+	for (const [repositoryOnly, sdk] of reviewedChanges) {
+		assert.ok(projected.includes(repositoryOnly), repositoryOnly);
+		projected = projected.replace(repositoryOnly, sdk);
+	}
+	return projected;
+}
 
 async function fixture(
 	workflows: Record<string, string> = {},
@@ -124,20 +272,72 @@ test("workflow conditions never read the secrets context", async () => {
 	}
 });
 
-test("only the reviewed manual HoBo acceptance recipe is enabled", async () => {
-	const actual = await readFile(
-		new URL("../.github/workflows/hobo-ci-acceptance.yml", import.meta.url),
-		"utf8",
-	);
+test("repository operator modes preserve the independently installable SDK acceptance recipe", async () => {
 	assert.equal(
-		actual,
+		sdkAcceptanceProjection(repositoryAcceptance),
 		template,
-		"the installable smoke template matches HoBo's actual acceptance job",
+		"repository-only bootstrap modes must not alter the installable SDK job steps",
 	);
-	const result = lint(await fixture({ [enabled]: actual }));
-	assert.equal(result.status, 0, result.stderr);
-	assert.match(result.stdout, /1 enabled workflow/);
+	assert.doesNotMatch(
+		template,
+		/scripts\/ci-bootstrap|bootstrap-controller|bootstrap-worker/u,
+	);
+	for (const actual of [template, repositoryAcceptance]) {
+		const result = lint(await fixture({ [enabled]: actual }));
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stdout, /1 enabled workflow/);
+	}
 });
+
+for (const [name, original, changed] of [
+	["automatic events", "  workflow_dispatch:", "  push:"],
+	[
+		"another hosted image",
+		"    runs-on: ubuntu-24.04",
+		"    runs-on: ubuntu-latest",
+	],
+	[
+		"private repository execution",
+		" && github.event.repository.private == false",
+		"",
+	],
+	[
+		"worker write access",
+		"    permissions:\n      contents: read\n    env:\n      HOBO_BOOTSTRAP_LEASE_ID:",
+		"    permissions:\n      contents: write\n    env:\n      HOBO_BOOTSTRAP_LEASE_ID:",
+	],
+	[
+		"unlocked dependency installation",
+		"--frozen-lockfile --ignore-scripts",
+		"--ignore-scripts",
+	],
+	[
+		"install scripts before key setup",
+		"--frozen-lockfile --ignore-scripts",
+		"--frozen-lockfile",
+	],
+	[
+		"a disabled cleanup boundary",
+		"        if: ${{ success() }}",
+		"        if: ${{ always() }}",
+	],
+	[
+		"an extra hosted job",
+		"jobs:\n",
+		"jobs:\n  unrelated:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: true\n",
+	],
+] as const) {
+	test(`repository operator recipe refuses ${name}`, async () => {
+		assert.ok(repositoryAcceptance.includes(original));
+		const result = lint(
+			await fixture({
+				[enabled]: repositoryAcceptance.replace(original, changed),
+			}),
+		);
+		assert.equal(result.status, 1);
+		assert.match(result.stderr, /differs from its reviewed recipe/);
+	});
+}
 test("authoritative CI workflows are an allowed enabled set", async () => {
 	const minimalHoboCi = `name: HoBo CI Fabric
 on:
@@ -398,6 +598,15 @@ test("every trunk-capable CI and release job requests the trunk label by default
 					"ubuntu-24.04",
 					`${file}:${lines[start]} release-npm must use GitHub-hosted runners for npm OIDC`,
 				);
+				continue;
+			}
+			if (
+				file === enabled &&
+				["  bootstrap-controller:", "  bootstrap-worker:"].includes(
+					lines[start] ?? "",
+				)
+			) {
+				assertRepositoryBootstrapBoundary(text);
 				continue;
 			}
 			const condition =

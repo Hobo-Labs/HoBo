@@ -62,8 +62,16 @@ function isNpmOidcHostedReleaseJob(
 	);
 }
 
-const acceptanceDigest =
+/** The installable SDK smoke recipe has no repository-only bootstrap dependency. */
+const sdkAcceptanceDigest =
 	"d130e672fa517fb41465b742cf0b47e921849f73fadbe886f26f34e8aa9faaf6";
+/** Repository operator modes are a separate, fully reviewed manual recipe. */
+const operatorAcceptanceDigest =
+	"d47f9661042b0445f9f7f1f268a6bcbc8838e8289cd01f1585a3b9a3b9dd71c5";
+const reviewedAcceptanceDigests = new Set([
+	sdkAcceptanceDigest,
+	operatorAcceptanceDigest,
+]);
 
 const TRUNK_EVENTS = new Set([
 	"push",
@@ -324,9 +332,20 @@ function lintWorkflowYaml(
 		);
 	}
 	if (activeCiFiles.has(file)) {
+		const jobStartIndices = new Set(jobStarts);
+		let jobLine = "";
 		for (const [index, line] of lines.entries()) {
+			if (jobStartIndices.has(index)) jobLine = line;
 			const runsOn = line.match(/^\s*runs-on:\s*(.*?)\s*$/)?.[1];
-			if (runsOn !== undefined && runsOn !== "hobo" && runsOn !== TRUNK_RUNS_ON)
+			const npmOidcHosted =
+				line.startsWith("    runs-on:") &&
+				isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
+			if (
+				runsOn !== undefined &&
+				runsOn !== "hobo" &&
+				runsOn !== TRUNK_RUNS_ON &&
+				!npmOidcHosted
+			)
 				errors.push(
 					`${file}:${index + 1}: runs-on must be hobo or the trunk label expression`,
 				);
@@ -370,9 +389,13 @@ for (const file of recognizedFiles) {
 	const path = join(workflowDir, file);
 	const text = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
 	if (file === acceptanceFile) {
-		if (createHash("sha256").update(text).digest("hex") !== acceptanceDigest) {
+		if (
+			!reviewedAcceptanceDigests.has(
+				createHash("sha256").update(text).digest("hex"),
+			)
+		) {
 			errors.push(
-				`${file}: manual HoBo acceptance workflow differs from its reviewed recipe (update acceptanceDigest after review)`,
+				`${file}: manual HoBo acceptance workflow differs from its reviewed recipe (review SDK or operator recipe before updating its digest)`,
 			);
 		}
 	}
