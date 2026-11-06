@@ -5,13 +5,15 @@ import { describe, expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
 const packageRoot = fileURLToPath(new URL("../", import.meta.url));
-const cue = join(
-	root,
-	".tools",
-	"cue",
-	"v0.14.0",
-	process.platform === "win32" ? "cue.exe" : "cue",
-);
+const cue =
+	process.env.HOBO_CUE_BIN ||
+	join(
+		root,
+		".tools",
+		"cue",
+		"v0.14.0",
+		process.platform === "win32" ? "cue.exe" : "cue",
+	);
 const schema = join(packageRoot, "data-models/provider_digitalocean.cue");
 describe("hosting price evidence CUE contract", () => {
 	it("accepts an explicitly estimated catalog rate", () => {

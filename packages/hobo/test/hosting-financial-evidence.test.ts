@@ -365,9 +365,14 @@ describe("independently signed durable financial evidence", () => {
 			dir = mkdtempSync(join(tmpdir(), "financial-cue-"));
 		dispose.push(() => rmSync(dir, { recursive: true, force: true }));
 		const jsonPath = join(dir, "evidence.json"),
-			binary = fileURLToPath(
-				new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
-			),
+			binary =
+				process.env.HOBO_CUE_BIN ||
+				fileURLToPath(
+					new URL(
+						`../../../.tools/cue/v0.14.0/${process.platform === "win32" ? "cue.exe" : "cue"}`,
+						import.meta.url,
+					),
+				),
 			schema = fileURLToPath(
 				new URL(
 					"../data-models/hosting_financial_evidence.cue",

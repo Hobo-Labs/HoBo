@@ -123,6 +123,7 @@ describe("operator trusted worker budget adapter", () => {
 		cleanup.push(() => rmSync(root, { recursive: true, force: true }));
 		const bin = join(root, "bin");
 		mkdirSync(bin);
+		const opened = join(root, "opened");
 		const marker = join(root, "closed");
 		const adapter = join(root, "adapter.mjs");
 		writeFileSync(
@@ -131,15 +132,20 @@ describe("operator trusted worker budget adapter", () => {
 import { writeFileSync } from "node:fs";
 const f = () => ({});
 export function createCiWorkerBudgetAdapter() {
+  writeFileSync(${JSON.stringify(opened)}, "opened");
   return { kind: "sqlite", options: { authority: { persistence: "durable-cas", read: f,
     lookup: f, reserve: f, claimExecution: f, uncertain: f, settle: f, release: f },
     quoteLease: f }, close() { writeFileSync(${JSON.stringify(marker)}, "closed"); } };
 }`,
 		);
 		const env = Object.fromEntries(
-			Object.entries(process.env).filter(
-				([name]) => !name.startsWith("HOBO_CI_") && name !== "DATABASE_URL",
-			),
+			Object.entries(process.env).filter(([name]) => {
+				const key = name.toUpperCase();
+				return (
+					!key.startsWith("HOBO_CI_") &&
+					!["DATABASE_URL", "PATH", "HOME", "NODE_OPTIONS"].includes(key)
+				);
+			}),
 		);
 		const daemon = join(
 			dirname(fileURLToPath(import.meta.url)),
@@ -163,6 +169,10 @@ export function createCiWorkerBudgetAdapter() {
 					HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID: "test-worker",
 					HOBO_CI_WORKER_DB: join(root, "ci.sqlite"),
 					HOBO_CI_WORKER_WORK_ROOT: join(root, "work"),
+					HOBO_CI_WORKER_SLOTS: "1",
+					HOBO_CI_WORKER_MEMORY_CLASS_STANDARD_MB: "3072",
+					HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB: "3072",
+					HOBO_CI_WORKER_MEMORY_HEAVY_RESERVE_MB: "3072",
 					HOBO_CI_PNPM_STORE_DIR: "",
 					HOBO_CI_GIT_MIRROR: "1",
 					HOBO_CI_GIT_MIRROR_ROOT: join(root, "git"),
@@ -172,8 +182,9 @@ export function createCiWorkerBudgetAdapter() {
 		);
 		expect(result.error).toBeUndefined();
 		expect(result.status).not.toBe(0);
-		expect(result.stderr).toMatch(/docker|ENOENT/u);
-		expect(existsSync(marker)).toBe(true);
+		expect(result.stderr).toMatch(/spawn docker ENOENT/u);
+		expect(existsSync(opened), result.stderr).toBe(true);
+		expect(existsSync(marker), result.stderr).toBe(true);
 	});
 	it("leaves the adapter absent by default and rejects paths outside local absolute modules", async () => {
 		expect(await loadWorkerBudgetAdapter(undefined, "sqlite")).toBeUndefined();

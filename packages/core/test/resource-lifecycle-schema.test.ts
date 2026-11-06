@@ -5,9 +5,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 
-const cue = fileURLToPath(
-	new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
-);
+const cue =
+	process.env.HOBO_CUE_BIN ||
+	fileURLToPath(
+		new URL(
+			`../../../.tools/cue/v0.14.0/${process.platform === "win32" ? "cue.exe" : "cue"}`,
+			import.meta.url,
+		),
+	);
 const schema = fileURLToPath(
 	new URL("../data-models/resource_lifecycle.cue", import.meta.url),
 );

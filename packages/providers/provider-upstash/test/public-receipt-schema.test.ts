@@ -19,9 +19,14 @@ import {
 } from "./fixtures/index.js";
 import { publicOptions } from "./public-serialization.js";
 
-const cue = fileURLToPath(
-	new URL("../../../../.tools/cue/v0.14.0/cue", import.meta.url),
-);
+const cue =
+	process.env.HOBO_CUE_BIN ||
+	fileURLToPath(
+		new URL(
+			`../../../../.tools/cue/v0.14.0/${process.platform === "win32" ? "cue.exe" : "cue"}`,
+			import.meta.url,
+		),
+	);
 const schema = fileURLToPath(
 	new URL("../data-models/temporary_redis.cue", import.meta.url),
 );

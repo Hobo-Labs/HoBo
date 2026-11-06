@@ -44,9 +44,13 @@ function vet(
 		),
 	);
 	execFileSync(
-		fileURLToPath(
-			new URL("../../../../.tools/cue/v0.14.0/cue", import.meta.url),
-		),
+		process.env.HOBO_CUE_BIN ||
+			fileURLToPath(
+				new URL(
+					`../../../../.tools/cue/v0.14.0/${process.platform === "win32" ? "cue.exe" : "cue"}`,
+					import.meta.url,
+				),
+			),
 		[
 			"vet",
 			fileURLToPath(

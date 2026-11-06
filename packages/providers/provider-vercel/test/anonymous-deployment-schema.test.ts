@@ -6,9 +6,14 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../src/json.js";
 
-const cue = fileURLToPath(
-	new URL("../../../../.tools/cue/v0.14.0/cue", import.meta.url),
-);
+const cue =
+	process.env.HOBO_CUE_BIN ||
+	fileURLToPath(
+		new URL(
+			`../../../../.tools/cue/v0.14.0/${process.platform === "win32" ? "cue.exe" : "cue"}`,
+			import.meta.url,
+		),
+	);
 const schema = fileURLToPath(
 	new URL("../data-models/anonymous_deployment.cue", import.meta.url),
 );

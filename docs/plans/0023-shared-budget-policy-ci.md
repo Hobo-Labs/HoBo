@@ -33,6 +33,10 @@ Shared-budget liabilities with estimated usage remain uncertain until supported
 by final provider evidence. Release OCI staging resolves the pnpm store from the
 workspace and pins it for offline deployment, including when the staging target
 is on another filesystem. Staging tests include subprocess output on failure.
+Provider and budget CUE contract tests honor the runner's `HOBO_CUE_BIN` and
+otherwise use the platform-specific cached executable. The worker adapter
+startup regression uses an explicit small memory plan, verifies that the adapter
+opened, and checks it closes after the intended Docker startup failure.
 
 ## Executable scenario ledger
 
