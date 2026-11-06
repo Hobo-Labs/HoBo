@@ -8,7 +8,7 @@ import {
 	ProviderAccountExposureSchema,
 } from "@hobo/broker";
 import { Pool } from "pg";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	ConfigurationSchema,
 	JobSchema,
@@ -101,6 +101,143 @@ function quoteLease(lease: Lease) {
 describe.skipIf(!connectionURL)(
 	"PostgreSQL authoritative CI lease composition",
 	() => {
+		it.each([
+			"running",
+			"uncertain",
+		] as const)("persists isolated retirement for %s without reclaiming or releasing its shared hold", async (state) => {
+			const nativePool = pool();
+			const budgetId = randomUUID();
+			const { config, account, offer } = await configuration();
+			offer.provider = "hobo-box-worker";
+			offer.backend = "isolated-container";
+			offer.runsOn = "hobo-isolated-worker";
+			offer.priceMicrosPerMinute = 0;
+			offer.freeMinutes = 0;
+			offer.budgetMicros = 0;
+			account.budgetPolicy = {
+				schemaVersion: "hobo.budget-policy/v1",
+				tenantId: "tenant",
+				budgetId,
+				periodId: "p1",
+				revision: "r1",
+				workloads: ["hosting", "ci"],
+				currency: "USD",
+				limitMicros: 300,
+				objective: "min-cost",
+				enforcement: "conservative",
+				periodKind: "manual",
+				constraints: [],
+			};
+			const parent = createPostgresBudgetAdmissionAuthority({
+				pool: nativePool,
+				now: () => NOW,
+				snapshot: create(BudgetLedgerSnapshotSchema, {
+					identity: {
+						tenantId: "tenant",
+						budgetId,
+						periodId: "p1",
+						policyRevision: "r1",
+					},
+					limitMicros: 300,
+					observedAt: NOW,
+					validUntil: UNTIL,
+					providerAccounts: [
+						{ providerAccountId: offer.providerAccountId, limitMicros: 300 },
+					],
+				}),
+			});
+			const hooks = createCiAsyncSharedBudgetHooks({
+				authority: parent,
+				quoteLease,
+				now: () => NOW,
+			});
+			const store = new PostgresCiStore(nativePool, randomUUID(), {
+				sharedBudget: hooks,
+			});
+			await store.configure(config, 0, NOW);
+			const demand = job();
+			demand.isolatedRequired = true;
+			demand.queueDeadlineAt = "2026-10-30T12:01:00Z";
+			const lease = await store.reserve(account, demand, NOW);
+			if (!lease) throw new Error("missing isolated lease");
+			await store.transition(
+				lease.id,
+				["reserved"],
+				(entry) => {
+					entry.state = "running";
+					entry.sandboxName = `hobo-${entry.id}`;
+					entry.sandboxSessionId = "session-1";
+					entry.sandboxStage = "running";
+				},
+				"ci.RunnerStarted",
+				NOW,
+			);
+			if (state === "uncertain")
+				await store.transition(
+					lease.id,
+					["running"],
+					(entry) => {
+						entry.state = "uncertain";
+					},
+					"ci.RunnerUncertain",
+					NOW,
+				);
+			const hold = await parent.lookup(ciReservationId(lease));
+			expect(hold?.status).toBe(state === "uncertain" ? "uncertain" : "held");
+			vi.spyOn(hooks, "claim").mockRejectedValue(
+				new Error("authority unavailable"),
+			);
+			vi.spyOn(hooks, "uncertain").mockRejectedValue(
+				new Error("authority unavailable"),
+			);
+			const expired = demand.queueDeadlineAt;
+			await expect(
+				store.transition(
+					lease.id,
+					[state],
+					(entry) => {
+						entry.sandboxStage = "stopping";
+						entry.runnerId = 99;
+					},
+					"ci.SandboxStopRequested",
+					expired,
+				),
+			).rejects.toThrow();
+			expect((await store.get(lease.id))?.sandboxStage).toBe("running");
+			await store.transition(
+				lease.id,
+				[state],
+				(entry) => {
+					entry.sandboxStage = "stopping";
+				},
+				"ci.SandboxStopRequested",
+				expired,
+			);
+			await store.transition(
+				lease.id,
+				[state],
+				(entry) => {
+					entry.sandboxStage = "stopped";
+				},
+				"ci.SandboxStopped",
+				expired,
+			);
+			await store.transition(
+				lease.id,
+				[state],
+				(entry) => {
+					entry.usageCompletedAt = expired;
+				},
+				"ci.SandboxRemoved",
+				expired,
+			);
+			expect(await store.get(lease.id)).toMatchObject({
+				state,
+				sandboxStage: "stopped",
+				usageCompletedAt: expired,
+			});
+			expect(await parent.lookup(ciReservationId(lease))).toEqual(hold);
+		});
 		it.each([
 			"kubernetes",
 			"hobo-box-worker",

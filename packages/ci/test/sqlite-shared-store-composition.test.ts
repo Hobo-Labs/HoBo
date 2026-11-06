@@ -9,7 +9,7 @@ import {
 	HostingQuoteSchema,
 	ProviderAccountExposureSchema,
 } from "@hobo/broker";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	AccountSchema,
 	ConfigurationSchema,
@@ -25,6 +25,7 @@ import {
 	ciReservationId,
 	createCiSharedBudgetHooks,
 } from "../src/shared-budget.js";
+import { SqliteCiStore } from "../src/sqlite-store.js";
 import { LeaseStore } from "../src/store.js";
 
 const NOW = "2026-10-30T12:00:00Z";
@@ -139,6 +140,133 @@ function quoteLease(lease: Lease) {
 }
 
 describe("real SQLite CI and parent authority composition", () => {
+	it.each([
+		"running",
+		"uncertain",
+	] as const)("persists isolated retirement for %s without reclaiming or releasing its shared hold", async (state) => {
+		const h = setup();
+		const offer = h.account.offers[0];
+		if (!offer) throw new Error("missing offer");
+		offer.provider = "hobo-box-worker";
+		offer.backend = "isolated-container";
+		offer.runsOn = "hobo-isolated-worker";
+		offer.priceMicrosPerMinute = 0;
+		offer.freeMinutes = 0;
+		offer.budgetMicros = 0;
+		h.config.connections = [
+			create(ConnectionSchema, {
+				accountId: h.account.id,
+				installationId: 1,
+				repositoryId: 1,
+				repository: "example/repository",
+				runnerGroupId: 1,
+				isolatedOnly: true,
+				acceptAllMatchingRepositoryJobs: true,
+				trustedRepositoryAcknowledged: true,
+				publicRepositoryAcknowledged: true,
+			}),
+		];
+		const hooks = createCiSharedBudgetHooks({
+			authority: h.parent,
+			quoteLease,
+			now: () => NOW,
+		});
+		const store = new SqliteCiStore(join(h.directory, "ci.sqlite"), {
+			sharedBudget: hooks,
+		});
+		cleanup.push(() => store.close());
+		await store.configure(h.config, 0, NOW);
+		const demand = create(JobSchema, {
+			id: 1,
+			runId: 10,
+			runAttempt: 1,
+			repositoryId: 1,
+			installationId: 1,
+			repository: "example/repository",
+			action: "queued",
+			isolatedRequired: true,
+			queueDeadlineAt: "2026-10-30T12:01:00Z",
+		});
+		const lease = await store.reserve(h.account, demand, NOW);
+		if (!lease) throw new Error("missing isolated lease");
+		await store.transition(
+			lease.id,
+			["reserved"],
+			(entry) => {
+				entry.state = "running";
+				entry.sandboxName = `hobo-${entry.id}`;
+				entry.sandboxSessionId = "session-1";
+				entry.sandboxStage = "running";
+			},
+			"ci.RunnerStarted",
+			NOW,
+		);
+		if (state === "uncertain")
+			await store.transition(
+				lease.id,
+				["running"],
+				(entry) => {
+					entry.state = "uncertain";
+				},
+				"ci.RunnerUncertain",
+				NOW,
+			);
+		const hold = h.parent.lookup(ciReservationId(lease));
+		expect(hold?.status).toBe(state === "uncertain" ? "uncertain" : "held");
+		vi.spyOn(hooks, "claim").mockImplementation(() => {
+			throw new Error("authority unavailable");
+		});
+		vi.spyOn(hooks, "uncertain").mockImplementation(() => {
+			throw new Error("authority unavailable");
+		});
+		const expired = demand.queueDeadlineAt;
+		await expect(
+			store.transition(
+				lease.id,
+				[state],
+				(entry) => {
+					entry.sandboxStage = "stopping";
+					entry.runnerId = 99;
+				},
+				"ci.SandboxStopRequested",
+				expired,
+			),
+		).rejects.toThrow();
+		expect((await store.get(lease.id))?.sandboxStage).toBe("running");
+		await store.transition(
+			lease.id,
+			[state],
+			(entry) => {
+				entry.sandboxStage = "stopping";
+			},
+			"ci.SandboxStopRequested",
+			expired,
+		);
+		await store.transition(
+			lease.id,
+			[state],
+			(entry) => {
+				entry.sandboxStage = "stopped";
+			},
+			"ci.SandboxStopped",
+			expired,
+		);
+		await store.transition(
+			lease.id,
+			[state],
+			(entry) => {
+				entry.usageCompletedAt = expired;
+			},
+			"ci.SandboxRemoved",
+			expired,
+		);
+		expect(await store.get(lease.id)).toMatchObject({
+			state,
+			sandboxStage: "stopped",
+			usageCompletedAt: expired,
+		});
+		expect(h.parent.lookup(ciReservationId(lease))).toEqual(hold);
+	});
 	it.each([
 		"before-open",
 		"native-mutation",

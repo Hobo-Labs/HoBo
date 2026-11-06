@@ -40,6 +40,7 @@ import {
 	type SandboxPricing,
 	SandboxPricingSchema,
 } from "./index.js";
+import { isIsolatedRetirementTransition } from "./isolated-retirement.js";
 import {
 	ciBudgetIdentity,
 	ciBudgetPolicy,
@@ -1223,13 +1224,23 @@ export class LeaseStore {
 		return this.transaction(() => {
 			const lease = this.get(id);
 			if (!lease || !expected.includes(lease.state)) return undefined;
+			const before = clone(LeaseSchema, lease);
 			const identity = leaseFinancialIdentity(lease);
 			update(lease);
 			if (lease.state === "dispatching" && !lease.dispatchingAt)
 				lease.dispatchingAt = at;
 			if (leaseFinancialIdentity(lease) !== identity)
 				throw new Error("lease financial identity is immutable");
-			if (["dispatching", "claiming", "running"].includes(lease.state)) {
+			const retirement = isIsolatedRetirementTransition(
+				before,
+				lease,
+				type,
+				at,
+			);
+			if (
+				!retirement &&
+				["dispatching", "claiming", "running"].includes(lease.state)
+			) {
 				if (!this.authorizeHeldEffect(lease, at))
 					throw new Error("durable policy revoked lease execution");
 				if (lease.budgetId) {
@@ -1253,7 +1264,7 @@ export class LeaseStore {
 						),
 					);
 				}
-			} else if (lease.state === "uncertain" && lease.budgetId)
+			} else if (!retirement && lease.state === "uncertain" && lease.budgetId)
 				this.options.sharedBudget?.uncertain(lease);
 			this.append(lease, type, at);
 			return lease;

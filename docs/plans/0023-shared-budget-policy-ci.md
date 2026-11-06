@@ -187,3 +187,10 @@ PR-base standards review also checked public wire/API constants individually.
 Their contract annotations remain adjacent to each declaration, including retained
 compatibility environment names and diagnostic provider URLs; that repair changes
 comments only.
+
+An isolated worker can finish after its admission deadline or while the shared
+budget authority is unavailable. SQLite and PostgreSQL permit only monotonic,
+session-bound stop and removal bookkeeping in that case. The transition cannot
+change execution state, resource identity, or liability, and the shared hold is
+retained until independent settlement. Regressions exercise expired admission,
+authority failure, forged cleanup events, and the worker's full reconciliation.

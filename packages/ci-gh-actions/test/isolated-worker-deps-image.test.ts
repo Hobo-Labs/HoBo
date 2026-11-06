@@ -518,6 +518,33 @@ describe("isolated worker deps image selection", () => {
 		expect(docker.driver.start).not.toHaveBeenCalled();
 	});
 
+	it("retires a completed isolated runner after its admission deadline", async () => {
+		const deadline = "2026-11-02T12:01:00Z";
+		const lease = await reservedLease("hobo-labs/hobo", deadline);
+		const docker = fakeDocker();
+		let clock = NOW;
+		const ctl = controller(docker.driver, undefined, () => clock);
+		await ctl.host.launch(lease.id);
+		expect((await store?.get(lease.id))?.state).toBe("running");
+		clock = deadline;
+		vi.spyOn(github, "request").mockResolvedValue(
+			Response.json({
+				id: 1,
+				run_id: 11,
+				status: "completed",
+				labels: ["hobo"],
+			}),
+		);
+		await ctl.host.reconcile(lease.id, true);
+		expect(docker.driver.stop).toHaveBeenCalledOnce();
+		expect(docker.driver.remove).toHaveBeenCalledOnce();
+		expect(await store?.get(lease.id)).toMatchObject({
+			state: "completed",
+			sandboxStage: "stopped",
+			usageCompletedAt: deadline,
+		});
+	});
+
 	it("retains an uncertain lease for a mismatched container creation identity", async () => {
 		const lease = await reservedLease("hobo-labs/hobo");
 		const docker = fakeDocker();
