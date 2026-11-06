@@ -2098,10 +2098,6 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
-    devDependencies:
-      '@hobo/runtime-local':
-        specifier: workspace:*
-        version: link:../../runtimes/runtime-local
 
   packages/providers/provider-ttl-sh:
     dependencies:

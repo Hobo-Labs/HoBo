@@ -184,10 +184,13 @@ foreign identities, partial GraphQL errors, rate limits, lost mutation replies,
 readiness transitions and positive instance-stop evidence. This is consumer
 contract evidence, not a claim of live-provider verification.
 
-`test/deployment-journal.test.ts` uses actual SQLite stores and independent
-connections for create races, reopen, lost replies, acknowledgement crashes,
-changed-commit refusal and exact-deployment retirement. One case runs the shipped
-resolver through core's bounded fetch transport against a real loopback HTTP server.
+The cross-package integration test
+[`railway-deployment-journal.test.ts`](../../hobo/test/railway-deployment-journal.test.ts)
+uses actual SQLite stores and independent connections for create races, reopen,
+lost replies, acknowledgement crashes, changed-commit refusal and exact-deployment
+retirement. One case runs the shipped resolver through core's bounded fetch
+transport against a real loopback HTTP server. Run it with
+`pnpm --filter @hobo/hobo exec vitest run test/railway-deployment-journal.test.ts`.
 
 Gates protecting this package: TypeScript (`strict`,
 `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`), the consumer-driven

@@ -13,14 +13,14 @@ import {
 	ResourceMutationJournalEntrySchema,
 } from "@hobo/core";
 import {
+	RAILWAY_SERVICE_PRODUCT_ID,
+	railwayResolverRegistry,
+} from "@hobo/provider-railway";
+import {
 	createManualClock,
 	createRuntimeLocalEventStore,
 } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-	RAILWAY_SERVICE_PRODUCT_ID,
-	railwayResolverRegistry,
-} from "../src/index.js";
 import {
 	isJsonObject,
 	isJsonString,
