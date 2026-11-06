@@ -313,7 +313,10 @@ Usage:
   hobo ci [global flags]
   hobo ci enable [--remote <name>] [--relay <https-origin>]
   hobo ci connect                  Alias of enable
+  hobo ci connect github           Register, authorize and install the GitHub App
   hobo ci connect <provider>       Add a runner integration: blacksmith, depot, jog (usejog), boat
+  hobo ci github import-key        Import or rotate a self-hosted GitHub App key
+  hobo ci github key-status        Check the self-hosted App key configuration
   hobo ci list|ls                  List GitHub Actions runs
   hobo ci inspect [run]            Inspect a run
   hobo ci logs [run]               Read run logs
@@ -327,6 +330,7 @@ ${statusLine}
 Running hobo ci without a subcommand shows help. connect and enable share the
 repository setup flow. A sole Git remote supplies the repository automatically;
 use --remote when the repository has several remotes.
+connect github runs the interactive hosted App ceremony before repository setup.
 
 Connection options:
   --remote <name>              Select the Git remote
@@ -337,6 +341,12 @@ Connection options:
   --accept-all-matching-jobs  Allow isolated runners for matching repository jobs
   -y, --yes                   Skip the connection confirmation
   --non-interactive           Never prompt (enable also requires --yes)
+
+Self-hosted App key import (hobo ci github import-key):
+  --app-id <id>               GitHub App ID
+  --key-file <path>           Read the App private key from a file
+  --webhook-secret-file <path> Read the webhook secret from a file
+  --home <path>               Private HoBo home outside the repository
 
 Integration options (hobo ci connect <provider>):
   --auth <method>             github-app | oidc | device | secret-ref (default: safest supported)

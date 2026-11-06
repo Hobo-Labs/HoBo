@@ -19,6 +19,8 @@ import {
 import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { runCiConnect } from "./ci-connect.js";
+import { runGithubCeremony } from "./ci-github-connect.js";
+import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
 import { runCiRuns } from "./ci-runs.js";
 import { type CiServeOptions, runCiServe } from "./ci-serve.js";
 
@@ -179,6 +181,9 @@ function parseCiArgs(args: readonly string[]) {
 			"token-file": { type: "string" },
 			home: { type: "string" },
 			"installation-id": { type: "string" },
+			"app-id": { type: "string" },
+			"key-file": { type: "string" },
+			"webhook-secret-file": { type: "string" },
 			yes: { type: "boolean", short: "y" },
 			"non-interactive": { type: "boolean" },
 			"accept-all-matching-jobs": { type: "boolean" },
@@ -262,6 +267,9 @@ export function createCiCommand(
 		interactive?: boolean;
 		prompt?: (question: string) => Promise<string>;
 		git?: (args: readonly string[], cwd: string) => Promise<string>;
+		openBrowser?: (url: string) => void;
+		sleep?: (ms: number) => Promise<void>;
+		now?: () => number;
 	} = {},
 ): CommandModule {
 	return {
@@ -276,7 +284,17 @@ export function createCiCommand(
 					"Invalid CI arguments. Run hobo ci --help for commands and options.",
 				);
 			}
-			const { values, positionals } = parsed;
+			const { values } = parsed;
+			const githubConnect =
+				parsed.positionals[0] === "connect" &&
+				parsed.positionals[1] === "github";
+			if (githubConnect && parsed.positionals.length !== 2)
+				return usage(
+					"hobo ci connect github takes no additional positional arguments.",
+				);
+			const positionals = githubConnect
+				? ["connect", ...parsed.positionals.slice(2)]
+				: parsed.positionals;
 			const command = positionals[0] ?? "";
 			if (
 				![
@@ -290,9 +308,84 @@ export function createCiCommand(
 					"grep",
 					"rerun",
 					"serve",
+					"github",
 				].includes(command)
 			)
 				return usage("Unknown CI command. Run hobo ci --help.");
+			if (command === "github") {
+				if (
+					positionals.length !== 2 ||
+					!["import-key", "key-status"].includes(positionals[1] ?? "")
+				)
+					return usage(
+						"Use hobo ci github import-key or hobo ci github key-status.",
+					);
+				const allowed =
+					positionals[1] === "import-key"
+						? new Set(["home", "app-id", "key-file", "webhook-secret-file"])
+						: new Set(["home"]);
+				const unsupported = Object.entries(values).find(
+					([key, value]) => value !== undefined && !allowed.has(key),
+				);
+				if (unsupported)
+					return usage(
+						`--${unsupported[0]} does not apply to hobo ci github ${positionals[1]}.`,
+					);
+				const env = deps.env ?? process.env;
+				const home = resolve(flags.cwd, values.home ?? defaultHoboHome(env));
+				try {
+					if (positionals[1] === "key-status") {
+						const stored = await storedGithubKey(home);
+						return stored
+							? {
+									message: `Self-hosted GitHub App ${stored.appId} has a stored key. Restart hobo ci serve after changing keys.`,
+									data: { appId: stored.appId, configured: true },
+								}
+							: {
+									message:
+										"No self-hosted GitHub App key is stored in this HoBo home.",
+									data: { configured: false },
+								};
+					}
+					if (
+						!values["app-id"] ||
+						!values["key-file"] ||
+						!values["webhook-secret-file"]
+					)
+						return usage(
+							"Import requires --app-id, --key-file, and --webhook-secret-file; supply file paths, never secret values.",
+						);
+					await importGithubKey({
+						home,
+						appId: String(values["app-id"]),
+						keyFile: resolve(flags.cwd, String(values["key-file"])),
+						webhookSecretFile: resolve(
+							flags.cwd,
+							String(values["webhook-secret-file"]),
+						),
+						fetch: deps.fetch,
+					});
+					return {
+						message:
+							"GitHub App key verified and saved for the self-hosted relay. Restart hobo ci serve; retain the previous GitHub key until all relay and worker processes have restarted.",
+					};
+				} catch {
+					return {
+						ok: false,
+						code: "HOBO_CI_GITHUB_KEY_ERROR",
+						message:
+							"Could not verify or store the GitHub App key. Check the App ID, credential files, GitHub access, and that HoBo home is private and outside the repository.",
+					};
+				}
+			}
+			for (const key of [
+				"app-id",
+				"key-file",
+				"webhook-secret-file",
+			] as const) {
+				if (values[key] !== undefined)
+					return usage(`--${key} only applies to hobo ci github import-key.`);
+			}
 			if (command === "serve") {
 				if (positionals.length !== 1)
 					return usage("hobo ci serve takes no positional arguments.");
@@ -341,7 +434,7 @@ export function createCiCommand(
 			if (command === "connect" && positionals.length >= 2) {
 				if (positionals.length !== 2)
 					return usage(
-						"hobo ci connect takes one provider: blacksmith, depot, jog or boat.",
+						"hobo ci connect takes one provider: github, blacksmith, depot, jog or boat.",
 					);
 				const allowed = new Set([...integrationKeys, "config"]);
 				const ignored = Object.entries(values).find(
@@ -438,6 +531,10 @@ export function createCiCommand(
 					Boolean(process.stdin.isTTY && process.stderr.isTTY)) &&
 				!flags.json &&
 				!values["non-interactive"];
+			if (githubConnect && (!interactive || flags.quiet))
+				return usage(
+					"GitHub setup requires an interactive terminal and visible progress. Run hobo ci connect github without --json, --quiet or --non-interactive.",
+				);
 			const ask =
 				deps.prompt ??
 				(async (question: string) => {
@@ -604,6 +701,20 @@ export function createCiCommand(
 				};
 				if (deps.fetch) clientOptions.fetch = deps.fetch;
 				const client = createCiRelayClient(clientOptions);
+				if (githubConnect) {
+					const result = await runGithubCeremony({
+						origin,
+						credential,
+						client,
+						prompt: ask,
+						emitProgress,
+						fetch: deps.fetch,
+						openBrowser: deps.openBrowser,
+						sleep: deps.sleep,
+						now: deps.now,
+					});
+					if (!result.ok) return result;
+				}
 				const state = await client.getPolicy();
 				if (
 					!state.account?.id ||

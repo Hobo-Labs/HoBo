@@ -11,6 +11,13 @@ The corresponding HTTP provider suite remains in
 `../../ci-gh-actions/contracts/hosted-control-boundary.pact.json` and its provider
 tests. The CLI adds no new server endpoint or response shape.
 
+`ci-github-device.pact.json` pins the GitHub device-code and pending-token HTTP
+interactions. `test/ci-github-connect.test.ts` executes these requests and also
+exercises disabled flow, backoff, denial, and relay installation polling. The
+relay OAuth start remains covered by `@hobo/ci-gh-actions`' OAuth-session tests.
+GitHub is an external provider and does not verify this consumer fixture; live
+App registration, settings changes, and installation remain release checks.
+
 `test/ci-runs.test.ts` exercises the process contract to GitHub CLI with exact
 argument arrays, repository/host selection, bounded JSON parsing, current commit
 resolution, retry admission and new-attempt fencing. It uses a process seam;
