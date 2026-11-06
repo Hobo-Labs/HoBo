@@ -397,7 +397,7 @@ jobs:
             > "$RUNNER_TEMP/impact-plan.json"
       - name: S0 gate set
         if: github.event_name == 'merge_group'
-        timeout-minutes: 12
+        timeout-minutes: 20
         env:
           # One vitest fork at a time: four forks (default) with 3 GiB heaps plus
           # componentize-js wizer exceed the 6 GiB job container and get OOM-killed.
