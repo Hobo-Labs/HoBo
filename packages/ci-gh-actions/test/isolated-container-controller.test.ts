@@ -187,9 +187,12 @@ describe("isolated container controller reconcile", () => {
 		expect(settle).not.toHaveBeenCalled();
 	});
 
-	it("binds and stops a uniquely observed create before settling its uncertain lease", async () => {
+	it.each([
+		"uncertain",
+		"dispatching",
+	] as const)("binds and stops a uniquely observed %s create before settling its lease", async (state) => {
 		const lease = runningLease({ jobId: 100 });
-		lease.state = "uncertain";
+		lease.state = state;
 		lease.sandboxStage = "creating";
 		lease.sandboxSessionId = "";
 		const { store, transition, settle } = mockedLeaseStore(lease);
@@ -224,7 +227,7 @@ describe("isolated container controller reconcile", () => {
 			now: () => "2026-10-26T12:02:00Z",
 		});
 		await controller.host.reconcile(lease.id, true);
-		expect(transition).toHaveBeenCalledTimes(4);
+		expect(transition).toHaveBeenCalledTimes(state === "dispatching" ? 5 : 4);
 		expect(lease.sandboxSessionId).toBe("observed-id");
 		expect(stop).toHaveBeenCalledWith(lease.sandboxName, "observed-id");
 		expect(remove).toHaveBeenCalledWith(lease.sandboxName, "observed-id");
@@ -271,6 +274,50 @@ describe("isolated container controller reconcile", () => {
 		await controller.host.reconcile(lease.id, true);
 		expect(list).toHaveBeenCalledTimes(1);
 		expect(transition).not.toHaveBeenCalled();
+		lease.state = "dispatching";
+		lease.sandboxStage = "creating";
+		lease.runnerId = 42;
+		await controller.host.reconcile(lease.id, true);
+		expect(transition).not.toHaveBeenCalled();
+		lease.runnerId = 0;
+		lease.hostRunId = 42;
+		await controller.host.reconcile(lease.id, true);
+		expect(transition).not.toHaveBeenCalled();
+		lease.hostRunId = 0;
+		lease.usageCompletedAt = NOW;
+		await controller.host.reconcile(lease.id, true);
+		expect(transition).not.toHaveBeenCalled();
+	});
+
+	it("retains an interrupted create if its uncertain hold cannot be recorded", async () => {
+		const lease = runningLease({});
+		lease.state = "dispatching";
+		lease.sandboxStage = "creating";
+		lease.sandboxSessionId = "";
+		const { store, transition } = mockedLeaseStore(lease);
+		transition.mockRejectedValue(new Error("budget authority unavailable"));
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop: vi.fn(),
+			remove: vi.fn(),
+			isRunning: vi.fn(),
+			list: vi.fn(async () => []),
+		};
+		const ctl = createIsolatedContainerController({
+			store,
+			github: deniedGithub(),
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "oracle-free-vm",
+			workerImage: "hobo-ci-worker:local",
+		});
+		await expect(ctl.host.reconcile(lease.id, true)).rejects.toThrow(
+			"budget authority unavailable",
+		);
+		expect(lease.state).toBe("dispatching");
+		expect(docker.stop).not.toHaveBeenCalled();
 	});
 
 	it("retains the stop time and retries settlement when final job observation fails", async () => {

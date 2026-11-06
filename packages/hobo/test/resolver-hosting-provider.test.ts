@@ -523,13 +523,15 @@ describe("production resolver hosting execution", () => {
 		HostingTransitionAction.RESTORE,
 	])("refuses routing action %s when credential verification exhausts its deadline", async (action) => {
 		let nowMs = 1000;
+		const deadlineMs = 60_000;
 		const fx = await fixture({
 			serving: "match",
 			nowMs: () => nowMs,
 			verifyRoutingCredentialScope: async () => {
-				nowMs = 10_000;
+				nowMs = deadlineMs;
 			},
 		});
+		fx.request.operation.deadlineAtMs = deadlineMs;
 		await fx.provider.execute(fx.request);
 		fx.request.operation.action = action;
 		await expect(fx.provider.execute(fx.request)).rejects.toThrow(

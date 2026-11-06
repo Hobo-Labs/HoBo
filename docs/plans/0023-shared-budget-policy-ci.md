@@ -194,3 +194,8 @@ session-bound stop and removal bookkeeping in that case. The transition cannot
 change execution state, resource identity, or liability, and the shared hold is
 retained until independent settlement. Regressions exercise expired admission,
 authority failure, forged cleanup events, and the worker's full reconciliation.
+An interrupted container creation also retains its reservation when inventory is
+missing or ambiguous. After the orphan grace period and configured startup
+window, a uniquely identified unregistered session is fenced as uncertain and
+retired through the owning host; an in-process launch remains protected from
+that recovery.

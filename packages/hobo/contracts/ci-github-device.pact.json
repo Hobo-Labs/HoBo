@@ -1,0 +1,30 @@
+{
+  "consumer": { "name": "HoboCiCli" },
+  "provider": { "name": "GitHubDeviceAuthorization" },
+  "metadata": { "pactSpecification": { "version": "3.0.0" } },
+  "interactions": [
+    {
+      "description": "request a device code for the relay App",
+      "request": {
+        "method": "POST",
+        "path": "/login/device/code",
+        "headers": { "Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded" },
+        "body": "client_id=Iv1.test-client&scope=offline_access"
+      },
+      "response": {
+        "status": 200,
+        "body": { "device_code": "device-code-is-private", "user_code": "ABCD-EFGH", "verification_uri": "https://github.com/login/device", "expires_in": 600, "interval": 5 }
+      }
+    },
+    {
+      "description": "poll a pending device authorization",
+      "request": {
+        "method": "POST",
+        "path": "/login/oauth/access_token",
+        "headers": { "Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded" },
+        "body": "client_id=Iv1.test-client&device_code=device-code-is-private&grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code"
+      },
+      "response": { "status": 200, "body": { "error": "authorization_pending" } }
+    }
+  ]
+}

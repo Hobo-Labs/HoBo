@@ -16,6 +16,38 @@ Human `hobo login` credentials do not authorize the CI account API.
 hobo ci connect --relay https://ci.example.com
 ```
 
+To create or install the GitHub App as part of setup, use an interactive terminal:
+
+```sh
+hobo ci connect github --relay https://ci.example.com
+```
+
+The relay must support its hosted App bootstrap and account-onboarding endpoints;
+the operator must provision the relay, its vault, and the account credential first.
+If the App is not ready, the CLI opens the relay's registration page. Its manifest
+prefills the name, webhook, events and CI permissions. The App owner approves
+registration in GitHub; the relay exchanges the one-use code and stores the App
+private key, webhook secret and OAuth client secret encrypted in its vault. Those
+secrets do not pass through the CLI or its output. Operator bootstrap credentials
+are entered in the relay page when required.
+
+GitHub's [manifest parameters](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest#github-app-manifest-parameters)
+do not include Device Flow. If it is disabled, the CLI opens GitHub's App settings;
+the App owner must enable **Device Flow** and save. The CLI verifies the setting
+using GitHub's device authorization, observes the prescribed polling interval,
+and discards the resulting short-lived user credentials. It then opens the relay's
+GitHub authorization and installation page and waits for an installation bound to
+the CI account. For an existing installation, select its repository access in that
+page and press Enter when finished. Repository setup still verifies the selected
+installation and asks for isolated-runner consent. Registration and installation
+timeouts are not proof of failure: inspect the relay and GitHub before retrying an
+uncertain App creation.
+
+The CLI does not create or distribute a fleet membership. Joined devices or
+clusters must have a configured runner provider and relay access. Installing the
+App and connecting a repository does not prove that any runner is available or
+that a GitHub Actions job has executed.
+
 Prefer the committed **`.hobo/ci.json`** profile when present. It names each
 environment's `relayOrigin`, optional `jobAdmission` (`push` for hosted relays,
 `pull` for loopback laptops), and `selection` rules for branch/CD routing. Local
@@ -48,6 +80,44 @@ GitHub for `runs-on: hobo` jobs, unless the environment's
 `"store": { "kind": "postgres", "urlEnv": "<ENV_NAME>" }` points it at a shared
 relay partition (the config holds the env var name, never the URL). Graceful
 shutdown on SIGINT/SIGTERM.
+
+Alternatively, import a self-hosted App's key and webhook secret from files:
+
+```sh
+hobo ci github import-key --app-id 12345 \
+  --key-file /private/path/app.pem \
+  --webhook-secret-file /private/path/webhook-secret
+hobo ci github key-status
+```
+
+The CLI verifies the RSA key against GitHub's App identity before changing the
+active version. It stores files with owner-only permissions under
+`HOBO_HOME/ci/github-credentials/`, refuses a HoBo home inside a Git
+checkout, and never prints the key or secret. File import currently requires
+POSIX permissions; on Windows use the relay's mounted secret files instead.
+`hobo ci serve` and its
+`--with-worker` process use this version when no explicit App credential
+environment is set; explicit environment credentials take precedence as a unit.
+Incomplete or unreadable App credentials fail startup rather than falling back
+to the local fixture App.
+With real App credentials, `ci serve` also requires `HOBO_CI_ACCOUNT_TOKEN`,
+`HOBO_CI_ACCOUNT_TOKEN_FILE`, or `HOBO_CI_CONTROL_TOKENS_FILE`. When it generates
+the local control-token configuration, it grants the explicitly selected
+`--installation-id` to the local account and stores only the token's hash. A
+supplied control-token file remains authoritative.
+The source files must already exist in a private location. A `--home` outside the
+checkout is still accessible to processes with that user's filesystem access;
+choose the host and access controls accordingly.
+
+To rotate a self-hosted private key, generate another key in GitHub App settings,
+repeat the import with the new file and the existing webhook secret, restart all
+relay and worker processes, and only then revoke the old key in GitHub. Older
+local versions remain under `HOBO_HOME/ci/github-credentials/versions/` until an
+operator removes them after the restart. Keep the webhook secret in the same
+secret manager as the relay; if it is reset in GitHub, update the relay together
+with GitHub's setting. This file import does not replace credentials in the hosted
+encrypted vault; hosted vault rotation and automatic distribution to joined devices
+or clusters are not implemented.
 
 Remote relay deployment: [`../ci-gh-actions/REMOTE-RELAY-SERVE.md`](../ci-gh-actions/REMOTE-RELAY-SERVE.md).
 
@@ -175,7 +245,8 @@ pagination cursor, or single-task follow protocol; `--level`, `--next`, and
 
 ## Contracts and checks
 
-`test/ci-command.test.ts`, `test/ci-serve.test.ts`, and `test/ci-runs.test.ts` cover setup, target selection,
+`test/ci-command.test.ts`, `test/ci-github-connect.test.ts`,
+`test/ci-github-keys.test.ts`, `test/ci-serve.test.ts`, and `test/ci-runs.test.ts` cover setup, target selection,
 unattended consent, account continuity for equivalent saved relay origins, run
 selection and failure behavior. The CLI-to-relay consumer
 contract pins method, account authentication, protobuf body and revision header;

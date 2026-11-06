@@ -545,6 +545,65 @@ describe("isolated worker deps image selection", () => {
 		});
 	});
 
+	it("fences and retires an interrupted create through the durable SQLite store", async () => {
+		const lease = await reservedLease("hobo-labs/hobo");
+		if (!store) throw new Error("missing store");
+		await store.transition(
+			lease.id,
+			["reserved"],
+			(entry) => {
+				entry.state = "dispatching";
+				entry.sandboxName = `hobo-${entry.id}`;
+				entry.sandboxStage = "creating";
+			},
+			"ci.DispatchRequested",
+			NOW,
+		);
+		const docker = fakeDocker();
+		docker.driver.list = vi.fn(async () => [
+			{
+				name: `hobo-${lease.id}`,
+				containerId: "observed-session",
+				state: "running" as const,
+			},
+		]);
+		const later = "2026-11-02T12:06:00Z";
+		vi.spyOn(github, "request").mockResolvedValue(
+			Response.json({
+				id: 1,
+				run_id: 11,
+				status: "completed",
+				labels: ["hobo"],
+			}),
+		);
+		const ctl = controller(docker.driver, undefined, () => later);
+		await ctl.reconcileLeases();
+		expect(docker.driver.stop).toHaveBeenCalledWith(
+			`hobo-${lease.id}`,
+			"observed-session",
+		);
+		expect(docker.driver.remove).toHaveBeenCalledOnce();
+		expect(docker.driver.start).not.toHaveBeenCalled();
+		expect(await store.get(lease.id)).toMatchObject({
+			state: "completed",
+			sandboxStage: "stopped",
+			usageCompletedAt: later,
+		});
+		// A delayed create reply cannot advance the retired reservation.
+		expect(
+			await store.transition(
+				lease.id,
+				["dispatching"],
+				(entry) => {
+					entry.state = "dispatched";
+					entry.sandboxSessionId = "observed-session";
+				},
+				"ci.SandboxCreated",
+				later,
+			),
+		).toBeUndefined();
+	});
+
 	it("retains an uncertain lease for a mismatched container creation identity", async () => {
 		const lease = await reservedLease("hobo-labs/hobo");
 		const docker = fakeDocker();

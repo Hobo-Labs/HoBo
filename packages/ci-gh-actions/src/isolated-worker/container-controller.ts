@@ -28,6 +28,7 @@ import {
 import {
 	createWorkerLeaseReconciler,
 	hasIsolatedStopIntent,
+	isUnregisteredDispatchingCreate,
 	isUnregisteredUncertainCreate,
 	type WorkerLeaseReconciler,
 	type WorkerLeaseReconciliationEvent,
@@ -1226,6 +1227,24 @@ export function createIsolatedContainerController(options: {
 		async reconcile(id: string, forceStop?: boolean) {
 			let lease = await options.store.get(id);
 			if (!lease || !LIVE_CONTAINER_STATES.has(lease.state)) return;
+			if (forceStop && isUnregisteredDispatchingCreate(lease)) {
+				// The durable state change fences a late create reply: its normal
+				// continuation can no longer register a runner for this lease.
+				if (inFlightLaunchIds.has(id)) return;
+				const interrupted = await options.store.transition(
+					id,
+					["dispatching"],
+					(entry) => {
+						if (!isUnregisteredDispatchingCreate(entry))
+							throw new Error("interrupted create changed during recovery");
+						entry.state = "uncertain";
+					},
+					"ci.SandboxCreateInterrupted",
+					now(),
+				);
+				if (!interrupted) return;
+				lease = interrupted;
+			}
 			if (
 				forceStop &&
 				!lease.sandboxSessionId &&

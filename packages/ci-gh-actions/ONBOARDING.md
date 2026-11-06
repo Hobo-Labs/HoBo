@@ -22,6 +22,13 @@ App credentials encrypted in PostgreSQL. The manifest subscribes to
 `workflow_job` and `workflow_run` and requests organization Members read access
 for administrator verification. It registers the OAuth callback used below.
 
+For a guided terminal flow, use `hobo ci connect github --relay <origin>` with
+an account credential. It opens this same manifest flow, waits for the relay to
+confirm registration, guides the App owner through enabling Device Flow in GitHub
+settings, verifies device authorization, and waits for the account's installation
+binding. See [the CLI guide](../hobo/CI.md) for key import, rotation boundaries
+and the self-hosted relay.
+
 **Enable Device Flow for every HoBo CI App.** CLI and headless user authorization
 must be supported, so this is part of the standard App setup rather
 than an optional follow-up. After GitHub creates the App, open its settings and

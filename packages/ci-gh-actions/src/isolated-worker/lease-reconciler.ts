@@ -47,18 +47,36 @@ function requeueJob(lease: Lease) {
 	});
 }
 
-/** Registration cannot have started while a create is still the durable stage. */
-export function isUnregisteredUncertainCreate(lease: Lease): boolean {
+function hasUnregisteredCreateIdentity(lease: Lease): boolean {
 	return (
-		lease.state === "uncertain" &&
 		(lease.provider === "kubernetes" || lease.provider === "hobo-box-worker") &&
-		(lease.sandboxStage === "creating" || lease.sandboxStage === "created") &&
 		!lease.pipelineId &&
 		!!lease.sandboxName &&
 		lease.sandboxName === `hobo-${lease.id}` &&
 		lease.runnerName === `hobo-${lease.id}` &&
+		lease.hostRunId === 0 &&
 		lease.runnerId === 0 &&
-		lease.actualJobId === 0
+		lease.actualJobId === 0 &&
+		!lease.usageCompletedAt
+	);
+}
+
+/** Registration cannot have started while a create is still the durable stage. */
+export function isUnregisteredUncertainCreate(lease: Lease): boolean {
+	return (
+		lease.state === "uncertain" &&
+		(lease.sandboxStage === "creating" || lease.sandboxStage === "created") &&
+		hasUnregisteredCreateIdentity(lease)
+	);
+}
+
+/** A dispatch interrupted before its create result must retain the same fence. */
+export function isUnregisteredDispatchingCreate(lease: Lease): boolean {
+	return (
+		lease.state === "dispatching" &&
+		lease.sandboxStage === "creating" &&
+		!lease.sandboxSessionId &&
+		hasUnregisteredCreateIdentity(lease)
 	);
 }
 
@@ -213,7 +231,21 @@ export function createWorkerLeaseReconciler(options: {
 			// A create can succeed after its reply is lost. A uniquely named,
 			// unregistered container may be bound and stopped by the owning host;
 			// never free its reservation merely because the reply was ambiguous.
-			if (isUnregisteredUncertainCreate(lease)) {
+			if (
+				isUnregisteredUncertainCreate(lease) ||
+				isUnregisteredDispatchingCreate(lease)
+			) {
+				// Another process may still be completing a slow create. Preserve
+				// both the orphan grace and the account's configured startup window.
+				const startupMinutes =
+					configuration?.accounts.find(
+						(account) => account.id === lease.accountId,
+					)?.startupMinutes ?? 0;
+				const createGraceMs = Math.max(orphanGraceMs, startupMinutes * 60_000);
+				if (lease.state === "dispatching" && ageMs < createGraceMs) {
+					liveLeaseIds.add(lease.id);
+					continue;
+				}
 				const matches = containers.filter(
 					(candidate) => candidate.name === lease.sandboxName,
 				);
@@ -251,6 +283,15 @@ export function createWorkerLeaseReconciler(options: {
 						liveLeaseIds.add(lease.id);
 					continue;
 				}
+			}
+			// An inconsistent create record is not proof that its provider effect
+			// was absent. Keep its hold rather than requeueing on missing inventory.
+			if (
+				["dispatching", "uncertain"].includes(lease.state) &&
+				["creating", "created"].includes(lease.sandboxStage)
+			) {
+				liveLeaseIds.add(lease.id);
+				continue;
 			}
 			let reason: string;
 			if (container?.state === "exited" || container?.state === "dead") {

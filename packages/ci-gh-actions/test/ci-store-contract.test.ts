@@ -21,13 +21,25 @@ import {
 	type StartedTestContainer,
 	Wait,
 } from "testcontainers";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+	afterAll,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 import {
 	parsePinnedImage,
 	pinnedContainerImages,
 } from "../contracts/pinned-container-images.js";
 import type { HostedInboxStore } from "../src/hosted-runtime.js";
-import type { IsolatedWorkerStore } from "../src/isolated-worker/container-controller.js";
+import {
+	createIsolatedContainerController,
+	type IsolatedWorkerStore,
+} from "../src/isolated-worker/container-controller.js";
+import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
 
 /** One behavioural contract for every engine behind the box worker and hosted runtime. */
 type ContractStore = HostedInboxStore &
@@ -146,6 +158,77 @@ function storeContract(
 			const snapshot = await store.policySnapshot();
 			expect(snapshot.state?.revision).toBe(1);
 			expect(snapshot.policies).toEqual([]);
+		});
+
+		it("fences and retires an interrupted isolated create", async () => {
+			const account = configuration().accounts[0];
+			if (!account) throw new Error("missing account");
+			const demand = job(1);
+			await store.queue(demand, NOW, revision);
+			const lease = await store.reserve(account, demand, NOW, revision);
+			if (!lease) throw new Error("missing isolated lease");
+			await store.transition(
+				lease.id,
+				["reserved"],
+				(entry) => {
+					entry.state = "dispatching";
+					entry.sandboxName = `hobo-${entry.id}`;
+					entry.sandboxStage = "creating";
+				},
+				"ci.DispatchRequested",
+				NOW,
+			);
+			const docker: DockerDriver = {
+				create: vi.fn(),
+				start: vi.fn(),
+				exec: vi.fn(),
+				stop: vi.fn(async () => undefined),
+				remove: vi.fn(async () => undefined),
+				isRunning: vi.fn(async () => true),
+				list: vi.fn(async () => [
+					{
+						name: `hobo-${lease.id}`,
+						containerId: "session",
+						state: "running" as const,
+					},
+				]),
+			};
+			const controller = createIsolatedContainerController({
+				store,
+				docker,
+				workerAccountId: "box",
+				workerImage: "hobo-ci-worker:local",
+				publicOrigin: "https://relay.example",
+				now: () => LATER,
+				github: {
+					request: async () =>
+						Response.json({
+							id: 1,
+							run_id: 900,
+							status: "completed",
+							labels: ["hobo"],
+						}),
+				},
+			});
+			await controller.reconcileLeases();
+			expect(docker.stop).toHaveBeenCalledWith(`hobo-${lease.id}`, "session");
+			expect(docker.remove).toHaveBeenCalledOnce();
+			expect(await store.get(lease.id)).toMatchObject({
+				state: "completed",
+				sandboxStage: "stopped",
+				usageCompletedAt: LATER,
+			});
+			expect(
+				await store.transition(
+					lease.id,
+					["dispatching"],
+					(entry) => {
+						entry.state = "dispatched";
+					},
+					"ci.SandboxCreated",
+					LATER,
+				),
+			).toBeUndefined();
 		});
 
 		it("round-trips control records", async () => {
