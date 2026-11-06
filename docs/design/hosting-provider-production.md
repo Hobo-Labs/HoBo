@@ -211,8 +211,9 @@ maps the original core regressions. Production suites additionally cover:
 Hand-authored API expectations are consumer contracts, not provider-verified traffic.
 They remain separate from the live observations above.
 
-The final workspace lane bounds per-package Vitest workers with `VITEST_MAX_WORKERS`,
-passed through Turbo's strict environment. Build outputs must settle before compiled
+The recorded workspace lane used `VITEST_MAX_WORKERS` through the then-current
+Turbo environment. CI now uses `HOBO_TEST_MAX_WORKERS` so package-specific
+single-worker settings remain effective. Build outputs must settle before compiled
 CLI subprocess tests start; otherwise concurrent compilation can expose partial files.
 
 The [provider validation record](../plans/0022-budgeted-cloud-hosting-transitions.md#provider-validation-record--2026-10-30)

@@ -107,7 +107,9 @@ interface ManifestHostingPolicy {
 }
 
 /** Financial declarations must never disappear into the legacy placement lane. */
-export function manifestHostingPolicy(manifest: ManifestV1): ManifestHostingPolicy {
+export function manifestHostingPolicy(
+	manifest: ManifestV1,
+): ManifestHostingPolicy {
 	let required = false;
 	let hardLimitMicros: number | undefined;
 	let spendCapMicros: number | undefined;

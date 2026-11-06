@@ -51,7 +51,9 @@ export function createDeployCommand(
 							? await deps.hosting.resumeDeployment(deploymentId)
 							: sub === "hosting-cancel"
 								? await deps.hosting.cancel(deploymentId)
-								: sub==="hosting-resume-mutation"?await deps.hosting.resumeMutation(deploymentId):undefined;
+								: sub === "hosting-resume-mutation"
+									? await deps.hosting.resumeMutation(deploymentId)
+									: undefined;
 				if (!state)
 					return {
 						ok: false,
