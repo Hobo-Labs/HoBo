@@ -102,6 +102,145 @@ function storeWith(leases: Lease[]): WorkerLeaseReconciliationStore {
 }
 
 describe("worker lease reconciliation", () => {
+	it("retries settlement of a confirmed stopped container even when inventory is empty", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000001", 1);
+		lease.state = "uncertain";
+		lease.sandboxStage = "stopped";
+		const active = [lease];
+		const store = storeWith(active);
+		const settleExited = vi.fn(async () => {
+			active.splice(0, 1);
+		});
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: { list: vi.fn(async () => []), stop: vi.fn(), remove: vi.fn() },
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			settleExited,
+		});
+		const result = await reconciler.reconcile();
+		expect(settleExited).toHaveBeenCalledWith(lease);
+		expect(result.liveLeaseIds.has(lease.id)).toBe(false);
+		expect(store.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+	});
+
+	it("retains a stopped lease when no settlement callback is available", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000001", 1);
+		lease.state = "uncertain";
+		lease.sandboxStage = "stopped";
+		const store = storeWith([lease]);
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: { list: vi.fn(async () => []), stop: vi.fn(), remove: vi.fn() },
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+		});
+
+		expect(
+			(await reconciler.reconcile({ draining: true })).liveLeaseIds.has(
+				lease.id,
+			),
+		).toBe(true);
+		expect(store.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+	});
+
+	it("asks the owning host to retire a uniquely observed unregistered uncertain create", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000001", 1);
+		lease.state = "uncertain";
+		lease.sandboxStage = "creating";
+		lease.sandboxSessionId = "";
+		const active = [lease];
+		const store = storeWith(active);
+		const settleExited = vi.fn(async () => {
+			active.splice(0, 1);
+		});
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => [
+					{
+						name: lease.sandboxName,
+						containerId: "observed-id",
+						state: "running" as const,
+					},
+				]),
+				stop: vi.fn(),
+				remove: vi.fn(),
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			settleExited,
+		});
+		const result = await reconciler.reconcile();
+		expect(settleExited).toHaveBeenCalledWith(lease);
+		expect(result.liveLeaseIds.has(lease.id)).toBe(false);
+		expect(store.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+	});
+
+	it("retains uncertain holds when the container identity is ambiguous or retirement fails", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000001", 1);
+		lease.state = "uncertain";
+		lease.sandboxStage = "creating";
+		lease.sandboxSessionId = "";
+		const store = storeWith([lease]);
+		const candidate = {
+			name: lease.sandboxName,
+			containerId: "observed-id",
+			state: "running",
+		} as const;
+		const list = vi.fn(async () => [candidate, candidate]);
+		const settleExited = vi.fn(async () => {
+			throw new Error("stop unconfirmed");
+		});
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: { list, stop: vi.fn(), remove: vi.fn() },
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			settleExited,
+		});
+		expect((await reconciler.reconcile()).liveLeaseIds.has(lease.id)).toBe(
+			true,
+		);
+		expect(settleExited).not.toHaveBeenCalled();
+		list.mockResolvedValue([candidate]);
+		expect((await reconciler.reconcile()).liveLeaseIds.has(lease.id)).toBe(
+			true,
+		);
+		expect(settleExited).toHaveBeenCalledOnce();
+		expect(store.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+	});
+
+	it("retains a missing uncertain create even after the grace period and during drain", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000001", 1);
+		lease.state = "uncertain";
+		lease.sandboxStage = "creating";
+		lease.sandboxSessionId = "";
+		const store = storeWith([lease]);
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: { list: vi.fn(async () => []), stop: vi.fn(), remove: vi.fn() },
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			orphanGraceMs: 1_000,
+			now: () => NOW,
+		});
+
+		expect((await reconciler.reconcile()).liveLeaseIds.has(lease.id)).toBe(
+			true,
+		);
+		expect(
+			(await reconciler.reconcile({ draining: true })).liveLeaseIds.has(
+				lease.id,
+			),
+		).toBe(true);
+		expect(store.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+	});
+
 	it("releases leaked memory when no job containers remain and admits the next job", async () => {
 		const active = [
 			staleLease("00000000-0000-4000-8000-000000000001", 1),

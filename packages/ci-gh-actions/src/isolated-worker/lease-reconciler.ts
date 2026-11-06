@@ -47,6 +47,32 @@ function requeueJob(lease: Lease) {
 	});
 }
 
+/** Registration cannot have started while a create is still the durable stage. */
+export function isUnregisteredUncertainCreate(lease: Lease): boolean {
+	return (
+		lease.state === "uncertain" &&
+		(lease.provider === "kubernetes" || lease.provider === "hobo-box-worker") &&
+		(lease.sandboxStage === "creating" || lease.sandboxStage === "created") &&
+		!lease.pipelineId &&
+		!!lease.sandboxName &&
+		lease.sandboxName === `hobo-${lease.id}` &&
+		lease.runnerName === `hobo-${lease.id}` &&
+		lease.runnerId === 0 &&
+		lease.actualJobId === 0
+	);
+}
+
+/** A durable stop intent is bound to the same isolated host session. */
+export function hasIsolatedStopIntent(lease: Lease): boolean {
+	return (
+		(lease.provider === "kubernetes" || lease.provider === "hobo-box-worker") &&
+		!lease.pipelineId &&
+		(lease.sandboxStage === "stopping" || lease.sandboxStage === "stopped") &&
+		!!lease.sandboxName &&
+		!!lease.sandboxSessionId
+	);
+}
+
 export function createWorkerLeaseReconciler(options: {
 	store: WorkerLeaseReconciliationStore;
 	docker: Pick<DockerDriver, "list" | "stop" | "remove">;
@@ -150,6 +176,82 @@ export function createWorkerLeaseReconciler(options: {
 			const ageMs = Number.isFinite(ageBaseMs)
 				? Math.max(0, now() - ageBaseMs)
 				: 0;
+			// A durable stop intent must be reconciled before releasing its hold.
+			// Retry final job observation and settlement after confirmed removal.
+			if (hasIsolatedStopIntent(lease)) {
+				if (!options.settleExited) {
+					liveLeaseIds.add(lease.id);
+					continue;
+				}
+				const matches = containers.filter(
+					(candidate) =>
+						candidate.name === lease.sandboxName ||
+						candidate.containerId === lease.sandboxSessionId,
+				);
+				if (
+					matches.length > 1 ||
+					(matches.length === 1 &&
+						(matches[0]?.name !== lease.sandboxName ||
+							matches[0]?.containerId !== lease.sandboxSessionId))
+				) {
+					liveLeaseIds.add(lease.id);
+					continue;
+				}
+				try {
+					await options.settleExited(lease);
+				} catch (error) {
+					options.log?.("hobo_ci_lease_reconciliation_failed", {
+						leaseId: lease.id,
+						message: error instanceof Error ? error.message : "unknown",
+					});
+				}
+				const current = await options.store.get(lease.id);
+				if (current && ACTIVE_STATES.has(current.state))
+					liveLeaseIds.add(lease.id);
+				continue;
+			}
+			// A create can succeed after its reply is lost. A uniquely named,
+			// unregistered container may be bound and stopped by the owning host;
+			// never free its reservation merely because the reply was ambiguous.
+			if (isUnregisteredUncertainCreate(lease)) {
+				const matches = containers.filter(
+					(candidate) => candidate.name === lease.sandboxName,
+				);
+				// An absent name does not fence a create whose reply was lost: the
+				// provider may still complete it after this inventory snapshot.
+				if (matches.length === 0 && !lease.sandboxSessionId) {
+					liveLeaseIds.add(lease.id);
+					continue;
+				}
+				if (matches.length > 0) {
+					const match = matches[0];
+					if (
+						matches.length !== 1 ||
+						!match?.containerId ||
+						(lease.sandboxSessionId &&
+							lease.sandboxSessionId !== match.containerId)
+					) {
+						liveLeaseIds.add(lease.id);
+						continue;
+					}
+					if (!options.settleExited) {
+						liveLeaseIds.add(lease.id);
+						continue;
+					}
+					try {
+						await options.settleExited(lease);
+					} catch (error) {
+						options.log?.("hobo_ci_lease_reconciliation_failed", {
+							leaseId: lease.id,
+							message: error instanceof Error ? error.message : "unknown",
+						});
+					}
+					const current = await options.store.get(lease.id);
+					if (current && ACTIVE_STATES.has(current.state))
+						liveLeaseIds.add(lease.id);
+					continue;
+				}
+			}
 			let reason: string;
 			if (container?.state === "exited" || container?.state === "dead") {
 				reason = `container-${container.state}`;

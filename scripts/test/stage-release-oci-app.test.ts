@@ -32,8 +32,11 @@ import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 const root = join(import.meta.dirname, "..", "..");
 
 function runQuiet(cwd: string, command: string, args: readonly string[]): void {
-	const result = spawnSync(command, args, { cwd, stdio: "ignore" });
-	expect(result.status).toBe(0);
+	const result = spawnSync(command, args, { cwd, encoding: "utf8" });
+	expect(
+		result.status,
+		`${result.stdout}\n${result.stderr}\n${result.error?.message ?? ""}`,
+	).toBe(0);
 }
 
 describe("release OCI app staging", () => {

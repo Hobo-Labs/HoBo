@@ -24,6 +24,15 @@ durable admission, provider effects, recovery and settlement.
 - CI GitHub/Station: scoped signals, guarded dispatch, current policy around
   awaits, project-file authoring and truthful inspection.
 
+The isolated worker records stop intent before requesting container shutdown and
+retains its lease until removal is confirmed. A named create whose response was
+lost remains reserved when inventory is empty, since the create may still finish.
+A uniquely observed, unregistered session can be bound and retired; a stopped
+session can resume settlement after a restart without charging the retry delay.
+Shared-budget liabilities with estimated usage remain uncertain until supported
+by final provider evidence. Release OCI staging tests include subprocess output
+when offline deployment fails so runner-specific failures can be diagnosed.
+
 ## Executable scenario ledger
 
 Paths identify actual source suites; provider-shaped expectations remain separate
@@ -48,6 +57,7 @@ from native vendor acceptance.
 | Larger native liability bypasses a tighter local cap or undercounts the next hold | `packages/ci/test/shared-budget-liability.test.ts` |
 | Credit claim omits a free dimension or understates quantities | CI shared-budget allocation coverage tests |
 | Queue expiry during awaited reads or after financial claim | Both CI-GH relay suites; no provider call and retained uncertainty |
+| Lost isolated create/stop response, failed removal or restarted settlement | `packages/ci-gh-actions/test/isolated-container-controller.test.ts`, `lease-reconciler.test.ts` |
 | Native command succeeds but financial observation fails; restart reruns command | CI execution observation/reconciliation regression suites |
 | Stop acknowledgment or elapsed wall time is mistaken for final billing | CI scheduler/shared-budget usage and receipt tests |
 | Claimed cancellation is released without native proof, or native identity is rebound on retry | `packages/ci/test/native-usage-finality.test.ts`, `packages/ci/test/sqlite-shared-store-composition.test.ts` |
