@@ -22,6 +22,20 @@ App credentials encrypted in PostgreSQL. The manifest subscribes to
 `workflow_job` and `workflow_run` and requests organization Members read access
 for administrator verification. It registers the OAuth callback used below.
 
+**Enable Device Flow for every HoBo CI App.** CLI and headless user authorization
+must be supported, so this is part of the standard App setup rather
+than an optional follow-up. After GitHub creates the App, open its settings and
+select **Identifying and authorizing users → Enable Device Flow** before
+completing setup. Do the same when connecting an existing App. Device flow
+authorizes a user; the worker's private-key-based installation authentication is
+a separate flow and does not require a user to sign in for each job.
+
+GitHub's documented [manifest fields](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest)
+and [registration URL parameters](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-using-url-parameters)
+do not provide a device-flow switch. Do not add an unrecognized manifest field or
+claim that registration enabled it automatically; complete the
+[App settings step](https://docs.github.com/en/apps/maintaining-github-apps/modifying-a-github-app-registration#enabling-or-disabling-the-device-flow).
+
 An uncertain App conversion is fenced; subsequent bootstrap attempts are
 refused until an operator reconciles the GitHub App and stored credentials. The
 service must not create a replacement automatically: GitHub may have created the
