@@ -33,9 +33,19 @@ const pnpm = version("pnpm");
 if (pnpm) ok(`pnpm ${pnpm}`);
 else if (process.env.npm_config_user_agent?.startsWith("pnpm/"))
 	ok(`pnpm available (${process.env.npm_config_user_agent.split(" ")[0]})`);
-else fail("pnpm not available; run corepack enable pnpm");
-if (version("corepack")) ok("Corepack available");
-else warn("Corepack not available in PATH");
+else
+	fail(
+		"pnpm not available; run bash scripts/bootstrap-dev.sh --project-only && pnpm run install:check",
+	);
+if (existsSync("mise.toml")) ok("mise.toml present");
+else fail("mise.toml missing; run bash scripts/bootstrap-dev.sh");
+if (existsSync("mise.lock")) ok("mise.lock present");
+else warn("mise.lock missing; run mise lock");
+if (version("mise")) ok(`mise ${version("mise")}`);
+else warn("mise not on PATH; run bash scripts/bootstrap-dev.sh");
+if (version("corepack"))
+	ok("Corepack available (optional when using mise pnpm)");
+else ok("Corepack not required when pnpm is provisioned via mise");
 if (existsSync("pnpm-lock.yaml")) ok("pnpm-lock.yaml present");
 else fail("pnpm-lock.yaml missing");
 if (existsSync("pnpm-workspace.yaml")) ok("pnpm-workspace.yaml present");
@@ -60,7 +70,9 @@ if (existsSync("node_modules")) {
 	}
 } else {
 	fail("node_modules missing");
-	console.error("next  corepack enable pnpm && pnpm install");
+	console.error(
+		"next  bash scripts/bootstrap-dev.sh --project-only && pnpm run install:check",
+	);
 	console.error(
 		"hint  Install once so agent:check and other tsx scripts can run.",
 	);

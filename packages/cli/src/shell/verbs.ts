@@ -313,18 +313,24 @@ Usage:
   hobo ci [global flags]
   hobo ci enable [--remote <name>] [--relay <https-origin>]
   hobo ci connect                  Alias of enable
+  hobo ci connect github           Register, authorize and install the GitHub App
+  hobo ci connect <provider>       Add a runner integration: blacksmith, depot, jog (usejog), boat
+  hobo ci github import-key        Import or rotate a self-hosted GitHub App key
+  hobo ci github key-status        Check the self-hosted App key configuration
   hobo ci list|ls                  List GitHub Actions runs
   hobo ci inspect [run]            Inspect a run
   hobo ci logs [run]               Read run logs
   hobo ci grep <text>              Search recent run logs
   hobo ci rerun [run]              Retry a completed run
   hobo ci status                  Inspect the relay connection
+  hobo ci serve                   Host the CI relay locally (see serve options)
 
 Role: ${verb.role}
 ${statusLine}
 Running hobo ci without a subcommand shows help. connect and enable share the
 repository setup flow. A sole Git remote supplies the repository automatically;
 use --remote when the repository has several remotes.
+connect github runs the interactive hosted App ceremony before repository setup.
 
 Connection options:
   --remote <name>              Select the Git remote
@@ -335,6 +341,40 @@ Connection options:
   --accept-all-matching-jobs  Allow isolated runners for matching repository jobs
   -y, --yes                   Skip the connection confirmation
   --non-interactive           Never prompt (enable also requires --yes)
+
+Self-hosted App key import (hobo ci github import-key):
+  --app-id <id>               GitHub App ID
+  --key-file <path>           Read the App private key from a file
+  --webhook-secret-file <path> Read the webhook secret from a file
+  --home <path>               Private HoBo home outside the repository
+
+Integration options (hobo ci connect <provider>):
+  --auth <method>             github-app | oidc | device | secret-ref (default: safest supported)
+  --runs-on <label>           Runner label (repeatable)
+  --org <github-org>          GitHub organization the provider app is installed on
+  --project-id <id>           Depot project for OIDC trust relationships
+  --secret-ref <ref>          github-secret:NAME or env:NAME (a reference, never a value)
+  --id <name>                 Integration id (default: provider)
+  --config <path>             Alternate ci.json path
+  --dry-run                   Print the entry without writing
+  --launch                    Run the provider CLI ceremony (boat ci connect)
+
+Serve options (hobo ci serve):
+  --environment <name>        CI profile from .hobo/ci.json (default + overrides)
+  --config <path>             Alternate ci.json path
+  --host <address>            Bind address (default 127.0.0.1; use 0.0.0.0 for containers)
+  --port <number>             Listen port (independent of public origin behind a proxy)
+  --origin, --base-url, --url, --endpoint <origin>
+                              Public HTTPS origin for webhooks and runner callbacks
+  --trust-proxy               Honor X-Forwarded-Proto from a TLS-terminating reverse proxy
+  --admission push|pull       Webhook push vs GitHub poll admission
+  --installation-id <id>      Required for pull admission polling
+  --allow-insecure            Allow non-loopback HTTP without TLS
+  --with-worker               Start isolated-container worker (needs DATABASE_URL)
+  --print-config              Print resolved config (secrets redacted) and exit
+  --db <path>                 SQLite relay store path
+  --engine <name>             Serve only this engine (repeatable; default: profile + repo inventory)
+  --home <path>               HOBO_HOME for serve state (credentials, db)
 
 Run options:
   --git-branch, --branch <name>  Filter list/grep by branch

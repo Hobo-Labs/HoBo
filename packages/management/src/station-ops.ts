@@ -31,15 +31,15 @@ export function stationInit(
 		id,
 		name,
 		tenant,
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 		...(existsSync(railDoc) ? { importRailDocPath: railDoc } : {}),
 	});
 	// Profile default station — best-effort write for local ops (schema-compatible).
 	try {
 		const profilePath = join(ctx.hoboHome, "profile.json");
 		const existing = existsSync(profilePath)
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
-			? (JSON.parse(readFileSync(profilePath, "utf8")) as Record<
+			? // oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
+				(JSON.parse(readFileSync(profilePath, "utf8")) as Record<
 					string,
 					unknown
 				>)
@@ -48,7 +48,7 @@ export function stationInit(
 			schemaVersion: "hobo.profile/v1",
 			...existing,
 			defaultStation: { id: result.stationId, dataDir: result.dataDir },
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+			// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 			...(result.occupancy.activeRailHash !== undefined
 				? { activeRail: result.occupancy.activeRailHash }
 				: {}),
@@ -71,7 +71,7 @@ export function stationInit(
 			bootstrapRailHash: result.bootstrap.contentHash,
 			bootstrapActive: result.occupancy.bootstrapActive,
 			activeRailHash: result.occupancy.activeRailHash,
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+			// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 			...(result.activatedRailHash !== undefined
 				? { activatedRailHash: result.activatedRailHash }
 				: {}),
@@ -131,15 +131,15 @@ export function stationUp(
 ): ManagementResult {
 	const status = stationStatus(ctx, stationId);
 	if (!status.ok || !status.data) return status;
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 	const id = String((status.data as { stationId: string }).stationId);
 	ctx.setOccupyMode(id, "occupying");
 	return okResult(`hobo station up: ${id}`, {
 		stationId: id,
 		status: "occupying",
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		activeRailHash: (status.data as { activeRailHash?: string }).activeRailHash,
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		bootstrapActive: (status.data as { bootstrapActive?: boolean })
 			.bootstrapActive,
 	});
@@ -195,7 +195,7 @@ export function stationRailsPublish(
 		name?: string;
 		version?: string;
 		docPath?: string;
-// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
 		raw?: Record<string, unknown>;
 	},
 ): ManagementResult {
@@ -210,12 +210,12 @@ export function stationRailsPublish(
 	}
 	const svc = StationService.fromEvents(state.events, {
 		stationId,
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 		...(ctx.now !== undefined ? { now: ctx.now } : {}),
 	});
 	let raw = input.raw;
 	if (!raw && input.docPath) {
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
 		raw = JSON.parse(readFileSync(input.docPath, "utf8")) as Record<
 			string,
 			unknown
@@ -274,7 +274,7 @@ function railTransition(
 	}
 	const svc = StationService.fromEvents(state.events, {
 		stationId,
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 		...(ctx.now !== undefined ? { now: ctx.now } : {}),
 	});
 	if (kind === "approve") svc.approveRail(resolved.contentHash);

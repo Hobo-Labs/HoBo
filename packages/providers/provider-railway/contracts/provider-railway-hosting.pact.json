@@ -1,0 +1,163 @@
+{
+  "consumer": {
+    "name": "HoBoHostingCoordinator"
+  },
+  "provider": {
+    "name": "RailwayPublicGraphQL"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "provenance": "Hand-authored consumer expectations checked against Railway's public API guides and railwayapp/cli src/gql/schema.json; not provider-verified or captured live traffic."
+  },
+  "interactions": [
+    {
+      "description": "read the project token scope",
+      "request": {
+        "method": "POST",
+        "path": "/graphql/v2",
+        "body": {
+          "query": "query hoboProjectToken { projectToken { projectId environmentId } }",
+          "variables": {}
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": {
+            "projectToken": {
+              "projectId": "project-one",
+              "environmentId": "environment-one"
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "read service ownership",
+      "request": {
+        "method": "POST",
+        "path": "/graphql/v2",
+        "body": {
+          "query": "query hoboService($id: String!) { service(id: $id) { id name projectId } }",
+          "variables": {
+            "id": "service-one"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": {
+            "service": {
+              "id": "service-one",
+              "name": "app",
+              "projectId": "project-one"
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "read exact deployment identity, readiness and stopped instances",
+      "request": {
+        "method": "POST",
+        "path": "/graphql/v2",
+        "body": {
+          "query": "query hoboDeployment($id: String!) { deployment(id: $id) { id projectId environmentId serviceId status deploymentStopped url meta } }",
+          "variables": {
+            "id": "deployment-one"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": {
+            "deployment": {
+              "id": "deployment-one",
+              "projectId": "project-one",
+              "environmentId": "environment-one",
+              "serviceId": "service-one",
+              "status": "SUCCESS",
+              "deploymentStopped": false,
+              "url": "https://app.up.railway.app/"
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "deploy a pinned commit once",
+      "request": {
+        "method": "POST",
+        "path": "/graphql/v2",
+        "body": {
+          "query": "mutation hoboDeploy($serviceId: String!, $environmentId: String!, $commitSha: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) }",
+          "variables": {
+            "serviceId": "service-one",
+            "environmentId": "environment-one",
+            "commitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": {
+            "serviceInstanceDeployV2": "deployment-new"
+          }
+        }
+      }
+    },
+    {
+      "description": "stop only the pinned deployment",
+      "request": {
+        "method": "POST",
+        "path": "/graphql/v2",
+        "body": {
+          "query": "mutation hoboStop($id: String!) { deploymentStop(id: $id) }",
+          "variables": {
+            "id": "deployment-one"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": {
+            "deploymentStop": true
+          }
+        }
+      }
+    },
+    {
+      "description": "reads a fresh approved service instance before single deployment dispatch",
+      "request": {
+        "method": "POST",
+        "path": "/graphql/v2",
+        "body": {
+          "query": "query hoboServiceInstance($serviceId: String!, $environmentId: String!) { serviceInstance(serviceId: $serviceId, environmentId: $environmentId) { id serviceId environmentId latestDeployment { id } } }",
+          "variables": {
+            "serviceId": "service-one",
+            "environmentId": "environment-one"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": {
+            "serviceInstance": {
+              "id": "instance-one",
+              "serviceId": "service-one",
+              "environmentId": "environment-one",
+              "latestDeployment": null
+            }
+          }
+        }
+      }
+    }
+  ]
+}

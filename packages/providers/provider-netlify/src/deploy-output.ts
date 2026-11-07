@@ -133,7 +133,13 @@ function normalizeHttpsUrl(raw: string, what: string): string {
 	// The CLI has historically printed the http:// form of a site that is in
 	// fact TLS-only. Upgrading is safe; accepting a non-web scheme is not.
 	if (url.protocol === "http:") url.protocol = "https:";
-	if (url.protocol !== "https:") {
+	if (
+		url.protocol !== "https:" ||
+		!url.hostname.endsWith(".netlify.app") ||
+		url.username ||
+		url.password ||
+		url.port
+	) {
 		throw contractChanged(`netlify deploy --json reported a non-https ${what}`);
 	}
 	return url.toString().replace(/\/$/u, "");
@@ -146,7 +152,23 @@ function normalizeHttpsUrl(raw: string, what: string): string {
  * matters is handing a human a link to somewhere else entirely.
  */
 export function assertClaimActionIsNetlify(claimUrl: string): void {
-	if (claimUrl.startsWith(NETLIFY_CLAIM_URL_PREFIX)) return;
+	let url: URL;
+	try {
+		url = new URL(claimUrl);
+	} catch {
+		throw contractChanged(
+			"the anonymous deploy reported an invalid ownership claim URL",
+		);
+	}
+	if (
+		url.protocol === "https:" &&
+		url.hostname === "app.netlify.com" &&
+		!url.username &&
+		!url.password &&
+		!url.port &&
+		/^\/(?:claim|drop)(?:\/|$)/u.test(url.pathname)
+	)
+		return;
 	throw contractChanged(
 		"the anonymous deploy reported a claim action that is not a netlify claim URL",
 	);
@@ -160,7 +182,9 @@ function findClaimUrl(
 	const fromJson = stringField(body, ["claim_url", "claimUrl", "claim"]);
 	const scanned =
 		fromJson ??
-		/https:\/\/app\.netlify\.com\/claim[^\s"'<>]*/iu.exec(rawOutput)?.[0];
+		/https:\/\/app\.netlify\.com\/(?:claim|drop)(?:\/|\?|#)[^\s"'<>]*/iu.exec(
+			rawOutput,
+		)?.[0];
 	if (scanned === undefined) {
 		throw new NetlifyProviderError(
 			"CLAIM_NOT_VERIFIED",

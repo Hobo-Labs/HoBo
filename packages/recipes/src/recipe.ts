@@ -454,7 +454,9 @@ export function parseSolutionRecipe(
 		placements.set(placement.placementId, {
 			placementId: placement.placementId,
 			yardId: placement.yardId,
-			...(placement.campId !== undefined ? { campId: placement.campId } : undefined),
+			...(placement.campId !== undefined
+				? { campId: placement.campId }
+				: undefined),
 			primitive: placement.primitive,
 			capabilityRef: placement.capabilityRef,
 			satisfiesProfileId: profile.id,

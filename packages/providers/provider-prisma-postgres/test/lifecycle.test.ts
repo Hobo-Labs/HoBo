@@ -6,6 +6,9 @@
  * exist to keep that honesty from eroding into a comfortable lie the first time
  * a caller wants `destroy()` to return `true`.
  */
+
+import { create } from "@bufbuild/protobuf";
+import { ResourceLifecycleObservationRecordSchema } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -15,6 +18,7 @@ import {
 import {
 	createPrismaClaimableDatabaseDriver,
 	type PrismaClaimableDatabase,
+	type PrismaDriverOptions,
 } from "../src/driver.js";
 import type { PrismaProviderError } from "../src/errors.js";
 import {
@@ -48,11 +52,13 @@ function driverAt(
 	nowMs: number,
 	client: ReturnType<typeof createPrismaClient>,
 	revocation?: { revoke(ref: string): Promise<void> },
+	retirement?: PrismaDriverOptions["retirement"],
 ) {
 	return createPrismaClaimableDatabaseDriver({
 		client,
 		custody: createStubCustody(),
 		clock: fixedClock(nowMs),
+		retirement,
 		...(revocation !== undefined
 			? {
 					revocation: { revoke: async (ref: string) => revocation.revoke(ref) },
@@ -216,6 +222,59 @@ describe("rotateBinding", () => {
 });
 
 describe("destroy", () => {
+	it("requires fresh scoped terminal provider absence and final usage before release", async () => {
+		const { record, client } = await provisioned();
+		const context = {
+			tenantId: "tenant",
+			providerId: record.providerId,
+			providerAccountId: "anonymous",
+			productId: record.definitionId,
+			resourceId: record.resourceRef,
+			operationId: "retire:db",
+			nowMs: FIXTURE_NOW_MS,
+			maxAgeMs: 1000,
+		};
+		const later = driverAt(
+			FIXTURE_NOW_MS,
+			client,
+			undefined,
+			async (resource, scope) =>
+				create(ResourceLifecycleObservationRecordSchema, {
+					...scope,
+					physicalId: resource.projectId,
+					status: "absent",
+					operationTerminal: true,
+					observedAtMs: FIXTURE_NOW_MS,
+					evidenceRef: "provider://retirement",
+					usageFinal: true,
+					usageEvidenceRef: "provider://final-usage",
+					settledMicros: 0,
+				}),
+		);
+		expect(await later.destroy(record, context)).toMatchObject({
+			released: true,
+			reapMode: "provider-confirmed",
+		});
+		const foreign = driverAt(
+			FIXTURE_NOW_MS,
+			client,
+			undefined,
+			async (resource, scope) =>
+				create(ResourceLifecycleObservationRecordSchema, {
+					...scope,
+					physicalId: resource.projectId,
+					tenantId: "foreign",
+					status: "absent",
+					operationTerminal: true,
+					observedAtMs: FIXTURE_NOW_MS,
+					evidenceRef: "provider://retirement",
+					usageFinal: true,
+					usageEvidenceRef: "provider://final-usage",
+					settledMicros: 0,
+				}),
+		);
+		await expect(foreign.destroy(record, context)).rejects.toThrow(/foreign/u);
+	});
 	it("reports the TTL reap rather than claiming a deletion it cannot perform", async () => {
 		const { record, driver } = await provisioned();
 		const outcome = await driver.destroy(record);
@@ -226,12 +285,12 @@ describe("destroy", () => {
 		expect(outcome.detail).toContain("no delete command exists");
 	});
 
-	it("reports released once the deadline has already passed", async () => {
+	it("does not release financial exposure when only the local deadline has passed", async () => {
 		const { record, client } = await provisioned();
 		const later = driverAt(record.expiresAtMs + 1, client);
 		const outcome = await later.destroy(record);
 
-		expect(outcome.released).toBe(true);
+		expect(outcome.released).toBe(false);
 		expect(outcome.reapMode).toBe("already-expired");
 	});
 

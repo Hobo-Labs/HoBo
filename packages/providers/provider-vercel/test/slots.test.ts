@@ -22,7 +22,7 @@ function untypedBag<T>(json: string): T {
 
 describe("vercel slot factories", () => {
 	it.each([
-		[project(), "web", "web.hosted/v1", VERCEL_PROJECT_PRODUCT_ID],
+		[project(), "web", "provider.project/v1", VERCEL_PROJECT_PRODUCT_ID],
 		[
 			edgeFunction(),
 			"service",

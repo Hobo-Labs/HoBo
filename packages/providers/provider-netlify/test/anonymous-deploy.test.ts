@@ -1,3 +1,7 @@
+import { prebuiltFixture } from "./helpers-artifact.js";
+
+const WORK_DIR = prebuiltFixture();
+
 /**
  * The effectful anonymous path, driven entirely offline.
  *
@@ -147,7 +151,7 @@ async function deployOnce(): Promise<AnonymousSiteRecord> {
 	const { driver } = driverWith(successResult());
 	return driver.deploy({
 		deploymentRef: "deployment-1",
-		workDir: "/tmp/hobo-fake",
+		workDir: WORK_DIR,
 		publishDir: "dist",
 		idempotencyKey: "attempt-1",
 		fencingToken: "fence-1",
@@ -271,7 +275,7 @@ describe("an ambiguous exit is observed, never retried blindly", () => {
 		const { driver } = driverWith(successResult());
 		const input = {
 			deploymentRef: "deployment-1",
-			workDir: "/tmp/hobo-fake",
+			workDir: WORK_DIR,
 			publishDir: "dist",
 			idempotencyKey: "attempt-1",
 			fencingToken: "fence-1",
@@ -287,7 +291,7 @@ describe("an ambiguous exit is observed, never retried blindly", () => {
 		const { driver } = driverWith(successResult());
 		const input = {
 			deploymentRef: "deployment-1",
-			workDir: "/tmp/hobo-fake",
+			workDir: WORK_DIR,
 			publishDir: "dist",
 			idempotencyKey: "attempt-1",
 			fencingToken: "fence-1",
@@ -324,7 +328,7 @@ describe("the claim URL goes straight into custody", () => {
 		const { driver, custody } = driverWith(successResult());
 		await driver.deploy({
 			deploymentRef: "deployment-1",
-			workDir: "/tmp/hobo-fake",
+			workDir: WORK_DIR,
 			publishDir: "dist",
 			idempotencyKey: "attempt-1",
 			fencingToken: "fence-1",
@@ -337,7 +341,7 @@ describe("the claim URL goes straight into custody", () => {
 		const { driver, actions } = driverWith(successResult());
 		await driver.deploy({
 			deploymentRef: "deployment-1",
-			workDir: "/tmp/hobo-fake",
+			workDir: WORK_DIR,
 			publishDir: "dist",
 			idempotencyKey: "attempt-1",
 			fencingToken: "fence-1",
@@ -413,7 +417,7 @@ describe("the invocation the driver actually makes", () => {
 		const { driver, runner } = driverWith(successResult());
 		await driver.deploy({
 			deploymentRef: "deployment-1",
-			workDir: "/tmp/hobo-fake",
+			workDir: WORK_DIR,
 			publishDir: "dist",
 			siteName: "; rm -rf /",
 			idempotencyKey: "attempt-1",

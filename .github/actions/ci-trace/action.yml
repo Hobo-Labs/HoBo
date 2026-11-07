@@ -1,0 +1,19 @@
+name: HoBo CI trace
+description: >-
+  Convert this job's Turbo run summaries into an OTLP/JSON trace (secrets
+  redacted) and upload it with the Turbo profile as a per-job artifact.
+runs:
+  using: composite
+  steps:
+    - name: Export OTel trace
+      shell: bash
+      run: |
+        set -euo pipefail
+        node --experimental-strip-types --no-warnings scripts/ci/ci-trace.mts ci-traces "${GITHUB_JOB}"
+    - name: Upload trace artifact
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: ci-trace-${{ github.job }}-${{ github.run_attempt }}
+        path: ci-traces/
+        retention-days: 14
+        if-no-files-found: ignore

@@ -1,5 +1,4 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import type { JsonValue } from "../src/json.js";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -25,8 +24,8 @@ import {
 	createRuntimeLocalEventStore,
 	type RuntimeLocalEventStore,
 } from "@hobo/runtime-local";
-
 import type { AuthContext } from "../src/auth.js";
+import type { JsonValue } from "../src/json.js";
 import { MCP_TOOL_CALL_VERB, MCP_TOOL_PORT } from "../src/tool-surface.js";
 
 // Mirrors packages/cli/test/cloud-verbs.test.ts: an in-process, mocked-lane Yard

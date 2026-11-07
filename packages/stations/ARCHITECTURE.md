@@ -33,3 +33,18 @@ parsed types, not raw config objects.
 
 Stations depend inward on `@hobo/core` (ports/envelopes), `@hobo/connectivity` (endpoint/routing shapes), and `@hobo/dispatcher` (budget-aware ranking for the routing control loop). Identity Connections attach `stationId`;
 Broker mounts a Station client as pure Conductor (no durable Connection store).
+
+## Routing effects and restart boundary
+
+Routing depends on `@hobo/contracts` for the canonical effect and resilience
+models. The control loop emits decisions and persists a generated routing snapshot
+before actuator writes; it never treats replay as permission to repeat an external
+effect. The hosting supervisor supplies fenced snapshot persistence and financial
+admission through `beforeApply`; an unresolved provider outcome blocks subsequent
+routing until observation or saga recovery establishes the result.
+
+The routing actuator cannot retire hosting resources or settle a provider bill.
+That distinction is explicit in the hosting supervisor contract. Cutover preserves
+availability/resiliency across every phase and reports confirmed restoration
+separately from reconciliation-required. Schema source is `data-models/`; `buf.yaml`
+opts this package into generated runtime records and drift checking.

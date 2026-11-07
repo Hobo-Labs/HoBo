@@ -616,10 +616,11 @@ describe("connection ops — lifecycle", () => {
 		expect(created.ok).toBe(true);
 		expect(created.status).toBe("created");
 		// SAFETY: connectionCreate success data contains the public connection.
-		const connection = (created.data as {
-			connection: { provider: string; alias?: string };
-		})
-			.connection;
+		const connection = (
+			created.data as {
+				connection: { provider: string; alias?: string };
+			}
+		).connection;
 		expect(connection.provider).toBe("github");
 		expect(connection.alias).toBe("gh");
 		expect(connection.stationId).toBe("station:local");

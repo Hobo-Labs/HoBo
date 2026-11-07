@@ -2,10 +2,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { type ManifestV1, parseManifest } from "@hobo/bindles";
-
+import type { JsonValue } from "../json.js";
 import { compileProjectManifest } from "./loader.js";
-import { type JsonValue } from "../json.js";
-
 
 // Resolve the Bindle manifest a project-scoped cloud verb operates on. The
 // committed `hobo.bindle.json` artifact wins when present (byte-stable,
@@ -14,7 +12,7 @@ import { type JsonValue } from "../json.js";
 // project with neither surfaces as `null` so the caller can fall back to
 // the shell stub rather than throwing an internal error.
 
-export const BINDLE_MANIFEST_FILE = "hobo.bindle.json";
+export const BINDLE_MANIFEST_FILE = "hobo.bindle.json"; // public-contract: manifest file name read from user projects
 
 export async function loadProjectManifest(
 	projectDir: string,

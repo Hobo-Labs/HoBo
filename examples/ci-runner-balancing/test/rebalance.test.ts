@@ -9,7 +9,13 @@ import {
 	HardBlockSignalSchema,
 	UsageSnapshotSchema,
 } from "../src/_generated/runner_balancing_pb.js";
-import { parseUsageSnapshots, RegistryParseError } from "../src/parse.js";
+import {
+	type FixtureDocument,
+	parseFixtureDocument,
+	parseJsonValue,
+	parseUsageSnapshots,
+	RegistryParseError,
+} from "../src/parse.js";
 import {
 	type RebalanceDeps,
 	runRebalance,
@@ -18,6 +24,28 @@ import {
 import { DEFAULT_REGISTRY_DOCUMENT } from "../src/registry.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+async function readFixture(
+	name: string,
+): Promise<
+	Required<Pick<FixtureDocument, "current" | "usage" | "failures" | "seq">>
+> {
+	const text = await readFile(path.join(HERE, "..", "fixtures", name), "utf8");
+	const fixture = parseFixtureDocument(parseJsonValue(JSON.parse(text)));
+	if (
+		fixture.current === undefined ||
+		fixture.usage === undefined ||
+		fixture.seq === undefined
+	) {
+		throw new Error(`${name} is missing current, usage, or seq`);
+	}
+	return {
+		current: fixture.current,
+		usage: fixture.usage,
+		failures: fixture.failures ?? [],
+		seq: fixture.seq,
+	};
+}
 
 interface MemoryUsage {
 	providerId: string;
@@ -155,18 +183,7 @@ describe("runRebalance", () => {
 	});
 
 	it("replays the shipped last-resort fixture: a spending-limit hard block fails over to the requesting machine", async () => {
-		// SAFETY: assertion to `JSON.parse( await readFile( path.join(HERE, "..", "fixtures", "last-resort-failover.fixture.json"), "utf8", ), ) as { cu` is required at this boundary.
-		const fixture = JSON.parse(
-			await readFile(
-				path.join(HERE, "..", "fixtures", "last-resort-failover.fixture.json"),
-				"utf8",
-			),
-		) as {
-			current: Record<string, string>;
-			usage: unknown;
-			failures: Array<{ providerId: string; reason: string }>;
-			seq: string;
-		};
+		const fixture = await readFixture("last-resort-failover.fixture.json");
 		const snapshots = parseUsageSnapshots(fixture.usage);
 		const { deps } = memoryDeps({ current: fixture.current });
 		const result = await runRebalance(
@@ -205,13 +222,7 @@ describe("runRebalance", () => {
 	});
 
 	it("replays the shipped free-credit-rotation fixture to the Blacksmith rung", async () => {
-		// SAFETY: assertion to `JSON.parse( await readFile( path.join(HERE, "..", "fixtures", "free-credit-rotation.fixture.json"), "utf8", ), ) as { cu` is required at this boundary.
-		const fixture = JSON.parse(
-			await readFile(
-				path.join(HERE, "..", "fixtures", "free-credit-rotation.fixture.json"),
-				"utf8",
-			),
-		) as { current: Record<string, string>; usage: unknown; seq: string };
+		const fixture = await readFixture("free-credit-rotation.fixture.json");
 		const snapshots = parseUsageSnapshots(fixture.usage);
 		expect(snapshots).toHaveLength(3);
 		const { deps } = memoryDeps({ current: fixture.current });

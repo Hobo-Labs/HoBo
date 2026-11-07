@@ -1,0 +1,53 @@
+{
+  "completeRows": [
+    {
+      "providerChargeId": "prov-charge-usage-1",
+      "agreementId": "agreement-a",
+      "chargeId": "overage",
+      "chargePeriodStart": "2026-01-01T00:00:00Z",
+      "chargePeriodEnd": "2026-01-31T23:59:59Z",
+      "billedCostDecimal": "1.50",
+      "effectiveCostDecimal": "1.50",
+      "currency": "USD",
+      "category": "usage",
+      "completeness": "complete",
+      "focusVersion": "1.4"
+    },
+    {
+      "providerChargeId": "prov-charge-adj-1",
+      "agreementId": "agreement-a",
+      "chargeId": "credit-adjustment",
+      "chargePeriodStart": "2026-01-01T00:00:00Z",
+      "chargePeriodEnd": "2026-01-31T23:59:59Z",
+      "billedCostDecimal": "-0.25",
+      "currency": "USD",
+      "category": "adjustment",
+      "completeness": "complete",
+      "focusVersion": "1.4"
+    }
+  ],
+  "partialRow": {
+    "providerChargeId": "prov-charge-partial",
+    "agreementId": "agreement-a",
+    "chargeId": "unknown",
+    "chargePeriodStart": "2026-01-01T00:00:00Z",
+    "chargePeriodEnd": "2026-01-31T23:59:59Z",
+    "billedCostDecimal": "9.99",
+    "currency": "USD",
+    "category": "usage",
+    "completeness": "partial",
+    "focusVersion": "1.4"
+  },
+  "duplicateRow": {
+    "providerChargeId": "prov-charge-usage-1",
+    "agreementId": "agreement-a",
+    "chargeId": "overage",
+    "chargePeriodStart": "2026-01-01T00:00:00Z",
+    "chargePeriodEnd": "2026-01-31T23:59:59Z",
+    "billedCostDecimal": "1.50",
+    "currency": "USD",
+    "category": "usage",
+    "completeness": "complete",
+    "focusVersion": "1.4"
+  }
+}

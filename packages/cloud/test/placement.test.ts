@@ -1,10 +1,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { parseJsonValue, type JsonValue } from "../src/json.js";
 import { type ManifestV1, parseManifest } from "@hobo/bindles";
 import { createCloudflareProvider } from "@hobo/provider-cloudflare";
 import { describe, expect, it } from "vitest";
-
 import {
 	createRegistryFromProviders,
 	matchResource,
@@ -15,6 +13,7 @@ import {
 	type ResourceDefinition,
 	type ResourceIntent,
 } from "../src/index.js";
+import { type JsonValue, parseJsonValue } from "../src/json.js";
 
 // E19 placement-constraint vocabulary golden vectors (0015 §B deliverable 2):
 // property selectors, affinity/anti-affinity between resource classes, spread,
@@ -24,7 +23,7 @@ import {
 // anti-affinity stays delegated to wadm.
 
 const HELLO_BINDLE_PLAN_HASH =
-	"sha256:30eb585558f0614fac037fa5ada935eaad03e86f35c39110af21b2c58bdaf5b6";
+	"sha256:0e1bbf78ae6b765d8a4cd5cb41c5b9c5eadc43e32ea4fedec97cf87a7deef915";
 
 function definition(overrides: {
 	providerId: string;

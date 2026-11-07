@@ -23,9 +23,11 @@ export {
 	createVercelClaimDeploymentDefinition,
 	createVercelSponsoredApiDefinition,
 	createVercelSponsoredWebDefinition,
+	createVercelStaticDeployDefinition,
 	VERCEL_BOOTSTRAP_STRATEGY_REF,
 	VERCEL_CLAIM_DEPLOYMENT_DEFINITION_ID,
 	VERCEL_CLAIM_STRATEGY_REF,
+	VERCEL_DEFINITIONS,
 	VERCEL_EVIDENCE_CHECKED_AT,
 	VERCEL_SOURCE_REFS,
 	VERCEL_SPONSOR_EXPOSURE_MINOR_UNITS,
@@ -35,6 +37,10 @@ export {
 	VERCEL_SPONSORED_WEB_DEFINITION_ID,
 	type VercelDefinitionOverrides,
 } from "./definitions.js";
+export {
+	createVercelStaticDeploymentResolver,
+	VERCEL_STATIC_DEPLOY_PRODUCT_ID,
+} from "./deployment-resolver.js";
 export {
 	type DropClassification,
 	VERCEL_DROP_CLASSIFICATION,
@@ -122,6 +128,7 @@ export {
 	edgeConfig,
 	edgeFunction,
 	project,
+	staticDeployment,
 	VERCEL_BLOB_PRODUCT_ID,
 	VERCEL_BLOB_PROFILE,
 	VERCEL_EDGE_CONFIG_PRODUCT_ID,
@@ -130,10 +137,12 @@ export {
 	VERCEL_EDGE_FUNCTION_PROFILE,
 	VERCEL_PROJECT_PRODUCT_ID,
 	VERCEL_PROJECT_PROFILE,
+	VERCEL_STATIC_DEPLOY_PROFILE,
 	type VercelBlobSlotOptions,
 	type VercelEdgeConfigSlotOptions,
 	type VercelEdgeFunctionSlotOptions,
 	type VercelProjectSlotOptions,
+	type VercelStaticDeploySlotOptions,
 	vercelSlots,
 } from "./slots.js";
 export {

@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,9 +17,11 @@ import {
 import { type MuxRunner, tmuxRunner } from "../src/mux.js";
 import { createResidentSessionRuntime } from "../src/resident-session-runtime.js";
 import { sessionSnapshotJson } from "../src/session-contract.js";
+import { killProcessGroup, trackChild } from "./subprocess-cleanup.js";
 
 const roots: string[] = [];
 const tmuxServers: string[] = [];
+const lockChildren: ChildProcess[] = [];
 const lockWorker = join(
 	dirname(fileURLToPath(import.meta.url)),
 	"fixtures/session-lock-worker.mts",
@@ -43,11 +45,16 @@ function runLockWorker(
 			],
 			{ stdio: "ignore" },
 		);
+		trackChild(child);
+		lockChildren.push(child);
 		child.once("exit", resolve);
 	});
 }
 
 afterEach(() => {
+	for (const child of lockChildren.splice(0)) {
+		if (child.pid !== undefined) killProcessGroup(child.pid);
+	}
 	for (const server of tmuxServers.splice(0)) {
 		spawnSync("tmux", ["-L", server, "kill-server"]);
 	}

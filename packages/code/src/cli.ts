@@ -177,6 +177,7 @@ import {
 } from "./station-session.js";
 import {
 	releaseStationSidecars,
+	sidecarsEnabled,
 	stopStationSidecars,
 } from "./station-sidecars.js";
 import { runTemplateCommand } from "./template-command.js";
@@ -398,6 +399,7 @@ export interface HoboCodeCliDeps {
 	 */
 	readonly signals?: Pick<EndingSignalHold, "hold" | "first">;
 	readonly muxRunner?: MuxRunner;
+	readonly allocateWorkspaces?: typeof allocateAgentWorkspaces;
 	/** Injectable machine probes for `init` discovery (tests / harnesses). */
 	readonly machineProbes?: MachineDiscoveryProbes;
 	readonly startDevSession?: typeof startDevBrowserSession;
@@ -2939,7 +2941,12 @@ export async function runHoboCodeCli(
 					);
 				}
 			}
-			const allocation = await allocateAgentWorkspaces({
+		}
+		const retainedIdentityAgents = new Set<string>();
+		try {
+			const allocation = await (
+				deps.allocateWorkspaces ?? allocateAgentWorkspaces
+			)({
 				workspaceRoot: workspace.path,
 				agentIds: agents.map((a) => a.id),
 				fallbackRoot: join(hoboHome, "workspaces"),
@@ -4035,6 +4042,7 @@ export async function runHoboCodeCli(
 			features,
 			tenant,
 			autoInitStation: true,
+			sidecars: sidecarsEnabled(env),
 		});
 		// Simulate in-session work, then resolve handback before painting mux.
 		session.setAgentState("worker", "working", session.platform.provider.id);

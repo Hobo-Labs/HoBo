@@ -9,6 +9,7 @@
  */
 import {
 	assertAllowedEndpoint as assertAllowedEndpointCore,
+	createBoundedFetchTransport,
 	guardTransport,
 	TransportGuardError,
 } from "@hobo/core";
@@ -165,35 +166,21 @@ export function createGuardedTransport(
 export function createFetchTransport(options: {
 	readonly fetchImpl: typeof globalThis.fetch;
 }): NeonTransport {
-	const { fetchImpl } = options;
+	const transport = createBoundedFetchTransport(options);
 	return {
 		async request(request) {
-			const controller = new AbortController();
-			const timer = setTimeout(() => {
-				controller.abort();
-			}, request.timeoutMs);
 			try {
-				const response = await fetchImpl(request.url, {
-					method: request.method,
-					headers: { ...request.headers },
-					...(request.body !== undefined ? { body: request.body } : undefined),
-					redirect: "manual",
-					signal: controller.signal,
-				});
-				const headers: Record<string, string> = {};
-				response.headers.forEach((value, key) => {
-					headers[key.toLowerCase()] = value;
-				});
-				const text = await response.text();
-				if (Buffer.byteLength(text, "utf8") > request.maxResponseBytes) {
-					throw new NeonProviderError(
-						"PROVIDER_CONTRACT_CHANGED",
-						`provider response exceeded the ${request.maxResponseBytes} byte cap`,
-					);
-				}
-				return { status: response.status, headers, body: text };
+				return await transport(request);
 			} catch (cause) {
 				if (cause instanceof NeonProviderError) throw cause;
+				if (
+					cause instanceof TransportGuardError &&
+					cause.code === "TRANSPORT_BODY_TOO_LARGE"
+				)
+					throw new NeonProviderError(
+						"PROVIDER_CONTRACT_CHANGED",
+						cause.message,
+					);
 				// A timed-out or dropped request never proves the server did
 				// nothing, so it can only be reported as ambiguous.
 				throw new NeonProviderError(
@@ -204,8 +191,6 @@ export function createFetchTransport(options: {
 						detail: { method: request.method },
 					},
 				);
-			} finally {
-				clearTimeout(timer);
 			}
 		},
 	};

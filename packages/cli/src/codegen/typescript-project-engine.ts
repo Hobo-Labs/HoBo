@@ -1,7 +1,15 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { copyFile, mkdir, readdir } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+	basename,
+	dirname,
+	isAbsolute,
+	join,
+	relative,
+	resolve,
+	sep,
+} from "node:path";
 import { create } from "@bufbuild/protobuf";
 import { type BuildOptions, build as bundle } from "esbuild";
 import ts from "typescript";
@@ -10,7 +18,7 @@ import {
 	scanAmbientTrainableSources,
 } from "./ambient-trainables.js";
 import { emittedPath } from "./source-files.js";
-import { stableStringify } from "./text.js";
+import { digest, stableStringify } from "./text.js";
 import { buildTrainables } from "./trainables.js";
 import {
 	CodegenArtifactSchema,
@@ -105,7 +113,19 @@ function sourceOverlay(
 	return files;
 }
 
-function overlayCompilerHost(
+const defaultLibraryDocuments = ts.createDocumentRegistry(
+	ts.sys.useCaseSensitiveFileNames,
+	ts.sys.getCurrentDirectory(),
+);
+
+function isDefaultLibrary(file: string, options: ts.CompilerOptions): boolean {
+	return (
+		dirname(resolve(file)) === dirname(ts.getDefaultLibFilePath(options)) &&
+		/^lib\..*\.d\.ts$/u.test(basename(file))
+	);
+}
+
+export function overlayCompilerHost(
 	options: ts.CompilerOptions,
 	files: ReadonlyMap<string, string>,
 ): ts.CompilerHost {
@@ -127,9 +147,31 @@ function overlayCompilerHost(
 		shouldCreateNewSourceFile,
 	) => {
 		const content = files.get(resolve(file));
-		return content === undefined
-			? getSourceFile(file, languageVersion, onError, shouldCreateNewSourceFile)
-			: ts.createSourceFile(file, content, languageVersion, true);
+		if (content !== undefined)
+			return ts.createSourceFile(file, content, languageVersion, true);
+		if (shouldCreateNewSourceFile || !isDefaultLibrary(file, options))
+			return getSourceFile(
+				file,
+				languageVersion,
+				onError,
+				shouldCreateNewSourceFile,
+			);
+		const text = readFile(file);
+		if (text === undefined)
+			return getSourceFile(
+				file,
+				languageVersion,
+				onError,
+				shouldCreateNewSourceFile,
+			);
+		return defaultLibraryDocuments.acquireDocument(
+			file,
+			options,
+			ts.ScriptSnapshot.fromString(text),
+			digest(text),
+			undefined,
+			languageVersion,
+		);
 	};
 	return host;
 }

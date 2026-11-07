@@ -4,7 +4,13 @@ import type {
 	CapabilityRequirement,
 	TrustPolicy,
 } from "@hobo/capability-profiles";
-import { lowerManifest, type LowerOptions } from "../intent.js";
+import {
+	BudgetPolicyError,
+	canonicalBudgetPolicyJson,
+	parseBudgetPolicy,
+} from "@hobo/core";
+import { type LowerOptions, lowerManifest } from "../intent.js";
+import type { JsonObject } from "../json.js";
 import {
 	DEPLOYMENT_PLAN_SCHEMA,
 	type DeploymentPlan,
@@ -18,14 +24,19 @@ import {
 } from "../plan-types.js";
 import type { PlannerRegistry } from "../registry/catalog.js";
 import type { ResourceDefinitionVNext } from "../registry/resource-definition-vnext.js";
+import {
+	createHostingPlanningPass,
+	type HostingPlanCommitment,
+	HostingPlanningError,
+	type HostingPlanningInput,
+	manifestHostingPolicy,
+} from "./hosting-budget.js";
 import { matchResource } from "./matching.js";
 import { emptyPlacementContext } from "./placement.js";
 import {
 	matchCapabilityRequirement,
 	type YardBindingContext,
 } from "./profile-matching.js";
-import { type JsonObject } from "../json.js";
-
 
 // The Planner: a pure function `plan(bindle, config, registry) -> DeploymentPlan`
 // (control-plane.md "The Planner"). Easy to test, replayable, deterministic. It
@@ -89,6 +100,8 @@ export interface PlanConfig {
 	 * the pre-existing port-only behaviour byte-for-byte.
 	 */
 	binding?: PlanBindingAuthority;
+	/** Trusted, pinned financial evidence. Planning allocates it read-only. */
+	hostingBudget?: HostingPlanningInput;
 }
 
 export interface PlanSuccess {
@@ -97,6 +110,7 @@ export interface PlanSuccess {
 	decisions: MatchDecided[];
 	plan: DeploymentPlan;
 	planHash: PlanHash;
+	hostingCommitment?: HostingPlanCommitment;
 }
 
 export interface PlanRejection {
@@ -155,7 +169,27 @@ export function plan(
 	config: PlanConfig,
 	registry: PlannerRegistry,
 ): PlanResult {
-	const objective = config.objective ?? "min-cost";
+	let authored: ReturnType<typeof manifestHostingPolicy>;
+	let pinnedPolicy: ReturnType<typeof parseBudgetPolicy> | undefined;
+	try {
+		authored = manifestHostingPolicy(bindle);
+		pinnedPolicy =
+			config.hostingBudget?.budgetPolicy === undefined
+				? undefined
+				: parseBudgetPolicy(config.hostingBudget.budgetPolicy);
+	} catch (error) {
+		if (
+			!(error instanceof HostingPlanningError) &&
+			!(error instanceof BudgetPolicyError)
+		)
+			throw error;
+		return rejectFinancialEvidence(config.deploymentId, error);
+	}
+	const objective =
+		config.objective ??
+		authored.budgetPolicy?.objective ??
+		pinnedPolicy?.objective ??
+		"min-cost";
 	const lowerOptions: LowerOptions = { objective };
 	if (config.region !== undefined) lowerOptions.region = config.region;
 	const intents = lowerManifest(bindle, lowerOptions);
@@ -174,9 +208,58 @@ export function plan(
 	// evaluate against it; deterministic because intents arrive in the
 	// byte-stable lowered (sorted-name) order.
 	const placementContext = emptyPlacementContext();
+	let hosting: ReturnType<typeof createHostingPlanningPass> | undefined;
+	try {
+		if (authored.required && !config.hostingBudget)
+			throw new HostingPlanningError(
+				"manifest declares financial policy but no authoritative hosting budget evidence was supplied",
+			);
+		if (config.hostingBudget) {
+			if (
+				authored.budgetPolicy &&
+				(pinnedPolicy === undefined ||
+					canonicalBudgetPolicyJson(authored.budgetPolicy) !==
+						canonicalBudgetPolicyJson(pinnedPolicy))
+			)
+				throw new HostingPlanningError(
+					"trusted financial evidence does not pin the authored shared budget policy",
+				);
+			const policy = authored.budgetPolicy ?? pinnedPolicy;
+			if (
+				policy &&
+				(objective === "cost" ? "min-cost" : objective) !== policy.objective
+			)
+				throw new HostingPlanningError(
+					"requested objective conflicts with the shared budget policy",
+				);
+			if (
+				authored.hardLimitMicros !== undefined &&
+				(config.hostingBudget.budget.currency !== "USD" ||
+					config.hostingBudget.budget.capMicros > authored.hardLimitMicros)
+			)
+				throw new HostingPlanningError(
+					"resolved budget widens the authored hard ceiling",
+				);
+			if (
+				authored.period !== undefined &&
+				config.hostingBudget.budget.periodKind !== authored.period
+			)
+				throw new HostingPlanningError(
+					"resolved budget does not attest the authored accounting period",
+				);
+			hosting = createHostingPlanningPass(config.hostingBudget);
+		}
+	} catch (error) {
+		if (
+			!(error instanceof HostingPlanningError) &&
+			!(error instanceof BudgetPolicyError)
+		)
+			throw error;
+		return rejectFinancialEvidence(config.deploymentId, error);
+	}
 
 	for (const intent of intents) {
-		const outcome = matchResource(intent, registry, placementContext);
+		const outcome = matchResource(intent, registry, placementContext, hosting);
 		if (!outcome.ok) {
 			remediations.push(outcome.remediation);
 			continue;
@@ -188,7 +271,9 @@ export function plan(
 		// and a Yard that cannot satisfy a capability would silently deploy
 		// something it never declared.
 		const requirement = config.binding?.requirements[intent.name];
-		let bound: BoundOffering | undefined;
+		let bound: BoundOffering | undefined = outcome.definition.productId
+			? { productId: outcome.definition.productId }
+			: undefined;
 		if (config.binding !== undefined && requirement !== undefined) {
 			const authority = config.binding;
 			const profileOutcome = matchCapabilityRequirement({
@@ -223,7 +308,23 @@ export function plan(
 					? { nonPortableRows: profileOutcome.nonPortableRows }
 					: undefined),
 			};
+			if (
+				hosting &&
+				profileOutcome.definition.providerId !== outcome.definition.providerId
+			) {
+				remediations.push({
+					resource: intent.name,
+					code: "budget.binding-provider-mismatch",
+					requiredPort: intent.port,
+					requiredFeatures: intent.require,
+					missing: [],
+					remediation:
+						"binding authority selected a different provider; obtain matching offering quotes before reserving",
+				});
+				continue;
+			}
 		}
+		if (hosting) hosting.commit(intent.name, outcome.definition);
 
 		const decision = {
 			...outcome.decision,
@@ -246,7 +347,9 @@ export function plan(
 			// `appliedRows` stays on the decision (the audit trail) and off the
 			// plan node: the plan is content-addressed, and which rows were
 			// consulted does not change what gets built.
-			...(bound?.productId !== undefined ? { productId: bound.productId } : undefined),
+			...(bound?.productId !== undefined
+				? { productId: bound.productId }
+				: undefined),
 			...(bound?.realizationParameters !== undefined
 				? { realizationParameters: bound.realizationParameters }
 				: undefined),
@@ -266,6 +369,27 @@ export function plan(
 			remediations,
 		};
 	}
+	if (
+		hosting &&
+		authored.spendCapMicros !== undefined &&
+		hosting.commitment().reservedMicros > authored.spendCapMicros
+	)
+		return {
+			ok: false,
+			deploymentId: config.deploymentId,
+			reason: "plan exceeds authored spend cap",
+			remediations: [
+				{
+					resource: "*",
+					code: "budget.spend-cap-exceeded",
+					requiredPort: "*",
+					requiredFeatures: [],
+					missing: [],
+					remediation:
+						"whole-plan bounded exposure exceeds the authored per-action spend cap",
+				},
+			],
+		};
 
 	const deploymentPlan: DeploymentPlan = {
 		schema: DEPLOYMENT_PLAN_SCHEMA,
@@ -274,11 +398,34 @@ export function plan(
 		objective,
 	};
 
-	return {
+	const result: PlanSuccess = {
 		ok: true,
 		deploymentId: config.deploymentId,
 		decisions,
 		plan: deploymentPlan,
 		planHash: hashDeploymentPlan(deploymentPlan),
+	};
+	if (hosting) result.hostingCommitment = hosting.commitment();
+	return result;
+}
+
+function rejectFinancialEvidence(
+	deploymentId: string,
+	error: HostingPlanningError | BudgetPolicyError,
+): PlanRejection {
+	return {
+		ok: false,
+		deploymentId,
+		reason: error.message,
+		remediations: [
+			{
+				resource: "*",
+				code: error.code,
+				requiredPort: "*",
+				requiredFeatures: [],
+				missing: [],
+				remediation: error.message,
+			},
+		],
 	};
 }

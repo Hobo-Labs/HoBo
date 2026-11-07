@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Devcontainer bootstrap: install project deps and common, agent-agnostic helper
-# tools. Agent-specific CLI/plugin setup stays opt-in; see docs/agent-tooling.md.
+# Devcontainer bootstrap: mise project tools, deps, CI act shim, common agent helpers.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# The remote user cannot write Corepack's default /usr/local/bin shim directory.
+export PATH="${HOME}/.local/bin:${PATH}"
+bash scripts/bootstrap-dev.sh
+
+eval "$(mise activate bash)" 2>/dev/null || true
+
 mkdir -p .tools/ci
-corepack enable pnpm --install-directory .tools/ci
-export PATH="$PWD/.tools/ci:$PATH"
 pnpm install --frozen-lockfile --config.confirmModulesPurge=false
 pnpm exec turbo run build --filter=@hobo/ci-gh-actions --concurrency=100%
 node --import tsx packages/ci-gh-actions/scripts/act-install.ts --directory .tools/ci

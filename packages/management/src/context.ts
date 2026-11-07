@@ -57,11 +57,13 @@ function connectionStorePath(hoboHome: string): string {
 function readAllConnectionEvents(hoboHome: string): ConnectionEvent[] {
 	const path = connectionStorePath(hoboHome);
 	if (!existsSync(path)) return [];
-	return readFileSync(path, "utf8")
-		.split("\n")
-		.filter(Boolean)
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
-		.map((line) => JSON.parse(line) as ConnectionEvent);
+	return (
+		readFileSync(path, "utf8")
+			.split("\n")
+			.filter(Boolean)
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+			.map((line) => JSON.parse(line) as ConnectionEvent)
+	);
 }
 
 function loadProfileDefaultStation(
@@ -70,7 +72,7 @@ function loadProfileDefaultStation(
 	const path = join(hoboHome, "profile.json");
 	if (!existsSync(path)) return undefined;
 	try {
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		const raw = JSON.parse(readFileSync(path, "utf8")) as {
 			defaultStation?: { id?: string };
 			session?: { principal?: { kind?: string; id?: string }; tenant?: string };
@@ -86,7 +88,7 @@ function loadProfileActor(hoboHome: string): ManagementActor {
 	const path = join(hoboHome, "profile.json");
 	if (existsSync(path)) {
 		try {
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 			const raw = JSON.parse(readFileSync(path, "utf8")) as {
 				session?: {
 					principal?: { kind?: string; id?: string };
@@ -95,7 +97,7 @@ function loadProfileActor(hoboHome: string): ManagementActor {
 			};
 			if (raw.session?.principal?.id) {
 				return {
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+					// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 					kind: (raw.session.principal.kind ??
 						"user") as ManagementActor["kind"],
 					id: raw.session.principal.id,
@@ -116,7 +118,7 @@ export function createManagementContext(
 
 	return {
 		hoboHome,
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 		...(home.now !== undefined ? { now: home.now } : {}),
 		resolveActor: () => loadProfileActor(hoboHome),
 		loadStation: (stationId: string) => {
@@ -144,7 +146,7 @@ export function createManagementContext(
 				return new ConnectionService({
 					tenant,
 					vault,
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+					// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 					...(home.now !== undefined ? { now: home.now } : {}),
 				});
 			}
@@ -162,7 +164,7 @@ export function createManagementContext(
 			return ConnectionService.fromEvents(events, {
 				tenant,
 				vault,
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+				// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 				...(home.now !== undefined ? { now: home.now } : {}),
 			});
 		},

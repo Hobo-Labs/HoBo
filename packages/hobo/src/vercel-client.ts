@@ -98,6 +98,10 @@ export interface VercelClientOptions {
 }
 
 export interface VercelClient {
+	getDeployment(
+		deploymentId: string,
+	): Promise<VercelDeploymentResult | undefined>;
+	deleteDeployment(deploymentId: string): Promise<void>;
 	createDeployment(
 		input: CreateDeploymentInput,
 	): Promise<VercelDeploymentResult>;
@@ -146,7 +150,53 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 	const fetchImpl = options.fetch ?? globalFetch;
 	const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
 
+	function deploymentPath(deploymentId: string) {
+		if (!deploymentId || !/^[A-Za-z0-9_-]+$/.test(deploymentId))
+			throw new Error("invalid deployment receipt identity");
+		return `${baseUrl}/v13/deployments/${encodeURIComponent(deploymentId)}${options.teamId ? `?teamId=${encodeURIComponent(options.teamId)}` : ""}`;
+	}
+	async function readDeployment(deploymentId: string) {
+		const response = await fetchImpl(deploymentPath(deploymentId), {
+			method: "GET",
+			headers: { Authorization: `Bearer ${token}` },
+			body: "",
+		});
+		if (response.status === 404) return undefined;
+		if (!response.ok)
+			throw new Error(
+				`vercel-client: get deployment failed (HTTP ${response.status})`,
+			);
+		const payload = await response.json();
+		if (!isJsonObject(payload) || payload.id !== deploymentId)
+			throw new Error(
+				"vercel-client: deployment read returned a different identity",
+			);
+		return {
+			id: deploymentId,
+			url: normalizeUrl(payload.url),
+			...(isJsonString(payload.readyState)
+				? { readyState: payload.readyState }
+				: undefined),
+			raw: payload,
+		};
+	}
 	return {
+		getDeployment: readDeployment,
+		async deleteDeployment(deploymentId: string) {
+			const response = await fetchImpl(deploymentPath(deploymentId), {
+				method: "DELETE",
+				headers: { Authorization: `Bearer ${token}` },
+				body: "",
+			});
+			if (!response.ok && response.status !== 404)
+				throw new Error(
+					`vercel-client: delete deployment failed (HTTP ${response.status})`,
+				);
+			if (await readDeployment(deploymentId))
+				throw new Error(
+					"vercel-client: deployment deletion remains unconfirmed",
+				);
+		},
 		async createDeployment(
 			input: CreateDeploymentInput,
 		): Promise<VercelDeploymentResult> {

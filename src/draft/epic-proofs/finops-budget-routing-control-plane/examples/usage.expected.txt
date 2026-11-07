@@ -1,6 +1,7 @@
 dry run intentParsed=true decisionGraph=decision-graph:approved-route actionPlanNeutral=true
-metric governance ok=false errors=1 contractsReachingRouting=0
+metric governance ok=false errors=8 contractsReachingRouting=0
 routing rejected=1 scored=4 frontier=3 selected=candidate-balanced
 stability cooldown retains=candidate-economy
 feedback proposals=2 allGated=true
+effects planning=pure mutation=noRollback unknown=reconcile executionAuthorized=false
 EPIC HELD: routing is constraint-first, provider-neutral, stability-damped, and proposal-gated

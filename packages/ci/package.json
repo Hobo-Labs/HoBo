@@ -30,6 +30,10 @@
       "types": "./dist/postgres-store.d.ts",
       "default": "./dist/postgres-store.js"
     },
+    "./sqlite": {
+      "types": "./dist/sqlite-store.d.ts",
+      "default": "./dist/sqlite-store.js"
+    },
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
       "default": "./dist/workspace-backend.js"
@@ -43,7 +47,10 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
+    "@hobo/core": "workspace:*",
+    "@hobo/broker": "workspace:*",
     "@hobo/dispatcher": "workspace:*",
+    "@hobo/pricing": "workspace:*",
     "pg": "8.22.0",
     "zod": "^4.1.13"
   },

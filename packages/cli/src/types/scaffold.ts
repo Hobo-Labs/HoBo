@@ -1,6 +1,5 @@
-import { UsageError } from "../shell/errors.js";
 import { isJsonString } from "../json.js";
-
+import { UsageError } from "../shell/errors.js";
 
 export const VALID_TEMPLATES = ["todo", "api", "agent", "fullstack"] as const;
 export type TemplateId = (typeof VALID_TEMPLATES)[number];

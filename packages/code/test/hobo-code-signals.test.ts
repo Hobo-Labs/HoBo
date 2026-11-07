@@ -14,6 +14,15 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { readStationSidecars } from "../src/station-sidecars.js";
+import { GIT_ISOLATED_ENV } from "./isolate-git-env.js";
+import {
+	drainEvidenceSidecarsForHomes,
+	killProcessGroup,
+	listLeakedEvidenceSidecarPids,
+	readProcessHoboHome,
+	trackChild,
+} from "./subprocess-cleanup.js";
 import { testEnv } from "./test-env.js";
 
 // hobo-code composes HoBo in process: a `/hobo <verb>` in its shell loads
@@ -37,6 +46,7 @@ const SHELL_DRAWN = `${ESC}[?1049h`;
 const VERB_ENDED = "hobo recipes:";
 /** Terminal control sequences, left out of the screen a failure shows. */
 const CONTROL_SEQUENCES = new RegExp(`${ESC}\\[[0-9;?]*[a-zA-Z]`, "gu");
+const VERB_DEADLINE_MS = 30_000;
 const SIGNAL_GRACE_MS = 30_000;
 /** How long hobo-code's child gets to end once hobo-code has. */
 const CHILD_GRACE_MS = 20_000;
@@ -122,14 +132,38 @@ async function until(done: () => boolean, ms: number): Promise<boolean> {
 const roots: string[] = [];
 /** Children of hobo-code a case looked at: none may outlive the case. */
 const children: number[] = [];
-afterEach(() => {
+afterEach(async () => {
 	for (const pid of children.splice(0)) {
-		if (running(pid)) process.kill(pid, "SIGKILL");
+		if (running(pid)) killProcessGroup(pid);
 	}
 	for (const root of roots.splice(0)) {
+		const home = join(root, "home");
+		const pidFile = join(root, "evidence-sidecar.pid");
+		if (existsSync(pidFile)) {
+			const pid = Number(readFileSync(pidFile, "utf8").trim());
+			if (Number.isInteger(pid) && pid > 0) killProcessGroup(pid);
+		}
+		const evidencePid = readStationSidecars(home, "station:local")?.evidencePid;
+		if (evidencePid !== undefined) killProcessGroup(evidencePid);
 		rmSync(root, { recursive: true, force: true });
+		await drainEvidenceSidecarsForHomes([home]);
+		await until(
+			() => !listRunningSidecarsUnder(root).some((pid) => running(pid)),
+			3_000,
+		);
 	}
 });
+
+function listRunningSidecarsUnder(root: string): number[] {
+	return listLeakedEvidenceSidecarPids().filter((pid) => {
+		const home = hoboHomeForTestPid(pid);
+		return home?.startsWith(root);
+	});
+}
+
+function hoboHomeForTestPid(pid: number): string | undefined {
+	return readProcessHoboHome(pid);
+}
 
 /** How a case ends hobo-code once a `/hobo` verb has left its runtime holding a store. */
 type Ending =
@@ -239,7 +273,9 @@ async function endTheShell(ending: Ending, run: Run = {}): Promise<Ended> {
 		`stty -a > '${at("stty-after")}'`,
 		`while [ ! -e '${at("done")}' ]; do sleep 0.1; done`,
 	].join("; ");
+	const sidecarPidFile = at("evidence-sidecar.pid");
 	const env: NodeJS.ProcessEnv = testEnv({
+		...GIT_ISOLATED_ENV,
 		PATH: process.env.PATH ?? "",
 		HOME: root,
 		HOBO_HOME: join(root, "home"),
@@ -252,18 +288,22 @@ async function endTheShell(ending: Ending, run: Run = {}): Promise<Ended> {
 		HOBO_CODE_FROM_SOURCE: "0",
 		HOBO_CODE_SKIP_STALE_REBUILD: "1",
 		HOBO_CODE_REDUCED_MOTION: "1",
+		HOBO_CODE_SIDECAR_PIDFILE: sidecarPidFile,
 		// The shell's Station Evidence sidecar outlives it by design, until its
 		// HOBO_HOME is gone: the cleanup removes that, and the sidecar notices
 		// within a moment.
 		HOBO_CODE_SIDECAR_POLL_MS: "250",
+		HOBO_CODE_SIDECAR_MAX_MS: "120000",
 		NODE_NO_WARNINGS: "1",
 	});
 	if (run.busyVerb === true) env.HOBO_CODE_HOBO_BIN = busyHobo;
 	const script = spawn("script", ["-qfec", command, "/dev/null"], {
 		cwd: project,
+		detached: true,
 		env,
 		stdio: ["pipe", "pipe", "pipe"],
 	});
+	trackChild(script);
 	let screen = "";
 	const draw = (chunk: Buffer): void => {
 		screen = `${screen}${chunk.toString("utf8")}`.slice(-64 * 1024);
@@ -278,8 +318,11 @@ async function endTheShell(ending: Ending, run: Run = {}): Promise<Ended> {
 			resolve();
 		});
 	});
+	void close.catch(() => {});
 	let child: number | undefined;
 	let grandchild: number | undefined;
+	let launcherPid: number | undefined;
+	let outcome: Ended | undefined;
 	try {
 		const drawn = await until(
 			() => closed || screen.includes(SHELL_DRAWN),
@@ -311,7 +354,10 @@ async function endTheShell(ending: Ending, run: Run = {}): Promise<Ended> {
 			grandchild = Number(readFileSync(at("grandchild"), "utf8"));
 			children.push(grandchild);
 		}
+		const settings = (name: string): string =>
+			existsSync(at(name)) ? lineSettings(readFileSync(at(name), "utf8")) : "";
 		const hoboCode = Number(readFileSync(at("pid"), "utf8"));
+		launcherPid = hoboCode;
 		child = childrenOf(hoboCode)[0];
 		if (child !== undefined) {
 			children.push(child);
@@ -321,37 +367,51 @@ async function endTheShell(ending: Ending, run: Run = {}): Promise<Ended> {
 		else {
 			const target = ending.to === "hobo-code" ? hoboCode : child;
 			if (target === undefined) throw new Error("hobo-code has no child");
+			// Signal the one process, never its group: passing the signal on
+			// to the child's process group is the launcher's job, and doing
+			// it here would prove nothing about the launcher.
 			process.kill(target, ending.signal);
 		}
-		await until(() => closed || existsSync(at("status")), SIGNAL_GRACE_MS);
-		await until(() => child === undefined || !running(child), CHILD_GRACE_MS);
-		await until(
-			() => grandchild === undefined || !running(grandchild),
-			CHILD_GRACE_MS,
-		);
-		if (
+		// One bounded wait for the whole ending: the processes end, the
+		// shell records hobo-code's status, and the terminal comes back.
+		const wantsRestore =
 			ending !== "close the terminal" &&
 			ending.to === "hobo-code" &&
-			ending.signal !== "SIGKILL"
+			ending.signal !== "SIGKILL";
+		// stty(1) writes nothing where script(1) has no usable TTY (a
+		// container): there are no settings to restore, so the restore
+		// predicates do not apply there.
+		const skipRestore = !wantsRestore || settings("stty-before") === "";
+		const terminalBack = (): boolean =>
+			screen.lastIndexOf(`${ESC}[?1049l`) >
+				screen.lastIndexOf(`${ESC}[?1049h`) &&
+			screen.lastIndexOf(`${ESC}[?25h`) > screen.lastIndexOf(`${ESC}[?25l`) &&
+			existsSync(at("stty-after"));
+		const deadline = Date.now() + SIGNAL_GRACE_MS;
+		while (
+			Date.now() <= deadline &&
+			!(
+				(closed || existsSync(at("status"))) &&
+				!running(hoboCode) &&
+				(child === undefined || !running(child)) &&
+				(grandchild === undefined || !running(grandchild)) &&
+				(skipRestore || terminalBack())
+			)
 		) {
-			// The outer shell can write its status before the final terminal bytes
-			// reach this parent. Wait for the restore output, not only the status.
-			await until(
-				() =>
-					screen.lastIndexOf(`${ESC}[?1049l`) >
-						screen.lastIndexOf(`${ESC}[?1049h`) &&
-					screen.lastIndexOf(`${ESC}[?25h`) >
-						screen.lastIndexOf(`${ESC}[?25l`) &&
-					existsSync(at("stty-after")),
-				SIGNAL_GRACE_MS,
-			);
+			await sleep(50);
 		}
+		if (
+			running(hoboCode) ||
+			(child !== undefined && running(child)) ||
+			(grandchild !== undefined && running(grandchild))
+		)
+			throw new Error(
+				`hobo-code process tree did not exit within ${SIGNAL_GRACE_MS}ms`,
+			);
 		const status = at("status");
-		const settings = (name: string): string =>
-			existsSync(at(name)) ? lineSettings(readFileSync(at(name), "utf8")) : "";
 		const last = (sequence: string): number =>
 			screen.lastIndexOf(`${ESC}[?${sequence}`);
-		return {
+		outcome = {
 			code: existsSync(status)
 				? Number(readFileSync(status, "utf8").trim())
 				: null,
@@ -363,21 +423,36 @@ async function endTheShell(ending: Ending, run: Run = {}): Promise<Ended> {
 			grandchildEnded:
 				grandchild === undefined ? undefined : !running(grandchild),
 			terminalRestored:
-				last("1049l") > last("1049h") &&
-				last("25h") > last("25l") &&
-				settings("stty-after") !== "" &&
-				settings("stty-after") === settings("stty-before"),
+				settings("stty-before") === "" ||
+				(last("1049l") > last("1049h") &&
+					last("25h") > last("25l") &&
+					settings("stty-after") !== "" &&
+					settings("stty-after") === settings("stty-before")),
 			screen: screen.replace(CONTROL_SEQUENCES, ""),
 		};
 	} finally {
 		writeFileSync(at("done"), "");
-		if (!(await until(() => closed, SIGNAL_GRACE_MS))) script.kill("SIGKILL");
-		await close;
+		if (launcherPid !== undefined && running(launcherPid))
+			killProcessGroup(launcherPid);
+		if (!(await until(() => closed, SIGNAL_GRACE_MS))) {
+			if (script.pid !== undefined) killProcessGroup(script.pid);
+			else script.kill("SIGKILL");
+			if (!(await until(() => closed, SIGNAL_GRACE_MS))) {
+				script.stdin.destroy();
+				script.stdout.destroy();
+				script.stderr.destroy();
+			}
+		}
 		spawnSync("tmux", ["kill-server"], {
 			env: tmuxEnv(tmuxDir),
 			stdio: "ignore",
 		});
+		if (closed) await close;
 	}
+	if (!closed)
+		throw new Error("pseudo-terminal did not close after termination");
+	if (!outcome) throw new Error("signal test did not produce an outcome");
+	return outcome;
 }
 
 /** The store was made, and is gone with the child that held it. */

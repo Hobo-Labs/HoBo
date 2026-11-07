@@ -28,9 +28,9 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
 	type ControlApiServer,
+	type ControlApiServerOptions,
 	createControlApiServer,
 	PayloadTooLargeError,
-	type ControlApiServerOptions,
 } from "../src/index.js";
 
 const temps: string[] = [];
@@ -613,9 +613,7 @@ describe("OTLP ingest", () => {
 		});
 		expect(res.status).toBe(400);
 		// SAFETY: the error response is a JSON object with a code field.
-		expect(((await res.json()) as JsonObject).code).toBe(
-			"bad-request",
-		);
+		expect(((await res.json()) as JsonObject).code).toBe("bad-request");
 	});
 
 	it("names the signal in a malformed-payload message", async () => {

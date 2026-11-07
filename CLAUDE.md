@@ -18,6 +18,8 @@ This repo is wired with the agent tools listed in the docs/agent-tooling.md tabl
 
 Install the binaries once with [`scripts/setup-agent-tools.sh`](scripts/setup-agent-tools.sh). MCP servers are defined in `.mcp.json` (auto-discovered).
 
+**Dev environment:** provision pinned Node, pnpm, cue, and turbo with [`mise.toml`](mise.toml) (`bash scripts/bootstrap-dev.sh --project-only` or `mise install`). Cloud agents without a custom image should run `bash scripts/bootstrap-dev.sh` first so dotfiles + mise stay current; see [`docs/dev-env/mise.md`](docs/dev-env/mise.md).
+
 ## Working norms
 - Docs and packages are both product surface: design docs are canonical for intent, `packages/` for behavior; `docs:freshness` requires a docs change alongside code changes; keep cross-doc links valid (relative `.md` links).
 - Follow the HoBo implementation architecture rules in [`AGENTS.md`](AGENTS.md): PACT at service boundaries, protobuf plus CUE for records/messages/data/objects, project-local `data-models/` folders for CUE-constrained types, parse-don't-validate derived types, and event-driven CQRS/actors/materialized views.

@@ -115,6 +115,8 @@ export function queues(options?: QueuesOptions): SlotBinding {
 }
 
 export interface WorkersOptions {
+	/** Explicit public workers.dev exposure; absent preserves the observed setting. */
+	readonly workersDev?: boolean;
 	readonly compatibilityDate?: string;
 	readonly smartPlacement?: boolean;
 }

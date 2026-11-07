@@ -683,9 +683,18 @@ describe("every verb, run bare", () => {
 
 	async function runBare(verb: string) {
 		return runHoboCodeCli([verb], {
-			env: isolatedEnv(),
+			env: { ...isolatedEnv(), HOBO_CODE_SIDECARS: "0" },
 			hoboHome: temp("hobo-code-verb-home-"),
 			cwd: temp("hobo-code-verb-cwd-"),
+			allocateWorkspaces: async ({ workspaceRoot, agentIds }) => ({
+				backend: "shared",
+				workspaces: agentIds.map((agentId) => ({
+					agentId,
+					path: workspaceRoot,
+					backend: "shared",
+				})),
+			}),
+			muxRunner: { run: async () => ({ code: 0, stdout: "hobo\n" }) },
 			// An stdin that is already at EOF.
 			//
 			// `vshell` owns stdin for the life of its pane and returns when stdin

@@ -32,7 +32,7 @@
  * This package registers no Resource Definitions for the `aws.*` product ids,
  * so a deploy attempted against this Yard fails closed at resolution
  * (`YARD_BINDING_PRODUCT_UNKNOWN`) until definitions land. It does now ship
- * SigV4-signed resolvers, but for 7 of the 19 ids only
+ * SigV4-signed resolvers for 8 of the 19 ids
  * (`AWS_RESOLVED_PRODUCT_IDS`), and those are proven against an injected fake
  * transport — no live AWS call has been made from this repo.
  */

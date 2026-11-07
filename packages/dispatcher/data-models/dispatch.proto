@@ -26,6 +26,19 @@ message CreditAccountRecord {
   optional double spend_to_date = 9;
   optional double reserved_units = 10;
   repeated CreditGrantRecord credits = 11;
+  optional double reserved_cost = 12;
+}
+
+message ReservedCreditConsumptionRecord {
+  string credit_id = 1;
+  double units = 2;
+}
+
+message ReservedConsumptionRecord {
+  double free_headroom = 1;
+  repeated ReservedCreditConsumptionRecord credits = 2;
+  optional double rate_units = 3;
+  optional uint32 concurrency_slots = 4;
 }
 
 message ReservationRecord {
@@ -38,6 +51,33 @@ message ReservationRecord {
   string status = 7;
   optional string expires_at = 8;
   optional string release_reason = 9;
+  optional double reserved_cost = 10;
+  optional double actual_cost = 11;
+  optional string command_hash = 12;
+  optional double unit_cost = 13;
+  optional double switching_cost = 14;
+  optional string dispatch_request_hash = 15;
+  optional string decision_input_json = 16;
+  optional double estimated_cost = 17;
+  optional ReservedConsumptionRecord consumption = 18;
+  optional uint64 confirmed_seq = 19;
+  optional uint64 released_seq = 20;
+  optional uint64 provider_usage_seq = 21;
+  optional uint64 started_seq = 22;
+  optional string usage_evidence_ref = 23;
+}
+
+message SettlementCommandRecord {
+  string reservation_id = 1;
+  optional double actual_cost = 2;
+  optional uint64 provider_usage_seq = 3;
+  optional bool usage_finalized = 4;
+  optional string usage_evidence_ref = 5;
+}
+
+message LedgerTimeAdvancedRecord {
+  string as_of = 1;
+  uint64 ledger_seq = 2;
 }
 
 message CreditLedgerViewRecord {
@@ -77,6 +117,8 @@ message HysteresisInputRecord {
   double minimum_savings = 2;
   string dwell_window = 3;
   string observed_at = 4;
+  optional string savings_since = 5;
+  optional string challenger_provider_id = 6;
 }
 
 message RankedCandidateRecord {
@@ -93,6 +135,8 @@ message RankedCandidateRecord {
   string credit_facts = 11;
   optional string next_credit_expires_at = 12;
   string rationale = 13;
+  bool eligible = 14;
+  optional string rejection_reason = 15;
 }
 
 message LedgerInputRecord {

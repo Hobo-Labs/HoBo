@@ -12,9 +12,8 @@ import {
 	runValkeyCommand,
 	VALKEY_CLI_AUTH_ENV,
 } from "../src/index.js";
+import type { JsonValue } from "../src/json.js";
 import { AUTH_REF } from "./harness.js";
-import { type JsonValue } from "../src/json.js";
-
 
 const SOURCE = {
 	host: "valkey-a.yard-1.hobo.test",

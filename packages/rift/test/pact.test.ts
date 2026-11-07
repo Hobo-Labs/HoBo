@@ -19,8 +19,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { type JsonObject } from "../src/json.js";
-
+import type { JsonObject } from "../src/json.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkg = join(here, "..");

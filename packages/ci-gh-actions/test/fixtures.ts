@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import {
 	AccountSchema,
+	type CiSharedBudgetHooks,
 	ConfigurationSchema,
 	ConnectionSchema,
 	JobSchema,
@@ -141,6 +142,8 @@ export class ContractApi implements GithubTransport {
 		display_title: "",
 	};
 	jobStatus = "queued";
+	/** The one label the original job asks for; the JIT runner must register with it. */
+	jobLabel = "hobo";
 	dispatches = 0;
 	registrations = 0;
 	deletes = 0;
@@ -194,7 +197,7 @@ export class ContractApi implements GithubTransport {
 				run_id: 11,
 				run_attempt: 1,
 				status: this.jobStatus,
-				labels: ["hobo"],
+				labels: [this.jobLabel],
 			});
 		if (
 			method === "POST" &&
@@ -228,7 +231,7 @@ export class ContractApi implements GithubTransport {
 				JSON.stringify({
 					name: `hobo-${this.leaseId}`,
 					runner_group_id: 1,
-					labels: ["hobo"],
+					labels: [this.jobLabel],
 					work_folder: "_hobo_work",
 				}),
 			);
@@ -250,8 +253,8 @@ export class ContractApi implements GithubTransport {
 		throw new Error(`unmatched contract: ${method} ${path}`);
 	}
 }
-export function harness(path = ":memory:") {
-	const store = new LeaseStore(path);
+export function harness(path = ":memory:", sharedBudget?: CiSharedBudgetHooks) {
+	const store = new LeaseStore(path, undefined, { sharedBudget });
 	const api = new ContractApi();
 	const identityClaims = claims();
 	const identity: IdentityVerifier = {

@@ -37,4 +37,25 @@ package ghactions
 	default_events: ["workflow_job", "workflow_run"]
 	default_permissions: {actions: "write", administration: "write", contents: "write", workflows: "write", metadata: "read", pull_requests: "write", members: "read"}
 }
-#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest
+// Third-party runner integration declared in .hobo/ci.json. References only:
+// secretRef names a GitHub secret or env var; raw credential values never fit.
+#RunnerIntegrationAuth: {
+ method: "github-app" | "oidc" | "device" | "secret-ref"
+ secretRef?: string & =~"^(github-secret|env):[A-Z][A-Z0-9_]{0,63}$"
+ projectId?: string & =~"^[a-z0-9]{6,32}$"
+ if method == "secret-ref" {secretRef: string}
+ if method == "oidc" {projectId: string}
+}
+#RunnerIntegration: {
+ id: string & =~"^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+ provider: "blacksmith" | "depot" | "jog" | "boat"
+ enabled?: bool
+ organization?: string & =~"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
+ runsOn: [string & =~"^[a-z0-9][a-z0-9.-]{0,63}$", ...string & =~"^[a-z0-9][a-z0-9.-]{0,63}$"]
+ auth: #RunnerIntegrationAuth
+ if provider == "blacksmith" {auth: method: "github-app", runsOn: [...=~"^blacksmith(-[a-z0-9]+)*$"]}
+ if provider == "jog" {auth: method: "github-app", runsOn: [...=~"^jog(-[a-z0-9]+)*$"]}
+ if provider == "depot" {auth: method: "github-app" | "oidc" | "secret-ref", runsOn: [...=~"^depot-[a-z0-9.-]+$"]}
+ if provider == "boat" {auth: method: "device" | "secret-ref", runsOn: [...=~"^boat(-(small|large|xlarge))?$"]}
+}
+#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration

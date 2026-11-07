@@ -19,6 +19,13 @@ const all = args.has("--all");
 const explain = args.has("--explain");
 const includeBuild = args.has("--build");
 const finalValidation = args.has("--final");
+const externalWorkspaceTests = args.has("--external-workspace-tests");
+if (externalWorkspaceTests && (staged || all || finalValidation || !baseArg)) {
+	console.error(
+		"--external-workspace-tests requires an explicit base and a separate required workspace test job",
+	);
+	process.exit(2);
+}
 const parallelLimit = Math.max(
 	1,
 	Number.parseInt(process.env.HOBO_RELEVANT_CHECK_CONCURRENCY ?? "4", 10) || 4,
@@ -60,7 +67,16 @@ function cannotStart(command: string, commandArgs: string[], why: string) {
 	console.error(`fail  ${[command, ...commandArgs].join(" ")} — ${why}`);
 }
 
-function run(command: string, commandArgs: string[]) {
+function logCheckExit(
+	check: { command: string; args: string[] },
+	status: number,
+): void {
+	const label = `${check.command} ${check.args.join(" ")}`;
+	if (status === 0) console.log(`ok  ${label} (exit 0)`);
+	else console.error(`fail  ${label} (exit ${status})`);
+}
+
+function run(command: string, commandArgs: string[], check?: Check) {
 	const platformCommand = invocationFor(command, commandArgs);
 	if (platformCommand === undefined) return 1;
 	const result = spawnSync(platformCommand.command, platformCommand.args, {
@@ -74,7 +90,9 @@ function run(command: string, commandArgs: string[]) {
 			`could not start ${platformCommand.command}: ${result.error.message}`,
 		);
 	}
-	return result.status ?? 1;
+	const status = result.status ?? 1;
+	logCheckExit(check ?? { command, args: commandArgs }, status);
+	return status;
 }
 
 function runAsync(check: Check): Promise<number> {
@@ -94,7 +112,11 @@ function runAsync(check: Check): Promise<number> {
 			);
 			resolve(1);
 		});
-		child.once("exit", (status) => resolve(status ?? 1));
+		child.once("exit", (status) => {
+			const code = status ?? 1;
+			logCheckExit(check, code);
+			resolve(code);
+		});
 	});
 }
 
@@ -304,11 +326,14 @@ const { checks, scopes } = selectRelevantChecks({
 	all,
 	includeBuild,
 	includeBroadSweeps: all || finalValidation,
+	workspaceTestsCoveredExternally: externalWorkspaceTests,
 	rootPackageJsonScriptsOnlyChanged: rootPackageJsonScriptsOnlyChanged(),
 });
 
 console.log(`Changed files: ${files.length}`);
 console.log(`Detected scope: ${scopes.join(", ") || "standard"}`);
+if (externalWorkspaceTests)
+	console.log("Workspace tests must pass in the separate required CI job.");
 for (const check of checks)
 	console.log(`- ${check.command} ${check.args.join(" ")} (${check.reason})`);
 
@@ -317,7 +342,7 @@ assertNoImplicitBroadSweeps(checks);
 if (explain) process.exit(0);
 
 for (const check of checks.filter((check) => check.serial)) {
-	const status = run(check.command, check.args);
+	const status = run(check.command, check.args, check);
 	if (status !== 0) process.exit(status);
 }
 

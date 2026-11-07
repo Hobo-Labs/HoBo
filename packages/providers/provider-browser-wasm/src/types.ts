@@ -1,3 +1,4 @@
+import type { CostSignal as CoreCostSignal } from "@hobo/core";
 import type { JsonObject } from "./json.js";
 
 export type PortKind = string;
@@ -7,12 +8,7 @@ export type Match =
 	| { kind: "full" }
 	| { kind: "partial"; missing: string[] }
 	| { kind: "none" };
-export type CostSignal = {
-	currency: string;
-	sku: string;
-	unit: string;
-	marginalPrice: string;
-};
+export type CostSignal = Omit<CoreCostSignal, "freeTier">;
 export type Capability = {
 	port: string;
 	satisfies(req: PortRequest): Match;

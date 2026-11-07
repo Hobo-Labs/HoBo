@@ -9,7 +9,11 @@
 
 package provider_webernetes
 
-import "list"
+import (
+	"list"
+	"regexp"
+	"strings"
+)
 
 #WebernetesPortKind: "compute" | "kv" | "queue"
 
@@ -86,6 +90,7 @@ import "list"
 	// Zero here is a real price, not a missing one: a local pod produces no
 	// vendor invoice. That is why this provider may publish the fact at all.
 	marginal_price: "0"
+	pricing_status: "verified-zero"
 }
 
 #WebernetesResourcePlan: {
@@ -181,19 +186,27 @@ import "list"
 	scheme: "http" | "https"
 
 	// Lowercased by URL parsing, never carrying userinfo or a trailing dot.
-	host:     =~"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"
+	host:     =~"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$" | "[::1]"
 	locality: #WebernetesEndpointLocality
+	// The separately supplied host/scheme cannot relabel a public locator.
+	_normalizedURL: strings.ToLower(url)
+	_normalizedURL: =~"^\(scheme)://\(regexp.QuoteMeta(host))(:[0-9]+)?([/#?]|$)"
 
 	// Loopback names are the ordinary case; `.hobo.localhost` is what the
-	// built-in transport emits, and a bare `.hobo` name is forbidden outright
+	// an injected local host may emit, and a bare `.hobo` name is forbidden outright
 	// (ADR-0130).
 	if locality == "loopback" {
-		host: "localhost" | "127.0.0.1" | =~"\\.localhost$" | =~"^127\\."
+		host: "localhost" | "[::1]" | =~"\\.localhost$" | =~"^127\\.\(#WebernetesIPv4Octet)\\.\(#WebernetesIPv4Octet)\\.\(#WebernetesIPv4Octet)$"
+	}
+	if locality == "private-network" {
+		host: =~"^(10\\.\(#WebernetesIPv4Octet)\\.\(#WebernetesIPv4Octet)\\.\(#WebernetesIPv4Octet)|172\\.(1[6-9]|2[0-9]|3[01])\\.\(#WebernetesIPv4Octet)\\.\(#WebernetesIPv4Octet)|192\\.168\\.\(#WebernetesIPv4Octet)\\.\(#WebernetesIPv4Octet))$"
 	}
 	if locality == "overlay" {
 		host: =~"\\.hobo\\.test$"
 	}
 }
+
+#WebernetesIPv4Octet: "(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])"
 
 #WebernetesTemporaryStationResult: {
 	station_id: #WebernetesStationRequest.station_id

@@ -83,11 +83,39 @@ resolution** — `YARD_BINDING_PRODUCT_UNKNOWN`, or no registered resolver —
 until Resource Definitions and resolvers land. Nothing in this section should
 be read as evidence that an AWS deployment works.
 
-## Deployment resolvers (supersedes the "catalog only" note above)
+## Deployment resolvers
 
-The section above is now **out of date on one point**: this package ships
-`ResourceResolver`s. It is left in place because this file is appended to
-rather than rewritten; read this section as the current state.
+`aws.lambda/v1` provides the service/worker compute path. Its desired record names
+an ECR image by sha256 digest, an existing `executionRoleArn`, `memoryMb`,
+`timeoutSeconds` and `architecture`; budget execution additionally requires
+`reservedConcurrency`, `ownershipRef` and `artifactDigest`. No IAM role, artifact,
+capacity or account is guessed. This is an IAM-invocable function; a public Function
+URL and its access policy are separate resources and are not invented.
+
+The resolver creates a deterministically named function, applies its reserved
+concurrency, then reads `Configuration`, `Code.ResolvedImageUri`, `Tags` and
+`Concurrency`. `outputs.ready` requires active initialization, successful last
+update, matching image/role/memory/timeout/architecture/concurrency and both native
+`hobo:owner` / `hobo:artifact` tags. `outputs.artifactDigest` is the immutable OCI
+digest from the independently read image; the deployment tag is exposed separately
+as `artifactMarker` and does not verify content. Creation acknowledgement and an initialized
+resource are different observations.
+
+Owned functions belonging to another artifact are refused. A combined code/capacity
+change needs a fresh immutable target, while a single supported delta carries the
+observed Lambda `RevisionId`. Missing, foreign or reused physical IDs and ownership
+are refused. Retirement verifies ownership and the source artifact before deletion,
+then independently reads confirmed absence. Target names must include a unique
+lifetime identity and must not be reused after retirement; `DeleteFunction` has no
+conditional revision fence.
+
+`test/lambda-hosting.test.ts` covers lost create acknowledgements, convergence,
+initialization, capacity bounds, artifact/ownership confusion, revision-fenced updates
+and unconfirmed retirement against a modeled API. The endpoint and input model are
+the official AWS SDK `lambda-2015-03-31` model. Live account and billing conformance
+requires an isolated AWS account and federated credentials; no anonymous Lambda
+provisioning API exists. Static `estimateCost()` rates are marked `estimate`; a
+placeholder zero is `unknown`. Financial admission requires current bounded quotes.
 
 `awsResolvers(options)` / `awsResolverRegistry(options)` (`src/resolvers.ts`)
 call AWS service APIs directly over an injected, guarded transport. There is no
@@ -113,6 +141,7 @@ and remove the resource — not the whole surface.
 |---|---|---|
 | `aws.s3/v1` | REST-XML on `s3.{region}.amazonaws.com` | `GET /{bucket}?location` (existence probe), `GET/PUT /{bucket}?versioning`, `GET/PUT /{bucket}?publicAccessBlock`, `PUT /{bucket}`, `DELETE /{bucket}` |
 | `aws.dynamodb/v1` | REST-JSON `x-amz-target` on `dynamodb.{region}.amazonaws.com` | `DescribeTable`, `CreateTable`, `UpdateTable`, `DeleteTable` |
+| `aws.lambda/v1` | REST-JSON on `lambda.{region}.amazonaws.com` | `GetFunction`, `CreateFunction` with an immutable ECR image, revision-bound `UpdateFunctionCode` / `UpdateFunctionConfiguration`, `PutFunctionConcurrency`, `DeleteFunction` plus absence readback |
 | `aws.sqs/v1`, `aws.sqs-fifo/v1` | query protocol on `sqs.{region}.amazonaws.com` | `GetQueueUrl`, `CreateQueue`, `GetQueueAttributes`, `SetQueueAttributes`, `DeleteQueue` |
 | `aws.sns/v1` | query protocol on `sns.{region}.amazonaws.com` | `ListTopics` (paged), `CreateTopic`, `GetTopicAttributes`, `SetTopicAttributes`, `DeleteTopic` |
 | `aws.secrets-manager/v1` | REST-JSON `x-amz-target` on `secretsmanager.{region}.amazonaws.com` | `DescribeSecret`, `CreateSecret`, `UpdateSecret`, `RestoreSecret`, `DeleteSecret` |
@@ -158,7 +187,6 @@ absent one.
 |---|---|
 | `aws.rds-postgres/v1`, `aws.rds-mysql/v1`, `aws.aurora-serverless-postgres/v1` | `CreateDBInstance`/`CreateDBCluster` take a `MasterUserPassword`, which would travel in `ResolveRequest.desired` — the record that reaches the event log and the plan digest. The managed-master-password path needs KMS + Secrets Manager wiring, and both paths need a DB subnet group and security group no binding names. |
 | `aws.elasticache-redis/v1` | Placement needs a cache subnet group and security group no binding names; omitting them silently lands the cluster in the default VPC. |
-| `aws.lambda/v1` | `CreateFunction` needs deployment-package bytes and an execution-role ARN; the binding carries neither. |
 | `aws.ecs-service/v1`, `aws.ecs-task/v1`, `aws.eks-deployment/v1` | Cluster, task-execution role, and network configuration live outside the binding; an EKS Deployment is a Kubernetes API object and is not reachable over this transport at all. |
 | `aws.app-runner/v1`, `aws.amplify-hosting/v1` | Creation is source-connection-scoped and returns a new ARN per call, with no documented list-by-name filter to converge against. |
 | `aws.api-gateway/v1` | `CreateRestApi`/`CreateApi` assign a fresh random id per call with no name-uniqueness, so a retry after a lost response creates a second API. |

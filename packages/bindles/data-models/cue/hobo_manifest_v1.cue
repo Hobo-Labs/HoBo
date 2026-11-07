@@ -64,6 +64,7 @@ import (
 		[string & #ResourceId]: #Resource
 	} & struct.MinFields(1)
 	triggerEdges?: [...#TriggerEdge]
+	policy?: {...}
 
 	for rid, resource in resources if resource.links != _|_ {
 		for i, link in resource.links {

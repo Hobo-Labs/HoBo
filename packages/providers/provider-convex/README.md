@@ -212,3 +212,14 @@ Realize/IR paths are deterministic and offline. The Management API lane is
 `describeConvexTarget`) every live call throws `ConvexCredentialsError` —
 fail closed, never a stub. Registered in
 [docs/design/live-provider-matrix.md](../../../docs/design/live-provider-matrix.md).
+
+## Hosting budget execution
+
+Static `estimateCost` values are explicitly `pricingStatus: "estimate"`; they are not
+current account quotes or enforceable liability bounds. Management calls validate an
+HTTPS base without credentials, query or fragment and forbid redirect following before
+sending a deploy credential. Dedicated negative tests cover those boundaries.
+
+Convex's anonymous backend matrix remains an explicit refusal where the host cannot
+supply the official backend's memory and durable storage. A deployment acknowledgement
+is not application health, final billing, data fencing or retirement evidence.

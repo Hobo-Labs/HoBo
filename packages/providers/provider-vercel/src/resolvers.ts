@@ -40,6 +40,7 @@
  * catalog offerings deliberately have no resolver — see the README table.
  */
 
+import { createHash } from "node:crypto";
 import { parseSecretRef, SecretValue } from "@hobo/bindings";
 import {
 	createResolverRegistry,
@@ -51,12 +52,16 @@ import {
 	type ResolveRequest,
 	type ResolverAction,
 	ResolverError,
+	type ResourceMutationJournal,
 	type ResourceResolver,
 	type TransportGuardPolicy,
 	type TransportMethod,
 	type TransportResponse,
 } from "@hobo/core";
-
+import {
+	createVercelStaticDeploymentResolver,
+	VERCEL_STATIC_DEPLOY_PRODUCT_ID,
+} from "./deployment-resolver.js";
 import {
 	isJsonArray,
 	isJsonBoolean,
@@ -121,6 +126,10 @@ export type VercelResolverOptions = {
 	/** Team the resources live in, when the token is team-scoped. */
 	readonly teamId?: string;
 	readonly call?: ApiCallOptions;
+	readonly mutationJournal?: ResourceMutationJournal;
+	readonly artifactTransport?: HttpTransport;
+	readonly maxArtifactBytes?: number;
+	readonly maxArtifactFiles?: number;
 };
 
 type Dispatch = HttpTransport;
@@ -130,8 +139,49 @@ type Dispatch = HttpTransport;
  * calls the network directly, and no unguarded transport is ever handed a
  * credential.
  */
-function guardedDispatch(transport: HttpTransport): Dispatch {
-	return guardTransport(transport, VERCEL_RESOLVER_TRANSPORT_POLICY);
+function guardedDispatch(
+	transport: HttpTransport,
+	options: VercelResolverOptions,
+	request: ResolveRequest,
+): Dispatch {
+	const dispatch = guardTransport(transport, VERCEL_RESOLVER_TRANSPORT_POLICY);
+	return async (outbound) => {
+		if (outbound.method !== "POST") return dispatch(outbound);
+		if (options.mutationJournal?.persistence !== "durable-cas")
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"vercel resource creation requires a durable mutation journal",
+			);
+		const mutationId = JSON.stringify([
+			"vercel",
+			options.teamId ?? "personal",
+			request.ref.productId,
+			request.ref.logicalId,
+			outbound.url,
+		]);
+		const requestDigest = `sha256:${createHash("sha256")
+			.update(JSON.stringify({ url: outbound.url, body: outbound.body ?? "" }))
+			.digest("hex")}`;
+		const claim = await options.mutationJournal.claim({
+			mutationId,
+			requestDigest,
+		});
+		if (claim.status !== "claimed")
+			throw new ResolverError(
+				"RESOLVER_PROVIDER_REJECTED",
+				"vercel creation was already attempted; observe its result instead of repeating POST",
+			);
+		try {
+			const response = await dispatch(outbound);
+			if (response.status >= 200 && response.status < 300)
+				await options.mutationJournal.acknowledge(mutationId, requestDigest);
+			else await options.mutationJournal.uncertain(mutationId, requestDigest);
+			return response;
+		} catch (error) {
+			await options.mutationJournal.uncertain(mutationId, requestDigest);
+			throw error;
+		}
+	};
 }
 
 type ApiRequest = {
@@ -148,7 +198,7 @@ async function callApi(
 ): Promise<TransportResponse> {
 	const body =
 		request.body === undefined ? undefined : JSON.stringify(request.body);
-	return dispatch({
+	const response = await dispatch({
 		method: request.method,
 		url: `${VERCEL_API_BASE}${request.path}`,
 		headers: {
@@ -164,6 +214,12 @@ async function callApi(
 		timeoutMs: options.timeoutMs ?? DEFAULT_CALL.timeoutMs,
 		maxResponseBytes: options.maxResponseBytes ?? DEFAULT_CALL.maxResponseBytes,
 	});
+	return response.status >= 200 && response.status < 300
+		? response
+		: {
+				...response,
+				body: response.body.replaceAll(credential.expose(), "[redacted]"),
+			};
 }
 
 function teamQuery(teamId: string | undefined): string {
@@ -478,6 +534,12 @@ type ProjectDesired = {
 
 function parseProjectDesired(request: ResolveRequest): ProjectDesired {
 	const desired = desiredOf(request);
+	for (const key of Object.keys(desired))
+		if (!["name", "operationId", ...PROJECT_SETTINGS].includes(key))
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"vercel project desired contains an unsupported setting",
+			);
 	const named = desiredString(desired, "name", VERCEL_PROJECT_PRODUCT_ID);
 	const name = deterministicName(
 		named ?? request.ref.logicalId,
@@ -498,6 +560,7 @@ async function getProjectView(
 	credential: SecretValue,
 	options: VercelResolverOptions,
 	idOrName: string,
+	byPhysicalId = false,
 ): Promise<ProjectView | undefined> {
 	const operation = "GET /v9/projects/{idOrName}";
 	const response = await callApi(
@@ -513,7 +576,27 @@ async function getProjectView(
 	if (response.status !== 200) {
 		throw providerRejected(operation, response.status, response.body);
 	}
-	return parseProjectView(response.body, operation);
+	const view = parseProjectView(response.body, operation);
+	assertProjectIdentity(view, options, idOrName, byPhysicalId);
+	return view;
+}
+
+function assertProjectIdentity(
+	view: ProjectView,
+	options: VercelResolverOptions,
+	expected: string,
+	byPhysicalId: boolean,
+): void {
+	if ((byPhysicalId ? view.id : view.name) !== expected)
+		throw unparseable(
+			"project observation",
+			"returned project identity differs from the requested resource",
+		);
+	if (options.teamId !== undefined && view.accountId !== options.teamId)
+		throw unparseable(
+			"project observation",
+			"returned project belongs to a different team",
+		);
 }
 
 function projectDelta(
@@ -547,7 +630,7 @@ function createProjectResolver(
 			);
 			assertProduct(parsed, VERCEL_PROJECT_PRODUCT_ID);
 			const credential = await resolveCredential(options, parsed.credentialRef);
-			const dispatch = guardedDispatch(transport);
+			const dispatch = guardedDispatch(transport, options, parsed);
 			const desired = parseProjectDesired(parsed);
 			const known = knownPhysicalId(parsed);
 			const observed = await getProjectView(
@@ -555,9 +638,15 @@ function createProjectResolver(
 				credential,
 				options,
 				known ?? desired.name,
+				known !== undefined,
 			);
 
 			if (observed === undefined) {
+				if (known !== undefined)
+					throw new ResolverError(
+						"RESOLVER_PRODUCT_UNSUPPORTED",
+						"known vercel project is absent; a fresh resource needs a new approved identity",
+					);
 				const operation = "POST /v9/projects";
 				const response = await callApi(
 					dispatch,
@@ -573,6 +662,7 @@ function createProjectResolver(
 					throw providerRejected(operation, response.status, response.body);
 				}
 				const view = parseProjectView(response.body, operation);
+				assertProjectIdentity(view, options, desired.name, false);
 				return outcomeOf("create", view.id, projectOutputs(view), [
 					`created vercel project ${view.name}`,
 				]);
@@ -604,6 +694,7 @@ function createProjectResolver(
 				throw providerRejected(operation, response.status, response.body);
 			}
 			const view = parseProjectView(response.body, operation);
+			assertProjectIdentity(view, options, observed.id, true);
 			return outcomeOf("update", view.id, projectOutputs(view), [
 				`updated ${Object.keys(delta).sort().join(", ")} on vercel project ${view.name}`,
 			]);
@@ -618,9 +709,19 @@ function createProjectResolver(
 			);
 			assertProduct(parsed, VERCEL_PROJECT_PRODUCT_ID);
 			const credential = await resolveCredential(options, parsed.credentialRef);
-			const dispatch = guardedDispatch(transport);
+			const dispatch = guardedDispatch(transport, options, parsed);
 			const target =
 				knownPhysicalId(parsed) ?? parseProjectDesired(parsed).name;
+			if (
+				!(await getProjectView(
+					dispatch,
+					credential,
+					options,
+					target,
+					knownPhysicalId(parsed) !== undefined,
+				))
+			)
+				return;
 			const operation = "DELETE /v9/projects/{idOrName}";
 			const response = await callApi(
 				dispatch,
@@ -651,10 +752,16 @@ function createProjectResolver(
 			);
 			assertProduct(parsed, VERCEL_PROJECT_PRODUCT_ID);
 			const credential = await resolveCredential(options, parsed.credentialRef);
-			const dispatch = guardedDispatch(transport);
-			const target =
-				knownPhysicalId(parsed) ?? parseProjectDesired(parsed).name;
-			const view = await getProjectView(dispatch, credential, options, target);
+			const dispatch = guardedDispatch(transport, options, parsed);
+			const known = knownPhysicalId(parsed);
+			const target = known ?? parseProjectDesired(parsed).name;
+			const view = await getProjectView(
+				dispatch,
+				credential,
+				options,
+				target,
+				known !== undefined,
+			);
 			return view === undefined
 				? undefined
 				: outcomeOf("noop", view.id, projectOutputs(view), [
@@ -707,6 +814,12 @@ function edgeConfigOutputs(view: EdgeConfigView): EdgeConfigOutputs {
 }
 
 function parseEdgeConfigSlug(request: ResolveRequest): string {
+	for (const key of Object.keys(request.desired))
+		if (!["slug", "operationId"].includes(key))
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"vercel edge config desired contains an unsupported setting",
+			);
 	const named = desiredString(
 		desiredOf(request),
 		"slug",
@@ -741,10 +854,19 @@ async function getEdgeConfigById(
 	if (response.status !== 200) {
 		throw providerRejected(operation, response.status, response.body);
 	}
-	return parseEdgeConfigView(
+	const view = parseEdgeConfigView(
 		readJsonObject(response.body, operation),
 		operation,
 	);
+	if (
+		view.id !== id ||
+		(options.teamId !== undefined && view.ownerId !== options.teamId)
+	)
+		throw unparseable(
+			operation,
+			"edge config identity or owning team differs from the approved resource",
+		);
+	return view;
 }
 
 /**
@@ -767,13 +889,20 @@ async function findEdgeConfigBySlug(
 	if (response.status !== 200) {
 		throw providerRejected(operation, response.status, response.body);
 	}
+	const matches: EdgeConfigView[] = [];
 	for (const entry of readJsonArray(response.body, operation)) {
-		if (!isJsonObject(entry)) {
+		if (!isJsonObject(entry))
 			throw unparseable(operation, "a list entry is not a JSON object");
+		if (entry.slug === slug) {
+			const view = parseEdgeConfigView(entry, operation);
+			if (options.teamId !== undefined && view.ownerId !== options.teamId)
+				throw unparseable(operation, "edge config belongs to a different team");
+			matches.push(view);
 		}
-		if (entry.slug === slug) return parseEdgeConfigView(entry, operation);
 	}
-	return undefined;
+	if (matches.length > 1)
+		throw unparseable(operation, "multiple edge configs claim the same name");
+	return matches[0];
 }
 
 async function lookupEdgeConfig(
@@ -804,7 +933,7 @@ function createEdgeConfigResolver(
 			);
 			assertProduct(parsed, VERCEL_EDGE_CONFIG_PRODUCT_ID);
 			const credential = await resolveCredential(options, parsed.credentialRef);
-			const dispatch = guardedDispatch(transport);
+			const dispatch = guardedDispatch(transport, options, parsed);
 			const slug = parseEdgeConfigSlug(parsed);
 			const known = knownPhysicalId(parsed);
 			const observed = await lookupEdgeConfig(
@@ -816,6 +945,11 @@ function createEdgeConfigResolver(
 			);
 
 			if (observed === undefined) {
+				if (known !== undefined)
+					throw new ResolverError(
+						"RESOLVER_PRODUCT_UNSUPPORTED",
+						"known vercel edge config is absent; fresh allocation requires a new approved identity",
+					);
 				const operation = "POST /v1/global-config";
 				const response = await callApi(
 					dispatch,
@@ -834,6 +968,14 @@ function createEdgeConfigResolver(
 					readJsonObject(response.body, operation),
 					operation,
 				);
+				if (
+					view.slug !== slug ||
+					(options.teamId !== undefined && view.ownerId !== options.teamId)
+				)
+					throw unparseable(
+						operation,
+						"created edge config identity differs from approved scope",
+					);
 				return outcomeOf("create", view.id, edgeConfigOutputs(view), [
 					`created vercel edge config ${view.slug}`,
 				]);
@@ -867,6 +1009,15 @@ function createEdgeConfigResolver(
 				readJsonObject(response.body, operation),
 				operation,
 			);
+			if (
+				view.id !== observed.id ||
+				view.slug !== slug ||
+				(options.teamId !== undefined && view.ownerId !== options.teamId)
+			)
+				throw unparseable(
+					operation,
+					"updated edge config identity differs from approved scope",
+				);
 			return outcomeOf("update", view.id, edgeConfigOutputs(view), [
 				`renamed vercel edge config ${observed.slug} to ${view.slug}`,
 			]);
@@ -881,7 +1032,7 @@ function createEdgeConfigResolver(
 			);
 			assertProduct(parsed, VERCEL_EDGE_CONFIG_PRODUCT_ID);
 			const credential = await resolveCredential(options, parsed.credentialRef);
-			const dispatch = guardedDispatch(transport);
+			const dispatch = guardedDispatch(transport, options, parsed);
 			const known = knownPhysicalId(parsed);
 			const target =
 				known ??
@@ -895,6 +1046,8 @@ function createEdgeConfigResolver(
 				)?.id;
 			// Nothing to delete is the state delete asks for.
 			if (target === undefined) return;
+			if (!(await getEdgeConfigById(dispatch, credential, options, target)))
+				return;
 			const operation = "DELETE /v1/global-config/{edgeConfigId}";
 			const response = await callApi(
 				dispatch,
@@ -924,7 +1077,7 @@ function createEdgeConfigResolver(
 			);
 			assertProduct(parsed, VERCEL_EDGE_CONFIG_PRODUCT_ID);
 			const credential = await resolveCredential(options, parsed.credentialRef);
-			const dispatch = guardedDispatch(transport);
+			const dispatch = guardedDispatch(transport, options, parsed);
 			const view = await lookupEdgeConfig(
 				dispatch,
 				credential,
@@ -971,6 +1124,7 @@ export const VERCEL_UNRESOLVED_PRODUCT_IDS = Object.freeze([
 export const VERCEL_RESOLVED_PRODUCT_IDS = Object.freeze([
 	"vercel.edge-config/v1",
 	"vercel.project/v1",
+	VERCEL_STATIC_DEPLOY_PRODUCT_ID,
 ] as const);
 
 /**
@@ -986,6 +1140,7 @@ export function vercelResolvers(
 	return Object.freeze([
 		createEdgeConfigResolver(options),
 		createProjectResolver(options),
+		createVercelStaticDeploymentResolver(options),
 	]);
 }
 

@@ -54,6 +54,7 @@ export interface DeclaredCost {
 	readonly sku: string;
 	readonly unit: string;
 	readonly marginalPrice: string;
+	readonly pricingStatus?: "unknown" | "estimate" | "verified-zero";
 	/**
 	 * Set when a provider means the stated price literally, including zero.
 	 * Without it a `"0"` is read as the repo-wide default, which is what it
@@ -94,18 +95,28 @@ export interface CostObjectiveVerdict {
 const COST_OBJECTIVES: ReadonlySet<string> = new Set(["cost", "min-cost"]);
 
 export function classifyPriceQuality(cost: DeclaredCost): PriceQuality {
+	if (cost.pricingStatus === "unknown") return "unpriced";
 	const raw = cost.marginalPrice.trim();
 	if (raw.length === 0) return "unpriced";
 
-	const value = Number.parseFloat(raw);
+	if (!/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/u.test(raw))
+		return "unparseable";
+	const value = Number(raw);
 	// Not a number at all, or a number that cannot be a price. Either way a
 	// human wrote something wrong, and folding it into "unpriced" would hide
 	// the typo for as long as the manifest lives.
 	if (!Number.isFinite(value) || value < 0) return "unparseable";
+	if (cost.pricingStatus === "verified-zero" && value !== 0)
+		return "unparseable";
 
 	// The load-bearing line: a bare "0" is the repo-wide default, not an offer
 	// of free compute — unless someone said they meant it.
-	if (value === 0 && cost.priceDeclared !== true) return "unpriced";
+	if (
+		value === 0 &&
+		cost.priceDeclared !== true &&
+		cost.pricingStatus !== "verified-zero"
+	)
+		return "unpriced";
 	return "priced";
 }
 

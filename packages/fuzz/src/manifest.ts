@@ -6,7 +6,20 @@ import {
 
 type FuzzObject = { readonly [key: string]: FuzzValue };
 type FuzzArray = readonly FuzzValue[];
-export type FuzzValue = FuzzObject | FuzzArray | Date | RegExp | Map<FuzzValue, FuzzValue> | Set<FuzzValue> | string | number | boolean | bigint | symbol | null | undefined;
+export type FuzzValue =
+	| FuzzObject
+	| FuzzArray
+	| Date
+	| RegExp
+	| Map<FuzzValue, FuzzValue>
+	| Set<FuzzValue>
+	| string
+	| number
+	| boolean
+	| bigint
+	| symbol
+	| null
+	| undefined;
 
 type ManifestResource = {
 	readonly type: string;

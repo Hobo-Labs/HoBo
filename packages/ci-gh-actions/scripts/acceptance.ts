@@ -900,7 +900,7 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
 			fault: { type: "string" },
 			local: { type: "boolean" },
 			"live-verify": { type: "boolean" },
-			repository: { type: "string", default: "Tyler-R-Kendrick/HoBo" },
+			repository: { type: "string", default: "Hobo-Labs/HoBo" },
 		},
 	});
 	const task = args.values["live-verify"]

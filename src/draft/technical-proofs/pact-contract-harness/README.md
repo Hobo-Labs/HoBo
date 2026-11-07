@@ -38,8 +38,8 @@ pnpm --prefix src/draft/technical-proofs/pact-contract-harness run test:contract
 pnpm --prefix src/draft/technical-proofs/pact-contract-harness run test:contract:provider
 ```
 
-Contract scripts use Node's test runner so they match the root `test:contract:*`
-stage-gate lanes and package-local turbo contract scripts.
+Contract scripts use Vitest, matching the proof's unit tests and the Vitest
+`describe`/`it` declarations in the consumer and provider contract suites.
 
 ## Verification
 

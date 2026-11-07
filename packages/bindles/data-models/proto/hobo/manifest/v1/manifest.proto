@@ -63,4 +63,6 @@ message Manifest {
   ComponentHost component_host = 2;
   map<string, Resource> resources = 3;
   repeated TriggerEdge trigger_edges = 4;
+  // Scope budget, contract-effect and resilience references survive collection.
+  google.protobuf.Struct policy = 5;
 }

@@ -8,6 +8,29 @@ import {
 } from "../src/index.js";
 
 describe("management API — credential-gated, fail-closed", () => {
+	it("refuses unsafe management targets before any credentialed request", () => {
+		for (const apiBase of [
+			"http://api.convex.dev/v1",
+			"https://user:password@api.convex.dev/v1",
+			"https://api.convex.dev/v1?forward=evil",
+			"https://api.convex.dev/v1#evil",
+		]) {
+			assert.throws(
+				() => createConvexManagementClient({ deployKey: "test-key", apiBase }),
+				/management API base/u,
+			);
+		}
+	});
+	it("forbids credentialed redirect following", async () => {
+		const client = createConvexManagementClient({
+			deployKey: "test-key",
+			fetchImpl: async (_url, init) => {
+				assert.equal(init?.redirect, "error");
+				return new Response("[]", { status: 200 });
+			},
+		});
+		await client.listDeployments();
+	});
 	it("fails closed without a deploy key (never a silent no-op)", async () => {
 		const client = createConvexManagementClient({});
 		assert.equal(client.live, false);

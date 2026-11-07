@@ -82,7 +82,7 @@ function nonNegativeNumber(
 	field: string,
 ): number {
 	if (value === undefined) return fallback;
-	if (!isJsonNumber(value) || Number.isNaN(value) || value < 0) {
+	if (!isJsonNumber(value) || !Number.isFinite(value) || value < 0) {
 		throw new BrokerParseError(code, `${code}: ${field} must be a number >= 0`);
 	}
 	return value;
@@ -182,6 +182,10 @@ export function parseBillingPolicy(
 			"invalid-billing-policy",
 			"spendCapUsd",
 		),
+		budgetUnlimited:
+			raw.budgetUnlimited === true || raw.budget_unlimited === true,
+		spendCapUnlimited:
+			raw.spendCapUnlimited === true || raw.spend_cap_unlimited === true,
 	};
 }
 

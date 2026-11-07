@@ -1,4 +1,8 @@
 export {
+	type NetlifyAnonymousHealthObservation,
+	observeNetlifyAnonymousSite,
+} from "./anonymous-health.js";
+export {
 	type AnonymousAuthorityProbe,
 	type AnonymousSiteDriver,
 	type AnonymousSiteDriverOptions,
@@ -45,6 +49,7 @@ export {
 export {
 	createNetlifyAnonymousStaticSiteDefinition,
 	createNetlifyAuthenticatedSiteDefinition,
+	createNetlifyStaticDeployDefinition,
 	NETLIFY_ANONYMOUS_STATIC_SITE_CANDIDATE,
 	NETLIFY_ANONYMOUS_STATIC_SITE_DEFINITION_ID,
 	NETLIFY_AUTHENTICATED_SITE_CANDIDATE,
@@ -71,7 +76,6 @@ export {
 	netlifyNativePorts,
 } from "./equivalence.js";
 export { netlify, PROVIDER_TARGET, type TypedOptionBlock } from "./options.js";
-
 export {
 	ANONYMOUS_ENV_ALLOWLIST,
 	type AnonymousDeployArgvInput,
@@ -107,6 +111,13 @@ export {
 	toAnonymousSiteReceipt,
 } from "./receipt.js";
 export {
+	NETLIFY_RESOLVED_PRODUCT_IDS,
+	NETLIFY_STATIC_DEPLOY_PRODUCT_ID,
+	type NetlifyResolverOptions,
+	netlifyResolverRegistry,
+	netlifyResolvers,
+} from "./resolvers.js";
+export {
 	type CredentialContinuityGrade,
 	type PlacementConstraint,
 	type ProviderResourceDefinitionData,
@@ -116,6 +127,13 @@ export {
 	type ResourceDefinitionSemanticsData,
 	semanticsToSelectionCandidate,
 } from "./resource-definition.js";
+export {
+	NETLIFY_DEFAULT_BINDINGS,
+	NETLIFY_STATIC_DEPLOY_PROFILE,
+	type NetlifyStaticDeploySlotOptions,
+	netlifySlots,
+	staticDeployment,
+} from "./slots.js";
 export type {
 	NetlifyAnonymousDeployResult,
 	NetlifyAnonymousTransport,

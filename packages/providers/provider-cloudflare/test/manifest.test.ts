@@ -30,6 +30,11 @@ describe("Capability Manifest publication (FR-031)", () => {
 				.sort(),
 			["compute", "kv", "objectStore"],
 		);
+		const compute = listed.find(
+			(entry) => isJsonObject(entry) && entry.port === "compute",
+		);
+		assert.ok(isJsonObject(compute));
+		assert.equal(compute.productId, "cloudflare.workers/v1");
 	});
 
 	it("rejects manifests that publish static secrets", () => {

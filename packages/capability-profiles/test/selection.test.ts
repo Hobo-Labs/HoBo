@@ -9,10 +9,10 @@
 
 import { describeConcern } from "@hobo/contract-harness";
 import {
+	type CapabilityRequirementInput,
 	createCapabilityProfileRegistry,
 	DEFAULT_TRUST_POLICY,
 	parseCapabilityRequirement,
-	type CapabilityRequirementInput,
 	type SelectionCandidate,
 	STANDARD_CAPABILITY_PROFILES,
 	selectCapabilityImplementation,
@@ -107,9 +107,7 @@ interface Ask {
 function run(ask: Ask) {
 	const candidates = ask.candidates.map(toCandidate);
 	const selectionInput = {
-		requirement: parseCapabilityRequirement(
-			ask.requirement ?? POSTGRES,
-		),
+		requirement: parseCapabilityRequirement(ask.requirement ?? POSTGRES),
 		registry,
 		candidates: ask.reversed ? [...candidates].reverse() : candidates,
 		policy: { ...DEFAULT_TRUST_POLICY, ...ask.policy },

@@ -7,6 +7,7 @@ import type {
 	PlannerRegistry,
 	ResourceDefinition,
 } from "../registry/catalog.js";
+import type { HostingPlanningPass } from "./hosting-budget.js";
 import {
 	emptyPlacementContext,
 	type PlacementContext,
@@ -14,6 +15,7 @@ import {
 	placementRejection,
 	spreadSurvivors,
 } from "./placement.js";
+import { assessCostObjective, classifyPriceQuality } from "./price-quality.js";
 
 // Matching (control-plane.md steps 2-5): resolve a Resource Definition per
 // resource via context-matching, negotiate the provider Capability.satisfies,
@@ -36,7 +38,10 @@ export interface MatchRejected {
 export type MatchOutcome = MatchAccepted | MatchRejected;
 
 function marginal(def: ResourceDefinition): number {
-	const value = Number.parseFloat(def.cost.marginalPrice);
+	if (def.cost.pricingStatus === "unknown") return Number.POSITIVE_INFINITY;
+	if (classifyPriceQuality(def.cost) === "unparseable")
+		return Number.POSITIVE_INFINITY;
+	const value = Number(def.cost.marginalPrice);
 	return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
 }
 
@@ -50,8 +55,10 @@ function rankByObjective(
 	if (a.specificity !== b.specificity) return b.specificity - a.specificity;
 	if (a.priority !== b.priority) return b.priority - a.priority;
 	if (objective === "min-cost" || objective === "cost") {
-		const delta = marginal(a) - marginal(b);
-		if (delta !== 0) return delta;
+		const left = marginal(a),
+			right = marginal(b);
+		if (left < right) return -1;
+		if (left > right) return 1;
 	}
 	return a.id.localeCompare(b.id);
 }
@@ -68,7 +75,24 @@ export function matchResource(
 	intent: ResourceIntent,
 	registry: PlannerRegistry,
 	placementContext?: PlacementContext,
+	hosting?: HostingPlanningPass,
 ): MatchOutcome {
+	const supported =
+		intent.objective === "min-cost" ||
+		intent.objective === "cost" ||
+		(intent.objective === "maximize-credits" && hosting !== undefined);
+	if (!supported)
+		return {
+			ok: false,
+			remediation: {
+				resource: intent.name,
+				code: "placement.unsupported-objective",
+				requiredPort: intent.port,
+				requiredFeatures: intent.require,
+				missing: [],
+				remediation: `objective ${intent.objective} requires an implemented ranking contract; maximize-credits requires fresh scoped hosting budget evidence`,
+			},
+		};
 	const context = placementContext ?? emptyPlacementContext();
 	const defs = registry.definitions();
 	// Context-matching by capability class (the resource's `type` -> port).
@@ -195,9 +219,60 @@ export function matchResource(
 		}
 	}
 
-	const ranked = [...survivors].sort((a, b) =>
-		rankByObjective(a, b, intent.objective),
-	);
+	const normalizedCosts = new Map<string, number>();
+	if (hosting) {
+		survivors = survivors.filter((candidate) => {
+			const quote = hosting.evaluate(intent.name, candidate);
+			if (!quote.ok) {
+				rejectedCandidates.push({
+					definitionId: candidate.id,
+					reason: quote.reason,
+				});
+				return false;
+			}
+			normalizedCosts.set(candidate.id, quote.allocation.expectedMicros);
+			return true;
+		});
+		if (survivors.length === 0)
+			return {
+				ok: false,
+				remediation: {
+					resource: intent.name,
+					code: "budget.no-eligible-offer",
+					requiredPort: intent.port,
+					requiredFeatures: intent.require,
+					missing: rejectedCandidates.map(
+						(candidate) => `${candidate.definitionId}: ${candidate.reason}`,
+					),
+					remediation:
+						"no fresh, compatible quote fits the remaining bounded budget allowance; update evidence or explicitly fund a different plan",
+				},
+			};
+	} else if (
+		new Set(survivors.map((candidate) => candidate.cost.unit)).size > 1
+	) {
+		return {
+			ok: false,
+			remediation: {
+				resource: intent.name,
+				code: "cost.incomparable-units",
+				requiredPort: intent.port,
+				requiredFeatures: intent.require,
+				missing: [],
+				remediation:
+					"price units differ; supply hosting budget evidence with a common usage horizon before comparing them",
+			},
+		};
+	}
+	const ranked = [...survivors].sort((a, b) => {
+		if (!hosting) return rankByObjective(a, b, intent.objective);
+		if (a.specificity !== b.specificity) return b.specificity - a.specificity;
+		if (a.priority !== b.priority) return b.priority - a.priority;
+		return (
+			(normalizedCosts.get(a.id) ?? Infinity) -
+				(normalizedCosts.get(b.id) ?? Infinity) || a.id.localeCompare(b.id)
+		);
+	});
 	if (criteria?.pickN !== undefined && ranked.length < criteria.pickN.count) {
 		return {
 			ok: false,
@@ -230,8 +305,14 @@ export function matchResource(
 		runnerUp !== undefined &&
 		winner.specificity === runnerUp.specificity &&
 		winner.priority === runnerUp.priority &&
-		(!costObjective || marginal(winner) === marginal(runnerUp));
+		(hosting
+			? normalizedCosts.get(winner.id) === normalizedCosts.get(runnerUp.id)
+			: !costObjective || marginal(winner) === marginal(runnerUp));
 	const allRejected = [...rejectedCandidates, ...losers];
+	const priceQuality = assessCostObjective({
+		objective: intent.objective,
+		candidates: survivors,
+	});
 
 	const decision: MatchDecided = {
 		deploymentId: "",
@@ -250,10 +331,13 @@ export function matchResource(
 		})),
 		tie,
 		objective: intent.objective,
-		rationale:
-			intent.objective === "min-cost" || intent.objective === "cost"
-				? "min-cost within constraints; stable tiebreak=definition-id"
-				: `objective=${intent.objective}; stable tiebreak=definition-id`,
+		rationale: hosting
+			? "expected incremental cost after shared entitlements; bounded exposure within budget; stable tiebreak=definition-id"
+			: !priceQuality.claimable
+				? `cost optimum unclaimed: ${priceQuality.reason}; stable tiebreak=definition-id`
+				: intent.objective === "min-cost" || intent.objective === "cost"
+					? "min-cost within constraints; stable tiebreak=definition-id"
+					: `objective=${intent.objective}; stable tiebreak=definition-id`,
 		catalogHash: registry.catalogHash,
 		catalogContentHash: registry.catalogHash,
 	};

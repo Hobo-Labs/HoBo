@@ -24,8 +24,8 @@ import {
 	DISPATCH_EVENTS,
 	parseCreditLedgerView,
 } from "../src/dispatcher.js";
-import { isJsonObject } from "../src/json.js";
 import type { JsonValue } from "../src/json.js";
+import { isJsonObject } from "../src/json.js";
 
 const DIGEST =
 	"sha256:1111111111111111111111111111111111111111111111111111111111111111";
@@ -180,19 +180,16 @@ describe("reserve", () => {
 		reserveOn(ledger, {
 			reservationId: "r-2",
 			units: 5,
-				expectedSeq: ledger.snapshot().seq,
-			});
+			expectedSeq: ledger.snapshot().seq,
+		});
 		// SAFETY: the parsed account exposes the reservation accounting field.
-			expect(
+		expect(
 			(ledger.snapshot().accounts[0] as { reservedUnits: number })
 				.reservedUnits,
 		).toBe(15);
 	});
 
-	it("draws from credit grants once the account-level headroom is exhausted", () => {
-		// The two-tier consumption path: account `freeHeadroom` first, then each
-		// grant in order. Skipping the grants would under-report available credit
-		// and send work to a paid provider while free credit sat unused.
+	it("uses grants as a breakdown of aggregate headroom, never an extra allowance", () => {
 		const ledger = createReservationLedger(
 			ledgerView([
 				account({
@@ -207,7 +204,7 @@ describe("reserve", () => {
 		const result = reserveOn(ledger, { units: 12 });
 		expect(result.reservation?.consumption?.freeHeadroom).toBe(5);
 		expect(result.reservation?.consumption?.credits).toEqual([
-			{ creditId: "c1", units: 7 },
+			{ creditId: "c1", units: 5 },
 		]);
 		// SAFETY: the parsed account's credits are CreditGrant records.
 		const after = ledger.snapshot().accounts[0] as {
@@ -215,7 +212,7 @@ describe("reserve", () => {
 			credits: Array<{ freeHeadroom: number }>;
 		};
 		expect(after.freeHeadroom).toBe(0);
-		expect(after.credits[0]?.freeHeadroom).toBe(3);
+		expect(after.credits[0]?.freeHeadroom).toBe(5);
 		// The second grant was never touched, because the request was satisfied.
 		expect(after.credits[1]?.freeHeadroom).toBe(10);
 	});
@@ -224,7 +221,7 @@ describe("reserve", () => {
 		const ledger = createReservationLedger(
 			ledgerView([
 				account({
-					freeHeadroom: 0,
+					freeHeadroom: 20,
 					credits: [
 						{ creditId: "c1", freeHeadroom: 10 },
 						{ creditId: "c2", freeHeadroom: 10 },
@@ -239,11 +236,7 @@ describe("reserve", () => {
 		expect(result.reservation?.consumption?.credits).toHaveLength(1);
 	});
 
-	it("skips a grant with an unusable headroom value", () => {
-		// `optionalNonNegativeNumber` on each grant. A grant carrying `null` or
-		// a negative number is skipped rather than consumed, because subtracting
-		// from it would produce a NaN headroom that compares false against every
-		// later check and silently removes the account from ranking.
+	it("falls back to paid work when unbounded credit facts cannot be trusted", () => {
 		const ledger = createReservationLedger(
 			ledgerView([
 				account({
@@ -256,9 +249,8 @@ describe("reserve", () => {
 			]),
 		);
 		const result = reserveOn(ledger, { units: 4 });
-		expect(result.reservation?.consumption?.credits).toEqual([
-			{ creditId: "good", units: 4 },
-		]);
+		expect(result.reservation?.consumption?.credits).toEqual([]);
+		expect(result.reservation?.reservedCost).toBe(0.08);
 	});
 
 	it("reserves against an account that does not exist in the ledger", () => {
@@ -572,14 +564,14 @@ describe("expire", () => {
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger, {
 			reservationId: "past",
-			expiresAt: "2026-06-01T00:00:00.000Z",
+			expiresAt: "2026-06-27T00:00:01.000Z",
 		});
 		reserveOn(ledger, {
 			reservationId: "future",
 			expiresAt: "2027-01-01T00:00:00.000Z",
 			expectedSeq: ledger.snapshot().seq,
 		});
-		const result = ledger.expire({ now: "2026-06-27T00:00:00.000Z" });
+		const result = ledger.expire({ now: "2026-06-27T00:00:02.000Z" });
 		expect(result.released).toBe(1);
 		// SAFETY: snapshot() returns reservations with the tested lifecycle fields.
 		const reservations = ledger.snapshot().reservations as Array<{
@@ -598,8 +590,8 @@ describe("expire", () => {
 		// `<=`, so the boundary instant expires. The alternative leaves a
 		// reservation alive for one sweep interval past its stated deadline.
 		const ledger = createReservationLedger(ledgerView([account()]));
-		reserveOn(ledger, { expiresAt: "2026-06-27T00:00:00.000Z" });
-		expect(ledger.expire({ now: "2026-06-27T00:00:00.000Z" }).released).toBe(1);
+		reserveOn(ledger, { expiresAt: "2026-06-27T00:00:01.000Z" });
+		expect(ledger.expire({ now: "2026-06-27T00:00:01.000Z" }).released).toBe(1);
 	});
 
 	it("never expires a reservation with no expiry", () => {
@@ -612,7 +604,7 @@ describe("expire", () => {
 
 	it("never expires a confirmed or already-released reservation", () => {
 		const ledger = createReservationLedger(ledgerView([account()]));
-		reserveOn(ledger, { expiresAt: "2026-06-01T00:00:00.000Z" });
+		reserveOn(ledger, { expiresAt: "2026-06-27T00:00:01.000Z" });
 		ledger.confirm({ reservationId: "r-1" });
 		expect(ledger.expire({ now: "2026-06-27T00:00:00.000Z" }).released).toBe(0);
 	});
@@ -621,8 +613,8 @@ describe("expire", () => {
 		const ledger = createReservationLedger(
 			ledgerView([account({ freeHeadroom: 100 })]),
 		);
-		reserveOn(ledger, { units: 25, expiresAt: "2026-06-01T00:00:00.000Z" });
-		ledger.expire({ now: "2026-06-27T00:00:00.000Z" });
+		reserveOn(ledger, { units: 25, expiresAt: "2026-06-27T00:00:01.000Z" });
+		ledger.expire({ now: "2026-06-27T00:00:01.000Z" });
 		// SAFETY: the parsed account is the ledger's CreditAccount shape.
 		expect(
 			(ledger.snapshot().accounts[0] as { freeHeadroom: number }).freeHeadroom,
@@ -644,22 +636,22 @@ describe("expire", () => {
 		const ledger = createReservationLedger(ledgerView([account()]));
 		reserveOn(ledger, {
 			reservationId: "a",
-			expiresAt: "2026-06-01T00:00:00Z",
+			expiresAt: "2026-06-27T00:00:01Z",
 		});
 		reserveOn(ledger, {
 			reservationId: "b",
-			expiresAt: "2026-06-01T00:00:00Z",
+			expiresAt: "2026-06-27T00:00:01Z",
 			expectedSeq: ledger.snapshot().seq,
 		});
-		const result = ledger.expire({ now: "2026-06-27T00:00:00.000Z" });
+		const result = ledger.expire({ now: "2026-06-27T00:00:01.000Z" });
 		expect(result.released).toBe(2);
-		expect(ledger.snapshot().seq).toBe(95);
+		expect(ledger.snapshot().seq).toBe(96);
 	});
 
 	it("emits ReservationExpired rather than ReservationReleased", () => {
 		const ledger = createReservationLedger(ledgerView([account()]));
-		reserveOn(ledger, { expiresAt: "2026-06-01T00:00:00Z" });
-		ledger.expire({ now: "2026-06-27T00:00:00.000Z" });
+		reserveOn(ledger, { expiresAt: "2026-06-27T00:00:01Z" });
+		ledger.expire({ now: "2026-06-27T00:00:01.000Z" });
 		expect(ledger.events().at(-1)?.type).toBe(
 			DISPATCH_EVENTS.ReservationExpired,
 		);

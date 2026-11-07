@@ -2,11 +2,17 @@ import { createSign } from "node:crypto";
 import { z } from "zod";
 
 export interface GithubTransport {
+	/**
+	 * `ifNoneMatch` makes a GET conditional: GitHub answers 304 when the ETag
+	 * still matches, and a 304 does not count against the installation's rate
+	 * limit. A transport may ignore it; the caller then just sees a 200.
+	 */
 	request(
 		installationId: number,
 		path: string,
 		method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
 		body?: string,
+		ifNoneMatch?: string,
 	): Promise<Response>;
 }
 const Run = z.object({
@@ -100,8 +106,10 @@ export async function getJob(
 			run_id: z.number().int().positive(),
 			status: z.string(),
 			labels: z.array(z.string()),
+			name: z.string().optional(),
 			runner_name: z.string().nullable().optional(),
 			run_attempt: z.number().int().positive().optional(),
+			created_at: z.string().optional(),
 		})
 		.parse(await response.json());
 }
@@ -147,6 +155,7 @@ export function githubApiUrl(path: string): string {
 				"head",
 				"status",
 				"filter",
+				"created",
 			].includes(key) ||
 			!value ||
 			value.length > 200 ||
@@ -168,11 +177,21 @@ export function githubApiUrl(path: string): string {
 			throw new Error("invalid GitHub API event");
 		if (
 			key === "status" &&
-			!["queued", "in_progress", "waiting", "pending", "requested"].includes(
-				value,
-			)
+			![
+				"queued",
+				"in_progress",
+				"waiting",
+				"pending",
+				"requested",
+				"completed",
+			].includes(value)
 		)
 			throw new Error("invalid GitHub API status");
+		if (
+			key === "created" &&
+			!/^>=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(value)
+		)
+			throw new Error("invalid GitHub API created");
 		if (key === "filter" && value !== "latest")
 			throw new Error("invalid GitHub API filter");
 		if (key === "state" && !["all", "open", "closed"].includes(value))
@@ -262,12 +281,18 @@ export function createGithubAppTransport(options: {
 				signal: AbortSignal.timeout(15000),
 			});
 		},
-		async request(installationId, path, method = "GET", body) {
+		async request(installationId, path, method = "GET", body, ifNoneMatch) {
 			const url = githubApiUrl(path);
 			const token = await installationToken(installationId);
+			const conditional =
+				method === "GET" && ifNoneMatch ? { "If-None-Match": ifNoneMatch } : {};
 			const init: RequestInit = {
 				method,
-				headers: { ...common, Authorization: `Bearer ${token}` },
+				headers: {
+					...common,
+					...conditional,
+					Authorization: `Bearer ${token}`,
+				},
 				redirect: "error",
 				signal: AbortSignal.timeout(15000),
 			};

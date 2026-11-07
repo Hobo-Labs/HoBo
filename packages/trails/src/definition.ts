@@ -160,7 +160,9 @@ function parseStep(s: TrailStep): TrailStep {
 	return Object.freeze({
 		id: s.id,
 		kind: s.kind,
-		...(s.description !== undefined ? { description: s.description } : undefined),
+		...(s.description !== undefined
+			? { description: s.description }
+			: undefined),
 		...(s.dependsOn !== undefined
 			? { dependsOn: Object.freeze([...s.dependsOn]) }
 			: undefined),
@@ -169,7 +171,9 @@ function parseStep(s: TrailStep): TrailStep {
 		...(s.schema !== undefined
 			? { schema: Object.freeze({ ...s.schema }) }
 			: undefined),
-		...(s.data !== undefined ? { data: Object.freeze({ ...s.data }) } : undefined),
+		...(s.data !== undefined
+			? { data: Object.freeze({ ...s.data }) }
+			: undefined),
 		...(s.identity !== undefined
 			? {
 					identity: Object.freeze({
@@ -188,12 +192,14 @@ function parseStep(s: TrailStep): TrailStep {
 			? { junction: Object.freeze({ ...s.junction }) }
 			: undefined),
 		...(s.oracleId !== undefined ? { oracleId: s.oracleId } : undefined),
-		...(s.progressive !== undefined ? { progressive: s.progressive } : undefined),
+		...(s.progressive !== undefined
+			? { progressive: s.progressive }
+			: undefined),
 	});
 }
 
 function stableStringify(value: JsonValue): string {
-	if (value === null || !isJsonObject(value) && !Array.isArray(value)) {
+	if (value === null || (!isJsonObject(value) && !Array.isArray(value))) {
 		return JSON.stringify(value);
 	}
 	if (Array.isArray(value)) {

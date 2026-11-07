@@ -12,8 +12,8 @@ import {
 
 import {
 	type SandboxAccessReport,
-	type SweTask,
 	SandboxAccessReportSchema,
+	type SweTask,
 	type SweTaskReport,
 	SweTaskReportSchema,
 	SweTaskSchema,

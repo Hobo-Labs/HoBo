@@ -1,4 +1,28 @@
 export {
+	type HostingCredentialScopeAttestation,
+	HostingCredentialScopeAttestationSchema,
+	type HostingCredentialScopeBinding,
+	HostingCredentialScopeBindingSchema,
+	type HostingCredentialScopeChallenge,
+	HostingCredentialScopeChallengeSchema,
+	type HostingCredentialScopeClaims,
+	HostingCredentialScopeClaimsSchema,
+	type HostingCredentialScopeRequest,
+	HostingCredentialScopeRequestSchema,
+} from "./_generated/hosting_credential_scope_pb.js";
+export {
+	type HostingFinancialEvidenceAttestation,
+	HostingFinancialEvidenceAttestationSchema,
+	type HostingFinancialEvidenceClaims,
+	HostingFinancialEvidenceClaimsSchema,
+	type HostingFinancialLiabilityEvidence,
+	HostingFinancialLiabilityEvidenceSchema,
+	type HostingFinancialLifecycleEvidence,
+	HostingFinancialLifecycleEvidenceSchema,
+	type HostingFinancialResourceBinding,
+	HostingFinancialResourceBindingSchema,
+} from "./_generated/hosting_financial_evidence_pb.js";
+export {
 	type AccessCommandDeps,
 	createAccessCommand,
 } from "./access-command.js";
@@ -161,9 +185,11 @@ export {
 	createDefaultCollectionTarget,
 	createDefaultDevRuntime,
 	createDefaultYardRuntime,
+	createProductionYardRuntime,
 	type DefaultDevRuntimeOptions,
 	type DefaultYardRuntimeOptions,
 	type EstateResourceState,
+	type ProductionYardRuntimeOptions,
 	readPulumiEstate,
 	type SelectIacProviderDeps,
 	selectIacProvider,
@@ -232,6 +258,33 @@ export {
 	servePrivateOnHost,
 	toRuntimeHostKind,
 } from "./host-registry.js";
+export { createHostingBudgetAuthorityBridge } from "./hosting-budget-authority.js";
+export {
+	createDurableHostingCredentialScopeReplayStore,
+	createHostingCredentialScopeIssuer,
+	createHostingCredentialScopeVerifier,
+	createVerifiedHostingCredentialLease,
+	type HostingCredentialScopeIdentity,
+	type HostingCredentialScopeReplayStore,
+	type HostingCredentialScopeRequestInput,
+	hashHostingCredentialMaterial,
+} from "./hosting-credential-scope.js";
+export {
+	createProductionHostingExecution,
+	type ProductionHostingExecutionOptions,
+} from "./hosting-execution.js";
+export {
+	createHostingFinancialEvidenceReader,
+	type HostingFinancialEvidenceSource,
+	type HostingFinancialResourceScope,
+	hostingFinancialEvidenceSigningPayload,
+} from "./hosting-financial-evidence.js";
+export { createDurableHostingMutationJournal } from "./hosting-mutation-journal.js";
+export {
+	createDurableHostingMutationScope,
+	type HostingMutationScope,
+} from "./hosting-mutation-scope.js";
+export { createDurableHostingResourceRepository } from "./hosting-resource-store.js";
 export {
 	createIdentityCommand,
 	type IdentityCommandDeps,
@@ -367,6 +420,10 @@ export {
 	registerPluginExtensions,
 } from "./plugin-loader.js";
 export {
+	createProductionHostingProviderCatalog,
+	type HostingProviderCatalogEntry,
+} from "./provider-hosting-catalog.js";
+export {
 	createPulumiBackedIacProvider,
 	type PulumiAutomationAdapter,
 	type PulumiBackedIacProviderOptions,
@@ -398,6 +455,15 @@ export {
 	createReplayCommand,
 	type ReplayCommandDeps,
 } from "./replay-command.js";
+export {
+	createResolverHostingTransitionProvider,
+	type HostingDesiredInput,
+	type HostingOperatingLiabilityInput,
+	type HostingOperatingLiabilityReader,
+	type HostingResourceLifecycleReader,
+	type ProductionResolverBinding,
+	type ResolverHostingProviderOptions,
+} from "./resolver-hosting-provider.js";
 export {
 	createFetchHttpTransport,
 	createResolverBackedIacProvider,

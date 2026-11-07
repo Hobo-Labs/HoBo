@@ -1,0 +1,81 @@
+name: HoBo Pricing CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/pricing/**"
+      - "packages/broker/test/pricing-authorization.test.ts"
+      - "packages/events/src/pricing-event-contracts.ts"
+      - "packages/events/test/pricing-upcaster-gate.test.ts"
+      - "packages/events/corpus/golden-replay-baseline.json"
+      - "packages/dispatcher/**"
+      - "docs/design/provider-pricing-commercial-terms.md"
+      - "docs/design/provider-pricing-scorecard.md"
+      - ".github/workflows/pricing-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/pricing/**"
+      - "packages/broker/test/pricing-authorization.test.ts"
+      - "packages/events/src/pricing-event-contracts.ts"
+      - "packages/events/corpus/golden-replay-baseline.json"
+      - "packages/dispatcher/**"
+      - "docs/design/provider-pricing-commercial-terms.md"
+      - "docs/design/provider-pricing-scorecard.md"
+      - ".github/workflows/pricing-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hobo-pricing-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # ci-runner-preflight replaces these from the job memory limit.
+  HOBO_TURBO_CONCURRENCY: "1"
+  HOBO_TEST_MAX_WORKERS: "1"
+
+jobs:
+  pricing-gate:
+    name: "@hobo/pricing affected gate"
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 0
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode
+        run: pnpm run pins:fetch ts-autocode
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Turbo cache
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      - name: Build and test pricing integration cone
+        run: |
+          set -euo pipefail
+          pnpm exec turbo run build test \
+            --filter=@hobo/pricing \
+            --filter=@hobo/broker \
+            --filter=@hobo/dispatcher \
+            --filter=@hobo/events \
+            --continue \
+            --concurrency=1
+      - name: Consumer contracts (pricing + dispatcher v2)
+        run: |
+          pnpm --filter @hobo/pricing run test:contract:consumer
+          pnpm --filter @hobo/dispatcher run test:contract:consumer
+      - name: Save Turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save

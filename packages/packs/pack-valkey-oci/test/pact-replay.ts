@@ -36,9 +36,15 @@ import {
 	type ValkeyEndpointInput,
 	valkeyRetentionSemantics,
 } from "../src/index.js";
+import {
+	isJsonBoolean,
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	type JsonValue,
+} from "../src/json.js";
 import { verifiedValkeyPack } from "./harness.js";
-import { isJsonString, isJsonNumber, isJsonBoolean, isJsonObject, type JsonValue, type JsonObject } from "../src/json.js";
-
 
 const manifest = verifiedValkeyPack();
 
@@ -72,10 +78,7 @@ const RESOLVER: PackSecretResolverPort = {
 		Promise.resolve(new SecretValue(parseSecretRef(ref), "resolved-password")),
 };
 
-function asRecord(
-	value: JsonValue,
-	what: string,
-): Readonly<JsonObject> {
+function asRecord(value: JsonValue, what: string): Readonly<JsonObject> {
 	if (!isJsonObject(value) || value === null || Array.isArray(value)) {
 		throw new Error(`the pact's ${what} must be an object`);
 	}
@@ -83,10 +86,7 @@ function asRecord(
 	return value as Readonly<JsonObject>;
 }
 
-function requireString(
-	record: Readonly<JsonObject>,
-	key: string,
-): string {
+function requireString(record: Readonly<JsonObject>, key: string): string {
 	const value = record[key];
 	if (!isJsonString(value)) throw new Error(`the pact omits ${key}`);
 	return value;

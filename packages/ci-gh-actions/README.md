@@ -65,7 +65,8 @@ also runs the local zero-budget scenario without GitHub credentials.
 Stations exports `createCiBudgetRoutingBridge` over the typed relay client.
 Subscribe it to the existing Broker `budget.ThresholdCrossed` and
 `budget.Recovered` facts for the account's tenant. A profile chooses the eligible
-provider offers; CI prioritizes usable free allocation, then the lowest projected charge.
+provider offers; CI minimizes the complete incremental cost by default.
+The explicit `maximize-credits` objective prioritizes usable free allocation.
 The highest active configured threshold wins. Recovery restores the lower or
 normal profile, and an empty offer list pauses new admissions.
 
@@ -76,6 +77,10 @@ consumer, and `reconcile()` applies rule changes to existing signal state.
 Already running jobs retain their reservation and finish on their chosen host.
 
 ## Deploy the relay
+
+For **`hobo ci serve`** in a checkout (bind/public origin split, ingress HMAC,
+trust proxy) see [`REMOTE-RELAY-SERVE.md`](REMOTE-RELAY-SERVE.md). For the
+container image and Compose/Kubernetes manifests see [`deploy/README.md`](deploy/README.md).
 
 [Compose, Kubernetes, image build, TLS, backup and recovery](deploy/README.md)
 are included. The runtime uses Node 24, UID/GID 1000, a read-only root filesystem,
@@ -149,7 +154,20 @@ such as `https://hobo-ci.vercel.app` when that is the relay for its account.
 An optional `githubWebhookOrigin` records the separate public HTTPS origin
 used for GitHub delivery, such as a tunnel to the local container. It is
 configuration metadata: it neither registers the App nor proves the hostname is
-publicly reachable. Credentials are sent only to the trusted control origin.
+publicly reachable. **Production GitHub App webhooks should target a shared ingress
+front door** (`createWebhookIngressHandler`), which loads this file at the event
+commit and forwards `workflow_job` events to the matching `relayOrigin`. Set
+`jobAdmission: "pull"` (or use loopback defaults) for local environments so
+developers poll GitHub instead of exposing a relay URL. Override the selected
+environment with `HOBO_CI_ENVIRONMENT` or a gitignored `.hobo/ci.local.json`
+overlay. Fork pull requests resolve config at the **base branch** ref and honor
+`selection.forkPullRequestEnvironment` so untrusted head refs cannot aim webhooks
+at an attacker-controlled relay.
+An optional `store` picks the isolated worker's lease journal for
+`hobo ci serve --with-worker`: `{ "kind": "sqlite" }` (the default, a local file
+that polls GitHub for `runs-on: hobo` jobs) or
+`{ "kind": "postgres", "urlEnv": "DATABASE_URL" }` for a shared relay partition.
+`urlEnv` names an environment variable; the schema refuses a connection string.
 Amounts are USD microdollars. Each policy still requires separately provisioned
 providers and a repository connection on its selected relay.
 
@@ -158,6 +176,51 @@ format using JSON Schema draft 2020-12. The example's `$schema` annotation point
 editors to that schema, and the package exports it as
 `@hobo/ci-gh-actions/schema/ci-project.schema.json`. The parser uses its shipped
 schemas and never fetches the `$schema` URL while loading configuration.
+
+### Provider shapes
+
+A policy provider is one of eight closed, kind-specific shapes defined in the
+sibling [provider schema](schema/ci-project-providers.schema.json) (exported as
+`@hobo/ci-gh-actions/schema/ci-project-providers.schema.json`). The project
+schema's `Provider` is a relative `$ref` to that file, which is a `oneOf` with
+`additionalProperties: false` on every branch. Every kind carries the base
+fields `id`, `kind`, `connectionRef`, `runsOn` and optional `enabled`; existing
+five-field providers of every kind except `vercel` stay valid unchanged.
+
+| Kind | Extra fields |
+|---|---|
+| `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `hobo-box-worker` | none; `scaleSet`, `engine` and `location` are rejected |
+| `kubernetes` | optional `scaleSet` **or** optional `engine` (never both); neither keeps the existing disposable-pod path |
+| `vercel` | required `location`: `vercel`, `local` or `remote`; `scaleSet` and `engine` are rejected |
+
+`scaleSet` names an [ARC](https://github.com/actions/actions-runner-controller)
+`AutoscalingRunnerSet`: `{ "name", "namespace", "maxRunners", "minRunners"? }`.
+`name` is the set's `runnerScaleSetName` and must equal the provider's `runsOn`
+(checked when the policy is applied, not when the file is parsed); `name` and
+`namespace` are DNS labels and `minRunners` (default 0) may not exceed
+`maxRunners`. `engine` is `{ "name" }` of a Dagger Engine whose readiness HoBo
+checks. HoBo never installs or upgrades ARC or Dagger. Neither shape accepts a
+kubeconfig, token or `githubConfigSecret`: cluster and Vercel credentials stay
+out of `.hobo/ci.json` and resolve through the `connectionRef`.
+
+```json
+{
+  "id": "arc",
+  "kind": "kubernetes",
+  "connectionRef": "yard:build-cluster",
+  "runsOn": "hobo-arc",
+  "scaleSet": { "name": "hobo-arc", "namespace": "arc-runners", "maxRunners": 4 }
+}
+```
+
+The TypeScript types (`CiProjectProvider`, `CiKubernetesProvider`,
+`CiVercelProvider`, …) are inferred from the same discriminated union in
+`src/project-providers.ts`; `pnpm --filter @hobo/ci-gh-actions schema:check`
+fails when either shipped file drifts. The protobuf `CiPolicyProvider` carries
+the shapes as a `capacity` oneof (`scale_set` | `engine`) plus `location`, CUE
+constrains them in `@hobo/ci`'s `ci.cue`, and `parseCiPolicy` rejects a shape on
+the wrong kind. A relay keeps reading persisted vercel policies whose protobuf
+`location` is empty; only authored files require it.
 
 Put reusable values in the document's typed `definitions` registries. For
 example, define the Linux pool and routing strategy once, then use these policy
@@ -362,21 +425,46 @@ drain the existing hosts before rotating those identities. A connection revoked
 while webhook REST validation is awaiting cannot admit new demand under its old
 binding.
 
-By default, routing selects eligible offers that consume measured free allocation
-first, choosing the lowest projected paid charge among them. When no eligible offer
-can consume free allocation, routing selects the cheapest paid offer. A partial free
-balance can leave a paid remainder more expensive than a fully paid host. Pricing
+By default, `min-cost` selects the lowest complete projected paid charge. Explicit
+`maximize-credits` prefers offers that consume measured free allocation before
+comparing paid remainders. A partial free balance can leave a paid remainder more
+expensive than a fully paid host. Pricing
 and allocation evidence must cover the entire reserved host duration, including
 any extra Sandbox proxy VM duration. The relay
 reserves worst-case runtime plus startup, checks account/provider budgets and concurrency, and rechecks delayed
 launches. Original Actions jobs and portable native pipelines share the ledger.
 Prices use integer USD microdollars; allocations use normalized runner minutes.
+Both relays reprice held offers with their pinned attempt and queue context, retaining
+other payer measurements for all-of constraints. This preflight checks feasibility;
+the durable store must still claim the financial hold and revalidate strict native
+liability proof before dispatch. A feasible plan cannot authorize provider effects.
+
+The isolated-worker daemon accepts `HOBO_CI_TRUSTED_BUDGET_ADAPTER` as an
+operator-controlled absolute path to a local `.js` or `.mjs` module. This is
+trusted host code, never a repository or job setting. Its exported
+`createCiWorkerBudgetAdapter({ kind })` returns `{ kind, options, close? }`,
+where `kind` matches the daemon store (`sqlite` or `postgres`) and `options`
+is the corresponding `@hobo/ci` shared-budget options object. The options must
+provide the same durable Broker authority used by hosting and a trusted quote
+publisher that binds the full provider account, price and execution plan. For
+PostgreSQL workers the parent authority must be shared PostgreSQL; a local
+SQLite authority cannot coordinate distributed hosts. For SQLite workers the
+parent authority must use a separate database file from the worker journal.
+
+Strict policies additionally require a provider-native liability verifier;
+credit allocations, settlement and unused holds require their respective trusted
+coverage, final-usage and cancelled-before-claim verifiers. Missing proof refuses
+the effect or keeps the hold. The daemon validates the adapter through the common
+hook factory, redacts adapter errors, and closes it during shutdown or failed
+startup. With no adapter, common-policy admission remains fail-closed. Supplying
+an adapter is an operator integration and does not certify provider billing.
 
 Allocation snapshots are trusted platform/provider inputs, not discovered vendor
 entitlements. `Offer.freeMinutes` is remaining free allocation at `observedAt`;
-`Offer.spentMicros` already includes all completed usage through that inclusive
-watermark. `Account.spentMicros` uses the same semantics when `usageObservedAt`
-is supplied. Only later completed local usage is added. Settlement records actual
+`Offer.spentMicros` is the trusted usage total at that watermark.
+`Account.spentMicros` uses the same semantics when `usageObservedAt` is supplied.
+Local completion at the same timestamp remains conservatively counted until a
+strictly newer observation covers it. Settlement records actual
 usage completion separately from late reconciliation, preventing double charging
 when a refreshed snapshot already includes that work. Snapshots cannot move
 backward or place account usage in the future. Expired price/allocation evidence
@@ -435,6 +523,12 @@ GitHub matches labels, not a requested job ID; refusing provisioning for an even
 does not prevent another queued matching job from claiming an already registered
 runner. The host and nested runner share a provider machine, so the bridge cannot
 isolate untrusted workloads. See [GitHub's self-hosted runner security guidance](https://docs.github.com/en/actions/reference/security/secure-use#hardening-for-self-hosted-runners).
+
+Event/ref allowlists and `ci.attempts` constrain the original demand admitted to
+request a host. They do not constrain the actual matching job GitHub assigns to
+that shared-label runner. The reservation covers account and host liability.
+Use an independently verified isolated execution target when actual-job, ref,
+or attempt isolation is required.
 
 Public repositories and PR provisioning are refused, even when public repository
 acknowledgment is set. Drain registered runners before changing a private repository

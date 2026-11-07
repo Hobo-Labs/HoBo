@@ -27,8 +27,7 @@ import {
 	createHoboCli,
 	type DevRuntime,
 } from "../src/index.js";
-import { type JsonValue, type JsonObject } from "../src/json.js";
-
+import type { JsonObject, JsonValue } from "../src/json.js";
 
 // Consumer pact for the CLI <-> local-dev-loop boundary: the collect (@hobo/bindles
 // run-to-collect) and dev (runtime-local Camp) verbs share this seam. The

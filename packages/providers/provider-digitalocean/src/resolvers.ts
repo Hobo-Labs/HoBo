@@ -339,6 +339,124 @@ function optionalInteger(
 	return isJsonNumber(value) && Number.isSafeInteger(value) ? value : undefined;
 }
 
+function requestedMarker(
+	context: DigitalOceanResolverContext,
+	key: "artifactDigest" | "ownershipRef",
+): string | undefined {
+	const value = context.desired[key];
+	if (value === undefined) return undefined;
+	if (!isJsonString(value) || !/^sha256:[a-f0-9]{64}$/u.test(value))
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			`desired.${key} must be a canonical sha256 reference`,
+		);
+	return value;
+}
+
+function markerTags(context: DigitalOceanResolverContext): string[] {
+	const tags = Array.isArray(context.desired.tags) ? context.desired.tags : [];
+	if (tags.some((tag) => !isJsonString(tag)))
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"desired.tags must contain strings",
+		);
+	const result = tags.filter(isJsonString);
+	for (const [key, prefix] of [
+		["artifactDigest", "hobo-artifact:"],
+		["ownershipRef", "hobo-owner:"],
+	] as const) {
+		const value = requestedMarker(context, key);
+		if (value !== undefined) {
+			if (result.some((tag) => tag.startsWith(prefix)))
+				throw new ResolverError(
+					"RESOLVER_PRODUCT_UNSUPPORTED",
+					"reserved hosting marker tags must be supplied through their dedicated fields",
+				);
+			result.push(`${prefix}${value}`);
+		}
+	}
+	return result.sort(compareStrings);
+}
+
+function observedTagMarkers(record: JsonObject): JsonObject {
+	const tags = Array.isArray(record.tags)
+		? record.tags.filter(isJsonString)
+		: [];
+	const markers: JsonObject = {};
+	for (const [key, prefix] of [
+		["artifactDigest", "hobo-artifact:"],
+		["ownershipRef", "hobo-owner:"],
+	] as const) {
+		const matches = tags.filter((tag) => tag.startsWith(prefix));
+		if (matches.length > 1)
+			throw new ResolverError(
+				"RESOLVER_OUTPUT_UNPARSEABLE",
+				"provider returned ambiguous hosting marker tags",
+			);
+		const value = matches[0]?.slice(prefix.length);
+		if (value !== undefined) {
+			if (!/^sha256:[a-f0-9]{64}$/u.test(value))
+				throw new ResolverError(
+					"RESOLVER_OUTPUT_UNPARSEABLE",
+					"provider returned an invalid hosting marker tag",
+				);
+			Object.assign(markers, { [key]: value });
+		}
+	}
+	return markers;
+}
+
+function markerEnvs(
+	context: DigitalOceanResolverContext,
+	raw: JsonValue | undefined,
+): JsonObject[] {
+	const envs = Array.isArray(raw) ? raw.filter(isJsonObject) : [];
+	const result = [...envs];
+	for (const [key, name] of [
+		["artifactDigest", "HOBO_ARTIFACT_DIGEST"],
+		["ownershipRef", "HOBO_OWNERSHIP_REF"],
+	] as const) {
+		const value = requestedMarker(context, key);
+		if (value !== undefined) {
+			if (envs.some((env) => env.key === name))
+				throw new ResolverError(
+					"RESOLVER_PRODUCT_UNSUPPORTED",
+					"reserved hosting environment markers must be supplied through their dedicated fields",
+				);
+			result.push({ key: name, value, type: "GENERAL", scope: "RUN_TIME" });
+		}
+	}
+	return result;
+}
+
+function observedEnvMarkers(record: JsonObject): JsonObject {
+	const envs = Array.isArray(record.envs)
+		? record.envs.filter(isJsonObject)
+		: [];
+	const markers: JsonObject = {};
+	for (const [key, name] of [
+		["artifactDigest", "HOBO_ARTIFACT_DIGEST"],
+		["ownershipRef", "HOBO_OWNERSHIP_REF"],
+	] as const) {
+		const matches = envs.filter((env) => env.key === name);
+		if (matches.length > 1)
+			throw new ResolverError(
+				"RESOLVER_OUTPUT_UNPARSEABLE",
+				"provider returned ambiguous hosting environment markers",
+			);
+		const value = matches[0]?.value;
+		if (value !== undefined) {
+			if (!isJsonString(value) || !/^sha256:[a-f0-9]{64}$/u.test(value))
+				throw new ResolverError(
+					"RESOLVER_OUTPUT_UNPARSEABLE",
+					"provider returned invalid hosting environment markers",
+				);
+			Object.assign(markers, { [key]: value });
+		}
+	}
+	return markers;
+}
+
 function nestedRecord(record: JsonObject | undefined, key: string): JsonObject {
 	if (record === undefined) return {};
 	const value = record[key];
@@ -737,6 +855,20 @@ async function findByName(
 	collection: Collection,
 ): Promise<JsonObject | undefined> {
 	const label = `digitalocean list ${collection.listKey} for ${context.name}`;
+	if (context.knownPhysicalId !== undefined) {
+		const response = await send(context, {
+			method: "GET",
+			path: `${collection.path}/${encodeURIComponent(context.knownPhysicalId)}`,
+		});
+		if (isNotFound(response)) return undefined;
+		const record = nestedRecord(expectOk(response, label), collection.itemKey);
+		if (identityOf(record, label) !== context.knownPhysicalId)
+			throw new ResolverError(
+				"RESOLVER_OUTPUT_UNPARSEABLE",
+				`${label}: physical identity differs from the pinned resource`,
+			);
+		return record;
+	}
 	const matches: JsonObject[] = [];
 	for (let page = 1; page <= context.maxListPages; page += 1) {
 		const record = expectOk(
@@ -750,6 +882,15 @@ async function findByName(
 				`${label}: DigitalOcean returned a page without a ${JSON.stringify(collection.listKey)} array, so the collection cannot be searched and a create would risk duplicating an existing resource`,
 			);
 		}
+		if (
+			items.some(
+				(item) => !isJsonObject(item) || collection.nameOf(item) === undefined,
+			)
+		)
+			throw new ResolverError(
+				"RESOLVER_OUTPUT_UNPARSEABLE",
+				`${label}: an incomplete collection record cannot establish absence or uniqueness`,
+			);
 		for (const item of items) {
 			if (isJsonObject(item) && collection.nameOf(item) === context.name) {
 				matches.push(item);
@@ -761,10 +902,9 @@ async function findByName(
 		}
 	}
 	if (matches.length > 1) throw ambiguous(context, collection);
-	if (matches.length === 1) return matches[0];
 	throw new ResolverError(
 		"RESOLVER_PROVIDER_REJECTED",
-		`digitalocean ${collection.listKey}: read ${context.maxListPages} pages of ${PAGE_SIZE} without reaching the end of the collection and without finding ${JSON.stringify(context.name)}. The lookup refuses rather than concluding "absent" from an exhausted budget, which would create a duplicate of a resource on a page nobody read; raise maxListPages if the team really is this large`,
+		`digitalocean ${collection.listKey}: read ${context.maxListPages} pages of ${PAGE_SIZE} without reaching the end of the collection. Neither uniqueness nor absence of ${JSON.stringify(context.name)} has been proven, so the lookup refuses to adopt or create from an exhausted page budget; raise maxListPages if the team really is this large`,
 	);
 }
 
@@ -814,6 +954,7 @@ function databaseOutputs(record: JsonObject) {
 	const engine = optionalString(record, "engine");
 	const version = optionalString(record, "version");
 	return {
+		ready: status === "online" && host !== undefined,
 		...(optionalString(record, "name") !== undefined
 			? { name: optionalString(record, "name") }
 			: undefined),
@@ -1016,6 +1157,9 @@ function dropletOutputs(record: JsonObject) {
 		.find((entry) => optionalString(entry, "type") === "private");
 	const region = nestedRecord(record, "region");
 	return {
+		...observedTagMarkers(record),
+		ready: optionalString(record, "status") === "active",
+		operationConfirmed: optionalString(record, "status") === "active",
 		...(optionalString(record, "name") !== undefined
 			? { name: optionalString(record, "name") }
 			: undefined),
@@ -1117,6 +1261,10 @@ const DROPLET_SPEC: Omit<DigitalOceanResolverSpec, "productId"> = {
 						productId,
 						"ubuntu-24-04-x64",
 					),
+					tags: markerTags(context),
+					...(optionalString(context.desired, "userData") !== undefined
+						? { user_data: optionalString(context.desired, "userData") }
+						: undefined),
 					...(optionalBoolean(context.desired, "backups") !== undefined
 						? { backups: optionalBoolean(context.desired, "backups") }
 						: undefined),
@@ -1184,6 +1332,9 @@ const DEFAULT_FORWARDING_RULES = Object.freeze([
 function loadBalancerOutputs(record: JsonObject) {
 	const region = nestedRecord(record, "region");
 	return {
+		ready:
+			optionalString(record, "status") === "active" &&
+			optionalString(record, "ip") !== undefined,
 		...(optionalString(record, "name") !== undefined
 			? { name: optionalString(record, "name") }
 			: undefined),
@@ -1351,6 +1502,14 @@ function appOutputs(record: JsonObject) {
 		"phase",
 	);
 	return {
+		...observedEnvMarkers(
+			nestedRecord(nestedRecord(record, "active_deployment"), "spec"),
+		),
+		ready:
+			phase === "ACTIVE" &&
+			liveUrl !== undefined &&
+			(record.in_progress_deployment === undefined ||
+				record.in_progress_deployment === null),
 		...(optionalString(spec, "name") !== undefined
 			? { name: optionalString(spec, "name") }
 			: undefined),
@@ -1401,7 +1560,10 @@ function appSpec(context: DigitalOceanResolverContext, productId: string) {
 			`${productId}: the request carries no desired.spec. An App Platform app is defined by its spec (services, static sites, env var references, ingress); this resolver forwards the spec you authored and owns only its name, because inventing a spec would deploy something nobody wrote`,
 		);
 	}
-	return { ...spec, name: context.name };
+	const envs = markerEnvs(context, spec.envs);
+	return envs.length === 0
+		? { ...spec, name: context.name }
+		: { ...spec, name: context.name, envs };
 }
 
 function appSpecEqual(left: JsonObject, right: JsonObject): boolean {
@@ -1733,6 +1895,10 @@ function functionOutputs(
 			item.value === true,
 	);
 	return {
+		ready:
+			exec !== undefined &&
+			optionalString(exec, "kind") !== undefined &&
+			optionalString(observed, "version") !== undefined,
 		functionName: context.name,
 		namespace: ns.namespace,
 		// The host, not the key. `basic` never leaves this module.
@@ -1894,7 +2060,29 @@ async function findAppNamed(
 	context: DigitalOceanResolverContext,
 	appName: string,
 ): Promise<JsonObject | undefined> {
-	return findByName({ ...context, name: appName }, APP_COLLECTION);
+	let physicalId = context.knownPhysicalId;
+	if (physicalId !== undefined) {
+		const kind =
+			context.request.ref.productId === DIGITALOCEAN_APP_WORKER_PRODUCT_ID
+				? "workers"
+				: "jobs";
+		const suffix = `/${kind}/${context.name}`;
+		if (!physicalId.endsWith(suffix))
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"the pinned physical component identity differs from its requested app component",
+			);
+		physicalId = physicalId.slice(0, -suffix.length);
+		if (!physicalId)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"the pinned component has no physical app identity",
+			);
+	}
+	return findByName(
+		{ ...context, name: appName, knownPhysicalId: physicalId },
+		APP_COLLECTION,
+	);
 }
 
 function componentsOf(
@@ -1915,6 +2103,7 @@ function componentOutputs(
 	const instanceSize = optionalString(component, "instance_size_slug");
 	const instanceCount = optionalInteger(component, "instance_count");
 	return {
+		ready: appOutputs(app).ready,
 		componentName: context.name,
 		componentKind: kind === "workers" ? "worker" : "job",
 		appName: optionalString(nestedRecord(app, "spec"), "name") ?? "",
@@ -2165,6 +2354,7 @@ function bucketPath(context: DigitalOceanResolverContext): string {
 
 function spacesOutputs(context: DigitalOceanResolverContext, region: string) {
 	return {
+		ready: true,
 		bucketName: context.name,
 		region,
 		endpoint: `https://${context.name}.${region}.digitaloceanspaces.com`,
@@ -2255,6 +2445,7 @@ function volumeOutputs(record: JsonObject) {
 	const size = optionalInteger(record, "size_gigabytes");
 	const region = optionalString(nestedRecord(record, "region"), "slug");
 	return {
+		ready: size !== undefined && size > 0 && region !== undefined,
 		...(optionalString(record, "name") !== undefined
 			? { name: optionalString(record, "name") }
 			: undefined),
@@ -2382,6 +2573,8 @@ const CLUSTER_COLLECTION: Collection = Object.freeze({
 function clusterOutputs(record: JsonObject) {
 	const status = optionalString(nestedRecord(record, "status"), "state");
 	return {
+		ready:
+			status === "running" && optionalString(record, "endpoint") !== undefined,
 		...(optionalString(record, "name") !== undefined
 			? { name: optionalString(record, "name") }
 			: undefined),
@@ -2597,6 +2790,15 @@ function createResolver(
 		const spacesKeys = signsRequests
 			? await resolveSpacesKeys(request, options.resolveSpacesCredential)
 			: undefined;
+		if (
+			signsRequests &&
+			knownPhysicalId(request) !== undefined &&
+			knownPhysicalId(request) !== resourceName(request, spec.productId)
+		)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"the pinned physical bucket identity differs from the requested name",
+			);
 		return {
 			request,
 			transport,
@@ -2614,15 +2816,68 @@ function createResolver(
 		providerId: DIGITALOCEAN_PROVIDER_TARGET,
 		productId: spec.productId,
 		async reconcile(request, transport) {
-			return spec.reconcile(await contextFor(request, transport));
+			const context = await contextFor(request, transport);
+			if (context.knownPhysicalId !== undefined) {
+				const observed = await spec.read(context);
+				assertPinnedIdentity(context, observed);
+				if (!observed)
+					throw new ResolverError(
+						"RESOLVER_PROVIDER_REJECTED",
+						"the pinned physical resource is absent; a replacement requires a new authorized resource identity",
+					);
+			}
+			const result = await spec.reconcile(context);
+			assertPinnedIdentity(context, result);
+			return lifecycleOutcome(
+				result,
+				result.action === "noop" || result.action === "adopt",
+			);
 		},
 		async read(request, transport) {
-			return spec.read(await contextFor(request, transport));
+			const context = await contextFor(request, transport);
+			const result = await spec.read(context);
+			assertPinnedIdentity(context, result);
+			return result === undefined ? undefined : lifecycleOutcome(result, true);
 		},
 		async delete(request, transport) {
-			await spec.remove(await contextFor(request, transport));
+			const context = await contextFor(request, transport);
+			if (context.knownPhysicalId !== undefined) {
+				const observed = await spec.read(context);
+				assertPinnedIdentity(context, observed);
+				if (!observed) return;
+			}
+			await spec.remove(context);
 		},
 	};
+}
+
+function assertPinnedIdentity(
+	context: DigitalOceanResolverContext,
+	result: ResolveOutcome | undefined,
+): void {
+	if (
+		result &&
+		context.knownPhysicalId !== undefined &&
+		result.physicalId !== context.knownPhysicalId
+	)
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			"provider observation differs from the pinned physical resource identity",
+		);
+}
+
+function lifecycleOutcome(
+	result: ResolveOutcome,
+	observed: boolean,
+): ResolveOutcome {
+	const ready =
+		result.outputs.ready === true && result.diagnostics.length === 0;
+	return outcome(
+		result.action,
+		result.physicalId,
+		{ ...result.outputs, ready, operationConfirmed: observed && ready },
+		result.diagnostics,
+	);
 }
 
 /**

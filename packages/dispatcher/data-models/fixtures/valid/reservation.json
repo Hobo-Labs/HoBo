@@ -1,0 +1,17 @@
+{
+  "reservation_id": "hosting-operation",
+  "provider_id": "cloud",
+  "dimension": "traffic.requests",
+  "units": 2,
+  "expected_seq": 1,
+  "committed_seq": 2,
+  "started_seq": 3,
+  "status": "running",
+  "reserved_cost": 2,
+  "consumption": {
+    "free_headroom": 0,
+    "credits": [],
+    "rate_units": 2,
+    "concurrency_slots": 1
+  }
+}

@@ -42,15 +42,21 @@ export function sameOriginVercelTempApiBase(
 
 export function isVercelStationUrl(url: string): boolean {
 	try {
-		const host = new URL(url).hostname;
-		return host.endsWith(".vercel.app") || host === "vercel.app";
+		const parsed = new URL(url);
+		return (
+			parsed.protocol === "https:" &&
+			parsed.hostname.endsWith(".vercel.app") &&
+			!parsed.username &&
+			!parsed.password &&
+			!parsed.port
+		);
 	} catch {
 		return false;
 	}
 }
 
 const REMEDIATION =
-	"Vercel Drop provision failed. Local: `pnpm --filter hobo-site run dev` (same-origin /api/vercel-temp). CI/replay: HOBO_VERCEL_DROP_MOCK=1. Live: vercel login session or https://vercel.com/drop — never VERCEL_TOKEN.";
+	"Vercel has no configured anonymous temporary API. Choose an available anonymous provider. HOBO_VERCEL_DROP_MOCK=1 enables an explicit offline replay; account-backed Vercel deployment requires a scoped credential.";
 
 export async function provisionVercelStationViaBroker(input: {
 	readonly stationId: string;
@@ -97,9 +103,7 @@ export async function provisionVercelStationViaBroker(input: {
 	try {
 		body = parseJsonTree(text);
 	} catch {
-		throw new Error(
-			`${REMEDIATION} (invalid JSON HTTP ${response.status})`,
-		);
+		throw new Error(`${REMEDIATION} (invalid JSON HTTP ${response.status})`);
 	}
 	if (!response.ok || !isJsonObject(body) || body.ok !== true) {
 		const fail = isJsonObject(body) ? body : {};

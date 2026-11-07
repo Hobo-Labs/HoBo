@@ -1,5 +1,6 @@
 import { fromJsonString } from "@bufbuild/protobuf";
 import { type Configuration, ConfigurationSchema } from "./_generated/ci_pb.js";
+import { ciBudgetPolicy, ciRoutingObjective } from "./policy.js";
 import {
 	validateSandboxAllowance,
 	validateSandboxPricing,
@@ -15,13 +16,21 @@ export function parseConfiguration(json: string): Configuration {
 			throw new Error("invalid or duplicate account");
 		accountIds.add(account.id);
 		micros(account.budgetMicros, account.spentMicros);
+		const common = ciBudgetPolicy(account);
+		const objective = ciRoutingObjective(account.routingStrategy);
+		if (
+			common &&
+			(!common.workloads.includes("ci") ||
+				(account.routingStrategy && objective !== common.objective))
+		)
+			throw new Error("common budget policy does not match CI routing");
 		const signalKeys = Object.keys(account.routingSignalCycles);
 		if (
 			signalKeys.length !== Object.keys(account.routingSignalCrossed).length ||
 			signalKeys.some(
 				(key) =>
 					!key.startsWith("broker:") ||
-					key.length > 300 ||
+					key.length > (key.startsWith("broker:v2:") ? 12000 : 300) ||
 					!Object.hasOwn(account.routingSignalCrossed, key) ||
 					(account.routingSignalCycles[key] ?? 0) < 1,
 			)
@@ -46,9 +55,15 @@ export function parseConfiguration(json: string): Configuration {
 				throw new Error("invalid or duplicate offer");
 			ids.add(offer.id);
 			if (
-				!["", "gh-actions", "dagger", "cf", "sandbox", "ado"].includes(
-					offer.backend,
-				)
+				![
+					"",
+					"gh-actions",
+					"dagger",
+					"cf",
+					"sandbox",
+					"ado",
+					"isolated-container",
+				].includes(offer.backend)
 			)
 				throw new Error("unsupported execution backend");
 			if (
@@ -57,7 +72,16 @@ export function parseConfiguration(json: string): Configuration {
 				(offer.provider === "dagger" && offer.backend !== "dagger") ||
 				(offer.provider === "cloudflare" && offer.backend !== "cf") ||
 				(offer.provider === "vercel" && offer.backend !== "sandbox") ||
-				(offer.backend === "sandbox" && offer.provider !== "vercel")
+				(offer.backend === "sandbox" && offer.provider !== "vercel") ||
+				(offer.provider === "hobo-box-worker" &&
+					offer.backend !== "isolated-container") ||
+				(offer.provider === "kubernetes" &&
+					offer.backend !== "isolated-container" &&
+					(offer.backend !== "gh-actions" ||
+						offer.runsOn === "hobo-isolated-worker")) ||
+				(offer.backend === "isolated-container" &&
+					offer.provider !== "kubernetes" &&
+					offer.provider !== "hobo-box-worker")
 			)
 				throw new Error(
 					"native provider requires its matching execution backend",
@@ -69,6 +93,7 @@ export function parseConfiguration(json: string): Configuration {
 					"depot",
 					"warpbuild",
 					"kubernetes",
+					"hobo-box-worker",
 					"local",
 					"dagger",
 					"cloudflare",
@@ -88,6 +113,21 @@ export function parseConfiguration(json: string): Configuration {
 				throw new Error(
 					"local provider requires one zero-price gh-actions workstation on hobo-local-host without free-minute credits",
 				);
+			if (offer.backend === "isolated-container") {
+				if (
+					(offer.provider !== "kubernetes" &&
+						offer.provider !== "hobo-box-worker") ||
+					offer.runsOn !== "hobo-isolated-worker" ||
+					offer.freeMinutes !== 0 ||
+					offer.priceMicrosPerMinute !== 0 ||
+					offer.budgetMicros !== 0 ||
+					offer.sandboxPricing ||
+					offer.sandboxAllowance
+				)
+					throw new Error(
+						"isolated-container requires a zero-price hobo-box-worker or kubernetes offer without sandbox pricing",
+					);
+			}
 			if (offer.backend === "sandbox") {
 				if (!offer.sandboxPricing || offer.freeMinutes !== 0)
 					throw new Error(

@@ -16,7 +16,13 @@ import {
 	foldUsageItems,
 	githubActionsUsage,
 } from "../../src/adapters/github-billing.js";
-import type { JsonValue } from "../../src/parse.js";
+import {
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	type JsonValue,
+	parseJsonValue,
+} from "../../src/parse.js";
 
 const PACTS = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "pacts");
 
@@ -41,27 +47,56 @@ interface PactFile {
 	interactions: PactInteraction[];
 }
 
+function parsePactInteraction(value: JsonValue): PactInteraction {
+	if (!isJsonObject(value)) throw new TypeError("pact interaction must be an object");
+	const { description, request, response } = value;
+	if (
+		!isJsonString(description) ||
+		!isJsonObject(request) ||
+		!isJsonObject(response) ||
+		!isJsonString(request.method) ||
+		!isJsonString(request.path) ||
+		!isJsonNumber(response.status)
+	) {
+		throw new TypeError("pact interaction has an invalid shape");
+	}
+	const interaction: PactInteraction = {
+		description,
+		request: { method: request.method, path: request.path },
+		response: { status: response.status },
+	};
+	if (isJsonString(request.query)) interaction.request.query = request.query;
+	if (request.body !== undefined) interaction.request.body = request.body;
+	if (response.body !== undefined) interaction.response.body = response.body;
+	return interaction;
+}
+
+function parsePactFile(value: JsonValue): PactFile {
+	if (!isJsonObject(value) || !Array.isArray(value.interactions)) {
+		throw new TypeError("pact file must contain an interactions array");
+	}
+	return { interactions: value.interactions.map(parsePactInteraction) };
+}
+
 async function loadPact(name: string): Promise<PactFile> {
-	// SAFETY: assertion to `JSON.parse(await readFile(path.join(PACTS, name), "utf8")) as PactFile` is required at this boundary.
-	return JSON.parse(await readFile(path.join(PACTS, name), "utf8")) as PactFile;
+	const text = await readFile(path.join(PACTS, name), "utf8");
+	return parsePactFile(parseJsonValue(JSON.parse(text)));
 }
 
 function pactFetch(
 	interactions: readonly PactInteraction[],
 	calls: RecordedCall[],
 ): typeof fetch {
-	// SAFETY: test fetch stand-in matches the Fetch API used by the adapters.
-	return ((input: RequestInfo | URL, init?: RequestInit) => {
+	return (input, init) => {
 		const url = new URL(String(input));
 		const method = (init?.method ?? "GET").toUpperCase();
 		const record: RecordedCall = {
 			method,
 			url: url.pathname + url.search,
 		};
-		if (Object.prototype.toString.call(init?.body) === "[object String]") {
-			const parsed = JSON.parse(String(init.body));
-			// SAFETY: recorded request bodies are JSON fixtures.
-			record.body = parsed as JsonValue;
+		const body = init?.body;
+		if (isJsonString(body)) {
+			record.body = parseJsonValue(JSON.parse(body));
 		}
 		calls.push(record);
 		const match = interactions.find(
@@ -80,16 +115,20 @@ function pactFetch(
 				{ status: match.response.status },
 			),
 		);
-	}) as typeof fetch;
+	};
 }
 
 describe("pact: balancer-to-github-billing", () => {
 	it("folds the enhanced billing usageItems the pact records", async () => {
 		const pact = await loadPact("balancer-to-github-billing.pact.json");
-		// SAFETY: assertion to `pact.interactions[0]?.response.body as { usageItems: Parameters<typeof foldUsageItems>[0]; }` is required at this boundary.
-		const body = pact.interactions[0]?.response.body as {
-			usageItems: Parameters<typeof foldUsageItems>[0];
-		};
+		const body = pact.interactions[0]?.response.body;
+		if (
+			!isJsonObject(body) ||
+			!Array.isArray(body.usageItems) ||
+			!body.usageItems.every(isJsonObject)
+		) {
+			throw new Error("enhanced billing pact is missing usageItems objects");
+		}
 		const folded = foldUsageItems(body.usageItems);
 		// Only the actions/minutes item counts; the packages item is ignored.
 		expect(folded).toStrictEqual({ spendUsd: 13.2, unitsUsed: 2200 });
@@ -97,11 +136,10 @@ describe("pact: balancer-to-github-billing", () => {
 
 	it("folds the legacy billing body the pact records", async () => {
 		const pact = await loadPact("balancer-to-github-billing.pact.json");
-		// SAFETY: assertion to `pact.interactions[1]?.response.body as { total_minutes_used: number; total_paid_minutes_used: number; }` is required at this boundary.
-		const body = pact.interactions[1]?.response.body as {
-			total_minutes_used: number;
-			total_paid_minutes_used: number;
-		};
+		const body = pact.interactions[1]?.response.body;
+		if (!isJsonObject(body)) {
+			throw new Error("legacy billing pact response must be an object");
+		}
 		const folded = foldLegacyActionsBilling(body, 0.006);
 		expect(folded.unitsUsed).toBe(305);
 		expect(folded.spendUsd).toBeCloseTo(0.06, 10);
@@ -109,7 +147,7 @@ describe("pact: balancer-to-github-billing", () => {
 
 	it("drives the adapter end-to-end against the pact responses", async () => {
 		const pact = await loadPact("balancer-to-github-billing.pact.json");
-		const calls: Array<{ method: string; url: string }> = [];
+		const calls: RecordedCall[] = [];
 		const source = githubActionsUsage({
 			owner: "hobo-operator",
 			ownerKind: "user",
@@ -131,9 +169,9 @@ describe("pact: balancer-to-github-billing", () => {
 describe("pact: balancer-to-actions-variables", () => {
 	it("reads and patches the routed variable exactly as the pact records", async () => {
 		const pact = await loadPact("balancer-to-actions-variables.pact.json");
-		const calls: Array<{ method: string; url: string; body?: unknown }> = [];
+		const calls: RecordedCall[] = [];
 		const port = actionsVariables({
-			owner: "hobo-operator",
+			owner: "Hobo-Labs",
 			repo: "HoBo",
 			token: "pact-token",
 			fetchImpl: pactFetch(pact.interactions, calls),
@@ -146,7 +184,7 @@ describe("pact: balancer-to-actions-variables", () => {
 
 		const patch = calls.find((call) => call.method === "PATCH");
 		expect(patch?.url).toBe(
-			"/repos/hobo-operator/HoBo/actions/variables/HOBO_RUNNER_LINUX_SMALL",
+			"/repos/Hobo-Labs/HoBo/actions/variables/HOBO_RUNNER_LINUX_SMALL",
 		);
 		expect(patch?.body).toStrictEqual(
 			pact.interactions[1]?.request.body,
@@ -159,9 +197,9 @@ describe("pact: balancer-to-actions-variables", () => {
 		const postOnly = pact.interactions.filter(
 			(interaction) => interaction.request.method === "POST",
 		);
-		const calls: Array<{ method: string; url: string; body?: unknown }> = [];
+		const calls: RecordedCall[] = [];
 		const port = actionsVariables({
-			owner: "hobo-operator",
+			owner: "Hobo-Labs",
 			repo: "HoBo",
 			token: "pact-token",
 			fetchImpl: pactFetch(postOnly, calls),
@@ -169,7 +207,7 @@ describe("pact: balancer-to-actions-variables", () => {
 
 		await port.set("HOBO_RUNNER_LINUX_SMALL", "ubuntu-latest");
 		const post = calls.find((call) => call.method === "POST");
-		expect(post?.url).toBe("/repos/hobo-operator/HoBo/actions/variables");
+		expect(post?.url).toBe("/repos/Hobo-Labs/HoBo/actions/variables");
 		expect(post?.body).toStrictEqual(postOnly[0]?.request.body);
 	});
 });

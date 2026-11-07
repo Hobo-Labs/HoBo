@@ -1,15 +1,30 @@
-import { toJsonString } from "@bufbuild/protobuf";
+import { toJson, toJsonString } from "@bufbuild/protobuf";
 import {
+	CiPolicyProviderSchema,
+	ciBudgetPolicyJson,
 	DesiredCiPolicySchema,
 	type ParsedCiPolicy,
 	parseCiPolicy,
 } from "@hobo/ci";
+import {
+	parseBudgetPolicyDocumentJson,
+	parseBudgetPolicyJson,
+} from "@hobo/core";
 import { z } from "zod";
 import { createCiRelayClient } from "./client.js";
+import {
+	parseEnvironmentEngineList,
+	parseEnvironmentEngineRelays,
+} from "./engine-relay-routing.js";
 import {
 	CiProjectDocumentSchema,
 	resolveCiProjectReferences,
 } from "./project-schema.js";
+import {
+	findRawSecrets,
+	type RunnerIntegration,
+	RunnerIntegrationsSchema,
+} from "./runner-integrations.js";
 
 const environmentName = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const ExplicitEnvironment = z.string().regex(environmentName);
@@ -26,14 +41,46 @@ const SecretRequirement = z
 const SecretDeclarations = z
 	.record(z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/), SecretRequirement)
 	.refine((secrets) => Object.keys(secrets).length <= 64);
+const ProtobufPolicyProvider = z
+	.object({ $typeName: z.literal("hobo.ci.v1.CiPolicyProvider") })
+	.loose();
 const JsonValue = z.json();
 const JsonObject = z.record(z.string(), JsonValue);
 type JsonData = z.infer<typeof JsonValue>;
+const JobAdmission = z.enum(["push", "pull"]);
+const WorkerStore = z.discriminatedUnion("kind", [
+	z.object({ kind: z.literal("sqlite") }).strict(),
+	z
+		.object({
+			kind: z.literal("postgres"),
+			urlEnv: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),
+		})
+		.strict(),
+]);
+const CiEngineId = z.string().regex(/^[a-z][a-z0-9-]{0,62}$/);
+const EngineRelayOverride = z
+	.object({
+		relayOrigin: z.string().min(1).max(2048).optional(),
+	})
+	.strict();
+export const EnvironmentEngineRelaysSchema = z
+	.record(CiEngineId, EngineRelayOverride)
+	.refine((entries) => Object.keys(entries).length <= 16);
+export const EnvironmentEnginesSchema = z.union([
+	z.array(CiEngineId).max(16),
+	z
+		.record(CiEngineId, EngineRelayOverride.partial())
+		.refine((entries) => Object.keys(entries).length <= 16),
+]);
 const EnvironmentFields = z
 	.object({
 		relayOrigin: z.string().min(1).max(2048),
 		githubWebhookOrigin: z.string().min(1).max(2048).optional(),
 		allowInsecureLoopback: z.boolean().optional(),
+		jobAdmission: JobAdmission.optional(),
+		store: WorkerStore.optional(),
+		engines: EnvironmentEnginesSchema.optional(),
+		engineRelays: EnvironmentEngineRelaysSchema.optional(),
 		secrets: SecretDeclarations.optional(),
 		policy: JsonValue,
 	})
@@ -63,10 +110,24 @@ export interface CiProjectEnvironment {
 	/** Declared public GitHub ingress; reachability and registration are separate. */
 	readonly githubWebhookOrigin: string | undefined;
 	readonly allowInsecureLoopback: boolean;
+	/** Push accepts signed GitHub webhooks at the relay; pull polls GitHub for queued jobs. */
+	readonly jobAdmission: "push" | "pull" | undefined;
+	/** Box worker lease journal; undefined means local SQLite. Postgres carries an env var name, never a URL. */
+	readonly store: CiWorkerStore | undefined;
+	/** Engines served from this environment profile (defaults to repository inventory). */
+	readonly engines: readonly string[] | undefined;
+	/** Per-engine relay origin overrides (falls back to environment relayOrigin). */
+	readonly engineRelays:
+		| Readonly<Record<string, { readonly relayOrigin?: string }>>
+		| undefined;
 	/** Logical names and required phases only; secret values are never configured here. */
 	readonly secrets: Readonly<Record<string, CiSecretRequirement>>;
 	readonly policy: ParsedCiPolicy;
 }
+
+export type CiWorkerStore =
+	| { readonly kind: "sqlite" }
+	| { readonly kind: "postgres"; readonly urlEnv: string };
 
 export type CiSecretPhase = "deployment" | "execution";
 export interface CiSecretRequirement {
@@ -97,6 +158,8 @@ export interface CiProjectEnvironmentTemplate {
 	relayOrigin?: string;
 	githubWebhookOrigin?: string;
 	allowInsecureLoopback?: boolean;
+	jobAdmission?: "push" | "pull";
+	store?: CiWorkerStore;
 	secrets?: Readonly<
 		Record<string, { readonly requiredFor: readonly CiSecretPhase[] }>
 	>;
@@ -129,7 +192,7 @@ function mergeTemplate(
 		const inherited = entries.get(key);
 		entries.set(
 			key,
-			inherited === undefined
+			inherited === undefined || key === "budgetPolicy"
 				? value
 				: mergeTemplate(inherited, value, depth + 1),
 		);
@@ -150,9 +213,14 @@ function projectConfig(
 		throw new Error("invalid environment selection");
 	const targets = new Set<string>();
 	for (const entry of entries) {
-		const key = JSON.stringify([entry.relayOrigin, entry.policy.accountId]);
-		if (targets.has(key)) throw new Error("duplicate environment account");
-		targets.add(key);
+		const origins = [entry.relayOrigin];
+		for (const override of Object.values(entry.engineRelays ?? {}))
+			if (override.relayOrigin) origins.push(override.relayOrigin);
+		for (const origin of origins) {
+			const key = JSON.stringify([origin, entry.policy.accountId]);
+			if (targets.has(key)) throw new Error("duplicate environment account");
+			targets.add(key);
+		}
 	}
 	const config = Object.freeze({
 		defaultEnvironment,
@@ -227,8 +295,13 @@ export function parseCiProjectConfig(
 			throw new Error("project configuration too large");
 		if (organization && !validatedConfigs.has(organization))
 			throw new Error("organization configuration is not validated");
-		const authored = CiProjectDocumentSchema.parse(JSON.parse(json));
-		const input = ProjectInput.parse(resolveCiProjectReferences(authored));
+		const authored = CiProjectDocumentSchema.parse(
+			parseBudgetPolicyDocumentJson(json),
+		);
+		if (findRawSecrets(authored.integrations ?? []).length)
+			throw new Error("integrations must hold references, never secrets");
+		const { selection: _ignoredSelection, ...documentBody } = authored;
+		const input = ProjectInput.parse(resolveCiProjectReferences(documentBody));
 		const entries = Object.entries(input.environments ?? {});
 		const environments = Object.fromEntries(
 			entries.map(([name, rawEntry]) => {
@@ -249,6 +322,10 @@ export function parseCiProjectConfig(
 							? githubWebhookOrigin(entry.githubWebhookOrigin)
 							: undefined,
 						allowInsecureLoopback,
+						jobAdmission: entry.jobAdmission,
+						store: entry.store ? Object.freeze({ ...entry.store }) : undefined,
+						engines: parseEnvironmentEngineList(entry.engines),
+						engineRelays: parseEnvironmentEngineRelays(entry.engineRelays),
 						secrets: Object.freeze(
 							Object.fromEntries(
 								Object.entries(entry.secrets ?? {}).map(
@@ -286,12 +363,20 @@ export function defineCiProjectConfig(
 ): CiProjectConfig {
 	try {
 		// `defineCiPolicy` returns frozen protobuf messages whose `$typeName`
-		// metadata is not part of the authored JSON schema. All other fields
-		// still pass through the strict policy parser below.
+		// metadata is not part of the authored JSON schema. Providers are
+		// written as protobuf JSON so an unset `capacity` oneof or an empty
+		// `location` never reach the closed authored provider shapes.
 		return parseCiProjectConfig(
-			JSON.stringify(input, (key, value) =>
-				key === "$typeName" ? undefined : value,
-			),
+			JSON.stringify(input, (key, value) => {
+				if (key === "budgetPolicy" && value !== undefined)
+					parseBudgetPolicyJson(JSON.stringify(value));
+				if (key === "$typeName") return undefined;
+				if (!ProtobufPolicyProvider.safeParse(value).success) return value;
+				const { location, ...provider } = JsonObject.parse(
+					toJson(CiPolicyProviderSchema, value, { alwaysEmitImplicit: true }),
+				);
+				return location ? { ...provider, location } : provider;
+			}),
 			organization,
 		);
 	} catch {
@@ -361,9 +446,14 @@ export async function ciEnvironmentPolicySha256(
 	if (!ExplicitEnvironment.safeParse(environment).success)
 		throw new Error("explicit CI environment required");
 	const selected = selectCiEnvironment(config, environment);
-	const bytes = new TextEncoder().encode(
-		toJsonString(DesiredCiPolicySchema, selected.policy),
+	const policy = JsonObject.parse(
+		JSON.parse(toJsonString(DesiredCiPolicySchema, selected.policy)),
 	);
+	if (selected.policy.budgetPolicy)
+		policy.budgetPolicy = JsonValue.parse(
+			JSON.parse(ciBudgetPolicyJson(selected.policy.budgetPolicy)),
+		);
+	const bytes = new TextEncoder().encode(JSON.stringify(policy));
 	const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
 	return Array.from(new Uint8Array(digest), (byte) =>
 		byte.toString(16).padStart(2, "0"),
@@ -450,4 +540,28 @@ export async function applyCiEnvironmentPolicy(
 		toJsonString(DesiredCiPolicySchema, selected.policy),
 	);
 	return client.putDesiredPolicy(policy, { revision: current.revision });
+}
+
+/**
+ * Read the runner-provider integrations from `.hobo/ci.json` text. Entries are
+ * references only; a credential-shaped value anywhere rejects the whole block
+ * with an error that never contains repository text.
+ */
+export function parseCiRunnerIntegrations(
+	json: string,
+): readonly RunnerIntegration[] {
+	try {
+		const document = z
+			.object({ integrations: z.json().optional() })
+			.loose()
+			.parse(JSON.parse(json));
+		const raw = document.integrations ?? [];
+		if (findRawSecrets(raw).length)
+			throw new Error("integrations must hold references, never secrets");
+		return Object.freeze(RunnerIntegrationsSchema.parse(raw));
+	} catch {
+		throw new Error(
+			"invalid CI runner integrations (references only; see hobo ci connect --help)",
+		);
+	}
 }

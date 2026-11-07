@@ -29,7 +29,7 @@ Out of scope for now:
 Use Node.js ≥ 22.6 (CI is 24; `setup` and `pins:*` need `--experimental-strip-types`) and the repo `packageManager` (`pnpm@10.33.4`). Clone with submodules — a GitHub zip without `external/ts-autocode` is incomplete; `pnpm run pins:fetch` completes a clone made without them, `pnpm run pins:status` checks the checkout against its pin offline, and `pnpm run pins:bump ts-autocode <ref>` moves the pin (commit the gitlink it stages with the change that needs it).
 
 ```sh
-corepack enable pnpm
+bash scripts/bootstrap-dev.sh --project-only
 pnpm install
 pnpm exec turbo run build --filter @hobo/adapter-hono --filter @hobo/hobo
 pnpm test

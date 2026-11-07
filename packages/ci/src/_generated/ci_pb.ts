@@ -4,13 +4,14 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Message } from "@bufbuild/protobuf";
+import { file_google_protobuf_struct } from "@bufbuild/protobuf/wkt";
+import type { JsonObject, Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file ci.proto.
  */
 export const file_ci: GenFile = /*@__PURE__*/
-  fileDesc("CghjaS5wcm90bxIKaG9iby5jaS52MSKwAQoQU2FuZGJveEFsbG93YW5jZRITCgtjcHVfdmNwdV9tcxgBIAEoARIUCgxtZW1vcnlfbWJfbXMYAiABKAESFAoMZWdyZXNzX2J5dGVzGAMgASgBEhEKCWNyZWF0aW9ucxgEIAEoARITCgtwcm94eV9ieXRlcxgFIAEoARIWCg5wcm94eV9zZXNzaW9ucxgGIAEoARIbChNwcm94eV9jb250cm9sX2NhbGxzGAcgASgBItYECg5TYW5kYm94UHJpY2luZxINCgV2Y3B1cxgBIAEoDRIRCgltZW1vcnlfbWIYAiABKA0SIAoYY3B1X21pY3Jvc19wZXJfdmNwdV9ob3VyGAMgASgBEiEKGW1lbW9yeV9taWNyb3NfcGVyX2diX2hvdXIYBCABKAESFwoPY3JlYXRpb25fbWljcm9zGAUgASgBEhwKFGVncmVzc19taWNyb3NfcGVyX2diGAYgASgBEhgKEG1heF9lZ3Jlc3NfYnl0ZXMYByABKAESGwoTcHJveHlfbWljcm9zX3Blcl9nYhgIIAEoARIaChJwcm94eV9maXhlZF9taWNyb3MYCSABKAESHgoWbmV0d29ya19oZWFkcm9vbV9ieXRlcxgKIAEoARIeChZib290c3RyYXBfZml4ZWRfbWljcm9zGAsgASgBEhkKEXByb3h5X3ZtX3JlcXVpcmVkGAwgASgIEhYKDnByb3h5X3ZtX3ZjcHVzGA0gASgNEhoKEnByb3h5X3ZtX21lbW9yeV9tYhgOIAEoDRIZChFwcm94eV92bV9leHRyYV9tcxgPIAEoARIeChZwcm94eV92bV9uZXR3b3JrX2J5dGVzGBAgASgBEicKH3Byb3h5X3ZtX25ldHdvcmtfaGVhZHJvb21fYnl0ZXMYESABKAESDgoGcmVnaW9uGBIgASgJEh8KF3Byb3h5X2NvbnRyb2xfbWF4X2NhbGxzGBMgASgBEiEKGXByb3h5X2NvbnRyb2xfY2FsbF9taWNyb3MYFCABKAESDAoEcGxhbhgVIAEoCSKyAQoUU2FuZGJveE1lYXN1cmVkVXNhZ2USEgoKc2Vzc2lvbl9pZBgBIAEoCRIOCgZjcHVfbXMYAiABKAESEwoLZHVyYXRpb25fbXMYAyABKAESEQoJbWVtb3J5X21iGAQgASgBEg0KBXZjcHVzGAUgASgBEhQKDGVncmVzc19ieXRlcxgGIAEoARIVCg1pbmdyZXNzX2J5dGVzGAcgASgBEhIKCnN0b3BwZWRfYXQYCCABKAkitwMKBU9mZmVyEgoKAmlkGAEgASgJEhAKCHByb3ZpZGVyGAIgASgJEhsKE3Byb3ZpZGVyX2FjY291bnRfaWQYAyABKAkSDwoHZW5hYmxlZBgEIAEoCBIPCgdydW5zX29uGAUgASgJEhQKDGZyZWVfbWludXRlcxgGIAEoARIfChdwcmljZV9taWNyb3NfcGVyX21pbnV0ZRgHIAEoARIVCg1idWRnZXRfbWljcm9zGAggASgBEhQKDHNwZW50X21pY3JvcxgJIAEoARITCgtjb25jdXJyZW5jeRgKIAEoDRITCgtvYnNlcnZlZF9hdBgLIAEoCRITCgt2YWxpZF91bnRpbBgMIAEoCRISCgpzb3VyY2VfdXJsGA0gASgJEhsKE2JyaWRnZV9hY2tub3dsZWRnZWQYDiABKAgSDwoHYmFja2VuZBgPIAEoCRIzCg9zYW5kYm94X3ByaWNpbmcYECABKAsyGi5ob2JvLmNpLnYxLlNhbmRib3hQcmljaW5nEjcKEXNhbmRib3hfYWxsb3dhbmNlGBEgASgLMhwuaG9iby5jaS52MS5TYW5kYm94QWxsb3dhbmNlIssDCgdBY2NvdW50EgoKAmlkGAEgASgJEhUKDWJ1ZGdldF9taWNyb3MYAiABKAESFAoMc3BlbnRfbWljcm9zGAMgASgBEhsKE21heF9ydW50aW1lX21pbnV0ZXMYBCABKA0SFwoPc3RhcnR1cF9taW51dGVzGAUgASgNEiEKBm9mZmVycxgGIAMoCzIRLmhvYm8uY2kudjEuT2ZmZXISGQoRdXNhZ2Vfb2JzZXJ2ZWRfYXQYByABKAkSSwoVcm91dGluZ19zaWduYWxfY3ljbGVzGAggAygLMiwuaG9iby5jaS52MS5BY2NvdW50LlJvdXRpbmdTaWduYWxDeWNsZXNFbnRyeRJNChZyb3V0aW5nX3NpZ25hbF9jcm9zc2VkGAkgAygLMi0uaG9iby5jaS52MS5BY2NvdW50LlJvdXRpbmdTaWduYWxDcm9zc2VkRW50cnkaOgoYUm91dGluZ1NpZ25hbEN5Y2xlc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoDToCOAEaOwoZUm91dGluZ1NpZ25hbENyb3NzZWRFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAg6AjgBIr8DCgpDb25uZWN0aW9uEhIKCmFjY291bnRfaWQYASABKAkSEgoKcmVwb3NpdG9yeRgCIAEoCRIVCg1yZXBvc2l0b3J5X2lkGAMgASgBEhcKD2luc3RhbGxhdGlvbl9pZBgEIAEoARIXCg9icmlkZ2Vfd29ya2Zsb3cYBSABKAkSEgoKYnJpZGdlX3NoYRgGIAEoCRIXCg9ydW5uZXJfZ3JvdXBfaWQYByABKA0SFgoOYWxsb3dlZF9ldmVudHMYCCADKAkSFAoMYWxsb3dlZF9yZWZzGAkgAygJEicKH3RydXN0ZWRfcmVwb3NpdG9yeV9hY2tub3dsZWRnZWQYCiABKAgSEgoKYnJpZGdlX3JlZhgLIAEoCRIbChNkaXNwYXRjaGVyX2FjdG9yX2lkGAwgASgBEiYKHnB1YmxpY19yZXBvc2l0b3J5X2Fja25vd2xlZGdlZBgNIAEoCBIfChdhbGxvd19hbGxfcHVsbF9yZXF1ZXN0cxgOIAEoCBIVCg1pc29sYXRlZF9vbmx5GA8gASgIEisKI2FjY2VwdF9hbGxfbWF0Y2hpbmdfcmVwb3NpdG9yeV9qb2JzGBAgASgIImMKDUNvbmZpZ3VyYXRpb24SJQoIYWNjb3VudHMYASADKAsyEy5ob2JvLmNpLnYxLkFjY291bnQSKwoLY29ubmVjdGlvbnMYAiADKAsyFi5ob2JvLmNpLnYxLkNvbm5lY3Rpb24ibAoSQ29uZmlndXJhdGlvblN0YXRlEhAKCHJldmlzaW9uGAEgASgNEjAKDWNvbmZpZ3VyYXRpb24YAiABKAsyGS5ob2JvLmNpLnYxLkNvbmZpZ3VyYXRpb24SEgoKdXBkYXRlZF9hdBgDIAEoCSJXCg1Db250cm9sUmVjb3JkEgsKA2tleRgBIAEoCRISCgphY2NvdW50X2lkGAIgASgJEhEKCWJvZHlfanNvbhgDIAEoCRISCgp1cGRhdGVkX2F0GAQgASgJIocBCgxBY2NvdW50U3RhdGUSEAoIcmV2aXNpb24YASABKA0SJAoHYWNjb3VudBgCIAEoCzITLmhvYm8uY2kudjEuQWNjb3VudBIrCgtjb25uZWN0aW9ucxgDIAMoCzIWLmhvYm8uY2kudjEuQ29ubmVjdGlvbhISCgp1cGRhdGVkX2F0GAQgASgJIqoCChZSZXBvc2l0b3J5U2V0dXBSZXF1ZXN0EhIKCnJlcG9zaXRvcnkYASABKAkSFQoNcmVwb3NpdG9yeV9pZBgCIAEoARIXCg9pbnN0YWxsYXRpb25faWQYAyABKAESFwoPcnVubmVyX2dyb3VwX2lkGAQgASgNEhQKDGFsbG93ZWRfcmVmcxgFIAMoCRInCh90cnVzdGVkX3JlcG9zaXRvcnlfYWNrbm93bGVkZ2VkGAYgASgIEiYKHnB1YmxpY19yZXBvc2l0b3J5X2Fja25vd2xlZGdlZBgHIAEoCBIfChdhbGxvd19hbGxfcHVsbF9yZXF1ZXN0cxgIIAEoCBIrCiNhY2NlcHRfYWxsX21hdGNoaW5nX3JlcG9zaXRvcnlfam9icxgJIAEoCCInChBSZWNvbmNpbGVSZXF1ZXN0EhMKC2hvc3RfcnVuX2lkGAEgASgBImcKEUNvbnRyb2xDcmVkZW50aWFsEhIKCmFjY291bnRfaWQYASABKAkSGAoQaW5zdGFsbGF0aW9uX2lkcxgCIAMoARIUCgx0b2tlbl9zaGEyNTYYAyABKAkSDgoGc2NvcGVzGAQgAygJIkMKEkNvbnRyb2xDcmVkZW50aWFscxItCgZ0b2tlbnMYASADKAsyHS5ob2JvLmNpLnYxLkNvbnRyb2xDcmVkZW50aWFsIsoBCgNKb2ISCgoCaWQYASABKAESDgoGcnVuX2lkGAIgASgBEhMKC3J1bl9hdHRlbXB0GAMgASgNEhUKDXJlcG9zaXRvcnlfaWQYBCABKAESFwoPaW5zdGFsbGF0aW9uX2lkGAUgASgBEhIKCnJlcG9zaXRvcnkYBiABKAkSDgoGbGFiZWxzGAcgAygJEg4KBmFjdGlvbhgIIAEoCRITCgtydW5uZXJfbmFtZRgJIAEoCRIZChFpc29sYXRlZF9yZXF1aXJlZBgKIAEoCCKFCgoFTGVhc2USCgoCaWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIQCghvZmZlcl9pZBgDIAEoCRIQCghwcm92aWRlchgEIAEoCRIOCgZqb2JfaWQYBSABKAESFwoPb3JpZ2luYWxfcnVuX2lkGAYgASgBEhMKC3J1bl9hdHRlbXB0GAcgASgNEhUKDXJlcG9zaXRvcnlfaWQYCCABKAESEgoKcmVwb3NpdG9yeRgJIAEoCRIXCg9pbnN0YWxsYXRpb25faWQYCiABKAESDQoFc3RhdGUYCyABKAkSGAoQcmVzZXJ2ZWRfbWludXRlcxgMIAEoARIdChVyZXNlcnZlZF9mcmVlX21pbnV0ZXMYDSABKAESHAoUcmVzZXJ2ZWRfcGFpZF9taWNyb3MYDiABKAESEwoLcnVubmVyX25hbWUYDyABKAkSEgoKY3JlYXRlZF9hdBgQIAEoCRITCgtob3N0X3J1bl9pZBgRIAEoARIRCglydW5uZXJfaWQYEiABKAESFQoNYWN0dWFsX2pvYl9pZBgTIAEoARIWCg5iaWxsZWRfbWludXRlcxgUIAEoARITCgtwYWlkX21pY3JvcxgVIAEoARISCgpzZXR0bGVkX2F0GBYgASgJEh8KF3ByaWNlX21pY3Jvc19wZXJfbWludXRlGBcgASgBEhgKEGZyZWVfdmFsaWRfdW50aWwYGCABKAkSGwoTYmlsbGVkX2ZyZWVfbWludXRlcxgZIAEoARITCgtwaXBlbGluZV9pZBgaIAEoCRIqCgZyZXN1bHQYGyABKAsyGi5ob2JvLmNpLnYxLlBpcGVsaW5lUmVzdWx0EhcKD3BpcGVsaW5lX2RpZ2VzdBgcIAEoCRIaChJ1c2FnZV9jb21wbGV0ZWRfYXQYHSABKAkSFAoMc2FuZGJveF9uYW1lGB4gASgJEhoKEnNhbmRib3hfc2Vzc2lvbl9pZBgfIAEoCRIaChJzYW5kYm94X2NvbW1hbmRfaWQYICABKAkSFQoNc2FuZGJveF9zdGFnZRghIAEoCRIzCg9zYW5kYm94X3ByaWNpbmcYIiABKAsyGi5ob2JvLmNpLnYxLlNhbmRib3hQcmljaW5nEkAKGnNhbmRib3hfcmVzZXJ2ZWRfYWxsb3dhbmNlGCMgASgLMhwuaG9iby5jaS52MS5TYW5kYm94QWxsb3dhbmNlEjwKFnNhbmRib3hfdXNlZF9hbGxvd2FuY2UYJCABKAsyHC5ob2JvLmNpLnYxLlNhbmRib3hBbGxvd2FuY2USGgoScHJveHlfc2FuZGJveF9uYW1lGCUgASgJEiAKGHByb3h5X3NhbmRib3hfc2Vzc2lvbl9pZBgmIAEoCRIgChhwcm94eV9zYW5kYm94X2NvbW1hbmRfaWQYJyABKAkSGwoTcHJveHlfc2FuZGJveF9zdGFnZRgoIAEoCRI/ChVzYW5kYm94X3N0b3BwZWRfdXNhZ2UYKSABKAsyIC5ob2JvLmNpLnYxLlNhbmRib3hNZWFzdXJlZFVzYWdlEj0KE3Byb3h5X3N0b3BwZWRfdXNhZ2UYKiABKAsyIC5ob2JvLmNpLnYxLlNhbmRib3hNZWFzdXJlZFVzYWdlEh8KF3NhbmRib3hfc3RvcF9mcm9tX3N0YWdlGCsgASgJEiEKGXJ1bm5lcl9kZWxldGlvbl9jb25maXJtZWQYLCABKAgiWQoHQ2lFdmVudBIMCgR0eXBlGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSEAoIbGVhc2VfaWQYAyABKAkSCgoCYXQYBCABKAkSDgoGZGV0YWlsGAUgASgJIlIKCFNuYXBzaG90EiEKBmxlYXNlcxgBIAMoCzIRLmhvYm8uY2kudjEuTGVhc2USIwoGZXZlbnRzGAIgAygLMhMuaG9iby5jaS52MS5DaUV2ZW50IpEBCgxQaXBlbGluZVN0ZXASCgoCaWQYASABKAkSDAoEYXJndhgCIAMoCRILCgNjd2QYAyABKAkSLgoDZW52GAQgAygLMiEuaG9iby5jaS52MS5QaXBlbGluZVN0ZXAuRW52RW50cnkaKgoIRW52RW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKjAQoIUGlwZWxpbmUSCgoCaWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRInCgVzdGVwcxgDIAMoCzIYLmhvYm8uY2kudjEuUGlwZWxpbmVTdGVwEhYKDmFydGlmYWN0X3BhdGhzGAQgAygJEhcKD3RpbWVvdXRfc2Vjb25kcxgFIAEoDRIdChVyZXF1aXJlZF9jYXBhYmlsaXRpZXMYBiADKAkiUwoSUGlwZWxpbmVTdGVwUmVzdWx0EgoKAmlkGAEgASgJEhEKCWV4aXRfY29kZRgCIAEoBRIOCgZzdGRvdXQYAyABKAkSDgoGc3RkZXJyGAQgASgJIj4KEFBpcGVsaW5lQXJ0aWZhY3QSDAoEcGF0aBgBIAEoCRIMCgRkYXRhGAIgASgMEg4KBnNoYTI1NhgDIAEoCSKsAQoOUGlwZWxpbmVSZXN1bHQSCgoCaWQYASABKAkSDwoHYmFja2VuZBgCIAEoCRIOCgZzdGF0dXMYAyABKAkSLQoFc3RlcHMYBCADKAsyHi5ob2JvLmNpLnYxLlBpcGVsaW5lU3RlcFJlc3VsdBIvCglhcnRpZmFjdHMYBSADKAsyHC5ob2JvLmNpLnYxLlBpcGVsaW5lQXJ0aWZhY3QSDQoFZXJyb3IYBiABKAkipgEKEEJ1ZGdldFNpZ25hbERhdGESEQoJdGVuYW50X2lkGAEgASgJEhoKEnRocmVzaG9sZF9mcmFjdGlvbhgCIAEoARIVCg10aHJlc2hvbGRfdXNkGAMgASgBEhIKCmJ1ZGdldF91c2QYBCABKAESFQoNbmV0X3NwZW50X3VzZBgFIAEoARINCgVjeWNsZRgGIAEoDRISCgpzaWduYWxfa2V5GAcgASgJIkgKDEJ1ZGdldFNpZ25hbBIMCgR0eXBlGAEgASgJEioKBGRhdGEYAiABKAsyHC5ob2JvLmNpLnYxLkJ1ZGdldFNpZ25hbERhdGEiQgoRQnVkZ2V0Um91dGluZ1J1bGUSGgoSdGhyZXNob2xkX2ZyYWN0aW9uGAEgASgBEhEKCW9mZmVyX2lkcxgCIAMoCSKJAQoTQnVkZ2V0Um91dGluZ1BvbGljeRISCgphY2NvdW50X2lkGAEgASgJEhEKCXRlbmFudF9pZBgCIAEoCRIYChBub3JtYWxfb2ZmZXJfaWRzGAMgAygJEjEKCnRocmVzaG9sZHMYBCADKAsyHS5ob2JvLmNpLnYxLkJ1ZGdldFJvdXRpbmdSdWxlYgZwcm90bzM");
+  fileDesc("CghjaS5wcm90bxIKaG9iby5jaS52MSKwAQoQU2FuZGJveEFsbG93YW5jZRITCgtjcHVfdmNwdV9tcxgBIAEoARIUCgxtZW1vcnlfbWJfbXMYAiABKAESFAoMZWdyZXNzX2J5dGVzGAMgASgBEhEKCWNyZWF0aW9ucxgEIAEoARITCgtwcm94eV9ieXRlcxgFIAEoARIWCg5wcm94eV9zZXNzaW9ucxgGIAEoARIbChNwcm94eV9jb250cm9sX2NhbGxzGAcgASgBItYECg5TYW5kYm94UHJpY2luZxINCgV2Y3B1cxgBIAEoDRIRCgltZW1vcnlfbWIYAiABKA0SIAoYY3B1X21pY3Jvc19wZXJfdmNwdV9ob3VyGAMgASgBEiEKGW1lbW9yeV9taWNyb3NfcGVyX2diX2hvdXIYBCABKAESFwoPY3JlYXRpb25fbWljcm9zGAUgASgBEhwKFGVncmVzc19taWNyb3NfcGVyX2diGAYgASgBEhgKEG1heF9lZ3Jlc3NfYnl0ZXMYByABKAESGwoTcHJveHlfbWljcm9zX3Blcl9nYhgIIAEoARIaChJwcm94eV9maXhlZF9taWNyb3MYCSABKAESHgoWbmV0d29ya19oZWFkcm9vbV9ieXRlcxgKIAEoARIeChZib290c3RyYXBfZml4ZWRfbWljcm9zGAsgASgBEhkKEXByb3h5X3ZtX3JlcXVpcmVkGAwgASgIEhYKDnByb3h5X3ZtX3ZjcHVzGA0gASgNEhoKEnByb3h5X3ZtX21lbW9yeV9tYhgOIAEoDRIZChFwcm94eV92bV9leHRyYV9tcxgPIAEoARIeChZwcm94eV92bV9uZXR3b3JrX2J5dGVzGBAgASgBEicKH3Byb3h5X3ZtX25ldHdvcmtfaGVhZHJvb21fYnl0ZXMYESABKAESDgoGcmVnaW9uGBIgASgJEh8KF3Byb3h5X2NvbnRyb2xfbWF4X2NhbGxzGBMgASgBEiEKGXByb3h5X2NvbnRyb2xfY2FsbF9taWNyb3MYFCABKAESDAoEcGxhbhgVIAEoCSKyAQoUU2FuZGJveE1lYXN1cmVkVXNhZ2USEgoKc2Vzc2lvbl9pZBgBIAEoCRIOCgZjcHVfbXMYAiABKAESEwoLZHVyYXRpb25fbXMYAyABKAESEQoJbWVtb3J5X21iGAQgASgBEg0KBXZjcHVzGAUgASgBEhQKDGVncmVzc19ieXRlcxgGIAEoARIVCg1pbmdyZXNzX2J5dGVzGAcgASgBEhIKCnN0b3BwZWRfYXQYCCABKAkitwMKBU9mZmVyEgoKAmlkGAEgASgJEhAKCHByb3ZpZGVyGAIgASgJEhsKE3Byb3ZpZGVyX2FjY291bnRfaWQYAyABKAkSDwoHZW5hYmxlZBgEIAEoCBIPCgdydW5zX29uGAUgASgJEhQKDGZyZWVfbWludXRlcxgGIAEoARIfChdwcmljZV9taWNyb3NfcGVyX21pbnV0ZRgHIAEoARIVCg1idWRnZXRfbWljcm9zGAggASgBEhQKDHNwZW50X21pY3JvcxgJIAEoARITCgtjb25jdXJyZW5jeRgKIAEoDRITCgtvYnNlcnZlZF9hdBgLIAEoCRITCgt2YWxpZF91bnRpbBgMIAEoCRISCgpzb3VyY2VfdXJsGA0gASgJEhsKE2JyaWRnZV9hY2tub3dsZWRnZWQYDiABKAgSDwoHYmFja2VuZBgPIAEoCRIzCg9zYW5kYm94X3ByaWNpbmcYECABKAsyGi5ob2JvLmNpLnYxLlNhbmRib3hQcmljaW5nEjcKEXNhbmRib3hfYWxsb3dhbmNlGBEgASgLMhwuaG9iby5jaS52MS5TYW5kYm94QWxsb3dhbmNlIpUECgdBY2NvdW50EgoKAmlkGAEgASgJEhUKDWJ1ZGdldF9taWNyb3MYAiABKAESFAoMc3BlbnRfbWljcm9zGAMgASgBEhsKE21heF9ydW50aW1lX21pbnV0ZXMYBCABKA0SFwoPc3RhcnR1cF9taW51dGVzGAUgASgNEiEKBm9mZmVycxgGIAMoCzIRLmhvYm8uY2kudjEuT2ZmZXISGQoRdXNhZ2Vfb2JzZXJ2ZWRfYXQYByABKAkSSwoVcm91dGluZ19zaWduYWxfY3ljbGVzGAggAygLMiwuaG9iby5jaS52MS5BY2NvdW50LlJvdXRpbmdTaWduYWxDeWNsZXNFbnRyeRJNChZyb3V0aW5nX3NpZ25hbF9jcm9zc2VkGAkgAygLMi0uaG9iby5jaS52MS5BY2NvdW50LlJvdXRpbmdTaWduYWxDcm9zc2VkRW50cnkSGAoQcm91dGluZ19zdHJhdGVneRgKIAEoCRIuCg1idWRnZXRfcG9saWN5GAsgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBo6ChhSb3V0aW5nU2lnbmFsQ3ljbGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgNOgI4ARo7ChlSb3V0aW5nU2lnbmFsQ3Jvc3NlZEVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCDoCOAEivwMKCkNvbm5lY3Rpb24SEgoKYWNjb3VudF9pZBgBIAEoCRISCgpyZXBvc2l0b3J5GAIgASgJEhUKDXJlcG9zaXRvcnlfaWQYAyABKAESFwoPaW5zdGFsbGF0aW9uX2lkGAQgASgBEhcKD2JyaWRnZV93b3JrZmxvdxgFIAEoCRISCgpicmlkZ2Vfc2hhGAYgASgJEhcKD3J1bm5lcl9ncm91cF9pZBgHIAEoDRIWCg5hbGxvd2VkX2V2ZW50cxgIIAMoCRIUCgxhbGxvd2VkX3JlZnMYCSADKAkSJwofdHJ1c3RlZF9yZXBvc2l0b3J5X2Fja25vd2xlZGdlZBgKIAEoCBISCgpicmlkZ2VfcmVmGAsgASgJEhsKE2Rpc3BhdGNoZXJfYWN0b3JfaWQYDCABKAESJgoecHVibGljX3JlcG9zaXRvcnlfYWNrbm93bGVkZ2VkGA0gASgIEh8KF2FsbG93X2FsbF9wdWxsX3JlcXVlc3RzGA4gASgIEhUKDWlzb2xhdGVkX29ubHkYDyABKAgSKwojYWNjZXB0X2FsbF9tYXRjaGluZ19yZXBvc2l0b3J5X2pvYnMYECABKAgiYwoNQ29uZmlndXJhdGlvbhIlCghhY2NvdW50cxgBIAMoCzITLmhvYm8uY2kudjEuQWNjb3VudBIrCgtjb25uZWN0aW9ucxgCIAMoCzIWLmhvYm8uY2kudjEuQ29ubmVjdGlvbiJsChJDb25maWd1cmF0aW9uU3RhdGUSEAoIcmV2aXNpb24YASABKA0SMAoNY29uZmlndXJhdGlvbhgCIAEoCzIZLmhvYm8uY2kudjEuQ29uZmlndXJhdGlvbhISCgp1cGRhdGVkX2F0GAMgASgJIlcKDUNvbnRyb2xSZWNvcmQSCwoDa2V5GAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSEQoJYm9keV9qc29uGAMgASgJEhIKCnVwZGF0ZWRfYXQYBCABKAkihwEKDEFjY291bnRTdGF0ZRIQCghyZXZpc2lvbhgBIAEoDRIkCgdhY2NvdW50GAIgASgLMhMuaG9iby5jaS52MS5BY2NvdW50EisKC2Nvbm5lY3Rpb25zGAMgAygLMhYuaG9iby5jaS52MS5Db25uZWN0aW9uEhIKCnVwZGF0ZWRfYXQYBCABKAkiqgIKFlJlcG9zaXRvcnlTZXR1cFJlcXVlc3QSEgoKcmVwb3NpdG9yeRgBIAEoCRIVCg1yZXBvc2l0b3J5X2lkGAIgASgBEhcKD2luc3RhbGxhdGlvbl9pZBgDIAEoARIXCg9ydW5uZXJfZ3JvdXBfaWQYBCABKA0SFAoMYWxsb3dlZF9yZWZzGAUgAygJEicKH3RydXN0ZWRfcmVwb3NpdG9yeV9hY2tub3dsZWRnZWQYBiABKAgSJgoecHVibGljX3JlcG9zaXRvcnlfYWNrbm93bGVkZ2VkGAcgASgIEh8KF2FsbG93X2FsbF9wdWxsX3JlcXVlc3RzGAggASgIEisKI2FjY2VwdF9hbGxfbWF0Y2hpbmdfcmVwb3NpdG9yeV9qb2JzGAkgASgIIicKEFJlY29uY2lsZVJlcXVlc3QSEwoLaG9zdF9ydW5faWQYASABKAEiZwoRQ29udHJvbENyZWRlbnRpYWwSEgoKYWNjb3VudF9pZBgBIAEoCRIYChBpbnN0YWxsYXRpb25faWRzGAIgAygBEhQKDHRva2VuX3NoYTI1NhgDIAEoCRIOCgZzY29wZXMYBCADKAkiQwoSQ29udHJvbENyZWRlbnRpYWxzEi0KBnRva2VucxgBIAMoCzIdLmhvYm8uY2kudjEuQ29udHJvbENyZWRlbnRpYWwinAIKA0pvYhIKCgJpZBgBIAEoARIOCgZydW5faWQYAiABKAESEwoLcnVuX2F0dGVtcHQYAyABKA0SFQoNcmVwb3NpdG9yeV9pZBgEIAEoARIXCg9pbnN0YWxsYXRpb25faWQYBSABKAESEgoKcmVwb3NpdG9yeRgGIAEoCRIOCgZsYWJlbHMYByADKAkSDgoGYWN0aW9uGAggASgJEhMKC3J1bm5lcl9uYW1lGAkgASgJEhkKEWlzb2xhdGVkX3JlcXVpcmVkGAogASgIEgwKBG5hbWUYCyABKAkSFAoMbWVtb3J5X2NsYXNzGAwgASgJEhEKCW1lbW9yeV9tYhgNIAEoDRIZChFxdWV1ZV9kZWFkbGluZV9hdBgOIAEoCSKxDQoFTGVhc2USCgoCaWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIQCghvZmZlcl9pZBgDIAEoCRIQCghwcm92aWRlchgEIAEoCRIOCgZqb2JfaWQYBSABKAESFwoPb3JpZ2luYWxfcnVuX2lkGAYgASgBEhMKC3J1bl9hdHRlbXB0GAcgASgNEhUKDXJlcG9zaXRvcnlfaWQYCCABKAESEgoKcmVwb3NpdG9yeRgJIAEoCRIXCg9pbnN0YWxsYXRpb25faWQYCiABKAESDQoFc3RhdGUYCyABKAkSGAoQcmVzZXJ2ZWRfbWludXRlcxgMIAEoARIdChVyZXNlcnZlZF9mcmVlX21pbnV0ZXMYDSABKAESHAoUcmVzZXJ2ZWRfcGFpZF9taWNyb3MYDiABKAESEwoLcnVubmVyX25hbWUYDyABKAkSEgoKY3JlYXRlZF9hdBgQIAEoCRITCgtob3N0X3J1bl9pZBgRIAEoARIRCglydW5uZXJfaWQYEiABKAESFQoNYWN0dWFsX2pvYl9pZBgTIAEoARIWCg5iaWxsZWRfbWludXRlcxgUIAEoARITCgtwYWlkX21pY3JvcxgVIAEoARISCgpzZXR0bGVkX2F0GBYgASgJEh8KF3ByaWNlX21pY3Jvc19wZXJfbWludXRlGBcgASgBEhgKEGZyZWVfdmFsaWRfdW50aWwYGCABKAkSGwoTYmlsbGVkX2ZyZWVfbWludXRlcxgZIAEoARITCgtwaXBlbGluZV9pZBgaIAEoCRIqCgZyZXN1bHQYGyABKAsyGi5ob2JvLmNpLnYxLlBpcGVsaW5lUmVzdWx0EhcKD3BpcGVsaW5lX2RpZ2VzdBgcIAEoCRIaChJ1c2FnZV9jb21wbGV0ZWRfYXQYHSABKAkSFAoMc2FuZGJveF9uYW1lGB4gASgJEhoKEnNhbmRib3hfc2Vzc2lvbl9pZBgfIAEoCRIaChJzYW5kYm94X2NvbW1hbmRfaWQYICABKAkSFQoNc2FuZGJveF9zdGFnZRghIAEoCRIzCg9zYW5kYm94X3ByaWNpbmcYIiABKAsyGi5ob2JvLmNpLnYxLlNhbmRib3hQcmljaW5nEkAKGnNhbmRib3hfcmVzZXJ2ZWRfYWxsb3dhbmNlGCMgASgLMhwuaG9iby5jaS52MS5TYW5kYm94QWxsb3dhbmNlEjwKFnNhbmRib3hfdXNlZF9hbGxvd2FuY2UYJCABKAsyHC5ob2JvLmNpLnYxLlNhbmRib3hBbGxvd2FuY2USGgoScHJveHlfc2FuZGJveF9uYW1lGCUgASgJEiAKGHByb3h5X3NhbmRib3hfc2Vzc2lvbl9pZBgmIAEoCRIgChhwcm94eV9zYW5kYm94X2NvbW1hbmRfaWQYJyABKAkSGwoTcHJveHlfc2FuZGJveF9zdGFnZRgoIAEoCRI/ChVzYW5kYm94X3N0b3BwZWRfdXNhZ2UYKSABKAsyIC5ob2JvLmNpLnYxLlNhbmRib3hNZWFzdXJlZFVzYWdlEj0KE3Byb3h5X3N0b3BwZWRfdXNhZ2UYKiABKAsyIC5ob2JvLmNpLnYxLlNhbmRib3hNZWFzdXJlZFVzYWdlEh8KF3NhbmRib3hfc3RvcF9mcm9tX3N0YWdlGCsgASgJEiEKGXJ1bm5lcl9kZWxldGlvbl9jb25maXJtZWQYLCABKAgSFAoMbWVtb3J5X2NsYXNzGC0gASgJEhEKCW1lbW9yeV9tYhguIAEoDRIQCghqb2JfbmFtZRgvIAEoCRIWCg5kaXNwYXRjaGluZ19hdBgwIAEoCRIbChNwcm92aWRlcl9hY2NvdW50X2lkGDEgASgJEhgKEGJ1ZGdldF90ZW5hbnRfaWQYMiABKAkSEQoJYnVkZ2V0X2lkGDMgASgJEhgKEGJ1ZGdldF9wZXJpb2RfaWQYNCABKAkSHgoWYnVkZ2V0X3BvbGljeV9yZXZpc2lvbhg1IAEoCRIcChRidWRnZXRfcG9saWN5X2RpZ2VzdBg2IAEoCRIZChFxdWV1ZV9kZWFkbGluZV9hdBg3IAEoCRIYChB1c2FnZV9wcm92ZW5hbmNlGDggASgJEh0KFWV4dGVybmFsX29wZXJhdGlvbl9pZBg5IAEoCRIaChJ1c2FnZV9ldmlkZW5jZV9yZWYYOiABKAkSIAoYYnVkZ2V0X2FkbWlzc2lvbl9hdHRlbXB0GDsgASgNEiMKG2J1ZGdldF9yZWxlYXNlX2V2aWRlbmNlX3JlZhg8IAEoCSJZCgdDaUV2ZW50EgwKBHR5cGUYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRIQCghsZWFzZV9pZBgDIAEoCRIKCgJhdBgEIAEoCRIOCgZkZXRhaWwYBSABKAkiQgoQQ2lSb3V0aW5nUmVmdXNhbBIMCgRjb2RlGAEgASgJEg4KBnJlYXNvbhgCIAEoCRIQCghvZmZlcl9pZBgDIAEoCSJSCghTbmFwc2hvdBIhCgZsZWFzZXMYASADKAsyES5ob2JvLmNpLnYxLkxlYXNlEiMKBmV2ZW50cxgCIAMoCzITLmhvYm8uY2kudjEuQ2lFdmVudCKRAQoMUGlwZWxpbmVTdGVwEgoKAmlkGAEgASgJEgwKBGFyZ3YYAiADKAkSCwoDY3dkGAMgASgJEi4KA2VudhgEIAMoCzIhLmhvYm8uY2kudjEuUGlwZWxpbmVTdGVwLkVudkVudHJ5GioKCEVudkVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiowEKCFBpcGVsaW5lEgoKAmlkGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSJwoFc3RlcHMYAyADKAsyGC5ob2JvLmNpLnYxLlBpcGVsaW5lU3RlcBIWCg5hcnRpZmFjdF9wYXRocxgEIAMoCRIXCg90aW1lb3V0X3NlY29uZHMYBSABKA0SHQoVcmVxdWlyZWRfY2FwYWJpbGl0aWVzGAYgAygJIlMKElBpcGVsaW5lU3RlcFJlc3VsdBIKCgJpZBgBIAEoCRIRCglleGl0X2NvZGUYAiABKAUSDgoGc3Rkb3V0GAMgASgJEg4KBnN0ZGVychgEIAEoCSI+ChBQaXBlbGluZUFydGlmYWN0EgwKBHBhdGgYASABKAkSDAoEZGF0YRgCIAEoDBIOCgZzaGEyNTYYAyABKAkirAEKDlBpcGVsaW5lUmVzdWx0EgoKAmlkGAEgASgJEg8KB2JhY2tlbmQYAiABKAkSDgoGc3RhdHVzGAMgASgJEi0KBXN0ZXBzGAQgAygLMh4uaG9iby5jaS52MS5QaXBlbGluZVN0ZXBSZXN1bHQSLwoJYXJ0aWZhY3RzGAUgAygLMhwuaG9iby5jaS52MS5QaXBlbGluZUFydGlmYWN0Eg0KBWVycm9yGAYgASgJIo8CChBCdWRnZXRTaWduYWxEYXRhEhEKCXRlbmFudF9pZBgBIAEoCRIaChJ0aHJlc2hvbGRfZnJhY3Rpb24YAiABKAESFQoNdGhyZXNob2xkX3VzZBgDIAEoARISCgpidWRnZXRfdXNkGAQgASgBEhUKDW5ldF9zcGVudF91c2QYBSABKAESDQoFY3ljbGUYBiABKA0SEgoKc2lnbmFsX2tleRgHIAEoCRIuCghpZGVudGl0eRgIIAEoCzIcLmhvYm8uY2kudjEuQ2lCdWRnZXRJZGVudGl0eRIVCg1wb2xpY3lfZGlnZXN0GAkgASgJEhQKB2Nyb3NzZWQYCiABKAhIAIgBAUIKCghfY3Jvc3NlZCJkChBDaUJ1ZGdldElkZW50aXR5EhEKCXRlbmFudF9pZBgBIAEoCRIRCglidWRnZXRfaWQYAiABKAkSEQoJcGVyaW9kX2lkGAMgASgJEhcKD3BvbGljeV9yZXZpc2lvbhgEIAEoCSJICgxCdWRnZXRTaWduYWwSDAoEdHlwZRgBIAEoCRIqCgRkYXRhGAIgASgLMhwuaG9iby5jaS52MS5CdWRnZXRTaWduYWxEYXRhIkIKEUJ1ZGdldFJvdXRpbmdSdWxlEhoKEnRocmVzaG9sZF9mcmFjdGlvbhgBIAEoARIRCglvZmZlcl9pZHMYAiADKAkiuQEKE0J1ZGdldFJvdXRpbmdQb2xpY3kSEgoKYWNjb3VudF9pZBgBIAEoCRIRCgl0ZW5hbnRfaWQYAiABKAkSGAoQbm9ybWFsX29mZmVyX2lkcxgDIAMoCRIxCgp0aHJlc2hvbGRzGAQgAygLMh0uaG9iby5jaS52MS5CdWRnZXRSb3V0aW5nUnVsZRIuCg1idWRnZXRfcG9saWN5GAUgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdGIGcHJvdG8z", [file_google_protobuf_struct]);
 
 /**
  * Conservative Sandbox rate card. All monetary values are integer microdollars.
@@ -384,6 +385,19 @@ export type Account = Message<"hobo.ci.v1.Account"> & {
    * @generated from field: map<string, bool> routing_signal_crossed = 9;
    */
   routingSignalCrossed: { [key: string]: boolean };
+
+  /**
+   * min-cost (including the legacy lowest-total-incremental-cost spelling)
+   * or an explicit maximize-credits objective.
+   *
+   * @generated from field: string routing_strategy = 10;
+   */
+  routingStrategy: string;
+
+  /**
+   * @generated from field: google.protobuf.Struct budget_policy = 11;
+   */
+  budgetPolicy?: JsonObject | undefined;
 };
 
 /**
@@ -784,6 +798,26 @@ export type Job = Message<"hobo.ci.v1.Job"> & {
    * @generated from field: bool isolated_required = 10;
    */
   isolatedRequired: boolean;
+
+  /**
+   * @generated from field: string name = 11;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string memory_class = 12;
+   */
+  memoryClass: string;
+
+  /**
+   * @generated from field: uint32 memory_mb = 13;
+   */
+  memoryMb: number;
+
+  /**
+   * @generated from field: string queue_deadline_at = 14;
+   */
+  queueDeadlineAt: string;
 };
 
 /**
@@ -1018,6 +1052,88 @@ export type Lease = Message<"hobo.ci.v1.Lease"> & {
    * @generated from field: bool runner_deletion_confirmed = 44;
    */
   runnerDeletionConfirmed: boolean;
+
+  /**
+   * @generated from field: string memory_class = 45;
+   */
+  memoryClass: string;
+
+  /**
+   * @generated from field: uint32 memory_mb = 46;
+   */
+  memoryMb: number;
+
+  /**
+   * @generated from field: string job_name = 47;
+   */
+  jobName: string;
+
+  /**
+   * @generated from field: string dispatching_at = 48;
+   */
+  dispatchingAt: string;
+
+  /**
+   * @generated from field: string provider_account_id = 49;
+   */
+  providerAccountId: string;
+
+  /**
+   * @generated from field: string budget_tenant_id = 50;
+   */
+  budgetTenantId: string;
+
+  /**
+   * @generated from field: string budget_id = 51;
+   */
+  budgetId: string;
+
+  /**
+   * @generated from field: string budget_period_id = 52;
+   */
+  budgetPeriodId: string;
+
+  /**
+   * @generated from field: string budget_policy_revision = 53;
+   */
+  budgetPolicyRevision: string;
+
+  /**
+   * @generated from field: string budget_policy_digest = 54;
+   */
+  budgetPolicyDigest: string;
+
+  /**
+   * @generated from field: string queue_deadline_at = 55;
+   */
+  queueDeadlineAt: string;
+
+  /**
+   * @generated from field: string usage_provenance = 56;
+   */
+  usageProvenance: string;
+
+  /**
+   * @generated from field: string external_operation_id = 57;
+   */
+  externalOperationId: string;
+
+  /**
+   * @generated from field: string usage_evidence_ref = 58;
+   */
+  usageEvidenceRef: string;
+
+  /**
+   * Financial admission generation, independent of a GitHub run attempt.
+   *
+   * @generated from field: uint32 budget_admission_attempt = 59;
+   */
+  budgetAdmissionAttempt: number;
+
+  /**
+   * @generated from field: string budget_release_evidence_ref = 60;
+   */
+  budgetReleaseEvidenceRef: string;
 };
 
 /**
@@ -1065,6 +1181,33 @@ export const CiEventSchema: GenMessage<CiEvent> = /*@__PURE__*/
   messageDesc(file_ci, 16);
 
 /**
+ * @generated from message hobo.ci.v1.CiRoutingRefusal
+ */
+export type CiRoutingRefusal = Message<"hobo.ci.v1.CiRoutingRefusal"> & {
+  /**
+   * @generated from field: string code = 1;
+   */
+  code: string;
+
+  /**
+   * @generated from field: string reason = 2;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: string offer_id = 3;
+   */
+  offerId: string;
+};
+
+/**
+ * Describes the message hobo.ci.v1.CiRoutingRefusal.
+ * Use `create(CiRoutingRefusalSchema)` to create a new message.
+ */
+export const CiRoutingRefusalSchema: GenMessage<CiRoutingRefusal> = /*@__PURE__*/
+  messageDesc(file_ci, 17);
+
+/**
  * @generated from message hobo.ci.v1.Snapshot
  */
 export type Snapshot = Message<"hobo.ci.v1.Snapshot"> & {
@@ -1084,7 +1227,7 @@ export type Snapshot = Message<"hobo.ci.v1.Snapshot"> & {
  * Use `create(SnapshotSchema)` to create a new message.
  */
 export const SnapshotSchema: GenMessage<Snapshot> = /*@__PURE__*/
-  messageDesc(file_ci, 17);
+  messageDesc(file_ci, 18);
 
 /**
  * A portable command pipeline. The backend binds its source workspace separately.
@@ -1118,7 +1261,7 @@ export type PipelineStep = Message<"hobo.ci.v1.PipelineStep"> & {
  * Use `create(PipelineStepSchema)` to create a new message.
  */
 export const PipelineStepSchema: GenMessage<PipelineStep> = /*@__PURE__*/
-  messageDesc(file_ci, 18);
+  messageDesc(file_ci, 19);
 
 /**
  * @generated from message hobo.ci.v1.Pipeline
@@ -1160,7 +1303,7 @@ export type Pipeline = Message<"hobo.ci.v1.Pipeline"> & {
  * Use `create(PipelineSchema)` to create a new message.
  */
 export const PipelineSchema: GenMessage<Pipeline> = /*@__PURE__*/
-  messageDesc(file_ci, 19);
+  messageDesc(file_ci, 20);
 
 /**
  * @generated from message hobo.ci.v1.PipelineStepResult
@@ -1192,7 +1335,7 @@ export type PipelineStepResult = Message<"hobo.ci.v1.PipelineStepResult"> & {
  * Use `create(PipelineStepResultSchema)` to create a new message.
  */
 export const PipelineStepResultSchema: GenMessage<PipelineStepResult> = /*@__PURE__*/
-  messageDesc(file_ci, 20);
+  messageDesc(file_ci, 21);
 
 /**
  * @generated from message hobo.ci.v1.PipelineArtifact
@@ -1219,7 +1362,7 @@ export type PipelineArtifact = Message<"hobo.ci.v1.PipelineArtifact"> & {
  * Use `create(PipelineArtifactSchema)` to create a new message.
  */
 export const PipelineArtifactSchema: GenMessage<PipelineArtifact> = /*@__PURE__*/
-  messageDesc(file_ci, 21);
+  messageDesc(file_ci, 22);
 
 /**
  * @generated from message hobo.ci.v1.PipelineResult
@@ -1261,7 +1404,7 @@ export type PipelineResult = Message<"hobo.ci.v1.PipelineResult"> & {
  * Use `create(PipelineResultSchema)` to create a new message.
  */
 export const PipelineResultSchema: GenMessage<PipelineResult> = /*@__PURE__*/
-  messageDesc(file_ci, 22);
+  messageDesc(file_ci, 23);
 
 /**
  * Broker facts consumed by the Station CI routing bridge.
@@ -1303,6 +1446,21 @@ export type BudgetSignalData = Message<"hobo.ci.v1.BudgetSignalData"> & {
    * @generated from field: string signal_key = 7;
    */
   signalKey: string;
+
+  /**
+   * @generated from field: hobo.ci.v1.CiBudgetIdentity identity = 8;
+   */
+  identity?: CiBudgetIdentity | undefined;
+
+  /**
+   * @generated from field: string policy_digest = 9;
+   */
+  policyDigest: string;
+
+  /**
+   * @generated from field: optional bool crossed = 10;
+   */
+  crossed?: boolean | undefined;
 };
 
 /**
@@ -1310,7 +1468,39 @@ export type BudgetSignalData = Message<"hobo.ci.v1.BudgetSignalData"> & {
  * Use `create(BudgetSignalDataSchema)` to create a new message.
  */
 export const BudgetSignalDataSchema: GenMessage<BudgetSignalData> = /*@__PURE__*/
-  messageDesc(file_ci, 23);
+  messageDesc(file_ci, 24);
+
+/**
+ * @generated from message hobo.ci.v1.CiBudgetIdentity
+ */
+export type CiBudgetIdentity = Message<"hobo.ci.v1.CiBudgetIdentity"> & {
+  /**
+   * @generated from field: string tenant_id = 1;
+   */
+  tenantId: string;
+
+  /**
+   * @generated from field: string budget_id = 2;
+   */
+  budgetId: string;
+
+  /**
+   * @generated from field: string period_id = 3;
+   */
+  periodId: string;
+
+  /**
+   * @generated from field: string policy_revision = 4;
+   */
+  policyRevision: string;
+};
+
+/**
+ * Describes the message hobo.ci.v1.CiBudgetIdentity.
+ * Use `create(CiBudgetIdentitySchema)` to create a new message.
+ */
+export const CiBudgetIdentitySchema: GenMessage<CiBudgetIdentity> = /*@__PURE__*/
+  messageDesc(file_ci, 25);
 
 /**
  * @generated from message hobo.ci.v1.BudgetSignal
@@ -1332,7 +1522,7 @@ export type BudgetSignal = Message<"hobo.ci.v1.BudgetSignal"> & {
  * Use `create(BudgetSignalSchema)` to create a new message.
  */
 export const BudgetSignalSchema: GenMessage<BudgetSignal> = /*@__PURE__*/
-  messageDesc(file_ci, 24);
+  messageDesc(file_ci, 26);
 
 /**
  * @generated from message hobo.ci.v1.BudgetRoutingRule
@@ -1354,7 +1544,7 @@ export type BudgetRoutingRule = Message<"hobo.ci.v1.BudgetRoutingRule"> & {
  * Use `create(BudgetRoutingRuleSchema)` to create a new message.
  */
 export const BudgetRoutingRuleSchema: GenMessage<BudgetRoutingRule> = /*@__PURE__*/
-  messageDesc(file_ci, 25);
+  messageDesc(file_ci, 27);
 
 /**
  * @generated from message hobo.ci.v1.BudgetRoutingPolicy
@@ -1379,6 +1569,11 @@ export type BudgetRoutingPolicy = Message<"hobo.ci.v1.BudgetRoutingPolicy"> & {
    * @generated from field: repeated hobo.ci.v1.BudgetRoutingRule thresholds = 4;
    */
   thresholds: BudgetRoutingRule[];
+
+  /**
+   * @generated from field: google.protobuf.Struct budget_policy = 5;
+   */
+  budgetPolicy?: JsonObject | undefined;
 };
 
 /**
@@ -1386,5 +1581,5 @@ export type BudgetRoutingPolicy = Message<"hobo.ci.v1.BudgetRoutingPolicy"> & {
  * Use `create(BudgetRoutingPolicySchema)` to create a new message.
  */
 export const BudgetRoutingPolicySchema: GenMessage<BudgetRoutingPolicy> = /*@__PURE__*/
-  messageDesc(file_ci, 26);
+  messageDesc(file_ci, 28);
 

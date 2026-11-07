@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { JsonObject } from "@hobo/data";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -24,6 +25,31 @@ function readFixture<T = unknown>(...segments: string[]): T {
 }
 
 describe("hobo.manifest/v1 loader", () => {
+	it("preserves financial policy and effect references through canonical round trips", () => {
+		const raw = readFixture<JsonObject>("golden/db-api-site.json");
+		const policy = {
+			budget: { hardLimitUsd: 100, softLimitUsd: 80, period: "monthly" },
+			costAvailabilityProfile: { budgetUsd: 100, availabilitySlo: 0.999 },
+			boundaryContracts: ["contract:checkout/writes@v1"],
+			resilienceProfileRef: "resilience:production@v1",
+		};
+		const first = parseManifest({ ...raw, policy });
+		const second = parseManifest(JSON.parse(serializeManifest(first)));
+		expect(second.value.policy).toEqual(policy);
+		expect(canonicalManifestHash(first)).not.toBe(
+			canonicalManifestHash(parseManifest(raw)),
+		);
+		expect(canonicalManifestHash(first)).toBe(canonicalManifestHash(second));
+	});
+
+	it("rejects malformed policy rather than erasing a financial declaration", () => {
+		const raw = readFixture<JsonObject>("golden/db-api-site.json");
+		for (const policy of [null, [], "ignore budget"]) {
+			expect(() => parseManifest({ ...raw, policy })).toThrow(
+				ManifestParseError,
+			);
+		}
+	});
 	it("round-trips the golden manifest through parse and serialize", () => {
 		const raw = readFixture("golden/db-api-site.json");
 		const first = parseManifest(raw);

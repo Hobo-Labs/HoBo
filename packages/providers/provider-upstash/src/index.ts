@@ -97,12 +97,14 @@ export {
 export {
 	assertNoCredentialMaterial,
 	type CredentialScanHit,
+	type PublicSerializationOptions,
 	scanForCredentialMaterial,
 	toProviderFacts,
 	toProvisionReceipt,
 	type UpstashProviderFact,
 	type UpstashProvisionReceipt,
 } from "./receipt.js";
+export { createUpstashTemporaryRedisResolver } from "./resolver.js";
 export {
 	createUpstashRestExecutor,
 	parseRestReply,
@@ -122,6 +124,7 @@ export {
 	type StartRedisMetrics,
 	type StartRedisSummary,
 	UPSTASH_START_REDIS_CONTRACT,
+	UPSTASH_START_REDIS_NATIVE_CONTRACT,
 } from "./start-redis.js";
 export {
 	assertAllowedEndpoint,

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isJsonString, type JsonObject, type JsonValue } from "../json.js";
+import { isJsonString, type JsonObject } from "../json.js";
 
 // The Executor (control-plane.md "Executor sandbox model"): the sandboxed apply
 // step. IaC apply runs untrusted-ish provider code, so it is isolated — no
@@ -143,9 +143,9 @@ export interface InProcessExecutorOptions {
 	now?: () => string;
 }
 
-// `unknown`: this hashes a serialization of the value and never reads a field
-// off it, so demanding `JsonValue` only moved work to the call sites.
-function hashRef(value: unknown): string {
+type HashRefInput = IacProgram | Readonly<Record<string, string>>;
+
+function hashRef(value: HashRefInput): string {
 	return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
 }
 

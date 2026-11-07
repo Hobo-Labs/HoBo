@@ -141,9 +141,7 @@ export function createContractAssertedDataDualFixtures(input?: {
 	});
 }
 
-function rowsChecksum(
-	rows: readonly JsonObject[],
-): `sha256:${string}` {
+function rowsChecksum(rows: readonly JsonObject[]): `sha256:${string}` {
 	return `sha256:${createHash("sha256")
 		.update(JSON.stringify(rows))
 		.digest("hex")}`;

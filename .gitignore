@@ -10,7 +10,7 @@
 .caveman/
 
 # Node / tooling
-node_modules/
+node_modules
 
 # Logs / OS cruft
 *.log
@@ -25,6 +25,13 @@ node_modules/
 # Turborepo local cache
 .turbo/
 
+# Host-staged release OCI build contexts
+deploy/release-images/.staging/
+
+# Local hello-bindle deployment test state
+examples/hello-bindle/.hobo/local-deployment-events/
+examples/hello-bindle/.hobo/local-deployment-lock.sqlite
+
 # Package build output
 dist/
 
@@ -36,8 +43,17 @@ sandboxes/
 
 # Pinned toolchain binaries downloaded on demand (e.g. CUE v0.14.0)
 .tools/
+# Local `mise oci build` output (see packages/ci-gh-actions/deploy/ci-runner/build.sh)
+packages/ci-gh-actions/deploy/ci-runner/oci-layout/
+# Local mise install cache (commit turbo lock sidecars under .mise/locks/)
+.mise/*
+!.mise/locks/
+!.mise/locks/**
 # Local yard/broker tooling installs (prefer $HOBO_HOME; belt-and-suspenders)
-.hobo/
+.hobo/*
+!.hobo/dagger.json
+!.hobo/ci.json
+.hobo/ci.local.json
 # OS-released codegen/build lock database, sidecars and interrupted staging trees.
 .hobo-codegen.lock
 .hobo-codegen.lock-*
@@ -101,3 +117,4 @@ reports/mutation/
 # as an embedded repository.
 /external/*.kept
 /external/*.kept.[0-9]*
+.mise/

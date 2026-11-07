@@ -211,7 +211,7 @@ function runCiSlice() {
 function runArtifactTrustSlice(componentDigest) {
   const signingKey = createFixtureSigningKey({
     keyId: "foundation-fixture-key",
-    builderId: "github-actions://Tyler-R-Kendrick/HoBo/.github/workflows/hobo-ci.yml",
+    builderId: "github-actions://Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml",
   });
   const trustBoundary = createTrustBoundary({
     trustedKeyIds: [signingKey.keyId],

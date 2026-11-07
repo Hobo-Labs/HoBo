@@ -63,12 +63,16 @@ const request = (overrides: RequestOverrides = {}) => ({
 });
 
 // SAFETY: this fixture intentionally uses the builder's untyped boundary input.
-const build = (overrides: Partial<Parameters<typeof buildDeploymentRequestFromParts>[0]> = {}) =>
+const build = (
+	overrides: Partial<
+		Parameters<typeof buildDeploymentRequestFromParts>[0]
+	> = {},
+) =>
 	buildDeploymentRequestFromParts({
 		bindleName: "shop",
-			resources,
-			...overrides,
-		} as never);
+		resources,
+		...overrides,
+	} as never);
 
 describe("the provider-selection refusal", () => {
 	it("refuses a bindle-level provider", () => {
@@ -123,7 +127,7 @@ describe("the provider-selection refusal", () => {
 				request({
 					yard: {
 						selectionMode: "compatible",
-						"requestedLayout": { providerId: "aws" },
+						requestedLayout: { providerId: "aws" },
 					},
 				}),
 			),
@@ -375,7 +379,7 @@ describe("buildDeploymentRequestFromParts", () => {
 		const built = build({ providerId: "aws" }) as { yard: object };
 		expect(built).not.toHaveProperty("provider");
 		expect(built).not.toHaveProperty("providerId");
-	expect(built.yard).toHaveProperty("requestedLayout");
+		expect(built.yard).toHaveProperty("requestedLayout");
 	});
 
 	it("defaults generation to refused", () => {
@@ -392,20 +396,17 @@ describe("buildDeploymentRequestFromParts", () => {
 		// Someone deploying without stating an objective is not asking to spend
 		// more than they have to.
 		// SAFETY: the builder result is the deployment request assembled above.
-		expect((build() as { objective?: string }).objective).toBe(
-			"min-cost",
-		);
+		expect((build() as { objective?: string }).objective).toBe("min-cost");
 	});
 
 	it("honours a stated objective", () => {
 		expect(
 			// SAFETY: the builder result is the deployment request assembled above.
-			(build({ objective: "min-latency" }) as { objective?: string })
-				.objective,
+			(build({ objective: "min-latency" }) as { objective?: string }).objective,
 		).toBe("min-latency");
 	});
 
-		it("defaults the owner tenant to local", () => {
+	it("defaults the owner tenant to local", () => {
 		expect(
 			// SAFETY: the builder result is the deployment request assembled above.
 			(build() as { ownerTenantId?: string }).ownerTenantId,
@@ -414,8 +415,8 @@ describe("buildDeploymentRequestFromParts", () => {
 
 	it("honours a stated owner tenant", () => {
 		expect(
+			// SAFETY: the builder result is the deployment request assembled above.
 			(
-				// SAFETY: the builder result is the deployment request assembled above.
 				build({ ownerTenantId: "acme" }) as {
 					ownerTenantId?: string;
 				}

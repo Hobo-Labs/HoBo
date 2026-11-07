@@ -24,9 +24,10 @@ policy, and timeout signal. Every interaction must execute.
 | Workflow dispatch | Branch/tag bridge ref, exact provider inputs, empty 204, 403 propagation | Mocked consumer test |
 | Repository JIT runner | `hobo` label, runner name/group/work folder, 201 payload, 422 propagation | Mocked consumer test |
 | Credential redirect | `redirect: error` on exchange and API requests; modeled Fetch rejection with no second destination | Mocked consumer test |
+| Conditional read | `If-None-Match` sent on a GET and its 304 returned to the caller; never sent on a write | Mocked consumer test |
 | API path guard | Absolute URL, traversal, and encoded separator rejected before Fetch | Local consumer test |
 
-The redirect stub models Fetch rejecting a 302 when `redirect` is `error`;
+The redirect stub models Fetch rejecting a 301, 302, 303, 307 or 308 when `redirect` is `error`;
 it does not claim a live HTTP redirect experiment. Test assertions are exercised
 through the transport directly, outside the relay's deliberate catch-and-retain
 handlers, so contract mismatches cannot become successful uncertainty tests.

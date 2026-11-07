@@ -107,6 +107,25 @@ diagnostic, not a URL — and that is asserted, not asserted-about.
 
 ## Convergence, and what it costs
 
+Persisted `ref.physicalId` selects an exact provider read before mutation or deletion.
+A renamed resource cannot be substituted by a same-name replacement. Missing pinned
+resources require a new authorized identity rather than an implicit new purchase.
+
+Every read exposes `ready` and `operationConfirmed` from positive provider state;
+unknown/provisioning/drifting state remains unconfirmed. Mutation acknowledgements
+remain unconfirmed until a later read. A successful DELETE request does not prove
+retirement; the durable host keeps observing until the resource is absent.
+
+Cloud Server creation stores `artifactDigest` and `ownershipRef` in native labels.
+Each SHA-256 value is split into two 32-character pieces to preserve the full value
+within label limits. Read evidence reconstructs it from provider labels, never from
+the request. Labels do not establish application health: an independent probe must
+verify the served artifact. Explicit non-sensitive `userData` can bootstrap a server.
+
+Static catalog prices are marked `pricingStatus: "estimate"`; production budgets
+require current account-scoped bounds. The lifecycle regression suite and actual
+`#CostFact` CUE fixtures protect these identity, state and financial boundaries.
+
 Hetzner's collections accept an exact `?name=` filter, so "does my resource
 already exist" is one bounded call rather than a paged scan — a nicer property
 than most provider APIs offer, and the reason this package needs no page

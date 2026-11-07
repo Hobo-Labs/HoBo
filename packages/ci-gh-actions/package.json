@@ -25,7 +25,16 @@
       "types": "./dist/project-config.d.ts",
       "default": "./dist/project-config.js"
     },
-    "./schema/ci-project.schema.json": "./schema/ci-project.schema.json"
+    "./runner-integrations": {
+      "types": "./dist/runner-integrations.d.ts",
+      "default": "./dist/runner-integrations.js"
+    },
+    "./cli-serve": {
+      "types": "./dist/cli-serve-entry.d.ts",
+      "default": "./dist/cli-serve-entry.js"
+    },
+    "./schema/ci-project.schema.json": "./schema/ci-project.schema.json",
+    "./schema/ci-project-providers.schema.json": "./schema/ci-project-providers.schema.json"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -51,7 +60,9 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
+    "@hobo/broker": "workspace:*",
     "@hobo/ci": "workspace:*",
+    "@hobo/core": "workspace:*",
     "pg": "8.22.0",
     "zod": "^4.1.13"
   },
@@ -62,6 +73,7 @@
     "@hobo/ci-dagger": "workspace:*",
     "@pact-foundation/pact": "17.1.4",
     "@types/pg": "8.15.5",
+    "testcontainers": "11.8.1",
     "yaml": "2.9.0"
   }
 }

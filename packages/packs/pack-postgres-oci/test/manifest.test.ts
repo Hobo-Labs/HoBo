@@ -17,14 +17,13 @@ import {
 	POSTGRES_PGDATA,
 	postgresImageReference,
 } from "../src/index.js";
+import type { JsonValue } from "../src/json.js";
 import {
 	FIXTURE_ANCHORS,
 	FIXTURE_SIGNATURE,
 	stubVerifier,
 	verifiedPostgresPack,
 } from "./harness.js";
-import { type JsonValue } from "../src/json.js";
-
 
 describe("the postgres pack manifest", () => {
 	it("parses and identifies itself as pack.postgres.oci/v1", () => {

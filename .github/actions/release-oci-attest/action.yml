@@ -1,0 +1,60 @@
+name: Attest GHCR release images
+description: Keyless GitHub artifact attestations (provenance + SBOM) for pushed GHCR digests.
+inputs:
+  digest-list-path:
+    description: Newline-separated ghcr.io/.../name@sha256:... references
+    required: true
+  image-id:
+    description: Image id to select from the digest list (e.g. hobo-cli)
+    required: true
+  ghcr-username:
+    description: GHCR docker login user (github.actor)
+    required: true
+  ghcr-token:
+    description: GHCR docker login password (GITHUB_TOKEN)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Log in to GHCR for attestation push
+      shell: bash
+      env:
+        GHCR_USERNAME: ${{ inputs.ghcr-username }}
+        GHCR_TOKEN: ${{ inputs.ghcr-token }}
+      run: |
+        set -euo pipefail
+        mkdir -p "${HOME}/.docker"
+        echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
+    - name: Resolve digest for image
+      id: meta
+      shell: bash
+      env:
+        DIGEST_LIST: ${{ inputs.digest-list-path }}
+        IMAGE_ID: ${{ inputs.image-id }}
+      run: |
+        set -euo pipefail
+        if [ ! -f "${DIGEST_LIST}" ]; then
+          echo "::error::digest list not found: ${DIGEST_LIST}"
+          exit 1
+        fi
+        ref="$(grep -F "/${IMAGE_ID}@" "${DIGEST_LIST}" | head -n1 || true)"
+        if [ -z "${ref}" ]; then
+          echo "::error::no digest for ${IMAGE_ID} in ${DIGEST_LIST}"
+          exit 1
+        fi
+        name="${ref%%@*}"
+        digest="${ref#*@}"
+        echo "subject-name=${name}" >> "$GITHUB_OUTPUT"
+        echo "subject-digest=${digest}" >> "$GITHUB_OUTPUT"
+    - name: Provenance attestation
+      uses: actions/attest-build-provenance@520d128f165991a6c774bcb264f323e3d70747f4
+      with:
+        subject-name: ${{ steps.meta.outputs.subject-name }}
+        subject-digest: ${{ steps.meta.outputs.subject-digest }}
+        push-to-registry: true
+    - name: SBOM attestation
+      uses: actions/attest-sbom@115c3be05ff3974bcbd596578934b3f9ce39bf68
+      with:
+        subject-name: ${{ steps.meta.outputs.subject-name }}
+        subject-digest: ${{ steps.meta.outputs.subject-digest }}
+        push-to-registry: true

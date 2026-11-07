@@ -57,7 +57,8 @@ function makeCapability(classKey: InitialCapabilityPort): Capability {
 				sku: facts.sku,
 				unit: facts.unit,
 				marginalPrice: "0.0000",
-				freeTier: { unit: facts.unit, included: 100_000, reset: "monthly" },
+				pricingStatus: "unknown",
+				freeTier: { unit: facts.unit, included: 0, reset: "unknown" },
 			};
 		},
 	};

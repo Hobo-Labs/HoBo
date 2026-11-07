@@ -124,7 +124,8 @@
 					"currency": "USD",
 					"sku": "webernetes:pod",
 					"unit": "request",
-					"marginalPrice": "0"
+					"marginalPrice": "0",
+					"pricingStatus": "verified-zero"
 				}
 			}
 		},

@@ -13,7 +13,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, it } from "vitest";
+import { isolateTurboEnv } from "./isolated-turbo-env.js";
 
+isolateTurboEnv();
 const require = createRequire(import.meta.url);
 const cli = fileURLToPath(new URL("../src/turbo-ci-cli.ts", import.meta.url));
 const roots: string[] = [];

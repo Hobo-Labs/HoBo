@@ -1,3 +1,10 @@
+---
+type: Implementation Record
+title: "Cloudflare CI local execution delivery"
+description: "Recorded delivery state for local Cloudflare CI execution."
+tags: [hobo, ci, cloudflare, delivery]
+---
+
 # Cloudflare CI local execution delivery
 
 - Phase: closed; implementation PR squash-merged.

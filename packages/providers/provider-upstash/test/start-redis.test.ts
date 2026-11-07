@@ -9,6 +9,7 @@ import {
 	parseStartRedisMetrics,
 	parseStartRedisResponse,
 	UPSTASH_START_REDIS_CONTRACT,
+	UPSTASH_START_REDIS_NATIVE_CONTRACT,
 } from "../src/start-redis.js";
 import {
 	DUPLICATE_TOKEN_PAYLOAD,
@@ -154,6 +155,12 @@ describe("parseStartRedisResponse", () => {
 		);
 		assert.match(error.message, /Expires field does not match/u);
 	});
+	it("rejects impossible calendar dates rather than normalizing a longer lease", () => {
+		expectContractChange(VALID_PAYLOAD.replace("2026-08-11", "2026-02-30"));
+		expectContractChange(
+			VALID_PAYLOAD.replace("3 days from creation", "0 days from creation"),
+		);
+	});
 
 	it("refuses an empty body", () => {
 		expectContractChange("");
@@ -170,17 +177,59 @@ describe("parseStartRedisResponse", () => {
 });
 
 describe("describeStartRedisDatabase", () => {
-	it("summarizes without the token", () => {
+	it("reviews the native Redis credential as v2 without rendering it in summaries", () => {
+		const native = `rediss://default:FAKE-native-password-DO-NOT-USE-0000@${FAKE_REST_HOST}:6379`;
+		const parsed = parseStartRedisResponse(
+			VALID_PAYLOAD.replace(
+				"**Token:",
+				`**Redis URL:** ${native} (TCP with TLS, for Redis clients)\n**Token:`,
+			),
+		);
+		assert.equal(parsed.contract, UPSTASH_START_REDIS_NATIVE_CONTRACT);
+		assert.equal(parsed.redisProtocolUrl, native);
+		assert.equal(
+			describeStartRedisDatabase(parsed).redisProtocolUrlPresent,
+			true,
+		);
+		assert.equal(
+			JSON.stringify(describeStartRedisDatabase(parsed)).includes(
+				"FAKE-native-password",
+			),
+			false,
+		);
+	});
+	it("rejects native credentials for another host, insecure transport, or an ambiguous duplicate", () => {
+		const native = `rediss://default:FAKE-native-password-DO-NOT-USE-0000@${FAKE_REST_HOST}:6379`;
+		for (const value of [
+			native.replace("rediss:", "redis:"),
+			native.replace(FAKE_REST_HOST, "attacker.example"),
+			`${native}?forward=evil`,
+		]) {
+			expectContractChange(
+				VALID_PAYLOAD.replace("**Token:", `**Redis URL:** ${value}\n**Token:`),
+			);
+		}
+		expectContractChange(
+			VALID_PAYLOAD.replace(
+				"**Token:",
+				`**Redis URL:** ${native}\n**Redis URL:** ${native}\n**Token:`,
+			),
+		);
+	});
+	it("summarizes status without native bearer identity, claim URL, endpoint or credentials", () => {
 		const summary = describeStartRedisDatabase(
 			parseStartRedisResponse(VALID_PAYLOAD),
 		);
 
-		assert.equal(summary.databaseId, FAKE_DATABASE_ID);
 		assert.equal(summary.tokenBytes, FAKE_REST_TOKEN.length);
-		assert.ok(
-			!JSON.stringify(summary).includes(FAKE_REST_TOKEN),
-			"the summary must not carry the token",
-		);
+		const publicStatus = JSON.stringify(summary);
+		for (const privateValue of [
+			FAKE_DATABASE_ID,
+			FAKE_REST_TOKEN,
+			FAKE_CONSOLE_URL,
+			FAKE_REST_HOST,
+		])
+			assert.ok(!publicStatus.includes(privateValue));
 	});
 });
 
