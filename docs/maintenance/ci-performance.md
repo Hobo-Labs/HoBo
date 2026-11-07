@@ -57,7 +57,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   shard and verifies that a repo-wide run discovers every Turbo test workspace. Shards prefer the
   validation job's same-run Turbo cache but run their complete selected plan on a cache miss. The required
   `PR impact gate` fails unless validation, every workspace shard, and the event's other required lanes
-  succeed. `scripts/test/merge-group-gate.test.ts` covers failed, cancelled, skipped, and missing results.
+  succeed. The PR merge base is pinned from the event's base SHA and passed to every job, so a later
+  target-branch update cannot silently change their test scope. `scripts/test/merge-group-gate.test.ts`
+  covers failed, cancelled, skipped, and missing results.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
   from each job, so queue time and run time can be compared before and after a change. The script
   imports node builtins only, because the step also runs on jobs that skipped or failed `pnpm install`

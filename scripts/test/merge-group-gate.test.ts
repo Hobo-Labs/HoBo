@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -155,6 +161,47 @@ describe("merge-group required gate", () => {
 				},
 			});
 			assert.equal(run.status, 42);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("pins the PR merge base before passing it between jobs", () => {
+		const script = shellForStep(validation, "Resolve Turbo SCM base");
+		const directory = mkdtempSync(join(tmpdir(), "hobo-pr-base-"));
+		try {
+			const sha = "a".repeat(40);
+			const eventBase = "b".repeat(40);
+			const output = join(directory, "output");
+			const marker = join(directory, "injected");
+			writeFileSync(
+				join(directory, "git"),
+				`#!/bin/sh\ncase "$1" in\n  cat-file) exit 0;;\n  merge-base) printf '%s' "$2" > "$CAPTURE"; printf '${sha}';;\n  *) exit 1;;\nesac\n`,
+				{ mode: 0o755 },
+			);
+			const run = spawnSync("bash", ["-c", script], {
+				env: {
+					...process.env,
+					PATH: `${directory}:${process.env.PATH ?? ""}`,
+					PR_BASE_SHA: eventBase,
+					GITHUB_OUTPUT: output,
+					CAPTURE: join(directory, "base"),
+				},
+			});
+			assert.equal(run.status, 0, String(run.stderr));
+			assert.equal(readFileSync(output, "utf8"), `base=${sha}\n`);
+			assert.equal(readFileSync(join(directory, "base"), "utf8"), eventBase);
+			const invalid = spawnSync("bash", ["-c", script], {
+				env: {
+					...process.env,
+					PATH: `${directory}:${process.env.PATH ?? ""}`,
+					PR_BASE_SHA: `main$(touch ${marker})`,
+					GITHUB_OUTPUT: output,
+					CAPTURE: join(directory, "base"),
+				},
+			});
+			assert.notEqual(invalid.status, 0);
+			assert.equal(existsSync(marker), false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

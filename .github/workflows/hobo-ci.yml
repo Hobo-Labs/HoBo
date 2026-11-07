@@ -288,13 +288,15 @@ jobs:
         if: github.event_name == 'pull_request'
         id: scm-base
         env:
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_BASE_REF: ${{ github.base_ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          BASE="$(node --import tsx scripts/ci/turbo-scm-base.mts)"
+          if [[ ! "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "PR base SHA is missing or invalid" >&2; exit 1
+          fi
+          git cat-file -e "${PR_BASE_SHA}^{commit}" || git fetch --no-tags origin "$PR_BASE_SHA"
+          BASE="$(git merge-base "$PR_BASE_SHA" HEAD)"
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
-          git fetch origin "${{ github.base_ref }}"
       # Shadow only: classifies non-meaningful (inert) paths and reports
       # the lanes they would drop. Execution below is unchanged in every
       # mode; HOBO_IMPACT_GATE=off disables the report.
@@ -335,7 +337,9 @@ jobs:
         run: pnpm run lint:code
       - name: Relevant checks only
         if: github.event_name == 'pull_request'
-        run: pnpm agent:check -- --base=origin/${{ github.base_ref }} --external-workspace-tests
+        env:
+          BASE: ${{ steps.scm-base.outputs.base }}
+        run: pnpm agent:check -- --base="$BASE" --external-workspace-tests
       # main-gate's main-base and S0 gate set steps mirror these steps.
       - name: Resolve the merge group base and gate scope
         if: github.event_name == 'merge_group'
