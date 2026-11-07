@@ -62,6 +62,24 @@ describe("release-oci-attest composite action", () => {
 		expect(actionYml).toMatch(/cyclonedx-json=/u);
 	});
 
+	it("scans the pushed digest from the registry, not the local docker daemon", () => {
+		expect(actionYml).toMatch(/syft "registry:\$\{image_ref\}"/u);
+		expect(actionYml).not.toMatch(/syft "docker:/u);
+	});
+
+	it("installs locked syft before exec (attest jobs run no preflight)", () => {
+		const installIdx = actionYml.indexOf("mise install --locked syft");
+		const execIdx = actionYml.indexOf("mise exec -- syft");
+		expect(installIdx).toBeGreaterThan(0);
+		expect(execIdx).toBeGreaterThan(installIdx);
+	});
+
+	it("attests provenance before SBOM generation so syft failure cannot kill it", () => {
+		const provenanceIdx = actionYml.indexOf("attest-build-provenance");
+		const syftIdx = actionYml.indexOf("mise exec -- syft");
+		expect(syftIdx).toBeGreaterThan(provenanceIdx);
+	});
+
 	it("passes sbom-path into attest-sbom", () => {
 		const sbomAttestIdx = actionYml.indexOf("attest-sbom");
 		const block = actionYml.slice(sbomAttestIdx);
