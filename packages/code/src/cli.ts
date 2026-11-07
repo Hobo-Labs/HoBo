@@ -2865,92 +2865,89 @@ export async function runHoboCodeCli(
 				[`hobo-code mux --host ${requestedHost ?? "<machine>"}`],
 				{ signal, leftoverWindows },
 			);
-		try {
-			if (resolvedMachine) {
-				deps.signals?.hold();
-				const gateway = await (deps.openStationGateway ?? openStationGateway)({
-					hoboHome,
-					stationId: platform.station.stationId,
-					isolationClass: resolvedMachine.isolationClass,
-				});
-				let failure: Error | undefined;
-				let signal: NodeJS.Signals | undefined;
-				try {
-					brokered = await brokerPanes(
-						placeable.map((a) => ({ machine: resolvedMachine, agentId: a.id })),
-						{ broker: gateway.broker, subject: "hobo-code", ttlSeconds: 3600 },
-					);
-					signal = await interruption();
-					if (signal === undefined && brokered.panes.length > 0) {
-						if (flags["dry-run"] === true) {
-							resolvedIdentities = brokered.panes.map((pane) => ({
-								pane: { ...pane, identityAgent: "<station-agent-socket>" },
-								stop: async () => {},
-							}));
-						} else {
-							// Each one as it is handed off, so that the cleanup below
-							// stops it if a later one fails.
-							const identities: ResolvedSshIdentity[] = [];
-							resolvedIdentities = identities;
-							for (const pane of brokered.panes) {
-								identities.push(await gateway.handoffSshIdentity(pane));
-								signal = await interruption();
-								if (signal !== undefined) break;
-							}
+		if (resolvedMachine) {
+			deps.signals?.hold();
+			const gateway = await (deps.openStationGateway ?? openStationGateway)({
+				hoboHome,
+				stationId: platform.station.stationId,
+				isolationClass: resolvedMachine.isolationClass,
+			});
+			let failure: Error | undefined;
+			let signal: NodeJS.Signals | undefined;
+			try {
+				brokered = await brokerPanes(
+					placeable.map((a) => ({ machine: resolvedMachine, agentId: a.id })),
+					{ broker: gateway.broker, subject: "hobo-code", ttlSeconds: 3600 },
+				);
+				signal = await interruption();
+				if (signal === undefined && brokered.panes.length > 0) {
+					if (flags["dry-run"] === true) {
+						resolvedIdentities = brokered.panes.map((pane) => ({
+							pane: { ...pane, identityAgent: "<station-agent-socket>" },
+							stop: async () => {},
+						}));
+					} else {
+						// Each one as it is handed off, so that the cleanup below
+						// stops it if a later one fails.
+						const identities: ResolvedSshIdentity[] = [];
+						resolvedIdentities = identities;
+						for (const pane of brokered.panes) {
+							identities.push(await gateway.handoffSshIdentity(pane));
+							signal = await interruption();
+							if (signal !== undefined) break;
 						}
 					}
-					brokerAudit = gateway.auditTypes();
-				} catch (error) {
-					failure = error instanceof Error ? error : new Error(String(error));
 				}
-				const closeError = await closeAuthorization(
-					gateway,
-					failure !== undefined
-						? MUX_FAILED
-						: signal !== undefined
-							? MUX_INTERRUPTED
-							: undefined,
+				brokerAudit = gateway.auditTypes();
+			} catch (error) {
+				failure = error instanceof Error ? error : new Error(String(error));
+			}
+			const closeError = await closeAuthorization(
+				gateway,
+				failure !== undefined
+					? MUX_FAILED
+					: signal !== undefined
+						? MUX_INTERRUPTED
+						: undefined,
+			);
+			// A failure here is an answer, not a crash: the gateway is closed,
+			// and every proxy handed off is stopped by the cleanup below.
+			if (failure !== undefined || closeError !== undefined) {
+				const answer = fail(
+					"HOBO_CODE_MUX_AUTHORIZATION_FAILED",
+					panel("✕ mux", [
+						failure !== undefined
+							? `handing the Station sessions on ${resolvedMachine.id} to their agent proxies failed: ${failure.message}`
+							: `closing the Station gateway failed: ${closeError?.message ?? "unknown"}`,
+						"No pane was opened, and every session handed off is ended.",
+					]),
+					["hobo-code auth status", "hobo-code mux --dry-run"],
+					{ machine: resolvedMachine },
 				);
-				// A failure here is an answer, not a crash: the gateway is closed,
-				// and every proxy handed off is stopped by the cleanup below.
-				if (failure !== undefined || closeError !== undefined) {
-					const answer = fail(
-						"HOBO_CODE_MUX_AUTHORIZATION_FAILED",
-						panel("✕ mux", [
-							failure !== undefined
-								? `handing the Station sessions on ${resolvedMachine.id} to their agent proxies failed: ${failure.message}`
-								: `closing the Station gateway failed: ${closeError?.message ?? "unknown"}`,
-							"No pane was opened, and every session handed off is ended.",
-						]),
-						["hobo-code auth status", "hobo-code mux --dry-run"],
-						{ machine: resolvedMachine },
-					);
-					return failure !== undefined && closeError !== undefined
-						? withCloseFailure(answer, closeError)
-						: answer;
-				}
-				if (signal !== undefined) return interrupted(signal);
-				if (brokered === undefined) {
-					throw new Error("mux brokered no panes and reported no failure");
-				}
-				if (brokered.panes.length === 0) {
-					return fail(
-						"HOBO_CODE_MUX_SESSION_DENIED",
-						panel("✕ mux", [
-							`the Station refused every session on ${resolvedMachine.id}.`,
-							...brokered.failures
-								.slice(0, 3)
-								.map((f) => `${f.agentId} · ${f.reason}`),
-							"Panes are not opened on a host the Station did not authorise;",
-							"there is no fallback to an ambient key.",
-						]),
-						["hobo-code machines", "hobo-code auth"],
-						{ machine: resolvedMachine, failures: brokered.failures },
-					);
-				}
+				return failure !== undefined && closeError !== undefined
+					? withCloseFailure(answer, closeError)
+					: answer;
+			}
+			if (signal !== undefined) return interrupted(signal);
+			if (brokered === undefined) {
+				throw new Error("mux brokered no panes and reported no failure");
+			}
+			if (brokered.panes.length === 0) {
+				return fail(
+					"HOBO_CODE_MUX_SESSION_DENIED",
+					panel("✕ mux", [
+						`the Station refused every session on ${resolvedMachine.id}.`,
+						...brokered.failures
+							.slice(0, 3)
+							.map((f) => `${f.agentId} · ${f.reason}`),
+						"Panes are not opened on a host the Station did not authorise;",
+						"there is no fallback to an ambient key.",
+					]),
+					["hobo-code machines", "hobo-code auth"],
+					{ machine: resolvedMachine, failures: brokered.failures },
+				);
 			}
 		}
-		const retainedIdentityAgents = new Set<string>();
 		try {
 			const allocation = await (
 				deps.allocateWorkspaces ?? allocateAgentWorkspaces
@@ -3077,10 +3074,7 @@ export async function runHoboCodeCli(
 			// created goes with its last window.
 			const signal = await interruption();
 			if (signal !== undefined) {
-				const leftover = await killWindows(
-					muxRunner,
-					applied.createdWindows,
-				);
+				const leftover = await killWindows(muxRunner, applied.createdWindows);
 				return interrupted(signal, leftover);
 			}
 			const created = new Set(applied.created);
