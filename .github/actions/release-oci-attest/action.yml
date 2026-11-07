@@ -52,9 +52,28 @@ runs:
         subject-name: ${{ steps.meta.outputs.subject-name }}
         subject-digest: ${{ steps.meta.outputs.subject-digest }}
         push-to-registry: true
+    - name: Generate CycloneDX SBOM for pushed digest
+      id: sbom
+      shell: bash
+      env:
+        SUBJECT_NAME: ${{ steps.meta.outputs.subject-name }}
+        SUBJECT_DIGEST: ${{ steps.meta.outputs.subject-digest }}
+      run: |
+        set -euo pipefail
+        mise trust ./mise.toml
+        mise install --locked syft
+        sbom_path="${RUNNER_TEMP}/oci-sbom.cdx.json"
+        image_ref="${SUBJECT_NAME}@${SUBJECT_DIGEST}"
+        mise exec -- syft "registry:${image_ref}" -o "cyclonedx-json=${sbom_path}"
+        if [ ! -s "${sbom_path}" ]; then
+          echo "::error::syft produced empty SBOM at ${sbom_path}"
+          exit 1
+        fi
+        echo "path=${sbom_path}" >> "$GITHUB_OUTPUT"
     - name: SBOM attestation
       uses: actions/attest-sbom@115c3be05ff3974bcbd596578934b3f9ce39bf68
       with:
         subject-name: ${{ steps.meta.outputs.subject-name }}
         subject-digest: ${{ steps.meta.outputs.subject-digest }}
+        sbom-path: ${{ steps.sbom.outputs.path }}
         push-to-registry: true
