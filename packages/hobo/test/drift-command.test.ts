@@ -1,16 +1,22 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { CliContext } from "@hobo/cli";
-import { deploymentIdFor } from "@hobo/cli";
-import { collectStream } from "@hobo/cloud";
+import type { CliContext, YardRuntime } from "@hobo/cli";
+import { DEFAULT_TENANT, deploymentIdFor } from "@hobo/cli";
+import {
+	collectStream,
+	currentFenceToken,
+	deploymentPlanned,
+	deploymentViewProjection,
+	hashDeploymentPlan,
+} from "@hobo/cloud";
 import { must } from "@hobo/core/total-access";
 import {
 	createInMemoryStateBackend,
 	createPulumiAutomationAdapter,
 } from "@hobo/iac-pulumi";
 import type { RuntimeLocalEventStore } from "@hobo/runtime-local";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	type CloudflareFetch,
 	type CloudflareFetchResponse,
@@ -78,9 +84,45 @@ function cfFetch(scriptGetStatus: number): CloudflareFetch {
 
 let openStores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
+	vi.restoreAllMocks();
 	for (const store of openStores) store.close();
 	openStores = [];
 });
+
+async function recordLegacyUnboundPlan(runtime: YardRuntime, cwd: string) {
+	const deploymentId = deploymentIdFor(cwd);
+	const stream = `deployment:${deploymentId}`;
+	const snapshot = await deploymentViewProjection.rebuildFromZero(
+		runtime.store,
+		stream,
+	);
+	const row = deploymentViewProjection.get(snapshot, deploymentId);
+	if (!row?.plan) throw new Error("fixture requires a stored deployment plan");
+	const plan = {
+		...row.plan,
+		resources: row.plan.resources.map(
+			({ productId: _productId, ...resource }) => resource,
+		),
+	};
+	const events = await collectStream(runtime.store, stream);
+	const fenceToken = currentFenceToken(runtime.store, stream);
+	await runtime.store.append(
+		stream,
+		[
+			deploymentPlanned({
+				deploymentId,
+				planHash: hashDeploymentPlan(plan),
+				plan,
+			}),
+		],
+		{
+			expectedSeq: events.at(-1)?.seq ?? 0,
+			actor: { kind: "system", id: "legacy-plan-fixture" },
+			tenant: DEFAULT_TENANT,
+			...(fenceToken !== undefined ? { fenceToken } : undefined),
+		},
+	);
+}
 
 async function withProject(
 	callback: (cwd: string) => Promise<void>,
@@ -285,37 +327,45 @@ describe("createDriftCommand", () => {
 		});
 	});
 
-	it("reports in-sync against a live Cloudflare backend when the Worker still exists", async () => {
+	it("refuses to infer a native product from an old plan even when a Worker exists", async () => {
 		await withProject(async (cwd) => {
 			const runtime = createDefaultYardRuntime();
 			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({ yardRuntime: runtime });
 			await cli.run(["up", "--json"], { cwd });
+			await recordLegacyUnboundPlan(runtime, cwd);
+			const nativeFetch = vi
+				.spyOn(globalThis, "fetch")
+				.mockRejectedValue(
+					new Error("unbound plan must not perform provider I/O"),
+				);
 
 			const command = createDriftCommand({
 				runtime,
 				env: CF_ENV,
 				cloudflareFetch: cfFetch(200),
 			});
-			const result = await command.run(runInput(cwd));
-
-			expect(result.ok).toBe(true);
-			expect(result.status).toBe("in-sync");
-			// SAFETY: assertion required at this I/O or test boundary.
-			expect((result.data as DriftData).checked).toBe(2);
-			// SAFETY: assertion required at this I/O or test boundary.
-			expect((result.data as DriftData).drifted).toEqual([]);
+			await expect(command.run(runInput(cwd))).rejects.toMatchObject({
+				code: "RESOLVER_IAC_PRODUCT_UNDECIDED",
+			});
+			expect(nativeFetch).not.toHaveBeenCalled();
 		});
 	});
 
-	it("reports divergence + a governed remediation when the live Worker is gone (404)", async () => {
+	it("does not turn an unrelated Worker 404 into retirement evidence for an unbound old plan", async () => {
 		await withProject(async (cwd) => {
 			const runtime = createDefaultYardRuntime();
 			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({ yardRuntime: runtime });
 			await cli.run(["up", "--json"], { cwd });
+			await recordLegacyUnboundPlan(runtime, cwd);
+			const nativeFetch = vi
+				.spyOn(globalThis, "fetch")
+				.mockRejectedValue(
+					new Error("unbound plan must not perform provider I/O"),
+				);
 
 			const emitted: string[] = [];
 			const command = createDriftCommand({
@@ -323,24 +373,11 @@ describe("createDriftCommand", () => {
 				env: CF_ENV,
 				cloudflareFetch: cfFetch(404),
 			});
-			const result = await command.run(runInput(cwd, (m) => emitted.push(m)));
-
-			expect(result.ok).toBe(true);
-			expect(result.status).toBe("drifted");
-			// SAFETY: assertion required at this I/O or test boundary.
-			expect((result.data as DriftData).checked).toBe(2);
-			// SAFETY: assertion required at this I/O or test boundary.
-			expect([...(result.data as DriftData).diverged].sort()).toEqual([
-				"service",
-				"sessions",
-			]);
-			// SAFETY: assertion required at this I/O or test boundary.
-			expect([...(result.data as DriftData).drifted].sort()).toEqual([
-				"service",
-				"sessions",
-			]);
-			expect(result.remediation?.[0]).toMatch(/hobo up/);
-			expect(emitted.every((m) => m.endsWith("diverged"))).toBe(true);
+			await expect(
+				command.run(runInput(cwd, (message) => emitted.push(message))),
+			).rejects.toMatchObject({ code: "RESOLVER_IAC_PRODUCT_UNDECIDED" });
+			expect(emitted).toEqual([]);
+			expect(nativeFetch).not.toHaveBeenCalled();
 		});
 	});
 

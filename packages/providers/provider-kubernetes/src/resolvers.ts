@@ -75,10 +75,12 @@ import {
 	type TransportMethod,
 	type TransportResponse,
 } from "@hobo/core";
+import { parseDeploymentRecord } from "./api.js";
 import { redactClusterText } from "./errors.js";
 import {
 	isJsonObject,
 	isJsonString,
+	type JsonBag,
 	type JsonObject,
 	type JsonValue,
 	type StringBag,
@@ -680,7 +682,7 @@ function objectOutputs(
 ): JsonObject {
 	const metadata = nestedRecord(record, "metadata");
 	const uid = optionalString(metadata, "uid");
-	return {
+	const outputs: JsonBag = {
 		name: context.name,
 		namespace: context.namespace,
 		kind: kind.kind,
@@ -689,6 +691,39 @@ function objectOutputs(
 			? { clusterDns: clusterDnsName(context) }
 			: undefined),
 	};
+	if (kind.kind !== "Deployment") return outputs;
+	try {
+		const rollout = parseDeploymentRecord(JSON.stringify(record));
+		outputs.ready = rollout.phase === "available";
+		outputs.operationConfirmed = rollout.phase === "available";
+		outputs.lifecycleStatus =
+			rollout.phase === "available"
+				? "ready"
+				: rollout.phase === "failed"
+					? "failed"
+					: "pending";
+		outputs.observedGeneration = rollout.observedGeneration;
+		outputs.generation = rollout.generation;
+		outputs.updatedReplicas = rollout.updatedReplicas;
+		outputs.availableReplicas = rollout.availableReplicas;
+		const containers = nestedRecord(
+			nestedRecord(nestedRecord(record, "spec"), "template"),
+			"spec",
+		).containers;
+		if (
+			Array.isArray(containers) &&
+			containers.length === 1 &&
+			isJsonObject(containers[0])
+		) {
+			const image = optionalString(containers[0], "image");
+			const digest = image?.match(/@(sha256:[a-f0-9]{64})$/u)?.[1];
+			if (digest) outputs.artifactDigest = digest;
+		}
+	} catch {
+		outputs.lifecycleStatus = "unknown";
+		outputs.operationConfirmed = false;
+	}
+	return outputs;
 }
 
 function driftDiagnostics(
@@ -1104,16 +1139,25 @@ function createResolver(
 				spec.productId,
 			);
 		}
+		const name = objectName(request, spec.productId);
+		const namespace = requiredNamespace(request, spec.productId);
+		const physicalId = knownPhysicalId(request);
+		if (physicalId !== undefined && physicalId !== `${namespace}/${name}`) {
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"the desired Kubernetes location differs from the recorded physical identity; an existing resource cannot be retargeted",
+			);
+		}
 		const token = await resolveToken(request, options.resolveCredential);
 		return {
 			request,
 			transport,
 			token,
 			apiServerUrl: options.apiServerUrl,
-			name: objectName(request, spec.productId),
-			namespace: requiredNamespace(request, spec.productId),
+			name,
+			namespace,
 			desired: request.desired,
-			knownPhysicalId: knownPhysicalId(request),
+			knownPhysicalId: physicalId,
 			resolveSecretData:
 				spec.productId === KUBERNETES_SECRET_PRODUCT_ID
 					? options.resolveSecretData

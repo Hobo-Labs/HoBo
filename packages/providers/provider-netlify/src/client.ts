@@ -71,7 +71,7 @@ export type NetlifyClient = {
 	}): Promise<SiteAccess>;
 };
 
-function parseSite(body: string): NetlifySite {
+function parseSite(body: string, expectedId: string): NetlifySite {
 	let parsed: ReturnType<typeof parseJsonValue>;
 	try {
 		parsed = parseJsonValue(body);
@@ -110,6 +110,12 @@ function parseSite(body: string): NetlifySite {
 					haveAccount: accountId !== undefined,
 				},
 			},
+		);
+	}
+	if (id !== expectedId) {
+		throw new NetlifyProviderError(
+			"PROVIDER_CONTRACT_CHANGED",
+			"netlify returned a different site identity; access and ownership are unproven",
 		);
 	}
 	const accountSlug = isJsonString(parsed.account_slug)
@@ -177,13 +183,16 @@ export function createNetlifyClient(
 					body: response.body,
 				});
 			}
-			return parseSite(response.body);
+			return parseSite(response.body, input.siteId);
 		},
 
 		async probeSiteAccess(input) {
 			const response = await request(input);
 			if (response.status === 200) {
-				return { kind: "readable", site: parseSite(response.body) };
+				return {
+					kind: "readable",
+					site: parseSite(response.body, input.siteId),
+				};
 			}
 			if (response.status === 401 || response.status === 403) {
 				return { kind: "forbidden" };

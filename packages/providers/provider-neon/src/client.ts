@@ -36,8 +36,12 @@ export type IdempotencyRecord = {
 };
 
 export interface IdempotencyStore {
+	/** Native keys and ids are bearer capabilities: this cache is private custody, never public events. */
+	readonly visibility: "private-custody";
 	get(key: string): Promise<IdempotencyRecord | undefined>;
 	put(record: IdempotencyRecord): Promise<void>;
+	/** Atomically claim an absent or definitely failed intent. Durable stores must CAS. */
+	claim(record: IdempotencyRecord): Promise<boolean>;
 }
 
 export function createInMemoryIdempotencyStore(
@@ -47,11 +51,19 @@ export function createInMemoryIdempotencyStore(
 		seed.map((record) => [record.key, record]),
 	);
 	return {
+		visibility: "private-custody",
+		async claim(record) {
+			const previous = records.get(record.key);
+			if (previous !== undefined && previous.state !== "failed") return false;
+			records.set(record.key, structuredClone(record));
+			return true;
+		},
 		async get(key) {
-			return records.get(key);
+			const record = records.get(key);
+			return record === undefined ? undefined : structuredClone(record);
 		},
 		async put(record) {
-			records.set(record.key, record);
+			records.set(record.key, structuredClone(record));
 		},
 	};
 }
@@ -94,8 +106,23 @@ const IDEMPOTENCY_KEY = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u;
 const DATABASE_ID =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
+/** Provider-local validation shared by client and resolver before mutation custody. */
+export function validateCreateDatabaseInput(input: CreateDatabaseInput): void {
+	if (!REF.test(input.ref))
+		throw new NeonProviderError(
+			"PROVIDER_CONTRACT_CHANGED",
+			"referrer must be a short identifier; the provider rejects an empty ref with 400",
+		);
+	if (!IDEMPOTENCY_KEY.test(input.idempotencyKey))
+		throw new NeonProviderError(
+			"PROVIDER_CONTRACT_CHANGED",
+			"idempotency key must be 8-128 identifier characters",
+		);
+}
+
 function retryAfterMs(
 	headers: Readonly<Record<string, string>>,
+	now: number,
 ): number | undefined {
 	for (const [key, value] of Object.entries(headers)) {
 		if (key.toLowerCase() !== "retry-after") continue;
@@ -103,16 +130,28 @@ function retryAfterMs(
 		if (Number.isFinite(seconds) && seconds >= 0)
 			return Math.min(seconds, 300) * 1000;
 		const at = Date.parse(value);
-		if (Number.isFinite(at)) return Math.max(0, at - Date.now());
+		if (Number.isFinite(at)) return Math.min(300_000, Math.max(0, at - now));
 	}
 	return undefined;
 }
 
 export function createNeonClient(options: NeonClientOptions): NeonClient {
+	if (options.store.visibility !== "private-custody")
+		throw new NeonProviderError(
+			"SECRET_CUSTODY_UNAVAILABLE",
+			"native idempotency state requires private custody; public event stores are forbidden",
+		);
+	if (!(options.store.claim instanceof Function))
+		throw new NeonProviderError(
+			"PROVIDER_CONTRACT_CHANGED",
+			"anonymous database creation requires an atomic idempotency claim store",
+		);
 	const policy = options.policy ?? DEFAULT_TRANSPORT_POLICY;
 	const transport = createGuardedTransport(options.transport, policy);
 	const baseUrl = options.baseUrl ?? NEON_CLAIMABLE_API_BASE;
-	const sleep = options.sleep ?? (async () => undefined);
+	const sleep =
+		options.sleep ??
+		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 	const maxReadAttempts = Math.max(
 		1,
 		Math.min(options.maxReadAttempts ?? 3, 6),
@@ -135,7 +174,13 @@ export function createNeonClient(options: NeonClientOptions): NeonClient {
 		}
 		let lastError: NeonProviderError | undefined;
 		for (let attempt = 0; attempt < maxReadAttempts; attempt += 1) {
-			if (attempt > 0) await sleep(retryBaseDelayMs * 2 ** (attempt - 1));
+			if (attempt > 0)
+				await sleep(
+					Math.max(
+						retryBaseDelayMs * 2 ** (attempt - 1),
+						lastError?.retryAfterMs ?? 0,
+					),
+				);
 			const response = await transport.request({
 				method: "GET",
 				url: `${baseUrl}/database/${databaseId}`,
@@ -143,8 +188,15 @@ export function createNeonClient(options: NeonClientOptions): NeonClient {
 				timeoutMs: policy.timeoutMs,
 				maxResponseBytes: policy.maxResponseBytes,
 			});
-			if (response.status === 200)
-				return parseNeonDatabaseResponse(response.body);
+			if (response.status === 200) {
+				const observed = parseNeonDatabaseResponse(response.body);
+				if (observed.databaseId.toLowerCase() !== databaseId.toLowerCase())
+					throw new NeonProviderError(
+						"PROVISIONING_CONFLICT",
+						"provider observation returned a foreign database identity",
+					);
+				return observed;
+			}
 			if (response.status === 404 || response.status === 400) {
 				throw new NeonProviderError(
 					"PROVISIONING_CONFLICT",
@@ -152,7 +204,7 @@ export function createNeonClient(options: NeonClientOptions): NeonClient {
 					{ detail: { status: response.status, databaseId } },
 				);
 			}
-			const retryAfter = retryAfterMs(response.headers);
+			const retryAfter = retryAfterMs(response.headers, options.clock());
 			const error = providerErrorForStatus(response.status, {
 				method: "GET",
 				body: response.body,
@@ -175,18 +227,7 @@ export function createNeonClient(options: NeonClientOptions): NeonClient {
 	async function createDatabase(
 		input: CreateDatabaseInput,
 	): Promise<CreateDatabaseOutcome> {
-		if (!REF.test(input.ref)) {
-			throw new NeonProviderError(
-				"PROVIDER_CONTRACT_CHANGED",
-				"referrer must be a short identifier; the provider rejects an empty ref with 400",
-			);
-		}
-		if (!IDEMPOTENCY_KEY.test(input.idempotencyKey)) {
-			throw new NeonProviderError(
-				"PROVIDER_CONTRACT_CHANGED",
-				"idempotency key must be 8-128 identifier characters",
-			);
-		}
+		validateCreateDatabaseInput(input);
 
 		const existing = await options.store.get(input.idempotencyKey);
 		if (existing?.databaseId !== undefined) {
@@ -210,12 +251,17 @@ export function createNeonClient(options: NeonClientOptions): NeonClient {
 			);
 		}
 
-		await options.store.put({
+		const claimed = await options.store.claim({
 			key: input.idempotencyKey,
 			state: "in-flight",
 			ref: input.ref,
 			attemptedAtMs: options.clock(),
 		});
+		if (!claimed)
+			throw new NeonProviderError(
+				"PROVIDER_OPERATION_AMBIGUOUS",
+				"another worker owns this create intent; observe it before any further mutation",
+			);
 
 		let response: Awaited<ReturnType<NeonTransport["request"]>>;
 		try {
@@ -257,7 +303,7 @@ export function createNeonClient(options: NeonClientOptions): NeonClient {
 			return { response: parsed, adopted: false };
 		}
 
-		const retryAfter = retryAfterMs(response.headers);
+		const retryAfter = retryAfterMs(response.headers, options.clock());
 		const error = providerErrorForStatus(response.status, {
 			method: "POST",
 			body: response.body,

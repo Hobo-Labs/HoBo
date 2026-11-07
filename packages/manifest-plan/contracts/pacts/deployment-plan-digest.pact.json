@@ -58,6 +58,58 @@
 			}
 		},
 		{
+			"description": "the current golden plan includes the selected product in its digest",
+			"request": {
+				"type": "message",
+				"body": {
+					"plan": {
+						"schema": "hobo.deployment-plan/v1",
+						"objective": "min-cost",
+						"dependencyOrder": [
+							"assets",
+							"sessions",
+							"service"
+						],
+						"resources": [
+							{
+								"name": "assets",
+								"port": "objectStore",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [],
+								"strategy": "rolling-update",
+								"region": "ENAM"
+							},
+							{
+								"name": "service",
+								"port": "compute",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [
+									"assets",
+									"sessions"
+								],
+								"strategy": "rolling-update",
+								"region": "ENAM",
+								"productId": "cloudflare.workers/v1"
+							},
+							{
+								"name": "sessions",
+								"port": "kv",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [],
+								"strategy": "rolling-update",
+								"region": "ENAM"
+							}
+						]
+					}
+				}
+			},
+			"response": {
+				"body": {
+					"planHash": "sha256:0e1bbf78ae6b765d8a4cd5cb41c5b9c5eadc43e32ea4fedec97cf87a7deef915"
+				}
+			}
+		},
+		{
 			"description": "a plan whose optional node fields are all absent",
 			"request": {
 				"type": "message",

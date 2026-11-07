@@ -26,6 +26,10 @@ inputs:
     description: Turbo --cache remote mode (remote:rw or remote:ro)
     required: false
     default: remote:rw
+  preferred-job:
+    description: Restore this run's completed prerequisite job cache before older fallbacks
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -72,8 +76,15 @@ runs:
     # Entries are content-addressed, so any job's cache is valid for any other:
     # prefer this job's own last save, then the newest save of any job. PR
     # saves are scoped to the PR ref; only push-to-main saves reach every PR.
+    - name: Restore prerequisite Turbo cache
+      id: prerequisite
+      if: inputs.mode == 'restore' && inputs.preferred-job != '' && env.TURBO_TOKEN == '' && env.HOBO_TURBO_CACHE_SHARED != '1'
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: .turbo/cache
+        key: turbo-${{ runner.os }}-${{ inputs.preferred-job }}-${{ hashFiles('pnpm-lock.yaml', 'mise.lock') }}-${{ github.sha }}-${{ github.run_attempt }}
     - name: Restore Turbo local cache fallback
-      if: inputs.mode == 'restore' && env.TURBO_TOKEN == '' && env.HOBO_TURBO_CACHE_SHARED != '1'
+      if: inputs.mode == 'restore' && env.TURBO_TOKEN == '' && env.HOBO_TURBO_CACHE_SHARED != '1' && steps.prerequisite.outputs.cache-hit != 'true'
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
       with:
         path: .turbo/cache

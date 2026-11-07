@@ -18,21 +18,19 @@ import {
 } from "@hobo/provider-vercel";
 import type { Yard as ParsedYard } from "@hobo/yards";
 
-import {
-	type ComposedYardOptions,
-	composeYard,
-	regionOption,
-} from "./compose.js";
+import { type ComposedYardOptions, composeYard } from "./compose.js";
 
 export {
 	blob,
 	edgeConfig,
 	edgeFunction,
 	project,
+	staticDeployment,
 	type VercelBlobSlotOptions,
 	type VercelEdgeConfigSlotOptions,
 	type VercelEdgeFunctionSlotOptions,
 	type VercelProjectSlotOptions,
+	type VercelStaticDeploySlotOptions,
 } from "@hobo/provider-vercel";
 
 /**
@@ -57,7 +55,7 @@ export interface VercelYardOptions
 export function Yard(options: VercelYardOptions = {}): ParsedYard {
 	return composeYard(
 		DEFAULT_VERCEL_YARD_NAME,
-		vercelYardSpec(regionOption(options.regions)),
+		vercelYardSpec(options),
 		options,
 	);
 }

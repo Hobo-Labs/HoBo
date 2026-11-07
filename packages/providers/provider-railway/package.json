@@ -21,7 +21,8 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@hobo/core": "workspace:*"
+		"@hobo/core": "workspace:*",
+		"@bufbuild/protobuf": "2.12.1"
 	},
 	"description": "HoBo Railway CloudProvider — equivalence + temporary/agent Environment Station contract."
 }

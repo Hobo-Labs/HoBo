@@ -1,6 +1,18 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
-import { LeaseSchema } from "@hobo/ci";
+import {
+	AccountSchema,
+	ConfigurationSchema,
+	ConnectionSchema,
+	JobSchema,
+	type Lease,
+	LeaseSchema,
+	OfferSchema,
+} from "@hobo/ci";
 import type { PostgresCiStore } from "@hobo/ci/postgres";
+import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GithubTransport } from "../src/github.js";
 import * as githubModule from "../src/github.js";
@@ -74,9 +86,582 @@ function runningLease(overrides: {
 	});
 }
 
+function transitionFor(lease: Lease) {
+	return async (
+		_id: string,
+		expected: readonly string[],
+		update: (entry: Lease) => void,
+	) => {
+		if (!expected.includes(lease.state)) return undefined;
+		update(lease);
+		return lease;
+	};
+}
+
+const fixtureStores = new Set<SqliteCiStore>();
+function mockedLeaseStore(lease: Lease) {
+	const store = new SqliteCiStore(":memory:");
+	fixtureStores.add(store);
+	vi.spyOn(store, "get").mockResolvedValue(lease);
+	const transition = vi
+		.spyOn(store, "transition")
+		.mockImplementation(transitionFor(lease));
+	const settle = vi.spyOn(store, "settle").mockResolvedValue(lease);
+	return { store, transition, settle };
+}
+
+function deniedGithub(): GithubTransport {
+	return {
+		async request() {
+			throw new Error("unexpected GitHub request");
+		},
+	};
+}
+
 describe("isolated container controller reconcile", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
+		for (const store of fixtureStores) store.close();
+		fixtureStores.clear();
+	});
+
+	it("does not repeatedly settle an estimated shared-budget liability", async () => {
+		const lease = runningLease({});
+		lease.state = "uncertain";
+		lease.sandboxStage = "stopped";
+		lease.budgetId = "shared-budget";
+		lease.usageProvenance = "estimated";
+		lease.usageCompletedAt = "2026-10-26T12:01:00Z";
+		lease.settledAt = "2026-10-26T12:02:00Z";
+		const { store, settle } = mockedLeaseStore(lease);
+		const github = deniedGithub();
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop: vi.fn(),
+			remove: vi.fn(),
+			isRunning: vi.fn(),
+			list: vi.fn(async () => []),
+		};
+		const controller = createIsolatedContainerController({
+			store,
+			github,
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "oracle-free-vm",
+			workerImage: "hobo-ci-worker:local",
+			now: () => "2026-10-26T12:03:00Z",
+		});
+
+		await controller.host.reconcile(lease.id, true);
+		await controller.host.reconcile(lease.id, true);
+		expect(settle).not.toHaveBeenCalled();
+		expect(lease.state).toBe("uncertain");
+	});
+
+	it("does not stop a dispatched session that is still starting", async () => {
+		const lease = runningLease({});
+		lease.state = "dispatched";
+		const { store, settle } = mockedLeaseStore(lease);
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop: vi.fn(),
+			remove: vi.fn(),
+			isRunning: vi.fn(async () => true),
+		};
+		const controller = createIsolatedContainerController({
+			store,
+			github: deniedGithub(),
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "oracle-free-vm",
+			workerImage: "hobo-ci-worker:local",
+		});
+
+		await controller.host.reconcile(lease.id);
+		expect(docker.stop).not.toHaveBeenCalled();
+		expect(docker.remove).not.toHaveBeenCalled();
+		expect(settle).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"uncertain",
+		"dispatching",
+	] as const)("binds and stops a uniquely observed %s create before settling its lease", async (state) => {
+		const lease = runningLease({ jobId: 100 });
+		lease.state = state;
+		lease.sandboxStage = "creating";
+		lease.sandboxSessionId = "";
+		const { store, transition, settle } = mockedLeaseStore(lease);
+		const stop = vi.fn(async () => undefined);
+		const remove = vi.fn(async () => undefined);
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop,
+			remove,
+			isRunning: vi.fn(async () => true),
+			list: vi.fn(async () => [
+				{
+					name: lease.sandboxName,
+					containerId: "observed-id",
+					state: "running" as const,
+				},
+			]),
+		};
+		const github = deniedGithub();
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(lease.jobId, "queued"),
+		);
+		const controller = createIsolatedContainerController({
+			store,
+			github,
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "oracle-free-vm",
+			workerImage: "hobo-ci-worker:local",
+			now: () => "2026-10-26T12:02:00Z",
+		});
+		await controller.host.reconcile(lease.id, true);
+		expect(transition).toHaveBeenCalledTimes(state === "dispatching" ? 5 : 4);
+		expect(lease.sandboxSessionId).toBe("observed-id");
+		expect(stop).toHaveBeenCalledWith(lease.sandboxName, "observed-id");
+		expect(remove).toHaveBeenCalledWith(lease.sandboxName, "observed-id");
+		expect(settle).toHaveBeenCalledOnce();
+		expect(settle.mock.calls[0]?.[4]).toMatchObject({
+			id: lease.jobId,
+			action: "queued",
+		});
+	});
+
+	it("does not bind an uncertain create when inventory is ambiguous or registration may have started", async () => {
+		const lease = runningLease({ jobId: 100 });
+		lease.state = "uncertain";
+		lease.sandboxStage = "creating";
+		lease.sandboxSessionId = "";
+		const { store, transition } = mockedLeaseStore(lease);
+		const container = {
+			name: lease.sandboxName,
+			containerId: "observed-id",
+			state: "running",
+		} as const;
+		const list = vi.fn(async () => [container, container]);
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop: vi.fn(),
+			remove: vi.fn(),
+			isRunning: vi.fn(),
+			list,
+		};
+		const github = deniedGithub();
+		const controller = createIsolatedContainerController({
+			store,
+			github,
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "oracle-free-vm",
+			workerImage: "hobo-ci-worker:local",
+		});
+		await controller.host.reconcile(lease.id, true);
+		expect(transition).not.toHaveBeenCalled();
+		lease.sandboxStage = "registering";
+		await controller.host.reconcile(lease.id, true);
+		expect(list).toHaveBeenCalledTimes(1);
+		expect(transition).not.toHaveBeenCalled();
+		lease.state = "dispatching";
+		lease.sandboxStage = "creating";
+		lease.runnerId = 42;
+		await controller.host.reconcile(lease.id, true);
+		expect(transition).not.toHaveBeenCalled();
+		lease.runnerId = 0;
+		lease.hostRunId = 42;
+		await controller.host.reconcile(lease.id, true);
+		expect(transition).not.toHaveBeenCalled();
+		lease.hostRunId = 0;
+		lease.usageCompletedAt = NOW;
+		await controller.host.reconcile(lease.id, true);
+		expect(transition).not.toHaveBeenCalled();
+	});
+
+	it("retains an interrupted create if its uncertain hold cannot be recorded", async () => {
+		const lease = runningLease({});
+		lease.state = "dispatching";
+		lease.sandboxStage = "creating";
+		lease.sandboxSessionId = "";
+		const { store, transition } = mockedLeaseStore(lease);
+		transition.mockRejectedValue(new Error("budget authority unavailable"));
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop: vi.fn(),
+			remove: vi.fn(),
+			isRunning: vi.fn(),
+			list: vi.fn(async () => []),
+		};
+		const ctl = createIsolatedContainerController({
+			store,
+			github: deniedGithub(),
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "oracle-free-vm",
+			workerImage: "hobo-ci-worker:local",
+		});
+		await expect(ctl.host.reconcile(lease.id, true)).rejects.toThrow(
+			"budget authority unavailable",
+		);
+		expect(lease.state).toBe("dispatching");
+		expect(docker.stop).not.toHaveBeenCalled();
+	});
+
+	it("retains the stop time and retries settlement when final job observation fails", async () => {
+		const lease = runningLease({ jobId: 100 });
+		let clock = "2026-10-26T12:02:00Z";
+		const { store, settle } = mockedLeaseStore(lease);
+		const stop = vi.fn(async () => undefined);
+		const remove = vi.fn(async () => undefined);
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop,
+			remove,
+			isRunning: vi.fn(async () => true),
+			list: vi.fn(async () => []),
+		};
+		const github = deniedGithub();
+		vi.spyOn(githubModule, "getJob")
+			.mockRejectedValueOnce(new Error("temporary GitHub failure"))
+			.mockResolvedValueOnce(githubJob(lease.jobId, "queued"));
+		const controller = createIsolatedContainerController({
+			store,
+			github,
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "oracle-free-vm",
+			workerImage: "hobo-ci-worker:local",
+			now: () => clock,
+		});
+		await expect(controller.host.reconcile(lease.id, true)).rejects.toThrow(
+			"temporary GitHub failure",
+		);
+		expect(lease.sandboxStage).toBe("stopped");
+		expect(lease.usageCompletedAt).toBe(clock);
+		expect(settle).not.toHaveBeenCalled();
+		clock = "2026-10-26T12:20:00Z";
+		await controller.host.reconcile(lease.id, true);
+		expect(stop).toHaveBeenCalledOnce();
+		expect(remove).toHaveBeenCalledOnce();
+		expect(settle).toHaveBeenCalledWith(
+			lease.id,
+			0,
+			2,
+			clock,
+			expect.objectContaining({ id: lease.jobId }),
+			"2026-10-26T12:02:00Z",
+		);
+	});
+
+	it("preserves the isolated capacity hold across restart until a removed worker is settled", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-ci-stop-recovery-"));
+		const path = join(root, "journal.sqlite");
+		let store = new SqliteCiStore(path);
+		let open = true;
+		try {
+			const at = "2026-10-26T12:00:00.000Z";
+			const configuration = create(ConfigurationSchema, {
+				accounts: [
+					create(AccountSchema, {
+						id: "account-a",
+						budgetMicros: 10_000,
+						maxRuntimeMinutes: 30,
+						startupMinutes: 5,
+						offers: [
+							create(OfferSchema, {
+								id: "box",
+								provider: "hobo-box-worker",
+								providerAccountId: "worker-a",
+								backend: "isolated-container",
+								runsOn: "hobo-isolated-worker",
+								enabled: true,
+								concurrency: 1,
+								priceMicrosPerMinute: 0,
+								budgetMicros: 0,
+								observedAt: "2026-10-26T11:00:00.000Z",
+								validUntil: "2026-11-26T12:00:00.000Z",
+								sourceUrl: "https://example.test/worker",
+								bridgeAcknowledged: true,
+							}),
+						],
+					}),
+				],
+				connections: [
+					create(ConnectionSchema, {
+						accountId: "account-a",
+						repository: "org/repo",
+						repositoryId: 101,
+						installationId: 10,
+						runnerGroupId: 1,
+						isolatedOnly: true,
+						acceptAllMatchingRepositoryJobs: true,
+						trustedRepositoryAcknowledged: true,
+						publicRepositoryAcknowledged: true,
+					}),
+				],
+			});
+			await store.configure(configuration, 0, at);
+			const account = configuration.accounts[0];
+			if (!account) throw new Error("missing fixture account");
+			const job = create(JobSchema, {
+				id: 100,
+				runId: 11,
+				runAttempt: 1,
+				repository: "org/repo",
+				repositoryId: 101,
+				installationId: 10,
+				action: "queued",
+				labels: ["hobo"],
+				isolatedRequired: true,
+			});
+			await store.queue(job, at, 1);
+			const reserved = await store.reserve(account, job, at, 1);
+			if (!reserved) throw new Error("fixture reservation failed");
+			expect(reserved.reservedPaidMicros).toBe(0);
+			await store.transition(
+				reserved.id,
+				["reserved"],
+				(lease) => {
+					lease.state = "uncertain";
+					lease.sandboxStage = "creating";
+					lease.sandboxName = `hobo-${lease.id}`;
+				},
+				"ci.LeaseUncertain",
+				at,
+			);
+			let present = true;
+			const docker: DockerDriver = {
+				create: vi.fn(),
+				start: vi.fn(),
+				exec: vi.fn(),
+				list: vi.fn(async () =>
+					present
+						? [
+								{
+									name: `hobo-${reserved.id}`,
+									containerId: "observed-id",
+									state: "running" as const,
+								},
+							]
+						: [],
+				),
+				isRunning: vi.fn(async () => true),
+				stop: vi.fn(async () => undefined),
+				remove: vi.fn(async () => {
+					present = false;
+				}),
+			};
+			const github = deniedGithub();
+			vi.spyOn(githubModule, "getJob")
+				.mockRejectedValueOnce(new Error("temporary GitHub failure"))
+				.mockResolvedValueOnce(githubJob(job.id, "queued"));
+			let clock = "2026-10-26T12:02:00.000Z";
+			let controller = createIsolatedContainerController({
+				store,
+				github,
+				publicOrigin: "https://ci.example.test",
+				docker,
+				workerAccountId: "worker-a",
+				workerImage: "hobo-ci-worker:local",
+				now: () => clock,
+			});
+			await expect(
+				controller.host.reconcile(reserved.id, true),
+			).rejects.toThrow("temporary GitHub failure");
+			const held = await store.get(reserved.id);
+			expect(held).toMatchObject({
+				state: "uncertain",
+				sandboxStage: "stopped",
+				reservedPaidMicros: 0,
+				usageCompletedAt: "2026-10-26T12:02:00.000Z",
+			});
+			const next = create(JobSchema, {
+				id: 101,
+				runId: 11,
+				runAttempt: 1,
+				repository: "org/repo",
+				repositoryId: 101,
+				installationId: 10,
+				action: "queued",
+				labels: ["hobo"],
+				isolatedRequired: true,
+			});
+			await store.queue(next, clock, 1);
+			expect(await store.reserve(account, next, clock, 1)).toBeUndefined();
+			store.close();
+			open = false;
+			store = new SqliteCiStore(path);
+			open = true;
+			clock = "2026-10-26T12:20:00.000Z";
+			controller = createIsolatedContainerController({
+				store,
+				github,
+				publicOrigin: "https://ci.example.test",
+				docker,
+				workerAccountId: "worker-a",
+				workerImage: "hobo-ci-worker:local",
+				now: () => clock,
+			});
+			await controller.reconcileLeases();
+			expect(await store.get(reserved.id)).toMatchObject({
+				state: "completed",
+				billedMinutes: 2,
+				paidMicros: 0,
+				usageCompletedAt: "2026-10-26T12:02:00.000Z",
+			});
+			expect(
+				(await store.pendingJobs()).map((pending) => pending.id),
+			).toContain(job.id);
+			expect(await store.reserve(account, next, clock, 1)).toBeDefined();
+		} finally {
+			if (open) store.close();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("never settles or removes work when a forced stop cannot be confirmed", async () => {
+		const lease = runningLease({ jobId: 100 });
+		const { store, settle } = mockedLeaseStore(lease);
+		const work = workDirectory();
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			stop: vi.fn(async () => {
+				throw new Error("stop timed out");
+			}),
+			remove: vi.fn(),
+			isRunning: vi.fn(async () => true),
+		};
+		const github = deniedGithub();
+		const controller = createIsolatedContainerController({
+			store,
+			github,
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "oracle-free-vm",
+			workerImage: "hobo-ci-worker:local",
+			workRoot: "/tmp/hobo-ci-test",
+			workFs: work.fs,
+			scheduleRetiredSweep: work.scheduleRetiredSweep,
+		});
+		await expect(controller.host.reconcile(lease.id, true)).rejects.toThrow(
+			"container stop uncertain",
+		);
+		expect(lease.sandboxStage).toBe("stopping");
+		expect(docker.remove).not.toHaveBeenCalled();
+		expect(settle).not.toHaveBeenCalled();
+		expect(work.retireJobDirectory).not.toHaveBeenCalled();
+	});
+
+	it("settles an auto-removed container only after confirming its absence", async () => {
+		const lease = runningLease({ jobId: 100 });
+		let present = true;
+		const { store, settle } = mockedLeaseStore(lease);
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			isRunning: vi.fn(async () => true),
+			stop: vi.fn(async () => {
+				present = false;
+			}),
+			remove: vi.fn(async () => {
+				throw new Error("no such container");
+			}),
+			list: vi.fn(async () =>
+				present
+					? [
+							{
+								name: lease.sandboxName,
+								containerId: lease.sandboxSessionId,
+								state: "running" as const,
+							},
+						]
+					: [],
+			),
+		};
+		const github = deniedGithub();
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(lease.jobId, "queued"),
+		);
+		const controller = createIsolatedContainerController({
+			store,
+			github,
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "oracle-free-vm",
+			workerImage: "hobo-ci-worker:local",
+			now: () => "2026-10-26T12:02:00Z",
+		});
+		await controller.host.reconcile(lease.id, true);
+		expect(docker.list).toHaveBeenCalled();
+		expect(lease.sandboxStage).toBe("stopped");
+		expect(settle).toHaveBeenCalledOnce();
+	});
+
+	it("recovers a lost stop acknowledgement after the container auto-removes", async () => {
+		const lease = runningLease({ jobId: 100 });
+		let present = true;
+		const { store, settle } = mockedLeaseStore(lease);
+		const docker: DockerDriver = {
+			create: vi.fn(),
+			start: vi.fn(),
+			exec: vi.fn(),
+			isRunning: vi.fn(async () => true),
+			stop: vi.fn(async () => {
+				present = false;
+				throw new Error("ack lost");
+			}),
+			remove: vi.fn(),
+			list: vi.fn(async () =>
+				present
+					? [
+							{
+								name: lease.sandboxName,
+								containerId: lease.sandboxSessionId,
+								state: "running" as const,
+							},
+						]
+					: [],
+			),
+		};
+		const github = deniedGithub();
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(lease.jobId, "queued"),
+		);
+		const controller = createIsolatedContainerController({
+			store,
+			github,
+			publicOrigin: "https://ci.example.test",
+			docker,
+			workerAccountId: "oracle-free-vm",
+			workerImage: "hobo-ci-worker:local",
+			now: () => "2026-10-26T12:02:00Z",
+		});
+		await expect(controller.host.reconcile(lease.id, true)).rejects.toThrow(
+			"container stop uncertain",
+		);
+		expect(lease.sandboxStage).toBe("stopping");
+		expect(settle).not.toHaveBeenCalled();
+		await controller.host.reconcile(lease.id, true);
+		expect(lease.sandboxStage).toBe("stopped");
+		expect(settle).toHaveBeenCalledOnce();
 	});
 
 	it("requeues uncertain leases without a container session after the recovery timeout", async () => {
@@ -143,9 +728,10 @@ describe("isolated container controller reconcile", () => {
 	it("force-stop settle does not requeue when the reserved job already completed", async () => {
 		const lease = runningLease({ actualJobId: 100 });
 		const settle = vi.fn(async () => lease);
-		// SAFETY: force-stop reconcile only calls get() and settle(); this stub implements both.
+		// SAFETY: force-stop reconcile uses get(), transition(), and settle(); this stub implements those methods.
 		const relayStore = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
+			transition: transitionFor(lease),
 			settle,
 		} as PostgresCiStore & HostedRelayStore;
 		const docker: DockerDriver = {
@@ -178,9 +764,10 @@ describe("isolated container controller reconcile", () => {
 	it("force-stop settle requeues when GitHub assigned a different job to the runner", async () => {
 		const lease = runningLease({ jobId: 100, actualJobId: 999 });
 		const settle = vi.fn(async () => lease);
-		// SAFETY: force-stop reconcile only calls get() and settle(); this stub implements both.
+		// SAFETY: force-stop reconcile uses get(), transition(), and settle(); this stub implements those methods.
 		const relayStore = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
+			transition: transitionFor(lease),
 			settle,
 		} as PostgresCiStore & HostedRelayStore;
 		const docker: DockerDriver = {
@@ -217,9 +804,10 @@ describe("isolated container controller reconcile", () => {
 	it("force-stop settle requeues when the reserved job is still queued and unassigned", async () => {
 		const lease = runningLease({ jobId: 100, actualJobId: 0 });
 		const settle = vi.fn(async () => lease);
-		// SAFETY: force-stop reconcile only calls get() and settle(); this stub implements both.
+		// SAFETY: force-stop reconcile uses get(), transition(), and settle(); this stub implements those methods.
 		const relayStore = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
+			transition: transitionFor(lease),
 			settle,
 		} as PostgresCiStore & HostedRelayStore;
 		const docker: DockerDriver = {
@@ -284,6 +872,10 @@ describe("isolated container controller reconcile", () => {
 		await controller.host.reconcile(lease.id);
 		expect(abortIsolatedAndRequeue).not.toHaveBeenCalled();
 		expect(docker.stop).not.toHaveBeenCalled();
+		await expect(controller.host.reconcile(lease.id, true)).rejects.toThrow(
+			"container status uncertain",
+		);
+		expect(docker.remove).not.toHaveBeenCalled();
 	});
 
 	function markerScenario(
@@ -297,9 +889,10 @@ describe("isolated container controller reconcile", () => {
 		const settle = vi.fn(async () => lease);
 		const abortIsolatedAndRequeue = vi.fn(async () => undefined);
 		const work = workRoot ? workDirectory() : undefined;
-		// SAFETY: reconcile() only calls get(), settle() and abortIsolatedAndRequeue().
+		// SAFETY: reconcile() uses get(), transition(), settle(), and abortIsolatedAndRequeue().
 		const relayStore = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
+			transition: transitionFor(lease),
 			settle,
 			abortIsolatedAndRequeue,
 		} as PostgresCiStore & HostedRelayStore;
@@ -314,8 +907,11 @@ describe("isolated container controller reconcile", () => {
 			exitState: vi.fn(async () => ({ exitCode: 137, oomKilled: true })),
 		};
 		if (memory?.peak) docker.memoryPeak = memory.peak;
-		// SAFETY: settle after a stop uses getJob(), not github.request().
+		// SAFETY: settle after a stop uses the mocked getJob() seam.
 		const github = {} as GithubTransport;
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(lease.jobId, "queued"),
+		);
 		const controllerOptions: Parameters<
 			typeof createIsolatedContainerController
 		>[0] = {
@@ -554,7 +1150,15 @@ describe("isolated container controller reconcile", () => {
 	it("retires the work directory after a container crash", async () => {
 		const s = markerScenario(undefined, true, undefined, "/srv/hobo-ci/work");
 		await s.controller.host.reconcile(s.lease.id);
-		expect(s.abortIsolatedAndRequeue).toHaveBeenCalledOnce();
+		expect(s.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+		expect(s.settle).toHaveBeenCalledWith(
+			s.lease.id,
+			0,
+			2,
+			expect.any(String),
+			expect.objectContaining({ id: s.lease.jobId }),
+			expect.any(String),
+		);
 		expect(s.work?.retireJobDirectory).toHaveBeenCalledWith(
 			`/srv/hobo-ci/work/${s.lease.sandboxName}`,
 		);
@@ -567,7 +1171,8 @@ describe("isolated container controller reconcile", () => {
 
 		await s.controller.host.reconcile(s.lease.id);
 
-		expect(s.abortIsolatedAndRequeue).toHaveBeenCalledOnce();
+		expect(s.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+		expect(s.settle).toHaveBeenCalledOnce();
 		expect(log).toHaveBeenCalledWith("hobo_ci_orphan_job_detected", {
 			repository: s.lease.repository,
 			runId: s.lease.originalRunId,

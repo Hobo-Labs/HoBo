@@ -1,0 +1,170 @@
+syntax = "proto3";
+package hobo.cloud.hosting.v1;
+
+import "hosting_planning.proto";
+
+enum HostingTransitionPhase {
+  HOSTING_TRANSITION_PHASE_UNSPECIFIED = 0;
+  HOSTING_TRANSITION_PHASE_PROPOSED = 1;
+  HOSTING_TRANSITION_PHASE_RESERVING = 2;
+  HOSTING_TRANSITION_PHASE_PREPARING = 3;
+  HOSTING_TRANSITION_PHASE_SHIFTING = 4;
+  HOSTING_TRANSITION_PHASE_VERIFYING = 5;
+  HOSTING_TRANSITION_PHASE_RETIRING = 6;
+  HOSTING_TRANSITION_PHASE_SETTLING = 7;
+  HOSTING_TRANSITION_PHASE_SETTLED = 8;
+  HOSTING_TRANSITION_PHASE_RESTORING = 9;
+  HOSTING_TRANSITION_PHASE_RECONCILING = 10;
+  HOSTING_TRANSITION_PHASE_BLOCKED = 11;
+  HOSTING_TRANSITION_PHASE_RESTORED = 12;
+}
+
+enum HostingTransitionAction {
+  HOSTING_TRANSITION_ACTION_UNSPECIFIED = 0;
+  HOSTING_TRANSITION_ACTION_PREPARE = 1;
+  HOSTING_TRANSITION_ACTION_SHIFT = 2;
+  HOSTING_TRANSITION_ACTION_VERIFY = 3;
+  HOSTING_TRANSITION_ACTION_RESTORE = 4;
+  HOSTING_TRANSITION_ACTION_RETIRE = 5;
+  HOSTING_TRANSITION_ACTION_SETTLE = 6;
+}
+
+message HostingTransitionConstraints {
+  double minimum_healthy_backends = 1;
+  repeated string allowed_jurisdictions = 2;
+  double maximum_latency_ms = 3;
+  // stateless, replicated, or single-writer; omission is never interpreted as stateless.
+  string movement_class = 4;
+  double observation_max_age_ms = 5;
+  double rollback_hold_until_ms = 6;
+  string required_capability_digest = 7;
+  bool interruption_allowed = 8;
+  double source_ownership_epoch = 9;
+}
+
+// Provider-enforced lifetime or prepaid entitlement, independently verified by
+// the production adapter. A quota, forecast, or local cleanup timer is not proof.
+message HostingDestinationLiability {
+  string resource_name = 1;
+  string provider_id = 2;
+  string provider_account_id = 3;
+  string artifact_digest = 4;
+  // provider-funded-zero or native-finite-term.
+  string mode = 5;
+  string evidence_ref = 6;
+  // Zero is permitted only for an irrevocable provider-funded-zero entitlement.
+  double expires_at_ms = 7;
+  double maximum_micros = 8;
+}
+
+message HostingTransitionPlan {
+  string schema_version = 1;
+  string transition_id = 2;
+  string tenant_id = 3;
+  string deployment_id = 4;
+  string source_plan_id = 5;
+  string target_plan_id = 6;
+  HostingPlanCommitment commitment = 7;
+  HostingTransitionConstraints constraints = 8;
+  double operation_timeout_ms = 9;
+  double observation_backoff_ms = 10;
+  double maximum_observation_attempts = 11;
+  double horizon_end_ms = 12;
+  string plan_digest = 13;
+  string workload_effects_json = 14;
+  string workload_resilience_json = 15;
+  string workload_contract_digest = 16;
+  string adapter_contract_digest = 17;
+  string workload_contract_id = 18;
+  string existing_reservation_id = 19;
+  // For adoption, target_plan_id is this immutable gateway DeploymentPlan sha256 artifact hash.
+  string financial_plan_hash = 20;
+  // Empty is the legacy move intent. Decommission explicitly permits an
+  // approved availability floor of zero and retires without a destination.
+  string intent = 21;
+  // Explicit operator resumption, not transparent retry. Zero disables it.
+  double maximum_mutation_resumes = 22;
+  repeated HostingDestinationLiability destination_liabilities = 23;
+  // Existing source exposure is approved separately; retirement timing is not
+  // a financial ceiling. Both inventories' maximums fit in the same commitment.
+  repeated HostingDestinationLiability source_liabilities = 24;
+  // Incumbent lifetime identity. Artifact equality never permits reusing a
+  // previous incarnation's native names or retirement commands.
+  string source_incarnation_id = 25;
+}
+
+message HostingTransitionOperation {
+  string operation_id = 1;
+  string operation_digest = 2;
+  HostingTransitionAction action = 3;
+  double started_at_ms = 4;
+  double deadline_at_ms = 5;
+  double observation_attempts = 6;
+  double next_observation_at_ms = 7;
+  bool mutation_dispatched = 8;
+  double mutation_resumes = 9;
+}
+
+// Positive, operation-bound evidence, supplied by a trusted adapter observation port.
+message HostingTransitionObservation {
+  string tenant_id = 1;
+  string transition_id = 2;
+  string operation_id = 3;
+  string operation_digest = 4;
+  double observed_at_ms = 5;
+  // applied, absent, pending, or failed; network exceptions are pending, never absent.
+  // absent is terminal proof that no matching operation is still in flight or can later apply.
+  string outcome = 6;
+  double healthy_backends = 7;
+  string jurisdiction = 8;
+  double latency_ms = 9;
+  string capability_digest = 10;
+  bool source_fenced = 11;
+  double source_quiescent_sequence = 12;
+  double destination_applied_sequence = 13;
+  bool checksum_equal = 14;
+  bool destination_owns_writes = 15;
+  bool reverse_transfer_safe = 16;
+  bool source_retired = 17;
+  string evidence_ref = 18;
+  bool ready = 19;
+  bool usage_final = 20;
+  double settled_micros = 21;
+  bool target_retired = 22;
+  string source_fence_token = 23;
+  double write_ownership_epoch = 24;
+  string source_plan_id = 25;
+  string target_plan_id = 26;
+  // Actual provider evidence, never reconstructed from the approved declaration.
+  repeated HostingDestinationLiability destination_liabilities = 27;
+  // All future target liability is either provider-funded or finally paid.
+  // Metered targets retain the financial reservation until this is proven.
+  bool destination_liability_finalized = 28;
+}
+
+message HostingTransitionState {
+  HostingTransitionPlan plan = 1;
+  HostingTransitionPhase phase = 2;
+  HostingTransitionOperation operation = 3;
+  double operation_sequence = 4;
+  string reservation_id = 5;
+  bool destination_owns_writes = 6;
+  bool reverse_transfer_safe = 7;
+  bool source_retirement_confirmed = 8;
+  string blocked_reason = 9;
+  HostingTransitionObservation last_observation = 10;
+  double settled_micros = 11;
+  double version = 12;
+  bool restoration_confirmed = 13;
+  bool compensation_cleanup_confirmed = 14;
+  bool cancel_requested = 15;
+  double write_ownership_epoch = 16;
+  string retirement_evidence_ref = 17;
+}
+
+message HostingTransitionEvent {
+  string event_id = 1;
+  string kind = 2;
+  HostingTransitionState state = 3;
+  double recorded_at_ms = 4;
+}

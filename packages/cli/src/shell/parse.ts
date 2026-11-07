@@ -48,6 +48,7 @@ export interface CliFlags {
 	readonly demoSeed: string | null;
 	/** Target region for residency-aware preflight (`hobo verify --region`). */
 	readonly region: string | null;
+	readonly budgetId?: string | null;
 }
 
 export interface CliRequest {
@@ -121,6 +122,8 @@ export function parseArgv(
 		demoSeed: null as string | null,
 		// SAFETY: `region: null as string | null,` is required at this I/O or test boundary.
 		region: null as string | null,
+		// SAFETY: mutable parser field is populated only by takeValue's string boundary.
+		budgetId: null as string | null,
 	};
 	const args: string[] = [];
 	let verb: string | null = null;
@@ -237,6 +240,7 @@ function parseOption(
 		demo: boolean;
 		demoSeed: string | null;
 		region: string | null;
+		budgetId: string | null;
 	},
 	verb: string | null,
 ): number {
@@ -355,6 +359,13 @@ function parseOption(
 		case "--region":
 			if (verb === "verify" || verb === "up") {
 				flags.region = takeValue(argv, index, token);
+				return index + 1;
+			}
+			throw unknownOption(token, verb);
+		case "--budget":
+		case "--budget-id":
+			if (verb === "up" || verb === "plan" || verb === "down") {
+				flags.budgetId = takeValue(argv, index, token);
 				return index + 1;
 			}
 			throw unknownOption(token, verb);

@@ -8,6 +8,7 @@ import { PROVIDER_TARGET } from "./options.js";
 import {
 	parseWebernetesStationDeployment,
 	parseWebernetesStationId,
+	WebernetesInputRejectedError,
 	type WebernetesStationDeployment,
 } from "./parse.js";
 
@@ -29,23 +30,6 @@ export type LocalTemporaryStationInput = {
 	readonly transport?: LocalTempTransport;
 };
 
-/** The default transport: a `.hobo.localhost` name, served by nothing yet. */
-function builtInTransport(): LocalTempTransport {
-	return {
-		async provision({ stationId }) {
-			const slug =
-				stationId
-					.toLowerCase()
-					.replace(/[^a-z0-9-]/gu, "")
-					.slice(-20) || "anon";
-			return {
-				stationUrl: `https://${slug}.${PROVIDER_TARGET}.hobo.localhost`,
-				claimUrl: `https://claim.hobo.localhost/${PROVIDER_TARGET}/${slug}`,
-			};
-		},
-	};
-}
-
 /**
  * Provision a temporary/agent Environment Station on the local yard.
  *
@@ -58,7 +42,12 @@ export async function provisionTemporaryEnvironmentStation(
 	input: LocalTemporaryStationInput,
 ): Promise<TemporaryEnvironmentStationResult> {
 	const stationId = parseWebernetesStationId(input.stationId);
-	const transport = input.transport ?? builtInTransport();
+	const transport = input.transport;
+	if (!transport)
+		throw new WebernetesInputRejectedError(
+			"transport",
+			"a real local station host transport is required; a generated URL does not provision a host",
+		);
 	const deployment: WebernetesStationDeployment =
 		parseWebernetesStationDeployment(await transport.provision({ stationId }));
 	const expiresAt = temporaryStationExpiresAt(TEMPORARY_STATION_TTL_MS);

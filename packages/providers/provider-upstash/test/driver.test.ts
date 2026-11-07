@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
+import { create } from "@bufbuild/protobuf";
+import { ResourceLifecycleObservationRecordSchema } from "@hobo/core";
 import { describe, it } from "vitest";
 
 import {
 	createInMemoryIdempotencyStore,
 	createUpstashClient,
 } from "../src/client.js";
-import { createUpstashTemporaryRedisDriver } from "../src/driver.js";
+import {
+	createUpstashTemporaryRedisDriver,
+	type UpstashDriverOptions,
+} from "../src/driver.js";
 import { isProviderError } from "../src/errors.js";
 import { toProviderFacts, toProvisionReceipt } from "../src/receipt.js";
 import {
@@ -20,6 +25,8 @@ import {
 	VALID_PAYLOAD,
 } from "./fixtures/index.js";
 
+import { publicOptions } from "./public-serialization.js";
+
 const BEFORE_EXPIRY = Date.parse("2026-08-08T12:00:00.000Z");
 const AFTER_EXPIRY = Date.parse("2026-08-12T12:00:00.000Z");
 const RESOURCE_REF = "yard/demo/cache";
@@ -28,6 +35,7 @@ function harness(
 	options: {
 		readonly script?: readonly StubResponse[];
 		readonly now?: number;
+		readonly retirement?: UpstashDriverOptions["retirement"];
 	} = {},
 ) {
 	let now = options.now ?? BEFORE_EXPIRY;
@@ -44,6 +52,7 @@ function harness(
 		client,
 		custody,
 		clock: () => now,
+		retirement: options.retirement,
 	});
 	return {
 		transport,
@@ -73,6 +82,36 @@ const ROTATION = {
 } as const;
 
 describe("provision", () => {
+	it("deposits the native Redis URL from the reviewed live v2 response and emits only its ref", async () => {
+		const native = `rediss://default:FAKE-native-password-DO-NOT-USE-0000@${FAKE_REST_HOST}:6379`;
+		const body = VALID_PAYLOAD.replace(
+			"**Token:",
+			`**Redis URL:** ${native} (TCP with TLS, for ioredis, node-redis, redis-py and other Redis clients)\n**Token:`,
+		);
+		const fx = harness({ script: [{ status: 200, body }] });
+		const record = await fx.provision();
+		assert.ok(record.redisProtocolUrlRef?.startsWith("hobo-secret://"));
+		assert.equal(
+			fx.custody.deposited.get(record.redisProtocolUrlRef ?? ""),
+			native,
+		);
+		for (const output of [
+			record,
+			await toProvisionReceipt(record, publicOptions(fx.custody)),
+			await toProviderFacts(record, publicOptions(fx.custody)),
+		]) {
+			assert.equal(
+				JSON.stringify(output).includes("FAKE-native-password"),
+				false,
+			);
+			assert.equal(JSON.stringify(output).includes("rediss://"), false);
+		}
+		assert.equal(
+			(await toProvisionReceipt(record, publicOptions(fx.custody)))
+				.redisProtocolUrlRef,
+			record.redisProtocolUrlRef,
+		);
+	});
 	it("produces a record carrying refs, never the token", async () => {
 		const { provision, custody } = harness();
 
@@ -349,15 +388,107 @@ describe("lease and teardown", () => {
 		);
 	});
 
-	it("reports an already-expired database as destroyed", async () => {
+	it("does not report provider retirement from an elapsed expiry alone", async () => {
 		const { driver, provision, setNow } = harness();
 		const record = await provision();
 		setNow(AFTER_EXPIRY);
 
 		const outcome = await driver.destroy(record);
 
-		assert.equal(outcome.destroyed, true);
-		assert.match(outcome.reason, /reaped/u);
+		assert.equal(outcome.destroyed, false);
+		assert.match(outcome.reason, /unverified/u);
+	});
+	it("releases only on current resource-bound terminal absence and final usage", async () => {
+		const fx = harness({
+			retirement: async (record, context) =>
+				create(ResourceLifecycleObservationRecordSchema, {
+					...context,
+					physicalId: record.databaseId,
+					status: "absent",
+					operationTerminal: true,
+					observedAtMs: context.nowMs,
+					evidenceRef: "provider://retirement",
+					usageFinal: true,
+					settledMicros: 0,
+					usageEvidenceRef: "provider://final-usage",
+				}),
+		});
+		const record = await fx.provision();
+		const context = {
+			tenantId: "tenant",
+			providerId: record.providerId,
+			providerAccountId: "anonymous",
+			productId: record.definitionId,
+			resourceId: record.resourceRef,
+			operationId: "retire:cache",
+			nowMs: BEFORE_EXPIRY,
+			maxAgeMs: 1000,
+		};
+		assert.equal((await fx.driver.destroy(record, context)).destroyed, true);
+	});
+	it("rejects foreign or stale retirement evidence and retains nonfinal usage", async () => {
+		for (const overrides of [
+			{ tenantId: "foreign" },
+			{ physicalId: "other" },
+			{ observedAtMs: BEFORE_EXPIRY - 1001 },
+		]) {
+			const fx = harness({
+				retirement: async (record, context) =>
+					create(ResourceLifecycleObservationRecordSchema, {
+						...context,
+						physicalId: record.databaseId,
+						status: "absent",
+						operationTerminal: true,
+						observedAtMs: context.nowMs,
+						evidenceRef: "provider://retirement",
+						usageFinal: true,
+						usageEvidenceRef: "provider://final-usage",
+						...overrides,
+					}),
+			});
+			const record = await fx.provision();
+			await assert.rejects(
+				fx.driver.destroy(record, {
+					tenantId: "tenant",
+					providerId: record.providerId,
+					providerAccountId: "anonymous",
+					productId: record.definitionId,
+					resourceId: record.resourceRef,
+					operationId: "retire:cache",
+					nowMs: BEFORE_EXPIRY,
+					maxAgeMs: 1000,
+				}),
+			);
+		}
+		const fx = harness({
+			now: AFTER_EXPIRY,
+			retirement: async (record, context) =>
+				create(ResourceLifecycleObservationRecordSchema, {
+					...context,
+					physicalId: record.databaseId,
+					status: "absent",
+					operationTerminal: true,
+					observedAtMs: context.nowMs,
+					evidenceRef: "provider://retirement",
+					usageFinal: false,
+				}),
+		});
+		const record = await fx.provision();
+		assert.equal(
+			(
+				await fx.driver.destroy(record, {
+					tenantId: "tenant",
+					providerId: record.providerId,
+					providerAccountId: "anonymous",
+					productId: record.definitionId,
+					resourceId: record.resourceRef,
+					operationId: "retire:cache",
+					nowMs: AFTER_EXPIRY,
+					maxAgeMs: 1000,
+				})
+			).destroyed,
+			false,
+		);
 	});
 
 	it("refuses to destroy a claimed database, which belongs to its owner now", async () => {
@@ -422,9 +553,13 @@ describe("receipts and facts", () => {
 	it("emits a receipt with locators and no credential material", async () => {
 		const { provision } = harness();
 
-		const receipt = toProvisionReceipt(await provision());
+		const receipt = await toProvisionReceipt(
+			await provision(),
+			publicOptions(),
+		);
 
-		assert.equal(receipt.databaseId, FAKE_DATABASE_ID);
+		assert.match(receipt.opaquePhysicalId, /^claimable:[a-f0-9]{64}$/u);
+		assert.equal(JSON.stringify(receipt).includes(FAKE_DATABASE_ID), false);
 		assert.equal(receipt.endpoint.host, FAKE_REST_HOST);
 		assert.equal(receipt.expiresAtIso, "2026-08-11T00:00:00.000Z");
 		assert.equal(receipt.teardown, "expiry-only");
@@ -437,13 +572,16 @@ describe("receipts and facts", () => {
 		const record = await provision();
 
 		assert.deepEqual(
-			toProviderFacts(record).map((fact) => fact.kind),
+			(await toProviderFacts(record, publicOptions())).map((fact) => fact.kind),
 			["provider.upstash.database.provisioned"],
 		);
 		assert.deepEqual(
-			toProviderFacts(driver.attestClaim(record, CLAIM)).map(
-				(fact) => fact.kind,
-			),
+			(
+				await toProviderFacts(
+					driver.attestClaim(record, CLAIM),
+					publicOptions(),
+				)
+			).map((fact) => fact.kind),
 			[
 				"provider.upstash.database.provisioned",
 				"provider.upstash.claim.pending-rotation",

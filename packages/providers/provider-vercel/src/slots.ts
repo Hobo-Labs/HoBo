@@ -9,7 +9,7 @@
  * nothing here ranks or chooses.
  *
  * Why factories rather than hand-typed rows: a row is magic strings
- * (`{ profile: capability.web.hosted, productId: "vercel.project/v1" }`) with no
+ * (`{ profile: capability.web.hosted, productId: "vercel.static-deploy/v1" }`) with no
  * autocomplete and no type checking on the property bag. Each factory below has
  * its **own** options type — never `Record<string, unknown>` in the signature —
  * so a typo is a compile error rather than a deploy-time surprise.
@@ -29,6 +29,7 @@
  */
 
 import { type SlotBinding, slotBinding } from "@hobo/core";
+import { VERCEL_STATIC_DEPLOY_PRODUCT_ID } from "./deployment-resolver.js";
 
 // public-contract: product ids the Vercel catalog registers for these offerings.
 export const VERCEL_PROJECT_PRODUCT_ID = "vercel.project/v1";
@@ -40,7 +41,20 @@ export const VERCEL_BLOB_PRODUCT_ID = "vercel.blob/v1";
 export const VERCEL_EDGE_CONFIG_PRODUCT_ID = "vercel.edge-config/v1";
 
 // public-contract: capability profiles these offerings claim to satisfy.
-export const VERCEL_PROJECT_PROFILE = "web.hosted/v1";
+export const VERCEL_PROJECT_PROFILE = "provider.project/v1";
+// public-contract: hosted-web capability profile advertised by the static deployment slot.
+export const VERCEL_STATIC_DEPLOY_PROFILE = "web.hosted/v1";
+export type VercelStaticDeploySlotOptions = { readonly projectId?: string };
+export function staticDeployment(
+	options: VercelStaticDeploySlotOptions = {},
+): SlotBinding {
+	return slotBinding({
+		slot: "web",
+		profile: VERCEL_STATIC_DEPLOY_PROFILE,
+		productId: VERCEL_STATIC_DEPLOY_PRODUCT_ID,
+		properties: definedProperties(options),
+	});
+}
 // public-contract: capability profile this offering satisfies; changing it re-targets the slot.
 export const VERCEL_EDGE_FUNCTION_PROFILE = "service.worker/v1";
 // public-contract: capability profile this offering satisfies; changing it re-targets the slot.
@@ -83,6 +97,7 @@ export type VercelEdgeConfigSlotOptions = {
  */
 type AnySlotOptions =
 	| VercelProjectSlotOptions
+	| VercelStaticDeploySlotOptions
 	| VercelEdgeFunctionSlotOptions
 	| VercelBlobSlotOptions
 	| VercelEdgeConfigSlotOptions;
@@ -95,7 +110,7 @@ function definedProperties(options: AnySlotOptions) {
 	return out;
 }
 
-/** A Vercel Project: the `web` slot, satisfying `web.hosted/v1`. */
+/** A Vercel Project configuration, distinct from a deployed web artifact. */
 export function project(options: VercelProjectSlotOptions = {}): SlotBinding {
 	return slotBinding({
 		slot: "web",
@@ -144,6 +159,7 @@ export function edgeConfig(
  * four bare names into their module scope.
  */
 export const vercelSlots = Object.freeze({
+	staticDeployment,
 	blob,
 	edgeConfig,
 	edgeFunction,

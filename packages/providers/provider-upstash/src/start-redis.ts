@@ -54,6 +54,9 @@ import type { DomainView } from "./wire.js";
 // public-contract: parser contract id carried on every parse result.
 export const UPSTASH_START_REDIS_CONTRACT =
 	"upstash.start-redis.markdown/v1" as const;
+// public-contract: reviewed live response adds an independent native Redis credential.
+export const UPSTASH_START_REDIS_NATIVE_CONTRACT =
+	"upstash.start-redis.markdown/v2" as const;
 
 /** The exact heading the document opens with. */
 // public-contract: the heading whose change is the drift signal.
@@ -74,13 +77,15 @@ export const MAX_PAYLOAD_BYTES = 16_384;
 export const MAX_PAYLOAD_LINES = 200;
 export const MAX_LINE_LENGTH = 1_024;
 
-// domain-view: the wire message keeps `token_present` and no token; the parse
-// result is the one place the plaintext token exists, for its single hop to
-// custody, so that flag is dropped here and the credential is added.
+// domain-view: this privileged native parser record carries bearer capability
+// ids, claim URLs and credentials for their single hop to private custody.
+// Public receipts/facts use a separate generated custodial projection.
 export type StartRedisDatabase = DomainView<
 	StartRedisDatabaseWire,
 	{
-		contract: typeof UPSTASH_START_REDIS_CONTRACT;
+		contract:
+			| typeof UPSTASH_START_REDIS_CONTRACT
+			| typeof UPSTASH_START_REDIS_NATIVE_CONTRACT;
 		/**
 		 * Earliest instant consistent with the reported date.
 		 *
@@ -95,24 +100,22 @@ export type StartRedisDatabase = DomainView<
 	/**
 	 * The bearer token, in plaintext.
 	 *
-	 * The only field in this package that holds credential material, and it
-	 * exists for exactly one hop: the driver deposits it into secret custody
-	 * and keeps a SecretRef. It is deliberately absent from the wire message
-	 * and from every record, receipt, fact, binding, and error. If you are
-	 * about to pass a `StartRedisDatabase` somewhere, pass
-	 * {@link describeStartRedisDatabase} instead.
+	 * The native database UUID, claim URL and optional native Redis URL are also
+	 * bearer capabilities. This entire record belongs in private custody. Use
+	 * {@link describeStartRedisDatabase} for public status diagnostics, or the
+	 * asynchronous custodial receipt/facts projection for a public resource.
 	 */
 	readonly token: string;
+	/** Native Redis URI is also a credential; it is deposited into custody immediately. */
+	readonly redisProtocolUrl?: string;
 };
 
 /** Everything about a parsed response that is safe to log. */
 export type StartRedisSummary = {
-	readonly contract: typeof UPSTASH_START_REDIS_CONTRACT;
-	readonly databaseId: string;
-	readonly restEndpointHost: string;
+	readonly contract: StartRedisDatabase["contract"];
 	readonly expiresAtIso: string;
-	readonly consoleUrl: string;
 	readonly tokenBytes: number;
+	readonly redisProtocolUrlPresent: boolean;
 };
 
 const UUID_V4 =
@@ -143,13 +146,16 @@ function contractError(
 	});
 }
 
-function isExpectedFieldLabel(value: string): value is ExpectedFieldLabel {
+function isExpectedFieldLabel(
+	value: string,
+): value is ExpectedFieldLabel | "Redis URL" {
 	switch (value) {
 		case "Database ID":
 		case "Endpoint":
 		case "Token":
 		case "Metrics":
 		case "Expires":
+		case "Redis URL":
 			return true;
 		default:
 			return false;
@@ -267,6 +273,30 @@ export function parseStartRedisResponse(body: string): StartRedisDatabase {
 			},
 		);
 	}
+	let redisProtocolUrl: string | undefined;
+	const nativeField = fields.get("Redis URL");
+	if (nativeField !== undefined) {
+		const [candidate] = nativeField.split(/\s/u);
+		try {
+			const url = new URL(candidate ?? "");
+			if (
+				url.protocol !== "rediss:" ||
+				url.username !== "default" ||
+				!TOKEN.test(decodeURIComponent(url.password)) ||
+				url.hostname !== restEndpointHost ||
+				url.port !== "6379" ||
+				url.pathname ||
+				url.search ||
+				url.hash
+			)
+				throw new Error("invalid native connection scope");
+			redisProtocolUrl = url.toString();
+		} catch {
+			contractError(
+				"start-redis Redis URL is not a TLS credential for the returned Redis host",
+			);
+		}
+	}
 
 	// The observed field is the URL followed by a parenthesised note about the
 	// JSON it returns, so the prefix is checked and the note is discarded.
@@ -298,9 +328,14 @@ export function parseStartRedisResponse(body: string): StartRedisDatabase {
 		);
 	}
 	const expiresAtMs = Date.parse(`${expiresOn}T00:00:00.000Z`);
-	if (!Number.isFinite(expiresAtMs)) {
+	if (
+		!Number.isFinite(expiresAtMs) ||
+		new Date(expiresAtMs).toISOString().slice(0, 10) !== expiresOn
+	) {
 		contractError("start-redis Expires date is not a real date");
 	}
+	if (Number(expiresMatch[2]) < 1)
+		contractError("start-redis Expires lifetime must be positive");
 
 	const consoleIds = new Set<string>();
 	let consoleUrl: string | undefined;
@@ -332,11 +367,15 @@ export function parseStartRedisResponse(body: string): StartRedisDatabase {
 	}
 
 	return {
-		contract: UPSTASH_START_REDIS_CONTRACT,
+		contract:
+			redisProtocolUrl === undefined
+				? UPSTASH_START_REDIS_CONTRACT
+				: UPSTASH_START_REDIS_NATIVE_CONTRACT,
 		databaseId,
 		restEndpointHost,
 		restEndpointUrl: `https://${restEndpointHost}`,
 		token,
+		...(redisProtocolUrl === undefined ? undefined : { redisProtocolUrl }),
 		expiresOn,
 		expiresAtMs,
 		expiresAtIso: new Date(expiresAtMs).toISOString(),
@@ -353,11 +392,9 @@ export function describeStartRedisDatabase(
 ): StartRedisSummary {
 	return {
 		contract: database.contract,
-		databaseId: database.databaseId,
-		restEndpointHost: database.restEndpointHost,
 		expiresAtIso: database.expiresAtIso,
-		consoleUrl: database.consoleUrl,
 		tokenBytes: Buffer.byteLength(database.token, "utf8"),
+		redisProtocolUrlPresent: database.redisProtocolUrl !== undefined,
 	};
 }
 

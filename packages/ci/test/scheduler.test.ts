@@ -134,6 +134,7 @@ describe("persistent interchangeable pipeline scheduler", () => {
 	});
 	it("uses free allocations before the cheapest paid backend", async () => {
 		const h = setup();
+		h.account.routingStrategy = "maximize-credits";
 		expect(
 			(await h.scheduler.execute(h.account, pipeline("first"))).backend,
 		).toBe("dagger");

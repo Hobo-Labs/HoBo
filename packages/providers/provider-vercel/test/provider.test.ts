@@ -23,7 +23,7 @@ describe("@hobo/provider-vercel", () => {
 	});
 
 	it("supports Vercel Drop temporary deploy", () => {
-		expect(supportsAnonymousTemporaryDeploy).toBe(true);
+		expect(supportsAnonymousTemporaryDeploy).toBe(false);
 		expect(VERCEL_DROP_URL).toBe("https://vercel.com/drop");
 	});
 
@@ -42,10 +42,11 @@ describe("@hobo/provider-vercel", () => {
 			deploymentId: "dpl_1",
 			projectName: "hobo-drop-x",
 		});
-		const fromText = parseVercelDropDeployOutput(
-			"Production: https://hobo-drop-y.vercel.app\n",
-		);
-		expect(fromText.stationUrl).toBe("https://hobo-drop-y.vercel.app");
+		expect(() =>
+			parseVercelDropDeployOutput(
+				"Production: https://hobo-drop-y.vercel.app\n",
+			),
+		).toThrow(/identity/);
 	});
 
 	it("provisions via injectable Drop transport (no VERCEL_TOKEN)", async () => {
@@ -55,7 +56,10 @@ describe("@hobo/provider-vercel", () => {
 					projectName,
 					deploymentId: `dpl-${stationId}`,
 					stationUrl: `https://${projectName}.vercel.app`,
-					claimUrl: `https://vercel.com/${projectName}`,
+					claimUrl: `https://vercel.com/claim-deployment?code=fake`,
+					anonymous: true,
+					expirySource: "provider-reported",
+					expiresAt: new Date(Date.now() + 60000).toISOString(),
 				};
 			},
 		};

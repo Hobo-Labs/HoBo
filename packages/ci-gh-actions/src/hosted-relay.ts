@@ -5,6 +5,7 @@ import {
 	type Configuration,
 	ConfigurationSchema,
 	type Connection,
+	compareCiRoutingCandidates,
 	effectiveCiAccount,
 	type Job,
 	JobSchema,
@@ -31,6 +32,7 @@ import {
 	getJob,
 	getRun,
 } from "./github.js";
+import { heldRoutingOptions } from "./held-routing.js";
 import { verifyIngressForward } from "./ingress-forward.js";
 import { isIsolatedHostOffer } from "./isolated-backend.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
@@ -80,6 +82,11 @@ export interface HostedRelayStore {
 	): Promise<boolean>;
 	observe(job: Job, at: string, expectedRevision?: number): Promise<void>;
 	queue(job: Job, at: string, expectedRevision?: number): Promise<void>;
+	expireQueued?(
+		job: Job,
+		at: string,
+		expectedRevision?: number,
+	): Promise<boolean>;
 	reserve(
 		account: Account,
 		job: Job,
@@ -542,6 +549,7 @@ export class HostedRelay {
 			]),
 			action: "queued",
 			isolatedRequired: isIsolatedHostOffer(offer),
+			queueDeadlineAt: lease.queueDeadlineAt,
 		});
 	}
 	private async launchEligible(lease: Lease): Promise<boolean> {
@@ -550,6 +558,7 @@ export class HostedRelay {
 		const now = this.now();
 		const bound = Date.parse(now) + lease.reservedMinutes * 60000;
 		if (
+			this.queueExpired(lease.queueDeadlineAt) ||
 			!offer.enabled ||
 			(offer.backend !== "" && offer.backend !== "gh-actions") ||
 			!offer.bridgeAcknowledged ||
@@ -564,16 +573,30 @@ export class HostedRelay {
 			return false;
 		// Reprice this exact host against fresh evidence, excluding its own reservation.
 		const repriced = route(
-			{ ...account, offers: [offer] },
+			{
+				...account,
+				offers: account.offers.map((entry) => ({
+					...entry,
+					enabled: entry.enabled && entry.id === offer.id,
+				})),
+			},
 			(await this.options.store.accountLeases(account.id)).filter(
 				(entry) => entry.id !== lease.id,
 			),
 			now,
+			heldRoutingOptions(account, lease, now),
 		);
 		return (
 			repriced !== undefined &&
 			repriced.freeMinutes >= lease.reservedFreeMinutes &&
 			repriced.paidMicros <= lease.reservedPaidMicros
+		);
+	}
+	private queueExpired(deadline: string): boolean {
+		return (
+			deadline !== "" &&
+			(!Number.isFinite(Date.parse(deadline)) ||
+				Date.parse(deadline) <= Date.parse(this.now()))
 		);
 	}
 	/** A reserved host has no external side effect yet, so a preferred host can
@@ -585,29 +608,41 @@ export class HostedRelay {
 			(entry) => entry.id !== lease.id,
 		);
 		const now = this.now();
-		const current = route({ ...account, offers: [offer] }, others, now);
-		const cheapest = route(
+		const options = heldRoutingOptions(account, lease, now);
+		const current = route(
 			{
 				...account,
-				offers: account.offers.filter((entry) =>
-					isIsolatedHostOffer(offer)
-						? isIsolatedHostOffer(entry)
-						: !entry.backend || entry.backend === "gh-actions",
-				),
+				offers: account.offers.map((entry) => ({
+					...entry,
+					enabled: entry.enabled && entry.id === offer.id,
+				})),
 			},
 			others,
 			now,
+			options,
+		);
+		const cheapest = route(
+			{
+				...account,
+				offers: account.offers.map((entry) => ({
+					...entry,
+					enabled:
+						entry.enabled &&
+						(isIsolatedHostOffer(offer)
+							? isIsolatedHostOffer(entry)
+							: !entry.backend || entry.backend === "gh-actions"),
+				})),
+			},
+			others,
+			now,
+			options,
 		);
 		if (!current || !cheapest) return false;
 		// A refreshed allocation for the same offer is not reflected in the
 		// existing reservation. Requeue it so the new free balance is reserved.
 		if (current.freeMinutes > lease.reservedFreeMinutes) return true;
-		const currentFree = current.freeMinutes > 0;
-		const preferredFree = cheapest.freeMinutes > 0;
 		return (
-			(preferredFree && !currentFree) ||
-			(preferredFree === currentFree &&
-				cheapest.paidMicros < current.paidMicros)
+			compareCiRoutingCandidates(cheapest, current, account.routingStrategy) < 0
 		);
 	}
 	private async logSharedLabelTrunkJob(job: Job): Promise<void> {
@@ -844,6 +879,14 @@ export class HostedRelay {
 		let storageRefused = false;
 		const waitingTrunk = new Set<string>();
 		for (const job of pending) {
+			if (this.queueExpired(job.queueDeadlineAt)) {
+				await this.options.store.expireQueued?.(
+					job,
+					this.now(),
+					reservationRevision,
+				);
+				continue;
+			}
 			if ((await this.options.isolatedHost?.isLaunchParked?.(job)) === true)
 				continue;
 			const rank = await this.admissionOrder.rank(refOf(job));
@@ -994,6 +1037,13 @@ export class HostedRelay {
 		);
 		for (const candidate of reserved) {
 			try {
+				if (this.queueExpired(candidate.queueDeadlineAt)) {
+					await this.options.store.expireQueued?.(
+						this.queuedDemand(candidate),
+						this.now(),
+					);
+					continue;
+				}
 				this.binding(candidate);
 				const [currentJob, originalRun] = await Promise.all([
 					getJob(
@@ -1011,6 +1061,14 @@ export class HostedRelay {
 				]);
 				// Authority may narrow while the GitHub reads are in flight.
 				const preflightRevision = await this.refreshConfig();
+				if (this.queueExpired(candidate.queueDeadlineAt)) {
+					await this.options.store.expireQueued?.(
+						this.queuedDemand(candidate),
+						this.now(),
+						preflightRevision,
+					);
+					continue;
+				}
 				const connection = this.binding(candidate);
 				const offer = providerOffer(this.account(candidate), candidate);
 				const isolatedHost = isIsolatedHostOffer(offer);
@@ -1031,7 +1089,10 @@ export class HostedRelay {
 				}
 				if (
 					currentJob.status !== "queued" ||
+					currentJob.id !== candidate.jobId ||
+					currentJob.run_id !== candidate.originalRunId ||
 					currentJob.run_attempt !== candidate.runAttempt ||
+					originalRun.id !== candidate.originalRunId ||
 					originalRun.run_attempt !== candidate.runAttempt ||
 					!(isolatedHost
 						? this.trustedSandboxOriginal(originalRun, connection)
@@ -1085,6 +1146,18 @@ export class HostedRelay {
 					preflightRevision,
 				);
 				if (!lease) continue;
+				if (this.queueExpired(lease.queueDeadlineAt)) {
+					await this.options.store.transition(
+						lease.id,
+						["dispatching"],
+						(entry) => {
+							entry.state = "uncertain";
+						},
+						"ci.LeaseUncertain",
+						this.now(),
+					);
+					continue;
+				}
 				try {
 					const response = await this.options.github.request(
 						lease.installationId,
@@ -1180,9 +1253,14 @@ export class HostedRelay {
 				`${lease.repository}/.github/workflows/${connection.bridgeWorkflow}`
 		)
 			throw new Error("identity does not own lease");
-		if (!this.trustedHost(run, connection, lease) || run.status === "completed")
+		if (
+			run.id !== runId ||
+			!this.trustedHost(run, connection, lease) ||
+			run.status === "completed"
+		)
 			throw new Error("untrusted host workflow");
 		if (
+			originalRun.id !== lease.originalRunId ||
 			!this.trustedOriginal(originalRun, connection) ||
 			originalRun.run_attempt !== lease.runAttempt
 		)
@@ -1210,6 +1288,8 @@ export class HostedRelay {
 		);
 		if (!claimed) throw new Error("lease already claimed");
 		try {
+			if (this.queueExpired(claimed.queueDeadlineAt))
+				throw new Error("CI queue deadline expired before runner registration");
 			const response = await this.options.github.request(
 				lease.installationId,
 				`/repos/${lease.repository}/actions/runners/generate-jitconfig`,
@@ -1327,6 +1407,7 @@ export class HostedRelay {
 			hostRunId,
 		);
 		if (
+			run.id !== hostRunId ||
 			!this.trustedHost(run, connection, lease) ||
 			run.status !== "completed" ||
 			!run.run_started_at

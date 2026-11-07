@@ -54,7 +54,8 @@ describe("Capability.estimateCost", () => {
 		assert.equal(cost.currency, "USD");
 		assert.equal(cost.sku, "cloudflare.kv.read");
 		assert.equal(cost.unit, "operation");
-		assert.equal(cost.freeTier.included, 100_000);
+		assert.equal(cost.freeTier.included, 0);
+		assert.equal(cost.pricingStatus, "unknown");
 	});
 
 	it("prices compute and objectStore with distinct SKUs", () => {

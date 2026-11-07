@@ -309,6 +309,8 @@ export function rolloutPhaseFor(input: {
 	readonly generation: number;
 	readonly observedGeneration: number;
 	readonly desiredReplicas: number;
+	readonly replicas: number;
+	readonly updatedReplicas: number;
 	readonly availableReplicas: number;
 	readonly conditions: readonly Condition[];
 }): RolloutPhaseResult {
@@ -330,7 +332,11 @@ export function rolloutPhaseFor(input: {
 	if (input.observedGeneration < input.generation) {
 		return { phase: "pending", failureReason: "" };
 	}
-	if (input.availableReplicas >= input.desiredReplicas) {
+	if (
+		input.replicas === input.desiredReplicas &&
+		input.availableReplicas === input.desiredReplicas &&
+		input.updatedReplicas === input.desiredReplicas
+	) {
 		return { phase: "available", failureReason: "" };
 	}
 	return { phase: "progressing", failureReason: "" };
@@ -369,6 +375,7 @@ export function parseDeploymentRecord(body: string): DeploymentRecord {
 		"Deployment status",
 		0,
 	);
+	const replicas = requireCount(status, "replicas", "Deployment status", 0);
 	const readyReplicas = requireCount(
 		status,
 		"readyReplicas",
@@ -391,6 +398,8 @@ export function parseDeploymentRecord(body: string): DeploymentRecord {
 		generation: meta.generation,
 		observedGeneration,
 		desiredReplicas,
+		updatedReplicas,
+		replicas,
 		availableReplicas,
 		conditions,
 	});

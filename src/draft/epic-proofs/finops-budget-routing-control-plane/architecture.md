@@ -46,10 +46,12 @@ Crossplane, and Kubernetes appear only as adapter fixture labels below the
 
 ## Contract Strategy
 
-- Protobuf records in `architecture/finops_budget_routing_control_plane.proto`
-  define the contract family.
-- CUE constraints in `architecture/finops_budget_routing_control_plane.cue`
-  capture provider-neutrality, metric-tier, stability, and feedback invariants.
+- Canonical Protobuf records in `data-models/finops_budget_routing_control_plane.proto`
+  generate the input records in `src/_generated/`. The historical `architecture/`
+  files mirror the canonical schema exactly; a test rejects drift.
+- CUE constraints and valid/invalid record fixtures in `data-models/` capture
+  the same protobuf JSON input shape. Runtime parsers enforce the stronger
+  relational invariants, including unique IDs, dependency cycles and digests.
 - Pact-style fixtures under `contracts/pacts/` name each consumer boundary.
 - Consumer tests verify the simulation advertises every provider named by the
   Pact fixtures.
@@ -74,10 +76,20 @@ The parsed domain types are `ResourceIntent`, `MetricContract`,
 `FeedbackProposal`. Core functions accept those parsed domain types, not raw
 DTOs with repeated boolean checks.
 
-Event architecture: router actors consume `routing.Commanded`,
-`metrics.Proposed`, and `feedback.Observed` commands, then append routing,
-action, and feedback events to an in-memory event-store. DX, OpsX, and FinX
-views are materialized views and projections over the same `DecisionGraph`.
-Current snapshots represent the latest read model, and historical snapshots are
-retained in an in-memory read store. Deterministic replay from the event-store
-produces the same `RoutingDecision`, `DecisionGraph`, and `ActionPlan`.
+Event architecture: the pure evaluator returns routing facts with event IDs,
+time and sequence derived from the pinned input. It does not append to a durable
+store or execute a provider. DX, OpsX, and FinX proof surfaces read the same
+`DecisionGraph`; the simulation holds these results in memory. Re-evaluating
+identical pinned inputs reproduces the decision, graph and action proposal.
+The production hosting supervisor owns durable command ingestion, atomic
+financial reservation, effect dispatch, reconciliation, observed rollback,
+source retirement and settlement. The proof declares those boundaries using
+the existing ADR-0136 effects/resilience contracts instead of claiming that a
+fixture proves external effects.
+
+The production command handler is hosted by a routing **actor**. Its durable
+**event store** commits decision events and staged effects before adapter I/O;
+materialized views are **projections** of those facts. The actor's current
+**snapshot** and historical **read store** are owned by that supervisor. This
+epic deliberately supplies pinned snapshots and returns pure projection values;
+it does not claim to instantiate the production actor or durable read store.

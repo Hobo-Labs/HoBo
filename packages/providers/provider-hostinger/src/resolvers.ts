@@ -381,6 +381,26 @@ function expectList(
 			`${label}: Hostinger returned neither an array nor a {data: [...]} envelope, so the collection cannot be searched and a mutation would risk acting on the wrong resource`,
 		);
 	}
+	if (items.some((item) => !isJsonObject(item)))
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			`${label}: an incomplete collection record cannot establish absence`,
+		);
+	if (isJsonObject(parsed)) {
+		const links = nestedRecord(parsed, "links"),
+			meta = nestedRecord(parsed, "meta");
+		const next = optionalString(links, "next"),
+			current = optionalInteger(meta, "current_page"),
+			last = optionalInteger(meta, "last_page");
+		if (
+			next !== undefined ||
+			(current !== undefined && last !== undefined && current < last)
+		)
+			throw new ResolverError(
+				"RESOLVER_OUTPUT_UNPARSEABLE",
+				`${label}: a partial listing cannot establish absence or uniqueness; use the pinned physical identity`,
+			);
+	}
 	return items.filter(isJsonObject);
 }
 
@@ -550,6 +570,8 @@ function vpsOutputs(record: JsonObject): JsonObject {
 		"name",
 	);
 	return {
+		ready: state === "running",
+		operationConfirmed: state === "running",
 		...(hostname !== undefined ? { hostname } : undefined),
 		...(state !== undefined ? { state } : undefined),
 		...(ipv4 !== undefined ? { ipv4 } : undefined),
@@ -590,6 +612,8 @@ function vpsDiagnostics(
 async function findVpsByHostname(
 	context: HostingerResolverContext,
 ): Promise<JsonObject | undefined> {
+	if (context.knownPhysicalId !== undefined)
+		return readVpsById(context, context.knownPhysicalId);
 	const label = `hostinger list virtual machines for ${context.name}`;
 	const machines = expectList(
 		await send(context, { method: "GET", path: VIRTUAL_MACHINES }),
@@ -620,7 +644,13 @@ async function readVpsById(
 	if (isNotFound(response)) return undefined;
 	const record = expectRecord(response, label);
 	// Hostinger wraps some single-resource reads in `{data: {...}}`.
-	return isJsonObject(record.data) ? record.data : record;
+	const resource = isJsonObject(record.data) ? record.data : record;
+	if (identityOf(resource, label) !== id)
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			`${label}: physical identity differs from the pinned resource`,
+		);
+	return resource;
 }
 
 /**
@@ -785,6 +815,7 @@ function zoneOutputs(
 	records: readonly JsonObject[],
 ): JsonObject {
 	return {
+		ready: true,
 		domain: context.name,
 		recordCount: records.length,
 		recordTypes: [
@@ -930,6 +961,7 @@ function websiteOutputs(observed: JsonObject): JsonObject {
 	const root = optionalString(observed, "root_directory");
 	const orderId = optionalInteger(observed, "order_id");
 	return {
+		ready: observed.is_enabled === true,
 		domain: optionalString(observed, "domain") ?? "",
 		url: `https://${optionalString(observed, "domain") ?? ""}`,
 		...(username === undefined ? undefined : { hostingAccount: username }),
@@ -1118,6 +1150,7 @@ function databaseOutputs(observed: JsonObject): JsonObject {
 	const user = optionalString(observed, "user");
 	const domain = optionalString(observed, "domain");
 	return {
+		ready: host !== undefined,
 		databaseName: optionalString(observed, "name") ?? "",
 		...(user === undefined ? undefined : { databaseUser: user }),
 		...(host === undefined ? undefined : { host }),
@@ -1285,6 +1318,24 @@ function createResolver(
 			);
 		}
 		const token = await resolveToken(request, options.resolveCredential);
+		const physicalId = knownPhysicalId(request);
+		if (
+			physicalId !== undefined &&
+			spec.productId !== HOSTINGER_VPS_PRODUCT_ID
+		) {
+			const desired = parseJsonObject(JSON.stringify(request.desired));
+			const address =
+				spec.productId === HOSTINGER_WEB_HOSTING_PRODUCT_ID ||
+				spec.productId === HOSTINGER_STATIC_SITE_PRODUCT_ID
+					? (optionalString(desired, "domain") ??
+						resourceName(request, spec.productId))
+					: resourceName(request, spec.productId);
+			if (address !== physicalId)
+				throw new ResolverError(
+					"RESOLVER_PRODUCT_UNSUPPORTED",
+					"the pinned physical resource identity differs from the requested address",
+				);
+		}
 		return {
 			request,
 			transport,
@@ -1303,15 +1354,68 @@ function createResolver(
 		providerId: HOSTINGER_PROVIDER_TARGET,
 		productId: spec.productId,
 		async reconcile(request, transport) {
-			return spec.reconcile(await contextFor(request, transport));
+			const context = await contextFor(request, transport);
+			if (context.knownPhysicalId !== undefined) {
+				const observed = await spec.read(context);
+				assertPinnedIdentity(context, observed);
+				if (!observed)
+					throw new ResolverError(
+						"RESOLVER_PROVIDER_REJECTED",
+						"the pinned physical resource is absent; a replacement requires a new authorized resource identity",
+					);
+			}
+			const result = await spec.reconcile(context);
+			assertPinnedIdentity(context, result);
+			return lifecycleOutcome(
+				result,
+				result.action === "noop" || result.action === "adopt",
+			);
 		},
 		async read(request, transport) {
-			return spec.read(await contextFor(request, transport));
+			const context = await contextFor(request, transport);
+			const result = await spec.read(context);
+			assertPinnedIdentity(context, result);
+			return result === undefined ? undefined : lifecycleOutcome(result, true);
 		},
 		async delete(request, transport) {
-			await spec.remove(await contextFor(request, transport));
+			const context = await contextFor(request, transport);
+			if (context.knownPhysicalId !== undefined) {
+				const observed = await spec.read(context);
+				assertPinnedIdentity(context, observed);
+				if (!observed) return;
+			}
+			await spec.remove(context);
 		},
 	};
+}
+
+function assertPinnedIdentity(
+	context: HostingerResolverContext,
+	result: ResolveOutcome | undefined,
+): void {
+	if (
+		result &&
+		context.knownPhysicalId !== undefined &&
+		result.physicalId !== context.knownPhysicalId
+	)
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			"provider observation differs from the pinned physical resource identity",
+		);
+}
+
+function lifecycleOutcome(
+	result: ResolveOutcome,
+	observed: boolean,
+): ResolveOutcome {
+	const ready =
+		result.outputs.ready === true && result.diagnostics.length === 0;
+	return outcome(
+		result.action,
+		result.physicalId,
+		{ ...result.outputs, ready, operationConfirmed: observed && ready },
+		result.diagnostics,
+	);
 }
 
 /**

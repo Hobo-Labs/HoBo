@@ -26,6 +26,7 @@ import {
 	parseOnboardingPlan,
 } from "../src/onboarding.js";
 import type { LeaseStore } from "../src/store.js";
+import { commonBudget, commonCiIntent } from "./fixtures/common-budget.js";
 import { harness, job, NOW } from "./fixtures.js";
 
 const stores: LeaseStore[] = [];
@@ -1348,7 +1349,7 @@ describe("hosted asynchronous account control", () => {
 		).toBe(400);
 		expect((await t.store.configuration())?.revision).toBe(2);
 	});
-	it("rejects stale, conflicting and future financial snapshots while allowing a newer billing reset", async () => {
+	it("rejects stale, conflicting and future snapshots and implicit manual-period billing resets", async () => {
 		const t = setup();
 		const account = (await t.store.configuration())?.configuration?.accounts[0];
 		if (!account) throw new Error("fixture");
@@ -1374,8 +1375,7 @@ describe("hosted asynchronous account control", () => {
 			).toBe(409);
 			expect((await t.store.configuration())?.revision).toBe(1);
 		}
-		// Initial usage and a new billing-period reset are both legitimate when
-		// explicitly timestamped; each refresh supersedes only earlier leases.
+		// A newer timestamp updates usage; it cannot name a new budget period.
 		const spent = structuredClone(original);
 		spent.spentMicros = 100;
 		spent.usageObservedAt = "2026-10-26T01:00:00Z";
@@ -1407,7 +1407,7 @@ describe("hosted asynchronous account control", () => {
 					2,
 				)
 			).status,
-		).toBe(200);
+		).toBe(409);
 		const conflicting = structuredClone(reset);
 		conflicting.spentMicros = 1;
 		expect(
@@ -1417,11 +1417,11 @@ describe("hosted asynchronous account control", () => {
 					"POST",
 					"observer",
 					conflicting,
-					3,
+					2,
 				)
 			).status,
 		).toBe(409);
-		expect((await t.store.configuration())?.revision).toBe(3);
+		expect((await t.store.configuration())?.revision).toBe(2);
 	});
 	it("refuses unbound repository discovery before any GitHub network request", async () => {
 		const t = setup();
@@ -1693,4 +1693,187 @@ it("allows only account operators to inspect and replay their quarantined delive
 		["account-b", 1, "delivery-a"],
 		["account-a", 1, "delivery-a"],
 	]);
+});
+
+it("preserves common budget policy and refuses omission from desired updates and observations", async () => {
+	const t = setup();
+	const account = t.h.configuration.accounts[0];
+	if (!account) throw new Error("fixture account missing");
+	const intent = commonCiIntent(account);
+	const saved = await t.request(
+		"/v2/accounts/self/policy",
+		"PUT",
+		"admin",
+		intent,
+	);
+	expect(saved.status).toBe(200);
+	expect((await saved.json()).account.budgetPolicy).toEqual(
+		intent.budgetPolicy,
+	);
+	const { budgetPolicy: _common, ...legacy } = intent;
+	expect(
+		(await t.request("/v2/accounts/self/policy", "PUT", "admin", legacy, 2))
+			.status,
+	).toBe(400);
+	const current = t.h.store.configuration()?.configuration?.accounts[0];
+	if (!current) throw new Error("fixture account missing");
+	const observation = JSON.parse(toJsonString(AccountSchema, current));
+	delete observation.budgetPolicy;
+	expect(
+		(
+			await t.request(
+				"/v2/accounts/self/observations",
+				"POST",
+				"observer",
+				observation,
+				2,
+			)
+		).status,
+	).toBe(400);
+	expect(t.h.store.configuration()?.revision).toBe(2);
+});
+
+it("accepts real scoped Broker reset and crossing and never replays reset over the crossing", async () => {
+	const t = setup();
+	const account = t.h.configuration.accounts[0];
+	if (!account) throw new Error("fixture account missing");
+	const budget = commonBudget();
+	const intent = commonCiIntent(account, budget);
+	expect(
+		(await t.request("/v2/accounts/self/policy", "PUT", "admin", intent))
+			.status,
+	).toBe(200);
+	const signals = foldBudgetSignals(
+		[
+			{
+				type: "meter.UsageRecorded",
+				data: {
+					tenantId: budget.tenantId,
+					budgetId: budget.budgetId,
+					periodId: budget.periodId,
+					costUsd: 1.2,
+				},
+			},
+		],
+		{
+			budgetUsd: 1,
+			thresholds: [1],
+			identity: {
+				tenantId: budget.tenantId,
+				budgetId: budget.budgetId,
+				periodId: budget.periodId,
+				policyRevision: budget.revision,
+			},
+		},
+	).signals;
+	const [reset, crossing] = signals;
+	if (!reset || !crossing) throw new Error("missing scoped signals");
+	expect(
+		(await t.request("/v2/accounts/self/signals", "POST", "observer", reset, 2))
+			.status,
+	).toBe(200);
+	expect(
+		(
+			await t.request(
+				"/v2/accounts/self/signals",
+				"POST",
+				"observer",
+				crossing,
+				3,
+			)
+		).status,
+	).toBe(200);
+	expect(
+		(await t.request("/v2/accounts/self/signals", "POST", "observer", reset, 4))
+			.status,
+	).toBe(200);
+	const current = t.h.store.configuration()?.configuration?.accounts[0];
+	if (!current) throw new Error("fixture account missing");
+	expect(Object.values(current.routingSignalCycles)).toEqual([2]);
+	expect(
+		effectiveCiAccount(current, parseCiPolicy(JSON.stringify(intent))).offers[0]
+			?.enabled,
+	).toBe(false);
+	expect(t.h.store.configuration()?.revision).toBe(4);
+});
+
+it("rejects old-period observations and legacy recovery after an explicit scoped rollover", async () => {
+	const t = setup();
+	const account = t.h.configuration.accounts[0];
+	if (!account) throw new Error("fixture account missing");
+	const old = commonCiIntent(account);
+	expect(
+		(await t.request("/v2/accounts/self/policy", "PUT", "admin", old)).status,
+	).toBe(200);
+	const before = t.h.store.configuration()?.configuration?.accounts[0];
+	if (!before) throw new Error("fixture account missing");
+	const observation = JSON.parse(toJsonString(AccountSchema, before));
+	const next = commonCiIntent(before, {
+		...commonBudget("period-b"),
+		revision: "revision-b",
+	});
+	expect(
+		(await t.request("/v2/accounts/self/policy", "PUT", "admin", next, 2))
+			.status,
+	).toBe(200);
+	expect(
+		(
+			await t.request(
+				"/v2/accounts/self/observations",
+				"POST",
+				"observer",
+				observation,
+				3,
+			)
+		).status,
+	).toBe(400);
+	const recovery = foldBudgetSignals(
+		[
+			{
+				type: "meter.UsageRecorded",
+				data: { tenantId: "tenant-a", costUsd: 2 },
+			},
+			{
+				type: "budget.CreditApplied",
+				data: { tenantId: "tenant-a", amountUsd: 2 },
+			},
+		],
+		{ tenantId: "tenant-a", budgetUsd: 1 },
+	).signals[1];
+	expect(
+		(
+			await t.request(
+				"/v2/accounts/self/signals",
+				"POST",
+				"observer",
+				recovery,
+				3,
+			)
+		).status,
+	).toBe(400);
+	expect(t.h.store.configuration()?.revision).toBe(3);
+});
+
+it("refuses generic native backend inventory that this GitHub runner control cannot execute", async () => {
+	const t = setup();
+	const account = t.h.configuration.accounts[0];
+	if (!account?.offers[0]) throw new Error("fixture account missing");
+	const native = create(OfferSchema, {
+		...account.offers[0],
+		id: "dagger-native",
+		provider: "dagger",
+		backend: "dagger",
+		providerAccountId: "trusted-native-engine",
+		runsOn: "native-engine",
+	});
+	account.offers.push(native);
+	t.h.store.configure(t.h.configuration, 1, NOW);
+	const policy = commonCiIntent(account);
+	expect(() => parseCiPolicy(JSON.stringify(policy))).not.toThrow();
+	expect(
+		(await t.request("/v2/accounts/self/policy", "PUT", "admin", policy, 2))
+			.status,
+	).toBe(409);
+	expect(t.h.store.configuration()?.revision).toBe(2);
+	expect(t.h.api.dispatches).toBe(0);
 });

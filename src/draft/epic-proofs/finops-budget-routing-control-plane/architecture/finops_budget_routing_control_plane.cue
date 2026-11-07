@@ -1,218 +1,177 @@
 package architecture_evidence
 
+// This schema uses protobuf JSON names, exactly as the parser receives them.
+#Money: number & >=0 & <=9007199254.740991
+#Nonempty: string & !=""
+#Version: =~"^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+
 #ResourceIntent: {
-	schema_version: "hobo.finops.resource-intent/v1"
-	owner: {
-		tenant:      string & !=""
-		workspace:   string & !=""
-		environment: "dev" | "test" | "staging" | "production"
-	}
+	schemaVersion: "hobo.finops.resource-intent/v1"
+	owner: #OwnerRef
 	capability: #CapabilityClass
-	budget:     #Budget
-	constraints: [...#Constraint]
-	routing_objective: "cost" | "reliability" | "balanced" | "performance" | "customBlend"
+	budget: #Budget
+	constraints: #Constraints
+	routing: {objective: "balanced" | "cost" | "reliability" | "performance" | "customBlend"}
 }
-
+#OwnerRef: {tenant: #Nonempty, workspace: #Nonempty, environment: #Nonempty}
 #CapabilityClass: {
-	category: "compute" | "storage" | "network" | "database" | "ai" | "queue" | "cache"
-	requirements: [...string]
+	category: #Nonempty
+	requirements: {
+		availability: string
+		latencyP95Ms: number & >=0
+		minAvailability: number & >=0 & <=1
+		durability: string
+		compliance: #Nonempty
+		if availability == "high" {minAvailability: >=0.95}
+	}
 }
-
-#OwnerRef: {
-	tenant:      string & !=""
-	workspace:   string & !=""
-	environment: "dev" | "test" | "staging" | "production"
-}
-
 #Budget: {
-	amount:               number & >0
-	currency:             "USD"
-	period:               "monthly" | "yearly"
-	soft_limit_behavior:  "reroute" | "degrade" | "notify" | "requireApproval"
-	hard_limit_behavior:  "deny" | "freeze" | "suspend"
+	amount: #Money
+	currency: "USD"
+	period: "monthly" | "yearly"
+	softLimitBehavior: "notify" | "requireApproval"
+	hardLimitBehavior: "deny" | "freeze" | "suspend"
 }
-
-#BudgetScope: {
-	tenant:      string & !=""
-	workspace:   string & !=""
-	environment: string & !=""
+#Constraints: {
+	allowedJurisdictions: [#Nonempty, ...#Nonempty]
+	disallowedJurisdictions: [...#Nonempty]
+	maxCost: #Money
+	minSecurityLevel: number & >=0
 }
-
-#Constraint: {
-	kind: "compliance" | "jurisdiction" | "security" | "maxCost" | "eligibility"
-	value: string | number | bool
+#BudgetState: {
+	spendToDate: #Money
+	committedCost: #Money
+	uncertainCost: #Money
+	recoveryReserve: #Money
 }
-
-#MeterDefinition: {
-	name:   string & !=""
-	unit:   string & !=""
-	source: string & !=""
-}
-
-#MeterMapping: {
-	meter_name:       string & !=""
-	capability_class: string & !=""
-	cost_class:       string & !=""
-}
-
-#FocusCostLedgerEntry: {
-	focus_version:    string & !=""
-	charge_period:   string & !=""
-	billing_currency: "USD"
-	effective_cost:   number & >=0
-}
-
-#Forecast: {
-	period:         string & !=""
-	projected_cost: number & >=0
-	currency:       "USD"
-}
-
-#BudgetRoutingPolicy: {
-	id:                  string & !=""
-	expression_language: "CEL" | "Rego"
-	allowed_inputs:      [...string]
-}
-
-#PolicyBinding: {
-	policy_id: string & !=""
-	scope:     #BudgetScope
-}
-
 #RoutingCandidate: {
-	id:               string & !=""
-	capability_class: string & !=""
-	marginal_cost:    number & >=0
-	abstract_traits:  [...string]
+	id: #Nonempty
+	capabilityClass: #Nonempty
+	monthlyCost: #Money
+	transitionCost: #Money
+	commitmentBound: #Money & >=(monthlyCost + transitionCost)
+	period: "monthly" | "yearly"
+	reliability: number & >=0 & <=1
+	latencyP95Ms: number & >=0
+	risk: number & >=0 & <=1
+	compliance: [...#Nonempty]
+	jurisdiction: #Nonempty
+	securityLevel: number & >=0
+	eligible: bool
+	abstractTraits: [...string]
 }
-
 #MetricContract: {
-	name:          string & !=""
-	tier:          "system" | "derived" | "user"
-	unit:          string & !=""
-	source:        string & !=""
-	version:       =~"^v[0-9]+\\.[0-9]+\\.[0-9]+$"
-	normalization: string & !=""
+	name: #Nonempty
+	tier: "system" | "derived" | "user"
+	version: #Version
+	unit?: string
+	source?: string
+	normalization?: string
+	mutable?: false
+	dependsOn?: [...#Nonempty]
+	transforms?: [...("weighted_sum" | "ratio")]
+	compositionSources?: [...#Nonempty]
+	weights?: {[string]: number & >=0 & <=1}
+	requiresApproval?: bool
+	approvalState?: string
+	approvalRef?: string
+	if tier == "system" {unit: #Nonempty, source: #Nonempty, normalization: #Nonempty}
+	if tier == "derived" {dependsOn: [#Nonempty, ...#Nonempty], transforms: ["weighted_sum" | "ratio"]}
+	if tier == "user" {requiresApproval: true, approvalState: "approved", approvalRef: #Nonempty, compositionSources: [#Nonempty, ...#Nonempty]}
 }
-
-#DerivedMetric: {
-	name:       string & !=""
-	depends_on: [...string]
-	transforms: [...("windowed_avg" | "p95" | "weighted_time_decay" | "weighted_sum" | "ratio")]
+#RoutingSnapshot: {
+	catalogHash: #Nonempty
+	metricRegistryHash: #Nonempty
+	budgetId: #Nonempty
+	periodId: #Nonempty
+	policyRevision: #Nonempty
+	ledgerSeq: int & >=0
+	observedAt: #Nonempty
 }
-
-#UserMetric: {
-	name:                string & !=""
-	composition_sources: [...string]
-	requires_approval:  true
-}
-
-#ConstraintResult: {
-	candidate_id: string & !=""
-	passed:       bool
-	reasons:      [...string]
-}
-
-#MetricVector: {
-	candidate_id: string & !=""
-	cost:         number & >=0
-	reliability:  number & >=0 & <=1
-	latency:      number & >=0
-	risk:         number & >=0 & <=1
-}
-
-#ParetoFrontier: {
-	candidate_ids:           [...string]
-	dominated_candidate_ids: [...string]
-}
-
-#PreferenceModel: {
-	cost_weight:        number & >=0 & <=1
-	reliability_weight: number & >=0 & <=1
-	latency_weight:     number & >=0 & <=1
-	risk_weight:        number & >=0 & <=1
-}
-
-#StabilityPolicy: {
-	min_improvement_threshold: number & >=0
-	cooldown_window:           string & !=""
-	migration_penalty:         number & >=0
-	flip_limit_per_window:     int & >=0
-}
-
-#DecisionGraph: {
-	id:                      string & !=""
-	generated_candidate_ids: [...string]
-	constraint_results:      [...#ConstraintResult]
-	metric_vectors:          [...#MetricVector]
-	pareto_frontier:         #ParetoFrontier
-	final_candidate_id:      string & !=""
-	rationale:               [...string]
-}
-
-#RoutingDecision: {
-	id:                    string & !=""
-	effect:                "allow" | "deny" | "requireApproval"
-	selected_candidate_id: string | *""
-	decision_graph_id:     string & !=""
-}
-
-#ActionPlan: {
-	id:               string & !=""
-	decision_id:      string & !=""
-	abstract_actions: [...("deploy" | "destroy" | "scale" | "migrate" | "pause" | "freeze" | "upgrade")]
-	backend_neutral:  true
-}
-
-#ActionResult: {
-	action_plan_id: string & !=""
-	status:         "accepted" | "blocked" | "completed" | "failed"
-}
-
-#AllocationRule: {
-	id:       string & !=""
-	strategy: "usage-share" | "equal" | "weighted"
-}
-
-#ApprovalRequest: {
-	id:            string & !=""
-	decision_id:   string & !=""
-	approver_role: string & !=""
-}
-
-#ExceptionGrant: {
-	id:         string & !=""
-	scope:      string & !=""
-	expires_at: string & !=""
-}
-
-#FeedbackProposal: {
-	id:     string & !=""
-	source: "actual-cost" | "telemetry" | "incident" | "override" | "deployment-outcome"
-	target: string & !=""
-	effect: "propose-metric-change" | "propose-policy-review" | "propose-weight-review"
-}
-
-#MetricVersionChange: {
-	metric_name:    string & !=""
-	from_version:   =~"^v[0-9]+\\.[0-9]+\\.[0-9]+$"
-	to_version:     =~"^v[0-9]+\\.[0-9]+\\.[0-9]+$"
-	approval_state: "requires-approval" | "approved" | "rejected"
-}
-
 #RoutingDecisionHistory: {
-	previous_candidate_id: string & !=""
-	previous_decision_at:  string & !=""
-	flips_in_window:       int & >=0
+	candidateId: #Nonempty
+	decidedAt: #Nonempty
+	flipsInWindow?: int & >=0
+	challengerCandidateId?: string
+	challengerSince?: string
 }
+#PreferenceModel: {
+	costWeight: number & >=0 & <=1
+	reliabilityWeight: number & >=0 & <=1
+	latencyWeight: number & >=0 & <=1
+	riskWeight: number & >=0 & <=1
+	customWeights?: {[string]: number & >=0 & <=1}
+	normalizationVersion: "fixed-reference/v1"
+}
+#StabilityPolicy: {
+	minImprovementThreshold: number & >=0 & <=1
+	cooldownMs: int & >=0
+	migrationPenalty: number & >=0 & <=1
+	flipLimitPerWindow: int & >=1
+	flipWindowMs: int & >=1
+	dwellMs: int & >=0
+}
+#RoutingScenario: {
+	id: #Nonempty
+	intent: #ResourceIntent
+	candidates: [...#RoutingCandidate]
+	metricContracts: [#MetricContract, ...#MetricContract]
+	history: [...#RoutingDecisionHistory]
+	budgetState: #BudgetState
+	snapshot: #RoutingSnapshot
+	preference?: #PreferenceModel
+	stability?: #StabilityPolicy
+}
+#FinopsBudgetRoutingControlPlane: #RoutingScenario
 
-#SimulationRequest: {
-	id:        string & !=""
-	scenarios: [...string]
+// Named records retain the public contract family. The scenario parser is the
+// executable input boundary; output views additionally carry derived evidence.
+#CapabilityRequirements: {
+	availability: string
+	latencyP95Ms: number & >=0
+	minAvailability: number & >=0 & <=1
+	durability: string
+	compliance: #Nonempty
 }
-
-#SimulationResult: {
-	request_id:         string & !=""
-	decision_graph_ids: [...string]
-	surface_views:      [...("dx" | "opsx" | "finx")]
+#RoutingPreferences: {objective: "balanced" | "cost" | "reliability" | "performance" | "customBlend"}
+#BudgetScope: #OwnerRef
+#ConstraintResult: {candidateId: #Nonempty, passed: bool, reasons: [...string]}
+#MetricVector: {
+	candidateId: #Nonempty
+	cost: #Money
+	reliability: number & >=0 & <=1
+	latency: number & >=0
+	risk: number & >=0 & <=1
+	customMetrics: {[string]: number & >=0 & <=1}
+	normalizedMetrics: {[string]: number & >=0 & <=1}
 }
+#ParetoFrontier: {candidateIds: [...string], dominatedCandidateIds: [...string]}
+#DecisionGraph: {
+	id: #Nonempty
+	generatedCandidateIds: [...string]
+	constraintResults: [...#ConstraintResult]
+	metricVectors: [...#MetricVector]
+	paretoFrontier: #ParetoFrontier
+	finalCandidateId?: string
+	rationale: [...string]
+	snapshot: #RoutingSnapshot
+	inputHash: #Nonempty
+}
+#RoutingDecision: {id: #Nonempty, effect: "allow" | "deny" | "requireApproval", selectedCandidateId?: string, decisionGraphId: #Nonempty}
+#ActionPlan: {id: #Nonempty, decisionId: #Nonempty, abstractActions: [...("deploy" | "destroy" | "scale" | "migrate" | "pause" | "freeze" | "upgrade")], backendNeutral: true}
+#FeedbackProposal: {id: #Nonempty, source: #Nonempty, target: #Nonempty, effect: "propose-metric-change" | "propose-policy-review" | "propose-weight-review"}
+#MetricVersionChange: {metricName: #Nonempty, fromVersion: #Version, toVersion: #Version, approvalState: "requires-approval" | "approved" | "rejected"}
+#MeterDefinition: {name: #Nonempty, unit: #Nonempty, source: #Nonempty}
+#MeterMapping: {meterName: #Nonempty, capabilityClass: #Nonempty, costClass: #Nonempty}
+#FocusCostLedgerEntry: {focusVersion: #Nonempty, chargePeriod: #Nonempty, billingCurrency: "USD", effectiveCost: #Money}
+#Forecast: {period: #Nonempty, projectedCost: #Money, currency: "USD"}
+#BudgetRoutingPolicy: {id: #Nonempty, expressionLanguage: "CEL" | "Rego", allowedInputs: [...string]}
+#PolicyBinding: {policyId: #Nonempty, scope: #BudgetScope}
+#DerivedMetric: {name: #Nonempty, dependsOn: [#Nonempty, ...#Nonempty], transforms: ["weighted_sum" | "ratio"]}
+#UserMetric: {name: #Nonempty, compositionSources: [#Nonempty, ...#Nonempty], requiresApproval: true}
+#ActionResult: {actionPlanId: #Nonempty, status: "accepted" | "blocked" | "completed" | "failed"}
+#AllocationRule: {id: #Nonempty, strategy: "usage-share" | "equal" | "weighted"}
+#ApprovalRequest: {id: #Nonempty, decisionId: #Nonempty, approverRole: #Nonempty}
+#ExceptionGrant: {id: #Nonempty, scope: #Nonempty, expiresAt: #Nonempty}
+#SimulationRequest: {id: #Nonempty, scenarios: [...string]}
+#SimulationResult: {requestId: #Nonempty, decisionGraphIds: [...string], surfaceViews: [...("dx" | "opsx" | "finx")]}

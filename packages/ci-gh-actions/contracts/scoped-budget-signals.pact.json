@@ -1,0 +1,296 @@
+{
+  "consumer": {
+    "name": "HoboScopedCiBudgetPublisher"
+  },
+  "provider": {
+    "name": "HoboCiAccountControlApi"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "verification": "Local real HTTP with injected provider dependencies; no live billing verification."
+  },
+  "interactions": [
+    {
+      "description": "accept scoped reset",
+      "providerStates": [
+        {
+          "name": "matching scoped budget and desired CI policy are configured"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/v2/accounts/self/signals",
+        "headers": {
+          "Authorization": "Bearer scoped-budget-observer-token-at-least-32-characters",
+          "Content-Type": "application/json",
+          "If-Match": "\"2\""
+        },
+        "body": {
+          "type": "budget.StateReset",
+          "data": {
+            "tenantId": "tenant-a",
+            "thresholdFraction": 1,
+            "thresholdUsd": 1,
+            "budgetUsd": 1,
+            "netSpentUsd": 0,
+            "cycle": 0,
+            "signalKey": "budget:v2:%5B%22tenant-a%22%2C%22shared-budget%22%2C%22period-a%22%2C%22revision-a%22%5D:1:reset:0",
+            "identity": {
+              "tenantId": "tenant-a",
+              "budgetId": "shared-budget",
+              "periodId": "period-a",
+              "policyRevision": "revision-a"
+            },
+            "policyDigest": "5b61f9df76a0fe8ee839e18a22b0d5e1a05d6920459bc496191c7848efe819ec",
+            "crossed": false
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "revision": 3,
+          "account": {
+            "id": "account-a",
+            "routingSignalCycles": {
+              "broker:v2:[\"tenant-a\",\"shared-budget\",\"period-a\",\"revision-a\"]:1": 1
+            },
+            "routingSignalCrossed": {
+              "broker:v2:[\"tenant-a\",\"shared-budget\",\"period-a\",\"revision-a\"]:1": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "first crossing follows reset without a watermark collision",
+      "providerStates": [
+        {
+          "name": "matching scoped budget and desired CI policy are configured"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/v2/accounts/self/signals",
+        "headers": {
+          "Authorization": "Bearer scoped-budget-observer-token-at-least-32-characters",
+          "Content-Type": "application/json",
+          "If-Match": "\"3\""
+        },
+        "body": {
+          "type": "budget.ThresholdCrossed",
+          "data": {
+            "tenantId": "tenant-a",
+            "thresholdFraction": 1,
+            "thresholdUsd": 1,
+            "budgetUsd": 1,
+            "netSpentUsd": 1.2,
+            "cycle": 1,
+            "signalKey": "budget:v2:%5B%22tenant-a%22%2C%22shared-budget%22%2C%22period-a%22%2C%22revision-a%22%5D:1:crossed:1",
+            "identity": {
+              "tenantId": "tenant-a",
+              "budgetId": "shared-budget",
+              "periodId": "period-a",
+              "policyRevision": "revision-a"
+            },
+            "policyDigest": "5b61f9df76a0fe8ee839e18a22b0d5e1a05d6920459bc496191c7848efe819ec",
+            "crossed": true
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "revision": 4,
+          "account": {
+            "id": "account-a",
+            "routingSignalCycles": {
+              "broker:v2:[\"tenant-a\",\"shared-budget\",\"period-a\",\"revision-a\"]:1": 2
+            },
+            "routingSignalCrossed": {
+              "broker:v2:[\"tenant-a\",\"shared-budget\",\"period-a\",\"revision-a\"]:1": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "recover only the current scoped budget",
+      "providerStates": [
+        {
+          "name": "matching scoped budget and desired CI policy are configured"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/v2/accounts/self/signals",
+        "headers": {
+          "Authorization": "Bearer scoped-budget-observer-token-at-least-32-characters",
+          "Content-Type": "application/json",
+          "If-Match": "\"4\""
+        },
+        "body": {
+          "type": "budget.Recovered",
+          "data": {
+            "tenantId": "tenant-a",
+            "thresholdFraction": 1,
+            "thresholdUsd": 1,
+            "budgetUsd": 1,
+            "netSpentUsd": 0.2,
+            "cycle": 2,
+            "signalKey": "budget:v2:%5B%22tenant-a%22%2C%22shared-budget%22%2C%22period-a%22%2C%22revision-a%22%5D:1:recovered:2",
+            "identity": {
+              "tenantId": "tenant-a",
+              "budgetId": "shared-budget",
+              "periodId": "period-a",
+              "policyRevision": "revision-a"
+            },
+            "policyDigest": "5b61f9df76a0fe8ee839e18a22b0d5e1a05d6920459bc496191c7848efe819ec",
+            "crossed": false
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "revision": 5,
+          "account": {
+            "id": "account-a",
+            "routingSignalCycles": {
+              "broker:v2:[\"tenant-a\",\"shared-budget\",\"period-a\",\"revision-a\"]:1": 3
+            },
+            "routingSignalCrossed": {
+              "broker:v2:[\"tenant-a\",\"shared-budget\",\"period-a\",\"revision-a\"]:1": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "late reset cannot overwrite newer scoped observations",
+      "providerStates": [
+        {
+          "name": "matching scoped budget and desired CI policy are configured"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/v2/accounts/self/signals",
+        "headers": {
+          "Authorization": "Bearer scoped-budget-observer-token-at-least-32-characters",
+          "Content-Type": "application/json",
+          "If-Match": "\"5\""
+        },
+        "body": {
+          "type": "budget.StateReset",
+          "data": {
+            "tenantId": "tenant-a",
+            "thresholdFraction": 1,
+            "thresholdUsd": 1,
+            "budgetUsd": 1,
+            "netSpentUsd": 0,
+            "cycle": 0,
+            "signalKey": "budget:v2:%5B%22tenant-a%22%2C%22shared-budget%22%2C%22period-a%22%2C%22revision-a%22%5D:1:reset:0",
+            "identity": {
+              "tenantId": "tenant-a",
+              "budgetId": "shared-budget",
+              "periodId": "period-a",
+              "policyRevision": "revision-a"
+            },
+            "policyDigest": "5b61f9df76a0fe8ee839e18a22b0d5e1a05d6920459bc496191c7848efe819ec",
+            "crossed": false
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "revision": 5,
+          "account": {
+            "id": "account-a",
+            "routingSignalCycles": {
+              "broker:v2:[\"tenant-a\",\"shared-budget\",\"period-a\",\"revision-a\"]:1": 3
+            },
+            "routingSignalCrossed": {
+              "broker:v2:[\"tenant-a\",\"shared-budget\",\"period-a\",\"revision-a\"]:1": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "foreign period is refused",
+      "providerStates": [
+        {
+          "name": "matching scoped budget and desired CI policy are configured"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/v2/accounts/self/signals",
+        "headers": {
+          "Authorization": "Bearer scoped-budget-observer-token-at-least-32-characters",
+          "Content-Type": "application/json",
+          "If-Match": "\"5\""
+        },
+        "body": {
+          "type": "budget.StateReset",
+          "data": {
+            "tenantId": "tenant-a",
+            "thresholdFraction": 1,
+            "thresholdUsd": 1,
+            "budgetUsd": 1,
+            "netSpentUsd": 0,
+            "cycle": 0,
+            "signalKey": "budget:v2:%5B%22tenant-a%22%2C%22shared-budget%22%2C%22period-a%22%2C%22revision-a%22%5D:1:reset:0",
+            "identity": {
+              "tenantId": "tenant-a",
+              "budgetId": "shared-budget",
+              "periodId": "foreign-period",
+              "policyRevision": "revision-a"
+            },
+            "policyDigest": "5b61f9df76a0fe8ee839e18a22b0d5e1a05d6920459bc496191c7848efe819ec",
+            "crossed": false
+          }
+        }
+      },
+      "response": {
+        "status": 400
+      }
+    },
+    {
+      "description": "legacy recovery cannot unpause scoped budget",
+      "providerStates": [
+        {
+          "name": "matching scoped budget and desired CI policy are configured"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/v2/accounts/self/signals",
+        "headers": {
+          "Authorization": "Bearer scoped-budget-observer-token-at-least-32-characters",
+          "Content-Type": "application/json",
+          "If-Match": "\"5\""
+        },
+        "body": {
+          "type": "budget.Recovered",
+          "data": {
+            "tenantId": "tenant-a",
+            "thresholdFraction": 1,
+            "thresholdUsd": 1,
+            "budgetUsd": 1,
+            "netSpentUsd": 0,
+            "cycle": 2,
+            "signalKey": "budget:tenant-a:1:recovered:2"
+          }
+        }
+      },
+      "response": {
+        "status": 400
+      }
+    }
+  ]
+}

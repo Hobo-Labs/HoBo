@@ -56,6 +56,8 @@ package hobo
 	costSku:       string
 	costUnit:      string
 	marginalPrice: string
+	pricingStatus?: "unknown" | "estimate" | "verified-zero"
+	productId?: string & !=""
 }
 
 #CapabilityVerdict: {

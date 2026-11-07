@@ -85,6 +85,28 @@ pnpm --filter @hobo/provider-digitalocean test
 
 ## Convergence, and what it costs
 
+Persisted `ref.physicalId` pins every observation and deletion to the exact provider
+resource. A renamed resource cannot be replaced by a new resource under its former name;
+a missing pinned resource requires a separately authorized replacement. Name discovery
+must finish its bounded listing before asserting either absence or uniqueness.
+
+Resolver outputs expose `ready` and `operationConfirmed`. Missing, provisioning and
+drifting state remain unconfirmed. A mutation acknowledgement does not confirm the
+operation; the durable host observes again, and retirement requires a fresh absent read.
+App Platform keeps readiness false while another deployment is in progress.
+
+Hosting `artifactDigest` and `ownershipRef` are canonical SHA-256 references. Droplet
+creation writes them as native tags; App Platform writes general runtime environment
+markers and reads them only from the active deployment's spec. Outputs never copy the
+requested marker into evidence. Native tags identify a resource; an independent
+application probe must still prove the served artifact and health. Explicit `userData`
+can supply non-sensitive bootstrap code for a Droplet; it must not contain credentials.
+
+Published rates carry `pricingStatus: "estimate"`; a static free-tier declaration is
+not a tenant balance or a verified zero bill. Production admission uses fresh, bounded
+quotes and the shared authority. `test/hosting-lifecycle.test.ts` and the actual
+`#CostFact` CUE corpus exercise identity, asynchronous state, markers and price evidence.
+
 DigitalOcean's v2 collections are keyed by a server-assigned id, not by the
 name the caller chose, so "does my resource already exist" is a *listing*
 question. Every `reconcile()` pages the collection — under a bounded page

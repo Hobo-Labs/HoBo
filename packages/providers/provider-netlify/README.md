@@ -256,3 +256,65 @@ pins safe locators, leaking projections, cycles, and shared references.
 This changes no wire records; existing receipt Protobuf/CUE models and provider
 contract tests remain the serialization gates. The package TypeScript check
 covers the scanner implementation.
+
+### Production resolver and anonymous isolation
+
+`netlifyResolverRegistry({accountId, accountSlug, resolveCredential,
+mutationJournal})` registers the authenticated site definition and
+`netlify.static-deploy/v1`. Site creation independently verifies that the native
+account ID and account slug identify the same account. A site read must report
+that account ID; a deployment read must report the approved site and immutable
+operation title. Native POSTs require a durable CAS mutation journal. Lost
+acknowledgements are observed through bounded account/site deployment discovery;
+a pending upload resumes only its idempotent file PUTs. A missing pinned resource
+is never silently recreated.
+
+Static desired properties are `siteId`, `operationId`, and `files`, a map of
+absolute safe paths to UTF-8 content. `artifactDigest` is the SHA-256 digest of
+independently fetched bytes from the immutable `deploy_ssl_url`; the expected
+file map and metadata title are not accepted as content evidence. Native ready
+state is not an application health or billing-final assertion. Deletion can use
+native scoped identity even when the public artifact is unhealthy. Independent
+absence and final usage remain necessary before budget release.
+
+Both anonymous entry points use the pinned `netlify-cli@27.1.1`, `--no-build`,
+`--allow-anonymous`, and no production flag. They copy a bounded regular-file-only
+artifact into a private directory, reject symlinks and credential/build
+configuration, and give the child a private HOME and XDG directories. Neither an
+ambient API token nor a saved Netlify login can silently authenticate this path.
+Timeouts kill the process group, aggregate stdout/stderr bytes are capped, and
+truncated output leaves the external outcome ambiguous. Parsing requires the
+observed deployment identity and real ownership claim URL; a hostname cannot
+stand in for either. The one-hour deadline is conservatively measured from the
+start of the attempt and labeled a documented window, not confirmed retirement.
+
+`observeNetlifyAnonymousSite({stationUrl, claimUrl, expectedMarker})` validates
+the data plane without claiming the site. Drop uses an HTML password form and an
+origin-scoped session cookie, so HTTP Basic authentication is insufficient. The
+helper uses bounded requests, posts the password only to the exact deployment
+origin, inspects redirects without following them, keeps the cookie in memory,
+and returns only status and marker evidence. Real anonymous acceptance on
+2026-10-30 returned HTTP 200 and the expected deployed marker through this
+shipped helper. This is evidence for anonymous static hosting; it does not verify
+paid account APIs or provider-confirmed cleanup.
+
+The compute capability manifest publishes the explicit
+`netlify.static-deploy/v1` product ID and static/hosted profiles. The matching
+`createNetlifyStaticDeployDefinition()` is included in `NETLIFY_DEFINITIONS` and
+has a registered static executor; it claims neither SSR nor functions.
+`staticDeployment({siteId})` and `NETLIFY_DEFAULT_BINDINGS` bind the same product
+for Yard selection. A site-only control-plane record cannot stand in for this
+hosting artifact.
+
+`data-models/anonymous_health.proto` owns the new credential-free health record;
+its runtime type derives generated output. `anonymous_health.cue` and the real
+CUE positive/negative fixture tests require HTTP 200 for a successful marker
+observation and exclude cookie material. The package now opts into scoped
+Protobuf generation via `data-models/buf.yaml`; generated drift is checked by
+`@hobo/schema-tools`.
+
+A scoped ready immutable deployment read publishes `servingEndpoint` from the
+validated root `deploy_ssl_url` origin after fetching artifact bytes. Foreign
+hosts, userinfo, paths, queries and fragments are refused. Site control records
+and pending deployments provide no serving endpoint proof; mutable primary site
+URLs are not accepted as immutable deployment bindings.

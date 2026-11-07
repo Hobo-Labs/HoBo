@@ -154,6 +154,7 @@ export function publishCapabilityManifest(
 			const fact = COST_FACTS[port];
 			return {
 				port: mapping.port,
+				pricingStatus: "estimate",
 				sku: fact.sku,
 				unit: fact.unit,
 				marginalPrice: fact.marginalPrice,

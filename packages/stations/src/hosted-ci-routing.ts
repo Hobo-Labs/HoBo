@@ -3,6 +3,7 @@ import {
 	type AccountState,
 	type BudgetSignal,
 	BudgetSignalSchema,
+	ciBudgetSignalUpdate,
 } from "@hobo/ci";
 import type { CiBudgetRoutingOutcome } from "./ci-routing.js";
 
@@ -38,6 +39,13 @@ export function createHostedCiBudgetRoutingBridge(options: {
 				const current = await options.client.getSignalState();
 				if (current.account?.id !== options.accountId)
 					throw new Error("CI routing account does not match relay policy");
+				if (
+					!ciBudgetSignalUpdate(signal, {
+						tenantId: options.tenantId,
+						budgetPolicy: current.account.budgetPolicy,
+					})
+				)
+					throw new Error("invalid or foreign CI budget signal");
 				try {
 					const saved = await options.client.publishBudgetSignal(signal, {
 						revision: current.revision,

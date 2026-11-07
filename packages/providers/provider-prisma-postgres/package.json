@@ -20,7 +20,8 @@
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/bindings": "workspace:*",
-		"@hobo/capability-profiles": "workspace:*"
+		"@hobo/capability-profiles": "workspace:*",
+		"@hobo/core": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",

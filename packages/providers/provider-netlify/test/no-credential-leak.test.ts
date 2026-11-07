@@ -1,3 +1,7 @@
+import { prebuiltFixture } from "./helpers-artifact.js";
+
+const WORK_DIR = prebuiltFixture();
+
 /**
  * Nothing this package serializes may carry credential material.
  *
@@ -96,7 +100,7 @@ async function record() {
 	});
 	return driver.deploy({
 		deploymentRef: "deployment-1",
-		workDir: "/tmp/hobo-fake",
+		workDir: WORK_DIR,
 		publishDir: "dist",
 		idempotencyKey: "attempt-1",
 		fencingToken: "fence-1",

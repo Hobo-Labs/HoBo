@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { toJson } from "@bufbuild/protobuf";
 import { DesiredCiPolicySchema } from "@hobo/ci";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
 	ciEnvironmentPolicySha256,
 	parseCiProjectConfig,
@@ -15,6 +16,33 @@ function source() {
 }
 
 describe("typed project component references", () => {
+	it("keeps generated scope-name patterns correct without JavaScript-only regex flags", () => {
+		const schema = z
+			.object({
+				$defs: z.record(
+					z.string(),
+					z.object({ pattern: z.string().optional() }).passthrough(),
+				),
+			})
+			.parse(ciProjectJsonSchema());
+		const pattern = Object.values(schema.$defs)
+			.map((entry) => entry.pattern)
+			.find(
+				(entry) =>
+					entry !== undefined &&
+					new RegExp(entry, "u").test("tenant-😀") &&
+					!new RegExp(entry, "u").test("tenant\u0001"),
+			);
+		if (!pattern)
+			throw new Error(
+				"scope identifier pattern is missing from the editor schema",
+			);
+		const portable = new RegExp(pattern);
+		expect(portable.test("acme")).toBe(true);
+		expect(portable.test("tenant-😀")).toBe(true);
+		for (const code of [0, 1, 31, 127, 128, 159])
+			expect(portable.test(`tenant${String.fromCharCode(code)}`)).toBe(false);
+	});
 	it("ships the exact schema generated from the runtime authoring contract", () => {
 		expect(
 			JSON.parse(

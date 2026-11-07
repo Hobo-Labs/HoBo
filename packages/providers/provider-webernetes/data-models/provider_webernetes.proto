@@ -72,6 +72,7 @@ message WebernetesCostSignal {
   string sku = 2;            // "webernetes:<resource>"
   string unit = 3;
   string marginal_price = 4; // "0" — a local pod bills nobody
+  string pricing_status = 5; // "verified-zero" for incremental vendor charges only
 }
 
 message WebernetesResourcePlan {

@@ -18,6 +18,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./hosting-mutation-journal": {
+			"types": "./dist/hosting-mutation-journal.d.ts",
+			"default": "./dist/hosting-mutation-journal.js"
 		}
 	},
 	"publishConfig": {
@@ -63,6 +67,7 @@
 		"@hobo/provider-neon": "workspace:*",
 		"@hobo/provider-netlify": "workspace:*",
 		"@hobo/provider-prisma-postgres": "workspace:*",
+		"@hobo/provider-railway": "workspace:*",
 		"@hobo/provider-ttl-sh": "workspace:*",
 		"@hobo/provider-upstash": "workspace:*",
 		"@hobo/provider-vercel": "workspace:*",

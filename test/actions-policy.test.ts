@@ -65,7 +65,7 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 		return lines.slice(start, end === -1 ? lines.length : end).join("\n");
 	};
 
-	for (const job of ["main-gate", "pr-gate"]) {
+	for (const job of ["main-gate", "pr_gate_validation"]) {
 		const text = jobText(job);
 		assert.match(
 			text,
@@ -79,11 +79,11 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 		);
 	}
 	assert.match(
-		jobText("pr-gate"),
+		jobText("pr_gate_validation"),
 		/- name: CI runner image contract \(manifest\)\n[ \t]+if: github\.event_name == 'merge_group'/u,
 	);
 	assert.match(
-		jobText("pr-gate"),
+		jobText("pr_gate_validation"),
 		/- name: Assert CI fabric contract\n[ \t]+if: github\.event_name == 'merge_group'/u,
 	);
 	assert.match(

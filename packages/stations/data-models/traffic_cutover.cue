@@ -17,8 +17,10 @@ package stations
 
 #CutoverPreconditionRecord: {
 	validation:         #CutoverValidation
-	ttl:                #CutoverTtlPrecondition
+	ttl?:               #CutoverTtlPrecondition
+	mechanism?: "weighted" | "dns"
 	incumbent_plan_id?: string
+	incumbent_plan_json?: string
 }
 
 #CutoverReason: {

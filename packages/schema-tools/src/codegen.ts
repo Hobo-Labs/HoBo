@@ -138,6 +138,12 @@ async function generatePackageProtos(
 ): Promise<void> {
 	await mkdir(outputDir, { recursive: true });
 	const buf = resolveBufCommand(invocation.repoRoot);
+	// Packages with cross-file ESM records may require explicit .js imports.
+	// The same template selection is used for generation and drift checking.
+	const localTemplate = join(pkg.dataModelsDir, "buf.gen.yaml");
+	const template = existsSync(localTemplate)
+		? localTemplate
+		: invocation.bufTemplate;
 	const result = await runCommand(
 		buf.command,
 		[
@@ -145,7 +151,7 @@ async function generatePackageProtos(
 			"generate",
 			pkg.dataModelsDir,
 			"--template",
-			invocation.bufTemplate,
+			template,
 			"-o",
 			outputDir,
 		],

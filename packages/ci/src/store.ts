@@ -6,8 +6,15 @@ import {
 	fromJsonString,
 	toJsonString,
 } from "@bufbuild/protobuf";
+import {
+	BudgetAdmissionDeniedError,
+	type BudgetReservation,
+	type BudgetSettlementEvidence,
+} from "@hobo/broker";
+import type { BudgetPolicyEvaluationContext } from "@hobo/core";
 import { z } from "zod";
 import { allocationQuote } from "./accounting.js";
+import type { PipelineUsageObservation } from "./execution.js";
 import { shouldAbortIsolatedFleetLease } from "./fleet-overflow.js";
 import {
 	ACTIVE_STATES,
@@ -33,6 +40,20 @@ import {
 	type SandboxPricing,
 	SandboxPricingSchema,
 } from "./index.js";
+import { isIsolatedRetirementTransition } from "./isolated-retirement.js";
+import {
+	ciBudgetIdentity,
+	ciBudgetPolicy,
+	ciBudgetPolicyJson,
+	ciQueueBudgetMs,
+} from "./policy.js";
+import {
+	type CiSharedBudgetHooks,
+	ciExecutionDigest,
+	ciFinancialPlanHash,
+	ciRequestDigest,
+	ciReservationId,
+} from "./shared-budget.js";
 
 /** A conservative bootstrap increase is operator policy, not a new usage observation. */
 function observedSandboxPricing(pricing: SandboxPricing | undefined): string {
@@ -40,6 +61,190 @@ function observedSandboxPricing(pricing: SandboxPricing | undefined): string {
 	const observed = clone(SandboxPricingSchema, pricing);
 	observed.bootstrapFixedMicros = 0;
 	return toJsonString(SandboxPricingSchema, observed);
+}
+
+/** Fields that identify the original payer and approved reservation never follow mutable aliases. */
+export function leaseFinancialIdentity(lease: Lease): string {
+	return JSON.stringify([
+		lease.id,
+		lease.pipelineId,
+		lease.pipelineDigest,
+		lease.jobId,
+		lease.originalRunId,
+		lease.runAttempt,
+		lease.repositoryId,
+		lease.repository,
+		lease.installationId,
+		lease.runnerName,
+		lease.externalOperationId,
+		lease.budgetReleaseEvidenceRef,
+		lease.usageProvenance,
+		lease.usageEvidenceRef,
+		lease.accountId,
+		lease.offerId,
+		lease.provider,
+		lease.providerAccountId,
+		lease.budgetTenantId,
+		lease.budgetId,
+		lease.budgetPeriodId,
+		lease.budgetPolicyRevision,
+		lease.budgetPolicyDigest,
+		lease.budgetAdmissionAttempt,
+		lease.reservedPaidMicros,
+		lease.reservedFreeMinutes,
+		lease.reservedMinutes,
+		lease.priceMicrosPerMinute,
+		lease.freeValidUntil,
+		lease.queueDeadlineAt,
+		lease.sandboxPricing
+			? toJsonString(SandboxPricingSchema, lease.sandboxPricing)
+			: "",
+		lease.sandboxReservedAllowance
+			? toJsonString(SandboxAllowanceSchema, lease.sandboxReservedAllowance)
+			: "",
+	]);
+}
+
+export function ciParentReleaseEvidenceRef(
+	lease: Lease,
+	receipt: BudgetReservation,
+	evidenceRef: string,
+): string {
+	if (
+		receipt.status !== "released" ||
+		receipt.reservationId !== ciReservationId(lease) ||
+		receipt.requestDigest !== ciRequestDigest(lease) ||
+		receipt.financialPlanHash !== ciFinancialPlanHash(lease) ||
+		receipt.executionDigest ||
+		!Number.isSafeInteger(receipt.ledgerSeq) ||
+		receipt.ledgerSeq <= 0 ||
+		receipt.identity?.tenantId !== lease.budgetTenantId ||
+		receipt.identity.budgetId !== lease.budgetId ||
+		receipt.identity.periodId !== lease.budgetPeriodId ||
+		receipt.identity.policyRevision !== lease.budgetPolicyRevision ||
+		receipt.usageEvidenceRef !== evidenceRef ||
+		receipt.sourceStoppedEvidenceRef !== evidenceRef
+	)
+		throw new Error("positive exact parent release receipt required");
+	return `ci-parent-release:${receipt.reservationId}:${receipt.ledgerSeq}`;
+}
+
+export function assertCiParentSettlement(
+	lease: Lease,
+	receipt: BudgetReservation,
+	evidence: BudgetSettlementEvidence,
+): void {
+	if (
+		receipt.status !== "settled" ||
+		receipt.reservationId !== ciReservationId(lease) ||
+		receipt.requestDigest !== ciRequestDigest(lease) ||
+		receipt.financialPlanHash !== ciFinancialPlanHash(lease) ||
+		receipt.executionDigest !== ciExecutionDigest(lease) ||
+		!Number.isSafeInteger(receipt.ledgerSeq) ||
+		receipt.ledgerSeq <= 0 ||
+		receipt.actualMicros !== lease.paidMicros ||
+		receipt.identity?.tenantId !== lease.budgetTenantId ||
+		receipt.identity.budgetId !== lease.budgetId ||
+		receipt.identity.periodId !== lease.budgetPeriodId ||
+		receipt.identity.policyRevision !== lease.budgetPolicyRevision ||
+		receipt.usageEvidenceRef !== evidence.usageEvidenceRef ||
+		receipt.sourceStoppedEvidenceRef !== evidence.sourceStoppedEvidenceRef
+	)
+		throw new Error("positive exact parent settlement receipt required");
+}
+
+function historicalBudgetIdentity(account: Account) {
+	const common = ciBudgetPolicy(account);
+	return common
+		? {
+				budgetTenantId: common.tenantId,
+				budgetId: common.budgetId,
+				budgetPeriodId: common.periodId,
+				budgetPolicyRevision: String(common.revision),
+				budgetPolicyDigest: ciBudgetPolicyJson(account.budgetPolicy),
+			}
+		: {
+				budgetTenantId: "",
+				budgetId: "",
+				budgetPeriodId: "",
+				budgetPolicyRevision: "",
+				budgetPolicyDigest: "",
+			};
+}
+
+export function pinCiQueueDeadline(
+	job: Job,
+	firstSeenAt: string,
+	account?: Account,
+	previousDeadlines: readonly string[] = [],
+): Job {
+	const pinned = clone(JobSchema, job);
+	pinned.queueDeadlineAt = ciQueueDeadlineAt(firstSeenAt, account, [
+		job.queueDeadlineAt,
+		...previousDeadlines,
+	]);
+	return pinned;
+}
+
+function ciQueueDeadlineAt(
+	firstSeenAt: string,
+	account: Account | undefined,
+	deadlines: readonly string[],
+): string {
+	const first = Date.parse(firstSeenAt);
+	if (!Number.isFinite(first)) throw new Error("invalid queue receipt time");
+	const candidates = deadlines.filter(Boolean).map((deadline) => {
+		const value = Date.parse(deadline);
+		if (!Number.isFinite(value)) throw new Error("invalid queue deadline");
+		return value;
+	});
+	const bound = account && ciQueueBudgetMs(account);
+	if (bound !== undefined) {
+		if (!Number.isSafeInteger(first + bound))
+			throw new Error("unsafe queue deadline");
+		candidates.push(first + bound);
+	}
+	return candidates.length
+		? new Date(Math.min(...candidates)).toISOString()
+		: "";
+}
+
+/** Measured CI-local context; financial bounds are independently supplied by the parent hook. */
+export function ciLeasePolicyMeasurements(
+	lease: Lease,
+	leases: readonly Lease[],
+	queueDurationMs: number,
+): BudgetPolicyEvaluationContext["measurements"] {
+	const active = leases.filter(
+		(entry) =>
+			entry.id !== lease.id &&
+			ACTIVE_STATES.has(entry.state) &&
+			(lease.budgetId
+				? entry.budgetTenantId === lease.budgetTenantId &&
+					entry.budgetId === lease.budgetId &&
+					entry.budgetPeriodId === lease.budgetPeriodId
+				: entry.accountId === lease.accountId),
+	);
+	return [
+		{ key: "work.concurrent", unit: "count", value: active.length + 1 },
+		{
+			key: "work.duration",
+			unit: "ms",
+			value:
+				lease.reservedMinutes * 60000 +
+				(lease.sandboxPricing?.proxyVmRequired
+					? lease.sandboxPricing.proxyVmExtraMs
+					: 0),
+		},
+		{ key: "ci.queue.duration", unit: "ms", value: queueDurationMs },
+		{
+			key: "ci.attempts",
+			unit: "count",
+			value: lease.pipelineId
+				? lease.budgetAdmissionAttempt
+				: lease.runAttempt + lease.budgetAdmissionAttempt - 1,
+		},
+	];
 }
 
 /** A trusted publisher confirms an existing conservative, zero-credit rate. */
@@ -56,7 +261,11 @@ export class LeaseStore {
 	private readonly db: DatabaseSync;
 	private transactionDepth = 0;
 	private savepointSequence = 0;
-	constructor(path: string, database?: DatabaseSync) {
+	constructor(
+		path: string,
+		database?: DatabaseSync,
+		private readonly options: { sharedBudget?: CiSharedBudgetHooks } = {},
+	) {
 		this.db = database ?? new DatabaseSync(path);
 		this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
    CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY, body TEXT NOT NULL);
@@ -132,6 +341,174 @@ export class LeaseStore {
 			? fromJsonString(ConfigurationStateSchema, z.string().parse(row.body))
 			: undefined;
 	}
+	private validateFinancialHistory(
+		configuration: Configuration,
+		previous: ConfigurationState | undefined,
+	): void {
+		const history = this.events()
+			.filter((event) => event.type === "ci.ConfigurationChanged")
+			.map((event) => fromJsonString(ConfigurationStateSchema, event.detail));
+		if (previous) history.push(previous);
+		const leases = this.all();
+		for (const account of configuration.accounts) {
+			const identity = historicalBudgetIdentity(account);
+			const budgetHistory = history.flatMap((state) =>
+				(state.configuration?.accounts ?? [])
+					.map((old) => historicalBudgetIdentity(old))
+					.filter(
+						(old) =>
+							identity.budgetId !== "" &&
+							old.budgetId === identity.budgetId &&
+							old.budgetTenantId === identity.budgetTenantId,
+					),
+			);
+			const latestBudget = budgetHistory.at(-1);
+			for (const old of budgetHistory) {
+				if (
+					old.budgetPolicyRevision === identity.budgetPolicyRevision &&
+					old.budgetPolicyDigest !== identity.budgetPolicyDigest
+				)
+					throw new Error(
+						"budget policy revision already binds different content",
+					);
+				if (
+					latestBudget &&
+					old.budgetPeriodId === identity.budgetPeriodId &&
+					latestBudget.budgetPeriodId !== identity.budgetPeriodId
+				)
+					throw new Error("retired budget period cannot reactivate");
+				if (
+					latestBudget &&
+					old.budgetPolicyRevision === identity.budgetPolicyRevision &&
+					latestBudget.budgetPolicyRevision !== identity.budgetPolicyRevision
+				)
+					throw new Error("retired budget policy revision cannot reactivate");
+			}
+			for (const state of history)
+				for (const old of state.configuration?.accounts ?? []) {
+					const oldIdentity = historicalBudgetIdentity(old);
+					const sameBudget =
+						identity.budgetId !== "" &&
+						identity.budgetId === oldIdentity.budgetId &&
+						identity.budgetTenantId === oldIdentity.budgetTenantId;
+					const samePeriod = sameBudget
+						? identity.budgetPeriodId === oldIdentity.budgetPeriodId
+						: account.id === old.id &&
+							identity.budgetId === oldIdentity.budgetId;
+					if (
+						account.id === old.id &&
+						oldIdentity.budgetId &&
+						(oldIdentity.budgetId !== identity.budgetId ||
+							oldIdentity.budgetTenantId !== identity.budgetTenantId)
+					)
+						throw new Error(
+							"durable common budget authority cannot be removed or rebound to reset history",
+						);
+					if (account.id === old.id || sameBudget) {
+						if (samePeriod && account.spentMicros < old.spentMicros)
+							throw new Error(
+								"account spending watermark cannot decrease within a budget period",
+							);
+						if (
+							!samePeriod &&
+							leases.some(
+								(lease) =>
+									(ACTIVE_STATES.has(lease.state) ||
+										(lease.budgetId &&
+											((lease.state === "cancelled" &&
+												!lease.budgetReleaseEvidenceRef) ||
+												(lease.state === "completed" &&
+													lease.usageProvenance !== "provider-final")))) &&
+									(oldIdentity.budgetId
+										? lease.budgetId === oldIdentity.budgetId &&
+											lease.budgetTenantId === oldIdentity.budgetTenantId &&
+											lease.budgetPeriodId === oldIdentity.budgetPeriodId
+										: lease.accountId === old.id && !lease.budgetId),
+							)
+						)
+							throw new Error(
+								"budget period cannot reset while liabilities remain active",
+							);
+						if (
+							old.usageObservedAt &&
+							(!account.usageObservedAt ||
+								Date.parse(account.usageObservedAt) <
+									Date.parse(old.usageObservedAt))
+						)
+							throw new Error(
+								"historical account usage watermark cannot move backwards",
+							);
+					}
+					for (const offer of account.offers)
+						for (const oldOffer of old.offers) {
+							if (
+								offer.provider !== oldOffer.provider ||
+								offer.providerAccountId !== oldOffer.providerAccountId
+							)
+								continue;
+							const sameNativePeriod =
+								samePeriod || (!identity.budgetId && !oldIdentity.budgetId);
+							const nativeLeases = leases.filter(
+								(lease) =>
+									lease.provider === offer.provider &&
+									(lease.providerAccountId
+										? lease.providerAccountId === offer.providerAccountId
+										: lease.accountId === old.id &&
+											lease.offerId === oldOffer.id),
+							);
+							if (
+								sameNativePeriod &&
+								(offer.spentMicros < oldOffer.spentMicros ||
+									(account.id !== old.id &&
+										account.spentMicros < old.spentMicros))
+							)
+								throw new Error(
+									"provider spending watermark cannot decrease within a budget period",
+								);
+							if (
+								Date.parse(offer.observedAt) < Date.parse(oldOffer.observedAt)
+							)
+								throw new Error(
+									"historical provider usage watermark cannot move backwards",
+								);
+							const previousOffer = previous?.configuration?.accounts
+								.find((entry) => entry.id === account.id)
+								?.offers.find((entry) => entry.id === offer.id);
+							if (
+								account.id !== old.id ||
+								offer.id !== oldOffer.id ||
+								!previousOffer
+							) {
+								const lastUsage = nativeLeases.reduce(
+									(latest, lease) =>
+										Math.max(
+											latest,
+											Date.parse(
+												lease.usageCompletedAt ||
+													lease.settledAt ||
+													lease.createdAt,
+											),
+										),
+									Date.parse(oldOffer.observedAt),
+								);
+								if (
+									Date.parse(offer.observedAt) <=
+										Date.parse(oldOffer.observedAt) ||
+									Date.parse(offer.observedAt) < lastUsage ||
+									nativeLeases.some(
+										(lease) =>
+											!lease.providerAccountId &&
+											ACTIVE_STATES.has(lease.state),
+									)
+								)
+									throw new Error(
+										"provider identity rename or revival requires a new native usage observation covering history",
+									);
+							}
+						}
+				}
+		}
+	}
 	/** Compare-and-swap platform policy, with its audit event in the lease partition. */
 	configure(
 		configuration: Configuration,
@@ -151,6 +528,7 @@ export class LeaseStore {
 			const parsed = parseConfiguration(
 				toJsonString(ConfigurationSchema, configuration),
 			);
+			this.validateFinancialHistory(parsed, previous);
 			for (const old of previous?.configuration?.accounts ?? []) {
 				const next = parsed.accounts.find((account) => account.id === old.id);
 				for (const [key, cycle] of Object.entries(old.routingSignalCycles)) {
@@ -475,9 +853,20 @@ export class LeaseStore {
 		at: string,
 	): Lease | undefined {
 		return this.transaction(() => {
+			const configuration = this.configuration()?.configuration;
+			const current = configuration
+				? configuration.accounts.find((entry) => entry.id === account.id)
+				: account;
+			if (!current) return undefined;
+			const desired = this.controlRecord(`ci-policy:${current.id}`);
+			const effective = desired
+				? effectiveCiAccount(current, parseCiPolicy(desired.bodyJson))
+				: current;
+			if (ciBudgetPolicy(effective) && !this.options.sharedBudget)
+				return undefined;
 			if (
-				pipeline.accountId !== account.id ||
-				pipeline.timeoutSeconds > account.maxRuntimeMinutes * 60
+				pipeline.accountId !== effective.id ||
+				pipeline.timeoutSeconds > effective.maxRuntimeMinutes * 60
 			)
 				throw new Error("pipeline scope or timeout exceeds account policy");
 			const leases = this.all();
@@ -492,33 +881,173 @@ export class LeaseStore {
 					ACTIVE_STATES.has(lease.state) || lease.state === "completed",
 			);
 			if (existing) return existing;
-			const selected = route(
-				{
-					...account,
-					maxRuntimeMinutes: Math.ceil(pipeline.timeoutSeconds / 60),
-					offers: account.offers.filter((offer) => offerIds.includes(offer.id)),
-				},
-				leases,
+			const firstReceipt = [
 				at,
+				...previous.map((lease) => lease.createdAt),
+			].reduce((first, value) =>
+				Date.parse(value) < Date.parse(first) ? value : first,
 			);
-			if (!selected) return undefined;
-			const lease = create(LeaseSchema, {
-				id: randomUUID(),
-				accountId: account.id,
-				pipelineId: pipeline.id,
-				pipelineDigest: digest,
-				offerId: selected.offer.id,
-				provider: selected.offer.provider,
-				state: "reserved",
-				reservedMinutes: selected.minutes,
-				reservedFreeMinutes: selected.freeMinutes,
-				reservedPaidMicros: selected.paidMicros,
-				priceMicrosPerMinute: selected.offer.priceMicrosPerMinute,
-				freeValidUntil: selected.offer.validUntil,
-				createdAt: at,
-			});
-			this.append(lease, "ci.LeaseReserved", at);
-			return lease;
+			const queueDurationMs = Math.max(
+				0,
+				Date.parse(at) - Date.parse(firstReceipt),
+			);
+			const queueDeadlineAt = ciQueueDeadlineAt(
+				firstReceipt,
+				effective,
+				previous.map((lease) => lease.queueDeadlineAt),
+			);
+			if (queueDeadlineAt && Date.parse(queueDeadlineAt) <= Date.parse(at))
+				return undefined;
+			const blockedOfferIds = new Set<string>();
+			while (blockedOfferIds.size < effective.offers.length) {
+				const selected = route(
+					{
+						...effective,
+						maxRuntimeMinutes: Math.ceil(pipeline.timeoutSeconds / 60),
+						offers: effective.offers.map((offer) => ({
+							...offer,
+							enabled:
+								offer.enabled &&
+								!blockedOfferIds.has(offer.id) &&
+								offerIds.includes(offer.id),
+						})),
+					},
+					leases,
+					at,
+					{
+						phase: this.options.sharedBudget ? "plan" : "admit",
+						attempt: previous.length + 1,
+						queueDurationMs,
+					},
+				);
+				if (!selected) return undefined;
+				const lease = create(LeaseSchema, {
+					id: randomUUID(),
+					accountId: account.id,
+					pipelineId: pipeline.id,
+					pipelineDigest: digest,
+					budgetAdmissionAttempt: previous.length + 1,
+					queueDeadlineAt,
+					runAttempt: previous.length + 1,
+					offerId: selected.offer.id,
+					provider: selected.offer.provider,
+					providerAccountId: selected.offer.providerAccountId,
+					...ciBudgetIdentity(effective, at),
+					state: "reserved",
+					reservedMinutes: selected.minutes,
+					reservedFreeMinutes: selected.freeMinutes,
+					reservedPaidMicros: selected.paidMicros,
+					priceMicrosPerMinute: selected.offer.priceMicrosPerMinute,
+					freeValidUntil: selected.offer.validUntil,
+					createdAt: at,
+				});
+				if (lease.budgetId)
+					try {
+						this.options.sharedBudget?.reserve(
+							lease,
+							ciLeasePolicyMeasurements(lease, leases, queueDurationMs),
+						);
+					} catch (error) {
+						if (error instanceof BudgetAdmissionDeniedError) {
+							blockedOfferIds.add(selected.offer.id);
+							continue;
+						}
+						throw error;
+					}
+				this.append(lease, "ci.LeaseReserved", at);
+				return lease;
+			}
+			return undefined;
+		});
+	}
+	/** Re-admit the exact held offer against durable policy immediately before allocation. */
+	authorizePipelineStart(
+		id: string,
+		account: Account,
+		pipeline: Pipeline,
+		at: string,
+		phase: "before-open" | "native-mutation" = "before-open",
+	): boolean {
+		return this.transaction(() => {
+			const lease = this.get(id);
+			if (!lease || !["reserved", "running"].includes(lease.state))
+				return false;
+			const configuration = this.configuration()?.configuration;
+			const current = configuration
+				? configuration.accounts.find((entry) => entry.id === account.id)
+				: account;
+			const desired = current && this.controlRecord(`ci-policy:${current.id}`);
+			const effective =
+				current &&
+				(desired
+					? effectiveCiAccount(current, parseCiPolicy(desired.bodyJson))
+					: current);
+			const identity = effective && ciBudgetIdentity(effective, at);
+			const selected =
+				effective &&
+				(!lease.queueDeadlineAt ||
+					(Number.isFinite(Date.parse(lease.queueDeadlineAt)) &&
+						Date.parse(lease.queueDeadlineAt) > Date.parse(at))) &&
+				pipeline.accountId === effective.id &&
+				pipeline.timeoutSeconds <= effective.maxRuntimeMinutes * 60
+					? route(
+							{
+								...effective,
+								maxRuntimeMinutes: Math.ceil(pipeline.timeoutSeconds / 60),
+								offers: effective.offers.map((offer) => ({
+									...offer,
+									enabled:
+										offer.enabled &&
+										offer.id === lease.offerId &&
+										offer.provider === lease.provider &&
+										offer.providerAccountId === lease.providerAccountId,
+								})),
+							},
+							this.all().filter((entry) => entry.id !== lease.id),
+							at,
+							{
+								phase: this.options.sharedBudget ? "plan" : "admit",
+								attempt: lease.pipelineId
+									? lease.budgetAdmissionAttempt || 1
+									: lease.runAttempt + (lease.budgetAdmissionAttempt || 1) - 1,
+								queueDurationMs: this.pipelineQueueDurationMs(lease, at),
+							},
+						)
+					: undefined;
+			if (
+				selected &&
+				identity &&
+				identity.budgetTenantId === lease.budgetTenantId &&
+				identity.budgetId === lease.budgetId &&
+				identity.budgetPeriodId === lease.budgetPeriodId &&
+				identity.budgetPolicyRevision === lease.budgetPolicyRevision &&
+				identity.budgetPolicyDigest === lease.budgetPolicyDigest &&
+				selected.paidMicros <= lease.reservedPaidMicros &&
+				selected.freeMinutes >= lease.reservedFreeMinutes &&
+				selected.offer.priceMicrosPerMinute === lease.priceMicrosPerMinute &&
+				selected.offer.validUntil === lease.freeValidUntil
+			) {
+				if (lease.budgetId) {
+					if (!this.options.sharedBudget) return false;
+					this.options.sharedBudget.claim(
+						lease,
+						ciLeasePolicyMeasurements(
+							lease,
+							this.all(),
+							this.pipelineQueueDurationMs(lease, at),
+						),
+					);
+				}
+				return true;
+			}
+			lease.state =
+				phase === "native-mutation" || lease.externalOperationId
+					? "uncertain"
+					: "cancelled";
+			if (lease.state === "uncertain" && lease.budgetId)
+				this.options.sharedBudget?.uncertain(lease);
+			this.append(lease, "ci.AdmissionRevoked", at);
+			return false;
 		});
 	}
 	private append(lease: Lease, type: string, at: string): void {
@@ -567,6 +1096,16 @@ export class LeaseStore {
 			const effective = desired
 				? effectiveCiAccount(current, parseCiPolicy(desired.bodyJson))
 				: current;
+			if (ciBudgetPolicy(effective) && !this.options.sharedBudget)
+				return undefined;
+			const demand = this.pinnedQueuedJob(job, at, effective);
+			if (
+				demand.queueDeadlineAt &&
+				Date.parse(demand.queueDeadlineAt) <= Date.parse(at)
+			) {
+				this.expireQueued(demand, at);
+				return undefined;
+			}
 			const key = `${job.repositoryId}:${job.id}:${job.runAttempt}`;
 			if (
 				this.db
@@ -588,44 +1127,91 @@ export class LeaseStore {
 				this.db.prepare("DELETE FROM pending_jobs WHERE job_key=?").run(key);
 				return existing;
 			}
-			const selected = route(
-				{
-					...effective,
-					offers: effective.offers.filter(
-						(offer) => !offer.backend || offer.backend === "gh-actions",
-					),
-				},
-				leases,
-				at,
-			);
-			if (!selected) return undefined;
-			const id = randomUUID();
-			const lease = create(LeaseSchema, {
-				id,
-				accountId: account.id,
-				offerId: selected.offer.id,
-				provider: selected.offer.provider,
-				jobId: job.id,
-				originalRunId: job.runId,
-				runAttempt: job.runAttempt,
-				repositoryId: job.repositoryId,
-				repository: job.repository,
-				installationId: job.installationId,
-				jobName: job.name,
-				memoryClass: job.memoryClass,
-				memoryMb: job.memoryMb,
-				state: "reserved",
-				priceMicrosPerMinute: selected.offer.priceMicrosPerMinute,
-				freeValidUntil: selected.offer.validUntil,
-				reservedMinutes: selected.minutes,
-				reservedFreeMinutes: selected.freeMinutes,
-				reservedPaidMicros: selected.paidMicros,
-				runnerName: `hobo-${id}`,
-				createdAt: at,
-			});
-			this.append(lease, "ci.LeaseReserved", at);
-			this.db.prepare("DELETE FROM pending_jobs WHERE job_key=?").run(key);
-			return lease;
+			const blockedOfferIds = new Set<string>();
+			while (blockedOfferIds.size < effective.offers.length) {
+				const selected = route(
+					{
+						...effective,
+						offers: effective.offers.map((offer) => ({
+							...offer,
+							enabled:
+								offer.enabled &&
+								!blockedOfferIds.has(offer.id) &&
+								(!offer.backend || offer.backend === "gh-actions"),
+						})),
+					},
+					leases,
+					at,
+					{
+						phase: this.options.sharedBudget ? "plan" : "admit",
+						attempt:
+							job.runAttempt +
+							leases.filter(
+								(lease) =>
+									lease.repositoryId === job.repositoryId &&
+									lease.jobId === job.id &&
+									lease.runAttempt === job.runAttempt,
+							).length,
+						queueDurationMs: this.queueDurationMs(job, at),
+					},
+				);
+				if (!selected) return undefined;
+				const id = randomUUID();
+				const lease = create(LeaseSchema, {
+					id,
+					budgetAdmissionAttempt:
+						leases.filter(
+							(entry) =>
+								entry.repositoryId === job.repositoryId &&
+								entry.jobId === job.id &&
+								entry.runAttempt === job.runAttempt,
+						).length + 1,
+					accountId: account.id,
+					offerId: selected.offer.id,
+					provider: selected.offer.provider,
+					providerAccountId: selected.offer.providerAccountId,
+					...ciBudgetIdentity(effective, at),
+					queueDeadlineAt: demand.queueDeadlineAt,
+					jobId: job.id,
+					originalRunId: job.runId,
+					runAttempt: job.runAttempt,
+					repositoryId: job.repositoryId,
+					repository: job.repository,
+					installationId: job.installationId,
+					jobName: job.name,
+					memoryClass: job.memoryClass,
+					memoryMb: job.memoryMb,
+					state: "reserved",
+					priceMicrosPerMinute: selected.offer.priceMicrosPerMinute,
+					freeValidUntil: selected.offer.validUntil,
+					reservedMinutes: selected.minutes,
+					reservedFreeMinutes: selected.freeMinutes,
+					reservedPaidMicros: selected.paidMicros,
+					runnerName: `hobo-${id}`,
+					createdAt: at,
+				});
+				if (lease.budgetId)
+					try {
+						this.options.sharedBudget?.reserve(
+							lease,
+							ciLeasePolicyMeasurements(
+								lease,
+								leases,
+								this.queueDurationMs(job, at),
+							),
+						);
+					} catch (error) {
+						if (error instanceof BudgetAdmissionDeniedError) {
+							blockedOfferIds.add(selected.offer.id);
+							continue;
+						}
+						throw error;
+					}
+				this.append(lease, "ci.LeaseReserved", at);
+				this.db.prepare("DELETE FROM pending_jobs WHERE job_key=?").run(key);
+				return lease;
+			}
+			return undefined;
 		});
 	}
 	transition(
@@ -638,15 +1224,260 @@ export class LeaseStore {
 		return this.transaction(() => {
 			const lease = this.get(id);
 			if (!lease || !expected.includes(lease.state)) return undefined;
+			const before = clone(LeaseSchema, lease);
+			const identity = leaseFinancialIdentity(lease);
 			update(lease);
 			if (lease.state === "dispatching" && !lease.dispatchingAt)
 				lease.dispatchingAt = at;
+			if (leaseFinancialIdentity(lease) !== identity)
+				throw new Error("lease financial identity is immutable");
+			const retirement = isIsolatedRetirementTransition(
+				before,
+				lease,
+				type,
+				at,
+			);
+			if (
+				!retirement &&
+				["dispatching", "claiming", "running"].includes(lease.state)
+			) {
+				if (!this.authorizeHeldEffect(lease, at))
+					throw new Error("durable policy revoked lease execution");
+				if (lease.budgetId) {
+					if (!this.options.sharedBudget)
+						throw new Error("shared CI budget authority unavailable");
+					this.options.sharedBudget.claim(
+						lease,
+						ciLeasePolicyMeasurements(
+							lease,
+							this.all(),
+							lease.pipelineId
+								? this.pipelineQueueDurationMs(lease, at)
+								: this.queueDurationMs(
+										create(JobSchema, {
+											id: lease.jobId,
+											repositoryId: lease.repositoryId,
+											runAttempt: lease.runAttempt,
+										}),
+										at,
+									),
+						),
+					);
+				}
+			} else if (!retirement && lease.state === "uncertain" && lease.budgetId)
+				this.options.sharedBudget?.uncertain(lease);
 			this.append(lease, type, at);
 			return lease;
 		});
 	}
+	private authorizeHeldEffect(lease: Lease, at: string): boolean {
+		if (
+			lease.queueDeadlineAt &&
+			Date.parse(lease.queueDeadlineAt) <= Date.parse(at)
+		)
+			return false;
+		const config = this.configuration()?.configuration;
+		if (!config) return !lease.budgetId;
+		const account = config.accounts.find(
+			(entry) => entry.id === lease.accountId,
+		);
+		if (!account) return false;
+		if (
+			!lease.pipelineId &&
+			!config.connections.some(
+				(entry) =>
+					entry.accountId === lease.accountId &&
+					entry.repositoryId === lease.repositoryId &&
+					entry.installationId === lease.installationId &&
+					entry.repository.toLowerCase() === lease.repository.toLowerCase(),
+			)
+		)
+			return false;
+		const desired = this.controlRecord(`ci-policy:${account.id}`);
+		const effective = desired
+			? effectiveCiAccount(account, parseCiPolicy(desired.bodyJson))
+			: account;
+		const identity = ciBudgetIdentity(effective, at);
+		if (
+			identity.budgetTenantId !== lease.budgetTenantId ||
+			identity.budgetId !== lease.budgetId ||
+			identity.budgetPeriodId !== lease.budgetPeriodId ||
+			identity.budgetPolicyRevision !== lease.budgetPolicyRevision ||
+			identity.budgetPolicyDigest !== lease.budgetPolicyDigest ||
+			lease.reservedMinutes >
+				effective.maxRuntimeMinutes + effective.startupMinutes ||
+			lease.reservedMinutes < effective.startupMinutes
+		)
+			return false;
+		const selected = route(
+			{
+				...effective,
+				maxRuntimeMinutes: lease.reservedMinutes - effective.startupMinutes,
+				offers: effective.offers.map((offer) => ({
+					...offer,
+					enabled:
+						offer.enabled &&
+						offer.id === lease.offerId &&
+						offer.provider === lease.provider &&
+						(lease.providerAccountId
+							? offer.providerAccountId === lease.providerAccountId
+							: !lease.budgetId),
+				})),
+			},
+			this.all().filter((entry) => entry.id !== lease.id),
+			at,
+			{
+				phase: this.options.sharedBudget ? "plan" : "admit",
+				attempt: lease.pipelineId
+					? lease.budgetAdmissionAttempt || 1
+					: lease.runAttempt + (lease.budgetAdmissionAttempt || 1) - 1,
+				queueDurationMs: lease.pipelineId
+					? this.pipelineQueueDurationMs(lease, at)
+					: this.queueDurationMs(
+							create(JobSchema, {
+								id: lease.jobId,
+								repositoryId: lease.repositoryId,
+								runAttempt: lease.runAttempt,
+							}),
+							at,
+						),
+			},
+		);
+		return (
+			!!selected &&
+			selected.paidMicros <= lease.reservedPaidMicros &&
+			selected.freeMinutes >= lease.reservedFreeMinutes &&
+			selected.offer.priceMicrosPerMinute === lease.priceMicrosPerMinute &&
+			selected.offer.validUntil === lease.freeValidUntil
+		);
+	}
 	queue(job: Job, at: string): void {
 		this.transaction(() => this.queueInside(job, at));
+	}
+	private pinnedQueuedJob(job: Job, at: string, account?: Account): Job {
+		const prior = this.events()
+			.filter((event) => event.type === "ci.JobQueued")
+			.map((event) => ({
+				job: fromJsonString(JobSchema, event.detail),
+				at: event.at,
+			}))
+			.filter(
+				(entry) =>
+					entry.job.repositoryId === job.repositoryId &&
+					entry.job.id === job.id &&
+					entry.job.runAttempt === job.runAttempt,
+			);
+		const leases = this.all().filter(
+			(lease) =>
+				lease.repositoryId === job.repositoryId &&
+				lease.jobId === job.id &&
+				lease.runAttempt === job.runAttempt,
+		);
+		const first = [
+			at,
+			...prior.map((entry) => entry.at),
+			...leases.map((lease) => lease.createdAt),
+		].reduce((earliest, value) =>
+			Date.parse(value) < Date.parse(earliest) ? value : earliest,
+		);
+		return pinCiQueueDeadline(job, first, account, [
+			...prior.map((entry) => entry.job.queueDeadlineAt),
+			...leases.map((lease) => lease.queueDeadlineAt),
+		]);
+	}
+	private queueDurationMs(job: Job, at: string): number {
+		const prior = this.events()
+			.filter((event) => event.type === "ci.JobQueued")
+			.filter((event) => {
+				const queued = fromJsonString(JobSchema, event.detail);
+				return (
+					queued.repositoryId === job.repositoryId &&
+					queued.id === job.id &&
+					queued.runAttempt === job.runAttempt
+				);
+			})
+			.map((event) => Date.parse(event.at));
+		const leases = this.all()
+			.filter(
+				(lease) =>
+					lease.repositoryId === job.repositoryId &&
+					lease.jobId === job.id &&
+					lease.runAttempt === job.runAttempt,
+			)
+			.map((lease) => Date.parse(lease.createdAt));
+		return Math.max(
+			0,
+			Date.parse(at) - Math.min(Date.parse(at), ...prior, ...leases),
+		);
+	}
+	private pipelineQueueDurationMs(lease: Lease, at: string): number {
+		const receipts = this.all()
+			.filter(
+				(entry) =>
+					entry.accountId === lease.accountId &&
+					entry.pipelineId === lease.pipelineId,
+			)
+			.map((entry) => Date.parse(entry.createdAt));
+		return Math.max(
+			0,
+			Date.parse(at) -
+				Math.min(Date.parse(at), Date.parse(lease.createdAt), ...receipts),
+		);
+	}
+	/** Expire only untouched demand. Once provider work may exist, keep its hold. */
+	expireQueued(job: Job, at: string, expectedRevision?: number): boolean {
+		return this.transaction(() => {
+			if (
+				expectedRevision !== undefined &&
+				this.configuration()?.revision !== expectedRevision
+			)
+				throw new Error("configuration revision conflict");
+			const key = `${job.repositoryId}:${job.id}:${job.runAttempt}`;
+			const row = this.db
+				.prepare("SELECT body FROM pending_jobs WHERE job_key=?")
+				.get(key);
+			const pending = row
+				? fromJsonString(JobSchema, z.string().parse(row.body))
+				: job;
+			if (
+				!pending.queueDeadlineAt ||
+				!Number.isFinite(Date.parse(pending.queueDeadlineAt)) ||
+				!Number.isFinite(Date.parse(at)) ||
+				Date.parse(pending.queueDeadlineAt) > Date.parse(at)
+			)
+				return false;
+			const leases = this.all().filter(
+				(lease) =>
+					lease.repositoryId === job.repositoryId &&
+					lease.jobId === job.id &&
+					lease.runAttempt === job.runAttempt &&
+					ACTIVE_STATES.has(lease.state),
+			);
+			if (leases.some((lease) => lease.state !== "reserved")) return false;
+			for (const lease of leases) {
+				lease.state = "cancelled";
+				this.append(lease, "ci.LeaseExpired", at);
+			}
+			if (
+				this.db.prepare("SELECT 1 FROM terminal_jobs WHERE job_key=?").get(key)
+			)
+				return true;
+			this.db.prepare("DELETE FROM pending_jobs WHERE job_key=?").run(key);
+			this.db
+				.prepare("INSERT OR IGNORE INTO terminal_jobs(job_key) VALUES(?)")
+				.run(key);
+			this.db.prepare("INSERT INTO events(body) VALUES(?)").run(
+				toJsonString(
+					CiEventSchema,
+					create(CiEventSchema, {
+						type: "ci.JobExpired",
+						at,
+						detail: toJsonString(JobSchema, pending),
+					}),
+				),
+			);
+			return true;
+		});
 	}
 	private queueInside(job: Job, at: string): void {
 		const key = `${job.repositoryId}:${job.id}:${job.runAttempt}`;
@@ -664,7 +1495,31 @@ export class LeaseStore {
 			)
 		)
 			return;
-		const detail = toJsonString(JobSchema, job);
+		const config = this.configuration()?.configuration;
+		const binding = config?.connections.find(
+			(entry) =>
+				entry.repositoryId === job.repositoryId &&
+				entry.installationId === job.installationId &&
+				entry.repository.toLowerCase() === job.repository.toLowerCase(),
+		);
+		const account = config?.accounts.find(
+			(entry) => entry.id === binding?.accountId,
+		);
+		const desired = account && this.controlRecord(`ci-policy:${account.id}`);
+		const effective =
+			account &&
+			(desired
+				? effectiveCiAccount(account, parseCiPolicy(desired.bodyJson))
+				: account);
+		const pinned = this.pinnedQueuedJob(job, at, effective);
+		if (
+			pinned.queueDeadlineAt &&
+			Date.parse(pinned.queueDeadlineAt) <= Date.parse(at)
+		) {
+			this.expireQueued(pinned, at);
+			return;
+		}
+		const detail = toJsonString(JobSchema, pinned);
 		this.db
 			.prepare("INSERT INTO events(body) VALUES (?)")
 			.run(
@@ -841,6 +1696,7 @@ export class LeaseStore {
 		unmet?: Job,
 		completedAt = at,
 		result?: PipelineResult,
+		evidence?: BudgetSettlementEvidence,
 	): Lease | undefined {
 		return this.transaction(() => {
 			const lease = this.get(id);
@@ -870,10 +1726,208 @@ export class LeaseStore {
 			lease.paidMicros = quote.paid;
 			lease.settledAt = at;
 			lease.usageCompletedAt = completedAt;
+			lease.usageProvenance = evidence ? "provider-final" : "estimated";
+			lease.usageEvidenceRef = evidence?.usageEvidenceRef ?? "";
 			if (result) lease.result = result;
-			this.append(lease, "ci.HostSettled", at);
+			if (lease.budgetId) {
+				if (!this.options.sharedBudget)
+					throw new Error("shared CI budget authority unavailable");
+				if (evidence)
+					assertCiParentSettlement(
+						lease,
+						this.options.sharedBudget.settle(lease, evidence),
+						evidence,
+					);
+				else {
+					lease.state = "uncertain";
+					this.options.sharedBudget.uncertain(lease);
+				}
+			}
+			this.append(
+				lease,
+				lease.state === "completed" ? "ci.HostSettled" : "ci.UsageEstimated",
+				at,
+			);
+			if (lease.paidMicros > lease.reservedPaidMicros)
+				this.append(lease, "ci.BudgetOverrun", at);
 			if (unmet) this.queueInside(unmet, at);
 			return lease;
+		});
+	}
+	recordPipelineOperation(
+		id: string,
+		externalOperationId: string,
+		at: string,
+	): void {
+		if (!/^[!-~]{1,500}$/u.test(externalOperationId))
+			throw new Error("invalid native pipeline execution identity");
+		this.transaction(() => {
+			const lease = this.get(id);
+			if (!lease?.pipelineId || !["running", "uncertain"].includes(lease.state))
+				throw new Error("pipeline is not awaiting native execution identity");
+			if (
+				lease.externalOperationId &&
+				lease.externalOperationId !== externalOperationId
+			)
+				throw new Error("native pipeline execution identity is immutable");
+			if (lease.externalOperationId) return;
+			lease.externalOperationId = externalOperationId;
+			this.append(lease, "ci.NativeExecutionBound", at);
+		});
+	}
+	recordPipelineResult(id: string, result: PipelineResult, at: string): void {
+		this.transaction(() => {
+			const lease = this.get(id);
+			if (
+				!lease?.pipelineId ||
+				!ACTIVE_STATES.has(lease.state) ||
+				result.id !== lease.pipelineId
+			)
+				throw new Error(
+					"pipeline result does not match active durable execution",
+				);
+			lease.result = result;
+			this.append(lease, "ci.PipelineResultObserved", at);
+		});
+	}
+	/** Positive provider final usage, bound to the durable execution identity. */
+	settlePipelineUsage(
+		id: string,
+		observation: PipelineUsageObservation,
+		at: string,
+		result?: PipelineResult,
+	): Lease | undefined {
+		return this.transaction(() => {
+			const lease = this.get(id);
+			if (
+				!lease?.pipelineId ||
+				(!ACTIVE_STATES.has(lease.state) &&
+					!(
+						lease.state === "completed" && lease.usageProvenance === "estimated"
+					))
+			)
+				return undefined;
+			if (
+				!lease.externalOperationId ||
+				observation.leaseId !== lease.id ||
+				observation.pipelineId !== lease.pipelineId ||
+				observation.pipelineDigest !== lease.pipelineDigest ||
+				observation.provider !== lease.provider ||
+				observation.providerAccountId !== lease.providerAccountId ||
+				observation.externalOperationId !== lease.externalOperationId ||
+				!observation.usageFinal ||
+				!observation.stopped ||
+				!observation.usageEvidenceRef ||
+				!observation.sourceStoppedEvidenceRef ||
+				!Number.isFinite(Date.parse(observation.completedAt)) ||
+				Date.parse(observation.completedAt) < Date.parse(lease.createdAt) ||
+				Date.parse(observation.completedAt) > Date.parse(at) ||
+				![
+					observation.billedMinutes,
+					observation.billedFreeMinutes,
+					observation.paidMicros,
+				].every((value) => Number.isSafeInteger(value) && value >= 0) ||
+				observation.billedFreeMinutes > observation.billedMinutes ||
+				observation.billedFreeMinutes > lease.reservedFreeMinutes
+			)
+				throw new Error(
+					"native pipeline usage proof does not match the durable execution",
+				);
+			lease.state = "completed";
+			lease.billedMinutes = observation.billedMinutes;
+			lease.billedFreeMinutes = observation.billedFreeMinutes;
+			lease.paidMicros = observation.paidMicros;
+			lease.settledAt = at;
+			lease.usageCompletedAt = observation.completedAt;
+			lease.usageProvenance = "provider-final";
+			lease.usageEvidenceRef = observation.usageEvidenceRef;
+			if (result) lease.result = result;
+			if (lease.budgetId) {
+				if (!this.options.sharedBudget)
+					throw new Error("shared CI budget authority unavailable");
+				assertCiParentSettlement(
+					lease,
+					this.options.sharedBudget.settle(lease, observation),
+					observation,
+				);
+			}
+			this.append(lease, "ci.HostSettled", at);
+			if (lease.paidMicros > lease.reservedPaidMicros)
+				this.append(lease, "ci.BudgetOverrun", at);
+			return lease;
+		});
+	}
+	/** Reconcile delayed native financial finality without creating any execution resource. */
+	reconcileSharedBudget(
+		id: string,
+		paidMicros: number,
+		evidence: BudgetSettlementEvidence,
+		at: string,
+	): Lease {
+		return this.transaction(() => {
+			const lease = this.get(id);
+			if (
+				!lease?.budgetId ||
+				!this.options.sharedBudget ||
+				!["reserved", "cancelled", "uncertain", "completed"].includes(
+					lease.state,
+				) ||
+				!Number.isSafeInteger(paidMicros) ||
+				paidMicros < 0
+			)
+				throw new Error(
+					"shared CI usage is not awaiting financial reconciliation",
+				);
+			if (
+				lease.state === "completed" &&
+				lease.usageProvenance === "provider-final"
+			) {
+				if (
+					lease.paidMicros !== paidMicros ||
+					lease.usageEvidenceRef !== evidence.usageEvidenceRef
+				)
+					throw new Error("final CI financial usage is immutable");
+				return lease;
+			}
+			lease.paidMicros = paidMicros;
+			lease.usageProvenance = "provider-final";
+			lease.usageEvidenceRef = evidence.usageEvidenceRef;
+			lease.state = "completed";
+			lease.settledAt = at;
+			assertCiParentSettlement(
+				lease,
+				this.options.sharedBudget.settle(lease, evidence),
+				evidence,
+			);
+			this.append(lease, "ci.HostSettled", at);
+			if (paidMicros > lease.reservedPaidMicros)
+				this.append(lease, "ci.BudgetOverrun", at);
+			return lease;
+		});
+	}
+	releaseUnusedSharedBudget(
+		id: string,
+		evidenceRef: string,
+		at = new Date().toISOString(),
+	): void {
+		this.transaction(() => {
+			const lease = this.get(id);
+			if (
+				!lease?.budgetId ||
+				!this.options.sharedBudget ||
+				lease.state !== "cancelled"
+			)
+				throw new Error("unused shared CI hold is not durably cancelled");
+			const receipt = this.options.sharedBudget.releaseUnused(
+				lease,
+				evidenceRef,
+			);
+			lease.budgetReleaseEvidenceRef = ciParentReleaseEvidenceRef(
+				lease,
+				receipt,
+				evidenceRef,
+			);
+			this.append(lease, "ci.ParentBudgetReleased", at);
 		});
 	}
 	cancelAndRequeue(id: string, job: Job, at: string): void {
@@ -998,10 +2052,14 @@ export class LeaseStore {
 					continue;
 				}
 
-				if (["ci.JobQueued", "ci.JobCompleted"].includes(event.type)) {
+				if (
+					["ci.JobQueued", "ci.JobCompleted", "ci.JobExpired"].includes(
+						event.type,
+					)
+				) {
 					const job = fromJsonString(JobSchema, event.detail);
 					const key = `${job.repositoryId}:${job.id}:${job.runAttempt}`;
-					if (event.type === "ci.JobCompleted") {
+					if (event.type !== "ci.JobQueued") {
 						this.db
 							.prepare("DELETE FROM assigned_jobs WHERE job_key=?")
 							.run(key);

@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import { runnerDownloadFor } from "../bootstrap.js";
 import { type GithubTransport, getJob } from "../github.js";
+import { heldRoutingOptions } from "../held-routing.js";
 import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
 import {
@@ -26,6 +27,9 @@ import {
 } from "./docker-driver.js";
 import {
 	createWorkerLeaseReconciler,
+	hasIsolatedStopIntent,
+	isUnregisteredDispatchingCreate,
+	isUnregisteredUncertainCreate,
 	type WorkerLeaseReconciler,
 	type WorkerLeaseReconciliationEvent,
 } from "./lease-reconciler.js";
@@ -55,12 +59,14 @@ export async function startRunner(
 	name: string,
 	containerId: string,
 	jitConfig: string,
+	beforeRun?: () => void,
 ): Promise<void> {
 	// The JIT config is a runner credential: deliver it over stdin into a
 	// 0600 file and hand it to the runner via env, never via argv (ps).
 	if (!docker.writeSecret)
 		throw new Error("docker driver cannot deliver secrets");
 	await docker.writeSecret(name, containerId, JIT_PATH, jitConfig);
+	beforeRun?.();
 	const runJob = docker.execDetached ?? docker.exec;
 	const prep = await runJob(name, containerId, [
 		"sh",
@@ -142,6 +148,7 @@ export interface IsolatedWorkerStore extends HostedRelayStore {
 		billedMinutes: number,
 		at: string,
 		unmet?: Job,
+		completedAt?: string,
 	): Promise<Lease | undefined>;
 }
 
@@ -154,6 +161,20 @@ type LaunchStage =
 	| "transition"
 	| "jit"
 	| "runner";
+
+class QueueDeadlineExpired extends Error {
+	constructor() {
+		super("CI queue deadline expired before isolated runner effect");
+	}
+}
+
+function assertQueueDeadline(lease: Lease, at: string): void {
+	if (!lease.queueDeadlineAt) return;
+	const deadline = Date.parse(lease.queueDeadlineAt);
+	const now = Date.parse(at);
+	if (!Number.isFinite(deadline) || !Number.isFinite(now) || deadline <= now)
+		throw new QueueDeadlineExpired();
+}
 type DepsImageFallbackLog = {
 	event: "hobo_ci_deps_image_fallback";
 	image: string;
@@ -189,6 +210,7 @@ type WarmContainer = Readonly<{
 	containerId: string;
 	memoryMb: number;
 	selection: JobImage;
+	mirrorPath: string;
 }>;
 type JobPickupLogFields = {
 	jobId: number;
@@ -522,6 +544,8 @@ export function createIsolatedContainerController(options: {
 				const selectedRepository =
 					repository ?? next?.repository ?? depsRepository;
 				const selection = await selectImage(selectedRepository);
+				const mirrorPath =
+					gitMirrorMount(selectedRepository).env.HOBO_CI_GIT_MIRROR ?? "";
 				const handle = await options.docker.create(
 					containerSpec(
 						name,
@@ -535,7 +559,12 @@ export function createIsolatedContainerController(options: {
 				);
 				try {
 					await options.docker.start(name, handle.containerId);
-					warm = { ...handle, memoryMb: prewarmMemoryMb, selection };
+					warm = {
+						...handle,
+						memoryMb: prewarmMemoryMb,
+						selection,
+						mirrorPath,
+					};
 				} catch {
 					await options.docker
 						.remove(name, handle.containerId)
@@ -599,17 +628,20 @@ export function createIsolatedContainerController(options: {
 				lease.reservedMinutes
 		)
 			throw new Error("worker offer changed");
+		const at = now();
 		const decision = route(
 			{
 				...account,
-				offers: account.offers.filter((entry) =>
-					isIsolatedContainerOffer(entry),
-				),
+				offers: account.offers.map((entry) => ({
+					...entry,
+					enabled: entry.enabled && isIsolatedContainerOffer(entry),
+				})),
 			},
 			(await options.store.accountLeases(lease.accountId)).filter(
 				(entry) => entry.id !== lease.id,
 			),
-			now(),
+			at,
+			heldRoutingOptions(account, lease, at),
 		);
 		if (
 			!decision ||
@@ -736,6 +768,129 @@ export function createIsolatedContainerController(options: {
 		}
 	};
 
+	// A durable stop intent precedes the effect because Docker's --rm may remove
+	// the container before the caller receives the stop acknowledgement.
+	const markStopRequested = async (lease: Lease) => {
+		if (hasIsolatedStopIntent(lease)) return lease;
+		const at = now();
+		const updated = await options.store.transition(
+			lease.id,
+			[lease.state],
+			(entry) => {
+				if (
+					!LIVE_CONTAINER_STATES.has(entry.state) ||
+					entry.sandboxName !== lease.sandboxName ||
+					entry.sandboxSessionId !== lease.sandboxSessionId ||
+					!entry.sandboxSessionId ||
+					entry.usageCompletedAt
+				)
+					throw new Error("isolated session changed before stop");
+				entry.sandboxStage = "stopping";
+			},
+			"ci.SandboxStopRequested",
+			at,
+		);
+		if (!updated) throw new Error("lease changed before stop");
+		return updated;
+	};
+
+	const isolatedSessionPresent = async (lease: Lease): Promise<boolean> => {
+		if (!options.docker.list) throw new Error("isolated inventory unavailable");
+		const matches = (await options.docker.list("hobo.ci/isolated=1")).filter(
+			(container) =>
+				container.name === lease.sandboxName ||
+				container.containerId === lease.sandboxSessionId,
+		);
+		if (
+			matches.length > 1 ||
+			(matches.length === 1 &&
+				(matches[0]?.name !== lease.sandboxName ||
+					matches[0]?.containerId !== lease.sandboxSessionId))
+		)
+			throw new Error("isolated session identity changed");
+		return matches.length === 1;
+	};
+
+	// A durable stop marker keeps the financial hold if final GitHub observation
+	// fails after the container has been removed. Removal time is recorded only
+	// after removal is confirmed; a later recovery time is conservative.
+	const markStopped = async (lease: Lease, removalConfirmed: boolean) => {
+		if (
+			lease.sandboxStage === "stopped" &&
+			(!removalConfirmed || lease.usageCompletedAt)
+		)
+			return lease;
+		const at = now();
+		const updated = await options.store.transition(
+			lease.id,
+			[lease.state],
+			(entry) => {
+				if (
+					!LIVE_CONTAINER_STATES.has(entry.state) ||
+					entry.sandboxName !== lease.sandboxName ||
+					entry.sandboxSessionId !== lease.sandboxSessionId ||
+					!entry.sandboxSessionId
+				)
+					throw new Error("isolated session changed during stop");
+				if (entry.sandboxStage !== "stopped") {
+					if (removalConfirmed) throw new Error("stop was not recorded");
+					if (entry.usageCompletedAt)
+						throw new Error("existing usage completion cannot be replaced");
+					entry.sandboxStage = "stopped";
+				}
+				if (removalConfirmed && !entry.usageCompletedAt)
+					entry.usageCompletedAt = at;
+			},
+			removalConfirmed ? "ci.SandboxRemoved" : "ci.SandboxStopped",
+			at,
+		);
+		if (!updated) throw new Error("lease changed during stop");
+		return updated;
+	};
+
+	const settleStopped = async (lease: Lease): Promise<void> => {
+		// Shared-budget settlement without final provider evidence deliberately
+		// leaves an estimated liability uncertain. Do not repeatedly settle and
+		// requeue it while waiting for the separate evidence reconciliation.
+		if (
+			lease.state === "uncertain" &&
+			lease.usageProvenance === "estimated" &&
+			lease.settledAt &&
+			lease.usageCompletedAt
+		)
+			return;
+		const completedAt =
+			lease.usageCompletedAt || (lease.pipelineId ? now() : "");
+		const completedMs = Date.parse(completedAt);
+		const createdMs = Date.parse(lease.createdAt);
+		const observedAt = now();
+		const observedMs = Date.parse(observedAt);
+		if (
+			!Number.isFinite(completedMs) ||
+			!Number.isFinite(createdMs) ||
+			!Number.isFinite(observedMs) ||
+			completedMs < createdMs ||
+			completedMs > observedMs + 5_000
+		)
+			throw new Error("invalid isolated stop time");
+		const original = await getJob(
+			options.github,
+			lease.installationId,
+			lease.repository,
+			lease.jobId,
+		);
+		// GitHub can assign a different job sharing the runner label.
+		const unmet = original.status === "queued" ? requeueJob(lease) : undefined;
+		await options.store.settle(
+			lease.id,
+			0,
+			Math.max(1, Math.ceil((completedMs - createdMs) / 60_000)),
+			observedAt,
+			unmet,
+			completedAt,
+		);
+	};
+
 	const host: IsolatedRunnerHost = {
 		async isLaunchParked(job: Job) {
 			const key = launchKey(job.repositoryId, job.id, job.runAttempt);
@@ -813,6 +968,8 @@ export function createIsolatedContainerController(options: {
 				}
 				let containerId = "";
 				let containerStartedAt = "";
+				let createInFlight = false;
+				let registrationAttempted = false;
 				const memoryMb = classMemoryMb(planned);
 				let stage: LaunchStage = "image";
 				try {
@@ -843,11 +1000,15 @@ export function createIsolatedContainerController(options: {
 							});
 						}
 					}
+					assertQueueDeadline(planned, now());
 					stage = "create";
 					const spare = warm?.memoryMb === memoryMb ? warm : undefined;
+					const mirrorPath =
+						gitMirrorMount(planned.repository).env.HOBO_CI_GIT_MIRROR ?? "";
 					const spareMatches =
 						spare?.selection.image === selection.image &&
-						spare.selection.depsKey === selection.depsKey;
+						spare.selection.depsKey === selection.depsKey &&
+						spare.mirrorPath === mirrorPath;
 					if (
 						spare &&
 						spareMatches &&
@@ -859,8 +1020,10 @@ export function createIsolatedContainerController(options: {
 						options.memoryAdmission?.consumeWarm(spare.memoryMb);
 						containerId = spare.containerId;
 						await options.docker.updateResources(spare.containerId, weights);
+						assertQueueDeadline(planned, now());
 						await options.docker.rename(spare.containerId, name);
 					} else {
+						createInFlight = true;
 						const handle = await options.docker.create(
 							containerSpec(
 								name,
@@ -874,8 +1037,10 @@ export function createIsolatedContainerController(options: {
 						);
 						if (handle.name !== name)
 							throw new Error("container identity mismatch");
+						createInFlight = false;
 						containerId = handle.containerId;
 						stage = "start";
+						assertQueueDeadline(planned, now());
 						await options.docker.start(name, containerId);
 					}
 					containerStartedAt = now();
@@ -894,7 +1059,7 @@ export function createIsolatedContainerController(options: {
 						containerStartedAt,
 					);
 					if (!created) throw new Error("reservation changed");
-					await options.store.transition(
+					const claiming = await options.store.transition(
 						id,
 						["dispatched"],
 						(lease) => {
@@ -907,7 +1072,11 @@ export function createIsolatedContainerController(options: {
 						now(),
 						auth.revision,
 					);
+					if (!claiming)
+						throw new Error("reservation changed before runner registration");
 					stage = "jit";
+					assertQueueDeadline(planned, now());
+					registrationAttempted = true;
 					const response = await options.github.request(
 						created.installationId,
 						`/repos/${created.repository}/actions/runners/generate-jitconfig`,
@@ -922,6 +1091,22 @@ export function createIsolatedContainerController(options: {
 					if (response.status !== 201)
 						throw new Error("runner registration failed");
 					const jit = jitResponse.parse(await response.json());
+					try {
+						assertQueueDeadline(planned, now());
+					} catch (error) {
+						if (error instanceof QueueDeadlineExpired)
+							await options.store.transition(
+								id,
+								["claiming"],
+								(lease) => {
+									lease.runnerId = jit.runner.id;
+									lease.state = "uncertain";
+								},
+								"ci.LeaseUncertain",
+								now(),
+							);
+						throw error;
+					}
 					stage = "transition";
 					const runnerRegisteredAt = now();
 					const registered = await options.store.transition(
@@ -938,6 +1123,7 @@ export function createIsolatedContainerController(options: {
 						runnerRegisteredAt,
 					);
 					if (!registered) throw new Error("registration revoked");
+					assertQueueDeadline(planned, now());
 					const fields: JobPickupLogFields = {
 						jobId: registered.jobId,
 						runId: registered.originalRunId,
@@ -974,6 +1160,7 @@ export function createIsolatedContainerController(options: {
 						name,
 						containerId,
 						jit.encoded_jit_config,
+						() => assertQueueDeadline(planned, now()),
 					);
 					launchLoops.delete(
 						launchKey(planned.repositoryId, planned.jobId, planned.runAttempt),
@@ -982,13 +1169,50 @@ export function createIsolatedContainerController(options: {
 					if ((await liveContainers("")) < slots)
 						void prewarm().catch(() => undefined);
 				} catch (error) {
+					let cleanupConfirmed = !containerId;
 					if (containerId) {
 						try {
 							await options.docker.stop(name, containerId);
 							await options.docker.remove(name, containerId);
+							cleanupConfirmed = true;
 						} catch {
 							/* recovery will retry stop */
 						}
+					}
+					if (
+						error instanceof QueueDeadlineExpired ||
+						createInFlight ||
+						registrationAttempted ||
+						!cleanupConfirmed
+					) {
+						logLaunch("hobo_ci_launch_failed", {
+							stage,
+							message: error instanceof Error ? error.message : "unknown",
+							leaseId: planned.id,
+							jobId: planned.jobId,
+							actualJobId: planned.actualJobId,
+							attempt:
+								(launchLoops.get(
+									launchKey(
+										planned.repositoryId,
+										planned.jobId,
+										planned.runAttempt,
+									),
+								)?.failures.length ?? 0) + 1,
+						});
+						await options.store.transition(
+							id,
+							["dispatching", "dispatched", "claiming", "running"],
+							(entry) => {
+								entry.state = "uncertain";
+							},
+							"ci.LeaseUncertain",
+							now(),
+						);
+						if (cleanupConfirmed && !createInFlight)
+							await cleanupWorkDirectory(planned);
+						// Keep the claimed financial hold until verified settlement.
+						return;
 					}
 					await failLaunch(
 						planned,
@@ -1001,10 +1225,70 @@ export function createIsolatedContainerController(options: {
 			}
 		},
 		async reconcile(id: string, forceStop?: boolean) {
-			const lease = await options.store.get(id);
-			if (!lease) return;
+			let lease = await options.store.get(id);
+			if (!lease || !LIVE_CONTAINER_STATES.has(lease.state)) return;
+			if (forceStop && isUnregisteredDispatchingCreate(lease)) {
+				// The durable state change fences a late create reply: its normal
+				// continuation can no longer register a runner for this lease.
+				if (inFlightLaunchIds.has(id)) return;
+				const interrupted = await options.store.transition(
+					id,
+					["dispatching"],
+					(entry) => {
+						if (!isUnregisteredDispatchingCreate(entry))
+							throw new Error("interrupted create changed during recovery");
+						entry.state = "uncertain";
+					},
+					"ci.SandboxCreateInterrupted",
+					now(),
+				);
+				if (!interrupted) return;
+				lease = interrupted;
+			}
+			if (
+				forceStop &&
+				!lease.sandboxSessionId &&
+				isUnregisteredUncertainCreate(lease) &&
+				options.docker.list
+			) {
+				const matches = (
+					await options.docker.list("hobo.ci/isolated=1")
+				).filter((container) => container.name === lease?.sandboxName);
+				const match = matches[0];
+				if (matches.length !== 1 || !match?.containerId) return;
+				const attached = await options.store.transition(
+					id,
+					["uncertain"],
+					(entry) => {
+						if (
+							!isUnregisteredUncertainCreate(entry) ||
+							entry.sandboxSessionId ||
+							entry.sandboxName !== match.name
+						)
+							throw new Error("uncertain create changed during recovery");
+						entry.sandboxSessionId = match.containerId;
+						entry.sandboxStage = "created";
+					},
+					"ci.SandboxCreated",
+					now(),
+				);
+				if (!attached) return;
+				lease = attached;
+			}
+			if (hasIsolatedStopIntent(lease)) {
+				if (!(await isolatedSessionPresent(lease))) {
+					lease = await markStopped(lease, false);
+					lease = await markStopped(lease, true);
+					await settleStopped(lease);
+					await cleanupWorkDirectory(lease);
+					return;
+				}
+			}
 			if (!lease.sandboxSessionId || !lease.sandboxName) {
 				if (lease.state === "uncertain") {
+					// A named create may still complete after a lost reply. Time alone
+					// cannot prove absence or fence a second container with that identity.
+					if (lease.sandboxName) return;
 					const ageMs = Date.parse(now()) - Date.parse(lease.createdAt);
 					if (ageMs >= uncertainWithoutContainerRecoveryMs) {
 						await options.store.abortIsolatedAndRequeue(
@@ -1027,8 +1311,10 @@ export function createIsolatedContainerController(options: {
 				// An inspect error (timeout under load, daemon hiccup) is not proof the
 				// job died: stopping here kills a live runner. Retry on the next tick.
 				if (!forceStop) return;
-				running = false;
+				throw new Error("container status uncertain");
 			}
+			if (running && lease.sandboxStage === "stopped")
+				throw new Error("stopped isolated session resumed unexpectedly");
 			let containerFailed = false;
 			if (!running && options.docker.exitState) {
 				try {
@@ -1051,7 +1337,7 @@ export function createIsolatedContainerController(options: {
 					// OOM evidence is best-effort; reconcile still settles the dead container.
 				}
 			}
-			let stop = forceStop === true;
+			let stop = forceStop === true || hasIsolatedStopIntent(lease);
 			if (!stop && lease.state === "running" && running) {
 				// The runner takes one job and exits, so its marker frees the slot on this
 				// tick instead of after GitHub reports the job (a poll interval later). A
@@ -1072,57 +1358,47 @@ export function createIsolatedContainerController(options: {
 			}
 			if (running && stop) await measureMemoryPeak(lease);
 			const deadWhileRunning = !stop && lease.state === "running" && !running;
+			if (deadWhileRunning) {
+				stop = true;
+				detectOrphanJob(lease);
+			}
+			// Dispatch may still be registering or starting this session. A normal
+			// reconciliation cannot retire it until there is a reason to stop.
+			if (!stop) return;
+			let removed = false;
 			try {
-				if (deadWhileRunning) {
-					await options.store.abortIsolatedAndRequeue(
-						id,
-						requeueJob(lease),
-						now(),
-					);
-					detectOrphanJob(lease);
-				}
 				try {
+					if (stop && !lease.pipelineId) lease = await markStopRequested(lease);
 					if (running) {
 						await options.docker.stop(
 							lease.sandboxName,
 							lease.sandboxSessionId,
 						);
 					}
-					await options.docker.remove(
-						lease.sandboxName,
-						lease.sandboxSessionId,
-					);
+					if (stop && !lease.pipelineId)
+						lease = await markStopped(lease, false);
+					try {
+						await options.docker.remove(
+							lease.sandboxName,
+							lease.sandboxSessionId,
+						);
+					} catch (error) {
+						if (
+							!stop ||
+							lease.pipelineId ||
+							(await isolatedSessionPresent(lease))
+						)
+							throw error;
+					}
+					removed = true;
+					if (stop && !lease.pipelineId) lease = await markStopped(lease, true);
 				} catch {
-					if (!deadWhileRunning && !forceStop)
-						throw new Error("container stop uncertain");
+					throw new Error("container stop uncertain");
 				}
-				if (deadWhileRunning) return;
-				if (!stop) return;
-				const original = await getJob(
-					options.github,
-					lease.installationId,
-					lease.repository,
-					lease.jobId,
-				);
-				// Match hosted relay settlement: if the reserved job is still queued
-				// (including when GitHub assigned a different job to this runner), re-queue it.
-				const unmet =
-					original.status === "queued" ? requeueJob(lease) : undefined;
-				await options.store.settle(
-					id,
-					0,
-					Math.max(
-						1,
-						Math.ceil(
-							(Date.parse(now()) - Date.parse(lease.createdAt)) / 60_000,
-						),
-					),
-					now(),
-					unmet,
-				);
-				if (containerFailed) detectOrphanJob(lease);
+				await settleStopped(lease);
+				if (containerFailed && !deadWhileRunning) detectOrphanJob(lease);
 			} finally {
-				await cleanupWorkDirectory(lease);
+				if (removed) await cleanupWorkDirectory(lease);
 			}
 		},
 	};

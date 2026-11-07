@@ -69,6 +69,7 @@
 import {
 	createResolverRegistry,
 	type HttpTransport,
+	parseResolveRequest,
 	RESOLVER_CONTRACT,
 	type ResolveOutcome,
 	type ResolveRequest,
@@ -94,6 +95,7 @@ import {
 import { AWS_PROVIDER_TARGET } from "./options.js";
 import {
 	dynamodb,
+	lambda,
 	s3,
 	secretsManager,
 	sns,
@@ -106,6 +108,7 @@ import {
 	AWS_MAX_TIMEOUT_MS,
 	type AwsResolverService,
 	awsServiceUrl,
+	guardedAwsTransport,
 	parseAwsRegion,
 } from "./transport.js";
 
@@ -130,6 +133,7 @@ function productIdOf(binding: SlotBinding, factory: string): string {
 
 export const AWS_S3_PRODUCT_ID = productIdOf(s3(), "s3");
 export const AWS_DYNAMODB_PRODUCT_ID = productIdOf(dynamodb(), "dynamodb");
+export const AWS_LAMBDA_PRODUCT_ID = productIdOf(lambda(), "lambda");
 export const AWS_SQS_PRODUCT_ID = productIdOf(sqs(), "sqs");
 export const AWS_SQS_FIFO_PRODUCT_ID = productIdOf(sqsFifo(), "sqsFifo");
 export const AWS_SNS_PRODUCT_ID = productIdOf(sns(), "sns");
@@ -146,6 +150,7 @@ export const AWS_SSM_PARAMETER_PRODUCT_ID = productIdOf(
 export const AWS_RESOLVED_PRODUCT_IDS = Object.freeze(
 	[
 		AWS_DYNAMODB_PRODUCT_ID,
+		AWS_LAMBDA_PRODUCT_ID,
 		AWS_S3_PRODUCT_ID,
 		AWS_SECRETS_MANAGER_PRODUCT_ID,
 		AWS_SNS_PRODUCT_ID,
@@ -172,9 +177,6 @@ export const AWS_RESOLVED_PRODUCT_IDS = Object.freeze(
  * cache subnet group and a security group that no binding names; omitting them
  * silently lands the cluster in the default VPC, which is a network decision
  * this resolver is not entitled to take.
- * `aws.lambda/v1`: `CreateFunction` requires deployment-package bytes and an
- * execution-role ARN. The binding carries neither, and a function with no code
- * is not a function.
  * `aws.ecs-service/v1`, `aws.ecs-task/v1`, `aws.eks-deployment/v1`: every one
  * needs a cluster, a task-execution role, and a network configuration that
  * exist outside the binding; and an EKS Deployment is a Kubernetes API object,
@@ -201,7 +203,6 @@ export const AWS_UNRESOLVED_PRODUCT_IDS = Object.freeze(
 		"aws.ecs-task/v1",
 		"aws.eks-deployment/v1",
 		"aws.elasticache-redis/v1",
-		"aws.lambda/v1",
 		"aws.rds-mysql/v1",
 		"aws.rds-postgres/v1",
 	].sort(compareStrings),
@@ -325,24 +326,29 @@ async function resolveAwsCredentials(
 	// did -- and reading `.accessKeyId` off `undefined` or a string throws a
 	// TypeError, which is precisely the untyped failure this boundary exists to
 	// turn into a refusal an operator can act on.
-	// The kind is read from the value's tag, as `json.ts` reads a JSON value's
-	// (the repo bans `typeof` narrowing); `undefined`, `null` and a string are
-	// not "[object Object]", so nothing below reads a field off them.
-	const tag = (value: AwsCredentials | string | undefined): string =>
-		Object.prototype.toString.call(value);
+	// Inspect own data properties rather than invoking host-provided getters.
+	// Primitives are boxed to empty or indexed values and fail the field checks.
+	const fields = Object.getOwnPropertyDescriptors(Object(material));
+	const accessKeyId = fields.accessKeyId?.value;
+	const secretAccessKey = fields.secretAccessKey?.value;
+	const sessionToken = fields.sessionToken?.value;
 	if (
-		tag(material) !== "[object Object]" ||
-		tag(material.accessKeyId) !== "[object String]" ||
-		tag(material.secretAccessKey) !== "[object String]" ||
-		material.accessKeyId.trim().length === 0 ||
-		material.secretAccessKey.trim().length === 0
+		Array.isArray(material) ||
+		!isJsonString(accessKeyId) ||
+		!isJsonString(secretAccessKey) ||
+		accessKeyId.trim().length === 0 ||
+		secretAccessKey.trim().length === 0 ||
+		(sessionToken !== undefined &&
+			(!isJsonString(sessionToken) || sessionToken.trim().length === 0))
 	) {
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_MISSING",
 			`aws resolver: credentialRef ${JSON.stringify(trimmed)} did not resolve to an access key id and secret access key. A missing credential is refused rather than retried unsigned, which would look like a permissions error at the provider`,
 		);
 	}
-	return material;
+	const parsed: AwsCredentials = { accessKeyId, secretAccessKey };
+	if (sessionToken !== undefined) Object.assign(parsed, { sessionToken });
+	return parsed;
 }
 
 // ---------------------------------------------------------------------------
@@ -2521,6 +2527,456 @@ const SSM_PARAMETER_SPEC: Omit<AwsResolverSpec, "productId"> = {
 };
 
 // ---------------------------------------------------------------------------
+// Lambda container-image functions — REST API model 2015-03-31.
+// ---------------------------------------------------------------------------
+
+function lambdaPath(context: AwsResolverContext, suffix = ""): string {
+	if (!/^[A-Za-z0-9_-]{1,64}$/u.test(context.name))
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Lambda function name must be an explicit bounded identifier",
+		);
+	return `/2015-03-31/functions/${encodeComponent(context.name)}${suffix}`;
+}
+
+function lambdaDesired(context: AwsResolverContext) {
+	const owner = optionalString(context.desired, "ownershipRef");
+	if (owner !== undefined) {
+		const allowed = new Set([
+			"name",
+			"image",
+			"executionRoleArn",
+			"memoryMb",
+			"timeoutSeconds",
+			"reservedConcurrency",
+			"architecture",
+			"ownershipRef",
+			"artifactDigest",
+		]);
+		for (const key of Object.keys(context.desired))
+			if (!allowed.has(key))
+				throw new ResolverError(
+					"RESOLVER_PRODUCT_UNSUPPORTED",
+					`Budgeted Lambda does not implement desired.${key}; unhandled bindings cannot be silently omitted`,
+				);
+	}
+	const artifact = optionalString(context.desired, "artifactDigest");
+	if (
+		context.desired.ownershipRef !== undefined &&
+		(!owner || !/^sha256:[a-f0-9]{64}$/u.test(owner))
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Lambda ownershipRef must be a complete sha256 ownership identity",
+		);
+	if (
+		(context.desired.artifactDigest !== undefined || owner !== undefined) &&
+		(!artifact || !/^sha256:[a-f0-9]{64}$/u.test(artifact))
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Lambda artifactDigest must pin the complete approved sha256 artifact",
+		);
+	const image = optionalString(context.desired, "image");
+	const role = optionalString(context.desired, "executionRoleArn");
+	const imageMatch = image?.match(
+		/^([0-9]{12})\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com\/[A-Za-z0-9._/-]+@sha256:[a-f0-9]{64}$/u,
+	);
+	const roleMatch = role?.match(
+		/^arn:(aws|aws-us-gov):iam::([0-9]{12}):role\/[A-Za-z0-9+=,.@_/-]+$/u,
+	);
+	if (
+		!image ||
+		!imageMatch ||
+		imageMatch[2] !== context.region ||
+		!role ||
+		!roleMatch
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Lambda requires desired.image as an immutable ECR sha256 image in the selected region and an explicit desired.executionRoleArn",
+		);
+	const memory = optionalInteger(context.desired, "memoryMb");
+	const timeout = optionalInteger(context.desired, "timeoutSeconds");
+	const architecture = optionalString(context.desired, "architecture");
+	const concurrency = optionalInteger(context.desired, "reservedConcurrency");
+	if (
+		(owner !== undefined ||
+			context.desired.reservedConcurrency !== undefined) &&
+		(concurrency === undefined || concurrency < 1 || concurrency > 1_000_000)
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Budgeted Lambda requires explicit positive bounded reservedConcurrency",
+		);
+	if (
+		memory === undefined ||
+		memory < 128 ||
+		memory > 10240 ||
+		timeout === undefined ||
+		timeout < 1 ||
+		timeout > 900 ||
+		!["x86_64", "arm64"].includes(architecture ?? "")
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Lambda requires bounded memoryMb (128..10240), timeoutSeconds (1..900), and architecture (x86_64 or arm64); no cost or capacity defaults are invented",
+		);
+	const arn = `arn:${roleMatch[1]}:lambda:${context.region}:${roleMatch[2]}:function:${context.name}`;
+	if (context.knownPhysicalId !== undefined && context.knownPhysicalId !== arn)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Lambda physical identity belongs to another function or account scope",
+		);
+	return {
+		image,
+		role,
+		memory,
+		timeout,
+		architecture,
+		concurrency,
+		arn,
+		owner,
+		artifact,
+	};
+}
+
+async function readLambda(
+	context: AwsResolverContext,
+): Promise<JsonObject | undefined> {
+	const desired = lambdaDesired(context);
+	const response = await send(context, {
+		service: "lambda",
+		method: "GET",
+		path: lambdaPath(context),
+	});
+	if (response.status === 404) return undefined;
+	const record = jsonResult(context, response, `lambda get ${context.name}`);
+	const config = answerRecord(
+		record,
+		"Configuration",
+		`lambda get ${context.name}`,
+	);
+	if (
+		!config ||
+		config.FunctionArn !== desired.arn ||
+		config.FunctionName !== context.name ||
+		config.PackageType !== "Image"
+	)
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			"Lambda response identity or package type differs from the approved resource scope",
+		);
+	if (
+		desired.owner !== undefined &&
+		answerRecord(record, "Tags", `lambda get ${context.name}`)?.[
+			"hobo:owner"
+		] !== desired.owner
+	)
+		throw new ResolverError(
+			"RESOLVER_PROVIDER_REJECTED",
+			"Lambda has different or missing ownership metadata; implicit adoption is forbidden",
+		);
+	return record;
+}
+
+function lambdaOutputs(
+	context: AwsResolverContext,
+	record: JsonObject | undefined,
+): JsonObject {
+	const wanted = lambdaDesired(context);
+	const configuration =
+		record === undefined
+			? undefined
+			: answerRecord(record, "Configuration", `lambda get ${context.name}`);
+	const code =
+		record === undefined
+			? undefined
+			: answerRecord(record, "Code", `lambda get ${context.name}`);
+	const observedImage = code?.ResolvedImageUri ?? code?.ImageUri;
+	const architectures = configuration?.Architectures;
+	const configurationMatches =
+		configuration !== undefined &&
+		configuration.Role === wanted.role &&
+		configuration.MemorySize === wanted.memory &&
+		configuration.Timeout === wanted.timeout &&
+		isJsonArray(architectures) &&
+		architectures.length === 1 &&
+		architectures[0] === wanted.architecture;
+	const state =
+		configuration === undefined
+			? undefined
+			: optionalString(configuration, "State");
+	const update =
+		configuration === undefined
+			? undefined
+			: optionalString(configuration, "LastUpdateStatus");
+	const terminal =
+		configuration !== undefined &&
+		((state === "Active" && update === "Successful") ||
+			state === "Failed" ||
+			update === "Failed");
+	const ready =
+		wanted.owner !== undefined &&
+		wanted.artifact !== undefined &&
+		(record === undefined
+			? undefined
+			: answerRecord(record, "Tags", `lambda get ${context.name}`)?.[
+					"hobo:artifact"
+				]) === wanted.artifact &&
+		terminal &&
+		state === "Active" &&
+		update === "Successful" &&
+		observedImage === wanted.image &&
+		configurationMatches &&
+		(wanted.concurrency === undefined ||
+			(record !== undefined &&
+				answerRecord(record, "Concurrency", `lambda get ${context.name}`)
+					?.ReservedConcurrentExecutions === wanted.concurrency));
+	const outputs: JsonObject = {
+		functionArn: wanted.arn,
+		functionName: context.name,
+		ready,
+		operationConfirmed: terminal,
+		lifecycleStatus: ready
+			? "ready"
+			: state === "Failed" || update === "Failed"
+				? "failed"
+				: "pending",
+	};
+	if (isJsonString(observedImage))
+		Object.assign(outputs, { image: observedImage });
+	const contentDigest = isJsonString(observedImage)
+		? observedImage.match(/@(sha256:[a-f0-9]{64})$/u)?.[1]
+		: undefined;
+	if (contentDigest !== undefined)
+		Object.assign(outputs, { artifactDigest: contentDigest });
+	if (configuration?.RevisionId !== undefined)
+		Object.assign(outputs, { revisionId: configuration.RevisionId });
+	const nativeArtifact =
+		record === undefined
+			? undefined
+			: answerRecord(record, "Tags", `lambda get ${context.name}`)?.[
+					"hobo:artifact"
+				];
+	if (isJsonString(nativeArtifact))
+		Object.assign(outputs, { artifactMarker: nativeArtifact });
+	return outputs;
+}
+
+const LAMBDA_SPEC: Omit<AwsResolverSpec, "productId"> = {
+	settings: {
+		image: "string",
+		executionRoleArn: "string",
+		memoryMb: "integer",
+		timeoutSeconds: "integer",
+		reservedConcurrency: "integer",
+		architecture: "string",
+		ownershipRef: "string",
+		artifactDigest: "string",
+	},
+	async read(context) {
+		const record = await readLambda(context);
+		return record === undefined
+			? undefined
+			: outcome(
+					settledAction(context),
+					lambdaDesired(context).arn,
+					lambdaOutputs(context, record),
+					[],
+				);
+	},
+	async reconcile(context) {
+		const wanted = lambdaDesired(context);
+		const observed = await readLambda(context);
+		if (observed !== undefined) {
+			if (
+				wanted.artifact !== undefined &&
+				answerRecord(observed, "Tags", `lambda get ${context.name}`)?.[
+					"hobo:artifact"
+				] !== wanted.artifact
+			)
+				throw new ResolverError(
+					"RESOLVER_PRODUCT_UNSUPPORTED",
+					"Lambda artifact differs; use a new immutable target function rather than overwriting an older deployment",
+				);
+			const outputs = lambdaOutputs(context, observed);
+			if (outputs.ready === true || outputs.operationConfirmed !== true)
+				return outcome(settledAction(context), wanted.arn, outputs, []);
+			const config = answerRecord(
+				observed,
+				"Configuration",
+				`lambda get ${context.name}`,
+			);
+			const revision =
+				config === undefined ? undefined : optionalString(config, "RevisionId");
+			if (!revision)
+				throw new ResolverError(
+					"RESOLVER_OUTPUT_UNPARSEABLE",
+					"Lambda has no revision fence for an update",
+				);
+			const code = answerRecord(observed, "Code", `lambda get ${context.name}`);
+			const imageChanged =
+				(code?.ResolvedImageUri ?? code?.ImageUri) !== wanted.image;
+			const architectures = config?.Architectures;
+			const configChanged =
+				config?.Role !== wanted.role ||
+				config?.MemorySize !== wanted.memory ||
+				config?.Timeout !== wanted.timeout ||
+				!isJsonArray(architectures) ||
+				architectures.length !== 1 ||
+				architectures[0] !== wanted.architecture;
+			const concurrencyChanged =
+				wanted.concurrency !== undefined &&
+				answerRecord(observed, "Concurrency", `lambda get ${context.name}`)
+					?.ReservedConcurrentExecutions !== wanted.concurrency;
+			if (
+				[imageChanged, configChanged, concurrencyChanged].filter(Boolean)
+					.length > 1
+			)
+				throw new ResolverError(
+					"RESOLVER_PRODUCT_UNSUPPORTED",
+					"Lambda image and capacity changes require a new immutable target function; two unjournaled mutations cannot share one execution claim",
+				);
+			if (!imageChanged && !configChanged && !concurrencyChanged)
+				return outcome(settledAction(context), wanted.arn, outputs, [
+					"provider initialization is not ready; unchanged configuration is not rewritten",
+				]);
+			if (concurrencyChanged) {
+				await setLambdaConcurrency(context, wanted.concurrency);
+				return outcome(
+					"update",
+					wanted.arn,
+					lambdaOutputs(context, await readLambda(context)),
+					[],
+				);
+			}
+			const response = await send(context, {
+				service: "lambda",
+				method: "PUT",
+				path: lambdaPath(context, imageChanged ? "/code" : "/configuration"),
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(
+					imageChanged
+						? {
+								ImageUri: wanted.image,
+								Architectures: [wanted.architecture],
+								RevisionId: revision,
+								Publish: false,
+							}
+						: {
+								Role: wanted.role,
+								MemorySize: wanted.memory,
+								Timeout: wanted.timeout,
+								RevisionId: revision,
+							},
+				),
+			});
+			jsonResult(context, response, `lambda update ${context.name}`);
+			const updated = await readLambda(context);
+			return outcome(
+				"update",
+				wanted.arn,
+				lambdaOutputs(context, updated),
+				updated === undefined
+					? [
+							"Lambda update acknowledged but resource is absent; outcome remains unconfirmed",
+						]
+					: [],
+			);
+		}
+		const body = {
+			FunctionName: context.name,
+			PackageType: "Image",
+			Role: wanted.role,
+			Code: { ImageUri: wanted.image },
+			MemorySize: wanted.memory,
+			Timeout: wanted.timeout,
+			Architectures: [wanted.architecture],
+			Publish: false,
+		};
+		if (wanted.owner !== undefined)
+			Object.assign(body, {
+				Tags: { "hobo:owner": wanted.owner, "hobo:artifact": wanted.artifact },
+			});
+		const response = await send(context, {
+			service: "lambda",
+			method: "POST",
+			path: "/2015-03-31/functions",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(body),
+		});
+		if (response.status !== 409)
+			jsonResult(context, response, `lambda create ${context.name}`);
+		if (response.status !== 409 && wanted.concurrency !== undefined)
+			await setLambdaConcurrency(context, wanted.concurrency);
+		const created = await readLambda(context);
+		if (response.status === 409 && created === undefined)
+			throw new ResolverError(
+				"RESOLVER_PROVIDER_REJECTED",
+				"Lambda create conflicted but no scoped function can be observed; outcome is unknown",
+			);
+		return outcome(
+			response.status === 409 ? "adopt" : "create",
+			wanted.arn,
+			lambdaOutputs(context, created),
+			created === undefined
+				? [
+						"Lambda create acknowledged but resource is absent; outcome remains unconfirmed",
+					]
+				: [],
+		);
+	},
+	async remove(context) {
+		const desired = lambdaDesired(context);
+		const existing = await readLambda(context);
+		if (existing === undefined) return;
+		if (
+			desired.artifact !== undefined &&
+			answerRecord(existing, "Tags", `lambda get ${context.name}`)?.[
+				"hobo:artifact"
+			] !== desired.artifact
+		)
+			throw new ResolverError(
+				"RESOLVER_PROVIDER_REJECTED",
+				"Lambda retirement artifact no longer matches the approved source",
+			);
+		const response = await send(context, {
+			service: "lambda",
+			method: "DELETE",
+			path: lambdaPath(context),
+		});
+		if (response.status === 404) return;
+		if (!isSuccess(response))
+			rejectJson(context, response, `lambda delete ${context.name}`);
+		if ((await readLambda(context)) !== undefined)
+			throw new ResolverError(
+				"RESOLVER_PROVIDER_REJECTED",
+				"Lambda still exists after deletion; retirement is not confirmed",
+			);
+	},
+};
+
+async function setLambdaConcurrency(
+	context: AwsResolverContext,
+	quantity: number | undefined,
+): Promise<void> {
+	if (quantity === undefined)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Lambda reserved concurrency is not bounded",
+		);
+	const response = await send(context, {
+		service: "lambda",
+		method: "PUT",
+		path: `/2017-10-31/functions/${encodeComponent(context.name)}/concurrency`,
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ ReservedConcurrentExecutions: quantity }),
+	});
+	jsonResult(context, response, `lambda concurrency ${context.name}`);
+}
+
+// ---------------------------------------------------------------------------
 // Wrapper and registry
 // ---------------------------------------------------------------------------
 
@@ -2636,9 +3092,10 @@ function createResolver(
 	}
 
 	async function contextFor(
-		request: ResolveRequest,
+		input: ResolveRequest,
 		transport: HttpTransport,
 	): Promise<AwsResolverContext> {
+		const request = parseResolveRequest(parseJsonObject(JSON.stringify(input)));
 		if (request.ref.productId !== spec.productId) {
 			throw new ResolverError(
 				"RESOLVER_PRODUCT_UNSUPPORTED",
@@ -2659,7 +3116,7 @@ function createResolver(
 		);
 		return {
 			request,
-			transport,
+			transport: guardedAwsTransport(transport, region),
 			credentials,
 			region,
 			nowMs,
@@ -2701,6 +3158,7 @@ export function awsResolvers(
 ): readonly ResourceResolver[] {
 	const specs: readonly AwsResolverSpec[] = [
 		{ productId: AWS_DYNAMODB_PRODUCT_ID, ...DYNAMODB_SPEC },
+		{ productId: AWS_LAMBDA_PRODUCT_ID, ...LAMBDA_SPEC },
 		{ productId: AWS_S3_PRODUCT_ID, ...S3_SPEC },
 		{ productId: AWS_SECRETS_MANAGER_PRODUCT_ID, ...SECRETS_MANAGER_SPEC },
 		{ productId: AWS_SNS_PRODUCT_ID, ...SNS_SPEC },

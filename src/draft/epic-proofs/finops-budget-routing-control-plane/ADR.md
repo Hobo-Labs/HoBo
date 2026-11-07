@@ -43,3 +43,38 @@ decision emits a `DecisionGraph` consumed by DX, OpsX, and FinX views.
 - Feedback can propose metric or policy evolution, but cannot mutate it directly.
 - Backend adapters remain mocked because production provider execution is out of
   scope for this proof.
+
+## 2026-10-29 — Make the claimed routing invariants executable
+
+The adversarial review found that latency was never filtered, a dominated
+incumbent lost stability protection, empty registries still produced metric
+claims, and candidate-relative normalization changed existing scores. The proof
+also printed fixed audit references unrelated to its inputs.
+
+Canonical inputs now live in `data-models/` and generate the parser's runtime
+records. `architecture/` mirrors those records for the existing evidence path;
+a byte-equality test prevents two independent contracts. CUE fixtures run at the
+schema boundary. No lower technical proof interface changed; the epic's
+independent decision contract is the changed atomic unit.
+
+Money is parsed at six-decimal USD precision, added in integer microdollars,
+and includes existing/unresolved/recovery exposure plus the entire proposed
+hosting commitment. Ranking uses expected operating+transition cost; hard
+admission uses the conservative commitment bound. This remains a read-only
+proof, not an authoritative reservation service.
+
+Metric semantics and normalization are versioned and fixed. The parser checks
+unique identities, approved compositions, dependency cycles, finite values,
+explicit periods and content-addressed evidence. Stability uses the currently
+feasible incumbent, not the Pareto frontier, and applies net improvement,
+migration penalty, cooldown, dwell evidence and flip limits independently.
+
+The action is a proposal with existing `EffectSpec` and `ResilienceProfile`
+metadata: pure decision, noRollback external mutation, no blind mutation retry,
+bounded observation retry, and reconciliation/readback on unknown outcomes.
+Executing and settling those effects remains the production supervisor's job.
+
+The loopback acceptance proof measures completed requests at every applied ramp
+and restoration. Each phase observes five requests and the total must reach at
+least twenty with zero failures. Elapsed sleeps alone were insufficient evidence
+under concurrent validation load because request throughput varies with load.

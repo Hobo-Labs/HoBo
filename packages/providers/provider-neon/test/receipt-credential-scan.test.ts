@@ -1,32 +1,13 @@
-/**
- * Neon receipts and facts — and the credential scan that guards them.
- *
- * These are the artifacts that leave the package: they land in a plan, an
- * append-only event log, and a support bundle. **The cost of being wrong here
- * is a credential in a log nobody can retract**, so the module does two
- * separate things to avoid it.
- *
- * **It projects rather than spreads.** A receipt is built field by field from
- * the record, so a future field added to `NeonClaimableDatabase` — a password,
- * a token, a raw URI — is not republished by default. A spread would carry it
- * out automatically and silently.
- *
- * **It re-scans the result anyway.** `assertNoCredentialMaterial` runs over the
- * finished artifact and refuses to emit it if anything credential-shaped
- * survived. Belt and braces on purpose: the projection is a rule a future
- * edit can break, and the scan is a check that notices.
- *
- * The scan's excerpts are deliberately short and truncated. A hit means
- * something secret is in the value, so the error must say *which rule* fired
- * without reproducing enough of the match to be useful to a reader of the log
- * it lands in.
- */
+import { parseSecretRef } from "@hobo/bindings";
+import { createClaimableOperationKeyDeriver } from "@hobo/core";
 import { describe, expect, it } from "vitest";
-
-import type { NeonClaimableDatabase } from "../src/driver.js";
-import { NEON_DEFINITION_ID, NEON_UNCLAIMED_LIMITS } from "../src/driver.js";
+import {
+	createInMemoryIdempotencyStore,
+	createNeonClient,
+} from "../src/client.js";
+import { createNeonClaimableDatabaseDriver } from "../src/driver.js";
 import { NeonProviderError } from "../src/errors.js";
-import type { JsonValue } from "../src/json.js";
+import { parseJsonValue } from "../src/json.js";
 import {
 	assertNoCredentialMaterial,
 	NEON_BINDING_PROFILE_REFS,
@@ -35,379 +16,243 @@ import {
 	toProviderFacts,
 	toProvisionReceipt,
 } from "../src/receipt.js";
+import {
+	createStubCustody,
+	createStubTransport,
+	FIXTURE_NOW_MS,
+	fixture,
+} from "./harness.js";
 
-/** A claimable-database record that projects to a clean receipt. */
-function record(
-	overrides: Partial<NeonClaimableDatabase> = {},
-): NeonClaimableDatabase {
-	const base: NeonClaimableDatabase = {
-		schemaVersion: "hobo.provider-neon.claimable-database/v1",
-		definitionId: NEON_DEFINITION_ID,
-		providerId: "neon",
-		resourceRef: "resource:db",
-		databaseId: "db-1",
-		neonProjectId: "proj-1",
-		providerStatus: "ACTIVE",
-		databaseName: "main",
-		endpoints: {
-			pooled: { host: "ep-1-pooler.neon.tech", port: 5432, tls: true },
-			direct: { host: "ep-1.neon.tech", port: 5432, tls: true },
+async function provision() {
+	const custody = createStubCustody();
+	const clock = () => FIXTURE_NOW_MS;
+	const driver = createNeonClaimableDatabaseDriver({
+		client: createNeonClient({
+			transport: createStubTransport([
+				{ status: 200, body: fixture("create-database.unclaimed.json") },
+			]),
+			store: createInMemoryIdempotencyStore(),
+			clock,
+		}),
+		custody,
+		clock,
+	});
+	const record = await driver.provision({
+		resourceRef: "hobo://yard/demo/database",
+		ref: "hobo-test",
+		idempotencyKey: "provider-receipt-fixture",
+	});
+	const options = {
+		custody,
+		deriveOperationKey: createClaimableOperationKeyDeriver(
+			Uint8Array.from({ length: 32 }, (_, i) => i + 1),
+		),
+		scope: {
+			tenantId: "tenant",
+			providerAccountId: "anonymous",
+			scopeId: "deployment",
 		},
-		expiresAtIso: "2026-07-01T00:00:00.000Z",
-		expiresAtMs: Date.parse("2026-07-01T00:00:00.000Z"),
-		expirySource: "provider-reported",
-		createdAtMs: Date.parse("2026-06-26T00:00:00.000Z"),
-		updatedAtMs: Date.parse("2026-06-26T00:00:00.000Z"),
-		observedAtMs: Date.parse("2026-06-26T00:00:00.000Z"),
-		logicalReplicationEnabled: false,
-		adopted: false,
-		claim: {
-			state: "unclaimed",
-			boundary: "resource",
-			atomicity: "single-resource",
-			claimUrl: "https://console.neon.tech/claim/abc",
-			actions: [],
-		},
-		limits: NEON_UNCLAIMED_LIMITS,
 	};
-	return { ...base, ...overrides };
+	return { record, custody, options };
 }
 
-const rulesFor = (value: JsonValue) =>
-	scanForCredentialMaterial(value).map((hit) => hit.rule);
-
-describe("the credential scan", () => {
-	it("finds nothing in a value with no credential material", () => {
+describe("Neon public credential scan", () => {
+	it.each([
+		["postgres://a:b@db/main", "postgres-uri"],
+		["POSTGRESQL://a:b@db/main", "postgres-uri"],
+		["Bearer abc123", "bearer-token"],
+		["PGPASSWORD: hunter2", "password-assignment"],
+		["npg_AbCd1234", "neon-role-password"],
+		["amqps://user:pass@broker/", "userinfo-pair"],
+		["-----BEGIN RSA PRIVATE KEY-----\nMIIE", "private-key"],
+		["https://neon.new/claim/private-id", "claim-capability-url"],
+	])("recognizes %s without exposing its content", (value, rule) => {
+		const hits = scanForCredentialMaterial({ nested: { value } });
+		expect(hits.map((hit) => hit.rule)).toContain(rule);
+		expect(JSON.stringify(hits)).not.toContain(value);
+		expect(hits[0]?.excerpt).toMatch(/^\[redacted:/u);
+	});
+	it("recognizes native capability identity fields", () => {
 		expect(
-			scanForCredentialMaterial({ host: "db.example", tls: true }),
-		).toEqual([]);
-		expect(scanForCredentialMaterial(undefined)).toEqual([]);
-		expect(scanForCredentialMaterial(null)).toEqual([]);
+			scanForCredentialMaterial({ databaseId: "private-native-id" }).map(
+				(hit) => hit.rule,
+			),
+		).toContain("native-capability-id");
+		expect(() =>
+			assertNoCredentialMaterial(
+				{ databaseId: "private-native-id" },
+				"receipt",
+			),
+		).toThrow("native-capability-id");
 	});
-
-	it("catches a Postgres URI under either scheme", () => {
-		// The URI carries the password. This is the single most likely thing to
-		// leak, because it is the value the provider actually returns.
-		expect(rulesFor({ uri: "postgres://a:b@db/main" })).toContain(
-			"postgres-uri",
-		);
-		expect(rulesFor({ uri: "POSTGRESQL://a:b@db/main" })).toContain(
-			"postgres-uri",
-		);
-	});
-
-	it("catches a bearer token", () => {
-		// An API token pasted into a detail field would authenticate whoever
-		// read the log.
-		expect(rulesFor({ auth: "Bearer abc123" })).toContain("bearer-token");
-		expect(rulesFor({ auth: "bearer  abc123" })).toContain("bearer-token");
-	});
-
-	it("catches a password assignment under its several spellings", () => {
-		// `password=`, `PGPASSWORD:`, and `pwd=` all appear in real config that
-		// might be copied into a detail field.
-		for (const value of [
-			"password=hunter2",
-			"PGPASSWORD: hunter2",
-			"pwd=hunter2",
-			"Password = hunter2",
-		]) {
-			expect(rulesFor({ note: value }), value).toContain("password-assignment");
-		}
-	});
-
-	it("catches a Neon role password by its prefix", () => {
-		// Neon-issued passwords start `npg_`, so the shape is recognisable even
-		// out of context — which is exactly where a leak would appear.
-		expect(rulesFor({ v: "npg_AbCd1234" })).toContain("neon-role-password");
-	});
-
-	it("catches a userinfo pair even without a known scheme", () => {
-		// A credential embedded in any URL-shaped string is still a credential,
-		// including one the URI rule would not match.
-		expect(rulesFor({ v: "amqps://user:pass@broker/" })).toContain(
-			"userinfo-pair",
-		);
-	});
-
-	it("catches a private key header", () => {
-		expect(rulesFor({ v: "-----BEGIN RSA PRIVATE KEY-----\nMIIE" })).toContain(
-			"private-key",
-		);
-	});
-
-	it("reports every rule that fired, not just the first", () => {
-		// A value carrying two kinds of secret needs both named — the fix for a
-		// leaked URI is different from the fix for a leaked token.
-		const rules = rulesFor({
-			uri: "postgres://a:b@db/main",
+	it("reports every matching rule with bounded, control-free excerpts", () => {
+		const hits = scanForCredentialMaterial({
+			uri: `postgres://a:${"p".repeat(80)}@db/main`,
 			auth: "Bearer abc123",
 		});
-		expect(rules).toContain("postgres-uri");
-		expect(rules).toContain("bearer-token");
-	});
-
-	it("scans nested values, not just the top level", () => {
-		// The artifacts are nested by construction; a top-level-only scan would
-		// miss every realistic leak.
-		expect(
-			rulesFor({ a: { b: { c: ["postgres://user:pw@db/main"] } } }),
-		).toContain("postgres-uri");
-	});
-
-	it("keeps its excerpt short and free of control characters", () => {
-		// The excerpt lands in an error message that lands in a log. It has to
-		// say enough to locate the hit and not enough to be useful to a reader.
-		const hit = scanForCredentialMaterial({
-			v: `padding-padding-postgres://user:${"p".repeat(80)}@db/main`,
-		})[0];
-		expect(hit?.excerpt.length).toBeLessThan(40);
-		expect(hit?.excerpt).not.toContain("pppppppppppppppppppp");
-		for (const char of hit?.excerpt ?? "") {
-			expect(char.charCodeAt(0)).toBeGreaterThan(0x1f);
+		expect(hits.map((hit) => hit.rule)).toEqual(
+			expect.arrayContaining(["postgres-uri", "bearer-token"]),
+		);
+		for (const hit of hits) {
+			expect(hit.excerpt.length).toBeLessThan(40);
+			expect(hit.excerpt).not.toContain("pppppppppppppppppppp");
+			for (const char of hit.excerpt) {
+				expect(char.charCodeAt(0)).toBeGreaterThan(0x1f);
+			}
 		}
-	});
-
-	it("does not fire on ordinary receipt content", () => {
-		// A false positive here refuses a legitimate receipt, so the rules have
-		// to be specific enough to leave normal hosts, ISO timestamps, and
-		// https claim URLs alone.
-		expect(
-			scanForCredentialMaterial({
-				host: "ep-1-pooler.neon.tech",
-				claimUrl: "https://console.neon.tech/claim/abc",
-				expiresAtIso: "2026-07-01T00:00:00.000Z",
-				credentialRef: "secret://neon/db-1/pooled",
-			}),
-		).toEqual([]);
-	});
-});
-
-describe("assertNoCredentialMaterial", () => {
-	it("passes a clean value silently", () => {
-		expect(() =>
-			assertNoCredentialMaterial({ host: "db.example" }, "a receipt"),
-		).not.toThrow();
-	});
-
-	it("throws under the custody code, naming what was being emitted", () => {
-		// The caller needs to know *which* artifact was refused — a receipt and
-		// a fact stream have different callers and different fixes.
-		let error: NeonProviderError | undefined;
 		try {
 			assertNoCredentialMaterial(
-				{ uri: "postgres://a:b@db/main" },
+				{ uri: "postgres://a:b@db/main", auth: "Bearer abc123" },
 				"the Neon provision receipt",
 			);
-		} catch (thrown) {
-			// SAFETY: assertNoCredentialMaterial only throws NeonProviderError here.
-			error = thrown as NeonProviderError;
+			throw new Error("credential scan did not reject the receipt");
+		} catch (error) {
+			expect(error).toBeInstanceOf(NeonProviderError);
+			if (!(error instanceof NeonProviderError)) throw error;
+			expect(error.code).toBe("SECRET_CUSTODY_UNAVAILABLE");
+			expect(error.message).toContain("the Neon provision receipt");
+			expect(error.message).toContain("postgres-uri");
+			expect(error.message).toContain("bearer-token");
 		}
-		expect(error).toBeInstanceOf(NeonProviderError);
-		expect(error?.code).toBe("SECRET_CUSTODY_UNAVAILABLE");
-		expect(error?.message).toContain("the Neon provision receipt");
-		expect(error?.message).toContain("postgres-uri");
 	});
-
-	it("names every rule that fired", () => {
+	it("accepts ordinary nonsecret metadata and custody references", () => {
+		expect(
+			scanForCredentialMaterial({
+				host: "db.example",
+				tls: true,
+				claimRef: "vault://claims/opaque",
+			}),
+		).toEqual([]);
 		expect(() =>
-			assertNoCredentialMaterial(
-				{ uri: "postgres://a:b@db/main", auth: "Bearer x" },
-				"a value",
-			),
-		).toThrow(/postgres-uri, bearer-token/);
+			assertNoCredentialMaterial({ host: "db.example" }, "receipt"),
+		).not.toThrow();
 	});
 });
 
-describe("toProvisionReceipt", () => {
-	it("projects a clean receipt from a clean record", () => {
-		const receipt = toProvisionReceipt(record());
-		expect(receipt.schemaVersion).toBe("hobo.provider-neon.receipt/v1");
-		expect(receipt.databaseId).toBe("db-1");
-		expect(receipt.endpoints.pooled.host).toBe("ep-1-pooler.neon.tech");
-		expect(receipt.endpoints.direct.tls).toBe(true);
-	});
-
-	it("carries the documented binding and migration profiles", () => {
-		// These tell a consumer how to bind to and migrate the database without
-		// asking the provider a second time.
-		const receipt = toProvisionReceipt(record());
+describe("Neon custody-required public serialization", () => {
+	it("seals native ids, project ids, claim URLs, endpoints and bindings", async () => {
+		const { record, custody, options } = await provision();
+		const receipt = await toProvisionReceipt(record, options);
+		const facts = await toProviderFacts(record, options);
+		const serialized = JSON.stringify({ receipt, facts });
+		for (const hidden of [
+			record.databaseId,
+			record.neonProjectId,
+			record.claim.claimUrl,
+		])
+			expect(serialized).not.toContain(hidden);
+		expect(receipt.schemaVersion).toBe("hobo.provider-neon.receipt/v2");
+		expect(receipt.opaquePhysicalId).toMatch(/^claimable:[a-f0-9]{64}$/u);
 		expect(receipt.bindingProfiles).toBe(NEON_BINDING_PROFILE_REFS);
 		expect(receipt.migrationProfiles).toBe(NEON_MIGRATION_PROFILE_REFS);
-	});
-
-	it("omits a port that the record did not carry", () => {
-		// A `port: undefined` on a receipt is a field a consumer has to reason
-		// about; an absent one means "the default".
-		const receipt = toProvisionReceipt(
-			record({
-				endpoints: {
-					pooled: { host: "a.neon.tech", tls: true },
-					direct: { host: "b.neon.tech", tls: true },
-				},
-			}),
-		);
-		expect("port" in receipt.endpoints.pooled).toBe(false);
-		expect("port" in receipt.endpoints.direct).toBe(false);
-	});
-
-	it("omits each credential locator independently when absent", () => {
-		// A database with a pooled secret and no direct one is a real state, and
-		// an empty-string locator would resolve to nothing at bind time.
-		const both = toProvisionReceipt(
-			record({
-				credentialRef: "secret://a",
-				directCredentialRef: "secret://b",
-			}),
-		);
-		expect(both.credentialRef).toBe("secret://a");
-		expect(both.directCredentialRef).toBe("secret://b");
-
-		const neither = toProvisionReceipt(record());
-		expect("credentialRef" in neither).toBe(false);
-		expect("directCredentialRef" in neither).toBe(false);
-	});
-
-	it("reduces claim actions to the ids that are actually blocking", () => {
-		// A receipt says what still stands between the reader and a claimed
-		// database. Listing completed or non-blocking actions would make a
-		// finished claim look outstanding.
-		const receipt = toProvisionReceipt(
-			record({
-				claim: {
-					...record().claim,
-					actions: [
-						{ id: "rotate", blocking: true, completed: false },
-						{ id: "done", blocking: true, completed: true },
-						{ id: "optional", blocking: false, completed: false },
-					],
-				},
-			}),
-		);
-		expect(receipt.claim.blockingActionIds).toEqual(["rotate"]);
-	});
-
-	it("refuses to emit a receipt whose record smuggled a credential", () => {
-		// The projection is a rule a future edit can break; the scan is the
-		// check that notices. Here a credential arrives through a field the
-		// projection does copy.
-		expect(() =>
-			toProvisionReceipt(record({ databaseName: "main?password=hunter2" })),
-		).toThrow(/credential-shaped material/);
-	});
-
-	it("does not republish a field the projection was never taught about", () => {
-		// A future field on the record — here a raw URI — must not travel out
-		// just because it exists. This is the property a spread would lose.
-		const smuggled = Object.assign(record(), {
-			connectionUri: "postgres://a:b@db/main",
-		});
-		// SAFETY: excess key proves projection ignores fields the builder never maps.
-		const receipt = toProvisionReceipt(smuggled as NeonClaimableDatabase);
-		expect(JSON.stringify(receipt)).not.toContain("postgres://");
-	});
-});
-
-describe("toProviderFacts", () => {
-	const factKinds = (overrides: Partial<NeonClaimableDatabase> = {}) =>
-		toProviderFacts(record(overrides)).map((fact) => fact.kind);
-
-	it("emits a provisioned fact for a fresh database", () => {
-		expect(factKinds()).toEqual(["provider.neon.database.provisioned"]);
-	});
-
-	it("emits an adopted fact instead when the database was pre-existing", () => {
-		// Adoption and provisioning are different events for billing and for
-		// teardown — HoBo must not delete a database it merely adopted.
-		expect(factKinds({ adopted: true })).toEqual([
-			"provider.neon.database.adopted",
-		]);
-	});
-
-	it("adds a pending-rotation fact while the pre-claim credential still works", () => {
-		// The provider reports CLAIMED, but the old credential keeps working
-		// until the owner rotates it. Reporting the claim as done would leave a
-		// live credential outstanding with nothing tracking it.
-		const facts = toProviderFacts(
-			record({
-				claim: {
-					...record().claim,
-					state: "claimed-pending-rotation",
-				},
-			}),
-		);
-		expect(facts.map((fact) => fact.kind)).toContain(
-			"provider.neon.claim.pending-rotation",
-		);
-		expect(JSON.stringify(facts)).toContain("until the owner rotates it");
-	});
-
-	it("adds a completed fact for a finished claim", () => {
 		expect(
-			factKinds({
-				claim: {
-					...record().claim,
-					state: "complete",
-				},
-			}),
-		).toContain("provider.neon.claim.completed");
-	});
-
-	it("adds a lease-expired fact carrying the expiry", () => {
-		// An expired lease is what turns a working database into a dead one, and
-		// the timestamp is what lets a reader tell how long ago.
-		const facts = toProviderFacts(
-			record({
-				claim: {
-					...record().claim,
-					state: "expired",
-				},
-			}),
-		);
-		const expired = facts.find(
-			(fact) => fact.kind === "provider.neon.lease.expired",
-		);
-		expect(expired?.detail.expiresAtIso).toBe("2026-07-01T00:00:00.000Z");
-	});
-
-	it("emits only the base fact for a state with no extra event", () => {
+			(
+				await custody.resolve(parseSecretRef(receipt.nativeIdentityRef).ref)
+			).expose(),
+		).toBe(record.databaseId);
 		expect(
-			factKinds({
-				claim: {
-					...record().claim,
-					state: "unclaimed",
+			(
+				await custody.resolve(parseSecretRef(receipt.claim.claimRef).ref)
+			).expose(),
+		).toBe(record.claim.claimUrl);
+		expect(scanForCredentialMaterial(parseJsonValue(serialized))).toEqual([]);
+		expect(
+			JSON.stringify(custody.deposits.map((item) => item.scope)),
+		).not.toContain(record.databaseId);
+	});
+	it("hashes source resource identities even when they embed a native capability", async () => {
+		const { record, options } = await provision();
+		const contaminated = {
+			...record,
+			resourceRef: `hobo://resource/${record.databaseId}`,
+		};
+		expect(
+			JSON.stringify(await toProvisionReceipt(contaminated, options)),
+		).not.toContain(record.databaseId);
+	});
+	it("requires custody and a private host key even at a JavaScript call boundary", async () => {
+		const { record } = await provision();
+		// @ts-expect-error JavaScript callers can omit mandatory custody options.
+		await expect(toProvisionReceipt(record)).rejects.toThrow("private custody");
+		// @ts-expect-error JavaScript callers can omit mandatory custody options.
+		await expect(toProviderFacts(record)).rejects.toThrow("private custody");
+	});
+	it("refuses custody locators containing native ids, and masks custody error causes", async () => {
+		const { record, options } = await provision();
+		await expect(
+			toProvisionReceipt(record, {
+				...options,
+				custody: {
+					async deposit() {
+						return `vault://public/${record.databaseId}`;
+					},
 				},
 			}),
-		).toHaveLength(1);
-	});
-
-	it("stamps every fact with the same observation time and resource", () => {
-		// Facts from one observation have to correlate. Two timestamps would
-		// make a reader think the events happened at different moments.
-		const facts = toProviderFacts(
-			record({
-				claim: {
-					...record().claim,
-					state: "expired",
+		).rejects.toThrow("capability material");
+		let error: Error | undefined;
+		try {
+			await toProvisionReceipt(record, {
+				...options,
+				custody: {
+					async deposit() {
+						throw new Error(record.databaseId);
+					},
 				},
-			}),
-		);
-		expect(new Set(facts.map((fact) => fact.occurredAtMs)).size).toBe(1);
-		expect(new Set(facts.map((fact) => fact.resourceRef))).toEqual(
-			new Set(["resource:db"]),
-		);
+			});
+		} catch (cause) {
+			if (cause instanceof Error) error = cause;
+			else throw cause;
+		}
+		expect(error).toBeInstanceOf(Error);
+		expect(String(error)).not.toContain(record.databaseId);
+		expect(error?.cause).toBeUndefined();
 	});
-
-	it("carries an empty credential ref rather than undefined in the detail map", () => {
-		// The detail map is typed as string|number|boolean. `undefined` there
-		// would serialize as a missing key and break a consumer reading it
-		// positionally.
-		expect(toProviderFacts(record())[0]?.detail.credentialRef).toBe("");
+	it("rejects poisoned public fields and malformed existing credential locators", async () => {
+		const { record, options } = await provision();
+		await expect(
+			toProvisionReceipt(
+				{ ...record, databaseName: "password=hunter2" },
+				options,
+			),
+		).rejects.toThrow("credential-shaped");
+		await expect(
+			toProvisionReceipt(
+				{
+					...record,
+					credentialRef: parseSecretRef("vault://safe/value").ref,
+					providerStatus: "UNCLAIMED",
+					databaseName: record.databaseId,
+				},
+				options,
+			),
+		).rejects.toThrow("capability material");
 	});
-
-	it("refuses to emit facts that smuggled a credential", () => {
-		expect(() =>
-			toProviderFacts(record({ providerStatus: "npg_leakedvalue" })),
-		).toThrow(/credential-shaped material/);
+	it("refuses case and URI-encoded native capability variants", async () => {
+		const { record, options } = await provision();
+		for (const databaseName of [
+			record.databaseId.toUpperCase(),
+			record.databaseId.replaceAll("-", "%2D"),
+			record.databaseId.replaceAll("-", "%252D"),
+		])
+			await expect(
+				toProvisionReceipt({ ...record, databaseName }, options),
+			).rejects.toThrow("capability material");
+	});
+	it("preserves distinct adopted, rotation and expiry facts without native identities", async () => {
+		const { record, options } = await provision();
+		for (const state of [
+			"claimed-pending-rotation",
+			"complete",
+			"expired",
+		] as const) {
+			const facts = await toProviderFacts(
+				{ ...record, adopted: true, claim: { ...record.claim, state } },
+				options,
+			);
+			expect(facts[0]?.kind).toBe("provider.neon.database.adopted");
+			expect(facts).toHaveLength(2);
+			expect(new Set(facts.map((fact) => fact.occurredAtMs)).size).toBe(1);
+			expect(JSON.stringify(facts)).not.toContain(record.databaseId);
+		}
 	});
 });

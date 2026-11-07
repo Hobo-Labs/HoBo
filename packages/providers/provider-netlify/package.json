@@ -24,11 +24,12 @@
 		"@hobo/bindings": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/claims": "workspace:*",
-		"@hobo/core": "workspace:*"
+		"@hobo/core": "workspace:*",
+		"@bufbuild/protobuf": "2.12.1"
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",
 		"vitest": "^4.1.9"
 	},
-	"description": "HoBo Netlify CloudProvider — equivalence, temporary/agent Environment Station contract, and the direct-anonymous netlify.anonymous-static/v1 claim strategy (static hosting only)."
+	"description": "HoBo Netlify CloudProvider \u2014 equivalence, temporary/agent Environment Station contract, and the direct-anonymous netlify.anonymous-static/v1 claim strategy (static hosting only)."
 }

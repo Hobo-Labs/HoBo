@@ -13,12 +13,19 @@ station provision plan), **Ship** (app Bindle
 source), **Live** (Preview ↔ Logs + claim URLs when anonymous deploys issue
 them — no Claim CTA). Temporary/agent station stamps (zero permanent API tokens) under `astro
 dev` / preview: Cloudflare `/api/cf-temp`, Lakebed `/api/lakebed-temp`,
-Vercel Drop `/api/vercel-temp`, Netlify `/api/provider-temp/netlify`
+Netlify `/api/provider-temp/netlify`
 (`netlify deploy --allow-anonymous`), local yards `/api/provider-temp/:id`
 → same-origin `/api/anon/host/*`. Replay mocks:
 `HOBO_LAKEBED_TEMP_MOCK=1 HOBO_VERCEL_DROP_MOCK=1 HOBO_NETLIFY_TEMP_MOCK=1`.
 Temp APIs advertise `apiVersion: hobo-temp-v2` — kill stale `:4321` processes
 if Deploy returns HTML. Static GitHub Pages has no temp brokers.
+Vercel is unavailable for real anonymous temporary deployment: the SDK has no
+documented anonymous API and never falls back to an authenticated CLI login.
+`/api/vercel-temp` reports availability false and refuses real provisioning;
+`HOBO_VERCEL_DROP_MOCK=1` is an explicit offline fixture lane. Its browser-safe
+provider capability constant drives the Examples target pack. Provider requests
+keep permanent credentials out of each child or API call without deleting the
+server process environment, so concurrent account-backed work is unaffected.
 Railway is not an OOB yard. Matching-honest native ports live in
 `src/lib/examples/target-capability-packs.ts`. Multi-host selections show
 policy placement intent; they do not claim browser-side failover or state
@@ -30,6 +37,10 @@ named `JsonValue`/`JsonObject` types, tag checks instead of `typeof`, and
 `SAFETY:` comments on remaining type assertions.
 
 ## Working on the site
+
+Site tests load native app modules and may compile TypeScript. Their bounded
+timeout follows `HOBO_TEST_TIMEOUT` (10 seconds by default), matching the other
+owning-package lanes; broader affected checks can supply a larger machine budget.
 
 The site is a workspace package (`hobo-site`) in the root pnpm workspace — the repo's
 architecture guard requires a single root `pnpm-lock.yaml`. It stays out of the repo's

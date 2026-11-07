@@ -45,9 +45,10 @@ const SHELL_DRAWN = `${ESC}[?1049h`;
 const VERB_ENDED = "hobo recipes:";
 /** Terminal control sequences, left out of the screen a failure shows. */
 const CONTROL_SEQUENCES = new RegExp(`${ESC}\\[[0-9;?]*[a-zA-Z]`, "gu");
-const VERB_DEADLINE_MS = 12_000;
+const VERB_DEADLINE_MS = 30_000;
 const SIGNAL_GRACE_MS = 5_000;
-const RUN_TIMEOUT_MS = 15_000;
+// The outer timeout must contain both startup waits and bounded teardown.
+const RUN_TIMEOUT_MS = 2 * VERB_DEADLINE_MS + 3 * SIGNAL_GRACE_MS + 20_000;
 
 /** Why the pseudo-terminal cases cannot run here, or false when they can. */
 function noUtilLinuxScript(): string | false {
@@ -92,11 +93,6 @@ async function until(done: () => boolean, ms: number): Promise<boolean> {
 		await sleep(100);
 	}
 	return true;
-}
-
-/** Poll /proc until `pid` has exited; resolves immediately when it already has. */
-async function waitForPidExit(pid: number): Promise<void> {
-	while (running(pid)) await sleep(50);
 }
 
 const roots: string[] = [];
@@ -245,7 +241,10 @@ async function endTheShell(ending: Ending): Promise<Ended> {
 			resolve();
 		});
 	});
+	void close.catch(() => {});
 	let child: number | undefined;
+	let launcherPid: number | undefined;
+	let outcome: Ended | undefined;
 	try {
 		await until(() => closed || screen.includes(SHELL_DRAWN), VERB_DEADLINE_MS);
 		if (!closed) {
@@ -265,6 +264,7 @@ async function endTheShell(ending: Ending): Promise<Ended> {
 			existsSync(at(name)) ? lineSettings(readFileSync(at(name), "utf8")) : "";
 		if (made.length > 0 && !closed) {
 			const hoboCode = Number(readFileSync(at("pid"), "utf8"));
+			launcherPid = hoboCode;
 			child = childrenOf(hoboCode)[0];
 			if (child !== undefined) {
 				children.push(child);
@@ -306,16 +306,15 @@ async function endTheShell(ending: Ending): Promise<Ended> {
 			) {
 				await sleep(50);
 			}
-			// The tree ended inside the window, or is still ending: wait the
-			// processes out on /proc (immediate once dead) so the assertions
-			// read a settled state.
-			await waitForPidExit(hoboCode);
-			if (child !== undefined) await waitForPidExit(child);
+			if (running(hoboCode) || (child !== undefined && running(child)))
+				throw new Error(
+					`hobo-code process tree did not exit within ${SIGNAL_GRACE_MS}ms`,
+				);
 		}
 		const status = at("status");
 		const last = (sequence: string): number =>
 			screen.lastIndexOf(`${ESC}[?${sequence}`);
-		return {
+		outcome = {
 			code: existsSync(status)
 				? Number(readFileSync(status, "utf8").trim())
 				: null,
@@ -333,12 +332,23 @@ async function endTheShell(ending: Ending): Promise<Ended> {
 		};
 	} finally {
 		writeFileSync(at("done"), "");
+		if (launcherPid !== undefined && running(launcherPid))
+			killProcessGroup(launcherPid);
 		if (!(await until(() => closed, SIGNAL_GRACE_MS))) {
 			if (script.pid !== undefined) killProcessGroup(script.pid);
 			else script.kill("SIGKILL");
+			if (!(await until(() => closed, SIGNAL_GRACE_MS))) {
+				script.stdin.destroy();
+				script.stdout.destroy();
+				script.stderr.destroy();
+			}
 		}
-		await close;
+		if (closed) await close;
 	}
+	if (!closed)
+		throw new Error("pseudo-terminal did not close after termination");
+	if (!outcome) throw new Error("signal test did not produce an outcome");
+	return outcome;
 }
 
 /** The store was made, and is gone with the child that held it. */

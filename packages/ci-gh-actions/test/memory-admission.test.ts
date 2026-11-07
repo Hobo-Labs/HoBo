@@ -385,7 +385,7 @@ describe("worker memory admission", () => {
 
 	it("admits two PR jobs whose learned reservations fit where class sizes do not", () => {
 		const peaks: MemoryPeakHistories = {
-			"PR impact gate": { peaksMb: [100, 100, 100] },
+			"PR impact validation": { peaksMb: [100, 100, 100] },
 			"PR off-path checks (ts-autocode surface, production packages)": {
 				peaksMb: [100, 100, 100],
 			},
@@ -400,7 +400,7 @@ describe("worker memory admission", () => {
 		const activeLeases: MemoryLease[] = [];
 		const generalLeaseIds = new Set<string>();
 		const names = [
-			"PR impact gate",
+			"PR impact validation",
 			"PR off-path checks (ts-autocode surface, production packages)",
 		];
 
@@ -428,7 +428,7 @@ describe("worker memory admission", () => {
 
 	it("restores class-sized reservations when learning is disabled", () => {
 		const peaks: MemoryPeakHistories = {
-			"PR impact gate": { peaksMb: [100, 100, 100] },
+			"PR impact validation": { peaksMb: [100, 100, 100] },
 		};
 		const resolved = resolveWorkerMemoryConfig(
 			{
@@ -438,7 +438,7 @@ describe("worker memory admission", () => {
 			{ totalMemoryMb: 32_768, trunkSlots: 0 },
 			peaks,
 		);
-		const request = memoryRequestForJob("PR impact gate", resolved);
+		const request = memoryRequestForJob("PR impact validation", resolved);
 		const log = vi.fn();
 		const admission = createWorkerMemoryAdmission(resolved, { log });
 		const activeLeases: MemoryLease[] = [];

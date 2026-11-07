@@ -6,7 +6,7 @@ import {
 	VERCEL_DEFAULT_REGIONS,
 	VERCEL_EDGE_CONFIG_PRODUCT_ID,
 	VERCEL_EDGE_FUNCTION_PRODUCT_ID,
-	VERCEL_PROJECT_PRODUCT_ID,
+	VERCEL_STATIC_DEPLOY_PRODUCT_ID,
 	VERCEL_UNRESOLVED_PRODUCT_IDS,
 	VercelYardSpecError,
 	vercelResolverRegistry,
@@ -45,7 +45,7 @@ describe("default vercel yard", () => {
 			},
 			{
 				profile: "web.hosted/v1",
-				productId: VERCEL_PROJECT_PRODUCT_ID,
+				productId: VERCEL_STATIC_DEPLOY_PRODUCT_ID,
 				properties: {},
 			},
 		]);
@@ -63,7 +63,7 @@ describe("default vercel yard", () => {
 
 	it("keeps the slot catalog grouped, one array of offerings per slot", () => {
 		expect(VERCEL_DEFAULT_BINDINGS.web?.map((row) => row.productId)).toEqual([
-			VERCEL_PROJECT_PRODUCT_ID,
+			VERCEL_STATIC_DEPLOY_PRODUCT_ID,
 		]);
 		expect(
 			VERCEL_DEFAULT_BINDINGS.service?.map((row) => row.productId),
@@ -97,13 +97,13 @@ describe("default vercel yard", () => {
 
 	it("carries per-offering settings into the rows", () => {
 		const rows = vercelYardSpec({
-			project: { framework: "nextjs" },
+			staticDeployment: { projectId: "prj_owned" },
 			blob: { access: "private" },
 		}).bindings;
 		expect(
-			rows.find((row) => row.productId === VERCEL_PROJECT_PRODUCT_ID)
+			rows.find((row) => row.productId === VERCEL_STATIC_DEPLOY_PRODUCT_ID)
 				?.properties,
-		).toEqual({ framework: "nextjs" });
+		).toEqual({ projectId: "prj_owned" });
 		expect(
 			rows.find((row) => row.productId === VERCEL_BLOB_PRODUCT_ID)?.properties,
 		).toEqual({ access: "private" });

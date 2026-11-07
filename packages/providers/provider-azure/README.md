@@ -224,3 +224,28 @@ The guard constrains the request this package composes and the response it
 accepts; it cannot prove the injected transport honours `timeoutMs`, refuses a
 302 itself, or terminates TLS against the real ARM certificate. Passing this
 package's tests is not evidence that an Azure deployment works.
+
+### Budgeted Container Apps execution
+
+Budgeted execution supplies `ownershipRef` and `artifactDigest`, both complete sha256
+references. The resolver persists them as `hobo.owner` / `hobo.artifact` ARM tags and
+publishes its observed tag as `outputs.artifactMarker`. `outputs.artifactDigest` is
+the independently read container image's immutable OCI digest. Tags do not verify
+content. Owned resources
+with different or missing ownership are never implicitly adopted. A different artifact
+requires a fresh immutable target name. Names must be unique per resource lifetime:
+ARM deletion cannot fence a later recreation under a reused name.
+
+`outputs.ready` requires exactly one approved container, no unapproved init containers,
+the declared image, CPU, memory, replica bounds and ingress shape,
+`provisioningState: Succeeded`, `runningStatus: Running`, and matching
+nonempty latest/ready revision names. Explicit CPU, memory, minimum and maximum replica
+bounds are required in this mode. A terminal ARM operation alone does not establish
+application readiness. Fresh application health remains a separate execution gate.
+
+The resolver guards its own transport and physical/resource identity. A `200` GET
+without a resource body is unknown, never absence. Retirement validates ownership and
+the source artifact, then requires a scoped absent read after the delete; even `204`
+is followed by observation. `test/hosting-lifecycle.test.ts` covers these refusal paths
+and capacity drift. Static cost hints are marked `estimate` or `unknown` rather than
+being treated as current billing evidence; admission requires scoped bounded quotes.

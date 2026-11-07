@@ -137,6 +137,37 @@ export {
 	type GatewayDeps,
 	UnauthorizedCommandError,
 } from "./gateway/gateway.js";
+export type {
+	HostingReservationIdentity,
+	SharedHostingBudgetAuthority,
+} from "./hosting-transition/budget-authority.js";
+export {
+	hostingTransitionContracts,
+	validateHostingAdapterContract,
+} from "./hosting-transition/contracts.js";
+export {
+	createHostingTransitionCoordinator,
+	type HostingOperationRequest,
+	type HostingTransitionCoordinatorOptions,
+	type HostingTransitionProvider,
+	hostingAdapterContractDigest,
+} from "./hosting-transition/coordinator.js";
+export {
+	createHostingTransitionPlan,
+	foldHostingTransition,
+	type HostingDestinationLiability,
+	HostingDestinationLiabilitySchema,
+	HostingTransitionAction,
+	type HostingTransitionObservation,
+	HostingTransitionObservationSchema,
+	type HostingTransitionOperation,
+	HostingTransitionPhase,
+	type HostingTransitionPlan,
+	type HostingTransitionPlanInput,
+	HostingTransitionPlanSchema,
+	type HostingTransitionState,
+	hostingTransitionStream,
+} from "./hosting-transition/model.js";
 export { type LowerOptions, lowerManifest } from "./intent.js";
 export {
 	type CompensationContext,
@@ -183,6 +214,23 @@ export {
 	type ResourceIntent,
 	type ResourcePlan,
 } from "./plan-types.js";
+export {
+	canonicalHostingEvidence,
+	createHostingPlanningPass,
+	type HostingBudgetSnapshot,
+	type HostingChargeComponent,
+	type HostingEntitlement,
+	type HostingEntitlementClaim,
+	type HostingPlanCommitment,
+	HostingPlanningError,
+	type HostingPlanningInput,
+	type HostingPriceQuote,
+	type HostingProviderCharge,
+	type HostingResourceCommitment,
+	type HostingUsageBound,
+	hostingBudgetHeadroom,
+	manifestHostingPolicy,
+} from "./planner/hosting-budget.js";
 export {
 	type DecidedPlacement,
 	emptyPlacementContext,

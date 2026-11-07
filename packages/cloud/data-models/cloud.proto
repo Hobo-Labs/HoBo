@@ -76,6 +76,8 @@ message ResourceDefinitionRef {
   string cost_sku = 8;
   string cost_unit = 9;
   string marginal_price = 10;
+  optional string pricing_status = 11;
+  optional string product_id = 12;
 }
 
 // Capability negotiation verdict: full | partial(missing) | none.

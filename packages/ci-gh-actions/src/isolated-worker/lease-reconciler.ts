@@ -47,6 +47,50 @@ function requeueJob(lease: Lease) {
 	});
 }
 
+function hasUnregisteredCreateIdentity(lease: Lease): boolean {
+	return (
+		(lease.provider === "kubernetes" || lease.provider === "hobo-box-worker") &&
+		!lease.pipelineId &&
+		!!lease.sandboxName &&
+		lease.sandboxName === `hobo-${lease.id}` &&
+		lease.runnerName === `hobo-${lease.id}` &&
+		lease.hostRunId === 0 &&
+		lease.runnerId === 0 &&
+		lease.actualJobId === 0 &&
+		!lease.usageCompletedAt
+	);
+}
+
+/** Registration cannot have started while a create is still the durable stage. */
+export function isUnregisteredUncertainCreate(lease: Lease): boolean {
+	return (
+		lease.state === "uncertain" &&
+		(lease.sandboxStage === "creating" || lease.sandboxStage === "created") &&
+		hasUnregisteredCreateIdentity(lease)
+	);
+}
+
+/** A dispatch interrupted before its create result must retain the same fence. */
+export function isUnregisteredDispatchingCreate(lease: Lease): boolean {
+	return (
+		lease.state === "dispatching" &&
+		lease.sandboxStage === "creating" &&
+		!lease.sandboxSessionId &&
+		hasUnregisteredCreateIdentity(lease)
+	);
+}
+
+/** A durable stop intent is bound to the same isolated host session. */
+export function hasIsolatedStopIntent(lease: Lease): boolean {
+	return (
+		(lease.provider === "kubernetes" || lease.provider === "hobo-box-worker") &&
+		!lease.pipelineId &&
+		(lease.sandboxStage === "stopping" || lease.sandboxStage === "stopped") &&
+		!!lease.sandboxName &&
+		!!lease.sandboxSessionId
+	);
+}
+
 export function createWorkerLeaseReconciler(options: {
 	store: WorkerLeaseReconciliationStore;
 	docker: Pick<DockerDriver, "list" | "stop" | "remove">;
@@ -150,6 +194,105 @@ export function createWorkerLeaseReconciler(options: {
 			const ageMs = Number.isFinite(ageBaseMs)
 				? Math.max(0, now() - ageBaseMs)
 				: 0;
+			// A durable stop intent must be reconciled before releasing its hold.
+			// Retry final job observation and settlement after confirmed removal.
+			if (hasIsolatedStopIntent(lease)) {
+				if (!options.settleExited) {
+					liveLeaseIds.add(lease.id);
+					continue;
+				}
+				const matches = containers.filter(
+					(candidate) =>
+						candidate.name === lease.sandboxName ||
+						candidate.containerId === lease.sandboxSessionId,
+				);
+				if (
+					matches.length > 1 ||
+					(matches.length === 1 &&
+						(matches[0]?.name !== lease.sandboxName ||
+							matches[0]?.containerId !== lease.sandboxSessionId))
+				) {
+					liveLeaseIds.add(lease.id);
+					continue;
+				}
+				try {
+					await options.settleExited(lease);
+				} catch (error) {
+					options.log?.("hobo_ci_lease_reconciliation_failed", {
+						leaseId: lease.id,
+						message: error instanceof Error ? error.message : "unknown",
+					});
+				}
+				const current = await options.store.get(lease.id);
+				if (current && ACTIVE_STATES.has(current.state))
+					liveLeaseIds.add(lease.id);
+				continue;
+			}
+			// A create can succeed after its reply is lost. A uniquely named,
+			// unregistered container may be bound and stopped by the owning host;
+			// never free its reservation merely because the reply was ambiguous.
+			if (
+				isUnregisteredUncertainCreate(lease) ||
+				isUnregisteredDispatchingCreate(lease)
+			) {
+				// Another process may still be completing a slow create. Preserve
+				// both the orphan grace and the account's configured startup window.
+				const startupMinutes =
+					configuration?.accounts.find(
+						(account) => account.id === lease.accountId,
+					)?.startupMinutes ?? 0;
+				const createGraceMs = Math.max(orphanGraceMs, startupMinutes * 60_000);
+				if (lease.state === "dispatching" && ageMs < createGraceMs) {
+					liveLeaseIds.add(lease.id);
+					continue;
+				}
+				const matches = containers.filter(
+					(candidate) => candidate.name === lease.sandboxName,
+				);
+				// An absent name does not fence a create whose reply was lost: the
+				// provider may still complete it after this inventory snapshot.
+				if (matches.length === 0 && !lease.sandboxSessionId) {
+					liveLeaseIds.add(lease.id);
+					continue;
+				}
+				if (matches.length > 0) {
+					const match = matches[0];
+					if (
+						matches.length !== 1 ||
+						!match?.containerId ||
+						(lease.sandboxSessionId &&
+							lease.sandboxSessionId !== match.containerId)
+					) {
+						liveLeaseIds.add(lease.id);
+						continue;
+					}
+					if (!options.settleExited) {
+						liveLeaseIds.add(lease.id);
+						continue;
+					}
+					try {
+						await options.settleExited(lease);
+					} catch (error) {
+						options.log?.("hobo_ci_lease_reconciliation_failed", {
+							leaseId: lease.id,
+							message: error instanceof Error ? error.message : "unknown",
+						});
+					}
+					const current = await options.store.get(lease.id);
+					if (current && ACTIVE_STATES.has(current.state))
+						liveLeaseIds.add(lease.id);
+					continue;
+				}
+			}
+			// An inconsistent create record is not proof that its provider effect
+			// was absent. Keep its hold rather than requeueing on missing inventory.
+			if (
+				["dispatching", "uncertain"].includes(lease.state) &&
+				["creating", "created"].includes(lease.sandboxStage)
+			) {
+				liveLeaseIds.add(lease.id);
+				continue;
+			}
 			let reason: string;
 			if (container?.state === "exited" || container?.state === "dead") {
 				reason = `container-${container.state}`;

@@ -37,6 +37,8 @@
  * and every build the subsets need, then each subset's test task alone with
  * its files passed through to vitest; the other arguments go to the first
  * call) and exits non-zero when any of it fails.
+ * `--shard=INDEX/COUNT` assigns every whole suite and dependent subset to
+ * exactly one zero-based shard; a repo-wide plan covers every workspace.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -68,6 +70,43 @@ export type TestPlan =
 			/** Dependents none of whose tests reach the change. */
 			readonly skipped: readonly string[];
 	  };
+
+/** Partition by workspace so a suite or dependent subset is never split or dropped. */
+export function shardTestPlan(
+	plan: TestPlan,
+	workspaces: readonly Workspace[],
+	index: number,
+	count: number,
+): TestPlan {
+	if (
+		!Number.isSafeInteger(index) ||
+		!Number.isSafeInteger(count) ||
+		count < 1 ||
+		count > 64 ||
+		index < 0 ||
+		index >= count
+	)
+		throw new Error("invalid workspace test shard");
+	const full =
+		plan.mode === "all"
+			? [...new Set(workspaces.map((ws) => ws.dir))]
+			: [...plan.full];
+	const subsets =
+		plan.mode === "all" ? new Map<string, readonly string[]>() : plan.subsets;
+	const wholeDirs = new Set(full);
+	if ([...subsets.keys()].some((dir) => wholeDirs.has(dir)))
+		throw new Error("workspace cannot be both a whole suite and a subset");
+	const dirs = [...new Set([...full, ...subsets.keys()])].sort();
+	const selected = new Set(
+		dirs.filter((_, position) => position % count === index),
+	);
+	return {
+		mode: "scoped",
+		full: full.filter((dir) => selected.has(dir)),
+		subsets: new Map([...subsets].filter(([dir]) => selected.has(dir))),
+		skipped: [],
+	};
+}
 
 type Json =
 	| string
@@ -669,19 +708,54 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 	};
 	const args = process.argv.slice(2);
 	const baseArgument = args.find((arg) => arg.startsWith("--base="));
-	const plan = planDependentTests(
+	const shardArgs = args.filter((arg) => arg.startsWith("--shard"));
+	if (
+		shardArgs.length > 1 ||
+		(shardArgs.length === 1 && !/^--shard=\d+\/\d+$/u.test(shardArgs[0] ?? ""))
+	) {
+		console.error(
+			"dependent-tests: invalid shard; expected --shard=INDEX/COUNT",
+		);
+		process.exit(2);
+	}
+	let plan = planDependentTests(
 		input.split("\n"),
 		repo,
 		baseArgument === undefined
 			? undefined
 			: cliRootFileReader(baseArgument.slice("--base=".length)),
 	);
+	if (shardArgs.length === 1) {
+		const match = /^--shard=(\d+)\/(\d+)$/u.exec(shardArgs[0] ?? "");
+		if (!match) throw new Error("invalid workspace test shard");
+		if (plan.mode === "all") {
+			const workspaceDirs = new Set(repo.workspaces.map((ws) => ws.dir));
+			const tests = turboTestGraph([]).filter((task) => task.task === "test");
+			if (
+				tests.length === 0 ||
+				tests.some((task) => !workspaceDirs.has(task.directory))
+			)
+				throw new Error(
+					"repo-wide test graph includes an undiscovered workspace",
+				);
+		}
+		plan = shardTestPlan(
+			plan,
+			repo.workspaces,
+			Number(match[1]),
+			Number(match[2]),
+		);
+		console.log(`dependent-tests: shard ${match[1]}/${match[2]}`);
+	}
 	console.log(describePlan(plan));
 	if (args.includes("--run"))
 		process.exit(
 			runPlan(
 				plan,
-				args.filter((arg) => arg !== "--run" && arg !== baseArgument),
+				args.filter(
+					(arg) =>
+						arg !== "--run" && arg !== baseArgument && !shardArgs.includes(arg),
+				),
 			),
 		);
 }

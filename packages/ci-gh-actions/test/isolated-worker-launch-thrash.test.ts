@@ -306,8 +306,11 @@ describe("isolated worker launch failure handling", () => {
 		await launching;
 	});
 
-	it("parks a job after three containerless launch cycles for ten minutes", async () => {
+	it("parks a job after three definitive pre-effect launch failures for ten minutes", async () => {
 		const f = await launchFixture();
+		vi.mocked(f.workFs.prepareJobDirectory).mockRejectedValue(
+			new Error("work directory unavailable"),
+		);
 		const relay = new HostedRelay({
 			config: f.configuration,
 			store: f.store,
@@ -324,7 +327,7 @@ describe("isolated worker launch failure handling", () => {
 
 		for (let attempt = 0; attempt < 3; attempt++) await relay.dispatchPending();
 
-		expect(f.docker.create).toHaveBeenCalledTimes(3);
+		expect(f.docker.create).not.toHaveBeenCalled();
 		expect(f.docker.start).not.toHaveBeenCalled();
 		expect(f.workFs.prepareJobDirectory).toHaveBeenCalledTimes(3);
 		expect(f.workFs.retireJobDirectory).toHaveBeenCalledTimes(3);
@@ -333,8 +336,8 @@ describe("isolated worker launch failure handling", () => {
 		expect(f.log).toHaveBeenCalledWith(
 			"hobo_ci_launch_parked",
 			expect.objectContaining({
-				stage: "create",
-				message: "docker create failed",
+				stage: "prepare",
+				message: "work directory unavailable",
 				jobId: 100,
 				attempt: 3,
 				failureCount: 3,
@@ -347,12 +350,12 @@ describe("isolated worker launch failure handling", () => {
 
 		await f.store.queue(f.job, f.clock.now, 1);
 		await relay.dispatchPending();
-		expect(f.docker.create).toHaveBeenCalledTimes(3);
+		expect(f.docker.create).not.toHaveBeenCalled();
 		expect(await f.store.activeLeases()).toEqual([]);
 
 		f.clock.now = new Date(Date.parse(NOW) + 10 * 60_000).toISOString();
 		await relay.dispatchPending();
-		expect(f.docker.create).toHaveBeenCalledTimes(4);
+		expect(f.workFs.prepareJobDirectory).toHaveBeenCalledTimes(4);
 	});
 
 	it("lets a matching idle runner take a swapped runner's original job", async () => {

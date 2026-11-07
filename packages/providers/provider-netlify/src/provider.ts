@@ -4,6 +4,7 @@ import {
 	type InitialCapabilityPort,
 } from "./equivalence.js";
 import { PROVIDER_TARGET } from "./options.js";
+import { NETLIFY_STATIC_DEPLOY_PRODUCT_ID } from "./resolvers.js";
 import type {
 	Capability,
 	CapabilityManifest,
@@ -36,6 +37,7 @@ function makeCapability(classKey: InitialCapabilityPort): Capability {
 				sku: `${PROVIDER_TARGET}:${mapping.resourceClass}`,
 				unit: "request",
 				marginalPrice: "0",
+				pricingStatus: "unknown",
 			};
 		},
 	};
@@ -83,10 +85,20 @@ export function createNetlifyProvider(): CloudProvider {
 				providerId: `@hobo/provider-${PROVIDER_TARGET}`,
 				published: {},
 				capabilities: {
-					capabilities: capabilities.map((c) => ({ port: c.port })),
+					capabilities: capabilities.map((c) => ({
+						port: c.port,
+						...(c.port === "compute"
+							? {
+									productId: NETLIFY_STATIC_DEPLOY_PRODUCT_ID,
+									profiles: ["web.static/v1", "web.hosted/v1"],
+									features: ["http", "static", "edge", "managed"],
+									resourceKind: "immutable-deployment",
+								}
+							: undefined),
+					})),
 				},
 				auth: { exchange: "hobo:brokered-deploy-token", staticSecrets: false },
-				cost: { facts: [] },
+				cost: { pricingStatus: "unknown", facts: [] },
 			};
 		},
 		client(port: PortKind, outputs: Outputs): ProviderClient {

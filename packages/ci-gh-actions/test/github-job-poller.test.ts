@@ -873,8 +873,8 @@ describe("pull-mode box worker over SQLite", () => {
 	it("blocks a pull request while a merge group waits for its lease cap", async () => {
 		const log = vi.spyOn(console, "error").mockImplementation(() => {});
 		const store = await configuredStore(2);
-		const first = memoryJob(1, "PR impact gate", ["hobo-trunk"]);
-		const waiting = memoryJob(2, "PR impact gate", ["hobo-trunk"]);
+		const first = memoryJob(1, "PR impact validation", ["hobo-trunk"]);
+		const waiting = memoryJob(2, "PR impact validation", ["hobo-trunk"]);
 		const pullRequest = memoryJob(3, "CI fabric contract guard");
 		const github = memoryGithub([first, waiting, pullRequest]);
 		for (const [job, at] of [
@@ -1166,7 +1166,7 @@ describe("pull-mode box worker over SQLite", () => {
 
 	it("queues heavy jobs over the memory budget and admits the next after settlement", async () => {
 		const store = await configuredStore(3);
-		const jobs = [1, 2, 3].map((id) => memoryJob(id, "PR impact gate"));
+		const jobs = [1, 2, 3].map((id) => memoryJob(id, "PR impact validation"));
 		const memoryAdmission = createWorkerMemoryAdmission(
 			resolveWorkerMemoryConfig(
 				{
@@ -1203,7 +1203,7 @@ describe("pull-mode box worker over SQLite", () => {
 		const store = await configuredStore(3);
 		const jobs = [
 			memoryJob(1, "unclassified standard job"),
-			memoryJob(2, "PR impact gate"),
+			memoryJob(2, "PR impact validation"),
 			memoryJob(3, "CI fabric contract guard"),
 		];
 		let now = NOW;
@@ -1258,8 +1258,8 @@ describe("pull-mode box worker over SQLite", () => {
 
 	it("blocks lower ranks until a memory-waiting trunk job is admitted", async () => {
 		const store = await configuredStore(3);
-		const running = memoryJob(1, "PR impact gate");
-		const trunk = memoryJob(2, "PR impact gate", ["hobo-trunk"]);
+		const running = memoryJob(1, "PR impact validation");
+		const trunk = memoryJob(2, "PR impact validation", ["hobo-trunk"]);
 		const pullRequest = memoryJob(3, "CI fabric contract guard");
 		let now = NOW;
 		const memoryAdmission = createWorkerMemoryAdmission(
@@ -1313,7 +1313,7 @@ describe("pull-mode box worker over SQLite", () => {
 	it("admits trunk heavy alongside a light PR within the full budget", async () => {
 		const store = await configuredStore(3);
 		const pullRequest = memoryJob(1, "CI fabric contract guard");
-		const trunk = memoryJob(2, "PR impact gate", ["hobo-trunk"]);
+		const trunk = memoryJob(2, "PR impact validation", ["hobo-trunk"]);
 		const memoryAdmission = createWorkerMemoryAdmission(
 			resolveWorkerMemoryConfig(
 				{ HOBO_CI_WORKER_MEMORY_BUDGET_MB: "12288" },
@@ -1346,7 +1346,7 @@ describe("pull-mode box worker over SQLite", () => {
 
 	it("caps newly admitted PR jobs while rank-0 trunk is active and removes the cap when it settles", async () => {
 		const store = await configuredStore(3);
-		const trunk = memoryJob(1, "PR impact gate");
+		const trunk = memoryJob(1, "PR impact validation");
 		const firstPr = memoryJob(2, "CI fabric contract guard");
 		const secondPr = memoryJob(3, "Secret scan");
 		const memoryAdmission = createWorkerMemoryAdmission(

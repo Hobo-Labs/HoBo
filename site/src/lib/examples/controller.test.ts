@@ -61,7 +61,8 @@ describe("Examples Home Station", () => {
 		expect(targetPackCanHostNow("cloudflare")).toBe(true);
 		expect(targetPackCanHostNow("lakebed")).toBe(true);
 		expect(targetPackCanHostNow("netlify")).toBe(true);
-		expect(targetPackCanHostNow("vercel")).toBe(true);
+		expect(targetPackCanHostNow("vercel")).toBe(false);
+
 
 		const multi = resolveStationDeployPlan(
 			yards,
@@ -143,13 +144,12 @@ describe("Examples Home Station", () => {
 				"cloudflare",
 				"lakebed",
 				"netlify",
-				"vercel",
 				"webernetes",
 			].sort(),
 		);
 	});
 
-	it("selects only Yard-allowed candidates; Cloudflare/Vercel stay hostable", async () => {
+	it("selects only Yard-allowed candidates and refuses unavailable anonymous Vercel hosting", async () => {
 		const catalog = await loadExamplesCatalog();
 		const hello = catalog.find(({ id }) => id === "hello-world")!;
 		const saas = catalog.find(({ id }) => id === "opensaas")!;
@@ -176,7 +176,8 @@ describe("Examples Home Station", () => {
 			"yard:vercel",
 		]);
 		expect(targetPackCanHostNow("cloudflare")).toBe(true);
-		expect(targetPackCanHostNow("vercel")).toBe(true);
+		expect(targetPackCanHostNow("vercel")).toBe(false);
+ expect(resolveExampleDeployPlan(hello).skipped).toContainEqual(expect.objectContaining({target:expect.objectContaining({id:"vercel"}),reason:"cannot-host"}));
 	});
 
 	it("loads yard deploy surfaces for Pool Code", async () => {

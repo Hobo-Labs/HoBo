@@ -231,19 +231,24 @@ jobs:
         if: always() && github.event_name == 'pull_request' && steps.source.outputs.source == 'build'
         run: docker image rm "hobo-ci-deps:${{ steps.key.outputs.key }}" >/dev/null 2>&1 || true
 
-  pr-gate:
-    name: PR impact gate
+  pr_gate_validation:
+    name: PR impact validation
     # Waits for the image job: a pull request that changes the image inputs must test on the
     # image it built (that job retags hobo-ci-worker:local, which this job's container starts
     # from). When the inputs are unchanged that job is a short no-op. !cancelled() keeps this
-    # required check running, never skipped, when the image build fails.
+    # validation running, never skipped, when the image build fails. The
+    # required PR impact gate below combines this result with merge-group tests.
     needs: ci-runner-image
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    # Target wall ~2–3 min; hard cap stays within the 20-minute workflow babysitter.
-    timeout-minutes: 12
+    # Large affected sets can need a cold-cache run; retain the workflow-wide cap.
+    timeout-minutes: 20
     permissions:
       contents: read
+    outputs:
+      merge_base: ${{ steps.merge-group-base.outputs.base }}
+      merge_tests: ${{ steps.merge-group-base.outputs.tests }}
+      pr_base: ${{ steps.scm-base.outputs.base }}
     env:
       GITHUB_EVENT_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
     steps:
@@ -283,13 +288,15 @@ jobs:
         if: github.event_name == 'pull_request'
         id: scm-base
         env:
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_BASE_REF: ${{ github.base_ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          BASE="$(node --import tsx scripts/ci/turbo-scm-base.mts)"
+          if [[ ! "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "PR base SHA is missing or invalid" >&2; exit 1
+          fi
+          git cat-file -e "${PR_BASE_SHA}^{commit}" || git fetch --no-tags origin "$PR_BASE_SHA"
+          BASE="$(git merge-base "$PR_BASE_SHA" HEAD)"
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
-          git fetch origin "${{ github.base_ref }}"
       # Shadow only: classifies non-meaningful (inert) paths and reports
       # the lanes they would drop. Execution below is unchanged in every
       # mode; HOBO_IMPACT_GATE=off disables the report.
@@ -330,34 +337,10 @@ jobs:
         run: pnpm run lint:code
       - name: Relevant checks only
         if: github.event_name == 'pull_request'
-        run: pnpm agent:check -- --base=origin/${{ github.base_ref }}
-      - name: Dagger checks plan (native CI parity)
-        if: github.event_name == 'pull_request'
-        run: |
-          pnpm exec turbo run build --filter=@hobo/ci-dagger --output-logs=new-only --concurrency=1
-          pnpm --filter @hobo/ci-dagger checks --plan --config .hobo/dagger.json
-      - name: Affected package lanes
-        if: github.event_name == 'pull_request'
         env:
-          TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
-        run: |
-          set -euo pipefail
-          # Compare root package.json/turbo.json content at the same merge base:
-          # root scripts and //# tasks stay package-scoped; globalDependencies
-          # and other shared root inputs run the whole workspace.
-          mapfile -t FILTERS < <(
-            git diff --name-only "${TURBO_SCM_BASE}"...HEAD \
-              | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base="${TURBO_SCM_BASE}"
-          )
-          if [ "${#FILTERS[@]}" -eq 0 ]; then
-            echo "Only inert paths changed; skipping turbo impact lanes"
-            exit 0
-          fi
-          pnpm exec turbo run build typecheck lint test:unit test:schema test:contract:consumer \
-            "${FILTERS[@]}" \
-            --continue=never --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} \
-            --anon-profile=turbo-profile.json
-      # main-gate's main-base, S0 gate set and Workspace tests steps mirror these steps.
+          BASE: ${{ steps.scm-base.outputs.base }}
+        run: pnpm agent:check -- --base="$BASE" --external-workspace-tests
+      # main-gate's main-base and S0 gate set steps mirror these steps.
       - name: Resolve the merge group base and gate scope
         if: github.event_name == 'merge_group'
         id: merge-group-base
@@ -397,7 +380,7 @@ jobs:
             > "$RUNNER_TEMP/impact-plan.json"
       - name: S0 gate set
         if: github.event_name == 'merge_group'
-        timeout-minutes: 12
+        timeout-minutes: 20
         env:
           # One vitest fork at a time: four forks (default) with 3 GiB heaps plus
           # componentize-js wizer exceed the 6 GiB job container and get OOM-killed.
@@ -407,31 +390,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$SCOPE" = "affected" ]; then
-            pnpm agent:check -- --base="$BASE"
+            pnpm agent:check -- --base="$BASE" --external-workspace-tests
           else
             pnpm run check:all
-          fi
-      - name: Workspace tests
-        if: github.event_name == 'merge_group'
-        timeout-minutes: ${{ steps.merge-group-base.outputs.tests == 'affected' && 10 || 20 }}
-        env:
-          TESTS: ${{ steps.merge-group-base.outputs.tests }}
-          BASE: ${{ steps.merge-group-base.outputs.base }}
-          HOBO_TURBO_CONCURRENCY: "1"
-        run: |
-          set -euo pipefail
-          if [ "$TESTS" = "affected" ]; then
-            # Changed packages run whole; their dependents run only the test files whose
-            # import closure reaches a changed file (scripts/ci/dependent-tests.mts).
-            # --base keeps the planner's root-config scoping identical to the
-            # lane decision above. The impact classification is shadow-only:
-            # nothing consumes impact-meaningful.txt yet.
-            git diff --name-only "$BASE" HEAD |
-              node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
-                --base="$BASE" --run --anon-profile=turbo-profile.json
-          else
-            pnpm exec turbo run test \
-              --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
           fi
       # The prune decides whether the save runs at all. Skipped here, the save's
       # composite never starts, so the runner never resolves actions/cache/save:
@@ -449,6 +410,201 @@ jobs:
       - name: CI trace
         if: always()
         uses: ./.github/actions/ci-trace
+
+  workspace_tests:
+    name: Workspace test shard ${{ matrix.shard }}
+    # The required gate accepts validation only when every shard succeeds.
+    needs: pr_gate_validation
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_validation.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 0
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Turbo cache
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          preferred-job: pr_gate_validation
+      - name: Check the sibling pins (gitlink against checkout, offline)
+        run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
+      - uses: ./.github/actions/pnpm-store
+      - name: Link deps layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check deps layer match
+        id: deps-layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - name: Verify deps layer sibling links
+        if: steps.deps-layer.outputs.match == 'true'
+        run: node --import tsx scripts/ensure-ts-autocode-links.mts
+      - name: Install dependencies
+        if: steps.deps-layer.outputs.match != 'true'
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Workspace tests
+        timeout-minutes: 19
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ needs.pr_gate_validation.outputs.pr_base }}
+          MERGE_TESTS: ${{ needs.pr_gate_validation.outputs.merge_tests }}
+          MERGE_BASE: ${{ needs.pr_gate_validation.outputs.merge_base }}
+          SHARD: ${{ matrix.shard }}
+          HOBO_TURBO_CONCURRENCY: "1"
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request) TESTS=affected; BASE="$PR_BASE" ;;
+            merge_group) TESTS="$MERGE_TESTS"; BASE="$MERGE_BASE" ;;
+            *) echo "Unexpected event: $EVENT_NAME" >&2; exit 1 ;;
+          esac
+          case "$TESTS" in
+            affected)
+              # Changed packages run whole; their dependents run only the tests
+              # whose import closure reaches a change. A missing base is an error.
+              if [ -z "$BASE" ] || ! git cat-file -e "${BASE}^{commit}"; then
+                echo "Merge-group base is missing or unreachable" >&2
+                exit 1
+              fi
+              git diff --name-only "$BASE" HEAD |
+                node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
+                  --base="$BASE" --shard="$SHARD/8" --run --anon-profile=turbo-profile.json
+              ;;
+            all)
+              printf '' | node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
+                --shard="$SHARD/8" --run --anon-profile=turbo-profile.json
+              ;;
+            *) echo "Invalid or missing merge-group test scope: $TESTS" >&2; exit 1 ;;
+          esac
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && steps.turbo-prune.outputs.save != 'false'
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
+      - name: CI trace
+        if: always()
+        uses: ./.github/actions/ci-trace
+
+  pr_affected:
+    name: PR affected package lanes
+    needs: pr_gate_validation
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.pr_gate_validation.result == 'success' }}
+    runs-on: hobo
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 0
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Turbo cache
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          preferred-job: pr_gate_validation
+      - name: Check the sibling pins (gitlink against checkout, offline)
+        run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
+      - uses: ./.github/actions/pnpm-store
+      - name: Link deps layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check deps layer match
+        id: deps-layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - name: Verify deps layer sibling links
+        if: steps.deps-layer.outputs.match == 'true'
+        run: node --import tsx scripts/ensure-ts-autocode-links.mts
+      - name: Install dependencies
+        if: steps.deps-layer.outputs.match != 'true'
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Dagger checks plan (native CI parity)
+        run: |
+          pnpm exec turbo run build --filter=@hobo/ci-dagger --output-logs=new-only --concurrency=1
+          pnpm --filter @hobo/ci-dagger checks --plan --config .hobo/dagger.json
+      - name: Affected package lanes
+        env:
+          TURBO_SCM_BASE: ${{ needs.pr_gate_validation.outputs.pr_base }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TURBO_SCM_BASE" ] || ! git cat-file -e "${TURBO_SCM_BASE}^{commit}"; then
+            echo "PR base is missing or unreachable" >&2; exit 1
+          fi
+          git diff --name-only "${TURBO_SCM_BASE}"...HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base="${TURBO_SCM_BASE}" \
+              > "$RUNNER_TEMP/hobo-affected-lanes"
+          mapfile -t FILTERS < "$RUNNER_TEMP/hobo-affected-lanes"
+          if [ "${#FILTERS[@]}" -eq 0 ]; then
+            echo "Only inert paths changed; skipping turbo impact lanes"
+            exit 0
+          fi
+          pnpm exec turbo run build typecheck lint test:unit test:schema test:contract:consumer \
+            "${FILTERS[@]}" \
+            --continue=never --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} \
+            --anon-profile=turbo-profile.json
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && steps.turbo-prune.outputs.save != 'false'
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
+      - name: CI trace
+        if: always()
+        uses: ./.github/actions/ci-trace
+
+  pr-gate:
+    name: PR impact gate
+    # This is the required check. It runs even if a prerequisite was skipped,
+    # failed, or cancelled, and accepts only the event's complete validation.
+    needs: [pr_gate_validation, workspace_tests, pr_affected]
+    if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require successful validation and workspace tests
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          VALIDATION_RESULT: ${{ needs.pr_gate_validation.result }}
+          WORKSPACE_RESULT: ${{ needs.workspace_tests.result }}
+          AFFECTED_RESULT: ${{ needs.pr_affected.result }}
+        run: |
+          set -euo pipefail
+          if [ "$VALIDATION_RESULT" != "success" ]; then
+            echo "PR impact validation did not succeed: $VALIDATION_RESULT" >&2
+            exit 1
+          fi
+          if [ "$WORKSPACE_RESULT" != "success" ]; then
+            echo "Workspace test shards did not all succeed: $WORKSPACE_RESULT" >&2
+            exit 1
+          fi
+          case "$EVENT_NAME:$AFFECTED_RESULT" in
+            pull_request:success|merge_group:skipped) ;;
+            *) echo "Unexpected affected-lanes result for $EVENT_NAME: $AFFECTED_RESULT" >&2; exit 1 ;;
+          esac
 
   pr-offpath:
     # Off the critical path: these used to run inside the PR impact gate.
@@ -520,8 +676,8 @@ jobs:
   main-gate:
     name: Main full gate
     # Not a required check and not run on merge_group: merge_group now runs the same
-    # affected gate inside the required PR impact gate instead.
-    # pr-gate's merge-group affected steps mirror this job's main-base, S0 gate set and Workspace tests steps.
+    # affected gate across the validation and workspace jobs instead.
+    # Those jobs mirror this job's main-base, S0 gate set and Workspace tests steps.
     # A push that changes the image inputs tests on the image it built; an unchanged push skips
     # the image job, which satisfies this dependency immediately.
     needs: ci-runner-image

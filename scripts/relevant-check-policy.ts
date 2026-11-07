@@ -18,6 +18,8 @@ export type RelevantCheckPolicyOptions = {
 	all?: boolean;
 	includeBuild?: boolean;
 	includeBroadSweeps?: boolean;
+	/** The caller requires a separate job to run all selected workspace tests. */
+	workspaceTestsCoveredExternally?: boolean;
 	rootPackageJsonScriptsOnlyChanged?: boolean;
 	workspacePackageExists?: (workspace: string) => boolean;
 	/** Whether a changed TypeScript file under packages/ names a ts-autocode module (default: reads it). */
@@ -400,7 +402,7 @@ export function selectRelevantChecks(
 		narrowWorkspaceTests.map(({ workspace }) => workspace),
 	);
 
-	if (workspaces.length > 0) {
+	if (workspaces.length > 0 && !options.workspaceTestsCoveredExternally) {
 		const turboWorkspaces = workspaces.filter(
 			(workspace) => !narrowWorkspaces.has(workspace),
 		);
@@ -422,7 +424,10 @@ export function selectRelevantChecks(
 		}
 	}
 
-	for (const { packageName, vitestPaths } of narrowWorkspaceTests) {
+	for (const {
+		packageName,
+		vitestPaths,
+	} of options.workspaceTestsCoveredExternally ? [] : narrowWorkspaceTests) {
 		checks.push({
 			command: "pnpm",
 			args: ["--filter", packageName, "exec", "vitest", "run", ...vitestPaths],

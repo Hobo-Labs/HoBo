@@ -37,7 +37,7 @@ import "list"
 	"provider.upstash.lease.expired"
 
 #StartRedisDatabase: {
-	contract: "upstash.start-redis.markdown/v1"
+	contract: "upstash.start-redis.markdown/v1" | "upstash.start-redis.markdown/v2"
 
 	// Also the idempotency key: `createDatabase` refuses a response whose id
 	// differs from the key it sent, because a provider that ignores the
@@ -66,8 +66,8 @@ import "list"
 // expiry instant so a plan can say what to expect before the call without the
 // two ever being read as the same fact.
 #UpstashUnclaimedLimits: {
-	documentedExpiryHours: 72
-	transport:             "https-rest"
+	documented_expiry_hours: 72
+	transport:               "https-rest"
 }
 
 #UpstashNonSecretEndpoint: {
@@ -113,10 +113,11 @@ import "list"
 	resource_ref:   string & !=""
 	database_id:    #Uuid4
 
-	rest_endpoint_host: #UpstashHostname
-	rest_endpoint_url:  "https://" + rest_endpoint_host
-	credential_ref?:    #SecretRefLocator
-	rest_url_ref?:      #SecretRefLocator
+	rest_endpoint_host:      #UpstashHostname
+	rest_endpoint_url:       "https://" + rest_endpoint_host
+	credential_ref?:         #SecretRefLocator
+	rest_url_ref?:           #SecretRefLocator
+	redis_protocol_url_ref?: #SecretRefLocator
 
 	expires_at_ms:  int & >0
 	expires_at_iso: #Instant
@@ -146,7 +147,7 @@ import "list"
 	state:     #UpstashClaimState
 	boundary:  "resource"
 	atomicity: "single-resource"
-	claim_url: =~"^https://upstash\\.com/start-redis/console/"
+	claim_ref: #SecretRefLocator
 
 	// Only the blocking actions still outstanding, so "the ceremony happened"
 	// cannot be read as "nobody holds a residual credential".
@@ -158,15 +159,17 @@ import "list"
 }
 
 #UpstashProvisionReceipt: {
-	schema_version: "hobo.provider-upstash.receipt/v1"
-	definition_id:  "upstash.temporary-redis/v1"
-	provider_id:    "upstash"
-	resource_ref:   string & !=""
-	database_id:    #Uuid4
-	endpoint:       #UpstashNonSecretEndpoint
+	schema_version:      "hobo.provider-upstash.receipt/v2"
+	definition_id:       "upstash.temporary-redis/v1"
+	provider_id:         "upstash"
+	resource_ref:        =~"^claimable:[0-9a-f]{64}$"
+	opaque_physical_id:  =~"^claimable:[0-9a-f]{64}$"
+	native_identity_ref: #SecretRefLocator
+	endpoint:            #UpstashNonSecretEndpoint
 
-	credential_ref?: #SecretRefLocator
-	rest_url_ref?:   #SecretRefLocator
+	credential_ref?:         #SecretRefLocator
+	rest_url_ref?:           #SecretRefLocator
+	redis_protocol_url_ref?: #SecretRefLocator
 
 	expires_at_iso:  #Instant
 	expires_at_ms:   int & >0
@@ -190,10 +193,12 @@ import "list"
 }
 
 #UpstashProviderFact: {
-	kind:           #UpstashProviderFactKind
-	occurred_at_ms: int & >0
-	resource_ref:   string & !=""
-	database_id:    #Uuid4
+	schema_version:      "hobo.provider-upstash.fact/v2"
+	kind:                #UpstashProviderFactKind
+	occurred_at_ms:      int & >0
+	resource_ref:        =~"^claimable:[0-9a-f]{64}$"
+	opaque_physical_id:  =~"^claimable:[0-9a-f]{64}$"
+	native_identity_ref: #SecretRefLocator
 
 	// Non-secret scalars only — the wire form flattens them to strings. A
 	// locator may appear; material may not, and `assertNoCredentialMaterial`
