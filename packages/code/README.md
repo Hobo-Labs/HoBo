@@ -78,12 +78,15 @@ child shares its console and gets Ctrl-C itself, and passing a signal on there
 is a forced kill (TerminateProcess) that would race the child's own handling
 and skip its exit listeners. The launcher only keeps the console's Ctrl-C and
 Ctrl-Break from ending it before its child, and waits. A launcher killed
-outright on Windows leaves the child running.
+outright on Windows leaves the child running. The Windows paths are not
+exercised by automated tests on Windows (the suites fake `process.platform`
+on Linux or skip there); the shell's forward ssh also runs without the
+watchdog's lifetime tie on Windows, so a killed shell can orphan that ssh
+and its authorization there.
 
-`nohup hobo-code …` does not keep hobo-code running after a hangup, and never
-did: Node clears an ignored SIGHUP when it starts, so the ignore `nohup` sets
-is gone before the launcher's first line. A bare `nohup node -e …` ends with
-129 on `kill -HUP` the same way. The launcher listens for SIGHUP and passes
+`nohup hobo-code …` does not keep hobo-code running after a hangup: POSIX
+preserves the SIGHUP ignore `nohup` sets across exec, but the launcher
+installs its own SIGHUP listener, which replaces the inherited ignore. The launcher listens for SIGHUP and passes
 the hangup on to its child: a hangup is how hobo-code learns its terminal is
 gone, and the shell, or `session serve`, then stops and removes what it made
 rather than run on with no terminal. Run it under tmux or screen to keep it

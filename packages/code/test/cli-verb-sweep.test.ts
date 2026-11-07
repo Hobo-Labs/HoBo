@@ -33,7 +33,13 @@
  * Each run gets its own `HOBO_HOME`, so nothing leaks between tests and
  * nothing touches the developer's real station.
  */
-import { mkdtempSync, readdirSync, readlinkSync, rmSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readlinkSync,
+	rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -50,6 +56,9 @@ const homes: string[] = [];
 
 /** The processes whose working directory is under `dir`. */
 function workingUnder(dir: string): number[] {
+	// /proc cwd enumeration is Linux-only; elsewhere there is no portable
+	// per-process cwd query, so this leak check does not apply.
+	if (!existsSync("/proc")) return [];
 	return readdirSync("/proc")
 		.filter((name) => /^\d+$/u.test(name))
 		.map(Number)

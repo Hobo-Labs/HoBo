@@ -1,3 +1,5 @@
+import { isolateTmux } from "./tmux-isolation.js";
+
 /**
  * The environment for a process a test starts with an environment of its own.
  *
@@ -8,6 +10,10 @@
  * a TMUX_TMPDIR the caller names, and drops TMUX.
  */
 export function testEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	// Lazily isolate when the package setupFiles did not run (a root
+	// test:file/single-file run): point this process at its own tmux
+	// server instead of failing every testEnv user.
+	if (process.env.TMUX_TMPDIR === undefined) isolateTmux();
 	const socketDir = process.env.TMUX_TMPDIR;
 	if (socketDir === undefined) {
 		throw new Error("test/isolate-tmux.ts has not run: TMUX_TMPDIR is unset");
@@ -15,8 +21,8 @@ export function testEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	return Object.fromEntries(
 		Object.entries({
 			TMUX_TMPDIR: socketDir,
-			...env,
 			HOBO_CODE_SEAT_AGENTS: "0",
+			...env,
 		}).filter(([name]) => name !== "TMUX"),
 	);
 }

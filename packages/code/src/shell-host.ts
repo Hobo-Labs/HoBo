@@ -754,13 +754,24 @@ export function createDefaultShellHost(
 			disposed = true;
 			// A verb still opening its authorization finishes first: the shell
 			// is closing, so it closes what it opened rather than forward it.
-			await Promise.all(authorizing);
-			await Promise.all([...forwards].map((forward) => forward.stop()));
-			await Promise.all([...servedSessions].map((served) => served.close()));
+			// Every cleanup runs even when one fails (a forward whose
+			// authorization would not close must not orphan served/dev
+			// sessions or keep the held signals); the first failure is
+			// rethrown once everything else is done.
+			const settled = await Promise.allSettled([
+				...authorizing,
+				...[...forwards].map((forward) => forward.stop()),
+				...[...servedSessions].map((served) => served.close()),
+				...[...devSessions].map((session) => session.close()),
+			]);
 			servedSessions.clear();
-			await Promise.all([...devSessions].map((session) => session.close()));
 			devSessions.clear();
 			if (authorizing.size === 0) releaseSignals();
+			const failed = settled.find(
+				(result): result is PromiseRejectedResult =>
+					result.status === "rejected",
+			);
+			if (failed !== undefined) throw failed.reason;
 		},
 		exitSignal: () => endedBy,
 		onNotice(listener) {
@@ -778,12 +789,12 @@ export function createDefaultShellHost(
 			const { IN_SESSION_MUX, sendToInSessionPane } = await import(
 				"./in-session-panes.js"
 			);
-			const { tmuxRunner } = await import("./mux.js");
+			const { sessionTarget, tmuxRunner } = await import("./mux.js");
 			const runner = tmuxRunner();
 			const listed = await runner.run([
 				"list-windows",
 				"-t",
-				`${IN_SESSION_MUX}:`,
+				sessionTarget(IN_SESSION_MUX),
 				"-F",
 				"#{window_name}\t#{pane_id}",
 			]);
@@ -791,7 +802,7 @@ export function createDefaultShellHost(
 				.split("\n")
 				.find((row) => row.startsWith(`${agent}\t`));
 			const target =
-				line?.split("\t")[1]?.trim() || `${IN_SESSION_MUX}:${agent}`;
+				line?.split("\t")[1]?.trim() || `${sessionTarget(IN_SESSION_MUX)}${agent}`;
 			await sendToInSessionPane(runner, target, text);
 			return `sent to ${agent} in this session — stay here, Tab to panes to watch it work`;
 		},

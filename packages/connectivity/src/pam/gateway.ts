@@ -272,28 +272,27 @@ export function createPrivilegedAccessGateway(
 			});
 		},
 		async stop() {
-			await Promise.allSettled(ending.values());
-			// End all live sessions. Each is dropped once its pam.SessionEnded is
-			// written: a stop whose audit failed part way, retried, records the
-			// sessions still left, and none twice.
-			for (const [id, session] of sessions) {
-				if (remote && session.remoteId) {
-					await remote.revokeSession(session.remoteId).catch(() => {});
+			// End all live sessions through the same ending map endSession
+			// uses, so a session ending concurrently is recorded once, with
+			// the verified token subject. Each is dropped once its
+			// pam.SessionEnded is written: a stop whose audit failed part
+			// way, retried, records the sessions still left, and none twice.
+			for (;;) {
+				await Promise.allSettled(ending.values());
+				const live = [...sessions.values()].filter(
+					(session) => !ending.has(session.sessionId),
+				);
+				if (live.length === 0) break;
+				for (const session of live) {
+					const recorded = endLive(
+						session.sessionId,
+						session,
+						"gateway-stop",
+					).finally(() => {
+						ending.delete(session.sessionId);
+					});
+					ending.set(session.sessionId, recorded);
 				}
-				await sink.append({
-					type: "pam.SessionEnded",
-					time: now(),
-					stationId: ctx?.stationId ?? "unknown",
-					tenant: ctx?.tenant ?? "unknown",
-					sessionId: id,
-					subject: session.sessionId,
-					target: session.targetId,
-					isolationClass: options.isolationClass,
-					kind: options.kind,
-					reason: "gateway-stop",
-					credentialRef: session.credentialRef,
-				});
-				sessions.delete(id);
 			}
 			if (ctx) {
 				await sink.append({

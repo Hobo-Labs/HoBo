@@ -231,7 +231,9 @@ if (argv[0] === "_station-agent") {
 							readonly auditTypes?: readonly string[];
 							readonly credentialMode?: "station-authorized-agent";
 							readonly identityAgent: string;
-							readonly closeAuthorization?: () => Promise<void>;
+							readonly closeAuthorization?: (
+								reason?: string,
+							) => Promise<void>;
 						};
 					}
 				).terminalAction
@@ -313,7 +315,7 @@ if (argv[0] === "_station-agent") {
 				signals,
 			);
 		} finally {
-			await action.closeAuthorization?.();
+			await action.closeAuthorization?.(signals.first ?? "forward-ended");
 			signals.release();
 		}
 	} else if (result.ok && action?.kind === "serve-sessions") {
@@ -343,9 +345,11 @@ if (argv[0] === "_station-agent") {
 		process.exitCode = result.exitCode;
 	}
 	// A signal held while the authorization was opened, which then went
-	// unused (the CLI failed after opening it, and closed it): it ends
+	// unused (the CLI failed after opening it, and closed it), or one that
+	// came while the forward's authorization was closing: it ends
 	// hobo-code now, as it would have, with the authorization closed.
-	if (signals.first !== undefined && action?.kind !== "forward-sessions") {
+	// A forward already ended by that signal returned this same status.
+	if (signals.first !== undefined) {
 		process.exitCode = signalStatus(signals.first);
 	}
 	signals.release();

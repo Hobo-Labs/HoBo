@@ -11,6 +11,7 @@
  * no ssh.
  */
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import type { DevMachine } from "./dev-machines.js";
 import { preferNamedEndpoint } from "./occupancy-endpoints.js";
 import {
@@ -42,8 +43,30 @@ export interface StartedSsh {
 	): void;
 }
 
-const startSsh = (args: readonly string[]): StartedSsh =>
-	spawn("ssh", [...args], { stdio: "inherit" });
+/** The watchdog the shell also runs its forward's ssh under. */
+const SSH_WATCHDOG = fileURLToPath(
+	new URL("../bin/ssh-watchdog.mjs", import.meta.url),
+);
+
+/**
+ * Run ssh detached under the watchdog, as the shell's forward does: in
+ * hobo-code's own process group the launcher's group signal ended ssh in
+ * parallel with hobo-code's handler, and the status hinged on which
+ * thread Node handed first. Detached under the watchdog, ssh outlives
+ * neither the signal (passed on by stopSsh) nor this process (the
+ * watchdog's stdin pipe ends with it) nor the lease. Windows has no
+ * process groups, so ssh runs directly there.
+ */
+const startSshDetached =
+	(deadlineMs: number) =>
+	(args: readonly string[]): StartedSsh =>
+		process.platform === "win32"
+			? spawn("ssh", [...args], { stdio: "inherit" })
+			: spawn(
+					process.execPath,
+					[SSH_WATCHDOG, String(deadlineMs), "ssh", ...args],
+					{ stdio: ["pipe", "inherit", "inherit"], detached: true },
+				);
 
 /** How long ssh gets to end on the signal it was passed before it is killed. */
 const SSH_STOP_GRACE_MS = 5_000;
@@ -91,7 +114,10 @@ export async function forwardResidentSessions(
 			stoppedBy ??= signal;
 			stopSsh(signal);
 		});
-		child = (io.startSsh ?? startSsh)(args);
+		child = (
+			io.startSsh ??
+			startSshDetached(Date.parse(forward.authorizationExpiresAt ?? ""))
+		)(args);
 		const expiration = setTimeout(() => {
 			expired = true;
 			stopSsh("SIGTERM");
@@ -109,10 +135,10 @@ export async function forwardResidentSessions(
 		};
 		child.once("error", () => finish(1));
 		child.once("exit", (code, signal) => {
-			// The launcher's signal reaches ssh, in hobo-code's group, as it
-			// reaches hobo-code, and Node can hand hobo-code ssh's exit first:
-			// the two reach different threads. Let that signal reach its
-			// listener before the status is decided, or it was ssh's (1).
+			// Node can hand hobo-code ssh's exit before the signal that
+			// caused it reaches its listener here: the two reach different
+			// threads. Let that signal arrive before the status is decided,
+			// or it was ssh's (1).
 			ended = true;
 			void letSignalsArrive().then(() =>
 				finish(

@@ -20,6 +20,14 @@
 import { spawn } from "node:child_process";
 import { ENDING_SIGNALS } from "./ending-signals.mjs";
 
+// Process groups are POSIX: on Windows there is no group to signal whole,
+// and kill(-pid) is invalid. The shell spawns ssh directly there; refuse
+// to run rather than pretend the lifetime tie exists.
+if (process.platform === "win32") {
+	process.stderr.write("ssh-watchdog: not supported on Windows\n");
+	process.exit(1);
+}
+
 /** How long ssh's group gets to end on a signal before it is killed. */
 const GRACE_MS = 3_000;
 

@@ -282,6 +282,8 @@ export async function openStationGateway(
 	};
 	const localProxies = new Set<SshAgentProxy>();
 	let stopped = false;
+	let gatewayStopped = false;
+	let closing: Promise<void> | undefined;
 	return {
 		// SAFETY: parsed or fixture value is the named domain type after this assertion.
 		broker: gateway as PaneSessionBroker,
@@ -334,6 +336,9 @@ export async function openStationGateway(
 		// and the gateway's stop, with its pam.GatewayStopped, is always tried.
 		async close(reason) {
 			if (stopped) return;
+			const inFlight = closing;
+			if (inFlight !== undefined) return inFlight;
+			const attempt = (async (): Promise<void> => {
 			const failures: unknown[] = [];
 			for (const proxy of localProxies) {
 				try {
@@ -352,12 +357,18 @@ export async function openStationGateway(
 					}
 				}
 			}
-			try {
-				await gateway.stop();
-				stopped = true;
-			} catch (error) {
-				failures.push(error);
+			if (!gatewayStopped) {
+				try {
+					await gateway.stop();
+					gatewayStopped = true;
+				} catch (error) {
+					failures.push(error);
+				}
 			}
+			// Done only once every step has succeeded: a proxy that would not
+			// close stays in localProxies for the retry, and the gateway is
+			// not stopped twice.
+			if (failures.length === 0) stopped = true;
 			if (failures.length > 0) {
 				throw new AggregateError(
 					failures,
@@ -368,6 +379,11 @@ export async function openStationGateway(
 						.join("; "),
 				);
 			}
+			})();
+			closing = attempt.finally(() => {
+				closing = undefined;
+			});
+			return closing;
 		},
 	};
 }

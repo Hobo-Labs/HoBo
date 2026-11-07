@@ -2847,15 +2847,23 @@ export async function runHoboCodeCli(
 			await letSignalsArrive();
 			return deps.signals.first;
 		};
-		const interrupted = (signal: NodeJS.Signals): HoboCodeCliResult =>
+		const interrupted = (
+			signal: NodeJS.Signals,
+			leftoverWindows: readonly string[] = [],
+		): HoboCodeCliResult =>
 			fail(
 				"HOBO_CODE_MUX_INTERRUPTED",
 				panel("✕ mux", [
 					`${signal} before the panes held their Station sessions`,
 					"Every session mux opened is ended; no pane keeps one.",
+					...(leftoverWindows.length > 0
+						? [
+								`windows mux could not remove: ${leftoverWindows.join(", ")} — remove them with tmux kill-window`,
+							]
+						: []),
 				]),
 				[`hobo-code mux --host ${requestedHost ?? "<machine>"}`],
-				{ signal },
+				{ signal, leftoverWindows },
 			);
 		try {
 			if (resolvedMachine) {
@@ -3069,8 +3077,11 @@ export async function runHoboCodeCli(
 			// created goes with its last window.
 			const signal = await interruption();
 			if (signal !== undefined) {
-				await killWindows(muxRunner, applied.createdWindows);
-				return interrupted(signal);
+				const leftover = await killWindows(
+					muxRunner,
+					applied.createdWindows,
+				);
+				return interrupted(signal, leftover);
 			}
 			const created = new Set(applied.created);
 			if (flags["dry-run"] !== true) {
