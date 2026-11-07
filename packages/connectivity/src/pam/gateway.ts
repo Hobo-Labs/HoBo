@@ -274,25 +274,30 @@ export function createPrivilegedAccessGateway(
 		async stop() {
 			// End all live sessions through the same ending map endSession
 			// uses, so a session ending concurrently is recorded once, with
-			// the verified token subject. Each is dropped once its
-			// pam.SessionEnded is written: a stop whose audit failed part
-			// way, retried, records the sessions still left, and none twice.
+			// the verified token subject. Refuse new sessions first so the
+			// live set can only shrink. Each session is dropped once its
+			// pam.SessionEnded is written; a failure propagates (no internal
+			// retry loop) and leaves the rest for a caller-retried stop.
+			running = false;
 			for (;;) {
 				await Promise.allSettled(ending.values());
 				const live = [...sessions.values()].filter(
 					(session) => !ending.has(session.sessionId),
 				);
 				if (live.length === 0) break;
-				for (const session of live) {
-					const recorded = endLive(
-						session.sessionId,
-						session,
-						"gateway-stop",
-					).finally(() => {
-						ending.delete(session.sessionId);
-					});
-					ending.set(session.sessionId, recorded);
-				}
+				await Promise.all(
+					live.map((session) => {
+						const recorded = endLive(
+							session.sessionId,
+							session,
+							"gateway-stop",
+						).finally(() => {
+							ending.delete(session.sessionId);
+						});
+						ending.set(session.sessionId, recorded);
+						return recorded;
+					}),
+				);
 			}
 			if (ctx) {
 				await sink.append({
