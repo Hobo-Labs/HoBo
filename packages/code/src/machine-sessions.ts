@@ -339,46 +339,46 @@ export async function openStationGateway(
 			const inFlight = closing;
 			if (inFlight !== undefined) return inFlight;
 			const attempt = (async (): Promise<void> => {
-			const failures: unknown[] = [];
-			for (const proxy of localProxies) {
-				try {
-					await proxy.close();
-					localProxies.delete(proxy);
-				} catch (error) {
-					failures.push(error);
-				}
-			}
-			if (reason !== undefined) {
-				for (const session of gateway.listSessions()) {
+				const failures: unknown[] = [];
+				for (const proxy of localProxies) {
 					try {
-						await gateway.endSession(session.sessionId, reason);
+						await proxy.close();
+						localProxies.delete(proxy);
 					} catch (error) {
 						failures.push(error);
 					}
 				}
-			}
-			if (!gatewayStopped) {
-				try {
-					await gateway.stop();
-					gatewayStopped = true;
-				} catch (error) {
-					failures.push(error);
+				if (reason !== undefined) {
+					for (const session of gateway.listSessions()) {
+						try {
+							await gateway.endSession(session.sessionId, reason);
+						} catch (error) {
+							failures.push(error);
+						}
+					}
 				}
-			}
-			// Done only once every step has succeeded: a proxy that would not
-			// close stays in localProxies for the retry, and the gateway is
-			// not stopped twice.
-			if (failures.length === 0) stopped = true;
-			if (failures.length > 0) {
-				throw new AggregateError(
-					failures,
-					failures
-						.map((failure) =>
-							failure instanceof Error ? failure.message : String(failure),
-						)
-						.join("; "),
-				);
-			}
+				if (!gatewayStopped) {
+					try {
+						await gateway.stop();
+						gatewayStopped = true;
+					} catch (error) {
+						failures.push(error);
+					}
+				}
+				// Done only once every step has succeeded: a proxy that would not
+				// close stays in localProxies for the retry, and the gateway is
+				// not stopped twice.
+				if (failures.length === 0) stopped = true;
+				if (failures.length > 0) {
+					throw new AggregateError(
+						failures,
+						failures
+							.map((failure) =>
+								failure instanceof Error ? failure.message : String(failure),
+							)
+							.join("; "),
+					);
+				}
 			})();
 			closing = attempt.finally(() => {
 				closing = undefined;

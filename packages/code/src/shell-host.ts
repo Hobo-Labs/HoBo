@@ -802,7 +802,8 @@ export function createDefaultShellHost(
 				.split("\n")
 				.find((row) => row.startsWith(`${agent}\t`));
 			const target =
-				line?.split("\t")[1]?.trim() || `${sessionTarget(IN_SESSION_MUX)}${agent}`;
+				line?.split("\t")[1]?.trim() ||
+				`${sessionTarget(IN_SESSION_MUX)}${agent}`;
 			await sendToInSessionPane(runner, target, text);
 			return `sent to ${agent} in this session — stay here, Tab to panes to watch it work`;
 		},

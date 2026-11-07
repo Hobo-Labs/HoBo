@@ -231,9 +231,7 @@ if (argv[0] === "_station-agent") {
 							readonly auditTypes?: readonly string[];
 							readonly credentialMode?: "station-authorized-agent";
 							readonly identityAgent: string;
-							readonly closeAuthorization?: (
-								reason?: string,
-							) => Promise<void>;
+							readonly closeAuthorization?: (reason?: string) => Promise<void>;
 						};
 					}
 				).terminalAction
