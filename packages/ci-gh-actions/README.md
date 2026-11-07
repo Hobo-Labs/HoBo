@@ -222,6 +222,12 @@ constrains them in `@hobo/ci`'s `ci.cue`, and `parseCiPolicy` rejects a shape on
 the wrong kind. A relay keeps reading persisted vercel policies whose protobuf
 `location` is empty; only authored files require it.
 
+References are optional. Each pool, routing policy, budget, provider entry and
+secret-requirement map accepts either a complete inline definition or a `$ref`.
+You can mix both forms in the same environment and duplicate inline definitions
+across environments. Omit `definitions` entirely when everything is inline.
+Both forms receive the same validation and resolve to the same policy.
+
 Put reusable values in the document's typed `definitions` registries. For
 example, define the Linux pool and routing strategy once, then use these policy
 fields in every environment that shares them:
