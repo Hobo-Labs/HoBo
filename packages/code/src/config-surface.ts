@@ -220,6 +220,15 @@ const KNOB_DEFS: readonly KnobDef[] = [
 		secret: false,
 	},
 	{
+		name: "HOBO_CODE_SEAT_AGENTS",
+		kind: "env",
+		stacks: ["harness-pi-flue", "agent-native"],
+		purpose:
+			"Seat the agent CLIs found on PATH in tmux, from the shell's panes and mux (0, false, no or off: no seats, no tmux session)",
+		example: "0",
+		secret: false,
+	},
+	{
 		name: "HOBO_RIFT",
 		kind: "env",
 		stacks: ["isolation"],

@@ -19,9 +19,11 @@
  * - From the `exit` event, which runs even when no await can, OpenSesame is sent
  *   SIGTERM if it is still running and the schema directory is removed; neither
  *   can throw out of the listener, which would skip the exit listeners after it.
- * - An ignored signal is not respected: the listeners replace an ignore set by
- *   `nohup` or `trap '' HUP` (OpenSesame itself keeps an ignore), and a second
- *   Ctrl-C is passed on as SIGTERM again, so a wedged OpenSesame still needs SIGKILL.
+ * - An ignored signal is not respected: Node clears an ignore set by `nohup` or
+ *   `trap '' HUP` when it starts, before these listeners exist, and they pass
+ *   the hangup on as above. OpenSesame, spawned by Node, starts with every
+ *   signal at its default, under `nohup` or not. A second Ctrl-C is passed on as
+ *   SIGTERM again, so a wedged OpenSesame still needs SIGKILL.
  *
  * What no handler can reach: SIGKILL, and a crash of the process. The schema
  * directory (`hobo-opensesame-*`, a 0600 `.env.schema`) stays in the temp

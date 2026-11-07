@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { killProcessGroup, trackChild } from "./subprocess-cleanup.js";
+import { testEnv } from "./test-env.js";
 
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const launcher = join(pkgRoot, "bin", "hobo-code.mjs");
@@ -58,11 +59,11 @@ describe("hobo-code bin launcher", () => {
 		const r = spawnSync(process.execPath, [launcher, "agents", "--help"], {
 			cwd: pkgRoot,
 			encoding: "utf8",
-			env: {
+			env: testEnv({
 				...process.env,
 				HOBO_CODE_FORCE_STALE_REBUILD: "1",
 				HOBO_CODE_TSC: fakeTsc,
-			},
+			}),
 		});
 		expect(r.status).toBe(0);
 		expect(r.stderr).toMatch(/tsc failed — running src\/ via tsx/);
@@ -83,10 +84,10 @@ describe("hobo-code bin launcher", () => {
 		const r = spawnSync(process.execPath, [launcher, "help"], {
 			cwd: pkgRoot,
 			encoding: "utf8",
-			env: {
+			env: testEnv({
 				...process.env,
 				HOBO_CODE_FORCE_STALE_REBUILD: "1",
-			},
+			}),
 		});
 		expect(r.status).toBe(0);
 		expect(r.stderr).toMatch(/tsc @hobo\/code only/);
@@ -99,7 +100,7 @@ describe("hobo-code bin launcher", () => {
 		const r = spawnSync(process.execPath, [launcher, "help"], {
 			cwd: pkgRoot,
 			encoding: "utf8",
-			env: { ...process.env, HOBO_CODE_SKIP_STALE_REBUILD: "1" },
+			env: testEnv({ ...process.env, HOBO_CODE_SKIP_STALE_REBUILD: "1" }),
 		});
 		expect(r.status).toBe(0);
 		expect(r.stdout).toMatch(/hobo-code/);
@@ -110,7 +111,7 @@ describe("hobo-code bin launcher", () => {
 		const r = spawnSync(process.execPath, [launcher, "status"], {
 			cwd: pkgRoot,
 			encoding: "utf8",
-			env: { ...process.env, HOBO_CODE_SKIP_STALE_REBUILD: "1" },
+			env: testEnv({ ...process.env, HOBO_CODE_SKIP_STALE_REBUILD: "1" }),
 		});
 		expect(r.status).toBe(0);
 		expect(r.stdout).toMatch(/session status|Agents:/i);
@@ -159,12 +160,12 @@ process.on("SIGTERM", close);
 			{
 				cwd: pkgRoot,
 				stdio: ["ignore", "pipe", "pipe"],
-				env: {
+				env: testEnv({
 					...process.env,
 					HOBO_CODE_SKIP_STALE_REBUILD: "1",
 					HOBO_HOME: hoboHome,
 					HOBO_CODE_HOBO_BIN: hoboBin,
-				},
+				}),
 			},
 		);
 		trackChild(child);

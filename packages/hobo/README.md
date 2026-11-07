@@ -34,9 +34,11 @@ and is never removed. As entry points, the binaries also remove owned temporary 
 (and the live Pulumi lane's workspace) on SIGTERM, SIGHUP, SIGINT or SIGQUIT
 (`removeOwnedDirsOnSignals`), and so does `hobo-code`, which composes in process: its entry
 asks for the same removal through that export of `src/cli.ts`, and it takes effect when a
-`/hobo` verb loads the composition. The `hobo-code` bin is a launcher that passes those four
-signals, a closing terminal's SIGHUP included, on to the child that composes, and that child
-takes a launcher killed outright as a hangup (`packages/code/README.md`).
+`/hobo` verb loads the composition. Except on Windows, the `hobo-code` bin is a launcher that
+passes those four signals, a closing terminal's SIGHUP included, on to the process group of
+the child that composes, and that child takes a launcher killed outright as a hangup. On
+Windows the launcher passes nothing on, and a launcher killed outright leaves the child
+running (`packages/code/README.md`).
 When nothing else in the process listens for the signal, the directories are removed and
 the signal raised again, so the process still ends by it (status 128+n). When something
 else handles the signal (`hobo serve control` stops gracefully on SIGTERM and SIGINT and

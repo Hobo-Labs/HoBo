@@ -121,6 +121,8 @@ export function createPrivilegedAccessGateway(
 	const keys = options.keys ?? createSessionBrokerKeys({ useEs256: false });
 	const now = options.now ?? (() => new Date().toISOString());
 	const sessions = new Map<string, SessionHandle & { remoteId?: string }>();
+	/** Endings being recorded: a second end of the same session waits for the first. */
+	const ending = new Map<string, Promise<void>>();
 	const targets = new Map<string, SessionTarget>();
 	let running = false;
 	let ctx: StationContext | null = null;
@@ -165,6 +167,36 @@ export function createPrivilegedAccessGateway(
 				{ code: verified.code },
 			);
 		}
+	}
+
+	async function endLive(
+		sessionId: string,
+		prev: SessionHandle & { remoteId?: string },
+		reason: string | undefined,
+	): Promise<void> {
+		if (remote && prev.remoteId) {
+			await remote.revokeSession(prev.remoteId).catch(() => {});
+		}
+		const verified = verifySessionToken({
+			token: prev.sessionToken.split("~")[0] ?? prev.sessionToken,
+			keys,
+		});
+		await sink.append({
+			type: "pam.SessionEnded",
+			time: now(),
+			stationId: ctx?.stationId ?? "unknown",
+			tenant: ctx?.tenant ?? "unknown",
+			sessionId,
+			subject: verified.ok ? verified.claims.sub : "unknown",
+			target: prev.targetId,
+			isolationClass: options.isolationClass,
+			kind: options.kind,
+			credentialRef: prev.credentialRef,
+			...(reason !== undefined ? { reason } : undefined),
+		});
+		// Dropped only once its end is recorded: an audit that could not be
+		// written leaves the session live, so a retried close records it.
+		sessions.delete(sessionId);
 	}
 
 	return {
@@ -240,26 +272,33 @@ export function createPrivilegedAccessGateway(
 			});
 		},
 		async stop() {
-			// End all live sessions.
-			for (const [id, session] of sessions) {
-				if (remote && session.remoteId) {
-					await remote.revokeSession(session.remoteId).catch(() => {});
-				}
-				await sink.append({
-					type: "pam.SessionEnded",
-					time: now(),
-					stationId: ctx?.stationId ?? "unknown",
-					tenant: ctx?.tenant ?? "unknown",
-					sessionId: id,
-					subject: session.sessionId,
-					target: session.targetId,
-					isolationClass: options.isolationClass,
-					kind: options.kind,
-					reason: "gateway-stop",
-					credentialRef: session.credentialRef,
-				});
+			// End all live sessions through the same ending map endSession
+			// uses, so a session ending concurrently is recorded once, with
+			// the verified token subject. Refuse new sessions first so the
+			// live set can only shrink. Each session is dropped once its
+			// pam.SessionEnded is written; a failure propagates (no internal
+			// retry loop) and leaves the rest for a caller-retried stop.
+			running = false;
+			for (;;) {
+				await Promise.allSettled(ending.values());
+				const live = [...sessions.values()].filter(
+					(session) => !ending.has(session.sessionId),
+				);
+				if (live.length === 0) break;
+				await Promise.all(
+					live.map((session) => {
+						const recorded = endLive(
+							session.sessionId,
+							session,
+							"gateway-stop",
+						).finally(() => {
+							ending.delete(session.sessionId);
+						});
+						ending.set(session.sessionId, recorded);
+						return recorded;
+					}),
+				);
 			}
-			sessions.clear();
 			if (ctx) {
 				await sink.append({
 					type: "pam.GatewayStopped",
@@ -458,29 +497,15 @@ export function createPrivilegedAccessGateway(
 			return handle;
 		},
 		async endSession(sessionId, reason) {
+			const inFlight = ending.get(sessionId);
+			if (inFlight) return inFlight;
 			const prev = sessions.get(sessionId);
 			if (!prev) return;
-			if (remote && prev.remoteId) {
-				await remote.revokeSession(prev.remoteId).catch(() => {});
-			}
-			sessions.delete(sessionId);
-			const verified = verifySessionToken({
-				token: prev.sessionToken.split("~")[0] ?? prev.sessionToken,
-				keys,
+			const recorded = endLive(sessionId, prev, reason).finally(() => {
+				ending.delete(sessionId);
 			});
-			await sink.append({
-				type: "pam.SessionEnded",
-				time: now(),
-				stationId: ctx?.stationId ?? "unknown",
-				tenant: ctx?.tenant ?? "unknown",
-				sessionId,
-				subject: verified.ok ? verified.claims.sub : "unknown",
-				target: prev.targetId,
-				isolationClass: options.isolationClass,
-				kind: options.kind,
-				credentialRef: prev.credentialRef,
-				...(reason !== undefined ? { reason } : undefined),
-			});
+			ending.set(sessionId, recorded);
+			return recorded;
 		},
 		listSessions() {
 			return Object.freeze([...sessions.values()]);

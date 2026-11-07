@@ -20,6 +20,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./ending-signals": {
+			"types": "./bin/ending-signals.d.mts",
+			"default": "./bin/ending-signals.mjs"
 		}
 	},
 	"publishConfig": {

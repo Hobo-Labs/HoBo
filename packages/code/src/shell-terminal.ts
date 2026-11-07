@@ -26,6 +26,20 @@ export interface StreamTerminalOptions {
 	 * scrollback. Capture / scripted streams leave it off.
 	 */
 	readonly alternateScreen?: boolean;
+	/**
+	 * Called once when the terminal goes: a read or write fails with EIO,
+	 * EPIPE and the like, or the live TTY's input ends. The shell takes it as a
+	 * hangup and quits; nothing more is written to the terminal.
+	 */
+	readonly onHangup?: () => void;
+}
+
+/** The errors a terminal that has gone (its window closed) answers with. */
+const TERMINAL_GONE = new Set(["EIO", "EPIPE", "ENXIO", "EBADF", "ECONNRESET"]);
+
+/** Whether `error` says the terminal has gone. */
+export function isTerminalGone(error: Error): boolean {
+	return "code" in error && TERMINAL_GONE.has(String(error.code));
 }
 
 interface MaybeTtyReadable extends Readable {
@@ -46,6 +60,9 @@ export class StreamTerminal implements Terminal {
 	private readonly fallbackRows: number;
 	private readonly rawMode: boolean;
 	private readonly alternateScreen: boolean;
+	private readonly onHangup: (() => void) | undefined;
+	/** Set once the terminal has gone: nothing more is written to it. */
+	private gone = false;
 	private wasRaw = false;
 	private stdinBuffer?: StdinBuffer;
 	private dataHandler?: (chunk: Buffer | string) => void;
@@ -64,7 +81,32 @@ export class StreamTerminal implements Terminal {
 		this.fallbackRows = options.rows ?? 24;
 		this.rawMode = options.rawMode === true;
 		this.alternateScreen = options.alternateScreen === true;
+		this.onHangup = options.onHangup;
 	}
+
+	/** Whether the terminal has gone (see onHangup). */
+	get hungUp(): boolean {
+		return this.gone;
+	}
+
+	private hangUp(): void {
+		if (this.gone) return;
+		this.gone = true;
+		this.onHangup?.();
+	}
+
+	/**
+	 * A failed read or write of the terminal: a gone terminal is a hangup;
+	 * anything else is thrown, as it was with no listener.
+	 */
+	private readonly onStreamError = (error: Error): void => {
+		if (!isTerminalGone(error)) throw error;
+		this.hangUp();
+	};
+
+	private readonly onInputEnd = (): void => {
+		this.hangUp();
+	};
 
 	get kittyProtocolActive(): boolean {
 		return false;
@@ -99,6 +141,13 @@ export class StreamTerminal implements Terminal {
 		);
 		this.dataHandler = (chunk) => this.stdinBuffer?.process(chunk);
 		this.stdin.on("data", this.dataHandler);
+		// Kept after stop: the quit path still writes (the closeout, the
+		// alternate screen's exit), and a terminal that went meanwhile must
+		// not turn those writes into an uncaught error before the shell has
+		// closed what it holds.
+		this.stdin.on("error", this.onStreamError);
+		this.stdout.on("error", this.onStreamError);
+		if (this.rawMode) this.stdin.once("end", this.onInputEnd);
 		if (this.stdin.resume instanceof Function) this.stdin.resume();
 		this.resizeHandler = onResize;
 		this.stdout.on("resize", onResize);
@@ -110,9 +159,15 @@ export class StreamTerminal implements Terminal {
 			this.stdout.removeListener("resize", this.resizeHandler);
 		this.stdinBuffer?.destroy();
 		delete this.stdinBuffer;
+		this.stdin.removeListener("end", this.onInputEnd);
 		if (this.rawMode && this.stdin.setRawMode instanceof Function) {
 			this.write("\x1b[?2004l");
-			this.stdin.setRawMode(this.wasRaw);
+			try {
+				this.stdin.setRawMode(this.wasRaw);
+			} catch (error) {
+				if (!(error instanceof Error)) throw error;
+				this.onStreamError(error);
+			}
 		}
 		if (this.alternateScreen) {
 			this.write("\x1b[?25h");
@@ -130,9 +185,15 @@ export class StreamTerminal implements Terminal {
 	}
 
 	write(data: string): void {
+		if (this.gone) return;
 		this.writeCount += 1;
 		this.bytesWritten += Buffer.byteLength(data, "utf8");
-		this.stdout.write(data);
+		try {
+			this.stdout.write(data);
+		} catch (error) {
+			if (!(error instanceof Error)) throw error;
+			this.onStreamError(error);
+		}
 	}
 
 	moveBy(lines: number): void {

@@ -122,7 +122,7 @@ describe("listing windows", () => {
 	it("addresses the session it was asked about", async () => {
 		const tmux = fakeTmux({ "list-windows": { stdout: "codex\t%1" } });
 		await listInSessionWindows(tmux, "other");
-		expect(tmux.calls[0]).toContain("other:");
+		expect(tmux.calls[0]).toContain("=other:");
 	});
 
 	it("classifies a window name it does not recognise as unknown", async () => {
