@@ -234,6 +234,17 @@ function lintWorkflowYaml(
 			.find((value) => value !== undefined);
 		const jobLine = lines[start] ?? "";
 		const npmOidcHosted = isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
+		if (
+			activeCiFiles.has(file) &&
+			runsOn !== undefined &&
+			runsOn !== "hobo" &&
+			runsOn !== TRUNK_RUNS_ON &&
+			!npmOidcHosted
+		) {
+			errors.push(
+				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression`,
+			);
+		}
 		if (runsOn === "hobo" || runsOn === TRUNK_RUNS_ON) {
 			for (const [index, line] of block.entries()) {
 				if (!/^\s*- uses: actions\/checkout@/.test(line)) continue;
@@ -322,15 +333,6 @@ function lintWorkflowYaml(
 		errors.push(
 			`${file}: authoritative CI jobs must run on self-hosted hobo runners`,
 		);
-	}
-	if (activeCiFiles.has(file)) {
-		for (const [index, line] of lines.entries()) {
-			const runsOn = line.match(/^\s*runs-on:\s*(.*?)\s*$/)?.[1];
-			if (runsOn !== undefined && runsOn !== "hobo" && runsOn !== TRUNK_RUNS_ON)
-				errors.push(
-					`${file}:${index + 1}: runs-on must be hobo or the trunk label expression`,
-				);
-		}
 	}
 	if (!requireDisabledJobs) {
 		lintPinnedActionRefs(file, text);

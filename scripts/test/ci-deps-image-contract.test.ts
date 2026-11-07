@@ -316,7 +316,7 @@ describe("CI deps image build contract", () => {
 describe("CI deps workflow contract", () => {
 	const workflow = read(".github/workflows/hobo-ci.yml");
 	const start = workflow.indexOf("  ci-deps-image:");
-	const end = workflow.indexOf("  pr-gate:", start);
+	const end = workflow.indexOf("  pr_gate_validation:", start);
 	const job = workflow.slice(start, end);
 	const buildCondition =
 		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name == 'pull_request'";
