@@ -152,7 +152,7 @@ engine holding a state file, no plan/apply round trip, and no shelling out to
 
 | Module | Exports | What it is |
 | --- | --- | --- |
-| `src/slots.ts` | `project`, `edgeFunction`, `blob`, `edgeConfig`, `vercelSlots` | Typed factories that emit `SlotBinding` records through core's parse boundary |
+| `src/slots.ts` | `staticDeployment`, `project`, `edgeFunction`, `blob`, `edgeConfig`, `vercelSlots` | Typed factories that emit `SlotBinding` records through core's parse boundary |
 | `src/resolvers.ts` | `vercelResolvers`, `vercelResolverRegistry`, `VERCEL_RESOLVER_TRANSPORT_POLICY`, `VERCEL_UNRESOLVED_PRODUCT_IDS` | `ResourceResolver` implementations that converge a resource against the REST API |
 | `src/default-yard.ts` | `vercelYardSpec`, `vercelSlotCatalog`, `vercelYardRows`, `VERCEL_DEFAULT_BINDINGS` | The default Yard catalog as raw, canonically-sorted rows |
 
@@ -165,7 +165,8 @@ boundary rather than here.
 
 | Factory | Slot | Profile | Product id |
 | --- | --- | --- | --- |
-| `project(options?)` | `web` | `web.hosted/v1` | `vercel.project/v1` |
+| `staticDeployment(options?)` | `web` | `web.hosted/v1` | `vercel.static-deploy/v1` |
+| `project(options?)` | `web` | `provider.project/v1` | `vercel.project/v1` |
 | `edgeFunction(options?)` | `service` | `service.worker/v1` | `vercel.edge-function/v1` |
 | `blob(options?)` | `bucket` | `bucket.object/v1` | `vercel.blob/v1` |
 | `edgeConfig(options?)` | `kv` | `kv.key-value/v1` | `vercel.edge-config/v1` |

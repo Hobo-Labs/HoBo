@@ -9,7 +9,7 @@
  * nothing here ranks or chooses.
  *
  * Why factories rather than hand-typed rows: a row is magic strings
- * (`{ profile: capability.web.hosted, productId: "vercel.project/v1" }`) with no
+ * (`{ profile: capability.web.hosted, productId: "vercel.static-deploy/v1" }`) with no
  * autocomplete and no type checking on the property bag. Each factory below has
  * its **own** options type — never `Record<string, unknown>` in the signature —
  * so a typo is a compile error rather than a deploy-time surprise.
@@ -110,7 +110,7 @@ function definedProperties(options: AnySlotOptions) {
 	return out;
 }
 
-/** A Vercel Project: the `web` slot, satisfying `web.hosted/v1`. */
+/** A Vercel Project configuration, distinct from a deployed web artifact. */
 export function project(options: VercelProjectSlotOptions = {}): SlotBinding {
 	return slotBinding({
 		slot: "web",

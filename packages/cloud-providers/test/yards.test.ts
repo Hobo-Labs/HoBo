@@ -135,7 +135,33 @@ describe("slot factories are re-exported for override authoring", () => {
 
 	it("exposes Cloudflare and Vercel factories", () => {
 		expect(cloudflare.r2().profile).toMatch(/^bucket\./u);
-		expect(vercel.project().profile).toMatch(/^web\./u);
+		expect(vercel.staticDeployment().profile).toBe("web.hosted/v1");
+		expect(vercel.project().profile).toBe("provider.project/v1");
+	});
+
+	it("passes Vercel offering settings through to the composed Yard", () => {
+		const built = vercel.Yard({
+			staticDeployment: { projectId: "prj_owned" },
+			edgeFunction: { memoryMb: 512 },
+			project: { framework: "nextjs" },
+		});
+		expect(
+			built.bindings.find((row) => row.productId === "vercel.static-deploy/v1")
+				?.properties,
+		).toEqual({ projectId: "prj_owned" });
+		expect(
+			built.bindings.find((row) => row.productId === "vercel.edge-function/v1")
+				?.properties,
+		).toEqual({ memoryMb: 512 });
+		expect(
+			built.bindings.find((row) => row.productId === "vercel.project/v1")
+				?.properties,
+		).toEqual({ framework: "nextjs" });
+	});
+
+	it("rejects credential-shaped Vercel offering settings", () => {
+		const staticDeployment = JSON.parse('{"apiKey":"not-a-secret"}');
+		expect(() => vercel.Yard({ staticDeployment })).toThrow(/credential/iu);
 	});
 });
 
