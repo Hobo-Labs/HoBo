@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 
 const workflow = readFileSync(".github/workflows/hobo-ci.yml", "utf8");
@@ -30,12 +32,16 @@ function shellForStep(block: string, name: string): string {
 
 describe("merge-group required gate", () => {
 	const validation = job("pr_gate_validation");
-	const workspace = job("merge_workspace");
+	const workspace = job("workspace_tests");
+	const affected = job("pr_affected");
 	const gate = job("pr-gate");
 
-	it("runs both validations before the required check and preserves the selected scope", () => {
+	it("requires validation, all workspace shards, and the PR package lanes", () => {
 		assert.match(validation, /name: S0 gate set/u);
-		assert.match(validation, /pnpm agent:check -- --base="\$BASE"/u);
+		assert.match(
+			validation,
+			/pnpm agent:check -- --base="\$BASE" --external-workspace-tests/u,
+		);
 		assert.match(
 			validation,
 			/merge_base: \$\{\{ steps\.merge-group-base\.outputs\.base \}\}/u,
@@ -48,9 +54,20 @@ describe("merge-group required gate", () => {
 		assert.match(workspace, /needs\.pr_gate_validation\.result == 'success'/u);
 		assert.match(workspace, /needs\.pr_gate_validation\.outputs\.merge_base/u);
 		assert.match(workspace, /needs\.pr_gate_validation\.outputs\.merge_tests/u);
+		assert.match(workspace, /needs\.pr_gate_validation\.outputs\.pr_base/u);
+		assert.match(workspace, /shard: \[0, 1, 2, 3, 4, 5, 6, 7\]/u);
+		assert.match(workspace, /fail-fast: false/u);
 		assert.match(workspace, /scripts\/ci\/dependent-tests\.mts/u);
-		assert.match(workspace, /pnpm exec turbo run test/u);
-		assert.match(gate, /needs: \[pr_gate_validation, merge_workspace\]/u);
+		assert.match(workspace, /--shard="\$SHARD\/8"/u);
+		assert.match(affected, /needs: pr_gate_validation/u);
+		assert.match(
+			affected,
+			/turbo run build typecheck lint test:unit test:schema test:contract:consumer/u,
+		);
+		assert.match(
+			gate,
+			/needs: \[pr_gate_validation, workspace_tests, pr_affected\]/u,
+		);
 		assert.match(gate, /if: \$\{\{ always\(\)/u);
 	});
 
@@ -70,23 +87,27 @@ describe("merge-group required gate", () => {
 		for (const event of ["pull_request", "merge_group", "push"]) {
 			for (const validationResult of statuses) {
 				for (const workspaceResult of statuses) {
-					const run = spawnSync("bash", ["-c", script], {
-						env: {
-							...process.env,
-							EVENT_NAME: event,
-							VALIDATION_RESULT: validationResult,
-							WORKSPACE_RESULT: workspaceResult,
-						},
-					});
-					const expected =
-						validationResult === "success" &&
-						((event === "pull_request" && workspaceResult === "skipped") ||
-							(event === "merge_group" && workspaceResult === "success"));
-					assert.equal(
-						run.status === 0,
-						expected,
-						`${event}/${validationResult}/${workspaceResult}`,
-					);
+					for (const affectedResult of statuses) {
+						const run = spawnSync("bash", ["-c", script], {
+							env: {
+								...process.env,
+								EVENT_NAME: event,
+								VALIDATION_RESULT: validationResult,
+								WORKSPACE_RESULT: workspaceResult,
+								AFFECTED_RESULT: affectedResult,
+							},
+						});
+						const expected =
+							validationResult === "success" &&
+							workspaceResult === "success" &&
+							((event === "pull_request" && affectedResult === "success") ||
+								(event === "merge_group" && affectedResult === "skipped"));
+						assert.equal(
+							run.status === 0,
+							expected,
+							`${event}/${validationResult}/${workspaceResult}/${affectedResult}`,
+						);
+					}
 				}
 			}
 		}
@@ -101,14 +122,62 @@ describe("merge-group required gate", () => {
 			["affected", "not-a-commit"],
 		]) {
 			const run = spawnSync("bash", ["-c", script], {
-				env: { ...process.env, TESTS: tests, BASE: base },
+				env: {
+					...process.env,
+					EVENT_NAME: "merge_group",
+					MERGE_TESTS: tests,
+					MERGE_BASE: base,
+					SHARD: "0",
+				},
 			});
 			assert.notEqual(run.status, 0, `${tests}/${base}`);
 		}
 	});
 
+	it("fails the PR package lane if the impact planner fails", () => {
+		const script = shellForStep(affected, "Affected package lanes");
+		const directory = mkdtempSync(join(tmpdir(), "hobo-affected-plan-"));
+		try {
+			writeFileSync(
+				join(directory, "git"),
+				'#!/bin/sh\n[ "$1" != diff ] || echo packages/ci/src/x.ts\n',
+				{ mode: 0o755 },
+			);
+			writeFileSync(join(directory, "node"), "#!/bin/sh\nexit 42\n", {
+				mode: 0o755,
+			});
+			const run = spawnSync("bash", ["-c", script], {
+				env: {
+					...process.env,
+					PATH: `${directory}:${process.env.PATH ?? ""}`,
+					RUNNER_TEMP: directory,
+					TURBO_SCM_BASE: "valid",
+				},
+			});
+			assert.equal(run.status, 42);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("refuses external workspace coverage without an explicit CI diff base", () => {
+		for (const args of [
+			["--external-workspace-tests"],
+			["--external-workspace-tests", "--staged", "--base=HEAD"],
+		]) {
+			const run = spawnSync(process.execPath, [
+				"--import",
+				"tsx",
+				"scripts/run-relevant-checks.ts",
+				...args,
+			]);
+			assert.equal(run.status, 2);
+		}
+	});
+
 	it("prefers the same-run validation cache before older cache entries", () => {
 		assert.match(workspace, /preferred-job: pr_gate_validation/u);
+		assert.match(affected, /preferred-job: pr_gate_validation/u);
 		assert.match(
 			cacheAction,
 			/inputs\.preferred-job.*github\.sha.*github\.run_attempt/u,

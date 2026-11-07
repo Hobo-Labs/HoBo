@@ -31,13 +31,21 @@ describe("worker memory config", () => {
 		);
 		expect(memoryRequestForJob("Secret scan", config).memoryMb).toBe(1_024);
 		expect(memoryRequestForJob("unknown job", config).memoryMb).toBe(2_048);
-		expect(memoryRequestForJob("PR impact gate", config).memoryMb).toBe(4_096);
+		expect(memoryRequestForJob("PR impact validation", config).memoryMb).toBe(
+			4_096,
+		);
 		expect(config.trunkReservationMb).toBe(4_096);
 	});
 
 	it("maps exact workflow job names and defaults unknown jobs to standard", () => {
 		expect(memoryClassForJob("CI fabric contract guard")).toBe("light");
-		expect(memoryClassForJob("PR impact gate")).toBe("heavy");
+		expect(memoryClassForJob("PR impact gate")).toBe("light");
+		expect(memoryClassForJob("PR impact validation")).toBe("heavy");
+		expect(memoryClassForJob("PR affected package lanes")).toBe("heavy");
+		for (let shard = 0; shard < 8; shard++)
+			expect(memoryClassForJob(`Workspace test shard ${shard}`)).toBe("heavy");
+		expect(memoryClassForJob("Workspace test shard 0 (0)")).toBe("heavy");
+		expect(memoryClassForJob("Workspace test shard 8")).toBe("standard");
 		expect(memoryClassForJob("CI fabric contract guard (retry)")).toBe(
 			"standard",
 		);

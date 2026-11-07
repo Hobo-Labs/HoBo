@@ -53,9 +53,13 @@ describe("pins wiring", () => {
 		);
 	});
 
-	it("both PR validation jobs check the pins after checkout and before installing", () => {
+	it("PR validation jobs check the pins after checkout and before installing", () => {
 		const workflow = read(".github/workflows/hobo-ci.yml");
-		for (const name of ["pr_gate_validation", "merge_workspace"]) {
+		for (const name of [
+			"pr_gate_validation",
+			"workspace_tests",
+			"pr_affected",
+		]) {
 			const job = jobText(workflow, name);
 			const checkout = job.indexOf("actions/checkout@");
 			const status = job.indexOf(`run: ${BOOTSTRAP} --status --offline`);
@@ -65,7 +69,7 @@ describe("pins wiring", () => {
 				`${name}: status follows checkout`,
 			);
 			assert.ok(install > status, `${name}: status precedes pnpm install`);
-			assert.match(job, /runs-on:.*'hobo-trunk' \|\| 'hobo'/u);
+			assert.match(job, /runs-on:\s*(?:hobo|.*'hobo-trunk' \|\| 'hobo')/u);
 		}
 	});
 

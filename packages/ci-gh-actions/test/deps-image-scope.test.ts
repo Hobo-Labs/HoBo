@@ -12,6 +12,9 @@ const publisher = parse(
 );
 const depsJob = workflow.jobs["ci-deps-image"];
 const prGate = workflow.jobs["pr-gate"];
+const prValidation = workflow.jobs.pr_gate_validation;
+const workspaceTests = workflow.jobs.workspace_tests;
+const prAffected = workflow.jobs.pr_affected;
 const mainGate = workflow.jobs["main-gate"];
 
 describe("CI deps image push scope", () => {
@@ -104,14 +107,21 @@ describe("CI deps image push scope", () => {
 
 	it("does not make either gate wait for the deps image", () => {
 		expect(mainGate.needs).toBe("ci-runner-image");
-		expect(prGate.needs).toBe("ci-runner-image");
+		expect(prValidation.needs).toBe("ci-runner-image");
+		expect(prGate.needs).toEqual([
+			"pr_gate_validation",
+			"workspace_tests",
+			"pr_affected",
+		]);
+		expect(workspaceTests.needs).toBe("pr_gate_validation");
+		expect(prAffected.needs).toBe("pr_gate_validation");
 		expect(depsJob.needs).toBe("ci-runner-image");
 	});
 });
 
 describe("exact deps layer matches", () => {
-	it("skips install in both gates, verifies sibling links, and installs on misses", () => {
-		for (const job of [prGate, mainGate]) {
+	it("skips install on a matching deps layer in every test job", () => {
+		for (const job of [prValidation, workspaceTests, prAffected, mainGate]) {
 			const payload = job.steps.find((step) => step.name === "Link deps layer");
 			const report = job.steps.find(
 				(step) => step.name === "Check deps layer match",

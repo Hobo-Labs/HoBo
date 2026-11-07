@@ -75,6 +75,19 @@ function turboTestSelects(checks: Check[], workspace: string) {
 	);
 }
 
+test("external workspace coverage omits only workspace test commands", () => {
+	const files = ["packages/ci/src/index.ts", "scripts/example.ts"];
+	const normal = plan(files);
+	const external = plan(files, { workspaceTestsCoveredExternally: true });
+	assert.ok(normal.checks.some(isWorkspaceTurboTest));
+	assert.ok(!external.checks.some(isWorkspaceTurboTest));
+	assert.deepEqual(external.workspaces, normal.workspaces);
+	assert.deepEqual(
+		external.checks,
+		normal.checks.filter((check) => !isWorkspaceTurboTest(check)),
+	);
+});
+
 function narrowVitestCheck(check: Check) {
 	return (
 		check.command === "pnpm" &&

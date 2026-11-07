@@ -50,13 +50,14 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   on a cold worker; a timeout cancels the gate and does not count as a passing check.
   Root typechecking builds the Redis-compatible package first because the Upstash provider sources
   referenced by root tests resolve its declarations from `dist` on a clean worker.
-- **Separate merge-group workspace budget.** A cold S0 validation took almost 19 minutes in
-  run 42312939250, leaving too little of its 20-minute job for the dependent workspace tests. S0 and
-  workspace tests now run in separate bounded jobs. The workspace job prefers the successful S0 job's
-  same-run Turbo cache, then falls back to the ordinary cache; it still runs the full selected plan on a
-  cache miss. The required `PR impact gate` succeeds only after validation succeeds and, for a merge
-  group, the workspace job also succeeds. Failed, cancelled, skipped, or missing prerequisites fail the
-  gate. `scripts/test/merge-group-gate.test.ts` checks those outcomes and missing test scopes.
+- **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
+  leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
+  now delegate workspace tests to eight bounded shards; the PR's build, lint, schema, and contract lanes
+  get a separate job. `dependent-tests.mts` assigns each whole suite or dependent subset to exactly one
+  shard and verifies that a repo-wide run discovers every Turbo test workspace. Shards prefer the
+  validation job's same-run Turbo cache but run their complete selected plan on a cache miss. The required
+  `PR impact gate` fails unless validation, every workspace shard, and the event's other required lanes
+  succeed. `scripts/test/merge-group-gate.test.ts` covers failed, cancelled, skipped, and missing results.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
   from each job, so queue time and run time can be compared before and after a change. The script
   imports node builtins only, because the step also runs on jobs that skipped or failed `pnpm install`
