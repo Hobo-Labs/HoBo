@@ -25,3 +25,11 @@ primitives; parsed derived types are the only values passed inward.
 - **Read store** — editors and tests read `_generated/` directly without a build step.
 
 No runtime engine is implemented; this names boundaries for promotion to `packages/schema-tools/`.
+
+## Package-specific generation templates
+
+The proof selects a package's `data-models/buf.gen.yaml` when present and falls
+back to the repository template otherwise, for both generation and drift
+checks. This matches the promoted schema tooling and preserves package-specific
+options such as the cloud package's ESM import extension. Using the root
+template unconditionally reports false drift against valid generated output.

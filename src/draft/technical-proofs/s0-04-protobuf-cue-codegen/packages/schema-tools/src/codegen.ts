@@ -130,9 +130,11 @@ async function generatePackageProtos(
 ): Promise<void> {
   await mkdir(outputDir, { recursive: true });
   const buf = resolveBufCommand(invocation.repoRoot);
+  const localTemplate = join(pkg.dataModelsDir, "buf.gen.yaml");
+  const template = existsSync(localTemplate) ? localTemplate : invocation.bufTemplate;
   const result = await runCommand(
     buf.command,
-    [...buf.args, "generate", pkg.dataModelsDir, "--template", invocation.bufTemplate, "-o", outputDir],
+    [...buf.args, "generate", pkg.dataModelsDir, "--template", template, "-o", outputDir],
     invocation.repoRoot,
     pluginPathEnv(invocation.repoRoot),
   );

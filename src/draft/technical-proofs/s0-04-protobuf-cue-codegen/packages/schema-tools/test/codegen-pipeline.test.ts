@@ -69,7 +69,7 @@ describe("CUE lane", () => {
 describe("json envelope", () => {
   it("round-trips CLEAN report and satisfies CUE constraints", async () => {
     const result = await runCli(["--check", "--json"], REPO_ROOT);
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode, result.stdout || result.stderr).toBe(0);
     const envelope = JSON.parse(result.stdout);
     expect(envelope.status).toBe("CLEAN");
     expect(Array.isArray(envelope.drift)).toBe(true);

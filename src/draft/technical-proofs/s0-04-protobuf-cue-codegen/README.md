@@ -14,6 +14,9 @@ once S0-01/S0-03 land on `main`.
 - `packages/core/` — seed event-envelope proto+CUE + fixtures (stand-in for S0-03 core)
 - `buf.gen.yaml` — shared buf v2 template (`protoc-gen-es`, `target=ts`)
 
+A package's `data-models/buf.gen.yaml`, when present, takes precedence over
+the shared template in both generation and drift checks.
+
 ## Commands
 
 ```bash
