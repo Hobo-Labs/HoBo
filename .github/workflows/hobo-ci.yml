@@ -1,10 +1,13 @@
 name: HoBo CI Fabric
 
 on:
+  # feature/hobo-code is the long-lived hobo-code branch: its pull requests get the PR
+  # impact gate and its pushes the full gate, judged against that branch, never main.
+  # The merge queue, the schedule and every publish stay main-only.
   push:
-    branches: [main]
+    branches: [main, feature/hobo-code]
   pull_request:
-    branches: [main]
+    branches: [main, feature/hobo-code]
     types: [opened, synchronize, reopened]
   merge_group:
     branches: [main]
@@ -109,9 +112,10 @@ jobs:
           bash -n packages/ci-gh-actions/deploy/ci-runner/build.sh
           pnpm run lint:shell:changed -- --base=HEAD~1
           bash packages/ci-gh-actions/deploy/ci-runner/build.sh
-      # Published from main only; a pull request's image is tried on the box, not shipped.
+      # Published from main only; a pull request's or feature/hobo-code push's image is tried
+      # on the box, not shipped.
       - name: Push runner image to GHCR (optional)
-        if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
+        if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           MISE_EXPERIMENTAL: "1"
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -680,10 +684,12 @@ jobs:
     # Those jobs mirror this job's main-base, S0 gate set and Workspace tests steps.
     # A push that changes the image inputs tests on the image it built; an unchanged push skips
     # the image job, which satisfies this dependency immediately.
+    # A push to feature/hobo-code runs the same gate against that branch's previous tip.
     needs: ci-runner-image
     if: >-
       !cancelled() && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/feature/hobo-code') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
@@ -694,8 +700,10 @@ jobs:
       contents: read
     # At most one Main full gate holds a box slot, whatever event started it, so the other slot
     # stays free for the short required jobs. A newer waiting gate replaces an older waiting one.
+    # feature/hobo-code queues in a group of its own, so its gate never replaces a waiting main
+    # one; main's group name is unchanged.
     concurrency:
-      group: ${{ github.workflow }}-main-gate
+      group: ${{ github.workflow }}-main-gate${{ github.ref == 'refs/heads/feature/hobo-code' && '-feature-hobo-code' || '' }}
       cancel-in-progress: false
     env:
       GITHUB_EVENT_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
@@ -885,7 +893,7 @@ jobs:
             pnpm run check:all
           fi
       - name: Generated-output drift
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/hobo-code')
         timeout-minutes: 8
         run: >-
           pnpm run codegen:check:affected &&

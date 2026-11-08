@@ -420,7 +420,7 @@ describe("main-gate scope", () => {
 		assert.equal(run("mise.lock\n"), "repo-wide\n");
 	});
 
-	it("checks affected generated-output drift on main pushes", () => {
+	it("checks affected generated-output drift on main and feature/hobo-code pushes", () => {
 		const workflow = readFileSync(".github/workflows/hobo-ci.yml", "utf8");
 		const mainStart = workflow.indexOf("  main-gate:");
 		const main = workflow.slice(
@@ -429,7 +429,7 @@ describe("main-gate scope", () => {
 		);
 		assert.match(
 			main,
-			/- name: Generated-output drift\n\s+if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'\n\s+timeout-minutes: 8\n\s+run: >-\n\s+pnpm run codegen:check:affected &&\n\s+pnpm exec turbo run test --filter=@hobo-draft\/s0-04-protobuf-cue-codegen --concurrency=100%/u,
+			/- name: Generated-output drift\n\s+if: github\.event_name == 'push' && \(github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/feature\/hobo-code'\)\n\s+timeout-minutes: 8\n\s+run: >-\n\s+pnpm run codegen:check:affected &&\n\s+pnpm exec turbo run test --filter=@hobo-draft\/s0-04-protobuf-cue-codegen --concurrency=100%/u,
 		);
 	});
 

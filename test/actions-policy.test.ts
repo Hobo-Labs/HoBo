@@ -92,6 +92,30 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 	);
 });
 
+test("feature/hobo-code gets the PR and push gates but never pushes the runner image", async () => {
+	const read = (name: string) =>
+		readFile(new URL(`../.github/workflows/${name}`, import.meta.url), "utf8");
+	const hoboCi = await read("hobo-ci.yml");
+	assert.match(
+		hoboCi,
+		/^ {2}push:\n {4}branches: \[main, feature\/hobo-code\]$/mu,
+	);
+	assert.match(
+		hoboCi,
+		/^ {2}pull_request:\n {4}branches: \[main, feature\/hobo-code\]$/mu,
+	);
+	assert.match(hoboCi, /^ {2}merge_group:\n {4}branches: \[main\]$/mu);
+	assert.match(
+		hoboCi,
+		/- name: Push runner image to GHCR \(optional\)\n {8}if: [^\n]* && github\.ref == 'refs\/heads\/main'\n/u,
+	);
+	// main keeps its group name; the feature branch never replaces a waiting main gate.
+	assert.match(
+		hoboCi,
+		/^ {6}group: \$\{\{ github\.workflow \}\}-main-gate\$\{\{ github\.ref == 'refs\/heads\/feature\/hobo-code' && '-feature-hobo-code' \|\| '' \}\}$/mu,
+	);
+});
+
 test("workflow conditions never read the secrets context", async () => {
 	const directory = new URL("../.github/workflows/", import.meta.url);
 	const files = (await readdir(directory)).filter((name) =>
