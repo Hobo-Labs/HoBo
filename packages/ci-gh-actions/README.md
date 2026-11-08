@@ -226,7 +226,11 @@ References are optional. Each pool, routing policy, budget, provider entry and
 secret-requirement map accepts either a complete inline definition or a `$ref`.
 You can mix both forms in the same environment and duplicate inline definitions
 across environments. Omit `definitions` entirely when everything is inline.
-Both forms receive the same validation and resolve to the same policy.
+In a complete environment policy, both forms receive the same validation and
+resolve to the same policy. Template/`extends` fragments are the exception:
+their inline pool/routing/budget fragments may be partial, while `$ref`
+targets and `definitions` entries must be complete. `budgetPolicy` has no
+registry and is always inline.
 
 Put reusable values in the document's typed `definitions` registries. For
 example, define the Linux pool and routing strategy once, then use these policy
