@@ -62,8 +62,10 @@
     "test:contract:provider": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "//#typecheck:root": {
       "dependsOn": [
+        "@hobo/bindings#build",
         "@hobo/bindles#build",
         "@hobo/ci#build",
+        "@hobo/claims#build",
         "@hobo/connectivity#build",
         "@hobo/core#build",
         "@hobo/dispatcher#build",

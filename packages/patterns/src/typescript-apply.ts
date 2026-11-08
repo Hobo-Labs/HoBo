@@ -391,13 +391,18 @@ function applyStructural(previous: string, snippet: string): string {
 	return next;
 }
 
-export function planPatternApplication(input: {
+/**
+ * `P` is whatever the caller's params hold. `parseApplicationRequest` accepts
+ * any scalar and coerces it to a string, and refuses anything else, so the
+ * accepted type stays as wide as that parser.
+ */
+export function planPatternApplication<P>(input: {
 	readonly catalog: PatternCatalog;
 	readonly patternId: string;
 	readonly isolationRoot: string;
 	readonly targetPath: string;
 	readonly isolationRunId: string;
-	readonly params?: Readonly<Record<string, string>>;
+	readonly params?: Readonly<Record<string, P>>;
 }): PatternApplicationPlan {
 	const parsed = parseApplicationRequest({
 		patternId: input.patternId,
@@ -436,13 +441,13 @@ export function planPatternApplication(input: {
 	});
 }
 
-export function applyPatternPlan(input: {
+export function applyPatternPlan<P>(input: {
 	readonly catalog: PatternCatalog;
 	readonly patternId: string;
 	readonly isolationRoot: string;
 	readonly targetPath: string;
 	readonly isolationRunId: string;
-	readonly params?: Readonly<Record<string, string>>;
+	readonly params?: Readonly<Record<string, P>>;
 }): PatternApplicationReceipt {
 	const plan = planPatternApplication(input);
 	const pattern = input.catalog.patterns.find(

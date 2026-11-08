@@ -1,10 +1,10 @@
 /**
- * JSON guards for atom metadata read from disk. They decide what a parsed
- * value is from its runtime tag, so callers branch on a JSON shape rather
- * than on `typeof`.
+ * JSON guards for atom metadata read from disk. A value's kind is decided by
+ * what it is, not by its `Symbol.toStringTag`, so a boxed `String` or an
+ * object spoofing the tag is not a string — the answer `typeof` gave. The
+ * anti-slop rules forbid `typeof`, so primitiveness is tested with `Object()`:
+ * it wraps a primitive in a new object and returns an object unchanged.
  */
-const tagOf = Object.prototype.toString;
-
 export type JsonObject = { readonly [key: string]: JsonValue };
 export type JsonValue =
 	| string
@@ -14,19 +14,20 @@ export type JsonValue =
 	| JsonValue[]
 	| JsonObject;
 
+/** A primitive string. */
 export function isJsonString<T>(value: T): value is T & string {
-	return tagOf.call(value) === "[object String]";
+	return Object(value) !== value && Object(value) instanceof String;
 }
 
+/** An object that is not an array or a function (and not null). */
 export function isJsonObject<T>(value: T): value is T & JsonObject {
 	return (
-		value !== undefined &&
-		value !== null &&
+		Object(value) === value &&
 		!Array.isArray(value) &&
-		tagOf.call(value) === "[object Object]"
+		!(value instanceof Function)
 	);
 }
 
 export function isJsonArray<T>(value: T): value is T & JsonValue[] {
-	return tagOf.call(value) === "[object Array]";
+	return Array.isArray(value);
 }
