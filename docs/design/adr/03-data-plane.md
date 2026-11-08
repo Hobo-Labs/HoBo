@@ -695,7 +695,7 @@ In-repo contract: `createHarnessV1` / `createHarnessAgent` (`packages/code/src/a
 
 ### Amendment (2026-11-08: hobo-code leaves main)
 
-hobo-code (`packages/code`, `@hobo/code`, the `hobo-code` binary) is developed on the long-lived `feature/hobo-code` branch and is not part of `main`. The sections above, and the references below, describe that branch: the package, its release workflow and image, the isolation runbook and the experience proof exist there. So does its event family, the code.* events and the OpenFeature keys under `code.`: it is listed in `docs/design/event-families.md` on that branch only. `main` is merged into `feature/hobo-code` from time to time. This ADR is amended again when hobo-code is released to `main` or dropped.
+hobo-code (`packages/code`, `@hobo/code`, the `hobo-code` binary) is developed on the long-lived `feature/hobo-code` branch and is not part of `main`. The sections above, and the references below, describe that branch: the package, its release workflow and image, the isolation runbook and the experience proof exist there. So does its event family, the code.* events and the OpenFeature keys under `code.`: it is listed in `docs/design/event-families.md` on that branch only. `main` is merged into `feature/hobo-code` from time to time, as merge commits and never squashed, by the [sync procedure](../../release/pipelines.md#syncing-main-into-featurehobo-code). This ADR is amended again when hobo-code is released to `main` or dropped.
 
 ### References
 - Package: `packages/code` (`@hobo/code`)
