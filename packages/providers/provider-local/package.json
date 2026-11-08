@@ -1,0 +1,38 @@
+{
+	"name": "@hobo/provider-local",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo local provider: definitions-only ResourceDefinition semantics for the localhost Yard seed products that @hobo/runtime-local engines actually back. No engine, no driver, no cloud calls; products without a local engine are named gaps, never claimed.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@hobo/capability-profiles": "workspace:*",
+		"@hobo/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/yards": "workspace:*",
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"typecheck:test": "tsc -p tsconfig.test.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run test/",
+		"test:unit": "vitest run test/"
+	}
+}

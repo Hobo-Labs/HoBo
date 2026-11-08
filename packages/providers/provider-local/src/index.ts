@@ -1,0 +1,32 @@
+export {
+	createLocalDefinitions,
+	deterministicLocalResourceName,
+	LOCAL_BOOTSTRAP_STRATEGY_REF,
+	LOCAL_CANDIDATES,
+	LOCAL_CLAIM_STRATEGY_REF,
+	LOCAL_COMPILER_REF,
+	LOCAL_DEFINITIONS,
+	LOCAL_ENGINE_GAPS,
+	LOCAL_EVIDENCE_CHECKED_AT,
+	LOCAL_IN_MEMORY_QUEUE_DEFINITION_ID,
+	LOCAL_IN_PROCESS_WORKER_DEFINITION_ID,
+	LOCAL_NODE_HTTP_SERVER_DEFINITION_ID,
+	LOCAL_PERMISSION_PROFILE_REF,
+	LOCAL_PROVIDER_ID,
+	LOCAL_SOURCE_EVIDENCE_REFS,
+	LOCAL_SQLITE_FILE_DEFINITION_ID,
+	LOCAL_TRUST_EVIDENCE_REF,
+	localCandidates,
+	type LocalDefinitionOverrides,
+	type LocalEngineGap,
+} from "./definition.js";
+
+export {
+	type CredentialContinuityGrade,
+	type LocalResourceDefinition,
+	type LocalResourceSemantics,
+	type PlacementConstraint,
+	RESOURCE_DEFINITION_VNEXT_SCHEMA,
+	type RemediationHint,
+	semanticsToSelectionCandidate,
+} from "./resource-definition.js";
