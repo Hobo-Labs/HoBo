@@ -103,8 +103,10 @@ export {
 	type ParityProvider,
 	type ParitySource,
 	type ProviderParityRow,
+	type ProviderProfileParityRow,
 	parityRow,
 	providerParity,
+	providerProfileParity,
 	type SimulatedParityLevel,
 } from "./parity.js";
 export * as vercel from "./vercel.js";

@@ -53,7 +53,10 @@ hard gates and lexicographic ranking, never here.
 hand — from two live sources: the product ids in the namespace's full
 allocatable catalog (`PARITY_SOURCES`; the parsed `Yard().bindings`), and the
 provider package's exported `*_RESOLVED_PRODUCT_IDS` constant.
-`formatParityClaim(row)` renders it.
+`providerProfileParity()` applies the same derivation per `(provider, profile)`,
+ordered by provider then lexicographic profile. `formatParityClaim(row)`
+re-derives a row before rendering it, so supplied level or denominator fields
+cannot fabricate a claim.
 
 | Level | Meaning | Who may claim it |
 |---|---|---|
@@ -81,10 +84,12 @@ ids and empty catalogs are refused (`PARITY_PROVIDER_EMPTY`,
 does not declare is refused (`PARITY_RESOLVED_NOT_IN_CATALOG`) rather than
 dropped, because dropping it would tidy the denominator.
 
-Grain: the count is per provider, per **product** — not per capability
-profile. Ids are de-duplicated, so a product listed under two profiles counts
-once (AWS's DynamoDB backs both a document and a key-value profile). One
-resolved product makes the row `L1-DECLARED`; the denominator says how much is covered.
+Grain: provider rows count each **product** once across the whole catalog, so
+a product listed under two profiles counts once (AWS's DynamoDB backs both a
+document and a key-value profile). Profile rows instead contain only that
+profile's catalog ids and the resolved subset. One resolved product makes its
+row `L1-DECLARED`; zero makes it `P0`, even when the provider overall is
+`L1-DECLARED`. The denominator always says how much is covered.
 
 Vercel is measured against its full allocatable catalog: the bare
 `vercel.Yard()` holds the default targets only and omits the opt-in

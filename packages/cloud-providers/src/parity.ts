@@ -28,11 +28,11 @@
  * layers own, and printing one from static data would be exactly the overclaim
  * this module exists to remove.
  *
- * Grain: per-provider *product* count. Ids are de-duplicated, so a product
- * listed under two capability profiles (e.g. one product backing both a
- * document and a key-value profile) counts once. One resolved product makes
- * the row `L1-DECLARED`; the denominator, not the level, says how much is
- * covered.
+ * Grain: per-provider or per-`(provider, profile)` *product* count. Provider
+ * rows de-duplicate a product listed under two profiles; profile rows contain
+ * only that profile's ids and resolved subset. One resolved product makes the
+ * row `L1-DECLARED`; zero makes it `P0`. The denominator, not the level, says
+ * how much is covered.
  *
  * This is a read model, not a deployment decision (see ADR.md): it does not
  * select among a Yard's offerings for deployment. It does canonicalize —
@@ -113,6 +113,10 @@ export interface ProviderParityRow {
 	readonly level: SimulatedParityLevel;
 	/** Always `"<resolved>/<catalog>"` — a claim without one is not a claim. */
 	readonly denominator: string;
+}
+
+export interface ProviderProfileParityRow extends ProviderParityRow {
+	readonly profile: string;
 }
 
 function canonicalIds(ids: Iterable<string>): readonly string[] {
@@ -244,6 +248,17 @@ function productIdsOf(yard: ParsedYard): string[] {
 	return ids;
 }
 
+function productIdsByProfile(yard: ParsedYard): ReadonlyMap<string, string[]> {
+	const profiles = new Map<string, string[]>();
+	for (const binding of yard.bindings) {
+		if (binding.productId === undefined) continue;
+		const ids = profiles.get(binding.profile) ?? [];
+		ids.push(binding.productId);
+		profiles.set(binding.profile, ids);
+	}
+	return profiles;
+}
+
 /** Every namespace's parity, derived from its live catalog and constants. */
 export function providerParity(): readonly ProviderParityRow[] {
 	return Object.freeze(
@@ -256,6 +271,24 @@ export function providerParity(): readonly ProviderParityRow[] {
 			);
 		}),
 	);
+}
+
+/** Per-profile parity in provider order, then lexicographic profile order. */
+export function providerProfileParity(): readonly ProviderProfileParityRow[] {
+	const rows = PARITY_PROVIDERS.flatMap((provider) => {
+		const source = PARITY_SOURCES[provider];
+		const profiles = productIdsByProfile(source.catalog());
+		return [...profiles.keys()].sort().map((profile) => {
+			const catalog = profiles.get(profile) ?? [];
+			const declared = new Set(catalog);
+			const resolved = source.resolved.filter((id) => declared.has(id));
+			return Object.freeze({
+				...parityRow(provider, catalog, resolved),
+				profile,
+			});
+		});
+	});
+	return Object.freeze(rows);
 }
 
 const LEVEL_EVIDENCE: Readonly<Record<SimulatedParityLevel, string>> =

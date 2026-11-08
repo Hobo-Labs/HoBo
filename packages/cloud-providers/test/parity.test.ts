@@ -37,6 +37,7 @@ import {
 	ParityError,
 	parityRow,
 	providerParity,
+	providerProfileParity,
 	vercel,
 } from "../src/index.js";
 
@@ -144,6 +145,62 @@ describe("providerParity()", () => {
 				readPackageFile("README.md"),
 			);
 		expect(block?.[1]).toBe(rows.map(formatParityClaim).join("\n"));
+	});
+});
+
+describe("providerProfileParity()", () => {
+	const rows = providerProfileParity();
+
+	it("derives every profile's catalog and resolved subset in deterministic order", () => {
+		const expected = PARITY_PROVIDERS.flatMap((provider) => {
+			const source = PARITY_SOURCES[provider];
+			const byProfile = new Map<string, string[]>();
+			for (const binding of source.catalog().bindings) {
+				if (binding.productId === undefined) continue;
+				const ids = byProfile.get(binding.profile) ?? [];
+				ids.push(binding.productId);
+				byProfile.set(binding.profile, ids);
+			}
+			return [...byProfile.keys()].sort().map((profile) => {
+				const catalog = [
+					...new Set(byProfile.get(profile) ?? []),
+				].sort();
+				const declared = new Set(catalog);
+				const resolved = [
+					...new Set(source.resolved.filter((id) => declared.has(id))),
+				].sort();
+				return {
+					provider,
+					profile,
+					catalogProductIds: catalog,
+					resolvedProductIds: resolved,
+					level: resolved.length > 0 ? "L1-DECLARED" : "P0",
+					denominator: `${resolved.length}/${catalog.length}`,
+				};
+			});
+		});
+		expect(rows).toEqual(expected);
+	});
+
+	it("keeps an unresolved AWS profile at P0 while the provider is L1-DECLARED", () => {
+		const provider = providerParity().find((row) => row.provider === "aws");
+		const profile = rows.find(
+			(row) => row.provider === "aws" && row.profile === "data.postgres/v1",
+		);
+		expect(provider?.level).toBe("L1-DECLARED");
+		expect(profile?.level).toBe("P0");
+		expect(profile?.denominator).toBe("0/2");
+		expect(profile?.resolvedProductIds).toEqual([]);
+	});
+
+	it("is deterministic and deep-frozen", () => {
+		expect(providerProfileParity()).toEqual(rows);
+		expect(Object.isFrozen(rows)).toBe(true);
+		for (const row of rows) {
+			expect(Object.isFrozen(row)).toBe(true);
+			expect(Object.isFrozen(row.catalogProductIds)).toBe(true);
+			expect(Object.isFrozen(row.resolvedProductIds)).toBe(true);
+		}
 	});
 });
 

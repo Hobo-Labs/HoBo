@@ -55,11 +55,13 @@ topology-authoring flow rather than opening a boundary beside it:
 - **Read store** — planners and policy surfaces query the yard read store; they
   never call into this package, which is authoring-time only.
 
-Parity is a separate pure read-model projection over each provider's published
-catalog and resolver constants. It emits no events and reads or writes no event
-store, snapshot, or read store. Because this in-process projection crosses no
-integration or persistence boundary, it has no protobuf parity record or CUE
-wire schema; its hand-written TypeScript interface duplicates no wire contract.
+`providerParity()` and `providerProfileParity()` are pure read-model
+projections over each provider's published catalog and resolver constants,
+respectively per provider and per `(provider, profile)`. They emit no events
+and read or write no event store, snapshot, or read store. Because these
+in-process projections cross no integration or persistence boundary, they have
+no protobuf parity record or CUE wire schema; their hand-written TypeScript
+interfaces duplicate no wire contract.
 
 ## Determinism
 
