@@ -44,17 +44,21 @@ message ProviderYardSpecRecord {
   repeated ProviderCatalogRowRecord bindings = 3;
 }
 
-// One provider's derived parity: how far its catalog is proven, as a level
-// plus the denominator that backs it (`providerParity()` in src/parity.ts).
+// One provider's constants-only parity projection: a level plus the
+// denominator that backs it. Produced by `toProviderParityRecord()` over
+// `providerParity()` in src/parity.ts.
 //
-// This is a read model, never a decision. Both counts are recomputed from code
-// — catalog_count from the provider's parsed Yard, resolved_count from the
-// provider package's `*_RESOLVED_PRODUCT_IDS` constant — so nothing here is a
-// hand-written claim. level is a string drawn from the closed council
-// vocabulary (P0, L1, L2, L3, P2, P3); the matching CUE closes the set and
-// enforces resolved_count <= catalog_count and that denominator spells
-// exactly "<resolved_count>/<catalog_count>". A constants-only projection only
-// ever emits P0 or L1: the higher levels need executed evidence.
+// This is a read model, never a deployment decision. Both counts are
+// recomputed from code — catalog_count from the provider's full allocatable
+// Yard catalog, resolved_count from the provider package's
+// `*_RESOLVED_PRODUCT_IDS` constant — so nothing here is a hand-written claim.
+// level is exactly "P0" or "L1": P0 iff resolved_count == 0, L1 iff
+// resolved_count > 0. That L1 is a candidate signal (resolvers declared), not
+// the council's full L1 (fake transport + six lifecycle cases + PACT), which
+// this record cannot evidence; L2/L3/P2/P3 need executed evidence and are
+// rejected here. The matching CUE enforces all of that, plus
+// resolved_count <= catalog_count and denominator ==
+// "<resolved_count>/<catalog_count>".
 message ProviderParityRowRecord {
   string provider = 1;
   string level = 2;
