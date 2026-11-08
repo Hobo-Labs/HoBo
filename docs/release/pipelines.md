@@ -119,7 +119,7 @@ The **CLI + PWA pipeline pulls the SDK's OCI artifact**. It never rebuilds the S
 - The same job runs the whole suite unsharded as `turbo run test --filter=@hobo/code` with `HOBO_TURBO_CONCURRENCY=1` and a **45-minute** budget. `@hobo/code#test` depends on its own build and on `@hobo/hobo#build` and `@hobo/adapter-hono#build`, so Turbo builds that cone first and replays it, and an unchanged suite, from cache. Outside pull requests it then packs dist trees from every pnpm workspace member, including the sibling `external/ts-autocode` packages, for the publish job.
 - PR OCI work runs `release-oci-affected.mts --only=hobo-code`, builds the image locally from the cone already built, and never pushes.
 - `code-v*` tags, pushed or manually dispatched on the tag, restore the same build artifact, stage `@hobo/code` as **`@hobo-labs/code`** and run `npm pack --dry-run`, then push `hobo-code` to GHCR without rebuilding its dependency cone and attach provenance and SBOM attestations. A dispatch on a tag is a release operation, not a dry run. A dispatch on a branch runs `code-release` only: the publish and attest jobs need a `refs/tags/code-v*` ref, because a branch name is not a release version.
-- HoBo Code is developed on the long-lived **`feature/hobo-code`** branch. Pull requests into it get this pipeline's `code-release` lane and HoBo CI Fabric's PR impact gate, judged against that branch's tip (`github.event.pull_request.base.sha`), and pushes to it run Main full gate against the branch's previous tip. Nothing publishes from the branch: the runner-image GHCR push needs `refs/heads/main`, the HoBo Code publish jobs need a `code-v*` tag, and the merge queue, the nightly sweep, the deps-image promotion and the SDK/CLI release train stay main-only. Its Main full gate queues in its own concurrency group, so it never replaces a waiting main gate; it does ask for the trunk runner label, as every push-capable job must (`scripts/lint-actions.ts`).
+- HoBo Code is developed on the long-lived **`feature/hobo-code`** branch. Pull requests into it get this pipeline's `code-release` lane and HoBo CI Fabric's PR impact gate, judged against that branch's tip (`github.event.pull_request.base.sha`), and pushes to it run Main full gate against the branch's previous tip. Nothing publishes from the branch: the runner-image GHCR push needs `refs/heads/main`, the HoBo Code publish jobs need a `code-v*` tag, and the merge queue, the nightly sweep, the deps-image promotion and the SDK/CLI release train stay main-only. Its Main full gate queues in its own concurrency group, so it never replaces a waiting main gate; it does ask for the trunk runner label, as every push-capable job must (`scripts/lint-actions.ts`). Merging `main` into the branch follows [the sync procedure](#syncing-main-into-featurehobo-code).
 
 The **SDK and CLI + PWA pipelines do not run HoBo Code tests or lint**. `@hobo/hobo` may still compile against the published `@hobo-labs/code` package at release boundaries without running HoBo Code's 5k+ test suite; that compilation is not a substitute for the independent `release-code` test gate.
 
@@ -221,6 +221,25 @@ Upstream [`Tyler-R-Kendrick/ts-autocode`](https://github.com/Tyler-R-Kendrick/ts
 5. Keep HoBo consumption through the pinned **git submodule sparse cone**, not through a source rebuild in the CLI pipeline or an unpinned upstream checkout.
 
 The sparse cone remains limited to the workspace members declared by HoBo's sibling-pin configuration. Publishing upstream packages does not change HoBo's source-consumption boundary by itself.
+
+## Syncing `main` into `feature/hobo-code`
+
+This branch keeps hobo-code (`packages/code`, `@hobo/code`, the `hobo-code` binary); `main` removed it in #1772. `main` is merged in from time to time so the branch keeps up with the platform.
+
+The first sync after #1772 lands on `main` must record the removal as merged without applying it. A plain merge would delete hobo-code from this branch too. `R` is #1772's squash commit on `main`:
+
+```bash
+git switch feature/hobo-code
+git fetch origin
+R=<squash commit of #1772 on main>
+git merge --no-ff "$R^"                    # main up to just before the removal
+git merge -s ours "$R" -m "merge: keep hobo-code across main's removal of it"
+git merge origin/main                      # everything after the removal, as usual
+```
+
+Every later sync is `git merge origin/main`. When a `main` change touches a file the removal rewrote (an ADR, these release docs, `@hobo/patterns`), resolve the conflict so this branch keeps its hobo-code content.
+
+**A sync is pushed as merge commits, or landed from a pull request with "Create a merge commit". It is never squash-merged or rebased.** A squash turns the `-s ours` merge into an ordinary commit, so git no longer records `R` as merged, and the next ordinary sync applies it and deletes hobo-code: a simulated squashed first sync left 1 of the 925 `packages/code` files. A rebase drops the merge commits the same way.
 
 ## Related references
 
