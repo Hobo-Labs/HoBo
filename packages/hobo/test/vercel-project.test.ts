@@ -1289,24 +1289,31 @@ describe("a transport failure (scripted transport, no network)", () => {
 		);
 	});
 
-	it("wraps a 2xx whose body cannot be read, as a runtime's JSON error quotes it", async () => {
+	// A runtime's JSON error quotes the start of the body, cut short: a part of
+	// the token no pattern of the whole token can find. The reason is fixed,
+	// and nothing of the body is quoted.
+	it.each([
+		["the token at its start", `${TOKEN} and the rest`],
+		["the token after a few characters", `<p>${TOKEN}</p>`],
+		["the token split across the quote's cut", `<html>${TOKEN.repeat(3)}`],
+	])("names no part of a 2xx body that is not JSON: %s", async (_case, body) => {
 		const error = await failedBy(async () => ({
 			ok: true,
 			status: 200,
 			async text() {
-				return `<html>${TOKEN}</html>`;
+				return body;
 			},
 			async json() {
-				throw new SyntaxError(
-					`Unexpected token '<', "<html>${TOKEN}</html>" is not valid JSON`,
-				);
+				return JSON.parse(body);
 			},
 		}));
 
 		expectNothingLeaks(error);
 		expect(error.message).toBe(
-			`vercel-client: create deployment answered HTTP 200, and its body could not be read: SyntaxError: Unexpected token '<', "<html>[redacted]</html>" is not valid JSON`,
+			"vercel-client: create deployment answered HTTP 200, and its body could not be read: response body was not JSON",
 		);
+		for (const part of [TOKEN.slice(0, 6), TOKEN.slice(4, 10), "<p>", "<html>"])
+			expect(error.message).not.toContain(part);
 	});
 
 	it.each([

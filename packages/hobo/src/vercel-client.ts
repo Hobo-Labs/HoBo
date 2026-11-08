@@ -140,10 +140,11 @@ export class VercelApiError extends Error {
 
 // A request that got no answer to read: the transport threw or rejected (a
 // refused connection, a header the runtime would not send), or a 2xx body could
-// not be read. `message` names the call and says what was thrown, read down its
-// `cause` chain and into an AggregateError's `errors` (`thrownText`), as refusal
-// text: redacted, and cut at 500 characters. What was thrown is not kept, so it
-// has no `cause`, and nothing unredacted is left to print.
+// not be read. `message` names the call and says what the transport threw,
+// read down its `cause` chain and into an AggregateError's `errors`
+// (`thrownText`), as refusal text: redacted, and cut at 500 characters; a 2xx
+// body that is not JSON gets a fixed reason instead. What was thrown is not
+// kept, so it has no `cause`, and nothing unredacted is left to print.
 export class VercelTransportError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -730,17 +731,23 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 				body,
 			}),
 		);
-	// The JSON object a 2xx answer to `what` carries; a body that cannot be read
-	// is a VercelTransportError.
-	const payloadFrom = (
+	// The JSON object a 2xx answer to `what` carries. A body `json()` cannot
+	// read is a VercelTransportError with a fixed reason: a runtime's JSON error
+	// quotes the start of the body, cut short where no pattern of the whole
+	// token finds the part of it the quote holds, so nothing of what was thrown
+	// is read.
+	const payloadFrom = async (
 		what: string,
 		response: VercelFetchResponse,
-	): Promise<JsonObject> =>
-		untilAnswered(
-			`${what} answered HTTP ${response.status}, and its body could not be read`,
-			secrets,
-			() => payloadOf(response),
-		);
+	): Promise<JsonObject> => {
+		try {
+			return await payloadOf(response);
+		} catch {
+			throw new VercelTransportError(
+				`vercel-client: ${what} answered HTTP ${response.status}, and its body could not be read: response body was not JSON`,
+			);
+		}
+	};
 
 	// A request with nothing to send: no body, as `fetch` requires of a GET;
 	// a transport that throws is a VercelTransportError naming `what`.

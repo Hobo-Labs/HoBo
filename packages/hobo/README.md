@@ -226,8 +226,10 @@ undefined. A request that gets no answer to read (the transport throws or
 rejects, or a 2xx body cannot be read) is a `VercelTransportError`: its
 `message` names the call and says what was thrown, down its `cause` chain and
 into an `AggregateError`'s `errors` (eight parts at most), redacted and cut the
-same way, and it keeps nothing of what was thrown, so it has no `cause`. A
-token that holds whitespace, or a control, format or other default-ignorable
+same way, and it keeps nothing of what was thrown, so it has no `cause`. A 2xx
+body that is not JSON is named by a fixed reason, `response body was not JSON`,
+and nothing of the body is quoted (a runtime's JSON error quotes its start, cut
+short). A token that holds whitespace, or a control, format or other default-ignorable
 character (CR, LF and NUL among them), is refused when the client is made,
 before any request, by an error that does not quote it. A credential binding's
 scope needs `POST` on `/v13/deployments`, and `POST` on `/v9/projects` for that
