@@ -656,6 +656,10 @@ ADR-0131 made Station the control-plane occupancy primitive, but "Station capabi
 - **(−)** Two init verbs coexist (`hobo station init` operator seed, `hobo-code init` discovery-gated dev seed); docs must keep the distinction crisp.
 - **(−)** The capability kind vocabulary is closed; new facility families require an ADR amendment rather than an ad-hoc string.
 
+### Amendment (2026-11-08: hobo-code leaves main)
+
+Decisions 3 and 4 (`hobo-code init`, the dev-scenario `codeDevStation` declarations) and the hobo-code consequences describe the `feature/hobo-code` branch, not `main`. Decisions 1, 2 and 5 — the typed `StationCapability`, fail-closed matching and the declared `isolationClass` — are on `main` in `@hobo/stations`.
+
 ## ADR-0158
 **Deployment phases: `plan` / `init` / `handle` — one program, three evaluations, phase-safe by contract.**
 

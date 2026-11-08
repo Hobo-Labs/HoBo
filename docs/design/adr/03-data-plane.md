@@ -693,6 +693,10 @@ Programmatic coding-agent turns go through Vercel AI SDK `HarnessAgent` ([Harnes
 
 In-repo contract: `createHarnessV1` / `createHarnessAgent` (`packages/code/src/ai-sdk-harness-runtime.ts`).
 
+### Amendment (2026-11-08: hobo-code leaves main)
+
+hobo-code (`packages/code`, `@hobo/code`, the `hobo-code` binary) is developed on the long-lived `feature/hobo-code` branch and is not part of `main`. The sections above, and the references below, describe that branch: the package, its release workflow and image, the isolation runbook and the experience proof exist there. `main` is merged into `feature/hobo-code` from time to time. This ADR is amended again when hobo-code is released to `main` or dropped.
+
 ### References
 - Package: `packages/code` (`@hobo/code`)
 - CLI: `hobo-code` section in `docs/design/cli-spec.md`
@@ -735,6 +739,10 @@ The first ADR-0152 emit path overwrote files in topo order. That made "add a sec
 - Replacing `examples/` or the high-value OpenUI template.
 - A second codegen CLI (HOBO-152 / HOBO-394 stay elevated, not forked).
 
+### Amendment (2026-11-08: hobo-code leaves main)
+
+The emission path in the `hobo-code` session (decisions 8 and 10: ScaffoldingAgent, `tryWorkspaceAction`, `templates/intents/*.json`) is on the `feature/hobo-code` branch, not `main`. The atom corpus itself stays in `packages/patterns` on `main`.
+
 ## ADR-0153
 **Canonical `@hobo/patterns` catalog, ontology-vector retrieval, explicit `template` verb.**
 
@@ -763,6 +771,10 @@ The first ADR-0152 emit path overwrote files in topo order. That made "add a sec
 - Zero-LLM route: `hobo-code template`, `/template`
 - Related: ADR-0135, ADR-0139, ADR-0152
 
+### Amendment (2026-11-08: hobo-code leaves main)
+
+The `hobo-code template` / `/template` route and the `hobo-code scaffold` adapter (decisions 3, 4 and the atom CLI in the consequences), and the OpenUI starter `starter.code.openui-astryx-bindle`, are on the `feature/hobo-code` branch, not `main`. On `main` the catalog is reached through `hobo new` and the `@hobo/patterns` library API, and apply receipts carry `promotionRef: "caller-promotes"`: promotion out of the isolation root is the caller's.
+
 ## ADR-0154
 **Durable HoBo Code review aggregate.**
 
@@ -782,6 +794,10 @@ Git workbench snapshots are mutation surfaces. "Reviewed index" meant authorizin
 ### Consequences
 - **(+)** Terminal, CLI, and browser share one parse-don't-validate contract.
 - **(−)** GitHub CLI (`gh`) is the live provider; tests use a fake provider plus a real temporary Git repository.
+
+### Amendment (2026-11-08: hobo-code leaves main)
+
+The review aggregate is part of `@hobo/code`, which is developed on the `feature/hobo-code` branch and is not part of `main`. This ADR describes that branch.
 
 ## ADR-0160
 **`drizzle-kit` is the default relational schema-diff engine behind the migration port — deploy-owned generation, HoBo-gated apply.**
