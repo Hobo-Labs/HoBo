@@ -130,6 +130,18 @@ describe("providerParity()", () => {
 		console.log(`\n${table}\n`);
 		expect(table.split("\n")).toHaveLength(PARITY_PROVIDERS.length);
 	});
+
+	it("matches the README's parity block byte for byte", () => {
+		const readme = readFileSync(
+			join(dirname(fileURLToPath(import.meta.url)), "..", "README.md"),
+			"utf8",
+		);
+		const block =
+			/<!-- parity:begin -->\n```text\n([\s\S]*?)\n```\n<!-- parity:end -->/u.exec(
+				readme,
+			);
+		expect(block?.[1]).toBe(rows.map(formatParityClaim).join("\n"));
+	});
 });
 
 describe("parityRow() level rules", () => {

@@ -41,20 +41,21 @@
  * fails closed at resolution rather than half-applying; what differs is how
  * much of a real API each provider package can already talk to, and every one
  * of those is proven against an injected fake transport rather than a live
- * account:
- *   - **cloudflare**, **vercel** — HTTP deployment resolvers.
- *   - **aws** (7/19), **gcp** (9/14), **azure** (9/16),
- *     **digitalocean** (9/14), **hetzner** (3/5) — signed or bearer-token
- *     resolvers for part of the catalog; each package names the products it
- *     cannot converge and why.
- *   - **kubernetes** (6/7) — convergent resolvers for built-in objects, plus a
- *     placement driver that does reach a real apiserver. Its catalog is
- *     built-ins only: databases, caches and queues arrive through operators,
- *     which are software this package cannot see.
- *   - **hostinger** (2/5) — the odd one out: allocation there is a *billing
- *     order*, so its resolvers adopt and converge what you already bought and
- *     refuse to purchase. Its transport guard does not allowlist the
- *     order-placing namespace, so that refusal is enforced below the code.
+ * account.
+ *
+ * How much, per provider, is deliberately not written here. This header once
+ * said `aws (7/19)` and `hostinger (2/5)` while the constants said 8 and 5:
+ * prose counts drift the moment a resolver lands. Call `providerParity()` —
+ * it derives `resolved/catalog` from each namespace's `Yard()` and the
+ * provider package's `*_RESOLVED_PRODUCT_IDS`, and `formatParityClaim()`
+ * renders it with the denominator attached. Two qualitative facts stay true
+ * regardless of counts:
+ *   - **kubernetes** also has a placement driver that does reach a real
+ *     apiserver; its catalog is built-ins only, because databases, caches and
+ *     queues arrive through operators this package cannot see.
+ *   - **hostinger** allocation is a *billing order*, so its resolvers adopt and
+ *     converge what you already bought and refuse to purchase; its transport
+ *     guard does not allowlist the order-placing namespace.
  */
 export * as aws from "./aws.js";
 export * as azure from "./azure.js";

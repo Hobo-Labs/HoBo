@@ -63,12 +63,16 @@ because rows canonicalize to a sorted set.
 
 ## Honest scope
 
-`cloudflare` and `vercel` ship HTTP deployment resolvers, proven in tests
-against an injected fake transport; **no live deploy is proven anywhere in this
-repo**, which additionally needs real credentials and network egress. `aws`,
-`azure`, and `gcp` are catalog-only: no resolvers, and no registered Resource
-Definitions for their product ids, so a deploy against those Yards fails closed
-at resolution rather than half-applying. The AWS catalog further
+Every namespace's provider package ships deployment resolvers for some or all
+of its catalog, proven in tests against an injected fake transport; **no live
+deploy is proven anywhere in this repo**, which additionally needs real
+credentials and network egress. No namespace registers Resource Definitions
+for its product ids, so a deploy against any of these Yards fails closed at
+resolution rather than half-applying. Per-provider coverage is not restated
+here: `providerParity()` derives `resolved/catalog` from the provider
+constants and emits at most `L1` (simulated), because a constants-only read
+model cannot see executed evidence. It is a projection, not a decision — it
+selects, filters, and reorders nothing. The AWS catalog further
 **under-declares** what AWS can allocate — a gap in the slot-factory set, not a
-selection the Yard made. See [`README.md`](./README.md) for the per-provider
-table.
+selection the Yard made. See [`README.md`](./README.md) for the parity levels
+and the code-pinned per-provider claims.

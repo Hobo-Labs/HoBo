@@ -6,8 +6,11 @@
  * but because Vercel genuinely ships one product per capability. A single entry
  * here is an accurate catalog, not a selection made early.
  *
- * SCOPE: Vercel is one of the two providers that ships HTTP deployment
- * resolvers, so this catalog is backed by real Vercel API drivers. Those
+ * SCOPE: part of this catalog is backed by Vercel REST API drivers
+ * (`VERCEL_RESOLVED_PRODUCT_IDS`); `vercel.blob/v1` and
+ * `vercel.edge-function/v1` have none, for the reasons named in
+ * `VERCEL_UNRESOLVED_PRODUCT_IDS`. The opt-in `project()` row is resolved but
+ * absent from the bare `Yard()`; `providerParity()` counts it. Those
  * drivers are proven against an injected fake transport; a live deploy
  * additionally needs real credentials and network egress, which no test here
  * supplies.
