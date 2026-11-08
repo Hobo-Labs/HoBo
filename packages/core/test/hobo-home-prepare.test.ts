@@ -21,7 +21,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, onTestFinished } from "vitest";
 
 import {
 	ensureHoboHome,
@@ -107,13 +107,24 @@ describe("prepareHoboHome", () => {
 
 	it("prints the notice exactly once when eight processes start together", async () => {
 		// Eight `hobo` invocations from one shell script, all on a fresh home.
+		// Each loads the module, says it is ready, then waits for the go file
+		// and prepares the home at once. A child waits by sleeping, not
+		// spinning, gives up after a minute or once its parent is gone, and is
+		// stopped when the test ends, however it ends: a slow start must not
+		// leave eight processes polling.
 		const { user, legacy } = layout();
 		const go = join(user, "go");
 		const script = `
 const { existsSync } = await import("node:fs");
 const { prepareHoboHome } = await import(${JSON.stringify(SOURCE)});
 process.stdout.write("ready\\n");
-while (!existsSync(${JSON.stringify(go)})) {}
+const tick = new Int32Array(new SharedArrayBuffer(4));
+const parent = process.ppid;
+const giveUp = Date.now() + 60_000;
+while (!existsSync(${JSON.stringify(go)})) {
+	if (Date.now() > giveUp || process.ppid !== parent) process.exit(3);
+	Atomics.wait(tick, 0, 0, 1);
+}
 prepareHoboHome({
 	env: { HOME: ${JSON.stringify(user)} },
 	legacyHomes: [${JSON.stringify(legacy)}],
@@ -121,44 +132,53 @@ prepareHoboHome({
 	warn: (line) => process.stdout.write(\`notice \${line}\\n\`),
 });
 `;
+		// Node strips the module's types itself, which starts eight children
+		// far faster than a loader would.
 		const children = Array.from({ length: 8 }, () =>
 			spawn(
 				process.execPath,
-				["--import", "tsx", "--input-type=module", "-e", script],
-				{
-					cwd: PACKAGE,
-				},
+				["--experimental-strip-types", "--input-type=module", "-e", script],
+				{ cwd: PACKAGE },
 			),
 		);
-		const outputs = children.map(
-			(child) =>
-				new Promise<string>((done) => {
-					let out = "";
-					child.stdout.on("data", (chunk) => {
-						out += String(chunk);
-					});
-					child.on("close", () => done(out));
-				}),
-		);
-		await Promise.all(
-			children.map(
+		// Runs when the test ends, a timeout included; a `finally` would wait
+		// for the readiness the timeout gave up on.
+		onTestFinished(() => {
+			for (const child of children)
+				if (child.exitCode === null && child.signalCode === null)
+					child.kill("SIGKILL");
+		});
+		{
+			const outputs = children.map(
 				(child) =>
-					new Promise<void>((ready) => {
-						const listen = (chunk: Buffer | string) => {
-							if (String(chunk).includes("ready")) {
-								child.stdout.off("data", listen);
-								ready();
-							}
-						};
-						child.stdout.on("data", listen);
+					new Promise<string>((done) => {
+						let out = "";
+						child.stdout.on("data", (chunk) => {
+							out += String(chunk);
+						});
+						child.on("close", () => done(out));
 					}),
-			),
-		);
-		writeFileSync(go, "");
-		const notices = (await Promise.all(outputs))
-			.flatMap((out) => out.split("\n"))
-			.filter((line) => line.startsWith("notice "));
-		expect(notices).toHaveLength(1);
+			);
+			await Promise.all(
+				children.map(
+					(child) =>
+						new Promise<void>((ready) => {
+							const listen = (chunk: Buffer | string) => {
+								if (String(chunk).includes("ready")) {
+									child.stdout.off("data", listen);
+									ready();
+								}
+							};
+							child.stdout.on("data", listen);
+						}),
+				),
+			);
+			writeFileSync(go, "");
+			const notices = (await Promise.all(outputs))
+				.flatMap((out) => out.split("\n"))
+				.filter((line) => line.startsWith("notice "));
+			expect(notices).toHaveLength(1);
+		}
 	});
 
 	it("names the program that printed it, and offers XDG_STATE_HOME/hobo", () => {
