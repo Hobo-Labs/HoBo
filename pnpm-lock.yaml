@@ -2783,16 +2783,6 @@ importers:
 
   src/draft/epic-proofs/governance-planes-s6-08: {}
 
-  src/draft/epic-proofs/hobo-code-session-orchestration:
-    dependencies:
-      '@hobo/code':
-        specifier: workspace:*
-        version: link:../../../../packages/code
-    devDependencies:
-      vitest:
-        specifier: ^4.1.9
-        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@26.0.1)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
-
   src/draft/epic-proofs/identity-auth-secrets-cross-app-access-xaa: {}
 
   src/draft/epic-proofs/mapping-styles-planner-resolution: {}
@@ -3042,16 +3032,6 @@ importers:
 
   src/draft/exp-proofs/dx/gitops-ci-journey-contract: {}
 
-  src/draft/exp-proofs/dx/hobo-code-harness-experience:
-    dependencies:
-      '@hobo/code':
-        specifier: workspace:*
-        version: link:../../../../../packages/code
-    devDependencies:
-      vitest:
-        specifier: ^4.1.9
-        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@26.0.1)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
-
   src/draft/exp-proofs/dx/inline-budget-authoring: {}
 
   src/draft/exp-proofs/dx/intent-alignment-iter2: {}
@@ -3215,16 +3195,6 @@ importers:
   src/draft/technical-proofs/actor-host-runtime-port-contract: {}
 
   src/draft/technical-proofs/adopt-in-place-contract: {}
-
-  src/draft/technical-proofs/agent-session-control-plane-contract:
-    dependencies:
-      '@hobo/code':
-        specifier: workspace:*
-        version: link:../../../../packages/code
-    devDependencies:
-      vitest:
-        specifier: ^4.1.9
-        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@26.0.1)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   src/draft/technical-proofs/alertmanager-routing-contract: {}
 
