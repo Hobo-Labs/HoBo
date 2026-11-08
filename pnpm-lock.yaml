@@ -1819,6 +1819,9 @@ importers:
       '@hobo/provider-lakebed':
         specifier: workspace:*
         version: link:../providers/provider-lakebed
+      '@hobo/provider-local':
+        specifier: workspace:*
+        version: link:../providers/provider-local
       '@hobo/provider-manifest':
         specifier: workspace:*
         version: link:../provider-manifest
@@ -8625,7 +8628,6 @@ packages:
   '@pact-foundation/pact-core@20.2.0':
     resolution: {integrity: sha512-AKPJomBRHmQ8ilOkCaT2ZpvL2j/GM9CeE3K81w57zy3gwOnN6ZdMyw38ddqIHudTgS6eNQLqBKLbrRsOOKwwtg==}
     engines: {node: '>=22'}
-    cpu: [x64, ia32, arm64]
     os: [darwin, linux, win32]
 
   '@pact-foundation/pact@17.1.4':

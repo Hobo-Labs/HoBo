@@ -69,6 +69,7 @@
 		"@hobo/provider-kafka": "workspace:*",
 		"@hobo/provider-kubernetes": "workspace:*",
 		"@hobo/provider-lakebed": "workspace:*",
+		"@hobo/provider-local": "workspace:*",
 		"@hobo/provider-manifest": "workspace:*",
 		"@hobo/provider-neon": "workspace:*",
 		"@hobo/provider-netlify": "workspace:*",

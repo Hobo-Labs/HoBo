@@ -24,6 +24,7 @@ import type {
 	ResourceDefinitionSemantics,
 	ResourceDefinitionVNext,
 } from "@hobo/cloud";
+import { LOCAL_DEFINITIONS } from "@hobo/provider-local";
 import {
 	NETLIFY_DEFINITIONS,
 	semanticsToSelectionCandidate,
@@ -175,6 +176,11 @@ export const FIRST_PARTY_DEFINITIONS: readonly ResourceDefinitionVNext[] =
 			toResourceDefinition(TTL_SH_RESOURCE_DEFINITION),
 			...NETLIFY_DEFINITIONS.map(toResourceDefinition),
 			...VERCEL_SPONSORED_DEFINITIONS.map(toResourceDefinition),
+			// The localhost Yard's engine-backed products. Registration makes
+			// them visible to composed selection on `yard:local`; their
+			// shipped evidence fields fail closed until a station supplies
+			// evidence, exactly as for every other entry here.
+			...LOCAL_DEFINITIONS.map(toResourceDefinition),
 		].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
 	);
 
