@@ -664,7 +664,7 @@ External foundations inform the design (rift CoW isolation, Flue/Pi harness base
 
 ### Amendment (defaults + distributed hive)
 
-1. **All progressive `code.*` OpenFeature flags default ON** — `code.harness.enabled`, `code.evidence.visual`, `code.monetization.surface`, `code.isolation.rift`, `code.distributed`. Disable deliberately via OpenFeature / env (`HOBO_CODE_MONETIZATION=0` for monetization surface). Monetization remains privacy-first (never inspects prompts or code).
+1. **All progressive OpenFeature flags under `code.` default ON** — `code.harness.enabled`, `code.evidence.visual`, `code.monetization.surface`, `code.isolation.rift`, `code.distributed`. Disable deliberately via OpenFeature / env (`HOBO_CODE_MONETIZATION=0` for monetization surface). Monetization remains privacy-first (never inspects prompts or code).
 2. **CLI binary is `hobo-code`** (not a `hobo code` / nested `buzz` verb). Flat verbs with **`dispatch` as the default**. Distributed compute is a core shipped surface (internal hive module inspired by [block/buzz](https://github.com/block/buzz)): rooms, first-class agent identities, multi-node dispatch (local-process, worktree, rift, named-endpoint, MxC, OpenShell). OpenFeature key `code.distributed` (default ON). Not a vendored fork of Buzz; **not** a user-facing verb name.
 
 ### Amendment (Eve subagents · DeepAgents+OpenShell+MxC · Workflow Worlds)
@@ -695,7 +695,7 @@ In-repo contract: `createHarnessV1` / `createHarnessAgent` (`packages/code/src/a
 
 ### Amendment (2026-11-08: hobo-code leaves main)
 
-hobo-code (`packages/code`, `@hobo/code`, the `hobo-code` binary) is developed on the long-lived `feature/hobo-code` branch and is not part of `main`. The sections above, and the references below, describe that branch: the package, its release workflow and image, the isolation runbook and the experience proof exist there. `main` is merged into `feature/hobo-code` from time to time. This ADR is amended again when hobo-code is released to `main` or dropped.
+hobo-code (`packages/code`, `@hobo/code`, the `hobo-code` binary) is developed on the long-lived `feature/hobo-code` branch and is not part of `main`. The sections above, and the references below, describe that branch: the package, its release workflow and image, the isolation runbook and the experience proof exist there. So does its event family, the code.* events and the OpenFeature keys under `code.`: it is listed in `docs/design/event-families.md` on that branch only. `main` is merged into `feature/hobo-code` from time to time. This ADR is amended again when hobo-code is released to `main` or dropped.
 
 ### References
 - Package: `packages/code` (`@hobo/code`)
