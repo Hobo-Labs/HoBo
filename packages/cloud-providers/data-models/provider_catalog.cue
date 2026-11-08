@@ -47,33 +47,3 @@ package data_models
 	// produce a Yard that silently satisfies no capability.
 	bindings: [...#ProviderCatalogRowRecord] & [_, ...]
 }
-
-// Parity levels, local before cloud fallback (council-decision.md). Closed, so
-// no record can invent a level no reader knows how to rank. This is the full
-// vocabulary; the constants-only record below may use only its first two.
-#ParityLevel: "P0" | "L1" | "L2" | "L3" | "P2" | "P3"
-
-// The levels a projection over constants can honestly emit. L2/L3/P2/P3 need
-// executed evidence (a run, minutes, a live account) that no count carries.
-#ConstantsParityLevel: #ParityLevel & ("P0" | "L1")
-
-// The constants-only projection record (`toProviderParityRecord()` in
-// src/parity.ts). Its L1 is a candidate signal — resolvers declared — not the
-// council's full L1 (fake transport + six lifecycle cases + PACT), which this
-// record has no field to evidence.
-#ProviderParityRowRecord: {
-	provider:       string & !=""
-	level:          #ConstantsParityLevel
-	catalog_count:  int & >=0
-	resolved_count: int & >=0 & <=catalog_count
-	// The denominator is derived, never free text: a claim without the exact
-	// count behind it is the overclaim this record exists to stop.
-	denominator: "\(resolved_count)/\(catalog_count)"
-	// P0 iff nothing resolved, in both directions.
-	if resolved_count == 0 {
-		level: "P0"
-	}
-	if resolved_count > 0 {
-		level: "L1"
-	}
-}

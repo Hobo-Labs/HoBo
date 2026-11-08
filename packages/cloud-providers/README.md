@@ -109,12 +109,11 @@ vercel L1: 3/5 resolvers declared (conformance not asserted here)
 ```
 <!-- parity:end -->
 
-Each row's wire form is `ProviderParityRowRecord` in
-[`data-models/provider_catalog.proto`](./data-models/provider_catalog.proto),
-produced by `toProviderParityRecord(row)` (counts, not id lists). The
-matching CUE caps that record at `P0` or `L1`, requires `P0` exactly when
-`resolved_count == 0`, bounds `resolved_count <= catalog_count`, and derives
-the denominator.
+Parity is an in-process pure read model: it crosses no integration or
+persistence boundary, so it has no protobuf record or CUE wire schema. The
+TypeScript row interface therefore duplicates no wire contract. Protobuf-first
+applies to the provider-catalog boundary, whose records and constraints remain
+in `data-models/`.
 
 ## HONEST SCOPE
 

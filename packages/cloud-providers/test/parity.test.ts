@@ -37,7 +37,6 @@ import {
 	ParityError,
 	parityRow,
 	providerParity,
-	toProviderParityRecord,
 	vercel,
 } from "../src/index.js";
 
@@ -170,40 +169,6 @@ describe("vercel's widened catalog", () => {
 	});
 });
 
-describe("toProviderParityRecord()", () => {
-	const rows = providerParity();
-
-	it("encodes every providerParity() row consistently", () => {
-		for (const row of rows) {
-			const record = toProviderParityRecord(row);
-			expect(record).toEqual({
-				provider: row.provider,
-				level: row.level,
-				catalog_count: row.catalogProductIds.length,
-				resolved_count: row.resolvedProductIds.length,
-				denominator: `${row.resolvedProductIds.length}/${row.catalogProductIds.length}`,
-			});
-			expect(record.denominator).toBe(row.denominator);
-			// The CUE record's invariants, checked on the real rows.
-			expect(record.resolved_count).toBeLessThanOrEqual(record.catalog_count);
-			expect(record.level === "P0").toBe(record.resolved_count === 0);
-			expect(Object.isFrozen(record)).toBe(true);
-		}
-	});
-
-	it("has exactly the proto message's fields", () => {
-		const proto = readPackageFile("data-models", "provider_catalog.proto");
-		const body =
-			/message ProviderParityRowRecord \{([^}]*)\}/u.exec(proto)?.[1] ?? "";
-		const fields = [...body.matchAll(/\b([a-z_]+) = \d+;/gu)].map((m) => m[1]);
-		const [first] = rows;
-		if (first === undefined) throw new Error("no rows");
-		expect(Object.keys(toProviderParityRecord(first)).sort()).toEqual(
-			[...fields].sort(),
-		);
-	});
-});
-
 describe("parityRow() level rules", () => {
 	it("resolved > 0 is L1 (candidate) — never higher", () => {
 		const row = parityRow("acme", ["acme.a/v1", "acme.b/v1"], ["acme.a/v1"]);
@@ -262,42 +227,16 @@ describe("PARITY_LEVELS", () => {
 	it("is the closed council vocabulary, in ascending local-then-cloud order", () => {
 		expect([...PARITY_LEVELS]).toEqual(["P0", "L1", "L2", "L3", "P2", "P3"]);
 	});
-
-	it("matches the CUE closed set", () => {
-		const cue = readPackageFile("data-models", "provider_catalog.cue");
-		const line = /#ParityLevel:\s*(.+)/u.exec(cue)?.[1] ?? "";
-		const levels = [...line.matchAll(/"([A-Z0-9]+)"/gu)].map((m) => m[1]);
-		expect(levels).toEqual([...PARITY_LEVELS]);
-	});
 });
 
-describe("#ProviderParityRowRecord (CUE)", () => {
-	const cue = readPackageFile("data-models", "provider_catalog.cue");
-	const block =
-		/^#ProviderParityRowRecord: \{\n([\s\S]*?)^\}/mu.exec(cue)?.[1] ?? "";
-
-	it("caps level at the constants-only set {P0, L1}", () => {
-		const constants =
-			/^#ConstantsParityLevel:\s*#ParityLevel & \(([^)]*)\)/mu.exec(cue)?.[1] ??
-			"";
-		expect([...constants.matchAll(/"([A-Z0-9]+)"/gu)].map((m) => m[1])).toEqual(
-			["P0", "L1"],
-		);
-		expect(block).toMatch(/^\s*level:\s*#ConstantsParityLevel\s*$/mu);
-	});
-
-	it("forces P0 iff resolved_count == 0, both directions", () => {
-		expect(block).toMatch(
-			/if resolved_count == 0 \{\s*level: "P0"\s*\}/u,
-		);
-		expect(block).toMatch(/if resolved_count > 0 \{\s*level: "L1"\s*\}/u);
-	});
-
-	it("bounds the counts and derives the denominator", () => {
-		expect(block).toMatch(/resolved_count:\s*int & >=0 & <=catalog_count/u);
-		expect(block).toMatch(/catalog_count:\s*int & >=0/u);
-		expect(block).toContain(
-			'denominator: "\\(resolved_count)/\\(catalog_count)"',
-		);
+describe("parity read-model boundary", () => {
+	it("has no protobuf or CUE record for an in-process projection", () => {
+		const proto = readPackageFile("data-models", "provider_catalog.proto");
+		const cue = readPackageFile("data-models", "provider_catalog.cue");
+		for (const schema of [proto, cue]) {
+			expect(schema).not.toContain("ProviderParityRowRecord");
+			expect(schema).not.toContain("ConstantsParityLevel");
+			expect(schema).not.toContain("#ParityLevel");
+		}
 	});
 });

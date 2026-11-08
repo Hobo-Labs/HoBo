@@ -66,12 +66,8 @@ import * as hostinger from "./hostinger.js";
 import * as kubernetes from "./kubernetes.js";
 import * as vercel from "./vercel.js";
 
-/**
- * The closed level vocabulary, local levels before cloud fallbacks. The CUE
- * `#ParityLevel` in data-models/provider_catalog.cue is the same set; a test
- * pins the two together.
- */
-// public-contract: the parity level vocabulary; the CUE #ParityLevel set and every rendered claim depend on it.
+/** The closed council vocabulary, local levels before cloud fallbacks. */
+// public-contract: the parity level vocabulary every parity claim depends on.
 export const PARITY_LEVELS = Object.freeze([
 	"P0",
 	"L1",
@@ -102,10 +98,8 @@ export class ParityError extends Error {
 }
 
 /**
- * One provider's derived parity, in TS shape: it keeps the id lists so a
- * caller can see *which* products resolve. The wire shape is
- * `ProviderParityRowRecord` (counts, not lists); `toProviderParityRecord()`
- * is the one encoder between them.
+ * One provider's derived parity. The id lists show which products resolve;
+ * this in-process read model has no wire representation.
  */
 export interface ProviderParityRow {
 	readonly provider: string;
@@ -242,33 +236,6 @@ export function providerParity(): readonly ProviderParityRow[] {
 			);
 		}),
 	);
-}
-
-/**
- * The wire form of one row, field for field `ProviderParityRowRecord` in
- * data-models/provider_catalog.proto (snake_case, counts not lists).
- */
-export interface ProviderParityRecord {
-	readonly provider: string;
-	readonly level: SimulatedParityLevel;
-	readonly catalog_count: number;
-	readonly resolved_count: number;
-	readonly denominator: string;
-}
-
-/** Encodes a row as its wire record. Counts are the id-list lengths. */
-export function toProviderParityRecord(
-	row: ProviderParityRow,
-): ProviderParityRecord {
-	const catalogCount = row.catalogProductIds.length;
-	const resolvedCount = row.resolvedProductIds.length;
-	return Object.freeze({
-		provider: row.provider,
-		level: row.level,
-		catalog_count: catalogCount,
-		resolved_count: resolvedCount,
-		denominator: `${resolvedCount}/${catalogCount}`,
-	});
 }
 
 const LEVEL_EVIDENCE: Readonly<Record<SimulatedParityLevel, string>> =
