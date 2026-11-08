@@ -17,10 +17,16 @@
  *    done the job.
  */
 import type { CapabilityBinding, SecretRef } from "@hobo/bindings";
+import {
+	parseResourceLifecycleObservation,
+	type ResourceLifecycleContext,
+	type ResourceLifecycleObservation,
+} from "@hobo/core";
 
 import type {
 	UpstashClaimAction as UpstashClaimActionWire,
 	UpstashClaimPlan as UpstashClaimPlanWire,
+	UpstashDestroyOutcome as UpstashDestroyOutcomeWire,
 	UpstashTemporaryRedis as UpstashTemporaryRedisWire,
 } from "./_generated/temporary_redis_pb.js";
 import { buildUpstashCapabilityBinding } from "./binding.js";
@@ -32,7 +38,7 @@ import {
 	UPSTASH_UNCLAIMED_LIMITS,
 } from "./definition.js";
 import { UpstashProviderError } from "./errors.js";
-import type { StartRedisDatabase } from "./start-redis.js";
+import type { StartRedisDatabase, StartRedisMetrics } from "./start-redis.js";
 import type { DomainView } from "./wire.js";
 
 export type UpstashClaimState =
@@ -166,11 +172,10 @@ export type ClaimVerification = {
 	readonly reasons: readonly string[];
 };
 
-export type DestroyOutcome = {
-	readonly destroyed: boolean;
-	readonly reason: string;
-	readonly manualAction?: string;
-};
+export type DestroyOutcome = DomainView<
+	UpstashDestroyOutcomeWire,
+	{ manualAction?: string }
+>;
 
 export type UpstashDriverOptions = {
 	readonly client: UpstashClient;
@@ -179,6 +184,11 @@ export type UpstashDriverOptions = {
 	readonly probe?: RedisProbePort;
 	/** Evidence locator recorded on every emitted binding. */
 	readonly producerEvidenceRef?: string;
+	/** Independent provider absence and final usage, bound to the caller's financial scope. */
+	readonly retirement?: (
+		record: UpstashTemporaryRedis,
+		context: ResourceLifecycleContext,
+	) => Promise<ResourceLifecycleObservation>;
 };
 
 export type ProvisionInput = {
@@ -252,6 +262,8 @@ export type UpstashTemporaryRedisDriver = {
 	readonly providerId: typeof UPSTASH_PROVIDER_ID;
 	provision(input: ProvisionInput): Promise<UpstashTemporaryRedis>;
 	observe(input: ObserveInput): Promise<UpstashTemporaryRedis>;
+	/** Read-only observation. Unlike adoption this never re-POSTs a create. */
+	observeMetrics(databaseId: string): Promise<StartRedisMetrics>;
 	verifyOwnership(
 		record: UpstashTemporaryRedis,
 	): Promise<OwnershipVerification>;
@@ -278,7 +290,10 @@ export type UpstashTemporaryRedisDriver = {
 		record: UpstashTemporaryRedis,
 		attestation: RotationAttestation,
 	): UpstashTemporaryRedis;
-	destroy(record: UpstashTemporaryRedis): Promise<DestroyOutcome>;
+	destroy(
+		record: UpstashTemporaryRedis,
+		context?: ResourceLifecycleContext,
+	): Promise<DestroyOutcome>;
 	assertLeaseLive(record: UpstashTemporaryRedis): void;
 	/** The claim window is the lease window; missing it is terminal. */
 	assertClaimable(record: UpstashTemporaryRedis): void;
@@ -301,14 +316,13 @@ export function createUpstashTemporaryRedisDriver(
 	): Promise<{
 		readonly credentialRef: SecretRef;
 		readonly restUrlRef: SecretRef;
+		readonly redisProtocolUrlRef?: SecretRef;
 		readonly binding: CapabilityBinding;
 	}> {
-		const labels = { databaseId: database.databaseId };
 		const tokenRef = await depositSecret(options.custody, database.token, {
 			providerId: UPSTASH_PROVIDER_ID,
 			resourceRef,
 			purpose: "redis-rest-token",
-			labels,
 		});
 		const urlRef = await depositSecret(
 			options.custody,
@@ -317,7 +331,6 @@ export function createUpstashTemporaryRedisDriver(
 				providerId: UPSTASH_PROVIDER_ID,
 				resourceRef,
 				purpose: "redis-rest-url",
-				labels,
 			},
 		);
 
@@ -333,8 +346,22 @@ export function createUpstashTemporaryRedisDriver(
 				: undefined),
 			producerEvidenceRef,
 		});
-
-		return { credentialRef: tokenRef.ref, restUrlRef: urlRef.ref, binding };
+		const native =
+			database.redisProtocolUrl === undefined
+				? undefined
+				: await depositSecret(options.custody, database.redisProtocolUrl, {
+						providerId: UPSTASH_PROVIDER_ID,
+						resourceRef,
+						purpose: "redis-protocol-url",
+					});
+		return {
+			credentialRef: tokenRef.ref,
+			restUrlRef: urlRef.ref,
+			binding,
+			...(native === undefined
+				? undefined
+				: { redisProtocolUrlRef: native.ref }),
+		};
 	}
 
 	async function toRecord(
@@ -359,6 +386,7 @@ export function createUpstashTemporaryRedisDriver(
 			restEndpointUrl: database.restEndpointUrl,
 			credentialRef: captured.credentialRef,
 			restUrlRef: captured.restUrlRef,
+			redisProtocolUrlRef: captured.redisProtocolUrlRef,
 			binding: captured.binding,
 			expiresAtMs: database.expiresAtMs,
 			expiresAtIso: database.expiresAtIso,
@@ -384,6 +412,21 @@ export function createUpstashTemporaryRedisDriver(
 	return {
 		definitionId: UPSTASH_DEFINITION_ID,
 		providerId: UPSTASH_PROVIDER_ID,
+		async observeMetrics(databaseId) {
+			if (
+				!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
+					databaseId,
+				)
+			)
+				throw new UpstashProviderError(
+					"PROVIDER_CONTRACT_CHANGED",
+					"metrics observation requires the exact database UUID",
+				);
+			return options.client.getMetrics(
+				`https://upstash.com/start-redis/metrics/${databaseId}`,
+				databaseId,
+			);
+		},
 
 		async provision(input) {
 			const outcome = await options.client.createDatabase({
@@ -609,8 +652,44 @@ export function createUpstashTemporaryRedisDriver(
 			};
 		},
 
-		async destroy(record) {
+		async destroy(record, context) {
 			const nowMs = options.clock();
+			if (options.retirement !== undefined) {
+				if (
+					!context ||
+					context.providerId !== UPSTASH_PROVIDER_ID ||
+					context.productId !== UPSTASH_DEFINITION_ID ||
+					context.resourceId !== record.resourceRef ||
+					(context.physicalId !== undefined &&
+						context.physicalId !== record.databaseId)
+				)
+					throw new UpstashProviderError(
+						"CLEANUP_FAILED",
+						"provider retirement requires the exact resource and financial scope",
+					);
+				const wire = await options.retirement(structuredClone(record), {
+					...context,
+					nowMs,
+					physicalId: record.databaseId,
+				});
+				const { $typeName: _wireType, ...evidence } = wire;
+				const observed = parseResourceLifecycleObservation(evidence, {
+					...context,
+					nowMs: options.clock(),
+					physicalId: record.databaseId,
+				});
+				if (
+					observed.status === "absent" &&
+					observed.operationTerminal &&
+					observed.usageFinal
+				)
+					return {
+						destroyed: true,
+						reason: `provider retirement and final usage confirmed by ${observed.evidenceRef}`,
+						retirementEvidenceRef: observed.evidenceRef,
+						usageEvidenceRef: observed.usageEvidenceRef,
+					};
+			}
 			if (
 				record.claim.state !== "unclaimed" &&
 				record.claim.state !== "expired"
@@ -627,13 +706,12 @@ export function createUpstashTemporaryRedisDriver(
 				);
 			}
 			if (record.expiresAtMs <= nowMs) {
-				// Expiry already did it. Reporting success here is accurate,
-				// and it keeps a teardown loop from stalling on a database
-				// that is provably gone.
+				// A deadline is an expected lifecycle event, not a read of the
+				// provider's current state. A claim or delayed reaper can outlive it.
 				return {
-					destroyed: true,
+					destroyed: false,
 					reason:
-						"the provider-reported expiry has passed, so the database has been reaped",
+						"the provider-reported expiry has passed; actual retirement remains unverified and financial exposure must be retained",
 				};
 			}
 			// Refusing is the honest outcome. A `destroy` that quietly

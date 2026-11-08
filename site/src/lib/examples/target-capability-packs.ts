@@ -7,6 +7,7 @@
  * policy DSL. Keep in sync when provider equivalence changes.
  */
 
+import { supportsAnonymousTemporaryDeploy as vercelSupportsAnonymousTemporaryDeploy } from "@hobo/provider-vercel/temporary-capability";
 import type { ResourceClass } from "./policy-planner.js";
 
 export type TargetCapabilityPack = {
@@ -81,8 +82,7 @@ export function packFromNative(input: {
 	readonly canHostNow?: boolean;
 	readonly unavailableReason?: string;
 }): TargetCapabilityPack {
-	const canHostNow =
-		input.canHostNow ?? input.supportsAnonymousTemporaryDeploy;
+	const canHostNow = input.canHostNow ?? input.supportsAnonymousTemporaryDeploy;
 	return {
 		label: input.label,
 		resourceClass: input.resourceClass,
@@ -143,8 +143,11 @@ export const TARGET_CAPABILITY_PACKS = {
 		// draft/promoted vercel: compute, objectStore, database; kv via edge-config/upstash
 		native: ["http", "compute", "objectStore", "database", "kv"],
 		environment:
-			"Vercel Drop (https://vercel.com/docs/drop) — new project per stamp; no permanent VERCEL_TOKEN",
-		supportsAnonymousTemporaryDeploy: true,
+			"Vercel requires a verified account-backed deployment; browser Drop is not an anonymous SDK API",
+		supportsAnonymousTemporaryDeploy: vercelSupportsAnonymousTemporaryDeploy,
+		canHostNow: false,
+		unavailableReason:
+			"Vercel has no documented anonymous temporary deployment API in this adapter. Choose a provider with an available anonymous API.",
 	}),
 	lakebed: packFromNative({
 		label: "Lakebed (local)",

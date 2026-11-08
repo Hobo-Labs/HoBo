@@ -18,8 +18,7 @@ import {
 	provisionPostgresApplicationCredential,
 	provisionPostgresSuperuserCredential,
 } from "../src/index.js";
-import { type JsonValue } from "../src/json.js";
-
+import type { JsonValue } from "../src/json.js";
 
 type Recorded = {
 	readonly scope: PackSecretScope;

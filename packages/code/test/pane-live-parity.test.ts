@@ -15,10 +15,12 @@ import {
 import type { MuxRunner } from "../src/mux.js";
 import { isPaneInteractDetach } from "../src/pane-interact.js";
 import { cellWidth } from "../src/rubberhose.js";
+import { trackChild } from "./subprocess-cleanup.js";
 
 async function tmuxOk(): Promise<boolean> {
 	return await new Promise((resolve) => {
 		const child = spawn("tmux", ["has-session", "-t", "hobo"]);
+		trackChild(child);
 		child.on("close", (code) => resolve(code === 0));
 		child.on("error", () => resolve(false));
 	});
@@ -29,6 +31,7 @@ function realTmuxRunner(): MuxRunner {
 		async run(args) {
 			return await new Promise((resolve, reject) => {
 				const child = spawn("tmux", [...args]);
+				trackChild(child);
 				let stdout = "";
 				let stderr = "";
 				child.stdout?.setEncoding("utf8");

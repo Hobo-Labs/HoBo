@@ -11,6 +11,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./temporary-capability": {
+			"types": "./dist/temporary-capability.d.ts",
+			"default": "./dist/temporary-capability.js"
 		}
 	},
 	"scripts": {
@@ -24,11 +28,12 @@
 		"@hobo/bindings": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/claims": "workspace:*",
-		"@hobo/core": "workspace:*"
+		"@hobo/core": "workspace:*",
+		"@bufbuild/protobuf": "2.12.1"
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",
 		"vitest": "^4.1.9"
 	},
-	"description": "HoBo Vercel CloudProvider — equivalence, temporary/agent Environment Station contract, and the sponsor-backed vercel.sponsored-project-transfer/v1 claim strategy (project + associated marketplace resource)."
+	"description": "HoBo Vercel CloudProvider \u2014 equivalence, temporary/agent Environment Station contract, and the sponsor-backed vercel.sponsored-project-transfer/v1 claim strategy (project + associated marketplace resource)."
 }

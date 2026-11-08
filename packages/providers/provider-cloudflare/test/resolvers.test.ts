@@ -376,24 +376,59 @@ function pagesDouble(): (call: RecordedCall) => TransportResponse {
 }
 
 function workersDouble(): (call: RecordedCall) => TransportResponse {
-	const scripts = new Map<string, JsonObject>();
+	const scripts = new Map<
+		string,
+		{ source: string; settings: JsonObject; enabled: boolean }
+	>();
 	return (call) => {
-		const name = call.path.endsWith("/settings")
-			? call.path.slice(
-					`/client/v4/accounts/${ACCOUNT_ID}/workers/scripts/`.length,
-					-"/settings".length,
-				)
-			: call.path.slice(
-					`/client/v4/accounts/${ACCOUNT_ID}/workers/scripts/`.length,
-				);
+		if (call.path === `/client/v4/accounts/${ACCOUNT_ID}/workers/subdomain`)
+			return ok({ subdomain: "account-owned" });
+		const match =
+				/\/workers\/scripts\/([^/]+)(?:\/(settings|subdomain))?$/u.exec(
+					call.path,
+				),
+			name = match?.[1] ?? "",
+			suffix = match?.[2],
+			found = scripts.get(name);
 		if (call.method === "GET") {
-			const found = scripts.get(name);
-			return found === undefined ? missing() : ok(found);
+			if (!found) return missing();
+			if (suffix === "settings") return ok(found.settings);
+			if (suffix === "subdomain")
+				return ok({ enabled: found.enabled, previews_enabled: false });
+			return {
+				status: 200,
+				headers: {
+					"content-type": "multipart/form-data; boundary=native-observed",
+				},
+				body: `--native-observed\r\nContent-Disposition: form-data; name="worker.js"\r\n\r\n${found.source}\r\n--native-observed--\r\n`,
+			};
 		}
 		if (call.method === "PUT") {
-			const created = { id: name, etag: `etag-${scripts.size}` };
-			scripts.set(name, created);
-			return ok(created);
+			const body = call.body ?? "",
+				metadata = body.split("\r\n\r\n")[1]?.split("\r\n--")[0],
+				source = body
+					.split("Content-Type: application/javascript+module\r\n\r\n")[1]
+					?.split("\r\n--")[0];
+			if (!metadata || source === undefined)
+				throw new Error("invalid worker upload fixture");
+			// SAFETY: the worker double parses the JSON metadata section emitted by the shipped multipart composer.
+			const settings = JSON.parse(metadata) as JsonObject;
+			scripts.set(name, {
+				source,
+				settings: {
+					compatibility_date: settings.compatibility_date ?? "2026-01-01",
+					compatibility_flags: settings.compatibility_flags ?? [],
+					placement: settings.placement ?? { mode: "off" },
+					bindings: settings.bindings ?? [],
+				},
+				enabled: found?.enabled ?? false,
+			});
+			return ok({ id: name, etag: "native-etag" });
+		}
+		if (call.method === "POST" && suffix === "subdomain" && found) {
+			const body = JSON.parse(call.body ?? "{}");
+			found.enabled = body.enabled === true;
+			return ok({ enabled: found.enabled, previews_enabled: false });
 		}
 		if (call.method === "DELETE") {
 			if (!scripts.delete(name)) return missing();
@@ -575,10 +610,10 @@ describe.each(HARNESSES)("$name resolver reconciles convergently", ({
 			request(productId, { desired, physicalId }),
 			fake.transport,
 		);
-		// Workers re-upload when a script is supplied, so they report update.
-		const expected = createMethod === "PUT" ? "update" : "adopt";
+		// Native source readback makes an unchanged Worker an adoption/noop too.
+		const expected = "adopt";
 		expect(adopted.action).toBe(expected);
-		expect(known.action).toBe(createMethod === "PUT" ? "update" : "noop");
+		expect(known.action).toBe("noop");
 	});
 
 	it("deletes the resource, and deleting a missing one succeeds", async () => {
@@ -1017,5 +1052,175 @@ describe("resolver construction fails closed", () => {
 		expect(() =>
 			cloudflareResolvers({ accountId: "  ", resolveCredential }),
 		).toThrow(/accountId/u);
+	});
+});
+
+describe("Workers native lifecycle and serving proof", () => {
+	it("activates public workers.dev only when explicitly requested and reads actual source/endpoint", async () => {
+		const fake = fakeTransport(workersDouble()),
+			r = resolverFor(CLOUDFLARE_WORKERS_PRODUCT_ID),
+			req = request(CLOUDFLARE_WORKERS_PRODUCT_ID, {
+				desired: { script: WORKER_SOURCE, workersDev: true },
+			});
+		const created = await r.reconcile(req, fake.transport);
+		expect(created.outputs).toMatchObject({
+			ready: true,
+			operationConfirmed: true,
+			workersDev: true,
+			servingEndpoint: "https://app-primary.account-owned.workers.dev",
+		});
+		expect(created.outputs.artifactDigest).toMatch(/^sha256:/);
+		expect(fake.countOf("POST", `${WORKER_SCRIPT}/subdomain`)).toBe(1);
+		await r.reconcile(req, fake.transport);
+		expect(fake.countOf("PUT", WORKER_SCRIPT)).toBe(1);
+		expect(fake.countOf("POST", `${WORKER_SCRIPT}/subdomain`)).toBe(1);
+	});
+	it("does not invent a public endpoint or activate a private generic Worker", async () => {
+		const fake = fakeTransport(workersDouble()),
+			result = await resolverFor(CLOUDFLARE_WORKERS_PRODUCT_ID).reconcile(
+				request(CLOUDFLARE_WORKERS_PRODUCT_ID, {
+					desired: { script: WORKER_SOURCE },
+				}),
+				fake.transport,
+			);
+		expect(result.outputs.ready).toBe(true);
+		expect(result.outputs.workersDev).toBe(false);
+		expect(result.outputs.servingEndpoint).toBeUndefined();
+		expect(fake.calls.every((call) => call.method !== "POST")).toBe(true);
+	});
+	it("requires the provider to acknowledge public activation", async () => {
+		const native = workersDouble();
+		const fake = fakeTransport((call) =>
+			call.method === "POST" && call.path.endsWith("/subdomain")
+				? ok({ enabled: false })
+				: native(call),
+		);
+		await expect(
+			resolverFor(CLOUDFLARE_WORKERS_PRODUCT_ID).reconcile(
+				request(CLOUDFLARE_WORKERS_PRODUCT_ID, {
+					desired: { script: WORKER_SOURCE, workersDev: true },
+				}),
+				fake.transport,
+			),
+		).rejects.toThrow(/confirm.*exposure/);
+	});
+	it("refuses a foreign or missing native account subdomain", async () => {
+		for (const account of [{ subdomain: "foreign.example" }, {}]) {
+			const native = workersDouble();
+			const fake = fakeTransport((call) =>
+				call.path === `/client/v4/accounts/${ACCOUNT_ID}/workers/subdomain`
+					? ok(account)
+					: native(call),
+			);
+			await expect(
+				resolverFor(CLOUDFLARE_WORKERS_PRODUCT_ID).reconcile(
+					request(CLOUDFLARE_WORKERS_PRODUCT_ID, {
+						desired: { script: WORKER_SOURCE, workersDev: true },
+					}),
+					fake.transport,
+				),
+			).rejects.toThrow(/invalid native serving subdomain/);
+		}
+	});
+	it("keeps settings-only observations pending without an artifact proof", async () => {
+		const native = workersDouble();
+		const fake = fakeTransport((call) =>
+			call.method === "GET" && call.path === WORKER_SCRIPT
+				? missing()
+				: native(call),
+		);
+		const result = await resolverFor(CLOUDFLARE_WORKERS_PRODUCT_ID).reconcile(
+			request(CLOUDFLARE_WORKERS_PRODUCT_ID, {
+				desired: { script: WORKER_SOURCE },
+			}),
+			fake.transport,
+		);
+		expect(result.outputs.ready).toBe(false);
+		expect(result.outputs.operationConfirmed).toBe(false);
+		expect(result.outputs.artifactDigest).toBeUndefined();
+		expect(result.outputs.servingEndpoint).toBeUndefined();
+	});
+	it("reports actual differing source bytes instead of copying the desired digest", async () => {
+		const native = workersDouble();
+		const fake = fakeTransport((call) =>
+			call.method === "GET" && call.path === WORKER_SCRIPT
+				? {
+						status: 200,
+						headers: { "content-type": "application/javascript" },
+						body: "provider-different-source",
+					}
+				: native(call),
+		);
+		const r = resolverFor(CLOUDFLARE_WORKERS_PRODUCT_ID);
+		const req = request(CLOUDFLARE_WORKERS_PRODUCT_ID, {
+			desired: { script: WORKER_SOURCE },
+		});
+		const result = await r.reconcile(req, fake.transport);
+		const normal = await r.reconcile(
+			req,
+			fakeTransport(workersDouble()).transport,
+		);
+		expect(result.outputs.artifactDigest).not.toBe(
+			normal.outputs.artifactDigest,
+		);
+	});
+	it("deactivates a public Worker only when explicitly requested", async () => {
+		const fake = fakeTransport(workersDouble());
+		const r = resolverFor(CLOUDFLARE_WORKERS_PRODUCT_ID);
+		await r.reconcile(
+			request(CLOUDFLARE_WORKERS_PRODUCT_ID, {
+				desired: { script: WORKER_SOURCE, workersDev: true },
+			}),
+			fake.transport,
+		);
+		const result = await r.reconcile(
+			request(CLOUDFLARE_WORKERS_PRODUCT_ID, {
+				desired: { script: WORKER_SOURCE, workersDev: false },
+			}),
+			fake.transport,
+		);
+		expect(result.outputs.ready).toBe(true);
+		expect(result.outputs.workersDev).toBe(false);
+		expect(result.outputs.servingEndpoint).toBeUndefined();
+		expect(fake.countOf("POST", `${WORKER_SCRIPT}/subdomain`)).toBe(2);
+		expect(fake.countOf("PUT", WORKER_SCRIPT)).toBe(1);
+	});
+	it("never recreates a missing pinned Worker or follows a conflicting desired name", async () => {
+		for (const req of [
+			request(CLOUDFLARE_WORKERS_PRODUCT_ID, {
+				physicalId: "app-primary",
+				desired: { script: WORKER_SOURCE },
+			}),
+			request(CLOUDFLARE_WORKERS_PRODUCT_ID, {
+				physicalId: "owned",
+				desired: { name: "foreign", script: WORKER_SOURCE },
+			}),
+		]) {
+			const fake = fakeTransport(workersDouble());
+			await expect(
+				resolverFor(CLOUDFLARE_WORKERS_PRODUCT_ID).reconcile(
+					req,
+					fake.transport,
+				),
+			).rejects.toThrow(/pinned|physical/);
+			expect(fake.calls.every((call) => call.method === "GET")).toBe(true);
+		}
+	});
+	it("rejects unsupported exposure flags, module injection and oversized unobservable artifacts before I/O", async () => {
+		for (const desired of [
+			{ script: WORKER_SOURCE, workersDev: "true" },
+			{ script: WORKER_SOURCE, mainModule: 'bad"\r\nmodule.js' },
+			{ script: "x".repeat(524288) },
+			{ script: WORKER_SOURCE, ownershipRef: "invented" },
+		]) {
+			const fake = fakeTransport(workersDouble());
+			await expect(
+				resolverFor(CLOUDFLARE_WORKERS_PRODUCT_ID).reconcile(
+					request(CLOUDFLARE_WORKERS_PRODUCT_ID, { desired }),
+					fake.transport,
+				),
+			).rejects.toThrow();
+			expect(fake.calls).toHaveLength(0);
+		}
 	});
 });

@@ -15,7 +15,7 @@ import {
 	PostgresWebhookRepairClaims,
 } from "@hobo/ci-gh-actions";
 import pg from "pg";
-import { bootstrap, workflow } from "./_generated/relay-assets.js";
+import { bootstrap, workflow } from "./_generated-assets/relay-assets.js";
 import {
 	validateDirectDatabaseUrl,
 	verifyRepairDatabase,

@@ -33,7 +33,7 @@ export type PublicConnectionView = Readonly<{
 	tenant: string;
 	createdAt: string;
 	updatedAt: string;
-// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
+	// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: existing boundary or test contract.
 	metadata: Readonly<Record<string, unknown>>;
 }>;
 
@@ -118,19 +118,19 @@ export type BrokerStatusView = Readonly<{
 export function toPublicConnection(c: ConnectionView): PublicConnectionView {
 	return Object.freeze({
 		id: c.id,
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 		...(c.alias !== undefined ? { alias: c.alias } : {}),
 		provider: c.provider,
 		flow: c.flow,
 		status: c.status,
 		subject: c.subject,
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 		...(c.installationId !== undefined
 			? { installationId: c.installationId }
 			: {}),
 		grantedScopes: c.grantedScopes,
 		requestedScopes: c.requestedScopes,
-// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/no-conditional-empty-object-spread -- SAFETY: existing boundary or test contract.
 		...(c.credentialRef !== undefined
 			? { credentialRef: c.credentialRef }
 			: {}),

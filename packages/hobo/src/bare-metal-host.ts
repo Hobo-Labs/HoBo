@@ -281,7 +281,11 @@ async function listen(
 		req.on("end", () => {
 			void (async () => {
 				try {
-					const url = new URL(req.url ?? "/", `http://${host}:${port}`);
+					const requestPath =
+						req.url?.startsWith("http://") || req.url?.startsWith("https://")
+							? `${new URL(req.url).pathname}${new URL(req.url).search}`
+							: (req.url ?? "/");
+					const url = new URL(requestPath, `http://${host}:${port}`);
 					const body = Buffer.concat(chunks);
 					const method = req.method ?? "GET";
 					const init: RequestInit = {

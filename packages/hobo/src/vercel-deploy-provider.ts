@@ -1,7 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-
 import type {
 	IacDiff,
 	IacDriftReport,
@@ -9,6 +8,7 @@ import type {
 	IacProgram,
 	IacProvider,
 } from "@hobo/cloud";
+import { isJsonString } from "./json.js";
 
 import {
 	afterConflict,
@@ -21,21 +21,19 @@ import {
 	type VercelFetch,
 } from "./vercel-client.js";
 
-// @hobo/hobo — the REAL Vercel deploy provider (composition/app layer).
+// Explicit committed-fixture helper. Production composition deploys the exact
+// approved ResourceResolver artifact and uses a durable mutation journal.
 //
-// This implements the SAME `IacProvider` port the @hobo/cloud Executor drives
-// (preview/apply/destroy/refresh over the kernel's shape-A `IacProgram`), but
-// instead of the in-memory Pulumi stand-in it forms a REAL Vercel Create
-// Deployment request. On `apply` it reads the committed, known-good Vercel file
-// tree (packages/hobo/fixtures/deploy/vercel/), posts it via `createVercelClient`,
-// and maps the returned deployment URL into the kernel's `IacOutputs` (`outputs.url`).
-// Only when Vercel answers that the project does not exist (404 `not_found`,
-// "Project not found": the first deploy from a fresh account) does it create the
-// project and deploy once more; any other refusal, and a second one, propagates
-// as a `VercelApiError`. A create answered 409 `conflict` means someone made the
-// project meanwhile, and a refusal of the deployment after it names that 409's
-// reason; any other 409 propagates. A deploy to an existing project makes no
-// other call, so a credential scoped to deployments alone keeps working.
+// On `apply` (with `fixtureArtifact: true`) it reads the committed Vercel file
+// tree (packages/hobo/fixtures/deploy/vercel/) and posts it via
+// `createVercelClient`. Only when Vercel answers that the project does not
+// exist (404 `not_found`, "Project not found": the first deploy from a fresh
+// account) does it create the project and deploy once more; any other
+// refusal, and a second one, propagates as a `VercelApiError`. A create
+// answered 409 `conflict` means someone made the project meanwhile, and a
+// refusal of the deployment after it names that 409's reason; any other 409
+// propagates. A deploy to an existing project makes no other call, so a
+// credential scoped to deployments alone keeps working.
 //
 // The project is created in the scope `teamId` names, or in the token's own
 // scope when there is none. Vercel answers "Project not found" for a project
@@ -46,13 +44,6 @@ import {
 // "token-default" when there is none: whatever scope Vercel gives a request
 // with no `teamId`, which for a team's token need not be personal
 // (`IacOutputs` values are strings).
-//
-// HONEST SCOPE: the live Vercel call is credential-gated (activates only when a
-// real `VERCEL_TOKEN` reaches `createVercelClient`) and is NOT exercised in this
-// sandbox. Only request formation (against a mocked fetch), provider selection,
-// and the no-token fallback are verified. `destroy` is modeled honestly: Vercel
-// deployments are immutable, so a real teardown would DELETE the deployment; this
-// provider best-effort forgets its local memo and no-ops (see note on `destroy`).
 
 // Default Vercel tree lives next to this package (fixtures/), not under examples/.
 // Both `dist/` and `src/` resolve via `../fixtures/deploy/vercel`.
@@ -90,6 +81,7 @@ function readVercelFileTree(rootDir: string): VercelDeploymentFile[] {
 }
 
 export interface VercelDeployProviderOptions {
+	readonly fixtureArtifact?: true;
 	// The Vercel access token (forwarded to `createVercelClient` as the Bearer).
 	readonly token: string;
 	// The transport. Defaults to global `fetch`; injected in tests.
@@ -140,6 +132,10 @@ export function createVercelDeployProvider(
 			};
 		},
 		async apply(program: IacProgram): Promise<IacOutputs> {
+			if (options.fixtureArtifact !== true)
+				throw new Error(
+					"fixture deploy requires explicit fixtureArtifact:true; production hosting requires the approved resolver artifact",
+				);
 			const cached = byDeployment.get(program.deploymentId);
 			if (cached !== undefined) {
 				return cached;
@@ -179,14 +175,40 @@ export function createVercelDeployProvider(
 			return outputs;
 		},
 		async destroy(program: IacProgram): Promise<void> {
-			// Vercel deployments are immutable: a real teardown would DELETE the
-			// deployment via the REST API (a follow-up when the delete path lands).
-			// Best-effort for now — forget the local memo and no-op honestly rather
-			// than claim a destroy we do not perform.
+			const receipt = byDeployment.get(program.deploymentId);
+			if (
+				!receipt ||
+				!isJsonString(receipt.deploymentId) ||
+				!receipt.deploymentId
+			)
+				throw new Error(
+					"fixture teardown requires its original provider-minted deployment receipt; use the durable resolver path after restart",
+				);
+			await client.deleteDeployment(receipt.deploymentId);
 			byDeployment.delete(program.deploymentId);
 		},
-		async refresh(_program: IacProgram): Promise<IacDriftReport> {
-			return { drift: false, observed: {} };
+		async refresh(program: IacProgram): Promise<IacDriftReport> {
+			const receipt = byDeployment.get(program.deploymentId);
+			if (
+				!receipt ||
+				!isJsonString(receipt.deploymentId) ||
+				!receipt.deploymentId
+			)
+				return { drift: true, observed: { contentVerified: "false" } };
+			const observed = await client.getDeployment(receipt.deploymentId);
+			return {
+				drift: true,
+				observed: {
+					exists: String(observed !== undefined),
+					contentVerified: "false",
+					...(observed
+						? {
+								deploymentId: observed.id,
+								readyState: observed.readyState ?? "unknown",
+							}
+						: undefined),
+				},
+			};
 		},
 	};
 }

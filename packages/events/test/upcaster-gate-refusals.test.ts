@@ -484,8 +484,8 @@ describe("check 5: golden replay", () => {
 		const errors = errorsOf(
 			contract({
 				goldenCorpus: [
-						// SAFETY: the test injects an unsupported encoding to exercise rejection.
-						{ ...good, encoding: "cbor" as never },
+					// SAFETY: the test injects an unsupported encoding to exercise rejection.
+					{ ...good, encoding: "cbor" as never },
 					createCorpusEntry(V2, "second", { ticketId: "T-2", title: "bang" }),
 				],
 			}),
@@ -635,8 +635,8 @@ describe("the wire codec", () => {
 		// different number rather than failing.
 		const schema = eventSchema("t", 1, [u32Field("count", 1)]);
 		for (const count of [0, 1, 127, 128, 129, 16_383, 16_384, 2 ** 31]) {
-		// SAFETY: roundTrip is intentionally given a schema-shaped test double.
-		expect(roundTrip(schema as never, { count })).toEqual({ count });
+			// SAFETY: roundTrip is intentionally given a schema-shaped test double.
+			expect(roundTrip(schema as never, { count })).toEqual({ count });
 		}
 	});
 
@@ -744,8 +744,8 @@ describe("pinning a corpus entry", () => {
 
 	it("refuses to pin a body that does not validate", () => {
 		expect(() =>
-				// SAFETY: the test intentionally passes an invalid body to exercise validation.
-				createCorpusEntry(V1, "bad", { ticketId: "T" } as never),
+			// SAFETY: the test intentionally passes an invalid body to exercise validation.
+			createCorpusEntry(V1, "bad", { ticketId: "T" } as never),
 		).toThrow(/must be a string/u);
 	});
 

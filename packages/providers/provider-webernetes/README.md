@@ -9,6 +9,10 @@ up needs no account.
 seam is `LocalTempTransport`, injected by whoever hosts the station — in this
 repo, the Examples dev server (`site/scripts/vite-temporary-station-api.mts`),
 which answers same-origin at `/api/anon/host/<id>/`.
+An unconfigured transport refuses before producing a station result. The provider
+does not invent a `.hobo.localhost` URL and present it as a running host. Consumers
+must independently probe the returned endpoint before routing application traffic;
+the endpoint parser proves locality and credential hygiene, not service health.
 
 ## What the provider actually claims
 
@@ -33,9 +37,10 @@ is what stops it from landing here.
 | Buckets, relational data, anything else | Not in the equivalence table, so `satisfies` answers `none`. |
 | Public reachability | Stations are loopback, RFC1918, or `.hobo.test` overlay names, and the parser enforces it. A public URL from the transport is a rejection, not a station. |
 
-Unlike a hosted provider, the zero in `estimateCost` is a **real** price rather
-than a missing one: a local pod produces no vendor invoice, which is why this
-package is willing to publish the fact at all.
+The zero in `estimateCost` is marked `pricingStatus: "verified-zero"` for
+incremental vendor charges: a local pod produces no vendor invoice. This does
+not erase operator hardware, power or shared infrastructure exposure, which
+belongs in the shared authority's existing commitments.
 
 ## Parse, don't validate
 
@@ -120,10 +125,7 @@ import {
 const provider = createWebernetesProvider();
 provider.realize({ name: "hello-world", port: "compute" });
 
-// Built-in transport: a .hobo.localhost name, one-hour lease.
-const station = await provisionTemporaryEnvironmentStation({ stationId: "st-1" });
-
-// Or inject the host that actually serves it.
+// Inject the host that actually serves the station. Omitting it refuses.
 await provisionTemporaryEnvironmentStation({
   stationId: "st-1",
   transport: {
@@ -152,3 +154,7 @@ against the real provider in `test/boundary.contract.test.ts`, and
 `contracts/provider-webernetes-local-station.pact.json` replayed through a faked
 `LocalTempTransport` in `test/local-station.contract.test.ts` — plus the
 protobuf + CUE boundary shapes in `data-models/`.
+`test/endpoint-cue.test.ts` runs the actual CUE validator against loopback,
+IPv6, private-network and overlay records, and rejects public locators labelled
+local, mismatched authority fields and invalid IPv4 ranges. The temporary station
+test also serves and probes a real loopback HTTP endpoint through the injected host.

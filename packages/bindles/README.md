@@ -3,6 +3,18 @@
 Minimal v1 closure-builder surface for explicit Bindle authoring. Assembly creates
 provider-agnostic manifest objects only — no runtime semantics (ADR-0072).
 
+Manifest scope `policy` metadata survives parsing and canonical serialization. Budget
+limits and contract-effect/resilience references therefore participate in the manifest
+hash; removing or changing them changes the deployment input. Malformed policy objects
+are rejected. Financial enforcement belongs to the hosting planner and shared authority
+([budgeted hosting transitions](../../docs/design/hosting-budget-transitions.md)).
+
+The canonical shared budget language is `policy.budgetPolicy` with discriminator
+`hobo.budget-policy/v1`. Parsing uses `@hobo/core`'s typed policy contract and
+rejects unknown controls, unsupported objectives/currencies, malformed funding
+windows and per-resource placement of this shared scope policy. The complete
+declaration survives serialization and participates in the manifest hash.
+
 ## Features · experiments · rollouts (Harness IfC)
 
 ```ts
@@ -77,3 +89,4 @@ The `hello-bindle` Hono example and `multi-cloud-shop` function-handler example
 are checked with their own `typecheck` scripts as well as runtime tests.
 This adjusts the TypeScript behavior surface, not the manifest Protobuf/CUE
 records; the existing SDK-lowering PACT tests remain the manifest boundary.
+Declared component constructors accept ordinary class instances; entrypoint result typing remains unchanged.

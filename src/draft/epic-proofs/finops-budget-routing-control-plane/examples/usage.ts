@@ -80,6 +80,16 @@ console.log(
 	`feedback proposals=${sim.feedbackGovernance.proposals.length} allGated=true`,
 );
 
+// Planning is pure; the proposal describes an external noRollback boundary.
+assert.equal(route.planningEffects.purity, "pure");
+assert.equal(route.actionPlan.execution.effects.purity, "noRollback");
+assert.equal(route.actionPlan.execution.authorized, false);
+assert.equal(route.actionPlan.execution.onUnknown, "reconcile");
+assert.ok(route.actionPlan.execution.mutationResilience.strategies.every(
+	(strategy) => strategy.kind !== "retry" && strategy.kind !== "hedging",
+));
+console.log("effects planning=pure mutation=noRollback unknown=reconcile executionAuthorized=false");
+
 console.log(
 	"EPIC HELD: routing is constraint-first, provider-neutral, stability-damped, and proposal-gated",
 );

@@ -42,6 +42,20 @@ describe("the default Cloudflare Yard is a catalog of what CAN be allocated", ()
 		]);
 	});
 
+	it("explicitly exposes only the default HTTP Worker offering", () => {
+		const yard = cloudflareYard();
+		expect(
+			yard.offerings.web?.find(
+				(binding) => binding.productId === CLOUDFLARE_WORKERS_PRODUCT_ID,
+			)?.properties.workersDev,
+		).toBe(true);
+		expect(
+			yard.offerings.service?.find(
+				(binding) => binding.productId === CLOUDFLARE_WORKERS_PRODUCT_ID,
+			)?.properties.workersDev,
+		).toBeUndefined();
+	});
+
 	it("keeps every web option on the web capability profile", () => {
 		for (const binding of cloudflareYard().offerings.web ?? []) {
 			expect(binding.slot).toBe("web");

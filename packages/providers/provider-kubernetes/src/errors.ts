@@ -44,7 +44,6 @@ const CREDENTIAL_PATTERNS: readonly RegExp[] = [
 	/"auths"\s*:\s*\{[\s\S]*?\}/gu,
 ];
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: flattening control characters out of apiserver text is the point; a raw CR/LF in a message is log forging.
 const CONTROL_CHARS = new RegExp(
 	`[${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}]`,
 	"gu",

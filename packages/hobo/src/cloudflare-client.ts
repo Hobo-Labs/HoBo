@@ -99,6 +99,7 @@ export interface CloudflareClientOptions {
 }
 
 export interface CloudflareClient {
+	deleteWorker(scriptName: string): Promise<void>;
 	uploadWorker(input: UploadWorkerInput): Promise<UploadWorkerResult>;
 	// Whether a Worker script of this name currently exists on the account. GETs
 	//   GET /accounts/{account_id}/workers/scripts/{script_name}
@@ -231,6 +232,25 @@ export function createCloudflareClient(
 					? `https://${input.scriptName}.${subdomain}.workers.dev`
 					: "";
 			return { url, scriptName: input.scriptName };
+		},
+		async deleteWorker(scriptName: string): Promise<void> {
+			const path = `${accountBase}/workers/scripts/${encodeURIComponent(scriptName)}`;
+			const response = await fetchImpl(path, {
+				method: "DELETE",
+				headers: { Authorization: `Bearer ${token}` },
+			});
+			if (response.status !== 404)
+				await assertOk(response, "delete worker script");
+			const observed = await fetchImpl(path, {
+				method: "GET",
+				headers: { Authorization: `Bearer ${token}` },
+			});
+			if (observed.status !== 404) {
+				await assertOk(observed, "confirm worker deletion");
+				throw new Error(
+					"cloudflare-client: worker deletion remains unconfirmed",
+				);
+			}
 		},
 		async scriptExists(scriptName: string): Promise<boolean> {
 			const response = await fetchImpl(

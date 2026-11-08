@@ -12,7 +12,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, it, type TestContext } from "vitest";
 
 // The temporary directories the composition makes for itself: the default
 // runtime's event store (`hobo-yard-*`) when no dataDir is given, and the live
@@ -30,13 +30,16 @@ const FIXTURE = fileURLToPath(
 const RUN_TIMEOUT_MS = 180_000;
 const SIGNAL_GRACE_MS = 15_000;
 
-let scratch = "";
-beforeEach(() => {
-	scratch = mkdtempSync(join(tmpdir(), "hobo-composed-temp-dirs-"));
-});
-afterEach(() => {
-	rmSync(scratch, { recursive: true, force: true });
-});
+/**
+ * A TMPDIR of the test's own, so the cases (each a process importing the whole
+ * composition, mostly waiting on it) run concurrently without seeing each
+ * other's directories.
+ */
+function scratchFor({ onTestFinished }: TestContext): string {
+	const dir = mkdtempSync(join(tmpdir(), "hobo-composed-temp-dirs-"));
+	onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+	return dir;
+}
 
 interface Ended {
 	readonly code: number | null;
@@ -48,6 +51,7 @@ interface Ended {
 }
 
 function run(
+	scratch: string,
 	mode: string,
 	dataDir: string,
 	signal?: NodeJS.Signals,
@@ -102,11 +106,11 @@ function run(
 	});
 }
 
-function left(prefix: string): string[] {
+function left(scratch: string, prefix: string): string[] {
 	return readdirSync(scratch).filter((name) => name.startsWith(prefix));
 }
 
-describe("the live Pulumi lane's own workspace", () => {
+describe.concurrent("the live Pulumi lane's own workspace", () => {
 	for (const [label, mode, signal, expected] of [
 		["a normal end", "normal", undefined, { code: 0, signal: null }],
 		["an uncaught error", "throw", undefined, { code: 1, signal: null }],
@@ -119,14 +123,16 @@ describe("the live Pulumi lane's own workspace", () => {
 	] as const) {
 		it(
 			`is removed on ${label}`,
-			async () => {
+			async (context) => {
+				const { expect } = context;
+				const scratch = scratchFor(context);
 				const yard = join(scratch, "kept-yard");
 				mkdirSync(yard);
-				const ended = await run(mode, yard, signal);
+				const ended = await run(scratch, mode, yard, signal);
 				expect({ code: ended.code, signal: ended.signal }).toEqual(expected);
 				// The lane made its own workspace, and nothing of it is left.
 				expect(ended.made).toHaveLength(1);
-				expect(left("hobo-pulumi-live-")).toEqual([]);
+				expect(left(scratch, "hobo-pulumi-live-")).toEqual([]);
 				// Said once: where the state is, and how to keep it.
 				expect(ended.notices).toHaveLength(1);
 				expect(ended.notices[0]).toContain(join(scratch, ended.made[0] ?? ""));
@@ -139,7 +145,7 @@ describe("the live Pulumi lane's own workspace", () => {
 	}
 });
 
-describe("the default runtime's own event store", () => {
+describe.concurrent("the default runtime's own event store", () => {
 	for (const [label, mode, signal, expected] of [
 		["a normal end", "normal", undefined, { code: 0, signal: null }],
 		["an uncaught error", "throw", undefined, { code: 1, signal: null }],
@@ -152,18 +158,20 @@ describe("the default runtime's own event store", () => {
 	] as const) {
 		it(
 			`is removed on ${label}, with the live lane's workspace`,
-			async () => {
-				const ended = await run(mode, "default", signal);
+			async (context) => {
+				const { expect } = context;
+				const scratch = scratchFor(context);
+				const ended = await run(scratch, mode, "default", signal);
 				expect({ code: ended.code, signal: ended.signal }).toEqual(expected);
-				expect(left("hobo-yard-")).toEqual([]);
-				expect(left("hobo-pulumi-live-")).toEqual([]);
+				expect(left(scratch, "hobo-yard-")).toEqual([]);
+				expect(left(scratch, "hobo-pulumi-live-")).toEqual([]);
 			},
 			RUN_TIMEOUT_MS,
 		);
 	}
 });
 
-describe("a HOBO_PULUMI_WORKDIR the caller names", () => {
+describe.concurrent("a HOBO_PULUMI_WORKDIR the caller names", () => {
 	for (const [label, mode, signal, expected] of [
 		["a normal end", "normal", undefined, { code: 0, signal: null }],
 		["an uncaught error", "throw", undefined, { code: 1, signal: null }],
@@ -176,13 +184,15 @@ describe("a HOBO_PULUMI_WORKDIR the caller names", () => {
 	] as const) {
 		it(
 			`is the live lane's workspace, kept on ${label}`,
-			async () => {
+			async (context) => {
+				const { expect } = context;
+				const scratch = scratchFor(context);
 				const yard = join(scratch, "kept-yard");
 				mkdirSync(yard);
 				const workDir = join(scratch, "kept-pulumi");
 				mkdirSync(workDir);
 				writeFileSync(join(workDir, "sentinel"), "earlier state");
-				const ended = await run(mode, yard, signal, {
+				const ended = await run(scratch, mode, yard, signal, {
 					HOBO_PULUMI_WORKDIR: workDir,
 				});
 				expect({ code: ended.code, signal: ended.signal }).toEqual(expected);
@@ -190,7 +200,7 @@ describe("a HOBO_PULUMI_WORKDIR the caller names", () => {
 				// and has nothing to say about it.
 				expect(ended.made).toEqual([]);
 				expect(ended.notices).toEqual([]);
-				expect(left("hobo-pulumi-live-")).toEqual([]);
+				expect(left(scratch, "hobo-pulumi-live-")).toEqual([]);
 				expect(readFileSync(join(workDir, "sentinel"), "utf8")).toBe(
 					"earlier state",
 				);

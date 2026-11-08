@@ -5,6 +5,7 @@ export {
 	probeHardlink,
 	probeOverlayfs,
 	probeReflink,
+	removeCopyOnWriteTree,
 } from "./capability.js";
 export * from "./journal.js";
 export * from "./names.js";

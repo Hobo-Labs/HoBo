@@ -61,6 +61,11 @@ interface TrafficLog {
 	bodies: string[];
 }
 
+interface TrafficStream {
+	stop: () => Promise<TrafficLog>;
+	waitForAdditional: (count: number) => Promise<void>;
+}
+
 interface SwapWorld {
 	servers: Server[];
 	backendAUrl?: string;
@@ -69,10 +74,11 @@ interface SwapWorld {
 	port?: ReturnType<typeof createSimpleTrafficRouting>;
 	routedPort?: ReturnType<typeof createSimpleTrafficRouting>;
 	activePlanId?: RoutingPlanId;
+	incumbentPlan?: RoutingPlan;
 	loop?: RoutingControlLoop;
 	outcome?: RoutingControlOutcome;
 	facts: string[];
-	traffic?: { stop: () => Promise<TrafficLog> };
+	traffic?: TrafficStream;
 	log?: TrafficLog;
 	unhealthyAtPercent?: number;
 }
@@ -93,6 +99,7 @@ After(async () => {
 	world.loop = undefined;
 	world.log = undefined;
 	world.activePlanId = undefined;
+	world.incumbentPlan = undefined;
 	world.unhealthyAtPercent = undefined;
 });
 
@@ -102,6 +109,7 @@ function topology(): RoutingTopology {
 		service: "site",
 		tenantId,
 		stationId: "station:prod",
+		costRouting: "stateless",
 		backends: [
 			{
 				id: "backend:a",
@@ -180,6 +188,7 @@ Given(
 		});
 		assert.equal(synthesis.kind, "plan");
 		if (synthesis.kind !== "plan") return;
+		world.incumbentPlan = synthesis.plan;
 		await world.routedPort.apply(synthesis.plan);
 	},
 );
@@ -207,13 +216,22 @@ Given("a continuous request stream against the proxy", async () => {
 		}
 	})();
 	world.traffic = {
+		waitForAdditional: async (count) => {
+			const requiredTotal = log.total + count;
+			const deadline = Date.now() + 10_000;
+			while (log.total < requiredTotal) {
+				assert.ok(Date.now() < deadline, `traffic did not reach ${requiredTotal} requests; observed ${log.total}`);
+				assert.ok(running, "traffic stopped before the observation interval completed");
+				await sleep(2);
+			}
+		},
 		stop: async () => {
 			running = false;
 			await worker;
 			return log;
 		},
 	};
-	await sleep(30);
+	await world.traffic.waitForAdditional(5);
 });
 
 Given("the target backend will fail its health gate at fifty percent", () => {
@@ -222,19 +240,54 @@ Given("the target backend will fail its health gate at fifty percent", () => {
 
 When("a budget threshold crossing reaches the routing control loop", async () => {
 	assert.ok(world.routedPort, "routing port not started");
+	assert.ok(world.incumbentPlan, "incumbent artifact not seeded");
 	const unhealthyAt = world.unhealthyAtPercent;
+	let persistedStateVersion = 0;
 	world.loop = createRoutingControlLoop({
 		topology: topology(),
 		policyDecision: policyDecision(),
 		costModel: COST_MODEL,
 		port: world.routedPort,
+		ledgerView: () => ({
+			view: "CreditLedgerView",
+			seq: 1,
+			accounts: COST_MODEL.map((model) => ({
+				providerId: model.backendId,
+				dimension: "traffic.requests",
+				listUnitCost: model.listUnitCost,
+				freeHeadroom: 0,
+				budgetCap: 100,
+				spendToDate: 0,
+				concurrencyHeadroom: 1,
+			})),
+		}),
+		persistState: async (state, expectedStateVersion) => {
+			assert.equal(expectedStateVersion, persistedStateVersion, "state persistence is CAS fenced");
+			assert.equal(state.stateVersion, persistedStateVersion + 1, "every checkpoint advances the state version");
+			persistedStateVersion = state.stateVersion;
+		},
+		beforeApply: async (plan) => {
+			assert.equal(plan.intent.tenantId, tenantId, "mock financial grant is tenant-scoped");
+			assert.equal(plan.intent.service, "site", "mock financial grant is deployment-scoped");
+		},
 		stability: { cooldownSeconds: 60 },
 		incumbentBackendId: "backend:a",
 		units: 100,
 		cutover: {
+			precondition: { validation: { status: "validated" }, mechanism: "weighted", incumbentPlanId: world.incumbentPlan.planId, incumbentPlan: world.incumbentPlan },
+			restorationHealthGate: async () => {
+				assert.ok(world.traffic, "traffic stream not started");
+				await world.traffic.waitForAdditional(5);
+				assert.ok(world.backendAUrl);
+				const probe = await fetch(world.backendAUrl);
+				return probe.status === 200 && await probe.text() === "A";
+			},
 			rampSteps: [10, 50, 100],
 			healthGate: async ({ percent }) => {
-				await sleep(40);
+				// Each applied ramp stays active until actual requests observe it.
+				// Elapsed sleeps do not prove a busy concurrent runner sent traffic.
+				assert.ok(world.traffic, "traffic stream not started");
+				await world.traffic.waitForAdditional(5);
 				if (unhealthyAt !== undefined) return percent < unhealthyAt;
 				// SAFETY: assertion to `d.backendBUrl as string); ` is required at this boundary.
 				const probe = await fetch(world.backendBUrl as string);
@@ -250,8 +303,8 @@ When("a budget threshold crossing reaches the routing control loop", async () =>
 			data: { tenantId: "tenant-a", thresholdFraction: 0.8, cycle: 1 },
 		},
 	});
-	await sleep(30);
 	assert.ok(world.traffic, "traffic stream not started");
+	await world.traffic.waitForAdditional(5);
 	world.log = await world.traffic.stop();
 	world.traffic = undefined;
 });
@@ -274,7 +327,7 @@ Then("no request observed a failure during the swap", () => {
 		0,
 		`expected zero failed requests, saw ${log.failed}/${log.total}`,
 	);
-	assert.ok(log.total > 10, `stream only sent ${log.total} requests`);
+	assert.ok(log.total >= 20, `stream only sent ${log.total} requests`);
 });
 
 Then("the fact trace follows the domain cutover saga ladder", () => {
@@ -282,8 +335,17 @@ Then("the fact trace follows the domain cutover saga ladder", () => {
 		"dispatch.Decided",
 		ROUTING_LOOP_EVENTS.ReplanProposed,
 		CUTOVER_EVENTS.Started,
+		CUTOVER_EVENTS.ApplyRequested,
+		"contract.EffectInvoked",
+		CUTOVER_EVENTS.Observed,
 		CUTOVER_EVENTS.RampAdvanced,
+		CUTOVER_EVENTS.ApplyRequested,
+		"contract.EffectInvoked",
+		CUTOVER_EVENTS.Observed,
 		CUTOVER_EVENTS.RampAdvanced,
+		CUTOVER_EVENTS.ApplyRequested,
+		"contract.EffectInvoked",
+		CUTOVER_EVENTS.Observed,
 		CUTOVER_EVENTS.RampAdvanced,
 		CUTOVER_EVENTS.RoutingChanged,
 		ROUTING_LOOP_EVENTS.Reapplied,

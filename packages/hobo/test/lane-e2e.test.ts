@@ -1,7 +1,6 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { first, must } from "@hobo/core/total-access";
 import type { RuntimeLocalEventStore } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -13,17 +12,9 @@ import {
 	type VercelFetchResponse,
 } from "../src/index.js";
 
-// END-TO-END proof of the REAL deploy lane THROUGH the composed runtime.
-//
-// The provider unit tests (vercel-deploy / cloudflare-deploy) call
-// `provider.apply()` directly — they prove the request SHAPE but bypass the
-// kernel. This file closes the remaining gap: it drives a full `hobo up`
-// (parse bindle -> gateway -> Planner -> Orchestrator/ResourceActors ->
-// Executor -> IacProvider) with a deploy token present in the INJECTED env, and
-// asserts the executor actually reaches the real provider's HTTP call. The only
-// thing swapped out is the socket (an injected recording `fetch`): no live token,
-// no network, but the entire in-process control plane runs for real. This is the
-// exact path a real `VERCEL_TOKEN` / `CLOUDFLARE_*` would light up in production.
+// Credential presence must not bypass production financial admission. These
+// composed CLI tests keep recording transports available and prove no provider
+// effect can run without the authoritative budget and execution supervisor.
 
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
@@ -128,8 +119,8 @@ function recordingCloudflareFetch() {
 	return { fetch, calls };
 }
 
-describe("hobo up drives the REAL deploy lane end to end (injected transport)", () => {
-	it("routes through to a real Vercel deployment when VERCEL_TOKEN is in the env", async () => {
+describe("hobo up requires financial authority before live provider effects", () => {
+	it("refuses bare Vercel credentials before any Create Deployment request", async () => {
 		await withProject(async (cwd) => {
 			const { fetch, calls } = recordingVercelFetch();
 			const runtime = createDefaultYardRuntime({
@@ -148,23 +139,14 @@ describe("hobo up drives the REAL deploy lane end to end (injected transport)", 
 				code?: string;
 			};
 
-			// The full control plane converged to Deployed — NOT the shell stub.
 			expect(up.code).not.toBe("HOBO_CLI_STUB");
-			expect(up.ok).toBe(true);
-			expect(up.status).toBe("deployed");
-
-			// The executor actually reached the REAL Vercel provider's HTTP call:
-			// exactly one Create-Deployment POST (memoized per deployment), with the
-			// Bearer token that came from the injected env.
-			expect(calls.length).toBe(1);
-			const call = first(calls);
-			expect(call.url).toBe("https://api.vercel.com/v13/deployments");
-			expect(call.method).toBe("POST");
-			expect(call.headers.Authorization).toBe("Bearer tok_e2e");
+			expect(up.ok).toBe(false);
+			expect(up.status).toBe("rejected");
+			expect(calls).toEqual([]);
 		});
 	});
 
-	it("routes through to a real Cloudflare Workers upload when CLOUDFLARE_* are in the env", async () => {
+	it("refuses bare Cloudflare credentials before any Worker upload", async () => {
 		await withProject(async (cwd) => {
 			const { fetch, calls } = recordingCloudflareFetch();
 			const runtime = createDefaultYardRuntime({
@@ -187,15 +169,9 @@ describe("hobo up drives the REAL deploy lane end to end (injected transport)", 
 			};
 
 			expect(up.code).not.toBe("HOBO_CLI_STUB");
-			expect(up.ok).toBe(true);
-			expect(up.status).toBe("deployed");
-
-			// The executor reached the REAL Cloudflare provider: a Workers script
-			// upload (PUT) authenticated with the token from the injected env.
-			const upload = calls.find((c) => c.method === "PUT");
-			expect(upload).toBeDefined();
-			expect(must(upload).url).toContain("/accounts/acct_e2e/workers/scripts/");
-			expect(must(upload).headers.Authorization).toBe("Bearer cf_e2e");
+			expect(up.ok).toBe(false);
+			expect(up.status).toBe("rejected");
+			expect(calls).toEqual([]);
 		});
 	});
 

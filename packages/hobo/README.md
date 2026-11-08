@@ -48,6 +48,65 @@ Canonical verb list: **42** verbs in `@hobo/cli` (`packages/cli/src/shell/verbs.
 
 ## CLI verification and remote deployment safety
 
+### Budgeted cloud hosting
+
+`createHostingBudgetAuthorityBridge` connects `@hobo/cloud` planning and durable
+hosting transitions to the broker's shared SQLite budget authority. The host
+supplies tenant-scoped planning evidence, independent revalidation, a trusted
+clock, and final provider-account/entitlement settlement evidence. Paid charges
+and shared credits are reserved together before deployment facts are published.
+Each charge stays with its source or destination billing account; credit scope
+and cost class remain part of the pinned plan.
+
+Execution adopts the gateway's existing reservation through an atomic claim.
+Another transition cannot spend the same authorization. A lost provider response
+keeps the hold until observation establishes the outcome; settlement requires
+retirement and final usage evidence. The default offline runtime does not infer
+provider prices, billing bounds, or final invoices. A hosting integration must
+supply these trusted ports and the effects/resilience-aware execution adapter.
+
+`test/hosting-budget-authority.test.ts` composes the actual gateway, transition
+journal and two SQLite authority connections. It covers admission races, shared
+free allocation, tampering, restart, reservation adoption and final settlement.
+The wire contracts and CUE/PACT fixtures live with `@hobo/cloud` and
+`@hobo/broker`; these offline tests do not verify a live provider API. See the
+[hosting transition design](../../docs/design/hosting-budget-transitions.md).
+
+`createProductionYardRuntime` is the async production composition. It requires a
+caller-owned persistent directory and trusted clock. `configureHosting` receives
+the same SQLite event partition used by the gateway and returns the actual provider
+registry, authoritative budget bridge and execution configuration. Credential
+leases and signed native financial readers can be acquired asynchronously before
+any provider effect. The returned `hostingController` supports status, bounded
+resume, cancellation and explicit bounded mutation resumption; `close()` closes
+the event store without deleting its persistent directory.
+
+`createResolverHostingTransitionProvider` drives shipped provider resolvers and
+Station routing. Every source and destination resource requires independently
+verified provider-funded or native finite-term liability evidence before the first
+mutation. Soft quotas and local timers cannot prove a hard financial bound. A
+successful move cannot release its hold while destination liability remains open.
+A source or destination's native serving endpoint must also match the active
+Station backends. Health probes use the same endpoint origin and serving path;
+multiple routed endpoints require an explicit probe for each (`additionalUrls`).
+A healthy response from another service cannot authorize routing. Missing native
+ingress, including an IAM-only function without an observed HTTP ingress, refuses
+cutover. Stock resolver execution supports stateless moves with pinned data;
+state transfer requires a workload adapter that proves checkpoints, checksums and
+write fencing, and is refused before mutation when that adapter is absent.
+
+Final reconciliation remains available after a write deadline. Retirement requires
+positive terminal absence and final billing evidence, including the exact native
+physical identity; a 404 and a DELETE acknowledgement alone cannot settle a hold.
+
+Native target names and durable resource receipts include tenant, deployment and
+transition incarnation. Existing sources name their approved `sourceIncarnationId`;
+a decommission names the creation transition of the target it retires. This prevents
+an old delayed DELETE from destroying a newer deployment with identical content.
+App Platform sibling component writes also serialize on the whole native parent
+using a shared SQLite CAS lock. A lost response retains that lock; clock expiry
+never unlocks an unknown native write.
+
 ### Self-hosted control plane
 
 The embedded local broker is the default. Hosted brokers, hosting relays, and
@@ -85,9 +144,9 @@ origin and contain no URL credentials (`HOBO_BROKER_ENDPOINT_UNSAFE`). Anonymous
 session discovery may use a separate HTTPS host, but placement credentials and
 claim tokens cannot be forwarded there. Session, placement, and claim POSTs
 refuse redirects. `test/broker-remote-*.test.ts` pins this HTTP boundary.
-`HOBO_DEPLOY_RESOLVERS=1` opts credentialed Cloudflare/Vercel deployments into
-the resolver lane, unless an explicit Pulumi adapter or live Pulumi setting
-takes precedence. Other values do not opt in.
+Cloudflare/Vercel credentials select exact-resource resolvers unless an explicit
+Pulumi adapter or live Pulumi setting takes precedence. `HOBO_DEPLOY_RESOLVERS`
+is retained as a compatibility spelling and no longer selects fixture uploads.
 
 `identity agent discover|register|status|claim|poll|token|rotate|revoke` exposes
 `@hobo/auth-md` in the composed CLI. An explicitly selected broker can advertise
@@ -125,18 +184,19 @@ as a live deployment. IaC selection lives in `src/compose.ts`:
 | Persistent local Yard worker | Product default with a loadable source Bindle |
 | In-memory Pulumi stand-in | Explicitly injected library/test runtime |
 | Real Pulumi Automation/CLI | `HOBO_PULUMI_LIVE=1` (engine- and credential-gated); its programs and `file://` state go in `HOBO_PULUMI_WORKDIR`, which is kept, else in a `hobo-pulumi-live-*` directory removed when the process ends (one `hobo:` line on stderr names it), so set `HOBO_PULUMI_WORKDIR` to keep the state |
-| Direct-HTTP resolver plane | a cloud credential **plus** `HOBO_DEPLOY_RESOLVERS=1` (opt-in) |
-| Live Cloudflare Workers | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
-| Live Vercel | `VERCEL_TOKEN` (and `VERCEL_TEAM_ID`, or `VERCEL_ORG_ID`, for a project in a team) |
+| Direct-HTTP Cloudflare resolver plane | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`; production hosting configuration required |
+| Direct-HTTP Vercel resolver plane | `VERCEL_TOKEN` (and `VERCEL_TEAM_ID`, or `VERCEL_ORG_ID`, for a project in a team); production hosting configuration required |
 
-The live Vercel provider (`src/vercel-deploy-provider.ts`) deploys first, with
-one `POST /v13/deployments`. Only when Vercel refuses that because the project
+The Vercel fixture helper (`src/vercel-deploy-provider.ts`,
+`createVercelDeployProvider({ fixtureArtifact: true, token })`, which
+`selectIacProvider` never picks) deploys first, with one
+`POST /v13/deployments`. Only when Vercel refuses that because the project
 does not exist (404 `not_found`, "Project not found") does it create the project
 with `POST /v9/projects` and deploy once more. A 409 there whose `error.code` is
 `conflict` means it was made meanwhile, and a refusal of the deployment after it
 names that 409's reason (the reason cut at 200 characters, the note kept whole,
 and the refusal's own text cut to leave it room); any other 409 is a refusal
-like any other. So the first `hobo up` from an account that has never seen the
+like any other. So its first deploy from an account that has never seen the
 project deploys instead of failing, and a deploy to an existing project is one
 request. Any other refusal, or a second one, is a `VercelApiError` carrying
 Vercel's status, `error.code` and `error.message`. A response body can echo the
@@ -176,11 +236,11 @@ The project is created in the scope `teamId` names, or in the token's own scope
 when there is no `teamId`. Vercel answers "Project not found" for a project that
 lives only in another scope, so a missing `teamId`, or a wrong one the token can
 still deploy to, does not fail: it creates a second project of that name there
-and deploys to it. Set `teamId`
-(`createVercelDeployProvider({ token, teamId })`) for a project that lives in a
-team. `selectIacProvider`, and so `hobo up`, reads it from `VERCEL_TEAM_ID`,
-beside `VERCEL_TOKEN`, as given, else from `VERCEL_ORG_ID`, the Vercel CLI's
-name for it, when that is a team id. The CLI writes a personal account's id
+and deploys to it. Set `teamId` (`createVercelClient({ token, teamId })`, or the
+helper's `teamId`) for a project that lives in a team. `selectIacProvider`, and
+so `hobo up`'s Vercel resolver plane, reads it from `VERCEL_TEAM_ID`, beside
+`VERCEL_TOKEN`, as given, else from `VERCEL_ORG_ID`, the Vercel CLI's name for
+it, when that is a team id. The CLI writes a personal account's id
 there too, and the Vercel CLI treats an `orgId` that starts with `team_` as a
 team and any other as the user (its `getOrgById`, in
 `packages/cli/src/util/projects/get-org-by-id.ts` of vercel/vercel); so does
@@ -189,13 +249,12 @@ team. A bare `team_`, with nothing after it, names neither, and is refused
 before anything is sent, with an error that names `VERCEL_ORG_ID`. Every entry
 point (`createVercelClient` and `createVercelDeployProvider` too) takes a team
 id trimmed, and takes an empty or blank one as none: with none, the deploy and
-any create are in the token's own scope. The resolver plane
-(`HOBO_DEPLOY_RESOLVERS=1`) reads it the same way, and its project lookups and
-creates carry the same `teamId`. A run whose credentials
+any create are in the token's own scope. The resolver plane's project lookups
+and creates carry that `teamId`. A run whose credentials
 come from OpenSesame (`HOBO_CREDENTIALS=opensesame`) keeps them too: the
 relaunched `hobo` starts from `@hobo/adapter-opensesame`'s allowlisted
 environment, and `VERCEL_TEAM_ID` and `VERCEL_ORG_ID`, team or account ids and
-not credentials, are on that allowlist. The outputs say what happened:
+not credentials, are on that allowlist. The helper's outputs say what happened:
 `projectCreated` is `"true"` when this deployment created the project and
 `"false"` otherwise, and `scope` is the `teamId`, or `"token-default"` when
 there is none: the scope Vercel gives a request with no `teamId`, which for a
@@ -251,7 +310,7 @@ Related execution paths:
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for layering and runtime assembly.
 
-Validate integration changes with `pnpm --filter @hobo/hobo run test`.
+Validate integration changes with `pnpm --filter @hobo/hobo run test`. Vitest loads workspace packages' built `dist` exports through Node rather than re-transforming that dependency graph through Vite; hobo's own source and tests still use the Vite loader. `@hobo/cli` stays on the Vite loader so dynamic bindle imports resolve `.js` specifiers in TypeScript sources.
 
 ## Local substrate auto-discovery (`src/local-substrates.ts`)
 
@@ -380,15 +439,13 @@ become `ResolveRequest.desired`.
    lane (unchanged);
 2. no cloud credential at all → the library runtime's in-memory Pulumi backend;
    product `up` uses the persistent local source-Bindle path instead;
-3. a cloud credential **plus `HOBO_DEPLOY_RESOLVERS=1`** → the resolver plane
-   (Cloudflare when `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` are set,
-   else Vercel when `VERCEL_TOKEN` is);
-4. otherwise → today's Cloudflare Workers / Vercel deploy providers (unchanged).
+3. a cloud credential → the exact-resource resolver plane (Cloudflare when
+   `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` are set, else Vercel).
 
-The lane is **opt-in and sits inside the cred-gated bracket**: it can only
-replace the two bespoke deploy providers, never the Pulumi lanes and never the
-credential-free default. Silently swapping someone's deploy backend on an
-upgrade is a behaviour change nobody asked for, so the env switch is required.
+The committed hello-bindle upload helpers require explicit `fixtureArtifact:true`
+and are never selected by environment. Their teardown performs native deletion
+and an independent absence read; missing receipts and uncertain deletion refuse.
+Existence alone reports content drift rather than claiming verified artifact identity.
 
 ### Fail-closed refusals (`ResolverIacError`, each with a `remediation`)
 
@@ -460,7 +517,7 @@ refused rather than shadowed.
   here rather than re-redacted.
 - **Preflight reports the resolver lane separately from the backend.**
   `describeDeployTarget` returns `lane: "resolver"` for credentialed
-  Cloudflare/Vercel with `HOBO_DEPLOY_RESOLVERS=1`. It does not model explicit
+  Cloudflare/Vercel regardless of the deprecated `HOBO_DEPLOY_RESOLVERS` flag. It does not model explicit
   Pulumi adapter overrides or `HOBO_PULUMI_LIVE=1`; use `selectIacProvider`
   precedence above to determine those paths. Credential presence and a
   preflight `live` flag do not establish provider authorization or readiness.

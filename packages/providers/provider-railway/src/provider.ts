@@ -47,6 +47,7 @@ function makeCapability(classKey: InitialCapabilityPort): Capability {
 				// Not free — unpriced. This package publishes no cost facts, so
 				// there is nothing dated to rank on.
 				marginalPrice: "0",
+				pricingStatus: "unknown",
 			};
 		},
 	};

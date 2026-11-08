@@ -4,6 +4,18 @@
 
 Accepted.
 
+### Hosting financial authority hardening
+
+Yard-first resolution requires complete normalized quotes, bound policy proof and
+durable admission before issuing a funded receipt or invoking generation. A
+single financial aggregate reserves money, provider-account limits and shared
+entitlements atomically; unknown effects retain commitments. Expected cost and
+the liability bound are separate values. The concrete local adapter uses SQLite
+transactions and an append-only generated event journal; distributed hosts must
+provide equivalent shared transactional authority. Budget ID, period and policy
+revision are independent identity dimensions. Cap changes and rollover do not
+implicitly forgive outstanding or uncertain work.
+
 ## Context
 
 The design suite defines a Meta-cloud Broker as a decision/receipt authority

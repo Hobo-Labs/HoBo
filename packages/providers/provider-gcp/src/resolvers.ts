@@ -67,6 +67,7 @@
 import {
 	createResolverRegistry,
 	type HttpTransport,
+	parseResolveRequest,
 	RESOLVER_CONTRACT,
 	type ResolveOutcome,
 	type ResolveRequest,
@@ -556,6 +557,12 @@ async function awaitOperation(
 			`${label} (poll ${attempt})`,
 			namePattern,
 		);
+		if (current.name !== operation.name) {
+			throw new ResolverError(
+				"RESOLVER_OUTPUT_UNPARSEABLE",
+				`${label}: operation identity changed while polling; a foreign operation cannot confirm this resource`,
+			);
+		}
 	}
 	if (current.errorText !== undefined) {
 		throw new ResolverError(
@@ -621,7 +628,10 @@ function assertProjectId(projectId: string): string {
 	// `typeof` first: this is called with option-bag input, so the annotation is
 	// a claim about the caller rather than a fact about the value, and
 	// `.trim()` on a non-string throws a TypeError instead of naming the field.
-	if (typeof projectId !== "string" || projectId.trim().length === 0) {
+	if (
+		!isJsonString(projectId) ||
+		!/^[a-z0-9][a-z0-9-]{0,62}$/u.test(projectId)
+	) {
 		throw new ResolverError(
 			"RESOLVER_PRODUCT_UNSUPPORTED",
 			"gcp resolvers need a projectId: every Google API path is project-scoped, and guessing one would target the wrong project",
@@ -755,9 +765,10 @@ function createResolver(
 	const poll = assertPollBudget(options.operationPoll);
 
 	async function contextFor(
-		request: ResolveRequest,
+		input: ResolveRequest,
 		transport: HttpTransport,
 	): Promise<GcpResolverContext> {
+		const request = parseResolveRequest(parseJsonObject(JSON.stringify(input)));
 		if (request.ref.productId !== spec.productId) {
 			throw new ResolverError(
 				"RESOLVER_PRODUCT_UNSUPPORTED",
@@ -1946,6 +1957,9 @@ function serviceBody(context: GcpResolverContext, image: string): JsonObject {
 	return {
 		...(ingress !== undefined ? { ingress } : undefined),
 		template: {
+			...(optionalString(context.desired, "serviceAccount") !== undefined
+				? { serviceAccount: context.desired.serviceAccount }
+				: undefined),
 			containers: [runContainer(context, image)],
 			...(Object.keys(scaling).length > 0 ? { scaling } : undefined),
 			...(concurrency !== undefined
@@ -1965,6 +1979,9 @@ function jobBody(context: GcpResolverContext, image: string): JsonObject {
 			...(tasks !== undefined ? { taskCount: tasks } : undefined),
 			...(parallelism !== undefined ? { parallelism } : undefined),
 			template: {
+				...(optionalString(context.desired, "serviceAccount") !== undefined
+					? { serviceAccount: context.desired.serviceAccount }
+					: undefined),
 				containers: [runContainer(context, image)],
 				...(maxRetries !== undefined ? { maxRetries } : undefined),
 				...(timeoutSeconds !== undefined
@@ -1996,7 +2013,9 @@ function serviceOutputs(
 	const uri = optionalString(record, "uri");
 	const ingress = optionalString(record, "ingress");
 	const image = observedImage(record, ["template"]);
-	return {
+	const lifecycle = runLifecycle(context, record, ["template"]);
+	const result: JsonObject = {
+		...lifecycle,
 		resourceName: runResourceName(context, location, "services"),
 		serviceId: context.name,
 		location,
@@ -2004,6 +2023,25 @@ function serviceOutputs(
 		...(ingress !== undefined ? { ingress } : undefined),
 		...(image !== undefined ? { image } : undefined),
 	};
+	if (lifecycle.ready === true && uri) {
+		try {
+			const endpoint = new URL(uri);
+			if (
+				endpoint.protocol === "https:" &&
+				endpoint.hostname.endsWith(".run.app") &&
+				!endpoint.username &&
+				!endpoint.password &&
+				!endpoint.port &&
+				!endpoint.search &&
+				!endpoint.hash &&
+				endpoint.pathname === "/"
+			)
+				Object.assign(result, { servingEndpoint: endpoint.href });
+		} catch {
+			/* An invalid native URL supplies no endpoint evidence. */
+		}
+	}
+	return result;
 }
 
 function jobOutputs(
@@ -2013,6 +2051,7 @@ function jobOutputs(
 ): JsonObject {
 	const image = observedImage(record, ["template", "template"]);
 	return {
+		...runLifecycle(context, record, ["template", "template"]),
 		resourceName: runResourceName(context, location, "jobs"),
 		jobId: context.name,
 		location,
@@ -2020,17 +2059,354 @@ function jobOutputs(
 	};
 }
 
+/** Cloud Run serves the observed generation only after its terminal condition settles. */
+function runLifecycle(
+	context: GcpResolverContext,
+	record: JsonObject,
+	templatePath: readonly string[],
+): JsonObject {
+	const generation = runGeneration(record.generation);
+	const current =
+		generation !== undefined &&
+		runGeneration(record.observedGeneration) === generation &&
+		record.reconciling !== true;
+	const condition = optionalString(
+		nestedRecord(record, "terminalCondition"),
+		"state",
+	);
+	const terminal =
+		current &&
+		(condition === "CONDITION_SUCCEEDED" || condition === "CONDITION_FAILED");
+	const wanted = optionalString(context.desired, "image");
+	const owner = runOwnership(context);
+	const artifact = runArtifact(context);
+	const ready =
+		owner !== undefined &&
+		artifact !== undefined &&
+		nestedRecord(record, "annotations")["hobo.dev/artifact"] === artifact &&
+		nestedRecord(record, "annotations")["hobo.dev/owner"] === owner &&
+		terminal &&
+		condition === "CONDITION_SUCCEEDED" &&
+		wanted !== undefined &&
+		observedImage(record, templatePath) === wanted &&
+		runSettingsMatch(context, record, templatePath);
+	const result: JsonObject = {
+		ready,
+		operationConfirmed: terminal,
+		lifecycleStatus: ready ? "ready" : terminal ? "failed" : "pending",
+	};
+	const nativeArtifact = nestedRecord(record, "annotations")[
+		"hobo.dev/artifact"
+	];
+	const contentDigest = observedImage(record, templatePath)?.match(
+		/@(sha256:[a-f0-9]{64})$/u,
+	)?.[1];
+	if (contentDigest !== undefined)
+		Object.assign(result, { artifactDigest: contentDigest });
+	if (isJsonString(nativeArtifact))
+		Object.assign(result, { artifactMarker: nativeArtifact });
+	return result;
+}
+
+function runGeneration(value: JsonValue | undefined): string | undefined {
+	if (isJsonNumber(value) && Number.isSafeInteger(value) && value > 0)
+		return String(value);
+	return isJsonString(value) &&
+		/^[1-9][0-9]{0,18}$/u.test(value) &&
+		BigInt(value) <= 9223372036854775807n
+		? value
+		: undefined;
+}
+
+function cpuQuantity(value: JsonValue | undefined): number | undefined {
+	if (!isJsonString(value) || !/^[0-9]+(?:\.[0-9]+)?m?$/u.test(value))
+		return undefined;
+	const amount =
+		Number(value.endsWith("m") ? value.slice(0, -1) : value) *
+		(value.endsWith("m") ? 1 : 1000);
+	return Number.isSafeInteger(amount) && amount > 0 ? amount : undefined;
+}
+
+function memoryQuantity(value: JsonValue | undefined): number | undefined {
+	if (!isJsonString(value)) return undefined;
+	const match = value.match(/^([0-9]+(?:\.[0-9]+)?)(Ki|Mi|Gi|Ti|K|M|G|T)?$/u);
+	if (!match) return undefined;
+	const units = new Map([
+		["Ki", 1024],
+		["Mi", 1024 ** 2],
+		["Gi", 1024 ** 3],
+		["Ti", 1024 ** 4],
+		["K", 1000],
+		["M", 1000 ** 2],
+		["G", 1000 ** 3],
+		["T", 1000 ** 4],
+	]);
+	const amount = Number(match[1]) * (units.get(match[2] ?? "") ?? 1);
+	return Number.isSafeInteger(amount) && amount > 0 ? amount : undefined;
+}
+
+function validateRunSettings(
+	context: GcpResolverContext,
+	kind: "services" | "jobs",
+): void {
+	const serviceAccount = optionalString(context.desired, "serviceAccount");
+	if (
+		context.desired.serviceAccount !== undefined &&
+		(!serviceAccount ||
+			!/^[A-Za-z0-9._-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com$/u.test(
+				serviceAccount,
+			))
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Cloud Run serviceAccount must name an explicit workload service account",
+		);
+	for (const [key, parse] of [
+		["cpu", cpuQuantity],
+		["memory", memoryQuantity],
+	] as const)
+		if (
+			context.desired[key] !== undefined &&
+			parse(context.desired[key]) === undefined
+		)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				`Cloud Run ${key} must be an explicit positive bounded quantity`,
+			);
+	const names =
+		kind === "services"
+			? ["minInstances", "maxInstances", "concurrency"]
+			: ["tasks", "parallelism", "maxRetries", "taskTimeoutSeconds"];
+	if (runOwnership(context) !== undefined) {
+		const allowed = new Set([
+			"name",
+			"image",
+			"region",
+			"location",
+			"cpu",
+			"memory",
+			"ownershipRef",
+			"artifactDigest",
+			"serviceAccount",
+			...(kind === "services" ? ["ingress", ...names] : names),
+		]);
+		for (const key of Object.keys(context.desired))
+			if (!allowed.has(key))
+				throw new ResolverError(
+					"RESOLVER_PRODUCT_UNSUPPORTED",
+					`Budgeted Cloud Run does not implement desired.${key}; unhandled bindings cannot be silently omitted`,
+				);
+		if (
+			!["cpu", "memory", "serviceAccount", ...names].every(
+				(key) => context.desired[key] !== undefined,
+			)
+		)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"Budgeted Cloud Run requires explicit workload identity, CPU, memory and all replica/concurrency/retry bounds",
+			);
+		if (
+			!/^[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[a-f0-9]{64}$/u.test(
+				optionalString(context.desired, "image") ?? "",
+			)
+		)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"Budgeted Cloud Run requires an immutable sha256 container image",
+			);
+		if (
+			context.desired.region !== undefined &&
+			context.desired.location !== undefined &&
+			context.desired.region !== context.desired.location
+		)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"Cloud Run region and location disagree",
+			);
+	}
+	for (const key of names) {
+		const value = optionalInteger(context.desired, key);
+		if (
+			context.desired[key] !== undefined &&
+			(value === undefined ||
+				value < (["minInstances", "maxRetries"].includes(key) ? 0 : 1))
+		)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				`Cloud Run ${key} must be a bounded integer`,
+			);
+	}
+	if (kind === "services") {
+		const min = optionalInteger(context.desired, "minInstances"),
+			max = optionalInteger(context.desired, "maxInstances");
+		if (min !== undefined && max !== undefined && min > max)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"Cloud Run minimum instances exceeds its bounded maximum",
+			);
+		if (
+			runOwnership(context) !== undefined &&
+			["cpu", "memory", ...names].some(
+				(key) => context.desired[key] === undefined,
+			)
+		)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"Budgeted Cloud Run requires explicit CPU, memory, minInstances, maxInstances and concurrency bounds",
+			);
+	}
+}
+
+function runSettingsMatch(
+	context: GcpResolverContext,
+	record: JsonObject,
+	templatePath: readonly string[],
+): boolean {
+	let template = record;
+	for (const key of templatePath) template = nestedRecord(template, key);
+	const containers = template.containers;
+	if (
+		runOwnership(context) !== undefined &&
+		(!isJsonArray(containers) || containers.length !== 1)
+	)
+		return false;
+	const container =
+		isJsonArray(containers) && isJsonObject(containers[0]) ? containers[0] : {};
+	const limits = nestedRecord(nestedRecord(container, "resources"), "limits");
+	if (
+		context.desired.serviceAccount !== undefined &&
+		context.desired.serviceAccount !== template.serviceAccount
+	)
+		return false;
+	if (
+		context.desired.cpu !== undefined &&
+		cpuQuantity(context.desired.cpu) !== cpuQuantity(limits.cpu)
+	)
+		return false;
+	if (
+		context.desired.memory !== undefined &&
+		memoryQuantity(context.desired.memory) !== memoryQuantity(limits.memory)
+	)
+		return false;
+	if (templatePath.length === 1) {
+		const scaling = nestedRecord(template, "scaling");
+		if (
+			context.desired.minInstances !== undefined &&
+			context.desired.minInstances !== scaling.minInstanceCount
+		)
+			return false;
+		if (
+			context.desired.maxInstances !== undefined &&
+			context.desired.maxInstances !== scaling.maxInstanceCount
+		)
+			return false;
+		if (
+			context.desired.concurrency !== undefined &&
+			context.desired.concurrency !== template.maxInstanceRequestConcurrency
+		)
+			return false;
+		const ingress = runIngress(context);
+		if (ingress !== undefined && record.ingress !== ingress) return false;
+	} else {
+		const jobTemplate = nestedRecord(record, "template");
+		if (
+			context.desired.tasks !== undefined &&
+			context.desired.tasks !== jobTemplate.taskCount
+		)
+			return false;
+		if (
+			context.desired.parallelism !== undefined &&
+			context.desired.parallelism !== jobTemplate.parallelism
+		)
+			return false;
+		if (
+			context.desired.maxRetries !== undefined &&
+			context.desired.maxRetries !== template.maxRetries
+		)
+			return false;
+		if (
+			context.desired.taskTimeoutSeconds !== undefined &&
+			`${context.desired.taskTimeoutSeconds}s` !== template.timeout
+		)
+			return false;
+	}
+	return true;
+}
+
+function runOwnership(context: GcpResolverContext): string | undefined {
+	const owner = optionalString(context.desired, "ownershipRef");
+	if (
+		context.desired.ownershipRef !== undefined &&
+		(!owner || !/^sha256:[a-f0-9]{64}$/u.test(owner))
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Cloud Run ownershipRef must be a complete sha256 ownership identity",
+		);
+	return owner;
+}
+
+function runArtifact(context: GcpResolverContext): string | undefined {
+	const artifact = optionalString(context.desired, "artifactDigest");
+	if (
+		(context.desired.artifactDigest !== undefined ||
+			context.desired.ownershipRef !== undefined) &&
+		(!artifact || !/^sha256:[a-f0-9]{64}$/u.test(artifact))
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Cloud Run artifactDigest must pin the complete approved sha256 artifact",
+		);
+	return artifact;
+}
+
+function assertRunScope(
+	context: GcpResolverContext,
+	location: string,
+	kind: "services" | "jobs",
+): string {
+	const expected = runResourceName(context, location, kind);
+	validateRunSettings(context, kind);
+	runOwnership(context);
+	runArtifact(context);
+	if (
+		context.knownPhysicalId !== undefined &&
+		context.knownPhysicalId !== expected
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Cloud Run physical identity belongs to a different resource or scope",
+		);
+	return expected;
+}
+
 async function readRunResource(
 	context: GcpResolverContext,
 	location: string,
 	kind: "services" | "jobs",
 ): Promise<JsonObject | undefined> {
+	const expected = assertRunScope(context, location, kind);
 	const response = await send("cloudRun", context, {
 		method: "GET",
 		path: runResourcePath(context, location, kind),
 	});
 	if (isNotFound(response)) return undefined;
-	return expectOk(response, `cloud run read ${kind} ${context.name}`);
+	const observed = expectOk(response, `cloud run read ${kind} ${context.name}`);
+	if (observed.name !== expected)
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			"Cloud Run response identity differs from the requested scope",
+		);
+	const owner = runOwnership(context);
+	if (
+		owner !== undefined &&
+		nestedRecord(observed, "annotations")["hobo.dev/owner"] !== owner
+	)
+		throw new ResolverError(
+			"RESOLVER_PROVIDER_REJECTED",
+			"Cloud Run resource has different or missing ownership metadata; implicit adoption is forbidden",
+		);
+	return observed;
 }
 
 /** Run one Cloud Run mutation and chase its operation within the budget. */
@@ -2044,6 +2420,7 @@ async function runRunOperation(
 		label,
 		RUN_OPERATION_NAME_PATTERN,
 	);
+	assertRunOperationScope(context, accepted);
 	return awaitOperation(
 		"cloudRun",
 		context,
@@ -2052,6 +2429,22 @@ async function runRunOperation(
 		RUN_OPERATION_NAME_PATTERN,
 		label,
 	);
+}
+
+function assertRunOperationScope(
+	context: GcpResolverContext,
+	operation: GcpOperation,
+): void {
+	const location = requiredLocation(context, GCP_CLOUD_RUN_PRODUCT_ID);
+	if (
+		!operation.name.startsWith(
+			`projects/${context.projectId}/locations/${location}/operations/`,
+		)
+	)
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			"Cloud Run operation belongs to another project or location scope",
+		);
 }
 
 /**
@@ -2078,6 +2471,14 @@ function cloudRunSpec(
 	): readonly string[] {
 		const changes: string[] = [];
 		const image = optionalString(context.desired, "image");
+		const artifact = runArtifact(context);
+		if (!runSettingsMatch(context, record, templatePath))
+			changes.push("capacity or ingress bounds");
+		if (
+			artifact !== undefined &&
+			nestedRecord(record, "annotations")["hobo.dev/artifact"] !== artifact
+		)
+			changes.push("artifactDigest");
 		if (image !== undefined && image !== observedImage(record, templatePath)) {
 			changes.push("image");
 		}
@@ -2110,15 +2511,34 @@ function cloudRunSpec(
 			const location = requiredLocation(context, productId);
 			const observed = await readRunResource(context, location, kind);
 			const resourceName = runResourceName(context, location, kind);
+			if (
+				observed !== undefined &&
+				runArtifact(context) !== undefined &&
+				nestedRecord(observed, "annotations")["hobo.dev/artifact"] !==
+					runArtifact(context)
+			)
+				throw new ResolverError(
+					"RESOLVER_PRODUCT_UNSUPPORTED",
+					"Cloud Run artifact differs; use a new immutable target name rather than overwriting an older deployment",
+				);
 			if (observed === undefined) {
 				const label = `cloud run create ${kind} ${context.name}`;
 				const image = requiredImage(context, productId);
+				const body = buildBody(context, image);
+				const owner = runOwnership(context);
+				if (owner !== undefined)
+					Object.assign(body, {
+						annotations: {
+							"hobo.dev/owner": owner,
+							"hobo.dev/artifact": runArtifact(context),
+						},
+					});
 				const operation = await runRunOperation(
 					context,
 					{
 						method: "POST",
 						path: `${runCollectionPath(context, location, kind)}?${idQuery}=${encodeURIComponent(context.name)}`,
-						json: buildBody(context, image),
+						json: body,
 					},
 					label,
 				);
@@ -2130,6 +2550,8 @@ function cloudRunSpec(
 							resourceName,
 							location,
 							operationConfirmed: false,
+							operationName: operation.name,
+							ready: false,
 						},
 						[unconfirmedDiagnostic(context, label)],
 					);
@@ -2139,7 +2561,12 @@ function cloudRunSpec(
 					"create",
 					resourceName,
 					created === undefined
-						? { resourceName, location, operationConfirmed: true }
+						? {
+								resourceName,
+								location,
+								operationConfirmed: false,
+								ready: false,
+							}
 						: {
 								...buildOutputs(context, location, created),
 								operationConfirmed: true,
@@ -2177,8 +2604,8 @@ function cloudRunSpec(
 				context,
 				{
 					method: "PATCH",
-					path: runResourcePath(context, location, kind),
-					json: buildBody(context, image),
+					path: `${runResourcePath(context, location, kind)}?updateMask=${kind === "services" ? "template,ingress,annotations" : "template,annotations"}`,
+					json: runUpdateBody(context, observed, buildBody(context, image)),
 				},
 				label,
 			);
@@ -2190,24 +2617,48 @@ function cloudRunSpec(
 					{
 						...buildOutputs(context, location, observed),
 						operationConfirmed: false,
+						operationName: operation.name,
 					},
 					[applied, unconfirmedDiagnostic(context, label)],
 				);
 			}
-			const updated =
-				(await readRunResource(context, location, kind)) ?? observed;
+			const updated = await readRunResource(context, location, kind);
 			return outcome(
 				"update",
 				resourceName,
 				{
-					...buildOutputs(context, location, updated),
-					operationConfirmed: true,
+					...(updated === undefined
+						? {
+								resourceName,
+								location,
+								operationConfirmed: false,
+								ready: false,
+							}
+						: buildOutputs(context, location, updated)),
+					operationConfirmed: updated !== undefined,
 				},
-				[applied],
+				updated === undefined
+					? [
+							applied,
+							"updated resource is absent from the final read; update is not confirmed",
+						]
+					: [applied],
 			);
 		},
 		async remove(context) {
 			const location = requiredLocation(context, productId);
+			assertRunScope(context, location, kind);
+			const existing = await readRunResource(context, location, kind);
+			if (existing === undefined) return;
+			if (
+				runArtifact(context) !== undefined &&
+				nestedRecord(existing, "annotations")["hobo.dev/artifact"] !==
+					runArtifact(context)
+			)
+				throw new ResolverError(
+					"RESOLVER_PROVIDER_REJECTED",
+					"Cloud Run retirement artifact no longer matches the approved source",
+				);
 			const label = `cloud run delete ${kind} ${context.name}`;
 			const response = await send("cloudRun", context, {
 				method: "DELETE",
@@ -2219,6 +2670,7 @@ function cloudRunSpec(
 				label,
 				RUN_OPERATION_NAME_PATTERN,
 			);
+			assertRunOperationScope(context, accepted);
 			const operation = await awaitOperation(
 				"cloudRun",
 				context,
@@ -2233,8 +2685,38 @@ function cloudRunSpec(
 					`${label}: Google accepted the delete but the operation was still running after ${context.poll.attempts} poll(s). A delete reports success by returning, so an unconfirmed one is refused instead; re-run delete (a second delete of an already-removed resource succeeds) or raise the operationPoll budget`,
 				);
 			}
+			if ((await readRunResource(context, location, kind)) !== undefined)
+				throw new ResolverError(
+					"RESOLVER_PROVIDER_REJECTED",
+					`${label}: resource still exists after terminal deletion; absence is not confirmed`,
+				);
 		},
 	};
+}
+
+function runUpdateBody(
+	context: GcpResolverContext,
+	observed: JsonObject,
+	body: JsonObject,
+): JsonObject {
+	const owner = runOwnership(context);
+	if (owner !== undefined) {
+		const etag = optionalString(observed, "etag");
+		if (!etag)
+			throw new ResolverError(
+				"RESOLVER_OUTPUT_UNPARSEABLE",
+				"Cloud Run update needs an observed etag fence",
+			);
+		Object.assign(body, {
+			etag,
+			annotations: {
+				...nestedRecord(observed, "annotations"),
+				"hobo.dev/owner": owner,
+				"hobo.dev/artifact": runArtifact(context),
+			},
+		});
+	}
+	return body;
 }
 
 // ---------------------------------------------------------------------------

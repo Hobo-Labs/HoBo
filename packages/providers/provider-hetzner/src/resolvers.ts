@@ -268,6 +268,66 @@ function optionalInteger(record: JsonObject, key: string): number | undefined {
 	return isJsonNumber(value) && Number.isSafeInteger(value) ? value : undefined;
 }
 
+function hostingLabels(context: HetznerResolverContext): JsonObject {
+	const labels = context.desired.labels;
+	if (labels !== undefined && !isJsonObject(labels))
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"desired.labels must be an object",
+		);
+	const result: JsonObject = labels === undefined ? {} : { ...labels };
+	for (const [field, prefix] of [
+		["artifactDigest", "hobo-artifact"],
+		["ownershipRef", "hobo-owner"],
+	] as const) {
+		const value = context.desired[field];
+		if (value === undefined) continue;
+		if (!isJsonString(value) || !/^sha256:[a-f0-9]{64}$/u.test(value))
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				`desired.${field} must be a canonical sha256 reference`,
+			);
+		if (
+			result[`${prefix}-a`] !== undefined ||
+			result[`${prefix}-b`] !== undefined
+		)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"reserved hosting labels must be supplied through their dedicated fields",
+			);
+		Object.assign(result, {
+			[`${prefix}-a`]: value.slice(7, 39),
+			[`${prefix}-b`]: value.slice(39),
+		});
+	}
+	return result;
+}
+
+function observedHostingLabels(record: JsonObject): JsonObject {
+	const labels = nestedRecord(record, "labels");
+	const result: JsonObject = {};
+	for (const [field, prefix] of [
+		["artifactDigest", "hobo-artifact"],
+		["ownershipRef", "hobo-owner"],
+	] as const) {
+		const first = labels[`${prefix}-a`],
+			second = labels[`${prefix}-b`];
+		if (first === undefined && second === undefined) continue;
+		if (
+			!isJsonString(first) ||
+			!isJsonString(second) ||
+			!/^[a-f0-9]{32}$/u.test(first) ||
+			!/^[a-f0-9]{32}$/u.test(second)
+		)
+			throw new ResolverError(
+				"RESOLVER_OUTPUT_UNPARSEABLE",
+				"provider returned incomplete or invalid hosting labels",
+			);
+		Object.assign(result, { [field]: `sha256:${first}${second}` });
+	}
+	return result;
+}
+
 function nestedRecord(record: JsonObject, key: string): JsonObject {
 	const value = record[key];
 	return isJsonObject(value) ? value : {};
@@ -564,10 +624,9 @@ async function resolveObjectStorageKeys(
 	// Reading `.accessKeyId` off `undefined` throws a TypeError -- the untyped
 	// failure this boundary exists to turn into an actionable refusal.
 	if (
-		keys === null ||
-		typeof keys !== "object" ||
-		typeof keys.accessKeyId !== "string" ||
-		typeof keys.secretAccessKey !== "string" ||
+		Object.prototype.toString.call(keys) !== "[object Object]" ||
+		!isJsonString(keys.accessKeyId) ||
+		!isJsonString(keys.secretAccessKey) ||
 		keys.accessKeyId.trim().length === 0 ||
 		keys.secretAccessKey.trim().length === 0
 	) {
@@ -714,6 +773,21 @@ async function findByName(
 	collection: Collection,
 ): Promise<JsonObject | undefined> {
 	const label = `hetzner list ${collection.listKey} named ${context.name}`;
+	if (context.knownPhysicalId !== undefined) {
+		const response = await send(context, {
+			method: "GET",
+			path: `${collection.path}/${encodeURIComponent(context.knownPhysicalId)}`,
+			surface: collection.surface,
+		});
+		if (isNotFound(response)) return undefined;
+		const record = nestedRecord(expectOk(response, label), collection.itemKey);
+		if (identityOf(record, label) !== context.knownPhysicalId)
+			throw new ResolverError(
+				"RESOLVER_OUTPUT_UNPARSEABLE",
+				`${label}: physical identity differs from the pinned resource`,
+			);
+		return record;
+	}
 	const record = expectOk(
 		await send(context, {
 			method: "GET",
@@ -729,6 +803,16 @@ async function findByName(
 			`${label}: Hetzner returned a body without a ${JSON.stringify(collection.listKey)} array, so the collection cannot be searched and a create would risk duplicating an existing resource`,
 		);
 	}
+	if (
+		items.some(
+			(item) =>
+				!isJsonObject(item) || optionalString(item, "name") === undefined,
+		)
+	)
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			`${label}: an incomplete collection record cannot establish absence or uniqueness`,
+		);
 	const matches = items
 		.filter(isJsonObject)
 		.filter((item) => optionalString(item, "name") === context.name);
@@ -781,6 +865,9 @@ function serverOutputs(record: JsonObject): JsonObject {
 	const name = optionalString(record, "name");
 	const status = optionalString(record, "status");
 	return {
+		...observedHostingLabels(record),
+		ready: status === "running",
+		operationConfirmed: status === "running",
 		...(name === undefined ? undefined : { name }),
 		...(status === undefined ? undefined : { status }),
 		...(ipv4 !== undefined ? { ipv4 } : undefined),
@@ -867,6 +954,10 @@ const CLOUD_SERVER_SPEC: Omit<HetznerResolverSpec, "productId"> = {
 					server_type: requiredString(context, "serverType", productId, "cx22"),
 					image: requiredString(context, "image", productId, "ubuntu-24.04"),
 					location: requiredLocation(context, productId),
+					labels: hostingLabels(context),
+					...(optionalString(context.desired, "userData") !== undefined
+						? { user_data: optionalString(context.desired, "userData") }
+						: undefined),
 					...(optionalBoolean(context.desired, "backups") !== undefined
 						? { backups: optionalBoolean(context.desired, "backups") }
 						: undefined),
@@ -921,7 +1012,18 @@ function loadBalancerOutputs(record: JsonObject): JsonObject {
 	const algorithm = optionalString(nestedRecord(record, "algorithm"), "type");
 	const location = optionalString(nestedRecord(record, "location"), "name");
 	const name = optionalString(record, "name");
+	const targets = isJsonArray(record.targets)
+		? record.targets.filter(isJsonObject)
+		: [];
+	const hasHealthyTarget = targets.some(
+		(target) =>
+			isJsonArray(target.health_status) &&
+			target.health_status.some(
+				(health) => isJsonObject(health) && health.status === "healthy",
+			),
+	);
 	return {
+		ready: ipv4 !== undefined && hasHealthyTarget,
 		...(name === undefined ? undefined : { name }),
 		...(ipv4 !== undefined ? { ipv4 } : undefined),
 		...(type !== undefined ? { loadBalancerType: type } : undefined),
@@ -1047,6 +1149,7 @@ function volumeOutputs(record: JsonObject): JsonObject {
 	const name = optionalString(record, "name");
 	const status = optionalString(record, "status");
 	return {
+		ready: size !== undefined && size > 0 && linuxDevice !== undefined,
 		...(name === undefined ? undefined : { name }),
 		...(status === undefined ? undefined : { status }),
 		...(size !== undefined ? { sizeGb: size } : undefined),
@@ -1247,6 +1350,8 @@ function storageBoxOutputs(observed: JsonObject): JsonObject {
 	const username = optionalString(observed, "username");
 	const server = optionalString(observed, "server");
 	return {
+		ready:
+			optionalString(observed, "status") === "active" && server !== undefined,
 		name: optionalString(observed, "name") ?? "",
 		status: optionalString(observed, "status") ?? "",
 		...(type === undefined ? undefined : { storageBoxType: type }),
@@ -1473,6 +1578,7 @@ function objectStorageOutputs(
 	location: string,
 ): JsonObject {
 	return {
+		ready: true,
 		bucketName: context.name,
 		location,
 		endpoint: `https://${context.name}.${location}.your-objectstorage.com`,
@@ -1631,6 +1737,15 @@ function createResolver(
 					options.resolveObjectStorageCredential,
 				)
 			: undefined;
+		if (
+			signsRequests &&
+			knownPhysicalId(request) !== undefined &&
+			knownPhysicalId(request) !== resourceName(request, spec.productId)
+		)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"the pinned physical bucket identity differs from the requested name",
+			);
 		return {
 			request,
 			transport,
@@ -1651,15 +1766,68 @@ function createResolver(
 		providerId: HETZNER_PROVIDER_TARGET,
 		productId: spec.productId,
 		async reconcile(request, transport) {
-			return spec.reconcile(await contextFor(request, transport));
+			const context = await contextFor(request, transport);
+			if (context.knownPhysicalId !== undefined) {
+				const observed = await spec.read(context);
+				assertPinnedIdentity(context, observed);
+				if (!observed)
+					throw new ResolverError(
+						"RESOLVER_PROVIDER_REJECTED",
+						"the pinned physical resource is absent; a replacement requires a new authorized resource identity",
+					);
+			}
+			const result = await spec.reconcile(context);
+			assertPinnedIdentity(context, result);
+			return lifecycleOutcome(
+				result,
+				result.action === "noop" || result.action === "adopt",
+			);
 		},
 		async read(request, transport) {
-			return spec.read(await contextFor(request, transport));
+			const context = await contextFor(request, transport);
+			const result = await spec.read(context);
+			assertPinnedIdentity(context, result);
+			return result === undefined ? undefined : lifecycleOutcome(result, true);
 		},
 		async delete(request, transport) {
-			await spec.remove(await contextFor(request, transport));
+			const context = await contextFor(request, transport);
+			if (context.knownPhysicalId !== undefined) {
+				const observed = await spec.read(context);
+				assertPinnedIdentity(context, observed);
+				if (!observed) return;
+			}
+			await spec.remove(context);
 		},
 	};
+}
+
+function assertPinnedIdentity(
+	context: HetznerResolverContext,
+	result: ResolveOutcome | undefined,
+): void {
+	if (
+		result &&
+		context.knownPhysicalId !== undefined &&
+		result.physicalId !== context.knownPhysicalId
+	)
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			"provider observation differs from the pinned physical resource identity",
+		);
+}
+
+function lifecycleOutcome(
+	result: ResolveOutcome,
+	observed: boolean,
+): ResolveOutcome {
+	const ready =
+		result.outputs.ready === true && result.diagnostics.length === 0;
+	return outcome(
+		result.action,
+		result.physicalId,
+		{ ...result.outputs, ready, operationConfirmed: observed && ready },
+		result.diagnostics,
+	);
 }
 
 /**

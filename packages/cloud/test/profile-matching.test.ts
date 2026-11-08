@@ -20,7 +20,6 @@ import {
 } from "../src/index.js";
 import { isJsonString, type JsonObject } from "../src/json.js";
 
-
 const profiles = createCapabilityProfileRegistry(STANDARD_CAPABILITY_PROFILES);
 
 const policy: TrustPolicy = {
@@ -184,8 +183,8 @@ interface Ask {
 
 function match(ask: Ask) {
 	const requirement = ask.fromBindle
-		// SAFETY: `? capabilityRequirementFromBindleRequirements(ask.fromBindle as never)` is required at this I/O or test boundary.
-		? capabilityRequirementFromBindleRequirements(ask.fromBindle)
+		? // SAFETY: `? capabilityRequirementFromBindleRequirements(ask.fromBindle as never)` is required at this I/O or test boundary.
+			capabilityRequirementFromBindleRequirements(ask.fromBindle)
 		: parseCapabilityRequirement(
 				// SAFETY: `(ask.requirement ?? {` is required at this I/O or test boundary.
 				(ask.requirement ?? {

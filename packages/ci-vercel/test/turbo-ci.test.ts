@@ -4,13 +4,18 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { planTurboCi, runTurboCi } from "../src/turbo-ci.js";
+import { isolateTurboEnv } from "./isolated-turbo-env.js";
 
+isolateTurboEnv();
 const turboPath = createRequire(import.meta.url).resolve("turbo/bin/turbo");
 const roots: string[] = [];
+// Child Turbo must not inherit GITHUB_ACTIONS and write error annotations into the real job log.
+beforeEach(() => vi.stubEnv("GITHUB_ACTIONS", undefined));
 afterEach(async () => {
+	vi.unstubAllEnvs();
 	await Promise.all(
 		roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
 	);

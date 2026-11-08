@@ -14,7 +14,12 @@ import {
 
 import { PrismaProviderError } from "./errors.js";
 
-export type SecretPurpose = "connection-string" | "rotation-evidence";
+export type SecretPurpose =
+	| "connection-string"
+	| "rotation-evidence"
+	| "claim-url"
+	| "capability-binding"
+	| "native-resource-id";
 
 export type SecretCustodyScope = {
 	readonly providerId: string;

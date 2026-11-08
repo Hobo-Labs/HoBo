@@ -2,7 +2,7 @@
 
 | POC | Source | Related Linear | Persona | BDD scenario | Vertical slice | Service boundaries | Pact contracts | Reference impl status | Disposition | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Connectivity-tier IR | `src/draft/technical-proofs/connectivity-tier-ir-contract` | HOBO-89 | Platform engineer | Cross-provider bind selects lowest legal tier | Secure cross-cloud connectivity fabric | Connectivity tier selector | ConnectivityTierSelector | verified | implemented_in_reference_impl | Kept tier 1-5 model and fail-closed tier selection. |
+| Connectivity-tier IR | `src/draft/technical-proofs/connectivity-tier-ir-contract` | HOBO-89 | Platform engineer | Cross-provider bind selects lowest legal tier | Secure cross-cloud connectivity fabric | Connectivity tier selector | ConnectivityTierSelector | verified | implemented_in_reference_impl | Kept tier 1-5 model and fail-closed tier selection; declaration now accepts typed plans and untrusted JSON at the same validation boundary, with simulation and Pact evidence unchanged. |
 | Yard topology manifest | `src/draft/technical-proofs/yard-topology-manifest-contract` | HOBO-94 | Platform engineer | Yard manifests fold into Junction halves | Secure cross-cloud connectivity fabric | Yard topology manifest, Junction planner | YardTopologyManifest, JunctionConnectivityPlanner | verified | implemented_in_reference_impl | Kept pure projection and content-hash manifest behavior. |
 | hobo:dns port | `src/draft/technical-proofs/hobo-dns-port-contract` | HOBO-101 | Domain operator | DNS writes stage in shadow before live promotion | Safe custom-domain and gateway promotion | DNS shadow port | DnsShadowPort | verified | implemented_in_reference_impl | Kept pre-validation shadow-only adapter. |
 | Gateway ingress port | `src/draft/technical-proofs/hobo-gateway-port`, `src/draft/technical-proofs/gateway-realization-contract` | HOBO-105 | Domain operator | Gateway terminates TLS and routes weighted traffic | Safe custom-domain and gateway promotion | Gateway traffic router | GatewayTrafficRouter | verified | implemented_in_reference_impl | Kept gateway builder and deterministic realization. |
@@ -40,6 +40,7 @@
 |---|---|---|
 | `src/draft/technical-proofs/dns-validation-gate-threat-model` | latest validated leaf hardening | DNS validation simulation and Pact evidence unchanged. |
 | `src/draft/technical-proofs/domain-event-body-contract` | latest validated leaf hardening | Domain validation event sequence and evidence unchanged. |
+| `src/draft/technical-proofs/yard-topology-manifest-contract` | typed parse boundary accepts `YardManifest \| JsonValue`; consumers resolve shipped declarations | Yard topology simulation, features, and Pact evidence unchanged. |
 
 ## Cascade absorptions (83d9b5c92)
 

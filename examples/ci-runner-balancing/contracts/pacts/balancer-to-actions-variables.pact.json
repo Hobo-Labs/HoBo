@@ -10,7 +10,7 @@
       "description": "balancer reads the current routed runner variable",
       "request": {
         "method": "GET",
-        "path": "/repos/hobo-operator/HoBo/actions/variables/HOBO_RUNNER_LINUX_SMALL",
+        "path": "/repos/Hobo-Labs/HoBo/actions/variables/HOBO_RUNNER_LINUX_SMALL",
         "headers": {
           "Accept": "application/vnd.github+json"
         }
@@ -30,7 +30,7 @@
       "description": "balancer patches the routed runner variable on a flip decision",
       "request": {
         "method": "PATCH",
-        "path": "/repos/hobo-operator/HoBo/actions/variables/HOBO_RUNNER_LINUX_SMALL",
+        "path": "/repos/Hobo-Labs/HoBo/actions/variables/HOBO_RUNNER_LINUX_SMALL",
         "headers": {
           "Content-Type": "application/json"
         },
@@ -47,7 +47,7 @@
       "description": "balancer creates the routed runner variable when it does not exist yet",
       "request": {
         "method": "POST",
-        "path": "/repos/hobo-operator/HoBo/actions/variables",
+        "path": "/repos/Hobo-Labs/HoBo/actions/variables",
         "headers": {
           "Content-Type": "application/json"
         },

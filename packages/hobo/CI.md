@@ -16,6 +16,120 @@ Human `hobo login` credentials do not authorize the CI account API.
 hobo ci connect --relay https://ci.example.com
 ```
 
+To create or install the GitHub App as part of setup, use an interactive terminal:
+
+```sh
+hobo ci connect github --relay https://ci.example.com
+```
+
+The relay must support its hosted App bootstrap and account-onboarding endpoints;
+the operator must provision the relay, its vault, and the account credential first.
+If the App is not ready, the CLI opens the relay's registration page. Its manifest
+prefills the name, webhook, events and CI permissions. The App owner approves
+registration in GitHub; the relay exchanges the one-use code and stores the App
+private key, webhook secret and OAuth client secret encrypted in its vault. Those
+secrets do not pass through the CLI or its output. Operator bootstrap credentials
+are entered in the relay page when required.
+
+GitHub's [manifest parameters](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest#github-app-manifest-parameters)
+do not include Device Flow. If it is disabled, the CLI opens GitHub's App settings;
+the App owner must enable **Device Flow** and save. The CLI verifies the setting
+using GitHub's device authorization, observes the prescribed polling interval,
+and discards the resulting short-lived user credentials. It then opens the relay's
+GitHub authorization and installation page and waits for an installation bound to
+the CI account. For an existing installation, select its repository access in that
+page and press Enter when finished. Repository setup still verifies the selected
+installation and asks for isolated-runner consent. Registration and installation
+timeouts are not proof of failure: inspect the relay and GitHub before retrying an
+uncertain App creation.
+
+The CLI does not create or distribute a fleet membership. Joined devices or
+clusters must have a configured runner provider and relay access. Installing the
+App and connecting a repository does not prove that any runner is available or
+that a GitHub Actions job has executed.
+
+Prefer the committed **`.hobo/ci.json`** profile when present. It names each
+environment's `relayOrigin`, optional `jobAdmission` (`push` for hosted relays,
+`pull` for loopback laptops), and `selection` rules for branch/CD routing. Local
+overrides belong in gitignored **`.hobo/ci.local.json`** or `HOBO_CI_ENVIRONMENT`.
+`hobo ci enable` reads that file before `--relay` / `HOBO_CI_RELAY_URL`.
+
+## Host a local relay
+
+When the `local` environment (or any profile with loopback `relayOrigin` and
+`jobAdmission: "pull"`) should admit jobs without a public webhook URL, run the
+relay on your machine:
+
+```sh
+HOBO_CI_ENVIRONMENT=local hobo ci serve --installation-id <app-installation-id>
+```
+
+Defaults come from the resolved **`.hobo/ci.json`** environment: `relayOrigin`,
+`jobAdmission`, and `allowInsecureLoopback`. Flags override config. The command
+binds **127.0.0.1** by default; non-loopback binds require an explicit public
+**`--origin`** (HTTPS, matching `relayOrigin`) or **`--allow-insecure`**. Use
+**`--host 0.0.0.0`** and **`--port`** for containers; keep **`--origin`** on the
+public URL when a reverse proxy terminates TLS (**`--trust-proxy`** honors
+`X-Forwarded-Proto`). GitHub App credentials load from `HOBO_CI_GITHUB_APP_*` /
+`*_FILE` env vars (never printed). Optional **`HOBO_CI_INGRESS_FORWARD_SECRET`**
+verifies ingress-forwarded webhooks. **`--print-config`** shows the resolved
+plan with secrets redacted. **`--with-worker`** starts the isolated-container
+sidecar with its own lease journal: local SQLite at
+`<HOBO_HOME>/ci/serve/worker.sqlite` (override `HOBO_CI_WORKER_DB`) that polls
+GitHub for `runs-on: hobo` jobs, unless the environment's
+`"store": { "kind": "postgres", "urlEnv": "<ENV_NAME>" }` points it at a shared
+relay partition (the config holds the env var name, never the URL). Graceful
+shutdown on SIGINT/SIGTERM.
+
+Alternatively, import a self-hosted App's key and webhook secret from files:
+
+```sh
+hobo ci github import-key --app-id 12345 \
+  --key-file /private/path/app.pem \
+  --webhook-secret-file /private/path/webhook-secret
+hobo ci github key-status
+```
+
+The CLI verifies the RSA key against GitHub's App identity before changing the
+active version. It stores files with owner-only permissions under
+`HOBO_HOME/ci/github-credentials/`, refuses a HoBo home inside a Git
+checkout, and never prints the key or secret. File import currently requires
+POSIX permissions; on Windows use the relay's mounted secret files instead.
+`hobo ci serve` and its
+`--with-worker` process use this version when no explicit App credential
+environment is set; explicit environment credentials take precedence as a unit.
+Incomplete or unreadable App credentials fail startup rather than falling back
+to the local fixture App.
+With real App credentials, `ci serve` also requires `HOBO_CI_ACCOUNT_TOKEN`,
+`HOBO_CI_ACCOUNT_TOKEN_FILE`, or `HOBO_CI_CONTROL_TOKENS_FILE`. When it generates
+the local control-token configuration, it grants the explicitly selected
+`--installation-id` to the local account and stores only the token's hash. A
+supplied control-token file remains authoritative.
+The source files must already exist in a private location. A `--home` outside the
+checkout is still accessible to processes with that user's filesystem access;
+choose the host and access controls accordingly.
+
+To rotate a self-hosted private key, generate another key in GitHub App settings,
+repeat the import with the new file and the existing webhook secret, restart all
+relay and worker processes, and only then revoke the old key in GitHub. Older
+local versions remain under `HOBO_HOME/ci/github-credentials/versions/` until an
+operator removes them after the restart. Keep the webhook secret in the same
+secret manager as the relay; if it is reset in GitHub, update the relay together
+with GitHub's setting. This file import does not replace credentials in the hosted
+encrypted vault; hosted vault rotation and automatic distribution to joined devices
+or clusters are not implemented.
+
+Remote relay deployment: [`../ci-gh-actions/REMOTE-RELAY-SERVE.md`](../ci-gh-actions/REMOTE-RELAY-SERVE.md).
+
+```sh
+hobo ci serve --environment production --host 0.0.0.0 --port 8787 \
+  --origin https://ci.example.com --trust-proxy
+hobo ci serve --environment local --port 8787 --admission pull --installation-id 12345
+hobo ci serve --print-config --environment local
+```
+
+See [`../ci/RUNNER-QUEUE.md`](../ci/RUNNER-QUEUE.md) for NAT/pull admission setup.
+
 `enable` and `connect` run the same setup. The CLI detects the sole Git remote,
 prompts when several exist, and asks before enabling isolated runners. Subsequent
 commands reuse a unique remote matching the saved repository. Use
@@ -131,7 +245,8 @@ pagination cursor, or single-task follow protocol; `--level`, `--next`, and
 
 ## Contracts and checks
 
-`test/ci-command.test.ts` and `test/ci-runs.test.ts` cover setup, target selection,
+`test/ci-command.test.ts`, `test/ci-github-connect.test.ts`,
+`test/ci-github-keys.test.ts`, `test/ci-serve.test.ts`, and `test/ci-runs.test.ts` cover setup, target selection,
 unattended consent, account continuity for equivalent saved relay origins, run
 selection and failure behavior. The CLI-to-relay consumer
 contract pins method, account authentication, protobuf body and revision header;
@@ -173,3 +288,29 @@ evidence was refreshed through `PostgresCiStore.reattestRate` after checking the
 published rates, preserving the rate card, budgets, allowances and usage watermark.
 This verifies the reviewed acceptance workflow and configured Vercel path;
 other providers and arbitrary workflow dependencies require their own acceptance.
+
+## Runner provider integrations (`hobo ci connect <provider>`)
+
+`hobo ci connect` with no provider still sets up the HoBo relay (alias of `enable`); `hobo ci serve` still hosts the relay. With a provider, it records a third-party GitHub Actions runner integration in `.hobo/ci.json` under `integrations` and prints the provider's own sign-in step:
+
+```sh
+hobo ci connect blacksmith --org Hobo-Labs
+hobo ci connect depot                                   # GitHub App runners
+hobo ci connect depot --id depot-builds --auth oidc --project-id <project>
+hobo ci connect jog                                     # alias: usejog
+hobo ci connect boat --org Hobo-Labs --launch           # runs `boat ci connect`
+```
+
+| Provider | Auth (default first) | What the owner does | Labels |
+|---|---|---|---|
+| Blacksmith | `github-app` only. GitHub SSO; no API tokens or OIDC for runners | Install the Blacksmith GitHub App at app.blacksmith.sh (org owner; orgs only) | `blacksmith-<n>vcpu-ubuntu-<ver>` |
+| Depot | `github-app` (runners), `oidc` (builds), `secret-ref` fallback (`DEPOT_TOKEN`) | Connect GitHub Actions in the Depot dashboard (org owner); for OIDC add a trust relationship and grant `id-token: write` | `depot-ubuntu-24.04` … |
+| Jog (usejog) | `github-app` only; no tokens | Install the Jog GitHub App; private repos only; prepaid credits | `jog` |
+| Boat | `device` (`boat ci connect` browser ceremony), `secret-ref` fallback (`BOAT_API_KEY`) | Complete `boat ci connect [--org]`; paid plan | `boat`, `boat-small`, `boat-large`, `boat-xlarge` |
+
+Secrets never pass through HoBo:
+
+- The config holds **references only**. `auth.secretRef` must be `github-secret:NAME` or `env:NAME`. The JSON schema, the CUE model (`#RunnerIntegration`) and the loader reject anything else, including credential-shaped or high-entropy strings in any field, and their errors never echo the value.
+- The CLI never prompts for, reads or prints a credential. For `secret-ref` you store the value yourself (`gh secret set NAME` prompts).
+- `--launch` runs the provider CLI with credential-like environment variables (`*TOKEN*`, `*SECRET*`, `*API_KEY*` …) removed, and output is redacted.
+- `packages/hobo/test/ci-connect-leak.test.ts` generates synthetic, real-looking tokens at runtime (never written to disk) and asserts that none appear in CLI output, progress or the written config.

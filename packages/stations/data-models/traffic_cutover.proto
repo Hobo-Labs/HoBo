@@ -5,7 +5,7 @@ package hobo.stations.v1;
 // Domain cutover saga shapes promoted from the
 // `domain-cutover-saga-contract` draft proof (scripts/promotions.json) and
 // re-expressed over the traffic-routing port. Language-neutral schema
-// reference for the architecture guard; not compiled at runtime.
+// contract; compiled generated records accompany runtime refinements.
 
 // Resolver-cache precondition: rollback can only be as fast as the TTL
 // clients already cached, so the effective RTO is the previous TTL.
@@ -25,6 +25,8 @@ message CutoverPreconditionRecord {
   CutoverValidation validation = 1;
   CutoverTtlPrecondition ttl = 2;
   string incumbent_plan_id = 3;
+  string mechanism = 4; // weighted | dns; DNS requires TTL evidence
+  string incumbent_plan_json = 5; // immutable approved RoutingPlan artifact
 }
 
 message CutoverRefusedEventData {

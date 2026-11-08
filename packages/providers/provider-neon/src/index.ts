@@ -23,7 +23,6 @@ export {
 	type NeonClient,
 	type NeonClientOptions,
 } from "./client.js";
-
 export {
 	deriveDirectConnectionUri,
 	isPooledHost,
@@ -108,10 +107,13 @@ export {
 	NEON_MIGRATION_PROFILE_REFS,
 	type NeonProviderFact,
 	type NeonProvisionReceipt,
+	type PublicSerializationOptions,
 	scanForCredentialMaterial,
 	toProviderFacts,
 	toProvisionReceipt,
 } from "./receipt.js";
+export { createNeonClaimableResolver } from "./resolver.js";
+export { confirmsNeonSqlProbe } from "./sql-probe.js";
 export {
 	assertAllowedEndpoint,
 	createFetchTransport,

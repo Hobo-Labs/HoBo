@@ -39,6 +39,7 @@ import {
 	createGuardedTransport,
 	DEFAULT_TRANSPORT_POLICY,
 	type TransportPolicy,
+	type TransportRequest,
 	type TransportResponse,
 	VERCEL_ALLOWED_PATH_PREFIXES,
 	VERCEL_API_ALLOWED_HOSTS,
@@ -53,7 +54,7 @@ function policy(overrides: Partial<TransportPolicy> = {}): TransportPolicy {
 }
 
 function recordingInner(response: Partial<TransportResponse> = {}) {
-	const calls: Array<Record<string, unknown>> = [];
+	const calls: TransportRequest[] = [];
 	const inner: VercelTransport = {
 		async request(request) {
 			calls.push({ ...request });
@@ -91,8 +92,8 @@ describe("the default transport policy", () => {
 		// programmatically with the sponsoring credential attached.
 		expect(VERCEL_CLAIM_HOST).toBe("vercel.com");
 		expect(
-			(DEFAULT_TRANSPORT_POLICY.allowedHosts as readonly string[]).includes(
-				VERCEL_CLAIM_HOST,
+			DEFAULT_TRANSPORT_POLICY.allowedHosts.some(
+				(host) => host === VERCEL_CLAIM_HOST,
 			),
 		).toBe(false);
 	});
@@ -180,12 +181,9 @@ describe("assertAllowedEndpoint", () => {
 			expect.unreachable("a foreign host must be refused");
 		} catch (error) {
 			expect(error).toBeInstanceOf(VercelProviderError);
-			expect((error as VercelProviderError).code).toBe(
-				"PROVIDER_CONTRACT_CHANGED",
-			);
-			expect(
-				(error as VercelProviderError).detail as Record<string, unknown>,
-			).toHaveProperty("guard");
+			if (!(error instanceof VercelProviderError)) throw error;
+			expect(error.code).toBe("PROVIDER_CONTRACT_CHANGED");
+			expect(error.detail).toHaveProperty("guard");
 		}
 	});
 
@@ -197,11 +195,9 @@ describe("assertAllowedEndpoint", () => {
 			assertAllowedEndpoint("https://api.vercel.com/v2/user", policy());
 			expect.unreachable("an out-of-prefix path must be refused");
 		} catch (error) {
-			const detail = (error as VercelProviderError).detail as Record<
-				string,
-				unknown
-			>;
-			expect(typeof detail.guard).toBe("string");
+			if (!(error instanceof VercelProviderError)) throw error;
+			const detail = error.detail;
+			expect(detail.guard).toEqual(expect.any(String));
 			expect(String(detail.guard).length).toBeGreaterThan(0);
 		}
 	});
@@ -344,20 +340,13 @@ describe("createFetchTransport", () => {
 		} = {},
 	) {
 		const seen: Array<{ url: string; init: RequestInit }> = [];
-		const impl = (async (url: string, init: RequestInit) => {
-			seen.push({ url, init });
-			return {
+		const impl: typeof globalThis.fetch = async (url, init = {}) => {
+			seen.push({ url: String(url), init });
+			return new Response(response.text ?? "{}", {
 				status: response.status ?? 200,
-				headers: {
-					forEach(fn: (value: string, key: string) => void) {
-						for (const [key, value] of Object.entries(response.headers ?? {})) {
-							fn(value, key);
-						}
-					},
-				},
-				text: async () => response.text ?? "{}",
-			};
-		}) as unknown as typeof globalThis.fetch;
+				headers: response.headers ?? {},
+			});
+		};
 		return { impl, seen };
 	}
 
@@ -416,9 +405,9 @@ describe("createFetchTransport", () => {
 		// The important distinction on a credentialed mutation path. A timed-out
 		// or dropped request never proves the server did nothing, and reporting a
 		// clean failure would invite a retry that duplicates a transfer request.
-		const impl = (async () => {
+		const impl: typeof globalThis.fetch = async () => {
 			throw new Error("socket hang up");
-		}) as unknown as typeof globalThis.fetch;
+		};
 		try {
 			await createFetchTransport({ fetchImpl: impl }).request({
 				...REQUEST,
@@ -426,13 +415,10 @@ describe("createFetchTransport", () => {
 			});
 			expect.unreachable("a dropped request must be reported");
 		} catch (error) {
-			expect((error as VercelProviderError).code).toBe(
-				"PROVIDER_OPERATION_AMBIGUOUS",
-			);
-			expect(
-				(error as VercelProviderError).detail as Record<string, unknown>,
-			).toMatchObject({ method: "POST" });
-			expect((error as VercelProviderError).retryable).toBe(false);
+			if (!(error instanceof VercelProviderError)) throw error;
+			expect(error.code).toBe("PROVIDER_OPERATION_AMBIGUOUS");
+			expect(error.detail).toMatchObject({ method: "POST" });
+			expect(error.retryable).toBe(false);
 		}
 	});
 
@@ -448,9 +434,8 @@ describe("createFetchTransport", () => {
 			});
 			expect.unreachable("an over-cap body must be refused");
 		} catch (error) {
-			expect((error as VercelProviderError).code).toBe(
-				"PROVIDER_CONTRACT_CHANGED",
-			);
+			if (!(error instanceof VercelProviderError)) throw error;
+			expect(error.code).toBe("PROVIDER_CONTRACT_CHANGED");
 		}
 	});
 });
@@ -543,7 +528,7 @@ describe("providerErrorForStatus", () => {
 		const detail = providerErrorForStatus(400, {
 			...post,
 			body: "rejected code=ABCD1234EFGH for project",
-		}).detail as Record<string, unknown>;
+		}).detail;
 		expect(String(detail.body)).not.toContain("ABCD1234EFGH");
 	});
 

@@ -1,6 +1,7 @@
 import type { Yard } from "@hobo/yards";
 
 import { deepFreeze } from "./freeze.js";
+import { isJsonString } from "./json.js";
 import {
 	CONNECTIVITY_TIER_LEVELS,
 	type ConnectivityTierName,
@@ -9,8 +10,6 @@ import {
 	type JunctionMemberManifest,
 	JunctionParseError,
 } from "./types.js";
-import { isJsonString } from "./json.js";
-
 
 /**
  * Optional per-member manifest declarations. Everything the tier selection

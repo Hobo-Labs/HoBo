@@ -1,0 +1,32 @@
+name: CI runner preflight
+description: Fail fast when the hobo runner image is missing pinned toolchains (mise.lock + system packages).
+runs:
+  using: composite
+  steps:
+    # The daemon deletes the host-mounted work dir at job teardown; /tmp goes with
+    # the --rm container. Only untagged images over a day old are pruned here: the
+    # base build's layer cache and every tagged image stay, and so does a build in
+    # flight. Stopped containers are pruned only when they carry the job label and
+    # are past the moment a warm spare sits between create and start.
+    - name: Prune stale untagged images and stopped job containers
+      shell: bash
+      run: |
+        set -uo pipefail
+        git config --global http.version HTTP/1.1
+        if command -v docker >/dev/null 2>&1 && [ -S /var/run/docker.sock ]; then
+          docker image prune -f --filter until=24h >/dev/null || echo "::warning::docker image prune failed"
+          docker container prune -f --filter label=hobo.ci/isolated=1 --filter until=10m >/dev/null \
+            || echo "::warning::docker container prune failed"
+          docker system df || true
+        fi
+    - shell: bash
+      run: |
+        set -euo pipefail
+        export MISE_EXPERIMENTAL=1
+        if command -v mise >/dev/null 2>&1; then
+          mise trust ./mise.toml
+          mise install
+        fi
+        node --no-warnings scripts/ci-runner-preflight.mts
+        node --experimental-strip-types scripts/ci/memory-env.mts
+        echo "HOBO_CUE_BIN=$(command -v cue)" >> "$GITHUB_ENV"

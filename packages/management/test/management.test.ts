@@ -47,12 +47,12 @@ describe("@hobo/management", () => {
 
 		const status = stationStatus(ctx, "station:local");
 		expect(status.ok).toBe(true);
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		expect((status.data as { status: string }).status).toBe("open");
 
 		const up = stationUp(ctx, "station:local");
 		expect(up.ok).toBe(true);
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		expect((up.data as { status: string }).status).toBe("occupying");
 
 		const snap = projectYardSnapshot(ctx, { stationId: "station:local" });
@@ -74,12 +74,12 @@ describe("@hobo/management", () => {
 			version: "1.0.0",
 		});
 		expect(pub.ok).toBe(true);
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		const hash = String((pub.data as { contentHash: string }).contentHash);
 		expect(stationRailsApprove(ctx, { hashOrId: hash }).ok).toBe(true);
 		expect(stationRailsActivate(ctx, { hashOrId: hash }).ok).toBe(true);
 		const list = stationRailsList(ctx, "station:local");
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		const rails = (list.data as { rails: { activationStatus: string }[] })
 			.rails;
 		const active = rails.find((r) => r.activationStatus === "active");
@@ -100,22 +100,22 @@ describe("@hobo/management", () => {
 			scopes: ["tasks:read"],
 		});
 		expect(created.ok).toBe(true);
-		const conn = (
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
-			created.data as { connection: { status: string; alias?: string } }
-		).connection;
+		const conn =
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+			(created.data as { connection: { status: string; alias?: string } })
+				.connection;
 		expect(conn.status).toBe("pending");
 		expect(conn.alias).toBe("work");
 
 		const auth = connectionAuthorize(ctx, { idOrAlias: "work" });
 		expect(auth.ok).toBe(true);
 		expect(
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 			(auth.data as { connection: { status: string } }).connection.status,
 		).toBe("active");
 
 		const list = connectionList(ctx);
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		expect((list.data as { count: number }).count).toBe(1);
 
 		const snap = projectYardSnapshot(ctx, { stationId: "station:local" });
@@ -134,7 +134,7 @@ describe("@hobo/management", () => {
 		stationInit(ctx, { name: "local", tenant: "local" });
 		const b = brokerStatus(ctx, { stationId: "station:local" });
 		expect(b.ok).toBe(true);
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		expect((b.data as { ok: boolean }).ok).toBe(true);
 	});
 });

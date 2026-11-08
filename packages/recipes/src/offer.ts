@@ -212,7 +212,10 @@ function scanForSecrets(value: CanonicalValue, path: string): void {
 		});
 		return;
 	}
-	if (value !== null && Object.prototype.toString.call(value) === "[object Object]") {
+	if (
+		value !== null &&
+		Object.prototype.toString.call(value) === "[object Object]"
+	) {
 		// SAFETY: assertion to `as { readonly [key: string]: CanonicalValue | undefined; }; fo` is required at this boundary.
 		const record = value as {
 			readonly [key: string]: CanonicalValue | undefined;

@@ -11,9 +11,22 @@ default:
     # file on purpose: the other root features/*.feature files are design
     # specs with no step definitions yet, and a glob would fail the lane.
     - "features/control-yard-core-loop.feature"
-    - "features/examples-console-cloudflare-station.feature"
   import:
     - "src/draft/epic-proofs/*/features/steps/**/*.ts"
     - "src/draft/projects/*/features/steps/**/*.ts"
     - "features/steps/**/*.ts"
   publishQuiet: true
+
+# Live acceptance, never part of `test:behavior`: the examples-console feature
+# boots `astro dev`, drives chromium, and stamps a real Cloudflare Temporary
+# Accounts station on workers.dev (it refuses a mocked URL). Run it by hand:
+#   node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.yaml --profile live
+live: &live-cloudflare
+  paths:
+    - "features/examples-console-cloudflare-station.feature"
+  import:
+    - "features/steps/examples-console-cloudflare-station.steps.ts"
+  publishQuiet: true
+
+# Alias retained for the hosting acceptance instructions.
+live-cloudflare: *live-cloudflare

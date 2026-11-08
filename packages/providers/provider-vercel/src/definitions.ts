@@ -313,3 +313,68 @@ export const VERCEL_SPONSORED_DEFINITIONS: readonly ProviderResourceDefinitionDa
 
 export const VERCEL_SPONSORED_CANDIDATES: readonly SelectionCandidate[] =
 	VERCEL_SPONSORED_DEFINITIONS.map(semanticsToSelectionCandidate);
+
+/** Native immutable static deployment using an operator-owned project. */
+export function createVercelStaticDeployDefinition(
+	overrides: VercelDefinitionOverrides = {},
+): ProviderResourceDefinitionData {
+	const conformance = overrides.conformance ?? "pass";
+	return {
+		id: "vercel.static-deploy/v1",
+		providerId: VERCEL_PROVIDER_ID,
+		port: "compute",
+		semantics: {
+			schemaVersion: RESOURCE_DEFINITION_VNEXT_SCHEMA,
+			productId: "vercel.static-deploy/v1",
+			displayName: "Vercel immutable static deployment in an owned project",
+			implementsProfiles: [
+				implementation("web.static/v1", conformance),
+				implementation("web.hosted/v1", conformance),
+			],
+			runtimeModels: ["paas"],
+			structuredCapabilities: {
+				bootstrap: "operator-credential",
+				anonymousDeployment: false,
+				httpsOnly: true,
+				immutableArtifact: true,
+				serverlessFunctions: false,
+				serverSideRendering: false,
+			},
+			placementConstraints: [],
+			producesBindingProfiles: ["binding.http/v1"],
+			migrationProfiles: [],
+			bootstrapStrategyRef: "bootstrap.vercel.operator-credential/v1",
+			claimStrategyRef: "claim.none/v1",
+			compilerRef: "compile.vercel.static-deploy/v1",
+			executorRef: "execute.vercel.static-deploy/v1",
+			permissionProfileRef: "permissions.vercel.operator-token/v1",
+			trustEvidenceRef: `hobo.evidence/provider-vercel/static-deploy${CONFORMANCE_SUFFIX}`,
+			sourceEvidenceRefs: [
+				"https://vercel.com/docs/rest-api/reference/endpoints/deployments/create-a-new-deployment",
+			],
+			remediation: [],
+			providerClass: "established",
+			evidenceExpiresAtMs:
+				overrides.evidenceExpiresAtMs ??
+				Date.parse(VERCEL_EVIDENCE_CHECKED_AT) + NINETY_DAYS_MS,
+			evidenceSignatureValid: overrides.evidenceSignatureValid ?? true,
+			creatorAuthorityAfterClaim: "absent",
+			claimAtomicity: "single-resource",
+			claimActionCount: 0,
+			continuity: {
+				endpoint: "preserved",
+				data: "not-applicable",
+				credentials: "not-applicable",
+			},
+			supportsExport: false,
+			supportsRotation: false,
+			supportsRevocation: true,
+			sponsorExposureMinorUnits: 0,
+			secretCustodyAvailable: overrides.secretCustodyAvailable ?? true,
+		},
+	};
+}
+export const VERCEL_DEFINITIONS: readonly ProviderResourceDefinitionData[] = [
+	...VERCEL_SPONSORED_DEFINITIONS,
+	createVercelStaticDeployDefinition(),
+];

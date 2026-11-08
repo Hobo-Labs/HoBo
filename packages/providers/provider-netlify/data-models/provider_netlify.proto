@@ -6,10 +6,9 @@ package hobo.provider.netlify.v1;
 // pinned Netlify CLI reports for an anonymous deploy, what this package hands to
 // the shared `@hobo/claims` coordinator, and what a receipt is allowed to show.
 //
-// Design-time contract artifacts. This package declares no `data-models/buf.yaml`
-// and imports no generated `*_pb.ts`; the CUE beside this file carries the
-// invariants, and the TypeScript in `src/` parses CLI and REST output into
-// derived domain types at the boundary.
+// Legacy contract artifacts are reconciled against provider-boundary proofs.
+// The package opts into codegen; new runtime observations derive generated
+// records. CUE carries semantic constraints alongside these wire contracts.
 //
 // The claim URL is bearer authority over a live site. It appears here only as a
 // custody locator (`claim_url_secret_ref`) or a one-time action id — never as a

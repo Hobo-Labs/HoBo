@@ -1,6 +1,19 @@
 syntax = "proto3";
 package hobo.ci.v1;
+import "google/protobuf/struct.proto";
 
+// Kubernetes only: an ARC AutoscalingRunnerSet that HoBo thinly reconciles.
+// `name` is the AutoscalingRunnerSet `runnerScaleSetName`. HoBo never installs ARC.
+message CiPolicyKubernetesScaleSet {
+  string name = 1;
+  uint32 min_runners = 2;
+  uint32 max_runners = 3;
+  string namespace = 4;
+}
+// Kubernetes only: a Dagger Engine HoBo checks for readiness. HoBo never installs it.
+message CiPolicyDaggerEngine {
+  string name = 1;
+}
 // Authored intent only. Financial observations and leases live in separate records.
 message CiPolicyProvider {
   string id = 1;
@@ -8,6 +21,12 @@ message CiPolicyProvider {
   string connection_ref = 3;
   string runs_on = 4;
   bool enabled = 5;
+  oneof capacity {
+    CiPolicyKubernetesScaleSet scale_set = 6;
+    CiPolicyDaggerEngine engine = 7;
+  }
+  // Vercel only: "vercel", "local" or "remote".
+  string location = 8;
 }
 message CiPolicyPool {
   string label = 1;
@@ -38,4 +57,6 @@ message DesiredCiPolicy {
   CiPolicyBudget budget = 5;
   CiPolicyRouting routing = 6;
   repeated CiPolicyThreshold thresholds = 7;
+  // Shared hobo.budget-policy/v1 authoring JSON, parsed by @hobo/core.
+  google.protobuf.Struct budget_policy = 8;
 }

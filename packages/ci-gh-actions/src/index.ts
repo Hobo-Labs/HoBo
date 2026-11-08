@@ -1,5 +1,10 @@
 export { createActionsBackend } from "./actions-backend.js";
+export { createAdmissionOrder } from "./admission-order.js";
 export { relayInstallAssets } from "./assets.js";
+export {
+	inventoryCiEnginesFromRepository,
+	knownEngineIds,
+} from "./ci-engine-inventory.js";
 export { CiRelayClientError, createCiRelayClient } from "./client.js";
 export {
 	type ControlAuthenticator,
@@ -7,6 +12,11 @@ export {
 	createControlAuthenticator,
 	createControlPlane,
 } from "./control-plane.js";
+export {
+	collectAllowedRelayOrigins,
+	resolveEngineRelayOrigin,
+	resolveEnvironmentEngines,
+} from "./engine-relay-routing.js";
 export {
 	createGithubAppTransport,
 	type GithubAppTransport,
@@ -19,6 +29,7 @@ export { createHostedAppBootstrap } from "./hosted-app-bootstrap.js";
 export { createHostedAppOnboarding } from "./hosted-app-onboarding.js";
 export { createHostedControlPlane } from "./hosted-control.js";
 export {
+	generalLeaseIdsFor,
 	HostedRelay,
 	type HostedRelayStore,
 	type IsolatedRunnerHost,
@@ -26,7 +37,111 @@ export {
 export {
 	createHostedRelayRuntime,
 	type HostedInboxStore,
+	type HostedRelayTickTiming,
 } from "./hosted-runtime.js";
+export { signIngressForward, verifyIngressForward } from "./ingress-forward.js";
+export {
+	isIsolatedContainerOffer,
+	isIsolatedHostOffer,
+	isSandboxOffer,
+} from "./isolated-backend.js";
+export { createCliDockerDriver } from "./isolated-worker/cli-docker-driver.js";
+export { createCompositeIsolatedHost } from "./isolated-worker/composite-host.js";
+export {
+	createIsolatedContainerController,
+	type IsolatedContainerController,
+	type IsolatedWorkerStore,
+} from "./isolated-worker/container-controller.js";
+export {
+	countInFlightWorkerLeases,
+	parseWorkerStopMode,
+	stopIsolatedWorker,
+	type WorkerStopMode,
+	waitForIsolatedWorkerDrain,
+	workerOfferKeys,
+} from "./isolated-worker/daemon-shutdown.js";
+export {
+	createDepsImageEnsurer,
+	type DepsImageAction,
+	type DepsImageDockerPort,
+	type DepsImageEnsureResult,
+	type DepsImageEnsurerOptions,
+	type DepsImageEvent,
+	type DepsImageFileSystemPort,
+	type DepsImageGitPort,
+	type DepsImageProcessPort,
+	type DepsImageProcessRequest,
+	defaultDepsRoot,
+} from "./isolated-worker/deps-image.js";
+export {
+	type BoxGitMirror,
+	type BoxGitMirrorEnsureResult,
+	boxGitMirrorPath,
+	createBoxGitMirror,
+} from "./isolated-worker/git-mirror.js";
+export {
+	createGithubJobPoller,
+	createPollLogFilter,
+	describeWaitingJobs,
+	type GithubJobPollerOptions,
+	type GithubJobPollSummary,
+	type GithubReadFailure,
+	type WaitingJob,
+} from "./isolated-worker/github-job-poller.js";
+export {
+	selectWorkerImagesForDeletion,
+	selectWorkerImageTagsForDeletion,
+	type WorkerImage,
+} from "./isolated-worker/image-gc.js";
+export {
+	createWorkerMemoryAdmission,
+	type MemoryAdmissionLog,
+	type WorkerMemoryAdmission,
+} from "./isolated-worker/memory-admission.js";
+export {
+	type JobMemoryRequest,
+	memoryClassForJob,
+	memoryRequestForJob,
+	parseAvailableMemoryMb,
+	readAvailableMemoryMb,
+	readHostMemory,
+	resolveWorkerMemoryConfig,
+	type WorkerMemoryClassName,
+	type WorkerMemoryConfig,
+} from "./isolated-worker/memory-classes.js";
+export {
+	createMemoryPeaks,
+	learnedReservationMb,
+	type MemoryPeakHistories,
+	type MemoryPeakHistory,
+	type MemoryPeaks,
+} from "./isolated-worker/memory-peaks.js";
+export { createPnpmStoreMaintenance } from "./isolated-worker/pnpm-store.js";
+export {
+	attachPostgresPoolErrorHandler,
+	formatPoolErrorLog,
+	redactPoolErrorMessage,
+} from "./isolated-worker/postgres-pool.js";
+export { createRetiredWorkDirectorySweeper } from "./isolated-worker/retired-work-directory-sweeper.js";
+export { singleFlight } from "./isolated-worker/single-flight.js";
+export {
+	createNodeWorkerStorageFileSystem,
+	createWorkerStorageAdmission,
+	type WorkerStorageAdmission,
+} from "./isolated-worker/storage-admission.js";
+export { resolveWorkerSlotConfig } from "./isolated-worker/worker-slots.js";
+export {
+	defaultWorkerDatabasePath,
+	resolveWorkerStorePlan,
+	type WorkerStoreChoice,
+	type WorkerStorePlan,
+} from "./isolated-worker/worker-store.js";
+export {
+	createJobDurations,
+	type JobDurations,
+	type JobObservation,
+} from "./job-durations.js";
+export { createJobPollAdmissionWorker } from "./job-poll-admission.js";
 export { startRelayFromEnvironment } from "./main.js";
 export {
 	createGithubOidcVerifier,
@@ -43,6 +158,7 @@ export {
 	type CiProjectEnvironment,
 	type CiSecretPhase,
 	type CiSecretRequirement,
+	type CiWorkerStore,
 	type ConfiguredCiRelayOptions,
 	ciEnvironmentPolicySha256,
 	ciEnvironmentSecretsSha256,
@@ -52,6 +168,7 @@ export {
 	requiredCiSecrets,
 	selectCiEnvironment,
 } from "./project-config.js";
+export { loadCiProjectFromDirectory } from "./project-config-loader.js";
 export {
 	type CiResolvedSecrets,
 	type CiSecretResolver,
@@ -64,6 +181,24 @@ export {
 	PostgresQueuedJobRepairClaims,
 } from "./queued-job-repair.js";
 export { Relay } from "./relay.js";
+export {
+	assertRelayOriginAllowed,
+	CI_PROJECT_LOCAL_OVERRIDE_PATH,
+	type CiJobAdmission,
+	type CiWebhookRoutingContext,
+	DEFAULT_CI_PROJECT_PATH,
+	inferJobAdmission,
+	isForkPullRequestRun,
+	loadCiProjectConfigDocument,
+	mergeCiProjectLocalOverlay,
+	parseCiProjectSelection,
+	type ResolvedCiRelayRoute,
+	relayWebhookPath,
+	resolveCiConfigRefForRun,
+	resolveCiRelayRoute,
+	resolveExplicitCiEnvironmentName,
+	selectEnvironmentForWebhook,
+} from "./relay-routing.js";
 export { createRelayRequestHandler, createRelayServer } from "./server.js";
 export {
 	createRelayService,
@@ -71,6 +206,11 @@ export {
 	type RelayServiceOptions,
 } from "./service.js";
 export { LeaseStore } from "./store.js";
+export {
+	type CiProjectContentFetcher,
+	createGithubCiProjectFetcher,
+	createWebhookIngressHandler,
+} from "./webhook-ingress.js";
 export {
 	createWebhookRepair,
 	PostgresWebhookRepairClaims,

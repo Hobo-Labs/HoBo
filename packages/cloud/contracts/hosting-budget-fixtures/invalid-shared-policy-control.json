@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "hobo.budget-policy/v1",
+  "tenantId": "tenant",
+  "budgetId": "budget",
+  "periodId": "period",
+  "revision": "r1",
+  "workloads": ["hosting", "ci"],
+  "currency": "USD",
+  "limitMicros": 1000,
+  "objective": "min-cost",
+  "enforcement": "strict",
+  "periodKind": "manual",
+  "constraints": [],
+  "ignoreMissingConstraints": true
+}

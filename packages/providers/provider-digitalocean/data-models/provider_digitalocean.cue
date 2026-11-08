@@ -18,6 +18,8 @@ package hobo
 }
 
 #CostFact: {
+	pricingStatus?: "unknown" | "estimate" | "verified-zero"
+	if pricingStatus != _|_ {if pricingStatus == "verified-zero" {marginalPrice: =~"^0\\.0+$"}}
 	port:             string & !=""
 	sku:              =~"^digitalocean\\."
 	unit:             string & !=""
@@ -50,9 +52,9 @@ package hobo
 }
 
 #YardBindingRow: {
-	profile:          =~"^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*/v[1-9][0-9]*$"
-	productId?:       =~"^digitalocean\\.[a-z0-9-]+/v[1-9][0-9]*$"
-	connectivityId?:  string & !=""
+	profile:         =~"^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*/v[1-9][0-9]*$"
+	productId?:      =~"^digitalocean\\.[a-z0-9-]+/v[1-9][0-9]*$"
+	connectivityId?: string & !=""
 }
 
 #ResolvedResource: {

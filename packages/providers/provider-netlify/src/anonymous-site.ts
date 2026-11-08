@@ -42,9 +42,8 @@ import {
 	type ExpirySource,
 	parseAnonymousDeployOutput,
 } from "./deploy-output.js";
+import { runIsolatedNetlifyAnonymousDeploy } from "./isolated-deploy.js";
 import {
-	anonymousDeployEnv,
-	buildAnonymousDeployArgv,
 	NETLIFY_CLI_PACKAGE_SPEC,
 	type ProcessRunner,
 } from "./process-runner.js";
@@ -212,25 +211,25 @@ export function createNetlifyAnonymousSiteDriver(
 				);
 			}
 
-			const argv = buildAnonymousDeployArgv({
-				publishDir: input.publishDir,
-				...(input.siteName !== undefined
-					? { siteName: input.siteName }
-					: undefined),
-				...(input.deployMessage !== undefined
-					? { deployMessage: input.deployMessage }
-					: undefined),
-			});
 			const createdAtMs = input.createdAtMs ?? options.clock();
-			const result = await options.runner.run(argv, {
-				cwd: input.workDir,
-				env: anonymousDeployEnv(options.env ?? {}),
+			const startedAtMs = options.clock();
+			const result = await runIsolatedNetlifyAnonymousDeploy({
+				runner: options.runner,
+				workDir: input.workDir,
+				publishDir: input.publishDir,
+				env: options.env ?? {},
 				timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
 				maxOutputBytes: options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
+				...(input.siteName === undefined
+					? undefined
+					: { siteName: input.siteName }),
+				...(input.deployMessage === undefined
+					? undefined
+					: { deployMessage: input.deployMessage }),
 			});
 			const observation = parseAnonymousDeployOutput({
 				result,
-				observedAtMs: options.clock(),
+				observedAtMs: startedAtMs,
 			});
 
 			const plan = compileAnonymousClaimPlan({

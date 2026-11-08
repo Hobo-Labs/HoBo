@@ -1,0 +1,30 @@
+syntax = "proto3";
+package hobo.stations.v1;
+
+// Persisted under one fenced service actor before external effects.
+message RoutingControlStateRecord {
+  string service = 1;
+  string tenant_id = 2;
+  string station_id = 3;
+  string incumbent_backend_id = 4;
+  uint32 revision = 5;
+  optional double last_swap_at_ms = 6;
+  repeated double swap_times_ms = 7;
+  string pending_plan_id = 8;
+  string pending_backend_id = 9;
+  string challenger_backend_id = 10;
+  string savings_since = 11;
+  uint32 pending_percent = 12;
+  string pending_phase = 13;
+  double pending_started_at_ms = 14;
+  string pending_plan_json = 15; // exact approved artifact for reconciliation
+  uint32 state_version = 16; // advances on every CAS checkpoint, independently of plan revision
+}
+
+message CutoverHealthObservationRecord {
+  bool healthy = 1;
+  string observed_at = 2;
+  string observation_id = 3;
+  string backend_id = 4;
+  string plan_id = 5;
+}

@@ -46,6 +46,7 @@ function makeCapability(classKey: InitialCapabilityPort): Capability {
 				unit: "request",
 				// A real zero: a local pod produces no vendor invoice.
 				marginalPrice: "0",
+				pricingStatus: "verified-zero",
 			};
 		},
 	};

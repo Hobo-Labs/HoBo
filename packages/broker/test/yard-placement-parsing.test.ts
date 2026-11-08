@@ -82,8 +82,12 @@ describe("parseYardShape", () => {
 
 	test("a non-string providerId is dropped rather than coerced", () => {
 		expect("providerId" in parseYardPlacement({ providerId: 42 })).toBe(false);
-		expect("providerId" in parseYardPlacement({ providerId: null })).toBe(false);
-		expect("providerId" in parseYardPlacement({ providerId: ["aws"] })).toBe(false);
+		expect("providerId" in parseYardPlacement({ providerId: null })).toBe(
+			false,
+		);
+		expect("providerId" in parseYardPlacement({ providerId: ["aws"] })).toBe(
+			false,
+		);
 	});
 
 	test("a real providerId and runtimeId are preserved", () => {
@@ -112,7 +116,10 @@ describe("parseYardShape", () => {
 	});
 
 	test("a non-array list field falls back to the empty default", () => {
-		const parsed = parseYardPlacement({ regions: "us-west", require: { a: 1 } });
+		const parsed = parseYardPlacement({
+			regions: "us-west",
+			require: { a: 1 },
+		});
 		expect(parsed.regions).toEqual([]);
 		expect(parsed.require).toEqual([]);
 	});
@@ -191,9 +198,9 @@ describe("parseYardShape", () => {
 		expect(() => parseYardPlacement({ properties: { fn: () => 1 } })).toThrow(
 			TypeError,
 		);
-		expect(() => parseYardPlacement({ properties: { sym: Symbol("x") } })).toThrow(
-			TypeError,
-		);
+		expect(() =>
+			parseYardPlacement({ properties: { sym: Symbol("x") } }),
+		).toThrow(TypeError);
 	});
 
 	test("a non-array camps field yields no camps", () => {
@@ -456,8 +463,8 @@ describe("the runtime catalog", () => {
 	function runtime(
 		overrides: Partial<YardRuntimeRegistration> & { runtimeId: string },
 	): YardRuntimeRegistration {
-			// SAFETY: the fixture supplies every required runtime registration field.
-			return {
+		// SAFETY: the fixture supplies every required runtime registration field.
+		return {
 			schemaVersion: "hobo.yard-runtime/v1",
 			providerId: "aws",
 			version: "1.0.0",
@@ -467,7 +474,7 @@ describe("the runtime catalog", () => {
 			generatorConnectorId: "conn-1",
 			requiredPermissions: [],
 			...overrides,
-			} as YardRuntimeRegistration;
+		} as YardRuntimeRegistration;
 	}
 
 	test("the snapshot orders by descending priority then id", () => {
@@ -539,7 +546,9 @@ describe("the runtime catalog", () => {
 });
 
 describe("planYardGeneration", () => {
-	const REQUESTED_PLACEMENT: YardPlacement = parseYardPlacement({ providerId: "aws" });
+	const REQUESTED_PLACEMENT: YardPlacement = parseYardPlacement({
+		providerId: "aws",
+	});
 
 	function policy(
 		overrides: Partial<YardGenerationPolicy> = {},
@@ -564,15 +573,17 @@ describe("planYardGeneration", () => {
 				generatorConnectorId: "conn-1",
 				requiredPermissions: [],
 				...r,
-				} as YardRuntimeRegistration);
+			} as YardRuntimeRegistration);
 		}
 		return cat.snapshot();
 	}
 
-	function plan(overrides: Partial<Parameters<typeof planYardGeneration>[0]> = {}) {
+	function plan(
+		overrides: Partial<Parameters<typeof planYardGeneration>[0]> = {},
+	) {
 		return planYardGeneration({
 			ownerTenantId: "t1",
-			"requestedLayout": REQUESTED_PLACEMENT,
+			requestedLayout: REQUESTED_PLACEMENT,
 			runtimeCatalog: catalogWith({}),
 			policy: policy(),
 			allowGenerationRequested: true,
@@ -608,7 +619,7 @@ describe("planYardGeneration", () => {
 	test("a shape with no provider is refused", () => {
 		// There is nothing to generate against, and a plan built without one
 		// would carry an empty credential scope.
-		const result = plan({ "requestedLayout": parseYardPlacement({}) });
+		const result = plan({ requestedLayout: parseYardPlacement({}) });
 		expect(result.allowed).toBe(false);
 		expect(result.allowed === false && result.reason).toContain("providerId");
 	});
@@ -781,8 +792,8 @@ describe("the generation saga", () => {
 			schemaVersion: "hobo.yard-generation-plan/v1",
 			attemptId: `attempt-${key}`,
 			idempotencyKey: `sha256:${key.padEnd(64, "0")}`,
-			"requestedLayout": parseYardPlacement({ providerId: "aws" }),
-			"requestedLayoutHash": contentHashOf({ providerId: "aws" }),
+			requestedLayout: parseYardPlacement({ providerId: "aws" }),
+			requestedLayoutHash: contentHashOf({ providerId: "aws" }),
 			runtimeId: "rt-0",
 			providerId: "aws",
 			generatorConnectorId: connectorId,
@@ -791,7 +802,7 @@ describe("the generation saga", () => {
 			credentialScopeRef: "scope://conn-1/aws",
 			inputs: { ownerTenantId: "t1", providerId: "aws", runtimeId: "rt-0" },
 			planHash: contentHashOf({ key }),
-		// SAFETY: this fixture supplies the complete generation plan contract.
+			// SAFETY: this fixture supplies the complete generation plan contract.
 		}) as YardGenerationPlan;
 	}
 

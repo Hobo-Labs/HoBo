@@ -1,6 +1,11 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
 import {
+	BudgetLedgerSnapshotSchema,
 	buildDeploymentRequestFromParts,
 	contentHashOf,
 	createAwsYardEventStoreFoldResolver,
@@ -10,15 +15,20 @@ import {
 	createGcpYardEventStoreFoldResolver,
 	createLocalHostCatalog,
 	createLocalYardEventStoreFoldResolver,
+	createSqliteBudgetAdmissionAuthority,
 	createYardRuntimeCatalog,
 	DEFAULT_YARD_GENERATION_POLICY,
 	EVENT_STORE_SLOT,
 	foldYardEventStoreAll,
+	HostingPolicyProofSchema,
+	HostingQuoteSchema,
 	inventorySnapshotFromFold,
 	LOCAL_HOST_PROVIDER_ID,
 	localYardInstance,
+	planYardGeneration,
 	resolveBindleDeployment,
 	YARD_EVENTS,
+	type YardFirstPlacementDeps,
 	yardEvent,
 } from "../src/index.js";
 
@@ -183,7 +193,13 @@ describe("yard event-store folds + provider resolvers", () => {
 		).toBe(true);
 	});
 
-	it("Azure generation connector + fold path when policy allows", async () => {
+	it.each([
+		"normal",
+		"release-race",
+		"claimed-retry",
+		"cancel-before-claim",
+		"expiry-after-claim",
+	])("funds Azure generation before provider effects: %s", async (mode) => {
 		const catalog = createLocalHostCatalog();
 		// Extend catalog with azure wildcard so residual placement can succeed after gen.
 		const azureCatalog = {
@@ -235,7 +251,7 @@ describe("yard event-store folds + provider resolvers", () => {
 			requireApproval: false,
 		};
 
-		const connector = createAzureYardGenerationConnector();
+		const nativeConnector = createAzureYardGenerationConnector();
 		const request = buildDeploymentRequestFromParts({
 			bindleName: "shop",
 			providerId: "azure",
@@ -246,21 +262,161 @@ describe("yard event-store folds + provider resolvers", () => {
 			],
 		});
 
-		const result = await resolveBindleDeployment(request, {
-			brokerId: "broker:azure-gen",
-			catalog: azureCatalog,
-			runtimeCatalog: runtimes,
-			generationPolicy: allowPolicy,
-			connectors: new Map([[connector.id, connector]]),
-			seedLocalYard: false,
+		const generation = planYardGeneration({
+			ownerTenantId: "local",
+			requestedLayout: request.yard.requestedLayout,
+			runtimeCatalog: runtimes.snapshot(),
+			policy: allowPolicy,
+			allowGenerationRequested: true,
+			attemptId: `gen-${request.requestId}`,
 		});
+		if (!generation.allowed) throw new Error("fixture generation denied");
+		const directory = mkdtempSync(
+			join(tmpdir(), "hobo-funded-yard-generation-"),
+		);
+		let now = "2026-10-29T12:00:00Z";
+		const authority = createSqliteBudgetAdmissionAuthority({
+			path: join(directory, "budget.sqlite"),
+			now: () => now,
+			snapshot: create(BudgetLedgerSnapshotSchema, {
+				identity: {
+					tenantId: "local",
+					budgetId: "hosting",
+					periodId: "2026-10",
+					policyRevision: "r1",
+				},
+				limitMicros: 100,
+				observedAt: "2026-10-29T00:00:00Z",
+				validUntil: "2026-11-01T00:00:00Z",
+			}),
+		});
+		const quote = create(HostingQuoteSchema, {
+			quoteId: "azure-generation",
+			yardId: generation.plan.expectedYardId,
+			providerId: "azure",
+			ownerTenantId: "local",
+			currency: "USD",
+			totalMicros: 10,
+			liabilityBoundMicros: 20,
+			components: [{ name: "provision-and-runtime", costMicros: 10 }],
+			requestDigest: contentHashOf(request),
+			observedAt: "2026-10-29T00:00:00Z",
+			validUntil: "2026-11-01T00:00:00Z",
+		});
+		const reservationId = `hosting:broker:azure-gen:${request.requestId}`;
+		let provisionCalls = 0;
+		let inspectCalls = 0;
+		const connector = {
+			...nativeConnector,
+			async provision(plan: Parameters<typeof nativeConnector.provision>[0]) {
+				provisionCalls++;
+				expect(authority.lookup(reservationId)?.executionDigest).toBe(
+					contentHashOf({
+						kind: "yard-generation",
+						requestDigest: quote.requestDigest,
+						planHash: plan.planHash,
+					}),
+				);
+				if (mode === "release-race") {
+					const competitor = createSqliteBudgetAdmissionAuthority({
+						path: join(directory, "budget.sqlite"),
+						snapshot: authority.read(now),
+						now: () => now,
+					});
+					try {
+						expect(() =>
+							competitor.release(reservationId, true, "cancelled-before-claim"),
+						).toThrow("execution-claimed");
+					} finally {
+						competitor.close();
+					}
+				}
+				return nativeConnector.provision(plan);
+			},
+			async inspect(attemptId: string) {
+				inspectCalls++;
+				return nativeConnector.inspect(attemptId);
+			},
+		};
+		const financial = {
+			...authority,
+			claimExecution(input: Parameters<typeof authority.claimExecution>[0]) {
+				const claimed = authority.claimExecution(input);
+				if (mode === "expiry-after-claim") now = "2026-11-02T00:00:00Z";
+				return claimed;
+			},
+			reserve(input: Parameters<typeof authority.reserve>[0]) {
+				const reservation = authority.reserve(input);
+				if (mode === "cancel-before-claim")
+					authority.release(reservationId, true, "cancelled-before-claim");
+				return reservation;
+			},
+		};
+		try {
+			const deps: YardFirstPlacementDeps = {
+				brokerId: "broker:azure-gen",
+				hostingBudget: {
+					authority: financial,
+					quotes: [quote],
+					now: () => now,
+				},
+				authorizeHosting(input) {
+					return {
+						gate: { effect: "allow", reasons: [], events: [] },
+						proof: create(HostingPolicyProofSchema, {
+							requestDigest: input.requestDigest,
+							quoteId: input.quote.quoteId,
+							identity: input.identity,
+							policyHash: "approved-azure-policy",
+							effect: "allow",
+							obligationsSatisfied: true,
+							evidenceRef: "gatekeeper:approved",
+						}),
+					};
+				},
+				catalog: azureCatalog,
+				runtimeCatalog: runtimes,
+				generationPolicy: allowPolicy,
+				connectors: new Map([[connector.id, connector]]),
+				seedLocalYard: false,
+			};
+			const result = await resolveBindleDeployment(request, deps);
+			if (mode === "cancel-before-claim") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(authority.read(now).reservedMicros).toBe(0);
+				return;
+			}
+			if (mode === "expiry-after-claim") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)).toMatchObject({
+					status: "held",
+					reservedMicros: 20,
+				});
+				return;
+			}
 
-		expect(result.outcome).toBe("resolved");
-		expect(result.generationAttemptId).toBeTruthy();
-		expect(
-			result.events.some((e) => e.type === YARD_EVENTS.GenerationStarted),
-		).toBe(true);
-		expect(result.events.some((e) => e.type === YARD_EVENTS.Ready)).toBe(true);
-		expect(result.receipt?.selectedProviderId).toBe("azure");
+			expect(result.outcome).toBe("resolved");
+			expect(result.generationAttemptId).toBeTruthy();
+			expect(
+				result.events.some((e) => e.type === YARD_EVENTS.GenerationStarted),
+			).toBe(true);
+			expect(result.events.some((e) => e.type === YARD_EVENTS.Ready)).toBe(
+				true,
+			);
+			expect(result.receipt?.selectedProviderId).toBe("azure");
+			expect(authority.read(now).reservedMicros).toBe(20);
+			if (mode === "claimed-retry") {
+				const retry = await resolveBindleDeployment(request, deps);
+				expect(retry.outcome).toBe("resolved");
+				expect(provisionCalls).toBe(1);
+				expect(inspectCalls).toBe(1);
+				expect(authority.read(now).reservedMicros).toBe(20);
+			}
+		} finally {
+			authority.close();
+			rmSync(directory, { recursive: true, force: true });
+		}
 	});
 });

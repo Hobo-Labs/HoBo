@@ -82,6 +82,31 @@ function programFor(deploymentId: string, resourceId: string): IacProgram {
 	};
 }
 
+describe("fixture deployment boundary and confirmed cleanup", () => {
+	it("does not substitute the committed hello fixture for a production artifact", async () => {
+		const fx = mockFetch();
+		const provider = createCloudflareDeployProvider({
+			token: "fixture-token",
+			accountId: "account",
+			fetch: fx.fetch,
+		});
+		await expect(provider.apply(programFor("deploy", "app"))).rejects.toThrow(
+			"fixtureArtifact:true",
+		);
+		expect(fx.calls).toEqual([]);
+	});
+	it("does not treat a DELETE acknowledgement as confirmed retirement", async () => {
+		const fx = mockFetch();
+		const client = createCloudflareClient({
+			token: "fixture-token",
+			accountId: "account",
+			fetch: fx.fetch,
+		});
+		await expect(client.deleteWorker("worker")).rejects.toThrow("unconfirmed");
+		expect(fx.calls.map((call) => call.method)).toEqual(["DELETE", "GET"]);
+	});
+});
+
 describe("createCloudflareClient.uploadWorker (mocked fetch, no network)", () => {
 	it("PUTs the script-upload URL with Bearer auth + a multipart body naming the ESM module", async () => {
 		const { fetch, calls } = mockFetch("acme");
@@ -246,6 +271,7 @@ describe("createCloudflareDeployProvider (mocked fetch, no network)", () => {
 	it("apply uploads the committed worker.mjs and maps the workers.dev URL into IacOutputs", async () => {
 		const { fetch, calls } = mockFetch("acme");
 		const provider = createCloudflareDeployProvider({
+			fixtureArtifact: true,
 			token: "tok",
 			accountId: "acct",
 			fetch,
@@ -270,6 +296,7 @@ describe("createCloudflareDeployProvider (mocked fetch, no network)", () => {
 	it("apply is memoized per deploymentId (one real Worker upload per plan)", async () => {
 		const { fetch, calls } = mockFetch("acme");
 		const provider = createCloudflareDeployProvider({
+			fixtureArtifact: true,
 			token: "tok",
 			accountId: "acct",
 			fetch,
@@ -289,6 +316,7 @@ describe("createCloudflareDeployProvider (mocked fetch, no network)", () => {
 	it("preview is a dry run and does not call fetch", async () => {
 		const { fetch, calls } = mockFetch("acme");
 		const provider = createCloudflareDeployProvider({
+			fixtureArtifact: true,
 			token: "tok",
 			accountId: "acct",
 			fetch,
@@ -313,7 +341,7 @@ describe("selectIacProvider env-gated selection (Cloudflare + Vercel + fallback)
 
 	let savedCfToken: string | undefined;
 	let savedCfAccount: string | undefined;
-	let savedVercel = process.env.VERCEL_TOKEN;
+	const savedVercel = process.env.VERCEL_TOKEN;
 
 	afterEach(() => {
 		const restore = (key: string, value: string | undefined): void => {
@@ -334,7 +362,7 @@ describe("selectIacProvider env-gated selection (Cloudflare + Vercel + fallback)
 			...pulumiDeps,
 			cloudflareFetch: cfFetch,
 		});
-		expect(provider.id).toMatch(/^cloudflare-deploy:/);
+		expect(provider.id).toMatch(/^resolver-backed:/);
 	});
 
 	it("Cloudflare takes precedence over Vercel when both credentials are present", () => {
@@ -347,7 +375,7 @@ describe("selectIacProvider env-gated selection (Cloudflare + Vercel + fallback)
 			},
 			cloudflareFetch: cfFetch,
 		});
-		expect(provider.id).toMatch(/^cloudflare-deploy:/);
+		expect(provider.id).toMatch(/^resolver-backed:/);
 	});
 
 	it("falls back to Vercel when only VERCEL_TOKEN is set (CF envs absent)", () => {
@@ -355,7 +383,7 @@ describe("selectIacProvider env-gated selection (Cloudflare + Vercel + fallback)
 			...pulumiDeps,
 			env: { VERCEL_TOKEN: "v" },
 		});
-		expect(provider.id).toMatch(/^vercel-deploy:/);
+		expect(provider.id).toMatch(/^resolver-backed:/);
 	});
 
 	it("requires BOTH CF envs — the token alone (no account id) does not select Cloudflare", () => {

@@ -77,9 +77,10 @@ The plaintext token exists in exactly one function scope. `captureCredentials`
 deposits it into the injected `SecretCustodyPort` and keeps only the `SecretRef`;
 nothing downstream ever sees the value.
 
-- `StartRedisDatabase.token` is the only field in the package holding credential
-  material. To render a parse result, use `describeStartRedisDatabase`, which
-  reports the token's *byte length* and nothing else.
+- `StartRedisDatabase.token` holds the REST token. The native database UUID,
+  console URL and metrics URL are also privileged: anonymous credential
+  retrieval is keyed by that UUID. Keep parser and driver working records
+  private, and use the custody-required public serializers for public output.
 - A custody port that fails deposits nothing and raises
   `SECRET_CUSTODY_UNAVAILABLE`; one that hands back something that is not a
   valid reference raises `SECRET_REFERENCE_INVALID`. Neither degrades to a
@@ -88,11 +89,16 @@ nothing downstream ever sees the value.
   detail **at construction time**, not when someone remembers to call it. The
   structural rule is the load-bearing one: an Upstash token is a long base64url
   string with no prefix to match, so any unbroken run of 40+ token characters is
-  treated as credential material. A UUID is 36 characters and survives; a
-  hostname has dots and survives.
-- `toProvisionReceipt` and `toProviderFacts` build their output by projection
-  rather than by spreading the record, then re-scan it with
-  `assertNoCredentialMaterial` and refuse to emit on a hit.
+  treated as credential material. Native database UUIDs are also bearer
+  capabilities: knowing one permits anonymous credential retrieval. The public
+  serializers separately compare against the known native identity and claim URL.
+- `await toProvisionReceipt(record, exposure)` and
+  `await toProviderFacts(record, exposure)` require secret custody, tenant/account/
+  incarnation scope and a host-secret-backed operation-key deriver. Version 2
+  output carries opaque physical IDs, native identity locators and claim locators;
+  raw native IDs, claim URLs and their occurrences inside input resource refs
+  never enter public receipts or facts. Both projections re-scan their output
+  and reject a custody locator that republishes a native capability.
 
 Tests assert the token appears in no receipt, no fact, no binding, no error
 message, and no fixture.
@@ -152,7 +158,7 @@ There is none, and `destroy` says so out loud rather than pretending:
 
 | Situation | Outcome |
 |---|---|
-| Expiry has already passed | `{ destroyed: true }` — the provider reaped it, which is accurate and keeps a teardown loop from stalling on a database that is provably gone |
+| Expiry has already passed | `{ destroyed: false }` — retirement remains unverified until independent provider evidence confirms absence and final usage |
 | Unclaimed and still live | throws `CLEANUP_FAILED` — no delete endpoint exists |
 | Claimed | throws `CLEANUP_FAILED` — it belongs to the owning account now, and only that console can delete it |
 
@@ -265,7 +271,7 @@ and what this package contributes is one honest observation per interaction.
    `RotateCapabilityBinding`, `ExpireGuestLease` — is what a caller issues.
    `provision()`, `observe()`, `verifyOwnership()`, `attestClaim()`, and
    `attestRotation()` are the effectful halves those commands drive here.
-2. `toProviderFacts(record)` returns this package's observations
+2. `await toProviderFacts(record, exposure)` returns this package's observations
    (`provider.upstash.database.provisioned` / `.adopted`,
    `provider.upstash.claim.pending-rotation` / `.completed`,
    `provider.upstash.lease.expired`). They are locator-only facts, not durable
@@ -434,3 +440,42 @@ because the value happened to be small.
 | `src/_generated/` | `pnpm run codegen` output; never hand-edited |
 | `contracts/` | the `start-redis` pact and what it does and does not verify |
 | `data-models/` | the protobuf wire view plus the CUE invariants for the parsed response, record, and receipt |
+
+## Hosting budget execution
+
+The reviewed live response now includes `Redis URL`. The parser preserves the five-field
+v1 contract and recognizes the additional credential as `upstash.start-redis.markdown/v2`.
+The native URI must use TLS, the exact REST endpoint hostname and port 6379, with no
+query, fragment or path. It is deposited under custody purpose `redis-protocol-url`;
+records and receipts contain only `redisProtocolUrlRef`. Unknown or duplicate fields
+still fail closed. Tests cover independent native credentials, custody, secret-free
+summaries/receipts/facts and malicious endpoint substitution.
+
+`destroy(record, context)` can consume an injected independent `retirement` observation.
+Only fresh, exact-scope terminal absence and final usage return `destroyed: true`, with
+retirement and usage evidence references. A passed expiry alone retains financial
+exposure. The anonymous surface still supplies no deletion endpoint. Native Redis and
+REST connection material remain outside event payloads.
+
+The real fetch transport delegates to core's streaming body limit and total deadline;
+retries wait according to policy and `Retry-After` rather than busy-looping.
+
+`createUpstashTemporaryRedisResolver` composes the actual temporary Redis driver
+with the shared resolver protocol, a durable CAS repository and mutation journal.
+Keys derive from tenant/account/deployment-incarnation/product/logical-resource
+scope, so reused author keys cannot adopt another deployment's database. Reads
+use `observeMetrics` and the native GET metrics endpoint; they never re-POST a
+create. Claim URLs and capability bindings enter custody and outcomes contain
+locators only. The current response's optional native `rediss://` connection URL
+is deposited with purpose `redis-protocol-url` and never appears in a receipt.
+A native expiry or a missing metrics record alone does not prove terminal
+retirement or final billing, and the anonymous API publishes no delete endpoint.
+
+Public serialization uses `PublicSerializationOptions`: `{ custody, scope,
+deriveOperationKey }`. Obtain the deriver from
+`createClaimableOperationKeyDeriver(privateHostKeyBytes)` in `@hobo/core`; capture
+at least 256 private bits from the host vault and pin their version. Public run
+IDs or author seeds are not suitable key material. Calls without custody refuse
+before producing output, and custody failures are masked without exposing their
+causes. Raw `StartRedisDatabase` and driver working records are privileged host
+data; they must stay in private custody rather than ordinary event streams.

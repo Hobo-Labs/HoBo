@@ -182,6 +182,13 @@ constraints with valid/invalid fixtures. `contracts/checks-cli.pact.json` and
 isolation, preserved toolchain settings, exit status, and side-effect-free plans.
 These consumer-contract tests run without a live Dagger engine.
 
+The process-group tests wait on events, never on the clock. The fixture CLI or
+its transport child connects to a Unix socket the test owns (`FIXTURE_PROBE`)
+once it is ready, and the kernel closes that connection when the process dies.
+That gives the test both "ready to abort" and "really stopped" without polling
+files or `/proc`. Their timeout is only a hang guard: a stalled host makes them
+slower, never red.
+
 The separate [live acceptance lane](acceptance/README.md) runs the **compiled**
 CLI against a real Dagger engine and digest-pinned container commands. It verifies
 passing/failing checks, exclusions, unmatched filters, named overlays, uncommitted

@@ -23,7 +23,9 @@ const passthrough = process.argv.slice(3).filter((a) => a !== "--" && a !== "");
 
 function failInstall(reason: string): never {
 	console.error(`fail  ${reason}`);
-	console.error("next  corepack enable pnpm && pnpm install");
+	console.error(
+		"next  bash scripts/bootstrap-dev.sh --project-only && pnpm run install:check",
+	);
 	console.error(
 		"hint  Workspace scripts need local deps (tsx). Install once, then re-run.",
 	);

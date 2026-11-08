@@ -190,6 +190,24 @@ async function codeOf(run: () => Promise<void>): Promise<string> {
 	return "NO_ERROR_THROWN";
 }
 
+it("never retargets a known physical resource through changed desired name or namespace", async () => {
+	const fake = fakeTransport(() =>
+		json(200, { metadata: { name: "victim", namespace: "other" } }),
+	);
+	const resolver = resolverFor(KUBERNETES_DEPLOYMENT_PRODUCT_ID);
+	const moved = request({
+		slot: "service",
+		productId: KUBERNETES_DEPLOYMENT_PRODUCT_ID,
+		logicalId: "app",
+		physicalId: "owned/app",
+		desired: { namespace: "other", name: "victim", spec: {} },
+	});
+	await expect(resolver.delete(moved, fake.transport)).rejects.toThrow(
+		/physical identity/u,
+	);
+	expect(fake.calls).toHaveLength(0);
+});
+
 async function messageOf(run: () => Promise<void>): Promise<string> {
 	try {
 		await run();

@@ -17,11 +17,13 @@
 		"access": "public"
 	},
 	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/bindings": "workspace:*",
 		"@hobo/bindles": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/claims": "workspace:*",
 		"@hobo/core": "workspace:*",
+		"@hobo/contracts": "workspace:*",
 		"@hobo/data": "workspace:*",
 		"@hobo/events": "workspace:*",
 		"@hobo/identity": "workspace:*",

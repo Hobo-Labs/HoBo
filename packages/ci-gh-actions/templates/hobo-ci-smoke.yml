@@ -10,6 +10,16 @@ on:
         required: false
         type: boolean
         default: false
+      dagger_acceptance:
+        description: Run @hobo/ci-dagger live acceptance (requires Dagger CLI on runner)
+        required: false
+        type: boolean
+        default: false
+      dagger_bin:
+        description: Path to dagger executable on the runner
+        required: false
+        type: string
+        default: dagger
 permissions:
   contents: read
 concurrency:
@@ -17,7 +27,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   smoke:
-    runs-on: hobo
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 10
     steps:
       - name: Verify HoBo JIT runner
@@ -33,11 +43,13 @@ jobs:
         if: ${{ !inputs.jit_only }}
         with:
           ref: ${{ github.sha }}
+          clean: false
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
         if: ${{ !inputs.jit_only }}
         with:
-          node-version: '24'
+          install: true
+          cache: true
       - name: Verify runner identity and checked-out revision
         if: ${{ !inputs.jit_only }}
         env:
@@ -80,5 +92,37 @@ jobs:
         with:
           name: hobo-runner-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
           path: hobo-ci-acceptance.json
+          if-no-files-found: error
+          retention-days: 7
+  dagger-native:
+    if: ${{ inputs.dagger_acceptance && !inputs.jit_only }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          clean: false
+          submodules: recursive
+          persist-credentials: false
+      - run: corepack enable pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Dagger checks plan (repo config)
+        run: pnpm --filter @hobo/ci-dagger checks --plan --config .hobo/dagger.json
+      - name: Live @hobo/ci-dagger acceptance
+        run: |
+          pnpm --filter @hobo/ci-dagger test:acceptance \
+            --dagger "${{ inputs.dagger_bin }}" \
+            --output "$RUNNER_TEMP/ci-dagger-acceptance.md"
+      - name: Upload Dagger acceptance evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hobo-dagger-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-dagger-acceptance.md
           if-no-files-found: error
           retention-days: 7

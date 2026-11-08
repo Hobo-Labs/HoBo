@@ -18,7 +18,20 @@ package data_models
 	budget_cap?:           number & >=0
 	spend_to_date?:        number & >=0
 	reserved_units?:       number & >=0
+	reserved_cost?:        number & >=0
 	credits: [...#CreditGrantRecord]
+}
+
+#ReservedCreditConsumptionRecord: {
+	credit_id: string & !=""
+	units: number & >0
+}
+
+#ReservedConsumptionRecord: {
+	free_headroom: number & >=0
+	credits: [...#ReservedCreditConsumptionRecord]
+	rate_units?: number & >=0
+	concurrency_slots?: int & >=0
 }
 
 #ReservationRecord: {
@@ -28,9 +41,36 @@ package data_models
 	units:           number & >0
 	expected_seq:    int & >=0
 	committed_seq:   int & >=0
-	status:          "pending" | "confirmed" | "released" | "expired"
+	status:          "pending" | "running" | "confirmed" | "released" | "expired"
 	expires_at?:     string
 	release_reason?: string
+	reserved_cost?: number & >=0
+	actual_cost?: number & >=0
+	command_hash?: string & =~"^sha256:[a-f0-9]{64}$"
+	unit_cost?: number & >=0
+	switching_cost?: number & >=0
+	dispatch_request_hash?: string & =~"^sha256:[a-f0-9]{64}$"
+	decision_input_json?: string & !=""
+	estimated_cost?: number & >=0
+	consumption?: #ReservedConsumptionRecord
+	confirmed_seq?: int & >=0
+	released_seq?: int & >=0
+	provider_usage_seq?: int & >=0
+	started_seq?: int & >=0
+	usage_evidence_ref?: string & !=""
+}
+
+#SettlementCommandRecord: {
+	reservation_id: string & !=""
+	actual_cost?: number & >=0
+	provider_usage_seq?: int & >=0
+	usage_finalized?: bool
+	usage_evidence_ref?: string & !=""
+}
+
+#LedgerTimeAdvancedRecord: {
+	as_of: string & !=""
+	ledger_seq: int & >=0
 }
 
 #CreditLedgerViewRecord: {
@@ -70,6 +110,8 @@ package data_models
 	minimum_savings:       number & >=0
 	dwell_window:          string & !=""
 	observed_at:           string & !=""
+	savings_since?:       string & !=""
+	challenger_provider_id?: string & !=""
 }
 
 #RankedCandidateRecord: {
@@ -86,6 +128,8 @@ package data_models
 	credit_facts:            "present" | "present-empty" | "missing" | "invalid"
 	next_credit_expires_at?: string
 	rationale:               string & !=""
+	eligible:                bool
+	rejection_reason?:       string & !=""
 }
 
 #LedgerInputRecord: {

@@ -236,7 +236,9 @@ export async function reconcileResource(
 		const grant = {
 			grantId: credential.id,
 			tokenRef: `tokenref://scoped/${credential.id}`,
-			...(ctx.actor?.id !== undefined ? { svidSubject: ctx.actor.id } : undefined),
+			...(ctx.actor?.id !== undefined
+				? { svidSubject: ctx.actor.id }
+				: undefined),
 			scope: {
 				port: resource.port,
 				resource: resource.name,

@@ -92,6 +92,51 @@ npm.cmd --prefix src/draft/epic-proofs/finops-budget-routing-control-plane test
 - DX, OpsX, and FinX views share one DecisionGraph id.
 - `proof.json` pins the validated cost-degradation saga proof in this rollup; its deterministic simulation contract is unchanged.
 
+## Budget-routing safety revision
+
+The pure evaluator now parses canonical generated Protobuf inputs from
+`data-models/` before it evaluates anything. The historical `architecture/`
+files are exact mirrors, checked by a test. CUE fixtures include a complete
+valid scenario and invalid negative-budget/missing-exposure scenarios.
+
+- Numeric availability and latency are hard requirements. Candidate IDs,
+  accounting periods, monetary precision, finite measurements, and snapshot
+  content hashes are checked before scoring.
+- A proposed hosting commitment includes operation and transition cost. Its
+  conservative bound is checked against settled spend, existing commitments,
+  unresolved exposure, and a protected recovery allowance. A zero budget is a
+  real ceiling. All monetary arithmetic uses integer microdollars internally.
+- The metric registry must include all immutable system metrics. Derived
+  `weighted_sum`/`ratio` compositions and approved user compositions are
+  dependency-checked and actually evaluated. Unsupported transforms fail at
+  the parser instead of being advertised as executed. Versioned fixed
+  reference normalization prevents catalog additions from rescaling existing
+  preferences.
+- Stability evaluates the incumbent's current feasibility independently of
+  Pareto membership. Net improvement includes migration penalty; cooldown,
+  sustained challenger evidence, and windowed flip limits are separate gates.
+  An infeasible incumbent cannot be retained by an optimization hold.
+- Every decision records the actual ledger sequence, budget/period/policy
+  identity, catalog/metric content hashes, and complete input digest. Replay
+  uses those inputs and never invokes an execution adapter.
+
+Effects and resilience reuse `@hobo/contracts` (ADR-0136). Planning declares
+`pure`; the proposed external mutation declares `noRollback`, a timeout and
+bulkhead, and no mutation retry/hedge. Observations have a bounded deterministic
+retry profile. The action remains **unauthorized** until a production supervisor
+obtains a financial reservation and satisfies movement/health prerequisites.
+An unknown provider outcome requires reconciliation and observed readback.
+This proof does not implement provider execution, durable financial admission,
+or a production rollback/retirement supervisor.
+
+The loopback cutover behavior explicitly supplies mocked budget, persistence,
+and admission ports; it exercises the promoted routing implementation while
+making no claim about a cloud provider's billing or durability.
+Each applied ramp and restoration remains active until five actual proxy requests
+complete. The acceptance assertion requires at least twenty requests with zero
+failures; request counts, rather than assumed throughput during a sleep, bound
+the observation interval under concurrent validation load.
+
 ## What Is Mocked
 
 - FOCUS actuals, cost estimates, MeteringView usage, OpenTelemetry signals, and

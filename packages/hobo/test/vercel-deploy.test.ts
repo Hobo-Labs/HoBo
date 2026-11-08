@@ -74,6 +74,37 @@ function programFor(deploymentId: string, resourceId: string): IacProgram {
 	};
 }
 
+describe("fixture deployment boundary and confirmed cleanup", () => {
+	it("does not substitute the committed hello fixture for a production artifact", async () => {
+		const fx = mockFetch({ id: "unused", url: "unused.vercel.app" });
+		const provider = createVercelDeployProvider({
+			token: "fixture-token",
+			fetch: fx.fetch,
+		});
+		await expect(provider.apply(programFor("deploy", "app"))).rejects.toThrow(
+			"fixtureArtifact:true",
+		);
+		expect(fx.calls).toEqual([]);
+	});
+	it("rejects a successful DELETE followed by a still-present deployment", async () => {
+		const fx = mockFetch({ id: "dpl_pinned", url: "pinned.vercel.app" });
+		const client = createVercelClient({
+			token: "fixture-token",
+			fetch: fx.fetch,
+			teamId: "team_pinned",
+		});
+		await expect(client.deleteDeployment("dpl_pinned")).rejects.toThrow(
+			"unconfirmed",
+		);
+		expect(fx.calls.map((call) => call.method)).toEqual(["DELETE", "GET"]);
+		expect(
+			fx.calls.every((call) =>
+				call.url.includes("dpl_pinned?teamId=team_pinned"),
+			),
+		).toBe(true);
+	});
+});
+
 describe("createVercelClient.createDeployment (mocked fetch, no network)", () => {
 	it("POSTs to /v13/deployments with Bearer auth, the artifact file payload, and target", async () => {
 		const { fetch, calls } = mockFetch({
@@ -159,7 +190,11 @@ describe("createVercelDeployProvider (mocked fetch, no network)", () => {
 			id: "dpl_apply",
 			url: "hobo-hello-bindle-xyz.vercel.app",
 		});
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = createVercelDeployProvider({
+			fixtureArtifact: true,
+			token: "tok",
+			fetch,
+		});
 
 		const outputs = await provider.apply(programFor("dep-1", "service"));
 
@@ -184,7 +219,11 @@ describe("createVercelDeployProvider (mocked fetch, no network)", () => {
 
 	it("apply is memoized per deploymentId (one real Vercel deployment per plan)", async () => {
 		const { fetch, calls } = mockFetch({ id: "dpl_memo", url: "m.vercel.app" });
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = createVercelDeployProvider({
+			fixtureArtifact: true,
+			token: "tok",
+			fetch,
+		});
 
 		const a = await provider.apply(programFor("dep-2", "service"));
 		const b = await provider.apply(programFor("dep-2", "sessions"));
@@ -198,7 +237,11 @@ describe("createVercelDeployProvider (mocked fetch, no network)", () => {
 
 	it("preview is a dry run and does not call fetch", async () => {
 		const { fetch, calls } = mockFetch({ id: "d", url: "d.vercel.app" });
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = createVercelDeployProvider({
+			fixtureArtifact: true,
+			token: "tok",
+			fetch,
+		});
 		const diff = await provider.preview(programFor("dep-3", "service"));
 		expect(calls.length).toBe(0);
 		expect(diff.changes).toBeGreaterThan(0);
@@ -227,7 +270,7 @@ describe("selectIacProvider env-gated selection (fallback intact)", () => {
 		savedToken = process.env.VERCEL_TOKEN;
 		process.env.VERCEL_TOKEN = "tok_from_env";
 		const provider = selectIacProvider({ ...pulumiDeps, vercelFetch: fetch });
-		expect(provider.id).toMatch(/^vercel-deploy:/);
+		expect(provider.id).toMatch(/^resolver-backed:/);
 	});
 
 	it("falls back to the in-memory Pulumi-backed provider when VERCEL_TOKEN is absent", () => {
@@ -243,7 +286,7 @@ describe("selectIacProvider env-gated selection (fallback intact)", () => {
 			env: { VERCEL_TOKEN: "tok_injected" },
 			vercelFetch: fetch,
 		});
-		expect(vercel.id).toMatch(/^vercel-deploy:/);
+		expect(vercel.id).toMatch(/^resolver-backed:/);
 		const pulumi = selectIacProvider({ ...pulumiDeps, env: {} });
 		expect(pulumi.id).toMatch(/^pulumi-backed:/);
 	});

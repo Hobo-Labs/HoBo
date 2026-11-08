@@ -36,13 +36,11 @@
 import type {
 	HttpTransport,
 	ResolveRequest,
-	ResolverError,
 	ResourceResolver,
 	TransportResponse,
 } from "@hobo/core";
-import { parseResolveRequest } from "@hobo/core";
+import { parseResolveRequest, type ResolveOutcome } from "@hobo/core";
 import { describe, expect, it } from "vitest";
-
 import {
 	AZURE_BLOB_STORAGE_PRODUCT_ID,
 	AZURE_CONTAINER_APPS_PRODUCT_ID,
@@ -53,8 +51,12 @@ import {
 	azureResolverRegistry,
 	redactAzureText,
 } from "../src/index.js";
+import type { JsonObject, JsonValue } from "../src/json.js";
 
-type Rec = Record<string, unknown>;
+type Rec = JsonObject;
+type ResolverProbe =
+	| (() => Promise<ResolveOutcome | undefined>)
+	| (() => Promise<void>);
 
 const CREDENTIAL_REF = "env://AZURE_ARM_ACCESS_TOKEN";
 /** A JWT-shaped ARM bearer token. Never expected anywhere but a header. */
@@ -100,7 +102,7 @@ function request(input: {
 			logicalId: input.logicalId ?? "thing",
 			...(input.physicalId !== undefined
 				? { physicalId: input.physicalId }
-				: {}),
+				: undefined),
 		},
 		desired: input.desired ?? {},
 		credentialRef: input.credentialRef ?? CREDENTIAL_REF,
@@ -123,7 +125,7 @@ function sequence(...responses: readonly TransportResponse[]): HttpTransport {
 
 function json(
 	status: number,
-	payload: unknown,
+	payload: JsonValue,
 	headers: Readonly<Record<string, string>> = {},
 ): TransportResponse {
 	return {
@@ -144,20 +146,26 @@ function raw(
 /** An ARM operation URL on the allowlisted surface. */
 const OPERATION_URL = `https://management.azure.com/subscriptions/${SUBSCRIPTION_ID}/providers/Microsoft.Cache/locations/eastus/operationResults/op-1`;
 
-async function codeOf(run: () => Promise<unknown>): Promise<string> {
+async function codeOf(run: ResolverProbe): Promise<string> {
 	try {
 		await run();
 	} catch (error) {
-		return (error as ResolverError).code ?? "NO_CODE";
+		const code =
+			error instanceof Error
+				? Object.getOwnPropertyDescriptor(error, "code")?.value
+				: undefined;
+		return Object.prototype.toString.call(code) === "[object String]"
+			? String(code)
+			: "NO_CODE";
 	}
 	return "NO_ERROR_THROWN";
 }
 
-async function messageOf(run: () => Promise<unknown>): Promise<string> {
+async function messageOf(run: ResolverProbe): Promise<string> {
 	try {
 		await run();
 	} catch (error) {
-		return (error as Error).message;
+		return error instanceof Error ? error.message : String(error);
 	}
 	return "NO_ERROR_THROWN";
 }
@@ -303,7 +311,7 @@ describe("the credential boundary", () => {
 		return resolverFor(AZURE_REDIS_CACHE_PRODUCT_ID, overrides).read(
 			request({
 				productId: AZURE_REDIS_CACHE_PRODUCT_ID,
-				...(credentialRef === undefined ? {} : { credentialRef }),
+				...(credentialRef === undefined ? undefined : { credentialRef }),
 			}),
 			transport,
 		);
@@ -368,7 +376,6 @@ describe("the credential boundary", () => {
 		expect(
 			await codeOf(() =>
 				readCache(always(raw(404, "")), {
-					// biome-ignore lint/suspicious/useAwait: rejecting is the point
 					resolveCredential: async () => {
 						throw "sealed";
 					},
@@ -399,13 +406,10 @@ describe("reading an ARM body", () => {
 		);
 	}
 
-	it("treats an empty body as nothing to describe, not as a failure", async () => {
-		// An empty body is legitimate on ARM — a 202 accept and a 204 delete both
-		// carry nothing — so it parses to "no detail" rather than raising. On a
-		// read that lands as "no resource here", which is the honest reading: a
-		// response that describes nothing is not evidence a cache exists, and the
-		// alternative would be to report a resource with no properties at all.
-		await expect(readCache(always(raw(200, "")))).resolves.toBeUndefined();
+	it("refuses an empty successful resource read instead of reporting absence", async () => {
+		await expect(readCache(always(raw(200, "")))).rejects.toThrow(
+			/absence is not confirmed/,
+		);
 	});
 
 	it("refuses a body that is not JSON", async () => {
@@ -758,6 +762,11 @@ describe("required desired fields", () => {
 
 describe("Container Apps desired shapes", () => {
 	const ENVIRONMENT = `/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.App/managedEnvironments/env-1`;
+	const APP_ID = `/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.App/containerApps/thing`;
+	function appJson(status: number, body: Rec): TransportResponse {
+		return json(status, { id: APP_ID, ...body });
+	}
+
 	const IMAGE = "ghcr.io/hobo/app:sha256-abc";
 
 	function appRequest(desired: Rec) {
@@ -771,7 +780,7 @@ describe("Container Apps desired shapes", () => {
 	function reconcileApp(desired: Rec, transport?: HttpTransport) {
 		return resolverFor(AZURE_CONTAINER_APPS_PRODUCT_ID).reconcile(
 			appRequest(desired),
-			transport ?? sequence(raw(404, ""), json(201, { name: "thing" })),
+			transport ?? sequence(raw(404, ""), appJson(201, { name: "thing" })),
 		);
 	}
 
@@ -876,7 +885,7 @@ describe("Container Apps desired shapes", () => {
 		const outcome = await reconcileApp(
 			complete,
 			always(
-				json(200, {
+				appJson(200, {
 					name: "thing",
 					location: "eastus",
 					properties: {
@@ -893,13 +902,13 @@ describe("Container Apps desired shapes", () => {
 		const outcome = await reconcileApp(
 			complete,
 			sequence(
-				json(200, {
+				appJson(200, {
 					name: "thing",
 					properties: {
 						template: { containers: [{ image: "old:1", name: "thing" }] },
 					},
 				}),
-				json(200, { name: "thing" }),
+				appJson(200, { name: "thing" }),
 			),
 		);
 		expect(outcome.action).toBe("update");
@@ -912,7 +921,7 @@ describe("Container Apps desired shapes", () => {
 		const outcome = await reconcileApp(
 			{ ...complete, ...wanted },
 			sequence(
-				json(200, {
+				appJson(200, {
 					name: "thing",
 					properties: {
 						template: {
@@ -922,7 +931,7 @@ describe("Container Apps desired shapes", () => {
 						},
 					},
 				}),
-				json(200, { name: "thing" }),
+				appJson(200, { name: "thing" }),
 			),
 		);
 		expect(outcome.action).toBe("update");
@@ -936,7 +945,7 @@ describe("Container Apps desired shapes", () => {
 		const outcome = await reconcileApp(
 			{ ...complete, [key]: 3 },
 			sequence(
-				json(200, {
+				appJson(200, {
 					name: "thing",
 					properties: {
 						template: {
@@ -945,7 +954,7 @@ describe("Container Apps desired shapes", () => {
 						},
 					},
 				}),
-				json(200, { name: "thing" }),
+				appJson(200, { name: "thing" }),
 			),
 		);
 		expect(outcome.action).toBe("update");
@@ -957,7 +966,7 @@ describe("Container Apps desired shapes", () => {
 		const outcome = await readApp(
 			{ managedEnvironmentId: ENVIRONMENT },
 			always(
-				json(200, {
+				appJson(200, {
 					name: "thing",
 					properties: { managedEnvironmentId: `${ENVIRONMENT}-other` },
 				}),
@@ -973,7 +982,7 @@ describe("Container Apps desired shapes", () => {
 		const outcome = await readApp(
 			{ managedEnvironmentId: ENVIRONMENT.toUpperCase() },
 			always(
-				json(200, {
+				appJson(200, {
 					name: "thing",
 					properties: { managedEnvironmentId: ENVIRONMENT },
 				}),
@@ -985,7 +994,7 @@ describe("Container Apps desired shapes", () => {
 	it("reports location drift rather than correcting it", async () => {
 		const outcome = await readApp(
 			{ location: "westus" },
-			always(json(200, { name: "thing", location: "eastus" })),
+			always(appJson(200, { name: "thing", location: "eastus" })),
 		);
 		expect(outcome?.diagnostics.join(" ")).toContain("immutable");
 	});
@@ -994,7 +1003,7 @@ describe("Container Apps desired shapes", () => {
 		const outcome = await readApp(
 			{},
 			always(
-				json(200, {
+				appJson(200, {
 					name: "thing",
 					properties: {
 						provisioningState: "Succeeded",
@@ -1016,8 +1025,12 @@ describe("Container Apps desired shapes", () => {
 	it("omits app fields ARM did not send", async () => {
 		// Publishing `fqdn: undefined` would make a binding believe it has an
 		// address to route to.
-		const outcome = await readApp({}, always(json(200, { name: "thing" })));
-		expect(outcome?.outputs).toEqual({ appName: "thing" });
+		const outcome = await readApp({}, always(appJson(200, { name: "thing" })));
+		expect(outcome?.outputs).toMatchObject({
+			appName: "thing",
+			ready: false,
+			operationConfirmed: false,
+		});
 	});
 });
 
@@ -1127,8 +1140,10 @@ describe("deletes", () => {
 		await expect(deleteCache(raw(404, ""))).resolves.toBeUndefined();
 	});
 
-	it("treats a 204 as done", async () => {
-		await expect(deleteCache(raw(204, ""))).resolves.toBeUndefined();
+	it("confirms a 204 delete with an absent resource read", async () => {
+		await expect(
+			deleteCache(raw(204, ""), raw(404, "")),
+		).resolves.toBeUndefined();
 	});
 
 	it("follows a long-running delete to completion", async () => {

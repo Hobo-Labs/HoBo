@@ -10,7 +10,10 @@ export {
 	type ParsedPipeline,
 	type PipelineBackend,
 	type PipelineCapability,
+	type PipelineExecutionScope,
 	type PipelineSession,
+	type PipelineUsageObservation,
+	type PipelineUsageScope,
 	parsePipeline,
 	parseRelativePath,
 	requiredCapabilities,
@@ -18,13 +21,40 @@ export {
 	supportsPipeline,
 } from "./execution.js";
 export {
+	DEFAULT_GITHUB_MACHINE_TYPE,
+	type FleetBackend,
+	type FleetMember,
+	type FleetSelection,
+	isGithubLatestLabel,
+	isIsolatedFleetProvider,
+	isOverflowRunnerLabel,
+	queuedDemandLabels,
+	selectFleetBackend,
+	shouldAbortIsolatedFleetLease,
+} from "./fleet-overflow.js";
+export {
+	ciBudgetIdentity,
+	ciBudgetPolicy,
+	ciBudgetPolicyJson,
+	ciBudgetSignalKey,
+	ciBudgetSignalUpdate,
+	ciQueueBudgetMs,
+	ciRoutingObjective,
 	defineCiPolicy,
 	effectiveCiAccount,
 	type ParsedCiPolicy,
 	parseCiPolicy,
 } from "./policy.js";
 export { providerFreeRunnerMinutes } from "./provider-allocation.js";
-export { ACTIVE_STATES, providerOffer, route } from "./routing.js";
+export {
+	ACTIVE_STATES,
+	type CiRoutingCandidateCost,
+	type CiRoutingOptions,
+	type CiRoutingRefusal,
+	compareCiRoutingCandidates,
+	providerOffer,
+	route,
+} from "./routing.js";
 export {
 	sandboxProxyOnlyUsageQuote,
 	sandboxReservationMicros,
@@ -34,3 +64,15 @@ export {
 	validateSandboxAllowance,
 	validateSandboxPricing,
 } from "./sandbox-pricing.js";
+export {
+	type CiAsyncSharedBudgetHooks,
+	type CiPolicyMeasurements,
+	type CiSharedBudgetHooks,
+	type CiSharedBudgetOptions,
+	ciExecutionDigest,
+	ciFinancialPlanHash,
+	ciRequestDigest,
+	ciReservationId,
+	createCiAsyncSharedBudgetHooks,
+	createCiSharedBudgetHooks,
+} from "./shared-budget.js";

@@ -239,6 +239,13 @@ function serverApi(
 				servers: servers.filter((entry) => entry.name === wanted),
 			});
 		}
+		if (call.method === "GET" && call.path.startsWith(`${SERVERS}/`)) {
+			const id = Number(call.path.slice(SERVERS.length + 1));
+			const found = servers.find((server) => server.id === id);
+			return found === undefined
+				? json(404, { error: { code: "not_found" } })
+				: json(200, { server: found });
+		}
 		if (call.method === "POST" && call.path === SERVERS) {
 			const sent = bodyOf(call);
 			const created = {

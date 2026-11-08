@@ -1,4 +1,9 @@
 import { createHash } from "node:crypto";
+import type {
+	BudgetReservation,
+	HostingPolicyProof,
+	HostingQuote,
+} from "../budget-authority.js";
 import {
 	cloneAsJson,
 	isJsonBoolean,
@@ -322,6 +327,9 @@ export interface ExecutionUnit {
 
 // domain-view: planning/placement domain type (wire form in broker.proto when present).
 export interface YardPlacementReceipt {
+	readonly budgetReservation?: BudgetReservation;
+	readonly hostingQuote?: HostingQuote;
+	readonly hostingPolicyProof?: HostingPolicyProof;
 	readonly schemaVersion: typeof YARD_PLACEMENT_RECEIPT_SCHEMA;
 	readonly requestId: string;
 	readonly brokerId: string;

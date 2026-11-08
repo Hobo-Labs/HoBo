@@ -55,8 +55,7 @@ function incomingHttpRequestFrom(
 	return { method, path, headers, body };
 }
 
-import { basename } from "node:path";
-
+import { basename, isAbsolute } from "node:path";
 import type {
 	BindleDefinition,
 	CollectionContext,
@@ -77,12 +76,15 @@ import {
 	createInProcessExecutor,
 	createRegistryFromProviders,
 	foldRegistryStream,
+	type PlannerRegistry,
 	type RegistrableProvider,
 	registerProviderFact,
+	type SharedHostingBudgetAuthority,
 } from "@hobo/cloud";
 import type {
 	CloudProvider,
 	ComponentHostEvent,
+	DurableEventStore,
 	EventStore,
 	HttpTransport,
 	InterfaceId,
@@ -109,12 +111,15 @@ import {
 } from "@hobo/runtime-local";
 import { REGISTRY_STREAM } from "./add-command.js";
 import type { CloudflareFetch } from "./cloudflare-client.js";
-import { createCloudflareDeployProvider } from "./cloudflare-deploy-provider.js";
 import {
 	refuseUnbrokeredLane,
 	requireOpenSesameSurrogate,
 	usesOpenSesameCredentials,
 } from "./credentials-opensesame.js";
+import {
+	createProductionHostingExecution,
+	type ProductionHostingExecutionOptions,
+} from "./hosting-execution.js";
 import { ownedTempDir } from "./owned-temp-dir.js";
 import {
 	createPulumiBackedIacProvider,
@@ -127,7 +132,7 @@ import {
 import type { FetchHandler } from "./servable-entrypoints.js";
 
 function asFetchHandler(
-	value: Function | JsonValue | undefined,
+	value: FetchHandler | JsonValue | undefined,
 ): FetchHandler | null {
 	if (!(value instanceof Function)) {
 		return null;
@@ -138,7 +143,6 @@ function asFetchHandler(
 
 import type { VercelFetch } from "./vercel-client.js";
 import { normalizeVercelTeamId } from "./vercel-client.js";
-import { createVercelDeployProvider } from "./vercel-deploy-provider.js";
 
 // @hobo/hobo — the composition root (apps layer). It wires HoBo's default
 // runtimes so the composed `hobo` binary runs the cloud verbs end to end in the
@@ -252,8 +256,7 @@ export interface SelectIacProviderDeps {
 	readonly vercelFetch?: VercelFetch;
 	// Optional injected transport for the Cloudflare client (tests mock the network).
 	readonly cloudflareFetch?: CloudflareFetch;
-	// Optional injected HTTP transport for the OPT-IN resolver-backed deploy lane
-	// (`HOBO_DEPLOY_RESOLVERS=1`). Defaults to a `globalThis.fetch` adapter. Inject
+	// Optional injected HTTP transport for the exact-resource resolver plane. Defaults to a `globalThis.fetch` adapter. Inject
 	// a fake to drive the REAL resolvers over a modelled provider account without
 	// a live token or a real socket.
 	readonly resolverTransport?: HttpTransport;
@@ -448,9 +451,9 @@ function hostCredentialResolver(
 // The Vercel team the environment names: `VERCEL_TEAM_ID` (the name
 // `scripts/staging-cutover-demo.mts` already uses) as the operator set it, else
 // `VERCEL_ORG_ID` (the Vercel CLI's) when it is a team id. Each is trimmed and
-// taken as unset when blank, the rule `createVercelDeployProvider` applies to
-// its own `teamId`; `undefined` when neither names a team. Both Vercel lanes
-// read it.
+// taken as unset when blank, the rule `createVercelClient` and
+// `createVercelDeployProvider` apply to their own `teamId`; `undefined` when
+// neither names a team. The Vercel resolver plane reads it.
 function vercelTeamIdOf(
 	env: Record<string, string | undefined>,
 ): string | undefined {
@@ -478,7 +481,7 @@ function vercelOrgTeamIdOf(orgId: string | undefined): string | undefined {
 	return id?.startsWith("team_") ? id : undefined;
 }
 
-// Build the OPT-IN resolver-backed deploy provider for whichever cloud the
+// Build the exact-artifact resolver-backed deploy provider for whichever cloud the
 // environment has credentials for, or `undefined` when it has none. Cloudflare
 // resolvers take a transport the host must wrap in the Cloudflare guard policy;
 // the Vercel resolvers apply their own guard internally, so the raw transport is
@@ -524,51 +527,15 @@ function resolverBackedProviderFor(
 	return undefined;
 }
 
-// Select the IaC backend on the deploy path by environment. This is HoBo's
-// thesis realized for the clouds actually reachable from its own pipeline, in
-// precedence order:
-//   - a Pulumi `adapter` override, or `HOBO_PULUMI_LIVE=1` -> the REAL pinned
-//     Pulumi engine behind the same adapter (binary- and credential-gated;
-//     docs/plans/0006 item 3-2).
-//   - no cloud credential at all -> the in-memory Pulumi-backed provider.
-//   - a cloud credential PLUS `HOBO_DEPLOY_RESOLVERS=1` -> the direct-HTTP
-//     resolver plane (`hobo.resource-resolver/v1`) behind the IacProvider port.
-//   - `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` present -> the REAL
-//     Cloudflare Workers deploy provider (cred-gated).
-//   - else `VERCEL_TOKEN` present -> the REAL Vercel deploy provider (cred-gated).
+// Live credentials select the exact-resource resolver plane. Fixture upload
+// helpers are explicitly opt-in demonstrations and never selected here.
 //
-// Both Vercel lanes (the deploy provider and the resolver plane) work in the
-// team `VERCEL_TEAM_ID`, else a `team_` `VERCEL_ORG_ID`, names, or in the
-// token's own scope when neither does (`vercelTeamIdOf`).
-//
-// The resolver lane is OPT-IN and deliberately sits INSIDE the cred-gated
-// bracket: it can only replace the two bespoke deploy providers, never the
-// Pulumi lanes and never the credential-free default. Swapping a user's deploy
-// backend on an upgrade is a behaviour change nobody asked for, so
-// `HOBO_DEPLOY_RESOLVERS=1` is required and everything else behaves exactly as
-// it did before.
-//
-// A Pulumi `adapter` override always wins (it is a Pulumi adapter), keeping the
-// existing spy-adapter tests deterministic regardless of ambient env. Pulumi
-// lanes resolve through the SHARED per-store adapter memo (see
-// selectPulumiEstateAdapter) so `up`, `drift`, and `import` composed over the
-// same store all observe the same state backend.
-//
-// Before any of that, `HOBO_CREDENTIALS=opensesame` (or running as a proxied
-// run's command, `HOBO_OPENSESAME_CHILD=1`) refuses with
-// OPENSESAME_PLACEHOLDERS_ONLY unless `VERCEL_TOKEN` is an OpenSesame surrogate
-// (`osr_` + 32 hex): a proxied run whose plugin is missing or off exits 0 with a
-// placeholder, and against an emulator that accepts any token that would deploy
-// "successfully" on nothing (ADR-0170). It also refuses another provider's
-// credential beside the surrogate, and selectPulumiEstateAdapter refuses the
-// live Pulumi lane (OPENSESAME_LANE_NOT_BROKERED). With neither set, nothing
-// here changes.
+// The Vercel resolver plane works in the team `VERCEL_TEAM_ID`, else a `team_`
+// `VERCEL_ORG_ID`, names, or in the token's own scope when neither does
+// (`vercelTeamIdOf`).
 export function selectIacProvider(deps: SelectIacProviderDeps): IacProvider {
 	const env = deps.env ?? process.env;
 	if (usesOpenSesameCredentials(env)) requireOpenSesameSurrogate(env);
-	const cloudflareToken = env.CLOUDFLARE_API_TOKEN;
-	const cloudflareAccountId = env.CLOUDFLARE_ACCOUNT_ID;
-	const vercelToken = env.VERCEL_TOKEN;
 	const estateAdapter = selectPulumiEstateAdapter(deps);
 	if (estateAdapter !== undefined) {
 		return createPulumiBackedIacProvider({
@@ -577,28 +544,11 @@ export function selectIacProvider(deps: SelectIacProviderDeps): IacProvider {
 			adapter: estateAdapter,
 		});
 	}
-	if (env.HOBO_DEPLOY_RESOLVERS === "1") {
-		const resolverBacked = resolverBackedProviderFor(deps, env);
-		if (resolverBacked !== undefined) return resolverBacked;
-	}
-	if (cloudflareToken && cloudflareAccountId) {
-		return createCloudflareDeployProvider({
-			token: cloudflareToken,
-			accountId: cloudflareAccountId,
-			...(deps.cloudflareFetch !== undefined
-				? { fetch: deps.cloudflareFetch }
-				: undefined),
-		});
-	}
-	const vercelTeamId = vercelTeamIdOf(env);
-	return createVercelDeployProvider({
-		// SAFETY: assertion required at this I/O or test boundary.
-		token: vercelToken as string,
-		...(deps.vercelFetch !== undefined
-			? { fetch: deps.vercelFetch }
-			: undefined),
-		...(vercelTeamId !== undefined ? { teamId: vercelTeamId } : undefined),
-	});
+	const resolverBacked = resolverBackedProviderFor(deps, env);
+	if (resolverBacked !== undefined) return resolverBacked;
+	throw new Error(
+		"live hosting requires an exact provider resolver configuration",
+	);
 }
 
 // Assemble the default `YardRuntime` the cloud verbs (plan/up/down) drive. This
@@ -617,10 +567,26 @@ export function createDefaultYardRuntime(
 		dataDir,
 		clock: createManualClock(),
 	});
+	return createYardRuntimeOverStore(options, store);
+}
+
+function createYardRuntimeOverStore(
+	options: DefaultYardRuntimeOptions,
+	store: ReturnType<typeof createRuntimeLocalEventStore>,
+): YardRuntime {
 	// One CloudProvider instance, shared between the planner registry (capability
 	// negotiation) and the IaC bridge (realize() on the deploy path).
 	const cloudflare = createCloudflareProvider();
+	const environment = options.env ?? process.env;
+	const hostingBudgetRequired =
+		options.iacAdapter === undefined &&
+		(environment.HOBO_PULUMI_LIVE === "1" ||
+			Boolean(
+				environment.CLOUDFLARE_API_TOKEN && environment.CLOUDFLARE_ACCOUNT_ID,
+			) ||
+			Boolean(environment.VERCEL_TOKEN));
 	return {
+		hostingBudgetRequired,
 		store,
 		actorHost: createInMemoryActorHost(),
 		executor: createInProcessExecutor({
@@ -652,6 +618,84 @@ export function createDefaultYardRuntime(
 			base: createRegistryFromProviders([toRegistrableProvider(cloudflare)]),
 		}),
 	};
+}
+
+export interface ProductionYardRuntimeOptions
+	extends DefaultYardRuntimeOptions {
+	/** Caller-owned persistent directory. Production state never uses an exit-cleaned temporary store. */
+	readonly dataDir: string;
+	readonly nowMs: () => number;
+	configureHosting(input: {
+		readonly store: DurableEventStore;
+		readonly defaultRegistry: PlannerRegistry;
+	}): Promise<{
+		readonly registry: PlannerRegistry;
+		readonly authority: SharedHostingBudgetAuthority;
+		readonly budgetId: string;
+		readonly execution: Omit<
+			ProductionHostingExecutionOptions,
+			"store" | "budget" | "budgetId" | "nowMs"
+		>;
+	}>;
+}
+
+/** Async production composition shares one persistent event partition among
+ * gateway admission, mutation journals and the execution supervisor. Verified
+ * credential leases and native financial readers can be acquired in configureHosting. */
+export async function createProductionYardRuntime(
+	options: ProductionYardRuntimeOptions,
+) {
+	if (!options.dataDir || !isAbsolute(options.dataDir))
+		throw new Error(
+			"production hosting requires an absolute persistent data directory",
+		);
+	const now = () => {
+		const value = options.nowMs();
+		if (!Number.isSafeInteger(value) || value < 0)
+			throw new Error("production hosting requires a valid trusted clock");
+		return value;
+	};
+	const store = createRuntimeLocalEventStore({
+		dataDir: options.dataDir,
+		clock: { now: () => new Date(now()).toISOString() },
+	});
+	try {
+		const base = createYardRuntimeOverStore(options, store);
+		const configured = await options.configureHosting({
+			store,
+			defaultRegistry: base.registry,
+		});
+		if (
+			configured.authority.persistence !== "durable-cas" ||
+			!configured.authority.resolve ||
+			!configured.budgetId ||
+			configured.execution.provider.requiresDestinationLiabilityProof !== true
+		)
+			throw new Error(
+				"production hosting requires durable financial admission, trusted quotes and native liability verification",
+			);
+		const hostingController = createProductionHostingExecution({
+			...configured.execution,
+			store,
+			budget: configured.authority,
+			budgetId: configured.budgetId,
+			nowMs: now,
+		});
+		return {
+			...base,
+			store,
+			registry: configured.registry,
+			hostingBudgetRequired: true,
+			hostingBudgetAuthority: configured.authority,
+			defaultHostingBudgetId: configured.budgetId,
+			hostingExecution: hostingController.execution,
+			hostingController,
+			close: () => store.close(),
+		};
+	} catch (error) {
+		store.close();
+		throw error;
+	}
 }
 
 // Idempotently record the DEFAULT provider set as durable registration +

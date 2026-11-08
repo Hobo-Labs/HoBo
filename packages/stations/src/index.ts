@@ -120,6 +120,7 @@ export {
 export {
 	CUTOVER_EVENTS,
 	type CutoverHealthGate,
+	type CutoverHealthObservation,
 	type CutoverPrecondition,
 	type CutoverTtlPrecondition,
 	DEFAULT_CONSECUTIVE_FAILURES_TO_ROLLBACK,
@@ -127,6 +128,9 @@ export {
 	executeRoutingCutover,
 	type RoutingCutoverOptions,
 	type RoutingCutoverResult,
+	routingCutoverEffects,
+	routingMutationResilience,
+	routingObservationResilience,
 } from "./traffic-routing/cutover.js";
 export {
 	applyRoutingObservations,
@@ -158,3 +162,8 @@ export {
 
 // public-contract: stable package identity for Station integrations and diagnostics.
 export const HOBO_STATIONS_PACKAGE = "@hobo/stations";
+
+export {
+	type RoutingControlStateRecord,
+	RoutingControlStateRecordSchema,
+} from "./_generated/routing_control_pb.js";

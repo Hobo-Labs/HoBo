@@ -20,6 +20,9 @@ export type SecretPurpose =
 	| "redis-rest-token"
 	| "redis-rest-url"
 	| "redis-protocol-url"
+	| "claim-url"
+	| "capability-binding"
+	| "native-resource-id"
 	| "rotation-evidence";
 
 export type SecretCustodyScope = {

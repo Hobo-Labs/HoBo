@@ -9,7 +9,11 @@ import {
 	type SandboxMeasuredUsage,
 	SandboxMeasuredUsageSchema,
 } from "@hobo/ci";
-import type { GithubTransport, HostedRelayStore } from "@hobo/ci-gh-actions";
+import type {
+	GithubTransport,
+	HostedRelayStore,
+	IsolatedRunnerHost,
+} from "@hobo/ci-gh-actions";
 import { z } from "zod";
 import type { IsolatedSandboxConfiguration } from "./isolated-sandbox.js";
 import type { ProxySandboxCreate } from "./proxy-sandbox.js";
@@ -18,6 +22,8 @@ import {
 	type ProxyStartupFailure,
 	type ProxyVmConfig,
 } from "./sandbox-proxy-vm.js";
+
+type RunnerLabel = NonNullable<Parameters<IsolatedRunnerHost["launch"]>[1]>;
 
 export interface SandboxUsage {
 	cpuMs: number;
@@ -333,7 +339,7 @@ export function createSandboxController(options: {
 	const controller = {
 		/** Persist intent before every irreversible external operation. Ambiguous
 		 * calls are never retried and remain reserved for reconciliation. */
-		async launch(id: string) {
+		async launch(id: string, label: RunnerLabel = "hobo") {
 			const initial = await options.store.get(id);
 			if (initial?.state !== "reserved") return;
 			let auth: SandboxAuthority;
@@ -577,7 +583,7 @@ export function createSandboxController(options: {
 					JSON.stringify({
 						name: registration.runnerName,
 						runner_group_id: refreshed.connection.runnerGroupId,
-						labels: ["hobo"],
+						labels: [label],
 						work_folder: "_hobo_work",
 					}),
 				);

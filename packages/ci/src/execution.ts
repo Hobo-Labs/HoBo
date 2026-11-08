@@ -1,4 +1,5 @@
 import { create, fromJson } from "@bufbuild/protobuf";
+import type { BudgetSettlementEvidence } from "@hobo/broker";
 import {
 	type Pipeline,
 	type PipelineArtifact,
@@ -25,7 +26,39 @@ export interface PipelineSession {
 export interface PipelineBackend {
 	readonly kind: BackendKind;
 	readonly capabilities: readonly PipelineCapability[];
-	open(pipeline: ParsedPipeline, signal: AbortSignal): Promise<PipelineSession>;
+	open(
+		pipeline: ParsedPipeline,
+		signal: AbortSignal,
+		scope?: PipelineExecutionScope,
+	): Promise<PipelineSession>;
+	/** A provider billing/readback authority, independent of command completion and close acknowledgements. */
+	observeFinalUsage?(
+		scope: PipelineUsageScope,
+	): Promise<PipelineUsageObservation | undefined>;
+}
+export interface PipelineUsageScope {
+	readonly leaseId: string;
+	readonly pipelineId: string;
+	readonly pipelineDigest: string;
+	readonly provider: string;
+	readonly providerAccountId: string;
+	readonly externalOperationId: string;
+}
+export interface PipelineExecutionScope extends PipelineUsageScope {
+	/** Call again after asynchronous preflight and immediately before native allocation. */
+	authorizeAllocation(): void;
+	/** Persist the provider identity before acknowledging creation; lost acknowledgements retain the hold. */
+	recordExternalOperationId(id: string): void;
+}
+export interface PipelineUsageObservation
+	extends PipelineUsageScope,
+		BudgetSettlementEvidence {
+	readonly usageFinal: boolean;
+	readonly stopped: boolean;
+	readonly completedAt: string;
+	readonly billedMinutes: number;
+	readonly billedFreeMinutes: number;
+	readonly paidMicros: number;
 }
 /** Only use for definitive refusal before any execution resource was created. */
 export class BackendUnavailableError extends Error {

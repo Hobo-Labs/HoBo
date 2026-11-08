@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "hobo.hosting-transition/v1",
+  "transitionId": "move",
+  "tenantId": "tenant",
+  "deploymentId": "deploy",
+  "sourcePlanId": "source",
+  "targetPlanId": "target",
+  "commitment": {
+    "budgetId": "budget",
+    "tenantId": "tenant",
+    "scopeId": "camp:prod",
+    "periodId": "period",
+    "policyRevision": "r1",
+    "currency": "USD",
+    "expectedMicros": 2,
+    "reservedMicros": 5,
+    "validUntilMs": 100000,
+    "allocations": [
+      {
+        "resourceName": "app",
+        "definitionId": "platform:b",
+        "quoteId": "quote",
+        "providerAccountId": "account:b",
+        "expectedMicros": 2,
+        "reservedMicros": 5
+      }
+    ],
+    "commitmentHash": "sha256:0842444c72800f93442a6864cb469f1d7c2d07b1fac0521438ec470ab635191f",
+    "evidence": {
+      "budget": {
+        "budgetId": "budget",
+        "tenantId": "tenant",
+        "scopeId": "camp:prod",
+        "periodId": "period",
+        "policyRevision": "r1",
+        "currency": "USD",
+        "periodEndMs": 100000,
+        "capMicros": 100,
+        "recoveryReserveMicros": 10,
+        "observedAtMs": 1000,
+        "validUntilMs": 100000,
+        "periodKind": "monthly"
+      },
+      "nowMs": 1000,
+      "horizonEndMs": 50000,
+      "maxObservationAgeMs": 1000,
+      "quotes": [
+        {
+          "id": "quote",
+          "resourceName": "app",
+          "definitionId": "platform:b",
+          "providerId": "b",
+          "providerAccountId": "account:b",
+          "currency": "USD",
+          "rateMicros": 1,
+          "billingUnit": "request",
+          "source": "https://example.test/quote",
+          "observedAtMs": 1000,
+          "validUntilMs": 100000,
+          "liabilityEndsAtMs": 50000
+        }
+      ],
+      "usages": [
+        {
+          "resourceName": "app",
+          "unit": "request",
+          "expectedQuantity": 2,
+          "boundedQuantity": 5
+        }
+      ]
+    }
+  },
+  "constraints": {
+    "allowedJurisdictions": [
+      "US"
+    ],
+    "maximumLatencyMs": 100,
+    "movementClass": "stateless",
+    "observationMaxAgeMs": 1000,
+    "requiredCapabilityDigest": "capabilities:v1",
+    "interruptionAllowed": false,
+    "sourceOwnershipEpoch": 1
+  },
+  "operationTimeoutMs": 100,
+  "observationBackoffMs": 10,
+  "maximumObservationAttempts": 3,
+  "horizonEndMs": 50000,
+  "planDigest": "sha256:7462cb3ce5f75b9096b4430c5eb6962a70fe8adb701583f46740e633ad6a9a50",
+  "workloadEffectsJson": "{\"schemaVersion\":\"hobo.effect-spec/v1\",\"purity\":\"pure\",\"capabilities\":[],\"domains\":[]}",
+  "workloadResilienceJson": "{\"schemaVersion\":\"hobo.resilience-profile/v1\",\"id\":\"workload\",\"strategies\":[{\"kind\":\"timeout\",\"deadlineMs\":100}],\"neverRetry\":[\"policy.Decided\",\"terminal\",\"cancellation\"]}",
+  "workloadContractDigest": "sha256:f632e78cdaf582eb2e8b7e709dff6ba0391ff1cafbae0c38c57fdfce88d33438",
+  "adapterContractDigest": "sha256:509da2fc783426fc3f666d892ad2b47ffd77226ede59b7da48b1eef2ece028fa",
+  "workloadContractId": "contract:workload/v1",
+  "intent": "decommission",
+  "maximumMutationResumes": 2
+}

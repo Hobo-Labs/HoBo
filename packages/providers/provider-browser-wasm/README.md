@@ -162,3 +162,15 @@ and bearer tokens never reach a console line or a receipt.
 ```bash
 pnpm --filter @hobo/provider-browser-wasm run test
 ```
+
+## Hosting budget execution
+
+A browser worker's placeholder price is marked `pricingStatus: "unknown"`; absence of
+a provider invoice does not establish the cost of its hosting origin, networking or
+persistent storage. Durable placement continues to require real dedicated workers and
+OPFS; the Node-only unavailable runtime refuses to fabricate instantiation.
+
+The shipped `provisionGuest` / `releaseGuest` path requires a real `GuestRuntimePort`.
+A closed tab is an orphan requiring reconciliation. Released state requires actual
+worker termination and, unless explicitly retained, partition removal. Stateful moves
+require the app's write-ownership and transfer evidence in addition to those host facts.

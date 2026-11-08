@@ -31,7 +31,9 @@ export function createProgressiveFlagPort(
 				enabled: input.enabled !== false,
 				state: "ENABLED",
 				defaultValue: input.defaultValue ?? false,
-				...(input.metadata !== undefined ? { metadata: input.metadata } : undefined),
+				...(input.metadata !== undefined
+					? { metadata: input.metadata }
+					: undefined),
 			});
 		},
 	};

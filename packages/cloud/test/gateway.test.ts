@@ -1,10 +1,8 @@
 import { mkdtempSync, readFileSync } from "node:fs";
-import { parseJsonValue, type JsonValue } from "../src/json.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ManifestV1, parseManifest } from "@hobo/bindles";
-
 import type { EventEnvelope } from "@hobo/core";
 import { createInMemoryActorHost } from "@hobo/data";
 import { createCloudflareProvider } from "@hobo/provider-cloudflare";
@@ -14,7 +12,6 @@ import {
 	type RuntimeLocalEventStore,
 } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
-
 import {
 	createRegistryFromProviders,
 	deploy,
@@ -23,9 +20,10 @@ import {
 	type GatewayDeps,
 	UnauthorizedCommandError,
 } from "../src/index.js";
+import { type JsonValue, parseJsonValue } from "../src/json.js";
 
 const HELLO_BINDLE_PLAN_HASH =
-	"sha256:30eb585558f0614fac037fa5ada935eaad03e86f35c39110af21b2c58bdaf5b6";
+	"sha256:0e1bbf78ae6b765d8a4cd5cb41c5b9c5eadc43e32ea4fedec97cf87a7deef915";
 
 let stores: RuntimeLocalEventStore[] = [];
 function freshStore(): RuntimeLocalEventStore {

@@ -35,11 +35,10 @@ import type {
 	AwsCredentials,
 	HttpTransport,
 	ResolveRequest,
-	ResolverError,
 	ResourceResolver,
 	TransportResponse,
 } from "@hobo/core";
-import { parseResolveRequest } from "@hobo/core";
+import { parseResolveRequest, ResolverError } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -51,7 +50,7 @@ import {
 	redactAwsText,
 } from "../src/index.js";
 
-type Rec = Record<string, unknown>;
+import type { JsonObject, JsonValue } from "../src/json.js";
 
 const CREDENTIAL_REF = "secret://camp/aws-deploy";
 const NOW_MS = Date.parse("2026-08-19T12:00:00.000Z");
@@ -86,18 +85,18 @@ function request(input: {
 	readonly productId: string;
 	readonly logicalId?: string;
 	readonly physicalId?: string;
-	readonly desired?: Rec;
+	readonly desired?: JsonObject;
 	readonly credentialRef?: string;
 }): ResolveRequest {
+	const ref = {
+		slot: "bucket",
+		productId: input.productId,
+		logicalId: input.logicalId ?? "thing",
+	};
+	if (input.physicalId !== undefined)
+		Object.assign(ref, { physicalId: input.physicalId });
 	return parseResolveRequest({
-		ref: {
-			slot: "bucket",
-			productId: input.productId,
-			logicalId: input.logicalId ?? "thing",
-			...(input.physicalId !== undefined
-				? { physicalId: input.physicalId }
-				: {}),
-		},
+		ref,
 		desired: input.desired ?? {},
 		credentialRef: input.credentialRef ?? CREDENTIAL_REF,
 	});
@@ -117,7 +116,7 @@ function sequence(...responses: readonly TransportResponse[]): HttpTransport {
 	};
 }
 
-function json(status: number, payload: unknown): TransportResponse {
+function json(status: number, payload: JsonValue): TransportResponse {
 	return {
 		status,
 		headers: { "content-type": "application/x-amz-json-1.0" },
@@ -129,20 +128,20 @@ function raw(status: number, body: string): TransportResponse {
 	return { status, headers: {}, body };
 }
 
-async function codeOf(run: () => Promise<unknown>): Promise<string> {
+async function codeOf<T>(run: () => Promise<T>): Promise<string> {
 	try {
 		await run();
 	} catch (error) {
-		return (error as ResolverError).code ?? "NO_CODE";
+		return error instanceof ResolverError ? error.code : "NO_CODE";
 	}
 	return "NO_ERROR_THROWN";
 }
 
-async function messageOf(run: () => Promise<unknown>): Promise<string> {
+async function messageOf<T>(run: () => Promise<T>): Promise<string> {
 	try {
 		await run();
 	} catch (error) {
-		return (error as Error).message;
+		return error instanceof Error ? error.message : String(error);
 	}
 	return "NO_ERROR_THROWN";
 }
@@ -304,7 +303,6 @@ describe("the credential boundary", () => {
 		expect(
 			await codeOf(() =>
 				readS3(always(raw(404, "")), {
-					// biome-ignore lint/suspicious/useAwait: rejecting is the point
 					resolveCredential: async () => {
 						throw "sealed";
 					},
@@ -327,7 +325,10 @@ describe("the credential boundary", () => {
 		expect(
 			await codeOf(() =>
 				readS3(always(raw(404, "")), {
-					resolveCredential: async () => material as never,
+					resolveCredential: async () => {
+						// SAFETY: Deliberately violate the typed credential boundary to verify runtime refusal of each malformed host response.
+						return material as never;
+					},
 				}),
 			),
 		).toBe("RESOLVER_CREDENTIAL_MISSING");
@@ -335,6 +336,7 @@ describe("the credential boundary", () => {
 
 	it("refuses to build resolvers with no resolveCredential at all", () => {
 		expect(() =>
+			// SAFETY: Deliberately omit the required host credential resolver to verify construction fails before provider I/O.
 			awsResolverRegistry(options({ resolveCredential: undefined as never })),
 		).toThrow(/never reads an environment variable/u);
 	});
@@ -357,6 +359,7 @@ describe("the signing clock", () => {
 		// A signer that reads `Date.now()` cannot be pinned by a test, and the
 		// signature would silently depend on when the process happened to run.
 		expect(() =>
+			// SAFETY: Deliberately omit the injected signing clock to verify runtime refusal instead of reading ambient time.
 			awsResolverRegistry(options({ nowMs: undefined as never })),
 		).toThrow(/injected nowMs/u);
 	});
@@ -923,7 +926,7 @@ describe("S3 reconcile", () => {
 });
 
 describe("DynamoDB desired shapes", () => {
-	function reconcileDynamo(desired: Rec, transport?: HttpTransport) {
+	function reconcileDynamo(desired: JsonObject, transport?: HttpTransport) {
 		return resolverFor(AWS_DYNAMODB_PRODUCT_ID).reconcile(
 			request({ productId: AWS_DYNAMODB_PRODUCT_ID, desired }),
 			transport ??

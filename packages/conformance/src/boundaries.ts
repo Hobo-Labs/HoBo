@@ -139,6 +139,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/hobo",
 	"packages/stage-gate",
 	"packages/policy",
+	"packages/pricing",
 	"packages/data",
 	"packages/events",
 	"packages/identity",

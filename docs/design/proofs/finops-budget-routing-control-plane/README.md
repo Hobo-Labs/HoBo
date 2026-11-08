@@ -32,6 +32,15 @@ billing APIs, provider SDKs, production IaC, or cloud credentials.
 | Feedback is governed | `turns actuals and overrides into proposals instead of mutating metrics or policy` |
 | DX/OpsX/FinX share one source of truth | `renders all three proof surfaces from the same decision graph id` |
 
+The October 29, 2026 adversarial hardening additionally checks hard numeric
+latency/availability, complete hosting-transition financial exposure, zero
+ceilings, fixed-reference metric normalization, governed dependency evaluation,
+incumbent feasibility versus Pareto membership, sustained dwell evidence,
+snapshot/content identity, and pure replay. Inputs use generated Protobuf
+records with positive/negative CUE fixtures. Action proposals carry the existing
+ADR-0136 effects and resilience declarations; external execution is not
+authorized by this proof. Unknown outcomes require production reconciliation.
+
 ## Verification
 
 ```powershell

@@ -1,10 +1,19 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { sanitizeNodeOptions } from "./lib/env.ts";
+import {
+	draftUnitPatterns,
+	gitLsFiles,
+	isNodeTestFile,
+	legacyUnitPatterns,
+	readShard,
+	selectDraftShard,
+	selectShard,
+} from "./lib/unit-test-selection.ts";
 
 const args = new Set(process.argv.slice(2));
 const quiet = args.has("--quiet");
@@ -13,6 +22,8 @@ const category = categoryArg?.slice("--category=".length) ?? "unit";
 const rootOnly = process.argv.includes("--root-only");
 const finalValidation = process.argv.includes("--final");
 const changedScope = process.argv.includes("--changed");
+const runTimeoutMs =
+	Number.parseInt(process.env.HOBO_TEST_RUN_TIMEOUT_MS ?? "", 10) || 600_000;
 const isAgent =
 	process.env.CI_AGENT === "true" ||
 	process.env.CODEX === "true" ||
@@ -27,20 +38,8 @@ const broadAgentCategories = new Set([
 ]);
 
 const categories = {
-	unit: rootOnly
-		? ["test/*test.ts", "test/*test.mjs"]
-		: [
-				"test/*test.ts",
-				"test/*test.mjs",
-				"src/draft/*/*/test/*test.ts",
-				"src/draft/exp-proofs/*/*/test/*test.ts",
-				"src/draft/*/*/test/*test.mjs",
-				"src/draft/exp-proofs/*/*/test/*test.mjs",
-				"src/draft/*/*/tests/*test.ts",
-				"src/draft/exp-proofs/*/*/tests/*test.ts",
-				"src/draft/*/*/tests/*test.mjs",
-				"src/draft/exp-proofs/*/*/tests/*test.mjs",
-			],
+	unit: rootOnly ? ["test/*test.ts", "test/*test.mjs"] : legacyUnitPatterns,
+	draft: draftUnitPatterns,
 	types: [
 		"src/draft/*/*/type-tests/*.ts",
 		"src/draft/exp-proofs/*/*/type-tests/*.ts",
@@ -120,21 +119,41 @@ if (!patterns) {
 }
 
 // Category lanes run under Vitest, which cannot load node:test-style files.
-// Files that import node:test belong to package-level `node --test` lanes
-// (their package.json test:contract:* scripts), so exclude them here; the
-// turbo part of the root lane still executes them under their owning engine.
+// Package files belong to their package-level `node --test` contract lanes;
+// root test/ files run under Node below after the Vitest process finishes.
 const nodeTestFiles = new Set<string>();
-const testFiles = gitLsFiles(patterns).filter((file) => {
+// Frozen proofs cannot change after promotion (scripts/promotions.json), so a
+// frozen proof test that runs its stale code against the live repo would fail
+// forever. The promoted package carries the maintained copy of each test here.
+const frozenLiveRepoTests = new Set([
+	"src/draft/technical-proofs/s0-04-protobuf-cue-codegen/packages/schema-tools/test/codegen-pipeline.test.ts",
+]);
+const selectedFiles = gitLsFiles(patterns).filter((file) => {
 	if (file.endsWith(".feature")) return false;
+	if (frozenLiveRepoTests.has(file)) return false;
 	if (isNodeTestFile(file)) {
 		nodeTestFiles.add(file);
 		return false;
 	}
 	return true;
 });
+const shard = readShard(process.argv.slice(2));
+const testFiles =
+	shard === undefined
+		? selectedFiles
+		: category === "draft"
+			? selectDraftShard(selectedFiles, shard)
+			: selectShard(selectedFiles, shard);
+const rootNodeTestFiles = [...nodeTestFiles].filter((file) =>
+	file.startsWith("test/"),
+);
+const shardedRootNodeTestFiles =
+	shard === undefined
+		? rootNodeTestFiles
+		: selectShard(rootNodeTestFiles, shard);
 if (nodeTestFiles.size > 0) {
 	console.log(
-		`Skipping ${nodeTestFiles.size} node:test-style file(s) covered by package lanes:`,
+		`Skipping ${nodeTestFiles.size} node:test-style file(s) covered by node:test lanes:`,
 	);
 	for (const file of nodeTestFiles) console.log(`  ${file}`);
 }
@@ -159,7 +178,7 @@ if (isAgent && testFiles.length > 3 && !changedScope && !finalValidation) {
 	);
 }
 
-if (testFiles.length === 0) {
+if (testFiles.length === 0 && shardedRootNodeTestFiles.length === 0) {
 	console.log(`No ${category} tests found; lane skipped.`);
 	process.exit(0);
 }
@@ -172,13 +191,36 @@ const configPath = join(configDir, "vitest.config.mjs");
 const baseConfigUrl = pathToFileURL(
 	resolve(process.cwd(), "vitest.config.ts"),
 ).href;
-const maxWorkers = Math.max(
+const configuredMaxWorkers = Math.max(
 	1,
-	Number.parseInt(process.env.HOBO_RELEVANT_CHECK_CONCURRENCY ?? "4", 10) || 4,
+	Number.parseInt(
+		process.env.HOBO_TEST_MAX_WORKERS ??
+			process.env.HOBO_RELEVANT_CHECK_CONCURRENCY ??
+			"4",
+		10,
+	) || 4,
 );
+const parsedMemoryMaxWorkers = Number.parseInt(
+	process.env.HOBO_TEST_MAX_WORKERS ?? "",
+	10,
+);
+const memoryMaxWorkers =
+	Number.isInteger(parsedMemoryMaxWorkers) && parsedMemoryMaxWorkers > 0
+		? parsedMemoryMaxWorkers
+		: configuredMaxWorkers;
+const maxWorkers = Math.min(configuredMaxWorkers, memoryMaxWorkers);
+const progressReporter = resolve(
+	process.cwd(),
+	"scripts",
+	"lib",
+	"vitest-progress-reporter.ts",
+);
+const baseReporters = quiet
+	? '["dot"]'
+	: '(baseConfig.test.reporters ?? ["default"])';
 writeFileSync(
 	configPath,
-	`import baseConfig from ${JSON.stringify(baseConfigUrl)};\nexport default { ...baseConfig, test: { ...baseConfig.test, include: ${JSON.stringify(testFiles)}, maxWorkers: ${maxWorkers}, pool: "forks", watch: false } };\n`,
+	`import baseConfig from ${JSON.stringify(baseConfigUrl)};\nexport default { ...baseConfig, test: { ...baseConfig.test, include: ${JSON.stringify(testFiles)}, maxWorkers: ${maxWorkers}, pool: "forks", watch: false, reporters: [...${baseReporters}, ${JSON.stringify(progressReporter)}, "hanging-process"] } };\n`,
 );
 
 try {
@@ -188,6 +230,8 @@ try {
 		"vitest",
 		"vitest.mjs",
 	);
+	const wallStart = Date.now();
+	const monotonicStart = performance.now();
 	const result = spawnSync(
 		process.execPath,
 		[
@@ -197,38 +241,67 @@ try {
 			process.cwd(),
 			"--config",
 			configPath,
-			...(quiet ? ["--silent", "--reporter=dot"] : []),
+			...(quiet ? ["--silent"] : []),
 		],
 		{
 			stdio: "inherit",
 			shell: false,
-			env: sanitizeNodeOptions(),
+			env: {
+				...sanitizeNodeOptions(),
+				HOBO_TEST_MAX_WORKERS: String(maxWorkers),
+			},
+			// Vitest bounds each test and hook, not a file or the run; a leaked handle
+			// or a stuck worker would otherwise hold the CI slot until the job timeout.
+			timeout: runTimeoutMs,
+			killSignal: "SIGKILL",
 		},
 	);
-	process.exitCode = result.status ?? 1;
+	if (
+		result.error &&
+		"code" in result.error &&
+		result.error.code === "ETIMEDOUT"
+	) {
+		console.error(
+			`run-tests: vitest exceeded ${runTimeoutMs / 1000}s (HOBO_TEST_RUN_TIMEOUT_MS) and was killed`,
+		);
+	} else if (result.error) {
+		console.error(`run-tests: vitest failed to start: ${result.error.message}`);
+	}
+	if (result.signal) {
+		// A killed child has no exit status; name the signal so CI logs show why.
+		console.error(
+			`run-tests: vitest was killed by ${result.signal} (no exit status)`,
+		);
+	}
+	// Vitest's Duration and the watchdog both use the monotonic clock, which stops
+	// while the host is suspended; the wall clock does not.
+	const pausedMs =
+		Date.now() - wallStart - (performance.now() - monotonicStart);
+	if (pausedMs > 30_000) {
+		console.error(
+			`run-tests: the wall clock ran ${Math.round(pausedMs / 1000)}s ahead of the monotonic clock; the host was suspended or paused during this run`,
+		);
+	}
+	let exitCode = result.status ?? 1;
+	if (exitCode === 0 && shardedRootNodeTestFiles.length > 0) {
+		const nodeResult = spawnSync(
+			process.execPath,
+			["--import", "tsx", "--test", ...shardedRootNodeTestFiles],
+			{
+				stdio: "inherit",
+				shell: false,
+				env: sanitizeNodeOptions(),
+				timeout: runTimeoutMs,
+				killSignal: "SIGKILL",
+			},
+		);
+		if (nodeResult.error)
+			console.error(
+				`run-tests: node --test failed: ${nodeResult.error.message}`,
+			);
+		exitCode = nodeResult.status ?? 1;
+	}
+	process.exitCode = exitCode;
 } finally {
 	rmSync(configDir, { force: true, recursive: true });
-}
-
-function isNodeTestFile(file: string): boolean {
-	const source = readFileSync(file, "utf8");
-	return /from\s+["']node:test["']|require\(\s*["']node:test["']\s*\)|import\s+["']node:test["']/.test(
-		source,
-	);
-}
-
-function gitLsFiles(globPatterns: string[]): string[] {
-	const result = spawnSync("git", ["ls-files", ...globPatterns], {
-		encoding: "utf8",
-		shell: false,
-		maxBuffer: 32 * 1024 * 1024,
-	});
-	if (result.error || result.status !== 0) {
-		process.stderr.write(result.stderr || result.error?.message || "");
-		process.exit(result.status ?? 1);
-	}
-	return result.stdout
-		.split(/\r?\n/)
-		.map((line) => line.trim())
-		.filter(Boolean);
 }

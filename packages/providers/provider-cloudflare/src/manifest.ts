@@ -67,6 +67,9 @@ export function publishCapabilityManifest(
 			const mapping = EQUIVALENCE_CLASSES[port];
 			return {
 				port: mapping.port,
+				...(mapping.port === "compute"
+					? { productId: "cloudflare.workers/v1" }
+					: undefined),
 				interface: `hobo:${mapping.port}/${mapping.resourceClass}`,
 				version: "0.1.0",
 				stability: "preview",
@@ -106,7 +109,8 @@ export function publishCapabilityManifest(
 			sku,
 			unit,
 			marginalPrice: "0.0000",
-			freeTier: { unit, included: 100000, reset: "monthly" },
+			pricingStatus: "unknown",
+			freeTier: { unit, included: 0, reset: "unknown" },
 			source: {
 				type: "declared-provider",
 				documentRef: digestRef(`cost:${providerId}:${sku}`),
@@ -120,12 +124,14 @@ export function publishCapabilityManifest(
 		schema: COST_SCHEMA,
 		providerId,
 		currency: "USD",
+		pricingStatus: "unknown",
 		facts: input.costFacts
 			? input.costFacts.map((fact) => ({
 					sku: fact.sku,
 					unit: fact.unit,
 					marginalPrice: "0.0000",
-					freeTier: { unit: fact.unit, included: 100000, reset: "monthly" },
+					pricingStatus: "unknown",
+					freeTier: { unit: fact.unit, included: 0, reset: "unknown" },
 					source: {
 						type: "declared-provider",
 						documentRef: digestRef(`cost:${providerId}:${fact.sku}`),

@@ -33,13 +33,11 @@
 import type {
 	HttpTransport,
 	ResolveRequest,
-	ResolverError,
 	ResourceResolver,
 	TransportResponse,
 } from "@hobo/core";
-import { parseResolveRequest } from "@hobo/core";
+import { parseResolveRequest, type ResolveOutcome } from "@hobo/core";
 import { describe, expect, it } from "vitest";
-
 import {
 	GCP_CLOUD_RUN_PRODUCT_ID,
 	GCP_CLOUD_STORAGE_PRODUCT_ID,
@@ -49,8 +47,12 @@ import {
 	gcpResolverRegistry,
 	redactGcpText,
 } from "../src/index.js";
+import type { JsonObject, JsonValue } from "../src/json.js";
 
-type Rec = Record<string, unknown>;
+type Rec = JsonObject;
+type ResolverProbe =
+	| (() => Promise<ResolveOutcome | undefined>)
+	| (() => Promise<void>);
 
 const CREDENTIAL_REF = "env://GOOGLE_OAUTH_ACCESS_TOKEN";
 /** A token-shaped OAuth2 access token. Never expected anywhere but a header. */
@@ -92,7 +94,7 @@ function request(input: {
 			logicalId: input.logicalId ?? "thing",
 			...(input.physicalId !== undefined
 				? { physicalId: input.physicalId }
-				: {}),
+				: undefined),
 		},
 		desired: input.desired ?? {},
 		credentialRef: input.credentialRef ?? CREDENTIAL_REF,
@@ -113,7 +115,7 @@ function sequence(...responses: readonly TransportResponse[]): HttpTransport {
 	};
 }
 
-function json(status: number, payload: unknown): TransportResponse {
+function json(status: number, payload: JsonValue): TransportResponse {
 	return {
 		status,
 		headers: { "content-type": "application/json" },
@@ -125,20 +127,26 @@ function raw(status: number, body: string): TransportResponse {
 	return { status, headers: {}, body };
 }
 
-async function codeOf(run: () => Promise<unknown>): Promise<string> {
+async function codeOf(run: ResolverProbe): Promise<string> {
 	try {
 		await run();
 	} catch (error) {
-		return (error as ResolverError).code ?? "NO_CODE";
+		const code =
+			error instanceof Error
+				? Object.getOwnPropertyDescriptor(error, "code")?.value
+				: undefined;
+		return Object.prototype.toString.call(code) === "[object String]"
+			? String(code)
+			: "NO_CODE";
 	}
 	return "NO_ERROR_THROWN";
 }
 
-async function messageOf(run: () => Promise<unknown>): Promise<string> {
+async function messageOf(run: ResolverProbe): Promise<string> {
 	try {
 		await run();
 	} catch (error) {
-		return (error as Error).message;
+		return error instanceof Error ? error.message : String(error);
 	}
 	return "NO_ERROR_THROWN";
 }
@@ -200,7 +208,12 @@ describe("the project scope", () => {
 
 	it("refuses a projectId that is not a string", () => {
 		expect(() =>
-			gcpResolverRegistry(options({ projectId: undefined as never })),
+			gcpResolverRegistry(
+				options({
+					// SAFETY: intentionally violating the typed host option contract to exercise its runtime parse boundary.
+					projectId: undefined as never,
+				}),
+			),
 		).toThrow(/projectId/u);
 	});
 
@@ -316,7 +329,6 @@ describe("the credential boundary", () => {
 		expect(
 			await codeOf(() =>
 				readTopic(always(raw(404, "")), {
-					// biome-ignore lint/suspicious/useAwait: rejecting is the point
 					resolveCredential: async () => {
 						throw "sealed";
 					},
@@ -543,7 +555,13 @@ describe("Cloud Run", () => {
 			sequence(
 				raw(404, ""),
 				json(200, { name: operationName, done: true }),
-				json(200, { name: "thing", uri: "https://thing-x.run.app" }),
+				json(200, {
+					name: `projects/${PROJECT_ID}/locations/${location}/services/thing`,
+					uri: "https://thing-x.run.app",
+					generation: "1",
+					observedGeneration: "1",
+					terminalCondition: { state: "CONDITION_SUCCEEDED" },
+				}),
 			),
 		);
 		expect(outcome.outputs.operationConfirmed).toBe(true);
@@ -569,7 +587,7 @@ describe("Cloud Run", () => {
 			{ image: IMAGE },
 			always(
 				json(200, {
-					name: "thing",
+					name: `projects/${PROJECT_ID}/locations/${location}/services/thing`,
 					template: { containers: [{ image: IMAGE }] },
 				}),
 			),
@@ -582,12 +600,12 @@ describe("Cloud Run", () => {
 			{ image: IMAGE },
 			sequence(
 				json(200, {
-					name: "thing",
+					name: `projects/${PROJECT_ID}/locations/${location}/services/thing`,
 					template: { containers: [{ image: "old:1" }] },
 				}),
 				json(200, { name: operationName, done: true }),
 				json(200, {
-					name: "thing",
+					name: `projects/${PROJECT_ID}/locations/${location}/services/thing`,
 					template: { containers: [{ image: IMAGE }] },
 				}),
 			),
@@ -604,13 +622,13 @@ describe("Cloud Run", () => {
 			{ ingress: "internal" },
 			sequence(
 				json(200, {
-					name: "thing",
+					name: `projects/${PROJECT_ID}/locations/${location}/services/thing`,
 					ingress: "all",
 					template: { containers: [{ image: IMAGE }] },
 				}),
 				json(200, { name: operationName, done: true }),
 				json(200, {
-					name: "thing",
+					name: `projects/${PROJECT_ID}/locations/${location}/services/thing`,
 					ingress: "INGRESS_TRAFFIC_INTERNAL_ONLY",
 					template: { containers: [{ image: IMAGE }] },
 				}),
@@ -626,7 +644,12 @@ describe("Cloud Run", () => {
 			await codeOf(() =>
 				reconcileRun(
 					{ ingress: "internal" },
-					always(json(200, { name: "thing", ingress: "all" })),
+					always(
+						json(200, {
+							name: `projects/${PROJECT_ID}/locations/${location}/services/thing`,
+							ingress: "all",
+						}),
+					),
 				),
 			),
 		).toBe("RESOLVER_OUTPUT_UNPARSEABLE");
@@ -637,7 +660,7 @@ describe("Cloud Run", () => {
 			{ image: "new:2" },
 			sequence(
 				json(200, {
-					name: "thing",
+					name: `projects/${PROJECT_ID}/locations/${location}/services/thing`,
 					template: { containers: [{ image: IMAGE }] },
 				}),
 				json(200, { name: operationName, done: false }),

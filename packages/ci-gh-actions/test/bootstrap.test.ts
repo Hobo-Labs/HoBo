@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { expect, it } from "vitest";
 import { runHostProcess, runnerEnvironment } from "../src/bootstrap.js";
 
@@ -105,37 +107,30 @@ it("forwards parent cancellation to the detached child and waits for shutdown", 
 	}
 });
 
-it.each([
-	"timeout",
-	"success",
-])("waits for TERM-ignoring descendants after parent %s", async (outcome) => {
+const TERM_IGNORING_DESCENDANT = `
+		process.on("SIGTERM", () => {});
+		require("node:fs").writeFileSync(process.argv[1], String(process.pid));
+		setInterval(() => {}, 1000);
+	`;
+const TERM_HONOURING_PARENT = `
+		process.on("SIGTERM", () => process.exit(0));
+		require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(TERM_IGNORING_DESCENDANT)}, process.argv[1]], {stdio:"ignore"});
+		setInterval(() => {
+			if (process.argv[2] === "success" && require("node:fs").existsSync(process.argv[1])) process.exit(0);
+		}, 10);
+	`;
+// Production waits 10s before SIGKILL; the escalation is the same at any grace.
+const TEST_SHUTDOWN = { graceMs: 300 };
+
+async function withTermIgnoringGroup(
+	run: (marker: string, directory: string) => Promise<void>,
+): Promise<void> {
 	const directory = await mkdtemp(join(tmpdir(), "hobo-host-group-"));
 	const marker = join(directory, "descendant");
 	const term = process.listenerCount("SIGTERM");
 	const interrupt = process.listenerCount("SIGINT");
-	const descendant = `
-			process.on("SIGTERM", () => {});
-			require("node:fs").writeFileSync(process.argv[1], String(process.pid));
-			setInterval(() => {}, 1000);
-		`;
-	const parent = `
-			process.on("SIGTERM", () => process.exit(0));
-			require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(descendant)}, process.argv[1]], {stdio:"ignore"});
-			setInterval(() => {
-				if (process.argv[2] === "success" && require("node:fs").existsSync(process.argv[1])) process.exit(0);
-			}, 10);
-		`;
 	try {
-		const operation = runHostProcess(
-			process.execPath,
-			["-e", parent, marker, outcome],
-			directory,
-			runnerEnvironment(process.env),
-			outcome === "timeout" ? 1000 : 15000,
-		);
-		if (outcome === "timeout")
-			await expect(operation).rejects.toThrow(/timed out/);
-		else await operation;
+		await run(marker, directory);
 		const pid = Number(await readFile(marker, "utf8"));
 		const status = await readFile(`/proc/${pid}/stat`, "utf8").catch(
 			() => undefined,
@@ -158,7 +153,50 @@ it.each([
 		}
 		await rm(directory, { recursive: true, force: true });
 	}
-}, 20000);
+}
+
+it.each([
+	"timeout",
+	"success",
+])("waits for TERM-ignoring descendants after parent %s", (outcome) =>
+	withTermIgnoringGroup(async (marker, directory) => {
+		const operation = runHostProcess(
+			process.execPath,
+			["-e", TERM_HONOURING_PARENT, marker, outcome],
+			directory,
+			runnerEnvironment(process.env),
+			outcome === "timeout" ? 1000 : 15000,
+			undefined,
+			TEST_SHUTDOWN,
+		);
+		if (outcome === "timeout")
+			await expect(operation).rejects.toThrow(/timed out/);
+		else await operation;
+	}));
+
+it("confirms the killed group even when the event loop stalls across SIGKILL", () =>
+	withTermIgnoringGroup(async (marker, directory) => {
+		const cancel = new AbortController();
+		const operation = runHostProcess(
+			process.execPath,
+			["-e", TERM_HONOURING_PARENT, marker, "cancel"],
+			directory,
+			runnerEnvironment(process.env),
+			undefined,
+			cancel.signal,
+			TEST_SHUTDOWN,
+		);
+		const settled = expect(operation).rejects.toThrow(/timed out/);
+		while (!existsSync(marker)) await sleep(10);
+		cancel.abort(new Error("cancelled"));
+		// A CPU-starved or paused host: no timer runs until both the SIGKILL and
+		// the confirmation window have expired, so they come due in one turn.
+		const stalledUntil = performance.now() + TEST_SHUTDOWN.graceMs + 2500;
+		while (performance.now() < stalledUntil) {
+			/* Block the event loop. */
+		}
+		await settled;
+	}));
 
 it("cleans up cancellation handlers when spawning fails", async () => {
 	const term = process.listenerCount("SIGTERM");

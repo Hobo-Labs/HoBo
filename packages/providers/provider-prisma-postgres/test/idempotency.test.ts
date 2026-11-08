@@ -31,6 +31,38 @@ const SNAPSHOT: PrismaResourceSnapshot = {
 };
 
 describe("createPrismaClient idempotency", () => {
+	it("retains the intent after a successful process returns malformed output", async () => {
+		const runner = createStubRunner([
+			stdout("not a result document"),
+			stdout(fixture("create.success.json")),
+		]);
+		const client = createPrismaClient({
+			runner,
+			store: createInMemoryIdempotencyStore(),
+			clock: fixedClock(FIXTURE_NOW_MS),
+		});
+		await expect(client.create({ idempotencyKey: KEY })).rejects.toMatchObject({
+			code: "PROVIDER_CONTRACT_CHANGED",
+		});
+		await expect(client.create({ idempotencyKey: KEY })).rejects.toMatchObject({
+			code: "PROVIDER_OPERATION_AMBIGUOUS",
+		});
+		expect(runner.runs).toHaveLength(1);
+	});
+	it("claims a CLI intent atomically across concurrent clients sharing the store", async () => {
+		const store = createInMemoryIdempotencyStore();
+		const runner = createStubRunner([stdout(fixture("create.success.json"))]);
+		const clients = [0, 1].map(() =>
+			createPrismaClient({ runner, store, clock: fixedClock(FIXTURE_NOW_MS) }),
+		);
+		const results = await Promise.allSettled(
+			clients.map((client) => client.create({ idempotencyKey: KEY })),
+		);
+		expect(
+			results.filter((result) => result.status === "fulfilled"),
+		).toHaveLength(1);
+		expect(runner.runs).toHaveLength(1);
+	});
 	it("runs the CLI exactly once for a fresh key", async () => {
 		const runner = createStubRunner([stdout(fixture("create.success.json"))]);
 		const client = createPrismaClient({

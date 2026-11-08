@@ -1,12 +1,10 @@
 import { inspect } from "node:util";
 
 import type { IacProgram } from "@hobo/cloud";
-import type { EventStore } from "@hobo/core";
 import { at, first } from "@hobo/core/total-access";
 import { REDACTION_WINDOW } from "@hobo/provider-vercel";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { selectIacProvider } from "../src/compose.js";
 import { type JsonObject, parseJsonObject } from "../src/json.js";
 import {
 	createVercelClient,
@@ -15,7 +13,10 @@ import {
 	type VercelFetchResponse,
 	VercelTransportError,
 } from "../src/vercel-client.js";
-import { createVercelDeployProvider } from "../src/vercel-deploy-provider.js";
+import {
+	createVercelDeployProvider,
+	type VercelDeployProviderOptions,
+} from "../src/vercel-deploy-provider.js";
 
 // The Vercel deploy path deploys first. Create Deployment names its project, and
 // on an account with no project by that name Vercel refuses it:
@@ -99,6 +100,14 @@ function scripted(
 	return { fetch, sent, routes };
 }
 
+// The committed-fixture helper as these tests drive it: `fixtureArtifact: true`
+// (without it, `apply` refuses before any request).
+function fixtureProvider(
+	options: Omit<VercelDeployProviderOptions, "fixtureArtifact">,
+) {
+	return createVercelDeployProvider({ fixtureArtifact: true, ...options });
+}
+
 function programFor(deploymentId: string): IacProgram {
 	return {
 		programId: `prog-${deploymentId}`,
@@ -117,7 +126,7 @@ const CREATE = "POST /v9/projects";
 describe("createVercelDeployProvider deploys first (scripted transport, no network)", () => {
 	it("deploys to an existing project in one request, with no project call", async () => {
 		const { fetch, sent, routes } = scripted({ [DEPLOY]: [DEPLOYED] });
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = fixtureProvider({ token: "tok", fetch });
 
 		const outputs = await provider.apply(programFor("dep-1"));
 
@@ -144,7 +153,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 			[DEPLOY]: [plainReply(404, body), DEPLOYED],
 			[CREATE]: [CREATED],
 		});
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = fixtureProvider({ token: "tok", fetch });
 
 		const outputs = await provider.apply(programFor("dep-1"));
 
@@ -157,7 +166,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 			[DEPLOY]: [PROJECT_NOT_FOUND, DEPLOYED],
 			[CREATE]: [CREATED],
 		});
-		const provider = createVercelDeployProvider({
+		const provider = fixtureProvider({
 			token: "tok",
 			fetch,
 			teamId: "team_7",
@@ -189,7 +198,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 			[DEPLOY]: [PROJECT_NOT_FOUND, DEPLOYED],
 			[CREATE]: [CONFLICT],
 		});
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = fixtureProvider({ token: "tok", fetch });
 
 		const outputs = await provider.apply(programFor("dep-1"));
 
@@ -210,7 +219,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 			[DEPLOY]: [PROJECT_NOT_FOUND, DEPLOYED],
 			[CREATE]: [CREATED],
 		});
-		const provider = createVercelDeployProvider({
+		const provider = fixtureProvider({
 			token: "tok",
 			fetch,
 			teamId,
@@ -235,7 +244,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 			[DEPLOY]: [PROJECT_NOT_FOUND, DEPLOYED],
 			[CREATE]: [CREATED],
 		});
-		const provider = createVercelDeployProvider({
+		const provider = fixtureProvider({
 			token: "tok",
 			fetch,
 			projectName: "acme-site",
@@ -261,7 +270,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 			],
 			[CREATE]: [CREATED],
 		});
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = fixtureProvider({ token: "tok", fetch });
 
 		const outputs = await provider.apply(programFor("dep-1"));
 
@@ -311,7 +320,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 		],
 	])("does not retry %s", async (_case, refusal, status, code) => {
 		const { fetch, routes } = scripted({ [DEPLOY]: [refusal] });
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = fixtureProvider({ token: "tok", fetch });
 
 		const pending = provider.apply(programFor("dep-1"));
 
@@ -325,7 +334,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 			[DEPLOY]: [PROJECT_NOT_FOUND, PROJECT_NOT_FOUND],
 			[CREATE]: [CREATED],
 		});
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = fixtureProvider({ token: "tok", fetch });
 
 		const pending = provider.apply(programFor("dep-1"));
 
@@ -349,7 +358,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 		const { fetch, routes } = scripted({
 			[DEPLOY]: [reply(status, { error: { code, message } })],
 		});
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = fixtureProvider({ token: "tok", fetch });
 
 		const pending = provider.apply(programFor("dep-1"));
 
@@ -378,7 +387,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 				}),
 			],
 		});
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = fixtureProvider({ token: "tok", fetch });
 
 		const pending = provider.apply(programFor("dep-1"));
 
@@ -395,7 +404,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 			[DEPLOY]: [PROJECT_NOT_FOUND, PROJECT_NOT_FOUND],
 			[CREATE]: [CONFLICT],
 		});
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = fixtureProvider({ token: "tok", fetch });
 
 		const pending = provider.apply(programFor("dep-1"));
 
@@ -430,7 +439,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 
 	it("keeps the whole 409 note after a long deployment refusal, cutting the refusal instead", async () => {
 		const plain = scripted({ [DEPLOY]: [refusalOfLength(490)] });
-		const alone = await createVercelDeployProvider({
+		const alone = await fixtureProvider({
 			token: "tok",
 			fetch: plain.fetch,
 		})
@@ -442,7 +451,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 			[DEPLOY]: [PROJECT_NOT_FOUND, refusalOfLength(490)],
 			[CREATE]: [CONFLICT],
 		});
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = fixtureProvider({ token: "tok", fetch });
 
 		const pending = provider.apply(programFor("dep-1"));
 
@@ -469,7 +478,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 				reply(409, { error: { code: "conflict", message: "y".repeat(2000) } }),
 			],
 		});
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = fixtureProvider({ token: "tok", fetch });
 
 		const pending = provider.apply(programFor("dep-1"));
 
@@ -492,7 +501,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 				reply(403, { error: { code: "forbidden", message: "Not authorized" } }),
 			],
 		});
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = fixtureProvider({ token: "tok", fetch });
 
 		const pending = provider.apply(programFor("dep-1"));
 
@@ -515,7 +524,7 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 			],
 			[CREATE]: [CREATED],
 		});
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = fixtureProvider({ token: "tok", fetch });
 
 		const earlier = await provider.apply(programFor("dep-1"));
 		const again = await provider.apply(programFor("dep-1"));
@@ -530,156 +539,9 @@ describe("createVercelDeployProvider deploys first (scripted transport, no netwo
 
 	it("preview still makes no request", async () => {
 		const { fetch, sent } = scripted({});
-		const provider = createVercelDeployProvider({ token: "tok", fetch });
+		const provider = fixtureProvider({ token: "tok", fetch });
 		await provider.preview(programFor("dep-1"));
 		expect(sent).toEqual([]);
-	});
-});
-
-describe("the composed provider's team (selectIacProvider, scripted transport, no network)", () => {
-	// selectIacProvider builds the Pulumi lane's provider lazily, so a stand-in
-	// store is never read on the Vercel path.
-	const deps = {
-		// SAFETY: assertion required at this I/O or test boundary.
-		store: {} as EventStore,
-		providers: [],
-	};
-
-	async function composedDeploy(env: NodeJS.ProcessEnv) {
-		const { fetch, sent, routes } = scripted({
-			[DEPLOY]: [PROJECT_NOT_FOUND, DEPLOYED],
-			[CREATE]: [CREATED],
-		});
-		const provider = selectIacProvider({ ...deps, env, vercelFetch: fetch });
-		const outputs = await provider.apply(programFor("dep-1"));
-		const queries = sent.map(({ url }) => new URL(url).search);
-		return { outputs, queries, routes: routes() };
-	}
-
-	it("creates and deploys in the team VERCEL_TEAM_ID names, and says so", async () => {
-		const { outputs, queries, routes } = await composedDeploy({
-			VERCEL_TOKEN: "tok",
-			VERCEL_TEAM_ID: "team_acme",
-		});
-
-		expect(routes).toEqual([DEPLOY, CREATE, DEPLOY]);
-		expect(queries).toEqual([
-			"?teamId=team_acme",
-			"?teamId=team_acme",
-			"?teamId=team_acme",
-		]);
-		expect(outputs).toMatchObject({
-			projectCreated: "true",
-			scope: "team_acme",
-		});
-	});
-
-	it.each([
-		["VERCEL_ORG_ID alone, trimmed", { VERCEL_ORG_ID: " team_x " }, "team_x"],
-		[
-			"VERCEL_TEAM_ID over VERCEL_ORG_ID",
-			{ VERCEL_TEAM_ID: "team_acme", VERCEL_ORG_ID: "team_org" },
-			"team_acme",
-		],
-		[
-			"VERCEL_ORG_ID when VERCEL_TEAM_ID is blank",
-			{ VERCEL_TEAM_ID: "  ", VERCEL_ORG_ID: "team_org" },
-			"team_org",
-		],
-		// The operator set VERCEL_TEAM_ID on purpose: a slug or any id is taken
-		// as given, whatever VERCEL_ORG_ID holds.
-		[
-			"a VERCEL_TEAM_ID that is not a team_ id, over a personal VERCEL_ORG_ID",
-			{ VERCEL_TEAM_ID: "acme-slug", VERCEL_ORG_ID: "u_abc" },
-			"acme-slug",
-		],
-		[
-			"a VERCEL_TEAM_ID that is not a team_ id, over a team VERCEL_ORG_ID",
-			{ VERCEL_TEAM_ID: "acme-slug", VERCEL_ORG_ID: "team_org" },
-			"acme-slug",
-		],
-	])("takes the team from %s", async (_case, team, teamId) => {
-		const { outputs, queries } = await composedDeploy({
-			VERCEL_TOKEN: "tok",
-			...team,
-		});
-
-		expect(queries).toEqual([
-			`?teamId=${teamId}`,
-			`?teamId=${teamId}`,
-			`?teamId=${teamId}`,
-		]);
-		expect(outputs.scope).toBe(teamId);
-	});
-
-	// A bare `team_` is no team id and no account id: refused here, naming the
-	// variable, rather than sent as `?teamId=team_`.
-	it.each([
-		["bare", { VERCEL_ORG_ID: "team_" }],
-		["bare, padded", { VERCEL_ORG_ID: " team_ " }],
-		[
-			"bare, VERCEL_TEAM_ID blank",
-			{ VERCEL_TEAM_ID: " ", VERCEL_ORG_ID: "team_" },
-		],
-	])("refuses a %s team_ VERCEL_ORG_ID before any request", (_case, team) => {
-		const { fetch, sent } = scripted({});
-
-		expect(() =>
-			selectIacProvider({
-				...deps,
-				env: { VERCEL_TOKEN: "tok", ...team },
-				vercelFetch: fetch,
-			}),
-		).toThrow(/^VERCEL_ORG_ID is "team_" with no id after it/u);
-		expect(sent).toEqual([]);
-	});
-
-	it("reads no VERCEL_ORG_ID, bare team_ or not, when VERCEL_TEAM_ID names the team", async () => {
-		const { outputs, queries } = await composedDeploy({
-			VERCEL_TOKEN: "tok",
-			VERCEL_TEAM_ID: "team_acme",
-			VERCEL_ORG_ID: "team_",
-		});
-
-		expect(queries).toEqual([
-			"?teamId=team_acme",
-			"?teamId=team_acme",
-			"?teamId=team_acme",
-		]);
-		expect(outputs.scope).toBe("team_acme");
-	});
-
-	it.each([
-		["unset", {}],
-		["empty", { VERCEL_TEAM_ID: "" }],
-		["blank", { VERCEL_TEAM_ID: "  " }],
-		["blank, VERCEL_ORG_ID too", { VERCEL_TEAM_ID: "", VERCEL_ORG_ID: " " }],
-		// A VERCEL_ORG_ID that is not a team_ id is a personal account's, as the
-		// Vercel CLI writes it: no team.
-		[
-			"unset, VERCEL_ORG_ID a personal account (u_abc)",
-			{ VERCEL_ORG_ID: "u_abc" },
-		],
-		[
-			"unset, VERCEL_ORG_ID a user id",
-			{ VERCEL_ORG_ID: " 6Qn1jRzOd4H7mDmW5wB2kLpX " },
-		],
-		[
-			"blank, VERCEL_ORG_ID a personal account",
-			{ VERCEL_TEAM_ID: " ", VERCEL_ORG_ID: "u_abc" },
-		],
-		["unset, VERCEL_ORG_ID TEAM_X (case matters)", { VERCEL_ORG_ID: "TEAM_x" }],
-	])("with VERCEL_TEAM_ID %s, stays in the token's own scope", async (_case, team) => {
-		const { outputs, queries } = await composedDeploy({
-			VERCEL_TOKEN: "tok",
-			...team,
-		});
-
-		expect(queries).toEqual(["", "", ""]);
-		expect(outputs).toMatchObject({
-			projectCreated: "true",
-			scope: "token-default",
-		});
 	});
 });
 
@@ -692,7 +554,7 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		token = TOKEN,
 	): Promise<VercelApiError> {
 		const fetch: VercelFetch = async (_url, init) => answer(init);
-		const provider = createVercelDeployProvider({ token, fetch });
+		const provider = fixtureProvider({ token, fetch });
 		try {
 			await provider.apply(programFor("dep-1"));
 		} catch (error) {
@@ -1254,7 +1116,7 @@ describe("a transport failure (scripted transport, no network)", () => {
 	// The deploy's error when the transport throws `thrown` (or answers 2xx
 	// with a body `json()` cannot read, when `answered` is set).
 	async function failedBy(fetch: VercelFetch): Promise<VercelTransportError> {
-		const provider = createVercelDeployProvider({ token: TOKEN, fetch });
+		const provider = fixtureProvider({ token: TOKEN, fetch });
 		try {
 			await provider.apply(programFor("dep-1"));
 		} catch (error) {
@@ -1448,7 +1310,7 @@ describe("a transport failure (scripted transport, no network)", () => {
 
 		let refusal: unknown;
 		try {
-			createVercelDeployProvider({ token, fetch });
+			fixtureProvider({ token, fetch });
 		} catch (error) {
 			refusal = error;
 		}
@@ -1459,6 +1321,61 @@ describe("a transport failure (scripted transport, no network)", () => {
 		expect(message).not.toContain(TOKEN.slice(0, 10));
 		expect(message).not.toContain(TOKEN.slice(10));
 		expect(sent).toEqual([]);
+	});
+});
+
+// The deployment read and delete main added (`getDeployment`,
+// `deleteDeployment`) follow the client's rules: a request with nothing to send
+// carries no body (`fetch` refuses a GET with one), the team id is trimmed, and
+// a transport that throws is a redacted VercelTransportError.
+describe("createVercelClient's deployment read and delete (scripted transport, no network)", () => {
+	const READ = "GET /v13/deployments/dpl_1";
+	const DELETE = "DELETE /v13/deployments/dpl_1";
+	const READ_BACK = reply(200, { id: "dpl_1", url: "one.vercel.app" });
+
+	it("reads and deletes with no body, in the trimmed team", async () => {
+		const { fetch, sent, routes } = scripted({
+			[READ]: [READ_BACK, reply(404, {})],
+			[DELETE]: [reply(200, {})],
+		});
+		const client = createVercelClient({
+			token: "tok",
+			fetch,
+			teamId: " team_x ",
+		});
+
+		const read = await client.getDeployment("dpl_1");
+		await client.deleteDeployment("dpl_1");
+
+		expect(read).toMatchObject({ id: "dpl_1", url: "https://one.vercel.app" });
+		expect(routes()).toEqual([READ, DELETE, READ]);
+		for (const { url, init } of sent) {
+			expect(Object.keys(init)).toEqual(["method", "headers"]);
+			expect(new URL(url).search).toBe("?teamId=team_x");
+		}
+	});
+
+	it("wraps a transport failure on a read, the token redacted", async () => {
+		const token = "tok_SECRET_0123456789abcdef";
+		const client = createVercelClient({
+			token,
+			fetch: async () => {
+				throw new TypeError(`fetch failed: Bearer ${token}`);
+			},
+		});
+
+		const error = await client.getDeployment("dpl_1").then(
+			() => undefined,
+			(thrown: Error) => thrown,
+		);
+
+		expect(error).toBeInstanceOf(VercelTransportError);
+		expect(error?.message).toBe(
+			"vercel-client: get deployment got no answer: TypeError: fetch failed: [redacted]",
+		);
+		expect(inspect(error, { depth: 10, showHidden: true })).not.toContain(
+			token,
+		);
 	});
 });
 
@@ -1543,16 +1460,14 @@ describe("the default transport", () => {
 			[CREATE]: [CREATED],
 		});
 		const injected = scripted(missingProject());
-		await createVercelDeployProvider({
+		await fixtureProvider({
 			token: "tok",
 			fetch: injected.fetch,
 		}).apply(programFor("dep-1"));
 
 		const viaGlobal = scripted(missingProject());
 		vi.stubGlobal("fetch", viaGlobal.fetch);
-		await createVercelDeployProvider({ token: "tok" }).apply(
-			programFor("dep-1"),
-		);
+		await fixtureProvider({ token: "tok" }).apply(programFor("dep-1"));
 
 		expect(viaGlobal.sent).toEqual(injected.sent);
 		for (const { init } of viaGlobal.sent) {

@@ -1,10 +1,10 @@
 import { createServer, type Server } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
+import { isJsonString } from "../src/json.js";
 import {
 	isLoopbackUrlListening,
 	listeningByUrl,
 } from "../src/occupancy-live.js";
-import { isJsonString } from "../src/json.js";
 
 /**
  * The probe decides whether `hobo status` calls an endpoint `live` or

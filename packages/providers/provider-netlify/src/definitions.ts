@@ -303,6 +303,7 @@ export function createNetlifyAuthenticatedSiteDefinition(
 export const NETLIFY_DEFINITIONS: readonly ProviderResourceDefinitionData[] = [
 	createNetlifyAnonymousStaticSiteDefinition(),
 	createNetlifyAuthenticatedSiteDefinition(),
+	createNetlifyStaticDeployDefinition(),
 ];
 
 export const NETLIFY_ANONYMOUS_STATIC_SITE_CANDIDATE: SelectionCandidate =
@@ -313,3 +314,39 @@ export const NETLIFY_AUTHENTICATED_SITE_CANDIDATE: SelectionCandidate =
 
 export const NETLIFY_CANDIDATES: readonly SelectionCandidate[] =
 	NETLIFY_DEFINITIONS.map(semanticsToSelectionCandidate);
+
+/** Immutable prebuilt deployment; the account-backed site's function/SSR
+ * capabilities are not claimed by the static artifact driver. */
+export function createNetlifyStaticDeployDefinition(
+	overrides: NetlifyDefinitionOverrides = {},
+): ProviderResourceDefinitionData {
+	const base = createNetlifyAuthenticatedSiteDefinition(overrides),
+		conformance = overrides.conformance ?? "pass";
+	return {
+		...base,
+		id: "netlify.static-deploy/v1",
+		semantics: {
+			...base.semantics,
+			productId: "netlify.static-deploy/v1",
+			displayName: "Netlify immutable static deployment in an owned site",
+			implementsProfiles: [
+				implementation("web.static/v1", conformance),
+				implementation("web.hosted/v1", conformance),
+			],
+			runtimeModels: ["paas"],
+			structuredCapabilities: {
+				bootstrap: "operator-credential",
+				anonymousDeployment: false,
+				httpsOnly: true,
+				immutableArtifact: true,
+				serverlessFunctions: false,
+				edgeFunctions: false,
+				serverSideRendering: false,
+			},
+			compilerRef: "compile.netlify.static-deploy/v1",
+			executorRef: "execute.netlify.static-deploy/v1",
+			supportsExport: false,
+			supportsRotation: false,
+		},
+	};
+}

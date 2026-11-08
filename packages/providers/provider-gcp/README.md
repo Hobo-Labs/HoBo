@@ -191,3 +191,28 @@ here, and only for them.
 - Whether a matching Resource Definition is registered for these `gcp.*` product
   ids is still checked at resolution time (`YARD_BINDING_PRODUCT_UNKNOWN`), not
   here.
+
+### Budgeted Cloud Run execution
+
+Budgeted execution supplies complete `ownershipRef` and `artifactDigest` sha256 refs.
+The resolver writes native `hobo.dev/owner` / `hobo.dev/artifact` annotations and
+publishes the observed native artifact annotation as `outputs.artifactMarker`.
+`outputs.artifactDigest` is the independently read container image's immutable OCI
+digest. An annotation does not verify content.
+Foreign project/location/resource/operation IDs, missing ownership and another
+artifact's target are refused. A new artifact uses a new immutable target name; source
+retirement cannot delete a name now carrying another artifact.
+
+`outputs.ready` requires matching positive observed/current generations, a successful
+terminal condition, completed reconciliation, exactly one approved container with the
+declared image, and actual CPU, memory, replica/concurrency bounds and ingress.
+Budgeted services declare those bounds
+explicitly. Quantity comparisons recognize equivalent CPU/memory representations.
+A completed operation with a missing post-read remains unconfirmed. Capacity drift
+cannot become ready merely because the artifact annotation matches. Updates use an
+observed `etag`; retirement verifies an independent absent read after terminal deletion.
+
+`test/hosting-lifecycle.test.ts` covers these observations and negative controls.
+Static list-price signals are tagged `estimate`; placeholder zero is `unknown`.
+Current bounded quotes and authoritative account usage are supplied independently of
+those hints. These modeled-API tests do not replace isolated live-project acceptance.

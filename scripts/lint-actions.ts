@@ -1,7 +1,20 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
+import { join, relative } from "node:path";
+import { verifyPinnedActionSha } from "./lib/verify-action-pins.mts";
+
+const lintActionsRepoRoot = join(import.meta.dirname, "..");
+const requireFromRepo = createRequire(import.meta.url);
+const yamlModulePath = requireFromRepo.resolve("yaml", {
+	paths: [join(lintActionsRepoRoot, "packages/ci-gh-actions")],
+});
+const yamlMod = await import(yamlModulePath);
+const { parseDocument } = yamlMod;
+if (parseDocument === undefined) {
+	throw new Error("yaml package missing parseDocument");
+}
 
 const root = join(process.cwd(), ".github");
 const workflowDir = join(root, "workflows");
@@ -15,57 +28,270 @@ const files = existsSync(disabledWorkflowDir)
 			.sort()
 	: [];
 const errors: string[] = [];
-// The user-authorized manual acceptance recipe is the only enabled workflow.
-// Pin its complete reviewed surface rather than accepting arbitrary YAML under
-// the approved filename (extra events/jobs/permissions would otherwise bypass
-// the disabled-CI policy). Updating it requires an explicit policy review.
+
 const acceptanceFile = "hobo-ci-acceptance.yml";
-const acceptanceDigest =
-	"6268254eb20f2767bace1bcd82f9ffbf767746e5be71399f3dc8f7d083861a02";
-for (const file of recognizedFiles) {
-	if (file !== acceptanceFile) {
-		errors.push(
-			`${file}: enabled workflow is not the approved manual HoBo acceptance workflow`,
-		);
-		continue;
-	}
-	const text = readFileSync(join(workflowDir, file), "utf8").replaceAll(
-		"\r\n",
-		"\n",
+/** Authoritative CI fabric (self-hosted hobo runners). */
+const activeCiFiles = new Set([
+	"hobo-ci.yml",
+	"ci-deps-publish.yml",
+	"examples-e2e.yml",
+	"dev-env-smoke.yml",
+	"pricing-ci.yml",
+	"release-hobo.yml",
+	"release-code.yml",
+	"release-pricing.yml",
+	"release-ts-autocode.yml",
+]);
+const allowedEnabled = new Set([acceptanceFile, ...activeCiFiles]);
+
+/** The one runner choice besides `hobo`: trunk events may ask for the box's trunk label. */
+const TRUNK_RUNS_ON =
+	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+
+/** npm trusted publishing requires GitHub-hosted runners (release-hobo release-npm only). */
+function isNpmOidcHostedReleaseJob(
+	file: string,
+	jobLine: string,
+	runsOn: string | undefined,
+): boolean {
+	const jobId = /^  ([a-z][a-z0-9-]+):/.exec(jobLine)?.[1];
+	return (
+		file === "release-hobo.yml" &&
+		jobId === "release-npm" &&
+		runsOn === "ubuntu-24.04"
 	);
-	if (createHash("sha256").update(text).digest("hex") !== acceptanceDigest)
-		errors.push(
-			`${file}: manual HoBo acceptance workflow differs from its reviewed recipe`,
-		);
 }
 
-for (const file of files) {
-	const path = join(disabledWorkflowDir, file);
-	const text = readFileSync(path, "utf8");
+const acceptanceDigest =
+	"d130e672fa517fb41465b742cf0b47e921849f73fadbe886f26f34e8aa9faaf6";
+
+const TRUNK_EVENTS = new Set([
+	"push",
+	"workflow_dispatch",
+	"merge_group",
+	"workflow_run",
+]);
+
+function hasTrunkEvent(lines: readonly string[], jobsIndex: number): boolean {
+	return lines
+		.slice(0, jobsIndex)
+		.some((line) => TRUNK_EVENTS.has(/^  ([a-z_]+):/.exec(line)?.[1] ?? ""));
+}
+
+function isPullRequestOnlyJob(
+	block: readonly string[],
+	workflowHasTrunkEvent: boolean,
+): boolean {
+	if (!workflowHasTrunkEvent) return true;
+	const condition = /^    if:([^\n]*(?:\n      [^\n]*)*)/m.exec(
+		block.join("\n"),
+	)?.[1];
+	return (
+		condition !== undefined &&
+		/github\.event_name\s*==\s*['"]pull_request['"]/.test(condition) &&
+		!condition.includes("||")
+	);
+}
+
+function collectPinnedActionRefs(text: string): Map<string, Set<string>> {
+	const byRepo = new Map<string, Set<string>>();
+	for (const line of text.split(/\r?\n/)) {
+		const match = line.match(/^\s*-?\s*uses:\s*([^@\s]+)@([0-9a-f]{40})\s*$/);
+		if (!match) continue;
+		const action = match[1];
+		const sha = match[2];
+		if (!action || !sha || action.startsWith("./")) continue;
+		const segments = action.split("/");
+		const repo =
+			segments.length >= 2
+				? `${segments[0]}/${segments[1]}`
+				: `actions/${action}`;
+		const shas = byRepo.get(repo) ?? new Set<string>();
+		shas.add(sha);
+		byRepo.set(repo, shas);
+	}
+	return byRepo;
+}
+
+async function verifyPinnedActionShasExist(
+	file: string,
+	text: string,
+): Promise<void> {
+	for (const [repo, shas] of collectPinnedActionRefs(text)) {
+		for (const sha of shas) {
+			const message = await verifyPinnedActionSha(repo, sha, file, process.env);
+			if (message) errors.push(message);
+		}
+	}
+}
+
+function lintPinnedActionRefs(file: string, text: string): void {
+	const lines = text.split(/\r?\n/);
+	for (const [index, line] of lines.entries()) {
+		const match = line.match(/^\s*-?\s*uses:\s*([^@\s]+)@(\S+)\s*$/);
+		if (!match) continue;
+		const action = match[1];
+		const ref = match[2];
+		if (!action || !ref) continue;
+		if (ref.startsWith("./")) continue;
+		if (!/^[0-9a-f]{40}$/.test(ref)) {
+			errors.push(
+				`${file}:${index + 1}: ${action} must pin a full commit SHA, not @${ref}`,
+			);
+		}
+	}
+}
+
+function lintWorkflowYamlStrict(file: string, text: string): void {
+	const doc = parseDocument(text, { uniqueKeys: true });
+	for (const error of doc.errors) {
+		errors.push(`${file}: invalid workflow YAML: ${error.message.trim()}`);
+	}
+}
+
+function lintLocalActionsNeedCheckoutFirst(
+	file: string,
+	block: readonly string[],
+	jobLine: number,
+): void {
+	const stepsIndex = block.findIndex((line) => line.trim() === "steps:");
+	if (stepsIndex === -1) return;
+	let seenCheckout = false;
+	for (let i = stepsIndex + 1; i < block.length; i++) {
+		const line = block[i] ?? "";
+		if (/^    [A-Za-z0-9_-]+:/.test(line)) break;
+		if (!/^\s+- /.test(line)) continue;
+		const indent = line.match(/^(\s*)-/)?.[1] ?? "      ";
+		let end = i + 1;
+		while (end < block.length && !block[end]?.startsWith(`${indent}- `)) {
+			end += 1;
+		}
+		const step = block.slice(i, end);
+		if (
+			step.some(
+				(entry) =>
+					/^\s+- uses: actions\/checkout@/.test(entry) ||
+					/^\s+uses: actions\/checkout@/.test(entry),
+			)
+		) {
+			seenCheckout = true;
+		}
+		const local = step
+			.map(
+				(entry) =>
+					entry.match(/^\s+- uses:\s+(\.\/[^\s#]+)\s*$/)?.[1] ??
+					entry.match(/^\s+uses:\s+(\.\/[^\s#]+)\s*$/)?.[1],
+			)
+			.find((value) => value !== undefined);
+		if (local && !seenCheckout) {
+			errors.push(
+				`${file}:${jobLine + i + 1}: repo-local action ${local} must follow a pinned actions/checkout step (self-hosted runners do not auto-fetch local actions)`,
+			);
+		}
+		i = end - 1;
+	}
+}
+
+function lintWorkflowYaml(
+	file: string,
+	text: string,
+	requireDisabledJobs: boolean,
+) {
+	lintWorkflowYamlStrict(file, text);
 	const lines = text.split(/\r?\n/);
 	const jobsIndex = lines.findIndex((line) => line === "jobs:");
 	if (jobsIndex === -1) {
-		errors.push(file + ": missing jobs section");
-	} else {
-		const jobStarts = lines
-			.map((line, index) => ({ line, index }))
-			.filter(
-				(entry) =>
-					entry.index > jobsIndex && /^  [A-Za-z0-9_-]+:$/.test(entry.line),
-			)
-			.map((entry) => entry.index);
-		for (const [position, start] of jobStarts.entries()) {
-			const end = jobStarts[position + 1] ?? lines.length;
-			if (
-				!lines
-					.slice(start, end)
-					.some((line) => line.trim() === "if: ${{ false }}")
-			) {
+		errors.push(`${file}: missing jobs section`);
+		return;
+	}
+	const jobStarts = lines
+		.map((line, index) => ({ line, index }))
+		.filter(
+			(entry) =>
+				entry.index > jobsIndex && /^  [A-Za-z0-9_-]+:$/.test(entry.line),
+		)
+		.map((entry) => entry.index);
+	const workflowHasTrunkEvent = hasTrunkEvent(lines, jobsIndex);
+	for (const [position, start] of jobStarts.entries()) {
+		const end = jobStarts[position + 1] ?? lines.length;
+		const block = lines.slice(start, end);
+		if (
+			requireDisabledJobs &&
+			!block.some((line) => line.trim() === "if: ${{ false }}")
+		) {
+			errors.push(`${file}:${start + 1}: hosted Actions job is not disabled`);
+		}
+		if (
+			!requireDisabledJobs &&
+			block.some((line) => line.trim() === "if: ${{ false }}")
+		) {
+			errors.push(
+				`${file}:${start + 1}: authoritative CI job must not be permanently disabled`,
+			);
+		}
+		const runsOn = block
+			.map((line) => line.match(/^\s*runs-on:\s*(.*?)\s*$/)?.[1])
+			.find((value) => value !== undefined);
+		const jobLine = lines[start] ?? "";
+		const npmOidcHosted = isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
+		if (
+			activeCiFiles.has(file) &&
+			runsOn !== undefined &&
+			runsOn !== "hobo" &&
+			runsOn !== TRUNK_RUNS_ON &&
+			!npmOidcHosted
+		) {
+			errors.push(
+				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression`,
+			);
+		}
+		if (runsOn === "hobo" || runsOn === TRUNK_RUNS_ON) {
+			for (const [index, line] of block.entries()) {
+				if (!/^\s*- uses: actions\/checkout@/.test(line)) continue;
+				const indent = line.match(/^(\s*)-/)?.[1] ?? "      ";
+				let end = index + 1;
+				while (end < block.length && !block[end]?.startsWith(`${indent}- `))
+					end += 1;
+				const step = block.slice(index, end);
+				if (step.some((entry) => /^\s+path:/.test(entry))) continue;
+				const repository = step
+					.map((entry) => entry.match(/^\s+repository:\s*(.*?)\s*$/)?.[1])
+					.find((value) => value !== undefined);
+				if (
+					repository &&
+					repository.toLowerCase() !== "hobo-labs/hobo" &&
+					repository !== "${{ github.repository }}"
+				)
+					continue;
+				if (!step.some((entry) => entry.trim() === "clean: false")) {
+					errors.push(
+						`${file}:${start + index + 1}: box checkout at the default path must set clean: false`,
+					);
+				}
+				const cleanCount = step.filter(
+					(entry) => entry.trim() === "clean: false",
+				).length;
+				if (cleanCount > 1) {
+					errors.push(
+						`${file}:${start + index + 1}: checkout must set clean: false once (duplicate keys break workflow parsing)`,
+					);
+				}
+			}
+		}
+		if (allowedEnabled.has(file)) {
+			const prOnly = isPullRequestOnlyJob(block, workflowHasTrunkEvent);
+			if (!npmOidcHosted && !prOnly && runsOn === "hobo") {
 				errors.push(
-					file + ":" + (start + 1) + ": hosted Actions job is not disabled",
+					`${file}:${start + 1}: trunk-label-routing: push/merge_group/workflow_dispatch-capable jobs must use the trunk label expression`,
+				);
+			}
+			if (prOnly && runsOn === TRUNK_RUNS_ON) {
+				errors.push(
+					`${file}:${start + 1}: trunk-label-routing: PR-only jobs must use plain hobo`,
 				);
 			}
 		}
+		lintLocalActionsNeedCheckoutFirst(file, block, start + 1);
 	}
 	const firstCheckout = lines.findIndex((line) =>
 		line.includes("actions/checkout@"),
@@ -73,7 +299,6 @@ for (const file of files) {
 	const firstSetupNode = lines.findIndex((line) =>
 		line.includes("actions/setup-node@"),
 	);
-
 	if (
 		firstSetupNode !== -1 &&
 		(firstCheckout === -1 || firstCheckout > firstSetupNode)
@@ -97,9 +322,108 @@ for (const file of files) {
 			`${file}: pnpm cache must set cache-dependency-path: pnpm-lock.yaml`,
 		);
 	}
-	if (firstSetupNode !== -1 && !/node-version:\s*24\b/.test(text)) {
+	if (firstSetupNode !== -1 && !/node-version:\s*['"]?24['"]?/.test(text)) {
 		errors.push(`${file}: Node version must be explicit and set to 24`);
 	}
+	if (
+		activeCiFiles.has(file) &&
+		!/runs-on:\s*hobo\b/m.test(text) &&
+		!text.includes(TRUNK_RUNS_ON)
+	) {
+		errors.push(
+			`${file}: authoritative CI jobs must run on self-hosted hobo runners`,
+		);
+	}
+	if (!requireDisabledJobs) {
+		lintPinnedActionRefs(file, text);
+	}
+}
+
+function lintCompositeActions(): void {
+	const actionsRoot = join(root, "actions");
+	if (!existsSync(actionsRoot)) return;
+	const walk = (directory: string): void => {
+		for (const name of readdirSync(directory)) {
+			const path = join(directory, name);
+			const stat = statSync(path);
+			if (stat.isDirectory()) {
+				walk(path);
+				continue;
+			}
+			if (name !== "action.yml" && name !== "action.yaml") continue;
+			const rel = relative(join(process.cwd(), ".github"), path).replaceAll(
+				"\\",
+				"/",
+			);
+			const text = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+			lintPinnedActionRefs(rel, text);
+		}
+	};
+	walk(actionsRoot);
+}
+
+for (const file of recognizedFiles) {
+	if (!allowedEnabled.has(file)) {
+		errors.push(
+			`${file}: enabled workflow is not in the approved CI fabric set (${[...allowedEnabled].join(", ")})`,
+		);
+		continue;
+	}
+	const path = join(workflowDir, file);
+	const text = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+	if (file === acceptanceFile) {
+		if (createHash("sha256").update(text).digest("hex") !== acceptanceDigest) {
+			errors.push(
+				`${file}: manual HoBo acceptance workflow differs from its reviewed recipe (update acceptanceDigest after review)`,
+			);
+		}
+	}
+	lintWorkflowYaml(file, text, false);
+}
+
+for (const file of files) {
+	const path = join(disabledWorkflowDir, file);
+	const text = readFileSync(path, "utf8");
+	lintWorkflowYaml(file, text, true);
+}
+
+lintCompositeActions();
+
+const verifyTargets: { file: string; text: string }[] = [];
+for (const file of recognizedFiles) {
+	if (!allowedEnabled.has(file)) continue;
+	verifyTargets.push({
+		file,
+		text: readFileSync(join(workflowDir, file), "utf8").replaceAll(
+			"\r\n",
+			"\n",
+		),
+	});
+}
+const actionsRoot = join(root, "actions");
+if (existsSync(actionsRoot)) {
+	const walkVerify = (directory: string): void => {
+		for (const name of readdirSync(directory)) {
+			const path = join(directory, name);
+			if (statSync(path).isDirectory()) {
+				walkVerify(path);
+				continue;
+			}
+			if (name !== "action.yml" && name !== "action.yaml") continue;
+			const rel = relative(join(process.cwd(), ".github"), path).replaceAll(
+				"\\",
+				"/",
+			);
+			verifyTargets.push({
+				file: rel,
+				text: readFileSync(path, "utf8").replaceAll("\r\n", "\n"),
+			});
+		}
+	};
+	walkVerify(actionsRoot);
+}
+for (const target of verifyTargets) {
+	await verifyPinnedActionShasExist(target.file, target.text);
 }
 
 if (errors.length > 0) {
@@ -107,5 +431,5 @@ if (errors.length > 0) {
 	process.exit(1);
 }
 console.log(
-	`actions lint ok: ${files.length} disabled workflow file(s); ${recognizedFiles.length} reviewed manual HoBo acceptance workflow(s)`,
+	`actions lint ok: ${files.length} disabled workflow file(s); ${recognizedFiles.length} enabled workflow file(s)`,
 );

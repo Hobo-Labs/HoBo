@@ -14,8 +14,7 @@ import {
 	createCollectCommand,
 	createHoboCli,
 } from "../src/index.js";
-import { type JsonValue, type JsonObject } from "../src/json.js";
-
+import type { JsonObject, JsonValue } from "../src/json.js";
 
 // S1-20: `hobo collect` runs run-to-collect on the project Bindle and prints /
 // emits the manifest IR, with --check failing on drift against the committed
