@@ -42,6 +42,7 @@
  * product is a gap below because its engine is not in `runtime-local`.
  */
 import type {
+	BindleRuntime,
 	ProfileImplementation,
 	SelectionCandidate,
 } from "@hobo/capability-profiles";
@@ -209,6 +210,12 @@ type LocalProduct = {
 	readonly displayName: string;
 	readonly profiles: readonly string[];
 	readonly executorRef: string;
+	/**
+	 * Workload runtime models the runtime-local engine actually serves.
+	 * `BindleRuntime` has no "station-local" member, so products that only
+	 * serve in-station callers (queue, sqlite) claim none.
+	 */
+	readonly runtimeModels: readonly BindleRuntime[];
 	readonly bindingProfiles: readonly string[];
 	readonly structuredCapabilities: Readonly<
 		Record<string, boolean | number | string | readonly string[]>
@@ -239,6 +246,7 @@ const LOCAL_PRODUCTS: readonly LocalProduct[] = Object.freeze([
 		// engine answers api and inbound-webhook requests.
 		profiles: [capability.api.http, capability.webhook.inboundHttp],
 		executorRef: "executor.runtime-local.component-host/v1",
+		runtimeModels: ["wasm"],
 		bindingProfiles: ["binding.http/v1"],
 		structuredCapabilities: {
 			...STATION_LOCAL,
@@ -261,6 +269,7 @@ const LOCAL_PRODUCTS: readonly LocalProduct[] = Object.freeze([
 		// engine, and it is the station's relational store.
 		profiles: [capability.data.sqlite, capability.data.relational],
 		executorRef: "executor.runtime-local.sqlite-eventstore/v1",
+		runtimeModels: [],
 		// No sqlite binding profile exists in the standard vocabulary and
 		// the typed data client is a separate layer's work; an empty list
 		// is the honest answer.
@@ -286,6 +295,7 @@ const LOCAL_PRODUCTS: readonly LocalProduct[] = Object.freeze([
 		displayName: "Local in-memory queue (runtime-local leased queue)",
 		profiles: [capability.queue.atLeastOnce],
 		executorRef: "executor.runtime-local.in-memory-queue/v1",
+		runtimeModels: [],
 		bindingProfiles: [],
 		structuredCapabilities: {
 			...STATION_LOCAL,
@@ -313,6 +323,7 @@ const LOCAL_PRODUCTS: readonly LocalProduct[] = Object.freeze([
 		displayName: "Local in-process worker (runtime-local host)",
 		profiles: [capability.service.worker],
 		executorRef: "executor.runtime-local.in-process-host/v1",
+		runtimeModels: ["wasm"],
 		bindingProfiles: [],
 		structuredCapabilities: {
 			...STATION_LOCAL,
@@ -342,9 +353,7 @@ function createLocalDefinition(
 			implementsProfiles: product.profiles.map((profileId) =>
 				implementation(profileId, product.slug, conformance),
 			),
-			// Co-located on the station: reachable in-process or over
-			// loopback from any workload runtime model running there.
-			runtimeModels: ["wasm", "oci", "vm_iaas", "paas", "serverless_faas"],
+			runtimeModels: product.runtimeModels,
 			structuredCapabilities: product.structuredCapabilities,
 			placementConstraints: [],
 			producesBindingProfiles: product.bindingProfiles,
@@ -381,9 +390,9 @@ function createLocalDefinition(
 			supportsExport: product.supportsExport,
 			// Nothing is minted, so there is nothing to rotate.
 			supportsRotation: false,
-			// Teardown is local: stop the process, discard memory, remove
-			// the file. `down` owns doing it; this records that it can.
-			supportsRevocation: true,
+			// False until a down loop exists: nothing here can revoke
+			// access to a created resource, and the ADR must not claim it.
+			supportsRevocation: false,
 			// The operator's own machine. HoBo sponsors nothing.
 			sponsorExposureMinorUnits: 0,
 			secretCustodyAvailable: overrides.secretCustodyAvailable ?? true,

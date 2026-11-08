@@ -103,6 +103,31 @@ describe("the declared local products", () => {
 		}
 	});
 
+	it("claims only runtime models the runtime-local engines serve", () => {
+		// The component host runs wasm; queue and sqlite have no workload
+		// runtime. None may claim oci / vm_iaas / paas / serverless_faas.
+		const byProduct = Object.fromEntries(
+			LOCAL_DEFINITIONS.map((d) => [d.semantics.productId, d.semantics.runtimeModels]),
+		);
+		expect(byProduct).toEqual({
+			"local:node-http-server": ["wasm"],
+			"local:in-process-worker": ["wasm"],
+			"local:in-memory-queue": [],
+			"local:sqlite-file": [],
+		});
+		for (const definition of LOCAL_DEFINITIONS) {
+			for (const model of definition.semantics.runtimeModels) {
+				expect(["oci", "vm_iaas", "paas", "serverless_faas"]).not.toContain(model);
+			}
+		}
+	});
+
+	it("claims no revocation until a down loop exists", () => {
+		for (const definition of LOCAL_DEFINITIONS) {
+			expect(definition.semantics.supportsRevocation).toBe(false);
+		}
+	});
+
 	it("is frozen and sorted by id", () => {
 		expect(Object.isFrozen(LOCAL_DEFINITIONS)).toBe(true);
 		const ids = LOCAL_DEFINITIONS.map((definition) => definition.id);

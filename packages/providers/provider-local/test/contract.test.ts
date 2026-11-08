@@ -1,5 +1,7 @@
 /**
- * The catalog pact, replayed against the real exports.
+ * Provider-side shape pin: the catalog pact, replayed against the real
+ * exports. Not consumer-verified; the consumer side is the @hobo/hobo
+ * first-party-catalog test.
  *
  * The boundary is in-process — a composition reading definitions — so the
  * pact's "responses" are computed here from `LOCAL_DEFINITIONS` and

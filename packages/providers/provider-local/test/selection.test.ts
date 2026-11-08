@@ -26,6 +26,9 @@ import {
 } from "../src/index.js";
 
 const profiles = createCapabilityProfileRegistry(STANDARD_CAPABILITY_PROFILES);
+/** Cloud credential families the repo's providers actually read. */
+const CLOUD_ENV_PREFIXES =
+	/^(CLOUDFLARE|AWS|VERCEL|NETLIFY|UPSTASH|PRISMA|AZURE|GOOGLE|GCP)_/u;
 const NOW = Date.UTC(2026, 10, 8);
 
 /** Local products are experimental until an L2 live run says otherwise. */
@@ -60,10 +63,23 @@ function stationCandidates() {
 
 describe("composed selection on yard:local", () => {
 	it("resolves the engine-backed bindle slots to local definitions", () => {
-		// The composed-local ask, with every cloud credential absent.
+		// The composed-local ask, with every cloud credential absent. Env is
+		// restored afterwards so no other test sees a mutated process.
+		const saved: Record<string, string | undefined> = {};
 		for (const key of Object.keys(process.env)) {
-			if (/^(CLOUDFLARE|AWS|VERCEL)_/u.test(key)) delete process.env[key];
+			if (CLOUD_ENV_PREFIXES.test(key)) {
+				saved[key] = process.env[key];
+				delete process.env[key];
+			}
 		}
+		try {
+			expectLocalWinners();
+		} finally {
+			Object.assign(process.env, saved);
+		}
+	});
+
+	function expectLocalWinners() {
 		expect(LOCALHOST_YARD_NAME).toBe("yard:local");
 
 		const api = selectFor(capability.api.http);
@@ -78,7 +94,7 @@ describe("composed selection on yard:local", () => {
 
 		const worker = selectFor(capability.service.worker);
 		expect(worker.winner?.definitionId).toBe("local.in-process-worker/v1");
-	});
+	}
 
 	it("refuses the seed products that have no local engine", () => {
 		// kv, bucket, topic, secret locator and static web have seed rows but

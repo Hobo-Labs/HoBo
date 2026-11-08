@@ -92,6 +92,11 @@ export type LocalResourceDefinition = {
 /**
  * The same projection `@hobo/cloud` performs, kept here so this package can
  * be selected against without the catalog in the loop.
+ * Source of the semantics: `toSelectionCandidate` in
+ * `packages/cloud/src/registry/resource-definition-vnext.ts` (registry
+ * semantics: `hasRegisteredDriver` is "executorRef nonempty"). Provider
+ * packages do not depend on `@hobo/cloud` (every other provider keeps its
+ * own copy for the same reason); keep this in step with the registry.
  * `hasRegisteredDriver` follows the executor reference, as it does there:
  * for local products the executor is the `@hobo/runtime-local` engine the
  * ref names, never a driver in this package.

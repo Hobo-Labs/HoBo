@@ -57,3 +57,35 @@ and `packages/hobo/src/recipe-plane.ts`, which only project and select).
 Wiring the camp machinery to realize a selected local definition — and its
 zero-orphan `down` — is later engine work in `@hobo/runtime-local` and the
 composition root, not a declaration edit.
+
+## Evidence-override trust boundary
+
+`LocalDefinitionOverrides` lets a composition inject `evidenceSignatureValid`,
+`evidenceExpiresAtMs` and `conformance`. Every claimable provider
+(`provider-upstash`, `provider-netlify` `definition.ts`) exposes the same seam;
+here the defaults are stricter (`false` / `unknown`, where those default
+`true`). The caller is the station operator, who is trusted: it owns the
+machine these products run on. The override flag is **not** itself
+cryptographic: `selectCapabilityImplementation` only reads
+`candidate.evidenceSignatureValid`. The enforcement point is the recipe
+plane: `compileRecipe` (`packages/recipes/src/compile.ts`, gate 3) takes the
+published `TrustEvidence` records and the station's `EvidenceVerifier`
+(`stationEvidenceVerifier` in `packages/hobo/src/recipe-plane.ts`) and refuses
+a product with no signed, fresh, non-failed evidence. That path verifies
+published evidence artifacts; it does not cross-check the candidate-level
+override flag. That is a repo-wide gap shared with every other provider, and
+it is not closed here.
+
+## Catalog records, no integration boundary
+
+The definitions are in-process catalog records, as in the L01 taxonomy layer.
+There is no persistence or integration boundary. `data-models/` is retained
+only because the repo's package-layout and architecture guards require a
+`.proto` + `.cue` in every package; no TypeScript type exists to mirror them,
+and `LocalEngineGap` is a plain internal TypeScript type. The files carry no
+runtime weight and can be dropped when the guards learn to exempt
+definitions-only packages. Revocation is claimed `false` for every product until a `down` loop
+exists, and `runtimeModels` lists only what `@hobo/runtime-local` serves:
+`wasm` for the component host and in-process host, none for queue and sqlite
+(which have no workload runtime of their own, and `BindleRuntime` has no
+station-local member).
