@@ -38,7 +38,6 @@ const activeCiFiles = new Set([
 	"dev-env-smoke.yml",
 	"pricing-ci.yml",
 	"release-hobo.yml",
-	"release-code.yml",
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
 ]);

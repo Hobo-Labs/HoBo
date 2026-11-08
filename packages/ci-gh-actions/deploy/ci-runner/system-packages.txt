@@ -8,8 +8,6 @@ xz-utils
 docker.io
 # Copies the mise OCI layout into the Docker daemon (build.sh); without it build.sh goes through the local registry.
 skopeo
-# Resident session runtime (@hobo/code mux, git-terminal pane) drives tmux.
-tmux
 # Unpacks the Playwright headless shell zip (base/Dockerfile).
 unzip
 # Chromium headless shell runtime libraries (Playwright's Debian 12 list, plus the

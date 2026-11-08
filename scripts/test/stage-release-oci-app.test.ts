@@ -174,7 +174,6 @@ describe("release OCI app staging", () => {
 
 	it.each([
 		["hobo-cli", "@hobo/hobo", "@hobo/hobo..."],
-		["hobo-code", "@hobo/code", "@hobo/code..."],
 		["hobo-codegen", "@hobo/schema-tools", "@hobo/schema-tools..."],
 		["hobo-ci-serve", "@hobo/ci-gh-actions", "@hobo/ci-gh-actions..."],
 	])("stages %s as a deployed app", (imageId, packageName, buildFilter) => {
@@ -195,7 +194,7 @@ describe("release OCI app staging", () => {
 		const specs = Object.values(RELEASE_OCI_STAGE_SPECS).filter(
 			(spec) => spec.kind === "deploy",
 		);
-		expect(specs).toHaveLength(4);
+		expect(specs).toHaveLength(3);
 		for (const spec of specs) {
 			const appDir = join("staging", spec.appPath);
 			expect(releaseOciDeployArgs(spec.packageName, appDir, storeDir)).toEqual([
@@ -293,9 +292,6 @@ describe("release OCI app staging", () => {
 				{ name: "hobo", entrypoint: "dist/bin/hobo.js" },
 				{ name: "hobo-mcp", entrypoint: "dist/bin/hobo-mcp.js" },
 			],
-		});
-		expect(RELEASE_OCI_STAGE_SPECS["hobo-code"]).toMatchObject({
-			wrappers: [{ name: "hobo-code", entrypoint: "dist/bin/hobo-code.js" }],
 		});
 		expect(RELEASE_OCI_STAGE_SPECS["hobo-codegen"]).toMatchObject({
 			wrappers: [{ name: "hobo-codegen", entrypoint: "dist/cli.js" }],

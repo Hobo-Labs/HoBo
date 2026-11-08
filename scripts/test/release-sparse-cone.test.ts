@@ -5,12 +5,10 @@ import { releaseOciInputSparseCones } from "../ci/release-oci-affected.mts";
 import {
 	assertConeCoversPaths,
 	coneCoversPath,
-	filePathsRequiredByCodeReleaseContractTests,
+	filePathsRequiredByReleaseOciContractTests,
 	formatSparseCheckoutBlock,
-	hoboCodeReleaseSparseCones,
 	hoboReleasePagesSparseCones,
 	hoboReleaseSparseCones,
-	requiredPathsForHoboCodeReleaseContract,
 	requiredPathsForHoboReleaseContract,
 	requiredPathsForHoboReleasePages,
 	requiredPathsForTsAutocodeReleaseContract,
@@ -137,7 +135,6 @@ describe("release sparse cone requirements", () => {
 		const cones = [
 			hoboReleaseSparseCones(root),
 			hoboReleasePagesSparseCones(),
-			hoboCodeReleaseSparseCones(root),
 			tsAutocodeReleaseSparseCones(),
 		];
 		for (const cone of cones) {
@@ -156,43 +153,26 @@ describe("release sparse cone requirements", () => {
 		);
 	});
 
-	it("hobo code release contract cone covers vitest setup and pins", () => {
-		const cones = hoboCodeReleaseSparseCones(root);
-		assertConeCoversPaths(
-			"hobo-code-release-contract",
-			cones,
-			requiredPathsForHoboCodeReleaseContract(root),
-		);
-	});
-
-	it("hobo code release cone covers harness skill roots", () => {
-		assertConeCoversPaths(
-			"hobo-code-release-harness",
-			hoboCodeReleaseSparseCones(root),
-			[".agents/skills", ".claude/skills"],
-		);
-	});
-
-	it("hobo code release contract cone covers OCI input pathspec directories", () => {
+	it("hobo release contract cone covers OCI input pathspec directories", () => {
 		const required = releaseOciInputSparseCones();
 		expect(required).toEqual(
 			expect.arrayContaining(["examples", "media", "site", "src"]),
 		);
 		expect(required).not.toContain("package.json");
 		assertConeCoversPaths(
-			"hobo-code-release-oci-inputs",
-			hoboCodeReleaseSparseCones(root),
+			"hobo-release-oci-inputs",
+			hoboReleaseSparseCones(root),
 			required,
 		);
 	});
 
-	it("hobo code release contract cone covers OCI manifest dockerfiles", () => {
-		const required = filePathsRequiredByCodeReleaseContractTests(root);
+	it("hobo release contract cone covers OCI manifest dockerfiles", () => {
+		const required = filePathsRequiredByReleaseOciContractTests(root);
 		const dockerfiles = required.filter((p) =>
 			p.startsWith("deploy/release-images/"),
 		);
 		expect(dockerfiles.length).toBeGreaterThan(1);
-		const cones = hoboCodeReleaseSparseCones(root);
+		const cones = hoboReleaseSparseCones(root);
 		for (const path of dockerfiles) {
 			expect(coneCoversPath(cones, path), path).toBe(true);
 		}
@@ -353,15 +333,8 @@ describe("release workflow shell lint diff base", () => {
 		join(root, ".github/workflows/release-hobo.yml"),
 		"utf8",
 	);
-	const codeWorkflow = readFileSync(
-		join(root, ".github/workflows/release-code.yml"),
-		"utf8",
-	);
 
-	for (const [label, workflow] of [
-		["release-hobo", hoboWorkflow],
-		["release-code", codeWorkflow],
-	] as const) {
+	for (const [label, workflow] of [["release-hobo", hoboWorkflow]] as const) {
 		it(`${label} lint:shell:changed uses HEAD^1 (sparse checkout has no origin/main)`, () => {
 			expect(workflow).toContain(
 				"pnpm run lint:shell:changed -- --base=HEAD^1",
@@ -376,10 +349,6 @@ describe("release workflow shell lint diff base", () => {
 describe("release workflow sparse-checkout sync", () => {
 	const hoboWorkflow = readFileSync(
 		join(root, ".github/workflows/release-hobo.yml"),
-		"utf8",
-	);
-	const codeWorkflow = readFileSync(
-		join(root, ".github/workflows/release-code.yml"),
 		"utf8",
 	);
 	const tsWorkflow = readFileSync(
@@ -410,16 +379,6 @@ describe("release workflow sparse-checkout sync", () => {
 			"release-pages",
 		);
 		expect(sortedPaths(inJob)).toEqual(sortedPaths(inWorkflow));
-	});
-
-	it("release-code CODE_RELEASE_SPARSE_PATHS matches canonical cone", () => {
-		const inWorkflow = parseWorkflowEnvMultiline(
-			codeWorkflow,
-			"CODE_RELEASE_SPARSE_PATHS",
-		);
-		expect(sortedPaths(inWorkflow)).toEqual(
-			sortedPaths(hoboCodeReleaseSparseCones(root)),
-		);
 	});
 
 	it("release-ts-autocode sparse-checkout matches canonical cone", () => {
