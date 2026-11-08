@@ -92,7 +92,7 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 	);
 });
 
-test("feature/hobo-code gets the PR and push gates but never pushes the runner image", async () => {
+test("feature/hobo-code gets the PR and push gates but publishes nothing", async () => {
 	const read = (name: string) =>
 		readFile(new URL(`../.github/workflows/${name}`, import.meta.url), "utf8");
 	const hoboCi = await read("hobo-ci.yml");
@@ -114,6 +114,16 @@ test("feature/hobo-code gets the PR and push gates but never pushes the runner i
 		hoboCi,
 		/^ {6}group: \$\{\{ github\.workflow \}\}-main-gate\$\{\{ github\.ref == 'refs\/heads\/feature\/hobo-code' && '-feature-hobo-code' \|\| '' \}\}$/mu,
 	);
+	const releaseCode = await read("release-code.yml");
+	const publishConditions = [
+		...releaseCode.matchAll(
+			/^ {2}(release-code-[a-z]+):\n {4}name: [^\n]+\n(?: {4}#[^\n]*\n)* {4}if: ([^\n]+)$/gmu,
+		),
+	].map((match) => [match[1], match[2]]);
+	assert.deepEqual(publishConditions, [
+		["release-code-publish", "startsWith(github.ref, 'refs/tags/code-v')"],
+		["release-code-attest", "startsWith(github.ref, 'refs/tags/code-v')"],
+	]);
 });
 
 test("workflow conditions never read the secrets context", async () => {
