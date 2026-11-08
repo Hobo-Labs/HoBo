@@ -47,3 +47,21 @@ package data_models
 	// produce a Yard that silently satisfies no capability.
 	bindings: [...#ProviderCatalogRowRecord] & [_, ...]
 }
+
+// Parity levels, local before cloud fallback (council-decision.md). Closed, so
+// a row cannot invent a level no reader knows how to rank.
+#ParityLevel: "P0" | "L1" | "L2" | "L3" | "P2" | "P3"
+
+#ProviderParityRowRecord: {
+	provider:       string & !=""
+	level:          #ParityLevel
+	catalog_count:  int & >=0
+	resolved_count: int & >=0 & <=catalog_count
+	// The denominator is derived, never free text: a claim without the exact
+	// count behind it is the overclaim this record exists to stop.
+	denominator: "\(resolved_count)/\(catalog_count)"
+	// Nothing resolved means nothing above catalog-only can be claimed.
+	if resolved_count == 0 {
+		level: "P0"
+	}
+}

@@ -13,6 +13,9 @@
  * `*_RESOLVED_PRODUCT_IDS` constant — so the test fails when the projection
  * disagrees with the code, not when someone forgets to bump a literal.
  */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { AWS_RESOLVED_PRODUCT_IDS } from "@hobo/provider-aws";
 import { AZURE_RESOLVED_PRODUCT_IDS } from "@hobo/provider-azure";
@@ -186,5 +189,20 @@ describe("formatParityClaim()", () => {
 describe("PARITY_LEVELS", () => {
 	it("is the closed council vocabulary, in ascending local-then-cloud order", () => {
 		expect([...PARITY_LEVELS]).toEqual(["P0", "L1", "L2", "L3", "P2", "P3"]);
+	});
+
+	it("matches the CUE closed set", () => {
+		const cue = readFileSync(
+			join(
+				dirname(fileURLToPath(import.meta.url)),
+				"..",
+				"data-models",
+				"provider_catalog.cue",
+			),
+			"utf8",
+		);
+		const line = /#ParityLevel:\s*(.+)/u.exec(cue)?.[1] ?? "";
+		const levels = [...line.matchAll(/"([A-Z0-9]+)"/gu)].map((m) => m[1]);
+		expect(levels).toEqual([...PARITY_LEVELS]);
 	});
 });
