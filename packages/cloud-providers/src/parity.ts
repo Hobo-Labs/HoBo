@@ -23,16 +23,16 @@
  *
  * WHAT THIS LAYER CAN SEE: constants only. It sees that a resolver id is
  * *declared* (`*_RESOLVED_PRODUCT_IDS`); it cannot see a conformance run or a
- * pact. So the `L1` it emits is a constants-only **candidate** signal —
- * "resolvers declared, conformance not asserted here" — not the council's full
- * L1, and the rendered claim says so. `L2`/`L3`/`P2`/`P3` are never emitted:
- * they need executed evidence later layers own, and printing one from static
- * data would be exactly the overclaim this module exists to remove.
+ * pact. It therefore emits `L1-DECLARED`, explicitly not the council's full L1.
+ * `L2`/`L3`/`P2`/`P3` are never emitted: they need executed evidence later
+ * layers own, and printing one from static data would be exactly the overclaim
+ * this module exists to remove.
  *
  * Grain: per-provider *product* count. Ids are de-duplicated, so a product
  * listed under two capability profiles (e.g. one product backing both a
  * document and a key-value profile) counts once. One resolved product makes
- * the row `L1`; the denominator, not the level, says how much is covered.
+ * the row `L1-DECLARED`; the denominator, not the level, says how much is
+ * covered.
  *
  * This is a read model, not a deployment decision (see ADR.md): it does not
  * select among a Yard's offerings for deployment. It does canonicalize —
@@ -79,8 +79,11 @@ export const PARITY_LEVELS = Object.freeze([
 
 export type ParityLevel = (typeof PARITY_LEVELS)[number];
 
-/** The only levels a constants-only projection may emit. */
-export type SimulatedParityLevel = Extract<ParityLevel, "P0" | "L1">;
+/**
+ * The only levels this projection may emit. Full L1 additionally requires the
+ * six-case conformance suite and PACT evidence that this projection cannot see.
+ */
+export type SimulatedParityLevel = "P0" | "L1-DECLARED";
 
 // public-contract: refusal codes callers may branch on.
 export type ParityErrorCode =
@@ -164,7 +167,7 @@ export function parityRow(
 		provider,
 		catalogProductIds: catalog,
 		resolvedProductIds: resolved,
-		level: resolved.length > 0 ? "L1" : "P0",
+		level: resolved.length > 0 ? "L1-DECLARED" : "P0",
 		denominator: `${resolved.length}/${catalog.length}`,
 	});
 }
@@ -258,15 +261,21 @@ export function providerParity(): readonly ProviderParityRow[] {
 const LEVEL_EVIDENCE: Readonly<Record<SimulatedParityLevel, string>> =
 	Object.freeze({
 		P0: "catalog only",
-		L1: "resolvers declared (conformance not asserted here)",
+		"L1-DECLARED": "resolvers declared (conformance not asserted here)",
 	});
 
 /**
- * Renders a row with its denominator and evidence kind attached.
+ * Re-derives and renders a row so caller-supplied level or denominator fields
+ * cannot fabricate a claim.
  *
  * Example format (illustrative, not a current claim):
- * `acme L1: 1/3 resolvers declared (conformance not asserted here)`.
+ * `acme L1-DECLARED: 1/3 resolvers declared (conformance not asserted here)`.
  */
 export function formatParityClaim(row: ProviderParityRow): string {
-	return `${row.provider} ${row.level}: ${row.denominator} ${LEVEL_EVIDENCE[row.level]}`;
+	const derived = parityRow(
+		row.provider,
+		row.catalogProductIds,
+		row.resolvedProductIds,
+	);
+	return `${derived.provider} ${derived.level}: ${derived.denominator} ${LEVEL_EVIDENCE[derived.level]}`;
 }

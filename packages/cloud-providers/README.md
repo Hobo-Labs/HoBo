@@ -58,21 +58,21 @@ provider package's exported `*_RESOLVED_PRODUCT_IDS` constant.
 | Level | Meaning | Who may claim it |
 |---|---|---|
 | `P0` | Catalog only — declarable, no resolver | this package |
-| `L1` | Simulated — a fake-transport resolver **plus** the six lifecycle conformance cases (create/update/replace/delete-idempotent/adopt/crash-resume) **plus** a PACT | full L1: conformance evidence (later layers). This package: a constants-only *candidate* signal only — see below |
+| `L1-DECLARED` | At least one resolver id is declared; conformance is not asserted | this package's constants-only projection |
+| `L1` | Simulated — a fake-transport resolver **plus** the six lifecycle conformance cases (create/update/replace/delete-idempotent/adopt/crash-resume) **plus** a PACT | conformance evidence (later layers) |
 | `L2` | Local-live — the six lifecycle cases against real local processes, loopback only | executed evidence (later layers) |
 | `L3` | Local-DX — timed offline script, minutes recorded | executed evidence (later layers) |
 | `P2` | Cloud live — **fallback** claim only | cred-gated executed evidence |
 | `P3` | Cloud DX — **fallback** claim only | cred-gated executed evidence |
 
 This package can see only constants. It sees that a resolver is *declared*;
-it cannot see a conformance run or a pact. So the `L1` that `providerParity()`
-emits is a constants-only **candidate** signal — "resolvers declared
-(conformance not asserted here)" — not the full L1 above, and the rendered
-claim says so. It never emits `L2`/`L3`/`P2`/`P3`: a higher level printed
-from static data would be an overclaim; it needs a run.
+it cannot see a conformance run or a pact. It therefore emits `L1-DECLARED`,
+not full `L1`, and every rendered claim says "conformance not asserted here".
+It never emits `L2`/`L3`/`P2`/`P3`: a higher level printed from static data
+would be an overclaim; it needs a run.
 
 How to read a claim — example format, not a current claim:
-`acme L1: 1/3 resolvers declared (conformance not asserted here)` means one of
+`acme L1-DECLARED: 1/3 resolvers declared (conformance not asserted here)` means one of
 the three product ids acme's catalog declares has a declared resolver, and
 nothing here asserts that resolver passes conformance. The denominator is
 always present — a level without one is not a claim. Blank provider or product
@@ -84,7 +84,7 @@ dropped, because dropping it would tidy the denominator.
 Grain: the count is per provider, per **product** — not per capability
 profile. Ids are de-duplicated, so a product listed under two profiles counts
 once (AWS's DynamoDB backs both a document and a key-value profile). One
-resolved product makes the row `L1`; the denominator says how much is covered.
+resolved product makes the row `L1-DECLARED`; the denominator says how much is covered.
 
 Vercel is measured against its full allocatable catalog: the bare
 `vercel.Yard()` holds the default targets only and omits the opt-in
@@ -98,15 +98,15 @@ fails if this block and `providerParity()` disagree):
 
 <!-- parity:begin -->
 ```text
-aws L1: 8/19 resolvers declared (conformance not asserted here)
-azure L1: 9/16 resolvers declared (conformance not asserted here)
-cloudflare L1: 6/6 resolvers declared (conformance not asserted here)
-digitalocean L1: 15/15 resolvers declared (conformance not asserted here)
-gcp L1: 9/14 resolvers declared (conformance not asserted here)
-hetzner L1: 5/5 resolvers declared (conformance not asserted here)
-hostinger L1: 5/5 resolvers declared (conformance not asserted here)
-kubernetes L1: 9/9 resolvers declared (conformance not asserted here)
-vercel L1: 3/5 resolvers declared (conformance not asserted here)
+aws L1-DECLARED: 8/19 resolvers declared (conformance not asserted here)
+azure L1-DECLARED: 9/16 resolvers declared (conformance not asserted here)
+cloudflare L1-DECLARED: 6/6 resolvers declared (conformance not asserted here)
+digitalocean L1-DECLARED: 15/15 resolvers declared (conformance not asserted here)
+gcp L1-DECLARED: 9/14 resolvers declared (conformance not asserted here)
+hetzner L1-DECLARED: 5/5 resolvers declared (conformance not asserted here)
+hostinger L1-DECLARED: 5/5 resolvers declared (conformance not asserted here)
+kubernetes L1-DECLARED: 9/9 resolvers declared (conformance not asserted here)
+vercel L1-DECLARED: 3/5 resolvers declared (conformance not asserted here)
 ```
 <!-- parity:end -->
 

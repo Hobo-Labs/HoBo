@@ -117,8 +117,8 @@ describe("providerParity()", () => {
 		}
 	});
 
-	it("emits nothing above L1 — higher levels need executed evidence", () => {
-		for (const row of rows) expect(["P0", "L1"]).toContain(row.level);
+	it("emits only P0 or L1-DECLARED — higher levels need executed evidence", () => {
+		for (const row of rows) expect(["P0", "L1-DECLARED"]).toContain(row.level);
 	});
 
 	it("is deterministic and deep-frozen", () => {
@@ -180,9 +180,9 @@ describe("vercel's widened catalog", () => {
 });
 
 describe("parityRow() level rules", () => {
-	it("resolved > 0 is L1 (candidate) — never higher", () => {
+	it("resolved > 0 is L1-DECLARED — never full L1 or higher", () => {
 		const row = parityRow("acme", ["acme.a/v1", "acme.b/v1"], ["acme.a/v1"]);
-		expect(row.level).toBe("L1");
+		expect(row.level).toBe("L1-DECLARED");
 		expect(row.denominator).toBe("1/2");
 	});
 
@@ -249,12 +249,23 @@ describe("parityRow() level rules", () => {
 });
 
 describe("formatParityClaim()", () => {
-	it("always carries the denominator and the evidence kind", () => {
+	it("always carries the derived denominator and the evidence kind", () => {
 		expect(
 			formatParityClaim(parityRow("aws", ["a/v1", "b/v1", "c/v1"], ["a/v1"])),
-		).toBe("aws L1: 1/3 resolvers declared (conformance not asserted here)");
+		).toBe("aws L1-DECLARED: 1/3 resolvers declared (conformance not asserted here)");
 		expect(formatParityClaim(parityRow("acme", ["a/v1"], []))).toBe(
 			"acme P0: 0/1 catalog only",
+		);
+	});
+
+	it("re-derives a fabricated row instead of rendering its claims", () => {
+		const fabricated = {
+			...parityRow("aws", ["a/v1", "b/v1"], ["a/v1"]),
+			level: "P0" as const,
+			denominator: "9/9",
+		};
+		expect(formatParityClaim(fabricated)).toBe(
+			"aws L1-DECLARED: 1/2 resolvers declared (conformance not asserted here)",
 		);
 	});
 });
