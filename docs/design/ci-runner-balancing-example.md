@@ -7,6 +7,11 @@ tags: [hobo, design]
 
 # CI Runner Balancing Example & Dogfood Record
 
+Production shared-budget CI admission is described in
+[shared-budget-policy.md](./shared-budget-policy.md). This variable-rebalancing
+example remains a ranking/reference path; it does not supply transactional
+financial admission or an absolute spending guarantee.
+
 **Example:** [`examples/ci-runner-balancing/`](../../examples/ci-runner-balancing/README.md) ·
 **Ancestry:** [`dispatcher-maximize-credits`](./proofs/hobo-363-dispatcher-maximize-credits/index.md),
 [`execution-host-providers`](./proofs/hobo-149-execution-host-providers/index.md),

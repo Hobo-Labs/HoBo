@@ -38,18 +38,14 @@ import {
 } from "../src/interactive-shell.js";
 
 /**
- * Real directories for the cases that hand the shell an environment of their
- * own. Building the initial state writes under its home (the evidence store
- * makes `durable/code/evidence`), so an environment with no `HOBO_HOME` must
- * still be pointed somewhere this file made and removes afterwards. The
- * reduced-motion cases pass `env` with no home at all; before they took these
- * directories they wrote `/tmp/.hobo/durable/code/evidence` on the machine.
+ * A user home and a project of this file's, for the case that hands the shell
+ * an environment naming no home at all: building the initial state writes
+ * under its home (the evidence store makes `durable/code/evidence`).
  */
 let fixtureRoot = "";
 
 beforeAll(() => {
 	fixtureRoot = mkdtempSync(join(tmpdir(), "hobo-shell-initial-state-"));
-	mkdirSync(join(fixtureRoot, "home"));
 	mkdirSync(join(fixtureRoot, "user"));
 	mkdirSync(join(fixtureRoot, "project"));
 });
@@ -57,16 +53,6 @@ beforeAll(() => {
 afterAll(() => {
 	rmSync(fixtureRoot, { recursive: true, force: true });
 });
-
-/** An unset root would make both paths relative, and the shell would write into the working directory. */
-const fixtureDirs = () => {
-	if (fixtureRoot === "")
-		throw new Error("the fixture root is made in beforeAll");
-	return {
-		hoboHome: join(fixtureRoot, "home"),
-		cwd: join(fixtureRoot, "project"),
-	};
-};
 
 const base = (overrides: Partial<InteractiveShellState> = {}) =>
 	// SAFETY: the fixture is the state shape the builders are declared over.
@@ -82,7 +68,6 @@ const message = (text: string): ShellMessage => ({
 	at: 1,
 });
 
-/** Stands in for the gate the host builds; it already has the declared shape. */
 const approval: PendingApproval = {
 	runId: "run-7",
 	sandboxRoot: "/tmp/sandbox",
@@ -211,7 +196,7 @@ describe("what the first frame starts with", () => {
 		// should not also have to pass a flag.
 		expect(
 			createInitialShellState({
-				...fixtureDirs(),
+				hoboHome: process.env.HOBO_HOME,
 				env: { HOBO_CODE_REDUCED_MOTION: "1" },
 			}).reducedMotion,
 		).toBe(true);
@@ -220,7 +205,7 @@ describe("what the first frame starts with", () => {
 	it("accepts the word true as well as the digit", () => {
 		expect(
 			createInitialShellState({
-				...fixtureDirs(),
+				hoboHome: process.env.HOBO_HOME,
 				env: { HOBO_CODE_REDUCED_MOTION: "true" },
 			}).reducedMotion,
 		).toBe(true);
@@ -231,7 +216,7 @@ describe("what the first frame starts with", () => {
 		// as truthy would enable it for someone who explicitly turned it off.
 		expect(
 			createInitialShellState({
-				...fixtureDirs(),
+				hoboHome: process.env.HOBO_HOME,
 				env: { HOBO_CODE_REDUCED_MOTION: "0" },
 			}).reducedMotion,
 		).toBe(false);
@@ -240,9 +225,9 @@ describe("what the first frame starts with", () => {
 	it("takes the explicit option over the environment", () => {
 		expect(
 			createInitialShellState({
-				...fixtureDirs(),
 				reducedMotion: true,
 				env: {},
+				hoboHome: process.env.HOBO_HOME,
 			}).reducedMotion,
 		).toBe(true);
 	});
@@ -259,7 +244,7 @@ describe("where the first frame keeps its state", () => {
 			const state = createInitialShellState({
 				env: {},
 				welcome: false,
-				cwd: fixtureDirs().cwd,
+				cwd: join(fixtureRoot, "project"),
 			});
 			expect(state.hoboHome).toBe(join(user, ".hobo"));
 		} finally {

@@ -229,7 +229,7 @@ function asNodePlatform(value: string): NodeJS.Platform {
 	return value as NodeJS.Platform;
 }
 
-function requireProbeFn(value: JsonValue | undefined, name: string): Function {
+function requireProbeFn(value: JsonValue | undefined, name: string): object {
 	if (!(value instanceof Function)) {
 		throw new LocalSubstrateError(
 			"LOCAL_SUBSTRATE_PROBES_INVALID",

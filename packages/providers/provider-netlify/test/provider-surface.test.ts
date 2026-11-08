@@ -39,7 +39,7 @@ function computeCapability() {
 }
 
 function request(overrides: Partial<PortRequest> = {}): PortRequest {
-	return { port: "compute", ...overrides } as PortRequest;
+	return { port: "compute", ...overrides };
 }
 
 describe("provider identity", () => {
@@ -125,13 +125,14 @@ describe("capability matching", () => {
 		// Zero marginal price is a claim about the free tier, and it is stated as
 		// a string so a comparison never goes through float arithmetic.
 		expect(cost.marginalPrice).toBe("0");
-		expect(typeof cost.marginalPrice).toBe("string");
+		expect(cost.marginalPrice).toEqual(expect.any(String));
+		expect(cost.pricingStatus).toBe("unknown");
 	});
 });
 
 describe("realize", () => {
 	function plan(overrides: Partial<ResourcePlan> = {}): ResourcePlan {
-		return { name: "site-a", port: "compute", ...overrides } as ResourcePlan;
+		return { name: "site-a", port: "compute", ...overrides };
 	}
 
 	it("builds a driver program for its own port", () => {
@@ -186,7 +187,15 @@ describe("capabilityManifest", () => {
 
 	it("lists every capability port", () => {
 		const manifest = provider.capabilityManifest();
-		expect(manifest.capabilities.capabilities).toEqual([{ port: "compute" }]);
+		expect(manifest.capabilities.capabilities).toEqual([
+			{
+				port: "compute",
+				productId: "netlify.static-deploy/v1",
+				profiles: ["web.static/v1", "web.hosted/v1"],
+				features: ["http", "static", "edge", "managed"],
+				resourceKind: "immutable-deployment",
+			},
+		]);
 	});
 
 	it("publishes no cost facts and an empty well-known document set", () => {
@@ -197,7 +206,7 @@ describe("capabilityManifest", () => {
 		// filling them in later is a deliberate change and not mistaken for a
 		// regression in this test.
 		const manifest = provider.capabilityManifest();
-		expect(manifest.cost).toEqual({ facts: [] });
+		expect(manifest.cost).toEqual({ pricingStatus: "unknown", facts: [] });
 		expect(manifest.published).toEqual({});
 	});
 });
@@ -207,7 +216,7 @@ describe("client", () => {
 		// The service name is what a receipt cites. A client that reported the
 		// port instead would make two providers hosting the same port
 		// indistinguishable in the record.
-		const client = provider.client("compute" as never, { url: "https://x" });
+		const client = provider.client("compute", { url: "https://x" });
 		expect(client.port).toBe("compute");
 		expect(client.resourceClass).toBe("netlify:site");
 		expect(client.providerService).toBe("Netlify Site");
@@ -215,14 +224,12 @@ describe("client", () => {
 
 	it("carries the plan outputs through as bindings", () => {
 		const outputs = { url: "https://site.netlify.app" };
-		expect(provider.client("compute" as never, outputs).bindings).toEqual(
-			outputs,
-		);
+		expect(provider.client("compute", outputs).bindings).toEqual(outputs);
 	});
 
 	it("refuses a port it does not host, naming it", () => {
 		for (const port of ["kv", "database"]) {
-			expect(() => provider.client(port as never, {})).toThrow(
+			expect(() => provider.client(port, {})).toThrow(
 				new RegExp(`no client for port ${port}`, "u"),
 			);
 		}

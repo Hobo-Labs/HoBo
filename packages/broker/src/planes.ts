@@ -52,10 +52,17 @@ export interface GatePlane {
 // Billing enforcement plane: authorize estimated spend against the billing
 // policy (budget + per-resolution spend cap) before any placement happens.
 export interface BillingPlane {
-	authorize(input: { spendEstimateUsd: number; billing: BillingPolicy }): {
+	authorize(input: {
+		spendEstimateUsd: number;
+		billing: BillingPolicy;
+		requestId?: string;
+		requestDigest?: string;
+	}): {
 		ok: boolean;
 		reasons: RejectionReason[];
 	};
+	/** Only before a side effect has begun; uncertain effects retain funds. */
+	release?(requestId: string, confirmedUnused: true): void;
 }
 
 // Argo-shaped delivery plane: hand an accepted receipt to the rollout engine.
@@ -129,14 +136,28 @@ export function createBillingPlane(): BillingPlane {
 	return {
 		authorize({ spendEstimateUsd, billing }) {
 			const reasons: RejectionReason[] = [];
-			if (billing.spendCapUsd > 0 && spendEstimateUsd > billing.spendCapUsd) {
+			if (!Number.isFinite(spendEstimateUsd) || spendEstimateUsd < 0)
+				return {
+					ok: false,
+					reasons: [
+						{
+							plane: "billing",
+							code: "invalid-spend-estimate",
+							message: "estimated spend must be finite and nonnegative",
+						},
+					],
+				};
+			if (
+				!billing.spendCapUnlimited &&
+				spendEstimateUsd > billing.spendCapUsd
+			) {
 				reasons.push({
 					plane: "billing",
 					code: "spend-cap-exceeded",
 					message: `estimated spend ${spendEstimateUsd} USD exceeds per-resolution cap ${billing.spendCapUsd} USD`,
 				});
 			}
-			if (billing.budgetUsd > 0 && spendEstimateUsd > billing.budgetUsd) {
+			if (!billing.budgetUnlimited && spendEstimateUsd > billing.budgetUsd) {
 				reasons.push({
 					plane: "billing",
 					code: "budget-exceeded",

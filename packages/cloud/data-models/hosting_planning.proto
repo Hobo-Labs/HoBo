@@ -1,0 +1,136 @@
+syntax = "proto3";
+package hobo.cloud.hosting.v1;
+import "google/protobuf/struct.proto";
+
+// Pinned planning evidence. Monetary quantities are integer micro-units of currency.
+message HostingBudgetSnapshot {
+  string budget_id = 1;
+  string tenant_id = 2;
+  string scope_id = 3;
+  string period_id = 4;
+  string policy_revision = 5;
+  double ledger_seq = 6;
+  string currency = 7;
+  double period_start_ms = 8;
+  double period_end_ms = 9;
+  double cap_micros = 10;
+  double settled_micros = 11;
+  double committed_micros = 12;
+  double unresolved_micros = 13;
+  double recovery_reserve_micros = 14;
+  double observed_at_ms = 15;
+  double valid_until_ms = 16;
+  string provider_account_id = 17;
+  optional string period_kind = 18;
+}
+
+message HostingPriceQuote {
+  string id = 1;
+  string resource_name = 2;
+  string definition_id = 3;
+  string provider_id = 4;
+  string provider_account_id = 5;
+  string currency = 6;
+  double rate_micros = 7;
+  string billing_unit = 8;
+  // Required for calendar months; other time units have exact fixed durations.
+  double billing_period_ms = 9;
+  string source = 10;
+  double observed_at_ms = 11;
+  double valid_until_ms = 12;
+  double liability_ends_at_ms = 13;
+  string entitlement_id = 14;
+  double minimum_quantity = 15;
+  bool round_up_quantity = 16;
+  double fixed_cost_micros = 17;
+  double transition_cost_micros = 18;
+  // Additional all-in charges, each attributed to its actual billing account.
+  repeated HostingChargeComponent components = 19;
+}
+
+message HostingChargeComponent {
+  string id = 1;
+  string provider_account_id = 2;
+  string cost_class = 3;
+  double expected_micros = 4;
+  double bounded_micros = 5;
+  string entitlement_id = 6;
+}
+
+message HostingProviderCharge {
+  string provider_account_id = 1;
+  double expected_micros = 2;
+  double reserved_micros = 3;
+}
+
+message HostingEntitlementClaim {
+  string entitlement_id = 1;
+  string unit = 2;
+  double quantity = 3;
+  string cost_class = 4;
+}
+
+message HostingUsageBound {
+  string resource_name = 1;
+  // time-ms converts into a quote's exact billing period; other units must match.
+  string unit = 2;
+  double expected_quantity = 3;
+  double bounded_quantity = 4;
+}
+
+message HostingEntitlement {
+  string id = 1;
+  string provider_account_id = 2;
+  string currency = 3;
+  // micros is a monetary credit; other units must match the quote's billing unit.
+  string unit = 4;
+  double remaining_quantity = 5;
+  double valid_until_ms = 6;
+  repeated string definition_ids = 7;
+  // Empty means primary usage only. Additional components require explicit classes.
+  repeated string cost_classes = 8;
+  string period_id = 9;
+}
+
+message HostingPlanningInput {
+  HostingBudgetSnapshot budget = 1;
+  double now_ms = 2;
+  double horizon_end_ms = 3;
+  double max_observation_age_ms = 4;
+  repeated HostingPriceQuote quotes = 5;
+  repeated HostingUsageBound usages = 6;
+  repeated HostingEntitlement entitlements = 7;
+  repeated HostingBudgetSnapshot provider_budgets = 8;
+  // The shared authored policy is pinned with the financial evidence and digest.
+  google.protobuf.Struct budget_policy = 9;
+}
+
+message HostingResourceCommitment {
+  string resource_name = 1;
+  string definition_id = 2;
+  string quote_id = 3;
+  string provider_account_id = 4;
+  string entitlement_id = 5;
+  double expected_micros = 6;
+  double reserved_micros = 7;
+  double reserved_entitlement_quantity = 8;
+  repeated HostingProviderCharge provider_charges = 9;
+  repeated HostingEntitlementClaim entitlement_claims = 10;
+}
+
+message HostingPlanCommitment {
+  string budget_id = 1;
+  string tenant_id = 2;
+  string scope_id = 3;
+  string period_id = 4;
+  string policy_revision = 5;
+  double ledger_seq = 6;
+  string currency = 7;
+  double expected_micros = 8;
+  double reserved_micros = 9;
+  double valid_until_ms = 10;
+  repeated HostingResourceCommitment allocations = 11;
+  // Digest covers evidence, selected quotes and complete financial commitment.
+  string commitment_hash = 12;
+  HostingPlanningInput evidence = 13;
+}

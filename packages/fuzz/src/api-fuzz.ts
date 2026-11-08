@@ -3,8 +3,8 @@
  * same fail-closed rules against an ephemeral server; this stays in-memory.
  */
 
-import { hasPrototypePollution } from "./manifest.js";
 import type { FuzzValue } from "./manifest.js";
+import { hasPrototypePollution } from "./manifest.js";
 import type { ControlModel } from "./model.js";
 
 export interface FuzzRequest {
@@ -90,7 +90,9 @@ export function handleControlRequest(
 	return fail(404, "not-found");
 }
 
-function ok(body: Record<string, FuzzValue | ResourceResponse[]>): FuzzResponse {
+function ok(
+	body: Record<string, FuzzValue | ResourceResponse[]>,
+): FuzzResponse {
 	return { status: 200, body: { ok: true, ...body } };
 }
 

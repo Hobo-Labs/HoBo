@@ -1,4 +1,10 @@
+import { parseBudgetPolicyJson } from "@hobo/core";
 import { z } from "zod";
+import {
+	CI_PROJECT_PROVIDERS_SCHEMA_REF,
+	CiProjectProviderSchema,
+} from "./project-providers.js";
+import { RunnerIntegrationsSchema } from "./runner-integrations.js";
 
 const name = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
@@ -26,7 +32,11 @@ const pool = z
 	.meta({ id: "Pool" });
 const routing = z
 	.object({
-		strategy: z.literal("lowest-total-incremental-cost"),
+		strategy: z.enum([
+			"lowest-total-incremental-cost",
+			"min-cost",
+			"maximize-credits",
+		]),
 		noEligibleProvider: z.literal("queue"),
 		unknownAllocation: z.literal("zero"),
 	})
@@ -42,24 +52,57 @@ const budget = z
 	})
 	.strict()
 	.meta({ id: "Budget" });
-const provider = z
+const safeQuantity = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+// Both Unicode-aware and flagless JSON Schema engines must accept astral characters and exclude C0/C1.
+const controlFree = /^(?:[\u0020-\u007e\u00a0-\uffff]|[^\0-\uffff])*$/u;
+const scopeName = z.string().min(1).max(200).regex(controlFree);
+const commonBudget = z
 	.object({
-		id,
-		kind: z.enum([
-			"github",
-			"blacksmith",
-			"depot",
-			"warpbuild",
-			"kubernetes",
-			"local",
-			"vercel",
-		]),
-		connectionRef: z.string().regex(/^[A-Za-z0-9_.:/-]{1,200}$/),
-		runsOn: z.string().regex(/^(?![Hh][Oo][Bb][Oo]$)[A-Za-z0-9_.-]{1,100}$/),
-		enabled: z.boolean().optional(),
+		schemaVersion: z.literal("hobo.budget-policy/v1"),
+		tenantId: scopeName,
+		budgetId: scopeName,
+		periodId: scopeName,
+		revision: scopeName,
+		workloads: z
+			.array(z.string().regex(/^[a-z][a-z0-9_.-]{0,79}$/u))
+			.min(1)
+			.max(32)
+			.meta({ uniqueItems: true }),
+		currency: z.literal("USD"),
+		limitMicros: safeQuantity,
+		objective: z.enum(["min-cost", "maximize-credits"]),
+		enforcement: z.enum(["strict", "conservative"]),
+		periodKind: z.enum(["manual", "fixed-window"]),
+		periodStartsAtMs: safeQuantity.optional(),
+		periodEndsAtMs: safeQuantity.optional(),
+		constraints: z
+			.array(
+				z
+					.object({
+						key: z.string().regex(/^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$/u),
+						workload: z.string().regex(/^(?:\*|[a-z][a-z0-9_.-]{0,79})$/u),
+						unit: z.string().regex(/^[A-Za-z][A-Za-z0-9_.:/-]{0,79}$/u),
+						maximum: safeQuantity,
+						target: z.string().max(200).regex(controlFree).optional(),
+					})
+					.strict(),
+			)
+			.max(128)
+			.optional(),
 	})
 	.strict()
-	.meta({ id: "Provider" });
+	.superRefine((value, context) => {
+		try {
+			parseBudgetPolicyJson(JSON.stringify(value));
+		} catch {
+			context.addIssue({
+				code: "custom",
+				message: "invalid common budget policy",
+			});
+		}
+	})
+	.meta({ id: "CommonBudgetPolicy" });
+const provider = CiProjectProviderSchema;
 const threshold = z
 	.object({ fraction: z.number().gt(0).max(1), allow: z.array(id) })
 	.strict();
@@ -80,6 +123,7 @@ const policy = z
 		pool: z.union([pool, reference("pools")]),
 		routing: z.union([routing, reference("routing")]),
 		budget: z.union([budget, reference("budgets")]),
+		budgetPolicy: commonBudget.optional(),
 		providers: z
 			.array(z.union([provider, reference("providers")]))
 			.min(1)
@@ -96,11 +140,66 @@ const partialPolicy = policy
 		budget: z.union([budget.partial(), reference("budgets")]).optional(),
 	})
 	.partial();
+const jobAdmission = z.enum(["push", "pull"]);
+/** Worker lease journal. Postgres names the env var holding its URL; never the URL itself. */
+const workerStore = z
+	.discriminatedUnion("kind", [
+		z.object({ kind: z.literal("sqlite") }).strict(),
+		z
+			.object({
+				kind: z.literal("postgres"),
+				urlEnv: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),
+			})
+			.strict(),
+	])
+	.meta({ id: "WorkerStore" });
+const ciEngineId = z
+	.string()
+	.regex(/^[a-z][a-z0-9-]{0,62}$/)
+	.meta({ id: "CiEngineId" });
+const engineRelayOverride = z
+	.object({
+		relayOrigin: z.string().min(1).max(2048).optional(),
+	})
+	.strict()
+	.meta({ id: "EngineRelayOverride" });
+const environmentEngines = z.union([
+	z.array(ciEngineId).max(16),
+	z
+		.record(ciEngineId, engineRelayOverride.partial())
+		.refine((entries) => Object.keys(entries).length <= 16),
+]);
+const selectionMatch = z
+	.object({
+		refPrefix: z.string().min(1).max(200).optional(),
+		branch: z.string().min(1).max(255).optional(),
+		events: z.array(z.string().min(1).max(100)).max(16).optional(),
+	})
+	.strict();
+const selectionRule = z
+	.object({
+		environment: name,
+		match: selectionMatch.optional(),
+	})
+	.strict();
+const selection = z
+	.object({
+		rules: z.array(selectionRule).max(32).optional(),
+		forkPullRequestEnvironment: name.optional(),
+	})
+	.strict();
 const fields = z
 	.object({
 		relayOrigin: z.string().min(1).max(2048),
 		githubWebhookOrigin: z.string().min(1).max(2048).optional(),
 		allowInsecureLoopback: z.boolean().optional(),
+		jobAdmission: jobAdmission.optional(),
+		store: workerStore.optional(),
+		engines: environmentEngines.optional(),
+		engineRelays: z
+			.record(ciEngineId, engineRelayOverride)
+			.refine((entries) => Object.keys(entries).length <= 16)
+			.optional(),
 		secrets: z.union([secrets, reference("secrets")]).optional(),
 		policy,
 	})
@@ -128,7 +227,10 @@ export const CiProjectDocumentSchema = z
 	.object({
 		$schema: z.string().max(2048).optional(),
 		defaultEnvironment: name.optional(),
+		selection: selection.optional(),
 		definitions: definitions.optional(),
+		/** Third-party runner providers. References only; never secret values. */
+		integrations: RunnerIntegrationsSchema.optional(),
 		templates: z
 			.record(name, template)
 			.refine((entries) => Object.keys(entries).length <= 32)
@@ -145,20 +247,63 @@ export const CiProjectDocumentSchema = z
 	})
 	.strict();
 
-/** The shipped editor schema and runtime parser share this authoring contract. */
+type JsonData = z.infer<ReturnType<typeof z.json>>;
+const object = z.record(z.string(), z.json());
+const localDefinitionRef = z
+	.object({ $ref: z.string().regex(/^#\/\$defs\/.+$/) })
+	.loose();
+
+/** `$defs` names reachable from `root` through local `#/$defs/` references. */
+function reachableDefinitions(
+	root: JsonData,
+	definitions: Readonly<Record<string, JsonData>>,
+): ReadonlySet<string> {
+	const reachable = new Set<string>();
+	const visit = (value: JsonData): void => {
+		if (Array.isArray(value)) {
+			for (const entry of value) visit(entry);
+			return;
+		}
+		const node = object.safeParse(value);
+		if (!node.success) return;
+		const ref = localDefinitionRef.safeParse(node.data);
+		const name = ref.success ? ref.data.$ref.slice("#/$defs/".length) : "";
+		const target = definitions[name];
+		if (target !== undefined && !reachable.has(name)) {
+			reachable.add(name);
+			visit(target);
+		}
+		for (const [key, entry] of Object.entries(node.data))
+			if (key !== "$defs") visit(entry);
+	};
+	visit(root);
+	return reachable;
+}
+
+/**
+ * The shipped editor schema and runtime parser share this authoring contract.
+ * Provider shapes live in the sibling `ci-project-providers.schema.json`, so
+ * the inlined provider definitions are dropped once `Provider` points there.
+ */
 export function ciProjectJsonSchema() {
+	const { $defs, ...root } = z.toJSONSchema(CiProjectDocumentSchema, {
+		target: "draft-2020-12",
+		reused: "ref",
+	});
+	const definitions = {
+		...object.parse($defs ?? {}),
+		Provider: { $ref: CI_PROJECT_PROVIDERS_SCHEMA_REF },
+	};
+	const reachable = reachableDefinitions(z.json().parse(root), definitions);
 	return {
-		...z.toJSONSchema(CiProjectDocumentSchema, {
-			target: "draft-2020-12",
-			reused: "ref",
-		}),
-		$id: "https://raw.githubusercontent.com/Tyler-R-Kendrick/HoBo/main/packages/ci-gh-actions/schema/ci-project.schema.json",
+		...root,
+		$defs: Object.fromEntries(
+			Object.entries(definitions).filter(([name]) => reachable.has(name)),
+		),
+		$id: "https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project.schema.json",
 		title: "HoBo CI project configuration",
 	};
 }
-
-type JsonData = z.infer<ReturnType<typeof z.json>>;
-const object = z.record(z.string(), z.json());
 const referencePattern =
 	/^#\/definitions\/(pools|routing|budgets|providers|secrets)\/([A-Za-z][A-Za-z0-9_-]{0,63})$/;
 
@@ -193,6 +338,11 @@ export function resolveCiProjectReferences(
 			]),
 		);
 	}
-	const { definitions: _definitions, $schema: _schema, ...document } = input;
+	const {
+		definitions: _definitions,
+		$schema: _schema,
+		integrations: _integrations,
+		...document
+	} = input;
 	return expand(z.json().parse(document), 0);
 }

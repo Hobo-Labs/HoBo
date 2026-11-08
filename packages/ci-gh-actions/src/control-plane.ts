@@ -9,11 +9,15 @@ import {
 import {
 	AccountSchema,
 	AccountStateSchema,
+	BudgetSignalSchema,
 	type Configuration,
 	ConfigurationSchema,
 	type ControlCredential,
 	ControlCredentialsSchema,
+	ciBudgetPolicyJson,
+	ciBudgetSignalUpdate,
 	DesiredCiPolicySchema,
+	effectiveCiAccount,
 	LeaseSchema,
 	parseCiPolicy,
 	parseConfiguration,
@@ -229,17 +233,91 @@ export function createControlPlane(options: {
 			if (!principal)
 				throw new ControlError(401, "account authentication required");
 			const scope =
-				request.method === "GET"
-					? "policy:read"
-					: path.includes("/repositories/")
-						? "repositories:write"
-						: path.includes("/leases/")
-							? "operations:write"
-							: "policy:write";
+				path === "/v2/accounts/self/signals"
+					? "observations:write"
+					: request.method === "GET"
+						? "policy:read"
+						: path.includes("/repositories/")
+							? "repositories:write"
+							: path.includes("/leases/")
+								? "operations:write"
+								: "policy:write";
 			if (!principal.scopes.includes(scope))
 				throw new ControlError(403, "account scope required");
 			const current = configuration();
-			if (path === "/v2/accounts/self/policy" && request.method === "PUT") {
+			if (
+				path === "/v2/accounts/self/signals" &&
+				["GET", "POST"].includes(request.method ?? "")
+			) {
+				const signal =
+					request.method === "POST"
+						? fromJsonString(BudgetSignalSchema, await body(request))
+						: undefined;
+				const expected = signal ? revision(request) : undefined;
+				const state = store.configuration();
+				if (
+					!state?.configuration ||
+					(expected !== undefined && state.revision !== expected)
+				)
+					throw new ControlError(409, "configuration revision conflict");
+				const config = clone(ConfigurationSchema, state.configuration);
+				const account = config.accounts.find(
+					(entry) => entry.id === principal.accountId,
+				);
+				if (!account) throw new ControlError(404, "account not found");
+				let saved = state;
+				if (signal) {
+					const record = store.controlRecord(
+						`ci-policy:${principal.accountId}`,
+					);
+					if (!record || record.accountId !== principal.accountId)
+						throw new ControlError(
+							409,
+							"desired policy is required before budget signals",
+						);
+					const policy = parseCiPolicy(record.bodyJson);
+					if (
+						ciBudgetPolicyJson(account.budgetPolicy) !==
+						ciBudgetPolicyJson(policy.budgetPolicy)
+					)
+						throw new ControlError(
+							409,
+							"desired and active budget scope differ",
+						);
+					let update: ReturnType<typeof ciBudgetSignalUpdate>;
+					try {
+						update = ciBudgetSignalUpdate(signal, policy);
+					} catch {
+						throw new ControlError(400, "invalid or foreign budget signal");
+					}
+					if (
+						update.watermark > (account.routingSignalCycles[update.key] ?? 0)
+					) {
+						account.routingSignalCycles[update.key] = update.watermark;
+						account.routingSignalCrossed[update.key] = update.crossed;
+						saved = save(config, state.revision);
+					}
+				}
+				send(
+					response,
+					200,
+					toJsonString(
+						AccountStateSchema,
+						create(AccountStateSchema, {
+							revision: saved.revision,
+							account,
+							connections: config.connections.filter(
+								(entry) => entry.accountId === principal.accountId,
+							),
+							updatedAt: saved.updatedAt,
+						}),
+					),
+					saved.revision,
+				);
+			} else if (
+				path === "/v2/accounts/self/policy" &&
+				request.method === "PUT"
+			) {
 				const expected = revision(request);
 				const input = await body(request);
 				let desired: ReturnType<typeof parseCiPolicy>;
@@ -291,7 +369,15 @@ export function createControlPlane(options: {
 						);
 				}
 				if (!desired.budget) throw new ControlError(400, "budget required");
-				account.budgetMicros = desired.budget.limitMicros;
+				if (account.budgetPolicy && !desired.budgetPolicy)
+					throw new ControlError(400, "common budget policy cannot be removed");
+				const effective = effectiveCiAccount(
+					{ ...account, budgetMicros: desired.budget.limitMicros },
+					desired,
+				);
+				account.budgetMicros = effective.budgetMicros;
+				account.budgetPolicy = desired.budgetPolicy;
+				account.routingStrategy = effective.routingStrategy;
 				const saved = store.configureWithRecord(
 					config,
 					expected,
@@ -372,7 +458,12 @@ export function createControlPlane(options: {
 						403,
 						"account policy belongs to another account",
 					);
-				if (store.controlRecord(`ci-policy:${principal.accountId}`))
+				if (
+					store.controlRecord(`ci-policy:${principal.accountId}`) ||
+					configuration().accounts.find(
+						(entry) => entry.id === principal.accountId,
+					)?.budgetPolicy
+				)
 					throw new ControlError(410, "use v2 desired policy for this account");
 				const latest = configuration();
 				const next = create(ConfigurationSchema, {
@@ -721,7 +812,7 @@ export function createControlPlane(options: {
 				);
 			else if (
 				error instanceof Error &&
-				/revision conflict|active lease prevents|snapshot cannot move backwards|routing signal watermark|routing signal state/.test(
+				/revision conflict|active lease prevents|snapshot cannot move backwards|routing signal watermark|routing signal state|spending watermark|budget period|budget policy revision|retired budget/.test(
 					error.message,
 				)
 			)

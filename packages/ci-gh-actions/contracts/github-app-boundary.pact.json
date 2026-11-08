@@ -188,6 +188,21 @@
         "body": { "ref": "hobo-ci-v1", "inputs": { "lease_id": "11111111-1111-4111-8111-111111111111", "runs_on": "blacksmith-2vcpu-ubuntu-2404", "timeout_minutes": "10" } }
       },
       "response": { "status": 302, "headers": { "Location": "https://redirect.invalid/credentials" } }
+    },
+    {
+      "description": "re-read an unchanged job list conditionally and get 304 Not Modified",
+      "request": {
+        "method": "GET",
+        "path": "/repos/hobo-fixture/ci-example/actions/runs/42/jobs?filter=latest&per_page=100",
+        "headers": {
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2026-03-10",
+          "Content-Type": "application/json",
+          "If-None-Match": "W/\"0123456789abcdef\"",
+          "Authorization": "Bearer ghs_consumer_fixture_only"
+        }
+      },
+      "response": { "status": 304, "headers": { "ETag": "W/\"0123456789abcdef\"", "x-ratelimit-remaining": "4999" } }
     }
   ]
 }

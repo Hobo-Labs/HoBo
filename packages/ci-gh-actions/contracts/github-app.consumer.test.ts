@@ -120,7 +120,8 @@ function contractTransport(...sequence: z.infer<typeof Interaction>[]) {
 				? undefined
 				: JSON.stringify(expected.request.body),
 		);
-		if (expected.response.status >= 300 && expected.response.status < 400) {
+		// Fetch's redirect statuses; a 304 is an ordinary response.
+		if ([301, 302, 303, 307, 308].includes(expected.response.status)) {
 			// Model Fetch's redirect:error rejection; no redirected request is issued.
 			throw new TypeError("fixture fetch refused redirect");
 		}
@@ -186,6 +187,34 @@ describe("hand-authored GitHub App REST consumer contract", () => {
 		expect(response.status).toBe(201);
 		expect(await response.json()).toEqual(registration.response.body);
 		expect(api.calls()).toBe(2);
+	});
+
+	it("sends If-None-Match on a GET and hands back the 304, but never on a write", async () => {
+		const conditional = interaction(
+			"re-read an unchanged job list conditionally and get 304 Not Modified",
+		);
+		const etag = conditional.request.headers["If-None-Match"];
+		const api = contractTransport(exchange, conditional, exchange, dispatch);
+		const response = await api.transport.request(
+			fixtures.installationId,
+			conditional.request.path,
+			"GET",
+			undefined,
+			etag,
+		);
+		expect(response.status).toBe(304);
+		expect(response.headers.get("etag")).toBe(etag);
+		// The dispatch interaction pins its exact header set, so a leaked
+		// If-None-Match on the POST fails here.
+		const write = await api.transport.request(
+			fixtures.installationId,
+			dispatch.request.path,
+			"POST",
+			JSON.stringify(dispatch.request.body),
+			etag,
+		);
+		expect(write.status).toBe(204);
+		expect(api.calls()).toBe(4);
 	});
 
 	it("stops before the API operation when App authentication fails", async () => {

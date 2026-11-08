@@ -197,6 +197,8 @@ export function composeTrailWithRecipes(
 			? { dependsOnTrails: trail.dependsOnTrails }
 			: undefined),
 		steps: merged,
-		...(trail.recipeList !== undefined ? { recipeList: trail.recipeList } : undefined),
+		...(trail.recipeList !== undefined
+			? { recipeList: trail.recipeList }
+			: undefined),
 	});
 }

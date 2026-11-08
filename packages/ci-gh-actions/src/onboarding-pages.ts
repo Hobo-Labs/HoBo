@@ -53,6 +53,8 @@ form.addEventListener('submit', async (event) => {
     githubForm.append(manifest); document.body.append(githubForm); githubForm.submit();
   } catch (error) { tokenField.value = ''; status.textContent = error.message || 'Registration could not start.'; }
 });`;
+const deviceFlowSetup =
+	"<p>After GitHub creates the App, enable <strong>Device Flow</strong> in its settings before finishing HoBo setup. This enables user authorization from CLI and headless environments.</p>";
 const accountScript = `
 const connect = document.getElementById('connect');
 const install = document.getElementById('install');
@@ -87,7 +89,7 @@ if (phase === 'installed') status.textContent = 'Review your connected installat
 export function appBootstrapPage(): Response {
 	return page(
 		"Set up HoBo CI",
-		`<main><h1>Set up HoBo CI</h1><p>Create the HoBo CI GitHub App using the platform operator token.</p><form id="setup" method="post" action="/v1/app-bootstrap/start"><label>App name <input name="appName" value="HoBo CI" required maxlength="100"></label><label>Operator token <input id="bootstrap-token" type="password" required autocomplete="off"></label><button type="submit">Create GitHub App</button></form><p id="status" role="status"></p></main>`,
+		`<main><h1>Set up HoBo CI</h1><p>Create the HoBo CI GitHub App using the platform operator token.</p>${deviceFlowSetup}<form id="setup" method="post" action="/v1/app-bootstrap/start"><label>App name <input name="appName" value="HoBo CI" required maxlength="100"></label><label>Operator token <input id="bootstrap-token" type="password" required autocomplete="off"></label><button type="submit">Create GitHub App</button></form><p id="status" role="status"></p></main>`,
 		bootstrapScript,
 	);
 }
@@ -119,7 +121,7 @@ form.addEventListener('submit', async (event) => {
 export function appOwnerBootstrapPage(): Response {
 	return page(
 		"Set up HoBo CI",
-		`<main><h1>Set up HoBo CI</h1><p>Sign in to GitHub as the HoBo repository owner to create the App.</p><form id="setup" method="post" action="/v1/app-bootstrap/start"><label>App name <input name="appName" value="HoBo CI" required maxlength="100"></label><button type="submit">Create GitHub App</button></form><p id="status" role="status"></p></main>`,
+		`<main><h1>Set up HoBo CI</h1><p>Sign in to GitHub as the HoBo repository owner to create the App.</p>${deviceFlowSetup}<form id="setup" method="post" action="/v1/app-bootstrap/start"><label>App name <input name="appName" value="HoBo CI" required maxlength="100"></label><button type="submit">Create GitHub App</button></form><p id="status" role="status"></p></main>`,
 		ownerBootstrapScript,
 	);
 }

@@ -67,11 +67,22 @@ export class CapabilityMatrixError extends Error {
 const tagOf = Object.prototype.toString;
 
 type JsonObject = { [key: string]: JsonValue };
-type JsonValue = string | number | boolean | null | undefined | JsonValue[] | JsonObject;
+type JsonValue =
+	| string
+	| number
+	| boolean
+	| null
+	| undefined
+	| JsonValue[]
+	| JsonObject;
 export type CapabilityMatrixDocument = JsonValue;
 
 function object(value: JsonValue, path: string): JsonObject {
-	if (value === null || Array.isArray(value) || tagOf.call(value) !== "[object Object]") {
+	if (
+		value === null ||
+		Array.isArray(value) ||
+		tagOf.call(value) !== "[object Object]"
+	) {
 		throw new CapabilityMatrixError(
 			"INVALID_CAPABILITY_MATRIX",
 			path,

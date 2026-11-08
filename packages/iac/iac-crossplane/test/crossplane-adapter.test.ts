@@ -10,8 +10,7 @@ import {
 	runIacBackendConformance,
 	validateIacProgram,
 } from "../src/index.js";
-import { type JsonValue } from "../src/json.js";
-
+import type { JsonValue } from "../src/json.js";
 
 // HOBO-716: the Kubernetes-substrate adapter over the in-memory cluster
 // fixture — the full behavior set promoted from the HOBO-188 draft proof plus

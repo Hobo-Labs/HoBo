@@ -1,6 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { isJsonString } from "./json.js";
-
 import {
 	copyFileSync,
 	mkdirSync,
@@ -12,11 +10,11 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
-
 import { renderEvidenceOverlayWrapper } from "../../../src/evidence-overlay.js";
 import { createLocalSessionControl } from "../../../src/local-session-control.js";
 import type { MuxRunner } from "../../../src/mux.js";
 import { startSessionControlServer } from "../../../src/session-control-server.js";
+import { isJsonString } from "./json.js";
 
 const output = process.argv[2];
 if (!output) throw new Error("usage: replay.playwright.ts <output-directory>");
@@ -135,8 +133,7 @@ const app = createServer((_request, response) => {
 });
 await new Promise<void>((resolve) => app.listen(0, "127.0.0.1", resolve));
 const address = app.address();
-if (!address || isJsonString(address))
-	throw new Error("app has no port");
+if (!address || isJsonString(address)) throw new Error("app has no port");
 const appUrl = `http://127.0.0.1:${address.port}/`;
 const wrapper = createServer((_request, response) => {
 	response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -151,10 +148,7 @@ const wrapper = createServer((_request, response) => {
 });
 await new Promise<void>((resolve) => wrapper.listen(0, "127.0.0.1", resolve));
 const wrapperAddress = wrapper.address();
-if (
-	!wrapperAddress ||
-	isJsonString(wrapperAddress)
-)
+if (!wrapperAddress || isJsonString(wrapperAddress))
 	throw new Error("wrapper has no port");
 
 const browser = await chromium.launch({ headless: true });

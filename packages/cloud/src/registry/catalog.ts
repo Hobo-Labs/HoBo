@@ -42,6 +42,7 @@ export interface RegistrableCapability {
 		marginalPrice: string;
 		sku: string;
 		unit: string;
+		pricingStatus?: "unknown" | "estimate" | "verified-zero";
 	};
 }
 
@@ -72,13 +73,19 @@ void _coreCloudProviderIsRegistrable;
 // equivalence mappings are its default Resource Definitions, one per capability).
 export interface ResourceDefinition {
 	id: string;
+	productId?: string;
 	providerId: string;
 	port: string;
 	features: string[];
 	regions: string[];
 	specificity: number;
 	priority: number;
-	cost: { sku: string; unit: string; marginalPrice: string };
+	cost: {
+		sku: string;
+		unit: string;
+		marginalPrice: string;
+		pricingStatus?: "unknown" | "estimate" | "verified-zero";
+	};
 	// Live capability negotiation delegated to the provider Capability.satisfies.
 	satisfies(req: { port: string; features?: string[] }): CapabilityVerdict;
 }
@@ -111,13 +118,30 @@ function normalizeVerdict(raw: {
 	return { kind: "none" };
 }
 
+function parsePricingStatus(
+	value: JsonValue | undefined,
+): ResourceDefinition["cost"]["pricingStatus"] {
+	if (value === undefined) return undefined;
+	if (value === "unknown" || value === "estimate" || value === "verified-zero")
+		return value;
+	return "unknown";
+}
+
 function catalogHashOf(definitions: ResourceDefinition[]): string {
 	const summary = definitions
 		.map((d) => ({
 			id: d.id,
+			productId: d.productId,
+			providerId: d.providerId,
 			port: d.port,
 			features: [...d.features].sort(),
+			regions: [...d.regions].sort(),
+			specificity: d.specificity,
+			priority: d.priority,
+			sku: d.cost.sku,
+			unit: d.cost.unit,
 			marginalPrice: d.cost.marginalPrice,
+			pricingStatus: d.cost.pricingStatus,
 		}))
 		.sort((a, b) => a.id.localeCompare(b.id));
 	const digest = createHash("sha256")
@@ -155,6 +179,10 @@ export function definitionsFor(
 
 		return {
 			id: `${provider.id}:${capability.port}`,
+			...(isJsonString(manifestEntry?.productId) &&
+			manifestEntry.productId.length > 0
+				? { productId: manifestEntry.productId }
+				: undefined),
 			providerId: provider.id,
 			port: capability.port,
 			features,
@@ -171,6 +199,11 @@ export function definitionsFor(
 				marginalPrice:
 					// SAFETY: `(costFact?.marginalPrice as string) ?? estimate.marginalPrice,` is required at this I/O or test boundary.
 					(costFact?.marginalPrice as string) ?? estimate.marginalPrice,
+				pricingStatus: parsePricingStatus(
+					costFact?.pricingStatus ??
+						estimate.pricingStatus ??
+						manifest.cost.pricingStatus,
+				),
 			},
 			satisfies: (req) => normalizeVerdict(capability.satisfies(req)),
 		};
@@ -195,6 +228,7 @@ export function createRegistryFromProviders(
 export function registerProviderFact(provider: RegistrableProvider) {
 	const definitions = definitionsFor(provider).map((d) => ({
 		id: d.id,
+		...(d.productId ? { productId: d.productId } : undefined),
 		providerId: d.providerId,
 		port: d.port,
 		features: d.features,
@@ -242,24 +276,16 @@ function negotiateFromEntry(
 
 // Parse a `provider.Registered` fact body into ResourceDefinitions
 // (parse-don't-validate: malformed entries are dropped, never half-trusted).
-// `unknown`: the argument is an event payload typed `data?: unknown` by the
-// stream it is read from, and this function is the parse boundary that decides
-// what it is. A `JsonValue` parameter would put a claim in front of the check
-// whose whole job is to establish it.
-export function parseRegisteredDefinitions(
-	data: unknown,
-): ResourceDefinition[] {
+export function parseRegisteredDefinitions<T>(data: T): ResourceDefinition[] {
 	if (data === null || !isJsonObject(data)) return [];
-	// SAFETY: `const body = data as { providerId?: JsonValue; definitions?: unknown };` is required at this I/O or test boundary.
-	const body = data as { providerId?: JsonValue; definitions?: unknown };
+	const body = data;
 	if (!isJsonString(body.providerId) || body.providerId.length === 0) return [];
 	if (!Array.isArray(body.definitions)) return [];
 
 	const parsed: ResourceDefinition[] = [];
 	for (const raw of body.definitions) {
 		if (raw === null || !isJsonObject(raw)) continue;
-		// SAFETY: `const rec = raw as JsonObject;` is required at this I/O or test boundary.
-		const rec = raw as JsonObject;
+		const rec = raw;
 		if (!isJsonString(rec.port) || rec.port.length === 0) continue;
 		const features = Array.isArray(rec.features)
 			? rec.features.filter((f): f is string => isJsonString(f))
@@ -267,9 +293,11 @@ export function parseRegisteredDefinitions(
 		const regions = Array.isArray(rec.regions)
 			? rec.regions.filter((r): r is string => isJsonString(r))
 			: [];
-		// SAFETY: `const cost = (rec.cost ?? {}) as JsonObject;` is required at this I/O or test boundary.
-		const cost = (rec.cost ?? {}) as JsonObject;
+		const cost = isJsonObject(rec.cost) ? rec.cost : {};
 		parsed.push({
+			...(isJsonString(rec.productId) && rec.productId.length > 0
+				? { productId: rec.productId }
+				: undefined),
 			id:
 				isJsonString(rec.id) && rec.id.length > 0
 					? rec.id
@@ -288,6 +316,7 @@ export function parseRegisteredDefinitions(
 				marginalPrice: isJsonString(cost.marginalPrice)
 					? cost.marginalPrice
 					: "0",
+				pricingStatus: parsePricingStatus(cost.pricingStatus),
 			},
 			satisfies: negotiateFromEntry(rec.port, features),
 		});

@@ -2674,6 +2674,12 @@ export interface RunInteractiveShellOptions {
 	readonly scriptedKeys?: string;
 	/** Test hook: receives the terminal for repaint-economy assertions. */
 	readonly onTerminal?: (terminal: StreamTerminal) => void;
+	/** Test hook: runs after TUI input listeners and the focused editor finish. */
+	readonly onKeyHandled?: () => void;
+	/** Test hook: runs after the terminal input listener is attached. */
+	readonly onReady?: () => void;
+	/** Test hook: runs after a turn settles and its final render is requested. */
+	readonly onTurnSettled?: () => void;
 	/**
 	 * Start Station dashboard + Evidence sidecars. Default: on for a live TTY
 	 * unless HOBO_CODE_SIDECARS=0. Tests pass false to stay off-network.
@@ -2816,6 +2822,16 @@ export async function runInteractiveShell(
 		alternateScreen: liveTty,
 	});
 	options.onTerminal?.(terminal);
+	const startTerminal = terminal.start.bind(terminal);
+	terminal.start = (onInput, onResize) => {
+		startTerminal((data) => {
+			try {
+				onInput(data);
+			} finally {
+				options.onKeyHandled?.();
+			}
+		}, onResize);
+	};
 	const tui = new TUI(terminal, false);
 
 	let quit = false;
@@ -2995,6 +3011,7 @@ export async function runInteractiveShell(
 	};
 
 	let turnInFlight = false;
+	let activeTurn: Promise<void> | undefined;
 
 	const onSubmit = async (prompt: string) => {
 		if (options.host.tryWorkspaceAction) {
@@ -3095,6 +3112,16 @@ export async function runInteractiveShell(
 		} finally {
 			turnInFlight = false;
 		}
+	};
+
+	const startTurn = (prompt: string) => {
+		const turn = onSubmit(prompt).catch(() => {});
+		activeTurn = turn;
+		void turn.then(() => {
+			if (activeTurn === turn) activeTurn = undefined;
+			if (!quit) tui.requestRender();
+			options.onTurnSettled?.();
+		});
 	};
 
 	const refreshUsage = () => {
@@ -3231,11 +3258,7 @@ export async function runInteractiveShell(
 			),
 		);
 		tui.requestRender();
-		void onSubmit(text)
-			.then(() => {
-				if (!quit) tui.requestRender();
-			})
-			.catch(() => {});
+		startTurn(text);
 	};
 
 	const handleKey = (sequence: string) => {
@@ -3374,11 +3397,7 @@ export async function runInteractiveShell(
 					"Still working on the previous turn — Esc cancels it.",
 				);
 			} else {
-				void onSubmit(result.submit)
-					.then(() => {
-						if (!quit) tui.requestRender();
-					})
-					.catch(() => {});
+				startTurn(result.submit);
 			}
 		}
 		tui.requestRender();
@@ -3753,6 +3772,7 @@ export async function runInteractiveShell(
 	});
 	tui.setFocus(input.editor);
 	tui.start();
+	options.onReady?.();
 
 	// pi-tui's resize hook only requestRender()s. Force a full clear + invalidate
 	// so width/height changes never leave differential leftovers (WSL/WT especially).
@@ -3817,27 +3837,37 @@ export async function runInteractiveShell(
 	paneTick.unref?.();
 
 	let maxMsTimer: NodeJS.Timeout | undefined;
-	if (options.maxMs !== undefined) {
-		maxMsTimer = setTimeout(requestQuit, options.maxMs);
-		maxMsTimer.unref?.();
+	let maxMsExpired: Promise<void> | undefined;
+	const maxMs =
+		options.maxMs ?? (options.scriptedKeys === undefined ? undefined : 12_000);
+	if (maxMs !== undefined) {
+		maxMsExpired = new Promise<void>((resolve) => {
+			maxMsTimer = setTimeout(() => {
+				resolve();
+				requestQuit();
+			}, maxMs);
+			maxMsTimer.unref?.();
+		});
 	}
 
 	if (options.scriptedKeys !== undefined) {
-		for (const sequence of splitKeySequences(options.scriptedKeys)) {
-			if (quit) break;
-			handleKey(sequence);
-			// Let submit/slash promises and render scheduling settle per key.
-			await new Promise((resolve) => setTimeout(resolve, 0));
+		try {
+			for (const sequence of splitKeySequences(options.scriptedKeys)) {
+				if (quit) break;
+				handleKey(sequence);
+				// Yield the event loop so immediate hosts settle while slow turns stay
+				// interruptible by the next Ctrl-C or Escape key.
+				await new Promise<void>((resolve) => setImmediate(resolve));
+			}
+			if (activeTurn) {
+				if (maxMsExpired) await Promise.race([activeTurn, maxMsExpired]);
+				else await activeTurn;
+			}
+			tui.requestRender(true);
+			await new Promise<void>((resolve) => process.nextTick(resolve));
+		} finally {
+			requestQuit();
 		}
-		// Drain any in-flight turn (bounded), then let the final render flush.
-		// `run it` / `debug it` boot occupancy + named endpoints — 2s is
-		// not enough for the assistant reply to land before scripted quit.
-		const drainDeadline = Date.now() + 12_000;
-		while (turnInFlight && Date.now() < drainDeadline) {
-			await new Promise((resolve) => setTimeout(resolve, 10));
-		}
-		await new Promise((resolve) => setTimeout(resolve, 40));
-		requestQuit();
 	}
 
 	// Signals must restore the terminal too: closing the emulator or `kill`

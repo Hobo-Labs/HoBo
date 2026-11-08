@@ -4,13 +4,63 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Message } from "@bufbuild/protobuf";
+import { file_google_protobuf_struct } from "@bufbuild/protobuf/wkt";
+import type { JsonObject, Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file provider_prisma_postgres.proto.
  */
 export const file_provider_prisma_postgres: GenFile = /*@__PURE__*/
-  fileDesc("Ch5wcm92aWRlcl9wcmlzbWFfcG9zdGdyZXMucHJvdG8SIGhvYm8ucHJvdmlkZXIucHJpc21hX3Bvc3RncmVzLnYxIuEBChRQcmlzbWFDcmVhdGVEb2N1bWVudBISCgpwcm9qZWN0X2lkGAEgASgJEhEKCWNsYWltX3VybBgCIAEoCRIYChBkZWxldGlvbl9kYXRlX21zGAMgASgDEg4KBnJlZ2lvbhgEIAEoCRIMCgRuYW1lGAUgASgJEiEKGWNvbm5lY3Rpb25fc3RyaW5nX3ByZXNlbnQYBiABKAgSRwoLb3V0cHV0X21vZGUYByABKA4yMi5ob2JvLnByb3ZpZGVyLnByaXNtYV9wb3N0Z3Jlcy52MS5QcmlzbWFPdXRwdXRNb2RlImwKF1ByaXNtYU5vblNlY3JldEVuZHBvaW50EgwKBGhvc3QYASABKAkSEQoEcG9ydBgCIAEoDUgAiAEBEhEKBHBhdGgYAyABKAlIAYgBARILCgN0bHMYBCABKAhCBwoFX3BvcnRCBwoFX3BhdGgigQEKEVByaXNtYUNsYWltQWN0aW9uEgoKAmlkGAEgASgJEgwKBGtpbmQYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEAoIYmxvY2tpbmcYBCABKAgSEQoJY29tcGxldGVkGAUgASgIEhAKA3VybBgGIAEoCUgAiAEBQgYKBF91cmwi2QIKG1ByaXNtYUFzc29jaWF0ZWRSZXNvdXJjZVJlZhIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEhUKDWRlZmluaXRpb25faWQYBCABKAkSEgoKcHJvamVjdF9pZBgFIAEoCRIRCgljbGFpbV91cmwYBiABKAkSEgoKY2xhaW1faG9zdBgHIAEoCRIiChpzdGFuZGFsb25lX2NsYWltX3N1cHBvcnRlZBgIIAEoCBIaChJyZXF1aXJlc193b3Jrc3BhY2UYCSABKAgSFwoPYnVuZGxlX3N0cmF0ZWd5GAogASgJEg4KBnJlZ2lvbhgLIAEoCRIVCg1kYXRhYmFzZV9uYW1lGAwgASgJEhYKDmV4cGlyZXNfYXRfaXNvGA0gASgJEhUKDWV4cGlyeV9zb3VyY2UYDiABKAki1wIKD1ByaXNtYUNsYWltUGxhbhIQCghzdHJhdGVneRgBIAEoCRIQCghib3VuZGFyeRgCIAEoCRIVCg1yZXNvdXJjZV9raW5kGAMgASgJEhEKCWF0b21pY2l0eRgEIAEoCRIRCgljbGFpbV91cmwYBSABKAkSQQoFc3RhdGUYBiABKA4yMi5ob2JvLnByb3ZpZGVyLnByaXNtYV9wb3N0Z3Jlcy52MS5QcmlzbWFDbGFpbVN0YXRlEkQKB2FjdGlvbnMYByADKAsyMy5ob2JvLnByb3ZpZGVyLnByaXNtYV9wb3N0Z3Jlcy52MS5QcmlzbWFDbGFpbUFjdGlvbhJaChNhc3NvY2lhdGVkX3Jlc291cmNlGAggASgLMj0uaG9iby5wcm92aWRlci5wcmlzbWFfcG9zdGdyZXMudjEuUHJpc21hQXNzb2NpYXRlZFJlc291cmNlUmVmIvQDChhQcmlzbWFQcm92aXNpb25PcGVyYXRpb24SFgoOc2NoZW1hX3ZlcnNpb24YASABKAkSDAoEa2luZBgCIAEoCRIVCg1kZWZpbml0aW9uX2lkGAMgASgJEhMKC3Byb3ZpZGVyX2lkGAQgASgJEhQKDGNvbXBpbGVyX3JlZhgFIAEoCRIUCgxleGVjdXRvcl9yZWYYBiABKAkSHgoWYm9vdHN0cmFwX3N0cmF0ZWd5X3JlZhgHIAEoCRIaChJjbGFpbV9zdHJhdGVneV9yZWYYCCABKAkSFAoMcmVzb3VyY2VfcmVmGAkgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgKIAEoCRIOCgZyZWdpb24YCyABKAkSDAoEYXJndhgMIAMoCRISCgp0aW1lb3V0X21zGA0gASgFEhgKEG1heF9vdXRwdXRfYnl0ZXMYDiABKAUSEwoLb3V0cHV0X21vZGUYDyABKAkSHAoUZG9jdW1lbnRlZF90dGxfaG91cnMYECABKAUSGgoNcmVxdWVzdGVkX3R0bBgRIAEoCUgAiAEBEiEKGXByb2R1Y2VzX2JpbmRpbmdfcHJvZmlsZXMYEiADKAkSHwoXZXhwZWN0ZWRfc2VjcmV0X3B1cnBvc2UYEyABKAlCEAoOX3JlcXVlc3RlZF90dGwirAEKElByaXNtYUNsYWltU3VtbWFyeRJBCgVzdGF0ZRgBIAEoDjIyLmhvYm8ucHJvdmlkZXIucHJpc21hX3Bvc3RncmVzLnYxLlByaXNtYUNsYWltU3RhdGUSEAoIYm91bmRhcnkYAiABKAkSEQoJYXRvbWljaXR5GAMgASgJEhEKCWNsYWltX3VybBgEIAEoCRIbChNibG9ja2luZ19hY3Rpb25faWRzGAUgAygJItcFChZQcmlzbWFQcm92aXNpb25SZWNlaXB0EhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEhUKDWRlZmluaXRpb25faWQYAiABKAkSEwoLcHJvdmlkZXJfaWQYAyABKAkSFAoMcmVzb3VyY2VfcmVmGAQgASgJEhIKCnByb2plY3RfaWQYBSABKAkSFQoNZGF0YWJhc2VfbmFtZRgGIAEoCRIOCgZyZWdpb24YByABKAkSSwoIZW5kcG9pbnQYCCABKAsyOS5ob2JvLnByb3ZpZGVyLnByaXNtYV9wb3N0Z3Jlcy52MS5QcmlzbWFOb25TZWNyZXRFbmRwb2ludBIbCg5jcmVkZW50aWFsX3JlZhgJIAEoCUgAiAEBEhYKDmV4cGlyZXNfYXRfaXNvGAogASgJEhUKDWV4cGlyZXNfYXRfbXMYCyABKAMSFQoNZXhwaXJ5X3NvdXJjZRgMIAEoCRIcChRkb2N1bWVudGVkX3R0bF9ob3VycxgNIAEoBRIWCg5vYnNlcnZlZF9hdF9tcxgOIAEoAxIPCgdhZG9wdGVkGA8gASgIEkcKC291dHB1dF9tb2RlGBAgASgOMjIuaG9iby5wcm92aWRlci5wcmlzbWFfcG9zdGdyZXMudjEuUHJpc21hT3V0cHV0TW9kZRJDCgVjbGFpbRgRIAEoCzI0LmhvYm8ucHJvdmlkZXIucHJpc21hX3Bvc3RncmVzLnYxLlByaXNtYUNsYWltU3VtbWFyeRJaChNhc3NvY2lhdGVkX3Jlc291cmNlGBIgASgLMj0uaG9iby5wcm92aWRlci5wcmlzbWFfcG9zdGdyZXMudjEuUHJpc21hQXNzb2NpYXRlZFJlc291cmNlUmVmEhgKEGJpbmRpbmdfcHJvZmlsZXMYEyADKAkSGgoSbWlncmF0aW9uX3Byb2ZpbGVzGBQgAygJQhEKD19jcmVkZW50aWFsX3JlZirKAQoQUHJpc21hQ2xhaW1TdGF0ZRIiCh5QUklTTUFfQ0xBSU1fU1RBVEVfVU5TUEVDSUZJRUQQABIgChxQUklTTUFfQ0xBSU1fU1RBVEVfVU5DTEFJTUVEEAESLworUFJJU01BX0NMQUlNX1NUQVRFX0NMQUlNRURfUEVORElOR19ST1RBVElPThACEh8KG1BSSVNNQV9DTEFJTV9TVEFURV9DT01QTEVURRADEh4KGlBSSVNNQV9DTEFJTV9TVEFURV9FWFBJUkVEEAQqmgEKEFByaXNtYU91dHB1dE1vZGUSIgoeUFJJU01BX09VVFBVVF9NT0RFX1VOU1BFQ0lGSUVEEAASGwoXUFJJU01BX09VVFBVVF9NT0RFX0pTT04QARIfChtQUklTTUFfT1VUUFVUX01PREVfSFVNQU5fVjEQAhIkCiBQUklTTUFfT1VUUFVUX01PREVfTE9DQUxfSk9VUk5BTBADYgZwcm90bzM");
+  fileDesc("Ch5wcm92aWRlcl9wcmlzbWFfcG9zdGdyZXMucHJvdG8SIGhvYm8ucHJvdmlkZXIucHJpc21hX3Bvc3RncmVzLnYxIvYBChRQcmlzbWFEZXN0cm95T3V0Y29tZRIQCghyZWxlYXNlZBgBIAEoCBIRCglyZWFwX21vZGUYAiABKAkSFwoPY3VzdG9keV9yZXZva2VkGAMgASgIEhYKDmV4cGlyZXNfYXRfaXNvGAQgASgJEg4KBmRldGFpbBgFIAEoCRIkChdyZXRpcmVtZW50X2V2aWRlbmNlX3JlZhgGIAEoCUgAiAEBEh8KEnVzYWdlX2V2aWRlbmNlX3JlZhgHIAEoCUgBiAEBQhoKGF9yZXRpcmVtZW50X2V2aWRlbmNlX3JlZkIVChNfdXNhZ2VfZXZpZGVuY2VfcmVmIuEBChRQcmlzbWFDcmVhdGVEb2N1bWVudBISCgpwcm9qZWN0X2lkGAEgASgJEhEKCWNsYWltX3VybBgCIAEoCRIYChBkZWxldGlvbl9kYXRlX21zGAMgASgDEg4KBnJlZ2lvbhgEIAEoCRIMCgRuYW1lGAUgASgJEiEKGWNvbm5lY3Rpb25fc3RyaW5nX3ByZXNlbnQYBiABKAgSRwoLb3V0cHV0X21vZGUYByABKA4yMi5ob2JvLnByb3ZpZGVyLnByaXNtYV9wb3N0Z3Jlcy52MS5QcmlzbWFPdXRwdXRNb2RlImwKF1ByaXNtYU5vblNlY3JldEVuZHBvaW50EgwKBGhvc3QYASABKAkSEQoEcG9ydBgCIAEoDUgAiAEBEhEKBHBhdGgYAyABKAlIAYgBARILCgN0bHMYBCABKAhCBwoFX3BvcnRCBwoFX3BhdGgigQEKEVByaXNtYUNsYWltQWN0aW9uEgoKAmlkGAEgASgJEgwKBGtpbmQYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEAoIYmxvY2tpbmcYBCABKAgSEQoJY29tcGxldGVkGAUgASgIEhAKA3VybBgGIAEoCUgAiAEBQgYKBF91cmwi2QIKG1ByaXNtYUFzc29jaWF0ZWRSZXNvdXJjZVJlZhIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEhUKDWRlZmluaXRpb25faWQYBCABKAkSEgoKcHJvamVjdF9pZBgFIAEoCRIRCgljbGFpbV91cmwYBiABKAkSEgoKY2xhaW1faG9zdBgHIAEoCRIiChpzdGFuZGFsb25lX2NsYWltX3N1cHBvcnRlZBgIIAEoCBIaChJyZXF1aXJlc193b3Jrc3BhY2UYCSABKAgSFwoPYnVuZGxlX3N0cmF0ZWd5GAogASgJEg4KBnJlZ2lvbhgLIAEoCRIVCg1kYXRhYmFzZV9uYW1lGAwgASgJEhYKDmV4cGlyZXNfYXRfaXNvGA0gASgJEhUKDWV4cGlyeV9zb3VyY2UYDiABKAki1wIKD1ByaXNtYUNsYWltUGxhbhIQCghzdHJhdGVneRgBIAEoCRIQCghib3VuZGFyeRgCIAEoCRIVCg1yZXNvdXJjZV9raW5kGAMgASgJEhEKCWF0b21pY2l0eRgEIAEoCRIRCgljbGFpbV91cmwYBSABKAkSQQoFc3RhdGUYBiABKA4yMi5ob2JvLnByb3ZpZGVyLnByaXNtYV9wb3N0Z3Jlcy52MS5QcmlzbWFDbGFpbVN0YXRlEkQKB2FjdGlvbnMYByADKAsyMy5ob2JvLnByb3ZpZGVyLnByaXNtYV9wb3N0Z3Jlcy52MS5QcmlzbWFDbGFpbUFjdGlvbhJaChNhc3NvY2lhdGVkX3Jlc291cmNlGAggASgLMj0uaG9iby5wcm92aWRlci5wcmlzbWFfcG9zdGdyZXMudjEuUHJpc21hQXNzb2NpYXRlZFJlc291cmNlUmVmIvQDChhQcmlzbWFQcm92aXNpb25PcGVyYXRpb24SFgoOc2NoZW1hX3ZlcnNpb24YASABKAkSDAoEa2luZBgCIAEoCRIVCg1kZWZpbml0aW9uX2lkGAMgASgJEhMKC3Byb3ZpZGVyX2lkGAQgASgJEhQKDGNvbXBpbGVyX3JlZhgFIAEoCRIUCgxleGVjdXRvcl9yZWYYBiABKAkSHgoWYm9vdHN0cmFwX3N0cmF0ZWd5X3JlZhgHIAEoCRIaChJjbGFpbV9zdHJhdGVneV9yZWYYCCABKAkSFAoMcmVzb3VyY2VfcmVmGAkgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgKIAEoCRIOCgZyZWdpb24YCyABKAkSDAoEYXJndhgMIAMoCRISCgp0aW1lb3V0X21zGA0gASgFEhgKEG1heF9vdXRwdXRfYnl0ZXMYDiABKAUSEwoLb3V0cHV0X21vZGUYDyABKAkSHAoUZG9jdW1lbnRlZF90dGxfaG91cnMYECABKAUSGgoNcmVxdWVzdGVkX3R0bBgRIAEoCUgAiAEBEiEKGXByb2R1Y2VzX2JpbmRpbmdfcHJvZmlsZXMYEiADKAkSHwoXZXhwZWN0ZWRfc2VjcmV0X3B1cnBvc2UYEyABKAlCEAoOX3JlcXVlc3RlZF90dGwivQEKElByaXNtYUNsYWltU3VtbWFyeRJBCgVzdGF0ZRgBIAEoDjIyLmhvYm8ucHJvdmlkZXIucHJpc21hX3Bvc3RncmVzLnYxLlByaXNtYUNsYWltU3RhdGUSEAoIYm91bmRhcnkYAiABKAkSEQoJYXRvbWljaXR5GAMgASgJEhEKCWNsYWltX3JlZhgGIAEoCRIbChNibG9ja2luZ19hY3Rpb25faWRzGAUgAygJSgQIBBAFUgljbGFpbV91cmwi8QUKFlByaXNtYVByb3Zpc2lvblJlY2VpcHQSFgoOc2NoZW1hX3ZlcnNpb24YASABKAkSFQoNZGVmaW5pdGlvbl9pZBgCIAEoCRITCgtwcm92aWRlcl9pZBgDIAEoCRIUCgxyZXNvdXJjZV9yZWYYBCABKAkSFQoNZGF0YWJhc2VfbmFtZRgGIAEoCRIOCgZyZWdpb24YByABKAkSGwoOY3JlZGVudGlhbF9yZWYYCSABKAlIAIgBARIWCg5leHBpcmVzX2F0X2lzbxgKIAEoCRIVCg1leHBpcmVzX2F0X21zGAsgASgDEhUKDWV4cGlyeV9zb3VyY2UYDCABKAkSHAoUZG9jdW1lbnRlZF90dGxfaG91cnMYDSABKAUSFgoOb2JzZXJ2ZWRfYXRfbXMYDiABKAMSDwoHYWRvcHRlZBgPIAEoCBJHCgtvdXRwdXRfbW9kZRgQIAEoDjIyLmhvYm8ucHJvdmlkZXIucHJpc21hX3Bvc3RncmVzLnYxLlByaXNtYU91dHB1dE1vZGUSQwoFY2xhaW0YESABKAsyNC5ob2JvLnByb3ZpZGVyLnByaXNtYV9wb3N0Z3Jlcy52MS5QcmlzbWFDbGFpbVN1bW1hcnkSGAoQYmluZGluZ19wcm9maWxlcxgTIAMoCRIaChJtaWdyYXRpb25fcHJvZmlsZXMYFCADKAkSGgoSb3BhcXVlX3BoeXNpY2FsX2lkGBUgASgJEhsKE25hdGl2ZV9pZGVudGl0eV9yZWYYFiABKAkSHwoXYXNzb2NpYXRlZF9yZXNvdXJjZV9yZWYYFyABKAkSFAoMZW5kcG9pbnRfcmVmGBggASgJEhgKC2JpbmRpbmdfcmVmGBkgASgJSAGIAQFCEQoPX2NyZWRlbnRpYWxfcmVmQg4KDF9iaW5kaW5nX3JlZkoECAUQBkoECAgQCUoECBIQE1IKcHJvamVjdF9pZFIIZW5kcG9pbnRSE2Fzc29jaWF0ZWRfcmVzb3VyY2UisgEKElByaXNtYVByb3ZpZGVyRmFjdBIMCgRraW5kGAEgASgJEhYKDm9jY3VycmVkX2F0X21zGAIgASgDEhQKDHJlc291cmNlX3JlZhgDIAEoCRIaChJvcGFxdWVfcGh5c2ljYWxfaWQYBCABKAkSGwoTbmF0aXZlX2lkZW50aXR5X3JlZhgFIAEoCRInCgZkZXRhaWwYBiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0KsoBChBQcmlzbWFDbGFpbVN0YXRlEiIKHlBSSVNNQV9DTEFJTV9TVEFURV9VTlNQRUNJRklFRBAAEiAKHFBSSVNNQV9DTEFJTV9TVEFURV9VTkNMQUlNRUQQARIvCitQUklTTUFfQ0xBSU1fU1RBVEVfQ0xBSU1FRF9QRU5ESU5HX1JPVEFUSU9OEAISHwobUFJJU01BX0NMQUlNX1NUQVRFX0NPTVBMRVRFEAMSHgoaUFJJU01BX0NMQUlNX1NUQVRFX0VYUElSRUQQBCqaAQoQUHJpc21hT3V0cHV0TW9kZRIiCh5QUklTTUFfT1VUUFVUX01PREVfVU5TUEVDSUZJRUQQABIbChdQUklTTUFfT1VUUFVUX01PREVfSlNPThABEh8KG1BSSVNNQV9PVVRQVVRfTU9ERV9IVU1BTl9WMRACEiQKIFBSSVNNQV9PVVRQVVRfTU9ERV9MT0NBTF9KT1VSTkFMEANiBnByb3RvMw", [file_google_protobuf_struct]);
+
+/**
+ * A local TTL cannot close provider-side financial exposure.
+ *
+ * @generated from message hobo.provider.prisma_postgres.v1.PrismaDestroyOutcome
+ */
+export type PrismaDestroyOutcome = Message<"hobo.provider.prisma_postgres.v1.PrismaDestroyOutcome"> & {
+  /**
+   * @generated from field: bool released = 1;
+   */
+  released: boolean;
+
+  /**
+   * @generated from field: string reap_mode = 2;
+   */
+  reapMode: string;
+
+  /**
+   * @generated from field: bool custody_revoked = 3;
+   */
+  custodyRevoked: boolean;
+
+  /**
+   * @generated from field: string expires_at_iso = 4;
+   */
+  expiresAtIso: string;
+
+  /**
+   * @generated from field: string detail = 5;
+   */
+  detail: string;
+
+  /**
+   * @generated from field: optional string retirement_evidence_ref = 6;
+   */
+  retirementEvidenceRef?: string | undefined;
+
+  /**
+   * @generated from field: optional string usage_evidence_ref = 7;
+   */
+  usageEvidenceRef?: string | undefined;
+};
+
+/**
+ * Describes the message hobo.provider.prisma_postgres.v1.PrismaDestroyOutcome.
+ * Use `create(PrismaDestroyOutcomeSchema)` to create a new message.
+ */
+export const PrismaDestroyOutcomeSchema: GenMessage<PrismaDestroyOutcome> = /*@__PURE__*/
+  messageDesc(file_provider_prisma_postgres, 0);
 
 /**
  * The pinned CLI's success document, minus the credential. `connection_string`
@@ -67,7 +117,7 @@ export type PrismaCreateDocument = Message<"hobo.provider.prisma_postgres.v1.Pri
  * Use `create(PrismaCreateDocumentSchema)` to create a new message.
  */
 export const PrismaCreateDocumentSchema: GenMessage<PrismaCreateDocument> = /*@__PURE__*/
-  messageDesc(file_provider_prisma_postgres, 0);
+  messageDesc(file_provider_prisma_postgres, 1);
 
 /**
  * A non-secret address. A hostname is not a credential, and there is no field
@@ -109,7 +159,7 @@ export type PrismaNonSecretEndpoint = Message<"hobo.provider.prisma_postgres.v1.
  * Use `create(PrismaNonSecretEndpointSchema)` to create a new message.
  */
 export const PrismaNonSecretEndpointSchema: GenMessage<PrismaNonSecretEndpoint> = /*@__PURE__*/
-  messageDesc(file_provider_prisma_postgres, 1);
+  messageDesc(file_provider_prisma_postgres, 2);
 
 /**
  * @generated from message hobo.provider.prisma_postgres.v1.PrismaClaimAction
@@ -156,7 +206,7 @@ export type PrismaClaimAction = Message<"hobo.provider.prisma_postgres.v1.Prisma
  * Use `create(PrismaClaimActionSchema)` to create a new message.
  */
 export const PrismaClaimActionSchema: GenMessage<PrismaClaimAction> = /*@__PURE__*/
-  messageDesc(file_provider_prisma_postgres, 2);
+  messageDesc(file_provider_prisma_postgres, 3);
 
 /**
  * What a bundled (Vercel-style) claim strategy needs in order to include this
@@ -253,7 +303,7 @@ export type PrismaAssociatedResourceRef = Message<"hobo.provider.prisma_postgres
  * Use `create(PrismaAssociatedResourceRefSchema)` to create a new message.
  */
 export const PrismaAssociatedResourceRefSchema: GenMessage<PrismaAssociatedResourceRef> = /*@__PURE__*/
-  messageDesc(file_provider_prisma_postgres, 3);
+  messageDesc(file_provider_prisma_postgres, 4);
 
 /**
  * @generated from message hobo.provider.prisma_postgres.v1.PrismaClaimPlan
@@ -313,7 +363,7 @@ export type PrismaClaimPlan = Message<"hobo.provider.prisma_postgres.v1.PrismaCl
  * Use `create(PrismaClaimPlanSchema)` to create a new message.
  */
 export const PrismaClaimPlanSchema: GenMessage<PrismaClaimPlan> = /*@__PURE__*/
-  messageDesc(file_provider_prisma_postgres, 4);
+  messageDesc(file_provider_prisma_postgres, 5);
 
 /**
  * What the pure compiler emits and the executor consumes. It carries the
@@ -440,7 +490,7 @@ export type PrismaProvisionOperation = Message<"hobo.provider.prisma_postgres.v1
  * Use `create(PrismaProvisionOperationSchema)` to create a new message.
  */
 export const PrismaProvisionOperationSchema: GenMessage<PrismaProvisionOperation> = /*@__PURE__*/
-  messageDesc(file_provider_prisma_postgres, 5);
+  messageDesc(file_provider_prisma_postgres, 6);
 
 /**
  * What the receipt says about the claim: the state plus the blocking actions
@@ -474,9 +524,9 @@ export type PrismaClaimSummary = Message<"hobo.provider.prisma_postgres.v1.Prism
   atomicity: string;
 
   /**
-   * @generated from field: string claim_url = 4;
+   * @generated from field: string claim_ref = 6;
    */
-  claimUrl: string;
+  claimRef: string;
 
   /**
    * @generated from field: repeated string blocking_action_ids = 5;
@@ -489,7 +539,7 @@ export type PrismaClaimSummary = Message<"hobo.provider.prisma_postgres.v1.Prism
  * Use `create(PrismaClaimSummarySchema)` to create a new message.
  */
 export const PrismaClaimSummarySchema: GenMessage<PrismaClaimSummary> = /*@__PURE__*/
-  messageDesc(file_provider_prisma_postgres, 6);
+  messageDesc(file_provider_prisma_postgres, 7);
 
 /**
  * The serialized output that leaves this package. Built by projection from the
@@ -520,11 +570,6 @@ export type PrismaProvisionReceipt = Message<"hobo.provider.prisma_postgres.v1.P
   resourceRef: string;
 
   /**
-   * @generated from field: string project_id = 5;
-   */
-  projectId: string;
-
-  /**
    * @generated from field: string database_name = 6;
    */
   databaseName: string;
@@ -533,11 +578,6 @@ export type PrismaProvisionReceipt = Message<"hobo.provider.prisma_postgres.v1.P
    * @generated from field: string region = 7;
    */
   region: string;
-
-  /**
-   * @generated from field: hobo.provider.prisma_postgres.v1.PrismaNonSecretEndpoint endpoint = 8;
-   */
-  endpoint?: PrismaNonSecretEndpoint | undefined;
 
   /**
    * SecretRef locator, never material
@@ -594,11 +634,6 @@ export type PrismaProvisionReceipt = Message<"hobo.provider.prisma_postgres.v1.P
   claim?: PrismaClaimSummary | undefined;
 
   /**
-   * @generated from field: hobo.provider.prisma_postgres.v1.PrismaAssociatedResourceRef associated_resource = 18;
-   */
-  associatedResource?: PrismaAssociatedResourceRef | undefined;
-
-  /**
    * @generated from field: repeated string binding_profiles = 19;
    */
   bindingProfiles: string[];
@@ -607,6 +642,31 @@ export type PrismaProvisionReceipt = Message<"hobo.provider.prisma_postgres.v1.P
    * @generated from field: repeated string migration_profiles = 20;
    */
   migrationProfiles: string[];
+
+  /**
+   * @generated from field: string opaque_physical_id = 21;
+   */
+  opaquePhysicalId: string;
+
+  /**
+   * @generated from field: string native_identity_ref = 22;
+   */
+  nativeIdentityRef: string;
+
+  /**
+   * @generated from field: string associated_resource_ref = 23;
+   */
+  associatedResourceRef: string;
+
+  /**
+   * @generated from field: string endpoint_ref = 24;
+   */
+  endpointRef: string;
+
+  /**
+   * @generated from field: optional string binding_ref = 25;
+   */
+  bindingRef?: string | undefined;
 };
 
 /**
@@ -614,7 +674,51 @@ export type PrismaProvisionReceipt = Message<"hobo.provider.prisma_postgres.v1.P
  * Use `create(PrismaProvisionReceiptSchema)` to create a new message.
  */
 export const PrismaProvisionReceiptSchema: GenMessage<PrismaProvisionReceipt> = /*@__PURE__*/
-  messageDesc(file_provider_prisma_postgres, 7);
+  messageDesc(file_provider_prisma_postgres, 8);
+
+/**
+ * Public fact projection: native capability values exist only in custody.
+ *
+ * @generated from message hobo.provider.prisma_postgres.v1.PrismaProviderFact
+ */
+export type PrismaProviderFact = Message<"hobo.provider.prisma_postgres.v1.PrismaProviderFact"> & {
+  /**
+   * @generated from field: string kind = 1;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: int64 occurred_at_ms = 2;
+   */
+  occurredAtMs: bigint;
+
+  /**
+   * @generated from field: string resource_ref = 3;
+   */
+  resourceRef: string;
+
+  /**
+   * @generated from field: string opaque_physical_id = 4;
+   */
+  opaquePhysicalId: string;
+
+  /**
+   * @generated from field: string native_identity_ref = 5;
+   */
+  nativeIdentityRef: string;
+
+  /**
+   * @generated from field: google.protobuf.Struct detail = 6;
+   */
+  detail?: JsonObject | undefined;
+};
+
+/**
+ * Describes the message hobo.provider.prisma_postgres.v1.PrismaProviderFact.
+ * Use `create(PrismaProviderFactSchema)` to create a new message.
+ */
+export const PrismaProviderFactSchema: GenMessage<PrismaProviderFact> = /*@__PURE__*/
+  messageDesc(file_provider_prisma_postgres, 9);
 
 /**
  * @generated from enum hobo.provider.prisma_postgres.v1.PrismaClaimState

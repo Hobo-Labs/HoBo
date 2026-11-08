@@ -72,4 +72,5 @@ export function createTrailEvent(
 		data: Object.freeze({ ...input.data }),
 	});
 }
+
 import type { JsonObject } from "./json.js";

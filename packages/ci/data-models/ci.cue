@@ -44,7 +44,7 @@ package ci
 }
 #Offer: {
  id: string & !=""
- provider: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "local" | "dagger" | "cloudflare" | "vercel" | "azure-devops"
+ provider: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "dagger" | "cloudflare" | "vercel" | "azure-devops"
  providerAccountId: string & !=""
  enabled: bool
  runsOn: string & !=""
@@ -57,9 +57,18 @@ package ci
  validUntil: string & !=""
  sourceUrl: string & =~"^https://"
  bridgeAcknowledged: bool
- backend?: "" | "gh-actions" | "dagger" | "cf" | "sandbox" | "ado"
+ backend?: "" | "gh-actions" | "dagger" | "cf" | "sandbox" | "ado" | "isolated-container"
  if provider == "azure-devops" {backend: "ado"}
- if backend != _|_ {if backend == "ado" {provider: "azure-devops"}}
+ if backend != _|_ {
+  if backend == "ado" {provider: "azure-devops"}
+  if backend == "sandbox" {provider: "vercel"}
+  if backend == "isolated-container" {
+   provider: "hobo-box-worker" | "kubernetes"
+   freeMinutes: 0
+   priceMicrosPerMinute: 0
+   runsOn: "hobo-isolated-worker"
+  }
+ }
  sandboxPricing?: #SandboxPricing
  sandboxAllowance?: #SandboxAllowance
  if provider == "local" {
@@ -80,6 +89,8 @@ package ci
  usageObservedAt?: string
  routingSignalCycles?: [string]: int & >0 & <=4294967295
  routingSignalCrossed?: [string]: bool
+ routingStrategy?: "" | "min-cost" | "lowest-total-incremental-cost" | "maximize-credits"
+ budgetPolicy?: #CommonBudgetPolicyJson
 }
 #Connection: {
  accountId: string & !=""
@@ -145,6 +156,10 @@ package ci
  repository: string & !="", labels: [...string]
  action: "queued" | "in_progress" | "completed", runnerName: string
  isolatedRequired?: bool
+ name?: string
+ memoryClass?: "" | "light" | "standard" | "heavy"
+ memoryMb?: int & >=0
+ queueDeadlineAt?: string
 }
 #Lease: {
  id: string & !="", accountId: string & !="", offerId: string & !=""
@@ -170,8 +185,35 @@ package ci
  proxyStoppedUsage?: #SandboxMeasuredUsage
  sandboxStopFromStage?: "" | "pending" | "created" | "registering" | "starting" | "running"
  runnerDeletionConfirmed?: bool
+ memoryClass?: "" | "light" | "standard" | "heavy"
+ memoryMb?: int & >=0
+ jobName?: string
+ dispatchingAt?: string
+ providerAccountId?: string
+ budgetTenantId?: string
+ budgetId?: string
+ budgetPeriodId?: string
+ budgetPolicyRevision?: string
+ budgetPolicyDigest?: string
+ queueDeadlineAt?: string
+ usageProvenance?: "" | "provider-final" | "estimated"
+ externalOperationId?: string
+ usageEvidenceRef?: string
+ budgetAdmissionAttempt?: int & >=0 & <=4294967295
+ budgetReleaseEvidenceRef?: string
+ if budgetId != _|_ {
+  if budgetId != "" {
+   budgetTenantId: string & !=""
+   budgetPeriodId: string & !=""
+   budgetPolicyRevision: string & !=""
+   budgetPolicyDigest: string & !=""
+   providerAccountId: string & !=""
+   budgetAdmissionAttempt: int & >=1 & <=4294967295
+  }
+ }
 }
 #CiEvent: {type: string & !="", accountId: string, leaseId: string, at: string & !="", detail: string}
+#CiRoutingRefusal: {code: string & !="", reason: string & !="", offerId: string}
 #Snapshot: {leases: [...#Lease], events: [...#CiEvent]}
 
 #Ci: #SandboxMeasuredUsage | #SandboxAllowance | #SandboxPricing | #DesiredCiPolicy | #BudgetSignal | #BudgetRoutingPolicy | #Offer | #Account | #Connection | #Configuration | #ConfigurationState | #ControlRecord | #AccountState | #RepositorySetupRequest | #ReconcileRequest | #ControlCredential | #ControlCredentials | #Job | #Lease | #CiEvent | #Snapshot | #PipelineStep | #Pipeline | #PipelineStepResult | #PipelineArtifact | #PipelineResult
@@ -197,32 +239,71 @@ package ci
  tenantId: string & !=""
  thresholdFraction: number & >0 & <=1
  thresholdUsd: number & >=0
- budgetUsd: number & >0
+ budgetUsd: number & >=0
  netSpentUsd: number
- cycle: int & >0 & <=4294967295
+ cycle: int & >=0 & <=4294967295
  signalKey: string & =~"^budget:"
+ identity?: #CiBudgetIdentity
+ policyDigest?: string
+ crossed?: bool
+ if identity == _|_ { budgetUsd: >0, cycle: >0 }
 }
-#BudgetSignal: {type: "budget.ThresholdCrossed" | "budget.Recovered", data: #BudgetSignalData}
+#CiBudgetIdentity: {tenantId: string & !="", budgetId: string & !="", periodId: string & !="", policyRevision: string & !=""}
+#BudgetSignal: {
+ type: "budget.ThresholdCrossed"
+ data: #BudgetSignalData & {cycle: >0, thresholdUsd: number, netSpentUsd: >=thresholdUsd, crossed?: true}
+} | {
+ type: "budget.Recovered"
+ data: #BudgetSignalData & {cycle: >0, thresholdUsd: number, netSpentUsd: <thresholdUsd, crossed?: false}
+} | {
+ type: "budget.StateReset"
+ data: #BudgetSignalData & {
+  identity: #CiBudgetIdentity
+  cycle: 0
+  netSpentUsd: 0
+  policyDigest: string & =~"^[a-f0-9]{64}$"
+  budgetUsd: number
+  if budgetUsd == 0 {crossed: true}
+  if budgetUsd > 0 {crossed: false}
+ }
+}
 #BudgetRoutingRule: {thresholdFraction: number & >0 & <=1, offerIds: [...(string & !="")]}
 #BudgetRoutingPolicy: {
  accountId: string & !="", tenantId: string & !=""
  normalOfferIds: [...(string & !="")]
  thresholds: [#BudgetRoutingRule, ...#BudgetRoutingRule]
+ budgetPolicy?: #CommonBudgetPolicyJson
 }
 
 // Desired policy does not contain runtime-owned balances, observations or leases.
 #CiPolicyProvider: {
  id: string & =~"^[A-Za-z0-9_-]{1,80}$"
- kind: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "local" | "vercel" | "azure-devops"
+ kind: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "vercel" | "azure-devops" | "dagger" | "cloudflare"
  connectionRef: string & !=""
  runsOn: string & =~"^[A-Za-z0-9_.-]{1,100}$"
  enabled?: bool
+ scaleSet?: #CiPolicyKubernetesScaleSet
+ engine?: #CiPolicyDaggerEngine
+ location?: "vercel" | "local" | "remote"
  if kind == "local" {runsOn: "hobo-local-host"}
+ // Mirror packages/ci/src/fleet-overflow.ts isGithubLatestLabel — never ubuntu-latest for github.
+ if kind == "github" {runsOn: != "ubuntu-latest"}
+ if scaleSet != _|_ {kind: "kubernetes", engine?: _|_}
+ if engine != _|_ {kind: "kubernetes"}
+ if kind != "vercel" {location?: _|_}
 }
+#CiPolicyKubernetesScaleSet: {
+ name: string & =~"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
+ minRunners?: int & >=0 & <=1000
+ maxRunners: int & >=1 & <=1000
+ namespace: string & =~"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
+ if minRunners != _|_ {maxRunners: >=minRunners}
+}
+#CiPolicyDaggerEngine: {name: string & =~"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"}
 #CiPolicyPool: {label: "hobo", os: "linux", architecture: "x64"}
 #CiPolicyBudget: {scope: "ci-account", currency: "USD", limitMicros?: int & >=0 & <=9007199254740991, period: "manual", timeZone: "UTC"}
 #CiPolicyThreshold: {fraction: number & >0 & <=1, allow?: [...(string & =~"^[A-Za-z0-9_-]{1,80}$")]}
-#CiPolicyRouting: {strategy: "lowest-total-incremental-cost", noEligibleProvider: "queue", unknownAllocation: "zero"}
+#CiPolicyRouting: {strategy: "lowest-total-incremental-cost" | "min-cost" | "maximize-credits", noEligibleProvider: "queue", unknownAllocation: "zero"}
 #DesiredCiPolicy: {
  accountId: string & =~"^[A-Za-z0-9_-]{1,80}$"
  tenantId: string & =~"^[A-Za-z0-9_-]{1,80}$"
@@ -231,4 +312,26 @@ package ci
  budget: #CiPolicyBudget
  routing: #CiPolicyRouting
  thresholds?: [...#CiPolicyThreshold]
+ budgetPolicy?: #CommonBudgetPolicyJson
+}
+
+// Struct's JSON shape; the canonical @hobo/core parser owns complete shared
+// constraint semantics and rejects unknown controls before any admission.
+#CommonBudgetPolicyJson: {
+ schemaVersion: "hobo.budget-policy/v1"
+ tenantId: string & !=""
+ budgetId: string & !=""
+ periodId: string & !=""
+ revision: string & !=""
+ workloads: [string & !="", ...string & !=""]
+ currency: "USD"
+ limitMicros: int & >=0 & <=9007199254740991
+ objective: "min-cost" | "maximize-credits"
+ enforcement: "strict" | "conservative"
+ periodKind: "manual" | "fixed-window"
+ periodStartsAtMs?: int & >=0
+ periodEndsAtMs?: int & >=0
+ if periodKind == "fixed-window" {periodStartsAtMs: int & >=0, periodEndsAtMs: int & >periodStartsAtMs}
+ if periodKind == "manual" {periodStartsAtMs?: _|_, periodEndsAtMs?: _|_}
+ constraints?: [...{key: string & !="", workload: string & !="", unit: string & !="", maximum: int & >=0 & <=9007199254740991, target?: string}]
 }

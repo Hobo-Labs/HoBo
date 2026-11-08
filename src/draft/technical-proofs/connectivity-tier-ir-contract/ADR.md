@@ -17,7 +17,10 @@ This package applies the **parse, don't validate** discipline: untrusted input i
 parsed once at the boundary into derived domain types, and downstream consumers
 receive those parsed, derived types instead of re-checking raw input. The CUE
 constraints bound the same derived types so malformed input is rejected at parse
-time rather than passed downstream.
+time rather than passed downstream. The public validation declaration therefore
+accepts `ConnectivityPlan | JsonValue`: already-typed plans and untrusted wire
+input share the same fail-closed runtime boundary without weakening the domain
+record with a JSON index signature.
 
 ## Event Architecture
 

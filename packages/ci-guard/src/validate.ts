@@ -300,7 +300,8 @@ function validateHoboCiWorkflow(
 		!/turbo run build typecheck lint/u.test(content) ||
 		(!/--affected/u.test(content) &&
 			!content.includes("{packages/*}[origin") &&
-			!content.includes("--filter=./packages/"))
+			!content.includes("--filter=./packages/") &&
+			!content.includes("scripts/ci/affected-lanes.mts"))
 	) {
 		violations.push({
 			code: "workflow.pr-gate.affected",

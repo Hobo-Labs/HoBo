@@ -14,11 +14,17 @@ import {
 	parseSecretRef,
 	type SecretRef,
 } from "@hobo/bindings";
+import {
+	parseResourceLifecycleObservation,
+	type ResourceLifecycleContext,
+	type ResourceLifecycleObservation,
+} from "@hobo/core";
 
 import type {
 	PrismaAssociatedResourceRef as PrismaAssociatedResourceRefWire,
 	PrismaClaimAction as PrismaClaimActionWire,
 	PrismaClaimPlan as PrismaClaimPlanWire,
+	PrismaDestroyOutcome as PrismaDestroyOutcomeWire,
 } from "./_generated/provider_prisma_postgres_pb.js";
 import { buildPrismaCapabilityBinding } from "./binding.js";
 import type {
@@ -186,6 +192,11 @@ export type PrismaDriverOptions = {
 	readonly producerEvidenceRef?: string;
 	/** Optional. Without it, `destroy` cannot revoke the deposited locator. */
 	readonly revocation?: SecretRevocationPort;
+	/** Independent provider read/settlement evidence. Never a locally computed TTL. */
+	readonly retirement?: (
+		record: PrismaClaimableDatabase,
+		context: ResourceLifecycleContext,
+	) => Promise<ResourceLifecycleObservation>;
 };
 
 export type ProvisionInput = CreateInput & { readonly resourceRef: string };
@@ -254,14 +265,10 @@ export type PrismaObservation =
 	  };
 
 /** What a destroy could actually accomplish against this product. */
-export type PrismaDestroyOutcome = {
-	/** True only when nothing provider-side outlives the call. */
-	readonly released: boolean;
-	readonly reapMode: "ttl-expiry" | "already-expired";
-	readonly custodyRevoked: boolean;
-	readonly expiresAtIso: string;
-	readonly detail: string;
-};
+export type PrismaDestroyOutcome = DomainView<
+	PrismaDestroyOutcomeWire,
+	{ reapMode: "ttl-expiry" | "already-expired" | "provider-confirmed" }
+>;
 
 /** Revoking custody is the only revocation this provider can perform. */
 export interface SecretRevocationPort {
@@ -277,7 +284,10 @@ export type PrismaClaimableDatabaseDriver = {
 		readonly resourceRef: string;
 	}): Promise<PrismaObservation>;
 	rotateBinding(record: PrismaClaimableDatabase): Promise<never>;
-	destroy(record: PrismaClaimableDatabase): Promise<PrismaDestroyOutcome>;
+	destroy(
+		record: PrismaClaimableDatabase,
+		context?: ResourceLifecycleContext,
+	): Promise<PrismaDestroyOutcome>;
 	verifyOwnership(
 		record: PrismaClaimableDatabase,
 	): Promise<OwnershipVerification>;
@@ -403,7 +413,7 @@ export function createPrismaClaimableDatabaseDriver(
 			providerId: PRISMA_PROVIDER_ID,
 			resourceRef,
 			purpose: "connection-string",
-			labels: { projectId: result.projectId, region: result.region },
+			labels: { region: result.region },
 		});
 		const binding = buildPrismaCapabilityBinding({
 			bindingId: `${resourceRef}#postgres`,
@@ -507,6 +517,14 @@ export function createPrismaClaimableDatabaseDriver(
 				...(input.ttl !== undefined ? { ttl: input.ttl } : undefined),
 			});
 			if (outcome.kind === "adopted") {
+				if (
+					input.region !== undefined &&
+					outcome.snapshot.region !== input.region
+				)
+					throw new PrismaProviderError(
+						"PROVISIONING_CONFLICT",
+						"the private resource snapshot reports a different region than requested",
+					);
 				return fromSnapshot(outcome.snapshot, input.resourceRef);
 			}
 
@@ -527,6 +545,11 @@ export function createPrismaClaimableDatabaseDriver(
 				tls: captured.snapshotTls,
 				credentialRef: captured.credentialRef ?? "",
 			});
+			if (input.region !== undefined && result.region !== input.region)
+				throw new PrismaProviderError(
+					"PROVISIONING_CONFLICT",
+					"the provider returned a different region than requested; allocation remains in private custody",
+				);
 
 			return {
 				schemaVersion: "hobo.provider-prisma-postgres.claimable-database/v1",
@@ -617,16 +640,54 @@ export function createPrismaClaimableDatabaseDriver(
 			);
 		},
 
-		async destroy(record) {
+		async destroy(record, context) {
 			const nowMs = options.clock();
 			const alreadyExpired = record.expiresAtMs <= nowMs;
+			let providerConfirmed = false;
+			let retirementEvidenceRef = "",
+				usageEvidenceRef = "";
+			if (options.retirement !== undefined) {
+				if (
+					!context ||
+					context.providerId !== PRISMA_PROVIDER_ID ||
+					context.productId !== PRISMA_DEFINITION_ID ||
+					context.resourceId !== record.resourceRef ||
+					(context.physicalId !== undefined &&
+						context.physicalId !== record.projectId)
+				)
+					throw new PrismaProviderError(
+						"CLEANUP_FAILED",
+						"provider retirement requires the exact resource and financial scope",
+					);
+				const wire = await options.retirement(structuredClone(record), {
+					...context,
+					nowMs,
+					physicalId: record.projectId,
+				});
+				const { $typeName: _wireType, ...evidence } = wire;
+				const observed = parseResourceLifecycleObservation(evidence, {
+					...context,
+					nowMs: options.clock(),
+					physicalId: record.projectId,
+				});
+				if (
+					observed.status === "absent" &&
+					observed.operationTerminal &&
+					observed.usageFinal
+				) {
+					providerConfirmed = true;
+					retirementEvidenceRef = observed.evidenceRef;
+					usageEvidenceRef = observed.usageEvidenceRef;
+				}
+			}
 
 			// A claimed database has left the TTL regime: nothing reaps it, and
 			// this package has no delete call. Saying "destroyed" would leave a
 			// live database behind a closed ledger entry.
 			if (
-				record.claim.state === "complete" ||
-				record.claim.state === "claimed-pending-rotation"
+				!providerConfirmed &&
+				(record.claim.state === "complete" ||
+					record.claim.state === "claimed-pending-rotation")
 			) {
 				throw new PrismaProviderError(
 					"CLEANUP_FAILED",
@@ -660,15 +721,26 @@ export function createPrismaClaimableDatabaseDriver(
 				}
 			}
 
+			if (providerConfirmed)
+				return {
+					released: true,
+					reapMode: "provider-confirmed",
+					custodyRevoked,
+					retirementEvidenceRef,
+					usageEvidenceRef,
+					expiresAtIso: record.expiresAtIso,
+					detail: "independent provider retirement and final usage confirmed",
+				};
+
 			// Honest accounting: `released` is false while the provider-side
 			// project is still alive on its timer, however tidy our own side is.
 			return {
-				released: alreadyExpired,
+				released: false,
 				reapMode: alreadyExpired ? "already-expired" : "ttl-expiry",
 				custodyRevoked,
 				expiresAtIso: record.expiresAtIso,
 				detail: alreadyExpired
-					? "the CLI-computed deletion deadline has passed; Prisma reaps unclaimed databases on its own schedule"
+					? "the CLI-computed deletion deadline has passed; actual provider retirement remains unverified and financial exposure must be retained"
 					: `no delete command exists for a temporary database; it is reaped when the deadline computed by the CLI (${record.expiresAtIso}) passes`,
 			};
 		},

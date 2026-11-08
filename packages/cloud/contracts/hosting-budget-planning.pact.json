@@ -1,0 +1,22 @@
+{
+  "consumer": { "name": "cloud-deployment-gateway" },
+  "provider": { "name": "shared-hosting-budget-authority" },
+  "metadata": { "pactSpecification": { "version": "4.0" }, "transport": "library-call" },
+  "interactions": [
+    {
+      "description": "Resolve current tenant-scoped planning evidence",
+      "request": { "operation": "resolve", "budgetId": "hosting", "tenantId": "tenant", "objective": "maximize-credits" },
+      "response": { "budget": { "budgetId": "hosting", "tenantId": "tenant", "policyRevision": "r1", "ledgerSeq": 1, "currency": "USD", "capMicros": 1000 }, "quotes": "fresh-account-scoped-quotes", "usages": "bounded-usage-for-every-resource" }
+    },
+    {
+      "description": "Reserve the plan and financial commitment as one identity before activation",
+      "request": { "operation": "reserve", "reservationId": "hosting:tenant:one", "planHash": "content-addressed-deployment-plan", "commitment": { "budgetId": "hosting", "tenantId": "tenant", "commitmentHash": "content-addressed-pinned-financial-evidence", "reservedMicros": 600 } },
+      "response": { "ok": true, "reservationId": "hosting:tenant:one" }
+    },
+    {
+      "description": "A concurrent reservation loser must not activate its plan",
+      "request": { "operation": "reserve", "reservationId": "hosting:tenant:two", "commitment": { "reservedMicros": 600 } },
+      "response": { "ok": false, "reason": "another deployment reserved the remaining allowance" }
+    }
+  ]
+}

@@ -234,3 +234,19 @@ A 5xx on a create is `PROVIDER_OPERATION_AMBIGUOUS`, never a retryable error: a
 timed-out POST never proves the apiserver did nothing. Every message and detail
 passes `redactClusterText`, because a `Status` message quotes the object that
 caused it and those objects carry ServiceAccount tokens and imagePullSecrets.
+
+## Hosting budget execution
+
+Cluster infrastructure cost is `pricingStatus: "unknown"`, not an authoritative zero.
+Budget admission must include the actual node, load balancer, volume, egress and retained
+resource obligations for the selected account. A known physical identity cannot be
+retargeted by changing the desired namespace or name, including on delete.
+
+Deployment readiness requires the controller to observe the current generation and
+total, updated and available replicas to equal the desired count. A surge rollout
+with old available pods and new unready pods remains progressing until the old
+ReplicaSet drains. Old ReplicaSet health cannot bless a new rollout. Resolver outputs `ready`, `operationConfirmed` and
+`lifecycleStatus` come from that controller read; incomplete records remain unknown.
+For a single-container image pinned by digest, `artifactDigest` comes from the observed
+image. Independent business health is still required before traffic moves. Namespace
+DELETE remains an acceptance; finalizers and billable volumes require observation.

@@ -281,6 +281,7 @@ describe("Sandbox composite costs", () => {
 			proxyControlCallMicros: 3,
 		});
 		sandbox.priceMicrosPerMinute = 0;
+		a.routingStrategy = "maximize-credits";
 		sandbox.concurrency = 2;
 		sandbox.sandboxAllowance = create(SandboxAllowanceSchema, {
 			proxyControlCalls: 100,

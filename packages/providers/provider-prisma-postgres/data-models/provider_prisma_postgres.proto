@@ -1,6 +1,19 @@
 syntax = "proto3";
 
+import "google/protobuf/struct.proto";
+
 package hobo.provider.prisma_postgres.v1;
+
+// A local TTL cannot close provider-side financial exposure.
+message PrismaDestroyOutcome {
+  bool released = 1;
+  string reap_mode = 2;
+  bool custody_revoked = 3;
+  string expires_at_iso = 4;
+  string detail = 5;
+  optional string retirement_evidence_ref = 6;
+  optional string usage_evidence_ref = 7;
+}
 
 // Design-time contract artifacts for @hobo/provider-prisma-postgres: the data
 // shapes crossing this package's boundaries — the pinned `create-db --json`
@@ -130,7 +143,9 @@ message PrismaClaimSummary {
   PrismaClaimState state = 1;
   string boundary = 2;                  // resource
   string atomicity = 3;                 // single-resource
-  string claim_url = 4;
+  reserved 4;
+  reserved "claim_url";
+  string claim_ref = 6;
   repeated string blocking_action_ids = 5;
 }
 
@@ -142,10 +157,10 @@ message PrismaProvisionReceipt {
   string definition_id = 2;
   string provider_id = 3;
   string resource_ref = 4;
-  string project_id = 5;
+  reserved 5, 8, 18;
+  reserved "project_id", "endpoint", "associated_resource";
   string database_name = 6;
   string region = 7;
-  PrismaNonSecretEndpoint endpoint = 8;
   optional string credential_ref = 9;   // SecretRef locator, never material
   string expires_at_iso = 10;
   int64 expires_at_ms = 11;
@@ -157,7 +172,22 @@ message PrismaProvisionReceipt {
   // no read-by-id API, so a receipt has to say where its facts came from.
   PrismaOutputMode output_mode = 16;
   PrismaClaimSummary claim = 17;
-  PrismaAssociatedResourceRef associated_resource = 18;
   repeated string binding_profiles = 19;
   repeated string migration_profiles = 20;
+  string opaque_physical_id = 21;
+  string native_identity_ref = 22;
+  string associated_resource_ref = 23;
+  string endpoint_ref = 24;
+  optional string binding_ref = 25;
+}
+
+
+// Public fact projection: native capability values exist only in custody.
+message PrismaProviderFact {
+  string kind = 1;
+  int64 occurred_at_ms = 2;
+  string resource_ref = 3;
+  string opaque_physical_id = 4;
+  string native_identity_ref = 5;
+  google.protobuf.Struct detail = 6;
 }

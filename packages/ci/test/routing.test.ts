@@ -1,4 +1,9 @@
-import { clone, create, toJsonString } from "@bufbuild/protobuf";
+import {
+	clone,
+	create,
+	type JsonObject,
+	toJsonString,
+} from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
 	AccountSchema,
@@ -8,7 +13,7 @@ import {
 	OfferSchema,
 } from "../src/_generated/ci_pb.js";
 import { parseConfiguration } from "../src/config.js";
-import { route } from "../src/routing.js";
+import { compareCiRoutingCandidates, route } from "../src/routing.js";
 
 function present<T>(value: T | undefined): T {
 	if (value === undefined) throw new Error("missing fixture value");
@@ -16,6 +21,23 @@ function present<T>(value: T | undefined): T {
 }
 
 const now = "2026-10-26T12:00:00Z";
+function common(overrides: JsonObject = {}): JsonObject {
+	return {
+		schemaVersion: "hobo.budget-policy/v1",
+		tenantId: "tenant",
+		budgetId: "ci",
+		periodId: "manual-1",
+		revision: "r1",
+		workloads: ["ci"],
+		currency: "USD",
+		limitMicros: 1000000,
+		objective: "min-cost",
+		enforcement: "conservative",
+		periodKind: "manual",
+		constraints: [],
+		...overrides,
+	};
+}
 function offer(id: string, free = 0, price = 1000) {
 	return create(OfferSchema, {
 		id,
@@ -58,6 +80,185 @@ function lease(offerId: string, free: number, paid = 0) {
 }
 
 describe("account allocation routing", () => {
+	it("preserves legacy fleet overflow while honoring an authored budget objective", () => {
+		const a = account();
+		const arc = offer("arc", 0, 100);
+		arc.provider = "kubernetes";
+		arc.backend = "gh-actions";
+		arc.runsOn = "arc-test";
+		const github = offer("gh", 0, 1);
+		a.offers = [arc, github];
+
+		// Legacy fleet routing keeps ARC even when GitHub overflow is cheaper.
+		expect(route(a, [], now)?.offer.id).toBe("arc");
+		// Shared policy explicitly requests the lowest paid cost across offers.
+		a.budgetPolicy = common({ objective: "min-cost" });
+		expect(route(a, [], now)?.offer.id).toBe("gh");
+		// Admission constraints apply before legacy fleet preference too.
+		a.budgetPolicy = undefined;
+		arc.budgetMicros = 999;
+		expect(route(a, [], now)?.offer.id).toBe("gh");
+	});
+	it("keeps settled old-period money separate after explicit funded rollover", () => {
+		const a = account();
+		a.offers = [offer("gh", 0, 100)];
+		a.budgetMicros = 1000;
+		a.budgetPolicy = common({ periodId: "manual-2", limitMicros: 1000 });
+		const prior = lease("gh", 0);
+		Object.assign(prior, {
+			state: "completed",
+			paidMicros: 1000,
+			settledAt: now,
+			budgetTenantId: "tenant",
+			budgetId: "ci",
+			budgetPeriodId: "manual-1",
+			budgetPolicyRevision: "r1",
+		});
+		expect(route(a, [prior], now)?.paidMicros).toBe(1000);
+	});
+	it("does not reuse paid or free usage completed at the snapshot's same clock tick", () => {
+		const a = account();
+		a.offers = [offer("gh", 10, 100)];
+		a.budgetMicros = 0;
+		a.usageObservedAt = now;
+		present(a.offers[0]).observedAt = now;
+		const done = lease("gh", 0);
+		Object.assign(done, {
+			state: "completed",
+			billedFreeMinutes: 10,
+			settledAt: now,
+			usageCompletedAt: now,
+		});
+		expect(route(a, [done], now)).toBeUndefined();
+		present(a.offers[0]).freeMinutes = 0;
+		a.budgetMicros = 1000;
+		done.billedFreeMinutes = 0;
+		done.paidMicros = 1000;
+		expect(route(a, [done], now)).toBeUndefined();
+		const fresh = "2026-10-26T12:00:00.001Z";
+		a.usageObservedAt = fresh;
+		a.spentMicros = 1000;
+		a.budgetMicros = 2000;
+		present(a.offers[0]).observedAt = fresh;
+		present(a.offers[0]).spentMicros = 1000;
+		expect(route(a, [done], fresh)?.paidMicros).toBe(1000);
+	});
+	it("uses one comparator for repricing and initial routing objectives", () => {
+		const partial = { paidMicros: 9000, freeMinutes: 1 },
+			paid = { paidMicros: 1000, freeMinutes: 0 };
+		expect(
+			compareCiRoutingCandidates(partial, paid, "min-cost"),
+		).toBeGreaterThan(0);
+		expect(
+			compareCiRoutingCandidates(partial, paid, "maximize-credits"),
+		).toBeLessThan(0);
+	});
+	it("applies shared cap, explicit zero and account concurrency controls", () => {
+		const a = account();
+		a.offers = [offer("gh", 0, 100)];
+		a.budgetPolicy = common({ limitMicros: 999 });
+		expect(route(a, [], now)).toBeUndefined();
+		a.budgetPolicy = common({ limitMicros: 0 });
+		expect(route(a, [], now)).toBeUndefined();
+		present(a.offers[0]).freeMinutes = 10;
+		expect(route(a, [], now)?.paidMicros).toBe(0);
+		a.budgetPolicy = common({
+			constraints: [
+				{ key: "work.concurrent", workload: "ci", unit: "count", maximum: 1 },
+			],
+		});
+		expect(route(a, [lease("other", 0)], now)).toBeUndefined();
+	});
+	it("requires actual applicable measurements and refuses unknown constraints or units", () => {
+		const a = account();
+		for (const constraint of [
+			{ key: "ci.unknown", workload: "ci", unit: "count", maximum: 9 },
+			{
+				key: "work.duration",
+				workload: "ci",
+				unit: "seconds",
+				maximum: 999999,
+			},
+		]) {
+			a.budgetPolicy = common({ constraints: [constraint] });
+			expect(route(a, [], now)).toBeUndefined();
+		}
+		a.budgetPolicy = common({
+			constraints: [
+				{ key: "ci.attempts", workload: "ci", unit: "count", maximum: 1 },
+				{ key: "ci.queue.duration", workload: "ci", unit: "ms", maximum: 2000 },
+			],
+		});
+		expect(route(a, [], now)).toBeUndefined();
+		expect(
+			route(a, [], now, { attempt: 1, queueDurationMs: 1000 }),
+		).toBeDefined();
+		expect(
+			route(a, [], now, { attempt: 2, queueDurationMs: 1000 }),
+		).toBeUndefined();
+		expect(
+			route(a, [], now, { attempt: 1, queueDurationMs: 3000 }),
+		).toBeUndefined();
+	});
+	it("distinguishes strict feasibility from funded execution admission", () => {
+		const a = account();
+		a.budgetPolicy = common({ enforcement: "strict" });
+		const reasons: string[] = [];
+		expect(
+			route(a, [], now, { onRefusal: (r) => reasons.push(r.code) }),
+		).toBeUndefined();
+		expect(reasons).toContain("budget.policy.native-bound");
+		expect(route(a, [], now, { phase: "plan" })?.requiresNativeBound).toBe(
+			true,
+		);
+	});
+	it("covers the entire host duration in a fixed financial window", () => {
+		const a = account();
+		a.budgetPolicy = common({
+			periodKind: "fixed-window",
+			periodStartsAtMs: Date.parse(now) - 1,
+			periodEndsAtMs: Date.parse(now) + 599999,
+		});
+		expect(route(a, [], now)).toBeUndefined();
+		a.budgetPolicy = common({
+			periodKind: "fixed-window",
+			periodStartsAtMs: Date.parse(now) - 1,
+			periodEndsAtMs: Date.parse(now) + 600000,
+		});
+		expect(route(a, [], now)).toBeDefined();
+		expect(route(a, [], "2026-10-26T12:10:00Z")).toBeUndefined();
+	});
+	it("enforces all-of provider guards while rotating away from an account at its ceiling", () => {
+		const a = account();
+		a.offers = [offer("gh", 0, 1), offer("blacksmith", 0, 2)];
+		present(a.offers[0]).spentMicros = 100;
+		a.budgetPolicy = common({
+			constraints: [
+				{
+					key: "provider.cost",
+					workload: "ci",
+					unit: "USD.micros",
+					maximum: 100,
+					target: "gh",
+				},
+			],
+		});
+		expect(route(a, [], now)?.offer.id).toBe("blacksmith");
+		present(a.offers[0]).spentMicros = 101;
+		expect(route(a, [], now)).toBeUndefined();
+	});
+	it("cannot mint free headroom by renaming a logical account or offer", () => {
+		const a = account();
+		a.offers = [offer("renamed", 10, 100)];
+		present(a.offers[0]).providerAccountId = "native";
+		const existing = lease("old-offer", 10, 0);
+		existing.accountId = "old-account";
+		existing.provider = "blacksmith";
+		existing.providerAccountId = "native";
+		expect(route(a, [existing], now)?.paidMicros).toBe(1000);
+		present(a.offers[0]).concurrency = 1;
+		expect(route(a, [existing], now)).toBeUndefined();
+	});
 	it("uses remaining free providers before cheapest paid provider", () => {
 		const a = account();
 		expect(route(a, [], now)?.offer.id).toBe("blacksmith");
@@ -66,15 +267,15 @@ describe("account allocation routing", () => {
 		expect(selected?.offer.id).toBe("depot");
 		expect(selected?.paidMicros).toBe(10000);
 	});
-	it("uses partial free allocation before a cheaper fully paid offer", () => {
+	it("chooses a cheaper fully paid offer over expensive partial free allocation", () => {
 		const a = account();
 		a.offers = [offer("gh", 1, 1000), offer("blacksmith", 0, 100)];
 		const choice = route(a, [], now);
-		expect(choice?.offer.id).toBe("gh");
-		expect(choice?.freeMinutes).toBe(1);
-		expect(choice?.paidMicros).toBe(9000);
+		expect(choice?.offer.id).toBe("blacksmith");
+		expect(choice?.freeMinutes).toBe(0);
+		expect(choice?.paidMicros).toBe(1000);
 	});
-	it("chooses the cheapest paid remainder among free-consuming offers", () => {
+	it("minimizes total paid cost across all eligible offers", () => {
 		const a = account();
 		a.offers = [
 			offer("gh", 1, 1000),
@@ -82,8 +283,17 @@ describe("account allocation routing", () => {
 			offer("depot", 0, 1),
 		];
 		const choice = route(a, [], now);
-		expect(choice?.offer.id).toBe("blacksmith");
-		expect(choice?.paidMicros).toBe(4000);
+		expect(choice?.offer.id).toBe("depot");
+		expect(choice?.paidMicros).toBe(10);
+	});
+	it("uses free allocation first only for explicit maximize-credits", () => {
+		const a = account();
+		a.routingStrategy = "maximize-credits";
+		a.offers = [offer("gh", 1, 1000), offer("blacksmith", 0, 100)];
+		expect(route(a, [], now)).toMatchObject({
+			offer: { id: "gh" },
+			paidMicros: 9000,
+		});
 	});
 	it("prefers usable free allocation when total projected charges tie", () => {
 		const a = account();
@@ -145,8 +355,9 @@ describe("account allocation routing", () => {
 		expect(choice?.freeMinutes).toBeLessThan(0.1);
 		expect(choice?.paidMicros).toBe(9901);
 	});
-	it("accounts for outstanding free reservations and budgets", () => {
+	it("bounds explicit maximize-credits by outstanding free reservations and budgets", () => {
 		const a = account();
+		a.routingStrategy = "maximize-credits";
 		a.offers = [offer("gh", 10, 1000), offer("blacksmith", 0, 100)];
 		const existing = lease("gh", 9, 1000);
 		expect(route(a, [existing], now)?.offer.id).toBe("gh");

@@ -14,7 +14,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { basename, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isJsonString, type JsonValue } from "./json.js";
-
+import { assertSourceDateEpoch } from "./source-date-epoch.js";
 
 export const PINNED_TOOLCHAIN = Object.freeze({
 	jco: "1.24.3",
@@ -186,12 +186,6 @@ function assertPinnedToolchain(toolchain: typeof PINNED_TOOLCHAIN) {
 				`componentize.toolchain_skew: ${name} expected ${expected} got ${toolchain[name as keyof typeof PINNED_TOOLCHAIN]}`,
 			);
 		}
-	}
-}
-
-function assertSourceDateEpoch(sourceDateEpoch: string) {
-	if (!sourceDateEpoch || Number.isNaN(Date.parse(sourceDateEpoch))) {
-		throw new Error("componentize.invalid_source_date_epoch");
 	}
 }
 

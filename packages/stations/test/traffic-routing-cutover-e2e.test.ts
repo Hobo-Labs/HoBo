@@ -107,6 +107,7 @@ function topology(): RoutingTopology {
 		service: "site",
 		tenantId,
 		stationId: "station:prod",
+		costRouting: "stateless",
 		backends: [
 			{
 				id: "backend:a",
@@ -141,6 +142,7 @@ async function seedIncumbentPlan(backendId: string, planId: string) {
 	assert.equal(synthesis.kind, "plan");
 	if (synthesis.kind !== "plan") throw new Error("seed plan denied");
 	await routedPort.apply(synthesis.plan);
+	return synthesis.plan;
 }
 
 // Costs make backend:b the budget-optimal target.
@@ -210,10 +212,16 @@ function startTrafficGenerator(): TrafficGenerator {
 }
 
 test("milestone: budget-pressured swap from A to B with zero failed requests across the ramp", async () => {
-	await seedIncumbentPlan("backend:a", "plan:site:seed-a");
+	const incumbentPlan = await seedIncumbentPlan(
+		"backend:a",
+		"plan:site:seed-a",
+	);
 
 	const facts: string[] = [];
 	const loop = createRoutingControlLoop({
+		ledgerView: () => ({ view: "CreditLedgerView", seq: 0, accounts: [] }),
+		persistState: async () => {},
+		beforeApply: async () => {},
 		topology: topology(),
 		policyDecision: policyDecision(),
 		costModel: COST_MODEL,
@@ -222,6 +230,14 @@ test("milestone: budget-pressured swap from A to B with zero failed requests acr
 		incumbentBackendId: "backend:a",
 		units: 100,
 		cutover: {
+			restorationHealthGate: async () =>
+				(await fetch(backendAUrl)).status === 200,
+			precondition: {
+				validation: { status: "validated" },
+				mechanism: "weighted",
+				incumbentPlanId: incumbentPlan.planId,
+				incumbentPlan,
+			},
 			rampSteps: [10, 50, 100],
 			// Health gate: probe the target backend between ramp steps; the
 			// pause lets live traffic interleave with every ramp stage.
@@ -264,8 +280,17 @@ test("milestone: budget-pressured swap from A to B with zero failed requests acr
 		"dispatch.Decided",
 		ROUTING_LOOP_EVENTS.ReplanProposed,
 		CUTOVER_EVENTS.Started,
+		CUTOVER_EVENTS.ApplyRequested,
+		"contract.EffectInvoked",
+		CUTOVER_EVENTS.Observed,
 		CUTOVER_EVENTS.RampAdvanced,
+		CUTOVER_EVENTS.ApplyRequested,
+		"contract.EffectInvoked",
+		CUTOVER_EVENTS.Observed,
 		CUTOVER_EVENTS.RampAdvanced,
+		CUTOVER_EVENTS.ApplyRequested,
+		"contract.EffectInvoked",
+		CUTOVER_EVENTS.Observed,
 		CUTOVER_EVENTS.RampAdvanced,
 		CUTOVER_EVENTS.RoutingChanged,
 		ROUTING_LOOP_EVENTS.Reapplied,
@@ -279,10 +304,16 @@ test("milestone: budget-pressured swap from A to B with zero failed requests acr
 });
 
 test("milestone: health-gate failure at 50% rolls back automatically with zero failed requests", async () => {
-	await seedIncumbentPlan("backend:a", "plan:site:seed-a-rollback");
+	const incumbentPlan = await seedIncumbentPlan(
+		"backend:a",
+		"plan:site:seed-a-rollback",
+	);
 
 	const facts: string[] = [];
 	const loop = createRoutingControlLoop({
+		ledgerView: () => ({ view: "CreditLedgerView", seq: 0, accounts: [] }),
+		persistState: async () => {},
+		beforeApply: async () => {},
 		topology: topology(),
 		policyDecision: policyDecision(),
 		costModel: COST_MODEL,
@@ -291,6 +322,14 @@ test("milestone: health-gate failure at 50% rolls back automatically with zero f
 		incumbentBackendId: "backend:a",
 		units: 100,
 		cutover: {
+			restorationHealthGate: async () =>
+				(await fetch(backendAUrl)).status === 200,
+			precondition: {
+				validation: { status: "validated" },
+				mechanism: "weighted",
+				incumbentPlanId: incumbentPlan.planId,
+				incumbentPlan,
+			},
 			rampSteps: [10, 50, 100],
 			healthGate: async ({ percent }) => {
 				await sleep(40);
@@ -324,7 +363,16 @@ test("milestone: health-gate failure at 50% rolls back automatically with zero f
 		"dispatch.Decided",
 		ROUTING_LOOP_EVENTS.ReplanProposed,
 		CUTOVER_EVENTS.Started,
+		CUTOVER_EVENTS.ApplyRequested,
+		"contract.EffectInvoked",
+		CUTOVER_EVENTS.Observed,
 		CUTOVER_EVENTS.RampAdvanced,
+		CUTOVER_EVENTS.ApplyRequested,
+		"contract.EffectInvoked",
+		CUTOVER_EVENTS.Observed,
+		CUTOVER_EVENTS.ApplyRequested,
+		"contract.EffectInvoked",
+		CUTOVER_EVENTS.Observed,
 		CUTOVER_EVENTS.RolledBack,
 	]);
 

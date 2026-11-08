@@ -16,6 +16,26 @@ afterAll(tables.remove);
 const { table } = tables;
 const scratch = tables.dir;
 
+const childProgram = `
+const { readFileSync } = require("node:fs");
+process.title = "a) Z 1 2 (b";
+const zombiePid = process.argv[1];
+const signalWhenZombie = () => {
+	let stat = "";
+	try {
+		stat = readFileSync(\`/proc/\${zombiePid}/stat\`, "utf8");
+	} catch {}
+	const close = stat.lastIndexOf(")");
+	if (stat.slice(close + 2, close + 3) !== "Z") {
+		setTimeout(signalWhenZombie, 10);
+		return;
+	}
+	process.stdout.write("ready\\n");
+};
+signalWhenZombie();
+setInterval(() => {}, 1 << 30);
+`;
+
 describe("scanGroup", () => {
 	it("is zombies for a group whose members are all zombies of one thread", () => {
 		expect(scanGroup(GROUP, table([zombie(100), zombie(101)]))).toBe("zombies");
@@ -71,47 +91,60 @@ describe("scanGroup", () => {
 	it.runIf(process.platform === "linux")(
 		"reads the fields after the last ')': a live process named 'a) Z 1 2 (b' beside a zombie is live",
 		async () => {
-			// comm is the basename of the file exec'd. The process this starts leads a group
-			// of its own (detached), and never reaps the `sleep 0` it started first.
+			// Node 24 names its main thread MainThread during startup, so set comm after that.
+			// The detached shell leaves `sleep 0` unreaped; Node signals after seeing its Z state.
 			const named = join(scratch, "a) Z 1 2 (b");
 			symlinkSync(process.execPath, named);
 			const leader = spawn(
 				"sh",
 				[
 					"-c",
-					'sleep 0 & echo $!; exec "$0" -e "setTimeout(() => {}, 20000)"',
+					'sleep 0 & zombie=$!; echo "$zombie"; exec "$0" -e "$1" "$zombie"',
 					named,
+					childProgram,
 				],
 				{ detached: true, stdio: ["ignore", "pipe", "ignore"] },
 			);
 			const pgid = leader.pid ?? 0;
 			try {
 				const zombiePid = await new Promise<string>((done) => {
-					leader.stdout.once("data", (chunk: Buffer) =>
-						done(chunk.toString("utf8").trim()),
-					);
+					let output = "";
+					leader.stdout.on("data", (chunk: Buffer) => {
+						output += chunk.toString("utf8");
+						const [pid, signal] = output.split("\n");
+						if (pid && signal === "ready") done(pid);
+					});
 				});
 				const ready = () =>
 					stateOf(String(pgid)).comm === "a) Z 1 2 (b" &&
 					stateOf(zombiePid).state === "Z";
-				// Readiness has no bound worth asserting: under memory pressure a fork or exec
-				// can stall for seconds, so wait as long as the test may run.
-				const until = Date.now() + 20_000;
-				while (!ready() && Date.now() < until) {
-					await new Promise((done) => setTimeout(done, 100));
-				}
 				expect(
 					ready(),
 					`never ready: ${statLineOf(String(pgid))} | ${statLineOf(zombiePid)}`,
 				).toBe(true);
 				expect(scanGroup({ pgid, sid: pgid }, "/proc")).toBe("live");
 			} finally {
-				process.kill(-pgid, "SIGKILL");
+				killGroup(pgid);
 			}
 		},
 		40_000,
 	);
 });
+
+function killGroup(pgid: number): void {
+	try {
+		process.kill(-pgid, "SIGKILL");
+	} catch (cause) {
+		if (!hasErrorCode(cause, "ESRCH")) throw cause;
+	}
+}
+
+function hasErrorCode(
+	cause: unknown,
+	code: string,
+): cause is NodeJS.ErrnoException {
+	return cause instanceof Error && "code" in cause && cause.code === code;
+}
 
 /** A process's /proc stat line as it reads now, for a failure message. */
 function statLineOf(pid: string): string {

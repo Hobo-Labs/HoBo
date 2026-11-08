@@ -25,8 +25,7 @@ import {
 	createYardClient,
 	type YardRuntime,
 } from "../src/index.js";
-import { type JsonObject } from "../src/json.js";
-
+import type { JsonObject } from "../src/json.js";
 
 // Consumer pact pinning the CLI <-> Yard (@hobo/cloud) boundary. The CLI's cloud
 // verbs share one call path (the yard-client seam); this contract asserts that

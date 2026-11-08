@@ -141,6 +141,7 @@ export function publishCapabilityManifest(
 				sku: fact.sku,
 				unit: fact.unit,
 				marginalPrice: fact.marginalPrice,
+				pricingStatus: "estimate",
 				freeTier: {
 					unit: fact.unit,
 					included: fact.included,

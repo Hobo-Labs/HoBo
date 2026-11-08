@@ -47,9 +47,10 @@ const pact: PactFile = JSON.parse(
 
 describe(`PACT ${pact.consumer.name} -> ${pact.provider.name}`, () => {
 	it("declares the interactions this suite verifies", () => {
-		expect(pact.interactions).toHaveLength(4);
+		expect(pact.interactions).toHaveLength(5);
 	});
 
+	// Keep the legacy plan and its digest alongside the current golden fixture.
 	const digestCases = pact.interactions.filter(
 		(i) => i.response.body.planHash !== undefined,
 	);
@@ -58,8 +59,28 @@ describe(`PACT ${pact.consumer.name} -> ${pact.provider.name}`, () => {
 	);
 
 	it("covers both outcomes the boundary has", () => {
-		expect(digestCases).toHaveLength(3);
+		expect(digestCases).toHaveLength(4);
 		expect(refusalCases).toHaveLength(1);
+	});
+
+	it("keeps the current golden-plan contract aligned with the cloud fixture", () => {
+		const currentPlan: PlanParseInput = JSON.parse(
+			readFileSync(
+				fileURLToPath(
+					new URL(
+						"../../cloud/test/fixtures/golden-plan.json",
+						import.meta.url,
+					),
+				),
+				"utf8",
+			),
+		);
+		const golden = pact.interactions.find(
+			(interaction) =>
+				interaction.description ===
+				"the current golden plan includes the selected product in its digest",
+		);
+		expect(golden?.request.body.plan).toEqual(currentPlan);
 	});
 
 	it.each(

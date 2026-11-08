@@ -192,9 +192,7 @@ export function createSqliteDataDualPort(
 		}));
 	}
 
-	function readRows(
-		db: DatabaseSync,
-	): readonly JsonObject[] {
+	function readRows(db: DatabaseSync): readonly JsonObject[] {
 		const rows = tenant
 			? db
 					.prepare(
@@ -210,7 +208,9 @@ export function createSqliteDataDualPort(
 			// SAFETY: the SELECT statements below provide these row columns.
 			(rows as { tenant_id?: string; id: string; doc: string }[]).map((row) =>
 				Object.freeze({
-					...(row.tenant_id !== undefined ? { tenant: row.tenant_id } : undefined),
+					...(row.tenant_id !== undefined
+						? { tenant: row.tenant_id }
+						: undefined),
 					id: row.id,
 					// SAFETY: writeSource serializes JsonObject documents.
 					...(JSON.parse(row.doc) as JsonObject),
@@ -221,12 +221,14 @@ export function createSqliteDataDualPort(
 
 	function fenceRow(forTenant: string): { fence_token: string } | undefined {
 		// SAFETY: the query selects the optional fence token column.
-		return source
-			.prepare(
-				`SELECT fence_token FROM ${table}_tenant_fence WHERE tenant_id = ?`,
-			)
-			// SAFETY: the query selects the optional fence token column.
-			.get(forTenant) as { fence_token: string } | undefined;
+		return (
+			source
+				.prepare(
+					`SELECT fence_token FROM ${table}_tenant_fence WHERE tenant_id = ?`,
+				)
+				// SAFETY: the query selects the optional fence token column.
+				.get(forTenant) as { fence_token: string } | undefined
+		);
 	}
 
 	function maxSeq(): number {
@@ -239,8 +241,8 @@ export function createSqliteDataDualPort(
 						)
 						.get(tenant)
 				: source.prepare(`SELECT MAX(seq) AS head FROM ${table}_cdc_log`).get()
-			// SAFETY: the query selects one nullable numeric head column.
 		) as { head: number | bigint | null } | undefined;
+		// SAFETY: the query selects one nullable numeric head column.
 		return Number(row?.head ?? 0);
 	}
 
@@ -306,22 +308,24 @@ export function createSqliteDataDualPort(
 			// Snapshot-then-tail: copy the current in-scope row set, then pin the
 			// watermark at today's CDC head so tailing resumes from here. One
 			// target transaction — a failed backfill leaves the watermark alone.
-			const rows = (tenant
-				? source
-						.prepare(
-							`SELECT tenant_id, id, doc FROM ${table} WHERE tenant_id = ? ORDER BY id`,
-						)
-						.all(tenant)
-				: source
-						.prepare(
-							`SELECT tenant_id, id, doc FROM ${table} ORDER BY tenant_id, id`,
-						)
-					// SAFETY: the SELECT above fixes the backfill row shape.
-					.all()).map((row) => ({
-					tenant_id: String(row.tenant_id),
-					id: String(row.id),
-					doc: String(row.doc),
-				}));
+			const rows = (
+				tenant
+					? source
+							.prepare(
+								`SELECT tenant_id, id, doc FROM ${table} WHERE tenant_id = ? ORDER BY id`,
+							)
+							.all(tenant)
+					: source
+							.prepare(
+								`SELECT tenant_id, id, doc FROM ${table} ORDER BY tenant_id, id`,
+							)
+							// SAFETY: the SELECT above fixes the backfill row shape.
+							.all()
+			).map((row) => ({
+				tenant_id: String(row.tenant_id),
+				id: String(row.id),
+				doc: String(row.doc),
+			}));
 			const head = maxSeq();
 			target.exec("BEGIN IMMEDIATE");
 			try {

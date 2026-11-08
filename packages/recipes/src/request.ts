@@ -81,7 +81,8 @@ export function parseDeploymentRequest(
 	const byRef = new Map<string, BindleCapabilityRequest>();
 	for (const capability of input.capabilities) {
 		if (
-			Object.prototype.toString.call(capability.capabilityRef) !== "[object String]" ||
+			Object.prototype.toString.call(capability.capabilityRef) !==
+				"[object String]" ||
 			capability.capabilityRef.trim().length === 0
 		) {
 			throw new DeploymentRequestError(

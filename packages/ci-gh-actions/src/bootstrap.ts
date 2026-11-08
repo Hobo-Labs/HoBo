@@ -9,11 +9,26 @@ import { pathToFileURL } from "node:url";
 // Official actions/runner release asset SHA-256, retrieved 2026-10-26.
 // public-contract: one pinned official release shared by standalone bridge and local installer.
 export const RUNNER_VERSION = "2.338.2";
-// public-contract: verify the same archive for hosted and local runners.
+// public-contract: verify the same archive for hosted and local runners (linux x64).
 export const RUNNER_SHA256 =
 	"baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40";
+// public-contract: verify the same archive for hosted and local runners (linux arm64).
+export const RUNNER_SHA256_ARM64 =
+	"670adb2f268fe21dcbb58b3db0e0aa9d5b3bddfe2c651481336e561ff86de945";
 // public-contract: the checksum-pinned download endpoint used by both execution paths.
 export const RUNNER_URL = `https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz`;
+// public-contract: checksum-pinned download endpoint for linux arm64 runners.
+export const RUNNER_URL_ARM64 = `https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-arm64-${RUNNER_VERSION}.tar.gz`;
+
+export type RunnerDownload = { url: string; sha256: string };
+
+/** Pinned runner tarball for the worker/container CPU (linux arm64 or x64 only). */
+export function runnerDownloadFor(processArch: string): RunnerDownload {
+	if (processArch === "arm64") {
+		return { url: RUNNER_URL_ARM64, sha256: RUNNER_SHA256_ARM64 };
+	}
+	return { url: RUNNER_URL, sha256: RUNNER_SHA256 };
+}
 
 /** Deliberate allowlist: never pass outer job context, tokens or cloud credentials. */
 export function runnerEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -42,6 +57,12 @@ function required(name: string): string {
 	if (!value) throw new Error(`missing ${name}`);
 	return value;
 }
+export type HostShutdownTimings = {
+	/** How long the process group gets to honour SIGTERM before SIGKILL. */
+	readonly graceMs?: number;
+	/** How long SIGKILL gets to empty the group before shutdown is unconfirmed. */
+	readonly confirmMs?: number;
+};
 export function runHostProcess(
 	command: string,
 	args: string[],
@@ -49,6 +70,7 @@ export function runHostProcess(
 	env: NodeJS.ProcessEnv,
 	timeout: number | undefined,
 	abortSignal?: AbortSignal,
+	{ graceMs = 10000, confirmMs = 2000 }: HostShutdownTimings = {},
 ): Promise<void> {
 	if (abortSignal?.aborted) return Promise.reject(abortSignal.reason);
 	return new Promise((resolve, reject) => {
@@ -98,10 +120,11 @@ export function runHostProcess(
 				try {
 					status = readFileSync(`/proc/${pid}/stat`, "utf8");
 				} catch (error) {
+					// A process reaped between readdir and read reports either code.
 					if (
 						error instanceof Error &&
 						"code" in error &&
-						error.code === "ENOENT"
+						(error.code === "ENOENT" || error.code === "ESRCH")
 					)
 						continue;
 					throw error;
@@ -148,13 +171,18 @@ export function runHostProcess(
 			stopping = true;
 			clearTimeout(timer);
 			signal("SIGTERM");
-			hardStop = setTimeout(() => signal("SIGKILL"), 10000);
-			deadline = setTimeout(() => {
+			hardStop = setTimeout(() => {
 				signal("SIGKILL");
-				finish(
-					new Error("runner process group shutdown could not be confirmed"),
-				);
-			}, 12000);
+				// Timed from the kill actually sent, never from SIGTERM: after an event-loop
+				// stall both timers would come due in one turn, before any check could see
+				// the killed group go.
+				deadline = setTimeout(() => {
+					check();
+					finish(
+						new Error("runner process group shutdown could not be confirmed"),
+					);
+				}, confirmMs);
+			}, graceMs);
 			poll = setInterval(check, 25);
 			check();
 		};

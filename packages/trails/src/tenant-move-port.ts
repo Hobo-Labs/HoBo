@@ -10,8 +10,8 @@
  * the pooled copy only after fence + zero lag + checksum equality.
  */
 import type { SqliteDataDualPort } from "./data-dual-port.js";
-import { MIGRATION_EVENTS, type MigrationFact } from "./migration-executor.js";
 import type { JsonObject } from "./json.js";
+import { MIGRATION_EVENTS, type MigrationFact } from "./migration-executor.js";
 
 // public-contract: tenant move protocol schema id.
 export const TENANT_MOVE_SCHEMA = "hobo.tenant-move/v1";

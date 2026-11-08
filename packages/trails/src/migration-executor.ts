@@ -7,12 +7,13 @@
  * Failure compensates by restoring the pre-migration snapshot (forward-only
  * recovery: snapshot + redeploy last-good Set; no `.down` scripts).
  */
+
+import type { JsonObject } from "./json.js";
 import type {
 	SchemaApplyPort,
 	SchemaPhaseResult,
 	SchemaSnapshotRef,
 } from "./schema-apply-port.js";
-import type { JsonObject } from "./json.js";
 
 // public-contract: migration executor schema id.
 export const MIGRATION_EXECUTOR_SCHEMA = "hobo.migration-executor/v1";
@@ -112,7 +113,9 @@ export async function executeDataMigration(
 			migrationId: plan.migrationId,
 			status: input.status,
 			dualWindowOpen: input.dualWindowOpen,
-			...(input.snapshot !== undefined ? { snapshot: input.snapshot } : undefined),
+			...(input.snapshot !== undefined
+				? { snapshot: input.snapshot }
+				: undefined),
 			phases: Object.freeze([...phases]),
 			blockedReasons: Object.freeze([...(input.blockedReasons ?? [])]),
 			violations: Object.freeze([...(input.violations ?? [])]),

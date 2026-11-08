@@ -2,8 +2,9 @@
  * Property oracles over trainable functions and their blessed gold seeds.
  * Gold suites exact-match examples; silver suites run these checks.
  */
-import { hasPrototypePollution } from "./manifest.js";
+
 import type { FuzzValue } from "./manifest.js";
+import { hasPrototypePollution } from "./manifest.js";
 import { type InvariantVerdict, verdict } from "./model.js";
 
 // public-contract: silver-fuzz report schema id
@@ -196,7 +197,7 @@ function withinBound(value: FuzzValue | undefined): boolean {
 function mutateSeeds(
 	seeds: readonly TrainableFuzzSeed[],
 	budget: number,
-	): FuzzValue[] {
+): FuzzValue[] {
 	const out: FuzzValue[] = [];
 	for (const seed of seeds.slice(0, budget)) {
 		out.push(seed.input);
@@ -215,11 +216,17 @@ function mutateSeeds(
 	return out;
 }
 
-function same(left: FuzzValue | undefined, right: FuzzValue | undefined): boolean {
+function same(
+	left: FuzzValue | undefined,
+	right: FuzzValue | undefined,
+): boolean {
 	return stable(left) === stable(right);
 }
 
-function stable(value: FuzzValue | undefined, seen: WeakSet<object> = new WeakSet()): string {
+function stable(
+	value: FuzzValue | undefined,
+	seen: WeakSet<object> = new WeakSet(),
+): string {
 	if (value === undefined) return "undefined";
 	const kind = Object.prototype.toString.call(value);
 	if (kind === "[object BigInt]") return `${String(value)}n`;

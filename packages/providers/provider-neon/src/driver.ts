@@ -293,10 +293,6 @@ export function createNeonClaimableDatabaseDriver(
 				providerId: NEON_PROVIDER_ID,
 				resourceRef,
 				purpose: "connection-string-pooled",
-				labels: {
-					databaseId: response.databaseId,
-					neonProjectId: response.neonProjectId,
-				},
 			},
 		);
 
@@ -308,7 +304,6 @@ export function createNeonClaimableDatabaseDriver(
 						providerId: NEON_PROVIDER_ID,
 						resourceRef,
 						purpose: "connection-string-direct",
-						labels: { databaseId: response.databaseId },
 					});
 
 		const binding = buildNeonCapabilityBinding({

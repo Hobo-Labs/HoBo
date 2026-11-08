@@ -10,9 +10,11 @@
 
 import { execSync, spawnSync } from "node:child_process";
 import {
+	chmodSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
@@ -22,13 +24,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { must } from "@hobo/core/total-access";
 import { afterAll, describe, expect, it } from "vitest";
-import { parseJsonObject, type JsonBag, type JsonValue } from "../src/json.js";
-
+import { type JsonBag, type JsonValue, parseJsonObject } from "../src/json.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
 import { CowTier as CowTierPb } from "../src/_generated/rift_workspace_pb.js";
-import { detectCapability, probeOverlayfs } from "../src/capability.js";
+import {
+	detectCapability,
+	probeOverlayfs,
+	removeOverlayProbe,
+} from "../src/capability.js";
 import { projectWorkspaces, readEvents } from "../src/journal.js";
 import { parseWorkspaceName } from "../src/names.js";
 import {
@@ -55,7 +60,7 @@ import {
 
 const dirs: string[] = [];
 afterAll(() => {
-	for (const d of dirs) rmSync(d, { recursive: true, force: true });
+	for (const d of dirs) removeOverlayProbe(d);
 });
 
 function source(): string {
@@ -108,6 +113,18 @@ describe("capability ladder", () => {
 		});
 		expect(copy.tier).toBe("copy");
 		expect(copy.isolatesInPlaceWrites).toBe(true);
+	});
+
+	it("removes an overlay probe with an inaccessible kernel work directory", () => {
+		const probe = mkdtempSync(join(tmpdir(), "rift-ovl-cleanup-"));
+		dirs.push(probe);
+		const workWork = join(probe, "work", "work");
+		mkdirSync(workWork, { recursive: true });
+		chmodSync(workWork, 0o000);
+
+		removeOverlayProbe(probe);
+
+		expect(existsSync(probe)).toBe(false);
 	});
 });
 
@@ -279,6 +296,14 @@ describe("exec wrapper", () => {
 });
 
 describe("overlay availability is reported, not silently skipped", () => {
+	it("leaves no overlay probe debris under the probed directory", () => {
+		const root = source();
+		probeOverlayfs(root);
+		expect(
+			readdirSync(root).some((name) => name.startsWith(".rift-ovl-")),
+		).toBe(false);
+	});
+
 	it("says so when this machine cannot grant an unprivileged overlay", () => {
 		// runIf drops the property block below with no skip count in the report,
 		// so a CI box without user namespaces would print "all passed" while
@@ -647,17 +672,41 @@ describe("repair distinguishes stale from truncated", () => {
 });
 
 describe("debris only accumulates when there is work to keep", () => {
-	it("does not park a skeleton with no files in it", () => {
+	it("does not park an overlayfs skeleton with no files in it", () => {
 		// The overlay tier always leaves an upper/work/merged skeleton, so a
 		// plain "is the directory empty" test never fires and every repeated
 		// run would leave another parked copy behind.
+		const capability = {
+			tier: "overlayfs",
+			available: ["overlayfs"],
+			reason: "forced",
+			isolatesInPlaceWrites: true,
+		} as const;
 		const root = source();
-		createWorkspace({ root, name: "claude" });
+		createWorkspace({ root, name: "claude", capability });
 		for (let i = 0; i < 3; i += 1) {
 			writeFileSync(join(root, RIFT_DIR, "events.jsonl"), "");
-			createWorkspace({ root, name: "claude" });
+			createWorkspace({ root, name: "claude", capability });
 		}
 		expect(listDebris(root)).toEqual([]);
+	});
+
+	it("parks a copy-tier workspace holding cloned files", () => {
+		const capability = {
+			tier: "copy",
+			available: ["copy"],
+			reason: "forced",
+			isolatesInPlaceWrites: true,
+		} as const;
+		const root = source();
+		createWorkspace({ root, name: "claude", capability });
+		writeFileSync(join(root, RIFT_DIR, "events.jsonl"), "");
+		const again = createWorkspace({ root, name: "claude", capability });
+		const parked = must(again.debris, "again.debris");
+		expect(listDebris(root)).toEqual([parked]);
+		expect(readFileSync(join(parked, "src", "app.ts"), "utf8")).toBe(
+			"original content\n",
+		);
 	});
 
 	it("parks — and can prune — a directory that holds work", () => {
@@ -681,7 +730,9 @@ describe("a root that predates event counting", () => {
 		const root = source();
 		createWorkspace({ root, name: "old" });
 		const snapshotPath = join(root, RIFT_DIR, "registry.json");
-		const snapshot: JsonBag = { ...parseJsonObject(readFileSync(snapshotPath, "utf8")) };
+		const snapshot: JsonBag = {
+			...parseJsonObject(readFileSync(snapshotPath, "utf8")),
+		};
 		writeFileSync(
 			snapshotPath,
 			JSON.stringify({

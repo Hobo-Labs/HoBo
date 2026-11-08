@@ -44,9 +44,11 @@
  *     diagnostic and left for a human, not silently "fixed".
  */
 
+import { createHash } from "node:crypto";
 import {
 	createResolverRegistry,
 	type HttpTransport,
+	parseResolveRequest,
 	RESOLVER_CONTRACT,
 	type ResolveOutcome,
 	type ResolveRequest,
@@ -74,7 +76,9 @@ import {
 	CLOUDFLARE_MAX_RESPONSE_BYTES,
 	CLOUDFLARE_MAX_TIMEOUT_MS,
 	cloudflareApiUrl,
+	guardedCloudflareTransport,
 } from "./transport.js";
+import { parseCloudflareWorkerSource } from "./worker-content.js";
 
 /**
  * Product ids are read off the slot factories rather than retyped, so the
@@ -547,6 +551,7 @@ function createResolver(
 		request: ResolveRequest,
 		transport: HttpTransport,
 	): Promise<CloudflareResolverContext> {
+		request = parseResolveRequest(parseJsonObject(JSON.stringify(request)));
 		if (request.ref.productId !== spec.productId) {
 			throw new ResolverError(
 				"RESOLVER_PRODUCT_UNSUPPORTED",
@@ -556,7 +561,7 @@ function createResolver(
 		const token = await resolveToken(request, options.resolveCredential);
 		return {
 			request,
-			transport,
+			transport: guardedCloudflareTransport(transport),
 			token,
 			accountId,
 			name: resourceName(request, spec.productId),
@@ -1179,7 +1184,9 @@ function workerUploadBody(context: CloudflareResolverContext): string {
 			? { compatibility_flags: [...compatibilityFlags] }
 			: undefined),
 		...(isJsonArray(bindings) ? { bindings } : undefined),
-		...(smartPlacement === true ? { placement: { mode: "smart" } } : undefined),
+		...(smartPlacement === undefined
+			? undefined
+			: { placement: { mode: smartPlacement ? "smart" : "off" } }),
 	});
 	if (
 		script.includes(WORKER_MULTIPART_BOUNDARY) ||
@@ -1237,53 +1244,313 @@ async function uploadWorker(
 	);
 }
 
+function assertWorkerRequest(context: CloudflareResolverContext): void {
+	if (
+		context.knownPhysicalId !== undefined &&
+		context.knownPhysicalId !== context.name
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Cloudflare Worker name differs from its pinned physical identity",
+		);
+	if (!/^[a-z0-9][a-z0-9_-]{0,62}$/u.test(context.name))
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Cloudflare Worker requires a plain provider script name",
+		);
+	if (
+		Buffer.byteLength(JSON.stringify(context.desired), "utf8") >
+		CLOUDFLARE_MAX_RESPONSE_BYTES - 16_384
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Cloudflare Worker artifact exceeds its bounded native readback limit",
+		);
+	const allowed = new Set([
+		"name",
+		"script",
+		"mainModule",
+		"compatibilityDate",
+		"compatibilityFlags",
+		"bindings",
+		"smartPlacement",
+		"workersDev",
+	]);
+	for (const key of Object.keys(context.desired))
+		if (!allowed.has(key))
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"Cloudflare Worker has an unsupported desired property",
+			);
+	for (const key of ["workersDev", "smartPlacement"])
+		if (
+			context.desired[key] !== undefined &&
+			!isJsonBoolean(context.desired[key])
+		)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"Cloudflare Worker boolean property has an invalid type",
+			);
+	for (const key of ["script", "mainModule", "compatibilityDate"])
+		if (
+			context.desired[key] !== undefined &&
+			optionalString(context.desired, key) === undefined
+		)
+			throw new ResolverError(
+				"RESOLVER_PRODUCT_UNSUPPORTED",
+				"Cloudflare Worker source/settings require nonempty strings",
+			);
+	const module =
+		optionalString(context.desired, "mainModule") ?? DEFAULT_WORKER_MAIN_MODULE;
+	if (
+		!/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/u.test(module) ||
+		module.split("/").some((part) => part === "." || part === "..")
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Cloudflare Worker main module must be a safe artifact path",
+		);
+	if (
+		context.desired.compatibilityFlags !== undefined &&
+		(!isJsonArray(context.desired.compatibilityFlags) ||
+			!context.desired.compatibilityFlags.every(isJsonString))
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Cloudflare Worker compatibility flags require a string array",
+		);
+	if (
+		context.desired.bindings !== undefined &&
+		!isJsonArray(context.desired.bindings)
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Cloudflare Worker bindings require an array",
+		);
+}
+function workerSettingsMatch(
+	context: CloudflareResolverContext,
+	settings: JsonObject,
+): boolean {
+	const date = optionalString(context.desired, "compatibilityDate");
+	if (date !== undefined && settings.compatibility_date !== date) return false;
+	const flags = optionalStringArray(context.desired, "compatibilityFlags");
+	if (
+		flags !== undefined &&
+		JSON.stringify([...flags].sort()) !==
+			JSON.stringify(
+				[
+					...(optionalStringArray(settings, "compatibility_flags") ?? []),
+				].sort(),
+			)
+	)
+		return false;
+	const placement = optionalBoolean(context.desired, "smartPlacement");
+	if (
+		placement !== undefined &&
+		(!isJsonObject(settings.placement) ||
+			settings.placement.mode !== (placement ? "smart" : "off"))
+	)
+		return false;
+	const expected = context.desired.bindings;
+	if (isJsonArray(expected)) {
+		const actual = settings.bindings;
+		if (!isJsonArray(actual) || actual.length !== expected.length) return false;
+		for (const binding of expected) {
+			if (!isJsonObject(binding) || !isJsonString(binding.name)) return false;
+			const matches = actual.filter(
+				(value) => isJsonObject(value) && value.name === binding.name,
+			);
+			if (matches.length !== 1 || !isJsonObject(matches[0])) return false;
+			const observed = matches[0];
+			for (const key of Object.keys(binding))
+				if (JSON.stringify(observed[key]) !== JSON.stringify(binding[key]))
+					return false;
+		}
+	}
+	return true;
+}
+async function observeWorker(
+	context: CloudflareResolverContext,
+	settings?: JsonObject,
+): Promise<JsonObject | undefined> {
+	const observed = settings ?? (await readWorkerSettings(context));
+	if (observed === undefined) return undefined;
+	const content = await send(context.transport, context.token, {
+		method: "GET",
+		path: workerPath(context),
+	});
+	if (isNotFound(content))
+		return {
+			...workerOutputs(context.name, observed),
+			ready: false,
+			operationConfirmed: false,
+			lifecycleStatus: "pending",
+		};
+	if (content.status !== 200)
+		throw new ResolverError(
+			"RESOLVER_PROVIDER_REJECTED",
+			`Cloudflare Worker content read returned HTTP ${content.status}`,
+		);
+	const source = parseCloudflareWorkerSource(
+		content.body,
+		content.headers["content-type"] ?? "",
+		optionalString(context.desired, "mainModule") ?? DEFAULT_WORKER_MAIN_MODULE,
+	);
+	const native = resultObject(
+		parseEnvelope(
+			await send(context.transport, context.token, {
+				method: "GET",
+				path: workerPath(context, "/subdomain"),
+			}),
+			"workers native subdomain",
+		),
+		"workers native subdomain",
+	);
+	if (!isJsonBoolean(native.enabled))
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			"Cloudflare Worker did not report its native subdomain state",
+		);
+	const requested = optionalBoolean(context.desired, "workersDev"),
+		ready =
+			workerSettingsMatch(context, observed) &&
+			(requested === undefined || requested === native.enabled);
+	const outputs: JsonObject = {
+		...workerOutputs(context.name, observed),
+		artifactDigest: `sha256:${createHash("sha256").update(source).digest("hex")}`,
+		workersDev: native.enabled,
+		ready,
+		operationConfirmed: true,
+		lifecycleStatus: ready ? "ready" : "failed",
+	};
+	if (native.enabled) {
+		const account = resultObject(
+			parseEnvelope(
+				await send(context.transport, context.token, {
+					method: "GET",
+					path: `/accounts/${encodeURIComponent(context.accountId)}/workers/subdomain`,
+				}),
+				"workers account subdomain",
+			),
+			"workers account subdomain",
+		);
+		const label = optionalString(account, "subdomain");
+		if (
+			label === undefined ||
+			!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(label) ||
+			!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(context.name)
+		)
+			throw new ResolverError(
+				"RESOLVER_OUTPUT_UNPARSEABLE",
+				"Cloudflare Worker returned an invalid native serving subdomain",
+			);
+		return {
+			...outputs,
+			servingEndpoint: `https://${context.name}.${label}.workers.dev`,
+		};
+	}
+	return outputs;
+}
+async function convergeWorkerSubdomain(
+	context: CloudflareResolverContext,
+	observed: JsonObject,
+): Promise<boolean> {
+	const requested = optionalBoolean(context.desired, "workersDev");
+	if (requested === undefined || observed.workersDev === requested)
+		return false;
+	const response = resultObject(
+		parseEnvelope(
+			await send(context.transport, context.token, {
+				method: "POST",
+				path: workerPath(context, "/subdomain"),
+				json: { enabled: requested },
+			}),
+			"workers subdomain activation",
+		),
+		"workers subdomain activation",
+	);
+	if (response.enabled !== requested)
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			"Cloudflare did not confirm the requested Worker exposure state",
+		);
+	return true;
+}
 const WORKERS_SPEC: Omit<CloudflareResolverSpec, "productId"> = {
 	async read(context) {
-		const observed = await readWorkerSettings(context);
-		if (observed === undefined) return undefined;
+		assertWorkerRequest(context);
+		const observed = await observeWorker(context);
+		return observed === undefined
+			? undefined
+			: outcome(settledAction(context), context.name, observed, []);
+	},
+	async reconcile(context) {
+		assertWorkerRequest(context);
+		const settings = await readWorkerSettings(context);
+		if (settings === undefined) {
+			if (context.knownPhysicalId !== undefined)
+				throw new ResolverError(
+					"RESOLVER_PRODUCT_UNSUPPORTED",
+					"pinned Cloudflare Worker is absent; a fresh allocation requires a new approved identity",
+				);
+			await uploadWorker(context);
+			let observed = await observeWorker(context);
+			if (!observed)
+				throw new ResolverError(
+					"RESOLVER_OUTPUT_UNPARSEABLE",
+					"Cloudflare Worker acknowledgment has no independent readback; retain its liability",
+				);
+			if (await convergeWorkerSubdomain(context, observed))
+				observed = await observeWorker(context);
+			if (!observed)
+				throw new ResolverError(
+					"RESOLVER_OUTPUT_UNPARSEABLE",
+					"Cloudflare Worker vanished after its mutation acknowledgment",
+				);
+			return outcome("create", context.name, observed, []);
+		}
+		let observed = await observeWorker(context, settings);
+		if (!observed)
+			throw new ResolverError(
+				"RESOLVER_OUTPUT_UNPARSEABLE",
+				"Cloudflare Worker observation is incomplete",
+			);
+		let changed = false;
+		const script = optionalString(context.desired, "script");
+		if (
+			script !== undefined &&
+			(observed.artifactDigest !==
+				`sha256:${createHash("sha256").update(script).digest("hex")}` ||
+				!workerSettingsMatch(context, settings))
+		) {
+			await uploadWorker(context);
+			changed = true;
+			observed = await observeWorker(context);
+			if (!observed)
+				throw new ResolverError(
+					"RESOLVER_OUTPUT_UNPARSEABLE",
+					"Cloudflare Worker update has no independent readback",
+				);
+		}
+		if (await convergeWorkerSubdomain(context, observed)) {
+			changed = true;
+			observed = await observeWorker(context);
+		}
+		if (!observed)
+			throw new ResolverError(
+				"RESOLVER_OUTPUT_UNPARSEABLE",
+				"Cloudflare Worker mutation has no independent readback",
+			);
 		return outcome(
-			settledAction(context),
+			changed ? "update" : settledAction(context),
 			context.name,
-			workerOutputs(context.name, observed),
+			observed,
 			[],
 		);
 	},
-	async reconcile(context) {
-		const observed = await readWorkerSettings(context);
-		if (observed === undefined) {
-			const created = await uploadWorker(context);
-			return outcome(
-				"create",
-				context.name,
-				workerOutputs(context.name, created),
-				[],
-			);
-		}
-		if (optionalString(context.desired, "script") === undefined) {
-			return outcome(
-				settledAction(context),
-				context.name,
-				workerOutputs(context.name, observed),
-				[
-					"no desired.script supplied, so the deployed Worker source was left untouched",
-				],
-			);
-		}
-		// The settings endpoint does not return script content, so there is
-		// nothing to diff against: the upload is re-sent. It is idempotent —
-		// one script, with the requested source — but it is an update, not a
-		// noop, and it is reported as one.
-		const updated = await uploadWorker(context);
-		return outcome(
-			"update",
-			context.name,
-			workerOutputs(context.name, updated),
-			[
-				"Worker source re-uploaded: the Cloudflare settings endpoint returns no script content to diff against",
-			],
-		);
-	},
 	async remove(context) {
+		assertWorkerRequest(context);
 		const response = await send(context.transport, context.token, {
 			method: "DELETE",
 			path: workerPath(context),

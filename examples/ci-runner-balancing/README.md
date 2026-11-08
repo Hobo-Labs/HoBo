@@ -214,7 +214,9 @@ ones in `src/_generated/runner_balancing_pb.ts`. Following **parse, don't
 validate**, untrusted registry and usage documents cross a single parse
 boundary (`src/parse.ts`) and come out as **derived types**
 (`ParsedRegistry`, generated records) whose invariants mirror the CUE
-constraints, so invalid values are unrepresentable downstream.
+constraints, so invalid values are unrepresentable downstream. JSON fixtures,
+PACT inputs, and GitHub HTTP responses likewise cross explicit JSON/shape
+parsers before use; optional fields are added only when present.
 
 The flow is event-driven CQRS: `RebalanceRequested` is the **command**; the
 rebalance **actor** collects usage and appends `meter.UsageRecorded`,

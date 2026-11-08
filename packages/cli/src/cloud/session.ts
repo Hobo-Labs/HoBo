@@ -3,10 +3,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { PrincipalRef } from "@hobo/core";
-
-import type { YardSession } from "./yard-client.js";
 import { isJsonString } from "../json.js";
-
+import type { YardSession } from "./yard-client.js";
 
 // Mocked-lane session material. The Yard gateway (gateway.authorize) accepts any
 // attributable principal — a non-`system` kind with a non-empty id — so a
@@ -15,8 +13,8 @@ import { isJsonString } from "../json.js";
 // it. Persisted under `.hobo/session.json` (gitignored) so the verbs chain.
 
 export const SESSION_FILE = path.join(".hobo", "session.json");
-export const DEFAULT_TENANT = "hobo-dev";
-export const ANONYMOUS_SUBJECT = "anonymous";
+export const DEFAULT_TENANT = "hobo-dev"; // public-contract: tenant id recorded for a session opened without one
+export const ANONYMOUS_SUBJECT = "anonymous"; // public-contract: subject recorded for an unauthenticated session
 
 function sessionPath(dir: string): string {
 	return path.join(dir, SESSION_FILE);

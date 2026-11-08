@@ -3,9 +3,11 @@ import {
 	collectStream,
 	type DeploymentPlan,
 	type DeployResult,
+	type DeployResultPlanned,
 	deploy,
 	type GatewayContext,
 	type GatewayDeps,
+	manifestHostingPolicy,
 	type OrchestratorDeps,
 	type OrchestratorResult,
 	type PlannerRegistry,
@@ -14,6 +16,7 @@ import {
 	plan as planDeployment,
 	runCompensation,
 	runOrchestrator,
+	type SharedHostingBudgetAuthority,
 } from "@hobo/cloud";
 import type { PrincipalRef } from "@hobo/core";
 
@@ -44,11 +47,28 @@ export interface YardRuntime {
 	readonly executor: OrchestratorDeps["executor"];
 	readonly broker: OrchestratorDeps["broker"];
 	readonly registry: PlannerRegistry;
+	/** Authoritative financial evidence and admission; never supplied by a CLI flag. */
+	readonly hostingBudgetAuthority?: SharedHostingBudgetAuthority;
+	readonly defaultHostingBudgetId?: string;
+	readonly hostingBudgetRequired?: boolean;
+	/** The production hosting supervisor owns provider effects and observed teardown. */
+	readonly hostingExecution?: {
+		up(request: {
+			admission: DeployResultPlanned;
+			session: YardSession;
+		}): Promise<UpResult>;
+		down(request: {
+			deploymentId: string;
+			session: YardSession;
+			bindle: ManifestV1;
+		}): Promise<DownResult>;
+	};
 }
 
 export interface DeployConfig {
 	readonly objective?: string;
 	readonly region?: string;
+	readonly budgetId?: string;
 }
 
 export interface PlanRenderedSuccess {
@@ -103,6 +123,14 @@ export interface DownResult {
 }
 
 export interface YardClient {
+	readonly planAuthoritatively: (
+		bindle: ManifestV1,
+		options: {
+			deploymentId: string;
+			session: YardSession;
+			config?: DeployConfig;
+		},
+	) => Promise<PlanRendered>;
 	readonly plan: (
 		bindle: ManifestV1,
 		options: { deploymentId: string; config?: DeployConfig },
@@ -159,7 +187,9 @@ function planConfig(
 ): PlanConfigInput {
 	return {
 		deploymentId,
-		...(config?.objective !== undefined ? { objective: config.objective } : undefined),
+		...(config?.objective !== undefined
+			? { objective: config.objective }
+			: undefined),
 		...(config?.region !== undefined ? { region: config.region } : undefined),
 	};
 }
@@ -170,6 +200,8 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 		actorHost: runtime.actorHost,
 		registry: runtime.registry,
 	};
+	if (runtime.hostingBudgetAuthority)
+		gatewayDeps.hostingBudgetAuthority = runtime.hostingBudgetAuthority;
 	const orchestratorDeps: OrchestratorDeps = {
 		store: runtime.store,
 		actorHost: runtime.actorHost,
@@ -190,6 +222,55 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 	}
 
 	return {
+		async planAuthoritatively(bindle, { deploymentId, session, config }) {
+			const budgetId = config?.budgetId ?? runtime.defaultHostingBudgetId;
+			const authority = runtime.hostingBudgetAuthority;
+			if (
+				!budgetId ||
+				!authority?.resolve ||
+				authority.persistence !== "durable-cas"
+			)
+				return {
+					ok: false,
+					deploymentId,
+					reason: "authoritative hosting budget is not configured",
+					remediations: [],
+				};
+			const evidence = await authority.resolve({
+				budgetId,
+				tenantId: session.tenant,
+				bindle,
+				objective:
+					config?.objective ??
+					manifestHostingPolicy(bindle).budgetPolicy?.objective ??
+					"min-cost",
+			});
+			if (
+				evidence.budget.tenantId !== session.tenant ||
+				evidence.budget.budgetId !== budgetId
+			)
+				throw new Error("hosting evidence belongs to another tenant or budget");
+			const result = planDeployment(
+				bindle,
+				{ ...planConfig(deploymentId, config), hostingBudget: evidence },
+				runtime.registry,
+			);
+			return result.ok
+				? {
+						ok: true,
+						deploymentId,
+						planHash: result.planHash,
+						plan: result.plan,
+						resources: result.plan.resources,
+						dependencyOrder: result.plan.dependencyOrder,
+					}
+				: {
+						ok: false,
+						deploymentId,
+						reason: result.reason,
+						remediations: result.remediations,
+					};
+		},
 		plan(bindle, { deploymentId, config }) {
 			const result = pureplan(bindle, deploymentId, config);
 			if (!result.ok) {
@@ -211,17 +292,32 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 		},
 
 		async up(bindle, { deploymentId, session, config }) {
+			const budgetId = config?.budgetId ?? runtime.defaultHostingBudgetId;
+			const requiresHosting =
+				runtime.hostingBudgetRequired === true ||
+				budgetId !== undefined ||
+				manifestHostingPolicy(bindle).required;
+			if (requiresHosting && (!runtime.hostingExecution || !budgetId))
+				return {
+					status: "rejected",
+					deploymentId,
+					reason:
+						"budgeted hosting requires a configured production supervisor and budget ID",
+					remediations: [],
+				};
 			const context: GatewayContext = {
 				tenant: session.tenant,
 				actor: session.principal,
 				correlationId: `deploy:${deploymentId}`,
 			};
+			const effectiveConfig = { ...config };
+			if (budgetId) effectiveConfig.budgetId = budgetId;
 			const deployResult: DeployResult = await deploy(
 				gatewayDeps,
 				{
 					deploymentId,
 					bindle,
-					...(config !== undefined ? { config } : undefined),
+					config: effectiveConfig,
 				},
 				context,
 			);
@@ -232,6 +328,16 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 					reason: deployResult.reason,
 					remediations: deployResult.remediations,
 				};
+			}
+			if (requiresHosting) {
+				if (!deployResult.hostingReservationId || !runtime.hostingExecution)
+					throw new Error(
+						"budgeted plan has no authoritative reservation or supervisor",
+					);
+				return runtime.hostingExecution.up({
+					admission: deployResult,
+					session,
+				});
 			}
 
 			const orchestrated = await runOrchestrator(
@@ -256,6 +362,24 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 		},
 
 		async down(bindle, { deploymentId, session }) {
+			const history = await collectStream(
+				runtime.store,
+				`deployment:${deploymentId}`,
+			);
+			if (
+				runtime.hostingBudgetRequired ||
+				history.some((event) => event.type === "hosting.BudgetReserved") ||
+				manifestHostingPolicy(bindle).required
+			) {
+				if (!runtime.hostingExecution)
+					return {
+						status: "needs-human",
+						deploymentId,
+						destroyed: [],
+						progress: [],
+					};
+				return runtime.hostingExecution.down({ deploymentId, session, bindle });
+			}
 			const planResult = pureplan(bindle, deploymentId);
 			if (!planResult.ok) {
 				return {

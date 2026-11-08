@@ -1,0 +1,3 @@
+[tools]
+# Optional agent/discovery CLIs — project build tools stay in HoBo mise.toml
+uv = "0.9.7"

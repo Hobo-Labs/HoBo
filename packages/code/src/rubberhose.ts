@@ -57,7 +57,6 @@ export interface CardOptions {
 
 /** Visible width, ignoring SGR escapes (colour must not shift geometry). */
 export function cellWidth(text: string): number {
-	// biome-ignore lint/suspicious/noControlCharactersInRegex: measuring past SGR is the point
 	return text.replace(
 		new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"),
 		"",

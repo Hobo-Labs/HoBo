@@ -31,8 +31,8 @@ function parseError(thunk: () => void): CapabilityParseError {
 		thunk();
 	} catch (error) {
 		expect(error).toBeInstanceOf(CapabilityParseError);
-			// SAFETY: toBeInstanceOf above establishes the caught error's class.
-			return error as CapabilityParseError;
+		// SAFETY: toBeInstanceOf above establishes the caught error's class.
+		return error as CapabilityParseError;
 	}
 	// SAFETY: every reachable path above returns a CapabilityParseError.
 	return expect.unreachable("expected a CapabilityParseError") as never;

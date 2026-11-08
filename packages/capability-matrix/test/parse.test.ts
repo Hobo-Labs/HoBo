@@ -2,15 +2,22 @@ import type { ResourceDefinitionVNext } from "@hobo/cloud";
 import { describe, expect, it } from "vitest";
 
 import {
-	CapabilityMatrixError,
 	type CapabilityMatrixDocument,
+	CapabilityMatrixError,
 	generateCapabilityMatrix,
 	parseCapabilityMatrix,
 	tryParseCapabilityMatrix,
 } from "../src/index.js";
 import { matrixInput, NEON } from "./fixtures.js";
 
-type JsonValue = string | number | boolean | null | undefined | JsonValue[] | JsonObject;
+type JsonValue =
+	| string
+	| number
+	| boolean
+	| null
+	| undefined
+	| JsonValue[]
+	| JsonObject;
 type JsonObject = Record<string, JsonValue>;
 
 /** A matrix that has been through JSON, as a stored or transmitted one would. */
@@ -26,7 +33,10 @@ function cells(document: JsonObject): JsonObject[] {
 	return document.cells as JsonObject[];
 }
 
-function expectRejection(document: CapabilityMatrixDocument, code: string): void {
+function expectRejection(
+	document: CapabilityMatrixDocument,
+	code: string,
+): void {
 	expect(() => parseCapabilityMatrix(document)).toThrow(CapabilityMatrixError);
 	try {
 		parseCapabilityMatrix(document);

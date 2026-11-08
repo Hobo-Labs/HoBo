@@ -70,10 +70,12 @@ export type ProviderErrorOptions = {
  * The generic opaque-blob rule is the important one: Upstash REST tokens are
  * long base64url strings with no fixed prefix to match on, so the rule is
  * structural — any unbroken run of 40+ token characters is treated as
- * credential material. A UUID is 36 characters and survives; a hostname
- * contains dots and survives; a token does not.
+ * credential material. Native UUIDs are also bearer capabilities and are
+ * removed independently, including percent-encoded forms.
  */
 const CREDENTIAL_PATTERNS: readonly RegExp[] = [
+	/https?:\/\/console\.upstash\.com\/redis\/\S+/giu,
+	/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
 	/\*\*\s*Token\s*:?\s*\*\*\s*\S+/giu,
 	/\bBearer\s+\S+/giu,
 	/\bUPSTASH_REDIS_REST_TOKEN\s*[=:]\s*\S+/giu,
@@ -106,6 +108,13 @@ export function containsControlChar(text: string): boolean {
  */
 export function redactProviderText(text: string, maxLength = 256): string {
 	let out = text;
+	for (;;) {
+		const decoded = out.replace(/%[a-f0-9]{2}/giu, (encoded) =>
+			String.fromCharCode(Number.parseInt(encoded.slice(1), 16)),
+		);
+		if (decoded === out) break;
+		out = decoded;
+	}
 	for (const pattern of CREDENTIAL_PATTERNS)
 		out = out.replace(pattern, "[redacted]");
 	out = flattenControlChars(out)

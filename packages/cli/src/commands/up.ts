@@ -1,6 +1,7 @@
 import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
 import { createFixtureSession, loadSession } from "../cloud/session.js";
 import { stubResult } from "../cloud/stub.js";
+import type { DeployConfig } from "../cloud/yard-client.js";
 import {
 	createYardClient,
 	type YardRuntime,
@@ -28,7 +29,7 @@ export interface UpCommandDeps {
 export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 	return {
 		implemented: Boolean(deps.runtime),
-		run: async ({ context, emitProgress }) => {
+		run: async ({ context, flags, emitProgress }) => {
 			const { runtime } = deps;
 			if (!runtime) {
 				return stubResult("up");
@@ -50,7 +51,12 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 				createFixtureSession();
 			const deploymentId = deploymentIdFor(projectDir);
 			const yard = createYardClient(runtime);
-			const result = await yard.up(bindle, { deploymentId, session });
+			const config: {
+				-readonly [Key in keyof DeployConfig]: DeployConfig[Key];
+			} = {};
+			if (flags.budgetId) config.budgetId = flags.budgetId;
+			if (flags.region) config.region = flags.region;
+			const result = await yard.up(bindle, { deploymentId, session, config });
 
 			if (result.status === "rejected") {
 				return {

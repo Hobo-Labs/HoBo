@@ -10,8 +10,7 @@ import {
 	type PackSecretCustodyPort,
 	type PackSecretScope,
 } from "../src/index.js";
-import { type JsonValue } from "../src/json.js";
-
+import type { JsonValue } from "../src/json.js";
 
 const SCOPE: PackSecretScope = {
 	packId: "pack.example.oci/v1",

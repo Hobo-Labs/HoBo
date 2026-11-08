@@ -252,8 +252,15 @@ export const LAMBDA_ARCHITECTURES = Object.freeze(["x86_64", "arm64"] as const);
 export type LambdaArchitecture = (typeof LAMBDA_ARCHITECTURES)[number];
 
 export interface LambdaOptions {
+	readonly ownershipRef?: string;
+	readonly artifactDigest?: string;
+	/** Immutable ECR container image URI, including its sha256 digest. */
+	readonly image?: string;
+	/** Existing execution role; credentials and implicit IAM creation are forbidden. */
+	readonly executionRoleArn?: string;
 	readonly memoryMb?: number;
 	readonly timeoutSeconds?: number;
+	readonly reservedConcurrency?: number;
 	readonly architecture?: LambdaArchitecture;
 }
 

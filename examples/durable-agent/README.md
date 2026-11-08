@@ -86,3 +86,7 @@ folds `run.StepCompleted` events so each journaled step result serves as the
 **snapshot** it reads instead of re-executing. Honest scope: no separate
 **materialized view** or **read store** is built here — `engine.journal(runId)`
 is the only read surface this example exposes.
+
+## Maintenance
+
+Tool input and output cross explicit JSON parse boundaries, keeping journal events typed without assertions.

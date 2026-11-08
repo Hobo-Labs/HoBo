@@ -67,7 +67,7 @@ export type ConnectivityTierDecision =
   | { ok: true; plan: ConnectivityPlan }
   | { ok: false; code: string; reason: string };
 
-export declare function validateConnectivityPlan(plan: JsonValue): ValidationResult;
+export declare function validateConnectivityPlan(plan: ConnectivityPlan | JsonValue): ValidationResult;
 export declare function roundTripConnectivityPlan(plan: ConnectivityPlan): ConnectivityPlan;
 export declare function decideConnectivityTier(edge: BindEdge): ConnectivityTierDecision;
 export declare function rejectPolicyWideningOverride(plan: Pick<ConnectivityPlan, "tier" | "policy" | "override">): ValidationResult;

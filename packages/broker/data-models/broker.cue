@@ -25,6 +25,8 @@ package data_models
 	quota_limit:    int & >=0
 	budget_usd:     number & >=0
 	spend_cap_usd:  number & >=0
+	budget_unlimited: bool | *false
+	spend_cap_unlimited: bool | *false
 	// Cross-field invariant: consumed quota never exceeds the limit.
 	quota_used: <=quota_limit
 }

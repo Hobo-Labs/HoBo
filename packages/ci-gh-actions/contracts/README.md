@@ -1,5 +1,12 @@
 # HoBo CI GitHub Actions contract coverage
 
+Digest-pinned container images for the Pact Broker lane live in
+[`pinned-container-images.json`](pinned-container-images.json) (shared with
+[`compose.pact.yml`](compose.pact.yml) and
+[`test/pinned-postgres-testcontainers.test.ts`](../test/pinned-postgres-testcontainers.test.ts)).
+Production relay images are built from
+[`../deploy/Dockerfile`](../deploy/Dockerfile) (multi-stage, non-root `1000:1000`).
+
 The [local runner Pact Broker lane](LOCAL-RUNNER-PACT.md) adds generated Pact
 consumer contracts, native provider verification, real broker publication and
 version-matrix gates for local CI. It explicitly retains unverified GitHub
@@ -16,6 +23,7 @@ GitHub or vendor verification, a published Pact broker, or a live runner pass.
 | `relay-boundary.pact.json` | Signed webhook intake and single-use authenticated JIT claims |
 | `onboarding-boundary.pact.json` | App/installation/repository discovery, reviewed setup branch and pull request, merged-source verification and protected bridge connection |
 | `control-plane-boundary.pact.json` | Account authentication and scopes, revisioned policy, stored setup operations and lease reconciliation |
+| `scoped-budget-signals.pact.json` | Current-period reset, crossing, recovery, ordered replay, and refusal of foreign-period or legacy recovery facts over local HTTP |
 | `service-boundary.pact.json` | Service readiness and admission over HTTP |
 | `actions-backend.pact.json` | Portable pipeline execution through the Actions backend |
 
@@ -26,12 +34,22 @@ protobuf wire parsing, credential handling and error behavior.
 Actions, Dagger and Cloudflare implementations. Negative wire cases stay in the
 owning HTTP provider tests; client coverage does not fabricate requests for
 payloads its API cannot express.
+`../test/scoped-budget-signals.test.ts` executes every scoped signal interaction
+against the shipped local control plane and separately exercises its typed client
+with actual Broker fold output. Provider billing and native spending bounds are
+outside this contract.
 
 Run the owning package suite from the monorepo root:
 
 ```sh
 pnpm --filter @hobo/ci-gh-actions test
 ```
+
+The owning Vitest configuration honors `HOBO_TEST_TIMEOUT` for test and hook
+budgets (10 seconds by default). The native GitHub CLI Pact sequence keeps its
+30-second default and honors the same override when workspace builds contend for
+CPU; final gates use `HOBO_TEST_TIMEOUT=60000`. This changes only the test harness
+budget: provider operation deadlines and CLI subprocess guards remain enforced.
 
 The [connected acceptance lane](../acceptance/README.md) additionally runs the
 shipped service, automatic worker, SQLite journal, OIDC/JWKS validation, JIT

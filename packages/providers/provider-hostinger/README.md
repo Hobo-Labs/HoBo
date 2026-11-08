@@ -95,6 +95,27 @@ to the account, which is a reference rather than a secret.
 
 ## Convergence, and what it costs
 
+Pinned VPS identities use a direct physical-ID read. A renamed purchased VPS cannot
+be replaced by another machine with its old hostname; a missing pinned identity is
+not permission to adopt or create a replacement. Name-addressed hosting products
+require the pinned domain/database identity to match before any provider call.
+
+Read outputs report `ready` and `operationConfirmed` only from explicit running,
+enabled or usable provider state. Mutating acknowledgements remain unconfirmed until
+observation. VPS removal still refuses billing cancellation and retains the purchased
+resource; a routing change or cancellation refusal does not prove its bill ended.
+The financial authority must retain that term's liability through settlement.
+
+The VPS API does not expose a trustworthy application artifact digest. This adapter
+does not invent one: production execution needs an independent authenticated
+application observation bound to the provider-observed machine/address. A running OS
+alone does not establish an app deployment.
+
+Catalog positive rates are `pricingStatus: "estimate"`; a database included in an
+already-purchased plan is `"unknown"` until the parent plan and entitlement are
+authoritatively bound. It is not an independently free hosting product. Lifecycle
+regressions and actual `#CostFact` CUE fixtures cover these boundaries.
+
 1. **A hostname that matches twice is a refusal, not a coin flip.** Hostinger
    does not enforce hostname uniqueness, and picking one by listing order would
    make the managed resource depend on the order the API answered in.

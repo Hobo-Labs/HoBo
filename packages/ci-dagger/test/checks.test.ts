@@ -7,6 +7,7 @@ import {
 	rm,
 	writeFile,
 } from "node:fs/promises";
+import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -37,6 +38,86 @@ async function prepareCli(root: string): Promise<string> {
 		{ mode: 0o755 },
 	);
 	return executable;
+}
+
+// A hang guard, not a budget: every wait in the process tests is on an event,
+// so a slow or stalled host makes them slower and never makes them fail.
+const HANG_GUARD_MS = 120_000;
+
+interface Announced {
+	readonly pid: number;
+	/** Settles once the process has exited and the kernel closed its socket. */
+	readonly gone: Promise<void>;
+}
+
+interface Probe {
+	readonly path: string;
+	readonly announced: Promise<Announced>;
+	close(): Promise<void>;
+}
+
+/** The fixture connects to `path` (`FIXTURE_PROBE`) when it is ready. */
+async function listenForProcess(root: string): Promise<Probe> {
+	const path =
+		process.platform === "win32"
+			? join("\\\\?\\pipe", root, "probe")
+			: join(root, "probe.sock");
+	const server = createServer();
+	const sockets = new Set<Socket>();
+	const announced = new Promise<Announced>((resolve, reject) => {
+		server.once("connection", (socket) => {
+			sockets.add(socket);
+			const gone = new Promise<void>((done) => {
+				socket.once("close", () => done());
+			});
+			let text = "";
+			socket.setEncoding("utf8");
+			socket.on("data", (chunk: string) => {
+				text += chunk;
+				const end = text.indexOf("\n");
+				if (end >= 0) resolve({ pid: Number(text.slice(0, end)), gone });
+			});
+			socket.once("close", () =>
+				reject(new Error("fixture disconnected before announcing its pid")),
+			);
+		});
+	});
+	announced.catch(() => {});
+	await new Promise<void>((done, fail) => {
+		server.once("error", fail);
+		server.listen(path, done);
+	});
+	return {
+		path,
+		announced,
+		close: () =>
+			new Promise<void>((done) => {
+				for (const socket of sockets) socket.destroy();
+				server.close(() => done());
+			}),
+	};
+}
+
+/** The announcement, or why the run ended without one. */
+function announcedDuring(
+	probe: Probe,
+	running: Promise<number>,
+): Promise<Announced> {
+	return Promise.race([
+		probe.announced,
+		running.then((code) => {
+			throw new Error(`Dagger CLI exited ${code} before the fixture was ready`);
+		}),
+	]);
+}
+
+function killIfLeft(pid: number | undefined): void {
+	if (!pid) return;
+	try {
+		process.kill(pid, "SIGKILL");
+	} catch {
+		/* already gone */
+	}
 }
 
 describe("native Dagger checks configuration", () => {
@@ -327,56 +408,33 @@ it.skipIf(process.platform !== "linux")(
 	"stops a transport child even when the CLI exits first on SIGTERM",
 	async () => {
 		const root = await mkdtemp(join(tmpdir(), "hobo-dagger-process-group-"));
+		const probe = await listenForProcess(root);
 		const controller = new AbortController();
 		let running: Promise<number> | undefined;
-		let pid = 0;
+		let transport: Announced | undefined;
 		try {
 			const executable = await prepareCli(root);
 			running = runDaggerChecks(config, {
 				cwd: root,
 				executable,
 				signal: controller.signal,
-				env: { ...process.env, FIXTURE_CHILD: "1" },
+				env: { ...process.env, FIXTURE_CHILD: "1", FIXTURE_PROBE: probe.path },
 			});
-			const rejected = expect(running).rejects.toThrow(/abort/i);
-			await expect
-				.poll(
-					async () => {
-						pid = Number(
-							await readFile(join(root, "child.pid"), "utf8").catch(() => "0"),
-						);
-						return pid > 0;
-					},
-					{ timeout: 10_000 },
-				)
-				.toBe(true);
+			// Announced only after it ignores SIGTERM, so only the group SIGKILL
+			// sent when the CLI closes can end it.
+			transport = await announcedDuring(probe, running);
 			controller.abort();
-			await rejected;
-			await expect
-				.poll(
-					async () => {
-						const state = await readFile(`/proc/${pid}/stat`, "utf8").catch(
-							() => "",
-						);
-						return state !== "" && !/\)\s+Z\s/.test(state);
-					},
-					{ timeout: 1000 },
-				)
-				.toBe(false);
+			await expect(running).rejects.toThrow(/abort/i);
+			await transport.gone;
 		} finally {
 			controller.abort();
 			await running?.catch(() => {});
-			if (pid) {
-				try {
-					process.kill(pid, "SIGKILL");
-				} catch {
-					/* child already reaped */
-				}
-			}
+			killIfLeft(transport?.pid);
+			await probe.close();
 			await rm(root, { recursive: true, force: true });
 		}
 	},
-	20_000,
+	HANG_GUARD_MS,
 );
 
 it.skipIf(process.platform === "win32")(
@@ -399,9 +457,11 @@ it.skipIf(process.platform !== "linux")(
 	"cleans up a background transport after a successful CLI exit",
 	async () => {
 		const root = await mkdtemp(join(tmpdir(), "hobo-dagger-success-group-"));
-		let pid = 0;
+		const probe = await listenForProcess(root);
+		let transport: Announced | undefined;
 		try {
 			const executable = await prepareCli(root);
+			// The fixture CLI exits 0 only after its transport child announced.
 			expect(
 				await runDaggerChecks(config, {
 					cwd: root,
@@ -410,64 +470,57 @@ it.skipIf(process.platform !== "linux")(
 						...process.env,
 						FIXTURE_CHILD: "1",
 						FIXTURE_CHILD_PARENT_EXIT: "1",
+						FIXTURE_PROBE: probe.path,
 					},
 				}),
 			).toBe(0);
-			pid = Number(await readFile(join(root, "child.pid"), "utf8"));
-			expect(pid).toBeGreaterThan(0);
-			await expect
-				.poll(
-					async () => {
-						const state = await readFile(`/proc/${pid}/stat`, "utf8").catch(
-							() => "",
-						);
-						return state !== "" && !/\)\s+Z\s/.test(state);
-					},
-					{ timeout: 1000 },
-				)
-				.toBe(false);
+			transport = await probe.announced;
+			expect(transport.pid).toBeGreaterThan(0);
+			await transport.gone;
 		} finally {
-			if (pid) {
-				try {
-					process.kill(pid, "SIGKILL");
-				} catch {
-					/* child already reaped */
-				}
-			}
+			killIfLeft(transport?.pid);
+			await probe.close();
 			await rm(root, { recursive: true, force: true });
 		}
 	},
+	HANG_GUARD_MS,
 );
 
-it("bounds abort cleanup even when the CLI ignores SIGTERM", async () => {
-	const root = await mkdtemp(join(tmpdir(), "hobo-dagger-abort-"));
-	const controller = new AbortController();
-	let running: Promise<number> | undefined;
-	try {
-		const executable = await prepareCli(root);
-		running = runDaggerChecks(config, {
-			cwd: root,
-			executable,
-			env: { ...process.env, FIXTURE_WAIT: "1", FIXTURE_IGNORE_TERM: "1" },
-			signal: controller.signal,
-		});
-		const rejected = expect(running).rejects.toThrow(/abort/i);
-		let observations = "";
-		const deadline = Date.now() + 3000;
-		while (observations.trim().split("\n").length < 2) {
-			if (Date.now() >= deadline) throw new Error("CLI fixture did not start");
-			await new Promise<void>((done) => setTimeout(done, 5));
-			observations = await readFile(join(root, "observed.jsonl"), "utf8").catch(
-				() => "",
-			);
+it(
+	"bounds abort cleanup even when the CLI ignores SIGTERM",
+	async () => {
+		const root = await mkdtemp(join(tmpdir(), "hobo-dagger-abort-"));
+		const probe = await listenForProcess(root);
+		const controller = new AbortController();
+		let running: Promise<number> | undefined;
+		let cli: Announced | undefined;
+		try {
+			const executable = await prepareCli(root);
+			running = runDaggerChecks(config, {
+				cwd: root,
+				executable,
+				env: {
+					...process.env,
+					FIXTURE_WAIT: "1",
+					FIXTURE_IGNORE_TERM: "1",
+					FIXTURE_PROBE: probe.path,
+				},
+				signal: controller.signal,
+			});
+			cli = await announcedDuring(probe, running);
+			controller.abort();
+			await expect(running).rejects.toThrow(/abort/i);
+			await cli.gone;
+			const observations = await readFile(join(root, "observed.jsonl"), "utf8");
+			const first = JSON.parse(observations.split("\n")[0] ?? "{}");
+			await expect(access(first.settings)).rejects.toThrow();
+		} finally {
+			controller.abort();
+			await running?.catch(() => {});
+			killIfLeft(cli?.pid);
+			await probe.close();
+			await rm(root, { recursive: true, force: true });
 		}
-		controller.abort();
-		await rejected;
-		const first = JSON.parse(observations.split("\n")[0] ?? "{}");
-		await expect(access(first.settings)).rejects.toThrow();
-	} finally {
-		controller.abort();
-		await running?.catch(() => {});
-		await rm(root, { recursive: true, force: true });
-	}
-}, 10_000);
+	},
+	HANG_GUARD_MS,
+);

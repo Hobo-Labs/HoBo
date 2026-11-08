@@ -20,6 +20,11 @@ therefore silently degrading every agent to one shared checkout.
 |---|---|---|
 | `reflink` | `cp --reflink=always` (FICLONE) | yes |
 | `overlayfs` | `unshare -Urm` + unprivileged overlay mount | yes |
+
+Overlay capability probing creates a short-lived `.rift-ovl-*` tree under the
+probed directory; teardown runs `chmod -R u+rwx` before `rm` so a kernel `work/work`
+at mode `000` cannot block deleting `HOBO_HOME` in tests or first-run sweeps.
+
 | `hardlink` | `cp -al` | **no** |
 | `copy` | `cp -a` | yes |
 
@@ -32,6 +37,8 @@ Regenerable bulk (`node_modules`, `.venv`, build output) is excluded when a
 tier has to **copy** entries, unless you pass `--copy-all`. The overlay tier
 copies nothing — the source is the lower layer — so the exclusion does not
 apply to it and `node_modules` is simply visible at no cost.
+
+Overlay probe cleanup restores owner access to kernel-created mode-000 work directories before removal, and cleanup failures never change the reported capability.
 
 ## Entering a workspace
 

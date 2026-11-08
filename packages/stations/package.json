@@ -22,7 +22,8 @@
 		"@hobo/bindles": "workspace:*",
 		"@hobo/connectivity": "workspace:*",
 		"@hobo/core": "workspace:*",
-		"@hobo/dispatcher": "workspace:*"
+		"@hobo/dispatcher": "workspace:*",
+		"@hobo/contracts": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",

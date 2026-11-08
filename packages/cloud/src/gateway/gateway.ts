@@ -1,5 +1,11 @@
 import { canonicalManifestHash, type ManifestV1 } from "@hobo/bindles";
-import type { EventInput, EventStore, PrincipalRef } from "@hobo/core";
+import { canonicalJson } from "@hobo/contracts";
+import type {
+	EventEnvelope,
+	EventInput,
+	EventStore,
+	PrincipalRef,
+} from "@hobo/core";
 import type { ActorHost, JsonObject } from "@hobo/data";
 import {
 	type Aggregate,
@@ -7,21 +13,23 @@ import {
 	defineAggregate,
 } from "@hobo/data";
 import { emit } from "@hobo/events";
-
 import {
 	deploymentPlanned,
 	deploymentPlanRejected,
 	deploymentRequested,
 	matchDecided,
 } from "../events.js";
+import type { SharedHostingBudgetAuthority } from "../hosting-transition/budget-authority.js";
+import { isJsonObject, isJsonString } from "../json.js";
 import type {
 	DeploymentPlan,
 	MatchDecided,
 	PlanRemediation,
 } from "../plan-types.js";
+import { manifestHostingPolicy } from "../planner/hosting-budget.js";
+import type { PlanResult } from "../planner/plan.js";
 import { type PlanConfig, plan } from "../planner/plan.js";
 import type { PlannerRegistry } from "../registry/catalog.js";
-
 
 // The Gateway (control-plane.md "Services"): command ingress. It authenticates
 // the principal, authorizes against tenant + scope, turns a command into events,
@@ -31,7 +39,7 @@ import type { PlannerRegistry } from "../registry/catalog.js";
 export interface DeployCommand {
 	deploymentId: string;
 	bindle: ManifestV1;
-	config?: { objective?: string; region?: string };
+	config?: { objective?: string; region?: string; budgetId?: string };
 }
 
 export interface GatewayContext {
@@ -44,6 +52,8 @@ export interface GatewayDeps {
 	store: EventStore;
 	actorHost: ActorHost;
 	registry: PlannerRegistry;
+	/** Trusted snapshot/quote resolution and durable shared-budget admission. */
+	hostingBudgetAuthority?: SharedHostingBudgetAuthority;
 }
 
 export interface AuthzResult {
@@ -117,6 +127,7 @@ export interface DeployResultPlanned {
 	planHash: string;
 	plan: DeploymentPlan;
 	decisions: MatchDecided[];
+	hostingReservationId?: string;
 }
 
 export interface DeployResultRejected {
@@ -146,6 +157,80 @@ export async function deploy(
 
 	const streamId = deploymentStreamId(command.deploymentId);
 	const bindleHash = canonicalManifestHash(command.bindle);
+	const prior: EventEnvelope[] = [];
+	for await (const event of deps.store.read(streamId)) prior.push(event);
+	const original = prior.find((event) => event.type === "deployment.Requested");
+	if (original && isJsonObject(original.data)) {
+		if (original.data.tenant !== context.tenant)
+			throw new UnauthorizedCommandError(
+				"deployment belongs to a different tenant",
+			);
+		if (
+			original.data.bindleHash !== bindleHash ||
+			canonicalJson(original.data.config ?? {}) !==
+				canonicalJson(command.config ?? {})
+		)
+			throw new AggregateInvariantError(
+				"deployment ID was already bound to different input",
+			);
+		const completed = [...prior]
+			.reverse()
+			.find(
+				(event) =>
+					event.type === "deployment.Planned" ||
+					event.type === "deployment.PlanRejected",
+			);
+		if (completed && isJsonObject(completed.data)) {
+			if (completed.type === "deployment.Planned") {
+				// SAFETY: this writer's durable event carries the previously typed plan.
+				const data = (
+					completed as EventEnvelope<{ plan: DeploymentPlan; planHash: string }>
+				).data;
+				const decisions = prior
+					.filter((event) => event.type === "match.Decided")
+					.map((event) => {
+						// SAFETY: match.Decided was emitted by the pure planner on this stream.
+						return event.data as MatchDecided;
+					});
+				const reservation = prior.find(
+					(event) => event.type === "hosting.BudgetReserved",
+				);
+				const reservationId =
+					reservation && isJsonObject(reservation.data)
+						? reservation.data.reservationId
+						: undefined;
+				const replay: DeployResultPlanned = {
+					status: "planned",
+					streamId,
+					deploymentId: command.deploymentId,
+					seq: completed.seq,
+					plan: data.plan,
+					planHash: data.planHash,
+					decisions,
+				};
+				if (isJsonString(reservationId))
+					replay.hostingReservationId = reservationId;
+				return replay;
+			}
+			// SAFETY: deployment.PlanRejected was produced by this gateway.
+			const rejected = (
+				completed as EventEnvelope<{
+					reason: string;
+					remediations: PlanRemediation[];
+				}>
+			).data;
+			return {
+				status: "rejected",
+				streamId,
+				deploymentId: command.deploymentId,
+				seq: completed.seq,
+				...rejected,
+			};
+		}
+		throw new AggregateInvariantError(
+			"deployment is pending; reconcile its recorded effects before retrying admission",
+		);
+	}
 
 	// 1. Command -> fact: append deployment.Requested under the single-writer lease.
 	const requested = await deploymentAggregate.execute(
@@ -168,10 +253,69 @@ export async function deploy(
 	if (command.config?.region !== undefined)
 		planConfig.region = command.config.region;
 
-	const outcome = plan(command.bindle, planConfig, deps.registry);
+	let outcome: PlanResult;
+	let hostingReservationId: string | undefined;
+	const budgetId = command.config?.budgetId;
+	if (budgetId !== undefined) {
+		const authority = deps.hostingBudgetAuthority;
+		if (!authority?.resolve || authority.persistence !== "durable-cas") {
+			outcome = admissionRejected(
+				command.deploymentId,
+				"budget.authority-required",
+				"budget-aware deployment requires a durable shared authority with trusted quote resolution",
+			);
+		} else {
+			const input = await authority.resolve({
+				budgetId,
+				tenantId: context.tenant,
+				bindle: command.bindle,
+				objective:
+					planConfig.objective ??
+					manifestHostingPolicy(command.bindle).budgetPolicy?.objective ??
+					"min-cost",
+			});
+			if (
+				input.budget.budgetId !== budgetId ||
+				input.budget.tenantId !== context.tenant
+			)
+				outcome = admissionRejected(
+					command.deploymentId,
+					"budget.scope-mismatch",
+					"resolved budget belongs to a different requested scope or tenant",
+				);
+			else {
+				planConfig.hostingBudget = input;
+				outcome = plan(command.bindle, planConfig, deps.registry);
+				if (outcome.ok && outcome.hostingCommitment) {
+					const reservationId = `hosting:${context.tenant}:${command.deploymentId}`;
+					const reserved = await authority.reserve({
+						reservationId,
+						planHash: outcome.planHash,
+						commitment: outcome.hostingCommitment,
+					});
+					if (!reserved.ok)
+						outcome = admissionRejected(
+							command.deploymentId,
+							"budget.reservation-denied",
+							reserved.reason,
+						);
+					else hostingReservationId = reserved.reservationId;
+				}
+			}
+		}
+	} else outcome = plan(command.bindle, planConfig, deps.registry);
 
 	const facts: EventInput[] = [];
 	if (outcome.ok) {
+		if (hostingReservationId && outcome.hostingCommitment)
+			facts.push({
+				type: "hosting.BudgetReserved",
+				data: {
+					deploymentId: command.deploymentId,
+					reservationId: hostingReservationId,
+					commitment: outcome.hostingCommitment,
+				},
+			});
 		for (const decision of outcome.decisions)
 			facts.push(matchDecided(decision));
 		facts.push(
@@ -205,7 +349,7 @@ export async function deploy(
 	});
 
 	if (outcome.ok) {
-		return {
+		const result: DeployResultPlanned = {
 			status: "planned",
 			streamId,
 			deploymentId: command.deploymentId,
@@ -214,6 +358,9 @@ export async function deploy(
 			plan: outcome.plan,
 			decisions: outcome.decisions,
 		};
+		if (hostingReservationId)
+			result.hostingReservationId = hostingReservationId;
+		return result;
 	}
 	return {
 		status: "rejected",
@@ -222,5 +369,27 @@ export async function deploy(
 		seq: emitted.seq,
 		reason: outcome.reason,
 		remediations: outcome.remediations,
+	};
+}
+
+function admissionRejected(
+	deploymentId: string,
+	code: string,
+	reason: string,
+): PlanResult {
+	return {
+		ok: false,
+		deploymentId,
+		reason,
+		remediations: [
+			{
+				resource: "*",
+				code,
+				requiredPort: "*",
+				requiredFeatures: [],
+				missing: [],
+				remediation: reason,
+			},
+		],
 	};
 }

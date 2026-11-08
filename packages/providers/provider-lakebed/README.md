@@ -38,7 +38,9 @@ Matching surface: `LAKEBED_TRAFFIC_ROUTING_PROFILE` declares
   runs Lakebed's password-free anonymous deploy (CLI transport by default;
   injectable for tests). Returns the shared
   `hobo.temporary-environment-station/v1` shape (`stationUrl` + `claimUrl` +
-  TTL). **Never** uses `LAKEBED_TOKEN` on this path. Permanent-token operator
+  provider-reported expiry). The pinned `lakebed@0.0.41` child runs with an
+  isolated HOME and an allowlisted environment, so it cannot use an ambient
+  login or token. Permanent-token operator
   deploys are out of scope for Examples.
 
 Native ports (Matching truth): `compute`, `kv`, `objectStore`, `database` —
@@ -50,3 +52,17 @@ see `lakebedNativePorts()`. Queue/container are not native.
 pnpm --filter @hobo/provider-lakebed build
 pnpm --filter @hobo/provider-lakebed test
 ```
+
+## Hosting budget execution
+
+Static cost facts are marked `pricingStatus: "estimate"`; production admission resolves
+fresh account-scoped quotes and all lifetime obligations through the shared authority.
+Anonymous deploy output rejects credential-bearing URLs and custom ports. An invalid
+explicit claim URL is refused, rather than swallowed and replaced with a derived URL.
+The parser accepts the CLI's complete pretty-printed JSON and JSON lines. It
+requires an explicit deployment id, provider-issued claim URL and native expiry;
+it never reconstructs identity or a claim credential from the app hostname.
+
+A CLI acknowledgement alone cannot establish serving health, data-transfer safety,
+resource retirement or final usage. The common hosting coordinator requires separate
+provider observations for those postconditions.

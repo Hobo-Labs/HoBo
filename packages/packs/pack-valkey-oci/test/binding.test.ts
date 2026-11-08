@@ -7,14 +7,13 @@ import {
 	VALKEY_BINDING_PROFILE,
 	valkeyRetentionSemantics,
 } from "../src/index.js";
+import type { JsonValue } from "../src/json.js";
 import {
 	AUTH_REF,
 	CERTIFICATE_REF,
 	verifiedOtherPack,
 	verifiedValkeyPack,
 } from "./harness.js";
-import { type JsonValue } from "../src/json.js";
-
 
 const manifest = verifiedValkeyPack();
 

@@ -34,6 +34,8 @@ message CostSignalRecord {
   string unit = 3;
   string marginal_price = 4;
   FreeTierRecord free_tier = 5;
+  // Static hints are estimates; unknown is never a verified zero price.
+  optional string pricing_status = 6;
 }
 
 message IacResourceRecord {

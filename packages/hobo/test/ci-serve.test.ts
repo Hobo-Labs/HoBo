@@ -1,0 +1,298 @@
+import { createHmac, generateKeyPairSync } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { toJsonString } from "@bufbuild/protobuf";
+import { DesiredCiPolicySchema, defineCiPolicy } from "@hobo/ci";
+import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
+import { importGithubKey } from "../src/ci-github-keys.js";
+import {
+	ciWorkerEnvironment,
+	resolveCiServePlan,
+	startCiServe,
+} from "../src/ci-serve.js";
+
+const ListenAddress = z.object({
+	address: z.string(),
+	family: z.string(),
+	port: z.number().int().positive(),
+});
+
+const directories: string[] = [];
+afterEach(async () => {
+	await Promise.all(
+		directories
+			.splice(0)
+			.map((path) => rm(path, { recursive: true, force: true })),
+	);
+});
+
+const policyJson = () =>
+	JSON.parse(
+		toJsonString(
+			DesiredCiPolicySchema,
+			defineCiPolicy({
+				accountId: "local-dev",
+				tenantId: "local-dev",
+				pool: { label: "hobo", os: "linux", architecture: "x64" },
+				providers: [
+					{
+						id: "gh",
+						kind: "github",
+						connectionRef: "gh",
+						runsOn: "ubuntu-24.04",
+					},
+				],
+				budget: {
+					scope: "ci-account",
+					currency: "USD",
+					period: "manual",
+					timeZone: "UTC",
+					limitMicros: 1,
+				},
+				routing: {
+					strategy: "lowest-total-incremental-cost",
+					noEligibleProvider: "queue",
+					unknownAllocation: "zero",
+				},
+				thresholds: [],
+			}),
+		),
+	);
+
+const minimalProject = {
+	defaultEnvironment: "local",
+	environments: {
+		local: {
+			relayOrigin: "http://127.0.0.1:8787",
+			allowInsecureLoopback: true,
+			jobAdmission: "pull",
+			engines: ["gh-actions", "vercel"],
+			policy: policyJson(),
+		},
+	},
+};
+
+async function projectRoot(projectJson = JSON.stringify(minimalProject)) {
+	const root = await mkdtemp(join(tmpdir(), "hobo-ci-serve-"));
+	directories.push(root);
+	await mkdir(join(root, ".hobo"), { recursive: true });
+	await mkdir(join(root, "packages", "ci-vercel"), { recursive: true });
+	await mkdir(join(root, "packages", "ci-gh-actions"), { recursive: true });
+	await writeFile(join(root, ".hobo", "ci.json"), projectJson);
+	return root;
+}
+
+/** Store entries stay string-valued; the parser decides which shapes are legal. */
+function withStore(store: Readonly<Record<string, string>>): string {
+	return JSON.stringify({
+		...minimalProject,
+		environments: {
+			local: { ...minimalProject.environments.local, store },
+		},
+	});
+}
+
+const git = async () => "git@github.com:example/project.git";
+
+describe("hobo ci serve multi-engine", () => {
+	it.each([
+		{ HOBO_CI_GITHUB_APP_ID: "123" },
+		{ HOBO_CI_GITHUB_APP_ID_FILE: "app-id" },
+		{ HOBO_CI_GITHUB_APP_KEY_FILE: "missing-key.pem" },
+		{ HOBO_CI_GITHUB_APP_PRIVATE_KEY: "unused" },
+	])("refuses incomplete App configuration instead of starting with fixture credentials", async (env) => {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-incomplete-app-"));
+		directories.push(home);
+		await expect(
+			startCiServe({
+				cwd,
+				options: {
+					environment: "local",
+					port: "31234",
+					home,
+					installationId: "1",
+				},
+				env,
+				git,
+			}),
+		).rejects.toThrow(
+			"GitHub App configuration requires a readable HOBO_CI_GITHUB_APP_KEY_FILE",
+		);
+	});
+
+	it("print-config lists resolved engines", async () => {
+		const cwd = await projectRoot();
+		const plan = await resolveCiServePlan({
+			cwd,
+			options: { environment: "local", engines: ["gh-actions"] },
+			env: {},
+			git,
+		});
+		expect(plan.engines).toEqual(["gh-actions"]);
+	});
+
+	it("defaults the worker store to local SQLite, even with DATABASE_URL set", async () => {
+		const cwd = await projectRoot();
+		const plan = await resolveCiServePlan({
+			cwd,
+			options: { environment: "local" },
+			env: { DATABASE_URL: "postgres://unused.invalid/db" },
+			git,
+		});
+		expect(plan.workerStore).toEqual({ kind: "sqlite" });
+		const env = ciWorkerEnvironment({
+			relayEnv: {
+				HOBO_CI_DB: "/state/relay.sqlite",
+				HOBO_CI_STORE_URL_ENV: "X",
+			},
+			store: plan.workerStore,
+			stateDir: "/state",
+		});
+		expect(env.HOBO_CI_STORE).toBe("sqlite");
+		expect(env.HOBO_CI_WORKER_DB).toBe(join("/state", "worker.sqlite"));
+		expect(env.HOBO_CI_DB).toBeUndefined();
+		expect(env.HOBO_CI_STORE_URL_ENV).toBeUndefined();
+	});
+
+	it("takes a Postgres worker store from the config by env var name", async () => {
+		const cwd = await projectRoot(
+			withStore({ kind: "postgres", urlEnv: "HOBO_CI_SHARED_DB" }),
+		);
+		const plan = await resolveCiServePlan({
+			cwd,
+			options: { environment: "local" },
+			env: {},
+			git,
+		});
+		expect(plan.workerStore).toEqual({
+			kind: "postgres",
+			urlEnv: "HOBO_CI_SHARED_DB",
+		});
+		expect(() =>
+			ciWorkerEnvironment({
+				relayEnv: {},
+				store: plan.workerStore,
+				stateDir: "/s",
+			}),
+		).toThrow("--with-worker postgres store requires HOBO_CI_SHARED_DB");
+		const env = ciWorkerEnvironment({
+			relayEnv: { HOBO_CI_SHARED_DB: "postgres://synthetic.invalid/db" },
+			store: plan.workerStore,
+			stateDir: "/s",
+		});
+		expect(env.HOBO_CI_STORE).toBe("postgres");
+		expect(env.HOBO_CI_STORE_URL_ENV).toBe("HOBO_CI_SHARED_DB");
+	});
+
+	it("refuses a connection string written into the config", async () => {
+		const cwd = await projectRoot(
+			withStore({ kind: "postgres", url: "postgres://user:pw@db.invalid/db" }),
+		);
+		await expect(
+			resolveCiServePlan({
+				cwd,
+				options: { environment: "local" },
+				env: {},
+				git,
+			}),
+		).rejects.toThrow();
+	});
+
+	it("readyz reports per-engine readiness on mounted paths", async () => {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-serve-home-"));
+		directories.push(home);
+		const key = generateKeyPairSync("rsa", {
+			modulusLength: 2048,
+			privateKeyEncoding: { type: "pkcs8", format: "pem" },
+			publicKeyEncoding: { type: "spki", format: "pem" },
+		}).privateKey;
+		const secret = "test-webhook-secret-for-imported-app";
+		await writeFile(join(home, "source.pem"), key);
+		await writeFile(join(home, "source-secret"), secret);
+		await importGithubKey({
+			home,
+			appId: "123",
+			keyFile: join(home, "source.pem"),
+			webhookSecretFile: join(home, "source-secret"),
+			fetch: async () => Response.json({ id: 123 }),
+		});
+		const port = String(
+			await new Promise<number>((resolve, reject) => {
+				import("node:net").then(({ createServer }) => {
+					const server = createServer();
+					server.listen(0, "127.0.0.1", () => {
+						const picked = ListenAddress.parse(server.address()).port;
+						server.close((error) => (error ? reject(error) : resolve(picked)));
+					});
+				});
+			}),
+		);
+		const serveInput = {
+			cwd,
+			options: {
+				environment: "local",
+				port,
+				home,
+				engines: ["gh-actions", "vercel"],
+				installationId: "1",
+			},
+			git,
+		};
+		await expect(startCiServe({ ...serveInput, env: {} })).rejects.toThrow(
+			"real App credentials require a CI account token",
+		);
+		const accountToken = "test-account-token-0123456789abcdef";
+		const handle = await startCiServe({
+			...serveInput,
+			env: { HOBO_CI_ACCOUNT_TOKEN: accountToken },
+		});
+		try {
+			const control = await readFile(
+				join(home, "ci", "serve", "control-tokens.json"),
+				"utf8",
+			);
+			expect(control).not.toContain(accountToken);
+			expect(JSON.parse(control).tokens[0].installationIds).toEqual([1]);
+			const listenPort = handle.plan.port;
+			const rootReady = await fetch(
+				`http://127.0.0.1:${listenPort}/readyz`,
+			).then((r) => r.json());
+			expect(rootReady.engines["gh-actions"].ready).toBe(true);
+			expect(rootReady.engines.vercel.ready).toBe(true);
+			const body = "{}";
+			const signature = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+			const webhook = await fetch(
+				`http://127.0.0.1:${listenPort}/engines/gh-actions/github/webhooks`,
+				{
+					method: "POST",
+					headers: {
+						"x-github-event": "ping",
+						"x-hub-signature-256": signature,
+					},
+					body,
+				},
+			);
+			expect(webhook.status).toBe(202);
+			expect(
+				(await fetch(`http://127.0.0.1:${listenPort}/engines/vercel/healthz`))
+					.status,
+			).toBe(200);
+			expect(
+				(
+					await fetch(
+						`http://127.0.0.1:${listenPort}/engines/gh-actions/github/webhooks`,
+						{
+							method: "POST",
+						},
+					)
+				).status,
+			).toBe(401);
+		} finally {
+			await handle.stop();
+		}
+	});
+});

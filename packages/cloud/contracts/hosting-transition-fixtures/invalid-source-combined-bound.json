@@ -1,0 +1,206 @@
+{
+  "schemaVersion": "hobo.hosting-transition/v1",
+  "transitionId": "move",
+  "tenantId": "tenant",
+  "deploymentId": "deploy",
+  "sourcePlanId": "source",
+  "targetPlanId": "target",
+  "commitment": {
+    "budgetId": "budget",
+    "tenantId": "tenant",
+    "scopeId": "camp:prod",
+    "periodId": "period",
+    "policyRevision": "r1",
+    "ledgerSeq": 0,
+    "currency": "USD",
+    "expectedMicros": 5,
+    "reservedMicros": 5,
+    "validUntilMs": 100000,
+    "allocations": [
+      {
+        "resourceName": "app",
+        "definitionId": "platform:b",
+        "quoteId": "quote",
+        "providerAccountId": "account:b",
+        "entitlementId": "",
+        "expectedMicros": 5,
+        "reservedMicros": 5,
+        "reservedEntitlementQuantity": 0,
+        "providerCharges": [
+          {
+            "providerAccountId": "account:a",
+            "expectedMicros": 3,
+            "reservedMicros": 3
+          },
+          {
+            "providerAccountId": "account:b",
+            "expectedMicros": 2,
+            "reservedMicros": 2
+          }
+        ],
+        "entitlementClaims": []
+      }
+    ],
+    "commitmentHash": "sha256:b2b7b8e3a3fde88bb0793f0fca0256373e67c4906ae692ddf7d19b2ac208ca65",
+    "evidence": {
+      "budget": {
+        "budgetId": "budget",
+        "tenantId": "tenant",
+        "scopeId": "camp:prod",
+        "periodId": "period",
+        "policyRevision": "r1",
+        "ledgerSeq": 0,
+        "currency": "USD",
+        "periodStartMs": 0,
+        "periodEndMs": 100000,
+        "capMicros": 100,
+        "settledMicros": 0,
+        "committedMicros": 0,
+        "unresolvedMicros": 0,
+        "recoveryReserveMicros": 10,
+        "observedAtMs": 1000,
+        "validUntilMs": 100000,
+        "providerAccountId": "",
+        "periodKind": "monthly"
+      },
+      "nowMs": 1000,
+      "horizonEndMs": 50000,
+      "maxObservationAgeMs": 1000,
+      "quotes": [
+        {
+          "id": "quote",
+          "resourceName": "app",
+          "definitionId": "platform:b",
+          "providerId": "b",
+          "providerAccountId": "account:b",
+          "currency": "USD",
+          "rateMicros": 1,
+          "billingUnit": "request",
+          "billingPeriodMs": 0,
+          "source": "https://example.test/quote",
+          "observedAtMs": 1000,
+          "validUntilMs": 100000,
+          "liabilityEndsAtMs": 50000,
+          "entitlementId": "",
+          "minimumQuantity": 0,
+          "roundUpQuantity": false,
+          "fixedCostMicros": 0,
+          "transitionCostMicros": 0,
+          "components": [
+            {
+              "id": "source-retained",
+              "providerAccountId": "account:a",
+              "costClass": "retention",
+              "expectedMicros": 3,
+              "boundedMicros": 3,
+              "entitlementId": ""
+            }
+          ]
+        }
+      ],
+      "usages": [
+        {
+          "resourceName": "app",
+          "unit": "request",
+          "expectedQuantity": 2,
+          "boundedQuantity": 2
+        }
+      ],
+      "entitlements": [],
+      "providerBudgets": [
+        {
+          "budgetId": "budget:account:a",
+          "tenantId": "tenant",
+          "scopeId": "camp:prod",
+          "periodId": "period",
+          "policyRevision": "r1",
+          "ledgerSeq": 0,
+          "currency": "USD",
+          "periodStartMs": 0,
+          "periodEndMs": 100000,
+          "capMicros": 100,
+          "settledMicros": 0,
+          "committedMicros": 0,
+          "unresolvedMicros": 0,
+          "recoveryReserveMicros": 10,
+          "observedAtMs": 1000,
+          "validUntilMs": 100000,
+          "providerAccountId": "account:a",
+          "periodKind": "monthly"
+        },
+        {
+          "budgetId": "budget:account:b",
+          "tenantId": "tenant",
+          "scopeId": "camp:prod",
+          "periodId": "period",
+          "policyRevision": "r1",
+          "ledgerSeq": 0,
+          "currency": "USD",
+          "periodStartMs": 0,
+          "periodEndMs": 100000,
+          "capMicros": 100,
+          "settledMicros": 0,
+          "committedMicros": 0,
+          "unresolvedMicros": 0,
+          "recoveryReserveMicros": 10,
+          "observedAtMs": 1000,
+          "validUntilMs": 100000,
+          "providerAccountId": "account:b",
+          "periodKind": "monthly"
+        }
+      ]
+    }
+  },
+  "constraints": {
+    "minimumHealthyBackends": 2,
+    "allowedJurisdictions": [
+      "US"
+    ],
+    "maximumLatencyMs": 100,
+    "movementClass": "stateless",
+    "observationMaxAgeMs": 1000,
+    "rollbackHoldUntilMs": 0,
+    "requiredCapabilityDigest": "capabilities:v1",
+    "interruptionAllowed": true,
+    "sourceOwnershipEpoch": 1
+  },
+  "operationTimeoutMs": 100,
+  "observationBackoffMs": 10,
+  "maximumObservationAttempts": 3,
+  "horizonEndMs": 50000,
+  "planDigest": "",
+  "workloadEffectsJson": "{\"schemaVersion\":\"hobo.effect-spec/v1\",\"purity\":\"pure\",\"capabilities\":[],\"domains\":[]}",
+  "workloadResilienceJson": "{\"schemaVersion\":\"hobo.resilience-profile/v1\",\"id\":\"workload\",\"strategies\":[{\"kind\":\"timeout\",\"deadlineMs\":100}],\"neverRetry\":[\"policy.Decided\",\"terminal\",\"cancellation\"]}",
+  "workloadContractDigest": "sha256:f632e78cdaf582eb2e8b7e709dff6ba0391ff1cafbae0c38c57fdfce88d33438",
+  "adapterContractDigest": "sha256:509da2fc783426fc3f666d892ad2b47ffd77226ede59b7da48b1eef2ece028fa",
+  "workloadContractId": "contract:workload/v1",
+  "existingReservationId": "",
+  "financialPlanHash": "",
+  "intent": "",
+  "maximumMutationResumes": 0,
+  "destinationLiabilities": [
+    {
+      "resourceName": "app",
+      "providerId": "b",
+      "providerAccountId": "account:b",
+      "artifactDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mode": "native-finite-term",
+      "evidenceRef": "native:prepaid:term-1",
+      "expiresAtMs": 50000,
+      "maximumMicros": 2
+    }
+  ],
+  "sourceLiabilities": [
+    {
+      "resourceName": "source-app",
+      "providerId": "a",
+      "providerAccountId": "account:a",
+      "artifactDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "mode": "native-finite-term",
+      "evidenceRef": "native:prepaid:source-term-1",
+      "expiresAtMs": 50000,
+      "maximumMicros": 4
+    }
+  ],
+  "sourceIncarnationId": "source-lifetime"
+}

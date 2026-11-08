@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# Hermetic HoBo CI runner: base Dockerfile + `mise oci build` (experimental).
+# Run on a native-arch Linux host with Docker and pinned mise (see mise-version.txt),
+# or inside a HoBo CI job container that mounts the host Docker socket.
+# From repo root:
+#   bash packages/ci-gh-actions/deploy/ci-runner/build.sh
+set -euo pipefail
+root="$(cd "$(dirname "$0")/../../../.." && pwd)"
+cd "$root"
+
+mise_version="$(tr -d '[:space:]' < packages/ci-gh-actions/deploy/ci-runner/mise-version.txt)"
+export MISE_EXPERIMENTAL=1
+export PATH="${HOME}/.local/bin:${PATH}"
+
+runner_ctx="${root}/packages/ci-gh-actions/deploy/ci-runner"
+base_dockerfile="${runner_ctx}/base/Dockerfile"
+oci_dir="${runner_ctx}/oci-layout"
+local_registry=""
+registry_container="hobo-ci-registry"
+base_image="hobo-ci-runner-base"
+archive_dir=""
+registry_started=0
+cap="${HOBO_CI_WORKER_BUILDER_CACHE_CAP:-${HOBO_CI_WORKER_BUILDER_KEEP_STORAGE:-4GB}}"
+if [[ ! "$cap" =~ ^[0-9]+([.][0-9]+)?[KMGT]B$ ]]; then
+  echo "invalid BuildKit cache cap: ${cap}" >&2
+  exit 1
+fi
+cleanup() {
+  rm -rf "${oci_dir}"
+  if [[ -n "${archive_dir}" ]]; then rm -rf "${archive_dir}"; fi
+  if [[ "${registry_started}" = 1 ]]; then
+    docker rm -f "${registry_container}" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
+
+if ! command -v mise >/dev/null 2>&1 || [[ "$(mise --version | awk '{print $1}')" != "$mise_version" ]]; then
+  echo "pinned mise ${mise_version} required on the host (no runtime curl install in release path)" >&2
+  exit 1
+fi
+mise trust ./mise.toml
+mise install --locked
+mise exec -- shellcheck --version
+
+node --no-warnings scripts/ci-runner-image-version.mts >/tmp/hobo-ci-runner-version.$$
+version="$(tr -d '[:space:]' < /tmp/hobo-ci-runner-version.$$)"
+rm -f /tmp/hobo-ci-runner-version.$$
+candidate="hobo-ci-worker:${version}"
+
+# The contract runs in the candidate before it becomes :local, which new jobs use.
+# Its inputs are streamed in: a bind mount would name a host path, and inside a
+# job container the checkout is not on the host.
+promote_candidate() {
+  echo "Runner image contract (inside ${candidate}):"
+  tar -C "${root}" -cf - mise.toml mise.lock scripts/ci-runner-preflight.mts scripts/lib/ci-runner-contract.mts \
+    | docker run --rm -i -e HOBO_CI_RUNNER_CONTRACT=live "${candidate}" \
+      sh -c 'mkdir -p /tmp/contract && tar -xf - -C /tmp/contract && cd /tmp/contract && node --no-warnings scripts/ci-runner-preflight.mts'
+  docker tag "${candidate}" hobo-ci-worker:local
+}
+finish() {
+  docker builder prune -f --keep-storage "$cap"
+  node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "${version}"
+  local digest
+  digest="$(docker inspect --format='{{index .RepoDigests 0}}' hobo-ci-worker:local 2>/dev/null || true)"
+  echo "Done. ${digest:-hobo-ci-worker:local (daemon tag only)}"
+}
+
+# The version is a hash of every input the image is built from, so an image already
+# tagged with it is this build's output: a re-run, or main after the pull request
+# that built these inputs. Rebuilding it would only repeat the base build, the
+# registry push and the layer load.
+if docker image inspect "${candidate}" >/dev/null 2>&1; then
+  echo "${candidate} is already on this host; skipping the build"
+  promote_candidate
+  finish
+  exit 0
+fi
+
+# Main publishes this exact content key. Reuse it after a box prune, but still
+# gate the local tag on the same runner contract as a native build.
+repository="${GITHUB_REPOSITORY:-Hobo-Labs/HoBo}"
+repository="${repository,,}"
+published="ghcr.io/${repository}/hobo-ci-worker:${version}"
+if [[ -n "${GHCR_TOKEN:-}" ]]; then
+  if printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR:-github-actions}" --password-stdin; then
+    if docker pull "${published}"; then
+      docker tag "${published}" "${candidate}"
+      if promote_candidate; then
+        finish
+        exit 0
+      fi
+      echo "Published runner image failed the local contract; building natively" >&2
+    fi
+  else
+    echo "GHCR login failed; building natively" >&2
+  fi
+else
+  echo "GHCR_TOKEN is unavailable; skipping published runner image pull"
+fi
+
+# Registry API, not `docker manifest inspect`: the runner image's Debian docker.io
+# CLI rejects the pinned OCI index (its attestation children are OCI manifests).
+node --no-warnings scripts/ci-runner-verify-base-digest.mts
+
+case "$(uname -m)" in
+  x86_64) target_arch=amd64 ;;
+  aarch64 | arm64) target_arch=arm64 ;;
+  *) echo "unsupported host architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+echo "Building base image (native ${target_arch}), tag ${base_image}:local"
+# The legacy builder (Debian's docker.io CLI) does not set TARGETARCH.
+docker build --build-arg "TARGETARCH=${target_arch}" \
+  -f "${base_dockerfile}" -t "${base_image}:local" "${runner_ctx}"
+
+start_registry() {
+  # Any free loopback port: a fixed 5000 collides with whatever else the host runs there.
+  # The registry is a per-build staging area; tmpfs and --rm leave no pushed base copies.
+  docker run -d --rm --tmpfs /var/lib/registry:rw -p 127.0.0.1::5000 --name "${registry_container}" registry:2 >/dev/null
+  registry_started=1
+}
+
+# Two addresses for one registry. The Docker daemon pushes from the host, over the
+# published loopback port, which it treats as plain HTTP. This process may be in a job
+# container, where 127.0.0.1 is its own loopback, so it falls back to the bridge address.
+ensure_local_registry() {
+  docker rm -f "${registry_container}" >/dev/null 2>&1 || true
+  start_registry
+  local published ip
+  published="$(docker port "${registry_container}" 5000/tcp | head -n1)"
+  local_registry="127.0.0.1:${published##*:}"
+  ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "${registry_container}" | awk '{print $1}')"
+  for _ in $(seq 1 30); do
+    for endpoint in "${local_registry}" "${ip}:5000"; do
+      if curl -fsS "http://${endpoint}/v2/" >/dev/null 2>&1; then
+        return 0
+      fi
+    done
+    sleep 1
+  done
+  echo "local registry ${registry_container} did not become ready (host ${local_registry}, bridge ${ip}:5000)" >&2
+  exit 1
+}
+
+echo "Publishing base to local registry (avoids Docker Hub 401 on mise oci --from)"
+ensure_local_registry
+echo "registry: daemon pushes to ${local_registry}, this process reads ${endpoint}"
+docker tag "${base_image}:local" "${local_registry}/${base_image}:local"
+docker push "${local_registry}/${base_image}:local"
+export MISE_OCI_INSECURE_REGISTRIES="${endpoint}"
+
+echo "Packaging mise.lock tools into OCI layout at ${oci_dir} (base via ${endpoint})"
+rm -rf "${oci_dir}"
+# Tagged as the candidate, so loading the layout cannot move :local ahead of the contract.
+# Every locked tool gets an OCI layer and its install bin dir in the image ENV PATH.
+mise --locked oci build -o "${oci_dir}" --from "${endpoint}/${base_image}:local" --tag "${candidate}"
+
+echo "Loading image into Docker as ${candidate}"
+# The classic image store's `docker load` reads only docker-save archives, not an OCI layout.
+if command -v skopeo >/dev/null 2>&1; then
+  # Not skopeo's docker-daemon: transport, whose client pins Docker API 1.22; current
+  # daemons refuse anything below 1.24.
+  archive_dir="$(mktemp -d)"
+  skopeo copy "oci:${oci_dir}" "docker-archive:${archive_dir}/candidate.tar:${candidate}"
+  docker load -i "${archive_dir}/candidate.tar"
+  rm -rf "${archive_dir}"
+  archive_dir=""
+else
+  # Without skopeo the layout goes through the registry and the daemon pulls it.
+  mise oci push --image-dir "${oci_dir}" "${endpoint}/${candidate}"
+  docker pull "${local_registry}/${candidate}"
+  docker tag "${local_registry}/${candidate}" "${candidate}"
+fi
+rm -rf "${oci_dir}"
+docker image rm --no-prune "${local_registry}/${base_image}:local" "${local_registry}/${candidate}" >/dev/null 2>&1 || true
+docker rm -f "${registry_container}" >/dev/null 2>&1 || true
+registry_started=0
+
+promote_candidate
+finish

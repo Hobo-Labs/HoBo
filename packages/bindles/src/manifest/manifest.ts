@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { parseBudgetPolicy } from "@hobo/core";
 import {
 	cloneAsJson,
 	isJsonObject,
@@ -7,6 +8,7 @@ import {
 	type JsonValue,
 } from "../json.js";
 
+// public-contract: manifest discriminator included in canonical deployment hashes.
 export const MANIFEST_SCHEMA = "hobo.manifest/v1" as const;
 
 const RESOURCE_TYPES = new Set(["data.v1", "component.v1", "website.v1"]);
@@ -50,6 +52,8 @@ type ManifestRecord = {
 	};
 	resources: Record<string, ResourceRecord>;
 	triggerEdges?: TriggerEdgeRecord[];
+	/** Scope policy is part of the canonical deployment input and hash. */
+	policy?: JsonObject;
 };
 
 type ResourceRecord = {
@@ -215,6 +219,10 @@ function parseManifestRecord(input: JsonValue): ManifestRecord {
 			validateTriggerEdge(edge, `triggerEdges[${index}]`, resources),
 		);
 	}
+	if (input.policy !== undefined) {
+		assertRecord(input.policy, "policy");
+		validateBudgetPolicy(input.policy, "policy");
+	}
 
 	return {
 		schema: MANIFEST_SCHEMA,
@@ -224,7 +232,20 @@ function parseManifestRecord(input: JsonValue): ManifestRecord {
 		},
 		resources,
 		...(triggerEdges ? { triggerEdges } : undefined),
+		...(input.policy !== undefined
+			? { policy: structuredClone(input.policy) }
+			: undefined),
 	};
+}
+
+function validateBudgetPolicy(policy: JsonObject, path: string): void {
+	if (policy.budgetPolicy === undefined) return;
+	try {
+		parseBudgetPolicy(policy.budgetPolicy);
+	} catch (error) {
+		if (!(error instanceof Error)) throw error;
+		throw new ManifestParseError(`${path}.budgetPolicy`, error.message);
+	}
 }
 
 function validateResource(
@@ -235,6 +256,15 @@ function validateResource(
 		throw new ManifestParseError(`resources.${id}`, "invalid resource id");
 	}
 	assertRecord(resource, `resources.${id}`);
+	if (resource.policy !== undefined) {
+		assertRecord(resource.policy, `resources.${id}.policy`);
+		validateBudgetPolicy(resource.policy, `resources.${id}.policy`);
+		if (resource.policy.budgetPolicy !== undefined)
+			throw new ManifestParseError(
+				`resources.${id}.policy.budgetPolicy`,
+				"shared budget policy must be declared at manifest.policy.budgetPolicy",
+			);
+	}
 
 	assertRequiredString(resource.type, `resources.${id}.type`);
 	if (!RESOURCE_TYPES.has(resource.type)) {

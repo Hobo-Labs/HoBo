@@ -1,5 +1,5 @@
 # Cursor Cloud Agent image for HoBo.
-# Node 24 on Debian bookworm, plus the Grok Build CLI (setup copied from OpenSesame).
+# Node base + mise (project tools) + optional Grok/Kimi CLIs.
 # Do not COPY the repo; Cursor checks it out separately.
 FROM node:24-bookworm
 
@@ -9,11 +9,13 @@ RUN apt-get update \
     git \
     curl \
     ca-certificates \
-    sudo \
     build-essential \
   && rm -rf /var/lib/apt/lists/*
 
-# Grok Build CLI (tier-1 coding agent), installed system-wide like OpenSesame.
+ENV PATH="/root/.local/bin:/usr/local/bin:${PATH}"
+RUN curl -fsSL https://mise.run | sh
+
+# Grok Build CLI (tier-1 coding agent).
 ENV GROK_BIN_DIR=/usr/local/bin
 RUN curl -fsSL https://x.ai/cli/install.sh | bash \
   && /usr/local/bin/grok --version
@@ -23,9 +25,6 @@ ARG KIMI_CODE_VERSION=2.1.1
 RUN npm install -g "@moonshot-ai/kimi-code@${KIMI_CODE_VERSION}" \
   && kimi --version
 
-RUN corepack enable
-
-RUN echo "node ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/node \
-  && chmod 0440 /etc/sudoers.d/node
-
 USER node
+ENV PATH="/home/node/.local/bin:${PATH}"
+RUN curl -fsSL https://mise.run | sh

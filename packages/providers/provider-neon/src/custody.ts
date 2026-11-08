@@ -18,6 +18,9 @@ import { NeonProviderError } from "./errors.js";
 export type SecretPurpose =
 	| "connection-string-pooled"
 	| "connection-string-direct"
+	| "claim-url"
+	| "capability-binding"
+	| "native-resource-id"
 	| "rotation-evidence";
 
 export type SecretCustodyScope = {

@@ -170,14 +170,16 @@ describe("the pact file itself", () => {
 	});
 });
 
-describe("the built-in transport, verified against the pact", () => {
-	it("produces exactly the .hobo.localhost pair the pact records", async () => {
+describe("the configured local transport, verified against the pact", () => {
+	it("accepts the .hobo.localhost pair only when a host transport supplies it", async () => {
 		const entry = interaction("names a .hobo.localhost host");
 
-		// No transport injected: this exercises the package's own default and
-		// asserts it against the reply the pact says the host produces.
+		await expect(
+			provisionTemporaryEnvironmentStation({ stationId: stationIdOf(entry) }),
+		).rejects.toThrow("real local station host transport");
 		const result = await provisionTemporaryEnvironmentStation({
 			stationId: stationIdOf(entry),
+			transport: transportFor(entry),
 		});
 
 		expect(result.stationUrl).toBe(entry.response.body.stationUrl);

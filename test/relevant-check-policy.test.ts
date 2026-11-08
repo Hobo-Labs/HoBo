@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { afterAll, beforeAll, test, vi } from "vitest";
+
+beforeAll(() => {
+	vi.stubEnv("HOBO_TURBO_CONCURRENCY", "");
+});
+
+afterAll(() => {
+	vi.unstubAllEnvs();
+});
 
 import { findCaseCollisions } from "../scripts/check-case-collisions.js";
 import {
@@ -65,6 +73,34 @@ function turboTestSelects(checks: Check[], workspace: string) {
 			isWorkspaceTurboTest(check) &&
 			check.args.includes(`--filter=./${workspace}`),
 	);
+}
+
+test("external workspace coverage omits only workspace test commands", () => {
+	const files = ["packages/ci/src/index.ts", "scripts/example.ts"];
+	const normal = plan(files);
+	const external = plan(files, { workspaceTestsCoveredExternally: true });
+	assert.ok(normal.checks.some(isWorkspaceTurboTest));
+	assert.ok(!external.checks.some(isWorkspaceTurboTest));
+	assert.deepEqual(external.workspaces, normal.workspaces);
+	assert.deepEqual(
+		external.checks,
+		normal.checks.filter((check) => !isWorkspaceTurboTest(check)),
+	);
+});
+
+function narrowVitestCheck(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args[0] === "--filter" &&
+		check.args[2] === "exec" &&
+		check.args[3] === "vitest" &&
+		check.args[4] === "run"
+	);
+}
+
+function narrowVitestPaths(checks: Check[]) {
+	const check = checks.find(narrowVitestCheck);
+	return check ? check.args.slice(5) : [];
 }
 
 function standardsCheck(check: Check) {
@@ -506,6 +542,19 @@ test("production package source changes select architecture guard and workspace 
 	assert.equal(turboTestSelects(checks, "packages/core"), true);
 });
 
+test("staged test-only @hobo/code changes run vitest on package-relative paths", () => {
+	const { checks } = plan(["packages/code/test/hobo-code-signals.test.ts"], {
+		staged: true,
+		workspacePackageExists: () => true,
+	});
+
+	assert.ok(checks.some(narrowVitestCheck));
+	assert.deepEqual(narrowVitestPaths(checks), [
+		"test/hobo-code-signals.test.ts",
+	]);
+	assert.equal(turboTestSelects(checks, "packages/code"), false);
+});
+
 test("examples package source changes select architecture guard and workspace tests", () => {
 	const { checks, workspaces } = plan(["examples/hello-bindle/src/main.ts"], {
 		workspacePackageExists: () => true,
@@ -565,7 +614,12 @@ test("root script and test changes select the root typecheck lane", () => {
 	const { checks } = plan(["scripts/run-relevant-checks.ts"]);
 
 	assert.equal(
-		checks.some((check) => check.args.join(" ") === "run typecheck:root"),
+		checks.some(
+			(check) =>
+				check.command === "pnpm" &&
+				check.args.join(" ") ===
+					"exec turbo run typecheck:root --output-logs=new-only --concurrency=100%",
+		),
 		true,
 	);
 });
@@ -598,6 +652,17 @@ test("editing a step definition trips the behavior lane", () => {
 		"src/draft/epic-proofs/finops-budget-routing-control-plane/features/steps/steps.ts",
 	]);
 	assert.ok(checks.some(isBehaviorLane));
+});
+
+test("the behavior lane builds the proofs' dependencies first, serially", () => {
+	const { checks } = plan(["cucumber.yaml"]);
+	assert.ok(checks.some(isBehaviorLane));
+	const build = checks.find(
+		(check) =>
+			check.args.join(" ").startsWith("exec turbo run build") &&
+			check.args.includes("--filter={./src/draft/epic-proofs/*}^..."),
+	);
+	assert.equal(build?.serial, true);
 });
 
 test("pattern-catalog starter Gherkin is fixture data, not the repo behavior lane", () => {
@@ -721,6 +786,30 @@ test("unrelated changes do not select the anti-slop drift test", () => {
 	]) {
 		assert.ok(!plan([file]).checks.some(isAntiSlopDriftTest), file);
 	}
+});
+
+const isGitleaksMainScanTest = (check: {
+	command: string;
+	args: readonly string[];
+}) =>
+	check.command === "node" &&
+	check.args.join(" ") ===
+		"--import tsx --test scripts/test/gitleaks-main-scan.test.ts";
+
+test("a main-gate gitleaks hang-contract edit selects its regression test", () => {
+	for (const file of [
+		"scripts/ci/gitleaks-main-scan.mts",
+		"scripts/test/gitleaks-main-scan.test.ts",
+		".github/workflows/hobo-ci.yml",
+	]) {
+		assert.ok(plan([file]).checks.some(isGitleaksMainScanTest), file);
+	}
+});
+
+test("unrelated changes do not select the gitleaks hang-contract test", () => {
+	assert.ok(
+		!plan(["packages/core/src/index.ts"]).checks.some(isGitleaksMainScanTest),
+	);
 });
 
 const isTsAutocodeSurfaceTest = (check: {

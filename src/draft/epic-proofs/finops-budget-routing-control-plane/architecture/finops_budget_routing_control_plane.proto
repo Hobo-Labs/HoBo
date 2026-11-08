@@ -2,17 +2,14 @@ syntax = "proto3";
 
 package hobo.draft.finops.v1;
 
-// Design-time contract artifact for the FinOps budget routing control-plane
-// proof. Runtime tests use handwritten TypeScript parsers that derive from
-// these records and the sibling CUE constraints.
-
+// Canonical proof inputs. Generated records are parsed before pure evaluation.
 message ResourceIntent {
   string schema_version = 1;
   OwnerRef owner = 2;
   CapabilityClass capability = 3;
   Budget budget = 4;
-  repeated Constraint constraints = 5;
-  string routing_objective = 6;
+  Constraints constraints = 5;
+  RoutingPreferences routing = 6;
 }
 
 message OwnerRef {
@@ -21,23 +18,192 @@ message OwnerRef {
   string environment = 3;
 }
 
+message CapabilityRequirements {
+  string availability = 1;
+  optional double latency_p95_ms = 2;
+  string durability = 3;
+  string compliance = 4;
+  optional double min_availability = 5;
+}
+
 message CapabilityClass {
   string category = 1;
-  repeated string requirements = 2;
+  CapabilityRequirements requirements = 2;
 }
 
 message Budget {
-  double amount = 1;
+  optional double amount = 1;
   string currency = 2;
   string period = 3;
   string soft_limit_behavior = 4;
   string hard_limit_behavior = 5;
 }
 
+message Constraints {
+  repeated string allowed_jurisdictions = 1;
+  repeated string disallowed_jurisdictions = 2;
+  optional double max_cost = 3;
+  optional double min_security_level = 4;
+}
+
+message RoutingPreferences {
+  string objective = 1;
+}
+
+message BudgetState {
+  optional double spend_to_date = 1;
+  optional double committed_cost = 2;
+  optional double uncertain_cost = 3;
+  optional double recovery_reserve = 4;
+}
+
 message BudgetScope {
   string tenant = 1;
   string workspace = 2;
   string environment = 3;
+}
+
+message RoutingSnapshot {
+  string catalog_hash = 1;
+  string metric_registry_hash = 2;
+  string budget_id = 3;
+  string period_id = 4;
+  string policy_revision = 5;
+  optional uint32 ledger_seq = 6;
+  string observed_at = 7;
+}
+
+message RoutingCandidate {
+  string id = 1;
+  string capability_class = 2;
+  optional double monthly_cost = 3;
+  optional double reliability = 4;
+  optional double latency_p95_ms = 5;
+  optional double risk = 6;
+  repeated string compliance = 7;
+  string jurisdiction = 8;
+  optional double security_level = 9;
+  bool eligible = 10;
+  repeated string abstract_traits = 11;
+  optional double transition_cost = 12;
+  optional double commitment_bound = 13;
+  string period = 14;
+}
+
+message MetricContract {
+  string name = 1;
+  string tier = 2;
+  string unit = 3;
+  string source = 4;
+  string version = 5;
+  string normalization = 6;
+  bool mutable = 7;
+  repeated string depends_on = 8;
+  repeated string transforms = 9;
+  repeated string composition_sources = 10;
+  map<string, double> weights = 11;
+  bool requires_approval = 12;
+  string approval_state = 13;
+  string approval_ref = 14;
+}
+
+message RoutingDecisionHistory {
+  string candidate_id = 1;
+  string decided_at = 2;
+  optional uint32 flips_in_window = 3;
+  string challenger_candidate_id = 4;
+  string challenger_since = 5;
+}
+
+message PreferenceModel {
+  double cost_weight = 1;
+  double reliability_weight = 2;
+  double latency_weight = 3;
+  double risk_weight = 4;
+  map<string, double> custom_weights = 5;
+  string normalization_version = 6;
+}
+
+message StabilityPolicy {
+  double min_improvement_threshold = 1;
+  uint32 cooldown_ms = 2;
+  double migration_penalty = 3;
+  uint32 flip_limit_per_window = 4;
+  uint32 flip_window_ms = 5;
+  uint32 dwell_ms = 6;
+}
+
+message RoutingScenario {
+  string id = 1;
+  ResourceIntent intent = 2;
+  repeated RoutingCandidate candidates = 3;
+  repeated MetricContract metric_contracts = 4;
+  repeated RoutingDecisionHistory history = 5;
+  BudgetState budget_state = 6;
+  RoutingSnapshot snapshot = 7;
+  PreferenceModel preference = 8;
+  StabilityPolicy stability = 9;
+}
+
+message ConstraintResult {
+  string candidate_id = 1;
+  bool passed = 2;
+  repeated string reasons = 3;
+}
+
+message MetricVector {
+  string candidate_id = 1;
+  double cost = 2;
+  optional double reliability = 3;
+  double latency = 4;
+  optional double risk = 5;
+  map<string, double> custom_metrics = 6;
+  map<string, double> normalized_metrics = 7;
+}
+
+message ParetoFrontier {
+  repeated string candidate_ids = 1;
+  repeated string dominated_candidate_ids = 2;
+}
+
+message DecisionGraph {
+  string id = 1;
+  repeated string generated_candidate_ids = 2;
+  repeated ConstraintResult constraint_results = 3;
+  repeated MetricVector metric_vectors = 4;
+  ParetoFrontier pareto_frontier = 5;
+  optional string final_candidate_id = 6;
+  repeated string rationale = 7;
+  RoutingSnapshot snapshot = 8;
+  string input_hash = 9;
+}
+
+message RoutingDecision {
+  string id = 1;
+  string effect = 2;
+  optional string selected_candidate_id = 3;
+  string decision_graph_id = 4;
+}
+
+message ActionPlan {
+  string id = 1;
+  string decision_id = 2;
+  repeated string abstract_actions = 3;
+  bool backend_neutral = 4;
+}
+
+message FeedbackProposal {
+  string id = 1;
+  string source = 2;
+  string target = 3;
+  string effect = 4;
+}
+
+message MetricVersionChange {
+  string metric_name = 1;
+  string from_version = 2;
+  string to_version = 3;
+  string approval_state = 4;
 }
 
 message MeterDefinition {
@@ -76,22 +242,6 @@ message PolicyBinding {
   BudgetScope scope = 2;
 }
 
-message RoutingCandidate {
-  string id = 1;
-  string capability_class = 2;
-  double marginal_cost = 3;
-  repeated string abstract_traits = 4;
-}
-
-message MetricContract {
-  string name = 1;
-  string tier = 2;
-  string unit = 3;
-  string source = 4;
-  string version = 5;
-  string normalization = 6;
-}
-
 message DerivedMetric {
   string name = 1;
   repeated string depends_on = 2;
@@ -102,69 +252,6 @@ message UserMetric {
   string name = 1;
   repeated string composition_sources = 2;
   bool requires_approval = 3;
-}
-
-message ConstraintResult {
-  string candidate_id = 1;
-  bool passed = 2;
-  repeated string reasons = 3;
-}
-
-message MetricVector {
-  string candidate_id = 1;
-  double cost = 2;
-  double reliability = 3;
-  double latency = 4;
-  double risk = 5;
-}
-
-message ParetoFrontier {
-  repeated string candidate_ids = 1;
-  repeated string dominated_candidate_ids = 2;
-}
-
-message PreferenceModel {
-  double cost_weight = 1;
-  double reliability_weight = 2;
-  double latency_weight = 3;
-  double risk_weight = 4;
-}
-
-message StabilityPolicy {
-  double min_improvement_threshold = 1;
-  string cooldown_window = 2;
-  double migration_penalty = 3;
-  int32 flip_limit_per_window = 4;
-}
-
-message RoutingDecisionHistory {
-  string previous_candidate_id = 1;
-  string previous_decision_at = 2;
-  int32 flips_in_window = 3;
-}
-
-message DecisionGraph {
-  string id = 1;
-  repeated string generated_candidate_ids = 2;
-  repeated ConstraintResult constraint_results = 3;
-  repeated MetricVector metric_vectors = 4;
-  ParetoFrontier pareto_frontier = 5;
-  string final_candidate_id = 6;
-  repeated string rationale = 7;
-}
-
-message RoutingDecision {
-  string id = 1;
-  string effect = 2;
-  string selected_candidate_id = 3;
-  string decision_graph_id = 4;
-}
-
-message ActionPlan {
-  string id = 1;
-  string decision_id = 2;
-  repeated string abstract_actions = 3;
-  bool backend_neutral = 4;
 }
 
 message ActionResult {
@@ -187,20 +274,6 @@ message ExceptionGrant {
   string id = 1;
   string scope = 2;
   string expires_at = 3;
-}
-
-message FeedbackProposal {
-  string id = 1;
-  string source = 2;
-  string target = 3;
-  string effect = 4;
-}
-
-message MetricVersionChange {
-  string metric_name = 1;
-  string from_version = 2;
-  string to_version = 3;
-  string approval_state = 4;
 }
 
 message SimulationRequest {

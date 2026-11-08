@@ -1,9 +1,12 @@
 import {
 	TEMPORARY_STATION_TTL_MS as CORE_TEMPORARY_STATION_TTL_MS,
+	createBoundedFetchTransport,
 	type TemporaryEnvironmentStationResult as SharedTemporaryEnvironmentStationResult,
+	type TransportMethod,
+	type TransportResponse,
 	temporaryStationExpiresAt,
 } from "@hobo/core";
-
+import { redactCloudflareText } from "./resolvers.js";
 import {
 	assertStationWorkerHasNoAppCode,
 	ENVIRONMENT_STATION_WORKER_MODULE,
@@ -13,6 +16,7 @@ import {
 	type PreviewChallenge,
 	solvePreviewChallenge,
 } from "./temporary-pow.js";
+import { guardedCloudflareTransport } from "./transport.js";
 
 export const CF_API_BASE = "https://api.cloudflare.com/client/v4"; // public-contract: Cloudflare API v4 base used by Temporary Accounts
 export const CF_TERMS_URL = "https://www.cloudflare.com/terms/"; // public-contract: Temporary Accounts terms URL
@@ -52,6 +56,12 @@ export type TemporaryPreviewAccount = {
 };
 
 export type TemporaryAccountTransport = {
+	/** Observed script deletion, distinct from a successful DELETE acknowledgement. */
+	deleteWorkerScript?(input: {
+		accountId: string;
+		apiToken: string;
+		scriptName: string;
+	}): Promise<{ absent: boolean }>;
 	requestChallenge(): Promise<PreviewChallenge>;
 	createPreviewAccount(
 		challenge: PreviewChallenge,
@@ -95,26 +105,89 @@ function sanitizeScriptName(stationId: string, override?: string): string {
 	);
 }
 
-async function readCfJson<T>(response: Response, label: string): Promise<T> {
+async function readCfJson<T>(
+	response: TransportResponse,
+	label: string,
+): Promise<T> {
 	// SAFETY: this fetch boundary is the Cloudflare envelope; callers then
 	// read named fields off the typed result rather than widening the body.
-	const body = (await response.json()) as CfEnvelope<T>;
-	if (!response.ok || !body.success || body.result === undefined) {
+	let body: CfEnvelope<T>;
+	try {
+		// SAFETY: named envelope fields are checked below and product-specific fields are checked by callers.
+		body = JSON.parse(response.body) as CfEnvelope<T>;
+	} catch {
+		throw new Error(
+			`Cloudflare ${label} returned a non-JSON response (HTTP ${response.status}); its outcome is unknown`,
+		);
+	}
+	if (
+		!body ||
+		response.status < 200 ||
+		response.status >= 300 ||
+		body.success !== true ||
+		body.result === undefined
+	) {
 		const detail =
-			body.errors
+			body?.errors
 				?.map((entry) => entry.message ?? String(entry.code))
 				.join("; ") || `HTTP ${response.status}`;
-		throw new Error(`Cloudflare ${label} failed: ${detail}`);
+		throw new Error(
+			`Cloudflare ${label} failed: ${redactCloudflareText(detail)}`,
+		);
 	}
 	return body.result;
+}
+
+function plainIdentifier(value: string, field: string): string {
+	if (!/^[A-Za-z0-9_-]{1,128}$/u.test(value))
+		throw new Error(`Cloudflare ${field} is not a valid scoped identifier`);
+	return value;
+}
+function transportMethod(method: string): TransportMethod {
+	switch (method) {
+		case "GET":
+		case "POST":
+		case "PUT":
+		case "DELETE":
+			return method;
+		default:
+			throw new Error("unsupported Cloudflare temporary-account method");
+	}
 }
 
 export function createCloudflareTemporaryAccountTransport(
 	fetchImpl: typeof fetch = fetch,
 ): TemporaryAccountTransport {
+	const dispatch = guardedCloudflareTransport(
+		createBoundedFetchTransport({ fetchImpl }),
+	);
+	const send = async (
+		url: string,
+		init: RequestInit = {},
+	): Promise<TransportResponse> => {
+		// Encoding a locally authored multipart request retains its generated Content-Type boundary.
+		const encoded = new Request(url, init);
+		const headers: Record<string, string> = {};
+		encoded.headers.forEach((value, key) => {
+			headers[key] = value;
+		});
+		const body = encoded.body === null ? undefined : await encoded.text();
+		if (body !== undefined && Buffer.byteLength(body, "utf8") > 1_048_576)
+			throw new Error(
+				"Cloudflare temporary-account request exceeds its transport byte bound",
+			);
+		return dispatch({
+			method: transportMethod(encoded.method),
+			url: encoded.url,
+			headers,
+			timeoutMs: 15000,
+			maxResponseBytes: 524288,
+			...(body === undefined ? undefined : { body }),
+		});
+	};
 	return {
 		async requestChallenge() {
-			const response = await fetchImpl(
+			const response = await send(
 				`${CF_API_BASE}/provisioning/previews/challenge`,
 				{
 					method: "POST",
@@ -126,7 +199,7 @@ export function createCloudflareTemporaryAccountTransport(
 		},
 
 		async createPreviewAccount(challenge, solution) {
-			const response = await fetchImpl(`${CF_API_BASE}/provisioning/previews`, {
+			const response = await send(`${CF_API_BASE}/provisioning/previews`, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({
@@ -169,6 +242,18 @@ export function createCloudflareTemporaryAccountTransport(
 					"Cloudflare preview account response missing accountId/apiToken/claimUrl",
 				);
 			}
+			plainIdentifier(accountId, "preview account");
+			const claim = new URL(claimUrl);
+			if (
+				claim.protocol !== "https:" ||
+				claim.hostname !== "dash.cloudflare.com" ||
+				claim.username ||
+				claim.password ||
+				claim.port
+			)
+				throw new Error(
+					"Cloudflare preview claim URL is outside its dashboard authority",
+				);
 			const workersDevSubdomain =
 				result.workersDevSubdomain ?? result.subdomain;
 			return {
@@ -187,6 +272,8 @@ export function createCloudflareTemporaryAccountTransport(
 			compatibilityFlags,
 			bindings,
 		}) {
+			plainIdentifier(accountId, "account");
+			plainIdentifier(scriptName, "script");
 			const bindingList = bindings
 				? Object.entries(bindings).map(([name, text]) => ({
 						type: "plain_text",
@@ -211,8 +298,8 @@ export function createCloudflareTemporaryAccountTransport(
 				}),
 			);
 
-			const put = await fetchImpl(
-				`${CF_API_BASE}/accounts/${accountId}/workers/scripts/${scriptName}`,
+			const put = await send(
+				`${CF_API_BASE}/accounts/${encodeURIComponent(accountId)}/workers/scripts/${encodeURIComponent(scriptName)}`,
 				{
 					method: "PUT",
 					headers: { authorization: `Bearer ${apiToken}` },
@@ -221,7 +308,7 @@ export function createCloudflareTemporaryAccountTransport(
 			);
 			await readCfJson<unknown>(put, "workers script upload");
 
-			const subdomain = await fetchImpl(
+			const subdomain = await send(
 				`${CF_API_BASE}/accounts/${accountId}/workers/scripts/${scriptName}/subdomain`,
 				{
 					method: "POST",
@@ -236,12 +323,11 @@ export function createCloudflareTemporaryAccountTransport(
 				enabled?: boolean;
 				previews_enabled?: boolean;
 				subdomain?: string;
-			}>(subdomain, "workers.dev subdomain enable").catch(() => ({
-				enabled: true,
-				subdomain: undefined,
-			}));
+			}>(subdomain, "workers.dev subdomain enable");
+			if (subResult.enabled !== true)
+				throw new Error("Cloudflare did not confirm workers.dev activation");
 
-			const account = await fetchImpl(
+			const account = await send(
 				`${CF_API_BASE}/accounts/${accountId}/workers/subdomain`,
 				{
 					method: "GET",
@@ -251,18 +337,34 @@ export function createCloudflareTemporaryAccountTransport(
 			const accountSub = await readCfJson<{ subdomain?: string }>(
 				account,
 				"workers subdomain",
-			).catch(() => ({ subdomain: undefined }));
+			);
 
 			const host = accountSub.subdomain ?? subResult.subdomain;
-			if (!host) {
-				// Fallback shape used by workers.dev when subdomain lookup lags.
-				return {
-					workersDevUrl: `https://${scriptName}.${accountId}.workers.dev`,
-				};
-			}
+			if (!host || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(host))
+				throw new Error(
+					"Cloudflare has not reported a valid workers.dev subdomain; the deployment remains unverified",
+				);
 			return {
 				workersDevUrl: `https://${scriptName}.${host}.workers.dev`,
 			};
+		},
+		async deleteWorkerScript({ accountId, apiToken, scriptName }) {
+			plainIdentifier(accountId, "account");
+			plainIdentifier(scriptName, "script");
+			const path = `${CF_API_BASE}/accounts/${encodeURIComponent(accountId)}/workers/scripts/${encodeURIComponent(scriptName)}`;
+			const deleted = await send(path, {
+				method: "DELETE",
+				headers: { authorization: `Bearer ${apiToken}` },
+			});
+			if (deleted.status !== 404)
+				await readCfJson(deleted, "workers script deletion");
+			const observed = await send(`${path}/settings`, {
+				method: "GET",
+				headers: { authorization: `Bearer ${apiToken}` },
+			});
+			if (observed.status === 404) return { absent: true };
+			await readCfJson(observed, "worker retirement observation");
+			return { absent: false };
 		},
 	};
 }

@@ -27,6 +27,7 @@ message CostFact {
   string unit = 3;
   string marginal_price = 4;
   uint64 free_tier_included = 5;
+  optional string pricing_status = 6;
 }
 
 // Broker-custody credential locator posture: this package stores no material.

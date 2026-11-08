@@ -1,3 +1,4 @@
+import { createClaimableOperationKeyDeriver } from "@hobo/core";
 /**
  * The one test that would catch every other mistake in this package: take the
  * artifacts that actually leave — plan, receipt, facts, binding, errors — and
@@ -27,6 +28,7 @@ import {
 } from "./harness.js";
 
 const FORBIDDEN_LITERALS = [
+	"01999999-0000-7000-8000-000000000001",
 	"postgres://",
 	"postgresql://",
 	"Bearer ",
@@ -57,19 +59,36 @@ async function artifacts() {
 		resourceRef: provisioned.resourceRef,
 		previous: provisioned,
 	});
+	const serialization = {
+		custody,
+		deriveOperationKey: createClaimableOperationKeyDeriver(
+			Uint8Array.from({ length: 32 }, (_, i) => i + 1),
+		),
+		scope: {
+			tenantId: "tenant",
+			providerAccountId: "anonymous",
+			scopeId: "deployment",
+		},
+	};
 	return {
 		provisioned,
 		claimed,
-		receipts: [toProvisionReceipt(provisioned), toProvisionReceipt(claimed)],
-		facts: [...toProviderFacts(provisioned), ...toProviderFacts(claimed)],
-		bindings: [provisioned.binding, claimed.binding],
-		claimVerification: driver.verifyClaim(claimed),
+		serialization,
+		receipts: [
+			await toProvisionReceipt(provisioned, serialization),
+			await toProvisionReceipt(claimed, serialization),
+		],
+		facts: [
+			...(await toProviderFacts(provisioned, serialization)),
+			...(await toProviderFacts(claimed, serialization)),
+		],
 	};
 }
 
 describe("no credential material in serialized outputs", () => {
-	it("finds nothing credential-shaped in records, receipts, facts, or bindings", async () => {
-		const output = await artifacts();
+	it("finds nothing credential-shaped in public receipts or facts", async () => {
+		const { receipts, facts } = await artifacts();
+		const output = { receipts, facts };
 		for (const [name, value] of Object.entries(output)) {
 			expect(
 				scanForCredentialMaterial(parseJsonValue(JSON.stringify(value))),
@@ -79,7 +98,8 @@ describe("no credential material in serialized outputs", () => {
 	});
 
 	it("finds none of the forbidden literals anywhere in the serialized artifacts", async () => {
-		const serialized = JSON.stringify(await artifacts());
+		const { receipts, facts } = await artifacts();
+		const serialized = JSON.stringify({ receipts, facts });
 		for (const literal of FORBIDDEN_LITERALS) {
 			expect(
 				serialized,
@@ -110,14 +130,14 @@ describe("no credential material in serialized outputs", () => {
 	});
 
 	it("refuses to emit a receipt built from a record carrying a raw connection string", async () => {
-		const { provisioned } = await artifacts();
+		const { provisioned, serialization } = await artifacts();
 		const poisoned = {
 			...provisioned,
 			databaseName:
 				"postgresql://neondb_owner:npg_supersecret@ep-fake-000000.us-east-2.aws.neon.tech/neondb",
 		};
-		expect(() => toProvisionReceipt(poisoned)).toThrowError(
-			/credential-shaped material/u,
-		);
+		await expect(
+			toProvisionReceipt(poisoned, serialization),
+		).rejects.toThrowError(/credential-shaped material/u);
 	});
 });

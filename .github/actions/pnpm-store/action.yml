@@ -1,0 +1,50 @@
+name: HoBo pnpm store
+description: >-
+  Shared pnpm store. On the box worker the store is a host bind mount
+  (HOBO_CI_PNPM_STORE_MOUNTED=1) and this is a no-op. Other self-hosted runners
+  install from the registry, which measured faster than restoring the ~1.3 GB
+  actions/cache archive. GitHub-hosted PRs restore the store that main last
+  saved (keyed on pnpm-lock.yaml), and main saves it.
+inputs:
+  mode:
+    description: restore (PRs, merge queue) or save (push to main)
+    required: false
+    default: restore
+runs:
+  using: composite
+  steps:
+    - name: Resolve pnpm store
+      id: store
+      shell: bash
+      env:
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
+      run: |
+        set -euo pipefail
+        # Read the process env here: an `if: env.X` expression only sees
+        # workflow-level and GITHUB_ENV values, never the variables the box
+        # worker sets on the job container.
+        if [ "${HOBO_CI_PNPM_STORE_MOUNTED:-}" = "1" ]; then
+          echo "use-cache=false" >> "$GITHUB_OUTPUT"
+          echo "npm_config_package_import_method=hardlink" >> "$GITHUB_ENV"
+          echo "pnpm store is host-mounted (${npm_config_store_dir:-unset}); using hardlinks, skipping actions/cache"
+        elif [ "${RUNNER_ENVIRONMENT}" != "github-hosted" ]; then
+          echo "use-cache=false" >> "$GITHUB_OUTPUT"
+          echo "self-hosted runner without a mounted store; installing from the registry"
+        else
+          echo "use-cache=true" >> "$GITHUB_OUTPUT"
+          echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+        fi
+    - name: Restore pnpm store seeded by main
+      if: steps.store.outputs.use-cache == 'true' && inputs.mode == 'restore'
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: ${{ steps.store.outputs.path }}
+        key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: |
+          pnpm-store-${{ runner.os }}-
+    - name: Save pnpm store from main
+      if: steps.store.outputs.use-cache == 'true' && inputs.mode == 'save'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: ${{ steps.store.outputs.path }}
+        key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}

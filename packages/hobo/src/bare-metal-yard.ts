@@ -4,9 +4,10 @@ import type { BindleDefinition } from "@hobo/bindles";
 import { bindleScope, descriptorFromHandle } from "@hobo/bindles/topology";
 import { camp } from "@hobo/camps";
 import type { YardRuntime } from "@hobo/cli";
-import { ensureHoboHome, resolveHoboHome } from "@hobo/core/hobo-home";
+import { ensureHoboHome } from "@hobo/core/hobo-home";
 import { type Yard, yard } from "@hobo/yards";
 import { createDefaultYardRuntime } from "./compose.js";
+import { defaultHoboHome } from "./hobo-home.js";
 import {
 	isJsonNumber,
 	isJsonObject,
@@ -104,10 +105,7 @@ export interface BareMetalYard {
 	readonly close: () => void;
 }
 
-/** `@hobo/core/hobo-home`'s rule, under the name this package exports it as. */
-export function defaultHoboHome(env: NodeJS.ProcessEnv = process.env): string {
-	return resolveHoboHome(env);
-}
+export { defaultHoboHome } from "./hobo-home.js";
 
 export function yardConfigPath(hoboHome: string): string {
 	return join(hoboHome, "yard.json");

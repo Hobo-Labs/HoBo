@@ -472,10 +472,10 @@ function scoreCriterion(
  * first diverging path — the same first-diff vocabulary the conformance
  * golden checks use.
  */
-export function matchGolden<T extends EvaluationValue, U extends EvaluationValue>(
-	expected: T,
-	actual: U,
-): MatchGoldenResult {
+export function matchGolden<
+	T extends EvaluationValue,
+	U extends EvaluationValue,
+>(expected: T, actual: U): MatchGoldenResult {
 	if (canonicalJson(expected) === canonicalJson(actual)) {
 		return { equal: true };
 	}
@@ -551,7 +551,9 @@ export function canonicalJson<T>(
 	const entries = Object.entries(value as object);
 	return `{${entries
 		.sort()
-			.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry, seen)}`)
+		.map(
+			([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry, seen)}`,
+		)
 		.join(",")}}`;
 }
 
@@ -631,12 +633,7 @@ function parseUnitInterval<T>(
 	label: string,
 	ErrorClass: new (message: string) => TypeError,
 ): number {
-	if (
-		!isNumber(value) ||
-		!Number.isFinite(value) ||
-		value < 0 ||
-		value > 1
-	) {
+	if (!isNumber(value) || !Number.isFinite(value) || value < 0 || value > 1) {
 		throw new ErrorClass(`${label} must be a finite number in [0,1]`);
 	}
 	return value;
@@ -757,7 +754,10 @@ export interface TrainableGoldenRegion {
 export function defineTrainableGoldenRubric(
 	region: TrainableGoldenRegion,
 ): Rubric {
-	if (valueKind(region.methodRef) !== "string" || region.methodRef.length === 0) {
+	if (
+		valueKind(region.methodRef) !== "string" ||
+		region.methodRef.length === 0
+	) {
 		throw new RubricParseError(
 			"trainable region methodRef must be a non-empty string",
 		);
@@ -1006,7 +1006,5 @@ function isPolluted<T>(
 		return true;
 	}
 	// SAFETY: valueKind(value) is "object", so Object.values accepts it.
-	return Object.values(objectValue).some((entry) =>
-		isPolluted(entry, seen),
-	);
+	return Object.values(objectValue).some((entry) => isPolluted(entry, seen));
 }

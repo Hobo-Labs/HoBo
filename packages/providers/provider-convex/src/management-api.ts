@@ -5,7 +5,6 @@
 // FAILS CLOSED with a remediation naming the broker path — never a silent
 // no-op. Env inspection is presence-only; values are never logged or echoed.
 
-// public-contract: default Management API base consumers may override.
 import {
 	isJsonArray,
 	isJsonObject,
@@ -13,6 +12,7 @@ import {
 	type JsonValue,
 } from "./json.js";
 
+// public-contract: default Management API base consumers may override.
 export const CONVEX_MANAGEMENT_API_BASE = "https://api.convex.dev/v1";
 
 export interface ConvexManagementClientOptions {
@@ -54,6 +54,18 @@ export function createConvexManagementClient(
 		/\/+$/u,
 		"",
 	);
+	const target = new URL(base);
+	if (
+		target.protocol !== "https:" ||
+		target.username ||
+		target.password ||
+		target.search ||
+		target.hash
+	) {
+		throw new Error(
+			"convex management API base must be an HTTPS URL without credentials, query, or fragment",
+		);
+	}
 	const fetchImpl = options.fetchImpl ?? globalThis.fetch;
 
 	async function request(path: string, init?: RequestInit): Promise<JsonValue> {
@@ -62,6 +74,7 @@ export function createConvexManagementClient(
 		}
 		const response = await fetchImpl(`${base}${path}`, {
 			...init,
+			redirect: "error",
 			headers: {
 				accept: "application/json",
 				authorization: `Bearer ${deployKey}`,

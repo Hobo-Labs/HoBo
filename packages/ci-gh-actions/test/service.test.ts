@@ -73,7 +73,10 @@ it("recovers before listening, gates startup and permissions, and caches readine
 	expect(h.history).toEqual(["recover"]);
 	const initial = await fetch(`${h.base()}/readyz`);
 	expect(initial.status).toBe(503);
-	expect(await initial.json()).toEqual({ ready: false });
+	expect(await initial.json()).toEqual({
+		ready: false,
+		engines: { "gh-actions": { ready: false } },
+	});
 	expect((await fetch(`${h.base()}/healthz`)).status).toBe(200);
 	expect(
 		(await fetch(`${h.base()}/github/webhooks`, { method: "POST" })).status,
@@ -108,7 +111,9 @@ it("times out unavailable permissions with an abort signal and leaks no failure 
 	expect(h.service.ready()).toBe(false);
 	expect(h.logs).toContainEqual({ level: "error", event: "readiness.failed" });
 	const response = await fetch(`${h.base()}/readyz`);
-	expect(await response.text()).toBe('{"ready":false}');
+	expect(await response.text()).toBe(
+		'{"ready":false,"engines":{"gh-actions":{"ready":false}}}',
+	);
 	gate.resolve();
 	await Promise.resolve();
 	expect(JSON.stringify(h.logs)).not.toContain("secret");

@@ -13,7 +13,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, it, type TestContext } from "vitest";
 import { CREDENTIAL_BINDINGS_FILE } from "../src/credentials-opensesame.js";
 import { isJsonObject, isJsonString, parseJsonValue } from "../src/json.js";
 
@@ -52,27 +52,43 @@ const BINDINGS = {
 	],
 };
 
-let root = "";
-/** The project: it holds hobo.credentials.json. */
-let work = "";
-/** A directory with no bindings, to start the bin from. */
-let elsewhere = "";
-let binDir = "";
-let scratch = "";
-beforeEach(() => {
-	root = mkdtempSync(join(tmpdir(), "hobo-bin-opensesame-"));
-	work = join(root, "work");
-	elsewhere = join(root, "elsewhere");
-	binDir = join(root, "bin");
-	scratch = join(root, "tmp");
-	for (const dir of [work, elsewhere, binDir, scratch]) mkdirSync(dir);
-	writeFileSync(join(work, CREDENTIAL_BINDINGS_FILE), JSON.stringify(BINDINGS));
-});
-afterEach(() => {
-	rmSync(root, { recursive: true, force: true });
-});
+interface Dirs {
+	readonly root: string;
+	/** The project: it holds hobo.credentials.json. */
+	readonly work: string;
+	/** A directory with no bindings, to start the bin from. */
+	readonly elsewhere: string;
+	readonly binDir: string;
+	readonly scratch: string;
+}
 
-function standIn(scenario: string): string {
+/**
+ * Directories of the test's own, so the cases (each a process composing the
+ * whole CLI from source, mostly waiting on it) run concurrently.
+ */
+function dirsFor({ onTestFinished }: TestContext): Dirs {
+	const root = mkdtempSync(join(tmpdir(), "hobo-bin-opensesame-"));
+	onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+	const dirs = {
+		root,
+		work: join(root, "work"),
+		elsewhere: join(root, "elsewhere"),
+		binDir: join(root, "bin"),
+		scratch: join(root, "tmp"),
+	};
+	// OpenSesame refuses group/other-writable bin dirs, so the fixture must not depend on umask.
+	for (const dir of [dirs.work, dirs.elsewhere, dirs.binDir, dirs.scratch]) {
+		mkdirSync(dir, { mode: 0o755 });
+		chmodSync(dir, 0o755);
+	}
+	writeFileSync(
+		join(dirs.work, CREDENTIAL_BINDINGS_FILE),
+		JSON.stringify(BINDINGS),
+	);
+	return dirs;
+}
+
+function standIn({ root, binDir }: Dirs, scenario: string): string {
 	const record = join(root, "opensesame-record.json");
 	writeFileSync(
 		join(binDir, "opensesame"),
@@ -124,11 +140,14 @@ interface BinInput {
 }
 
 /** The `hobo-yard-*` event stores the runs left in their TMPDIR (C-8 of the #1593 review). */
-function leftYards(): string[] {
+function leftYards({ scratch }: Dirs): string[] {
 	return readdirSync(scratch).filter((name) => name.startsWith("hobo-yard-"));
 }
 
-function runBin(input: BinInput): Promise<BinRun> {
+function runBin(
+	{ root, work, binDir, scratch }: Dirs,
+	input: BinInput,
+): Promise<BinRun> {
 	const bin = input.bin ?? HOBO_BIN;
 	return new Promise((resolve, reject) => {
 		const child = spawn(
@@ -174,25 +193,27 @@ function runBin(input: BinInput): Promise<BinRun> {
 	});
 }
 
-describe("the composed hobo binary under HOBO_CREDENTIALS=opensesame", () => {
+describe.concurrent("the composed hobo binary under HOBO_CREDENTIALS=opensesame", () => {
 	it(
 		"relaunches itself under OpenSesame with its TypeScript loader and not its --env-file, reads the bindings from --cwd, and exits as the command did",
-		async () => {
-			const record = standIn("surrogate-delivered");
+		async (context) => {
+			const { expect } = context;
+			const dirs = dirsFor(context);
+			const record = standIn(dirs, "surrogate-delivered");
 			// A file holding another provider's credential: re-read in the command,
 			// it would sit beside the surrogate (C-1 of the #1593 review).
-			const envFile = join(root, "fixture.env");
+			const envFile = join(dirs.root, "fixture.env");
 			writeFileSync(
 				envFile,
 				"CLOUDFLARE_API_TOKEN=cf_dummy_marker_not_a_secret\nCLOUDFLARE_ACCOUNT_ID=acct_dummy\n",
 			);
 			// Started where there are no bindings: they are read from --cwd (C-7).
-			const run = await runBin({
+			const run = await runBin(dirs, {
 				nodeArgs: [`--env-file=${envFile}`],
-				args: ["--cwd", work, "recipes"],
+				args: ["--cwd", dirs.work, "recipes"],
 				env: { HOBO_CREDENTIALS: "opensesame" },
 				record,
-				cwd: elsewhere,
+				cwd: dirs.elsewhere,
 			});
 			expect(run.stderr.match(/^hobo: .*$/gmu)).toEqual([
 				"hobo: not passed to the run under OpenSesame: --env-file (a Node option reaches it only when it reads no environment or code from disk)",
@@ -208,43 +229,47 @@ describe("the composed hobo binary under HOBO_CREDENTIALS=opensesame", () => {
 				TSX_LOADER,
 				HOBO_BIN,
 				"--cwd",
-				work,
+				dirs.work,
 				"recipes",
 			]);
 			expect(run.childMarker).toBe("1");
 			// The composed process removed its event store on the way out.
-			expect(leftYards()).toEqual([]);
+			expect(leftYards(dirs)).toEqual([]);
 		},
 		RUN_TIMEOUT_MS,
 	);
 
 	it(
 		"answers --help without starting OpenSesame, with no bindings anywhere",
-		async () => {
-			const record = standIn("surrogate-delivered");
-			const run = await runBin({
+		async (context) => {
+			const { expect } = context;
+			const dirs = dirsFor(context);
+			const record = standIn(dirs, "surrogate-delivered");
+			const run = await runBin(dirs, {
 				args: ["--help"],
 				env: { HOBO_CREDENTIALS: "opensesame" },
 				record,
-				cwd: elsewhere,
+				cwd: dirs.elsewhere,
 			});
 			expect(run.stderr).not.toMatch(/^hobo: /mu);
 			expect(run.status).toBe(0);
 			expect(run.stdout).toMatch(/^HoBo CLI/u);
 			expect(run.command).toBeUndefined();
 			// The composed process removed its event store on the way out.
-			expect(leftYards()).toEqual([]);
+			expect(leftYards(dirs)).toEqual([]);
 		},
 		RUN_TIMEOUT_MS,
 	);
 });
 
-describe("hobo-mcp under HOBO_CREDENTIALS=opensesame", () => {
+describe.concurrent("hobo-mcp under HOBO_CREDENTIALS=opensesame", () => {
 	it(
 		"relaunches under OpenSesame, given the store passphrase, and serves MCP through it",
-		async () => {
-			const record = standIn("surrogate-delivered");
-			const run = await runBin({
+		async (context) => {
+			const { expect } = context;
+			const dirs = dirsFor(context);
+			const record = standIn(dirs, "surrogate-delivered");
+			const run = await runBin(dirs, {
 				bin: HOBO_MCP_BIN,
 				env: {
 					HOBO_CREDENTIALS: "opensesame",
@@ -263,7 +288,7 @@ describe("hobo-mcp under HOBO_CREDENTIALS=opensesame", () => {
 			]);
 			expect(run.childMarker).toBe("1");
 			// The composed process removed its event store on the way out.
-			expect(leftYards()).toEqual([]);
+			expect(leftYards(dirs)).toEqual([]);
 			expect(run.sawStorePassword).toBe(true);
 			// The relaunched server answered on the stdout the client reads.
 			const reply = parseJsonValue(run.stdout.trim());
@@ -275,9 +300,11 @@ describe("hobo-mcp under HOBO_CREDENTIALS=opensesame", () => {
 
 	it(
 		"a relaunched server holding a placeholder says so on one line, not a stack trace",
-		async () => {
-			const record = standIn("plugin-absent");
-			const run = await runBin({
+		async (context) => {
+			const { expect } = context;
+			const dirs = dirsFor(context);
+			const record = standIn(dirs, "plugin-absent");
+			const run = await runBin(dirs, {
 				bin: HOBO_MCP_BIN,
 				env: {
 					HOBO_CREDENTIALS: "opensesame",
@@ -293,16 +320,18 @@ describe("hobo-mcp under HOBO_CREDENTIALS=opensesame", () => {
 			expect(run.stderr).toMatch(/^hobo: placeholders_only: /mu);
 			expect(run.stderr).not.toMatch(/^\s+at /mu);
 			expect(run.stdout).toBe("");
-			expect(leftYards()).toEqual([]);
+			expect(leftYards(dirs)).toEqual([]);
 		},
 		RUN_TIMEOUT_MS,
 	);
 
 	it(
 		"without the store passphrase, starts nothing and says why on one line",
-		async () => {
-			const record = standIn("surrogate-delivered");
-			const run = await runBin({
+		async (context) => {
+			const { expect } = context;
+			const dirs = dirsFor(context);
+			const record = standIn(dirs, "surrogate-delivered");
+			const run = await runBin(dirs, {
 				bin: HOBO_MCP_BIN,
 				env: { HOBO_CREDENTIALS: "opensesame" },
 				record,
@@ -315,7 +344,7 @@ describe("hobo-mcp under HOBO_CREDENTIALS=opensesame", () => {
 			expect(run.stdout).toBe("");
 			expect(run.command).toBeUndefined();
 			// The composed process removed its event store on the way out.
-			expect(leftYards()).toEqual([]);
+			expect(leftYards(dirs)).toEqual([]);
 		},
 		RUN_TIMEOUT_MS,
 	);
@@ -326,6 +355,7 @@ describe("hobo-mcp under HOBO_CREDENTIALS=opensesame", () => {
  * resolves with how it ended. A process that swallows the signal is killed.
  */
 function signalBin(
+	{ root, elsewhere, scratch }: Dirs,
 	bin: string,
 	args: readonly string[],
 	ready: (stderr: string) => boolean,
@@ -366,35 +396,41 @@ function signalBin(
 	});
 }
 
-describe("the composed binaries' own event store, on a signal", () => {
+describe.concurrent("the composed binaries' own event store, on a signal", () => {
 	it(
 		"hobo removes it on a signal it has no other handler for, and still ends by it",
-		async () => {
+		async (context) => {
+			const { expect } = context;
+			const dirs = dirsFor(context);
 			// `serve control` stops gracefully on SIGINT and SIGTERM and has no SIGHUP
 			// handler: SIGHUP finds only the entry point's.
 			const ended = await signalBin(
+				dirs,
 				HOBO_BIN,
 				["serve", "control", "--port", "0"],
 				(stderr) => stderr.includes("hobo serve control: http"),
 				"SIGHUP",
 			);
 			expect(ended.signal).toBe("SIGHUP");
-			expect(leftYards()).toEqual([]);
+			expect(leftYards(dirs)).toEqual([]);
 		},
 		RUN_TIMEOUT_MS,
 	);
 
 	it(
 		"hobo-mcp removes it on SIGTERM while it serves, and still ends by it",
-		async () => {
+		async (context) => {
+			const { expect } = context;
+			const dirs = dirsFor(context);
 			const ended = await signalBin(
+				dirs,
 				HOBO_MCP_BIN,
 				[],
-				() => leftYards().length > 0,
+				() => leftYards(dirs).length > 0,
 				"SIGTERM",
 			);
 			expect(ended.signal).toBe("SIGTERM");
-			expect(leftYards()).toEqual([]);
+			expect(leftYards(dirs)).toEqual([]);
 		},
 		RUN_TIMEOUT_MS,
 	);

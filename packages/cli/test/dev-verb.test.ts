@@ -18,8 +18,7 @@ import {
 	createHoboCli,
 	type DevRuntime,
 } from "../src/index.js";
-import { type JsonValue } from "../src/json.js";
-
+import type { JsonValue } from "../src/json.js";
 
 // S1-19: `hobo dev` boots a runtime-local Camp, collects + links the Bindle,
 // serves it locally, and live-tails the component-host events through the

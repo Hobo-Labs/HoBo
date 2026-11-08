@@ -128,7 +128,7 @@ function buildCatalog(): readonly SlotBinding[] {
 		queues(),
 		workers(),
 		web,
-		alsoServes("web", web, workers()),
+		alsoServes("web", web, workers({ workersDev: true })),
 	]);
 }
 

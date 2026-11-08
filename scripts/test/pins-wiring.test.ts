@@ -37,11 +37,11 @@ describe("pins wiring", () => {
 	it("setup initialises the pins before it installs, so the submodule exists first", () => {
 		const parts = String(scripts.setup).split(" && ");
 		assert.equal(parts[0], BOOTSTRAP);
-		// The install runs through `corepack pnpm …` — the same command as
-		// install:check — instead of `corepack enable pnpm`, which hard-fails
-		// when the Node bin directory is not writable (EACCES on the shim
-		// symlink) even though corepack could run pnpm perfectly well.
-		assert.deepEqual(parts.slice(1), [`corepack ${scripts["install:check"]}`]);
+		// The install runs through bootstrap-dev + install:check (mise-provisioned pnpm).
+		assert.deepEqual(parts.slice(1), [
+			"bash scripts/bootstrap-dev.sh --project-only",
+			"pnpm run install:check",
+		]);
 	});
 
 	it("a missing submodule is remedied with pins:fetch, not a hand-typed git command", () => {
@@ -53,17 +53,24 @@ describe("pins wiring", () => {
 		);
 	});
 
-	it("the disabled PR gate checks the pins after checkout and before installing", () => {
-		const job = jobText(
-			read(".github/workflows-disabled/hobo-ci.yml"),
-			"pr-gate",
-		);
-		const checkout = job.indexOf("actions/checkout@");
-		const status = job.indexOf(`run: ${BOOTSTRAP} --status --offline`);
-		const install = job.indexOf("pnpm install");
-		assert.ok(checkout >= 0 && status > checkout, "status runs after checkout");
-		assert.ok(install > status, "status runs before pnpm install");
-		assert.match(job, /if: \$\{\{ false \}\}/u);
+	it("PR validation jobs check the pins after checkout and before installing", () => {
+		const workflow = read(".github/workflows/hobo-ci.yml");
+		for (const name of [
+			"pr_gate_validation",
+			"workspace_tests",
+			"pr_affected",
+		]) {
+			const job = jobText(workflow, name);
+			const checkout = job.indexOf("actions/checkout@");
+			const status = job.indexOf(`run: ${BOOTSTRAP} --status --offline`);
+			const install = job.indexOf("scripts/ci/pnpm-install.mts");
+			assert.ok(
+				checkout >= 0 && status > checkout,
+				`${name}: status follows checkout`,
+			);
+			assert.ok(install > status, `${name}: status precedes pnpm install`);
+			assert.match(job, /runs-on:\s*(?:hobo|.*'hobo-trunk' \|\| 'hobo')/u);
+		}
 	});
 
 	it("the setup docs name the three verbs", () => {

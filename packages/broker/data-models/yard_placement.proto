@@ -75,4 +75,127 @@ message YardPlacementReceipt {
   string selected_camp_id = 6;
   string inventory_hash = 7;
   string content_hash = 8;
+  BudgetReservation budget_reservation = 9;
+  HostingQuote hosting_quote = 10;
+  HostingPolicyProof hosting_policy_proof = 11;
+}
+
+
+message BudgetIdentity {
+  string tenant_id = 1;
+  string budget_id = 2;
+  string period_id = 3;
+  string policy_revision = 4;
+}
+
+// USD integer microdollars. Zero is a hard zero allowance, never unlimited.
+message BudgetLedgerSnapshot {
+  BudgetIdentity identity = 1;
+  uint32 seq = 2;
+  double limit_micros = 3;
+  double spent_micros = 4;
+  double reserved_micros = 5;
+  string observed_at = 6;
+  string valid_until = 7;
+  repeated BudgetProviderAccount provider_accounts = 8;
+  repeated BudgetEntitlement entitlements = 9;
+  // External unresolved liabilities, excluding this authority's held reservations.
+  double unresolved_micros = 10;
+  double recovery_reserve_micros = 11;
+  // Commitments owned by another authority; excludes this journal's holds.
+  double external_committed_micros = 12;
+}
+
+message BudgetProviderAccount {
+  string provider_account_id = 1;
+  double limit_micros = 2;
+  double spent_micros = 3;
+  double reserved_micros = 4;
+  double external_committed_micros = 5;
+}
+message BudgetEntitlement {
+  string bucket_id = 1;
+  string unit = 2;
+  string period_id = 3;
+  double remaining_units = 4;
+  double reserved_units = 5;
+  string observed_at = 6;
+  string valid_until = 7;
+}
+message ProviderAccountExposure {
+  string provider_account_id = 1;
+  double liability_micros = 2;
+}
+message EntitlementClaim {
+  string bucket_id = 1;
+  string unit = 2;
+  double units = 3;
+}
+message BudgetSettlementEvidence {
+  string usage_evidence_ref = 1;
+  string source_stopped_evidence_ref = 2;
+  repeated ProviderAccountExposure provider_accounts = 3;
+  repeated EntitlementClaim entitlement_claims = 4;
+}
+
+message HostingQuoteComponent {
+  string name = 1;
+  double cost_micros = 2;
+}
+
+// Complete incremental quote for one unsplittable request, including setup,
+// execution, cleanup, network, overlap/migration and applicable credits.
+message HostingQuote {
+  string quote_id = 1;
+  string yard_id = 2;
+  string provider_id = 3;
+  string owner_tenant_id = 4;
+  string currency = 5;
+  double total_micros = 6;
+  string observed_at = 7;
+  string valid_until = 8;
+  repeated HostingQuoteComponent components = 9;
+  string request_digest = 10;
+  // Conservative enforceable exposure bound; absence is an estimate only.
+  optional double liability_bound_micros = 11;
+  repeated ProviderAccountExposure provider_accounts = 12;
+  repeated EntitlementClaim entitlement_claims = 13;
+  string financial_plan_hash = 14;
+}
+
+message BudgetReservation {
+  string reservation_id = 1;
+  BudgetIdentity identity = 2;
+  string request_digest = 3;
+  string quote_id = 4;
+  double reserved_micros = 5;
+  // held | uncertain | settled | released
+  string status = 6;
+  double actual_micros = 7;
+  uint32 ledger_seq = 8;
+  string quote_digest = 9;
+  string usage_evidence_ref = 10;
+  string source_stopped_evidence_ref = 11;
+  repeated ProviderAccountExposure provider_accounts = 12;
+  repeated EntitlementClaim entitlement_claims = 13;
+  BudgetSettlementEvidence settlement_evidence = 14;
+  string execution_digest = 15;
+  string financial_plan_hash = 16;
+}
+
+message BudgetAuthorityEvent {
+  string type = 1;
+  BudgetLedgerSnapshot snapshot = 2;
+  repeated BudgetReservation reservations = 3;
+  string reconciliation_evidence_ref = 4;
+}
+
+message HostingPolicyProof {
+  string request_digest = 1;
+  string quote_id = 2;
+  BudgetIdentity identity = 3;
+  string policy_hash = 4;
+  string effect = 5;
+  string evidence_ref = 6;
+  bool obligations_satisfied = 7;
 }

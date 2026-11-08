@@ -27,6 +27,13 @@ const bindles = fileURLToPath(
 	new URL("../../bindles/dist/index.js", import.meta.url),
 );
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+function assertLoopbackOrigin(origin: string): void {
+	const host = new URL(origin).hostname.toLowerCase();
+	expect(LOOPBACK_HOSTS.has(host)).toBe(true);
+}
+
 async function setup(
 	run: (
 		project: string,
@@ -51,7 +58,11 @@ return {web: b.web(() => handler)};
 `,
 	);
 	initBareMetalYard({ hoboHome, componentHost: "local" });
-	const env: NodeJS.ProcessEnv = { ...process.env, HOBO_HOME: hoboHome };
+	const env: NodeJS.ProcessEnv = {
+		...process.env,
+		HOBO_HOME: hoboHome,
+		HOBO_PORTLESS: "0",
+	};
 	for (const key of [
 		"HOBO_BROKER",
 		"HOBO_BROKER_URI",
@@ -82,7 +93,9 @@ return {web: b.web(() => handler)};
 	}
 }
 
-describe("product self-hosted deployment process lifecycle", () => {
+// Every case deploys its own temporary project with its own HOBO_HOME on an
+// OS-assigned port, and spends most of its time waiting on `hobo` processes.
+describe.concurrent("product self-hosted deployment process lifecycle", () => {
 	it("refuses an application returning 503 and tears down its worker", async () => {
 		await setup(async (project, _env, command) => {
 			const probedUrlFile = join(project, "probe-url.txt");
@@ -91,7 +104,7 @@ describe("product self-hosted deployment process lifecycle", () => {
 				`import { bindle } from ${JSON.stringify(bindles)};
 import { writeFileSync } from "node:fs";
 export default bindle("real-app", b => ({web: b.web(() => request => {
-writeFileSync(${JSON.stringify(probedUrlFile)}, new URL(request.url).origin);
+writeFileSync(${JSON.stringify(probedUrlFile)}, "http://127.0.0.1:" + new URL(request.url).port);
 return new Response("application unavailable", {status: 503});
 })}));`,
 			);
@@ -101,8 +114,9 @@ return new Response("application unavailable", {status: 503});
 				),
 			});
 			const url = await readFile(probedUrlFile, "utf8");
+			assertLoopbackOrigin(url.trim());
 			await expect(
-				fetch(url, { signal: AbortSignal.timeout(1000) }),
+				fetch(url.trim(), { signal: AbortSignal.timeout(1000) }),
 			).rejects.toThrow();
 			expect(await readLocalDeployment(project)).toBeUndefined();
 			await expect(

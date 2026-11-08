@@ -67,7 +67,6 @@ async function messageOf(fn: () => Promise<BuildResult>): Promise<string> {
 	return "<did not throw>";
 }
 
-
 function build(root: string, overrides: BuildOverrides = {}) {
 	// SAFETY: test overrides intentionally exercise missing and drifted toolchain fields.
 	return componentizeHelloBindle({
@@ -142,6 +141,12 @@ describe("SOURCE_DATE_EPOCH", () => {
 				await messageOf(() => build(sourceRoot(), { sourceDateEpoch: epoch })),
 			).toContain("invalid_source_date_epoch");
 		}
+	});
+
+	test("Unix epoch seconds from CI deps image are accepted", async () => {
+		await expect(
+			build(sourceRoot(), { sourceDateEpoch: "1704067200" }),
+		).resolves.toBeDefined();
 	});
 
 	test("the epoch reaches the recorded metadata", async () => {

@@ -4,6 +4,7 @@ import {
 	chmod,
 	mkdir,
 	mkdtemp,
+	readdir,
 	readFile,
 	rm,
 	stat,
@@ -181,44 +182,36 @@ export async function vetCueConstraints(
 ): Promise<CueVetResult> {
 	const cueBinary = await ensureCueBinary(repoRoot);
 	const violations: CueViolation[] = [];
-	const validDir = join(pkg.dataModelsDir, "fixtures", "valid");
-	const invalidDir = join(pkg.dataModelsDir, "fixtures", "invalid");
 
 	for (const schemaPath of pkg.cueSchemas.map((absolute) =>
 		absolute.slice(pkg.dataModelsDir.length + 1),
 	)) {
-		if (existsSync(validDir)) {
-			const { readdir } = await import("node:fs/promises");
-			const validFixtures = (await readdir(validDir))
-				.filter((name) => name.endsWith(".json"))
-				.sort();
-			for (const fixture of validFixtures) {
-				violations.push(
-					...(await vetFixture(
-						cueBinary,
-						schemaPath,
-						join("fixtures", "valid", fixture),
-						pkg,
-						true,
-					)),
-				);
-			}
-		}
-		if (existsSync(invalidDir)) {
-			const { readdir } = await import("node:fs/promises");
-			const invalidFixtures = (await readdir(invalidDir))
-				.filter((name) => name.endsWith(".json"))
-				.sort();
-			for (const fixture of invalidFixtures) {
-				violations.push(
-					...(await vetFixture(
-						cueBinary,
-						schemaPath,
-						join("fixtures", "invalid", fixture),
-						pkg,
-						false,
-					)),
-				);
+		// Flat corpora retain their package-wide meaning. Scoped corpora add
+		// checks only for their owning schema; they cannot mask flat fixtures.
+		for (const fixtureRoot of [
+			"fixtures",
+			join("fixtures", basename(schemaPath, ".cue")),
+		]) {
+			for (const [kind, expectValid] of [
+				["valid", true],
+				["invalid", false],
+			] as const) {
+				const directory = join(pkg.dataModelsDir, fixtureRoot, kind);
+				if (!existsSync(directory)) continue;
+				const fixtures = (await readdir(directory))
+					.filter((name) => name.endsWith(".json"))
+					.sort();
+				for (const fixture of fixtures) {
+					violations.push(
+						...(await vetFixture(
+							cueBinary,
+							schemaPath,
+							join(fixtureRoot, kind, fixture),
+							pkg,
+							expectValid,
+						)),
+					);
+				}
 			}
 		}
 	}

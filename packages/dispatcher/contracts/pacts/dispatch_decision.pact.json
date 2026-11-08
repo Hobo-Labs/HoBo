@@ -43,6 +43,18 @@
 					"reason": "no registered runner candidates"
 				}
 			}
+		},
+		{
+			"description": "all registered hosting backends exceed the hard budget and no decision fact is emitted",
+			"request": {
+				"method": "POST",
+				"path": "/dispatcher/decide",
+				"body": { "category": "traffic-backend", "objective": "maximize-credits", "units": 2 }
+			},
+			"response": {
+				"status": 200,
+				"body": { "ok": false, "reason": "no eligible candidates within budget and capacity" }
+			}
 		}
 	],
 	"metadata": {

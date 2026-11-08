@@ -15,6 +15,36 @@ export interface RejectionMatrixRow {
 // public-contract: the closed rejection-code catalog agents self-correct against.
 export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 	{
+		code: "invalid-spend-estimate",
+		plane: "billing",
+		remediation:
+			"supply a finite nonnegative estimate and stable request identity",
+	},
+	{
+		code: "reservation-replay-mismatch",
+		plane: "billing",
+		remediation:
+			"use a new request identity for changed work; reconcile the existing reservation",
+	},
+	{
+		code: "metering-evidence-incomplete",
+		plane: "billing",
+		remediation:
+			"reconcile unknown charges and restore a complete monotonic metering stream before spending",
+	},
+	{
+		code: "hosting-budget-admission-denied",
+		plane: "billing",
+		remediation:
+			"supply fresh scoped bounded quotes, fulfilled policy evidence and an affordable durable shared reservation",
+	},
+	{
+		code: "yard-generation-uncertain",
+		plane: "placement",
+		remediation:
+			"inspect and reconcile the existing generation attempt; retain its budget commitment until positively settled",
+	},
+	{
 		code: "connector-missing",
 		plane: "connectors",
 		remediation:

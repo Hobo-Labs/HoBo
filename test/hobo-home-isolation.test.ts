@@ -106,7 +106,9 @@ let projects = 0;
 /**
  * Runs probe files (name to body) one after the other in one worker, as the
  * root config runs files (isolate: false), with only the global setup and the
- * setup file under test, a TMPDIR of their own, and `env`.
+ * setup file under test, a TMPDIR of their own, and `env`. Files run in name
+ * order: vitest's default sequencer puts larger files first, so a probe that
+ * needs another to have run first could not rely on its name.
  */
 function runProbes(
 	files: Readonly<Record<string, string>>,
@@ -123,7 +125,7 @@ function runProbes(
 	}
 	writeFileSync(
 		join(project, "vitest.config.mjs"),
-		`export default { test: { globals: true, isolate: false, pool: "threads", fileParallelism: false, maxWorkers: 1, include: ["*.probe.test.mjs"], globalSetup: [${JSON.stringify(GLOBAL_SETUP)}], setupFiles: [${JSON.stringify(SETUP)}] } };\n`,
+		`export default { test: { globals: true, isolate: false, pool: "threads", fileParallelism: false, maxWorkers: 1, include: ["*.probe.test.mjs"], sequence: { sequencer: class { async shard(files) { return files; } async sort(files) { return [...files].sort((x, y) => (x.moduleId < y.moduleId ? -1 : 1)); } } }, globalSetup: [${JSON.stringify(GLOBAL_SETUP)}], setupFiles: [${JSON.stringify(SETUP)}] } };\n`,
 	);
 	const vitest = join(
 		dirname(createRequire(import.meta.url).resolve("vitest/package.json")),
@@ -189,9 +191,10 @@ describe("the throwaway HOBO_HOME", () => {
 
 	it("stays set after a file's last test, so a late write lands inside the run's root", () => {
 		// The timer fires once the file's test is done; HOBO_HOME unset then would send it to ~/.hobo.
+		// The next file waits for that write, so the worker cannot end before it.
 		const { status, seen, temp, left } = runProbes({
-			a: `it("leaves a timer", () => { setTimeout(() => record("late"), 0); });\n`,
-			b: `it("keeps the worker busy", async () => { await new Promise((done) => setTimeout(done, 500)); });\n`,
+			a: `it("leaves a timer", () => { globalThis.lateWrite = new Promise((written) => setTimeout(() => { record("late"); written(); }, 0)); });\n`,
+			b: `it("waits for the late write", () => { if (!globalThis.lateWrite) throw new Error("a did not run first"); return globalThis.lateWrite; });\n`,
 		});
 		expect(status).toBe(0);
 		expect(seen).toHaveLength(1);

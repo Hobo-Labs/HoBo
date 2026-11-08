@@ -38,7 +38,9 @@ afterEach(() => {
 		rmSync(directory, { recursive: true, force: true });
 });
 
-describe("local runner controller lifecycle", () => {
+// Each command cold-starts `node --import tsx` (up to 15 s apiece); a test runs
+// several, which outlasts vitest's 5 s default on a loaded CI box.
+describe("local runner controller lifecycle", { timeout: 60_000 }, () => {
 	it("starts once without credentials, reports waiting, and stop waits for drain", async () => {
 		const { state, command } = controller();
 		try {

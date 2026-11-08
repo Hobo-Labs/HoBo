@@ -14,8 +14,7 @@ import {
 	PulumiEngineUnavailableError,
 	runIacBackendConformance,
 } from "../src/index.js";
-import { type JsonValue } from "../src/json.js";
-
+import type { JsonValue } from "../src/json.js";
 
 // HOBO-715: the REAL Pulumi Automation API engine (@pulumi/pulumi
 // LocalWorkspace over the same rendered YAML programs and file:// state

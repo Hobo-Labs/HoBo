@@ -56,8 +56,8 @@ import {
 	type JsonObject,
 } from "./json.js";
 import {
-	acquireLocalStateLock,
-	LocalStateLockBusyError,
+	acquireLocalStateLockQueued,
+	withLocalStateLockQueued,
 } from "./local-state-lock.js";
 
 // domain-view: parsed owner-only persistence view derived from auth_md.proto; public views exclude custody material.
@@ -159,27 +159,19 @@ function key(resource: string, ref: string): string {
 function directory(home: string): string {
 	return join(home, "auth-md", "registrations");
 }
-async function acquireAuthMdLock(home: string): Promise<() => void> {
+async function prepareAuthMdLock(home: string): Promise<string> {
 	const root = join(home, "auth-md");
+	const registrations = directory(home);
 	await mkdir(root, { recursive: true, mode: 0o700 });
-	const deadline = Date.now() + 120_000;
-	for (;;) {
-		try {
-			return acquireLocalStateLock(join(root, "operations-lock.sqlite"));
-		} catch (error) {
-			if (!(error instanceof LocalStateLockBusyError) || Date.now() >= deadline)
-				throw error;
-			await new Promise((resolve) => setTimeout(resolve, 25));
-		}
-	}
+	await mkdir(registrations, { recursive: true, mode: 0o700 });
+	await chmod(registrations, 0o700);
+	return join(root, "operations-lock.sqlite");
+}
+async function acquireAuthMdLock(home: string): Promise<() => void> {
+	return acquireLocalStateLockQueued(await prepareAuthMdLock(home));
 }
 async function withAuthMdLock<T>(home: string, operation: () => Promise<T>) {
-	const release = await acquireAuthMdLock(home);
-	try {
-		return await operation();
-	} finally {
-		release();
-	}
+	return withLocalStateLockQueued(await prepareAuthMdLock(home), operation);
 }
 function statePath(home: string, resource: string, ref: string): string {
 	return join(directory(home), `${key(resource, ref)}.json`);
@@ -193,8 +185,6 @@ async function save(
 	state: StoredAuthMdState,
 	createOnly = false,
 ): Promise<void> {
-	await mkdir(directory(home), { recursive: true, mode: 0o700 });
-	await chmod(directory(home), 0o700);
 	const path = statePath(home, state.resource, state.registrationRef);
 	if (createOnly) {
 		await writeFile(path, `${JSON.stringify(state)}\n`, {

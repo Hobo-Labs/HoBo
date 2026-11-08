@@ -2,9 +2,10 @@
  * Cucumber steps for features/examples-console-cloudflare-station.feature.
  * Delegates to the Playwright feature runner (same gate as examples:regression).
  * The runner needs `astro dev` serving EXAMPLES_BASE_URL; these steps boot it
- * themselves (and tear it down) when nothing is already listening, so the
- * behavior lane passes on a cold checkout instead of requiring a manually
- * started dev server.
+ * themselves (and tear it down) when nothing is already listening, so a cold
+ * checkout does not need a manually started dev server. The feature stamps a
+ * live Cloudflare station, so it runs only under cucumber.yaml's `live`
+ * profile, never in the offline `test:behavior` lane.
  */
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -12,7 +13,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AfterAll, Given, Then, When, setDefaultTimeout } from "@cucumber/cucumber";
 
-setDefaultTimeout(300_000);
+const STEP_TIMEOUT_MS = 300_000;
+// Below the step timeout so a stuck run is killed and reported, not orphaned.
+const FEATURE_TIMEOUT_MS = 270_000;
+// astro dev is ready in about a second; this bounds a dev server that never binds.
+const READY_TIMEOUT_MS = 60_000;
+setDefaultTimeout(STEP_TIMEOUT_MS);
 
 const REPO_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SCRIPT = path.join(
@@ -21,6 +27,7 @@ const SCRIPT = path.join(
 );
 const BASE_URL = process.env.EXAMPLES_BASE_URL ?? "http://127.0.0.1:4321/HoBo/";
 const HEALTH_URL = new URL("api/cf-temp", BASE_URL).toString();
+const { hostname: DEV_HOST, port: DEV_PORT } = new URL(BASE_URL);
 
 let featurePassed = false;
 let devServer: ChildProcess | undefined;
@@ -57,12 +64,28 @@ async function ensureDevServer(): Promise<void> {
 		} catch (error) {
 			throw new Error(`site dependency build failed: ${String(error)}`);
 		}
-		devServer = spawn("pnpm", ["--filter", "hobo-site", "run", "dev"], {
-			cwd: REPO_ROOT,
-			env: process.env,
-			stdio: ["ignore", "pipe", "pipe"],
-			detached: true,
-		});
+		// Bind where the health probe looks: `astro dev` defaults to `localhost`,
+		// which resolves to ::1 first on Debian and Node >= 17, so a 127.0.0.1
+		// probe never connects.
+		devServer = spawn(
+			"pnpm",
+			[
+				"--filter",
+				"hobo-site",
+				"run",
+				"dev",
+				"--host",
+				DEV_HOST.replace(/^\[|\]$/gu, ""),
+				"--port",
+				DEV_PORT || "4321",
+			],
+			{
+				cwd: REPO_ROOT,
+				env: process.env,
+				stdio: ["ignore", "pipe", "pipe"],
+				detached: true,
+			},
+		);
 		const collect = (chunk: Buffer) => {
 			devServerFailure = `${devServerFailure}${chunk.toString("utf8")}`.slice(
 				-4000,
@@ -80,7 +103,7 @@ async function ensureDevServer(): Promise<void> {
 			devServer = undefined;
 		});
 	}
-	const deadline = Date.now() + 120_000;
+	const deadline = Date.now() + READY_TIMEOUT_MS;
 	while (Date.now() < deadline) {
 		if (await healthOk()) return;
 		if (!devServer) {
@@ -89,7 +112,7 @@ async function ensureDevServer(): Promise<void> {
 		await new Promise((resolveSleep) => setTimeout(resolveSleep, 1_000));
 	}
 	throw new Error(
-		`astro dev never became healthy at ${HEALTH_URL} within 120s — start it manually with \`pnpm --filter hobo-site run dev\``,
+		`astro dev never became healthy at ${HEALTH_URL} within ${READY_TIMEOUT_MS / 1000}s — start it manually with \`pnpm --filter hobo-site run dev --host ${DEV_HOST}\`\n${devServerFailure}`,
 	);
 }
 
@@ -112,8 +135,20 @@ async function runPlaywrightFeature(): Promise<void> {
 			env: process.env,
 			stdio: "inherit",
 		});
-		child.on("error", reject);
+		const timer = setTimeout(() => {
+			child.kill("SIGKILL");
+			reject(
+				new Error(
+					`examples-console Playwright feature exceeded ${FEATURE_TIMEOUT_MS / 1000}s and was killed`,
+				),
+			);
+		}, FEATURE_TIMEOUT_MS);
+		child.on("error", (error) => {
+			clearTimeout(timer);
+			reject(error);
+		});
 		child.on("close", (code) => {
+			clearTimeout(timer);
 			if (code === 0) {
 				featurePassed = true;
 				resolve();

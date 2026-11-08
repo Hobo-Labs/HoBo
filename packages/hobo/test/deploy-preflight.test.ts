@@ -66,7 +66,7 @@ describe("resolver lane", () => {
 			VERCEL_TOKEN: "t",
 			HOBO_DEPLOY_RESOLVERS: value,
 		});
-		expect(target.lane).toBe("deploy-provider");
+		expect(target.lane).toBe("resolver");
 	});
 	// The lane is reported separately from the cloud because the two converge
 	// differently: a resolver re-run adopts an existing resource, where the
@@ -78,8 +78,8 @@ describe("resolver lane", () => {
 			CLOUDFLARE_ACCOUNT_ID: "a",
 		});
 		expect(target.backend).toBe("cloudflare");
-		expect(target.lane).toBe("deploy-provider");
-		expect(target.summary).toContain("HOBO_DEPLOY_RESOLVERS=1");
+		expect(target.lane).toBe("resolver");
+		expect(target.summary).toContain("authoritative hosting budget");
 	});
 
 	it("reports the resolver plane when opted in", () => {
@@ -89,7 +89,7 @@ describe("resolver lane", () => {
 			HOBO_DEPLOY_RESOLVERS: "1",
 		});
 		expect(target.lane).toBe("resolver");
-		expect(target.summary).toContain("read-or-create");
+		expect(target.summary).toContain("native liability evidence");
 	});
 
 	it("switches Vercel onto the resolver plane too", () => {

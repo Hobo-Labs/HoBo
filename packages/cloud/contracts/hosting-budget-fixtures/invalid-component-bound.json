@@ -1,0 +1,121 @@
+{
+  "nowMs": 1000,
+  "horizonEndMs": 3601000,
+  "maxObservationAgeMs": 1000,
+  "budget": {
+    "budgetId": "hosting",
+    "tenantId": "tenant",
+    "scopeId": "camp:prod",
+    "periodId": "period:one",
+    "policyRevision": "r1",
+    "ledgerSeq": 1,
+    "currency": "USD",
+    "periodStartMs": 0,
+    "periodEndMs": 36000000,
+    "capMicros": 1000,
+    "settledMicros": 0,
+    "committedMicros": 0,
+    "unresolvedMicros": 0,
+    "recoveryReserveMicros": 0,
+    "observedAtMs": 1000,
+    "validUntilMs": 36000000,
+    "providerAccountId": ""
+  },
+  "quotes": [
+    {
+      "id": "quote:a",
+      "resourceName": "app",
+      "definitionId": "a",
+      "providerId": "a",
+      "providerAccountId": "account:a",
+      "currency": "USD",
+      "rateMicros": 100,
+      "billingUnit": "hour",
+      "billingPeriodMs": 0,
+      "source": "contract:quoted-terms",
+      "observedAtMs": 1000,
+      "validUntilMs": 36000000,
+      "liabilityEndsAtMs": 3601000,
+      "entitlementId": "promo",
+      "minimumQuantity": 0,
+      "roundUpQuantity": false,
+      "fixedCostMicros": 0,
+      "transitionCostMicros": 0,
+      "components": [
+        {
+          "id": "source-egress",
+          "providerAccountId": "source",
+          "costClass": "egress",
+          "expectedMicros": 50,
+          "boundedMicros": 49,
+          "entitlementId": ""
+        }
+      ]
+    }
+  ],
+  "usages": [
+    {
+      "resourceName": "app",
+      "unit": "time-ms",
+      "expectedQuantity": 3600000,
+      "boundedQuantity": 3600000
+    }
+  ],
+  "entitlements": [
+    {
+      "id": "promo",
+      "providerAccountId": "account:a",
+      "currency": "USD",
+      "unit": "micros",
+      "remainingQuantity": 100,
+      "validUntilMs": 36000000,
+      "definitionIds": [
+        "a"
+      ],
+      "costClasses": [
+        "usage"
+      ],
+      "periodId": "period:one"
+    }
+  ],
+  "providerBudgets": [
+    {
+      "budgetId": "hosting",
+      "tenantId": "tenant",
+      "scopeId": "camp:prod",
+      "periodId": "period:one",
+      "policyRevision": "r1",
+      "ledgerSeq": 1,
+      "currency": "USD",
+      "periodStartMs": 0,
+      "periodEndMs": 36000000,
+      "capMicros": 1000,
+      "settledMicros": 0,
+      "committedMicros": 0,
+      "unresolvedMicros": 0,
+      "recoveryReserveMicros": 0,
+      "observedAtMs": 1000,
+      "validUntilMs": 36000000,
+      "providerAccountId": "account:a"
+    },
+    {
+      "budgetId": "hosting",
+      "tenantId": "tenant",
+      "scopeId": "camp:prod",
+      "periodId": "period:one",
+      "policyRevision": "r1",
+      "ledgerSeq": 1,
+      "currency": "USD",
+      "periodStartMs": 0,
+      "periodEndMs": 36000000,
+      "capMicros": 60,
+      "settledMicros": 0,
+      "committedMicros": 0,
+      "unresolvedMicros": 0,
+      "recoveryReserveMicros": 0,
+      "observedAtMs": 1000,
+      "validUntilMs": 36000000,
+      "providerAccountId": "source"
+    }
+  ]
+}

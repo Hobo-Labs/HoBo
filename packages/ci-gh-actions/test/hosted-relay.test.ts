@@ -1,11 +1,18 @@
-import { clone } from "@bufbuild/protobuf";
-import { ConfigurationSchema, OfferSchema } from "@hobo/ci";
+import { clone, create } from "@bufbuild/protobuf";
+import {
+	CiEventSchema,
+	ConfigurationSchema,
+	type Lease,
+	LeaseSchema,
+	OfferSchema,
+} from "@hobo/ci";
 import { afterEach, expect, it } from "vitest";
 import { HostedRelay, type HostedRelayStore } from "../src/hosted-relay.js";
 import {
 	createHostedRelayRuntime,
 	type HostedInboxStore,
 } from "../src/hosted-runtime.js";
+import type { WorkerStorageLease } from "../src/isolated-worker/storage-admission.js";
 import { harness, job, NOW, queued, SECRET, signed } from "./fixtures.js";
 
 const fixtures: ReturnType<typeof harness>[] = [];
@@ -81,6 +88,9 @@ function setup() {
 		async cancelAndRequeue(id, job, at) {
 			h.store.cancelAndRequeue(id, job, at);
 		},
+		async abortIsolatedAndRequeue(id, job, at) {
+			h.store.abortIsolatedAndRequeue(id, job, at);
+		},
 		async settleObserved(id, host, minutes, at, unmet, complete, observed) {
 			const current = h.store.get(id);
 			if (
@@ -123,11 +133,68 @@ async function reserve(h: ReturnType<typeof setup>) {
 	return lease;
 }
 
-it("requeues a paid reservation when a partial free host becomes available", async () => {
+/** Runtime recovery consumes an already-admitted provider record. It cannot
+ * convert a live lease to a different provider through the financial authority. */
+function sandboxRecoveryStore(
+	h: ReturnType<typeof setup>,
+	original: Lease,
+	state: string,
+	event: string,
+): HostedInboxStore {
+	const lease = clone(LeaseSchema, original);
+	lease.provider = "vercel";
+	lease.sandboxName = `hobo-${lease.id}`;
+	lease.state = state;
+	const events = [
+		create(CiEventSchema, { type: event, leaseId: lease.id, at: NOW }),
+	];
+	return {
+		...h.asyncStore,
+		async get(id) {
+			return id === lease.id ? clone(LeaseSchema, lease) : undefined;
+		},
+		async all() {
+			return [clone(LeaseSchema, lease)];
+		},
+		async activeLeases() {
+			return [clone(LeaseSchema, lease)];
+		},
+		async transition(id, expected, update, type, at) {
+			if (id !== lease.id || !expected.includes(lease.state)) return undefined;
+			update(lease);
+			events.push(create(CiEventSchema, { type, leaseId: id, at }));
+			return clone(LeaseSchema, lease);
+		},
+		async ready() {
+			return true;
+		},
+		async latestLeaseIntents(ids) {
+			return events.filter((item) => ids.includes(item.leaseId));
+		},
+		async claimWebhook() {
+			return undefined;
+		},
+		async acceptWebhook() {
+			return { duplicate: false };
+		},
+		async acceptIgnoredWebhook() {
+			return { duplicate: false };
+		},
+		async ackWebhook() {
+			return true;
+		},
+		async failWebhook() {
+			return "retry";
+		},
+	};
+}
+
+it("requeues a paid reservation for a partial free host under maximize-credits", async () => {
 	const h = setup();
 	const account = h.configuration.accounts[0];
 	const paid = account?.offers[0];
 	if (!account || !paid) throw new Error("missing offer");
+	account.routingStrategy = "maximize-credits";
 	paid.freeMinutes = 0;
 	paid.priceMicrosPerMinute = 1;
 	paid.observedAt = "2026-10-26T11:00:00Z";
@@ -243,6 +310,51 @@ it("rechecks isolation for demand queued before the connection changed", async (
 	await h.relay.dispatchPending();
 	expect(h.store.all()).toEqual([]);
 	expect(h.api.dispatches).toBe(0);
+});
+
+it("reads active leases immediately before storage admission", async () => {
+	const h = setup();
+	h.store.queue(job(), NOW);
+	setIsolatedOnly(h);
+	h.relay.options.isolatedHost = { async launch() {}, async reconcile() {} };
+	const activeLeases = h.asyncStore.activeLeases.bind(h.asyncStore);
+	let reads = 0;
+	h.asyncStore.activeLeases = async () => {
+		reads++;
+		const leases = await activeLeases();
+		if (reads !== 2) return leases;
+		return [
+			...leases,
+			create(LeaseSchema, {
+				id: "fresh-lease",
+				sandboxName: "hobo-fresh-lease",
+				jobId: 99,
+				state: "dispatching",
+			}),
+		];
+	};
+	const admissions: (readonly WorkerStorageLease[])[] = [];
+	h.relay.options.storageAdmission = {
+		admit: async (leases) => {
+			admissions.push(leases);
+			return true;
+		},
+		release() {},
+		reap: async () => undefined,
+		maintain: async () => undefined,
+	};
+
+	await h.relay.dispatchPending();
+
+	expect(admissions).toEqual([
+		[
+			{
+				id: "fresh-lease",
+				sandboxName: "hobo-fresh-lease",
+				jobId: "99",
+			},
+		],
+	]);
 });
 
 it("cancels and requeues a bridge reservation after isolation becomes required", async () => {
@@ -369,41 +481,7 @@ it.each([
 ] as const)("force-stops %s sandbox leases through a recovery-only host", async (state) => {
 	const h = setup();
 	const lease = await reserve(h);
-	h.store.transition(
-		lease.id,
-		["reserved"],
-		(entry) => {
-			entry.provider = "vercel";
-			entry.sandboxName = `hobo-${lease.id}`;
-			entry.state = state;
-		},
-		"ci.SandboxCreated",
-		NOW,
-	);
-	const store: HostedInboxStore = {
-		...h.asyncStore,
-		async ready() {
-			return true;
-		},
-		async latestLeaseIntents(ids) {
-			return h.store.events().filter((event) => ids.includes(event.leaseId));
-		},
-		async claimWebhook() {
-			return undefined;
-		},
-		async acceptWebhook() {
-			return { duplicate: false };
-		},
-		async acceptIgnoredWebhook() {
-			return { duplicate: false };
-		},
-		async ackWebhook() {
-			return true;
-		},
-		async failWebhook() {
-			return "retry";
-		},
-	};
+	const store = sandboxRecoveryStore(h, lease, state, "ci.SandboxCreated");
 	const calls: Array<{ id: string; forceStop?: boolean }> = [];
 	const runtime = createHostedRelayRuntime({
 		store,
@@ -489,41 +567,7 @@ it.each([
 ])("recovers abandoned sandbox %s only after the function deadline", async (state, event) => {
 	const h = setup();
 	const lease = await reserve(h);
-	h.store.transition(
-		lease.id,
-		["reserved"],
-		(entry) => {
-			entry.provider = "vercel";
-			entry.sandboxName = `hobo-${lease.id}`;
-			entry.state = state;
-		},
-		event,
-		NOW,
-	);
-	const store: HostedInboxStore = {
-		...h.asyncStore,
-		async ready() {
-			return true;
-		},
-		async latestLeaseIntents(ids) {
-			return h.store.events().filter((item) => ids.includes(item.leaseId));
-		},
-		async claimWebhook() {
-			return undefined;
-		},
-		async acceptWebhook() {
-			return { duplicate: false };
-		},
-		async acceptIgnoredWebhook() {
-			return { duplicate: false };
-		},
-		async ackWebhook() {
-			return true;
-		},
-		async failWebhook() {
-			return "retry";
-		},
-	};
+	const store = sandboxRecoveryStore(h, lease, state, event);
 	let now = new Date(Date.parse(NOW) + 800_000).toISOString();
 	const reconciliations: Array<{ id: string; forceStop?: boolean }> = [];
 	const runtime = createHostedRelayRuntime({
@@ -541,11 +585,11 @@ it.each([
 		},
 	});
 	await runtime.tick();
-	expect(h.store.get(lease.id)?.state).toBe(state);
+	expect((await store.get(lease.id))?.state).toBe(state);
 	expect(reconciliations.some((item) => item.forceStop)).toBe(false);
 	now = new Date(Date.parse(NOW) + 1_021_000).toISOString();
 	await runtime.tick();
-	expect(h.store.get(lease.id)?.state).toBe("uncertain");
+	expect((await store.get(lease.id))?.state).toBe("uncertain");
 	expect(reconciliations.at(-1)).toEqual({ id: lease.id, forceStop: true });
 });
 it("attributes delayed job completion to the job's own attempt after a rerun starts", async () => {
@@ -707,6 +751,27 @@ it("runs a durable async reservation through provider dispatch, JIT and settleme
 	});
 	expect(h.api.registrations).toBe(1);
 	expect(h.api.deletes).toBe(1);
+});
+it("registers a bridge runner under the trunk label its job asks for", async () => {
+	const h = setup();
+	h.api.jobLabel = "hobo-trunk";
+	const lease = await reserve(h);
+	await h.relay.dispatchPending();
+	expect(await h.relay.claim(lease.id, "valid")).toMatchObject({
+		encodedJitConfig: "c2VjcmV0",
+	});
+	expect(h.api.registrations).toBe(1);
+	expect(h.api.violations).toEqual([]);
+});
+it("refuses a bridge claim once its job asks for a label no hobo runner serves", async () => {
+	const h = setup();
+	const lease = await reserve(h);
+	await h.relay.dispatchPending();
+	h.api.jobLabel = "ubuntu-latest";
+	await expect(h.relay.claim(lease.id, "valid")).rejects.toThrow(
+		"original job no longer asks for a hobo runner",
+	);
+	expect(h.api.registrations).toBe(0);
 });
 it("preserves ambiguous dispatch reservations and never repeats the provider request", async () => {
 	const h = setup();
@@ -964,7 +1029,7 @@ it("durably records signed delivery before a bounded worker launches a host", as
 	expect(ignored).toBe(true);
 	expect(accepted).toBe(false);
 	expect(await runtime.ingestWebhook(input)).toBe("accepted");
-	expect(await runtime.ingestWebhook(input)).toBe("duplicate");
+	expect(await runtime.ingestWebhook(input)).toBe("requeued");
 	expect(h.api.dispatches).toBe(0);
 	h.api.strictLeaseId = false;
 	await runtime.tick();
@@ -1262,4 +1327,92 @@ it("backs off a failed delivery and still processes subsequent accounts", async 
 	);
 	expect(failed).toEqual(["poison"]);
 	expect(acknowledged).toEqual(["valid"]);
+});
+
+function withPullRequestRun(h: ReturnType<typeof setup>, jobCalls: number[]) {
+	const request = h.api.request.bind(h.api);
+	h.api.request = async (installation, path, method, body) => {
+		const jobId = /\/actions\/jobs\/(\d+)$/.exec(path)?.[1];
+		if (jobId) jobCalls.push(Number(jobId));
+		if (path === "/repos/org/repo/actions/runs/12")
+			return Response.json({
+				...h.api.original,
+				id: 12,
+				event: "pull_request",
+				head_branch: "feature",
+				run_started_at: "2026-10-26T11:00:00Z",
+			});
+		return request(installation, path, method, body);
+	};
+}
+function pullRequestJob() {
+	const demand = job(2);
+	demand.runId = 12;
+	return demand;
+}
+
+it("reserves a trunk job before an older pull-request job queued ahead of it", async () => {
+	const h = setup();
+	withPullRequestRun(h, []);
+	h.store.queue(pullRequestJob(), NOW);
+	h.store.queue(job(1), NOW);
+	h.api.strictLeaseId = false;
+	await h.relay.dispatchPending();
+	expect(h.store.all().map((lease) => lease.jobId)).toEqual([1]);
+	expect(h.store.pendingJobs().map((demand) => demand.id)).toEqual([2]);
+});
+
+it("keeps lower ranks queued while a trunk job cannot reserve a slot", async () => {
+	const h = setup();
+	const offer = h.configuration.accounts[0]?.offers[0];
+	const connection = h.configuration.connections[0];
+	if (!offer || !connection) throw new Error("missing offer or connection");
+	offer.concurrency = 2;
+	connection.allowedEvents = ["push", "pull_request"];
+	connection.allowedRefs = ["refs/heads/main", "refs/heads/feature"];
+	h.store.configure(h.configuration, 1, NOW);
+	withPullRequestRun(h, []);
+	const reserve = h.asyncStore.reserve.bind(h.asyncStore);
+	h.asyncStore.reserve = async (account, demand, at, expected) =>
+		demand.id === 1 ? undefined : reserve(account, demand, at, expected);
+	h.store.queue(job(1), NOW);
+	h.store.queue(pullRequestJob(), NOW);
+	h.api.strictLeaseId = false;
+	await h.relay.dispatchPending();
+	expect(h.store.all()).toEqual([]);
+	expect(h.store.pendingJobs().map((demand) => demand.id)).toEqual([1, 2]);
+	await h.relay.dispatchPending();
+	expect(h.store.all()).toEqual([]);
+	expect(h.store.pendingJobs().map((demand) => demand.id)).toEqual([1, 2]);
+	h.asyncStore.reserve = reserve;
+	await h.relay.dispatchPending();
+	expect(
+		h.store
+			.all()
+			.map((lease) => lease.jobId)
+			.sort(),
+	).toEqual([1, 2]);
+	expect(h.store.pendingJobs()).toEqual([]);
+});
+
+it("launches reserved trunk leases before pull-request leases", async () => {
+	const h = setup();
+	const offer = h.configuration.accounts[0]?.offers[0];
+	if (!offer) throw new Error("missing offer");
+	offer.concurrency = 2;
+	h.store.configure(h.configuration, 1, NOW);
+	const jobCalls: number[] = [];
+	withPullRequestRun(h, jobCalls);
+	h.store.queue(pullRequestJob(), NOW);
+	h.store.queue(job(1), NOW);
+	const activeLeases = h.asyncStore.activeLeases.bind(h.asyncStore);
+	// Lease ids are random, so pin the store's order to the unfavourable one.
+	h.asyncStore.activeLeases = async () =>
+		(await activeLeases()).sort((a, b) => b.jobId - a.jobId);
+	h.api.strictLeaseId = false;
+	await h.relay.dispatchPending();
+	expect(jobCalls).toEqual([1, 2]);
+	expect(h.store.all().find((lease) => lease.jobId === 1)?.state).toBe(
+		"dispatched",
+	);
 });

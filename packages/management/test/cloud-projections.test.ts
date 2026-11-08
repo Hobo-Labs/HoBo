@@ -132,7 +132,7 @@ describe("projectCredentialAudit", () => {
 			scopes: ["tasks:read"],
 		});
 		expect(created.ok).toBe(true);
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		const connectionId = (created.data as { connection: { id: string } })
 			.connection.id;
 		expect(connectionAuthorize(ctx, { idOrAlias: "work" }).ok).toBe(true);
@@ -186,7 +186,7 @@ describe("partial projections are reported, not hidden", () => {
 			{},
 		);
 		expect(res.ok).toBe(true);
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
 		const view = res.data as { skippedYards: readonly string[] };
 		expect(view.skippedYards).toContain("broken-yard");
 	});

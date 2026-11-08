@@ -66,10 +66,11 @@ function vercelDropTransport(): VercelDropTransport {
 					stationId.replace(/[^a-z0-9-]/giu, "").slice(-24) ||
 					"anon";
 				return {
-					projectName: slug,
+					projectName,
 					deploymentId: `dpl_mock_${slug}`,
 					stationUrl: `https://${slug}.vercel.app`,
-					claimUrl: `https://vercel.com/${slug}`,
+					claimUrl: `https://vercel.com/claim-deployment?code=mock-${slug}`,
+ anonymous:true,expirySource:"provider-reported",expiresAt:new Date(Date.now()+60000).toISOString(),
 				};
 			},
 		};
@@ -77,21 +78,7 @@ function vercelDropTransport(): VercelDropTransport {
 	return createVercelDropCliTransport();
 }
 
-function stripPermanentVercelEnv(): void {
-	for (const key of ["VERCEL_TOKEN", "VERCEL_OIDC_TOKEN", "NOW_TOKEN"] as const) {
-		if (process.env[key]) delete process.env[key];
-	}
-}
 
-function stripPermanentNetlifyEnv(): void {
-	for (const key of [
-		"NETLIFY_AUTH_TOKEN",
-		"NETLIFY_ACCESS_TOKEN",
-		"NETLIFY_TOKEN",
-	] as const) {
-		if (process.env[key]) delete process.env[key];
-	}
-}
 
 function netlifyTempTransport(): NetlifyAnonymousTransport {
 	if (process.env.HOBO_NETLIFY_TEMP_MOCK === "1") {
@@ -102,7 +89,7 @@ function netlifyTempTransport(): NetlifyAnonymousTransport {
 				return {
 					deployId: slug,
 					stationUrl: `https://${slug}.netlify.app`,
-					claimUrl: `https://app.netlify.com/access/claim/${slug}`,
+					claimUrl: `https://app.netlify.com/drop/${slug}#drop_token=mock`,
 				};
 			},
 		};
@@ -160,7 +147,6 @@ async function provisionProviderTemp(
 		case "webernetes":
 			return provisionLocalSameOriginTemp(providerId, stationId, origin);
 		case "netlify": {
-			stripPermanentNetlifyEnv();
 			return provisionNetlifyTemp({
 				stationId,
 				transport: netlifyTempTransport(),
@@ -187,11 +173,6 @@ function lakebedTempTransport(): LakebedAnonymousTransport {
 	return createLakebedAnonymousCliTransport();
 }
 
-function stripPermanentLakebedEnv(): void {
-	for (const key of ["LAKEBED_TOKEN", "LAKEBED_TOKEN_API"] as const) {
-		if (process.env[key]) delete process.env[key];
-	}
-}
 
 function json(
 	res: Connect.ServerResponse,
@@ -216,23 +197,12 @@ async function readJsonBody(req: Connect.IncomingMessage): Promise<JsonValue> {
 		chunks.push(buffer);
 	}
 	if (chunks.length === 0) return {};
-	try {
-		return parseJsonTree(Buffer.concat(chunks).toString("utf8"));
-	} catch {
-		return {};
-	}
+	let body:JsonValue;
+ try{body=parseJsonTree(Buffer.concat(chunks).toString("utf8"));}catch{throw new Error("Invalid JSON request body");}
+ if(isJsonObject(body)&&Object.keys(body).some(key=>/^(?:api[_-]?token|token|credentials?|credentialRef|api[_-]?key|password|secret|(?:CLOUDFLARE|CF|VERCEL|NOW|NETLIFY|LAKEBED)_(?:API_)?(?:TOKEN|KEY|AUTH_TOKEN))$/iu.test(key)))throw new Error("Permanent credential fields are forbidden on anonymous temporary APIs");
+ return body;
 }
 
-function stripPermanentCloudflareEnv(): void {
-	for (const key of [
-		"CLOUDFLARE_API_TOKEN",
-		"CLOUDFLARE_API_KEY",
-		"CF_API_TOKEN",
-		"CLOUDFLARE_ACCOUNT_ID",
-	] as const) {
-		if (process.env[key]) delete process.env[key];
-	}
-}
 
 function matchCfTemp(
 	pathname: string,
@@ -434,7 +404,7 @@ async function runOpenSaasCfTemp(root: string): Promise<{
 	};
 }
 
-function temporaryStationMiddleware(): Connect.NextHandleFunction {
+function temporaryStationRequestHandler(): Connect.NextHandleFunction {
 	return async (req, res, next) => {
 		const url = new URL(req.url ?? "/", "http://127.0.0.1");
 		const anon = matchAnon(url.pathname);
@@ -567,7 +537,6 @@ function temporaryStationMiddleware(): Connect.NextHandleFunction {
 		}
 
 		if (cf === "opensaas" && req.method === "POST") {
-			stripPermanentCloudflareEnv();
 			const body = await readJsonBody(req);
 			const rootValue = isJsonObject(body) ? body.root : undefined;
 			const root =
@@ -632,7 +601,6 @@ function temporaryStationMiddleware(): Connect.NextHandleFunction {
 		}
 
 		if (cf === "swaghaus" && req.method === "POST") {
-			stripPermanentCloudflareEnv();
 			const body = await readJsonBody(req);
 			const rootValue = isJsonObject(body) ? body.root : undefined;
 			const root =
@@ -733,7 +701,6 @@ function temporaryStationMiddleware(): Connect.NextHandleFunction {
 		}
 
 		if (cf === "station" && req.method === "POST") {
-			stripPermanentCloudflareEnv();
 			// SAFETY: assertion required at this I/O boundary.
 			const body = await readJsonBody(req);
 			const requestedStationId = jsonStringField(body, "stationId");
@@ -780,7 +747,6 @@ function temporaryStationMiddleware(): Connect.NextHandleFunction {
 		}
 
 		if (lakebed === "station" && req.method === "POST") {
-			stripPermanentLakebedEnv();
 			// SAFETY: assertion required at this I/O boundary.
 			const body = await readJsonBody(req);
 			const requestedStationId = jsonStringField(body, "stationId");
@@ -821,15 +787,16 @@ function temporaryStationMiddleware(): Connect.NextHandleFunction {
 				provider: "vercel",
 				drop: "https://vercel.com/drop",
 				docs: "https://vercel.com/docs/drop",
-				anonymous: true,
-				temporary: true,
+				anonymous: process.env.HOBO_VERCEL_DROP_MOCK === "1",
+ available:process.env.HOBO_VERCEL_DROP_MOCK === "1",
+				temporary: process.env.HOBO_VERCEL_DROP_MOCK === "1",
 				mock: process.env.HOBO_VERCEL_DROP_MOCK === "1",
 			});
 			return;
 		}
 
 		if (vercelTemp === "station" && req.method === "POST") {
-			stripPermanentVercelEnv();
+ if(process.env.HOBO_VERCEL_DROP_MOCK!=="1"){json(res,501,{ok:false,error:"anonymous-api-unavailable",remediation:"Vercel has no configured anonymous temporary API. Choose an available anonymous provider; authenticated Vercel deployment requires a scoped account."});return;}
 			// SAFETY: assertion required at this I/O boundary.
 			const body = await readJsonBody(req);
 			const requestedStationId = jsonStringField(body, "stationId");
@@ -857,7 +824,7 @@ function temporaryStationMiddleware(): Connect.NextHandleFunction {
 					ok: false,
 					error: error instanceof Error ? error.message : String(error),
 					remediation:
-						"Vercel Drop failed. Set HOBO_VERCEL_DROP_MOCK=1 for replay, or `vercel login` (session) / https://vercel.com/drop. Never VERCEL_TOKEN on Examples path.",
+						"Vercel anonymous API is unavailable. HOBO_VERCEL_DROP_MOCK=1 enables an explicit offline replay only; choose an available anonymous provider for a real deployment.",
 				});
 			}
 			return;
@@ -939,6 +906,15 @@ function temporaryStationMiddleware(): Connect.NextHandleFunction {
 
 		json(res, 404, { ok: false, error: "not-found" });
 	};
+}
+
+export function temporaryStationMiddleware():Connect.NextHandleFunction {
+ const handle=temporaryStationRequestHandler();
+ return (req,res,next)=>{
+  void Promise.resolve().then(()=>handle(req,res,next)).catch(()=>{
+   if(!res.headersSent)json(res,400,{ok:false,error:"invalid-temporary-request"});else res.destroy();
+  });
+ };
 }
 
 export function temporaryStationApiPlugin(): Plugin {

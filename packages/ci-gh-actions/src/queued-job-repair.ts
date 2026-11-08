@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { GithubTransport } from "./github.js";
 import type { HostedRelay } from "./hosted-relay.js";
 import { unlockAndRelease } from "./postgres-session-lock.js";
+import { servedRunnerLabel } from "./runner-labels.js";
 
 const Status = z.enum([
 	"queued",
@@ -268,11 +269,7 @@ export function createQueuedJobRepair(options: {
 				const job = jobs[i];
 				if (!job || job.run_id !== runId)
 					throw new Error("GitHub job identity mismatch");
-				if (
-					job.status === "queued" &&
-					job.labels.length === 1 &&
-					job.labels[0]?.toLowerCase() === "hobo"
-				) {
+				if (job.status === "queued" && servedRunnerLabel(job.labels)) {
 					if (!(await scan.take(2))) {
 						cursor.jobIndex = i;
 						await scan.checkpoint(cursor, 60000);

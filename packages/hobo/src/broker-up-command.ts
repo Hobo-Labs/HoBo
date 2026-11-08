@@ -24,8 +24,10 @@ import {
 	type CommandModule,
 	createUpCommand,
 	loadBindleDefinition,
+	loadProjectManifest,
 	type YardRuntime,
 } from "@hobo/cli";
+import { manifestHostingPolicy } from "@hobo/cloud";
 import {
 	defaultHoboHome,
 	initBareMetalYard,
@@ -130,6 +132,23 @@ export function createBrokerAwareUpCommand(
 					env,
 					hoboHome,
 				});
+				const financialManifest = await loadProjectManifest(projectDir);
+				const financialRequired = Boolean(
+					deps.runtime?.hostingBudgetRequired ||
+						flags.budgetId ||
+						deps.runtime?.defaultHostingBudgetId ||
+						(financialManifest &&
+							manifestHostingPolicy(financialManifest).required),
+				);
+				if (financialRequired && (target.kind !== "local" || !yardUp))
+					return {
+						ok: false,
+						status: "rejected",
+						code: "HOBO_HOSTING_AUTHORITY_REQUIRED",
+						message:
+							"budgeted hosting requires a configured authoritative hosting runtime; placement and local fallback cannot waive financial admission",
+						data: { command: "up", budgetRequired: true },
+					};
 
 				// Local zero-config: prefer event-sourced Yard lane when runtime is wired
 				// (preserves claim/inspect). Fall back to broker-runtime placement+serve

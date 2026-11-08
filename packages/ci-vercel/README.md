@@ -89,6 +89,11 @@ cancellation and cloud-feature refusals. `test/turbo-ci-cli.test.ts` verifies em
 dry-run JSON and repeated interrupts against the real CLI. The CLI consumer PACT in
 `contracts/turbo-ci.consumer.test.ts` verifies the metadata contract against the
 installed binary without Vercel credentials. TypeScript covers the SDK and CLI.
+The runner hands the caller's environment, `TURBO_CACHE_DIR` and remote-cache
+settings included, to Turbo, so both runner suites drop inherited `TURBO_*`
+variables (`test/isolated-turbo-env.ts`): their fixtures hash identically in every
+temp dir, and the shared CI cache would otherwise replay a task instead of running
+the script the test observes.
 The plan uses generated [Protobuf](data-models/turbo_ci.proto), with independent
 [CUE constraints and fixtures](data-models/turbo-ci/plan.cue). Check codegen with
 `pnpm codegen:check --filter packages/ci-vercel`; run `cue vet -d '#TurboCiPlan'
@@ -189,7 +194,9 @@ installation; these three settings must be supplied together.
 
 The reviewed sibling `ci-gh-actions` workflow and bootstrap files are embedded
 into the build by `scripts/generate-assets.mts`; a contract test verifies their
-contents match the sources. A deployment must verify rewrites, the private queue
+contents match the sources. Both asset generators format their output with the
+repo-pinned Biome before writing, and the proxy bundle's `--check` mode compares
+against those formatted bytes. A deployment must verify rewrites, the private queue
 trigger and scheduler before production use. Contract tests run without live
 GitHub or Vercel credentials. The real-process proxy shutdown test uses a
 35-second Vitest deadline so cold TypeScript startup on slower filesystems is
@@ -266,7 +273,9 @@ its identity, termination and usage are proven.
 
 The managed relay embeds the reviewed Actions host workflow and standalone
 bootstrap from `@hobo/ci-gh-actions`. Its build regenerates
-`src/_generated/relay-assets.ts`; commit that snapshot whenever the shared host
+`src/_generated-assets/relay-assets.ts`; commit that snapshot whenever the shared host
 source changes. `test/relay-assets.test.ts` checks byte equality with the source.
+The sandbox proxy bundle also lives in `src/_generated-assets/`: this directory
+keeps non-protobuf generators out of the protobuf-owned `src/_generated/` tree.
 The local persistent listener can wait without an age-based deadline; the
 embedded hosted bridge still supplies and enforces its lease timeout.
