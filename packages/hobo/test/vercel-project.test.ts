@@ -873,6 +873,34 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		expectNoToken(error, TOKEN, []);
 	});
 
+	// A token the credential shapes complete: its text ends in `[redacted]`,
+	// the marker `redactProviderText` writes, so a body holding the token's
+	// start followed by `Bearer …` holds no token until the shapes have run. The
+	// second search, after them, is what finds it.
+	it.each([
+		["after a hyphen, the `[` case", "tok-[redacted]", "tok-Bearer abc"],
+		["after a backslash", "tok\\[redacted]", "tok\\Bearer abc"],
+	])("carries no token the shapes complete, %s", async (_case, token, sent) => {
+		const raw = await refusedBy(
+			() => plainReply(404, `you sent ${sent} back`),
+			token,
+		);
+		const inJson = await refusedBy(
+			() =>
+				reply(404, {
+					error: { code: "not_found", message: `you sent ${sent} back` },
+				}),
+			token,
+		);
+
+		expect(raw.message).not.toContain(token);
+		expect(raw.message).toBe(
+			"vercel-client: create deployment failed (HTTP 404): you sent [redacted] back",
+		);
+		expect(inJson.apiMessage).not.toContain(token);
+		expect(inJson.apiMessage).toBe("you sent [redacted] back");
+	});
+
 	it("carries no token sent back JSON-escaped as the code", async () => {
 		const body = `{"error":{"code":"${escaped}","message":"x"}}`;
 		const error = await refusedBy(() => plainReply(404, body));
