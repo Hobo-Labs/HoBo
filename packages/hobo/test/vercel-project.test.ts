@@ -831,6 +831,48 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		}
 	});
 
+	// A JSON refusal body of many small values: each string and key is
+	// searched, so the walk must not pay a full search for every one of them.
+	it.each([
+		[
+			"175k nested objects",
+			() => `${'{"a":'.repeat(175_000)}1${"}".repeat(175_000)}`,
+		],
+		[
+			"91k keys",
+			() =>
+				`{${Array.from({ length: 91_000 }, (_, i) => `"k${String(i).padStart(5, "0")}":1`).join(",")}}`,
+		],
+		[
+			"35k strings",
+			() =>
+				`[${Array.from({ length: 35_000 }, (_, i) => `"${String(i).padStart(26, "x")}"`).join(",")}]`,
+		],
+		// Each longer than the token, so each is searched.
+		[
+			"30k strings longer than the token",
+			() =>
+				`[${Array.from({ length: 30_400 }, (_, i) => `"${String(i).padStart(30, "x")}"`).join(",")}]`,
+		],
+	])("stays fast on a 1 MB JSON body of %s", async (_case, make) => {
+		const body = make();
+		const started = performance.now();
+		const error = await refusedBy(() => plainReply(404, body));
+		const took = performance.now() - started;
+
+		expect(body.length).toBeGreaterThanOrEqual(1_000_000);
+		expect(error.message.length).toBeLessThanOrEqual(501);
+		expect(took).toBeLessThan(1000);
+	});
+
+	it("still redacts the token among many short strings, as a value and a key", async () => {
+		const values = Array.from({ length: 1000 }, (_, i) => `"v${i}"`);
+		const body = `{"error":{"code":"not_found","message":"x"},"echo":[${values.join(",")},"${TOKEN}"],"${TOKEN}":1}`;
+		const error = await refusedBy(() => plainReply(404, body));
+
+		expectNoToken(error, TOKEN, []);
+	});
+
 	it("carries no token sent back JSON-escaped as the code", async () => {
 		const body = `{"error":{"code":"${escaped}","message":"x"}}`;
 		const error = await refusedBy(() => plainReply(404, body));

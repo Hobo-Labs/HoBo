@@ -326,10 +326,23 @@ function charPattern(char: string): string {
 // a search is linear in the text for a token of bounded length. One pattern
 // for each form, not one for them all: a single alternation of every form is
 // some hundred times slower to search.
-function tokenPatterns(token: string): readonly RegExp[] {
-	return tokenForms(token).map(
-		(form) => new RegExp(Array.from(form, charPattern).join(""), "gu"),
-	);
+function tokenPatterns(token: string): TokenSearch {
+	const forms = tokenForms(token);
+	return {
+		patterns: forms.map(
+			(form) => new RegExp(Array.from(form, charPattern).join(""), "gu"),
+		),
+		shortest: Math.min(...forms.map((form) => form.length)),
+	};
+}
+
+// The client's own token as `withoutToken` searches for it: a pattern for each
+// form, and the length of the shortest form. Every way of writing a character
+// takes one character of text or more, so a text shorter than that holds no
+// form, and is not searched at all.
+interface TokenSearch {
+	readonly patterns: readonly RegExp[];
+	readonly shortest: number;
 }
 
 // One character that can sit unseen between two characters of a token.
@@ -389,11 +402,20 @@ interface Span {
 // against `text` with its breaks taken out; the stretches they match are
 // joined where they meet or overlap, and each is redacted in `text` from its
 // first character to its last, breaks inside it and all.
-function withoutToken(text: string, secrets: readonly RegExp[]): string {
+function withoutToken(text: string, secrets: TokenSearch): string {
+	if (text.length < secrets.shortest) return text;
 	const { kept, at: pieceAt, from: pieceFrom } = unbroken(text);
+	if (kept.length < secrets.shortest) return text;
 	const found: Span[] = [];
-	for (const secret of secrets) {
-		for (const match of kept.matchAll(secret)) {
+	// Each pattern runs from the start of `kept` with `exec`, which reuses the
+	// compiled pattern; `matchAll` would copy it for every text.
+	for (const secret of secrets.patterns) {
+		secret.lastIndex = 0;
+		for (
+			let match = secret.exec(kept);
+			match !== null;
+			match = secret.exec(kept)
+		) {
 			found.push({ start: match.index, end: match.index + match[0].length });
 		}
 	}
@@ -436,16 +458,13 @@ function withoutToken(text: string, secrets: readonly RegExp[]): string {
 // REFUSAL_TEXT_LIMIT characters. The token is looked for again once
 // `redactProviderText` has changed the text (it turns control characters into
 // spaces, trims, and cuts), so nothing it does can bring the token back.
-function refusalText(text: string, secrets: readonly RegExp[]): string {
+function refusalText(text: string, secrets: TokenSearch): string {
 	return tokenFreeRefusalText(withoutToken(text, secrets), secrets);
 }
 
 // `refusalText` of a text the token has already been taken out of: the
 // credential shapes, the cut, and the token looked for once more.
-function tokenFreeRefusalText(
-	text: string,
-	secrets: readonly RegExp[],
-): string {
+function tokenFreeRefusalText(text: string, secrets: TokenSearch): string {
 	return withoutToken(redactProviderText(text, REFUSAL_TEXT_LIMIT), secrets);
 }
 
@@ -459,7 +478,7 @@ type JsonCopy =
 // `value` itself.
 function copyStep(
 	value: JsonValue,
-	secrets: readonly RegExp[],
+	secrets: TokenSearch,
 	pending: JsonCopy[],
 ): JsonValue {
 	if (isJsonString(value)) return withoutToken(value, secrets);
@@ -480,10 +499,7 @@ function copyStep(
 // Walked with a queue of containers rather than by recursion, so a body nested
 // any depth cannot run the call stack out. Keys are defined, never assigned,
 // so a `__proto__` key stays a key.
-function withoutTokenInJson(
-	value: JsonValue,
-	secrets: readonly RegExp[],
-): JsonValue {
+function withoutTokenInJson(value: JsonValue, secrets: TokenSearch): JsonValue {
 	const pending: JsonCopy[] = [];
 	const copy = copyStep(value, secrets, pending);
 	for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
@@ -515,7 +531,7 @@ function withoutTokenInJson(
 function bodyText(
 	detail: string,
 	json: JsonValue | undefined,
-	secrets: readonly RegExp[],
+	secrets: TokenSearch,
 ): string {
 	if (json !== undefined) {
 		try {
@@ -567,7 +583,7 @@ function thrownText(cause: unknown): string {
 function transportError(
 	what: string,
 	cause: unknown,
-	secrets: readonly RegExp[],
+	secrets: TokenSearch,
 ): VercelTransportError {
 	let said: string;
 	try {
@@ -584,7 +600,7 @@ function transportError(
 // `what`.
 async function untilAnswered<T>(
 	what: string,
-	secrets: readonly RegExp[],
+	secrets: TokenSearch,
 	step: () => Promise<T>,
 ): Promise<T> {
 	try {
@@ -606,10 +622,7 @@ const TOKEN_BREAK = new RegExp(BREAK_CHAR, "u");
 // error; the body in `message` is refusal text either way.
 const REFUSAL_CODE = /^[A-Za-z0-9_.-]{1,64}$/u;
 
-function refusalCode(
-	code: string,
-	secrets: readonly RegExp[],
-): string | undefined {
+function refusalCode(code: string, secrets: TokenSearch): string | undefined {
 	return REFUSAL_CODE.test(code) && refusalText(code, secrets) === code
 		? code
 		: undefined;
@@ -618,7 +631,7 @@ function refusalCode(
 async function failure(
 	what: string,
 	response: VercelFetchResponse,
-	secrets: readonly RegExp[],
+	secrets: TokenSearch,
 ): Promise<VercelApiError> {
 	const detail = await response.text().catch(() => "");
 	// Parsed once, and the token taken out of it once: `code`, `apiMessage` and
