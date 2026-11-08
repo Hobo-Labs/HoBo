@@ -46,7 +46,6 @@ const SHELL_DRAWN = `${ESC}[?1049h`;
 const VERB_ENDED = "hobo recipes:";
 /** Terminal control sequences, left out of the screen a failure shows. */
 const CONTROL_SEQUENCES = new RegExp(`${ESC}\\[[0-9;?]*[a-zA-Z]`, "gu");
-const VERB_DEADLINE_MS = 30_000;
 const SIGNAL_GRACE_MS = 30_000;
 /** How long hobo-code's child gets to end once hobo-code has. */
 const CHILD_GRACE_MS = 20_000;
