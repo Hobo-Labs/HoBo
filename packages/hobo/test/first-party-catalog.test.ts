@@ -30,6 +30,16 @@
  * conformance are judged downstream at a supplied instant. Registration only
  * makes a product visible to that judgement.
  */
+import {
+	createCapabilityProfileRegistry,
+	DEFAULT_TRUST_POLICY,
+	parseCapabilityRequirement,
+	STANDARD_CAPABILITY_PROFILES,
+	selectCapabilityImplementation,
+	type TrustPolicy,
+} from "@hobo/capability-profiles";
+import { capability } from "@hobo/core";
+import { LOCAL_DEFINITIONS, localCandidates } from "@hobo/provider-local";
 import { NETLIFY_DEFINITIONS } from "@hobo/provider-netlify";
 import { PRISMA_RESOURCE_DEFINITION } from "@hobo/provider-prisma-postgres";
 import { TTL_SH_RESOURCE_DEFINITION } from "@hobo/provider-ttl-sh";
@@ -300,5 +310,70 @@ describe("products whose declaration has not landed", () => {
 
 	it("is frozen", () => {
 		expect(Object.isFrozen(CATALOG_GAPS)).toBe(true);
+	});
+});
+
+describe("local yard definitions (consumer side of @hobo/provider-local)", () => {
+	const profiles = createCapabilityProfileRegistry(STANDARD_CAPABILITY_PROFILES);
+	const NOW = Date.UTC(2026, 10, 8);
+	const policy: TrustPolicy = {
+		...DEFAULT_TRUST_POLICY,
+		minimumProviderClass: "experimental",
+		creatorAuthorityAfterClaim: "must-be-absent",
+	};
+	const select = (
+		profileId: string,
+		candidates: ReturnType<typeof localCandidates>,
+	) =>
+		selectCapabilityImplementation({
+			requirement: parseCapabilityRequirement({
+				requiredProfiles: [{ profileId, versionRange: ">=1" }],
+			}),
+			registry: profiles,
+			candidates,
+			policy,
+			nowMs: NOW,
+		});
+
+	it("registers the four local definitions", () => {
+		const ids = new Set(FIRST_PARTY_DEFINITIONS.map((d) => d.id));
+		expect(LOCAL_DEFINITIONS).toHaveLength(4);
+		for (const definition of LOCAL_DEFINITIONS) {
+			expect(ids.has(definition.id)).toBe(true);
+		}
+	});
+
+	it("refuses the shipped local candidates: evidence fails closed", () => {
+		const shipped = FIRST_PARTY_CANDIDATES.filter(
+			(candidate) => candidate.providerId === "local",
+		);
+		expect(shipped).toHaveLength(4);
+		for (const profileId of [
+			capability.api.http,
+			capability.data.sqlite,
+			capability.queue.atLeastOnce,
+		]) {
+			const result = select(profileId, shipped);
+			expect(result.winner).toBeUndefined();
+			expect(result.rejections.length).toBeGreaterThan(0);
+		}
+	});
+
+	it("selects a local winner once the station injects evidence", () => {
+		const injected = localCandidates({
+			evidenceSignatureValid: true,
+			evidenceExpiresAtMs: NOW + 30 * 24 * 60 * 60 * 1000,
+			conformance: "pass",
+		});
+		const expected = [
+			[capability.api.http, "local.node-http-server/v1"],
+			[capability.data.sqlite, "local.sqlite-file/v1"],
+			[capability.queue.atLeastOnce, "local.in-memory-queue/v1"],
+		] as const;
+		for (const [profileId, definitionId] of expected) {
+			const result = select(profileId, injected);
+			expect(result.winner?.definitionId).toBe(definitionId);
+			expect(result.winner?.providerId).toBe("local");
+		}
 	});
 });
