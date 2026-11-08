@@ -56,7 +56,10 @@ function root(source?: string): string {
 const read = (dir: string) =>
 	readFileSync(join(dir, "src", "bindle.ts"), "utf8");
 
-function plan(dir: string, overrides: Record<string, unknown> = {}) {
+function plan(
+	dir: string,
+	overrides: Partial<Parameters<typeof planPatternApplication>[0]> = {},
+) {
 	runCounter += 1;
 	return planPatternApplication({
 		catalog,
@@ -65,10 +68,13 @@ function plan(dir: string, overrides: Record<string, unknown> = {}) {
 		targetPath: "src/bindle.ts",
 		isolationRunId: `plan-${runCounter}`,
 		...overrides,
-	} as never);
+	});
 }
 
-function apply(dir: string, overrides: Record<string, unknown> = {}) {
+function apply(
+	dir: string,
+	overrides: Partial<Parameters<typeof applyPatternPlan>[0]> = {},
+) {
 	runCounter += 1;
 	return applyPatternPlan({
 		catalog,
@@ -78,7 +84,7 @@ function apply(dir: string, overrides: Record<string, unknown> = {}) {
 		isolationRunId: `apply-${runCounter}`,
 		params: { resourceName: "shop" },
 		...overrides,
-	} as never);
+	});
 }
 
 describe("planPatternApplication", () => {
@@ -273,7 +279,8 @@ export default bindle("demo", (b) => {
 			expect.unreachable("a malformed target must be refused");
 		} catch (error) {
 			expect(error).toBeInstanceOf(PatternParseError);
-			expect((error as Error).message.length).toBeGreaterThan(
+			if (!(error instanceof Error)) throw error;
+			expect(error.message.length).toBeGreaterThan(
 				"target has source syntax errors: ".length,
 			);
 		}
@@ -424,7 +431,7 @@ describe("the receipt an apply returns", () => {
 			targetPath: "src/bindle.ts",
 			isolationRunId: "run-fixed",
 			params: { resourceName: "shop" },
-		} as never);
+		});
 		expect(receipt.isolationRunId).toBe("run-fixed");
 	});
 });

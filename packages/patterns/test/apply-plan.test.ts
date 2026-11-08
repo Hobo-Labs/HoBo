@@ -52,7 +52,9 @@ function root(withFile = true) {
 	return dir;
 }
 
-const plan = (overrides: Record<string, unknown> = {}) =>
+const plan = (
+	overrides: Partial<Parameters<typeof planPatternApplication>[0]> = {},
+) =>
 	planPatternApplication({
 		catalog,
 		patternId: PATTERN_ID,
@@ -60,7 +62,7 @@ const plan = (overrides: Record<string, unknown> = {}) =>
 		targetPath: "src/bindle.ts",
 		isolationRunId: "run-1",
 		...overrides,
-	} as never);
+	});
 
 describe("planPatternApplication", () => {
 	it("plans an application against an existing file", () => {
@@ -176,7 +178,9 @@ describe("the path guard", () => {
 });
 
 describe("applyPatternPlan receipts", () => {
-	function apply(overrides: Record<string, unknown> = {}) {
+	function apply(
+		overrides: Partial<Parameters<typeof applyPatternPlan>[0]> = {},
+	) {
 		return applyPatternPlan({
 			catalog,
 			patternId: PATTERN_ID,
@@ -185,7 +189,7 @@ describe("applyPatternPlan receipts", () => {
 			isolationRunId: "run-1",
 			params: { resourceName: "shop" },
 			...overrides,
-		} as never);
+		});
 	}
 
 	it("reports zero model calls", () => {
@@ -225,7 +229,7 @@ describe("applyPatternPlan receipts", () => {
 			targetPath: "src/bindle.ts",
 			isolationRunId: "run-1",
 			params: { resourceName: "shop" },
-		} as never);
+		});
 		const second = applyPatternPlan({
 			catalog,
 			patternId: PATTERN_ID,
@@ -233,7 +237,7 @@ describe("applyPatternPlan receipts", () => {
 			targetPath: "src/bindle.ts",
 			isolationRunId: "run-2",
 			params: { resourceName: "shop" },
-		} as never);
+		});
 		expect(second.idempotent).toBe(true);
 		expect(second.reasonCode).toBe("idempotent");
 		expect(second.changedFiles).toEqual([]);

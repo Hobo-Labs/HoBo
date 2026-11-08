@@ -147,11 +147,14 @@ function allocateName(base: string, used: Set<string>): string {
 	return `${base}${n}`;
 }
 
-function unwrapSnippetFile(text: string): {
+/** A snippet split into the imports it names and the statements it adds. */
+type UnwrappedSnippet = {
 	readonly imports: ReadonlyMap<string, readonly string[]>;
 	readonly statements: readonly ts.Statement[];
 	readonly sourceFile: ts.SourceFile;
-} {
+};
+
+function unwrapSnippetFile(text: string): UnwrappedSnippet {
 	const sf = parseTs(text, "snippet.ts");
 	const imports = new Map<string, string[]>();
 	const statements: ts.Statement[] = [];
@@ -394,7 +397,7 @@ export function planPatternApplication(input: {
 	readonly isolationRoot: string;
 	readonly targetPath: string;
 	readonly isolationRunId: string;
-	readonly params?: Readonly<Record<string, unknown>>;
+	readonly params?: Readonly<Record<string, string>>;
 }): PatternApplicationPlan {
 	const parsed = parseApplicationRequest({
 		patternId: input.patternId,
@@ -439,7 +442,7 @@ export function applyPatternPlan(input: {
 	readonly isolationRoot: string;
 	readonly targetPath: string;
 	readonly isolationRunId: string;
-	readonly params?: Readonly<Record<string, unknown>>;
+	readonly params?: Readonly<Record<string, string>>;
 }): PatternApplicationReceipt {
 	const plan = planPatternApplication(input);
 	const pattern = input.catalog.patterns.find(
@@ -448,11 +451,9 @@ export function applyPatternPlan(input: {
 	if (!pattern) {
 		throw new PatternParseError(`unknown pattern ${input.patternId}`);
 	}
-	const rendered = renderPattern({
-		catalog: input.catalog,
-		pattern,
-		...(input.params ? { params: input.params } : {}),
-	});
+	const rendered = input.params
+		? renderPattern({ catalog: input.catalog, pattern, params: input.params })
+		: renderPattern({ catalog: input.catalog, pattern });
 	const changed: string[] = [];
 	const postimage: string[] = [];
 	let allIdempotent = true;

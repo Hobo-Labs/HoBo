@@ -13,7 +13,12 @@
  * first entrypoint is the one a caller binds to the primary URL, and putting a
  * private service there would make the deployment's front door unreachable.
  */
-import type { BindleDefinition } from "@hobo/bindles";
+import type {
+	BindleDefinition,
+	BindleResourceRecord,
+	ProviderAnnotation,
+	ResourceKind,
+} from "@hobo/bindles";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -22,40 +27,44 @@ import {
 	listServableEntrypointsWithReplay,
 } from "../src/servable-entrypoints.js";
 
+type Entrypoint = NonNullable<ReturnType<BindleDefinition["entrypoint"]>>;
+
+/** One resource of a test Bindle: its kind, what its entrypoint returns, its annotations. */
+type ResourceSpec = {
+	readonly kind: ResourceKind;
+	readonly handler?: ReturnType<Entrypoint>;
+	readonly annotations?: readonly Omit<ProviderAnnotation, "provider">[];
+};
+
 /** A Bindle whose resources map to the given kinds and handlers. */
 function definition(
-	resources: Record<
-		string,
-		{
-			kind: string;
-			handler?: unknown;
-			annotations?: Array<{ option: string; config: Record<string, unknown> }>;
-		}
-	>,
+	resources: Readonly<Record<string, ResourceSpec>>,
 ): BindleDefinition {
+	const records: Record<string, BindleResourceRecord> = {};
+	for (const [name, spec] of Object.entries(resources)) {
+		records[name] = {
+			kind: spec.kind,
+			name,
+			stableId: `${spec.kind}:${name}`,
+			declaredAllow: [],
+			annotations: (spec.annotations ?? []).map((annotation) => ({
+				provider: "test",
+				...annotation,
+			})),
+			dependsOn: [],
+		};
+	}
 	return {
 		name: "app",
-		resources: Object.fromEntries(
-			Object.entries(resources).map(([name, spec]) => [
-				name,
-				{
-					kind: spec.kind,
-					name,
-					stableId: `${spec.kind}:${name}`,
-					declaredAllow: [],
-					annotations: spec.annotations ?? [],
-					dependsOn: [],
-				},
-			]),
-		),
+		resources: records,
 		edges: [],
 		requirements: { require: [], prefer: [], runtimes: [], labels: {} },
 		entrypoint: (name: string) => {
-			const spec = resources[name];
-			if (!spec || !("handler" in spec)) return undefined;
-			return () => spec.handler;
+			const handler = resources[name]?.handler;
+			if (handler === undefined) return undefined;
+			return () => handler;
 		},
-	} as unknown as BindleDefinition;
+	};
 }
 
 const ok = () => new Response("hello");
