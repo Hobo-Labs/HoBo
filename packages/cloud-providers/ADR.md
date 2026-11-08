@@ -70,9 +70,15 @@ credentials and network egress. No namespace registers Resource Definitions
 for its product ids, so a deploy against any of these Yards fails closed at
 resolution rather than half-applying. Per-provider coverage is not restated
 here: `providerParity()` derives `resolved/catalog` from the provider
-constants and emits at most `L1` (simulated), because a constants-only read
-model cannot see executed evidence. It is a projection, not a decision — it
-selects, filters, and reorders nothing. The AWS catalog further
+constants and emits at most `L1` — and that `L1` is a constants-only
+candidate signal (resolvers declared), not the council's full L1 (fake
+transport + six lifecycle cases + PACT), because a constants-only read model
+cannot see executed evidence. It is a projection, not a deployment decision:
+it does not select among a Yard's offerings for deployment. It does
+canonicalize — ids sorted and de-duplicated (a product on two profiles counts
+once), bindings without a `productId` excluded from product counts, rows in
+fixed provider order — and it reads Vercel's full catalog including the
+opt-in `project()` row. The AWS catalog further
 **under-declares** what AWS can allocate — a gap in the slot-factory set, not a
 selection the Yard made. See [`README.md`](./README.md) for the parity levels
 and the code-pinned per-provider claims.
