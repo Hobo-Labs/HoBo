@@ -1396,9 +1396,6 @@ importers:
       '@hobo/cloud':
         specifier: workspace:*
         version: link:../cloud
-      '@hobo/code':
-        specifier: workspace:*
-        version: link:../code
       '@hobo/conformance':
         specifier: workspace:*
         version: link:../conformance

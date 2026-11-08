@@ -33,14 +33,6 @@ describe("createDoctorCommand", () => {
 			command: "doctor",
 			backend: "cloudflare",
 			live: true,
-			codeHarness: {
-				present: true,
-				adr: "ADR-0139",
-				monetizationDefault: "on",
-				distributedDefault: "on",
-				binary: "hobo-code",
-				defaultVerb: "dispatch",
-			},
 			identityMigration: {
 				continuousDefault: true,
 				bindleConfigRequired: false,

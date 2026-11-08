@@ -42,7 +42,6 @@
 		"@hobo/ci-gh-actions": "workspace:*",
 		"@hobo/cli": "workspace:*",
 		"@hobo/cloud": "workspace:*",
-		"@hobo/code": "workspace:*",
 		"@hobo/conformance": "workspace:*",
 		"@hobo/connectivity": "workspace:*",
 		"@hobo/contracts": "workspace:*",

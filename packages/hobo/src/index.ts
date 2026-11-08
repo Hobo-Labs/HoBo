@@ -175,12 +175,6 @@ export {
 	createCloudflareDeployProvider,
 } from "./cloudflare-deploy-provider.js";
 export {
-	type CodeCommandDeps,
-	featurePortFromStore,
-	resolveCodeFeatures,
-} from "./code-command.js";
-export { describeCodeHarnessHealth } from "./code-health.js";
-export {
 	bootstrapDefaultProviders,
 	createDefaultCollectionTarget,
 	createDefaultDevRuntime,

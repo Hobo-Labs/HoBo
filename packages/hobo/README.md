@@ -28,20 +28,17 @@ Composed binaries: `dist/bin/hobo.js` (product `hobo`) and `dist/bin/hobo-mcp.js
 `createDefaultYardRuntime()` without a `dataDir` keeps its throwaway event store in a
 `hobo-yard-*` directory under `TMPDIR` that the process owns and removes when it exits,
 an uncaught error included (`src/owned-temp-dir.ts`). The `hobo` binary instead passes a
-persistent data directory under `HOBO_HOME`; `hobo-mcp`, `createComposedHoboCli()` and
-`@hobo/code`'s in-process runner use the temporary default. A `dataDir` you pass is yours
-and is never removed. As entry points, the binaries also remove owned temporary directories
-(and the live Pulumi lane's workspace) on SIGTERM, SIGHUP, SIGINT or SIGQUIT
-(`removeOwnedDirsOnSignals`), and so does `hobo-code`, which composes in process: its entry
-asks for the same removal through that export of `src/cli.ts`, and it takes effect when a
-`/hobo` verb loads the composition. The `hobo-code` bin is a launcher that passes those four
-signals, a closing terminal's SIGHUP included, on to the child that composes, and that child
-takes a launcher killed outright as a hangup (`packages/code/README.md`).
+persistent data directory under `HOBO_HOME`; `hobo-mcp` and `createComposedHoboCli()`
+use the temporary default. A `dataDir` you pass is yours and is never removed. As entry
+points, the binaries also remove owned temporary directories (and the live Pulumi lane's
+workspace) on SIGTERM, SIGHUP, SIGINT or SIGQUIT (`removeOwnedDirsOnSignals`). Another
+entry point that composes this CLI in its own process asks for the same removal through
+that export of `src/cli.ts`.
 When nothing else in the process listens for the signal, the directories are removed and
 the signal raised again, so the process still ends by it (status 128+n). When something
 else handles the signal (`hobo serve control` stops gracefully on SIGTERM and SIGINT and
-exits 0; `hobo-code`'s shell quits on all four), that handler decides how the
-process ends, and the directories are removed on `exit`. The library itself installs no
+exits 0), that handler decides how the process ends, and the directories are removed on
+`exit`. The library itself installs no
 signal handler, so a host that embeds it keeps its own signal handling. SIGKILL and a
 crash are out of reach.
 Canonical verb list: **42** verbs in `@hobo/cli` (`packages/cli/src/shell/verbs.ts`).
