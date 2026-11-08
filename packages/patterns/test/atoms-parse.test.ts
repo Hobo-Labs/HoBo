@@ -57,8 +57,8 @@ describe("parseAtomAsPattern", () => {
 		}
 	});
 
-	it("refuses a top-level array", () => {
-		expect(refusal([FILE])).toBe("atom id is required");
+	it("refuses a top-level array as not an object", () => {
+		expect(refusal([FILE])).toBe("atom meta must be an object");
 	});
 
 	it("does not take a boxed String or a spoofed tag as the id", () => {
@@ -89,8 +89,11 @@ describe("parseAtomAsPattern", () => {
 				files: [{ path: new String("src/app.ts"), from: "body/app.ts" }],
 			}),
 		).toBe("probe.atom: file needs path and from");
+	});
+
+	it("refuses an array file entry as not an object", () => {
 		expect(refusal({ id: "probe.atom", files: [["src/app.ts"]] })).toBe(
-			"probe.atom: file needs path and from",
+			"probe.atom: invalid file entry",
 		);
 	});
 
