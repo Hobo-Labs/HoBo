@@ -85,6 +85,8 @@ export type SimulatedParityLevel = Extract<ParityLevel, "P0" | "L1">;
 // public-contract: refusal codes callers may branch on.
 export type ParityErrorCode =
 	| "PARITY_PROVIDER_EMPTY"
+	| "PARITY_PRODUCT_ID_EMPTY"
+	| "PARITY_CATALOG_EMPTY"
 	| "PARITY_RESOLVED_NOT_IN_CATALOG";
 
 export class ParityError extends Error {
@@ -111,21 +113,30 @@ export interface ProviderParityRow {
 }
 
 function canonicalIds(ids: Iterable<string>): readonly string[] {
-	return Object.freeze([...new Set(ids)].sort());
+	const canonical = [...ids];
+	for (const id of canonical) {
+		if (id.trim() === "") {
+			throw new ParityError(
+				"PARITY_PRODUCT_ID_EMPTY",
+				"A parity row must not contain a blank product id.",
+			);
+		}
+	}
+	return Object.freeze([...new Set(canonical)].sort());
 }
 
 /**
  * Parses one provider's catalog and resolved ids into a parity row.
  *
- * Refuses rather than repairs: an empty provider id, or a resolved id the
- * catalog does not declare (`PARITY_RESOLVED_NOT_IN_CATALOG`), throws.
+ * Refuses rather than repairs: blank provider or product ids, an empty catalog,
+ * or a resolved id the catalog does not declare all throw a typed ParityError.
  */
 export function parityRow(
 	provider: string,
 	catalogProductIds: Iterable<string>,
 	resolvedProductIds: Iterable<string>,
 ): ProviderParityRow {
-	if (provider === "") {
+	if (provider.trim() === "") {
 		throw new ParityError(
 			"PARITY_PROVIDER_EMPTY",
 			"A parity row must name its provider.",
@@ -133,6 +144,12 @@ export function parityRow(
 	}
 	const catalog = canonicalIds(catalogProductIds);
 	const resolved = canonicalIds(resolvedProductIds);
+	if (catalog.length === 0) {
+		throw new ParityError(
+			"PARITY_CATALOG_EMPTY",
+			`${provider}: a parity row must contain at least one catalog product id.`,
+		);
+	}
 	const declared = new Set(catalog);
 	const stray = resolved.filter((id) => !declared.has(id));
 	if (stray.length > 0) {

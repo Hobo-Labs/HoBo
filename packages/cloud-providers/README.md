@@ -75,10 +75,11 @@ How to read a claim — example format, not a current claim:
 `acme L1: 1/3 resolvers declared (conformance not asserted here)` means one of
 the three product ids acme's catalog declares has a declared resolver, and
 nothing here asserts that resolver passes conformance. The denominator is
-always present — a level without one is not a claim. A resolved id the
-catalog does not declare is refused (`ParityError`, code
-`PARITY_RESOLVED_NOT_IN_CATALOG`) rather than dropped, because dropping it
-would tidy the denominator.
+always present — a level without one is not a claim. Blank provider or product
+ids and empty catalogs are refused (`PARITY_PROVIDER_EMPTY`,
+`PARITY_PRODUCT_ID_EMPTY`, `PARITY_CATALOG_EMPTY`). A resolved id the catalog
+does not declare is refused (`PARITY_RESOLVED_NOT_IN_CATALOG`) rather than
+dropped, because dropping it would tidy the denominator.
 
 Grain: the count is per provider, per **product** — not per capability
 profile. Ids are de-duplicated, so a product listed under two profiles counts

@@ -60,6 +60,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 const readPackageFile = (...path: string[]) =>
 	readFileSync(join(here, "..", ...path), "utf8");
 
+function catchParityError(run: () => void): ParityError {
+	try {
+		run();
+	} catch (error) {
+		if (error instanceof ParityError) return error;
+		throw error;
+	}
+	throw new Error("expected a ParityError");
+}
+
 function catalogIdsOf(yard: {
 	readonly bindings: readonly { readonly productId?: string }[];
 }): string[] {
@@ -207,8 +217,34 @@ describe("parityRow() level rules", () => {
 		expect(caught.message).toContain("acme.ghost/v1");
 	});
 
-	it("refuses an empty provider id", () => {
-		expect(() => parityRow("", ["acme.a/v1"], [])).toThrow(ParityError);
+	for (const provider of ["", " \t\n"]) {
+		it(`refuses blank provider id ${JSON.stringify(provider)}`, () => {
+			const error = catchParityError(() =>
+				parityRow(provider, ["acme.a/v1"], []),
+			);
+			expect(error.code).toBe("PARITY_PROVIDER_EMPTY");
+		});
+	}
+
+	for (const productId of ["", " \t\n"]) {
+		it(`refuses blank catalog product id ${JSON.stringify(productId)}`, () => {
+			const error = catchParityError(() =>
+				parityRow("acme", [productId], []),
+			);
+			expect(error.code).toBe("PARITY_PRODUCT_ID_EMPTY");
+		});
+
+		it(`refuses blank resolved product id ${JSON.stringify(productId)}`, () => {
+			const error = catchParityError(() =>
+				parityRow("acme", ["acme.a/v1"], [productId]),
+			);
+			expect(error.code).toBe("PARITY_PRODUCT_ID_EMPTY");
+		});
+	}
+
+	it("refuses an empty catalog", () => {
+		const error = catchParityError(() => parityRow("acme", [], []));
+		expect(error.code).toBe("PARITY_CATALOG_EMPTY");
 	});
 });
 
