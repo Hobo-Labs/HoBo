@@ -50,3 +50,15 @@ SQLite sidecars and interrupted staging trees so recovery state stays local.
 
 Atomic snippets live in [`atoms/`](./atoms/README.md) and load with the rest of
 the catalog. Chat emit uses the same trees.
+
+## What the loaders refuse
+
+- An atom's `meta.json` must be a JSON object. An array or a scalar is refused
+  with `atom meta must be an object`, and a `files` entry that is not an object
+  with `<id>: invalid file entry`. Only primitive strings count as strings: a
+  boxed `String`, or an object that sets `Symbol.toStringTag` to `"String"`, is
+  not an atom id.
+- `planPatternApplication` and `applyPatternPlan` take params of any value
+  type. A string, number or boolean is coerced with `String()`, as
+  `parseApplicationRequest` does; anything else is refused with
+  `param <name> must be a scalar`.
