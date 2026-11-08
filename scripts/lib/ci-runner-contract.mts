@@ -431,9 +431,17 @@ export function syncMissingMiseTools(
 			);
 		}
 	}
+	// Export bin dirs only for tools PATH cannot already see: prepending
+	// every tool's real bin dir would shadow shims and system installs on
+	// healthy images, and a `mise which` failure for a visible tool would
+	// fail preflight fleet-wide for no benefit.
+	const invisibleTools = configuredTools.filter((tool) => {
+		const which = run("sh", ["-c", `command -v ${tool} || true`]);
+		return !(which.out.split("\n")[0]?.trim() ?? "");
+	});
 	const pathExport = exportMiseToolBinDirsToPath(
 		root,
-		configuredTools,
+		invisibleTools,
 		run,
 		env,
 		appendFile,

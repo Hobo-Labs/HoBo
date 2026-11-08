@@ -157,8 +157,9 @@ describe("ci-runner mise tool sync", () => {
 				args: ["--cd", root, "install", "--locked", "shellcheck"],
 			},
 		]);
-		// Every configured tool is resolved with `mise which`, in mise.toml
-		// order, and their bin dirs compose PATH exactly, in that order.
+		// The fake shell sees no tool on PATH, so every configured tool is
+		// resolved with `mise which`, in mise.toml order, and their bin dirs
+		// compose PATH exactly, in that order.
 		const configuredTools = parseMiseToolNames(
 			readFileSync(join(root, MISE_TOML), "utf8"),
 		);
@@ -180,7 +181,7 @@ describe("ci-runner mise tool sync", () => {
 		expect(env.PATH).toContain(binDir);
 	});
 
-	it("exports every configured tool to PATH when already installed (syft preflight)", () => {
+	it("exports PATH-invisible configured tools when already installed (syft preflight)", () => {
 		const env = {
 			PATH: "/usr/bin",
 			GITHUB_ACTIONS: "true",
@@ -225,6 +226,40 @@ describe("ci-runner mise tool sync", () => {
 			root,
 		);
 		expect(check.ok).toBe(true);
+	});
+
+	it("does not prepend or resolve tools PATH already sees", () => {
+		const env = {
+			PATH: "/usr/bin",
+			GITHUB_ACTIONS: "true",
+			GITHUB_PATH: "/runner/github-path",
+		};
+		const appended: string[] = [];
+		const whichCalls: string[] = [];
+		const syftBin = dirname(miseWhichExecutable("syft"));
+		const result = syncMissingMiseTools(root, {
+			run: (cmd, args) => {
+				if (cmd === "sh") {
+					const tool = args[1]?.split(" ")[2] ?? "";
+					return {
+						ok: true,
+						out: tool === "syft" ? "" : `/usr/bin/${tool}`,
+					};
+				}
+				if (cmd === "mise" && args.includes("which")) {
+					const tool = args.at(-1)!;
+					whichCalls.push(tool);
+					return { ok: true, out: miseWhichExecutable(tool) };
+				}
+				return { ok: true, out: "" };
+			},
+			env,
+			appendFile: (_path, data) => appended.push(data),
+		});
+		expect(result.ok).toBe(true);
+		expect(whichCalls).toEqual(["syft"]);
+		expect(env.PATH).toBe(`${syftBin}:/usr/bin`);
+		expect(appended).toEqual([`${syftBin}\n`]);
 	});
 
 	it("keeps resolver failure diagnostics when install succeeds without a usable binary", () => {
