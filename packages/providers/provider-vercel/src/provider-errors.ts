@@ -50,9 +50,11 @@ export type ProviderErrorOptions = {
 
 /**
  * How much of a text the shapes below are searched in: its first
- * REDACTION_WINDOW characters, or four times `maxLength` when that is more. An
+ * REDACTION_WINDOW characters, or four times `maxLength` when that is more, and
+ * the rest of the run of non-whitespace that cut falls in (`windowOf`). An
  * error message is cut far shorter than this, so a longer text only costs time:
- * a hostile body of a megabyte is searched no further than this.
+ * a hostile body of a megabyte with whitespace in it is searched no further than
+ * this, and one without is searched in linear time.
  */
 export const REDACTION_WINDOW = 8192;
 
@@ -85,28 +87,35 @@ const CREDENTIAL_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
- * `text` cut at `window` characters. A cut inside a run of non-whitespace drops
- * that whole run: every shape above but the private key ends at whitespace, so
- * a credential the cut runs through leaves nothing behind. A private key cut
- * after its BEGIN line is redacted to the end of the window.
+ * `text` cut at `window` characters, or, when that cut falls inside a run of
+ * non-whitespace, at the end of that run. Every shape above but the private
+ * key ends at whitespace, so none is cut through and a credential leaves
+ * nothing behind; a private key cut after its BEGIN line is redacted to the
+ * end of what is searched. A long body with no whitespace, such as compact
+ * JSON, is then searched whole (the shapes are linear in it), and its start is
+ * still shown, redacted.
  */
 function windowOf(text: string, window: number): string {
 	if (text.length <= window) return text;
-	const whitespace = /\s/u;
-	let end = window;
-	if (!whitespace.test(text.charAt(window))) {
-		while (end > 0 && !whitespace.test(text.charAt(end - 1))) end--;
-	}
-	return text.slice(0, end);
+	const whitespace = /\s/gu;
+	whitespace.lastIndex = window;
+	const next = whitespace.exec(text);
+	return next === null ? text : text.slice(0, next.index);
 }
 
+// Each C0 control character and DEL as a space. Copied a stretch at a time,
+// not a character at a time: a text searched whole can be a megabyte.
 function flattenControlChars(text: string): string {
 	let out = "";
-	for (const ch of text) {
-		const code = ch.charCodeAt(0);
-		out += code <= 31 || code === 127 ? " " : ch;
+	let from = 0;
+	for (let index = 0; index < text.length; index++) {
+		const code = text.charCodeAt(index);
+		if (code <= 31 || code === 127) {
+			out += `${text.slice(from, index)} `;
+			from = index + 1;
+		}
 	}
-	return out;
+	return from === 0 ? text : out + text.slice(from);
 }
 
 /**
@@ -115,12 +124,12 @@ function flattenControlChars(text: string): string {
  * (REDACTION_WINDOW) is searched and kept; a text longer than it is marked cut.
  */
 export function redactProviderText(text: string, maxLength = 256): string {
-	const window = Math.max(REDACTION_WINDOW, 4 * maxLength);
-	let out = windowOf(text, window);
+	const searched = windowOf(text, Math.max(REDACTION_WINDOW, 4 * maxLength));
+	let out = searched;
 	for (const pattern of CREDENTIAL_PATTERNS)
 		out = out.replace(pattern, "[redacted]");
 	out = flattenControlChars(out).trim();
-	return out.length > maxLength || text.length > window
+	return out.length > maxLength || searched.length < text.length
 		? `${out.slice(0, maxLength)}…`
 		: out;
 }

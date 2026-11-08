@@ -810,13 +810,18 @@ describe("a refusal's text (scripted transport, no network)", () => {
 			"a private key",
 			`${shrinking(REDACTION_WINDOW - 200)}-----BEGIN PRIVATE KEY-----\n${keyBody}\n-----END PRIVATE KEY-----`,
 			["MIIK", "qqqq"],
+			// Searched to the end of the key line the cut falls in, and redacted
+			// from BEGIN to there: the rest is cut off.
+			true,
 		],
 		[
 			"a JWT",
 			`${shrinking(REDACTION_WINDOW - 200)}token eyJ${"h".repeat(40)}.eyJ${"p".repeat(4000)}.sigsigsig`,
 			["eyJ", "hhhh", "pppp"],
+			// Searched to the end of the JWT the cut falls in, so nothing is cut.
+			false,
 		],
-	])("leaves nothing of %s the window cuts through", async (_case, body, parts) => {
+	])("leaves nothing of %s the window cuts through", async (_case, body, parts, cut) => {
 		const raw = await refusedBy(() => plainReply(404, body));
 		const inJson = await refusedBy(() =>
 			plainReply(
@@ -827,7 +832,7 @@ describe("a refusal's text (scripted transport, no network)", () => {
 
 		for (const text of [raw.message, inJson.message, inJson.apiMessage ?? ""]) {
 			for (const part of parts) expect(text).not.toContain(part);
-			expect(text.endsWith("…")).toBe(true);
+			expect(text.endsWith("…")).toBe(cut);
 		}
 	});
 
@@ -899,6 +904,17 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		);
 		expect(inJson.apiMessage).not.toContain(token);
 		expect(inJson.apiMessage).toBe("you sent [redacted] back");
+	});
+
+	it("shows the start of a long refusal body with no whitespace in it", async () => {
+		const body = `{"error":{"code":"internal","message":"sent ${TOKEN}"},"pad":"${"x".repeat(20_000)}"}`;
+		const error = await refusedBy(() => plainReply(500, body));
+
+		expectNoToken(error, TOKEN, []);
+		expect(error.message).toMatch(
+			/^vercel-client: create deployment failed \(HTTP 500\): \{"error":\{"code":"internal","message":"sent \[redacted\]"\},"pad":"x+…$/u,
+		);
+		expect(error.message).toHaveLength(501);
 	});
 
 	it("carries no token sent back JSON-escaped as the code", async () => {

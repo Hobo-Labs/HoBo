@@ -18,7 +18,9 @@ import {
 
 describe("redactProviderText on a hostile text", () => {
 	// A hostile body must not stall the error path: every shape is linear in
-	// the text, and only the first REDACTION_WINDOW characters are searched.
+	// the text, and only the first REDACTION_WINDOW characters, and the rest of
+	// the run of non-whitespace that cut falls in, are searched. `-ey` over and
+	// over has no whitespace, so it is searched whole.
 	const MB = 1_000_000;
 	const repeated = (unit: string, length = MB) =>
 		unit.repeat(Math.ceil(length / unit.length));
@@ -41,7 +43,7 @@ describe("redactProviderText on a hostile text", () => {
 
 		expect(hostile.length).toBeGreaterThanOrEqual(MB);
 		expect(redacted.length).toBeLessThanOrEqual(257);
-		expect(took).toBeLessThan(250);
+		expect(took).toBeLessThan(1000);
 	});
 
 	// The shapes themselves, with the window opened past the whole megabyte (it
@@ -100,7 +102,24 @@ describe("redactProviderText on a hostile text", () => {
 		expect(redacted).not.toContain("eyJ");
 		expect(redacted).not.toContain("hhhh");
 		expect(redacted).not.toContain("pppp");
-		expect(redacted.endsWith("token…")).toBe(true);
+		// The window's cut falls inside the JWT, which is searched to its end.
+		expect(redacted.endsWith("token [redacted]")).toBe(true);
+	});
+
+	// A long body with no whitespace in it, such as compact JSON: the window's
+	// cut falls inside its one run, which is searched to its end, so the
+	// output still shows the body's start, redacted.
+	it.each([
+		[180, 180],
+		[256, 256],
+	])("shows the redacted start of a long body with no whitespace, at maxLength %i", (maxLength, shown) => {
+		const body = `{"error":{"message":"rejected:sk_live_abcdefghijklmnop"},"pad":"${"x".repeat(20_000)}"}`;
+
+		const redacted = redactProviderText(body, maxLength);
+
+		const start = '{"error":{"message":"rejected:[redacted]"},"pad":"';
+		expect(redacted).toBe(`${(start + "x".repeat(shown)).slice(0, shown)}…`);
+		expect(redacted).not.toContain("sk_live");
 	});
 
 	it("redacts a private key whole across a foreign END marker inside it", () => {
