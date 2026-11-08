@@ -24,35 +24,6 @@
 			"why": "links packages/bindles, and packages/runtime and packages/core by a name it computes, into generated projects' node_modules/@hobo, compiles the generated code against their dist/ types and imports it, which imports them by name"
 		},
 		{
-			"from": "packages/code/src/composed-hobo.ts",
-			"needs": ["@hobo/hobo#build"],
-			"why": "spawns packages/hobo/dist/bin/hobo.js and imports packages/hobo/dist/<file> in-process"
-		},
-		{
-			"from": "packages/code/src/generated-app-runtime.ts",
-			"needs": [
-				"@hobo/adapter-hono#build",
-				"@hobo/bindles#build",
-				"@hobo/core#build"
-			],
-			"why": "links adapters/adapter-hono, bindles and core into a generated app's node_modules; cli's loader then imports the app's bindle.ts, which imports them by name"
-		},
-		{
-			"from": "packages/code/test/composed-hobo.test.ts",
-			"needs": ["@hobo/hobo#build"],
-			"why": "drives composed-hobo.ts against the real packages/hobo/dist; the stub trees it also builds under a temp root need nothing"
-		},
-		{
-			"from": "packages/code/test/dev-browser.test.ts",
-			"needs": ["@hobo/hobo#build"],
-			"why": "resolves the shipped hobo binary, packages/hobo/dist/bin/hobo.js, through composed-hobo.ts; the stub trees under a temp root need nothing"
-		},
-		{
-			"from": "packages/code/test/hobo-bin-resolve.test.ts",
-			"needs": ["@hobo/hobo#build"],
-			"why": "resolves the shipped hobo binary, packages/hobo/dist/bin/hobo.js, through composed-hobo.ts; the stub trees under a temp root need nothing"
-		},
-		{
 			"from": "packages/hobo/test/persistent-local-deployment.test.ts",
 			"needs": ["@hobo/bindles#build"],
 			"why": "loads ../../bindles/dist/index.js by URL"

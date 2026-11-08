@@ -4,12 +4,12 @@
  * Much of this workspace resolves its state directory as
  * `process.env.HOBO_HOME ?? join(HOME, ".hobo")`. A test that calls such an API
  * without passing an explicit `hoboHome` therefore writes into the *developer's
- * own* `~/.hobo` — the same directory a real `hobo-code` session persists chats,
- * auth sessions and evidence to.
+ * own* `~/.hobo` — the same directory a real session persists chats, auth
+ * sessions and evidence to.
  *
- * That was not hypothetical. A clean run of `packages/code`'s suite left 33
- * files under `~/.hobo/durable`, including an auth session written by a test
- * whose whole assertion was that `auth --help` prints a topic-scoped help page.
+ * That was not hypothetical. A clean run of one package's suite left 33 files
+ * under `~/.hobo/durable`, including an auth session written by a test whose
+ * whole assertion was that `auth --help` prints a topic-scoped help page.
  *
  * Three things are wrong with that, in increasing order of seriousness:
  *

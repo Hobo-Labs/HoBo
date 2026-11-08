@@ -494,7 +494,7 @@ export function applyPatternPlan(input: {
 		postimage,
 		idempotent: allIdempotent,
 		promotionRequired: true,
-		promotionRef: "hobo-code promote",
+		promotionRef: "caller-promotes",
 		llmCalls: 0,
 		llmInputTokens: 0,
 		llmOutputTokens: 0,

@@ -199,7 +199,7 @@ describe("applyPatternPlan receipts", () => {
 	it("always requires promotion and names the command", () => {
 		const receipt = apply();
 		expect(receipt.promotionRequired).toBe(true);
-		expect(receipt.promotionRef).toBe("hobo-code promote");
+		expect(receipt.promotionRef).toBe("caller-promotes");
 	});
 
 	it("reports the files it changed", () => {

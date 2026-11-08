@@ -542,17 +542,15 @@ test("production package source changes select architecture guard and workspace 
 	assert.equal(turboTestSelects(checks, "packages/core"), true);
 });
 
-test("staged test-only @hobo/code changes run vitest on package-relative paths", () => {
-	const { checks } = plan(["packages/code/test/hobo-code-signals.test.ts"], {
+test("staged test-only package changes run vitest on package-relative paths", () => {
+	const { checks } = plan(["packages/rift/test/rift.test.ts"], {
 		staged: true,
 		workspacePackageExists: () => true,
 	});
 
 	assert.ok(checks.some(narrowVitestCheck));
-	assert.deepEqual(narrowVitestPaths(checks), [
-		"test/hobo-code-signals.test.ts",
-	]);
-	assert.equal(turboTestSelects(checks, "packages/code"), false);
+	assert.deepEqual(narrowVitestPaths(checks), ["test/rift.test.ts"]);
+	assert.equal(turboTestSelects(checks, "packages/rift"), false);
 });
 
 test("examples package source changes select architecture guard and workspace tests", () => {
@@ -667,14 +665,14 @@ test("the behavior lane builds the proofs' dependencies first, serially", () => 
 
 test("pattern-catalog starter Gherkin is fixture data, not the repo behavior lane", () => {
 	const { checks } = plan([
-		"packages/patterns/patterns/starter/code/openui-astryx-bindle/project/features/visual.feature",
+		"packages/patterns/patterns/starter/cli/todo/project/features/visual.feature",
 	]);
 	assert.equal(checks.some(isBehaviorLane), false);
 });
 
 test("OptimizeXP evidence features use their own gate, not the root behavior lane", () => {
 	const { checks } = plan([
-		"packages/code/.optimizexp/features/git-workbench/git-workbench.feature",
+		"packages/cli/.optimizexp/features/new-project/new-project.feature",
 	]);
 	assert.equal(checks.some(isBehaviorLane), false);
 	assert.ok(
@@ -706,7 +704,7 @@ test("global .optimizexp changes select the optimizexp drift lane", () => {
 
 test("project-local persona/feature changes select the optimizexp drift lane", () => {
 	const { checks } = plan([
-		"packages/code/.optimizexp/features/hobo-code-cost-zero/README.md",
+		"packages/cli/.optimizexp/features/new-project/README.md",
 	]);
 	assert.ok(checks.some(isOptimizexpLane));
 });

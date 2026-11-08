@@ -134,8 +134,7 @@ export function parseAtomAsPattern(
 				path: sourcePath,
 				commit: "",
 				symbol: id,
-				rationale:
-					"git-backed atomic snippet; available via hobo-code template",
+				rationale: "git-backed atomic snippet; available through the catalog",
 			},
 		],
 		limitations: [],
