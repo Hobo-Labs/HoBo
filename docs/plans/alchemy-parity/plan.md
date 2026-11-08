@@ -26,6 +26,31 @@ rejected A native-per-cloud and un-gated B/C):
   simulated conformance in tranche 1 (T14–T19), then P2 in tranche order
   (T20). Breadth is sequenced, not excluded; labels stay honest meanwhile.
 
+## Council amendment (2026-11-08) — supersedes layer order below
+
+The 7-harness council (`council-decision.md`) reordered delivery local-first.
+Where the layer tables below conflict with `council-decision.md`, the council
+file wins:
+
+- Layers run 01 taxonomy → 02 local-yard → 03 bindings → 04 npm → 05 local DX
+  → 06 local testing → 07 breadth → 08 local epic; Cloudflare (old layer 02),
+  ephemeral-Camp previews (old 05), P2 waves and the spike are **fallback
+  layers 09–12**, opened only after L2/L3 are green.
+- Primary parity levels are **L1-DECLARED** (constants-only candidate signal
+  emitted by `providerParity()`; full L1 additionally requires the 6-case
+  conformance + PACT evidence), **L2 local-live**, **L3 local-DX**. Cloud
+  P2/P3 are fallback claims.
+- T2's cred-gated live-lane spec moves to fallback layers; the simulated
+  contract is the existing `@hobo/conformance` provider-lifecycle suite
+  (496 green at L01). The T2 draft technical proof is replaced by the L02
+  local conformance proof.
+- T9's timed script is the local L3 script (localhost URL), not a cloud URL.
+- Phase-0 council decisions: single local engine owner = `@hobo/runtime-local`
+  (`provider-local` is definitions+adapter only); lifecycle "replace" is
+  stack-orchestrated delete+create (providers never emit replace);
+  `FetchHandler` is the local proof surface with additive optional ctx;
+  DataClient minimum = encapsulated binding resolver, no invented query API.
+
 ## Task graph
 
 ```text
@@ -131,8 +156,10 @@ proving repeatable and a named account/cost owner per cloud.
 
 ## Exit criteria for the initiative
 
-1. `sdlc-state.md` parity table: every family ≥ P1 with executed gate output;
-   Cloudflare P2 6/6; T9 P3 minutes recorded.
+1. `sdlc-state.md` parity table: every family ≥ L1-DECLARED with executed gate
+   output (full L1 only where 6-case+PACT evidence ran); Local L2 for the
+   core seed profiles with denominator; L3 minutes recorded. Cloud claims
+   reported fallback-only, never as the headline.
 2. Every stack PR squash-merged bottom-up under the Done rule
    (`references/stacked-prs.md`), billing-only CI documented not blocking.
 3. `docs/competitors/alchemy.md` + gap-analysis + live-provider-matrix match

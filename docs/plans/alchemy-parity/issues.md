@@ -7,6 +7,15 @@ tags: [hobo, plans, sdlc, alchemy, backlog]
 
 # Alchemy parity — issues (staged)
 
+**Council amendment (2026-11-08):** contracts below predate the local-first
+reorder in `council-decision.md`. Mapping: I1→layer 01 (conformance suite is
+the existing `@hobo/conformance` provider-lifecycle; cred-gated live-lane spec
+and draft proof move to fallback/L02), **new L02 local-yard contracts come from
+the owner-map dispatch briefs**, I3 splits into layers 03/04/05, I4→layer 08
+(local L3 script), I5→layers 06 (local testing) + 10 (cloud CI fallback),
+I6→layer 07, I2→layer 09 fallback, I7→layer 12, I8→layer 11. Council file
+wins on any conflict.
+
 Staged per `sdlc/references/linear-planning.md` fallback: Linear MCP is not
 available in this session, so the coordinator imports these at dispatch time.
 

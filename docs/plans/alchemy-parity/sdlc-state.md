@@ -142,6 +142,18 @@ Fallback (after L2/L3 green; cred-gated; never the getting-started default):
 11. `sdlc/alchemy-parity-11-cloud-p2-fallback` — T20 P2 waves per cloud.
 12. `sdlc/alchemy-parity-12-iac-alchemy-spike` — T13 deferred spike (may end in a documented kill).
 
+## Layer status
+
+- **L01 taxonomy — implemented + council-reviewed (2026-11-08).** Seats:
+  claude implemented, kimi fix rounds, grok+cursor FAIL → cursor re-review
+  **pass**. Gates (coordinator re-run): `@hobo/cloud-providers` 147/147,
+  typecheck, branch `agent:check` 11/11, `@hobo/conformance` 496/496.
+  Output: `providerParity()` + `providerProfileParity()` emitting only
+  `P0`/`L1-DECLARED` with denominators; competitor capture refreshed.
+  Remaining I1 items by council re-scope: draft proof → L02; cred-gated
+  live-lane spec → fallback layers 09/10.
+- L02–L12: not started; owner-map + Phase-0 decisions in `plan.md` amendment.
+
 ## Open gates
 
 - [x] Dispatch: user delegated all gates to the 7-harness council
