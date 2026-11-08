@@ -689,6 +689,15 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		["a zero-width non-joiner (U+200C)", "\u200c"],
 		["a zero-width joiner (U+200D)", "\u200d"],
 		["a word joiner (U+2060)", "\u2060"],
+		// Default-ignorable code points that are neither control nor format
+		// characters: a renderer draws them as nothing at all.
+		["a variation selector (U+FE0F)", "\ufe0f"],
+		["a combining grapheme joiner (U+034F)", "\u034f"],
+		["a Hangul filler (U+3164)", "\u3164"],
+		["a Hangul choseong filler (U+115F)", "\u115f"],
+		["a Khmer inherent vowel (U+17B4)", "\u17b4"],
+		["a Mongolian free variation selector (U+180B)", "\u180b"],
+		["a variation selector supplement (U+E0100)", "\u{e0100}"],
 	])("carries no token broken up by %s", async (_case, char) => {
 		const sent = split(REPRO, char);
 		const json = JSON.stringify({
@@ -887,7 +896,10 @@ describe("a refusal's text (scripted transport, no network)", () => {
 			.replace(/&#0*([0-9]{1,7});?/gu, (match, dec: string) =>
 				code(dec, 10, match),
 			)
-			.replace(/\\+[nrt/]|[\s\p{Cc}\p{Cf}]/gu, "");
+			.replace(
+				/\\+[nrt/]|[\s\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/gu,
+				"",
+			);
 	}
 
 	// What the base64 runs in `text` decode to, and the base64 runs in those.
@@ -1304,6 +1316,8 @@ describe("a transport failure (scripted transport, no network)", () => {
 		["a tab", "\t"],
 		["a space", " "],
 		["a zero-width space", "\u200b"],
+		["a variation selector (U+FE0F)", "\ufe0f"],
+		["a variation selector supplement (U+E0100)", "\u{e0100}"],
 	])("refuses a token holding %s before any request, not saying it", (_case, char) => {
 		const token = `${TOKEN.slice(0, 10)}${char}${TOKEN.slice(10)}`;
 		const { fetch, sent } = scripted({});

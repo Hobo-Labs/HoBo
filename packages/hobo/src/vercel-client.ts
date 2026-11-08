@@ -271,10 +271,12 @@ function literal(char: string): string {
 
 // What can sit unseen between two characters of a token: whitespace (a
 // newline, `\r\n`, spaces, tabs), a control character (NUL, ESC, DEL, NEL),
-// or a format character (a soft hyphen, a zero-width space or joiner, a word
-// joiner). A message shows a control character as a space, and a format
-// character not at all, so either leaves the token readable.
-const BREAK_CHAR = "[\\s\\p{Cc}\\p{Cf}]";
+// a format character (a soft hyphen, a zero-width space or joiner, a word
+// joiner), or any other default-ignorable code point (a variation selector, a
+// combining grapheme joiner, a Hangul filler). A message shows a control
+// character as a space, and the rest not at all, so each leaves the token
+// readable.
+const BREAK_CHAR = "[\\s\\p{Cc}\\p{Cf}\\p{Default_Ignorable_Code_Point}]";
 
 // Patterns for the hex digits of `value`, at least `width` of them, one per
 // digit, each in either case.
@@ -333,8 +335,9 @@ function tokenPatterns(token: string): readonly RegExp[] {
 const ONE_BREAK = new RegExp(`^${BREAK_CHAR}$`, "u");
 
 // Whether `point` (the code point `char` holds) is a break: in ASCII, the
-// controls and the space (`\s` there is a subset of them); above it, whatever
-// BREAK_CHAR matches, astral format characters (the tag characters) included.
+// controls and the space (`\s` there is a subset of them, and no ASCII code
+// point is default-ignorable); above it, whatever BREAK_CHAR matches, astral
+// ones (the tag characters, the variation selector supplement) included.
 function isBreak(point: number, char: string): boolean {
 	return point < 0x80 ? point <= 0x20 || point === 0x7f : ONE_BREAK.test(char);
 }
@@ -590,8 +593,8 @@ async function untilAnswered<T>(
 	}
 }
 
-// Whitespace, a control character or a format character: what a token cannot
-// hold. RFC 6750's b64token has none of them, a runtime refuses CR, LF and NUL
+// Whitespace, a control or format character, or another default-ignorable
+// code point: what a token cannot hold. RFC 6750's b64token has none of them, a runtime refuses CR, LF and NUL
 // in a header, and the redaction takes these out of a text before it looks for
 // the token (`withoutToken`), so a token that held one could never be found.
 const TOKEN_BREAK = new RegExp(BREAK_CHAR, "u");
@@ -701,7 +704,7 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 	}
 	if (TOKEN_BREAK.test(token)) {
 		throw new TypeError(
-			"createVercelClient: the token holds whitespace, or a control or format character (CR, LF and NUL among them), which no Vercel token holds and an Authorization header cannot carry: nothing was sent. Set the token again without them",
+			"createVercelClient: the token holds whitespace, or a control, format or other default-ignorable character (CR, LF and NUL among them), which no Vercel token holds and an Authorization header cannot carry: nothing was sent. Set the token again without them",
 		);
 	}
 	const secrets = tokenPatterns(token);

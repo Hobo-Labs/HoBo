@@ -212,10 +212,11 @@ in either case, after one backslash or more, as in JSON inside a JSON string),
 percent-encoded byte by byte as `%XX` or, encoded twice, as `%25XX` (either
 case), or as an HTML numeric reference, `&#xNN;` or `&#NN;` (either case, any
 number of leading zeros, the `;` optional). A run of whitespace (a newline,
-`\r\n`, spaces, tabs), control characters (NUL, ESC, DEL, NEL) or format
-characters (a soft hyphen, a zero-width space or joiner, a word joiner), which a
-message shows as spaces or not at all, may sit anywhere in it, inside an
-encoding too. A JSON body is also parsed and its strings, keys included,
+`\r\n`, spaces, tabs), control characters (NUL, ESC, DEL, NEL), format
+characters (a soft hyphen, a zero-width space or joiner, a word joiner) or any
+other default-ignorable code point (a variation selector, a combining grapheme
+joiner, a Hangul filler), which a message shows as spaces or not at all, may
+sit anywhere in it, inside an encoding too. A JSON body is also parsed and its strings, keys included,
 searched before it is written back out; any other body, or one too deep to
 write back out, is searched as text. The token is looked for again after the
 rest of the redaction has run, so nothing it does brings the token back. The
@@ -226,11 +227,11 @@ rejects, or a 2xx body cannot be read) is a `VercelTransportError`: its
 `message` names the call and says what was thrown, down its `cause` chain and
 into an `AggregateError`'s `errors` (eight parts at most), redacted and cut the
 same way, and it keeps nothing of what was thrown, so it has no `cause`. A
-token that holds whitespace, or a control or format character (CR, LF and NUL
-among them), is refused when the client is made, before any request, by an
-error that does not quote it. A credential binding's scope needs `POST` on `/v13/deployments`, and
-`POST` on `/v9/projects` for that first deploy; it needs no `GET` on the
-project.
+token that holds whitespace, or a control, format or other default-ignorable
+character (CR, LF and NUL among them), is refused when the client is made,
+before any request, by an error that does not quote it. A credential binding's
+scope needs `POST` on `/v13/deployments`, and `POST` on `/v9/projects` for that
+first deploy; it needs no `GET` on the project.
 
 The project is created in the scope `teamId` names, or in the token's own scope
 when there is no `teamId`. Vercel answers "Project not found" for a project that
