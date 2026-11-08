@@ -341,7 +341,7 @@ export function releaseOciStagingLocation(
 }
 
 /** Resolve from the workspace: pnpm otherwise chooses a different store for
- * a deployment target on another filesystem, breaking offline deployment. */
+ * a deployment target on another filesystem, breaking deployment from the workspace store. */
 export function releasePnpmStore(root: string): string {
 	const result = spawnSync("pnpm", ["store", "path", "--silent"], {
 		cwd: root,
@@ -368,7 +368,7 @@ export function releaseOciDeployArgs(
 		packageName,
 		"deploy",
 		"--prod",
-		"--offline",
+		"--prefer-offline",
 		"--config.inject-workspace-packages=true",
 		"--cpu=current",
 		"--os=current",
