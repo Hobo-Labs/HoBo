@@ -241,8 +241,8 @@ function gherkinForPersona(input: {
 	const entry =
 		input.entryCommand ||
 		input.seed.match(/`([^`]+)`/)?.[1] ||
-		"hobo-code help";
-	const bin = entry.split(/\s+/)[0] ?? "hobo-code";
+		"hobo --help";
+	const bin = entry.split(/\s+/)[0] ?? "hobo";
 	return gherkinTemplate({
 		kind,
 		featureId: input.featureId,
@@ -768,7 +768,7 @@ function planExperience(args: Record<string, string>) {
 		featureId,
 		experienceId: row?.experienceId || experienceId || featureId,
 		personaId: row?.personaId || personaId,
-		entryCommand: row?.entryCommand || args.seed || "hobo-code help",
+		entryCommand: row?.entryCommand || args.seed || "hobo --help",
 		driver: row?.driver || args.driver || "cli",
 		intent: row?.intent || args.seed || "TODO intent",
 	});
