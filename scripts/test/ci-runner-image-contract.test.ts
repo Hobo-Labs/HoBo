@@ -29,6 +29,7 @@ import {
 	MISE_LOCK,
 	MISE_TOML,
 	parseDockerHubDigestRef,
+	parseMiseToolNames,
 	playwrightHeadlessShellExecutables,
 	probeMiseTool,
 	REQUIRED_COMMANDS,
@@ -149,15 +150,34 @@ describe("ci-runner mise tool sync", () => {
 		expect(result.installed).toEqual(["shellcheck"]);
 		expect(result.elapsedMs).toBe(75);
 		expect(result.detail).toContain("installed shellcheck");
-		expect(env.PATH).toContain(binDir);
-		expect(appended.some((entry) => entry.data.includes(`${binDir}\n`))).toBe(
-			true,
+		// Exactly one locked install, of the only missing configured tool.
+		expect(calls.filter((call) => call.args.includes("install"))).toEqual([
+			{
+				cmd: "mise",
+				args: ["--cd", root, "install", "--locked", "shellcheck"],
+			},
+		]);
+		// Every configured tool is resolved with `mise which`, in mise.toml
+		// order, and their bin dirs compose PATH exactly, in that order.
+		const configuredTools = parseMiseToolNames(
+			readFileSync(join(root, MISE_TOML), "utf8"),
 		);
-		expect(calls.some((call) => call.args.includes("install"))).toBe(true);
 		expect(
-			calls.filter((call) => call.cmd === "mise" && call.args.includes("which"))
-				.length,
-		).toBeGreaterThan(1);
+			calls
+				.filter((call) => call.cmd === "mise" && call.args.includes("which"))
+				.map((call) => call.args.at(-1)),
+		).toEqual(configuredTools);
+		const expectedDirs = configuredTools.map((tool) =>
+			dirname(miseWhichExecutable(tool)),
+		);
+		expect(env.PATH).toBe([...expectedDirs, "/usr/bin"].join(":"));
+		expect(appended).toEqual([
+			{
+				path: "/runner/github-path",
+				data: expectedDirs.map((dir) => `${dir}\n`).join(""),
+			},
+		]);
+		expect(env.PATH).toContain(binDir);
 	});
 
 	it("exports every configured tool to PATH when already installed (syft preflight)", () => {

@@ -1,5 +1,5 @@
 name: Attest GHCR release images
-description: Keyless GitHub artifact attestations (provenance + SBOM) for pushed GHCR digests.
+description: Keyless GitHub artifact attestations (provenance + SBOM) for pushed GHCR digests. Requires a checked-out workspace with root mise.toml and mise on PATH (installs locked syft itself; attest jobs run no preflight).
 inputs:
   digest-list-path:
     description: Newline-separated ghcr.io/.../name@sha256:... references
@@ -67,6 +67,10 @@ runs:
         mise exec -- syft "registry:${image_ref}" -o "cyclonedx-json=${sbom_path}"
         if [ ! -s "${sbom_path}" ]; then
           echo "::error::syft produced empty SBOM at ${sbom_path}"
+          exit 1
+        fi
+        if ! grep -q '"bomFormat"[[:space:]]*:[[:space:]]*"CycloneDX"' "${sbom_path}"; then
+          echo "::error::syft SBOM at ${sbom_path} is not CycloneDX JSON"
           exit 1
         fi
         echo "path=${sbom_path}" >> "$GITHUB_OUTPUT"

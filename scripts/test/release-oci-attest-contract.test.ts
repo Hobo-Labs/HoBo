@@ -67,6 +67,17 @@ describe("release-oci-attest composite action", () => {
 		expect(actionYml).not.toMatch(/syft "docker:/u);
 	});
 
+	it("validates the SBOM is CycloneDX before attesting it", () => {
+		const syftIdx = actionYml.indexOf("mise exec -- syft");
+		const checkIdx = actionYml.indexOf("is not CycloneDX JSON");
+		const sbomAttestIdx = actionYml.indexOf("attest-sbom");
+		expect(checkIdx).toBeGreaterThan(syftIdx);
+		expect(sbomAttestIdx).toBeGreaterThan(checkIdx);
+		expect(actionYml).toMatch(
+			/"bomFormat"\[\[:space:\]\]\*:\[\[:space:\]\]\*"CycloneDX"/u,
+		);
+	});
+
 	it("installs locked syft before exec (attest jobs run no preflight)", () => {
 		const installIdx = actionYml.indexOf("mise install --locked syft");
 		const execIdx = actionYml.indexOf("mise exec -- syft");

@@ -290,7 +290,7 @@ function exportMiseToolBinDirsToPath(
 	return { ok: true };
 }
 
-function parseMiseToolNames(miseToml: string): string[] {
+export function parseMiseToolNames(miseToml: string): string[] {
 	const names: string[] = [];
 	let inTools = false;
 	for (const line of miseToml.split("\n")) {
