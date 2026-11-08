@@ -86,4 +86,16 @@ export * as gcp from "./gcp.js";
 export * as hetzner from "./hetzner.js";
 export * as hostinger from "./hostinger.js";
 export * as kubernetes from "./kubernetes.js";
+export {
+	formatParityClaim,
+	PARITY_LEVELS,
+	PARITY_PROVIDERS,
+	ParityError,
+	type ParityErrorCode,
+	type ParityLevel,
+	type ProviderParityRow,
+	parityRow,
+	providerParity,
+	type SimulatedParityLevel,
+} from "./parity.js";
 export * as vercel from "./vercel.js";
