@@ -103,6 +103,32 @@ describe("redactProviderText on a hostile text", () => {
 		expect(redacted.endsWith("token…")).toBe(true);
 	});
 
+	it("redacts a private key whole across a foreign END marker inside it", () => {
+		const redacted = redactProviderText(
+			"key -----BEGIN PRIVATE KEY-----\npartOne\n-----END CERTIFICATE-----\npartTwo\n-----END PRIVATE KEY----- done",
+		);
+
+		expect(redacted).toBe("key [redacted] done");
+	});
+
+	it.each([
+		["END markers", repeated("-----END CERTIFICATE-----\n")],
+		[
+			"END markers after a BEGIN",
+			`-----BEGIN PRIVATE KEY-----\n${repeated("-----END CERT ")}`,
+		],
+		[
+			"long END labels",
+			`-----BEGIN PRIVATE KEY-----\n${repeated(`-----END ${"A ".repeat(500)}`)}`,
+		],
+	])("searches 1 MB of %s whole in linear time", (_case, hostile) => {
+		const started = performance.now();
+		redactProviderText(hostile, 2 * MB);
+		const took = performance.now() - started;
+
+		expect(took).toBeLessThan(1000);
+	});
+
 	it("redacts a private key whose END is missing to the end of the text", () => {
 		const redacted = redactProviderText(
 			"key -----BEGIN EC PRIVATE KEY-----\nMIIBOgIBAAJBAK and the rest",

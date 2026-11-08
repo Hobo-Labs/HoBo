@@ -135,7 +135,9 @@ four times its `maxLength` when that is more, and marks a longer text cut, so a
 hostile body of a megabyte costs no more than that; every shape is linear in
 the text besides. A cut that falls inside a run of non-whitespace drops the
 whole run, and a private key with a BEGIN line and no END line is redacted to
-the end of the text, so a credential the cut runs through leaves nothing.
+the end of the text, so a credential the cut runs through leaves nothing. A
+key is redacted from its BEGIN line to its own END line, past any other END line
+(a certificate's) inside it.
 
 `createGuardedTransport` allows HTTPS only, to `api.vercel.com` only
 (`VERCEL_API_ALLOWED_HOSTS`), on allowlisted path prefixes, with no redirects

@@ -75,11 +75,13 @@ const CREDENTIAL_PATTERNS: readonly RegExp[] = [
 	// A JWT starts only where a run of base64url characters starts, so
 	// `-ey-ey-ey…` is one search, not one from every `ey` to the end.
 	/(?<![A-Za-z0-9_-])ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.\S*/giu,
-	// A private key, from its BEGIN line to its END line, or to the next BEGIN or
-	// END line of any kind, or to the end of the text when there is none (as
-	// when the text was cut inside the key): never a search from every BEGIN to
-	// the end.
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----(?:(?!-----(?:BEGIN|END) )[\s\S])*(?:-----END [A-Z ]*PRIVATE KEY-----)?/giu,
+	// A private key, from its BEGIN line to its own END line (another END line,
+	// such as a certificate's, inside it does not end it), or to the next BEGIN
+	// line, or to the end of the text when there is neither (as when the text
+	// was cut inside the key): never a search from every BEGIN to the end. The
+	// END line is looked for only where `-----END ` starts, and its label's run
+	// is read once there.
+	/-----BEGIN [A-Z ]*PRIVATE KEY-----(?:(?!-----BEGIN |-----END [A-Z ]*PRIVATE KEY-----)[\s\S])*(?:-----END [A-Z ]*PRIVATE KEY-----)?/giu,
 ];
 
 /**
