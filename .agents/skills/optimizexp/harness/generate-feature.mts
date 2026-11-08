@@ -736,10 +736,7 @@ function planExperience(args: Record<string, string>) {
 	const selection = resolveProjects(args.projects ?? "all", root);
 	const writeScope = writeScopeFromSelection(selection, root);
 	const projects = listProjects(root);
-	const project =
-		selection.projects[0] ??
-		projects.find((p) => p.id === "code") ??
-		projects[0];
+	const project = selection.projects[0] ?? projects[0];
 	if (!project) {
 		console.error("No project for plan");
 		process.exit(2);
@@ -844,13 +841,12 @@ function rubberduckCheck(args: Record<string, string>) {
 function fromCatalog(args: Record<string, string>) {
 	const root = repoRoot();
 	const selection = resolveProjects(args.projects ?? "all", root);
-	const projects = listProjects(root);
 	const project =
-		selection.projects.find((p) => p.id !== "root") ??
-		projects.find((p) => p.id === "code") ??
-		selection.projects[0];
+		selection.projects.find((p) => p.id !== "root") ?? selection.projects[0];
 	if (!project) {
-		console.error("No project; pass --project code");
+		console.error(
+			"No project; pass --project <id> (list them: init.mts --mode list-projects)",
+		);
 		process.exit(2);
 	}
 	const catalog = readExperienceCatalog(project, root);
