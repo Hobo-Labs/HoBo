@@ -883,10 +883,10 @@ describe("selectIacProvider: the Vercel resolver lane's team", () => {
 		);
 	}
 
-	it("looks up and creates the project in the team VERCEL_TEAM_ID names", async () => {
+	it("looks the project up, once, in the team VERCEL_TEAM_ID names", async () => {
 		const requests = await reconcileWith({ VERCEL_TEAM_ID: " team_acme " });
 
-		expect(requests.length).toBeGreaterThan(0);
+		expect(requests).toHaveLength(1);
 		for (const request of requests) {
 			expect(request).toMatch(/\?teamId=team_acme$/u);
 		}
@@ -901,7 +901,7 @@ describe("selectIacProvider: the Vercel resolver lane's team", () => {
 
 		for (const request of org) expect(request).toMatch(/\?teamId=team_org$/u);
 		for (const request of both) expect(request).toMatch(/\?teamId=acme-slug$/u);
-		expect(Math.min(org.length, both.length)).toBeGreaterThan(0);
+		expect([org.length, both.length]).toEqual([1, 1]);
 	});
 
 	it.each([
@@ -929,7 +929,7 @@ describe("selectIacProvider: the Vercel resolver lane's team", () => {
 	it("takes a VERCEL_ORG_ID that is not a team_ id (a personal account) as no team", async () => {
 		const requests = await reconcileWith({ VERCEL_ORG_ID: "u_abc" });
 
-		expect(requests.length).toBeGreaterThan(0);
+		expect(requests).toHaveLength(1);
 		for (const request of requests) expect(request).not.toContain("?");
 	});
 
@@ -961,7 +961,7 @@ describe("selectIacProvider: the Vercel resolver lane's team", () => {
 	])("takes the team from %s", async (_case, team, teamId) => {
 		const requests = await reconcileWith(team);
 
-		expect(requests.length).toBeGreaterThan(0);
+		expect(requests).toHaveLength(1);
 		for (const request of requests) {
 			expect(new URL(request, "https://api.vercel.com").search).toBe(
 				`?teamId=${teamId}`,
@@ -1007,7 +1007,7 @@ describe("selectIacProvider: the Vercel resolver lane's team", () => {
 	])("with VERCEL_TEAM_ID %s, stays in the token's own scope", async (_case, team) => {
 		const requests = await reconcileWith(team);
 
-		expect(requests.length).toBeGreaterThan(0);
+		expect(requests).toHaveLength(1);
 		for (const request of requests) expect(request).not.toContain("?");
 	});
 });
