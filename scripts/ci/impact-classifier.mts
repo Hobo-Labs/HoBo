@@ -245,6 +245,7 @@ const DIRECTIVE_COMMENT =
  */
 const SELF_PATHS = new Set([
 	"scripts/ci/impact-classifier.mts",
+	"scripts/lib/read-stdin.mts",
 	"scripts/ci/affected-lanes.mts",
 	"scripts/ci/dependent-tests.mts",
 	"scripts/ci/job-scope.mts",

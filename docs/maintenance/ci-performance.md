@@ -96,9 +96,12 @@ In Node 22, `import process from "node:process"` builds that module's exports fr
 the read before git writes, `readFileSync(0)` fails with `EAGAIN`. `artifact-trust` failed that way in
 14 s on #1772, and the same job passed on other PRs. After an empty read, `readStdin` sleeps 10 ms on
 `Atomics.wait` and reads again. It gives up only when nothing has arrived for 30 s.
-`scripts/test/read-stdin.test.ts` runs the three scripts with a writer that starts one second late.
-It keeps a `readFileSync(0)` control that must still fail with `EAGAIN`, so the harness is shown to
-reproduce the failure.
+`scripts/test/read-stdin.test.ts` runs the three scripts with a writer that starts one second late,
+plus a late write larger than the 64 KiB read chunk. It keeps a `readFileSync(0)` control that must
+still fail with `EAGAIN`, so the harness is shown to reproduce the failure; the control skips itself
+on a Node/platform where fd 0 stays blocking, since the quirk it pins is libuv's, not the scripts'.
+`scripts/lib/read-stdin.mts` is in the impact classifier's `SELF_PATHS`: changing the reader the
+classifier itself reads stdin through counts as a classifier self-change.
 
 ## Frozen proofs and live-repo tests
 

@@ -173,38 +173,60 @@ function runWithLateWriter(
  * non-blocking with one raw read, prints `probe=<code>`, then prints what
  * `read` returns.
  */
-function childReading(read: string): string[] {
-	const source = [
+function childReading(read: string, probe = true): string[] {
+	const lines = [
 		'import "node:process";',
 		'import { readFileSync, readSync, writeSync } from "node:fs";',
 		`import { readStdin } from ${JSON.stringify(helper)};`,
-		'let probe = "data";',
-		"try { readSync(0, Buffer.alloc(1)); } catch (error) { probe = error.code; }",
-		"writeSync(2, `probe=${probe}\\n`);",
-		`writeSync(1, JSON.stringify(${read}));`,
-	].join("\n");
-	return [...STRIP, "--input-type=module", "--eval", source];
+	];
+	if (probe) {
+		lines.push(
+			'let probe = "data";',
+			"try { readSync(0, Buffer.alloc(1)); } catch (error) { probe = error.code; }",
+			"writeSync(2, `probe=${probe}\\n`);",
+		);
+	}
+	lines.push(`writeSync(1, JSON.stringify(${read}));`);
+	return [...STRIP, "--input-type=module", "--eval", lines.join("\n")];
 }
 
 describe("stdin on a pipe the writer has not written to yet", () => {
-	it("readFileSync(0) fails with EAGAIN: the CI failure", async () => {
+	it("readFileSync(0) fails with EAGAIN: the CI failure", async (t) => {
 		const exit = await runWithLateWriter(
 			childReading('readFileSync(0, "utf8")'),
-			{ after: "probe=", delayMs: 0 },
+			{ delayMs: 1000, input: "x" },
 		);
-		assert.match(exit.stderr, /^probe=EAGAIN$/m);
+		if (!/^probe=EAGAIN$/m.test(exit.stderr)) {
+			// The EAGAIN crash pins a Node/libuv quirk: importing node:process
+			// sets O_NONBLOCK on fd 0. Where a future Node or another platform
+			// keeps fd 0 blocking, the control case has nothing to control.
+			t.skip("fd 0 stayed blocking on this Node/platform");
+			return;
+		}
 		assert.match(exit.stderr, /EAGAIN: resource temporarily unavailable/);
 		assert.equal(exit.status, 1);
 	});
 
 	it("readStdin waits for the writer and returns everything it wrote", async () => {
 		const input = "docs/a.md\npackages/core/src/a.ts\n";
-		const exit = await runWithLateWriter(childReading("readStdin()"), {
-			after: "probe=",
+		const exit = await runWithLateWriter(childReading("readStdin()", false), {
 			delayMs: 300,
 			input,
 		});
-		assert.match(exit.stderr, /^probe=EAGAIN$/m);
+		assert.equal(exit.status, 0, exit.stderr);
+		assert.equal(JSON.parse(exit.stdout), input);
+	});
+
+	it("readStdin returns a late write larger than one read chunk", async () => {
+		const input = Array.from(
+			{ length: 3000 },
+			(_v, i) => `packages/core/src/file-${i}.ts\n`,
+		).join("");
+		assert.ok(Buffer.byteLength(input) > 64 * 1024);
+		const exit = await runWithLateWriter(childReading("readStdin()", false), {
+			delayMs: 300,
+			input,
+		});
 		assert.equal(exit.status, 0, exit.stderr);
 		assert.equal(JSON.parse(exit.stdout), input);
 	});
