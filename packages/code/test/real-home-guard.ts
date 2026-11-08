@@ -1,10 +1,11 @@
 /**
- * Global setup for this package's suite: one root for every throwaway home,
- * and a guard that fails the run when anything was written into a real one.
+ * Global setup for this package's suite: a guard that fails the run when a
+ * real HoBo home changed during it.
  *
  * `test/isolate-user-home.ts` and the root's `test/setup/isolate-hobo-home.ts`
- * point HOME and HOBO_HOME at directories inside the root this makes, so an
- * in-process call that omits its home lands there. That cannot reach a child
+ * point HOME and HOBO_HOME at directories inside the run's root of throwaway
+ * homes (the root's `test/setup/hobo-test-homes.ts`, the global setup before
+ * this one), so an in-process call that omits its home lands there. That cannot reach a child
  * process started with an environment of its own, or a path built from a
  * literal. The guard covers both: before the run it lists what is already in
  * each real HoBo home and starts watching it, and after the run it names
@@ -47,12 +48,11 @@
  * the run. `HOBO_TEST_HOBO_HOME` is the deliberate way to run against a real
  * home, and the guard reports what that run wrote there.
  */
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join, resolve, sep } from "node:path";
 import {
 	AMBIENT_HOME_ENV,
-	HOMES_ROOT_ENV,
 	REAL_HOME_ENV,
 	recordRealHome,
 } from "../../../test/setup/hobo-test-homes.js";
@@ -216,10 +216,7 @@ export function realHomeGuard(
 				`real-home guard: cannot watch ${path}; it still compares snapshots\n`,
 			);
 		const before = snapshotHomes(homes);
-		const root = mkdtempSync(join(tmpdir(), "hobo-code-test-homes-"));
-		process.env[HOMES_ROOT_ENV] = root;
 		return async () => {
-			rmSync(root, { recursive: true, force: true });
 			await new Promise((done) => setTimeout(done, SETTLE_MS));
 			watch.close();
 			const after = snapshotHomes(homes);

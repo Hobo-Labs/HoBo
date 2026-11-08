@@ -10,13 +10,17 @@
  *
  * `os.homedir()` returns `process.env.HOME` when it is set, so setting HOME
  * here moves every in-process lookup. The directory is one per worker inside
- * the run's root (`test/real-home-guard.ts` makes and removes it), so state
+ * the run's root (the root's `test/setup/hobo-test-homes.ts` makes and
+ * removes it), so state
  * still cannot leak between runs. A child process given an environment with
  * no HOME falls back to the account's home instead; the guard reports that.
  *
  * Git refuses to commit without an identity, and the developer's
- * `~/.gitconfig` is no longer read, so the home carries one of its own. It is
- * the lowest-precedence config: a test that sets `user.name` in its repository
+ * `~/.gitconfig` is no longer read, so the home carries one of its own.
+ * `test/isolate-git-env.ts` points this process's git at no global config
+ * (`GIT_CONFIG_GLOBAL=/dev/null`), so it serves only a child spawned with an
+ * environment of its own that keeps HOME but not that setting. It is the
+ * lowest-precedence config: a test that sets `user.name` in its repository
  * still gets that name.
  */
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";

@@ -112,6 +112,10 @@ describe("what the guard watches", () => {
 });
 
 const GUARD = fileURLToPath(new URL("./real-home-guard.ts", import.meta.url));
+/** The root of throwaway homes this package's config sets up before the guard. */
+const HOMES = fileURLToPath(
+	new URL("../../../test/setup/hobo-test-homes.ts", import.meta.url),
+);
 const VITEST = join(
 	dirname(createRequire(import.meta.url).resolve("vitest/package.json")),
 	"vitest.mjs",
@@ -160,7 +164,7 @@ function runUnderGuard(
 	);
 	writeFileSync(
 		join(project, "vitest.config.mjs"),
-		`export default { test: { globals: true, include: ["probe.test.mjs"], globalSetup: [${JSON.stringify(join(project, "guard.ts"))}], setupFiles: ${JSON.stringify(options.setupFiles ?? [])} } };\n`,
+		`export default { test: { globals: true, include: ["probe.test.mjs"], globalSetup: [${JSON.stringify(HOMES)}, ${JSON.stringify(join(project, "guard.ts"))}], setupFiles: ${JSON.stringify(options.setupFiles ?? [])} } };\n`,
 	);
 	// Another vitest run of its own: none of this run's VITEST_* settings or homes.
 	const inherited = Object.fromEntries(
@@ -328,7 +332,7 @@ describe("the guard", () => {
 			false,
 		);
 		const seen = readFileSync(join(run.temp, "seen-home"), "utf8");
-		expect(seen.startsWith(join(run.temp, "hobo-code-test-homes-"))).toBe(true);
+		expect(seen.startsWith(join(run.temp, "hobo-test-homes-"))).toBe(true);
 	});
 
 	it("runs against a throwaway home whatever HOBO_HOME the runner exported", () => {
