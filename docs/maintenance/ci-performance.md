@@ -87,6 +87,19 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   and checks that both real entries scope without giving up. #1652 (ci-gh-actions) and #1653
   (`scripts/run-tests.ts`) would have skipped both jobs: 1–3 slot-minutes each per run, excluding stalls.
 
+## Changed paths on stdin
+
+`job-scope.mts`, `dependent-tests.mts` and `impact-classifier.mts` read the changed paths that a
+`git diff --name-only …` pipe gives them through `scripts/lib/read-stdin.mts`, not `readFileSync(0)`.
+In Node 22, `import process from "node:process"` builds that module's exports from every property of
+`process`. That opens `process.stdin`, and on a pipe libuv sets O_NONBLOCK on fd 0. If node reaches
+the read before git writes, `readFileSync(0)` fails with `EAGAIN`. `artifact-trust` failed that way in
+14 s on #1772, and the same job passed on other PRs. After an empty read, `readStdin` sleeps 10 ms on
+`Atomics.wait` and reads again. It gives up only when nothing has arrived for 30 s.
+`scripts/test/read-stdin.test.ts` runs the three scripts with a writer that starts one second late.
+It keeps a `readFileSync(0)` control that must still fail with `EAGAIN`, so the harness is shown to
+reproduce the failure.
+
 ## Frozen proofs and live-repo tests
 
 `scripts/run-tests.ts` skips a frozen proof test that scans the live repo when its promoted package keeps
