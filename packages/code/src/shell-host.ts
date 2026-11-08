@@ -404,6 +404,11 @@ function startShellForward(
 			}
 			if (closeFailure !== undefined) throw closeFailure;
 		});
+	// Handled here as well as in stop(): a forward that ends on its own is
+	// removed from tracking before anyone awaits it, and its close failure
+	// was already reported in the notice above. This branch only suppresses
+	// the unhandled rejection; stop() still sees the rejection via done.
+	done.catch(() => {});
 	return {
 		async stop() {
 			own.emit("SIGTERM", "SIGTERM");

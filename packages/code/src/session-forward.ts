@@ -96,6 +96,9 @@ export async function forwardResidentSessions(
 	const { machine, port } = forward;
 	(io.stdout ?? process.stdout).write(forwardBanner(forward));
 	const leaseMs = authorizationLeaseDelay(forward.authorizationExpiresAt ?? "");
+	// The watchdog can end ssh at the lease before this process timer
+	// fires; either one reaching the deadline means the lease ran out.
+	const deadlineMs = Date.parse(forward.authorizationExpiresAt ?? "");
 	const args = remoteSessionServeSshArgs(machine, port, forward.identityAgent);
 	return new Promise<number>((resolve) => {
 		let child: StartedSsh | undefined;
@@ -142,7 +145,7 @@ export async function forwardResidentSessions(
 			ended = true;
 			void letSignalsArrive().then(() =>
 				finish(
-					expired
+					expired || (signal === "SIGTERM" && Date.now() >= deadlineMs)
 						? 124
 						: stoppedBy !== undefined
 							? signalStatus(stoppedBy)

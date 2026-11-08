@@ -165,7 +165,7 @@ describe("in-session panes", () => {
 	it("is listed in hobo-code config", () => {
 		const knob = inspectConfigSurface(
 			{ HOBO_CODE_SEAT_AGENTS: "off" },
-			"/nonexistent-hobo-config-test",
+			mkdtempSync(join(tmpdir(), "hobo-config-empty-")),
 		).knobs.find((entry) => entry.name === "HOBO_CODE_SEAT_AGENTS");
 		expect(knob).toEqual(
 			expect.objectContaining({ kind: "env", secret: false, present: true }),

@@ -347,15 +347,17 @@ export async function applyMux(
 	]);
 	const existed = has.code === 0;
 	const windows: CreatedWindow[] = [];
-	// A window whose -P id did not parse is still removable by its exact
-	// =session:window target; dropping it here leaked it silently.
-	const windowTarget = (window: CreatedWindow): string =>
-		window.id ?? `${sessionTarget(plan.session)}${window.name}`;
+	// Windows are named only by the id tmux printed for them: a window whose
+	// -P id did not parse cannot be named safely (a =session:window target
+	// could name another client's window), so it is never killed here. It
+	// stays, and rollback reports it as surviving.
+	const idsOf = (list: readonly CreatedWindow[]): string[] =>
+		list.flatMap((window) => (window.id === undefined ? [] : [window.id]));
 	const result = (ok: boolean, detail: string): ApplyResult => ({
 		ok,
 		session: plan.session,
 		created: windows.map((window) => window.name),
-		createdWindows: windows.map(windowTarget),
+		createdWindows: idsOf(windows),
 		existed,
 		detail,
 	});
@@ -439,11 +441,9 @@ export async function applyMux(
 		if (added.code !== 0) {
 			// Remove what this run added, by id: a window tmux gave no id for
 			// cannot be named safely, and stays.
-			const left = new Set(
-				await killWindows(runner, windows.map(windowTarget)),
-			);
-			const surviving = windows.filter((window) =>
-				left.has(windowTarget(window)),
+			const left = new Set(await killWindows(runner, idsOf(windows)));
+			const surviving = windows.filter(
+				(window) => window.id === undefined || left.has(window.id),
 			);
 			const rolledBack = surviving.length === 0;
 			windows.splice(0, windows.length, ...surviving);

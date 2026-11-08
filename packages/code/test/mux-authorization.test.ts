@@ -7,6 +7,7 @@ import {
 	readdirSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { createServer, type Server } from "node:net";
@@ -164,6 +165,15 @@ async function fixture() {
 	for (const name of ["codex", "ssh"]) {
 		writeFileSync(join(bin, name), "#!/bin/sh\nexit 0\n");
 		chmodSync(join(bin, name), 0o755);
+	}
+	// The child's PATH is this bin plus /usr/bin:/bin, and tmux/sleep are not
+	// in /usr/bin on every platform (NixOS keeps them in the system profile),
+	// so link the real ones this process found into the bin it will search.
+	for (const tool of ["tmux", "sleep"]) {
+		const real = spawnSync("sh", ["-c", `command -v ${tool}`], {
+			encoding: "utf8",
+		}).stdout.trim();
+		if (real.length > 0) symlinkSync(real, join(bin, tool));
 	}
 	const agentSocket = join(root, "a.sock");
 	const agent = createServer((socket) => socket.end());

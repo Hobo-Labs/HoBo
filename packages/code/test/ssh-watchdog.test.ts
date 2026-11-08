@@ -126,6 +126,25 @@ async function watch(
 }
 
 describe("the shell's ssh watchdog", () => {
+	it("refuses to run without a finite lease deadline", async () => {
+		const watchdog = spawn(process.execPath, [WATCHDOG, "NaN", "true"], {
+			stdio: ["pipe", "ignore", "pipe"],
+			env: testEnv({ PATH: process.env.PATH ?? "" }),
+		});
+		watchdogs.push(watchdog);
+		let stderrText = "";
+		watchdog.stderr?.on("data", (chunk) => {
+			stderrText += String(chunk);
+		});
+		const ended = new Promise<[number | null, NodeJS.Signals | null]>(
+			(resolve) =>
+				watchdog.once("exit", (code, signal) => resolve([code, signal])),
+		);
+		const [code] = await ended;
+		expect(code).toBe(1);
+		expect(stderrText).toContain("not a finite time");
+	});
+
 	it("ends ssh's process group when the shell's end of its pipe closes", async () => {
 		const watched = await watch();
 		expect(running(watched.ssh)).toBe(true);

@@ -34,6 +34,13 @@ const GRACE_MS = 3_000;
 const [deadlineArg = "", command = "", ...args] = process.argv.slice(2);
 const deadline = Number(deadlineArg);
 
+// Without a finite lease deadline the lease tie does not exist; refuse
+// rather than run ssh with only half the lifetime tie in place.
+if (!Number.isFinite(deadline)) {
+	process.stderr.write("ssh-watchdog: lease deadline is not a finite time\n");
+	process.exit(1);
+}
+
 const ssh = spawn(command, args, {
 	stdio: ["ignore", "ignore", "inherit"],
 	detached: true,

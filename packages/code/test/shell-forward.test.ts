@@ -130,6 +130,7 @@ async function shell(
 		readonly holdOpening?: boolean;
 		readonly sshScript?: string;
 		readonly leaseMs?: number;
+		readonly failClose?: boolean;
 	} = {},
 ) {
 	const root = mkdtempSync(join(tmpdir(), "s"));
@@ -203,6 +204,8 @@ async function shell(
 				close: async (reason) => {
 					closes.push(reason);
 					await gateway.close(reason);
+					if (options.failClose === true)
+						throw new Error("station refused the close");
 				},
 			};
 		},
@@ -270,6 +273,22 @@ describe("the shell's /sessions serve --host", () => {
 		expect(await until(() => s.closes.length > 0, 30_000)).toBe(true);
 		expect(audit(s.hoboHome)).toEqual(closedWith());
 		expect(s.sockets()).toEqual([]);
+		await s.host.dispose?.();
+		expect(s.closes).toEqual([undefined]);
+	}, 60_000);
+
+	it("a failed close when ssh ends by itself is noticed, and the shell lives on", async () => {
+		const s = await shell({ failClose: true });
+		const notices: string[] = [];
+		s.host.onNotice?.((text) => notices.push(text));
+		await serveInShell(s.host);
+		expect(await until(() => s.sshPid() !== undefined, 30_000)).toBe(true);
+		writeFileSync(s.release, "");
+		expect(await until(() => notices.length > 0, 30_000)).toBe(true);
+		expect(notices[0]).toContain("closing the Station authorization failed");
+		// The forward ended on its own and left tracking, so nobody awaits its
+		// completion: the failure must not surface as an unhandled rejection,
+		// and disposing the shell settles clean.
 		await s.host.dispose?.();
 		expect(s.closes).toEqual([undefined]);
 	}, 60_000);

@@ -226,6 +226,43 @@ describe("applyMux", () => {
 		expect(result.createdWindows).toEqual(["@0", "@1"]);
 	});
 
+	it("never kills a window by name when tmux printed no id for it", async () => {
+		const plan = planMux("hobo", [
+			{ name: "claude", kind: "local", command: "claude" },
+			{ name: "codex", kind: "local", command: "codex" },
+			{ name: "gemini", kind: "local", command: "gemini" },
+		]);
+		const calls: string[][] = [];
+		let added = 0;
+		const runner: MuxRunner = {
+			run: async (args) => {
+				calls.push([...args]);
+				if (args[0] === "has-session") return { code: 1, stdout: "" };
+				if (args[0] === "new-session") return { code: 0, stdout: "$0 @0\n" };
+				if (args[0] === "new-window") {
+					added += 1;
+					// First added window: tmux printed nothing parseable as an id.
+					// Second: creation fails, so applyMux rolls back.
+					return added === 1
+						? { code: 0, stdout: "(no id)\n" }
+						: { code: 1, stdout: "" };
+				}
+				return { code: 0, stdout: "" };
+			},
+		};
+		const result = await applyMux(plan, runner);
+		expect(result.ok).toBe(false);
+		expect(result.detail).toContain("rollback incomplete");
+		// Only the window tmux gave an id for is killed, and only by that id:
+		// the unparsed window stays rather than risk naming another client's.
+		const kills = calls
+			.filter((call) => call[0] === "kill-window")
+			.map((call) => call[call.indexOf("-t") + 1]);
+		expect(kills).toEqual(["@0"]);
+		expect(result.created).toEqual(["codex"]);
+		expect(result.createdWindows).toEqual([]);
+	});
+
 	it("adds its windows to the session it made by its id, not its name", async () => {
 		// Another client may rename the session, or make one of its name,
 		// while mux adds its windows.
