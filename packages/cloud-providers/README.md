@@ -50,55 +50,71 @@ hard gates and lexicographic ranking, never here.
 ## Parity: how far each namespace is proven
 
 `providerParity()` returns one row per namespace, derived — never typed by
-hand — from two live sources: the product ids in the namespace's parsed
-`Yard().bindings`, and the provider package's exported
-`*_RESOLVED_PRODUCT_IDS` constant. `formatParityClaim(row)` renders it.
+hand — from two live sources: the product ids in the namespace's full
+allocatable catalog (`PARITY_SOURCES`; the parsed `Yard().bindings`), and the
+provider package's exported `*_RESOLVED_PRODUCT_IDS` constant.
+`formatParityClaim(row)` renders it.
 
 | Level | Meaning | Who may claim it |
 |---|---|---|
 | `P0` | Catalog only — declarable, no resolver | this package |
-| `L1` | Simulated — resolvers exist, proven against an injected fake transport | this package |
+| `L1` | Simulated — a fake-transport resolver **plus** the six lifecycle conformance cases (create/update/replace/delete-idempotent/adopt/crash-resume) **plus** a PACT | full L1: conformance evidence (later layers). This package: a constants-only *candidate* signal only — see below |
 | `L2` | Local-live — the six lifecycle cases against real local processes, loopback only | executed evidence (later layers) |
 | `L3` | Local-DX — timed offline script, minutes recorded | executed evidence (later layers) |
 | `P2` | Cloud live — **fallback** claim only | cred-gated executed evidence |
 | `P3` | Cloud DX — **fallback** claim only | cred-gated executed evidence |
 
-This package can see only constants, so it only ever emits `P0` or `L1`. A
-higher level printed from static data would be an overclaim; it needs a run.
+This package can see only constants. It sees that a resolver is *declared*;
+it cannot see a conformance run or a pact. So the `L1` that `providerParity()`
+emits is a constants-only **candidate** signal — "resolvers declared
+(conformance not asserted here)" — not the full L1 above, and the rendered
+claim says so. It never emits `L2`/`L3`/`P2`/`P3`: a higher level printed
+from static data would be an overclaim; it needs a run.
 
-How to read a claim: `aws L1: 8/19 simulated (fake-transport)` means 8 of the
-19 product ids the default AWS catalog declares have a resolver, and those
-resolvers are proven only against a fake transport. The denominator is always
-present — a level without one is not a claim. A resolved id the catalog does
-not declare is refused (`ParityError`, code `PARITY_RESOLVED_NOT_IN_CATALOG`)
-rather than dropped, because dropping it would tidy the denominator.
+How to read a claim — example format, not a current claim:
+`acme L1: 1/3 resolvers declared (conformance not asserted here)` means one of
+the three product ids acme's catalog declares has a declared resolver, and
+nothing here asserts that resolver passes conformance. The denominator is
+always present — a level without one is not a claim. A resolved id the
+catalog does not declare is refused (`ParityError`, code
+`PARITY_RESOLVED_NOT_IN_CATALOG`) rather than dropped, because dropping it
+would tidy the denominator.
 
-Vercel is measured against its full allocatable catalog, which includes the
-opt-in `project()` row: the bare `vercel.Yard()` omits it, but
-`vercel.project/v1` has a shipped resolver. Every other namespace is measured
-against its bare `Yard()`.
+Grain: the count is per provider, per **product** — not per capability
+profile. Ids are de-duplicated, so a product listed under two profiles counts
+once (AWS's DynamoDB backs both a document and a key-value profile). One
+resolved product makes the row `L1`; the denominator says how much is covered.
+
+Vercel is measured against its full allocatable catalog: the bare
+`vercel.Yard()` holds the default targets only and omits the opt-in
+`project()` row, but `vercel.project/v1` has a shipped resolver, so measuring
+against the bare default would refuse with `PARITY_RESOLVED_NOT_IN_CATALOG`.
+Vercel's denominator is therefore the default *plus* `project()`. Every other
+namespace is measured against its bare `Yard()`.
 
 The current projection, pinned to the code by `test/parity.test.ts` (the test
 fails if this block and `providerParity()` disagree):
 
 <!-- parity:begin -->
 ```text
-aws L1: 8/19 simulated (fake-transport)
-azure L1: 9/16 simulated (fake-transport)
-cloudflare L1: 6/6 simulated (fake-transport)
-digitalocean L1: 15/15 simulated (fake-transport)
-gcp L1: 9/14 simulated (fake-transport)
-hetzner L1: 5/5 simulated (fake-transport)
-hostinger L1: 5/5 simulated (fake-transport)
-kubernetes L1: 9/9 simulated (fake-transport)
-vercel L1: 3/5 simulated (fake-transport)
+aws L1: 8/19 resolvers declared (conformance not asserted here)
+azure L1: 9/16 resolvers declared (conformance not asserted here)
+cloudflare L1: 6/6 resolvers declared (conformance not asserted here)
+digitalocean L1: 15/15 resolvers declared (conformance not asserted here)
+gcp L1: 9/14 resolvers declared (conformance not asserted here)
+hetzner L1: 5/5 resolvers declared (conformance not asserted here)
+hostinger L1: 5/5 resolvers declared (conformance not asserted here)
+kubernetes L1: 9/9 resolvers declared (conformance not asserted here)
+vercel L1: 3/5 resolvers declared (conformance not asserted here)
 ```
 <!-- parity:end -->
 
-The same row's wire form is `ProviderParityRowRecord` in
+Each row's wire form is `ProviderParityRowRecord` in
 [`data-models/provider_catalog.proto`](./data-models/provider_catalog.proto),
-with the closed level set and `resolved_count <= catalog_count` enforced in
-the matching CUE.
+produced by `toProviderParityRecord(row)` (counts, not id lists). The
+matching CUE caps that record at `P0` or `L1`, requires `P0` exactly when
+`resolved_count == 0`, bounds `resolved_count <= catalog_count`, and derives
+the denominator.
 
 ## HONEST SCOPE
 
@@ -112,7 +128,7 @@ Counts live in the parity block above; this table carries what a count cannot.
 | `azure` | ARM drivers | Same: fake-transport proof only. The rest fail closed. See `AZURE_RESOLVED_PRODUCT_IDS` / `AZURE_UNRESOLVED_PRODUCT_IDS`. |
 | `aws` | SigV4-signed drivers | Same: fake-transport proof only. The rest fail closed. See `AWS_RESOLVED_PRODUCT_IDS` / `AWS_UNRESOLVED_PRODUCT_IDS`. |
 | `digitalocean` | v2 bearer-token drivers, Spaces over SigV4, Functions over OpenWhisk | Same: fake-transport proof only. `queue`, `topic` and `secretRef` carry no rows at all, because DigitalOcean sells none of them. |
-| `kubernetes` | apiserver drivers | Same: fake-transport proof only. The Secret's contents arrive through an injected `resolveSecretData` and never through `desired`. This namespace also has a placement driver that does reach a real apiserver. Catalog is built-ins only: databases, caches and queues arrive through operators. |
+| `kubernetes` | apiserver drivers | Same: fake-transport proof only. The Secret's contents arrive through an injected `resolveSecretData` and never through `desired`. This namespace also has a placement driver (`provisionWorkload`), not a resolver, written to place onto a real cluster through an injected transport (opt-in `kubectl proxy`); no live apply is proven here, and the resolvers above remain fake-transport only. Catalog is built-ins only: databases, caches and queues arrive through operators. |
 | `hetzner` | Cloud API drivers, Object Storage over SigV4, Storage Box on `api.hetzner.com` | Same: fake-transport proof only. Robot stays unreachable. Five slots carry no rows: Hetzner sells no managed database, cache, queue, topic or secret store. |
 | `hostinger` | adopt-and-converge drivers | The odd one out. On Hostinger allocation is a **billing order**, so these resolvers converge an instance you already bought and refuse to purchase one — a refusal the transport guard enforces by not allowlisting `/api/billing/v1/`. Fake-transport proof only. |
 

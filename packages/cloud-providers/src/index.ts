@@ -12,8 +12,10 @@
  * });
  * ```
  *
- * Each namespace exposes `Yard()` — the provider's full allocatable catalog,
- * parsed into a real `Yard` — alongside that provider's slot factories, so
+ * Each namespace exposes `Yard()` — the provider's default catalog, parsed
+ * into a real `Yard`; for every namespace but Vercel that is its full
+ * allocatable catalog (Vercel's bare `Yard()` omits the opt-in `project()`
+ * row; see `src/vercel.ts`) — alongside that provider's slot factories, so
  * narrowing or re-parameterizing a catalog uses the same typed vocabulary the
  * default is built from:
  *
@@ -46,12 +48,15 @@
  * How much, per provider, is deliberately not written here. This header once
  * said `aws (7/19)` and `hostinger (2/5)` while the constants said 8 and 5:
  * prose counts drift the moment a resolver lands. Call `providerParity()` —
- * it derives `resolved/catalog` from each namespace's `Yard()` and the
- * provider package's `*_RESOLVED_PRODUCT_IDS`, and `formatParityClaim()`
+ * it derives `resolved/catalog` from each namespace's full allocatable
+ * catalog (`PARITY_SOURCES`; Vercel's includes the opt-in `project()` row) and
+ * the provider package's `*_RESOLVED_PRODUCT_IDS`, and `formatParityClaim()`
  * renders it with the denominator attached. Two qualitative facts stay true
  * regardless of counts:
- *   - **kubernetes** also has a placement driver that does reach a real
- *     apiserver; its catalog is built-ins only, because databases, caches and
+ *   - **kubernetes** also has a placement driver (`provisionWorkload`) written
+ *     to place onto a real cluster through an injected transport (opt-in
+ *     `kubectl proxy`); that driver is not a resolver, no live apply is
+ *     proven here, and the resolvers stay fake-transport only. Its catalog is built-ins only, because databases, caches and
  *     queues arrive through operators this package cannot see.
  *   - **hostinger** allocation is a *billing order*, so its resolvers adopt and
  *     converge what you already bought and refuse to purchase; its transport
@@ -91,12 +96,17 @@ export {
 	formatParityClaim,
 	PARITY_LEVELS,
 	PARITY_PROVIDERS,
+	PARITY_SOURCES,
 	ParityError,
 	type ParityErrorCode,
 	type ParityLevel,
+	type ParityProvider,
+	type ParitySource,
+	type ProviderParityRecord,
 	type ProviderParityRow,
 	parityRow,
 	providerParity,
 	type SimulatedParityLevel,
+	toProviderParityRecord,
 } from "./parity.js";
 export * as vercel from "./vercel.js";

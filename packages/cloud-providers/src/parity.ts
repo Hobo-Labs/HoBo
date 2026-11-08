@@ -14,21 +14,33 @@
  * The vocabulary is the council's (docs/plans/alchemy-parity/council-decision.md):
  *
  *   - `P0` — catalog only: declarable, no resolver.
- *   - `L1` — simulated: resolver ids exist, proven against an injected fake
- *     transport in the provider package.
+ *   - `L1` — simulated: a fake-transport resolver **plus** the six lifecycle
+ *     conformance cases (create/update/replace/delete-idempotent/adopt/
+ *     crash-resume) **plus** a PACT.
  *   - `L2` — local-live: the six lifecycle cases against real local processes.
  *   - `L3` — local-DX: a timed offline script, minutes recorded.
  *   - `P2` / `P3` — cloud live / cloud DX. Fallback claims only.
  *
- * HONEST BY CONSTRUCTION: this layer can only see constants, so it can only
- * ever emit `P0` or `L1`. `L2`/`L3`/`P2`/`P3` require *executed* evidence that
- * later layers own; a projection over static data that printed one of them
- * would be exactly the overclaim this module exists to remove.
+ * WHAT THIS LAYER CAN SEE: constants only. It sees that a resolver id is
+ * *declared* (`*_RESOLVED_PRODUCT_IDS`); it cannot see a conformance run or a
+ * pact. So the `L1` it emits is a constants-only **candidate** signal —
+ * "resolvers declared, conformance not asserted here" — not the council's full
+ * L1, and the rendered claim says so. `L2`/`L3`/`P2`/`P3` are never emitted:
+ * they need executed evidence later layers own, and printing one from static
+ * data would be exactly the overclaim this module exists to remove.
  *
- * This is a read model, not a decision (see ADR.md): it does not select,
- * filter, or reorder Yard rows. A resolved id the catalog does not declare is
- * refused with a typed error rather than dropped, because silently dropping it
- * would make the denominator look tidier than the code is.
+ * Grain: per-provider *product* count. Ids are de-duplicated, so a product
+ * listed under two capability profiles (e.g. one product backing both a
+ * document and a key-value profile) counts once. One resolved product makes
+ * the row `L1`; the denominator, not the level, says how much is covered.
+ *
+ * This is a read model, not a deployment decision (see ADR.md): it does not
+ * select among a Yard's offerings for deployment. It does canonicalize —
+ * ids are sorted and de-duplicated, bindings without a `productId` are left
+ * out of the product counts, and rows come back in `PARITY_PROVIDERS` order.
+ * A resolved id the catalog does not declare is refused with a typed error
+ * rather than dropped, because silently dropping it would make the
+ * denominator look tidier than the code is.
  *
  * Determinism: no clock, no randomness, no environment reads; ids are
  * de-duplicated and sorted; every returned value is deep-frozen.
@@ -89,7 +101,12 @@ export class ParityError extends Error {
 	}
 }
 
-/** One provider's derived parity. Field names mirror `ProviderParityRowRecord`. */
+/**
+ * One provider's derived parity, in TS shape: it keeps the id lists so a
+ * caller can see *which* products resolve. The wire shape is
+ * `ProviderParityRowRecord` (counts, not lists); `toProviderParityRecord()`
+ * is the one encoder between them.
+ */
 export interface ProviderParityRow {
 	readonly provider: string;
 	readonly catalogProductIds: readonly string[];
@@ -155,9 +172,9 @@ export const PARITY_PROVIDERS = Object.freeze([
 	"vercel",
 ] as const);
 
-type ParityProvider = (typeof PARITY_PROVIDERS)[number];
+export type ParityProvider = (typeof PARITY_PROVIDERS)[number];
 
-interface ParitySource {
+export interface ParitySource {
 	readonly catalog: () => ParsedYard;
 	readonly resolved: readonly string[];
 }
@@ -173,7 +190,9 @@ interface ParitySource {
  * relaxed, hide a working resolver. The full allocatable catalog is the honest
  * denominator; no other namespace has an opt-in row today.
  */
-const SOURCES: Readonly<Record<ParityProvider, ParitySource>> = Object.freeze({
+// public-contract: where each parity row's catalog and resolved halves are read from.
+export const PARITY_SOURCES: Readonly<Record<ParityProvider, ParitySource>> =
+	Object.freeze({
 	aws: { catalog: () => aws.Yard(), resolved: AWS_RESOLVED_PRODUCT_IDS },
 	azure: { catalog: () => azure.Yard(), resolved: AZURE_RESOLVED_PRODUCT_IDS },
 	cloudflare: {
@@ -215,7 +234,7 @@ function productIdsOf(yard: ParsedYard): string[] {
 export function providerParity(): readonly ProviderParityRow[] {
 	return Object.freeze(
 		PARITY_PROVIDERS.map((provider) => {
-			const source = SOURCES[provider];
+			const source = PARITY_SOURCES[provider];
 			return parityRow(
 				provider,
 				productIdsOf(source.catalog()),
@@ -225,13 +244,45 @@ export function providerParity(): readonly ProviderParityRow[] {
 	);
 }
 
+/**
+ * The wire form of one row, field for field `ProviderParityRowRecord` in
+ * data-models/provider_catalog.proto (snake_case, counts not lists).
+ */
+export interface ProviderParityRecord {
+	readonly provider: string;
+	readonly level: SimulatedParityLevel;
+	readonly catalog_count: number;
+	readonly resolved_count: number;
+	readonly denominator: string;
+}
+
+/** Encodes a row as its wire record. Counts are the id-list lengths. */
+export function toProviderParityRecord(
+	row: ProviderParityRow,
+): ProviderParityRecord {
+	const catalogCount = row.catalogProductIds.length;
+	const resolvedCount = row.resolvedProductIds.length;
+	return Object.freeze({
+		provider: row.provider,
+		level: row.level,
+		catalog_count: catalogCount,
+		resolved_count: resolvedCount,
+		denominator: `${resolvedCount}/${catalogCount}`,
+	});
+}
+
 const LEVEL_EVIDENCE: Readonly<Record<SimulatedParityLevel, string>> =
 	Object.freeze({
 		P0: "catalog only",
-		L1: "simulated (fake-transport)",
+		L1: "resolvers declared (conformance not asserted here)",
 	});
 
-/** `"aws L1: 8/19 simulated (fake-transport)"` — the denominator is never omitted. */
+/**
+ * Renders a row with its denominator and evidence kind attached.
+ *
+ * Example format (illustrative, not a current claim):
+ * `acme L1: 1/3 resolvers declared (conformance not asserted here)`.
+ */
 export function formatParityClaim(row: ProviderParityRow): string {
 	return `${row.provider} ${row.level}: ${row.denominator} ${LEVEL_EVIDENCE[row.level]}`;
 }
