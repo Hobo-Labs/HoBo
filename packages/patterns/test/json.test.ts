@@ -1,8 +1,7 @@
 /**
- * The JSON guards atom parsing branches on. They answer what `typeof` would:
- * only a primitive is a string, so a boxed `String` and an object spoofing
- * `Symbol.toStringTag` are not, and only a non-array, non-function object is
- * an object.
+ * The JSON guards atom parsing branches on. Only a primitive is a string, so
+ * a boxed `String` and an object spoofing `Symbol.toStringTag` are not, and
+ * only a plain object — what `JSON.parse` can produce — is an object.
  */
 import { describe, expect, it } from "vitest";
 
@@ -41,10 +40,27 @@ describe("isJsonObject", () => {
 	it("accepts a plain object", () => {
 		expect(isJsonObject({})).toBe(true);
 		expect(isJsonObject(spoofedString)).toBe(true);
+		expect(isJsonObject(Object.create(null))).toBe(true);
 	});
 
 	it("rejects null, arrays, functions and primitives", () => {
 		for (const value of [null, undefined, [], () => 1, "probe", 7, false]) {
+			expect(isJsonObject(value)).toBe(false);
+		}
+	});
+
+	it("rejects non-plain objects JSON.parse cannot produce", () => {
+		class Probe {}
+		for (const value of [
+			new Date(),
+			new Map(),
+			new Set(),
+			/probe/u,
+			new Uint8Array(1),
+			new String("probe"),
+			new Number(7),
+			new Probe(),
+		]) {
 			expect(isJsonObject(value)).toBe(false);
 		}
 	});

@@ -51,6 +51,24 @@ describe("parseAtomAsPattern", () => {
 		]);
 	});
 
+	it("does not resolve prototype keys as kind or tag features", () => {
+		for (const meta of [
+			{ id: "probe.atom", kind: "constructor", files: [FILE] },
+			{ id: "probe.atom", kind: "__proto__", files: [FILE] },
+			{
+				id: "probe.atom",
+				kind: "http",
+				tags: ["toString", "constructor", "__proto__"],
+				files: [FILE],
+			},
+		]) {
+			const manifest = parse(meta);
+			expect(manifest.features.map((item) => item.id)).toEqual([
+				meta.kind === "http" ? "authoring-resource:api" : "artifact:starter",
+			]);
+		}
+	});
+
 	it("refuses metadata that is not an object", () => {
 		for (const meta of [null, "probe", 7]) {
 			expect(refusal(meta)).toBe("atom meta must be an object");

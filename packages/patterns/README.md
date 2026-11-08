@@ -53,11 +53,14 @@ the catalog. Chat emit uses the same trees.
 
 ## What the loaders refuse
 
-- An atom's `meta.json` must be a JSON object. An array or a scalar is refused
-  with `atom meta must be an object`, and a `files` entry that is not an object
-  with `<id>: invalid file entry`. Only primitive strings count as strings: a
-  boxed `String`, or an object that sets `Symbol.toStringTag` to `"String"`, is
-  not an atom id.
+- An atom's `meta.json` must be a plain JSON object — what `JSON.parse` can
+  produce, so a `Date`, `Map`, class instance, or boxed primitive is not one.
+  An array or a scalar is refused with `atom meta must be an object`, and a
+  `files` entry that is not an object with `<id>: invalid file entry`. Only
+  primitive strings count as strings: a boxed `String`, or an object that sets
+  `Symbol.toStringTag` to `"String"`, is not an atom id. Kind and tag feature
+  lookup goes through `Map`s, so prototype keys (`"constructor"`, `"__proto__"`)
+  resolve to no feature instead of an inherited value.
 - `planPatternApplication` and `applyPatternPlan` take params of any value
   type. A string, number or boolean is coerced with `String()`, as
   `parseApplicationRequest` does; anything else is refused with
