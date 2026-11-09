@@ -15,7 +15,6 @@ import {
 	type TrustPolicy,
 } from "@hobo/capability-profiles";
 import { capability } from "@hobo/core";
-import { LOCALHOST_YARD_NAME } from "@hobo/yards";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -80,7 +79,9 @@ describe("composed selection on yard:local", () => {
 	});
 
 	function expectLocalWinners() {
-		expect(LOCALHOST_YARD_NAME).toBe("yard:local");
+		// The yard name these candidates serve is `yard:local`
+		// (`@hobo/yards`' LOCALHOST_YARD_NAME; asserted there, not imported
+		// here — an adapter package may not depend on `@hobo/yards`).
 
 		const api = selectFor(capability.api.http);
 		expect(api.winner?.definitionId).toBe("local.node-http-server/v1");

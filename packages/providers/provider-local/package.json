@@ -18,11 +18,11 @@
 		"access": "public"
 	},
 	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/core": "workspace:*"
 	},
 	"devDependencies": {
-		"@hobo/yards": "workspace:*",
 		"@types/node": "^22.15.29",
 		"vitest": "^4.1.9"
 	},

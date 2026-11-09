@@ -16,9 +16,9 @@ export {
 	LOCAL_SOURCE_EVIDENCE_REFS,
 	LOCAL_SQLITE_FILE_DEFINITION_ID,
 	LOCAL_TRUST_EVIDENCE_REF,
-	localCandidates,
 	type LocalDefinitionOverrides,
 	type LocalEngineGap,
+	localCandidates,
 } from "./definition.js";
 
 export {

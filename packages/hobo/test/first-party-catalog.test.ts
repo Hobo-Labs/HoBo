@@ -39,12 +39,17 @@ import {
 	type TrustPolicy,
 } from "@hobo/capability-profiles";
 import { capability } from "@hobo/core";
-import { LOCAL_DEFINITIONS, localCandidates } from "@hobo/provider-local";
+import {
+	LOCAL_DEFINITIONS,
+	LOCAL_ENGINE_GAPS,
+	localCandidates,
+} from "@hobo/provider-local";
 import { NETLIFY_DEFINITIONS } from "@hobo/provider-netlify";
 import { PRISMA_RESOURCE_DEFINITION } from "@hobo/provider-prisma-postgres";
 import { TTL_SH_RESOURCE_DEFINITION } from "@hobo/provider-ttl-sh";
 import { UPSTASH_RESOURCE_DEFINITION } from "@hobo/provider-upstash";
 import { VERCEL_SPONSORED_DEFINITIONS } from "@hobo/provider-vercel";
+import { LOCALHOST_PROVIDER_ID, seedLocalhostYard } from "@hobo/yards";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -314,7 +319,9 @@ describe("products whose declaration has not landed", () => {
 });
 
 describe("local yard definitions (consumer side of @hobo/provider-local)", () => {
-	const profiles = createCapabilityProfileRegistry(STANDARD_CAPABILITY_PROFILES);
+	const profiles = createCapabilityProfileRegistry(
+		STANDARD_CAPABILITY_PROFILES,
+	);
 	const NOW = Date.UTC(2026, 10, 8);
 	const policy: TrustPolicy = {
 		...DEFAULT_TRUST_POLICY,
@@ -340,6 +347,56 @@ describe("local yard definitions (consumer side of @hobo/provider-local)", () =>
 		expect(LOCAL_DEFINITIONS).toHaveLength(4);
 		for (const definition of LOCAL_DEFINITIONS) {
 			expect(ids.has(definition.id)).toBe(true);
+		}
+	});
+
+	// The seed denominator, asserted here because this composition may
+	// import both `@hobo/yards` and `@hobo/provider-local`; the adapter
+	// package itself may not depend on `@hobo/yards`.
+	const FULL_SEED = seedLocalhostYard([
+		{ capabilityId: "capability:runtime:node", present: true },
+		{ capabilityId: "capability:toolchain:sqlite", present: true },
+	]);
+
+	it("stamps the seed's provider id on every local definition", () => {
+		for (const definition of LOCAL_DEFINITIONS) {
+			expect(definition.providerId).toBe(LOCALHOST_PROVIDER_ID);
+		}
+	});
+
+	it("maps every local definition to a seed row, profile for profile", () => {
+		for (const definition of LOCAL_DEFINITIONS) {
+			const rows = FULL_SEED.rows.filter(
+				(row) => row.productId === definition.semantics.productId,
+			);
+			expect(rows.length).toBeGreaterThan(0);
+			const seedProfiles = rows.map((row) => row.profile).sort();
+			const claimed = definition.semantics.implementsProfiles
+				.map((implementation) => implementation.profileId)
+				.sort();
+			expect(claimed).toEqual(seedProfiles);
+		}
+	});
+
+	it("partitions the seed products into claimed and named gaps", () => {
+		const seedProductIds = [
+			...new Set(FULL_SEED.rows.map((row) => row.productId)),
+		];
+		const claimed = LOCAL_DEFINITIONS.map(
+			(definition) => definition.semantics.productId,
+		);
+		const gaps = LOCAL_ENGINE_GAPS.map((gap) => gap.seedProductId);
+		expect([...claimed, ...gaps].sort()).toEqual([...seedProductIds].sort());
+	});
+
+	it("never claims a profile the seed lists as unavailable", () => {
+		const unavailable = new Set(
+			FULL_SEED.unavailable.map((entry) => entry.profile),
+		);
+		for (const definition of LOCAL_DEFINITIONS) {
+			for (const implementation of definition.semantics.implementsProfiles) {
+				expect(unavailable.has(implementation.profileId)).toBe(false);
+			}
 		}
 	});
 

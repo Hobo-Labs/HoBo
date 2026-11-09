@@ -41,6 +41,8 @@
  * minted — secret references are refs only, and the seed's secret-locator
  * product is a gap below because its engine is not in `runtime-local`.
  */
+
+import { create } from "@bufbuild/protobuf";
 import type {
 	BindleRuntime,
 	ProfileImplementation,
@@ -48,6 +50,10 @@ import type {
 } from "@hobo/capability-profiles";
 import { capability } from "@hobo/core";
 
+import {
+	type LocalEngineGapRecord,
+	LocalEngineGapRecordSchema,
+} from "./_generated/provider_local_pb.js";
 import {
 	type LocalResourceDefinition,
 	RESOURCE_DEFINITION_VNEXT_SCHEMA,
@@ -77,9 +83,11 @@ export const LOCAL_IN_PROCESS_WORKER_DEFINITION_ID =
 
 // public-contract: strategy and permission refs the planner records. There
 // is no claim, so the claim ref names that absence instead of a ceremony.
-export const LOCAL_BOOTSTRAP_STRATEGY_REF = "bootstrap.local.station/v1" as const;
+export const LOCAL_BOOTSTRAP_STRATEGY_REF =
+	"bootstrap.local.station/v1" as const;
 // public-contract: claim ref naming the absence of a claim ceremony.
-export const LOCAL_CLAIM_STRATEGY_REF = "claim.local.none-station-owned/v1" as const;
+export const LOCAL_CLAIM_STRATEGY_REF =
+	"claim.local.none-station-owned/v1" as const;
 // public-contract: compiler ref the plan records.
 export const LOCAL_COMPILER_REF = "compiler.local.runtime-local/v1" as const;
 // public-contract: permission profile ref the gatekeeper resolves.
@@ -114,45 +122,42 @@ export type LocalDefinitionOverrides = {
  *
  * Recorded rather than omitted, so the denominator is auditable: claimed
  * products plus these gaps are exactly the seed's distinct product ids.
+ * The record type is the generated protobuf message
+ * (`data-models/provider_local.proto`), never a hand-declared parallel.
  */
-export type LocalEngineGap = {
-	readonly productId: string;
-	/** The engine that would have to exist in `@hobo/runtime-local`. */
-	readonly engine: string;
-	readonly reason: string;
-};
+export type LocalEngineGap = LocalEngineGapRecord;
 
 export const LOCAL_ENGINE_GAPS: readonly LocalEngineGap[] = Object.freeze([
-	{
-		productId: "local:filesystem-bucket",
-		engine: "a filesystem bucket (put/get/delete over a directory root)",
+	create(LocalEngineGapRecordSchema, {
+		seedProductId: "local:filesystem-bucket",
+		missingEngine: "a filesystem bucket (put/get/delete over a directory root)",
 		reason:
 			"no bucket engine exists in @hobo/runtime-local: nothing there stores objects under a directory root, so bucket.filesystem/v1 has no local realization to describe",
-	},
-	{
-		productId: "local:in-memory-kv",
-		engine: "an in-memory key-value store behind a kv port",
+	}),
+	create(LocalEngineGapRecordSchema, {
+		seedProductId: "local:in-memory-kv",
+		missingEngine: "an in-memory key-value store behind a kv port",
 		reason:
 			"no kv engine exists in @hobo/runtime-local: the in-memory Redis reference store in @hobo/kv-redis-compatible is a conformance fixture for testing adapters, not a station product, so kv.key-value/v1 is not claimed",
-	},
-	{
-		productId: "local:in-memory-secret-locator",
-		engine: "a station secret-locator store resolving refs at use time",
+	}),
+	create(LocalEngineGapRecordSchema, {
+		seedProductId: "local:in-memory-secret-locator",
+		missingEngine: "a station secret-locator store resolving refs at use time",
 		reason:
 			"no secret-locator engine exists in @hobo/runtime-local: SecretRef parsing lives in @hobo/bindings and mints nothing, so secret-ref.locator/v1 stays unclaimed (refs only, never material)",
-	},
-	{
-		productId: "local:in-memory-topic",
-		engine: "an in-memory ephemeral pub/sub fan-out",
+	}),
+	create(LocalEngineGapRecordSchema, {
+		seedProductId: "local:in-memory-topic",
+		missingEngine: "an in-memory ephemeral pub/sub fan-out",
 		reason:
 			"no ephemeral topic engine exists in @hobo/runtime-local: the SQLite EventStore subscribe path is durable and replayable, which is a different fidelity than topic.ephemeral-pubsub/v1",
-	},
-	{
-		productId: "local:static-file-server",
-		engine: "a static asset file server",
+	}),
+	create(LocalEngineGapRecordSchema, {
+		seedProductId: "local:static-file-server",
+		missingEngine: "a static asset file server",
 		reason:
 			"no static-file engine exists in @hobo/runtime-local: the component host serves component HTTP handlers, not prebuilt assets from a directory, so web.static/v1 is not claimed",
-	},
+	}),
 ]);
 
 const LOGICAL_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/u;
@@ -323,7 +328,10 @@ const LOCAL_PRODUCTS: readonly LocalProduct[] = Object.freeze([
 		displayName: "Local in-process worker (runtime-local host)",
 		profiles: [capability.service.worker],
 		executorRef: "executor.runtime-local.in-process-host/v1",
-		runtimeModels: ["wasm"],
+		// No runtime model claim: the in-process host runs supplied fetch
+		// handlers (`isolateBoundary: "in_process"`), not wasm components.
+		// Wasm belongs to the component host (`local:node-http-server`).
+		runtimeModels: [],
 		bindingProfiles: [],
 		structuredCapabilities: {
 			...STATION_LOCAL,
@@ -423,4 +431,5 @@ export function localCandidates(
 }
 
 /** The shipped-constant projection. Fails closed in selection, on purpose. */
-export const LOCAL_CANDIDATES: readonly SelectionCandidate[] = localCandidates();
+export const LOCAL_CANDIDATES: readonly SelectionCandidate[] =
+	localCandidates();

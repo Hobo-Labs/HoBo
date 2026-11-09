@@ -1,15 +1,13 @@
 /**
  * The local definitions, held to what `@hobo/runtime-local` actually runs.
  *
- * The seed in `@hobo/yards` is the denominator: every definition here must
- * map to a seed row, and every seed product this package does not claim must
- * be a named gap. A definition that claimed a product with no engine behind
- * it would let composed selection pick something nothing can realize.
+ * The seed in `@hobo/yards` is the denominator, but an adapter package may
+ * not depend on `@hobo/yards` (package-boundary rule
+ * `adapter-imports-non-core`), so the seed-mapping assertions live with
+ * the composition that may import both sides:
+ * `packages/hobo/test/first-party-catalog.test.ts`. This file pins the
+ * package-local invariants those assertions rely on.
  */
-import {
-	LOCALHOST_PROVIDER_ID,
-	seedLocalhostYard,
-} from "@hobo/yards";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -20,57 +18,29 @@ import {
 	RESOURCE_DEFINITION_VNEXT_SCHEMA,
 } from "../src/index.js";
 
-/** Every host capability present, so the seed claims its full local set. */
-const FULL_SEED = seedLocalhostYard([
-	{ capabilityId: "capability:runtime:node", present: true },
-	{ capabilityId: "capability:toolchain:sqlite", present: true },
-]);
-
-const seedProductIds = [...new Set(FULL_SEED.rows.map((row) => row.productId))];
-
 describe("the declared local products", () => {
-	it("uses the seed's provider id", () => {
-		expect(LOCAL_PROVIDER_ID).toBe(LOCALHOST_PROVIDER_ID);
+	it("uses the local provider id the seed stamps", () => {
+		// The equality with `@hobo/yards`' LOCALHOST_PROVIDER_ID is asserted
+		// in the composition-side catalog test.
+		expect(LOCAL_PROVIDER_ID).toBe("local");
 		for (const definition of LOCAL_DEFINITIONS) {
-			expect(definition.providerId).toBe(LOCALHOST_PROVIDER_ID);
+			expect(definition.providerId).toBe("local");
 		}
 	});
 
-	it("maps every definition to a seed row, profile for profile", () => {
-		for (const definition of LOCAL_DEFINITIONS) {
-			const rows = FULL_SEED.rows.filter(
-				(row) => row.productId === definition.semantics.productId,
-			);
-			expect(rows.length).toBeGreaterThan(0);
-			const seedProfiles = rows.map((row) => row.profile).sort();
-			const claimed = definition.semantics.implementsProfiles
-				.map((implementation) => implementation.profileId)
-				.sort();
-			expect(claimed).toEqual(seedProfiles);
-		}
-	});
-
-	it("partitions the seed products into claimed and named gaps", () => {
+	it("keeps claimed products and named gaps disjoint, gaps explained", () => {
 		const claimed = LOCAL_DEFINITIONS.map(
 			(definition) => definition.semantics.productId,
 		);
-		const gaps = LOCAL_ENGINE_GAPS.map((gap) => gap.productId);
-		expect([...claimed, ...gaps].sort()).toEqual([...seedProductIds].sort());
+		const gaps = LOCAL_ENGINE_GAPS.map((gap) => gap.seedProductId);
 		expect(new Set(claimed).size).toBe(claimed.length);
+		expect(new Set(gaps).size).toBe(gaps.length);
+		for (const productId of gaps) {
+			expect(claimed).not.toContain(productId);
+		}
 		for (const gap of LOCAL_ENGINE_GAPS) {
 			expect(gap.reason.length).toBeGreaterThan(20);
-			expect(gap.engine).toBeTruthy();
-		}
-	});
-
-	it("never claims a profile the seed lists as unavailable", () => {
-		const unavailable = new Set(
-			FULL_SEED.unavailable.map((entry) => entry.profile),
-		);
-		for (const definition of LOCAL_DEFINITIONS) {
-			for (const implementation of definition.semantics.implementsProfiles) {
-				expect(unavailable.has(implementation.profileId)).toBe(false);
-			}
+			expect(gap.missingEngine).toBeTruthy();
 		}
 	});
 
@@ -104,20 +74,26 @@ describe("the declared local products", () => {
 	});
 
 	it("claims only runtime models the runtime-local engines serve", () => {
-		// The component host runs wasm; queue and sqlite have no workload
+		// The component host runs wasm; the in-process host runs supplied
+		// fetch handlers (no wasm), and queue and sqlite have no workload
 		// runtime. None may claim oci / vm_iaas / paas / serverless_faas.
 		const byProduct = Object.fromEntries(
-			LOCAL_DEFINITIONS.map((d) => [d.semantics.productId, d.semantics.runtimeModels]),
+			LOCAL_DEFINITIONS.map((d) => [
+				d.semantics.productId,
+				d.semantics.runtimeModels,
+			]),
 		);
 		expect(byProduct).toEqual({
 			"local:node-http-server": ["wasm"],
-			"local:in-process-worker": ["wasm"],
+			"local:in-process-worker": [],
 			"local:in-memory-queue": [],
 			"local:sqlite-file": [],
 		});
 		for (const definition of LOCAL_DEFINITIONS) {
 			for (const model of definition.semantics.runtimeModels) {
-				expect(["oci", "vm_iaas", "paas", "serverless_faas"]).not.toContain(model);
+				expect(["oci", "vm_iaas", "paas", "serverless_faas"]).not.toContain(
+					model,
+				);
 			}
 		}
 	});
@@ -157,8 +133,6 @@ describe("deterministic physical naming", () => {
 		expect(() =>
 			deterministicLocalResourceName("local:in-memory-queue", "../escape"),
 		).toThrow(TypeError);
-		expect(() => deterministicLocalResourceName("", "jobs")).toThrow(
-			TypeError,
-		);
+		expect(() => deterministicLocalResourceName("", "jobs")).toThrow(TypeError);
 	});
 });

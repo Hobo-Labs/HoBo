@@ -73,8 +73,12 @@ function loadPact(): PactFile {
 			"utf8",
 		),
 	);
-	const consumer = isJsonObject(decoded.consumer) ? decoded.consumer : undefined;
-	const provider = isJsonObject(decoded.provider) ? decoded.provider : undefined;
+	const consumer = isJsonObject(decoded.consumer)
+		? decoded.consumer
+		: undefined;
+	const provider = isJsonObject(decoded.provider)
+		? decoded.provider
+		: undefined;
 	const interactionsRaw = decoded.interactions;
 	if (
 		!isJsonString(consumer?.name) ||
@@ -128,10 +132,12 @@ function actualFor(path: string): JsonObject {
 	if (path === "/provider-local/gaps") {
 		return {
 			providerId: LOCAL_PROVIDER_ID,
-			gapProductIds: LOCAL_ENGINE_GAPS.map((gap) => gap.productId).sort(),
+			gapProductIds: LOCAL_ENGINE_GAPS.map((gap) => gap.seedProductId).sort(),
 		};
 	}
-	const evidence = /^\/provider-local\/definitions\/(.+)\/evidence$/u.exec(path);
+	const evidence = /^\/provider-local\/definitions\/(.+)\/evidence$/u.exec(
+		path,
+	);
 	if (evidence?.[1] !== undefined) {
 		const definition = LOCAL_DEFINITIONS.find(
 			(candidate) => candidate.id === evidence[1],

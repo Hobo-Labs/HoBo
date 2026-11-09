@@ -2522,6 +2522,9 @@ importers:
 
   packages/providers/provider-local:
     dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
       '@hobo/capability-profiles':
         specifier: workspace:*
         version: link:../../capability-profiles
@@ -2529,9 +2532,6 @@ importers:
         specifier: workspace:*
         version: link:../../core
     devDependencies:
-      '@hobo/yards':
-        specifier: workspace:*
-        version: link:../../yards
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
