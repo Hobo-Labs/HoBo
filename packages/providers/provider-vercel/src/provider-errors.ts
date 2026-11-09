@@ -174,8 +174,7 @@ function redactJwts(text: string): string {
 	while (index + 1 < text.length) {
 		const head = text.charCodeAt(index) | 32;
 		const next = text.charCodeAt(index + 1) | 32;
-		const boundary =
-			index === 0 || !isWordChar(text.charCodeAt(index - 1));
+		const boundary = index === 0 || !isWordChar(text.charCodeAt(index - 1));
 		if (head !== 101 || next !== 121 || !boundary) {
 			index += 1;
 			continue;
