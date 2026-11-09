@@ -87,6 +87,27 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   and checks that both real entries scope without giving up. #1652 (ci-gh-actions) and #1653
   (`scripts/run-tests.ts`) would have skipped both jobs: 1–3 slot-minutes each per run, excluding stalls.
 
+## The ci-gh-actions test suite
+
+`packages/ci-gh-actions/vitest.config.ts` runs its test files in two projects. `shared` (everything
+but five files) sets `isolate: false`, so the files share their worker's module graph instead of each
+re-importing the `@hobo/*` graph; `restoreMocks: true` undoes a spy a test leaves. `isolated` keeps
+per-file isolation for the files that load Docker, Pact or Dagger tooling, which could not be run in a
+shared worker where this was measured. A globalSetup (`test/setup/tmpfs-tmpdir.ts`) moves the tests'
+`TMPDIR` to `/dev/shm` when it has at least 512 MiB free, because every SQLite store the tests open
+waits on an fsync per commit; `HOBO_CI_TEST_TMPFS=0` keeps the disk.
+
+The suite also no longer runs pnpm (the `project` script is checked statically and its built CLI
+started once), no longer starts a Postgres container only for `SELECT 1` (`ci-store-contract.test.ts`
+runs the same pinned image), stalls 1 s less in the bootstrap shutdown case, starts no cleanup
+`stop` for a local runner already stopped, keeps the daemon import cases from running a build outside
+turbo, removes the fake docker directories it made, and declares `@hobo/stations`, so a change there
+now selects the two ci-gh-actions tests that load it.
+
+Measured back to back on one CPU (`taskset -c 0`, `CI=1`, `HOBO_TEST_MAX_WORKERS=1`, `TURBO_HASH` set
+as under turbo, TMPDIR on disk) on a shared host: 118.0 s wall and 71.0 s CPU before (load 13.5 →
+18.0), 39.9 s wall and 26.4 s CPU after (load 18.4 → 16.9).
+
 ## Changed paths on stdin
 
 `job-scope.mts`, `dependent-tests.mts` and `impact-classifier.mts` read the changed paths that a
