@@ -24,6 +24,7 @@ import {
 	cloudflareResolverRegistry,
 	guardedCloudflareTransport,
 } from "@hobo/provider-cloudflare";
+import { VERCEL_PROJECT_PRODUCT_ID } from "@hobo/provider-vercel";
 import {
 	createManualClock,
 	createRuntimeLocalEventStore,
@@ -836,6 +837,197 @@ describe("selectIacProvider: exact artifacts for live providers", () => {
 	});
 });
 
+describe("selectIacProvider: the Vercel resolver lane's team", () => {
+	// A Vercel account that already holds the project, in the scope each request
+	// names: a create would need a durable mutation journal, which
+	// selectIacProvider does not hold, so the lane's team is read off its lookup.
+	function fakeVercel() {
+		const urls: string[] = [];
+		const transport: HttpTransport = async (request) => {
+			urls.push(request.url);
+			const url = new URL(request.url);
+			const teamId = url.searchParams.get("teamId");
+			return {
+				status: 200,
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					id: "prj_lane",
+					name: decodeURIComponent(url.pathname.split("/").at(-1) ?? ""),
+					...(teamId === null ? undefined : { accountId: teamId }),
+				}),
+			};
+		};
+		return { transport, urls };
+	}
+
+	async function reconcileWith(env: Record<string, string>) {
+		const store = await storeWithPlan([
+			{
+				name: "web",
+				port: "web",
+				provider: "vercel",
+				deps: [],
+				productId: VERCEL_PROJECT_PRODUCT_ID,
+			},
+		]);
+		const vercel = fakeVercel();
+		const provider = selectIacProvider({
+			store,
+			providers: [],
+			env: { HOBO_DEPLOY_RESOLVERS: "1", VERCEL_TOKEN: FAKE_TOKEN, ...env },
+			resolverTransport: vercel.transport,
+		});
+		await provider.apply({ ...program("web"), provider: "vercel" });
+		return vercel.urls.map(
+			(url) => `${new URL(url).pathname}${new URL(url).search}`,
+		);
+	}
+
+	it("looks the project up, once, in the team VERCEL_TEAM_ID names", async () => {
+		const requests = await reconcileWith({ VERCEL_TEAM_ID: " team_acme " });
+
+		expect(requests).toHaveLength(1);
+		for (const request of requests) {
+			expect(request).toMatch(/\?teamId=team_acme$/u);
+		}
+	});
+
+	it("falls back to a team_ VERCEL_ORG_ID, and VERCEL_TEAM_ID wins over it", async () => {
+		const org = await reconcileWith({ VERCEL_ORG_ID: " team_org " });
+		const both = await reconcileWith({
+			VERCEL_TEAM_ID: "team_named",
+			VERCEL_ORG_ID: "team_org",
+		});
+
+		for (const request of org) expect(request).toMatch(/\?teamId=team_org$/u);
+		for (const request of both)
+			expect(request).toMatch(/\?teamId=team_named$/u);
+		expect([org.length, both.length]).toEqual([1, 1]);
+	});
+
+	it.each([
+		"acme-slug",
+		"team_",
+		" team_ ",
+	])("refuses a non-canonical %j VERCEL_TEAM_ID before any request", async (teamId) => {
+		const vercel = fakeVercel();
+		const store = await storeWithPlan([]);
+
+		expect(() =>
+			selectIacProvider({
+				store,
+				providers: [],
+				env: {
+					HOBO_DEPLOY_RESOLVERS: "1",
+					VERCEL_TOKEN: FAKE_TOKEN,
+					VERCEL_TEAM_ID: teamId,
+				},
+				resolverTransport: vercel.transport,
+			}),
+		).toThrow(/^VERCEL_TEAM_ID must be the canonical team id/u);
+		expect(vercel.urls).toEqual([]);
+	});
+
+	it.each([
+		"team_",
+		" team_ ",
+	])("refuses a bare %j VERCEL_ORG_ID before any request", async (orgId) => {
+		const vercel = fakeVercel();
+		const store = await storeWithPlan([]);
+
+		expect(() =>
+			selectIacProvider({
+				store,
+				providers: [],
+				env: {
+					HOBO_DEPLOY_RESOLVERS: "1",
+					VERCEL_TOKEN: FAKE_TOKEN,
+					VERCEL_ORG_ID: orgId,
+				},
+				resolverTransport: vercel.transport,
+			}),
+		).toThrow(/^VERCEL_ORG_ID is "team_" with no id after it/u);
+		expect(vercel.urls).toEqual([]);
+	});
+
+	it("takes a VERCEL_ORG_ID that is not a team_ id (a personal account) as no team", async () => {
+		const requests = await reconcileWith({ VERCEL_ORG_ID: "u_abc" });
+
+		expect(requests).toHaveLength(1);
+		for (const request of requests) expect(request).not.toContain("?");
+	});
+
+	it.each([
+		["VERCEL_ORG_ID alone, trimmed", { VERCEL_ORG_ID: " team_x " }, "team_x"],
+		[
+			"VERCEL_TEAM_ID over VERCEL_ORG_ID",
+			{ VERCEL_TEAM_ID: "team_acme", VERCEL_ORG_ID: "team_org" },
+			"team_acme",
+		],
+		[
+			"VERCEL_ORG_ID when VERCEL_TEAM_ID is blank",
+			{ VERCEL_TEAM_ID: "  ", VERCEL_ORG_ID: "team_org" },
+			"team_org",
+		],
+		[
+			"VERCEL_TEAM_ID, over a bare team_ VERCEL_ORG_ID",
+			{ VERCEL_TEAM_ID: "team_acme", VERCEL_ORG_ID: "team_" },
+			"team_acme",
+		],
+	])("takes the team from %s", async (_case, team, teamId) => {
+		const requests = await reconcileWith(team);
+
+		expect(requests).toHaveLength(1);
+		for (const request of requests) {
+			expect(new URL(request, "https://api.vercel.com").search).toBe(
+				`?teamId=${teamId}`,
+			);
+		}
+	});
+
+	it("refuses a bare team_ VERCEL_ORG_ID beside a blank VERCEL_TEAM_ID", async () => {
+		const vercel = fakeVercel();
+		const store = await storeWithPlan([]);
+
+		expect(() =>
+			selectIacProvider({
+				store,
+				providers: [],
+				env: {
+					VERCEL_TOKEN: FAKE_TOKEN,
+					VERCEL_TEAM_ID: " ",
+					VERCEL_ORG_ID: "team_",
+				},
+				resolverTransport: vercel.transport,
+			}),
+		).toThrow(/^VERCEL_ORG_ID is "team_" with no id after it/u);
+		expect(vercel.urls).toEqual([]);
+	});
+
+	it.each([
+		["unset", {}],
+		["empty", { VERCEL_TEAM_ID: "" }],
+		["blank", { VERCEL_TEAM_ID: "  " }],
+		["blank, VERCEL_ORG_ID too", { VERCEL_TEAM_ID: "", VERCEL_ORG_ID: " " }],
+		// A VERCEL_ORG_ID that is not a team_ id is a personal account's, as the
+		// Vercel CLI writes it: no team.
+		[
+			"unset, VERCEL_ORG_ID a user id",
+			{ VERCEL_ORG_ID: " 6Qn1jRzOd4H7mDmW5wB2kLpX " },
+		],
+		[
+			"blank, VERCEL_ORG_ID a personal account",
+			{ VERCEL_TEAM_ID: " ", VERCEL_ORG_ID: "u_abc" },
+		],
+		["unset, VERCEL_ORG_ID TEAM_X (case matters)", { VERCEL_ORG_ID: "TEAM_x" }],
+	])("with VERCEL_TEAM_ID %s, stays in the token's own scope", async (_case, team) => {
+		const requests = await reconcileWith(team);
+
+		expect(requests).toHaveLength(1);
+		for (const request of requests) expect(request).not.toContain("?");
+	});
+});
+
 function stubPulumiAdapter(): PulumiAutomationAdapter {
 	return {
 		id: "stub",
@@ -846,7 +1038,7 @@ function stubPulumiAdapter(): PulumiAutomationAdapter {
 			return { resources: {} };
 		},
 		async destroy() {
-			return undefined;
+			return null;
 		},
 		async refresh() {
 			return { drifted: false };
