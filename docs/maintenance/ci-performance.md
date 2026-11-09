@@ -174,8 +174,11 @@ passes over real projects), not sleeping, spawning or waiting on a network. What
   compiler host keeps the lib files and installed packages' `.d.ts` in one document registry, so the
   two programs of a pass, and every later pass, reuse them. `typescript-app-build`'s fixture uses real
   `@types/node` (with `skipLibCheck`) only in the case that packages and runs the app.
-- **Cheap refusals first.** `hobo build` answers an explicit runtime for a Node app, or an empty
-  service list, before its freshness gate regenerates the project.
+- **Cheap refusals first, on authoritative inputs only.** `hobo build` refuses an explicit empty
+  `services` list, or an explicit runtime for a Node app whose imprint's recorded inputs all still
+  match, before its freshness gate regenerates the project. A project codegen has not generated (just
+  scaffolded, or cloned without `.hobo/`) still gets the gate's drift answer
+  (`test/build-before-codegen.test.ts`).
 - **Workers.** CI runs one worker (`CI` set); elsewhere files spread across cores under the
   memory-derived `HOBO_TEST_MAX_WORKERS` cap. `typescript-project-codegen` is four files so it is not a
   single critical path. Case timeouts go through `test/support/slow.ts`, so `HOBO_TEST_TIMEOUT` can
