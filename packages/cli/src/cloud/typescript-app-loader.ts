@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import {
 	basename,
 	dirname,
@@ -237,8 +237,16 @@ export async function recordedAppInputsMatch(
 	}
 	if (snapshot.files.length === 0) return false;
 	for (const { file, expected } of snapshot.files) {
-		if (!existsSync(file)) return false;
-		const bytes = await readFile(file);
+		// Any input that is gone, not a regular file (a directory, or a FIFO a
+		// read would block on) or unreadable is a mismatch: the freshness gate
+		// then decides, and reports it the way it reports any other drift.
+		let bytes: Buffer;
+		try {
+			if (!(await stat(file)).isFile()) return false;
+			bytes = await readFile(file);
+		} catch {
+			return false;
+		}
 		const actual = snapshot.rawBytes
 			? sha256Bytes(bytes)
 			: digest(bytes.toString("utf8"));

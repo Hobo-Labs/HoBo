@@ -327,6 +327,32 @@ getAppModule("missing.ts");
 		);
 
 		it(
+			"refuses through the gate when a recorded input is no longer a file",
+			async () => {
+				const app = join(root, "src/app.ts");
+				const authored = await readFile(app, "utf8");
+				await rm(app);
+				await mkdir(app);
+				try {
+					const result = await createHoboCli().run(
+						["build", "--runtime", "wasm", "--json"],
+						{ cwd: root },
+					);
+					// The digest check treats the directory as a mismatch, so the freshness
+					// gate answers with a JSON refusal, as it did before the early refusals.
+					expect(JSON.parse(result.stdout)).toMatchObject({
+						ok: false,
+						code: "HOBO_BUILD_CODEGEN_DRIFT",
+					});
+				} finally {
+					await rm(app, { recursive: true, force: true });
+					await writeFile(app, authored);
+				}
+			},
+			slow(60_000),
+		);
+
+		it(
 			"asks for codegen when an explicit runtime meets an imprint its sources no longer match",
 			async () => {
 				const app = join(root, "src/app.ts");
