@@ -18,14 +18,21 @@ import { CREDENTIAL_BINDINGS_FILE } from "../src/credentials-opensesame.js";
 import { isJsonObject, isJsonString, parseJsonValue } from "../src/json.js";
 
 // The composed `hobo` binary itself under HOBO_CREDENTIALS=opensesame (ADR-0170),
-// started as a person starts it from source (`node --import tsx src/bin/hobo.ts`),
 // with @hobo/adapter-opensesame's stand-in found on PATH as `opensesame`. The
 // stand-in's knobs reach it from its wrapper, because the adapter passes
 // OpenSesame only its allowlist and the bin's fixed passEnv.
+//
+// The cases run the built bins (`dist`, which turbo builds before `test`), as
+// an installed `hobo` runs. Only the case about relaunching with a TypeScript
+// loader starts it from source (`node --import tsx src/bin/hobo.ts`): from
+// source every child compiles the whole CLI again.
 
-const HOBO_BIN = fileURLToPath(new URL("../src/bin/hobo.ts", import.meta.url));
+const HOBO_SOURCE_BIN = fileURLToPath(
+	new URL("../src/bin/hobo.ts", import.meta.url),
+);
+const HOBO_BIN = fileURLToPath(new URL("../dist/bin/hobo.js", import.meta.url));
 const HOBO_MCP_BIN = fileURLToPath(
-	new URL("../src/bin/hobo-mcp.ts", import.meta.url),
+	new URL("../dist/bin/hobo-mcp.js", import.meta.url),
 );
 const FAKE_OPENSESAME = fileURLToPath(
 	new URL(
@@ -34,8 +41,8 @@ const FAKE_OPENSESAME = fileURLToPath(
 	),
 );
 const TSX_LOADER = createRequire(import.meta.url).resolve("tsx");
-// Each relaunch composes the whole CLI twice (the parent, then the command)
-// from source: tens of seconds on a loaded machine.
+// Each relaunch composes the whole CLI twice (the parent, then the command):
+// tens of seconds on a loaded machine.
 const RUN_TIMEOUT_MS = 180_000;
 
 const BINDINGS = {
@@ -64,7 +71,7 @@ interface Dirs {
 
 /**
  * Directories of the test's own, so the cases (each a process composing the
- * whole CLI from source, mostly waiting on it) run concurrently.
+ * whole CLI, mostly waiting on it) run concurrently.
  */
 function dirsFor({ onTestFinished }: TestContext): Dirs {
 	const root = mkdtempSync(join(tmpdir(), "hobo-bin-opensesame-"));
@@ -144,6 +151,11 @@ function leftYards({ scratch }: Dirs): string[] {
 	return readdirSync(scratch).filter((name) => name.startsWith("hobo-yard-"));
 }
 
+/** The TypeScript loader a source bin needs; a built bin needs none. */
+function loaderFor(bin: string): string[] {
+	return bin.endsWith(".ts") ? ["--import", TSX_LOADER] : [];
+}
+
 function runBin(
 	{ root, work, binDir, scratch }: Dirs,
 	input: BinInput,
@@ -154,8 +166,7 @@ function runBin(
 			process.execPath,
 			[
 				...(input.nodeArgs ?? []),
-				"--import",
-				TSX_LOADER,
+				...loaderFor(bin),
 				bin,
 				...(input.args ?? []),
 			],
@@ -209,6 +220,7 @@ describe.concurrent("the composed hobo binary under HOBO_CREDENTIALS=opensesame"
 			);
 			// Started where there are no bindings: they are read from --cwd (C-7).
 			const run = await runBin(dirs, {
+				bin: HOBO_SOURCE_BIN,
 				nodeArgs: [`--env-file=${envFile}`],
 				args: ["--cwd", dirs.work, "recipes"],
 				env: { HOBO_CREDENTIALS: "opensesame" },
@@ -227,7 +239,7 @@ describe.concurrent("the composed hobo binary under HOBO_CREDENTIALS=opensesame"
 				process.execPath,
 				"--import",
 				TSX_LOADER,
-				HOBO_BIN,
+				HOBO_SOURCE_BIN,
 				"--cwd",
 				dirs.work,
 				"recipes",
@@ -280,12 +292,8 @@ describe.concurrent("hobo-mcp under HOBO_CREDENTIALS=opensesame", () => {
 			});
 			expect(run.stderr).not.toMatch(/^hobo: /mu);
 			expect(run.status).toBe(0);
-			expect(run.command).toEqual([
-				process.execPath,
-				"--import",
-				TSX_LOADER,
-				HOBO_MCP_BIN,
-			]);
+			// The same invocation: the built bin, with no loader to carry over.
+			expect(run.command).toEqual([process.execPath, HOBO_MCP_BIN]);
 			expect(run.childMarker).toBe("1");
 			// The composed process removed its event store on the way out.
 			expect(leftYards(dirs)).toEqual([]);
@@ -362,22 +370,18 @@ function signalBin(
 	signal: NodeJS.Signals,
 ): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
 	return new Promise((resolve, reject) => {
-		const child = spawn(
-			process.execPath,
-			["--import", TSX_LOADER, bin, ...args],
-			{
-				cwd: elsewhere,
-				env: {
-					PATH: process.env.PATH ?? "",
-					HOME: root,
-					HOBO_HOME: join(root, ".hobo"),
-					TMPDIR: scratch,
-					NODE_NO_WARNINGS: "1",
-				},
-				// stdin stays open: hobo-mcp serves it until it ends.
-				stdio: ["pipe", "ignore", "pipe"],
+		const child = spawn(process.execPath, [...loaderFor(bin), bin, ...args], {
+			cwd: elsewhere,
+			env: {
+				PATH: process.env.PATH ?? "",
+				HOME: root,
+				HOBO_HOME: join(root, ".hobo"),
+				TMPDIR: scratch,
+				NODE_NO_WARNINGS: "1",
 			},
-		);
+			// stdin stays open: hobo-mcp serves it until it ends.
+			stdio: ["pipe", "ignore", "pipe"],
+		});
 		const err: string[] = [];
 		let sent = false;
 		const poll = setInterval(() => {
