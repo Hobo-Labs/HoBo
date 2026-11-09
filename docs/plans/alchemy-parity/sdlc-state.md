@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: "Alchemy parity delivery state"
-description: "SDLC state for full Alchemy parity: measured P0-P3, Cloudflare first to live, stacked PRs."
+description: "SDLC state for full Alchemy parity: L2 local-live primary (council-decision.md), stacked PRs."
 tags: [hobo, plans, sdlc, alchemy, parity, providers]
 ---
 
@@ -20,22 +20,31 @@ about to ship in `v2.0.0-beta.86`, at an honestly measured parity level, without
 copying the parts HoBo ADRs forbid (Effect public API, provider-specific Bindle
 types, plaintext secrets, schemaless boundaries, real-cloud PR-default tests).
 
-## Parity definition (measurable; council-adopted)
+## Parity definition (measurable; superseded by `council-decision.md`)
+
+> Superseded: the 7-harness council adopted **L2 Local-live as primary
+> parity** (`council-decision.md`); the P0–P3 table and Cloudflare-first
+> target below are the pre-amendment definition, kept as record. Where they
+> conflict with `council-decision.md`, the council file wins — cloud P2/P3
+> are fallback claims only, and the getting-started default is the
+> localhost Yard.
 
 | Level | Meaning | Claimable? |
 |---|---|---|
 | P0 | Catalog/slot/profile row exists. Deploy may fail closed. | **No.** Label design-only. |
 | P1 | Fake-transport resolver + `@hobo/conformance` provider-lifecycle 6 cases (create/update/replace/delete-idempotent/adopt/crash-resume) + PACT at boundary. | Yes, as "simulated". |
-| P2 | Cred-gated live reconcile, same 6 cases on a real account + deterministic-name recovery + no-plaintext conformance (ADR-0027) + impedance in PortabilityReport (ADR-0144) + zero-orphan cleanup sweep. | **Only level counted as live parity.** |
+| P2 | Cred-gated live reconcile, same 6 cases on a real account + deterministic-name recovery + no-plaintext conformance (ADR-0027) + impedance in PortabilityReport (ADR-0144) + zero-orphan cleanup sweep. | Fallback claim only (superseded — see banner). |
 | P3 | Timed first-day script executed end to end (install → new → dev watch → up real URL → logs → test → down), minutes recorded vs Alchemy getting-started. Unexecuted = not parity. | Yes, per pattern. |
 
 Claim format always shows the denominator, e.g.
 `Cloudflare P2: bucket/kv/queue/api (4/6 profiles), DX P3: 6/8 steps`.
 
-**Target (full parity attempt, user-selected scope):** every provider/pattern
-family in `plan.md` reaches **P1**; Cloudflare reaches **P2** first and becomes
-the getting-started default; the developer loop reaches **P3**. Other clouds
-advance to P2 in tranche order in `plan.md`, never by relabelling P0/P1.
+**Target (full parity attempt, user-selected scope; amended by
+`council-decision.md`):** every provider/pattern family in `plan.md` reaches
+**L1 simulated**, the localhost Yard reaches **L2 local-live / L3 local-DX**
+as the primary parity claim and getting-started default; Cloudflare is the
+first fallback cloud to P2 after L2/L3 are green. Other clouds advance to P2
+in tranche order in `plan.md`, never by relabelling P0/P1.
 
 ## Decisions
 

@@ -28,9 +28,16 @@ import { KUBERNETES_RESOLVED_PRODUCT_IDS } from "@hobo/provider-kubernetes";
 import { VERCEL_RESOLVED_PRODUCT_IDS } from "@hobo/provider-vercel";
 import { describe, expect, it } from "vitest";
 
-import * as namespaces from "../src/index.js";
 import {
+	aws,
+	azure,
+	cloudflare,
+	digitalocean,
 	formatParityClaim,
+	gcp,
+	hetzner,
+	hostinger,
+	kubernetes,
 	PARITY_LEVELS,
 	PARITY_PROVIDERS,
 	PARITY_SOURCES,
@@ -55,6 +62,19 @@ const RESOLVED_CONSTANTS = {
 	hostinger: HOSTINGER_RESOLVED_PRODUCT_IDS,
 	kubernetes: KUBERNETES_RESOLVED_PRODUCT_IDS,
 	vercel: VERCEL_RESOLVED_PRODUCT_IDS,
+} as const;
+
+/** Each provider namespace by name, for the bare-`Yard()` recount below. */
+const NAMESPACES = {
+	aws,
+	azure,
+	cloudflare,
+	digitalocean,
+	gcp,
+	hetzner,
+	hostinger,
+	kubernetes,
+	vercel,
 } as const;
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -113,7 +133,7 @@ describe("providerParity()", () => {
 		for (const provider of PARITY_PROVIDERS) {
 			if (provider === "vercel") continue;
 			expect(catalogIdsOf(PARITY_SOURCES[provider].catalog())).toEqual(
-				catalogIdsOf(namespaces[provider].Yard()),
+				catalogIdsOf(NAMESPACES[provider].Yard()),
 			);
 		}
 	});
@@ -162,9 +182,7 @@ describe("providerProfileParity()", () => {
 				byProfile.set(binding.profile, ids);
 			}
 			return [...byProfile.keys()].sort().map((profile) => {
-				const catalog = [
-					...new Set(byProfile.get(profile) ?? []),
-				].sort();
+				const catalog = [...new Set(byProfile.get(profile) ?? [])].sort();
 				const declared = new Set(catalog);
 				const resolved = [
 					...new Set(source.resolved.filter((id) => declared.has(id))),
@@ -285,9 +303,7 @@ describe("parityRow() level rules", () => {
 
 	for (const productId of ["", " \t\n"]) {
 		it(`refuses blank catalog product id ${JSON.stringify(productId)}`, () => {
-			const error = catchParityError(() =>
-				parityRow("acme", [productId], []),
-			);
+			const error = catchParityError(() => parityRow("acme", [productId], []));
 			expect(error.code).toBe("PARITY_PRODUCT_ID_EMPTY");
 		});
 
@@ -309,7 +325,9 @@ describe("formatParityClaim()", () => {
 	it("always carries the derived denominator and the evidence kind", () => {
 		expect(
 			formatParityClaim(parityRow("aws", ["a/v1", "b/v1", "c/v1"], ["a/v1"])),
-		).toBe("aws L1-DECLARED: 1/3 resolvers declared (conformance not asserted here)");
+		).toBe(
+			"aws L1-DECLARED: 1/3 resolvers declared (conformance not asserted here)",
+		);
 		expect(formatParityClaim(parityRow("acme", ["a/v1"], []))).toBe(
 			"acme P0: 0/1 catalog only",
 		);

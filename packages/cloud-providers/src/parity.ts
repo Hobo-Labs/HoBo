@@ -211,34 +211,37 @@ export interface ParitySource {
 // public-contract: where each parity row's catalog and resolved halves are read from.
 export const PARITY_SOURCES: Readonly<Record<ParityProvider, ParitySource>> =
 	Object.freeze({
-	aws: { catalog: () => aws.Yard(), resolved: AWS_RESOLVED_PRODUCT_IDS },
-	azure: { catalog: () => azure.Yard(), resolved: AZURE_RESOLVED_PRODUCT_IDS },
-	cloudflare: {
-		catalog: () => cloudflare.Yard(),
-		resolved: CLOUDFLARE_RESOLVED_PRODUCT_IDS,
-	},
-	digitalocean: {
-		catalog: () => digitalocean.Yard(),
-		resolved: DIGITALOCEAN_RESOLVED_PRODUCT_IDS,
-	},
-	gcp: { catalog: () => gcp.Yard(), resolved: GCP_RESOLVED_PRODUCT_IDS },
-	hetzner: {
-		catalog: () => hetzner.Yard(),
-		resolved: HETZNER_RESOLVED_PRODUCT_IDS,
-	},
-	hostinger: {
-		catalog: () => hostinger.Yard(),
-		resolved: HOSTINGER_RESOLVED_PRODUCT_IDS,
-	},
-	kubernetes: {
-		catalog: () => kubernetes.Yard(),
-		resolved: KUBERNETES_RESOLVED_PRODUCT_IDS,
-	},
-	vercel: {
-		catalog: () => vercel.Yard({ project: {} }),
-		resolved: VERCEL_RESOLVED_PRODUCT_IDS,
-	},
-});
+		aws: { catalog: () => aws.Yard(), resolved: AWS_RESOLVED_PRODUCT_IDS },
+		azure: {
+			catalog: () => azure.Yard(),
+			resolved: AZURE_RESOLVED_PRODUCT_IDS,
+		},
+		cloudflare: {
+			catalog: () => cloudflare.Yard(),
+			resolved: CLOUDFLARE_RESOLVED_PRODUCT_IDS,
+		},
+		digitalocean: {
+			catalog: () => digitalocean.Yard(),
+			resolved: DIGITALOCEAN_RESOLVED_PRODUCT_IDS,
+		},
+		gcp: { catalog: () => gcp.Yard(), resolved: GCP_RESOLVED_PRODUCT_IDS },
+		hetzner: {
+			catalog: () => hetzner.Yard(),
+			resolved: HETZNER_RESOLVED_PRODUCT_IDS,
+		},
+		hostinger: {
+			catalog: () => hostinger.Yard(),
+			resolved: HOSTINGER_RESOLVED_PRODUCT_IDS,
+		},
+		kubernetes: {
+			catalog: () => kubernetes.Yard(),
+			resolved: KUBERNETES_RESOLVED_PRODUCT_IDS,
+		},
+		vercel: {
+			catalog: () => vercel.Yard({ project: {} }),
+			resolved: VERCEL_RESOLVED_PRODUCT_IDS,
+		},
+	});
 
 function productIdsOf(yard: ParsedYard): string[] {
 	const ids: string[] = [];
