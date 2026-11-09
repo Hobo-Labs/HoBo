@@ -17,8 +17,12 @@ import {
 	type AmbientTrainableClass,
 	scanAmbientTrainableSources,
 } from "./ambient-trainables.js";
+import {
+	createDeclarationCache,
+	type DeclarationCache,
+} from "./declaration-cache.js";
 import { emittedPath } from "./source-files.js";
-import { digest, stableStringify } from "./text.js";
+import { stableStringify } from "./text.js";
 import { buildTrainables } from "./trainables.js";
 import {
 	CodegenArtifactSchema,
@@ -115,10 +119,7 @@ function sourceOverlay(
 	return files;
 }
 
-const sharedDeclarationDocuments = ts.createDocumentRegistry(
-	ts.sys.useCaseSensitiveFileNames,
-	ts.sys.getCurrentDirectory(),
-);
+const sharedDeclarations = createDeclarationCache();
 
 function isDefaultLibrary(file: string, options: ts.CompilerOptions): boolean {
 	return (
@@ -131,8 +132,7 @@ function isDefaultLibrary(file: string, options: ts.CompilerOptions): boolean {
  * Declarations nobody edits while codegen runs: the compiler's lib files and
  * installed packages' `.d.ts`. Each codegen pass builds two programs, and
  * every pass of a long-lived process re-parsed them (0.4-1.2 s a program for
- * `@types/node`). They are kept in one document registry instead, keyed by
- * a digest of their text, so an edited file is parsed again.
+ * `@types/node`). They come from a bounded DeclarationCache instead.
  */
 function isSharedDeclaration(
 	file: string,
@@ -148,6 +148,7 @@ function isSharedDeclaration(
 export function overlayCompilerHost(
 	options: ts.CompilerOptions,
 	files: ReadonlyMap<string, string>,
+	declarations: DeclarationCache = sharedDeclarations,
 ): ts.CompilerHost {
 	const host = ts.createCompilerHost(options, true);
 	const readFile = host.readFile.bind(host);
@@ -184,14 +185,7 @@ export function overlayCompilerHost(
 				onError,
 				shouldCreateNewSourceFile,
 			);
-		return sharedDeclarationDocuments.acquireDocument(
-			file,
-			options,
-			ts.ScriptSnapshot.fromString(text),
-			digest(text),
-			undefined,
-			languageVersion,
-		);
+		return declarations.acquire(file, options, text, languageVersion);
 	};
 	return host;
 }

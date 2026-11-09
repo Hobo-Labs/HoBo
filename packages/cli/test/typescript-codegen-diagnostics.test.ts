@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import ts from "typescript";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createDeclarationCache } from "../src/codegen/declaration-cache.js";
 import { sourceDiagnostics } from "../src/codegen/typescript-diagnostics.js";
 import {
 	createTypeScriptProjectCodegenEngine,
@@ -199,5 +200,25 @@ describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 		const first = parse();
 		expect(first?.fileName).toBe(declaration);
 		expect(parse()).toBe(first);
+	});
+
+	it("holds at most its limit of declarations, releasing the least recently used", async () => {
+		const root = await project();
+		const cache = createDeclarationCache(2);
+		const parse = (name: string) =>
+			overlayCompilerHost(baseOptions, new Map(), cache).getSourceFile(
+				join(root, `node_modules/${name}/index.d.ts`),
+				ts.ScriptTarget.ES2022,
+			);
+		const pkg = parse("pkg");
+		const other = parse("other");
+		expect(parse("pkg")).toBe(pkg); // a hit: pkg is now the most recent
+		parse("third"); // over the limit: other, the least recent, goes
+		expect(cache.size).toBe(2);
+		expect(parse("pkg")).toBe(pkg);
+		const reparsed = parse("other");
+		expect(reparsed).not.toBe(other);
+		expect(reparsed?.fileName).toBe(other?.fileName);
+		expect(cache.size).toBe(2);
 	});
 });
