@@ -38,22 +38,21 @@ async function project(nodeTypes = false): Promise<string> {
 		);
 	}
 	await writeFile(join(root, "package.json"), '{"type":"module"}');
+	const shared = {
+		target: "ES2022",
+		module: "NodeNext",
+		moduleResolution: "NodeNext",
+		strict: true,
+		baseUrl: ".",
+		paths: { "~/*": ["src/*"] },
+	};
+	// With Node's types the app's own files are still checked; Node's declarations are not ours to check.
+	const compilerOptions = nodeTypes
+		? { ...shared, types: ["node"], skipLibCheck: true }
+		: { ...shared, types: [] };
 	await writeFile(
 		join(root, "tsconfig.json"),
-		JSON.stringify({
-			compilerOptions: {
-				target: "ES2022",
-				module: "NodeNext",
-				moduleResolution: "NodeNext",
-				strict: true,
-				baseUrl: ".",
-				paths: { "~/*": ["src/*"] },
-				types: nodeTypes ? ["node"] : [],
-				// The app's own files are still checked; Node's declarations are not ours to check.
-				...(nodeTypes ? { skipLibCheck: true } : {}),
-			},
-			include: ["src"],
-		}),
+		JSON.stringify({ compilerOptions, include: ["src"] }),
 	);
 	await writeFile(
 		join(root, "src/lib/shared.ts"),

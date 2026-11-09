@@ -12,7 +12,7 @@ import { slow } from "./support/slow.js";
 
 let root: string;
 
-const files: Record<string, string> = {
+const files = {
 	"app.ts": [
 		'import { shape } from "pkg";',
 		"export const total: number = shape.size;",
@@ -25,18 +25,18 @@ const files: Record<string, string> = {
 	"node_modules/pkg/package.json": '{"name":"pkg","types":"index.d.ts"}',
 	"node_modules/pkg/index.d.ts":
 		"export declare const shape: { size: number; broken: NotAType };",
-};
+} satisfies Record<string, string>;
 
 const isSource = (file: string) =>
 	!file.endsWith(".d.ts") &&
 	!file.split(sep).includes("node_modules") &&
 	!file.split(sep).includes("test");
 
-const variants: Record<string, ts.CompilerOptions> = {
+const variants = {
 	strict: { strict: true, skipLibCheck: false },
 	skipLibCheck: { strict: true, skipLibCheck: true },
 	"no default lib": { strict: true, noLib: true },
-};
+} satisfies Record<string, ts.CompilerOptions>;
 
 function program(options: ts.CompilerOptions): ts.Program {
 	return ts.createProgram(
@@ -75,9 +75,8 @@ afterAll(async () => {
 // Each case builds whole programs over the default lib: seconds of CPU on a busy runner.
 describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 	it.each(
-		Object.keys(variants),
-	)("match a whole-program check filtered to sources (%s)", (variant) => {
-		const options = variants[variant] ?? {};
+		Object.entries(variants),
+	)("match a whole-program check filtered to sources (%s)", (_variant, options) => {
 		const whole = program(options);
 		// What codegen reported before: check everything, then keep source and file-less diagnostics.
 		const expected = [
@@ -92,19 +91,17 @@ describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 	});
 
 	it("never type-checks a file it does not report on", () => {
-		const real = program(variants.strict ?? {});
+		const real = program(variants.strict);
 		const asked: (string | undefined)[] = [];
-		const recording = new Proxy(real, {
-			get(target, key, receiver) {
-				if (key === "getSemanticDiagnostics")
-					return (file?: ts.SourceFile) => {
-						asked.push(file?.fileName);
-						return target.getSemanticDiagnostics(file);
-					};
-				const value = Reflect.get(target, key, receiver);
-				return typeof value === "function" ? value.bind(target) : value;
+		// Program methods are closures over the program, so a copy with one
+		// method replaced records what is asked of it.
+		const recording: ts.Program = {
+			...real,
+			getSemanticDiagnostics(file) {
+				asked.push(file?.fileName);
+				return real.getSemanticDiagnostics(file);
 			},
-		});
+		};
 		sourceDiagnostics(recording, isSource);
 		expect(asked.sort()).toEqual(
 			["app.ts", "helper.ts"].map((file) => join(root, file)),
