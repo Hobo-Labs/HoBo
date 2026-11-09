@@ -1,16 +1,22 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, sep } from "node:path";
+import { dirname, join } from "node:path";
 import ts from "typescript";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sourceDiagnostics } from "../src/codegen/typescript-diagnostics.js";
 import {
 	createTypeScriptProjectCodegenEngine,
 	overlayCompilerHost,
+	sourceCandidate,
 } from "../src/codegen/typescript-project-engine.js";
 import { slow } from "./support/slow.js";
 
-let root: string;
+const GENERATED_ROOTS = [
+	".hobo/generated/app-imprint",
+	"src/_generated/app-imprint",
+];
+
+let scratch: string;
 
 const files = {
 	"app.ts": [
@@ -25,34 +31,43 @@ const files = {
 	"node_modules/pkg/package.json": '{"name":"pkg","types":"index.d.ts"}',
 	"node_modules/pkg/index.d.ts":
 		"export declare const shape: { size: number; broken: NotAType };",
+	"node_modules/other/index.d.ts": "export declare const other: 1;",
+	"node_modules/third/index.d.ts": "export declare const third: 3;",
 } satisfies Record<string, string>;
 
-const isSource = (file: string) =>
-	!file.endsWith(".d.ts") &&
-	!file.split(sep).includes("node_modules") &&
-	!file.split(sep).includes("test");
+async function project(
+	overrides: Readonly<Record<string, string>> = {},
+): Promise<string> {
+	const root = await mkdtemp(join(scratch, "project-"));
+	for (const [path, content] of Object.entries({ ...files, ...overrides })) {
+		await mkdir(dirname(join(root, path)), { recursive: true });
+		await writeFile(join(root, path), content);
+	}
+	return root;
+}
 
-const variants = {
-	strict: { strict: true, skipLibCheck: false },
-	skipLibCheck: { strict: true, skipLibCheck: true },
-	"no default lib": { strict: true, noLib: true },
-} satisfies Record<string, ts.CompilerOptions>;
+const baseOptions: ts.CompilerOptions = {
+	target: ts.ScriptTarget.ES2022,
+	module: ts.ModuleKind.NodeNext,
+	moduleResolution: ts.ModuleResolutionKind.NodeNext,
+	types: [],
+	noEmit: true,
+};
 
-function program(options: ts.CompilerOptions): ts.Program {
+/** A program as codegen builds one: through its overlay compiler host. */
+function program(root: string, options: ts.CompilerOptions): ts.Program {
+	const settings = { ...baseOptions, ...options };
 	return ts.createProgram(
 		["app.ts", "helper.ts", "test/app.test.ts", "local.d.ts"].map((file) =>
 			join(root, file),
 		),
-		{
-			target: ts.ScriptTarget.ES2022,
-			module: ts.ModuleKind.NodeNext,
-			moduleResolution: ts.ModuleResolutionKind.NodeNext,
-			types: [],
-			noEmit: true,
-			...options,
-		},
+		settings,
+		overlayCompilerHost(settings, new Map()),
 	);
 }
+
+const isSourceOf = (root: string) => (file: string) =>
+	sourceCandidate(root, file, GENERATED_ROOTS);
 
 const text = (diagnostics: readonly ts.Diagnostic[]) =>
 	diagnostics.map(
@@ -60,24 +75,56 @@ const text = (diagnostics: readonly ts.Diagnostic[]) =>
 			`${diagnostic.file?.fileName ?? "<global>"}:${diagnostic.start} TS${diagnostic.code} ${ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")}`,
 	);
 
+const es2017 = { strict: true, lib: ["lib.es2017.d.ts"] };
+
+// Each row's test file is not a source, so its own errors are never reported,
+// but a global type its syntax needs and the lib lacks (TS2318) always was.
+const cases = [
+	{ name: "strict", options: { strict: true, skipLibCheck: false } },
+	{ name: "skipLibCheck", options: { strict: true, skipLibCheck: true } },
+	{ name: "no default lib", options: { strict: true, noLib: true } },
+	{
+		name: "an async generator in a test file, es2017 lib",
+		options: es2017,
+		test: "export async function* numbers() { yield 1; }",
+		global: true,
+	},
+	{
+		name: "`using` in a test file, es2017 lib",
+		options: es2017,
+		test: "export function scoped() { using held = { [Symbol.dispose]() {} } as never; }",
+		global: true,
+	},
+	{
+		name: "`await using` in a test file, es2017 lib",
+		options: es2017,
+		test: "export async function scoped() { await using held = {} as never; }",
+		global: true,
+	},
+];
+
 beforeAll(async () => {
-	root = await mkdtemp(join(tmpdir(), "hobo-codegen-diagnostics-"));
-	for (const [path, content] of Object.entries(files)) {
-		await mkdir(dirname(join(root, path)), { recursive: true });
-		await writeFile(join(root, path), content);
-	}
+	scratch = await mkdtemp(join(tmpdir(), "hobo-codegen-diagnostics-"));
 });
 
 afterAll(async () => {
-	await rm(root, { recursive: true, force: true });
+	await rm(scratch, { recursive: true, force: true });
 });
 
 // Each case builds whole programs over the default lib: seconds of CPU on a busy runner.
 describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 	it.each(
-		Object.entries(variants),
-	)("match a whole-program check filtered to sources (%s)", (_variant, options) => {
-		const whole = program(options);
+		cases,
+	)("match a whole-program check filtered to sources ($name)", async ({
+		options,
+		test,
+		global,
+	}) => {
+		const root = await project(
+			test === undefined ? {} : { "test/app.test.ts": test },
+		);
+		const isSource = isSourceOf(root);
+		const whole = program(root, options);
 		// What codegen reported before: check everything, then keep source and file-less diagnostics.
 		const expected = [
 			...whole.getSyntacticDiagnostics(),
@@ -85,13 +132,20 @@ describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 		].filter(
 			(diagnostic) => !diagnostic.file || isSource(diagnostic.file.fileName),
 		);
-		const actual = sourceDiagnostics(program(options), isSource);
+		const actual = sourceDiagnostics(program(root, options), isSource);
 		expect(text(actual)).toEqual(text(expected));
 		expect(actual.length).toBeGreaterThan(0);
+		if (global)
+			expect(
+				actual.some(
+					(diagnostic) => !diagnostic.file && diagnostic.code === 2318,
+				),
+			).toBe(true);
 	});
 
-	it("never type-checks a file it does not report on", () => {
-		const real = program(variants.strict);
+	it("never type-checks a declaration file", async () => {
+		const root = await project();
+		const real = program(root, { strict: true, skipLibCheck: false });
 		const asked: (string | undefined)[] = [];
 		// Program methods are closures over the program, so a copy with one
 		// method replaced records what is asked of it.
@@ -102,16 +156,17 @@ describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 				return real.getSemanticDiagnostics(file);
 			},
 		};
-		sourceDiagnostics(recording, isSource);
+		sourceDiagnostics(recording, isSourceOf(root));
 		expect(asked.sort()).toEqual(
-			["app.ts", "helper.ts"].map((file) => join(root, file)),
+			["app.ts", "helper.ts", "test/app.test.ts"].map((file) =>
+				join(root, file),
+			),
 		);
 	});
 
 	it("reports the same source errors through the engine, and none from declarations or tests", async () => {
-		await writeFile(
-			join(root, "tsconfig.json"),
-			JSON.stringify({
+		const root = await project({
+			"tsconfig.json": JSON.stringify({
 				compilerOptions: {
 					target: "ES2022",
 					module: "NodeNext",
@@ -120,33 +175,24 @@ describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 					types: [],
 				},
 			}),
-		);
-		try {
-			const failure = createTypeScriptProjectCodegenEngine().generate(root);
-			await expect(failure).rejects.toMatchObject({
-				code: "HOBO_CODEGEN_SOURCE_PARSE",
-			});
-			const message = await failure.catch((error: Error) => error.message);
-			expect(message).toContain(`${join(root, "app.ts")}:3:14 TS2322`);
-			expect(message).toContain(`${join(root, "helper.ts")}:1:54 TS2339`);
-			expect(message).not.toContain("node_modules");
-			expect(message).not.toContain("local.d.ts");
-			expect(message).not.toContain("app.test.ts");
-		} finally {
-			await rm(join(root, "tsconfig.json"));
-		}
+		});
+		const failure = createTypeScriptProjectCodegenEngine().generate(root);
+		await expect(failure).rejects.toMatchObject({
+			code: "HOBO_CODEGEN_SOURCE_PARSE",
+		});
+		const message = await failure.catch((error: Error) => error.message);
+		expect(message).toContain(`${join(root, "app.ts")}:3:14 TS2322`);
+		expect(message).toContain(`${join(root, "helper.ts")}:1:54 TS2339`);
+		expect(message).not.toContain("node_modules");
+		expect(message).not.toContain("local.d.ts");
+		expect(message).not.toContain("app.test.ts");
 	});
 
-	it("parses an installed package's declarations once for every program", () => {
-		const options: ts.CompilerOptions = {
-			target: ts.ScriptTarget.ES2022,
-			module: ts.ModuleKind.NodeNext,
-			moduleResolution: ts.ModuleResolutionKind.NodeNext,
-			types: [],
-		};
+	it("parses an installed package's declarations once for every program", async () => {
+		const root = await project();
 		const declaration = join(root, "node_modules/pkg/index.d.ts");
 		const parse = () =>
-			overlayCompilerHost(options, new Map()).getSourceFile(
+			overlayCompilerHost(baseOptions, new Map()).getSourceFile(
 				declaration,
 				ts.ScriptTarget.ES2022,
 			);

@@ -49,7 +49,8 @@ function inside(root: string, file: string): boolean {
 	);
 }
 
-function sourceCandidate(
+/** Whether codegen treats `file` as one of the app's own sources (and reports its diagnostics). */
+export function sourceCandidate(
 	root: string,
 	file: string,
 	generatedRoots: readonly string[],
