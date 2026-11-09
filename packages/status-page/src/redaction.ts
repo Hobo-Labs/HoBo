@@ -65,10 +65,13 @@ export const REDACTION_RULES: readonly RedactionRule[] = Object.freeze([
 	},
 	{
 		id: "internal-hostname",
-		// Starts at the first letter or digit of a run of hostname characters, or
-		// right after a hostname this rule just matched (`a.corp-b.lan` holds two),
-		// which is where the old `\b` form started too — but not again at every
-		// hyphen inside a run, so `a-a-a-…` is one search.
+		// Starts at the first letter or digit of a run of hostname characters
+		// (after the start of the text or any character that is not a letter,
+		// digit or hyphen, and any hyphens after it), or right after a hostname
+		// this rule just matched (`a.corp-b.lan` holds two). That includes after
+		// `_`, where the old `\b` form could not start: `x_db-1.corp` is found
+		// from `db`, where the old one found `1.corp`. It does not start again at
+		// every hyphen inside a run, so `a-a-a-…` is one search.
 		pattern:
 			/[a-z0-9](?<=(?:^|[^a-z0-9-]|\.(?:internal|corp|lan|intranet))-*[a-z0-9])[a-z0-9-]*\.(?:internal|corp|lan|intranet)\b/gi,
 		description: "internal hostname suffix",
