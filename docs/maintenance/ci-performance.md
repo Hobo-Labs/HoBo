@@ -91,11 +91,13 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
 
 `packages/ci-gh-actions/vitest.config.ts` runs its test files in two projects. `shared` (everything
 but five files) sets `isolate: false`, so the files share their worker's module graph instead of each
-re-importing the `@hobo/*` graph; `restoreMocks: true` undoes a spy a test leaves. `isolated` keeps
-per-file isolation for the files that load Docker, Pact or Dagger tooling, which could not be run in a
-shared worker where this was measured. A globalSetup (`test/setup/tmpfs-tmpdir.ts`) moves the tests'
-`TMPDIR` to `/dev/shm` when it has at least 512 MiB free, because every SQLite store the tests open
-waits on an fsync per commit; `HOBO_CI_TEST_TMPFS=0` keeps the disk.
+re-importing the `@hobo/*` graph; `restoreMocks: true` undoes a spy a test leaves, and
+`test/setup/no-leaked-handles.ts` fails a file that leaves a timer, server, socket or child process
+running in the shared worker. `isolated` keeps per-file isolation for the files that load Docker, Pact
+or Dagger tooling, which could not be run in a shared worker where this was measured. A globalSetup
+(`test/setup/tmpfs-tmpdir.ts`, declared once at the root, so it runs once) moves the tests' `TMPDIR` to
+`/dev/shm` when it has at least 512 MiB free and can run a file from there, because every SQLite store
+the tests open waits on an fsync per commit; `HOBO_CI_TEST_TMPFS=0` keeps the disk.
 
 The suite also no longer runs pnpm (the `project` script is checked statically and its built CLI
 started once), no longer starts a Postgres container only for `SELECT 1` (`ci-store-contract.test.ts`
@@ -105,8 +107,8 @@ turbo, removes the fake docker directories it made, and declares `@hobo/stations
 now selects the two ci-gh-actions tests that load it.
 
 Measured back to back on one CPU (`taskset -c 0`, `CI=1`, `HOBO_TEST_MAX_WORKERS=1`, `TURBO_HASH` set
-as under turbo, TMPDIR on disk) on a shared host: 118.0 s wall and 71.0 s CPU before (load 13.5 →
-18.0), 39.9 s wall and 26.4 s CPU after (load 18.4 → 16.9).
+as under turbo, TMPDIR on disk) on a shared host: 145.6 s wall and 73.3 s CPU before (load 28.0 →
+34.1), 44.9 s wall and 28.2 s CPU after (load 33.2 → 32.4).
 
 ## Changed paths on stdin
 
