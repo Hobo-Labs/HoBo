@@ -49,6 +49,11 @@ export type DockerContainer = Readonly<{
 	name: string;
 	containerId: string;
 	state: DockerContainerState;
+	/** When the container record was created on the host (best-effort). */
+	createdAtMs?: number;
+	/** From `hobo.ci/timeout-ms` when present. */
+	timeoutMs?: number;
+	labels?: Readonly<Record<string, string>>;
 }>;
 
 export type DockerImageInspection = Readonly<{

@@ -1,6 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { ACTIVE_STATES, JobSchema, type Lease } from "@hobo/ci";
 import type { HostedRelayStore } from "../hosted-relay.js";
+import { containerPastHardTimeout } from "./container-timeout.js";
 import { workerOfferKey, workerOfferKeys } from "./daemon-shutdown.js";
 import type { DockerContainer, DockerDriver } from "./docker-driver.js";
 import {
@@ -16,6 +17,7 @@ export type WorkerLeaseReconciliationStore = Pick<
 export type WorkerLeaseReconciliationEvent =
 	| "hobo_ci_container_orphan_removed"
 	| "hobo_ci_container_orphan_remove_failed"
+	| "hobo_ci_container_timeout_enforced"
 	| "hobo_ci_lease_orphan_released"
 	| "hobo_ci_lease_reconciliation_failed"
 	| "hobo_ci_memory_without_containers";
@@ -306,6 +308,46 @@ export function createWorkerLeaseReconciler(options: {
 					continue;
 				}
 			} else if (container) {
+				if (
+					container.state === "running" &&
+					container.timeoutMs !== undefined &&
+					container.createdAtMs !== undefined &&
+					containerPastHardTimeout(
+						container.createdAtMs,
+						container.timeoutMs,
+						now(),
+					)
+				) {
+					try {
+						await options.docker.stop(container.name, container.containerId);
+						await options.docker.remove(container.name, container.containerId);
+						options.log?.("hobo_ci_container_timeout_enforced", {
+							leaseId: lease.id,
+							jobId: lease.jobId,
+							name: container.name,
+							timeoutMs: container.timeoutMs,
+						});
+					} catch (error) {
+						options.log?.("hobo_ci_lease_reconciliation_failed", {
+							leaseId: lease.id,
+							message: error instanceof Error ? error.message : "unknown",
+						});
+						liveLeaseIds.add(lease.id);
+						continue;
+					}
+					try {
+						await options.settleExited?.(lease);
+					} catch (error) {
+						options.log?.("hobo_ci_lease_reconciliation_failed", {
+							leaseId: lease.id,
+							message: error instanceof Error ? error.message : "unknown",
+						});
+					}
+					const current = await options.store.get(lease.id);
+					if (current && ACTIVE_STATES.has(current.state))
+						liveLeaseIds.add(lease.id);
+					continue;
+				}
 				liveLeaseIds.add(lease.id);
 				continue;
 			} else {
@@ -353,15 +395,36 @@ export function createWorkerLeaseReconciler(options: {
 				protectedNames.has(container.name)
 			)
 				continue;
+			const staleTimedOut =
+				container.state === "running" &&
+				container.timeoutMs !== undefined &&
+				container.createdAtMs !== undefined &&
+				containerPastHardTimeout(
+					container.createdAtMs,
+					container.timeoutMs,
+					now(),
+				);
 			try {
 				if (container.state === "running")
 					await options.docker.stop(container.name, container.containerId);
 				await options.docker.remove(container.name, container.containerId);
-				options.log?.("hobo_ci_container_orphan_removed", {
-					name: container.name,
-					containerId: container.containerId,
-					state: container.state,
-				});
+				const event = staleTimedOut
+					? "hobo_ci_container_timeout_enforced"
+					: "hobo_ci_container_orphan_removed";
+				if (container.timeoutMs !== undefined) {
+					options.log?.(event, {
+						name: container.name,
+						containerId: container.containerId,
+						state: container.state,
+						timeoutMs: container.timeoutMs,
+					});
+				} else {
+					options.log?.(event, {
+						name: container.name,
+						containerId: container.containerId,
+						state: container.state,
+					});
+				}
 			} catch (error) {
 				options.log?.("hobo_ci_container_orphan_remove_failed", {
 					name: container.name,
