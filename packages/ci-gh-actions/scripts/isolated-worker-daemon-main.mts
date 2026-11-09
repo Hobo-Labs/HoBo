@@ -23,6 +23,7 @@ import {
 	createMemoryPeaks,
 	createNodeWorkerStorageFileSystem,
 	createPnpmStoreMaintenance,
+	createPollIngestCoalesce,
 	createPollLogFilter,
 	createRetiredWorkDirectorySweeper,
 	createWorkerMemoryAdmission,
@@ -545,12 +546,14 @@ try {
 				workerReconcileMs,
 			}),
 	});
+	const pollIngestCoalesce = createPollIngestCoalesce();
 	const poller =
 		plan.admission === "pull"
 			? createGithubJobPoller({
 					github,
 					durations: jobDurations,
 					admissionOrder: runtime.admissionOrder,
+					ingestCoalesce: pollIngestCoalesce,
 					connections: async () =>
 						(await store.configuration())?.configuration?.connections ?? [],
 					ingest: (delivery) => runtime.ingestWebhook(delivery),
