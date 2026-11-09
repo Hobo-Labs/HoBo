@@ -155,3 +155,40 @@ done; running: <file> (<age>s)`, so a stuck file is named while it is stuck. A h
 late on the wall clock but not on the monotonic one prints `the host was paused for about Ns`, which
 places the pause in the log. The run ends with the ten slowest files. If the step dies with no summary,
 the last heartbeat names what was running. If the log just stops, the box itself stopped.
+
+## The cli package's test cost
+
+`packages/cli`'s suite spends nearly all of its time compiling TypeScript inside the tests (codegen
+passes over real projects), not sleeping, spawning or waiting on a network. What keeps it down:
+
+- **One module graph per worker.** `packages/cli/vitest.config.ts` keeps the root's `isolate: false`.
+  Per-file isolation re-imported `src/index`, every `@hobo/*` dependency and the compiler for each of
+  the 40-odd files. No file keeps state across files: env changes are restored in `finally`/`afterEach`
+  and the trainable registry is reset after each test that uses it. The suite passes in file order and
+  shuffled (`--sequence.shuffle --sequence.seed=<n>`).
+- **Shared fixtures.** `test/support/built-starter.ts` builds each starter (`new` → `codegen` →
+  `build`) once per worker and hands each caller a copy; a run-scoped `globalSetup`
+  (`test/support/run-scratch.ts`) removes them. The cli config replaces the root's `globalSetup` list
+  rather than merging it, so the wasmtime warm-up, which no cli test uses, does not run.
+- **Cheap codegen passes.** Codegen type-checks only its source files (`sourceDiagnostics`), and its
+  compiler host keeps the lib files and installed packages' `.d.ts` in one document registry, so the
+  two programs of a pass, and every later pass, reuse them. `typescript-app-build`'s fixture uses real
+  `@types/node` (with `skipLibCheck`) only in the case that packages and runs the app.
+- **Cheap refusals first.** `hobo build` answers an explicit runtime for a Node app, or an empty
+  service list, before its freshness gate regenerates the project.
+- **Workers.** CI runs one worker (`CI` set); elsewhere files spread across cores under the
+  memory-derived `HOBO_TEST_MAX_WORKERS` cap. `typescript-project-codegen` is four files so it is not a
+  single critical path. Case timeouts go through `test/support/slow.ts`, so `HOBO_TEST_TIMEOUT` can
+  raise them on a loaded runner.
+- **Lighter `hobo` processes.** `@hobo/cli` loads `ts-autocode-training` only when a codegen
+  directive scan runs, and `@hobo/cli/argv` exports `CANONICAL_VERBS` and `parseArgv` without the CLI.
+  The compiler still loads with `@hobo/cli`: `ts-autocode-grounding`'s only export imports it, and
+  `codegen/text.ts` (used by the cloud loader) takes its digest helpers from there.
+
+Measured on one CPU (`taskset -c 0`, `CI=1`, `HOBO_TEST_MAX_WORKERS=1`, `HOBO_TEST_TIMEOUT=600000`,
+fresh `HOME`/`HOBO_HOME`/`TMPDIR`), back to back on a shared 4-CPU host, load average 25–35:
+origin/main 935 s wall, 550 s CPU (545 tests, 8 failed, 6 of them on timeouts that the old hard-coded
+case limits did not let `HOBO_TEST_TIMEOUT` lift); after these changes 394 s wall, 291 s CPU (554
+tests, 2 failed). The remaining failures are this host's: no `cue` v0.14.0 on `PATH`
+(`codegen-schema-contract`), and a `/tmp/.hobo` marker above `os.tmpdir()` that `ci.test.ts` and
+`shell.test.ts` read as a project root.
