@@ -9,8 +9,12 @@ export default mergeConfig(
 		test: {
 			maxWorkers: capVitestWorkers(1),
 			fileParallelism: false,
-			// Preserve the package's default per-file isolation when inheriting root setup.
-			isolate: true,
+			// Files share a worker's module graph (the root default). Each file
+			// re-importing `src/index`, every `@hobo/*` dependency and the compiler
+			// cost ~54 CPU s of the ~63 s the light files took. Nothing here keeps
+			// state across files: env changes are restored in `finally`/`afterEach`,
+			// and the trainable registry is reset after each test that uses it.
+			isolate: false,
 			// Load the shipped compiler through Node, matching the product CLI.
 			server: { deps: { external: [/[/\\]node_modules[/\\]typescript[/\\]/] } },
 		},
