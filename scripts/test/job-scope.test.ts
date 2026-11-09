@@ -109,6 +109,7 @@ describe("job-scope", () => {
 			"vitest.config.ts",
 			"scripts/ci/job-scope.mts",
 			"scripts/ci/affected-lanes.mts",
+			"scripts/lib/read-stdin.mts",
 			"packages/ci-gh-actions/deploy/ci-runner/Dockerfile.base",
 			"scripts/ci-runner-preflight.mts",
 		])
@@ -200,15 +201,21 @@ describe("job-scope", () => {
 		const imports = [...source.matchAll(/^import .* from "([^"]+)";$/gm)].map(
 			(match) => match[1],
 		);
+		const local = ["./affected-lanes.mts", "../lib/read-stdin.mts"];
 		assert.deepEqual(
 			imports.filter(
-				(name) => !name?.startsWith("node:") && name !== "./affected-lanes.mts",
+				(name) => !name?.startsWith("node:") && !local.includes(name ?? ""),
 			),
 			[],
 		);
-		const lanes = readFileSync("scripts/ci/affected-lanes.mts", "utf8");
-		for (const match of lanes.matchAll(/^import .* from "([^"]+)";$/gm))
-			assert.ok(match[1]?.startsWith("node:"), match[1]);
+		for (const path of [
+			"scripts/ci/affected-lanes.mts",
+			"scripts/lib/read-stdin.mts",
+		]) {
+			const text = readFileSync(path, "utf8");
+			for (const match of text.matchAll(/^import .* from "([^"]+)";$/gm))
+				assert.ok(match[1]?.startsWith("node:"), `${path}: ${match[1]}`);
+		}
 	});
 
 	it("prints a GITHUB_OUTPUT line from the CLI", () => {
