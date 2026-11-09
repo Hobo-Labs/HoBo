@@ -13,8 +13,9 @@
  * Edges: static and dynamic imports, `resolve("…")` calls, and string literals
  * naming an existing repository path relative to the file, its package or the
  * repository root (`new URL("../dist/bin/hobo.js", import.meta.url)`,
- * `join(here, "../../connectivity/contracts/pacts")`). A `dist/` path stands
- * for the `src/` file built into it. A literal naming another package's file
+ * `join(here, "../../connectivity/contracts/pacts")`). A bare `"./"` or
+ * `"../"` is no edge unless it is a module-relative URL's base. A `dist/`
+ * path stands for the `src/` file built into it. A literal naming another package's file
  * (`hobo ci serve --with-worker` spawning the worker daemon) is that one file,
  * not its imports: it runs as its own process and its package's suite covers
  * it. A package entry that maps to no source file stands for the whole package
@@ -143,6 +144,22 @@ const STATIC_IMPORT =
 const DYNAMIC_IMPORT = /\bimport\s*\(\s*(?:(["'])([^"'\n]+)\1\s*\))?/g;
 const RESOLVE_CALL = /\bresolve\(\s*["']([^"'\n]+)["']\s*\)/g;
 const PATH_LITERAL = /["'`]((?:\.\.?\/|packages\/|examples\/)[^"'`\n$]*)["'`]/g;
+const BARE_DIR = /^\.\.?\/$/;
+
+/** Whether the literal `match` is the base of `new URL(literal, import.meta.url)`. */
+function isUrlBase(
+	text: string,
+	match: RegExpExecArray | RegExpMatchArray,
+): boolean {
+	const start = match.index ?? 0;
+	return (
+		/\bnew\s+URL\(\s*$/.test(text.slice(Math.max(0, start - 40), start)) &&
+		/^\s*,\s*import\.meta\.url\b/.test(
+			text.slice(start + match[0].length, start + match[0].length + 40),
+		)
+	);
+}
+
 const VITEST_CONFIGS = [
 	"vitest.config.ts",
 	"vitest.config.mts",
@@ -378,8 +395,14 @@ export function createWalker(repo: Repo) {
 		// imports. A vitest config's literals are setup files vitest imports.
 		const loadsWhatItNames = VITEST_CONFIGS.includes(posix.basename(file));
 		const named = new Set<string>();
-		for (const match of withoutComments(source).matchAll(PATH_LITERAL)) {
+		const text = withoutComments(source);
+		for (const match of text.matchAll(PATH_LITERAL)) {
 			const literal = match[1] ?? "";
+			// A bare `./` or `../` names no file. `entry.startsWith("./")` tests a
+			// specifier and read as reaching every file of @hobo/core. Only the
+			// base of a module-relative URL (`new URL("../", import.meta.url)`,
+			// a package root a module reads computed paths under) stays an edge.
+			if (BARE_DIR.test(literal) && !isUrlBase(text, match)) continue;
 			// `startsWith("packages/connectors/")` tests a path; it reads nothing.
 			const prefix = literal.endsWith("/");
 			const bases = /^(?:packages|examples)\//.test(literal)

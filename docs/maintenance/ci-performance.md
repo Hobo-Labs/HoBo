@@ -118,6 +118,21 @@ one, not only when a path outside every package changed: `packages/code` imports
 `../../cli/src/cloud/loader.js` without depending on `@hobo/cli`, and 3317dcc2 changed `packages/cli`
 without running `packages/code/test/happy-path-run.test.ts`. Only a concrete reach counts there.
 
+A bare `"./"` or `"../"` string literal is no longer an edge to its directory.
+`entry.startsWith("./")` in `packages/core/src/plugin-manifest.ts` read as reaching every file of
+`@hobo/core`, so any core change ran 53 whole suites and 53 subsets; a change to
+`packages/core/src/_generated/actor_host_port_pb.ts` now plans 13 whole suites and 14 subsets and
+skips 106 dependents (10 and 13 of them without the wider bystander check above). The base of a module-relative URL (`new URL("../", import.meta.url)`, a package
+root its module reads computed paths under) stays an edge. An unknown or unmapped change still runs
+everything.
+
+`scripts/ci/plan-replay.mts` replays the planner over the last N main commits (`--count=100`), each
+with its parent as the base, and prints whole/subset counts. `--before=REF` compares against the
+planner at REF. `--check` reads a second import graph from the syntax tree
+(`scripts/lib/test-import-specifiers.mts`) and fails if a test whose imports or vitest config reach a
+changed file is not in the plan. Run against the old planner, it reports the 41 `packages/cli` tests a
+root config change missed. `scripts/test/dependent-tests.test.ts` pins both fixes on the real tree.
+
 ## Frozen proofs and live-repo tests
 
 `scripts/run-tests.ts` skips a frozen proof test that scans the live repo when its promoted package keeps

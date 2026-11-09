@@ -262,6 +262,25 @@ describe("a package that imports another by relative path", () => {
 	});
 });
 
+describe("a bare ./ or ../ literal", () => {
+	const literals = extend(repo, {
+		"packages/lib/src/feat/spec.ts":
+			'export const relative = (entry: string) => entry.startsWith("./");\n',
+		"packages/lib/src/feat/root.ts":
+			'export const root = new URL("../", import.meta.url);\n',
+		"packages/app/test/spec.test.ts": 'import "@t/lib/feat/spec";\n',
+		"packages/app/test/root-url.test.ts": 'import "@t/lib/feat/root";\n',
+	});
+
+	it("is no edge in a string test, and the base of a module URL is", () => {
+		assert.deepEqual(
+			scoped(planDependentTests(["packages/lib/src/worker.ts"], literals))
+				.subsets["packages/app"],
+			["test/computed.test.ts", "test/root-url.test.ts", "test/root.test.ts"],
+		);
+	});
+});
+
 describe("planDependentTests", () => {
 	it("runs only the dependent tests whose closure reaches a worker-only file", () => {
 		assert.deepEqual(
@@ -543,5 +562,16 @@ describe("the repository's own plans", { concurrency: true }, () => {
 				"packages/code"
 			]?.includes("test/happy-path-run.test.ts"),
 		);
+	});
+
+	it("plans a generated @hobo/core leaf by what imports it, not by core's `./`", () => {
+		const { full, subsets, skipped } = plan(
+			"packages/core/src/_generated/actor_host_port_pb.ts",
+		);
+		assert.deepEqual(
+			[full.length, Object.keys(subsets).length, skipped.length],
+			[13, 14, 106],
+		);
+		assert.ok(full.includes("packages/core"));
 	});
 });
