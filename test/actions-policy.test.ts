@@ -10,12 +10,9 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { onTestFinished, test } from "vitest";
+import { lintActionsRepository } from "../scripts/lint-actions.ts";
 
-const policy = fileURLToPath(
-	new URL("../scripts/lint-actions.ts", import.meta.url),
-);
 const template = await readFile(
 	new URL(
 		"../packages/ci-gh-actions/templates/hobo-ci-smoke.yml",
@@ -43,11 +40,21 @@ async function fixture(
 	}
 	return root;
 }
-function lint(root: string) {
-	return spawnSync(process.execPath, ["--experimental-strip-types", policy], {
-		cwd: root,
-		encoding: "utf8",
-	});
+async function lint(root: string) {
+	const previous = process.env.HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY;
+	process.env.HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY = "1";
+	try {
+		const result = await lintActionsRepository(root);
+		return {
+			status: result.exitCode,
+			stdout: result.stdout,
+			stderr: result.stderr,
+		};
+	} finally {
+		if (previous === undefined)
+			delete process.env.HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY;
+		else process.env.HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY = previous;
+	}
 }
 
 test("trunk gates run the CI fabric contract while the standalone guard is PR-only", async () => {
@@ -134,7 +141,7 @@ test("only the reviewed manual HoBo acceptance recipe is enabled", async () => {
 		template,
 		"the installable smoke template matches HoBo's actual acceptance job",
 	);
-	const result = lint(await fixture({ [enabled]: actual }));
+	const result = await lint(await fixture({ [enabled]: actual }));
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /1 enabled workflow/);
 });
@@ -156,7 +163,7 @@ jobs:
         with:
           node-version: "24"
 `;
-	const result = lint(
+	const result = await lint(
 		await fixture({
 			[enabled]: template,
 			"hobo-ci.yml": minimalHoboCi,
@@ -192,7 +199,7 @@ jobs:
           sparse-checkout: .github/actions
       - uses: ./.github/actions/hobo-checkout
 `;
-	const badResult = lint(
+	const badResult = await lint(
 		await fixture({}, { "local-action-guard.yml": disabledBad }),
 	);
 	assert.equal(badResult.status, 1);
@@ -201,7 +208,8 @@ jobs:
 		/repo-local action \.\/\.github\/actions\/hobo-checkout must follow a pinned actions\/checkout step/,
 	);
 	assert.equal(
-		lint(await fixture({}, { "local-action-guard.yml": disabledGood })).status,
+		(await lint(await fixture({}, { "local-action-guard.yml": disabledGood })))
+			.status,
 		0,
 	);
 });
@@ -218,13 +226,15 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683${inputs}
 `;
 	assert.equal(
-		lint(
-			await fixture({
-				"hobo-ci.yml": workflow(
-					"\n        with:\n          clean: false",
-					trunkRunsOn,
-				),
-			}),
+		(
+			await lint(
+				await fixture({
+					"hobo-ci.yml": workflow(
+						"\n        with:\n          clean: false",
+						trunkRunsOn,
+					),
+				}),
+			)
 		).status,
 		0,
 	);
@@ -233,7 +243,9 @@ jobs:
 		"\n        with:\n          clean: true",
 		"\n        with:\n          repository: Hobo-Labs/HoBo",
 	]) {
-		const result = lint(await fixture({ "hobo-ci.yml": workflow(inputs) }));
+		const result = await lint(
+			await fixture({ "hobo-ci.yml": workflow(inputs) }),
+		);
 		assert.equal(result.status, 1);
 		assert.match(result.stderr, /must set clean: false/);
 	}
@@ -242,10 +254,12 @@ jobs:
 		"\n        with:\n          repository: Hobo-Labs/ts-autocode",
 	])
 		assert.equal(
-			lint(
-				await fixture({
-					"hobo-ci.yml": workflow(inputs, trunkRunsOn),
-				}),
+			(
+				await lint(
+					await fixture({
+						"hobo-ci.yml": workflow(inputs, trunkRunsOn),
+					}),
+				)
 			).status,
 			0,
 		);
@@ -268,13 +282,15 @@ jobs:
     steps:
       - run: true
 `;
-	const accepted = lint(await fixture({ "hobo-ci.yml": hoboCi(trunkRunsOn) }));
+	const accepted = await lint(
+		await fixture({ "hobo-ci.yml": hoboCi(trunkRunsOn) }),
+	);
 	assert.equal(accepted.status, 0, accepted.stderr);
 	const trunkOnPr = hoboCi(trunkRunsOn).replace(
 		"runs-on: hobo",
 		`runs-on: ${trunkRunsOn}`,
 	);
-	const rejectedTrunkOnPr = lint(
+	const rejectedTrunkOnPr = await lint(
 		await fixture({ "release-hobo.yml": trunkOnPr }),
 	);
 	assert.equal(rejectedTrunkOnPr.status, 1);
@@ -284,7 +300,7 @@ jobs:
 		trunkRunsOn.replace("'hobo-trunk'", "'ubuntu-latest'"),
 		"ubuntu-latest",
 	]) {
-		const result = lint(await fixture({ "hobo-ci.yml": hoboCi(runsOn) }));
+		const result = await lint(await fixture({ "hobo-ci.yml": hoboCi(runsOn) }));
 		assert.equal(result.status, 1, runsOn);
 		assert.match(result.stderr, /runs-on must be hobo or the trunk label/);
 	}
@@ -306,7 +322,7 @@ jobs:
 		"workflow_dispatch",
 		"workflow_run",
 	]) {
-		const shared = lint(
+		const shared = await lint(
 			await fixture({ "pricing-ci.yml": workflow(event, "hobo") }),
 		);
 		assert.equal(shared.status, 1, event);
@@ -314,7 +330,7 @@ jobs:
 			shared.stderr,
 			/trunk-label-routing: push\/merge_group\/workflow_dispatch-capable jobs must use the trunk label expression/,
 		);
-		const trunk = lint(
+		const trunk = await lint(
 			await fixture({ "pricing-ci.yml": workflow(event, trunkRunsOn) }),
 		);
 		assert.equal(trunk.status, 0, trunk.stderr);
@@ -335,9 +351,11 @@ jobs:
     steps:
       - run: true
 `;
-	const shared = lint(await fixture({ "examples-e2e.yml": workflow("hobo") }));
+	const shared = await lint(
+		await fixture({ "examples-e2e.yml": workflow("hobo") }),
+	);
 	assert.equal(shared.status, 0, shared.stderr);
-	const trunk = lint(
+	const trunk = await lint(
 		await fixture({ "examples-e2e.yml": workflow(trunkRunsOn) }),
 	);
 	assert.equal(trunk.status, 1);
@@ -345,7 +363,7 @@ jobs:
 		trunk.stderr,
 		/trunk-label-routing: PR-only jobs must use plain hobo/,
 	);
-	const prOnlyWorkflow = lint(
+	const prOnlyWorkflow = await lint(
 		await fixture({
 			"examples-e2e.yml": workflow(trunkRunsOn).replace(
 				"  workflow_dispatch:\n",
@@ -413,11 +431,11 @@ test("every trunk-capable CI and release job requests the trunk label by default
 	}
 });
 test("a checkout without enabled workflows still passes", async () => {
-	assert.equal(lint(await fixture()).status, 0);
+	assert.equal((await lint(await fixture())).status, 0);
 });
 test("every other recognized workflow filename remains forbidden", async () => {
 	for (const name of ["ci.yml", "hobo-ci-acceptance.yaml", "CI.YML"]) {
-		const result = lint(
+		const result = await lint(
 			await fixture({ [enabled]: template, [name]: template }),
 		);
 		assert.equal(result.status, 1);
@@ -466,7 +484,7 @@ for (const [name, original, changed] of [
 ] as const) {
 	test(`the approved filename cannot enable ${name}`, async () => {
 		assert.ok(template.includes(original));
-		const result = lint(
+		const result = await lint(
 			await fixture({ [enabled]: template.replace(original, changed) }),
 		);
 		assert.equal(result.status, 1);
@@ -481,12 +499,12 @@ test("the preserved CI job-disable policy remains enforced", async () => {
 		path,
 		"jobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
 	);
-	assert.equal(lint(root).status, 1);
+	assert.equal((await lint(root)).status, 1);
 	await writeFile(
 		path,
 		"jobs:\n  build:\n    if: ${{ false }}\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
 	);
-	assert.equal(lint(root).status, 0);
+	assert.equal((await lint(root)).status, 0);
 });
 
 test("the optional JIT smoke verifies runner identity without the full workflow steps", () => {

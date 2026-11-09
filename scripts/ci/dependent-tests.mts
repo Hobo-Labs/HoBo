@@ -44,6 +44,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { posix } from "node:path";
 import process from "node:process";
+import { readStdin } from "../lib/read-stdin.mts";
 import {
 	affectedLanes,
 	cliRootFileReader,
@@ -686,7 +687,7 @@ function describePlan(plan: TestPlan): string {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-	const input = readFileSync(0, "utf8");
+	const input = readStdin();
 	const listed = spawnSync("git", ["ls-files", "-z"], {
 		encoding: "utf8",
 		maxBuffer: 256 * 1024 * 1024,

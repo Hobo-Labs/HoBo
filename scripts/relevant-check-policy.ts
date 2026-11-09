@@ -530,6 +530,31 @@ export function selectRelevantChecks(
 	if (
 		files.some(
 			(file) =>
+				file === "scripts/lib/read-stdin.mts" ||
+				file === "scripts/test/read-stdin.test.ts" ||
+				file === "scripts/test/job-scope.test.ts" ||
+				file === "scripts/ci/job-scope.mts" ||
+				file === "scripts/ci/dependent-tests.mts" ||
+				file === "scripts/ci/impact-classifier.mts",
+		)
+	) {
+		checks.push({
+			command: "node",
+			args: [
+				"--import",
+				"tsx",
+				"--test",
+				"scripts/test/read-stdin.test.ts",
+				"scripts/test/job-scope.test.ts",
+			],
+			reason:
+				"changed-path stdin readers must keep surviving a late writer on a non-blocking pipe (EAGAIN)",
+		});
+	}
+
+	if (
+		files.some(
+			(file) =>
 				file === "external/ts-autocode" ||
 				file === "pnpm-workspace.yaml" ||
 				file === "tools/pins/siblings.json" ||

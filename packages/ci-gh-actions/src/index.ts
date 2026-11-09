@@ -53,6 +53,11 @@ export {
 	type IsolatedWorkerStore,
 } from "./isolated-worker/container-controller.js";
 export {
+	containerPastHardTimeout,
+	ISOLATED_TIMEOUT_LABEL,
+	parseContainerTimeoutMs,
+} from "./isolated-worker/container-timeout.js";
+export {
 	countInFlightWorkerLeases,
 	parseWorkerStopMode,
 	stopIsolatedWorker,
@@ -117,6 +122,10 @@ export {
 	type MemoryPeaks,
 } from "./isolated-worker/memory-peaks.js";
 export { createPnpmStoreMaintenance } from "./isolated-worker/pnpm-store.js";
+export {
+	createPollIngestCoalesce,
+	type PollIngestCoalesce,
+} from "./isolated-worker/poll-ingest-coalesce.js";
 export {
 	attachPostgresPoolErrorHandler,
 	formatPoolErrorLog,
