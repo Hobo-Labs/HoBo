@@ -18,6 +18,7 @@
 		"access": "public"
 	},
 	"devDependencies": {
+		"@hobo/redaction-test-harness": "workspace:*",
 		"@types/node": "^22.15.29",
 		"vitest": "^4.1.9"
 	},
@@ -27,6 +28,7 @@
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test": "vitest run test/ contracts/",
+		"test:deep": "vitest run --config vitest.deep.config.ts",
 		"test:unit": "vitest run test/",
 		"test:contract:consumer": "vitest run contracts/consumer"
 	},

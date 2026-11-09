@@ -5,23 +5,17 @@
  * scanned from every `http` to the end and back for each part: on a payload
  * holding a megabyte of `-ey` or of `http://claim?`, the guard stalled the
  * append. These pin that it still refuses what it refused, and is linear.
+ *
+ * This is the fast tier: `shared-detectors.deep.test.ts` holds the sweeps, the
+ * growth measurements and the full-size differential (`pnpm run test:deep`).
  */
-import {
-	assertPatternSweepLinear,
-	ownPatterns,
-} from "@hobo/provider-redaction/linear-sweep";
-import {
-	assertGrowsLinearly,
-	repeatedTo,
-} from "@hobo/provider-redaction/linear-time";
 import {
 	assertFindsNoLess,
 	JWT_PIECES,
 	PEM_PIECES,
 	URL_PIECES,
-} from "@hobo/provider-redaction/redaction-differential";
+} from "@hobo/redaction-test-harness/redaction-differential";
 import { describe, expect, it } from "vitest";
-import { FORBIDDEN_IN_EVENTS } from "../src/events.js";
 import { assertNoSecrets, type ClaimEvent } from "../src/index.js";
 import { assertNoSecrets as baseAssertNoSecrets } from "./fixtures/base-guard.js";
 
@@ -48,30 +42,6 @@ describe("assertNoSecrets detectors", () => {
 			assertNoSecrets(observed("see https://example.com/claim?page=2")),
 		).not.toThrow();
 	});
-
-	it.each([
-		["-ey", repeatedTo("-ey")],
-		["http://claim?", repeatedTo("http://claim?")],
-		["http://", repeatedTo("http://")],
-	] as const)(
-		"checking a payload of %s grows linearly",
-		{ timeout: 30_000 },
-		(_case, input) => {
-			assertGrowsLinearly(
-				(text) => {
-					try {
-						assertNoSecrets(observed(text));
-					} catch {
-						// Refusing is fine; stalling is not.
-					}
-				},
-				input,
-				// The old claim-URL detector was worse than quadratic: one call on 16
-				// kB took minutes. Starting at 1 kB, it fails the measure in seconds.
-				{ startLength: 1024 },
-			);
-		},
-	);
 });
 
 // Against the guard as it stood before (vendored under test/fixtures): on
@@ -90,29 +60,14 @@ describe("assertNoSecrets against the guard it replaced", () => {
 		["claim urls", URL_PIECES],
 		["jwts", JWT_PIECES],
 		["private keys", PEM_PIECES],
-	] as const)(
-		"refuses every event the old guard refused, on %s",
-		{ timeout: 60_000 },
-		(_case, pieces) => {
-			expect(
-				assertFindsNoLess(
-					refuses(baseAssertNoSecrets),
-					refuses(assertNoSecrets),
-					pieces,
-				),
-			).toBeGreaterThan(1000);
-		},
-	);
-});
-
-// Each of the event guard's patterns, on runs of every class and between its own
-// fragments (`patternFragments`), but those core shares, which core sweeps.
-describe("each pattern on the whole sweep", () => {
-	it.each(
-		ownPatterns(FORBIDDEN_IN_EVENTS.map((entry) => entry.pattern)).map(
-			(pattern) => [pattern.source, pattern] as const,
-		),
-	)("/%s/ grows linearly", { timeout: 60_000 }, (_source, pattern) => {
-		assertPatternSweepLinear(pattern);
+	] as const)("on 20k texts, refuses every event the old guard refused, on %s", (_case, pieces) => {
+		expect(
+			assertFindsNoLess(
+				refuses(baseAssertNoSecrets),
+				refuses(assertNoSecrets),
+				pieces,
+				20_000,
+			),
+		).toBeGreaterThan(100);
 	});
 });

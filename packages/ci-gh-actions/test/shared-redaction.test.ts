@@ -4,25 +4,15 @@
  * at every `eyJ` in a run and read to its end, so a runner log holding a
  * megabyte of `-eyJ` stalled both. These pin that a JWT is still found and
  * redacted, and that both are linear.
+ *
+ * This is the fast tier: `shared-redaction.deep.test.ts` holds the sweeps, the
+ * growth measurements and the full-size differential (`pnpm run test:deep`).
  */
 
-import {
-	assertPatternSweepLinear,
-	assertSweepLinear,
-	ownPatterns,
-} from "@hobo/provider-redaction/linear-sweep";
-import {
-	assertGrowsLinearly,
-	repeatedTo,
-} from "@hobo/provider-redaction/linear-time";
-import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
+import { KEPT_LOCATOR } from "@hobo/provider-redaction";
+import { assertRevealsNoMore } from "@hobo/redaction-test-harness/redaction-differential";
 import { describe, expect, it } from "vitest";
-import {
-	looksLikeSecret,
-	OPAQUE_RUN,
-	redactSecrets,
-	SECRET_PATTERNS,
-} from "../src/runner-integrations.js";
+import { looksLikeSecret, redactSecrets } from "../src/runner-integrations.js";
 import { redactSecrets as baseRedactSecrets } from "./fixtures/base-redaction.js";
 
 const JWT = "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJnaXRodWIifQ.c2lnbmF0dXJlLXZhbHVl";
@@ -44,23 +34,6 @@ describe("runner-integration secret patterns", () => {
 			'{"jwt":"[REDACTED]","next":"kept"}',
 		);
 	});
-
-	it.each([
-		["-eyJ", repeatedTo("-eyJ")],
-		["-eyJ signed and short", repeatedTo("-eyJAAAAAAAA.AAAAAAAA.")],
-		["eyJ runs ending in a dot", repeatedTo("-eyJAAAAAAAA.")],
-	] as const)(
-		"redacting %s grows linearly",
-		{ timeout: 30_000 },
-		(_case, input) => {
-			assertGrowsLinearly((text) => {
-				redactSecrets(text);
-			}, input);
-			assertGrowsLinearly((text) => {
-				looksLikeSecret(text);
-			}, input);
-		},
-	);
 });
 
 // Against the redactor as it stood before (vendored under test/fixtures): on
@@ -68,14 +41,14 @@ describe("runner-integration secret patterns", () => {
 // marker half the old one hid stays hidden; and it is linear on runs of every
 // character class and pair of them.
 describe("redactSecrets against the redactor it replaced", () => {
-	it("hides every marker the old redactor hid", { timeout: 60_000 }, () => {
+	it("on 5k texts, hides every marker the old redactor hid", () => {
 		expect(
 			assertRevealsNoMore(
 				(text) => baseRedactSecrets(text, []),
 				(text) => redactSecrets(text, []),
-				{ count: 50_000 },
+				{ count: 5_000, kept: KEPT_LOCATOR },
 			),
-		).toBeGreaterThan(1000);
+		).toBeGreaterThan(500);
 	});
 
 	it("finds a key whose BEGIN line a key before it took", () => {
@@ -84,33 +57,5 @@ describe("redactSecrets against the redactor it replaced", () => {
 		const two =
 			"-----BEGIN PRIVATE KEY-----\nA\n-----END PRIVATE KEY----------BEGIN PRIVATE KEY-----SECRPEM2 x";
 		expect(redactSecrets(two)).not.toContain("SECRPEM2");
-	});
-
-	it("grows linearly on the whole sweep", { timeout: 60_000 }, () => {
-		assertSweepLinear((text) => redactSecrets(text, []), {
-			alphabet: "aZ9",
-			words: [
-				"ghp_",
-				"eyJ",
-				"-----BEGIN PRIVATE KEY-----",
-				"-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
-				"sk_live_",
-				"AKIA",
-			],
-			// A key, a run and an END line after it: B-1 in 0462fa6c.
-			fragments: ["-----END"],
-		});
-	});
-});
-
-// Each of redactSecrets' patterns and its opaque-run rule, on runs of every class and between its own
-// fragments (`patternFragments`), but those core shares, which core sweeps.
-describe("each pattern on the whole sweep", () => {
-	it.each(
-		ownPatterns([...SECRET_PATTERNS, OPAQUE_RUN]).map(
-			(pattern) => [pattern.source, pattern] as const,
-		),
-	)("/%s/ grows linearly", { timeout: 60_000 }, (_source, pattern) => {
-		assertPatternSweepLinear(pattern);
 	});
 });

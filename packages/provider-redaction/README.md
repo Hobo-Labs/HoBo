@@ -1,8 +1,7 @@
 # @hobo/provider-redaction
 
 The one redactor for provider text (an API error body, CLI output, an
-apiserver Status, a host fault), and the linear-time test harness that holds
-it. Every provider and pack that puts such text in an error message, a log
+apiserver Status, a host fault). Every provider and pack that puts such text in an error message, a log
 line or a receipt redacts it here, so the shapes and their bounds exist once.
 
 A leaf package: it imports no HoBo package, and only the packages that redact
@@ -11,10 +10,11 @@ redaction shape runs the suites that redact, not every dependent of core.
 
 | Export | What |
 |---|---|
-| `@hobo/provider-redaction` | `redactProviderText`, `createProviderRedactor`, `redactMatches`, the shared shapes and detectors |
-| `@hobo/provider-redaction/linear-time` | `measureGrowth`, `assertGrowsLinearly`, for tests |
-| `@hobo/provider-redaction/linear-sweep` | the growth sweep, for tests |
-| `@hobo/provider-redaction/redaction-differential` | the differential test against an old redactor, for tests |
+| `@hobo/provider-redaction` | `redactProviderText`, `createProviderRedactor`, `redactMatches`, the shared shapes and detectors (`SHARED_SHAPES`), `LONG_TOKEN_RUN_PROFILE` (the profile of every provider whose own rule was a long token run), and `KEPT_LOCATOR`, what it keeps on purpose |
+
+The harness that holds it linear and never weaker than the copies it replaced
+(`linear-time`, `linear-sweep`, `redaction-differential`) is test-only, in
+`@hobo/redaction-test-harness`, which every caller takes as a devDependency.
 
 ## Provider redaction
 
@@ -49,16 +49,23 @@ that is not global or is sticky.
 
 Some rules the shapes hold, each with a test:
 
-- A private key is found in code (`keySpans`), with one pass for BEGIN lines and
-  one for END lines, in any case. It runs from its BEGIN line to the last END
+- A private key is found in code (`keySpans`), with one pass for BEGIN lines (in
+  any case) and one for END lines (written as keys write them: a `-----end …`
+  line in a body ends nothing, as no redactor this replaced ended on one). It
+  runs from its BEGIN line to the last END
   line before the next BEGIN, when that line starts a line (after whitespace,
   the start, or an escaped `\n`), with the rest of that line's run. With no
   such END line, or one another shape's match ran over (`Bearer -----END …`),
   it runs to the next BEGIN line or the end: a `-----BEGIN` that starts no
   BEGIN line (`-----BEGINx`) does not stop it. A label is anything up to the
-  next `-`; a `-----BEGIN` whose label another shape's match runs into (a JWT
-  that took a word of it) is still the start of a key, and is redacted from
-  there. `PRIVATE_KEY_PATTERN` on its own takes BEGIN to the next BEGIN.
+  next `-`. A BEGIN line is also one that appears only once the other shapes'
+  matches are taken out, as each redactor this replaced took them out first
+  (`-----BEGIN eyJ…-x… PRIVATE KEY-----`, a JWT with a `-` in the label): the
+  text is searched again with the matches masked, and with the keys found
+  masked (whole, and body only), until no new BEGIN line appears, each found
+  one a key of its own. A text that nests more than eight such lines is
+  redacted from the first of them to the end. `PRIVATE_KEY_PATTERN` on its own
+  takes BEGIN to the next BEGIN.
 - A JWT is an `ey` header and two segments of ten or more (`JWT_PATTERN`), or an
   `eyJ` one of eight or more and three segments (`JSON_JWT_PATTERN`, also
   `SIGNED_JWT_PATTERN`); `my-eyewear-store.myshopify.com` is neither. It is
@@ -90,60 +97,35 @@ long s) and `K` (U+212A, the Kelvin sign): a look-behind that refuses a start
 after a letter then refused one after `ſ` too, and `ſghp_…`, `Ksk_live_…` and
 `ſBearer …` went unredacted. The shapes use `i` alone, which folds ASCII only;
 a body class that should hold every letter the old `iu` copy held lists `ſ` and
-`K` itself (`[\u017F\u212AA-Za-z0-9_-]`), and a look-behind stays ASCII. The
+`K` itself (`[\u017F\u212AA-Za-z0-9_-]`), and the look-behind that says where
+its run starts holds the same class: one that left them out let every position
+inside a run of `ſ` start a match (`ſ` repeated 64k times took 46 s). A run
+that starts with `ſ` or `K` before a credential keeps the credential: a
+prefixed key takes the letter with it, and a JWT keeps it as its lead. The
 one shape that needs `u` (the secret-named key, for `\p{Cc}`) spells its words
 in both cases with `anyCase` (`token` is `[Tt][Oo][Kk\u212A][Ee][Nn]`) instead
 of setting `i`.
 
-## Linear-time tests
+## Tests
 
-`@hobo/provider-redaction/linear-time` is how the redaction tests prove a pattern linear
-without a wall-clock bound that a slow or loaded machine fails.
-`measureGrowth(run, input)` times `input(n)` and `input(4n)` in the CPU time of
-the thread that runs them (so other processes on a loaded machine do not count),
-the better of two runs each, taking turns. n doubles from 4096 (to at most 2^18)
-until a run takes 30 ms of CPU time, long against Linux's few-millisecond
-CPU-time ticks; an operation too quick for that is repeated within each timed
-run, the same number of times at both sizes. `assertGrowsLinearly` throws a
-`NonLinearGrowthError` at `LINEAR_GROWTH_LIMIT` (8: linear work grows about 4x,
-quadratic about 16x), then runs `input(1 MB)` once. An operation that costs next
-to nothing even repeated `MAX_REPEAT` times is linear while 4n stays under 240
-ms. `NEGATIVE_CONTROL` holds a test's expected-to-fail pattern to small sizes and
-one run, since quadratic work shows its 16x early. The only absolute bound is
-`HANG_BACKSTOP_MS` (20 s) on a single call, an `OperationHangError`.
-`repeatedTo(unit, prefix)` builds the inputs.
+`test` runs the fast tier, in four files so they run in parallel:
 
-`@hobo/provider-redaction/linear-sweep` runs one pattern or function on inputs nobody has to
-think of: runs of each character of its alphabet and of the separator classes
-(`_`, whitespace, `.`, `-`, `%`, `+`, `:`, quotes, `*`, `=`, `/`, `@`, `,`, two
-control characters), every ordered pair of them, its own words before each run,
-and runs between its literal fragments (`patternFragments`: every literal of
-three or more characters in its source, and `=` and `:`): a fragment, a run,
-and a fragment or a terminator after it, and a whole sample (a word), a run, a
-terminator and a fragment (`key … aaa -----END`). Each input's call on 2 Ki
-characters is screened against the fastest of 32 scans of as many characters
-by the redactor's own search (`referenceFloor`, once a sweep): under 32 times
-that, the better of three calls, it is linear. Linear patterns cost up to about
-23, quadratic ones 160 or more. The screen is in wall time, since a call that
-short reads 0 on the CPU clock; load only ever slows a run, so it cannot lift
-the fastest of many scans, and a slowed call only costs a measurement. An input
-above 32 is measured as growth in CPU time (`judgeInput`). A call that reaches
-the hang backstop is an offender, named. `assertPatternSweepLinear` sweeps one
-pattern through the redactor's own search, with its fragments taken from its
-source, and `profilePatterns` lists a profile's.
+- `provider-redaction.test.ts`: what each shape redacts and keeps, the window,
+  profiles and decoding, and every leak rounds 1 to 4 found as a fixed input;
+- `regressions.test.ts`: every hostile input a review found a quadratic search
+  on, screened once each against a linear scan (`test/adversarial.ts`,
+  `assertInputLinear`), and round 5's leaks;
+- `detectors.test.ts`: the shared detectors held to the ones they replaced, on
+  20k texts each;
+- `long-token-profile.test.ts`: `LONG_TOKEN_RUN_PROFILE`, the profile six
+  providers share, held to the two-line rule it replaced on 5k texts, once here
+  rather than in each provider.
 
-`@hobo/provider-redaction/redaction-differential` holds a redactor to the one it replaced.
-`assertRevealsNoMore(old, now)` generates texts of credential shapes,
-separators and control characters carrying random markers, and fails when the
-new redactor shows half a marker the old one hid. The texts carry credentials
-at their real lengths with a marker inside (AKIA keys, `ghp_`, Stripe, GitLab
-and Slack tokens, a full JWT, private keys with and without END), percent
-encodings, non-ASCII, zero-width and direction characters, secret names used as
-schemes, and digests a value is glued to. The one exception is a marker in a
-clean locator's own path or in the name of the key it is the value of, which
-the shared redactor keeps on purpose (`decode` says what the redactor does to a
-text first). `assertFindsNoLess(old, now, pieces)` does the same for a
-detector: every text the old one found, the new one finds.
+`test:deep` runs `*.deep.test.ts`: every shared shape and detector swept over
+its own classes, fragments, repeated pieces and periodic texts, the whole
+redactor's growth on each hostile input, a megabyte of each searched whole, the
+negative controls the sweep must catch, the detectors at 150k texts, and the
+long-token profile at 50k texts on three seeds with its growth and sweep.
 
 ## Architecture
 
@@ -160,14 +142,14 @@ search.
 
 ## Data models
 
-`data-models/provider_redaction.proto` describes the evidence the harness
-reports as data: a profile's pattern sources, a growth measurement, and a sweep
-input's outcome. `data-models/provider_redaction.cue` constrains each. The
-TypeScript types hold `RegExp`s and functions, which a record cannot, so they
-are not generated from the proto.
+`data-models/provider_redaction.proto` describes a provider's profile as data:
+its pattern sources and options. `data-models/provider_redaction.cue`
+constrains it. The TypeScript types hold `RegExp`s, which a record cannot, so
+they are not generated from the proto.
 
 ## Commands
 
 ```bash
 pnpm exec turbo run build test --filter ./packages/provider-redaction
+pnpm exec turbo run build test:deep --filter ./packages/provider-redaction
 ```

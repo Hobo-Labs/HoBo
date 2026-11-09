@@ -5,23 +5,18 @@
  * bearer token, URL credentials, a private key's BEGIN line — reached the
  * message, and so did control characters. These pin that what the rule caught
  * is still caught, what it missed is caught now, and that it is linear.
+ *
+ * This is the fast tier: `shared-redaction.deep.test.ts` holds the sweeps, the
+ * growth measurements and the full-size differential (`pnpm run test:deep`).
  */
 
-import {
-	assertPatternSweepLinear,
-	profilePatterns,
-} from "@hobo/provider-redaction/linear-sweep";
-import {
-	assertGrowsLinearly,
-	repeatedTo,
-} from "@hobo/provider-redaction/linear-time";
-import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
+import { KEPT_LOCATOR } from "@hobo/provider-redaction";
+import { assertRevealsNoMore } from "@hobo/redaction-test-harness/redaction-differential";
 import { describe, expect, it } from "vitest";
 
-import { AWS_REDACTION_PROFILE, redactAwsText } from "../src/resolvers.js";
+import { redactAwsText } from "../src/resolvers.js";
 import { redactAwsText as baseRedact } from "./fixtures/base-redaction.js";
 
-const MB = 1_000_000;
 const redact = (text: string, limit?: number) =>
 	redactAwsText(text, undefined, limit);
 
@@ -47,20 +42,6 @@ describe("redactAwsText", () => {
 	it("keeps its limit of 400 characters", () => {
 		expect(redact("ab ".repeat(300))).toHaveLength(401);
 	});
-
-	it.each([
-		["-ey", repeatedTo("-ey")],
-		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
-		["short runs", repeatedTo("a.")],
-	] as const)(
-		"redacting %s grows linearly",
-		{ timeout: 30_000 },
-		(_case, input) => {
-			assertGrowsLinearly((text) => {
-				redact(text, 8 * MB);
-			}, input);
-		},
-	);
 });
 
 // The same three secrets, redacted whole, by every caller of the shared
@@ -90,15 +71,13 @@ describe("the shared shapes, through this caller", () => {
 // pattern this caller adds is linear on every class and pair of classes.
 describe("against the redactor it replaced", () => {
 	const LONG = 1_000_000;
-	it("hides every marker the base branch's redactor hid", {
-		timeout: 60_000,
-	}, () => {
+	it("on 5k texts, hides every marker the base branch's redactor hid", () => {
 		const hidden = assertRevealsNoMore(
 			(text) => baseRedact(text, undefined, LONG),
 			(text) => redactAwsText(text, undefined, LONG),
-			{ count: 50_000 },
+			{ count: 5_000, kept: KEPT_LOCATOR },
 		);
-		expect(hidden).toBeGreaterThan(1000);
+		expect(hidden).toBeGreaterThan(500);
 	});
 	it.each([
 		["Bearer abcd\u0007SECRCTL3 ok", "SECRCTL3"],
@@ -106,15 +85,4 @@ describe("against the redactor it replaced", () => {
 	])("reads a credential on through a control character: %j", (text, marker) => {
 		expect(redactAwsText(text, undefined, LONG)).not.toContain(marker);
 	});
-	it.each(
-		profilePatterns(AWS_REDACTION_PROFILE).map(
-			(pattern) => [pattern.source, pattern] as const,
-		),
-	)(
-		"its pattern /%s/ grows linearly on the whole sweep",
-		{ timeout: 30_000 },
-		(_source, pattern) => {
-			assertPatternSweepLinear(pattern);
-		},
-	);
 });

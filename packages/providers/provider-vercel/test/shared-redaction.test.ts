@@ -1,28 +1,21 @@
 /**
- * Vercel's redactor is the shared one (`@hobo/provider-redaction`, whose
- * tests hold the hostile-text cases first written here) plus Vercel's claim
+ * Vercel's redactor is the shared one (`@hobo/provider-redaction`; #1773's
+ * hostile-text cases stay in `redaction-hostile-text.test.ts`) plus Vercel's claim
  * and transfer codes. Before the move it had its own copy of the shapes; these
  * pin that nothing it redacted leaks now, what it newly redacts, and that its
  * own shape is linear.
+ *
+ * This is the fast tier: `shared-redaction.deep.test.ts` holds the sweeps, the
+ * growth measurements and the full-size differential (`pnpm run test:deep`).
  */
 
-import {
-	assertPatternSweepLinear,
-	profilePatterns,
-} from "@hobo/provider-redaction/linear-sweep";
-import {
-	assertGrowsLinearly,
-	repeatedTo,
-} from "@hobo/provider-redaction/linear-time";
-import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
+import { KEPT_LOCATOR } from "@hobo/provider-redaction";
+import { assertRevealsNoMore } from "@hobo/redaction-test-harness/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import { REDACTION_WINDOW, redactProviderText } from "../src/index.js";
-import { VERCEL_REDACTION_PROFILE } from "../src/provider-errors.js";
 import { redactProviderText as baseRedact } from "./fixtures/base-redaction.js";
 import { redactProviderText as mainRedact } from "./fixtures/main-redaction.js";
-
-const MB = 1_000_000;
 
 describe("provider-vercel redaction", () => {
 	it("still redacts every shape its own copy did", () => {
@@ -60,16 +53,6 @@ describe("provider-vercel redaction", () => {
 			),
 		).toBe("before x-[redacted] after");
 	});
-
-	it.each([["near-miss transfer codes", repeatedTo("code=ABC ")]] as const)(
-		"redacting %s grows linearly",
-		{ timeout: 30_000 },
-		(_case, input) => {
-			assertGrowsLinearly((text) => {
-				redactProviderText(text, 8 * MB);
-			}, input);
-		},
-	);
 });
 
 // The same three secrets, redacted whole, by every caller of the shared
@@ -93,47 +76,27 @@ describe("the shared shapes, through this caller", () => {
 	});
 });
 
-// #1773's hostile-text assertions (9d3fe8c2), through this caller.
-describe("a JWT after a boundary, as #1773 pins it", () => {
-	const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NX0.dBjftJeZ4CVPmB92K";
-	it.each([
-		" ",
-		'"',
-		"=",
-		":",
-		"-",
-	])("redacts a JWT that follows %j", (before) => {
-		expect(redactProviderText(`x${before}${jwt}`)).toBe(`x${before}[redacted]`);
-	});
-
-	it("takes a hyphen inside a word as a boundary, as the old `\\bey` had it", () => {
-		expect(redactProviderText(`token-${jwt} end`)).toBe("token-[redacted] end");
-	});
-});
-
 // Against the redactor this caller had before (vendored under test/fixtures):
 // on generated texts full of credential shapes, separators and control
 // characters, every marker half the old one hid stays hidden, and every
 // pattern this caller adds is linear on every class and pair of classes.
 describe("against the redactor it replaced", () => {
 	const LONG = 1_000_000;
-	it("hides every marker the base branch's redactor hid", {
-		timeout: 60_000,
-	}, () => {
+	it("on 5k texts, hides every marker the base branch's redactor hid", () => {
 		const hidden = assertRevealsNoMore(
 			(text) => baseRedact(text, LONG),
 			(text) => redactProviderText(text, LONG),
-			{ count: 50_000 },
+			{ count: 5_000, kept: KEPT_LOCATOR },
 		);
-		expect(hidden).toBeGreaterThan(1000);
+		expect(hidden).toBeGreaterThan(500);
 	});
-	it("hides every marker main's redactor hid", { timeout: 60_000 }, () => {
+	it("on 5k texts, hides every marker main's redactor hid", () => {
 		const hidden = assertRevealsNoMore(
 			(text) => mainRedact(text, LONG),
 			(text) => redactProviderText(text, LONG),
-			{ count: 50_000 },
+			{ count: 5_000, kept: KEPT_LOCATOR },
 		);
-		expect(hidden).toBeGreaterThan(1000);
+		expect(hidden).toBeGreaterThan(500);
 	});
 	it.each([
 		["Bearer abcd\u0007SECRCTL3 ok", "SECRCTL3"],
@@ -141,17 +104,6 @@ describe("against the redactor it replaced", () => {
 	])("reads a credential on through a control character: %j", (text, marker) => {
 		expect(redactProviderText(text, LONG)).not.toContain(marker);
 	});
-	it.each(
-		profilePatterns(VERCEL_REDACTION_PROFILE).map(
-			(pattern) => [pattern.source, pattern] as const,
-		),
-	)(
-		"its pattern /%s/ grows linearly on the whole sweep",
-		{ timeout: 30_000 },
-		(_source, pattern) => {
-			assertPatternSweepLinear(pattern);
-		},
-	);
 });
 
 // A key whose END line another shape took runs to the next BEGIN line, not to

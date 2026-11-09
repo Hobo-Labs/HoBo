@@ -18,11 +18,15 @@
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
-		"test": "vitest run"
+		"test": "vitest run",
+		"test:deep": "vitest run --config vitest.deep.config.ts"
 	},
 	"dependencies": {
 		"@hobo/core": "workspace:*",
 		"@hobo/provider-redaction": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/redaction-test-harness": "workspace:*"
 	},
 	"description": "HoBo Kubernetes (local simulation) CloudProvider — equivalence + temporary/agent Environment Station contract."
 }

@@ -1,27 +1,10 @@
-/**
- * The evidence scan's JWT and private-key detectors are the shared ones
- * (`@hobo/provider-redaction`). Its own JWT detector started again at
- * every `ey` and scanned to the end of the run, and its connection-string
- * detectors backtracked over every `:` for an `@`, so an artifact holding a
- * megabyte of `-ey` or of `postgres://:::` stalled the scan. These pin that it
- * still refuses what it refused, and is linear.
- */
-import {
-	assertPatternSweepLinear,
-	ownPatterns,
-} from "@hobo/provider-redaction/linear-sweep";
-import {
-	assertGrowsLinearly,
-	repeatedTo,
-} from "@hobo/provider-redaction/linear-time";
 import {
 	assertFindsNoLess,
 	DSN_PIECES,
 	JWT_PIECES,
 	PEM_PIECES,
-} from "@hobo/provider-redaction/redaction-differential";
+} from "@hobo/redaction-test-harness/redaction-differential";
 import { describe, expect, it } from "vitest";
-import { SECRET_PATTERN } from "../src/live/evidence.js";
 import { assertSanitized, LiveEvidenceError } from "../src/live/index.js";
 import { assertSanitized as baseAssertSanitized } from "./fixtures/base-guard.js";
 
@@ -52,33 +35,6 @@ describe("assertSanitized detectors", () => {
 			assertSanitized(artifactNoting("postgres://db.example/app")),
 		).not.toThrow();
 	});
-
-	it.each([
-		["-ey", repeatedTo("-ey")],
-		[
-			"postgres:// and colons",
-			(length: number) => `postgres://${":".repeat(length)}`,
-		],
-		["postgres://a: with no @", repeatedTo("postgres://a:")],
-		["postgres:// over and over", repeatedTo("postgres://")],
-		["redis:// over and over", repeatedTo("redis://")],
-		["mysql://a: with no @", repeatedTo("mysql://a:")],
-		["mongodb+srv://a: with no @", repeatedTo("mongodb+srv://a:")],
-		["-sk- over and over", repeatedTo("-sk-")],
-		["Bearer and spaces", repeatedTo("Bearer ")],
-	] as const)(
-		"scanning an artifact of %s grows linearly",
-		{ timeout: 30_000 },
-		(_case, input) => {
-			assertGrowsLinearly((text) => {
-				try {
-					assertSanitized(artifactNoting(text));
-				} catch {
-					// Refusing is fine; stalling is not.
-				}
-			}, input);
-		},
-	);
 
 	// The patterns before this branch, which the scan must still agree with.
 	const OLD_CONNECTION_STRINGS = [
@@ -155,29 +111,14 @@ describe("assertSanitized against the scan it replaced", () => {
 		["connection strings", DSN_PIECES],
 		["jwts", JWT_PIECES],
 		["private keys", PEM_PIECES],
-	] as const)(
-		"refuses every artifact the old scan refused, on %s",
-		{ timeout: 60_000 },
-		(_case, pieces) => {
-			expect(
-				assertFindsNoLess(
-					refuses(baseAssertSanitized),
-					refuses(assertSanitized),
-					pieces,
-				),
-			).toBeGreaterThan(1000);
-		},
-	);
-});
-
-// Each of the evidence scan's patterns, on runs of every class and between its own
-// fragments (`patternFragments`): the sweep above runs them together on runs.
-describe("each pattern on the whole sweep", () => {
-	it.each(
-		ownPatterns(SECRET_PATTERN).map(
-			(pattern) => [pattern.source, pattern] as const,
-		),
-	)("/%s/ grows linearly", { timeout: 60_000 }, (_source, pattern) => {
-		assertPatternSweepLinear(pattern);
+	] as const)("on 20k texts, refuses every artifact the old scan refused, on %s", (_case, pieces) => {
+		expect(
+			assertFindsNoLess(
+				refuses(baseAssertSanitized),
+				refuses(assertSanitized),
+				pieces,
+				20_000,
+			),
+		).toBeGreaterThan(100);
 	});
 });

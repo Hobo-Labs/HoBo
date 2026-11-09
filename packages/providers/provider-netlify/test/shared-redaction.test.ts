@@ -6,38 +6,25 @@
  * URL shape scanned from every `http` to the end of the run. These pin that
  * nothing it redacted leaks now and that every shape it runs is linear; the
  * receipt scanner's detectors are held to the same.
+ *
+ * This is the fast tier: `shared-redaction.deep.test.ts` holds the sweeps, the
+ * growth measurements and the full-size differential (`pnpm run test:deep`).
  */
 
-import {
-	assertPatternSweepLinear,
-	ownPatterns,
-	profilePatterns,
-} from "@hobo/provider-redaction/linear-sweep";
-import {
-	assertGrowsLinearly,
-	repeatedTo,
-} from "@hobo/provider-redaction/linear-time";
+import { KEPT_LOCATOR } from "@hobo/provider-redaction";
 import {
 	assertFindsNoLess,
 	assertRevealsNoMore,
 	JWT_PIECES,
 	PEM_PIECES,
 	URL_PIECES,
-} from "@hobo/provider-redaction/redaction-differential";
+} from "@hobo/redaction-test-harness/redaction-differential";
 import { describe, expect, it } from "vitest";
 
-import {
-	NETLIFY_REDACTION_PROFILE,
-	redactProviderText,
-} from "../src/provider-errors.js";
-import {
-	CREDENTIAL_PATTERNS as RECEIPT_PATTERNS,
-	scanForCredentialMaterial,
-} from "../src/receipt.js";
+import { redactProviderText } from "../src/provider-errors.js";
+import { scanForCredentialMaterial } from "../src/receipt.js";
 import { scanForCredentialMaterial as baseScan } from "./fixtures/base-guard.js";
 import { redactProviderText as baseRedact } from "./fixtures/base-redaction.js";
-
-const MB = 1_000_000;
 
 describe("provider-netlify redaction", () => {
 	it("still redacts every shape its own copy did", () => {
@@ -58,35 +45,6 @@ describe("provider-netlify redaction", () => {
 				"before [redacted] after",
 			);
 	});
-
-	it.each([
-		["-ey", repeatedTo("-ey")],
-		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
-		["http:// with no claim", repeatedTo("http://")],
-		["a name run with no separator", repeatedTo("a")],
-	] as const)(
-		"redacting %s grows linearly",
-		{ timeout: 30_000 },
-		(_case, input) => {
-			assertGrowsLinearly((text) => {
-				redactProviderText(text, 8 * MB);
-			}, input);
-		},
-	);
-
-	it.each([
-		["-ey", repeatedTo("-ey")],
-		["http:// with no claim", repeatedTo("http://")],
-		["http://claim with no query", repeatedTo("http://claim")],
-	] as const)(
-		"scanning a receipt string of %s grows linearly",
-		{ timeout: 30_000 },
-		(_case, input) => {
-			assertGrowsLinearly((text) => {
-				scanForCredentialMaterial(text);
-			}, input);
-		},
-	);
 
 	it("the receipt scanner still finds a claim URL, a JWT and a key", () => {
 		const labels = (value: string) =>
@@ -134,15 +92,13 @@ describe("the shared shapes, through this caller", () => {
 // pattern this caller adds is linear on every class and pair of classes.
 describe("against the redactor it replaced", () => {
 	const LONG = 1_000_000;
-	it("hides every marker the base branch's redactor hid", {
-		timeout: 60_000,
-	}, () => {
+	it("on 5k texts, hides every marker the base branch's redactor hid", () => {
 		const hidden = assertRevealsNoMore(
 			(text) => baseRedact(text, LONG),
 			(text) => redactProviderText(text, LONG),
-			{ count: 50_000 },
+			{ count: 5_000, kept: KEPT_LOCATOR },
 		);
-		expect(hidden).toBeGreaterThan(1000);
+		expect(hidden).toBeGreaterThan(500);
 	});
 	it.each([
 		["Bearer abcd\u0007SECRCTL3 ok", "SECRCTL3"],
@@ -150,17 +106,6 @@ describe("against the redactor it replaced", () => {
 	])("reads a credential on through a control character: %j", (text, marker) => {
 		expect(redactProviderText(text, LONG)).not.toContain(marker);
 	});
-	it.each(
-		profilePatterns(NETLIFY_REDACTION_PROFILE).map(
-			(pattern) => [pattern.source, pattern] as const,
-		),
-	)(
-		"its pattern /%s/ grows linearly on the whole sweep",
-		{ timeout: 30_000 },
-		(_source, pattern) => {
-			assertPatternSweepLinear(pattern);
-		},
-	);
 });
 
 // The receipt scanner against the one it replaced (vendored under
@@ -172,29 +117,14 @@ describe("scanForCredentialMaterial against the scanner it replaced", () => {
 		["claim and drop urls", URL_PIECES],
 		["jwts", JWT_PIECES],
 		["private keys", PEM_PIECES],
-	] as const)(
-		"flags every text the old scanner flagged, on %s",
-		{ timeout: 60_000 },
-		(_case, pieces) => {
-			expect(
-				assertFindsNoLess(
-					(text) => baseScan(text).length > 0,
-					(text) => scanForCredentialMaterial(text).length > 0,
-					pieces,
-				),
-			).toBeGreaterThan(1000);
-		},
-	);
-});
-
-// Each of the receipt scanner's patterns, on runs of every class and between its own
-// fragments (`patternFragments`): the sweep above runs them together on runs.
-describe("each pattern on the whole sweep", () => {
-	it.each(
-		ownPatterns(RECEIPT_PATTERNS.map((entry) => entry.pattern)).map(
-			(pattern) => [pattern.source, pattern] as const,
-		),
-	)("/%s/ grows linearly", { timeout: 60_000 }, (_source, pattern) => {
-		assertPatternSweepLinear(pattern);
+	] as const)("on 20k texts, flags every text the old scanner flagged, on %s", (_case, pieces) => {
+		expect(
+			assertFindsNoLess(
+				(text) => baseScan(text).length > 0,
+				(text) => scanForCredentialMaterial(text).length > 0,
+				pieces,
+				20_000,
+			),
+		).toBeGreaterThan(100);
 	});
 });

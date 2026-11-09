@@ -6,28 +6,17 @@
  * encoding was quadratic — and whose private-key shape searched from every
  * BEGIN for an END. These pin that nothing it redacted leaks now, encoded or
  * not, and that it is linear.
+ *
+ * This is the fast tier: `shared-redaction.deep.test.ts` holds the sweeps, the
+ * growth measurements and the full-size differential (`pnpm run test:deep`).
  */
 
-import { decodePercentFully } from "@hobo/provider-redaction";
-import {
-	assertPatternSweepLinear,
-	profilePatterns,
-} from "@hobo/provider-redaction/linear-sweep";
-import {
-	assertGrowsLinearly,
-	repeatedTo,
-} from "@hobo/provider-redaction/linear-time";
-import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
+import { decodePercentFully, KEPT_LOCATOR } from "@hobo/provider-redaction";
+import { assertRevealsNoMore } from "@hobo/redaction-test-harness/redaction-differential";
 import { describe, expect, it } from "vitest";
 
-import {
-	containsControlChar,
-	redactProviderText,
-	UPSTASH_REDACTION_PROFILE,
-} from "../src/errors.js";
+import { containsControlChar, redactProviderText } from "../src/errors.js";
 import { redactProviderText as baseRedact } from "./fixtures/base-redaction.js";
-
-const MB = 1_000_000;
 
 describe("provider-upstash redaction", () => {
 	it("still redacts every shape its own copy did", () => {
@@ -52,20 +41,6 @@ describe("provider-upstash redaction", () => {
 			);
 		}
 	});
-
-	it.each([
-		["nested %25", (length: number) => `%${"25".repeat(length / 2)}41`],
-		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
-		["-ey", repeatedTo("-ey")],
-	] as const)(
-		"redacting %s grows linearly",
-		{ timeout: 30_000 },
-		(_case, input) => {
-			assertGrowsLinearly((text) => {
-				redactProviderText(text, 8 * MB);
-			}, input);
-		},
-	);
 
 	it("takes a prefixed key's whole run, not only from its prefix", () => {
 		// Starting at the prefix left the run's start, part of the key, behind.
@@ -120,15 +95,13 @@ describe("the shared shapes, through this caller", () => {
 // pattern this caller adds is linear on every class and pair of classes.
 describe("against the redactor it replaced", () => {
 	const LONG = 1_000_000;
-	it("hides every marker the base branch's redactor hid", {
-		timeout: 60_000,
-	}, () => {
+	it("on 5k texts, hides every marker the base branch's redactor hid", () => {
 		const hidden = assertRevealsNoMore(
 			(text) => baseRedact(text, LONG),
 			(text) => redactProviderText(text, LONG),
-			{ count: 50_000, decode: decodePercentFully },
+			{ count: 5_000, kept: KEPT_LOCATOR, decode: decodePercentFully },
 		);
-		expect(hidden).toBeGreaterThan(1000);
+		expect(hidden).toBeGreaterThan(500);
 	});
 	it.each([
 		["Bearer abcd\u0007SECRCTL3 ok", "SECRCTL3"],
@@ -136,17 +109,6 @@ describe("against the redactor it replaced", () => {
 	])("reads a credential on through a control character: %j", (text, marker) => {
 		expect(redactProviderText(text, LONG)).not.toContain(marker);
 	});
-	it.each(
-		profilePatterns(UPSTASH_REDACTION_PROFILE).map(
-			(pattern) => [pattern.source, pattern] as const,
-		),
-	)(
-		"its pattern /%s/ grows linearly on the whole sweep",
-		{ timeout: 30_000 },
-		(_source, pattern) => {
-			assertPatternSweepLinear(pattern);
-		},
-	);
 });
 
 // A key whose END line another shape took runs to the next BEGIN line, not to

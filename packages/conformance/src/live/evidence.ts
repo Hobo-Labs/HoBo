@@ -19,7 +19,6 @@ import type {
 	CreatorAuthorityAfterClaim,
 	ProviderClass,
 } from "@hobo/capability-profiles";
-import { JWT_DETECTOR, PRIVATE_KEY_DETECTOR } from "@hobo/provider-redaction";
 import {
 	computeEvidenceDigest,
 	DIGEST_PATTERN,
@@ -338,6 +337,20 @@ export function assertNoUpgradedUnknowns(
 	}
 }
 
+/**
+ * A compact JWS: a run of base64url characters that starts where a run starts
+ * and holds an `ey` header of ten characters or more and a payload of ten or
+ * more. The look-ahead reads the run once, so `-ey-ey-ey…` is one search; the
+ * `\bey…` form this replaced started again at every `ey` and read to the end.
+ * The same shape as `@hobo/provider-redaction`'s JWT_DETECTOR, kept here so the
+ * conformance evidence gate does not depend on the redaction package.
+ */
+const JWT_SHAPE =
+	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{10,}\.)(?:[A-Za-z0-9_]*-)*?ey[A-Za-z0-9_-]{10,}\./u;
+
+/** A private key's BEGIN line, any label up to the next `-`. */
+const PRIVATE_KEY_LINE = /-----BEGIN[^-]*PRIVATE KEY-----/u;
+
 /** Values that must never appear anywhere in an artifact. */
 export const SECRET_PATTERN: readonly RegExp[] = [
 	// A connection string with credentials, looked for once per run of
@@ -353,10 +366,10 @@ export const SECRET_PATTERN: readonly RegExp[] = [
 				"i",
 			),
 	),
-	PRIVATE_KEY_DETECTOR,
+	PRIVATE_KEY_LINE,
 	/\bBearer\s+[\u017F\u212AA-Za-z0-9._-]{8,}/i,
 	/\b(?:sk|pk|ghp|gho|xox[abpsr])[-_][A-Za-z0-9_-]{16,}\b/u,
-	JWT_DETECTOR,
+	JWT_SHAPE,
 	/"(?:password|passwd|secret|apiKey|api_key|accessKey|access_key|token)"\s*:/i,
 ];
 

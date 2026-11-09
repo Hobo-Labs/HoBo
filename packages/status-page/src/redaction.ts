@@ -27,19 +27,11 @@ export interface RedactionRule {
 	readonly description: string;
 }
 
-// Three rules below start with a character class and only then look back. A
-// look-back of variable length placed first runs at every position, and at each
-// one reads back over a run of digits, dots, hyphens or percent signs: 128 kB of
-// digits took 11 s. Read after one character the rule could start with, it runs
-// only there, and reads back over what that character follows.
 // public-contract: denylist scanned over rendered public output.
 export const REDACTION_RULES: readonly RedactionRule[] = Object.freeze([
 	{
 		id: "credential-in-url",
-		// Starts at the first letter of a run of scheme characters, the match the
-		// old form found first, without starting again at every letter after it.
-		pattern:
-			/[a-z](?<=(?:^|[^a-z0-9+.-])[0-9+.-]*[a-z])[a-z0-9+.-]*:\/\/[^/\s:@<>&"']+:[^/\s@<>&"']+@/gi,
+		pattern: /[a-z][a-z0-9+.-]*:\/\/[^/\s:@<>&"']+:[^/\s@<>&"']+@/gi,
 		description: "URL with embedded credentials (user:pass@host)",
 	},
 	{
@@ -65,24 +57,12 @@ export const REDACTION_RULES: readonly RedactionRule[] = Object.freeze([
 	},
 	{
 		id: "internal-hostname",
-		// Starts at the first letter or digit of a run of hostname characters, or
-		// right after a hostname this rule just matched (`a.corp-b.lan` holds two),
-		// which is where the old `\b` form started too — but not again at every
-		// hyphen inside a run, so `a-a-a-…` is one search.
-		pattern:
-			/[a-z0-9](?<=(?:^|[^a-z0-9-]|\.(?:internal|corp|lan|intranet))-*[a-z0-9])[a-z0-9-]*\.(?:internal|corp|lan|intranet)\b/gi,
+		pattern: /\b[a-z0-9][a-z0-9-]*\.(?:internal|corp|lan|intranet)\b/gi,
 		description: "internal hostname suffix",
 	},
 	{
 		id: "email-address",
-		// Starts where the old `\b` form started first: at the first word
-		// character of a run of local-part characters (a `_` is one, so it is
-		// not read back over), or at the `.`, `%`, `+` or `-` right after an
-		// address this rule just matched (`ann@x.io-bob@y.io` holds two, the
-		// second from its `-`; the look back is bounded by DNS's 253 and 63). It
-		// never starts at every `.` inside a run, so `a.a.a.…` is one search.
-		pattern:
-			/(?:[A-Za-z0-9_](?<=(?:^|[^A-Za-z0-9._%+-])[.%+-]*[A-Za-z0-9_])|[.%+-](?<=@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}[.%+-]))[A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+		pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
 		description: "email address (customer-specific data)",
 	},
 	{

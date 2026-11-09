@@ -61,6 +61,7 @@ import {
 } from "@hobo/core";
 import {
 	createProviderRedactor,
+	LONG_TOKEN_RUN_PROFILE,
 	type ProviderRedactionProfile,
 } from "@hobo/provider-redaction";
 
@@ -152,9 +153,8 @@ const RAW_CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{16,}$/u;
  * last, so it cannot split a JWT or a key the shared shapes redact whole.
  */
 /** The provider's own patterns, on top of the shared ones. */
-export const CLOUDFLARE_REDACTION_PROFILE: ProviderRedactionProfile = {
-	fallbacks: [/[A-Za-z0-9_-]{20,}/gu],
-};
+export const CLOUDFLARE_REDACTION_PROFILE: ProviderRedactionProfile =
+	LONG_TOKEN_RUN_PROFILE;
 
 const redactTokenText = createProviderRedactor(CLOUDFLARE_REDACTION_PROFILE);
 

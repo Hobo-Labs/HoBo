@@ -92,6 +92,7 @@
 		"test:contract:consumer": "node --import tsx scripts/run-tests.ts --category=contract-consumer && pnpm exec turbo run test:contract:consumer --filter \"./packages/*\" --concurrency=100%",
 		"test:contract:provider": "node --import tsx scripts/run-tests.ts --category=contract-provider && pnpm exec turbo run test:contract:provider --filter \"./packages/*\" --concurrency=100%",
 		"test:coverage": "vitest run --config vitest.coverage.config.ts",
+		"test:deep": "pnpm exec turbo run test:deep --concurrency=100%",
 		"test:dom": "node --import tsx scripts/run-tests.ts --category=dom",
 		"test:fast": "node --import tsx scripts/run-tests.ts --root-only --quiet --no-artifacts",
 		"test:file": "vitest run --no-isolate --passWithNoTests",

@@ -813,22 +813,39 @@ folding puts `ſ` and `K` (U+017F, U+212A) in `[A-Za-z]` and `\w`, so a
 look-behind that refuses a start after a letter refuses one after them too,
 and the credential after them is kept. Use `i` alone, list those two in a body
 class that should hold them, and spell words with `anyCase` where `u` is
-needed.
+needed. A look-behind that says where a run starts holds exactly the run's
+own class: one narrower than the body (ASCII before a `[ſK…]` body) lets every
+position inside a run of the missing characters start a match.
 
-Sweep every pattern with `@hobo/provider-redaction/linear-sweep` (`assertSweepLinear`, or
-`assertPatternSweepLinear` for one pattern), which builds runs of every
-character class and every pair of them, and runs between the pattern's own
-literal fragments, ended by each terminator, so neither a class nobody listed
-nor a look-ahead for a later literal (`\S*(?=…-----END)` read again from every
-place it could give a character back) can hide a quadratic case. Give a
+Sweep every pattern with `@hobo/redaction-test-harness/linear-sweep` (`assertSweepLinear`, or
+`assertPatternSweepLinear` for one pattern, through the caller's own search),
+which reads the pattern's alphabet from its own classes and builds runs of every
+class and every pair of them, runs between the pattern's own literal fragments
+ended by each terminator, each fragment over and over, and periodic texts, so
+neither a class nobody listed, a look-ahead for a later literal
+(`\S*(?=…-----END)` read again from every place it could give a character
+back), a repeated literal nor a long period can hide a quadratic case. Give a
 whole-function sweep a whole sample as a word and the literals it looks for as
 fragments. Structure a regular expression can only find by looking ahead from
 every position (a private key's last END line) is found in code instead. A redactor or guard that replaces another is held to it with
-`@hobo/provider-redaction/redaction-differential` (`assertRevealsNoMore`,
+`@hobo/redaction-test-harness/redaction-differential` (`assertRevealsNoMore`,
 `assertFindsNoLess`), the old one vendored under the package's
 `test/fixtures`: it may redact more, never less.
 
-Prove it with `assertGrowsLinearly` from `@hobo/provider-redaction/linear-time`, never with a
+Tier those tests. `test` is the fast tier, run on every change: unit cases,
+every leak and hostile input a review found as a fixed input (screened once
+with `assertInputLinear`, not swept), and a differential at 5k texts (20k for a
+detector). Sweeps,
+growth measurements and full-size differentials go in `*.deep.test.ts`, which
+the package's `vitest.config.ts` (extending the root config) excludes and
+`test:deep` runs (`vitest.deep.config.ts`, a turbo task, `pnpm run test:deep`).
+The shared shapes are swept once, in `@hobo/provider-redaction`; a caller
+sweeps only what it adds (`ownPatterns(…, SHARED_SHAPES)`), and callers that
+share a profile (`LONG_TOKEN_RUN_PROFILE`) test it once, where it is defined,
+and only their own wrapper themselves. The deep tier runs the full-size
+differentials at 50k texts on three seeds (`DEEP_SEEDS`).
+
+Prove it with `assertGrowsLinearly` from `@hobo/redaction-test-harness/linear-time`, never with a
 wall-clock bound such as "1 MB in under a second": CI runs on single-CPU
 runners, and a loaded machine fails an absolute bound that a linear pattern
 meets. It times n and 4n characters in the thread's CPU time, not wall time, the

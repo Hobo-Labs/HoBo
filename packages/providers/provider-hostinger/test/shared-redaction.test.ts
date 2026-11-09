@@ -4,27 +4,18 @@
  * rule was all it had, so a secret shorter than the rule — a password, a short
  * bearer token, URL credentials, a private key's BEGIN line — reached the
  * message, and so did control characters. These pin that what the rule caught
- * is still caught, what it missed is caught now, and that it is linear.
+ * is still caught, and what it missed is caught now. Its profile is the shared
+ * long-token one, tested once in `@hobo/provider-redaction`.
  */
 
-import {
-	assertPatternSweepLinear,
-	profilePatterns,
-} from "@hobo/provider-redaction/linear-sweep";
-import {
-	assertGrowsLinearly,
-	repeatedTo,
-} from "@hobo/provider-redaction/linear-time";
-import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
+import { LONG_TOKEN_RUN_PROFILE } from "@hobo/provider-redaction";
 import { describe, expect, it } from "vitest";
 
 import {
 	HOSTINGER_REDACTION_PROFILE,
 	redactHostingerText,
 } from "../src/resolvers.js";
-import { redactHostingerText as baseRedact } from "./fixtures/base-redaction.js";
 
-const MB = 1_000_000;
 const redact = (text: string, limit?: number) =>
 	redactHostingerText(text, limit);
 
@@ -50,20 +41,6 @@ describe("redactHostingerText", () => {
 	it("keeps its limit of 400 characters", () => {
 		expect(redact("ab ".repeat(300))).toHaveLength(401);
 	});
-
-	it.each([
-		["-ey", repeatedTo("-ey")],
-		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
-		["short runs", repeatedTo("a.")],
-	] as const)(
-		"redacting %s grows linearly",
-		{ timeout: 30_000 },
-		(_case, input) => {
-			assertGrowsLinearly((text) => {
-				redact(text, 8 * MB);
-			}, input);
-		},
-	);
 });
 
 // The same three secrets, redacted whole, by every caller of the shared
@@ -87,21 +64,13 @@ describe("the shared shapes, through this caller", () => {
 	});
 });
 
-// Against the redactor this caller had before (vendored under test/fixtures):
-// on generated texts full of credential shapes, separators and control
-// characters, every marker half the old one hid stays hidden, and every
-// pattern this caller adds is linear on every class and pair of classes.
-describe("against the redactor it replaced", () => {
+// The profile is the shared long-token one (`LONG_TOKEN_RUN_PROFILE`), whose
+// differential against the rule it replaced, growth and sweep run once, in
+// `@hobo/provider-redaction`. What stays here is this caller's wrapper.
+describe("the long-token profile, through this caller", () => {
 	const LONG = 1_000_000;
-	it("hides every marker the base branch's redactor hid", {
-		timeout: 60_000,
-	}, () => {
-		const hidden = assertRevealsNoMore(
-			(text) => baseRedact(text, LONG),
-			(text) => redactHostingerText(text, LONG),
-			{ count: 50_000 },
-		);
-		expect(hidden).toBeGreaterThan(1000);
+	it("is the shared one", () => {
+		expect(HOSTINGER_REDACTION_PROFILE).toBe(LONG_TOKEN_RUN_PROFILE);
 	});
 	it.each([
 		["Bearer abcd\u0007SECRCTL3 ok", "SECRCTL3"],
@@ -109,15 +78,4 @@ describe("against the redactor it replaced", () => {
 	])("reads a credential on through a control character: %j", (text, marker) => {
 		expect(redactHostingerText(text, LONG)).not.toContain(marker);
 	});
-	it.each(
-		profilePatterns(HOSTINGER_REDACTION_PROFILE).map(
-			(pattern) => [pattern.source, pattern] as const,
-		),
-	)(
-		"its pattern /%s/ grows linearly on the whole sweep",
-		{ timeout: 30_000 },
-		(_source, pattern) => {
-			assertPatternSweepLinear(pattern);
-		},
-	);
 });

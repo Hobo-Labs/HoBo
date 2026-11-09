@@ -15,22 +15,3 @@ message RedactionProfileDescriptor {
   bool decode_percent = 4;
   bool collapse_whitespace = 5;
 }
-
-// One growth measurement: the cost of n and 4n characters, in CPU time.
-message GrowthMeasurement {
-  uint32 length = 1;
-  uint32 repeat = 2;
-  bool calibrated = 3;
-  double small_ms = 4;
-  double large_ms = 5;
-  double ratio = 6;
-}
-
-// One sweep input's outcome: its name, the screen's reading, and, for an
-// input the screen could not settle, its growth or the time it hung for.
-message SweepOutcome {
-  string input = 1;
-  double screen_ms = 2;
-  double hung_ms = 3;
-  GrowthMeasurement growth = 4;
-}

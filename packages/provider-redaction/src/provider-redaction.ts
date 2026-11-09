@@ -39,7 +39,7 @@ declare const redactionPatternBrand: unique symbol;
  * replaced, and not sticky, so a match is looked for anywhere. A shape must
  * also be linear in the text; that is a property of how it is written, which a
  * parse cannot see, so each shape here has a growth test on an adversarial
- * input (`@hobo/provider-redaction/linear-time`).
+ * input (`@hobo/redaction-test-harness/linear-time`).
  */
 export type RedactionPattern = RegExp & {
 	readonly [redactionPatternBrand]: true;
@@ -100,7 +100,7 @@ export const PRIVATE_KEY_PATTERN = redactionPattern(
  * provider copies' `\bey` kept it (`token-[redacted]`).
  */
 export const JWT_PATTERN = redactionPattern(
-	/(?<![A-Za-z0-9_-])(?=[\u017F\u212AA-Za-z0-9_-]*\.[\u017F\u212AA-Za-z0-9_-]{10,}\.)(?<lead>(?:[\u017F\u212AA-Za-z0-9_]*-)*?)ey[\u017F\u212AA-Za-z0-9_-]{10,}\.[\u017F\u212AA-Za-z0-9_-]{10,}\.\S*/gi,
+	/(?<![\u017F\u212AA-Za-z0-9_-])(?=[\u017F\u212AA-Za-z0-9_-]*\.[\u017F\u212AA-Za-z0-9_-]{10,}\.)(?<lead>(?:[A-Za-z0-9_]*[-\u017F\u212A])*?)ey[\u017F\u212AA-Za-z0-9_-]{10,}\.[\u017F\u212AA-Za-z0-9_-]{10,}\.\S*/gi,
 );
 
 /**
@@ -148,7 +148,7 @@ export const CREDENTIAL_PATTERNS: readonly RedactionPattern[] = Object.freeze([
 	// alone is a credential too: a token is often the user
 	// (`https://ghp_…@github.com/…`), and `Token ://…@host` is one with no scheme.
 	redactionPattern(
-		/(?<![a-z0-9+.-])[\u017F\u212Aa-z0-9+.-]*:\/\/[^\s"':/@]+(?::[^\s"'/@]*)?@\S+/gi,
+		/(?<![\u017F\u212Aa-z0-9+.-])[\u017F\u212Aa-z0-9+.-]*:\/\/[^\s"':/@]+(?::[^\s"'/@]*)?@\S+/gi,
 	),
 	// Inline credentials with no scheme in front of them.
 	redactionPattern(/\/\/[^/\s:@]+:[^/\s:@]+@/gu),
@@ -175,7 +175,7 @@ export const CREDENTIAL_PATTERNS: readonly RedactionPattern[] = Object.freeze([
 	// (`api_key='`, cut short) is one too.
 	redactionPattern(
 		new RegExp(
-			String.raw`(?<![A-Za-z0-9_-])[\u017F\u212AA-Za-z0-9_-]*(?:${SECRET_KEY_NAMES})["'*]*\s*(?:=|:(?!\/\/[^\s\p{Cc}]{0,256}(?!\S))|(?<!(?<![A-Za-z0-9_-])(?:${anyCase("hobo-token|hobo-secret|secret")})):)(?![\s"'*]*(?:${anyCase("hobo-token|hobo-secret|secret|env")}):\/\/[^\s\p{Cc}]{0,256}(?!\S))(?:[\s"'*]*[^\s"'*]\S*(?:(?<=[=:])[\s"'*]+[^\s"'*]\S*|\s*[=:][\s"'*]*[^\s"'*]\S*)*|[\s"'*]*["'*](?!\S))`,
+			String.raw`(?<![\u017F\u212AA-Za-z0-9_-])[\u017F\u212AA-Za-z0-9_-]*(?:${SECRET_KEY_NAMES})["'*]*\s*(?:=|:(?!\/\/[^\s\p{Cc}]{0,256}(?!\S))|(?<!(?<![\u017F\u212AA-Za-z0-9_-])(?:${anyCase("hobo-token|hobo-secret|secret")})):)(?![\s"'*]*(?:${anyCase("hobo-token|hobo-secret|secret|env")}):\/\/[^\s\p{Cc}]{0,256}(?!\S))(?:[\s"'*]*[^\s"'*]\S*(?:(?<=[=:])[\s"'*]+[^\s"'*]\S*|\s*[=:][\s"'*]*[^\s"'*]\S*)*|[\s"'*]*["'*](?!\S))`,
 			"gu",
 		),
 	),
@@ -183,7 +183,7 @@ export const CREDENTIAL_PATTERNS: readonly RedactionPattern[] = Object.freeze([
 	// shapes it starts where a run starts and takes the run's start before a
 	// `-` with it: starting at the prefix left `AAAA…-` behind, part of the key.
 	redactionPattern(
-		/(?<![A-Za-z0-9_-])(?:[\u017F\u212AA-Za-z0-9_]*-)*?(?:sk|pk|ghp|gho|ghs|glpat|github_pat|xox[abprs])[-_][\u017F\u212AA-Za-z0-9_-]{8,}/gi,
+		/(?<![\u017F\u212AA-Za-z0-9_-])(?:[A-Za-z0-9_]*[-\u017F\u212A])*?(?:sk|pk|ghp|gho|ghs|glpat|github_pat|xox[abprs])[-_][\u017F\u212AA-Za-z0-9_-]{8,}/gi,
 	),
 ]);
 
@@ -207,6 +207,27 @@ export const SIGNED_JWT_PATTERN = JSON_JWT_PATTERN;
 
 /** A private key's BEGIN line. */
 export const PRIVATE_KEY_DETECTOR: RegExp = /-----BEGIN[^-]*PRIVATE KEY-----/u;
+
+/**
+ * The profile of a provider whose only rule of its own was that any run of
+ * twenty or more token characters is a credential (Azure, Cloudflare,
+ * DigitalOcean, GCP, Hetzner, Hostinger): that rule as a fallback, searched
+ * after the shared shapes. One object, so its tests run once, here.
+ */
+export const LONG_TOKEN_RUN_PROFILE: ProviderRedactionProfile = Object.freeze({
+	fallbacks: Object.freeze([redactionPattern(/[A-Za-z0-9_-]{20,}/gu)]),
+});
+
+/**
+ * Every shared shape, the patterns and the detectors: what a caller's tests
+ * leave to this package's (`ownPatterns(profilePatterns(profile), SHARED_SHAPES)`
+ * from `@hobo/redaction-test-harness/linear-sweep` is what a caller adds).
+ */
+export const SHARED_SHAPES: readonly RegExp[] = Object.freeze([
+	...CREDENTIAL_PATTERNS,
+	JWT_DETECTOR,
+	PRIVATE_KEY_DETECTOR,
+]);
 
 /**
  * `text` cut at `window` characters, or, when that cut falls inside a run of
@@ -253,7 +274,7 @@ export function containsControlChar(text: string): boolean {
 }
 
 function isHexDigit(unit: string | undefined): boolean {
-	return unit !== undefined && /^[0-9a-f]$/iu.test(unit);
+	return unit !== undefined && /^[0-9A-Fa-f]$/u.test(unit);
 }
 
 /**
@@ -390,7 +411,10 @@ function pushMatches(
 }
 
 const BEGIN_LINE = /-----BEGIN[^-]*PRIVATE KEY-----/gi;
-const END_LINE = /-----END[^-]*PRIVATE KEY-----/gi;
+// Case-sensitive, as every redactor this replaced matched it: a key ends only
+// on an END line written the way keys write it, so a `-----end …` inside a
+// body cannot end it early and show the rest.
+const END_LINE = /-----END[^-]*PRIVATE KEY-----/g;
 const RUN = /\S*/uy;
 
 /** Whether `at` starts a line: after whitespace, the start, or an escaped `\n`. */
@@ -409,56 +433,151 @@ function runEnd(text: string, from: number): number {
 }
 
 /**
- * A private key's span, where the END line that ends it starts and ends (-1
- * when none does), and where the next BEGIN line is (or the end of the text):
- * as far as the key can run.
+ * The private key that starts at `from` (a BEGIN line ending at `bodyStart`):
+ * to the last END line before `stop` (the next BEGIN line, or the end of the
+ * text), with the rest of that line's run, when that line starts a line and no
+ * other match runs over it; otherwise to `stop`. `ends` are the END lines in
+ * order, and `next` is the first one that may lie after `bodyStart`.
  */
-type KeySpan = readonly [
+function keyAt(
+	text: string,
 	from: number,
-	to: number,
-	end: number,
-	endLine: number,
+	bodyStart: number,
 	stop: number,
-];
+	ends: readonly RegExpExecArray[],
+	reaches: (before: number, past: number) => boolean,
+): Span {
+	let low = 0;
+	let high = ends.length;
+	while (low < high) {
+		const middle = (low + high) >> 1;
+		if ((ends[middle]?.index ?? stop) < stop) low = middle + 1;
+		else high = middle;
+	}
+	const last = ends[low - 1];
+	if (
+		last === undefined ||
+		last.index < bodyStart ||
+		!startsLine(text, last.index)
+	)
+		return [from, stop];
+	const endLine = last.index + last[0].length;
+	// A key whose END line another shape took goes on to the next BEGIN line.
+	if (reaches(endLine, last.index)) return [from, stop];
+	return [from, runEnd(text, endLine)];
+}
 
 /**
- * Every private key in `text`, found with one pass for BEGIN lines and one
- * for END lines: a key runs from its BEGIN line to the last END line before
- * the next BEGIN line, with the rest of that line's run, when that line starts
- * a line; otherwise to the next BEGIN line or the end of the text. A BEGIN or
- * END line holds a space (`PRIVATE KEY`), so the runs read after END lines do
- * not overlap: linear however the lines are arranged.
+ * Every private key in `text`. A key starts at a BEGIN line (in any case) and
+ * runs as `keyAt` says. A BEGIN line is also one that only appears once the
+ * other shapes' matches are taken out, as each redactor this replaced took
+ * them out first: `-----BEGIN eyJ…-x… PRIVATE KEY-----`, whose label a JWT with
+ * a `-` in it broke. So the text is searched again with every match so far
+ * (the other shapes' and the keys found) masked by a character that is
+ * neither a `-` nor whitespace, until no new BEGIN line appears: a key taken
+ * out can make the BEGIN line of one around it. Each round is linear, and a
+ * round finds a new BEGIN line or ends; past MADE_ROUNDS the rest is redacted.
  */
-function keySpans(text: string): readonly KeySpan[] {
-	const begins = [...text.matchAll(BEGIN_LINE)];
-	if (begins.length === 0) return [];
+function keySpans(text: string, others: readonly Span[]): Span[] {
+	if (!/-----BEGIN/iu.test(text)) return [];
 	const ends = [...text.matchAll(END_LINE)];
-	const keys: KeySpan[] = [];
-	let next = 0;
-	begins.forEach((begin, index) => {
-		const from = begin.index;
-		const bodyStart = from + begin[0].length;
-		const stop = begins[index + 1]?.index ?? text.length;
-		while ((ends[next]?.index ?? stop) < bodyStart) next++;
-		let last: RegExpExecArray | undefined;
-		for (
-			let end = ends[next];
-			end !== undefined && end.index < stop;
-			end = ends[++next]
-		)
-			last = end;
-		if (last !== undefined && startsLine(text, last.index))
-			keys.push([
-				from,
-				runEnd(text, last.index + last[0].length),
-				last.index,
-				last.index + last[0].length,
-				stop,
-			]);
-		else keys.push([from, stop, -1, -1, stop]);
+	const reaches = overlapping([...others]);
+	const starts = new Map<number, number>();
+	for (const begin of text.matchAll(BEGIN_LINE))
+		starts.set(begin.index, begin.index + begin[0].length);
+	// Real BEGIN lines stop each other; a key from a BEGIN line that only the
+	// masking made is held to the next BEGIN line of either kind. A made line
+	// never shortens a real key: every key here only adds what is redacted.
+	const real = [...starts.keys()];
+	const keys: Span[] = [];
+	const bodies: Span[] = [];
+	const lines: Span[] = [];
+	const add = (from: number, stop: number): void => {
+		const bodyStart = starts.get(from) ?? from;
+		const key = keyAt(text, from, bodyStart, stop, ends, reaches);
+		keys.push(key);
+		bodies.push([bodyStart, key[1]]);
+		lines.push([from, bodyStart]);
+	};
+	real.forEach((from, index) => {
+		add(from, real[index + 1] ?? text.length);
 	});
-	return keys;
+	if (others.length === 0) return keys;
+	for (let round = 0; ; round++) {
+		// Masked four ways, and every BEGIN line any of them shows is one: with
+		// each key whole, which can make the BEGIN line of a key around it, or
+		// its body only, which keeps the end of its BEGIN line for one that
+		// reaches it through a match; and with every `-----BEGIN` and
+		// `PRIVATE KEY-----` outside the keys' own BEGIN lines masked or kept,
+		// since the redactors this replaced took the other shapes out in
+		// different orders (a JWT before the key, a long run after it).
+		const made = new Map<number, number>();
+		for (const masked of [
+			maskSpans(text, others, keys),
+			maskSpans(text, others, bodies),
+			maskSpans(text, others, keys, lines),
+			maskSpans(text, others, bodies, lines),
+		])
+			for (const begin of masked.matchAll(BEGIN_LINE))
+				if (!starts.has(begin.index))
+					made.set(begin.index, begin.index + begin[0].length);
+		if (made.size === 0) return keys;
+		// A key nested in more BEGIN lines than MADE_ROUNDS takes a round each,
+		// and a text could nest one per few characters: past that, everything
+		// from the first such BEGIN line on is redacted, which hides more and
+		// costs one more pass.
+		if (round === MADE_ROUNDS) {
+			keys.push([
+				[...made.keys()].reduce((low, from) => Math.min(low, from)),
+				text.length,
+			]);
+			return keys;
+		}
+		for (const [from, bodyStart] of made) starts.set(from, bodyStart);
+		const all = [...starts.keys()].sort((left, right) => left - right);
+		const next = new Map(all.map((from, index) => [from, all[index + 1]]));
+		for (const from of made.keys()) add(from, next.get(from) ?? text.length);
+	}
 }
+
+/** How many rounds of BEGIN lines made by masking `keySpans` follows. */
+const MADE_ROUNDS = 8;
+
+/**
+ * `text` with every span's characters an `x`, which is neither a `-` nor
+ * whitespace. With `lines` (the keys' own BEGIN lines), every `-----BEGIN`
+ * and `PRIVATE KEY-----` outside those lines is then left as it was, as a
+ * redactor that found the key before the shape that took it saw them
+ * (`…abcdef-----BEGIN …`, a long run that ran into it, or the run after a
+ * key's END line).
+ */
+function maskSpans(
+	text: string,
+	others: readonly Span[],
+	keys: readonly Span[],
+	lines?: readonly Span[],
+): string {
+	const units = text.split("");
+	const mask = (spans: readonly Span[]): void => {
+		for (const [from, to] of spans)
+			for (let at = from; at < to; at++) units[at] = "x";
+	};
+	mask(others);
+	mask(keys);
+	if (lines !== undefined) {
+		const inLine = overlapping([...lines]);
+		for (const token of KEY_TOKENS)
+			for (const found of text.matchAll(token)) {
+				const end = found.index + found[0].length;
+				if (inLine(end, found.index)) continue;
+				for (let at = found.index; at < end; at++) units[at] = text.charAt(at);
+			}
+	}
+	return units.join("");
+}
+
+// What a key's BEGIN line is made of, kept inside another shape's match.
+const KEY_TOKENS = [/-----BEGIN/giu, /PRIVATE KEY-----/giu];
 
 /**
  * Where every pattern matches in `text`, searched twice: as it came, where a
@@ -485,61 +604,13 @@ function credentialSpans(
 	const flattened = flattenControlChars(text);
 	const searched = flattened === text ? [text] : [text, flattened];
 	const others: Span[] = [];
-	const keys: KeySpan[] = [];
 	for (const pattern of patterns)
-		for (const each of searched) {
-			if (pattern === PRIVATE_KEY_PATTERN) keys.push(...keySpans(each));
-			else pushMatches(others, each, pattern, accept);
-		}
-	const reaches = overlapping(others);
+		if (pattern !== PRIVATE_KEY_PATTERN)
+			for (const each of searched) pushMatches(others, each, pattern, accept);
+	if (!patterns.includes(PRIVATE_KEY_PATTERN)) return others;
 	const spans = [...others];
-	// A key whose END line another shape took goes on to the next BEGIN line
-	// that is one: a `-----BEGIN` inside the body (`-----BEGINx`) is not.
-	for (const [from, to, end, endLine, stop] of keys)
-		spans.push([from, end >= 0 && reaches(endLine, end) ? stop : to]);
-	if (patterns.includes(PRIVATE_KEY_PATTERN))
-		for (const each of searched) spans.push(...madeBeginLines(each, others));
+	for (const each of searched) spans.push(...keySpans(each, others));
 	return spans;
-}
-
-/**
- * A BEGIN line another shape's match runs through: a `-----BEGIN` whose label
- * (`[^-]*`, newlines too) reaches that match, which is followed by the rest of
- * a label and `PRIVATE KEY-----` (`-----BEGINx … eyJ…-----BEGIN PRIVATE KEY-----`,
- * where a JWT took the second line's `-----BEGIN`). Taken first, that match
- * left the first `-----BEGIN` a BEGIN line, and the key started there; so
- * here the text from it to the match is redacted. The dashes before and after
- * each place are found once, so each match is looked at in constant time.
- */
-function madeBeginLines(text: string, others: readonly Span[]): Span[] {
-	if (others.length === 0 || !/-----BEGIN/i.test(text)) return [];
-	const before = new Int32Array(text.length + 1);
-	let dash = -1;
-	for (let at = 0; at <= text.length; at++) {
-		before[at] = dash;
-		if (text.charCodeAt(at) === 45) dash = at;
-	}
-	const after = new Int32Array(text.length + 1);
-	dash = text.length;
-	for (let at = text.length; at >= 0; at--) {
-		if (text.charCodeAt(at) === 45) dash = at;
-		after[at] = dash;
-	}
-	const made: Span[] = [];
-	for (const [from, to] of others) {
-		const lastDash = before[from] ?? -1;
-		const begin = lastDash - 4;
-		const nextDash = after[to] ?? text.length;
-		if (
-			begin >= 0 &&
-			text.slice(begin, begin + 10).toUpperCase() === "-----BEGIN" &&
-			nextDash - 11 >= to &&
-			text.slice(nextDash - 11, nextDash).toUpperCase() === "PRIVATE KEY" &&
-			text.startsWith("-----", nextDash)
-		)
-			made.push([begin, from]);
-	}
-	return made;
 }
 
 /**
@@ -674,3 +745,16 @@ const sharedRedactor = createProviderRedactor();
 export function redactProviderText(text: string, maxLength = 256): string {
 	return sharedRedactor(text, maxLength);
 }
+
+/**
+ * A locator the shared redactor keeps, for a test that holds it to another
+ * redactor (`assertRevealsNoMore`'s `kept`): its path a run of 256 characters or
+ * fewer with no control character in it, ending at whitespace or the end, and,
+ * when it is a key's value, that key's name (the shared redactor's names). A
+ * marker anywhere else in the run, before the name or glued to it from
+ * another credential, is not exempt.
+ */
+export const KEPT_LOCATOR = new RegExp(
+	String.raw`(?:(?<![\u017F\u212AA-Za-z0-9_-])[\u017F\u212AA-Za-z0-9_-]*(?:${SECRET_KEY_NAMES})["'*]*\s*[=:][\s"'*]*|(?<![\u017F\u212AA-Za-z0-9_-]))(?:${anyCase("hobo-token|hobo-secret|secret|env")}):\/\/[^\s\p{Cc}]{0,256}(?!\S)`,
+	"gu",
+);

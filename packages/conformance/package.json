@@ -44,12 +44,12 @@
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/claims": "workspace:*",
 		"@hobo/core": "workspace:*",
-		"@hobo/provider-redaction": "workspace:*",
 		"@hobo/runtime": "workspace:*",
 		"@hobo/trust": "workspace:*"
 	},
 	"devDependencies": {
 		"@hobo/provider-kafka": "workspace:*",
+		"@hobo/redaction-test-harness": "workspace:*",
 		"@hobo/runtime-dapr": "workspace:*",
 		"@types/node": "^22.15.3",
 		"tsx": "^4.20.3"
@@ -62,6 +62,7 @@
 		"build-corpus": "node --import tsx src/corpus/record.ts",
 		"conformance:live": "node --import tsx src/live/cli.ts",
 		"test": "vitest run",
+		"test:deep": "vitest run --config vitest.deep.config.ts",
 		"test:contract:consumer": "vitest run contracts/consumer"
 	}
 }

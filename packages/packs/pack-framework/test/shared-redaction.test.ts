@@ -4,20 +4,16 @@
  * private-key shape searched from every BEGIN for an END that never came.
  * These pin that nothing it redacted leaks now, what it newly redacts, and
  * that it is linear.
+ *
+ * This is the fast tier: `shared-redaction.deep.test.ts` holds the sweeps, the
+ * growth measurements and the full-size differential (`pnpm run test:deep`).
  */
 
-import { assertPatternSweepLinear } from "@hobo/provider-redaction/linear-sweep";
-import {
-	assertGrowsLinearly,
-	repeatedTo,
-} from "@hobo/provider-redaction/linear-time";
-import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
+import { KEPT_LOCATOR } from "@hobo/provider-redaction";
+import { assertRevealsNoMore } from "@hobo/redaction-test-harness/redaction-differential";
 import { describe, expect, it } from "vitest";
-import { ARGV_CREDENTIAL_PATTERNS } from "../src/argv.js";
 import { redactPackText } from "../src/errors.js";
 import { redactPackText as baseRedact } from "./fixtures/base-redaction.js";
-
-const MB = 1_000_000;
 
 describe("redactPackText", () => {
 	it("still redacts every shape its own copy did", () => {
@@ -43,18 +39,6 @@ describe("redactPackText", () => {
 		])
 			expect(redactPackText(`before ${secret}`)).toBe("before [redacted]");
 	});
-
-	it.each([
-		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
-	] as const)(
-		"redacting %s grows linearly",
-		{ timeout: 30_000 },
-		(_case, input) => {
-			assertGrowsLinearly((text) => {
-				redactPackText(text, 8 * MB);
-			}, input);
-		},
-	);
 });
 
 // The same three secrets, redacted whole, by every caller of the shared
@@ -84,15 +68,13 @@ describe("the shared shapes, through this caller", () => {
 // pattern this caller adds is linear on every class and pair of classes.
 describe("against the redactor it replaced", () => {
 	const LONG = 1_000_000;
-	it("hides every marker the base branch's redactor hid", {
-		timeout: 60_000,
-	}, () => {
+	it("on 5k texts, hides every marker the base branch's redactor hid", () => {
 		const hidden = assertRevealsNoMore(
 			(text) => baseRedact(text, LONG),
 			(text) => redactPackText(text, LONG),
-			{ count: 50_000 },
+			{ count: 5_000, kept: KEPT_LOCATOR },
 		);
-		expect(hidden).toBeGreaterThan(1000);
+		expect(hidden).toBeGreaterThan(500);
 	});
 	it.each([
 		["Bearer abcd\u0007SECRCTL3 ok", "SECRCTL3"],
@@ -100,20 +82,4 @@ describe("against the redactor it replaced", () => {
 	])("reads a credential on through a control character: %j", (text, marker) => {
 		expect(redactPackText(text, LONG)).not.toContain(marker);
 	});
-});
-
-// The argv guard's patterns: an element is at most 1024 characters, and each
-// pattern is linear on runs of every class and between its own fragments.
-describe("the argv guard", () => {
-	it.each(
-		ARGV_CREDENTIAL_PATTERNS.map(
-			(pattern) => [pattern.source, pattern] as const,
-		),
-	)(
-		"its pattern /%s/ grows linearly on the whole sweep",
-		{ timeout: 60_000 },
-		(_source, pattern) => {
-			assertPatternSweepLinear(pattern);
-		},
-	);
 });

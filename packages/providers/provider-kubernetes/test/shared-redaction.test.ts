@@ -6,26 +6,17 @@
  * every `eyJ`, the private-key shape searched from every BEGIN for an END, and
  * the dockerconfigjson shape from every `"auths":{` for a `}`. These pin that
  * nothing it redacted leaks now and that it is linear.
+ *
+ * This is the fast tier: `shared-redaction.deep.test.ts` holds the sweeps, the
+ * growth measurements and the full-size differential (`pnpm run test:deep`).
  */
 
-import {
-	assertPatternSweepLinear,
-	profilePatterns,
-} from "@hobo/provider-redaction/linear-sweep";
-import {
-	assertGrowsLinearly,
-	repeatedTo,
-} from "@hobo/provider-redaction/linear-time";
-import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
+import { KEPT_LOCATOR } from "@hobo/provider-redaction";
+import { assertRevealsNoMore } from "@hobo/redaction-test-harness/redaction-differential";
 import { describe, expect, it } from "vitest";
 
-import {
-	KUBERNETES_REDACTION_PROFILE,
-	redactClusterText,
-} from "../src/errors.js";
+import { redactClusterText } from "../src/errors.js";
 import { redactClusterText as baseRedact } from "./fixtures/base-redaction.js";
-
-const MB = 1_000_000;
 
 describe("redactClusterText", () => {
 	it("still redacts every shape its own copy did", () => {
@@ -50,20 +41,6 @@ describe("redactClusterText", () => {
 			redactClusterText('secret {"auths": {"r": {"auth": "dXNlcjpwYXNz"'),
 		).toBe("secret {[redacted]");
 	});
-
-	it.each([
-		["-eyJ", repeatedTo("-eyJ")],
-		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
-		['"auths":{ with no closing brace', repeatedTo('"auths":{')],
-	] as const)(
-		"redacting %s grows linearly",
-		{ timeout: 30_000 },
-		(_case, input) => {
-			assertGrowsLinearly((text) => {
-				redactClusterText(text, 8 * MB);
-			}, input);
-		},
-	);
 });
 
 // The same three secrets, redacted whole, by every caller of the shared
@@ -93,15 +70,13 @@ describe("the shared shapes, through this caller", () => {
 // pattern this caller adds is linear on every class and pair of classes.
 describe("against the redactor it replaced", () => {
 	const LONG = 1_000_000;
-	it("hides every marker the base branch's redactor hid", {
-		timeout: 60_000,
-	}, () => {
+	it("on 5k texts, hides every marker the base branch's redactor hid", () => {
 		const hidden = assertRevealsNoMore(
 			(text) => baseRedact(text, LONG),
 			(text) => redactClusterText(text, LONG),
-			{ count: 50_000 },
+			{ count: 5_000, kept: KEPT_LOCATOR },
 		);
-		expect(hidden).toBeGreaterThan(1000);
+		expect(hidden).toBeGreaterThan(500);
 	});
 	it.each([
 		["Bearer abcd\u0007SECRCTL3 ok", "SECRCTL3"],
@@ -109,15 +84,4 @@ describe("against the redactor it replaced", () => {
 	])("reads a credential on through a control character: %j", (text, marker) => {
 		expect(redactClusterText(text, LONG)).not.toContain(marker);
 	});
-	it.each(
-		profilePatterns(KUBERNETES_REDACTION_PROFILE).map(
-			(pattern) => [pattern.source, pattern] as const,
-		),
-	)(
-		"its pattern /%s/ grows linearly on the whole sweep",
-		{ timeout: 30_000 },
-		(_source, pattern) => {
-			assertPatternSweepLinear(pattern);
-		},
-	);
 });

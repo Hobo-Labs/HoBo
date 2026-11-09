@@ -78,6 +78,7 @@ import {
 import { type AwsCredentials, signAwsRequest } from "@hobo/core/aws-sigv4";
 import {
 	createProviderRedactor,
+	LONG_TOKEN_RUN_PROFILE,
 	type ProviderRedactionProfile,
 } from "@hobo/provider-redaction";
 
@@ -243,9 +244,8 @@ const RAW_CREDENTIAL_PATTERN = /^[A-Za-z0-9]{32,}$/u;
  * last, so it cannot split a JWT or a key the shared shapes redact whole.
  */
 /** The provider's own patterns, on top of the shared ones. */
-export const HETZNER_REDACTION_PROFILE: ProviderRedactionProfile = {
-	fallbacks: [/[A-Za-z0-9_-]{20,}/gu],
-};
+export const HETZNER_REDACTION_PROFILE: ProviderRedactionProfile =
+	LONG_TOKEN_RUN_PROFILE;
 
 const redactTokenText = createProviderRedactor(HETZNER_REDACTION_PROFILE);
 

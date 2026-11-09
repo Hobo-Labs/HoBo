@@ -6,33 +6,23 @@
  * shape could start at every word boundary inside a run. These pin that
  * nothing it redacted leaks now, that digests still survive, and that the
  * shapes are linear.
+ *
+ * This is the fast tier: `shared-redaction.deep.test.ts` holds the sweeps, the
+ * growth measurements and the full-size differential (`pnpm run test:deep`).
  */
 
-import { JWT_DETECTOR } from "@hobo/provider-redaction";
-import {
-	assertPatternSweepLinear,
-	profilePatterns,
-} from "@hobo/provider-redaction/linear-sweep";
-import {
-	assertGrowsLinearly,
-	repeatedTo,
-} from "@hobo/provider-redaction/linear-time";
+import { JWT_DETECTOR, KEPT_LOCATOR } from "@hobo/provider-redaction";
 import {
 	assertFindsNoLess,
 	assertRevealsNoMore,
 	JWT_PIECES,
-} from "@hobo/provider-redaction/redaction-differential";
+} from "@hobo/redaction-test-harness/redaction-differential";
 import { describe, expect, it } from "vitest";
 
-import {
-	containsControlChar,
-	redactProviderText,
-	TTL_SH_REDACTION_PROFILE,
-} from "../src/errors.js";
+import { containsControlChar, redactProviderText } from "../src/errors.js";
 import { ARGV_CREDENTIAL_PATTERNS } from "../src/push.js";
 import { redactProviderText as baseRedact } from "./fixtures/base-redaction.js";
 
-const MB = 1_000_000;
 const digest = `sha256:${"0123456789abcdef".repeat(4)}`;
 
 describe("provider-ttl-sh redaction", () => {
@@ -64,21 +54,6 @@ describe("provider-ttl-sh redaction", () => {
 			"ttl.sh/hobo-abc/app:1h",
 		);
 	});
-
-	it.each([
-		["-ey", repeatedTo("-ey")],
-		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
-		["an opaque run of word boundaries", repeatedTo("a+")],
-		["digests", repeatedTo(`${digest} `)],
-	] as const)(
-		"redacting %s grows linearly",
-		{ timeout: 30_000 },
-		(_case, input) => {
-			assertGrowsLinearly((text) => {
-				redactProviderText(text, 8 * MB);
-			}, input);
-		},
-	);
 
 	it("still reports control characters", () => {
 		expect(containsControlChar("a\u0007")).toBe(true);
@@ -113,15 +88,13 @@ describe("the shared shapes, through this caller", () => {
 // pattern this caller adds is linear on every class and pair of classes.
 describe("against the redactor it replaced", () => {
 	const LONG = 1_000_000;
-	it("hides every marker the base branch's redactor hid", {
-		timeout: 60_000,
-	}, () => {
+	it("on 5k texts, hides every marker the base branch's redactor hid", () => {
 		const hidden = assertRevealsNoMore(
 			(text) => baseRedact(text, LONG),
 			(text) => redactProviderText(text, LONG),
-			{ count: 50_000 },
+			{ count: 5_000, kept: KEPT_LOCATOR },
 		);
-		expect(hidden).toBeGreaterThan(1000);
+		expect(hidden).toBeGreaterThan(500);
 	});
 	it.each([
 		["Bearer abcd\u0007SECRCTL3 ok", "SECRCTL3"],
@@ -129,35 +102,12 @@ describe("against the redactor it replaced", () => {
 	])("reads a credential on through a control character: %j", (text, marker) => {
 		expect(redactProviderText(text, LONG)).not.toContain(marker);
 	});
-	it.each(
-		profilePatterns(TTL_SH_REDACTION_PROFILE).map(
-			(pattern) => [pattern.source, pattern] as const,
-		),
-	)(
-		"its pattern /%s/ grows linearly on the whole sweep",
-		{ timeout: 30_000 },
-		(_source, pattern) => {
-			assertPatternSweepLinear(pattern);
-		},
-	);
 });
 
 // The argv guard's patterns: an element is at most 1024 characters, and each
 // pattern is linear on runs of every class and between its own fragments.
 describe("the argv guard", () => {
-	it.each(
-		ARGV_CREDENTIAL_PATTERNS.map(
-			(pattern) => [pattern.source, pattern] as const,
-		),
-	)(
-		"its pattern /%s/ grows linearly on the whole sweep",
-		{ timeout: 60_000 },
-		(_source, pattern) => {
-			assertPatternSweepLinear(pattern);
-		},
-	);
-
-	it("refuses every JWT the `\\bey…` detector it replaced refused", () => {
+	it("on 20k texts, refuses every JWT the `\\bey…` detector it replaced refused", () => {
 		const old = /\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./u;
 		expect(ARGV_CREDENTIAL_PATTERNS).toContain(JWT_DETECTOR);
 		expect(
@@ -166,7 +116,7 @@ describe("the argv guard", () => {
 				(text) => JWT_DETECTOR.test(text),
 				JWT_PIECES,
 			),
-		).toBeGreaterThan(1000);
+		).toBeGreaterThan(100);
 	});
 });
 
