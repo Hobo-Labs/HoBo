@@ -3,6 +3,7 @@
  * a boxed `String` and an object spoofing `Symbol.toStringTag` are not, and
  * only a plain object — what `JSON.parse` can produce — is an object.
  */
+import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
 import { isJsonArray, isJsonObject, isJsonString } from "../src/json.js";
@@ -47,6 +48,11 @@ describe("isJsonObject", () => {
 		for (const value of [null, undefined, [], () => 1, "probe", 7, false]) {
 			expect(isJsonObject(value)).toBe(false);
 		}
+	});
+
+	it("rejects a cross-realm function (realm-independent callable check)", () => {
+		const foreign = runInNewContext("() => 1");
+		expect(isJsonObject(foreign)).toBe(false);
 	});
 
 	it("rejects non-plain objects JSON.parse cannot produce", () => {
