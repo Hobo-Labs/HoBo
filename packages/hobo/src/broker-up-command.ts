@@ -94,6 +94,8 @@ export interface BrokerAwareUpCommandDeps {
 	readonly runtime?: YardRuntime;
 	/** Product composition keeps the self-hosted process running beyond CLI exit. */
 	readonly persistentLocal?: boolean;
+	/** Starts the persistent local deployment (default: the real worker process). */
+	readonly startLocalDeployment?: typeof startLocalDeployment;
 }
 
 export function createBrokerAwareUpCommand(
@@ -195,6 +197,7 @@ export function createBrokerAwareUpCommand(
 						definition,
 						emitProgress,
 						persistent: deps.persistentLocal === true,
+						start: deps.startLocalDeployment ?? startLocalDeployment,
 						ttlSeconds:
 							flags.anonymous === true || flags.temporary === true
 								? localTtlSeconds(env.HOBO_LOCAL_DEPLOYMENT_TTL_SECONDS)
@@ -496,6 +499,7 @@ async function runLocalUp(input: {
 	readonly hoboHome: string;
 	readonly definitionName: string;
 	readonly persistent?: boolean;
+	readonly start: typeof startLocalDeployment;
 	readonly ttlSeconds?: number;
 	readonly definition: NonNullable<
 		Awaited<ReturnType<typeof loadBindleDefinition>>
@@ -540,7 +544,7 @@ async function runLocalUp(input: {
 
 	const port = await freePort();
 	if (input.persistent) {
-		const { receipt, reused } = await startLocalDeployment({
+		const { receipt, reused } = await input.start({
 			projectDir,
 			hoboHome,
 			componentHost: placement.componentHost,
