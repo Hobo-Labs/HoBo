@@ -67,6 +67,14 @@ describe("release-oci-attest composite action", () => {
 		expect(actionYml).not.toMatch(/syft "docker:/u);
 	});
 
+	it("retries the registry scan on a bounded budget (GHCR digest visibility lag)", () => {
+		expect(actionYml).toMatch(
+			/until mise exec -- syft "registry:\$\{image_ref\}"/u,
+		);
+		expect(actionYml).toMatch(/attempt\}" -ge 12/u);
+		expect(actionYml).toMatch(/sleep 10/u);
+	});
+
 	it("validates the SBOM is CycloneDX before attesting it", () => {
 		const syftIdx = actionYml.indexOf("mise exec -- syft");
 		const checkIdx = actionYml.indexOf("is not CycloneDX JSON");
