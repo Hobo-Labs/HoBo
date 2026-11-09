@@ -31,6 +31,7 @@
 		"test:contract:consumer": "vitest run contracts/consumer"
 	},
 	"dependencies": {
-		"@bufbuild/protobuf": "2.12.1"
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/core": "workspace:*"
 	}
 }

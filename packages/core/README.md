@@ -26,7 +26,7 @@ collapsing. A pattern is parsed by `redactionPattern`, which refuses one that is
 not global or is sticky. Every pattern is linear in the text, each with an
 adversarial growth test (`test/provider-redaction.test.ts`, see below);
 `JWT_DETECTOR` and `PRIVATE_KEY_DETECTOR` are the same shapes for guards that
-refuse instead.
+refuse instead. A private-key label is anything up to the next `-`.
 
 ## Linear-time tests
 

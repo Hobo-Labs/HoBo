@@ -12,6 +12,12 @@
  *    secret-named fields and secret-shaped strings before they are serialized.
  */
 
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type, anti-slop/no-known-value-widening -- SAFETY: the guards and redactDeep take any value a caller is about to log or serialize, the one place this package reads values nobody has parsed, and must look at each one's representation to redact it. */
+import {
+	JWT_PATTERN,
+	PRIVATE_KEY_PATTERN,
+} from "@hobo/core/provider-redaction";
+
 // public-contract: callers and tests assert on this exact placeholder in serialized output.
 export const REDACTED = "[redacted]";
 
@@ -36,6 +42,7 @@ export function materialLocator(
 	if (!LOCATOR_PATTERN.test(candidate)) {
 		throw new Error(`invalid material locator handle: ${handle}`);
 	}
+	// SAFETY: the candidate matched LOCATOR_PATTERN, the brand's only invariant.
 	return candidate as MaterialLocator;
 }
 
@@ -103,11 +110,18 @@ export function forgetSensitive(ref: SensitiveRef): void {
 const SECRET_KEY_PATTERN =
 	/(assertion|token|secret|password|passphrase|credential|private[_-]?key|authorization|client[_-]?secret|jwk|jwt)/iu;
 
-const SECRET_SHAPED_PATTERNS: readonly RegExp[] = [
-	// Compact JWS/JWT: three base64url segments.
-	/\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b/gu,
-	// PEM blocks of any key type.
-	/-----BEGIN[^-]*PRIVATE KEY-----[\s\S]*?-----END[^-]*PRIVATE KEY-----/gu,
+const SECRET_TEXT_PATTERNS: readonly RegExp[] = [
+	// PEM blocks of any key type, from `@hobo/core/provider-redaction`: to the
+	// key's own END line, or the next BEGIN, or the end of the text. The lazy
+	// `[\s\S]*?-----END` this replaced searched from every BEGIN for an END.
+	PRIVATE_KEY_PATTERN,
+	// Compact JWS/JWT, the shared linear pattern: an `ey` header and two dots.
+	JWT_PATTERN,
+	// The same shape with this module's shorter segments (`eyJ` and four
+	// characters each). Like the shared one it starts only where a run of
+	// base64url characters starts and reads that run once, where `\beyJ…`
+	// started again at every `eyJ` and read to the end.
+	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4})(?:[A-Za-z0-9_]*-)*?eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b/gu,
 	// `Bearer <token>` in prose or headers.
 	/\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/giu,
 	// Long opaque high-entropy handles (claim/access tokens).
@@ -117,7 +131,7 @@ const SECRET_SHAPED_PATTERNS: readonly RegExp[] = [
 /** Scrub secret-shaped substrings out of a free-text string. */
 export function redactText(value: string): string {
 	let output = value;
-	for (const pattern of SECRET_SHAPED_PATTERNS) {
+	for (const pattern of SECRET_TEXT_PATTERNS) {
 		output = output.replace(pattern, REDACTED);
 	}
 	return output;

@@ -73,12 +73,13 @@ export function redactionPattern(pattern: RegExp): RedactionPattern {
  * A private key, from its BEGIN line to its own END line (another END line,
  * such as a certificate's, inside it does not end it), or to the next BEGIN
  * line, or to the end of the text when there is neither (as when the text was
- * cut inside the key): never a search from every BEGIN to the end. The END line
- * is looked for only where `-----END ` starts, and its label's run is read once
- * there.
+ * cut inside the key): never a search from every BEGIN to the end. A label is
+ * anything up to the next `-` (`RSA`, `ENCRYPTED`, `OPENSSH`, one with a
+ * digit), so it is read once from each marker. The END line is looked for only
+ * where `-----END` starts.
  */
 export const PRIVATE_KEY_PATTERN = redactionPattern(
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----(?:(?!-----BEGIN |-----END [A-Z ]*PRIVATE KEY-----)[\s\S])*(?:-----END [A-Z ]*PRIVATE KEY-----)?/giu,
+	/-----BEGIN[^-]*PRIVATE KEY-----(?:(?!-----BEGIN|-----END[^-]*PRIVATE KEY-----)[\s\S])*(?:-----END[^-]*PRIVATE KEY-----)?/giu,
 );
 
 /**
@@ -143,8 +144,7 @@ export const JWT_DETECTOR: RegExp =
 	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{8,}\.)(?:[A-Za-z0-9_]*-)*?ey[A-Za-z0-9_-]{8,}\./iu;
 
 /** A private key's BEGIN line. */
-export const PRIVATE_KEY_DETECTOR: RegExp =
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----/u;
+export const PRIVATE_KEY_DETECTOR: RegExp = /-----BEGIN[^-]*PRIVATE KEY-----/u;
 
 /**
  * `text` cut at `window` characters, or, when that cut falls inside a run of

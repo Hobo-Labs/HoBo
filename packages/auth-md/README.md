@@ -122,6 +122,8 @@ anonymous registration changes nothing about what this package will do.
   material is held in a module-private `WeakMap` — never an own-property — so
   `JSON.stringify` yields `"[redacted]"`. `formatRedacted` is the defence-in-depth
   formatter for everything else; `AuthMdError` scrubs its own message and details.
+  `redactText` keeps line breaks and length; its private-key and JWT patterns are
+  the shared linear ones from `@hobo/core/provider-redaction`.
 - **Pre-claim authorization is bound to four things at once**: session, tenant/project,
   audience, and the exact service (`SessionBinding`, `assertBindingMatches`).
 - **Post-claim scopes never silently widen.** Anything above the pre-claim set
