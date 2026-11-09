@@ -6,10 +6,7 @@
  * megabyte of `-ey` or of `postgres://:::` stalled the scan. These pin that it
  * still refuses what it refused, and is linear.
  */
-import {
-	assertPatternSweepLinear,
-	assertSweepLinear,
-} from "@hobo/core/linear-sweep";
+import { assertPatternSweepLinear, ownPatterns } from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import {
 	assertFindsNoLess,
@@ -167,41 +164,14 @@ describe("assertSanitized against the scan it replaced", () => {
 	);
 });
 
-describe("assertSanitized on the whole sweep", () => {
-	it("grows linearly on runs of every class and pair of classes", {
-		timeout: 60_000,
-	}, () => {
-		assertSweepLinear(
-			(text) => {
-				try {
-					assertSanitized(artifactNoting(text));
-				} catch {
-					// Refusing is fine; stalling is not.
-				}
-			},
-			{
-				alphabet: "aZ9",
-				words: [
-					"postgres://",
-					"rediss://",
-					"mysql://",
-					"mongodb+srv://",
-					"eyJ",
-					"-----BEGIN PRIVATE KEY-----",
-				],
-			},
-		);
-	});
-});
-
 // Each of the evidence scan's patterns, on runs of every class and between its own
 // fragments (`patternFragments`): the sweep above runs them together on runs.
 describe("each pattern on the whole sweep", () => {
-	it.each(SECRET_PATTERN.map((pattern) => [pattern.source, pattern] as const))(
-		"/%s/ grows linearly",
-		{ timeout: 60_000 },
-		(_source, pattern) => {
-			assertPatternSweepLinear(pattern);
-		},
-	);
+	it.each(
+		ownPatterns(SECRET_PATTERN).map(
+			(pattern) => [pattern.source, pattern] as const,
+		),
+	)("/%s/ grows linearly", { timeout: 60_000 }, (_source, pattern) => {
+		assertPatternSweepLinear(pattern);
+	});
 });

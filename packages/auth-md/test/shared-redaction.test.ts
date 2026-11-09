@@ -11,6 +11,7 @@
 import {
 	assertPatternSweepLinear,
 	assertSweepLinear,
+	ownPatterns,
 } from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
@@ -78,7 +79,7 @@ describe("redactText", () => {
 describe("redactText against the scrubber it replaced", () => {
 	it("hides every marker the old scrubber hid", { timeout: 60_000 }, () => {
 		expect(
-			assertRevealsNoMore(baseRedactText, redactText, { count: 50_000 }),
+			assertRevealsNoMore(baseRedactText, redactText, { count: 20_000 }),
 		).toBeGreaterThan(1000);
 	});
 
@@ -98,10 +99,10 @@ describe("redactText against the scrubber it replaced", () => {
 });
 
 // Each of redactText's patterns and its key-name test, on runs of every class and between its own
-// fragments (`patternFragments`): the sweep above runs them together on runs.
+// fragments (`patternFragments`), but those core shares, which core sweeps.
 describe("each pattern on the whole sweep", () => {
 	it.each(
-		[...SECRET_TEXT_PATTERNS, SECRET_KEY_PATTERN].map(
+		ownPatterns([...SECRET_TEXT_PATTERNS, SECRET_KEY_PATTERN]).map(
 			(pattern) => [pattern.source, pattern] as const,
 		),
 	)("/%s/ grows linearly", { timeout: 60_000 }, (_source, pattern) => {

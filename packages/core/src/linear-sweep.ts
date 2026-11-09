@@ -29,7 +29,15 @@ import {
 	measureGrowth,
 	OperationHangError,
 } from "./linear-time.js";
-import { redactionPattern, redactMatches } from "./provider-redaction.js";
+import {
+	CREDENTIAL_PATTERNS,
+	JSON_JWT_PATTERN,
+	JWT_DETECTOR,
+	PRIVATE_KEY_DETECTOR,
+	redactionPattern,
+	redactMatches,
+	SIGNED_JWT_PATTERN,
+} from "./provider-redaction.js";
 
 /**
  * Separator classes every sweep includes: what a run of a credential-shaped
@@ -111,6 +119,8 @@ export function sweepInputs(spec: SweepSpec): readonly SweepInput[] {
 					name: `${shown(first + second)} repeated`,
 					text: repeat(first + second),
 				});
+	// Every word and fragment: a word holding a fragment is not one, since the
+	// fragment alone is put after a run, where the word puts more.
 	const pieces = [
 		...new Set([...(spec.words ?? []), ...(spec.fragments ?? [])]),
 	];
@@ -372,15 +382,32 @@ export function patternFragments(pattern: RegExp): readonly string[] {
 		} else literal += char;
 	}
 	flush();
-	// A fragment inside a longer one builds no input the longer does not; a
-	// separator stays, since it is put on its own after a run.
-	return [...found].filter(
-		(fragment) =>
-			fragment.length === 1 ||
-			![...found].some(
-				(other) => other !== fragment && other.includes(fragment),
-			),
+	return longest([...found]);
+}
+
+/** `pieces` without one inside a longer one, separators (one character) kept. */
+function longest(pieces: readonly string[]): string[] {
+	return pieces.filter(
+		(piece) =>
+			piece.length === 1 ||
+			!pieces.some((other) => other !== piece && other.includes(piece)),
 	);
+}
+
+const SHARED_PATTERNS = new Set<RegExp>([
+	...CREDENTIAL_PATTERNS,
+	JSON_JWT_PATTERN,
+	JWT_DETECTOR,
+	PRIVATE_KEY_DETECTOR,
+	SIGNED_JWT_PATTERN,
+]);
+
+/**
+ * `patterns` without the shared ones (`@hobo/core/provider-redaction`'s own
+ * objects), which core's tests sweep: what a caller adds.
+ */
+export function ownPatterns(patterns: readonly RegExp[]): readonly RegExp[] {
+	return patterns.filter((pattern) => !SHARED_PATTERNS.has(pattern));
 }
 
 /** Every pattern a redaction profile searches: its own, its fallbacks, its keep. */

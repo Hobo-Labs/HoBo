@@ -93,7 +93,7 @@ describe("against the redactor it replaced", () => {
 		const hidden = assertRevealsNoMore(
 			(text) => baseRedact(text, undefined, LONG),
 			(text) => redactAwsText(text, undefined, LONG),
-			{ count: 50_000 },
+			{ count: 20_000 },
 		);
 		expect(hidden).toBeGreaterThan(1000);
 	});

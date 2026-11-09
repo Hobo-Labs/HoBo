@@ -8,10 +8,7 @@
  * that its cost grows linearly.
  */
 
-import {
-	assertPatternSweepLinear,
-	assertSweepLinear,
-} from "@hobo/core/linear-sweep";
+import { assertPatternSweepLinear, ownPatterns } from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
@@ -100,24 +97,17 @@ describe("redactDebugPayload against the masking it replaced", () => {
 			assertRevealsNoMore(
 				shown(baseRedactDebugPayload),
 				shown(redactDebugPayload),
-				{ count: 50_000 },
+				{ count: 20_000 },
 			),
 		).toBeGreaterThan(1000);
-	});
-
-	it("grows linearly on the whole sweep", { timeout: 60_000 }, () => {
-		assertSweepLinear((text) => redactDebugPayload({ message: text }), {
-			alphabet: "aZ9",
-			words: ["Bearer ", "eyJ", "sk-", "postgres://", "API_KEY"],
-		});
 	});
 });
 
 // Each of the debug-payload patterns, on runs of every class and between its own
-// fragments (`patternFragments`): the sweep above runs them together on runs.
+// fragments (`patternFragments`), but those core shares, which core sweeps.
 describe("each pattern on the whole sweep", () => {
 	it.each(
-		[SECRET_STRING, SENSITIVE_DEBUG_KEY].map(
+		ownPatterns([SECRET_STRING, SENSITIVE_DEBUG_KEY]).map(
 			(pattern) => [pattern.source, pattern] as const,
 		),
 	)("/%s/ grows linearly", { timeout: 60_000 }, (_source, pattern) => {

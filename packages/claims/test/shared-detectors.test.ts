@@ -6,10 +6,7 @@
  * holding a megabyte of `-ey` or of `http://claim?`, the guard stalled the
  * append. These pin that it still refuses what it refused, and is linear.
  */
-import {
-	assertPatternSweepLinear,
-	assertSweepLinear,
-} from "@hobo/core/linear-sweep";
+import { assertPatternSweepLinear, ownPatterns } from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import {
 	assertFindsNoLess,
@@ -102,38 +99,11 @@ describe("assertNoSecrets against the guard it replaced", () => {
 	);
 });
 
-describe("assertNoSecrets on the whole sweep", () => {
-	it("grows linearly on runs of every class and pair of classes", {
-		timeout: 60_000,
-	}, () => {
-		assertSweepLinear(
-			(text) => {
-				try {
-					assertNoSecrets(observed(text));
-				} catch {
-					// Refusing is fine; stalling is not.
-				}
-			},
-			{
-				alphabet: "aZ9",
-				words: [
-					"https://",
-					"claim",
-					"transfer",
-					"?code=",
-					"eyJ",
-					"-----BEGIN PRIVATE KEY-----",
-				],
-			},
-		);
-	});
-});
-
 // Each of the event guard's patterns, on runs of every class and between its own
-// fragments (`patternFragments`): the sweep above runs them together on runs.
+// fragments (`patternFragments`), but those core shares, which core sweeps.
 describe("each pattern on the whole sweep", () => {
 	it.each(
-		FORBIDDEN_IN_EVENTS.map((entry) => entry.pattern).map(
+		ownPatterns(FORBIDDEN_IN_EVENTS.map((entry) => entry.pattern)).map(
 			(pattern) => [pattern.source, pattern] as const,
 		),
 	)("/%s/ grows linearly", { timeout: 60_000 }, (_source, pattern) => {

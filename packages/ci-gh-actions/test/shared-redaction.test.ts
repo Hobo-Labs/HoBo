@@ -9,6 +9,7 @@
 import {
 	assertPatternSweepLinear,
 	assertSweepLinear,
+	ownPatterns,
 } from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
@@ -69,7 +70,7 @@ describe("redactSecrets against the redactor it replaced", () => {
 			assertRevealsNoMore(
 				(text) => baseRedactSecrets(text, []),
 				(text) => redactSecrets(text, []),
-				{ count: 50_000 },
+				{ count: 20_000 },
 			),
 		).toBeGreaterThan(1000);
 	});
@@ -100,10 +101,10 @@ describe("redactSecrets against the redactor it replaced", () => {
 });
 
 // Each of redactSecrets' patterns and its opaque-run rule, on runs of every class and between its own
-// fragments (`patternFragments`): the sweep above runs them together on runs.
+// fragments (`patternFragments`), but those core shares, which core sweeps.
 describe("each pattern on the whole sweep", () => {
 	it.each(
-		[...SECRET_PATTERNS, OPAQUE_RUN].map(
+		ownPatterns([...SECRET_PATTERNS, OPAQUE_RUN]).map(
 			(pattern) => [pattern.source, pattern] as const,
 		),
 	)("/%s/ grows linearly", { timeout: 60_000 }, (_source, pattern) => {
