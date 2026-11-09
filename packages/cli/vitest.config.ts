@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig, mergeConfig } from "vitest/config";
 import { capVitestWorkers } from "../../scripts/ci/vitest-max-workers.mts";
 import rootConfig from "../../vitest.config.js";
@@ -15,6 +16,10 @@ export default mergeConfig(
 			// state across files: env changes are restored in `finally`/`afterEach`,
 			// and the trainable registry is reset after each test that uses it.
 			isolate: false,
+			// Removes the fixtures test/support/built-starter.ts shares across files.
+			globalSetup: [
+				fileURLToPath(new URL("./test/support/run-scratch.ts", import.meta.url)),
+			],
 			// Load the shipped compiler through Node, matching the product CLI.
 			server: { deps: { external: [/[/\\]node_modules[/\\]typescript[/\\]/] } },
 		},
