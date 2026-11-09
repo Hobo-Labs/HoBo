@@ -2,7 +2,6 @@
  * Client-side privacy masking before any network send or local persistence.
  * Default masks: password / email / tel inputs + configurable selectors.
  */
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type -- SAFETY: these walkers take whatever rrweb event or debug payload a recorder hands them, the one place this package reads values nobody has parsed, and must look at each one's representation to mask it before it is sent or kept. */
 import {
 	defaultPrivacyPolicy,
 	type PrivacyPolicy,
@@ -104,6 +103,7 @@ const SECRET_STRING =
 	/(?:Bearer\s+\S+|-----BEGIN (?:RSA |EC )?PRIVATE KEY-----|(?:sk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[0-9A-Za-z_-]{35}|(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5})[A-Za-z0-9_-]*?eyJ[A-Za-z0-9_-]{5,}\.|(?<![A-Za-z0-9+.-])[0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/:@]+:[^@\s/]+@|\b[A-Z](?=[A-Z0-9_]*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?))[A-Z0-9_]*\s*=)/i;
 
 /** Redact generic debug payloads before every persistence path, at every level. */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type -- SAFETY: these walk whatever debug payload a recorder hands them, which nobody has parsed, and must look at each value's representation to mask it before it is kept. */
 export function redactDebugPayload(
 	payload: Readonly<Record<string, unknown>>,
 ): Readonly<Record<string, unknown>> {
@@ -133,6 +133,7 @@ function redactDebugValue(value: unknown): unknown {
 	}
 	return Object.freeze(out);
 }
+/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type */
 
 /**
  * Assert that known sensitive plaintext never appears in a serialized blob
@@ -159,6 +160,7 @@ export function assertNoSensitivePlaintext(
 	}
 }
 
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type -- SAFETY: deepMask walks whatever rrweb event a recorder hands it, which nobody has parsed, and must look at each value's representation to mask it before it is sent. */
 function deepMask(
 	value: unknown,
 	policy: PrivacyPolicy,
@@ -223,5 +225,7 @@ function deepMask(
 	}
 	return out;
 }
+
+/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type */
 
 export { defaultPrivacyPolicy, MASK_TOKEN };

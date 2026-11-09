@@ -1,4 +1,4 @@
-import { JWT_PATTERN } from "@hobo/core/provider-redaction";
+import { SIGNED_JWT_PATTERN } from "@hobo/core/provider-redaction";
 import { z } from "zod";
 
 /**
@@ -107,9 +107,11 @@ const SECRET_PATTERNS: readonly RegExp[] = [
 	/\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b/g,
 	/\bxox[abposr]-[A-Za-z0-9-]{10,}\b/g,
 	/\bAKIA[0-9A-Z]{16}\b/g,
-	// The shared linear JWT pattern: `\beyJ…` started again at every `eyJ` in a
-	// run and read to its end, quadratic in a hostile text.
-	JWT_PATTERN,
+	// A signed JWT and nothing after it, the shared linear form: `\beyJ…`
+	// started again at every `eyJ` in a run and read to its end, quadratic in a
+	// hostile text. The bounded form keeps an unsigned token from counting and
+	// the rest of a JSON body from being swallowed with the signature.
+	SIGNED_JWT_PATTERN,
 	/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
 	/\b(?:boat|bsm|jog)_[A-Za-z0-9]{20,}\b/g,
 ];

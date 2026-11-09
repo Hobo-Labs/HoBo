@@ -12,7 +12,9 @@ import {
 	HANG_BACKSTOP_MS,
 	LINEAR_GROWTH_LIMIT,
 	MAX_REPEAT,
+	MissingCpuClockError,
 	measureGrowth,
+	NEGATIVE_CONTROL,
 	NonLinearGrowthError,
 	OperationHangError,
 	repeatedTo,
@@ -35,30 +37,57 @@ function quadraticScan(text: string): void {
 	if (sum < 0) throw new Error("unreachable");
 }
 
+// A growth measurement's backstop against the root config's 10 s timeout.
+const GROWTH_TIMEOUT_MS = 30_000;
+
 afterEach(() => {
 	vi.restoreAllMocks();
+	vi.unstubAllGlobals();
 });
 
 describe("measureGrowth", () => {
-	it("passes linear work and reports the sizes it measured", () => {
+	it("passes linear work and reports the sizes it measured", {
+		timeout: GROWTH_TIMEOUT_MS,
+	}, () => {
 		const growth = measureGrowth(linearScan, repeatedTo("a"));
 		expect(grewLinearly(growth), JSON.stringify(growth)).toBe(true);
 		expect(growth.length).toBeGreaterThanOrEqual(4096);
 		expect(growth.ratio).toBe(growth.largeMs / Math.max(growth.smallMs, 0.001));
 	});
 
-	it("fails quadratic work, at a size quadratic work still finishes at", () => {
-		const growth = measureGrowth(quadraticScan, repeatedTo("a"));
-		expect(growth.ratio, JSON.stringify(growth)).toBeGreaterThanOrEqual(
-			LINEAR_GROWTH_LIMIT,
-		);
-		expect(grewLinearly(growth)).toBe(false);
-		expect(() => assertGrowsLinearly(quadraticScan, repeatedTo("a"))).toThrow(
-			NonLinearGrowthError,
+	it(
+		"fails quadratic work, at a size quadratic work still finishes at",
+		() => {
+			// Measured once, with the cheap negative-control options.
+			let refused: unknown;
+			try {
+				assertGrowsLinearly(quadraticScan, repeatedTo("a"), NEGATIVE_CONTROL);
+			} catch (error) {
+				refused = error;
+			}
+			if (!(refused instanceof NonLinearGrowthError))
+				throw new Error(
+					`expected a NonLinearGrowthError, got ${String(refused)}`,
+				);
+			expect(refused.growth.ratio).toBeGreaterThanOrEqual(LINEAR_GROWTH_LIMIT);
+			expect(grewLinearly(refused.growth)).toBe(false);
+			expect(refused.growth.length).toBeLessThanOrEqual(
+				NEGATIVE_CONTROL.maxLength ?? 0,
+			);
+		},
+		GROWTH_TIMEOUT_MS,
+	);
+
+	it("refuses to measure without a per-thread CPU clock", () => {
+		vi.stubGlobal("process", { threadCpuUsage: undefined });
+		expect(() => measureGrowth(linearScan, repeatedTo("a"))).toThrow(
+			MissingCpuClockError,
 		);
 	});
 
-	it("repeats an operation too quick to time, and keeps its ratio honest", () => {
+	it("repeats an operation too quick to time, and keeps its ratio honest", {
+		timeout: GROWTH_TIMEOUT_MS,
+	}, () => {
 		const constant = measureGrowth((text) => {
 			text.charCodeAt(0);
 		}, repeatedTo("a"));

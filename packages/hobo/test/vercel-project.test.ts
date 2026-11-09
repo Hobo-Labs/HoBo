@@ -1,6 +1,7 @@
 import { inspect } from "node:util";
 
 import type { IacProgram } from "@hobo/cloud";
+import { assertGrowsLinearlyAsync } from "@hobo/core/linear-time";
 import { at, first } from "@hobo/core/total-access";
 import { REDACTION_WINDOW } from "@hobo/provider-vercel";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -564,6 +565,24 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		throw new Error("expected the deploy to be refused");
 	}
 
+	// A refusal body in Vercel's error envelope.
+	const inErrorJson = (message: string) =>
+		JSON.stringify({ error: { code: "not_found", message } });
+
+	// The refusal path grows linearly in its body, raw and in the envelope:
+	// measured as growth from n to 4n in CPU time (`@hobo/core/linear-time`),
+	// not as a wall-clock bound a loaded runner fails.
+	async function expectLinearRefusal(
+		hostileOf: (length: number) => string,
+	): Promise<void> {
+		await assertGrowsLinearlyAsync(async (text) => {
+			await refusedBy(() => plainReply(404, text));
+		}, hostileOf);
+		await assertGrowsLinearlyAsync(async (text) => {
+			await refusedBy(() => plainReply(404, inErrorJson(text)));
+		}, hostileOf);
+	}
+
 	it("carries neither the token nor credential-shaped text, however it is printed", async () => {
 		// A body that echoes the request: the Authorization header, the bare
 		// token, and another credential in the message.
@@ -717,29 +736,29 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		expect(inJson.apiMessage).toBe("sent [redacted] back");
 	});
 
-	it("stays linear on a long hostile body: 1 MB of breaks and near-misses", async () => {
+	it("stays linear on a long hostile body: 1 MB of breaks and near-misses", {
+		timeout: 60_000,
+	}, async () => {
 		// Every character of the token but the last, each followed by a run of
 		// whitespace, control and format characters, over and over: each try
 		// runs nearly to the end and fails.
 		const nearMiss = Array.from(TOKEN.slice(0, -1)).join(
 			" \r\n\t\u0000\u001b\u200b\u00ad ",
 		);
-		let hostile = "";
-		while (hostile.length < 1_000_000)
-			hostile += `${nearMiss}${" \u200b".repeat(32)}\n`;
-		const json = JSON.stringify({
-			error: { code: "not_found", message: hostile },
-		});
-
-		const started = performance.now();
+		const hostileOf = (length: number) => {
+			let text = "";
+			while (text.length < length)
+				text += `${nearMiss}${" \u200b".repeat(32)}\n`;
+			return text;
+		};
+		const hostile = hostileOf(1_000_000);
 		const raw = await refusedBy(() => plainReply(404, hostile));
-		const inJson = await refusedBy(() => plainReply(404, json));
-		const took = performance.now() - started;
+		const inJson = await refusedBy(() => plainReply(404, inErrorJson(hostile)));
 
 		expect(hostile.length).toBeGreaterThanOrEqual(1_000_000);
 		expect(raw.message.length).toBeLessThanOrEqual(501);
 		expect(inJson.apiMessage?.length).toBeLessThanOrEqual(501);
-		expect(took).toBeLessThan(1000);
+		await expectLinearRefusal(hostileOf);
 	});
 
 	it.each([
@@ -780,21 +799,23 @@ describe("a refusal's text (scripted transport, no network)", () => {
 			"a mix of both, bearer and key shapes, and whitespace",
 			"-ey-ey eyAAAAAAAAAAAA.eyBBBBBBBBBBBB -----BEGIN PRIVATE KEY-----\n Bearer api_key= sk- \t",
 		],
-	])("stays linear on a 1 MB body of %s", async (_case, unit) => {
-		const hostile = unit.repeat(Math.ceil(MB / unit.length));
-		const json = JSON.stringify({
-			error: { code: "not_found", message: hostile },
-		});
+	])(
+		"stays linear on a 1 MB body of %s",
+		{ timeout: 60_000 },
+		async (_case, unit) => {
+			const hostileOf = (length: number) =>
+				unit.repeat(Math.ceil(length / unit.length));
+			const hostile = hostileOf(MB);
+			const raw = await refusedBy(() => plainReply(404, hostile));
+			const inJson = await refusedBy(() =>
+				plainReply(404, inErrorJson(hostile)),
+			);
 
-		const started = performance.now();
-		const raw = await refusedBy(() => plainReply(404, hostile));
-		const inJson = await refusedBy(() => plainReply(404, json));
-		const took = performance.now() - started;
-
-		expect(raw.message.length).toBeLessThanOrEqual(501);
-		expect(inJson.apiMessage?.length).toBeLessThanOrEqual(501);
-		expect(took).toBeLessThan(1000);
-	});
+			expect(raw.message.length).toBeLessThanOrEqual(501);
+			expect(inJson.apiMessage?.length).toBeLessThanOrEqual(501);
+			await expectLinearRefusal(hostileOf);
+		},
+	);
 
 	// A body redaction shrinks to almost nothing, so the window's end reaches
 	// the message: what the window cuts through leaves nothing behind.
@@ -841,34 +862,41 @@ describe("a refusal's text (scripted transport, no network)", () => {
 	it.each([
 		[
 			"175k nested objects",
-			() => `${'{"a":'.repeat(175_000)}1${"}".repeat(175_000)}`,
+			(length: number) => {
+				const depth = Math.ceil(length / 6);
+				return `${'{"a":'.repeat(depth)}1${"}".repeat(depth)}`;
+			},
 		],
 		[
 			"91k keys",
-			() =>
-				`{${Array.from({ length: 91_000 }, (_, i) => `"k${String(i).padStart(5, "0")}":1`).join(",")}}`,
+			(length: number) =>
+				`{${Array.from({ length: Math.ceil(length / 11) }, (_, i) => `"k${String(i).padStart(5, "0")}":1`).join(",")}}`,
 		],
 		[
 			"35k strings",
-			() =>
-				`[${Array.from({ length: 35_000 }, (_, i) => `"${String(i).padStart(26, "x")}"`).join(",")}]`,
+			(length: number) =>
+				`[${Array.from({ length: Math.ceil(length / 29) }, (_, i) => `"${String(i).padStart(26, "x")}"`).join(",")}]`,
 		],
 		// Each longer than the token, so each is searched.
 		[
 			"30k strings longer than the token",
-			() =>
-				`[${Array.from({ length: 30_400 }, (_, i) => `"${String(i).padStart(30, "x")}"`).join(",")}]`,
+			(length: number) =>
+				`[${Array.from({ length: Math.ceil(length / 33) }, (_, i) => `"${String(i).padStart(30, "x")}"`).join(",")}]`,
 		],
-	])("stays fast on a 1 MB JSON body of %s", async (_case, make) => {
-		const body = make();
-		const started = performance.now();
-		const error = await refusedBy(() => plainReply(404, body));
-		const took = performance.now() - started;
+	])(
+		"stays linear on a 1 MB JSON body of %s",
+		{ timeout: 60_000 },
+		async (_case, make) => {
+			const body = make(1_000_000);
+			const error = await refusedBy(() => plainReply(404, body));
 
-		expect(body.length).toBeGreaterThanOrEqual(1_000_000);
-		expect(error.message.length).toBeLessThanOrEqual(501);
-		expect(took).toBeLessThan(1000);
-	});
+			expect(body.length).toBeGreaterThanOrEqual(1_000_000);
+			expect(error.message.length).toBeLessThanOrEqual(501);
+			await assertGrowsLinearlyAsync(async (text) => {
+				await refusedBy(() => plainReply(404, text));
+			}, make);
+		},
+	);
 
 	it("still redacts the token among many short strings, as a value and a key", async () => {
 		const values = Array.from({ length: 1000 }, (_, i) => `"v${i}"`);
@@ -1098,20 +1126,16 @@ describe("a refusal's text (scripted transport, no network)", () => {
 			"runs of zeros in references",
 			`&#x${"0 ".repeat(2048)}&#${"0".repeat(2048)}`,
 		],
-	])("stays linear on 1 MB of %s", async (_case, unit) => {
-		const hostile = unit.repeat(Math.ceil(1_000_000 / unit.length));
-		const json = JSON.stringify({
-			error: { code: "not_found", message: hostile },
-		});
-
-		const started = performance.now();
+	])("stays linear on 1 MB of %s", { timeout: 60_000 }, async (_case, unit) => {
+		const hostileOf = (length: number) =>
+			unit.repeat(Math.ceil(length / unit.length));
+		const hostile = hostileOf(1_000_000);
 		const raw = await refusedBy(() => plainReply(404, hostile));
-		const inJson = await refusedBy(() => plainReply(404, json));
-		const took = performance.now() - started;
+		const inJson = await refusedBy(() => plainReply(404, inErrorJson(hostile)));
 
 		expect(raw.message.length).toBeLessThanOrEqual(501);
 		expect(inJson.apiMessage?.length).toBeLessThanOrEqual(501);
-		expect(took).toBeLessThan(1000);
+		await expectLinearRefusal(hostileOf);
 	});
 
 	it.each([

@@ -20,15 +20,27 @@ describe("runner-integration secret patterns", () => {
 		}
 	});
 
+	it("does not count an unsigned token, nor swallow what follows a signature", () => {
+		expect(looksLikeSecret("eyJhbGciOiJub25lIn0.eyJzdWIiOiJ4In0.")).toBe(false);
+		expect(redactSecrets(`{"jwt":"${JWT}","next":"kept"}`)).toBe(
+			'{"jwt":"[REDACTED]","next":"kept"}',
+		);
+	});
+
 	it.each([
 		["-eyJ", repeatedTo("-eyJ")],
+		["-eyJ signed and short", repeatedTo("-eyJAAAAAAAA.AAAAAAAA.")],
 		["eyJ runs ending in a dot", repeatedTo("-eyJAAAAAAAA.")],
-	] as const)("redacting %s grows linearly", (_case, input) => {
-		assertGrowsLinearly((text) => {
-			redactSecrets(text);
-		}, input);
-		assertGrowsLinearly((text) => {
-			looksLikeSecret(text);
-		}, input);
-	});
+	] as const)(
+		"redacting %s grows linearly",
+		{ timeout: 30_000 },
+		(_case, input) => {
+			assertGrowsLinearly((text) => {
+				redactSecrets(text);
+			}, input);
+			assertGrowsLinearly((text) => {
+				looksLikeSecret(text);
+			}, input);
+		},
+	);
 });

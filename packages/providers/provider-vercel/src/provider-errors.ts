@@ -7,10 +7,7 @@
  * reliably reaches a log, a receipt, and a support ticket.
  */
 
-import {
-	createProviderRedactor,
-	type ProviderTextRedactor,
-} from "@hobo/core/provider-redaction";
+import { createProviderRedactor } from "@hobo/core/provider-redaction";
 
 export const PROVIDER_ERROR_CODES = [
 	"PROVIDER_RATE_LIMITED",
@@ -55,6 +52,10 @@ export type ProviderErrorOptions = {
 
 export { REDACTION_WINDOW } from "@hobo/core/provider-redaction";
 
+const providerRedactor = createProviderRedactor({
+	patterns: [/\bcode\s*[=:]\s*[A-Za-z0-9-]{8,}/giu],
+});
+
 /**
  * Replace anything credential-shaped with a marker and flatten control
  * characters so provider text cannot forge a log record. The shared redactor
@@ -62,9 +63,9 @@ export { REDACTION_WINDOW } from "@hobo/core/provider-redaction";
  * Vercel adds its claim and transfer codes, which are bearer authority on this
  * path.
  */
-export const redactProviderText: ProviderTextRedactor = createProviderRedactor({
-	patterns: [/\bcode\s*[=:]\s*[A-Za-z0-9-]{8,}/giu],
-});
+export function redactProviderText(text: string, maxLength = 256): string {
+	return providerRedactor(text, maxLength);
+}
 
 function redactOptionalText(value: string | undefined): string | undefined {
 	return value === undefined ? undefined : redactProviderText(value, 160);

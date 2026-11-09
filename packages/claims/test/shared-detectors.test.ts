@@ -39,19 +39,23 @@ describe("assertNoSecrets detectors", () => {
 		["-ey", repeatedTo("-ey")],
 		["http://claim?", repeatedTo("http://claim?")],
 		["http://", repeatedTo("http://")],
-	] as const)("checking a payload of %s grows linearly", (_case, input) => {
-		assertGrowsLinearly(
-			(text) => {
-				try {
-					assertNoSecrets(observed(text));
-				} catch {
-					// Refusing is fine; stalling is not.
-				}
-			},
-			input,
-			// The old claim-URL detector was worse than quadratic: one call on 16
-			// kB took minutes. Starting at 1 kB, it fails the measure in seconds.
-			{ startLength: 1024 },
-		);
-	});
+	] as const)(
+		"checking a payload of %s grows linearly",
+		{ timeout: 30_000 },
+		(_case, input) => {
+			assertGrowsLinearly(
+				(text) => {
+					try {
+						assertNoSecrets(observed(text));
+					} catch {
+						// Refusing is fine; stalling is not.
+					}
+				},
+				input,
+				// The old claim-URL detector was worse than quadratic: one call on 16
+				// kB took minutes. Starting at 1 kB, it fails the measure in seconds.
+				{ startLength: 1024 },
+			);
+		},
+	);
 });

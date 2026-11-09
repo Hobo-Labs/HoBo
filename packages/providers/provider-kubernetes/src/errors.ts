@@ -7,10 +7,7 @@
  * adopted namespace, whatever the operator already put there.
  */
 
-import {
-	createProviderRedactor,
-	type ProviderTextRedactor,
-} from "@hobo/core/provider-redaction";
+import { createProviderRedactor } from "@hobo/core/provider-redaction";
 
 export const KUBERNETES_ERROR_CODES = [
 	"PROVIDER_AUTH_FAILED",
@@ -37,14 +34,7 @@ export type KubernetesErrorOptions = {
 	readonly cause?: Error;
 };
 
-/**
- * Replace anything credential-shaped with a marker and flatten control
- * characters so apiserver text cannot forge a log record. The shared redactor
- * (`@hobo/core/provider-redaction`) holds the shapes, the window and the cut;
- * Kubernetes adds the kubeconfig's embedded blobs and the dockerconfigjson an
- * imagePullSecret carries.
- */
-export const redactClusterText: ProviderTextRedactor = createProviderRedactor({
+const clusterRedactor = createProviderRedactor({
 	patterns: [
 		/\b(?:client-key-data|client-certificate-data|certificate-authority-data)\s*[=:]\s*\S+/giu,
 		// .dockerconfigjson, the usual imagePullSecret payload: to its first
@@ -52,6 +42,17 @@ export const redactClusterText: ProviderTextRedactor = createProviderRedactor({
 		/"auths"\s*:\s*\{[^}]*\}?/gu,
 	],
 });
+
+/**
+ * Replace anything credential-shaped with a marker and flatten control
+ * characters so apiserver text cannot forge a log record. The shared redactor
+ * (`@hobo/core/provider-redaction`) holds the shapes, the window and the cut;
+ * Kubernetes adds the kubeconfig's embedded blobs and the dockerconfigjson an
+ * imagePullSecret carries.
+ */
+export function redactClusterText(text: string, maxLength = 256): string {
+	return clusterRedactor(text, maxLength);
+}
 
 export class KubernetesProviderError extends Error {
 	readonly code: KubernetesErrorCode;

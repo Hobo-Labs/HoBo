@@ -21,10 +21,7 @@
  * support ticket.
  */
 
-import {
-	createProviderRedactor,
-	type ProviderTextRedactor,
-} from "@hobo/core/provider-redaction";
+import { createProviderRedactor } from "@hobo/core/provider-redaction";
 
 export const TTL_SH_ERROR_CODES = [
 	/** A host, scheme, port, or path outside the single allowlisted origin. */
@@ -95,6 +92,17 @@ export type TtlShErrorOptions = {
 
 export { containsControlChar } from "@hobo/core/provider-redaction";
 
+const providerRedactor = createProviderRedactor({
+	keep: /\bsha(?:256|512)[:-][0-9a-f]{32,128}\b/giu,
+	patterns: [/\bBasic\s+\S+/giu],
+	// A long opaque run with no recognisable prefix, for credential formats
+	// nobody has catalogued yet. Deliberately excludes `/` and `.`, so a URL
+	// path is not mistaken for one long token. It starts only where such a run
+	// starts, so one long run is one search. Searched last: run before the JWT
+	// shape, it split a token and left the payload behind.
+	fallbacks: [/(?<![A-Za-z0-9+_-])[A-Za-z0-9+_-]{40,}={0,2}\b/gu],
+});
+
 /**
  * Redact credential-shaped material and flatten control characters, through the
  * shared redactor (`@hobo/core/provider-redaction`) and ttl.sh's own shapes.
@@ -103,17 +111,9 @@ export { containsControlChar } from "@hobo/core/provider-redaction";
  * in every receipt, and a redaction that ate it would make the audit trail
  * useless. It is kept out of the search and put back afterwards.
  */
-export const redactProviderText: ProviderTextRedactor = createProviderRedactor({
-	keep: /\bsha(?:256|512)[:-][0-9a-f]{32,128}\b/giu,
-	patterns: [
-		/\bBasic\s+\S+/giu,
-		// A long opaque run with no recognisable prefix, for credential formats
-		// nobody has catalogued yet. Deliberately excludes `/` and `.`, so a URL
-		// path is not mistaken for one long token. It starts only where such a
-		// run starts, so one long run is one search.
-		/(?<![A-Za-z0-9+_-])[A-Za-z0-9+_-]{40,}={0,2}\b/gu,
-	],
-});
+export function redactProviderText(text: string, maxLength = 256): string {
+	return providerRedactor(text, maxLength);
+}
 
 function redactOptionalText(value: string | undefined): string | undefined {
 	return value === undefined ? undefined : redactProviderText(value, 180);

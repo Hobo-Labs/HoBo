@@ -37,7 +37,8 @@ declare const redactionPatternBrand: unique symbol;
  * A pattern parsed for use as a redaction shape: global, so every occurrence is
  * replaced, and not sticky, so a match is looked for anywhere. A shape must
  * also be linear in the text; that is a property of how it is written, which a
- * parse cannot see, so each shape here has a 1 MB adversarial test.
+ * parse cannot see, so each shape here has a growth test on an adversarial
+ * input (`@hobo/core/linear-time`).
  */
 export type RedactionPattern = RegExp & {
 	readonly [redactionPatternBrand]: true;
@@ -109,6 +110,13 @@ export const CREDENTIAL_PATTERNS: readonly RedactionPattern[] = Object.freeze([
 	PRIVATE_KEY_PATTERN,
 	JWT_PATTERN,
 	redactionPattern(/\bBearer\s+\S+/giu),
+	// An Authorization header in any scheme, and a Basic or Token credential on
+	// its own (capitalized, as the schemes are written, and at least eight
+	// credential characters long, so the words in prose survive).
+	redactionPattern(
+		/\bauthorization["']?\s*[=:]\s*["']?\s*(?:basic|bearer|token|digest|negotiate)\s+\S+/giu,
+	),
+	redactionPattern(/\b(?:Basic|Token)\s+[A-Za-z0-9+/._~-]{8,}={0,2}/gu),
 	// Connection strings, whole: the password sits in the authority section,
 	// and Prisma Postgres hands out prisma+postgres://…?api_key=….
 	redactionPattern(/(?:prisma\+)?postgres(?:ql)?:\/\/\S+/giu),
@@ -142,6 +150,18 @@ export const CREDENTIAL_PATTERNS: readonly RedactionPattern[] = Object.freeze([
  */
 export const JWT_DETECTOR: RegExp =
 	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{8,}\.)(?:[A-Za-z0-9_]*-)*?ey[A-Za-z0-9_-]{8,}\./iu;
+
+/**
+ * A signed compact JWS and nothing after it: an `eyJ` header and a payload and
+ * a signature of eight base64url characters or more. For a caller that must
+ * neither count an unsigned token nor swallow what follows the signature (the
+ * rest of a JSON body). Linear like JWT_PATTERN: it starts only where a run of
+ * base64url characters starts, and the look-ahead reads that run and the next
+ * two once.
+ */
+export const SIGNED_JWT_PATTERN = redactionPattern(
+	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8})(?:[A-Za-z0-9_]*-)*?eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/gu,
+);
 
 /** A private key's BEGIN line. */
 export const PRIVATE_KEY_DETECTOR: RegExp = /-----BEGIN[^-]*PRIVATE KEY-----/u;
@@ -228,10 +248,17 @@ export function decodePercentFully(text: string): string {
 /** What one provider adds to the shared redaction. */
 export type ProviderRedactionProfile = {
 	/**
-	 * The provider's own shapes, searched after the private key and before the
-	 * other shared shapes.
+	 * The provider's own structured shapes (a claim URL, a token prefix, a CLI
+	 * line): searched after the private key and before the other shared shapes,
+	 * because each knows where its own credential ends.
 	 */
 	readonly patterns?: readonly RegExp[];
+	/**
+	 * Generic fallbacks (a long opaque run): searched last, after every shared
+	 * shape, so a JWT, a key, a bearer token or a credential URL is redacted
+	 * whole before a fallback can split it and leave part of it behind.
+	 */
+	readonly fallbacks?: readonly RegExp[];
 	/**
 	 * Spans that are kept whole, never redacted (an artifact's digest identifies
 	 * it, and appears in every receipt). Searched before any shape.
@@ -258,12 +285,15 @@ function parseProfile(profile: ProviderRedactionProfile): ParsedProfile {
 		// The private key first, then the provider's shapes: a shape written for
 		// one provider's format knows where its credential ends, and a shared
 		// shape that matched inside it first would leave the rest behind.
+		// Generic fallbacks last: run first, a long-opaque-run rule splits a JWT
+		// into pieces the JWT shape no longer matches, and its payload survives.
 		patterns: Object.freeze([
 			PRIVATE_KEY_PATTERN,
 			...(profile.patterns ?? []).map(redactionPattern),
 			...CREDENTIAL_PATTERNS.filter(
 				(pattern) => pattern !== PRIVATE_KEY_PATTERN,
 			),
+			...(profile.fallbacks ?? []).map(redactionPattern),
 		]),
 		keep:
 			profile.keep === undefined ? undefined : redactionPattern(profile.keep),
@@ -308,7 +338,11 @@ export function createProviderRedactor(
 ): ProviderTextRedactor {
 	const parsed = parseProfile(profile);
 	return (text, maxLength = 256) => {
-		const decoded = parsed.decodePercent ? decodePercentFully(text) : text;
+		// Control characters become spaces before anything is searched, so one
+		// cannot hide a credential from a shape (`PASSWORD\u0000=…`).
+		const decoded = flattenControlChars(
+			parsed.decodePercent ? decodePercentFully(text) : text,
+		);
 		const searched = windowOf(
 			decoded,
 			Math.max(REDACTION_WINDOW, 4 * maxLength),
@@ -321,7 +355,6 @@ export function createProviderRedactor(
 		} else {
 			out = redactKeeping(searched, parsed.keep, parsed.patterns);
 		}
-		out = flattenControlChars(out);
 		if (parsed.collapseWhitespace) out = out.replace(/\s{2,}/gu, " ");
 		out = out.trim();
 		return out.length > maxLength || searched.length < decoded.length
@@ -330,6 +363,9 @@ export function createProviderRedactor(
 	};
 }
 
+const sharedRedactor = createProviderRedactor();
+
 /** The shared shapes alone. */
-export const redactProviderText: ProviderTextRedactor =
-	createProviderRedactor();
+export function redactProviderText(text: string, maxLength = 256): string {
+	return sharedRedactor(text, maxLength);
+}

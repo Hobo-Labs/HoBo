@@ -7,10 +7,7 @@
  * scrubbed before they can reach a message, a log line, or a receipt.
  */
 
-import {
-	createProviderRedactor,
-	type ProviderTextRedactor,
-} from "@hobo/core/provider-redaction";
+import { createProviderRedactor } from "@hobo/core/provider-redaction";
 
 export const PROVIDER_ERROR_CODES = [
 	"PROVIDER_RATE_LIMITED",
@@ -63,13 +60,7 @@ export type ProviderErrorOptions = {
 	readonly cause?: Error;
 };
 
-/**
- * Replace anything credential-shaped with a marker and flatten control
- * characters, which CLI output has plenty of and which can otherwise forge a
- * log record. The shared redactor (`@hobo/core/provider-redaction`) holds the
- * shapes, the window and the cut; Netlify adds its own below.
- */
-export const redactProviderText: ProviderTextRedactor = createProviderRedactor({
+const providerRedactor = createProviderRedactor({
 	patterns: [
 		// The claim URL carries its session material in the fragment, so the
 		// fragment has to go with it — and the whole run it sits in. The match
@@ -81,6 +72,16 @@ export const redactProviderText: ProviderTextRedactor = createProviderRedactor({
 	],
 	collapseWhitespace: true,
 });
+
+/**
+ * Replace anything credential-shaped with a marker and flatten control
+ * characters, which CLI output has plenty of and which can otherwise forge a
+ * log record. The shared redactor (`@hobo/core/provider-redaction`) holds the
+ * shapes, the window and the cut; Netlify adds its own below.
+ */
+export function redactProviderText(text: string, maxLength = 256): string {
+	return providerRedactor(text, maxLength);
+}
 
 function redactOptionalText(value: string | undefined): string | undefined {
 	return value === undefined ? undefined : redactProviderText(value, 160);

@@ -18,10 +18,7 @@
  * - `SECRET_CUSTODY_UNAVAILABLE` — the deposit side failed. Reporting that as
  *   `SECRET_REFERENCE_INVALID` would blame a reference that was never issued.
  */
-import {
-	createProviderRedactor,
-	type ProviderTextRedactor,
-} from "@hobo/core/provider-redaction";
+import { createProviderRedactor } from "@hobo/core/provider-redaction";
 
 export const PROVIDER_ERROR_CODES = [
 	"PROVIDER_AUTH_FAILED",
@@ -71,6 +68,21 @@ export type ProviderErrorOptions = {
 
 export { containsControlChar } from "@hobo/core/provider-redaction";
 
+const providerRedactor = createProviderRedactor({
+	patterns: [
+		/https?:\/\/console\.upstash\.com\/redis\/\S+/giu,
+		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
+		/\*\*\s*Token\s*:?\s*\*\*\s*\S+/giu,
+	],
+	// Upstash REST tokens are long base64url strings with no fixed prefix to
+	// match on, so the rule is structural: any unbroken run of 40+ token
+	// characters is credential material. Searched last, so it cannot split a
+	// JWT or a key the shared shapes redact whole.
+	fallbacks: [/[A-Za-z0-9_-]{40,}/gu],
+	decodePercent: true,
+	collapseWhitespace: true,
+});
+
 /**
  * Replace anything credential-shaped with a marker and flatten control
  * characters so provider text cannot forge a log record. The text is
@@ -80,19 +92,9 @@ export { containsControlChar } from "@hobo/core/provider-redaction";
  * capabilities, encoded forms included), the CLI's `**Token:**` line and long
  * opaque runs.
  */
-export const redactProviderText: ProviderTextRedactor = createProviderRedactor({
-	patterns: [
-		/https?:\/\/console\.upstash\.com\/redis\/\S+/giu,
-		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
-		/\*\*\s*Token\s*:?\s*\*\*\s*\S+/giu,
-		// Upstash REST tokens are long base64url strings with no fixed prefix to
-		// match on, so the rule is structural: any unbroken run of 40+ token
-		// characters is credential material.
-		/[A-Za-z0-9_-]{40,}/gu,
-	],
-	decodePercent: true,
-	collapseWhitespace: true,
-});
+export function redactProviderText(text: string, maxLength = 256): string {
+	return providerRedactor(text, maxLength);
+}
 
 function redactOptionalText(value: string | undefined): string | undefined {
 	return value === undefined ? undefined : redactProviderText(value, 160);

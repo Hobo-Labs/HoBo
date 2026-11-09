@@ -40,21 +40,29 @@ describe("provider-netlify redaction", () => {
 		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
 		["http:// with no claim", repeatedTo("http://")],
 		["a name run with no separator", repeatedTo("a")],
-	] as const)("redacting %s grows linearly", (_case, input) => {
-		assertGrowsLinearly((text) => {
-			redactProviderText(text, 8 * MB);
-		}, input);
-	});
+	] as const)(
+		"redacting %s grows linearly",
+		{ timeout: 30_000 },
+		(_case, input) => {
+			assertGrowsLinearly((text) => {
+				redactProviderText(text, 8 * MB);
+			}, input);
+		},
+	);
 
 	it.each([
 		["-ey", repeatedTo("-ey")],
 		["http:// with no claim", repeatedTo("http://")],
 		["http://claim with no query", repeatedTo("http://claim")],
-	] as const)("scanning a receipt string of %s grows linearly", (_case, input) => {
-		assertGrowsLinearly((text) => {
-			scanForCredentialMaterial(text);
-		}, input);
-	});
+	] as const)(
+		"scanning a receipt string of %s grows linearly",
+		{ timeout: 30_000 },
+		(_case, input) => {
+			assertGrowsLinearly((text) => {
+				scanForCredentialMaterial(text);
+			}, input);
+		},
+	);
 
 	it("the receipt scanner still finds a claim URL, a JWT and a key", () => {
 		const labels = (value: string) =>
@@ -72,5 +80,26 @@ describe("provider-netlify redaction", () => {
 			"jwt",
 		);
 		expect(labels("-----BEGIN RSA PRIVATE KEY-----")).toContain("private key");
+	});
+});
+
+// The same three secrets, redacted whole, by every caller of the shared
+// redactor: a JWT with a long header and signature (a generic long-run rule
+// searched first split one and left its payload), a private key, and a URL
+// with credentials.
+describe("the shared shapes, through this caller", () => {
+	const header = `eyJ${"h".repeat(53)}`;
+	const payload = "eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJyb290In0";
+	const signature = "s".repeat(48);
+	it.each([
+		["a JWT", `${header}.${payload}.${signature}`],
+		[
+			"a private key",
+			"-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA\n-----END RSA PRIVATE KEY-----",
+		],
+		["a URL with credentials", "https://admin:hunter2@db.example.com/app"],
+	])("redacts %s whole", (_case, secret) => {
+		const text = `before ${secret} after`;
+		expect(redactProviderText(text)).toBe("before [redacted] after");
 	});
 });

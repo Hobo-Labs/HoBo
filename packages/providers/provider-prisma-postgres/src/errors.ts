@@ -7,10 +7,7 @@
  * from it reaches a message without going through {@link redactProviderText}.
  */
 
-import {
-	createProviderRedactor,
-	type ProviderTextRedactor,
-} from "@hobo/core/provider-redaction";
+import { createProviderRedactor } from "@hobo/core/provider-redaction";
 import { isJsonString } from "./json.js";
 
 export const PROVIDER_ERROR_CODES = [
@@ -44,6 +41,15 @@ export type ProviderErrorOptions = {
 
 export { containsControlChar } from "@hobo/core/provider-redaction";
 
+const providerRedactor = createProviderRedactor({
+	patterns: [
+		/https?:\/\/create-db\.prisma\.io\/claim\S*/giu,
+		/\bproj_[A-Za-z0-9_-]+/gu,
+		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
+	],
+	decodePercent: true,
+});
+
 /**
  * Replace anything credential-shaped with a marker and flatten control
  * characters so provider text cannot forge a log record. The text is
@@ -52,14 +58,9 @@ export { containsControlChar } from "@hobo/core/provider-redaction";
  * window and the cut; Prisma Postgres adds its claim URL, `proj_` ids and
  * UUIDs.
  */
-export const redactProviderText: ProviderTextRedactor = createProviderRedactor({
-	patterns: [
-		/https?:\/\/create-db\.prisma\.io\/claim\S*/giu,
-		/\bproj_[A-Za-z0-9_-]+/gu,
-		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
-	],
-	decodePercent: true,
-});
+export function redactProviderText(text: string, maxLength = 256): string {
+	return providerRedactor(text, maxLength);
+}
 
 export class PrismaProviderError extends Error {
 	readonly code: ProviderErrorCode;

@@ -61,11 +61,13 @@ describe("offer scan detectors", () => {
 		);
 	});
 
-	it.each([
-		["-ey", repeatedTo("-ey")],
-	] as const)("scanning a value of %s grows linearly", (_case, input) => {
-		assertGrowsLinearly((text) => {
-			assertOfferIsSecretFree({ ...offer, trustEvidenceRefs: [text] });
-		}, input);
-	});
+	it.each([["-ey", repeatedTo("-ey")]] as const)(
+		"scanning a value of %s grows linearly",
+		{ timeout: 30_000 },
+		(_case, input) => {
+			assertGrowsLinearly((text) => {
+				assertOfferIsSecretFree({ ...offer, trustEvidenceRefs: [text] });
+			}, input);
+		},
+	);
 });

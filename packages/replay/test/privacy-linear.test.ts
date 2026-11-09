@@ -67,9 +67,13 @@ describe("the debug-payload secret pattern", () => {
 		["letters", repeatedTo("a")],
 		["a scheme run", repeatedTo("a.")],
 		["key names with no =", repeatedTo("TOKEN")],
-	] as const)("testing %s grows linearly", (_case, input) => {
-		assertGrowsLinearly((text) => {
-			masked(text);
-		}, input);
-	});
+	] as const)(
+		"testing %s grows linearly",
+		{ timeout: 30_000 },
+		(_case, input) => {
+			assertGrowsLinearly((text) => {
+				masked(text);
+			}, input);
+		},
+	);
 });

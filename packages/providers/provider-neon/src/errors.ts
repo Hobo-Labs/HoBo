@@ -6,10 +6,7 @@
  * that reliably reaches a log, a receipt, and a support ticket.
  */
 
-import {
-	createProviderRedactor,
-	type ProviderTextRedactor,
-} from "@hobo/core/provider-redaction";
+import { createProviderRedactor } from "@hobo/core/provider-redaction";
 import { isJsonString } from "./json.js";
 
 export const PROVIDER_ERROR_CODES = [
@@ -42,6 +39,15 @@ export type ProviderErrorOptions = {
 
 export { containsControlChar } from "@hobo/core/provider-redaction";
 
+const providerRedactor = createProviderRedactor({
+	patterns: [
+		/https?:\/\/neon\.new\/claim\/\S+/giu,
+		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
+		/\bnpg_[A-Za-z0-9_-]{4,}/giu,
+	],
+	decodePercent: true,
+});
+
 /**
  * Replace anything credential-shaped with a marker and flatten control
  * characters so provider text cannot forge a log record. The text is
@@ -50,14 +56,9 @@ export { containsControlChar } from "@hobo/core/provider-redaction";
  * window and the cut; Neon adds its claim URL, project UUIDs and `npg_`
  * passwords.
  */
-export const redactProviderText: ProviderTextRedactor = createProviderRedactor({
-	patterns: [
-		/https?:\/\/neon\.new\/claim\/\S+/giu,
-		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
-		/\bnpg_[A-Za-z0-9_-]{4,}/giu,
-	],
-	decodePercent: true,
-});
+export function redactProviderText(text: string, maxLength = 256): string {
+	return providerRedactor(text, maxLength);
+}
 
 export class NeonProviderError extends Error {
 	readonly code: ProviderErrorCode;

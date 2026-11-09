@@ -14,19 +14,25 @@ intent with explicit `full | partial | none` realization and capability notes.
 
 `@hobo/core/provider-redaction` (a subpath, not the root: it names provider
 credential shapes) is the one redactor for provider text. `redactProviderText`
-replaces the shared credential shapes (private key, JWT, bearer token,
-connection strings, URL credentials, secret-named keys, prefixed keys) with
-`[redacted]`, flattens control characters, and cuts to `maxLength`; it searches
-the first `REDACTION_WINDOW` (8192) characters, or four times `maxLength`, plus
-the rest of the run of non-whitespace the cut falls in, and marks a longer text
-cut. `createProviderRedactor(profile)` adds a provider's own `patterns` (searched
-after the private key and before the other shared shapes), spans to keep whole,
-full percent-decoding (`decodePercentFully`, one pass), and whitespace
+turns control characters into spaces first, so none can hide a credential
+(`PASSWORD\u0000=…`), then replaces the shared credential shapes (private key,
+JWT, bearer token, an `Authorization` header in any scheme, `Basic` and `Token`
+credentials, connection strings, URL credentials, secret-named keys, prefixed
+keys) with `[redacted]`, and cuts to `maxLength`; it searches the first
+`REDACTION_WINDOW` (8192) characters, or four times `maxLength`, plus the rest
+of the run of non-whitespace the cut falls in, and marks a longer text cut.
+`createProviderRedactor(profile)` adds a provider's own structured `patterns`
+(searched after the private key and before the other shared shapes) and its
+generic `fallbacks`, such as a long-opaque-run rule (searched last, so they
+cannot split a JWT or a key the shared shapes redact whole), spans to keep
+whole, full percent-decoding (`decodePercentFully`, one pass), and whitespace
 collapsing. A pattern is parsed by `redactionPattern`, which refuses one that is
 not global or is sticky. Every pattern is linear in the text, each with an
 adversarial growth test (`test/provider-redaction.test.ts`, see below);
 `JWT_DETECTOR` and `PRIVATE_KEY_DETECTOR` are the same shapes for guards that
-refuse instead. A private-key label is anything up to the next `-`.
+refuse instead, and `SIGNED_JWT_PATTERN` is a JWT bounded to its three segments
+for a caller that must not count an unsigned token or swallow what follows the
+signature. A private-key label is anything up to the next `-`.
 
 ## Linear-time tests
 
@@ -34,14 +40,15 @@ refuse instead. A private-key label is anything up to the next `-`.
 without a wall-clock bound that a slow or loaded machine fails.
 `measureGrowth(run, input)` times `input(n)` and `input(4n)` in the CPU time of
 the thread that runs them (so other processes on a loaded machine do not count),
-the best of three runs each, taking turns. n doubles from 4096 (to at most 2^18)
-until a run takes 50 ms of CPU time, long against Linux's few-millisecond
+the better of two runs each, taking turns. n doubles from 4096 (to at most 2^18)
+until a run takes 30 ms of CPU time, long against Linux's few-millisecond
 CPU-time ticks; an operation too quick for that is repeated within each timed
 run, the same number of times at both sizes. `assertGrowsLinearly` throws a
 `NonLinearGrowthError` at `LINEAR_GROWTH_LIMIT` (8: linear work grows about 4x,
 quadratic about 16x), then runs `input(1 MB)` once. An operation that costs next
-to nothing even repeated `MAX_REPEAT` times is linear while 4n stays under 400
-ms. The only absolute bound is `HANG_BACKSTOP_MS` (20 s) on a single call, an
+to nothing even repeated `MAX_REPEAT` times is linear while 4n stays under 240
+ms. `NEGATIVE_CONTROL` holds a test's expected-to-fail pattern to small sizes and
+one run, since quadratic work shows its 16x early. The only absolute bound is `HANG_BACKSTOP_MS` (20 s) on a single call, an
 `OperationHangError`. `repeatedTo(unit, prefix)` builds the inputs.
 
 ## Honest scope

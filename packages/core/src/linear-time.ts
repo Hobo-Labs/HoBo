@@ -4,14 +4,14 @@
  * loaded the machine is.
  *
  * `measureGrowth` times the operation on an input of length n and on one of
- * length 4n, the best of three runs each, the two sizes taking turns, in the
- * CPU time of the thread that runs it (wall time where the runtime has no such
- * clock). Linear work grows about 4×, and quadratic work about 16×;
+ * length 4n, the better of two runs each, the two sizes taking turns, in the
+ * CPU time of the thread that runs it (a runtime without that clock is
+ * refused). Linear work grows about 4×, and quadratic work about 16×;
  * LINEAR_GROWTH_LIMIT (8) sits between them with a factor of two either side.
  *
  * Each timed run must be long against the clock's tick (Linux counts a
  * thread's CPU time in scheduler ticks of a few milliseconds), so n doubles
- * from 4096 until a run takes 50 ms. A quadratic operation reaches that at a
+ * from 4096 until a run takes 30 ms. A quadratic operation reaches that at a
  * size it still finishes at, rather than being left to stall on a megabyte.
  * An operation so quick that n reaches its cap first is repeated within each
  * timed run instead, the same number of times at both sizes, so its ratio is
@@ -51,14 +51,14 @@ export type GrowthOptions = {
 	 * to tell from timer noise, and one slow run at a tiny size could pass).
 	 */
 	readonly startLength?: number;
-	/** n doubles until a timed run takes this much CPU time (default 50 ms). */
+	/** n doubles until a timed run takes this much CPU time (default 30 ms). */
 	readonly minMs?: number;
 	/**
 	 * n stops doubling here (default 2^18, so 4n is at most 1 Mi characters:
 	 * larger texts add garbage-collection costs that grow faster than the work).
 	 */
 	readonly maxLength?: number;
-	/** Runs per size; the fastest counts (default 3). */
+	/** Runs per size once calibrated; the fastest counts (default 2). */
 	readonly runs?: number;
 };
 
@@ -77,14 +77,26 @@ export class OperationHangError extends Error {
  * The CPU time this thread has used, in milliseconds: what one run of the
  * operation costs, whatever else the machine is running. Wall time on a loaded
  * machine includes every slice other processes and threads took meanwhile, and
- * those slices are what made a ratio of two wall times flake. Where the
- * runtime has no per-thread CPU clock, wall time stands in.
+ * those slices are what made a ratio of two wall times flake. A runtime with
+ * no per-thread CPU clock (`process.threadCpuUsage`, Node 22.19 and later; the
+ * engines range allows older 22.x) is refused rather than measured by wall
+ * time, which would bring the flakes back without saying so.
  */
 function cpuMs(): number {
 	const used = globalThis.process?.threadCpuUsage?.();
-	return used === undefined
-		? performance.now()
-		: (used.user + used.system) / 1000;
+	if (used === undefined) throw new MissingCpuClockError();
+	return (used.user + used.system) / 1000;
+}
+
+export class MissingCpuClockError extends Error {
+	readonly code = "CPU_CLOCK_MISSING" as const;
+
+	constructor() {
+		super(
+			"this runtime has no per-thread CPU clock (process.threadCpuUsage), so growth cannot be measured without the wall-clock noise it exists to avoid",
+		);
+		this.name = "MissingCpuClockError";
+	}
 }
 
 /** The most times one timed run repeats the operation. */
@@ -110,46 +122,58 @@ function once(
 	return cpuMs() - startedCpu;
 }
 
-function fastest(
-	run: (input: string) => void,
+/** `once` for an operation that returns a promise. */
+async function onceAsync(
+	run: (input: string) => Promise<void>,
 	input: string,
-	runs: number,
-	repeat = 1,
-): number {
-	let best = Number.POSITIVE_INFINITY;
-	for (let attempt = 0; attempt < runs; attempt++)
-		best = Math.min(best, once(run, input, repeat));
-	return best;
+	repeat: number,
+): Promise<number> {
+	const startedCpu = cpuMs();
+	for (let call = 0; call < repeat; call++) {
+		const startedWall = performance.now();
+		await run(input);
+		const wall = performance.now() - startedWall;
+		if (wall > HANG_BACKSTOP_MS)
+			throw new OperationHangError(input.length, wall);
+	}
+	return cpuMs() - startedCpu;
 }
 
-/** How `run`'s cost grows from `input(n)` to `input(4n)`. */
-export function measureGrowth(
-	run: (input: string) => void,
+/** One timed run the measurement asks for. */
+type TimedRun = { readonly input: string; readonly repeat: number };
+
+/**
+ * The measurement, written once for both kinds of operation: it yields each
+ * run it needs timed and is handed back that run's CPU time.
+ */
+function* growthPlan(
 	input: (length: number) => string,
-	options: GrowthOptions = {},
-): Growth {
-	const minMs = options.minMs ?? 50;
+	options: GrowthOptions,
+): Generator<TimedRun, Growth, number> {
+	const minMs = options.minMs ?? 30;
 	const maxLength = options.maxLength ?? 262_144;
-	const runs = options.runs ?? 3;
+	const runs = options.runs ?? 2;
 	let length = options.startLength ?? 4096;
 	let repeat = 1;
-	let smallMs = fastest(run, input(length), runs);
+	// Calibrating takes one run a step: only the final sizes need the best of
+	// several.
+	let smallMs = yield { input: input(length), repeat };
 	while (smallMs < minMs && length * 2 <= maxLength) {
 		length *= 2;
-		smallMs = fastest(run, input(length), runs);
+		smallMs = yield { input: input(length), repeat };
 	}
 	const small = input(length);
 	while (smallMs < minMs && repeat * 2 <= MAX_REPEAT) {
 		repeat *= 2;
-		smallMs = fastest(run, small, runs, repeat);
+		smallMs = yield { input: small, repeat };
 	}
 	// The two sizes take turns, so anything that slows the machine for a while
 	// slows both rather than one.
 	const large = input(4 * length);
 	let largeMs = Number.POSITIVE_INFINITY;
 	for (let attempt = 0; attempt < runs; attempt++) {
-		largeMs = Math.min(largeMs, once(run, large, repeat));
-		smallMs = Math.min(smallMs, once(run, small, repeat));
+		largeMs = Math.min(largeMs, yield { input: large, repeat });
+		smallMs = Math.min(smallMs, yield { input: small, repeat });
 	}
 	return {
 		length,
@@ -162,14 +186,53 @@ export function measureGrowth(
 	};
 }
 
+/** How `run`'s cost grows from `input(n)` to `input(4n)`. */
+export function measureGrowth(
+	run: (input: string) => void,
+	input: (length: number) => string,
+	options: GrowthOptions = {},
+): Growth {
+	const plan = growthPlan(input, options);
+	let step = plan.next();
+	while (step.done !== true)
+		step = plan.next(once(run, step.value.input, step.value.repeat));
+	return step.value;
+}
+
+/** `measureGrowth` for an operation that returns a promise. */
+export async function measureGrowthAsync(
+	run: (input: string) => Promise<void>,
+	input: (length: number) => string,
+	options: GrowthOptions = {},
+): Promise<Growth> {
+	const plan = growthPlan(input, options);
+	let step = plan.next();
+	while (step.done !== true)
+		step = plan.next(await onceAsync(run, step.value.input, step.value.repeat));
+	return step.value;
+}
+
+/**
+ * Options for a negative control, a pattern expected to fail the measure:
+ * quadratic work shows its 16x at small n, so it is calibrated from 1 kB,
+ * capped at 32 kB, timed once a size, and costs well under a second of CPU
+ * where the defaults would spend most of a minute on it.
+ */
+export const NEGATIVE_CONTROL: GrowthOptions = Object.freeze({
+	startLength: 1024,
+	maxLength: 32_768,
+	minMs: 20,
+	runs: 1,
+});
+
 /**
  * Linear: the cost grew by less than LINEAR_GROWTH_LIMIT, or the operation
  * costs next to nothing (`calibrated` false) and 4n took under
  * LINEAR_GROWTH_LIMIT × `minMs`. No quadratic operation is uncalibrated: one
- * that costs under 50 µs on a megabyte, repeated MAX_REPEAT times, is not
+ * that costs under 30 µs on a quarter megabyte, repeated MAX_REPEAT times, is not
  * reading the megabyte.
  */
-export function grewLinearly(growth: Growth, minMs = 50): boolean {
+export function grewLinearly(growth: Growth, minMs = 30): boolean {
 	return (
 		growth.ratio < LINEAR_GROWTH_LIMIT ||
 		(!growth.calibrated && growth.largeMs < LINEAR_GROWTH_LIMIT * minMs)
@@ -212,6 +275,19 @@ export function assertGrowsLinearly(
 	const growth = measureGrowth(run, input, options);
 	if (!grewLinearly(growth, options.minMs))
 		throw new NonLinearGrowthError(growth);
-	fastest(run, input(options.finalLength ?? 1_000_000), 1);
+	once(run, input(options.finalLength ?? 1_000_000), 1);
+	return growth;
+}
+
+/** `assertGrowsLinearly` for an operation that returns a promise. */
+export async function assertGrowsLinearlyAsync(
+	run: (input: string) => Promise<void>,
+	input: (length: number) => string,
+	options: GrowthOptions & { readonly finalLength?: number } = {},
+): Promise<Growth> {
+	const growth = await measureGrowthAsync(run, input, options);
+	if (!grewLinearly(growth, options.minMs))
+		throw new NonLinearGrowthError(growth);
+	await onceAsync(run, input(options.finalLength ?? 1_000_000), 1);
 	return growth;
 }

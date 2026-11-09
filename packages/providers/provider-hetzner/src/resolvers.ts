@@ -236,10 +236,11 @@ const RAW_CREDENTIAL_PATTERN = /^[A-Za-z0-9]{32,}$/u;
  * Anything long and token-shaped is scrubbed out of provider error text, on top
  * of the shared shapes (`@hobo/core/provider-redaction`): a private key, a
  * bearer token, a JWT, connection strings, URL credentials, and secret-named
- * keys short enough to slip under the length rule.
+ * keys short enough to slip under the length rule. The length rule is searched
+ * last, so it cannot split a JWT or a key the shared shapes redact whole.
  */
 const redactTokenText = createProviderRedactor({
-	patterns: [/[A-Za-z0-9_-]{20,}/gu],
+	fallbacks: [/[A-Za-z0-9_-]{20,}/gu],
 });
 
 /**

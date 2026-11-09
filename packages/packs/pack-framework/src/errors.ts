@@ -10,10 +10,7 @@
  * not match what was signed.
  */
 
-import {
-	createProviderRedactor,
-	type ProviderTextRedactor,
-} from "@hobo/core/provider-redaction";
+import { createProviderRedactor } from "@hobo/core/provider-redaction";
 
 export const PACK_ERROR_CODES = [
 	"PACK_MANIFEST_INVALID",
@@ -49,6 +46,8 @@ export interface PackErrorJson {
 	readonly detail: PackErrorDetail;
 }
 
+const packRedactor = createProviderRedactor();
+
 /**
  * Redact credential-shaped substrings and flatten control characters, through
  * the shared redactor (`@hobo/core/provider-redaction`), which holds every
@@ -57,7 +56,9 @@ export interface PackErrorJson {
  * A container runtime echoes back the command line it was handed, so text from
  * a pack operation is exactly the text most likely to carry a credential.
  */
-export const redactPackText: ProviderTextRedactor = createProviderRedactor();
+export function redactPackText(text: string, maxLength = 256): string {
+	return packRedactor(text, maxLength);
+}
 
 export class PackError extends Error {
 	readonly code: PackErrorCode;

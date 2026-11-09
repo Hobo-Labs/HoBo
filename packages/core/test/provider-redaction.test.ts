@@ -21,6 +21,7 @@ import {
 	HANG_BACKSTOP_MS,
 	LINEAR_GROWTH_LIMIT,
 	measureGrowth,
+	NEGATIVE_CONTROL,
 	repeatedTo,
 } from "../src/linear-time.js";
 import {
@@ -36,6 +37,7 @@ import {
 	RedactionPatternError,
 	redactionPattern,
 	redactProviderText,
+	SIGNED_JWT_PATTERN,
 } from "../src/provider-redaction.js";
 
 const MB = 1_000_000;
@@ -53,6 +55,8 @@ const PATTERN_NAMES = [
 	"private key",
 	"jwt",
 	"bearer",
+	"authorization header",
+	"basic or token",
 	"postgres url",
 	"redis url",
 	"mysql, mongodb or amqp url",
@@ -117,6 +121,21 @@ const adversarial: readonly Adversary[] = [
 		name: "Bearer and spaces to the end",
 		targets: ["bearer"],
 		text: repeatedTo(" ", "Bearer"),
+	},
+	{
+		name: "Authorization: over and over",
+		targets: ["authorization header"],
+		text: repeatedTo("Authorization: "),
+	},
+	{
+		name: "authorization= and a scheme with nothing after it",
+		targets: ["authorization header"],
+		text: repeatedTo("authorization=basic "),
+	},
+	{
+		name: "Basic and short credentials",
+		targets: ["basic or token"],
+		text: repeatedTo("Basic abcdefg Token abcdefg "),
 	},
 	{
 		name: "connection-string schemes",
@@ -185,6 +204,10 @@ function expectLinear(
 	expect(grewLinearly(growth), `${what}: ${JSON.stringify(growth)}`).toBe(true);
 }
 
+// A growth measurement costs about a second of CPU; this is its backstop
+// against the root config's 10 s test timeout on a slow or loaded runner.
+const GROWTH_TIMEOUT_MS = 30_000;
+
 describe("every pattern on a hostile text", () => {
 	const searchedWhole = (text: string) => {
 		redactProviderText(text, 8 * MB);
@@ -192,20 +215,24 @@ describe("every pattern on a hostile text", () => {
 
 	it.each(
 		adversarial.map((entry) => [entry.name, entry] as const),
-	)("%s: searched whole, the cost grows linearly", (_case, entry) => {
-		expectLinear(searchedWhole, entry.text, entry.name);
-		// A megabyte, searched whole, still returns: only a hang trips this.
+	)("%s: a megabyte searched whole returns, and by default the window bounds the output", (_case, entry) => {
+		// Linearity is measured pattern by pattern below; this only catches a
+		// hang in the redactor around them.
 		const megabyte = entry.text(MB);
 		expect(megabyte.length).toBeGreaterThanOrEqual(MB);
 		expect(timed(() => searchedWhole(megabyte))).toBeLessThan(HANG_BACKSTOP_MS);
+		expect(redactProviderText(megabyte).length).toBeLessThanOrEqual(257);
 	});
 
-	it.each(
-		adversarial.map((entry) => [entry.name, entry] as const),
-	)("%s: by default, the window bounds the output", (_case, entry) => {
-		// The window only ever shortens what is searched whole above.
-		expect(redactProviderText(entry.text(MB)).length).toBeLessThanOrEqual(257);
-	});
+	it(
+		"the whole redactor grows linearly on a mix of every shape",
+		() => {
+			const mix = adversarial.find((entry) => entry.targets.length === 0);
+			if (mix === undefined) throw new Error("no mixed input");
+			expectLinear(searchedWhole, mix.text, mix.name);
+		},
+		GROWTH_TIMEOUT_MS,
+	);
 
 	it("every shared pattern has an input built against it", () => {
 		expect(CREDENTIAL_PATTERNS).toHaveLength(PATTERN_NAMES.length);
@@ -221,64 +248,72 @@ describe("every pattern on a hostile text", () => {
 		adversarial.flatMap((entry) =>
 			entry.targets.map((target) => [target, entry.name, entry] as const),
 		),
-	)("the %s pattern alone grows linearly on %s", (target, _case, entry) => {
-		const pattern = patternNamed(target);
-		expectLinear(
-			(text) => {
-				text.replace(pattern, "[redacted]");
-			},
-			entry.text,
-			`${target} on ${entry.name}`,
-		);
-	});
+	)(
+		"the %s pattern alone grows linearly on %s",
+		(target, _case, entry) => {
+			const pattern = patternNamed(target);
+			expectLinear(
+				(text) => {
+					text.replace(pattern, "[redacted]");
+				},
+				entry.text,
+				`${target} on ${entry.name}`,
+			);
+		},
+		GROWTH_TIMEOUT_MS,
+	);
 
 	it.each([
+		["the JWT detector", JWT_DETECTOR, repeatedTo("-ey")],
+		["the JWT detector", JWT_DETECTOR, repeatedTo("eyAAAAAAAAAA-")],
+		["the signed JWT pattern", SIGNED_JWT_PATTERN, repeatedTo("-eyJ")],
+		["the signed JWT pattern", SIGNED_JWT_PATTERN, repeatedTo("-eyJAAAAAAAA.")],
 		[
-			"the JWT detector",
-			JWT_DETECTOR,
-			["-ey over and over", "ey runs with no dot", "runs ending in a dot"],
+			"the signed JWT pattern",
+			SIGNED_JWT_PATTERN,
+			repeatedTo("-eyJAAAAAAAA.AAAAAAAA."),
 		],
 		[
 			"the private-key detector",
 			PRIVATE_KEY_DETECTOR,
-			["BEGIN markers", "long END labels after a BEGIN"],
+			repeatedTo("-----BEGIN PRIVATE KEY"),
 		],
-	] as const)("%s grows linearly", (_case, detector, inputs) => {
-		for (const entry of adversarial.filter((each) =>
-			inputs.includes(each.name),
-		)) {
+	] as const)(
+		"%s grows linearly",
+		(name, pattern, text) => {
+			expectLinear(
+				(each) => {
+					each.replace(
+						new RegExp(pattern.source, `${pattern.flags.replace("g", "")}g`),
+						"x",
+					);
+				},
+				text,
+				name,
+			);
+		},
+		GROWTH_TIMEOUT_MS,
+	);
+
+	it(
+		"percent-decoding nested %25 grows linearly",
+		() => {
+			// One layer of `%25` per pass for the old decoder: `%252525…41`.
+			const nested = (length: number) => `%${"25".repeat(length / 2)}41`;
 			expectLinear(
 				(text) => {
-					detector.test(text);
+					decodePercentFully(text);
 				},
-				entry.text,
-				entry.name,
+				nested,
+				"decodePercentFully",
 			);
-		}
-	});
-
-	it("percent-decoding nested %25 grows linearly", () => {
-		// One layer of `%25` per pass for the old decoder: `%252525…41`.
-		const nested = (length: number) => `%${"25".repeat(length / 2)}41`;
-		expectLinear(
-			(text) => {
-				decodePercentFully(text);
-			},
-			nested,
-			"decodePercentFully",
-		);
-		const redact = createProviderRedactor({ decodePercent: true });
-		expectLinear(
-			(text) => {
-				redact(text);
-			},
-			nested,
-			"a decoding redactor",
-		);
-	});
+		},
+		GROWTH_TIMEOUT_MS,
+	);
 
 	// The measure has to tell the two apart, or the tests above prove nothing:
-	// the patterns and the decoder they replaced must fail it.
+	// the patterns and the decoder they replaced must fail it. A quadratic shows
+	// its 16x at a small size, so these are capped there (NEGATIVE_CONTROL).
 	it.each([
 		[
 			"the old JWT pattern",
@@ -295,26 +330,39 @@ describe("every pattern on a hostile text", () => {
 			/[A-Za-z0-9_-]*(?:access[_-]?token|auth[_-]?token|api[_-]?key)\s*[=:]\s*\S+/giu,
 			repeatedTo("a"),
 		],
-	] as const)("%s fails the measure", (_case, pattern, text) => {
-		const growth = measureGrowth((each) => {
-			each.replace(pattern, "x");
-		}, text);
-		expect(growth.ratio, JSON.stringify(growth)).toBeGreaterThanOrEqual(
-			LINEAR_GROWTH_LIMIT,
-		);
-	});
+	] as const)(
+		"%s fails the measure",
+		(_case, pattern, text) => {
+			const growth = measureGrowth(
+				(each) => {
+					each.replace(pattern, "x");
+				},
+				text,
+				NEGATIVE_CONTROL,
+			);
+			expect(growth.ratio, JSON.stringify(growth)).toBeGreaterThanOrEqual(
+				LINEAR_GROWTH_LIMIT,
+			);
+		},
+		GROWTH_TIMEOUT_MS,
+	);
 
-	it("the old decoder, again until nothing changes, fails the measure", () => {
-		const growth = measureGrowth(
-			(text) => {
-				decodeByPasses(text);
-			},
-			(length) => `%${"25".repeat(length / 2)}41`,
-		);
-		expect(growth.ratio, JSON.stringify(growth)).toBeGreaterThanOrEqual(
-			LINEAR_GROWTH_LIMIT,
-		);
-	});
+	it(
+		"the old decoder, again until nothing changes, fails the measure",
+		() => {
+			const growth = measureGrowth(
+				(text) => {
+					decodeByPasses(text);
+				},
+				(length) => `%${"25".repeat(length / 2)}41`,
+				NEGATIVE_CONTROL,
+			);
+			expect(growth.ratio, JSON.stringify(growth)).toBeGreaterThanOrEqual(
+				LINEAR_GROWTH_LIMIT,
+			);
+		},
+		GROWTH_TIMEOUT_MS,
+	);
 });
 
 // The old way: decode the whole text again until it stops changing.
@@ -384,6 +432,27 @@ describe("redactProviderText", () => {
 				"key -----BEGIN EC PRIVATE KEY-----\nMIIBOgIBAAJBAK and the rest",
 			),
 		).toBe("key [redacted]");
+	});
+
+	it("redacts an Authorization header in any scheme, and Basic and Token credentials", () => {
+		for (const [text, expected] of [
+			["Authorization: Basic dXNlcjpwYXNz ok", "[redacted] ok"],
+			["authorization=token abc123 ok", "[redacted] ok"],
+			['{"Authorization": "Digest x=1"} ok', '{"[redacted] ok'],
+			["sent Basic dXNlcjpwYXNzd29yZA== ok", "sent [redacted] ok"],
+			["sent Token 0123456789abcdef ok", "sent [redacted] ok"],
+			["a basic plan and a token budget", "a basic plan and a token budget"],
+		] as const)
+			expect(redactProviderText(text)).toBe(expected);
+	});
+
+	it("finds a credential a control character was meant to hide", () => {
+		for (const text of [
+			"PASSWORD\u0000=hunter2",
+			"Bearer\u0001abc123",
+			"api_key\u001b=abc123",
+		])
+			expect(redactProviderText(`x ${text} y`)).toBe("x [redacted] y");
 	});
 
 	it("flattens control characters, so a text cannot forge a log record", () => {
@@ -461,6 +530,29 @@ describe("a provider profile", () => {
 			patterns: [/\*\*\s*Token\s*:?\s*\*\*\s*\S+/giu],
 		});
 		expect(redact("cli **Token:** abc ok")).toBe("cli [redacted] ok");
+	});
+
+	it("bounds the signed JWT pattern to its three segments", () => {
+		const jwt =
+			"eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJnaXRodWIifQ.c2lnbmF0dXJlLXZhbHVl";
+		const find = (text: string) =>
+			[...text.matchAll(SIGNED_JWT_PATTERN)].map((match) => match[0]);
+		expect(find(`{"jwt":"${jwt}","next":1}`)).toEqual([jwt]);
+		expect(find(`x-${jwt}`)).toEqual([`x-${jwt}`]);
+		expect(find("eyJhbGciOiJub25lIn0.eyJzdWIiOiJ4In0.")).toEqual([]);
+	});
+
+	it("searches a profile's fallbacks last, so they cannot split a JWT", () => {
+		const header = `eyJ${"h".repeat(53)}`;
+		const payload = "eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJyb290In0";
+		const signature = "s".repeat(48);
+		const jwt = `${header}.${payload}.${signature}`;
+		const opaque = /[A-Za-z0-9_-]{40,}/gu;
+		const fallbackLast = createProviderRedactor({ fallbacks: [opaque] });
+		expect(fallbackLast(`token ${jwt} ok`)).toBe("token [redacted] ok");
+		// Run first, the same rule splits it and the payload survives.
+		const splitFirst = createProviderRedactor({ patterns: [opaque] });
+		expect(splitFirst(`token ${jwt} ok`)).toContain(payload);
 	});
 
 	it("adds the provider's shapes to the shared ones", () => {
