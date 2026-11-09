@@ -55,6 +55,14 @@ topology-authoring flow rather than opening a boundary beside it:
 - **Read store** — planners and policy surfaces query the yard read store; they
   never call into this package, which is authoring-time only.
 
+`providerParity()` and `providerProfileParity()` are pure read-model
+projections over each provider's published catalog and resolver constants,
+respectively per provider and per `(provider, profile)`. They emit no events
+and read or write no event store, snapshot, or read store. Because these
+in-process projections cross no integration or persistence boundary, they have
+no protobuf parity record or CUE wire schema; their hand-written TypeScript
+interfaces duplicate no wire contract.
+
 ## Determinism
 
 No clock, no randomness, no environment reads. Two calls with equal options
@@ -63,12 +71,22 @@ because rows canonicalize to a sorted set.
 
 ## Honest scope
 
-`cloudflare` and `vercel` ship HTTP deployment resolvers, proven in tests
-against an injected fake transport; **no live deploy is proven anywhere in this
-repo**, which additionally needs real credentials and network egress. `aws`,
-`azure`, and `gcp` are catalog-only: no resolvers, and no registered Resource
-Definitions for their product ids, so a deploy against those Yards fails closed
-at resolution rather than half-applying. The AWS catalog further
+Every namespace's provider package ships deployment resolvers for some or all
+of its catalog, proven in tests against an injected fake transport; **no live
+deploy is proven anywhere in this repo**, which additionally needs real
+credentials and network egress. No namespace registers Resource Definitions
+for its product ids, so a deploy against any of these Yards fails closed at
+resolution rather than half-applying. Per-provider coverage is not restated
+here: `providerParity()` derives `resolved/catalog` from the provider
+constants and emits `L1-DECLARED` when any resolver is declared, explicitly not
+the council's full L1 (fake transport + six lifecycle cases + PACT), because a
+constants-only read model cannot see executed evidence. It is a projection, not
+a deployment decision:
+it does not select among a Yard's offerings for deployment. It does
+canonicalize — ids sorted and de-duplicated (a product on two profiles counts
+once), bindings without a `productId` excluded from product counts, rows in
+fixed provider order — and it reads Vercel's full catalog including the
+opt-in `project()` row. The AWS catalog further
 **under-declares** what AWS can allocate — a gap in the slot-factory set, not a
-selection the Yard made. See [`README.md`](./README.md) for the per-provider
-table.
+selection the Yard made. See [`README.md`](./README.md) for the parity levels
+and the code-pinned per-provider claims.
