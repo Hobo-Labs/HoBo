@@ -89,7 +89,11 @@ return {web: b.web(() => handler)};
 	try {
 		await run(project, env, command);
 	} finally {
-		await command(["down"]).catch(() => undefined);
+		// The local deployment's `down` acts on its receipt; with none left it
+		// falls through to the runtime `down`, which these deployments never
+		// used. Most cases have already stopped or expired theirs.
+		const live = await readLocalDeployment(project).catch(() => true);
+		if (live) await command(["down"]).catch(() => undefined);
 		await rm(project, { recursive: true, force: true });
 	}
 }

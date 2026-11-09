@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, it } from "vitest";
 import { initBareMetalYard } from "../src/bare-metal-yard.js";
+import { readLocalDeployment } from "../src/local-deployment.js";
 
 const exec = promisify(execFile);
 const bin = fileURLToPath(new URL("../dist/bin/hobo.js", import.meta.url));
@@ -84,7 +85,11 @@ describe("canonical starter through real self-hosted deployment", () => {
 					fetch(up.data.primaryUrl, { signal: AbortSignal.timeout(1000) }),
 				).rejects.toThrow();
 			} finally {
-				await command(["down"]).catch(() => undefined);
+				// The local deployment's `down` acts on its receipt; with none left it
+				// falls through to the runtime `down`, which this deployment never
+				// used. A passing run has already stopped it.
+				const live = await readLocalDeployment(project).catch(() => true);
+				if (live) await command(["down"]).catch(() => undefined);
 				await rm(root, { recursive: true, force: true });
 			}
 		},
