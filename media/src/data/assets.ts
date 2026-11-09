@@ -205,16 +205,17 @@ export const CHARACTERS = [
 /**
  * APPROVED scene props — owner-approved 2026-08-05, round 1.
  *
- * Generated from scratch in the ink register (never from the old scene SVGs),
- * destined to replace the five hand-built scene illustrations once each is
- * layer-traced, rigged, and animated with spriterrific. These are the
- * originals the traces derive from; the scenes they replace stay live until
- * their animated successors are individually approved.
+ * Generated from scratch in the ink register. They were once destined to
+ * replace the five full-width scene illustrations on the homepage; those
+ * panels have since been removed altogether, and these drawings stand on the
+ * trail band instead, as the landmarks each homepage section arrives at.
+ * `media/scripts/build-trail-art.py` cuts each one out of its paper into
+ * `site/public/parallax/landmarks/`; these remain the originals.
  */
 export const SCENE_PROPS: Reference[] = [
-	{ key: "signpost", title: "Signpost", file: "reference/scene-props/signpost.webp", note: "→ scene-crossroads. LIVE: traced into six rigged layers (post+grass, five boards pivoting on their nails; the short broken board passes behind the post) — now animating on the homepage." },
-	{ key: "train", title: "Locomotive", file: "reference/scene-props/train.webp", note: "→ scene-train. Wheels, rods and steam as layers; wheels roll, steam loops." },
-	{ key: "depot", title: "Depot", file: "reference/scene-props/depot.webp", note: "→ scene-depot. Hanging sign swings; clock hands tick." },
-	{ key: "blimp", title: "Blimp", file: "reference/scene-props/blimp.webp", note: "→ scene-blimp. Gentle bob; propeller spins." },
-	{ key: "steamboat", title: "Steamboat", file: "reference/scene-props/steamboat.webp", note: "→ scene-steamboat. Paddle churns, funnel puffs; stray ink text removed at trace." },
+	{ key: "signpost", title: "Signpost", file: "reference/scene-props/signpost.webp", note: "→ landmark at the crossroads stop (“Two bad landlords, and the open road”)." },
+	{ key: "train", title: "Locomotive", file: "reference/scene-props/train.webp", note: "→ landmark at the main-line stop (“Deployment is not a destination”)." },
+	{ key: "depot", title: "Depot", file: "reference/scene-props/depot.webp", note: "→ landmark at the depot stop (“Four words for traveling light”)." },
+	{ key: "blimp", title: "Blimp", file: "reference/scene-props/blimp.webp", note: "→ landmark at the airfield stop (the agents section). Floats at half ground speed and bobs." },
+	{ key: "steamboat", title: "Steamboat", file: "reference/scene-props/steamboat.webp", note: "→ landmark at the river stop (the landscape table). Sits behind the path and rocks; the lettered “toot” is erased at build." },
 ];
