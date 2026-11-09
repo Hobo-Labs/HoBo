@@ -2,7 +2,7 @@ name: HoBo Pricing CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/hobo-code]
     paths:
       - "packages/pricing/**"
       - "packages/broker/test/pricing-authorization.test.ts"
@@ -14,7 +14,7 @@ on:
       - "docs/design/provider-pricing-scorecard.md"
       - ".github/workflows/pricing-ci.yml"
   push:
-    branches: [main]
+    branches: [main, feature/hobo-code]
     paths:
       - "packages/pricing/**"
       - "packages/broker/test/pricing-authorization.test.ts"

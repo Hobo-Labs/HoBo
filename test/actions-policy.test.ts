@@ -92,6 +92,65 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 	);
 });
 
+test("feature/hobo-code gets the PR and push gates but publishes nothing", async () => {
+	const read = (name: string) =>
+		readFile(new URL(`../.github/workflows/${name}`, import.meta.url), "utf8");
+	const hoboCi = await read("hobo-ci.yml");
+	assert.match(
+		hoboCi,
+		/^ {2}push:\n {4}branches: \[main, feature\/hobo-code\]$/mu,
+	);
+	assert.match(
+		hoboCi,
+		/^ {2}pull_request:\n {4}branches: \[main, feature\/hobo-code\]$/mu,
+	);
+	assert.match(hoboCi, /^ {2}merge_group:\n {4}branches: \[main\]$/mu);
+	assert.match(
+		hoboCi,
+		/- name: Push runner image to GHCR \(optional\)\n {8}if: [^\n]* && github\.ref == 'refs\/heads\/main'\n/u,
+	);
+	// The feature push runs Main full gate, in the one shared concurrency group:
+	// two full gates at once would occupy both box slots.
+	assert.match(
+		hoboCi,
+		/\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/feature\/hobo-code'\)/u,
+	);
+	assert.match(hoboCi, /^ {6}group: \$\{\{ github\.workflow \}\}-main-gate$/mu);
+	assert.doesNotMatch(hoboCi, /-main-gate\$\{\{/u);
+	// The deps-image GHCR push stays main-only.
+	assert.match(
+		hoboCi,
+		/github\.event_name != 'pull_request' && github\.ref == 'refs\/heads\/main'/u,
+	);
+	for (const name of ["pricing-ci.yml", "examples-e2e.yml"]) {
+		const text = await read(name);
+		assert.match(
+			text,
+			/^ {2}pull_request:\n {4}branches: \[main, feature\/hobo-code\]$/mu,
+			name,
+		);
+	}
+	const releaseCode = await read("release-code.yml");
+	assert.match(
+		releaseCode,
+		/^ {2}pull_request:\n(?: {4}#[^\n]*\n)* {4}branches: \[main, feature\/hobo-code\]$/mu,
+	);
+	// A branch dispatch must say loudly that it publishes nothing.
+	assert.match(
+		releaseCode,
+		/- name: Branch dispatch publishes nothing\n {8}if: github\.event_name == 'workflow_dispatch' && !startsWith\(github\.ref, 'refs\/tags\/code-v'\)\n {8}run: echo "::error title=No publish on a branch dispatch::/u,
+	);
+	const publishConditions = [
+		...releaseCode.matchAll(
+			/^ {2}(release-code-[a-z]+):\n {4}name: [^\n]+\n(?: {4}#[^\n]*\n)* {4}if: ([^\n]+)$/gmu,
+		),
+	].map((match) => [match[1], match[2]]);
+	assert.deepEqual(publishConditions, [
+		["release-code-publish", "startsWith(github.ref, 'refs/tags/code-v')"],
+		["release-code-attest", "startsWith(github.ref, 'refs/tags/code-v')"],
+	]);
+});
+
 test("workflow conditions never read the secrets context", async () => {
 	const directory = new URL("../.github/workflows/", import.meta.url);
 	const files = (await readdir(directory)).filter((name) =>
