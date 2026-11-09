@@ -24,6 +24,16 @@ describe("assertSanitized detectors", () => {
 		["a postgres url with credentials", "postgresql://app:hunter2@db/app"],
 		["a redis url with credentials", "rediss://default:pw@cache:6379"],
 		["a mongodb url with credentials", "mongodb+srv://u:p:x@cluster/db"],
+		// Spellings `iu` matched: \u017F for s and \u212A for k.
+		[
+			"a postgres url spelled with \u017F",
+			"po\u017Ftgres://app:hunter2@db/app",
+		],
+		["a redis url spelled with \u017F", "redi\u017F://default:pw@cache:6379"],
+		[
+			"a mongodb url spelled with \u017F",
+			"mongodb+\u017Frv://u:p:x@cluster/db",
+		],
 	])("still refuses %s", (_case, note) => {
 		expect(() => assertSanitized(artifactNoting(note))).toThrow(
 			LiveEvidenceError,

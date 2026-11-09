@@ -900,7 +900,8 @@ describe("selectIacProvider: the Vercel resolver lane's team", () => {
 		});
 
 		for (const request of org) expect(request).toMatch(/\?teamId=team_org$/u);
-		for (const request of both) expect(request).toMatch(/\?teamId=team_named$/u);
+		for (const request of both)
+			expect(request).toMatch(/\?teamId=team_named$/u);
 		expect([org.length, both.length]).toEqual([1, 1]);
 	});
 

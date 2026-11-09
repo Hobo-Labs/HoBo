@@ -184,6 +184,15 @@ describe("every pattern on a hostile text", () => {
 				"token: secret://",
 			],
 		},
+		"locator tail": {
+			alphabet: ALNUM,
+			words: [
+				"secret://camp/db",
+				"secret://camp/db\\n",
+				"token: hobo-token://a/b",
+				"env://A_B",
+			],
+		},
 		"prefixed key": {
 			alphabet: ALNUM,
 			words: ["sk_", "sk-", "ghp_", "xoxb-", "github_pat_"],

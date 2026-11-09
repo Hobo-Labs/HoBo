@@ -812,6 +812,28 @@ test("unrelated changes do not select the gitleaks hang-contract test", () => {
 	);
 });
 
+const isReadStdinTest = (check: { command: string; args: readonly string[] }) =>
+	check.command === "node" &&
+	check.args.join(" ") ===
+		"--import tsx --test scripts/test/read-stdin.test.ts scripts/test/job-scope.test.ts";
+
+test("a changed-path stdin reader edit selects its regression tests", () => {
+	for (const file of [
+		"scripts/lib/read-stdin.mts",
+		"scripts/test/read-stdin.test.ts",
+		"scripts/test/job-scope.test.ts",
+		"scripts/ci/job-scope.mts",
+		"scripts/ci/dependent-tests.mts",
+		"scripts/ci/impact-classifier.mts",
+	]) {
+		assert.ok(plan([file]).checks.some(isReadStdinTest), file);
+	}
+});
+
+test("unrelated changes do not select the stdin reader tests", () => {
+	assert.ok(!plan(["packages/core/src/index.ts"]).checks.some(isReadStdinTest));
+});
+
 const isTsAutocodeSurfaceTest = (check: {
 	command: string;
 	args: readonly string[];

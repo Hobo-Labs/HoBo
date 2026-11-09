@@ -49,6 +49,9 @@ they hold; this note records where the package sits and how it is held.
   the fastest of 32 linear scans of its length (under 32 of those is linear;
   quadratic patterns cost 160 or more), and an input above that is measured as
   growth in CPU time, never against a wall-clock bound (`/linear-time`).
+- **Locators in their grammar.** A kept locator is one the issuing code could
+  have written (`src/locator.ts`); what is glued after it is redacted, and the
+  differential's exemption (`KEPT_LOCATOR`) covers only that grammar.
 - **ASCII case folding.** No shape sets both `i` and `u`: under `iu`,
   `[A-Za-z]` also holds `ſ` and `K`, and a look-behind refused a credential
   after one. Body classes list those two themselves, the look-behind that

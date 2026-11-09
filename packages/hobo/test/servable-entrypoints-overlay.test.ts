@@ -29,7 +29,12 @@
  * - **Every transformed response says how it was transformed**, so a user
  *   looking at a page that behaves oddly can tell whether HoBo touched it.
  */
-import type { BindleDefinition } from "@hobo/bindles";
+import type {
+	BindleDefinition,
+	BindleResourceRecord,
+	ProviderAnnotation,
+	ResourceKind,
+} from "@hobo/bindles";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -38,42 +43,46 @@ import {
 	listServableEntrypointsWithReplay,
 } from "../src/servable-entrypoints.js";
 
+type Entrypoint = NonNullable<ReturnType<BindleDefinition["entrypoint"]>>;
+
+/** One resource of a test Bindle: its kind, what its entrypoint returns, its annotations. */
+type ResourceSpec = {
+	readonly kind: ResourceKind;
+	readonly handler?: ReturnType<Entrypoint>;
+	readonly annotations?: readonly Omit<ProviderAnnotation, "provider">[];
+};
+
 const CONTROLS = "https://controls.example/evidence";
 
 /** A Bindle whose resources map to the given kinds and handlers. */
 function definition(
-	resources: Record<
-		string,
-		{
-			kind: string;
-			handler?: unknown;
-			annotations?: Array<{ option: string; config: Record<string, unknown> }>;
-		}
-	>,
+	resources: Readonly<Record<string, ResourceSpec>>,
 ): BindleDefinition {
+	const records: Record<string, BindleResourceRecord> = {};
+	for (const [name, spec] of Object.entries(resources)) {
+		records[name] = {
+			kind: spec.kind,
+			name,
+			stableId: `${spec.kind}:${name}`,
+			declaredAllow: [],
+			annotations: (spec.annotations ?? []).map((annotation) => ({
+				provider: "test",
+				...annotation,
+			})),
+			dependsOn: [],
+		};
+	}
 	return {
 		name: "app",
-		resources: Object.fromEntries(
-			Object.entries(resources).map(([name, spec]) => [
-				name,
-				{
-					kind: spec.kind,
-					name,
-					stableId: `${spec.kind}:${name}`,
-					declaredAllow: [],
-					annotations: spec.annotations ?? [],
-					dependsOn: [],
-				},
-			]),
-		),
+		resources: records,
 		edges: [],
 		requirements: { require: [], prefer: [], runtimes: [], labels: {} },
 		entrypoint: (name: string) => {
-			const spec = resources[name];
-			if (!spec || !("handler" in spec)) return undefined;
-			return () => spec.handler;
+			const handler = resources[name]?.handler;
+			if (handler === undefined) return undefined;
+			return () => handler;
 		},
-	} as unknown as BindleDefinition;
+	};
 }
 
 const ok = () => new Response("hello");
@@ -87,11 +96,12 @@ function serve(
 	def: BindleDefinition,
 	options: { controls?: string } = {},
 ): ReturnType<typeof listServableEntrypoints> {
+	if (options.controls === undefined) {
+		return listServableEntrypoints(def, { env: {} });
+	}
 	return listServableEntrypoints(def, {
 		env: {},
-		...(options.controls !== undefined
-			? { evidenceControlsUrl: options.controls }
-			: {}),
+		evidenceControlsUrl: options.controls,
 	});
 }
 

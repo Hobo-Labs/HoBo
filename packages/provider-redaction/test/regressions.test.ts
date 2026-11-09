@@ -76,3 +76,40 @@ describe("round 5's leaks", () => {
 			);
 	});
 });
+
+// Round 6's leak: a kept locator kept whatever was glued to it. A locator is
+// kept only in the grammar its issuing code writes, and only up to where it
+// ends; each of these showed its secret.
+describe("round 6's leaks", () => {
+	it.each([
+		["an escaped line break", "token: secret://camp/db\\nopaqueSECRETvalue123"],
+		[
+			"an escaped line break in JSON",
+			'{"detail":"secret://camp/db\\nSECRETVALUE"}',
+		],
+		["a zero-width space", "token: secret://a\u200bSECRETVALUE"],
+		["a direction override", "token: secret://a\u202eEULAVTERCES"],
+		[
+			"a zero-width space after a path",
+			"token: secret://camp/db\u200bSECRETVALUE",
+		],
+		["one segment glued on", "see secret://locSECRET2 here"],
+	])("redacts what %s glues to a locator", (_case, text) => {
+		expect(redactProviderText(text, 400)).not.toMatch(/SECRET|EULAV|opaque/u);
+	});
+
+	it.each([
+		["token: secret://camp/db ok", "token: secret://camp/db ok"],
+		[
+			'{"ref":"hobo-token://vercel/deploy"}',
+			'{"ref":"hobo-token://vercel/deploy"}',
+		],
+		[
+			"token=env://AWS_DEPLOY_CREDENTIALS done",
+			"token=env://AWS_DEPLOY_CREDENTIALS done",
+		],
+		["token: secret://camp/db\\nnext", "token: secret://camp/db[redacted]"],
+	])("keeps the locator in %j", (text, out) => {
+		expect(redactProviderText(text, 400)).toBe(out);
+	});
+});

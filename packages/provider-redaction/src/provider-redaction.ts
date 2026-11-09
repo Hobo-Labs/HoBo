@@ -16,6 +16,7 @@
  */
 
 import { anyCase, SECRET_KEY_NAMES } from "./any-case.js";
+import { LOCATOR, LOCATOR_END, LOCATOR_PATH } from "./locator.js";
 /** What a redacted span becomes. */
 export const REDACTION_MARKER = "[redacted]";
 
@@ -162,11 +163,12 @@ export const CREDENTIAL_PATTERNS: readonly RedactionPattern[] = Object.freeze([
 	// Only the locator schemes are (`hobo-token://`, `hobo-secret://`,
 	// `secret://`): `password://…` and `api-key://…` are a key and its value,
 	// and so is `token=//…`, since a scheme ends in `:`.
-	// Only a clean one is kept: its run ends at whitespace or the end of the
-	// text within 256 characters, with no control character in it, because a
-	// run reads on through a control character and so does what it hides
-	// (`hobo-token://x\u001bSECRET` is redacted whole). The bound keeps the
-	// look-ahead from reading a run again from every start in it. A value
+	// Only a clean one is kept: one the issuing code could have written
+	// (`locator.ts`: an authority, a path segment, unreserved characters),
+	// ending at the end of its run, after closing quotes or brackets, or at an
+	// escaped line break. Anything else in the run (a control, zero-width or
+	// direction character, a single segment such as `secret://locSECRET`) makes
+	// the value a value, redacted whole (`hobo-token://x\u001bSECRET`). A value
 	// that ends in a separator, or has one after it, is itself a name
 	// (`api_key=password: …`, `token=Token =…`), so the run after it is taken
 	// too, and the one after that while each ends in one (`api_key=a,password=
@@ -175,7 +177,18 @@ export const CREDENTIAL_PATTERNS: readonly RedactionPattern[] = Object.freeze([
 	// (`api_key='`, cut short) is one too.
 	redactionPattern(
 		new RegExp(
-			String.raw`(?<![\u017F\u212AA-Za-z0-9_-])[\u017F\u212AA-Za-z0-9_-]*(?:${SECRET_KEY_NAMES})["'*]*\s*(?:=|:(?!\/\/[^\s\p{Cc}]{0,256}(?!\S))|(?<!(?<![\u017F\u212AA-Za-z0-9_-])(?:${anyCase("hobo-token|hobo-secret|secret")})):)(?![\s"'*]*(?:${anyCase("hobo-token|hobo-secret|secret|env")}):\/\/[^\s\p{Cc}]{0,256}(?!\S))(?:[\s"'*]*[^\s"'*]\S*(?:(?<=[=:])[\s"'*]+[^\s"'*]\S*|\s*[=:][\s"'*]*[^\s"'*]\S*)*|[\s"'*]*["'*](?!\S))`,
+			String.raw`(?<![\u017F\u212AA-Za-z0-9_-])[\u017F\u212AA-Za-z0-9_-]*(?:${SECRET_KEY_NAMES})["'*]*\s*(?:=|:(?!\/\/${LOCATOR_PATH}${LOCATOR_END})|(?<!(?<![\u017F\u212AA-Za-z0-9_-])(?:${anyCase("hobo-token|hobo-secret|secret")})):)(?![\s"'*]*(?:${LOCATOR})${LOCATOR_END})(?:[\s"'*]*[^\s"'*]\S*(?:(?<=[=:])[\s"'*]+[^\s"'*]\S*|\s*[=:][\s"'*]*[^\s"'*]\S*)*|[\s"'*]*["'*](?!\S))`,
+			"gu",
+		),
+	),
+	// What is glued to a kept locator: from the first character the locator
+	// grammar does not hold (an escaped line break, a zero-width or direction
+	// mark) to the end of the run, but closing quotes and brackets. The
+	// locator itself is read as the `lead` and kept, and read once: the
+	// look-ahead and back-reference stop it from giving characters back.
+	redactionPattern(
+		new RegExp(
+			String.raw`(?<![\u017F\u212AA-Za-z0-9_-])(?<lead>(?=(?<locator>${LOCATOR}))\k<locator>)(?![A-Za-z0-9._~\/#-])[^\s"'}\],)]+`,
 			"gu",
 		),
 	),
@@ -748,13 +761,12 @@ export function redactProviderText(text: string, maxLength = 256): string {
 
 /**
  * A locator the shared redactor keeps, for a test that holds it to another
- * redactor (`assertRevealsNoMore`'s `kept`): its path a run of 256 characters or
- * fewer with no control character in it, ending at whitespace or the end, and,
- * when it is a key's value, that key's name (the shared redactor's names). A
- * marker anywhere else in the run, before the name or glued to it from
- * another credential, is not exempt.
+ * redactor (`assertRevealsNoMore`'s `kept`): one in the issuing code's
+ * grammar (`locator.ts`), ending where a kept locator ends, and, when it is a
+ * key's value, that key's name (the shared redactor's names). A marker
+ * anywhere else, before the name or glued after the locator, is not exempt.
  */
 export const KEPT_LOCATOR = new RegExp(
-	String.raw`(?:(?<![\u017F\u212AA-Za-z0-9_-])[\u017F\u212AA-Za-z0-9_-]*(?:${SECRET_KEY_NAMES})["'*]*\s*[=:][\s"'*]*|(?<![\u017F\u212AA-Za-z0-9_-]))(?:${anyCase("hobo-token|hobo-secret|secret|env")}):\/\/[^\s\p{Cc}]{0,256}(?!\S)`,
+	String.raw`(?:(?<![\u017F\u212AA-Za-z0-9_-])[\u017F\u212AA-Za-z0-9_-]*(?:${SECRET_KEY_NAMES})["'*]*\s*[=:][\s"'*]*|(?<![\u017F\u212AA-Za-z0-9_-]))(?:${LOCATOR})(?=${LOCATOR_END})`,
 	"gu",
 );
