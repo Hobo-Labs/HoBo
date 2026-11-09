@@ -691,6 +691,9 @@ importers:
       '@hobo/ci-dagger':
         specifier: workspace:*
         version: link:../ci-dagger
+      '@hobo/stations':
+        specifier: workspace:*
+        version: link:../stations
       '@pact-foundation/pact':
         specifier: 17.1.4
         version: 17.1.4

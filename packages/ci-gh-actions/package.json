@@ -71,6 +71,7 @@
     "@dagger.io/dagger": "0.21.11",
     "@hobo/ci-cf": "workspace:*",
     "@hobo/ci-dagger": "workspace:*",
+    "@hobo/stations": "workspace:*",
     "@pact-foundation/pact": "17.1.4",
     "@types/pg": "8.15.5",
     "testcontainers": "11.8.1",
