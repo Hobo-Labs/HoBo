@@ -78,24 +78,59 @@ describe("the public redaction gate's linear rules", () => {
 		]);
 	});
 
+	// Every rule on runs it could backtrack in, starting with each kind of
+	// character it reads: a letter, a digit, `.`, `-`, `%` and `+`.
+	const runs = [
+		["letters", repeatedTo("a")],
+		["digits", repeatedTo("1")],
+		["dots", repeatedTo(".")],
+		["hyphens", repeatedTo("-")],
+		["percent signs", repeatedTo("%")],
+		["plus signs", repeatedTo("+")],
+		["a scheme run", repeatedTo("a.")],
+		["a-a-a-…", repeatedTo("a-")],
+		["1.1.1.…", repeatedTo("1.")],
+		["%a%a%a…", repeatedTo("%a")],
+	] as const;
+	const linearRules = [
+		"credential-in-url",
+		"internal-hostname",
+		"email-address",
+	] as const;
 	it.each([
 		["internal-hostname", "a.corp-a.corp-…", repeatedTo("a.corp-")],
 		["email-address", "a@b.io.a@b.io.…", repeatedTo("a@b.io.")],
 		["email-address", "@b.io.b.io.b.io…", repeatedTo("b.io.", "@")],
-		["credential-in-url", "letters", repeatedTo("a")],
-		["credential-in-url", "a scheme run", repeatedTo("a.")],
-		["internal-hostname", "a-a-a-…", repeatedTo("a-")],
-		["email-address", "a.a.a.…", repeatedTo("a.")],
-	] as const)("%s grows linearly on %s", (id, _case, input) => {
-		const pattern = rule(id);
-		assertGrowsLinearly((text) => {
-			text.replace(new RegExp(pattern.source, pattern.flags), "");
-		}, input);
-	});
+		[
+			"email-address",
+			"@ and a long tld run",
+			repeatedTo(`${"a".repeat(60)}.`, "@"),
+		],
+		...linearRules.flatMap((id) =>
+			runs.map(([name, text]) => [id, name, text] as const),
+		),
+	] as const)(
+		"%s grows linearly on %s",
+		{ timeout: 30_000 },
+		(id, _case, input) => {
+			const pattern = rule(id);
+			assertGrowsLinearly((text) => {
+				text.replace(new RegExp(pattern.source, pattern.flags), "");
+			}, input);
+		},
+	);
 
-	it("the whole scan grows linearly", () => {
-		assertGrowsLinearly((text) => {
-			scanRenderedOutput(text);
-		}, repeatedTo("a.a-"));
-	});
+	it.each([
+		["a.a-", repeatedTo("a.a-")],
+		["digits", repeatedTo("1")],
+		["1.-%+", repeatedTo("1.-%+")],
+	] as const)(
+		"the whole scan grows linearly on %s",
+		{ timeout: 30_000 },
+		(_case, input) => {
+			assertGrowsLinearly((text) => {
+				scanRenderedOutput(text);
+			}, input);
+		},
+	);
 });

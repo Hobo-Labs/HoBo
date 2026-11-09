@@ -12,7 +12,6 @@
  *    secret-named fields and secret-shaped strings before they are serialized.
  */
 
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type, anti-slop/no-known-value-widening -- SAFETY: the guards and redactDeep take any value a caller is about to log or serialize, the one place this package reads values nobody has parsed, and must look at each one's representation to redact it. */
 import {
 	JWT_PATTERN,
 	PRIVATE_KEY_PATTERN,
@@ -46,9 +45,11 @@ export function materialLocator(
 	return candidate as MaterialLocator;
 }
 
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters -- SAFETY: a type guard over a value nobody has parsed is the parse. */
 export function isMaterialLocator(value: unknown): value is MaterialLocator {
 	return typeof value === "string" && LOCATOR_PATTERN.test(value);
 }
+/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters */
 
 /**
  * A handle to secret material. Serializing it yields `"[redacted]"`; the
@@ -84,11 +85,13 @@ export function createSensitive<Kind extends SensitiveKind>(
 	return ref;
 }
 
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters -- SAFETY: a type guard over a value nobody has parsed is the parse. */
 export function isSensitiveRef(value: unknown): value is SensitiveRef {
 	return (
 		typeof value === "object" && value !== null && sensitiveRefs.has(value)
 	);
 }
+/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters */
 
 /**
  * Read the material behind a reference. Only mediated ports (verifier,
@@ -120,8 +123,10 @@ const SECRET_TEXT_PATTERNS: readonly RegExp[] = [
 	// The same shape with this module's shorter segments (`eyJ` and four
 	// characters each). Like the shared one it starts only where a run of
 	// base64url characters starts and reads that run once, where `\beyJ…`
-	// started again at every `eyJ` and read to the end.
-	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4})(?:[A-Za-z0-9_]*-)*?eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b/gu,
+	// started again at every `eyJ` and read to the end. It ends with the
+	// signature's run and no `\b`: a `\b` the signature could fail (one ending
+	// in `-`) sent the search back to the next `eyJ`, quadratic again.
+	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4})(?:[A-Za-z0-9_]*-)*?eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/gu,
 	// `Bearer <token>` in prose or headers.
 	/\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/giu,
 	// Long opaque high-entropy handles (claim/access tokens).
@@ -141,6 +146,7 @@ export function redactText(value: string): string {
  * Structurally redact a value: sensitive refs collapse to `"[redacted]"`,
  * secret-named fields are replaced, and remaining strings are text-scrubbed.
  */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type, anti-slop/no-known-value-widening -- SAFETY: redactDeep and formatRedacted take whatever value a caller is about to log or serialize, the one boundary where looking at a value's representation is the job. */
 export function redactDeep(
 	value: unknown,
 	seen = new WeakSet<object>(),
@@ -182,3 +188,4 @@ export function redactDeep(
 export function formatRedacted(value: unknown): string {
 	return JSON.stringify(redactDeep(value));
 }
+/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type, anti-slop/no-known-value-widening */

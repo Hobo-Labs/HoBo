@@ -46,9 +46,19 @@ describe("redactText", () => {
 		["-eyJ", repeatedTo("-eyJ")],
 		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
 		["short runs", repeatedTo(`${"a-".repeat(19)}. `)],
-	] as const)("redacting %s grows linearly", (_case, input) => {
-		assertGrowsLinearly((text) => {
-			redactText(text);
-		}, input);
-	});
+		// A signature ending in `-`, which a trailing `\b` would refuse, after
+		// a run of `eyJ-`: each `eyJ` started the short-JWT search again.
+		[
+			"eyJ- runs and a signature ending in -",
+			(length: number) => `${"eyJ-".repeat(Math.ceil(length / 4))}x.aaaa.----`,
+		],
+	] as const)(
+		"redacting %s grows linearly",
+		{ timeout: 30_000 },
+		(_case, input) => {
+			assertGrowsLinearly((text) => {
+				redactText(text);
+			}, input);
+		},
+	);
 });

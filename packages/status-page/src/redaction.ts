@@ -27,6 +27,11 @@ export interface RedactionRule {
 	readonly description: string;
 }
 
+// Three rules below start with a character class and only then look back. A
+// look-back of variable length placed first runs at every position, and at each
+// one reads back over a run of digits, dots, hyphens or percent signs: 128 kB of
+// digits took 11 s. Read after one character the rule could start with, it runs
+// only there, and reads back over what that character follows.
 // public-contract: denylist scanned over rendered public output.
 export const REDACTION_RULES: readonly RedactionRule[] = Object.freeze([
 	{
@@ -34,7 +39,7 @@ export const REDACTION_RULES: readonly RedactionRule[] = Object.freeze([
 		// Starts at the first letter of a run of scheme characters, the match the
 		// old form found first, without starting again at every letter after it.
 		pattern:
-			/(?<=(?:^|[^a-z0-9+.-])[0-9+.-]*)[a-z][a-z0-9+.-]*:\/\/[^/\s:@<>&"']+:[^/\s@<>&"']+@/gi,
+			/[a-z](?<=(?:^|[^a-z0-9+.-])[0-9+.-]*[a-z])[a-z0-9+.-]*:\/\/[^/\s:@<>&"']+:[^/\s@<>&"']+@/gi,
 		description: "URL with embedded credentials (user:pass@host)",
 	},
 	{
@@ -65,7 +70,7 @@ export const REDACTION_RULES: readonly RedactionRule[] = Object.freeze([
 		// which is where the old `\b` form started too — but not again at every
 		// hyphen inside a run, so `a-a-a-…` is one search.
 		pattern:
-			/(?<=(?:^|[^a-z0-9-]|\.(?:internal|corp|lan|intranet))-*)[a-z0-9][a-z0-9-]*\.(?:internal|corp|lan|intranet)\b/gi,
+			/[a-z0-9](?<=(?:^|[^a-z0-9-]|\.(?:internal|corp|lan|intranet))-*[a-z0-9])[a-z0-9-]*\.(?:internal|corp|lan|intranet)\b/gi,
 		description: "internal hostname suffix",
 	},
 	{
@@ -76,7 +81,7 @@ export const REDACTION_RULES: readonly RedactionRule[] = Object.freeze([
 		// old `\b` form started too — but not at every `.` inside a run, so
 		// `a.a.a.…` is one search.
 		pattern:
-			/(?<=(?:^|[^A-Za-z0-9._%+-]|@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63})[._%+-]*)[A-Za-z0-9_][A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+			/[A-Za-z0-9_](?<=(?:^|[^A-Za-z0-9._%+-]|@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63})[._%+-]*[A-Za-z0-9_])[A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
 		description: "email address (customer-specific data)",
 	},
 	{

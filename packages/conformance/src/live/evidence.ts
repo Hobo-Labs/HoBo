@@ -343,12 +343,19 @@ export function assertNoUpgradedUnknowns(
 
 /** Values that must never appear anywhere in an artifact. */
 const SECRET_PATTERN: readonly RegExp[] = [
-	// A connection string with credentials: the first `:` after the scheme,
-	// then the first `@` after it, so neither part scans back over the other.
-	/postgres(?:ql)?:\/\/[^\s":]*:[^\s"@]*@/iu,
-	/rediss?:\/\/[^\s":]*:[^\s"@]*@/iu,
-	/mysql:\/\/[^\s":]*:[^\s"@]*@/iu,
-	/mongodb(?:\+srv)?:\/\/[^\s":]*:[^\s"@]*@/iu,
+	// A connection string with credentials, looked for once per run of
+	// characters that are neither whitespace nor a quote: at the run's first
+	// `scheme://`, its first `:` after that and the first `@` after the `:`. A
+	// later `scheme://` in the same run reaches a `:` and an `@` no earlier, so
+	// it can match only where the first does; searching from every one of them,
+	// and to the end of the run each time, was quadratic.
+	...["postgres(?:ql)?", "rediss?", "mysql", "mongodb(?:\\+srv)?"].map(
+		(scheme) =>
+			new RegExp(
+				`(?<![^\\s"])(?:(?!${scheme}:\\/\\/)[^\\s"])*${scheme}:\\/\\/[^\\s":]*:[^\\s"@]*@`,
+				"iu",
+			),
+	),
 	PRIVATE_KEY_DETECTOR,
 	/\bBearer\s+[A-Za-z0-9._-]{8,}/iu,
 	/\b(?:sk|pk|ghp|gho|xox[abpsr])[-_][A-Za-z0-9_-]{16,}\b/u,
