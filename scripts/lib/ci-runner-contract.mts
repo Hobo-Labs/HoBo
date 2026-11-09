@@ -249,7 +249,9 @@ function runMiseToolVersion(
 	tool: string,
 ): CommandResult {
 	const versionArgs =
-		tool === "cue" || tool === "gitleaks" ? ["version"] : ["--version"];
+		tool === "cue" || tool === "gitleaks" || tool === "syft"
+			? ["version"]
+			: ["--version"];
 	return run("mise", ["exec", "--", tool, ...versionArgs], { cwd: root });
 }
 
@@ -304,7 +306,9 @@ export function probeMiseTool(
 		};
 	}
 	const versionArgs =
-		tool === "cue" || tool === "gitleaks" ? ["version"] : ["--version"];
+		tool === "cue" || tool === "gitleaks" || tool === "syft"
+			? ["version"]
+			: ["--version"];
 	const ver = run(executable, versionArgs);
 	return {
 		ok: ver.ok,

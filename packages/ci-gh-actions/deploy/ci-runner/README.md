@@ -35,7 +35,7 @@ On a push whose commit file lists contain no runner image input, the workflow sk
 
 ## Fallback Dockerfile (`Dockerfile.monolithic`)
 
-Use only when `mise oci` cannot package a required tool (for example an **asdf** backend, a vfox plugin whose hooks write outside the install dir, or **rust** from a non-mise rustup). HoBo’s pinned set (`cue`, `gitleaks`, `node`, `pnpm`, `shellcheck`, `turbo`) uses aqua/core backends and is intended to stay on the OCI path.
+Use only when `mise oci` cannot package a required tool (for example an **asdf** backend, a vfox plugin whose hooks write outside the install dir, or **rust** from a non-mise rustup). HoBo’s pinned set (`cue`, `gitleaks`, `node`, `pnpm`, `shellcheck`, `syft`, `turbo`) uses aqua/core backends and is intended to stay on the OCI path.
 
 If you must fall back:
 

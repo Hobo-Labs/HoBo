@@ -230,6 +230,7 @@ describe("ci-runner image contract (repo manifests)", () => {
 			"node",
 			"pnpm",
 			"shellcheck",
+			"syft",
 			"turbo",
 		]);
 		const platforms = [
@@ -307,7 +308,9 @@ describe("ci-runner image contract (repo manifests)", () => {
 		expect(lockedTools).toContain("shellcheck");
 		for (const tool of lockedTools) {
 			const versionArgs =
-				tool === "cue" || tool === "gitleaks" ? "version" : "--version";
+				tool === "cue" || tool === "gitleaks" || tool === "syft"
+					? "version"
+					: "--version";
 			expect(fallback, `${tool} in monolithic image`).toContain(
 				`mise exec -- ${tool} ${versionArgs}`,
 			);
@@ -344,7 +347,15 @@ describe("ci-runner image contract (repo manifests)", () => {
 			};
 		};
 		evaluateCiRunnerContract(root, { run });
-		const tools = ["cue", "gitleaks", "node", "pnpm", "shellcheck", "turbo"];
+		const tools = [
+			"cue",
+			"gitleaks",
+			"node",
+			"pnpm",
+			"shellcheck",
+			"syft",
+			"turbo",
+		];
 		const resolveCalls = calls.filter(
 			(call) => call.cmd === "mise" && call.args[2] === "which",
 		);
