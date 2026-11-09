@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import { resetTrainables } from "@hobo/runtime";
+import { afterEach, describe, expect, it } from "vitest";
 import { runCodegen } from "../src/codegen/run-codegen.js";
 import {
 	createTypeScriptProjectCodegenEngine,
@@ -16,6 +17,12 @@ import {
 	compilePackagedConsumer,
 	write,
 } from "./support/typescript-project.js";
+
+// Generated code imported in-process registers trainables in the shared
+// registry; with files sharing a worker (isolate: false), clear it after each test.
+afterEach(() => {
+	resetTrainables();
+});
 
 // One of four files split from typescript-project-codegen.test.ts so the
 // files can spread across workers; helpers are in ./support/typescript-project.ts.
