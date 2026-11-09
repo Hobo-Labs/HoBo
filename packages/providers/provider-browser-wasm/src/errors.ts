@@ -7,6 +7,11 @@
  * reliably reaches a console, a receipt and a bug report.
  */
 
+import {
+	createProviderRedactor,
+	type ProviderTextRedactor,
+} from "@hobo/core/provider-redaction";
+
 export const BROWSER_WASM_ERROR_CODES = [
 	/** The document cannot support what the placement asked for. */
 	"HOST_UNSUPPORTED",
@@ -36,32 +41,13 @@ export type BrowserWasmErrorOptions = {
 	readonly cause?: Error;
 };
 
-/** Shapes that must never survive into a message, console line, or receipt. */
-const CREDENTIAL_PATTERNS: readonly RegExp[] = [
-	/\bBearer\s+\S+/giu,
-	/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/gu,
-	// The usual way a secret reaches a browser: in the URL.
-	/\b(?:access_token|id_token|session|api[_-]?key|token)=[^&\s"']+/giu,
-	/\b(?:sk|pk)[-_][A-Za-z0-9_-]{8,}/gu,
-];
-
-function flattenControlChars(text: string): string {
-	let out = "";
-	for (const ch of text) {
-		const code = ch.charCodeAt(0);
-		out += code <= 31 || code === 127 ? " " : ch;
-	}
-	return out;
-}
-
-export function redactHostText(text: string, maxLength = 256): string {
-	let out = text;
-	for (const pattern of CREDENTIAL_PATTERNS) {
-		out = out.replace(pattern, "[redacted]");
-	}
-	out = flattenControlChars(out).trim();
-	return out.length > maxLength ? `${out.slice(0, maxLength)}…` : out;
-}
+/**
+ * Replace anything credential-shaped with a marker and flatten control
+ * characters so host text cannot forge a console line. The shared redactor
+ * (`@hobo/core/provider-redaction`) holds every shape this needs, the window
+ * and the cut; a secret in a URL (`?access_token=…`) is its secret-key shape.
+ */
+export const redactHostText: ProviderTextRedactor = createProviderRedactor();
 
 export class BrowserWasmProviderError extends Error {
 	readonly code: BrowserWasmErrorCode;

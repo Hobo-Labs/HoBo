@@ -18,6 +18,11 @@
  * - `SECRET_CUSTODY_UNAVAILABLE` — the deposit side failed. Reporting that as
  *   `SECRET_REFERENCE_INVALID` would blame a reference that was never issued.
  */
+import {
+	createProviderRedactor,
+	type ProviderTextRedactor,
+} from "@hobo/core/provider-redaction";
+
 export const PROVIDER_ERROR_CODES = [
 	"PROVIDER_AUTH_FAILED",
 	"PROVIDER_RATE_LIMITED",
@@ -64,64 +69,30 @@ export type ProviderErrorOptions = {
 	readonly cause?: Error;
 };
 
-/**
- * Shapes that must never survive into a message, a log line, or a receipt.
- *
- * The generic opaque-blob rule is the important one: Upstash REST tokens are
- * long base64url strings with no fixed prefix to match on, so the rule is
- * structural — any unbroken run of 40+ token characters is treated as
- * credential material. Native UUIDs are also bearer capabilities and are
- * removed independently, including percent-encoded forms.
- */
-const CREDENTIAL_PATTERNS: readonly RegExp[] = [
-	/https?:\/\/console\.upstash\.com\/redis\/\S+/giu,
-	/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
-	/\*\*\s*Token\s*:?\s*\*\*\s*\S+/giu,
-	/\bBearer\s+\S+/giu,
-	/\bUPSTASH_REDIS_REST_TOKEN\s*[=:]\s*\S+/giu,
-	/\b(?:token|password|pwd)\s*[=:]\s*\S+/giu,
-	/\brediss?:\/\/\S+/giu,
-	/[A-Za-z0-9_-]{40,}/gu,
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/giu,
-];
-
-function flattenControlChars(text: string): string {
-	let out = "";
-	for (const ch of text) {
-		const code = ch.charCodeAt(0);
-		out += code <= 31 || code === 127 ? " " : ch;
-	}
-	return out;
-}
-
-export function containsControlChar(text: string): boolean {
-	for (const ch of text) {
-		const code = ch.charCodeAt(0);
-		if (code <= 31 || code === 127) return true;
-	}
-	return false;
-}
+export { containsControlChar } from "@hobo/core/provider-redaction";
 
 /**
  * Replace anything credential-shaped with a marker and flatten control
- * characters so provider text cannot forge a log record.
+ * characters so provider text cannot forge a log record. The text is
+ * percent-decoded fully first, so an encoded credential is found too. The
+ * shared redactor (`@hobo/core/provider-redaction`) holds the shapes, the
+ * window and the cut; Upstash adds its console URL, native UUIDs (bearer
+ * capabilities, encoded forms included), the CLI's `**Token:**` line and long
+ * opaque runs.
  */
-export function redactProviderText(text: string, maxLength = 256): string {
-	let out = text;
-	for (;;) {
-		const decoded = out.replace(/%[a-f0-9]{2}/giu, (encoded) =>
-			String.fromCharCode(Number.parseInt(encoded.slice(1), 16)),
-		);
-		if (decoded === out) break;
-		out = decoded;
-	}
-	for (const pattern of CREDENTIAL_PATTERNS)
-		out = out.replace(pattern, "[redacted]");
-	out = flattenControlChars(out)
-		.replace(/\s{2,}/gu, " ")
-		.trim();
-	return out.length > maxLength ? `${out.slice(0, maxLength)}…` : out;
-}
+export const redactProviderText: ProviderTextRedactor = createProviderRedactor({
+	patterns: [
+		/https?:\/\/console\.upstash\.com\/redis\/\S+/giu,
+		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
+		/\*\*\s*Token\s*:?\s*\*\*\s*\S+/giu,
+		// Upstash REST tokens are long base64url strings with no fixed prefix to
+		// match on, so the rule is structural: any unbroken run of 40+ token
+		// characters is credential material.
+		/[A-Za-z0-9_-]{40,}/gu,
+	],
+	decodePercent: true,
+	collapseWhitespace: true,
+});
 
 function redactOptionalText(value: string | undefined): string | undefined {
 	return value === undefined ? undefined : redactProviderText(value, 160);

@@ -1,0 +1,50 @@
+/**
+ * `redactClusterText` is the shared redactor (`@hobo/core/provider-redaction`)
+ * plus the kubeconfig's embedded blobs and an imagePullSecret's
+ * dockerconfigjson. Before the move it had its own copy, and three of its
+ * shapes backtracked on an apiserver body: the JWT shape started again at
+ * every `eyJ`, the private-key shape searched from every BEGIN for an END, and
+ * the dockerconfigjson shape from every `"auths":{` for a `}`. These pin that
+ * nothing it redacted leaks now and that it is linear.
+ */
+import { describe, expect, it } from "vitest";
+
+import { redactClusterText } from "../src/errors.js";
+
+const MB = 1_000_000;
+const repeated = (unit: string) => unit.repeat(Math.ceil(MB / unit.length));
+
+describe("redactClusterText", () => {
+	it("still redacts every shape its own copy did", () => {
+		for (const secret of [
+			"Bearer abc123",
+			"eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJrdWJlcm5ldGVzIn0.c2lnbmF0dXJl",
+			"client-key-data: LS0tLS1CRUdJTg==",
+			"client-certificate-data: LS0tLS1CRUdJTg==",
+			"certificate-authority-data: LS0tLS1CRUdJTg==",
+			"token: abc123",
+			"-----BEGIN RSA PRIVATE KEY-----\nMIIB\n-----END RSA PRIVATE KEY-----",
+			'"auths": {"registry.example.com": {"auth": "dXNlcjpwYXNz"}}',
+		])
+			expect(redactClusterText(`before ${secret} after`)).not.toMatch(
+				/abc123|eyJ|LS0t|MIIB|dXNl/u,
+			);
+	});
+
+	it("now also redacts a dockerconfigjson whose closing brace was cut off", () => {
+		// Before, the shape needed a `}` and left this whole.
+		expect(
+			redactClusterText('secret {"auths": {"r": {"auth": "dXNlcjpwYXNz"'),
+		).toBe("secret {[redacted]");
+	});
+
+	it.each([
+		["-eyJ", repeated("-eyJ")],
+		["BEGIN markers", repeated("-----BEGIN PRIVATE KEY-----")],
+		['"auths":{ with no closing brace', repeated('"auths":{')],
+	])("redacts 1 MB of %s in well under a second", (_case, hostile) => {
+		const started = performance.now();
+		redactClusterText(hostile, 2 * MB);
+		expect(performance.now() - started).toBeLessThan(1000);
+	});
+});

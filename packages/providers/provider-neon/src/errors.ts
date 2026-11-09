@@ -5,6 +5,11 @@
  * carried a connection string before, and an error message is the one string
  * that reliably reaches a log, a receipt, and a support ticket.
  */
+
+import {
+	createProviderRedactor,
+	type ProviderTextRedactor,
+} from "@hobo/core/provider-redaction";
 import { isJsonString } from "./json.js";
 
 export const PROVIDER_ERROR_CODES = [
@@ -35,53 +40,24 @@ export type ProviderErrorOptions = {
 	readonly cause?: Error;
 };
 
-/** Shapes that must never survive into an error message, log line, or receipt. */
-const CREDENTIAL_PATTERNS: readonly RegExp[] = [
-	/https?:\/\/neon\.new\/claim\/\S+/giu,
-	/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
-	/postgres(?:ql)?:\/\/\S+/giu,
-	/\bBearer\s+\S+/giu,
-	/\b(?:password|pgpassword|pwd)\s*[=:]\s*\S+/giu,
-	/\bnpg_[A-Za-z0-9_-]{4,}/giu,
-	/\b(?:sk|pk)[-_][A-Za-z0-9_-]{8,}/giu,
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/giu,
-];
-
-function flattenControlChars(text: string): string {
-	let out = "";
-	for (const ch of text) {
-		const code = ch.charCodeAt(0);
-		out += code <= 31 || code === 127 ? " " : ch;
-	}
-	return out;
-}
-
-export function containsControlChar(text: string): boolean {
-	for (const ch of text) {
-		const code = ch.charCodeAt(0);
-		if (code <= 31 || code === 127) return true;
-	}
-	return false;
-}
+export { containsControlChar } from "@hobo/core/provider-redaction";
 
 /**
  * Replace anything credential-shaped with a marker and flatten control
- * characters so provider text cannot forge a log record.
+ * characters so provider text cannot forge a log record. The text is
+ * percent-decoded fully first, so an encoded credential is found too. The
+ * shared redactor (`@hobo/core/provider-redaction`) holds the shapes, the
+ * window and the cut; Neon adds its claim URL, project UUIDs and `npg_`
+ * passwords.
  */
-export function redactProviderText(text: string, maxLength = 256): string {
-	let out = text;
-	for (;;) {
-		const decoded = out.replace(/%[a-f0-9]{2}/giu, (encoded) =>
-			String.fromCharCode(Number.parseInt(encoded.slice(1), 16)),
-		);
-		if (decoded === out) break;
-		out = decoded;
-	}
-	for (const pattern of CREDENTIAL_PATTERNS)
-		out = out.replace(pattern, "[redacted]");
-	out = flattenControlChars(out).trim();
-	return out.length > maxLength ? `${out.slice(0, maxLength)}…` : out;
-}
+export const redactProviderText: ProviderTextRedactor = createProviderRedactor({
+	patterns: [
+		/https?:\/\/neon\.new\/claim\/\S+/giu,
+		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
+		/\bnpg_[A-Za-z0-9_-]{4,}/giu,
+	],
+	decodePercent: true,
+});
 
 export class NeonProviderError extends Error {
 	readonly code: ProviderErrorCode;

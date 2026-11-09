@@ -7,6 +7,11 @@
  * adopted namespace, whatever the operator already put there.
  */
 
+import {
+	createProviderRedactor,
+	type ProviderTextRedactor,
+} from "@hobo/core/provider-redaction";
+
 export const KUBERNETES_ERROR_CODES = [
 	"PROVIDER_AUTH_FAILED",
 	"PROVIDER_CONTRACT_CHANGED",
@@ -32,35 +37,21 @@ export type KubernetesErrorOptions = {
 	readonly cause?: Error;
 };
 
-/** Shapes that must never survive into a message, log line, or receipt. */
-const CREDENTIAL_PATTERNS: readonly RegExp[] = [
-	/\bBearer\s+\S+/giu,
-	// Projected ServiceAccount tokens and any other compact JWS.
-	/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/gu,
-	// kubeconfig embeds these as base64 blobs.
-	/\b(?:client-key-data|client-certificate-data|certificate-authority-data|token)\s*[=:]\s*\S+/giu,
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/gu,
-	// .dockerconfigjson, the usual imagePullSecret payload.
-	/"auths"\s*:\s*\{[\s\S]*?\}/gu,
-];
-
-const CONTROL_CHARS = new RegExp(
-	`[${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}]`,
-	"gu",
-);
-
 /**
  * Replace anything credential-shaped with a marker and flatten control
- * characters so apiserver text cannot forge a log record.
+ * characters so apiserver text cannot forge a log record. The shared redactor
+ * (`@hobo/core/provider-redaction`) holds the shapes, the window and the cut;
+ * Kubernetes adds the kubeconfig's embedded blobs and the dockerconfigjson an
+ * imagePullSecret carries.
  */
-export function redactClusterText(text: string, maxLength = 256): string {
-	let out = text;
-	for (const pattern of CREDENTIAL_PATTERNS) {
-		out = out.replace(pattern, "[redacted]");
-	}
-	out = out.replace(CONTROL_CHARS, " ").trim();
-	return out.length > maxLength ? `${out.slice(0, maxLength)}…` : out;
-}
+export const redactClusterText: ProviderTextRedactor = createProviderRedactor({
+	patterns: [
+		/\b(?:client-key-data|client-certificate-data|certificate-authority-data)\s*[=:]\s*\S+/giu,
+		// .dockerconfigjson, the usual imagePullSecret payload: to its first
+		// closing brace, or to the end of the text when there is none.
+		/"auths"\s*:\s*\{[^}]*\}?/gu,
+	],
+});
 
 export class KubernetesProviderError extends Error {
 	readonly code: KubernetesErrorCode;

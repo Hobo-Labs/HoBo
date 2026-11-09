@@ -8,6 +8,10 @@
  * leaking the day someone adds one.
  */
 import { redactSecretRef } from "@hobo/bindings";
+import {
+	JWT_DETECTOR,
+	PRIVATE_KEY_DETECTOR,
+} from "@hobo/core/provider-redaction";
 
 import type {
 	AnonymousSiteRecord,
@@ -96,7 +100,11 @@ const CREDENTIAL_PATTERNS: readonly {
 }[] = [
 	{
 		label: "claim or drop url with parameters",
-		pattern: /https?:\/\/\S*(?:claim|drop)\S*[?#]\S+/iu,
+		// The first `http(s)://` in a run, the first `claim`/`drop` after it, and
+		// the first `?`/`#` after that: each part stops at its first occurrence,
+		// so the search is linear where `\S*` before each part was not.
+		pattern:
+			/(?<!\S)(?:(?!https?:\/\/)\S)*https?:\/\/(?:(?!claim|drop)\S)*(?:claim|drop)[^\s?#]*[?#]\S/iu,
 	},
 	{
 		label: "netlify session or site parameter",
@@ -123,8 +131,8 @@ const CREDENTIAL_PATTERNS: readonly {
 		label: "password assignment",
 		pattern: /\b(?:password|passwd|pwd)\s*[=:]\s*[^"\s,}]+/iu,
 	},
-	{ label: "jwt", pattern: /\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./u },
-	{ label: "private key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/u },
+	{ label: "jwt", pattern: JWT_DETECTOR },
+	{ label: "private key", pattern: PRIVATE_KEY_DETECTOR },
 ];
 
 /**
