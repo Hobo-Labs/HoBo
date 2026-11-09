@@ -308,6 +308,25 @@ getAppModule("missing.ts");
 				readFile(join(root, ".hobo/build/build-manifest.json")),
 			).rejects.toMatchObject({ code: "ENOENT" });
 		}, 60_000);
+
+		it("refuses an explicit runtime before checking the generated tree", async () => {
+			const app = join(root, "src/app.ts");
+			const authored = await readFile(app, "utf8");
+			await writeFile(app, `${authored}\nexport const drifted = 1;\n`);
+			try {
+				const result = await createHoboCli().run(
+					["build", "--runtime", "wasm", "--json"],
+					{ cwd: root },
+				);
+				// The request can never build, so it is refused as such, not as drift.
+				expect(JSON.parse(result.stdout)).toMatchObject({
+					ok: false,
+					code: "HOBO_BUILD_RUNTIME_INVALID",
+				});
+			} finally {
+				await writeFile(app, authored);
+			}
+		});
 	});
 	it("does not bypass an explicit empty service declaration into Node packaging", async () => {
 		const root = await project();

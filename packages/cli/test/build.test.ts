@@ -131,6 +131,27 @@ describe("hobo build", () => {
 		});
 	});
 
+	it("refuses an empty service declaration before checking the generated tree", async () => {
+		await withSeededBuildProject(async (projectRoot) => {
+			await writeFile(
+				join(projectRoot, "src/_generated/hooks.d.ts"),
+				"stale generated file\n",
+			);
+			const bindlePath = join(projectRoot, "hobo.bindle.json");
+			const bindle = JSON.parse(await readFile(bindlePath, "utf8"));
+			await writeFile(bindlePath, JSON.stringify({ ...bindle, services: [] }));
+
+			const result = await createFixtureCli().run(["build", "--json"], {
+				cwd: projectRoot,
+			});
+
+			expect(JSON.parse(result.stdout)).toMatchObject({
+				ok: false,
+				code: "HOBO_BUILD_NO_SERVICES",
+			});
+		});
+	});
+
 	it("names service and cause on componentize failure without writing a manifest", async () => {
 		await withTempBuildProject(async (projectRoot) => {
 			await writeBuildFixtureProject(projectRoot, {

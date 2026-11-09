@@ -99,7 +99,9 @@ export async function runBuild(request: RunBuildOptions): Promise<BuildResult> {
 		},
 	];
 
-	await assertGeneratedFreshWrapper(projectRoot);
+	// Refusals that read only the request and hobo.bindle.json come before the
+	// freshness gate, which regenerates the whole project: a request that can
+	// never build is answered without paying for a codegen pass.
 	if (nodeApp && targetRuntime !== "auto")
 		throw new BuildError(
 			"HOBO_BUILD_RUNTIME_INVALID",
@@ -107,6 +109,7 @@ export async function runBuild(request: RunBuildOptions): Promise<BuildResult> {
 			{ runtime: targetRuntime },
 		);
 	const services = nodeApp ? [] : await discoverServices(projectRoot);
+	await assertGeneratedFreshWrapper(projectRoot);
 	const componentize = services.some(
 		(service) => !fallbackReasonFor(service, targetRuntime),
 	)
