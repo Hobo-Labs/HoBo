@@ -22,6 +22,7 @@ on:
       - "scripts/test/code-test-build-artifact.test.ts"
       - "scripts/test/release-sparse-cone.test.ts"
       - "scripts/test/release-oci-affected.test.ts"
+      - "scripts/test/release-oci-attest-contract.test.ts"
       - "scripts/test/release-oci-image-contract.test.ts"
       - "scripts/test/stage-release-oci-app.test.ts"
       - ".github/actions/release-oci-attest/**"
@@ -91,7 +92,7 @@ jobs:
       - name: Shell syntax (changed scripts)
         run: pnpm run lint:shell:changed -- --base=HEAD^1
       - name: npm scope map + OCI manifest contract
-        run: pnpm exec vitest run scripts/test/code-test-build-artifact.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/stage-release-oci-app.test.ts
+        run: pnpm exec vitest run scripts/test/code-test-build-artifact.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-attest-contract.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/stage-release-oci-app.test.ts
       - name: Lint @hobo/code
         run: pnpm --filter @hobo/code lint
       - name: Turbo cache
