@@ -24,15 +24,16 @@ const config = mergeConfig(
 	}),
 );
 
-// Replaced, not merged (mergeConfig concatenates arrays): the root's wasmtime
-// warm-up downloads a 40-60 MB runtime on a cold runner, and no test here runs
-// wasmtime. The throwaway HOBO_HOMEs stay; run-scratch removes the fixtures
+// The root's global setups, minus its wasmtime warm-up: that downloads a
+// 40-60 MB runtime on a cold runner, and no test here runs wasmtime. A setup
+// the root adds later still runs here. run-scratch removes the fixtures
 // test/support/built-starter.ts shares across files.
+const rootGlobalSetup = [config.test?.globalSetup ?? []].flat();
 config.test = {
 	...config.test,
 	globalSetup: [
-		fileURLToPath(
-			new URL("../../test/setup/hobo-test-homes.ts", import.meta.url),
+		...rootGlobalSetup.filter(
+			(setup) => !setup.endsWith("wasmtime-global-setup.ts"),
 		),
 		fileURLToPath(new URL("./test/support/run-scratch.ts", import.meta.url)),
 	],
