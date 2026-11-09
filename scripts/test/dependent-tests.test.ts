@@ -5,6 +5,7 @@ import {
 	planCommands,
 	planDependentTests,
 	type Repo,
+	readRepo,
 	shardTestPlan,
 	type TestGraph,
 	type TestPlan,
@@ -175,6 +176,91 @@ function scoped(plan: TestPlan) {
 		skipped: plan.skipped,
 	};
 }
+
+/** `repo` with more files: each case adds only what it is about. */
+function extend(base: Repo, more: Readonly<Record<string, string>>): Repo {
+	const added = new Map(Object.entries(more));
+	return {
+		files: new Set([...base.files, ...added.keys()]),
+		read: (path) => added.get(path) ?? base.read(path),
+		workspaces: base.workspaces,
+	};
+}
+
+/**
+ * A root vitest config with setup files, merged by a package whose `test`
+ * script builds first. Neither package depends on what changes, so both are
+ * bystanders, asked only whether their config reaches the path.
+ */
+const rootConfigRepo: Repo = {
+	...extend(repo, {
+		"vitest.config.ts": [
+			'import { fileURLToPath } from "node:url";',
+			"export default { test: { globalSetup: [",
+			'	fileURLToPath(new URL("./test/setup/homes.ts", import.meta.url)),',
+			"] } };",
+			"",
+		].join("\n"),
+		"test/setup/homes.ts": "export default () => {};\n",
+		"packages/heavy/package.json": manifest(
+			"@t/heavy",
+			"pnpm run build && vitest run",
+		),
+		"packages/heavy/vitest.config.ts":
+			'import root from "../../vitest.config.js";\nexport default root;\n',
+		"packages/heavy/test/h.test.ts": 'import { strict } from "node:assert";\n',
+		"packages/merged/package.json": manifest("@t/merged", "vitest run"),
+		"packages/merged/vitest.config.ts":
+			'import root from "../../vitest.config.js";\nexport default root;\n',
+		"packages/merged/test/m.test.ts": 'import { strict } from "node:assert";\n',
+	}),
+	workspaces: [
+		...repo.workspaces,
+		{ dir: "packages/heavy", name: "@t/heavy", dependencies: [] },
+		{ dir: "packages/merged", name: "@t/merged", dependencies: [] },
+	],
+};
+
+describe("a bystander whose test script is not plain vitest", () => {
+	for (const path of ["vitest.config.ts", "test/setup/homes.ts"])
+		it(`runs whole when its config reaches ${path}`, () => {
+			assert.deepEqual(scoped(planDependentTests([path], rootConfigRepo)), {
+				full: ["packages/heavy", "packages/merged"],
+				subsets: {},
+				skipped: [],
+			});
+		});
+
+	it("runs whole when one of its tests reaches the path, and not otherwise", () => {
+		const reading = extend(rootConfigRepo, {
+			"packages/heavy/test/guide.test.ts":
+				'const guide = "../../../docs/guide.md";\n',
+		});
+		assert.deepEqual(scoped(planDependentTests(["docs/guide.md"], reading)), {
+			full: ["packages/heavy"],
+			subsets: { "packages/none": ["test/x.test.ts"] },
+			skipped: [],
+		});
+		// `packages/tool` (`node --test`) reaches neither and stays out.
+		assert.deepEqual(
+			scoped(planDependentTests(["docs/other.md"], rootConfigRepo)),
+			{ full: [], subsets: {}, skipped: [] },
+		);
+	});
+});
+
+describe("a package that imports another by relative path", () => {
+	it("runs the tests that reach the change without declaring the dependency", () => {
+		const reaching = extend(repo, {
+			"packages/none/test/reach.test.ts": 'import "../../lib/src/worker.js";\n',
+		});
+		assert.deepEqual(
+			scoped(planDependentTests(["packages/lib/src/worker.ts"], reaching))
+				.subsets["packages/none"],
+			["test/reach.test.ts"],
+		);
+	});
+});
 
 describe("planDependentTests", () => {
 	it("runs only the dependent tests whose closure reaches a worker-only file", () => {
@@ -425,5 +511,37 @@ describe("planCommands", () => {
 		assert.ok(build.includes("@hobo/hobo#build"));
 		assert.ok(!build.includes("@hobo/hobo#test"));
 		assert.ok(!build.includes("--"));
+	});
+});
+
+describe("the repository's own plans", { concurrency: true }, () => {
+	let tree: Repo | undefined;
+	const plan = (path: string) =>
+		scoped(planDependentTests([path], (tree ??= readRepo())));
+
+	// `packages/cli` merges the root config but its script builds first.
+	for (const [path, full] of [
+		["vitest.config.ts", ["packages/cli", "packages/hobo"]],
+		[
+			"test/setup/hobo-test-homes.ts",
+			["packages/cli", "packages/code", "packages/hobo"],
+		],
+		[
+			"test/setup/isolate-hobo-home.ts",
+			["packages/cli", "packages/code", "packages/hobo"],
+		],
+	] as const)
+		it(`runs the suites whose config reaches ${path}`, () => {
+			assert.deepEqual(plan(path), { full, subsets: {}, skipped: [] });
+		});
+
+	it("runs a test that imports another package's source by relative path", () => {
+		// `packages/code` imports `../../cli/src/cloud/loader.js` and declares no
+		// dependency on @hobo/cli; 3317dcc2 changed cli and missed it.
+		assert.ok(
+			plan("packages/cli/src/cloud/loader.ts").subsets[
+				"packages/code"
+			]?.includes("test/happy-path-run.test.ts"),
+		);
 	});
 });

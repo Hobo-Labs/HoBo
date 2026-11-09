@@ -21,11 +21,14 @@
  * and its workspace dependencies. A dependent's test with a computed `import()`
  * or a relative import that resolves to nothing runs. A dependent runs in full
  * when its `test` script is not plain `vitest run` or its vitest config's
- * closure reaches the change.
+ * closure reaches the change; a package whose script is not plain runs whole
+ * or not at all, since its script cannot take a file list.
  *
- * A changed path outside every package (the root vitest config, a doc a test
- * reads) runs the tests anywhere whose closure concretely reaches it; there a
- * give-up does not count, or a docs edit would run every package.
+ * Every other package runs the tests whose closure concretely reaches a
+ * changed path: a path outside every package (the root vitest config, a doc a
+ * test reads), or a file another package imports by relative path without
+ * depending on it. There a give-up does not count, or a docs edit would run
+ * every package.
  *
  * Node builtins only.
  *
@@ -246,8 +249,15 @@ export function createWalker(repo: Repo) {
 	const manifests = new Map<string, JsonObject | undefined>();
 	const edgeCache = new Map<string, Edges>();
 
-	const ownerOf = (path: string) =>
-		byDepth.find((ws) => path === ws.dir || path.startsWith(`${ws.dir}/`));
+	const owners = new Map<string, Workspace | undefined>();
+	const ownerOf = (path: string) => {
+		if (!owners.has(path))
+			owners.set(
+				path,
+				byDepth.find((ws) => path === ws.dir || path.startsWith(`${ws.dir}/`)),
+			);
+		return owners.get(path);
+	};
 	const manifestOf = (ws: Workspace) => {
 		if (!manifests.has(ws.dir))
 			manifests.set(ws.dir, parseManifest(repo.read(`${ws.dir}/package.json`)));
@@ -484,16 +494,15 @@ export function planDependentTests(
 			}
 		}
 	}
-	// A path outside every package (the root vitest config, a shared setup file,
-	// a doc a test reads) can reach any package's tests, but only a closure that
-	// actually reaches it counts: walking every package strictly would run all
-	// of them for a docs edit.
-	const bystanders =
-		outside.length === 0
-			? []
-			: repo.workspaces
-					.map((ws) => ws.dir)
-					.filter((dir) => !changedPackages.has(dir) && !dependents.has(dir));
+	// A package that declares no dependency can still reach a change: a path
+	// outside every package (the root vitest config, a shared setup file, a doc
+	// a test reads), or another package's file it imports by relative path
+	// (`packages/code` importing `../../cli/src/cloud/loader.js`). Only a
+	// closure that actually reaches it counts: walking every package strictly
+	// would run all of them for a docs edit.
+	const bystanders = repo.workspaces
+		.map((ws) => ws.dir)
+		.filter((dir) => !changedPackages.has(dir) && !dependents.has(dir));
 	const testsOf = new Map<string, string[]>();
 	for (const path of repo.files) {
 		if (!TEST_FILE.test(path) || /(?:^|\/)(?:node_modules|dist)\//.test(path))
@@ -514,8 +523,14 @@ export function planDependentTests(
 		const scripts = ws ? walker.manifestOf(ws)?.scripts : undefined;
 		const test = isObject(scripts) ? scripts.test : undefined;
 		if (!isString(test)) continue;
-		if (!PLAIN_VITEST.test(test.trim())) {
-			if (!lenient) full.push(dir);
+		// A script that is not plain `vitest run` cannot take a file list, so it
+		// runs whole or not at all. A dependent runs whole. A bystander still has
+		// to be asked whether its config or tests reach the change: skipping it
+		// here missed `packages/cli` (`pnpm run build && vitest run`) when the
+		// root vitest config it merges changed.
+		const plain = PLAIN_VITEST.test(test.trim());
+		if (!plain && !lenient) {
+			full.push(dir);
 			continue;
 		}
 		const config = VITEST_CONFIGS.map((name) => `${dir}/${name}`).find((path) =>
@@ -531,7 +546,7 @@ export function planDependentTests(
 		);
 		if (selected.length === 0) {
 			if (!lenient) skipped.push(dir);
-		} else if (selected.length === tests.length) full.push(dir);
+		} else if (!plain || selected.length === tests.length) full.push(dir);
 		else
 			subsets.set(
 				dir,
@@ -686,17 +701,15 @@ function describePlan(plan: TestPlan): string {
 	return lines.join("\n");
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-	const input = readStdin();
+/** The checkout in the working directory: tracked files, read from disk. */
+export function readRepo(): Repo {
 	const listed = spawnSync("git", ["ls-files", "-z"], {
 		encoding: "utf8",
 		maxBuffer: 256 * 1024 * 1024,
 	});
-	if (listed.status !== 0) {
-		console.error("dependent-tests: git ls-files failed");
-		process.exit(2);
-	}
-	const repo: Repo = {
+	if (listed.status !== 0)
+		throw new Error("dependent-tests: git ls-files failed");
+	return {
 		files: new Set(listed.stdout.split("\0").filter((path) => path !== "")),
 		read: (path) => {
 			try {
@@ -707,6 +720,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 		},
 		workspaces: readWorkspaces(),
 	};
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+	const input = readStdin();
+	const repo = readRepo();
 	const args = process.argv.slice(2);
 	const baseArgument = args.find((arg) => arg.startsWith("--base="));
 	const shardArgs = args.filter((arg) => arg.startsWith("--shard"));

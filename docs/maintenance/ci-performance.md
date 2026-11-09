@@ -105,6 +105,19 @@ classifier itself reads stdin through counts as a classifier self-change. Edits 
 three callers also select `scripts/test/read-stdin.test.ts` + `job-scope.test.ts` in
 `scripts/relevant-check-policy.ts`, since the broad `test:scripts` lane is not part of the PR gate.
 
+## Planner
+
+`scripts/ci/dependent-tests.mts` plans a changed path outside every package (the root vitest config, a
+shared setup file, a doc) by asking each other package whether its vitest config or a test reaches it.
+It used to skip any package whose `test` script is not plain `vitest run` before asking, so a root
+`vitest.config.ts` change ran `packages/hobo` and missed `packages/cli`
+(`pnpm run build && vitest run`), whose config merges the root one; `test/setup/*` had the same gap.
+Such a package is now asked like any other and runs whole when it is reached, since its script cannot
+take a file list. The same question is now asked of every package that neither changed nor depends on
+one, not only when a path outside every package changed: `packages/code` imports
+`../../cli/src/cloud/loader.js` without depending on `@hobo/cli`, and 3317dcc2 changed `packages/cli`
+without running `packages/code/test/happy-path-run.test.ts`. Only a concrete reach counts there.
+
 ## Frozen proofs and live-repo tests
 
 `scripts/run-tests.ts` skips a frozen proof test that scans the live repo when its promoted package keeps
