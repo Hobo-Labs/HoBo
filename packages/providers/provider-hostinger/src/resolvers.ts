@@ -69,6 +69,7 @@ import {
 	type TransportMethod,
 	type TransportResponse,
 } from "@hobo/core";
+import { createProviderRedactor } from "@hobo/core/provider-redaction";
 
 import {
 	isJsonArray,
@@ -182,8 +183,15 @@ const CREDENTIAL_REF_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/[^\s@]+$/u;
  */
 const RAW_CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{32,}$/u;
 
-/** Anything long and token-shaped is scrubbed out of provider error text. */
-const TOKEN_PATTERN = /[A-Za-z0-9_-]{20,}/gu;
+/**
+ * Anything long and token-shaped is scrubbed out of provider error text, on top
+ * of the shared shapes (`@hobo/core/provider-redaction`): a private key, a
+ * bearer token, a JWT, connection strings, URL credentials, and secret-named
+ * keys short enough to slip under the length rule.
+ */
+const redactTokenText = createProviderRedactor({
+	patterns: [/[A-Za-z0-9_-]{20,}/gu],
+});
 
 /**
  * Property names that carry a secret rather than a reference to one. A request
@@ -203,8 +211,7 @@ const INLINE_SECRET_KEYS = Object.freeze([
  * carried hostnames and token fragments before.
  */
 export function redactHostingerText(text: string, limit = 400): string {
-	const scrubbed = text.replace(TOKEN_PATTERN, "[redacted]");
-	return scrubbed.length > limit ? `${scrubbed.slice(0, limit)}…` : scrubbed;
+	return redactTokenText(text, limit);
 }
 
 // ---------------------------------------------------------------------------

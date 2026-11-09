@@ -59,6 +59,7 @@ import {
 	type TransportMethod,
 	type TransportResponse,
 } from "@hobo/core";
+import { createProviderRedactor } from "@hobo/core/provider-redaction";
 
 import { CLOUDFLARE_PROVIDER_TARGET } from "./hello-bindle.js";
 import {
@@ -140,8 +141,15 @@ const CREDENTIAL_REF_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/[^\s@]+$/u;
  */
 const RAW_CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{16,}$/u;
 
-/** Anything long and token-shaped is scrubbed out of provider error text. */
-const TOKEN_PATTERN = /[A-Za-z0-9_-]{20,}/gu;
+/**
+ * Anything long and token-shaped is scrubbed out of provider error text, on top
+ * of the shared shapes (`@hobo/core/provider-redaction`): a private key, a
+ * bearer token, a JWT, connection strings, URL credentials, and secret-named
+ * keys short enough to slip under the length rule.
+ */
+const redactTokenText = createProviderRedactor({
+	patterns: [/[A-Za-z0-9_-]{20,}/gu],
+});
 
 /** A listing that will not terminate is refused rather than half-read. */
 const MAX_LIST_PAGES = 25;
@@ -159,8 +167,7 @@ const DEFAULT_WORKER_MAIN_MODULE = "worker.js";
  * carried an account id or a token fragment before.
  */
 export function redactCloudflareText(text: string, limit = 400): string {
-	const scrubbed = text.replace(TOKEN_PATTERN, "[redacted]");
-	return scrubbed.length > limit ? `${scrubbed.slice(0, limit)}…` : scrubbed;
+	return redactTokenText(text, limit);
 }
 
 /** The `{ success, errors, result }` envelope every v4 endpoint returns. */

@@ -78,6 +78,7 @@ import {
 	type TransportMethod,
 	type TransportResponse,
 } from "@hobo/core";
+import { createProviderRedactor } from "@hobo/core/provider-redaction";
 
 import {
 	isJsonArray,
@@ -271,8 +272,15 @@ const CREDENTIAL_REF_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/[^\s@]+$/u;
  */
 const RAW_CREDENTIAL_PATTERN = /^[A-Za-z0-9._~+/-]{20,}=*$/u;
 
-/** Anything long and token-shaped is scrubbed out of provider error text. */
-const TOKEN_PATTERN = /[A-Za-z0-9_-]{20,}/gu;
+/**
+ * Anything long and token-shaped is scrubbed out of provider error text, on top
+ * of the shared shapes (`@hobo/core/provider-redaction`): a private key, a
+ * bearer token, a JWT, connection strings, URL credentials, and secret-named
+ * keys short enough to slip under the length rule.
+ */
+const redactTokenText = createProviderRedactor({
+	patterns: [/[A-Za-z0-9_-]{20,}/gu],
+});
 
 /** A Cloud Run operation name: `projects/…/locations/…/operations/…`. */
 const RUN_OPERATION_NAME_PATTERN =
@@ -294,8 +302,7 @@ const DATABASE_VERSION_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/u;
  * carried resource paths and token fragments before.
  */
 export function redactGcpText(text: string, limit = 400): string {
-	const scrubbed = text.replace(TOKEN_PATTERN, "[redacted]");
-	return scrubbed.length > limit ? `${scrubbed.slice(0, limit)}…` : scrubbed;
+	return redactTokenText(text, limit);
 }
 
 // ---------------------------------------------------------------------------
