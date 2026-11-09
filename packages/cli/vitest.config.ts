@@ -8,8 +8,10 @@ export default mergeConfig(
 	rootConfig,
 	defineConfig({
 		test: {
-			maxWorkers: capVitestWorkers(1),
-			fileParallelism: false,
+			// CI runs one worker: the compiler-heavy files are bounded on a shared
+			// runner box. Elsewhere files spread across the cores, still under the
+			// memory-derived HOBO_TEST_MAX_WORKERS cap when it is set.
+			maxWorkers: capVitestWorkers(process.env.CI ? 1 : undefined),
 			// Files share a worker's module graph (the root default). Each file
 			// re-importing `src/index`, every `@hobo/*` dependency and the compiler
 			// cost ~54 CPU s of the ~63 s the light files took. Nothing here keeps
