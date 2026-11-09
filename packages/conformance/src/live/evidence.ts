@@ -351,6 +351,16 @@ const JWT_COMPACT_SERIALIZATION =
 /** A private key's BEGIN line, any label up to the next `-`. */
 const PRIVATE_KEY_LINE = /-----BEGIN[^-]*PRIVATE KEY-----/u;
 
+/**
+ * `word` spelled so that `i` alone matches what the `iu` form it replaced
+ * did: under `iu`, `s` also matched `ſ` (U+017F) and `k` matched `K`
+ * (U+212A). Explicit classes keep those spellings without the `u` flag,
+ * whose Unicode folding made the old patterns' starts ambiguous.
+ */
+function withFoldedLetters(word: string): string {
+	return word.replace(/s/gu, "[s\\u017F]").replace(/k/giu, "[k\\u212A]");
+}
+
 /** Values that must never appear anywhere in an artifact. */
 export const SECRET_PATTERN: readonly RegExp[] = [
 	// A connection string with credentials, looked for once per run of
@@ -359,18 +369,23 @@ export const SECRET_PATTERN: readonly RegExp[] = [
 	// later `scheme://` in the same run reaches a `:` and an `@` no earlier, so
 	// it can match only where the first does; searching from every one of them,
 	// and to the end of the run each time, was quadratic.
-	...["postgres(?:ql)?", "rediss?", "mysql", "mongodb(?:\\+srv)?"].map(
-		(scheme) =>
-			new RegExp(
-				`(?<![^\\s"])(?:(?!${scheme}:\\/\\/)[^\\s"])*${scheme}:\\/\\/[^\\s":]*:[^\\s"@]*@`,
-				"i",
-			),
-	),
+	...["postgres(?:ql)?", "rediss?", "mysql", "mongodb(?:\\+srv)?"]
+		.map(withFoldedLetters)
+		.map(
+			(scheme) =>
+				new RegExp(
+					`(?<![^\\s"])(?:(?!${scheme}:\\/\\/)[^\\s"])*${scheme}:\\/\\/[^\\s":]*:[^\\s"@]*@`,
+					"i",
+				),
+		),
 	PRIVATE_KEY_LINE,
 	/\bBearer\s+[\u017F\u212AA-Za-z0-9._-]{8,}/i,
 	/\b(?:sk|pk|ghp|gho|xox[abpsr])[-_][A-Za-z0-9_-]{16,}\b/u,
 	JWT_COMPACT_SERIALIZATION,
-	/"(?:password|passwd|secret|apiKey|api_key|accessKey|access_key|token)"\s*:/i,
+	new RegExp(
+		`"(?:${withFoldedLetters("password|passwd|secret|apiKey|api_key|accessKey|access_key|token")})"\\s*:`,
+		"i",
+	),
 ];
 
 /**

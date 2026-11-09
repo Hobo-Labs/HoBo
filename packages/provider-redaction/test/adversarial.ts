@@ -23,6 +23,7 @@ export const PATTERN_NAMES = [
 	"url credentials",
 	"inline credentials",
 	"secret key",
+	"locator tail",
 	"prefixed key",
 ] as const;
 export type PatternName = (typeof PATTERN_NAMES)[number];
@@ -218,6 +219,17 @@ export const adversarial: readonly Adversary[] = [
 		text: repeatedTo(
 			"-----BEGIN a -----BEGIN PRIVATE KEY-----\nb\n-----END PRIVATE KEY----- PRIVATE KEY-----\n",
 		),
+	},
+	// Round 6: what is glued to a kept locator, over and over.
+	{
+		name: "locators glued to each other",
+		targets: ["locator tail", "secret key"],
+		text: repeatedTo("secret://camp/db\\n"),
+	},
+	{
+		name: "a locator and a long tail",
+		targets: ["locator tail"],
+		text: (length) => `token: secret://camp/db\u200b${"a".repeat(length)}`,
 	},
 	{
 		name: "a mix, with whitespace",

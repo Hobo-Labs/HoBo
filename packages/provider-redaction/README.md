@@ -78,9 +78,15 @@ Some rules the shapes hold, each with a test:
   without a scheme: a token is often the user (`https://ghp_…@github.com/…`,
   `Token ://…@host`).
 - A locator (`hobo-token://…`, `hobo-secret://…`, `secret://…`, `env://…`) is a
-  reference, not a secret, and is kept, as a key's value too, when its run is
-  clean: 256 characters or fewer, no control character in it, ending at
-  whitespace or the end. One a control character runs on through is redacted.
+  reference, not a secret, and is kept, as a key's value too, only in the
+  grammar the code that issues locators writes (`src/locator.ts`, after
+  `parseSecretRef` in `@hobo/bindings`): an authority and at least one path
+  segment of unreserved URI characters, an optional `#field`, or `env://` and
+  a variable's name. It ends at the end of its run, after closing quotes or
+  brackets, or at an escaped `\n` or `\r`. Whatever is glued after it (a
+  line break's escape and the next line, a zero-width or direction mark) is
+  redacted and the locator kept; a value that is not in the grammar at all
+  (`secret://locSECRET`, a control character in the run) is redacted whole.
   Only those schemes: `password://…` and `api-key://…` are a key and its value.
 - A secret-named key (`token`, `secret`, `auth`, `authorization`, `session`,
   `password`, `api_key`, `secret_key`, `access_key`, `private_key`, …) whose
