@@ -15,6 +15,10 @@ import ts from "typescript";
  * `program.getGlobalDiagnostics()` is not added: it also holds the ones the
  * checker raises while it initialises (for example under `noLib`), which the
  * whole-program check never reported.
+ *
+ * Known gap: a global type that only a declaration file's check would need
+ * (under `noLib`, for example ImportAttributes for an import attribute in a
+ * `.d.ts`) is no longer reported, since declarations are not checked.
  */
 export function sourceDiagnostics(
 	program: ts.Program,
