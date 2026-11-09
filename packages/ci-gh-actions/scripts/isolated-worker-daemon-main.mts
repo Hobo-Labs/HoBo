@@ -11,6 +11,7 @@ import {
 	attachPostgresPoolErrorHandler,
 	boxGitMirrorPath,
 	createBoxGitMirror,
+	ensureBoxGitMirrorRoot,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createDepsImageEnsurer,
@@ -395,6 +396,15 @@ try {
 	const gitMirrorRoot =
 		process.env.HOBO_CI_GIT_MIRROR_ROOT ?? "/var/lib/hobo-ci/git";
 	const gitMirrorEnabled = process.env.HOBO_CI_GIT_MIRROR !== "0";
+	if (gitMirrorEnabled) {
+		const mirrorRoot = ensureBoxGitMirrorRoot(gitMirrorRoot);
+		if (mirrorRoot.status === "unusable") {
+			log("hobo_ci_git_mirror_root_unusable", {
+				root: gitMirrorRoot,
+				reason: mirrorRoot.reason,
+			});
+		}
+	}
 	const gitMirrors = new Map<string, ReturnType<typeof createBoxGitMirror>>();
 	function gitMirrorFor(repository: string) {
 		const key = repository.toLowerCase();

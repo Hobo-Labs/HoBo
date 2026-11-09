@@ -178,9 +178,9 @@ describe("bounded pnpm install", () => {
 		assert.equal(parseInstallTimeoutSeconds("240"), 240);
 	});
 
-	it("routes all six workflow installs through the bounded wrapper", () => {
+	it("routes all workflow installs through the bounded wrapper", () => {
 		const workflow = readFileSync(".github/workflows/hobo-ci.yml", "utf8");
-		assert.equal(workflow.split("scripts/ci/pnpm-install.mts").length - 1, 6);
+		assert.equal(workflow.split("scripts/ci/pnpm-install.mts").length - 1, 7);
 		assert.doesNotMatch(workflow, /^\s*pnpm install --frozen-lockfile/mu);
 	});
 });

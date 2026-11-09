@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	boxGitMirrorPath,
 	createBoxGitMirror,
+	ensureBoxGitMirrorRoot,
 	shaRef,
 } from "../src/isolated-worker/git-mirror.js";
 
@@ -43,6 +44,32 @@ function commitSource(root: string): CommitSource {
 	const second = git(source, ["rev-parse", "HEAD"]);
 	return { source, first, second };
 }
+
+describe("ensureBoxGitMirrorRoot", () => {
+	it("creates an absolute mirror root", () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-root-"));
+		roots.push(root);
+		const mirrorRoot = join(root, "git");
+		expect(ensureBoxGitMirrorRoot(mirrorRoot)).toEqual({ status: "ready" });
+		expect(mirrorRoot).toBeTruthy();
+	});
+
+	it("reports EACCES instead of throwing when the root is not writable", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-root-"));
+		roots.push(root);
+		const locked = join(root, "locked");
+		mkdirSync(locked, { mode: 0o555 });
+		const mirror = createBoxGitMirror({
+			root: locked,
+			repository: "Hobo-Labs/HoBo",
+			originUrl: join(root, "missing"),
+		});
+		const result = await mirror.ensure("a".repeat(40));
+		expect(result.status).toBe("miss");
+		if (result.status === "miss")
+			expect(result.reason).toMatch(/not writable|not creatable/);
+	});
+});
 
 describe("boxGitMirrorPath", () => {
 	it("places owner/name.git under the absolute root", () => {

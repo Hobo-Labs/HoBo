@@ -83,6 +83,7 @@ export {
 	type BoxGitMirrorEnsureResult,
 	boxGitMirrorPath,
 	createBoxGitMirror,
+	ensureBoxGitMirrorRoot,
 } from "./isolated-worker/git-mirror.js";
 export {
 	createGithubJobPoller,

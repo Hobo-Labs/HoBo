@@ -97,7 +97,7 @@ jobs:
         if: steps.rebuild.outputs.needed == 'true'
       - name: Install root deps for shell lint
         if: steps.rebuild.outputs.needed == 'true'
-        run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
       - name: Build base + mise oci layers (native arch)
         if: steps.rebuild.outputs.needed == 'true'
         timeout-minutes: 15

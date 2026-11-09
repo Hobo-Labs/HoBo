@@ -19,6 +19,27 @@ export type GitRunner = (
 	cwd?: string,
 ) => Promise<{ status: number; stdout: string; stderr: string }>;
 
+export type BoxGitMirrorRootEnsureResult =
+	| { readonly status: "ready" }
+	| { readonly status: "unusable"; readonly reason: string };
+
+/** Create the host git-mirror root once so lazy clone does not throw EACCES. */
+export function ensureBoxGitMirrorRoot(root: string): BoxGitMirrorRootEnsureResult {
+	try {
+		mkdirSync(root, { recursive: true, mode: 0o755 });
+		return { status: "ready" };
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		const denied =
+			error instanceof Error && "code" in error && error.code === "EACCES";
+		const kind = denied ? "not writable" : "could not be created";
+		return {
+			status: "unusable",
+			reason: `git mirror root ${kind}: ${root} (${message})`,
+		};
+	}
+}
+
 export function boxGitMirrorPath(root: string, repository: string): string {
 	if (
 		!isAbsolute(root) ||
@@ -103,7 +124,19 @@ export function createBoxGitMirror(options: {
 			await git([`--git-dir=${path}`, "config", "gc.auto", "0"]);
 			return undefined;
 		}
-		mkdirSync(dirname(path), { recursive: true, mode: 0o755 });
+		try {
+			mkdirSync(dirname(path), { recursive: true, mode: 0o755 });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			const denied =
+				error instanceof Error && "code" in error && error.code === "EACCES";
+			return {
+				status: "miss",
+				reason: denied
+					? `mirror path not writable: ${dirname(path)} (${message})`
+					: `mirror path not creatable: ${dirname(path)} (${message})`,
+			};
+		}
 		const cloned = await git([
 			"clone",
 			"--bare",

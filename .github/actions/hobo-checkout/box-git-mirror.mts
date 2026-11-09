@@ -81,9 +81,12 @@ export function resolveBoxGitMirror(
 			reason: "HOBO_CI_GIT_MIRROR must be absolute and contain no '..' segments",
 		};
 	}
+	const mirrorRoot =
+		env.HOBO_CI_GIT_MIRROR_ROOT?.trim() || "/var/lib/hobo-ci/git";
+	const defaultMirror = join(resolve(mirrorRoot), `${repository}.git`);
 	const candidates = [
 		...(configured ? [configured] : []),
-		`/var/lib/hobo-ci/git/${repository}.git`,
+		defaultMirror,
 		`/opt/hobo/ci/git/${repository}.git`,
 		...extraSearchPaths,
 	];

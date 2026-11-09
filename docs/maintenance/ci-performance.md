@@ -21,6 +21,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   (an `if: env.X` expression never sees container env) and skips `actions/cache`. A self-hosted runner
   without the mount installs from the registry: a cold `pnpm install` measured ~21s, while restoring the
   1.3 GB cache archive took 31–52s and main's save took 142s. Only GitHub-hosted runners use the cache.
+  Every box `hobo-ci.yml` install uses `scripts/ci/pnpm-install.mts` (default **180 s** timeout via
+  `HOBO_PNPM_INSTALL_TIMEOUT_S`). The worker daemon calls `ensureBoxGitMirrorRoot` on
+  `HOBO_CI_GIT_MIRROR_ROOT` (default `/var/lib/hobo-ci/git`) so lazy mirror clone does not throw
+  **EACCES** when the host path is missing or not writable; failures become mirror **miss** + checkout
+  fallback.
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob
   lazily at checkout and timed out with HTTP 408 on this repo.
 - **Turbo cache saves even when the job fails.** `.github/actions/turbo-cache` restores at job start and
