@@ -449,18 +449,27 @@ function hostCredentialResolver(
 }
 
 // The Vercel team the environment names: `VERCEL_TEAM_ID` (the name
-// `scripts/staging-cutover-demo.mts` already uses) as the operator set it, else
-// `VERCEL_ORG_ID` (the Vercel CLI's) when it is a team id. Each is trimmed and
-// taken as unset when blank, the rule `createVercelClient` and
-// `createVercelDeployProvider` apply to their own `teamId`; `undefined` when
-// neither names a team. The Vercel resolver plane reads it.
+// `scripts/staging-cutover-demo.mts` already uses), else `VERCEL_ORG_ID`
+// (the Vercel CLI's) when it is a team id. Each is trimmed and taken as unset
+// when blank, the rule `createVercelClient` and `createVercelDeployProvider`
+// apply to their own `teamId`; `undefined` when neither names a team. The
+// Vercel resolver plane reads it, and the resolvers compare it with the
+// canonical `team_…` accountId Vercel returns, so a slug or bare `team_`
+// here would read as a different team on every later read: refuse it now,
+// before anything is sent, instead of after a create succeeded.
 function vercelTeamIdOf(
 	env: Record<string, string | undefined>,
 ): string | undefined {
-	return (
-		normalizeVercelTeamId(env.VERCEL_TEAM_ID) ??
-		vercelOrgTeamIdOf(env.VERCEL_ORG_ID)
-	);
+	const named = normalizeVercelTeamId(env.VERCEL_TEAM_ID);
+	if (named !== undefined) {
+		if (named === "team_" || !named.startsWith("team_")) {
+			throw new Error(
+				"VERCEL_TEAM_ID must be the canonical team id (team_ and the rest), not a slug, a name, or a bare team_: nothing was sent to Vercel. Set VERCEL_TEAM_ID to the team_ id, or unset it to work in the token's own scope",
+			);
+		}
+		return named;
+	}
+	return vercelOrgTeamIdOf(env.VERCEL_ORG_ID);
 }
 
 // The Vercel CLI writes the id of the team or of the personal account a

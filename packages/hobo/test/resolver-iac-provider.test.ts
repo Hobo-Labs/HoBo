@@ -895,13 +895,36 @@ describe("selectIacProvider: the Vercel resolver lane's team", () => {
 	it("falls back to a team_ VERCEL_ORG_ID, and VERCEL_TEAM_ID wins over it", async () => {
 		const org = await reconcileWith({ VERCEL_ORG_ID: " team_org " });
 		const both = await reconcileWith({
-			VERCEL_TEAM_ID: "acme-slug",
+			VERCEL_TEAM_ID: "team_named",
 			VERCEL_ORG_ID: "team_org",
 		});
 
 		for (const request of org) expect(request).toMatch(/\?teamId=team_org$/u);
-		for (const request of both) expect(request).toMatch(/\?teamId=acme-slug$/u);
+		for (const request of both) expect(request).toMatch(/\?teamId=team_named$/u);
 		expect([org.length, both.length]).toEqual([1, 1]);
+	});
+
+	it.each([
+		"acme-slug",
+		"team_",
+		" team_ ",
+	])("refuses a non-canonical %j VERCEL_TEAM_ID before any request", async (teamId) => {
+		const vercel = fakeVercel();
+		const store = await storeWithPlan([]);
+
+		expect(() =>
+			selectIacProvider({
+				store,
+				providers: [],
+				env: {
+					HOBO_DEPLOY_RESOLVERS: "1",
+					VERCEL_TOKEN: FAKE_TOKEN,
+					VERCEL_TEAM_ID: teamId,
+				},
+				resolverTransport: vercel.transport,
+			}),
+		).toThrow(/^VERCEL_TEAM_ID must be the canonical team id/u);
+		expect(vercel.urls).toEqual([]);
 	});
 
 	it.each([
@@ -944,14 +967,6 @@ describe("selectIacProvider: the Vercel resolver lane's team", () => {
 			"VERCEL_ORG_ID when VERCEL_TEAM_ID is blank",
 			{ VERCEL_TEAM_ID: "  ", VERCEL_ORG_ID: "team_org" },
 			"team_org",
-		],
-		// The operator set VERCEL_TEAM_ID on purpose: a slug or any id is taken
-		// as given, whatever VERCEL_ORG_ID holds, a bare `team_` included (it is
-		// not read).
-		[
-			"a VERCEL_TEAM_ID that is not a team_ id, over a personal VERCEL_ORG_ID",
-			{ VERCEL_TEAM_ID: "acme-slug", VERCEL_ORG_ID: "u_abc" },
-			"acme-slug",
 		],
 		[
 			"VERCEL_TEAM_ID, over a bare team_ VERCEL_ORG_ID",
