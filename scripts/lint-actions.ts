@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, relative } from "node:path";
+import { pathToFileURL } from "node:url";
 import { verifyPinnedActionSha } from "./lib/verify-action-pins.mts";
 
 const lintActionsRepoRoot = join(import.meta.dirname, "..");
@@ -16,18 +17,11 @@ if (parseDocument === undefined) {
 	throw new Error("yaml package missing parseDocument");
 }
 
-const root = join(process.cwd(), ".github");
-const workflowDir = join(root, "workflows");
-const disabledWorkflowDir = join(root, "workflows-disabled");
-const recognizedFiles = existsSync(workflowDir)
-	? readdirSync(workflowDir).filter((name) => /\.ya?ml$/i.test(name))
-	: [];
-const files = existsSync(disabledWorkflowDir)
-	? readdirSync(disabledWorkflowDir)
-			.filter((name) => /\.ya?ml$/.test(name))
-			.sort()
-	: [];
-const errors: string[] = [];
+export type LintActionsResult = Readonly<{
+	exitCode: number;
+	stdout: string;
+	stderr: string;
+}>;
 
 const acceptanceFile = "hobo-ci-acceptance.yml";
 /** Authoritative CI fabric (self-hosted hobo runners). */
@@ -114,6 +108,7 @@ function collectPinnedActionRefs(text: string): Map<string, Set<string>> {
 }
 
 async function verifyPinnedActionShasExist(
+	errors: string[],
 	file: string,
 	text: string,
 ): Promise<void> {
@@ -125,7 +120,11 @@ async function verifyPinnedActionShasExist(
 	}
 }
 
-function lintPinnedActionRefs(file: string, text: string): void {
+function lintPinnedActionRefs(
+	errors: string[],
+	file: string,
+	text: string,
+): void {
 	const lines = text.split(/\r?\n/);
 	for (const [index, line] of lines.entries()) {
 		const match = line.match(/^\s*-?\s*uses:\s*([^@\s]+)@(\S+)\s*$/);
@@ -142,7 +141,11 @@ function lintPinnedActionRefs(file: string, text: string): void {
 	}
 }
 
-function lintWorkflowYamlStrict(file: string, text: string): void {
+function lintWorkflowYamlStrict(
+	errors: string[],
+	file: string,
+	text: string,
+): void {
 	const doc = parseDocument(text, { uniqueKeys: true });
 	for (const error of doc.errors) {
 		errors.push(`${file}: invalid workflow YAML: ${error.message.trim()}`);
@@ -150,6 +153,7 @@ function lintWorkflowYamlStrict(file: string, text: string): void {
 }
 
 function lintLocalActionsNeedCheckoutFirst(
+	errors: string[],
 	file: string,
 	block: readonly string[],
 	jobLine: number,
@@ -193,11 +197,12 @@ function lintLocalActionsNeedCheckoutFirst(
 }
 
 function lintWorkflowYaml(
+	errors: string[],
 	file: string,
 	text: string,
 	requireDisabledJobs: boolean,
 ) {
-	lintWorkflowYamlStrict(file, text);
+	lintWorkflowYamlStrict(errors, file, text);
 	const lines = text.split(/\r?\n/);
 	const jobsIndex = lines.findIndex((line) => line === "jobs:");
 	if (jobsIndex === -1) {
@@ -291,7 +296,7 @@ function lintWorkflowYaml(
 				);
 			}
 		}
-		lintLocalActionsNeedCheckoutFirst(file, block, start + 1);
+		lintLocalActionsNeedCheckoutFirst(errors, file, block, start + 1);
 	}
 	const firstCheckout = lines.findIndex((line) =>
 		line.includes("actions/checkout@"),
@@ -335,12 +340,12 @@ function lintWorkflowYaml(
 		);
 	}
 	if (!requireDisabledJobs) {
-		lintPinnedActionRefs(file, text);
+		lintPinnedActionRefs(errors, file, text);
 	}
 }
 
-function lintCompositeActions(): void {
-	const actionsRoot = join(root, "actions");
+function lintCompositeActions(errors: string[], githubRoot: string): void {
+	const actionsRoot = join(githubRoot, "actions");
 	if (!existsSync(actionsRoot)) return;
 	const walk = (directory: string): void => {
 		for (const name of readdirSync(directory)) {
@@ -351,85 +356,135 @@ function lintCompositeActions(): void {
 				continue;
 			}
 			if (name !== "action.yml" && name !== "action.yaml") continue;
-			const rel = relative(join(process.cwd(), ".github"), path).replaceAll(
-				"\\",
-				"/",
-			);
+			const rel = relative(githubRoot, path).replaceAll("\\", "/");
 			const text = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
-			lintPinnedActionRefs(rel, text);
+			lintPinnedActionRefs(errors, rel, text);
 		}
 	};
 	walk(actionsRoot);
 }
 
-for (const file of recognizedFiles) {
-	if (!allowedEnabled.has(file)) {
-		errors.push(
-			`${file}: enabled workflow is not in the approved CI fabric set (${[...allowedEnabled].join(", ")})`,
-		);
-		continue;
-	}
-	const path = join(workflowDir, file);
-	const text = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
-	if (file === acceptanceFile) {
-		if (createHash("sha256").update(text).digest("hex") !== acceptanceDigest) {
+/** Lint workflow YAML under `repoRoot/.github` (same rules as the CLI). */
+export async function lintActionsRepository(
+	repoRoot: string,
+): Promise<LintActionsResult> {
+	const errors: string[] = [];
+	const githubRoot = join(repoRoot, ".github");
+	const workflowDir = join(githubRoot, "workflows");
+	const disabledWorkflowDir = join(githubRoot, "workflows-disabled");
+	const recognizedFiles = existsSync(workflowDir)
+		? readdirSync(workflowDir).filter((name) => /\.ya?ml$/i.test(name))
+		: [];
+	const files = existsSync(disabledWorkflowDir)
+		? readdirSync(disabledWorkflowDir)
+				.filter((name) => /\.ya?ml$/.test(name))
+				.sort()
+		: [];
+	const skipRemotePinVerify =
+		process.env.HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY === "1";
+
+	for (const file of recognizedFiles) {
+		if (!allowedEnabled.has(file)) {
 			errors.push(
-				`${file}: manual HoBo acceptance workflow differs from its reviewed recipe (update acceptanceDigest after review)`,
+				`${file}: enabled workflow is not in the approved CI fabric set (${[...allowedEnabled].join(", ")})`,
 			);
+			continue;
+		}
+		const path = join(workflowDir, file);
+		const text = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+		if (file === acceptanceFile) {
+			if (
+				createHash("sha256").update(text).digest("hex") !== acceptanceDigest
+			) {
+				errors.push(
+					`${file}: manual HoBo acceptance workflow differs from its reviewed recipe (update acceptanceDigest after review)`,
+				);
+			}
+		}
+		lintWorkflowYaml(errors, file, text, false);
+	}
+
+	for (const file of files) {
+		const path = join(disabledWorkflowDir, file);
+		const text = readFileSync(path, "utf8");
+		lintWorkflowYaml(errors, file, text, true);
+	}
+
+	lintCompositeActions(errors, githubRoot);
+
+	const verifyTargets: { file: string; text: string }[] = [];
+	for (const file of recognizedFiles) {
+		if (!allowedEnabled.has(file)) continue;
+		verifyTargets.push({
+			file,
+			text: readFileSync(join(workflowDir, file), "utf8").replaceAll(
+				"\r\n",
+				"\n",
+			),
+		});
+	}
+	const actionsRoot = join(githubRoot, "actions");
+	if (existsSync(actionsRoot)) {
+		const walkVerify = (directory: string): void => {
+			for (const name of readdirSync(directory)) {
+				const path = join(directory, name);
+				if (statSync(path).isDirectory()) {
+					walkVerify(path);
+					continue;
+				}
+				if (name !== "action.yml" && name !== "action.yaml") continue;
+				const rel = relative(githubRoot, path).replaceAll("\\", "/");
+				verifyTargets.push({
+					file: rel,
+					text: readFileSync(path, "utf8").replaceAll("\r\n", "\n"),
+				});
+			}
+		};
+		walkVerify(actionsRoot);
+	}
+	if (!skipRemotePinVerify) {
+		for (const target of verifyTargets) {
+			await verifyPinnedActionShasExist(errors, target.file, target.text);
 		}
 	}
-	lintWorkflowYaml(file, text, false);
-}
 
-for (const file of files) {
-	const path = join(disabledWorkflowDir, file);
-	const text = readFileSync(path, "utf8");
-	lintWorkflowYaml(file, text, true);
-}
-
-lintCompositeActions();
-
-const verifyTargets: { file: string; text: string }[] = [];
-for (const file of recognizedFiles) {
-	if (!allowedEnabled.has(file)) continue;
-	verifyTargets.push({
-		file,
-		text: readFileSync(join(workflowDir, file), "utf8").replaceAll(
-			"\r\n",
-			"\n",
-		),
-	});
-}
-const actionsRoot = join(root, "actions");
-if (existsSync(actionsRoot)) {
-	const walkVerify = (directory: string): void => {
-		for (const name of readdirSync(directory)) {
-			const path = join(directory, name);
-			if (statSync(path).isDirectory()) {
-				walkVerify(path);
-				continue;
-			}
-			if (name !== "action.yml" && name !== "action.yaml") continue;
-			const rel = relative(join(process.cwd(), ".github"), path).replaceAll(
-				"\\",
-				"/",
-			);
-			verifyTargets.push({
-				file: rel,
-				text: readFileSync(path, "utf8").replaceAll("\r\n", "\n"),
-			});
-		}
+	const stdout: string[] = [];
+	const stderr: string[] = [];
+	const previousLog = console.log;
+	const previousError = console.error;
+	console.log = (...parts: unknown[]) => {
+		stdout.push(parts.map(String).join(" "));
 	};
-	walkVerify(actionsRoot);
-}
-for (const target of verifyTargets) {
-	await verifyPinnedActionShasExist(target.file, target.text);
+	console.error = (...parts: unknown[]) => {
+		stderr.push(parts.map(String).join(" "));
+	};
+	try {
+		if (errors.length > 0) {
+			for (const error of errors) console.error(`ERR ${error}`);
+			return {
+				exitCode: 1,
+				stdout: stdout.join("\n"),
+				stderr: stderr.join("\n"),
+			};
+		}
+		console.log(
+			`actions lint ok: ${files.length} disabled workflow file(s); ${recognizedFiles.length} enabled workflow file(s)`,
+		);
+		return {
+			exitCode: 0,
+			stdout: stdout.join("\n"),
+			stderr: stderr.join("\n"),
+		};
+	} finally {
+		console.log = previousLog;
+		console.error = previousError;
+	}
 }
 
-if (errors.length > 0) {
-	for (const error of errors) console.error(`ERR ${error}`);
-	process.exit(1);
+const entry = process.argv[1];
+if (entry && import.meta.url === pathToFileURL(entry).href) {
+	const result = await lintActionsRepository(process.cwd());
+	if (result.stdout) process.stdout.write(`${result.stdout}\n`);
+	if (result.stderr) process.stderr.write(`${result.stderr}\n`);
+	process.exit(result.exitCode);
 }
-console.log(
-	`actions lint ok: ${files.length} disabled workflow file(s); ${recognizedFiles.length} enabled workflow file(s)`,
-);
