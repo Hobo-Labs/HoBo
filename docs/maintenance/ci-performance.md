@@ -169,13 +169,15 @@ passes over real projects), not sleeping, spawning or waiting on a network. What
   shuffled (`--sequence.shuffle --sequence.seed=<n>`).
 - **Shared fixtures.** `test/support/built-starter.ts` builds each starter (`new` → `codegen` →
   `build`) once per worker and hands each caller a copy; a run-scoped `globalSetup`
-  (`test/support/run-scratch.ts`) removes them. The cli config replaces the root's `globalSetup` list
-  rather than merging it, so the wasmtime warm-up, which no cli test uses, does not run.
-- **Cheap codegen passes.** Codegen type-checks no declaration file (`sourceDiagnostics` checks every
-  other file, so a missing global type a test file needs is still reported), and its compiler host
-  takes the lib files and installed packages' `.d.ts` from a bounded cache
-  (`src/codegen/declaration-cache.ts`, least recently used out past 2048 entries), so the two programs
-  of a pass, and every later pass, reuse them. `typescript-app-build`'s fixture uses real
+  (`test/support/run-scratch.ts`) removes them. The cli config keeps the root's `globalSetup` list
+  minus its wasmtime warm-up, which no cli test uses, so a setup the root adds later still runs.
+- **Cheaper codegen passes, mostly from the declaration cache.** Codegen's compiler host takes the lib
+  files and installed packages' `.d.ts` from a bounded cache (`src/codegen/declaration-cache.ts`, least
+  recently used out past 2048 entries), so the two programs of a pass, and every later pass, reuse
+  them; that is most of the win. Codegen also type-checks no declaration file, but it must still check
+  tests and every other non-declaration file (`sourceDiagnostics`, so a missing global type a test
+  file needs is still reported), which gives back much of that saving, and a project with
+  `skipLibCheck` gains about nothing from it because the compiler skips declarations anyway. `typescript-app-build`'s fixture uses real
   `@types/node` (with `skipLibCheck`) only in the case that packages and runs the app.
 - **Cheap refusals first, on authoritative inputs only.** `hobo build` refuses an explicit empty
   `services` list, or an explicit runtime for a Node app whose imprint's recorded inputs all still
