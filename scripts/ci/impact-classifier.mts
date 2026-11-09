@@ -38,6 +38,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import process from "node:process";
+import { readStdin } from "../lib/read-stdin.mts";
 import {
 	affectedLanes,
 	type AffectedLanes,
@@ -244,6 +245,7 @@ const DIRECTIVE_COMMENT =
  */
 const SELF_PATHS = new Set([
 	"scripts/ci/impact-classifier.mts",
+	"scripts/lib/read-stdin.mts",
 	"scripts/ci/affected-lanes.mts",
 	"scripts/ci/dependent-tests.mts",
 	"scripts/ci/job-scope.mts",
@@ -393,7 +395,7 @@ function cliVersionReader(baseRef: string): ReadVersions {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
 	const mode = process.env.HOBO_IMPACT_GATE ?? "shadow";
-	const input = readFileSync(0, "utf8");
+	const input = readStdin();
 	const paths = input.split("\n");
 	if (mode === "off") {
 		console.error("impact-gate: off");
