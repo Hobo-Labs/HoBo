@@ -48,7 +48,11 @@ describe("fleet enrollment scorecard", () => {
 			"todo",
 			"skip",
 		]);
-		const allowed = new Set(["pass", "blocked-on-credentials", "not-implemented"]);
+		const allowed = new Set([
+			"pass",
+			"blocked-on-credentials",
+			"not-implemented",
+		]);
 
 		const invalidStatus: string[] = [];
 		const unknownStatus: string[] = [];
