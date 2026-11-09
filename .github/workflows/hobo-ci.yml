@@ -113,7 +113,9 @@ jobs:
           pnpm run lint:shell:changed -- --base=HEAD~1
           bash packages/ci-gh-actions/deploy/ci-runner/build.sh
       # Published from main only; a pull request's or feature/hobo-code push's image is tried
-      # on the box, not shipped.
+      # on the box, not shipped. The build retags hobo-ci-worker:local, as a pull request's
+      # already does, so this run's later jobs test on it; version-pinned consumers re-pin
+      # :local from the content-hash candidate (scripts/ci/ensure-ci-worker-image.mts).
       - name: Push runner image to GHCR (optional)
         if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
@@ -698,12 +700,12 @@ jobs:
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 20 }}
     permissions:
       contents: read
-    # At most one Main full gate holds a box slot, whatever event started it, so the other slot
-    # stays free for the short required jobs. A newer waiting gate replaces an older waiting one.
-    # feature/hobo-code queues in a group of its own, so its gate never replaces a waiting main
-    # one; main's group name is unchanged.
+    # At most one Main full gate holds a box slot, whatever event or branch started it, so the
+    # other slot stays free for the short required jobs. A newer waiting gate replaces an older
+    # waiting one. feature/hobo-code shares this group on purpose: two full gates at once would
+    # occupy both box slots.
     concurrency:
-      group: ${{ github.workflow }}-main-gate${{ github.ref == 'refs/heads/feature/hobo-code' && '-feature-hobo-code' || '' }}
+      group: ${{ github.workflow }}-main-gate
       cancel-in-progress: false
     env:
       GITHUB_EVENT_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}

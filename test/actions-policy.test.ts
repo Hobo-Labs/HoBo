@@ -109,12 +109,37 @@ test("feature/hobo-code gets the PR and push gates but publishes nothing", async
 		hoboCi,
 		/- name: Push runner image to GHCR \(optional\)\n {8}if: [^\n]* && github\.ref == 'refs\/heads\/main'\n/u,
 	);
-	// main keeps its group name; the feature branch never replaces a waiting main gate.
+	// The feature push runs Main full gate, in the one shared concurrency group:
+	// two full gates at once would occupy both box slots.
 	assert.match(
 		hoboCi,
-		/^ {6}group: \$\{\{ github\.workflow \}\}-main-gate\$\{\{ github\.ref == 'refs\/heads\/feature\/hobo-code' && '-feature-hobo-code' \|\| '' \}\}$/mu,
+		/\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/feature\/hobo-code'\)/u,
 	);
+	assert.match(hoboCi, /^ {6}group: \$\{\{ github\.workflow \}\}-main-gate$/mu);
+	assert.doesNotMatch(hoboCi, /-main-gate\$\{\{/u);
+	// The deps-image GHCR push stays main-only.
+	assert.match(
+		hoboCi,
+		/github\.event_name != 'pull_request' && github\.ref == 'refs\/heads\/main'/u,
+	);
+	for (const name of ["pricing-ci.yml", "examples-e2e.yml"]) {
+		const text = await read(name);
+		assert.match(
+			text,
+			/^ {2}pull_request:\n {4}branches: \[main, feature\/hobo-code\]$/mu,
+			name,
+		);
+	}
 	const releaseCode = await read("release-code.yml");
+	assert.match(
+		releaseCode,
+		/^ {2}pull_request:\n(?: {4}#[^\n]*\n)* {4}branches: \[main, feature\/hobo-code\]$/mu,
+	);
+	// A branch dispatch must say loudly that it publishes nothing.
+	assert.match(
+		releaseCode,
+		/- name: Branch dispatch publishes nothing\n {8}if: github\.event_name == 'workflow_dispatch' && !startsWith\(github\.ref, 'refs\/tags\/code-v'\)\n {8}run: echo "::error title=No publish on a branch dispatch::/u,
+	);
 	const publishConditions = [
 		...releaseCode.matchAll(
 			/^ {2}(release-code-[a-z]+):\n {4}name: [^\n]+\n(?: {4}#[^\n]*\n)* {4}if: ([^\n]+)$/gmu,
