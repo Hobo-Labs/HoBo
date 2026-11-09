@@ -99,6 +99,7 @@
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test": "vitest run",
 		"pretest:ci-e2e": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test:ci-e2e": "vitest run --config vitest.ci-e2e.config.ts"
