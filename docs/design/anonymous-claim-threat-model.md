@@ -55,7 +55,13 @@ terminal, or a browser history — can claim someone else's deployment.
 Controls: one-time material is stored encrypted, bound to tenant, guest
 session, deployment, and intended user, and released once. Comparison-only
 material is stored as a SHA-256 hash. Redaction applies to claim URLs with the
-same rigor as to passwords, including in receipts, spans, and fixtures. The
+same rigor as to passwords, including in receipts, spans, and fixtures. Provider
+text — an error body, CLI output, an apiserver Status — is redacted by one
+implementation, `@hobo/core/provider-redaction`: shared credential shapes, each
+linear in the text so a hostile megabyte cannot stall the error path, a bounded
+search window, and a profile per provider for its own claim URLs and token
+formats. Event, offer, and evidence guards that refuse rather than redact use
+the same JWT and private-key detectors. The
 material is persisted atomically *before* the deployment is reported
 successful, so a crash can never leave a live resource with an unrecoverable
 claim path.

@@ -783,6 +783,19 @@ includes `HEAD`, without which a registry transport cannot be expressed at all
 target — bounded and stripped of control characters, because that value is
 chosen by the peer and ends up in logs.
 
+Provider error text is redacted the same way: one implementation in
+`@hobo/core/provider-redaction` (`redactProviderText`, or
+`createProviderRedactor` with a profile of the provider's own shapes, a kept
+span such as ttl.sh's digests, percent-decoding, or whitespace collapsing).
+Every shape in it is linear in the text and has a 1 MB adversarial test, the
+search is bounded by `REDACTION_WINDOW`, and a provider shape goes in its
+profile, never in a local copy of the redactor. Guards that refuse a payload
+rather than redact it use its `JWT_DETECTOR` and `PRIVATE_KEY_DETECTOR`. A new
+shape must be linear: a shape that can start again inside a run it already
+scanned to the end (`\bey…` inside `-ey-ey…`, `[\s\S]*?END` from every BEGIN,
+`\S*` before a literal from every `http`, decoding the whole text again until it
+stops changing) is quadratic on a hostile body.
+
 Credentials are **not** passed through, and the provider tests do not need them
 to be: `CLOUDFLARE_API_TOKEN`, `VERCEL_TOKEN` and friends are saved, set, and
 restored by the tests themselves rather than read from the ambient environment.
