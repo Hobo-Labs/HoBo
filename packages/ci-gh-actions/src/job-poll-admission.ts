@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { GithubTransport } from "./github.js";
 import { getJob, getRun } from "./github.js";
+import { createPollIngestCoalesce } from "./isolated-worker/poll-ingest-coalesce.js";
 import { servedRunnerLabel } from "./runner-labels.js";
 
 const QueuedRun = z.object({
@@ -27,6 +28,7 @@ export function createJobPollAdmissionWorker(options: JobPollAdmissionOptions) {
 		throw new Error("invalid poll interval");
 	let timer: ReturnType<typeof setInterval> | undefined;
 	let running = false;
+	const coalesce = createPollIngestCoalesce({ minMs: intervalMs });
 
 	async function tick(): Promise<void> {
 		if (running) return;
@@ -66,6 +68,14 @@ export function createJobPollAdmissionWorker(options: JobPollAdmissionOptions) {
 				for (const job of jobs) {
 					if (job.status !== "queued" || !servedRunnerLabel(job.labels))
 						continue;
+					if (
+						coalesce.shouldSkip(
+							workflowRun.repository.id,
+							job.id,
+							workflowRun.run_attempt,
+						)
+					)
+						continue;
 					const current = await getJob(
 						options.github,
 						options.installationId,
@@ -90,6 +100,12 @@ export function createJobPollAdmissionWorker(options: JobPollAdmissionOptions) {
 						}),
 					);
 					const result = await options.processWorkflowJobWebhook(body);
+					coalesce.observe(
+						workflowRun.repository.id,
+						job.id,
+						workflowRun.run_attempt,
+						result,
+					);
 					options.logger?.(
 						`poll-admission job ${job.id} run ${run.id}: ${result}`,
 					);

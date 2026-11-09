@@ -4,6 +4,7 @@ import type { AdmissionOrder } from "../admission-order.js";
 import type { GithubTransport } from "../github.js";
 import type { JobDurations } from "../job-durations.js";
 import { servedRunnerLabel } from "../runner-labels.js";
+import type { PollIngestCoalesce } from "./poll-ingest-coalesce.js";
 
 /** Pull-mode admission: GitHub REST stands in for webhook ingress, so a box
  * needs no public URL, relay, or shared database to see `runs-on: hobo` work. */
@@ -32,6 +33,7 @@ export interface GithubJobPollerOptions {
 	durations?: Pick<JobDurations, "observe">;
 	/** Primed from the run lists already read here, at no extra GitHub request. */
 	admissionOrder?: Pick<AdmissionOrder, "prime">;
+	ingestCoalesce?: PollIngestCoalesce;
 	now?: () => number;
 }
 
@@ -317,6 +319,21 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						// Assignment is only useful once GitHub names the runner.
 						if (status.data !== "queued" && !job.runner_name) continue;
 						summary.hoboJobs++;
+						if (
+							status.data === "queued" &&
+							options.ingestCoalesce?.shouldSkip(
+								connection.repositoryId,
+								job.id,
+								job.run_attempt,
+							)
+						) {
+							summary.waiting.push({
+								jobId: job.id,
+								runId: job.run_id,
+								result: "coalesced",
+							});
+							continue;
+						}
 						const rawBody = Buffer.from(
 							JSON.stringify({
 								action: status.data,
@@ -360,6 +377,12 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 							);
 							result = "failed";
 						}
+						options.ingestCoalesce?.observe(
+							connection.repositoryId,
+							job.id,
+							job.run_attempt,
+							result,
+						);
 						if (result === "accepted" || result === "requeued")
 							summary.accepted++;
 						else if (status.data === "queued")
