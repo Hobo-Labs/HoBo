@@ -104,41 +104,6 @@ function left(scratch: string, prefix: string): string[] {
 	return readdirSync(scratch).filter((name) => name.startsWith(prefix));
 }
 
-describe.concurrent("the live Pulumi lane's own workspace", () => {
-	for (const [label, mode, signal, expected] of [
-		["a normal end", "normal", undefined, { code: 0, signal: null }],
-		["an uncaught error", "throw", undefined, { code: 1, signal: null }],
-		[
-			"SIGTERM, which still ends the process",
-			"wait",
-			"SIGTERM",
-			{ code: null, signal: "SIGTERM" },
-		],
-	] as const) {
-		it(
-			`is removed on ${label}`,
-			async (context) => {
-				const { expect } = context;
-				const scratch = scratchFor(context);
-				const yard = join(scratch, "kept-yard");
-				mkdirSync(yard);
-				const ended = await run(scratch, mode, yard, signal);
-				expect({ code: ended.code, signal: ended.signal }).toEqual(expected);
-				// The lane made its own workspace, and nothing of it is left.
-				expect(ended.made).toHaveLength(1);
-				expect(left(scratch, "hobo-pulumi-live-")).toEqual([]);
-				// Said once: where the state is, and how to keep it.
-				expect(ended.notices).toHaveLength(1);
-				expect(ended.notices[0]).toContain(join(scratch, ended.made[0] ?? ""));
-				expect(ended.notices[0]).toContain("HOBO_PULUMI_WORKDIR");
-				// A directory the caller named is the caller's: it is kept.
-				expect(existsSync(join(yard, "eventstore.sqlite"))).toBe(true);
-			},
-			RUN_TIMEOUT_MS,
-		);
-	}
-});
-
 describe.concurrent("the default runtime's own event store", () => {
 	for (const [label, mode, signal, expected] of [
 		["a normal end", "normal", undefined, { code: 0, signal: null }],
@@ -158,7 +123,13 @@ describe.concurrent("the default runtime's own event store", () => {
 				const ended = await run(scratch, mode, "default", signal);
 				expect({ code: ended.code, signal: ended.signal }).toEqual(expected);
 				expect(left(scratch, "hobo-yard-")).toEqual([]);
+				// The lane made its own workspace, and nothing of it is left.
+				expect(ended.made).toHaveLength(1);
 				expect(left(scratch, "hobo-pulumi-live-")).toEqual([]);
+				// Said once: where the state is, and how to keep it.
+				expect(ended.notices).toHaveLength(1);
+				expect(ended.notices[0]).toContain(join(scratch, ended.made[0] ?? ""));
+				expect(ended.notices[0]).toContain("HOBO_PULUMI_WORKDIR");
 			},
 			RUN_TIMEOUT_MS,
 		);
@@ -198,6 +169,8 @@ describe.concurrent("a HOBO_PULUMI_WORKDIR the caller names", () => {
 				expect(readFileSync(join(workDir, "sentinel"), "utf8")).toBe(
 					"earlier state",
 				);
+				// A data directory the caller named is the caller's too: it is kept.
+				expect(existsSync(join(yard, "eventstore.sqlite"))).toBe(true);
 			},
 			RUN_TIMEOUT_MS,
 		);
