@@ -8,33 +8,61 @@
 // contract, so the machinery in ./troupe.ts never has to know who it is
 // animating:
 //
-//   - one PNG per character in public/cast/, a 6x2 grid of 192x192 cells;
-//   - the same pose in the same cell on every sheet (POSE, below);
-//   - feet on one baseline and the body centred on one column in every cell,
+//   - one PNG per character in public/cast/, a grid of square cells;
+//   - the same pose in the same cell on every sheet;
+//   - feet on one baseline and the body on one centre column in every cell,
 //     so a pose swap cannot make anyone bob or slide.
 //
-// A character is listed here only once its sheet has been reviewed and
-// promoted (AGENTS.md, "Generated-art rules"). An empty list is a valid
-// state: the troupe simply has nobody to send.
+// The numbers are not written here. The build that packs the sheets also
+// writes `public/cast/cast.json`, and this file reads it, so the geometry the
+// page plays and the geometry on disk cannot drift apart. What *is* written
+// here is casting: who is in the troupe, and how big each stands beside Bo.
+//
+// A character is listed only once its sheet has been reviewed and promoted
+// (AGENTS.md, "Generated-art rules").
 // ==========================================================================
 
+import contract from "../../../public/cast/cast.json";
 import type { Sheet } from "./sprite";
+
+const POSE_NAMES = [
+	"stand",
+	"lookLeft",
+	"lookRight",
+	"blink",
+	"wave",
+	"startled",
+	"doze",
+	"walkA",
+	"walkPass",
+	"walkB",
+	"run",
+	"runB",
+] as const;
+
+type PoseName = (typeof POSE_NAMES)[number];
+
+const cellOf = (name: PoseName): number => {
+	const at = contract.poses.indexOf(name);
+	if (at < 0) throw new Error(`cast: the sheets have no '${name}' pose`);
+	return at;
+};
 
 /** Which cell holds which pose — identical on every cast sheet. */
 export const POSE = {
-	stand: 0,
-	lookLeft: 1,
-	lookRight: 2,
-	blink: 3,
-	wave: 4,
-	startled: 5,
-	doze: 6,
-	walkA: 7,
-	walkPass: 8,
-	walkB: 9,
-	run: 10,
-	runB: 11,
-} as const;
+	stand: cellOf("stand"),
+	lookLeft: cellOf("lookLeft"),
+	lookRight: cellOf("lookRight"),
+	blink: cellOf("blink"),
+	wave: cellOf("wave"),
+	startled: cellOf("startled"),
+	doze: cellOf("doze"),
+	walkA: cellOf("walkA"),
+	walkPass: cellOf("walkPass"),
+	walkB: cellOf("walkB"),
+	run: cellOf("run"),
+	runB: cellOf("runB"),
+} satisfies Record<PoseName, number>;
 
 export type Member = {
 	name: string;
@@ -50,28 +78,32 @@ export type Member = {
 	stride: number;
 };
 
-/** The geometry every cast sheet is normalized to. */
-const sheet = (name: string): Sheet => ({
-	src: `/cast/${name}.png`,
-	cols: 6,
-	rows: 2,
-	frameW: 192,
-	frameH: 192,
-	feet: 0.94,
-	cx: 0.5,
-	body: 0.62,
-});
+type Built = keyof typeof contract.members;
 
-const member = (name: string, stature: number, peek: number, stride = 0.2): Member => ({
+const member = (name: Built, stature: number, stride = 0.2): Member => ({
 	name,
-	sheet: sheet(name),
+	sheet: {
+		src: `/cast/${name}.png`,
+		cols: contract.cols,
+		rows: contract.rows,
+		frameW: contract.cell,
+		frameH: contract.cell,
+		feet: contract.feet,
+		cx: 0.5,
+		body: contract.members[name].body,
+	},
 	stature,
-	peek,
+	peek: contract.members[name].peek,
 	stride,
 });
 
-export const CAST: readonly Member[] = [];
-
-// `member` is how a promoted sheet joins the cast; kept exported so adding
-// one is a single line above and the helper is not dead code while it waits.
-export { member };
+export const CAST: readonly Member[] = [
+	// Tuck: stout, in a patched bowler. About Bo's size.
+	member("tuck", 0.96),
+	// Pip: the small one, all scarf.
+	member("pip", 0.76, 0.22),
+	// Mags: tall and narrow under a newsboy cap.
+	member("mags", 1.1, 0.18),
+	// Cog: the wind-up one. Agents travel this road too.
+	member("cog", 0.9),
+];

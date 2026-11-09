@@ -62,7 +62,7 @@ type Item = {
 	tile: number;
 	href?: string;
 	stop?: string;
-	at?: number;
+	along?: number;
 	idle?: string;
 };
 
@@ -134,7 +134,7 @@ const placed: Item[] = landmarks().map((m) => ({
 	speed: m.speed,
 	tile: 0,
 	stop: m.stop,
-	at: m.at,
+	along: m.along,
 	idle: m.idle,
 	href: href(`/parallax/landmarks/${m.file}`),
 	style: [
@@ -234,7 +234,7 @@ const firstStop = TRAIL_STOPS[0].label;
 						class:list={["plx-mark", `plx-mark-${l.key}`, l.idle && `does-${l.idle}`]}
 						style={l.style}
 						data-plx-stop={l.stop}
-						data-plx-at={l.at}
+						data-plx-along={l.along}
 						data-plx-mark-speed={l.speed}
 					>
 						<span class:list={["plx-mark-art", `is-${l.night}`]} />
@@ -675,9 +675,10 @@ const firstStop = TRAIL_STOPS[0].label;
 		border-radius: 999px;
 		background: var(--bg);
 		color: var(--text-mute);
-		font-size: 0.66rem;
+		/* DESIGN.md's label-caps step, not a size of its own. */
+		font-size: 0.75rem;
 		font-weight: 700;
-		letter-spacing: 0.1em;
+		letter-spacing: 0.08em;
 		line-height: 1.5;
 		text-transform: uppercase;
 		white-space: nowrap;

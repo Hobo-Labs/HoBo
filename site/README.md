@@ -202,7 +202,7 @@ fractional tile width brings back sub-pixel seams.
 **What moves it.** With no script, CSS walks Bo along a looping trail on a timer,
 exactly as the band always did. Once `src/lib/stage/trail.ts` mounts it adds
 `is-driven`, the timers stop, and each layer's offset comes from the scroll
-position instead: the ground travels half as far as the page scrolled
+position instead: the ground travels 85% as far as the page scrolled
 (`GROUND_PER_SCROLL`), and every other layer a fraction of that — the same slot
 speeds, now multiplying distance instead of time. The world *follows* the scroll
 rather than tracking it exactly, so a wheel notch becomes a short walk that ends
@@ -210,11 +210,12 @@ in a slow last step instead of a jump cut.
 
 **Stops and landmarks.** Each landing-page section declares
 `data-trail-stop="<key>"` (the keys live in `src/lib/trail-stops.ts`). A landmark
-in `src/lib/trail-landmarks.ts` belongs to a stop and is placed relative to that
-stop's mark — where Bo is standing when the section's heading reaches the reading
-line — so a section's props are composed as a group and arrive together. A
-landmark with no artwork on disk does not render, the same rule plate slots
-follow. Landmark art is built by `media/scripts/build-trail-art.py`; see
+in `src/lib/trail-landmarks.ts` belongs to a stop and stands a fraction of the way
+through that section (`along`, 0 to 1): 0 is beside Bo as the section's heading
+reaches the reading line, 1 is where the next section begins. A fraction rather
+than a distance, because a section is a different length on every screen and its
+props should be spread through it on all of them. A landmark with no artwork on
+disk does not render, the same rule plate slots follow. Landmark art is built by `media/scripts/build-trail-art.py`; see
 `public/parallax/landmarks/README.md`.
 
 **He never turns around.** Scrolling back up runs the reel backwards: the same
@@ -279,9 +280,13 @@ one small thing and leaves. `src/lib/stage/troupe.ts` is the director;
 
 A box is only used if the gap above it is actually empty, measured at the moment
 of use against the real text lines (`isClear`). One visitor at a time; scrolling
-sends whoever is out away at once. Every character shares one sheet contract
-(`src/lib/stage/cast.ts`, `public/cast/README.md`), so adding a hobit is one
-reviewed sheet and one line.
+sends whoever is out away at once.
+
+The cast is four new characters — Tuck, Pip, Mags and Cog — none of them Bo and
+none of them drawn from Bo's sheets. Every one shares a single sheet contract
+(`public/cast/README.md`), and the build writes that contract to
+`public/cast/cast.json` for `src/lib/stage/cast.ts` to read, so adding a hobit is
+one reviewed board, a rebuild, and one line of casting.
 
 ## Bo idling
 

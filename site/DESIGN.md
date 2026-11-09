@@ -423,16 +423,17 @@ the page scrolls over it. It is the one place scroll drives motion, and here
 the scroll relationship *is* the meaning: reading down the page walks Bo down
 the trail.
 
-- **The ground moves half as far as the page.** Every other layer moves a
+- **The ground moves a little slower than the page** (85% of the distance). Every other layer moves a
   fraction of that — the same slot speeds the plates always declared. Nothing
   moves faster than scroll itself, which reads as a glitch rather than depth.
 - **His stride comes from the ground covered,** so a planted foot stays
   planted. Past the pace at which a stride is readable he is simply running.
 - **Scrolling back up runs the reel backwards:** the same frames in reverse
   order. He is never mirrored — Bo is not symmetric.
-- **Each section is a stop.** Its landmarks ride the ground and pull alongside
-  him as that section's heading reaches the reading line, and a small flat
-  marker names the stretch. A landmark is the section it stands for: clicking
+- **Each section is a stop.** Its landmarks ride the ground, spread through
+  that section's own stretch of trail, so the first is beside him as the
+  heading reaches the reading line and the rest go by as the section is read.
+  A small flat marker names the stretch. A landmark is the section it stands for: clicking
   one goes there.
 - **The world follows the scroll; it does not track it.** A wheel notch would
   arrive as a jump cut. Easing toward it turns the distance into a short walk

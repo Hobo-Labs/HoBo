@@ -18,8 +18,11 @@ import type { TrailStop } from "./trail-stops";
 //
 // All measurements are in tile units of the band's 300-unit scene:
 //
-//   at     where its centre sits relative to the stop's mark; positive is
-//          further along the trail (screen-right)
+//   along  how far through its section it stands, 0 to 1: 0 is beside Bo as
+//          the section's heading reaches the reading line, 1 is where the
+//          next section begins. A fraction rather than a distance, because a
+//          section is a different length on every screen and its props
+//          should be spread through it on all of them
 //   h      drawn height; width follows the artwork's own aspect
 //   base   the scene row its bottom edge rests on. The path runs 210-257 and
 //          Bo's feet land on 268, so 250-260 is "beside the path, behind him"
@@ -32,7 +35,7 @@ import type { TrailStop } from "./trail-stops";
 export type Landmark = {
 	key: string;
 	stop: TrailStop;
-	at: number;
+	along: number;
 	h: number;
 	base: number;
 	speed: number;
@@ -43,12 +46,57 @@ export type Landmark = {
 	idle?: "bob" | "sway" | "puff";
 };
 
+// Three depths. Roadside props stand on the near side of the path, just
+// behind Bo. Background props sit across the path at the foot of the hills,
+// smaller and slower, so a section can hold a building without it crowding
+// him. One thing flies.
+const ROAD = { base: 258, speed: 1, order: 65, night: "invert", tone: 0.96 } as const;
+const BACK = { base: 214, speed: 0.78, order: 45, night: "invert", tone: 0.8 } as const;
+
+// Placed in the order the page reads, each section's props spread through
+// its own stretch of trail.
 const PLACED: Landmark[] = [
-	{ key: "signpost", stop: "crossroads", at: 150, h: 150, base: 258, speed: 1, order: 65, night: "invert", tone: 0.96 },
-	{ key: "train", stop: "rails", at: 190, h: 124, base: 258, speed: 1, order: 65, night: "invert", tone: 0.96, idle: "puff" },
-	{ key: "depot", stop: "depot", at: 170, h: 158, base: 258, speed: 1, order: 65, night: "invert", tone: 0.96 },
-	{ key: "blimp", stop: "airfield", at: 120, h: 96, base: 118, speed: 0.5, order: 25, night: "invert", tone: 0.7, idle: "bob" },
-	{ key: "steamboat", stop: "river", at: 200, h: 112, base: 216, speed: 0.8, order: 55, night: "invert", tone: 0.86, idle: "sway" },
+	// "Pack your bindle and hitch a ride" — where the road starts.
+	{ key: "milestone", stop: "trailhead", along: 0.14, h: 78, ...ROAD },
+	{ key: "arch", stop: "trailhead", along: 0.62, h: 150, ...ROAD },
+
+	// "Two bad landlords, and the open road" — the company town, the
+	// fixer-upper, and the way out.
+	{ key: "company-gate", stop: "crossroads", along: 0.08, h: 118, ...BACK },
+	{ key: "shack", stop: "crossroads", along: 0.42, h: 132, ...ROAD },
+	{ key: "signpost", stop: "crossroads", along: 0.78, h: 150, ...ROAD },
+
+	// "Deployment is not a destination" — pack, settle, ride.
+	{ key: "trunk", stop: "rails", along: 0.08, h: 84, ...ROAD },
+	{ key: "tent", stop: "rails", along: 0.36, h: 104, ...ROAD },
+	{ key: "train", stop: "rails", along: 0.68, h: 124, ...ROAD, idle: "puff" },
+	{ key: "water-tower", stop: "rails", along: 0.9, h: 132, ...BACK },
+
+	// "Four words for traveling light" — yard, junction, station.
+	{ key: "handcar", stop: "depot", along: 0.1, h: 96, ...ROAD },
+	{ key: "switch-stand", stop: "depot", along: 0.4, h: 116, ...ROAD },
+	{ key: "depot", stop: "depot", along: 0.72, h: 158, ...ROAD },
+
+	// "Who writes what" — the developer's tools, the platform engineer's
+	// plans, and the gate policy is enforced at.
+	{ key: "toolbox", stop: "crew", along: 0.06, h: 74, ...ROAD },
+	{ key: "drafting-table", stop: "crew", along: 0.32, h: 108, ...ROAD },
+	{ key: "barrier", stop: "crew", along: 0.6, h: 120, ...ROAD },
+	{ key: "padlock-post", stop: "crew", along: 0.86, h: 112, ...ROAD },
+
+	// "Built for humans, and the agents that work for them" — the wires
+	// agents talk over, and the airship overhead.
+	{ key: "switchboard", stop: "airfield", along: 0.1, h: 118, ...ROAD },
+	{ key: "blimp", stop: "airfield", along: 0.4, h: 96, base: 118, speed: 0.5, order: 25, night: "invert", tone: 0.7, idle: "bob" },
+	{ key: "radio-mast", stop: "airfield", along: 0.7, h: 150, ...ROAD },
+
+	// "Other roofs over your head" — everyone else's.
+	{ key: "rooftops", stop: "river", along: 0.1, h: 92, ...BACK },
+	{ key: "steamboat", stop: "river", along: 0.45, h: 112, base: 216, speed: 0.8, order: 55, night: "invert", tone: 0.86, idle: "sway" },
+	{ key: "lighthouse", stop: "river", along: 0.8, h: 128, ...BACK },
+
+	// "Ready to hit the rails?" — home.
+	{ key: "cottage", stop: "home", along: 0.35, h: 136, ...ROAD },
 ];
 
 const DIR = new URL("../../public/parallax/landmarks/", import.meta.url);

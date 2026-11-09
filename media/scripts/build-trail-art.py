@@ -17,7 +17,7 @@ and normalizes it into what the site ships:
   site/public/cast/<name>.png
       One sheet per hobit, cut from that character's reviewed pose board and
       packed to the contract in site/src/lib/stage/cast.ts: a 6x2 grid of
-      192px cells, the same pose in the same cell on every sheet, feet on one
+      256px cells, the same pose in the same cell on every sheet, feet on one
       baseline and the body on one centre column.
 
 Generation is a separate, earlier step — the Higgsfield CLI
@@ -81,7 +81,7 @@ SINGLE_PROPS: dict[str, dict] = {
 
 # ------------------------------------------------------------- the contract
 
-CELL = 192
+CELL = 256
 COLS, ROWS = 6, 2
 FEET = 0.94  # feet baseline, as a fraction of the cell height
 BODY = 0.62  # the standing figure's height, as a fraction of the cell height
@@ -150,79 +150,91 @@ def cut_out(
 	return _tight(la) if crop else la
 
 
+def _two_ink(grey: np.ndarray, solid: np.ndarray) -> np.ndarray:
+	"""Reduce a keyed board to exactly what the style is: black, white, nothing.
+
+	A model asked for flat ink still leaves soft shading, grey smudges and
+	stray specks, and every one of them survives as a visible stain once the
+	sprite stands on a page. At source resolution each pixel is therefore
+	snapped to black ink, white paint or clear — and the antialiasing the
+	shipped art needs comes from the downscale that follows, which is why
+	boards are generated several times larger than they ship.
+	"""
+	total = solid.size
+	# Dust: tiny islands of ink in the ground, and pinholes of ground in ink.
+	lab, n = ndimage.label(solid, structure=np.ones((3, 3)))
+	if n:
+		sizes = ndimage.sum(solid, lab, index=np.arange(1, n + 1))
+		solid = solid & ~np.isin(lab, np.flatnonzero(sizes < total * 0.00002) + 1)
+	holes, n = ndimage.label(~solid)
+	if n:
+		sizes = ndimage.sum(~solid, holes, index=np.arange(1, n + 1))
+		solid = solid | np.isin(holes, np.flatnonzero(sizes < total * 0.000004) + 1)
+
+	white = solid & (grey >= 128)
+	# The same for the two inks: a fleck of white in the black, or of black in
+	# the white, that is too small to be a drawn mark is noise from the model.
+	for ink in (white, solid & ~white):
+		lab, n = ndimage.label(ink)
+		if n:
+			sizes = ndimage.sum(ink, lab, index=np.arange(1, n + 1))
+			flip = np.isin(lab, np.flatnonzero(sizes < total * 0.000003) + 1)
+			white = white ^ flip
+	white &= solid
+	return np.dstack([np.where(white, 255, 0), np.where(solid, 255, 0)]).astype(np.uint8)
+
+
 def cut_chroma(path: Path) -> np.ndarray:
 	"""Key a board drawn on a flat colour. Returns an uncropped grey+alpha array.
 
-	Generated boards are drawn on a flat chroma ground rather than on white,
+	Generated boards are drawn on a chroma ground rather than on white,
 	because enclosure cannot tell paper from paint: an arm resting on a hip
 	closes a loop of paper that flood-fill can never reach, and it ships as a
 	white blob the first time the sprite stands on a dark page. On a coloured
-	ground the question does not arise — white is paint, colour is ground.
+	ground the question does not arise — neutral is ink, colour is ground.
 
-	Black-and-white ink over one flat colour is exactly solvable. Every pixel
-	is `a * ink + (1 - a) * ground` with a neutral ink, so its distance from
-	the grey axis is the ground's, scaled by how much ground shows through.
-	That gives coverage directly, and the ink's own grey falls out of it —
-	no threshold, and no colour fringe left on an antialiased edge.
+	"Flat" is the model's word, not a fact: the ground arrives as a patchwork
+	of visibly different greens. So the key does not measure how far a pixel
+	is from *the* ground colour — that reads every darker patch as a film of
+	ink and leaves grey ghosts of the patchwork behind. It asks only whether
+	a pixel is coloured at all, and black-and-white ink never is.
 	"""
 	rgb = np.asarray(Image.open(path).convert("RGB"), dtype=np.float32)
 	edge = np.concatenate([rgb[:10].reshape(-1, 3), rgb[-10:].reshape(-1, 3), rgb[:, :10].reshape(-1, 3), rgb[:, -10:].reshape(-1, 3)])
 	ground = np.median(edge, axis=0)
-	chroma = ground - ground.mean()
-	if float(chroma @ chroma) < 40**2:
+	lead = int(np.argmax(ground))
+	rest = [c for c in range(3) if c != lead]
+	strength = float(ground[lead] - ground[rest].mean())
+	if strength < 60:
 		raise SystemExit(f"{path.name}: the ground is not a colour; use cut_out for art on paper")
 
-	mean = rgb.mean(axis=2)
-	off_axis = rgb - mean[..., None]
-	# A generated "flat" ground wanders a few levels; a soft local estimate of
-	# how saturated it is keeps that drift from reading as faint ink.
-	raw = (off_axis @ chroma) / float(chroma @ chroma)
-	is_ground = raw > 0.82
-	level = ndimage.gaussian_filter(np.where(is_ground, raw, 0.0), 40) / np.maximum(
-		ndimage.gaussian_filter(is_ground.astype(np.float32), 40), 1e-3
-	)
-	through = (raw / np.maximum(level, 0.5)).clip(0, 1)
-	cover = 1 - through
-	cover = np.where(cover < 0.1, 0.0, np.where(cover > 0.93, 1.0, cover))
-
-	grey = ((mean - through * ground.mean()) / np.maximum(cover, 1e-3)).clip(0, 255)
-	grey = np.where(cover > 0, grey, 0)
-	# Partial coverage is an edge, and an edge is ink: (0, partial).
-	grey = np.where(cover < 1, np.where(grey < 150, 0.0, 255.0), grey)
-
-	solid = cover > 0
-	lab, n = ndimage.label(solid, structure=np.ones((3, 3)))
-	if n:
-		sizes = ndimage.sum(solid, lab, index=np.arange(1, n + 1))
-		specks = np.isin(lab, np.flatnonzero(sizes < solid.size * 0.00003) + 1)
-		cover = np.where(specks, 0.0, cover)
-	return np.dstack([grey, cover * 255]).astype(np.uint8)
+	# How coloured each pixel is, in the ground's own direction.
+	colour = rgb[..., lead] - rgb[..., rest].mean(axis=2)
+	solid = colour < strength * 0.3
+	# Ink is read from the channels the ground is *not* in, so spill from the
+	# ground onto an edge cannot tint it.
+	grey = rgb[..., rest].mean(axis=2)
+	return _two_ink(grey, solid)
 
 
 def cut_alpha(path: Path) -> np.ndarray:
-	"""A board that arrived with a real transparent background: use it as given.
+	"""A board that arrived with a real transparent background.
 
-	The model's own alpha is coverage and its colour is ink, which is already
-	the contract — it only needs the same edge rule and despeckle as the rest.
+	The model's own alpha says where the drawing is; the same two-ink
+	reduction as a keyed board makes it the same kind of artwork.
 	"""
 	rgba = np.asarray(Image.open(path).convert("RGBA"), dtype=np.float32)
 	grey = rgba[..., :3] @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
-	cover = rgba[..., 3] / 255
-	cover = np.where(cover < 0.1, 0.0, np.where(cover > 0.93, 1.0, cover))
-	grey = np.where(cover > 0, grey, 0)
-	grey = np.where(cover < 1, np.where(grey < 150, 0.0, 255.0), grey)
-	solid = cover > 0
-	lab, n = ndimage.label(solid, structure=np.ones((3, 3)))
-	if n:
-		sizes = ndimage.sum(solid, lab, index=np.arange(1, n + 1))
-		specks = np.isin(lab, np.flatnonzero(sizes < solid.size * 0.00003) + 1)
-		cover = np.where(specks, 0.0, cover)
-	return np.dstack([grey, cover * 255]).astype(np.uint8)
+	return _two_ink(grey, rgba[..., 3] > 128)
 
 
 def read_board(path: Path) -> np.ndarray:
 	"""Transparent boards are used as given, chroma ones keyed, paper ones cut by enclosure."""
 	source = Image.open(path)
+	# A promoted board is a three-value palette PNG; its transparency lives in
+	# the palette, not in a channel, until it is expanded.
+	if source.mode == "P" or "transparency" in source.info:
+		source = source.convert("RGBA")
 	if source.mode in ("RGBA", "LA") and np.asarray(source.convert("RGBA"))[..., 3].min() < 16:
 		return cut_alpha(path)
 	rgb = np.asarray(source.convert("RGB"), dtype=np.float32)
@@ -255,43 +267,34 @@ def split_board(la: np.ndarray, cols: int, rows: int) -> list[np.ndarray]:
 	"""Cut a board into its drawings, in reading order.
 
 	A grid is only where the drawings were *asked* to go; nothing guarantees a
-	raised arm or a popped hat stays inside its cell. So the cells are never
-	trusted as crop boxes. Each drawing is recovered as connected ink — the
-	large components are the drawings, and every loose piece (a hat in mid-air,
-	a puff of smoke) joins the drawing it is nearest to.
+	raised arm or a puff of smoke stays inside its cell. So the cells are never
+	used as crop boxes. Every connected piece of ink is recovered whole and
+	then joins the drawing whose cell its centre falls in — which keeps a
+	chimney's smoke, a campfire beside its tent or a hat in mid-air with the
+	thing it belongs to, and never slices a drawing along a grid line.
 	"""
 	solid = la[..., 1] > 24
-	# Bridge hairline gaps inside one drawing without merging two drawings.
-	lab, n = ndimage.label(ndimage.binary_dilation(solid, iterations=3))
-	lab = np.where(solid, lab, 0)
+	lab, n = ndimage.label(solid, structure=np.ones((3, 3)))
+	if n == 0:
+		raise SystemExit("the board is empty")
+	ys, xs = np.where(solid)
+	x0, x1, y0, y1 = xs.min(), xs.max() + 1, ys.min(), ys.max() + 1
+	centres = ndimage.center_of_mass(solid, lab, index=np.arange(1, n + 1))
 	areas = ndimage.sum(solid, lab, index=np.arange(1, n + 1))
-	order = np.argsort(areas)[::-1]
-	want = cols * rows
-	if n < want:
-		raise SystemExit(f"board has {n} drawings, expected {want}")
-	cores = [int(i) + 1 for i in order[:want]]
-	boxes = ndimage.find_objects(lab)
-	centre = lambda i: ((boxes[i - 1][1].start + boxes[i - 1][1].stop) / 2, (boxes[i - 1][0].start + boxes[i - 1][0].stop) / 2)  # noqa: E731
 
-	owner = {c: c for c in cores}
-	for i in order[want:]:
-		piece = int(i) + 1
-		if areas[i] < 12:
-			continue
-		px, py = centre(piece)
-		owner[piece] = min(cores, key=lambda c: (centre(c)[0] - px) ** 2 + (centre(c)[1] - py) ** 2)
-
-	# Reading order: rows by height on the page, then left to right.
-	by_y = sorted(cores, key=lambda c: centre(c)[1])
-	grid = [sorted(by_y[r * cols : (r + 1) * cols], key=lambda c: centre(c)[0]) for r in range(rows)]
+	cell_of = np.zeros(n + 1, dtype=np.int32) - 1
+	for i, (cy, cx) in enumerate(centres, start=1):
+		col = min(cols - 1, max(0, int((cx - x0) / (x1 - x0) * cols)))
+		row = min(rows - 1, max(0, int((cy - y0) / (y1 - y0) * rows)))
+		cell_of[i] = row * cols + col
 
 	out = []
-	for core in (c for row in grid for c in row):
-		mine = np.isin(lab, [p for p, c in owner.items() if c == core])
-		# Everything opaque that belongs to this drawing, antialiased rim included.
-		keep = ndimage.binary_dilation(mine, iterations=2) & (la[..., 1] > 0)
+	for cell in range(cols * rows):
+		members = np.flatnonzero(cell_of == cell)
+		if members.size == 0 or areas[members - 1].sum() < solid.sum() / (cols * rows) * 0.12:
+			raise SystemExit(f"cell {cell} of the {cols}x{rows} board holds no drawing")
 		piece = la.copy()
-		piece[~keep] = 0
+		piece[~np.isin(lab, members)] = 0
 		out.append(_tight(piece, pad=2))
 	return out
 
@@ -332,11 +335,15 @@ def build_landmarks() -> None:
 def _eyes(grey: np.ndarray, alpha: np.ndarray) -> list[np.ndarray]:
 	"""The eye whites, each as a filled mask (white plus the pupil inside it).
 
-	Usually two. A character whose eyes touch has one region holding both
-	pupils, and that is fine: everything downstream moves pupils *within* a
-	mask and never needs to know how many it holds.
+	An eye is a roundish white shape that encloses a solid dark pupil. A hat
+	with a stitched patch is white and encloses something too, but what it
+	encloses is mostly more white; a glove encloses only hairlines. Eyes also
+	come as a matched pair, so of everything that qualifies the two most alike
+	in size and height are the ones — or the one, where a character's eyes
+	touch and share a single white.
 	"""
-	white = (grey > 200) & (alpha == 255)
+	white = (grey > 128) & (alpha > 128)
+	dark = (grey <= 128) & (alpha > 128)
 	lab, n = ndimage.label(white)
 	h = grey.shape[0]
 	found = []
@@ -344,35 +351,42 @@ def _eyes(grey: np.ndarray, alpha: np.ndarray) -> list[np.ndarray]:
 		region = lab == i
 		ys, xs = np.where(region)
 		eh, ew = np.ptp(ys) + 1, np.ptp(xs) + 1
+		if not (0.06 * h <= eh <= 0.45 * h and 0.45 < ew / eh < 2.4):
+			continue
 		filled = ndimage.binary_fill_holes(region)
-		# An eye is a white shape that encloses a dark pupil. A glove or a hat
-		# is white too, but encloses nothing dark worth the name.
-		pupil = (filled & ~region).sum()
-		if 0.07 * h <= eh <= 0.4 * h and 0.5 < ew / eh < 2.6 and pupil > 0.05 * filled.sum():
-			found.append((filled.sum(), filled))
-	found.sort(key=lambda f: -f[0])
+		inside = filled & ~region
+		if inside.sum() < 0.06 * filled.sum() or (inside & dark).sum() < 0.85 * inside.sum():
+			continue
+		if filled.sum() < 0.6 * eh * ew:
+			continue
+		found.append((int(filled.sum()), float(ys.mean()), filled))
 	if not found:
 		raise SystemExit("found no eyes on the standing pose")
-	return [f[1] for f in found[:2]]
+	if len(found) == 1:
+		return [found[0][2]]
+	best = min(
+		((a, b) for k, a in enumerate(found) for b in found[k + 1 :]),
+		key=lambda p: abs(p[0][0] - p[1][0]) / max(p[0][0], p[1][0]) + abs(p[0][1] - p[1][1]) / h,
+	)
+	return [best[0][2], best[1][2]]
 
 
 def _look(grey: np.ndarray, eyes: list[np.ndarray], direction: int) -> np.ndarray:
-	out = grey.astype(np.float32).copy()
+	"""Pupils slid sideways inside their own whites. Colour only."""
+	out = grey.copy()
 	for eye in eyes:
 		width = np.ptp(np.where(eye)[1]) + 1
-		dx = direction * max(2, round(width * 0.14))
-		src = grey.astype(np.float32)
-		core = eye & (src < 128)
-		# The pupil, with the antialiased pixel around it and the highlight in it.
-		pupil = ndimage.binary_fill_holes(ndimage.binary_dilation(core, iterations=1)) & eye
-		cleared = np.where(pupil, 255.0, src)
-		moved = np.roll(np.where(pupil, src, 255.0), dx, axis=1)
+		dx = direction * max(2, round(width * 0.16))
+		# The pupil is the dark the eye encloses, highlight and all.
+		pupil = ndimage.binary_fill_holes(eye & (grey <= 128)) & eye
+		cleared = np.where(pupil, 255, grey)
+		moved = np.roll(np.where(pupil, grey, 255), dx, axis=1)
 		if dx > 0:
-			moved[:, :dx] = 255.0
+			moved[:, :dx] = 255
 		else:
-			moved[:, dx:] = 255.0
-		# Keep one white pixel between the pupil and the rim it slid toward.
-		inner = ndimage.binary_erosion(eye, iterations=1)
+			moved[:, dx:] = 255
+		# Keep a rim of white between the pupil and the edge it slid toward.
+		inner = ndimage.binary_erosion(eye, iterations=max(1, round(width * 0.05)))
 		out = np.where(eye, np.where(inner, np.minimum(cleared, moved), cleared), out)
 	return out.astype(np.uint8)
 
@@ -380,17 +394,15 @@ def _look(grey: np.ndarray, eyes: list[np.ndarray], direction: int) -> np.ndarra
 def _blink(grey: np.ndarray, eyes: list[np.ndarray]) -> np.ndarray:
 	"""Eyes shut: each white closes down to the lower lid it already has."""
 	out = grey.copy()
+	rows = np.arange(grey.shape[0])[:, None]
 	for eye in eyes:
-		height = np.ptp(np.where(eye)[0]) + 1
-		lid = max(2, round(height * 0.1))
-		# The lid is the part of the eye that is no longer eye when the shape
-		# is shifted up — its own bottom edge, so the curve is the drawing's.
+		ys = np.where(eye)[0]
+		lid = max(2, round((np.ptp(ys) + 1) * 0.09))
+		# The lid is what is left of the eye when the shape is lifted by a
+		# lid's thickness — its own bottom edge, so the curve is the drawing's.
 		raised = np.roll(eye, -lid, axis=0)
 		raised[-lid:] = False
-		crescent = eye & ~raised
-		# Only the lower half: the same shift also leaves nothing at the top.
-		ys = np.where(eye)[0]
-		crescent &= np.arange(grey.shape[0])[:, None] > (ys.min() + ys.max()) / 2
+		crescent = eye & ~raised & (rows > (ys.min() + ys.max()) / 2)
 		out = np.where(eye, 0, out)
 		out = np.where(crescent, 255, out)
 	return out.astype(np.uint8)
@@ -403,18 +415,15 @@ def _ink_centre(la: np.ndarray) -> float:
 	return float(xs.mean()) if xs.size else la.shape[1] / 2
 
 
-def _place(pose: np.ndarray) -> np.ndarray:
-	"""One pose into one cell: feet on the baseline, body on the centre column."""
+def _place(pose: np.ndarray, centre: float) -> np.ndarray:
+	"""One pose into one cell: feet on the baseline, `centre` on the centre column."""
 	cell = np.zeros((CELL, CELL, 2), dtype=np.uint8)
 	h, w = pose.shape[:2]
-	left = round(CELL / 2 - _ink_centre(pose))
+	left = round(CELL / 2 - centre)
 	top = round(CELL * FEET) - h
-	# A flung-out limb may leave the cell; the body may not.
-	x0, y0 = max(left, 0), max(top, 0)
-	x1, y1 = min(left + w, CELL), min(top + h, CELL)
-	if x1 <= x0 or y1 <= y0:
-		raise SystemExit("a pose landed entirely outside its cell")
-	cell[y0:y1, x0:x1] = pose[y0 - top : y1 - top, x0 - left : x1 - left]
+	if left < 0 or top < 0 or left + w > CELL or top + h > CELL:
+		raise SystemExit("a pose does not fit its cell; the fit step should have prevented this")
+	cell[top : top + h, left : left + w] = pose
 	return cell
 
 
@@ -424,42 +433,66 @@ def build_cast() -> None:
 		print("cast: no reviewed boards yet (media/public/reference/cast/cast.json)")
 		return
 	CAST_OUT.mkdir(parents=True, exist_ok=True)
+	meta = {}
 	for member in json.loads(manifest.read_text())["cast"]:
 		name = member["name"]
-		la = read_board(CAST_BOARDS / member["board"])
-		pieces = split_board(la, member["cols"], member["rows"])
-		drawn = dict(zip(member["poses"], pieces, strict=True))
+		pieces = split_board(read_board(CAST_BOARDS / member["board"]), member["cols"], member["rows"])
+		drawn = {key: piece for key, piece in zip(member["poses"], pieces, strict=True) if key}
 		if "stand" not in drawn:
 			raise SystemExit(f"{name}: the board has no standing pose to scale from")
 
-		# One scale for the whole character, set by the standing pose, so he is
-		# the same size in every cell rather than each pose being fitted to it.
-		scale = (CELL * BODY) / drawn["stand"].shape[0]
-		poses = {key: resize_la(piece, scale) for key, piece in drawn.items() if key}
-
-		stand = _place(poses["stand"])
+		# The three eye states are made at full size, from the standing pose,
+		# by moving colour only — so they share its silhouette exactly and a
+		# peek can look around without its outline boiling.
+		stand = drawn["stand"]
 		grey, alpha = stand[..., 0], stand[..., 1]
 		eyes = _eyes(grey, alpha)
-		cells = {key: _place(pose) for key, pose in poses.items()}
-		cells["lookLeft"] = np.dstack([_look(grey, eyes, -1), alpha])
-		cells["lookRight"] = np.dstack([_look(grey, eyes, 1), alpha])
-		cells["blink"] = np.dstack([_blink(grey, eyes), alpha])
+		drawn["lookLeft"] = np.dstack([_look(grey, eyes, -1), alpha])
+		drawn["lookRight"] = np.dstack([_look(grey, eyes, 1), alpha])
+		drawn["blink"] = np.dstack([_blink(grey, eyes), alpha])
+		# A character drawn with one run pose repeats it rather than shipping
+		# an empty cell; the troupe gives a run its second beat by motion.
+		drawn.setdefault("runB", drawn["run"])
+
+		# One scale for the whole character, so he is the same size in every
+		# cell — set by the standing pose, then eased down until the widest
+		# and tallest poses fit too. Nothing is ever cropped to make it fit.
+		centres = {key: _ink_centre(piece) for key, piece in drawn.items()}
 		for key in DERIVED:
-			# The invariant the derived frames exist for: colour moves, coverage does not.
-			if not np.array_equal(cells[key][..., 1], alpha):
-				raise SystemExit(f"{name}: {key} changed the silhouette")
-		# A character drawn with one run pose alternates it with the high walk
-		# pose rather than shipping an empty cell.
-		cells.setdefault("runB", cells.get("run", stand))
+			centres[key] = centres["stand"]
+		scale = (CELL * BODY) / stand.shape[0]
+		for key, piece in drawn.items():
+			h, w = piece.shape[:2]
+			reach = max(centres[key], w - centres[key])
+			scale = min(scale, (CELL * FEET - 2) / h, (CELL / 2 - 2) / reach)
 
 		sheet = np.zeros((ROWS * CELL, COLS * CELL, 2), dtype=np.uint8)
+		cells = {}
 		for i, key in enumerate(POSES):
-			if key not in cells:
+			if key not in drawn:
 				raise SystemExit(f"{name}: no '{key}' pose on the board and none derived")
+			cells[key] = _place(resize_la(drawn[key], scale), centres[key] * scale)
 			r, c = divmod(i, COLS)
 			sheet[r * CELL : (r + 1) * CELL, c * CELL : (c + 1) * CELL] = cells[key]
+		for key in DERIVED:
+			# The invariant the derived cells exist for: colour moves, coverage does not.
+			if not np.array_equal(cells[key][..., 1], cells["stand"][..., 1]):
+				raise SystemExit(f"{name}: {key} changed the silhouette")
 		Image.fromarray(sheet, "LA").save(CAST_OUT / f"{name}.png", optimize=True)
-		print(f"cast/{name}.png  {sheet.shape[1]}x{sheet.shape[0]}  ({len(POSES)} poses)")
+
+		ys = np.where(np.concatenate(eyes).reshape(len(eyes), *eyes[0].shape).any(axis=0))[0]
+		stand_h = stand.shape[0] * scale
+		crown = FEET - stand_h / CELL
+		meta[name] = {
+			# The standing figure's height, and how far down the cell a peek
+			# must reveal to clear the eyes — both as fractions of the cell.
+			"body": round(stand_h / CELL, 4),
+			"peek": round(crown + (ys.max() + 0.06 * stand.shape[0]) * scale / CELL, 4),
+		}
+		print(f"cast/{name}.png  {sheet.shape[1]}x{sheet.shape[0]}  body {meta[name]['body']}  peek {meta[name]['peek']}")
+
+	contract = {"cell": CELL, "cols": COLS, "rows": ROWS, "feet": FEET, "poses": POSES, "members": meta}
+	(CAST_OUT / "cast.json").write_text(json.dumps(contract, indent="\t") + "\n")
 
 
 if __name__ == "__main__":

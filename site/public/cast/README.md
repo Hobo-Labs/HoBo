@@ -16,10 +16,24 @@ never has to know who it is animating:
 | | |
 |---|---|
 | Grid | 6 columns × 2 rows, 12 cells |
-| Cell | 192 × 192 px, grayscale + alpha, 8 levels per channel |
+| Cell | 256 × 256 px, grayscale + alpha, 8 levels per channel |
 | Feet baseline | 94% down the cell, in every cell |
 | Body centre | the cell's centre column, in every cell |
-| Standing height | 62% of the cell |
+| Standing height | up to 62% of the cell — eased down if a pose would not fit |
+
+`cast.json`, beside the sheets, records the contract and each character's own
+numbers (standing height, and how far down a peek must reveal to clear the
+eyes). The build writes it and `src/lib/stage/cast.ts` reads it, so the
+geometry the page plays and the geometry on disk cannot drift apart.
+
+## Who they are
+
+| Sheet | | |
+|---|---|---|
+| `tuck.png` | Tuck | stout, in a patched bowler; about Bo's size |
+| `pip.png` | Pip | the small one, all striped scarf and one curled tuft |
+| `mags.png` | Mags | tall and narrow under a newsboy cap, polka-dot neckerchief |
+| `cog.png` | Cog | a wind-up tin hobot — rivets, a visor, a key in the back |
 
 The same pose is in the same cell on every sheet:
 
@@ -55,25 +69,51 @@ with his scarf on the other shoulder — the same mistake as mirroring Bo's bind
 ## Where they come from
 
 ```sh
-higgsfield generate create <model> --prompt "<brief>" --image-references <style-ref> --wait   # generate -> media/runs/ (gitignored)
-# look at the boards; promote the good ones to media/public/reference/cast/
-uv run media/scripts/build-trail-art.py cast                                                    # normalize -> here
+higgsfield auth login                                                        # once; the account's own plan credits
+higgsfield generate create gpt_image_2_6 --prompt "<brief>" \
+  --image-references <reference> --background transparent \
+  --quality high --resolution 4k --aspect_ratio 16:9 --wait                  # -> media/runs/ (gitignored)
+# look at the result; promote the good ones to media/public/reference/cast/
+uv run media/scripts/build-trail-art.py cast                                 # normalize -> here
 ```
 
-The briefs live in `media/scripts/jobs/trail-cast.json`, and the style
-references they attach are composed by `media/scripts/build-style-refs.py`.
-Generation runs through the Higgsfield CLI on the account's own plan credits
-(`higgsfield auth login` first); there is no API key involved.
+Two images per character, in order:
 
-Each character is generated as one **pose board**: the same character eight
-times on one sheet. A model keeps a character far more consistent within one
-image than across several, which is what makes a set of poses usable as frames.
-The board is drawn on a flat chroma ground so the cut-out is exact (see
-`../parallax/landmarks/README.md` for why).
+1. **A turnaround** — front and right-facing side in one image, with Bo's own
+   frames attached as the style reference (`media/scripts/build-style-refs.py`
+   composes them). This is where the design is decided.
+2. **A pose board** — the same character eight times in a 4×2 grid, generated
+   with *that character's turnaround* as the reference. A model keeps a
+   character far more consistent within one image than across several, which
+   is what makes a set of poses usable as frames.
 
-The board's grid is only where the poses were *asked* to go; it is never trusted
-as a set of crop boxes. Each pose is recovered as connected ink, and any loose
-piece — a hat in mid-air — joins the pose it is nearest to.
+The briefs are in `media/scripts/jobs/trail-cast.json`. The model was chosen by
+running the same briefs through two and looking: GPT Image 2.6 returned crisp,
+artifact-free linework on a real transparent background; Nano Banana Pro
+returned smeared edges on a patchy chroma ground. The cut-out still handles a
+chroma ground and paper (see `../parallax/landmarks/README.md`), but a real
+alpha channel is the least lossy thing to start from.
+
+**Every board is reduced to two inks before anything else.** A model asked for
+flat black and white still leaves soft shading, grey smudges and specks, and
+each one is a visible stain the moment the sprite stands on a page. At source
+resolution every pixel is snapped to black, white or clear; the antialiasing the
+shipped art needs comes from the downscale, which is why boards are generated
+at several times their shipping size. The promoted boards in the Reference tier
+are stored as that reduction — three values, so a palette holds them exactly in
+30–100 KB.
+
+The board's grid is only where the poses were *asked* to go; it is never used
+as a set of crop boxes. Every connected piece of ink is recovered whole and
+joins the pose whose cell its centre falls in, so a raised arm is never sliced
+along a grid line.
+
+**What review caught.** Tuck's first pose board drifted from his turnaround:
+the shaggy fur came back scalloped, and his legs were solid black facing the
+viewer but hollow outlines in the side views. It was regenerated with the fur
+silhouette and limbs stated explicitly. One Nano Banana Pro board was refused
+by the provider's content filter for no visible reason and was not retried
+once that model was dropped.
 
 A character joins the cast in `src/lib/stage/cast.ts` only after its sheet has
 been looked at, at the size it ships, on both the day and night page.

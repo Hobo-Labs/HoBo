@@ -155,7 +155,7 @@ type Bit = "peek" | "wave" | "nap";
 /** Up from behind a box, one small bit of business, and back down. */
 async function popUp(who: Member, perch: Perch, bit: Bit, cue: Cue) {
 	const { sheet } = who;
-	const tall = Math.round(between(58, 70) * who.stature);
+	const tall = Math.round(between(70, 84) * who.stature);
 	const sprite = new Sprite(sheet);
 	sprite.size(tall);
 	const frameH = tall / sheet.body;
@@ -265,7 +265,7 @@ function enter(who: Member, trail: Trail) {
 	const unit = trail.unit();
 	// A little smaller than Bo and a little further back, so he reads as
 	// someone else on the same road rather than a second Bo.
-	const tall = 121 * unit * 0.8 * who.stature;
+	const tall = 121 * unit * 0.88 * who.stature;
 	const sprite = new Sprite(sheet);
 	sprite.size(tall);
 	const actor = new Actor(sprite, "troupe-traveler");
@@ -398,7 +398,7 @@ export function mountTroupe(trail: Trail): void {
 			const bit =
 				pick<Bit>(shown > 1 ? ["peek", "peek", "wave", "nap"] : ["peek", "peek", "wave"]) ?? "peek";
 			const { sheet } = who;
-			const frameH = (70 * who.stature) / sheet.body;
+			const frameH = (84 * who.stature) / sheet.body;
 			// The figure is narrower than its cell, and only as much of him as
 			// the bit shows ever rises above the edge.
 			const wide = frameH * (sheet.frameW / sheet.frameH) * 0.62;

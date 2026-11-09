@@ -219,3 +219,48 @@ export const SCENE_PROPS: Reference[] = [
 	{ key: "blimp", title: "Blimp", file: "reference/scene-props/blimp.webp", note: "→ landmark at the airfield stop (the agents section). Floats at half ground speed and bobs." },
 	{ key: "steamboat", title: "Steamboat", file: "reference/scene-props/steamboat.webp", note: "→ landmark at the river stop (the landscape table). Sits behind the path and rocks; the lettered “toot” is erased at build." },
 ];
+
+/**
+ * The cast: the hobits who are not Bo.
+ *
+ * Generated for the site's troupe (Higgsfield CLI, GPT Image 2.6, native
+ * transparency), reviewed, and normalized by
+ * `media/scripts/build-trail-art.py` to one contract — a 6×2 grid of 256px
+ * cells with the same pose in the same cell on every sheet. These are **pose
+ * sheets, not cycles**: the catalogue steps through all twelve cells so each
+ * can be inspected, but the site plays them as poses with motion between.
+ * Cells 1–3 (look left, look right, blink) are derived from cell 0 by moving
+ * colour only, so the four share one silhouette exactly.
+ */
+const castSheet = (key: string, title: string, note: string): Sheet => ({
+	key: `cast-${key}`,
+	title,
+	file: `cast/${key}.png`,
+	frame: { w: 256, h: 256 },
+	grid: { cols: 6, rows: 2 },
+	frames: 12,
+	tick: 0.7,
+	note,
+});
+
+export const CAST_SHEETS: Sheet[] = [
+	castSheet("tuck", "Tuck", "Stout, in a patched bowler. About Bo's size. His first board drifted — scalloped fur, hollow legs in the side views — and was regenerated with the fur and limbs locked."),
+	castSheet("pip", "Pip", "The small one, all striped scarf and one curled tuft. Side views only ever face right; the scarf is why she is never mirrored."),
+	castSheet("mags", "Mags", "Tall and narrow under a newsboy cap, polka-dot neckerchief at the throat."),
+	castSheet("cog", "Cog", "The wind-up one: riveted tin, a visor for a face, a key in the back. Agents travel this road too. White tin, so he reads on a night page without a rim."),
+];
+
+/** The reviewed boards the cast sheets are cut from — stored as their two-ink reduction. */
+export const CAST_BOARDS: Reference[] = ["tuck", "pip", "mags", "cog"].flatMap(
+	(name): Reference[] => [
+		{ key: `${name}-turnaround`, title: `${name[0]?.toUpperCase()}${name.slice(1)} — turnaround`, file: `reference/cast/${name}-turnaround.png`, note: "The design: front and right-facing side, one image so the two views agree. The pose board is generated from this." },
+		{ key: `${name}-board`, title: `${name[0]?.toUpperCase()}${name.slice(1)} — pose board`, file: `reference/cast/${name}-board.png`, wide: true, note: "Eight poses in one image: stand, wave, startled, doze; walk ×3 and a run, heading right. One image keeps the character consistent across them." },
+	],
+);
+
+/** Prop boards for the trail: one image per six props, cut apart at build. */
+export const TRAIL_PROP_BOARDS: Reference[] = [
+	{ key: "props-a", title: "Trail props A", file: "reference/trail-props/props-a.png", wide: true, note: "Mile marker and bindle, company-town gatehouse, fixer-upper shack, trunk and crates, tent and campfire, water tower." },
+	{ key: "props-b", title: "Trail props B", file: "reference/trail-props/props-b.png", wide: true, note: "Switch stand, handcar, boom barrier and booth, radio mast and telegraph hut, lighthouse, cottage." },
+	{ key: "props-c", title: "Trail props C", file: "reference/trail-props/props-c.png", wide: true, note: "Toolbox, drafting table, padlocked gate post, telephone switchboard, a row of rooftops, a timber arch." },
+];

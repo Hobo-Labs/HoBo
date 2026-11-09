@@ -19,7 +19,7 @@ uv run media/scripts/build-trail-art.py landmarks
 | Source | What it is | How paper becomes alpha |
 |---|---|---|
 | `media/public/reference/scene-props/*.webp` | the five approved scene props (signpost, train, depot, blimp, steamboat) | **enclosure** — paper is flood-filled from the border |
-| `media/public/reference/trail-props/*.png` | reviewed prop boards, several props to a sheet, listed in `boards.json` | **chroma key** — the boards are drawn on a flat colour |
+| `media/public/reference/trail-props/*.png` | three reviewed prop boards, six props to a sheet, named in `boards.json` | **their own alpha** — generated with a real transparent background |
 
 The five approved props used to be traced into the full-width scene panels the
 landing page stopped for. Those panels are gone; the props stand on the trail
@@ -46,11 +46,34 @@ drawing *encloses* stays white too: the gap under a handrail, the space between
 a ladder's rungs. On white paper nobody can see that. On a night band it is a
 white patch.
 
-So art generated for this purpose is drawn on a flat chroma ground instead.
-Black-and-white ink over one flat colour is exactly solvable: every pixel is
-`a * ink + (1 - a) * ground` with a neutral ink, so its distance from the grey
-axis gives the coverage directly and the ink's own grey falls out of it. No
-threshold to tune, and no colour fringe left on an antialiased edge.
+So art generated for this purpose is not drawn on paper. The shipped boards
+were generated with a real transparent background, which settles the question
+outright. The build also accepts a board on a flat chroma ground, and there the
+rule is simple: black-and-white ink is never coloured, so anything coloured is
+ground. (It does *not* measure distance from "the" ground colour — a model's
+"flat" green arrives as a patchwork of greens, and that reads every darker
+patch as a film of ink and leaves grey ghosts of the patchwork behind.)
+
+Either way, every board is then reduced to exactly two inks — black, white,
+clear — at source resolution, and antialiased only by the downscale. See
+`../../cast/README.md` for why.
+
+## Which landmark stands where
+
+| Stop (section) | Landmarks |
+|---|---|
+| trailhead — "Pack your bindle and hitch a ride" | mile marker and bindle, timber arch |
+| crossroads — "Two bad landlords, and the open road" | company-town gatehouse, fixer-upper shack, signpost |
+| main line — "Deployment is not a destination" | trunk and crates, tent and campfire, locomotive, water tower |
+| depot — "Four words for traveling light" | handcar, switch stand, depot |
+| crew camp — "Who writes what" | toolbox, drafting table, boom barrier, padlocked gate post |
+| airfield — the agents section | telephone switchboard, airship, radio mast |
+| river — "Other roofs over your head" | rooftops, steamboat, lighthouse |
+| home stretch — the closing card | cottage |
+
+Each stands a fraction of the way through its section (`along` in
+`src/lib/trail-landmarks.ts`), so a section's props are spread through it at
+every screen size instead of bunching at its start.
 
 ## Night
 

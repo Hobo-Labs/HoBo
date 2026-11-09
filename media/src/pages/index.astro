@@ -1,7 +1,11 @@
 ---
 import SpritePlayer from "../components/SpritePlayer.astro";
 import ModelViewer from "../components/ModelViewer.astro";
-import { BILL_SPRITES, BO_PIXEL_SHEETS, CHARACTERS, PLATES, SCENE_PROPS, SHEETS, SPRITES, TURNAROUND } from "../data/assets";
+import { BILL_SPRITES, BO_PIXEL_SHEETS, CHARACTERS, PLATES, SCENE_PROPS, SHEETS, SPRITES, TURNAROUND,
+	CAST_SHEETS,
+	CAST_BOARDS,
+	TRAIL_PROP_BOARDS,
+} from "../data/assets";
 import { href } from "../lib/url";
 
 const title = "Bo — art department";
@@ -117,6 +121,68 @@ const description =
 			</section>
 
 			<section>
+				<h2>The cast — hobits who are not Bo</h2>
+				<p class="section-note">
+					Four new characters for the site's troupe: the travelers who turn
+					up around Bo when the page has been still a while. Generated with
+					the Higgsfield CLI (GPT Image 2.6, native transparency), reviewed,
+					and normalized by <code>media/scripts/build-trail-art.py</code> to
+					one sheet contract. These are <strong>pose sheets, not cycles</strong>
+					— the player steps through all twelve cells so each can be
+					inspected. Cells 1–3 are derived from cell 0 by moving colour only,
+					so a character can look around without its outline boiling.
+				</p>
+				<div class="grid">
+					{
+						CAST_SHEETS.map((s) => (
+							<article class="card">
+								<div class="stage">
+									<SpritePlayer sheet={s} height="9rem" />
+								</div>
+								<h3>{s.title}</h3>
+								<dl class="spec">
+									<div><dt>Poses</dt><dd>{s.frames}</dd></div>
+									<div><dt>Grid</dt><dd>{s.grid.cols}×{s.grid.rows}</dd></div>
+									<div><dt>Cell</dt><dd>{s.frame.w}×{s.frame.h}</dd></div>
+								</dl>
+								<p>{s.note}</p>
+								<a class="dl" href={href(s.file)} download>Download sheet</a>
+							</article>
+						))
+					}
+				</div>
+				<div class="stack">
+					{
+						CAST_BOARDS.map((r) => (
+							<figure class={`card${r.wide ? " wide" : ""}`}>
+								<img src={href(r.file)} alt={`${r.title}, black-and-white rubberhose character art`} loading="lazy" />
+								<figcaption><strong>{r.title}</strong> — {r.note}</figcaption>
+							</figure>
+						))
+					}
+				</div>
+			</section>
+
+			<section>
+				<h2>Trail props — the landmarks' source boards</h2>
+				<p class="section-note">
+					Eighteen props for the trail band, six to a board, each one tied to
+					a section of the landing page. Cut apart and normalized into
+					<code>site/public/parallax/landmarks/</code> by the same build.
+				</p>
+				<div class="stack">
+					{
+						TRAIL_PROP_BOARDS.map((r) => (
+							<figure class="card wide">
+								<img src={href(r.file)} alt={`${r.title}: six roadside props in ink`} loading="lazy" />
+								<figcaption><strong>{r.title}</strong> — {r.note}</figcaption>
+							</figure>
+						))
+					}
+				</div>
+			</section>
+
+			<section>
 				<h2>HoBit Bill — animations</h2>
 				<p class="section-note">
 					Generated with the Spriterrific CLI from Bill's own turnaround.
@@ -209,10 +275,10 @@ const description =
 			<section>
 				<h2>Scene props — approved</h2>
 				<p class="section-note">
-					Owner-approved, round 1. Each replaces one of the five hand-built
-					scene SVGs once it is layer-traced, rigged and animated with
-					spriterrific — the live scenes stay until their animated
-					successors are approved individually.
+					Owner-approved, round 1. The five full-width scene panels these
+					were meant to replace have been removed from the homepage
+					altogether; the drawings stand on the trail band instead, as the
+					landmarks each section arrives at.
 				</p>
 				<div class="grid">
 					{

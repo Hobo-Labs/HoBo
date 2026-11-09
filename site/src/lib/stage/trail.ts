@@ -25,7 +25,7 @@
 import { isPaused, isStill, onMotionChange, restoreMotion, setPaused } from "./motion";
 
 /** Pixels of ground per pixel of page. Under 1, as site/DESIGN.md requires. */
-const GROUND_PER_SCROLL = 0.5;
+const GROUND_PER_SCROLL = 0.85;
 /** Seconds for the world to close ~63% of the gap to the scroll position. */
 const FOLLOW = 0.14;
 /** Bo's planted foot tracks back 11px of a 554px frame, per frame. */
@@ -46,8 +46,10 @@ type LayerRef = { el: HTMLElement; speed: number; units: number; tile: number };
 type MarkRef = {
 	el: HTMLElement;
 	stop: string;
-	atUnits: number;
-	at: number;
+	/** How far through its section it stands, 0 to 1. */
+	along: number;
+	/** The scroll position at which it is beside Bo. */
+	scroll: number;
 	speed: number;
 	width: number;
 	shown: boolean;
@@ -100,8 +102,8 @@ export function mountTrail(band: HTMLElement): Trail {
 	const marks: MarkRef[] = [...band.querySelectorAll<HTMLElement>("[data-plx-stop]")].map((el) => ({
 		el,
 		stop: el.dataset.plxStop ?? "",
-		atUnits: Number(el.dataset.plxAt),
-		at: 0,
+		along: Number(el.dataset.plxAlong),
+		scroll: 0,
 		speed: Number(el.dataset.plxMarkSpeed),
 		width: 0,
 		shown: false,
@@ -143,15 +145,22 @@ export function mountTrail(band: HTMLElement): Trail {
 		boFeet = boBox.top - box.top + boBox.height * (524 / 542);
 		stride = STRIDE * boBox.width;
 		for (const layer of layers) layer.tile = layer.units * unit;
-		for (const mark of marks) {
-			mark.at = mark.atUnits * unit;
-			mark.width = mark.el.offsetWidth;
-		}
 		const line = window.innerHeight * READING_LINE;
-		const max = document.documentElement.scrollHeight - window.innerHeight;
+		const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
 		for (const stop of stops) {
 			const top = stop.el.getBoundingClientRect().top + window.scrollY;
-			stop.scroll = clamp(top - line, 0, Math.max(0, max));
+			stop.scroll = clamp(top - line, 0, max);
+		}
+		// A landmark stands a fraction of the way through its section, so it is
+		// placed between its stop and the next one — however far apart those
+		// happen to be at this width.
+		for (const mark of marks) {
+			mark.width = mark.el.offsetWidth;
+			const at = stops.findIndex((s) => s.key === mark.stop);
+			const from = stops[at];
+			if (!from) continue;
+			const to = stops[at + 1]?.scroll ?? max;
+			mark.scroll = from.scroll + Math.max(0, to - from.scroll) * mark.along;
 		}
 		return true;
 	};
@@ -170,16 +179,13 @@ export function mountTrail(band: HTMLElement): Trail {
 		walk.style.backgroundPosition = `${(col / (WALK_COLS - 1)) * 100}% ${(row / (WALK_COLS - 1)) * 100}%`;
 	};
 
-	const placeMarks = (ground: number, only?: string) => {
+	const placeMarks = (ground: number) => {
+		// "Beside Bo" is just ahead of him: he is arriving at it, not standing in it.
+		const beside = boX + stride * 46;
 		for (const mark of marks) {
-			const stop = stops.find((s) => s.key === mark.stop);
-			if (!stop) continue;
-			const centre = boX + mark.at + (stop.scroll * GROUND_PER_SCROLL - ground) * mark.speed;
+			const centre = beside + (mark.scroll * GROUND_PER_SCROLL - ground) * mark.speed;
 			const left = centre - mark.width / 2;
-			const shown =
-				only === undefined
-					? left < width + 60 && left + mark.width > -60
-					: mark.stop === only;
+			const shown = left < width + 60 && left + mark.width > -60;
 			if (shown) mark.el.style.transform = `translate3d(${left.toFixed(1)}px, 0, 0)`;
 			if (shown !== mark.shown) {
 				mark.shown = shown;
@@ -217,10 +223,10 @@ export function mountTrail(band: HTMLElement): Trail {
 		raf = 0;
 		if (!measure()) return;
 		for (const layer of layers) layer.el.style.transform = "";
-		const stop = stopFor(window.scrollY);
-		// Composed as if he had just arrived, without anything having travelled.
-		world = (stop?.scroll ?? 0) * GROUND_PER_SCROLL;
-		placeMarks(world, stop?.key);
+		// Composed for where the page is, without anything having travelled:
+		// the trail is simply in the right place whenever it is looked at.
+		world = window.scrollY * GROUND_PER_SCROLL;
+		placeMarks(world);
 		announce(window.scrollY);
 		lean = 0;
 		bo.style.setProperty("--lean", "0deg");
