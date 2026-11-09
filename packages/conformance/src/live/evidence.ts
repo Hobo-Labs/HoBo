@@ -14,10 +14,15 @@
  *    instant it stops counting, so selection can fail closed without asking
  *    anyone whether the provider has changed since.
  */
+
 import type {
 	CreatorAuthorityAfterClaim,
 	ProviderClass,
 } from "@hobo/capability-profiles";
+import {
+	JWT_DETECTOR,
+	PRIVATE_KEY_DETECTOR,
+} from "@hobo/core/provider-redaction";
 import {
 	computeEvidenceDigest,
 	DIGEST_PATTERN,
@@ -338,14 +343,16 @@ export function assertNoUpgradedUnknowns(
 
 /** Values that must never appear anywhere in an artifact. */
 const SECRET_PATTERN: readonly RegExp[] = [
-	/postgres(?:ql)?:\/\/[^\s"]*:[^\s"]*@/iu,
-	/rediss?:\/\/[^\s"]*:[^\s"]*@/iu,
-	/mysql:\/\/[^\s"]*:[^\s"]*@/iu,
-	/mongodb(?:\+srv)?:\/\/[^\s"]*:[^\s"]*@/iu,
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
+	// A connection string with credentials: the first `:` after the scheme,
+	// then the first `@` after it, so neither part scans back over the other.
+	/postgres(?:ql)?:\/\/[^\s":]*:[^\s"@]*@/iu,
+	/rediss?:\/\/[^\s":]*:[^\s"@]*@/iu,
+	/mysql:\/\/[^\s":]*:[^\s"@]*@/iu,
+	/mongodb(?:\+srv)?:\/\/[^\s":]*:[^\s"@]*@/iu,
+	PRIVATE_KEY_DETECTOR,
 	/\bBearer\s+[A-Za-z0-9._-]{8,}/iu,
 	/\b(?:sk|pk|ghp|gho|xox[abpsr])[-_][A-Za-z0-9_-]{16,}\b/u,
-	/\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/u,
+	JWT_DETECTOR,
 	/"(?:password|passwd|secret|apiKey|api_key|accessKey|access_key|token)"\s*:/iu,
 ];
 

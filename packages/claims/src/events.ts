@@ -7,6 +7,10 @@
  * identity assertions, or raw environment variables — {@link assertNoSecrets}
  * is the enforcement point, not a convention.
  */
+import {
+	JWT_DETECTOR,
+	PRIVATE_KEY_DETECTOR,
+} from "@hobo/core/provider-redaction";
 import type {
 	ClaimAtomicity,
 	ClaimBundle,
@@ -250,8 +254,8 @@ const FORBIDDEN_IN_EVENTS: readonly {
 			/\b(?:postgres(?:ql)?|mysql|rediss?|mongodb(?:\+srv)?|amqps?):\/\//iu,
 	},
 	{ label: "bearer token", pattern: /\bBearer\s+[A-Za-z0-9._-]{8,}/iu },
-	{ label: "private key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/u },
-	{ label: "jwt", pattern: /\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./u },
+	{ label: "private key", pattern: PRIVATE_KEY_DETECTOR },
+	{ label: "jwt", pattern: JWT_DETECTOR },
 	{
 		label: "api key",
 		pattern: /\b(?:sk|pk|ghp|gho|xox[abpsr])[-_][A-Za-z0-9_-]{12,}/u,
@@ -262,8 +266,12 @@ const FORBIDDEN_IN_EVENTS: readonly {
 	},
 	{
 		label: "claim url",
+		// The first `http(s)://` in a run, the first `claim`/`transfer` word after
+		// it, the first `?`/`#` after that, and a credential parameter after
+		// that: each part stops at its first occurrence, so the search is linear
+		// where `\S*` before each part was not.
 		pattern:
-			/https?:\/\/\S*\b(?:claim|transfer)\b\S*[?#]\S*(?:token|code|key)=/iu,
+			/(?<!\S)(?:(?!https?:\/\/)\S)*https?:\/\/(?:(?!\b(?:claim|transfer)\b)\S)*\b(?:claim|transfer)\b[^\s?#]*[?#](?:(?!(?:token|code|key)=)\S)*(?:token|code|key)=/iu,
 	},
 ];
 

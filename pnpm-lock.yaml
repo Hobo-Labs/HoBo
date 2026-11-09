@@ -2216,6 +2216,9 @@ importers:
       '@hobo/claims':
         specifier: workspace:*
         version: link:../claims
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
       '@hobo/trust':
         specifier: workspace:*
         version: link:../trust
