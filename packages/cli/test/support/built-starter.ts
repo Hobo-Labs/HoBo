@@ -1,5 +1,4 @@
 import { cp, mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHoboCli } from "../../src/index.js";
 import type { VALID_TEMPLATES } from "../../src/types/scaffold.js";
@@ -9,14 +8,8 @@ type Template = (typeof VALID_TEMPLATES)[number];
 
 const built = new Map<Template, Promise<string>>();
 
-async function build(template: Template): Promise<string> {
-	// The run's scratch directory (test/support/run-scratch.ts) is removed when the run ends.
-	const root = await mkdtemp(
-		join(
-			process.env[RUN_SCRATCH_ENV] ?? tmpdir(),
-			`hobo-built-starter-${template}-`,
-		),
-	);
+/** `hobo new` → `codegen` → `build` of `template` in `root`; returns the project. */
+async function build(template: Template, root: string): Promise<string> {
 	const cli = createHoboCli();
 	const steps = [
 		{ cwd: root, args: ["new", "app", "-t", template, "--json"] },
@@ -34,19 +27,27 @@ async function build(template: Template): Promise<string> {
 }
 
 /**
- * A starter after `hobo new` → `codegen` → `build`, copied into `dir`.
+ * A starter after `hobo new` → `codegen` → `build`, in `dir`.
  *
- * Each template is built once per worker (test files share the module graph,
- * `isolate: false`), so every file that needs a built starter pays for one
- * pipeline. The copy is the caller's to change and remove.
+ * Under the cli config each template is built once per worker in the run's
+ * scratch directory (test/support/run-scratch.ts, removed when the run ends)
+ * and copied to each caller: test files share the module graph
+ * (`isolate: false`), so every file that needs a built starter pays for one
+ * pipeline. Without that directory (another config), nothing outlives the
+ * caller, so the starter is built straight into `dir`. Either way the result
+ * is the caller's to change and remove.
  */
 export async function copyBuiltStarter(
 	template: Template,
 	dir: string,
 ): Promise<string> {
+	const scratch = process.env[RUN_SCRATCH_ENV];
+	if (!scratch) return await build(template, dir);
 	let pending = built.get(template);
 	if (!pending) {
-		pending = build(template);
+		pending = mkdtemp(join(scratch, `hobo-built-starter-${template}-`)).then(
+			(root) => build(template, root),
+		);
 		built.set(template, pending);
 		// A failed build is reported to every caller, and retried by the next file.
 		pending.catch(() => built.delete(template));
