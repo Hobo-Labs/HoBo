@@ -43,10 +43,13 @@ export default defineConfig({
 					// Each file re-imported the @hobo/* graph (about 0.5 s apiece);
 					// sharing the worker's module graph imports it once. The global
 					// state tests touch (environment, timers, PATH) is restored in
-					// their own `finally` blocks or test hooks.
+					// their own `finally` blocks or test hooks, and a file that leaves
+					// a timer, server or process running fails
+					// (test/setup/no-leaked-handles.ts).
 					isolate: false,
 					include: ["test/**/*.test.ts", "contracts/**/*.test.ts"],
 					exclude: ISOLATED,
+					setupFiles: [setup("no-leaked-handles.ts")],
 				},
 			},
 		],
