@@ -6,7 +6,10 @@ protobuf→TypeScript codegen via `buf` + `protoc-gen-es`, CUE constraint vettin
 
 Promotes patterns from `hobo-codegen-cli-contract`, `domain-event-body-contract`, and
 `control-plane-event-schema-contract`. Production promotion target: `packages/schema-tools/`
-once S0-01/S0-03 land on `main`.
+once S0-01/S0-03 land on `main`. Promoted; this copy is `frozen` in
+`scripts/promotions.json`: production is canonical, and this suite's json-envelope
+check is scoped to this POC tree because the frozen generator predates production's
+`import_extension=js` — the promoted suite owns the whole-repo assertion.
 
 ## Layout
 
