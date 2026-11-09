@@ -74,12 +74,11 @@ describe("required runtimes + broker hard-fail", () => {
 				};
 			},
 		});
-		// Past the runtime check, placement reaches yard-first matching. A fresh
-		// HOBO_HOME seeds only a local-provider yard, and an oci bindle asks for
-		// @hobo/provider-oci, so the refusal is the yard inventory's.
-		expect(placement.outcome).toBe("rejected");
+		// Past the runtime check, whatever placement then decides. Today a fresh
+		// HOBO_HOME seeds only a local-provider yard, so an oci bindle (which asks
+		// for @hobo/provider-oci) is refused for the yard inventory; that is
+		// placement's to change, and this case does not pin it.
 		expect(placement.message).not.toMatch(/not installed/i);
-		expect(placement.message).toMatch(/no compatible ready yard/i);
 		expect(placement.requiredRuntimes).toEqual(["oci"]);
 		// First placement equips the isolated wasm toolchain into the throwaway
 		// HOBO_HOME, beyond the 10s default when it has to download.
