@@ -242,14 +242,17 @@ still deploy to, does not fail: it creates a second project of that name there
 and deploys to it. Set `teamId` (`createVercelClient({ token, teamId })`, or the
 helper's `teamId`) for a project that lives in a team. `selectIacProvider`, and
 so `hobo up`'s Vercel resolver plane, reads it from `VERCEL_TEAM_ID`, beside
-`VERCEL_TOKEN`, as given, else from `VERCEL_ORG_ID`, the Vercel CLI's name for
+`VERCEL_TOKEN`, else from `VERCEL_ORG_ID`, the Vercel CLI's name for
 it, when that is a team id. The CLI writes a personal account's id
 there too, and the Vercel CLI treats an `orgId` that starts with `team_` as a
 team and any other as the user (its `getOrgById`, in
 `packages/cli/src/util/projects/get-org-by-id.ts` of vercel/vercel); so does
 this, and a `VERCEL_ORG_ID` that does not start with `team_` is taken as no
 team. A bare `team_`, with nothing after it, names neither, and is refused
-before anything is sent, with an error that names `VERCEL_ORG_ID`. Every entry
+before anything is sent, with an error that names `VERCEL_ORG_ID`. So is a
+`VERCEL_TEAM_ID` that is not a canonical `team_…` id — a slug or a name: the
+resolvers compare it with the canonical `accountId` Vercel returns, so a slug
+would read as a different team on every later read, after a create succeeded. Every entry
 point (`createVercelClient` and `createVercelDeployProvider` too) takes a team
 id trimmed, and takes an empty or blank one as none: with none, the deploy and
 any create are in the token's own scope. The resolver plane's project lookups

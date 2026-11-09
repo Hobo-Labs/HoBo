@@ -228,6 +228,14 @@ function normalizeUrl(raw: JsonValue | undefined): string {
 // each cut at this many characters, and a `…` marks the cut.
 const REFUSAL_TEXT_LIMIT = 500;
 
+// The most of a refusal body `failure` parses and searches. The transport
+// owns how much body it hands over (`response.text()`), but nothing past
+// this is JSON-parsed, token-walked, or written back out, so a hostile
+// endpoint cannot make the error path walk an unbounded body; the shown
+// text is cut to REFUSAL_TEXT_LIMIT either way. The bound sits above the
+// megabyte bodies the hostile-text tests prove stay linear.
+const REFUSAL_BODY_LIMIT = 4_194_304;
+
 // The part of `bytes`' base64 that depends on `bytes` alone, wherever in a
 // longer value they sit: at each of the three alignments, the whole groups of
 // four that hold only their bits (which covers `Bearer token` too).
@@ -242,7 +250,9 @@ function alignedBase64(bytes: Buffer): string[] {
 // The client's own token as the strings a response body can echo it as: the
 // token, and its base64 (whole, as a Basic header's `:token`, and the part of
 // a longer base64 that depends on the token alone), the base64 of that base64,
-// and the base64 of its percent-encoding (`%XX`, either case). How each of
+// and the base64 of its percent-encoding (`%XX`, either case) — each also in
+// base64url (`-`/`_` for `+`/`/`, padding dropped), since a body that echoes
+// the token as a JWT segment or a URL part uses that alphabet. How each of
 // their characters can be written (escaped, percent-encoded, an HTML
 // reference) is `charPattern`'s, not a form of its own. Longest first, so a
 // whole form goes before a part of it; a derived piece shorter than four
@@ -253,7 +263,9 @@ function tokenForms(token: string): readonly string[] {
 		.map((byte) => `%${byte.toString(16).padStart(2, "0")}`)
 		.join("");
 	const base64 = (text: string) => Buffer.from(text, "utf8").toString("base64");
-	const derived = [
+	const base64url = (form: string) =>
+		form.replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+	const standard = [
 		bytes.toString("base64"),
 		base64(`:${token}`),
 		...alignedBase64(bytes),
@@ -261,6 +273,7 @@ function tokenForms(token: string): readonly string[] {
 		base64(percent),
 		base64(percent.toUpperCase()),
 	];
+	const derived = [...standard, ...standard.map(base64url)];
 	const forms = new Set([token, ...derived.filter((form) => form.length >= 4)]);
 	return [...forms].sort((a, b) => b.length - a.length);
 }
@@ -633,7 +646,11 @@ async function failure(
 	response: VercelFetchResponse,
 	secrets: TokenSearch,
 ): Promise<VercelApiError> {
-	const detail = await response.text().catch(() => "");
+	const rawDetail = await response.text().catch(() => "");
+	const detail =
+		rawDetail.length > REFUSAL_BODY_LIMIT
+			? rawDetail.slice(0, REFUSAL_BODY_LIMIT)
+			: rawDetail;
 	// Parsed once, and the token taken out of it once: `code`, `apiMessage` and
 	// `message` are each read from that.
 	const parsed = parseJsonValue(detail);
@@ -786,10 +803,7 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 			deploymentPath(deploymentId),
 		);
 		if (response.status === 404) return undefined;
-		if (!response.ok)
-			throw new Error(
-				`vercel-client: get deployment failed (HTTP ${response.status})`,
-			);
+		if (!response.ok) throw await failure("get deployment", response, secrets);
 		const payload = await payloadFrom("get deployment", response);
 		if (payload.id !== deploymentId)
 			throw new Error(
@@ -813,9 +827,7 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 				deploymentPath(deploymentId),
 			);
 			if (!response.ok && response.status !== 404)
-				throw new Error(
-					`vercel-client: delete deployment failed (HTTP ${response.status})`,
-				);
+				throw await failure("delete deployment", response, secrets);
 			if (await readDeployment(deploymentId))
 				throw new Error(
 					"vercel-client: deployment deletion remains unconfirmed",
@@ -842,8 +854,12 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 				};
 			}
 			const payload = await payloadFrom("create project", made);
+			if (!isJsonString(payload.id) || payload.id === "")
+				throw new VercelTransportError(
+					`vercel-client: create project answered HTTP ${made.status} without a project id, so no creation is reported`,
+				);
 			return {
-				id: isJsonString(payload.id) ? payload.id : "",
+				id: payload.id,
 				name: isJsonString(payload.name) ? payload.name : name,
 				created: true,
 			};

@@ -74,9 +74,10 @@ const CREDENTIAL_PATTERNS: readonly RegExp[] = [
 	// Vercel claim/transfer codes are bearer authority on this path.
 	/\bcode\s*[=:]\s*[A-Za-z0-9-]{8,}/giu,
 	/\b(?:sk|pk)[-_][A-Za-z0-9_-]{8,}/giu,
-	// A JWT starts only where a run of base64url characters starts, so
-	// `-ey-ey-ey…` is one search, not one from every `ey` to the end.
-	/(?<![A-Za-z0-9_-])ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.\S*/giu,
+	// The JWT shape is not a regex: see redactJwts below. A hyphen is a
+	// word boundary for it (`token-eyJ…` must redact, as the old `\bey` did),
+	// and a regex that allows a start after a hyphen rescans the run from
+	// every `ey` — quadratic on `-ey-ey-ey…`.
 	// A private key, from its BEGIN line to its own END line (another END line,
 	// such as a certificate's, inside it does not end it), or to the next BEGIN
 	// line, or to the end of the text when there is neither (as when the text
@@ -118,6 +119,95 @@ function flattenControlChars(text: string): string {
 	return from === 0 ? text : out + text.slice(from);
 }
 
+function isBase64Url(code: number): boolean {
+	return (
+		(code >= 48 && code <= 57) ||
+		(code >= 65 && code <= 90) ||
+		(code >= 97 && code <= 122) ||
+		code === 45 ||
+		code === 95
+	);
+}
+
+function isWordChar(code: number): boolean {
+	return (
+		(code >= 48 && code <= 57) ||
+		(code >= 65 && code <= 90) ||
+		(code >= 97 && code <= 122) ||
+		code === 95
+	);
+}
+
+function isSpace(code: number): boolean {
+	return (
+		code <= 32 ||
+		code === 0xa0 ||
+		code === 0x1680 ||
+		(code >= 0x2000 && code <= 0x200a) ||
+		code === 0x2028 ||
+		code === 0x2029 ||
+		code === 0x202f ||
+		code === 0x205f ||
+		code === 0x3000 ||
+		code === 0xfeff
+	);
+}
+
+/**
+ * Redact JWTs (`ey<10+>.<10+>.<non-space*>`, case-insensitive head) in
+ * one linear pass. A start counts where the previous character is not a word
+ * character, so a hyphen is a boundary and `token-eyJ…` redacts. When a
+ * candidate fails, the scan resumes at the end of the segment already read:
+ * a start inside that segment shares its terminator (and its second segment),
+ * so it cannot succeed where the earlier start failed — which is what keeps
+ * `-ey-ey-ey…` linear where the equivalent regex is quadratic.
+ */
+function redactJwts(text: string): string {
+	let out = "";
+	let from = 0;
+	let index = 0;
+	const segmentEnd = (start: number): number => {
+		let end = start;
+		while (end < text.length && isBase64Url(text.charCodeAt(end))) end += 1;
+		return end;
+	};
+	while (index + 1 < text.length) {
+		const head = text.charCodeAt(index) | 32;
+		const next = text.charCodeAt(index + 1) | 32;
+		const boundary =
+			index === 0 || !isWordChar(text.charCodeAt(index - 1));
+		if (head !== 101 || next !== 121 || !boundary) {
+			index += 1;
+			continue;
+		}
+		const firstEnd = segmentEnd(index);
+		if (
+			firstEnd - index < 12 ||
+			firstEnd >= text.length ||
+			text.charCodeAt(firstEnd) !== 46
+		) {
+			index = Math.max(firstEnd, index + 1);
+			continue;
+		}
+		const secondStart = firstEnd + 1;
+		const secondEnd = segmentEnd(secondStart);
+		if (
+			secondEnd - secondStart < 10 ||
+			secondEnd >= text.length ||
+			text.charCodeAt(secondEnd) !== 46
+		) {
+			index = Math.max(secondEnd, index + 1);
+			continue;
+		}
+		let tail = secondEnd + 1;
+		while (tail < text.length && !isSpace(text.charCodeAt(tail))) tail += 1;
+		out += `${text.slice(from, index)}[redacted]`;
+		from = tail;
+		index = tail;
+	}
+	return from === 0 ? text : out + text.slice(from);
+}
+
 /**
  * Replace anything credential-shaped with a marker and flatten control
  * characters so provider text cannot forge a log record. Only the window
@@ -128,6 +218,7 @@ export function redactProviderText(text: string, maxLength = 256): string {
 	let out = searched;
 	for (const pattern of CREDENTIAL_PATTERNS)
 		out = out.replace(pattern, "[redacted]");
+	out = redactJwts(out);
 	out = flattenControlChars(out).trim();
 	return out.length > maxLength || searched.length < text.length
 		? `${out.slice(0, maxLength)}…`

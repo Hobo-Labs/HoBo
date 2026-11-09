@@ -26,6 +26,11 @@ import {
 // project is one request, with no project call, and needs no project-read scope.
 // NO network: every request goes to a scripted transport.
 
+// Linear redaction finishes these bodies in tens of milliseconds; the
+// quadratic shapes they replaced took ten seconds or more. The bound sits
+// far above linear-under-load on shared CI runners and far below quadratic.
+const LINEAR_BOUND_MS = 5_000;
+
 type SentInit = Parameters<VercelFetch>[1];
 
 interface Sent {
@@ -739,7 +744,7 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		expect(hostile.length).toBeGreaterThanOrEqual(1_000_000);
 		expect(raw.message.length).toBeLessThanOrEqual(501);
 		expect(inJson.apiMessage?.length).toBeLessThanOrEqual(501);
-		expect(took).toBeLessThan(1000);
+		expect(took).toBeLessThan(LINEAR_BOUND_MS);
 	});
 
 	it.each([
@@ -793,7 +798,7 @@ describe("a refusal's text (scripted transport, no network)", () => {
 
 		expect(raw.message.length).toBeLessThanOrEqual(501);
 		expect(inJson.apiMessage?.length).toBeLessThanOrEqual(501);
-		expect(took).toBeLessThan(1000);
+		expect(took).toBeLessThan(LINEAR_BOUND_MS);
 	});
 
 	// A body redaction shrinks to almost nothing, so the window's end reaches
@@ -867,7 +872,7 @@ describe("a refusal's text (scripted transport, no network)", () => {
 
 		expect(body.length).toBeGreaterThanOrEqual(1_000_000);
 		expect(error.message.length).toBeLessThanOrEqual(501);
-		expect(took).toBeLessThan(1000);
+		expect(took).toBeLessThan(LINEAR_BOUND_MS);
 	});
 
 	it("still redacts the token among many short strings, as a value and a key", async () => {
@@ -1111,7 +1116,7 @@ describe("a refusal's text (scripted transport, no network)", () => {
 
 		expect(raw.message.length).toBeLessThanOrEqual(501);
 		expect(inJson.apiMessage?.length).toBeLessThanOrEqual(501);
-		expect(took).toBeLessThan(1000);
+		expect(took).toBeLessThan(LINEAR_BOUND_MS);
 	});
 
 	it.each([

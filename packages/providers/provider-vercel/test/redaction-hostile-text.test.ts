@@ -16,6 +16,11 @@ import {
 	redactProviderText,
 } from "../src/provider-errors.js";
 
+// Linear shapes finish these bodies in tens of milliseconds; the quadratic
+// shapes they replaced took ten seconds or more. The bound sits far above
+// linear-under-load on shared CI runners and far below quadratic.
+const LINEAR_BOUND_MS = 5_000;
+
 describe("redactProviderText on a hostile text", () => {
 	// A hostile body must not stall the error path: every shape is linear in
 	// the text, and only the first REDACTION_WINDOW characters, and the rest of
@@ -43,7 +48,7 @@ describe("redactProviderText on a hostile text", () => {
 
 		expect(hostile.length).toBeGreaterThanOrEqual(MB);
 		expect(redacted.length).toBeLessThanOrEqual(257);
-		expect(took).toBeLessThan(1000);
+		expect(took).toBeLessThan(LINEAR_BOUND_MS);
 	});
 
 	// The shapes themselves, with the window opened past the whole megabyte (it
@@ -62,7 +67,7 @@ describe("redactProviderText on a hostile text", () => {
 
 		expect(hostile.length).toBeLessThan(2 * MB);
 		expect(redacted.endsWith("…")).toBe(false);
-		expect(took).toBeLessThan(1000);
+		expect(took).toBeLessThan(LINEAR_BOUND_MS);
 	});
 
 	// Text the shapes shrink to almost nothing (a bearer token of 400
@@ -145,7 +150,7 @@ describe("redactProviderText on a hostile text", () => {
 		redactProviderText(hostile, 2 * MB);
 		const took = performance.now() - started;
 
-		expect(took).toBeLessThan(1000);
+		expect(took).toBeLessThan(LINEAR_BOUND_MS);
 	});
 
 	it("redacts a private key whose END is missing to the end of the text", () => {
@@ -158,10 +163,14 @@ describe("redactProviderText on a hostile text", () => {
 
 	it("still redacts a JWT that follows a space, a quote, or an equals sign", () => {
 		const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NX0.dBjftJeZ4CVPmB92K";
-		for (const before of [" ", '"', "=", ":"]) {
+		for (const before of [" ", '"', "=", ":", "-"]) {
 			expect(redactProviderText(`x${before}${jwt}`)).toBe(
 				`x${before}[redacted]`,
 			);
 		}
+		// A hyphen inside a word is still a boundary, as the old `\bey` had it.
+		expect(redactProviderText(`token-${jwt} end`)).toBe(
+			"token-[redacted] end",
+		);
 	});
 });
