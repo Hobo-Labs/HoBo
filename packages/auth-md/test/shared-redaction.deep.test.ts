@@ -9,7 +9,7 @@ import {
 	KEPT_LOCATOR,
 	redactionPattern,
 	redactMatches,
-	SHARED_SHAPES,
+	SHARED_PATTERNS,
 } from "@hobo/provider-redaction";
 import {
 	asGlobal,
@@ -33,14 +33,19 @@ import { SECRET_KEY_PATTERN, SECRET_TEXT_PATTERNS } from "../src/redaction.js";
 import { redactText as baseRedactText } from "./fixtures/base-redaction.js";
 
 /** A pattern searched the way `redactMatches` searches it, made global. */
-const searchShape: PatternSearch = (text, pattern) => {
+const searchAsRedactor: PatternSearch = (text, pattern) => {
 	redactMatches(text, [redactionPattern(asGlobal(pattern))]);
 };
+
+// Built from pieces: this package's own test refuses a committed file that
+// holds a private key's BEGIN line.
+const KEY_LINE = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");
+const END_LINE = ["-----END", "PRIVATE KEY-----"].join(" ");
 
 describe("redactText", () => {
 	it.each([
 		["-eyJ", repeatedTo("-eyJ")],
-		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
+		["BEGIN markers", repeatedTo(KEY_LINE)],
 		["short runs", repeatedTo(`${"a-".repeat(19)}. `)],
 		// A signature ending in `-`, which a trailing `\b` would refuse, after
 		// a run of `eyJ-`: each `eyJ` started the short-JWT search again.
@@ -79,12 +84,7 @@ describe("redactText against the scrubber it replaced", () => {
 	it("grows linearly on the whole sweep", { timeout: 600_000 }, () => {
 		assertSweepLinear((text) => redactText(text), {
 			alphabet: "aZ9",
-			words: [
-				"eyJ",
-				"-----BEGIN PRIVATE KEY-----",
-				"-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
-				"Bearer ",
-			],
+			words: ["eyJ", KEY_LINE, `${KEY_LINE}\nabc\n${END_LINE}`, "Bearer "],
 			// A key, a run and an END line after it: B-1 in 0462fa6c.
 			fragments: ["-----END"],
 		});
@@ -97,9 +97,9 @@ describe("each pattern on the whole sweep", () => {
 	it.each(
 		ownPatterns(
 			[...SECRET_TEXT_PATTERNS, SECRET_KEY_PATTERN],
-			SHARED_SHAPES,
+			SHARED_PATTERNS,
 		).map((pattern) => [pattern.source, pattern] as const),
 	)("/%s/ grows linearly", { timeout: 600_000 }, (_source, pattern) => {
-		assertPatternSweepLinear(pattern, searchShape);
+		assertPatternSweepLinear(pattern, searchAsRedactor);
 	});
 });

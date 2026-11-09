@@ -59,7 +59,7 @@ function timed(run: () => void): number {
 }
 
 /** A shape searched the way `redactMatches` searches it, made global. */
-const searchShape: PatternSearch = (text, pattern) => {
+const searchAsRedactor: PatternSearch = (text, pattern) => {
 	redactMatches(text, [redactionPattern(asGlobal(pattern))]);
 };
 
@@ -233,7 +233,7 @@ describe("every pattern on a hostile text", () => {
 			// classes and fragments and the words listed here.
 			assertPatternSweepLinear(
 				pattern,
-				searchShape,
+				searchAsRedactor,
 				patternSpec(pattern, SWEEP_SPECS[name]),
 			);
 		},

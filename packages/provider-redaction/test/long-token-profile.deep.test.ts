@@ -32,7 +32,7 @@ const redact = createProviderRedactor(LONG_TOKEN_RUN_PROFILE);
 const LONG = 1_000_000;
 
 /** A pattern searched the way `redactMatches` searches it, made global. */
-const searchShape: PatternSearch = (text, pattern) => {
+const searchAsRedactor: PatternSearch = (text, pattern) => {
 	redactMatches(text, [redactionPattern(asGlobal(pattern))]);
 };
 
@@ -72,7 +72,7 @@ describe("the long-token profile, deep", () => {
 		"its pattern /%s/ grows linearly on the whole sweep",
 		{ timeout: 600_000 },
 		(_source, pattern) => {
-			assertPatternSweepLinear(pattern, searchShape);
+			assertPatternSweepLinear(pattern, searchAsRedactor);
 		},
 	);
 });

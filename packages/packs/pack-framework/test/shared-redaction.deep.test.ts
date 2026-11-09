@@ -25,7 +25,7 @@ import { redactPackText } from "../src/errors.js";
 import { redactPackText as baseRedact } from "./fixtures/base-redaction.js";
 
 /** A pattern searched the way `redactMatches` searches it, made global. */
-const searchShape: PatternSearch = (text, pattern) => {
+const searchAsRedactor: PatternSearch = (text, pattern) => {
 	redactMatches(text, [redactionPattern(asGlobal(pattern))]);
 };
 
@@ -63,7 +63,7 @@ describe("the argv guard", () => {
 		"its pattern /%s/ grows linearly on the whole sweep",
 		{ timeout: 600_000 },
 		(_source, pattern) => {
-			assertPatternSweepLinear(pattern, searchShape);
+			assertPatternSweepLinear(pattern, searchAsRedactor);
 		},
 	);
 });

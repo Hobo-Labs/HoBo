@@ -190,7 +190,7 @@ describe("committed files carry no material", () => {
 	it("contains no PEM key block or JWT-shaped literal", () => {
 		const offenders = walk(packageRoot).filter((file) => {
 			// This test file necessarily names the shapes it forbids.
-			if (/redaction(?:\.deep)?\.test\.ts$/u.test(file)) return false;
+			if (file.endsWith("redaction.test.ts")) return false;
 			const contents = readFileSync(file, "utf8");
 			return (
 				/-----BEGIN[^-]*PRIVATE KEY-----/u.test(contents) ||

@@ -9,7 +9,7 @@ import {
 	KEPT_LOCATOR,
 	redactionPattern,
 	redactMatches,
-	SHARED_SHAPES,
+	SHARED_PATTERNS,
 } from "@hobo/provider-redaction";
 import {
 	asGlobal,
@@ -36,7 +36,7 @@ import {
 import { redactSecrets as baseRedactSecrets } from "./fixtures/base-redaction.js";
 
 /** A pattern searched the way `redactMatches` searches it, made global. */
-const searchShape: PatternSearch = (text, pattern) => {
+const searchAsRedactor: PatternSearch = (text, pattern) => {
 	redactMatches(text, [redactionPattern(asGlobal(pattern))]);
 };
 
@@ -97,10 +97,10 @@ describe("redactSecrets against the redactor it replaced", () => {
 // fragments (`patternFragments`), but those core shares, which core sweeps.
 describe("each pattern on the whole sweep", () => {
 	it.each(
-		ownPatterns([...SECRET_PATTERNS, OPAQUE_RUN], SHARED_SHAPES).map(
+		ownPatterns([...SECRET_PATTERNS, OPAQUE_RUN], SHARED_PATTERNS).map(
 			(pattern) => [pattern.source, pattern] as const,
 		),
 	)("/%s/ grows linearly", { timeout: 600_000 }, (_source, pattern) => {
-		assertPatternSweepLinear(pattern, searchShape);
+		assertPatternSweepLinear(pattern, searchAsRedactor);
 	});
 });

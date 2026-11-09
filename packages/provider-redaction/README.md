@@ -10,7 +10,7 @@ redaction shape runs the suites that redact, not every dependent of core.
 
 | Export | What |
 |---|---|
-| `@hobo/provider-redaction` | `redactProviderText`, `createProviderRedactor`, `redactMatches`, the shared shapes and detectors (`SHARED_SHAPES`), `LONG_TOKEN_RUN_PROFILE` (the profile of every provider whose own rule was a long token run), and `KEPT_LOCATOR`, what it keeps on purpose |
+| `@hobo/provider-redaction` | `redactProviderText`, `createProviderRedactor`, `redactMatches`, the shared shapes and detectors (`SHARED_PATTERNS`), `LONG_TOKEN_RUN_PROFILE` (the profile of every provider whose own rule was a long token run), and `KEPT_LOCATOR`, what it keeps on purpose |
 
 The harness that holds it linear and never weaker than the copies it replaced
 (`linear-time`, `linear-sweep`, `redaction-differential`) is test-only, in

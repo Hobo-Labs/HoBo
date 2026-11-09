@@ -8,7 +8,7 @@
 import {
 	redactionPattern,
 	redactMatches,
-	SHARED_SHAPES,
+	SHARED_PATTERNS,
 } from "@hobo/provider-redaction";
 import {
 	asGlobal,
@@ -32,7 +32,7 @@ import { assertNoSecrets, type ClaimEvent } from "../src/index.js";
 import { assertNoSecrets as baseAssertNoSecrets } from "./fixtures/base-guard.js";
 
 /** A pattern searched the way `redactMatches` searches it, made global. */
-const searchShape: PatternSearch = (text, pattern) => {
+const searchAsRedactor: PatternSearch = (text, pattern) => {
 	redactMatches(text, [redactionPattern(asGlobal(pattern))]);
 };
 
@@ -105,9 +105,9 @@ describe("each pattern on the whole sweep", () => {
 	it.each(
 		ownPatterns(
 			FORBIDDEN_IN_EVENTS.map((entry) => entry.pattern),
-			SHARED_SHAPES,
+			SHARED_PATTERNS,
 		).map((pattern) => [pattern.source, pattern] as const),
 	)("/%s/ grows linearly", { timeout: 600_000 }, (_source, pattern) => {
-		assertPatternSweepLinear(pattern, searchShape);
+		assertPatternSweepLinear(pattern, searchAsRedactor);
 	});
 });

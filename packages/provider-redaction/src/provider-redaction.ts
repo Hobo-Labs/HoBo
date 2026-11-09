@@ -220,10 +220,10 @@ export const LONG_TOKEN_RUN_PROFILE: ProviderRedactionProfile = Object.freeze({
 
 /**
  * Every shared shape, the patterns and the detectors: what a caller's tests
- * leave to this package's (`ownPatterns(profilePatterns(profile), SHARED_SHAPES)`
+ * leave to this package's (`ownPatterns(profilePatterns(profile), SHARED_PATTERNS)`
  * from `@hobo/redaction-test-harness/linear-sweep` is what a caller adds).
  */
-export const SHARED_SHAPES: readonly RegExp[] = Object.freeze([
+export const SHARED_PATTERNS: readonly RegExp[] = Object.freeze([
 	...CREDENTIAL_PATTERNS,
 	JWT_DETECTOR,
 	PRIVATE_KEY_DETECTOR,

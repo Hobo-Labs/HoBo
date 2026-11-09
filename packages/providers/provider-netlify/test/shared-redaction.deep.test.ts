@@ -9,7 +9,7 @@ import {
 	KEPT_LOCATOR,
 	redactionPattern,
 	redactMatches,
-	SHARED_SHAPES,
+	SHARED_PATTERNS,
 } from "@hobo/provider-redaction";
 import {
 	asGlobal,
@@ -44,7 +44,7 @@ import { scanForCredentialMaterial as baseScan } from "./fixtures/base-guard.js"
 import { redactProviderText as baseRedact } from "./fixtures/base-redaction.js";
 
 /** A pattern searched the way `redactMatches` searches it, made global. */
-const searchShape: PatternSearch = (text, pattern) => {
+const searchAsRedactor: PatternSearch = (text, pattern) => {
 	redactMatches(text, [redactionPattern(asGlobal(pattern))]);
 };
 
@@ -107,7 +107,7 @@ describe("against the redactor it replaced", () => {
 		"its pattern /%s/ grows linearly on the whole sweep",
 		{ timeout: 600_000 },
 		(_source, pattern) => {
-			assertPatternSweepLinear(pattern, searchShape);
+			assertPatternSweepLinear(pattern, searchAsRedactor);
 		},
 	);
 });
@@ -142,9 +142,9 @@ describe("each pattern on the whole sweep", () => {
 	it.each(
 		ownPatterns(
 			RECEIPT_PATTERNS.map((entry) => entry.pattern),
-			SHARED_SHAPES,
+			SHARED_PATTERNS,
 		).map((pattern) => [pattern.source, pattern] as const),
 	)("/%s/ grows linearly", { timeout: 600_000 }, (_source, pattern) => {
-		assertPatternSweepLinear(pattern, searchShape);
+		assertPatternSweepLinear(pattern, searchAsRedactor);
 	});
 });

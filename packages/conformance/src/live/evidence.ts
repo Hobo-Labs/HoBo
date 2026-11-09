@@ -345,7 +345,7 @@ export function assertNoUpgradedUnknowns(
  * The same shape as `@hobo/provider-redaction`'s JWT_DETECTOR, kept here so the
  * conformance evidence gate does not depend on the redaction package.
  */
-const JWT_SHAPE =
+const JWT_COMPACT_SERIALIZATION =
 	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{10,}\.)(?:[A-Za-z0-9_]*-)*?ey[A-Za-z0-9_-]{10,}\./u;
 
 /** A private key's BEGIN line, any label up to the next `-`. */
@@ -369,7 +369,7 @@ export const SECRET_PATTERN: readonly RegExp[] = [
 	PRIVATE_KEY_LINE,
 	/\bBearer\s+[\u017F\u212AA-Za-z0-9._-]{8,}/i,
 	/\b(?:sk|pk|ghp|gho|xox[abpsr])[-_][A-Za-z0-9_-]{16,}\b/u,
-	JWT_SHAPE,
+	JWT_COMPACT_SERIALIZATION,
 	/"(?:password|passwd|secret|apiKey|api_key|accessKey|access_key|token)"\s*:/i,
 ];
 

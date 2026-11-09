@@ -486,10 +486,7 @@ export function patternWords(pattern: RegExp): readonly string[] {
  * names (`\\d` is `0`, `\\s` a space), and where it ends. `literal` says
  * whether it is one character, rather than a class.
  */
-function escapeAt(
-	source: string,
-	at: number,
-): { readonly char: string; readonly literal: boolean; readonly end: number } {
+function escapeAt(source: string, at: number): Escape {
 	const next = source.charAt(at + 1);
 	if (next === "u" && source[at + 2] === "{") {
 		const close = source.indexOf("}", at);
@@ -507,21 +504,39 @@ function escapeAt(
 	}
 	if (next === "p" || next === "P")
 		return { char: "a", literal: false, end: source.indexOf("}", at) };
-	const classes: Record<string, string> = {
-		d: "0",
-		D: "a",
-		w: "a",
-		W: " ",
-		s: " ",
-		S: "a",
-		b: "",
-		B: "",
-	};
-	const named = classes[next];
+	const named = CLASS_ESCAPES.get(next);
 	if (named !== undefined) return { char: named, literal: false, end: at + 1 };
-	const control: Record<string, string> = { n: "\n", t: "\t", r: "\r" };
-	return { char: control[next] ?? next, literal: true, end: at + 1 };
+	return {
+		char: CONTROL_ESCAPES.get(next) ?? next,
+		literal: true,
+		end: at + 1,
+	};
 }
+
+/** A regular expression escape, read: what it stands for and where it ends. */
+type Escape = {
+	readonly char: string;
+	readonly literal: boolean;
+	readonly end: number;
+};
+
+/** A representative of each class escape (`\\b` and `\\B` read nothing). */
+const CLASS_ESCAPES = new Map([
+	["d", "0"],
+	["D", "a"],
+	["w", "a"],
+	["W", " "],
+	["s", " "],
+	["S", "a"],
+	["b", ""],
+	["B", ""],
+]);
+
+const CONTROL_ESCAPES = new Map([
+	["n", "\n"],
+	["t", "\t"],
+	["r", "\r"],
+]);
 
 /**
  * Where a character class that starts at `from` ends: the index of its `]`.
