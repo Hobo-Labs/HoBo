@@ -1,0 +1,153 @@
+{
+ "run": "trail-cast-r1",
+ "jobs": [
+  {
+   "name": "tuck-grok",
+   "model": "xai/grok-imagine-image-2.0",
+   "prompt": "1930s rubberhose cartoon in the Fleischer Studios and Steamboat Willie tradition. Crisp, bold, confident black ink linework with flat pure-white fills. Strictly two inks, black and white: no grey tones, no shading, no gradients, no halftone, no texture. The entire background is one flat, solid, perfectly uniform bright green (#00FF00) with nothing else on it: no ground line, no ground shadow, no cast shadows, no motion lines, no dust puffs, no text, no letters, no labels, no numbers, no border, no frame, no watermark. Nothing in the drawing itself is green. The attached reference image shows an existing character from this cartoon world, on the same green background. Match its ink style, line weight, fur rendering and eye style exactly, but draw the new character described here, not the one in the reference. Do not draw a bindle or a stick. The character is a 'hobit': a small soot-sprite hobo creature from the same world as the reference character, but clearly a different individual. Face: two large white oval eyes, each with a round black pupil carrying one tiny white highlight; the two eyes sit side by side with a clear gap between them; no mouth, no nose, no eyebrows. Limbs: thin simple black rubber-hose arms and legs with no elbows or knees, round white cartoon gloves, small rounded black shoes. Body: a dense, solid-black shaggy fur ball with an irregular pointed fur silhouette and a few longer tufts on top. He is round and stout. His signature is a battered white bowler hat with a black hat band and one stitched patch, worn tilted on top of his fur. He carries nothing. A character pose sheet showing this SAME character eight times in a tidy grid of four columns and two rows, evenly spaced with generous empty green space between poses, every pose fully visible, nothing overlapping, nothing cropped, all eight drawn at exactly the same scale with identical proportions, identical outfit, identical eyes. Arms and legs never touch the body or each other in a way that closes a loop. Top row, left to right: (1) standing facing the viewer, arms relaxed and slightly away from the sides, neutral, looking straight ahead; (2) standing facing the viewer, one arm raised high waving hello; (3) startled, jumping straight up, eyes wide, arms and legs flung out; (4) sitting on the ground facing the viewer, dozing, eyes closed as two small downward curves, slumped and relaxed. Bottom row, left to right, all four in side view, facing and moving toward the right: (5) mid-walk, front leg stretched forward and back leg stretched behind; (6) mid-walk, both legs together directly under the body, body slightly higher; (7) mid-walk, legs apart again with the opposite leg forward; (8) a frantic cartoon run toward the right, body leaning far forward, legs stretched wide apart in mid-stride, arms pumping. ",
+   "refs": [
+    "media/runs/trail-cast-r1/refs/style-bo-green.png"
+   ],
+   "params": {
+    "resolution": "2k",
+    "aspect_ratio": "16:9",
+    "quality": "medium"
+   }
+  },
+  {
+   "name": "tuck-qwen",
+   "model": "alibaba/qwen-image-3/edit",
+   "prompt": "1930s rubberhose cartoon in the Fleischer Studios and Steamboat Willie tradition. Crisp, bold, confident black ink linework with flat pure-white fills. Strictly two inks, black and white: no grey tones, no shading, no gradients, no halftone, no texture. The entire background is one flat, solid, perfectly uniform bright green (#00FF00) with nothing else on it: no ground line, no ground shadow, no cast shadows, no motion lines, no dust puffs, no text, no letters, no labels, no numbers, no border, no frame, no watermark. Nothing in the drawing itself is green. The attached reference image shows an existing character from this cartoon world, on the same green background. Match its ink style, line weight, fur rendering and eye style exactly, but draw the new character described here, not the one in the reference. Do not draw a bindle or a stick. The character is a 'hobit': a small soot-sprite hobo creature from the same world as the reference character, but clearly a different individual. Face: two large white oval eyes, each with a round black pupil carrying one tiny white highlight; the two eyes sit side by side with a clear gap between them; no mouth, no nose, no eyebrows. Limbs: thin simple black rubber-hose arms and legs with no elbows or knees, round white cartoon gloves, small rounded black shoes. Body: a dense, solid-black shaggy fur ball with an irregular pointed fur silhouette and a few longer tufts on top. He is round and stout. His signature is a battered white bowler hat with a black hat band and one stitched patch, worn tilted on top of his fur. He carries nothing. A character pose sheet showing this SAME character eight times in a tidy grid of four columns and two rows, evenly spaced with generous empty green space between poses, every pose fully visible, nothing overlapping, nothing cropped, all eight drawn at exactly the same scale with identical proportions, identical outfit, identical eyes. Arms and legs never touch the body or each other in a way that closes a loop. Top row, left to right: (1) standing facing the viewer, arms relaxed and slightly away from the sides, neutral, looking straight ahead; (2) standing facing the viewer, one arm raised high waving hello; (3) startled, jumping straight up, eyes wide, arms and legs flung out; (4) sitting on the ground facing the viewer, dozing, eyes closed as two small downward curves, slumped and relaxed. Bottom row, left to right, all four in side view, facing and moving toward the right: (5) mid-walk, front leg stretched forward and back leg stretched behind; (6) mid-walk, both legs together directly under the body, body slightly higher; (7) mid-walk, legs apart again with the opposite leg forward; (8) a frantic cartoon run toward the right, body leaning far forward, legs stretched wide apart in mid-stride, arms pumping. ",
+   "refs": [
+    "media/runs/trail-cast-r1/refs/style-bo-green.png"
+   ],
+   "params": {
+    "resolution": "2k",
+    "aspect_ratio": "16:9",
+    "prompt_extend": true,
+    "enable_thinking": true
+   }
+  },
+  {
+   "name": "tuck-ideogram",
+   "model": "ideogram/v4.0",
+   "prompt": "1930s rubberhose cartoon, Fleischer / Steamboat Willie ink style. Bold black ink linework, flat pure-white fills, strictly black and white: no grey, shading, gradients or texture. Background: one flat solid bright green (#00FF00), nothing else: no ground line, shadows, motion lines, text, labels, numbers, border or frame. Character pose sheet: the SAME character eight times in a tidy 4x2 grid, evenly spaced, nothing overlapping or cropped, identical scale and design in every pose. The character is a small soot-sprite hobo creature: a round, dense, solid-black shaggy fur ball with a pointed fur silhouette; two large white oval eyes with round black pupils and tiny highlights, side by side with a gap between them; no mouth or nose; thin black rubber-hose arms and legs without elbows or knees; round white cartoon gloves; small black shoes; a battered white bowler hat with a black band and one stitched patch, tilted on his head. Limbs never close a loop against the body. Top row: (1) standing facing viewer, arms slightly out, neutral; (2) facing viewer, one arm raised waving; (3) startled jump, eyes wide, limbs flung out; (4) sitting dozing, eyes closed as two small curves. Bottom row, side view moving right: (5) walking, legs stretched apart; (6) walking, legs together under the body; (7) walking, opposite leg forward; (8) frantic run leaning far forward, legs wide, arms pumping.",
+   "refs": [
+    "media/runs/trail-cast-r1/refs/style-bo-green.png"
+   ],
+   "ref_param": "image_url",
+   "params": {
+    "aspect_ratio": "16:9",
+    "rendering_speed": "QUALITY",
+    "image_weight": 35
+   }
+  },
+  {
+   "name": "tuck-recraft",
+   "model": "recraft/v4.1/pro/text-to-image",
+   "prompt": "1930s rubberhose cartoon in the Fleischer Studios and Steamboat Willie tradition. Crisp, bold, confident black ink linework with flat pure-white fills. Strictly two inks, black and white: no grey tones, no shading, no gradients, no halftone, no texture. The entire background is one flat, solid, perfectly uniform bright green (#00FF00) with nothing else on it: no ground line, no ground shadow, no cast shadows, no motion lines, no dust puffs, no text, no letters, no labels, no numbers, no border, no frame, no watermark. Nothing in the drawing itself is green. Do not draw a bindle or a stick. The character is a 'hobit': a small soot-sprite hobo creature from the same world as the reference character, but clearly a different individual. Face: two large white oval eyes, each with a round black pupil carrying one tiny white highlight; the two eyes sit side by side with a clear gap between them; no mouth, no nose, no eyebrows. Limbs: thin simple black rubber-hose arms and legs with no elbows or knees, round white cartoon gloves, small rounded black shoes. Body: a dense, solid-black shaggy fur ball with an irregular pointed fur silhouette and a few longer tufts on top. He is round and stout. His signature is a battered white bowler hat with a black hat band and one stitched patch, worn tilted on top of his fur. He carries nothing. A character pose sheet showing this SAME character eight times in a tidy grid of four columns and two rows, evenly spaced with generous empty green space between poses, every pose fully visible, nothing overlapping, nothing cropped, all eight drawn at exactly the same scale with identical proportions, identical outfit, identical eyes. Arms and legs never touch the body or each other in a way that closes a loop. Top row, left to right: (1) standing facing the viewer, arms relaxed and slightly away from the sides, neutral, looking straight ahead; (2) standing facing the viewer, one arm raised high waving hello; (3) startled, jumping straight up, eyes wide, arms and legs flung out; (4) sitting on the ground facing the viewer, dozing, eyes closed as two small downward curves, slumped and relaxed. Bottom row, left to right, all four in side view, facing and moving toward the right: (5) mid-walk, front leg stretched forward and back leg stretched behind; (6) mid-walk, both legs together directly under the body, body slightly higher; (7) mid-walk, legs apart again with the opposite leg forward; (8) a frantic cartoon run toward the right, body leaning far forward, legs stretched wide apart in mid-stride, arms pumping. ",
+   "params": {
+    "resolution": "2k",
+    "aspect_ratio": "16:9",
+    "output_format": "png",
+    "colors": [
+     {
+      "rgb": [
+       0,
+       0,
+       0
+      ]
+     },
+     {
+      "rgb": [
+       255,
+       255,
+       255
+      ]
+     }
+    ],
+    "background_color": {
+     "rgb": [
+      0,
+      255,
+      0
+     ]
+    }
+   }
+  },
+  {
+   "name": "props-a-grok",
+   "model": "xai/grok-imagine-image-2.0",
+   "prompt": "1930s rubberhose cartoon in the Fleischer Studios and Steamboat Willie tradition. Crisp, bold, confident black ink linework with flat pure-white fills. Strictly two inks, black and white: no grey tones, no shading, no gradients, no halftone, no texture. The entire background is one flat, solid, perfectly uniform bright green (#00FF00) with nothing else on it: no ground line, no ground shadow, no cast shadows, no motion lines, no dust puffs, no text, no letters, no labels, no numbers, no border, no frame, no watermark. Nothing in the drawing itself is green. The attached reference image shows existing props from this cartoon world (an airship, a wooden hut, a signpost, a steamboat, a locomotive) on the same green background. Match their ink style, line weight, level of detail and friendly rubberhose character exactly, but draw the six new props described here. Each prop is a self-contained object drawn in three-quarter view, standing on its own, with at most a small tuft of grass at its base. Black ink outlines of varying weight, clean white fills, a few solid black accents, and only light line hatching for wood grain, bricks and shingles. All signs and boards are blank. A prop sheet of six separate roadside cartoon props in a tidy grid of three columns and two rows, evenly spaced with generous empty green space between them, every prop fully visible, nothing overlapping, nothing cropped. Top row, left to right: (1) a rounded stone mile marker with a hobo bindle (a stick with a tied cloth bundle) leaning against it; (2) a grim brick factory gatehouse with a tall smoking chimney and a wrought-iron arch gate, the entrance to a company town; (3) a ramshackle fixer-upper shack with crooked boards, a patched sagging roof, a bent stovepipe, and a ladder leaning against it. Bottom row, left to right: (4) a battered steamer trunk with two wooden crates stacked beside it and a coil of rope on top; (5) a canvas hobo tent with a small campfire and a tin kettle hanging from a tripod of sticks; (6) a wooden railroad water tower on timber stilts with a hanging spout. ",
+   "refs": [
+    "media/runs/trail-cast-r1/refs/style-props-green.png"
+   ],
+   "params": {
+    "resolution": "2k",
+    "aspect_ratio": "16:9",
+    "quality": "medium"
+   }
+  },
+  {
+   "name": "props-a-qwen",
+   "model": "alibaba/qwen-image-3/edit",
+   "prompt": "1930s rubberhose cartoon in the Fleischer Studios and Steamboat Willie tradition. Crisp, bold, confident black ink linework with flat pure-white fills. Strictly two inks, black and white: no grey tones, no shading, no gradients, no halftone, no texture. The entire background is one flat, solid, perfectly uniform bright green (#00FF00) with nothing else on it: no ground line, no ground shadow, no cast shadows, no motion lines, no dust puffs, no text, no letters, no labels, no numbers, no border, no frame, no watermark. Nothing in the drawing itself is green. The attached reference image shows existing props from this cartoon world (an airship, a wooden hut, a signpost, a steamboat, a locomotive) on the same green background. Match their ink style, line weight, level of detail and friendly rubberhose character exactly, but draw the six new props described here. Each prop is a self-contained object drawn in three-quarter view, standing on its own, with at most a small tuft of grass at its base. Black ink outlines of varying weight, clean white fills, a few solid black accents, and only light line hatching for wood grain, bricks and shingles. All signs and boards are blank. A prop sheet of six separate roadside cartoon props in a tidy grid of three columns and two rows, evenly spaced with generous empty green space between them, every prop fully visible, nothing overlapping, nothing cropped. Top row, left to right: (1) a rounded stone mile marker with a hobo bindle (a stick with a tied cloth bundle) leaning against it; (2) a grim brick factory gatehouse with a tall smoking chimney and a wrought-iron arch gate, the entrance to a company town; (3) a ramshackle fixer-upper shack with crooked boards, a patched sagging roof, a bent stovepipe, and a ladder leaning against it. Bottom row, left to right: (4) a battered steamer trunk with two wooden crates stacked beside it and a coil of rope on top; (5) a canvas hobo tent with a small campfire and a tin kettle hanging from a tripod of sticks; (6) a wooden railroad water tower on timber stilts with a hanging spout. ",
+   "refs": [
+    "media/runs/trail-cast-r1/refs/style-props-green.png"
+   ],
+   "params": {
+    "resolution": "2k",
+    "aspect_ratio": "16:9",
+    "prompt_extend": true,
+    "enable_thinking": true
+   }
+  },
+  {
+   "name": "props-a-ideogram",
+   "model": "ideogram/v4.0",
+   "prompt": "1930s rubberhose cartoon, Fleischer / Steamboat Willie ink style. Bold black ink linework, flat pure-white fills, strictly black and white: no grey, shading, gradients or texture. Background: one flat solid bright green (#00FF00), nothing else: no ground line, shadows, motion lines, text, labels, numbers, border or frame. Prop sheet: six separate roadside cartoon props in a tidy 3x2 grid, evenly spaced, nothing overlapping or cropped, each a self-contained object in three-quarter view with at most a tuft of grass at its base. Ink outlines of varying weight, white fills, a few solid black accents, light hatching for wood, brick and shingles. All signs blank. Top row: (1) a rounded stone mile marker with a hobo bindle (stick and tied cloth bundle) leaning on it; (2) a grim brick factory gatehouse with a tall smoking chimney and a wrought-iron arch gate; (3) a ramshackle shack with crooked boards, patched sagging roof, bent stovepipe and a ladder leaning on it. Bottom row: (4) a battered steamer trunk with two stacked wooden crates and a coil of rope; (5) a canvas hobo tent with a small campfire and a tin kettle on a tripod of sticks; (6) a wooden railroad water tower on timber stilts with a hanging spout.",
+   "refs": [
+    "media/runs/trail-cast-r1/refs/style-props-green.png"
+   ],
+   "ref_param": "image_url",
+   "params": {
+    "aspect_ratio": "16:9",
+    "rendering_speed": "QUALITY",
+    "image_weight": 35
+   }
+  },
+  {
+   "name": "props-a-recraft",
+   "model": "recraft/v4.1/pro/text-to-image",
+   "prompt": "1930s rubberhose cartoon in the Fleischer Studios and Steamboat Willie tradition. Crisp, bold, confident black ink linework with flat pure-white fills. Strictly two inks, black and white: no grey tones, no shading, no gradients, no halftone, no texture. The entire background is one flat, solid, perfectly uniform bright green (#00FF00) with nothing else on it: no ground line, no ground shadow, no cast shadows, no motion lines, no dust puffs, no text, no letters, no labels, no numbers, no border, no frame, no watermark. Nothing in the drawing itself is green. Each prop is a self-contained object drawn in three-quarter view, standing on its own, with at most a small tuft of grass at its base. Black ink outlines of varying weight, clean white fills, a few solid black accents, and only light line hatching for wood grain, bricks and shingles. All signs and boards are blank. A prop sheet of six separate roadside cartoon props in a tidy grid of three columns and two rows, evenly spaced with generous empty green space between them, every prop fully visible, nothing overlapping, nothing cropped. Top row, left to right: (1) a rounded stone mile marker with a hobo bindle (a stick with a tied cloth bundle) leaning against it; (2) a grim brick factory gatehouse with a tall smoking chimney and a wrought-iron arch gate, the entrance to a company town; (3) a ramshackle fixer-upper shack with crooked boards, a patched sagging roof, a bent stovepipe, and a ladder leaning against it. Bottom row, left to right: (4) a battered steamer trunk with two wooden crates stacked beside it and a coil of rope on top; (5) a canvas hobo tent with a small campfire and a tin kettle hanging from a tripod of sticks; (6) a wooden railroad water tower on timber stilts with a hanging spout. ",
+   "params": {
+    "resolution": "2k",
+    "aspect_ratio": "16:9",
+    "output_format": "png",
+    "colors": [
+     {
+      "rgb": [
+       0,
+       0,
+       0
+      ]
+     },
+     {
+      "rgb": [
+       255,
+       255,
+       255
+      ]
+     }
+    ],
+    "background_color": {
+     "rgb": [
+      0,
+      255,
+      0
+     ]
+    }
+   }
+  }
+ ]
+}

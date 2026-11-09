@@ -23,6 +23,8 @@ A job file is `{"run": "<run-id>", "jobs": [{...}]}`, each job:
     model         endpoint id, e.g. "xai/grok-imagine-image-2.0"
     prompt        the prompt, verbatim
     refs          optional local image paths, uploaded and passed as image_urls
+    ref_param     the body field refs go in, when it is not `image_urls`
+                  (a name without a trailing "s" takes the first ref only)
     params        optional extra body fields (resolution, aspect_ratio, ...)
 
 Jobs whose output already exists are skipped, so a run can be resumed or
@@ -96,7 +98,10 @@ def body_for(job: dict) -> dict:
 	body = {"prompt": job["prompt"], **job.get("params", {})}
 	refs = [ROOT / r for r in job.get("refs", [])]
 	if refs:
-		body["image_urls"] = [upload(r) for r in refs]
+		# Most models take a list under `image_urls`; a few take one `image_url`.
+		field = job.get("ref_param", "image_urls")
+		urls = [upload(r) for r in refs]
+		body[field] = urls if field.endswith("s") else urls[0]
 	return body
 
 
@@ -153,7 +158,9 @@ def main() -> None:
 			# so nothing is uploaded just to ask what it would cost.
 			body = {"prompt": job["prompt"], **job.get("params", {})}
 			if job.get("refs"):
-				body["image_urls"] = ["https://example.com/ref.png"] * len(job["refs"])
+				field = job.get("ref_param", "image_urls")
+				stand_in = ["https://example.com/ref.png"] * len(job["refs"])
+				body[field] = stand_in if field.endswith("s") else stand_in[0]
 			est = _call("POST", f"{API}/estimate/{job['model']}", body)
 			total += float(est["usd"])
 			print(f"{job['name']}: ${est['usd']}")
