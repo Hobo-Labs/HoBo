@@ -2,7 +2,7 @@ name: HoBo Examples E2E
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feature/hobo-code]
     types: [labeled]
   schedule:
     - cron: "17 3 * * 1"
