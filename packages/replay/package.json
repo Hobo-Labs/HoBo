@@ -20,6 +20,7 @@
 	"dependencies": {},
 	"devDependencies": {
 		"@hobo/contract-harness": "workspace:*",
+		"@hobo/core": "workspace:*",
 		"@types/node": "^22.15.29",
 		"typescript": "^6.0.3",
 		"vitest": "^4.1.9"

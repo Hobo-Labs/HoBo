@@ -2254,6 +2254,9 @@ importers:
       '@hobo/contract-harness':
         specifier: workspace:*
         version: link:../contract-harness
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0

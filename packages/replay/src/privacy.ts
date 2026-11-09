@@ -2,6 +2,7 @@
  * Client-side privacy masking before any network send or local persistence.
  * Default masks: password / email / tel inputs + configurable selectors.
  */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type -- SAFETY: these walkers take whatever rrweb event or debug payload a recorder hands them, the one place this package reads values nobody has parsed, and must look at each one's representation to mask it before it is sent or kept. */
 import {
 	defaultPrivacyPolicy,
 	type PrivacyPolicy,
@@ -92,13 +93,21 @@ const SENSITIVE_DEBUG_KEY =
 	/^(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[_-]?key|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|private[_-]?key|credentials?)$/i;
 const HIDDEN_REASONING_KEY =
 	/^(?:reasoning|chain[_-]?of[_-]?thought|hidden[_-]?reasoning|thoughts)$/i;
+// Each alternative starts once per run it reads. The JWT one starts where a run
+// of base64url characters starts and finds the first `eyJ` in it, the URL one at
+// the first letter of a scheme run, and the assignment one checks for the key
+// name in one look-ahead: the forms they replace started again at every `eyJ`,
+// at every letter, and at every place a key name could end, each reading to the
+// end of the run, so a long hostile string took quadratic time to test. Each
+// accepts exactly the strings its old form did.
 const SECRET_STRING =
-	/(?:Bearer\s+\S+|-----BEGIN (?:RSA |EC )?PRIVATE KEY-----|(?:sk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[0-9A-Za-z_-]{35}|eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}|[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/:@]+:[^@\s/]+@|\b[A-Z][A-Z0-9_]*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?)[A-Z0-9_]*\s*=)/i;
+	/(?:Bearer\s+\S+|-----BEGIN (?:RSA |EC )?PRIVATE KEY-----|(?:sk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[0-9A-Za-z_-]{35}|(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5})[A-Za-z0-9_-]*?eyJ[A-Za-z0-9_-]{5,}\.|(?<![A-Za-z0-9+.-])[0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/:@]+:[^@\s/]+@|\b[A-Z](?=[A-Z0-9_]*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?))[A-Z0-9_]*\s*=)/i;
 
 /** Redact generic debug payloads before every persistence path, at every level. */
 export function redactDebugPayload(
 	payload: Readonly<Record<string, unknown>>,
 ): Readonly<Record<string, unknown>> {
+	// SAFETY: redactDebugValue maps an object to an object of the same keys.
 	return Object.freeze(redactDebugValue(payload) as Record<string, unknown>);
 }
 
@@ -112,6 +121,7 @@ function redactDebugValue(value: unknown): unknown {
 	if (value === null || typeof value !== "object") return value;
 
 	const out: Record<string, unknown> = {};
+	// SAFETY: value is a non-null object here, so its entries are string keys.
 	for (const [key, nested] of Object.entries(
 		value as Record<string, unknown>,
 	)) {
@@ -160,28 +170,27 @@ function deepMask(
 	if (value === null || typeof value !== "object") {
 		return value;
 	}
+	// SAFETY: value is a non-null, non-array object here.
 	const obj = value as Record<string, unknown>;
 	const out: Record<string, unknown> = {};
 	const tag =
 		typeof obj.tagName === "string" ? obj.tagName.toLowerCase() : undefined;
-	const attrs =
-		obj.attributes && typeof obj.attributes === "object"
-			? (obj.attributes as Record<string, string>)
-			: undefined;
+	let attrs: Record<string, string> | undefined;
+	if (obj.attributes && typeof obj.attributes === "object") {
+		// SAFETY: rrweb serializes a node's attributes as a string map.
+		attrs = obj.attributes as Record<string, string>;
+	}
 	const type =
 		typeof obj.type === "string"
 			? obj.type
 			: typeof attrs?.type === "string"
 				? attrs.type
 				: undefined;
-	const mask = shouldMaskNode(
-		{
-			...(tag !== undefined ? { tag } : {}),
-			...(type !== undefined ? { type } : {}),
-			...(attrs !== undefined ? { attributes: attrs } : {}),
-		},
-		policy,
-	);
+	let context: MaskContext = {};
+	if (tag !== undefined) context = { ...context, tag };
+	if (type !== undefined) context = { ...context, type };
+	if (attrs !== undefined) context = { ...context, attributes: attrs };
+	const mask = shouldMaskNode(context, policy);
 
 	for (const [k, v] of Object.entries(obj)) {
 		if (policy.blockAttributes.includes(k) && mask) {
@@ -200,6 +209,7 @@ function deepMask(
 		}
 		// Network plugin redaction: strip Authorization and cookie headers.
 		if (k === "headers" && v && typeof v === "object" && !Array.isArray(v)) {
+			// SAFETY: v is a non-null, non-array object here.
 			const headers = { ...(v as Record<string, unknown>) };
 			for (const h of Object.keys(headers)) {
 				if (/^(authorization|cookie|set-cookie|x-api-key)$/i.test(h)) {

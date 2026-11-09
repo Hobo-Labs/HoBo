@@ -43,7 +43,8 @@ static site is the **read store**, rebuildable from zero. Types follow
   status.claude.com, so existing ecosystem tooling can consume HoBo pages.
 - **Publish gate** (`src/redaction.ts`): public pages require a
   declared-public component allowlist; a denylist scan runs over the
-  *rendered output*; the exact bytes are content-hashed onto the
+  *rendered output* (every rule linear in it, and reporting the same matches the
+  backtracking forms did); the exact bytes are content-hashed onto the
   `statuspage.Published` audit event.
 - **Static site writer** (`src/site.ts`): the only IO module — writes
   `index.html` + `api/v2/*.json` per page plus a portfolio directory.

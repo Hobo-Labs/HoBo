@@ -787,14 +787,27 @@ Provider error text is redacted the same way: one implementation in
 `@hobo/core/provider-redaction` (`redactProviderText`, or
 `createProviderRedactor` with a profile of the provider's own shapes, a kept
 span such as ttl.sh's digests, percent-decoding, or whitespace collapsing).
-Every shape in it is linear in the text and has a 1 MB adversarial test, the
-search is bounded by `REDACTION_WINDOW`, and a provider shape goes in its
+Every pattern in it is linear in the text and has an adversarial test, the
+search is bounded by `REDACTION_WINDOW`, and a provider pattern goes in its
 profile, never in a local copy of the redactor. Guards that refuse a payload
-rather than redact it use its `JWT_DETECTOR` and `PRIVATE_KEY_DETECTOR`. A new
-shape must be linear: a shape that can start again inside a run it already
-scanned to the end (`\bey…` inside `-ey-ey…`, `[\s\S]*?END` from every BEGIN,
-`\S*` before a literal from every `http`, decoding the whole text again until it
-stops changing) is quadratic on a hostile body.
+rather than redact it use its `JWT_DETECTOR` and `PRIVATE_KEY_DETECTOR`, and a
+scrubber that must keep line breaks and length (auth-md's `redactText`) uses
+its `PRIVATE_KEY_PATTERN` and `JWT_PATTERN`. A new pattern must be linear: one
+that can start again inside a run it already scanned to the end (`\bey…` inside
+`-ey-ey…`, `[\s\S]*?END` from every BEGIN, `\S*` before a literal from every
+`http`, `\b[…]+@` from every boundary inside `a.a.a.…`, decoding the whole text
+again until it stops changing) is quadratic on a hostile body.
+
+Prove it with `assertGrowsLinearly` from `@hobo/core/linear-time`, never with a
+wall-clock bound such as "1 MB in under a second": CI runs on single-CPU
+runners, and a loaded machine fails an absolute bound that a linear pattern
+meets. It times n and 4n characters in the thread's CPU time, not wall time, the
+best of three runs each, taking turns; n doubles from 4096 until a run takes 50
+ms of CPU, so a quadratic pattern is caught at a size it still finishes at, and
+an operation too quick for that is repeated within each run. It fails at a ratio
+of 8, where linear work gives about 4 and quadratic about 16. Its only absolute
+bound is a 20 s backstop on one call, which only a hang reaches. Show the old
+pattern fails the same measure.
 
 Credentials are **not** passed through, and the provider tests do not need them
 to be: `CLOUDFLARE_API_TOKEN`, `VERCEL_TOKEN` and friends are saved, set, and
