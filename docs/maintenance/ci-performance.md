@@ -101,7 +101,9 @@ plus a late write larger than the 64 KiB read chunk. It keeps a `readFileSync(0)
 still fail with `EAGAIN`, so the harness is shown to reproduce the failure; the control skips itself
 on a Node/platform where fd 0 stays blocking, since the quirk it pins is libuv's, not the scripts'.
 `scripts/lib/read-stdin.mts` is in the impact classifier's `SELF_PATHS`: changing the reader the
-classifier itself reads stdin through counts as a classifier self-change.
+classifier itself reads stdin through counts as a classifier self-change. Edits to the reader or its
+three callers also select `scripts/test/read-stdin.test.ts` + `job-scope.test.ts` in
+`scripts/relevant-check-policy.ts`, since the broad `test:scripts` lane is not part of the PR gate.
 
 ## Frozen proofs and live-repo tests
 
