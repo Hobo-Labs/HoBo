@@ -572,6 +572,19 @@ describe("a refusal's text (scripted transport, no network)", () => {
 	// The refusal path grows linearly in its body, raw and in the envelope:
 	// measured as growth from n to 4n in CPU time (`@hobo/core/linear-time`),
 	// not as a wall-clock bound a loaded runner fails.
+	// And a budget beside the growth: refusing a megabyte, raw and in the
+	// envelope, takes under five seconds of CPU. Growth alone passes a linear
+	// path that is slow at every size; this is generous enough for a loaded
+	// single-CPU runner and still fails one that is.
+	const MEGABYTE = 1_000_000;
+	const CPU_BUDGET_MS = 5_000;
+	async function cpuMsOf<Result>(run: () => Promise<Result>): Promise<number> {
+		const before = process.threadCpuUsage();
+		await run();
+		const used = process.threadCpuUsage(before);
+		return (used.user + used.system) / 1000;
+	}
+
 	async function expectLinearRefusal(
 		hostileOf: (length: number) => string,
 	): Promise<void> {
@@ -581,6 +594,15 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		await assertGrowsLinearlyAsync(async (text) => {
 			await refusedBy(() => plainReply(404, inErrorJson(text)));
 		}, hostileOf);
+		const hostile = hostileOf(MEGABYTE);
+		expect(
+			await cpuMsOf(() => refusedBy(() => plainReply(404, hostile))),
+		).toBeLessThan(CPU_BUDGET_MS);
+		expect(
+			await cpuMsOf(() =>
+				refusedBy(() => plainReply(404, inErrorJson(hostile))),
+			),
+		).toBeLessThan(CPU_BUDGET_MS);
 	}
 
 	it("carries neither the token nor credential-shaped text, however it is printed", async () => {
@@ -895,6 +917,9 @@ describe("a refusal's text (scripted transport, no network)", () => {
 			await assertGrowsLinearlyAsync(async (text) => {
 				await refusedBy(() => plainReply(404, text));
 			}, make);
+			expect(
+				await cpuMsOf(() => refusedBy(() => plainReply(404, body))),
+			).toBeLessThan(CPU_BUDGET_MS);
 		},
 	);
 
