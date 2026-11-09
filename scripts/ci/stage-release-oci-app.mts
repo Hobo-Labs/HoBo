@@ -357,7 +357,8 @@ export function releasePnpmStore(root: string): string {
 
 /** Deploy is `--prefer-offline`, never `--offline`: deploy re-resolves direct
  * dependencies and a frozen install caches no registry metadata, so a cold
- * ephemeral runner must be allowed to fetch metadata. Versions and integrity
+ * ephemeral runner must be allowed to fetch missing metadata/tarballs.
+ * Versions and integrity
  * stay pinned by the shared workspace lockfile deploy resolves against. */
 export function releaseOciDeployArgs(
 	packageName: string,
