@@ -61,8 +61,9 @@ rule for a place, used by the executable lookup and by `PATH`.
 - **The environment is an allowlist, by name.** OpenSesame passes its command everything it was started with except the store
   passphrase and the names a binding overwrites, so the launch builds the environment: `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`,
   `TERM`, `TMPDIR`, `TZ`, `CI`, the `LC_*`, `NODE_*`, `XDG_*` and `HOBO_*` families (credential-shaped names left out), the Windows
-  trio on win32, the checked `OPENSESAME_ENV_PARSE` (an absolute path to a file in a trusted place, else `bridge_missing`: Node runs the script it names), whatever the caller lists in `passEnv`, and the run's two own variables, which
-  win. A non-surrogate value in a bound variable or a conventional one for the bound provider (`VERCEL_TOKEN`, `VERCEL_API_TOKEN`)
+  trio on win32, the checked `OPENSESAME_ENV_PARSE` (an absolute path to a file in a trusted place, else `bridge_missing`: Node runs the script it names), `VERCEL_TEAM_ID` and `VERCEL_ORG_ID`, whatever the caller lists in `passEnv`, and the run's two own variables, which
+  win. The two Vercel names (hobo's and the Vercel CLI's, which can hold a personal account's id) say which team or account a deploy is in: configuration, named nothing like a
+  credential, and allowlisted by those exact names, so the rest of `VERCEL_*` stays behind. A non-surrogate value in a bound variable or a conventional one for the bound provider (`VERCEL_TOKEN`, `VERCEL_API_TOKEN`)
   refuses the run (`real_credential_in_env`). The allowlist cannot see what a name does not say: `HOBO_PAT` reaches the command, and
   `passEnv` is passed as given. Operator code supplies `passEnv` (the `runProxied` caller's argument), never a repository file,
   the environment or a model; `CredentialBindings` has no such field and must not get one.
