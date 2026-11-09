@@ -326,24 +326,28 @@ getAppModule("missing.ts");
 			slow(60_000),
 		);
 
-		it("refuses an explicit runtime before checking the generated tree", async () => {
-			const app = join(root, "src/app.ts");
-			const authored = await readFile(app, "utf8");
-			await writeFile(app, `${authored}\nexport const drifted = 1;\n`);
-			try {
-				const result = await createHoboCli().run(
-					["build", "--runtime", "wasm", "--json"],
-					{ cwd: root },
-				);
-				// The request can never build, so it is refused as such, not as drift.
-				expect(JSON.parse(result.stdout)).toMatchObject({
-					ok: false,
-					code: "HOBO_BUILD_RUNTIME_INVALID",
-				});
-			} finally {
-				await writeFile(app, authored);
-			}
-		});
+		it(
+			"asks for codegen when an explicit runtime meets an imprint its sources no longer match",
+			async () => {
+				const app = join(root, "src/app.ts");
+				const authored = await readFile(app, "utf8");
+				await writeFile(app, `${authored}\nexport const drifted = 1;\n`);
+				try {
+					const result = await createHoboCli().run(
+						["build", "--runtime", "wasm", "--json"],
+						{ cwd: root },
+					);
+					// A stale imprint is no evidence of what the app is, so the gate answers.
+					expect(JSON.parse(result.stdout)).toMatchObject({
+						ok: false,
+						code: "HOBO_BUILD_CODEGEN_DRIFT",
+					});
+				} finally {
+					await writeFile(app, authored);
+				}
+			},
+			slow(60_000),
+		);
 	});
 	it(
 		"does not bypass an explicit empty service declaration into Node packaging",

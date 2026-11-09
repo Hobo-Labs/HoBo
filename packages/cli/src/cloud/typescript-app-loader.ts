@@ -220,6 +220,33 @@ async function sourceSnapshot(project: string): Promise<{
 	return { files, rawBytes: manifest.sourceDigestEncoding === "raw" };
 }
 
+/**
+ * Whether every input the codegen manifest recorded still has the digest it
+ * recorded. False when there is no manifest, it records nothing, an input is
+ * missing or changed, or the manifest is malformed: the imprint is then not
+ * evidence of anything, and only a codegen pass can say what the app is.
+ */
+export async function recordedAppInputsMatch(
+	project: string,
+): Promise<boolean> {
+	let snapshot: Awaited<ReturnType<typeof sourceSnapshot>>;
+	try {
+		snapshot = await sourceSnapshot(project);
+	} catch {
+		return false;
+	}
+	if (snapshot.files.length === 0) return false;
+	for (const { file, expected } of snapshot.files) {
+		if (!existsSync(file)) return false;
+		const bytes = await readFile(file);
+		const actual = snapshot.rawBytes
+			? sha256Bytes(bytes)
+			: digest(bytes.toString("utf8"));
+		if (actual !== expected) return false;
+	}
+	return true;
+}
+
 async function packagedModule(
 	project: string,
 	entrypoint: string,
