@@ -222,6 +222,22 @@ describe("merge-group required gate", () => {
 		}
 	});
 
+	it("builds @hobo/core and @hobo/data before the bindles schema lane", () => {
+		const pkg = readFileSync("package.json", "utf8");
+		const marker = pkg.indexOf('"test:schema":');
+		assert.ok(marker >= 0, "missing root test:schema script");
+		const script = pkg.slice(marker, pkg.indexOf("\n", marker));
+		const build = script.indexOf(
+			"turbo run build --filter=@hobo/core --filter=@hobo/data",
+		);
+		const bindles = script.indexOf("--filter @hobo/bindles run test:schema");
+		assert.ok(build >= 0, "test:schema does not build core/data first");
+		assert.ok(
+			bindles > build,
+			"bindles test:schema must run after the core/data build",
+		);
+	});
+
 	it("prefers the same-run validation cache before older cache entries", () => {
 		assert.match(workspace, /preferred-job: pr_gate_validation/u);
 		assert.match(affected, /preferred-job: pr_gate_validation/u);
