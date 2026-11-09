@@ -22,7 +22,8 @@
 		"@hobo/bindings": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/core": "workspace:*",
-		"@hobo/kv-redis-compatible": "workspace:*"
+		"@hobo/kv-redis-compatible": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",

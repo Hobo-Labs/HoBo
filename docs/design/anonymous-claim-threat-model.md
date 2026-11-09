@@ -57,7 +57,7 @@ session, deployment, and intended user, and released once. Comparison-only
 material is stored as a SHA-256 hash. Redaction applies to claim URLs with the
 same rigor as to passwords, including in receipts, spans, and fixtures. Provider
 text — an error body, CLI output, an apiserver Status — is redacted by one
-implementation, `@hobo/core/provider-redaction`: shared credential shapes, each
+implementation, `@hobo/provider-redaction`: shared credential shapes, each
 linear in the text so a hostile megabyte cannot stall the error path, a bounded
 search window, and a profile per provider for its own claim URLs and token
 formats. Event, offer, and evidence guards that refuse rather than redact use

@@ -10,7 +10,7 @@
 import {
 	createProviderRedactor,
 	type ProviderRedactionProfile,
-} from "@hobo/core/provider-redaction";
+} from "@hobo/provider-redaction";
 
 export const KUBERNETES_ERROR_CODES = [
 	"PROVIDER_AUTH_FAILED",
@@ -52,7 +52,7 @@ const clusterRedactor = createProviderRedactor(KUBERNETES_REDACTION_PROFILE);
 /**
  * Replace anything credential-shaped with a marker and flatten control
  * characters so apiserver text cannot forge a log record. The shared redactor
- * (`@hobo/core/provider-redaction`) holds the shapes, the window and the cut;
+ * (`@hobo/provider-redaction`) holds the shapes, the window and the cut;
  * Kubernetes adds the kubeconfig's embedded blobs and the dockerconfigjson an
  * imagePullSecret carries.
  */

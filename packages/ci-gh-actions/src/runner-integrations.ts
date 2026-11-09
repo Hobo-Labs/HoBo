@@ -4,7 +4,7 @@ import {
 	redactionPattern,
 	redactMatches,
 	SIGNED_JWT_PATTERN,
-} from "@hobo/core/provider-redaction";
+} from "@hobo/provider-redaction";
 import { z } from "zod";
 
 /**

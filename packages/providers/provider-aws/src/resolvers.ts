@@ -84,7 +84,7 @@ import { type AwsCredentials, signAwsRequest } from "@hobo/core/aws-sigv4";
 import {
 	createProviderRedactor,
 	type ProviderRedactionProfile,
-} from "@hobo/core/provider-redaction";
+} from "@hobo/provider-redaction";
 
 import {
 	isJsonArray,
@@ -254,7 +254,7 @@ const RAW_CREDENTIAL_PATTERN = /^(?:[A-Z0-9]{16,}|[A-Za-z0-9/+=_-]{32,})$/u;
 
 /**
  * Anything long and token-shaped is scrubbed out of provider error text, on top
- * of the shared shapes (`@hobo/core/provider-redaction`): a private key, a
+ * of the shared shapes (`@hobo/provider-redaction`): a private key, a
  * bearer token, a JWT, connection strings, URL credentials, and secret-named
  * keys short enough to slip under the length rule. The length rule is searched
  * last, so it cannot split a JWT or a key the shared shapes redact whole.

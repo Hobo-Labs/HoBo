@@ -8,9 +8,9 @@
  * that its cost grows linearly.
  */
 
-import { assertPatternSweepLinear, ownPatterns } from "@hobo/core/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
-import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
+import { assertPatternSweepLinear, ownPatterns } from "@hobo/provider-redaction/linear-sweep";
+import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
+import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import { redactDebugPayload } from "../src/index.js";

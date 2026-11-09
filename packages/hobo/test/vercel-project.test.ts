@@ -1,7 +1,7 @@
 import { inspect } from "node:util";
 
 import type { IacProgram } from "@hobo/cloud";
-import { assertGrowsLinearlyAsync } from "@hobo/core/linear-time";
+import { assertGrowsLinearlyAsync } from "@hobo/provider-redaction/linear-time";
 import { at, first } from "@hobo/core/total-access";
 import { REDACTION_WINDOW } from "@hobo/provider-vercel";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -570,7 +570,7 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		JSON.stringify({ error: { code: "not_found", message } });
 
 	// The refusal path grows linearly in its body, raw and in the envelope:
-	// measured as growth from n to 4n in CPU time (`@hobo/core/linear-time`),
+	// measured as growth from n to 4n in CPU time (`@hobo/provider-redaction/linear-time`),
 	// not as a wall-clock bound a loaded runner fails.
 	// And a budget beside the growth: refusing a megabyte, raw and in the
 	// envelope, takes under five seconds of CPU. Growth alone passes a linear

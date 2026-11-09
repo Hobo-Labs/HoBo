@@ -1,14 +1,14 @@
 /**
- * `redactPackText` is the shared redactor (`@hobo/core/provider-redaction`)
+ * `redactPackText` is the shared redactor (`@hobo/provider-redaction`)
  * with no shapes of its own. Before the move it had its own copy, whose
  * private-key shape searched from every BEGIN for an END that never came.
  * These pin that nothing it redacted leaks now, what it newly redacts, and
  * that it is linear.
  */
 
-import { assertPatternSweepLinear } from "@hobo/core/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
-import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
+import { assertPatternSweepLinear } from "@hobo/provider-redaction/linear-sweep";
+import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
+import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
 import { describe, expect, it } from "vitest";
 import { ARGV_CREDENTIAL_PATTERNS } from "../src/argv.js";
 import { redactPackText } from "../src/errors.js";

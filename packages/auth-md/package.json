@@ -32,6 +32,6 @@
 	},
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1",
-		"@hobo/core": "workspace:*"
+		"@hobo/provider-redaction": "workspace:*"
 	}
 }

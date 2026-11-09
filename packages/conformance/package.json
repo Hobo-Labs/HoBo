@@ -44,6 +44,7 @@
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/claims": "workspace:*",
 		"@hobo/core": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*",
 		"@hobo/runtime": "workspace:*",
 		"@hobo/trust": "workspace:*"
 	},

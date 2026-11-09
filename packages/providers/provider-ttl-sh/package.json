@@ -20,7 +20,8 @@
 	"dependencies": {
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/claims": "workspace:*",
-		"@hobo/core": "workspace:*"
+		"@hobo/core": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",

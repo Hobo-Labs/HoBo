@@ -1,5 +1,5 @@
 /**
- * ttl.sh's redactor is the shared one (`@hobo/core/provider-redaction`) plus
+ * ttl.sh's redactor is the shared one (`@hobo/provider-redaction`) plus
  * `Basic` credentials and long opaque runs, with digests kept whole. Before the
  * move it had its own copy, whose JWT and private-key shapes backtracked
  * (every `ey` and every BEGIN started a search to the end) and whose opaque-run
@@ -11,14 +11,14 @@
 import {
 	assertPatternSweepLinear,
 	profilePatterns,
-} from "@hobo/core/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
-import { JWT_DETECTOR } from "@hobo/core/provider-redaction";
+} from "@hobo/provider-redaction/linear-sweep";
+import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
+import { JWT_DETECTOR } from "@hobo/provider-redaction";
 import {
 	assertFindsNoLess,
 	assertRevealsNoMore,
 	JWT_PIECES,
-} from "@hobo/core/redaction-differential";
+} from "@hobo/provider-redaction/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import {

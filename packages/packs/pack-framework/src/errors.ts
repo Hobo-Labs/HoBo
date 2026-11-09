@@ -10,7 +10,7 @@
  * not match what was signed.
  */
 
-import { createProviderRedactor } from "@hobo/core/provider-redaction";
+import { createProviderRedactor } from "@hobo/provider-redaction";
 
 export const PACK_ERROR_CODES = [
 	"PACK_MANIFEST_INVALID",
@@ -50,7 +50,7 @@ const packRedactor = createProviderRedactor();
 
 /**
  * Redact credential-shaped substrings and flatten control characters, through
- * the shared redactor (`@hobo/core/provider-redaction`), which holds every
+ * the shared redactor (`@hobo/provider-redaction`), which holds every
  * shape this needs (`requirepass` included), the window and the cut.
  *
  * A container runtime echoes back the command line it was handed, so text from

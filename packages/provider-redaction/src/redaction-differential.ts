@@ -11,7 +11,7 @@
  * their real lengths, percent-encodings, non-ASCII, zero-width and direction
  * characters, secret names used as schemes, and digests a value is glued to.
  *
- * Reached through the `@hobo/core/redaction-differential` subpath, for tests.
+ * Reached through the `@hobo/provider-redaction/redaction-differential` subpath, for tests.
  */
 
 /** What a redaction left of a text: the text a person or a log would see. */

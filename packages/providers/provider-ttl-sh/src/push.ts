@@ -24,7 +24,7 @@
  * one. Two *different* digests under one reference is a refusal: a reference
  * whose content silently changed is a reference nobody can verify.
  */
-import { JWT_DETECTOR } from "@hobo/core/provider-redaction";
+import { JWT_DETECTOR } from "@hobo/provider-redaction";
 import {
 	containsControlChar,
 	redactProviderText,

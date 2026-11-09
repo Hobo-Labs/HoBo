@@ -232,7 +232,7 @@ one may retire a placement from the read model.
 
 A 5xx on a create is `PROVIDER_OPERATION_AMBIGUOUS`, never a retryable error: a
 timed-out POST never proves the apiserver did nothing. Every message and detail
-passes `redactClusterText` (the shared `@hobo/core/provider-redaction` redactor
+passes `redactClusterText` (the shared `@hobo/provider-redaction` redactor
 plus kubeconfig blobs and dockerconfigjson), because a `Status` message quotes the object that
 caused it and those objects carry ServiceAccount tokens and imagePullSecrets.
 

@@ -21,7 +21,7 @@
  * only an operation that has stopped returning, not a slow machine.
  *
  * `assertGrowsLinearly` throws a NonLinearGrowthError naming the growth, so a
- * test only calls it. Reached through the `@hobo/core/linear-time` subpath; the
+ * test only calls it. Reached through the `@hobo/provider-redaction/linear-time` subpath; the
  * redaction tests in every provider package share it.
  */
 

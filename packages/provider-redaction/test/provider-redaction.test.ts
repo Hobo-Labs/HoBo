@@ -9,7 +9,7 @@
  * searched from every BEGIN for an END that never came.
  *
  * Linear means the cost grows about 4x from n to 4n characters, measured by
- * `measureGrowth` (`@hobo/core/linear-time`), so no verdict here depends on
+ * `measureGrowth` (`@hobo/provider-redaction/linear-time`), so no verdict here depends on
  * how fast or how loaded the machine is. The one absolute bound is the 20 s
  * backstop on a single megabyte run, which only a hang reaches.
  */
@@ -270,7 +270,7 @@ describe("every pattern on a hostile text", () => {
 		GROWTH_TIMEOUT_MS,
 	);
 
-	// The sweep (`@hobo/core/linear-sweep`): every pattern on runs of each
+	// The sweep (`@hobo/provider-redaction/linear-sweep`): every pattern on runs of each
 	// character class it reads, each pair of them, and its own words followed
 	// by them, so no class is left out by whoever wrote the inputs above.
 	const ALNUM = "aZ9";

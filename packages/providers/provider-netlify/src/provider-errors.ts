@@ -10,7 +10,7 @@
 import {
 	createProviderRedactor,
 	type ProviderRedactionProfile,
-} from "@hobo/core/provider-redaction";
+} from "@hobo/provider-redaction";
 
 export const PROVIDER_ERROR_CODES = [
 	"PROVIDER_RATE_LIMITED",
@@ -82,7 +82,7 @@ const providerRedactor = createProviderRedactor(NETLIFY_REDACTION_PROFILE);
 /**
  * Replace anything credential-shaped with a marker and flatten control
  * characters, which CLI output has plenty of and which can otherwise forge a
- * log record. The shared redactor (`@hobo/core/provider-redaction`) holds the
+ * log record. The shared redactor (`@hobo/provider-redaction`) holds the
  * shapes, the window and the cut; Netlify adds its own below.
  */
 export function redactProviderText(text: string, maxLength = 256): string {

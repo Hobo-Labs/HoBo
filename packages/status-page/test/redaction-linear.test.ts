@@ -13,8 +13,8 @@ import {
 	assertSweepLinear,
 	patternFragments,
 	type SweepSpec,
-} from "@hobo/core/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
+} from "@hobo/provider-redaction/linear-sweep";
+import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
 import { describe, expect, it } from "vitest";
 
 import { REDACTION_RULES, scanRenderedOutput } from "../src/index.js";

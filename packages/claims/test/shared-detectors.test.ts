@@ -1,19 +1,19 @@
 /**
  * The event guard's JWT and private-key detectors are the shared ones
- * (`@hobo/core/provider-redaction`). Its own JWT detector started again at
+ * (`@hobo/provider-redaction`). Its own JWT detector started again at
  * every `ey` and scanned to the end of the run, and its claim-URL detector
  * scanned from every `http` to the end and back for each part: on a payload
  * holding a megabyte of `-ey` or of `http://claim?`, the guard stalled the
  * append. These pin that it still refuses what it refused, and is linear.
  */
-import { assertPatternSweepLinear, ownPatterns } from "@hobo/core/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
+import { assertPatternSweepLinear, ownPatterns } from "@hobo/provider-redaction/linear-sweep";
+import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
 import {
 	assertFindsNoLess,
 	JWT_PIECES,
 	PEM_PIECES,
 	URL_PIECES,
-} from "@hobo/core/redaction-differential";
+} from "@hobo/provider-redaction/redaction-differential";
 import { describe, expect, it } from "vitest";
 import { FORBIDDEN_IN_EVENTS } from "../src/events.js";
 import { assertNoSecrets, type ClaimEvent } from "../src/index.js";

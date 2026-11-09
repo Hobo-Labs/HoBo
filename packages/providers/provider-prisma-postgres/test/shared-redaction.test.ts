@@ -1,5 +1,5 @@
 /**
- * Prisma Postgres's redactor is the shared one (`@hobo/core/provider-redaction`) plus its
+ * Prisma Postgres's redactor is the shared one (`@hobo/provider-redaction`) plus its
  * own shapes, with the text percent-decoded fully first. Before the move it
  * had its own copy, which decoded by running over the whole text again until
  * it stopped changing — one pass per layer of `%25`, so a megabyte of nested
@@ -11,10 +11,10 @@
 import {
 	assertPatternSweepLinear,
 	profilePatterns,
-} from "@hobo/core/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
-import { decodePercentFully } from "@hobo/core/provider-redaction";
-import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
+} from "@hobo/provider-redaction/linear-sweep";
+import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
+import { decodePercentFully } from "@hobo/provider-redaction";
+import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import {

@@ -1,5 +1,5 @@
 /**
- * `redactClusterText` is the shared redactor (`@hobo/core/provider-redaction`)
+ * `redactClusterText` is the shared redactor (`@hobo/provider-redaction`)
  * plus the kubeconfig's embedded blobs and an imagePullSecret's
  * dockerconfigjson. Before the move it had its own copy, and three of its
  * shapes backtracked on an apiserver body: the JWT shape started again at
@@ -11,9 +11,9 @@
 import {
 	assertPatternSweepLinear,
 	profilePatterns,
-} from "@hobo/core/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
-import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
+} from "@hobo/provider-redaction/linear-sweep";
+import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
+import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import {

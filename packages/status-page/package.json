@@ -28,6 +28,7 @@
 	},
 	"devDependencies": {
 		"@hobo/contract-harness": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*",
 		"@types/node": "^22.15.29",
 		"vitest": "^4.1.9"
 	},

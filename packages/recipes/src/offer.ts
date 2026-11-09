@@ -15,7 +15,7 @@ import type { ClaimAtomicity, Instant } from "@hobo/claims";
 import {
 	JWT_DETECTOR,
 	PRIVATE_KEY_DETECTOR,
-} from "@hobo/core/provider-redaction";
+} from "@hobo/provider-redaction";
 import type { CanonicalValue } from "@hobo/trust";
 import { canonicalize, DIGEST_PATTERN, sha256Of } from "@hobo/trust";
 

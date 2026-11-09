@@ -784,7 +784,7 @@ target — bounded and stripped of control characters, because that value is
 chosen by the peer and ends up in logs.
 
 Provider error text is redacted the same way: one implementation in
-`@hobo/core/provider-redaction` (`redactProviderText`, or
+`@hobo/provider-redaction` (`redactProviderText`, or
 `createProviderRedactor` with a profile of the provider's own structured
 shapes, its generic `fallbacks` such as a long-opaque-run rule (searched last,
 so one cannot split a JWT and leave its payload), a kept span such as ttl.sh's
@@ -810,7 +810,7 @@ overlaps the character after it (`(?<=(?:^|[^…])[._%+-]*[A-Za-z0-9_])` on a ru
 of `_`), and a value that may chain on to the end and is then read again from
 the next run.
 
-Sweep every pattern with `@hobo/core/linear-sweep` (`assertSweepLinear`, or
+Sweep every pattern with `@hobo/provider-redaction/linear-sweep` (`assertSweepLinear`, or
 `assertPatternSweepLinear` for one pattern), which builds runs of every
 character class and every pair of them, and runs between the pattern's own
 literal fragments, ended by each terminator, so neither a class nobody listed
@@ -819,11 +819,11 @@ place it could give a character back) can hide a quadratic case. Give a
 whole-function sweep a whole sample as a word and the literals it looks for as
 fragments. Structure a regular expression can only find by looking ahead from
 every position (a private key's last END line) is found in code instead. A redactor or guard that replaces another is held to it with
-`@hobo/core/redaction-differential` (`assertRevealsNoMore`,
+`@hobo/provider-redaction/redaction-differential` (`assertRevealsNoMore`,
 `assertFindsNoLess`), the old one vendored under the package's
 `test/fixtures`: it may redact more, never less.
 
-Prove it with `assertGrowsLinearly` from `@hobo/core/linear-time`, never with a
+Prove it with `assertGrowsLinearly` from `@hobo/provider-redaction/linear-time`, never with a
 wall-clock bound such as "1 MB in under a second": CI runs on single-CPU
 runners, and a loaded machine fails an absolute bound that a linear pattern
 meets. It times n and 4n characters in the thread's CPU time, not wall time, the

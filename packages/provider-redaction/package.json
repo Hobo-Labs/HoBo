@@ -1,0 +1,44 @@
+{
+	"name": "@hobo/provider-redaction",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist",
+		"data-models"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/provider-redaction.d.ts",
+			"default": "./dist/provider-redaction.js"
+		},
+		"./linear-time": {
+			"types": "./dist/linear-time.d.ts",
+			"default": "./dist/linear-time.js"
+		},
+		"./linear-sweep": {
+			"types": "./dist/linear-sweep.d.ts",
+			"default": "./dist/linear-sweep.js"
+		},
+		"./redaction-differential": {
+			"types": "./dist/redaction-differential.d.ts",
+			"default": "./dist/redaction-differential.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"test": "vitest run"
+	},
+	"devDependencies": {
+		"@hobo/contract-harness": "workspace:*",
+		"@types/node": "^22.15.29",
+		"fast-check": "^4.3.0",
+		"vitest": "^4.1.9"
+	}
+}

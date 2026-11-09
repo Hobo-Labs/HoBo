@@ -10,7 +10,7 @@
 import {
 	createProviderRedactor,
 	type ProviderRedactionProfile,
-} from "@hobo/core/provider-redaction";
+} from "@hobo/provider-redaction";
 import { isJsonString } from "./json.js";
 
 export const PROVIDER_ERROR_CODES = [
@@ -42,7 +42,7 @@ export type ProviderErrorOptions = {
 	readonly cause?: Error;
 };
 
-export { containsControlChar } from "@hobo/core/provider-redaction";
+export { containsControlChar } from "@hobo/provider-redaction";
 
 /** The provider's own patterns, on top of the shared ones. */
 export const PRISMA_POSTGRES_REDACTION_PROFILE: ProviderRedactionProfile = {
@@ -62,7 +62,7 @@ const providerRedactor = createProviderRedactor(
  * Replace anything credential-shaped with a marker and flatten control
  * characters so provider text cannot forge a log record. The text is
  * percent-decoded fully first, so an encoded credential is found too. The
- * shared redactor (`@hobo/core/provider-redaction`) holds the shapes, the
+ * shared redactor (`@hobo/provider-redaction`) holds the shapes, the
  * window and the cut; Prisma Postgres adds its claim URL, `proj_` ids and
  * UUIDs.
  */

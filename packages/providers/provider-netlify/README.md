@@ -158,7 +158,7 @@ Typed `NetlifyProviderError` with stable codes: `PROVIDER_RATE_LIMITED`,
 URLs with inline credentials, credential assignments, JWTs, and private-key
 blocks, flattens control characters (CLI output is full of them and they can
 forge a log record), and bounds length; it is the shared redactor
-(`@hobo/core/provider-redaction`) plus the claim URL and `nf_`/`nfp_` tokens, so
+(`@hobo/provider-redaction`) plus the claim URL and `nf_`/`nfp_` tokens, so
 every shape is linear in the text. Credential scanning follows each
 value's JSON projection and guards shared or cyclic object graphs. A 404 from the site API maps to
 `CLAIM_EXPIRED` rather than a generic not-found, because an unclaimed anonymous

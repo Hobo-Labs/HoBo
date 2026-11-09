@@ -19,22 +19,6 @@
 		"./total-access": {
 			"types": "./dist/total-access.d.ts",
 			"default": "./dist/total-access.js"
-		},
-		"./provider-redaction": {
-			"types": "./dist/provider-redaction.d.ts",
-			"default": "./dist/provider-redaction.js"
-		},
-		"./linear-time": {
-			"types": "./dist/linear-time.d.ts",
-			"default": "./dist/linear-time.js"
-		},
-		"./linear-sweep": {
-			"types": "./dist/linear-sweep.d.ts",
-			"default": "./dist/linear-sweep.js"
-		},
-		"./redaction-differential": {
-			"types": "./dist/redaction-differential.d.ts",
-			"default": "./dist/redaction-differential.js"
 		}
 	},
 	"publishConfig": {

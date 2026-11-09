@@ -63,6 +63,7 @@
     "@hobo/broker": "workspace:*",
     "@hobo/ci": "workspace:*",
     "@hobo/core": "workspace:*",
+    "@hobo/provider-redaction": "workspace:*",
     "pg": "8.22.0",
     "zod": "^4.1.13"
   },

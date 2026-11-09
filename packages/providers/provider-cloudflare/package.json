@@ -23,6 +23,7 @@
 	"dependencies": {
 		"@hobo/bindings": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
-		"@hobo/core": "workspace:*"
+		"@hobo/core": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*"
 	}
 }

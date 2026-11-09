@@ -1,5 +1,5 @@
 /**
- * `redactDigitalOceanText` is the shared redactor (`@hobo/core/provider-redaction`) plus its
+ * `redactDigitalOceanText` is the shared redactor (`@hobo/provider-redaction`) plus its
  * rule that any long token-shaped run is a credential. Before the move that
  * rule was all it had, so a secret shorter than the rule — a password, a short
  * bearer token, URL credentials, a private key's BEGIN line — reached the
@@ -10,9 +10,9 @@
 import {
 	assertPatternSweepLinear,
 	profilePatterns,
-} from "@hobo/core/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
-import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
+} from "@hobo/provider-redaction/linear-sweep";
+import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
+import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import {

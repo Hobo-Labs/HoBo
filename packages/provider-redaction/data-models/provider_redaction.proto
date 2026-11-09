@@ -1,0 +1,36 @@
+syntax = "proto3";
+package hobo.provider_redaction.v1;
+
+// What one provider adds to the shared redaction, as data: each pattern's
+// source and flags, which `redactionPattern` parses into a RedactionPattern.
+message PatternSource {
+  string source = 1;
+  string flags = 2;
+}
+
+message RedactionProfileDescriptor {
+  repeated PatternSource patterns = 1;
+  repeated PatternSource fallbacks = 2;
+  PatternSource keep = 3;
+  bool decode_percent = 4;
+  bool collapse_whitespace = 5;
+}
+
+// One growth measurement: the cost of n and 4n characters, in CPU time.
+message GrowthMeasurement {
+  uint32 length = 1;
+  uint32 repeat = 2;
+  bool calibrated = 3;
+  double small_ms = 4;
+  double large_ms = 5;
+  double ratio = 6;
+}
+
+// One sweep input's outcome: its name, the screen's reading, and, for an
+// input the screen could not settle, its growth or the time it hung for.
+message SweepOutcome {
+  string input = 1;
+  double screen_ms = 2;
+  double hung_ms = 3;
+  GrowthMeasurement growth = 4;
+}

@@ -21,7 +21,8 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@hobo/core": "workspace:*"
+		"@hobo/core": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*"
 	},
 	"description": "HoBo DigitalOcean CloudProvider: App Platform/Droplets/Managed Databases/Spaces/Load Balancers behind the agnostic ports."
 }

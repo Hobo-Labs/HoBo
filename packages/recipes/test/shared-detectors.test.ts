@@ -1,11 +1,11 @@
 /**
  * The offer scan's JWT and private-key detectors are the shared ones
- * (`@hobo/core/provider-redaction`). Its own JWT detector started again at
+ * (`@hobo/provider-redaction`). Its own JWT detector started again at
  * every `ey` and scanned to the end of the run, so an offer value holding a
  * megabyte of `-ey` stalled the scan. These pin that it still refuses what it
  * refused, and is linear.
  */
-import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
+import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
 import { describe, expect, it } from "vitest";
 
 import {

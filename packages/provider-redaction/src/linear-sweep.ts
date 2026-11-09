@@ -19,7 +19,7 @@
  * grow by less than LINEAR_GROWTH_LIMIT. A call that reaches the hang backstop
  * is an offender too, named.
  *
- * Reached through the `@hobo/core/linear-sweep` subpath, for tests.
+ * Reached through the `@hobo/provider-redaction/linear-sweep` subpath, for tests.
  */
 import {
 	type Growth,
@@ -403,7 +403,7 @@ const SHARED_PATTERNS = new Set<RegExp>([
 ]);
 
 /**
- * `patterns` without the shared ones (`@hobo/core/provider-redaction`'s own
+ * `patterns` without the shared ones (`@hobo/provider-redaction`'s own
  * objects), which core's tests sweep: what a caller adds.
  */
 export function ownPatterns(patterns: readonly RegExp[]): readonly RegExp[] {

@@ -1,5 +1,5 @@
 /**
- * Vercel's redactor is the shared one (`@hobo/core/provider-redaction`, whose
+ * Vercel's redactor is the shared one (`@hobo/provider-redaction`, whose
  * tests hold the hostile-text cases first written here) plus Vercel's claim
  * and transfer codes. Before the move it had its own copy of the shapes; these
  * pin that nothing it redacted leaks now, what it newly redacts, and that its
@@ -9,9 +9,9 @@
 import {
 	assertPatternSweepLinear,
 	profilePatterns,
-} from "@hobo/core/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
-import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
+} from "@hobo/provider-redaction/linear-sweep";
+import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
+import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import { REDACTION_WINDOW, redactProviderText } from "../src/index.js";

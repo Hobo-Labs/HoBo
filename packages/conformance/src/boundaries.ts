@@ -45,6 +45,12 @@ export type PackageClassification = {
 // makes that legal by construction instead of by a growing exception list.
 // ADR-0156 records the longer-term move of these contracts into `@hobo/core`.
 const CONTRACT_PACKAGE_PATHS = new Set([
+	// `@hobo/provider-redaction`: the one redactor for provider text, which
+	// every provider and pack redacts its errors through, and the linear-time
+	// test harness that holds it. A leaf (it imports no HoBo package) that the
+	// adapters depend on, like the vocabulary packages below; it lives outside
+	// `@hobo/core` so a change to it does not run every core dependent's suite.
+	"packages/provider-redaction",
 	"packages/wit",
 	"packages/capability-profiles",
 	"packages/bindings",

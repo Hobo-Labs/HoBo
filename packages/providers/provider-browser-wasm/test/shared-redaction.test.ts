@@ -1,11 +1,11 @@
 /**
- * `redactHostText` is the shared redactor (`@hobo/core/provider-redaction`)
+ * `redactHostText` is the shared redactor (`@hobo/provider-redaction`)
  * with no shapes of its own. Before the move it had its own copy, whose JWT
  * shape started again at every `eyJ` and ran to the end. These pin that
  * nothing it redacted leaks now, what it newly redacts, and that it is linear.
  */
-import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
-import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
+import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
+import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import { redactHostText } from "../src/errors.js";

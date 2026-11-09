@@ -1,7 +1,7 @@
 /**
  * `redactText` scrubs free text in place: unlike a provider redactor it keeps
  * line breaks and never cuts, so it takes the shared private-key and JWT
- * patterns (`@hobo/core/provider-redaction`) rather than a whole redactor.
+ * patterns (`@hobo/provider-redaction`) rather than a whole redactor.
  * Before, its own JWT pattern started again at every `eyJ` and read to the
  * end, and its private-key pattern searched from every BEGIN for an END; both
  * were quadratic in a hostile text. These pin that what it redacted it still
@@ -12,9 +12,9 @@ import {
 	assertPatternSweepLinear,
 	assertSweepLinear,
 	ownPatterns,
-} from "@hobo/core/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
-import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
+} from "@hobo/provider-redaction/linear-sweep";
+import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
+import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import { REDACTED, redactText } from "../src/index.js";

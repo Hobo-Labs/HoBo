@@ -18,7 +18,7 @@ import {
 	type RedactionPattern,
 	redactionPattern,
 	redactMatches,
-} from "@hobo/core/provider-redaction";
+} from "@hobo/provider-redaction";
 
 // public-contract: callers and tests assert on this exact placeholder in serialized output.
 export const REDACTED = "[redacted]";
@@ -117,7 +117,7 @@ export const SECRET_KEY_PATTERN =
 	/(assertion|token|secret|password|passphrase|credential|private[_-]?key|authorization|client[_-]?secret|jwk|jwt)/iu;
 
 export const SECRET_TEXT_PATTERNS: readonly RedactionPattern[] = [
-	// PEM blocks of any key type, from `@hobo/core/provider-redaction`: to the
+	// PEM blocks of any key type, from `@hobo/provider-redaction`: to the
 	// key's own END line, or the next BEGIN, or the end of the text. The lazy
 	// `[\s\S]*?-----END` this replaced searched from every BEGIN for an END.
 	PRIVATE_KEY_PATTERN,

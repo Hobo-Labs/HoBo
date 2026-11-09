@@ -10,7 +10,7 @@
 import {
 	JWT_DETECTOR,
 	PRIVATE_KEY_DETECTOR,
-} from "@hobo/core/provider-redaction";
+} from "@hobo/provider-redaction";
 import type {
 	ClaimAtomicity,
 	ClaimBundle,

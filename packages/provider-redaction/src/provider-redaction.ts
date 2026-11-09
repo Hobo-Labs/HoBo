@@ -10,7 +10,7 @@
  * text (none can start again inside a run it has already scanned to its end),
  * only a window of the text is searched, and a longer text is marked cut.
  *
- * Reached through the `@hobo/core/provider-redaction` subpath, not the package
+ * Reached through the `@hobo/provider-redaction` subpath, not the package
  * root: the flagship surface is provider-neutral, and this module names
  * provider credential shapes.
  */
@@ -38,7 +38,7 @@ declare const redactionPatternBrand: unique symbol;
  * replaced, and not sticky, so a match is looked for anywhere. A shape must
  * also be linear in the text; that is a property of how it is written, which a
  * parse cannot see, so each shape here has a growth test on an adversarial
- * input (`@hobo/core/linear-time`).
+ * input (`@hobo/provider-redaction/linear-time`).
  */
 export type RedactionPattern = RegExp & {
 	readonly [redactionPatternBrand]: true;

@@ -21,7 +21,8 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@hobo/core": "workspace:*"
+		"@hobo/core": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*"
 	},
 	"description": "HoBo Browser WASM CloudProvider — equivalence + temporary/agent Environment Station contract."
 }

@@ -21,7 +21,7 @@
 		"@hobo/bindings": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/claims": "workspace:*",
-		"@hobo/core": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*",
 		"@hobo/trust": "workspace:*"
 	},
 	"devDependencies": {

@@ -24,7 +24,7 @@
 import {
 	createProviderRedactor,
 	type ProviderRedactionProfile,
-} from "@hobo/core/provider-redaction";
+} from "@hobo/provider-redaction";
 
 export const TTL_SH_ERROR_CODES = [
 	/** A host, scheme, port, or path outside the single allowlisted origin. */
@@ -93,7 +93,7 @@ export type TtlShErrorOptions = {
 	readonly cause?: Error;
 };
 
-export { containsControlChar } from "@hobo/core/provider-redaction";
+export { containsControlChar } from "@hobo/provider-redaction";
 
 /** The provider's own patterns, on top of the shared ones. */
 export const TTL_SH_REDACTION_PROFILE: ProviderRedactionProfile = {
@@ -111,7 +111,7 @@ const providerRedactor = createProviderRedactor(TTL_SH_REDACTION_PROFILE);
 
 /**
  * Redact credential-shaped material and flatten control characters, through the
- * shared redactor (`@hobo/core/provider-redaction`) and ttl.sh's own shapes.
+ * shared redactor (`@hobo/provider-redaction`) and ttl.sh's own shapes.
  *
  * Digests survive: a digest is the artifact's identity, not a secret, it appears
  * in every receipt, and a redaction that ate it would make the audit trail

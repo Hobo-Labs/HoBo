@@ -1,5 +1,5 @@
 /**
- * Netlify's redactor is the shared one (`@hobo/core/provider-redaction`) plus
+ * Netlify's redactor is the shared one (`@hobo/provider-redaction`) plus
  * the claim URL and `nf_`/`nfp_` tokens. Before the move it had its own copy,
  * and two of its shapes backtracked: the JWT shape started again at every `ey`
  * and the private-key shape searched from every BEGIN for an END, and the claim
@@ -12,15 +12,15 @@ import {
 	assertPatternSweepLinear,
 	ownPatterns,
 	profilePatterns,
-} from "@hobo/core/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
+} from "@hobo/provider-redaction/linear-sweep";
+import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
 import {
 	assertFindsNoLess,
 	assertRevealsNoMore,
 	JWT_PIECES,
 	PEM_PIECES,
 	URL_PIECES,
-} from "@hobo/core/redaction-differential";
+} from "@hobo/provider-redaction/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import {

@@ -7,7 +7,7 @@
  * reliably reaches a console, a receipt and a bug report.
  */
 
-import { createProviderRedactor } from "@hobo/core/provider-redaction";
+import { createProviderRedactor } from "@hobo/provider-redaction";
 
 export const BROWSER_WASM_ERROR_CODES = [
 	/** The document cannot support what the placement asked for. */
@@ -43,7 +43,7 @@ const hostRedactor = createProviderRedactor();
 /**
  * Replace anything credential-shaped with a marker and flatten control
  * characters so host text cannot forge a console line. The shared redactor
- * (`@hobo/core/provider-redaction`) holds every shape this needs, the window
+ * (`@hobo/provider-redaction`) holds every shape this needs, the window
  * and the cut; a secret in a URL (`?access_token=…`) is its secret-key shape.
  */
 export function redactHostText(text: string, maxLength = 256): string {

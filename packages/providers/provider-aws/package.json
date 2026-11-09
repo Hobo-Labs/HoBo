@@ -21,7 +21,8 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@hobo/core": "workspace:*"
+		"@hobo/core": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*"
 	},
 	"description": "HoBo AWS CloudProvider: RDS/S3/Fargate/SQS/ElastiCache/DynamoDB behind the agnostic ports (HOBO-711)."
 }

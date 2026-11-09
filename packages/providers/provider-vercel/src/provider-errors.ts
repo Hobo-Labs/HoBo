@@ -10,7 +10,7 @@
 import {
 	createProviderRedactor,
 	type ProviderRedactionProfile,
-} from "@hobo/core/provider-redaction";
+} from "@hobo/provider-redaction";
 
 export const PROVIDER_ERROR_CODES = [
 	"PROVIDER_RATE_LIMITED",
@@ -53,7 +53,7 @@ export type ProviderErrorOptions = {
 	readonly cause?: Error;
 };
 
-export { REDACTION_WINDOW } from "@hobo/core/provider-redaction";
+export { REDACTION_WINDOW } from "@hobo/provider-redaction";
 
 /** The provider's own patterns, on top of the shared ones. */
 export const VERCEL_REDACTION_PROFILE: ProviderRedactionProfile = {
@@ -67,7 +67,7 @@ const providerRedactor = createProviderRedactor(VERCEL_REDACTION_PROFILE);
 /**
  * Replace anything credential-shaped with a marker and flatten control
  * characters so provider text cannot forge a log record. The shared redactor
- * (`@hobo/core/provider-redaction`) holds the shapes, the window and the cut;
+ * (`@hobo/provider-redaction`) holds the shapes, the window and the cut;
  * Vercel adds its claim and transfer codes, which are bearer authority on this
  * path.
  */
