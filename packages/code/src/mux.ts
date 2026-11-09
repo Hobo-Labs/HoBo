@@ -70,16 +70,23 @@ export interface MuxPlan {
 }
 
 /**
- * Pin a `-t` target to a session.
+ * Pin a `-t` target to the session named exactly `session`.
  *
  * tmux treats `-t <name>` on new-window/list-windows as a *window* target, so
  * a bare session name can prefix-match a window instead: with session "hobo"
  * and window "hobo-code", `new-window -t hobo` failed with "index 0 in use"
  * and the session silently came up with one pane. The trailing colon means
- * "this session, tmux's choice of window".
+ * "this session, tmux's choice of window". A session name, too, is matched
+ * as a prefix when no session has exactly that name: with only "hobo-old"
+ * there, `hobo:` meant "hobo-old". The leading `=` asks for an exact match.
  */
 export function sessionTarget(session: string): string {
-	return `${session}:`;
+	return `=${session}:`;
+}
+
+/** A `-t` target for the session named exactly `session` (see sessionTarget). */
+export function exactSession(session: string): string {
+	return `=${session}`;
 }
 
 /** tmux window names cannot contain dots or colons without confusing targets. */
@@ -105,6 +112,9 @@ export function shellQuote(value: string): string {
 	return `'${value.replace(/'/gu, `'\\''`)}'`;
 }
 
+/** A command that begins with a `NAME=value` environment assignment. */
+const LEADING_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/u;
+
 /**
  * The command that places `target.command` in its workspace — the exec wrapper
  * for namespace-mounted trees, a `cd` otherwise, and nothing when the target
@@ -123,7 +133,14 @@ export function placedCommand(target: MuxTarget): string {
 		const binary = target.exec.binary.endsWith(".js")
 			? `${shellQuote(process.execPath)} ${shellQuote(target.exec.binary)}`
 			: shellQuote(target.exec.binary);
-		return `${binary} exec --root ${shellQuote(target.exec.root)} --name ${shellQuote(target.exec.name)} -- ${target.command}`;
+		// hobo-rift runs what follows `--` as an argv vector, each element
+		// quoted, so leading `NAME=value` words are no environment there: the
+		// first became the command, and the agent never started. `env` makes
+		// them environment again.
+		const vector = LEADING_ASSIGNMENT.test(target.command)
+			? `env ${target.command}`
+			: target.command;
+		return `${binary} exec --root ${shellQuote(target.exec.root)} --name ${shellQuote(target.exec.name)} -- ${vector}`;
 	}
 	return target.cwd
 		? `cd ${shellQuote(target.cwd)} && ${target.command}`
@@ -269,8 +286,45 @@ export interface ApplyResult {
 	readonly ok: boolean;
 	readonly session: string;
 	readonly created: readonly string[];
+	/**
+	 * tmux's ids (`@n`) of the windows this run created, in order. A name can
+	 * come to mean another client's session or window; an id cannot.
+	 */
+	readonly createdWindows: readonly string[];
 	readonly existed: boolean;
 	readonly detail: string;
+}
+
+/** A window this run created: its name, and tmux's id for it when reported. */
+interface CreatedWindow {
+	readonly name: string;
+	readonly id?: string;
+}
+
+/** tmux's id from `-P -F` output, when it is one (`@n`, `$n`). */
+function tmuxId(
+	output: string | undefined,
+	sigil: "@" | "$",
+): string | undefined {
+	const id = output?.trim();
+	return id?.startsWith(sigil) === true ? id : undefined;
+}
+
+/**
+ * Remove the windows `ids` (tmux's `@n`), each by its id, never a name: a
+ * session the windows were the last of goes with them. The ids that could
+ * not be removed.
+ */
+export async function killWindows(
+	runner: MuxRunner,
+	ids: readonly string[],
+): Promise<readonly string[]> {
+	const left: string[] = [];
+	for (const id of [...ids].reverse()) {
+		const removed = await runner.run(["kill-window", "-t", id]);
+		if (removed.code !== 0) left.push(id);
+	}
+	return left;
 }
 
 /**
@@ -278,29 +332,49 @@ export interface ApplyResult {
  *
  * Idempotent: an existing session is reused and only missing windows are
  * added, so running this twice does not duplicate panes or kill your work.
+ * Once mux has the session, it names it by tmux's id, and it records each
+ * window it creates by id: another client may rename the session, or make
+ * one of the same name, meanwhile.
  */
 export async function applyMux(
 	plan: MuxPlan,
 	runner: MuxRunner,
 ): Promise<ApplyResult> {
-	const has = await runner.run(["has-session", "-t", plan.session]);
+	const has = await runner.run([
+		"has-session",
+		"-t",
+		exactSession(plan.session),
+	]);
 	const existed = has.code === 0;
-	const created: string[] = [];
+	const windows: CreatedWindow[] = [];
+	// Windows are named only by the id tmux printed for them: a window whose
+	// -P id did not parse cannot be named safely (a =session:window target
+	// could name another client's window), so it is never killed here. It
+	// stays, and rollback reports it as surviving.
+	const idsOf = (list: readonly CreatedWindow[]): string[] =>
+		list.flatMap((window) => (window.id === undefined ? [] : [window.id]));
+	const result = (ok: boolean, detail: string): ApplyResult => ({
+		ok,
+		session: plan.session,
+		created: windows.map((window) => window.name),
+		createdWindows: idsOf(windows),
+		existed,
+		detail,
+	});
+	/** The session as a window target: by tmux's id once mux has it. */
+	let target = sessionTarget(plan.session);
 
 	if (!existed) {
 		const first = plan.targets[0];
 		if (!first) {
-			return {
-				ok: false,
-				session: plan.session,
-				created: [],
-				existed: false,
-				detail: "no agents detected — nothing to seat in a session",
-			};
+			return result(false, "no agents detected — nothing to seat in a session");
 		}
 		const start = await runner.run([
 			"new-session",
 			"-d",
+			"-P",
+			"-F",
+			"#{session_id} #{window_id}",
 			"-s",
 			plan.session,
 			"-n",
@@ -308,15 +382,16 @@ export async function applyMux(
 			targetCommand(first),
 		]);
 		if (start.code !== 0) {
-			return {
-				ok: false,
-				session: plan.session,
-				created: [],
-				existed: false,
-				detail: "tmux new-session failed (is tmux installed?)",
-			};
+			return result(false, "tmux new-session failed (is tmux installed?)");
 		}
-		created.push(safeWindowName(first.name));
+		const [sessionId, windowId] = start.stdout.trim().split(" ");
+		const session = tmuxId(sessionId, "$");
+		if (session !== undefined) target = `${session}:`;
+		const id = tmuxId(windowId, "@");
+		windows.push({
+			name: safeWindowName(first.name),
+			...(id !== undefined ? { id } : undefined),
+		});
 	}
 
 	// Only ask tmux what already exists when joining a session we did not just
@@ -324,12 +399,21 @@ export async function applyMux(
 	// session still being torn down, and those stale window names made us skip
 	// creating the real ones — the session silently came up with one pane
 	// instead of six.
-	const present = new Set<string>(created);
+	const present = new Set<string>(windows.map((window) => window.name));
 	if (existed) {
+		const named = await runner.run([
+			"display-message",
+			"-p",
+			"-t",
+			sessionTarget(plan.session),
+			"#{session_id}",
+		]);
+		const session = named.code === 0 ? tmuxId(named.stdout, "$") : undefined;
+		if (session !== undefined) target = `${session}:`;
 		const listed = await runner.run([
 			"list-windows",
 			"-t",
-			sessionTarget(plan.session),
+			target,
 			"-F",
 			"#{window_name}",
 		]);
@@ -339,60 +423,50 @@ export async function applyMux(
 		}
 	}
 
-	for (const target of plan.targets) {
-		const name = safeWindowName(target.name);
-		if (present.has(name) || created.includes(name)) continue;
+	for (const plannedTarget of plan.targets) {
+		const name = safeWindowName(plannedTarget.name);
+		if (present.has(name)) continue;
 		const added = await runner.run([
 			"new-window",
 			"-d",
+			"-P",
+			"-F",
+			"#{window_id}",
 			"-t",
-			sessionTarget(plan.session),
+			target,
 			"-n",
 			name,
-			targetCommand(target),
+			targetCommand(plannedTarget),
 		]);
 		if (added.code !== 0) {
-			let rolledBack = true;
-			const surviving = new Set(created);
-			if (existed) {
-				for (const createdName of [...created].reverse()) {
-					const removed = await runner.run([
-						"kill-window",
-						"-t",
-						`${plan.session}:${createdName}`,
-					]);
-					if (removed.code === 0) surviving.delete(createdName);
-					rolledBack = rolledBack && removed.code === 0;
-				}
-			} else {
-				const removed = await runner.run(["kill-session", "-t", plan.session]);
-				rolledBack = removed.code === 0;
-				if (rolledBack) surviving.clear();
-			}
-			return {
-				ok: false,
-				session: plan.session,
-				created: [...surviving],
-				existed,
-				detail: `tmux new-window failed for ${name}; rollback ${rolledBack ? "complete" : "incomplete"}`,
-			};
+			// Remove what this run added, by id: a window tmux gave no id for
+			// cannot be named safely, and stays.
+			const left = new Set(await killWindows(runner, idsOf(windows)));
+			const surviving = windows.filter(
+				(window) => window.id === undefined || left.has(window.id),
+			);
+			const rolledBack = surviving.length === 0;
+			windows.splice(0, windows.length, ...surviving);
+			return result(
+				false,
+				`tmux new-window failed for ${name}; rollback ${rolledBack ? "complete" : "incomplete"}`,
+			);
 		}
-		created.push(name);
+		const id = tmuxId(added.stdout, "@");
+		windows.push({ name, ...(id !== undefined ? { id } : undefined) });
+		present.add(name);
 	}
 
-	return {
-		ok: true,
-		session: plan.session,
-		created,
-		existed,
-		detail: existed
-			? `reattached to ${plan.session}; added ${created.length} window(s)`
-			: `created ${plan.session} with ${created.length} window(s)`,
-	};
+	return result(
+		true,
+		existed
+			? `reattached to ${plan.session}; added ${windows.length} window(s)`
+			: `created ${plan.session} with ${windows.length} window(s)`,
+	);
 }
 
 /** The command a human runs to join the session — local or over ssh. */
 export function attachCommand(session: string, host?: string): string {
-	const local = `tmux attach -t ${safeWindowName(session)}`;
+	const local = `tmux attach -t ${exactSession(safeWindowName(session))}`;
 	return host ? `ssh -t ${host} ${JSON.stringify(local)}` : local;
 }

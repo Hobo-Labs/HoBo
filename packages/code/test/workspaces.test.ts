@@ -5,7 +5,15 @@
  * and the "rift backend" created an empty directory holding a JSON marker, so
  * an agent opening it found nothing at all. These pin the replacements.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { first, must } from "@hobo/core/total-access";
@@ -14,6 +22,10 @@ import {
 	allocateAgentWorkspaces,
 	findGitRoot,
 } from "../src/agent-workspaces.js";
+import {
+	applySettingsToSeatCommand,
+	defaultHarnessSettings,
+} from "../src/harness-settings.js";
 import { placedCommand } from "../src/mux.js";
 import {
 	createRiftWorkspace,
@@ -240,6 +252,43 @@ describe("entering a namespace-mounted workspace", () => {
 		expect(wrapped).toContain("'/usr/bin/hobo-rift' exec");
 		expect(wrapped).toContain("--name 'claude'");
 		expect(wrapped).not.toContain("cd '/ws/.hobo-rift");
+	});
+
+	it("starts the agent with its environment through hobo-rift exec", () => {
+		// hobo-rift takes the command after `--` as an argv vector and quotes
+		// each element (`quoteVector`), so a leading `NAME=value` became the
+		// command's name, and the agent never started.
+		const bin = tmp();
+		const seen = join(bin, "effort");
+		writeFileSync(
+			join(bin, "hobo-rift"),
+			'#!/bin/sh\nwhile [ "$1" != "--" ]; do shift; done\nshift\nexec "$@"\n',
+		);
+		writeFileSync(
+			join(bin, "claude"),
+			`#!/bin/sh\necho "$CLAUDE_CODE_EFFORT_LEVEL" > '${seen}'\n`,
+		);
+		for (const name of ["hobo-rift", "claude"])
+			chmodSync(join(bin, name), 0o755);
+		const command = applySettingsToSeatCommand(
+			"claude",
+			"claude",
+			defaultHarnessSettings("claude"),
+		);
+		expect(command).toMatch(/^CLAUDE_CODE_EFFORT_LEVEL=\S+ claude/u);
+		const placed = placedCommand({
+			name: "claude",
+			kind: "local",
+			command,
+			cwd: "/ws/.hobo-rift/workspaces/claude/merged",
+			exec: { binary: join(bin, "hobo-rift"), root: "/ws", name: "claude" },
+		});
+		const ran = spawnSync("sh", ["-c", placed], {
+			env: { PATH: `${bin}:/usr/bin:/bin` },
+			encoding: "utf8",
+		});
+		expect(ran.status, ran.stderr).toBe(0);
+		expect(readFileSync(seen, "utf8").trim()).toBe("medium");
 	});
 
 	it("still plain-cds for ordinary directory workspaces", () => {

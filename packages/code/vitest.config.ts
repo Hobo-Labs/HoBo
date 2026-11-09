@@ -15,6 +15,8 @@ export default defineConfig({
 				new URL("../../test/setup/isolate-hobo-home.ts", import.meta.url),
 			),
 			"test/subprocess-teardown.ts",
+			// isolate-tmux: a tmux server per test file, and no agent CLIs seated in it.
+			"test/isolate-tmux.ts",
 		],
 		// Optimizexp feature binding tests live under .optimizexp/ and run via root test:file
 		exclude: ["**/node_modules/**", "**/dist/**", "**/.optimizexp/**"],

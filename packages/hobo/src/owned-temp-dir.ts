@@ -35,13 +35,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isMainThread } from "node:worker_threads";
-
-const ENDING_SIGNALS: readonly NodeJS.Signals[] = [
-	"SIGTERM",
-	"SIGHUP",
-	"SIGINT",
-	"SIGQUIT",
-];
+// The one list of the signals that end a process here, hobo-code's: its
+// launcher, which cannot import a build, reads the same file.
+import { ENDING_SIGNALS } from "@hobo/code/ending-signals";
 
 /** The part of a process the directories' removal is tied to. `process` is one. */
 export interface DirOwner {

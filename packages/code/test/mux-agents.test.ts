@@ -147,9 +147,9 @@ describe("uniform mux targets", () => {
 	});
 
 	it("builds an attach command for local and remote alike", () => {
-		expect(attachCommand("hobo")).toBe("tmux attach -t hobo");
+		expect(attachCommand("hobo")).toBe("tmux attach -t =hobo");
 		expect(attachCommand("hobo", "box")).toBe(
-			'ssh -t box "tmux attach -t hobo"',
+			'ssh -t box "tmux attach -t =hobo"',
 		);
 	});
 });
@@ -179,6 +179,7 @@ describe("panes outlive their command", () => {
 });
 
 describe("applyMux", () => {
+	/** A tmux stand-in: one session, `$0`; window `@n` is the nth made. */
 	function fakeTmux(
 		existing: string[] = [],
 	): MuxRunner & { calls: string[][] } {
@@ -191,6 +192,7 @@ describe("applyMux", () => {
 				if (args[0] === "has-session") {
 					return { code: existing.length > 0 ? 0 : 1, stdout: "" };
 				}
+				if (args[0] === "display-message") return { code: 0, stdout: "$0\n" };
 				if (args[0] === "list-windows") {
 					return { code: 0, stdout: windows.join("\n") };
 				}
@@ -200,7 +202,11 @@ describe("applyMux", () => {
 						"args[args.indexOf('-n') + 1]",
 					);
 					windows.push(name);
-					return { code: 0, stdout: "" };
+					const id = `@${windows.length - 1}`;
+					return {
+						code: 0,
+						stdout: args[0] === "new-session" ? `$0 ${id}\n` : `${id}\n`,
+					};
 				}
 				return { code: 0, stdout: "" };
 			},
@@ -217,6 +223,57 @@ describe("applyMux", () => {
 		expect(result.ok).toBe(true);
 		expect(result.existed).toBe(false);
 		expect(result.created).toEqual(["claude", "codex"]);
+		expect(result.createdWindows).toEqual(["@0", "@1"]);
+	});
+
+	it("never kills a window by name when tmux printed no id for it", async () => {
+		const plan = planMux("hobo", [
+			{ name: "claude", kind: "local", command: "claude" },
+			{ name: "codex", kind: "local", command: "codex" },
+			{ name: "gemini", kind: "local", command: "gemini" },
+		]);
+		const calls: string[][] = [];
+		let added = 0;
+		const runner: MuxRunner = {
+			run: async (args) => {
+				calls.push([...args]);
+				if (args[0] === "has-session") return { code: 1, stdout: "" };
+				if (args[0] === "new-session") return { code: 0, stdout: "$0 @0\n" };
+				if (args[0] === "new-window") {
+					added += 1;
+					// First added window: tmux printed nothing parseable as an id.
+					// Second: creation fails, so applyMux rolls back.
+					return added === 1
+						? { code: 0, stdout: "(no id)\n" }
+						: { code: 1, stdout: "" };
+				}
+				return { code: 0, stdout: "" };
+			},
+		};
+		const result = await applyMux(plan, runner);
+		expect(result.ok).toBe(false);
+		expect(result.detail).toContain("rollback incomplete");
+		// Only the window tmux gave an id for is killed, and only by that id:
+		// the unparsed window stays rather than risk naming another client's.
+		const kills = calls
+			.filter((call) => call[0] === "kill-window")
+			.map((call) => call[call.indexOf("-t") + 1]);
+		expect(kills).toEqual(["@0"]);
+		expect(result.created).toEqual(["codex"]);
+		expect(result.createdWindows).toEqual([]);
+	});
+
+	it("adds its windows to the session it made by its id, not its name", async () => {
+		// Another client may rename the session, or make one of its name,
+		// while mux adds its windows.
+		const plan = planMux("hobo", [
+			{ name: "claude", kind: "local", command: "claude" },
+			{ name: "codex", kind: "local", command: "codex" },
+		]);
+		const runner = fakeTmux();
+		await applyMux(plan, runner);
+		const added = runner.calls.find((call) => call[0] === "new-window");
+		expect(added?.[added.indexOf("-t") + 1]).toBe("$0:");
 	});
 
 	it("reuses an existing session and only adds missing windows", async () => {
@@ -229,6 +286,7 @@ describe("applyMux", () => {
 		expect(result.existed).toBe(true);
 		// Idempotent: an existing pane is never duplicated or killed.
 		expect(result.created).toEqual(["codex"]);
+		expect(result.createdWindows).toEqual(["@1"]);
 		expect(runner.calls.some((c) => c[0] === "kill-session")).toBe(false);
 	});
 
@@ -253,7 +311,7 @@ describe("applyMux", () => {
 			},
 		};
 		const result = await applyMux(plan, runner);
-		expect(seen).toEqual(["hobo:"]);
+		expect(seen).toEqual(["=hobo:"]);
 		expect(result.created).toEqual(["hobo-code", "claude"]);
 	});
 
@@ -300,7 +358,10 @@ describe("applyMux", () => {
 		expect(result.ok).toBe(false);
 		expect(result.detail).toContain("codex");
 		expect(result.detail).toContain("rollback complete");
-		expect(base.calls).toContainEqual(["kill-session", "-t", "hobo"]);
+		// By its window's id: the session goes with its last window, and no
+		// session is ever killed by name.
+		expect(base.calls).toContainEqual(["kill-window", "-t", "@0"]);
+		expect(base.calls.some((call) => call[0] === "kill-session")).toBe(false);
 		expect(result.created).toEqual([]);
 	});
 
@@ -319,8 +380,9 @@ describe("applyMux", () => {
 		};
 		const result = await applyMux(plan, runner);
 		expect(result.ok).toBe(false);
-		expect(base.calls).toContainEqual(["kill-window", "-t", "hobo:codex"]);
+		expect(base.calls).toContainEqual(["kill-window", "-t", "@1"]);
 		expect(base.calls.some((call) => call[0] === "kill-session")).toBe(false);
+		expect(base.calls.some((call) => call.includes("@0"))).toBe(false);
 	});
 
 	it("reports panes that survive an incomplete rollback", async () => {
@@ -331,9 +393,9 @@ describe("applyMux", () => {
 		const runner: MuxRunner = {
 			run: async (args) => {
 				if (args[0] === "has-session") return { code: 1, stdout: "" };
-				if (args[0] === "new-session") return { code: 0, stdout: "" };
+				if (args[0] === "new-session") return { code: 0, stdout: "$0 @0\n" };
 				if (args[0] === "new-window") return { code: 1, stdout: "" };
-				if (args[0] === "kill-session") return { code: 1, stdout: "" };
+				if (args[0] === "kill-window") return { code: 1, stdout: "" };
 				return { code: 0, stdout: "" };
 			},
 		};

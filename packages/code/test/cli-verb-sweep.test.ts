@@ -33,7 +33,13 @@
  * Each run gets its own `HOBO_HOME`, so nothing leaks between tests and
  * nothing touches the developer's real station.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readlinkSync,
+	rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -44,12 +50,34 @@ import {
 	type HoboCodeCliResult,
 	runHoboCodeCli,
 } from "../src/cli.js";
+import { testEnv } from "./test-env.js";
 
 const homes: string[] = [];
 
+/** The processes whose working directory is under `dir`. */
+function workingUnder(dir: string): number[] {
+	// /proc cwd enumeration is Linux-only; elsewhere there is no portable
+	// per-process cwd query, so this leak check does not apply.
+	if (!existsSync("/proc")) return [];
+	return readdirSync("/proc")
+		.filter((name) => /^\d+$/u.test(name))
+		.map(Number)
+		.filter((pid) => {
+			try {
+				return readlinkSync(`/proc/${pid}/cwd`).startsWith(dir);
+			} catch {
+				return false;
+			}
+		});
+}
+
+// A verb that left a process working in its HOBO_HOME (mux once seated the
+// agents on PATH there) raced the removal below: ENOTEMPTY.
 afterEach(() => {
-	for (const dir of homes.splice(0))
-		rmSync(dir, { recursive: true, force: true });
+	const homesNow = homes.splice(0);
+	const working = homesNow.flatMap((dir) => workingUnder(dir));
+	for (const dir of homesNow) rmSync(dir, { recursive: true, force: true });
+	expect(working, "processes still working in a verb's HOBO_HOME").toEqual([]);
 });
 
 async function run(
@@ -61,11 +89,11 @@ async function run(
 	return await runHoboCodeCli([...argv], {
 		hoboHome,
 		cwd: hoboHome,
-		env: {
+		env: testEnv({
 			HOBO_HOME: hoboHome,
 			HOBO_ENV: "local-dev",
 			HOBO_CODE_SIDECARS: "0",
-		},
+		}),
 		json: false,
 		allocateWorkspaces: async ({ workspaceRoot, agentIds }) => ({
 			backend: "shared",

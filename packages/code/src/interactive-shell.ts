@@ -15,6 +15,7 @@
 import type { Readable, Writable } from "node:stream";
 import { type Component, matchesKey, TUI } from "@earendil-works/pi-tui";
 import { must } from "@hobo/core/total-access";
+import { ENDING_SIGNALS } from "../bin/ending-signals.mjs";
 import { HOBO_LOGO_TUI } from "./_generated-art/hobo-logo-tui.js";
 import {
 	harnessDisplayLabel,
@@ -137,7 +138,7 @@ import {
 	scrollToLive,
 	shellViewportRows,
 } from "./shell-scroll.js";
-import { StreamTerminal } from "./shell-terminal.js";
+import { isTerminalGone, StreamTerminal } from "./shell-terminal.js";
 import {
 	BO_IDLE_TICK_MS,
 	HOBO_MARK_CONSOLE,
@@ -2660,6 +2661,23 @@ export interface ShellHost {
 	readonly aboutLines?: readonly string[];
 	/** Release long-lived local dev sessions owned by this shell. */
 	readonly dispose?: () => Promise<void>;
+	/**
+	 * The shell's terminal went (its window closed): a hangup, taken as SIGHUP
+	 * is, so `exitSignal` reports SIGHUP while a verb holds an authorization.
+	 */
+	readonly hangUp?: () => void;
+	/**
+	 * Listen for what the host tells the shell on its own, such as a forward
+	 * that ended while the shell stays (ssh refused, its lease ran out); the
+	 * shell shows each in its transcript. The result stops listening.
+	 */
+	readonly onNotice?: (listener: (text: string) => void) => () => void;
+	/**
+	 * The ending signal that came while one of this shell's verbs held a Station
+	 * authorization (opening it, or a forward over it), if any: the shell then
+	 * ends by that signal, once `dispose` has closed what was open.
+	 */
+	readonly exitSignal?: () => NodeJS.Signals | undefined;
 }
 
 export interface RunInteractiveShellOptions {
@@ -2692,6 +2710,15 @@ export interface RunInteractiveShellOptions {
 	readonly sessionId?: string;
 	readonly messages?: readonly ShellMessage[];
 	readonly journal?: readonly ShellMessage[];
+}
+
+/** Stop the shell's TUI; a terminal that has gone takes nothing more. */
+function leaveTerminal(tui: TUI): void {
+	try {
+		tui.stop();
+	} catch (error) {
+		if (!(error instanceof Error) || !isTerminalGone(error)) throw error;
+	}
 }
 
 /**
@@ -2821,6 +2848,16 @@ export async function runInteractiveShell(
 	}
 
 	const liveTty = isTty && options.scriptedKeys === undefined;
+	let quit = false;
+	let resolveDone!: () => void;
+	const done = new Promise<void>((resolve) => {
+		resolveDone = resolve;
+	});
+	const requestQuit = () => {
+		if (quit) return;
+		quit = true;
+		resolveDone();
+	};
 	const terminal = new StreamTerminal({
 		stdin,
 		stdout,
@@ -2828,6 +2865,13 @@ export async function runInteractiveShell(
 		rows: state.height,
 		rawMode: liveTty,
 		alternateScreen: liveTty,
+		// The terminal went (its window closed): a hangup, which quits the
+		// shell as SIGHUP does, and the host ends hobo-code by it while one of
+		// its verbs holds a Station authorization.
+		onHangup: () => {
+			options.host.hangUp?.();
+			requestQuit();
+		},
 	});
 	options.onTerminal?.(terminal);
 	const startTerminal = terminal.start.bind(terminal);
@@ -2841,17 +2885,6 @@ export async function runInteractiveShell(
 		}, onResize);
 	};
 	const tui = new TUI(terminal, false);
-
-	let quit = false;
-	let resolveDone!: () => void;
-	const done = new Promise<void>((resolve) => {
-		resolveDone = resolve;
-	});
-	const requestQuit = () => {
-		if (quit) return;
-		quit = true;
-		resolveDone();
-	};
 
 	let attachBusy = false;
 	/** Set after the Editor exists — Enter / /mux attach call this. */
@@ -3844,6 +3877,14 @@ export async function runInteractiveShell(
 	}, 200);
 	paneTick.unref?.();
 
+	// What the host tells the shell on its own (a forward that ended) is shown
+	// in the transcript, as a verb's answer is.
+	const stopNotices = options.host.onNotice?.((text) => {
+		if (quit) return;
+		state = appendProduct(state, text);
+		tui.requestRender();
+	});
+
 	let maxMsTimer: NodeJS.Timeout | undefined;
 	let maxMsExpired: Promise<void> | undefined;
 	const maxMs =
@@ -3882,24 +3923,27 @@ export async function runInteractiveShell(
 	// otherwise leaves raw mode, a hidden cursor and bracketed paste enabled.
 	// hobo-code's launcher passes SIGINT and SIGQUIT on as well, and in raw
 	// mode neither comes from the keyboard: each asks the shell to quit.
-	const quitSignals = ["SIGTERM", "SIGHUP", "SIGINT", "SIGQUIT"] as const;
 	const onSignal = () => requestQuit();
-	for (const signal of quitSignals) process.once(signal, onSignal);
+	for (const signal of ENDING_SIGNALS) process.once(signal, onSignal);
 
 	try {
 		await done;
 	} finally {
 		clearInterval(tick);
 		clearInterval(paneTick);
+		stopNotices?.();
 		if (maxMsTimer) clearTimeout(maxMsTimer);
-		for (const signal of quitSignals) process.removeListener(signal, onSignal);
+		for (const signal of ENDING_SIGNALS)
+			process.removeListener(signal, onSignal);
 		resizeStream.off?.("resize", onTerminalResize);
 		resizeStream.removeListener?.("resize", onTerminalResize);
 		// Leave the alternate screen (and raw mode) even if the driver threw —
-		// a CLI that can strand a terminal in raw mode is not shippable.
-		tui.stop();
+		// a CLI that can strand a terminal in raw mode is not shippable. A
+		// terminal that has gone takes nothing more, and its failures do not
+		// stop the quit: the host's dispose still closes what the shell holds.
+		leaveTerminal(tui);
 		state = persistShellChat(state, true);
-		if (state.sessionId) {
+		if (state.sessionId && !terminal.hungUp) {
 			stdout.write(`${formatShellCloseout(state.sessionId)}\n`);
 		}
 		await sidecars?.close().catch(() => {});

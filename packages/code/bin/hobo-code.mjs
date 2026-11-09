@@ -24,6 +24,7 @@ import { createRequire } from "node:module";
 import { constants } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { forwardSignal, launcherSignals } from "./launcher-signals.mjs";
 
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const distCli = join(pkgRoot, "dist", "cli.js");
@@ -180,12 +181,12 @@ function tryRebuildDist() {
 }
 
 /**
- * The child runs in a session of its own where the platform allows it, so the
- * terminal's hangup never reaches it, nor does a signal sent to hobo-code:
- * this launcher passes on every signal that ends hobo-code (below). Its IPC
- * channel covers the one end that passes nothing on, the launcher killed
- * outright: the channel closes, and the child takes that as a hangup
- * (`src/bin/hobo-code.ts`).
+ * Except on Windows the child runs in a session of its own, so the terminal's
+ * hangup never reaches it, nor does a signal sent to hobo-code: this launcher
+ * passes on every signal that ends hobo-code (below). Its IPC channel covers
+ * the one end that passes nothing on, the launcher killed outright: the
+ * channel closes, and the child takes that as a hangup
+ * (`src/launcher-hangup.ts`). On Windows the child shares the console.
  */
 const detached = process.platform !== "win32";
 const childStdio = ["inherit", "inherit", "inherit", "ipc"];
@@ -246,20 +247,21 @@ const run = useSource
 			env: process.env,
 			detached,
 		});
-// Every signal that ends hobo-code goes on to a detached child, the closing
-// terminal's SIGHUP included, and hobo-code waits for the child to end: the
-// terminal is handed back once the child has restored it. A child that is not
-// detached gets the console's own events.
-const forwarded = detached
-	? ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"]
-	: ["SIGINT", "SIGTERM"];
-const forward = (signal) => run.kill(signal);
-for (const signal of forwarded) process.on(signal, forward);
+// Except on Windows, every signal that ends hobo-code goes on to the child,
+// the closing terminal's SIGHUP included, and hobo-code waits for the child to
+// end: the terminal is handed back once the child has restored it. On Windows
+// nothing is passed on (launcher-signals.mjs says why), and hobo-code only
+// waits for the child.
+const signals = launcherSignals(process.platform);
+const onSignal = signals.forward
+	? (signal) => forwardSignal(run, signal)
+	: () => {};
+for (const signal of signals.listen) process.on(signal, onSignal);
 const result = await new Promise((resolve) => {
 	run.once("error", (error) => resolve({ error }));
 	run.once("exit", (status, signal) => resolve({ status, signal }));
 });
-for (const signal of forwarded) process.off(signal, forward);
+for (const signal of signals.listen) process.off(signal, onSignal);
 if (result.error) process.stderr.write(`hobo-code: ${result.error.message}\n`);
 // A child ended by signal n: 128+n, as a shell reports it.
 process.exitCode =

@@ -57,15 +57,40 @@ inside a per-run temporary root, removed when the run ends; a `HOBO_HOME` set by
 the runner is preserved. This keeps package tests from writing `/tmp/.hobo`
 under turbo's strict environment or the developer's real `~/.hobo` outside it.
 
-The launcher runs `dist/bin/hobo-code.js` (or `src/` via tsx) as a child, in a
-session of its own except on Windows, so neither a signal sent to `hobo-code`
-nor the terminal's hangup reaches that child directly. The launcher passes
-SIGINT, SIGTERM, SIGHUP and SIGQUIT on to it, the SIGHUP of a closing terminal
-included, waits for it to end, and exits with its status, or 128+n when it
-ends by signal n. Killed outright (SIGKILL), the launcher passes nothing on:
-the child sees its IPC channel to the launcher close and quits as on SIGHUP.
-On Windows the child shares the console, and only SIGINT and SIGTERM are
-passed on.
+The launcher runs `dist/bin/hobo-code.js` (or `src/` via tsx) as a child.
+Except on Windows that child has a session and process group of its own, so
+neither a signal sent to `hobo-code` nor the terminal's hangup reaches it
+directly. There, the launcher passes SIGINT, SIGTERM, SIGHUP and SIGQUIT on to
+the child's process group, the SIGHUP of a closing terminal included, so what
+the child starts without detaching gets them too: the `--pi` TUI, `tmux
+attach`, and the `ssh` of `session serve --host` (not that of the shell's
+`/sessions serve --host`, which the shell starts detached and stops itself).
+(A `/hobo` command runs in the
+child itself; only with `HOBO_CODE_HOBO_BIN`, a stand-in for tests, is it a
+process of its own, which the group signal then reaches as well.) It waits for
+the child to end, and
+exits with its status, or 128+n when it ends by signal n. Killed outright
+(SIGKILL), the launcher passes nothing on: the child takes its IPC channel to
+the launcher closing as a hangup and raises SIGHUP on itself, at once if the
+launcher was gone before the child finished starting
+(`src/launcher-hangup.ts`). On Windows the launcher passes nothing on: the
+child shares its console and gets Ctrl-C itself, and passing a signal on there
+is a forced kill (TerminateProcess) that would race the child's own handling
+and skip its exit listeners. The launcher only keeps the console's Ctrl-C and
+Ctrl-Break from ending it before its child, and waits. A launcher killed
+outright on Windows leaves the child running. The Windows paths are not
+exercised by automated tests on Windows (the suites fake `process.platform`
+on Linux or skip there); the shell's forward ssh also runs without the
+watchdog's lifetime tie on Windows, so a killed shell can orphan that ssh
+and its authorization there.
+
+`nohup hobo-code …` does not keep hobo-code running after a hangup: POSIX
+preserves the SIGHUP ignore `nohup` sets across exec, but the launcher
+installs its own SIGHUP listener, which replaces the inherited ignore. The launcher listens for SIGHUP and passes
+the hangup on to its child: a hangup is how hobo-code learns its terminal is
+gone, and the shell, or `session serve`, then stops and removes what it made
+rather than run on with no terminal. Run it under tmux or screen to keep it
+running.
 
 | Binary | Product |
 |---|---|
@@ -337,7 +362,10 @@ occupancy, not a minted key). Each agent is a JSON plugin under
 `@ai-sdk/harness-*`; `cli` / `eve` / `sdk` are in-repo HarnessV1 adapters
 for runtimes the SDK does not ship yet. CLI plugins carry `runtime.prompt`
 one-shot argv so Cursor/Copilot/Gemini/Aider/Goose still run without a
-builtin SDK package. TTY seating still uses mux.
+builtin SDK package. TTY seating still uses mux. `HOBO_CODE_SEAT_AGENTS=0`
+(or `false`, `no`, `off`) turns seating off: the shell then starts no tmux
+session and no agent CLI, and neither does `hobo-code mux`, which answers that
+seating is off (its checks and a `--dry-run` plan still run). `hobo-code config` lists it.
 Programmatic turns use `createHarnessV1(spec)` or `createHarnessAgent(spec)`
 (AI SDK `HarnessAgent` + just-bash for host adapters; bridge adapters need
 an injected network sandbox).
@@ -414,11 +442,13 @@ hobo-code mux --host box.example  # same panes, over ssh
   claude    · coding-agent · bin:/home/you/.local/bin/claude
   codex     · coding-agent · bin:/home/you/.local/bin/codex
   ollama    · inference    · bin:/usr/local/bin/ollama
- in-session · stay in hobo-code · chat first · optional tmux attach -t hobo
+ in-session · stay in hobo-code · chat first · optional tmux attach -t =hobo
 ```
 
 Re-running is idempotent: an existing session is reused and only missing
 windows are added — it never duplicates or kills a pane you are working in.
+mux names its session exactly (tmux's `=hobo`): a session whose name only
+begins with it, such as `hobo-old`, is never joined or written to.
 
 **Panes open in the devenv workspace, one virtual worktree per agent.** The
 workspace is the directory that declares the toolchain (`DEVENV_ROOT`, else the
@@ -551,7 +581,8 @@ or `/hobo plan`. That composition keeps a throwaway event store in a
 `hobo-yard-*` directory under `TMPDIR`, removed when hobo-code exits and, since
 the entry point asks for it (`removeOwnedDirsOnSignals`, loaded beside
 `createComposedHoboCli`), on SIGTERM, SIGHUP, SIGINT or SIGQUIT as well,
-which the launcher passes on to the process that holds the store (above). The
+which the launcher passes on to the process that holds the store, except on
+Windows (above). The
 shell quits on each of the four: it leaves the alternate screen, shows the
 cursor and restores the terminal's settings, and hobo-code's status is the
 quit's (0).
@@ -869,6 +900,57 @@ The Station authorization gates a lease-bound local SSH-agent socket backed by
 detach, expires with the authorization, and drains redemption/end facts to the
 Station's Yard audit feed. Private keys and session tokens are never copied
 into pane commands or remote hosts; a missing installed agent fails closed.
+Only the proxies of the panes mux created stay. If mux fails before then (a
+proxy that does not start, a gateway that does not close), it answers with
+`HOBO_CODE_MUX_AUTHORIZATION_FAILED`, stops every proxy it handed off, each
+writing its `pam.SessionEnded`, and ends any session the gateway still held
+with the reason `mux-failed`. Like `session serve --host` below, mux holds
+SIGINT, SIGTERM, SIGHUP and SIGQUIT from just before it opens the
+authorization: one that comes before the panes hold their sessions ends mux
+with `HOBO_CODE_MUX_INTERRUPTED`, and hobo-code with 128+n, once every proxy
+is stopped and the gateway has ended what it held with `mux-interrupted`.
+The tmux windows this run created go too, each by tmux's window id, never by
+a name, which another client may have taken meanwhile: a session the run
+created goes with its last window, and one that was there before keeps its
+own windows.
+
+`hobo-code session serve --host <machine> --port <n>` forwards the resident
+session browser over SSH under such an authorization, and closes the
+authorization when the forward ends, however it ends: when ssh exits, or on
+SIGINT, SIGTERM, SIGHUP or SIGQUIT, which stop ssh first and then end
+hobo-code with 128+n. hobo-code listens for those four from just before it
+opens the authorization (`src/signal-hold.ts`): a signal that comes while the
+authorization is being opened means ssh never starts, and one that comes
+while ssh is being started stops it once it has. Either way the authorization
+is closed before hobo-code ends, and they stay held until it is: a second
+signal while it is being closed is only recorded. If the verb fails once the
+authorization is open, a throw included, before it hands the authorization to
+the forward, it closes it itself, and the Station's `pam.SessionEnded` says
+`session-serve-failed`. The interactive shell's `/sessions serve --host
+<machine>` runs the same forward behind its screen (ssh gets no terminal, and
+runs in a process group of its own, so that only the shell's quit stops it,
+under a watchdog, `bin/ssh-watchdog.mjs`, whose stdin is a pipe the shell's
+process holds: when that process ends, however it ends, or the
+authorization's lease does, the watchdog ends ssh), and closes the
+authorization when the forward ends, when it cannot start, and
+when the shell quits. The shell holds the same four signals from just before
+one of its verbs opens an authorization: one that comes while that verb or its
+forward runs quits the shell, which waits for a verb still opening the
+authorization, stops ssh, closes the authorization with the reason
+`shell-quit` (as quitting the shell any other way does), and ends hobo-code
+with 128+n. Its terminal closing is a hangup, taken as SIGHUP: a terminal
+that has gone fails every read and write (EIO), and the shell quits on that
+without writing to it again, so the authorization is closed with
+`shell-quit` and hobo-code ends with 129. If the shell's process ends without
+quitting (an uncaught error, or SIGKILL), ssh does not outlive it: an
+uncaught error's `exit` stops ssh at once, and the watchdog ends it either
+way. Nothing can close the authorization then, and its lease ends it. A
+forward that ends while the shell stays (ssh refused or ended, or the lease
+ran out) is told in the shell's transcript, as a verb's answer is: why,
+ssh's last line with its escapes dropped and passed through the package's
+redaction, and whether the authorization is closed. Its `/sessions serve` without `--host` starts the
+loopback session browser as `hobo-code session serve` does, shows where it is,
+and closes it when the shell quits.
 
 ## Package layout
 
@@ -876,7 +958,15 @@ into pane commands or remote hosts; a missing installed agent fails closed.
 
 Vitest clears inherited Git repository selectors before loading tests, so a
 pre-commit run cannot redirect temporary repositories, worktrees, or indexes to
-the checkout being committed. Tests still set those variables explicitly for
+the checkout being committed. It also gives each test file a tmux server of its
+own (`TMUX_TMPDIR` under the test TMPDIR, `TMUX` cleared, and the server on that
+socket killed after the file, by the socket's path) and sets
+`HOBO_CODE_SEAT_AGENTS=0`, so no test reaches the developer's tmux or starts
+their agent CLIs, from the shell's panes or from `mux` (`test/isolate-tmux.ts`).
+A test that starts a process or runs a verb with an environment of its own
+builds it with `testEnv` (`test/test-env.ts`), which carries both; the verb
+sweep (`cli-verb-sweep.test.ts`) also fails if a verb left a process working
+in its HOBO_HOME. Tests still set those variables explicitly for
 their own temporary repositories. Set `HOBO_TEST_MAX_WORKERS` to bound Vitest
 workers on slow or memory-constrained hosts and `HOBO_TEST_TIMEOUT` to adjust
 the default per-test and hook budgets. Turbo's strict environment passes both
