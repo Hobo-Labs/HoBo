@@ -5,8 +5,8 @@
  * selection. Which offering a given resource gets is decided later, by ADR-0151
  * selection, against the requirements the app actually states.
  *
- * SCOPE: Cloudflare is one of the two providers that ships HTTP deployment
- * resolvers (`cloudflareResolverRegistry`), so this catalog is backed by real
+ * SCOPE: every product in this catalog has an HTTP deployment resolver
+ * (`cloudflareResolverRegistry`; count in `providerParity()`), backed by
  * `api.cloudflare.com/client/v4` drivers. Those drivers are proven against an
  * injected fake transport; a live deploy additionally needs real credentials
  * and network egress, which no test here supplies.

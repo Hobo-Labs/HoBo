@@ -10,10 +10,10 @@
  * managed database, cache, queue, topic or secret store, so five slots carry no
  * rows and an app that needs Postgres gets a truthful `none` here rather than a
  * machine it would have to administer. `@hobo/provider-hetzner` ships resolvers
- * for 3 of its 5 catalogued products (Cloud Servers, Load Balancers, Volumes),
- * exercised against an injected fake transport; the other two live on hosts the
- * transport guard deliberately does not allowlist. No Resource Definitions are
- * registered, so a deploy against this Yard still fails closed at resolution.
+ * for its catalogued products (count: `providerParity()` in `./parity.js`), each on
+ * an exact-host transport guard and exercised against an injected fake
+ * transport. No Resource Definitions are registered, so a deploy against this
+ * Yard still fails closed at resolution.
  */
 import {
 	type HetznerYardSpecOptions,

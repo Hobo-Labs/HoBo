@@ -41,6 +41,18 @@ export default mergeConfig(
 						name: "isolated",
 						isolate: true,
 						include: ISOLATED_TEST_FILES,
+						// The compile-time tests run under tsc in this project only
+						// (in both, they would be type-checked twice), with the
+						// tsconfig that includes them (src's tsconfig leaves test/
+						// out), so `pnpm test` fails on one that does not compile.
+						// That tsconfig also takes the Vercel deploy path's test
+						// files, which compile cleanly, so a type error in one of them
+						// fails the run as a source error; test/ as a whole does not.
+						typecheck: {
+							enabled: true,
+							include: ["test/**/*.test-d.ts"],
+							tsconfig: "./tsconfig.types.json",
+						},
 					},
 				},
 				{
