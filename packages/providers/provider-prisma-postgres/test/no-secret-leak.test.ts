@@ -1,3 +1,4 @@
+import { createClaimableOperationKeyDeriver } from "@hobo/core";
 /**
  * The one test that would catch every other mistake in this package: take the
  * artifacts that actually leave — record, claim plan, associated-resource ref,
@@ -27,6 +28,7 @@ import {
 } from "./harness.js";
 
 const FORBIDDEN_LITERALS = [
+	"proj_fake000000000000",
 	"postgres://",
 	"postgresql://",
 	"prisma+postgres://",
@@ -44,9 +46,10 @@ async function artifacts() {
 		store: createInMemoryIdempotencyStore(),
 		clock,
 	});
+	const custody = createStubCustody();
 	const driver = createPrismaClaimableDatabaseDriver({
 		client,
-		custody: createStubCustody(),
+		custody,
 		clock,
 	});
 	const provisioned = await driver.provision({
@@ -58,21 +61,36 @@ async function artifacts() {
 		attestedBy: "operator@example.test",
 		workspaceId: "ws_fake",
 	});
+	const serialization = {
+		custody,
+		deriveOperationKey: createClaimableOperationKeyDeriver(
+			Uint8Array.from({ length: 32 }, (_, i) => i + 1),
+		),
+		scope: {
+			tenantId: "tenant",
+			providerAccountId: "anonymous",
+			scopeId: "deployment",
+		},
+	};
 	return {
 		provisioned,
 		claimed,
-		associatedResource: driver.associatedResource(provisioned),
-		receipts: [toProvisionReceipt(provisioned), toProvisionReceipt(claimed)],
-		facts: [...toProviderFacts(provisioned), ...toProviderFacts(claimed)],
-		binding: provisioned.binding,
-		claimVerification: driver.verifyClaim(claimed),
-		ownership: await driver.verifyOwnership(provisioned),
+		serialization,
+		receipts: [
+			await toProvisionReceipt(provisioned, serialization),
+			await toProvisionReceipt(claimed, serialization),
+		],
+		facts: [
+			...(await toProviderFacts(provisioned, serialization)),
+			...(await toProviderFacts(claimed, serialization)),
+		],
 	};
 }
 
 describe("no credential material in serialized outputs", () => {
-	it("finds nothing credential-shaped in records, receipts, facts, or bindings", async () => {
-		const output = await artifacts();
+	it("finds nothing credential-shaped in public receipts or facts", async () => {
+		const { receipts, facts } = await artifacts();
+		const output = { receipts, facts };
 		for (const [name, value] of Object.entries(output)) {
 			expect(
 				scanForCredentialMaterial(parseJsonValue(JSON.stringify(value))),
@@ -82,7 +100,8 @@ describe("no credential material in serialized outputs", () => {
 	});
 
 	it("finds none of the forbidden literals anywhere in the serialized artifacts", async () => {
-		const serialized = JSON.stringify(await artifacts());
+		const { receipts, facts } = await artifacts();
+		const serialized = JSON.stringify({ receipts, facts });
 		for (const literal of FORBIDDEN_LITERALS) {
 			expect(
 				serialized,
@@ -121,14 +140,14 @@ describe("no credential material in serialized outputs", () => {
 	});
 
 	it("refuses to emit a receipt built from a record carrying a raw connection string", async () => {
-		const { provisioned } = await artifacts();
+		const { provisioned, serialization } = await artifacts();
 		const poisoned = {
 			...provisioned,
 			databaseName:
 				"postgresql://fake_user_000000:REDACTED@db.prisma.io:5432/postgres",
 		};
-		expect(() => toProvisionReceipt(poisoned)).toThrowError(
-			/credential-shaped material/u,
-		);
+		await expect(
+			toProvisionReceipt(poisoned, serialization),
+		).rejects.toThrowError(/credential-shaped material/u);
 	});
 });

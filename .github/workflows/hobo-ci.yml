@@ -10,17 +10,17 @@ on:
     branches: [main]
     types: [checks_requested]
   schedule:
-    - cron: "17 3 * * 1"
+    - cron: "17 3 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
-  # Per-job heap ≈ (HOBO_CI_WORKER_MEMORY_MB default 8192 / HOBO_TURBO_CONCURRENCY) × 0.75
-  NODE_OPTIONS: --max-old-space-size=3072
-  # Serial turbo test tasks on 8 GiB workers (@hobo/cli vitest also caps maxWorkers: 1).
+  # ci-runner-preflight replaces these from the job's cgroup limit. The worker
+  # injects NODE_OPTIONS at container creation so every Node process gets its heap cap.
   HOBO_TURBO_CONCURRENCY: "1"
+  HOBO_TEST_MAX_WORKERS: "1"
   # Every turbo run writes .turbo/runs/<id>.json; ci-trace turns them into OTel spans.
   TURBO_RUN_SUMMARY: "true"
   # A git transfer under 1 KB/s for 30 s aborts instead of hanging (the pins use the same bound).
@@ -29,9 +29,10 @@ env:
   GIT_HTTP_LOW_SPEED_LIMIT: "1000"
   GIT_HTTP_LOW_SPEED_TIME: "30"
 
-# A newer push to main supersedes the in-progress one: its secret scan covers the full history and
-# its gates test the newer tree, while the older run would hold box slots the merge queue is waiting
-# for. The event name keeps schedule and workflow_dispatch on main out of the pushes' group, so a
+# A newer push to main supersedes the in-progress one: its secret scan covers the landed
+# range (schedule still does full history after a blob backfill) and its gates test the
+# newer tree, while the older run would hold box slots the merge queue is waiting for.
+# The event name keeps schedule and workflow_dispatch on main out of the pushes' group, so a
 # push never cancels them; merge_group runs are never cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
@@ -43,21 +44,34 @@ jobs:
     # Skipped (which satisfies the required check) on merge_group: the PR run already evaluated
     # these inputs, and building here would retag the box's hobo-ci-worker:local from an unmerged
     # group commit. The push to main covers the merged tree.
-    if: github.event_name != 'merge_group'
-    # Trunk runs ask for their own label once the box serves it (repository variable
-    # HOBO_CI_TRUNK_RUNNER=true). GitHub hands a runner to the oldest queued job its labels match,
+    # A push whose per-commit file lists contain no image input also skips, satisfying needs at
+    # once so Main full gate does not wait for a no-op. Missing file lists and forced pushes build.
+    if: >-
+      github.event_name != 'merge_group' && (
+      github.event_name != 'push' ||
+      github.event.commits[0] == null ||
+      github.event.forced == true ||
+      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"mise.toml') ||
+      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"mise.lock') ||
+      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"packages/ci-gh-actions/deploy/ci-runner/') ||
+      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/lib/ci-runner-contract.mts') ||
+      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/ci-runner-preflight.mts') ||
+      contains(format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed)), '"scripts/test/ci-runner-image-contract.test.ts'))
+    # Trunk runs ask for their own label by default; HOBO_CI_TRUNK_RUNNER=false is the
+    # kill switch for a box daemon too old to serve it. GitHub hands a runner to the oldest queued job its labels match,
     # so under the shared `hobo` label the runner the box launched for a main job went to an older
     # PR job instead. scripts/lint-actions.ts allows this expression and `hobo`, nothing else.
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER == 'true' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 45
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
     steps:
       # No submodules: the diff only needs the gitlink, not ts-autocode's tree. Depth 2 gives
-      # HEAD~1: the previous main commit on push, the base on a pull request's merge commit.
+      # HEAD~1 for the image-input diff; the full-history secret scan lives in main-gate.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          clean: false
           fetch-depth: 2
       - name: Detect runner image inputs changed
         id: rebuild
@@ -77,46 +91,171 @@ jobs:
           else
             echo "needed=false" >> "$GITHUB_OUTPUT"
           fi
+      - uses: ./.github/actions/ci-runner-preflight
+        if: steps.rebuild.outputs.needed == 'true'
+      - uses: ./.github/actions/pnpm-store
+        if: steps.rebuild.outputs.needed == 'true'
+      - name: Install root deps for shell lint
+        if: steps.rebuild.outputs.needed == 'true'
+        run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
       - name: Build base + mise oci layers (native arch)
         if: steps.rebuild.outputs.needed == 'true'
         timeout-minutes: 15
         env:
           MISE_EXPERIMENTAL: "1"
-        run: bash packages/ci-gh-actions/deploy/ci-runner/build.sh
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          bash -n packages/ci-gh-actions/deploy/ci-runner/build.sh
+          pnpm run lint:shell:changed -- --base=HEAD~1
+          bash packages/ci-gh-actions/deploy/ci-runner/build.sh
       # Published from main only; a pull request's image is tried on the box, not shipped.
       - name: Push runner image to GHCR (optional)
         if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
         env:
           MISE_EXPERIMENTAL: "1"
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "$GHCR_TOKEN" ]; then
+            echo "GHCR_TOKEN is unavailable; skipping runner image push"
+            exit 0
+          fi
           version="$(node --no-warnings scripts/ci-runner-image-version.mts)"
           repo="${GITHUB_REPOSITORY,,}"
           image="ghcr.io/${repo}/hobo-ci-worker:${version}"
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker tag "hobo-ci-worker:${version}" "$image"
           docker push "$image"
           docker tag "hobo-ci-worker:local" "ghcr.io/${repo}/hobo-ci-worker:latest"
           docker push "ghcr.io/${repo}/hobo-ci-worker:latest"
 
-  pr-gate:
-    name: PR impact gate
+  ci-deps-image:
+    name: CI deps layer (pnpm)
+    needs: ci-runner-image
+    if: >-
+      !cancelled() && needs.ci-runner-image.result != 'failure' && (
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request')
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 20
+    # Any event can reuse an existing content-keyed image. Only PR misses build
+    # and run the contract; non-PR misses defer to the publisher and daemon.
+    # Local and GHCR candidates verify before non-PR promotion.
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 1
+      - name: Limit PR builds to deps image inputs
+        id: scope
+        run: |
+          set -euo pipefail
+          run=true
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            git fetch --depth=1 origin "$base"
+            changed="$(git diff --name-only "$base" HEAD -- \
+              packages/ci-gh-actions/deploy/ci-runner/deps \
+              scripts/ci/deps-key.mts \
+              scripts/ci/deps-layer-buckets.mts \
+              scripts/ci/deps-layer.mts \
+              scripts/lib/deps-key.mts \
+              scripts/lib/ts-source-resolve.mts \
+              scripts/test/ci-deps-image-mount.test.ts)"
+            if [ -z "$changed" ]; then run=false; fi
+          fi
+          echo "run=${run}" >> "$GITHUB_OUTPUT"
+      - name: Compute deps key
+        if: steps.scope.outputs.run == 'true'
+        id: key
+        run: echo "key=$(node --no-warnings scripts/ci/deps-key.mts)" >> "$GITHUB_OUTPUT"
+      - name: Check current local deps image
+        if: steps.scope.outputs.run == 'true'
+        id: current
+        run: |
+          set -euo pipefail
+          actual="$(docker image inspect hobo-ci-deps:local --format '{{ index .Config.Labels "hobo.ci.deps-key" }}' 2>/dev/null || true)"
+          current=false
+          if [ "$actual" = "${{ steps.key.outputs.key }}" ]; then current=true; fi
+          echo "current=${current}" >> "$GITHUB_OUTPUT"
+      - name: Login to GHCR for read-only cache
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Resolve local or GHCR deps image
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true'
+        id: source
+        run: |
+          set -euo pipefail
+          candidate="hobo-ci-deps:${{ steps.key.outputs.key }}"
+          remote="ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:${{ steps.key.outputs.key }}"
+          source=build
+          if docker image inspect "$candidate" >/dev/null 2>&1; then
+            source=local
+          elif docker manifest inspect "$remote" >/dev/null 2>&1; then
+            docker pull "$remote"
+            docker tag "$remote" "$candidate"
+            source=ghcr
+          fi
+          echo "source=${source}" >> "$GITHUB_OUTPUT"
+      - name: Build deps image and verify offline install
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name == 'pull_request'
+        id: build
+        run: bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh --no-promote
+      - name: Defer non-PR deps image miss
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name != 'pull_request'
+        run: echo "Key miss deferred to CI deps image publisher and the daemon ensure loop; skipping Fabric rebuild"
+      - name: Verify deps image under job mount
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && (steps.source.outputs.source != 'build' || github.event_name == 'pull_request')
+        env:
+          HOBO_CI_DEPS_MOUNT_CONTRACT: '1'
+          HOBO_CI_DEPS_IMAGE: hobo-ci-deps:${{ steps.key.outputs.key }}
+          HOBO_CI_DEPS_LAYER: ${{ steps.key.outputs.key }}
+        run: node --experimental-strip-types --no-warnings --import ./scripts/lib/ts-source-resolve.mts --test scripts/test/ci-deps-image-mount.test.ts
+      - name: Promote verified deps image
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source != 'build' && github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          candidate="hobo-ci-deps:${{ steps.key.outputs.key }}"
+          docker tag "$candidate" hobo-ci-deps:local
+          node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
+      - name: Remove PR candidate tag (never a later local-hit promotion)
+        if: always() && github.event_name == 'pull_request' && steps.source.outputs.source == 'build'
+        run: docker image rm "hobo-ci-deps:${{ steps.key.outputs.key }}" >/dev/null 2>&1 || true
+
+  pr_gate_validation:
+    name: PR impact validation
     # Waits for the image job: a pull request that changes the image inputs must test on the
     # image it built (that job retags hobo-ci-worker:local, which this job's container starts
     # from). When the inputs are unchanged that job is a short no-op. !cancelled() keeps this
-    # required check running, never skipped, when the image build fails.
+    # validation running, never skipped, when the image build fails. The
+    # required PR impact gate below combines this result with merge-group tests.
     needs: ci-runner-image
-    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
-    runs-on: hobo
-    timeout-minutes: 25
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    # Large affected sets can need a cold-cache run; retain the workflow-wide cap.
+    timeout-minutes: 20
     permissions:
       contents: read
+    outputs:
+      merge_base: ${{ steps.merge-group-base.outputs.base }}
+      merge_tests: ${{ steps.merge-group-base.outputs.tests }}
+      pr_base: ${{ steps.scm-base.outputs.base }}
     env:
       GITHUB_EVENT_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          clean: false
           fetch-depth: 0
       - uses: ./.github/actions/ci-runner-preflight
       - name: Turbo cache
@@ -128,18 +267,53 @@ jobs:
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - uses: ./.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check deps layer match
+        id: deps-layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - name: Verify deps layer sibling links
+        if: steps.deps-layer.outputs.match == 'true'
+        run: node --import tsx scripts/ensure-ts-autocode-links.mts
+      - name: Install dependencies
+        if: steps.deps-layer.outputs.match != 'true'
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: CI runner image contract (manifest)
+        if: github.event_name == 'merge_group'
+        run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
+      - name: Assert CI fabric contract
+        if: github.event_name == 'merge_group'
+        run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
       - name: Resolve Turbo SCM base
+        if: github.event_name == 'pull_request'
         id: scm-base
         env:
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_BASE_REF: ${{ github.base_ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          BASE="$(node --import tsx scripts/ci/turbo-scm-base.mts)"
+          if [[ ! "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "PR base SHA is missing or invalid" >&2; exit 1
+          fi
+          git cat-file -e "${PR_BASE_SHA}^{commit}" || git fetch --no-tags origin "$PR_BASE_SHA"
+          BASE="$(git merge-base "$PR_BASE_SHA" HEAD)"
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
-          git fetch origin "${{ github.base_ref }}"
+      # Shadow only: classifies non-meaningful (inert) paths and reports
+      # the lanes they would drop. Execution below is unchanged in every
+      # mode; HOBO_IMPACT_GATE=off disables the report.
+      - name: Impact classification (shadow)
+        if: github.event_name == 'pull_request' && vars.HOBO_IMPACT_GATE != 'off'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
+          HOBO_IMPACT_GATE: ${{ vars.HOBO_IMPACT_GATE || 'shadow' }}
+        run: |
+          set -euo pipefail
+          git diff --name-only "${TURBO_SCM_BASE}"...HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base="${TURBO_SCM_BASE}" \
+            > "$RUNNER_TEMP/impact-plan.json"
       - name: DCO sign-off check
+        if: github.event_name == 'pull_request'
         continue-on-error: true
         env:
           DCO_BASE: origin/${{ github.base_ref }}
@@ -159,32 +333,67 @@ jobs:
           fi
           echo "All commits carry a matching DCO sign-off."
       - name: Code format gate
+        if: github.event_name == 'pull_request'
         run: pnpm run lint:code
       - name: Relevant checks only
-        run: pnpm agent:check -- --base=origin/${{ github.base_ref }}
-      - name: Dagger checks plan (native CI parity)
-        run: |
-          pnpm exec turbo run build --filter=@hobo/ci-dagger --output-logs=new-only --concurrency=1
-          pnpm --filter @hobo/ci-dagger checks --plan --config .hobo/dagger.json
-      - name: Affected package lanes
+        if: github.event_name == 'pull_request'
         env:
-          TURBO_SCM_BASE: ${{ steps.scm-base.outputs.base }}
+          BASE: ${{ steps.scm-base.outputs.base }}
+        run: pnpm agent:check -- --base="$BASE" --external-workspace-tests
+      # main-gate's main-base and S0 gate set steps mirror these steps.
+      - name: Resolve the merge group base and gate scope
+        if: github.event_name == 'merge_group'
+        id: merge-group-base
         run: |
           set -euo pipefail
-          # scripts/ci/affected-lanes.mts: skips only when every changed path is inert,
-          # runs the whole workspace for root inputs, filters packages with dependents.
-          mapfile -t FILTERS < <(
-            git diff --name-only "${TURBO_SCM_BASE}"...HEAD \
-              | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts
-          )
-          if [ "${#FILTERS[@]}" -eq 0 ]; then
-            echo "Only inert paths changed; skipping turbo impact lanes"
-            exit 0
+          # An unreachable merge-group base runs repo-wide; otherwise
+          # scripts/ci/affected-lanes.mts --main-gate decides. Root scripts and
+          # //# tasks stay scoped; globalDependencies and other shared inputs widen.
+          base="$GITHUB_EVENT_MERGE_GROUP_BASE_SHA"
+          if [ -n "$base" ] && ! git cat-file -e "${base}^{commit}" 2>/dev/null; then base=""; fi
+          # A workflow edit cannot change a package's test result.
+          scope="repo-wide"
+          tests="all"
+          if [ -n "$base" ]; then
+            changed="$(git diff --name-only "$base" HEAD)"
+            scope="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --main-gate --base="$base" <<<"$changed")"
+            lanes="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base="$base" <<<"$changed")"
+            if [ "$lanes" != "--filter=*" ]; then tests="affected"; fi
           fi
-          pnpm exec turbo run build typecheck lint test:unit test:schema test:contract:consumer \
-            "${FILTERS[@]}" \
-            --continue=never --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} \
-            --anon-profile=turbo-profile.json
+          echo "merge group gate: ${scope}, workspace tests: ${tests} (base ${base:-none})"
+          {
+            echo "base=${base}"
+            echo "scope=${scope}"
+            echo "tests=${tests}"
+          } >> "$GITHUB_OUTPUT"
+      - name: Impact classification (shadow)
+        if: github.event_name == 'merge_group' && steps.merge-group-base.outputs.base != '' && vars.HOBO_IMPACT_GATE != 'off'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          BASE: ${{ steps.merge-group-base.outputs.base }}
+          HOBO_IMPACT_GATE: ${{ vars.HOBO_IMPACT_GATE || 'shadow' }}
+        run: |
+          set -euo pipefail
+          git diff --name-only "$BASE" HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base="$BASE" --meaningful-out="$RUNNER_TEMP/impact-meaningful.txt" \
+            > "$RUNNER_TEMP/impact-plan.json"
+      - name: S0 gate set
+        if: github.event_name == 'merge_group'
+        timeout-minutes: 20
+        env:
+          # One vitest fork at a time: four forks (default) with 3 GiB heaps plus
+          # componentize-js wizer exceed the 6 GiB job container and get OOM-killed.
+          HOBO_RELEVANT_CHECK_CONCURRENCY: "1"
+          SCOPE: ${{ steps.merge-group-base.outputs.scope }}
+          BASE: ${{ steps.merge-group-base.outputs.base }}
+        run: |
+          set -euo pipefail
+          if [ "$SCOPE" = "affected" ]; then
+            pnpm agent:check -- --base="$BASE" --external-workspace-tests
+          else
+            pnpm run check:all
+          fi
       # The prune decides whether the save runs at all. Skipped here, the save's
       # composite never starts, so the runner never resolves actions/cache/save:
       # that resolve once spent 2 minutes timing out against the GitHub API.
@@ -202,18 +411,214 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-trace
 
-  pr-offpath:
-    # Off the critical path: these used to run inside the PR impact gate.
-    name: PR off-path checks (ts-autocode surface, production packages)
-    if: github.event_name == 'pull_request'
-    runs-on: hobo
-    timeout-minutes: 25
+  workspace_tests:
+    name: Workspace test shard ${{ matrix.shard }}
+    # The required gate accepts validation only when every shard succeeds.
+    needs: pr_gate_validation
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_validation.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          clean: false
+          fetch-depth: 0
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Turbo cache
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          preferred-job: pr_gate_validation
+      - name: Check the sibling pins (gitlink against checkout, offline)
+        run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
+      - uses: ./.github/actions/pnpm-store
+      - name: Link deps layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check deps layer match
+        id: deps-layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - name: Verify deps layer sibling links
+        if: steps.deps-layer.outputs.match == 'true'
+        run: node --import tsx scripts/ensure-ts-autocode-links.mts
+      - name: Install dependencies
+        if: steps.deps-layer.outputs.match != 'true'
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Workspace tests
+        timeout-minutes: 19
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ needs.pr_gate_validation.outputs.pr_base }}
+          MERGE_TESTS: ${{ needs.pr_gate_validation.outputs.merge_tests }}
+          MERGE_BASE: ${{ needs.pr_gate_validation.outputs.merge_base }}
+          SHARD: ${{ matrix.shard }}
+          HOBO_TURBO_CONCURRENCY: "1"
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request) TESTS=affected; BASE="$PR_BASE" ;;
+            merge_group) TESTS="$MERGE_TESTS"; BASE="$MERGE_BASE" ;;
+            *) echo "Unexpected event: $EVENT_NAME" >&2; exit 1 ;;
+          esac
+          case "$TESTS" in
+            affected)
+              # Changed packages run whole; their dependents run only the tests
+              # whose import closure reaches a change. A missing base is an error.
+              if [ -z "$BASE" ] || ! git cat-file -e "${BASE}^{commit}"; then
+                echo "Merge-group base is missing or unreachable" >&2
+                exit 1
+              fi
+              git diff --name-only "$BASE" HEAD |
+                node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
+                  --base="$BASE" --shard="$SHARD/8" --run --anon-profile=turbo-profile.json
+              ;;
+            all)
+              printf '' | node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
+                --shard="$SHARD/8" --run --anon-profile=turbo-profile.json
+              ;;
+            *) echo "Invalid or missing merge-group test scope: $TESTS" >&2; exit 1 ;;
+          esac
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && steps.turbo-prune.outputs.save != 'false'
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
+      - name: CI trace
+        if: always()
+        uses: ./.github/actions/ci-trace
+
+  pr_affected:
+    name: PR affected package lanes
+    needs: pr_gate_validation
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.pr_gate_validation.result == 'success' }}
+    runs-on: hobo
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 0
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Turbo cache
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          preferred-job: pr_gate_validation
+      - name: Check the sibling pins (gitlink against checkout, offline)
+        run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
+      - uses: ./.github/actions/pnpm-store
+      - name: Link deps layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check deps layer match
+        id: deps-layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - name: Verify deps layer sibling links
+        if: steps.deps-layer.outputs.match == 'true'
+        run: node --import tsx scripts/ensure-ts-autocode-links.mts
+      - name: Install dependencies
+        if: steps.deps-layer.outputs.match != 'true'
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Dagger checks plan (native CI parity)
+        run: |
+          pnpm exec turbo run build --filter=@hobo/ci-dagger --output-logs=new-only --concurrency=1
+          pnpm --filter @hobo/ci-dagger checks --plan --config .hobo/dagger.json
+      - name: Affected package lanes
+        env:
+          TURBO_SCM_BASE: ${{ needs.pr_gate_validation.outputs.pr_base }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TURBO_SCM_BASE" ] || ! git cat-file -e "${TURBO_SCM_BASE}^{commit}"; then
+            echo "PR base is missing or unreachable" >&2; exit 1
+          fi
+          git diff --name-only "${TURBO_SCM_BASE}"...HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base="${TURBO_SCM_BASE}" \
+              > "$RUNNER_TEMP/hobo-affected-lanes"
+          mapfile -t FILTERS < "$RUNNER_TEMP/hobo-affected-lanes"
+          if [ "${#FILTERS[@]}" -eq 0 ]; then
+            echo "Only inert paths changed; skipping turbo impact lanes"
+            exit 0
+          fi
+          pnpm exec turbo run build typecheck lint test:unit test:schema test:contract:consumer \
+            "${FILTERS[@]}" \
+            --continue=never --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} \
+            --anon-profile=turbo-profile.json
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && steps.turbo-prune.outputs.save != 'false'
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
+      - name: CI trace
+        if: always()
+        uses: ./.github/actions/ci-trace
+
+  pr-gate:
+    name: PR impact gate
+    # This is the required check. It runs even if a prerequisite was skipped,
+    # failed, or cancelled, and accepts only the event's complete validation.
+    needs: [pr_gate_validation, workspace_tests, pr_affected]
+    if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require successful validation and workspace tests
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          VALIDATION_RESULT: ${{ needs.pr_gate_validation.result }}
+          WORKSPACE_RESULT: ${{ needs.workspace_tests.result }}
+          AFFECTED_RESULT: ${{ needs.pr_affected.result }}
+        run: |
+          set -euo pipefail
+          if [ "$VALIDATION_RESULT" != "success" ]; then
+            echo "PR impact validation did not succeed: $VALIDATION_RESULT" >&2
+            exit 1
+          fi
+          if [ "$WORKSPACE_RESULT" != "success" ]; then
+            echo "Workspace test shards did not all succeed: $WORKSPACE_RESULT" >&2
+            exit 1
+          fi
+          case "$EVENT_NAME:$AFFECTED_RESULT" in
+            pull_request:success|merge_group:skipped) ;;
+            *) echo "Unexpected affected-lanes result for $EVENT_NAME: $AFFECTED_RESULT" >&2; exit 1 ;;
+          esac
+
+  pr-offpath:
+    # Off the critical path: these used to run inside the PR impact gate.
+    name: PR off-path checks (ts-autocode surface, production packages)
+    if: github.event_name == 'pull_request'
+    runs-on: hobo
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
           # Depth 2 holds the PR merge commit and its first parent (the base tip).
           fetch-depth: 2
       - uses: ./.github/actions/ci-runner-preflight
@@ -226,8 +631,9 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Read root config at HEAD^1 too, so root-only edits stay off-path.
           CHANGED="$(git diff --name-only HEAD^1 HEAD)"
-          LANES="$(printf '%s\n' "$CHANGED" | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts)"
+          LANES="$(printf '%s\n' "$CHANGED" | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=HEAD^1)"
           # ts-autocode surface and package-boundary inputs that live outside packages/.
           PINS="$(printf '%s\n' "$CHANGED" | grep -E '^(external/|tools/pins/|\.gitmodules$|scripts/test/ts-autocode-|scripts/bootstrap-siblings\.mts$|scripts/check-package-boundaries)' || true)"
           if [ -z "$LANES" ] && [ -z "$PINS" ]; then
@@ -246,7 +652,7 @@ jobs:
       - uses: ./.github/actions/pnpm-store
         if: steps.scope.outputs.run == 'true'
       - if: steps.scope.outputs.run == 'true'
-        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
       - name: Every name HoBo imports from ts-autocode exists at the pin, and its grounding fields are still checked
         if: steps.scope.outputs.run == 'true'
         run: node --import tsx --test scripts/test/ts-autocode-consumer-surface.test.ts scripts/test/ts-autocode-grounding-drift.test.ts
@@ -269,19 +675,20 @@ jobs:
 
   main-gate:
     name: Main full gate
-    # Not a required check, so on merge_group it gated nothing while holding one
-    # of the box's two slots; the push to main re-runs the same tree. Add
-    # merge_group back here if this job ever becomes a required check.
-    # Same reason as pr-gate: a push that changes the image inputs tests on the image it built.
+    # Not a required check and not run on merge_group: merge_group now runs the same
+    # affected gate across the validation and workspace jobs instead.
+    # Those jobs mirror this job's main-base, S0 gate set and Workspace tests steps.
+    # A push that changes the image inputs tests on the image it built; an unchanged push skips
+    # the image job, which satisfies this dependency immediately.
     needs: ci-runner-image
     if: >-
       !cancelled() && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER == 'true' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     # A main run past 20 minutes is a failure; the step timeouts below fail a hang sooner.
-    # The weekly schedule is the one whole-workspace sweep and gets an hour.
+    # The daily schedule is the one whole-workspace sweep and gets an hour.
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 20 }}
     permissions:
       contents: read
@@ -292,19 +699,141 @@ jobs:
       cancel-in-progress: false
     env:
       GITHUB_EVENT_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+      S0_SPARSE_PATHS: |
+        .agents
+        .changeset
+        .claude
+        .codex
+        .cursor
+        .devcontainer
+        .githooks
+        .github
+        .hobo
+        .impeccable
+        .mise
+        .optimizexp
+        .repo
+        ast-grep
+        contrib
+        deploy
+        docs
+        examples
+        external
+        features
+        packages
+        plans
+        release
+        scripts
+        site
+        src
+        test
+        tools
+        workflows
+        mise.toml
+        mise.lock
+        package.json
+        pnpm-lock.yaml
+        pnpm-workspace.yaml
+        turbo.json
+        tsconfig.base.json
+        .env.example
+        .gitattributes
+        .gitignore
+        .gitleaks.toml
+        .gitmodules
+        .mcp.json
+        AGENTS.md
+        AUTH.md
+        CLAUDE.md
+        CODE_OF_CONDUCT.md
+        CONTRIBUTING.md
+        DX.md
+        GAPS.md
+        LICENSE
+        NOTES.md
+        PRODUCT.md
+        README.md
+        SECURITY.md
+        SUPPORT.md
+        biome.json
+        buf.gen.yaml
+        cucumber.yaml
+        konsistent.json
+        oxlint.config.ts
+        sgconfig.yml
+        skills-lock.json
+        stryker.scripts.conf.json
+        tsconfig.json
+        vitest.config.ts
+        vitest.coverage.config.ts
+        vitest.mutation.config.ts
+        media/package.json
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          submodules: recursive
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - name: Checkout (sparse S0, full history)
+        uses: ./.github/actions/hobo-checkout
+        with:
           fetch-depth: 0
+          sparse-paths: ${{ env.S0_SPARSE_PATHS }}
+          submodules: "false"
       - uses: ./.github/actions/ci-runner-preflight
+      - name: Start secret scan (full history, background)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          SCAN_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          : > "$RUNNER_TEMP/gitleaks/log"
+          nohup node --experimental-strip-types --no-warnings \
+            scripts/ci/gitleaks-main-scan.mts --background \
+            --dir "$RUNNER_TEMP/gitleaks" \
+            </dev/null >/dev/null 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/gitleaks/nohup.pid"
+      - name: Fetch pinned ts-autocode
+        run: |
+          set -euo pipefail
+          # Sparse S0 keeps the gitlink only. pins:fetch materializes the pin's
+          # grounding/training/rewrite cone so deps-key and pnpm prepare can see
+          # the workspace importers. Skip when the cone is already present.
+          if [ -f external/ts-autocode/packages/grounding/package.json ] \
+            && [ -f external/ts-autocode/packages/training/package.json ] \
+            && [ -f external/ts-autocode/packages/rewrite/package.json ]; then
+            echo "ts-autocode pin cone already present"
+            exit 0
+          fi
+          pnpm run pins:fetch ts-autocode
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
         with:
           turbo-token: ${{ secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: remote:rw
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Link deps layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check deps layer match
+        id: deps-layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - name: Verify deps layer sibling links
+        if: steps.deps-layer.outputs.match == 'true'
+        run: node --import tsx scripts/ensure-ts-autocode-links.mts
+      - name: Install dependencies
+        if: steps.deps-layer.outputs.match != 'true' || github.event_name == 'schedule'
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: CI runner image contract (manifest)
+        run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
+      - name: Assert CI fabric contract
+        run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
       - name: Seed the pnpm store cache for PRs
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: ./.github/actions/pnpm-store
@@ -317,21 +846,21 @@ jobs:
           PUSH_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          # The push's `before`, or HEAD~1 for a dispatch. The weekly schedule and an
+          # The push's `before`, or HEAD~1 for a dispatch. The daily schedule and an
           # unreachable base run repo-wide; otherwise scripts/ci/affected-lanes.mts
-          # --main-gate decides (repo-wide only for root config, lockfile, toolchain pins).
+          # compares root config at that base. Root scripts and //# tasks stay
+          # affected-only; globalDependencies and other shared inputs widen.
           base=""
           if [ "$EVENT_NAME" = "push" ]; then base="$PUSH_BEFORE"; fi
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then base="$(git rev-parse HEAD~1)"; fi
           if [ -n "$base" ] && ! git cat-file -e "${base}^{commit}" 2>/dev/null; then base=""; fi
-          # Package tests go repo-wide only for inputs turbo hashes into every task; a
-          # workflow edit cannot change a package's test result.
+          # A workflow edit cannot change a package's test result.
           scope="repo-wide"
           tests="all"
           if [ -n "$base" ]; then
             changed="$(git diff --name-only "$base" HEAD)"
-            scope="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --main-gate <<<"$changed")"
-            lanes="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts <<<"$changed")"
+            scope="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --main-gate --base="$base" <<<"$changed")"
+            lanes="$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base="$base" <<<"$changed")"
             if [ "$lanes" != "--filter=*" ]; then tests="affected"; fi
           fi
           echo "main gate: ${scope}, workspace tests: ${tests} (base ${base:-none})"
@@ -355,10 +884,15 @@ jobs:
           else
             pnpm run check:all
           fi
+      - name: Generated-output drift
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        timeout-minutes: 8
+        run: >-
+          pnpm run codegen:check:affected &&
+          pnpm exec turbo run test --filter=@hobo-draft/s0-04-protobuf-cue-codegen --concurrency=100%
       - name: Workspace tests
-        # The whole-workspace sweep (weekly, or a lockfile/root-config change) is not held
-        # to the main-push budget.
-        timeout-minutes: ${{ steps.main-base.outputs.tests == 'affected' && 10 || 40 }}
+        # Weekly schedule gets the hour-long job budget; push/dispatch repo-wide sweeps stay ≤20.
+        timeout-minutes: ${{ github.event_name == 'schedule' && (steps.main-base.outputs.tests == 'affected' && 10 || 55) || (steps.main-base.outputs.tests == 'affected' && 10 || 20) }}
         env:
           TESTS: ${{ steps.main-base.outputs.tests }}
           BASE: ${{ steps.main-base.outputs.base }}
@@ -367,13 +901,23 @@ jobs:
           if [ "$TESTS" = "affected" ]; then
             # Changed packages run whole; their dependents run only the test files whose
             # import closure reaches a changed file (scripts/ci/dependent-tests.mts).
+            # --base keeps the planner's root-config scoping identical to the
+            # lane decision above.
             git diff --name-only "$BASE" HEAD |
               node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
-                --run --anon-profile=turbo-profile.json
+                --base="$BASE" --run --anon-profile=turbo-profile.json
           else
             pnpm exec turbo run test \
               --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} --anon-profile=turbo-profile.json
           fi
+      - name: Secret scan (full history)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types --no-warnings \
+            scripts/ci/gitleaks-main-scan.mts --wait \
+            --dir "$RUNNER_TEMP/gitleaks"
       - name: Prune Turbo cache
         id: turbo-prune
         if: always() && env.TURBO_TOKEN == ''
@@ -399,6 +943,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          clean: false
           # Depth 2 holds the PR merge commit and its first parent (the base tip).
           fetch-depth: 2
       - uses: ./.github/actions/ci-runner-preflight
@@ -417,7 +962,7 @@ jobs:
               src/draft/technical-proofs/componentize-artifact-trust-contract/test/publish-verify.test.ts \
               >> "$GITHUB_OUTPUT"
       - if: steps.scope.outputs.run == 'true'
-        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
       - name: Verify signed hello-bindle and refuse stripped signatures
         if: steps.scope.outputs.run == 'true'
         run: pnpm test:file src/draft/technical-proofs/componentize-artifact-trust-contract/test/publish-verify.test.ts
@@ -431,6 +976,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          clean: false
           fetch-depth: 2
       - uses: ./.github/actions/ci-runner-preflight
       - name: Decide whether the diff reaches the cold dev loop
@@ -452,7 +998,7 @@ jobs:
       # `prepare` only checks packages/runtime's ts-autocode links, which are not installed.
       - if: steps.scope.outputs.run == 'true'
         run: >-
-          pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
+          node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
           --filter .
           --filter "./packages/cli..."
           --filter "./src/draft/technical-proofs/hobo-612-dev-local-loop-poc..."
@@ -474,7 +1020,9 @@ jobs:
 
   ci-guard:
     name: CI fabric contract guard
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER == 'true' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    # On other events, these steps run inside Main full gate or PR impact gate.
+    if: github.event_name == 'pull_request'
+    runs-on: hobo
     timeout-minutes: 10
     permissions:
       contents: read
@@ -482,20 +1030,20 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          clean: false
       - uses: ./.github/actions/ci-runner-preflight
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
-        run: pnpm exec vitest run scripts/test/ci-runner-image-contract.test.ts
+        run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
       - name: Assert CI fabric contract
         run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
 
   secret-scan:
     name: Secret scan
-    # Skipped (which satisfies the required check) on merge_group: the PR run scanned
-    # base..head, the squashed group commit adds no content beyond those commits, and the
-    # push to main rescans the full history.
-    if: github.event_name != 'merge_group'
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER == 'true' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    # Skipped (which satisfies the required check) on merge_group and trunk events; trunk runs
+    # scan the full history inside Main full gate in parallel with its checks.
+    if: github.event_name == 'pull_request'
+    runs-on: hobo
     timeout-minutes: 10
     permissions:
       contents: read
@@ -503,14 +1051,11 @@ jobs:
       # No submodules: gitleaks scans this repository's history, not ts-autocode's.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          clean: false
           fetch-depth: 0
       - uses: ./.github/actions/ci-runner-preflight
       - name: Scan git history for secrets
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            gitleaks git --config .gitleaks.toml --redact --exit-code 1 \
-              --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.sha }}"
-          else
-            gitleaks git --config .gitleaks.toml --redact --exit-code 1
-          fi
+          gitleaks git --config .gitleaks.toml --redact --exit-code 1 \
+            --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.sha }}"

@@ -23,7 +23,7 @@ import { type JsonValue, parseJsonValue } from "../src/json.js";
 // anti-affinity stays delegated to wadm.
 
 const HELLO_BINDLE_PLAN_HASH =
-	"sha256:30eb585558f0614fac037fa5ada935eaad03e86f35c39110af21b2c58bdaf5b6";
+	"sha256:0e1bbf78ae6b765d8a4cd5cb41c5b9c5eadc43e32ea4fedec97cf87a7deef915";
 
 function definition(overrides: {
 	providerId: string;

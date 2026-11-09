@@ -10,6 +10,7 @@ import {
 	type HoboCli,
 	type YardRuntime,
 } from "@hobo/cli";
+import type { SharedHostingBudgetAuthority } from "@hobo/cloud";
 import { createAwsProvider } from "@hobo/provider-aws";
 import { createAzureProvider } from "@hobo/provider-azure";
 import { createDigitalOceanProvider } from "@hobo/provider-digitalocean";
@@ -44,6 +45,7 @@ import { createDriftCommand } from "./drift-command.js";
 import { createEraseCommand } from "./erase-command.js";
 import { createFeatureCommand } from "./feature-command.js";
 import { createGenerateCommand } from "./generate-command.js";
+import type { createProductionHostingExecution } from "./hosting-execution.js";
 import { createIdentityCommand } from "./identity-command.js";
 import { createImportCommand } from "./import-command.js";
 import { createIncidentCommand } from "./incident-command.js";
@@ -80,6 +82,12 @@ import { createYardCommand } from "./yard-command.js";
 export { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
 
 export interface ComposedHoboCliOptions {
+	/** The production host supplies trusted financial and provider wiring. */
+	readonly hosting?: {
+		readonly budgetId: string;
+		readonly authority: SharedHostingBudgetAuthority;
+		readonly supervisor: ReturnType<typeof createProductionHostingExecution>;
+	};
 	// Override the default local/mocked YardRuntime shared across plan/up/down.
 	// Injecting one lets a caller (e.g. a test) hold the runtime so it can close
 	// `runtime.store` afterward.
@@ -157,10 +165,20 @@ registerInstallable("runtime-cloud-native", () =>
 export function createComposedHoboCli(
 	options: ComposedHoboCliOptions = {},
 ): HoboCli {
-	const runtime = options.yardRuntime ?? createDefaultYardRuntime();
+	const baseRuntime = options.yardRuntime ?? createDefaultYardRuntime();
+	const runtime: YardRuntime = options.hosting
+		? {
+				...baseRuntime,
+				hostingBudgetAuthority: options.hosting.authority,
+				defaultHostingBudgetId: options.hosting.budgetId,
+				hostingBudgetRequired: true,
+				hostingExecution: options.hosting.supervisor.execution,
+			}
+		: baseRuntime;
 	const explicitFixture =
 		options.yardRuntime !== undefined && options.requireRealExecution !== true;
 	const cloudConfigured =
+		options.hosting !== undefined ||
 		process.env.HOBO_PULUMI_LIVE === "1" ||
 		Boolean(
 			(process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID) ||
@@ -260,7 +278,7 @@ export function createComposedHoboCli(
 			// OpenFeature flags + canary/experiment observe (Harness ADR-0083).
 			feature: createFeatureCommand(),
 			// Continuous delivery observe / rollback (attested apply plane).
-			deploy: createDeployCommand(),
+			deploy: createDeployCommand({ hosting: options.hosting?.supervisor }),
 			// CD failure disposition (A2H default / sandboxed self-heal).
 			incident: createIncidentCommand(),
 			down: createLocalDeploymentDownCommand(

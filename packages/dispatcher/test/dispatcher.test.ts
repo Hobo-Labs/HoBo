@@ -504,6 +504,7 @@ test("reservation lifecycle: confirm, release, and expire emit dispatch reservat
 			"dispatch.ReservationReserved",
 			"dispatch.ReservationConfirmed",
 			"dispatch.ReservationReserved",
+			"dispatch.LedgerTimeAdvanced",
 			"dispatch.ReservationExpired",
 		],
 	);

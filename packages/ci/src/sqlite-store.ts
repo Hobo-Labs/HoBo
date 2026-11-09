@@ -6,6 +6,10 @@ import {
 	fromJsonString,
 	toJsonString,
 } from "@bufbuild/protobuf";
+import {
+	BudgetAdmissionDeniedError,
+	type BudgetSettlementEvidence,
+} from "@hobo/broker";
 import { z } from "zod";
 import {
 	type Account,
@@ -15,15 +19,28 @@ import {
 	type ConfigurationState,
 	type ControlRecord,
 	type Job,
+	JobSchema,
 	type Lease,
 	LeaseSchema,
+	type Offer,
 	type PipelineResult,
 	SandboxAllowanceSchema,
 	SandboxPricingSchema,
 } from "./_generated/ci_pb.js";
-import { effectiveCiAccount, parseCiPolicy } from "./policy.js";
+import {
+	ciBudgetIdentity,
+	ciBudgetPolicy,
+	effectiveCiAccount,
+	parseCiPolicy,
+} from "./policy.js";
 import { ACTIVE_STATES, route } from "./routing.js";
-import { LeaseStore, type RateReattestation } from "./store.js";
+import type { CiSharedBudgetHooks } from "./shared-budget.js";
+import {
+	ciLeasePolicyMeasurements,
+	LeaseStore,
+	pinCiQueueDeadline,
+	type RateReattestation,
+} from "./store.js";
 import {
 	type ClaimedWebhook,
 	isWebhookDeliveryId,
@@ -45,7 +62,19 @@ const INTENT_EVENT_TYPES = [
 	"ci.RunnerClaimed",
 	"ci.SandboxCreated",
 ] as const;
-const ISOLATED_PROVIDERS = new Set(["vercel", "kubernetes", "hobo-box-worker"]);
+function isIsolatedCiOffer(offer: Offer | undefined): boolean {
+	return (
+		!!offer &&
+		((offer.provider === "vercel" &&
+			offer.backend === "sandbox" &&
+			offer.freeMinutes === 0) ||
+			((offer.provider === "kubernetes" ||
+				offer.provider === "hobo-box-worker") &&
+				offer.backend === "isolated-container" &&
+				offer.freeMinutes === 0 &&
+				offer.priceMicrosPerMinute === 0))
+	);
+}
 
 const Body = z.object({ body: z.string() });
 const Count = z.number().int().nonnegative();
@@ -66,14 +95,20 @@ function jobKey(job: Job): string {
  * `HostedInboxStore` contract as `PostgresCiStore`, one file, one writer.
  * The lease journal tables are `LeaseStore`'s, so policy validation and job
  * observation semantics are shared rather than re-implemented. Vercel Sandbox
- * egress/proxy accounting stays Postgres-only.
+ * egress/proxy accounting stays Postgres-only. Shared-budget policies require
+ * trusted hooks and fail closed without them. A SQLite budget authority must
+ * use a separate database file because its synchronous transaction commits
+ * independently while the lease journal holds its own writer lock.
  */
 export class SqliteCiStore {
 	private readonly db: DatabaseSync;
 	private readonly leases: LeaseStore;
-	constructor(path: string) {
+	constructor(
+		path: string,
+		private readonly options: { sharedBudget?: CiSharedBudgetHooks } = {},
+	) {
 		this.db = new DatabaseSync(path);
-		this.leases = new LeaseStore(path, this.db);
+		this.leases = new LeaseStore(path, this.db, options);
 		this.db.exec(`CREATE INDEX IF NOT EXISTS leases_job_key ON leases(job_key);
    CREATE INDEX IF NOT EXISTS leases_state ON leases(json_extract(body,'$.state'));
    CREATE INDEX IF NOT EXISTS leases_account ON leases(json_extract(body,'$.accountId'));
@@ -301,7 +336,44 @@ export class SqliteCiStore {
 			this.leases.observe(job, at);
 		});
 	}
-	/** Same admission as `PostgresCiStore.reserve`, including isolated-only offers. */
+	/** Reconstruct the earliest queue receipt and pin its policy deadline across retries. */
+	private queueHistory(job: Job, at: string, account: Account) {
+		const prior = this.leases
+			.events()
+			.filter((event) => event.type === "ci.JobQueued")
+			.map((event) => ({
+				job: fromJsonString(JobSchema, event.detail),
+				at: event.at,
+			}))
+			.filter(
+				(entry) =>
+					entry.job.repositoryId === job.repositoryId &&
+					entry.job.id === job.id &&
+					entry.job.runAttempt === job.runAttempt,
+			);
+		const leases = this.leases
+			.all()
+			.filter(
+				(lease) =>
+					lease.repositoryId === job.repositoryId &&
+					lease.jobId === job.id &&
+					lease.runAttempt === job.runAttempt,
+			);
+		const earliest = [
+			at,
+			...prior.map((entry) => entry.at),
+			...leases.map((lease) => lease.createdAt),
+		].reduce((a, b) => (Date.parse(b) < Date.parse(a) ? b : a));
+		return {
+			demand: pinCiQueueDeadline(job, earliest, account, [
+				...prior.map((entry) => entry.job.queueDeadlineAt),
+				...leases.map((lease) => lease.queueDeadlineAt),
+			]),
+			durationMs: Math.max(0, Date.parse(at) - Date.parse(earliest)),
+			leases,
+		};
+	}
+	/** Reserve through the common financial authority before any isolated or bridge effect. */
 	reserve(
 		account: Account,
 		job: Job,
@@ -328,25 +400,35 @@ export class SqliteCiStore {
 			const effective = desired
 				? effectiveCiAccount(current, parseCiPolicy(desired.bodyJson))
 				: current;
+			if (ciBudgetPolicy(effective) && !this.options.sharedBudget)
+				return undefined;
+			const history = this.queueHistory(job, at, effective);
+			if (
+				history.demand.queueDeadlineAt &&
+				Date.parse(history.demand.queueDeadlineAt) <= Date.parse(at)
+			) {
+				this.leases.expireQueued(history.demand, at);
+				return undefined;
+			}
 			const key = jobKey(job);
 			if (
 				this.exists("terminal_jobs", key) ||
 				this.exists("assigned_jobs", key)
 			)
 				return undefined;
-			const leases = this.leasesWhere(
-				"json_extract(body,'$.accountId')=?",
-				effective.id,
-			);
-			const existing = this.leasesWhere("job_key=?", key).find(
+			const leases = this.leases.all();
+			const existing = history.leases.find(
 				(lease) =>
-					lease.repositoryId === job.repositoryId &&
-					lease.jobId === job.id &&
-					lease.runAttempt === job.runAttempt &&
-					ACTIVE_STATES.has(lease.state),
+					ACTIVE_STATES.has(lease.state) &&
+					(lease.actualJobId === 0 || lease.actualJobId === job.id),
 			);
 			if (existing) {
-				if (requiresIsolation && !ISOLATED_PROVIDERS.has(existing.provider)) {
+				const offer = effective.offers.find(
+					(entry) =>
+						entry.id === existing.offerId &&
+						entry.provider === existing.provider,
+				);
+				if (requiresIsolation && !isIsolatedCiOffer(offer)) {
 					if (existing.state === "reserved") {
 						existing.state = "cancelled";
 						this.append(existing, "ci.LeaseCancelled", at);
@@ -357,56 +439,83 @@ export class SqliteCiStore {
 				this.db.prepare("DELETE FROM pending_jobs WHERE job_key=?").run(key);
 				return existing;
 			}
-			const selected = route(
-				{
-					...effective,
-					offers: effective.offers.filter((offer) =>
-						requiresIsolation
-							? (offer.provider === "vercel" &&
-									offer.backend === "sandbox" &&
-									offer.freeMinutes === 0) ||
-								((offer.provider === "kubernetes" ||
-									offer.provider === "hobo-box-worker") &&
-									offer.backend === "isolated-container" &&
-									offer.freeMinutes === 0 &&
-									offer.priceMicrosPerMinute === 0)
-							: !offer.backend || offer.backend === "gh-actions",
-					),
-				},
-				leases,
-				at,
-			);
-			if (!selected) return undefined;
-			const id = randomUUID();
-			const lease = create(LeaseSchema, {
-				id,
-				accountId: effective.id,
-				offerId: selected.offer.id,
-				provider: selected.offer.provider,
-				jobId: job.id,
-				originalRunId: job.runId,
-				runAttempt: job.runAttempt,
-				repositoryId: job.repositoryId,
-				repository: job.repository,
-				installationId: job.installationId,
-				state: "reserved",
-				priceMicrosPerMinute: selected.offer.priceMicrosPerMinute,
-				freeValidUntil: selected.offer.validUntil,
-				sandboxPricing: selected.offer.sandboxPricing
-					? clone(SandboxPricingSchema, selected.offer.sandboxPricing)
-					: undefined,
-				sandboxReservedAllowance: selected.sandboxReservedAllowance
-					? clone(SandboxAllowanceSchema, selected.sandboxReservedAllowance)
-					: undefined,
-				reservedMinutes: selected.minutes,
-				reservedFreeMinutes: selected.freeMinutes,
-				reservedPaidMicros: selected.paidMicros,
-				runnerName: `hobo-${id}`,
-				createdAt: at,
-			});
-			this.append(lease, "ci.LeaseReserved", at);
-			this.db.prepare("DELETE FROM pending_jobs WHERE job_key=?").run(key);
-			return lease;
+			const blocked = new Set<string>();
+			while (blocked.size < effective.offers.length) {
+				const selected = route(
+					{
+						...effective,
+						offers: effective.offers.map((offer) => ({
+							...offer,
+							enabled:
+								offer.enabled &&
+								!blocked.has(offer.id) &&
+								(requiresIsolation
+									? isIsolatedCiOffer(offer)
+									: !offer.backend || offer.backend === "gh-actions"),
+						})),
+					},
+					leases,
+					at,
+					{
+						phase: this.options.sharedBudget ? "plan" : "admit",
+						attempt: job.runAttempt + history.leases.length,
+						queueDurationMs: history.durationMs,
+					},
+				);
+				if (!selected) return undefined;
+				const id = randomUUID();
+				const lease = create(LeaseSchema, {
+					id,
+					budgetAdmissionAttempt: history.leases.length + 1,
+					accountId: effective.id,
+					offerId: selected.offer.id,
+					provider: selected.offer.provider,
+					providerAccountId: selected.offer.providerAccountId,
+					...ciBudgetIdentity(effective, at),
+					queueDeadlineAt: history.demand.queueDeadlineAt,
+					jobId: job.id,
+					originalRunId: job.runId,
+					runAttempt: job.runAttempt,
+					repositoryId: job.repositoryId,
+					repository: job.repository,
+					installationId: job.installationId,
+					jobName: job.name,
+					memoryClass: job.memoryClass,
+					memoryMb: job.memoryMb,
+					state: "reserved",
+					priceMicrosPerMinute: selected.offer.priceMicrosPerMinute,
+					freeValidUntil: selected.offer.validUntil,
+					sandboxPricing: selected.offer.sandboxPricing
+						? clone(SandboxPricingSchema, selected.offer.sandboxPricing)
+						: undefined,
+					sandboxReservedAllowance: selected.sandboxReservedAllowance
+						? clone(SandboxAllowanceSchema, selected.sandboxReservedAllowance)
+						: undefined,
+					reservedMinutes: selected.minutes,
+					reservedFreeMinutes: selected.freeMinutes,
+					reservedPaidMicros: selected.paidMicros,
+					runnerName: `hobo-${id}`,
+					createdAt: at,
+				});
+				if (lease.budgetId) {
+					try {
+						this.options.sharedBudget?.reserve(
+							lease,
+							ciLeasePolicyMeasurements(lease, leases, history.durationMs),
+						);
+					} catch (error) {
+						if (error instanceof BudgetAdmissionDeniedError) {
+							blocked.add(selected.offer.id);
+							continue;
+						}
+						throw error;
+					}
+				}
+				this.append(lease, "ci.LeaseReserved", at);
+				this.db.prepare("DELETE FROM pending_jobs WHERE job_key=?").run(key);
+				return lease;
+			}
+			return undefined;
 		});
 	}
 	transition(
@@ -436,6 +545,7 @@ export class SqliteCiStore {
 		unmet?: Job,
 		completedAt = at,
 		result?: PipelineResult,
+		evidence?: BudgetSettlementEvidence,
 	): Lease | undefined {
 		const lease = this.leases.get(id);
 		if (lease && ACTIVE_STATES.has(lease.state) && lease.provider === "vercel")
@@ -448,6 +558,7 @@ export class SqliteCiStore {
 			unmet,
 			completedAt,
 			result,
+			evidence,
 		);
 	}
 	settle(
@@ -458,6 +569,7 @@ export class SqliteCiStore {
 		unmet?: Job,
 		completedAt?: string,
 		result?: PipelineResult,
+		evidence?: BudgetSettlementEvidence,
 	): Promise<Lease | undefined> {
 		return this.tx(() =>
 			this.settleInside(
@@ -468,6 +580,7 @@ export class SqliteCiStore {
 				unmet,
 				completedAt,
 				result,
+				evidence,
 			),
 		);
 	}
@@ -498,6 +611,36 @@ export class SqliteCiStore {
 				completedAt,
 			);
 		});
+	}
+
+	/** Expire only untouched queued demand; claimed work retains its financial hold. */
+	expireQueued(
+		job: Job,
+		at: string,
+		expectedRevision?: number,
+	): Promise<boolean> {
+		return this.tx(() => this.leases.expireQueued(job, at, expectedRevision));
+	}
+	/** Apply independently verified native finality to a previously retained hold. */
+	reconcileSharedBudget(
+		id: string,
+		paidMicros: number,
+		evidence: BudgetSettlementEvidence,
+		at: string,
+	): Promise<Lease> {
+		return this.tx(() =>
+			this.leases.reconcileSharedBudget(id, paidMicros, evidence, at),
+		);
+	}
+	/** Release only a cancelled hold with trusted proof it was never claimed. */
+	releaseUnusedSharedBudget(
+		id: string,
+		evidenceRef: string,
+		at?: string,
+	): Promise<void> {
+		return this.tx(() =>
+			this.leases.releaseUnusedSharedBudget(id, evidenceRef, at),
+		);
 	}
 
 	/** A fingerprint tombstone remains after acknowledgement for delivery deduplication. */

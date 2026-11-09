@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { z } from "zod";
+import type * as z from "zod";
 import {
 	parseCiProjectConfig,
 	selectCiEnvironment,

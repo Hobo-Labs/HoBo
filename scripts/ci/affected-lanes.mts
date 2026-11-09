@@ -3,9 +3,13 @@
  *
  * Package lanes run for changed packages and examples, including packages one
  * level down in a pnpm-workspace group (`packages/providers/<name>`). Root build inputs that
- * every turbo task hashes (workspace, turbo, tsconfig and biome config,
- * toolchain pins, vendored sources) and any deleted package run the whole
- * workspace. `pnpm-lock.yaml` alone runs the whole workspace too; with changed
+ * every turbo task hashes (workspace, tsconfig and biome config, toolchain pins,
+ * vendored sources) and any deleted package run the whole workspace. Root
+ * package.json and turbo.json edits are compared with their base: scripts-only
+ * manifest edits and root `//#` task edits do not change workspace package
+ * tasks. globalDependencies edits, every other edit to those files, or a missing
+ * or unparsable base/head run the whole workspace.
+ * `pnpm-lock.yaml` alone runs the whole workspace too; with changed
  * package paths it only filters those packages (Turbo still hashes the lockfile).
  * Everything outside packages/ and examples/ (workflows, root
  * scripts, root tests, draft proofs, docs) is not a package-lane input: the
@@ -13,11 +17,12 @@
  * the main full gate runs the whole workspace after merge. Dependents are not
  * added, matching the previous rg-based filter.
  *
- * CLI: `git diff --name-only BASE...HEAD | node --import tsx scripts/ci/affected-lanes.mts`
- * prints one turbo argument per line (empty output = skip, `--filter=*`-free
- * output with no args = run all). With `--main-gate` it prints `repo-wide` or
- * `affected` instead (see mainGateScope).
+ * CLI: `git diff --name-only BASE...HEAD | node --import tsx scripts/ci/affected-lanes.mts --base=BASE`
+ * prints one turbo argument per line (empty output = skip, `--filter=*` = run
+ * all). With `--main-gate` it prints `repo-wide` or `affected` instead (see
+ * mainGateScope). Omitting `--base` retains fail-closed path-only behavior.
  */
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import process from "node:process";
 
@@ -26,10 +31,93 @@ export type AffectedLanes =
 	| { readonly mode: "all"; readonly reason: string }
 	| { readonly mode: "filtered"; readonly filters: readonly string[] };
 
+export type RootConfigPath = "package.json" | "turbo.json";
+export type ReadRootFile = (
+	path: RootConfigPath,
+	side: "base" | "head",
+) => string | undefined;
+
+type JsonValue =
+	| string
+	| number
+	| boolean
+	| null
+	| readonly JsonValue[]
+	| JsonObject;
+interface JsonObject {
+	readonly [key: string]: JsonValue;
+}
+
+const tagOf = Object.prototype.toString;
+
+function isJsonObject<T>(value: T): value is T & JsonObject {
+	return tagOf.call(value) === "[object Object]";
+}
+
+function parseRootObject(text: string | undefined): JsonObject | undefined {
+	if (text === undefined) return undefined;
+	try {
+		const value: unknown = JSON.parse(text);
+		return isJsonObject(value) ? value : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function jsonEqual(
+	base: JsonValue | undefined,
+	head: JsonValue | undefined,
+): boolean {
+	if (base === head) return true;
+	if (Array.isArray(base) || Array.isArray(head)) {
+		return (
+			Array.isArray(base) &&
+			Array.isArray(head) &&
+			base.length === head.length &&
+			base.every((entry, index) => jsonEqual(entry, head[index]))
+		);
+	}
+	if (!isJsonObject(base) || !isJsonObject(head)) return false;
+	const baseKeys = Object.keys(base);
+	const headKeys = Object.keys(head);
+	return (
+		baseKeys.length === headKeys.length &&
+		baseKeys.every(
+			(key) => Object.hasOwn(head, key) && jsonEqual(base[key], head[key]),
+		)
+	);
+}
+
+function rootConfigIsPackageLaneInput(
+	path: RootConfigPath,
+	readRootFile: ReadRootFile | undefined,
+): boolean {
+	if (!readRootFile) return true;
+	const base = parseRootObject(readRootFile(path, "base"));
+	const head = parseRootObject(readRootFile(path, "head"));
+	if (!base || !head) return true;
+	const keys = new Set([...Object.keys(base), ...Object.keys(head)]);
+	const differing = [...keys].filter((key) => !jsonEqual(base[key], head[key]));
+	if (path === "package.json")
+		return differing.some((key) => key !== "scripts");
+	return differing.some((key) => {
+		if (key !== "tasks") return true;
+		const baseTasks = base.tasks;
+		const headTasks = head.tasks;
+		if (!isJsonObject(baseTasks) || !isJsonObject(headTasks)) return true;
+		const taskKeys = new Set([
+			...Object.keys(baseTasks),
+			...Object.keys(headTasks),
+		]);
+		return [...taskKeys].some(
+			(task) =>
+				!task.startsWith("//#") && !jsonEqual(baseTasks[task], headTasks[task]),
+		);
+	});
+}
+
 const GLOBAL_INPUTS = [
 	/^pnpm-workspace\.yaml$/,
-	/^package\.json$/,
-	/^turbo\.json$/,
 	/^tsconfig[^/]*\.json$/,
 	/^biome\.jsonc?$/,
 	/^\.npmrc$/,
@@ -64,6 +152,7 @@ export function affectedLanes(
 	paths: readonly string[],
 	exists: (dir: string) => boolean = existsSync,
 	groups: ReadonlySet<string> = WORKSPACE_GROUPS,
+	readRootFile?: ReadRootFile,
 ): AffectedLanes {
 	const changed = paths
 		.map((path) => path.trim())
@@ -89,6 +178,11 @@ export function affectedLanes(
 			dirs.add(dir);
 			continue;
 		}
+		if (
+			(path === "package.json" || path === "turbo.json") &&
+			rootConfigIsPackageLaneInput(path, readRootFile)
+		)
+			return { mode: "all", reason: `workspace-wide input changed: ${path}` };
 		if (GLOBAL_INPUTS.some((pattern) => pattern.test(path)))
 			return { mode: "all", reason: `workspace-wide input changed: ${path}` };
 		if (LOCKFILE_ONLY_GLOBAL.test(path)) {
@@ -115,27 +209,68 @@ const CI_INPUTS = /^mise\.lock$/;
 
 /**
  * Whether Main full gate runs every gate (`check:all`) or only the affected ones
- * (`agent:check --base=<previous main commit>`). Repo-wide for root config, the
- * lockfile and toolchain pins; affected for everything else. Workflow and action
- * files are affected-only: the PR and merge-group runs already executed the
- * changed workflow, agent:check selects the automation lanes for `.github/`, and
- * the weekly schedule still runs the whole sweep.
+ * (`agent:check --base=<previous main commit>`). Repo-wide for behavior-changing
+ * root config, globalDependencies edits, the lockfile and toolchain pins;
+ * affected for everything else.
+ * Workflow and action files are affected-only: the PR and merge-group runs
+ * already executed the changed workflow, agent:check selects the automation
+ * lanes for `.github/`, and the weekly schedule still runs the whole sweep.
  */
 export function mainGateScope(
 	paths: readonly string[],
 	exists: (dir: string) => boolean = existsSync,
+	readRootFile?: ReadRootFile,
 ): MainGateScope {
 	const ci = paths
 		.map((path) => path.trim())
 		.find((path) => CI_INPUTS.test(path));
 	if (ci) return { mode: "repo-wide", reason: `CI input changed: ${ci}` };
-	const lanes = affectedLanes(paths, exists);
+	const lanes = affectedLanes(paths, exists, WORKSPACE_GROUPS, readRootFile);
 	return lanes.mode === "all"
 		? { mode: "repo-wide", reason: lanes.reason }
 		: { mode: "affected" };
 }
 
+/**
+ * Root-config reader for CLI callers: base contents come from the merge
+ * base with `baseRef`, head contents from the working tree.
+ */
+export function cliRootFileReader(baseRef: string): ReadRootFile {
+	let mergeBase = baseRef;
+	try {
+		mergeBase = execFileSync("git", ["merge-base", baseRef, "HEAD"], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
+	} catch {
+		// An unrelated or unavailable history falls back to the ref itself.
+	}
+	if (mergeBase === "") mergeBase = baseRef;
+	return (path, side) => {
+		// An empty ref would make `git show :path` read the index, which
+		// matches a clean tree and would narrow. No base means widen.
+		if (side === "base" && mergeBase === "") return undefined;
+		try {
+			return side === "head"
+				? readFileSync(new URL(`../../${path}`, import.meta.url), "utf8")
+				: execFileSync("git", ["show", `${mergeBase}:${path}`], {
+						encoding: "utf8",
+						stdio: ["ignore", "pipe", "ignore"],
+					});
+		} catch {
+			return undefined;
+		}
+	};
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
+	const baseArgument = process.argv.find((argument) =>
+		argument.startsWith("--base="),
+	);
+	const readRootFile =
+		baseArgument === undefined
+			? undefined
+			: cliRootFileReader(baseArgument.slice("--base=".length));
 	const input = await new Promise<string>((resolve, reject) => {
 		let text = "";
 		process.stdin.setEncoding("utf8");
@@ -146,13 +281,18 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 		process.stdin.on("error", reject);
 	});
 	if (process.argv.includes("--main-gate")) {
-		const scope = mainGateScope(input.split("\n"));
+		const scope = mainGateScope(input.split("\n"), existsSync, readRootFile);
 		if (scope.mode === "repo-wide")
 			console.error(`affected-lanes: repo-wide (${scope.reason})`);
 		process.stdout.write(`${scope.mode}\n`);
 		process.exit(0);
 	}
-	const lanes = affectedLanes(input.split("\n"));
+	const lanes = affectedLanes(
+		input.split("\n"),
+		existsSync,
+		WORKSPACE_GROUPS,
+		readRootFile,
+	);
 	if (lanes.mode === "filtered") {
 		process.stdout.write(`${lanes.filters.join("\n")}\n`);
 	} else {

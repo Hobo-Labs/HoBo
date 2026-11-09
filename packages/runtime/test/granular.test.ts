@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
+import { tsImport } from "tsx/esm/api";
 import { afterEach, test } from "vitest";
 import {
 	defineGrounding,
@@ -82,6 +84,15 @@ test("stage-3: @intent/@returns + bare @trainable class compose and register", a
 		"Program.trainableMethod",
 	);
 	assert.equal(await run("Ada"), "Hello, Ada!");
+});
+
+test("stage-3 syntax: @intent decorates a class method under exactOptionalPropertyTypes", async () => {
+	const fixture = await tsImport<{ readonly createIntent: string | undefined }>(
+		fileURLToPath(new URL("./fixtures/todo-api.ts", import.meta.url)),
+		import.meta.url,
+	);
+
+	assert.equal(fixture.createIntent, "Create a todo from text");
 });
 
 test("stage-3: bare @trainable class with NO other decorators infers everything", async () => {

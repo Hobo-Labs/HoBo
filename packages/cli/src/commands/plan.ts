@@ -1,4 +1,6 @@
+import { manifestHostingPolicy } from "@hobo/cloud";
 import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
+import { createFixtureSession, loadSession } from "../cloud/session.js";
 import { stubResult } from "../cloud/stub.js";
 import { createYardClient, type YardRuntime } from "../cloud/yard-client.js";
 import type { CommandModule } from "../shell/registry.js";
@@ -17,7 +19,7 @@ export interface PlanCommandDeps {
 export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 	return {
 		implemented: Boolean(deps.runtime),
-		run: async ({ context }) => {
+		run: async ({ context, flags }) => {
 			const { runtime } = deps;
 			if (!runtime) {
 				return stubResult("plan");
@@ -35,7 +37,16 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 
 			const deploymentId = deploymentIdFor(projectDir);
 			const yard = createYardClient(runtime);
-			const rendered = yard.plan(bindle, { deploymentId });
+			const budgetId = flags.budgetId ?? runtime.defaultHostingBudgetId;
+			const rendered =
+				budgetId || manifestHostingPolicy(bindle).required
+					? await yard.planAuthoritatively(bindle, {
+							deploymentId,
+							session:
+								(await loadSession(projectDir)) ?? createFixtureSession(),
+							config: budgetId ? { budgetId } : {},
+						})
+					: yard.plan(bindle, { deploymentId });
 
 			if (!rendered.ok) {
 				return {

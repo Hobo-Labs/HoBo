@@ -18,6 +18,8 @@ export type RelevantCheckPolicyOptions = {
 	all?: boolean;
 	includeBuild?: boolean;
 	includeBroadSweeps?: boolean;
+	/** The caller requires a separate job to run all selected workspace tests. */
+	workspaceTestsCoveredExternally?: boolean;
 	rootPackageJsonScriptsOnlyChanged?: boolean;
 	workspacePackageExists?: (workspace: string) => boolean;
 	/** Whether a changed TypeScript file under packages/ names a ts-autocode module (default: reads it). */
@@ -68,6 +70,17 @@ function workspaceTestRelevant(file: string) {
 
 function defaultWorkspacePackageExists(workspace: string) {
 	return existsSync(`${workspace}/package.json`);
+}
+
+function defaultWorkspacePackageName(workspace: string): string | undefined {
+	try {
+		const manifest: { name?: string } = JSON.parse(
+			readFileSync(`${workspace}/package.json`, "utf8"),
+		);
+		return manifest.name;
+	} catch {
+		return undefined;
+	}
 }
 
 const PACKAGE_TYPESCRIPT = /^packages\/.+\.(?:[cm]?ts|tsx)$/u;
@@ -305,6 +318,22 @@ export function selectRelevantChecks(
 		});
 	}
 
+	const shellChanged =
+		automationChanged ||
+		files.some((file) => file.endsWith(".sh") || file.endsWith(".bash"));
+	if (shellChanged) {
+		checks.push({
+			command: "pnpm",
+			args: [
+				"run",
+				"lint:shell:changed",
+				"--",
+				staged ? "--staged" : `--base=${options.base}`,
+			],
+			reason: "changed shell scripts must pass bash -n and shellcheck in CI",
+		});
+	}
+
 	if (sourceChanged || automationChanged || konsistentConfigChanged) {
 		checks.push({
 			command: "pnpm",
@@ -348,20 +377,61 @@ export function selectRelevantChecks(
 		});
 	}
 
-	if (workspaces.length > 0) {
+	const narrowWorkspaceTests = workspaces.flatMap((workspace) => {
+		if (!staged) return [];
+		const relevantFiles = workspaceTestFiles.filter(
+			(file) => workspaceTestRelevant(file) && workspaceFor(file) === workspace,
+		);
+		const testFiles = relevantFiles.filter((file) =>
+			file.startsWith(`${workspace}/test/`),
+		);
+		const vitestPaths = testFiles
+			.filter((file) => /\.(?:test|spec)\./u.test(file))
+			.map((file) => file.slice(`${workspace}/`.length));
+		const requiresFullWorkspaceTest =
+			relevantFiles.length !== testFiles.length ||
+			testFiles.includes(`${workspace}/test/subprocess-teardown.ts`) ||
+			files.some((file) => file.startsWith(`${workspace}/vitest.config.`)) ||
+			(testFiles.length > 0 && vitestPaths.length === 0);
+		if (requiresFullWorkspaceTest) return [];
+		const packageName = defaultWorkspacePackageName(workspace);
+		if (!packageName) return [];
+		return [{ workspace, packageName, vitestPaths }];
+	});
+	const narrowWorkspaces = new Set(
+		narrowWorkspaceTests.map(({ workspace }) => workspace),
+	);
+
+	if (workspaces.length > 0 && !options.workspaceTestsCoveredExternally) {
+		const turboWorkspaces = workspaces.filter(
+			(workspace) => !narrowWorkspaces.has(workspace),
+		);
+		if (turboWorkspaces.length > 0) {
+			checks.push({
+				command: "pnpm",
+				args: [
+					"exec",
+					"turbo",
+					"run",
+					"test",
+					...turboWorkspaces.map((workspace) => `--filter=./${workspace}`),
+					"--continue",
+					"--output-logs=new-only",
+					turboConcurrencyArg(),
+				],
+				reason: `workspace tests for ${turboWorkspaces.length} changed package(s) via Turbo; strict env passes HOBO_* and NODE_OPTIONS; warm runs replay from cache`,
+			});
+		}
+	}
+
+	for (const {
+		packageName,
+		vitestPaths,
+	} of options.workspaceTestsCoveredExternally ? [] : narrowWorkspaceTests) {
 		checks.push({
 			command: "pnpm",
-			args: [
-				"exec",
-				"turbo",
-				"run",
-				"test",
-				...workspaces.map((workspace) => `--filter=./${workspace}`),
-				"--continue",
-				"--output-logs=new-only",
-				turboConcurrencyArg(),
-			],
-			reason: `workspace tests for ${workspaces.length} changed package(s) via Turbo; strict env passes HOBO_* and NODE_OPTIONS; warm runs replay from cache`,
+			args: ["--filter", packageName, "exec", "vitest", "run", ...vitestPaths],
+			reason: `staged changes are test-only; run ${vitestPaths.length} changed test file(s) directly`,
 		});
 	}
 
@@ -433,6 +503,27 @@ export function selectRelevantChecks(
 			],
 			reason:
 				"vendored anti-slop copies must match their SHA-256 manifests and each other (ADR-0173)",
+		});
+	}
+
+	if (
+		files.some(
+			(file) =>
+				file === "scripts/ci/gitleaks-main-scan.mts" ||
+				file === "scripts/test/gitleaks-main-scan.test.ts" ||
+				file === ".github/workflows/hobo-ci.yml",
+		)
+	) {
+		checks.push({
+			command: "node",
+			args: [
+				"--import",
+				"tsx",
+				"--test",
+				"scripts/test/gitleaks-main-scan.test.ts",
+			],
+			reason:
+				"blobless main-gate gitleaks must write an exit file and bound the wait (finding 75)",
 		});
 	}
 
@@ -587,6 +678,12 @@ export function selectRelevantChecks(
 			command: "pnpm",
 			args: ["run", "docs:coverage"],
 			reason: "documentation coverage may be affected",
+		});
+		checks.push({
+			command: "pnpm",
+			args: ["run", "docs:findings", "--", "--check"],
+			reason:
+				"CI performance findings and their generated index must stay valid",
 		});
 	}
 

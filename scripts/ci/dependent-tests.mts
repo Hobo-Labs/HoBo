@@ -29,17 +29,26 @@
  *
  * Node builtins only.
  *
- * CLI: `git diff --name-only BASE HEAD | node --experimental-strip-types scripts/ci/dependent-tests.mts [--run [turbo args…]]`
+ * CLI: `git diff --name-only BASE HEAD | node --experimental-strip-types scripts/ci/dependent-tests.mts [--base=BASE] [--run [turbo args…]]`
+ * `--base` compares root package.json/turbo.json against the merge base, so
+ * scripts-only manifest edits and `//#` task edits stay scoped exactly as
+ * the workflow's affected-lanes step scoped them; omitting it widens.
  * prints the plan; `--run` also runs it (one turbo call for the whole suites
  * and every build the subsets need, then each subset's test task alone with
  * its files passed through to vitest; the other arguments go to the first
  * call) and exits non-zero when any of it fails.
+ * `--shard=INDEX/COUNT` assigns every whole suite and dependent subset to
+ * exactly one zero-based shard; a repo-wide plan covers every workspace.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { posix } from "node:path";
 import process from "node:process";
-import { affectedLanes } from "./affected-lanes.mts";
+import {
+	affectedLanes,
+	cliRootFileReader,
+	type ReadRootFile,
+} from "./affected-lanes.mts";
 import { readWorkspaces, type Workspace } from "./job-scope.mts";
 
 /** Repository access, injectable so tests can describe a tree in memory. */
@@ -61,6 +70,43 @@ export type TestPlan =
 			/** Dependents none of whose tests reach the change. */
 			readonly skipped: readonly string[];
 	  };
+
+/** Partition by workspace so a suite or dependent subset is never split or dropped. */
+export function shardTestPlan(
+	plan: TestPlan,
+	workspaces: readonly Workspace[],
+	index: number,
+	count: number,
+): TestPlan {
+	if (
+		!Number.isSafeInteger(index) ||
+		!Number.isSafeInteger(count) ||
+		count < 1 ||
+		count > 64 ||
+		index < 0 ||
+		index >= count
+	)
+		throw new Error("invalid workspace test shard");
+	const full =
+		plan.mode === "all"
+			? [...new Set(workspaces.map((ws) => ws.dir))]
+			: [...plan.full];
+	const subsets =
+		plan.mode === "all" ? new Map<string, readonly string[]>() : plan.subsets;
+	const wholeDirs = new Set(full);
+	if ([...subsets.keys()].some((dir) => wholeDirs.has(dir)))
+		throw new Error("workspace cannot be both a whole suite and a subset");
+	const dirs = [...new Set([...full, ...subsets.keys()])].sort();
+	const selected = new Set(
+		dirs.filter((_, position) => position % count === index),
+	);
+	return {
+		mode: "scoped",
+		full: full.filter((dir) => selected.has(dir)),
+		subsets: new Map([...subsets].filter(([dir]) => selected.has(dir))),
+		skipped: [],
+	};
+}
 
 type Json =
 	| string
@@ -390,6 +436,7 @@ export function createWalker(repo: Repo) {
 export function planDependentTests(
 	changedPaths: readonly string[],
 	repo: Repo,
+	readRootFile?: ReadRootFile,
 ): TestPlan {
 	const changed = changedPaths
 		.map((path) => path.trim())
@@ -397,7 +444,15 @@ export function planDependentTests(
 	const outside = changed.filter(
 		(path) => !repo.workspaces.some((ws) => path.startsWith(`${ws.dir}/`)),
 	);
-	const lanes = affectedLanes(changed, (path) => repo.files.has(path));
+	// The root reader keeps this planner consistent with the workflow's
+	// lane decision: without it a scripts-only root package.json edit the
+	// workflow scoped still widens here to the whole workspace.
+	const lanes = affectedLanes(
+		changed,
+		(path) => repo.files.has(path),
+		undefined,
+		readRootFile,
+	);
 	if (lanes.mode === "all" && (outside.length > 0 || changed.length === 0))
 		return { mode: "all", reason: lanes.reason };
 	const walker = createWalker(repo);
@@ -651,14 +706,56 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 		},
 		workspaces: readWorkspaces(),
 	};
-	const plan = planDependentTests(input.split("\n"), repo);
-	console.log(describePlan(plan));
 	const args = process.argv.slice(2);
+	const baseArgument = args.find((arg) => arg.startsWith("--base="));
+	const shardArgs = args.filter((arg) => arg.startsWith("--shard"));
+	if (
+		shardArgs.length > 1 ||
+		(shardArgs.length === 1 && !/^--shard=\d+\/\d+$/u.test(shardArgs[0] ?? ""))
+	) {
+		console.error(
+			"dependent-tests: invalid shard; expected --shard=INDEX/COUNT",
+		);
+		process.exit(2);
+	}
+	let plan = planDependentTests(
+		input.split("\n"),
+		repo,
+		baseArgument === undefined
+			? undefined
+			: cliRootFileReader(baseArgument.slice("--base=".length)),
+	);
+	if (shardArgs.length === 1) {
+		const match = /^--shard=(\d+)\/(\d+)$/u.exec(shardArgs[0] ?? "");
+		if (!match) throw new Error("invalid workspace test shard");
+		if (plan.mode === "all") {
+			const workspaceDirs = new Set(repo.workspaces.map((ws) => ws.dir));
+			const tests = turboTestGraph([]).filter((task) => task.task === "test");
+			if (
+				tests.length === 0 ||
+				tests.some((task) => !workspaceDirs.has(task.directory))
+			)
+				throw new Error(
+					"repo-wide test graph includes an undiscovered workspace",
+				);
+		}
+		plan = shardTestPlan(
+			plan,
+			repo.workspaces,
+			Number(match[1]),
+			Number(match[2]),
+		);
+		console.log(`dependent-tests: shard ${match[1]}/${match[2]}`);
+	}
+	console.log(describePlan(plan));
 	if (args.includes("--run"))
 		process.exit(
 			runPlan(
 				plan,
-				args.filter((arg) => arg !== "--run"),
+				args.filter(
+					(arg) =>
+						arg !== "--run" && arg !== baseArgument && !shardArgs.includes(arg),
+				),
 			),
 		);
 }

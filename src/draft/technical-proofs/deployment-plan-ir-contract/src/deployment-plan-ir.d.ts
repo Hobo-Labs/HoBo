@@ -68,4 +68,4 @@ export declare function outputPlaceholder(input: {
 export declare function parsePlaceholder(value: string):
   | { kind: "resource-output"; type: string; className: string; id: string; output: string }
   | { kind: "context"; field: string };
-export declare function validateDeploymentPlan(plan: DeploymentPlan): ValidationResult;
+export declare function validateDeploymentPlan(plan: DeploymentPlan | JsonValue): ValidationResult;

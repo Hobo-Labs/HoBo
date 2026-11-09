@@ -38,24 +38,44 @@ describe("lakebed anonymous temporary station", () => {
 	it("parses lakebed deploy JSON and URL output", () => {
 		expect(
 			parseLakebedDeployOutput(
-				'{"deployId":"d1","url":"https://d1.lakebed.app","claimUrl":"https://lakebed.dev/claim/d1"}\n',
+				'{"deployId":"d1","url":"https://d1.lakebed.app","claimUrl":"https://lakebed.dev/claim/d1","expiresAt":"2030-01-01T00:00:00.000Z"}\n',
 			),
 		).toEqual({
 			deployId: "d1",
 			stationUrl: "https://d1.lakebed.app",
 			claimUrl: "https://lakebed.dev/claim/d1",
+			expiresAt: "2030-01-01T00:00:00.000Z",
 		});
-		const fromUrl = parseLakebedDeployOutput(
-			"Deployed: https://anon42.lakebed.app/\n",
+		expect(() =>
+			parseLakebedDeployOutput("Deployed: https://anon42.lakebed.app/\n"),
+		).toThrow("provider-issued claim URL");
+	});
+
+	it("reads current CLI pretty JSON without confusing the API and application URLs", () => {
+		const parsed = parseLakebedDeployOutput(
+			JSON.stringify(
+				{
+					api: "https://api.lakebed.dev",
+					deployId: "dep_actual",
+					expiresAt: "2030-01-01T00:00:00.000Z",
+					url: "https://actual.lakebed.app",
+					claimUrl:
+						"https://api.lakebed.dev/claim/dep_actual/provider-issued-token",
+				},
+				null,
+				2,
+			),
 		);
-		expect(fromUrl.stationUrl).toBe("https://anon42.lakebed.app/");
-		expect(fromUrl.claimUrl).toContain("claim");
+		expect(parsed.stationUrl).toBe("https://actual.lakebed.app");
+		expect(parsed.claimUrl).toBe(
+			"https://api.lakebed.dev/claim/dep_actual/provider-issued-token",
+		);
 	});
 
 	it("rejects URLs that are not owned Lakebed endpoints", () => {
 		expect(() =>
 			parseLakebedDeployOutput(
-				'{"deployId":"d1","url":"https://attacker.example","claimUrl":"https://lakebed.dev/claim/d1"}',
+				'{"deployId":"d1","url":"https://attacker.example","claimUrl":"https://lakebed.dev/claim/d1","expiresAt":"2030-01-01T00:00:00.000Z"}',
 			),
 		).toThrow("unexpected host");
 	});
@@ -67,6 +87,7 @@ describe("lakebed anonymous temporary station", () => {
 					deployId: `dep-${stationId}`,
 					stationUrl: `https://${stationId}.lakebed.app`,
 					claimUrl: `https://lakebed.dev/claim/dep-${stationId}`,
+					expiresAt: "2030-01-01T00:00:00.000Z",
 				};
 			},
 		};

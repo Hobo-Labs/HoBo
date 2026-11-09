@@ -75,6 +75,34 @@ function turboTestSelects(checks: Check[], workspace: string) {
 	);
 }
 
+test("external workspace coverage omits only workspace test commands", () => {
+	const files = ["packages/ci/src/index.ts", "scripts/example.ts"];
+	const normal = plan(files);
+	const external = plan(files, { workspaceTestsCoveredExternally: true });
+	assert.ok(normal.checks.some(isWorkspaceTurboTest));
+	assert.ok(!external.checks.some(isWorkspaceTurboTest));
+	assert.deepEqual(external.workspaces, normal.workspaces);
+	assert.deepEqual(
+		external.checks,
+		normal.checks.filter((check) => !isWorkspaceTurboTest(check)),
+	);
+});
+
+function narrowVitestCheck(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args[0] === "--filter" &&
+		check.args[2] === "exec" &&
+		check.args[3] === "vitest" &&
+		check.args[4] === "run"
+	);
+}
+
+function narrowVitestPaths(checks: Check[]) {
+	const check = checks.find(narrowVitestCheck);
+	return check ? check.args.slice(5) : [];
+}
+
 function standardsCheck(check: Check) {
 	return (
 		check.command === "pnpm" &&
@@ -514,6 +542,19 @@ test("production package source changes select architecture guard and workspace 
 	assert.equal(turboTestSelects(checks, "packages/core"), true);
 });
 
+test("staged test-only @hobo/code changes run vitest on package-relative paths", () => {
+	const { checks } = plan(["packages/code/test/hobo-code-signals.test.ts"], {
+		staged: true,
+		workspacePackageExists: () => true,
+	});
+
+	assert.ok(checks.some(narrowVitestCheck));
+	assert.deepEqual(narrowVitestPaths(checks), [
+		"test/hobo-code-signals.test.ts",
+	]);
+	assert.equal(turboTestSelects(checks, "packages/code"), false);
+});
+
 test("examples package source changes select architecture guard and workspace tests", () => {
 	const { checks, workspaces } = plan(["examples/hello-bindle/src/main.ts"], {
 		workspacePackageExists: () => true,
@@ -745,6 +786,30 @@ test("unrelated changes do not select the anti-slop drift test", () => {
 	]) {
 		assert.ok(!plan([file]).checks.some(isAntiSlopDriftTest), file);
 	}
+});
+
+const isGitleaksMainScanTest = (check: {
+	command: string;
+	args: readonly string[];
+}) =>
+	check.command === "node" &&
+	check.args.join(" ") ===
+		"--import tsx --test scripts/test/gitleaks-main-scan.test.ts";
+
+test("a main-gate gitleaks hang-contract edit selects its regression test", () => {
+	for (const file of [
+		"scripts/ci/gitleaks-main-scan.mts",
+		"scripts/test/gitleaks-main-scan.test.ts",
+		".github/workflows/hobo-ci.yml",
+	]) {
+		assert.ok(plan([file]).checks.some(isGitleaksMainScanTest), file);
+	}
+});
+
+test("unrelated changes do not select the gitleaks hang-contract test", () => {
+	assert.ok(
+		!plan(["packages/core/src/index.ts"]).checks.some(isGitleaksMainScanTest),
+	);
 });
 
 const isTsAutocodeSurfaceTest = (check: {

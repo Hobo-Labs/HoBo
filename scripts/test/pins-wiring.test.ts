@@ -53,14 +53,24 @@ describe("pins wiring", () => {
 		);
 	});
 
-	it("the PR gate checks the pins after checkout and before installing", () => {
-		const job = jobText(read(".github/workflows/hobo-ci.yml"), "pr-gate");
-		const checkout = job.indexOf("actions/checkout@");
-		const status = job.indexOf(`run: ${BOOTSTRAP} --status --offline`);
-		const install = job.indexOf("pnpm install");
-		assert.ok(checkout >= 0 && status > checkout, "status runs after checkout");
-		assert.ok(install > status, "status runs before pnpm install");
-		assert.match(job, /runs-on:\s*hobo\b/u);
+	it("PR validation jobs check the pins after checkout and before installing", () => {
+		const workflow = read(".github/workflows/hobo-ci.yml");
+		for (const name of [
+			"pr_gate_validation",
+			"workspace_tests",
+			"pr_affected",
+		]) {
+			const job = jobText(workflow, name);
+			const checkout = job.indexOf("actions/checkout@");
+			const status = job.indexOf(`run: ${BOOTSTRAP} --status --offline`);
+			const install = job.indexOf("scripts/ci/pnpm-install.mts");
+			assert.ok(
+				checkout >= 0 && status > checkout,
+				`${name}: status follows checkout`,
+			);
+			assert.ok(install > status, `${name}: status precedes pnpm install`);
+			assert.match(job, /runs-on:\s*(?:hobo|.*'hobo-trunk' \|\| 'hobo')/u);
+		}
 	});
 
 	it("the setup docs name the three verbs", () => {

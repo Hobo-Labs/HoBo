@@ -15,22 +15,8 @@ import {
 	createCloudflareClient,
 } from "./cloudflare-client.js";
 
-// @hobo/hobo — the REAL Cloudflare Workers deploy provider (composition/app layer).
-//
-// This implements the SAME `IacProvider` port the @hobo/cloud Executor drives
-// (preview/apply/destroy/refresh over the kernel's shape-A `IacProgram`), but
-// instead of the in-memory Pulumi stand-in it forms a REAL Cloudflare Workers
-// Script Upload request. On `apply` it reads the committed, known-good ESM Worker
-// module (packages/hobo/fixtures/deploy/cloudflare/worker.mjs), uploads it via
-// `createCloudflareClient`, and maps the returned workers.dev URL into the
-// kernel's `IacOutputs` (`outputs.url`).
-//
-// HONEST SCOPE: the live Cloudflare call is credential-gated (activates only when a
-// real `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` reach the client) and is NOT
-// exercised in this sandbox. Only request formation (against a mocked fetch),
-// provider selection, and the no-token fallback are verified. `destroy` is modeled
-// honestly: a real teardown would DELETE the script; this provider best-effort
-// forgets its local memo and no-ops (see note on `destroy`).
+// Explicit fixture deployment helper. Production composition uses exact planned
+// ResourceResolvers; this helper never substitutes hello-bindle for an artifact.
 
 // Default Worker module lives next to this package (fixtures/), not under examples/.
 // Both `dist/` and `src/` resolve via `../fixtures/deploy/cloudflare/worker.mjs`.
@@ -40,6 +26,9 @@ function defaultWorkerModulePath(): string {
 }
 
 export interface CloudflareDeployProviderOptions {
+	/** Explicit opt-in for the committed demonstration artifact. Never enabled by
+	 * environment/provider selection or the budgeted production runtime. */
+	readonly fixtureArtifact?: true;
 	// The Cloudflare API token (forwarded to `createCloudflareClient` as the Bearer).
 	readonly token: string;
 	// The Cloudflare account id (Cloudflare `account_id`).
@@ -84,6 +73,10 @@ export function createCloudflareDeployProvider(
 			};
 		},
 		async apply(program: IacProgram): Promise<IacOutputs> {
+			if (options.fixtureArtifact !== true)
+				throw new Error(
+					"fixture deploy requires explicit fixtureArtifact:true; production hosting requires the approved resolver artifact",
+				);
 			const cached = byDeployment.get(program.deploymentId);
 			if (cached !== undefined) {
 				return cached;
@@ -104,22 +97,25 @@ export function createCloudflareDeployProvider(
 			return outputs;
 		},
 		async destroy(program: IacProgram): Promise<void> {
-			// A real teardown would DELETE the Worker script via
-			//   DELETE /accounts/{account_id}/workers/scripts/{script_name}
-			// (a follow-up when the delete path lands). Best-effort for now — forget
-			// the local memo and no-op honestly rather than claim a destroy we do not
-			// perform.
+			if (!byDeployment.has(program.deploymentId))
+				throw new Error(
+					"fixture teardown requires the original deployment receipt; use the durable resolver path after restart",
+				);
+			await client.deleteWorker(scriptName);
 			byDeployment.delete(program.deploymentId);
 		},
 		async refresh(_program: IacProgram): Promise<IacDriftReport> {
-			// REAL drift check: GET the deployed Worker script. If it still exists the
-			// deployment matches what `apply` uploaded (in-sync); if it 404s the
-			// Worker was deleted out of band (drift). This is a genuine read of live
-			// Cloudflare state — credential-gated like apply, mock-tested here.
 			const exists = await client.scriptExists(scriptName);
-			return exists
-				? { drift: false, observed: { scriptName, provider: "cloudflare" } }
-				: { drift: true, observed: {} };
+			// Existence cannot prove that another actor did not replace the code.
+			return {
+				drift: true,
+				observed: {
+					scriptName,
+					provider: "cloudflare",
+					exists: String(exists),
+					contentVerified: "false",
+				},
+			};
 		},
 	};
 }

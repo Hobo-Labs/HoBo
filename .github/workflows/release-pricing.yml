@@ -1,0 +1,136 @@
+name: HoBo Pricing release (npm dry-run)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/pricing/**"
+      - "release/npm-scope-map.json"
+      - "scripts/ci/npm-publish-scope.mts"
+      - "scripts/test/npm-publish-scope.test.ts"
+      - ".github/workflows/release-pricing.yml"
+  push:
+    tags:
+      - "pricing-v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hobo-pricing-release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  HOBO_TURBO_CONCURRENCY: "1"
+
+jobs:
+  pricing-release-contract:
+    name: Pricing release contract (static)
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode
+        run: pnpm run pins:fetch ts-autocode
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: npm scope map contract
+        run: pnpm exec vitest run scripts/test/npm-publish-scope.test.ts
+
+  pricing-release-build:
+    name: Build and test @hobo/pricing (release cone)
+    needs: pricing-release-contract
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode
+        run: pnpm run pins:fetch ts-autocode
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Turbo cache
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      - run: pnpm exec turbo run build test --filter=@hobo/pricing --concurrency=1
+      - name: Save Turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
+
+  pricing-release-pack:
+    name: npm pack dry-run (@hobo-labs/pricing)
+    needs: pricing-release-build
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          clean: false
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode
+        run: pnpm run pins:fetch ts-autocode
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - run: pnpm exec turbo run build --filter=@hobo/pricing --concurrency=1
+      - name: npm pack dry-run (scoped staging)
+        run: |
+          set -euo pipefail
+          staging=/tmp/hobo-pricing-release-staging
+          rm -rf "$staging"
+          mkdir -p "$staging"
+          cp -a packages/pricing/. "$staging/"
+          node --no-warnings scripts/ci/npm-publish-scope.mts packages/pricing/package.json "$staging/package.json"
+          grep -q '"name": "@hobo-labs/pricing"' "$staging/package.json"
+          (cd "$staging" && npm pack --dry-run --ignore-scripts)
+
+  pricing-release-publish:
+    name: npm publish @hobo-labs/pricing (tag only)
+    if: startsWith(github.ref, 'refs/tags/pricing-v')
+    needs: pricing-release-pack
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode
+        run: pnpm run pins:fetch ts-autocode
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - run: pnpm exec turbo run build --filter=@hobo/pricing --concurrency=1
+      - name: npm publish with provenance (requires NPM_TOKEN)
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "::error::NPM_TOKEN is required to publish @hobo-labs/pricing from a pricing-v* tag"
+            exit 1
+          fi
+          staging=/tmp/hobo-pricing-release-publish
+          rm -rf "$staging"
+          mkdir -p "$staging"
+          cp -a packages/pricing/. "$staging/"
+          node --no-warnings scripts/ci/npm-publish-scope.mts packages/pricing/package.json "$staging/package.json"
+          grep -q '"name": "@hobo-labs/pricing"' "$staging/package.json"
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "$HOME/.npmrc"
+          cd "$staging"
+          npm publish --access public --provenance --ignore-scripts

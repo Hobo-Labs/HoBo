@@ -1,10 +1,12 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHmac, generateKeyPairSync } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { toJsonString } from "@bufbuild/protobuf";
 import { DesiredCiPolicySchema, defineCiPolicy } from "@hobo/ci";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { importGithubKey } from "../src/ci-github-keys.js";
 import {
 	ciWorkerEnvironment,
 	resolveCiServePlan,
@@ -95,6 +97,32 @@ function withStore(store: Readonly<Record<string, string>>): string {
 const git = async () => "git@github.com:example/project.git";
 
 describe("hobo ci serve multi-engine", () => {
+	it.each([
+		{ HOBO_CI_GITHUB_APP_ID: "123" },
+		{ HOBO_CI_GITHUB_APP_ID_FILE: "app-id" },
+		{ HOBO_CI_GITHUB_APP_KEY_FILE: "missing-key.pem" },
+		{ HOBO_CI_GITHUB_APP_PRIVATE_KEY: "unused" },
+	])("refuses incomplete App configuration instead of starting with fixture credentials", async (env) => {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-incomplete-app-"));
+		directories.push(home);
+		await expect(
+			startCiServe({
+				cwd,
+				options: {
+					environment: "local",
+					port: "31234",
+					home,
+					installationId: "1",
+				},
+				env,
+				git,
+			}),
+		).rejects.toThrow(
+			"GitHub App configuration requires a readable HOBO_CI_GITHUB_APP_KEY_FILE",
+		);
+	});
+
 	it("print-config lists resolved engines", async () => {
 		const cwd = await projectRoot();
 		const plan = await resolveCiServePlan({
@@ -177,6 +205,21 @@ describe("hobo ci serve multi-engine", () => {
 		const cwd = await projectRoot();
 		const home = await mkdtemp(join(tmpdir(), "hobo-ci-serve-home-"));
 		directories.push(home);
+		const key = generateKeyPairSync("rsa", {
+			modulusLength: 2048,
+			privateKeyEncoding: { type: "pkcs8", format: "pem" },
+			publicKeyEncoding: { type: "spki", format: "pem" },
+		}).privateKey;
+		const secret = "test-webhook-secret-for-imported-app";
+		await writeFile(join(home, "source.pem"), key);
+		await writeFile(join(home, "source-secret"), secret);
+		await importGithubKey({
+			home,
+			appId: "123",
+			keyFile: join(home, "source.pem"),
+			webhookSecretFile: join(home, "source-secret"),
+			fetch: async () => Response.json({ id: 123 }),
+		});
 		const port = String(
 			await new Promise<number>((resolve, reject) => {
 				import("node:net").then(({ createServer }) => {
@@ -188,7 +231,7 @@ describe("hobo ci serve multi-engine", () => {
 				});
 			}),
 		);
-		const handle = await startCiServe({
+		const serveInput = {
 			cwd,
 			options: {
 				environment: "local",
@@ -197,16 +240,43 @@ describe("hobo ci serve multi-engine", () => {
 				engines: ["gh-actions", "vercel"],
 				installationId: "1",
 			},
-			env: {},
 			git,
+		};
+		await expect(startCiServe({ ...serveInput, env: {} })).rejects.toThrow(
+			"real App credentials require a CI account token",
+		);
+		const accountToken = "test-account-token-0123456789abcdef";
+		const handle = await startCiServe({
+			...serveInput,
+			env: { HOBO_CI_ACCOUNT_TOKEN: accountToken },
 		});
 		try {
+			const control = await readFile(
+				join(home, "ci", "serve", "control-tokens.json"),
+				"utf8",
+			);
+			expect(control).not.toContain(accountToken);
+			expect(JSON.parse(control).tokens[0].installationIds).toEqual([1]);
 			const listenPort = handle.plan.port;
 			const rootReady = await fetch(
 				`http://127.0.0.1:${listenPort}/readyz`,
 			).then((r) => r.json());
 			expect(rootReady.engines["gh-actions"].ready).toBe(true);
 			expect(rootReady.engines.vercel.ready).toBe(true);
+			const body = "{}";
+			const signature = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+			const webhook = await fetch(
+				`http://127.0.0.1:${listenPort}/engines/gh-actions/github/webhooks`,
+				{
+					method: "POST",
+					headers: {
+						"x-github-event": "ping",
+						"x-hub-signature-256": signature,
+					},
+					body,
+				},
+			);
+			expect(webhook.status).toBe(202);
 			expect(
 				(await fetch(`http://127.0.0.1:${listenPort}/engines/vercel/healthz`))
 					.status,

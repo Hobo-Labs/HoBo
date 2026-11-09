@@ -5,6 +5,7 @@ import {
 	planCommands,
 	planDependentTests,
 	type Repo,
+	shardTestPlan,
 	type TestGraph,
 	type TestPlan,
 	turboTestGraph,
@@ -100,6 +101,71 @@ const repo: Repo = {
 	],
 };
 
+describe("workspace test shards", () => {
+	it("partitions whole suites and dependent subsets exactly once", () => {
+		const plan = planDependentTests(["packages/lib/src/client.ts"], repo);
+		assert.equal(plan.mode, "scoped");
+		if (plan.mode !== "scoped") throw new Error("expected scoped plan");
+		const shards = [0, 1, 2, 3].map((index) =>
+			shardTestPlan(plan, repo.workspaces, index, 4),
+		);
+		const full = shards.flatMap((part) =>
+			part.mode === "scoped" ? part.full : [],
+		);
+		const subsets = shards.flatMap((part) =>
+			part.mode === "scoped" ? [...part.subsets] : [],
+		);
+		assert.deepEqual([...full].sort(), [...plan.full].sort());
+		assert.equal(new Set(full).size, full.length);
+		assert.deepEqual(
+			subsets.sort(([a], [b]) => a.localeCompare(b)),
+			[...plan.subsets].sort(([a], [b]) => a.localeCompare(b)),
+		);
+		assert.equal(new Set(subsets.map(([dir]) => dir)).size, subsets.length);
+	});
+
+	it("partitions every workspace for a repo-wide plan and rejects invalid shards", () => {
+		const plan: TestPlan = { mode: "all", reason: "global input" };
+		const shards = [0, 1, 2, 3].map((index) =>
+			shardTestPlan(plan, repo.workspaces, index, 4),
+		);
+		const full = shards.flatMap((part) =>
+			part.mode === "scoped" ? part.full : [],
+		);
+		assert.deepEqual(
+			[...full].sort(),
+			repo.workspaces.map((ws) => ws.dir).sort(),
+		);
+		assert.equal(new Set(full).size, full.length);
+		for (const [index, count] of [
+			[-1, 4],
+			[4, 4],
+			[0, 0],
+			[0, 65],
+			[0.5, 4],
+		] as const)
+			assert.throws(
+				() => shardTestPlan(plan, repo.workspaces, index, count),
+				/invalid workspace test shard/u,
+			);
+		assert.throws(
+			() =>
+				shardTestPlan(
+					{
+						mode: "scoped",
+						full: ["packages/lib"],
+						subsets: new Map([["packages/lib", ["test/lib.test.ts"]]]),
+						skipped: [],
+					},
+					repo.workspaces,
+					0,
+					4,
+				),
+			/both a whole suite and a subset/u,
+		);
+	});
+});
+
 function scoped(plan: TestPlan) {
 	assert.equal(plan.mode, "scoped");
 	if (plan.mode !== "scoped") throw new Error("unreachable");
@@ -187,6 +253,35 @@ describe("planDependentTests", () => {
 	it("runs the whole workspace for a workspace-wide input or an empty diff", () => {
 		assert.equal(planDependentTests(["pnpm-lock.yaml"], repo).mode, "all");
 		assert.equal(planDependentTests([""], repo).mode, "all");
+	});
+
+	it("keeps a scripts-only root package.json edit scoped with a root reader", () => {
+		const scriptsOnly = (path: string, side: "base" | "head") =>
+			path === "package.json"
+				? JSON.stringify({ scripts: { test: side } })
+				: undefined;
+		const plan = planDependentTests(
+			["package.json", "docs/guide.md"],
+			repo,
+			scriptsOnly,
+		);
+		assert.equal(plan.mode, "scoped");
+		// Without the reader the same diff widens, as it did in merge groups.
+		assert.equal(
+			planDependentTests(["package.json", "docs/guide.md"], repo).mode,
+			"all",
+		);
+	});
+
+	it("still widens for a root dependency edit with a root reader", () => {
+		const dependencyEdit = (path: string, side: "base" | "head") =>
+			path === "package.json"
+				? JSON.stringify({ devDependencies: { tsx: side } })
+				: undefined;
+		assert.equal(
+			planDependentTests(["package.json"], repo, dependencyEdit).mode,
+			"all",
+		);
 	});
 });
 

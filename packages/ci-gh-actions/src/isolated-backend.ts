@@ -1,4 +1,4 @@
-import type { Lease, Offer } from "@hobo/ci";
+import { isIsolatedFleetProvider, type Lease, type Offer } from "@hobo/ci";
 
 /** Vercel Sandbox JIT isolation (metered). */
 export function isSandboxOffer(
@@ -23,11 +23,22 @@ export function isIsolatedHostOffer(
 	return isSandboxOffer(offer) || isIsolatedContainerOffer(offer);
 }
 
-export function isIsolatedHostLease(lease: Pick<Lease, "provider">): boolean {
-	return (
-		lease.provider === "vercel" ||
-		lease.provider === "kubernetes" ||
-		lease.provider === "hobo-box-worker"
+export function isIsolatedHostLease(
+	lease: Pick<Lease, "provider"> & {
+		backend?: string;
+		runsOn?: string;
+	},
+): boolean {
+	if (lease.provider === "vercel" || lease.provider === "hobo-box-worker")
+		return true;
+	// Kubernetes is isolated only when the offer proves isolated-container.
+	// Missing backend must not match ARC (gh-actions) leases.
+	if (lease.provider !== "kubernetes" || lease.backend === undefined)
+		return false;
+	return isIsolatedFleetProvider(
+		lease.provider,
+		lease.backend,
+		lease.runsOn ?? "",
 	);
 }
 

@@ -172,11 +172,12 @@ it("keeps the existing reservation when the new host costs the same", async () =
 	expect(h.store.get(original.id)?.state).toBe("dispatched");
 	expect(h.store.pendingJobs()).toHaveLength(0);
 });
-it("requeues an unlaunched paid host when a partial free allocation becomes available", async () => {
+it("requeues an unlaunched paid host for partial free allocation under maximize-credits", async () => {
 	const h = setup();
 	const account = h.configuration.accounts[0];
 	const offer = account?.offers[0];
 	if (!account || !offer) throw new Error("missing offer");
+	account.routingStrategy = "maximize-credits";
 	offer.freeMinutes = 0;
 	offer.priceMicrosPerMinute = 1;
 	const original = await reserve(h);

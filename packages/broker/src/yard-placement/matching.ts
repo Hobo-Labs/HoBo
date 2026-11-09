@@ -30,17 +30,36 @@ export function matchYard(
 		readonly objective?: string;
 		readonly contributingPolicyIds?: readonly string[];
 		readonly bindleRuntimes?: readonly string[];
+		/** Whole-request normalized quotes after financial hard filters. Missing
+		 * entries are ineligible, never an assumed zero cost. */
+		readonly economicCosts?: ReadonlyMap<string, number>;
 	},
 ): YardMatchDecision {
 	// SAFETY: assertion required at this I/O or test boundary.
 	const layoutHash = contentHashOf(request.requestedLayout) as ContentHash;
 	const candidates: YardCandidateDecision[] = inventory.yards
-		.map((yard) =>
-			evaluateCandidate(yard, request, {
+		.map((yard) => {
+			const candidate = evaluateCandidate(yard, request, {
 				ownerTenantId: options.ownerTenantId,
 				bindleRuntimes: options.bindleRuntimes ?? [],
-			}),
-		)
+			});
+			if (!options.economicCosts) return candidate;
+			const cost = options.economicCosts.get(yard.yardId);
+			const rankInputs: YardCandidateDecision["rankInputs"] = {
+				...candidate.rankInputs,
+			};
+			if (cost !== undefined)
+				Object.assign(rankInputs, { totalCostMicros: cost });
+			return Object.freeze({
+				...candidate,
+				compatible: candidate.compatible && cost !== undefined,
+				hardFailures: Object.freeze([
+					...candidate.hardFailures,
+					...(cost === undefined ? ["budget-quote-ineligible"] : []),
+				]),
+				rankInputs: Object.freeze(rankInputs),
+			});
+		})
 		.sort((a, b) => compareCandidates(a, b, options.objective ?? "min-cost"));
 
 	const compatible = candidates.filter((c) => c.compatible);
@@ -286,11 +305,12 @@ function compareCandidates(
 		// SAFETY: assertion required at this I/O or test boundary.
 		if (sa[key] !== sb[key]) return Number(sb[key]) - Number(sa[key]);
 	}
-	// Objective: prefer higher capacity for min-cost reuse; stable yard id tiebreak.
+	// Capacity is not a price. Only normalized full-request quote totals can
+	// implement min-cost; absent economics leaves a deterministic structural tie.
 	if (objective === "min-cost") {
-		const ca = Number(a.rankInputs.capacityTotal ?? 0);
-		const cb = Number(b.rankInputs.capacityTotal ?? 0);
-		if (ca !== cb) return cb - ca;
+		const ca = Number(a.rankInputs.totalCostMicros ?? 0);
+		const cb = Number(b.rankInputs.totalCostMicros ?? 0);
+		if (ca !== cb) return ca - cb;
 	}
 	return a.yardId < b.yardId ? -1 : a.yardId > b.yardId ? 1 : 0;
 }

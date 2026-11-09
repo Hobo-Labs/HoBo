@@ -1,9 +1,11 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { create, toJsonString } from "@bufbuild/protobuf";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	CiEventSchema,
 	type Configuration,
 	ConfigurationSchema,
 	JobSchema,
@@ -69,6 +71,49 @@ function original() {
 		labels: ["hobo"],
 		action: "queued",
 	});
+}
+
+/** Seed authentic settled history, rather than changing a new GH lease's original payer. */
+function historicalSandbox(paidMicros = 0) {
+	const database = new DatabaseSync(":memory:");
+	const store = new LeaseStore(":memory:", database);
+	const job = original();
+	const old = create(LeaseSchema, {
+		id: "historical-sandbox",
+		accountId: "example",
+		offerId: "historical-vercel",
+		provider: "vercel",
+		providerAccountId: "vercel:historical",
+		jobId: job.id,
+		originalRunId: job.runId,
+		runAttempt: job.runAttempt,
+		repositoryId: job.repositoryId,
+		repository: job.repository,
+		installationId: job.installationId,
+		runnerName: "hobo-historical-sandbox",
+		state: "completed",
+		sandboxStage: "stopped",
+		runnerDeletionConfirmed: true,
+		createdAt: NOW,
+		settledAt: NOW,
+		usageCompletedAt: NOW,
+		paidMicros,
+	});
+	const body = toJsonString(LeaseSchema, old);
+	database
+		.prepare("INSERT INTO leases(id,job_key,body) VALUES(?,?,?)")
+		.run(old.id, `${job.repositoryId}:${job.id}:${job.runAttempt}`, body);
+	database.prepare("INSERT INTO events(body) VALUES(?)").run(
+		toJsonString(CiEventSchema, {
+			...create(CiEventSchema),
+			type: "ci.HostSettled",
+			accountId: old.accountId,
+			leaseId: old.id,
+			at: NOW,
+			detail: body,
+		}),
+	);
+	return { store, old };
 }
 
 describe("durable account policy and usage snapshots", () => {
@@ -636,7 +681,7 @@ describe("durable account policy and usage snapshots", () => {
 		}
 	});
 	it("attributes late Sandbox events without disturbing a replacement reservation or assignment", async () => {
-		const store = new LeaseStore(":memory:");
+		const { store, old } = historicalSandbox(4321);
 		try {
 			const config = await configuration();
 			const account = config.accounts[0];
@@ -644,23 +689,6 @@ describe("durable account policy and usage snapshots", () => {
 			if (!account || !offer) throw new Error("fixture");
 			offer.concurrency = 3;
 			store.configure(config, 0, NOW);
-			const old = store.reserve(account, original(), NOW);
-			if (!old) throw new Error("old reservation");
-			store.transition(
-				old.id,
-				["reserved"],
-				(lease) => {
-					lease.state = "completed";
-					lease.provider = "vercel";
-					lease.sandboxStage = "stopped";
-					lease.runnerDeletionConfirmed = true;
-					lease.settledAt = NOW;
-					lease.usageCompletedAt = NOW;
-					lease.paidMicros = 4321;
-				},
-				"ci.HostSettled",
-				NOW,
-			);
 			const job = original();
 			job.id = 2;
 			job.runId = 12;
@@ -709,28 +737,12 @@ describe("durable account policy and usage snapshots", () => {
 		}
 	});
 	it("preserves pending demand and terminal tombstones on late Sandbox events", async () => {
-		const store = new LeaseStore(":memory:");
+		const { store, old } = historicalSandbox(1234);
 		try {
 			const config = await configuration();
 			const account = config.accounts[0];
 			if (!account) throw new Error("fixture");
 			store.configure(config, 0, NOW);
-			const old = store.reserve(account, original(), NOW);
-			if (!old) throw new Error("old reservation");
-			store.transition(
-				old.id,
-				["reserved"],
-				(lease) => {
-					lease.state = "completed";
-					lease.provider = "vercel";
-					lease.sandboxStage = "stopped";
-					lease.runnerDeletionConfirmed = true;
-					lease.settledAt = NOW;
-					lease.paidMicros = 1234;
-				},
-				"ci.HostSettled",
-				NOW,
-			);
 			const job = create(JobSchema, { ...original(), id: 2, runId: 12 });
 			store.queue(original(), NOW);
 			store.queue(job, NOW);
@@ -757,7 +769,7 @@ describe("durable account policy and usage snapshots", () => {
 		}
 	});
 	it("cancels an unlaunched replacement when a settled runner's job is confirmed completed", async () => {
-		const store = new LeaseStore(":memory:");
+		const { store, old } = historicalSandbox(0);
 		try {
 			const config = await configuration();
 			const account = config.accounts[0];
@@ -765,21 +777,6 @@ describe("durable account policy and usage snapshots", () => {
 			if (!account || !offer) throw new Error("fixture");
 			offer.concurrency = 2;
 			store.configure(config, 0, NOW);
-			const old = store.reserve(account, original(), NOW);
-			if (!old) throw new Error("old reservation");
-			store.transition(
-				old.id,
-				["reserved"],
-				(lease) => {
-					lease.state = "completed";
-					lease.provider = "vercel";
-					lease.sandboxStage = "stopped";
-					lease.runnerDeletionConfirmed = true;
-					lease.settledAt = NOW;
-				},
-				"ci.HostSettled",
-				NOW,
-			);
 			const job = create(JobSchema, { ...original(), id: 2, runId: 12 });
 			const replacement = store.reserve(account, job, NOW);
 			if (!replacement) throw new Error("replacement reservation");

@@ -49,13 +49,15 @@ function originalAccount(): Account {
 		].map(([id = "", provider = ""]) => ({
 			id,
 			provider,
+			backend: provider === "kubernetes" ? "isolated-container" : "",
 			providerAccountId: `${provider}-owned`,
 			enabled: id === "github",
-			runsOn: `${id}-native`,
-			freeMinutes: 20,
-			priceMicrosPerMinute: 100,
-			budgetMicros: 1000000,
-			spentMicros: 20,
+			runsOn:
+				provider === "kubernetes" ? "hobo-isolated-worker" : `${id}-native`,
+			freeMinutes: provider === "kubernetes" ? 0 : 20,
+			priceMicrosPerMinute: provider === "kubernetes" ? 0 : 100,
+			budgetMicros: provider === "kubernetes" ? 0 : 1000000,
+			spentMicros: provider === "kubernetes" ? 0 : 20,
 			concurrency: 2,
 			observedAt: "2026-10-27T10:00:00Z",
 			validUntil: "2026-10-28T12:00:00Z",
@@ -152,7 +154,7 @@ describe("Station CI budget routing bridge", () => {
 			const account = (await client.getPolicy()).account;
 			expect(account?.spentMicros).toBe(100);
 			expect(account?.offers.map((offer) => offer.spentMicros)).toEqual([
-				20, 20, 20,
+				20, 20, 0,
 			]);
 		} finally {
 			store.close();

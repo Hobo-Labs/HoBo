@@ -1,0 +1,53 @@
+syntax = "proto3";
+package hobo.core.v1;
+
+// Positive provider readback. Control-plane readiness and application health
+// are distinct. Missing evidence stays unknown and retains financial exposure.
+message ResourceLifecycleObservationRecord {
+  string tenant_id = 1;
+  string provider_id = 2;
+  string provider_account_id = 3;
+  string product_id = 4;
+  string resource_id = 5;
+  string physical_id = 6;
+  string operation_id = 7;
+  // ready | pending | failed | absent | unknown
+  string status = 8;
+  double observed_at_ms = 9;
+  string evidence_ref = 10;
+  // Only an independently observed digest; never copy desired into evidence.
+  string artifact_digest = 11;
+  // No matching mutation is in flight or can apply later.
+  bool operation_terminal = 12;
+  optional bool billable = 13;
+  bool healthy = 14;
+  string health_evidence_ref = 15;
+  bool usage_final = 16;
+  // Presence is required for final usage; an omitted scalar is not zero.
+  optional double settled_micros = 17;
+  string usage_evidence_ref = 18;
+  // Independently observed HTTP serving endpoint, never a console URL or a
+  // desired backend copied into evidence.
+  string serving_endpoint = 19;
+}
+
+// Journal metadata deliberately excludes HTTP bodies, credentials and headers.
+message ResourceMutationJournalEntry {
+  string mutation_id = 1;
+  string request_digest = 2;
+  // claimed | acknowledged | uncertain
+  string status = 3;
+  double recorded_at_ms = 4;
+}
+
+// Scoped, content-addressed persistence of sanitized provider identities.
+// record_json contains a provider-owned schema with custody references only.
+message ProviderResourceRecordEnvelope {
+  string tenant_id = 1;
+  string provider_id = 2;
+  string provider_account_id = 3;
+  string scope_id = 4;
+  string record_key = 5;
+  string record_json = 6;
+  string record_digest = 7;
+}

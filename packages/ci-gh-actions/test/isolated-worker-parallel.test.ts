@@ -60,6 +60,11 @@ function fakeDocker(): DockerDriver & { calls: string[] } {
 		rename: vi.fn(async (_id: string, name: string) => {
 			calls.push(`rename ${name}`);
 		}),
+		updateResources: vi.fn(async (containerId, weights) => {
+			calls.push(
+				`update ${weights.cpuShares} ${weights.blkioWeight ?? "off"} ${containerId}`,
+			);
+		}),
 		stop: vi.fn(async () => {}),
 		remove: vi.fn(async (name: string) => {
 			calls.push(`remove ${name}`);
@@ -72,6 +77,13 @@ function controller(
 	docker: DockerDriver,
 	active: ReturnType<typeof lease>[],
 	slots: number,
+	container: Readonly<{
+		volumes?: readonly Readonly<{ source: string; target: string }>[];
+		containerEnv?: Readonly<Record<string, string>>;
+		gitMirror?: {
+			pathFor(repository: string): string | undefined;
+		};
+	}> = {},
 ) {
 	const transition = vi.fn(async () => undefined);
 	const stub: Pick<
@@ -102,6 +114,7 @@ function controller(
 			workerAccountId: "box",
 			workerImage: "hobo-ci-worker:local",
 			slots,
+			...container,
 		}),
 	};
 }
@@ -150,6 +163,61 @@ describe("isolated worker parallel slots", () => {
 		await ctl.discardWarm();
 		expect(docker.calls.at(-1)).toMatch(/^remove hobo-warm-/);
 	});
+
+	it("mounts the shared store and selects hardlink imports", async () => {
+		const docker = fakeDocker();
+		const { ctl } = controller(docker, [], 2, {
+			volumes: [{ source: "/srv/pnpm-store", target: "/pnpm-store" }],
+			containerEnv: {
+				npm_config_store_dir: "/pnpm-store",
+				npm_config_package_import_method: "hardlink",
+			},
+		});
+		await ctl.prewarm();
+		expect(docker.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				volumes: [{ source: "/srv/pnpm-store", target: "/pnpm-store" }],
+				env: expect.objectContaining({
+					npm_config_store_dir: "/pnpm-store",
+					npm_config_package_import_method: "hardlink",
+				}),
+			}),
+		);
+		await ctl.discardWarm();
+	});
+
+	it("mounts an existing box git mirror read-only and names it for checkout", async () => {
+		const mirror = mkdtempSync(join(tmpdir(), "hobo-git-mirror-mount-"));
+		const docker = fakeDocker();
+		const { ctl } = controller(docker, [], 2, {
+			gitMirror: { pathFor: () => mirror },
+		});
+		await ctl.prewarm("Hobo-Labs/HoBo");
+		expect(docker.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				volumes: [{ source: mirror, target: mirror, readonly: true }],
+				env: expect.objectContaining({ HOBO_CI_GIT_MIRROR: mirror }),
+			}),
+		);
+		await ctl.discardWarm();
+		rmSync(mirror, { recursive: true, force: true });
+	});
+
+	it("exports the container memory limit to the runner environment", async () => {
+		const docker = fakeDocker();
+		const { ctl } = controller(docker, [], 2);
+		await ctl.prewarm();
+		expect(docker.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				memoryMb: 8192,
+				env: expect.objectContaining({
+					HOBO_CI_JOB_MEMORY_MB: "8192",
+					NODE_OPTIONS: expect.stringMatching(/^--max-old-space-size=\d+$/u),
+				}),
+			}),
+		);
+		await ctl.discardWarm();
+	});
 });
 
 describe("cli docker driver parallel helpers", () => {
@@ -164,6 +232,43 @@ describe("cli docker driver parallel helpers", () => {
 		chmodSync(bin, 0o755);
 		return { bin, log };
 	}
+
+	it("parses image ids, repo tags and labels from docker inspect", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "fake-docker-inspect-"));
+		try {
+			const bin = join(dir, "docker");
+			writeFileSync(
+				bin,
+				`#!/bin/sh\nprintf '%s\\n' '[{"Id":"sha256:abc","RepoTags":["hobo-ci-worker:local","hobo-ci-worker:v0123456789ab"],"Config":{"Labels":{"hobo.ci.toolchain":"v0123456789ab"}}}]'\n`,
+			);
+			chmodSync(bin, 0o755);
+			const driver = createCliDockerDriver({ binary: bin, env: {} });
+			await expect(
+				driver.inspectImage?.("hobo-ci-worker:local"),
+			).resolves.toEqual({
+				id: "sha256:abc",
+				repoTags: ["hobo-ci-worker:local", "hobo-ci-worker:v0123456789ab"],
+				labels: { "hobo.ci.toolchain": "v0123456789ab" },
+			});
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("runs image probes as the requested user without network access", async () => {
+		const { bin, log } = fakeBinary();
+		const driver = createCliDockerDriver({ binary: bin, env: {} });
+		await expect(
+			driver.probeImage?.(
+				"hobo-ci-deps:local",
+				["sh", "-c", "test -w /opt/actions-runner/_hobo_work"],
+				"1000:1000",
+			),
+		).resolves.toEqual({ exitCode: 0 });
+		expect(readFileSync(log, "utf8").trim()).toBe(
+			"run --rm --network none --user 1000:1000 hobo-ci-deps:local sh -c test -w /opt/actions-runner/_hobo_work",
+		);
+	});
 
 	it("bind-mounts shared volumes and runs the runner detached", async () => {
 		const { bin, log } = fakeBinary();
@@ -207,6 +312,144 @@ describe("cli docker driver parallel helpers", () => {
 		expect(argv.indexOf("--init")).toBeLessThan(argv.indexOf("img"));
 	});
 
+	it("passes the per-job memory limit and job memory environment to docker create", async () => {
+		const { bin, log } = fakeBinary();
+		const driver = createCliDockerDriver({
+			binary: bin,
+			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0", PATH: process.env.PATH },
+		});
+		await driver.create({
+			name: "hobo-x",
+			image: "img",
+			timeoutMs: 1,
+			memoryMb: 3_072,
+			env: { HOBO_CI_JOB_MEMORY_MB: "3072" },
+			command: ["sleep", "infinity"],
+		});
+		const argv = readFileSync(log, "utf8").trim();
+		expect(argv).toContain("--memory 3072m --memory-swap 3072m");
+		expect(argv).toContain("-e HOBO_CI_JOB_MEMORY_MB=3072");
+	});
+
+	it("passes ranked CPU and IO weights to create and warm-container updates", async () => {
+		const { bin, log } = fakeBinary();
+		const driver = createCliDockerDriver({
+			binary: bin,
+			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0", PATH: process.env.PATH },
+		});
+		await driver.create({
+			name: "hobo-trunk",
+			image: "img",
+			timeoutMs: 1,
+			env: {},
+			command: ["sleep", "infinity"],
+			cpuShares: 8_192,
+			blkioWeight: 800,
+		});
+		await driver.updateResources?.("c1", {
+			cpuShares: 512,
+			blkioWeight: 200,
+		});
+		const lines = readFileSync(log, "utf8").trim().split("\n");
+		expect(lines[0]).toContain("--cpu-shares 8192 --blkio-weight 800");
+		expect(lines[1]).toBe("update --cpu-shares 512 --blkio-weight 200 c1");
+	});
+
+	it("falls back to CPU-only weights once the engine rejects block IO weights", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "fake-docker-no-blkio-"));
+		try {
+			const log = join(dir, "log");
+			const bin = join(dir, "docker");
+			writeFileSync(
+				bin,
+				`#!/bin/sh\necho "$*" >> "${log}"\ncase " $* " in *" --blkio-weight "*) echo "Block I/O weight is not supported" >&2; exit 125;; esac\nprintf '%064d\\n' 7\n`,
+			);
+			chmodSync(bin, 0o755);
+			const logEvent = vi.fn();
+			const driver = createCliDockerDriver({
+				binary: bin,
+				env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0", PATH: process.env.PATH },
+				log: logEvent,
+			});
+			const spec = {
+				name: "hobo-x",
+				image: "img",
+				timeoutMs: 1,
+				env: {},
+				command: ["sleep", "infinity"],
+				cpuShares: 8_192,
+				blkioWeight: 800,
+			} as const;
+			await driver.create(spec);
+			await driver.create({ ...spec, name: "hobo-y" });
+			await driver.updateResources?.("c1", {
+				cpuShares: 512,
+				blkioWeight: 200,
+			});
+			const lines = readFileSync(log, "utf8").trim().split("\n");
+			expect(lines).toHaveLength(4);
+			expect(lines[0]).toContain("--blkio-weight 800");
+			expect(lines.slice(1).join("\n")).not.toContain("--blkio-weight");
+			expect(lines[1]).toContain("--cpu-shares 8192");
+			expect(lines[3]).toBe("update --cpu-shares 512 c1");
+			expect(logEvent).toHaveBeenCalledOnce();
+			expect(logEvent).toHaveBeenCalledWith(
+				"hobo_ci_blkio_weight_unsupported",
+				expect.objectContaining({
+					message: expect.stringContaining("Block I/O weight"),
+				}),
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it.each([
+		{ cpuShares: 1, blkioWeight: 800 },
+		{ cpuShares: 512, blkioWeight: 9 },
+	])("rejects invalid container resource weights %o", async (weights) => {
+		const { bin } = fakeBinary();
+		const driver = createCliDockerDriver({
+			binary: bin,
+			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0" },
+		});
+		await expect(
+			driver.create({
+				name: "hobo-x",
+				image: "img",
+				timeoutMs: 1,
+				env: {},
+				command: [],
+				...weights,
+			}),
+		).rejects.toThrow(/invalid container/u);
+	});
+
+	it("appends :ro only from the typed readonly flag", async () => {
+		const { bin, log } = fakeBinary();
+		const driver = createCliDockerDriver({
+			binary: bin,
+			env: { HOBO_CI_MOUNT_DOCKER_SOCKET: "0" },
+		});
+		await driver.create({
+			name: "hobo-x",
+			image: "img",
+			timeoutMs: 1,
+			env: {},
+			command: [],
+			volumes: [
+				{
+					source: "/var/lib/hobo-ci/git/Hobo-Labs/HoBo.git",
+					target: "/var/lib/hobo-ci/git/Hobo-Labs/HoBo.git",
+					readonly: true,
+				},
+			],
+		});
+		expect(readFileSync(log, "utf8")).toContain(
+			"-v /var/lib/hobo-ci/git/Hobo-Labs/HoBo.git:/var/lib/hobo-ci/git/Hobo-Labs/HoBo.git:ro",
+		);
+	});
+
 	it("refuses volume specs that could smuggle extra mount options", async () => {
 		const { bin } = fakeBinary();
 		const driver = createCliDockerDriver({
@@ -245,6 +488,7 @@ describe("cli docker driver parallel helpers", () => {
 		expect(flat).not.toContain(b64);
 		expect(flat).not.toContain("--jitconfig");
 		expect(flat).toContain("ACTIONS_RUNNER_INPUT_JITCONFIG");
+		expect(flat).toContain("set -eu\numask 022\n");
 	});
 
 	it("refuses to start a runner when the driver cannot deliver secrets", async () => {

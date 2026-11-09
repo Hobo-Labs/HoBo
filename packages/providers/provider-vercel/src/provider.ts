@@ -1,3 +1,4 @@
+import { VERCEL_STATIC_DEPLOY_PRODUCT_ID } from "./deployment-resolver.js";
 import {
 	EQUIVALENCE_CLASSES,
 	INITIAL_CAPABILITY_PORTS,
@@ -36,6 +37,7 @@ function makeCapability(classKey: InitialCapabilityPort): Capability {
 				sku: `${PROVIDER_TARGET}:${mapping.resourceClass}`,
 				unit: "request",
 				marginalPrice: "0",
+				pricingStatus: "unknown",
 			};
 		},
 	};
@@ -89,10 +91,20 @@ export function createVercelProvider(): CloudProvider {
 				providerId: `@hobo/provider-${PROVIDER_TARGET}`,
 				published: {},
 				capabilities: {
-					capabilities: capabilities.map((c) => ({ port: c.port })),
+					capabilities: capabilities.map((c) => ({
+						port: c.port,
+						...(c.port === "compute"
+							? {
+									productId: VERCEL_STATIC_DEPLOY_PRODUCT_ID,
+									profiles: ["web.static/v1", "web.hosted/v1"],
+									features: ["http", "static", "managed"],
+									resourceKind: "immutable-deployment",
+								}
+							: undefined),
+					})),
 				},
 				auth: { exchange: "hobo:brokered-deploy-token", staticSecrets: false },
-				cost: { facts: [] },
+				cost: { pricingStatus: "unknown", facts: [] },
 			};
 		},
 		client(port: PortKind, outputs: Outputs): ProviderClient {

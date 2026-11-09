@@ -29,13 +29,8 @@ const LEDGER_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
 	resources: {
-		service: {
-			type: "component.v1",
-			image: "oci://registry.example.com/shop@sha256:abc123",
-			runtime: "wasm",
-			exports: ["wasi:http/incoming-handler"],
-			bind: ["ledger"],
-		},
+		// This catalog test asks only for a database. Comparing compute offers
+		// from both providers requires a separate normalized hosting quote.
 		// `hobo:database` lowers to the bare `database` port — advertised by the
 		// AWS equivalence table (RDS PostgreSQL), not by the cloudflare base set.
 		ledger: { type: "data.v1", port: "hobo:database" },
@@ -73,7 +68,7 @@ describe("hobo add aws (composed catalog entry)", () => {
 			const plan = envelope(
 				(await cli.run(["plan", "--json"], { cwd: dir })).stdout,
 			);
-			expect(plan.ok).toBe(true);
+			expect(plan.ok, JSON.stringify(plan)).toBe(true);
 			const ledger = plan.data.resources.find(
 				(r: { name: string }) => r.name === "ledger",
 			);

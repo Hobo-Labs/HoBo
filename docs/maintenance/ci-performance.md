@@ -3,8 +3,13 @@
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
-  runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, each capped by `HOBO_CI_WORKER_MEMORY_MB`. Raise the
-  relay offer concurrency to match the slot count.
+  runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, subject to both slot and memory admission. Exact job names
+  select light/standard/heavy hard container limits (3072/4096/6144 MiB); active, reserved and warm requests
+  must sum within host/cgroup memory minus at least 2048 MiB reserve. On the 15989 MiB box that budget is
+  13941 MiB, so three mixed classes can fit but three heavy jobs cannot. Job preflight derives the Node heap,
+  serial turbo and `HOBO_TEST_MAX_WORKERS` from the admitted container limit; CI never exports
+  `VITEST_MAX_WORKERS`, preserving single-worker config pins. Byte or inode usage above 85% triggers safe
+  pruning before admission, and usage above 95% after pruning leaves the job queued.
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
   SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
   GitHub every `HOBO_CI_JOB_POLL_MS` for queued `runs-on: hobo` jobs, so CI does not stop when a hosted
@@ -33,11 +38,28 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
 - **Slimmer impact gate.** `scripts/ci/affected-lanes.mts` filters the turbo lanes to the changed
   packages and examples, including the packages inside a pnpm-workspace group such as
   `packages/providers/<name>` (the groups are read from `pnpm-workspace.yaml`; before that, any change
-  under a group read as a removed package and ran the whole workspace). Root build inputs (workspace, turbo, tsconfig, biome, toolchain pins,
-  vendored sources) run the whole workspace; a lockfile-only diff does too, but lockfile plus package
+  under a group read as a removed package and ran the whole workspace). Root build inputs (workspace, behavior-changing turbo config, tsconfig, biome, toolchain pins,
+  vendored sources) run the whole workspace. Scripts-only root manifest edits and root `//#` task edits
+  stay scoped by comparing root files with the diff base; `globalDependencies` additions and removals
+  run the whole workspace because they change every task's hash inputs. Missing or invalid base content
+  fails closed. A lockfile-only diff runs everything, but lockfile plus package
   paths stay scoped to those packages. Workflows, root scripts and draft proofs are covered by the
   root checks in the same gate. `scripts/test/affected-lanes.test.ts` pins the skip logic. Dependents are
   not added yet: several packages carry pre-existing biome lint debt that a dependents sweep would surface.
+  The impact job and its merge-group S0 step have a 20-minute limit so large affected sets can finish
+  on a cold worker; a timeout cancels the gate and does not count as a passing check.
+  Root typechecking builds the Redis-compatible package first because the Upstash provider sources
+  referenced by root tests resolve its declarations from `dist` on a clean worker.
+- **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
+  leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
+  now delegate workspace tests to eight bounded shards; the PR's build, lint, schema, and contract lanes
+  get a separate job. `dependent-tests.mts` assigns each whole suite or dependent subset to exactly one
+  shard and verifies that a repo-wide run discovers every Turbo test workspace. Shards prefer the
+  validation job's same-run Turbo cache but run their complete selected plan on a cache miss. The required
+  `PR impact gate` fails unless validation, every workspace shard, and the event's other required lanes
+  succeed. The PR merge base is pinned from the event's base SHA and passed to every job, so a later
+  target-branch update cannot silently change their test scope. `scripts/test/merge-group-gate.test.ts`
+  covers failed, cancelled, skipped, and missing results.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
   from each job, so queue time and run time can be compared before and after a change. The script
   imports node builtins only, because the step also runs on jobs that skipped or failed `pnpm install`

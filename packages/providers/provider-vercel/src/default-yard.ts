@@ -36,10 +36,12 @@ import {
 	edgeConfig,
 	edgeFunction,
 	project,
+	staticDeployment,
 	type VercelBlobSlotOptions,
 	type VercelEdgeConfigSlotOptions,
 	type VercelEdgeFunctionSlotOptions,
 	type VercelProjectSlotOptions,
+	type VercelStaticDeploySlotOptions,
 } from "./slots.js";
 
 /**
@@ -87,6 +89,7 @@ export interface VercelYardSpec {
 export interface VercelYardSpecOptions {
 	readonly regions?: readonly string[];
 	readonly project?: VercelProjectSlotOptions;
+	readonly staticDeployment?: VercelStaticDeploySlotOptions;
 	readonly edgeFunction?: VercelEdgeFunctionSlotOptions;
 	readonly blob?: VercelBlobSlotOptions;
 	readonly edgeConfig?: VercelEdgeConfigSlotOptions;
@@ -94,7 +97,7 @@ export interface VercelYardSpecOptions {
 
 /** The catalog with no per-offering settings: what Vercel can allocate, bare. */
 export const VERCEL_DEFAULT_BINDINGS: VercelSlotCatalog = Object.freeze({
-	web: Object.freeze([project()]),
+	web: Object.freeze([staticDeployment()]),
 	service: Object.freeze([edgeFunction()]),
 	bucket: Object.freeze([blob()]),
 	kv: Object.freeze([edgeConfig()]),
@@ -121,7 +124,10 @@ export function vercelSlotCatalog(
 	options: VercelYardSpecOptions = {},
 ): VercelSlotCatalog {
 	return Object.freeze({
-		web: Object.freeze([project(options.project ?? {})]),
+		web: Object.freeze([
+			staticDeployment(options.staticDeployment ?? {}),
+			...(options.project ? [project(options.project)] : []),
+		]),
 		service: Object.freeze([edgeFunction(options.edgeFunction ?? {})]),
 		bucket: Object.freeze([blob(options.blob ?? {})]),
 		kv: Object.freeze([edgeConfig(options.edgeConfig ?? {})]),

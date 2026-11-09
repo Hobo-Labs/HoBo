@@ -7,8 +7,7 @@
  * `HOBO_NETLIFY_TEMP_MOCK=1` at the Examples broker.
  */
 
-import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -16,9 +15,9 @@ import {
 	TEMPORARY_STATION_TTL_MS,
 	type TemporaryEnvironmentStationResult,
 	temporaryStationExpiresAt,
-	temporaryStationTtlSeconds,
 } from "@hobo/core";
-
+import { NETLIFY_ANONYMOUS_CLAIM_WINDOW_MS } from "./deploy-output.js";
+import { runIsolatedNetlifyAnonymousDeploy } from "./isolated-deploy.js";
 import {
 	isJsonObject,
 	isJsonString,
@@ -27,6 +26,11 @@ import {
 	parseJsonValue,
 } from "./json.js";
 import { PROVIDER_TARGET } from "./options.js";
+import {
+	createNodeProcessRunner,
+	type ProcessRunner,
+} from "./process-runner.js";
+import { NetlifyProviderError } from "./provider-errors.js";
 
 export const NETLIFY_TEMPORARY_PROVIDER_ID = PROVIDER_TARGET;
 export const supportsAnonymousTemporaryDeploy = true as const;
@@ -77,12 +81,33 @@ const DEFAULT_STATION_HTML = `<!doctype html>
 </html>
 `;
 
-function stripPermanentNetlifyEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-	const next = { ...env };
-	delete next.NETLIFY_AUTH_TOKEN;
-	delete next.NETLIFY_ACCESS_TOKEN;
-	delete next.NETLIFY_TOKEN;
-	return next;
+function validateAnonymousResult(
+	result: NetlifyAnonymousDeployResult,
+): NetlifyAnonymousDeployResult {
+	const station = new URL(result.stationUrl),
+		claim = new URL(result.claimUrl);
+	if (
+		station.protocol !== "https:" ||
+		!station.hostname.endsWith(".netlify.app") ||
+		station.username ||
+		station.password ||
+		station.port
+	)
+		throw new Error(
+			"Netlify station URL is outside its HTTPS hosting authority",
+		);
+	if (
+		claim.protocol !== "https:" ||
+		claim.hostname !== "app.netlify.com" ||
+		claim.username ||
+		claim.password ||
+		claim.port ||
+		!/^\/(?:claim|drop)(?:\/|$)/u.test(claim.pathname)
+	)
+		throw new Error(
+			"Netlify claim URL is outside its dashboard ownership authority",
+		);
+	return result;
 }
 
 function jsonNonEmptyString(value: JsonValue | undefined): string {
@@ -106,35 +131,27 @@ function resultFromNetlifyJson(
 	// CLI may emit http://*.netlify.app — normalize to https for browsers.
 	const stationUrl = stationUrlRaw.replace(/^http:\/\//u, "https://");
 	const deployId =
-		jsonNonEmptyString(parsed.deploy_id) ||
-		jsonNonEmptyString(parsed.deployId) ||
-		jsonNonEmptyString(parsed.site_id) ||
-		jsonNonEmptyString(parsed.id);
+		jsonNonEmptyString(parsed.deploy_id) || jsonNonEmptyString(parsed.deployId);
 	let claimUrl =
 		jsonNonEmptyString(parsed.claim_url) || jsonNonEmptyString(parsed.claimUrl);
 	const password = jsonNonEmptyString(parsed.password);
 	// Drop sites are password-gated until claimed — surface password on claimUrl.
 	if (claimUrl && password && !claimUrl.includes("password=")) {
-		const sep = claimUrl.includes("?") ? "&" : "#";
-		// Prefer fragment so password is not sent to Netlify as a query param twice.
-		claimUrl = `${claimUrl}${claimUrl.includes("#") ? "&" : sep}password=${encodeURIComponent(password)}`;
+		claimUrl = `${claimUrl}${claimUrl.includes("#") ? "&" : "#"}password=${encodeURIComponent(password)}`;
 	}
 	if (!stationUrl) return null;
-	if (!claimUrl && !deployId) return null;
-	const slug = new URL(stationUrl).hostname.split(".")[0] || "anon";
-	return {
-		deployId: deployId || slug,
+	if (!claimUrl || !deployId) return null;
+	return validateAnonymousResult({
+		deployId,
 		stationUrl,
-		claimUrl:
-			claimUrl ||
-			`https://app.netlify.com/drop/${slug}${password ? `#password=${encodeURIComponent(password)}` : ""}`,
-	};
+		claimUrl,
+	});
 }
 
 /**
  * Parse `netlify deploy --allow-anonymous` stdout for live URL + claim material.
  * CLI `--json` often pretty-prints — accept whole-stdout JSON, single-line JSON,
- * or URL fallback.
+ * or individual JSON lines. Text URLs alone do not establish resource identity.
  */
 export function parseNetlifyAnonymousDeployOutput(
 	stdout: string,
@@ -176,80 +193,52 @@ export function parseNetlifyAnonymousDeployOutput(
 			"netlify anonymous deploy output missing *.netlify.app URL (see netlify deploy --allow-anonymous)",
 		);
 	}
-	const stationUrl = urlMatch[0]
-		.replace(/[.,)]+$/u, "")
-		.replace(/^http:\/\//u, "https://");
-	const deployId = new URL(stationUrl).hostname.split(".")[0] || "anon";
 	const claimMatch = trimmed.match(
 		/https?:\/\/[^\s"'<>]*app\.netlify\.com\/[^\s"'<>]*(?:claim|drop)[^\s"'<>]*/iu,
 	);
-	return {
-		deployId,
-		stationUrl,
-		claimUrl:
-			claimMatch?.[0]?.replace(/[.,)]+$/u, "") ??
-			`https://app.netlify.com/drop/${deployId}`,
-	};
-}
-
-async function runNetlifyAnonymousCli(input: {
-	readonly workDir: string;
-}): Promise<NetlifyAnonymousDeployResult> {
-	const env = stripPermanentNetlifyEnv(process.env);
-	const stdout = await new Promise<string>((resolve, reject) => {
-		const child = spawn(
-			"npx",
-			[
-				"--yes",
-				"netlify-cli",
-				"deploy",
-				"--allow-anonymous",
-				"--dir",
-				".",
-				"--prod",
-				"--json",
-			],
-			{
-				cwd: input.workDir,
-				env,
-				stdio: ["ignore", "pipe", "pipe"],
-			},
+	if (!claimMatch)
+		throw new Error(
+			"netlify anonymous deploy has no observed ownership claim URL; refusing to invent one",
 		);
-		let out = "";
-		let err = "";
-		child.stdout?.on("data", (chunk: Buffer) => {
-			out += chunk.toString("utf8");
-		});
-		child.stderr?.on("data", (chunk: Buffer) => {
-			err += chunk.toString("utf8");
-		});
-		child.on("error", (error) => {
-			reject(
-				new Error(
-					`netlify anonymous CLI failed to start: ${error.message}. Install netlify-cli or open ${NETLIFY_DROP_URL}.`,
-				),
-			);
-		});
-		child.on("close", (code) => {
-			if (code !== 0) {
-				reject(
-					new Error(
-						`netlify deploy --allow-anonymous exited ${code}: ${err || out || "no output"}. Update netlify-cli, or use ${NETLIFY_DROP_URL}. Never NETLIFY_AUTH_TOKEN on Examples path.`,
-					),
-				);
-				return;
-			}
-			resolve(out || err);
-		});
-	});
-
-	return parseNetlifyAnonymousDeployOutput(stdout);
+	throw new Error(
+		"netlify anonymous deployment has no observed JSON deployment identity; refusing to substitute a site hostname or account ID",
+	);
 }
 
-export function createNetlifyAnonymousCliTransport(): NetlifyAnonymousTransport {
+async function runNetlifyAnonymousCli(
+	input: {
+		readonly workDir: string;
+	},
+	options: {
+		readonly runner?: ProcessRunner;
+		readonly env?: Readonly<Record<string, string | undefined>>;
+	},
+): Promise<NetlifyAnonymousDeployResult> {
+	const result = await runIsolatedNetlifyAnonymousDeploy({
+		runner: options.runner ?? createNodeProcessRunner(),
+		workDir: input.workDir,
+		publishDir: ".",
+		env: options.env ?? process.env,
+		timeoutMs: 120000,
+		maxOutputBytes: 524288,
+	});
+	if (result.code !== 0)
+		throw new NetlifyProviderError(
+			"PROVIDER_OPERATION_AMBIGUOUS",
+			"Netlify anonymous deployment did not complete; reconcile its observed site before creating another",
+		);
+	return parseNetlifyAnonymousDeployOutput(result.stdout || result.stderr);
+}
+
+export function createNetlifyAnonymousCliTransport(
+	options: {
+		readonly runner?: ProcessRunner;
+		readonly env?: Readonly<Record<string, string | undefined>>;
+	} = {},
+): NetlifyAnonymousTransport {
 	return {
 		async deployAnonymous({ workDir }) {
-			return runNetlifyAnonymousCli({ workDir });
+			return runNetlifyAnonymousCli({ workDir }, options);
 		},
 	};
 }
@@ -262,7 +251,7 @@ export async function materializeNetlifyStation(input: {
 	readonly workDir: string;
 	readonly files: readonly NetlifyDropFile[];
 }> {
-	const files =
+	const supplied =
 		input.files ??
 		([
 			{
@@ -271,16 +260,61 @@ export async function materializeNetlifyStation(input: {
 				encoding: "utf-8",
 			},
 		] as const);
-	const workDir =
-		input.rootDir ?? (await mkdtemp(path.join(tmpdir(), "hobo-netlify-anon-")));
+	if (supplied.length === 0 || supplied.length > 256)
+		throw new Error("Netlify station needs a bounded nonempty public file set");
+	const seen = new Set<string>();
+	let totalBytes = 0;
+	const files = supplied.map((entry) => {
+		const parts = entry.file.split("/");
+		if (
+			!entry.file ||
+			path.posix.isAbsolute(entry.file) ||
+			path.win32.isAbsolute(entry.file) ||
+			entry.file.includes("\\") ||
+			parts.some(
+				(part) =>
+					!part ||
+					part === "." ||
+					part === ".." ||
+					[
+						".netlify",
+						"node_modules",
+						".npmrc",
+						"netlify.toml",
+						".env",
+						".git",
+					].includes(part),
+			) ||
+			seen.has(entry.file)
+		)
+			throw new Error(
+				"Netlify station file path escapes or overrides its isolated artifact directory",
+			);
+		seen.add(entry.file);
+		const body =
+			entry.encoding === "base64"
+				? Buffer.from(entry.data, "base64")
+				: Buffer.from(entry.data, "utf8");
+		if (entry.encoding === "base64" && body.toString("base64") !== entry.data)
+			throw new Error("Netlify station file is not canonical base64");
+		totalBytes += body.byteLength;
+		if (totalBytes > 2_097_152)
+			throw new Error(
+				"Netlify station artifact exceeds its aggregate byte bound",
+			);
+		return Object.freeze({ ...entry });
+	});
+	const root = input.rootDir ?? tmpdir();
+	await mkdir(root, { recursive: true });
+	const workDir = await mkdtemp(path.join(root, "hobo-netlify-anon-"));
 	for (const entry of files) {
 		const abs = path.join(workDir, entry.file);
-		await mkdir(path.dirname(abs), { recursive: true });
+		await mkdir(path.dirname(abs), { recursive: true, mode: 0o700 });
 		const body =
 			entry.encoding === "base64"
 				? Buffer.from(entry.data, "base64")
 				: entry.data;
-		await writeFile(abs, body);
+		await writeFile(abs, body, { flag: "wx", mode: 0o600 });
 	}
 	return { workDir, files };
 }
@@ -298,21 +332,28 @@ export async function provisionTemporaryEnvironmentStation(
 		...(input.workDir ? { rootDir: input.workDir } : undefined),
 	});
 	const transport = input.transport ?? createNetlifyAnonymousCliTransport();
-	const deployed = await transport.deployAnonymous({
-		stationId: input.stationId,
-		workDir,
-	});
-	const expiresAt = temporaryStationExpiresAt(TEMPORARY_STATION_TTL_MS);
-	return {
-		stationId: input.stationId,
-		stationUrl: deployed.stationUrl,
-		primaryUrl: deployed.stationUrl,
-		claimUrl: deployed.claimUrl,
-		expiresAt,
-		ttlSeconds: temporaryStationTtlSeconds(),
-		providerId: NETLIFY_TEMPORARY_PROVIDER_ID,
-		accountId: deployed.deployId,
-		anonymous: true,
-		temporary: true,
-	};
+	const startedAtMs = Date.now();
+	try {
+		const deployed = validateAnonymousResult(
+			await transport.deployAnonymous({ stationId: input.stationId, workDir }),
+		);
+		const ttlMs = Math.min(
+			TEMPORARY_STATION_TTL_MS,
+			NETLIFY_ANONYMOUS_CLAIM_WINDOW_MS,
+		);
+		const expiresAt = temporaryStationExpiresAt(ttlMs, startedAtMs);
+		return {
+			stationId: input.stationId,
+			stationUrl: deployed.stationUrl,
+			primaryUrl: deployed.stationUrl,
+			claimUrl: deployed.claimUrl,
+			expiresAt,
+			ttlSeconds: ttlMs / 1000,
+			providerId: NETLIFY_TEMPORARY_PROVIDER_ID,
+			anonymous: true,
+			temporary: true,
+		};
+	} finally {
+		await rm(workDir, { recursive: true, force: true });
+	}
 }

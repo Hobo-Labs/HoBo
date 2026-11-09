@@ -58,6 +58,8 @@ export interface CostSignal {
 	sku: string;
 	unit: string;
 	marginalPrice: string;
+	/** Ranking hint provenance; financial admission still requires scoped quotes. */
+	pricingStatus?: "unknown" | "estimate" | "verified-zero";
 	freeTier: { unit: string; included: number; reset: string };
 }
 
@@ -109,6 +111,7 @@ export interface IacResource {
 
 // public-contract: IaC program wire-shape ids (hobo.iac-program/v1).
 export const IAC_PROGRAM_API_VERSION = "hobo.iac-program/v1";
+// public-contract: kind discriminator consumed by provider-neutral IaC executors.
 export const IAC_PROGRAM_KIND = "iac-program";
 
 /**

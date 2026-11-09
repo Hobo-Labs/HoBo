@@ -139,6 +139,7 @@ describe("metered billing plane", () => {
 		const fold = foldMeteredUsage(usage);
 		expect(fold.spentUsd).toBe(75.5);
 		expect(fold.sampleCount).toBe(2);
+		expect(fold.unknownSampleCount).toBe(1);
 	});
 
 	it("authorizes against the metered remaining budget", async () => {
@@ -148,7 +149,7 @@ describe("metered billing plane", () => {
 			stationId: "station:test",
 			railHash:
 				"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-			billingPlane: createMeteredBillingPlane(usage),
+			billingPlane: createMeteredBillingPlane(usage.slice(0, 3)),
 		});
 		// Budget 100, metered spend 75.5 → remaining 24.5: 10 fits...
 		const ok = await broker.resolve(baseRequest);

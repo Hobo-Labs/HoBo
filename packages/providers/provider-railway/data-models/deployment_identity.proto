@@ -1,0 +1,17 @@
+syntax = "proto3";
+package hobo.provider.railway.v1;
+
+// Metadata only: the native billable deployment identity acknowledged by the
+// one journalled dispatch. No credentials or GraphQL bodies are persisted.
+message RailwayDeploymentIdentity {
+  string tenant_id = 1;
+  string operation_id = 2;
+  string request_digest = 3;
+  string project_id = 4;
+  string environment_id = 5;
+  string service_id = 6;
+  string logical_id = 7;
+  string deployment_id = 8;
+  string commit_sha = 9;
+  double recorded_at_ms = 10;
+}

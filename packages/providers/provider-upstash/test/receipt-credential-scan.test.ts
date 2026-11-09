@@ -21,43 +21,52 @@
  * constraint on what may be put in a detail field, not an accident.
  */
 import { describe, expect, it } from "vitest";
-
+import {
+	createInMemoryIdempotencyStore,
+	createUpstashClient,
+} from "../src/client.js";
+import type { UpstashTemporaryRedis } from "../src/driver.js";
+import { createUpstashTemporaryRedisDriver } from "../src/driver.js";
 import { UpstashProviderError } from "../src/errors.js";
+import type { JsonValue } from "../src/json.js";
 import {
 	assertNoCredentialMaterial,
 	scanForCredentialMaterial,
 	toProviderFacts,
 	toProvisionReceipt,
 } from "../src/receipt.js";
+import {
+	createStubCustody,
+	createStubTransport,
+	FAKE_CONSOLE_URL,
+	FAKE_DATABASE_ID,
+	FIXTURE_CREATED_AT_MS,
+} from "./fixtures/index.js";
+import { publicOptions } from "./public-serialization.js";
 
-/** A record that projects to a clean receipt. */
-function record(overrides: Record<string, unknown> = {}) {
+async function fixtureRecord(
+	overrides: Partial<UpstashTemporaryRedis> = {},
+): Promise<UpstashTemporaryRedis> {
+	const driver = createUpstashTemporaryRedisDriver({
+		client: createUpstashClient({
+			transport: createStubTransport({}),
+			store: createInMemoryIdempotencyStore(),
+			clock: () => FIXTURE_CREATED_AT_MS,
+		}),
+		custody: createStubCustody(),
+		clock: () => FIXTURE_CREATED_AT_MS,
+	});
 	return {
-		definitionId: "upstash.redis/v1",
-		providerId: "upstash",
-		resourceRef: "resource:cache",
-		databaseId: "db-1",
-		restEndpointHost: "db-1.upstash.io",
-		expiresAtIso: "2026-07-01T00:00:00.000Z",
-		expiresAtMs: Date.parse("2026-07-01T00:00:00.000Z"),
-		statedTtlDays: 7,
-		expirySource: "provider-reported",
-		observedAtMs: Date.parse("2026-06-26T00:00:00.000Z"),
-		adopted: false,
-		claim: {
-			state: "unclaimed",
-			boundary: "resource",
-			atomicity: "single-resource",
-			claimUrl: "https://console.upstash.com/claim",
-			actions: [],
-		},
-		limits: { maxCommands: 10_000 },
+		...(await driver.provision({
+			resourceRef: `logical/${FAKE_DATABASE_ID}`,
+			idempotencyKey: FAKE_DATABASE_ID,
+		})),
 		...overrides,
-	} as never;
+	};
 }
 
-const rulesFor = (value: unknown) =>
-	scanForCredentialMaterial(value as never).map((hit) => hit.rule);
+const rulesFor = (value: JsonValue) =>
+	scanForCredentialMaterial(value).map((hit) => hit.rule);
 
 describe("the credential scan", () => {
 	it("finds nothing in a value with no credential material", () => {
@@ -65,7 +74,7 @@ describe("the credential scan", () => {
 			scanForCredentialMaterial({
 				host: "db-1.upstash.io",
 				tls: true,
-			} as never),
+			}),
 		).toEqual([]);
 	});
 
@@ -133,12 +142,16 @@ describe("the credential scan", () => {
 		// usable credential.
 		const hit = scanForCredentialMaterial({
 			v: `padding-padding-rediss://default:${"p".repeat(60)}@db/`,
-		} as never)[0];
+		})[0];
 		expect(hit?.excerpt.length).toBeLessThan(40);
 		// Control characters are replaced with spaces so an excerpt cannot
 		// forge a line in the log it lands in.
-		// biome-ignore lint/suspicious/noControlCharactersInRegex: asserting the absence of control characters is the point.
-		expect(hit?.excerpt).not.toMatch(/[\u0000-\u001f\u007f]/u);
+		expect(
+			[...(hit?.excerpt ?? "")].every(
+				(character) =>
+					character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127,
+			),
+		).toBe(true);
 	});
 
 	it("leaves ordinary receipt content alone", () => {
@@ -149,7 +162,7 @@ describe("the credential scan", () => {
 				host: "db-1.upstash.io",
 				expiresAtIso: "2026-07-01T00:00:00.000Z",
 				credentialRef: "secret://upstash/db-1/rest",
-			} as never),
+			}),
 		).toEqual([]);
 	});
 });
@@ -157,7 +170,7 @@ describe("the credential scan", () => {
 describe("assertNoCredentialMaterial", () => {
 	it("passes a clean value silently", () => {
 		expect(() =>
-			assertNoCredentialMaterial({ host: "db.upstash.io" } as never, "x"),
+			assertNoCredentialMaterial({ host: "db.upstash.io" }, "x"),
 		).not.toThrow();
 	});
 
@@ -165,11 +178,11 @@ describe("assertNoCredentialMaterial", () => {
 		let error: UpstashProviderError | undefined;
 		try {
 			assertNoCredentialMaterial(
-				{ uri: "redis://db/0" } as never,
+				{ uri: "redis://db/0" },
 				"the Upstash provision receipt",
 			);
 		} catch (thrown) {
-			error = thrown as UpstashProviderError;
+			if (thrown instanceof UpstashProviderError) error = thrown;
 		}
 		expect(error).toBeInstanceOf(UpstashProviderError);
 		expect(error?.code).toBe("SECRET_REFERENCE_INVALID");
@@ -178,171 +191,194 @@ describe("assertNoCredentialMaterial", () => {
 	});
 });
 
-describe("toProvisionReceipt", () => {
-	it("projects a clean receipt", () => {
-		const receipt = toProvisionReceipt(record());
-		expect(receipt.schemaVersion).toBe("hobo.provider-upstash.receipt/v1");
-		expect(receipt.databaseId).toBe("db-1");
+describe("custody-required public receipts and facts", () => {
+	it("seals native capabilities and hashes resource metadata even when the input ref includes a native id", async () => {
+		const record = await fixtureRecord();
+		const custody = createStubCustody();
+		const options = publicOptions(custody);
+		const receipt = await toProvisionReceipt(record, options);
+		const facts = await toProviderFacts(record, options);
+		expect(receipt.schemaVersion).toBe("hobo.provider-upstash.receipt/v2");
+		expect(receipt.opaquePhysicalId).toMatch(/^claimable:[a-f0-9]{64}$/u);
+		expect(receipt.resourceRef).toMatch(/^claimable:[a-f0-9]{64}$/u);
+		expect(receipt.nativeIdentityRef).toMatch(/^hobo-secret:\/\//u);
+		expect(receipt.claim.claimRef).toMatch(/^hobo-secret:\/\//u);
+		const serialized = JSON.stringify({ receipt, facts });
+		expect(serialized).not.toContain(FAKE_DATABASE_ID);
+		expect(serialized).not.toContain(FAKE_DATABASE_ID.replaceAll("-", ""));
+		expect(serialized).not.toContain(FAKE_CONSOLE_URL);
+		expect([...custody.deposited.values()]).toContain(FAKE_DATABASE_ID);
+		expect([...custody.deposited.values()]).toContain(FAKE_CONSOLE_URL);
+		expect(facts[0]?.opaquePhysicalId).toBe(receipt.opaquePhysicalId);
+		expect(facts[0]?.schemaVersion).toBe("hobo.provider-upstash.fact/v2");
 	});
-
-	it("pins the endpoint as HTTPS REST on 443", () => {
-		// Upstash's no-signup lane is REST-only over TLS. Reporting anything
-		// else would have a consumer dial a port that is not open.
-		expect(toProvisionReceipt(record()).endpoint).toEqual({
-			host: "db-1.upstash.io",
+	it("preserves documented capability limits and expiry without inventing deletion or export", async () => {
+		const record = await fixtureRecord();
+		const receipt = await toProvisionReceipt(record, publicOptions());
+		expect(receipt.endpoint).toEqual({
+			host: record.restEndpointHost,
 			port: 443,
 			tls: true,
 			transport: "https-rest",
 		});
+		expect(receipt.limits).toEqual(record.limits);
+		expect(receipt.expiresAtIso).toBe(record.expiresAtIso);
+		expect(receipt.statedTtlDays).toBe(record.statedTtlDays);
+		expect(receipt.teardown).toBe("expiry-only");
+		expect(receipt.migrationProfiles).toEqual([]);
+		expect(receipt.bindingProfiles).toContain("binding.redis-rest/v1");
 	});
-
-	it("declares teardown as expiry-only", () => {
-		// There is no delete API on this lane; the database disappears when its
-		// TTL runs out. Claiming HoBo can tear it down would be a promise it
-		// cannot keep.
-		expect(toProvisionReceipt(record()).teardown).toBe("expiry-only");
+	it("retains optional credential locators and filters completed/nonblocking claim actions", async () => {
+		const initial = await fixtureRecord();
+		const record = {
+			...initial,
+			claim: {
+				...initial.claim,
+				actions: [
+					{
+						id: "blocking",
+						kind: "human-ceremony" as const,
+						description: "outstanding",
+						blocking: true,
+						completed: false,
+					},
+					{
+						id: "complete",
+						kind: "human-ceremony" as const,
+						description: "done",
+						blocking: true,
+						completed: true,
+					},
+					{
+						id: "optional",
+						kind: "human-ceremony" as const,
+						description: "optional",
+						blocking: false,
+						completed: false,
+					},
+				],
+			},
+		};
+		const receipt = await toProvisionReceipt(record, publicOptions());
+		expect(receipt.credentialRef).toBe(record.credentialRef);
+		expect(receipt.restUrlRef).toBe(record.restUrlRef);
+		expect(receipt.claim.blockingActionIds).toEqual(["blocking"]);
 	});
-
-	it("declares no migration profiles", () => {
-		// Honest emptiness: a temporary Redis has no supported migration path,
-		// and listing one would offer a route that does not exist.
-		expect(toProvisionReceipt(record()).migrationProfiles).toEqual([]);
-		expect(toProvisionReceipt(record()).bindingProfiles.length).toBeGreaterThan(
-			0,
-		);
-	});
-
-	it("omits each secret locator independently when absent", () => {
-		const both = toProvisionReceipt(
-			record({ credentialRef: "secret://a", restUrlRef: "secret://b" }),
-		);
-		expect(both.credentialRef).toBe("secret://a");
-		expect(both.restUrlRef).toBe("secret://b");
-
-		const neither = toProvisionReceipt(record());
-		expect("credentialRef" in neither).toBe(false);
-		expect("restUrlRef" in neither).toBe(false);
-	});
-
-	it("reduces claim actions to those actually blocking", () => {
-		const receipt = toProvisionReceipt(
-			record({
-				claim: {
-					...(record() as { claim: Record<string, unknown> }).claim,
-					actions: [
-						{ id: "reset-token", blocking: true, completed: false },
-						{ id: "done", blocking: true, completed: true },
-						{ id: "optional", blocking: false, completed: false },
-					],
-				},
-			}),
-		);
-		expect(receipt.claim.blockingActionIds).toEqual(["reset-token"]);
-	});
-
-	it("carries both the stated TTL and the observed expiry", () => {
-		// The TTL is what the provider promised; the expiry is when it lands.
-		// A consumer reconciling a surprise deletion needs both.
-		const receipt = toProvisionReceipt(record());
-		expect(receipt.statedTtlDays).toBe(7);
-		expect(receipt.expiresAtIso).toBe("2026-07-01T00:00:00.000Z");
-	});
-
-	it("refuses to emit a receipt whose record smuggled a credential", () => {
-		expect(() =>
-			toProvisionReceipt(
-				record({ restEndpointHost: "db-1.upstash.io/?token=abcdefghijkl" }),
-			),
-		).toThrow(/credential-shaped material/);
-	});
-
-	it("does not republish a field the projection was never taught about", () => {
-		// The property a spread would lose.
-		const receipt = toProvisionReceipt(
-			record({ restToken: "rediss://default:pw@db/" } as never),
-		);
-		expect(JSON.stringify(receipt)).not.toContain("rediss://");
-	});
-});
-
-describe("toProviderFacts", () => {
-	const kinds = (overrides: Record<string, unknown> = {}) =>
-		toProviderFacts(record(overrides)).map((fact) => fact.kind);
-
-	it("emits provisioned for a fresh database and adopted for a pre-existing one", () => {
-		// The two differ for billing and for teardown expectations.
-		expect(kinds()).toEqual(["provider.upstash.database.provisioned"]);
-		expect(kinds({ adopted: true })).toEqual([
-			"provider.upstash.database.adopted",
-		]);
-	});
-
-	it("adds a pending-rotation fact while the pre-claim token still works", () => {
-		// The ceremony is attested, but the old REST token keeps working until
-		// an owner resets it in the console. Reporting the claim as finished
-		// would leave a live token outstanding with nothing tracking it.
-		const facts = toProviderFacts(
-			record({
-				claim: {
-					...(record() as { claim: Record<string, unknown> }).claim,
-					state: "claimed-pending-rotation",
-				},
-			}),
-		);
-		expect(facts.map((fact) => fact.kind)).toContain(
-			"provider.upstash.claim.pending-rotation",
-		);
-		expect(JSON.stringify(facts)).toContain("resets it in the console");
-	});
-
-	it("adds completed and expired facts for their states", () => {
+	it("emits the correct state facts with only opaque identity correlation", async () => {
+		const initial = await fixtureRecord();
+		for (const state of [
+			"unclaimed",
+			"claimed-pending-rotation",
+			"complete",
+			"expired",
+		] as const) {
+			const record = { ...initial, claim: { ...initial.claim, state } };
+			const facts = await toProviderFacts(record, publicOptions());
+			expect(facts[0]?.kind).toBe("provider.upstash.database.provisioned");
+			if (state === "claimed-pending-rotation")
+				expect(facts.map((fact) => fact.kind)).toContain(
+					"provider.upstash.claim.pending-rotation",
+				);
+			if (state === "complete")
+				expect(facts.map((fact) => fact.kind)).toContain(
+					"provider.upstash.claim.completed",
+				);
+			if (state === "expired")
+				expect(facts.map((fact) => fact.kind)).toContain(
+					"provider.upstash.lease.expired",
+				);
+			expect(new Set(facts.map((fact) => fact.resourceRef)).size).toBe(1);
+		}
 		expect(
-			kinds({
-				claim: {
-					...(record() as { claim: Record<string, unknown> }).claim,
-					state: "complete",
-				},
-			}),
-		).toContain("provider.upstash.claim.completed");
-		const expired = toProviderFacts(
-			record({
-				claim: {
-					...(record() as { claim: Record<string, unknown> }).claim,
-					state: "expired",
-				},
-			}),
-		).find((fact) => fact.kind === "provider.upstash.lease.expired");
-		expect(expired?.detail.expiresAtIso).toBe("2026-07-01T00:00:00.000Z");
+			(await toProviderFacts({ ...initial, adopted: true }, publicOptions()))[0]
+				?.kind,
+		).toBe("provider.upstash.database.adopted");
 	});
-
-	it("emits only the base fact for a state with no extra event", () => {
-		expect(kinds()).toHaveLength(1);
-	});
-
-	it("correlates every fact from one observation", () => {
-		const facts = toProviderFacts(
-			record({
-				claim: {
-					...(record() as { claim: Record<string, unknown> }).claim,
-					state: "expired",
-				},
-			}),
+	it("refuses missing custody or a custody locator that republishes the native capability", async () => {
+		const record = await fixtureRecord();
+		const missing = publicOptions();
+		Object.defineProperty(missing, "custody", { value: undefined });
+		await expect(toProvisionReceipt(record, missing)).rejects.toThrow(
+			"requires private custody",
 		);
-		expect(new Set(facts.map((fact) => fact.occurredAtMs)).size).toBe(1);
-		expect(new Set(facts.map((fact) => fact.resourceRef))).toEqual(
-			new Set(["resource:cache"]),
+		const bad = publicOptions({
+			async deposit() {
+				return `hobo-secret://unsafe/${FAKE_DATABASE_ID}`;
+			},
+		});
+		await expect(toProvisionReceipt(record, bad)).rejects.toThrow(
+			"native capability",
+		);
+		await expect(toProviderFacts(record, bad)).rejects.toThrow(
+			"native capability",
 		);
 	});
-
-	it("carries an empty credential ref rather than undefined", () => {
-		// The detail map is typed as scalars. `undefined` would serialize as a
-		// missing key and break a consumer reading it positionally.
-		expect(toProviderFacts(record())[0]?.detail.credentialRef).toBe("");
+	it("refuses case-folded, compact, and percent-encoded native capabilities in public fields and custody locators", async () => {
+		const record = await fixtureRecord();
+		for (const capability of [
+			FAKE_DATABASE_ID.toUpperCase(),
+			FAKE_DATABASE_ID.toUpperCase().replaceAll("-", ""),
+			FAKE_DATABASE_ID.toUpperCase().replaceAll("-", "%2D"),
+			FAKE_DATABASE_ID.replaceAll("-", "%252d"),
+			FAKE_CONSOLE_URL.toUpperCase(),
+		]) {
+			const options = publicOptions({
+				async deposit() {
+					return `hobo-secret://unsafe/${capability}`;
+				},
+			});
+			await expect(toProvisionReceipt(record, options)).rejects.toThrow(
+				"native capability",
+			);
+			await expect(toProviderFacts(record, options)).rejects.toThrow(
+				"native capability",
+			);
+			const poisoned = { ...record, definitionId: capability };
+			await expect(
+				toProvisionReceipt(poisoned, publicOptions()),
+			).rejects.toThrow("native capability");
+			await expect(toProviderFacts(poisoned, publicOptions())).rejects.toThrow(
+				"native capability",
+			);
+		}
 	});
-
-	it("refuses to emit facts that smuggled a credential", () => {
-		expect(() =>
-			toProviderFacts(record({ expirySource: "A".repeat(40) })),
-		).toThrow(/credential-shaped material/);
+	it("never republishes a secret from an upstream custody exception or its cause", async () => {
+		const record = await fixtureRecord();
+		const options = publicOptions({
+			async deposit() {
+				throw new Error(`${FAKE_DATABASE_ID} ${FAKE_CONSOLE_URL}`);
+			},
+		});
+		let failure: Error | undefined;
+		try {
+			await toProvisionReceipt(record, options);
+		} catch (error) {
+			if (error instanceof Error) failure = error;
+		}
+		expect(failure).toBeInstanceOf(UpstashProviderError);
+		expect(JSON.stringify(failure)).not.toContain(FAKE_DATABASE_ID);
+		expect(String(failure)).not.toContain(FAKE_DATABASE_ID);
+		expect(failure).not.toHaveProperty("cause");
+	});
+	it("rejects credential-bearing projected fields and ignores extra private fields", async () => {
+		const record = await fixtureRecord();
+		await expect(
+			toProvisionReceipt(
+				{ ...record, restEndpointHost: "db.upstash.io/?token=abcdefghijkl" },
+				publicOptions(),
+			),
+		).rejects.toThrow("credential-shaped");
+		const poisoned = { ...record };
+		Object.defineProperty(poisoned, "expirySource", { value: "A".repeat(40) });
+		await expect(toProviderFacts(poisoned, publicOptions())).rejects.toThrow(
+			"credential-shaped",
+		);
+		const extended = {
+			...record,
+			unpublishedNativeValue: "rediss://default:private@db/",
+		};
+		expect(
+			JSON.stringify(await toProvisionReceipt(extended, publicOptions())),
+		).not.toContain("rediss://");
 	});
 });

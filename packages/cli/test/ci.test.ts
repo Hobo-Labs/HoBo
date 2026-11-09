@@ -102,6 +102,9 @@ describe("CI shell routing", () => {
 			expect(help.exitCode).toBe(0);
 			expect(help.stdout).toContain("hobo ci connect");
 			expect(help.stdout).toContain("hobo ci enable");
+			expect(help.stdout).toContain("hobo ci github import-key");
+			expect(help.stdout).toContain("hobo ci github key-status");
+			expect(help.stdout).not.toContain("hobo ci github-key");
 			expect(help.stdout).toContain("--accept-all-matching-jobs");
 			for (const command of [
 				"list|ls",

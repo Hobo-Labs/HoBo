@@ -32,6 +32,7 @@ const TOPOLOGY: RoutingTopology = {
 	service: "checkout",
 	tenantId,
 	stationId: "station:prod",
+	costRouting: "stateless",
 	backends: [
 		{
 			id: "backend:vercel",
@@ -67,6 +68,14 @@ test("milestone: a budget signal re-dispatches to the cheaper backend and re-app
 	const port = createSimpleTrafficRouting();
 	const facts: { type: string }[] = [];
 	const loop = createRoutingControlLoop({
+		ledgerView: () => ({
+			view: "CreditLedgerView" as const,
+			seq: 0,
+			accounts: [],
+		}),
+		persistState: async () => {},
+		beforeApply: async () => {},
+		healthGate: () => true,
 		topology: TOPOLOGY,
 		policyDecision: policyDecision(),
 		costModel: COST_MODEL,
@@ -112,6 +121,9 @@ test("milestone: two rapid signals produce exactly one swap — the second is he
 	let seq = 1;
 	let nowIso = "2026-08-03T00:00:00.000Z";
 	const loop = createRoutingControlLoop({
+		persistState: async () => {},
+		beforeApply: async () => {},
+		healthGate: () => true,
 		topology: TOPOLOGY,
 		policyDecision: policyDecision(),
 		costModel: COST_MODEL,
@@ -155,6 +167,14 @@ test("milestone: two rapid signals produce exactly one swap — the second is he
 test("milestone: an unhealthy-backend observation refuses the replan with availability-unsatisfied", async () => {
 	const port = createSimpleTrafficRouting();
 	const loop = createRoutingControlLoop({
+		ledgerView: () => ({
+			view: "CreditLedgerView" as const,
+			seq: 0,
+			accounts: [],
+		}),
+		persistState: async () => {},
+		beforeApply: async () => {},
+		healthGate: () => true,
 		topology: TOPOLOGY,
 		availability: parseMinAvailabilitySpec({ minHealthyBackends: 2 }),
 		policyDecision: policyDecision(),
@@ -195,6 +215,14 @@ test("policy deny fails the loop closed before any apply", async () => {
 		},
 	};
 	const loop = createRoutingControlLoop({
+		ledgerView: () => ({
+			view: "CreditLedgerView" as const,
+			seq: 0,
+			accounts: [],
+		}),
+		persistState: async () => {},
+		beforeApply: async () => {},
+		healthGate: () => true,
 		topology: TOPOLOGY,
 		policyDecision: policyDecision("deny"),
 		costModel: COST_MODEL,
@@ -220,6 +248,9 @@ test("flip limit holds a swap even after cooldown has expired", async () => {
 	let seq = 1;
 	let nowIso = "2026-08-03T00:00:00.000Z";
 	const loop = createRoutingControlLoop({
+		persistState: async () => {},
+		beforeApply: async () => {},
+		healthGate: () => true,
 		topology: TOPOLOGY,
 		policyDecision: policyDecision(),
 		costModel: COST_MODEL,

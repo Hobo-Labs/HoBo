@@ -1,6 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { first } from "@hobo/core/total-access";
 import {
+	type BudgetAdmissionAuthority,
+	type BudgetIdentity,
+	type BudgetReservation,
+	budgetIdentityKey,
+	type HostingPolicyProof,
+	type HostingQuote,
+	validateHostingQuote,
+} from "../budget-authority.js";
+import {
 	cloneAsJson,
 	isJsonNumber,
 	isJsonObject,
@@ -8,6 +17,7 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "../json.js";
+import type { GateDecision } from "../planes.js";
 import type { BrokerCatalog, PlacementDecision } from "../types.js";
 import { defaultYardGenerationConnectors } from "./connectors.js";
 import {
@@ -63,6 +73,24 @@ export interface YardFirstPlacementDeps {
 	readonly foldResolvers?: readonly YardEventStoreFoldResolver[];
 	/** Prior event log for crash-resume / replay. */
 	readonly priorEvents?: readonly YardEvent[];
+	/** Host-bound Gatekeeper/policy authorization. Approvals and unfulfilled
+	 * obligations cannot be turned into execution merely by affordable pricing. */
+	readonly authorizeHosting?: (input: {
+		request: BindleDeploymentRequest;
+		requestDigest: string;
+		quote: HostingQuote;
+		identity: BudgetIdentity;
+		now: string;
+	}) =>
+		| { gate: GateDecision; proof: HostingPolicyProof }
+		| Promise<{ gate: GateDecision; proof: HostingPolicyProof }>;
+	/** Trusted whole-request quotes and the shared durable financial authority.
+	 * Estimates without an enforceable exposure bound cannot authorize hosting. */
+	readonly hostingBudget?: {
+		readonly authority: BudgetAdmissionAuthority;
+		readonly quotes: readonly HostingQuote[];
+		readonly now: () => string;
+	};
 }
 
 export interface YardFirstPlacementResult {
@@ -146,7 +174,144 @@ export async function resolveBindleDeployment(
 	}
 
 	const ownerTenantId = request.ownerTenantId || deps.ownerTenantId || "local";
+	if (deps.ownerTenantId && deps.ownerTenantId !== ownerTenantId)
+		return rejectResult(
+			foldState,
+			emitted,
+			"policy",
+			"owner-tenant-mismatch",
+			"deployment owner differs from the authenticated tenant",
+		);
 	const runtimeCatalog = deps.runtimeCatalog ?? createYardRuntimeCatalog();
+	const requestDigest = contentHashOf(request);
+	const reservationId = `hosting:${deps.brokerId}:${request.requestId}`;
+	let budgetReservation: BudgetReservation | undefined;
+	let hostingQuote: HostingQuote | undefined;
+	let hostingPolicyProof: HostingPolicyProof | undefined;
+	const isLocalProvider = (providerId: string) =>
+		providerId === "local" || providerId === "@hobo/provider-local-host";
+	function economicCosts(
+		yards: readonly {
+			yardId: string;
+			providerId: string;
+			ownerTenantId: string;
+		}[],
+	): ReadonlyMap<string, number> {
+		const costs = new Map<string, number>();
+		const context = deps.hostingBudget;
+		let ledger: ReturnType<BudgetAdmissionAuthority["read"]> | undefined;
+		try {
+			ledger = context?.authority.read(context.now());
+		} catch {
+			return costs;
+		}
+		const previous = context?.authority.lookup(reservationId);
+		for (const yard of yards) {
+			if (
+				!context &&
+				isLocalProvider(yard.providerId) &&
+				request.spendEstimateUsd === 0
+			) {
+				costs.set(yard.yardId, 0);
+				continue;
+			}
+			if (
+				context?.authority.persistence !== "durable-cas" ||
+				!ledger?.identity ||
+				ledger.identity.tenantId !== ownerTenantId
+			)
+				continue;
+			const quote = context.quotes.find(
+				(row) =>
+					row.yardId === yard.yardId &&
+					row.providerId === yard.providerId &&
+					row.ownerTenantId === ownerTenantId &&
+					row.requestDigest === requestDigest,
+			);
+			if (!quote) continue;
+			try {
+				validateHostingQuote(quote, context.now());
+			} catch {
+				continue;
+			}
+			if (quote.liabilityBoundMicros === undefined) continue;
+			if (
+				previous
+					? previous.quoteId !== quote.quoteId || previous.status === "released"
+					: ledger.spentMicros +
+							ledger.reservedMicros +
+							ledger.unresolvedMicros +
+							ledger.recoveryReserveMicros +
+							ledger.externalCommittedMicros +
+							quote.liabilityBoundMicros >
+						ledger.limitMicros
+			)
+				continue;
+			costs.set(yard.yardId, quote.totalMicros);
+		}
+		return costs;
+	}
+	async function admitHosting(
+		yardId: string,
+		providerId: string,
+	): Promise<void> {
+		const context = deps.hostingBudget;
+		if (
+			!context &&
+			isLocalProvider(providerId) &&
+			request.spendEstimateUsd === 0
+		)
+			return;
+		if (context?.authority.persistence !== "durable-cas")
+			throw new Error("durable shared hosting budget authority required");
+		const quote = context.quotes.find(
+			(row) =>
+				row.yardId === yardId &&
+				row.providerId === providerId &&
+				row.ownerTenantId === ownerTenantId &&
+				row.requestDigest === requestDigest,
+		);
+		if (!quote) throw new Error("complete hosting quote missing");
+		const ledger = context.authority.read(context.now());
+		if (!ledger.identity) throw new Error("budget identity missing");
+		if (!deps.authorizeHosting)
+			throw new Error("bound hosting policy authorization required");
+		const { gate, proof } = await deps.authorizeHosting({
+			request,
+			requestDigest,
+			quote,
+			identity: ledger.identity,
+			now: context.now(),
+		});
+		if (
+			(gate.effect !== "allow" && gate.effect !== "allow-degraded") ||
+			proof.effect !== gate.effect ||
+			!proof.obligationsSatisfied ||
+			!proof.evidenceRef ||
+			!proof.policyHash ||
+			proof.requestDigest !== requestDigest ||
+			proof.quoteId !== quote.quoteId ||
+			!proof.identity ||
+			budgetIdentityKey(proof.identity) !== budgetIdentityKey(ledger.identity)
+		)
+			throw new Error(
+				"hosting policy denies, requires approval, or lacks bound fulfilled obligations",
+			);
+		budgetReservation = context.authority.reserve({
+			reservationId,
+			requestDigest,
+			quote,
+			identity: ledger.identity,
+			expectedSeq: ledger.seq,
+			now: context.now(),
+		});
+		if (budgetReservation.status !== "held")
+			throw new Error(
+				"existing terminal or uncertain commitment cannot authorize a new execution",
+			);
+		hostingQuote = quote;
+		hostingPolicyProof = proof;
+	}
 
 	append(
 		yardEvent(YARD_EVENTS.PlacementRequested, {
@@ -162,7 +327,8 @@ export async function resolveBindleDeployment(
 	// Zero-config: seed a ready local yard via facts when inventory empty.
 	if (
 		deps.seedLocalYard !== false &&
-		Object.keys(foldState.yards).length === 0
+		Object.keys(foldState.yards).length === 0 &&
+		isLocalProvider(request.yard.requestedLayout.providerId ?? "local")
 	) {
 		const providerId = request.yard.requestedLayout.providerId ?? "local";
 		const yard = localYardInstance({
@@ -185,6 +351,7 @@ export async function resolveBindleDeployment(
 		objective: request.objective,
 		bindleRuntimes: request.bindleRequirements.runtimes,
 		contributingPolicyIds: ["yard-match"],
+		economicCosts: economicCosts(snapshot.yards),
 	});
 
 	append(
@@ -224,6 +391,43 @@ export async function resolveBindleDeployment(
 				genDecision.reason,
 			);
 		}
+		let inspectGenerationOnly = false;
+		try {
+			await admitHosting(
+				genDecision.plan.expectedYardId,
+				genDecision.plan.providerId,
+			);
+			const financial = deps.hostingBudget;
+			if (financial && budgetReservation && hostingQuote) {
+				const now = financial.now();
+				validateHostingQuote(hostingQuote, now);
+				const head = financial.authority.read(now);
+				const previous = financial.authority.lookup(reservationId);
+				inspectGenerationOnly = Boolean(previous?.executionDigest);
+				budgetReservation = financial.authority.claimExecution({
+					reservationId,
+					requestDigest,
+					executionDigest: contentHashOf({
+						kind: "yard-generation",
+						requestDigest,
+						planHash: genDecision.plan.planHash,
+					}),
+					expectedSeq: head.seq,
+				});
+				// A durable claim may wait for a database writer past quote expiry.
+				validateHostingQuote(hostingQuote, financial.now());
+			}
+		} catch (error) {
+			return rejectResult(
+				foldState,
+				emitted,
+				"billing",
+				"hosting-budget-admission-denied",
+				error instanceof Error
+					? error.message
+					: "hosting budget admission failed",
+			);
+		}
 
 		append(
 			yardEvent(YARD_EVENTS.GenerationRequested, {
@@ -256,7 +460,26 @@ export async function resolveBindleDeployment(
 			}),
 		);
 
-		const genResult = await saga.run(genDecision.plan);
+		let genResult: Awaited<ReturnType<typeof saga.run>>;
+		try {
+			if (inspectGenerationOnly) {
+				const connector = connectors.get(genDecision.plan.generatorConnectorId);
+				if (!connector) throw new Error("claimed generation connector missing");
+				// The claim may have committed before a lost provider acknowledgement.
+				// Reopening a saga must inspect that operation rather than provision again.
+				genResult = await connector.inspect(genDecision.plan.attemptId);
+			} else genResult = await saga.run(genDecision.plan);
+		} catch (error) {
+			if (budgetReservation)
+				deps.hostingBudget?.authority.uncertain(reservationId);
+			return rejectResult(
+				foldState,
+				emitted,
+				"placement",
+				"yard-generation-uncertain",
+				error instanceof Error ? error.message : "generation outcome uncertain",
+			);
+		}
 		generationAttemptId = genDecision.plan.attemptId;
 
 		// Feed connector progress signals through the provider fold resolver.
@@ -276,6 +499,8 @@ export async function resolveBindleDeployment(
 		}
 
 		if (genResult.status === "failed" || !genResult.yardId) {
+			if (budgetReservation)
+				deps.hostingBudget?.authority.uncertain(reservationId);
 			append(
 				yardEvent(YARD_EVENTS.GenerationFailed, {
 					attemptId: genDecision.plan.attemptId,
@@ -341,6 +566,9 @@ export async function resolveBindleDeployment(
 				ownerTenantId,
 				objective: request.objective,
 				bindleRuntimes: request.bindleRequirements.runtimes,
+				economicCosts: economicCosts(
+					inventorySnapshotFromFold(foldState).yards,
+				),
 			},
 		);
 		append(
@@ -456,6 +684,19 @@ export async function resolveBindleDeployment(
 			placements.error,
 		);
 	}
+	try {
+		await admitHosting(yard.yardId, yard.providerId);
+	} catch (error) {
+		return rejectResult(
+			foldState,
+			emitted,
+			"billing",
+			"hosting-budget-admission-denied",
+			error instanceof Error
+				? error.message
+				: "hosting budget admission failed",
+		);
+	}
 
 	const residualDefinitionIds = placements.decisions.map((p) => p.definitionId);
 	const executionUnits = buildExecutionUnits({
@@ -498,6 +739,10 @@ export async function resolveBindleDeployment(
 		]),
 		resolverPins: pins,
 	};
+
+	if (budgetReservation && hostingQuote)
+		Object.assign(receiptBody, { budgetReservation, hostingQuote });
+	if (hostingPolicyProof) Object.assign(receiptBody, { hostingPolicyProof });
 
 	const receipt: YardPlacementReceipt = Object.freeze({
 		...receiptBody,

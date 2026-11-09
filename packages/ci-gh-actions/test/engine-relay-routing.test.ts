@@ -72,7 +72,8 @@ describe("engine-aware CI routing", () => {
 				},
 			},
 		});
-		const env = config.environments.dev!;
+		const env = config.environments.dev;
+		if (!env) throw new Error("dev environment");
 		expect(resolveEngineRelayOrigin(env, "gh-actions")).toBe(
 			"https://relay.example.com",
 		);
@@ -153,9 +154,11 @@ describe("engine-aware CI routing", () => {
 				},
 			},
 		});
+		const env = config.environments.dev;
+		if (!env) throw new Error("dev environment");
 		expect(
 			resolveEnvironmentEngines({
-				environment: config.environments.dev!,
+				environment: env,
 				inventory: ["gh-actions", "vercel", "dagger"],
 				cliEngines: ["gh-actions"],
 			}),

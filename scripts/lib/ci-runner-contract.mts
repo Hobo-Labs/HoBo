@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { delimiter, dirname, isAbsolute, join } from "node:path";
 
 export const CI_RUNNER_BASE_DOCKERFILE =
 	"packages/ci-gh-actions/deploy/ci-runner/base/Dockerfile";
@@ -11,6 +11,13 @@ export const CI_RUNNER_SYSTEM_PACKAGES =
 	"packages/ci-gh-actions/deploy/ci-runner/system-packages.txt";
 export const MISE_TOML = "mise.toml";
 export const MISE_LOCK = "mise.lock";
+export const CI_RUNNER_IMAGE_VERSION_INPUTS = [
+	MISE_LOCK,
+	MISE_TOML,
+	CI_RUNNER_SYSTEM_PACKAGES,
+	CI_RUNNER_BASE_DOCKERFILE,
+	CI_RUNNER_BUILD_SCRIPT,
+] as const;
 
 /** Digest-pinned debian:bookworm-slim for the CI runner base layer (must match base/Dockerfile FROM). */
 export const CI_RUNNER_DEBIAN_BOOKWORM_SLIM =
@@ -59,15 +66,11 @@ export const CI_RUNNER_DOCKERFILE = CI_RUNNER_BASE_DOCKERFILE;
 
 /** Version tag derived from toolchain lock + base manifest (reproducible rebuild key). */
 export function ciRunnerImageVersion(root: string): string {
-	const parts = [
-		MISE_LOCK,
-		MISE_TOML,
-		CI_RUNNER_SYSTEM_PACKAGES,
-		CI_RUNNER_BASE_DOCKERFILE,
-		// build.sh skips the build when this version is already on the host, so
-		// how it assembles the image has to move the version too.
-		CI_RUNNER_BUILD_SCRIPT,
-	].map((rel) => readFileSync(join(root, rel)));
+	// build.sh skips the build when this version is already on the host, so
+	// how it assembles the image has to move the version too.
+	const parts = CI_RUNNER_IMAGE_VERSION_INPUTS.map((rel) =>
+		readFileSync(join(root, rel)),
+	);
 	const digest = createHash("sha256")
 		.update(Buffer.concat(parts))
 		.digest("hex");
@@ -167,13 +170,87 @@ export function assertTurboLockSidecarsPresent(root: string): void {
 
 export type ContractCheck = { ok: boolean; name: string; detail: string };
 
-export type CommandResult = { ok: boolean; out: string };
-export type CommandRunner = (cmd: string, args: string[]) => CommandResult;
+export type CommandResult = {
+	readonly ok: boolean;
+	readonly out: string;
+	readonly command?: string;
+	readonly failure?: string;
+};
+export type CommandOptions = { readonly cwd?: string };
+export type CommandRunner = (
+	cmd: string,
+	args: string[],
+	options?: CommandOptions,
+) => CommandResult;
 
-function spawnCommand(cmd: string, args: string[]): CommandResult {
-	const r = spawnSync(cmd, args, { encoding: "utf8" });
+function commandLine(cmd: string, args: readonly string[]): string {
+	return [cmd, ...args]
+		.map((arg) =>
+			/^[\w./:@%+=,-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`,
+		)
+		.join(" ");
+}
+
+function outputTail(output: string | null): string {
+	const lines = (output ?? "").trim().split("\n").filter(Boolean);
+	return lines.slice(-3).join(" | ") || "(empty)";
+}
+
+function commandFailure(result: CommandResult, fallback: string): string {
+	return (
+		result.failure ?? `${result.command ?? fallback}: ${result.out || "failed"}`
+	);
+}
+
+export function spawnCommand(
+	cmd: string,
+	args: string[],
+	options: CommandOptions = {},
+): CommandResult {
+	const r = spawnSync(cmd, args, { encoding: "utf8", cwd: options.cwd });
+	const command = commandLine(cmd, args);
 	const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
-	return { ok: r.status === 0, out: out || `(exit ${r.status})` };
+	if (r.error) {
+		const error: NodeJS.ErrnoException = r.error;
+		const code = error.code ?? "UNKNOWN";
+		const reason =
+			code === "ENOENT"
+				? "spawn error ENOENT (not installed in runner image)"
+				: `spawn error ${code}`;
+		return {
+			ok: false,
+			out,
+			command,
+			failure: `${command}: ${reason}: ${error.message}`,
+		};
+	}
+	if (r.signal) {
+		return {
+			ok: false,
+			out,
+			command,
+			failure: `${command}: terminated by signal ${r.signal} (no exit status)`,
+		};
+	}
+	if (r.status !== 0) {
+		return {
+			ok: false,
+			out,
+			command,
+			failure: `${command}: exited ${r.status ?? "with no status"}; stderr tail: ${outputTail(r.stderr)}`,
+		};
+	}
+	return { ok: true, out, command };
+}
+
+function runMiseToolVersion(
+	run: CommandRunner,
+	root: string,
+	tool: string,
+): CommandResult {
+	const versionArgs =
+		tool === "cue" || tool === "gitleaks" ? ["version"] : ["--version"];
+	return run("mise", ["exec", "--", tool, ...versionArgs], { cwd: root });
 }
 
 function parseMiseToolNames(miseToml: string): string[] {
@@ -194,6 +271,153 @@ function parseMiseToolNames(miseToml: string): string[] {
 		if (m) names.push(m[1]!);
 	}
 	return names;
+}
+
+const MISE_TOOL_REMEDY = `Remedy: preflight installs missing tools with mise install --locked from the checkout's ${MISE_LOCK}; if the tool still fails, rebuild with bash ${CI_RUNNER_BUILD_SCRIPT}`;
+
+export function probeMiseTool(
+	tool: string,
+	run: CommandRunner,
+	root: string = process.cwd(),
+): ContractCheck {
+	const whichArgs = ["-c", `command -v ${tool} || true`];
+	const which = run("sh", whichArgs);
+	const path = which.out.split("\n")[0]?.trim() ?? "";
+	if (!path) {
+		return {
+			ok: false,
+			name: `mise-tool:${tool}`,
+			detail: `${commandLine("sh", whichArgs)}: ${tool} not on PATH (not installed in runner image)\n    ${MISE_TOOL_REMEDY}`,
+		};
+	}
+	const resolveArgs = ["--cd", root, "which", tool];
+	const resolved = run("mise", resolveArgs);
+	const executable = resolved.out.split("\n")[0]?.trim() ?? "";
+	if (!resolved.ok || !isAbsolute(executable)) {
+		const failure = resolved.ok
+			? `${commandLine("mise", resolveArgs)}: expected an absolute executable path for ${tool}, got ${executable || "(empty)"}`
+			: commandFailure(resolved, commandLine("mise", resolveArgs));
+		return {
+			ok: false,
+			name: `mise-tool:${tool}`,
+			detail: `${failure}\n    ${MISE_TOOL_REMEDY}`,
+		};
+	}
+	const versionArgs =
+		tool === "cue" || tool === "gitleaks" ? ["version"] : ["--version"];
+	const ver = run(executable, versionArgs);
+	return {
+		ok: ver.ok,
+		name: `mise-tool:${tool}`,
+		detail: ver.ok
+			? (ver.out.split("\n")[0] ?? `${tool} reported success`)
+			: `${commandFailure(ver, commandLine(executable, versionArgs))}\n    ${MISE_TOOL_REMEDY}`,
+	};
+}
+
+export type MiseToolSyncResult = {
+	readonly ok: boolean;
+	readonly installed: readonly string[];
+	readonly elapsedMs: number;
+	readonly detail: string;
+};
+
+export function syncMissingMiseTools(
+	root: string,
+	options: {
+		readonly run?: CommandRunner;
+		readonly now?: () => number;
+		readonly env?: NodeJS.ProcessEnv;
+		readonly appendFile?: (path: string, data: string) => void;
+	} = {},
+): MiseToolSyncResult {
+	const run = options.run ?? spawnCommand;
+	const now = options.now ?? Date.now;
+	const env = options.env ?? process.env;
+	const appendFile = options.appendFile ?? appendFileSync;
+	const started = now();
+	const finish = (
+		ok: boolean,
+		installed: readonly string[],
+		detail: string,
+	): MiseToolSyncResult => ({
+		ok,
+		installed,
+		elapsedMs: now() - started,
+		detail,
+	});
+	const trustArgs = ["--cd", root, "trust", "./mise.toml"];
+	const trust = run("mise", trustArgs);
+	if (!trust.ok) {
+		return finish(
+			false,
+			[],
+			`${commandFailure(trust, commandLine("mise", trustArgs))}\n    ${MISE_TOOL_REMEDY}`,
+		);
+	}
+	const listArgs = [
+		"--cd",
+		root,
+		"ls",
+		"--current",
+		"--missing",
+		"--no-header",
+	];
+	const listing = run("mise", listArgs);
+	if (!listing.ok) {
+		return finish(
+			false,
+			[],
+			`${commandFailure(listing, commandLine("mise", listArgs))}\n    ${MISE_TOOL_REMEDY}`,
+		);
+	}
+	const configured = new Set(
+		parseMiseToolNames(readFileSync(join(root, MISE_TOML), "utf8")),
+	);
+	const missing = [
+		...new Set(
+			listing.out.split("\n").flatMap((line) => {
+				const [name] = line.trim().split(/\s+/);
+				return name && configured.has(name) ? [name] : [];
+			}),
+		),
+	];
+	if (missing.length === 0) {
+		return finish(true, [], "all mise.toml tools are already installed");
+	}
+	const installArgs = ["--cd", root, "install", "--locked", ...missing];
+	const install = run("mise", installArgs);
+	const installCommand = commandLine("mise", installArgs);
+	if (!install.ok) {
+		return finish(
+			false,
+			[],
+			`${commandFailure(install, installCommand)}\n    ${MISE_TOOL_REMEDY}`,
+		);
+	}
+	const binDirs: string[] = [];
+	for (const tool of missing) {
+		const resolveArgs = ["--cd", root, "which", tool];
+		const resolved = run("mise", resolveArgs);
+		const executable = resolved.out.split("\n")[0]?.trim() ?? "";
+		if (!resolved.ok || !isAbsolute(executable)) {
+			const failure = resolved.ok
+				? `${commandLine("mise", resolveArgs)}: expected an absolute executable path for ${tool}, got ${executable || "(empty)"}`
+				: commandFailure(resolved, commandLine("mise", resolveArgs));
+			return finish(false, missing, `${failure}\n    ${MISE_TOOL_REMEDY}`);
+		}
+		binDirs.push(dirname(executable));
+	}
+	const pathDirs = [...new Set(binDirs)];
+	env.PATH = [...pathDirs, ...(env.PATH ? [env.PATH] : [])].join(delimiter);
+	if (env.GITHUB_ACTIONS === "true" && env.GITHUB_PATH) {
+		appendFile(env.GITHUB_PATH, pathDirs.map((dir) => `${dir}\n`).join(""));
+	}
+	return finish(
+		true,
+		missing,
+		`installed ${missing.join(", ")} with ${installCommand}`,
+	);
 }
 
 const SYSTEM_COMMANDS = {
@@ -268,27 +492,7 @@ export function evaluateCiRunnerContract(
 
 	const miseToml = readFileSync(join(root, MISE_TOML), "utf8");
 	for (const tool of parseMiseToolNames(miseToml)) {
-		const which = run("sh", ["-c", `command -v ${tool} || true`]);
-		const path = which.out.split("\n")[0]?.trim() ?? "";
-		if (!path) {
-			checks.push({
-				ok: false,
-				name: `mise-tool:${tool}`,
-				detail: `${tool} not on PATH; run ${CI_RUNNER_BUILD_SCRIPT} after mise.lock changes`,
-			});
-			continue;
-		}
-		const ver =
-			tool === "cue"
-				? run("cue", ["version"])
-				: tool === "gitleaks"
-					? run("gitleaks", ["version"])
-					: run(tool, ["--version"]);
-		checks.push({
-			ok: ver.ok,
-			name: `mise-tool:${tool}`,
-			detail: ver.ok ? ver.out.split("\n")[0]! : ver.out,
-		});
+		checks.push(probeMiseTool(tool, run, root));
 	}
 
 	const commands = live
@@ -308,7 +512,7 @@ export function evaluateCiRunnerContract(
 
 	if (live) checks.push(checkHeadlessShell(run));
 
-	const cue = run("cue", ["version"]);
+	const cue = runMiseToolVersion(run, root, "cue");
 	if (cue.ok && !cue.out.includes("0.14.0")) {
 		checks.push({
 			ok: false,

@@ -81,6 +81,86 @@ test("facts for other tenants are not folded into a scoped policy", () => {
 	assert.equal(signals.length, 0);
 });
 
+test("versioned budget identity separates budgets, periods and cap revisions with explicit reset facts", () => {
+	const identity = {
+		tenantId: "tenant-a",
+		budgetId: "hosting",
+		periodId: "2026-10",
+		policyRevision: "r1",
+	};
+	const scopedPolicy = { budgetUsd: 100, identity };
+	const facts = [
+		{
+			type: METER_USAGE_RECORDED_EVENT,
+			data: {
+				tenantId: "tenant-a",
+				budgetId: "hosting",
+				periodId: "2026-10",
+				costUsd: 75,
+			},
+		},
+	];
+	const first = foldBudgetSignals(facts, scopedPolicy);
+	assert.equal(first.signals[0]?.type, BUDGET_EVENTS.StateReset);
+	assert.equal(first.state.netSpentUsd, 75);
+	assert.equal(
+		foldBudgetSignals([...facts, ...first.signals], scopedPolicy).signals
+			.length,
+		0,
+	);
+	const revised = foldBudgetSignals([...facts, ...first.signals], {
+		budgetUsd: 50,
+		identity: { ...identity, policyRevision: "r2" },
+	});
+	assert.deepEqual(
+		revised.signals.map((signal) => signal.type),
+		[BUDGET_EVENTS.StateReset, BUDGET_EVENTS.ThresholdCrossed],
+	);
+	assert.notEqual(
+		revised.signals[0]?.data.signalKey,
+		first.signals[0]?.data.signalKey,
+	);
+	assert.throws(
+		() =>
+			foldBudgetSignals([...facts, ...first.signals], {
+				budgetUsd: 50,
+				identity,
+			}),
+		/without a policy revision/,
+	);
+	const nextPeriod = foldBudgetSignals([...facts, ...first.signals], {
+		budgetUsd: 100,
+		identity: { ...identity, periodId: "2026-11" },
+	});
+	assert.equal(nextPeriod.state.netSpentUsd, 0);
+	assert.equal(nextPeriod.signals[0]?.type, BUDGET_EVENTS.StateReset);
+	const anotherBudget = foldBudgetSignals(facts, {
+		budgetUsd: 100,
+		identity: { ...identity, budgetId: "storage" },
+	});
+	assert.equal(anotherBudget.state.netSpentUsd, 0);
+	assert.notEqual(
+		anotherBudget.signals[0]?.data.signalKey,
+		first.signals[0]?.data.signalKey,
+	);
+});
+
+test("zero is an explicitly exhausted versioned budget and duplicate thresholds are invalid", () => {
+	const identity = {
+		tenantId: "tenant-a",
+		budgetId: "hosting",
+		periodId: "2026-10",
+		policyRevision: "r1",
+	};
+	const zero = foldBudgetSignals([], { budgetUsd: 0, identity });
+	assert.equal(zero.state.crossed["1"], true);
+	assert.equal(zero.signals[0]?.data.crossed, true);
+	assert.throws(
+		() => foldBudgetSignals([], { budgetUsd: 100, thresholds: [1, 1] }),
+		/thresholds/,
+	);
+});
+
 test("milestone: replaying the journal twice emits each threshold signal exactly once and matches golden state", async () => {
 	const journal = new SqliteJournal(createMemoryNodeSqliteDriver(), {
 		clock: { now: () => "2026-08-03T00:00:00.000Z" },

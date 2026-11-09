@@ -17,6 +17,24 @@ import {
 const KEY = "hobo:resource:demo-db:0001";
 
 describe("create idempotency and adoption", () => {
+	it("claims a create intent atomically across concurrent clients sharing the store", async () => {
+		const store = createInMemoryIdempotencyStore();
+		const transport = createStubTransport([
+			{ status: 200, body: fixture("create-database.unclaimed.json") },
+		]);
+		const clients = [0, 1].map(() =>
+			createNeonClient({ transport, store, clock: fixedClock(FIXTURE_NOW_MS) }),
+		);
+		const results = await Promise.allSettled(
+			clients.map((client) =>
+				client.createDatabase({ ref: "hobo-test", idempotencyKey: KEY }),
+			),
+		);
+		expect(
+			results.filter((result) => result.status === "fulfilled"),
+		).toHaveLength(1);
+		expect(transport.posts).toHaveLength(1);
+	});
 	it("creates once and records the resulting database id", async () => {
 		const transport = createStubTransport([
 			{ status: 200, body: fixture("create-database.unclaimed.json") },

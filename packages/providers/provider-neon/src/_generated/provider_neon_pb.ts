@@ -4,13 +4,14 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Message } from "@bufbuild/protobuf";
+import { file_google_protobuf_struct } from "@bufbuild/protobuf/wkt";
+import type { JsonObject, Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file provider_neon.proto.
  */
 export const file_provider_neon: GenFile = /*@__PURE__*/
-  fileDesc("ChNwcm92aWRlcl9uZW9uLnByb3RvEhVob2JvLnByb3ZpZGVyLm5lb24udjEi+AEKEk5lb25EYXRhYmFzZVJlY29yZBITCgtkYXRhYmFzZV9pZBgBIAEoCRI5CgZzdGF0dXMYAiABKA4yKS5ob2JvLnByb3ZpZGVyLm5lb24udjEuTmVvbkRhdGFiYXNlU3RhdHVzEhcKD25lb25fcHJvamVjdF9pZBgDIAEoCRIRCgljbGFpbV91cmwYBCABKAkSFQoNZXhwaXJlc19hdF9tcxgFIAEoAxIVCg1jcmVhdGVkX2F0X21zGAYgASgDEhUKDXVwZGF0ZWRfYXRfbXMYByABKAMSIQoZY29ubmVjdGlvbl9zdHJpbmdfcHJlc2VudBgIIAEoCCJqChVOZW9uTm9uU2VjcmV0RW5kcG9pbnQSDAoEaG9zdBgBIAEoCRIRCgRwb3J0GAIgASgNSACIAQESEQoEcGF0aBgDIAEoCUgBiAEBEgsKA3RscxgEIAEoCEIHCgVfcG9ydEIHCgVfcGF0aCKSAQoUTmVvblJlY2VpcHRFbmRwb2ludHMSPAoGcG9vbGVkGAEgASgLMiwuaG9iby5wcm92aWRlci5uZW9uLnYxLk5lb25Ob25TZWNyZXRFbmRwb2ludBI8CgZkaXJlY3QYAiABKAsyLC5ob2JvLnByb3ZpZGVyLm5lb24udjEuTmVvbk5vblNlY3JldEVuZHBvaW50In8KD05lb25DbGFpbUFjdGlvbhIKCgJpZBgBIAEoCRIMCgRraW5kGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhAKCGJsb2NraW5nGAQgASgIEhEKCWNvbXBsZXRlZBgFIAEoCBIQCgN1cmwYBiABKAlIAIgBAUIGCgRfdXJsIt8BCg1OZW9uQ2xhaW1QbGFuEhAKCHN0cmF0ZWd5GAEgASgJEhAKCGJvdW5kYXJ5GAIgASgJEhUKDXJlc291cmNlX2tpbmQYAyABKAkSEQoJYXRvbWljaXR5GAQgASgJEhEKCWNsYWltX3VybBgFIAEoCRI0CgVzdGF0ZRgGIAEoDjIlLmhvYm8ucHJvdmlkZXIubmVvbi52MS5OZW9uQ2xhaW1TdGF0ZRI3CgdhY3Rpb25zGAcgAygLMiYuaG9iby5wcm92aWRlci5uZW9uLnYxLk5lb25DbGFpbUFjdGlvbiKdAQoQTmVvbkNsYWltU3VtbWFyeRI0CgVzdGF0ZRgBIAEoDjIlLmhvYm8ucHJvdmlkZXIubmVvbi52MS5OZW9uQ2xhaW1TdGF0ZRIQCghib3VuZGFyeRgCIAEoCRIRCglhdG9taWNpdHkYAyABKAkSEQoJY2xhaW1fdXJsGAQgASgJEhsKE2Jsb2NraW5nX2FjdGlvbl9pZHMYBSADKAkijgEKE05lb25VbmNsYWltZWRMaW1pdHMSGQoRbWF4X3N0b3JhZ2VfYnl0ZXMYASABKAMSGgoSbWF4X3RyYW5zZmVyX2J5dGVzGAIgASgDEhAKCGJyYW5jaGVzGAMgASgIEg4KBnJlZ2lvbhgEIAEoCRIeChZwb3N0Z3Jlc19tYWpvcl92ZXJzaW9uGAUgASgNIpUFChROZW9uUHJvdmlzaW9uUmVjZWlwdBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRIVCg1kZWZpbml0aW9uX2lkGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEhQKDHJlc291cmNlX3JlZhgEIAEoCRITCgtkYXRhYmFzZV9pZBgFIAEoCRIXCg9uZW9uX3Byb2plY3RfaWQYBiABKAkSFwoPcHJvdmlkZXJfc3RhdHVzGAcgASgJEhUKDWRhdGFiYXNlX25hbWUYCCABKAkSPgoJZW5kcG9pbnRzGAkgASgLMisuaG9iby5wcm92aWRlci5uZW9uLnYxLk5lb25SZWNlaXB0RW5kcG9pbnRzEhsKDmNyZWRlbnRpYWxfcmVmGAogASgJSACIAQESIgoVZGlyZWN0X2NyZWRlbnRpYWxfcmVmGAsgASgJSAGIAQESFgoOZXhwaXJlc19hdF9pc28YDCABKAkSFQoNZXhwaXJlc19hdF9tcxgNIAEoAxIVCg1leHBpcnlfc291cmNlGA4gASgJEhYKDm9ic2VydmVkX2F0X21zGA8gASgDEg8KB2Fkb3B0ZWQYECABKAgSNgoFY2xhaW0YESABKAsyJy5ob2JvLnByb3ZpZGVyLm5lb24udjEuTmVvbkNsYWltU3VtbWFyeRI6CgZsaW1pdHMYEiABKAsyKi5ob2JvLnByb3ZpZGVyLm5lb24udjEuTmVvblVuY2xhaW1lZExpbWl0cxIYChBiaW5kaW5nX3Byb2ZpbGVzGBMgAygJEhoKEm1pZ3JhdGlvbl9wcm9maWxlcxgUIAMoCUIRCg9fY3JlZGVudGlhbF9yZWZCGAoWX2RpcmVjdF9jcmVkZW50aWFsX3JlZiqjAQoSTmVvbkRhdGFiYXNlU3RhdHVzEiQKIE5FT05fREFUQUJBU0VfU1RBVFVTX1VOU1BFQ0lGSUVEEAASIgoeTkVPTl9EQVRBQkFTRV9TVEFUVVNfVU5DTEFJTUVEEAESIQodTkVPTl9EQVRBQkFTRV9TVEFUVVNfQ0xBSU1JTkcQAhIgChxORU9OX0RBVEFCQVNFX1NUQVRVU19DTEFJTUVEEAMq3QEKDk5lb25DbGFpbVN0YXRlEiAKHE5FT05fQ0xBSU1fU1RBVEVfVU5TUEVDSUZJRUQQABIeChpORU9OX0NMQUlNX1NUQVRFX1VOQ0xBSU1FRBABEh0KGU5FT05fQ0xBSU1fU1RBVEVfQ0xBSU1JTkcQAhItCilORU9OX0NMQUlNX1NUQVRFX0NMQUlNRURfUEVORElOR19ST1RBVElPThADEh0KGU5FT05fQ0xBSU1fU1RBVEVfQ09NUExFVEUQBBIcChhORU9OX0NMQUlNX1NUQVRFX0VYUElSRUQQBWIGcHJvdG8z");
+  fileDesc("ChNwcm92aWRlcl9uZW9uLnByb3RvEhVob2JvLnByb3ZpZGVyLm5lb24udjEi+AEKEk5lb25EYXRhYmFzZVJlY29yZBITCgtkYXRhYmFzZV9pZBgBIAEoCRI5CgZzdGF0dXMYAiABKA4yKS5ob2JvLnByb3ZpZGVyLm5lb24udjEuTmVvbkRhdGFiYXNlU3RhdHVzEhcKD25lb25fcHJvamVjdF9pZBgDIAEoCRIRCgljbGFpbV91cmwYBCABKAkSFQoNZXhwaXJlc19hdF9tcxgFIAEoAxIVCg1jcmVhdGVkX2F0X21zGAYgASgDEhUKDXVwZGF0ZWRfYXRfbXMYByABKAMSIQoZY29ubmVjdGlvbl9zdHJpbmdfcHJlc2VudBgIIAEoCCJqChVOZW9uTm9uU2VjcmV0RW5kcG9pbnQSDAoEaG9zdBgBIAEoCRIRCgRwb3J0GAIgASgNSACIAQESEQoEcGF0aBgDIAEoCUgBiAEBEgsKA3RscxgEIAEoCEIHCgVfcG9ydEIHCgVfcGF0aCKSAQoUTmVvblJlY2VpcHRFbmRwb2ludHMSPAoGcG9vbGVkGAEgASgLMiwuaG9iby5wcm92aWRlci5uZW9uLnYxLk5lb25Ob25TZWNyZXRFbmRwb2ludBI8CgZkaXJlY3QYAiABKAsyLC5ob2JvLnByb3ZpZGVyLm5lb24udjEuTmVvbk5vblNlY3JldEVuZHBvaW50In8KD05lb25DbGFpbUFjdGlvbhIKCgJpZBgBIAEoCRIMCgRraW5kGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhAKCGJsb2NraW5nGAQgASgIEhEKCWNvbXBsZXRlZBgFIAEoCBIQCgN1cmwYBiABKAlIAIgBAUIGCgRfdXJsIt8BCg1OZW9uQ2xhaW1QbGFuEhAKCHN0cmF0ZWd5GAEgASgJEhAKCGJvdW5kYXJ5GAIgASgJEhUKDXJlc291cmNlX2tpbmQYAyABKAkSEQoJYXRvbWljaXR5GAQgASgJEhEKCWNsYWltX3VybBgFIAEoCRI0CgVzdGF0ZRgGIAEoDjIlLmhvYm8ucHJvdmlkZXIubmVvbi52MS5OZW9uQ2xhaW1TdGF0ZRI3CgdhY3Rpb25zGAcgAygLMiYuaG9iby5wcm92aWRlci5uZW9uLnYxLk5lb25DbGFpbUFjdGlvbiKuAQoQTmVvbkNsYWltU3VtbWFyeRI0CgVzdGF0ZRgBIAEoDjIlLmhvYm8ucHJvdmlkZXIubmVvbi52MS5OZW9uQ2xhaW1TdGF0ZRIQCghib3VuZGFyeRgCIAEoCRIRCglhdG9taWNpdHkYAyABKAkSEQoJY2xhaW1fcmVmGAYgASgJEhsKE2Jsb2NraW5nX2FjdGlvbl9pZHMYBSADKAlKBAgEEAVSCWNsYWltX3VybCKOAQoTTmVvblVuY2xhaW1lZExpbWl0cxIZChFtYXhfc3RvcmFnZV9ieXRlcxgBIAEoAxIaChJtYXhfdHJhbnNmZXJfYnl0ZXMYAiABKAMSEAoIYnJhbmNoZXMYAyABKAgSDgoGcmVnaW9uGAQgASgJEh4KFnBvc3RncmVzX21ham9yX3ZlcnNpb24YBSABKA0i9wUKFE5lb25Qcm92aXNpb25SZWNlaXB0EhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEhUKDWRlZmluaXRpb25faWQYAiABKAkSEwoLcHJvdmlkZXJfaWQYAyABKAkSFAoMcmVzb3VyY2VfcmVmGAQgASgJEhcKD3Byb3ZpZGVyX3N0YXR1cxgHIAEoCRIVCg1kYXRhYmFzZV9uYW1lGAggASgJEhsKDmNyZWRlbnRpYWxfcmVmGAogASgJSACIAQESIgoVZGlyZWN0X2NyZWRlbnRpYWxfcmVmGAsgASgJSAGIAQESFgoOZXhwaXJlc19hdF9pc28YDCABKAkSFQoNZXhwaXJlc19hdF9tcxgNIAEoAxIVCg1leHBpcnlfc291cmNlGA4gASgJEhYKDm9ic2VydmVkX2F0X21zGA8gASgDEg8KB2Fkb3B0ZWQYECABKAgSNgoFY2xhaW0YESABKAsyJy5ob2JvLnByb3ZpZGVyLm5lb24udjEuTmVvbkNsYWltU3VtbWFyeRI6CgZsaW1pdHMYEiABKAsyKi5ob2JvLnByb3ZpZGVyLm5lb24udjEuTmVvblVuY2xhaW1lZExpbWl0cxIYChBiaW5kaW5nX3Byb2ZpbGVzGBMgAygJEhoKEm1pZ3JhdGlvbl9wcm9maWxlcxgUIAMoCRIaChJvcGFxdWVfcGh5c2ljYWxfaWQYFSABKAkSGwoTbmF0aXZlX2lkZW50aXR5X3JlZhgWIAEoCRIaChJuYXRpdmVfcHJvamVjdF9yZWYYFyABKAkSFAoMZW5kcG9pbnRfcmVmGBggASgJEhgKC2JpbmRpbmdfcmVmGBkgASgJSAKIAQFCEQoPX2NyZWRlbnRpYWxfcmVmQhgKFl9kaXJlY3RfY3JlZGVudGlhbF9yZWZCDgoMX2JpbmRpbmdfcmVmSgQIBRAGSgQIBhAHSgQICRAKUgtkYXRhYmFzZV9pZFIPbmVvbl9wcm9qZWN0X2lkUgllbmRwb2ludHMisAEKEE5lb25Qcm92aWRlckZhY3QSDAoEa2luZBgBIAEoCRIWCg5vY2N1cnJlZF9hdF9tcxgCIAEoAxIUCgxyZXNvdXJjZV9yZWYYAyABKAkSGgoSb3BhcXVlX3BoeXNpY2FsX2lkGAQgASgJEhsKE25hdGl2ZV9pZGVudGl0eV9yZWYYBSABKAkSJwoGZGV0YWlsGAYgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCqjAQoSTmVvbkRhdGFiYXNlU3RhdHVzEiQKIE5FT05fREFUQUJBU0VfU1RBVFVTX1VOU1BFQ0lGSUVEEAASIgoeTkVPTl9EQVRBQkFTRV9TVEFUVVNfVU5DTEFJTUVEEAESIQodTkVPTl9EQVRBQkFTRV9TVEFUVVNfQ0xBSU1JTkcQAhIgChxORU9OX0RBVEFCQVNFX1NUQVRVU19DTEFJTUVEEAMq3QEKDk5lb25DbGFpbVN0YXRlEiAKHE5FT05fQ0xBSU1fU1RBVEVfVU5TUEVDSUZJRUQQABIeChpORU9OX0NMQUlNX1NUQVRFX1VOQ0xBSU1FRBABEh0KGU5FT05fQ0xBSU1fU1RBVEVfQ0xBSU1JTkcQAhItCilORU9OX0NMQUlNX1NUQVRFX0NMQUlNRURfUEVORElOR19ST1RBVElPThADEh0KGU5FT05fQ0xBSU1fU1RBVEVfQ09NUExFVEUQBBIcChhORU9OX0NMQUlNX1NUQVRFX0VYUElSRUQQBWIGcHJvdG8z", [file_google_protobuf_struct]);
 
 /**
  * One response from POST /api/v1/database or GET /api/v1/database/:id.
@@ -268,9 +269,9 @@ export type NeonClaimSummary = Message<"hobo.provider.neon.v1.NeonClaimSummary">
   atomicity: string;
 
   /**
-   * @generated from field: string claim_url = 4;
+   * @generated from field: string claim_ref = 6;
    */
-  claimUrl: string;
+  claimRef: string;
 
   /**
    * @generated from field: repeated string blocking_action_ids = 5;
@@ -355,16 +356,6 @@ export type NeonProvisionReceipt = Message<"hobo.provider.neon.v1.NeonProvisionR
   resourceRef: string;
 
   /**
-   * @generated from field: string database_id = 5;
-   */
-  databaseId: string;
-
-  /**
-   * @generated from field: string neon_project_id = 6;
-   */
-  neonProjectId: string;
-
-  /**
    * the provider's own vocabulary
    *
    * @generated from field: string provider_status = 7;
@@ -375,11 +366,6 @@ export type NeonProvisionReceipt = Message<"hobo.provider.neon.v1.NeonProvisionR
    * @generated from field: string database_name = 8;
    */
   databaseName: string;
-
-  /**
-   * @generated from field: hobo.provider.neon.v1.NeonReceiptEndpoints endpoints = 9;
-   */
-  endpoints?: NeonReceiptEndpoints | undefined;
 
   /**
    * locator, never material
@@ -441,6 +427,31 @@ export type NeonProvisionReceipt = Message<"hobo.provider.neon.v1.NeonProvisionR
    * @generated from field: repeated string migration_profiles = 20;
    */
   migrationProfiles: string[];
+
+  /**
+   * @generated from field: string opaque_physical_id = 21;
+   */
+  opaquePhysicalId: string;
+
+  /**
+   * @generated from field: string native_identity_ref = 22;
+   */
+  nativeIdentityRef: string;
+
+  /**
+   * @generated from field: string native_project_ref = 23;
+   */
+  nativeProjectRef: string;
+
+  /**
+   * @generated from field: string endpoint_ref = 24;
+   */
+  endpointRef: string;
+
+  /**
+   * @generated from field: optional string binding_ref = 25;
+   */
+  bindingRef?: string | undefined;
 };
 
 /**
@@ -449,6 +460,50 @@ export type NeonProvisionReceipt = Message<"hobo.provider.neon.v1.NeonProvisionR
  */
 export const NeonProvisionReceiptSchema: GenMessage<NeonProvisionReceipt> = /*@__PURE__*/
   messageDesc(file_provider_neon, 7);
+
+/**
+ * Public fact projection: native capability values exist only in custody.
+ *
+ * @generated from message hobo.provider.neon.v1.NeonProviderFact
+ */
+export type NeonProviderFact = Message<"hobo.provider.neon.v1.NeonProviderFact"> & {
+  /**
+   * @generated from field: string kind = 1;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: int64 occurred_at_ms = 2;
+   */
+  occurredAtMs: bigint;
+
+  /**
+   * @generated from field: string resource_ref = 3;
+   */
+  resourceRef: string;
+
+  /**
+   * @generated from field: string opaque_physical_id = 4;
+   */
+  opaquePhysicalId: string;
+
+  /**
+   * @generated from field: string native_identity_ref = 5;
+   */
+  nativeIdentityRef: string;
+
+  /**
+   * @generated from field: google.protobuf.Struct detail = 6;
+   */
+  detail?: JsonObject | undefined;
+};
+
+/**
+ * Describes the message hobo.provider.neon.v1.NeonProviderFact.
+ * Use `create(NeonProviderFactSchema)` to create a new message.
+ */
+export const NeonProviderFactSchema: GenMessage<NeonProviderFact> = /*@__PURE__*/
+  messageDesc(file_provider_neon, 8);
 
 /**
  * @generated from enum hobo.provider.neon.v1.NeonDatabaseStatus

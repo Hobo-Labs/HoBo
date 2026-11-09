@@ -1,4 +1,5 @@
-import { isJsonString, isJsonObject } from "../src/json.js";
+import { evaluateRoutingScenario, parseMetricContracts, parseResourceIntent, routingInputHashes } from "./routing-engine.js";
+export { evaluateRoutingScenario, parseMetricContracts, parseResourceIntent, routingInputHashes } from "./routing-engine.js";
 
 const EPIC = Object.freeze({
   id: "post-core-finops-control-plane",
@@ -29,24 +30,6 @@ const STANDARD_BASELINES = Object.freeze([
   { name: "OPA/Rego", version: "current", role: "policy-engine adapter" },
 ]);
 
-const FORBIDDEN_CORE_KEYS = new Set([
-  "provider",
-  "providerId",
-  "cloud",
-  "sku",
-  "skuId",
-  "region",
-  "account",
-  "accountId",
-  "subscriptionId",
-  "billingAccountId",
-  "backend",
-  "backendApi",
-  "stack",
-]);
-
-const FORBIDDEN_CORE_VALUE = /\b(aws|azure|gcp|us-east-[0-9]|eastus|terraform apply|pulumi up)\b/iu;
-const APPROVED_DERIVED_TRANSFORMS = new Set(["windowed_avg", "p95", "weighted_time_decay", "weighted_sum", "ratio"]);
 const NOW = "2026-07-01T16:00:00.000Z";
 
 export async function runFinopsRoutingControlPlaneSimulation() {
@@ -56,7 +39,8 @@ export async function runFinopsRoutingControlPlaneSimulation() {
     candidates: candidateFixture(),
     metricContracts: metricContractsFixture(),
     history: [],
-    budgetState: { spendToDate: 700 },
+    budgetState: { spendToDate: 700, committedCost: 0, uncertainCost: 0, recoveryReserve: 0 },
+    snapshot: snapshotFixture(),
   });
   const approvalRequired = evaluateRoutingScenario({
     id: "approval-required",
@@ -71,7 +55,8 @@ export async function runFinopsRoutingControlPlaneSimulation() {
     candidates: candidateFixture(),
     metricContracts: metricContractsFixture(),
     history: [],
-    budgetState: { spendToDate: 900 },
+    budgetState: { spendToDate: 900, committedCost: 0, uncertainCost: 0, recoveryReserve: 0 },
+    snapshot: snapshotFixture(),
   });
   const budgetDeny = evaluateRoutingScenario({
     id: "budget-deny",
@@ -90,7 +75,8 @@ export async function runFinopsRoutingControlPlaneSimulation() {
     candidates: candidateFixture(),
     metricContracts: metricContractsFixture(),
     history: [],
-    budgetState: { spendToDate: 1_900 },
+    budgetState: { spendToDate: 1_900, committedCost: 0, uncertainCost: 0, recoveryReserve: 0 },
+    snapshot: snapshotFixture(),
   });
   const stabilityCooldown = evaluateRoutingScenario({
     id: "stability-cooldown",
@@ -100,11 +86,11 @@ export async function runFinopsRoutingControlPlaneSimulation() {
     history: [
       {
         candidateId: "candidate-economy",
-        score: 0.7485,
         decidedAt: "2026-07-01T08:00:00.000Z",
       },
     ],
-    budgetState: { spendToDate: 700 },
+    budgetState: { spendToDate: 700, committedCost: 0, uncertainCost: 0, recoveryReserve: 0 },
+    snapshot: snapshotFixture(),
   });
   const invalidMetricContracts = parseMetricContracts(invalidMetricContractsFixture());
   const providerLeakage = parseResourceIntent(providerLeakingIntent());
@@ -153,375 +139,6 @@ export async function runFinopsRoutingControlPlaneSimulation() {
       covered: [...CONTRACTS_COVERED],
       missing: [],
     },
-  };
-}
-
-export function parseResourceIntent(raw) {
-  const errors = [];
-  inspectProviderLeakage(raw, "intent", errors);
-  if (raw?.schemaVersion !== "hobo.finops.resource-intent/v1") {
-    errors.push("intent.schemaVersion must be hobo.finops.resource-intent/v1");
-  }
-  if (!raw?.owner?.tenant || !raw?.owner?.workspace || !raw?.owner?.environment) {
-    errors.push("intent.owner requires tenant, workspace, and environment");
-  }
-  if (!raw?.capability?.category) {
-    errors.push("intent.capability.category is required");
-  }
-  if (!(raw?.budget?.amount > 0) || raw?.budget?.currency !== "USD") {
-    errors.push("intent.budget requires a positive USD amount");
-  }
-
-  return errors.length > 0
-    ? { ok: false, errors, intent: null }
-    : { ok: true, errors: [], intent: structuredClone(raw) };
-}
-
-export function parseMetricContracts(rawContracts) {
-  const errors = [];
-  const parsed = [];
-
-  for (const metric of rawContracts) {
-    const prefix = `metric.${metric?.name ?? "unknown"}`;
-    if (!metric?.name) errors.push(`${prefix}.name is required`);
-    if (!["system", "derived", "user"].includes(metric?.tier)) {
-      errors.push(`${prefix}.tier must be system, derived, or user`);
-    }
-    if (!/^v\d+\.\d+\.\d+$/u.test(metric?.version ?? "")) {
-      errors.push(`${prefix}.version must be semantic and explicit`);
-    }
-
-    if (metric?.tier === "system") {
-      if (!metric.unit) errors.push(`${prefix}.unit is required for system metrics`);
-      if (!metric.source) errors.push(`${prefix}.source is required for system metrics`);
-      if (!metric.normalization) errors.push(`${prefix}.normalization is required for system metrics`);
-      if (metric.mutable === true) errors.push(`${prefix}.semantics must be immutable`);
-    }
-
-    if (metric?.tier === "derived") {
-      if (!Array.isArray(metric.dependsOn) || metric.dependsOn.length === 0) {
-        errors.push(`${prefix}.dependsOn is required for derived metrics`);
-      }
-      for (const transform of metric.transforms ?? []) {
-        if (!APPROVED_DERIVED_TRANSFORMS.has(transform)) {
-          errors.push(`${prefix}.transforms contains unapproved transform ${transform}`);
-        }
-      }
-    }
-
-    if (metric?.tier === "user") {
-      if (metric.formula) errors.push(`${prefix}.formula is not allowed; user metrics are composition-only`);
-      if (metric.requiresApproval !== true) errors.push(`${prefix}.requiresApproval must be true`);
-      for (const source of metric.compositionSources ?? []) {
-        if (source.startsWith("raw:") || source.startsWith("otel.")) {
-          errors.push(`${prefix}.compositionSources cannot reference raw telemetry ${source}`);
-        }
-      }
-    }
-
-    parsed.push(structuredClone(metric));
-  }
-
-  return errors.length > 0 ? { ok: false, errors, contracts: [] } : { ok: true, errors: [], contracts: parsed };
-}
-
-export function evaluateRoutingScenario({ id, intent, candidates, metricContracts, history, budgetState }) {
-  const parsedIntent = parseResourceIntent(intent);
-  const parsedMetrics = parseMetricContracts(metricContracts);
-
-  if (!parsedIntent.ok || !parsedMetrics.ok) {
-    return {
-      scenarioId: id,
-      status: "rejected",
-      parse: { intent: parsedIntent, metrics: parsedMetrics },
-    };
-  }
-
-  const constraints = applyConstraints(parsedIntent.intent, candidates);
-  const policy = evaluateBudgetPolicy(parsedIntent.intent, constraints.allowed, budgetState);
-  const eligible = policy.candidatePolicies.filter((candidatePolicy) => candidatePolicy.effect !== "deny");
-  const eligibleCandidateIds = new Set(eligible.map((candidatePolicy) => candidatePolicy.candidateId));
-  const metricVectors = buildMetricVectors(
-    constraints.allowed.filter((candidate) => eligibleCandidateIds.has(candidate.id)),
-  );
-  const pareto = buildParetoFrontier(metricVectors);
-  const preference = selectFromPareto(pareto, preferenceModel());
-  const stability = applyStability(preference, history, stabilityPolicy(), pareto);
-  const finalCandidateId = stability.selectedCandidateId;
-  const finalPolicy = policy.candidatePolicies.find((candidatePolicy) => candidatePolicy.candidateId === finalCandidateId);
-  const graph = createDecisionGraph({
-    scenarioId: id,
-    candidates,
-    constraints,
-    policy,
-    metricVectors,
-    pareto,
-    preference,
-    stability,
-    finalCandidateId,
-  });
-  const decision = createRoutingDecision(id, graph, finalPolicy, finalCandidateId, constraints, eligible);
-  const actionPlan = compileActionPlan(decision);
-  const events = eventLogFor(id, decision, graph, actionPlan);
-
-  return {
-    scenarioId: id,
-    status: decision.effect,
-    parse: { intent: parsedIntent, metrics: parsedMetrics },
-    constraints,
-    policy,
-    metricVectors,
-    pareto,
-    preference,
-    stability,
-    decisionGraph: graph,
-    routingDecision: decision,
-    actionPlan,
-    events,
-  };
-}
-
-function applyConstraints(intent, candidates) {
-  const allowed = [];
-  const rejected = [];
-  const results = [];
-
-  for (const candidate of candidates) {
-    const reasons = [];
-    if (candidate.capabilityClass !== intent.capability.category) reasons.push("capability-mismatch");
-    if (candidate.monthlyCost > intent.constraints.maxCost) reasons.push("max-cost-exceeded");
-    if (!candidate.compliance.includes(intent.capability.requirements.compliance)) reasons.push("compliance-missing");
-    if (!intent.constraints.allowedJurisdictions.includes(candidate.jurisdiction)) reasons.push("jurisdiction-not-allowed");
-    if (candidate.securityLevel < intent.constraints.minSecurityLevel) reasons.push("security-level-too-low");
-    if (!candidate.eligible) reasons.push("cost-routing-ineligible");
-
-    const result = {
-      candidateId: candidate.id,
-      passed: reasons.length === 0,
-      reasons,
-    };
-    results.push(result);
-    if (result.passed) {
-      allowed.push(candidate);
-    } else {
-      rejected.push({ candidateId: candidate.id, reasons });
-    }
-  }
-
-  return { allowed, rejected, results };
-}
-
-function evaluateBudgetPolicy(intent, candidates, budgetState) {
-  const candidatePolicies = candidates.map((candidate) => {
-    const projectedCost = budgetState.spendToDate + candidate.monthlyCost;
-    if (projectedCost > intent.budget.amount && intent.budget.hardLimitBehavior === "deny") {
-      return policyResult(candidate.id, "deny", "hard-budget-limit");
-    }
-    if (projectedCost > intent.budget.amount) {
-      return policyResult(candidate.id, "requireApproval", "budget-forecast-over-limit");
-    }
-    if (projectedCost > intent.budget.amount * 0.8 && intent.budget.softLimitBehavior === "requireApproval") {
-      return policyResult(candidate.id, "requireApproval", "soft-budget-threshold");
-    }
-    return policyResult(candidate.id, "allow", "within-budget");
-  });
-
-  return {
-    evaluatedAt: NOW,
-    candidatePolicies,
-    deniedCandidateIds: candidatePolicies.filter((policy) => policy.effect === "deny").map((policy) => policy.candidateId),
-    approvalCandidateIds: candidatePolicies
-      .filter((policy) => policy.effect === "requireApproval")
-      .map((policy) => policy.candidateId),
-  };
-}
-
-function buildMetricVectors(candidates) {
-  return candidates.map((candidate) => ({
-    candidateId: candidate.id,
-    cost: candidate.monthlyCost,
-    reliability: candidate.reliability,
-    latency: candidate.latencyP95Ms,
-    risk: candidate.risk,
-    customMetrics: {
-      "experienced.reliability": round(candidate.reliability * 100 - candidate.risk * 10),
-    },
-  }));
-}
-
-function buildParetoFrontier(metricVectors) {
-  const dominated = new Set();
-  for (const candidate of metricVectors) {
-    for (const challenger of metricVectors) {
-      if (candidate.candidateId !== challenger.candidateId && dominates(challenger, candidate)) {
-        dominated.add(candidate.candidateId);
-      }
-    }
-  }
-
-  return {
-    candidateIds: metricVectors
-      .filter((vector) => !dominated.has(vector.candidateId))
-      .map((vector) => vector.candidateId),
-    dominatedCandidateIds: [...dominated].sort(),
-    vectors: metricVectors,
-  };
-}
-
-function selectFromPareto(pareto, model) {
-  const vectors = pareto.vectors.filter((vector) => pareto.candidateIds.includes(vector.candidateId));
-  const costs = vectors.map((vector) => vector.cost);
-  const latencies = vectors.map((vector) => vector.latency);
-  const minCost = Math.min(...costs);
-  const maxCost = Math.max(...costs);
-  const minLatency = Math.min(...latencies);
-  const maxLatency = Math.max(...latencies);
-  const scored = vectors.map((vector) => {
-    const score =
-      normalizedLowerIsBetter(vector.cost, minCost, maxCost) * model.costWeight +
-      vector.reliability * model.reliabilityWeight +
-      normalizedLowerIsBetter(vector.latency, minLatency, maxLatency) * model.latencyWeight +
-      (1 - vector.risk) * model.riskWeight;
-    return { candidateId: vector.candidateId, score: round(score) };
-  });
-  scored.sort((left, right) => right.score - left.score || left.candidateId.localeCompare(right.candidateId));
-
-  return {
-    model,
-    selectedCandidateId: scored[0]?.candidateId ?? null,
-    selectedScore: scored[0]?.score ?? 0,
-    scored,
-    appliedOnlyWithinPareto: true,
-  };
-}
-
-function applyStability(preference, history, policy, pareto) {
-  const previous = history.at(-1);
-  if (!previous || previous.candidateId === preference.selectedCandidateId) {
-    return {
-      selectedCandidateId: preference.selectedCandidateId,
-      overridden: false,
-      reason: "no-recent-placement-change",
-      improvementRatio: 1,
-      policy,
-    };
-  }
-
-  const improvementRatio = round((preference.selectedScore - previous.score) / previous.score);
-  const previousStillValid = pareto.candidateIds.includes(previous.candidateId);
-  const withinCooldown = Date.parse(NOW) - Date.parse(previous.decidedAt) < hours(24);
-  const flipLimited = (previous.flipsInWindow ?? 1) >= policy.flipLimitPerWindow;
-
-  if (previousStillValid && (improvementRatio < policy.minImprovementThreshold || withinCooldown || flipLimited)) {
-    return {
-      selectedCandidateId: previous.candidateId,
-      overridden: true,
-      reason: "stability-cooldown-or-threshold",
-      improvementRatio,
-      policy,
-    };
-  }
-
-  return {
-    selectedCandidateId: preference.selectedCandidateId,
-    overridden: false,
-    reason: "stability-allows-change",
-    improvementRatio,
-    policy,
-  };
-}
-
-function createDecisionGraph({
-  scenarioId,
-  candidates,
-  constraints,
-  policy,
-  metricVectors,
-  pareto,
-  preference,
-  stability,
-  finalCandidateId,
-}) {
-  const rejectedCandidateIds = [
-    ...constraints.rejected.map((candidate) => candidate.candidateId),
-    ...policy.deniedCandidateIds,
-  ];
-
-  return {
-    id: `decision-graph:${scenarioId}`,
-    generatedCandidateIds: candidates.map((candidate) => candidate.id),
-    rejectedCandidateIds,
-    constraintResults: constraints.results,
-    policiesTriggered: policy.candidatePolicies.filter((item) => item.effect !== "allow"),
-    metricsEvaluated: {
-      systemMetrics: ["cost.monthly", "reliability.uptime", "latency.p95", "risk.incident"],
-      derivedMetrics: ["experienced.reliability"],
-      userMetrics: ["business.quality"],
-    },
-    metricVectors,
-    paretoSet: pareto.candidateIds,
-    dominatedCandidateIds: pareto.dominatedCandidateIds,
-    preferenceChoice: preference.selectedCandidateId,
-    stabilityOverride: stability.overridden,
-    finalSelection: finalCandidateId,
-    rationale: [
-      "constraint-filter-before-metrics",
-      "policy-before-metric-vector",
-      "pareto-frontier-before-preference",
-      stability.overridden ? "stability-overrode-preference" : "stability-accepted-preference",
-    ],
-    auditRefs: [
-      "focus-ledger@seq:42",
-      "metering-view@seq:42",
-      "credit-ledger@seq:42",
-      "cloud-event:routing.Decided",
-    ],
-  };
-}
-
-function createRoutingDecision(scenarioId, graph, finalPolicy, finalCandidateId, constraints, eligible) {
-  if (constraints.allowed.length === 0 || eligible.length === 0 || !finalCandidateId) {
-    return {
-      id: `routing-decision:${scenarioId}`,
-      effect: "deny",
-      selectedCandidateId: null,
-      decisionGraphId: graph.id,
-      reason: "no-eligible-candidates",
-    };
-  }
-
-  return {
-    id: `routing-decision:${scenarioId}`,
-    effect: finalPolicy?.effect ?? "allow",
-    selectedCandidateId: finalCandidateId,
-    decisionGraphId: graph.id,
-    reason: finalPolicy?.reason ?? "within-budget",
-  };
-}
-
-function compileActionPlan(decision) {
-  if (decision.effect === "deny") {
-    return {
-      id: `action-plan:${decision.id}`,
-      decisionId: decision.id,
-      backendNeutral: true,
-      actions: [{ type: "freeze", scope: "resource-intent", targetConstraints: ["no-new-spend"] }],
-      allowedActions: ["deploy", "destroy", "scale", "migrate", "pause", "freeze", "upgrade"],
-    };
-  }
-
-  return {
-    id: `action-plan:${decision.id}`,
-    decisionId: decision.id,
-    backendNeutral: true,
-    actions: [
-      {
-        type: decision.effect === "requireApproval" ? "pause" : "migrate",
-        scope: "resource-intent",
-        targetConstraints: ["cost-within-budget", "reliability-gte-current", "latency-within-intent"],
-      },
-    ],
-    allowedActions: ["deploy", "destroy", "scale", "migrate", "pause", "freeze", "upgrade"],
   };
 }
 
@@ -597,104 +214,6 @@ function createSimulationPreview(approvedRoute, stabilityCooldown) {
   };
 }
 
-function eventLogFor(scenarioId, decision, graph, actionPlan) {
-  return [
-    event(1, "routing.CandidatesGenerated", scenarioId, { count: graph.generatedCandidateIds.length }),
-    event(2, "routing.Decided", scenarioId, {
-      decisionId: decision.id,
-      decisionGraphId: graph.id,
-      effect: decision.effect,
-    }),
-    event(3, "routing.ActionPlanCompiled", scenarioId, {
-      actionPlanId: actionPlan.id,
-      backendNeutral: actionPlan.backendNeutral,
-    }),
-  ];
-}
-
-function inspectProviderLeakage(value, path, errors) {
-  if (value === null || value === undefined) return;
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => inspectProviderLeakage(item, `${path}[${index}]`, errors));
-    return;
-  }
-  if (isJsonString(value)) {
-    if (FORBIDDEN_CORE_VALUE.test(value)) {
-      errors.push(`${path} contains provider, concrete region, or backend API value ${value}`);
-    }
-    return;
-  }
-  if (!isJsonObject(value)) return;
-
-  for (const [key, nested] of Object.entries(value)) {
-    if (FORBIDDEN_CORE_KEYS.has(key)) {
-      errors.push(`${path}.${key} is adapter-specific and forbidden in router core inputs`);
-    }
-    inspectProviderLeakage(nested, `${path}.${key}`, errors);
-  }
-}
-
-function dominates(left, right) {
-  const atLeastAsGood =
-    left.cost <= right.cost &&
-    left.reliability >= right.reliability &&
-    left.latency <= right.latency &&
-    left.risk <= right.risk;
-  const strictlyBetter =
-    left.cost < right.cost ||
-    left.reliability > right.reliability ||
-    left.latency < right.latency ||
-    left.risk < right.risk;
-  return atLeastAsGood && strictlyBetter;
-}
-
-function normalizedLowerIsBetter(value, min, max) {
-  if (max === min) return 1;
-  return (max - value) / (max - min);
-}
-
-function policyResult(candidateId, effect, reason) {
-  return { candidateId, effect, reason };
-}
-
-function preferenceModel() {
-  return {
-    costWeight: 0.35,
-    reliabilityWeight: 0.35,
-    latencyWeight: 0.2,
-    riskWeight: 0.1,
-  };
-}
-
-function stabilityPolicy() {
-  return {
-    minImprovementThreshold: 0.12,
-    cooldownWindow: "24h",
-    migrationPenalty: 0.05,
-    flipLimitPerWindow: 2,
-  };
-}
-
-function hours(value) {
-  return value * 60 * 60 * 1_000;
-}
-
-function round(value) {
-  return Math.round(value * 10_000) / 10_000;
-}
-
-function event(seq, type, scenarioId, data) {
-  return {
-    id: `evt:${scenarioId}:${seq}`,
-    type,
-    seq,
-    time: NOW,
-    source: "finops-budget-routing-control-plane",
-    specversion: "1.0",
-    data,
-  };
-}
-
 function adapterFixture(adapter) {
   return {
     adapter,
@@ -725,6 +244,7 @@ function baseIntent() {
       category: "compute",
       requirements: {
         availability: "high",
+        minAvailability: 0.95,
         latencyP95Ms: 120,
         durability: "standard",
         compliance: "pci",
@@ -763,10 +283,10 @@ function providerLeakingIntent() {
 
 function candidateFixture() {
   return [
-    candidate("candidate-economy", 2_200, 0.91, 160, 0.2, ["pci"], "US", 4, true),
+    candidate("candidate-economy", 2_200, 0.96, 110, 0.2, ["pci"], "US", 4, true),
     candidate("candidate-balanced", 3_000, 0.97, 95, 0.1, ["pci"], "US", 5, true),
     candidate("candidate-premium", 4_200, 0.985, 80, 0.16, ["pci"], "US", 5, true),
-    candidate("candidate-wasteful", 3_600, 0.93, 150, 0.25, ["pci"], "US", 4, true),
+    candidate("candidate-wasteful", 3_600, 0.96, 110, 0.25, ["pci"], "US", 4, true),
     candidate("candidate-ineligible", 1_700, 0.98, 70, 0.05, ["none"], "EU", 2, false),
   ];
 }
@@ -776,6 +296,9 @@ function candidate(id, monthlyCost, reliability, latencyP95Ms, risk, compliance,
     id,
     capabilityClass: "compute",
     monthlyCost,
+    transitionCost: 0,
+    commitmentBound: monthlyCost,
+    period: "monthly",
     reliability,
     latencyP95Ms,
     risk,
@@ -794,7 +317,7 @@ function metricContractsFixture() {
       tier: "system",
       unit: "USD",
       source: "focus-ledger",
-      normalization: "currency-usd",
+      normalization: "fixed-usd-10000/v1",
       version: "v1.0.0",
       mutable: false,
     },
@@ -803,7 +326,7 @@ function metricContractsFixture() {
       tier: "system",
       unit: "ratio",
       source: "opentelemetry-slo",
-      normalization: "global-0-1",
+      normalization: "fixed-0-1/v1",
       version: "v1.0.0",
       mutable: false,
     },
@@ -812,7 +335,16 @@ function metricContractsFixture() {
       tier: "system",
       unit: "ms",
       source: "opentelemetry-metrics",
-      normalization: "lower-is-better",
+      normalization: "fixed-ms-200/v1",
+      version: "v1.0.0",
+      mutable: false,
+    },
+    {
+      name: "risk.incident",
+      tier: "system",
+      unit: "ratio",
+      source: "incident-system",
+      normalization: "fixed-0-1/v1",
       version: "v1.0.0",
       mutable: false,
     },
@@ -822,14 +354,17 @@ function metricContractsFixture() {
       version: "v1.0.0",
       dependsOn: ["reliability.uptime", "latency.p95"],
       transforms: ["weighted_sum"],
+      weights: { "reliability.uptime": 0.7, "latency.p95": 0.3 },
     },
     {
       name: "business.quality",
       tier: "user",
       version: "v1.0.0",
       compositionSources: ["experienced.reliability", "cost.monthly"],
-      weights: { reliability: 0.7, cost: 0.3 },
+      weights: { "experienced.reliability": 0.7, "cost.monthly": 0.3 },
       requiresApproval: true,
+      approvalState: "approved",
+      approvalRef: "metric-approval:business-quality:v1",
     },
   ];
 }
@@ -840,7 +375,7 @@ function invalidMetricContractsFixture() {
       name: "cost.monthly",
       tier: "system",
       source: "focus-ledger",
-      normalization: "currency-usd",
+      normalization: "fixed-usd-10000/v1",
       version: "v1.0.0",
     },
     {
@@ -855,7 +390,6 @@ function invalidMetricContractsFixture() {
       tier: "user",
       version: "v1.0.0",
       compositionSources: ["raw:otel.request.duration"],
-      formula: "eval(raw)",
       requiresApproval: false,
     },
     {
@@ -867,4 +401,8 @@ function invalidMetricContractsFixture() {
       version: "latest",
     },
   ];
+}
+
+function snapshotFixture() {
+  return { ...routingInputHashes(candidateFixture(), metricContractsFixture()), budgetId: "budget:tenant-a:production", periodId: "2026-07", policyRevision: "routing-policy:v1", ledgerSeq: 42, observedAt: NOW };
 }

@@ -100,3 +100,7 @@ not exercised by this example's tests — `collectStream` over the deployment
 stream is the only read surface asserted here. The operator ⇄ Yard boundary
 (`up` realizes, `down` destroys) is pinned by the executable PACT in
 `contracts/pacts/operator-to-yard.pact.json`.
+
+## Maintenance
+
+Lifecycle tests fail explicitly when deployment responses omit resource lists before iterating them.

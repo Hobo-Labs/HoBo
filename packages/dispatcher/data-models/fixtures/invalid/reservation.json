@@ -1,0 +1,10 @@
+{
+  "reservation_id": "hosting-operation",
+  "provider_id": "cloud",
+  "dimension": "traffic.requests",
+  "units": 2,
+  "expected_seq": 1,
+  "committed_seq": 2,
+  "status": "cancel-requested-and-refunded",
+  "reserved_cost": 2
+}

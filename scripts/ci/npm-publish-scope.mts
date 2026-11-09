@@ -14,10 +14,26 @@ type ScopeMap = {
 	packages: Record<string, string>;
 };
 
+export function assertNpmScopeMapAllowlist(map: ScopeMap): void {
+	if (!map.publicScope.startsWith("@hobo-labs")) {
+		throw new Error("npm-scope-map: publicScope must be @hobo-labs");
+	}
+	for (const [workspace, published] of Object.entries(map.packages)) {
+		if (!workspace.startsWith("@hobo/")) {
+			throw new Error(`npm-scope-map: invalid workspace key ${workspace}`);
+		}
+		if (!published.startsWith("@hobo-labs/")) {
+			throw new Error(`npm-scope-map: invalid public name for ${workspace}`);
+		}
+	}
+}
+
 export function loadNpmScopeMap(): ScopeMap {
-	const raw: unknown = JSON.parse(readFileSync(mapPath, "utf8"));
-	// SAFETY: `release/npm-scope-map.json` is repo-owned release metadata, validated in contract tests.
-	return raw as ScopeMap;
+	const parsed: unknown = JSON.parse(readFileSync(mapPath, "utf8"));
+	// SAFETY: `release/npm-scope-map.json` is repo-owned release metadata; contract tests pin every row.
+	const map = parsed as ScopeMap;
+	assertNpmScopeMapAllowlist(map);
+	return map;
 }
 
 export function mapPackageName(
@@ -35,6 +51,7 @@ export function mapPackageName(
 
 type PackageJson = {
 	name: string;
+	version?: string;
 	dependencies?: Record<string, string>;
 	devDependencies?: Record<string, string>;
 	peerDependencies?: Record<string, string>;
@@ -57,19 +74,52 @@ function remapDeps(
 	return out;
 }
 
+const WORKSPACE_RANGE = /^workspace:/;
+
+/** Replace workspace ranges with the release semver for published @hobo-labs deps. */
+function pinReleaseDependencyRanges(
+	deps: Record<string, string> | undefined,
+	map: ScopeMap,
+	version: string,
+): Record<string, string> | undefined {
+	if (!deps) return deps;
+	const published = new Set(Object.values(map.packages));
+	const out: Record<string, string> = {};
+	for (const [name, range] of Object.entries(deps)) {
+		if (WORKSPACE_RANGE.test(range)) {
+			if (published.has(name)) {
+				out[name] = version;
+			}
+			continue;
+		}
+		out[name] = range;
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /** Returns a publish-ready manifest object (caller writes to staging dir). */
 export function applyScopeToManifest(
 	manifest: PackageJson,
 	map: ScopeMap = loadNpmScopeMap(),
+	options?: { version?: string },
 ): PackageJson {
 	const out: PackageJson = {
 		...manifest,
 		name: mapPackageName(manifest.name, map),
 	};
-	const deps = remapDeps(manifest.dependencies, map);
-	const devDeps = remapDeps(manifest.devDependencies, map);
-	const peerDeps = remapDeps(manifest.peerDependencies, map);
-	const optDeps = remapDeps(manifest.optionalDependencies, map);
+	if (options?.version) {
+		out.version = options.version;
+	}
+	let deps = remapDeps(manifest.dependencies, map);
+	let devDeps = remapDeps(manifest.devDependencies, map);
+	let peerDeps = remapDeps(manifest.peerDependencies, map);
+	let optDeps = remapDeps(manifest.optionalDependencies, map);
+	if (options?.version) {
+		deps = pinReleaseDependencyRanges(deps, map, options.version);
+		devDeps = pinReleaseDependencyRanges(devDeps, map, options.version);
+		peerDeps = pinReleaseDependencyRanges(peerDeps, map, options.version);
+		optDeps = pinReleaseDependencyRanges(optDeps, map, options.version);
+	}
 	if (deps) out.dependencies = deps;
 	else delete out.dependencies;
 	if (devDeps) out.devDependencies = devDeps;

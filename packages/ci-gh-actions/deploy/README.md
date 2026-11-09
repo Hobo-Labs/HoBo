@@ -34,6 +34,12 @@ an image or commit them:
 | `HOBO_CI_TRUST_PROXY` | Set `1` when TLS terminates at a reverse proxy that sets `X-Forwarded-Proto` |
 | `HOBO_CI_HOST` / `HOBO_CI_PORT` | `0.0.0.0` / `8787` inside the container |
 
+Box-worker resource settings are resolved once at daemon startup. The class limits, aggregate admission
+budget, distinct-merge-group cap, job-side caps and storage-pressure settings are documented with the other
+non-secret worker settings below. Jobs in an already admitted merge group share its capacity; jobs in excess
+merge groups remain queued without blocking push jobs, and each waiting job logs
+`hobo_ci_merge_group_cap_wait` once with its `groupKey`.
+
 `HOBO_CI_CONFIG` seeds a new empty partition. An existing database retains its
 revisioned configuration; replacing the seed file does not override it on restart.
 Use the authenticated account policy API described in the [relay README](../README.md)
@@ -88,6 +94,126 @@ HOBO_CI_CONTROL_TOKENS_PATH=/srv/hobo-ci/secrets/control-tokens.json
 HOBO_CI_DATA_VOLUME=hobo-ci-data
 HOBO_CI_IMAGE=hobo-ci-relay:local
 ```
+
+For an isolated box worker, class limits and admission share one budget. The worker refuses to start unless every
+general class fits outside the trunk reservation and the heavy trunk class fits the full budget. These are
+non-secret settings:
+
+| Worker variable | Default | Purpose |
+|---|---|---|
+| `HOBO_CI_WORKER_MEMORY_BUDGET_MB` | host/cgroup total minus reserve | Sum available to active, reserved and warm containers; explicit values cannot exceed this ceiling |
+| `HOBO_CI_WORKER_MEMORY_RESERVE_MB` | `2048`, minimum `2048` | Host, daemon, Docker and page-cache headroom subtracted from the budget ceiling |
+| `HOBO_CI_WORKER_MEMORY_CLASS_LIGHT_MB` | `3072` | Exact-name guard/lint/contract job hard limits |
+| `HOBO_CI_WORKER_MEMORY_LIGHT_RESERVE_MB` | `1024` | Unmeasured light reservation; integer 512 through the light class limit |
+| `HOBO_CI_WORKER_MEMORY_CLASS_STANDARD_MB` | `4096` | Unlisted jobs and the pre-warmed container hard limit |
+| `HOBO_CI_WORKER_MEMORY_STANDARD_RESERVE_MB` | `2048` | Unmeasured standard reservation; integer 512 through the standard class limit |
+| `HOBO_CI_WORKER_MEMORY_CLASS_HEAVY_MB` | `HOBO_CI_WORKER_MEMORY_MB` or `6144` | Turbo build/test and image job hard limits; OOM/rollback reservation |
+| `HOBO_CI_WORKER_MEMORY_HEAVY_RESERVE_MB` | `4096` | Unmeasured heavy and trunk reservation; integer 512 through the heavy class limit |
+| `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; the startup check still applies |
+| `HOBO_CI_WORKER_MEMORY_LEARN` | `1` | `0` disables unmeasured and learned reservations, restoring full class admission |
+| `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Time smaller same-rank jobs may backfill behind a non-fitting head job |
+| `HOBO_CI_JOB_POLL_MS` | `5000` | GitHub list-poll interval; minimum 5000, maximum 300000; every list uses its cached ETag and unchanged 304 responses do not consume primary rate limit |
+| `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum distinct merge groups with active leases, grouped by `head_sha`; zero and invalid values are rejected |
+| `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK` | `1` | Maximum new non-trunk leases while a trunk lease is active; strict integer 0–8; zero pauses them; uncapped when trunk is idle |
+| `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host per-job work mounts, teardown and pressure checks; same filesystem as pnpm store |
+| `HOBO_CI_WORKER_WORKDIR_INODES` | `200000` | Host-workdir inode growth reserved per job; digits only, `0` disables this root's reservation |
+| `HOBO_CI_WORKER_CONTAINER_INODES` | `170000` | Docker-writable-layer inode growth reserved per job; digits only, `0` disables this root's reservation |
+| `HOBO_CI_PNPM_STORE_DIR` | `~/.cache/hobo-ci/pnpm-store` | Shared store mounted read-write at `/pnpm-store`; empty disables it |
+| `HOBO_CI_PNPM_STORE_PRUNE_INTERVAL_MS` | `21600000` | Minimum interval between idle-only store prunes; integer at least 60000, persisted across failures and restarts |
+| `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image/builder/store/dead-workdir GC interval; minimum 60000, capped at 300000 |
+| `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cache cap with no age exemption; `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` remains a deprecated alias |
+| `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | `400000` | Free inodes required on Docker's data root before a deps rebuild; digits only |
+| `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | `8589934592` | Free bytes required on Docker's data root before a deps rebuild; digits only |
+
+One `hobo_ci_job_pickup` log per lease records job/run identity, workflow event, runner label, admission,
+container-start and registration timestamps, and their millisecond deltas. Polled job creation time and total
+pickup delay are included when known. The metadata comes from existing GitHub reads; no additional API calls
+are made.
+
+The class size remains the container's `--memory` and `--memory-swap` hard limit and its
+`HOBO_CI_JOB_MEMORY_MB` environment variable. Unmeasured jobs reserve 1024 MiB light, 2048 MiB standard,
+or 4096 MiB heavy. After three measured peaks for a job name, the last 20 peaks in
+`${HOBO_CI_WORKER_WORK_ROOT}/memory-peaks.json` produce `ceil256(max(peak) × 1.25 + 256)` clamped to
+1024 MiB through the class size. An OOM forces the class reservation for seven days. The unmeasured idle
+trunk reservation is 4096 MiB before it learns from **Main full gate**. Warm-container matching still uses
+the class limit.
+
+Each job and warm admission samples `/proc/meminfo` once and requires the reservation to leave the
+configured host reserve after subtracting it from `MemAvailable`. Missing host data uses the budget-only
+check. A live-host block logs `reason=host-available` with `availableMb`. With a 13954 MiB budget and the
+unmeasured trunk reservation, the PR share is about 9858 MiB: up to nine light, four standard, or two heavy
+unmeasured PR reservations fit before slot and live-host limits.
+
+Settlement reads the running container's cgroup peak before stopping it and logs
+`hobo_ci_container_memory_peak` with `jobId`, `jobName`, `memoryClass`, `limitMb`, `reservedMb`, and
+`peakMb`. Missing or corrupt history starts empty. Admission wait/admit logs include `classMb` and
+`learned`. Setting `HOBO_CI_WORKER_MEMORY_LEARN=0` rolls admission back to class sizes without lowering
+container hard limits. On the 15989 MiB box with a 2048 MiB reserve, the admission budget is
+**13941 MiB**.
+
+Rank-0 trunk containers also receive `--cpu-shares 8192` and request `--blkio-weight 800`; other ranks use
+512 and 200. These fixed 16:1 CPU and 4:1 IO preferences need no environment setting. The first weighted
+create/update probes block-IO support once per daemon process. An unsupported engine or cgroup logs
+`hobo_ci_blkio_weight_unsupported` once and retries with CPU-only weighting, so IO support never gates
+admission. Warm spares start at PR weight and are updated to their lease's weights on assignment. The
+trunk-active PR cap leaves running PRs untouched and preserves strict trunk-first ordering. All of these
+scheduling changes require a box daemon redeploy before their effect is observable.
+
+At startup and before every admission or drain check, the worker reconciles its lease journal against the strictly
+parsed `hobo.ci/isolated=1` Docker inventory. Running containers are never reaped; exited/dead containers settle;
+missing containers release after a two-minute reservation grace, or immediately during drain. Unleased worker
+containers are removed. A Docker listing failure releases nothing. Watch `hobo_ci_lease_orphan_released`,
+`hobo_ci_container_orphan_removed`, `hobo_ci_memory_without_containers` and
+`hobo_ci_lease_reconciliation_failed` when diagnosing stale admission memory. Optional drain mode waits only for live
+containers, up to the configured 30-minute bound; the default handoff mode exits without that wait. See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for the full state rules
+and event fields.
+
+Orphaned GitHub job recovery uses the installation's existing `actions: write` permission. It logs
+`hobo_ci_orphan_job_detected`, `hobo_ci_orphan_job_dropped` with a `reason`,
+`hobo_ci_orphan_job_confirmed`, `hobo_ci_orphan_runner_delete` with a `status`,
+`hobo_ci_orphan_run_force_cancel` with a `status`, and either `hobo_ci_orphan_run_rerun` with a `status` or
+`hobo_ci_orphan_run_rerun_skipped` with the run `event`. The recovery sequence, rerun policy, and restart
+limits are documented in [the runner queue guide](../../ci/RUNNER-QUEUE.md).
+
+Job preflight reserves 768 MiB for native/non-heap memory, then chooses
+`workers = max(1, min(cpuCount, floor((limit - 768) / 1280) - 1))` and
+`heap = min(3072, floor((limit - 768) / (workers + 1)))`. It exports that heap through `NODE_OPTIONS`,
+always exports `HOBO_TURBO_CONCURRENCY=1`, and exports the worker count through `HOBO_TEST_MAX_WORKERS`.
+This keeps `(workers + 1) × heap + 768 <= limit`, including the turbo/Vitest parent's heap. It never exports
+`VITEST_MAX_WORKERS`, preserving configs that pin one worker or disable file parallelism.
+
+| Class | Container limit | Node heap per process | Max Vitest workers |
+|---|---:|---:|---:|
+| `light` | 3072 MiB | 1152 MiB | 1 |
+| `standard` | 4096 MiB | 1664 MiB | 1 |
+| `heavy` | 6144 MiB | 1344 MiB | 3 |
+
+Each job bind-mounts its host work directory. After pass, failure, cancellation, crash or timeout, teardown
+atomically renames it into the work root's `.retired` directory and triggers a single-flight background sweeper;
+recursive deletion no longer blocks lease reconciliation or admission. Startup reaps only directories with no
+active lease or container and retires them through the same path. Startup and scheduled GC trigger the sweeper,
+drain-mode shutdown awaits it, and handoff mode leaves it for the successor. Watch `hobo_ci_work_dir_retired`,
+`hobo_ci_work_dir_removed` and `hobo_ci_work_dir_remove_failed`. Ticks over five seconds also log
+`hobo_ci_isolated_worker_tick_slow` with delivery, worker/lease reconciliation and dispatch timings.
+All jobs install from the shared `/pnpm-store` with `npm_config_package_import_method=hardlink`; cross-filesystem
+store/work-root configurations fail startup. Jobs and admission-pressure maintenance never prune the store. Only
+scheduled GC requests pnpm pruning, and only with no active leases and no running container mounting the store;
+a failed Docker inventory check treats it as busy. Pruning is single-flight per daemon and across processes through
+`pnpm-store-prune.lock` beside the store. `pnpm-store-prune.stamp` records each start before spawn and rate-limits
+prunes to one per **6 hours** by default, including failed prunes and daemon restarts. The detached prune's whole
+process group is killed on timeout. Admission waits while a prune runs, logging `hobo_ci_storage_admission_wait`
+once with `message=pnpm store prune in progress`; other non-rate-limited outcomes log `hobo_ci_pnpm_store_prune`.
+Scheduled GC runs at least every five minutes for fetch intermediates, old deps images (two newest plus `local`
+and in-use images retained), old worker images (current and previous content keys plus `local` and in-use images
+retained), dangling images and builder cache. BuildKit has a hard 4 GB default cap with no age exemption. Byte or
+inode usage above **85%** triggers non-pnpm GC before admission, at most once per 60 seconds; every admission
+decision still takes a fresh sample. Usage still above **95%** blocks admission and logs `hobo_ci_inode_pressure`
+once per episode. A dispatch pass stops storage admission after its first refusal because pressure is host-wide.
+A refused trunk-label job blocks lower ranks and logs `hobo_ci_trunk_wait` with `reason: "storage"`.
+Admission additionally reserves **200000** workdir and **170000** container inodes per granted job, summed when
+both roots share a device and reduced by observed consumption. Insufficient reserved headroom uses the same
+rate-limited GC/recheck, then logs `hobo_ci_inode_reserve_wait` once per episode while the job waits.
+See [the runner queue guide](../../ci/RUNNER-QUEUE.md) for operations and admission logs.
 
 For a release, publish the tested image to your registry and replace
 `HOBO_CI_IMAGE` with its immutable `registry/image@sha256:...` reference. The local
@@ -177,6 +303,75 @@ manifest. `/healthz` checks process liveness; `/readyz` includes recovery/readin
 and becomes unavailable while draining. Recreate updates deliberately incur a
 brief availability gap. Kubernetes secrets, ingress/certificate provisioning,
 registry access and storage lifecycle remain operator-managed infrastructure.
+
+## Box worker deps image
+
+Run `scripts/isolated-worker-daemon.mts` from a checkout that tracks HoBo's default
+branch. The daemon reads that checkout's head on startup and every
+`HOBO_CI_DEPS_POLL_MS` (default `300000`), recomputing the deps key only when the
+head changes. The checkout defaults to the repository containing the daemon script,
+independent of the service manager's working directory; set `HOBO_CI_DEPS_ROOT` to
+override it. The checkout needs the lockfile importer manifests, including the
+pinned ts-autocode submodule. The deps key hashes the lockfile, workspace,
+normalized importer dependency fields, optional `.npmrc` and `.pnpmfile.cjs`,
+patches, platform, toolchain version, and `DEPS_LAYOUT.version`. Recipe edits
+update the pinned recipe digest but do not rebuild the image unless the layout
+version is deliberately bumped. Node and pnpm mise entries are covered by the
+toolchain version, and `scripts/ci/deps-layer.mts` is staged into the deps
+context so mount verify can run `link`. It is not hashed into the key.
+
+The install stage moves every repo-relative `node_modules` under `/opt/hobo-deps` and splits its `node_modules/.pnpm` into 64 stable entry-name hash buckets under `/opt/hobo-deps-buckets`. `scripts/ci/deps-layer-buckets.mts` owns the assignment and generates the Dockerfile's `COPY --link` section into `/opt/hobo-deps`; `--check` and `scripts/test/deps-layer-buckets.test.ts` reject drift. A residual layer holds workspace links and pnpm metadata, with no `.git` and no checkout path. A final root step chowns `/opt/hobo-deps`, its `node_modules` and `.pnpm` to uid 1000 so `--link` cannot leave them root-owned. Ownership and timestamps are normalized, and `build-deps.sh` opts into timestamp rewriting only when supported, so unchanged bucket layers are reused across deps keys.
+
+The install stage moves every repo-relative `node_modules` under `/opt/hobo-deps` and splits its `node_modules/.pnpm` into 64 stable entry-name hash buckets under `/opt/hobo-deps-buckets`. `scripts/ci/deps-layer-buckets.mts` owns the assignment and generates the Dockerfile's `COPY --link` section into `/opt/hobo-deps`; `--check` and `scripts/test/deps-layer-buckets.test.ts` reject drift. A residual layer holds workspace links and pnpm metadata, with no `.git` and no checkout path. A final root step chowns `/opt/hobo-deps`, its `node_modules` and `.pnpm` to uid 1000 so `--link` cannot leave them root-owned. Ownership and timestamps are normalized, and `build-deps.sh` opts into timestamp rewriting only when supported, so unchanged bucket layers are reused across deps keys.
+
+The daemon and `build-deps.sh` use the checkout's computed
+`hobo-ci-worker:<toolchain>` when that image exists. If it is absent, they use the
+`hobo-ci-worker:v[0-9a-f]{12}` tag carried by `hobo-ci-worker:local`; the same
+selected toolchain prefixes the deps key and labels the image. They fail only when
+neither toolchain is available. For a new key, the daemon checks
+`hobo-ci-deps:<key>`, tries the corresponding
+`ghcr.io/<owner>/<repo>/hobo-ci-deps:<key>` pull, then builds a registry miss with
+`build-deps.sh --no-promote`. Before that build's `pnpm install`/`mv` into
+`/opt/hobo-deps`, the script samples free inodes and bytes on Docker's data root.
+Inside a job container the daemon-reported `DockerRootDir` path is usually not
+mounted; the script then `df`s a host bind mount on the same device (`HOBO_CI_HOST_JOB_DIRECTORY`,
+`GITHUB_WORKSPACE`, `/pnpm-store`, or `/`). If free inodes or bytes are below headroom, it prunes only the BuildKit cache (`docker builder prune`);
+it never runs `docker image prune -af`. A remaining shortage refuses the rebuild
+so a key miss cannot `ENOSPC` a concurrent main job. Builds are single-flight and asynchronous: they do
+not block admission or hold a job slot. The process runs under `nice` and `ionice`,
+and `HOBO_CI_DEPS_BUILD_MEMORY_MB` (default `4096`, minimum `512`) caps both the
+Docker build and its offline verification container. A successful local, pulled,
+or built candidate is tagged `hobo-ci-deps:local` only after the real mounted-job
+contract passes, then passed to keep-2 GC. `HOBO_CI_DEPS_IMAGE=` disables both
+selection and this ensure loop.
+
+GHCR publication is deliberately outside HoBo CI. `ci-deps-publish.yml` starts after a successful main fabric run (or manually), recomputes the key at that run's commit, and skips unless the keyed local image or a matching `:local` is present. It also skips an existing remote manifest. Only a genuine miss is tagged and pushed, with a five-minute workflow budget and a 240-second command timeout. A stalled registry therefore fails or cancels only the publisher; it cannot make the fabric run red.
+
+Look for `hobo_ci_deps_image_ensure_started` with the selected key before local,
+registry, or build work, then `hobo_ci_deps_image_ensure` with
+`action=hit|pull|build` after success, and `hobo_ci_deps_image_ensure_failed` with
+`retryMs` after failure. Failures are fail-open and retry with one-minute
+exponential backoff capped at 15 minutes. Jobs keep using
+`hobo-ci-worker:local` until deps promotion succeeds; an image build never
+prevents the daemon from admitting other work.
+
+The final image mirrors repo-relative `node_modules` trees under
+`/opt/hobo-deps`, not the mounted work directory. After checkout,
+`scripts/ci/deps-layer.mts link` links them into the checkout. The matching check
+validates the checkout and payload keys, `.modules.yaml`, virtual store, root and
+workspace `tsx` resolution, and `pnpm exec`; any miss runs the normal install.
+`prepareJobDirectory` pre-creates and chowns the job root, `HoBo`, and `HoBo/HoBo`
+to uid/gid 1000. A once-per-image-id probe checks payload readability and runner
+writability before selection. Failure logs `hobo_ci_deps_image_fallback` with
+`reason=unwritable-workdir` (runner directory not writable by uid 1000),
+`reason=missing-payload` (no `/opt/hobo-deps` payload or key marker, as in an
+image built before the off-workdir layout), or `reason=probe-failed`, and uses
+the worker image.
+
+For immediate recovery from an unwritable promoted image, stop the daemon, run
+`docker rmi hobo-ci-deps:local`, and restart it. Alternatively set
+`HOBO_CI_DEPS_IMAGE=` (empty) and restart to disable selection and the ensure
+loop. Redeploy the fixed daemon and rebuild the image before re-enabling it.
 
 ## Backup, restore and stop
 

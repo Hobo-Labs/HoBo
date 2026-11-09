@@ -20,6 +20,7 @@ import {
 } from "@hobo/ci-gh-actions/cli-serve";
 import type { CommandResult } from "@hobo/cli";
 import { z } from "zod";
+import { githubKeyEnvironment } from "./ci-github-keys.js";
 import { ciRepositoryFromRemote } from "./ci-repository.js";
 import { defaultHoboHome } from "./hobo-home.js";
 import { isJsonNumber, isJsonObject } from "./json.js";
@@ -241,8 +242,8 @@ async function resolveRepository(
 	const remotes = (await git(["remote"], cwd).catch(() => ""))
 		.split("\n")
 		.filter(Boolean);
-	const remote =
-		options.remote ?? (remotes.length === 1 ? remotes[0]! : "origin");
+	const soleRemote = remotes.length === 1 ? remotes[0] : undefined;
+	const remote = options.remote ?? soleRemote ?? "origin";
 	if (!remotes.includes(remote)) throw new Error("missing git remote");
 	return ciRepositoryFromRemote(await git(["remote", "get-url", remote], cwd));
 }
@@ -334,8 +335,8 @@ export async function resolveCiServePlan(input: {
 			? undefined
 			: Number(input.options.installationId);
 	if (
-		input.options.installationId !== undefined &&
-		(!Number.isSafeInteger(installationId) || installationId! < 1)
+		installationId !== undefined &&
+		(!Number.isSafeInteger(installationId) || installationId < 1)
 	)
 		throw new Error("invalid installation id");
 	const committed = await readFile(project.configPath, "utf8");
@@ -416,6 +417,7 @@ async function ensureCredentials(
 	env: NodeJS.ProcessEnv,
 	directory: string,
 	requireRealCredentials: boolean,
+	installationId?: number,
 ): Promise<{
 	keyPath: string;
 	tokenPath: string;
@@ -425,12 +427,27 @@ async function ensureCredentials(
 	await mkdir(directory, { recursive: true, mode: 0o700 });
 	const keyPath = join(directory, "github-app.pem");
 	const tokenPath = join(directory, "control-tokens.json");
+	const configuredKeyPath = env.HOBO_CI_GITHUB_APP_KEY_FILE;
 	const hasKeyFile =
-		env.HOBO_CI_GITHUB_APP_KEY_FILE &&
-		(await access(env.HOBO_CI_GITHUB_APP_KEY_FILE, constants.R_OK).then(
+		configuredKeyPath !== undefined &&
+		configuredKeyPath.length > 0 &&
+		(await access(configuredKeyPath, constants.R_OK).then(
 			() => true,
 			() => false,
 		));
+	const appConfigurationPresent = Boolean(
+		env.HOBO_CI_GITHUB_APP_ID ||
+			env.HOBO_CI_GITHUB_APP_ID_FILE ||
+			configuredKeyPath ||
+			env.HOBO_CI_GITHUB_APP_PRIVATE_KEY ||
+			env.HOBO_CI_GITHUB_APP_PRIVATE_KEY_FILE ||
+			env.HOBO_CI_WEBHOOK_SECRET ||
+			env.HOBO_CI_WEBHOOK_SECRET_FILE,
+	);
+	if (appConfigurationPresent && !hasKeyFile)
+		throw new Error(
+			"GitHub App configuration requires a readable HOBO_CI_GITHUB_APP_KEY_FILE",
+		);
 	if (requireRealCredentials && !hasKeyFile)
 		throw new Error(
 			"remote bind requires GitHub App credentials (HOBO_CI_GITHUB_APP_KEY_FILE and related secrets)",
@@ -441,9 +458,13 @@ async function ensureCredentials(
 			throw new Error("HOBO_CI_WEBHOOK_SECRET must be at least 32 characters");
 		let controlPath = env.HOBO_CI_CONTROL_TOKENS_FILE ?? tokenPath;
 		if (!env.HOBO_CI_CONTROL_TOKENS_FILE) {
-			const token =
-				env.HOBO_CI_ACCOUNT_TOKEN ??
-				`synthetic-local-token-${createHash("sha256").update(directory).digest("hex")}`;
+			const token = (
+				await readOptionalSecret(env, "HOBO_CI_ACCOUNT_TOKEN")
+			)?.trimEnd();
+			if (!token || token.length < 32 || /\s/.test(token))
+				throw new Error(
+					"real App credentials require a CI account token of at least 32 characters or HOBO_CI_CONTROL_TOKENS_FILE",
+				);
 			await writeFile(
 				tokenPath,
 				JSON.stringify({
@@ -451,7 +472,8 @@ async function ensureCredentials(
 						{
 							accountId: "local-dev",
 							tokenSha256: createHash("sha256").update(token).digest("hex"),
-							installationIds: [],
+							installationIds:
+								installationId === undefined ? [] : [installationId],
 							scopes: [
 								"policy:read",
 								"policy:write",
@@ -466,7 +488,7 @@ async function ensureCredentials(
 			controlPath = tokenPath;
 		}
 		return {
-			keyPath: env.HOBO_CI_GITHUB_APP_KEY_FILE!,
+			keyPath: configuredKeyPath,
 			tokenPath: controlPath,
 			webhookSecret,
 			appId: await readSecret(env, "HOBO_CI_GITHUB_APP_ID"),
@@ -523,10 +545,12 @@ export async function startCiServe(input: {
 	await mkdir(stateDir, { recursive: true, mode: 0o700 });
 	const requireRealCredentials =
 		!LOOPBACK.has(plan.host) && !plan.allowInsecureLoopback;
+	const configuredEnv = await githubKeyEnvironment(input.env, home);
 	const credentials = await ensureCredentials(
-		input.env,
+		configuredEnv,
 		stateDir,
 		requireRealCredentials,
+		plan.installationId,
 	);
 	const dbPath = input.options.db ?? join(stateDir, "relay.sqlite");
 	const seedConfig = join(stateDir, "config.json");
@@ -545,7 +569,7 @@ export async function startCiServe(input: {
 			{ mode: 0o600 },
 		);
 	}
-	const relayEnv: NodeJS.ProcessEnv = { ...input.env };
+	const relayEnv: NodeJS.ProcessEnv = { ...configuredEnv };
 	relayEnv.HOBO_CI_PUBLIC_URL = plan.publicOrigin;
 	relayEnv.HOBO_CI_HOST = plan.host;
 	relayEnv.HOBO_CI_PORT = String(plan.port);
@@ -554,7 +578,7 @@ export async function startCiServe(input: {
 	relayEnv.HOBO_CI_GITHUB_APP_ID = credentials.appId;
 	relayEnv.HOBO_CI_GITHUB_APP_KEY_FILE = credentials.keyPath;
 	relayEnv.HOBO_CI_CONTROL_TOKENS_FILE = credentials.tokenPath;
-	if (input.env.HOBO_CI_WEBHOOK_SECRET_FILE) {
+	if (configuredEnv.HOBO_CI_WEBHOOK_SECRET_FILE) {
 		delete relayEnv.HOBO_CI_WEBHOOK_SECRET;
 	} else {
 		relayEnv.HOBO_CI_WEBHOOK_SECRET = credentials.webhookSecret;

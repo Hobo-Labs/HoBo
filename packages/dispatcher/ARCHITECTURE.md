@@ -27,8 +27,9 @@ ranked candidates instead of re-checking raw DTO fields.
 
 - **Command** — a dispatch/placement request over a pinned `CreditLedgerView@seq`.
 - **Event** — `dispatch.Decided`, `match.Decided`,
-  `dispatch.ReservationReserved`, `dispatch.ReservationConfirmed`,
-  `dispatch.ReservationReleased`, `dispatch.ReservationExpired`.
+  `dispatch.ReservationReserved`, `dispatch.ReservationStarted`, `dispatch.ReservationConfirmed`,
+  `dispatch.ReservationReleased`, `dispatch.ReservationExpired`, and
+  `dispatch.LedgerTimeAdvanced` (monotonic pinned time with a new CAS sequence).
 - **Actor** — the reservation ledger aggregate applies reservation events in
   seq order (CAS on `expectedSeq`; stale views re-rank instead of double-spend).
 - **Event store** — accepted facts append to the platform event store as the
@@ -44,3 +45,21 @@ ranked candidates instead of re-checking raw DTO fields.
 Determinism: decisions are pure functions of (registry, ledger view, request).
 `replayDispatchDecision(replayInput)` reproduces a byte-identical
 `dispatch.Decided` fact — asserted by the replay test.
+
+Reservation facts carry the full consumption and monetary commitment for
+read-model reconstruction. Paid holds, free grants, rate quantities and
+concurrency slots are changed atomically in the local aggregate. Confirmation
+records actual spend and frees concurrency; cancellation restores the original
+debit. A reservation-ID/payload collision fails before any mutation. Parser
+boundaries reject duplicate account keys and reservation identities.
+
+This module does not own a durable writer, provider billing synchronization or
+execution cancellation. An embedding actor must persist its snapshot/facts and
+fence starts against the commitment. `ReservationStarted` must commit before
+external dispatch; a pending-expiry supervisor must prove no outbox dispatch
+occurred (or has fenced it). Running holds never expire or refund on actor
+lease loss/cancellation alone. Settlement requires explicitly final usage,
+including provider cancellation/absence evidence when zero is claimed. It
+must not release an operation's hold while billing remains unresolved. The dispatcher is an
+admission component, not a promise that asynchronous provider invoices cannot
+exceed a budget. Adversarial evidence is in `test/budget-safety.test.ts`.

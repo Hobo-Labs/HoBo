@@ -293,10 +293,12 @@ them.
 ## Building before a repo-wide test run
 
 `pnpm run build` covers `./packages/**` — every nested package, not just direct
-children of `packages/`. `pnpm run test` builds first via `pretest:unit` (~14s
-warm) because the repo-wide vitest sweep imports built dists from workspace
-packages, and without it a suite fails on whichever package happened to be
-stale rather than on anything real.
+children of `packages/`. `pnpm run test` / `test:unit` is one turbo graph over
+exactly the legacy root `test/` and `src/draft/**` Vitest set: four root shards
+and nine draft shards hashed by proof package directory, with a shared turbo
+dependency on the builds the legacy pretest supplied. Production `packages/**` suites stay in Workspace
+tests, and `scripts/test/` stays in `test:scripts`. An unchanged unit run pays
+only turbo's hashing and log replay.
 
 ### One build graph, not two
 
@@ -329,8 +331,11 @@ too.
 is the single exception and carries its own task override — so editing a test
 can no longer invalidate 124 builds and everything downstream of them.
 
-Every turbo invocation in this repo passes `--concurrency=100%` — one task per
-logical CPU. This is a **memory** limit, not a speed one, and the difference
+Turbo invocations default to `--concurrency=100%` — one task per logical CPU —
+and CI overrides that through `HOBO_TURBO_CONCURRENCY`. Root test shards honor
+`HOBO_TEST_MAX_WORKERS`, then `HOBO_RELEVANT_CHECK_CONCURRENCY`; package configs
+keep their own `maxWorkers` / `fileParallelism` limits. This is a **memory**
+limit, not a speed one, and the difference
 matters: on a fixed 224-task set, turbo's default of 10 and a cap of 4 finish
 within noise of each other (5m49s vs 5m36s on a four-core box), so capping costs
 nothing. What it buys is that a fully-cold 902-task sweep at the default OOM-kills
@@ -685,10 +690,14 @@ Non-negotiables for either lane:
 
 ### Which command is the repo-wide gate
 
-`pnpm run test:all` (turbo, one vitest config per package) is the only command
-that runs every suite the way its own package intends — with that package's
-environment, setup files and process isolation. `pnpm run test:unit` is the
-category runner and the default PR lane.
+`pnpm run test:all` runs every package suite the way its own package intends —
+with that package's environment, setup files and process isolation. `pnpm run
+test:unit` is the S0 lane for exactly the legacy root/draft Vitest set; it does
+not run production package suites or `scripts/test/`. Per-package `test:unit`
+scripts remain the narrower affected-PR lane where they exist.
+`scripts/test/unit-test-coverage.test.ts` requires exact equality between the
+legacy selection and the root/draft shard union, rejecting extras as well as
+missing files.
 
 `test:smoke` and `test:file` share one command (`vitest run --no-isolate`) and
 one root config. **They are single-target tools, not a full-repo gate.** Run bare
@@ -782,6 +791,10 @@ Live service checks and `pnpm eval:agent:live` are manual/release-only lanes. De
 
 Run the smallest sufficient lane through `pnpm agent:check`; no-arg mode validates the latest commit, `--staged` validates staged files, and `--base=origin/main` validates the whole PR branch. It never selects E2E, avoids broad unit/contract sweeps unless final/all validation explicitly asks for them, and escalates only to schema, contract, UI, behavior, visual, mock-agent eval, or bounded property lanes based on changed files.
 
+## Main train release versioning (repo + CI)
+
+Do **not** pick `@hobo-labs/*` semver or push `v0.0.0-alpha.N` tags by hand for the main train. [`version.json`](version.json) + **[Nerdbank.GitVersioning](https://dotnet.github.io/Nerdbank.GitVersioning/)** (`nerdbank-gitversioning` via `pnpm exec nbgv` under **`release/mise.toml`** dotnet only — not root [`mise.toml`](mise.toml)) compute **`0.0.0-alpha.{height+offset}`** from git. After green **`HoBo CI Fabric`** on a release-relevant **`main`** push, [`.github/workflows/release-hobo.yml`](.github/workflows/release-hobo.yml) (`workflow_run`) publishes npm (**`alpha`** dist-tag only), GHCR, and Pages, then **`release-tag`** ( **`environment: production`** ) SSH-signs the tag and pushes it over **HTTPS** with **`GITHUB_TOKEN`**. Use [`scripts/ci/compute-release-version.mts`](scripts/ci/compute-release-version.mts) locally after `mise -C release install --locked`.
+
 ## Cursor Cloud specific instructions
 
 Durable, non-obvious notes for this environment. The startup update script runs `bash scripts/bootstrap-dev.sh --project-only` (mise installs pinned Node/pnpm/cue/turbo from `mise.toml`) and `pnpm install --frozen-lockfile`; do not re-add Corepack-only install steps here. **HoBo CI Fabric** on self-hosted `hobo` runners uses the hermetic **`hobo-ci-worker:local`** image (mise OCI + base Dockerfile); jobs preflight with `.github/actions/ci-runner-preflight` — no workflow `setup-node` / `setup-cue`. Rebuild on the box with `bash packages/ci-gh-actions/deploy/ci-runner/build.sh` (see `packages/ci/RUNNER-QUEUE.md`). Workflow env: `NODE_OPTIONS=--max-old-space-size=3072`, `HOBO_TURBO_CONCURRENCY=1`; the Main full gate `check:all` step also sets `HOBO_RELEVANT_CHECK_CONCURRENCY=1` (one root Vitest fork) to avoid job-container OOM kills. A `test:unit` that exits 1 with no Vitest summary was killed by a signal: `scripts/run-tests.ts` logs `run-tests: vitest was killed by <SIGNAL>`.
@@ -791,7 +804,7 @@ Durable, non-obvious notes for this environment. The startup update script runs 
 - **No sudo.** `sudo` is never available and never allowed. Do not run it, do not ask the user to run it, do not suggest root apt/system Docker installs. Prefer `$HOME/.local/bin`, npx/pnpm, remote anon APIs. Host is **aarch64** — download ARM64 binaries only. No `/var/run/docker.sock` here.
 - **Examples Temporary = browser-only.** End users never run CLI setup (docker/wrangler/openpouch/crane). Ship is browser → same-origin `/api/cf-temp/*` → remote HTTPS APIs. Do not treat local CLI image push/deploy as a product fallback.
 - **No server/GUI.** This is a design-docs + executable proof/contract repo (see README "Current state"). "Running the app" means the validation/lint/test tooling, not a web/backend service. Verify the environment with `pnpm run doctor`, `pnpm run lint`, `pnpm run standards:check`, `pnpm test`, and the doc validators listed in `README.md` "How to work in this repo".
-- **Node version.** Local Node 22 satisfies `engines` (`>=22`); CI uses Node 24. Optional Windows bins are not fetched on Linux (`pnpm.supportedArchitectures.os` is `current`).
+- **Node version.** Local Node 22 satisfies `engines` (`>=22`); CI uses Node 24. Optional native packages are installed for the current OS and CPU only (`pnpm.supportedArchitectures` is `current` for both; see [finding 19](docs/ci/findings/0019-every-job-installed-both-cpus-agent-clis.md)).
 - **Developer inner loop for a single proof package:** `pnpm exec turbo run test --filter ./src/draft/<kind>/<slug>` (see `src/draft/AGENTS.md`). The turbo "no output files found" warning on `test` is expected (no build outputs) and not a failure.
 - **`test:smoke` runs Vitest** (`vitest run --no-isolate`), same engine as `test:file`; there is no bun dependency. Both are single-target tools — see "Which command is the repo-wide gate" above before reading a bare root run as a regression.
 - **`tgrep` is not installed**, so `pnpm run search` falls back to `rg`. Always pass explicit path args (e.g. `pnpm run search "pattern" src docs`); running it with no path scope over the full worktree can be very slow.

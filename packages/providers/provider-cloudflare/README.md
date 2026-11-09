@@ -120,7 +120,7 @@ Store**, **Cron Triggers**, and custom domains. Cron Triggers matter for
 capability honesty: no temporary-account product claims
 `service.scheduled/v1`.
 
-### What is *not* verified
+### Documentation and native acceptance evidence
 
 | Verified 2026-08-08 | Not verified |
 |---|---|
@@ -130,11 +130,13 @@ capability honesty: no temporary-account product claims
 | Terms of Service and Privacy Policy must be accepted in the product | |
 | REST provisioning exists ([changelog, 2026-07-14](https://developers.cloudflare.com/changelog/post/2026-07-14-temporary-accounts-api/)) | |
 
-The unverified half is contained rather than assumed: `parsePreviewAccountResponse()`
-and `parsePreviewChallengeResponse()` accept only the exact shapes above, with
-bounded lengths, and refuse anything else with `PROVIDER_CONTRACT_CHANGED`. A
-wrong guess is therefore a typed refusal at the boundary, not a half-parsed
-account — and correcting it is a change to two parsers and their fixtures.
+The table records the original documentation review. Anonymous native acceptance
+on **2026-10-30** subsequently exercised the preview challenge and provisioning
+wire contract, then the generic Worker resolver's upload, source readback,
+Workers.dev activation, HTTP response and deletion. That acceptance covers this
+Worker path, not every temporary-account resource. `parsePreviewAccountResponse()`
+and `parsePreviewChallengeResponse()` still require their bounded exact shapes
+and refuse drift with `PROVIDER_CONTRACT_CHANGED`.
 
 ### Product definitions
 
@@ -323,8 +325,10 @@ capability requirement:
 | `service` | `cloudflare.workers/v1` |
 | `web` | `cloudflare.pages/v1`, `cloudflare.workers/v1` |
 
-`web` carrying two entries is not an unresolved ambiguity to tidy away; it is
-the accurate statement that Cloudflare can serve a web capability either way.
+The HTTP Worker entry explicitly sets `workersDev: true`. A generic `workers()`
+binding leaves exposure unchanged, so allocating a queue consumer does not
+silently publish it. The compute manifest names `cloudflare.workers/v1` directly
+so selection reaches the executable Worker resolver.
 
 Every row is built from the `src/slots.ts` factories, never hand-written, so the
 catalog cannot drift from the product ids the resolvers key on.
@@ -368,11 +372,13 @@ resolvers are the effectful edge of that flow, not its owner.
 
 ## HONEST SCOPE — direct API path
 
-- **Live deploys are unproven here.** The resolvers are exercised against an
-  *injected fake* transport in `test/resolvers.test.ts`. A live deploy
-  additionally needs real credentials, real network egress, and a real
-  Cloudflare account — none of which a unit test supplies. A green test run is
-  evidence about request composition and convergence logic, not about Cloudflare.
+- **Native Worker acceptance is scoped.** On 2026-10-30 the actual generic
+  registry and bounded HTTPS transport created one anonymous Worker, read its
+  exact uploaded source from the native multipart response, observed its
+  enabled Workers.dev binding and account subdomain, and received HTTP 200
+  with the expected body. Generic delete followed by an independent native
+  read confirmed absence. Other products remain covered by offline contracts;
+  this Worker result does not establish their live behavior or final billing.
 - **The guard cannot prove what the host's transport does.** It constrains the
   request this package composes and the response it accepts. Whether the
   injected transport actually honours `timeoutMs`, refuses to follow a 302
@@ -394,13 +400,35 @@ resolvers are the effectful edge of that flow, not its owner.
 | `cloudflare.d1/v1` | `GET ?name=`, `POST`, `PATCH` (read replication), `DELETE` on `/accounts/{id}/d1/database` | query execution, imports/exports, time-travel restore, per-database Worker bindings |
 | `cloudflare.kv/v1` | paged `GET`, `POST`, `DELETE` on `/accounts/{id}/storage/kv/namespaces` | key read/write/list (`ttlSeconds` is per write and is reported as a diagnostic), bulk operations, namespace rename |
 | `cloudflare.queues/v1` | paged `GET`, `POST`, `PUT` (queue `settings`), `DELETE` on `/accounts/{id}/queues` | consumers (`maxBatchSize` / `maxRetries` are consumer-scoped and reported as diagnostics), producers, dead-letter wiring, message push/pull |
-| `cloudflare.workers/v1` | `GET /accounts/{id}/workers/scripts/{name}/settings`, `PUT` module upload (`multipart/form-data`), `DELETE` | routes, custom domains, `workers.dev` subdomains, cron triggers, secrets, tail/logs, versions and gradual deployments, Durable Object migrations |
+| `cloudflare.workers/v1` | Native settings and single-module source `GET`, `PUT` module upload (`multipart/form-data`), explicit Workers.dev `GET`/`POST`, observed account subdomain, `DELETE` | routes, custom domains, cron triggers, secret provisioning, tail/logs, versions and gradual deployments, Durable Object migrations, multi-module source proof |
 | `cloudflare.pages/v1` | `GET`, `POST`, `PATCH` (production branch), `DELETE` on `/accounts/{id}/pages/projects[/{name}]` | deployments (upload, rollback, retry), custom domains, build config beyond the production branch, Pages Functions |
 
-Two behaviours worth stating plainly rather than discovering: the Workers
-resolver **re-uploads on every reconcile** when `desired.script` is present,
-because the settings endpoint returns no script content to diff against (the
-result is still exactly one script with the requested source, reported as
-`update`); and paged lookups refuse rather than half-read if a listing has not
-terminated within 25 pages, because a truncated list cannot rule out an existing
-resource and creating one anyway would risk a duplicate.
+Workers compare the actual native source digest and requested settings before
+uploading. An unchanged Worker is adopted or reported as a noop. Source proof
+preserves UTF-8 bytes, including BOM and line endings; malformed multipart,
+unexpected modules and artifacts exceeding the bounded readback contract fail
+closed. A settings response without source cannot establish readiness. Missing
+pinned Workers require a new approved allocation identity. Paged lookups refuse
+when a listing has not terminated within 25 pages, because a truncated list
+cannot rule out an existing resource.
+
+### Anonymous acceptance and production observations
+
+The temporary-account transport enforces a total request deadline and streaming
+response-byte bound. Its FormData encoding preserves the native worker upload
+contract. A workers.dev endpoint is returned only after positive activation and
+the provider's observed subdomain; the SDK no longer fabricates a hostname when
+activation or subdomain observation is missing. Resource resolvers wrap the
+injected HTTP transport in the provider guard, rather than relying on callers to
+guard it. Placeholder zero prices carry `pricingStatus: "unknown"` and cannot
+serve as verified free hosting quotes.
+
+`deleteWorkerScript({accountId, apiToken, scriptName})` issues the scoped native
+DELETE and independently reads the script settings; authentication failures are
+not absence. The generic resolver was separately exercised through its actual
+registry: the Worker returned HTTP 200 and independent native GET confirmed 404
+after deletion at **2026-10-30T01:04:30Z**. The repeatable manual lane is
+[`hosting-anonymous-acceptance.mts`](../../../scripts/manual/hosting-anonymous-acceptance.mts),
+which persists no-replay intent and private account custody before Worker
+creation. The temporary account's eventual cleanup and final billing remain
+unconfirmed; a local TTL does not prove either.

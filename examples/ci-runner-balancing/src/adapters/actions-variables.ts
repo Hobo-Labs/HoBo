@@ -7,6 +7,7 @@
  * apply mode must never pretend a flip landed.
  */
 
+import { isJsonObject, isJsonString, parseJsonValue } from "../parse.js";
 import type { FetchLike } from "./github-billing.js";
 
 export interface ActionsVariablesOptions {
@@ -51,9 +52,10 @@ export function actionsVariables(
 				const response = await fetchImpl(`${base}/${name}`, { headers });
 				if (response.status === 404) return undefined;
 				if (!response.ok) return undefined;
-				// SAFETY: assertion to `it response.json()) as { value?: unknown }; ` is required at this boundary.
-				const body = (await response.json()) as { value?: unknown };
-				return Object.prototype.toString.call(body.value) === "[object String]" ? body.value : undefined;
+				const body = parseJsonValue(await response.json());
+				return isJsonObject(body) && isJsonString(body.value)
+					? body.value
+					: undefined;
 			} catch {
 				return undefined;
 			}

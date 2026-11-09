@@ -9,15 +9,16 @@ export function createCompositeIsolatedHost(options: {
 }): IsolatedRunnerHost | undefined {
 	if (!options.sandbox && !options.worker) return undefined;
 	return {
-		async launch(id: string, label?: RunnerLabel) {
+		async launch(id: string, label?: RunnerLabel, rank?: number) {
 			const lease = await options.store.get(id);
 			if (!lease) return;
-			if (lease.provider === "vercel") await options.sandbox?.launch(id, label);
+			if (lease.provider === "vercel")
+				await options.sandbox?.launch(id, label, rank);
 			else if (
 				lease.provider === "kubernetes" ||
 				lease.provider === "hobo-box-worker"
 			)
-				await options.worker?.launch(id, label);
+				await options.worker?.launch(id, label, rank);
 			else throw new Error("unsupported isolated provider");
 		},
 		async reconcile(id: string, forceStop?: boolean) {

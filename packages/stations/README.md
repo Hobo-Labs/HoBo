@@ -276,3 +276,68 @@ pnpm --filter @hobo/stations build
 - `@hobo/broker` — pure Conductor (receipts pin `stationId` + `railHash`)
 - `@hobo/connectivity` — overlay / PAM / policy foundations
 - Design: ADR-0131, package map in `docs/design/package-namespaces.md`
+
+## Budget-driven routing transitions
+
+`createRoutingControlLoop` executes routing decisions under an explicitly declared
+`topology.costRouting` (`stateless`, `active-active-eventual`, or
+`pinned-with-replica`). A single-writer or undeclared topology cannot move on a
+price signal. Budget signals are tenant-bound triggers; the fresh ledger and
+financial supervisor authorize the actual transition.
+
+A routing change requires `ledgerView`, `persistState`, and `beforeApply`.
+`beforeApply(plan, phase, percent, reason)` must check the supervisor's verified
+reservation and current policy before every provider effect; its reason separates
+ordinary optimization, forced recovery, and source restoration. A forced unhealthy
+incumbent bypasses optimization cooldown/flip limits and may use the explicit
+`recoveryLedgerView` backed by a protected recovery allowance. Missing supervisor
+capabilities refuse the move; the loop never invents a hard budget guarantee from
+an empty ledger. Financial settlement and source retirement belong to the hosting
+transition supervisor, not the traffic-routing port.
+
+The host CAS-persists the generated `RoutingControlStateRecord` under its service
+actor fence. `snapshot()` and `initialState` retain incumbent, stability history,
+sustained savings evidence, and pending effect identity across restart. Provider
+writes are serialized within one loop; `persistState(state, expectedStateVersion)`
+must compare and advance `stateVersion` on every checkpoint under the cross-process
+actor fence. This version is independent of the plan `revision`. After uncertain writes, new signals
+return `reconciliation-required`; `reconcilePending()` checks the persisted approved plan artifact, current policy
+and constraints, active/full provider status, and fresh scoped destination/source
+health before accepting final applies or restorations. Intermediate interrupted ramps stay
+pending for the supervising durable saga.
+
+Non-progressive writes also require an explicit `healthGate`.
+
+Progressive cutover requires a validated adapter-specific `precondition`, destination
+`healthGate`, source `restorationHealthGate`, and an awaited `beforeApply`
+admission/checkpoint hook. The prerequisite includes the exact immutable
+`incumbentPlan` plus `incumbentPlanId`; its tenant/service/Station/Rail scope and
+active/full provider status are checked before the first shift. Compensation
+restores that artifact under a new operation identity, with the prior artifact
+hash recorded, rather than rebuilding a plan from the candidate set. DNS changes
+add TTL evidence; weighted routing does not invent DNS obligations. Availability
+and resiliency are preserved in every phase, and infeasible final shapes refuse
+before traffic moves. `minObservationSeconds` requires timestamped, distinct health
+observations after that interval; the supervisor owns the timer/observation port.
+The interval starts after native apply and active/full status confirmation;
+authorization, checkpoint and adapter latency cannot count as healthy serving time.
+Restart reconciliation establishes and persists a fresh observation baseline before
+accepting an interrupted operation, then retains that baseline across health probes.
+Structured observations expire after `maxObservationAgeSeconds` (default 30 seconds),
+including during restart reconciliation. Provider acknowledgements and statuses must
+identify the exact requested plan; acknowledgements also identify the adapter.
+A boolean gate is an explicitly supplied trusted observation callback and cannot
+satisfy a declared timed observation window.
+
+Effects use the existing `@hobo/contracts` models: routing mutations are
+`noRollback` and attempted once, while read-only status observations have bounded
+retries. `contract.EffectInvoked`, `resilience.*`, `routing.ApplyRequested`, and
+`routing.Observed` facts expose the boundary. The resilience applicator does not
+implement wall-clock deadline or delay enforcement; durable supervision owns those
+policies. Failed or ambiguous compensation reports recovery pending and never
+claims `domain.RolledBack` until active/full restoration is observed.
+
+`TrafficRoutingPort` capability limitations remain real: a weight-only adapter
+that returns partial realization for availability or resiliency cannot complete a
+cutover requiring those guarantees. Tests use explicit contract-backed adapters
+for stronger guarantees; they do not certify live cloud behavior.

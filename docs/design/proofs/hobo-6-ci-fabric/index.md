@@ -61,9 +61,12 @@ live in [`fixtures.yml`](../../../../.github/workflows/fixtures.yml)
 (`pull_request: [labeled]` only), so adding a label re-runs just those lanes
 instead of the whole PR gate, and `hobo-ci.yml` no longer retriggers on label
 events at all; the weekly schedule skips `pr-gate` (it exists for `main-gate`
-and the fixture sweeps); every job carries `timeout-minutes` instead of the
-360-minute default; gate jobs use Turbo remote cache when configured, otherwise
-`actions/cache` on `.turbo/cache` keyed by commit with an OS-scoped restore prefix.
+and the fixture sweeps); every job carries explicit `timeout-minutes` (≤20 on
+push/PR/merge_group; weekly `main-gate` schedule may use 60) instead of the
+360-minute default; `scripts/test/workflow-job-timeouts.test.ts` fails CI when a
+job omits a timeout or exceeds that cap; gate jobs use Turbo remote cache when
+configured, otherwise `actions/cache` on `.turbo/cache` keyed by commit with an
+OS-scoped restore prefix.
 
 This is a branch POC. It does not implement the runner/build-machine
 cost-routed CI fabric, full multi-cloud E2E matrix, or real provider IAM

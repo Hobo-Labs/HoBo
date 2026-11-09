@@ -21,9 +21,12 @@ default:
 # boots `astro dev`, drives chromium, and stamps a real Cloudflare Temporary
 # Accounts station on workers.dev (it refuses a mocked URL). Run it by hand:
 #   node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.yaml --profile live
-live:
+live: &live-cloudflare
   paths:
     - "features/examples-console-cloudflare-station.feature"
   import:
     - "features/steps/examples-console-cloudflare-station.steps.ts"
   publishQuiet: true
+
+# Alias retained for the hosting acceptance instructions.
+live-cloudflare: *live-cloudflare

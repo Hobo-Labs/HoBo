@@ -1,0 +1,49 @@
+syntax = "proto3";
+package hobo.hosting.financial.v1;
+
+// External generated records are canonical protobuf JSON, decoded with their
+// owning core/cloud schemas. Their structures are deliberately not duplicated.
+message HostingFinancialResourceBinding {
+  string artifact_id = 1;
+  string resource_name = 2;
+  string product_id = 3;
+  string resource_id = 4;
+  string physical_id = 5;
+  string artifact_digest = 6;
+}
+message HostingFinancialLifecycleEvidence {
+  HostingFinancialResourceBinding binding = 1;
+  string observation_json = 2;
+}
+message HostingFinancialLiabilityEvidence {
+  HostingFinancialResourceBinding binding = 1;
+  string liability_json = 2;
+  bool finalized = 3;
+}
+message HostingFinancialEvidenceClaims {
+  string schema_version = 1;
+  string proof_id = 2;
+  string issuer_id = 3;
+  string key_id = 4;
+  string tenant_id = 5;
+  string provider_id = 6;
+  string provider_account_id = 7;
+  string operation_id = 8;
+  string operation_digest = 9;
+  string plan_digest = 10;
+  double issued_at_ms = 11;
+  double expires_at_ms = 12;
+  repeated HostingFinancialLifecycleEvidence lifecycles = 13;
+  repeated HostingFinancialLiabilityEvidence liabilities = 14;
+  // All money in nested records uses this exact commitment currency.
+  string currency = 15;
+}
+message HostingFinancialEvidenceAttestation {
+  HostingFinancialEvidenceClaims claims = 1;
+  string signature = 2;
+}
+message HostingFinancialEvidenceUse {
+  string proof_digest = 1;
+  HostingFinancialEvidenceAttestation attestation = 2;
+  double accepted_at_ms = 3;
+}

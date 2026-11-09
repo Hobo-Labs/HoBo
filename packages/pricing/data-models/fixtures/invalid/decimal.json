@@ -1,0 +1,39 @@
+{
+  "catalog": {
+    "schema": "hobo.pricing.catalog/v1",
+    "catalogHash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "products": [],
+    "rateCards": [
+      {
+        "id": "rate-invalid-decimal",
+        "version": "1",
+        "currency": "USD",
+        "effective": {
+          "start": "2026-11-01T00:00:00Z"
+        },
+        "charges": [
+          {
+            "base": {
+              "id": "invalid-decimal",
+              "selectors": {},
+              "fallback": false,
+              "invoiceBehavior": "separate-line"
+            },
+            "fixed": {
+              "cadence": "once",
+              "timing": "advance",
+              "amount": {
+                "decimal": "10.",
+                "currency": "USD"
+              },
+              "proration": "none"
+            }
+          }
+        ]
+      }
+    ],
+    "allowances": [],
+    "credits": [],
+    "commitments": []
+  }
+}

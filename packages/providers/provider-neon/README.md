@@ -84,12 +84,15 @@ Selection metadata matches: `creatorAuthorityAfterClaim: "rotatable"`,
   host allowlist, the `/api/v1/` path prefix, no userinfo, no non-443 port, a
   bounded body (64 KiB default), a bounded timeout (15 s default), and **refuses
   to follow redirects** rather than chasing a `Location` to another origin.
-- **The credential leaves in one direction only.** A returned
-  `connection_string` is parsed, deposited through `SecretCustodyPort`, and
-  replaced by a `SecretRef` inside a single function scope. Records, bindings,
-  receipts, facts, and errors carry the locator plus non-secret endpoint
-  metadata. `toProvisionReceipt` and `toProviderFacts` re-scan their own output
-  and throw rather than emit.
+- **Public serialization requires private custody.** A returned
+  `connection_string` is deposited through `SecretCustodyPort`. Native SDK
+  records remain privileged: the anonymous database ID, claim URL, and endpoint
+  metadata can grant access or identify a capability. The async
+  `toProvisionReceipt` and `toProviderFacts` require custody, a private host HMAC
+  key deriver, and a tenant/account/deployment scope. Their v2 projections carry
+  opaque identities and custody locators; they refuse missing custody, invalid
+  locators, native capability material, and credential-shaped output. Keep the
+  native client idempotency journal inside the private custody boundary.
 - **Idempotency and adoption.** A create is attempted at most once per
   idempotency key. A repeat call with a recorded database id **observes**; a
   repeat call after an unresolved attempt raises `PROVIDER_OPERATION_AMBIGUOUS`
@@ -157,7 +160,7 @@ The flow for one claimable database:
    `RotateCapabilityBinding`, `ExpireGuestLease` — is what a caller issues.
    `driver.provision()`, `observe()`, `verifyOwnership()`, and
    `attestRotation()` are the effectful halves those commands invoke here.
-2. `toProviderFacts(record)` returns this package's observations
+2. `await toProviderFacts(record, publicSerialization)` returns this package's observations
    (`provider.neon.database.provisioned` / `.adopted` / `.observed`,
    `provider.neon.claim.pending-rotation` / `.completed`,
    `provider.neon.lease.expired`). They are locator-only facts, not durable
@@ -215,8 +218,19 @@ const record = await driver.provision({
   resourceRef: "hobo://yard/demo/data/main",
 });
 
-console.log(toProvisionReceipt(record)); // locators only
+console.log(await toProvisionReceipt(record, publicSerialization));
 ```
+
+The host supplies `publicSerialization = { custody, deriveOperationKey, scope }`.
+Create `deriveOperationKey` with `createClaimableOperationKeyDeriver` from
+`@hobo/core` using a privately stored, version-pinned key of at least 32 random
+bytes. Retain that key version and the same scope across restart; use a new
+`scope.scopeId` for each deployment incarnation. Do not derive the key from a
+public name or anonymous credential placeholder. Public `resourceRef` values
+are scope-bound hashes, and `opaquePhysicalId` also depends on the private key.
+The native database/project IDs, claim URL, endpoints, and optional binding are
+available only by resolving their custody references in an authorized host.
+The serializer has no public deterministic fallback.
 
 ## Tests
 
@@ -235,3 +249,28 @@ Gates protecting this package: TypeScript (`strict`,
 boundary contract in `contracts/provider-neon-boundary.pact.json`, the
 protobuf + CUE boundary shapes in `data-models/`, and the credential scan in
 `test/no-secret-leak.test.ts`.
+
+## Hosting budget execution
+
+The anonymous create API provides no server-side idempotency key. A production
+`IdempotencyStore` must implement atomic `claim(record)` and persist the claim before
+network I/O. Concurrent losers observe or refuse; they do not issue a second POST.
+The included in-memory store provides local CAS for tests and single-process use.
+Ambiguous creates retain their intent. Reads honor `Retry-After` using the injected
+clock, and the fetch adapter uses core's streaming byte cap and total deadline.
+
+This is a data dependency. Provider status and a successful `pg_dump` do not prove
+application write fencing or a safe reverse migration. Hosting moves keep it pinned
+unless the app's Trails protocol supplies ownership, checkpoint and checksum evidence.
+
+`createNeonClaimableResolver` composes the actual claimable driver with the
+shared resolver protocol. Supply a durable CAS resource repository and mutation
+journal, tenant/account/deployment-incarnation scope, clock, and secret custody.
+The provider idempotency key derives from that entire scope and the logical
+resource; a reused author key cannot adopt another deployment's database.
+Creation is attempted once. A lost response keeps the attempt uncertain and
+cannot trigger a second anonymous allocation. Reads use the actual provider GET
+and pin the original physical id and endpoint. Claim URLs and serialized
+capability bindings enter custody; persisted outcomes contain locators only.
+The anonymous surface has no verified delete operation. Its native expiry is
+recorded, while retirement and final usage remain separate observed conditions.

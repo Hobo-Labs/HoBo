@@ -10,8 +10,8 @@
 import {
 	createCapabilityProfileRegistry,
 	type SelectionCandidate,
-	type StructuredCapabilityValue,
 	STANDARD_CAPABILITY_PROFILES,
+	type StructuredCapabilityValue,
 	selectCapabilityImplementation,
 	type TrustPolicy,
 } from "@hobo/capability-profiles";
@@ -105,7 +105,7 @@ function candidate(
 		hasRegisteredDriver: true,
 		secretCustodyAvailable: true,
 		...overrides,
-	// SAFETY: this fixture supplies every required SelectionCandidate field above.
+		// SAFETY: this fixture supplies every required SelectionCandidate field above.
 	} as SelectionCandidate;
 }
 
@@ -157,7 +157,12 @@ const sqlite = candidate({
 
 const NAMED = { neon, prisma, sqlite } as const;
 
-type ScenarioValue = boolean | number | string | readonly string[] | ScenarioOptions;
+type ScenarioValue =
+	| boolean
+	| number
+	| string
+	| readonly string[]
+	| ScenarioOptions;
 type ScenarioOptions = Readonly<Record<string, ScenarioValue>>;
 
 type CandidateSpec =
@@ -172,39 +177,39 @@ type CandidateSpec =
 			 * product that speaks Postgres but has never proven a migration tool.
 			 */
 			readonly guaranteesOnly?: boolean;
-		readonly structuredCapabilities?: Readonly<
-			Record<string, StructuredCapabilityValue>
-		>;
+			readonly structuredCapabilities?: Readonly<
+				Record<string, StructuredCapabilityValue>
+			>;
 	  };
 
-	const resolve = (spec: CandidateSpec): SelectionCandidate => {
-		// SAFETY: named fixture keys are the only keys in NAMED; object specs have definitionId.
-		const named = NAMED[spec as keyof typeof NAMED];
-		if (named !== undefined) return named;
-		return candidate({
-				definitionId: spec.definitionId,
-				providerId: spec.providerId,
-				structuredCapabilities: {
-					...(spec.guaranteesOnly
-						? GUARANTEED
-						: spec.from
-							? NAMED[spec.from].structuredCapabilities
-							: BASE_CAPABILITIES),
-					...spec.structuredCapabilities,
-				},
-				});
-	};
+const resolve = (spec: CandidateSpec): SelectionCandidate => {
+	// SAFETY: named fixture keys are the only keys in NAMED; object specs have definitionId.
+	const named = NAMED[spec as keyof typeof NAMED];
+	if (named !== undefined) return named;
+	return candidate({
+		definitionId: spec.definitionId,
+		providerId: spec.providerId,
+		structuredCapabilities: {
+			...(spec.guaranteesOnly
+				? GUARANTEED
+				: spec.from
+					? NAMED[spec.from].structuredCapabilities
+					: BASE_CAPABILITIES),
+			...spec.structuredCapabilities,
+		},
+	});
+};
 
 describeConcern("postgres profile matching", {
 	cases: `${import.meta.dirname}/profile-matching.cases.jsonl`,
 	subject: () => ({
 		select: (ask: {
-		readonly options?: ScenarioOptions;
+			readonly options?: ScenarioOptions;
 			readonly candidates: readonly CandidateSpec[];
 		}) => {
 			const outcome = selectCapabilityImplementation({
-					// SAFETY: JSONL scenarios intentionally exercise the runtime authoring boundary.
-					requirement: postgres.database(ask.options as never),
+				// SAFETY: JSONL scenarios intentionally exercise the runtime authoring boundary.
+				requirement: postgres.database(ask.options as never),
 				registry,
 				candidates: ask.candidates.map(resolve),
 				policy,
@@ -220,15 +225,12 @@ describeConcern("postgres profile matching", {
 		},
 		/** The parsed requirement, for the authoring-order and refusal lanes. */
 		requirement: (options?: ScenarioOptions) =>
-				// SAFETY: JSONL scenarios intentionally exercise the runtime authoring boundary.
-				JSON.stringify(postgres.database(options as never)),
+			// SAFETY: JSONL scenarios intentionally exercise the runtime authoring boundary.
+			JSON.stringify(postgres.database(options as never)),
 		/** Authoring order must not change the requirement. */
-		isOrderIndependent: (
-		a: ScenarioOptions,
-		b: ScenarioOptions,
-		) =>
+		isOrderIndependent: (a: ScenarioOptions, b: ScenarioOptions) =>
 			// SAFETY: JSONL scenarios intentionally exercise the runtime authoring boundary.
 			JSON.stringify(postgres.database(a as never)) ===
-				JSON.stringify(postgres.database(b as never)),
+			JSON.stringify(postgres.database(b as never)),
 	}),
 });

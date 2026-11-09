@@ -22,7 +22,7 @@ describe("@hobo/provider-netlify", () => {
 		expect(supportsAnonymousTemporaryDeploy).toBe(true);
 	});
 
-	it("parses anonymous deploy JSON + URL fallback", () => {
+	it("parses anonymous deploy JSON and refuses invented URL fallback", () => {
 		const pretty = `{
   "site_id": "site_abc",
   "site_url": "http://radiant-fox-123.netlify.app",
@@ -36,11 +36,11 @@ describe("@hobo/provider-netlify", () => {
 		expect(fromCli.claimUrl).toContain("password=My-Drop-Site");
 		expect(fromCli.deployId).toBe("dep_abc");
 
-		const fromText = parseNetlifyAnonymousDeployOutput(
-			"Website URL: https://cool-site.netlify.app\nDone",
-		);
-		expect(fromText.stationUrl).toBe("https://cool-site.netlify.app");
-		expect(fromText.claimUrl).toContain("cool-site");
+		expect(() =>
+			parseNetlifyAnonymousDeployOutput(
+				"Website URL: https://cool-site.netlify.app\nDone",
+			),
+		).toThrow(/claim URL/);
 	});
 
 	it("temporary provision path", async () => {

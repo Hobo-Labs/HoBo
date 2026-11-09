@@ -1,5 +1,9 @@
 import { expect, it } from "vitest";
-import { admissionRank, createAdmissionOrder } from "../src/admission-order.js";
+import {
+	admissionRank,
+	createAdmissionOrder,
+	TRUNK_RANK,
+} from "../src/admission-order.js";
 import type { GithubTransport } from "../src/github.js";
 import { run } from "./fixtures.js";
 
@@ -76,6 +80,36 @@ it("looks each run up once and retries a failed lookup next tick", async () => {
 	expect(calls).toEqual([2, 1, 2]);
 });
 
+it("exposes the primed head sha for a run", async () => {
+	const { github } = transport(new Map());
+	const order = createAdmissionOrder(github);
+	order.prime({
+		runId: 9,
+		event: "push",
+		runStartedAt: "2026-10-26T12:00:00Z",
+		headSha: "a".repeat(40),
+	});
+	expect(await order.headSha(ref(9))).toBe("a".repeat(40));
+});
+
+it("ranks the trunk-only label ahead of pull requests when run lookups fail", async () => {
+	const { github } = transport(
+		new Map([
+			[1, { event: "pull_request", startedAt: "2026-10-26T12:00:00Z" }],
+		]),
+	);
+	const order = createAdmissionOrder(github);
+	const trunk = { ...ref(2), labels: ["hobo-trunk"] };
+	const general = { ...ref(3), labels: ["hobo"] };
+	expect(
+		(await order([general, ref(1), trunk], (item) => item)).map(
+			(item) => item.jobId,
+		),
+	).toEqual([2, 1, 3]);
+	expect(await order.rank(trunk)).toBe(TRUNK_RANK);
+	expect(await order.rank(general)).toBe(1);
+});
+
 it("admits a run's longest expected job first, inside the rank and run order", async () => {
 	const { github } = transport(
 		new Map([
@@ -134,4 +168,36 @@ it("looks a run up again until GitHub gives it a start time", async () => {
 	expect(await order.rank(ref(1))).toBe(0);
 	expect(await order.rank(ref(1))).toBe(0);
 	expect(calls).toEqual([1, 1]);
+});
+
+it("keeps a seen trunk rank when the next lookup fails", async () => {
+	const runs = new Map<number, RunEntry>([
+		[1, { event: "push", startedAt: null }],
+		[2, { event: "pull_request", startedAt: "2026-10-26T12:00:00Z" }],
+	]);
+	const { github } = transport(runs);
+	const order = createAdmissionOrder(github);
+	expect(await order.rank(ref(1))).toBe(0);
+	runs.delete(1);
+	expect(
+		(await order([ref(2), ref(1)], (item) => item)).map((item) => item.jobId),
+	).toEqual([1, 2]);
+});
+
+it("uses primed run data without another GitHub request", async () => {
+	const { github, calls } = transport(
+		new Map([
+			[2, { event: "pull_request", startedAt: "2026-10-26T12:00:00Z" }],
+		]),
+	);
+	const order = createAdmissionOrder(github);
+	order.prime({
+		runId: 1,
+		event: "push",
+		runStartedAt: "2026-10-26T12:10:00Z",
+	});
+	expect(
+		(await order([ref(2), ref(1)], (item) => item)).map((item) => item.jobId),
+	).toEqual([1, 2]);
+	expect(calls).toEqual([2]);
 });

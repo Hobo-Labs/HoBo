@@ -24,6 +24,7 @@ package data_models
 	unit:           string & !=""
 	marginal_price: string & !=""
 	free_tier:      #FreeTierRecord
+	pricing_status?: "unknown" | "estimate" | "verified-zero"
 }
 
 #IacResourceRecord: {

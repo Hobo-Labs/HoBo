@@ -19,6 +19,13 @@ const all = args.has("--all");
 const explain = args.has("--explain");
 const includeBuild = args.has("--build");
 const finalValidation = args.has("--final");
+const externalWorkspaceTests = args.has("--external-workspace-tests");
+if (externalWorkspaceTests && (staged || all || finalValidation || !baseArg)) {
+	console.error(
+		"--external-workspace-tests requires an explicit base and a separate required workspace test job",
+	);
+	process.exit(2);
+}
 const parallelLimit = Math.max(
 	1,
 	Number.parseInt(process.env.HOBO_RELEVANT_CHECK_CONCURRENCY ?? "4", 10) || 4,
@@ -319,11 +326,14 @@ const { checks, scopes } = selectRelevantChecks({
 	all,
 	includeBuild,
 	includeBroadSweeps: all || finalValidation,
+	workspaceTestsCoveredExternally: externalWorkspaceTests,
 	rootPackageJsonScriptsOnlyChanged: rootPackageJsonScriptsOnlyChanged(),
 });
 
 console.log(`Changed files: ${files.length}`);
 console.log(`Detected scope: ${scopes.join(", ") || "standard"}`);
+if (externalWorkspaceTests)
+	console.log("Workspace tests must pass in the separate required CI job.");
 for (const check of checks)
 	console.log(`- ${check.command} ${check.args.join(" ")} (${check.reason})`);
 

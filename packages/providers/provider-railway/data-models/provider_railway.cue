@@ -88,6 +88,7 @@ import "list"
 	// is why it is pinned: a non-zero marginal price may only appear together
 	// with dated COST_SOURCE provenance, which this package does not carry.
 	marginal_price: "0"
+	pricing_status: "unknown"
 }
 
 #RailwayResourcePlan: {

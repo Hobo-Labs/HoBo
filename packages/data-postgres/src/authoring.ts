@@ -358,7 +358,8 @@ export function database(
 		},
 	};
 	if (options.runtime !== undefined) requirementInput.runtime = options.runtime;
-	if (options.trustRef !== undefined) requirementInput.trustRef = options.trustRef;
+	if (options.trustRef !== undefined)
+		requirementInput.trustRef = options.trustRef;
 	return parseCapabilityRequirement(requirementInput);
 }
 

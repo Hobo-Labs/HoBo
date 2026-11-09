@@ -12,6 +12,7 @@ import {
 import {
 	CAPABILITY_SLOTS,
 	type CapabilitySlot,
+	createBoundedFetchTransport,
 	type EventEnvelope,
 	type EventStore,
 	type HttpTransport,
@@ -22,8 +23,6 @@ import {
 	type ResolveOutcome,
 	type ResolveRequest,
 	type ResourceResolver,
-	type TransportRequest,
-	type TransportResponse,
 } from "@hobo/core";
 import {
 	cloneAsJson,
@@ -647,26 +646,5 @@ export function createResolverBackedIacProvider(
 export function createFetchHttpTransport(
 	fetchImpl: typeof globalThis.fetch,
 ): HttpTransport {
-	return async (request: TransportRequest): Promise<TransportResponse> => {
-		const controller = new AbortController();
-		const timer = setTimeout(() => {
-			controller.abort();
-		}, request.timeoutMs);
-		try {
-			const response = await fetchImpl(request.url, {
-				method: request.method,
-				headers: { ...request.headers },
-				...(request.body !== undefined ? { body: request.body } : undefined),
-				redirect: "manual",
-				signal: controller.signal,
-			});
-			const headers: Record<string, string> = {};
-			response.headers.forEach((value, key) => {
-				headers[key] = value;
-			});
-			return { status: response.status, headers, body: await response.text() };
-		} finally {
-			clearTimeout(timer);
-		}
-	};
+	return createBoundedFetchTransport({ fetchImpl });
 }

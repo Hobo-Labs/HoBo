@@ -29,6 +29,8 @@ message BillingPolicy {
   uint32 quota_limit = 3;
   double budget_usd = 4;
   double spend_cap_usd = 5;
+  bool budget_unlimited = 6;
+  bool spend_cap_unlimited = 7;
 }
 
 // Delivery (GitOps) plane configuration; engine "argo" renders Argo CD

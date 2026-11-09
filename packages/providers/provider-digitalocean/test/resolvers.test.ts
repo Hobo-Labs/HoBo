@@ -239,6 +239,13 @@ function databaseApi(
 				meta: { total: clusters.length },
 			});
 		}
+		if (call.method === "GET" && call.path.startsWith(`${DATABASES}/`)) {
+			const id = decodeURIComponent(call.path.slice(DATABASES.length + 1));
+			const found = clusters.find((cluster) => cluster.id === id);
+			return found === undefined
+				? json(404, { id: "not_found" })
+				: json(200, { database: found });
+		}
 		if (call.method === "POST" && call.path === DATABASES) {
 			const sent = bodyOf(call);
 			const created = {
@@ -1623,7 +1630,7 @@ describe("a bounded listing refuses rather than concluding 'absent'", () => {
 				maxListPages: 2,
 			}).reconcile(request(POSTGRES_REQUEST), fake.transport),
 		);
-		expect(message).toContain("refuses rather than concluding");
+		expect(message).toContain("refuses to adopt or create");
 		expect(fake.countOf("POST", DATABASES)).toBe(0);
 		expect(fake.countOf("GET", DATABASES)).toBe(2);
 	});

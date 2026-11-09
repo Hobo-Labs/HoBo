@@ -15,7 +15,10 @@ import {
 	type ConfigurationState,
 	ConnectionSchema,
 	type ControlRecord,
+	ciBudgetPolicyJson,
+	ciBudgetSignalUpdate,
 	DesiredCiPolicySchema,
+	effectiveCiAccount,
 	LeaseSchema,
 	OfferSchema,
 	parseCiPolicy,
@@ -353,7 +356,15 @@ export function createHostedControlPlane(options: {
 						);
 				}
 				if (!desired.budget) throw new ControlError(400, "budget required");
-				account.budgetMicros = desired.budget.limitMicros;
+				if (account.budgetPolicy && !desired.budgetPolicy)
+					throw new ControlError(400, "common budget policy cannot be removed");
+				const effective = effectiveCiAccount(
+					{ ...account, budgetMicros: desired.budget.limitMicros },
+					desired,
+				);
+				account.budgetMicros = effective.budgetMicros;
+				account.budgetPolicy = desired.budgetPolicy;
+				account.routingStrategy = effective.routingStrategy;
 				parseConfiguration(toJsonString(ConfigurationSchema, config));
 				const saved = await store.configureWithRecord(
 					config,
@@ -449,29 +460,20 @@ export function createHostedControlPlane(options: {
 						"desired policy is required before budget signals",
 					);
 				const policy = parseCiPolicy(record.bodyJson);
-				const data = signal.data;
-				const crossed = signal.type === "budget.ThresholdCrossed";
 				if (
-					!data ||
-					data.tenantId !== policy.tenantId ||
-					(!crossed && signal.type !== "budget.Recovered") ||
-					!Number.isFinite(data.budgetUsd) ||
-					data.budgetUsd <= 0 ||
-					!Number.isFinite(data.thresholdFraction) ||
-					data.thresholdFraction <= 0 ||
-					data.thresholdFraction > 1 ||
-					!Number.isFinite(data.thresholdUsd) ||
-					data.thresholdUsd !==
-						Number((data.thresholdFraction * data.budgetUsd).toFixed(9)) ||
-					!Number.isFinite(data.netSpentUsd) ||
-					data.netSpentUsd >= data.thresholdUsd !== crossed ||
-					data.cycle < 1 ||
-					data.signalKey !==
-						`budget:${policy.tenantId}:${data.thresholdFraction}:${crossed ? "crossed" : "recovered"}:${data.cycle}`
+					ciBudgetPolicyJson(account.budgetPolicy) !==
+					ciBudgetPolicyJson(policy.budgetPolicy)
 				)
+					throw new ControlError(409, "desired and active budget scope differ");
+				let update: ReturnType<typeof ciBudgetSignalUpdate>;
+				try {
+					update = ciBudgetSignalUpdate(signal, policy);
+				} catch {
 					throw new ControlError(400, "invalid or foreign budget signal");
-				const key = `broker:${policy.tenantId}:${data.thresholdFraction}`;
-				if (data.cycle <= (account.routingSignalCycles[key] ?? 0)) {
+				}
+				if (
+					update.watermark <= (account.routingSignalCycles[update.key] ?? 0)
+				) {
 					const latest = await state();
 					if (latest.revision !== expected)
 						throw new ControlError(409, "configuration revision conflict");
@@ -481,8 +483,8 @@ export function createHostedControlPlane(options: {
 						latest.revision,
 					);
 				}
-				account.routingSignalCycles[key] = data.cycle;
-				account.routingSignalCrossed[key] = crossed;
+				account.routingSignalCycles[update.key] = update.watermark;
+				account.routingSignalCrossed[update.key] = update.crossed;
 				const saved = await store.configure(
 					current.configuration,
 					expected,
@@ -549,6 +551,9 @@ export function createHostedControlPlane(options: {
 					);
 				if (
 					incoming.budgetMicros !== account.budgetMicros ||
+					incoming.routingStrategy !== account.routingStrategy ||
+					ciBudgetPolicyJson(incoming.budgetPolicy) !==
+						ciBudgetPolicyJson(account.budgetPolicy) ||
 					incoming.maxRuntimeMinutes !== account.maxRuntimeMinutes ||
 					incoming.startupMinutes !== account.startupMinutes ||
 					JSON.stringify(
@@ -1141,7 +1146,7 @@ export function createHostedControlPlane(options: {
 				);
 			if (
 				error instanceof Error &&
-				/revision conflict|active lease prevents|snapshot cannot move backwards|routing signal watermark|routing signal state/i.test(
+				/revision conflict|active lease prevents|snapshot cannot move backwards|routing signal watermark|routing signal state|spending watermark|budget period|budget policy revision|retired budget/i.test(
 					error.message,
 				)
 			)

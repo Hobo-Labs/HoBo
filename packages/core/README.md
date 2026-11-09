@@ -92,3 +92,10 @@ refs, and the `EventStore`/`Queue`/`Streamer` port contracts — but hosts no ac
 appends nothing to any event store, and maintains no projection or read store itself.
 Commands, events, actors, and materialized views are owned by the packages that
 implement or consume these ports; this package only guarantees their records parse.
+
+The bounded WHATWG HTTP adapter treats `TransportResponse.body` as UTF-8 text.
+It rejects malformed or truncated UTF-8, preserves an observed leading BOM, and
+cancels a failed response before releasing its reader. This prevents text
+normalization from making different served bytes appear to match an approved
+artifact digest. Binary protocols need an explicit bytes/base64 boundary;
+replacement characters are not a valid binary transport.

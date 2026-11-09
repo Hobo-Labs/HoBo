@@ -12,6 +12,7 @@ export type CostSignal = {
 	sku: string;
 	unit: string;
 	marginalPrice: string;
+	pricingStatus?: "unknown" | "estimate" | "verified-zero";
 };
 export type Capability = {
 	port: string;

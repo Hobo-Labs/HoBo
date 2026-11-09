@@ -2,7 +2,14 @@
 import {
 	evaluateCiRunnerContract,
 	formatContractFailure,
+	syncMissingMiseTools,
 } from "./lib/ci-runner-contract.mts";
+
+const sync = syncMissingMiseTools(process.cwd());
+console.log(
+	`${sync.ok ? "ok  " : "ERR "} mise-tool-sync: ${sync.detail} (${sync.elapsedMs} ms)`,
+);
+if (!sync.ok) process.exit(1);
 
 const checks = evaluateCiRunnerContract(process.cwd());
 for (const c of checks) {

@@ -6,10 +6,9 @@ package hobo.provider.vercel.v1;
 // the Vercel REST boundary returns, what this package hands to the shared
 // `@hobo/claims` coordinator, and what a receipt is allowed to show.
 //
-// Design-time contract artifacts. This package declares no `data-models/buf.yaml`
-// and imports no generated `*_pb.ts`; the CUE beside this file carries the
-// invariants, and the TypeScript in `src/` parses inbound payloads into derived
-// domain types at the boundary.
+// Legacy contract artifacts are reconciled against boundary proof fixtures.
+// This package opts into codegen; new runtime observations derive generated
+// records. CUE carries semantic invariants alongside these wire contracts.
 //
 // No field here can hold bearer material. The 24 hour transfer code and the
 // claim-deployment URL built from it appear only as custody locators

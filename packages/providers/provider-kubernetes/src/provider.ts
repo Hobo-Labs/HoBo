@@ -45,6 +45,7 @@ function makeCapability(classKey: InitialCapabilityPort): Capability {
 		},
 		estimateCost(_req: PortRequest): CostSignal {
 			return {
+				pricingStatus: "unknown",
 				currency: "USD",
 				sku: fact.sku,
 				unit: fact.unit,

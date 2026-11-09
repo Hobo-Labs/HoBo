@@ -124,7 +124,8 @@
 					"currency": "USD",
 					"sku": "railway:redis",
 					"unit": "request",
-					"marginalPrice": "0"
+					"marginalPrice": "0",
+					"pricingStatus": "unknown"
 				}
 			}
 		},
