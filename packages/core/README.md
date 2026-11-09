@@ -10,6 +10,23 @@ the typed **port contracts** other packages implement: `EventStore`, `Queue`, `S
 `TrafficRoutingPort` adds provider-neutral, tenant-scoped multi-backend routing
 intent with explicit `full | partial | none` realization and capability notes.
 
+## Provider redaction
+
+`@hobo/core/provider-redaction` (a subpath, not the root: it names provider
+credential shapes) is the one redactor for provider text. `redactProviderText`
+replaces the shared credential shapes (private key, JWT, bearer token,
+connection strings, URL credentials, secret-named keys, prefixed keys) with
+`[redacted]`, flattens control characters, and cuts to `maxLength`; it searches
+the first `REDACTION_WINDOW` (8192) characters, or four times `maxLength`, plus
+the rest of the run of non-whitespace the cut falls in, and marks a longer text
+cut. `createProviderRedactor(profile)` adds a provider's own `patterns` (searched
+after the private key and before the other shared shapes), spans to keep whole,
+full percent-decoding (`decodePercentFully`, one pass), and whitespace
+collapsing. A pattern is parsed by `redactionPattern`, which refuses one that is
+not global or is sticky. Every shape is linear in the text, each with a 1 MB
+adversarial test (`test/provider-redaction.test.ts`); `JWT_DETECTOR` and
+`PRIVATE_KEY_DETECTOR` are the same shapes for guards that refuse instead.
+
 ## Honest scope
 
 Implemented: parsers, derived record constructors, error taxonomies, the port

@@ -19,6 +19,10 @@
 		"./total-access": {
 			"types": "./dist/total-access.d.ts",
 			"default": "./dist/total-access.js"
+		},
+		"./provider-redaction": {
+			"types": "./dist/provider-redaction.d.ts",
+			"default": "./dist/provider-redaction.js"
 		}
 	},
 	"publishConfig": {
