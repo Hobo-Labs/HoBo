@@ -10,6 +10,10 @@ import { vetReportEnvelope } from "../src/cue.js";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(fileURLToPath(new URL("../../../../../../..", import.meta.url)));
+const POC_ROOT = join(
+  REPO_ROOT,
+  "src/draft/technical-proofs/s0-04-protobuf-cue-codegen",
+);
 const POC_PACKAGES = join(
   REPO_ROOT,
   "src/draft/technical-proofs/s0-04-protobuf-cue-codegen/packages",
@@ -68,7 +72,11 @@ describe("CUE lane", () => {
 
 describe("json envelope", () => {
   it("round-trips CLEAN report and satisfies CUE constraints", async () => {
-    const result = await runCli(["--check", "--json"], REPO_ROOT);
+    // Scoped to this POC tree: the promoted @hobo/schema-tools suite owns the
+    // whole-repo check. This frozen generator predates production's
+    // import_extension=js, so a whole-repo run here reports production's
+    // current output as drift (promotions.json: reference).
+    const result = await runCli(["--check", "--json"], POC_ROOT);
     expect(result.exitCode).toBe(0);
     const envelope = JSON.parse(result.stdout);
     expect(envelope.status).toBe("CLEAN");

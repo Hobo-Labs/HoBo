@@ -70,8 +70,8 @@
 		{
 			"proof": "src/draft/technical-proofs/s0-04-protobuf-cue-codegen/packages/schema-tools",
 			"promotedTo": "packages/schema-tools",
-			"status": "frozen",
-			"note": "S0-04 promotion gate: production codegen orchestrator. Promoted with nested-package + buf.yaml opt-in discovery and strict-tsconfig fixes; the POC copy remains its own executable proof fixture.",
+			"status": "reference",
+			"note": "S0-04 promotion gate: production codegen orchestrator. Promoted with nested-package + buf.yaml opt-in discovery and strict-tsconfig fixes; the POC copy remains its own executable proof fixture. Reference since the frozen generator predates production's import_extension=js: its whole-repo json-envelope check is scoped to the POC tree, and the promoted @hobo/schema-tools suite owns the whole-repo assertion.",
 			"digests": {
 				"contracts/pacts/schema_tools_codegen_report.pact.json": "sha256:bc246cf883752dc4ca4bd8e70d24df2177deed49d578c013f9789c388275bbba",
 				"data-models/buf.yaml": "sha256:b91555931d75c55b4ab15530a6be430649a9a1de07577a3963612b90b186434c",
