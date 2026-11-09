@@ -11,17 +11,17 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { beforeAll, describe, expect, it } from "vitest";
-import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 import {
 	affectedReleaseOciImages,
 	clearReleaseOciGitTreeCache,
+	type ImageInputs,
 	imageInputs,
 	isBuildInput,
 	isReleaseOciLayerNoise,
-	releaseInputGitTree,
-	type ImageInputs,
 	type RepoTree,
+	releaseInputGitTree,
 } from "../ci/release-oci-affected.mts";
+import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 
