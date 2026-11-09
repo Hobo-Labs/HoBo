@@ -4,7 +4,7 @@ import { capVitestWorkers } from "../../scripts/ci/vitest-max-workers.mts";
 import rootConfig from "../../vitest.config.js";
 
 /** Heavy subprocess + esbuild suites; bound compiler concurrency on shared runners. */
-export default mergeConfig(
+const config = mergeConfig(
 	rootConfig,
 	defineConfig({
 		test: {
@@ -18,12 +18,24 @@ export default mergeConfig(
 			// state across files: env changes are restored in `finally`/`afterEach`,
 			// and the trainable registry is reset after each test that uses it.
 			isolate: false,
-			// Removes the fixtures test/support/built-starter.ts shares across files.
-			globalSetup: [
-				fileURLToPath(new URL("./test/support/run-scratch.ts", import.meta.url)),
-			],
 			// Load the shipped compiler through Node, matching the product CLI.
 			server: { deps: { external: [/[/\\]node_modules[/\\]typescript[/\\]/] } },
 		},
 	}),
 );
+
+// Replaced, not merged (mergeConfig concatenates arrays): the root's wasmtime
+// warm-up downloads a 40-60 MB runtime on a cold runner, and no test here runs
+// wasmtime. The throwaway HOBO_HOMEs stay; run-scratch removes the fixtures
+// test/support/built-starter.ts shares across files.
+config.test = {
+	...config.test,
+	globalSetup: [
+		fileURLToPath(
+			new URL("../../test/setup/hobo-test-homes.ts", import.meta.url),
+		),
+		fileURLToPath(new URL("./test/support/run-scratch.ts", import.meta.url)),
+	],
+};
+
+export default config;
