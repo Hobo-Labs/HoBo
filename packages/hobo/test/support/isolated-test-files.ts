@@ -15,6 +15,7 @@ export const ISOLATED_TEST_FILES = [
 	"test/cloudflare-deploy.test.ts",
 	"test/serve-control-command.test.ts",
 	"test/vercel-deploy.test.ts",
+	"test/vercel-project.test.ts",
 	"test/verify-command.test.ts",
 ];
 

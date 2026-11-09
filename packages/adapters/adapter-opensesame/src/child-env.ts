@@ -36,6 +36,12 @@ const INHERITED = [
 	"CI",
 	// The launch has already checked it names an absolute path to a file in a trusted place (bridge.ts); OpenSesame reads it, the command has no use for it.
 	"OPENSESAME_ENV_PARSE",
+	// The Vercel team (or, as the CLI writes VERCEL_ORG_ID, the account) a deploy is in, by hobo's name and the Vercel
+	// CLI's (hobo's selectIacProvider reads the first, else the second when it is a team_ id): configuration, not a
+	// credential, and named nothing like one (CREDENTIAL_NAME below). Only these names: the rest of VERCEL_* is not a
+	// family the allowlist keeps.
+	"VERCEL_TEAM_ID",
+	"VERCEL_ORG_ID",
 ] as const;
 
 /** Windows will not start a process without these. */
