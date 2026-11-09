@@ -19,7 +19,8 @@
 	},
 	"dependencies": {
 		"@hobo/bindings": "workspace:*",
-		"@hobo/capability-profiles": "workspace:*"
+		"@hobo/capability-profiles": "workspace:*",
+		"@hobo/core": "workspace:*"
 	},
 	"devDependencies": {
 		"@hobo/cloud": "workspace:*",
