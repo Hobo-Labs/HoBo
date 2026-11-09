@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ArtifactKind } from "../src/_generated/build_manifest_pb.js";
 import { sha256Bytes } from "../src/build/events.js";
 import { parseBuildManifest } from "../src/build/parse.js";
@@ -19,15 +19,23 @@ import { createHoboCli } from "../src/index.js";
 
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
 
-async function project(): Promise<string> {
+/**
+ * The app reads `process.env`. `nodeTypes` gives it the repository's real
+ * `@types/node` (about 140 declaration files, 15-25 CPU s per codegen pass);
+ * otherwise one ambient declaration types it, which is all the refusal cases
+ * need: they assert on what `build` refuses, not on Node's types.
+ */
+async function project(nodeTypes = false): Promise<string> {
 	const root = await mkdtemp(join(tmpdir(), "hobo-node-app-build-"));
 	await mkdir(join(root, "src/lib"), { recursive: true });
-	await mkdir(join(root, "node_modules"), { recursive: true });
-	await symlink(
-		join(repo, "node_modules/@types"),
-		join(root, "node_modules/@types"),
-		"dir",
-	);
+	if (nodeTypes) {
+		await mkdir(join(root, "node_modules"), { recursive: true });
+		await symlink(
+			join(repo, "node_modules/@types"),
+			join(root, "node_modules/@types"),
+			"dir",
+		);
+	}
 	await writeFile(join(root, "package.json"), '{"type":"module"}');
 	await writeFile(
 		join(root, "tsconfig.json"),
@@ -39,7 +47,9 @@ async function project(): Promise<string> {
 				strict: true,
 				baseUrl: ".",
 				paths: { "~/*": ["src/*"] },
-				types: ["node"],
+				types: nodeTypes ? ["node"] : [],
+				// The app's own files are still checked; Node's declarations are not ours to check.
+				...(nodeTypes ? { skipLibCheck: true } : {}),
 			},
 			include: ["src"],
 		}),
@@ -62,7 +72,11 @@ async function project(): Promise<string> {
 	);
 	await writeFile(
 		join(root, "src/assets.d.ts"),
-		'declare module "*.png" { const path: string; export default path; }\n',
+		`declare module "*.png" { const path: string; export default path; }\n${
+			nodeTypes
+				? ""
+				: "declare const process: { env: Record<string, string | undefined> };\n"
+		}`,
 	);
 	await writeFile(
 		join(root, "src/lib/contracts.ts"),
@@ -84,7 +98,7 @@ export class OrderBook { constructor(readonly label: string) {} async process(in
 
 describe("plain TypeScript Node app build", () => {
 	it("codegens, builds deterministically and executes the packaged app with normal Node", async () => {
-		const root = await project();
+		const root = await project(true);
 		try {
 			const cli = createHoboCli();
 			const generated = await cli.run(["codegen", "--json"], { cwd: root });
@@ -264,27 +278,37 @@ getAppModule("missing.ts");
 		}
 	}, 90_000);
 
-	it.each([
-		"wasm",
-		"container",
-	])("refuses explicit %s instead of silently packaging Node", async (runtime) => {
-		const root = await project();
-		try {
-			const cli = createHoboCli();
-			expect(
-				(await cli.run(["codegen", "--json"], { cwd: root })).exitCode,
-			).toBe(0);
-			const result = await cli.run(["build", "--runtime", runtime, "--json"], {
+	describe("on one generated project", () => {
+		let root: string;
+		beforeAll(async () => {
+			root = await project();
+			const generated = await createHoboCli().run(["codegen", "--json"], {
 				cwd: root,
 			});
+			expect(generated.exitCode, generated.stdout).toBe(0);
+		}, 60_000);
+		afterAll(async () => {
+			await rm(root, { recursive: true, force: true });
+		});
+
+		it.each([
+			"wasm",
+			"container",
+		])("refuses explicit %s instead of silently packaging Node", async (runtime) => {
+			const result = await createHoboCli().run(
+				["build", "--runtime", runtime, "--json"],
+				{ cwd: root },
+			);
 			expect(JSON.parse(result.stdout)).toMatchObject({
 				ok: false,
 				code: "HOBO_BUILD_RUNTIME_INVALID",
 			});
-		} finally {
-			await rm(root, { recursive: true, force: true });
-		}
-	}, 60_000);
+			// The cases share the project, so a refusal must leave it as it found it.
+			await expect(
+				readFile(join(root, ".hobo/build/build-manifest.json")),
+			).rejects.toMatchObject({ code: "ENOENT" });
+		}, 60_000);
+	});
 	it("does not bypass an explicit empty service declaration into Node packaging", async () => {
 		const root = await project();
 		try {
