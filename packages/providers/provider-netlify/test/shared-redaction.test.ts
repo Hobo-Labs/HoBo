@@ -13,7 +13,10 @@ import {
 	ownPatterns,
 	profilePatterns,
 } from "@hobo/provider-redaction/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
+import {
+	assertGrowsLinearly,
+	repeatedTo,
+} from "@hobo/provider-redaction/linear-time";
 import {
 	assertFindsNoLess,
 	assertRevealsNoMore,

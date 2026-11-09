@@ -8,12 +8,15 @@
  * not, and that it is linear.
  */
 
+import { decodePercentFully } from "@hobo/provider-redaction";
 import {
 	assertPatternSweepLinear,
 	profilePatterns,
 } from "@hobo/provider-redaction/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
-import { decodePercentFully } from "@hobo/provider-redaction";
+import {
+	assertGrowsLinearly,
+	repeatedTo,
+} from "@hobo/provider-redaction/linear-time";
 import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
 import { describe, expect, it } from "vitest";
 

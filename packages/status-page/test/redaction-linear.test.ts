@@ -14,7 +14,10 @@ import {
 	patternFragments,
 	type SweepSpec,
 } from "@hobo/provider-redaction/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
+import {
+	assertGrowsLinearly,
+	repeatedTo,
+} from "@hobo/provider-redaction/linear-time";
 import { describe, expect, it } from "vitest";
 
 import { REDACTION_RULES, scanRenderedOutput } from "../src/index.js";

@@ -5,7 +5,10 @@
  * megabyte of `-ey` stalled the scan. These pin that it still refuses what it
  * refused, and is linear.
  */
-import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
+import {
+	assertGrowsLinearly,
+	repeatedTo,
+} from "@hobo/provider-redaction/linear-time";
 import { describe, expect, it } from "vitest";
 
 import {

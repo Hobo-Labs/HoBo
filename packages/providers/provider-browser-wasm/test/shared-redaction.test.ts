@@ -4,7 +4,10 @@
  * shape started again at every `eyJ` and ran to the end. These pin that
  * nothing it redacted leaks now, what it newly redacts, and that it is linear.
  */
-import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
+import {
+	assertGrowsLinearly,
+	repeatedTo,
+} from "@hobo/provider-redaction/linear-time";
 import { assertRevealsNoMore } from "@hobo/provider-redaction/redaction-differential";
 import { describe, expect, it } from "vitest";
 

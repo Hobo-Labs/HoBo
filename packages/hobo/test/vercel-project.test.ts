@@ -1,8 +1,8 @@
 import { inspect } from "node:util";
 
 import type { IacProgram } from "@hobo/cloud";
-import { assertGrowsLinearlyAsync } from "@hobo/provider-redaction/linear-time";
 import { at, first } from "@hobo/core/total-access";
+import { assertGrowsLinearlyAsync } from "@hobo/provider-redaction/linear-time";
 import { REDACTION_WINDOW } from "@hobo/provider-vercel";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

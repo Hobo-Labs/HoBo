@@ -6,8 +6,14 @@
  * holding a megabyte of `-ey` or of `http://claim?`, the guard stalled the
  * append. These pin that it still refuses what it refused, and is linear.
  */
-import { assertPatternSweepLinear, ownPatterns } from "@hobo/provider-redaction/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
+import {
+	assertPatternSweepLinear,
+	ownPatterns,
+} from "@hobo/provider-redaction/linear-sweep";
+import {
+	assertGrowsLinearly,
+	repeatedTo,
+} from "@hobo/provider-redaction/linear-time";
 import {
 	assertFindsNoLess,
 	JWT_PIECES,
