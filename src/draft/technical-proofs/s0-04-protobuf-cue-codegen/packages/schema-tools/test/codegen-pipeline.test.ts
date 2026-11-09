@@ -75,7 +75,7 @@ describe("json envelope", () => {
     // Scoped to this POC tree: the promoted @hobo/schema-tools suite owns the
     // whole-repo check. This frozen generator predates production's
     // import_extension=js, so a whole-repo run here reports production's
-    // current output as drift (promotions.json: reference).
+    // current output as drift.
     const result = await runCli(["--check", "--json"], POC_ROOT);
     expect(result.exitCode).toBe(0);
     const envelope = JSON.parse(result.stdout);

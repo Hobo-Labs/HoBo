@@ -70,8 +70,8 @@
 		{
 			"proof": "src/draft/technical-proofs/s0-04-protobuf-cue-codegen/packages/schema-tools",
 			"promotedTo": "packages/schema-tools",
-			"status": "reference",
-			"note": "S0-04 promotion gate: production codegen orchestrator. Promoted with nested-package + buf.yaml opt-in discovery and strict-tsconfig fixes; the POC copy remains its own executable proof fixture. Reference since the frozen generator predates production's import_extension=js: its whole-repo json-envelope check is scoped to the POC tree, and the promoted @hobo/schema-tools suite owns the whole-repo assertion.",
+			"status": "frozen",
+			"note": "S0-04 promotion gate: production codegen orchestrator. Promoted with nested-package + buf.yaml opt-in discovery and strict-tsconfig fixes; the POC copy remains its own executable proof fixture. Its json-envelope cwd is scoped to the POC tree because the frozen generator predates production's import_extension=js, and promoted @hobo/schema-tools owns the whole-repo check.",
 			"digests": {
 				"contracts/pacts/schema_tools_codegen_report.pact.json": "sha256:bc246cf883752dc4ca4bd8e70d24df2177deed49d578c013f9789c388275bbba",
 				"data-models/buf.yaml": "sha256:b91555931d75c55b4ab15530a6be430649a9a1de07577a3963612b90b186434c",
@@ -87,7 +87,7 @@
 				"src/discover.ts": "sha256:685f5decd7f27d0522503c97246c917c9bcdb5d2812d87d13833c5856dc721c7",
 				"src/parse.ts": "sha256:2750ed6d6ac8d3ed6bcbe60c6f1f9a06f43b6903398d615fce901781c6dd0b4a",
 				"src/types.ts": "sha256:2fd23e4a87f8feb36d65841ad16b9fa90bcab6d6cfb4a18df206d244807fdbac",
-				"test/codegen-pipeline.test.ts": "sha256:5113466f5fbe62a9d5e31917e9ecaff7cdd62c5b825488b867c91c11a30e80c9",
+				"test/codegen-pipeline.test.ts": "sha256:7d7eb8a6614ef9506c30238e144864f2a4ab35f7d682bc4c4deb29eccc304d90",
 				"tsconfig.json": "sha256:72909bdc6a21c90a32d98bf1a5bc1b40109b130f1d71e3b22b8b90f0ef36fb0b"
 			}
 		},
