@@ -109,6 +109,28 @@ describe("hobo build", () => {
 		});
 	});
 
+	it("still refuses a stale tree when the requested runtime is valid", async () => {
+		await withSeededBuildProject(async (projectRoot) => {
+			await writeFile(
+				join(projectRoot, "src/_generated/hooks.d.ts"),
+				"stale generated file\n",
+			);
+
+			const result = await createFixtureCli().run(
+				["build", "--runtime", "wasm", "--json"],
+				{ cwd: projectRoot },
+			);
+
+			expect(JSON.parse(result.stdout)).toMatchObject({
+				ok: false,
+				code: "HOBO_BUILD_CODEGEN_DRIFT",
+			});
+			await expect(
+				access(join(projectRoot, BUILD_MANIFEST_PATH)),
+			).rejects.toMatchObject({ code: "ENOENT" });
+		});
+	});
+
 	it("names service and cause on componentize failure without writing a manifest", async () => {
 		await withTempBuildProject(async (projectRoot) => {
 			await writeBuildFixtureProject(projectRoot, {
