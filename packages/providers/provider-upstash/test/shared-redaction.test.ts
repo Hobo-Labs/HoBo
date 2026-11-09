@@ -7,10 +7,22 @@
  * BEGIN for an END. These pin that nothing it redacted leaks now, encoded or
  * not, and that it is linear.
  */
+
+import {
+	assertPatternSweepLinear,
+	profilePatterns,
+} from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
+import { decodePercentFully } from "@hobo/core/provider-redaction";
+import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
 
-import { containsControlChar, redactProviderText } from "../src/errors.js";
+import {
+	containsControlChar,
+	redactProviderText,
+	UPSTASH_REDACTION_PROFILE,
+} from "../src/errors.js";
+import { redactProviderText as baseRedact } from "./fixtures/base-redaction.js";
 
 const MB = 1_000_000;
 
@@ -52,6 +64,26 @@ describe("provider-upstash redaction", () => {
 		},
 	);
 
+	it("takes a prefixed key's whole run, not only from its prefix", () => {
+		// Starting at the prefix left the run's start, part of the key, behind.
+		const key = `${"A".repeat(30)}SECROPQ1-sk_${"B".repeat(20)}`;
+		expect(redactProviderText(`before ${key} after`)).toBe(
+			"before [redacted] after",
+		);
+	});
+
+	it.each([
+		"**Token:** SECRUPS2abc",
+		"**Token**: SECRUPS2abc",
+		"** Token ** : SECRUPS2abc",
+	])("redacts the CLI's token line %j", (line) => {
+		// `**Token**: …` leaked before and after the move: `\s*:?\s*` read only
+		// a colon inside the emphasis.
+		expect(redactProviderText(`before ${line} after`)).toBe(
+			"before [redacted] after",
+		);
+	});
+
 	it("still reports control characters", () => {
 		expect(containsControlChar("a\u001b[31m")).toBe(true);
 		expect(containsControlChar("plain")).toBe(false);
@@ -77,4 +109,39 @@ describe("the shared shapes, through this caller", () => {
 		const text = `before ${secret} after`;
 		expect(redactProviderText(text)).toBe("before [redacted] after");
 	});
+});
+
+// Against the redactor this caller had before (vendored under test/fixtures):
+// on generated texts full of credential shapes, separators and control
+// characters, every marker half the old one hid stays hidden, and every
+// pattern this caller adds is linear on every class and pair of classes.
+describe("against the redactor it replaced", () => {
+	const LONG = 1_000_000;
+	it("hides every marker the base branch's redactor hid", {
+		timeout: 60_000,
+	}, () => {
+		const hidden = assertRevealsNoMore(
+			(text) => baseRedact(text, LONG),
+			(text) => redactProviderText(text, LONG),
+			{ count: 50_000, decode: decodePercentFully },
+		);
+		expect(hidden).toBeGreaterThan(1000);
+	});
+	it.each([
+		["Bearer abcd\u0007SECRCTL3 ok", "SECRCTL3"],
+		["token=abcd\u0000SECRCTL2tail", "SECRCTL2"],
+	])("reads a credential on through a control character: %j", (text, marker) => {
+		expect(redactProviderText(text, LONG)).not.toContain(marker);
+	});
+	it.each(
+		profilePatterns(UPSTASH_REDACTION_PROFILE).map(
+			(pattern) => [pattern.source, pattern] as const,
+		),
+	)(
+		"its pattern /%s/ grows linearly on the whole sweep",
+		{ timeout: 30_000 },
+		(_source, pattern) => {
+			assertPatternSweepLinear(pattern);
+		},
+	);
 });

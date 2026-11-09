@@ -7,10 +7,14 @@
  * pattern on generated strings, that it accepts exactly the same strings, and
  * that its cost grows linearly.
  */
+
+import { assertSweepLinear } from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
+import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import { redactDebugPayload } from "../src/index.js";
+import { redactDebugPayload as baseRedactDebugPayload } from "./fixtures/base-redaction.js";
 
 const OLD_SECRET_STRING =
 	/(?:Bearer\s+\S+|-----BEGIN (?:RSA |EC )?PRIVATE KEY-----|(?:sk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[0-9A-Za-z_-]{35}|eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}|[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/:@]+:[^@\s/]+@|\b[A-Z][A-Z0-9_]*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?)[A-Z0-9_]*\s*=)/i;
@@ -76,4 +80,31 @@ describe("the debug-payload secret pattern", () => {
 			}, input);
 		},
 	);
+});
+
+// Against the masking as it stood before (vendored under test/fixtures): on
+// generated texts full of credential shapes and control characters, every
+// string the old one masked is masked; and the check is linear on runs of
+// every character class and pair of them.
+describe("redactDebugPayload against the masking it replaced", () => {
+	const shown =
+		(redact: typeof redactDebugPayload) =>
+		(text: string): string =>
+			JSON.stringify(redact({ message: text }));
+	it("masks every string the old masking masked", { timeout: 60_000 }, () => {
+		expect(
+			assertRevealsNoMore(
+				shown(baseRedactDebugPayload),
+				shown(redactDebugPayload),
+				{ count: 50_000 },
+			),
+		).toBeGreaterThan(1000);
+	});
+
+	it("grows linearly on the whole sweep", { timeout: 60_000 }, () => {
+		assertSweepLinear((text) => redactDebugPayload({ message: text }), {
+			alphabet: "aZ9",
+			words: ["Bearer ", "eyJ", "sk-", "postgres://", "API_KEY"],
+		});
+	});
 });

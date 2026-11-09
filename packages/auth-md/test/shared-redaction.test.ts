@@ -7,10 +7,14 @@
  * were quadratic in a hostile text. These pin that what it redacted it still
  * redacts, that the text is otherwise untouched, and that it is linear.
  */
+
+import { assertSweepLinear } from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
+import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import { REDACTED, redactText } from "../src/index.js";
+import { redactText as baseRedactText } from "./fixtures/base-redaction.js";
 
 describe("redactText", () => {
 	it("still redacts every shape its own patterns did", () => {
@@ -61,4 +65,23 @@ describe("redactText", () => {
 			}, input);
 		},
 	);
+});
+
+// Against the scrubber as it stood before (vendored under test/fixtures): on
+// generated texts full of credential shapes and control characters, every
+// marker half the old one hid stays hidden; and the scrubber is linear on runs
+// of every character class and pair of them.
+describe("redactText against the scrubber it replaced", () => {
+	it("hides every marker the old scrubber hid", { timeout: 60_000 }, () => {
+		expect(
+			assertRevealsNoMore(baseRedactText, redactText, { count: 50_000 }),
+		).toBeGreaterThan(1000);
+	});
+
+	it("grows linearly on the whole sweep", { timeout: 60_000 }, () => {
+		assertSweepLinear((text) => redactText(text), {
+			alphabet: "aZ9",
+			words: ["eyJ", "-----BEGIN PRIVATE KEY-----", "Bearer "],
+		});
+	});
 });

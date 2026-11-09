@@ -7,6 +7,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+	assertSweepLinear,
+	SEPARATOR_CLASSES,
+	SweepGrowthError,
+	sweepInputs,
+} from "../src/linear-sweep.js";
+import {
 	assertGrowsLinearly,
 	grewLinearly,
 	HANG_BACKSTOP_MS,
@@ -131,5 +137,43 @@ describe("repeatedTo", () => {
 		expect(text.startsWith("xab")).toBe(true);
 		expect(text.length).toBeGreaterThanOrEqual(10);
 		expect(text.length).toBeLessThan(12);
+	});
+});
+
+describe("the sweep", () => {
+	it(
+		"finds a class nobody built an input from",
+		() => {
+			// Quadratic on runs of `_` (and only of `_` among the sweep's
+			// classes): every start reads the run to its end and finds no `!`.
+			const underscoreRuns = /_+!/gu;
+			let refused: unknown;
+			try {
+				assertSweepLinear(
+					(text) => {
+						text.replace(underscoreRuns, "");
+					},
+					{ alphabet: "z" },
+					{ floorLength: 16_384 },
+				);
+			} catch (error) {
+				refused = error;
+			}
+			if (!(refused instanceof SweepGrowthError))
+				throw new Error(`expected a SweepGrowthError, got ${String(refused)}`);
+			expect(refused.offenders.map((offender) => offender.input)).toContain(
+				'"_" repeated',
+			);
+		},
+		GROWTH_TIMEOUT_MS,
+	);
+
+	it("builds every class, every pair, and each word followed by each class", () => {
+		const inputs = sweepInputs({ alphabet: "a", words: ["w"] });
+		const classes = new Set(["a", ...SEPARATOR_CLASSES]).size;
+		expect(inputs).toHaveLength(
+			classes + classes * (classes - 1) + 1 + 2 * classes,
+		);
+		expect(inputs.map((input) => input.name)).toContain('"_ " repeated');
 	});
 });

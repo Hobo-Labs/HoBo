@@ -7,7 +7,10 @@
  * reliably reaches a log, a receipt, and a support ticket.
  */
 
-import { createProviderRedactor } from "@hobo/core/provider-redaction";
+import {
+	createProviderRedactor,
+	type ProviderRedactionProfile,
+} from "@hobo/core/provider-redaction";
 
 export const PROVIDER_ERROR_CODES = [
 	"PROVIDER_RATE_LIMITED",
@@ -52,9 +55,14 @@ export type ProviderErrorOptions = {
 
 export { REDACTION_WINDOW } from "@hobo/core/provider-redaction";
 
-const providerRedactor = createProviderRedactor({
-	patterns: [/\bcode\s*[=:]\s*[A-Za-z0-9-]{8,}/giu],
-});
+/** The provider's own patterns, on top of the shared ones. */
+export const VERCEL_REDACTION_PROFILE: ProviderRedactionProfile = {
+	// A claim or transfer code, and the rest of its run: what is glued to a
+	// code (`code=abc12345=…`) is not told apart from it.
+	patterns: [/\bcode\s*[=:]\s*[A-Za-z0-9-]{8,}\S*/giu],
+};
+
+const providerRedactor = createProviderRedactor(VERCEL_REDACTION_PROFILE);
 
 /**
  * Replace anything credential-shaped with a marker and flatten control

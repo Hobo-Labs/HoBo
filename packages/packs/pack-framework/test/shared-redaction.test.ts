@@ -6,9 +6,11 @@
  * that it is linear.
  */
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
+import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import { redactPackText } from "../src/errors.js";
+import { redactPackText as baseRedact } from "./fixtures/base-redaction.js";
 
 const MB = 1_000_000;
 
@@ -68,5 +70,29 @@ describe("the shared shapes, through this caller", () => {
 	])("redacts %s whole", (_case, secret) => {
 		const text = `before ${secret} after`;
 		expect(redactPackText(text)).toBe("before [redacted] after");
+	});
+});
+
+// Against the redactor this caller had before (vendored under test/fixtures):
+// on generated texts full of credential shapes, separators and control
+// characters, every marker half the old one hid stays hidden, and every
+// pattern this caller adds is linear on every class and pair of classes.
+describe("against the redactor it replaced", () => {
+	const LONG = 1_000_000;
+	it("hides every marker the base branch's redactor hid", {
+		timeout: 60_000,
+	}, () => {
+		const hidden = assertRevealsNoMore(
+			(text) => baseRedact(text, LONG),
+			(text) => redactPackText(text, LONG),
+			{ count: 50_000 },
+		);
+		expect(hidden).toBeGreaterThan(1000);
+	});
+	it.each([
+		["Bearer abcd\u0007SECRCTL3 ok", "SECRCTL3"],
+		["token=abcd\u0000SECRCTL2tail", "SECRCTL2"],
+	])("reads a credential on through a control character: %j", (text, marker) => {
+		expect(redactPackText(text, LONG)).not.toContain(marker);
 	});
 });

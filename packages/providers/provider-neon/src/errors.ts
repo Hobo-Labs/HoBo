@@ -6,7 +6,10 @@
  * that reliably reaches a log, a receipt, and a support ticket.
  */
 
-import { createProviderRedactor } from "@hobo/core/provider-redaction";
+import {
+	createProviderRedactor,
+	type ProviderRedactionProfile,
+} from "@hobo/core/provider-redaction";
 import { isJsonString } from "./json.js";
 
 export const PROVIDER_ERROR_CODES = [
@@ -39,14 +42,17 @@ export type ProviderErrorOptions = {
 
 export { containsControlChar } from "@hobo/core/provider-redaction";
 
-const providerRedactor = createProviderRedactor({
+/** The provider's own patterns, on top of the shared ones. */
+export const NEON_REDACTION_PROFILE: ProviderRedactionProfile = {
 	patterns: [
 		/https?:\/\/neon\.new\/claim\/\S+/giu,
 		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
 		/\bnpg_[A-Za-z0-9_-]{4,}/giu,
 	],
 	decodePercent: true,
-});
+};
+
+const providerRedactor = createProviderRedactor(NEON_REDACTION_PROFILE);
 
 /**
  * Replace anything credential-shaped with a marker and flatten control

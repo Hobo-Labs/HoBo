@@ -794,12 +794,29 @@ search is bounded by `REDACTION_WINDOW`, and a provider pattern goes in its
 profile, never in a local copy of the redactor. Guards that refuse a payload
 rather than redact it use its `JWT_DETECTOR` and `PRIVATE_KEY_DETECTOR`, and a
 scrubber that must keep line breaks and length (auth-md's `redactText`) uses
-its `PRIVATE_KEY_PATTERN` and `JWT_PATTERN`. A new pattern must be linear: one
-that can start again inside a run it already scanned to the end (`\bey…` inside
-`-ey-ey…`, `[\s\S]*?END` from every BEGIN, `\S*` before a literal from every
-`http`, `\b[…]+@` from every boundary inside `a.a.a.…`, a variable-length
-look-back placed first, which runs at every position, decoding the whole text
-again until it stops changing) is quadratic on a hostile body.
+its `PRIVATE_KEY_PATTERN` and `JWT_PATTERN` through `redactMatches`. A redactor
+with shapes of its own searches them all over the same text and merges the
+spans (`redactMatches`), never replaces them in turn: a shape that ran first cut
+a run short, or ate another shape's name or a key's END line, and part of a
+credential survived. A new pattern must be linear: one that can start again
+inside a run it already scanned to the end (`\bey…` inside `-ey-ey…`,
+`[\s\S]*?END` from every BEGIN, `\S*` before a literal from every `http`,
+`\b[…]+@` from every boundary inside `a.a.a.…`, a variable-length look-back
+placed first, which runs at every position, decoding the whole text again until
+it stops changing) is quadratic on a hostile body. So is one with two optional
+quantifiers next to each other that read the same character (`\s*["']?\s*`,
+`\s*:?\s*`: write `\s*(?:["']\s*)?`), a look-back with a starred class that
+overlaps the character after it (`(?<=(?:^|[^…])[._%+-]*[A-Za-z0-9_])` on a run
+of `_`), and a value that may chain on to the end and is then read again from
+the next run.
+
+Sweep every pattern with `@hobo/core/linear-sweep` (`assertSweepLinear`, or
+`assertPatternSweepLinear` for one pattern), which builds runs of every
+character class and every pair of them, so a class nobody listed cannot hide a
+quadratic case. A redactor or guard that replaces another is held to it with
+`@hobo/core/redaction-differential` (`assertRevealsNoMore`,
+`assertFindsNoLess`), the old one vendored under the package's
+`test/fixtures`: it may redact more, never less.
 
 Prove it with `assertGrowsLinearly` from `@hobo/core/linear-time`, never with a
 wall-clock bound such as "1 MB in under a second": CI runs on single-CPU

@@ -7,7 +7,10 @@
  * scrubbed before they can reach a message, a log line, or a receipt.
  */
 
-import { createProviderRedactor } from "@hobo/core/provider-redaction";
+import {
+	createProviderRedactor,
+	type ProviderRedactionProfile,
+} from "@hobo/core/provider-redaction";
 
 export const PROVIDER_ERROR_CODES = [
 	"PROVIDER_RATE_LIMITED",
@@ -60,7 +63,8 @@ export type ProviderErrorOptions = {
 	readonly cause?: Error;
 };
 
-const providerRedactor = createProviderRedactor({
+/** The provider's own patterns, on top of the shared ones. */
+export const NETLIFY_REDACTION_PROFILE: ProviderRedactionProfile = {
 	patterns: [
 		// The claim URL carries its session material in the fragment, so the
 		// fragment has to go with it — and the whole run it sits in. The match
@@ -71,7 +75,9 @@ const providerRedactor = createProviderRedactor({
 		/\bnf(?:p)?_[A-Za-z0-9]{8,}/giu,
 	],
 	collapseWhitespace: true,
-});
+};
+
+const providerRedactor = createProviderRedactor(NETLIFY_REDACTION_PROFILE);
 
 /**
  * Replace anything credential-shaped with a marker and flatten control

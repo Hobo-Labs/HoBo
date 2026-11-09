@@ -15,6 +15,9 @@
 import {
 	JWT_PATTERN,
 	PRIVATE_KEY_PATTERN,
+	type RedactionPattern,
+	redactionPattern,
+	redactMatches,
 } from "@hobo/core/provider-redaction";
 
 // public-contract: callers and tests assert on this exact placeholder in serialized output.
@@ -113,7 +116,7 @@ export function forgetSensitive(ref: SensitiveRef): void {
 const SECRET_KEY_PATTERN =
 	/(assertion|token|secret|password|passphrase|credential|private[_-]?key|authorization|client[_-]?secret|jwk|jwt)/iu;
 
-const SECRET_TEXT_PATTERNS: readonly RegExp[] = [
+const SECRET_TEXT_PATTERNS: readonly RedactionPattern[] = [
 	// PEM blocks of any key type, from `@hobo/core/provider-redaction`: to the
 	// key's own END line, or the next BEGIN, or the end of the text. The lazy
 	// `[\s\S]*?-----END` this replaced searched from every BEGIN for an END.
@@ -126,20 +129,20 @@ const SECRET_TEXT_PATTERNS: readonly RegExp[] = [
 	// started again at every `eyJ` and read to the end. It ends with the
 	// signature's run and no `\b`: a `\b` the signature could fail (one ending
 	// in `-`) sent the search back to the next `eyJ`, quadratic again.
-	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4})(?:[A-Za-z0-9_]*-)*?eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/gu,
+	redactionPattern(
+		/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4})(?:[A-Za-z0-9_]*-)*?eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/gu,
+	),
 	// `Bearer <token>` in prose or headers.
-	/\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/giu,
+	redactionPattern(/\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/giu),
 	// Long opaque high-entropy handles (claim/access tokens).
-	/\b[A-Za-z0-9_-]{40,}\b/gu,
+	redactionPattern(/\b[A-Za-z0-9_-]{40,}\b/gu),
 ];
 
 /** Scrub secret-shaped substrings out of a free-text string. */
 export function redactText(value: string): string {
-	let output = value;
-	for (const pattern of SECRET_TEXT_PATTERNS) {
-		output = output.replace(pattern, REDACTED);
-	}
-	return output;
+	// Every pattern over the same text: replaced in turn, a private key taken
+	// first left a 40-character handle before it too short for the last one.
+	return redactMatches(value, SECRET_TEXT_PATTERNS);
 }
 
 /**

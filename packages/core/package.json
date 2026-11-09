@@ -27,6 +27,14 @@
 		"./linear-time": {
 			"types": "./dist/linear-time.d.ts",
 			"default": "./dist/linear-time.js"
+		},
+		"./linear-sweep": {
+			"types": "./dist/linear-sweep.d.ts",
+			"default": "./dist/linear-sweep.js"
+		},
+		"./redaction-differential": {
+			"types": "./dist/redaction-differential.d.ts",
+			"default": "./dist/redaction-differential.js"
 		}
 	},
 	"publishConfig": {

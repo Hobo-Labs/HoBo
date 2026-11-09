@@ -21,7 +21,10 @@
  * support ticket.
  */
 
-import { createProviderRedactor } from "@hobo/core/provider-redaction";
+import {
+	createProviderRedactor,
+	type ProviderRedactionProfile,
+} from "@hobo/core/provider-redaction";
 
 export const TTL_SH_ERROR_CODES = [
 	/** A host, scheme, port, or path outside the single allowlisted origin. */
@@ -92,7 +95,8 @@ export type TtlShErrorOptions = {
 
 export { containsControlChar } from "@hobo/core/provider-redaction";
 
-const providerRedactor = createProviderRedactor({
+/** The provider's own patterns, on top of the shared ones. */
+export const TTL_SH_REDACTION_PROFILE: ProviderRedactionProfile = {
 	keep: /\bsha(?:256|512)[:-][0-9a-f]{32,128}\b/giu,
 	patterns: [/\bBasic\s+\S+/giu],
 	// A long opaque run with no recognisable prefix, for credential formats
@@ -101,7 +105,9 @@ const providerRedactor = createProviderRedactor({
 	// starts, so one long run is one search. Searched last: run before the JWT
 	// shape, it split a token and left the payload behind.
 	fallbacks: [/(?<![A-Za-z0-9+_-])[A-Za-z0-9+_-]{40,}={0,2}\b/gu],
-});
+};
+
+const providerRedactor = createProviderRedactor(TTL_SH_REDACTION_PROFILE);
 
 /**
  * Redact credential-shaped material and flatten control characters, through the

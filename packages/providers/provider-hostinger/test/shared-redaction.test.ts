@@ -6,10 +6,20 @@
  * message, and so did control characters. These pin that what the rule caught
  * is still caught, what it missed is caught now, and that it is linear.
  */
+
+import {
+	assertPatternSweepLinear,
+	profilePatterns,
+} from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
+import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
 
-import { redactHostingerText } from "../src/resolvers.js";
+import {
+	HOSTINGER_REDACTION_PROFILE,
+	redactHostingerText,
+} from "../src/resolvers.js";
+import { redactHostingerText as baseRedact } from "./fixtures/base-redaction.js";
 
 const MB = 1_000_000;
 const redact = (text: string, limit?: number) =>
@@ -72,4 +82,39 @@ describe("the shared shapes, through this caller", () => {
 		const text = `before ${secret} after`;
 		expect(redact(text)).toBe("before [redacted] after");
 	});
+});
+
+// Against the redactor this caller had before (vendored under test/fixtures):
+// on generated texts full of credential shapes, separators and control
+// characters, every marker half the old one hid stays hidden, and every
+// pattern this caller adds is linear on every class and pair of classes.
+describe("against the redactor it replaced", () => {
+	const LONG = 1_000_000;
+	it("hides every marker the base branch's redactor hid", {
+		timeout: 60_000,
+	}, () => {
+		const hidden = assertRevealsNoMore(
+			(text) => baseRedact(text, LONG),
+			(text) => redactHostingerText(text, LONG),
+			{ count: 50_000 },
+		);
+		expect(hidden).toBeGreaterThan(1000);
+	});
+	it.each([
+		["Bearer abcd\u0007SECRCTL3 ok", "SECRCTL3"],
+		["token=abcd\u0000SECRCTL2tail", "SECRCTL2"],
+	])("reads a credential on through a control character: %j", (text, marker) => {
+		expect(redactHostingerText(text, LONG)).not.toContain(marker);
+	});
+	it.each(
+		profilePatterns(HOSTINGER_REDACTION_PROFILE).map(
+			(pattern) => [pattern.source, pattern] as const,
+		),
+	)(
+		"its pattern /%s/ grows linearly on the whole sweep",
+		{ timeout: 30_000 },
+		(_source, pattern) => {
+			assertPatternSweepLinear(pattern);
+		},
+	);
 });

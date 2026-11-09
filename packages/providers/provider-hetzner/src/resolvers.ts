@@ -76,7 +76,10 @@ import {
 	type TransportResponse,
 } from "@hobo/core";
 import { type AwsCredentials, signAwsRequest } from "@hobo/core/aws-sigv4";
-import { createProviderRedactor } from "@hobo/core/provider-redaction";
+import {
+	createProviderRedactor,
+	type ProviderRedactionProfile,
+} from "@hobo/core/provider-redaction";
 
 import {
 	isJsonArray,
@@ -239,9 +242,12 @@ const RAW_CREDENTIAL_PATTERN = /^[A-Za-z0-9]{32,}$/u;
  * keys short enough to slip under the length rule. The length rule is searched
  * last, so it cannot split a JWT or a key the shared shapes redact whole.
  */
-const redactTokenText = createProviderRedactor({
+/** The provider's own patterns, on top of the shared ones. */
+export const HETZNER_REDACTION_PROFILE: ProviderRedactionProfile = {
 	fallbacks: [/[A-Za-z0-9_-]{20,}/gu],
-});
+};
+
+const redactTokenText = createProviderRedactor(HETZNER_REDACTION_PROFILE);
 
 /**
  * Redact provider text before it reaches a message, a diagnostic, or a log.

@@ -1,4 +1,10 @@
-import { SIGNED_JWT_PATTERN } from "@hobo/core/provider-redaction";
+import {
+	PRIVATE_KEY_PATTERN,
+	type RedactionPattern,
+	redactionPattern,
+	redactMatches,
+	SIGNED_JWT_PATTERN,
+} from "@hobo/core/provider-redaction";
 import { z } from "zod";
 
 /**
@@ -101,6 +107,11 @@ export const RUNNER_PROVIDER_PROFILES = {
 
 /** Shapes that are credentials, never references. Never echo the match. */
 const SECRET_PATTERNS: readonly RegExp[] = [
+	// A private key first, the shared form: searched after the JWT shape, which
+	// starts where a run starts, its BEGIN line was read as part of a token. It
+	// runs from BEGIN to its own END line and the rest of that line's run, so
+	// text glued to a key goes with it.
+	PRIVATE_KEY_PATTERN,
 	/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g,
 	/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
 	/\bdepot_(?:project|org|user)_[A-Za-z0-9]{16,}\b/g,
@@ -112,9 +123,11 @@ const SECRET_PATTERNS: readonly RegExp[] = [
 	// hostile text. The bounded form keeps an unsigned token from counting and
 	// the rest of a JSON body from being swallowed with the signature.
 	SIGNED_JWT_PATTERN,
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
 	/\b(?:boat|bsm|jog)_[A-Za-z0-9]{20,}\b/g,
 ];
+
+const SECRET_SPANS: readonly RedactionPattern[] =
+	SECRET_PATTERNS.map(redactionPattern);
 
 function entropy(value: string): number {
 	const counts = new Map<string, number>();
@@ -128,6 +141,7 @@ function entropy(value: string): number {
 }
 
 const OPAQUE_RUN = /[A-Za-z0-9+_=-]{32,}/g;
+const OPAQUE_SPAN = redactionPattern(OPAQUE_RUN);
 const DIGEST = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 function opaqueCredential(run: string): boolean {
 	return (
@@ -156,8 +170,17 @@ export function redactSecrets(
 	let out = text;
 	for (const secret of known)
 		if (secret.length >= 8) out = out.split(secret).join("[REDACTED]");
-	for (const pattern of SECRET_PATTERNS)
-		out = out.replace(pattern, "[REDACTED]");
+	// Every shape over the same text: replaced in turn, a private key's END
+	// line took the BEGIN line glued after it, and the next key was not found.
+	// The opaque-run rule too: run after the shapes, it saw a run they had cut
+	// short, and the part before a JWT had lost its digit. It is run again
+	// after them, for a run that only qualifies once a shape is gone.
+	out = redactMatches(
+		out,
+		[...SECRET_SPANS, OPAQUE_SPAN],
+		"[REDACTED]",
+		(match, pattern) => pattern !== OPAQUE_SPAN || opaqueCredential(match),
+	);
 	return out.replace(OPAQUE_RUN, (run) =>
 		opaqueCredential(run) ? "[REDACTED]" : run,
 	);

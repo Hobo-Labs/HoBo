@@ -18,7 +18,10 @@
  * - `SECRET_CUSTODY_UNAVAILABLE` — the deposit side failed. Reporting that as
  *   `SECRET_REFERENCE_INVALID` would blame a reference that was never issued.
  */
-import { createProviderRedactor } from "@hobo/core/provider-redaction";
+import {
+	createProviderRedactor,
+	type ProviderRedactionProfile,
+} from "@hobo/core/provider-redaction";
 
 export const PROVIDER_ERROR_CODES = [
 	"PROVIDER_AUTH_FAILED",
@@ -68,11 +71,14 @@ export type ProviderErrorOptions = {
 
 export { containsControlChar } from "@hobo/core/provider-redaction";
 
-const providerRedactor = createProviderRedactor({
+/** The provider's own patterns, on top of the shared ones. */
+export const UPSTASH_REDACTION_PROFILE: ProviderRedactionProfile = {
 	patterns: [
 		/https?:\/\/console\.upstash\.com\/redis\/\S+/giu,
 		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
-		/\*\*\s*Token\s*:?\s*\*\*\s*\S+/giu,
+		// The CLI's `**Token:** …` line, or `**Token**: …`. Each run of spaces is
+		// read once: `\s*:?\s*` read one two ways and was quadratic in it.
+		/\*\*\s*Token\s*(?::\s*)?\*\*\s*(?::\s*)?\S+/giu,
 	],
 	// Upstash REST tokens are long base64url strings with no fixed prefix to
 	// match on, so the rule is structural: any unbroken run of 40+ token
@@ -81,7 +87,9 @@ const providerRedactor = createProviderRedactor({
 	fallbacks: [/[A-Za-z0-9_-]{40,}/gu],
 	decodePercent: true,
 	collapseWhitespace: true,
-});
+};
+
+const providerRedactor = createProviderRedactor(UPSTASH_REDACTION_PROFILE);
 
 /**
  * Replace anything credential-shaped with a marker and flatten control

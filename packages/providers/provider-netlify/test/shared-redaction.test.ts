@@ -7,11 +7,29 @@
  * nothing it redacted leaks now and that every shape it runs is linear; the
  * receipt scanner's detectors are held to the same.
  */
+
+import {
+	assertPatternSweepLinear,
+	assertSweepLinear,
+	profilePatterns,
+} from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
+import {
+	assertFindsNoLess,
+	assertRevealsNoMore,
+	JWT_PIECES,
+	PEM_PIECES,
+	URL_PIECES,
+} from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
 
-import { redactProviderText } from "../src/provider-errors.js";
+import {
+	NETLIFY_REDACTION_PROFILE,
+	redactProviderText,
+} from "../src/provider-errors.js";
 import { scanForCredentialMaterial } from "../src/receipt.js";
+import { scanForCredentialMaterial as baseScan } from "./fixtures/base-guard.js";
+import { redactProviderText as baseRedact } from "./fixtures/base-redaction.js";
 
 const MB = 1_000_000;
 
@@ -101,5 +119,83 @@ describe("the shared shapes, through this caller", () => {
 	])("redacts %s whole", (_case, secret) => {
 		const text = `before ${secret} after`;
 		expect(redactProviderText(text)).toBe("before [redacted] after");
+	});
+});
+
+// Against the redactor this caller had before (vendored under test/fixtures):
+// on generated texts full of credential shapes, separators and control
+// characters, every marker half the old one hid stays hidden, and every
+// pattern this caller adds is linear on every class and pair of classes.
+describe("against the redactor it replaced", () => {
+	const LONG = 1_000_000;
+	it("hides every marker the base branch's redactor hid", {
+		timeout: 60_000,
+	}, () => {
+		const hidden = assertRevealsNoMore(
+			(text) => baseRedact(text, LONG),
+			(text) => redactProviderText(text, LONG),
+			{ count: 50_000 },
+		);
+		expect(hidden).toBeGreaterThan(1000);
+	});
+	it.each([
+		["Bearer abcd\u0007SECRCTL3 ok", "SECRCTL3"],
+		["token=abcd\u0000SECRCTL2tail", "SECRCTL2"],
+	])("reads a credential on through a control character: %j", (text, marker) => {
+		expect(redactProviderText(text, LONG)).not.toContain(marker);
+	});
+	it.each(
+		profilePatterns(NETLIFY_REDACTION_PROFILE).map(
+			(pattern) => [pattern.source, pattern] as const,
+		),
+	)(
+		"its pattern /%s/ grows linearly on the whole sweep",
+		{ timeout: 30_000 },
+		(_source, pattern) => {
+			assertPatternSweepLinear(pattern);
+		},
+	);
+});
+
+// The receipt scanner against the one it replaced (vendored under
+// test/fixtures): on 150k generated texts per piece set, it flags every text
+// the old one flagged.
+
+describe("scanForCredentialMaterial against the scanner it replaced", () => {
+	it.each([
+		["claim and drop urls", URL_PIECES],
+		["jwts", JWT_PIECES],
+		["private keys", PEM_PIECES],
+	] as const)(
+		"flags every text the old scanner flagged, on %s",
+		{ timeout: 60_000 },
+		(_case, pieces) => {
+			expect(
+				assertFindsNoLess(
+					(text) => baseScan(text).length > 0,
+					(text) => scanForCredentialMaterial(text).length > 0,
+					pieces,
+				),
+			).toBeGreaterThan(1000);
+		},
+	);
+});
+
+describe("scanForCredentialMaterial on the whole sweep", () => {
+	it("grows linearly on runs of every class and pair of classes", {
+		timeout: 60_000,
+	}, () => {
+		assertSweepLinear((text) => scanForCredentialMaterial(text), {
+			alphabet: "aZ9",
+			words: [
+				"https://",
+				"app.netlify.com/claim",
+				"drop",
+				"?",
+				"eyJ",
+				"-----BEGIN PRIVATE KEY-----",
+				"nfp_",
+			],
+		});
 	});
 });

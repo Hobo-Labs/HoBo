@@ -6,10 +6,18 @@
  * holding a megabyte of `-ey` or of `http://claim?`, the guard stalled the
  * append. These pin that it still refuses what it refused, and is linear.
  */
+import { assertSweepLinear } from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
+import {
+	assertFindsNoLess,
+	JWT_PIECES,
+	PEM_PIECES,
+	URL_PIECES,
+} from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import { assertNoSecrets, type ClaimEvent } from "../src/index.js";
+import { assertNoSecrets as baseAssertNoSecrets } from "./fixtures/base-guard.js";
 
 const observed = (observedStatus: string): ClaimEvent => ({
 	type: "ClaimStatusObserved",
@@ -58,4 +66,62 @@ describe("assertNoSecrets detectors", () => {
 			);
 		},
 	);
+});
+
+// Against the guard as it stood before (vendored under test/fixtures): on
+// 150k generated texts per piece set, it refuses every event the old one did.
+
+describe("assertNoSecrets against the guard it replaced", () => {
+	const refuses = (check: (event: ClaimEvent) => void) => (text: string) => {
+		try {
+			check(observed(text));
+			return false;
+		} catch {
+			return true;
+		}
+	};
+	it.each([
+		["claim urls", URL_PIECES],
+		["jwts", JWT_PIECES],
+		["private keys", PEM_PIECES],
+	] as const)(
+		"refuses every event the old guard refused, on %s",
+		{ timeout: 60_000 },
+		(_case, pieces) => {
+			expect(
+				assertFindsNoLess(
+					refuses(baseAssertNoSecrets),
+					refuses(assertNoSecrets),
+					pieces,
+				),
+			).toBeGreaterThan(1000);
+		},
+	);
+});
+
+describe("assertNoSecrets on the whole sweep", () => {
+	it("grows linearly on runs of every class and pair of classes", {
+		timeout: 60_000,
+	}, () => {
+		assertSweepLinear(
+			(text) => {
+				try {
+					assertNoSecrets(observed(text));
+				} catch {
+					// Refusing is fine; stalling is not.
+				}
+			},
+			{
+				alphabet: "aZ9",
+				words: [
+					"https://",
+					"claim",
+					"transfer",
+					"?code=",
+					"eyJ",
+					"-----BEGIN PRIVATE KEY-----",
+				],
+			},
+		);
+	});
 });

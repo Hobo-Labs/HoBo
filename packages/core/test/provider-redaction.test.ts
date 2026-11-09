@@ -15,7 +15,7 @@
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-
+import { assertSweepLinear, type SweepSpec } from "../src/linear-sweep.js";
 import {
 	grewLinearly,
 	HANG_BACKSTOP_MS,
@@ -29,6 +29,7 @@ import {
 	containsControlChar,
 	createProviderRedactor,
 	decodePercentFully,
+	JSON_JWT_PATTERN,
 	JWT_DETECTOR,
 	JWT_PATTERN,
 	PRIVATE_KEY_DETECTOR,
@@ -36,9 +37,15 @@ import {
 	REDACTION_WINDOW,
 	RedactionPatternError,
 	redactionPattern,
+	redactMatches,
 	redactProviderText,
 	SIGNED_JWT_PATTERN,
 } from "../src/provider-redaction.js";
+import {
+	assertFindsNoLess,
+	JWT_PIECES,
+	PEM_PIECES,
+} from "../src/redaction-differential.js";
 
 const MB = 1_000_000;
 const repeated = (unit: string, length = MB) =>
@@ -54,6 +61,7 @@ function timed(run: () => void): number {
 const PATTERN_NAMES = [
 	"private key",
 	"jwt",
+	"json jwt",
 	"bearer",
 	"authorization header",
 	"basic or token",
@@ -84,6 +92,11 @@ type Adversary = {
 // position and scan to the end, or scan back over what it already read.
 const adversarial: readonly Adversary[] = [
 	{ name: "-ey over and over", targets: ["jwt"], text: repeatedTo("-ey") },
+	{
+		name: "-eyJ over and over",
+		targets: ["json jwt"],
+		text: repeatedTo("-eyJ"),
+	},
 	{
 		name: "ey runs with no dot",
 		targets: ["jwt"],
@@ -234,63 +247,126 @@ describe("every pattern on a hostile text", () => {
 		GROWTH_TIMEOUT_MS,
 	);
 
-	it("every shared pattern has an input built against it", () => {
+	// A match's value is searched again from its first whitespace, so a value
+	// that went on to the end and was read again from every run (a chain of
+	// `token: `, each a name and a separator) was quadratic.
+	it.each([
+		"token: ",
+		"a: token: ",
+		"**Token**: ",
+		"api_key=password: ",
+		"Bearer ",
+		"authorization: bearer ",
+		"-----BEGIN PRIVATE KEY----- ",
+	])(
+		"the whole redactor grows linearly on %j repeated",
+		(unit) => {
+			expectLinear(searchedWhole, repeatedTo(unit), unit);
+		},
+		GROWTH_TIMEOUT_MS,
+	);
+
+	// The sweep (`@hobo/core/linear-sweep`): every pattern on runs of each
+	// character class it reads, each pair of them, and its own words followed
+	// by them, so no class is left out by whoever wrote the inputs above.
+	const ALNUM = "aZ9";
+	const SWEEP_SPECS = {
+		"private key": {
+			alphabet: ALNUM,
+			words: [
+				"-----BEGIN ",
+				"-----BEGIN PRIVATE KEY-----",
+				"-----END ",
+				"-----END PRIVATE KEY-----",
+			],
+		},
+		jwt: {
+			alphabet: `${ALNUM}ey`,
+			words: ["ey", "-ey", "eyAAAAAAAAAA.", "eyAAAAAAAAAA.AAAAAAAAAA."],
+		},
+		"json jwt": {
+			alphabet: `${ALNUM}eyJ`,
+			words: ["eyJ", "-eyJ", "eyJAAAAAAAA.", "eyJAAAAAAAA.AAAAAAAA."],
+		},
+		bearer: { alphabet: ALNUM, words: ["Bearer", "Bearer "] },
+		"authorization header": {
+			alphabet: ALNUM,
+			words: [
+				"authorization",
+				"authorization:",
+				'authorization="',
+				"Authorization: Basic",
+			],
+		},
+		"basic or token": {
+			alphabet: ALNUM,
+			words: ["Basic ", "Token ", "Token Ab"],
+		},
+		"postgres url": {
+			alphabet: ALNUM,
+			words: ["postgres://", "prisma+postgres://", "postgresql:"],
+		},
+		"redis url": { alphabet: ALNUM, words: ["redis://", "rediss:"] },
+		"mysql, mongodb or amqp url": {
+			alphabet: ALNUM,
+			words: ["mysql://", "mongodb+srv://", "amqps:"],
+		},
+		"url credentials": {
+			alphabet: ALNUM,
+			words: ["a://", "https://u:", "http://a:b"],
+		},
+		"inline credentials": { alphabet: ALNUM, words: ["//", "//a:", "//a:b"] },
+		"secret key": {
+			alphabet: ALNUM,
+			words: [
+				"token",
+				"password=",
+				"api_key:",
+				'token="',
+				"hobo-token://",
+				"token: secret://",
+			],
+		},
+		"prefixed key": {
+			alphabet: ALNUM,
+			words: ["sk_", "sk-", "ghp_", "xoxb-", "github_pat_"],
+		},
+	} satisfies Readonly<Record<PatternName, SweepSpec>>;
+
+	it("every shared pattern has a sweep", () => {
 		expect(CREDENTIAL_PATTERNS).toHaveLength(PATTERN_NAMES.length);
 		expect(patternNamed("private key")).toBe(PRIVATE_KEY_PATTERN);
 		expect(patternNamed("jwt")).toBe(JWT_PATTERN);
-		const targeted = new Set(adversarial.flatMap((entry) => entry.targets));
-		expect([...PATTERN_NAMES].filter((name) => !targeted.has(name))).toEqual(
-			[],
-		);
+		expect(patternNamed("json jwt")).toBe(JSON_JWT_PATTERN);
+		expect(Object.keys(SWEEP_SPECS).sort()).toEqual([...PATTERN_NAMES].sort());
 	});
 
-	it.each(
-		adversarial.flatMap((entry) =>
-			entry.targets.map((target) => [target, entry.name, entry] as const),
-		),
-	)(
-		"the %s pattern alone grows linearly on %s",
-		(target, _case, entry) => {
-			const pattern = patternNamed(target);
-			expectLinear(
-				(text) => {
-					text.replace(pattern, "[redacted]");
-				},
-				entry.text,
-				`${target} on ${entry.name}`,
-			);
+	it.each(PATTERN_NAMES.map((name) => [name] as const))(
+		"the %s pattern grows linearly on every class and pair of classes",
+		(name) => {
+			const pattern = patternNamed(name);
+			// Through the search the redactor runs, which reads a match's value
+			// again from the first whitespace in it.
+			assertSweepLinear((text) => {
+				redactMatches(text, [pattern]);
+			}, SWEEP_SPECS[name]);
 		},
 		GROWTH_TIMEOUT_MS,
 	);
 
 	it.each([
-		["the JWT detector", JWT_DETECTOR, repeatedTo("-ey")],
-		["the JWT detector", JWT_DETECTOR, repeatedTo("eyAAAAAAAAAA-")],
-		["the signed JWT pattern", SIGNED_JWT_PATTERN, repeatedTo("-eyJ")],
-		["the signed JWT pattern", SIGNED_JWT_PATTERN, repeatedTo("-eyJAAAAAAAA.")],
-		[
-			"the signed JWT pattern",
-			SIGNED_JWT_PATTERN,
-			repeatedTo("-eyJAAAAAAAA.AAAAAAAA."),
-		],
+		["the JWT detector", JWT_DETECTOR, SWEEP_SPECS.jwt],
 		[
 			"the private-key detector",
 			PRIVATE_KEY_DETECTOR,
-			repeatedTo("-----BEGIN PRIVATE KEY"),
+			SWEEP_SPECS["private key"],
 		],
 	] as const)(
-		"%s grows linearly",
-		(name, pattern, text) => {
-			expectLinear(
-				(each) => {
-					each.replace(
-						new RegExp(pattern.source, `${pattern.flags.replace("g", "")}g`),
-						"x",
-					);
-				},
-				text,
-				name,
-			);
+		"%s grows linearly on every class and pair of classes",
+		(_case, detector, spec) => {
+			assertSweepLinear((text) => {
+				detector.test(text);
+			}, spec);
 		},
 		GROWTH_TIMEOUT_MS,
 	);
@@ -446,6 +522,109 @@ describe("redactProviderText", () => {
 			expect(redactProviderText(text)).toBe(expected);
 	});
 
+	it("reads a credential on through a control character inside it", () => {
+		for (const text of [
+			"Bearer abcd\u0007SECRCTL3 ok",
+			"token=abcd\u0000SECRCTL2tail ok",
+		])
+			expect(redactProviderText(text)).not.toContain("SECRCTL");
+	});
+
+	it("keeps a locator, which is a reference, and redacts a token beside it", () => {
+		for (const locator of [
+			"hobo-token://camp/vercel",
+			"secret://camp/aws-deploy",
+			"hobo-secret://camp/db",
+		]) {
+			const redacted = redactProviderText(
+				`credentialRef ${locator} and token=abc123secret`,
+			);
+			expect(redacted).toBe(`credentialRef ${locator} and [redacted]`);
+		}
+		expect(redactProviderText("token: secret://camp/x")).toBe(
+			"token: secret://camp/x",
+		);
+	});
+
+	it("keeps only a clean locator: one a control character runs on through is redacted", () => {
+		expect(redactProviderText("ref hobo-token://camp/x ok")).toBe(
+			"ref hobo-token://camp/x ok",
+		);
+		for (const text of [
+			"ref hobo-token://camp/x\u001bSECRLOC1 ok",
+			"token=hobo-token://camp/x\u0000SECRLOC1 ok",
+			`token=hobo-token://${"a".repeat(300)}SECRLOC1 ok`,
+		]) {
+			expect(redactProviderText(text, 10_000)).not.toContain("SECRLOC1");
+		}
+	});
+
+	it("finds a credential whose name another match took as its value", () => {
+		for (const text of [
+			'"token": "\'npg_password: SECRVAL1 ok',
+			"api_key=password: SECRVAL1 ok",
+			"x code=password: SECRVAL1 ok",
+		]) {
+			expect(redactProviderText(text, 10_000)).not.toContain("SECRVAL1");
+		}
+	});
+
+	it("takes what is glued to a private key's END line with it", () => {
+		const key =
+			"-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----npg_SECRPEM1";
+		expect(redactProviderText(`before ${key} after`)).toBe(
+			"before [redacted] after",
+		);
+	});
+
+	it("redacts every match of every pattern as one marker per run of them", () => {
+		const opaque = redactionPattern(/[A-Za-z0-9_-]{20,}/gu);
+		const url = redactionPattern(/postgres:\/\/\S+/gu);
+		// The url match ends a run the long-run rule needs whole: both are kept.
+		expect(
+			redactMatches("x SECRQcY0c2SQ0123postgres://u:p@h y", [url, opaque]),
+		).toBe("x [redacted] y");
+		expect(redactMatches("a b", [opaque])).toBe("a b");
+	});
+
+	it("tells a Basic or Token credential from the word after it in prose", () => {
+		for (const prose of [
+			"Token required for this call",
+			"Basic authentication failed",
+			"Token Authentication is off",
+			"Token expired at noon",
+			"Basic credentials missing",
+		])
+			expect(redactProviderText(prose)).toBe(prose);
+		for (const credential of [
+			"abcdefgh1",
+			"dXNlcjpwYXNz",
+			"ABCDEFGHIJ",
+			"abc.defgh",
+		])
+			expect(redactProviderText(`sent Token ${credential} ok`)).toBe(
+				"sent [redacted] ok",
+			);
+	});
+
+	it("takes a JWT's header and payload minimums from the copies it replaced", () => {
+		expect(redactProviderText("my-eyewear-store.myshopify.com")).toBe(
+			"my-eyewear-store.myshopify.com",
+		);
+		// ten and ten after `ey`, or eight, eight and eight after `eyJ`.
+		expect(redactProviderText("t eyAAAAAAAAAA.BBBBBBBBBB.c ok")).toBe(
+			"t [redacted] ok",
+		);
+		expect(redactProviderText("t eyJAAAAAAAA.BBBBBBBB.CCCCCCCC ok")).toBe(
+			"t [redacted] ok",
+		);
+	});
+
+	it("takes a prefixed key's whole run, not only from its prefix", () => {
+		const run = `${"A".repeat(30)}SECROPQ1-sk_${"B".repeat(20)}`;
+		expect(redactProviderText(`x ${run} y`)).toBe("x [redacted] y");
+	});
+
 	it("finds a credential a control character was meant to hide", () => {
 		for (const text of [
 			"PASSWORD\u0000=hunter2",
@@ -542,17 +721,34 @@ describe("a provider profile", () => {
 		expect(find("eyJhbGciOiJub25lIn0.eyJzdWIiOiJ4In0.")).toEqual([]);
 	});
 
-	it("searches a profile's fallbacks last, so they cannot split a JWT", () => {
+	it("redacts a JWT whole, whichever group a long-run rule is in", () => {
 		const header = `eyJ${"h".repeat(53)}`;
 		const payload = "eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJyb290In0";
 		const signature = "s".repeat(48);
 		const jwt = `${header}.${payload}.${signature}`;
 		const opaque = /[A-Za-z0-9_-]{40,}/gu;
-		const fallbackLast = createProviderRedactor({ fallbacks: [opaque] });
-		expect(fallbackLast(`token ${jwt} ok`)).toBe("token [redacted] ok");
-		// Run first, the same rule splits it and the payload survives.
-		const splitFirst = createProviderRedactor({ patterns: [opaque] });
-		expect(splitFirst(`token ${jwt} ok`)).toContain(payload);
+		// Searched in turn over a text being rewritten, the rule run first split
+		// it and the payload survived; every shape now searches the same text.
+		for (const profile of [{ fallbacks: [opaque] }, { patterns: [opaque] }]) {
+			expect(createProviderRedactor(profile)(`token ${jwt} ok`)).toBe(
+				"token [redacted] ok",
+			);
+		}
+	});
+
+	it("leaves no shape short of the text another one matched", () => {
+		const redact = createProviderRedactor({
+			patterns: [/\bcode\s*[=:]\s*[A-Za-z0-9-]{8,}/giu],
+			fallbacks: [/[A-Za-z0-9/+=_-]{20,}/gu],
+		});
+		// `code` takes `password` from the secret-key shape, which still sees it.
+		expect(redact("x code=password: .-hunter2hunter2 y")).toBe(
+			"x [redacted] y",
+		);
+		// The postgres URL takes the end of a run the long-run rule needs whole.
+		expect(redact("x SECRQcY0c2SQ0123postgres://u:p@h y")).toBe(
+			"x [redacted] y",
+		);
 	});
 
 	it("adds the provider's shapes to the shared ones", () => {
@@ -572,10 +768,10 @@ describe("a provider profile", () => {
 		expect(
 			redact(`pushed ${digest} and ${digest} with ${"Z".repeat(48)}`),
 		).toBe(`pushed ${digest} and ${digest} with [redacted]`);
-		// A text that carries the placeholder's delimiters cannot forge a slot.
-		expect(redact(`x \uE0000\uE001 ${digest}`)).toBe(
-			`x \uFFFD0\uFFFD ${digest}`,
-		);
+		// The text between kept spans is searched on its own, so a run that
+		// would be long enough with the digest in it is not.
+		const before = `${"Z".repeat(20)}-`;
+		expect(redact(`${before}${digest}`)).toBe(`${before}${digest}`);
 	});
 
 	it("decodes percent-encoding fully before searching, when asked", () => {
@@ -620,5 +816,46 @@ describe("decodePercentFully", () => {
 			),
 			{ numRuns: 2000, seed: 20261108 },
 		);
+	});
+});
+
+// The detectors the claims, recipes, netlify-receipt and conformance guards
+// had, as they stood before they took the shared ones: on 150k generated texts
+// each, the shared detector finds every text the old one found.
+describe("the shared detectors against the ones they replaced", () => {
+	const finds = (pattern: RegExp) => (text: string) => pattern.test(text);
+	it.each([
+		[
+			"the claims, recipes and netlify JWT detector",
+			/\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./u,
+			JWT_DETECTOR,
+			JWT_PIECES,
+		],
+		[
+			"the conformance JWT detector",
+			/\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/u,
+			JWT_DETECTOR,
+			JWT_PIECES,
+		],
+		[
+			"every guard's private-key detector",
+			/-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
+			PRIVATE_KEY_DETECTOR,
+			PEM_PIECES,
+		],
+	] as const)(
+		"%s finds nothing the shared one misses",
+		(_case, old, now, pieces) => {
+			expect(assertFindsNoLess(finds(old), finds(now), pieces)).toBeGreaterThan(
+				1000,
+			);
+		},
+		GROWTH_TIMEOUT_MS,
+	);
+
+	it("a hostname with ey in it is not a JWT to either", () => {
+		const host = "see my-eyewear-store.myshopify.com.example.internal.";
+		expect(JWT_DETECTOR.test(host)).toBe(false);
+		expect(redactProviderText(host)).toBe(host.trim());
 	});
 });

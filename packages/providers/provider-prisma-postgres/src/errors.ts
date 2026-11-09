@@ -7,7 +7,10 @@
  * from it reaches a message without going through {@link redactProviderText}.
  */
 
-import { createProviderRedactor } from "@hobo/core/provider-redaction";
+import {
+	createProviderRedactor,
+	type ProviderRedactionProfile,
+} from "@hobo/core/provider-redaction";
 import { isJsonString } from "./json.js";
 
 export const PROVIDER_ERROR_CODES = [
@@ -41,14 +44,19 @@ export type ProviderErrorOptions = {
 
 export { containsControlChar } from "@hobo/core/provider-redaction";
 
-const providerRedactor = createProviderRedactor({
+/** The provider's own patterns, on top of the shared ones. */
+export const PRISMA_POSTGRES_REDACTION_PROFILE: ProviderRedactionProfile = {
 	patterns: [
 		/https?:\/\/create-db\.prisma\.io\/claim\S*/giu,
 		/\bproj_[A-Za-z0-9_-]+/gu,
 		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
 	],
 	decodePercent: true,
-});
+};
+
+const providerRedactor = createProviderRedactor(
+	PRISMA_POSTGRES_REDACTION_PROFILE,
+);
 
 /**
  * Replace anything credential-shaped with a marker and flatten control

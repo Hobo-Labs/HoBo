@@ -6,10 +6,18 @@
  * megabyte of `-ey` or of `postgres://:::` stalled the scan. These pin that it
  * still refuses what it refused, and is linear.
  */
+import { assertSweepLinear } from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
+import {
+	assertFindsNoLess,
+	DSN_PIECES,
+	JWT_PIECES,
+	PEM_PIECES,
+} from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import { assertSanitized, LiveEvidenceError } from "../src/live/index.js";
+import { assertSanitized as baseAssertSanitized } from "./fixtures/base-guard.js";
 
 function artifactNoting(note: string): Parameters<typeof assertSanitized>[0] {
 	// SAFETY: a fixture holding one string is the assertSanitized input at this test boundary.
@@ -120,5 +128,65 @@ describe("assertSanitized detectors", () => {
 				OLD_CONNECTION_STRINGS.some((pattern) => pattern.test(serialized)),
 			);
 		}
+	});
+});
+
+// Against the scan as it stood before (vendored under test/fixtures): on 150k
+// generated texts per piece set, it refuses every artifact the old one did.
+
+describe("assertSanitized against the scan it replaced", () => {
+	const refuses =
+		(check: (artifact: Parameters<typeof assertSanitized>[0]) => void) =>
+		(text: string) => {
+			try {
+				check(artifactNoting(text));
+				return false;
+			} catch {
+				return true;
+			}
+		};
+	it.each([
+		["connection strings", DSN_PIECES],
+		["jwts", JWT_PIECES],
+		["private keys", PEM_PIECES],
+	] as const)(
+		"refuses every artifact the old scan refused, on %s",
+		{ timeout: 60_000 },
+		(_case, pieces) => {
+			expect(
+				assertFindsNoLess(
+					refuses(baseAssertSanitized),
+					refuses(assertSanitized),
+					pieces,
+				),
+			).toBeGreaterThan(1000);
+		},
+	);
+});
+
+describe("assertSanitized on the whole sweep", () => {
+	it("grows linearly on runs of every class and pair of classes", {
+		timeout: 60_000,
+	}, () => {
+		assertSweepLinear(
+			(text) => {
+				try {
+					assertSanitized(artifactNoting(text));
+				} catch {
+					// Refusing is fine; stalling is not.
+				}
+			},
+			{
+				alphabet: "aZ9",
+				words: [
+					"postgres://",
+					"rediss://",
+					"mysql://",
+					"mongodb+srv://",
+					"eyJ",
+					"-----BEGIN PRIVATE KEY-----",
+				],
+			},
+		);
 	});
 });

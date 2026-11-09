@@ -7,7 +7,10 @@
  * adopted namespace, whatever the operator already put there.
  */
 
-import { createProviderRedactor } from "@hobo/core/provider-redaction";
+import {
+	createProviderRedactor,
+	type ProviderRedactionProfile,
+} from "@hobo/core/provider-redaction";
 
 export const KUBERNETES_ERROR_CODES = [
 	"PROVIDER_AUTH_FAILED",
@@ -34,14 +37,17 @@ export type KubernetesErrorOptions = {
 	readonly cause?: Error;
 };
 
-const clusterRedactor = createProviderRedactor({
+/** The provider's own patterns, on top of the shared ones. */
+export const KUBERNETES_REDACTION_PROFILE: ProviderRedactionProfile = {
 	patterns: [
 		/\b(?:client-key-data|client-certificate-data|certificate-authority-data)\s*[=:]\s*\S+/giu,
 		// .dockerconfigjson, the usual imagePullSecret payload: to its first
 		// closing brace, or to the end of the text when there is none.
 		/"auths"\s*:\s*\{[^}]*\}?/gu,
 	],
-});
+};
+
+const clusterRedactor = createProviderRedactor(KUBERNETES_REDACTION_PROFILE);
 
 /**
  * Replace anything credential-shaped with a marker and flatten control
