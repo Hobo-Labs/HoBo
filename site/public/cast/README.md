@@ -55,10 +55,15 @@ with his scarf on the other shoulder — the same mistake as mirroring Bo's bind
 ## Where they come from
 
 ```sh
-uv run media/scripts/higgsfield-run.py media/scripts/jobs/trail-cast.json   # generate -> media/runs/ (gitignored)
+higgsfield generate create <model> --prompt "<brief>" --image-references <style-ref> --wait   # generate -> media/runs/ (gitignored)
 # look at the boards; promote the good ones to media/public/reference/cast/
-uv run media/scripts/build-trail-art.py cast                                # normalize -> here
+uv run media/scripts/build-trail-art.py cast                                                    # normalize -> here
 ```
+
+The briefs live in `media/scripts/jobs/trail-cast.json`, and the style
+references they attach are composed by `media/scripts/build-style-refs.py`.
+Generation runs through the Higgsfield CLI on the account's own plan credits
+(`higgsfield auth login` first); there is no API key involved.
 
 Each character is generated as one **pose board**: the same character eight
 times on one sheet. A model keeps a character far more consistent within one

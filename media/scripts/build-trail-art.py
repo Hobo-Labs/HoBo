@@ -20,9 +20,11 @@ and normalizes it into what the site ships:
       192px cells, the same pose in the same cell on every sheet, feet on one
       baseline and the body on one centre column.
 
-Generation is a separate, earlier step (`higgsfield-run.py`, into the
-gitignored `media/runs/`), and promotion from a run to the Reference tier is
-a person looking at it. See AGENTS.md, "Generated-art rules".
+Generation is a separate, earlier step — the Higgsfield CLI
+(`higgsfield generate create <model> ... --wait`), from the briefs in
+`media/scripts/jobs/`, into the gitignored `media/runs/` — and promotion from
+a run to the Reference tier is a person looking at it. See AGENTS.md,
+"Generated-art rules".
 
 Three rules this follows, learned the hard way on Bo's own sheets
 (site/public/parallax/README.md):
@@ -197,9 +199,33 @@ def cut_chroma(path: Path) -> np.ndarray:
 	return np.dstack([grey, cover * 255]).astype(np.uint8)
 
 
+def cut_alpha(path: Path) -> np.ndarray:
+	"""A board that arrived with a real transparent background: use it as given.
+
+	The model's own alpha is coverage and its colour is ink, which is already
+	the contract — it only needs the same edge rule and despeckle as the rest.
+	"""
+	rgba = np.asarray(Image.open(path).convert("RGBA"), dtype=np.float32)
+	grey = rgba[..., :3] @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
+	cover = rgba[..., 3] / 255
+	cover = np.where(cover < 0.1, 0.0, np.where(cover > 0.93, 1.0, cover))
+	grey = np.where(cover > 0, grey, 0)
+	grey = np.where(cover < 1, np.where(grey < 150, 0.0, 255.0), grey)
+	solid = cover > 0
+	lab, n = ndimage.label(solid, structure=np.ones((3, 3)))
+	if n:
+		sizes = ndimage.sum(solid, lab, index=np.arange(1, n + 1))
+		specks = np.isin(lab, np.flatnonzero(sizes < solid.size * 0.00003) + 1)
+		cover = np.where(specks, 0.0, cover)
+	return np.dstack([grey, cover * 255]).astype(np.uint8)
+
+
 def read_board(path: Path) -> np.ndarray:
-	"""A board on a chroma ground is keyed; one on paper is cut by enclosure."""
-	rgb = np.asarray(Image.open(path).convert("RGB"), dtype=np.float32)
+	"""Transparent boards are used as given, chroma ones keyed, paper ones cut by enclosure."""
+	source = Image.open(path)
+	if source.mode in ("RGBA", "LA") and np.asarray(source.convert("RGBA"))[..., 3].min() < 16:
+		return cut_alpha(path)
+	rgb = np.asarray(source.convert("RGB"), dtype=np.float32)
 	corner = np.median(np.concatenate([rgb[:10].reshape(-1, 3), rgb[-10:].reshape(-1, 3)]), axis=0)
 	chroma = corner - corner.mean()
 	return cut_chroma(path) if float(chroma @ chroma) >= 40**2 else cut_out(path, crop=False)
