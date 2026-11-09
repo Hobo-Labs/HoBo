@@ -262,13 +262,14 @@ return new Response("application unavailable", {status: 503});
 		});
 	}, 300_000);
 
-	it.each([
-		"--anonymous",
-		"--temporary",
-	])("expires a real self-hosted %s deployment without a hosted service", async (flag) => {
+	// --anonymous and --temporary are one switch (`anonymous || temporary` in
+	// src/broker-up-command.ts and wantsAnonymousMode in src/broker-target.ts),
+	// and self-hosted-broker.test.ts places with each in-process, so one flag
+	// carries the real expiry.
+	it("expires a real self-hosted --anonymous deployment without a hosted service", async () => {
 		await setup(async (project, env, command) => {
 			env.HOBO_LOCAL_DEPLOYMENT_TTL_SECONDS = "3";
-			const up = await command(["up", flag]);
+			const up = await command(["up", "--anonymous"]);
 			expect(up).toMatchObject({
 				ok: true,
 				data: { persistent: true, expiresAt: expect.any(String) },
