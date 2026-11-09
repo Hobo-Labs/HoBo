@@ -7,12 +7,12 @@
  * the dockerconfigjson shape from every `"auths":{` for a `}`. These pin that
  * nothing it redacted leaks now and that it is linear.
  */
+import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { describe, expect, it } from "vitest";
 
 import { redactClusterText } from "../src/errors.js";
 
 const MB = 1_000_000;
-const repeated = (unit: string) => unit.repeat(Math.ceil(MB / unit.length));
 
 describe("redactClusterText", () => {
 	it("still redacts every shape its own copy did", () => {
@@ -39,12 +39,12 @@ describe("redactClusterText", () => {
 	});
 
 	it.each([
-		["-eyJ", repeated("-eyJ")],
-		["BEGIN markers", repeated("-----BEGIN PRIVATE KEY-----")],
-		['"auths":{ with no closing brace', repeated('"auths":{')],
-	])("redacts 1 MB of %s in well under a second", (_case, hostile) => {
-		const started = performance.now();
-		redactClusterText(hostile, 2 * MB);
-		expect(performance.now() - started).toBeLessThan(1000);
+		["-eyJ", repeatedTo("-eyJ")],
+		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
+		['"auths":{ with no closing brace', repeatedTo('"auths":{')],
+	] as const)("redacting %s grows linearly", (_case, input) => {
+		assertGrowsLinearly((text) => {
+			redactClusterText(text, 8 * MB);
+		}, input);
 	});
 });

@@ -5,6 +5,7 @@
  * These pin that nothing it redacted leaks now, what it newly redacts, and
  * that it is linear.
  */
+import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { describe, expect, it } from "vitest";
 
 import { redactPackText } from "../src/errors.js";
@@ -36,10 +37,11 @@ describe("redactPackText", () => {
 			expect(redactPackText(`before ${secret}`)).toBe("before [redacted]");
 	});
 
-	it("redacts 1 MB of BEGIN markers in well under a second", () => {
-		const hostile = "-----BEGIN PRIVATE KEY-----".repeat(MB / 27);
-		const started = performance.now();
-		redactPackText(hostile, 2 * MB);
-		expect(performance.now() - started).toBeLessThan(1000);
+	it.each([
+		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
+	] as const)("redacting %s grows linearly", (_case, input) => {
+		assertGrowsLinearly((text) => {
+			redactPackText(text, 8 * MB);
+		}, input);
 	});
 });

@@ -5,6 +5,7 @@
  * megabyte of `-ey` stalled the scan. These pin that it still refuses what it
  * refused, and is linear.
  */
+import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -23,8 +24,6 @@ import {
 	requestForRecipe,
 	SIGNER,
 } from "./fixtures.js";
-
-const MB = 1_000_000;
 
 function inboxOffer(): DeploymentOffer {
 	const recipe = findStandardRecipe(
@@ -50,6 +49,8 @@ const withRef = (ref: string): DeploymentOffer => ({
 });
 
 describe("offer scan detectors", () => {
+	const offer = inboxOffer();
+
 	it.each([
 		["a jwt", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NX0.sig"],
 		["a jwt after a hyphen", "x-eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NX0.sig"],
@@ -60,10 +61,11 @@ describe("offer scan detectors", () => {
 		);
 	});
 
-	it("scans a value of 1 MB of -ey in well under a second", () => {
-		const offer = withRef("-ey".repeat(MB / 3));
-		const started = performance.now();
-		assertOfferIsSecretFree(offer);
-		expect(performance.now() - started).toBeLessThan(1000);
+	it.each([
+		["-ey", repeatedTo("-ey")],
+	] as const)("scanning a value of %s grows linearly", (_case, input) => {
+		assertGrowsLinearly((text) => {
+			assertOfferIsSecretFree({ ...offer, trustEvidenceRefs: [text] });
+		}, input);
 	});
 });

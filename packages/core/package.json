@@ -23,6 +23,10 @@
 		"./provider-redaction": {
 			"types": "./dist/provider-redaction.d.ts",
 			"default": "./dist/provider-redaction.js"
+		},
+		"./linear-time": {
+			"types": "./dist/linear-time.d.ts",
+			"default": "./dist/linear-time.js"
 		}
 	},
 	"publishConfig": {

@@ -23,9 +23,26 @@ cut. `createProviderRedactor(profile)` adds a provider's own `patterns` (searche
 after the private key and before the other shared shapes), spans to keep whole,
 full percent-decoding (`decodePercentFully`, one pass), and whitespace
 collapsing. A pattern is parsed by `redactionPattern`, which refuses one that is
-not global or is sticky. Every shape is linear in the text, each with a 1 MB
-adversarial test (`test/provider-redaction.test.ts`); `JWT_DETECTOR` and
-`PRIVATE_KEY_DETECTOR` are the same shapes for guards that refuse instead.
+not global or is sticky. Every pattern is linear in the text, each with an
+adversarial growth test (`test/provider-redaction.test.ts`, see below);
+`JWT_DETECTOR` and `PRIVATE_KEY_DETECTOR` are the same shapes for guards that
+refuse instead.
+
+## Linear-time tests
+
+`@hobo/core/linear-time` is how the redaction tests prove a pattern linear
+without a wall-clock bound that a slow or loaded machine fails.
+`measureGrowth(run, input)` times `input(n)` and `input(4n)` in the CPU time of
+the thread that runs them (so other processes on a loaded machine do not count),
+the best of three runs each, taking turns. n doubles from 4096 (to at most 2^18)
+until a run takes 50 ms of CPU time, long against Linux's few-millisecond
+CPU-time ticks; an operation too quick for that is repeated within each timed
+run, the same number of times at both sizes. `assertGrowsLinearly` throws a
+`NonLinearGrowthError` at `LINEAR_GROWTH_LIMIT` (8: linear work grows about 4x,
+quadratic about 16x), then runs `input(1 MB)` once. An operation that costs next
+to nothing even repeated `MAX_REPEAT` times is linear while 4n stays under 400
+ms. The only absolute bound is `HANG_BACKSTOP_MS` (20 s) on a single call, an
+`OperationHangError`. `repeatedTo(unit, prefix)` builds the inputs.
 
 ## Honest scope
 

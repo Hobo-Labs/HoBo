@@ -1,23 +1,37 @@
 /**
- * The shared provider redactor: every shape linear on 1 MB of a hostile text,
- * the window and its cut, the profile a provider extends it with, and the
+ * The shared provider redactor: every pattern linear in a hostile text, the
+ * window and its cut, the profile a provider extends it with, and the
  * one-pass percent-decoding.
  *
- * Ported from provider-vercel's hostile-text tests, where the shapes first
- * became linear: the JWT shape could start at every `ey` and run to the end
- * (100 kB of `-ey` took about ten seconds), and the private-key shape searched
- * from every BEGIN for an END that never came.
+ * Ported from provider-vercel's hostile-text tests, where the patterns first
+ * became linear: the JWT pattern could start at every `ey` and run to the end
+ * (100 kB of `-ey` took about ten seconds), and the private-key pattern
+ * searched from every BEGIN for an END that never came.
+ *
+ * Linear means the cost grows about 4x from n to 4n characters, measured by
+ * `measureGrowth` (`@hobo/core/linear-time`), so no verdict here depends on
+ * how fast or how loaded the machine is. The one absolute bound is the 20 s
+ * backstop on a single megabyte run, which only a hang reaches.
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
+import {
+	grewLinearly,
+	HANG_BACKSTOP_MS,
+	LINEAR_GROWTH_LIMIT,
+	measureGrowth,
+	repeatedTo,
+} from "../src/linear-time.js";
 import {
 	CREDENTIAL_PATTERNS,
 	containsControlChar,
 	createProviderRedactor,
 	decodePercentFully,
 	JWT_DETECTOR,
+	JWT_PATTERN,
 	PRIVATE_KEY_DETECTOR,
+	PRIVATE_KEY_PATTERN,
 	REDACTION_WINDOW,
 	RedactionPatternError,
 	redactionPattern,
@@ -34,95 +48,286 @@ function timed(run: () => void): number {
 	return performance.now() - started;
 }
 
-describe("every shape on 1 MB of a hostile text", () => {
-	// One input per shape, built to make a backtracking form of it start again
-	// at every position and scan to the end. The window is opened past the
-	// whole megabyte (maxLength 2 MB), so the shapes run on all of it.
-	const adversarial: readonly (readonly [string, string])[] = [
-		["jwt: -ey over and over", repeated("-ey")],
-		["jwt: ey runs with no dot", repeated("eyAAAAAAAAAA-")],
-		["jwt: runs ending in a dot", repeated("-eyAAAAAAAAAA.")],
-		["private key: BEGIN markers", repeated("-----BEGIN PRIVATE KEY-----")],
-		["private key: END markers", repeated("-----END CERTIFICATE-----\n")],
-		[
-			"private key: long END labels after a BEGIN",
-			`-----BEGIN PRIVATE KEY-----\n${repeated(`-----END ${"A ".repeat(500)}`)}`,
-		],
-		["bearer: Bearer and a tab", repeated("Bearer\t")],
-		["bearer: Bearer and spaces to the end", `Bearer${" ".repeat(MB)}`],
-		["connection strings", repeated("postgres:/rediss:/mysql:/")],
-		["url credentials: a scheme run", repeated("a.")],
-		["url credentials: :// over and over", repeated("a://")],
-		["url credentials: user and no @", repeated("a://b:")],
-		[
-			"url credentials: one long user",
-			`a://${"b".repeat(MB)}:${"c".repeat(MB)}`,
-		],
-		["inline credentials: //a", repeated("//a")],
-		["inline credentials: //a:a", repeated("//a:a")],
-		["secret key: one name run", repeated("a")],
-		["secret key: names with no separator", repeated("token")],
-		["secret key: a name and spaces", `password${" ".repeat(MB)}`],
-		["secret key: a separator and spaces", `password=${" ".repeat(MB)}`],
-		["secret key: quotes", repeated('"token"*:"')],
-		["prefixed key: -sk- over and over", repeated("-sk-")],
-		[
-			"a mix, with whitespace",
-			repeated(
-				"-ey-ey eyAAAAAAAAAAAA.eyBBBBBBBBBBBB -----BEGIN RSA PRIVATE KEY-----\n-----BEGIN PRIVATE KEY----- Bearer api_key= code= sk- a://b: //c:d \t\r\n",
-			),
-		],
-	];
+/** Each shared pattern by what it finds, in CREDENTIAL_PATTERNS' order. */
+const PATTERN_NAMES = [
+	"private key",
+	"jwt",
+	"bearer",
+	"postgres url",
+	"redis url",
+	"mysql, mongodb or amqp url",
+	"url credentials",
+	"inline credentials",
+	"secret key",
+	"prefixed key",
+] as const;
+type PatternName = (typeof PATTERN_NAMES)[number];
+
+function patternNamed(name: PatternName): RegExp {
+	const pattern = CREDENTIAL_PATTERNS[PATTERN_NAMES.indexOf(name)];
+	if (pattern === undefined) throw new Error(`no shared pattern ${name}`);
+	return pattern;
+}
+
+type Adversary = {
+	readonly name: string;
+	/** The patterns a backtracking form of which it was built to defeat. */
+	readonly targets: readonly PatternName[];
+	readonly text: (length: number) => string;
+};
+
+// Each input makes a backtracking form of its target start again at every
+// position and scan to the end, or scan back over what it already read.
+const adversarial: readonly Adversary[] = [
+	{ name: "-ey over and over", targets: ["jwt"], text: repeatedTo("-ey") },
+	{
+		name: "ey runs with no dot",
+		targets: ["jwt"],
+		text: repeatedTo("eyAAAAAAAAAA-"),
+	},
+	{
+		name: "runs ending in a dot",
+		targets: ["jwt"],
+		text: repeatedTo("-eyAAAAAAAAAA."),
+	},
+	{
+		name: "BEGIN markers",
+		targets: ["private key"],
+		text: repeatedTo("-----BEGIN PRIVATE KEY-----"),
+	},
+	{
+		name: "END markers",
+		targets: ["private key"],
+		text: repeatedTo("-----END CERTIFICATE-----\n"),
+	},
+	{
+		name: "long END labels after a BEGIN",
+		targets: ["private key"],
+		text: repeatedTo(
+			`-----END ${"A ".repeat(500)}`,
+			"-----BEGIN PRIVATE KEY-----\n",
+		),
+	},
+	{
+		name: "Bearer and a tab",
+		targets: ["bearer"],
+		text: repeatedTo("Bearer\t"),
+	},
+	{
+		name: "Bearer and spaces to the end",
+		targets: ["bearer"],
+		text: repeatedTo(" ", "Bearer"),
+	},
+	{
+		name: "connection-string schemes",
+		targets: ["postgres url", "redis url", "mysql, mongodb or amqp url"],
+		text: repeatedTo("postgres:/rediss:/mysql:/mongodb+srv:/"),
+	},
+	{
+		name: "a scheme run",
+		targets: ["url credentials"],
+		text: repeatedTo("a."),
+	},
+	{
+		name: ":// over and over",
+		targets: ["url credentials", "inline credentials"],
+		text: repeatedTo("a://"),
+	},
+	{
+		name: "user and no @",
+		targets: ["url credentials"],
+		text: repeatedTo("a://b:"),
+	},
+	{
+		name: "one long user",
+		targets: ["url credentials"],
+		text: (length) => `a://${"b".repeat(length / 2)}:${"c".repeat(length / 2)}`,
+	},
+	{ name: "//a", targets: ["inline credentials"], text: repeatedTo("//a") },
+	{ name: "//a:a", targets: ["inline credentials"], text: repeatedTo("//a:a") },
+	{ name: "one name run", targets: ["secret key"], text: repeatedTo("a") },
+	{
+		name: "names with no separator",
+		targets: ["secret key"],
+		text: repeatedTo("token"),
+	},
+	{
+		name: "a name and spaces",
+		targets: ["secret key"],
+		text: repeatedTo(" ", "password"),
+	},
+	{
+		name: "a separator and spaces",
+		targets: ["secret key"],
+		text: repeatedTo(" ", "password="),
+	},
+	{ name: "quotes", targets: ["secret key"], text: repeatedTo('"token"*:"') },
+	{
+		name: "-sk- over and over",
+		targets: ["prefixed key"],
+		text: repeatedTo("-sk-"),
+	},
+	{
+		name: "a mix, with whitespace",
+		targets: [],
+		text: repeatedTo(
+			"-ey-ey eyAAAAAAAAAAAA.eyBBBBBBBBBBBB -----BEGIN RSA PRIVATE KEY-----\n-----BEGIN PRIVATE KEY----- Bearer api_key= code= sk- a://b: //c:d \t\r\n",
+		),
+	},
+];
+
+function expectLinear(
+	run: (text: string) => void,
+	text: (length: number) => string,
+	what: string,
+): void {
+	const growth = measureGrowth(run, text);
+	expect(grewLinearly(growth), `${what}: ${JSON.stringify(growth)}`).toBe(true);
+}
+
+describe("every pattern on a hostile text", () => {
+	const searchedWhole = (text: string) => {
+		redactProviderText(text, 8 * MB);
+	};
 
 	it.each(
-		adversarial,
-	)("%s is searched whole in well under a second", (_case, hostile) => {
-		expect(hostile.length).toBeGreaterThanOrEqual(MB);
-		const took = timed(() => redactProviderText(hostile, 2 * MB));
-		expect(took).toBeLessThan(1000);
+		adversarial.map((entry) => [entry.name, entry] as const),
+	)("%s: searched whole, the cost grows linearly", (_case, entry) => {
+		expectLinear(searchedWhole, entry.text, entry.name);
+		// A megabyte, searched whole, still returns: only a hang trips this.
+		const megabyte = entry.text(MB);
+		expect(megabyte.length).toBeGreaterThanOrEqual(MB);
+		expect(timed(() => searchedWhole(megabyte))).toBeLessThan(HANG_BACKSTOP_MS);
 	});
 
 	it.each(
-		adversarial,
-	)("%s costs no more than the window by default", (_case, hostile) => {
-		let redacted = "";
-		const took = timed(() => {
-			redacted = redactProviderText(hostile);
-		});
-		expect(redacted.length).toBeLessThanOrEqual(257);
-		expect(took).toBeLessThan(1000);
+		adversarial.map((entry) => [entry.name, entry] as const),
+	)("%s: by default, the window bounds the output", (_case, entry) => {
+		// The window only ever shortens what is searched whole above.
+		expect(redactProviderText(entry.text(MB)).length).toBeLessThanOrEqual(257);
 	});
 
-	it("each shared shape alone stays linear on each input", () => {
-		for (const pattern of CREDENTIAL_PATTERNS) {
-			for (const [, hostile] of adversarial) {
-				const took = timed(() => hostile.replace(pattern, "[redacted]"));
-				expect(
-					took,
-					`${pattern.source} on ${hostile.slice(0, 20)}`,
-				).toBeLessThan(1000);
-			}
-		}
+	it("every shared pattern has an input built against it", () => {
+		expect(CREDENTIAL_PATTERNS).toHaveLength(PATTERN_NAMES.length);
+		expect(patternNamed("private key")).toBe(PRIVATE_KEY_PATTERN);
+		expect(patternNamed("jwt")).toBe(JWT_PATTERN);
+		const targeted = new Set(adversarial.flatMap((entry) => entry.targets));
+		expect([...PATTERN_NAMES].filter((name) => !targeted.has(name))).toEqual(
+			[],
+		);
 	});
 
-	it("the detectors stay linear too", () => {
-		for (const [, hostile] of adversarial) {
-			expect(timed(() => JWT_DETECTOR.test(hostile))).toBeLessThan(1000);
-			expect(timed(() => PRIVATE_KEY_DETECTOR.test(hostile))).toBeLessThan(
-				1000,
+	it.each(
+		adversarial.flatMap((entry) =>
+			entry.targets.map((target) => [target, entry.name, entry] as const),
+		),
+	)("the %s pattern alone grows linearly on %s", (target, _case, entry) => {
+		const pattern = patternNamed(target);
+		expectLinear(
+			(text) => {
+				text.replace(pattern, "[redacted]");
+			},
+			entry.text,
+			`${target} on ${entry.name}`,
+		);
+	});
+
+	it.each([
+		[
+			"the JWT detector",
+			JWT_DETECTOR,
+			["-ey over and over", "ey runs with no dot", "runs ending in a dot"],
+		],
+		[
+			"the private-key detector",
+			PRIVATE_KEY_DETECTOR,
+			["BEGIN markers", "long END labels after a BEGIN"],
+		],
+	] as const)("%s grows linearly", (_case, detector, inputs) => {
+		for (const entry of adversarial.filter((each) =>
+			inputs.includes(each.name),
+		)) {
+			expectLinear(
+				(text) => {
+					detector.test(text);
+				},
+				entry.text,
+				entry.name,
 			);
 		}
 	});
 
-	it("percent-decoding a megabyte of nested %25 is one pass", () => {
+	it("percent-decoding nested %25 grows linearly", () => {
 		// One layer of `%25` per pass for the old decoder: `%252525…41`.
-		const nested = `%${"25".repeat(MB / 2)}41`;
-		expect(timed(() => decodePercentFully(nested))).toBeLessThan(1000);
-		expect(
-			timed(() => createProviderRedactor({ decodePercent: true })(nested)),
-		).toBeLessThan(1000);
+		const nested = (length: number) => `%${"25".repeat(length / 2)}41`;
+		expectLinear(
+			(text) => {
+				decodePercentFully(text);
+			},
+			nested,
+			"decodePercentFully",
+		);
+		const redact = createProviderRedactor({ decodePercent: true });
+		expectLinear(
+			(text) => {
+				redact(text);
+			},
+			nested,
+			"a decoding redactor",
+		);
+	});
+
+	// The measure has to tell the two apart, or the tests above prove nothing:
+	// the patterns and the decoder they replaced must fail it.
+	it.each([
+		[
+			"the old JWT pattern",
+			/\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.\S*/giu,
+			repeatedTo("-ey"),
+		],
+		[
+			"the old private-key pattern",
+			/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/giu,
+			repeatedTo("-----BEGIN PRIVATE KEY-----"),
+		],
+		[
+			"the old secret-key prefix",
+			/[A-Za-z0-9_-]*(?:access[_-]?token|auth[_-]?token|api[_-]?key)\s*[=:]\s*\S+/giu,
+			repeatedTo("a"),
+		],
+	] as const)("%s fails the measure", (_case, pattern, text) => {
+		const growth = measureGrowth((each) => {
+			each.replace(pattern, "x");
+		}, text);
+		expect(growth.ratio, JSON.stringify(growth)).toBeGreaterThanOrEqual(
+			LINEAR_GROWTH_LIMIT,
+		);
+	});
+
+	it("the old decoder, again until nothing changes, fails the measure", () => {
+		const growth = measureGrowth(
+			(text) => {
+				decodeByPasses(text);
+			},
+			(length) => `%${"25".repeat(length / 2)}41`,
+		);
+		expect(growth.ratio, JSON.stringify(growth)).toBeGreaterThanOrEqual(
+			LINEAR_GROWTH_LIMIT,
+		);
 	});
 });
+
+// The old way: decode the whole text again until it stops changing.
+function decodeByPasses(text: string): string {
+	let out = text;
+	for (;;) {
+		const decoded = out.replace(/%[a-f0-9]{2}/giu, (encoded) =>
+			String.fromCharCode(Number.parseInt(encoded.slice(1), 16)),
+		);
+		if (decoded === out) return out;
+		out = decoded;
+	}
+}
 
 describe("redactProviderText", () => {
 	it("redacts each shared shape", () => {
@@ -304,18 +509,6 @@ describe("a provider profile", () => {
 });
 
 describe("decodePercentFully", () => {
-	// The old way: decode the whole text again until it stops changing.
-	function decodeByPasses(text: string): string {
-		let out = text;
-		for (;;) {
-			const decoded = out.replace(/%[a-f0-9]{2}/giu, (encoded) =>
-				String.fromCharCode(Number.parseInt(encoded.slice(1), 16)),
-			);
-			if (decoded === out) return out;
-			out = decoded;
-		}
-	}
-
 	it("decodes every layer", () => {
 		expect(decodePercentFully("%252541%2F")).toBe("A/");
 		expect(decodePercentFully("%%3341")).toBe("41");

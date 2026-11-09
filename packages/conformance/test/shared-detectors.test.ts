@@ -6,11 +6,10 @@
  * megabyte of `-ey` or of `postgres://:::` stalled the scan. These pin that it
  * still refuses what it refused, and is linear.
  */
+import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { describe, expect, it } from "vitest";
 
 import { assertSanitized, LiveEvidenceError } from "../src/live/index.js";
-
-const MB = 1_000_000;
 
 function artifactNoting(note: string): Parameters<typeof assertSanitized>[0] {
 	// SAFETY: a fixture holding one string is the assertSanitized input at this test boundary.
@@ -41,15 +40,18 @@ describe("assertSanitized detectors", () => {
 	});
 
 	it.each([
-		["-ey", "-ey".repeat(MB / 3)],
-		["postgres:// and colons", `postgres://${":".repeat(MB)}`],
-	])("scans an artifact of 1 MB of %s in well under a second", (_case, note) => {
-		const started = performance.now();
-		try {
-			assertSanitized(artifactNoting(note));
-		} catch {
-			// Refusing is fine; stalling is not.
-		}
-		expect(performance.now() - started).toBeLessThan(1000);
+		["-ey", repeatedTo("-ey")],
+		[
+			"postgres:// and colons",
+			(length: number) => `postgres://${":".repeat(length)}`,
+		],
+	] as const)("scanning an artifact of %s grows linearly", (_case, input) => {
+		assertGrowsLinearly((text) => {
+			try {
+				assertSanitized(artifactNoting(text));
+			} catch {
+				// Refusing is fine; stalling is not.
+			}
+		}, input);
 	});
 });

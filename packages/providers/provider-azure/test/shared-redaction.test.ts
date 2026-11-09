@@ -6,6 +6,7 @@
  * message, and so did control characters. These pin that what the rule caught
  * is still caught, what it missed is caught now, and that it is linear.
  */
+import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { describe, expect, it } from "vitest";
 
 import { redactAzureText } from "../src/resolvers.js";
@@ -37,12 +38,12 @@ describe("redactAzureText", () => {
 	});
 
 	it.each([
-		["-ey", "-ey".repeat(MB / 3)],
-		["BEGIN markers", "-----BEGIN PRIVATE KEY-----".repeat(MB / 27)],
-		["short runs", "a.".repeat(MB / 2)],
-	])("redacts 1 MB of %s in well under a second", (_case, hostile) => {
-		const started = performance.now();
-		redact(hostile, 2 * MB);
-		expect(performance.now() - started).toBeLessThan(1000);
+		["-ey", repeatedTo("-ey")],
+		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
+		["short runs", repeatedTo("a.")],
+	] as const)("redacting %s grows linearly", (_case, input) => {
+		assertGrowsLinearly((text) => {
+			redact(text, 8 * MB);
+		}, input);
 	});
 });

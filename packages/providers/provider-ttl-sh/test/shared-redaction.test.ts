@@ -7,12 +7,12 @@
  * nothing it redacted leaks now, that digests still survive, and that the
  * shapes are linear.
  */
+import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { describe, expect, it } from "vitest";
 
 import { containsControlChar, redactProviderText } from "../src/errors.js";
 
 const MB = 1_000_000;
-const repeated = (unit: string) => unit.repeat(Math.ceil(MB / unit.length));
 const digest = `sha256:${"0123456789abcdef".repeat(4)}`;
 
 describe("provider-ttl-sh redaction", () => {
@@ -46,14 +46,14 @@ describe("provider-ttl-sh redaction", () => {
 	});
 
 	it.each([
-		["-ey", repeated("-ey")],
-		["BEGIN markers", repeated("-----BEGIN PRIVATE KEY-----")],
-		["an opaque run of word boundaries", repeated("a+")],
-		["digests", repeated(`${digest} `)],
-	])("redacts 1 MB of %s in well under a second", (_case, hostile) => {
-		const started = performance.now();
-		redactProviderText(hostile, 2 * MB);
-		expect(performance.now() - started).toBeLessThan(1000);
+		["-ey", repeatedTo("-ey")],
+		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
+		["an opaque run of word boundaries", repeatedTo("a+")],
+		["digests", repeatedTo(`${digest} `)],
+	] as const)("redacting %s grows linearly", (_case, input) => {
+		assertGrowsLinearly((text) => {
+			redactProviderText(text, 8 * MB);
+		}, input);
 	});
 
 	it("still reports control characters", () => {

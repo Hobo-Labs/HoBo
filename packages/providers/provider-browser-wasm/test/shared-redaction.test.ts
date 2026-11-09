@@ -4,6 +4,7 @@
  * shape started again at every `eyJ` and ran to the end. These pin that
  * nothing it redacted leaks now, what it newly redacts, and that it is linear.
  */
+import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { describe, expect, it } from "vitest";
 
 import { redactHostText } from "../src/errors.js";
@@ -37,10 +38,11 @@ describe("redactHostText", () => {
 			);
 	});
 
-	it("redacts 1 MB of -eyJ in well under a second", () => {
-		const hostile = "-eyJ".repeat(MB / 4);
-		const started = performance.now();
-		redactHostText(hostile, 2 * MB);
-		expect(performance.now() - started).toBeLessThan(1000);
+	it.each([
+		["-eyJ", repeatedTo("-eyJ")],
+	] as const)("redacting %s grows linearly", (_case, input) => {
+		assertGrowsLinearly((text) => {
+			redactHostText(text, 8 * MB);
+		}, input);
 	});
 });

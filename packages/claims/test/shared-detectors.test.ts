@@ -6,11 +6,11 @@
  * holding a megabyte of `-ey` or of `http://claim?`, the guard stalled the
  * append. These pin that it still refuses what it refused, and is linear.
  */
+import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { describe, expect, it } from "vitest";
 
 import { assertNoSecrets, type ClaimEvent } from "../src/index.js";
 
-const MB = 1_000_000;
 const observed = (observedStatus: string): ClaimEvent => ({
 	type: "ClaimStatusObserved",
 	itemId: "i",
@@ -36,16 +36,22 @@ describe("assertNoSecrets detectors", () => {
 	});
 
 	it.each([
-		["-ey", "-ey".repeat(MB / 3)],
-		["http://claim?", "http://claim?".repeat(MB / 13)],
-		["http://", "http://".repeat(MB / 7)],
-	])("checks a payload of 1 MB of %s in well under a second", (_case, status) => {
-		const started = performance.now();
-		try {
-			assertNoSecrets(observed(status));
-		} catch {
-			// Refusing is fine; stalling is not.
-		}
-		expect(performance.now() - started).toBeLessThan(1000);
+		["-ey", repeatedTo("-ey")],
+		["http://claim?", repeatedTo("http://claim?")],
+		["http://", repeatedTo("http://")],
+	] as const)("checking a payload of %s grows linearly", (_case, input) => {
+		assertGrowsLinearly(
+			(text) => {
+				try {
+					assertNoSecrets(observed(text));
+				} catch {
+					// Refusing is fine; stalling is not.
+				}
+			},
+			input,
+			// The old claim-URL detector was worse than quadratic: one call on 16
+			// kB took minutes. Starting at 1 kB, it fails the measure in seconds.
+			{ startLength: 1024 },
+		);
 	});
 });

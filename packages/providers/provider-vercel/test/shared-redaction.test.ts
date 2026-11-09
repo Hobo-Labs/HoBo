@@ -5,6 +5,7 @@
  * pin that nothing it redacted leaks now, what it newly redacts, and that its
  * own shape is linear.
  */
+import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { describe, expect, it } from "vitest";
 
 import { REDACTION_WINDOW, redactProviderText } from "../src/index.js";
@@ -43,10 +44,11 @@ describe("provider-vercel redaction", () => {
 			);
 	});
 
-	it("searches 1 MB of near-miss transfer codes in well under a second", () => {
-		const hostile = "code=ABC ".repeat(MB / 9);
-		const started = performance.now();
-		redactProviderText(hostile, 2 * MB);
-		expect(performance.now() - started).toBeLessThan(1000);
+	it.each([
+		["near-miss transfer codes", repeatedTo("code=ABC ")],
+	] as const)("redacting %s grows linearly", (_case, input) => {
+		assertGrowsLinearly((text) => {
+			redactProviderText(text, 8 * MB);
+		}, input);
 	});
 });

@@ -7,12 +7,12 @@
  * BEGIN for an END. These pin that nothing it redacted leaks now, encoded or
  * not, and that it is linear.
  */
+import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { describe, expect, it } from "vitest";
 
 import { containsControlChar, redactProviderText } from "../src/errors.js";
 
 const MB = 1_000_000;
-const repeated = (unit: string) => unit.repeat(Math.ceil(MB / unit.length));
 
 describe("provider-neon redaction", () => {
 	it("still redacts every shape its own copy did", () => {
@@ -39,13 +39,13 @@ describe("provider-neon redaction", () => {
 	});
 
 	it.each([
-		["nested %25", `%${"25".repeat(MB / 2)}41`],
-		["BEGIN markers", repeated("-----BEGIN PRIVATE KEY-----")],
-		["-ey", repeated("-ey")],
-	])("redacts 1 MB of %s in well under a second", (_case, hostile) => {
-		const started = performance.now();
-		redactProviderText(hostile, 2 * MB);
-		expect(performance.now() - started).toBeLessThan(1000);
+		["nested %25", (length: number) => `%${"25".repeat(length / 2)}41`],
+		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
+		["-ey", repeatedTo("-ey")],
+	] as const)("redacting %s grows linearly", (_case, input) => {
+		assertGrowsLinearly((text) => {
+			redactProviderText(text, 8 * MB);
+		}, input);
 	});
 
 	it("still reports control characters", () => {

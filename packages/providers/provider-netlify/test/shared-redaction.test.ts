@@ -7,19 +7,13 @@
  * nothing it redacted leaks now and that every shape it runs is linear; the
  * receipt scanner's detectors are held to the same.
  */
+import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { describe, expect, it } from "vitest";
 
 import { redactProviderText } from "../src/provider-errors.js";
 import { scanForCredentialMaterial } from "../src/receipt.js";
 
 const MB = 1_000_000;
-const repeated = (unit: string) => unit.repeat(Math.ceil(MB / unit.length));
-
-function took(run: () => void): number {
-	const started = performance.now();
-	run();
-	return performance.now() - started;
-}
 
 describe("provider-netlify redaction", () => {
 	it("still redacts every shape its own copy did", () => {
@@ -42,20 +36,24 @@ describe("provider-netlify redaction", () => {
 	});
 
 	it.each([
-		["-ey", repeated("-ey")],
-		["BEGIN markers", repeated("-----BEGIN PRIVATE KEY-----")],
-		["http:// with no claim", repeated("http://")],
-		["a name run with no separator", repeated("a")],
-	])("redacts 1 MB of %s in well under a second", (_case, hostile) => {
-		expect(took(() => redactProviderText(hostile, 2 * MB))).toBeLessThan(1000);
+		["-ey", repeatedTo("-ey")],
+		["BEGIN markers", repeatedTo("-----BEGIN PRIVATE KEY-----")],
+		["http:// with no claim", repeatedTo("http://")],
+		["a name run with no separator", repeatedTo("a")],
+	] as const)("redacting %s grows linearly", (_case, input) => {
+		assertGrowsLinearly((text) => {
+			redactProviderText(text, 8 * MB);
+		}, input);
 	});
 
 	it.each([
-		["-ey", repeated("-ey")],
-		["http:// with no claim", repeated("http://")],
-		["http://claim with no query", repeated("http://claim")],
-	])("scans a receipt string of 1 MB of %s in well under a second", (_case, hostile) => {
-		expect(took(() => scanForCredentialMaterial(hostile))).toBeLessThan(1000);
+		["-ey", repeatedTo("-ey")],
+		["http:// with no claim", repeatedTo("http://")],
+		["http://claim with no query", repeatedTo("http://claim")],
+	] as const)("scanning a receipt string of %s grows linearly", (_case, input) => {
+		assertGrowsLinearly((text) => {
+			scanForCredentialMaterial(text);
+		}, input);
 	});
 
 	it("the receipt scanner still finds a claim URL, a JWT and a key", () => {
