@@ -8,7 +8,6 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,11 +21,10 @@ import { describe, it, type TestContext } from "vitest";
 // Since the live lane's state is the only record of what it deployed, building
 // it on a directory of its own is said on one `hobo:` line.
 
-const TSX_LOADER = createRequire(import.meta.url).resolve("tsx");
 const FIXTURE = fileURLToPath(
-	new URL("./fixtures/composed-temp-dirs.mts", import.meta.url),
+	new URL("./fixtures/composed-temp-dirs.mjs", import.meta.url),
 );
-// Each run imports the whole composition from source.
+// Each run imports the whole built composition.
 const RUN_TIMEOUT_MS = 180_000;
 const SIGNAL_GRACE_MS = 15_000;
 
@@ -59,19 +57,15 @@ function run(
 ): Promise<Ended> {
 	const report = join(scratch, "report.json");
 	return new Promise((resolve, reject) => {
-		const child = spawn(
-			process.execPath,
-			["--import", TSX_LOADER, FIXTURE, mode, report, dataDir],
-			{
-				env: {
-					PATH: process.env.PATH ?? "",
-					TMPDIR: scratch,
-					NODE_NO_WARNINGS: "1",
-					...env,
-				},
-				stdio: ["ignore", "ignore", "pipe"],
+		const child = spawn(process.execPath, [FIXTURE, mode, report, dataDir], {
+			env: {
+				PATH: process.env.PATH ?? "",
+				TMPDIR: scratch,
+				NODE_NO_WARNINGS: "1",
+				...env,
 			},
-		);
+			stdio: ["ignore", "ignore", "pipe"],
+		});
 		let stderr = "";
 		child.stderr.setEncoding("utf8");
 		child.stderr.on("data", (chunk: string) => {
