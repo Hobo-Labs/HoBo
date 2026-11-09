@@ -361,6 +361,7 @@ try {
 		docker,
 		activeLeases: async () => storageLeases(await store.activeLeases()),
 		scheduleRetiredSweep: retiredSweep.trigger,
+		drainRetiredSweep: retiredSweep.drain,
 		pnpmStore: pnpmStore
 			? createPnpmStoreMaintenance({
 					path: pnpmStore,
@@ -395,6 +396,8 @@ try {
 	const gitMirrorRoot =
 		process.env.HOBO_CI_GIT_MIRROR_ROOT ?? "/var/lib/hobo-ci/git";
 	const gitMirrorEnabled = process.env.HOBO_CI_GIT_MIRROR !== "0";
+	if (gitMirrorEnabled)
+		mkdirSync(gitMirrorRoot, { recursive: true, mode: 0o755 });
 	const gitMirrors = new Map<string, ReturnType<typeof createBoxGitMirror>>();
 	function gitMirrorFor(repository: string) {
 		const key = repository.toLowerCase();
