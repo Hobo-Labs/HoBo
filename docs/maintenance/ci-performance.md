@@ -97,18 +97,25 @@ them, and each of the rest from the built `dist` where TypeScript loading is not
   (fullstack). The four starter trees are byte-identical, and `packages/cli/test/starter-end-to-end.test.ts`
   runs `new → codegen → build → /proof` for all four in-process.
 - `persistent-local-deployment` walks one deployment through serve, reuse, edit and `down`, and
-  expires one `--anonymous` deployment (`--temporary` is the same switch, and `self-hosted-broker.test.ts`
-  places with both). Its cleanup, and the starter test's, runs `down` only while a receipt is left.
-- `composed-temp-dirs` runs its fixture on bare node against `dist`, in six cases instead of nine.
+  expires one `--anonymous` deployment. `--temporary` takes the same TTL rule (`wantsAnonymousMode`), and
+  `self-hosted-broker.test.ts` checks in-process, with the worker start stood in for, that the persistent
+  lane asks for the TTL under each flag. Its cleanup, and the starter test's, runs `down` only while a
+  receipt is left.
+- `composed-temp-dirs` runs its fixture on bare node against `dist`, in seven cases instead of nine.
 - `bin-opensesame` keeps `node --import tsx` only for the case about relaunching with the loader.
-- `ci-runs` passes its no-op `sleep` from the shared harness, and `runtime-requirements` pins the oci
-  placement outcome (refused for the yard inventory) with a ready stub host instead of equipping kubectl.
+- `ci-runs` passes its no-op `sleep` from the shared harness, and `runtime-requirements` gives the oci
+  placement case a ready stub host instead of equipping kubectl, asserting only that it gets past the
+  runtime check.
 - `login-device-grant` keeps the cases only the command shows; RFC 8628 protocol cases are in
   `oidc-device-grant.test.ts`.
 
-Measured back to back on one CPU (`taskset -c 0`, `CI=1`, `HOBO_TEST_MAX_WORKERS=1`) on a shared host:
-580.6 s wall and 479.1 s CPU before (load 16.6 → 14.8), 374.1 s wall and 249.6 s CPU after (load
-17.1 → 26.4). The wasm files, `fileParallelism`, and the CLI's eager imports are left for later changes.
+- The package's `pretest` builds it outside turbo (`scripts/ensure-built.mts`), so a local run does
+  not test a stale `dist`.
+
+Measured back to back on one CPU (`taskset -c 0`, `CI=1`, `HOBO_TEST_MAX_WORKERS=1`) on a shared host,
+whose load rose through both runs: 896.5 s wall and 461.8 s CPU before (load 3.8 → 24.6), 460.4 s wall
+and 241.9 s CPU after (load 24.6 → 37.3). CPU is the steadier figure. The wasm files, `fileParallelism`,
+and the CLI's eager imports are left for later changes.
 
 ## Changed paths on stdin
 
