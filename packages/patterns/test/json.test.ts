@@ -1,7 +1,8 @@
 /**
  * The JSON guards atom parsing branches on. Only a primitive is a string, so
  * a boxed `String` and an object spoofing `Symbol.toStringTag` are not, and
- * only a plain object — what `JSON.parse` can produce — is an object.
+ * only a plain object in this realm — the shape `JSON.parse` produces here —
+ * is an object.
  */
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
