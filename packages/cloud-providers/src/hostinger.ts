@@ -11,8 +11,8 @@
  * API manages instances you already own. `@hobo/provider-hostinger`'s resolvers
  * therefore adopt-and-converge rather than create, and refuse with remediation
  * when there is nothing to adopt — a refusal its transport guard enforces by
- * not allowlisting the order-placing namespace at all. Two of its five
- * catalogued products have resolvers; `bucket`, `kv`, `queue`, `topic` and
+ * not allowlisting the order-placing namespace at all. Resolver coverage is
+ * `providerParity()` in `./parity.js`; `bucket`, `kv`, `queue`, `topic` and
  * `secretRef` carry no rows, because Hostinger sells none of them.
  */
 import {
