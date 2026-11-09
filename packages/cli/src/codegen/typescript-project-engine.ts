@@ -31,6 +31,7 @@ import {
 	emitGeneratedDeclarations,
 	emitSourceDeclarationGraph,
 } from "./typescript-declarations.js";
+import { sourceDiagnostics } from "./typescript-diagnostics.js";
 
 /** Compiler options are behavioral configuration; TypeScript owns their schema. */
 export interface TypeScriptProjectCodegenOptions {
@@ -113,7 +114,7 @@ function sourceOverlay(
 	return files;
 }
 
-const defaultLibraryDocuments = ts.createDocumentRegistry(
+const sharedDeclarationDocuments = ts.createDocumentRegistry(
 	ts.sys.useCaseSensitiveFileNames,
 	ts.sys.getCurrentDirectory(),
 );
@@ -122,6 +123,24 @@ function isDefaultLibrary(file: string, options: ts.CompilerOptions): boolean {
 	return (
 		dirname(resolve(file)) === dirname(ts.getDefaultLibFilePath(options)) &&
 		/^lib\..*\.d\.ts$/u.test(basename(file))
+	);
+}
+
+/**
+ * Declarations nobody edits while codegen runs: the compiler's lib files and
+ * installed packages' `.d.ts`. Each codegen pass builds two programs, and
+ * every pass of a long-lived process re-parsed them (0.4-1.2 s a program for
+ * `@types/node`). They are kept in one document registry instead, keyed by
+ * a digest of their text, so an edited file is parsed again.
+ */
+function isSharedDeclaration(
+	file: string,
+	options: ts.CompilerOptions,
+): boolean {
+	return (
+		isDefaultLibrary(file, options) ||
+		(/\.d\.[cm]?ts$/u.test(file) &&
+			resolve(file).split(sep).includes("node_modules"))
 	);
 }
 
@@ -149,7 +168,7 @@ export function overlayCompilerHost(
 		const content = files.get(resolve(file));
 		if (content !== undefined)
 			return ts.createSourceFile(file, content, languageVersion, true);
-		if (shouldCreateNewSourceFile || !isDefaultLibrary(file, options))
+		if (shouldCreateNewSourceFile || !isSharedDeclaration(file, options))
 			return getSourceFile(
 				file,
 				languageVersion,
@@ -164,7 +183,7 @@ export function overlayCompilerHost(
 				onError,
 				shouldCreateNewSourceFile,
 			);
-		return defaultLibraryDocuments.acquireDocument(
+		return sharedDeclarationDocuments.acquireDocument(
 			file,
 			options,
 			ts.ScriptSnapshot.fromString(text),
@@ -1018,19 +1037,15 @@ export function createTypeScriptProjectCodegenEngine(
 					"HOBO_CODEGEN_SOURCE_PARSE",
 					"TypeScript project has no exported runtime app modules",
 				);
-			const errors = [
-				...program.getSyntacticDiagnostics(),
-				...program.getSemanticDiagnostics(),
-			].filter(
-				(diagnostic) =>
-					(!diagnostic.file ||
-						sourceCandidate(
-							root,
-							diagnostic.file.fileName,
-							generatedRoots,
-							program.getCompilerOptions().outDir,
-						)) &&
-					!ambientDecoratorDiagnostic(diagnostic, root, ambient),
+			const errors = sourceDiagnostics(program, (file) =>
+				sourceCandidate(
+					root,
+					file,
+					generatedRoots,
+					program.getCompilerOptions().outDir,
+				),
+			).filter(
+				(diagnostic) => !ambientDecoratorDiagnostic(diagnostic, root, ambient),
 			);
 			if (errors.length)
 				throw new CodegenError(
