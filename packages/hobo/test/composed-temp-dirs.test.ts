@@ -136,6 +136,31 @@ describe.concurrent("the default runtime's own event store", () => {
 	}
 });
 
+// A data directory the caller names, with no HOBO_PULUMI_WORKDIR: the event
+// store is the caller's and kept, while the lane still makes, says and removes
+// its own workspace. One ending is enough here; the others are the siblings'.
+it(
+	"keeps a named data directory and still removes the lane's own workspace",
+	async (context) => {
+		const { expect } = context;
+		const scratch = scratchFor(context);
+		const yard = join(scratch, "kept-yard");
+		mkdirSync(yard);
+		const ended = await run(scratch, "normal", yard);
+		expect({ code: ended.code, signal: ended.signal }).toEqual({
+			code: 0,
+			signal: null,
+		});
+		expect(ended.made).toHaveLength(1);
+		expect(left(scratch, "hobo-pulumi-live-")).toEqual([]);
+		expect(ended.notices).toHaveLength(1);
+		expect(ended.notices[0]).toContain(join(scratch, ended.made[0] ?? ""));
+		expect(ended.notices[0]).toContain("HOBO_PULUMI_WORKDIR");
+		expect(existsSync(join(yard, "eventstore.sqlite"))).toBe(true);
+	},
+	RUN_TIMEOUT_MS,
+);
+
 describe.concurrent("a HOBO_PULUMI_WORKDIR the caller names", () => {
 	for (const [label, mode, signal, expected] of [
 		["a normal end", "normal", undefined, { code: 0, signal: null }],
