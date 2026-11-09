@@ -169,8 +169,6 @@ describe("redactProviderText on a hostile text", () => {
 			);
 		}
 		// A hyphen inside a word is still a boundary, as the old `\bey` had it.
-		expect(redactProviderText(`token-${jwt} end`)).toBe(
-			"token-[redacted] end",
-		);
+		expect(redactProviderText(`token-${jwt} end`)).toBe("token-[redacted] end");
 	});
 });
