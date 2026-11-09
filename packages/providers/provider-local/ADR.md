@@ -17,9 +17,13 @@ logicalId)` input into a derived type — the physical name string, branded
 by construction as `hobo-local--<product>--<logical>` — and refuses
 anything outside the slug grammar with a `TypeError` instead of returning a
 string downstream code would validate again. The definitions themselves are
-derived types over the seed: `test/definition.test.ts` parses the real
+derived types over the seed: the composition-side catalog test
+(`packages/hobo/test/first-party-catalog.test.ts`) parses the real
 `seedLocalhostYard` output and requires every claimed profile set to equal
 its seed rows, so a hand-edited claim cannot drift from the derived source.
+That assertion lives there, not in this package's tests, because an adapter
+package may not depend on `@hobo/yards` (package-boundary rule
+`adapter-imports-non-core`).
 
 ## Event architecture
 
@@ -79,13 +83,15 @@ it is not closed here.
 ## Catalog records, no integration boundary
 
 The definitions are in-process catalog records, as in the L01 taxonomy layer.
-There is no persistence or integration boundary. `data-models/` is retained
-only because the repo's package-layout and architecture guards require a
-`.proto` + `.cue` in every package; no TypeScript type exists to mirror them,
-and `LocalEngineGap` is a plain internal TypeScript type. The files carry no
-runtime weight and can be dropped when the guards learn to exempt
-definitions-only packages. Revocation is claimed `false` for every product until a `down` loop
+There is no persistence or integration boundary. `data-models/` carries the
+`.proto` + `.cue` contract the repo's package-layout and architecture guards
+require, and since the council fix round on #1778 the package opts into
+codegen (`data-models/buf.yaml`): `LocalEngineGap` is the generated
+`LocalEngineGapRecord` message type, built with
+`create(LocalEngineGapRecordSchema)` — never a hand-declared parallel.
+Revocation is claimed `false` for every product until a `down` loop
 exists, and `runtimeModels` lists only what `@hobo/runtime-local` serves:
-`wasm` for the component host and in-process host, none for queue and sqlite
+`wasm` for the component host, none for the in-process host (it runs
+supplied fetch handlers, not wasm components), queue, or sqlite
 (which have no workload runtime of their own, and `BindleRuntime` has no
 station-local member).
