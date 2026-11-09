@@ -62,6 +62,10 @@ export type ParsedObservation = ParsedFleetRecord<Observation>;
 export type ParsedOfferAdmission = ParsedFleetRecord<OfferAdmission>;
 export type ParsedFleetEvent = ParsedFleetRecord<FleetEvent>;
 
+/** Trusted-caller contract: construct only after an out-of-band GitHub
+ * assignment lookup confirms this runner holds this job (see
+ * authorizeStartFence in @hobo/ci-gh-actions). The store trusts
+ * `assignment.verified`; it does not re-verify against GitHub. */
 export interface StartBindingInput {
 	slotId: string;
 	claimId: string;

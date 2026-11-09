@@ -154,8 +154,13 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				 partition_id text NOT NULL,id text NOT NULL,account_id text NOT NULL,offer_id text NOT NULL,
 				 profile_id text NOT NULL,runner_name text NOT NULL,state text NOT NULL,capacity_group_id text NOT NULL,
 				 capacity_cost_units integer NOT NULL,offer_observation_hash text NOT NULL,binding_secret_hash text NOT NULL,
-				 incarnation_id text NOT NULL,body text NOT NULL,PRIMARY KEY(partition_id,id),
+				 incarnation_id text NOT NULL,demand_key text,body text NOT NULL,PRIMARY KEY(partition_id,id),
 				 UNIQUE(partition_id,account_id,runner_name))`,
+			);
+			await client.query(
+				`CREATE UNIQUE INDEX IF NOT EXISTS hobo_ci_fleet_v2_one_open_slot_per_demand
+				 ON hobo_ci_fleet_v2_runner_slots(partition_id,demand_key)
+				 WHERE state IN ('reserved','provisioning','registered','bound')`,
 			);
 			await client.query(
 				`CREATE TABLE IF NOT EXISTS hobo_ci_fleet_v2_execution_claims(
@@ -822,6 +827,21 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			);
 			if (!group)
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "capacity group not found");
+			if (group.accountId !== executionAccountId(input.demandKey))
+				rejectFleet(
+					FleetRejectionCode.CAPACITY_INELIGIBLE,
+					"capacity group account does not match demand account",
+				);
+			const openSlot = await client.query(
+				`SELECT id FROM hobo_ci_fleet_v2_runner_slots
+				 WHERE partition_id=$1 AND demand_key=$2 AND state IN ('reserved','provisioning','registered','bound') FOR UPDATE`,
+				[this.partition, key],
+			);
+			if ((openSlot.rowCount ?? 0) > 0)
+				rejectFleet(
+					FleetRejectionCode.DEMAND_CONFLICT,
+					"demand already has an open capacity reservation",
+				);
 			const reserved = await client.query(
 				`UPDATE hobo_ci_fleet_v2_capacity_groups SET reserved_units=reserved_units+$3,seq=seq+1
 				 WHERE partition_id=$1 AND id=$2 AND seq=$4 AND state='active' AND reserved_units+$3<=approved_units`,
@@ -859,8 +879,8 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			outbox.availableAt = at;
 			await client.query(
 				`INSERT INTO hobo_ci_fleet_v2_runner_slots(partition_id,id,account_id,offer_id,profile_id,runner_name,state,
-				 capacity_group_id,capacity_cost_units,offer_observation_hash,binding_secret_hash,incarnation_id,body)
-				 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+				 capacity_group_id,capacity_cost_units,offer_observation_hash,binding_secret_hash,incarnation_id,demand_key,body)
+				 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
 				[
 					this.partition,
 					slot.id,
@@ -874,6 +894,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 					slot.offerObservationHash,
 					slot.bindingSecretHash,
 					slot.incarnationId,
+					key,
 					toJsonString(RunnerSlotSchema, slot),
 				],
 			);
@@ -951,6 +972,39 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 					`runner slot expected ${expected}, found ${slot.state}`,
 				);
 			transitionRunnerSlot(expected, next);
+			// Pre-claim release (see the SQLite store): give reserved units
+			// back when a never-claimed slot leaves an open state.
+			if (
+				(next === "released" || next === "uncertain") &&
+				["reserved", "provisioning", "registered"].includes(expected)
+			) {
+				const claim = await client.query(
+					"SELECT key FROM hobo_ci_fleet_v2_execution_claims WHERE partition_id=$1 AND runner_slot_id=$2",
+					[this.partition, slot.id],
+				);
+				if ((claim.rowCount ?? 0) === 0) {
+					const changed = await client.query(
+						`UPDATE hobo_ci_fleet_v2_capacity_groups SET reserved_units=reserved_units-$3,seq=seq+1
+						 WHERE partition_id=$1 AND id=$2 AND reserved_units>=$3`,
+						[this.partition, slot.capacityGroupId, slot.capacityCostUnits],
+					);
+					if (changed.rowCount !== 1)
+						rejectFleet(
+							FleetRejectionCode.CAPACITY_CONFLICT,
+							"capacity release would make reserved units negative",
+						);
+					const currentGroup = await this.capacityInside(
+						client,
+						slot.capacityGroupId,
+					);
+					if (currentGroup) {
+						const group = clone(CapacityGroupSchema, currentGroup);
+						group.reservedUnits -= slot.capacityCostUnits;
+						group.seq += 1;
+						await this.saveCapacity(client, group);
+					}
+				}
+			}
 			slot.state = next;
 			if (externalRunnerId !== undefined)
 				slot.externalRunnerId = externalRunnerId;
@@ -969,6 +1023,35 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 		});
 	}
 
+	/** Effects belong to the incarnation that planned their slot (see the
+	 * SQLite store). */
+	private async assertEffectIncarnationCurrent(
+		client: PoolClient,
+		effect: Effect,
+	): Promise<void> {
+		const slot =
+			effect.subjectType === "runner-slot"
+				? await this.slotInside(client, effect.subjectId)
+				: effect.subjectType === "execution-claim"
+					? await (async () => {
+							const claim = await this.claimByIdInside(
+								client,
+								effect.subjectId,
+							);
+							return claim
+								? this.slotInside(client, claim.runnerSlotId)
+								: undefined;
+						})()
+					: undefined;
+		if (!slot) return;
+		const current = await this.currentIncarnationInside(client);
+		if (!current || slot.incarnationId !== current.id)
+			rejectFleet(
+				FleetRejectionCode.INCARNATION_STALE,
+				"effect belongs to a stale controller incarnation",
+			);
+	}
+
 	claimEffect(input: EffectClaimInput): Promise<WorkerDelivery> {
 		leaseDuration(input.leaseMs);
 		positiveInteger(input.ownerEpoch, "owner epoch");
@@ -976,6 +1059,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			const effect = await this.effectInside(client, input.effectId, true);
 			if (!effect)
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "effect not found");
+			await this.assertEffectIncarnationCurrent(client, effect);
 			const now = await this.now(client);
 			const activeResult = await client.query(
 				"SELECT body FROM hobo_ci_fleet_v2_deliveries WHERE partition_id=$1 AND effect_id=$2 AND state='claimed' FOR UPDATE",
@@ -1137,6 +1221,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			const effect = await this.effectInside(client, input.effectId, true);
 			if (!effect)
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "effect not found");
+			await this.assertEffectIncarnationCurrent(client, effect);
 			transitionEffect(effect.state as EffectState, "dispatching");
 			effect.state = "dispatching";
 			await this.saveEffect(client, effect);
@@ -1165,6 +1250,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			const effect = await this.effectInside(client, input.effectId, true);
 			if (!effect)
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "effect not found");
+			await this.assertEffectIncarnationCurrent(client, effect);
 			const nextEffect =
 				input.outcome === "confirmed"
 					? "confirmed"
@@ -1275,18 +1361,48 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "runner slot not found");
 			const key = executionKeyId(input.key);
 			const existing = await this.claimInside(client, key, true);
+			if (existing) {
+				// One success shape only (see the SQLite store): same claim,
+				// same slot, still start-authorized or running.
+				if (
+					existing.id !== input.claimId ||
+					existing.runnerSlotId !== slot.id ||
+					(existing.state !== "start-authorized" &&
+						existing.state !== "running")
+				)
+					rejectFleet(
+						FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+						"actual job is already claimed",
+					);
+				const current = await this.currentIncarnationInside(client);
+				if (!current || slot.incarnationId !== current.id)
+					rejectFleet(
+						FleetRejectionCode.INCARNATION_STALE,
+						"start binding belongs to a stale controller incarnation",
+					);
+				const expectedSecret = Buffer.from(slot.bindingSecretHash, "hex");
+				const actualSecret = createHash("sha256")
+					.update(input.bindingSecret)
+					.digest();
+				if (
+					expectedSecret.length !== actualSecret.length ||
+					!timingSafeEqual(expectedSecret, actualSecret)
+				)
+					rejectFleet(
+						FleetRejectionCode.BINDING_SECRET_MISMATCH,
+						"binding secret does not match slot",
+					);
+				return { claim: existing, idempotent: true };
+			}
+			if (await this.claimByIdInside(client, input.claimId))
+				rejectFleet(
+					FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+					"claim id is already used by another execution",
+				);
 			const demand = await this.demandInside(client, key, true);
 			if (!demand)
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "actual demand not found");
 			await this.verifyStart(client, slot, demand, input);
-			if (existing) {
-				if (existing.runnerSlotId !== slot.id)
-					rejectFleet(
-						FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
-						"actual job is already claimed by another slot",
-					);
-				return { claim: existing, idempotent: true };
-			}
 			if (slot.state === "bound")
 				rejectFleet(
 					FleetRejectionCode.SLOT_ALREADY_BOUND,

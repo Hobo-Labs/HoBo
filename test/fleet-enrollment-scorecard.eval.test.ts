@@ -48,7 +48,7 @@ describe("fleet enrollment scorecard", () => {
 			"todo",
 			"skip",
 		]);
-		const allowed = new Set(["pass", "blocked-on-credentials"]);
+		const allowed = new Set(["pass", "blocked-on-credentials", "not-implemented"]);
 
 		const invalidStatus: string[] = [];
 		const unknownStatus: string[] = [];
@@ -62,6 +62,9 @@ describe("fleet enrollment scorecard", () => {
 		const passRows = rows.filter((row) => row.status === "pass");
 		const blockedRows = rows.filter(
 			(row) => row.status === "blocked-on-credentials",
+		);
+		const notImplementedRows = rows.filter(
+			(row) => row.status === "not-implemented",
 		);
 
 		expect(passRows.length).toBeGreaterThan(80);
@@ -94,10 +97,15 @@ describe("fleet enrollment scorecard", () => {
 		const blockedMatch = markdown.match(
 			/Blocked on credentials \(G9 live staging\):\s*(\d+)/,
 		);
+		const notImplementedMatch = markdown.match(/Not implemented:\s*(\d+)/);
 		expect(passMatch).not.toBeNull();
 		expect(blockedMatch).not.toBeNull();
+		expect(notImplementedMatch).not.toBeNull();
 		expect(Number(passMatch?.[1])).toBe(passRows.length);
 		expect(Number(blockedMatch?.[1])).toBe(blockedRows.length);
-		expect(passRows.length + blockedRows.length).toBe(rows.length);
+		expect(Number(notImplementedMatch?.[1])).toBe(notImplementedRows.length);
+		expect(
+			passRows.length + blockedRows.length + notImplementedRows.length,
+		).toBe(rows.length);
 	});
 });

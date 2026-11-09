@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Immutable pre-job hook (design §9.3). Installed outside the workspace.
+# Every body field is an unverified claim: the controller authorizes only an
+# assignment its own GitHub lookup confirms for RUNNER_NAME, and any curl or
+# HTTP failure exits nonzero so the job never starts unfenced.
 set -euo pipefail
 : "${HOBO_START_FENCE_URL:?}"
 : "${HOBO_SLOT_ID:?}"

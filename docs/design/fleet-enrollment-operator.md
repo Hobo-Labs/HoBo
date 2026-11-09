@@ -2,6 +2,8 @@
 
 Operator semantics and limits from [`fleet-enrollment-design.md`](./fleet-enrollment-design.md), especially Sections 2.3, 6, and 17.4.
 
+**Implementation state (honest scope):** the transactional strict stores (SQLite + Postgres), state machines, and the fail-closed start authorizer are implemented and conformance-tested. The production GitHub assignment lookup and the controller endpoint that installs the pre-job hook are **not wired yet**, so no strict start can authorize in production today — authorization fails closed by construction. Kubernetes and Dagger paths are planner/boundary only. The [scorecard](./fleet-enrollment-scorecard.md) marks these rows `not-implemented`.
+
 ## Admission modes and execution guarantees
 
 - **Standalone SQLite box mode** remains a single admission authority. Enrolling several workers does not turn it into a shared fleet.

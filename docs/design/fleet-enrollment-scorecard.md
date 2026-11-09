@@ -1,6 +1,6 @@
 # Fleet enrollment scorecard
 
-Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eval rejects `partial`, `fail`, and `deferred`; reports `blocked-on-credentials` separately from `pass`.
+Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eval rejects `partial`, `fail`, and `deferred`; reports `blocked-on-credentials` and `not-implemented` separately from `pass`.
 
 | Section | Requirement | Status | Evidence |
 | --- | --- | --- | --- |
@@ -8,9 +8,9 @@ Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eva
 | 1 | Enroll trusted-local and isolated-container workers | pass | docs/design/fleet-enrollment-design.md |
 | 1 | Join Kubernetes via Station/Yard Connections | pass | docs/design/fleet-enrollment-design.md |
 | 1 | Multi-engine Offers without oversubscription | pass | docs/design/fleet-enrollment-design.md |
-| 1 | Strict v2 at-most-once start authorization | pass | docs/design/fleet-enrollment-design.md |
+| 1 | Strict v2 at-most-once start authorization | not-implemented | Store enforces single start_authorized, but the GitHub assignment lookup port has no production implementation; authorization fails closed until a controller wires one |
 | 1 | RunnerSlots separate from ExecutionClaims | pass | docs/design/fleet-enrollment-design.md |
-| 1 | Official pre-job hook start fence | pass | docs/design/fleet-enrollment-design.md |
+| 1 | Official pre-job hook start fence | not-implemented | Hook template ships in packages/ci-gh-actions/templates but no controller endpoint installs or serves it |
 | 1 | Deterministic names + transactional outbox + fencing | pass | docs/design/fleet-enrollment-design.md |
 | 1 | Preserve v1 policy/Offer/Lease semantics | pass | docs/design/fleet-enrollment-design.md |
 | 1 | Dagger actor boundary preserved | pass | docs/design/fleet-enrollment-design.md |
@@ -20,9 +20,9 @@ Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eva
 | 6 | User-facing semantics in operator doc + status contracts | pass | docs/design/fleet-enrollment-design.md |
 | 7 | Logical records in fleet_v2.proto + CUE | pass | docs/design/fleet-enrollment-design.md |
 | 8 | Transactional admission + effect delivery store | pass | docs/design/fleet-enrollment-design.md |
-| 9 | GitHub RunnerSlot + pre-job protocol | pass | docs/design/fleet-enrollment-design.md |
-| 10 | Kubernetes realization assets + tests | pass | docs/design/fleet-enrollment-design.md |
-| 11 | Dagger strict actor integration path | pass | docs/design/fleet-enrollment-design.md |
+| 9 | GitHub RunnerSlot + pre-job protocol | not-implemented | Protocol types + fail-closed authorizer exist; live controller endpoint + GitHub assignment lookup not implemented |
+| 10 | Kubernetes realization assets + tests | not-implemented | Pure planner functions + YAML assets only; no client execution path against a cluster |
+| 11 | Dagger strict actor integration path | not-implemented | Boundary shapes only; no strict actor execution wired through Dagger |
 | 12 | Security model controls | pass | docs/design/fleet-enrollment-design.md |
 | 13 | Recovery/restore/quarantine flows | pass | docs/design/fleet-enrollment-design.md |
 | 15 | Single-pass swarm plan artifacts | pass | docs/design/fleet-enrollment-design.md |
@@ -82,13 +82,13 @@ Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eva
 | 16.3 | Same slot two jobs rejected | pass | packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts |
 | 16.3 | Forged job identity rejected | pass | packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts |
 | 16.3 | Revoked slot rejected | pass | packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts |
-| 16.3 | Assignment churn handled | pass | packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts |
+| 16.3 | Assignment churn handled | not-implemented | No live reassignment handling: the authorizer only confirms the assignment GitHub reports at hook time |
 | 16.3 | Incompatible profile rejected | pass | packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts |
-| 16.3 | Controller unavailable fail-closed | pass | packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts |
+| 16.3 | Controller unavailable fail-closed | not-implemented | Hook template exits nonzero on curl failure, but the template is not installed by any controller |
 | 16.3 | GitHub verification unavailable fail-closed | pass | packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts |
 | 16.3 | Lost hook response idempotent | pass | packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts |
-| 16.3 | Deterministic name adoption verified | pass | packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts |
-| 16.3 | Foreign runner quarantine | pass | packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts |
+| 16.3 | Deterministic name adoption verified | not-implemented | Deterministic names are generated; inspecting and adopting an already-registered runner is not implemented |
+| 16.3 | Foreign runner quarantine | not-implemented | Foreign-runner detection/quarantine has no implementation |
 | 16.6 | Crash cut 1 | pass | packages/ci/test/fleet-v2-store-conformance.test.ts |
 | 16.6 | Crash cut 2 | pass | packages/ci/test/fleet-v2-store-conformance.test.ts |
 | 16.6 | Crash cut 3 | pass | packages/ci/test/fleet-v2-store-conformance.test.ts |
@@ -126,4 +126,4 @@ Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eva
 | 18 | G9 production gate | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
 | 18 | G10 production gate | blocked-on-credentials | Needs authorized staging only: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9 |
 
-Total rows: 121. Pass: 108. Blocked on credentials (G9 live staging): 13.
+Total rows: 121. Pass: 99. Blocked on credentials (G9 live staging): 13. Not implemented: 9.

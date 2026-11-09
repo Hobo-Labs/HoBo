@@ -37,13 +37,15 @@ jobs:
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Regenerate scorecard
         run: node --import tsx scripts/generate-fleet-enrollment-scorecard.mts
+      - name: Scorecard must be committed current
+        run: git diff --exit-code -- docs/design/fleet-enrollment-scorecard.md
       - name: Scorecard eval (pass + blocked-on-credentials)
         run: mise exec -- pnpm exec vitest run test/fleet-enrollment-scorecard.eval.test.ts
 
   strict-store:
     name: Strict v2 store + start fence
     runs-on: hobo
-    timeout-minutes: 45
+    timeout-minutes: 20
     env:
       HOBO_FLEET_ENROLLMENT_CI: "1"
     steps:

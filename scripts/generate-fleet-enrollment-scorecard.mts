@@ -3,7 +3,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-type Status = "pass" | "blocked-on-credentials";
+type Status = "pass" | "blocked-on-credentials" | "not-implemented";
 type Row = { section: string; item: string; evidence: string; status: Status };
 
 const rows: Row[] = [];
@@ -72,16 +72,48 @@ const sections = {
 	"21": ["Primary references linked"],
 } as const satisfies Record<string, readonly string[]>;
 
+/** Rows with no wired implementation behind them. Stated plainly instead of
+ * inherited "pass": the fence authorizes only through a GitHub assignment
+ * lookup port with no production implementation, the hook template is not
+ * installed by any controller endpoint, and the Kubernetes/Dagger paths are
+ * planner/shape only. */
+const notImplementedRows = new Map<string, string>([
+	[
+		"Strict v2 at-most-once start authorization",
+		"Store enforces single start_authorized, but the GitHub assignment lookup port has no production implementation; authorization fails closed until a controller wires one",
+	],
+	[
+		"Official pre-job hook start fence",
+		"Hook template ships in packages/ci-gh-actions/templates but no controller endpoint installs or serves it",
+	],
+	[
+		"GitHub RunnerSlot + pre-job protocol",
+		"Protocol types + fail-closed authorizer exist; live controller endpoint + GitHub assignment lookup not implemented",
+	],
+	[
+		"Kubernetes realization assets + tests",
+		"Pure planner functions + YAML assets only; no client execution path against a cluster",
+	],
+	[
+		"Dagger strict actor integration path",
+		"Boundary shapes only; no strict actor execution wired through Dagger",
+	],
+]);
+
 for (const [section, items] of Object.entries(sections)) {
 	for (const item of items) {
+		const gap = notImplementedRows.get(item);
 		const status: Status =
-			section === "20" && item === "Final handoff vertical slice"
-				? "blocked-on-credentials"
-				: "pass";
+			gap !== undefined
+				? "not-implemented"
+				: section === "20" && item === "Final handoff vertical slice"
+					? "blocked-on-credentials"
+					: "pass";
 		const evidence =
-			status === "blocked-on-credentials"
+			gap ??
+			(status === "blocked-on-credentials"
 				? G9_CREDENTIALS
-				: "docs/design/fleet-enrollment-design.md";
+				: "docs/design/fleet-enrollment-design.md");
 		add(section, item, evidence, status);
 	}
 }
@@ -118,8 +150,32 @@ const matrix163 = [
 	"Deterministic name adoption verified",
 	"Foreign runner quarantine",
 ];
+const notImplemented163 = new Map<string, string>([
+	[
+		"Assignment churn handled",
+		"No live reassignment handling: the authorizer only confirms the assignment GitHub reports at hook time",
+	],
+	[
+		"Controller unavailable fail-closed",
+		"Hook template exits nonzero on curl failure, but the template is not installed by any controller",
+	],
+	[
+		"Deterministic name adoption verified",
+		"Deterministic names are generated; inspecting and adopting an already-registered runner is not implemented",
+	],
+	[
+		"Foreign runner quarantine",
+		"Foreign-runner detection/quarantine has no implementation",
+	],
+]);
 for (const item of matrix163) {
-	add("16.3", item, "packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts");
+	const gap = notImplemented163.get(item);
+	add(
+		"16.3",
+		item,
+		gap ?? "packages/ci-gh-actions/test/fleet-v2-start-fence.test.ts",
+		gap === undefined ? "pass" : "not-implemented",
+	);
 }
 
 for (let cut = 1; cut <= 15; cut++) {
@@ -172,11 +228,14 @@ const passCount = rows.filter((row) => row.status === "pass").length;
 const blockedCount = rows.filter(
 	(row) => row.status === "blocked-on-credentials",
 ).length;
+const notImplementedCount = rows.filter(
+	(row) => row.status === "not-implemented",
+).length;
 
 const lines = [
 	"# Fleet enrollment scorecard",
 	"",
-	"Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eval rejects `partial`, `fail`, and `deferred`; reports `blocked-on-credentials` separately from `pass`.",
+	"Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eval rejects `partial`, `fail`, and `deferred`; reports `blocked-on-credentials` and `not-implemented` separately from `pass`.",
 	"",
 	"| Section | Requirement | Status | Evidence |",
 	"| --- | --- | --- | --- |",
@@ -185,12 +244,12 @@ const lines = [
 			`| ${row.section} | ${row.item} | ${row.status} | ${row.evidence} |`,
 	),
 	"",
-	`Total rows: ${rows.length}. Pass: ${passCount}. Blocked on credentials (G9 live staging): ${blockedCount}.`,
+	`Total rows: ${rows.length}. Pass: ${passCount}. Blocked on credentials (G9 live staging): ${blockedCount}. Not implemented: ${notImplementedCount}.`,
 	"",
 ];
 
 const out = join(process.cwd(), "docs/design/fleet-enrollment-scorecard.md");
 writeFileSync(out, lines.join("\n"));
 console.log(
-	`wrote ${out} (${rows.length} rows, ${passCount} pass, ${blockedCount} blocked-on-credentials)`,
+	`wrote ${out} (${rows.length} rows, ${passCount} pass, ${blockedCount} blocked-on-credentials, ${notImplementedCount} not-implemented)`,
 );

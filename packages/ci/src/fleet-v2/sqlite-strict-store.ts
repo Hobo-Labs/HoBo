@@ -91,6 +91,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 		this.db.exec(`
 			PRAGMA foreign_keys = ON;
 			PRAGMA journal_mode = WAL;
+			PRAGMA busy_timeout = 5000;
 			CREATE TABLE IF NOT EXISTS fleet_v2_incarnations (
 				id TEXT PRIMARY KEY, current INTEGER NOT NULL, body TEXT NOT NULL);
 			CREATE UNIQUE INDEX IF NOT EXISTS fleet_v2_one_incarnation
@@ -117,8 +118,11 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				profile_id TEXT NOT NULL, runner_name TEXT NOT NULL, state TEXT NOT NULL,
 				capacity_group_id TEXT NOT NULL, capacity_cost_units INTEGER NOT NULL,
 				offer_observation_hash TEXT NOT NULL, binding_secret_hash TEXT NOT NULL,
-				incarnation_id TEXT NOT NULL, body TEXT NOT NULL,
+				incarnation_id TEXT NOT NULL, demand_key TEXT, body TEXT NOT NULL,
 				UNIQUE(account_id, runner_name));
+			CREATE UNIQUE INDEX IF NOT EXISTS fleet_v2_one_open_slot_per_demand
+				ON fleet_v2_runner_slots(demand_key)
+				WHERE state IN ('reserved','provisioning','registered','bound');
 			CREATE TABLE IF NOT EXISTS fleet_v2_execution_claims (
 				id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE,
 				runner_slot_id TEXT NOT NULL UNIQUE, state TEXT NOT NULL,
@@ -646,6 +650,22 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 			const group = this.capacityInside(input.slot.capacityGroupId);
 			if (!group)
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "capacity group not found");
+			if (group.accountId !== executionAccountId(input.demandKey))
+				rejectFleet(
+					FleetRejectionCode.CAPACITY_INELIGIBLE,
+					"capacity group account does not match demand account",
+				);
+			const openSlot = this.db
+				.prepare(
+					`SELECT id FROM fleet_v2_runner_slots
+					 WHERE demand_key=? AND state IN ('reserved','provisioning','registered','bound')`,
+				)
+				.get(key);
+			if (openSlot)
+				rejectFleet(
+					FleetRejectionCode.DEMAND_CONFLICT,
+					"demand already has an open capacity reservation",
+				);
 			const reserved = this.db
 				.prepare(
 					`UPDATE fleet_v2_capacity_groups SET reserved_units=reserved_units+?,seq=seq+1
@@ -685,8 +705,8 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 			this.db
 				.prepare(
 					`INSERT INTO fleet_v2_runner_slots(id,account_id,offer_id,profile_id,runner_name,state,
-					 capacity_group_id,capacity_cost_units,offer_observation_hash,binding_secret_hash,incarnation_id,body)
-					 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+					 capacity_group_id,capacity_cost_units,offer_observation_hash,binding_secret_hash,incarnation_id,demand_key,body)
+					 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				)
 				.run(
 					slot.id,
@@ -700,6 +720,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 					slot.offerObservationHash,
 					slot.bindingSecretHash,
 					slot.incarnationId,
+					key,
 					toJsonString(RunnerSlotSchema, slot),
 				);
 			this.db
@@ -786,6 +807,44 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 					`runner slot expected ${expected}, found ${slot.state}`,
 				);
 			transitionRunnerSlot(expected, next);
+			// Pre-claim release: a slot that leaves reserved/provisioning/
+			// registered for a terminal state without an execution claim gives
+			// its reserved units back, so abandoned reservations cannot leak
+			// capacity forever. Claimed slots release only via
+			// completeExecution teardown.
+			if (
+				(next === "released" || next === "uncertain") &&
+				["reserved", "provisioning", "registered"].includes(expected)
+			) {
+				const claim = this.db
+					.prepare(
+						"SELECT key FROM fleet_v2_execution_claims WHERE runner_slot_id=?",
+					)
+					.get(slot.id);
+				if (!claim) {
+					const changed = this.db
+						.prepare(
+							"UPDATE fleet_v2_capacity_groups SET reserved_units=reserved_units-?,seq=seq+1 WHERE id=? AND reserved_units>=?",
+						)
+						.run(
+							slot.capacityCostUnits,
+							slot.capacityGroupId,
+							slot.capacityCostUnits,
+						).changes;
+					if (changed !== 1)
+						rejectFleet(
+							FleetRejectionCode.CAPACITY_CONFLICT,
+							"capacity release would make reserved units negative",
+						);
+					const currentGroup = this.capacityInside(slot.capacityGroupId);
+					if (currentGroup) {
+						const group = clone(CapacityGroupSchema, currentGroup);
+						group.reservedUnits -= slot.capacityCostUnits;
+						group.seq += 1;
+						this.saveCapacity(group);
+					}
+				}
+			}
 			slot.state = next;
 			if (externalRunnerId !== undefined)
 				slot.externalRunnerId = externalRunnerId;
@@ -803,6 +862,28 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 		});
 	}
 
+	/** Effects belong to the incarnation that planned their slot; after a
+	 * restore, delivering a stale incarnation's effect would act on a world
+	 * the controller no longer believes in. */
+	private assertEffectIncarnationCurrent(effect: Effect): void {
+		const slot =
+			effect.subjectType === "runner-slot"
+				? this.slotInside(effect.subjectId)
+				: effect.subjectType === "execution-claim"
+					? (() => {
+							const claim = this.claimByIdInside(effect.subjectId);
+							return claim ? this.slotInside(claim.runnerSlotId) : undefined;
+						})()
+					: undefined;
+		if (!slot) return;
+		const current = this.currentIncarnationSync();
+		if (!current || slot.incarnationId !== current.id)
+			rejectFleet(
+				FleetRejectionCode.INCARNATION_STALE,
+				"effect belongs to a stale controller incarnation",
+			);
+	}
+
 	claimEffect(input: EffectClaimInput): Promise<WorkerDelivery> {
 		leaseDuration(input.leaseMs);
 		positiveInteger(input.ownerEpoch, "owner epoch");
@@ -810,6 +891,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 			const effect = this.effectInside(input.effectId);
 			if (!effect)
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "effect not found");
+			this.assertEffectIncarnationCurrent(effect);
 			const now = this.now();
 			const activeRow = this.db
 				.prepare(
@@ -960,6 +1042,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 			const effect = this.effectInside(input.effectId);
 			if (!effect)
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "effect not found");
+			this.assertEffectIncarnationCurrent(effect);
 			transitionEffect(
 				effect.state as import("./state-machine.js").EffectState,
 				"dispatching",
@@ -990,6 +1073,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 			const effect = this.effectInside(input.effectId);
 			if (!effect)
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "effect not found");
+			this.assertEffectIncarnationCurrent(effect);
 			const nextEffect =
 				input.outcome === "confirmed"
 					? "confirmed"
@@ -1099,18 +1183,52 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "runner slot not found");
 			const key = executionKeyId(input.key);
 			const existing = this.claimInside(key);
+			if (existing) {
+				// One success shape only: the same claim, on the same slot, still
+				// start-authorized or running (the lost-response retry). It is
+				// answered before mutable eligibility checks, but the binding
+				// secret and incarnation are still verified. A terminal claim —
+				// including uncertain, which must never re-authorize a start —
+				// and any identity mismatch are EXECUTION_ALREADY_CLAIMED.
+				if (
+					existing.id !== input.claimId ||
+					existing.runnerSlotId !== slot.id ||
+					(existing.state !== "start-authorized" &&
+						existing.state !== "running")
+				)
+					rejectFleet(
+						FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+						"actual job is already claimed",
+					);
+				const current = this.currentIncarnationSync();
+				if (!current || slot.incarnationId !== current.id)
+					rejectFleet(
+						FleetRejectionCode.INCARNATION_STALE,
+						"start binding belongs to a stale controller incarnation",
+					);
+				const expected = Buffer.from(slot.bindingSecretHash, "hex");
+				const actual = createHash("sha256")
+					.update(input.bindingSecret)
+					.digest();
+				if (
+					expected.length !== actual.length ||
+					!timingSafeEqual(expected, actual)
+				)
+					rejectFleet(
+						FleetRejectionCode.BINDING_SECRET_MISMATCH,
+						"binding secret does not match runner slot",
+					);
+				return { claim: existing, idempotent: true };
+			}
+			if (this.claimByIdInside(input.claimId))
+				rejectFleet(
+					FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+					"claim id is already used by another execution",
+				);
 			const demand = this.demandInside(key);
 			if (!demand)
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "actual demand not found");
 			this.verifyStart(slot, demand, input);
-			if (existing) {
-				if (existing.runnerSlotId !== slot.id)
-					rejectFleet(
-						FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
-						"actual job is already claimed by another slot",
-					);
-				return { claim: existing, idempotent: true };
-			}
 			if (slot.state === "bound")
 				rejectFleet(
 					FleetRejectionCode.SLOT_ALREADY_BOUND,
