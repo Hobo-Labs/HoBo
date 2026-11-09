@@ -10,7 +10,6 @@ import {
 	statfs,
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { z } from "zod";
 import { selectWorkerImagesForDeletion, type WorkerImage } from "./image-gc.js";
 import {
 	buildHostCapacityRecord,
@@ -32,7 +31,6 @@ const IMMINENT_INODE_BUFFER = 50_000;
 const JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}$/u;
 const RETIRED_JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}-[0-9a-z]+$/u;
 const RETIRED_ROOT = ".retired";
-const ErrnoCode = z.object({ code: z.string() });
 
 export type WorkerFileSystemStats = Readonly<{
 	blocks: number;
@@ -180,8 +178,12 @@ export function createNodeWorkerStorageFileSystem(
 					)
 					.map((entry) => join(root, RETIRED_ROOT, entry.name));
 			} catch (error) {
-				const parsed = ErrnoCode.safeParse(error);
-				if (parsed.success && parsed.data.code === "ENOENT") return [];
+				if (
+					error instanceof Error &&
+					"code" in error &&
+					error.code === "ENOENT"
+				)
+					return [];
 				throw error;
 			}
 		},
@@ -207,8 +209,12 @@ export function createNodeWorkerStorageFileSystem(
 				await io.rename(path, retired);
 				return retired;
 			} catch (error) {
-				const parsed = ErrnoCode.safeParse(error);
-				if (parsed.success && parsed.data.code === "ENOENT") return undefined;
+				if (
+					error instanceof Error &&
+					"code" in error &&
+					error.code === "ENOENT"
+				)
+					return undefined;
 				throw error;
 			}
 		},
