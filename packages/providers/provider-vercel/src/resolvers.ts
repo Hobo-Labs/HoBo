@@ -218,8 +218,40 @@ async function callApi(
 		? response
 		: {
 				...response,
-				body: response.body.replaceAll(credential.expose(), "[redacted]"),
+				body: redactCredentialForms(response.body, credential),
 			};
+}
+
+/**
+ * A non-2xx body with the credential taken out in the encodings a body can
+ * echo it in — raw, base64 (whole and as a Basic header's `:token`),
+ * base64url, and percent-encoded — before `redactProviderText` shapes it.
+ * The fuller per-character scrub lives on the fixture client
+ * (@hobo/hobo's vercel-client), which this package cannot import; these
+ * whole-form replacements are the resolver plane's share of it.
+ */
+function redactCredentialForms(body: string, credential: SecretValue): string {
+	const token = credential.expose();
+	if (token === "") return body;
+	const bytes = Buffer.from(token, "utf8");
+	const percent = [...bytes]
+		.map((byte) => `%${byte.toString(16).padStart(2, "0")}`)
+		.join("");
+	const base64url = (form: string) =>
+		form.replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+	const standard = [
+		token,
+		bytes.toString("base64"),
+		Buffer.from(`:${token}`, "utf8").toString("base64"),
+		percent,
+		percent.toUpperCase(),
+	];
+	const forms = [...new Set([...standard, ...standard.map(base64url)])]
+		.filter((form) => form.length >= 4)
+		.sort((a, b) => b.length - a.length);
+	let out = body;
+	for (const form of forms) out = out.replaceAll(form, "[redacted]");
+	return out;
 }
 
 function teamQuery(teamId: string | undefined): string {

@@ -496,12 +496,16 @@ export {
 export {
 	type CreateDeploymentInput,
 	createVercelClient,
+	isProjectNotFound,
+	VercelApiError,
 	type VercelClient,
 	type VercelClientOptions,
 	type VercelDeploymentFile,
 	type VercelDeploymentResult,
 	type VercelFetch,
 	type VercelFetchResponse,
+	type VercelProjectResult,
+	VercelTransportError,
 } from "./vercel-client.js";
 export {
 	createVercelDeployProvider,

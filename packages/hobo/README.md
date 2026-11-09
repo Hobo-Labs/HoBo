@@ -182,7 +182,86 @@ as a live deployment. IaC selection lives in `src/compose.ts`:
 | In-memory Pulumi stand-in | Explicitly injected library/test runtime |
 | Real Pulumi Automation/CLI | `HOBO_PULUMI_LIVE=1` (engine- and credential-gated); its programs and `file://` state go in `HOBO_PULUMI_WORKDIR`, which is kept, else in a `hobo-pulumi-live-*` directory removed when the process ends (one `hobo:` line on stderr names it), so set `HOBO_PULUMI_WORKDIR` to keep the state |
 | Direct-HTTP Cloudflare resolver plane | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`; production hosting configuration required |
-| Direct-HTTP Vercel resolver plane | `VERCEL_TOKEN`; production hosting configuration required |
+| Direct-HTTP Vercel resolver plane | `VERCEL_TOKEN` (and `VERCEL_TEAM_ID`, or `VERCEL_ORG_ID`, for a project in a team); production hosting configuration required |
+
+The Vercel fixture helper (`src/vercel-deploy-provider.ts`,
+`createVercelDeployProvider({ fixtureArtifact: true, token })`, which
+`selectIacProvider` never picks) deploys first, with one
+`POST /v13/deployments`. Only when Vercel refuses that because the project
+does not exist (404 `not_found`, "Project not found") does it create the project
+with `POST /v9/projects` and deploy once more. A 409 there whose `error.code` is
+`conflict` means it was made meanwhile, and a refusal of the deployment after it
+names that 409's reason (the reason cut at 200 characters, the note kept whole,
+and the refusal's own text cut to leave it room); any other 409 is a refusal
+like any other. So its first deploy from an account that has never seen the
+project deploys instead of failing, and a deploy to an existing project is one
+request. Any other refusal, or a second one, is a `VercelApiError` carrying
+Vercel's status, `error.code` and `error.message`. A response body can echo the
+request, and the executor keeps an error's message, so the error's `message` and
+`apiMessage` have the token, and anything bearer- or credential-shaped, replaced
+by `[redacted]`, and each is cut at 500 characters (a `…` marks the cut). The
+token is looked for as sent; in base64, alone, as a Basic header's `:token`, and
+as the part of a longer base64 value (such as `Bearer token`'s) that depends on
+the token alone; as the base64 of its base64; and as the base64 of its
+percent-encoding (`%XX`, either case). In each of those, every character may be
+written as itself (a `/` also as JSON's `\/`), as a JSON escape `\uXXXX` (hex
+in either case, after one backslash or more, as in JSON inside a JSON string),
+percent-encoded byte by byte as `%XX` or, encoded twice, as `%25XX` (either
+case), or as an HTML numeric reference, `&#xNN;` or `&#NN;` (either case, any
+number of leading zeros, the `;` optional). A run of whitespace (a newline,
+`\r\n`, spaces, tabs), control characters (NUL, ESC, DEL, NEL), format
+characters (a soft hyphen, a zero-width space or joiner, a word joiner) or any
+other default-ignorable code point (a variation selector, a combining grapheme
+joiner, a Hangul filler), which a message shows as spaces or not at all, may
+sit anywhere in it, inside an encoding too. A JSON body is also parsed and its strings, keys included,
+searched before it is written back out; any other body, or one too deep to
+write back out, is searched as text. The token is looked for again after the
+rest of the redaction has run, so nothing it does brings the token back. The
+error's `code` is kept only when it is a short identifier (letters, digits, `_`, `.` and `-`, at
+most 64 characters, and nothing the redaction would change), and is otherwise
+undefined. A request that gets no answer to read (the transport throws or
+rejects, or a 2xx body cannot be read) is a `VercelTransportError`: its
+`message` names the call and says what was thrown, down its `cause` chain and
+into an `AggregateError`'s `errors` (eight parts at most), redacted and cut the
+same way, and it keeps nothing of what was thrown, so it has no `cause`. A 2xx
+body that is not JSON is named by a fixed reason, `response body was not JSON`,
+and nothing of the body is quoted (a runtime's JSON error quotes its start, cut
+short). A token that holds whitespace, or a control, format or other default-ignorable
+character (CR, LF and NUL among them), is refused when the client is made,
+before any request, by an error that does not quote it. A credential binding's
+scope needs `POST` on `/v13/deployments`, and `POST` on `/v9/projects` for that
+first deploy; it needs no `GET` on the project.
+
+The project is created in the scope `teamId` names, or in the token's own scope
+when there is no `teamId`. Vercel answers "Project not found" for a project that
+lives only in another scope, so a missing `teamId`, or a wrong one the token can
+still deploy to, does not fail: it creates a second project of that name there
+and deploys to it. Set `teamId` (`createVercelClient({ token, teamId })`, or the
+helper's `teamId`) for a project that lives in a team. `selectIacProvider`, and
+so `hobo up`'s Vercel resolver plane, reads it from `VERCEL_TEAM_ID`, beside
+`VERCEL_TOKEN`, else from `VERCEL_ORG_ID`, the Vercel CLI's name for
+it, when that is a team id. The CLI writes a personal account's id
+there too, and the Vercel CLI treats an `orgId` that starts with `team_` as a
+team and any other as the user (its `getOrgById`, in
+`packages/cli/src/util/projects/get-org-by-id.ts` of vercel/vercel); so does
+this, and a `VERCEL_ORG_ID` that does not start with `team_` is taken as no
+team. A bare `team_`, with nothing after it, names neither, and is refused
+before anything is sent, with an error that names `VERCEL_ORG_ID`. So is a
+`VERCEL_TEAM_ID` that is not a canonical `team_…` id — a slug or a name: the
+resolvers compare it with the canonical `accountId` Vercel returns, so a slug
+would read as a different team on every later read, after a create succeeded. Every entry
+point (`createVercelClient` and `createVercelDeployProvider` too) takes a team
+id trimmed, and takes an empty or blank one as none: with none, the deploy and
+any create are in the token's own scope. The resolver plane's project lookups
+and creates carry that `teamId`. A run whose credentials
+come from OpenSesame (`HOBO_CREDENTIALS=opensesame`) keeps them too: the
+relaunched `hobo` starts from `@hobo/adapter-opensesame`'s allowlisted
+environment, and `VERCEL_TEAM_ID` and `VERCEL_ORG_ID`, team or account ids and
+not credentials, are on that allowlist. The helper's outputs say what happened:
+`projectCreated` is `"true"` when this deployment created the project and
+`"false"` otherwise, and `scope` is the `teamId`, or `"token-default"` when
+there is none: the scope Vercel gives a request with no `teamId`, which for a
+team's token need not be a personal account.
 
 **Credentials from OpenSesame (`HOBO_CREDENTIALS=opensesame`, [ADR-0170](../../docs/design/adr/02-identity-security.md#adr-0170)).**
 The composed `hobo` then relaunches itself once, before composing anything, as
