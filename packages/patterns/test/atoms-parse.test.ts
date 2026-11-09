@@ -115,6 +115,15 @@ describe("parseAtomAsPattern", () => {
 		);
 	});
 
+	it("yields no parameters when params.properties is an array", () => {
+		const manifest = parse({
+			id: "probe.atom",
+			files: [FILE],
+			params: { properties: [{ name: {} }] },
+		});
+		expect(manifest.parameters).toEqual([]);
+	});
+
 	it("falls back to the default label when a param default is not a primitive string", () => {
 		const manifest = parse({
 			id: "probe.atom",

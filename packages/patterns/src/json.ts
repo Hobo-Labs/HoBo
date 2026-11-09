@@ -5,9 +5,11 @@
  * anti-slop rules forbid `typeof`, so primitiveness is tested with `Object()`:
  * it wraps a primitive in a new object and returns an object unchanged.
  *
- * The guards are shallow, like `packages/code/src/json.ts`: they establish
- * the outermost kind of a value that `JSON.parse` produced. Callers re-guard
- * every leaf they read, which is what keeps each field's refusal specific.
+ * The guards are shallow: they establish only the outermost kind of a value
+ * that `JSON.parse` produced. They are stricter than the tag-based guards in
+ * `packages/code/src/json.ts`: only primitive strings and plain objects in
+ * this realm qualify. Callers re-guard every leaf they read, which is what
+ * keeps each field's refusal specific.
  */
 export type JsonObject = { readonly [key: string]: JsonValue };
 export type JsonValue =

@@ -58,7 +58,9 @@ the catalog. Chat emit uses the same trees.
   An array or a scalar is refused with `atom meta must be an object`, and a
   `files` entry that is not an object with `<id>: invalid file entry`. Only
   primitive strings count as strings: a boxed `String`, or an object that sets
-  `Symbol.toStringTag` to `"String"`, is not an atom id. Kind and tag feature
+  `Symbol.toStringTag` to `"String"`, is not an atom id. If `params.properties`
+  is an array (or any non-plain object), it yields no parameters rather than
+  parameters named by array indexes. Kind and tag feature
   lookup goes through `Map`s, so prototype keys (`"constructor"`, `"__proto__"`)
   resolve to no feature instead of an inherited value.
 - `planPatternApplication` and `applyPatternPlan` take params of any value

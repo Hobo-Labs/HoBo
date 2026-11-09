@@ -50,8 +50,13 @@ describe("isJsonObject", () => {
 		}
 	});
 
-	it("rejects a cross-realm function (realm-independent callable check)", () => {
+	it("rejects functions, including one from another realm", () => {
 		const foreign = runInNewContext("() => 1");
+		expect(isJsonObject(foreign)).toBe(false);
+	});
+
+	it("rejects a cross-realm plain object (foreign Object.prototype)", () => {
+		const foreign = runInNewContext("({ probe: true })");
 		expect(isJsonObject(foreign)).toBe(false);
 	});
 
