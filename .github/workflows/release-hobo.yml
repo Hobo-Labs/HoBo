@@ -230,7 +230,7 @@ jobs:
   # built by release-code.yml, never here.
   release-contract:
     name: Release contract + affected OCI images
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: hobo-box
     timeout-minutes: 20
     steps:
       - name: Bootstrap repo-local composite actions

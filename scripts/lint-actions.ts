@@ -41,6 +41,8 @@ const allowedEnabled = new Set([acceptanceFile, ...activeCiFiles]);
 /** The one runner choice besides `hobo`: trunk events may ask for the box's trunk label. */
 const TRUNK_RUNS_ON =
 	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+/** Box-local Docker jobs (runner/deps image, cold dev loop) must not overflow to ARC. */
+const BOX_RUNS_ON = "hobo-box";
 
 /** npm trusted publishing requires GitHub-hosted runners (release-hobo release-npm only). */
 function isNpmOidcHostedReleaseJob(
@@ -243,14 +245,39 @@ function lintWorkflowYaml(
 			activeCiFiles.has(file) &&
 			runsOn !== undefined &&
 			runsOn !== "hobo" &&
+			runsOn !== BOX_RUNS_ON &&
 			runsOn !== TRUNK_RUNS_ON &&
 			!npmOidcHosted
 		) {
 			errors.push(
-				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression`,
+				`${file}:${start + 1}: runs-on must be hobo, hobo-box, or the trunk label expression`,
 			);
 		}
-		if (runsOn === "hobo" || runsOn === TRUNK_RUNS_ON) {
+		const executableLines = block.filter(
+			(line) => !/^\s*#/.test(line) && !line.trim().startsWith("#"),
+		);
+		const needsBoxWorker =
+			executableLines.some((line) =>
+				/image="hobo-ci-worker:local"/.test(line),
+			) ||
+			executableLines.some((line) =>
+				/packages\/ci-gh-actions\/deploy\/ci-runner\/build\.sh/.test(line),
+			) ||
+			executableLines.some((line) =>
+				/packages\/ci-gh-actions\/deploy\/ci-runner\/deps\/build-deps\.sh/.test(
+					line,
+				),
+			);
+		if (needsBoxWorker && runsOn !== BOX_RUNS_ON) {
+			errors.push(
+				`${file}:${start + 1}: jobs that use hobo-ci-worker:local must runs-on: hobo-box`,
+			);
+		}
+		if (
+			runsOn === "hobo" ||
+			runsOn === TRUNK_RUNS_ON ||
+			runsOn === BOX_RUNS_ON
+		) {
 			for (const [index, line] of block.entries()) {
 				if (!/^\s*- uses: actions\/checkout@/.test(line)) continue;
 				const indent = line.match(/^(\s*)-/)?.[1] ?? "      ";
@@ -292,7 +319,7 @@ function lintWorkflowYaml(
 			}
 			if (prOnly && runsOn === TRUNK_RUNS_ON) {
 				errors.push(
-					`${file}:${start + 1}: trunk-label-routing: PR-only jobs must use plain hobo`,
+					`${file}:${start + 1}: trunk-label-routing: PR-only jobs must use plain hobo or hobo-box`,
 				);
 			}
 		}

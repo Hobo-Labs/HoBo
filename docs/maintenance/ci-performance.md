@@ -2,6 +2,7 @@
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
+- **Box-only Docker jobs.** Workflows that run `deploy/ci-runner/build.sh`, `build-deps.sh`, or `docker run … hobo-ci-worker:local` ask for `runs-on: hobo-box` so fleet overflow (`hobo-arc`) never schedules them without the local worker image.
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
   runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, subject to both slot and memory admission. Exact job names
   select light/standard/heavy hard container limits (3072/4096/6144 MiB); active, reserved and warm requests

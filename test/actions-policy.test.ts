@@ -302,7 +302,10 @@ jobs:
 	]) {
 		const result = await lint(await fixture({ "hobo-ci.yml": hoboCi(runsOn) }));
 		assert.equal(result.status, 1, runsOn);
-		assert.match(result.stderr, /runs-on must be hobo or the trunk label/);
+		assert.match(
+			result.stderr,
+			/runs-on must be hobo, hobo-box, or the trunk label/,
+		);
 	}
 });
 
@@ -423,11 +426,24 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			const prOnly =
 				/github\.event_name == 'pull_request'/.test(condition) &&
 				!condition.includes("||");
-			assert.equal(
-				runsOn,
-				prOnly ? "hobo" : trunkRunsOn,
-				`${file}:${lines[start]}`,
-			);
+			const executable = block
+				.split("\n")
+				.filter((line) => !/^\s*#/.test(line) && !line.trim().startsWith("#"))
+				.join("\n");
+			const needsBoxWorker =
+				/image="hobo-ci-worker:local"/.test(executable) ||
+				/packages\/ci-gh-actions\/deploy\/ci-runner\/build\.sh/.test(
+					executable,
+				) ||
+				/packages\/ci-gh-actions\/deploy\/ci-runner\/deps\/build-deps\.sh/.test(
+					executable,
+				);
+			const expected = needsBoxWorker
+				? "hobo-box"
+				: prOnly
+					? "hobo"
+					: trunkRunsOn;
+			assert.equal(runsOn, expected, `${file}:${lines[start]}`);
 		}
 	}
 });

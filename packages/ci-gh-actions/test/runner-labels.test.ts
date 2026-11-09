@@ -1,9 +1,10 @@
 import { expect, it } from "vitest";
-import { servedRunnerLabel } from "../src/runner-labels.js";
+import { BOX_RUNNER_LABEL, servedRunnerLabel } from "../src/runner-labels.js";
 
 it("serves exactly one hobo or hobo-trunk label, case-insensitively", () => {
 	expect(servedRunnerLabel(["hobo"])).toBe("hobo");
 	expect(servedRunnerLabel(["HoBo-Trunk"])).toBe("hobo-trunk");
+	expect(servedRunnerLabel([BOX_RUNNER_LABEL])).toBe(BOX_RUNNER_LABEL);
 	expect(servedRunnerLabel([])).toBeUndefined();
 	expect(servedRunnerLabel(["hobo", "hobo-trunk"])).toBeUndefined();
 	expect(servedRunnerLabel(["hobo", "linux"])).toBeUndefined();
