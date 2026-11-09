@@ -50,7 +50,7 @@ import {
 	ensureEmbeddedBroker,
 	resolveBindlePlacement,
 } from "./broker-runtime.js";
-import { resolveBrokerTarget } from "./broker-target.js";
+import { resolveBrokerTarget, wantsAnonymousMode } from "./broker-target.js";
 import {
 	type CredentialPresenter,
 	createCredentialPresenter,
@@ -198,10 +198,9 @@ export function createBrokerAwareUpCommand(
 						emitProgress,
 						persistent: deps.persistentLocal === true,
 						start: deps.startLocalDeployment ?? startLocalDeployment,
-						ttlSeconds:
-							flags.anonymous === true || flags.temporary === true
-								? localTtlSeconds(env.HOBO_LOCAL_DEPLOYMENT_TTL_SECONDS)
-								: 0,
+						ttlSeconds: wantsAnonymousMode(flags)
+							? localTtlSeconds(env.HOBO_LOCAL_DEPLOYMENT_TTL_SECONDS)
+							: 0,
 					});
 				}
 
