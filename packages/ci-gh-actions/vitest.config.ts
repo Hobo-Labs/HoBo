@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 // Files that load Docker, Pact or Dagger tooling (directly or through a
@@ -20,6 +21,11 @@ export default defineConfig({
 		// A spy a test leaves behind is undone before the next one, which matters
 		// once files share a worker.
 		restoreMocks: true,
+		// Temporary files on tmpfs where there is room: every SQLite store the
+		// tests open commits with an fsync (test/setup/tmpfs-tmpdir.ts).
+		globalSetup: [
+			fileURLToPath(new URL("./test/setup/tmpfs-tmpdir.ts", import.meta.url)),
+		],
 		// `include` stays per project: a top-level one would put every file in
 		// both projects.
 		projects: [
