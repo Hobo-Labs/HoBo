@@ -840,7 +840,7 @@ growth measurements and full-size differentials go in `*.deep.test.ts`, which
 the package's `vitest.config.ts` (extending the root config) excludes and
 `test:deep` runs (`vitest.deep.config.ts`, a turbo task, `pnpm run test:deep`).
 The shared shapes are swept once, in `@hobo/provider-redaction`; a caller
-sweeps only what it adds (`ownPatterns(…, SHARED_SHAPES)`), and callers that
+sweeps only what it adds (`ownPatterns(…, SHARED_PATTERNS)`), and callers that
 share a profile (`LONG_TOKEN_RUN_PROFILE`) test it once, where it is defined,
 and only their own wrapper themselves. The deep tier runs the full-size
 differentials at 50k texts on three seeds (`DEEP_SEEDS`).
