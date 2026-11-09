@@ -216,14 +216,26 @@ export function createHostedRelayRuntime(options: {
 				);
 			if (covered) return "duplicate" as const;
 			const nowMs = Date.parse(now());
-			for (const [deliveryId, lastRecheckMs] of lastDuplicateRecheck) {
-				if (nowMs - lastRecheckMs >= 60_000)
-					lastDuplicateRecheck.delete(deliveryId);
+			const registrationPending = leases.some(
+				(lease) =>
+					lease.repositoryId === identity.repository.id &&
+					matchesAttempt(lease.runAttempt) &&
+					(lease.jobId === jobId || lease.actualJobId === jobId) &&
+					lease.runnerId > 0 &&
+					(lease.state === "claiming" ||
+						lease.state === "running" ||
+						lease.state === "uncertain" ||
+						lease.state === "dispatched"),
+			);
+			const recheckMs = registrationPending ? 300_000 : 60_000;
+			const recheckKey = `${identity.repository.id}:${jobId}:${runAttempt ?? 0}`;
+			for (const [key, lastMs] of lastDuplicateRecheck) {
+				if (nowMs - lastMs >= recheckMs) lastDuplicateRecheck.delete(key);
 			}
-			const lastRecheckMs = lastDuplicateRecheck.get(input.deliveryId);
-			if (lastRecheckMs !== undefined && nowMs - lastRecheckMs < 60_000)
+			const lastRecheckMs = lastDuplicateRecheck.get(recheckKey);
+			if (lastRecheckMs !== undefined && nowMs - lastRecheckMs < recheckMs)
 				return "duplicate" as const;
-			lastDuplicateRecheck.set(input.deliveryId, nowMs);
+			lastDuplicateRecheck.set(recheckKey, nowMs);
 			try {
 				const recheck = await (await relay()).processWebhook(
 					Buffer.from(input.rawBody),
