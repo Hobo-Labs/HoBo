@@ -120,6 +120,8 @@ describe("HOBO_COMPONENTIZE_REAL wiring in runBuild", () => {
 	});
 
 	it("permits the contract floor only for explicitly selected library fixtures", async () => {
+		// The case is about the flag being absent; a runner that exports it must not decide it.
+		delete process.env.HOBO_COMPONENTIZE_REAL;
 		await withSeededProject(async (projectRoot) => {
 			const result = await runBuild({
 				requireRealComponentize: false,
