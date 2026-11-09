@@ -16,6 +16,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   Postgres quota or webhook relay does. `HOBO_CI_STORE=postgres` (or `"store": {"kind": "postgres",
   "urlEnv": …}` in the CI project config) keeps the shared-relay path. `ci-store-contract.test.ts` runs
   one suite against both stores; see `packages/ci/RUNNER-QUEUE.md` for the env vars.
+- **Pinned SBOM scanner.** `syft@1.56.0` is pinned through mise for the hermetic runner image, so runner and release SBOM generation use the same reproducible scanner version.
 - **Shared pnpm store.** The box worker bind-mounts one content-addressed store into every job container
   and sets `HOBO_CI_PNPM_STORE_MOUNTED=1`; `.github/actions/pnpm-store` reads that from the process env
   (an `if: env.X` expression never sees container env) and skips `actions/cache`. A self-hosted runner
