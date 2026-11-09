@@ -71,21 +71,17 @@ export function redactionPattern(pattern: RegExp): RedactionPattern {
 }
 
 /**
- * A private key, from its BEGIN line to the last END line before the next
- * BEGIN line, when that END line starts a line: after whitespace, the start of
- * the text, or an escaped `\n` or `\r` (a key inside a JSON string). Otherwise
- * (no END line, as when the text was cut inside the key, or a last one glued
- * to the text before it, `…abc-----END PRIVATE KEY-----`) to the next BEGIN
- * line or the end of the text. An END line inside a key, such as a
- * certificate's, or one another shape's match ran over, does not end it. The rest of the END
- * line's run goes with it (`-----END PRIVATE KEY-----npg_…`). A label is
+ * A private key, from its BEGIN line to the next BEGIN line or the end of the
+ * text: the shape a search for one starts from. `redactMatches`, and every
+ * redactor built on it, ends a key at its END line in code (`keySpans`), which
+ * a regular expression could only do by looking ahead from every place it
+ * could give a character back: to the last END line before the next BEGIN
+ * line, when that END line starts a line, with the rest of its run. A label is
  * anything up to the next `-` (`RSA`, `ENCRYPTED`, `OPENSSH`, one with a
- * digit). Each BEGIN reads on to the next BEGIN once, and back over it once,
- * trying each END line once and reading from it only to the next: never a
- * search from every BEGIN to the end.
+ * digit); BEGIN and END are matched in any case.
  */
 export const PRIVATE_KEY_PATTERN = redactionPattern(
-	/-----BEGIN[^-]*PRIVATE KEY-----(?:(?:(?!-----BEGIN)[\s\S])*(?:(?<!\S)|(?<=\\[nr]))-----END[^-]*PRIVATE KEY-----\S*(?=(?:(?!-----BEGIN|-----END)[\s\S])*(?:-----BEGIN|$))|(?:(?!-----BEGIN)[\s\S])*)/giu,
+	/-----BEGIN[^-]*PRIVATE KEY-----(?:(?!-----BEGIN)[\s\S])*/giu,
 );
 
 /**
@@ -98,11 +94,12 @@ export const PRIVATE_KEY_PATTERN = redactionPattern(
  * lookahead reads that run and the payload's once, so `-ey-ey-ey…` is one
  * search, not one from every `ey` to the end. Once the lookahead holds, the
  * first `ey` in the run with ten characters after it matches, because every
- * `ey` in a run reads to the same dot. So a JWT after a `-` is still found, and
- * the run's start before the `-` goes with it.
+ * `ey` in a run reads to the same dot. So a JWT after a `-` is still found;
+ * the run's start before it is read as the `lead` group and kept, as the
+ * provider copies' `\bey` kept it (`token-[redacted]`).
  */
 export const JWT_PATTERN = redactionPattern(
-	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{10,}\.)(?:[A-Za-z0-9_]*-)*?ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.\S*/giu,
+	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{10,}\.)(?<lead>(?:[A-Za-z0-9_]*-)*?)ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.\S*/giu,
 );
 
 /**
@@ -112,7 +109,7 @@ export const JWT_PATTERN = redactionPattern(
  * hostname such as `my-eyewear-store.myshopify.com` is neither.
  */
 export const JSON_JWT_PATTERN = redactionPattern(
-	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8})(?:[A-Za-z0-9_]*-)*?eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/gu,
+	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8})(?<lead>(?:[A-Za-z0-9_]*-)*?)eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/gu,
 );
 
 /**
@@ -146,9 +143,11 @@ export const CREDENTIAL_PATTERNS: readonly RedactionPattern[] = Object.freeze([
 	redactionPattern(/(?:mysql|mongodb(?:\+srv)?|amqps?):\/\/\S+/giu),
 	// Any other URL with inline credentials, whole, from the start of its run of
 	// scheme characters (`-x-redis://…` from its `-`, as the provider copies'
-	// `\b` took it). It starts only there, so `a.a.a.…` is one search.
+	// `\b` took it). It starts only there, so `a.a.a.…` is one search. A user
+	// alone is a credential too: a token is often the user
+	// (`https://ghp_…@github.com/…`), and `Token ://…@host` is one with no scheme.
 	redactionPattern(
-		/(?<![a-z0-9+.-])[a-z0-9+.-]*:\/\/[^\s"':/@]+:[^\s"'/@]+@\S+/giu,
+		/(?<![a-z0-9+.-])[a-z0-9+.-]*:\/\/[^\s"':/@]+(?::[^\s"'/@]*)?@\S+/giu,
 	),
 	// Inline credentials with no scheme in front of them.
 	redactionPattern(/\/\/[^/\s:@]+:[^/\s:@]+@/gu),
@@ -158,8 +157,10 @@ export const CREDENTIAL_PATTERNS: readonly RedactionPattern[] = Object.freeze([
 	// markdown emphasis around the separator (`"token": "…"`, `**Token:** …`)
 	// do not stand in for the value. A locator is a reference, not a secret,
 	// and the useful part of an error: `hobo-token://…` is a scheme, not a key
-	// and its value (a scheme ends in `:`, so `token=//…` is a key and its value),
-	// and `token: secret://camp/x` names where the secret is.
+	// and its value, and `token: secret://camp/x` names where the secret is.
+	// Only the locator schemes are (`hobo-token://`, `hobo-secret://`,
+	// `secret://`): `password://…` and `api-key://…` are a key and its value,
+	// and so is `token=//…`, since a scheme ends in `:`.
 	// Only a clean one is kept: its run ends at whitespace or the end of the
 	// text within 256 characters, with no control character in it, because a
 	// run reads on through a control character and so does what it hides
@@ -167,11 +168,12 @@ export const CREDENTIAL_PATTERNS: readonly RedactionPattern[] = Object.freeze([
 	// look-ahead from reading a run again from every start in it. A value
 	// that ends in a separator, or has one after it, is itself a name
 	// (`api_key=password: …`, `token=Token =…`), so the run after it is taken
-	// too: one run, not a chain of them, because a match
-	// that read every `token: ` to the end was read again from the next. A
-	// value of quotes or emphasis alone (`api_key='`, cut short) is one too.
+	// too, and the one after that while each ends in one (`api_key=a,password=
+	// b= SECRET`). A search resumes at a match's last run (`pushMatches`), so a
+	// chain of `token: ` is read once. A value of quotes or emphasis alone
+	// (`api_key='`, cut short) is one too.
 	redactionPattern(
-		/(?<![A-Za-z0-9_-])[A-Za-z0-9_-]*(?:token|secret|auth(?:orization)?|session|password|passwd|pwd|requirepass|api[_-]?key|secret[_-]?key|session[_-]?id)["'*]*\s*(?:=|:(?!\/\/[^\s\p{Cc}]{0,256}(?!\S)))(?![\s"'*]*(?:hobo-token|hobo-secret|secret|env):\/\/[^\s\p{Cc}]{0,256}(?!\S))(?:[\s"'*]*[^\s"'*]\S*(?:(?<=[=:])[\s"'*]+[^\s"'*]\S*|\s*[=:][\s"'*]*[^\s"'*]\S*)?|[\s"'*]*["'*](?!\S))/giu,
+		/(?<![A-Za-z0-9_-])[A-Za-z0-9_-]*(?:token|secret|auth(?:orization)?|session|password|passwd|pwd|requirepass|api[_-]?key|secret[_-]?key|access[_-]?key|private[_-]?key|session[_-]?id)["'*]*\s*(?:=|:(?!\/\/[^\s\p{Cc}]{0,256}(?!\S))|(?<!(?<![A-Za-z0-9_-])(?:hobo-token|hobo-secret|secret)):)(?![\s"'*]*(?:hobo-token|hobo-secret|secret|env):\/\/[^\s\p{Cc}]{0,256}(?!\S))(?:[\s"'*]*[^\s"'*]\S*(?:(?<=[=:])[\s"'*]+[^\s"'*]\S*|\s*[=:][\s"'*]*[^\s"'*]\S*)*|[\s"'*]*["'*](?!\S))/giu,
 	),
 	// Prefixed keys: Stripe-style sk_/pk_, GitHub, GitLab, Slack. Like the JWT
 	// shapes it starts where a run starts and takes the run's start before a
@@ -343,21 +345,27 @@ type Span = readonly [from: number, to: number];
 /** Whether a pattern's match is redacted: for a rule that is a shape and a test. */
 export type AcceptMatch = (match: string, pattern: RedactionPattern) => boolean;
 
+/** Where the last run of a match starts, or its end when it has one run. */
+function lastRunStart(match: string): number {
+	for (let at = match.length - 1; at > 0; at--)
+		if (WHITESPACE.test(match.charAt(at))) return at + 1;
+	return match.length;
+}
+
+const WHITESPACE = /\s/u;
+
 /**
- * Every match of `pattern` in `text`, a match's value searched again: the
- * search resumes at the first whitespace inside a match, not at its end, so
- * a value that is itself a name and a separator (`"token": "password: …`,
- * `**Token**: api_key=**Token:** …`) does not hide the match after it. A
- * match that spans no whitespace is searched past whole. Every shape but the
- * private key spans a bounded number of runs, so each character is read again
- * a bounded number of times, and a private key's body once more.
+ * Every match of `pattern` in `text`. The search resumes at the last run of a
+ * match, not at its end, so a match that starts inside it is still found
+ * (`**Token**: api_key=**Token:** …`, `Bearer Bearer x`). The runs before the
+ * last are not searched again: a later start in them reads on through the
+ * same runs, so it ends no further. Each character is read again at most once,
+ * however many runs a match spans.
  */
 function pushMatches(
 	spans: Span[],
 	text: string,
 	pattern: RedactionPattern,
-	offset: number,
-	ends?: number[],
 	accept?: AcceptMatch,
 ): void {
 	const search = new RegExp(pattern.source, pattern.flags);
@@ -367,16 +375,82 @@ function pushMatches(
 		match = search.exec(text)
 	) {
 		const length = match[0].length;
-		if (length > 0 && (accept === undefined || accept(match[0], pattern))) {
-			spans.push([offset + match.index, offset + match.index + length]);
-			// Where a private key's last END line starts, read in the match
-			// alone: searched for in the text, a key with none read back to its start.
-			const end = match[0].lastIndexOf("-----END");
-			ends?.push(end < 0 ? -1 : match.index + end);
-		}
-		const gap = match[0].search(/\s/u);
-		search.lastIndex = match.index + (gap > 0 ? gap : Math.max(length, 1));
+		// A shape may read context it does not redact, named `lead`: a JWT is
+		// searched from the start of its run, for one search per run, and
+		// redacted from its `ey` (`token-[redacted]`).
+		const lead = match.groups?.lead?.length ?? 0;
+		if (length > lead && (accept === undefined || accept(match[0], pattern)))
+			spans.push([match.index + lead, match.index + length]);
+		search.lastIndex = match.index + Math.max(lastRunStart(match[0]), 1);
 	}
+}
+
+const BEGIN_LINE = /-----BEGIN[^-]*PRIVATE KEY-----/giu;
+const END_LINE = /-----END[^-]*PRIVATE KEY-----/giu;
+const RUN = /\S*/uy;
+
+/** Whether `at` starts a line: after whitespace, the start, or an escaped `\n`. */
+function startsLine(text: string, at: number): boolean {
+	if (at === 0) return true;
+	const before = text.charAt(at - 1);
+	if (WHITESPACE.test(before)) return true;
+	return text.charAt(at - 2) === "\\" && (before === "n" || before === "r");
+}
+
+/** Where the run of non-whitespace that starts at `from` ends. */
+function runEnd(text: string, from: number): number {
+	RUN.lastIndex = from;
+	RUN.exec(text);
+	return RUN.lastIndex;
+}
+
+/**
+ * A private key's span, and where the END line that ends it starts and ends
+ * (-1 when none does).
+ */
+type KeySpan = readonly [
+	from: number,
+	to: number,
+	end: number,
+	endLine: number,
+];
+
+/**
+ * Every private key in `text`, found with one pass for BEGIN lines and one
+ * for END lines: a key runs from its BEGIN line to the last END line before
+ * the next BEGIN line, with the rest of that line's run, when that line starts
+ * a line; otherwise to the next BEGIN line or the end of the text. A BEGIN or
+ * END line holds a space (`PRIVATE KEY`), so the runs read after END lines do
+ * not overlap: linear however the lines are arranged.
+ */
+function keySpans(text: string): readonly KeySpan[] {
+	const begins = [...text.matchAll(BEGIN_LINE)];
+	if (begins.length === 0) return [];
+	const ends = [...text.matchAll(END_LINE)];
+	const keys: KeySpan[] = [];
+	let next = 0;
+	begins.forEach((begin, index) => {
+		const from = begin.index;
+		const bodyStart = from + begin[0].length;
+		const stop = begins[index + 1]?.index ?? text.length;
+		while ((ends[next]?.index ?? stop) < bodyStart) next++;
+		let last: RegExpExecArray | undefined;
+		for (
+			let end = ends[next];
+			end !== undefined && end.index < stop;
+			end = ends[++next]
+		)
+			last = end;
+		if (last !== undefined && startsLine(text, last.index))
+			keys.push([
+				from,
+				runEnd(text, last.index + last[0].length),
+				last.index,
+				last.index + last[0].length,
+			]);
+		else keys.push([from, stop, -1, -1]);
+	});
+	return keys;
 }
 
 /**
@@ -391,80 +465,64 @@ function pushMatches(
  * run another needed whole (a long-run rule saw 18 characters where there had
  * been 40), or took another's name (`code=password: …` lost `password` to the
  * `code` shape, and its value survived). So the order of the patterns cannot
- * leave anything behind that any one of them matches.
+ * leave anything behind that any one of them matches. PRIVATE_KEY_PATTERN is
+ * found by `keySpans`, and a key whose END line another shape's match takes
+ * any of (`Bearer -----END …`, `KEY-----glpat-…` to a long-run rule) goes on to
+ * the next BEGIN line or the end, as it did when that shape ran first.
  */
 function credentialSpans(
-	spans: Span[],
 	text: string,
 	patterns: readonly RedactionPattern[],
-	offset: number,
 	accept?: AcceptMatch,
-): void {
+): Span[] {
 	const flattened = flattenControlChars(text);
-	const keys: Span[] = [];
-	const ends: number[] = [];
+	const searched = flattened === text ? [text] : [text, flattened];
 	const others: Span[] = [];
-	for (const pattern of patterns) {
-		const key = pattern === PRIVATE_KEY_PATTERN;
-		const found = key ? keys : others;
-		pushMatches(found, text, pattern, 0, key ? ends : undefined, accept);
-		if (flattened !== text)
-			pushMatches(found, flattened, pattern, 0, key ? ends : undefined, accept);
+	const keys: KeySpan[] = [];
+	for (const pattern of patterns)
+		for (const each of searched) {
+			if (pattern === PRIVATE_KEY_PATTERN) keys.push(...keySpans(each));
+			else pushMatches(others, each, pattern, accept);
+		}
+	const reaches = overlapping(others);
+	const spans = [...others];
+	for (const [from, to, end, endLine] of keys) {
+		if (end < 0 || !reaches(endLine, end)) {
+			spans.push([from, to]);
+			continue;
+		}
+		NEXT_BEGIN.lastIndex = from + 1;
+		const next = NEXT_BEGIN.exec(text);
+		spans.push([from, next === null ? text.length : next.index]);
 	}
-	const ranOver = coverage(others);
-	keys.forEach(([from, to], index) => {
-		spans.push([
-			offset + from,
-			offset + keyEnd(text, from, to, ends[index] ?? -1, ranOver),
-		]);
-	});
-	for (const [from, to] of others) spans.push([offset + from, offset + to]);
+	return spans;
 }
 
 /**
- * Whether a span starts before a position and ends after it: `others` sorted
- * by start, with the furthest end of any span up to each one.
+ * Whether a span of `spans` starts before `before` and ends after `past`:
+ * `spans` sorted by start, with the furthest end of any span up to each one.
  */
-function coverage(others: Span[]): (at: number) => boolean {
-	others.sort((left, right) => left[0] - right[0]);
+function overlapping(spans: Span[]): (before: number, past: number) => boolean {
+	const sorted = [...spans].sort((left, right) => left[0] - right[0]);
 	const furthest: number[] = [];
 	let reach = -1;
-	for (const [, to] of others) {
+	for (const [, to] of sorted) {
 		reach = Math.max(reach, to);
 		furthest.push(reach);
 	}
-	return (at) => {
+	return (before, past) => {
 		let low = 0;
-		let high = others.length;
+		let high = sorted.length;
 		while (low < high) {
 			const middle = (low + high) >> 1;
-			if ((others[middle]?.[0] ?? at) < at) low = middle + 1;
+			if ((sorted[middle]?.[0] ?? before) < before) low = middle + 1;
 			else high = middle;
 		}
-		return low > 0 && (furthest[low - 1] ?? -1) > at;
+		return low > 0 && (furthest[low - 1] ?? -1) > past;
 	};
 }
 
 const NEXT_BEGIN = /-----BEGIN/giu;
-
-/**
- * Where a private key's span ends: where its pattern ended it, unless the END
- * line that ended it is inside another shape's match (`Bearer -----END …`,
- * `**Token:** -----END …`), which ran over it. Then that line ends nothing,
- * and the key goes on to the next BEGIN line or the end of the text.
- */
-function keyEnd(
-	text: string,
-	from: number,
-	to: number,
-	end: number,
-	ranOver: (at: number) => boolean,
-): number {
-	if (end <= from || !ranOver(end)) return to;
-	NEXT_BEGIN.lastIndex = from + 1;
-	const next = NEXT_BEGIN.exec(text);
-	return next === null ? text.length : next.index;
-}
 
 /** `text` with each run of overlapping or touching spans one marker. */
 function replaceSpans(
@@ -501,15 +559,21 @@ export function redactMatches(
 	marker = REDACTION_MARKER,
 	accept?: AcceptMatch,
 ): string {
-	const spans: Span[] = [];
-	credentialSpans(spans, text, patterns, 0, accept);
-	return replaceSpans(text, spans, marker);
+	return replaceSpans(text, credentialSpans(text, patterns, accept), marker);
 }
+
+// What a kept span is searched as: a run character (`password=sha256:…-x`
+// is one run, and its value is taken whole) that no credential shape's class
+// holds, so no long-run rule matches the span itself.
+const KEPT = String.fromCharCode(0xe000);
 
 /**
  * `text` with every credential span redacted, and every span `keep` matches
- * kept whole: the text between kept spans is searched on its own, so no shape
- * reads into one.
+ * kept whole where no credential span reaches it. The whole text is searched
+ * with each kept span masked, not the pieces between them: searched apart, a
+ * value glued to a kept digest (`password=sha256:…-SECRET`) was its own piece,
+ * with no name before it. A kept span a credential span reaches is redacted
+ * with it, whole.
  */
 function redactSpans(
 	text: string,
@@ -517,13 +581,21 @@ function redactSpans(
 	keep: RedactionPattern | undefined,
 ): string {
 	if (keep === undefined) return redactMatches(text, patterns);
-	const spans: Span[] = [];
+	const kept: Span[] = [];
+	let masked = "";
 	let from = 0;
-	for (const kept of text.matchAll(keep)) {
-		credentialSpans(spans, text.slice(from, kept.index), patterns, from);
-		from = kept.index + kept[0].length;
+	for (const span of text.matchAll(keep)) {
+		const to = span.index + span[0].length;
+		if (to === span.index) continue;
+		kept.push([span.index, to]);
+		masked += text.slice(from, span.index) + KEPT.repeat(to - span.index);
+		from = to;
 	}
-	credentialSpans(spans, text.slice(from), patterns, from);
+	masked += text.slice(from);
+	const spans = credentialSpans(masked, patterns);
+	const reaches = overlapping(spans);
+	for (const [start, end] of kept)
+		if (reaches(end, start)) spans.push([start, end]);
 	return replaceSpans(text, spans);
 }
 

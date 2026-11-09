@@ -6,7 +6,10 @@
  * holding a megabyte of `-ey` or of `http://claim?`, the guard stalled the
  * append. These pin that it still refuses what it refused, and is linear.
  */
-import { assertSweepLinear } from "@hobo/core/linear-sweep";
+import {
+	assertPatternSweepLinear,
+	assertSweepLinear,
+} from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import {
 	assertFindsNoLess,
@@ -15,7 +18,7 @@ import {
 	URL_PIECES,
 } from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
-
+import { FORBIDDEN_IN_EVENTS } from "../src/events.js";
 import { assertNoSecrets, type ClaimEvent } from "../src/index.js";
 import { assertNoSecrets as baseAssertNoSecrets } from "./fixtures/base-guard.js";
 
@@ -123,5 +126,17 @@ describe("assertNoSecrets on the whole sweep", () => {
 				],
 			},
 		);
+	});
+});
+
+// Each of the event guard's patterns, on runs of every class and between its own
+// fragments (`patternFragments`): the sweep above runs them together on runs.
+describe("each pattern on the whole sweep", () => {
+	it.each(
+		FORBIDDEN_IN_EVENTS.map((entry) => entry.pattern).map(
+			(pattern) => [pattern.source, pattern] as const,
+		),
+	)("/%s/ grows linearly", { timeout: 60_000 }, (_source, pattern) => {
+		assertPatternSweepLinear(pattern);
 	});
 });

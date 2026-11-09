@@ -106,7 +106,7 @@ export const RUNNER_PROVIDER_PROFILES = {
 } satisfies Readonly<Record<RunnerIntegrationProvider, RunnerProviderProfile>>;
 
 /** Shapes that are credentials, never references. Never echo the match. */
-const SECRET_PATTERNS: readonly RegExp[] = [
+export const SECRET_PATTERNS: readonly RegExp[] = [
 	// A private key first, the shared form: searched after the JWT shape, which
 	// starts where a run starts, its BEGIN line was read as part of a token. It
 	// runs from BEGIN to its own END line and the rest of that line's run, so
@@ -140,7 +140,7 @@ function entropy(value: string): number {
 	return bits;
 }
 
-const OPAQUE_RUN = /[A-Za-z0-9+_=-]{32,}/g;
+export const OPAQUE_RUN = /[A-Za-z0-9+_=-]{32,}/g;
 const OPAQUE_SPAN = redactionPattern(OPAQUE_RUN);
 const DIGEST = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 function opaqueCredential(run: string): boolean {

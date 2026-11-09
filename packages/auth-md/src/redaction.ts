@@ -113,10 +113,10 @@ export function forgetSensitive(ref: SensitiveRef): void {
 	vault.delete(ref);
 }
 
-const SECRET_KEY_PATTERN =
+export const SECRET_KEY_PATTERN =
 	/(assertion|token|secret|password|passphrase|credential|private[_-]?key|authorization|client[_-]?secret|jwk|jwt)/iu;
 
-const SECRET_TEXT_PATTERNS: readonly RedactionPattern[] = [
+export const SECRET_TEXT_PATTERNS: readonly RedactionPattern[] = [
 	// PEM blocks of any key type, from `@hobo/core/provider-redaction`: to the
 	// key's own END line, or the next BEGIN, or the end of the text. The lazy
 	// `[\s\S]*?-----END` this replaced searched from every BEGIN for an END.
@@ -130,7 +130,7 @@ const SECRET_TEXT_PATTERNS: readonly RedactionPattern[] = [
 	// signature's run and no `\b`: a `\b` the signature could fail (one ending
 	// in `-`) sent the search back to the next `eyJ`, quadratic again.
 	redactionPattern(
-		/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4})(?:[A-Za-z0-9_]*-)*?eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/gu,
+		/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4})(?<lead>(?:[A-Za-z0-9_]*-)*?)eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/gu,
 	),
 	// `Bearer <token>` in prose or headers.
 	redactionPattern(/\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/giu),

@@ -15,7 +15,11 @@
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { assertSweepLinear, type SweepSpec } from "../src/linear-sweep.js";
+import {
+	assertSweepLinear,
+	patternFragments,
+	type SweepSpec,
+} from "../src/linear-sweep.js";
 import {
 	grewLinearly,
 	HANG_BACKSTOP_MS,
@@ -278,6 +282,8 @@ describe("every pattern on a hostile text", () => {
 				"-----BEGIN PRIVATE KEY-----",
 				"-----END ",
 				"-----END PRIVATE KEY-----",
+				// A whole key, so a run and a literal after it come after one.
+				"-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
 			],
 		},
 		jwt: {
@@ -347,9 +353,12 @@ describe("every pattern on a hostile text", () => {
 			const pattern = patternNamed(name);
 			// Through the search the redactor runs, which reads a match's value
 			// again from the first whitespace in it.
-			assertSweepLinear((text) => {
-				redactMatches(text, [pattern]);
-			}, SWEEP_SPECS[name]);
+			assertSweepLinear(
+				(text) => {
+					redactMatches(text, [pattern]);
+				},
+				{ ...SWEEP_SPECS[name], fragments: patternFragments(pattern) },
+			);
 		},
 		GROWTH_TIMEOUT_MS,
 	);
@@ -484,14 +493,15 @@ describe("redactProviderText", () => {
 
 	it("still redacts a JWT that follows a space, a quote, an equals sign, a colon, or a hyphen", () => {
 		const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NX0.dBjftJeZ4CVPmB92K";
-		for (const before of [" ", '"', "=", ":"]) {
+		for (const before of [" ", '"', "=", ":", "-"]) {
 			expect(redactProviderText(`x${before}${jwt}`)).toBe(
 				`x${before}[redacted]`,
 			);
 		}
-		// A word boundary inside a base64url run is only after a `-`; the run's
-		// start goes with the JWT.
-		expect(redactProviderText(`id x-${jwt} ok`)).toBe("id [redacted] ok");
+		// A hyphen inside a word is a boundary, as the old `\bey` had it, and
+		// the word before it is kept (#1773 9d3fe8c2).
+		expect(redactProviderText(`token-${jwt} end`)).toBe("token-[redacted] end");
+		expect(redactProviderText(`id x-${jwt} ok`)).toBe("id x-[redacted] ok");
 	});
 
 	it("redacts a private key whole across a foreign END marker inside it", () => {

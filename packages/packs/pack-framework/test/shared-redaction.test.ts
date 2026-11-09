@@ -5,10 +5,12 @@
  * These pin that nothing it redacted leaks now, what it newly redacts, and
  * that it is linear.
  */
+
+import { assertPatternSweepLinear } from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
-
+import { ARGV_CREDENTIAL_PATTERNS } from "../src/argv.js";
 import { redactPackText } from "../src/errors.js";
 import { redactPackText as baseRedact } from "./fixtures/base-redaction.js";
 
@@ -95,4 +97,20 @@ describe("against the redactor it replaced", () => {
 	])("reads a credential on through a control character: %j", (text, marker) => {
 		expect(redactPackText(text, LONG)).not.toContain(marker);
 	});
+});
+
+// The argv guard's patterns: an element is at most 1024 characters, and each
+// pattern is linear on runs of every class and between its own fragments.
+describe("the argv guard", () => {
+	it.each(
+		ARGV_CREDENTIAL_PATTERNS.map(
+			(pattern) => [pattern.source, pattern] as const,
+		),
+	)(
+		"its pattern /%s/ grows linearly on the whole sweep",
+		{ timeout: 60_000 },
+		(_source, pattern) => {
+			assertPatternSweepLinear(pattern);
+		},
+	);
 });

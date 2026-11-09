@@ -9,7 +9,11 @@
  * that against the old rules on generated text, and that every rule's cost
  * grows linearly on runs of every character class and pair of them.
  */
-import { assertSweepLinear, type SweepSpec } from "@hobo/core/linear-sweep";
+import {
+	assertSweepLinear,
+	patternFragments,
+	type SweepSpec,
+} from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { describe, expect, it } from "vitest";
 
@@ -216,13 +220,16 @@ describe("the public redaction gate's linear rules", () => {
 
 	it.each(
 		REDACTION_RULES.map((each) => each.id),
-	)("%s grows linearly on the whole sweep", { timeout: 30_000 }, (id) => {
+	)("%s grows linearly on the whole sweep", { timeout: 60_000 }, (id) => {
 		const pattern = rule(id);
 		const spec = SWEEPS.get(id);
 		if (spec === undefined) throw new Error(`no sweep for ${id}`);
-		assertSweepLinear((text) => {
-			text.replace(new RegExp(pattern.source, pattern.flags), "");
-		}, spec);
+		assertSweepLinear(
+			(text) => {
+				text.replace(new RegExp(pattern.source, pattern.flags), "");
+			},
+			{ ...spec, fragments: patternFragments(pattern) },
+		);
 	});
 
 	it.each([

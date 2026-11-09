@@ -1,5 +1,5 @@
 /**
- * `redactDebugPayload` as it stood on the base branch (169d87fcf819), copied by a script
+ * `redactDebugPayload` as it stood on the base branch (9d3fe8c2d723), copied by a script
  * with only the declarations it reaches, as the oracle the differential test
  * holds the shared redactor to. Not edited by hand but for the lint's disable
  * block and SAFETY lines; do not import it from src.

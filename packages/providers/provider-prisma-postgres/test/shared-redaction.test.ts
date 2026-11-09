@@ -22,6 +22,7 @@ import {
 	PRISMA_POSTGRES_REDACTION_PROFILE,
 	redactProviderText,
 } from "../src/errors.js";
+import { ARGV_CREDENTIAL_PATTERNS } from "../src/migration.js";
 import { redactProviderText as baseRedact } from "./fixtures/base-redaction.js";
 
 const MB = 1_000_000;
@@ -120,6 +121,22 @@ describe("against the redactor it replaced", () => {
 	)(
 		"its pattern /%s/ grows linearly on the whole sweep",
 		{ timeout: 30_000 },
+		(_source, pattern) => {
+			assertPatternSweepLinear(pattern);
+		},
+	);
+});
+
+// The argv guard's patterns: an element is at most 1024 characters, and each
+// pattern is linear on runs of every class and between its own fragments.
+describe("the argv guard", () => {
+	it.each(
+		ARGV_CREDENTIAL_PATTERNS.map(
+			(pattern) => [pattern.source, pattern] as const,
+		),
+	)(
+		"its pattern /%s/ grows linearly on the whole sweep",
+		{ timeout: 60_000 },
 		(_source, pattern) => {
 			assertPatternSweepLinear(pattern);
 		},

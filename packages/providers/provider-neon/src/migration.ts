@@ -95,7 +95,11 @@ function assertArgvValue(value: string, what: string): string {
 	return value;
 }
 
-const ARGV_CREDENTIAL_PATTERNS: readonly RegExp[] = [
+/**
+ * Credential shapes refused in a command line; exported so a test can sweep
+ * each for linear growth.
+ */
+export const ARGV_CREDENTIAL_PATTERNS: readonly RegExp[] = [
 	/postgres(?:ql)?:\/\//iu,
 	/\bnpg_[A-Za-z0-9_-]{4,}/u,
 	/(?:^|[=\s])(?:--)?password[=\s]/iu,

@@ -5,8 +5,11 @@
  * sit, run through both. Wherever the old redactor hid half of a marker's
  * random tail, the new one must hide it too: it may redact more, never less.
  * The one exception is a marker inside a locator's path (`hobo-token://…`,
- * `secret://…`): a locator names where a secret is kept and is the useful
- * part of an error, so the shared redactor keeps it where the old ones did not.
+ * `secret://…`) or the name of the key it is the value of: a locator names
+ * where a secret is kept and is the useful part of an error, so the shared
+ * redactor keeps it where the old ones did not. The texts carry credentials at
+ * their real lengths, percent-encodings, non-ASCII, zero-width and direction
+ * characters, secret names used as schemes, and digests a value is glued to.
  *
  * Reached through the `@hobo/core/redaction-differential` subpath, for tests.
  */
@@ -73,7 +76,43 @@ export const FUZZ_PIECES: readonly string[] = Object.freeze([
 	"9",
 	"error",
 	"ok",
+	// Percent-encodings, a decoder's work.
+	"%3D",
+	"%3A",
+	"%2F",
+	"%40",
+	"%25",
+	"token%3D",
+	"Bearer%20",
+	// Unicode: letters a class may not hold, zero-width and direction marks,
+	// and a no-break space, which is whitespace to `\s`.
+	"é",
+	"Ω",
+	"\u0627",
+	"\u200b",
+	"\u200d",
+	"\u202e",
+	"\u00a0",
+	// A scheme on its own, after a credential's name, and a secret's name used
+	// as a scheme.
+	"://",
+	"Token ://",
+	"password://",
+	"pwd://",
+	"api-key://",
+	"token://",
+	"x-token://",
+	// A kept digest, which a value can be glued to.
+	`sha256:${"0123456789abcdef".repeat(4)}`,
+	// More key names.
+	"access_key=",
+	"secret_access_key=",
+	"aws_secret_access_key=",
+	"client_secret=",
+	"private_key=",
 ]);
+
+const UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 const MARKER_CHARS =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -101,9 +140,50 @@ export type FuzzText = {
 	readonly tails: readonly string[];
 };
 
+type Draw = (bound: number) => number;
+
+function drawn(draw: Draw, chars: string, length: number): string {
+	let out = "";
+	for (let char = 0; char < length; char++) out += chars[draw(chars.length)];
+	return out;
+}
+
+/**
+ * Credentials at their real lengths, each with a marker inside its body: a
+ * marker alone is shorter than the minimum many shapes ask for, and a shape
+ * only redacts what is long enough to be one.
+ */
+const CREDENTIALS: readonly ((draw: Draw) => FuzzText)[] = [
+	(draw) => {
+		const tail = drawn(draw, UPPER, 8);
+		return { text: `AKIASECR${tail}${drawn(draw, UPPER, 4)}`, tails: [tail] };
+	},
+	...[
+		(tail: string, draw: Draw) =>
+			`ghp_SECR${tail}${drawn(draw, MARKER_CHARS, 24)}`,
+		(tail: string, draw: Draw) =>
+			`sk_live_SECR${tail}${drawn(draw, MARKER_CHARS, 12)}`,
+		(tail: string, draw: Draw) =>
+			`rk_test_SECR${tail}${drawn(draw, MARKER_CHARS, 12)}`,
+		(tail: string, draw: Draw) =>
+			`glpat-SECR${tail}${drawn(draw, MARKER_CHARS, 8)}`,
+		(tail: string, draw: Draw) =>
+			`xoxb-1234567890-SECR${tail}${drawn(draw, MARKER_CHARS, 12)}`,
+		(tail: string, draw: Draw) =>
+			`eyJhbGciOiJIUzI1NiJ9.eyJSECR${tail}${drawn(draw, MARKER_CHARS, 6)}.${drawn(draw, MARKER_CHARS, 22)}`,
+		(tail: string) =>
+			`-----BEGIN PRIVATE KEY-----\nMIIBSECR${tail}\n-----END PRIVATE KEY-----`,
+		(tail: string) => `-----BEGIN RSA PRIVATE KEY-----\nSECR${tail}`,
+	].map((credential) => (draw: Draw): FuzzText => {
+		const tail = drawn(draw, MARKER_CHARS, 8);
+		return { text: credential(tail, draw), tails: [tail] };
+	}),
+];
+
 /**
  * `count` texts from a seeded generator, so a failure names a text that
- * replays. Each is up to 24 pieces, a fifth of them markers.
+ * replays. Each is up to 24 pieces: a fifth of them markers, a tenth
+ * credentials at their real lengths with a marker inside, the rest pieces.
  */
 export function* fuzzTexts(
 	count: number,
@@ -115,12 +195,16 @@ export function* fuzzTexts(
 		const tails: string[] = [];
 		const pieces = 1 + next(24);
 		for (let piece = 0; piece < pieces; piece++) {
-			if (next(5) === 0) {
-				let tail = "";
-				for (let char = 0; char < 8; char++)
-					tail += MARKER_CHARS[next(MARKER_CHARS.length)];
+			const kind = next(10);
+			const credential = CREDENTIALS[next(CREDENTIALS.length)];
+			if (kind < 2) {
+				const tail = drawn(next, MARKER_CHARS, 8);
 				tails.push(tail);
 				text += `SECR${tail}`;
+			} else if (kind === 2 && credential !== undefined) {
+				const made = credential(next);
+				tails.push(...made.tails);
+				text += made.text;
 			} else {
 				text += FUZZ_PIECES[next(FUZZ_PIECES.length)];
 			}
@@ -130,13 +214,14 @@ export function* fuzzTexts(
 }
 
 /**
- * A locator the shared redactor keeps, and the run it is in: its path a run
- * of 256 characters or fewer with no control character in it, ending at
- * whitespace or the end, and before it, in the same run or as a `name:` run,
- * the key it is the value of. The key's name is kept with its value.
+ * A locator the shared redactor keeps: its path a run of 256 characters or
+ * fewer with no control character in it, ending at whitespace or the end, and,
+ * when it is a key's value, that key's name (the shared redactor's names). A
+ * marker anywhere else in the run, before the name or glued to it from
+ * another credential, is not exempt.
  */
 export const LOCATOR_RUN =
-	/(?:(?<![^\s\p{Cc}])[^\s\p{Cc}]*?(?:[=:][\s"'*]*)?)?(?:hobo-token|hobo-secret|secret|env):\/\/[^\s\p{Cc}]{0,256}(?!\S)/gu;
+	/(?:(?<![A-Za-z0-9_-])[A-Za-z0-9_-]*(?:token|secret|auth(?:orization)?|session|password|passwd|pwd|requirepass|api[_-]?key|secret[_-]?key|access[_-]?key|private[_-]?key|session[_-]?id)["'*]*\s*[=:][\s"'*]*|(?<![A-Za-z0-9_-]))(?:hobo-token|hobo-secret|secret|env):\/\/[^\s\p{Cc}]{0,256}(?!\S)/giu;
 
 function insideLocator(text: string, tail: string): boolean {
 	const at = text.indexOf(`SECR${tail}`);

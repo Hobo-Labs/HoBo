@@ -244,7 +244,7 @@ export type ClaimEvent =
 	  };
 
 /** Patterns that must never reach a durable event payload. */
-const FORBIDDEN_IN_EVENTS: readonly {
+export const FORBIDDEN_IN_EVENTS: readonly {
 	readonly label: string;
 	readonly pattern: RegExp;
 }[] = [

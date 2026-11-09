@@ -342,7 +342,7 @@ export function assertNoUpgradedUnknowns(
 }
 
 /** Values that must never appear anywhere in an artifact. */
-const SECRET_PATTERN: readonly RegExp[] = [
+export const SECRET_PATTERN: readonly RegExp[] = [
 	// A connection string with credentials, looked for once per run of
 	// characters that are neither whitespace nor a quote: at the run's first
 	// `scheme://`, its first `:` after that and the first `@` after the `:`. A

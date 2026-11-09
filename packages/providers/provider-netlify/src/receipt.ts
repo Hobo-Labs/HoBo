@@ -94,7 +94,7 @@ export type CredentialScanHit = {
 };
 
 /** Patterns that must never appear in anything this package serializes. */
-const CREDENTIAL_PATTERNS: readonly {
+export const CREDENTIAL_PATTERNS: readonly {
 	readonly label: string;
 	readonly pattern: RegExp;
 }[] = [

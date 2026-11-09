@@ -6,21 +6,31 @@
  * redacted, and that both are linear.
  */
 
-import { assertSweepLinear } from "@hobo/core/linear-sweep";
+import {
+	assertPatternSweepLinear,
+	assertSweepLinear,
+} from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
-
-import { looksLikeSecret, redactSecrets } from "../src/runner-integrations.js";
+import {
+	looksLikeSecret,
+	OPAQUE_RUN,
+	redactSecrets,
+	SECRET_PATTERNS,
+} from "../src/runner-integrations.js";
 import { redactSecrets as baseRedactSecrets } from "./fixtures/base-redaction.js";
 
 const JWT = "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJnaXRodWIifQ.c2lnbmF0dXJlLXZhbHVl";
 
 describe("runner-integration secret patterns", () => {
 	it("still finds and redacts a JWT, alone or after a hyphen", () => {
-		for (const text of [JWT, `x-${JWT}`]) {
-			expect(looksLikeSecret(text)).toBe(true);
-			expect(redactSecrets(`log ${text} done`)).toBe("log [REDACTED] done");
+		for (const before of ["", "x-"]) {
+			expect(looksLikeSecret(`${before}${JWT}`)).toBe(true);
+			// The word before a hyphen is kept, as #1773 keeps it.
+			expect(redactSecrets(`log ${before}${JWT} done`)).toBe(
+				`log ${before}[REDACTED] done`,
+			);
 		}
 	});
 
@@ -75,7 +85,28 @@ describe("redactSecrets against the redactor it replaced", () => {
 	it("grows linearly on the whole sweep", { timeout: 60_000 }, () => {
 		assertSweepLinear((text) => redactSecrets(text, []), {
 			alphabet: "aZ9",
-			words: ["ghp_", "eyJ", "-----BEGIN PRIVATE KEY-----", "sk_live_", "AKIA"],
+			words: [
+				"ghp_",
+				"eyJ",
+				"-----BEGIN PRIVATE KEY-----",
+				"-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+				"sk_live_",
+				"AKIA",
+			],
+			// A key, a run and an END line after it: B-1 in 0462fa6c.
+			fragments: ["-----END"],
 		});
+	});
+});
+
+// Each of redactSecrets' patterns and its opaque-run rule, on runs of every class and between its own
+// fragments (`patternFragments`): the sweep above runs them together on runs.
+describe("each pattern on the whole sweep", () => {
+	it.each(
+		[...SECRET_PATTERNS, OPAQUE_RUN].map(
+			(pattern) => [pattern.source, pattern] as const,
+		),
+	)("/%s/ grows linearly", { timeout: 60_000 }, (_source, pattern) => {
+		assertPatternSweepLinear(pattern);
 	});
 });

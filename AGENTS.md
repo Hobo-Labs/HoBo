@@ -812,8 +812,13 @@ the next run.
 
 Sweep every pattern with `@hobo/core/linear-sweep` (`assertSweepLinear`, or
 `assertPatternSweepLinear` for one pattern), which builds runs of every
-character class and every pair of them, so a class nobody listed cannot hide a
-quadratic case. A redactor or guard that replaces another is held to it with
+character class and every pair of them, and runs between the pattern's own
+literal fragments, ended by each terminator, so neither a class nobody listed
+nor a look-ahead for a later literal (`\S*(?=…-----END)` read again from every
+place it could give a character back) can hide a quadratic case. Give a
+whole-function sweep a whole sample as a word and the literals it looks for as
+fragments. Structure a regular expression can only find by looking ahead from
+every position (a private key's last END line) is found in code instead. A redactor or guard that replaces another is held to it with
 `@hobo/core/redaction-differential` (`assertRevealsNoMore`,
 `assertFindsNoLess`), the old one vendored under the package's
 `test/fixtures`: it may redact more, never less.

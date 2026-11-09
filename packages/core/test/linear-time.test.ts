@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
 	assertSweepLinear,
+	patternFragments,
 	SEPARATOR_CLASSES,
 	SweepGrowthError,
 	sweepInputs,
@@ -154,7 +155,7 @@ describe("the sweep", () => {
 						text.replace(underscoreRuns, "");
 					},
 					{ alphabet: "z" },
-					{ floorLength: 16_384 },
+					{ floorLength: 16_384, failFast: true },
 				);
 			} catch (error) {
 				refused = error;
@@ -171,9 +172,59 @@ describe("the sweep", () => {
 	it("builds every class, every pair, and each word followed by each class", () => {
 		const inputs = sweepInputs({ alphabet: "a", words: ["w"] });
 		const classes = new Set(["a", ...SEPARATOR_CLASSES]).size;
+		const separators = SEPARATOR_CLASSES.length;
+		// Runs and pairs; around a piece ("" or "w" before, "w" after); ended by
+		// each terminator but the run's own; then a terminator and "w"; and the
+		// word on its own, before each class, and with each class.
+		const pairs = classes + classes * (classes - 1);
+		const around = 2 * classes;
+		const ended = 2 * (classes * separators - separators);
+		const thenWord = 2 * separators;
 		expect(inputs).toHaveLength(
-			classes + classes * (classes - 1) + 1 + 2 * classes,
+			pairs + around + ended + thenWord + 1 + 2 * classes,
 		);
 		expect(inputs.map((input) => input.name)).toContain('"_ " repeated');
+	});
+
+	it("puts a run between a pattern's fragments, and a terminator before one", () => {
+		const key = "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----";
+		const names = sweepInputs({
+			alphabet: "a",
+			words: [key],
+			fragments: ["-----END"],
+		}).map((input) => input.name);
+		expect(names).toContain(
+			`${JSON.stringify(key)}, "a" repeated, then " -----END"`,
+		);
+		expect(names).toContain('"-----END", "a" repeated, "-----END"');
+	});
+
+	it("reads a pattern's literal fragments from its source", () => {
+		expect(
+			patternFragments(/-----BEGIN[^-]*PRIVATE KEY-----(?:x|y)-----END/u),
+		).toEqual(["-----BEGIN", "PRIVATE KEY-----", "-----END"]);
+		// A quantified character is not part of the run before it, and `=`, `:`
+		// and `://` are kept.
+		expect(patternFragments(/rediss?:\/\/\S+/u)).toEqual(["redis", "://", ":"]);
+		expect(patternFragments(/\bBearer\s+\S+/u)).toEqual(["Bearer"]);
+		expect(patternFragments(/(?<![a-z])api_key=\S+/u)).toEqual([
+			"api_key=",
+			"=",
+		]);
+	});
+
+	it("names an input a call hangs on, as an offender", () => {
+		const hang = (text: string): void => {
+			if (text.startsWith("x"))
+				throw new OperationHangError(text.length, 25_000);
+		};
+		let caught: unknown;
+		try {
+			assertSweepLinear(hang, { alphabet: "x" }, { floorLength: 1024 });
+		} catch (error) {
+			caught = error;
+		}
+		expect(caught).toBeInstanceOf(SweepGrowthError);
+		expect(String(caught)).toContain('"x" repeated (one call ran 25000 ms)');
 	});
 });

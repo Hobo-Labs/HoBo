@@ -8,12 +8,16 @@
  * that its cost grows linearly.
  */
 
-import { assertSweepLinear } from "@hobo/core/linear-sweep";
+import {
+	assertPatternSweepLinear,
+	assertSweepLinear,
+} from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import { redactDebugPayload } from "../src/index.js";
+import { SECRET_STRING, SENSITIVE_DEBUG_KEY } from "../src/privacy.js";
 import { redactDebugPayload as baseRedactDebugPayload } from "./fixtures/base-redaction.js";
 
 const OLD_SECRET_STRING =
@@ -106,5 +110,17 @@ describe("redactDebugPayload against the masking it replaced", () => {
 			alphabet: "aZ9",
 			words: ["Bearer ", "eyJ", "sk-", "postgres://", "API_KEY"],
 		});
+	});
+});
+
+// Each of the debug-payload patterns, on runs of every class and between its own
+// fragments (`patternFragments`): the sweep above runs them together on runs.
+describe("each pattern on the whole sweep", () => {
+	it.each(
+		[SECRET_STRING, SENSITIVE_DEBUG_KEY].map(
+			(pattern) => [pattern.source, pattern] as const,
+		),
+	)("/%s/ grows linearly", { timeout: 60_000 }, (_source, pattern) => {
+		assertPatternSweepLinear(pattern);
 	});
 });

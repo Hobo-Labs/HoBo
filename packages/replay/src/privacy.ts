@@ -88,7 +88,7 @@ export function maskRrwebEvents(
 	return Object.freeze(events.map((e) => maskRrwebEvent(e, policy)));
 }
 
-const SENSITIVE_DEBUG_KEY =
+export const SENSITIVE_DEBUG_KEY =
 	/^(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[_-]?key|password|passwd|secret|token|access[_-]?token|refresh[_-]?token|private[_-]?key|credentials?)$/i;
 const HIDDEN_REASONING_KEY =
 	/^(?:reasoning|chain[_-]?of[_-]?thought|hidden[_-]?reasoning|thoughts)$/i;
@@ -99,7 +99,7 @@ const HIDDEN_REASONING_KEY =
 // at every letter, and at every place a key name could end, each reading to the
 // end of the run, so a long hostile string took quadratic time to test. Each
 // accepts exactly the strings its old form did.
-const SECRET_STRING =
+export const SECRET_STRING =
 	/(?:Bearer\s+\S+|-----BEGIN (?:RSA |EC )?PRIVATE KEY-----|(?:sk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[0-9A-Za-z_-]{35}|(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5})[A-Za-z0-9_-]*?eyJ[A-Za-z0-9_-]{5,}\.|(?<![A-Za-z0-9+.-])[0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/:@]+:[^@\s/]+@|\b[A-Z](?=[A-Z0-9_]*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?))[A-Z0-9_]*\s*=)/i;
 
 /** Redact generic debug payloads before every persistence path, at every level. */

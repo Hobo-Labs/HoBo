@@ -44,13 +44,18 @@ describe("provider-vercel redaction", () => {
 		// Each of these left the secret in the message before.
 		for (const secret of [
 			"VERCEL_TOKEN=vcp_abcdef",
-			"x-eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NX0.sig",
 			"https://user:hunter2@example.com/x",
 			"ghp_abcdefghijklmnop",
 		])
 			expect(redactProviderText(`before ${secret} after`)).toBe(
 				"before [redacted] after",
 			);
+		// The word before a hyphen is kept, as #1773 keeps it.
+		expect(
+			redactProviderText(
+				"before x-eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NX0.sig after",
+			),
+		).toBe("before x-[redacted] after");
 	});
 
 	it.each([["near-miss transfer codes", repeatedTo("code=ABC ")]] as const)(
@@ -82,6 +87,24 @@ describe("the shared shapes, through this caller", () => {
 	])("redacts %s whole", (_case, secret) => {
 		const text = `before ${secret} after`;
 		expect(redactProviderText(text)).toBe("before [redacted] after");
+	});
+});
+
+// #1773's hostile-text assertions (9d3fe8c2), through this caller.
+describe("a JWT after a boundary, as #1773 pins it", () => {
+	const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NX0.dBjftJeZ4CVPmB92K";
+	it.each([
+		" ",
+		'"',
+		"=",
+		":",
+		"-",
+	])("redacts a JWT that follows %j", (before) => {
+		expect(redactProviderText(`x${before}${jwt}`)).toBe(`x${before}[redacted]`);
+	});
+
+	it("takes a hyphen inside a word as a boundary, as the old `\\bey` had it", () => {
+		expect(redactProviderText(`token-${jwt} end`)).toBe("token-[redacted] end");
 	});
 });
 

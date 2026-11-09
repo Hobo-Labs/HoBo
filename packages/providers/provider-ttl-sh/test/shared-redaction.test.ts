@@ -13,7 +13,12 @@ import {
 	profilePatterns,
 } from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
-import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
+import { JWT_DETECTOR } from "@hobo/core/provider-redaction";
+import {
+	assertFindsNoLess,
+	assertRevealsNoMore,
+	JWT_PIECES,
+} from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -21,6 +26,7 @@ import {
 	redactProviderText,
 	TTL_SH_REDACTION_PROFILE,
 } from "../src/errors.js";
+import { ARGV_CREDENTIAL_PATTERNS } from "../src/push.js";
 import { redactProviderText as baseRedact } from "./fixtures/base-redaction.js";
 
 const MB = 1_000_000;
@@ -131,4 +137,32 @@ describe("against the redactor it replaced", () => {
 			assertPatternSweepLinear(pattern);
 		},
 	);
+});
+
+// The argv guard's patterns: an element is at most 1024 characters, and each
+// pattern is linear on runs of every class and between its own fragments.
+describe("the argv guard", () => {
+	it.each(
+		ARGV_CREDENTIAL_PATTERNS.map(
+			(pattern) => [pattern.source, pattern] as const,
+		),
+	)(
+		"its pattern /%s/ grows linearly on the whole sweep",
+		{ timeout: 60_000 },
+		(_source, pattern) => {
+			assertPatternSweepLinear(pattern);
+		},
+	);
+
+	it("refuses every JWT the `\\bey…` detector it replaced refused", () => {
+		const old = /\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./u;
+		expect(ARGV_CREDENTIAL_PATTERNS).toContain(JWT_DETECTOR);
+		expect(
+			assertFindsNoLess(
+				(text) => old.test(text),
+				(text) => JWT_DETECTOR.test(text),
+				JWT_PIECES,
+			),
+		).toBeGreaterThan(1000);
+	});
 });

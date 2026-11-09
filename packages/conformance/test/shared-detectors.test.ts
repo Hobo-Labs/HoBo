@@ -6,7 +6,10 @@
  * megabyte of `-ey` or of `postgres://:::` stalled the scan. These pin that it
  * still refuses what it refused, and is linear.
  */
-import { assertSweepLinear } from "@hobo/core/linear-sweep";
+import {
+	assertPatternSweepLinear,
+	assertSweepLinear,
+} from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import {
 	assertFindsNoLess,
@@ -15,7 +18,7 @@ import {
 	PEM_PIECES,
 } from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
-
+import { SECRET_PATTERN } from "../src/live/evidence.js";
 import { assertSanitized, LiveEvidenceError } from "../src/live/index.js";
 import { assertSanitized as baseAssertSanitized } from "./fixtures/base-guard.js";
 
@@ -189,4 +192,16 @@ describe("assertSanitized on the whole sweep", () => {
 			},
 		);
 	});
+});
+
+// Each of the evidence scan's patterns, on runs of every class and between its own
+// fragments (`patternFragments`): the sweep above runs them together on runs.
+describe("each pattern on the whole sweep", () => {
+	it.each(SECRET_PATTERN.map((pattern) => [pattern.source, pattern] as const))(
+		"/%s/ grows linearly",
+		{ timeout: 60_000 },
+		(_source, pattern) => {
+			assertPatternSweepLinear(pattern);
+		},
+	);
 });

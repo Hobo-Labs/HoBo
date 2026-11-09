@@ -24,6 +24,7 @@
  * one. Two *different* digests under one reference is a refusal: a reference
  * whose content silently changed is a reference nobody can verify.
  */
+import { JWT_DETECTOR } from "@hobo/core/provider-redaction";
 import {
 	containsControlChar,
 	redactProviderText,
@@ -97,11 +98,16 @@ export const PUSH_TOOL_ALLOWLIST = ["crane"] as const;
  */
 export const PUSH_FLAG_ALLOWLIST = ["--platform=all"] as const;
 
-const ARGV_CREDENTIAL_PATTERNS: readonly RegExp[] = [
+/**
+ * Credential shapes refused in a command line; exported so a test can sweep
+ * each for linear growth.
+ */
+export const ARGV_CREDENTIAL_PATTERNS: readonly RegExp[] = [
 	/^--?(?:password|password-stdin|username|token|auth|creds?)\b/iu,
 	/\/\/[^/\s:@]+:[^/\s:@]+@/u,
 	/\bBearer\s/iu,
-	/\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./u,
+	// The shared JWT detector: `\bey…` started again at every `ey` in a run.
+	JWT_DETECTOR,
 ];
 
 function assertArgvValue(value: string, what: string): string {

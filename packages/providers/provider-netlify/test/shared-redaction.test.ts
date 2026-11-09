@@ -27,7 +27,10 @@ import {
 	NETLIFY_REDACTION_PROFILE,
 	redactProviderText,
 } from "../src/provider-errors.js";
-import { scanForCredentialMaterial } from "../src/receipt.js";
+import {
+	CREDENTIAL_PATTERNS as RECEIPT_PATTERNS,
+	scanForCredentialMaterial,
+} from "../src/receipt.js";
 import { scanForCredentialMaterial as baseScan } from "./fixtures/base-guard.js";
 import { redactProviderText as baseRedact } from "./fixtures/base-redaction.js";
 
@@ -197,5 +200,17 @@ describe("scanForCredentialMaterial on the whole sweep", () => {
 				"nfp_",
 			],
 		});
+	});
+});
+
+// Each of the receipt scanner's patterns, on runs of every class and between its own
+// fragments (`patternFragments`): the sweep above runs them together on runs.
+describe("each pattern on the whole sweep", () => {
+	it.each(
+		RECEIPT_PATTERNS.map((entry) => entry.pattern).map(
+			(pattern) => [pattern.source, pattern] as const,
+		),
+	)("/%s/ grows linearly", { timeout: 60_000 }, (_source, pattern) => {
+		assertPatternSweepLinear(pattern);
 	});
 });

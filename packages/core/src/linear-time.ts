@@ -64,12 +64,15 @@ export type GrowthOptions = {
 
 export class OperationHangError extends Error {
 	readonly code = "OPERATION_HANG" as const;
+	/** How long the run took before the backstop stopped it, in wall time. */
+	readonly wallMs: number;
 
 	constructor(length: number, ms: number) {
 		super(
 			`one run on ${length} characters took ${Math.round(ms)} ms, past the ${HANG_BACKSTOP_MS} ms backstop`,
 		);
 		this.name = "OperationHangError";
+		this.wallMs = ms;
 	}
 }
 

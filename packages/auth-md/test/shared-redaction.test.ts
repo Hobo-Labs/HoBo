@@ -8,12 +8,16 @@
  * redacts, that the text is otherwise untouched, and that it is linear.
  */
 
-import { assertSweepLinear } from "@hobo/core/linear-sweep";
+import {
+	assertPatternSweepLinear,
+	assertSweepLinear,
+} from "@hobo/core/linear-sweep";
 import { assertGrowsLinearly, repeatedTo } from "@hobo/core/linear-time";
 import { assertRevealsNoMore } from "@hobo/core/redaction-differential";
 import { describe, expect, it } from "vitest";
 
 import { REDACTED, redactText } from "../src/index.js";
+import { SECRET_KEY_PATTERN, SECRET_TEXT_PATTERNS } from "../src/redaction.js";
 import { redactText as baseRedactText } from "./fixtures/base-redaction.js";
 
 describe("redactText", () => {
@@ -81,7 +85,26 @@ describe("redactText against the scrubber it replaced", () => {
 	it("grows linearly on the whole sweep", { timeout: 60_000 }, () => {
 		assertSweepLinear((text) => redactText(text), {
 			alphabet: "aZ9",
-			words: ["eyJ", "-----BEGIN PRIVATE KEY-----", "Bearer "],
+			words: [
+				"eyJ",
+				"-----BEGIN PRIVATE KEY-----",
+				"-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+				"Bearer ",
+			],
+			// A key, a run and an END line after it: B-1 in 0462fa6c.
+			fragments: ["-----END"],
 		});
+	});
+});
+
+// Each of redactText's patterns and its key-name test, on runs of every class and between its own
+// fragments (`patternFragments`): the sweep above runs them together on runs.
+describe("each pattern on the whole sweep", () => {
+	it.each(
+		[...SECRET_TEXT_PATTERNS, SECRET_KEY_PATTERN].map(
+			(pattern) => [pattern.source, pattern] as const,
+		),
+	)("/%s/ grows linearly", { timeout: 60_000 }, (_source, pattern) => {
+		assertPatternSweepLinear(pattern);
 	});
 });
