@@ -75,13 +75,14 @@ export const REDACTION_RULES: readonly RedactionRule[] = Object.freeze([
 	},
 	{
 		id: "email-address",
-		// Starts at the first word character of a run of local-part characters, or
-		// right after an address this rule just matched (`a@b.com.c@d.io` holds
-		// two; the look back is bounded by DNS's 253 and 63), which is where the
-		// old `\b` form started too — but not at every `.` inside a run, so
-		// `a.a.a.…` is one search.
+		// Starts where the old `\b` form started first: at the first word
+		// character of a run of local-part characters (a `_` is one, so it is
+		// not read back over), or at the `.`, `%`, `+` or `-` right after an
+		// address this rule just matched (`ann@x.io-bob@y.io` holds two, the
+		// second from its `-`; the look back is bounded by DNS's 253 and 63). It
+		// never starts at every `.` inside a run, so `a.a.a.…` is one search.
 		pattern:
-			/[A-Za-z0-9_](?<=(?:^|[^A-Za-z0-9._%+-]|@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63})[._%+-]*[A-Za-z0-9_])[A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+			/(?:[A-Za-z0-9_](?<=(?:^|[^A-Za-z0-9._%+-])[.%+-]*[A-Za-z0-9_])|[.%+-](?<=@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}[.%+-]))[A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
 		description: "email address (customer-specific data)",
 	},
 	{
