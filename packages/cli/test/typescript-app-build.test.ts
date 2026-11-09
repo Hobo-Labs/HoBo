@@ -16,6 +16,7 @@ import { ArtifactKind } from "../src/_generated/build_manifest_pb.js";
 import { sha256Bytes } from "../src/build/events.js";
 import { parseBuildManifest } from "../src/build/parse.js";
 import { createHoboCli } from "../src/index.js";
+import { slow } from "./support/slow.js";
 
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -97,129 +98,139 @@ export class OrderBook { constructor(readonly label: string) {} async process(in
 }
 
 describe("plain TypeScript Node app build", () => {
-	it("codegens, builds deterministically and executes the packaged app with normal Node", async () => {
-		const root = await project(true);
-		try {
-			const cli = createHoboCli();
-			const generated = await cli.run(["codegen", "--json"], { cwd: root });
-			expect(generated.exitCode, generated.stdout).toBe(0);
-			const first = await cli.run(["build", "--json"], { cwd: root });
-			expect(first.exitCode, first.stdout).toBe(0);
-			const manifest = parseBuildManifest(
-				JSON.parse(
-					await readFile(join(root, ".hobo/build/build-manifest.json"), "utf8"),
-				),
-			);
-			expect(manifest.runtimeTarget).toBe("auto");
-			expect(() =>
-				parseBuildManifest({
-					...manifest,
-					artifacts: manifest.artifacts.map((artifact) => ({
-						...artifact,
-						runtime: "wasm",
-					})),
-				}),
-			).toThrow("Node app artifacts require runtime node");
-			expect(
-				manifest.artifacts.some(
-					(artifact) => artifact.path === ".hobo/build/node-app/app.d.mts",
-				),
-			).toBe(true);
-			expect(
-				manifest.artifacts.some(
-					(artifact) => artifact.path === ".hobo/build/node-app/bindings.d.mts",
-				),
-			).toBe(true);
-			expect(
-				manifest.artifacts.some(
-					(artifact) => artifact.path === ".hobo/build/node-app/bindings.mjs",
-				),
-			).toBe(true);
-			expect(
-				manifest.artifacts.some(
-					(artifact) =>
-						artifact.path.includes("/runtime/types/") &&
-						/\.d\.[cm]?ts$/u.test(artifact.path),
-				),
-			).toBe(true);
-			expect(
-				manifest.artifacts.some(
-					(artifact) => artifact.path === ".hobo/build/node-app/app.mjs",
-				),
-			).toBe(true);
-			expect(
-				manifest.artifacts.some(
-					(artifact) =>
-						artifact.path.includes("/runtime/") &&
-						artifact.path.endsWith(".mjs"),
-				),
-			).toBe(true);
-			expect(
-				manifest.artifacts.every(
-					(artifact) =>
-						artifact.kind === "node-app" && artifact.runtime === "node",
-				),
-			).toBe(true);
-			for (const artifact of manifest.artifacts)
-				expect(artifact.digest).toBe(
-					sha256Bytes(await readFile(join(root, artifact.path))),
+	it(
+		"codegens, builds deterministically and executes the packaged app with normal Node",
+		async () => {
+			const root = await project(true);
+			try {
+				const cli = createHoboCli();
+				const generated = await cli.run(["codegen", "--json"], { cwd: root });
+				expect(generated.exitCode, generated.stdout).toBe(0);
+				const first = await cli.run(["build", "--json"], { cwd: root });
+				expect(first.exitCode, first.stdout).toBe(0);
+				const manifest = parseBuildManifest(
+					JSON.parse(
+						await readFile(
+							join(root, ".hobo/build/build-manifest.json"),
+							"utf8",
+						),
+					),
 				);
-			expect(
-				manifest.artifacts.some(
-					(artifact) =>
-						artifact.path.includes("/runtime/assets/") &&
-						artifact.path.endsWith(".png"),
-				),
-			).toBe(true);
-			const before = await readFile(
-				join(root, ".hobo/build/build-manifest.json"),
-				"utf8",
-			);
-			const again = await cli.run(["build", "--json"], { cwd: root });
-			expect(again.exitCode, again.stdout).toBe(0);
-			expect(
-				await readFile(join(root, ".hobo/build/build-manifest.json"), "utf8"),
-			).toBe(before);
+				expect(manifest.runtimeTarget).toBe("auto");
+				expect(() =>
+					parseBuildManifest({
+						...manifest,
+						artifacts: manifest.artifacts.map((artifact) => ({
+							...artifact,
+							runtime: "wasm",
+						})),
+					}),
+				).toThrow("Node app artifacts require runtime node");
+				expect(
+					manifest.artifacts.some(
+						(artifact) => artifact.path === ".hobo/build/node-app/app.d.mts",
+					),
+				).toBe(true);
+				expect(
+					manifest.artifacts.some(
+						(artifact) =>
+							artifact.path === ".hobo/build/node-app/bindings.d.mts",
+					),
+				).toBe(true);
+				expect(
+					manifest.artifacts.some(
+						(artifact) => artifact.path === ".hobo/build/node-app/bindings.mjs",
+					),
+				).toBe(true);
+				expect(
+					manifest.artifacts.some(
+						(artifact) =>
+							artifact.path.includes("/runtime/types/") &&
+							/\.d\.[cm]?ts$/u.test(artifact.path),
+					),
+				).toBe(true);
+				expect(
+					manifest.artifacts.some(
+						(artifact) => artifact.path === ".hobo/build/node-app/app.mjs",
+					),
+				).toBe(true);
+				expect(
+					manifest.artifacts.some(
+						(artifact) =>
+							artifact.path.includes("/runtime/") &&
+							artifact.path.endsWith(".mjs"),
+					),
+				).toBe(true);
+				expect(
+					manifest.artifacts.every(
+						(artifact) =>
+							artifact.kind === "node-app" && artifact.runtime === "node",
+					),
+				).toBe(true);
+				for (const artifact of manifest.artifacts)
+					expect(artifact.digest).toBe(
+						sha256Bytes(await readFile(join(root, artifact.path))),
+					);
+				expect(
+					manifest.artifacts.some(
+						(artifact) =>
+							artifact.path.includes("/runtime/assets/") &&
+							artifact.path.endsWith(".png"),
+					),
+				).toBe(true);
+				const before = await readFile(
+					join(root, ".hobo/build/build-manifest.json"),
+					"utf8",
+				);
+				const again = await cli.run(["build", "--json"], { cwd: root });
+				expect(again.exitCode, again.stdout).toBe(0);
+				expect(
+					await readFile(join(root, ".hobo/build/build-manifest.json"), "utf8"),
+				).toBe(before);
 
-			await writeFile(
-				join(root, "src/app.ts"),
-				(await readFile(join(root, "src/app.ts"), "utf8")) +
-					"\nexport const newExport = 1;\n",
-			);
-			const stale = await cli.run(["build", "--json"], { cwd: root });
-			expect(JSON.parse(stale.stdout)).toMatchObject({
-				ok: false,
-				code: "HOBO_BUILD_CODEGEN_DRIFT",
-			});
-			expect(
-				await readFile(join(root, ".hobo/build/build-manifest.json"), "utf8"),
-			).toBe(before);
-			// The deployment artifact must run after all authored/generated TS sources are gone.
-			await rm(join(root, "src"), { recursive: true, force: true });
-			const consumer = join(root, "isolated-consumer");
-			await mkdir(consumer);
-			await cp(join(root, ".hobo/build/node-app"), join(consumer, "node-app"), {
-				recursive: true,
-			});
-			await writeFile(join(consumer, "package.json"), '{"type":"module"}');
-			await writeFile(
-				join(consumer, "tsconfig.json"),
-				JSON.stringify({
-					compilerOptions: {
-						target: "ES2022",
-						module: "NodeNext",
-						moduleResolution: "NodeNext",
-						strict: true,
-						noEmit: true,
-						skipLibCheck: false,
-						types: [],
+				await writeFile(
+					join(root, "src/app.ts"),
+					(await readFile(join(root, "src/app.ts"), "utf8")) +
+						"\nexport const newExport = 1;\n",
+				);
+				const stale = await cli.run(["build", "--json"], { cwd: root });
+				expect(JSON.parse(stale.stdout)).toMatchObject({
+					ok: false,
+					code: "HOBO_BUILD_CODEGEN_DRIFT",
+				});
+				expect(
+					await readFile(join(root, ".hobo/build/build-manifest.json"), "utf8"),
+				).toBe(before);
+				// The deployment artifact must run after all authored/generated TS sources are gone.
+				await rm(join(root, "src"), { recursive: true, force: true });
+				const consumer = join(root, "isolated-consumer");
+				await mkdir(consumer);
+				await cp(
+					join(root, ".hobo/build/node-app"),
+					join(consumer, "node-app"),
+					{
+						recursive: true,
 					},
-					include: ["consumer.mts"],
-				}),
-			);
-			await writeFile(
-				join(consumer, "consumer.mts"),
-				`import { createAppClient, getAppModule } from "./node-app/app.mjs";
+				);
+				await writeFile(join(consumer, "package.json"), '{"type":"module"}');
+				await writeFile(
+					join(consumer, "tsconfig.json"),
+					JSON.stringify({
+						compilerOptions: {
+							target: "ES2022",
+							module: "NodeNext",
+							moduleResolution: "NodeNext",
+							strict: true,
+							noEmit: true,
+							skipLibCheck: false,
+							types: [],
+						},
+						include: ["consumer.mts"],
+					}),
+				);
+				await writeFile(
+					join(consumer, "consumer.mts"),
+					`import { createAppClient, getAppModule } from "./node-app/app.mjs";
 import { modulePaths, trainableMappings } from "./node-app/bindings.mjs";
 const path: "src/app.ts" = modulePaths[0];
 const mappings: readonly unknown[] = trainableMappings;
@@ -240,43 +251,49 @@ const wrongResult: Promise<{total:string;label:string}> = module.processOrder({u
 // @ts-expect-error module names remain a closed compiler-derived mapping
 getAppModule("missing.ts");
 `,
-			);
-			const typecheck = spawnSync(
-				process.execPath,
-				[join(repo, "node_modules/typescript/bin/tsc"), "-p", "tsconfig.json"],
-				{ cwd: consumer, encoding: "utf8", timeout: 20_000 },
-			);
-			expect(typecheck.error?.message).toBeUndefined();
-			expect(typecheck.status, typecheck.stdout + typecheck.stderr).toBe(0);
-			const run = spawnSync(
-				process.execPath,
-				[
-					"--input-type=module",
-					"-e",
-					'const {readFile}=await import("node:fs/promises"); const {getAppModule,resolveAppAsset}=await import("./node-app/app.mjs"); const {modulePaths,trainableMappings}=await import("./node-app/bindings.mjs"); const module=getAppModule("src/app.ts"); const result=await module.processOrder({units:7}); const book=new module.OrderBook("native"); console.log(JSON.stringify({...result,modulePaths,trainableMappings,book:await book.process({units:3}),asset:Array.from(await readFile(resolveAppAsset(module.iconPath)))}));',
-				],
-				{
-					cwd: consumer,
-					encoding: "utf8",
-					env: { ...process.env, ALLOW_APP_EXECUTION: "1" },
-					timeout: 20_000,
-				},
-			);
-			expect(run.error?.message).toBeUndefined();
-			expect(run.status, run.stderr).toBe(0);
-			expect(JSON.parse(run.stdout)).toEqual({
-				total: 42,
-				label: "total-6",
-				book: { total: 18, label: "native" },
-				modulePaths: ["src/app.ts"],
-				trainableMappings: [],
-				asset: [137, 80, 78, 71, 13, 10, 26, 10, 0, 255, 128],
-			});
-			expect(ArtifactKind.NODE_APP).toBe(3);
-		} finally {
-			await rm(root, { recursive: true, force: true });
-		}
-	}, 90_000);
+				);
+				const typecheck = spawnSync(
+					process.execPath,
+					[
+						join(repo, "node_modules/typescript/bin/tsc"),
+						"-p",
+						"tsconfig.json",
+					],
+					{ cwd: consumer, encoding: "utf8", timeout: 20_000 },
+				);
+				expect(typecheck.error?.message).toBeUndefined();
+				expect(typecheck.status, typecheck.stdout + typecheck.stderr).toBe(0);
+				const run = spawnSync(
+					process.execPath,
+					[
+						"--input-type=module",
+						"-e",
+						'const {readFile}=await import("node:fs/promises"); const {getAppModule,resolveAppAsset}=await import("./node-app/app.mjs"); const {modulePaths,trainableMappings}=await import("./node-app/bindings.mjs"); const module=getAppModule("src/app.ts"); const result=await module.processOrder({units:7}); const book=new module.OrderBook("native"); console.log(JSON.stringify({...result,modulePaths,trainableMappings,book:await book.process({units:3}),asset:Array.from(await readFile(resolveAppAsset(module.iconPath)))}));',
+					],
+					{
+						cwd: consumer,
+						encoding: "utf8",
+						env: { ...process.env, ALLOW_APP_EXECUTION: "1" },
+						timeout: 20_000,
+					},
+				);
+				expect(run.error?.message).toBeUndefined();
+				expect(run.status, run.stderr).toBe(0);
+				expect(JSON.parse(run.stdout)).toEqual({
+					total: 42,
+					label: "total-6",
+					book: { total: 18, label: "native" },
+					modulePaths: ["src/app.ts"],
+					trainableMappings: [],
+					asset: [137, 80, 78, 71, 13, 10, 26, 10, 0, 255, 128],
+				});
+				expect(ArtifactKind.NODE_APP).toBe(3);
+			} finally {
+				await rm(root, { recursive: true, force: true });
+			}
+		},
+		slow(90_000),
+	);
 
 	describe("on one generated project", () => {
 		let root: string;
@@ -286,28 +303,29 @@ getAppModule("missing.ts");
 				cwd: root,
 			});
 			expect(generated.exitCode, generated.stdout).toBe(0);
-		}, 60_000);
+		}, slow(60_000));
 		afterAll(async () => {
 			await rm(root, { recursive: true, force: true });
 		});
 
-		it.each([
-			"wasm",
-			"container",
-		])("refuses explicit %s instead of silently packaging Node", async (runtime) => {
-			const result = await createHoboCli().run(
-				["build", "--runtime", runtime, "--json"],
-				{ cwd: root },
-			);
-			expect(JSON.parse(result.stdout)).toMatchObject({
-				ok: false,
-				code: "HOBO_BUILD_RUNTIME_INVALID",
-			});
-			// The cases share the project, so a refusal must leave it as it found it.
-			await expect(
-				readFile(join(root, ".hobo/build/build-manifest.json")),
-			).rejects.toMatchObject({ code: "ENOENT" });
-		}, 60_000);
+		it.each(["wasm", "container"])(
+			"refuses explicit %s instead of silently packaging Node",
+			async (runtime) => {
+				const result = await createHoboCli().run(
+					["build", "--runtime", runtime, "--json"],
+					{ cwd: root },
+				);
+				expect(JSON.parse(result.stdout)).toMatchObject({
+					ok: false,
+					code: "HOBO_BUILD_RUNTIME_INVALID",
+				});
+				// The cases share the project, so a refusal must leave it as it found it.
+				await expect(
+					readFile(join(root, ".hobo/build/build-manifest.json")),
+				).rejects.toMatchObject({ code: "ENOENT" });
+			},
+			slow(60_000),
+		);
 
 		it("refuses an explicit runtime before checking the generated tree", async () => {
 			const app = join(root, "src/app.ts");
@@ -328,24 +346,28 @@ getAppModule("missing.ts");
 			}
 		});
 	});
-	it("does not bypass an explicit empty service declaration into Node packaging", async () => {
-		const root = await project();
-		try {
-			const cli = createHoboCli();
-			await writeFile(
-				join(root, "hobo.bindle.json"),
-				JSON.stringify({ services: [] }),
-			);
-			expect(
-				(await cli.run(["codegen", "--json"], { cwd: root })).exitCode,
-			).toBe(0);
-			const result = await cli.run(["build", "--json"], { cwd: root });
-			expect(JSON.parse(result.stdout)).toMatchObject({
-				ok: false,
-				code: "HOBO_BUILD_NO_SERVICES",
-			});
-		} finally {
-			await rm(root, { recursive: true, force: true });
-		}
-	}, 60_000);
+	it(
+		"does not bypass an explicit empty service declaration into Node packaging",
+		async () => {
+			const root = await project();
+			try {
+				const cli = createHoboCli();
+				await writeFile(
+					join(root, "hobo.bindle.json"),
+					JSON.stringify({ services: [] }),
+				);
+				expect(
+					(await cli.run(["codegen", "--json"], { cwd: root })).exitCode,
+				).toBe(0);
+				const result = await cli.run(["build", "--json"], { cwd: root });
+				expect(JSON.parse(result.stdout)).toMatchObject({
+					ok: false,
+					code: "HOBO_BUILD_NO_SERVICES",
+				});
+			} finally {
+				await rm(root, { recursive: true, force: true });
+			}
+		},
+		slow(60_000),
+	);
 });

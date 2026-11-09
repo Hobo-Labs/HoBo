@@ -8,6 +8,7 @@ import {
 	createTypeScriptProjectCodegenEngine,
 	overlayCompilerHost,
 } from "../src/codegen/typescript-project-engine.js";
+import { slow } from "./support/slow.js";
 
 let root: string;
 
@@ -33,7 +34,7 @@ const isSource = (file: string) =>
 
 const variants: Record<string, ts.CompilerOptions> = {
 	strict: { strict: true, skipLibCheck: false },
-	"skipLibCheck": { strict: true, skipLibCheck: true },
+	skipLibCheck: { strict: true, skipLibCheck: true },
 	"no default lib": { strict: true, noLib: true },
 };
 
@@ -72,7 +73,7 @@ afterAll(async () => {
 });
 
 // Each case builds whole programs over the default lib: seconds of CPU on a busy runner.
-describe("codegen source diagnostics", { timeout: 60_000 }, () => {
+describe("codegen source diagnostics", { timeout: slow(60_000) }, () => {
 	it.each(
 		Object.keys(variants),
 	)("match a whole-program check filtered to sources (%s)", (variant) => {
@@ -82,7 +83,9 @@ describe("codegen source diagnostics", { timeout: 60_000 }, () => {
 		const expected = [
 			...whole.getSyntacticDiagnostics(),
 			...whole.getSemanticDiagnostics(),
-		].filter((diagnostic) => !diagnostic.file || isSource(diagnostic.file.fileName));
+		].filter(
+			(diagnostic) => !diagnostic.file || isSource(diagnostic.file.fileName),
+		);
 		const actual = sourceDiagnostics(program(options), isSource);
 		expect(text(actual)).toEqual(text(expected));
 		expect(actual.length).toBeGreaterThan(0);

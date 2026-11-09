@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { runCodegen } from "../src/codegen/run-codegen.js";
 import { createTypeScriptProjectCodegenEngine } from "../src/codegen/typescript-project-engine.js";
+import { slow } from "./support/slow.js";
 import {
 	compile,
 	compilePackagedConsumer,
@@ -15,7 +16,7 @@ import {
 // One of four files split from typescript-project-codegen.test.ts so the
 // files can spread across workers; helpers are in ./support/typescript-project.ts.
 describe("TypeScript app codegen executes the compiler-inferred app contract: packaged execution", {
-	timeout: 60_000,
+	timeout: slow(60_000),
 }, () => {
 	it("executes a packaged complex generic/class/overloaded/namespace app with aliases, top-level await and dynamic imports in plain Node", async () => {
 		const root = await mkdtemp(

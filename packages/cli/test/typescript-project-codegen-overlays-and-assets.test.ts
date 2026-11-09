@@ -10,6 +10,7 @@ import {
 	createTypeScriptProjectCodegenEngine,
 	selectTypeScriptProjectCodegenEngine,
 } from "../src/codegen/typescript-project-engine.js";
+import { slow } from "./support/slow.js";
 import {
 	compile,
 	compilePackagedConsumer,
@@ -19,7 +20,7 @@ import {
 // One of four files split from typescript-project-codegen.test.ts so the
 // files can spread across workers; helpers are in ./support/typescript-project.ts.
 describe("TypeScript app codegen executes the compiler-inferred app contract: source overlays, assets and CommonJS", {
-	timeout: 60_000,
+	timeout: slow(60_000),
 }, () => {
 	it.each([
 		"missing",

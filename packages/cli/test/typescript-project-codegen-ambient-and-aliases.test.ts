@@ -12,12 +12,13 @@ import {
 	packageTypeScriptAppArtifacts,
 	selectTypeScriptProjectCodegenEngine,
 } from "../src/codegen/typescript-project-engine.js";
+import { slow } from "./support/slow.js";
 import { compile, write } from "./support/typescript-project.js";
 
 // One of four files split from typescript-project-codegen.test.ts so the
 // files can spread across workers; helpers are in ./support/typescript-project.ts.
 describe("TypeScript app codegen executes the compiler-inferred app contract: ambient trainables and module resolution", {
-	timeout: 60_000,
+	timeout: slow(60_000),
 }, () => {
 	it("composes ambient trainable registrations and executes an applied artifact through the generated namespace", async () => {
 		const root = await mkdtemp(join(tmpdir(), "hobo-ts-imprint-training-"));

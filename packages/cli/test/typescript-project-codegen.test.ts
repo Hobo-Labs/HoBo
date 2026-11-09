@@ -9,11 +9,12 @@ import {
 	selectTypeScriptProjectCodegenEngine,
 } from "../src/codegen/typescript-project-engine.js";
 import { compile, fixture, write } from "./support/typescript-project.js";
+import { slow } from "./support/slow.js";
 
 // One of four files split from typescript-project-codegen.test.ts so the
 // files can spread across workers; helpers are in ./support/typescript-project.ts.
 describe("TypeScript app codegen executes the compiler-inferred app contract: sources, entrypoints and generated models", {
-	timeout: 60_000,
+	timeout: slow(60_000),
 }, () => {
 	it("discovers arbitrary source layout, retains imported nested/generic types, compiles and executes classes and HTTP handlers", async () => {
 		const root = await mkdtemp(join(tmpdir(), "hobo-ts-imprint-"));
