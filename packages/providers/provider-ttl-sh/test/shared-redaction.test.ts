@@ -8,12 +8,15 @@
  * shapes are linear.
  */
 
+import { JWT_DETECTOR } from "@hobo/provider-redaction";
 import {
 	assertPatternSweepLinear,
 	profilePatterns,
 } from "@hobo/provider-redaction/linear-sweep";
-import { assertGrowsLinearly, repeatedTo } from "@hobo/provider-redaction/linear-time";
-import { JWT_DETECTOR } from "@hobo/provider-redaction";
+import {
+	assertGrowsLinearly,
+	repeatedTo,
+} from "@hobo/provider-redaction/linear-time";
 import {
 	assertFindsNoLess,
 	assertRevealsNoMore,
@@ -116,7 +119,7 @@ describe("against the redactor it replaced", () => {
 		const hidden = assertRevealsNoMore(
 			(text) => baseRedact(text, LONG),
 			(text) => redactProviderText(text, LONG),
-			{ count: 20_000 },
+			{ count: 50_000 },
 		);
 		expect(hidden).toBeGreaterThan(1000);
 	});
@@ -164,5 +167,16 @@ describe("the argv guard", () => {
 				JWT_PIECES,
 			),
 		).toBeGreaterThan(1000);
+	});
+});
+
+// A key whose END line another shape took runs to the next BEGIN line, not to
+// a `-----BEGIN` inside its body: the body was shown before.
+describe("a private key's END line, taken by another shape", () => {
+	it.each([
+		"-----BEGIN PRIVATE KEY-----\n-----BEGINx\nSECRETBODY1\nBearer -----END PRIVATE KEY-----\n",
+		"-----BEGIN PRIVATE KEY-----*\u001b-----BEGIN SECRETBODY1 Bearer -----END PRIVATE KEY-----",
+	])("redacts %j whole", (text) => {
+		expect(redactProviderText(text, 10_000)).toBe("[redacted]");
 	});
 });

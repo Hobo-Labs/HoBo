@@ -73,10 +73,10 @@ function assertArgvValue(value: string, what: string): string {
  * each for linear growth.
  */
 export const ARGV_CREDENTIAL_PATTERNS: readonly RegExp[] = [
-	/postgres(?:ql)?:\/\//iu,
-	/prisma\+postgres:\/\//iu,
-	/(?:^|[=\s])(?:--)?password[=\s]/iu,
-	/\bapi_key=/iu,
+	/postgres(?:ql)?:\/\//i,
+	/prisma\+postgres:\/\//i,
+	/(?:^|[=\s])(?:--)?password[=\s]/i,
+	/\bapi_key=/i,
 	/\/\/[^/\s:@]+:[^/\s:@]+@/u,
 ];
 

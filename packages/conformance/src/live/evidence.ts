@@ -19,10 +19,7 @@ import type {
 	CreatorAuthorityAfterClaim,
 	ProviderClass,
 } from "@hobo/capability-profiles";
-import {
-	JWT_DETECTOR,
-	PRIVATE_KEY_DETECTOR,
-} from "@hobo/provider-redaction";
+import { JWT_DETECTOR, PRIVATE_KEY_DETECTOR } from "@hobo/provider-redaction";
 import {
 	computeEvidenceDigest,
 	DIGEST_PATTERN,
@@ -353,14 +350,14 @@ export const SECRET_PATTERN: readonly RegExp[] = [
 		(scheme) =>
 			new RegExp(
 				`(?<![^\\s"])(?:(?!${scheme}:\\/\\/)[^\\s"])*${scheme}:\\/\\/[^\\s":]*:[^\\s"@]*@`,
-				"iu",
+				"i",
 			),
 	),
 	PRIVATE_KEY_DETECTOR,
-	/\bBearer\s+[A-Za-z0-9._-]{8,}/iu,
+	/\bBearer\s+[\u017F\u212AA-Za-z0-9._-]{8,}/i,
 	/\b(?:sk|pk|ghp|gho|xox[abpsr])[-_][A-Za-z0-9_-]{16,}\b/u,
 	JWT_DETECTOR,
-	/"(?:password|passwd|secret|apiKey|api_key|accessKey|access_key|token)"\s*:/iu,
+	/"(?:password|passwd|secret|apiKey|api_key|accessKey|access_key|token)"\s*:/i,
 ];
 
 /**

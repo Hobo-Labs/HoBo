@@ -103,9 +103,9 @@ export const PUSH_FLAG_ALLOWLIST = ["--platform=all"] as const;
  * each for linear growth.
  */
 export const ARGV_CREDENTIAL_PATTERNS: readonly RegExp[] = [
-	/^--?(?:password|password-stdin|username|token|auth|creds?)\b/iu,
+	/^--?(?:password|password-stdin|username|token|auth|creds?)\b/i,
 	/\/\/[^/\s:@]+:[^/\s:@]+@/u,
-	/\bBearer\s/iu,
+	/\bBearer\s/i,
 	// The shared JWT detector: `\bey…` started again at every `ey` in a run.
 	JWT_DETECTOR,
 ];
@@ -211,9 +211,9 @@ export function buildCranePushArgv(input: CranePushInput): readonly string[] {
 }
 
 const REPORTED_DIGEST = /\bsha256:[0-9a-f]{64}\b/u;
-const RATE_LIMITED = /\b429\b|too many requests|rate ?limit/iu;
+const RATE_LIMITED = /\b429\b|too many requests|rate ?limit/i;
 const AMBIGUOUS =
-	/\b5\d\d\b|timeout|timed out|connection reset|eof|broken pipe|i\/o/iu;
+	/\b5\d\d\b|timeout|timed out|connection reset|eof|broken pipe|i\/o/i;
 
 /**
  * The default executor: a `crane push` behind an injected runner.

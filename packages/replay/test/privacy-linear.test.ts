@@ -97,7 +97,7 @@ describe("redactDebugPayload against the masking it replaced", () => {
 			assertRevealsNoMore(
 				shown(baseRedactDebugPayload),
 				shown(redactDebugPayload),
-				{ count: 20_000 },
+				{ count: 50_000 },
 			),
 		).toBeGreaterThan(1000);
 	});

@@ -10,7 +10,10 @@ import {
 	assertSweepLinear,
 	patternFragments,
 	SEPARATOR_CLASSES,
+	SWEEP_LENGTH,
+	SWEEP_SCREEN_RATIO,
 	SweepGrowthError,
+	screenRatio,
 	sweepInputs,
 } from "../src/linear-sweep.js";
 import {
@@ -118,6 +121,31 @@ describe("measureGrowth", () => {
 		expect(grewLinearly({ ...uncalibrated, calibrated: true })).toBe(false);
 	});
 
+	it("calls an operation calibrated by its calibrating run, not its best", () => {
+		// Quadratic: 12 ms of CPU at n, 192 ms at 4n, but the calibrating run at
+		// n was slowed to 25 ms. Read from the best run at n (12 ms, under
+		// minMs) it looked like an operation that costs next to nothing, and
+		// 4n under 8 × minMs passed it as linear.
+		let cpu = 0;
+		vi.spyOn(process, "threadCpuUsage").mockImplementation(() => ({
+			user: cpu * 1000,
+			system: 0,
+		}));
+		let calls = 0;
+		const quadratic = (text: string): void => {
+			calls++;
+			cpu += calls === 1 ? 25 : 12 * (text.length / 4096) ** 2;
+		};
+		const growth = measureGrowth(quadratic, repeatedTo("a"), {
+			startLength: 4096,
+			maxLength: 4096,
+			minMs: 20,
+		});
+		expect(growth).toMatchObject({ calibrated: true, smallMs: 12 });
+		expect(growth.ratio).toBeCloseTo(16);
+		expect(grewLinearly(growth)).toBe(false);
+	});
+
 	it("stops at the first run past the backstop", () => {
 		let now = 0;
 		vi.spyOn(performance, "now").mockImplementation(() => {
@@ -155,16 +183,24 @@ describe("the sweep", () => {
 						text.replace(underscoreRuns, "");
 					},
 					{ alphabet: "z" },
-					{ floorLength: 16_384, failFast: true },
+					{ failFast: true },
 				);
 			} catch (error) {
 				refused = error;
 			}
 			if (!(refused instanceof SweepGrowthError))
 				throw new Error(`expected a SweepGrowthError, got ${String(refused)}`);
-			expect(refused.offenders.map((offender) => offender.input)).toContain(
-				'"_" repeated',
+			// Which input is reported first is the sweep's order, not the
+			// pattern's, so the test holds what it is, not what it is called: a
+			// long run of `_` with no `!` in it.
+			const [offender] = refused.offenders;
+			const reported = sweepInputs({ alphabet: "z" }).find(
+				(input) => input.name === offender?.input,
 			);
+			const text = reported?.text(1024) ?? "";
+			expect(refused.offenders).toHaveLength(1);
+			expect(text).toMatch(/_{256}/u);
+			expect(text).not.toContain("!");
 		},
 		GROWTH_TIMEOUT_MS,
 	);
@@ -184,6 +220,22 @@ describe("the sweep", () => {
 			pairs + around + ended + thenWord + 1 + 2 * classes,
 		);
 		expect(inputs.map((input) => input.name)).toContain('"_ " repeated');
+	});
+
+	it("screens a quadratic call far above the ratio and a linear one below it", () => {
+		// The threshold's margin, measured: a linear redaction costs a few
+		// reference scans, and a quadratic one hundreds at SWEEP_LENGTH.
+		const runs = "_".repeat(SWEEP_LENGTH);
+		const quadratic = (text: string): void => {
+			text.replace(/_+!/gu, "");
+		};
+		const linear = (text: string): void => {
+			text.replace(/_+/gu, "");
+		};
+		const best = (run: (text: string) => void) =>
+			Math.min(...[0, 1, 2, 3, 4].map(() => screenRatio(run, runs)));
+		expect(best(quadratic)).toBeGreaterThan(4 * SWEEP_SCREEN_RATIO);
+		expect(best(linear)).toBeLessThan(SWEEP_SCREEN_RATIO / 2);
 	});
 
 	it("puts a run between a pattern's fragments, and a terminator before one", () => {
@@ -220,7 +272,7 @@ describe("the sweep", () => {
 		};
 		let caught: unknown;
 		try {
-			assertSweepLinear(hang, { alphabet: "x" }, { floorLength: 1024 });
+			assertSweepLinear(hang, { alphabet: "x" }, { length: 1024 });
 		} catch (error) {
 			caught = error;
 		}

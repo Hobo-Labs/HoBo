@@ -45,9 +45,9 @@ export { containsControlChar } from "@hobo/provider-redaction";
 /** The provider's own patterns, on top of the shared ones. */
 export const NEON_REDACTION_PROFILE: ProviderRedactionProfile = {
 	patterns: [
-		/https?:\/\/neon\.new\/claim\/\S+/giu,
-		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
-		/\bnpg_[A-Za-z0-9_-]{4,}/giu,
+		/https?:\/\/neon\.new\/claim\/\S+/gi,
+		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/gi,
+		/\bnpg_[\u017F\u212AA-Za-z0-9_-]{4,}/gi,
 	],
 	decodePercent: true,
 };
@@ -90,7 +90,7 @@ export class NeonProviderError extends Error {
 			Object.fromEntries(
 				Object.entries(options.detail ?? {}).map(([key, value]) => [
 					key,
-					/idempotency|database.?id|project.?id|claim.?url/iu.test(key)
+					/idempotency|database.?id|project.?id|claim.?url/i.test(key)
 						? "[redacted]"
 						: isJsonString(value)
 							? redactProviderText(value)

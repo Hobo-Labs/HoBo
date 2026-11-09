@@ -70,9 +70,9 @@ export const NETLIFY_REDACTION_PROFILE: ProviderRedactionProfile = {
 		// fragment has to go with it — and the whole run it sits in. The match
 		// starts only where a run without whitespace or quotes starts, so
 		// `http://http://…` is one search, not one from every `http` to the end.
-		/(?<![^\s"'])[^\s"']*app\.netlify\.com\/claim\S*/giu,
+		/(?<![^\s"'])[^\s"']*app\.netlify\.com\/claim\S*/gi,
 		// nfp_… is Netlify's personal access token prefix; nf_ covers session ids.
-		/\bnf(?:p)?_[A-Za-z0-9]{8,}/giu,
+		/\bnf(?:p)?_[\u017F\u212AA-Za-z0-9]{8,}/gi,
 	],
 	collapseWhitespace: true,
 };

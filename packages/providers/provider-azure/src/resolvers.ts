@@ -2560,7 +2560,7 @@ function containerAppOutputs(
 		ready &&
 		fqdn &&
 		fqdn.length <= 253 &&
-		/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+azurecontainerapps\.io$/iu.test(
+		/^(?:[\u017F\u212Aa-z0-9](?:[\u017F\u212Aa-z0-9-]{0,61}[\u017F\u212Aa-z0-9])?\.)+azurecontainerapps\.io$/i.test(
 			fqdn,
 		)
 	)

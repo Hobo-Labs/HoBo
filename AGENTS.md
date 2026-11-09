@@ -808,7 +808,12 @@ quantifiers next to each other that read the same character (`\s*["']?\s*`,
 `\s*:?\s*`: write `\s*(?:["']\s*)?`), a look-back with a starred class that
 overlaps the character after it (`(?<=(?:^|[^…])[._%+-]*[A-Za-z0-9_])` on a run
 of `_`), and a value that may chain on to the end and is then read again from
-the next run.
+the next run. Do not set `i` and `u` together on a redaction pattern: Unicode case
+folding puts `ſ` and `K` (U+017F, U+212A) in `[A-Za-z]` and `\w`, so a
+look-behind that refuses a start after a letter refuses one after them too,
+and the credential after them is kept. Use `i` alone, list those two in a body
+class that should hold them, and spell words with `anyCase` where `u` is
+needed.
 
 Sweep every pattern with `@hobo/provider-redaction/linear-sweep` (`assertSweepLinear`, or
 `assertPatternSweepLinear` for one pattern), which builds runs of every

@@ -74,11 +74,11 @@ export { containsControlChar } from "@hobo/provider-redaction";
 /** The provider's own patterns, on top of the shared ones. */
 export const UPSTASH_REDACTION_PROFILE: ProviderRedactionProfile = {
 	patterns: [
-		/https?:\/\/console\.upstash\.com\/redis\/\S+/giu,
-		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
+		/https?:\/\/console\.upstash\.com\/redis\/\S+/gi,
+		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/gi,
 		// The CLI's `**Token:** …` line, or `**Token**: …`. Each run of spaces is
 		// read once: `\s*:?\s*` read one two ways and was quadratic in it.
-		/\*\*\s*Token\s*(?::\s*)?\*\*\s*(?::\s*)?\S+/giu,
+		/\*\*\s*Token\s*(?::\s*)?\*\*\s*(?::\s*)?\S+/gi,
 	],
 	// Upstash REST tokens are long base64url strings with no fixed prefix to
 	// match on, so the rule is structural: any unbroken run of 40+ token

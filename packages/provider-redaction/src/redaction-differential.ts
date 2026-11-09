@@ -14,6 +14,7 @@
  * Reached through the `@hobo/provider-redaction/redaction-differential` subpath, for tests.
  */
 
+import { anyCase, SECRET_KEY_NAMES } from "./any-case.js";
 /** What a redaction left of a text: the text a person or a log would see. */
 export type Redact = (text: string) => string;
 
@@ -104,6 +105,15 @@ export const FUZZ_PIECES: readonly string[] = Object.freeze([
 	"x-token://",
 	// A kept digest, which a value can be glued to.
 	`sha256:${"0123456789abcdef".repeat(4)}`,
+	// A `-----BEGIN` that is not a BEGIN line, inside a key's body, and the
+	// pieces another shape takes of an END line.
+	"-----BEGINx\n",
+	"-----BEGIN PRIVATE KEY-----*",
+	"Bearer -----END PRIVATE KEY-----",
+	"KEY-----",
+	// Letters `i` folds to ASCII under the `u` flag: `ſ` to `s`, `K` to `k`.
+	"ſ",
+	"\u212a",
 	// More key names.
 	"access_key=",
 	"secret_access_key=",
@@ -174,6 +184,10 @@ const CREDENTIALS: readonly ((draw: Draw) => FuzzText)[] = [
 		(tail: string) =>
 			`-----BEGIN PRIVATE KEY-----\nMIIBSECR${tail}\n-----END PRIVATE KEY-----`,
 		(tail: string) => `-----BEGIN RSA PRIVATE KEY-----\nSECR${tail}`,
+		(tail: string, draw: Draw) =>
+			`eyAiYWxnIjoiSFMSECR${tail}.eyAic3ViIjoiU0VDUiJ9.${drawn(draw, MARKER_CHARS, 12)}`,
+		(tail: string) =>
+			`-----BEGIN PRIVATE KEY-----\n-----BEGINx\nSECR${tail}\nBearer -----END PRIVATE KEY-----\n`,
 	].map((credential) => (draw: Draw): FuzzText => {
 		const tail = drawn(draw, MARKER_CHARS, 8);
 		return { text: credential(tail, draw), tails: [tail] };
@@ -220,8 +234,10 @@ export function* fuzzTexts(
  * marker anywhere else in the run, before the name or glued to it from
  * another credential, is not exempt.
  */
-export const LOCATOR_RUN =
-	/(?:(?<![A-Za-z0-9_-])[A-Za-z0-9_-]*(?:token|secret|auth(?:orization)?|session|password|passwd|pwd|requirepass|api[_-]?key|secret[_-]?key|access[_-]?key|private[_-]?key|session[_-]?id)["'*]*\s*[=:][\s"'*]*|(?<![A-Za-z0-9_-]))(?:hobo-token|hobo-secret|secret|env):\/\/[^\s\p{Cc}]{0,256}(?!\S)/giu;
+export const LOCATOR_RUN = new RegExp(
+	String.raw`(?:(?<![A-Za-z0-9_-])[\u017F\u212AA-Za-z0-9_-]*(?:${SECRET_KEY_NAMES})["'*]*\s*[=:][\s"'*]*|(?<![A-Za-z0-9_-]))(?:${anyCase("hobo-token|hobo-secret|secret|env")}):\/\/[^\s\p{Cc}]{0,256}(?!\S)`,
+	"gu",
+);
 
 function insideLocator(text: string, tail: string): boolean {
 	const at = text.indexOf(`SECR${tail}`);

@@ -114,7 +114,7 @@ export function forgetSensitive(ref: SensitiveRef): void {
 }
 
 export const SECRET_KEY_PATTERN =
-	/(assertion|token|secret|password|passphrase|credential|private[_-]?key|authorization|client[_-]?secret|jwk|jwt)/iu;
+	/(assertion|token|secret|password|passphrase|credential|private[_-]?key|authorization|client[_-]?secret|jwk|jwt)/i;
 
 export const SECRET_TEXT_PATTERNS: readonly RedactionPattern[] = [
 	// PEM blocks of any key type, from `@hobo/provider-redaction`: to the
@@ -133,7 +133,7 @@ export const SECRET_TEXT_PATTERNS: readonly RedactionPattern[] = [
 		/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4})(?<lead>(?:[A-Za-z0-9_]*-)*?)eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/gu,
 	),
 	// `Bearer <token>` in prose or headers.
-	redactionPattern(/\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/giu),
+	redactionPattern(/\bBearer\s+[\u017F\u212AA-Za-z0-9._~+/-]{8,}=*/gi),
 	// Long opaque high-entropy handles (claim/access tokens).
 	redactionPattern(/\b[A-Za-z0-9_-]{40,}\b/gu),
 ];

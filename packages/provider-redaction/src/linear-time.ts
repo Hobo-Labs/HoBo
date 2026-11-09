@@ -170,6 +170,10 @@ function* growthPlan(
 		repeat *= 2;
 		smallMs = yield { input: small, repeat };
 	}
+	// Whether calibration reached minMs, read before the timed runs below: their
+	// best can come in under it, which says the calibrating run was slowed, not
+	// that the operation costs next to nothing.
+	const calibrated = smallMs >= minMs;
 	// The two sizes take turns, so anything that slows the machine for a while
 	// slows both rather than one.
 	const large = input(4 * length);
@@ -181,7 +185,7 @@ function* growthPlan(
 	return {
 		length,
 		repeat,
-		calibrated: smallMs >= minMs,
+		calibrated,
 		smallMs,
 		largeMs,
 		// A run too quick for the clock to see counts as one microsecond.

@@ -104,7 +104,7 @@ describe("against the redactor it replaced", () => {
 		const hidden = assertRevealsNoMore(
 			(text) => baseRedact(text, LONG),
 			(text) => redactProviderText(text, LONG),
-			{ count: 20_000, decode: decodePercentFully },
+			{ count: 50_000, decode: decodePercentFully },
 		);
 		expect(hidden).toBeGreaterThan(1000);
 	});

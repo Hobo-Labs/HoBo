@@ -54,8 +54,11 @@ Some rules the shapes hold, each with a test:
   line before the next BEGIN, when that line starts a line (after whitespace,
   the start, or an escaped `\n`), with the rest of that line's run. With no
   such END line, or one another shape's match ran over (`Bearer -----END …`),
-  it runs to the next BEGIN or the end. A label is anything up to the next `-`.
-  `PRIVATE_KEY_PATTERN` on its own takes BEGIN to the next BEGIN.
+  it runs to the next BEGIN line or the end: a `-----BEGIN` that starts no
+  BEGIN line (`-----BEGINx`) does not stop it. A label is anything up to the
+  next `-`; a `-----BEGIN` whose label another shape's match runs into (a JWT
+  that took a word of it) is still the start of a key, and is redacted from
+  there. `PRIVATE_KEY_PATTERN` on its own takes BEGIN to the next BEGIN.
 - A JWT is an `ey` header and two segments of ten or more (`JWT_PATTERN`), or an
   `eyJ` one of eight or more and three segments (`JSON_JWT_PATTERN`, also
   `SIGNED_JWT_PATTERN`); `my-eyewear-store.myshopify.com` is neither. It is
@@ -80,6 +83,17 @@ Some rules the shapes hold, each with a test:
 
 `JWT_DETECTOR` and `PRIVATE_KEY_DETECTOR` are the same shapes for guards that
 refuse instead.
+
+No shape is searched with both the `i` and `u` flags. Under `iu` a pattern
+folds case the Unicode way, so `[A-Za-z]` and `\w` also hold `ſ` (U+017F, a
+long s) and `K` (U+212A, the Kelvin sign): a look-behind that refuses a start
+after a letter then refused one after `ſ` too, and `ſghp_…`, `Ksk_live_…` and
+`ſBearer …` went unredacted. The shapes use `i` alone, which folds ASCII only;
+a body class that should hold every letter the old `iu` copy held lists `ſ` and
+`K` itself (`[\u017F\u212AA-Za-z0-9_-]`), and a look-behind stays ASCII. The
+one shape that needs `u` (the secret-named key, for `\p{Cc}`) spells its words
+in both cases with `anyCase` (`token` is `[Tt][Oo][Kk\u212A][Ee][Nn]`) instead
+of setting `i`.
 
 ## Linear-time tests
 
@@ -106,10 +120,14 @@ control characters), every ordered pair of them, its own words before each run,
 and runs between its literal fragments (`patternFragments`: every literal of
 three or more characters in its source, and `=` and `:`): a fragment, a run,
 and a fragment or a terminator after it, and a whole sample (a word), a run, a
-terminator and a fragment (`key … aaa -----END`). An input whose one call on 16
-Ki characters takes under 0.5 ms of wall time is linear; one above is timed as
-four calls on a quarter of the length, the better of two, and only one that
-still looks quadratic is measured as growth in CPU time. A call that reaches
+terminator and a fragment (`key … aaa -----END`). Each input's call on 2 Ki
+characters is screened against the fastest of 32 scans of as many characters
+by the redactor's own search (`referenceFloor`, once a sweep): under 32 times
+that, the better of three calls, it is linear. Linear patterns cost up to about
+23, quadratic ones 160 or more. The screen is in wall time, since a call that
+short reads 0 on the CPU clock; load only ever slows a run, so it cannot lift
+the fastest of many scans, and a slowed call only costs a measurement. An input
+above 32 is measured as growth in CPU time (`judgeInput`). A call that reaches
 the hang backstop is an offender, named. `assertPatternSweepLinear` sweeps one
 pattern through the redactor's own search, with its fragments taken from its
 source, and `profilePatterns` lists a profile's.

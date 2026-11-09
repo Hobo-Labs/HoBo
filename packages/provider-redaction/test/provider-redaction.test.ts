@@ -15,9 +15,11 @@
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { anyCase } from "../src/any-case.js";
 import {
 	assertSweepLinear,
 	patternFragments,
+	SweepGrowthError,
 	type SweepSpec,
 } from "../src/linear-sweep.js";
 import {
@@ -347,6 +349,32 @@ describe("every pattern on a hostile text", () => {
 		expect(Object.keys(SWEEP_SPECS).sort()).toEqual([...PATTERN_NAMES].sort());
 	});
 
+	it(
+		"catches the private-key shape this replaced, B-1 in 0462fa6c",
+		() => {
+			// It read the run after an END line, then looked ahead for the next
+			// END from every place it could give a character back.
+			const replaced =
+				/-----BEGIN[^-]*PRIVATE KEY-----(?:(?:(?!-----BEGIN)[\s\S])*(?:(?<!\S)|(?<=\\[nr]))-----END[^-]*PRIVATE KEY-----\S*(?=(?:(?!-----BEGIN|-----END)[\s\S])*(?:-----BEGIN|$))|(?:(?!-----BEGIN)[\s\S])*)/gi;
+			expect(() =>
+				assertSweepLinear(
+					(text) => {
+						text.replace(replaced, "");
+					},
+					{
+						alphabet: "a",
+						words: [
+							"-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+						],
+						fragments: patternFragments(replaced),
+					},
+					{ failFast: true },
+				),
+			).toThrow(SweepGrowthError);
+		},
+		GROWTH_TIMEOUT_MS,
+	);
+
 	it.each(PATTERN_NAMES.map((name) => [name] as const))(
 		"the %s pattern grows linearly on every class and pair of classes",
 		(name) => {
@@ -577,6 +605,50 @@ describe("redactProviderText", () => {
 		]) {
 			expect(redactProviderText(text, 10_000)).not.toContain("SECRVAL1");
 		}
+	});
+
+	it.each([
+		[
+			"a `-----BEGIN` inside the body",
+			"-----BEGIN PRIVATE KEY-----\n-----BEGINx\nSECRETBODY1\nBearer -----END PRIVATE KEY-----\n",
+		],
+		[
+			"a BEGIN line glued after a control character",
+			"-----BEGIN PRIVATE KEY-----*\u001b-----BEGIN SECRETBODY1 Bearer -----END PRIVATE KEY-----",
+		],
+	])("runs a key whose END line another shape took past %s, to the next BEGIN line", (_case, text) => {
+		expect(redactProviderText(text, 10_000)).toBe("[redacted]");
+	});
+
+	it("redacts a key a JWT made a BEGIN line of, from its first `-----BEGIN`", () => {
+		// Taken first, the JWT took the second line's `-----BEGIN`, and the
+		// first `-----BEGINx` then read as a BEGIN line.
+		const text =
+			"-----BEGINx\nSECRETBODY1\u001beyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NX0.sigsigsig-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----";
+		expect(redactProviderText(text, 10_000)).toBe("[redacted]");
+	});
+
+	it.each([
+		["ſ", "ſeyAiYWxnIjoiSFMSECR.eyAic3ViIjoiU0VDUiJ9.sigSECRsig"],
+		["ſ", "ſeyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NX0.SECRB2JWT"],
+		["ſ", "ſghp_SECRB2GHPabcdefghijklmnop"],
+		["\u212a", "\u212ask_live_SECRB2SKabcdefghijkl"],
+		["ſ", "ſBearer SECRB2BEARER"],
+	])("finds a credential after %s, which `i` with `u` folds to an ASCII letter", (letter, text) => {
+		expect(redactProviderText(`x ${text} y`, 10_000)).toBe(
+			`x ${letter}[redacted] y`,
+		);
+	});
+
+	it("reads a credential on through ſ and K, as the `iu` copies did", () => {
+		for (const key of [
+			"sk_live_\u212aSECRB2SKabcdefghijkl",
+			"ghp_abcdefghijklmnopqrstuvwxyzſSECRB2",
+		])
+			expect(redactProviderText(`x ${key} y`, 10_000)).toBe("x [redacted] y");
+		expect(redactProviderText("x SECRB2NAME\u212apwd=hunter2 y")).toBe(
+			"x [redacted] y",
+		);
 	});
 
 	it("takes what is glued to a private key's END line with it", () => {
@@ -867,5 +939,24 @@ describe("the shared detectors against the ones they replaced", () => {
 		const host = "see my-eyewear-store.myshopify.com.example.internal.";
 		expect(JWT_DETECTOR.test(host)).toBe(false);
 		expect(redactProviderText(host)).toBe(host.trim());
+	});
+});
+
+describe("anyCase", () => {
+	it("matches every case a word matched under iu, and nothing it did not", () => {
+		const spelled = new RegExp(`^(?:${anyCase("token|sk")})$`, "u");
+		const folded = /^(?:token|sk)$/iu;
+		for (const word of [
+			"token",
+			"TOKEN",
+			"toKen",
+			"to\u212Aen",
+			"\u017Fk",
+			"S\u212A",
+			"tokens",
+			"t0ken",
+			"sx",
+		])
+			expect(spelled.test(word)).toBe(folded.test(word));
 	});
 });

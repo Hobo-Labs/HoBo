@@ -8,10 +8,7 @@
  * leaking the day someone adds one.
  */
 import { redactSecretRef } from "@hobo/bindings";
-import {
-	JWT_DETECTOR,
-	PRIVATE_KEY_DETECTOR,
-} from "@hobo/provider-redaction";
+import { JWT_DETECTOR, PRIVATE_KEY_DETECTOR } from "@hobo/provider-redaction";
 
 import type {
 	AnonymousSiteRecord,
@@ -104,32 +101,35 @@ export const CREDENTIAL_PATTERNS: readonly {
 		// the first `?`/`#` after that: each part stops at its first occurrence,
 		// so the search is linear where `\S*` before each part was not.
 		pattern:
-			/(?<!\S)(?:(?!https?:\/\/)\S)*https?:\/\/(?:(?!claim|drop)\S)*(?:claim|drop)[^\s?#]*[?#]\S/iu,
+			/(?<!\S)(?:(?!https?:\/\/)\S)*https?:\/\/(?:(?!claim|drop)\S)*(?:claim|drop)[^\s?#]*[?#]\S/i,
 	},
 	{
 		label: "netlify session or site parameter",
-		pattern: /\b(?:session_id|nf_jwt)=/iu,
+		pattern: /\b(?:session_id|nf_jwt)=/i,
 	},
-	{ label: "bearer token", pattern: /\bBearer\s+[A-Za-z0-9._-]{8,}/iu },
+	{
+		label: "bearer token",
+		pattern: /\bBearer\s+[\u017F\u212AA-Za-z0-9._-]{8,}/i,
+	},
 	{
 		label: "netlify personal access token",
 		pattern: /\bnfp_[A-Za-z0-9_-]{8,}/u,
 	},
 	{
 		label: "netlify auth token assignment",
-		pattern: /NETLIFY_(?:AUTH_)?TOKEN\s*[=:]\s*\S/iu,
+		pattern: /NETLIFY_(?:AUTH_)?TOKEN\s*[=:]\s*\S/i,
 	},
 	{
 		label: "connection string",
-		pattern: /\b(?:postgres(?:ql)?|mysql|rediss?|mongodb(?:\+srv)?):\/\//iu,
+		pattern: /\b(?:postgres(?:ql)?|mysql|rediss?|mongodb(?:\+srv)?):\/\//i,
 	},
 	{
 		label: "api key assignment",
-		pattern: /\bapi[_-]?key\s*[=:]\s*[^"\s,}]+/iu,
+		pattern: /\bapi[_-]?key\s*[=:]\s*[^"\s,}]+/i,
 	},
 	{
 		label: "password assignment",
-		pattern: /\b(?:password|passwd|pwd)\s*[=:]\s*[^"\s,}]+/iu,
+		pattern: /\b(?:password|passwd|pwd)\s*[=:]\s*[^"\s,}]+/i,
 	},
 	{ label: "jwt", pattern: JWT_DETECTOR },
 	{ label: "private key", pattern: PRIVATE_KEY_DETECTOR },

@@ -7,10 +7,7 @@
  * identity assertions, or raw environment variables — {@link assertNoSecrets}
  * is the enforcement point, not a convention.
  */
-import {
-	JWT_DETECTOR,
-	PRIVATE_KEY_DETECTOR,
-} from "@hobo/provider-redaction";
+import { JWT_DETECTOR, PRIVATE_KEY_DETECTOR } from "@hobo/provider-redaction";
 import type {
 	ClaimAtomicity,
 	ClaimBundle,
@@ -251,9 +248,12 @@ export const FORBIDDEN_IN_EVENTS: readonly {
 	{
 		label: "connection string",
 		pattern:
-			/\b(?:postgres(?:ql)?|mysql|rediss?|mongodb(?:\+srv)?|amqps?):\/\//iu,
+			/\b(?:postgres(?:ql)?|mysql|rediss?|mongodb(?:\+srv)?|amqps?):\/\//i,
 	},
-	{ label: "bearer token", pattern: /\bBearer\s+[A-Za-z0-9._-]{8,}/iu },
+	{
+		label: "bearer token",
+		pattern: /\bBearer\s+[\u017F\u212AA-Za-z0-9._-]{8,}/i,
+	},
 	{ label: "private key", pattern: PRIVATE_KEY_DETECTOR },
 	{ label: "jwt", pattern: JWT_DETECTOR },
 	{
@@ -262,7 +262,7 @@ export const FORBIDDEN_IN_EVENTS: readonly {
 	},
 	{
 		label: "password assignment",
-		pattern: /\b(?:password|passwd|secret|admin_key|adminKey)\s*[:=]\s*\S/iu,
+		pattern: /\b(?:password|passwd|secret|admin_key|adminKey)\s*[:=]\s*\S/i,
 	},
 	{
 		label: "claim url",
@@ -271,7 +271,7 @@ export const FORBIDDEN_IN_EVENTS: readonly {
 		// that: each part stops at its first occurrence, so the search is linear
 		// where `\S*` before each part was not.
 		pattern:
-			/(?<!\S)(?:(?!https?:\/\/)\S)*https?:\/\/(?:(?!\b(?:claim|transfer)\b)\S)*\b(?:claim|transfer)\b[^\s?#]*[?#](?:(?!(?:token|code|key)=)\S)*(?:token|code|key)=/iu,
+			/(?<!\S)(?:(?!https?:\/\/)\S)*https?:\/\/(?:(?!\b(?:claim|transfer)\b)\S)*\b(?:claim|transfer)\b[^\s?#]*[?#](?:(?!(?:token|code|key)=)\S)*(?:token|code|key)=/i,
 	},
 ];
 

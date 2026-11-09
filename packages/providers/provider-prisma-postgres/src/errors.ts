@@ -47,9 +47,9 @@ export { containsControlChar } from "@hobo/provider-redaction";
 /** The provider's own patterns, on top of the shared ones. */
 export const PRISMA_POSTGRES_REDACTION_PROFILE: ProviderRedactionProfile = {
 	patterns: [
-		/https?:\/\/create-db\.prisma\.io\/claim\S*/giu,
+		/https?:\/\/create-db\.prisma\.io\/claim\S*/gi,
 		/\bproj_[A-Za-z0-9_-]+/gu,
-		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/giu,
+		/\b[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\b/gi,
 	],
 	decodePercent: true,
 };
@@ -94,7 +94,7 @@ export class PrismaProviderError extends Error {
 			Object.fromEntries(
 				Object.entries(options.detail ?? {}).map(([key, value]) => [
 					key,
-					/idempotency|database.?id|project.?id|claim.?url/iu.test(key)
+					/idempotency|database.?id|project.?id|claim.?url/i.test(key)
 						? "[redacted]"
 						: isJsonString(value)
 							? redactProviderText(value)

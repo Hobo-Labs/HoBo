@@ -15,6 +15,7 @@
  * provider credential shapes.
  */
 
+import { anyCase, SECRET_KEY_NAMES } from "./any-case.js";
 /** What a redacted span becomes. */
 export const REDACTION_MARKER = "[redacted]";
 
@@ -81,7 +82,7 @@ export function redactionPattern(pattern: RegExp): RedactionPattern {
  * digit); BEGIN and END are matched in any case.
  */
 export const PRIVATE_KEY_PATTERN = redactionPattern(
-	/-----BEGIN[^-]*PRIVATE KEY-----(?:(?!-----BEGIN)[\s\S])*/giu,
+	/-----BEGIN[^-]*PRIVATE KEY-----(?:(?!-----BEGIN)[\s\S])*/gi,
 );
 
 /**
@@ -99,7 +100,7 @@ export const PRIVATE_KEY_PATTERN = redactionPattern(
  * provider copies' `\bey` kept it (`token-[redacted]`).
  */
 export const JWT_PATTERN = redactionPattern(
-	/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{10,}\.)(?<lead>(?:[A-Za-z0-9_]*-)*?)ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.\S*/giu,
+	/(?<![A-Za-z0-9_-])(?=[\u017F\u212AA-Za-z0-9_-]*\.[\u017F\u212AA-Za-z0-9_-]{10,}\.)(?<lead>(?:[\u017F\u212AA-Za-z0-9_]*-)*?)ey[\u017F\u212AA-Za-z0-9_-]{10,}\.[\u017F\u212AA-Za-z0-9_-]{10,}\.\S*/gi,
 );
 
 /**
@@ -121,12 +122,12 @@ export const CREDENTIAL_PATTERNS: readonly RedactionPattern[] = Object.freeze([
 	PRIVATE_KEY_PATTERN,
 	JWT_PATTERN,
 	JSON_JWT_PATTERN,
-	redactionPattern(/\bBearer\s+\S+/giu),
+	redactionPattern(/\bBearer\s+\S+/gi),
 	// An Authorization header in any scheme. One optional quote, and the spaces
 	// after it, as one optional group: `\s*["']?\s*` read a run of spaces two
 	// ways at once and was quadratic in it.
 	redactionPattern(
-		/\bauthorization["']?\s*[=:]\s*(?:["']\s*)?(?:basic|bearer|token|digest|negotiate)\s+\S+/giu,
+		/\bauthorization["']?\s*[=:]\s*(?:["']\s*)?(?:basic|bearer|token|digest|negotiate)\s+\S+/gi,
 	),
 	// A Basic or Token credential on its own: capitalized, as the schemes are
 	// written, eight credential characters or more, with a digit, a symbol, or
@@ -138,16 +139,16 @@ export const CREDENTIAL_PATTERNS: readonly RedactionPattern[] = Object.freeze([
 	// Connection strings, whole: the password sits in the authority section,
 	// and Prisma Postgres hands out prisma+postgres://…?api_key=…. Found inside
 	// a run too (`…WWWredis://…`), as the provider copies found them.
-	redactionPattern(/(?:prisma\+)?postgres(?:ql)?:\/\/\S+/giu),
-	redactionPattern(/rediss?:\/\/\S+/giu),
-	redactionPattern(/(?:mysql|mongodb(?:\+srv)?|amqps?):\/\/\S+/giu),
+	redactionPattern(/(?:prisma\+)?postgres(?:ql)?:\/\/\S+/gi),
+	redactionPattern(/rediss?:\/\/\S+/gi),
+	redactionPattern(/(?:mysql|mongodb(?:\+srv)?|amqps?):\/\/\S+/gi),
 	// Any other URL with inline credentials, whole, from the start of its run of
 	// scheme characters (`-x-redis://…` from its `-`, as the provider copies'
 	// `\b` took it). It starts only there, so `a.a.a.…` is one search. A user
 	// alone is a credential too: a token is often the user
 	// (`https://ghp_…@github.com/…`), and `Token ://…@host` is one with no scheme.
 	redactionPattern(
-		/(?<![a-z0-9+.-])[a-z0-9+.-]*:\/\/[^\s"':/@]+(?::[^\s"'/@]*)?@\S+/giu,
+		/(?<![a-z0-9+.-])[\u017F\u212Aa-z0-9+.-]*:\/\/[^\s"':/@]+(?::[^\s"'/@]*)?@\S+/gi,
 	),
 	// Inline credentials with no scheme in front of them.
 	redactionPattern(/\/\/[^/\s:@]+:[^/\s:@]+@/gu),
@@ -173,13 +174,16 @@ export const CREDENTIAL_PATTERNS: readonly RedactionPattern[] = Object.freeze([
 	// chain of `token: ` is read once. A value of quotes or emphasis alone
 	// (`api_key='`, cut short) is one too.
 	redactionPattern(
-		/(?<![A-Za-z0-9_-])[A-Za-z0-9_-]*(?:token|secret|auth(?:orization)?|session|password|passwd|pwd|requirepass|api[_-]?key|secret[_-]?key|access[_-]?key|private[_-]?key|session[_-]?id)["'*]*\s*(?:=|:(?!\/\/[^\s\p{Cc}]{0,256}(?!\S))|(?<!(?<![A-Za-z0-9_-])(?:hobo-token|hobo-secret|secret)):)(?![\s"'*]*(?:hobo-token|hobo-secret|secret|env):\/\/[^\s\p{Cc}]{0,256}(?!\S))(?:[\s"'*]*[^\s"'*]\S*(?:(?<=[=:])[\s"'*]+[^\s"'*]\S*|\s*[=:][\s"'*]*[^\s"'*]\S*)*|[\s"'*]*["'*](?!\S))/giu,
+		new RegExp(
+			String.raw`(?<![A-Za-z0-9_-])[\u017F\u212AA-Za-z0-9_-]*(?:${SECRET_KEY_NAMES})["'*]*\s*(?:=|:(?!\/\/[^\s\p{Cc}]{0,256}(?!\S))|(?<!(?<![A-Za-z0-9_-])(?:${anyCase("hobo-token|hobo-secret|secret")})):)(?![\s"'*]*(?:${anyCase("hobo-token|hobo-secret|secret|env")}):\/\/[^\s\p{Cc}]{0,256}(?!\S))(?:[\s"'*]*[^\s"'*]\S*(?:(?<=[=:])[\s"'*]+[^\s"'*]\S*|\s*[=:][\s"'*]*[^\s"'*]\S*)*|[\s"'*]*["'*](?!\S))`,
+			"gu",
+		),
 	),
 	// Prefixed keys: Stripe-style sk_/pk_, GitHub, GitLab, Slack. Like the JWT
 	// shapes it starts where a run starts and takes the run's start before a
 	// `-` with it: starting at the prefix left `AAAA…-` behind, part of the key.
 	redactionPattern(
-		/(?<![A-Za-z0-9_-])(?:[A-Za-z0-9_]*-)*?(?:sk|pk|ghp|gho|ghs|glpat|github_pat|xox[abprs])[-_][A-Za-z0-9_-]{8,}/giu,
+		/(?<![A-Za-z0-9_-])(?:[\u017F\u212AA-Za-z0-9_]*-)*?(?:sk|pk|ghp|gho|ghs|glpat|github_pat|xox[abprs])[-_][\u017F\u212AA-Za-z0-9_-]{8,}/gi,
 	),
 ]);
 
@@ -385,8 +389,8 @@ function pushMatches(
 	}
 }
 
-const BEGIN_LINE = /-----BEGIN[^-]*PRIVATE KEY-----/giu;
-const END_LINE = /-----END[^-]*PRIVATE KEY-----/giu;
+const BEGIN_LINE = /-----BEGIN[^-]*PRIVATE KEY-----/gi;
+const END_LINE = /-----END[^-]*PRIVATE KEY-----/gi;
 const RUN = /\S*/uy;
 
 /** Whether `at` starts a line: after whitespace, the start, or an escaped `\n`. */
@@ -405,14 +409,16 @@ function runEnd(text: string, from: number): number {
 }
 
 /**
- * A private key's span, and where the END line that ends it starts and ends
- * (-1 when none does).
+ * A private key's span, where the END line that ends it starts and ends (-1
+ * when none does), and where the next BEGIN line is (or the end of the text):
+ * as far as the key can run.
  */
 type KeySpan = readonly [
 	from: number,
 	to: number,
 	end: number,
 	endLine: number,
+	stop: number,
 ];
 
 /**
@@ -447,8 +453,9 @@ function keySpans(text: string): readonly KeySpan[] {
 				runEnd(text, last.index + last[0].length),
 				last.index,
 				last.index + last[0].length,
+				stop,
 			]);
-		else keys.push([from, stop, -1, -1]);
+		else keys.push([from, stop, -1, -1, stop]);
 	});
 	return keys;
 }
@@ -486,16 +493,53 @@ function credentialSpans(
 		}
 	const reaches = overlapping(others);
 	const spans = [...others];
-	for (const [from, to, end, endLine] of keys) {
-		if (end < 0 || !reaches(endLine, end)) {
-			spans.push([from, to]);
-			continue;
-		}
-		NEXT_BEGIN.lastIndex = from + 1;
-		const next = NEXT_BEGIN.exec(text);
-		spans.push([from, next === null ? text.length : next.index]);
-	}
+	// A key whose END line another shape took goes on to the next BEGIN line
+	// that is one: a `-----BEGIN` inside the body (`-----BEGINx`) is not.
+	for (const [from, to, end, endLine, stop] of keys)
+		spans.push([from, end >= 0 && reaches(endLine, end) ? stop : to]);
+	if (patterns.includes(PRIVATE_KEY_PATTERN))
+		for (const each of searched) spans.push(...madeBeginLines(each, others));
 	return spans;
+}
+
+/**
+ * A BEGIN line another shape's match runs through: a `-----BEGIN` whose label
+ * (`[^-]*`, newlines too) reaches that match, which is followed by the rest of
+ * a label and `PRIVATE KEY-----` (`-----BEGINx … eyJ…-----BEGIN PRIVATE KEY-----`,
+ * where a JWT took the second line's `-----BEGIN`). Taken first, that match
+ * left the first `-----BEGIN` a BEGIN line, and the key started there; so
+ * here the text from it to the match is redacted. The dashes before and after
+ * each place are found once, so each match is looked at in constant time.
+ */
+function madeBeginLines(text: string, others: readonly Span[]): Span[] {
+	if (others.length === 0 || !/-----BEGIN/i.test(text)) return [];
+	const before = new Int32Array(text.length + 1);
+	let dash = -1;
+	for (let at = 0; at <= text.length; at++) {
+		before[at] = dash;
+		if (text.charCodeAt(at) === 45) dash = at;
+	}
+	const after = new Int32Array(text.length + 1);
+	dash = text.length;
+	for (let at = text.length; at >= 0; at--) {
+		if (text.charCodeAt(at) === 45) dash = at;
+		after[at] = dash;
+	}
+	const made: Span[] = [];
+	for (const [from, to] of others) {
+		const lastDash = before[from] ?? -1;
+		const begin = lastDash - 4;
+		const nextDash = after[to] ?? text.length;
+		if (
+			begin >= 0 &&
+			text.slice(begin, begin + 10).toUpperCase() === "-----BEGIN" &&
+			nextDash - 11 >= to &&
+			text.slice(nextDash - 11, nextDash).toUpperCase() === "PRIVATE KEY" &&
+			text.startsWith("-----", nextDash)
+		)
+			made.push([begin, from]);
+	}
+	return made;
 }
 
 /**
@@ -521,8 +565,6 @@ function overlapping(spans: Span[]): (before: number, past: number) => boolean {
 		return low > 0 && (furthest[low - 1] ?? -1) > past;
 	};
 }
-
-const NEXT_BEGIN = /-----BEGIN/giu;
 
 /** `text` with each run of overlapping or touching spans one marker. */
 function replaceSpans(

@@ -33,8 +33,14 @@ they hold; this note records where the package sits and how it is held.
 
 - **Linear time.** Every pattern is swept (`/linear-sweep`): runs of every
   character class and every pair of them, and runs between the pattern's own
-  literal fragments, ended by each terminator. Growth is measured in CPU time,
-  never against a wall-clock bound (`/linear-time`).
+  literal fragments, ended by each terminator. Each input is screened against
+  the fastest of 32 linear scans of its length (under 32 of those is linear;
+  quadratic patterns cost 160 or more), and an input above that is measured as
+  growth in CPU time, never against a wall-clock bound (`/linear-time`).
+- **ASCII case folding.** No shape sets both `i` and `u`: under `iu`,
+  `[A-Za-z]` also holds `ſ` and `K`, and a look-behind refused a credential
+  after one. Body classes list those two themselves; the one `u` shape spells
+  its words with `anyCase`.
 - **Never weaker.** Each caller holds its redactor to the copy it replaced,
   vendored under its `test/fixtures`, on generated texts with secret markers
   (`/redaction-differential`): it may redact more, never less.

@@ -97,8 +97,8 @@ export { containsControlChar } from "@hobo/provider-redaction";
 
 /** The provider's own patterns, on top of the shared ones. */
 export const TTL_SH_REDACTION_PROFILE: ProviderRedactionProfile = {
-	keep: /\bsha(?:256|512)[:-][0-9a-f]{32,128}\b/giu,
-	patterns: [/\bBasic\s+\S+/giu],
+	keep: /\bsha(?:256|512)[:-][0-9a-f]{32,128}\b/gi,
+	patterns: [/\bBasic\s+\S+/gi],
 	// A long opaque run with no recognisable prefix, for credential formats
 	// nobody has catalogued yet. Deliberately excludes `/` and `.`, so a URL
 	// path is not mistaken for one long token. It starts only where such a run

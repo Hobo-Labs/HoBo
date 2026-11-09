@@ -70,7 +70,7 @@ describe("redactSecrets against the redactor it replaced", () => {
 			assertRevealsNoMore(
 				(text) => baseRedactSecrets(text, []),
 				(text) => redactSecrets(text, []),
-				{ count: 20_000 },
+				{ count: 50_000 },
 			),
 		).toBeGreaterThan(1000);
 	});

@@ -7,17 +7,19 @@
  * underscore, a run of spaces) and a literal the search looks ahead for cannot
  * hide a quadratic case.
  *
- * Each input is a run of n characters. One call on n = 16 Ki characters under a
- * sixteenth of SWEEP_FLOOR_MS of wall time (never less than CPU time) is linear
- * on it: a quadratic search costs sixteen times as much at 64 Ki characters,
- * still under the floor, and a quadratic search of 64 Ki characters, even one
- * that starts again only at every 27th character, takes tens of milliseconds or
- * more. An input above that is timed again as four calls on a quarter of the
- * length, which cost what the one call did if the pattern is linear and a
- * quarter of it if it is quadratic; any that still looks quadratic is measured
- * as growth with `measureGrowth`, in CPU time, up to 16 Ki characters, and must
- * grow by less than LINEAR_GROWTH_LIMIT. A call that reaches the hang backstop
- * is an offender too, named.
+ * Each input is a run of SWEEP_LENGTH characters (2 Ki). Its call is timed
+ * against the reference, the fastest of REFERENCE_SCANS scans of as many
+ * characters by the redactor's own search (`referenceFloor`, once a sweep):
+ * under SWEEP_SCREEN_RATIO (32) times it, the better of three calls, it is
+ * linear. Linear patterns cost up to about 23 on every input of their sweeps,
+ * and quadratic ones 160 or more. The screen is in wall time because a call at
+ * 2 Ki takes well under the CPU clock's tick (Linux counts a thread's CPU in
+ * ticks of a few milliseconds, so most calls read 0). Load only ever slows a
+ * run, so it cannot lift the fastest of many scans, and a slowed call only
+ * sends an input to be measured. An input above the ratio is measured as growth
+ * with `measureGrowth`, in CPU time over runs long enough for that clock, and
+ * must grow by less than LINEAR_GROWTH_LIMIT. A call that reaches the hang
+ * backstop is an offender too, named.
  *
  * Reached through the `@hobo/provider-redaction/linear-sweep` subpath, for tests.
  */
@@ -169,22 +171,31 @@ export function sweepInputs(spec: SweepSpec): readonly SweepInput[] {
 	return inputs;
 }
 
-/**
- * One call on SWEEP_LENGTH characters under this much CPU is linear on them: a
- * quadratic search of that many characters takes a tenth of a second or more.
- */
-export const SWEEP_FLOOR_MS = 8;
+/** The length each input is screened at. */
+export const SWEEP_LENGTH = 2048;
 
-/** The length of the one call that decides whether an input is measured. */
-export const SWEEP_LENGTH = 65_536;
+/**
+ * An input whose call costs under this many times the reference scan's
+ * (`referenceFloor`) is linear on it. Linear patterns on every input of their
+ * sweeps cost up to about 23 at SWEEP_LENGTH characters, and quadratic ones 160
+ * to 440 (`test/linear-time.test.ts` pins the margin).
+ */
+export const SWEEP_SCREEN_RATIO = 32;
+
+/**
+ * The CPU time a timed run of a screened-out input's growth must reach, and the
+ * same `minMs` its verdict is read with (`grewLinearly`): read with another,
+ * an uncalibrated quadratic run could pass as one that costs next to nothing.
+ */
+export const SWEEP_GROWTH_MIN_MS = 20;
 
 export type SweepResult = {
 	readonly input: string;
-	/** Wall time of one call on a quarter of SWEEP_LENGTH characters. */
-	readonly screenMs?: number;
+	/** The call's cost over the reference scan's best (`screenRatio`). */
+	readonly ratio?: number;
 	/** How long one call ran before the hang backstop stopped it. */
 	readonly hungMs?: number;
-	/** The growth, measured only for an input above the floor. */
+	/** The growth, measured only for an input the screen could not settle. */
 	readonly growth?: Growth;
 };
 
@@ -196,9 +207,57 @@ function wallOnce(run: (input: string) => void, input: string): number {
 	return wall;
 }
 
+const NEVER = redactionPattern(/(?!)/g);
+
+/** A linear scan of `text` by the redactor's own search: the reference cost. */
+function scan(text: string): void {
+	redactMatches(text, [NEVER]);
+}
+
+/**
+ * A call's cost over `floor` (`referenceFloor`), the better of up to `tries`
+ * calls, the next taken only while the ratio is at SWEEP_SCREEN_RATIO or more.
+ */
+export function screenRatio(
+	run: (input: string) => void,
+	text: string,
+	floor = referenceFloor(text.length),
+	tries = 3,
+): number {
+	let call = wallOnce(run, text);
+	for (
+		let attempt = 1;
+		attempt < tries && call / floor >= SWEEP_SCREEN_RATIO;
+		attempt++
+	)
+		call = Math.min(call, wallOnce(run, text));
+	return call / floor;
+}
+
+/**
+ * The reference: the fastest of REFERENCE_SCANS scans of `length` characters
+ * by the redactor's own search, in milliseconds. A busy machine only slows a
+ * run, so the fastest of many is as near the scan's real cost as the clock
+ * shows, and load cannot lift it: a slowed call reads high, which costs a
+ * growth measurement and misjudges nothing, and only a lifted reference could
+ * read a quadratic call low, which would take every one of the scans slowed.
+ * Plain ASCII is the cheapest text to scan, so an input's own scan costs at
+ * least this.
+ */
+export function referenceFloor(length = SWEEP_LENGTH): number {
+	const text = "a".repeat(length);
+	let floor = Number.POSITIVE_INFINITY;
+	for (let scanned = 0; scanned < REFERENCE_SCANS; scanned++)
+		floor = Math.min(floor, wallOnce(scan, text));
+	return Math.max(floor, 0.001);
+}
+
+/** How many scans the reference is the fastest of. */
+export const REFERENCE_SCANS = 32;
+
 export type SweepOptions = {
-	/** The length of the deciding call (default SWEEP_LENGTH). */
-	readonly floorLength?: number;
+	/** The length each input is screened at (default SWEEP_LENGTH). */
+	readonly length?: number;
 	/** Stop at the first input that is not linear (for a negative control). */
 	readonly failFast?: boolean;
 };
@@ -209,12 +268,13 @@ export function sweepGrowth(
 	spec: SweepSpec,
 	options: SweepOptions = {},
 ): readonly SweepResult[] {
-	const floorLength = options.floorLength ?? SWEEP_LENGTH;
+	const length = options.length ?? SWEEP_LENGTH;
+	const floor = referenceFloor(length);
 	const results: SweepResult[] = [];
 	for (const input of sweepInputs(spec)) {
 		let result: SweepResult;
 		try {
-			result = sweepOne(run, input, floorLength / 4);
+			result = judgeInput(run, input, length, floor);
 		} catch (error) {
 			if (!(error instanceof OperationHangError)) throw error;
 			result = { input: input.name, hungMs: error.wallMs };
@@ -225,47 +285,37 @@ export function sweepGrowth(
 	return results;
 }
 
-function offends(result: SweepResult): boolean {
+/** Whether a sweep result is not linear: it hung, or grew by the limit or more. */
+export function offends(result: SweepResult): boolean {
 	return (
 		result.hungMs !== undefined ||
-		(result.growth !== undefined && !grewLinearly(result.growth))
+		(result.growth !== undefined &&
+			!grewLinearly(result.growth, SWEEP_GROWTH_MIN_MS))
 	);
 }
 
 /**
- * One input: a call on `length` characters, in wall time, which is
- * fine-grained and never less than CPU time. Under a sixteenth of the floor,
- * any quadratic part of it costs under the floor at four times the length.
- * Otherwise four calls on a quarter of the length, which cost what the one call
- * did if the pattern is linear and a quarter of it if it is quadratic; only an
- * input that still looks quadratic is measured as growth, in CPU time.
+ * One input: its call on `length` characters over `floor`, the reference scan's
+ * best (`referenceFloor`), the better of up to three calls (`screenRatio`). Under
+ * SWEEP_SCREEN_RATIO it is linear. Above it, the growth from n to 4n is
+ * measured in CPU time (`measureGrowth`), where linear work gives about 4 and
+ * quadratic about 16.
  */
-function sweepOne(
+export function judgeInput(
 	run: (input: string) => void,
 	input: SweepInput,
-	length: number,
+	length = SWEEP_LENGTH,
+	floor = referenceFloor(length),
 ): SweepResult {
-	const text = input.text(length);
-	let screenMs = wallOnce(run, text);
-	if (screenMs < SWEEP_FLOOR_MS / 16) return { input: input.name, screenMs };
-	// Wall time is noisy at a millisecond: the better of two of each, so a
-	// collection or a busy moment does not send a linear input to be measured.
-	const quarter = input.text(length / 4);
-	let quartersMs = Number.POSITIVE_INFINITY;
-	for (let attempt = 0; attempt < 2; attempt++) {
-		if (attempt > 0) screenMs = Math.min(screenMs, wallOnce(run, text));
-		let total = 0;
-		for (let call = 0; call < 4; call++) total += wallOnce(run, quarter);
-		quartersMs = Math.min(quartersMs, total);
-		if (screenMs < 2 * quartersMs) return { input: input.name, screenMs };
-	}
+	const ratio = screenRatio(run, input.text(length), floor);
+	if (ratio < SWEEP_SCREEN_RATIO) return { input: input.name, ratio };
 	const growth = measureGrowth(run, input.text, {
-		startLength: 1024,
+		startLength: Math.max(256, length / 8),
 		maxLength: length,
-		minMs: 20,
+		minMs: SWEEP_GROWTH_MIN_MS,
 		runs: 2,
 	});
-	return { input: input.name, screenMs, growth };
+	return { input: input.name, ratio, growth };
 }
 
 export class SweepGrowthError extends Error {

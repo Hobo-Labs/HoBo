@@ -59,7 +59,7 @@ export { REDACTION_WINDOW } from "@hobo/provider-redaction";
 export const VERCEL_REDACTION_PROFILE: ProviderRedactionProfile = {
 	// A claim or transfer code, and the rest of its run: what is glued to a
 	// code (`code=abc12345=…`) is not told apart from it.
-	patterns: [/\bcode\s*[=:]\s*[A-Za-z0-9-]{8,}\S*/giu],
+	patterns: [/\bcode\s*[=:]\s*[\u017F\u212AA-Za-z0-9-]{8,}\S*/gi],
 };
 
 const providerRedactor = createProviderRedactor(VERCEL_REDACTION_PROFILE);

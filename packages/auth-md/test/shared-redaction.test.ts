@@ -79,7 +79,7 @@ describe("redactText", () => {
 describe("redactText against the scrubber it replaced", () => {
 	it("hides every marker the old scrubber hid", { timeout: 60_000 }, () => {
 		expect(
-			assertRevealsNoMore(baseRedactText, redactText, { count: 20_000 }),
+			assertRevealsNoMore(baseRedactText, redactText, { count: 50_000 }),
 		).toBeGreaterThan(1000);
 	});
 
