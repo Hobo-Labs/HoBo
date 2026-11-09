@@ -87,6 +87,29 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   and checks that both real entries scope without giving up. #1652 (ci-gh-actions) and #1653
   (`scripts/run-tests.ts`) would have skipped both jobs: 1–3 slot-minutes each per run, excluding stalls.
 
+## The hobo package's child-process tests
+
+About 80% of `@hobo/hobo`'s test time went to four files that start the `hobo` binary as child
+processes, each spending seconds loading the CLI before doing any work. The suite now starts fewer of
+them, and each of the rest from the built `dist` where TypeScript loading is not what it tests:
+
+- `starter-deployment-end-to-end` runs the packaged `up` → HTTP → `down` lifecycle for one starter
+  (fullstack). The four starter trees are byte-identical, and `packages/cli/test/starter-end-to-end.test.ts`
+  runs `new → codegen → build → /proof` for all four in-process.
+- `persistent-local-deployment` walks one deployment through serve, reuse, edit and `down`, and
+  expires one `--anonymous` deployment (`--temporary` is the same switch, and `self-hosted-broker.test.ts`
+  places with both). Its cleanup, and the starter test's, runs `down` only while a receipt is left.
+- `composed-temp-dirs` runs its fixture on bare node against `dist`, in six cases instead of nine.
+- `bin-opensesame` keeps `node --import tsx` only for the case about relaunching with the loader.
+- `ci-runs` passes its no-op `sleep` from the shared harness, and `runtime-requirements` pins the oci
+  placement outcome (refused for the yard inventory) with a ready stub host instead of equipping kubectl.
+- `login-device-grant` keeps the cases only the command shows; RFC 8628 protocol cases are in
+  `oidc-device-grant.test.ts`.
+
+Measured back to back on one CPU (`taskset -c 0`, `CI=1`, `HOBO_TEST_MAX_WORKERS=1`) on a shared host:
+580.6 s wall and 479.1 s CPU before (load 16.6 → 14.8), 374.1 s wall and 249.6 s CPU after (load
+17.1 → 26.4). The wasm files, `fileParallelism`, and the CLI's eager imports are left for later changes.
+
 ## Changed paths on stdin
 
 `job-scope.mts`, `dependent-tests.mts` and `impact-classifier.mts` read the changed paths that a
