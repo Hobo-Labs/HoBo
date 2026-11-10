@@ -264,7 +264,8 @@ export function createIsolatedContainerController(options: {
 			| "hobo_ci_work_dir_retired"
 			| "hobo_ci_work_dir_removed"
 			| "hobo_ci_work_dir_remove_failed"
-			| "hobo_ci_git_mirror",
+			| "hobo_ci_git_mirror"
+			| "hobo_ci_deps_toolchain_drift",
 		fields: Readonly<Record<string, string | number | boolean>>,
 	) => void;
 	now?: () => string;
@@ -379,12 +380,17 @@ export function createIsolatedContainerController(options: {
 				.map((tag) => tag.match(/^hobo-ci-worker:(v[0-9a-f]{12})$/)?.[1])
 				.find((tag) => tag !== undefined);
 			const depsKey = deps.labels["hobo.ci.deps-key"];
-			const candidate =
-				toolchain && deps.labels["hobo.ci.toolchain"] === toolchain && depsKey
-					? { image: depsImage, depsKey }
-					: undefined;
+			const depsToolchain = deps.labels["hobo.ci.toolchain"];
+			const candidate = depsKey ? { image: depsImage, depsKey } : undefined;
 			let selection = workerSelection;
 			if (candidate) {
+				if (toolchain && depsToolchain && depsToolchain !== toolchain) {
+					options.log?.("hobo_ci_deps_toolchain_drift", {
+						workerToolchain: toolchain,
+						depsToolchain: depsToolchain ?? "none",
+						depsKey: depsKey ?? "none",
+					});
+				}
 				const failure = await probeDepsImage(deps.id);
 				if (failure) logDepsImageFallback(deps.id, failure);
 				else selection = candidate;

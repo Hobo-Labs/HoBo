@@ -10,7 +10,7 @@ mise replaces ad hoc **Corepack-only** Node/pnpm setup, **cue-lang/setup-cue**, 
 
 | Section | HoBo usage |
 | --- | --- |
-| `[tools]` | `node@24`, `pnpm@10.33.4` (matches `package.json#packageManager`), `cue@0.14.0` (schema lane), `shellcheck@0.10.0` (shell lint via `mise exec`), `turbo@2.11.10` (matches root devDependency), `gitleaks@8.22.1`. **`dotnet@10.0.100`** for Nerdbank.GitVersioning lives in [`release/mise.toml`](../release/mise.toml) only (not the CI runner image). |
+| `[tools]` | `node@24`, `pnpm@10.33.4` (matches `package.json#packageManager`), `cue@0.14.0` (schema lane), `shellcheck@0.10.0` (shell lint via `mise exec`), `turbo@2.11.10` (matches root devDependency), `gitleaks@8.22.1`, `syft@1.56.0` (release OCI CycloneDX SBOM generation for artifact attestations). **`dotnet@10.0.100`** for Nerdbank.GitVersioning lives in [`release/mise.toml`](../release/mise.toml) only (not the CI runner image). |
 | `[env]` | Optional project env vars (keep secrets out; use `mise env` + `.env` locally). |
 | `[tasks]` | Thin wrappers around existing `pnpm` / Turbo scripts so `mise run build` matches `pnpm run build`. |
 | `[settings]` | `experimental = true` only when needed; prefer stable flags. |
