@@ -88,7 +88,8 @@ function input(leases = 0, at = "2026-11-10T00:00:00Z") {
 		installationId: 7,
 		repository: REPOSITORY,
 		account: account(),
-		leases: boxLeases(leases),
+		leases: async () => boxLeases(leases),
+		isolatedOnly: false,
 		at,
 	};
 }
@@ -145,6 +146,7 @@ describe("fleet route publisher", () => {
 		const publisher = createFleetRoutePublisher({
 			github: api.transport,
 			minIntervalMs: 60_000,
+			minComputeIntervalMs: 0,
 		});
 		const writes = () =>
 			api.calls.filter((call) => call.method !== "GET").length;
@@ -182,6 +184,7 @@ describe("fleet route publisher", () => {
 		const api = github({ variableStatus: 403 });
 		const publisher = createFleetRoutePublisher({
 			github: api.transport,
+			minComputeIntervalMs: 0,
 			log: (event, fields) => events.push([event, { ...fields }]),
 		});
 		expect((await publisher.publish(input()))?.outcome).toBe("failed");
@@ -211,5 +214,83 @@ describe("fleet route publisher", () => {
 		});
 		await expect(publisher.publish(input())).resolves.toBeUndefined();
 		expect(events).toEqual(["hobo_ci_fleet_routes_error"]);
+		// The next dispatch ticks do not ask GitHub or log again.
+		await publisher.publish(input(0, "2026-11-10T00:00:02Z"));
+		await publisher.publish(input(0, "2026-11-10T00:00:14Z"));
+		expect(api.calls).toHaveLength(1);
+		expect(events).toHaveLength(1);
+		await publisher.publish(input(0, "2026-11-10T00:00:15Z"));
+		expect(api.calls).toHaveLength(2);
+	});
+
+	it("computes a repository's table at most once per interval and reads leases only then", async () => {
+		const api = github();
+		const publisher = createFleetRoutePublisher({ github: api.transport });
+		let reads = 0;
+		const tick = (at: string) =>
+			publisher.publish({
+				...input(0, at),
+				leases: async () => {
+					reads += 1;
+					return [];
+				},
+			});
+		expect((await tick("2026-11-10T00:00:00Z"))?.outcome).toBe("published");
+		await expect(tick("2026-11-10T00:00:02Z")).resolves.toBeUndefined();
+		await expect(tick("2026-11-10T00:00:14Z")).resolves.toBeUndefined();
+		expect(reads).toBe(1);
+		expect((await tick("2026-11-10T00:00:15Z"))?.outcome).toBe("unchanged");
+		expect(reads).toBe(2);
+	});
+
+	it("keeps pull requests and public-repository trunk jobs off a shared ARC scale set", async () => {
+		const withArc = () => {
+			const current = account();
+			current.offers.push(
+				create(OfferSchema, {
+					id: "arc",
+					provider: "kubernetes",
+					providerAccountId: "arc-account",
+					enabled: true,
+					runsOn: "hobo-arc",
+					backend: "gh-actions",
+					concurrency: 4,
+					budgetMicros: 0,
+					observedAt: "2026-11-09T00:00:00Z",
+					validUntil: "2026-12-09T00:00:00Z",
+					sourceUrl: "https://example.test/rates",
+					bridgeAcknowledged: true,
+				}),
+			);
+			return current;
+		};
+		const routes = async (options: {
+			private: boolean;
+			isolatedOnly: boolean;
+		}) => {
+			const api = github({ private: options.private });
+			const publisher = createFleetRoutePublisher({ github: api.transport });
+			const result = await publisher.publish({
+				...input(2),
+				account: withArc(),
+				isolatedOnly: options.isolatedOnly,
+			});
+			return result?.table.routes;
+		};
+		// Public: nothing may use the shared cluster, so GitHub-hosted takes it.
+		expect(await routes({ private: false, isolatedOnly: false })).toEqual({
+			pr: "ubuntu-24.04",
+			fork: "ubuntu-24.04",
+			trunk: "ubuntu-24.04",
+		});
+		// Private and not isolated-only: trunk may spill to ARC, pull requests may not.
+		expect(await routes({ private: true, isolatedOnly: false })).toEqual({
+			pr: "ubuntu-24.04",
+			fork: "ubuntu-24.04",
+			trunk: "hobo-arc",
+		});
+		expect((await routes({ private: true, isolatedOnly: true }))?.trunk).toBe(
+			"ubuntu-24.04",
+		);
 	});
 });

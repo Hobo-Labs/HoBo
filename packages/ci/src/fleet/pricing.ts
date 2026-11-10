@@ -13,6 +13,7 @@
 
 import {
 	catalogHashOf,
+	parseDecimal,
 	parseQuoteScenario,
 	type QuoteScenario,
 	stateHashOf,
@@ -24,6 +25,23 @@ const RUNNER_MINUTE = "runner-minute";
 const PLAN = "plan";
 const USD = "USD";
 const ZERO_HASH = `sha256:${"0".repeat(64)}`;
+
+const MICROS_SCALE = 6;
+
+/** Whole microdollars, rounded up: a bound must never understate a charge. */
+export function usdToMicrosCeil(decimal: string): number | undefined {
+	const parsed = parseDecimal(decimal);
+	if (parsed === undefined || parsed.coefficient < 0n) return undefined;
+	const shift = MICROS_SCALE - parsed.scale;
+	let micros: bigint;
+	if (shift >= 0) micros = parsed.coefficient * 10n ** BigInt(shift);
+	else {
+		const divisor = 10n ** BigInt(-shift);
+		micros = parsed.coefficient / divisor;
+		if (parsed.coefficient % divisor !== 0n) micros += 1n;
+	}
+	return micros <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(micros) : undefined;
+}
 
 const MINUTE_METER = {
 	dimension: RUNNER_MINUTE,

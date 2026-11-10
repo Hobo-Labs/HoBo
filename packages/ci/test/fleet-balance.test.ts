@@ -63,6 +63,7 @@ const PUBLIC_ORG_PR: FleetDemand = {
 	repository: { visibility: "public", ownerType: "organization" },
 	forkPullRequest: false,
 	needsDocker: true,
+	isolationRequired: false,
 };
 
 function balance(
@@ -256,6 +257,39 @@ describe("fleet eligibility", () => {
 		);
 	});
 
+	it("keeps a job that needs its own machine off shared members", () => {
+		const result = balance(all, {
+			demand: {
+				...PUBLIC_ORG_PR,
+				needsDocker: false,
+				isolationRequired: true,
+			},
+		});
+		expect(refusal(result, "arc-remote")).toBe("fleet.isolation");
+		expect(refusal(result, "agent-box")).toBe("fleet.isolation");
+		expect(refusal(result, "github-hosted-public")).toBeUndefined();
+		expect(refusal(result, "hobo-box")).toBeUndefined();
+	});
+
+	it("reaches a job queued on another label the member's runners register with", () => {
+		const trunk = { ...PUBLIC_ORG_PR, queuedOnLabel: "hobo-trunk" };
+		expect(
+			balance([member("hobo-box", { concurrency: 3 })], { demand: trunk })
+				.refusals[0]?.code,
+		).toBe("fleet.label-bound");
+		expect(
+			balance(
+				[
+					member("hobo-box", {
+						concurrency: 3,
+						servesLabels: ["hobo-trunk"],
+					}),
+				],
+				{ demand: trunk },
+			).selected?.memberId,
+		).toBe("hobo-box");
+	});
+
 	it("skips disabled, unhealthy and full members", () => {
 		const result = balance([
 			member("hobo-box", { concurrency: 3, activeJobs: 3 }),
@@ -409,6 +443,29 @@ describe("fleet budget policy", () => {
 		expect(result.selected?.memberId).toBe("modal-sandbox-4vcpu");
 	});
 
+	it("holds a payer to the operator's own ceiling and the account to its legacy one", () => {
+		const capped = balance([
+			member("modal-sandbox-4vcpu", {
+				payerExposureMicros: 950_000,
+				payerBudgetMicros: 1_000_000,
+			}),
+			member("github-hosted-public"),
+		]);
+		expect(capped.refusals[0]?.code).toBe("fleet.payer-budget");
+		// A free member is never refused for money.
+		expect(capped.selected?.memberId).toBe("github-hosted-public");
+		const legacy = balance(rented, {
+			exposureMicros: 4_999_000,
+			ceilingMicros: 5_000_000,
+		});
+		expect(legacy.ranking.map((choice) => choice.memberId)).toEqual([
+			"github-hosted-public",
+		]);
+		expect(
+			legacy.refusals.filter((entry) => entry.code === "fleet.account-budget"),
+		).toHaveLength(2);
+	});
+
 	it("applies the concurrency and queue-age ceilings CI admission applies", () => {
 		const constrained = policy({}, [
 			{ key: "work.concurrent", workload: "ci", unit: "count", maximum: 4 },
@@ -471,6 +528,7 @@ describe("fleet route table", () => {
 				repository: { visibility: "public", ownerType: "organization" },
 				forkPullRequest: false,
 				needsDocker: true,
+				isolationRequired: true,
 			},
 		},
 		{
@@ -481,6 +539,7 @@ describe("fleet route table", () => {
 				repository: { visibility: "public", ownerType: "organization" },
 				forkPullRequest: false,
 				needsDocker: true,
+				isolationRequired: true,
 			},
 		},
 	] as const;

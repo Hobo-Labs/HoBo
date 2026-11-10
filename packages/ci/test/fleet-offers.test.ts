@@ -188,7 +188,11 @@ describe("fleet offers", () => {
 	});
 
 	it("balances the account's real offers: box, then ARC, then rented, then GitHub", () => {
-		const spill = (boxJobs: number, arcJobs: number) => {
+		const spill = (
+			boxJobs: number,
+			arcJobs: number,
+			isolationRequired = false,
+		) => {
 			const leases = [
 				...Array.from({ length: boxJobs }, () => lease("box", "running")),
 				...Array.from({ length: arcJobs }, () => lease("arc", "running")),
@@ -204,6 +208,7 @@ describe("fleet offers", () => {
 					repository: { visibility: "public", ownerType: "organization" },
 					forkPullRequest: false,
 					needsDocker: true,
+					isolationRequired,
 				},
 				policy: fleetBudgetPolicy(current),
 				...fleetAccountExposure(current, leases),
@@ -214,6 +219,90 @@ describe("fleet offers", () => {
 		expect(spill(0, 0)).toEqual(["box", "arc", "blacksmith", "github"]);
 		expect(spill(3, 0)).toEqual(["arc", "blacksmith", "github"]);
 		expect(spill(3, 3)).toEqual(["blacksmith", "github"]);
+		// A job that needs its own machine never lands on the shared cluster.
+		expect(spill(3, 0, true)).toEqual(["blacksmith", "github"]);
+	});
+
+	it("does not count usage the offer's observation already covers", () => {
+		const leases = [
+			lease("blacksmith", "completed", {
+				billedFreeMinutes: 500,
+				paidMicros: 70_000,
+				settledAt: "2026-11-01T00:00:00Z",
+			}),
+			lease("blacksmith", "completed", {
+				billedFreeMinutes: 90,
+				paidMicros: 40_000,
+				settledAt: "2026-11-09T12:00:00Z",
+			}),
+		];
+		const blacksmith = fleetMembersFromAccount(account(), leases, {
+			poolLabel: "hobo",
+		}).find((member) => member.model.id === "blacksmith");
+		expect(blacksmith).toMatchObject({
+			payerExposureMicros: 40_000,
+			commercial: { allowanceRemainingMinutes: "1410" },
+		});
+		const observed = create(AccountSchema, {
+			...account(),
+			usageObservedAt: "2026-11-09T00:00:00Z",
+		});
+		expect(fleetAccountExposure(observed, leases).exposureMicros).toBe(40_000);
+	});
+
+	it("sums one provider account's spend across every offer it backs", () => {
+		const shared = create(AccountSchema, {
+			...account(),
+			offers: [
+				offer("depot-small", "depot", "depot-ubuntu-24.04"),
+				offer("depot-large", "depot", "depot-ubuntu-24.04-4"),
+			],
+		});
+		const held = (offerId: string) =>
+			lease(offerId, "running", {
+				provider: "depot",
+				providerAccountId: "depot-account",
+				reservedPaidMicros: 600_000,
+			});
+		const members = fleetMembersFromAccount(
+			shared,
+			[held("depot-small"), held("depot-large")],
+			{ poolLabel: "hobo" },
+		);
+		expect(members.map((member) => member.payerExposureMicros)).toEqual([
+			1_200_000, 1_200_000,
+		]);
+		expect(members.map((member) => member.activeJobs)).toEqual([1, 1]);
+	});
+
+	it("takes the ceiling the operator set, not the catalog's, and carries the offer's budget", () => {
+		const raised = create(AccountSchema, {
+			...account(),
+			offers: [offer("github", "github", "ubuntu-24.04", { concurrency: 60 })],
+		});
+		const [github] = fleetMembersFromAccount(raised, [], { poolLabel: "hobo" });
+		expect(github?.concurrency).toBe(60);
+		expect(github?.model.concurrency).toBeUndefined();
+		expect(github?.payerBudgetMicros).toBe(10_000_000);
+	});
+
+	it("leaves out a backend that hosts no runner and lets the pool serve its other labels", () => {
+		const mixed = create(AccountSchema, {
+			...account(),
+			offers: [
+				offer("box", "hobo-box-worker", "hobo-isolated-worker", {
+					backend: "isolated-container",
+					budgetMicros: 0,
+				}),
+				offer("engine", "kubernetes", "dagger-engine", { backend: "dagger" }),
+			],
+		});
+		const members = fleetMembersFromAccount(mixed, [], {
+			poolLabel: "hobo",
+			extraPoolLabels: ["hobo-trunk"],
+		});
+		expect(members.map((member) => member.model.id)).toEqual(["box"]);
+		expect(members[0]?.servesLabels).toEqual(["hobo-trunk"]);
 	});
 
 	it("counts held and settled money as exposure", () => {
@@ -223,6 +312,10 @@ describe("fleet offers", () => {
 				lease("blacksmith", "completed", { paidMicros: 40_000 }),
 				lease("blacksmith", "expired", { reservedPaidMicros: 999 }),
 			]),
-		).toEqual({ exposureMicros: 120_000, activeWork: 1 });
+		).toEqual({
+			exposureMicros: 120_000,
+			activeWork: 1,
+			ceilingMicros: 5_000_000,
+		});
 	});
 });

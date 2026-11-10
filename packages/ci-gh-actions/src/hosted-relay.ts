@@ -1224,7 +1224,8 @@ export class HostedRelay {
 					installationId: connection.installationId,
 					repository: connection.repository,
 					account,
-					leases: await this.options.store.accountLeases(account.id),
+					leases: () => this.options.store.accountLeases(account.id),
+					isolatedOnly: connection.isolatedOnly,
 					at: this.now(),
 				});
 			} catch {

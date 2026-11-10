@@ -11,6 +11,9 @@
  * A class whose best member is injected, or that has no admitted member at
  * all, stays on its hobo label. Waiting there is the only place a job can
  * still be rescued, because injected capacity can come to it later.
+ *
+ * The published value is constrained by `#FleetRoutes` in
+ * `data-models/ci.cue`; a class added here needs a fixture there.
  */
 
 import {

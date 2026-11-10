@@ -47,7 +47,10 @@ export type FleetRoutePublishInput = Readonly<{
 	installationId: number;
 	repository: string;
 	account: Account;
-	leases: readonly Lease[];
+	/** Read only when a table is actually computed. */
+	leases: () => Promise<readonly Lease[]>;
+	/** The connection admits isolated runners only. */
+	isolatedOnly: boolean;
 	/** Authoritative current time, RFC 3339 UTC. */
 	at: string;
 }>;
@@ -60,11 +63,15 @@ const Repository = z.object({
 const FACTS_TTL_MS = 10 * 60_000;
 /** A label that changes more often than this would chase individual jobs. */
 const DEFAULT_MIN_INTERVAL_MS = 60_000;
+/** The dispatch pass runs every couple of seconds; a table need not. */
+const DEFAULT_MIN_COMPUTE_INTERVAL_MS = 15_000;
 
 export function createFleetRoutePublisher(options: {
 	github: GithubTransport;
 	variable?: string;
 	minIntervalMs?: number;
+	/** Minimum gap between computations for one repository, failed or not. */
+	minComputeIntervalMs?: number;
 	log?: FleetRouteLog;
 }) {
 	const variable = options.variable ?? FLEET_ROUTES_VARIABLE;
@@ -78,6 +85,9 @@ export function createFleetRoutePublisher(options: {
 		}
 	>();
 	const published = new Map<string, { value: string; atMs: number }>();
+	const minComputeIntervalMs =
+		options.minComputeIntervalMs ?? DEFAULT_MIN_COMPUTE_INTERVAL_MS;
+	const attempted = new Map<string, number>();
 
 	async function repositoryFacts(
 		installationId: number,
@@ -124,18 +134,33 @@ export function createFleetRoutePublisher(options: {
 		return created.status;
 	}
 
-	/** Resolves to undefined, and logs, when the table could not be computed. */
+	/**
+	 * Resolves to undefined when the repository was computed too recently, or,
+	 * with a log line, when the table could not be computed.
+	 */
 	async function publish(
 		input: FleetRoutePublishInput,
 	): Promise<FleetRoutePublication | undefined> {
 		const nowMs = Date.parse(input.at);
+		const lastAttemptMs = attempted.get(input.repository);
+		if (
+			lastAttemptMs !== undefined &&
+			nowMs - lastAttemptMs < minComputeIntervalMs
+		)
+			return undefined;
+		// Recorded first, so a failing lookup backs off like a successful one.
+		attempted.set(input.repository, nowMs);
 		try {
 			const repository = await repositoryFacts(
 				input.installationId,
 				input.repository,
 				nowMs,
 			);
-			const { account, leases } = input;
+			const { account } = input;
+			const leases = await input.leases();
+			// Admission requires isolation for every public-repository job and
+			// every pull request, whatever the connection says.
+			const isolated = input.isolatedOnly || repository.visibility === "public";
 			const minutes = account.maxRuntimeMinutes + account.startupMinutes;
 			const demand = {
 				minutes,
@@ -148,22 +173,35 @@ export function createFleetRoutePublisher(options: {
 			const table = fleetRouteTable({
 				members: fleetMembersFromAccount(account, leases, {
 					poolLabel: RUNNER_LABEL,
+					extraPoolLabels: [TRUNK_RUNNER_LABEL],
 				}),
 				classes: [
 					{
 						name: "pr",
 						hoboLabel: RUNNER_LABEL,
-						demand: { ...demand, forkPullRequest: false },
+						demand: {
+							...demand,
+							forkPullRequest: false,
+							isolationRequired: true,
+						},
 					},
 					{
 						name: "fork",
 						hoboLabel: RUNNER_LABEL,
-						demand: { ...demand, forkPullRequest: true },
+						demand: {
+							...demand,
+							forkPullRequest: true,
+							isolationRequired: true,
+						},
 					},
 					{
 						name: "trunk",
 						hoboLabel: TRUNK_RUNNER_LABEL,
-						demand: { ...demand, forkPullRequest: false },
+						demand: {
+							...demand,
+							forkPullRequest: false,
+							isolationRequired: isolated,
+						},
 					},
 				],
 				policy: fleetBudgetPolicy(account),

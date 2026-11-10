@@ -19,7 +19,7 @@ GitHub or vendor verification, a published Pact broker, or a live runner pass.
 
 | Artifact | Executed boundary |
 | --- | --- |
-| `github-app-boundary.pact.json` | Signed App JWT exchange, installation credentials, dispatch and JIT registration, error and redirect handling |
+| `github-app-boundary.pact.json` | Signed App JWT exchange, installation credentials, dispatch and JIT registration, the fleet route table variable (repository read, update, create, refusal), error and redirect handling |
 | `relay-boundary.pact.json` | Signed webhook intake and single-use authenticated JIT claims |
 | `onboarding-boundary.pact.json` | App/installation/repository discovery, reviewed setup branch and pull request, merged-source verification and protected bridge connection |
 | `control-plane-boundary.pact.json` | Account authentication and scopes, revisioned policy, stored setup operations and lease reconciliation |

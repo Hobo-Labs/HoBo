@@ -84,8 +84,9 @@ out of that without special cases:
 in order and never merges them.
 
 1. **Can this member run the job at all?** Repository visibility and ownership,
-   Docker, forks, the member's circuit breaker, its free slots, and whether the
-   label the job is queued on can still reach it. A refusal here carries a
+   Docker, forks, whether the job needs a machine nothing else shares, the
+   member's circuit breaker, its free slots, and whether the label the job is
+   queued on can still reach it. A refusal here carries a
    code such as `fleet.capacity` or `fleet.visibility`.
 2. **What does the job cost there?** Dispatcher v2 rates every remaining member
    through the pricing engine and ranks them by incremental billed amount. A
@@ -95,6 +96,15 @@ in order and never merges them.
    `work.cost`, `work.duration`, `work.concurrent`, `provider.cost` for each
    payer, and `ci.attempts` and `ci.queue.duration` when known. A refusal
    carries the policy's own code, such as `budget.policy.exhausted`.
+
+Two ceilings that admission applies outside the policy are applied here too: the
+operator's own ceiling on each payer, and the account's legacy ceiling, which
+intersects an authored policy's limit. A free member is never refused for money.
+
+Isolation follows admission's rule. A public repository's jobs and every pull
+request must run on a machine nothing else shares, so a shared ARC cluster or an
+agent's workstation is refused for them with `fleet.isolation`, however cheap it
+is.
 
 Roles order the result. `primary` is capacity that is already paid for,
 `overflow` is rented capacity ranked by price, and `last-resort` is considered
@@ -127,14 +137,28 @@ failed write is logged and never disturbs admission. Publishing is off unless
 the box daemon runs with `HOBO_CI_FLEET_ROUTES=1`, and the GitHub App needs
 repository **Variables: write**.
 
+The table is computed at most every fifteen seconds per repository, and a
+failed lookup waits the same interval, so the two-second dispatch pass neither
+re-rates the fleet nor retries GitHub on every tick. The published value is
+constrained by `#FleetRoutes` in `packages/ci/data-models/ci.cue`, and the
+repository read and variable writes are in the GitHub App consumer contract.
+
 The rate, included minutes and ceiling of each member come from the connected
-offer, which is what the operator observed for this account. The provider's
+offer, which is what the operator observed for this account. Usage that the
+offer's observation already covers is not counted again, exactly as in
+admission. The provider's
 model supplies what does not vary by account: rounding, plan fee, eligibility
 and tier. `modelledOfferTerms` reads a model as the rate observation an operator
 would post for a new offer.
 
 ## What is not built
 
+- **Label-routed work is not accounted.** A job that asks for a provider's label
+  never passes through relay admission, so it holds no lease: its cost does not
+  reach the budget and its slot does not count against the member. Until the
+  relay records those jobs from their `workflow_job` events, a route to a paid
+  label provider is bounded only by that provider's own spend limit. This must
+  be closed before a workflow reads the table for a paid provider.
 - **Workflows do not read the route table yet.** Every job still asks for
   `hobo` or `hobo-trunk`, so publishing the table changes nothing until a
   workflow indexes it. That change also needs jobs that run off the box: today

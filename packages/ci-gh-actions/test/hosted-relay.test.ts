@@ -1432,7 +1432,7 @@ it("hands each connected repository's account and leases to the fleet route publ
 				published.push({
 					repository: input.repository,
 					accountId: input.account.id,
-					leases: input.leases.length,
+					leases: (await input.leases()).length,
 					at: input.at,
 				});
 				return undefined;

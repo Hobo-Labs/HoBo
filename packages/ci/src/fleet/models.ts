@@ -75,6 +75,12 @@ export type RunnerFinancialModel = Readonly<{
 		docker: boolean;
 		/** Jobs from forks may run here. */
 		forkPullRequests: boolean;
+		/**
+		 * Every job gets a machine nothing else shares and that is discarded
+		 * afterwards. Admission requires this for public repositories and pull
+		 * requests; a shared cluster or a workstation does not qualify.
+		 */
+		isolated: boolean;
 	}>;
 	evidence: Readonly<{
 		source: string;
@@ -107,6 +113,7 @@ function evidence(
 const HOSTED_VM = {
 	privateRepositories: true,
 	docker: true,
+	isolated: true,
 } as const;
 
 /**
@@ -155,6 +162,7 @@ export const RUNNER_FINANCIAL_MODELS = [
 			docker: false,
 			// The box holds the agent's own credentials.
 			forkPullRequests: false,
+			isolated: false,
 		},
 		evidence: evidence(
 			"https://github.com/Hobo-Labs/HoBo/blob/main/packages/ci-gh-actions/README.md",
@@ -178,6 +186,8 @@ export const RUNNER_FINANCIAL_MODELS = [
 			...HOSTED_VM,
 			organizationOnly: false,
 			forkPullRequests: false,
+			// Pods share the operator's cluster and its node credentials.
+			isolated: false,
 		},
 		evidence: evidence(
 			"https://docs.github.com/en/actions/tutorials/use-actions-runner-controller/deploy-runner-scale-sets",
@@ -364,6 +374,7 @@ export const RUNNER_FINANCIAL_MODELS = [
 			organizationOnly: false,
 			docker: true,
 			forkPullRequests: true,
+			isolated: true,
 		},
 		evidence: evidence(
 			"https://docs.github.com/en/actions/reference/runners/github-hosted-runners",
@@ -387,6 +398,7 @@ export const RUNNER_FINANCIAL_MODELS = [
 			organizationOnly: false,
 			docker: true,
 			forkPullRequests: true,
+			isolated: true,
 		},
 		evidence: evidence(
 			"https://docs.github.com/en/billing/reference/actions-runner-pricing",

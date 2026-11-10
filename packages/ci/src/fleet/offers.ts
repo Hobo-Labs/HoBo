@@ -11,13 +11,14 @@
 import { type BudgetPolicy, parseBudgetPolicy } from "@hobo/core";
 import type { Account, Lease } from "../_generated/ci_pb.js";
 import { ciBudgetPolicy, ciRoutingObjective } from "../policy.js";
+import { ACTIVE_STATES, shouldCountLocalUsage } from "../routing.js";
 import type { FleetMemberState } from "./balance.js";
 import {
 	type FleetRole,
 	RUNNER_FINANCIAL_MODELS,
 	type RunnerFinancialModel,
 } from "./models.js";
-import type { RunnerCommercialState } from "./pricing.js";
+import { type RunnerCommercialState, usdToMicrosCeil } from "./pricing.js";
 
 type OfferIdentity = Readonly<{
 	provider: string;
@@ -43,6 +44,9 @@ export function runnerModelForOffer(
 ): RunnerFinancialModel | undefined {
 	if (isIsolatedHost(offer))
 		return RUNNER_FINANCIAL_MODELS.find((model) => model.id === "hobo-box");
+	// A Dagger engine or a Sandbox under the same provider hosts no runner a
+	// job's label could reach.
+	if (offer.backend !== "" && offer.backend !== "gh-actions") return undefined;
 	const provided = RUNNER_FINANCIAL_MODELS.filter(
 		(model) => model.provider === offer.provider && model.binding === "label",
 	);
@@ -57,27 +61,17 @@ export function fleetRoleOfOffer(offer: OfferIdentity): FleetRole | undefined {
 	return runnerModelForOffer(offer)?.role;
 }
 
-/** Whole microdollars per minute, rounded up. */
-function microsPerMinute(usdPerMinute: string): number {
-	const [whole = "0", fraction = ""] = usdPerMinute.split(".");
-	const padded = `${fraction}000000`;
-	const micros =
-		Number(whole) * 1_000_000 +
-		Number(padded.slice(0, 6)) +
-		(/[1-9]/.test(padded.slice(6)) ? 1 : 0);
-	if (!Number.isSafeInteger(micros) || micros < 0)
-		throw new TypeError(`invalid modelled rate ${usdPerMinute}`);
-	return micros;
-}
-
 /**
  * The rate fields of an offer, read from its model: what an operator posts as
  * the offer's rate observation. Balances and spend are account facts and are
  * not here.
  */
 export function modelledOfferTerms(model: RunnerFinancialModel) {
+	const priceMicrosPerMinute = usdToMicrosCeil(model.usdPerMinute);
+	if (priceMicrosPerMinute === undefined)
+		throw new TypeError(`invalid modelled rate ${model.usdPerMinute}`);
 	return {
-		priceMicrosPerMinute: microsPerMinute(model.usdPerMinute),
+		priceMicrosPerMinute,
 		freeMinutes: Number(model.monthlyFreeMinutes ?? "0"),
 		concurrency: model.concurrency,
 		sourceUrl: model.evidence.source,
@@ -94,19 +88,11 @@ function usdFromMicros(micros: number): string {
 	return `${whole}.${fraction}`;
 }
 
-/** Lease states that hold capacity and money. Mirrors admission routing. */
-const HOLDING = new Set([
-	"reserved",
-	"dispatching",
-	"dispatched",
-	"claiming",
-	"running",
-	"uncertain",
-]);
-
 export type FleetAccountFacts = Readonly<{
 	/** Label injected runners serve for this account's pool, normally `hobo`. */
 	poolLabel: string;
+	/** Other labels the pool's runners register with, such as `hobo-trunk`. */
+	extraPoolLabels?: readonly string[];
 	/** Offers whose circuit breaker is open. */
 	unhealthyOfferIds?: ReadonlySet<string>;
 	/** Opt-in providers where the owner has turned public repositories on. */
@@ -133,13 +119,30 @@ export function fleetMembersFromAccount(
 		if (!base) return [];
 		const isolated = isIsolatedHost(offer);
 		const mine = leases.filter((lease) => lease.offerId === offer.id);
-		const holding = mine.filter((lease) => HOLDING.has(lease.state));
-		const settled = mine.filter((lease) => lease.state === "completed");
+		const holding = mine.filter((lease) => ACTIVE_STATES.has(lease.state));
+		// As in admission: usage the offer's observation already covers is in
+		// its balances and is not counted a second time.
+		const counted = (lease: Lease) =>
+			lease.state === "completed" &&
+			shouldCountLocalUsage(lease, offer.observedAt);
+		const settled = mine.filter(counted);
+		// One provider account can back several offers; its spend is all of them.
+		const payerLeases = leases.filter((lease) =>
+			lease.providerAccountId
+				? lease.provider === offer.provider &&
+					lease.providerAccountId === offer.providerAccountId
+				: lease.offerId === offer.id,
+		);
 		const freeUsed =
 			holding.reduce((sum, lease) => sum + lease.reservedFreeMinutes, 0) +
 			settled.reduce((sum, lease) => sum + lease.billedFreeMinutes, 0);
 		// The account's observed allowance replaces the catalog's, never adds to it.
-		const { monthlyFreeMinutes: _catalogAllowance, ...structural } = base;
+		// So does its ceiling: a plan-dependent limit is whatever the operator set.
+		const {
+			monthlyFreeMinutes: _catalogAllowance,
+			concurrency: _catalogCeiling,
+			...structural
+		} = base;
 		// One label can be several priced classes (GitHub prices a public and a
 		// private repository differently). The offer carries this account's rate,
 		// so the member serves every repository any of those classes serves.
@@ -202,8 +205,14 @@ export function fleetMembersFromAccount(
 				payer: offer.providerAccountId,
 				payerExposureMicros:
 					offer.spentMicros +
-					holding.reduce((sum, lease) => sum + lease.reservedPaidMicros, 0) +
-					settled.reduce((sum, lease) => sum + lease.paidMicros, 0),
+					payerLeases
+						.filter((lease) => ACTIVE_STATES.has(lease.state))
+						.reduce((sum, lease) => sum + lease.reservedPaidMicros, 0) +
+					payerLeases
+						.filter(counted)
+						.reduce((sum, lease) => sum + lease.paidMicros, 0),
+				payerBudgetMicros: offer.budgetMicros,
+				servesLabels: isolated ? (facts.extraPoolLabels ?? []) : [],
 			},
 		];
 	});
@@ -241,14 +250,20 @@ export function fleetAccountExposure(
 	leases: readonly Lease[],
 ) {
 	const mine = leases.filter((lease) => lease.accountId === account.id);
-	const holding = mine.filter((lease) => HOLDING.has(lease.state));
+	const holding = mine.filter((lease) => ACTIVE_STATES.has(lease.state));
 	return {
 		exposureMicros:
 			account.spentMicros +
 			holding.reduce((sum, lease) => sum + lease.reservedPaidMicros, 0) +
 			mine
-				.filter((lease) => lease.state === "completed")
+				.filter(
+					(lease) =>
+						lease.state === "completed" &&
+						(!account.usageObservedAt ||
+							shouldCountLocalUsage(lease, account.usageObservedAt)),
+				)
 				.reduce((sum, lease) => sum + lease.paidMicros, 0),
 		activeWork: holding.length,
+		ceilingMicros: account.budgetMicros,
 	};
 }

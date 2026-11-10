@@ -25,13 +25,16 @@ import {
 	evaluateBudgetPolicy,
 } from "@hobo/core";
 import { decideDispatchV2 } from "@hobo/dispatcher";
-import { parseDecimal } from "@hobo/pricing";
 import type {
 	FleetBinding,
 	FleetRole,
 	RunnerFinancialModel,
 } from "./models.js";
-import { type RunnerCommercialState, runnerQuoteScenario } from "./pricing.js";
+import {
+	type RunnerCommercialState,
+	runnerQuoteScenario,
+	usdToMicrosCeil,
+} from "./pricing.js";
 
 export type FleetMemberState = Readonly<{
 	model: RunnerFinancialModel;
@@ -51,6 +54,10 @@ export type FleetMemberState = Readonly<{
 	payer: string;
 	/** That payer's spend and held commitments this budget period. */
 	payerExposureMicros: number;
+	/** The operator's own ceiling on that payer. Absent means none. */
+	payerBudgetMicros?: number;
+	/** Labels its runners register with besides the model's `runsOn`. */
+	servesLabels?: readonly string[];
 }>;
 
 export type FleetDemand = Readonly<{
@@ -64,6 +71,11 @@ export type FleetDemand = Readonly<{
 	}>;
 	forkPullRequest: boolean;
 	needsDocker: boolean;
+	/**
+	 * The job must run on a machine nothing else shares: admission requires it
+	 * for public repositories, pull requests and isolated-only connections.
+	 */
+	isolationRequired: boolean;
 	/**
 	 * The label the job is already queued on. GitHub does not let a queued job
 	 * change `runs-on`, so only a member serving that label can still take it.
@@ -82,6 +94,11 @@ export type FleetBalanceInput = Readonly<{
 	exposureMicros: number;
 	/** CI work already held by the admitting authority. */
 	activeWork: number;
+	/**
+	 * The account's legacy ceiling. Admission intersects it with an authored
+	 * policy's limit, so the lower of the two applies here too.
+	 */
+	ceilingMicros?: number;
 	now: string;
 	/** Opening a new provider account to place this job is permitted. */
 	allowNewProviderAgreements: boolean;
@@ -116,23 +133,6 @@ export type FleetBalance = Readonly<{
 }>;
 
 const ROLE_ORDER: readonly FleetRole[] = ["primary", "overflow", "last-resort"];
-const MICROS_SCALE = 6;
-
-/** Whole microdollars, rounded up: a bound must never understate a charge. */
-function usdToMicrosCeil(decimal: string): number | undefined {
-	const parsed = parseDecimal(decimal);
-	if (parsed === undefined || parsed.coefficient < 0n) return undefined;
-	const shift = MICROS_SCALE - parsed.scale;
-	let micros: bigint;
-	if (shift >= 0) micros = parsed.coefficient * 10n ** BigInt(shift);
-	else {
-		const divisor = 10n ** BigInt(-shift);
-		micros = parsed.coefficient / divisor;
-		if (parsed.coefficient % divisor !== 0n) micros += 1n;
-	}
-	return micros <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(micros) : undefined;
-}
-
 function roleOf(member: FleetMemberState): FleetRole {
 	return member.role ?? member.model.role;
 }
@@ -159,7 +159,8 @@ function ineligible(
 		return refuse("fleet.unhealthy", "member's circuit breaker is open");
 	if (
 		demand.queuedOnLabel !== undefined &&
-		demand.queuedOnLabel !== model.runsOn
+		demand.queuedOnLabel !== model.runsOn &&
+		member.servesLabels?.includes(demand.queuedOnLabel) !== true
 	)
 		return refuse(
 			"fleet.label-bound",
@@ -197,6 +198,11 @@ function ineligible(
 		return refuse("fleet.docker", "member has no Docker daemon");
 	if (demand.forkPullRequest && !eligibility.forkPullRequests)
 		return refuse("fleet.fork", "member does not run jobs from forks");
+	if (demand.isolationRequired && !eligibility.isolated)
+		return refuse(
+			"fleet.isolation",
+			"job requires a machine nothing else shares; this member is shared",
+		);
 	const ceiling = ceilingOf(member);
 	if (ceiling !== undefined && member.activeJobs >= ceiling)
 		return refuse("fleet.capacity", `all ${ceiling} slots are in use`);
@@ -320,6 +326,31 @@ export function balanceFleet(input: FleetBalanceInput): FleetBalance {
 					memberId: member.model.id,
 					code: "pricing.INVALID_AMOUNT",
 					reason: "quote is not a nonnegative bounded amount",
+				});
+				continue;
+			}
+			const payerSpent = payerExposure.get(member.payer) ?? 0;
+			if (
+				micros > 0 &&
+				member.payerBudgetMicros !== undefined &&
+				payerSpent + micros > member.payerBudgetMicros
+			) {
+				refusals.push({
+					memberId: member.model.id,
+					code: "fleet.payer-budget",
+					reason: "job would exceed the operator's ceiling for this payer",
+				});
+				continue;
+			}
+			if (
+				micros > 0 &&
+				input.ceilingMicros !== undefined &&
+				input.exposureMicros + micros > input.ceilingMicros
+			) {
+				refusals.push({
+					memberId: member.model.id,
+					code: "fleet.account-budget",
+					reason: "job would exceed the account's legacy ceiling",
 				});
 				continue;
 			}
