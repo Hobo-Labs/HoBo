@@ -683,7 +683,12 @@ describe("the walk's cost", () => {
 	const counting = () => {
 		let workspaceReads = 0;
 		const lookups = new Map<string, number>();
-		const tracked = new Set(files.keys());
+		class CountedFiles extends Set<string> {
+			override has(path: string): boolean {
+				lookups.set(path, (lookups.get(path) ?? 0) + 1);
+				return super.has(path);
+			}
+		}
 		// Each read of a workspace's `dir` is one comparison against a path.
 		const workspaces = packages.map((dir) => ({
 			get dir() {
@@ -694,13 +699,7 @@ describe("the walk's cost", () => {
 			dependencies: [],
 		}));
 		const tree: Repo = {
-			files: {
-				has: (path: string) => {
-					lookups.set(path, (lookups.get(path) ?? 0) + 1);
-					return tracked.has(path);
-				},
-				[Symbol.iterator]: () => tracked[Symbol.iterator](),
-			} as ReadonlySet<string>,
+			files: new CountedFiles(files.keys()),
 			read: (path) => files.get(path),
 			workspaces,
 		};
