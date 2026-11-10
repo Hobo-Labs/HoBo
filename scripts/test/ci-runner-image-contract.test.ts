@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { expect } from "vitest";
 import {
@@ -29,6 +29,7 @@ import {
 	MISE_LOCK,
 	MISE_TOML,
 	parseDockerHubDigestRef,
+	parseMiseToolNames,
 	playwrightHeadlessShellExecutables,
 	probeMiseTool,
 	REQUIRED_COMMANDS,
@@ -113,12 +114,15 @@ describe("ci-runner tool command diagnostics", () => {
 });
 
 describe("ci-runner mise tool sync", () => {
+	const miseWhichExecutable = (tool: string) =>
+		`/opt/mise/installs/${tool}/0/bin/${tool}`;
+
 	it("installs missing locked tools and exports their bin dirs to current and GitHub PATH", () => {
 		const calls: { cmd: string; args: string[] }[] = [];
 		const appended: { path: string; data: string }[] = [];
 		const times = [100, 175];
-		const executable = "/opt/mise/installs/shellcheck/0.10.0/bin/shellcheck";
-		const binDir = "/opt/mise/installs/shellcheck/0.10.0/bin";
+		const executable = miseWhichExecutable("shellcheck");
+		const binDir = dirname(executable);
 		const env = {
 			PATH: "/usr/bin",
 			GITHUB_ACTIONS: "true",
@@ -127,13 +131,15 @@ describe("ci-runner mise tool sync", () => {
 		const result = syncMissingMiseTools(root, {
 			run: (cmd, args) => {
 				calls.push({ cmd, args });
+				if (cmd === "mise" && args.includes("which")) {
+					const tool = args.at(-1)!;
+					return { ok: true, out: miseWhichExecutable(tool) };
+				}
 				return {
 					ok: true,
-					out: args.includes("which")
-						? executable
-						: args.includes("ls")
-							? "shellcheck 0.10.0 (missing) /checkout/mise.toml 0.10.0\nnot-in-mise-toml 1 (missing)"
-							: "",
+					out: args.includes("ls")
+						? "shellcheck 0.10.0 (missing) /checkout/mise.toml 0.10.0\nnot-in-mise-toml 1 (missing)"
+						: "",
 				};
 			},
 			now: () => times.shift() ?? 175,
@@ -144,22 +150,116 @@ describe("ci-runner mise tool sync", () => {
 		expect(result.installed).toEqual(["shellcheck"]);
 		expect(result.elapsedMs).toBe(75);
 		expect(result.detail).toContain("installed shellcheck");
-		expect(env.PATH).toBe([binDir, "/usr/bin"].join(delimiter));
-		expect(appended).toEqual([
-			{ path: "/runner/github-path", data: `${binDir}\n` },
-		]);
-		expect(calls).toEqual([
-			{ cmd: "mise", args: ["--cd", root, "trust", "./mise.toml"] },
-			{
-				cmd: "mise",
-				args: ["--cd", root, "ls", "--current", "--missing", "--no-header"],
-			},
+		// Exactly one locked install, of the only missing configured tool.
+		expect(calls.filter((call) => call.args.includes("install"))).toEqual([
 			{
 				cmd: "mise",
 				args: ["--cd", root, "install", "--locked", "shellcheck"],
 			},
-			{ cmd: "mise", args: ["--cd", root, "which", "shellcheck"] },
 		]);
+		// The fake shell sees no tool on PATH, so every configured tool is
+		// resolved with `mise which`, in mise.toml order, and their bin dirs
+		// compose PATH exactly, in that order.
+		const configuredTools = parseMiseToolNames(
+			readFileSync(join(root, MISE_TOML), "utf8"),
+		);
+		expect(
+			calls
+				.filter((call) => call.cmd === "mise" && call.args.includes("which"))
+				.map((call) => call.args.at(-1)),
+		).toEqual(configuredTools);
+		const expectedDirs = configuredTools.map((tool) =>
+			dirname(miseWhichExecutable(tool)),
+		);
+		expect(env.PATH).toBe([...expectedDirs, "/usr/bin"].join(":"));
+		expect(appended).toEqual([
+			{
+				path: "/runner/github-path",
+				data: expectedDirs.map((dir) => `${dir}\n`).join(""),
+			},
+		]);
+		expect(env.PATH).toContain(binDir);
+	});
+
+	it("exports PATH-invisible configured tools when already installed (syft preflight)", () => {
+		const env = {
+			PATH: "/usr/bin",
+			GITHUB_ACTIONS: "true",
+			GITHUB_PATH: "/runner/github-path",
+		};
+		const appended: string[] = [];
+		const syftBin = dirname(miseWhichExecutable("syft"));
+		const installCalls: string[][] = [];
+		const result = syncMissingMiseTools(root, {
+			run: (cmd, args) => {
+				if (cmd === "mise" && args.includes("install")) {
+					installCalls.push(args);
+				}
+				if (cmd === "mise" && args.includes("which")) {
+					const tool = args.at(-1)!;
+					return { ok: true, out: miseWhichExecutable(tool) };
+				}
+				return { ok: true, out: "" };
+			},
+			env,
+			appendFile: (_path, data) => appended.push(data),
+		});
+		expect(result.ok).toBe(true);
+		expect(result.installed).toEqual([]);
+		expect(result.detail).toContain("already installed");
+		expect(installCalls).toEqual([]);
+		expect(env.PATH).toContain(syftBin);
+		expect(appended.join("")).toContain(`${syftBin}\n`);
+		const check = probeMiseTool(
+			"syft",
+			(cmd, _args) => {
+				if (cmd === "sh") {
+					return env.PATH?.includes(syftBin)
+						? { ok: true, out: miseWhichExecutable("syft") }
+						: { ok: true, out: "" };
+				}
+				if (cmd === "mise") {
+					return { ok: true, out: miseWhichExecutable("syft") };
+				}
+				return { ok: true, out: "Application: syft" };
+			},
+			root,
+		);
+		expect(check.ok).toBe(true);
+	});
+
+	it("does not prepend or resolve tools PATH already sees", () => {
+		const env = {
+			PATH: "/usr/bin",
+			GITHUB_ACTIONS: "true",
+			GITHUB_PATH: "/runner/github-path",
+		};
+		const appended: string[] = [];
+		const whichCalls: string[] = [];
+		const syftBin = dirname(miseWhichExecutable("syft"));
+		const result = syncMissingMiseTools(root, {
+			run: (cmd, args) => {
+				if (cmd === "sh") {
+					const tool = args[1]?.split(" ")[2] ?? "";
+					return {
+						ok: true,
+						out: tool === "syft" ? "" : `/usr/bin/${tool}`,
+					};
+				}
+				if (cmd === "mise" && args.includes("which")) {
+					const tool = args.at(-1)!;
+					whichCalls.push(tool);
+					return { ok: true, out: miseWhichExecutable(tool) };
+				}
+				return { ok: true, out: "" };
+			},
+			env,
+			appendFile: (_path, data) => appended.push(data),
+		});
+		expect(result.ok).toBe(true);
+		expect(whichCalls).toEqual(["syft"]);
+		expect(env.PATH).toBe(`${syftBin}:/usr/bin`);
+		expect(appended).toEqual([`${syftBin}\n`]);
 	});
 
 	it("keeps resolver failure diagnostics when install succeeds without a usable binary", () => {
@@ -196,6 +296,10 @@ describe("ci-runner mise tool sync", () => {
 		const result = syncMissingMiseTools(root, {
 			run: (_cmd, args) => {
 				calls.push(args);
+				if (args.includes("which")) {
+					const tool = args.at(-1)!;
+					return { ok: true, out: miseWhichExecutable(tool) };
+				}
 				return { ok: true, out: "" };
 			},
 		});
@@ -230,6 +334,7 @@ describe("ci-runner image contract (repo manifests)", () => {
 			"node",
 			"pnpm",
 			"shellcheck",
+			"syft",
 			"turbo",
 		]);
 		const platforms = [
@@ -307,7 +412,9 @@ describe("ci-runner image contract (repo manifests)", () => {
 		expect(lockedTools).toContain("shellcheck");
 		for (const tool of lockedTools) {
 			const versionArgs =
-				tool === "cue" || tool === "gitleaks" ? "version" : "--version";
+				tool === "cue" || tool === "gitleaks" || tool === "syft"
+					? "version"
+					: "--version";
 			expect(fallback, `${tool} in monolithic image`).toContain(
 				`mise exec -- ${tool} ${versionArgs}`,
 			);
@@ -344,7 +451,15 @@ describe("ci-runner image contract (repo manifests)", () => {
 			};
 		};
 		evaluateCiRunnerContract(root, { run });
-		const tools = ["cue", "gitleaks", "node", "pnpm", "shellcheck", "turbo"];
+		const tools = [
+			"cue",
+			"gitleaks",
+			"node",
+			"pnpm",
+			"shellcheck",
+			"syft",
+			"turbo",
+		];
 		const resolveCalls = calls.filter(
 			(call) => call.cmd === "mise" && call.args[2] === "which",
 		);
