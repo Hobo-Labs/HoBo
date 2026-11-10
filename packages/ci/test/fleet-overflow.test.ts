@@ -5,6 +5,7 @@ import {
 	isGithubLatestLabel,
 	isIsolatedFleetProvider,
 	isOverflowRunnerLabel,
+	LOCAL_HOST_RUNNER_LABEL,
 	queuedDemandLabels,
 	selectFleetBackend,
 	shouldAbortIsolatedFleetLease,
@@ -133,6 +134,36 @@ describe("selectFleetBackend", () => {
 			backend: "arc",
 			runsOn: "hobo-arc",
 			memberId: "arc-1",
+			spilled: true,
+		});
+	});
+
+	it("spills to an enrolled local box before github, and after arc", () => {
+		const local = (freeSlots: number, enabled = true): FleetMember =>
+			member({
+				id: "local-1",
+				backend: "local",
+				runsOn: LOCAL_HOST_RUNNER_LABEL,
+				freeSlots,
+				enabled,
+			});
+		const pick = (members: FleetMember[]) =>
+			selectFleetBackend({ members, currentLabels: ["hobo"] })?.backend;
+		expect(pick([hobo(0), github(4), local(1)])).toBe("local");
+		expect(pick([hobo(0), github(4), local(1), arc(1)])).toBe("arc");
+		// Enrolled but busy, or not enrolled at all: GitHub-hosted is next.
+		expect(pick([hobo(0), github(4), local(0)])).toBe("github");
+		expect(pick([hobo(0), github(4), local(3, false)])).toBe("github");
+		expect(pick([hobo(1), github(4), local(1)])).toBe("hobo");
+		expect(
+			selectFleetBackend({
+				members: [hobo(0), local(1)],
+				currentLabels: ["hobo"],
+			}),
+		).toEqual({
+			backend: "local",
+			runsOn: "hobo-local-host",
+			memberId: "local-1",
 			spilled: true,
 		});
 	});

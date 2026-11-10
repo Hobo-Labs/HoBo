@@ -227,7 +227,7 @@ PR CI (**HoBo CI Fabric** on `pull_request`) is always in this bucket for a publ
 
 ### 4. JIT label contract
 
-- Workflows must use exactly one runner label: **`hobo`**, or **`hobo-trunk`** for the jobs of `push`, `workflow_dispatch` and `merge_group` runs. The relay rejects jobs with extra runner labels. Each JIT runner registers with the one label its lease's job asked for (`packages/ci-gh-actions/src/runner-labels.ts`).
+- Workflows must use exactly one runner label. On the fleet that is **`hobo`**, or **`hobo-trunk`** for the jobs of `push`, `workflow_dispatch` and `merge_group` runs; a routed job asks for whichever label the route job chose (see "Runner routing" below). The relay rejects jobs with extra runner labels. Each JIT runner registers with the one label its lease's job asked for (`packages/ci-gh-actions/src/runner-labels.ts`).
 - Trunk-capable jobs in every enabled box workflow, including `hobo-ci.yml`, `release-hobo.yml` and `release-code.yml`, ask for **`hobo-trunk` by default** through `${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}`. This includes **PR impact gate** on `merge_group`; its `pull_request` runs use `hobo`. Setting repository variable **`HOBO_CI_TRUNK_RUNNER=false`** is the kill switch that returns trunk runs to `hobo`; pull-request-only jobs always use `hobo`. PR-only jobs, including Secret scan (trunk events scan history inside Main full gate), request plain `hobo`.
 - `scripts/lint-actions.ts` allows only that expression and `runs-on: hobo`. Its **`trunk-label-routing`** rule also fails a push/merge-group/dispatch-capable job on plain `hobo` and a PR-only job on the expression. Other repositories served by the same box must use the expression for their push, merge-group, and manual-dispatch jobs too: event rank alone does not reserve trunk capacity, and a shared-label runner can be assigned to an older PR job.
 - A trunk-event job still requesting `hobo` logs **`hobo_ci_trunk_job_on_shared_label`** once per job, with `repository`, `workflow`, `runId`, and `jobId`. Treat that event as a workflow misconfiguration; it remains capped with shared-label demand.
@@ -288,6 +288,28 @@ The fixed box → ARC → GitHub order above is what admission applies to a job 
 - **No workflow reads the variable yet**, so turning this on changes no job's runner. It is safe to enable for observing what the fleet would choose.
 - `.hobo/ci.json` accepts provider kinds **`jog`** and **`boat`** from a relay built at or after this change. Do not add them to the file an older deployed relay reads: an unknown kind fails policy parsing.
 
+### Runner routing: the fleet, then a local box, then GitHub-hosted
+
+A workflow run no longer waits on a fleet that is not taking jobs. Every routed workflow starts with a **Route runners** job on `ubuntu-24.04`, and every other job asks for the label that job chose.
+
+| Tier | Label | Chosen when |
+|---|---|---|
+| Fleet | `hobo`, or `hobo-trunk` for trunk events | No job asking for that label has waited past the limit |
+| Local box | `hobo-local-host` | The fleet is past the limit, a local box is enrolled, and no job asking for its label has waited past the limit |
+| GitHub-hosted | `ubuntu-24.04` | Neither of the above |
+
+- **How availability is read.** From GitHub's queue, which every backend shares: the oldest queued job whose only label is the tier's label. A fleet that is down, full, or cut off from its relay looks the same there, and nothing has to be asked of it. The limit is 300 seconds; repository variable **`HOBO_CI_ROUTE_MAX_WAIT_SECONDS`** changes it. A job queued for more than a day is treated as abandoned and ignored.
+- **The local box.** Set repository variable **`HOBO_CI_LOCAL_RUNNER=true`** once a box is registered under `hobo-local-host` (the `local` provider kind's label, see `packages/ci-gh-actions/LOCAL-DEVELOPMENT.md`). The variable says a box is enrolled, not that it is connected: a box that is enrolled and offline is passed over as soon as one job has waited for it past the limit.
+- **Pinning.** Repository variable **`HOBO_CI_ROUTE`**: `fleet` restores the behaviour before routing (the kill switch), `github` or `local` sends everything to that tier, and unset or `auto` falls back as above.
+- **It cannot fail a run.** If the queue cannot be read, or the machine has no Node able to run the script, the fleet's label is returned with a warning. If the route job itself does not succeed, jobs ask for the fleet's label and both required gates fail closed.
+- **The decision is made once per run**, when it starts. A run routed to the fleet that then stalls stays there; re-running the workflow routes it again.
+- **On a GitHub-hosted machine** the job runs the same steps. `ci-runner-preflight` installs the pinned mise and the tools in `mise.lock` first (`.github/actions/ci-runner-preflight/hosted-toolchain.sh`); the pnpm store and Turbo cache use their `actions/cache` paths; there is no deps layer, so dependencies are installed from the lockfile.
+- **The one job that differs there** is the cold dev loop. On the fleet it runs in the worker image with the network disabled; a GitHub-hosted machine has no worker image, so it runs the same commands on a copy of the tree in a network namespace whose only interface is loopback.
+- **Always GitHub-hosted:** the route job, and the two required gates (**PR impact gate**, **HoBo release PR gate**). The gates run no repository code and only add up other jobs' results. On the fleet, a superseded run's gate had to find a runner before the next run could start, which held one pull request for 30 minutes.
+- **Not routed:** tag, publish and attest jobs in the release workflows, and `ci-deps-publish.yml`. They build or push the fleet's own images.
+- **It does not read `HOBO_CI_FLEET_ROUTES`.** The route table the relay can publish (above) says what the fleet would choose when the relay is up; this job has to decide when it is not, so it reads the queue. Feeding the table in as a second input is the next step.
+- **Where it lives:** `scripts/ci/route-runner.mts` (decision and queue reading), `.github/actions/route-runner` (the step), `selectFleetBackend` in `packages/ci/src/fleet-overflow.ts` (the order: fleet, ARC, local box, GitHub-hosted), and `scripts/lint-actions.ts` (which labels a workflow may ask for).
+
 ### 7. Merge queue (landing, not pickup)
 
 **Merge queue** requires branch protection on `main` with merge queue enabled and the required HoBo CI checks. **Main full gate** is not one of them and does not run on `merge_group` (it runs on the push to `main`), so a queue entry holds no slot for it. Instead, the required **PR impact gate** runs on `merge_group` and executes Main full gate's affected S0 and dependent workspace-test lanes against the merge group's base SHA. That gates **merge** after jobs complete; it does not cause **`queued`** by itself. The required **CI fabric contract guard** runs only on `pull_request`; its two contract steps run inside **Main full gate** on push, schedule and dispatch, and inside **PR impact gate** on `merge_group`.
@@ -323,7 +345,7 @@ These require org admin / platform operator action, not a workflow edit:
 - Re-onboarding **Hobo-Labs/HoBo** in relay policy.
 - Org/repo **Actions** permissions for fork PRs if you expect fork contributions to run CI.
 
-Workflow YAML in this repository requests exactly **`hobo`** or **`hobo-trunk`**; a permanently **`queued`** run means **no matching JIT runner registered**, almost always because the relay did not admit or launch the job.
+Workflow YAML in this repository requests **`hobo`** or **`hobo-trunk`** unless the route job sent the run elsewhere; a permanently **`queued`** run on those labels means **no matching JIT runner registered**, almost always because the relay did not admit or launch the job.
 
 ## Quick probe (repo script)
 
