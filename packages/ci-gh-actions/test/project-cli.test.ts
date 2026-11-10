@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -555,9 +555,24 @@ it("loads organization profiles and uses an entire repository override without t
 	expect(send).not.toHaveBeenCalled();
 });
 
-it("uses the invoking repository directory when launched by the documented pnpm script", async () => {
-	const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-	const directory = await mkdtemp(join(repoRoot, ".hobo-ci-project-smoke-"));
+it("the documented pnpm script runs the built CLI", async () => {
+	// pnpm runs a package script in the package directory and passes the
+	// directory it was invoked from as INIT_CWD; that hand-off is pnpm's. What
+	// is this package's: the script names the built CLI, and the CLI reads the
+	// project from INIT_CWD (the in-process case above pins how).
+	const manifest = z
+		.object({ scripts: z.object({ project: z.string() }) })
+		.parse(
+			JSON.parse(
+				await readFile(new URL("../package.json", import.meta.url), "utf8"),
+			),
+		);
+	expect(manifest.scripts.project).toBe("node dist/project-cli.js");
+});
+
+it("the built CLI reads the project from the directory pnpm was invoked in", async () => {
+	const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+	const directory = await mkdtemp(join(tmpdir(), "hobo-ci-project-smoke-"));
 	directories.push(directory);
 	await mkdir(join(directory, ".hobo"));
 	await writeFile(
@@ -573,19 +588,14 @@ it("uses the invoking repository directory when launched by the documented pnpm 
 			},
 		}),
 	);
+	// As `pnpm --filter @hobo/ci-gh-actions project` starts it: in the package
+	// directory, with the invoking directory in INIT_CWD.
 	const result = await execute(
-		"pnpm",
-		[
-			"--filter",
-			"@hobo/ci-gh-actions",
-			"project",
-			"inspect",
-			"--environment",
-			"local",
-		],
+		process.execPath,
+		["dist/project-cli.js", "inspect", "--environment", "local"],
 		{
-			cwd: directory,
-			env: process.env,
+			cwd: packageRoot,
+			env: { PATH: process.env.PATH ?? "", INIT_CWD: directory },
 			timeout: 30000,
 		},
 	);

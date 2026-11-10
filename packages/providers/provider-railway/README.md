@@ -198,3 +198,15 @@ contract in `contracts/provider-railway-yard-boundary.pact.json` — replayed
 interaction by interaction against the real provider in
 `test/boundary.contract.test.ts` — and the protobuf + CUE boundary shapes in
 `data-models/`.
+
+## Host forms for self-hosted data stores
+
+`RAILWAY_HOST_FORMS` (`src/host-forms.ts`) states, for compute products this
+package already declares, whether each could host a self-managed, stateful,
+TCP-served data store such as PostgreSQL: a long-running VM or container, a
+persistent volume, inbound TCP, and enough control to run backups. Every facet
+is cited to the vendor's documentation with the date it was read. It adds no
+product and does not change the published Capability Manifest; it is read by
+`assessSelfHostedDataStore` in `@hobo/core`. Cited documentation only — nothing
+has been deployed onto these products from this repository. See
+[`docs/design/postgres-backend-catalog.md`](../../../docs/design/postgres-backend-catalog.md).

@@ -3,7 +3,7 @@
 Digest-pinned container images for the Pact Broker lane live in
 [`pinned-container-images.json`](pinned-container-images.json) (shared with
 [`compose.pact.yml`](compose.pact.yml) and
-[`test/pinned-postgres-testcontainers.test.ts`](../test/pinned-postgres-testcontainers.test.ts)).
+[`test/pinned-container-images.test.ts`](../test/pinned-container-images.test.ts)).
 Production relay images are built from
 [`../deploy/Dockerfile`](../deploy/Dockerfile) (multi-stage, non-root `1000:1000`).
 
