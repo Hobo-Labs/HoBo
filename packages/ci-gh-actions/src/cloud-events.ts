@@ -51,6 +51,16 @@ export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
 	["hobo_ci_mesh_board_recovered", "ci.MeshBoardRecovered"],
 	["hobo_ci_mesh_claims_unreachable", "ci.MeshClaimsLost"],
 	["hobo_ci_mesh_claims_recovered", "ci.MeshClaimsRecovered"],
+	// Mesh capacity and availability
+	["hobo_ci_mesh_node_joined", "ci.MeshNodeJoined"],
+	["hobo_ci_mesh_node_lost", "ci.MeshNodeLost"],
+	["hobo_ci_mesh_node_unhealthy", "ci.MeshNodeDegraded"],
+	["hobo_ci_mesh_node_recovered", "ci.MeshNodeRecovered"],
+	["hobo_ci_mesh_capacity_exhausted", "ci.MeshCapacityExhausted"],
+	["hobo_ci_mesh_capacity_restored", "ci.MeshCapacityRestored"],
+	["hobo_ci_mesh_capacity", "ci.MeshCapacityReported"],
+	["hobo_ci_mesh_config_published", "ci.MeshConfigPublished"],
+	["hobo_ci_mesh_config_drift", "ci.MeshConfigDrifted"],
 	// Telemetry about telemetry
 	["hobo_ci_trace_export_problem", "ci.TraceExportDegraded"],
 ]);
