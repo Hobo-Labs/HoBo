@@ -34,6 +34,10 @@
       "types": "./dist/sqlite-store.d.ts",
       "default": "./dist/sqlite-store.js"
     },
+    "./mesh": {
+      "types": "./dist/mesh/index.d.ts",
+      "default": "./dist/mesh/index.js"
+    },
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
       "default": "./dist/workspace-backend.js"
