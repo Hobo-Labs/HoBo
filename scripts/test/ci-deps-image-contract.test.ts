@@ -135,6 +135,11 @@ describe("CI deps image build contract", () => {
 		includes(dockerfile, "ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}");
 		includes(dockerfile, "ENV npm_config_store_dir=/pnpm-store");
 		includes(dockerfile, "npm_config_package_import_method=copy");
+		const install = dockerfile.slice(
+			dockerfile.indexOf("FROM fetch AS install"),
+			dockerfile.indexOf("FROM ${TOOLCHAIN_IMAGE} AS final"),
+		);
+		includes(install, "npm_config_package_import_method=hardlink");
 		includes(dockerfile, "/opt/hobo-deps/.hobo-ci-deps-key");
 		assert.ok(!dockerfile.includes("remote.origin.url"));
 		includes(build, "epoch=0");

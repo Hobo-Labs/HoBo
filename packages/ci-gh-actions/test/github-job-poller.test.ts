@@ -1079,7 +1079,10 @@ describe("pull-mode box worker over SQLite", () => {
 		});
 		await poller.poll();
 		await runtime.tick({ maxDeliveries: 10 });
-		expect(storageAdmission.admit).toHaveBeenCalledWith(expect.any(Array), "2");
+		expect(storageAdmission.admit).toHaveBeenCalledWith(
+			expect.any(Array),
+			expect.objectContaining({ jobId: "2" }),
+		);
 		expect(storageAdmission.release).toHaveBeenCalledWith("2");
 		expect(storageAdmission.release).not.toHaveBeenCalledWith("1");
 		expect((await store.activeLeases()).map((lease) => lease.jobId)).toEqual([

@@ -156,12 +156,30 @@ export {
 	redactPoolErrorMessage,
 } from "./isolated-worker/postgres-pool.js";
 export { createRetiredWorkDirectorySweeper } from "./isolated-worker/retired-work-directory-sweeper.js";
+export {
+	createHostCapacityTracker,
+	readHostCapacitySignals,
+	type HostCapacitySnapshot,
+	type HostCapacityTracker,
+} from "./isolated-worker/host-capacity.js";
 export { singleFlight } from "./isolated-worker/single-flight.js";
 export {
 	createNodeWorkerStorageFileSystem,
 	createWorkerStorageAdmission,
+	type StorageAdmissionRequest,
+	type StorageAdmissionTarget,
 	type WorkerStorageAdmission,
 } from "./isolated-worker/storage-admission.js";
+export {
+	DEPS_BUILD_ADMISSION_ID,
+	STORAGE_CLASS_RESERVES,
+	storageClassForJob,
+	storageReserveForClass,
+	storageReserveForDepsBuild,
+	storageReserveForJob,
+	type WorkerStorageClassName,
+	type WorkerStorageReserve,
+} from "./isolated-worker/storage-job-classes.js";
 export { resolveWorkerSlotConfig } from "./isolated-worker/worker-slots.js";
 export {
 	defaultWorkerDatabasePath,
