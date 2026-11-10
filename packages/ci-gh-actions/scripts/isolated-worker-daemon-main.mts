@@ -32,6 +32,7 @@ import {
 	createRelayTrace,
 	createRetiredWorkDirectorySweeper,
 	createWorkerMemoryAdmission,
+	createWorkerMesh,
 	createWorkerStorageAdmission,
 	type DepsImageProcessRequest,
 	defaultDepsRoot,
@@ -40,6 +41,8 @@ import {
 	type HostedInboxStore,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
+	memoryRequestForJob,
+	meshSettingsFromEnv,
 	parseWorkerStopMode,
 	readAvailableMemoryMb,
 	readHostHealthSample,
@@ -75,6 +78,22 @@ function inodeReserve(name: string, fallback: number): number {
 	return reserve;
 }
 
+/** Optional NATS credentials, from the variable or its `_FILE`. */
+function natsCredentials() {
+	const read = (name: string) => {
+		const file = process.env[`${name}_FILE`];
+		const value = file
+			? readFileSync(file, "utf8").trimEnd()
+			: process.env[name];
+		return value ? value : undefined;
+	};
+	return {
+		token: read("HOBO_CI_NATS_TOKEN"),
+		user: read("HOBO_CI_NATS_USER"),
+		password: read("HOBO_CI_NATS_PASSWORD"),
+	};
+}
+
 function storageLeases(leases: readonly Lease[]) {
 	return leases.map((lease) => ({
 		id: lease.id,
@@ -87,6 +106,17 @@ function secretOrFile(name: string): string {
 	const file = process.env[`${name}_FILE`];
 	return file ? readFileSync(file, "utf8").trimEnd() : required(name);
 }
+
+/**
+ * Set once the worker has joined a mesh: its own log events say what became
+ * of the jobs it took, and that is what its reliability is scored from.
+ */
+let meshOutcomes:
+	| ((
+			event: string,
+			fields: Readonly<Record<string, string | number | boolean>>,
+	  ) => void)
+	| undefined;
 
 // Off unless OTEL_EXPORTER_OTLP_ENDPOINT (or the traces-specific variable) or
 // HOBO_CI_TRACE_FILE is set. Every log event below is also a span, and so is
@@ -135,6 +165,7 @@ function log(
 	fields: Readonly<Record<string, string | number | boolean>> = {},
 ) {
 	console.error(JSON.stringify({ event, ...fields }));
+	meshOutcomes?.(event, fields);
 	relayTrace.event(event, fields);
 	ciEvents.emit(event, fields);
 }
@@ -181,10 +212,27 @@ const appId = required("HOBO_CI_GITHUB_APP_ID");
 const privateKey = process.env.HOBO_CI_GITHUB_APP_KEY_FILE
 	? readFileSync(process.env.HOBO_CI_GITHUB_APP_KEY_FILE, "utf8")
 	: secretOrFile("HOBO_CI_GITHUB_APP_PRIVATE_KEY");
+// A worker's configuration is its own file or variable. One that has
+// neither and is told where a mesh is asks the mesh, so adding a box takes a
+// NATS address and App credentials and nothing else.
+const meshBootSettings = meshSettingsFromEnv(process.env, hostname());
+const localConfiguration = process.env.HOBO_CI_CONFIG
+	? readFileSync(process.env.HOBO_CI_CONFIG, "utf8")
+	: process.env.HOBO_CI_CONFIG_JSON;
+const sharedConfiguration =
+	localConfiguration === undefined && meshBootSettings
+		? await (await import("@hobo/ci-gh-actions/mesh-nats")).readNatsMeshConfig({
+				servers: meshBootSettings.servers,
+				namespace: meshBootSettings.namespace,
+				replicas: meshBootSettings.replicas,
+				name: `hobo-ci-worker ${meshBootSettings.nodeId} (configuration)`,
+				...natsCredentials(),
+			})
+		: undefined;
 const configuration = parseConfiguration(
-	process.env.HOBO_CI_CONFIG
-		? readFileSync(process.env.HOBO_CI_CONFIG, "utf8")
-		: required("HOBO_CI_CONFIG_JSON"),
+	localConfiguration ??
+		sharedConfiguration?.value ??
+		required("HOBO_CI_CONFIG_JSON"),
 );
 const workerAccountId = required("HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID");
 // No ingress in pull mode, so the origin is informational (runner container env).
@@ -556,7 +604,9 @@ try {
 		workFs,
 		scheduleRetiredSweep: retiredSweep.trigger,
 	});
-	let liveWorkerLeaseIds = (await worker.reconcileLeases()).liveLeaseIds;
+	const firstReconciliation = await worker.reconcileLeases();
+	let liveWorkerLeaseIds = firstReconciliation.liveLeaseIds;
+	let inUseWorkerMemoryMb = firstReconciliation.inUseMemoryMb;
 	await worker.reconcileOrphanJobs();
 	let depsImageEnsurer: ReturnType<typeof createDepsImageEnsurer> | undefined;
 	if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
@@ -667,6 +717,124 @@ try {
 				workerReconcileMs,
 			}),
 	});
+	// Relay mesh: off unless HOBO_CI_NATS_URL names a server. With it, this
+	// worker advertises its free slots and takes a queued job only on its turn
+	// (see docs/design/ci-relay-mesh.md). It only applies when the worker reads
+	// GitHub's queue itself.
+	const meshSettings =
+		plan.admission === "pull"
+			? meshSettingsFromEnv(process.env, hostname())
+			: undefined;
+	const natsMesh = meshSettings
+		? (await import("@hobo/ci-gh-actions/mesh-nats")).createNatsMesh({
+				servers: meshSettings.servers,
+				namespace: meshSettings.namespace,
+				replicas: meshSettings.replicas,
+				name: `hobo-ci-worker ${meshSettings.nodeId}`,
+				onStatus: (status) => log("hobo_ci_mesh_nats", { status }),
+				...natsCredentials(),
+			})
+		: undefined;
+	let meshDraining = false;
+	const mesh =
+		meshSettings && natsMesh
+			? createWorkerMesh({
+					settings: meshSettings,
+					board: natsMesh.board,
+					claims: natsMesh.claims,
+					freeSlots: () => slots - liveWorkerLeaseIds.size,
+					totalSlots: slots,
+					healthy: () => !meshDraining,
+					servesTrunk: trunkSlots > 0,
+					// Memory a new job could have: what the worker's budget has
+					// left, and no more than the host can spare above its reserve.
+					free: () => {
+						const budgetLeftMb = memoryConfig.budgetMb - inUseWorkerMemoryMb;
+						const availableMb = readAvailableMemoryMb();
+						return {
+							memoryMb: Math.max(
+								0,
+								Math.floor(
+									availableMb === undefined
+										? budgetLeftMb
+										: Math.min(
+												budgetLeftMb,
+												availableMb - memoryConfig.reserveMb,
+											),
+								),
+							),
+						};
+					},
+					platform: { os: process.platform, arch: process.arch },
+					// A job is sized by the same memory class the worker would
+					// reserve for it at launch.
+					needs: (job) => ({
+						memoryMb: memoryRequestForJob(job.name, memoryConfig).memoryMb,
+					}),
+					log,
+				})
+			: undefined;
+	meshOutcomes = mesh?.record;
+	log("hobo_ci_mesh", {
+		enabled: mesh !== undefined,
+		configuration:
+			localConfiguration !== undefined
+				? "local"
+				: sharedConfiguration
+					? "mesh"
+					: "none",
+		nodeId: meshSettings?.nodeId ?? "",
+		namespace: meshSettings?.namespace ?? "",
+		servers: meshSettings?.servers.length ?? 0,
+		stepMs: meshSettings?.stepMs ?? 0,
+	});
+	// Every 10 s: say what this worker can take, then read what the mesh can.
+	const meshBeat = async () => {
+		await mesh?.advertise();
+		await mesh?.observe();
+	};
+	const meshAdvertTimer = mesh
+		? setInterval(() => void meshBeat(), 10_000)
+		: undefined;
+	meshAdvertTimer?.unref();
+	// Keep the mesh's copy of the configuration in step with this worker's.
+	// A worker with its own file never has it overwritten: a difference is
+	// reported, and an operator decides which side is right.
+	const syncMeshConfiguration = async () => {
+		if (!natsMesh) return;
+		const mine = toJsonString(ConfigurationSchema, configuration);
+		const shared = await natsMesh.config.read();
+		if (!shared) {
+			const published = await natsMesh.config.publish(mine);
+			log("hobo_ci_mesh_config_published", {
+				revision: published === "conflict" ? 0 : published.revision,
+				conflict: published === "conflict",
+			});
+		} else if (
+			toJsonString(ConfigurationSchema, parseConfiguration(shared.value)) !==
+			mine
+		)
+			log("hobo_ci_mesh_config_drift", {
+				revision: shared.revision,
+				source: localConfiguration === undefined ? "mesh" : "local",
+			});
+	};
+	// The first connection is made in the background; advertise as soon as it is up.
+	void natsMesh?.ready.then(
+		async () => {
+			await meshBeat();
+			await syncMeshConfiguration().catch((error) =>
+				log("hobo_ci_mesh_config_sync_failed", {
+					message: error instanceof Error ? error.message : "unknown",
+				}),
+			);
+		},
+		(error) =>
+			log("hobo_ci_mesh_nats", {
+				status: "failed",
+				message: error instanceof Error ? error.message : "unknown",
+			}),
+	);
 	const pollIngestCoalesce = createPollIngestCoalesce();
 	const poller =
 		plan.admission === "pull"
@@ -678,6 +846,7 @@ try {
 					connections: async () =>
 						(await store.configuration())?.configuration?.connections ?? [],
 					ingest: (delivery) => runtime.ingestWebhook(delivery),
+					claim: async (job) => (mesh ? mesh.claim(job) : true),
 					onIngestError: (jobId, message) =>
 						log("hobo_ci_isolated_worker_job_ingest_failed", {
 							jobId,
@@ -726,6 +895,7 @@ try {
 		const reconciliation = await worker.reconcileLeases();
 		workerReconcileMs = Date.now() - workerReconcileStartedAt;
 		liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+		inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 		runOrphanJobReconcile();
 		if (!reconciliation.inventoryKnown) return;
 		// In push mode the hosted relay drains the shared inbox; in pull mode
@@ -872,6 +1042,10 @@ try {
 			if (gcTimer) clearInterval(gcTimer);
 			await worker.discardWarm().catch(() => undefined);
 			log("hobo_ci_isolated_worker_draining", { signal });
+			// Tell the mesh at once: the others stop waiting for this node's turn.
+			meshDraining = true;
+			if (meshAdvertTimer) clearInterval(meshAdvertTimer);
+			await mesh?.advertise();
 			await jobPollInFlight;
 			await orphanReconcileInFlight;
 			await gcInFlight;
@@ -883,6 +1057,7 @@ try {
 				const reconciliation = await worker.reconcileLeases({ draining: true });
 				workerReconcileMs = Date.now() - workerReconcileStartedAt;
 				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+				inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 				await worker.reconcileOrphanJobs();
 				if (reconciliation.inventoryKnown) await runtime.tick({ admit: false });
 			};
@@ -928,6 +1103,10 @@ try {
 					});
 			}
 			await closeStore();
+			await Promise.race([
+				natsMesh?.close().catch(() => undefined),
+				new Promise((resolve) => setTimeout(resolve, 2000).unref()),
+			]);
 			await closeTrace();
 			process.exit(result.mode === "handoff" || result.drained ? 0 : 1);
 		})().catch(async (error) => {

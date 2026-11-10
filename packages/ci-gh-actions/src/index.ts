@@ -64,6 +64,7 @@ export {
 	type HostedInboxStore,
 	type HostedRelayTickTiming,
 } from "./hosted-runtime.js";
+export { initializeHostedRelaySchema } from "./hosted-schema.js";
 export {
 	createRelayHandler,
 	type HostedRelayApplication,
@@ -194,6 +195,12 @@ export {
 	type JobObservation,
 } from "./job-durations.js";
 export { startRelayFromEnvironment } from "./main.js";
+export {
+	createWorkerMesh,
+	type MeshSettings,
+	meshSettingsFromEnv,
+	type WorkerMesh,
+} from "./mesh-worker.js";
 export { createNodeRelayHandler } from "./node-http.js";
 export {
 	createGithubOidcVerifier,

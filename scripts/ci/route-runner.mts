@@ -8,12 +8,17 @@
  * not itself wait on the fleet. It has no dependencies and installs nothing.
  *
  * Availability is read from GitHub's queue, the one thing every backend
- * shares: a backend is taking jobs when no job asking for its label has waited
- * past the limit, it has not been slow to pick up what it took recently, and
- * few jobs are already waiting for it. Nothing is asked of the fleet itself,
+ * shares: a backend is taking jobs when it was seen to pick one up recently and
+ * quickly, no job asking for its label has waited past the limit, and few jobs
+ * are already waiting for it. Nothing is asked of the fleet itself,
  * so a fleet that is down, saturated, or cut off from its relay reads the same.
+ *
+ * Runs that start together would each read the same queue before any of them
+ * had added to it, so a run waits its turn: while a run that started just
+ * ahead has not chosen, this one leaves the self-hosted runners to it.
  */
 import { appendFileSync } from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import {
 	DEFAULT_GITHUB_MACHINE_TYPE,
@@ -25,6 +30,26 @@ import {
 /** `auto` falls back; the others pin one tier, `fleet` being the behaviour before routing. */
 export const ROUTE_MODES = ["auto", "fleet", "local", "github"] as const;
 export type RouteMode = (typeof ROUTE_MODES)[number];
+
+/**
+ * How long a run that has started may go without choosing a runner before it
+ * is taken to have chosen. The route job is the first thing a run does and
+ * takes seconds; a run older than this that still shows no finished job is
+ * stuck somewhere else.
+ */
+export const BURST_SECONDS = 60;
+/** The workflow whose only work is to be picked up by each self-hosted label. */
+export const PROBE_WORKFLOW_PATH = ".github/workflows/fleet-probe.yml";
+/** Probe runs read per decision: the newest may still be waiting, the ones before it say how the last went. */
+export const MAX_PROBE_LOOKUPS = 3;
+
+/**
+ * How long a run waits for a probe that is under way before it gives up on a
+ * backend no runner has been seen on. Only a run with nothing else to go on
+ * waits: after a quiet spell the fleet is still used if it answers.
+ */
+export const PROBE_WAIT_SECONDS = 60;
+export const PROBE_POLL_SECONDS = 10;
 
 export type RouteTier = "fleet" | "local" | "github";
 
@@ -59,6 +84,8 @@ export type RouteLimits = Readonly<{
 export type LabelLoad = Readonly<{
 	queued: number;
 	oldestWaitSeconds: number;
+	/** Jobs a runner took within the recent window. */
+	recentPickups: number;
 	slowestRecentPickupSeconds: number;
 }>;
 
@@ -98,22 +125,38 @@ export function labelLoad(
 	return {
 		queued: waits.length,
 		oldestWaitSeconds: longest(waits),
+		recentPickups: pickups.length,
 		slowestRecentPickupSeconds: longest(pickups),
 	};
 }
 
 /**
- * A backend is taking jobs when nothing has waited for it past the limit, it
- * has not been slow to pick up what it took recently, and fewer jobs than the
- * limit are already waiting. The last is what a wait alone misses: a queue
- * that was just emptied and refilled is full long before its oldest job is old.
+ * A backend is refusing jobs when one has waited for it past the limit, it was
+ * slow to pick up what it took recently, or as many jobs as the limit are
+ * already waiting. The last is what a wait alone misses: a queue that was just
+ * emptied and refilled is full long before its oldest job is old.
+ */
+export function refusingJobs(load: LabelLoad, limits: RouteLimits): boolean {
+	return (
+		load.oldestWaitSeconds >= limits.maxWaitSeconds ||
+		load.slowestRecentPickupSeconds >= limits.maxWaitSeconds ||
+		load.queued >= limits.maxQueued
+	);
+}
+
+/**
+ * A backend is taking jobs when it has been seen to: a runner took a job
+ * recently, and nothing says it is refusing them.
+ *
+ * Being seen to matters most. An empty queue says nothing: when the merge
+ * queue was rebuilt, ten runs chose in the same second, each saw nothing
+ * waiting for the fleet, and all ten were sent to a fleet that was taking
+ * minutes to pick a job up. Without a recent pickup the answer is no, and the
+ * run goes where jobs are known to start. The probe workflow keeps a pickup
+ * on record while the backend is up.
  */
 export function takingJobs(load: LabelLoad, limits: RouteLimits): boolean {
-	return (
-		load.oldestWaitSeconds < limits.maxWaitSeconds &&
-		load.slowestRecentPickupSeconds < limits.maxWaitSeconds &&
-		load.queued < limits.maxQueued
-	);
+	return load.recentPickups > 0 && !refusingJobs(load, limits);
 }
 
 export function parseRouteMode(value: string | undefined): RouteMode {
@@ -126,9 +169,9 @@ function describeLoad(name: string, load: LabelLoad): string {
 		load.queued === 0
 			? `${name} has nothing waiting`
 			: `${name} has ${load.queued} waiting, the oldest for ${load.oldestWaitSeconds} s`;
-	return load.slowestRecentPickupSeconds === 0
-		? waiting
-		: `${waiting}, and recently took ${load.slowestRecentPickupSeconds} s to pick a job up`;
+	return load.recentPickups === 0
+		? `${waiting}, and has not been seen to pick a job up in the last ${RECENT_PICKUP_SECONDS / 60} minutes`
+		: `${waiting}, and recently took up to ${load.slowestRecentPickupSeconds} s to pick a job up`;
 }
 
 /**
@@ -142,6 +185,8 @@ export function routeRunner(input: {
 	limits: RouteLimits;
 	fleet: LabelLoad;
 	local: LabelLoad;
+	/** Runs that started just ahead of this one and have not chosen a runner yet. */
+	undecidedAhead: number;
 }): RouteDecision {
 	const { mode, fleetLabel, limits } = input;
 	if (mode === "fleet")
@@ -162,20 +207,24 @@ export function routeRunner(input: {
 			runner: LOCAL_HOST_RUNNER_LABEL,
 			reason: "routing is pinned to the local box",
 		};
+	// A run that has not chosen yet is taken to choose a self-hosted runner.
+	// Its jobs are not in the queue to be counted, and runs that start together
+	// would otherwise all read the same empty queue and all choose the fleet.
+	const first = input.undecidedAhead === 0;
 	const members = [
 		{
 			id: "fleet",
 			backend: "hobo",
 			enabled: true,
 			runsOn: fleetLabel,
-			freeSlots: takingJobs(input.fleet, limits) ? 1 : 0,
+			freeSlots: first && takingJobs(input.fleet, limits) ? 1 : 0,
 		},
 		{
 			id: "local",
 			backend: "local",
 			enabled: input.localEnrolled,
 			runsOn: LOCAL_HOST_RUNNER_LABEL,
-			freeSlots: takingJobs(input.local, limits) ? 1 : 0,
+			freeSlots: first && takingJobs(input.local, limits) ? 1 : 0,
 		},
 		{
 			id: "github",
@@ -191,6 +240,11 @@ export function routeRunner(input: {
 		input.localEnrolled
 			? describeLoad("the local box", input.local)
 			: "no local box is enrolled",
+		...(first
+			? []
+			: [
+					`${input.undecidedAhead} run(s) started in the ${BURST_SECONDS} s before this one and have not chosen a runner yet`,
+				]),
 	].join("; ");
 	if (!selected || selected.backend === "hobo")
 		return { tier: "fleet", runner: fleetLabel, reason: loads };
@@ -236,18 +290,86 @@ function asList(value: JsonValue | undefined): readonly JsonValue[] {
 	return Array.isArray(value) ? value : [];
 }
 
-/** Runs GitHub has not finished, oldest first, from one page of the unfiltered list. */
+type ListedRun = Readonly<{
+	id: number;
+	createdAtMs: number;
+	finished: boolean;
+	probe: boolean;
+}>;
+
+function listedRuns(runsPage: JsonValue): ListedRun[] {
+	return asList(asObject(runsPage)?.workflow_runs).flatMap((entry) => {
+		const run = asObject(entry);
+		const id = asNumber(run?.id);
+		if (!run || id === undefined) return [];
+		return [
+			{
+				id,
+				createdAtMs: Date.parse(asText(run.created_at) ?? ""),
+				finished: asText(run.status) === "completed",
+				probe: asText(run.path) === PROBE_WORKFLOW_PATH,
+			},
+		];
+	});
+}
+
+/**
+ * Runs GitHub has not finished, oldest first, from one page of the unfiltered
+ * list. Probe runs are left out: they are read on their own, finished or not.
+ */
 export function unfinishedRunIds(
 	runsPage: JsonValue,
 	ownRunId: number,
 ): number[] {
-	return asList(asObject(runsPage)?.workflow_runs)
-		.map((run) => asObject(run))
-		.filter((run) => run !== undefined && asText(run.status) !== "completed")
-		.map((run) => asNumber(run?.id))
-		.filter((id) => id !== undefined && id !== ownRunId)
-		.map((id) => id ?? 0)
+	return listedRuns(runsPage)
+		.filter((run) => !run.finished && !run.probe && run.id !== ownRunId)
+		.map((run) => run.id)
 		.sort((left, right) => left - right);
+}
+
+/** The newest probe runs on the page, newest first, whatever their state. */
+export function probeRunIds(runsPage: JsonValue): number[] {
+	return listedRuns(runsPage)
+		.filter((run) => run.probe)
+		.map((run) => run.id)
+		.sort((left, right) => right - left)
+		.slice(0, MAX_PROBE_LOOKUPS);
+}
+
+/**
+ * Unfinished runs that started in the moments before this one, newest first.
+ * Each may be about to put its jobs on the same runners this run is weighing.
+ */
+export function runsJustAhead(
+	runsPage: JsonValue,
+	ownRunId: number,
+	nowMs: number,
+): number[] {
+	const runs = listedRuns(runsPage);
+	const own = runs.find((run) => run.id === ownRunId);
+	const ownCreatedAtMs =
+		own && !Number.isNaN(own.createdAtMs) ? own.createdAtMs : nowMs;
+	return runs
+		.filter(
+			(run) =>
+				!run.finished &&
+				!run.probe &&
+				run.id < ownRunId &&
+				ownCreatedAtMs - run.createdAtMs <= BURST_SECONDS * 1000,
+		)
+		.map((run) => run.id)
+		.sort((left, right) => right - left);
+}
+
+/**
+ * Whether a run has chosen its runner. The route job is the first to finish
+ * in a routed run, and the jobs that need it appear straight after; a run
+ * with no finished job has not got that far.
+ */
+export function hasChosen(jobsPage: JsonValue): boolean {
+	return asList(asObject(jobsPage)?.jobs).some(
+		(job) => asText(asObject(job)?.status) === "completed",
+	);
 }
 
 /**
@@ -282,10 +404,20 @@ export function lookupOrder(runIds: readonly number[]): number[] {
 
 export type QueueReader = (path: string) => Promise<JsonValue>;
 
+export type QueueView = Readonly<{
+	jobs: readonly SeenJob[];
+	/** Runs just ahead of this one that have not chosen a runner, or could not be read in time. */
+	undecidedAhead: number;
+	/** A probe run has not finished, so a pickup may be about to be recorded. */
+	probeUnderway: boolean;
+}>;
+
 /**
- * Reads the queue until every label is seen not taking jobs, or the runs to
- * read are exhausted. The unfiltered run list is used because the
- * status-filtered one has gone on reporting no runs while runs were queued.
+ * Reads the queue: the newest probe runs, then the runs that started just
+ * ahead of this one, then the rest of the unfinished runs until every label
+ * is seen refusing jobs or the lookups run out. The unfiltered run list is
+ * used because the status-filtered one has gone on reporting no runs while
+ * runs were queued.
  */
 export async function observeQueue(input: {
 	read: QueueReader;
@@ -294,28 +426,91 @@ export async function observeQueue(input: {
 	labels: readonly string[];
 	limits: RouteLimits;
 	nowMs: number;
-}): Promise<SeenJob[]> {
-	const runs = lookupOrder(
-		unfinishedRunIds(
-			await input.read(`/repos/${input.repository}/actions/runs?per_page=100`),
-			input.ownRunId,
+}): Promise<QueueView> {
+	const runsPage = await input.read(
+		`/repos/${input.repository}/actions/runs?per_page=100`,
+	);
+	const jobsOf = (runId: number) =>
+		input.read(
+			`/repos/${input.repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
+		);
+	const seen: SeenJob[] = [];
+	for (const runId of probeRunIds(runsPage))
+		seen.push(...seenJobs(await jobsOf(runId)));
+	const ahead = runsJustAhead(runsPage, input.ownRunId, input.nowMs);
+	const rest = lookupOrder(
+		unfinishedRunIds(runsPage, input.ownRunId).filter(
+			(runId) => !ahead.includes(runId),
 		),
 	);
-	const seen: SeenJob[] = [];
-	for (const runId of runs.slice(0, MAX_RUN_LOOKUPS)) {
-		seen.push(
-			...seenJobs(
-				await input.read(
-					`/repos/${input.repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
-				),
-			),
+	let undecidedAhead = ahead.length;
+	for (const runId of [...ahead, ...rest].slice(0, MAX_RUN_LOOKUPS)) {
+		const allRefusing = input.labels.every((label) =>
+			refusingJobs(labelLoad(seen, label, input.nowMs), input.limits),
 		);
-		const noneTaking = input.labels.every(
-			(label) => !takingJobs(labelLoad(seen, label, input.nowMs), input.limits),
-		);
-		if (noneTaking) break;
+		if (allRefusing) break;
+		const jobsPage = await jobsOf(runId);
+		seen.push(...seenJobs(jobsPage));
+		if (ahead.includes(runId) && hasChosen(jobsPage)) undecidedAhead -= 1;
 	}
-	return seen;
+	return {
+		jobs: seen,
+		undecidedAhead,
+		probeUnderway: listedRuns(runsPage).some(
+			(run) => run.probe && !run.finished,
+		),
+	};
+}
+
+/**
+ * Decides, and where a probe might still change the answer, waits for it.
+ *
+ * A wait is worth it only for a backend that is preferred to the one chosen,
+ * that no runner has been seen on, and that nothing says is refusing jobs,
+ * while a probe is under way and no run ahead has yet to choose. Every other
+ * case is decided at once.
+ */
+export async function chooseRunner(input: {
+	observe: (nowMs: number) => Promise<QueueView>;
+	now: () => number;
+	sleep: (seconds: number) => Promise<void>;
+	mode: RouteMode;
+	fleetLabel: string;
+	localEnrolled: boolean;
+	limits: RouteLimits;
+}): Promise<RouteDecision> {
+	const { fleetLabel, localEnrolled, limits } = input;
+	const startMs = input.now();
+	for (;;) {
+		const nowMs = input.now();
+		const view = await input.observe(nowMs);
+		const fleet = labelLoad(view.jobs, fleetLabel, nowMs);
+		const local = labelLoad(view.jobs, LOCAL_HOST_RUNNER_LABEL, nowMs);
+		const decision = routeRunner({
+			mode: input.mode,
+			fleetLabel,
+			localEnrolled,
+			limits,
+			fleet,
+			local,
+			undecidedAhead: view.undecidedAhead,
+		});
+		const unseen = (load: LabelLoad) =>
+			load.recentPickups === 0 && !refusingJobs(load, limits);
+		const probeMayHelp =
+			view.probeUnderway &&
+			view.undecidedAhead === 0 &&
+			((decision.tier !== "fleet" && unseen(fleet)) ||
+				(decision.tier === "github" && localEnrolled && unseen(local)));
+		const waitedSeconds = seconds(startMs, nowMs);
+		if (!probeMayHelp) return decision;
+		if (waitedSeconds + PROBE_POLL_SECONDS > PROBE_WAIT_SECONDS)
+			return {
+				...decision,
+				reason: `${decision.reason}; waited ${waitedSeconds} s for the probe to be picked up`,
+			};
+		await input.sleep(PROBE_POLL_SECONDS);
+	}
 }
 
 function githubReader(apiUrl: string, token: string): QueueReader {
@@ -375,32 +570,36 @@ export async function main(
 			DEFAULT_MAX_QUEUED,
 		),
 	};
-	const nowMs = Date.now();
 	let decision: RouteDecision;
 	try {
-		const jobs =
-			mode === "auto"
-				? await observeQueue({
-						read: githubReader(
-							env.GITHUB_API_URL ?? "https://api.github.com",
-							env.GITHUB_TOKEN ?? "",
-						),
-						repository: env.GITHUB_REPOSITORY ?? "",
-						ownRunId: Number(env.GITHUB_RUN_ID),
-						labels: localEnrolled
-							? [fleetLabel, LOCAL_HOST_RUNNER_LABEL]
-							: [fleetLabel],
-						limits,
-						nowMs,
-					})
-				: [];
-		decision = routeRunner({
+		const read = githubReader(
+			env.GITHUB_API_URL ?? "https://api.github.com",
+			env.GITHUB_TOKEN ?? "",
+		);
+		decision = await chooseRunner({
+			observe: (nowMs) =>
+				mode === "auto"
+					? observeQueue({
+							read,
+							repository: env.GITHUB_REPOSITORY ?? "",
+							ownRunId: Number(env.GITHUB_RUN_ID),
+							labels: localEnrolled
+								? [fleetLabel, LOCAL_HOST_RUNNER_LABEL]
+								: [fleetLabel],
+							limits,
+							nowMs,
+						})
+					: Promise.resolve({
+							jobs: [],
+							undecidedAhead: 0,
+							probeUnderway: false,
+						}),
+			now: Date.now,
+			sleep: (wait) => delay(wait * 1000),
 			mode,
 			fleetLabel,
 			localEnrolled,
 			limits,
-			fleet: labelLoad(jobs, fleetLabel, nowMs),
-			local: labelLoad(jobs, LOCAL_HOST_RUNNER_LABEL, nowMs),
 		});
 	} catch (error) {
 		// This job is running on a GitHub-hosted machine, so that tier is known

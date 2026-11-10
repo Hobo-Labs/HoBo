@@ -60,6 +60,44 @@ describe("self-hosted broker without hosted services", () => {
 		}
 	});
 
+	// The persistent lane (the product's `up`) gives an anonymous or temporary
+	// deployment the configured TTL, and an ordinary one none. The worker start
+	// is stood in for, so this checks what it is asked for without serving.
+	it.each([
+		{ flags: [], ttlSeconds: 0 },
+		{ flags: ["--anonymous"], ttlSeconds: 7 },
+		{ flags: ["--temporary"], ttlSeconds: 7 },
+	])("asks the persistent lane for ttlSeconds $ttlSeconds with flags $flags", async ({
+		flags,
+		ttlSeconds,
+	}) => {
+		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-self-hosted-ttl-"));
+		try {
+			initBareMetalYard({ hoboHome, componentHost: "local" });
+			const asked: number[] = [];
+			const cli = createHoboCli({
+				commands: {
+					up: createBrokerAwareUpCommand({
+						env: { HOBO_LOCAL_DEPLOYMENT_TTL_SECONDS: "7" },
+						persistentLocal: true,
+						startLocalDeployment: async (options) => {
+							asked.push(options.ttlSeconds);
+							throw new Error("not started in this test");
+						},
+					}),
+				},
+			});
+			await cli.run(["up", ...flags, "--home", hoboHome, "--json"], {
+				cwd: fileURLToPath(
+					new URL("../../../examples/hello-bindle", import.meta.url),
+				),
+			});
+			expect(asked).toEqual([ttlSeconds]);
+		} finally {
+			await rm(hoboHome, { recursive: true, force: true });
+		}
+	});
+
 	it("accepts an explicitly selected self-hosted network broker", () => {
 		expect(
 			resolveBrokerTarget({

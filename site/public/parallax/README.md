@@ -16,9 +16,18 @@ swaps the image and changes nothing else. The difference is register: idle's
 cycle is a hop, stand's is a breath anchored at the feet, for places where Bo
 should be present without performing.
 
-`<ParallaxTrail facing="west" />` fails the build if its sheet is missing. That
-is deliberate: there is no fallback, because the obvious fallback is wrong — see
-below.
+The trail band loads `bo-walk.png` and `bo-idle.png` only. It is driven by the
+page's scroll position, and scrolling back up plays the east sheet's frames in
+reverse — the reel runs backwards — rather than turning him around. So the band
+no longer needs a west sheet at all, and the `facing` prop that used to select
+one (and fail the build when it was missing) is gone. `bo-walk-left.png` stays
+here as art and in the media catalogue; nothing on the site loads it. The reason
+a west walk was never a flip still stands, and still applies to anything drawn
+from these sheets — see below.
+
+Two folders sit beside these sheets and follow the same "supplied, used as
+given" rule: `plates/` (the looping scenery) and `landmarks/` (the props that
+stand beside the trail at each stop). Each has its own README.
 
 ## The west sheet cannot be a mirror
 
@@ -114,10 +123,10 @@ poses did contain a cycle; they were simply shuffled.
 foot gliding at a measurable −1.33px per frame, which is where the band's whole
 speed derivation comes from. The west poses do not carry a consistent ground
 contact — the feet-band drift stays noisy in any ordering, with swings of ±12px
-— so his feet will not plant against the scrolling ground the way they do going
-east. Look at it in the preview before using `facing="west"` in anger. A west
-sheet drawn as a true cycle, with the feet on one ground line and the 50ms
-cadence, would fix this and drop straight in.
+— so his feet would not plant against scrolling ground the way they do going
+east. That is one of the reasons the band stopped using it: reversing the east
+sheet keeps the plant exact in both directions, where this sheet could not
+offer it in one.
 
 ## What the site does to a sheet once it is here
 

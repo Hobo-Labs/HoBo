@@ -216,6 +216,12 @@ adapter. App keys and installation tokens remain in the relay.
 
 The GitHub App needs Actions, Administration, Contents, Workflows and Pull requests
 write access, plus Metadata read. Subscribe to `workflow_job` and `workflow_run`.
+`initializeHostedRelaySchema(pool)` creates every PostgreSQL table the hosted
+relay's GitHub stores use (App registration, OAuth sessions, platform App
+bootstrap, webhook repair and queued-job repair) by running the same
+initialisers each store runs on first use, and stores nothing. The Vercel
+adapter calls it to give a standby database the schema of the serving one.
+
 The Vercel host supplies the App bootstrap and OAuth callbacks described
 below; they are Postgres-only today, so the Node service (`hobo ci serve`, the
 container image) does not serve them and takes an existing App's ID, key and
@@ -583,6 +589,38 @@ free allocation.
 The publisher must supply complete snapshots and normalized prices for all billed
 components. Provider-native spending controls remain the external billing ceiling.
 Admission budgets do not migrate or terminate a running GitHub job mid-step.
+
+## Relay mesh
+
+Several box workers can share one queue with no central relay. Each reads GitHub's queue itself;
+NATS carries their advertisements and makes "one worker starts this job" exact. Without NATS they
+still agree by ranking, so NATS being down costs a duplicate runner start, not a stopped queue.
+The design is in [CI Relay Mesh](../../docs/design/ci-relay-mesh.md); settings and behaviour are in
+the [runner queue runbook](../ci/RUNNER-QUEUE.md).
+
+**Try it on one machine.** No NATS needed for the first command:
+
+```sh
+pnpm --filter @hobo/ci-gh-actions run mesh:demo
+docker run --rm -p 4222:4222 nats:2 -js   # or: nats-server -js
+HOBO_CI_NATS_URL=nats://127.0.0.1:4222 pnpm --filter @hobo/ci-gh-actions run mesh:demo
+```
+
+The demo queues jobs across three nodes with 1, 2 and 5 free slots, then kills the largest and
+queues again. It prints who took what; every job is taken once.
+
+**Run the end-to-end test** against a real server (it is skipped when no binary is found):
+
+```sh
+HOBO_CI_NATS_SERVER_BIN="$(command -v nats-server)" \
+  pnpm --filter @hobo/ci-gh-actions exec vitest run test/mesh-nats.e2e.test.ts
+```
+
+**Join a worker to a mesh.** Set `HOBO_CI_NATS_URL` on each worker and restart it. One server with
+`HOBO_CI_NATS_REPLICAS=1` is enough for two boxes on a LAN. For more, run three NATS servers as a
+cluster with `HOBO_CI_NATS_REPLICAS=3`, and connect boxes behind NAT as leaf nodes: they only dial
+out. `createNatsMesh` is exported from `@hobo/ci-gh-actions/mesh-nats`; `createMemoryMesh` in
+`@hobo/ci/mesh` is the same contract in one process.
 
 ## Tracing
 
