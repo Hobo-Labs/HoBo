@@ -63,6 +63,9 @@ it.each([
 	"blacksmith",
 	"depot",
 	"warpbuild",
+	"jog",
+	"boat",
+	"lizard",
 	"kubernetes",
 ])("dispatches a %s provider offer through its configured host label", async (provider) => {
 	const h = setup();

@@ -1,7 +1,10 @@
 import { generateKeyPairSync, verify } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { create } from "@bufbuild/protobuf";
+import { AccountSchema, OfferSchema } from "@hobo/ci";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { createFleetRoutePublisher } from "../src/fleet-routes.js";
 import {
 	createGithubAppTransport,
 	type GithubTransport,
@@ -10,7 +13,7 @@ import {
 const Interaction = z.object({
 	description: z.string(),
 	request: z.object({
-		method: z.enum(["GET", "POST", "DELETE"]),
+		method: z.enum(["GET", "POST", "PATCH", "DELETE"]),
 		path: z.string(),
 		headers: z.record(z.string(), z.string()),
 		body: z.json().optional(),
@@ -267,6 +270,83 @@ describe("hand-authored GitHub App REST consumer contract", () => {
 			message: "fixture fetch refused redirect",
 		});
 		expect(api.calls()).toBe(isExchange ? 1 : 2);
+	});
+
+	describe("fleet route table variable", () => {
+		const repository = interaction(
+			"read the repository's visibility and owner type before routing",
+		);
+		const update = interaction(
+			"update the fleet route table repository variable",
+		);
+		const routes = () => ({
+			installationId: fixtures.installationId,
+			repository: repository.request.path.slice("/repos/".length),
+			account: create(AccountSchema, {
+				id: "hobo-fixture",
+				budgetMicros: 1_000_000,
+				maxRuntimeMinutes: 19,
+				startupMinutes: 1,
+				offers: [
+					create(OfferSchema, {
+						id: "box",
+						provider: "hobo-box-worker",
+						providerAccountId: "box",
+						enabled: true,
+						runsOn: "hobo-isolated-worker",
+						backend: "isolated-container",
+						concurrency: 2,
+						observedAt: "2026-11-09T00:00:00Z",
+						validUntil: "2026-12-09T00:00:00Z",
+						sourceUrl: "https://example.test/rates",
+						bridgeAcknowledged: true,
+					}),
+				],
+			}),
+			leases: async () => [],
+			isolatedOnly: true,
+			at: "2026-11-10T00:00:00Z",
+		});
+
+		it("reads the repository and updates the variable with the published table", async () => {
+			// The transport exchanges an installation token for every request.
+			const api = contractTransport(exchange, repository, exchange, update);
+			const publisher = createFleetRoutePublisher({ github: api.transport });
+			const result = await publisher.publish(routes());
+			expect(result?.outcome).toBe("published");
+			expect(result?.value).toBe(
+				z.object({ value: z.string() }).parse(update.request.body).value,
+			);
+			expect(api.calls()).toBe(4);
+		});
+
+		it("creates the variable when the update reports it missing", async () => {
+			const api = contractTransport(
+				exchange,
+				repository,
+				exchange,
+				interaction("report a missing fleet route table repository variable"),
+				exchange,
+				interaction("create the fleet route table repository variable"),
+			);
+			const publisher = createFleetRoutePublisher({ github: api.transport });
+			expect((await publisher.publish(routes()))?.outcome).toBe("published");
+			expect(api.calls()).toBe(6);
+		});
+
+		it("reports a refused write without retrying it", async () => {
+			const api = contractTransport(
+				exchange,
+				repository,
+				exchange,
+				interaction(
+					"refuse the fleet route table write without Variables permission",
+				),
+			);
+			const publisher = createFleetRoutePublisher({ github: api.transport });
+			expect((await publisher.publish(routes()))?.outcome).toBe("failed");
+			expect(api.calls()).toBe(4);
+		});
 	});
 
 	it("rejects malformed API paths before signing or sending credentials", async () => {

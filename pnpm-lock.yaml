@@ -779,6 +779,9 @@ importers:
       '@hobo/adapter-drizzle':
         specifier: workspace:*
         version: link:../adapters/adapter-drizzle
+      '@hobo/bindles':
+        specifier: workspace:*
+        version: link:../bindles
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
@@ -1479,6 +1482,9 @@ importers:
         specifier: ^4.1.13
         version: 4.4.3
     devDependencies:
+      '@hobo/ci-vercel':
+        specifier: workspace:*
+        version: link:../ci-vercel
       '@hobo/contract-harness':
         specifier: workspace:*
         version: link:../contract-harness

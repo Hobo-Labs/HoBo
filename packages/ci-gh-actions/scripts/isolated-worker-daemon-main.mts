@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
-import { homedir, hostname } from "node:os";
+import { cpus, homedir, hostname, loadavg } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
@@ -16,10 +16,12 @@ import {
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createDepsImageEnsurer,
+	createFleetRoutePublisher,
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
 	createHostedRelayRuntime,
+	createHostHealthMonitor,
 	createIsolatedContainerController,
 	createJobDurations,
 	createMemoryPeaks,
@@ -43,6 +45,7 @@ import {
 	meshSettingsFromEnv,
 	parseWorkerStopMode,
 	readAvailableMemoryMb,
+	readHostHealthSample,
 	readHostMemory,
 	relayTraceSinkFromEnv,
 	resolveWorkerMemoryConfig,
@@ -288,6 +291,14 @@ const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
 	throw new Error("invalid HOBO_CI_WORKER_TRUNK_LEND");
 const lendTrunkSlots = trunkLend === "1";
+// Off unless set: the relay then keeps HOBO_CI_FLEET_ROUTES current so new jobs
+// can ask a label provider for a runner while the box is full. The App needs
+// repository "Variables: write" for it; a refused write is logged and ignored.
+const fleetRoutesFlag = process.env.HOBO_CI_FLEET_ROUTES ?? "0";
+if (fleetRoutesFlag !== "0" && fleetRoutesFlag !== "1")
+	throw new Error("invalid HOBO_CI_FLEET_ROUTES");
+const publishFleetRoutes = fleetRoutesFlag === "1";
+const NO_OFFERS: ReadonlySet<string> = new Set();
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
@@ -463,8 +474,9 @@ try {
 		log,
 	});
 	retiredSweep.trigger();
+	const dockerDataRoot = await docker.dataRoot();
 	const storageAdmission = createWorkerStorageAdmission({
-		dockerDataRoot: await docker.dataRoot(),
+		dockerDataRoot,
 		workRoot,
 		fs: workFs,
 		docker,
@@ -495,6 +507,33 @@ try {
 			dockerDataRoot: inodeReserve("HOBO_CI_WORKER_CONTAINER_INODES", 170_000),
 		},
 		log,
+	});
+	const hostHealthPaths = [dockerDataRoot, workRoot];
+	// Collection cannot start inside the tick that noticed the pressure; it is
+	// asked for here and started when that tick ends.
+	let gcRequested = false;
+	const hostHealth = createHostHealthMonitor({
+		sample: () => {
+			const availableMb = readAvailableMemoryMb();
+			return readHostHealthSample({
+				loadAverage1m: loadavg()[0] ?? 0,
+				// Load average is the whole host's, so the divisor is too: not the
+				// daemon's own cgroup share.
+				cpus: cpus().length,
+				memory:
+					availableMb === undefined
+						? undefined
+						: { availableMb, totalMb: hostMemorySample.totalMemoryMb },
+				paths: hostHealthPaths,
+				statfs: workFs.statfs,
+			});
+		},
+		log,
+		// Collect now, not at the next interval: a job is about to need the room.
+		onPressure: (verdict) => {
+			if (verdict.reasons.some((reason) => reason.startsWith("storage")))
+				gcRequested = true;
+		},
 	});
 	await storageAdmission.reap();
 	const jobPickupMetadata = new Map<
@@ -635,6 +674,26 @@ try {
 	const host = createCompositeIsolatedHost({ store, worker: worker.host });
 	if (!host) throw new Error("worker host unavailable");
 	let workerReconcileMs = 0;
+	const fleetRoutes = publishFleetRoutes
+		? createFleetRoutePublisher({
+				github,
+				log,
+				// A critically short host stops being the fleet's first choice.
+				// Only this worker's offers: another host's health is its own.
+				unhealthyOfferIds: (account) =>
+					hostHealth.current().state === "critical"
+						? new Set(
+								account.offers
+									.filter(
+										(offer) =>
+											isIsolatedContainerOffer(offer) &&
+											offer.providerAccountId === workerAccountId,
+									)
+									.map((offer) => offer.id),
+							)
+						: NO_OFFERS,
+			})
+		: undefined;
 	const runtime = createHostedRelayRuntime({
 		store,
 		github,
@@ -650,6 +709,7 @@ try {
 		lendTrunkSlots,
 		memoryAdmission,
 		storageAdmission,
+		fleetRoutes,
 		control: async () => undefined,
 		onTickTiming: (timing) =>
 			log("hobo_ci_isolated_worker_tick_slow", {
@@ -829,6 +889,8 @@ try {
 	}
 
 	const reconcileAndLaunch = singleFlight(async () => {
+		// Sampled at most every ten seconds; never fails the tick.
+		await hostHealth.observe();
 		const workerReconcileStartedAt = Date.now();
 		const reconciliation = await worker.reconcileLeases();
 		workerReconcileMs = Date.now() - workerReconcileStartedAt;
@@ -847,6 +909,10 @@ try {
 		const current = reconcileAndLaunch();
 		const tracked = current.finally(() => {
 			if (tickInFlight === tracked) tickInFlight = undefined;
+			if (gcRequested) {
+				gcRequested = false;
+				runGc();
+			}
 		});
 		tickInFlight = tracked;
 		return tracked;
@@ -938,6 +1004,7 @@ try {
 		trunkSlots,
 		mergeGroupLeases,
 		lendTrunkSlots,
+		publishFleetRoutes,
 		workRoot,
 		pnpmStoreMounted: pnpmStore !== "",
 		pnpmStorePruneIntervalMs,
@@ -1024,6 +1091,17 @@ try {
 				});
 			}
 			if (stopMode === "drain") await retiredSweep.drain();
+			if (stopMode === "drain" && fleetRoutes) {
+				// Leaving for good: nobody will keep the route table current, so
+				// every class goes back to its hobo label. A handoff leaves it,
+				// because the successor takes over within seconds.
+				const state = await store.configuration().catch(() => undefined);
+				for (const connection of state?.configuration?.connections ?? [])
+					await fleetRoutes.reset({
+						installationId: connection.installationId,
+						repository: connection.repository,
+					});
+			}
 			await closeStore();
 			await Promise.race([
 				natsMesh?.close().catch(() => undefined),

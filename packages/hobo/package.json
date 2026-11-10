@@ -89,6 +89,7 @@
 		"zod": "^4.1.13"
 	},
 	"devDependencies": {
+		"@hobo/ci-vercel": "workspace:*",
 		"@hobo/contract-harness": "workspace:*",
 		"@hobo/testing": "workspace:*",
 		"@types/pg": "8.15.5",
