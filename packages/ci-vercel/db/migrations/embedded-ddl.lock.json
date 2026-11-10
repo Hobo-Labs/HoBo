@@ -1,0 +1,15 @@
+{
+	"contract": "hobo.ci.embedded-ddl-lock/v1",
+	"provenOn": "PostgreSQL 16.15",
+	"sha256": "a2cfa73776bcb40d3e996d434ea80e29e19f6808514a339af9ec14a86da970bc",
+	"statements": [
+		{
+			"source": "src/database-connections.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_database_probes ( id uuid PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now() )"
+		},
+		{
+			"source": "src/worker-health.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_worker_health ( component text PRIMARY KEY, success_at timestamptz, failure_at timestamptz )"
+		}
+	]
+}

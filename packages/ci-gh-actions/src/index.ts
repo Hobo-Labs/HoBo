@@ -7,16 +7,33 @@ export {
 } from "./ci-engine-inventory.js";
 export { CiRelayClientError, createCiRelayClient } from "./client.js";
 export {
+	CI_INFRA_EVENT_TYPES,
+	type CiEventEmitter,
+	type CiEventSink,
+	type CiEventSource,
+	ciEventSinkFromEnv,
+	cloudEventsHttpSink,
+	createCiEventEmitter,
+	toCiCloudEvent,
+} from "./cloud-events.js";
+export {
 	type ControlAuthenticator,
 	type ControlPrincipal,
 	createControlAuthenticator,
-	createControlPlane,
-} from "./control-plane.js";
+} from "./control-auth.js";
 export {
 	collectAllowedRelayOrigins,
 	resolveEngineRelayOrigin,
 	resolveEnvironmentEngines,
 } from "./engine-relay-routing.js";
+export {
+	createFailureLog,
+	describeFailure,
+	type FailureEvents,
+	failureRoute,
+	reportRelayFailure,
+	setRelayFailureEvents,
+} from "./failure-log.js";
 export {
 	createGithubAppTransport,
 	type GithubAppTransport,
@@ -39,6 +56,13 @@ export {
 	type HostedInboxStore,
 	type HostedRelayTickTiming,
 } from "./hosted-runtime.js";
+export { initializeHostedRelaySchema } from "./hosted-schema.js";
+export {
+	createRelayHandler,
+	type HostedRelayApplication,
+	type StubEngine,
+	type VerifiedWebhook,
+} from "./http-handler.js";
 export { signIngressForward, verifyIngressForward } from "./ingress-forward.js";
 export {
 	isIsolatedContainerOffer,
@@ -150,8 +174,8 @@ export {
 	type JobDurations,
 	type JobObservation,
 } from "./job-durations.js";
-export { createJobPollAdmissionWorker } from "./job-poll-admission.js";
 export { startRelayFromEnvironment } from "./main.js";
+export { createNodeRelayHandler } from "./node-http.js";
 export {
 	createGithubOidcVerifier,
 	type GithubClaims,
@@ -189,7 +213,7 @@ export {
 	createQueuedJobRepair,
 	PostgresQueuedJobRepairClaims,
 } from "./queued-job-repair.js";
-export { Relay } from "./relay.js";
+export { createRelayHost } from "./relay-host.js";
 export {
 	assertRelayOriginAllowed,
 	CI_PROJECT_LOCAL_OVERRIDE_PATH,
@@ -208,8 +232,21 @@ export {
 	resolveExplicitCiEnvironmentName,
 	selectEnvironmentForWebhook,
 } from "./relay-routing.js";
-export { createRelayRequestHandler, createRelayServer } from "./server.js";
 export {
+	createRelayTrace,
+	githubRoute,
+	otlpFileSink,
+	otlpHttpSink,
+	type RelaySpan,
+	type RelayTrace,
+	type RelayTraceSink,
+	relayTraceSinkFromEnv,
+	runTraceId,
+	toOtlpTraces,
+	traceGithubTransport,
+} from "./relay-trace.js";
+export {
+	admitWhenReady,
 	createRelayService,
 	type RelayServiceLog,
 	type RelayServiceOptions,

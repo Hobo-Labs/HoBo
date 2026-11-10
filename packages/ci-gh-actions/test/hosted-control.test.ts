@@ -966,6 +966,22 @@ describe("hosted asynchronous account control", () => {
 			(await t.request("/v2/accounts/self/policy", "PUT", "admin", bad, 2))
 				.status,
 		).toBe(409);
+		// A relay with no Sandbox host refuses the provider instead of storing it inert.
+		const unavailable = await t.request(
+			"/v2/accounts/self/policy",
+			"PUT",
+			"admin",
+			policy,
+			2,
+		);
+		expect(unavailable.status).toBe(409);
+		expect(await unavailable.json()).toEqual({
+			error: "sandbox providers are unavailable on this relay",
+		});
+		t.relay.options.isolatedHost = {
+			launch: async () => {},
+			reconcile: async () => {},
+		};
 		expect(
 			(await t.request("/v2/accounts/self/policy", "PUT", "admin", policy, 2))
 				.status,

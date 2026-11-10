@@ -13,6 +13,7 @@ import {
 	parsePinnedImage,
 	pinnedContainerImages,
 } from "../contracts/pinned-container-images.js";
+import { startContainer } from "./fixtures/start-container.js";
 
 function dockerAvailable(): boolean {
 	if (process.env.HOBO_FUZZ_DOCKER === "0") return false;
@@ -31,18 +32,22 @@ describe.runIf(docker)("pinned Postgres via Testcontainers", () => {
 			pinnedContainerImages.postgres17Alpine,
 		);
 		// testcontainers 11 has no withDigest(); pin through the image reference.
-		container = await new GenericContainer(`${repository}@${digest}`)
-			.withEnvironment({
-				POSTGRES_DB: "pact",
-				POSTGRES_USER: "pact",
-				POSTGRES_PASSWORD: "local-contract-tests-only",
-			})
-			.withWaitStrategy(
-				// The image logs readiness twice: once for the init server, then for the real one.
-				Wait.forLogMessage(/database system is ready to accept connections/, 2),
-			)
-			.withExposedPorts(5432)
-			.start();
+		container = await startContainer(() =>
+			new GenericContainer(`${repository}@${digest}`)
+				.withEnvironment({
+					POSTGRES_DB: "pact",
+					POSTGRES_USER: "pact",
+					POSTGRES_PASSWORD: "local-contract-tests-only",
+				})
+				.withWaitStrategy(
+					// The image logs readiness twice: once for the init server, then for the real one.
+					Wait.forLogMessage(
+						/database system is ready to accept connections/,
+						2,
+					),
+				)
+				.withExposedPorts(5432),
+		);
 		const host = container.getHost();
 		const port = container.getMappedPort(5432);
 		connectionString = `postgresql://pact:local-contract-tests-only@${host}:${port}/pact`;
