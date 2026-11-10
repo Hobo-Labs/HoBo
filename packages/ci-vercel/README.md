@@ -294,6 +294,9 @@ start looked like a relay nobody was calling.
 | `hobo_ci_control_failed` | An account or registration API call threw | `method`, `route` |
 | `hobo_ci_ready_check_failed` | The readiness check itself threw | none |
 
+The GitHub App bootstrap store reports `bootstrap store initialization failed` with the database
+error as its cause, so the line shows why the store could not be reached.
+
 Each line carries the error's class, its message and its cause's message, with URL credentials and
 anything shaped like a token removed and the text capped at 300 characters. A route has its
 identifiers replaced. One line per event name is written every 10 seconds per instance; `suppressed`
