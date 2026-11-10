@@ -11,8 +11,11 @@ covers these limits and disposal of error/redirect response streams. Product CLI
 HTTPS control plane and native PostgreSQL store in
 [`packages/hobo/e2e/ci.test.ts`](../hobo/e2e/ci.test.ts).
 
-`@hobo/ci-gh-actions` provides the hosted HoBo CI relay, account API, repository
-installer and ephemeral GitHub Actions runner host. Once the repository's setup
+`@hobo/ci-gh-actions` provides the HoBo CI relay, account API, repository
+installer and ephemeral GitHub Actions runner host. There is one relay; it is
+[hosted three ways](#one-relay-thin-hosts) (a Node service behind `hobo ci serve`
+and the container image, Vercel, and the box worker daemon), and each host adds
+only a store, a scheduler and runner backends. Once the repository's setup
 PR is merged and its connection activated, workflows select HoBo with one line:
 
 ```yaml
@@ -107,6 +110,22 @@ drain on SIGTERM. The Vercel host adds the GitHub App bootstrap and OAuth
 onboarding, the queue wake-up and the webhook and queued-job repair; those are
 Postgres-only today and the Node service does not have them.
 
+What a host can turn on, and who does:
+
+| Option | Node service | Vercel |
+| --- | --- | --- |
+| `ingressForwardSecret` (`X-Hobo-Ingress-Forward` intake) | `HOBO_CI_INGRESS_FORWARD_SECRET` | not configured |
+| `trustProxy` (refuse a plain-HTTP forward) | `HOBO_CI_TRUST_PROXY=1` | not configured |
+| `stubEngines` (health of engines it does not serve) | `HOBO_CI_STUB_ENGINES` | none |
+| `fullAccountUpdates` (`PUT /v1/accounts/self/policy`) | on | off (410) |
+| `isolatedHost` (Sandbox runner; also lets a desired policy name a Sandbox provider) | none | Vercel Sandbox |
+| `denyUnisolated` (no workflow bridge) | off | on |
+
+Everything else, routes included, is the same code with the same behaviour:
+the `/engines/gh-actions` mount and the per-engine health map are served by
+every host, and the v2 runtime, providers, rate-observation, observation and
+inbox routes and `isolated-connect` are served by the Node service too.
+
 ## One HTTP layer
 
 Every host of the relay serves the same Fetch handler, `createRelayHandler`
@@ -197,9 +216,10 @@ adapter. App keys and installation tokens remain in the relay.
 
 The GitHub App needs Actions, Administration, Contents, Workflows and Pull requests
 write access, plus Metadata read. Subscribe to `workflow_job` and `workflow_run`.
-The hosted Vercel adapter supplies the App bootstrap and OAuth callbacks described
-below. Self-hosted deployments must mount equivalent authenticated callbacks and
-provide encrypted secret storage. Customer repository setup is handled by the
+The Vercel host supplies the App bootstrap and OAuth callbacks described
+below; they are Postgres-only today, so the Node service (`hobo ci serve`, the
+container image) does not serve them and takes an existing App's ID, key and
+webhook secret from its `HOBO_CI_*` bindings instead. Customer repository setup is handled by the
 account APIs below.
 
 [Hosted GitHub App bootstrap and account onboarding](ONBOARDING.md) describes the operator and account flows.
@@ -509,7 +529,7 @@ any extra Sandbox proxy VM duration. The relay
 reserves worst-case runtime plus startup, checks account/provider budgets and concurrency, and rechecks delayed
 launches. Original Actions jobs and portable native pipelines share the ledger.
 Prices use integer USD microdollars; allocations use normalized runner minutes.
-Both relays reprice held offers with their pinned attempt and queue context, retaining
+The relay reprices held offers with their pinned attempt and queue context, retaining
 other payer measurements for all-of constraints. This preflight checks feasibility;
 the durable store must still claim the financial hold and revalidate strict native
 liability proof before dispatch. A feasible plan cannot authorize provider effects.

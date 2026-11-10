@@ -11,8 +11,8 @@ from changing that metadata.
 | SDK | State |
 | --- | --- |
 | `@hobo/ci` | Portable pipelines, allocation routing and durable budget reservations |
-| [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md) | Hosted relay, tenant API, repository installer and JIT-runner host |
-| [`@hobo/ci-vercel`](../ci-vercel/README.md) | Vercel relay hosting and local execution of Vercel CI-tagged Turbo checks |
+| [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md) | The relay (one core, with its Node service host for `hobo ci serve` and the container image), tenant API, repository installer and JIT-runner host |
+| [`@hobo/ci-vercel`](../ci-vercel/README.md) | The Vercel host of that same relay, and local execution of Vercel CI-tagged Turbo checks |
 | [`@hobo/ci-dagger`](../ci-dagger/README.md) | Native Dagger CI checks on local/self-hosted engines and portable SDK adapter |
 | [`@hobo/ci-cf`](../ci-cf/README.md) | Implemented native Cloudflare CI adapter |
 | [`@hobo/ci-ado`](../ci-ado/README.md) | Local command checks and self-hosted Azure Pipelines configuration |
@@ -263,8 +263,10 @@ provider-specific toolchain/environment defaults are not part of this contract.
 ## Apply routing and budgets
 
 The Node coordinator `PipelineScheduler` from `@hobo/ci/scheduler` uses
-`LeaseStore` from `@hobo/ci/store`. The original Actions relay uses the same
-ledger, so its reservations and native pipelines cannot spend the same balance.
+`LeaseStore` from `@hobo/ci/store`. The Actions relay uses the same ledger
+(its SQLite store, `SqliteCiStore` from `@hobo/ci/sqlite`, wraps `LeaseStore`;
+`PostgresCiStore` implements the same port), so its reservations and native
+pipelines cannot spend the same balance.
 Bind eligible account offer IDs to real, account-scoped backend contexts;
 construct `new PipelineScheduler(store, account.id, bindings)` for that account.
 The scheduler rejects another account even if its offer IDs are identical.

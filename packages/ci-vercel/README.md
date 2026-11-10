@@ -118,6 +118,12 @@ Vercel host around it: the function entrypoint, which paths stream
 (`src/relay-streams.ts`), the queue consumer, the scheduler, the Postgres store
 wiring and the Sandbox runner.
 
+It runs the same relay core as the Node service ([one relay, thin
+hosts](../ci-gh-actions/README.md#one-relay-thin-hosts)); what is specific to
+this host is the `PostgresCiStore`, the queue wake-up and 15-minute schedule
+that call the worker tick, the Sandbox runner backend, the GitHub App bootstrap
+and OAuth onboarding, and the webhook and queued-job repair.
+
 This package provides a Vercel Node Function entrypoint, a Postgres-backed
 relay, a private queue consumer, and an independent scheduler. Signed
 GitHub deliveries are committed before acknowledgement. Queue notifications
