@@ -1,0 +1,71 @@
+name: Route runners
+description: >-
+  Chooses the runner label this run's jobs ask for: the hobo fleet while it is
+  taking jobs, an enrolled local box when it is not, GitHub-hosted when neither
+  is. Never fails: when the queue cannot be read, or no Node on the machine can
+  run the script, the fleet label is returned and a warning says why.
+inputs:
+  token:
+    description: A token that can read this repository's Actions runs and jobs.
+    required: true
+  mode:
+    description: auto (default), or fleet, local, github to pin one tier.
+    required: false
+    default: ""
+  local-runner:
+    description: "`true` when a local box is enrolled under hobo-local-host."
+    required: false
+    default: ""
+  max-wait-seconds:
+    description: A job waiting this long for a label means that backend is not taking jobs.
+    required: false
+    default: ""
+  trunk-runner:
+    description: "`false` keeps trunk events on the shared `hobo` label."
+    required: false
+    default: ""
+outputs:
+  runner:
+    description: The runs-on label for this run's jobs.
+    value: ${{ steps.route.outputs.runner }}
+  tier:
+    description: fleet, local or github.
+    value: ${{ steps.route.outputs.tier }}
+runs:
+  using: composite
+  steps:
+    - id: route
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        HOBO_CI_ROUTE: ${{ inputs.mode }}
+        HOBO_CI_LOCAL_RUNNER: ${{ inputs.local-runner }}
+        HOBO_CI_ROUTE_MAX_WAIT_SECONDS: ${{ inputs.max-wait-seconds }}
+        HOBO_CI_TRUNK_RUNNER: ${{ inputs.trunk-runner }}
+      run: |
+        set -uo pipefail
+        fleet=hobo
+        case " push workflow_dispatch merge_group workflow_run " in
+          *" ${GITHUB_EVENT_NAME} "*)
+            if [ "${HOBO_CI_TRUNK_RUNNER}" != "false" ]; then fleet=hobo-trunk; fi ;;
+        esac
+        stay_on_fleet() {
+          echo "::warning::runner routing did not run ($1); staying on the fleet"
+          { echo "runner=${fleet}"; echo "tier=fleet"; } >> "$GITHUB_OUTPUT"
+        }
+        # The script is TypeScript run as written, which needs Node 22.18 or later.
+        cache="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
+        node_bin=""
+        for candidate in "$(command -v node || true)" \
+          "${cache}"/node/24.*/*/bin/node "${cache}"/node/22.*/*/bin/node; do
+          [ -x "${candidate}" ] || continue
+          if "${candidate}" -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 18) ? 0 : 1)'; then
+            node_bin="${candidate}"
+            break
+          fi
+        done
+        if [ -z "${node_bin}" ]; then
+          stay_on_fleet "no Node 22.18 or later on this machine"
+          exit 0
+        fi
+        "${node_bin}" --no-warnings scripts/ci/route-runner.mts || stay_on_fleet "the routing script failed"
