@@ -40,6 +40,7 @@
 		"typecheck:types": "tsc --noEmit -p tsconfig.types.json",
 		"lint": "biome check .",
 		"test": "pnpm run build && vitest run --exclude test/manifest/cue-gate.test.ts",
+		"pretest:schema": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test:schema": "vitest run test/manifest"
 	}
 }

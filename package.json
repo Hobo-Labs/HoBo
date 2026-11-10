@@ -103,7 +103,7 @@
 		"test:name": "vitest run --no-isolate --passWithNoTests -t",
 		"test:property": "pnpm --filter @hobo/fuzz run test:property",
 		"test:root": "node --import tsx scripts/run-tests.ts --root-only",
-		"test:schema": "node --import tsx scripts/validate-sdk-contracts.ts && node --import tsx scripts/validate-deployment-set-delta.ts && node --import tsx scripts/check-cue-schemas.ts && node --import tsx packages/schema-tools/src/cli.ts --check && pnpm --filter @hobo/bindles run test:schema && pnpm --filter @hobo/stage-gate run test:schema",
+		"test:schema": "node --import tsx scripts/validate-sdk-contracts.ts && node --import tsx scripts/validate-deployment-set-delta.ts && node --import tsx scripts/check-cue-schemas.ts && node --import tsx packages/schema-tools/src/cli.ts --check && pnpm exec turbo run build --filter=@hobo/core --filter=@hobo/data && pnpm --filter @hobo/bindles run test:schema && pnpm --filter @hobo/stage-gate run test:schema",
 		"test:scripts": "node --import tsx --test \"scripts/test/*.test.ts\"",
 		"test:ship-gap-closure": "node --import tsx --test scripts/test/check-ship-gap-closure.test.ts",
 		"test:smoke": "vitest run --no-isolate --passWithNoTests",

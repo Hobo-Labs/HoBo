@@ -6,7 +6,7 @@ import {
 	createGithubInstallationAdminVerifier,
 } from "./app-registration-http.js";
 import { PostgresAppRegistration } from "./app-registration-postgres.js";
-import type { ControlAuthenticator } from "./control-plane.js";
+import type { ControlAuthenticator } from "./control-auth.js";
 import { createGithubOAuthSession } from "./github-oauth-session.js";
 import { PostgresGithubOAuthSessionStore } from "./github-oauth-session-postgres.js";
 import type { OnboardingGithubPort } from "./onboarding.js";

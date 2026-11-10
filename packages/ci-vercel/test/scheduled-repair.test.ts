@@ -1,7 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
+import { normalizeQueueWakeup } from "../src/queue-forwarding.js";
 import { createScheduledRepairHandler } from "../src/scheduled-repair.js";
-import { createHostedWorker } from "../src/worker.js";
+import {
+	createHostedWorker,
+	isPlatformScheduleRun,
+	QueueMessageSchema,
+} from "../src/worker.js";
 
 const secret = "secret-for-our-cron-needs-32-bytes";
 const request = (authorization?: string, method = "GET") =>
@@ -11,12 +16,50 @@ const request = (authorization?: string, method = "GET") =>
 	});
 
 describe("scheduled repair", () => {
-	it("does not configure an unauthenticated Vercel Cron target", async () => {
+	it("schedules repair on the private queue and never on a public route", async () => {
 		const config = JSON.parse(
 			await readFile(new URL("../vercel.json", import.meta.url), "utf8"),
 		);
+		// A cron or a path schedule would call a public URL; the queue consumer
+		// is private, so a topic target needs no shared secret.
 		expect(config.crons).toBeUndefined();
-		expect(config.schedules).toBeUndefined();
+		expect(config.schedules).toEqual({
+			"hobo-ci-repair": { schedule: "*/15 * * * *", topic: "hobo-ci" },
+		});
+		const consumer = config.functions["api/queue.ts"].experimentalTriggers;
+		expect(consumer).toEqual([{ type: "queue/v2beta", topic: "hobo-ci" }]);
+	});
+	it("accepts the scheduler's run message and tells it from the relay's own", () => {
+		// The shape Vercel publishes for a static schedule with a topic target.
+		const run = QueueMessageSchema.parse({
+			scheduleId: "sch_example",
+			executionId: "schx_example",
+			name: "hobo-ci-repair",
+			namespace: "default",
+			scheduledAt: "2026-11-10T05:00:00.000Z",
+			expression: "*/15 * * * *",
+			source: "static",
+		});
+		expect(isPlatformScheduleRun(run)).toBe(true);
+		expect(normalizeQueueWakeup(run)).toEqual({
+			source: "static",
+			name: "hobo-ci-repair",
+		});
+		for (const own of [
+			{ source: "static", name: "hobo-ci-repair" },
+			{ source: "hobo-ci", name: "hobo-ci-repair" },
+			{ deliveryId: "delivery-1" },
+			null,
+		])
+			expect(isPlatformScheduleRun(QueueMessageSchema.parse(own))).toBe(false);
+		// A schedule under any other name is not repair.
+		expect(() =>
+			QueueMessageSchema.parse({
+				scheduleId: "sch_other",
+				name: "other",
+				source: "static",
+			}),
+		).toThrow();
 	});
 	it("requires a sufficiently strong secret and rejects unauthorized requests", async () => {
 		const enqueue = vi.fn(async () => {});

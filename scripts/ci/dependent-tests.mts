@@ -13,19 +13,30 @@
  * Edges: static and dynamic imports, `resolve("…")` calls, and string literals
  * naming an existing repository path relative to the file, its package or the
  * repository root (`new URL("../dist/bin/hobo.js", import.meta.url)`,
- * `join(here, "../../connectivity/contracts/pacts")`). A `dist/` path stands
- * for the `src/` file built into it. A literal naming another package's file
+ * `join(here, "../../connectivity/contracts/pacts")`). A bare `"./"` or
+ * `"../"` is that directory, unless it only tests a string (the first
+ * argument of `startsWith`, `endsWith`, `includes`, `replace` or `replaceAll`,
+ * an operand of `===`, a `case` label). A `dist/`
+ * path stands for the `src/` file built into it. A literal naming another package's file
  * (`hobo ci serve --with-worker` spawning the worker daemon) is that one file,
  * not its imports: it runs as its own process and its package's suite covers
- * it. A package entry that maps to no source file stands for the whole package
+ * it. Entering a package by importing it or naming one of its files also
+ * reaches its `package.json`, its `turbo.json`, its `tsconfig.json`, every
+ * tsconfig its scripts name, what those extend inside the package and the
+ * config of a bundler its scripts run: they shape what an importer gets. A directory read does not:
+ * `join(here, "../../lib/fixtures")` reads data the manifest does not shape.
+ * A package entry that maps to no source file stands for the whole package
  * and its workspace dependencies. A dependent's test with a computed `import()`
  * or a relative import that resolves to nothing runs. A dependent runs in full
  * when its `test` script is not plain `vitest run` or its vitest config's
- * closure reaches the change.
+ * closure reaches the change; a package whose script is not plain runs whole
+ * or not at all, since its script cannot take a file list.
  *
- * A changed path outside every package (the root vitest config, a doc a test
- * reads) runs the tests anywhere whose closure concretely reaches it; there a
- * give-up does not count, or a docs edit would run every package.
+ * Every other package runs the tests whose closure concretely reaches a
+ * changed path: a path outside every package (the root vitest config, a doc a
+ * test reads), or a file another package imports by relative path without
+ * depending on it. There a give-up does not count, or a docs edit would run
+ * every package.
  *
  * Node builtins only.
  *
@@ -39,6 +50,8 @@
  * call) and exits non-zero when any of it fails.
  * `--shard=INDEX/COUNT` assigns every whole suite and dependent subset to
  * exactly one zero-based shard; a repo-wide plan covers every workspace.
+ * `--plan-shards=MAX` runs nothing: it prints the JSON list of shard indexes
+ * this plan needs (`[0]` to `[0, …, MAX-1]`) and the plan itself on stderr.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -109,6 +122,26 @@ export function shardTestPlan(
 	};
 }
 
+/**
+ * Suites one scoped shard carries. Four is what the fixed eight-shard matrix
+ * already gave each shard for a 32-suite plan, so no shard is asked for more
+ * than shards have carried before; raise it only with shard timings in hand.
+ */
+const SUITES_PER_SHARD = 4;
+
+/**
+ * How many shards a plan is worth, `max` at most. A repo-wide plan takes them
+ * all; a scoped one takes one per `SUITES_PER_SHARD` suites or subsets, and
+ * one when it holds nothing, so the job that reports the result still runs.
+ */
+export function planShardCount(plan: TestPlan, max: number): number {
+	if (!Number.isSafeInteger(max) || max < 1 || max > 64)
+		throw new Error("invalid workspace test shard");
+	if (plan.mode === "all") return max;
+	const units = plan.full.length + plan.subsets.size;
+	return Math.min(max, Math.max(1, Math.ceil(units / SUITES_PER_SHARD)));
+}
+
 type Json =
 	| string
 	| number
@@ -140,6 +173,67 @@ const STATIC_IMPORT =
 const DYNAMIC_IMPORT = /\bimport\s*\(\s*(?:(["'])([^"'\n]+)\1\s*\))?/g;
 const RESOLVE_CALL = /\bresolve\(\s*["']([^"'\n]+)["']\s*\)/g;
 const PATH_LITERAL = /["'`]((?:\.\.?\/|packages\/|examples\/)[^"'`\n$]*)["'`]/g;
+const BARE_DIR = /^\.\.?\/$/;
+const TSCONFIG = /(?:[\w.-]+\/)*tsconfig(?:\.[\w-]+)?\.json\b/g;
+const EXTENDS = /"extends"\s*:\s*(\[[^\]]*\]|"[^"\n]*")/;
+/** Bundlers whose config beside the manifest shapes the build, when a script runs one. */
+const BUNDLERS = ["tsup", "vite"];
+const CONFIG_EXTENSIONS = ["ts", "mts", "js", "mjs", "cjs"];
+
+const STRING_TEST_ARGUMENT =
+	/\.(?:startsWith|endsWith|includes|replace|replaceAll)\(\s*$/;
+const COMPARED_TO = /[!=]==?\s*$/;
+const COMPARED_WITH = /^\s*[!=]==?/;
+const CASE_LABEL = /\bcase\s+$/;
+
+/**
+ * Whether the literal `match` only tests a string: the first argument of
+ * `startsWith`, `endsWith`, `includes`, `replace` or `replaceAll` (what is
+ * searched for), an operand of an equality, or a `case` label. A replacement
+ * (`s.replace("@/", "../")`) is a value that may be a path, and like an
+ * array element, a property or a concatenation it stays one.
+ */
+function isStringTest(
+	text: string,
+	match: RegExpExecArray | RegExpMatchArray,
+): boolean {
+	const start = match.index ?? 0;
+	const end = start + match[0].length;
+	// Whole lines, so a comment's `//` is judged from its line's first quote.
+	const from = text.lastIndexOf("\n", Math.max(0, start - 200)) + 1;
+	const before = text
+		.slice(from, start)
+		.split("\n")
+		.map(withoutTrailingComment)
+		.join("\n");
+	const after = text.slice(end, end + 200).replace(/^\s*\/\/.*\n/, "");
+	return (
+		STRING_TEST_ARGUMENT.test(before) ||
+		COMPARED_TO.test(before) ||
+		COMPARED_WITH.test(after) ||
+		(CASE_LABEL.test(before) && /^\s*:/.test(after))
+	);
+}
+
+/**
+ * `line` without the `//` comment that ends it. A `//` inside a string on
+ * the line (`"http://…"`) is not one. Only the text a literal is judged by
+ * goes through this: a cut in the wrong place cannot hide a literal.
+ */
+function withoutTrailingComment(line: string): string {
+	let quote = "";
+	for (let index = 0; index < line.length; index++) {
+		const char = line[index];
+		if (quote !== "") {
+			if (char === "\\") index++;
+			else if (char === quote) quote = "";
+		} else if (char === '"' || char === "'" || char === "`") quote = char;
+		else if (char === "/" && line[index + 1] === "/")
+			return line.slice(0, index);
+	}
+	return line;
+}
+
 const VITEST_CONFIGS = [
 	"vitest.config.ts",
 	"vitest.config.mts",
@@ -150,12 +244,14 @@ const CONDITIONS = ["import", "node", "default", "require"];
 
 /**
  * `source` without the comments that start a line. Only those: `"src/**\/*.ts"`
- * opens and closes a block comment mid-line.
+ * opens and closes a block comment mid-line, and cutting a `//` that sits in a
+ * string would lose the literals after it. A literal in a trailing comment is
+ * therefore still an edge; `isStringTest` reads past such a comment.
  */
 function withoutComments(source: string): string {
 	return source
-		.replace(/^\s*\/\*[\s\S]*?\*\//gm, "")
-		.replace(/^\s*\/\/.*$/gm, "");
+		.replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, "")
+		.replace(/^[ \t]*\/\/.*$/gm, "");
 }
 
 function packageName(specifier: string): string {
@@ -236,9 +332,6 @@ type Edges = Readonly<{
 
 export function createWalker(repo: Repo) {
 	const byName = new Map(repo.workspaces.map((ws) => [ws.name, ws]));
-	const byDepth = [...repo.workspaces].sort(
-		(a, b) => b.dir.length - a.dir.length,
-	);
 	const dirs = new Set<string>(["."]);
 	for (const file of repo.files)
 		for (let dir = posix.dirname(file); dir !== "."; dir = posix.dirname(dir))
@@ -246,16 +339,94 @@ export function createWalker(repo: Repo) {
 	const manifests = new Map<string, JsonObject | undefined>();
 	const edgeCache = new Map<string, Edges>();
 
-	const ownerOf = (path: string) =>
-		byDepth.find((ws) => path === ws.dir || path.startsWith(`${ws.dir}/`));
+	// The deepest workspace directory at or above the path. Looked up by
+	// walking up from it: a scan of every workspace per path was a fifth of
+	// the planner's time.
+	const byDir = new Map(repo.workspaces.map((ws) => [ws.dir, ws]));
+	const owners = new Map<string, Workspace | undefined>();
+	const ownerOf = (path: string): Workspace | undefined => {
+		if (owners.has(path)) return owners.get(path);
+		let owner: Workspace | undefined;
+		for (let dir = path; dir !== "." && dir !== "/"; dir = posix.dirname(dir)) {
+			owner = byDir.get(dir);
+			if (owner) break;
+		}
+		owners.set(path, owner);
+		return owner;
+	};
 	const manifestOf = (ws: Workspace) => {
 		if (!manifests.has(ws.dir))
 			manifests.set(ws.dir, parseManifest(repo.read(`${ws.dir}/package.json`)));
 		return manifests.get(ws.dir);
 	};
 
+	/**
+	 * The files that shape what an importer of `ws` gets without being imported:
+	 * its manifest (`exports`, `type`, dependencies), its `turbo.json`, its
+	 * `tsconfig.json`, every tsconfig one of its scripts names
+	 * (`tsc -p config/tsconfig.types.json`), what those extend inside the
+	 * package, and the config of a bundler one of its scripts runs.
+	 */
+	const inputs = new Map<string, readonly string[]>();
+	function packageInputs(ws: Workspace): readonly string[] {
+		const cached = inputs.get(ws.dir);
+		if (cached) return cached;
+		const scripts = manifestOf(ws)?.scripts;
+		const commands = isObject(scripts)
+			? Object.values(scripts).filter(isString)
+			: [];
+		const inside = (path: string) =>
+			path.startsWith(`${ws.dir}/`) && repo.files.has(path);
+		const found = new Set(
+			[
+				"package.json",
+				"turbo.json",
+				...BUNDLERS.filter((tool) =>
+					commands.some((command) =>
+						new RegExp(`(?:^|[\\s;&|])${tool}(?:[\\s;&|]|$)`).test(command),
+					),
+				).flatMap((tool) =>
+					CONFIG_EXTENSIONS.map((extension) => `${tool}.config.${extension}`),
+				),
+			]
+				.map((name) => `${ws.dir}/${name}`)
+				.filter(inside),
+		);
+		const tsconfigs = ["tsconfig.json"]
+			.concat(commands.flatMap((command) => command.match(TSCONFIG) ?? []))
+			.map((name) => posix.normalize(posix.join(ws.dir, name)));
+		for (let path = tsconfigs.shift(); path; path = tsconfigs.shift()) {
+			if (found.has(path) || !inside(path)) continue;
+			found.add(path);
+			// A tsconfig is JSONC, so `extends` is read as text. One that leaves
+			// the package (the root base config) is a path outside every package.
+			const extended = EXTENDS.exec(repo.read(path) ?? "")?.[1] ?? "";
+			for (const [, target = ""] of extended.matchAll(/"([^"]*)"/g)) {
+				if (!target.startsWith(".")) continue;
+				const next = posix.normalize(posix.join(posix.dirname(path), target));
+				tsconfigs.push(next.endsWith(".json") ? next : `${next}.json`);
+			}
+		}
+		const list = [...found];
+		inputs.set(ws.dir, list);
+		return list;
+	}
+	/** The changed manifest or build config of the package `path` sits in. */
+	function changedInput(
+		path: string,
+		changed: ReadonlySet<string>,
+	): string | undefined {
+		const owner = ownerOf(path);
+		return owner && packageInputs(owner).find((input) => changed.has(input));
+	}
+
 	/** The tracked source file `path` names, or the one a `dist/` path is built from. */
+	const sources = new Map<string, string | undefined>();
 	function sourceFile(path: string): string | undefined {
+		if (!sources.has(path)) sources.set(path, findSourceFile(path));
+		return sources.get(path);
+	}
+	function findSourceFile(path: string): string | undefined {
 		const owner = ownerOf(path);
 		const bases = [path];
 		if (owner && path.startsWith(`${owner.dir}/dist/`)) {
@@ -368,8 +539,15 @@ export function createWalker(repo: Repo) {
 		// imports. A vitest config's literals are setup files vitest imports.
 		const loadsWhatItNames = VITEST_CONFIGS.includes(posix.basename(file));
 		const named = new Set<string>();
-		for (const match of withoutComments(source).matchAll(PATH_LITERAL)) {
+		const text = withoutComments(source);
+		for (const match of text.matchAll(PATH_LITERAL)) {
 			const literal = match[1] ?? "";
+			// A bare `./` or `../` names the directory a module reads computed
+			// paths under (`new URL("../", import.meta.url)`, `cwd: "../"`),
+			// unless it only tests a string: `entry.startsWith("./")` read as
+			// reaching every file of @hobo/core.
+			const bare = BARE_DIR.test(literal);
+			if (bare && isStringTest(text, match)) continue;
 			// `startsWith("packages/connectors/")` tests a path; it reads nothing.
 			const prefix = literal.endsWith("/");
 			const bases = /^(?:packages|examples)\//.test(literal)
@@ -380,7 +558,9 @@ export function createWalker(repo: Repo) {
 					.normalize(posix.join(base, literal))
 					.replace(/\/$/, "");
 				if (path === ".." || path.startsWith("../")) continue;
-				const target = sourceFile(path);
+				// A bare directory is read, not imported: its `index.ts` is one
+				// file of it.
+				const target = bare ? undefined : sourceFile(path);
 				if (target && (loadsWhatItNames || ownerOf(target) === owner))
 					files.add(target);
 				else if (target) named.add(target);
@@ -419,9 +599,19 @@ export function createWalker(repo: Repo) {
 			if (seen.has(file)) continue;
 			seen.add(file);
 			if (changed.has(file)) return file;
+			// Entering a package, by import or by a file it names, takes what
+			// that package's manifest and build config make of it.
+			const input = changedInput(file, changed);
+			if (input) return input;
 			const next = edges(file);
 			if (next.unscoped && !lenient) return next.unscoped;
-			for (const path of next.named ?? []) if (changed.has(path)) return path;
+			for (const path of next.named ?? []) {
+				if (changed.has(path)) return path;
+				const namedInput = changedInput(path, changed);
+				if (namedInput) return namedInput;
+			}
+			// A directory is data read from disk: a change under it counts, the
+			// manifest of the package it sits in does not.
 			for (const dir of next.dirs) {
 				const prefix = dir === "." ? "" : `${dir}/`;
 				for (const path of changed) if (path.startsWith(prefix)) return path;
@@ -484,16 +674,15 @@ export function planDependentTests(
 			}
 		}
 	}
-	// A path outside every package (the root vitest config, a shared setup file,
-	// a doc a test reads) can reach any package's tests, but only a closure that
-	// actually reaches it counts: walking every package strictly would run all
-	// of them for a docs edit.
-	const bystanders =
-		outside.length === 0
-			? []
-			: repo.workspaces
-					.map((ws) => ws.dir)
-					.filter((dir) => !changedPackages.has(dir) && !dependents.has(dir));
+	// A package that declares no dependency can still reach a change: a path
+	// outside every package (the root vitest config, a shared setup file, a doc
+	// a test reads), or another package's file it imports by relative path
+	// (`packages/code` importing `../../cli/src/cloud/loader.js`). Only a
+	// closure that actually reaches it counts: walking every package strictly
+	// would run all of them for a docs edit.
+	const bystanders = repo.workspaces
+		.map((ws) => ws.dir)
+		.filter((dir) => !changedPackages.has(dir) && !dependents.has(dir));
 	const testsOf = new Map<string, string[]>();
 	for (const path of repo.files) {
 		if (!TEST_FILE.test(path) || /(?:^|\/)(?:node_modules|dist)\//.test(path))
@@ -502,6 +691,9 @@ export function planDependentTests(
 		if (owner)
 			testsOf.set(owner.dir, [...(testsOf.get(owner.dir) ?? []), path]);
 	}
+	// A changed package runs whole even when only its tests or docs changed:
+	// its tests read sibling files by names this walk cannot follow
+	// (`readPackageFile("README.md")`, a scan of the test directory).
 	const full = [...changedPackages];
 	const subsets = new Map<string, readonly string[]>();
 	const skipped: string[] = [];
@@ -514,8 +706,14 @@ export function planDependentTests(
 		const scripts = ws ? walker.manifestOf(ws)?.scripts : undefined;
 		const test = isObject(scripts) ? scripts.test : undefined;
 		if (!isString(test)) continue;
-		if (!PLAIN_VITEST.test(test.trim())) {
-			if (!lenient) full.push(dir);
+		// A script that is not plain `vitest run` cannot take a file list, so it
+		// runs whole or not at all. A dependent runs whole. A bystander still has
+		// to be asked whether its config or tests reach the change: skipping it
+		// here missed `packages/cli` (`pnpm run build && vitest run`) when the
+		// root vitest config it merges changed.
+		const plain = PLAIN_VITEST.test(test.trim());
+		if (!plain && !lenient) {
+			full.push(dir);
 			continue;
 		}
 		const config = VITEST_CONFIGS.map((name) => `${dir}/${name}`).find((path) =>
@@ -531,7 +729,7 @@ export function planDependentTests(
 		);
 		if (selected.length === 0) {
 			if (!lenient) skipped.push(dir);
-		} else if (selected.length === tests.length) full.push(dir);
+		} else if (!plain || selected.length === tests.length) full.push(dir);
 		else
 			subsets.set(
 				dir,
@@ -686,17 +884,15 @@ function describePlan(plan: TestPlan): string {
 	return lines.join("\n");
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-	const input = readStdin();
+/** The checkout in the working directory: tracked files, read from disk. */
+export function readRepo(): Repo {
 	const listed = spawnSync("git", ["ls-files", "-z"], {
 		encoding: "utf8",
 		maxBuffer: 256 * 1024 * 1024,
 	});
-	if (listed.status !== 0) {
-		console.error("dependent-tests: git ls-files failed");
-		process.exit(2);
-	}
-	const repo: Repo = {
+	if (listed.status !== 0)
+		throw new Error("dependent-tests: git ls-files failed");
+	return {
 		files: new Set(listed.stdout.split("\0").filter((path) => path !== "")),
 		read: (path) => {
 			try {
@@ -707,9 +903,22 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 		},
 		workspaces: readWorkspaces(),
 	};
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+	const input = readStdin();
+	const repo = readRepo();
 	const args = process.argv.slice(2);
 	const baseArgument = args.find((arg) => arg.startsWith("--base="));
 	const shardArgs = args.filter((arg) => arg.startsWith("--shard"));
+	const planShards = args.find((arg) => arg.startsWith("--plan-shards"));
+	const shardCap = Number(/^--plan-shards=(\d+)$/u.exec(planShards ?? "")?.[1]);
+	if (planShards !== undefined && !(shardCap >= 1 && shardCap <= 64)) {
+		console.error(
+			"dependent-tests: invalid shard cap; expected --plan-shards=MAX, 1 to 64",
+		);
+		process.exit(2);
+	}
 	if (
 		shardArgs.length > 1 ||
 		(shardArgs.length === 1 && !/^--shard=\d+\/\d+$/u.test(shardArgs[0] ?? ""))
@@ -726,6 +935,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 			? undefined
 			: cliRootFileReader(baseArgument.slice("--base=".length)),
 	);
+	if (planShards !== undefined) {
+		const count = planShardCount(plan, shardCap);
+		console.error(describePlan(plan));
+		console.log(
+			`[${Array.from({ length: count }, (_, index) => index).join(", ")}]`,
+		);
+		process.exit(0);
+	}
 	if (shardArgs.length === 1) {
 		const match = /^--shard=(\d+)\/(\d+)$/u.exec(shardArgs[0] ?? "");
 		if (!match) throw new Error("invalid workspace test shard");
