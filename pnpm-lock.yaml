@@ -681,6 +681,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@modelcontextprotocol/sdk':
+        specifier: 1.30.0
+        version: 1.30.0(@cfworker/json-schema@4.1.1)(zod@4.4.3)
       '@nats-io/jetstream':
         specifier: 3.4.0
         version: 3.4.0

@@ -19,6 +19,8 @@ export type HostedRelayApplication = Readonly<{
 	claim(leaseId: string, oidc: string): Promise<Response>;
 	control(request: Request): Promise<Response | undefined>;
 	ready(): Promise<boolean>;
+	/** The relay's MCP server (`createRelayMcp`); a host without one answers 404. */
+	mcp?(request: Request): Promise<Response>;
 }>;
 
 /** An engine a host reports in health but this relay does not serve. */
@@ -276,6 +278,18 @@ export function createRelayHandler(options: {
 				reportRelayFailure(
 					"hobo_ci_control_failed",
 					{ method: request.method, route: failureRoute(path) },
+					error instanceof Error ? error : undefined,
+				);
+				return json(503, { error: "service unavailable" });
+			}
+		}
+		if (path === "/mcp" && options.application.mcp) {
+			try {
+				return await options.application.mcp(request);
+			} catch (error) {
+				reportRelayFailure(
+					"hobo_ci_mcp_failed",
+					{ method: request.method },
 					error instanceof Error ? error : undefined,
 				);
 				return json(503, { error: "service unavailable" });
