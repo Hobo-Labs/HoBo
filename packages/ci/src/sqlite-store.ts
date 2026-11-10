@@ -14,6 +14,7 @@ import { z } from "zod";
 import {
 	type Account,
 	type CiEvent,
+	type CiEventPage,
 	CiEventSchema,
 	type Configuration,
 	type ConfigurationState,
@@ -27,6 +28,7 @@ import {
 	SandboxAllowanceSchema,
 	SandboxPricingSchema,
 } from "./_generated/ci_pb.js";
+import type { EventCursor } from "./event-log.js";
 import {
 	ciBudgetIdentity,
 	ciBudgetPolicy,
@@ -314,6 +316,10 @@ export class SqliteCiStore {
 	}
 	events(): Promise<CiEvent[]> {
 		return this.read(() => this.leases.events());
+	}
+	/** An account's events after a log position, or its newest ones. */
+	eventsSince(cursor: EventCursor): Promise<CiEventPage> {
+		return this.read(() => this.leases.eventsSince(cursor));
 	}
 	/** Latest dispatch/claim intent for each lease, without scanning history. */
 	latestLeaseIntents(ids: readonly string[]): Promise<CiEvent[]> {

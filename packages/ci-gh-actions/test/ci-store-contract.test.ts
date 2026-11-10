@@ -6,9 +6,11 @@ import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
 	AccountSchema,
+	type CiEventPage,
 	type Configuration,
 	ConfigurationSchema,
 	ConnectionSchema,
+	type EventCursor,
 	type Job,
 	JobSchema,
 	OfferSchema,
@@ -64,6 +66,7 @@ type ContractStore = HostedInboxStore &
 		): Promise<{ bodyJson: string } | undefined>;
 		controlRecord(key: string): Promise<{ bodyJson: string } | undefined>;
 		hasWebhook(deliveryId: string): Promise<boolean>;
+		eventsSince(cursor: EventCursor): Promise<CiEventPage>;
 	};
 
 const NOW = "2026-11-02T12:00:00.000Z";
@@ -125,6 +128,44 @@ function job(id: number, action = "queued"): Job {
 		action,
 		isolatedRequired: true,
 	});
+}
+
+/** The fixture account plus a second one with its own repository and box. */
+function twoAccounts(): Configuration {
+	const config = configuration();
+	const [account] = config.accounts;
+	const [connection] = config.connections;
+	if (!account || !connection) throw new Error("fixture account");
+	return create(ConfigurationSchema, {
+		accounts: [
+			account,
+			create(AccountSchema, {
+				...account,
+				id: "other-co",
+				offers: account.offers.map((offer) =>
+					create(OfferSchema, { ...offer, providerAccountId: "other-box" }),
+				),
+			}),
+		],
+		connections: [
+			connection,
+			create(ConnectionSchema, {
+				...connection,
+				accountId: "other-co",
+				repository: "Other/Repo",
+				repositoryId: 202,
+				installationId: 20,
+			}),
+		],
+	});
+}
+
+function foreignJob(id: number): Job {
+	const other = job(id);
+	other.repositoryId = 202;
+	other.installationId = 20;
+	other.repository = "Other/Repo";
+	return other;
 }
 
 function delivery(deliveryId: string, body: string, receivedAt = NOW) {
@@ -370,6 +411,123 @@ function storeContract(
 				[lease.id, "ci.DispatchRequested"],
 			]);
 			expect(await store.latestLeaseIntents([])).toEqual([]);
+		});
+
+		it("reads an account's events after a cursor, in log order", async () => {
+			const account = configuration().accounts[0];
+			if (!account) throw new Error("fixture account");
+			await store.queue(job(1), NOW, revision);
+			const lease = await store.reserve(account, job(1), NOW, revision);
+			if (!lease) throw new Error("reservation");
+			const newest = await store.eventsSince({
+				accountId: "hobo-labs",
+				limit: 10,
+			});
+			// A job queued before any lease names no account: it is the
+			// account's through the repository connection.
+			expect(newest.events.map((entry) => entry.event?.type)).toEqual([
+				"ci.JobQueued",
+				"ci.LeaseReserved",
+			]);
+			const positions = newest.events.map((entry) => entry.seq);
+			expect(positions).toEqual([...positions].sort((a, b) => a - b));
+			expect(new Set(positions).size).toBe(positions.length);
+			expect(newest.cursor).toBe(positions.at(-1));
+			const idle = await store.eventsSince({
+				accountId: "hobo-labs",
+				after: newest.cursor,
+				limit: 10,
+			});
+			expect(idle.events).toEqual([]);
+			expect(idle.cursor).toBe(newest.cursor);
+			await store.transition(
+				lease.id,
+				["reserved"],
+				(entry) => {
+					entry.state = "dispatching";
+				},
+				"ci.DispatchRequested",
+				LATER,
+				revision,
+			);
+			const next = await store.eventsSince({
+				accountId: "hobo-labs",
+				after: newest.cursor,
+				limit: 10,
+			});
+			expect(
+				next.events.map((entry) => [entry.event?.type, entry.event?.leaseId]),
+			).toEqual([["ci.DispatchRequested", lease.id]]);
+			expect(next.cursor).toBeGreaterThan(newest.cursor);
+			// One event at a time from the start walks the same log without a
+			// skip or a repeat, and the newest-first read keeps log order.
+			const walked: string[] = [];
+			let after = 0;
+			for (;;) {
+				const page = await store.eventsSince({
+					accountId: "hobo-labs",
+					after,
+					limit: 1,
+				});
+				if (page.events.length === 0) break;
+				expect(page.events.length).toBe(1);
+				walked.push(page.events[0]?.event?.type ?? "");
+				after = page.cursor;
+			}
+			expect(walked).toEqual([
+				"ci.JobQueued",
+				"ci.LeaseReserved",
+				"ci.DispatchRequested",
+			]);
+			expect(
+				(
+					await store.eventsSince({ accountId: "hobo-labs", limit: 2 })
+				).events.map((entry) => entry.event?.type),
+			).toEqual(["ci.LeaseReserved", "ci.DispatchRequested"]);
+			await expect(
+				store.eventsSince({ accountId: "", limit: 10 }),
+			).rejects.toThrow(/account/);
+			await expect(
+				store.eventsSince({ accountId: "hobo-labs", limit: 0 }),
+			).rejects.toThrow(/limit/);
+		});
+
+		it("never reads another account's events", async () => {
+			const config = twoAccounts();
+			revision = (await store.configure(config, revision, NOW)).revision;
+			const [mine, theirs] = config.accounts;
+			if (!mine || !theirs) throw new Error("fixture accounts");
+			await store.queue(job(1), NOW, revision);
+			await store.queue(foreignJob(2), NOW, revision);
+			const lease = await store.reserve(mine, job(1), NOW, revision);
+			const foreign = await store.reserve(theirs, foreignJob(2), NOW, revision);
+			if (!lease || !foreign) throw new Error("reservation");
+			for (const [accountId, leaseId, jobId] of [
+				["hobo-labs", lease.id, 1],
+				["other-co", foreign.id, 2],
+			] as const) {
+				const page = await store.eventsSince({ accountId, after: 0, limit: 50 });
+				expect(
+					page.events.map((entry) => [
+						entry.event?.type,
+						entry.event?.leaseId ?? "",
+					]),
+				).toEqual([
+					["ci.JobQueued", ""],
+					["ci.LeaseReserved", leaseId],
+				]);
+				expect(page.events[0]?.event?.detail).toContain(`"id":${jobId}`);
+				expect(
+					(await store.eventsSince({ accountId, limit: 50 })).events,
+				).toEqual(page.events);
+			}
+			// A configuration change belongs to the partition, not to an account.
+			const stranger = await store.eventsSince({
+				accountId: "nobody",
+				after: 0,
+				limit: 50,
+			});
+			expect(stranger.events).toEqual([]);
 		});
 
 		it("binds the runner's job and fences it from re-reservation", async () => {

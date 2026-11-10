@@ -14,6 +14,7 @@ import type { Pool, PoolClient } from "pg";
 import { z } from "zod";
 import {
 	type Account,
+	type CiEventPage,
 	CiEventSchema,
 	type Configuration,
 	ConfigurationStateSchema,
@@ -28,8 +29,15 @@ import {
 	SandboxAllowanceSchema,
 	type SandboxMeasuredUsage,
 	SandboxPricingSchema,
+	SequencedCiEventSchema,
 } from "./_generated/ci_pb.js";
 import { allocationQuote } from "./accounting.js";
+import {
+	accountEventPage,
+	EVENT_SCAN_LIMIT,
+	type EventCursor,
+	eventCursorBounds,
+} from "./event-log.js";
 import { shouldAbortIsolatedFleetLease } from "./fleet-overflow.js";
 import { isIsolatedRetirementTransition } from "./isolated-retirement.js";
 import {
@@ -751,6 +759,59 @@ export class PostgresCiStore {
 					[this.partition],
 				)
 			).rows.map((r) => fromJsonString(CiEventSchema, r.body)),
+		);
+	}
+	/**
+	 * An account's events after a log position, oldest first; without a
+	 * position, its newest ones. A partition's transactions serialize at its
+	 * lock row, so `seq` order is commit order and a position handed back as
+	 * `after` never skips an event. The read itself takes no partition lock: a
+	 * caller waiting for news polls it, and must not stall admission.
+	 */
+	async eventsSince(cursor: EventCursor): Promise<CiEventPage> {
+		const { accountId, after } = eventCursorBounds(cursor);
+		await this.initialize();
+		// Another account's events are left out by the query; a job event names
+		// no account and is attributed through the repository's connection.
+		const mine = "coalesce(body::jsonb ->> 'accountId','') IN ($2,'')";
+		const rows =
+			after === undefined
+				? (
+						await this.pool.query<{ seq: string; body: string }>(
+							`SELECT seq::text AS seq,body FROM hobo_ci_events WHERE partition_id=$1 AND ${mine} ORDER BY seq DESC LIMIT $3`,
+							[this.partition, accountId, EVENT_SCAN_LIMIT],
+						)
+					).rows.reverse()
+				: (
+						await this.pool.query<{ seq: string; body: string }>(
+							`SELECT seq::text AS seq,body FROM hobo_ci_events WHERE partition_id=$1 AND ${mine} AND seq>$3 ORDER BY seq LIMIT $4`,
+							[this.partition, accountId, after, EVENT_SCAN_LIMIT],
+						)
+					).rows;
+		const connections = rows.length
+			? ((
+					await this.pool.query<{ body: string }>(
+						"SELECT body FROM hobo_ci_configuration WHERE partition_id=$1",
+						[this.partition],
+					)
+				).rows.map(
+					(row) =>
+						fromJsonString(ConfigurationStateSchema, row.body).configuration
+							?.connections ?? [],
+				)[0] ?? [])
+			: [];
+		return accountEventPage(
+			rows.map((row) => {
+				const seq = Number(row.seq);
+				if (!Number.isSafeInteger(seq))
+					throw new Error("event position out of range");
+				return create(SequencedCiEventSchema, {
+					seq,
+					event: fromJsonString(CiEventSchema, row.body),
+				});
+			}),
+			connections,
+			cursor,
 		);
 	}
 	/** Latest dispatch/claim intent for each active lease, without scanning history. */

@@ -2,6 +2,15 @@ export * from "./_generated/ci_pb.js";
 export * from "./_generated/policy_pb.js";
 export { parseConfiguration, positiveId } from "./config.js";
 export {
+	accountEventPage,
+	accountOwnsEvent,
+	accountOwnsJob,
+	EVENT_SCAN_LIMIT,
+	type EventCursor,
+	eventCursorBounds,
+	eventJob,
+} from "./event-log.js";
+export {
 	type BackendKind,
 	BackendUnavailableError,
 	type CloseReason,

@@ -14,11 +14,18 @@ import {
 import type { BudgetPolicyEvaluationContext } from "@hobo/core";
 import { z } from "zod";
 import { allocationQuote } from "./accounting.js";
+import {
+	accountEventPage,
+	EVENT_SCAN_LIMIT,
+	type EventCursor,
+	eventCursorBounds,
+} from "./event-log.js";
 import type { PipelineUsageObservation } from "./execution.js";
 import { shouldAbortIsolatedFleetLease } from "./fleet-overflow.js";
 import {
 	ACTIVE_STATES,
 	type Account,
+	type CiEventPage,
 	CiEventSchema,
 	type Configuration,
 	ConfigurationSchema,
@@ -39,6 +46,7 @@ import {
 	SandboxAllowanceSchema,
 	type SandboxPricing,
 	SandboxPricingSchema,
+	SequencedCiEventSchema,
 } from "./index.js";
 import { isIsolatedRetirementTransition } from "./isolated-retirement.js";
 import {
@@ -332,6 +340,40 @@ export class LeaseStore {
 			.prepare("SELECT body FROM events ORDER BY seq")
 			.all()
 			.map((row) => fromJsonString(CiEventSchema, z.string().parse(row.body)));
+	}
+	/**
+	 * An account's events after a log position, oldest first; without a
+	 * position, its newest ones. `seq` is the log's own key, so a position
+	 * handed back as `after` never skips or repeats an event.
+	 */
+	eventsSince(cursor: EventCursor): CiEventPage {
+		const { accountId, after } = eventCursorBounds(cursor);
+		// Another account's events are left out by the query; a job event names
+		// no account and is attributed through the repository's connection.
+		const mine = "coalesce(json_extract(body,'$.accountId'),'') IN (?,'')";
+		const rows =
+			after === undefined
+				? this.db
+						.prepare(
+							`SELECT seq, body FROM events WHERE ${mine} ORDER BY seq DESC LIMIT ?`,
+						)
+						.all(accountId, EVENT_SCAN_LIMIT)
+						.reverse()
+				: this.db
+						.prepare(
+							`SELECT seq, body FROM events WHERE seq>? AND ${mine} ORDER BY seq LIMIT ?`,
+						)
+						.all(after, accountId, EVENT_SCAN_LIMIT);
+		return accountEventPage(
+			rows.map((row) =>
+				create(SequencedCiEventSchema, {
+					seq: z.number().int().parse(row.seq),
+					event: fromJsonString(CiEventSchema, z.string().parse(row.body)),
+				}),
+			),
+			this.configuration()?.configuration?.connections ?? [],
+			cursor,
+		);
 	}
 	configuration(): ConfigurationState | undefined {
 		const row = this.db

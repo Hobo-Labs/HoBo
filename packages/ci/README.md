@@ -46,6 +46,38 @@ this estimate is not a hard billing cap or proof of the globally cheapest price.
 A publisher must obtain and refresh provider-specific rates and free balances;
 no live Vercel inventory or price verification is built into this package.
 
+## Event cursor
+
+Every lease and job change is appended to the partition's event journal inside
+the transaction that makes it, so the journal is already the record of what
+changed. `eventsSince({accountId, after, limit})` on `LeaseStore`,
+`SqliteCiStore` and `PostgresCiStore` reads it as a change feed: an account's
+events after a log position, oldest first, with the position to read after
+next (`CiEventPage`, each event a `SequencedCiEvent`). Without `after` it
+returns the account's newest events. It is a projection over the journal, not
+a second bus: nothing is written to serve it, and no schema changed.
+
+- **Order.** The position is the journal's own key (`seq`). A partition has one
+  writer at a time (SQLite) or serializes its transactions at the partition
+  lock row (Postgres), so `seq` order is commit order and a cursor never skips
+  an event. The Postgres read takes no partition lock: a caller polling for
+  news cannot stall admission.
+- **Scope.** An event belongs to the account it names. A job event recorded
+  before or apart from a lease (`ci.JobQueued`, `ci.JobExpired`,
+  `ci.JobCompleted`, `ci.JobAssignmentCleared`) names none and belongs to the
+  account whose connection holds the job's repository and installation.
+  Partition events such as `ci.ConfigurationChanged` belong to no account and
+  are never returned. `accountOwnsEvent` and `accountOwnsJob`
+  (`src/event-log.ts`) are that rule for both engines.
+- **Bounds.** A page holds at most 500 events and one read examines at most
+  1000 journal rows. The cursor advances past rows that did not match, so a
+  reader keeps making progress through other accounts' activity.
+
+The shared store contract (`packages/ci-gh-actions/test/ci-store-contract.test.ts`)
+holds both engines to this behaviour; `test/event-log.test.ts` covers the page
+arithmetic. The relay's MCP server is the consumer: see
+[`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#mcp-server).
+
 ## PostgreSQL hosting adapter
 
 `PostgresCiStore` (`@hobo/ci/postgres`) stores journal events, leases, queued

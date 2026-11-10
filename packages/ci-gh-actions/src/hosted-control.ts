@@ -10,6 +10,7 @@ import {
 	AccountStateSchema,
 	BudgetSignalSchema,
 	type CiEvent,
+	type CiEventPage,
 	type Configuration,
 	ConfigurationSchema,
 	type ConfigurationState,
@@ -18,6 +19,7 @@ import {
 	ciBudgetPolicyJson,
 	ciBudgetSignalUpdate,
 	DesiredCiPolicySchema,
+	type EventCursor,
 	effectiveCiAccount,
 	LeaseSchema,
 	OfferSchema,
@@ -84,6 +86,8 @@ export interface HostedControlStore extends HostedRelayStore {
 		terminalStatus: string,
 	): Promise<ControlRecord | undefined>;
 	events(): Promise<CiEvent[]>;
+	/** An account's events after a log position, or its newest ones. */
+	eventsSince(cursor: EventCursor): Promise<CiEventPage>;
 	quarantinedWebhooks(
 		accountId: string,
 		expectedRevision: number,
