@@ -245,7 +245,8 @@ export function createHostedRelayRuntime(options: {
 					? ("requeued" as const)
 					: ("duplicate" as const);
 			} catch {
-				return "duplicate" as const;
+				// Fail-open for poll recovery: coalesce must not strand jobs on GitHub.
+				return "requeued" as const;
 			}
 		},
 		async claim(id: string, token: string): Promise<Response> {

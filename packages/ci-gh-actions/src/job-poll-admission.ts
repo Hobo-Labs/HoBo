@@ -68,20 +68,27 @@ export function createJobPollAdmissionWorker(options: JobPollAdmissionOptions) {
 				for (const job of jobs) {
 					if (job.status !== "queued" || !servedRunnerLabel(job.labels))
 						continue;
-					if (
-						coalesce.shouldSkip(
-							workflowRun.repository.id,
-							job.id,
-							workflowRun.run_attempt,
-						)
-					)
-						continue;
 					const current = await getJob(
 						options.github,
 						options.installationId,
 						options.repository,
 						job.id,
 					);
+					const createdAt = current.created_at;
+					const queuedSinceMs =
+						createdAt !== undefined &&
+						Number.isFinite(Date.parse(createdAt))
+							? Date.parse(createdAt)
+							: undefined;
+					if (
+						coalesce.shouldSkip(
+							workflowRun.repository.id,
+							job.id,
+							workflowRun.run_attempt,
+							queuedSinceMs,
+						)
+					)
+						continue;
 					const body = Buffer.from(
 						JSON.stringify({
 							action: "queued",

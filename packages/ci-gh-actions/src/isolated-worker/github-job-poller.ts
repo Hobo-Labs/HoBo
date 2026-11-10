@@ -319,12 +319,17 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						// Assignment is only useful once GitHub names the runner.
 						if (status.data !== "queued" && !job.runner_name) continue;
 						summary.hoboJobs++;
+						const queuedSinceMs =
+							job.created_at !== undefined
+								? Date.parse(job.created_at)
+								: undefined;
 						if (
 							status.data === "queued" &&
 							options.ingestCoalesce?.shouldSkip(
 								connection.repositoryId,
 								job.id,
 								job.run_attempt,
+								queuedSinceMs,
 							)
 						) {
 							summary.waiting.push({
