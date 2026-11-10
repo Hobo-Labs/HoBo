@@ -247,6 +247,19 @@ Running the command a second time appends `provider.Approved`. A manifest with
 issues, with no capability mappings, or claiming a built-in provider's id is
 refused without writing anything.
 
+When the manifest declares billing, the derived `PricingCatalog` is persisted
+as a `pricing.CatalogRegistered` fact appended **in the same append** as
+`provider.Registered`, so a held provider never exists without the prices it
+was ranked on. The fact carries the whole catalog as canonical protobuf-JSON
+plus its `catalogHash`; replaying the registry stream rebuilds it with no other
+source (`readStoredCatalog` in `@hobo/hobo`). A reader recomputes the hash and
+**fails closed** on a body that does not decode or does not match — altered
+prices must not rank anything. The wire shape is pinned append-only in
+`@hobo/events` (`PRICING_EVENT_CONTRACTS`, golden corpus). `hobo registry`
+lists the stored hash on each installed provider. Facts are never rewritten:
+a provider registered before catalogs were stored gets its catalog appended on
+the next `hobo registry add`, and an unchanged catalog is not appended twice.
+
 ## Gates
 
 | Gate | What it pins |
@@ -264,8 +277,10 @@ Implemented: the schema, parser, lowerings, `hobo registry add`, OpenAPI client
 and code-mode MCP server generation, a `check`/`lower`/`generate` CLI, and a
 worked example.
 
-Not implemented: signing of the published index; persisting the derived
-pricing catalog into pricing state at registration; generation from AsyncAPI,
+Not implemented: signing of the published index; refreshing a stored catalog
+when a manifest's prices change after registration (the first stored catalog
+is kept; re-registering with new prices is not yet a command); consumption of
+the stored catalog by the quote engine's financial-state views; generation from AsyncAPI,
 GraphQL, or gRPC; schema-typed request and response bodies; and realization —
 a data-only provider can be found, authenticated against, ranked, quoted, and
 called through its API, but provisioning its resources through HoBo still

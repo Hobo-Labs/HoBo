@@ -17,6 +17,10 @@ import {
 } from "@hobo/provider-manifest";
 
 import { REGISTRY_STREAM } from "./add-command.js";
+import {
+	catalogRegisteredFact,
+	storedCatalogs,
+} from "./pricing-catalog-store.js";
 
 const REGISTRY_ACTOR: PrincipalRef = { kind: "system", id: "yard/registry" };
 
@@ -26,6 +30,8 @@ export interface RegistryAddInput {
 	readonly file: string | undefined;
 	readonly cwd: string;
 	readonly emitProgress: (line: string) => void;
+	/** UTC timestamp for facts this command appends. Defaults to the wall clock. */
+	readonly now?: () => string;
 }
 
 // `hobo registry add <manifest>` — register a provider described by a data
@@ -134,16 +140,23 @@ export async function runRegistryAdd(
 			: { pricingCatalogHash: billing.catalog.catalogHash }),
 	};
 
-	if (installed && approved) {
-		return {
-			ok: true,
-			status: "already_installed",
-			code: "HOBO_OK",
-			message: `hobo registry add: provider "${provider.id}" is already registered and approved.`,
-			data: { ...data, approved: true },
-		};
-	}
-
+	// The catalog is persisted when the provider is first registered — and, for
+	// a provider registered before catalogs were stored, on the next run.
+	const catalogFacts = (() => {
+		if (billing === undefined) return [];
+		if (storedCatalogs(events).has(provider.id)) return [];
+		return [
+			catalogRegisteredFact(
+				provider.id,
+				billing.catalog,
+				(input.now ?? (() => new Date().toISOString()))(),
+			),
+		];
+	})();
+	const pricingCatalog = {
+		persisted: billing !== undefined,
+		appended: catalogFacts.length > 0,
+	};
 	const lastSeq = events.at(-1)?.seq ?? 0;
 	const append = {
 		expectedSeq: lastSeq,
@@ -151,10 +164,24 @@ export async function runRegistryAdd(
 		tenant: DEFAULT_TENANT,
 	};
 
+	if (installed && approved) {
+		if (catalogFacts.length > 0) {
+			await runtime.store.append(REGISTRY_STREAM, catalogFacts, append);
+			emitProgress(`stored pricing catalog for ${provider.id}`);
+		}
+		return {
+			ok: true,
+			status: "already_installed",
+			code: "HOBO_OK",
+			message: `hobo registry add: provider "${provider.id}" is already registered and approved.`,
+			data: { ...data, approved: true, pricingCatalog },
+		};
+	}
+
 	if (installed) {
 		await runtime.store.append(
 			REGISTRY_STREAM,
-			[approveProviderFact(provider.id, REGISTRY_ACTOR.id)],
+			[approveProviderFact(provider.id, REGISTRY_ACTOR.id), ...catalogFacts],
 			append,
 		);
 		await runtime.registry.refresh?.();
@@ -164,13 +191,15 @@ export async function runRegistryAdd(
 			status: "approved",
 			code: "HOBO_OK",
 			message: `hobo registry add: approved provider "${provider.id}" — it is now matchable. It was registered from a manifest, which declares capabilities but cannot provision them.`,
-			data: { ...data, approved: true },
+			data: { ...data, approved: true, pricingCatalog },
 		};
 	}
 
+	// One append: the registration and its pricing catalog land together or not
+	// at all, so a held provider never exists without the prices it was ranked on.
 	await runtime.store.append(
 		REGISTRY_STREAM,
-		[registerProviderFact(provider)],
+		[registerProviderFact(provider), ...catalogFacts],
 		append,
 	);
 	await runtime.registry.refresh?.();
@@ -185,6 +214,6 @@ export async function runRegistryAdd(
 		status: "installed",
 		code: "HOBO_OK",
 		message: `hobo registry add: registered provider "${provider.id}" (${ports.join(", ")}) — held; run \`hobo registry add ${file}\` again to approve it for matching.`,
-		data: { ...data, approved: false },
+		data: { ...data, approved: false, pricingCatalog },
 	};
 }

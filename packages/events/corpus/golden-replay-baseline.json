@@ -72,6 +72,10 @@
 		{
 			"key": "pricing.ReconciliationRecorded@v1#pricing-ReconciliationRecorded-v1",
 			"bodyDigest": "sha256:b43f709ab93050c0af3d3f3c8abd665d3936bf30aa152bb6dc65ad5d0a572063"
+		},
+		{
+			"key": "pricing.CatalogRegistered@v1#pricing-CatalogRegistered-v1",
+			"bodyDigest": "sha256:634ba394ac6bb83c088cfba13a87f36a531eb45965674dab1722080ce90486ea"
 		}
 	]
 }

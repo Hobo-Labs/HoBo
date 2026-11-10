@@ -54,6 +54,7 @@
 		"@hobo/management": "workspace:*",
 		"@hobo/mcp": "workspace:*",
 		"@hobo/policy": "workspace:*",
+		"@hobo/pricing": "workspace:*",
 		"@hobo/provider-aws": "workspace:*",
 		"@hobo/provider-azure": "workspace:*",
 		"@hobo/provider-cloudflare": "workspace:*",
@@ -92,6 +93,7 @@
 	},
 	"devDependencies": {
 		"@hobo/contract-harness": "workspace:*",
+		"@hobo/events": "workspace:*",
 		"@hobo/testing": "workspace:*",
 		"@types/pg": "8.15.5",
 		"pg": "8.22.0"

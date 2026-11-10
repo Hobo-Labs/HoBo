@@ -2,10 +2,19 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { collectStream } from "@hobo/cloud";
+import { PRICING_EVENT_CONTRACTS, validateEventBody } from "@hobo/events";
+import { catalogHashOf } from "@hobo/pricing";
 import type { RuntimeLocalEventStore } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
-
-import { createComposedHoboCli, createDefaultYardRuntime } from "../src/index.js";
+import { REGISTRY_STREAM } from "../src/add-command.js";
+import {
+	catalogRegisteredFact,
+	createComposedHoboCli,
+	createDefaultYardRuntime,
+	readStoredCatalog,
+	storedCatalogs,
+} from "../src/index.js";
 
 // `hobo registry add <manifest>` registers a provider described by a
 // hobo.provider-manifest/v1 data file — no provider package involved.
@@ -152,5 +161,209 @@ describe("hobo registry add", () => {
 		expect((await run("registry", "add", missing)).code).toBe(
 			"HOBO_REGISTRY_ADD_UNREADABLE",
 		);
+	});
+});
+
+describe("hobo registry add: pricing catalog persistence", () => {
+	async function stream(runtime: ReturnType<typeof cli>["runtime"]) {
+		return collectStream(runtime.store, REGISTRY_STREAM);
+	}
+
+	it("appends the catalog beside the registration, in one append", async () => {
+		const { run, runtime } = cli();
+		const first = await run("registry", "add", MANIFEST);
+		expect(first.data.pricingCatalog).toEqual({
+			persisted: true,
+			appended: true,
+		});
+
+		const events = await stream(runtime);
+		expect(events.map((event) => event.type)).toEqual([
+			"provider.Registered",
+			"pricing.CatalogRegistered",
+		]);
+		// Same append, so the registration never exists without its prices.
+		expect(events[0]?.seq).toBe(
+			events[1]?.seq === undefined ? -1 : events[1].seq - 1,
+		);
+	});
+
+	it("rebuilds the exact catalog from the stream", async () => {
+		const { run, runtime } = cli();
+		const first = await run("registry", "add", MANIFEST);
+		const read = readStoredCatalog(await stream(runtime), "acme-cloud");
+		if (!read.ok) throw new Error(read.reason);
+		expect(read.catalog.catalogHash).toBe(first.data.pricingCatalogHash);
+		expect(catalogHashOf(read.catalog)).toBe(read.catalog.catalogHash);
+		expect(read.catalog.products.map((product) => product.id)).toEqual([
+			"acme-cloud/gpu-a1",
+			"acme-cloud/pg-flex",
+			"acme-cloud/llm-large",
+			"acme-cloud/print-farm",
+		]);
+		// The unrated plan has no rate card, and that survives persistence.
+		expect(
+			read.catalog.rateCards.some((card) => card.id.includes("/spot@")),
+		).toBe(false);
+	});
+
+	it("does not append again on approval or on a repeat run", async () => {
+		const { run, runtime } = cli();
+		await run("registry", "add", MANIFEST);
+		await run("registry", "add", MANIFEST);
+		await run("registry", "add", MANIFEST);
+		const types = (await stream(runtime)).map((event) => event.type);
+		expect(
+			types.filter((type) => type === "pricing.CatalogRegistered"),
+		).toHaveLength(1);
+		expect(types).toContain("provider.Approved");
+	});
+
+	it("backfills a provider registered before catalogs were stored", async () => {
+		const { run, runtime } = cli();
+		await run("registry", "add", MANIFEST);
+		await run("registry", "add", MANIFEST);
+		// Simulate the older stream: registration + approval, no catalog fact.
+		const full = await stream(runtime);
+		expect(
+			full.some((event) => event.type === "pricing.CatalogRegistered"),
+		).toBe(true);
+
+		const legacy = cli();
+		const registered = full.find(
+			(event) => event.type === "provider.Registered",
+		);
+		const approved = full.find((event) => event.type === "provider.Approved");
+		if (!registered || !approved) throw new Error("missing facts");
+		await legacy.runtime.store.append(
+			REGISTRY_STREAM,
+			[
+				{ type: registered.type, data: registered.data },
+				{ type: approved.type, data: approved.data },
+			],
+			{
+				expectedSeq: 0,
+				actor: { kind: "system", id: "yard/registry" },
+				tenant: "default",
+			},
+		);
+		expect(storedCatalogs(await stream(legacy.runtime)).size).toBe(0);
+
+		const result = await legacy.run("registry", "add", MANIFEST);
+		expect(result.status).toBe("already_installed");
+		expect(result.data.pricingCatalog).toEqual({
+			persisted: true,
+			appended: true,
+		});
+		expect(storedCatalogs(await stream(legacy.runtime)).has("acme-cloud")).toBe(
+			true,
+		);
+	});
+
+	it("stores nothing for a manifest that declares no billing", async () => {
+		const { run, runtime } = cli();
+		const file = tempManifest(
+			"no-billing.yaml",
+			"schema: hobo.provider-manifest/v1\nprovider: { id: free-host, displayName: Free Host }\ncapabilities:\n  regions: [r]\n  mappings:\n    - { id: kv, port: kv, providerService: free.kv }\n",
+		);
+		const result = await run("registry", "add", file);
+		expect(result.data.pricingCatalog).toEqual({
+			persisted: false,
+			appended: false,
+		});
+		expect((await stream(runtime)).map((event) => event.type)).toEqual([
+			"provider.Registered",
+		]);
+	});
+
+	it("lists the stored catalog hash on installed providers", async () => {
+		const { run } = cli();
+		const added = await run("registry", "add", MANIFEST);
+		const listed = await run("registry");
+		expect(listed.data.providers).toContainEqual(
+			expect.objectContaining({
+				providerId: "acme-cloud",
+				pricingCatalogHash: added.data.pricingCatalogHash,
+			}),
+		);
+		expect(
+			listed.data.providers.filter(
+				(provider: { source: string; pricingCatalogHash?: string }) =>
+					provider.source === "base" &&
+					provider.pricingCatalogHash !== undefined,
+			),
+		).toEqual([]);
+	});
+});
+
+describe("pricing catalog fact", () => {
+	it("conforms to the pinned pricing.CatalogRegistered event contract", async () => {
+		const { run, runtime } = cli();
+		await run("registry", "add", MANIFEST);
+		const fact = (await collectStream(runtime.store, REGISTRY_STREAM)).find(
+			(event) => event.type === "pricing.CatalogRegistered",
+		);
+		const contract = PRICING_EVENT_CONTRACTS.find(
+			(candidate) => candidate.type === "pricing.CatalogRegistered",
+		);
+		const schema = contract?.schemas.at(-1);
+		if (!fact || !schema) throw new Error("fact or contract missing");
+		// SAFETY: the fact body is the string-field record the contract describes.
+		expect(
+			validateEventBody(schema, fact.data as Record<string, string>),
+		).toEqual({
+			ok: true,
+			errors: [],
+		});
+	});
+
+	it("is deterministic for a fixed time", async () => {
+		const { run, runtime } = cli();
+		await run("registry", "add", MANIFEST);
+		const stored = readStoredCatalog(
+			await collectStream(runtime.store, REGISTRY_STREAM),
+			"acme-cloud",
+		);
+		if (!stored.ok) throw new Error(stored.reason);
+		const at = "2026-11-10T00:00:00Z";
+		expect(catalogRegisteredFact("acme-cloud", stored.catalog, at)).toEqual(
+			catalogRegisteredFact("acme-cloud", stored.catalog, at),
+		);
+	});
+
+	it("fails closed on a tampered or undecodable body", async () => {
+		const { run, runtime } = cli();
+		await run("registry", "add", MANIFEST);
+		const events = await collectStream(runtime.store, REGISTRY_STREAM);
+		const fact = events.find(
+			(event) => event.type === "pricing.CatalogRegistered",
+		);
+		if (!fact) throw new Error("no catalog fact");
+		// SAFETY: the fact body is the string-field record the contract describes.
+		const body = fact.data as Record<string, string>;
+
+		const edited = body.catalogJson?.replace('"0.0005"', '"0.0001"') ?? "";
+		expect(edited).not.toBe(body.catalogJson);
+		const tampered = readStoredCatalog(
+			[{ type: fact.type, data: { ...body, catalogJson: edited } }],
+			"acme-cloud",
+		);
+		expect(tampered).toEqual({
+			ok: false,
+			reason: expect.stringContaining("does not match its recorded hash"),
+		});
+
+		const garbage = readStoredCatalog(
+			[{ type: fact.type, data: { ...body, catalogJson: "{not json" } }],
+			"acme-cloud",
+		);
+		expect(garbage).toEqual({
+			ok: false,
+			reason: expect.stringContaining("does not decode"),
+		});
+		expect(readStoredCatalog([], "acme-cloud")).toEqual({
+			ok: false,
+			reason: "no pricing catalog stored for acme-cloud",
+		});
 	});
 });

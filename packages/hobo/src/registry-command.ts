@@ -6,6 +6,7 @@ import {
 } from "@hobo/cloud";
 
 import { REGISTRY_STREAM } from "./add-command.js";
+import { storedCatalogs } from "./pricing-catalog-store.js";
 import { runRegistryAdd } from "./registry-add.js";
 
 export interface RegistryCommandDeps {
@@ -29,6 +30,9 @@ interface RegistryProvider {
 	// Only approved providers are matchable (walkthrough Part 0/2); a held
 	// (installed-but-unapproved) provider renders approved: false.
 	readonly approved: boolean;
+	// Hash of the pricing catalog stored at registration, when the provider
+	// declared billing. Absent for built-in providers.
+	readonly pricingCatalogHash?: string;
 }
 
 // `hobo registry` — administer registry artifacts. This read view lists the
@@ -121,6 +125,7 @@ export function createRegistryCommand(
 					approved: true,
 				}));
 
+			const catalogs = storedCatalogs(registryEvents);
 			const installed: RegistryProvider[] = installedRows
 				.map((row) => ({
 					providerId: row.providerId,
@@ -133,6 +138,12 @@ export function createRegistryCommand(
 					source: "installed" as const,
 					approved: approvedSet.has(row.providerId),
 				}))
+				.map((row): RegistryProvider => {
+					const stored = catalogs.get(row.providerId);
+					return stored === undefined
+						? row
+						: { ...row, pricingCatalogHash: stored.catalogHash };
+				})
 				.sort((a, b) => a.providerId.localeCompare(b.providerId));
 
 			const allProviders = [...providers, ...installed];

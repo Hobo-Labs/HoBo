@@ -888,6 +888,7 @@ The dispatcher may define a minimal structural quote interface to avoid a packag
 Proposed new fact families (final names should be pinned in the ADR):
 
 - `pricing.RateCardPublished`
+- `pricing.CatalogRegistered` — a provider's whole `PricingCatalog`, appended by `hobo registry add` when a [provider manifest](./provider-manifest.md) declares billing (ADR-0177)
 - `pricing.ProviderAgreementObserved`
 - `pricing.GrantObserved`
 - `pricing.CommitmentObserved`

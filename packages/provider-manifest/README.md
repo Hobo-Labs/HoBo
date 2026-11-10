@@ -37,7 +37,8 @@ artifacts (below).
 capabilities but cannot provision them, so the provider is registered **held**:
 listed by `hobo registry`, never matched. Running the same command again
 appends `provider.Approved`, which is the explicit decision to make it
-matchable. The command refuses a manifest with issues (whole, listing each
+matchable. When the manifest declares billing, the pricing catalog is stored in
+the same append as the registration. The command refuses a manifest with issues (whole, listing each
 one), one with no capability mappings, and one whose `provider.id` belongs to
 a provider compiled into the runtime.
 
@@ -189,8 +190,10 @@ and its `registry-catalog` projection builds the materialized view.
 
 ## Honest scope
 
-- `hobo registry add` records the capability documents. The pricing catalog
-  is derived and its hash reported, but it is not persisted into pricing state.
+- `hobo registry add` stores the derived pricing catalog as a
+  `pricing.CatalogRegistered` fact beside the registration (see the design doc).
+  It is not refreshed when a manifest's prices change after registration, and
+  nothing feeds it into quote-engine financial state yet.
 - Client and MCP generation reads OpenAPI 3.0/3.1 only, resolves only local
   `#/components/parameters` references, and does not type request or response
   bodies.

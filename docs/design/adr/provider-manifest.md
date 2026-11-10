@@ -44,7 +44,9 @@ protobuf JSON form is the authoring format. The package parses it once and
   code-mode MCP server (`search` + `execute`) rather than one tool per endpoint.
 
 `hobo registry add <manifest>` registers the provider held; a second run
-approves it. Held-first is the default because a manifest cannot provision.
+approves it. A declared billing section is persisted as a
+`pricing.CatalogRegistered` fact in the same append (pinned append-only in
+`@hobo/events`), readable back with a hash check that fails closed. Held-first is the default because a manifest cannot provision.
 
 Extension points are explicit and inert: an extension auth flow is published
 but never brokered; a plan with an external charge is reported as unrated and
