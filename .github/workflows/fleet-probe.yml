@@ -1,0 +1,45 @@
+name: Fleet probe
+
+# One job per self-hosted label, each doing nothing. What it leaves behind is
+# how long a runner took to pick it up, which the route job of every workflow
+# reads before it sends work to that label (scripts/ci/route-runner.mts): a
+# label no runner has been seen on is not sent work.
+#
+# Started by each CI run, so the record is fresh whenever it is needed and
+# nothing runs while the repository is quiet. A newer probe replaces an older
+# one, so a label that is down holds one waiting job, not one per run.
+on:
+  workflow_run:
+    workflows: ["HoBo CI Fabric"]
+    types: [requested]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: fleet-probe
+  cancel-in-progress: true
+
+jobs:
+  pr-fleet:
+    name: hobo picks a job up
+    runs-on: hobo
+    timeout-minutes: 2
+    steps:
+      - run: "true"
+
+  trunk-fleet:
+    name: hobo-trunk picks a job up
+    if: vars.HOBO_CI_TRUNK_RUNNER != 'false'
+    runs-on: hobo-trunk
+    timeout-minutes: 2
+    steps:
+      - run: "true"
+
+  local-box:
+    name: hobo-local-host picks a job up
+    if: vars.HOBO_CI_LOCAL_RUNNER == 'true'
+    runs-on: hobo-local-host
+    timeout-minutes: 2
+    steps:
+      - run: "true"
