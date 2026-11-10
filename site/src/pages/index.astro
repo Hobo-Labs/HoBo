@@ -1,15 +1,12 @@
 ---
 import { Code } from "astro:components";
 import Base from "../layouts/Base.astro";
-import Mascot from "../components/Mascot.astro";
+import BoIdle from "../components/BoIdle.astro";
 import ParallaxTrail from "../components/ParallaxTrail.astro";
 import WorldHero from "../components/WorldHero.astro";
-import Blimp from "../components/scenes/Blimp.astro";
-import Crossroads from "../components/scenes/Crossroads.astro";
-import Depot from "../components/scenes/Depot.astro";
-import Steamboat from "../components/scenes/Steamboat.astro";
-import Train from "../components/scenes/Train.astro";
+import { stopLabel, type TrailStop } from "../lib/trail-stops";
 import { href } from "../lib/url";
+import "../styles/troupe.css";
 
 const bindleSnippet = `import { bindle } from "@hobo/bindles";
 
@@ -23,6 +20,13 @@ export default bindle("hello-bindle", (b) => {
  return { api, web };
 });`;
 
+// Each section is a stop on the trail docked below the page: its landmarks
+// pull alongside Bo as this section's heading reaches the reading line.
+const stop = (key: TrailStop) => ({
+	"data-trail-stop": key,
+	"data-trail-label": stopLabel(key),
+});
+
 const shikiThemes = {
 	light: "github-light-high-contrast",
 	dark: "github-dark-high-contrast",
@@ -33,17 +37,12 @@ const shikiThemes = {
 	title="HoBo — pack your bindle, we'll find your app a home"
 	description="HoBo describes your app once, finds it the cheapest home that passes your policies, and keeps it moving with continuous, zero-drama migrations — across any provider, any mix, or your own metal."
 >
-	<!-- ===================== Trail ===================== -->
-	{/* Ink's band and hero render only when no world is chosen; each world
+	{/* Ink's hero and trail render only when no world is chosen; each world
 	    brings its own art and its own opening argument instead. */}
-	<div class="ink-world">
-		<ParallaxTrail />
-	</div>
-
 	<WorldHero />
 
 	<!-- ===================== Hero ===================== -->
-	<section class="hero ink-world">
+	<section class="hero ink-world" {...stop("trailhead")}>
 		<div class="container">
 			<div>
 				<h1>
@@ -85,7 +84,7 @@ const shikiThemes = {
 	</section>
 
 	<!-- ===================== Problem ===================== -->
-	<section class="section ink-world">
+	<section class="section ink-world" {...stop("crossroads")}>
 		<div class="container">
 			<div class="section-head">
 				<span class="badge">Why HoBo exists</span>
@@ -96,7 +95,6 @@ const shikiThemes = {
 					<strong>your code shouldn't pay a loyalty tax to its landlord</strong>.
 				</p>
 			</div>
-			<Crossroads />
 			<div class="grid grid-3" style="align-items: stretch;">
 				<div class="card tradeoff">
 					<h3>The company town</h3>
@@ -126,7 +124,7 @@ const shikiThemes = {
 	</section>
 
 	<!-- ===================== Continuous migration ===================== -->
-	<section class="section ink-world">
+	<section class="section ink-world" {...stop("rails")}>
 		<div class="container">
 			<div class="section-head">
 				<span class="badge badge-accent">The guiding principle</span>
@@ -175,7 +173,6 @@ const shikiThemes = {
 					</div>
 				</div>
 			</div>
-			<Train />
 			<p class="section-foot">
 				Every hop is an event in an append-only log — replay the journey,
 				audit every fare, roll back any move.
@@ -185,7 +182,7 @@ const shikiThemes = {
 	</section>
 
 	<!-- ===================== Primitives bento ===================== -->
-	<section class="section ink-world" style="padding-top: 0;">
+	<section class="section ink-world" style="padding-top: 0;" {...stop("depot")}>
 		<div class="container">
 			<div class="section-head">
 				<span class="badge">The vocabulary</span>
@@ -196,7 +193,6 @@ const shikiThemes = {
 					isolation and trails for continuous moves. Start with the bindle.
 				</p>
 			</div>
-			<Depot />
 			<div class="grid grid-3 bento">
 				<a class="card span-2" href={href("/primitives/bindles/")}>
 					<h3><span class="term">Bindle</span> <span class="sticker">start here</span></h3>
@@ -271,7 +267,7 @@ const shikiThemes = {
 	</section>
 
 	<!-- ===================== Who writes what ===================== -->
-	<section class="section ink-world">
+	<section class="section ink-world" {...stop("crew")}>
 		<div class="container">
 			<div class="section-head">
 				<span class="badge">The division of labor</span>
@@ -315,7 +311,7 @@ const shikiThemes = {
 	</section>
 
 	<!-- ===================== Agent-native ===================== -->
-	<section class="section ink-world">
+	<section class="section ink-world" {...stop("airfield")}>
 		<div class="container">
 			<div class="section-head">
 				<span class="badge">AI-native</span>
@@ -326,7 +322,6 @@ const shikiThemes = {
 					their own scoped, short-lived credentials.
 				</p>
 			</div>
-			<Blimp />
 			<div class="grid grid-2">
 				<div class="grid" style="gap: 1rem;">
 					<div class="card">
@@ -408,7 +403,7 @@ const shikiThemes = {
 	</section>
 
 	<!-- ===================== Landscape ===================== -->
-	<section class="section ink-world">
+	<section class="section ink-world" {...stop("river")}>
 		<div class="container">
 			<div class="section-head">
 				<span class="badge">The landscape</span>
@@ -419,7 +414,6 @@ const shikiThemes = {
 					Nobody else keeps looking for a cheaper home after move-in day.
 				</p>
 			</div>
-			<Steamboat />
 			<div
 				class="table-wrap"
 				tabindex="0"
@@ -506,10 +500,10 @@ const shikiThemes = {
 	</section>
 
 	<!-- ===================== CTA ===================== -->
-	<section class="cta-band ink-world">
+	<section class="cta-band ink-world" {...stop("home")}>
 		<div class="container">
 			<div class="postcard">
-				<div class="postcard-bo"><Mascot size={84} /></div>
+				<div class="postcard-bo"><BoIdle size="5.6rem" /></div>
 				<h2 class="cta-inner-title">Ready to hit the rails?</h2>
 				<p style="margin: 0 auto 1.5rem; max-width: 36rem; color: var(--text-mute);">
 					Pack a bindle — that's the only must — and let your app find its
@@ -527,6 +521,13 @@ const shikiThemes = {
 			</div>
 		</div>
 	</section>
+
+	<!-- ===================== Trail ===================== -->
+	{/* Last in <main> and stuck to the bottom of the viewport: the page
+	    scrolls over it, and at the very end it comes to rest above the footer. */}
+	<div class="trail-dock ink-world">
+		<ParallaxTrail />
+	</div>
 </Base>
 
 <style>
@@ -536,6 +537,36 @@ const shikiThemes = {
 		font-size: clamp(1.45rem, 2.8vw, 2rem);
 		letter-spacing: -0.01em;
 		font-weight: 620;
+	}
+
+	/* The trail is the page's imagery, so it stays in view: stuck to the bottom
+	   of the viewport for as long as <main> is on screen, and set down above
+	   the footer when the page runs out. Sticky rather than fixed, so nothing
+	   has to reserve room for it and the footer is never covered. */
+	.trail-dock {
+		position: sticky;
+		bottom: 0;
+		z-index: 40;
+	}
+
+	/* A short viewport (a zoomed page, a phone on its side) has no room to
+	   give up: the band lets go and sits at the foot of the page instead. */
+	@media (max-height: 420px) {
+		.trail-dock {
+			position: static;
+		}
+
+		:global(html:has(.trail-dock)) {
+			scroll-padding-bottom: 0;
+		}
+	}
+
+	/* The hero's calls to action have to be above the band on arrival, so on
+	   a laptop-height screen the hero gives back its top margin first. */
+	@media (min-width: 900px) and (min-height: 421px) {
+		.hero {
+			padding-top: clamp(0.75rem, calc((100vh - 760px) / 2), 6rem);
+		}
 	}
 
 	@keyframes postcard-sway {

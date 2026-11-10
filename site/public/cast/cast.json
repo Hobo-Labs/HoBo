@@ -1,0 +1,38 @@
+{
+	"cell": 256,
+	"cols": 6,
+	"rows": 2,
+	"feet": 0.94,
+	"poses": [
+		"stand",
+		"lookLeft",
+		"lookRight",
+		"blink",
+		"wave",
+		"startled",
+		"doze",
+		"walkA",
+		"walkPass",
+		"walkB",
+		"run",
+		"runB"
+	],
+	"members": {
+		"tuck": {
+			"body": 0.62,
+			"peek": 0.6842
+		},
+		"pip": {
+			"body": 0.62,
+			"peek": 0.6105
+		},
+		"mags": {
+			"body": 0.62,
+			"peek": 0.5922
+		},
+		"cog": {
+			"body": 0.62,
+			"peek": 0.7339
+		}
+	}
+}

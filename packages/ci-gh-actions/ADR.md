@@ -1,4 +1,13 @@
-# Hosted original-job relay
+# Original-job relay
+
+One relay core serves every host. `HostedRelay` holds admission, reservation,
+dispatch, runner claim and reconciliation; `createHostedRelayRuntime` puts the
+durable webhook inbox and the worker tick around it; `createHostedControlPlane`
+is the account API; `createRelayHandler` is the HTTP surface. A host supplies a
+store (`SqliteCiStore` or `PostgresCiStore`, one port), whatever calls the tick,
+and its runner backends. The earlier synchronous relay, its own HTTP handler
+and control plane, and its own poller are gone: there is nothing left to keep
+in step. See [the README](README.md#one-relay-thin-hosts) for the host table.
 
 The implementation is an application-layer consumer of `@hobo/ci`. It does not
 replace HoBo's Dispatcher or reuse `workflow_dispatch` adapters as if they could
@@ -11,7 +20,9 @@ Events: `ci.JobQueued`, `ci.JobCompleted`, `ci.LeaseReserved`, `ci.DispatchReque
 `ci.HostDispatched`, `ci.RunnerClaimed`, `ci.RunnerRegistered`, `ci.JobObserved`,
 `ci.LeaseUncertain`, `ci.LeaseCancelled`, `ci.HostSettled`.
 
-`LeaseStore` is a single-writer SQLite actor partition. It appends generated
+`LeaseStore` is a single-writer SQLite actor partition; `SqliteCiStore` wraps it
+and adds the webhook inbox, so the Node service's partition is the same file
+format the earlier relay wrote. It appends generated
 `CiEvent` records and updates the lease/pending-job query projections in the same
 transaction; no network operation runs in the transaction. Durable reserved leases
 form the outbox. Intent is persisted before dispatch/JIT creation. An ambiguous

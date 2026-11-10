@@ -2,6 +2,13 @@ name: HoBo CI trace
 description: >-
   Convert this job's Turbo run summaries into an OTLP/JSON trace (secrets
   redacted) and upload it with the Turbo profile as a per-job artifact.
+inputs:
+  disambiguator:
+    description: >-
+      Unique suffix within a matrix job (for example matrix.shard). Defaults to
+      0 for non-matrix jobs.
+    required: false
+    default: "0"
 runs:
   using: composite
   steps:
@@ -13,7 +20,7 @@ runs:
     - name: Upload trace artifact
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
-        name: ci-trace-${{ github.job }}-${{ github.run_attempt }}
+        name: ci-trace-${{ github.job }}-${{ inputs.disambiguator }}-${{ github.run_attempt }}
         path: ci-traces/
         retention-days: 14
         if-no-files-found: ignore
