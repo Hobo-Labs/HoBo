@@ -201,10 +201,11 @@ as gated saga steps over a real store (ADR-0032 §3-4), delivered as
    [event-families.md](./event-families.md); shapes are pinned in
    `packages/trails/data-models/migration.proto`.
 5. Carried risk: SQLite is the only live `SchemaApplyPort` binding; managed-Postgres bindings stay
-   with Data Plane per the owning-initiative table. The home for further bindings is one package per
-   engine over a common contract, with `@hobo/trails` importing ports only
-   ([ADR-0177](./adr/03-data-plane.md#adr-0177),
-   [data-engines-continuous-migration](./data-engines-continuous-migration.md)).
+   with Data Plane per the owning-initiative table. **Resolved by
+   [ADR-0177](./adr/03-data-plane.md#adr-0177):** the SQLite binding moved to
+   `@hobo/data-sqlite`, `@hobo/data-postgres` and `@hobo/data-mongodb` implement the same
+   `@hobo/data-core` contract, and `@hobo/trails` imports no engine
+   ([data-engines-continuous-migration](./data-engines-continuous-migration.md)).
 
 ## M3 Release Candidate Evidence
 
@@ -241,9 +242,13 @@ Accepted state: schema-evolution safety is a CI gate, and the evidence mapping i
    event body requires a total upcaster plus a new corpus entry.
 3. GA handoff mapping for [release-notes-upgrade-guide.md](./release-notes-upgrade-guide.md) M4:
    the M3 evidence mapping above plus the corpus gate as the "no unliftable stored event" claim.
-4. Carried risks (explicit, not silently closed): live Debezium-class CDC and multi-DB dual-schema
-   beyond SQLite/Postgres-shaped fixtures remain the ADR-0134 residual; production restore
-   orchestration stays with Backup & Restore.
+4. Carried risks (explicit, not silently closed): production restore orchestration stays with
+   Backup & Restore. The ADR-0134 residual — live change capture and dual runs beyond
+   SQLite-shaped fixtures — is addressed by [ADR-0177](./adr/03-data-plane.md#adr-0177): real
+   change capture for PostgreSQL (logical decoding) and MongoDB (change streams) behind one
+   engine contract, each proven by the engine conformance kit against a live server. What
+   remains carried is that those live lanes are opt-in (they need a server) rather than part of
+   the default CI lane.
 
 ## Follow-Up Gate
 

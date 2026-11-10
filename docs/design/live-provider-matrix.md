@@ -44,6 +44,21 @@ tags: [hobo, design, providers, honesty]
 
 Shared temp contract: `hobo.temporary-environment-station/v1` in `@hobo/core` (`temporaryStationToAnonymousSessionShape` aligns with broker `AnonymousSessionResult`).
 
+## Data engines (`packages/data-*`, ADR-0177)
+
+Each engine implements the `@hobo/data-core` SPI and is proven by one conformance kit
+([data-engines-continuous-migration](./data-engines-continuous-migration.md#9-verification)). "Live"
+here means the kit ran against a real server.
+
+| Engine package | Default lane | Live lane | Notes |
+|---|---|---|---|
+| `@hobo/data-sqlite` | **Real** — every test opens SQLite files | same | Kit passes 21/21 same-engine and cross-engine with the reference engine. Capture is a transactional outbox; the fence is entry-point |
+| `@hobo/data-postgres` | Offline: decoder against recorded `pgoutput` bytes, statement and type tests, the executor Pact | **Cred-gated**: `HOBO_TEST_POSTGRES_URL` (needs `wal_level=logical`) | Last live run 2026-11-10, PostgreSQL 16.15: kit 21/21, plus cross-engine with SQLite and MongoDB in both directions. Only PostgreSQL 16 was run; the SQL needs 14+. No driver dependency — an injected executor |
+| `@hobo/data-mongodb` | Offline: the whole kit over an in-memory executor | **Cred-gated**: `HOBO_TEST_MONGODB_URL` (needs a replica set) | Last live run 2026-11-10, MongoDB 8.0.4 single-node replica set: kit 19/19 (no `schema` port), plus cross-engine with SQLite and PostgreSQL in both directions. Sharded clusters and failover are untested. No driver dependency — an injected executor |
+
+The default CI lane does not provide either server, so the two live lanes run only where someone
+supplies one. A regression in live change capture is therefore caught by that run, not by every push.
+
 ## IaC engines (`packages/iac/`)
 
 | Adapter | Default | Live |

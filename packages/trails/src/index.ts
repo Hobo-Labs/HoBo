@@ -7,32 +7,30 @@ export {
 export {
 	CAN_TRAIL_SCHEMA_VERSION,
 	type CanTrailInput,
+	type CanTrailPolicyVerdict,
 	type CanTrailReason,
 	type CanTrailResult,
 	evaluateCanTrail,
 } from "./can-trail.js";
-export {
-	type CreateSqliteDataDualPortOptions,
-	createSqliteDataDualPort,
-	type DataDualPort,
-	FencedTenantError,
-	type SqliteDataDualPort,
-	type SqliteDataDualWrite,
-} from "./data-dual-port.js";
+export type { DataDualPort, LiveDataDualPort } from "./data-dual-port.js";
 export {
 	applySchemaStep,
 	createContractAssertedDataDualFixtures,
 	DATA_DUAL_SCHEMA,
+	type DataDualEvidence,
 	type DataDualFixture,
 	type DataDualResult,
 	type DataDualView,
 	evaluateDataDual,
+	evaluateDataDualEvidence,
 	type SchemaApplyResult,
 } from "./data-steps.js";
 export {
 	defineTrail,
 	orderTrailSteps,
+	TRAIL_DATA_PATTERNS,
 	TRAIL_DEFINITION_SCHEMA,
+	type TrailDataPattern,
 	type TrailDefinition,
 	type TrailDefinitionInput,
 	type TrailStep,
@@ -84,6 +82,7 @@ export {
 export {
 	type CompatGateEvidence,
 	type DataMigrationPlan,
+	type DataMigrationPolicyVerdict,
 	type DataMigrationResult,
 	type DataMigrationStatus,
 	type ExecuteDataMigrationOptions,
@@ -109,20 +108,19 @@ export {
 	type TrailRunnerOptions,
 	type TrailRunResult,
 } from "./runner.js";
-export {
-	type CreateSqliteSchemaApplyPortOptions,
-	createSqliteSchemaApplyPort,
-	type SchemaApplyPort,
-	type SchemaPhase,
-	type SchemaPhaseResult,
-	type SchemaSnapshotRef,
+export type {
+	PortResult,
+	SchemaApplyPort,
+	SchemaPhase,
+	SchemaPhaseResult,
+	SchemaSnapshotRef,
 } from "./schema-apply-port.js";
 export {
-	type CreateSqliteTenantMovePortsOptions,
-	createSqliteTenantMovePorts,
-	type SqliteTenantMovePorts,
+	type CreateTenantMovePortsOptions,
+	createTenantMovePorts,
 	TENANT_MOVE_SCHEMA,
 	type TenantFencePort,
+	type TenantMovePorts,
 	type TenantTransferPort,
 } from "./tenant-move-port.js";
 export {

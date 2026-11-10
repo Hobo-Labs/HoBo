@@ -1,0 +1,229 @@
+// Wire records for the MongoDB engine binding.
+//
+// Three groups. The executor records are the request and result of every
+// method on the MongoExecutor port — the one boundary that leaves the package.
+// The metadata entries are the documents the binding keeps in its metadata
+// collection, beside the datasets. MongoEngineSettings is the non-secret part
+// of the engine options.
+//
+// A BSON value is carried as canonical MongoDB Extended JSON v2 in a
+// google.protobuf.Value: `{ "$numberLong": "9007199254740993" }` is a 64-bit
+// integer and stays one through every hop. That is why no field here is a
+// double or an int64 standing in for "a number".
+//
+// No field here is a credential, a connection string, or a server error
+// message. A refused command is its numeric code and its code name: MongoDB
+// quotes the offending key in a duplicate-key message and the offending
+// document in a validation message, and both are payload.
+
+syntax = "proto3";
+
+package hobo.data.mongodb.v1;
+
+import "google/protobuf/struct.proto";
+
+// The non-secret engine options, after the one parse.
+message MongoEngineSettings {
+  // False for a deployment that cannot open change streams. The binding then
+  // has no capture port and its declaration says so.
+  bool capture = 1;
+  // Starts with `_`, which no dataset name can.
+  string metadata_collection = 2;
+  uint32 scan_page_size = 3;
+}
+
+// What an executor knows about a refused command.
+message MongoCommandFailure {
+  // The server's numeric code; 0 when the refusal was client-side.
+  int32 code = 1;
+  string code_name = 2;
+  repeated string labels = 3;
+}
+
+// ── collections ─────────────────────────────────────────────────────────────
+
+message MongoEnsureCollectionRequest {
+  string collection = 1;
+  // A `{ "$jsonSchema": … }` document; absent means no validator.
+  optional google.protobuf.Struct validator = 2;
+  // Keep pre- and post-images so a change stream can return the document as
+  // of each change.
+  bool change_images = 3;
+}
+
+message MongoEnsureCollectionResult {
+  bool created = 1;
+}
+
+// ── reads ───────────────────────────────────────────────────────────────────
+
+enum MongoIdSelectorKind {
+  MONGO_ID_SELECTOR_KIND_UNSPECIFIED = 0;
+  // Exactly the listed `_id`s.
+  MONGO_ID_SELECTOR_KIND_IDS = 1;
+  // Every `_id` strictly between two bounds; an absent bound is open.
+  MONGO_ID_SELECTOR_KIND_RANGE = 2;
+}
+
+message MongoIdSelector {
+  MongoIdSelectorKind kind = 1;
+  repeated google.protobuf.Value ids = 2;
+  optional google.protobuf.Value after = 3;
+  optional google.protobuf.Value before = 4;
+}
+
+message MongoFindRequest {
+  string collection = 1;
+  MongoIdSelector select = 2;
+  optional uint32 limit = 3;
+}
+
+message MongoFindResult {
+  // Ascending `_id`, in BSON comparison order.
+  repeated google.protobuf.Struct documents = 1;
+}
+
+// ── writes ──────────────────────────────────────────────────────────────────
+
+enum MongoWriteKind {
+  MONGO_WRITE_KIND_UNSPECIFIED = 0;
+  // A duplicate `_id` is refused with server code 11000.
+  MONGO_WRITE_KIND_INSERT = 1;
+  // Replace the whole document, inserting it when absent.
+  MONGO_WRITE_KIND_REPLACE = 2;
+  MONGO_WRITE_KIND_DELETE = 3;
+  MONGO_WRITE_KIND_DELETE_RANGE = 4;
+}
+
+message MongoWriteOperation {
+  MongoWriteKind kind = 1;
+  // INSERT and REPLACE.
+  optional google.protobuf.Struct document = 2;
+  // DELETE.
+  optional google.protobuf.Value id = 3;
+  // DELETE_RANGE; an absent bound is open.
+  optional google.protobuf.Value after = 4;
+  optional google.protobuf.Value before = 5;
+}
+
+message MongoBulkWriteRequest {
+  string collection = 1;
+  // Applied in order; the first refusal stops the batch.
+  repeated MongoWriteOperation operations = 2;
+}
+
+message MongoBulkWriteResult {
+  uint32 inserted = 1;
+  uint32 replaced = 2;
+  uint32 deleted = 3;
+}
+
+// ── change streams ──────────────────────────────────────────────────────────
+
+message MongoChangeHeadRequest {
+  string collection = 1;
+}
+
+// A resume token as text. Opaque: only the deployment that minted it may
+// interpret it.
+message MongoChangeToken {
+  string token = 1;
+}
+
+// Keep only events whose document key holds `equals` at a dotted path.
+message MongoKeyMatch {
+  string path = 1;
+  google.protobuf.Value equals = 2;
+}
+
+message MongoChangeReadRequest {
+  string collection = 1;
+  // Events strictly after this token.
+  string after = 2;
+  uint32 limit = 3;
+  optional MongoKeyMatch where = 4;
+}
+
+message MongoChangeEvent {
+  string token = 1;
+  // insert, replace, update, delete — or any other operation type, which the
+  // binding refuses rather than skips.
+  string operation = 2;
+  optional google.protobuf.Value id = 3;
+  // The whole document as of this change; absent for a delete.
+  optional google.protobuf.Struct document = 4;
+}
+
+message MongoChangeBatch {
+  repeated MongoChangeEvent events = 1;
+  // Every event at or before this token, matching or not, has been seen.
+  string token = 2;
+  // True only when the stream had nothing further when the read ended.
+  bool drained = 3;
+}
+
+// ── transactions ────────────────────────────────────────────────────────────
+
+message MongoAwaitTransactionsRequest {
+  string collection = 1;
+}
+
+// ── stored documents ────────────────────────────────────────────────────────
+
+// The `_id` of a record's document. Field order is part of the identity.
+message MongoRecordId {
+  // Tenant; empty for an untenanted record.
+  string t = 1;
+  // The canonical key string.
+  string k = 2;
+}
+
+enum MongoMetadataKind {
+  MONGO_METADATA_KIND_UNSPECIFIED = 0;
+  MONGO_METADATA_KIND_DATASET = 1;
+  MONGO_METADATA_KIND_FENCE = 2;
+  MONGO_METADATA_KIND_WATERMARK = 3;
+  MONGO_METADATA_KIND_SUBSCRIPTION = 4;
+}
+
+// `_id` is `dataset:<dataset>`.
+message MongoDatasetEntry {
+  string id = 1;
+  MongoMetadataKind kind = 2;
+  string dataset = 3;
+  // The dataset schema as canonical JSON text.
+  string schema = 4;
+  string schema_digest = 5;
+}
+
+// `_id` is `fence:<dataset>:<tenant>`. Present exactly while the fence is up.
+message MongoFenceEntry {
+  string id = 1;
+  MongoMetadataKind kind = 2;
+  string dataset = 3;
+  // Empty when the fence spans every tenant.
+  string tenant = 4;
+  string token = 5;
+  string reason = 6;
+}
+
+// `_id` is `watermark:<dataset>:<source>`.
+message MongoWatermarkEntry {
+  string id = 1;
+  MongoMetadataKind kind = 2;
+  string dataset = 3;
+  string source = 4;
+  // The source's position after the last applied batch. Opaque.
+  string position = 5;
+}
+
+// `_id` is `subscription:<subscription>`.
+message MongoSubscriptionEntry {
+  string id = 1;
+  MongoMetadataKind kind = 2;
+  string subscription = 3;
+  string dataset = 4;
+  string tenant = 5;
+  // The resume token taken when the subscription was first started.
+  string start = 6;
+}

@@ -38,6 +38,18 @@
 			"bodyDigest": "sha256:bb0544b093f031bc195cd594eb2dc90c5e44e3138466942ac322d6a80641bdc9"
 		},
 		{
+			"key": "migration.Held@v1#migration-Held-v1",
+			"bodyDigest": "sha256:eb4c96b061e0f9bf51fd4936c4312cb42f77805bbc800705307675ffe3d0df73"
+		},
+		{
+			"key": "migration.Resumed@v1#migration-Resumed-v1",
+			"bodyDigest": "sha256:506c1bc9dc34b62f88d67ce917cdf73d14d9bf2315719638c298c0c80cd8cbc3"
+		},
+		{
+			"key": "migration.Completed@v1#migration-Completed-v1",
+			"bodyDigest": "sha256:306f28dfcef9ebeb33d33d0396f31d38711248dc76f4b675f21229c5248b14ff"
+		},
+		{
 			"key": "pricing.RateCardPublished@v1#pricing-RateCardPublished-v1",
 			"bodyDigest": "sha256:500e821e8ce2caee71b440165884e3a0c9729cfd934686d400e578b6c8a9f08f"
 		},

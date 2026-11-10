@@ -1,0 +1,395 @@
+// Wire records for the engine-neutral data contract (ADR-0177).
+//
+// These are the durable shapes: what a dataset is, what a change looks like in
+// flight, what an engine declares, what a migration decision recorded, and
+// what each migration.* fact carries. The parsed TypeScript values in `src/`
+// are narrowings of these records, constructible only through their parsers.
+//
+// Two rules hold throughout. No record here carries a credential — an engine
+// is reached through a binding and a secretRef, never through a field. And no
+// evidence record carries a row: digests, counts, and positions only. The one
+// record that does carry payload, ChangeEnvelope, is a transport record that
+// passes between a capture port and an apply port and is never appended to an
+// event store.
+
+syntax = "proto3";
+
+package hobo.data.core.v1;
+
+// ── canonical model ─────────────────────────────────────────────────────────
+
+enum CanonicalType {
+  CANONICAL_TYPE_UNSPECIFIED = 0;
+  CANONICAL_TYPE_BOOL = 1;
+  CANONICAL_TYPE_INT64 = 2;
+  CANONICAL_TYPE_FLOAT64 = 3;
+  CANONICAL_TYPE_DECIMAL = 4;
+  CANONICAL_TYPE_STRING = 5;
+  CANONICAL_TYPE_BYTES = 6;
+  CANONICAL_TYPE_TIMESTAMP = 7;
+  CANONICAL_TYPE_DATE = 8;
+  CANONICAL_TYPE_UUID = 9;
+  CANONICAL_TYPE_JSON = 10;
+  CANONICAL_TYPE_ENCRYPTED = 11;
+}
+
+message DatasetField {
+  string name = 1;
+  CanonicalType type = 2;
+  bool nullable = 3;
+}
+
+message DatasetSchema {
+  string contract = 1; // hobo.dataset-schema/v1
+  string name = 2;
+  uint32 version = 3;
+  repeated string key_fields = 4;
+  repeated DatasetField fields = 5;
+  bool open = 6;
+}
+
+enum ChangeOp {
+  CHANGE_OP_UNSPECIFIED = 0;
+  CHANGE_OP_UPSERT = 1;
+  CHANGE_OP_DELETE = 2;
+}
+
+// A write an application asks for. `record_json` is the canonical record in
+// canonical JSON; absent for a delete.
+message RecordMutation {
+  string tenant = 1;
+  string key = 2;
+  ChangeOp op = 3;
+  optional string record_json = 4;
+}
+
+// Transport record between a capture port and an apply port. Never a fact.
+message ChangeEnvelope {
+  string contract = 1; // hobo.change-envelope/v1
+  string dataset = 2;
+  string position = 3;
+  uint32 schema_version = 4;
+  string tenant = 5;
+  string key = 6;
+  ChangeOp op = 7;
+  optional string record_json = 8;
+  optional string classification = 9;
+}
+
+// ── digests ─────────────────────────────────────────────────────────────────
+
+message BucketDigest {
+  uint32 bucket = 1;
+  uint64 count = 2;
+  string digest = 3; // 64 lowercase hex characters
+}
+
+message DatasetDigest {
+  string contract = 1; // hobo.dataset-digest/v1
+  string dataset = 2;
+  string tenant = 3;
+  uint64 count = 4;
+  string digest = 5;
+  repeated BucketDigest buckets = 6;
+}
+
+// ── type mapping ────────────────────────────────────────────────────────────
+
+enum MappingFidelity {
+  MAPPING_FIDELITY_UNSPECIFIED = 0;
+  MAPPING_FIDELITY_EXACT = 1;
+  MAPPING_FIDELITY_WIDENING = 2;
+  MAPPING_FIDELITY_CONSTRAINED = 3;
+  MAPPING_FIDELITY_LOSSY = 4;
+}
+
+message TypeMappingEdge {
+  CanonicalType canonical = 1;
+  string native = 2;
+  MappingFidelity write = 3;
+  MappingFidelity read = 4;
+  string note = 5;
+}
+
+message TypeMappingAnnex {
+  string engine = 1;
+  repeated TypeMappingEdge edges = 2;
+}
+
+message MappingFinding {
+  string code = 1;
+  string field = 2;
+  CanonicalType canonical = 3;
+  string fidelity = 4;
+  string waiver_key = 5;
+  string detail = 6;
+}
+
+// ── engine declaration ──────────────────────────────────────────────────────
+
+enum SpiPort {
+  SPI_PORT_UNSPECIFIED = 0;
+  SPI_PORT_DATASETS = 1;
+  SPI_PORT_RECORDS = 2;
+  SPI_PORT_SNAPSHOT = 3;
+  SPI_PORT_CAPTURE = 4;
+  SPI_PORT_APPLY = 5;
+  SPI_PORT_VERIFY = 6;
+  SPI_PORT_FENCE = 7;
+  SPI_PORT_RETIRE = 8;
+  SPI_PORT_SCHEMA = 9;
+}
+
+message NativeMigrationProfile {
+  string profile = 1;
+  string pattern = 2;
+}
+
+message EngineDeclaration {
+  string contract = 1; // hobo.data-engine/v1
+  string engine = 2;
+  string profile = 3;
+  string paradigm = 4; // relational | document | key-value | reference
+  repeated SpiPort ports = 5;
+  string capture_ordering = 6; // global | per-key | none
+  string fence_enforcement = 7; // store | entry-point | none
+  string snapshot_consistency = 8; // consistent | fuzzy | none
+  bool ddl_transactional = 9;
+  repeated NativeMigrationProfile native_profiles = 10;
+  TypeMappingAnnex type_mapping = 11;
+  repeated string impedance = 12;
+}
+
+// ── custody and policy ──────────────────────────────────────────────────────
+
+enum CustodyRole {
+  CUSTODY_ROLE_UNSPECIFIED = 0;
+  CUSTODY_ROLE_SOURCE = 1;
+  CUSTODY_ROLE_TARGET = 2;
+  CUSTODY_ROLE_EVENT_LOG = 3;
+  CUSTODY_ROLE_STAGING_ARTIFACT = 4;
+  CUSTODY_ROLE_RELAY = 5;
+  CUSTODY_ROLE_CAPTURE_LOG = 6;
+  CUSTODY_ROLE_ROLLBACK_SNAPSHOT = 7;
+  CUSTODY_ROLE_RETIRING_SOURCE = 8;
+}
+
+message CustodyPoint {
+  string id = 1;
+  CustodyRole role = 2;
+  string region = 3;
+  repeated string protections = 4;
+  optional string retain_until = 5; // RFC 3339
+}
+
+message CustodyPath {
+  string contract = 1; // hobo.custody-path/v1
+  repeated CustodyPoint points = 2;
+}
+
+message CustodyFinding {
+  string code = 1;
+  string point = 2;
+  string role = 3;
+  string detail = 4;
+  string remediation = 5;
+}
+
+message PolicyVerdict {
+  string contract = 1; // hobo.data-migration-policy-verdict/v1
+  bool ok = 2;
+  string classification = 3;
+  repeated CustodyFinding findings = 4;
+  string custody_digest = 5;
+  string evaluated_at = 6;
+}
+
+// ── pattern catalog and selection ───────────────────────────────────────────
+
+enum MigrationPatternId {
+  MIGRATION_PATTERN_ID_UNSPECIFIED = 0;
+  MIGRATION_PATTERN_ID_IN_PLACE_EVOLVE = 1;
+  MIGRATION_PATTERN_ID_REBUILD_AND_SWAP = 2;
+  MIGRATION_PATTERN_ID_OFFLINE_COPY = 3;
+  MIGRATION_PATTERN_ID_SNAPSHOT_AND_TAIL = 4;
+  MIGRATION_PATTERN_ID_LOG_PIVOT = 5;
+  MIGRATION_PATTERN_ID_STREAM_HANDOFF = 6;
+}
+
+enum MigrationPhase {
+  MIGRATION_PHASE_UNSPECIFIED = 0;
+  MIGRATION_PHASE_PLAN = 1;
+  MIGRATION_PHASE_GATE = 2;
+  MIGRATION_PHASE_PREPARE = 3;
+  MIGRATION_PHASE_SEED = 4;
+  MIGRATION_PHASE_CONVERGE = 5;
+  MIGRATION_PHASE_VERIFY = 6;
+  MIGRATION_PHASE_SHIFT_READS = 7;
+  MIGRATION_PHASE_FENCE_AND_FLIP = 8;
+  MIGRATION_PHASE_SOAK = 9;
+  MIGRATION_PHASE_FINALIZE = 10;
+}
+
+message MigrationPattern {
+  MigrationPatternId id = 1;
+  string summary = 2;
+  repeated string authorities = 3; // projected | authoritative | journal
+  repeated string changes = 4; // shape | placement | engine | paradigm
+  repeated MigrationPhase phases = 5;
+  repeated SpiPort source_ports = 6;
+  repeated SpiPort target_ports = 7;
+  string write_freeze = 8; // none | bounded | window
+  string rollback_before_flip = 9; // none | to-snapshot | lossless
+  string rollback_in_soak = 10;
+  string rollback_in_soak_with_reverse_tail = 11;
+  string authority_after = 12; // unchanged | log
+}
+
+message SelectionReason {
+  string code = 1;
+  string detail = 2;
+}
+
+message MigrationCandidate {
+  MigrationPatternId pattern = 1;
+  string realization = 2; // native | hub
+  optional string profile = 3;
+  bool eligible = 4;
+  repeated SelectionReason reasons = 5;
+  string write_freeze = 6;
+  string rollback_in_soak = 7;
+  bool reverse_tail = 8;
+}
+
+message MigrationDecision {
+  string contract = 1; // hobo.migration-decision/v1
+  string authority = 2;
+  string change = 3;
+  optional MigrationCandidate selected = 4;
+  repeated MigrationCandidate candidates = 5;
+  repeated MappingFinding mapping_findings = 6;
+  string catalog_digest = 7;
+  string digest = 8;
+}
+
+// ── aggregate and results ───────────────────────────────────────────────────
+
+message MigrationState {
+  string migration_id = 1;
+  string status = 2; // new | running | held | completed | rolled-back | failed
+  optional MigrationPatternId pattern = 3;
+  repeated MigrationPhase completed_phases = 4;
+  bool cut_over = 5;
+  optional MigrationPhase held_at = 6;
+  optional string held_reason = 7;
+}
+
+message MigrationRunResult {
+  string migration_id = 1;
+  MigrationPatternId pattern = 2;
+  string status = 3; // completed | held | rolled-back | failed
+  MigrationPhase phase = 4;
+  string rollback = 5; // none | to-snapshot | lossless
+  optional string reason = 6;
+  repeated string impedance = 7;
+}
+
+message InPlaceEvolveResult {
+  string contract = 1; // hobo.in-place-evolve/v1
+  string migration_id = 2;
+  string status = 3; // completed | contract-blocked | held | rolled-back | failed
+  bool dual_window_open = 4;
+  optional string snapshot_ref = 5;
+  repeated string blocked_reasons = 6;
+}
+
+message EngineConformanceResult {
+  string case_id = 1;
+  string status = 2; // pass | fail | blocked | not-run
+  string detail = 3;
+}
+
+message EngineConformanceReport {
+  string suite = 1; // hobo.data-engine-conformance/v1
+  string engine = 2;
+  string outcome = 3; // pass | fail | unknown
+  repeated EngineConformanceResult results = 4;
+  repeated string skipped = 5;
+  string checked_at = 6;
+}
+
+// ── migration.* fact bodies emitted by the pattern executors ────────────────
+//
+// The original expand/backfill/contract bodies stay defined in
+// packages/trails/data-models/migration.proto. These are the bodies the
+// uniform phase model emits; every field beyond the originals is additive.
+
+message MigrationPlannedEventData {
+  string migration_id = 1;
+  repeated string phases = 2;
+  string planned_at = 3;
+  optional MigrationPatternId pattern = 4;
+  optional string decision_digest = 5;
+  optional string custody_digest = 6;
+  optional string source = 7;
+  optional string target = 8;
+  optional string dataset = 9;
+}
+
+// `checkpoint_json` holds positions, counts, and digests — never a record.
+message MigrationPhaseAppliedEventData {
+  string migration_id = 1;
+  string phase = 2;
+  string applied_at = 3;
+  optional string checkpoint_json = 4;
+}
+
+message MigrationVerifiedEventData {
+  string migration_id = 1;
+  string point = 2;
+  string verified_at = 3;
+  optional uint64 count = 4;
+  optional string digest = 5;
+}
+
+message MigrationCutOverEventData {
+  string migration_id = 1;
+  string cut_over_at = 2;
+  optional uint64 count = 3;
+  optional string digest = 4;
+  optional bool reverse_tail = 5;
+  optional string authority = 6; // "log" when a log-pivot moved it
+}
+
+message MigrationRolledBackEventData {
+  string migration_id = 1;
+  string reason = 2;
+  string rolled_back_at = 3;
+  optional bool lossless = 4;
+  optional uint32 erasures_replayed = 5;
+}
+
+message MigrationHeldEventData {
+  string migration_id = 1;
+  MigrationPhase phase = 2;
+  string reason = 3;
+  string held_at = 4;
+}
+
+message MigrationResumedEventData {
+  string migration_id = 1;
+  MigrationPhase phase = 2;
+  string resumed_at = 3;
+}
+
+message MigrationCompletedEventData {
+  string migration_id = 1;
+  MigrationPatternId pattern = 2;
+  string completed_at = 3;
+}
+
+message MigrationFailedEventData {
+  string migration_id = 1;
+  string reason = 2; // an error class name only; never a message that could carry a DSN
+  string failed_at = 3;
+}

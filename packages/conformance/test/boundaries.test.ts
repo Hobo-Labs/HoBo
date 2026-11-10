@@ -7,6 +7,7 @@ import {
 	canonicalWorkspaceEdges,
 	classifyPackage,
 	detectWorkspaceCycles,
+	isDataEnginePackage,
 	mergeWorkspaceEdges,
 	parseWorkspaceEdge,
 	validateBoundaryImports,
@@ -398,5 +399,100 @@ describe("manifest packages are pre-registered as contract vocabulary", () => {
 				parseWorkspaceEdge({ from: path, to: "packages/cloud" }),
 			]).errors,
 		).toEqual([`dependency points outward: ${path} -> packages/cloud`]);
+	});
+});
+
+/**
+ * ADR-0177 — the data engine family. `data-core` is the engine-neutral
+ * contract; each `data-<engine>` package implements it; and the runbook engine
+ * must never import an engine at runtime.
+ */
+describe("data engine packages and the engine-neutral orchestrator rule", () => {
+	const DATA_PACKAGES = [
+		"packages/data-core",
+		"packages/data-sqlite",
+		"packages/data-postgres",
+		"packages/data-mongodb",
+	] as const;
+
+	it.each(DATA_PACKAGES)("%s classifies as a layer-1 contract", (path) => {
+		expect(classifyPackage(path)).toEqual({ kind: "contract", layer: 1 });
+	});
+
+	it("only data-<engine> packages are engines: not the contract, not the app kernel", () => {
+		expect(isDataEnginePackage("packages/data-sqlite")).toBe(true);
+		expect(isDataEnginePackage("packages/data-postgres")).toBe(true);
+		expect(isDataEnginePackage("packages/data-mongodb")).toBe(true);
+		expect(isDataEnginePackage("packages/data-core")).toBe(false);
+		expect(isDataEnginePackage("packages/data")).toBe(false);
+		expect(isDataEnginePackage("packages/storage-sqlite")).toBe(false);
+	});
+
+	it("an engine imports the contract and core, and the contract imports only core", () => {
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({ from: "packages/data-core", to: "packages/core" }),
+				parseWorkspaceEdge({
+					from: "packages/data-sqlite",
+					to: "packages/data-core",
+				}),
+				parseWorkspaceEdge({
+					from: "packages/data-postgres",
+					to: "packages/data-core",
+				}),
+				parseWorkspaceEdge({
+					from: "packages/data-mongodb",
+					to: "packages/data-core",
+				}),
+			]).errors,
+		).toEqual([]);
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({ from: "packages/data-core", to: "packages/data" }),
+			]).errors,
+		).toEqual([
+			"dependency points outward: packages/data-core -> packages/data",
+		]);
+	});
+
+	it("the runbook engine may import the contract but never an engine at runtime", () => {
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({
+					from: "packages/trails",
+					to: "packages/data-core",
+				}),
+			]).errors,
+		).toEqual([]);
+		for (const engine of [
+			"packages/data-sqlite",
+			"packages/data-postgres",
+			"packages/data-mongodb",
+		]) {
+			expect(
+				validateBoundaryImports([
+					parseWorkspaceEdge({ from: "packages/trails", to: engine }),
+				]).errors,
+			).toEqual([
+				`orchestrators must not import a data engine at runtime: packages/trails -> ${engine}`,
+			]);
+		}
+	});
+
+	it("a test-only edge to an engine is allowed: live lanes need a real store", () => {
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({
+					from: "packages/trails",
+					to: "packages/data-sqlite",
+					dev: true,
+				}),
+				parseWorkspaceEdge({
+					from: "packages/data-postgres",
+					to: "packages/data-sqlite",
+					dev: true,
+				}),
+			]).errors,
+		).toEqual([]);
 	});
 });

@@ -13,6 +13,13 @@ export const POSTGRES_DATA_ERROR_CODES = [
 	"MIGRATION_FAILED",
 	"CONFORMANCE_SUITE_INVALID",
 	"CONFORMANCE_EXECUTOR_MISSING",
+	// Engine binding (src/engine): failures of the binding itself, as opposed
+	// to the engine-neutral refusals, which are `DataCoreError`s.
+	"ENGINE_OPTIONS_INVALID",
+	"ENGINE_EXECUTOR_CONTRACT",
+	"CAPTURE_POSITION_INVALID",
+	"CAPTURE_SUBSCRIPTION_LOST",
+	"CAPTURE_STREAM_UNDECODABLE",
 ] as const;
 
 export type PostgresDataErrorCode = (typeof POSTGRES_DATA_ERROR_CODES)[number];

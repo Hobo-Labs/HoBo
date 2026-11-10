@@ -70,7 +70,7 @@ This catalog is the canonical event-family inventory for design docs. Add a fami
 | `livefix.*` | `livefix.Proposed`, `livefix.Applied` |
 | `match.*` | `match.Decided` |
 | `meter.*` | `meter.UsageRecorded` |
-| `migration.*` | `migration.Planned`, `migration.SnapshotTaken`, `migration.PhaseApplied`, `migration.Verified`, `migration.CutOver`, `migration.RolledBack`, `migration.Failed`, `migration.Exported`, `migration.Imported` |
+| `migration.*` | `migration.Planned`, `migration.SnapshotTaken`, `migration.PhaseApplied`, `migration.Verified`, `migration.CutOver`, `migration.RolledBack`, `migration.Failed`, `migration.Exported`, `migration.Imported`, `migration.Held`, `migration.Resumed`, `migration.Completed` |
 | `model.*` | `model.Registered`, `model.Promoted` |
 | `notification.*` | `notification.Requested`, `notification.Delivered` |
 | `pam.*` | `pam.SessionStarted`, `pam.SessionRenewed`, `pam.SessionEnded`, `pam.SessionDenied`, `pam.GatewayStarted`, `pam.GatewayStopped` |

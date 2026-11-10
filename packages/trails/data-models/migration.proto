@@ -104,3 +104,53 @@ message MigrationImportedEventData {
   uint32 stream_count = 4;
   string imported_at = 5;
 }
+
+// ── ADR-0177 additions ─────────────────────────────────────────────────────
+//
+// The executor behind `executeDataMigration` is now the `@hobo/data-core`
+// in-place-evolve pattern. It can hold on a negative policy verdict and it
+// re-applies erasures after a restore; the uniform phase model's bodies are
+// defined in packages/data-core/data-models/data_core.proto.
+
+message MigrationHeldEventData {
+  string migration_id = 1;
+  string phase = 2; // the safe-hold phase the migration is sitting in
+  string reason = 3;
+  string held_at = 4;
+}
+
+message MigrationResumedEventData {
+  string migration_id = 1;
+  string phase = 2;
+  string resumed_at = 3;
+}
+
+message MigrationCompletedEventData {
+  string migration_id = 1;
+  string pattern = 2;
+  string completed_at = 3;
+}
+
+// Digest evidence over a source/target dual: counts and digests computed where
+// the data lives. The dual oracle prefers it to a row view.
+message DataDualEvidenceRecord {
+  uint64 source_count = 1;
+  string source_digest = 2;
+  uint64 target_count = 3;
+  string target_digest = 4;
+  string fidelity = 5; // always "live"
+}
+
+message CanTrailPolicyFindingRecord {
+  string code = 1;
+  string point = 2;
+  string detail = 3;
+}
+
+// A policy verdict computed over a migration's custody path, as can-trail
+// consumes it. Structural mirror of the @hobo/data-core PolicyVerdict.
+message CanTrailPolicyVerdictRecord {
+  bool ok = 1;
+  repeated CanTrailPolicyFindingRecord findings = 2;
+  string custody_digest = 3;
+}

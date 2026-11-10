@@ -56,7 +56,34 @@ export type CanTrailInput = Readonly<{
 	conflictingTrail?: boolean;
 	/** Residency obligation conflict. */
 	residencyConflict?: boolean;
+	/**
+	 * A policy verdict computed over the migration's custody path — every
+	 * place the data rests or passes (ADR-0177 decision 9). When present it
+	 * supersedes `policyAllows` and `residencyConflict`: the gate then judges
+	 * evidence instead of trusting a caller-supplied boolean.
+	 */
+	policyVerdict?: CanTrailPolicyVerdict;
 }>;
+
+/**
+ * Structural mirror of the `@hobo/data-core` policy verdict, declared here so
+ * the sealed Trails surface never re-exports a foreign package's types.
+ */
+export type CanTrailPolicyVerdict = Readonly<{
+	ok: boolean;
+	findings: readonly Readonly<{
+		code: string;
+		point: string;
+		detail: string;
+	}>[];
+	custodyDigest: string;
+}>;
+
+/** Finding codes that are a residency conflict rather than a general denial. */
+const RESIDENCY_FINDING_CODES: readonly string[] = Object.freeze([
+	"CUSTODY_RESIDENCY_CONFLICT",
+	"CUSTODY_REGION_UNMAPPED",
+]);
 
 /**
  * Dry-run can-trail. Pure continuous identity trails report bindleConfigRequired:false.
@@ -125,7 +152,31 @@ export function evaluateCanTrail(input: CanTrailInput): CanTrailResult {
 					s.kind === "custom",
 			);
 
-	if (input.policyAllows === false) {
+	const verdict = input.policyVerdict;
+	if (verdict !== undefined) {
+		// Computed evidence: each finding names the custody point at fault.
+		const residency = verdict.findings.filter((finding) =>
+			RESIDENCY_FINDING_CODES.includes(finding.code),
+		);
+		const other = verdict.findings.filter(
+			(finding) => !RESIDENCY_FINDING_CODES.includes(finding.code),
+		);
+		if (residency.length > 0) {
+			reasons.push({
+				code: "residency-conflict",
+				message: residency.map((finding) => finding.detail).join("; "),
+			});
+		}
+		if (other.length > 0 || (!verdict.ok && residency.length === 0)) {
+			reasons.push({
+				code: "policy-denied",
+				message:
+					other.length > 0
+						? other.map((finding) => finding.detail).join("; ")
+						: "policy verdict over the custody path is negative",
+			});
+		}
+	} else if (input.policyAllows === false) {
 		reasons.push({
 			code: "policy-denied",
 			message: "policy pack denies this trail",
@@ -137,7 +188,7 @@ export function evaluateCanTrail(input: CanTrailInput): CanTrailResult {
 			message: "another trail is active for this tenant/target",
 		});
 	}
-	if (input.residencyConflict === true) {
+	if (verdict === undefined && input.residencyConflict === true) {
 		reasons.push({
 			code: "residency-conflict",
 			message: "residency obligation conflicts with trail targets",

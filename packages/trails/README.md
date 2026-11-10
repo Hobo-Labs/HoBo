@@ -81,3 +81,39 @@ hobo trails inspect <id>
 2. App Trails = versioned schema/data/junction steps composed with platform recipes.
 3. Progressive ramp via existing Harness `FeatureFlagStore`.
 4. Fail-closed dual oracles + compensation; history is durable and idempotent.
+
+## Data migrations (ADR-0177)
+
+Trails composes data migrations; it does not implement a storage engine.
+
+- **No engine is imported.** The schema-apply and dual-run ports are declared
+  here as shapes. `@hobo/data-sqlite` satisfies them today; any other
+  `@hobo/data-<engine>` package can. The package-boundary gate refuses a
+  runtime import of an engine from this package.
+- **One executor.** `executeDataMigration` is `@hobo/data-core`'s
+  `in-place-evolve` pattern behind Trails' own types. It accepts a `policy`
+  callback — recomputed before every phase, a negative verdict holds the
+  migration at its last safe state — and a `replayErasures` callback, called
+  after every restore so a rollback cannot resurrect an erased subject.
+- **Evidence, not rows.** A dual-run port that offers `evidence()` is judged on
+  counts and digests; no row leaves the store. `snapshot()` remains for the
+  simulated-fixture oracle.
+- **A computed gate.** `evaluateCanTrail` accepts a `policyVerdict` computed by
+  `@hobo/data-core` over the migration's custody path. A dump file, a relaying
+  runner, or a rollback snapshot in the wrong place blocks the trail and is
+  named in the reason. The older `policyAllows` / `residencyConflict` booleans
+  still work when no verdict is supplied.
+- **Patterns.** A data step may name the migration pattern it realizes
+  (`data.pattern`), from the closed catalog in `@hobo/data-core`.
+
+```ts
+import { evaluateCustodyPath, parseCustodyPath } from "@hobo/data-core";
+import { createSqliteDataDualPort } from "@hobo/data-sqlite";
+import { evaluateCanTrail, TrailRunner } from "@hobo/trails";
+
+const verdict = evaluateCustodyPath({ path: parseCustodyPath(custody), policy, now });
+const gate = evaluateCanTrail({ trail, policyVerdict: verdict });
+
+const dual = createSqliteDataDualPort({ sourcePath, targetPath, tenant: "acme" });
+const result = new TrailRunner({ tenant: "acme", target: "silo-a", dataDual: dual }).run(trail);
+```

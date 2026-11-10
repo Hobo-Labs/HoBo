@@ -1,6 +1,6 @@
 /**
  * Platform golden-replay corpus: pinned v1 wire shapes for the `migration.*`
- * event family (ADR-0032). Append-only — bumping any of these event bodies to
+ * event family (ADR-0032, extended by ADR-0177). Append-only — bumping any of these event bodies to
  * v2 requires (a) a total v1→v2 upcaster and (b) a NEW corpus entry for v2;
  * removing or editing a pinned entry fails the gate. The CI test in
  * `test/upcaster-gate.test.ts` runs `runCanDeployUpcasterGate` over every
@@ -161,6 +161,50 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				importedHeadSeq: 42,
 				streamCount: 7,
 				importedAt: "2026-08-03T00:00:08.000Z",
+			},
+		),
+		// ADR-0177: the uniform phase model's hold / resume / complete facts,
+		// emitted by the `@hobo/data-core` pattern executors.
+		v1Contract(
+			"migration.Held",
+			[
+				stringField("migrationId", 1),
+				stringField("phase", 2),
+				stringField("reason", 3),
+				stringField("heldAt", 4),
+			],
+			{
+				migrationId: "mig-001",
+				phase: "converge",
+				reason:
+					"policy verdict is negative before verify: CUSTODY_RESIDENCY_CONFLICT",
+				heldAt: "2026-11-10T00:00:00.000Z",
+			},
+		),
+		v1Contract(
+			"migration.Resumed",
+			[
+				stringField("migrationId", 1),
+				stringField("phase", 2),
+				stringField("resumedAt", 3),
+			],
+			{
+				migrationId: "mig-001",
+				phase: "verify",
+				resumedAt: "2026-11-10T00:05:00.000Z",
+			},
+		),
+		v1Contract(
+			"migration.Completed",
+			[
+				stringField("migrationId", 1),
+				stringField("pattern", 2),
+				stringField("completedAt", 3),
+			],
+			{
+				migrationId: "mig-001",
+				pattern: "snapshot-and-tail",
+				completedAt: "2026-11-10T01:00:00.000Z",
 			},
 		),
 	]);

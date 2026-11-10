@@ -44,3 +44,25 @@ not import or re-export foreign packages. Consumers receive Trails-owned DTOs
 (`IdentityTrailHandle`, `TrailIdentityProgress`, `TrailCanMigrateEvidence`,
 `ProgressiveFlagPort` internals). Encapsulation is gated by
 `test/public-surface.test.ts`.
+
+## Engine neutrality (ADR-0177)
+
+Trails is the runbook engine and holds no storage-engine code. The live
+schema-apply and dual-run bindings that once imported `node:sqlite` from this
+package now live in `@hobo/data-sqlite`; this package keeps only the port
+shapes (`SchemaApplyPort`, `DataDualPort`, `LiveDataDualPort`), declared
+locally so the sealed public surface re-exports no foreign type.
+
+`executeDataMigration` delegates to the `in-place-evolve` pattern executor in
+`@hobo/data-core`, so there is one implementation of expand → backfill →
+contract. The **command** is still "run this migration"; the **events** are
+still the `migration.*` family, now including `migration.Held`,
+`migration.Resumed`, and `migration.Completed`; the migration aggregate is the
+single-writer **actor**; its facts are appended to the **event store**; status
+is a **projection** over them; and each phase's checkpoint is the **snapshot**
+a resumed run continues from.
+
+The dual oracle prefers digest evidence over a row view, and `can-trail`
+accepts a policy verdict computed over the migration's custody path in place
+of caller-supplied booleans. Both are structural mirrors of `@hobo/data-core`
+records, pinned in `data-models/migration.proto`.

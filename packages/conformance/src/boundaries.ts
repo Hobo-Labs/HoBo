@@ -52,6 +52,14 @@ const CONTRACT_PACKAGE_PATHS = new Set([
 	"packages/trust",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
+	// The data engine family (ADR-0177). `data-core` is the engine-neutral
+	// contract and imports only `@hobo/core`; each `data-<engine>` package
+	// implements that contract for one storage engine and imports only it.
+	// They are contracts for the same reason `data-postgres` already was: an
+	// engine binding is implementable vocabulary a provider declares against.
+	"packages/data-core",
+	"packages/data-sqlite",
+	"packages/data-mongodb",
 	// The four manifest packages (decomposition of `CapabilityRequirement` /
 	// `SelectionCandidate` out of `@hobo/capability-profiles` and of
 	// `ResourceIntent` / `ResourcePlan` out of `@hobo/cloud`).
@@ -207,7 +215,31 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/manifest-request",
 	"packages/manifest-declaration",
 	"packages/manifest-plan",
+	// Data engine family (ADR-0177); kind decided in `CONTRACT_PACKAGE_PATHS`.
+	"packages/data-core",
+	"packages/data-sqlite",
+	"packages/data-mongodb",
 ]);
+
+/**
+ * A data engine package: `packages/data-<engine>`. `data-core` is the
+ * engine-neutral contract and `data` is the app-authoring kernel; neither is
+ * an engine.
+ */
+const DATA_ENGINE_PACKAGE = /^packages\/data-(?!core$)[a-z0-9-]+$/u;
+
+export function isDataEnginePackage(path: string): boolean {
+	return DATA_ENGINE_PACKAGE.test(path);
+}
+
+/**
+ * Packages that orchestrate migrations and must stay engine-neutral
+ * (ADR-0177 decision 3). The runbook engine once held `node:sqlite` bindings
+ * directly, which made it the place every engine's driver would accumulate;
+ * this is the rule that keeps that from recurring. A test may still import an
+ * engine to exercise a live lane — the rule is about runtime edges.
+ */
+const ENGINE_NEUTRAL_ORCHESTRATORS = new Set(["packages/trails"]);
 
 // Documented, narrowly-scoped exceptions. The AI training/eval providers
 // (provider-agentv, provider-ax) legitimately COMPOSE the SDK training/runtime
@@ -491,6 +523,16 @@ export function validateBoundaryImports(
 		if (to.kind === "unknown") {
 			errors.push(`unknown import target ${edge.to}`);
 			continue;
+		}
+
+		if (
+			ENGINE_NEUTRAL_ORCHESTRATORS.has(edge.from) &&
+			isDataEnginePackage(edge.to) &&
+			edge.dev !== true
+		) {
+			errors.push(
+				`orchestrators must not import a data engine at runtime: ${edge.from} -> ${edge.to}`,
+			);
 		}
 
 		if (from.kind === "core" && to.kind !== "external") {

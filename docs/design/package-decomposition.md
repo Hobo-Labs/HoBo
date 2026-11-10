@@ -181,23 +181,23 @@ reproduce the problem for the majority of the set.
 
 ### Data engines — one package per engine over a common contract
 
-The same reasoning applies to data, and the same asymmetry exists today:
-`@hobo/data-postgres` owns a profile, a conformance suite, and migration
-profiles, while the live schema-apply and dual-run bindings sit inside
-`@hobo/trails` and import `node:sqlite` directly.
+The same reasoning applied to data, and the same asymmetry existed:
+`@hobo/data-postgres` owned a profile, a conformance suite, and migration
+profiles, while the live schema-apply and dual-run bindings sat inside
+`@hobo/trails` and imported `node:sqlite` directly. That is now separated
+([ADR-0177](./adr/03-data-plane.md#adr-0177)):
 
 | Package | Owns |
 |---|---|
-| `@hobo/data-core` | engine-neutral contract: engine SPI, canonical change envelope, migration pattern catalog + selector, custody-path policy verdict, shared conformance fold |
-| `@hobo/data-<engine>` | one engine's profile, vocabulary, conformance, SPI implementation, migration profiles, type-mapping annex |
-| `@hobo/trails` | the runner; imports ports only, never an engine |
+| `@hobo/data-core` | engine-neutral contract: canonical records and change envelope, engine SPI, pattern catalog + selector, custody-path policy verdict, pattern executors, migration aggregate, conformance kit, reference engine |
+| `@hobo/data-sqlite`, `@hobo/data-postgres`, `@hobo/data-mongodb` | one engine each: the SPI binding, its declaration, its type-mapping annex, its impedance codes |
+| `@hobo/trails` | the runbook engine; imports `@hobo/data-core` and never an engine at runtime |
 
-`@hobo/data-core` and the non-Postgres engine packages **do not exist yet**.
-The topology, the pattern catalog, and the slice plan are in
-[data-engines-continuous-migration.md](./data-engines-continuous-migration.md)
-([ADR-0177](./adr/03-data-plane.md#adr-0177)). `@hobo/data` is unchanged: it
-stays the app-authoring kernel and is deliberately not the common engine
-package.
+The boundary gate enforces the last row: `packages/trails → packages/data-<engine>`
+is refused as a runtime edge and allowed only as a test edge. `@hobo/data` is
+unchanged — it stays the app-authoring kernel and is deliberately not the
+common engine package. Detail, evidence, and limits are in
+[data-engines-continuous-migration.md](./data-engines-continuous-migration.md).
 
 ### Stations
 

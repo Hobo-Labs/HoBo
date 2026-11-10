@@ -7,14 +7,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { createSqliteSchemaApplyPort } from "@hobo/data-sqlite";
 import { afterEach, test } from "vitest";
-
 import {
 	type CompatGateEvidence,
 	executeDataMigration,
 	MIGRATION_EVENTS,
 } from "../src/migration-executor.js";
-import { createSqliteSchemaApplyPort } from "../src/schema-apply-port.js";
 
 const cleanups: (() => void)[] = [];
 

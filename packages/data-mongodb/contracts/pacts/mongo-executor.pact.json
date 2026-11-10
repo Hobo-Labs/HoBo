@@ -1,0 +1,502 @@
+{
+	"consumer": {
+		"name": "@hobo/data-mongodb"
+	},
+	"provider": {
+		"name": "MongoExecutor"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"note": "The one boundary that leaves this package is the MongoExecutor port. It is in-process, so it is expressed here as one POST per port method: the path names the method, the body is its request record, and a 200 body is its result record. A refused command is a thrown MongoCommandError, written here as a 409 whose body carries the server's numeric code and nothing else. Every value is canonical MongoDB Extended JSON v2. `POST /transaction` stands for MongoExecutor.transaction(body): `steps` are the session calls the body makes, in order, and a final `abort` step is the body throwing. Interactions are ordered and share state: `test/executor-contract.test.ts` replays them in order against the in-memory executor, and `test/live.test.ts` replays the same file against a real replica set through the driver adapter. Resume tokens are opaque and differ per provider, so they are type-matched (matchingRules) on the way out and injected from provider state (generators) on the way in."
+	},
+	"interactions": [
+		{
+			"description": "ensureCollection creates a collection with a strict validator and change images",
+			"request": {
+				"method": "POST",
+				"path": "/ensureCollection",
+				"body": {
+					"collection": "orders",
+					"changeImages": true,
+					"validator": {
+						"$jsonSchema": {
+							"bsonType": "object",
+							"required": ["_id", "qty", "price"],
+							"additionalProperties": false,
+							"properties": {
+								"_id": {
+									"bsonType": "object",
+									"required": ["t", "k"],
+									"additionalProperties": false,
+									"properties": {
+										"t": { "bsonType": "string" },
+										"k": { "bsonType": "string" }
+									}
+								},
+								"qty": { "bsonType": "long" },
+								"price": { "bsonType": ["decimal", "null"] }
+							}
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "created": true }
+			}
+		},
+		{
+			"description": "ensureCollection is idempotent: an existing collection is converged, not recreated",
+			"request": {
+				"method": "POST",
+				"path": "/ensureCollection",
+				"body": {
+					"collection": "orders",
+					"changeImages": true,
+					"validator": {
+						"$jsonSchema": {
+							"bsonType": "object",
+							"required": ["_id", "qty", "price"],
+							"additionalProperties": false,
+							"properties": {
+								"_id": {
+									"bsonType": "object",
+									"required": ["t", "k"],
+									"additionalProperties": false,
+									"properties": {
+										"t": { "bsonType": "string" },
+										"k": { "bsonType": "string" }
+									}
+								},
+								"qty": { "bsonType": "long" },
+								"price": { "bsonType": ["decimal", "null"] }
+							}
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "created": false }
+			}
+		},
+		{
+			"description": "a write made before changeHead is never returned by a later read",
+			"request": {
+				"method": "POST",
+				"path": "/bulkWrite",
+				"body": {
+					"collection": "orders",
+					"operations": [
+						{
+							"kind": "replace",
+							"document": {
+								"_id": { "t": "tenant-a", "k": "[\"before\"]" },
+								"qty": { "$numberLong": "0" },
+								"price": null
+							}
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "inserted": 1, "replaced": 0, "deleted": 0 }
+			}
+		},
+		{
+			"description": "changeHead returns the stream's current resume point as opaque text",
+			"providerStates": [{ "name": "the token is remembered as changeHead" }],
+			"request": {
+				"method": "POST",
+				"path": "/changeHead",
+				"body": { "collection": "orders" }
+			},
+			"response": {
+				"status": 200,
+				"body": { "token": "<opaque resume token>" },
+				"matchingRules": {
+					"body": {
+						"$.token": { "matchers": [{ "match": "type" }] }
+					}
+				}
+			}
+		},
+		{
+			"description": "a transaction commits every write in order, or none; a 64-bit integer beyond 2^53 is a long, not a double",
+			"request": {
+				"method": "POST",
+				"path": "/transaction",
+				"body": {
+					"steps": [
+						{
+							"op": "find",
+							"request": {
+								"collection": "orders",
+								"select": {
+									"kind": "ids",
+									"ids": [{ "t": "tenant-a", "k": "[\"order-1\"]" }]
+								}
+							}
+						},
+						{
+							"op": "bulkWrite",
+							"request": {
+								"collection": "orders",
+								"operations": [
+									{
+										"kind": "replace",
+										"document": {
+											"_id": { "t": "tenant-a", "k": "[\"order-1\"]" },
+											"qty": { "$numberLong": "9007199254740993" },
+											"price": { "$numberDecimal": "0.0000001234" }
+										}
+									},
+									{
+										"kind": "replace",
+										"document": {
+											"_id": { "t": "tenant-b", "k": "[\"order-2\"]" },
+											"qty": { "$numberLong": "-9223372036854775808" },
+											"price": null
+										}
+									},
+									{
+										"kind": "replace",
+										"document": {
+											"_id": { "t": "tenant-a", "k": "[\"order-1\"]" },
+											"qty": { "$numberLong": "9007199254740993" },
+											"price": { "$numberDecimal": "1234.56" }
+										}
+									}
+								]
+							}
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"results": [
+						{ "documents": [] },
+						{ "inserted": 2, "replaced": 1, "deleted": 0 }
+					]
+				}
+			}
+		},
+		{
+			"description": "a transaction whose body throws leaves nothing behind",
+			"request": {
+				"method": "POST",
+				"path": "/transaction",
+				"body": {
+					"steps": [
+						{
+							"op": "bulkWrite",
+							"request": {
+								"collection": "orders",
+								"operations": [
+									{
+										"kind": "replace",
+										"document": {
+											"_id": { "t": "tenant-a", "k": "[\"aborted\"]" },
+											"qty": { "$numberLong": "1" },
+											"price": null
+										}
+									},
+									{
+										"kind": "delete",
+										"id": { "t": "tenant-a", "k": "[\"order-1\"]" }
+									}
+								]
+							}
+						},
+						{ "op": "abort" }
+					]
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": { "aborted": true }
+			}
+		},
+		{
+			"description": "find by ids returns documents in _id order with every BSON type intact; a Decimal128 comes back as the server prints it",
+			"request": {
+				"method": "POST",
+				"path": "/find",
+				"body": {
+					"collection": "orders",
+					"select": {
+						"kind": "ids",
+						"ids": [
+							{ "t": "tenant-b", "k": "[\"order-2\"]" },
+							{ "t": "tenant-a", "k": "[\"aborted\"]" },
+							{ "t": "tenant-a", "k": "[\"order-1\"]" }
+						]
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"documents": [
+						{
+							"_id": { "t": "tenant-a", "k": "[\"order-1\"]" },
+							"qty": { "$numberLong": "9007199254740993" },
+							"price": { "$numberDecimal": "1234.56" }
+						},
+						{
+							"_id": { "t": "tenant-b", "k": "[\"order-2\"]" },
+							"qty": { "$numberLong": "-9223372036854775808" },
+							"price": null
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "readChanges returns committed changes strictly after a token, in commit order, each with the document as of that change",
+			"request": {
+				"method": "POST",
+				"path": "/readChanges",
+				"body": {
+					"collection": "orders",
+					"after": "<opaque resume token>",
+					"limit": 2
+				},
+				"generators": {
+					"body": {
+						"$.after": {
+							"type": "ProviderState",
+							"expression": "${changeHead}"
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"events": [
+						{
+							"token": "<opaque resume token>",
+							"operation": "insert",
+							"id": { "t": "tenant-a", "k": "[\"order-1\"]" },
+							"document": {
+								"_id": { "t": "tenant-a", "k": "[\"order-1\"]" },
+								"qty": { "$numberLong": "9007199254740993" },
+								"price": { "$numberDecimal": "1.234E-7" }
+							}
+						},
+						{
+							"token": "<opaque resume token>",
+							"operation": "insert",
+							"id": { "t": "tenant-b", "k": "[\"order-2\"]" },
+							"document": {
+								"_id": { "t": "tenant-b", "k": "[\"order-2\"]" },
+								"qty": { "$numberLong": "-9223372036854775808" },
+								"price": null
+							}
+						}
+					],
+					"token": "<opaque resume token>",
+					"drained": false
+				},
+				"matchingRules": {
+					"body": {
+						"$.token": { "matchers": [{ "match": "type" }] },
+						"$.events[*].token": { "matchers": [{ "match": "type" }] }
+					}
+				}
+			}
+		},
+		{
+			"description": "readChanges filters by document key and reports drained only when nothing further was available",
+			"request": {
+				"method": "POST",
+				"path": "/readChanges",
+				"body": {
+					"collection": "orders",
+					"after": "<opaque resume token>",
+					"limit": 10,
+					"where": { "path": "_id.t", "equals": "tenant-a" }
+				},
+				"generators": {
+					"body": {
+						"$.after": {
+							"type": "ProviderState",
+							"expression": "${changeHead}"
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"events": [
+						{
+							"token": "<opaque resume token>",
+							"operation": "insert",
+							"id": { "t": "tenant-a", "k": "[\"order-1\"]" },
+							"document": {
+								"_id": { "t": "tenant-a", "k": "[\"order-1\"]" },
+								"qty": { "$numberLong": "9007199254740993" },
+								"price": { "$numberDecimal": "1.234E-7" }
+							}
+						},
+						{
+							"token": "<opaque resume token>",
+							"operation": "replace",
+							"id": { "t": "tenant-a", "k": "[\"order-1\"]" },
+							"document": {
+								"_id": { "t": "tenant-a", "k": "[\"order-1\"]" },
+								"qty": { "$numberLong": "9007199254740993" },
+								"price": { "$numberDecimal": "1234.56" }
+							}
+						}
+					],
+					"token": "<opaque resume token>",
+					"drained": true
+				},
+				"matchingRules": {
+					"body": {
+						"$.token": { "matchers": [{ "match": "type" }] },
+						"$.events[*].token": { "matchers": [{ "match": "type" }] }
+					}
+				}
+			}
+		},
+		{
+			"description": "a duplicate insert is refused with the server's code and no message",
+			"request": {
+				"method": "POST",
+				"path": "/bulkWrite",
+				"body": {
+					"collection": "orders",
+					"operations": [
+						{
+							"kind": "insert",
+							"document": {
+								"_id": { "t": "tenant-a", "k": "[\"order-1\"]" },
+								"qty": { "$numberLong": "1" },
+								"price": null
+							}
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": { "code": 11000 }
+			}
+		},
+		{
+			"description": "a document the validator refuses is refused loudly, never coerced",
+			"request": {
+				"method": "POST",
+				"path": "/bulkWrite",
+				"body": {
+					"collection": "orders",
+					"operations": [
+						{
+							"kind": "replace",
+							"document": {
+								"_id": { "t": "tenant-a", "k": "[\"order-3\"]" },
+								"qty": { "$numberDouble": "1.0" },
+								"price": null
+							}
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": { "code": 121 }
+			}
+		},
+		{
+			"description": "a range is every _id strictly between two bounds, so one tenant is one contiguous range",
+			"request": {
+				"method": "POST",
+				"path": "/find",
+				"body": {
+					"collection": "orders",
+					"select": {
+						"kind": "range",
+						"after": { "t": "tenant-a", "k": { "$minKey": 1 } },
+						"before": { "t": "tenant-a", "k": { "$maxKey": 1 } }
+					},
+					"limit": 10
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"documents": [
+						{
+							"_id": { "t": "tenant-a", "k": "[\"before\"]" },
+							"qty": { "$numberLong": "0" },
+							"price": null
+						},
+						{
+							"_id": { "t": "tenant-a", "k": "[\"order-1\"]" },
+							"qty": { "$numberLong": "9007199254740993" },
+							"price": { "$numberDecimal": "1234.56" }
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "deleteRange removes exactly that range and reports how many documents went",
+			"request": {
+				"method": "POST",
+				"path": "/bulkWrite",
+				"body": {
+					"collection": "orders",
+					"operations": [
+						{
+							"kind": "deleteRange",
+							"after": { "t": "tenant-a", "k": { "$minKey": 1 } },
+							"before": { "t": "tenant-a", "k": { "$maxKey": 1 } }
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "inserted": 0, "replaced": 0, "deleted": 2 }
+			}
+		},
+		{
+			"description": "awaitTransactions resolves once no earlier transaction on the collection is still open",
+			"request": {
+				"method": "POST",
+				"path": "/awaitTransactions",
+				"body": { "collection": "orders" }
+			},
+			"response": {
+				"status": 200,
+				"body": {}
+			}
+		},
+		{
+			"description": "a read from a token that is not a resume token is refused, not answered with an empty batch",
+			"request": {
+				"method": "POST",
+				"path": "/readChanges",
+				"body": {
+					"collection": "orders",
+					"after": "not-a-resume-token",
+					"limit": 1
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": { "refused": true }
+			}
+		}
+	]
+}

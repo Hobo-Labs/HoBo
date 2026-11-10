@@ -55,6 +55,79 @@ export {
 	runPostgresConformance,
 } from "./conformance.js";
 export {
+	CAPTURE_SESSION_SETTINGS,
+	mutationsOf,
+} from "./engine/capture.js";
+export {
+	createPostgresEngine,
+	POSTGRES_IMPEDANCE_CODES,
+	POSTGRES_SCHEMA_FIXTURE,
+	POSTGRES_SCHEMA_FIXTURE_TABLE,
+	type PostgresEngine,
+	type PostgresEngineOptions,
+	type PostgresImpedanceCode,
+	postgresEngineDeclaration,
+} from "./engine/engine.js";
+export {
+	createPgExecutor,
+	type PgCellLike,
+	type PgClientLike,
+	type PgPoolLike,
+	type PgQueryableLike,
+	type PgQueryResultLike,
+	type PgRowLike,
+	type PostgresExecutor,
+	type PostgresParameter,
+	type PostgresQueryResult,
+	type PostgresRow,
+	sqlStateOf,
+} from "./engine/executor.js";
+export {
+	captureObjectNames,
+	OPEN_FIELDS_COLUMN,
+	type PostgresCaptureObjects,
+	parseNamespace,
+	quoteIdentifier,
+	TENANT_COLUMN,
+} from "./engine/identifiers.js";
+export { formatLsn, parseLsn } from "./engine/lsn.js";
+export {
+	decodePgOutputMessage,
+	decodePgOutputTransactions,
+	type PgOutputCell,
+	type PgOutputColumn,
+	type PgOutputDecodeResult,
+	type PgOutputMessage,
+	type PgOutputOldImage,
+	type PgOutputRelation,
+	type PgOutputRowChange,
+	type PgOutputTransaction,
+	type PgOutputTuple,
+} from "./engine/pgoutput.js";
+export { SCHEMA_SNAPSHOT_REFUSALS } from "./engine/schema-port.js";
+export {
+	bootstrapStatements,
+	type DatasetStatements,
+	datasetStatements,
+	FENCE_TOKEN_SETTING,
+	FENCE_TRIGGER,
+	FENCED_WRITE_SQLSTATE,
+	guardStatements,
+	TRUNCATE_REFUSED_SQLSTATE,
+	TRUNCATE_TRIGGER,
+} from "./engine/statements.js";
+export {
+	canonicalFromNative,
+	datasetTableDdl,
+	encodeParameter,
+	type NativeCell,
+	type NativeTextSource,
+	nativeTextToCanonical,
+	POSTGRES_ENGINE_ID,
+	POSTGRES_NATIVE_TYPES,
+	POSTGRES_TYPE_MAPPING,
+} from "./engine/types.js";
+export {
 	isPostgresDataError,
 	POSTGRES_DATA_ERROR_CODES,
 	PostgresDataError,

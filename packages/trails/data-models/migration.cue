@@ -101,3 +101,49 @@ package trails
 	stream_count:      uint32
 	imported_at:       string & !=""
 }
+
+// ── ADR-0177 additions ──────────────────────────────────────────────────────
+
+#MigrationHeldEventData: {
+	migrationId: string & !=""
+	// A migration holds only in a safe-hold phase; the cutover step completes
+	// or compensates.
+	phase:  "plan" | "gate" | "prepare" | "seed" | "converge" | "verify" | "shift-reads" | "soak"
+	reason: string & !=""
+	heldAt: string & !=""
+}
+
+#MigrationResumedEventData: {
+	migrationId: string & !=""
+	phase:       string & !=""
+	resumedAt:   string & !=""
+}
+
+#MigrationCompletedEventData: {
+	migrationId: string & !=""
+	pattern:     "in-place-evolve" | "rebuild-and-swap" | "offline-copy" | "snapshot-and-tail" | "log-pivot" | "stream-handoff"
+	completedAt: string & !=""
+}
+
+#DataDualEvidenceRecord: {
+	sourceCount:  int & >=0
+	sourceDigest: =~"^[0-9a-f]{64}$"
+	targetCount:  int & >=0
+	targetDigest: =~"^[0-9a-f]{64}$"
+	fidelity:     "live"
+}
+
+#CanTrailPolicyFindingRecord: {
+	code:   string & !=""
+	point:  string & !=""
+	detail: string
+}
+
+#CanTrailPolicyVerdictRecord: {
+	ok:            bool
+	findings:      [...#CanTrailPolicyFindingRecord]
+	custodyDigest: =~"^sha256:[0-9a-f]{64}$"
+	// A verdict is ok exactly when it has no findings.
+	ok: len(findings) == 0
+}
+

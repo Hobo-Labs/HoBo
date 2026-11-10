@@ -4,8 +4,10 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 
 import {
+	DATA_STORE_ENGINES,
 	type DataStoreProviderProfile,
 	dataStoreOffering,
+	engineOfDataStoreProvider,
 	matchDataStoreOfferings,
 	parseDataStoreProviderProfile,
 	resolveDataStore,
@@ -102,4 +104,25 @@ test("dataStoreOffering helper defaults to stable + real", () => {
 	const entry = dataStoreOffering("kv.point");
 	assert.equal(entry.stability, "stable");
 	assert.equal(entry.fidelity, "real");
+});
+
+test("an engine is a different fact from a product (ADR-0177)", () => {
+	assert.equal(engineOfDataStoreProvider("sqlite-local"), "sqlite");
+	// D1 speaks SQLite: it must never be mistaken for a Postgres.
+	assert.equal(engineOfDataStoreProvider("cloudflare-d1"), "sqlite");
+	assert.equal(engineOfDataStoreProvider("supabase-postgres"), "postgres");
+	assert.equal(engineOfDataStoreProvider("azure-sql"), "sqlserver");
+});
+
+test("a product that hosts several engines does not get one guessed for it", () => {
+	assert.equal(engineOfDataStoreProvider("aws-rds"), "other");
+	assert.equal(engineOfDataStoreProvider("gcp-cloudsql"), "other");
+	assert.equal(engineOfDataStoreProvider("other"), "other");
+});
+
+test("the engine vocabulary is closed", () => {
+	assert.deepEqual(
+		[...DATA_STORE_ENGINES],
+		["sqlite", "postgres", "sqlserver", "mysql", "mongodb", "other"],
+	);
 });

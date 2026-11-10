@@ -307,6 +307,7 @@ export type {
 } from "./ports/component-host.js";
 export { parseInterfaceId } from "./ports/component-host.js";
 export type {
+	DataStoreEngine,
 	DataStoreMatch,
 	DataStoreOffering,
 	DataStoreOfferingId,
@@ -316,10 +317,12 @@ export type {
 	DataStoreResolveResult,
 } from "./ports/data-store-offerings.js";
 export {
+	DATA_STORE_ENGINES,
 	DATA_STORE_RESOURCE_CLASS,
 	DataStoreOfferingParseError,
 	DEFAULT_DATA_STORE_FALLBACKS,
 	dataStoreOffering,
+	engineOfDataStoreProvider,
 	matchDataStoreOfferings,
 	parseDataStoreOffering,
 	parseDataStoreOfferingId,
