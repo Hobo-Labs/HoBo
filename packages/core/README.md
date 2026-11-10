@@ -66,7 +66,10 @@ only unsourced realization, and `dataStoreProfileOf` derives the resolver
 profile from the claims. `ports/self-hosted-data-store.ts` is the pure
 `assessSelfHostedDataStore`, which reads a provider's declared compute feature
 tokens and Yard profiles and returns `can` / `cannot` / `undetermined` with
-reasons. Core holds no vendor facts; the PostgreSQL catalog built from these
+reasons. A provider package can add cited, per-product **host forms**
+(`parseRegisteredHostForm`) about products it already declares; the assessment
+then lists every form, so one provider can show a form that qualifies beside
+one that does not. Core holds no vendor facts; the PostgreSQL catalog built from these
 is in `@hobo/cloud-providers`. See
 [`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
 

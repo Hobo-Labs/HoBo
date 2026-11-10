@@ -17,10 +17,44 @@ message RegisteredCatalogRowRecord {
   string product_id = 2;
 }
 
+message HostFormSourceRecord {
+  string url = 1;        // https vendor documentation URL
+  string checked_at = 2; // UTC YYYY-MM-DD the URL was read
+  string note = 3;
+}
+
+message RegisteredHostFacetClaimRecord {
+  string facet = 1; // long-running-compute | persistent-volume | inbound-tcp | operator-control
+  bool holds = 2;
+  string detail = 3;
+  repeated HostFormSourceRecord sources = 4;
+}
+
+// One compute product a provider already declares, described as a host form.
+message RegisteredHostFormRecord {
+  string product_id = 1;     // a Yard catalog product id
+  string resource_class = 2; // an equivalence resource class
+  string provider_service = 3;
+  string form = 4; // vm | container
+  repeated HostFormSourceRecord form_sources = 5;
+  string volume_product_id = 6;
+  repeated RegisteredHostFacetClaimRecord facets = 7;
+}
+
 message RegisteredHostDeclarationRecord {
   string provider_id = 1;
   repeated RegisteredComputeCapabilityRecord compute = 2;
   repeated RegisteredCatalogRowRecord catalog = 3;
+  repeated RegisteredHostFormRecord host_forms = 4;
+}
+
+message SelfHostFormAssessmentRecord {
+  string target = 1;
+  string provider_service = 2;
+  string verdict = 3; // can | cannot | undetermined
+  repeated SelfHostFacetFindingRecord findings = 4;
+  repeated string missing = 5;
+  repeated string caveats = 6;
 }
 
 message SelfHostFacetFindingRecord {
@@ -37,4 +71,5 @@ message SelfHostAssessmentRecord {
   repeated string missing = 5;
   repeated string caveats = 6;
   string summary = 7;
+  repeated SelfHostFormAssessmentRecord forms = 8;
 }

@@ -17,10 +17,43 @@ package core
 	product_id?: string & !=""
 }
 
+#HostFormSourceRecord: {
+	url:        string & =~"^https://"
+	checked_at: string & =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+	note:       string & !=""
+}
+
+#RegisteredHostFacetClaimRecord: {
+	facet:  #SelfHostFacet
+	holds:  bool
+	detail: string & !=""
+	sources: [#HostFormSourceRecord, ...#HostFormSourceRecord]
+}
+
+#RegisteredHostFormRecord: {
+	product_id?:       string & !=""
+	resource_class?:   string & !=""
+	provider_service:  string & !=""
+	form:              "vm" | "container"
+	form_sources: [#HostFormSourceRecord, ...#HostFormSourceRecord]
+	volume_product_id?: string & !=""
+	facets: [...#RegisteredHostFacetClaimRecord]
+}
+
 #RegisteredHostDeclarationRecord: {
 	provider_id: string & !=""
 	compute: [...#RegisteredComputeCapabilityRecord]
 	catalog: [...#RegisteredCatalogRowRecord]
+	host_forms: [...#RegisteredHostFormRecord]
+}
+
+#SelfHostFormAssessmentRecord: {
+	target:           string & !=""
+	provider_service: string & !=""
+	verdict:          "can" | "cannot" | "undetermined"
+	findings: [...#SelfHostFacetFindingRecord]
+	missing: [...#SelfHostFacet]
+	caveats: [...string & !=""]
 }
 
 #SelfHostFacetFindingRecord: {
@@ -36,6 +69,7 @@ package core
 	findings: [...#SelfHostFacetFindingRecord]
 	missing: [...#SelfHostFacet]
 	caveats: [...string & !=""]
+	forms: [...#SelfHostFormAssessmentRecord]
 	summary: string & !=""
 	if verdict == "can" {
 		missing: []

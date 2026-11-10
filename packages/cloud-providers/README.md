@@ -163,14 +163,22 @@ plus Netlify and Railway (equivalence classes only; no Yard catalog here):
 
 | Verdict | Providers | Why |
 |---|---|---|
-| `can` | `hetzner`, `hostinger` | The declared compute class is a VM. Hetzner also declares an attachable `bucket.filesystem/v1` volume; Hostinger does not, so its data shares the VM's lifetime (reported as a caveat). |
+| `can` | `hetzner`, `hostinger` | The declared compute class is a VM. Hetzner also declares an attachable `bucket.filesystem/v1` volume; Hostinger does not, so its data shares the VM's lifetime (a caveat). |
+| `can` | `digitalocean` (Droplet), `kubernetes` (StatefulSet) | A cited host form on a Yard product, with the volume realized by a Yard `bucket.filesystem/v1` product (Block Storage; PersistentVolumeClaim). |
+| `can`, with a caveat | `aws` (ECS service on Fargate), `azure` (Container Apps), `railway` (persistent service) | Every facet is cited, but the volume (EFS, Azure Files, Railway volume) is not a product in that provider's Yard catalog yet. |
 | `cannot` | `cloudflare`, `vercel`, `netlify` | Nothing declared is a VM or a container (edge workers; static and HTTP compute). |
-| `undetermined` | `aws`, `azure`, `digitalocean`, `gcp`, `kubernetes`, `railway` | A container is declared, but nothing declares that it is long-running, keeps a disk, accepts TCP, or can run backup tooling. |
+| `undetermined` | `gcp` | Only Cloud Run's volume facet is cited; long-running, inbound TCP and operator control are not, and the GCP Yard has no VM or Kubernetes product. |
 
-A verdict describes the declaration, not the vendor. `undetermined` is resolved
-by enriching the provider's declaration with the facet tokens
-(`long-running`, `persistent-volume`, `tcp`, `exec`) backed by its
-documentation, never by special-casing the provider here.
+Per product, `SelfHostAssessment.forms` also shows the forms that do not
+qualify: `aws.app-runner/v1` (HTTP only) and
+`digitalocean.app-platform-service/v1` (no persistent storage) are `cannot`.
+
+A verdict describes the declaration, not the vendor. The six provider packages
+above publish `*_HOST_FORMS`: cited, per-product statements about products
+they already declare, read here unchanged. An `undetermined` is resolved by
+citing the missing facets in that provider's host forms, never by
+special-casing the provider here. Citations per facet are in
+[`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
 
 ## HONEST SCOPE
 

@@ -12,6 +12,7 @@ export {
 	INITIAL_CAPABILITY_PORTS,
 	type InitialCapabilityPort,
 } from "./equivalence.js";
+export { GCP_HOST_FORMS } from "./host-forms.js";
 export {
 	assertLocalIacProgram,
 	GCP_IAC_PROVIDER,

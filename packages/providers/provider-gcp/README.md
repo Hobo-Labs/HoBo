@@ -216,3 +216,15 @@ observed `etag`; retirement verifies an independent absent read after terminal d
 Static list-price signals are tagged `estimate`; placeholder zero is `unknown`.
 Current bounded quotes and authoritative account usage are supplied independently of
 those hints. These modeled-API tests do not replace isolated live-project acceptance.
+
+## Host forms for self-hosted data stores
+
+`GCP_HOST_FORMS` (`src/host-forms.ts`) states, for compute products this
+package already declares, whether each could host a self-managed, stateful,
+TCP-served data store such as PostgreSQL: a long-running VM or container, a
+persistent volume, inbound TCP, and enough control to run backups. Every facet
+is cited to the vendor's documentation with the date it was read. It adds no
+product and does not change the published Capability Manifest; it is read by
+`assessSelfHostedDataStore` in `@hobo/core`. Cited documentation only — nothing
+has been deployed onto these products from this repository. See
+[`docs/design/postgres-backend-catalog.md`](../../../docs/design/postgres-backend-catalog.md).

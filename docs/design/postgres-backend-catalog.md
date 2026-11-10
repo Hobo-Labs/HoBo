@@ -30,7 +30,8 @@ budget-policy mechanism has a vocabulary to negotiate in.
 |---|---|---|
 | Offering and provider vocabulary | `@hobo/core` (`ports/data-store-offerings.ts`) | `DataStoreOfferingId`, `DataStoreProvider`, `DATA_STORE_OFFERING_IDS`, `DATA_STORE_PROVIDERS`, `DATA_STORE_PROVIDER_FAMILIES` |
 | Catalog record, parser, profile derivation | `@hobo/core` (`ports/data-store-catalog.ts`) | `parseDataStoreCatalogEntry`, `dataStoreProfileOf`, `operatorOwnedOfferings`, `dataStoreCatalogEvidence` |
-| Self-host matcher (pure) | `@hobo/core` (`ports/self-hosted-data-store.ts`) | `assessSelfHostedDataStore`, `SELF_HOST_FACETS`, `SELF_HOST_FEATURE_TOKENS` |
+| Self-host matcher (pure) | `@hobo/core` (`ports/self-hosted-data-store.ts`) | `assessSelfHostedDataStore`, `parseRegisteredHostForm`, `SELF_HOST_FACETS`, `SELF_HOST_FEATURE_TOKENS` |
+| Cited host forms per provider | `@hobo/provider-{aws,azure,gcp,digitalocean,kubernetes,railway}` (`host-forms.ts`) | `AWS_HOST_FORMS`, `AZURE_HOST_FORMS`, `GCP_HOST_FORMS`, `DIGITALOCEAN_HOST_FORMS`, `KUBERNETES_HOST_FORMS`, `RAILWAY_HOST_FORMS` |
 | The PostgreSQL catalog (vendor facts) | `@hobo/cloud-providers` (`postgres-backends.ts`) | `POSTGRES_BACKEND_CATALOG`, `postgresBackendProfiles()`, `postgresBackendEvidence()`, `POSTGRES_BACKEND_EXCLUSIONS` |
 | Self-host answer from real declarations | `@hobo/cloud-providers` (`self-hosted-postgres.ts`) | `selfHostedPostgresHosts()`, `registeredHostDeclarations()`, `SELF_HOST_PROVIDERS` |
 
@@ -183,32 +184,94 @@ Yard catalog — and contains no list of provider names:
   can mount it;
 - anything else is not a host form.
 
-| Provider | Verdict | Reason (derived from its declaration) |
-|---|---|---|
-| `aws` | undetermined | Fargate declares a container but not long-running-compute, persistent-volume, inbound-tcp, operator-control |
-| `azure` | undetermined | Container Apps declares a container but not long-running-compute, persistent-volume, inbound-tcp, operator-control |
-| `cloudflare` | cannot | declares compute only as Workers [edge, worker, wasm-native, http]: none is a VM or a container |
-| `digitalocean` | undetermined | App Platform declares a container but not long-running-compute, persistent-volume, inbound-tcp, operator-control |
-| `gcp` | undetermined | Cloud Run declares a container but not long-running-compute, persistent-volume, inbound-tcp, operator-control |
-| `hetzner` | can | on Hetzner Cloud Server |
-| `hostinger` | can | on Hostinger VPS. Caveat: no bucket.filesystem/v1 volume is declared: data lives on the VM's own disk and is lost if the machine is rebuilt or deleted |
-| `kubernetes` | undetermined | Kubernetes Deployment declares a container but not long-running-compute, persistent-volume, inbound-tcp, operator-control |
-| `vercel` | cannot | declares compute only as Vercel Web [http, static, managed]: none is a VM or a container |
-| `netlify` | cannot | declares compute only as Netlify Site [http, static, edge, managed]: none is a VM or a container |
-| `railway` | undetermined | Railway Service declares a container but not long-running-compute, persistent-volume, inbound-tcp, operator-control |
+Tokens alone cannot say which of a provider's products fits, so a provider
+package can also publish **host forms** (`*_HOST_FORMS`, parsed by
+`parseRegisteredHostForm`): one compute product it *already declares* — a Yard
+`productId`, or an equivalence `resourceClass` — stated to be a VM or a
+container, with each facet it provides or lacks cited to the vendor's
+documentation in the catalog's `{ url, checkedAt, note }` shape. A form adds no
+product and leaves the published Capability Manifest untouched; it names the
+Yard `bucket.filesystem/v1` product that realizes its volume when the catalog
+has one. Forms are assessed per product, so a provider can have one form that
+can and one that cannot, and `SelfHostAssessment.forms` lists both.
+
+| Provider | Verdict | Qualifying form | Other forms assessed | Reason or caveat |
+|---|---|---|---|---|
+| `aws` | can | `aws.ecs-service/v1` (Amazon ECS service on Fargate) | `aws.app-runner/v1` cannot | the persistent volume is cited from vendor documentation, but no bucket.filesystem/v1 product in this provider's Yard catalog realizes it yet |
+| `azure` | can | `azure.container-apps/v1` (Azure Container Apps) | — | the persistent volume is cited from vendor documentation, but no bucket.filesystem/v1 product in this provider's Yard catalog realizes it yet |
+| `cloudflare` | cannot | — | — | declares compute only as Workers [edge, worker, wasm-native, http]: none is a VM or a container |
+| `digitalocean` | can | `digitalocean.droplet/v1` (DigitalOcean Droplet) | `digitalocean.app-platform-service/v1` cannot | every facet established |
+| `gcp` | undetermined | — | `gcp.cloud-run/v1` undetermined | Cloud Run service declares a container but not long-running-compute, inbound-tcp, operator-control |
+| `hetzner` | can | `hetzner:cloud-server` (Hetzner Cloud Server) | — | every facet established |
+| `hostinger` | can | `hostinger:vps` (Hostinger VPS) | — | no bucket.filesystem/v1 volume is declared: data lives on the VM's own disk and is lost if the machine is rebuilt or deleted |
+| `kubernetes` | can | `kubernetes.statefulset/v1` (Kubernetes StatefulSet) | `kubernetes:deployment` undetermined | every facet established |
+| `vercel` | cannot | — | — | declares compute only as Vercel Web [http, static, managed]: none is a VM or a container |
+| `netlify` | cannot | — | — | declares compute only as Netlify Site [http, static, edge, managed]: none is a VM or a container |
+| `railway` | can | `railway:service` (Railway persistent service) | — | the persistent volume is cited from vendor documentation, but no bucket.filesystem/v1 product in this provider's Yard catalog realizes it yet |
 
 A verdict is a statement about the **declaration**, not about what the vendor
-sells. `cannot` means nothing the provider has registered with HoBo is a VM or
-a container. For Vercel that matches the vendor's own guide, which says "You
-can't run your own Postgres or Redis container with local disk"
+sells. `cannot` at provider level means nothing the provider has registered
+with HoBo is a VM or a container. For Vercel that matches the vendor's own
+guide, which says "You can't run your own Postgres or Redis container with
+local disk"
 ([Docker Compose concepts on Vercel](https://vercel.com/kb/guide/docker-compose-concepts-on-vercel),
-read 2026-11-10). `undetermined` means a container is declared but the
-declaration is too coarse to say whether it stays up, keeps a disk, or accepts
-TCP — the right fix is to enrich that provider's declaration with the facet
-tokens, backed by its documentation, not to special-case it here. DigitalOcean
-is the clearest case: it sells Droplets and block storage, and both are Yard
-rows, but its declared compute class is App Platform, so nothing declares the
-Droplet as a VM.
+read 2026-11-10).
+
+Reading the `can` rows honestly:
+
+- **DigitalOcean and Kubernetes** qualify on products and volumes that are
+  both in their Yard catalogs (Droplet + Block Storage; StatefulSet +
+  PersistentVolumeClaim). The matcher reads those rows; the host form only
+  states what kind of product each is.
+- **AWS, Azure and Railway** qualify on a container product whose persistent
+  volume is cited from documentation but is **not a product in that provider's
+  Yard catalog** (Amazon EFS, Azure Files, Railway volumes), so HoBo cannot
+  allocate it yet; that is the caveat on the row. EFS and Azure Files are
+  network file shares, not block storage, and their fitness for a database's
+  durability semantics is not assessed here.
+- **GCP stays undetermined.** Its Yard declares Cloud Run, App Engine and
+  functions, and no VM, Kubernetes or volume product. For Cloud Run only the
+  volume facet could be cited (NFS mounts); the pages read did not settle
+  whether a Cloud Run service accepts raw inbound TCP, so nothing is claimed.
+  Resolving it means either reading that question to a primary source or
+  adding a VM or Kubernetes product to the GCP Yard.
+- **App Runner and App Platform** are `cannot` per product, each on one cited
+  facet (HTTP-only ingress; no persistent storage).
+
+Nothing has been deployed onto any of these products from this repository.
+
+### Citations per host-form facet (read 2026-11-10)
+
+| Provider form | Facet | Holds | Cited statement | Source |
+|---|---|---|---|---|
+| `aws.ecs-service/v1` | is a container | yes | an ECS service keeps a desired number of tasks running | <https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs_services.html> |
+| `aws.ecs-service/v1` | long-running-compute | yes | 'This helps maintain your desired number of tasks in the service' | <https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs_services.html> |
+| `aws.ecs-service/v1` | persistent-volume | yes | 'your tasks have access to the same persistent storage'; on Fargate, EFS is supported on platform version 1.4.0 or later | <https://docs.aws.amazon.com/AmazonECS/latest/developerguide/efs-volumes.html> |
+| `aws.ecs-service/v1` | inbound-tcp | yes | the Network Load Balancer 'attempts to open a TCP connection to the selected target on the port specified in the listener configuration' | <https://docs.aws.amazon.com/AmazonECS/latest/developerguide/nlb.html> |
+| `aws.ecs-service/v1` | operator-control | yes | 'You can use ECS Exec to run commands in or get a shell to a container running on an Amazon EC2 instance or on AWS Fargate' | <https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html> |
+| `aws.app-runner/v1` | is a container | yes | App Runner runs container instances behind web requests | <https://docs.aws.amazon.com/apprunner/latest/dg/develop.html> |
+| `aws.app-runner/v1` | inbound-tcp | **no** | 'App Runner provides support for HTTP 1.0 and HTTP 1.1 to the container instances' | <https://docs.aws.amazon.com/apprunner/latest/dg/develop.html> |
+| `azure.container-apps/v1` | is a container | yes | Container Apps runs containers with managed ingress | <https://learn.microsoft.com/en-us/azure/container-apps/ingress-overview> |
+| `azure.container-apps/v1` | long-running-compute | yes | 'If you want to ensure that an instance of your revision is always running, set the minimum number of replicas to 1 or higher' | <https://learn.microsoft.com/en-us/azure/container-apps/scale-app> |
+| `azure.container-apps/v1` | persistent-volume | yes | storage types table: 'Azure Files | Permanent storage | Data is persisted to Azure Files'; container-scoped storage is ephemeral | <https://learn.microsoft.com/en-us/azure/container-apps/storage-mounts> |
+| `azure.container-apps/v1` | inbound-tcp | yes | 'Ingress supports: External and internal ingress; HTTP and TCP ingress types' | <https://learn.microsoft.com/en-us/azure/container-apps/ingress-overview> |
+| `azure.container-apps/v1` | operator-control | yes | 'Connecting to a container's console is useful when you want to troubleshoot your application inside a container' | <https://learn.microsoft.com/en-us/azure/container-apps/container-console> |
+| `digitalocean.droplet/v1` | is a vm | yes | 'DigitalOcean Droplets are Linux-based virtual machines (VMs) that run on top of virtualized hardware' | <https://docs.digitalocean.com/products/droplets/> |
+| `digitalocean.droplet/v1` | persistent-volume | yes | 'Volumes are network-attached block storage' | <https://docs.digitalocean.com/products/volumes/> |
+| `digitalocean.app-platform-service/v1` | is a container | yes | App Platform runs containers on host instances it manages | <https://docs.digitalocean.com/products/app-platform/details/limits/> |
+| `digitalocean.app-platform-service/v1` | persistent-volume | **no** | 'The host instances running App Platform containers do not provide persistent data storage' | <https://docs.digitalocean.com/products/app-platform/details/limits/> |
+| `gcp.cloud-run/v1` | is a container | yes | 'A Cloud Run service starts Cloud Run instances to handle incoming requests' | <https://cloud.google.com/run/docs/container-contract> |
+| `gcp.cloud-run/v1` | persistent-volume | yes | 'To mount an NFS server as a volume in Cloud Run'; 'we recommend Filestore, which is a fully managed NFS offering' | <https://cloud.google.com/run/docs/configuring/services/nfs-volume-mounts> |
+| `kubernetes.statefulset/v1` | is a container | yes | a StatefulSet manages Pods 'that need persistent storage or a stable, unique network identity' | <https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/> |
+| `kubernetes.statefulset/v1` | long-running-compute | yes | 'useful for managing applications that need persistent storage or a stable, unique network identity' | <https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/> |
+| `kubernetes.statefulset/v1` | persistent-volume | yes | StatefulSets provide 'Stable, persistent storage' | <https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/> |
+| `kubernetes.statefulset/v1` | inbound-tcp | yes | 'The default protocol for Services is TCP' | <https://kubernetes.io/docs/concepts/services-networking/service/> |
+| `kubernetes.statefulset/v1` | operator-control | yes | 'how to use kubectl exec to get a shell to a running container' | <https://kubernetes.io/docs/tasks/debug/debug-application/get-shell-running-container/> |
+| `railway:service` | is a container | yes | 'Persistent services: Services that are always running' | <https://docs.railway.com/reference/services> |
+| `railway:service` | long-running-compute | yes | 'Persistent services: Services that are always running' | <https://docs.railway.com/reference/services> |
+| `railway:service` | persistent-volume | yes | 'When mounting a volume to a service, a volume is made available to the service on the specified mount path' | <https://docs.railway.com/reference/volumes> |
+| `railway:service` | inbound-tcp | yes | TCP Proxy 'is useful for services like databases, game servers, or any application that communicates over raw TCP' | <https://docs.railway.com/reference/tcp-proxy> |
+| `railway:service` | operator-control | yes | 'When a volume is mounted to a service, backups can be manually created, deleted and restored'; schedules daily, weekly or monthly | <https://docs.railway.com/reference/backups> |
 
 The table covers the nine provider namespaces with a Yard catalog plus Netlify
 and Railway, which publish compute equivalence classes but no Yard catalog in

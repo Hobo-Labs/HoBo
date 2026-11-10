@@ -6,7 +6,9 @@
  * row are read off code. The compute half is the provider package's own
  * `EQUIVALENCE_CLASSES` — the table its Capability Manifest publishes — taking
  * every class on the `compute` port. The catalog half is the provider's full
- * allocatable Yard (`PARITY_SOURCES`), reduced to `(profile, productId)`. The
+ * allocatable Yard (`PARITY_SOURCES`), reduced to `(profile, productId)`. A
+ * third, optional input is the provider package's `*_HOST_FORMS`: cited,
+ * per-product statements about products those two halves already declare. The
  * verdict is `assessSelfHostedDataStore` from `@hobo/core`, which never sees a
  * rule keyed on a provider id.
  *
@@ -27,18 +29,31 @@ import {
 	type RegisteredCatalogRow,
 	type RegisteredComputeCapability,
 	type RegisteredHostDeclaration,
+	type RegisteredHostForm,
 	type SelfHostAssessment,
 } from "@hobo/core";
-import { EQUIVALENCE_CLASSES as AWS } from "@hobo/provider-aws";
-import { EQUIVALENCE_CLASSES as AZURE } from "@hobo/provider-azure";
+import { EQUIVALENCE_CLASSES as AWS, AWS_HOST_FORMS } from "@hobo/provider-aws";
+import {
+	EQUIVALENCE_CLASSES as AZURE,
+	AZURE_HOST_FORMS,
+} from "@hobo/provider-azure";
 import { EQUIVALENCE_CLASSES as CLOUDFLARE } from "@hobo/provider-cloudflare";
-import { EQUIVALENCE_CLASSES as DIGITALOCEAN } from "@hobo/provider-digitalocean";
-import { EQUIVALENCE_CLASSES as GCP } from "@hobo/provider-gcp";
+import {
+	EQUIVALENCE_CLASSES as DIGITALOCEAN,
+	DIGITALOCEAN_HOST_FORMS,
+} from "@hobo/provider-digitalocean";
+import { EQUIVALENCE_CLASSES as GCP, GCP_HOST_FORMS } from "@hobo/provider-gcp";
 import { EQUIVALENCE_CLASSES as HETZNER } from "@hobo/provider-hetzner";
 import { EQUIVALENCE_CLASSES as HOSTINGER } from "@hobo/provider-hostinger";
-import { EQUIVALENCE_CLASSES as KUBERNETES } from "@hobo/provider-kubernetes";
+import {
+	EQUIVALENCE_CLASSES as KUBERNETES,
+	KUBERNETES_HOST_FORMS,
+} from "@hobo/provider-kubernetes";
 import { EQUIVALENCE_CLASSES as NETLIFY } from "@hobo/provider-netlify";
-import { EQUIVALENCE_CLASSES as RAILWAY } from "@hobo/provider-railway";
+import {
+	EQUIVALENCE_CLASSES as RAILWAY,
+	RAILWAY_HOST_FORMS,
+} from "@hobo/provider-railway";
 import { EQUIVALENCE_CLASSES as VERCEL } from "@hobo/provider-vercel";
 
 import { PARITY_PROVIDERS, PARITY_SOURCES } from "./parity.js";
@@ -53,6 +68,8 @@ export interface EquivalenceClassLike {
 
 export interface SelfHostSource {
 	readonly equivalenceClasses: Readonly<Record<string, EquivalenceClassLike>>;
+	/** Cited per-product host forms the provider package declares, if any. */
+	readonly hostForms?: readonly RegisteredHostForm[];
 	/** The provider's Yard catalog rows; empty when it publishes no Yard here. */
 	readonly catalog: () => readonly RegisteredCatalogRow[];
 }
@@ -86,26 +103,44 @@ const noYard = () => [];
 export const SELF_HOST_SOURCES: Readonly<
 	Record<SelfHostProvider, SelfHostSource>
 > = Object.freeze({
-	aws: { equivalenceClasses: AWS, catalog: yardRows("aws") },
-	azure: { equivalenceClasses: AZURE, catalog: yardRows("azure") },
+	aws: {
+		equivalenceClasses: AWS,
+		hostForms: AWS_HOST_FORMS,
+		catalog: yardRows("aws"),
+	},
+	azure: {
+		equivalenceClasses: AZURE,
+		hostForms: AZURE_HOST_FORMS,
+		catalog: yardRows("azure"),
+	},
 	cloudflare: {
 		equivalenceClasses: CLOUDFLARE,
 		catalog: yardRows("cloudflare"),
 	},
 	digitalocean: {
 		equivalenceClasses: DIGITALOCEAN,
+		hostForms: DIGITALOCEAN_HOST_FORMS,
 		catalog: yardRows("digitalocean"),
 	},
-	gcp: { equivalenceClasses: GCP, catalog: yardRows("gcp") },
+	gcp: {
+		equivalenceClasses: GCP,
+		hostForms: GCP_HOST_FORMS,
+		catalog: yardRows("gcp"),
+	},
 	hetzner: { equivalenceClasses: HETZNER, catalog: yardRows("hetzner") },
 	hostinger: { equivalenceClasses: HOSTINGER, catalog: yardRows("hostinger") },
 	kubernetes: {
 		equivalenceClasses: KUBERNETES,
+		hostForms: KUBERNETES_HOST_FORMS,
 		catalog: yardRows("kubernetes"),
 	},
 	vercel: { equivalenceClasses: VERCEL, catalog: yardRows("vercel") },
 	netlify: { equivalenceClasses: NETLIFY, catalog: noYard },
-	railway: { equivalenceClasses: RAILWAY, catalog: noYard },
+	railway: {
+		equivalenceClasses: RAILWAY,
+		hostForms: RAILWAY_HOST_FORMS,
+		catalog: noYard,
+	},
 });
 
 /** A provider's declaration, reduced to what the self-host question reads. */
@@ -128,6 +163,7 @@ export function registeredHostDeclaration(
 		providerId: provider,
 		compute: Object.freeze(compute),
 		catalog: Object.freeze(source.catalog().map((row) => Object.freeze(row))),
+		hostForms: source.hostForms ?? Object.freeze([]),
 	});
 }
 

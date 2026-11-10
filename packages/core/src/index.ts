@@ -695,17 +695,23 @@ export type {
 	RegisteredCatalogRow,
 	RegisteredComputeCapability,
 	RegisteredHostDeclaration,
+	RegisteredHostFacetClaim,
+	RegisteredHostForm,
 	SelfHostAssessment,
 	SelfHostFacet,
 	SelfHostFacetFinding,
 	SelfHostFacetState,
+	SelfHostForm,
+	SelfHostFormAssessment,
 	SelfHostVerdict,
 } from "./ports/self-hosted-data-store.js";
 export {
 	assessSelfHostedDataStore,
 	assessSelfHostedDataStores,
+	parseRegisteredHostForm,
 	SELF_HOST_FACETS,
 	SELF_HOST_FEATURE_TOKENS,
+	SELF_HOST_FORMS,
 } from "./ports/self-hosted-data-store.js";
 export type {
 	RunId,

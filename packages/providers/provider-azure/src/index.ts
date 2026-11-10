@@ -12,6 +12,7 @@ export {
 	INITIAL_CAPABILITY_PORTS,
 	type InitialCapabilityPort,
 } from "./equivalence.js";
+export { AZURE_HOST_FORMS } from "./host-forms.js";
 export {
 	AZURE_IAC_PROVIDER,
 	assertLocalIacProgram,

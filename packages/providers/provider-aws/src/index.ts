@@ -12,6 +12,7 @@ export {
 	INITIAL_CAPABILITY_PORTS,
 	type InitialCapabilityPort,
 } from "./equivalence.js";
+export { AWS_HOST_FORMS } from "./host-forms.js";
 export {
 	AWS_IAC_PROVIDER,
 	assertLocalIacProgram,

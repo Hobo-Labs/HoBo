@@ -100,54 +100,141 @@ describe("verdicts", () => {
 		}
 	});
 
-	it("container declarations are undetermined, and say what is missing", () => {
-		for (const provider of [
-			"aws",
-			"azure",
-			"gcp",
-			"digitalocean",
-			"kubernetes",
-			"railway",
-		] as const) {
-			const result = verdictOf(provider);
-			expect(result.verdict, provider).toBe("undetermined");
-			expect(result.missing, provider).toEqual(SELF_HOST_FACETS);
+	it("a provider whose qualifying form is a declared Yard product can", () => {
+		const expected = {
+			aws: "aws.ecs-service/v1",
+			azure: "azure.container-apps/v1",
+			digitalocean: "digitalocean.droplet/v1",
+			kubernetes: "kubernetes.statefulset/v1",
+			railway: "railway:service",
+		} as const;
+		for (const [provider, target] of Object.entries(expected)) {
+			// SAFETY: keys of `expected` are assessed provider ids by construction.
+			const result = verdictOf(provider as keyof typeof expected);
+			expect(result.verdict, provider).toBe("can");
+			expect(result.resourceClass, provider).toBe(target);
+			expect(result.missing, provider).toEqual([]);
 		}
 	});
 
-	it("a declared volume does not rescue a container that cannot be shown to mount it", () => {
-		for (const provider of ["digitalocean", "kubernetes"] as const) {
-			const declared = registeredHostDeclaration(provider).catalog.filter(
-				(row) => row.profile === "bucket.filesystem/v1",
-			);
-			expect(declared.length, provider).toBeGreaterThan(0);
+	it("shows which form qualifies and which does not, per product", () => {
+		const forms = (provider: "aws" | "digitalocean" | "kubernetes") =>
+			verdictOf(provider).forms.map((form) => [form.target, form.verdict]);
+		expect(forms("aws")).toEqual([
+			["aws.ecs-service/v1", "can"],
+			["aws.app-runner/v1", "cannot"],
+		]);
+		expect(forms("digitalocean")).toEqual([
+			["digitalocean.droplet/v1", "can"],
+			["digitalocean.app-platform-service/v1", "cannot"],
+		]);
+		// The Deployment equivalence class carries no cited form, so it stays
+		// undetermined beside the StatefulSet that qualifies.
+		expect(forms("kubernetes")).toEqual([
+			["kubernetes.statefulset/v1", "can"],
+			["kubernetes:deployment", "undetermined"],
+		]);
+	});
+
+	it("realizes the volume from the Yard where the catalog has one", () => {
+		for (const [provider, product] of [
+			["digitalocean", "digitalocean.block-storage/v1"],
+			["kubernetes", "kubernetes.persistent-volume-claim/v1"],
+		] as const) {
+			const result = verdictOf(provider);
+			expect(result.caveats, provider).toEqual([]);
 			expect(
-				verdictOf(provider).findings.find(
-					(f) => f.facet === "persistent-volume",
-				)?.reason,
-			).toContain("nothing declares that this container can mount it");
+				result.findings.find((f) => f.facet === "persistent-volume")?.reason,
+			).toContain(product);
+		}
+		// AWS, Azure and Railway cite a volume their catalog cannot allocate yet.
+		for (const provider of ["aws", "azure", "railway"] as const) {
+			expect(verdictOf(provider).caveats[0], provider).toContain(
+				"no bucket.filesystem/v1 product",
+			);
+		}
+	});
+
+	it("leaves GCP undetermined: only the volume facet of Cloud Run is cited", () => {
+		const gcp = verdictOf("gcp");
+		expect(gcp.verdict).toBe("undetermined");
+		expect(gcp.resourceClass).toBe("gcp.cloud-run/v1");
+		expect(gcp.missing).toEqual([
+			"long-running-compute",
+			"inbound-tcp",
+			"operator-control",
+		]);
+	});
+
+	it("names only products and classes the provider already declares", () => {
+		for (const provider of SELF_HOST_PROVIDERS) {
+			const source = SELF_HOST_SOURCES[provider];
+			const rows = source.catalog();
+			const products = new Set(rows.map((row) => row.productId));
+			const classes = new Set(
+				Object.values(source.equivalenceClasses).map((c) => c.resourceClass),
+			);
+			for (const form of source.hostForms ?? []) {
+				if (form.productId !== undefined) {
+					expect(products, form.productId).toContain(form.productId);
+				}
+				if (form.resourceClass !== undefined) {
+					expect(classes, form.resourceClass).toContain(form.resourceClass);
+				}
+				if (form.volumeProductId !== undefined) {
+					expect(rows).toContainEqual({
+						profile: "bucket.filesystem/v1",
+						productId: form.volumeProductId,
+					});
+				}
+			}
+		}
+	});
+
+	it("cites the vendor's own documentation for every form and facet", () => {
+		const domains = {
+			aws: ["docs.aws.amazon.com"],
+			azure: ["learn.microsoft.com"],
+			gcp: ["cloud.google.com"],
+			digitalocean: ["docs.digitalocean.com"],
+			kubernetes: ["kubernetes.io"],
+			railway: ["docs.railway.com"],
+		} as const;
+		for (const [provider, hosts] of Object.entries(domains)) {
+			// SAFETY: keys of `domains` are assessed provider ids by construction.
+			const forms =
+				SELF_HOST_SOURCES[provider as keyof typeof domains].hostForms;
+			expect(forms?.length, provider).toBeGreaterThan(0);
+			for (const form of forms ?? []) {
+				const cited = [
+					...form.formSources,
+					...form.facets.flatMap((claim) => claim.sources),
+				];
+				for (const source of cited) {
+					expect(hosts).toContain(new URL(source.url).host);
+					expect(source.checkedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
+				}
+			}
 		}
 	});
 
 	it("partitions the registry three ways, with a reason on every row", () => {
 		const by = Object.groupBy(selfHostedPostgresHosts(), (a) => a.verdict);
 		expect((by.can ?? []).map((a) => a.providerId)).toEqual([
+			"aws",
+			"azure",
+			"digitalocean",
 			"hetzner",
 			"hostinger",
+			"kubernetes",
+			"railway",
 		]);
 		expect((by.cannot ?? []).map((a) => a.providerId)).toEqual([
 			"cloudflare",
 			"vercel",
 			"netlify",
 		]);
-		expect((by.undetermined ?? []).map((a) => a.providerId)).toEqual([
-			"aws",
-			"azure",
-			"digitalocean",
-			"gcp",
-			"kubernetes",
-			"railway",
-		]);
+		expect((by.undetermined ?? []).map((a) => a.providerId)).toEqual(["gcp"]);
 		for (const assessment of selfHostedPostgresHosts()) {
 			expect(assessment.summary.length).toBeGreaterThan(20);
 			expect(assessment.findings).toHaveLength(SELF_HOST_FACETS.length);
@@ -165,14 +252,14 @@ describe("verdicts", () => {
 		).toBe("can");
 	});
 
-	it("an enriched container declaration becomes determinable without a code change", () => {
-		const kubernetes = registeredHostDeclaration("kubernetes");
+	it("a token-enriched class still becomes determinable without a code change", () => {
+		const netlify = registeredHostDeclaration("netlify");
 		const enriched = assessSelfHostedDataStore({
-			...kubernetes,
-			compute: kubernetes.compute.map((entry) => ({
+			...netlify,
+			compute: netlify.compute.map((entry) => ({
 				...entry,
 				features: [
-					...entry.features,
+					"container",
 					"long-running",
 					"persistent-volume",
 					"tcp",

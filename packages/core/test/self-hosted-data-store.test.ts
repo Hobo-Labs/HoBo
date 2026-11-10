@@ -7,6 +7,7 @@ import { test } from "vitest";
 import {
 	assessSelfHostedDataStore,
 	assessSelfHostedDataStores,
+	parseRegisteredHostForm,
 	type RegisteredHostDeclaration,
 	SELF_HOST_FACETS,
 } from "../src/ports/self-hosted-data-store.js";
@@ -128,4 +129,141 @@ test("no rule reads the provider id", () => {
 				.verdict,
 	);
 	assert.deepEqual(new Set(verdicts), new Set(["undetermined"]));
+});
+
+// --- cited host forms: per-product verdicts ---------------------------------
+
+const cite = {
+	url: "https://vendor.example/docs/product",
+	checkedAt: "2026-11-10",
+	note: "what the page says",
+};
+
+function claim(facet: string, holds = true) {
+	return { facet, holds, detail: `${facet} detail`, sources: [cite] };
+}
+
+function form(overrides = {}) {
+	return parseRegisteredHostForm({
+		productId: "p.stateful/v1",
+		providerService: "P Stateful",
+		form: "container",
+		formSources: [cite],
+		facets: SELF_HOST_FACETS.map((facet) => claim(facet)),
+		...overrides,
+	});
+}
+
+test("a host form refuses an uncited form, an uncited facet, and a missing target", () => {
+	assert.throws(() => form({ formSources: [] }), /hostForm\.formSources/u);
+	assert.throws(
+		() => form({ facets: [{ ...claim("inbound-tcp"), sources: [] }] }),
+		/facets\[0\]\.sources/u,
+	);
+	assert.throws(
+		() => form({ productId: undefined }),
+		/a productId or a resourceClass/u,
+	);
+	assert.throws(
+		() => form({ facets: [claim("inbound-tcp"), claim("inbound-tcp")] }),
+		/one claim per facet/u,
+	);
+	assert.throws(() => form({ form: "function" }), /hostForm\.form/u);
+	const parsed = form({ resourceClass: "p:compute" });
+	assert.deepEqual(
+		parseRegisteredHostForm(JSON.parse(JSON.stringify(parsed))),
+		parsed,
+	);
+});
+
+test("a container form with every facet cited can, and names its Yard volume", () => {
+	const result = assessSelfHostedDataStore({
+		...declaration(["container", "http"], [volume]),
+		hostForms: [form({ volumeProductId: "p.volume/v1" })],
+	});
+	assert.equal(result.verdict, "can");
+	assert.equal(result.resourceClass, "p.stateful/v1");
+	assert.deepEqual(result.caveats, []);
+	assert.match(result.findings[1]?.reason ?? "", /mounts p\.volume\/v1/u);
+	// The untouched equivalence class is still listed, still undetermined.
+	assert.deepEqual(
+		result.forms.map((entry) => [entry.target, entry.verdict]),
+		[
+			["p.stateful/v1", "can"],
+			["p:compute", "undetermined"],
+		],
+	);
+});
+
+test("a cited volume with no Yard product behind it is a caveat, not a refusal", () => {
+	const result = assessSelfHostedDataStore({
+		...declaration(["container"]),
+		hostForms: [form({ resourceClass: "p:compute" })],
+	});
+	assert.equal(result.verdict, "can");
+	assert.match(result.caveats[0] ?? "", /no bucket\.filesystem\/v1 product/u);
+	// Naming the resource class supersedes its token reading.
+	assert.equal(result.forms.length, 1);
+});
+
+test("one cited missing facet makes that form cannot, without sinking the provider", () => {
+	const httpOnly = form({
+		productId: "p.web/v1",
+		providerService: "P Web",
+		facets: [claim("inbound-tcp", false)],
+	});
+	const alone = assessSelfHostedDataStore({
+		providerId: "p",
+		compute: [],
+		catalog: [],
+		hostForms: [httpOnly],
+	});
+	assert.equal(alone.verdict, "cannot");
+	assert.match(alone.summary, /P Web: inbound-tcp detail/u);
+	const both = assessSelfHostedDataStore({
+		providerId: "p",
+		compute: [],
+		catalog: [],
+		hostForms: [httpOnly, form()],
+	});
+	assert.equal(both.verdict, "can");
+	assert.deepEqual(
+		both.forms.map((entry) => entry.verdict),
+		["can", "cannot"],
+	);
+});
+
+test("a partly cited form stays undetermined and names only what is uncited", () => {
+	const result = assessSelfHostedDataStore({
+		providerId: "p",
+		compute: [],
+		catalog: [],
+		hostForms: [form({ facets: [claim("persistent-volume")] })],
+	});
+	assert.equal(result.verdict, "undetermined");
+	assert.deepEqual(result.missing, [
+		"long-running-compute",
+		"inbound-tcp",
+		"operator-control",
+	]);
+});
+
+test("a VM form can on its Yard volume, and falls back to the root-disk caveat", () => {
+	const vm = form({ form: "vm", facets: [], volumeProductId: "p.volume/v1" });
+	const attached = assessSelfHostedDataStore({
+		providerId: "p",
+		compute: [],
+		catalog: [volume],
+		hostForms: [vm],
+	});
+	assert.equal(attached.verdict, "can");
+	assert.deepEqual(attached.caveats, []);
+	const bare = assessSelfHostedDataStore({
+		providerId: "p",
+		compute: [],
+		catalog: [],
+		hostForms: [vm],
+	});
+	assert.equal(bare.verdict, "can");
+	assert.match(bare.caveats[0] ?? "", /lost if the machine is rebuilt/u);
 });

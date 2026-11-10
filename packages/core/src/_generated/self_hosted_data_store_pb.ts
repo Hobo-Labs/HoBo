@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file self_hosted_data_store.proto.
  */
 export const file_self_hosted_data_store: GenFile = /*@__PURE__*/
-  fileDesc("ChxzZWxmX2hvc3RlZF9kYXRhX3N0b3JlLnByb3RvEgxob2JvLmNvcmUudjEiZwohUmVnaXN0ZXJlZENvbXB1dGVDYXBhYmlsaXR5UmVjb3JkEhYKDnJlc291cmNlX2NsYXNzGAEgASgJEhgKEHByb3ZpZGVyX3NlcnZpY2UYAiABKAkSEAoIZmVhdHVyZXMYAyADKAkiQQoaUmVnaXN0ZXJlZENhdGFsb2dSb3dSZWNvcmQSDwoHcHJvZmlsZRgBIAEoCRISCgpwcm9kdWN0X2lkGAIgASgJIrMBCh9SZWdpc3RlcmVkSG9zdERlY2xhcmF0aW9uUmVjb3JkEhMKC3Byb3ZpZGVyX2lkGAEgASgJEkAKB2NvbXB1dGUYAiADKAsyLy5ob2JvLmNvcmUudjEuUmVnaXN0ZXJlZENvbXB1dGVDYXBhYmlsaXR5UmVjb3JkEjkKB2NhdGFsb2cYAyADKAsyKC5ob2JvLmNvcmUudjEuUmVnaXN0ZXJlZENhdGFsb2dSb3dSZWNvcmQiSgoaU2VsZkhvc3RGYWNldEZpbmRpbmdSZWNvcmQSDQoFZmFjZXQYASABKAkSDQoFc3RhdGUYAiABKAkSDgoGcmVhc29uGAMgASgJIscBChhTZWxmSG9zdEFzc2Vzc21lbnRSZWNvcmQSEwoLcHJvdmlkZXJfaWQYASABKAkSDwoHdmVyZGljdBgCIAEoCRIWCg5yZXNvdXJjZV9jbGFzcxgDIAEoCRI6CghmaW5kaW5ncxgEIAMoCzIoLmhvYm8uY29yZS52MS5TZWxmSG9zdEZhY2V0RmluZGluZ1JlY29yZBIPCgdtaXNzaW5nGAUgAygJEg8KB2NhdmVhdHMYBiADKAkSDwoHc3VtbWFyeRgHIAEoCWIGcHJvdG8z");
+  fileDesc("ChxzZWxmX2hvc3RlZF9kYXRhX3N0b3JlLnByb3RvEgxob2JvLmNvcmUudjEiZwohUmVnaXN0ZXJlZENvbXB1dGVDYXBhYmlsaXR5UmVjb3JkEhYKDnJlc291cmNlX2NsYXNzGAEgASgJEhgKEHByb3ZpZGVyX3NlcnZpY2UYAiABKAkSEAoIZmVhdHVyZXMYAyADKAkiQQoaUmVnaXN0ZXJlZENhdGFsb2dSb3dSZWNvcmQSDwoHcHJvZmlsZRgBIAEoCRISCgpwcm9kdWN0X2lkGAIgASgJIkUKFEhvc3RGb3JtU291cmNlUmVjb3JkEgsKA3VybBgBIAEoCRISCgpjaGVja2VkX2F0GAIgASgJEgwKBG5vdGUYAyABKAkigwEKHlJlZ2lzdGVyZWRIb3N0RmFjZXRDbGFpbVJlY29yZBINCgVmYWNldBgBIAEoCRINCgVob2xkcxgCIAEoCBIOCgZkZXRhaWwYAyABKAkSMwoHc291cmNlcxgEIAMoCzIiLmhvYm8uY29yZS52MS5Ib3N0Rm9ybVNvdXJjZVJlY29yZCKBAgoYUmVnaXN0ZXJlZEhvc3RGb3JtUmVjb3JkEhIKCnByb2R1Y3RfaWQYASABKAkSFgoOcmVzb3VyY2VfY2xhc3MYAiABKAkSGAoQcHJvdmlkZXJfc2VydmljZRgDIAEoCRIMCgRmb3JtGAQgASgJEjgKDGZvcm1fc291cmNlcxgFIAMoCzIiLmhvYm8uY29yZS52MS5Ib3N0Rm9ybVNvdXJjZVJlY29yZBIZChF2b2x1bWVfcHJvZHVjdF9pZBgGIAEoCRI8CgZmYWNldHMYByADKAsyLC5ob2JvLmNvcmUudjEuUmVnaXN0ZXJlZEhvc3RGYWNldENsYWltUmVjb3JkIu8BCh9SZWdpc3RlcmVkSG9zdERlY2xhcmF0aW9uUmVjb3JkEhMKC3Byb3ZpZGVyX2lkGAEgASgJEkAKB2NvbXB1dGUYAiADKAsyLy5ob2JvLmNvcmUudjEuUmVnaXN0ZXJlZENvbXB1dGVDYXBhYmlsaXR5UmVjb3JkEjkKB2NhdGFsb2cYAyADKAsyKC5ob2JvLmNvcmUudjEuUmVnaXN0ZXJlZENhdGFsb2dSb3dSZWNvcmQSOgoKaG9zdF9mb3JtcxgEIAMoCzImLmhvYm8uY29yZS52MS5SZWdpc3RlcmVkSG9zdEZvcm1SZWNvcmQitwEKHFNlbGZIb3N0Rm9ybUFzc2Vzc21lbnRSZWNvcmQSDgoGdGFyZ2V0GAEgASgJEhgKEHByb3ZpZGVyX3NlcnZpY2UYAiABKAkSDwoHdmVyZGljdBgDIAEoCRI6CghmaW5kaW5ncxgEIAMoCzIoLmhvYm8uY29yZS52MS5TZWxmSG9zdEZhY2V0RmluZGluZ1JlY29yZBIPCgdtaXNzaW5nGAUgAygJEg8KB2NhdmVhdHMYBiADKAkiSgoaU2VsZkhvc3RGYWNldEZpbmRpbmdSZWNvcmQSDQoFZmFjZXQYASABKAkSDQoFc3RhdGUYAiABKAkSDgoGcmVhc29uGAMgASgJIoICChhTZWxmSG9zdEFzc2Vzc21lbnRSZWNvcmQSEwoLcHJvdmlkZXJfaWQYASABKAkSDwoHdmVyZGljdBgCIAEoCRIWCg5yZXNvdXJjZV9jbGFzcxgDIAEoCRI6CghmaW5kaW5ncxgEIAMoCzIoLmhvYm8uY29yZS52MS5TZWxmSG9zdEZhY2V0RmluZGluZ1JlY29yZBIPCgdtaXNzaW5nGAUgAygJEg8KB2NhdmVhdHMYBiADKAkSDwoHc3VtbWFyeRgHIAEoCRI5CgVmb3JtcxgIIAMoCzIqLmhvYm8uY29yZS52MS5TZWxmSG9zdEZvcm1Bc3Nlc3NtZW50UmVjb3JkYgZwcm90bzM");
 
 /**
  * @generated from message hobo.core.v1.RegisteredComputeCapabilityRecord
@@ -62,6 +62,126 @@ export const RegisteredCatalogRowRecordSchema: GenMessage<RegisteredCatalogRowRe
   messageDesc(file_self_hosted_data_store, 1);
 
 /**
+ * @generated from message hobo.core.v1.HostFormSourceRecord
+ */
+export type HostFormSourceRecord = Message<"hobo.core.v1.HostFormSourceRecord"> & {
+  /**
+   * https vendor documentation URL
+   *
+   * @generated from field: string url = 1;
+   */
+  url: string;
+
+  /**
+   * UTC YYYY-MM-DD the URL was read
+   *
+   * @generated from field: string checked_at = 2;
+   */
+  checkedAt: string;
+
+  /**
+   * @generated from field: string note = 3;
+   */
+  note: string;
+};
+
+/**
+ * Describes the message hobo.core.v1.HostFormSourceRecord.
+ * Use `create(HostFormSourceRecordSchema)` to create a new message.
+ */
+export const HostFormSourceRecordSchema: GenMessage<HostFormSourceRecord> = /*@__PURE__*/
+  messageDesc(file_self_hosted_data_store, 2);
+
+/**
+ * @generated from message hobo.core.v1.RegisteredHostFacetClaimRecord
+ */
+export type RegisteredHostFacetClaimRecord = Message<"hobo.core.v1.RegisteredHostFacetClaimRecord"> & {
+  /**
+   * long-running-compute | persistent-volume | inbound-tcp | operator-control
+   *
+   * @generated from field: string facet = 1;
+   */
+  facet: string;
+
+  /**
+   * @generated from field: bool holds = 2;
+   */
+  holds: boolean;
+
+  /**
+   * @generated from field: string detail = 3;
+   */
+  detail: string;
+
+  /**
+   * @generated from field: repeated hobo.core.v1.HostFormSourceRecord sources = 4;
+   */
+  sources: HostFormSourceRecord[];
+};
+
+/**
+ * Describes the message hobo.core.v1.RegisteredHostFacetClaimRecord.
+ * Use `create(RegisteredHostFacetClaimRecordSchema)` to create a new message.
+ */
+export const RegisteredHostFacetClaimRecordSchema: GenMessage<RegisteredHostFacetClaimRecord> = /*@__PURE__*/
+  messageDesc(file_self_hosted_data_store, 3);
+
+/**
+ * One compute product a provider already declares, described as a host form.
+ *
+ * @generated from message hobo.core.v1.RegisteredHostFormRecord
+ */
+export type RegisteredHostFormRecord = Message<"hobo.core.v1.RegisteredHostFormRecord"> & {
+  /**
+   * a Yard catalog product id
+   *
+   * @generated from field: string product_id = 1;
+   */
+  productId: string;
+
+  /**
+   * an equivalence resource class
+   *
+   * @generated from field: string resource_class = 2;
+   */
+  resourceClass: string;
+
+  /**
+   * @generated from field: string provider_service = 3;
+   */
+  providerService: string;
+
+  /**
+   * vm | container
+   *
+   * @generated from field: string form = 4;
+   */
+  form: string;
+
+  /**
+   * @generated from field: repeated hobo.core.v1.HostFormSourceRecord form_sources = 5;
+   */
+  formSources: HostFormSourceRecord[];
+
+  /**
+   * @generated from field: string volume_product_id = 6;
+   */
+  volumeProductId: string;
+
+  /**
+   * @generated from field: repeated hobo.core.v1.RegisteredHostFacetClaimRecord facets = 7;
+   */
+  facets: RegisteredHostFacetClaimRecord[];
+};
+
+/**
+ * Describes the message hobo.core.v1.RegisteredHostFormRecord.
+ * Use `create(RegisteredHostFormRecordSchema)` to create a new message.
+ */
+export const RegisteredHostFormRecordSchema: GenMessage<RegisteredHostFormRecord> = /*@__PURE__*/
+  messageDesc(file_self_hosted_data_store, 4);
+
+/**
  * @generated from message hobo.core.v1.RegisteredHostDeclarationRecord
  */
 export type RegisteredHostDeclarationRecord = Message<"hobo.core.v1.RegisteredHostDeclarationRecord"> & {
@@ -79,6 +199,11 @@ export type RegisteredHostDeclarationRecord = Message<"hobo.core.v1.RegisteredHo
    * @generated from field: repeated hobo.core.v1.RegisteredCatalogRowRecord catalog = 3;
    */
   catalog: RegisteredCatalogRowRecord[];
+
+  /**
+   * @generated from field: repeated hobo.core.v1.RegisteredHostFormRecord host_forms = 4;
+   */
+  hostForms: RegisteredHostFormRecord[];
 };
 
 /**
@@ -86,7 +211,51 @@ export type RegisteredHostDeclarationRecord = Message<"hobo.core.v1.RegisteredHo
  * Use `create(RegisteredHostDeclarationRecordSchema)` to create a new message.
  */
 export const RegisteredHostDeclarationRecordSchema: GenMessage<RegisteredHostDeclarationRecord> = /*@__PURE__*/
-  messageDesc(file_self_hosted_data_store, 2);
+  messageDesc(file_self_hosted_data_store, 5);
+
+/**
+ * @generated from message hobo.core.v1.SelfHostFormAssessmentRecord
+ */
+export type SelfHostFormAssessmentRecord = Message<"hobo.core.v1.SelfHostFormAssessmentRecord"> & {
+  /**
+   * @generated from field: string target = 1;
+   */
+  target: string;
+
+  /**
+   * @generated from field: string provider_service = 2;
+   */
+  providerService: string;
+
+  /**
+   * can | cannot | undetermined
+   *
+   * @generated from field: string verdict = 3;
+   */
+  verdict: string;
+
+  /**
+   * @generated from field: repeated hobo.core.v1.SelfHostFacetFindingRecord findings = 4;
+   */
+  findings: SelfHostFacetFindingRecord[];
+
+  /**
+   * @generated from field: repeated string missing = 5;
+   */
+  missing: string[];
+
+  /**
+   * @generated from field: repeated string caveats = 6;
+   */
+  caveats: string[];
+};
+
+/**
+ * Describes the message hobo.core.v1.SelfHostFormAssessmentRecord.
+ * Use `create(SelfHostFormAssessmentRecordSchema)` to create a new message.
+ */
+export const SelfHostFormAssessmentRecordSchema: GenMessage<SelfHostFormAssessmentRecord> = /*@__PURE__*/
+  messageDesc(file_self_hosted_data_store, 6);
 
 /**
  * @generated from message hobo.core.v1.SelfHostFacetFindingRecord
@@ -117,7 +286,7 @@ export type SelfHostFacetFindingRecord = Message<"hobo.core.v1.SelfHostFacetFind
  * Use `create(SelfHostFacetFindingRecordSchema)` to create a new message.
  */
 export const SelfHostFacetFindingRecordSchema: GenMessage<SelfHostFacetFindingRecord> = /*@__PURE__*/
-  messageDesc(file_self_hosted_data_store, 3);
+  messageDesc(file_self_hosted_data_store, 7);
 
 /**
  * @generated from message hobo.core.v1.SelfHostAssessmentRecord
@@ -159,6 +328,11 @@ export type SelfHostAssessmentRecord = Message<"hobo.core.v1.SelfHostAssessmentR
    * @generated from field: string summary = 7;
    */
   summary: string;
+
+  /**
+   * @generated from field: repeated hobo.core.v1.SelfHostFormAssessmentRecord forms = 8;
+   */
+  forms: SelfHostFormAssessmentRecord[];
 };
 
 /**
@@ -166,5 +340,5 @@ export type SelfHostAssessmentRecord = Message<"hobo.core.v1.SelfHostAssessmentR
  * Use `create(SelfHostAssessmentRecordSchema)` to create a new message.
  */
 export const SelfHostAssessmentRecordSchema: GenMessage<SelfHostAssessmentRecord> = /*@__PURE__*/
-  messageDesc(file_self_hosted_data_store, 4);
+  messageDesc(file_self_hosted_data_store, 8);
 
