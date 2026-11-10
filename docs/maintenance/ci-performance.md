@@ -46,7 +46,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   packages and examples, including the packages inside a pnpm-workspace group such as
   `packages/providers/<name>` (the groups are read from `pnpm-workspace.yaml`; before that, any change
   under a group read as a removed package and ran the whole workspace). Root build inputs (workspace, behavior-changing turbo config, tsconfig, biome, toolchain pins,
-  vendored sources) run the whole workspace. Scripts-only root manifest edits and root `//#` task edits
+  vendored sources) run the whole workspace. A `mise.toml` or `mise.lock` diff that only touches a tool no
+  package task runs (`gitleaks`, `shellcheck`, `syft`; the list is explicit in the script) does not
+  ([finding 81](../ci/findings/0081-a-ci-only-tool-pin-planned-the-whole-workspace.md)). Scripts-only root manifest edits and root `//#` task edits
   stay scoped by comparing root files with the diff base; `globalDependencies` additions and removals
   run the whole workspace because they change every task's hash inputs. Missing or invalid base content
   fails closed. A lockfile-only diff runs everything, but lockfile plus package
@@ -59,9 +61,13 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   referenced by root tests resolve its declarations from `dist` on a clean worker.
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
-  now delegate workspace tests to eight bounded shards; the PR's build, lint, schema, and contract lanes
+  now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes
   get a separate job. `dependent-tests.mts` assigns each whole suite or dependent subset to exactly one
-  shard and verifies that a repo-wide run discovers every Turbo test workspace. Shards prefer the
+  shard and verifies that a repo-wide run discovers every Turbo test workspace. The validation job
+  plans the matrix (`--plan-shards=8`): one shard per four planned suites, eight for a repo-wide plan or
+  whenever the plan is missing. Each shard splits by its position in the matrix GitHub built, so the
+  list cannot drop a suite
+  ([finding 82](../ci/findings/0082-eight-test-shards-started-for-plans-of-zero-to-four-suites.md)). Shards prefer the
   validation job's same-run Turbo cache but run their complete selected plan on a cache miss. The required
   `PR impact gate` fails unless validation, every workspace shard, and the event's other required lanes
   succeed. The PR merge base is pinned from the event's base SHA and passed to every job, so a later
