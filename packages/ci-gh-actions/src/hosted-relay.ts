@@ -1195,6 +1195,12 @@ export class HostedRelay {
 				if (isolatedHost) {
 					if (!this.options.isolatedHost)
 						throw new Error("isolated runner unavailable");
+					if (
+						(await this.options.isolatedHost.isLaunchParked?.(
+							this.queuedDemand(candidate),
+						)) === true
+					)
+						continue;
 					const rank = await this.admissionOrder.rank({
 						installationId: candidate.installationId,
 						repository: candidate.repository,

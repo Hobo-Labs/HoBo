@@ -11,7 +11,23 @@ export const RUNNER_LABEL = "hobo";
 // public-contract: the `runs-on` label hobo-ci.yml's trunk jobs ask for (scripts/lint-actions.ts).
 export const TRUNK_RUNNER_LABEL = "hobo-trunk";
 
-export type RunnerLabel = typeof RUNNER_LABEL | typeof TRUNK_RUNNER_LABEL;
+/**
+ * Optional box fleet identity some workflows use alongside the shared `hobo` mesh
+ * label. JIT registration must include every fleet label the job asks for.
+ */
+export const BOX_ISOLATED_RUNNER_LABEL = "hobo-box";
+
+export type RunnerLabel =
+	| typeof RUNNER_LABEL
+	| typeof TRUNK_RUNNER_LABEL
+	| typeof BOX_ISOLATED_RUNNER_LABEL;
+
+function parseFleetRunnerLabel(lowered: string): RunnerLabel | undefined {
+	if (lowered === RUNNER_LABEL) return RUNNER_LABEL;
+	if (lowered === TRUNK_RUNNER_LABEL) return TRUNK_RUNNER_LABEL;
+	if (lowered === BOX_ISOLATED_RUNNER_LABEL) return BOX_ISOLATED_RUNNER_LABEL;
+	return undefined;
+}
 
 /**
  * The runner label a job asked for, if HoBo serves it; exactly one label, never more.
@@ -22,7 +38,21 @@ export function servedRunnerLabel(
 ): RunnerLabel | undefined {
 	if (labels.length !== 1) return undefined;
 	const label = labels[0]?.toLowerCase();
-	return label === RUNNER_LABEL || label === TRUNK_RUNNER_LABEL
-		? label
-		: undefined;
+	if (!label) return undefined;
+	return parseFleetRunnerLabel(label);
+}
+
+/** Labels registered on a JIT runner so GitHub can match the shared fleet mesh. */
+export function jitRunnerRegistrationLabels(
+	jobLabels: readonly string[] | undefined,
+	primary: RunnerLabel,
+): readonly RunnerLabel[] {
+	const out = new Set<RunnerLabel>([primary]);
+	for (const raw of jobLabels ?? []) {
+		const parsed = parseFleetRunnerLabel(raw.toLowerCase());
+		if (parsed) out.add(parsed);
+	}
+	// Trunk jobs must not pick up shared-label work; everyone else stays in the mesh.
+	if (primary !== TRUNK_RUNNER_LABEL) out.add(RUNNER_LABEL);
+	return [...out];
 }

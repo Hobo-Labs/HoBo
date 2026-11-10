@@ -531,6 +531,28 @@ export function createCliDockerDriver(options: {
 				throw new Error("invalid container exit state");
 			return { exitCode: Number(match[1]), oomKilled: match[2] === "true" };
 		},
+		async readContainerFile(_name, containerId, path, maxBytes = 4096) {
+			if (!/^\/[A-Za-z0-9_./-]+$/.test(path)) throw new Error("invalid path");
+			try {
+				const { stdout } = await exec(
+					docker,
+					["exec", containerId, "cat", path],
+					{
+						env,
+						timeout: 30_000,
+						maxBuffer: maxBytes + 256,
+					},
+				);
+				return stdout.slice(0, maxBytes);
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					Object.getOwnPropertyDescriptor(error, "code")?.value === 1
+				)
+					return undefined;
+				throw error;
+			}
+		},
 		async exists(_name, containerId, path) {
 			if (!/^\/[A-Za-z0-9_./-]+$/.test(path)) throw new Error("invalid path");
 			try {

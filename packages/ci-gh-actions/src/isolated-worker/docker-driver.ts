@@ -108,4 +108,11 @@ export interface DockerDriver {
 	): Promise<Readonly<{ exitCode: number; oomKilled: boolean }>>;
 	/** Whether `path` exists inside the running container; rejects when docker cannot say. */
 	exists?(name: string, containerId: string, path: string): Promise<boolean>;
+	/** Read a small UTF-8 text file from a running container (diagnostics). */
+	readContainerFile?(
+		name: string,
+		containerId: string,
+		path: string,
+		maxBytes?: number,
+	): Promise<string | undefined>;
 }

@@ -21,7 +21,18 @@ import {
 	type JobPickupMetadataCache,
 	jobPickupMetadataKey,
 } from "../job-pickup.js";
-import { RUNNER_LABEL, type RunnerLabel } from "../runner-labels.js";
+import {
+	clearJitEmptyExit,
+	type JitEmptyExitState,
+	jitEmptyExitKey,
+	jitEmptyExitLaunchBlocked,
+	recordJitEmptyExit,
+} from "../jit-empty-exit-backoff.js";
+import {
+	jitRunnerRegistrationLabels,
+	RUNNER_LABEL,
+	type RunnerLabel,
+} from "../runner-labels.js";
 import {
 	containerResourceWeightsForRank,
 	type DockerDriver,
@@ -52,9 +63,41 @@ const WORK_TARGET = "/opt/actions-runner/_hobo_work";
 /** Written when the one-job JIT runner exits; the container itself keeps running. */
 // public-contract: in-container marker path the start script writes and reconcile probes.
 export const RUNNER_EXITED_PATH = "/tmp/hobo-ci-runner-exited";
+export const RUNNER_EXIT_CODE_PATH = "/tmp/hobo-ci-runner-exit-code";
+export const RUNNER_EXIT_SUMMARY_PATH = "/tmp/hobo-ci-runner-exit-summary";
 
 /** Start the runner with its JIT config delivered over stdin to a 0600 file
  * and handed to the runner via env, so the credential never appears in argv. */
+async function readRunnerExitEvidence(
+	docker: DockerDriver,
+	name: string,
+	containerId: string,
+): Promise<Readonly<{ runShExit?: number; summary?: string }>> {
+	type RunnerExitEvidence = { runShExit?: number; summary?: string };
+	const evidence: RunnerExitEvidence = {};
+	if (docker.readContainerFile) {
+		const codeText = await docker.readContainerFile(
+			name,
+			containerId,
+			RUNNER_EXIT_CODE_PATH,
+			16,
+		);
+		if (codeText !== undefined) {
+			const parsed = Number.parseInt(codeText.trim(), 10);
+			if (Number.isFinite(parsed)) evidence.runShExit = parsed;
+		}
+		const summary = await docker.readContainerFile(
+			name,
+			containerId,
+			RUNNER_EXIT_SUMMARY_PATH,
+			2048,
+		);
+		if (summary !== undefined && summary.trim() !== "")
+			evidence.summary = summary.trim();
+	}
+	return evidence;
+}
+
 export async function startRunner(
 	docker: DockerDriver,
 	name: string,
@@ -86,7 +129,19 @@ fi
 ACTIONS_RUNNER_INPUT_JITCONFIG="$(cat ${JIT_PATH})"
 rm -f ${JIT_PATH}
 export ACTIONS_RUNNER_INPUT_JITCONFIG
-./run.sh || true
+RUNNER_EXIT=0
+./run.sh || RUNNER_EXIT=$?
+printf '%s\\n' "$RUNNER_EXIT" > ${RUNNER_EXIT_CODE_PATH}
+{
+  echo "run_sh_exit=$RUNNER_EXIT"
+  for d in /opt/actions-runner/_diag ./_diag; do
+    if [ -d "$d" ]; then
+      echo "diag_dir=$d"
+      tail -n 8 "$d"/Runner_*.log 2>/dev/null || true
+      break
+    fi
+  done
+} > ${RUNNER_EXIT_SUMMARY_PATH} 2>&1 || true
 : > ${RUNNER_EXITED_PATH}`,
 	]);
 	if (prep.exitCode !== 0) throw new Error("runner start failed");
@@ -97,16 +152,21 @@ const jitResponse = z.object({
 	runner: z.object({ id: z.number().int().positive() }),
 });
 
-function requeueJob(lease: {
-	jobId: number;
-	originalRunId: number;
-	runAttempt: number;
-	repositoryId: number;
-	installationId: number;
-	repository: string;
-	memoryClass: string;
-	memoryMb: number;
-}) {
+function requeueJob(
+	lease: {
+		jobId: number;
+		originalRunId: number;
+		runAttempt: number;
+		repositoryId: number;
+		installationId: number;
+		repository: string;
+		memoryClass: string;
+		memoryMb: number;
+	},
+	jobLabels?: readonly string[],
+) {
+	const labels =
+		jobLabels && jobLabels.length > 0 ? [...jobLabels] : [RUNNER_LABEL];
 	return create(JobSchema, {
 		id: lease.jobId,
 		runId: lease.originalRunId,
@@ -116,7 +176,7 @@ function requeueJob(lease: {
 		repository: lease.repository,
 		memoryClass: lease.memoryClass,
 		memoryMb: lease.memoryMb,
-		labels: ["hobo"],
+		labels,
 		action: "queued",
 		isolatedRequired: true,
 	});
@@ -213,11 +273,27 @@ type WarmContainer = Readonly<{
 	selection: JobImage;
 	mirrorPath: string;
 }>;
+type JitEmptyExitLogFields = {
+	jobId: number;
+	runId: number;
+	runAttempt: number;
+	repository: string;
+	runnerName: string;
+	emptyExitCount: number;
+	nextLaunchMs: number;
+	githubStatus: string;
+	githubRunnerName: string;
+	jobLabels: string;
+	runShExit?: number;
+	runnerDiagTail?: string;
+};
+
 type JobPickupLogFields = {
 	jobId: number;
 	runId: number;
 	runEvent?: string;
 	label?: string;
+	jitLabels?: string;
 	jobCreatedAt?: string;
 	admittedAt?: string;
 	containerStartedAt?: string;
@@ -263,6 +339,8 @@ export function createIsolatedContainerController(options: {
 			| "hobo_ci_launch_failed"
 			| "hobo_ci_launch_parked"
 			| "hobo_ci_launch_yielded_foreign_runner"
+			| "hobo_ci_jit_empty_exit"
+			| "hobo_ci_jit_empty_exit_backoff"
 			| "hobo_ci_work_dir_retired"
 			| "hobo_ci_work_dir_removed"
 			| "hobo_ci_work_dir_remove_failed"
@@ -672,6 +750,11 @@ export function createIsolatedContainerController(options: {
 		parkedAtMs?: number;
 	};
 	const launchLoops = new Map<string, LaunchLoopState>();
+	const emptyExitLoops = new Map<string, JitEmptyExitState>();
+	const pendingExitEvidence = new Map<
+		string,
+		Awaited<ReturnType<typeof readRunnerExitEvidence>>
+	>();
 	const launchKey = (repositoryId: number, jobId: number, runAttempt: number) =>
 		`${repositoryId}:${jobId}:${runAttempt}`;
 	const logLaunch = (
@@ -888,16 +971,49 @@ export function createIsolatedContainerController(options: {
 			lease.jobId,
 		);
 		const custody = runnerCustody(original.runner_name);
+		const emptyKey = jitEmptyExitKey(
+			lease.repositoryId,
+			lease.jobId,
+			lease.runAttempt,
+		);
+		if (original.status !== "queued") clearJitEmptyExit(emptyExitLoops, emptyKey);
 		// Fleet mesh: another `hobo` runner may hold the job; withdraw instead of re-admitting.
 		const unmet =
 			original.status === "queued" && custody !== "foreign"
-				? requeueJob(lease)
+				? requeueJob(lease, original.labels)
 				: undefined;
 		if (original.status === "queued" && custody === "foreign") {
 			await options.store.withdrawQueuedJob?.(
-				requeueJob(lease),
+				requeueJob(lease, original.labels),
 				observedAt,
 			);
+			clearJitEmptyExit(emptyExitLoops, emptyKey);
+		}
+		if (unmet) {
+			const empty = recordJitEmptyExit(
+				emptyExitLoops,
+				emptyKey,
+				observedMs,
+			);
+			const evidence = pendingExitEvidence.get(lease.id) ?? {};
+			pendingExitEvidence.delete(lease.id);
+			const emptyExitLog: JitEmptyExitLogFields = {
+				jobId: lease.jobId,
+				runId: lease.originalRunId,
+				runAttempt: lease.runAttempt,
+				repository: lease.repository,
+				runnerName: lease.runnerName,
+				emptyExitCount: empty.count,
+				nextLaunchMs: empty.nextLaunchMs,
+				githubStatus: original.status,
+				githubRunnerName: original.runner_name ?? "",
+				jobLabels: original.labels.join(","),
+			};
+			if (evidence.runShExit !== undefined)
+				emptyExitLog.runShExit = evidence.runShExit;
+			if (evidence.summary !== undefined)
+				emptyExitLog.runnerDiagTail = evidence.summary;
+			options.log?.("hobo_ci_jit_empty_exit", emptyExitLog);
 		}
 		await options.store.settle(
 			lease.id,
@@ -912,6 +1028,27 @@ export function createIsolatedContainerController(options: {
 	const host: IsolatedRunnerHost = {
 		async isLaunchParked(job: Job) {
 			const key = launchKey(job.repositoryId, job.id, job.runAttempt);
+			const emptyKey = jitEmptyExitKey(
+				job.repositoryId,
+				job.id,
+				job.runAttempt,
+			);
+			const emptyBlocked = jitEmptyExitLaunchBlocked(
+				emptyExitLoops,
+				emptyKey,
+				Date.parse(now()),
+			);
+			if (emptyBlocked) {
+				options.log?.("hobo_ci_jit_empty_exit_backoff", {
+					jobId: job.id,
+					runId: job.runId,
+					runAttempt: job.runAttempt,
+					emptyExitCount: emptyBlocked.count,
+					nextLaunchMs: emptyBlocked.nextLaunchMs,
+					waitMs: emptyBlocked.nextLaunchMs - Date.parse(now()),
+				});
+				return true;
+			}
 			const state = launchLoops.get(key);
 			if (state?.parkedAtMs === undefined) return false;
 			if (Date.parse(now()) - state.parkedAtMs >= launchParkMs) {
@@ -1152,6 +1289,24 @@ export function createIsolatedContainerController(options: {
 					stage = "jit";
 					assertQueueDeadline(planned, now());
 					registrationAttempted = true;
+					let jobLabels = githubJob?.labels;
+					if (!jobLabels?.length) {
+						try {
+							jobLabels = (
+								await getJob(
+									options.github,
+									claiming.installationId,
+									claiming.repository,
+									claiming.actualJobId > 0
+										? claiming.actualJobId
+										: claiming.jobId,
+								)
+							).labels;
+						} catch {
+							/* best effort */
+						}
+					}
+					const jitLabels = jitRunnerRegistrationLabels(jobLabels, label);
 					const response = await options.github.request(
 						created.installationId,
 						`/repos/${created.repository}/actions/runners/generate-jitconfig`,
@@ -1159,7 +1314,7 @@ export function createIsolatedContainerController(options: {
 						JSON.stringify({
 							name: created.runnerName,
 							runner_group_id: auth.connection.runnerGroupId,
-							labels: [label],
+							labels: jitLabels,
 							work_folder: "_hobo_work",
 						}),
 					);
@@ -1212,6 +1367,7 @@ export function createIsolatedContainerController(options: {
 					);
 					if (metadata?.event !== undefined) fields.runEvent = metadata.event;
 					fields.label = label;
+					fields.jitLabels = jitLabels.join(",");
 					if (metadata?.jobCreatedAt !== undefined)
 						fields.jobCreatedAt = metadata.jobCreatedAt;
 					fields.admittedAt = registered.createdAt;
@@ -1429,6 +1585,14 @@ export function createIsolatedContainerController(options: {
 					// Same as a failed inspect: not proof of anything, retry next tick.
 				}
 				if (!exited) return;
+				pendingExitEvidence.set(
+					lease.id,
+					await readRunnerExitEvidence(
+						options.docker,
+						lease.sandboxName,
+						lease.sandboxSessionId,
+					),
+				);
 				stop = true;
 			}
 			if (running && stop) await measureMemoryPeak(lease);
