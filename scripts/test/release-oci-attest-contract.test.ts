@@ -53,6 +53,59 @@ describe("release-oci-attest composite action", () => {
 	it("fails fast when digest list file is missing", () => {
 		expect(actionYml).toMatch(/digest list not found/u);
 	});
+
+	it("generates a CycloneDX SBOM with syft before attest-sbom", () => {
+		const syftIdx = actionYml.indexOf("mise exec -- syft");
+		const sbomAttestIdx = actionYml.indexOf("attest-sbom");
+		expect(syftIdx).toBeGreaterThan(0);
+		expect(sbomAttestIdx).toBeGreaterThan(syftIdx);
+		expect(actionYml).toMatch(/cyclonedx-json=/u);
+	});
+
+	it("scans the pushed digest from the registry, not the local docker daemon", () => {
+		expect(actionYml).toMatch(/syft "registry:\$\{image_ref\}"/u);
+		expect(actionYml).not.toMatch(/syft "docker:/u);
+	});
+
+	it("retries the registry scan on a bounded budget (GHCR digest visibility lag)", () => {
+		expect(actionYml).toMatch(
+			/until mise exec -- syft "registry:\$\{image_ref\}"/u,
+		);
+		expect(actionYml).toMatch(/attempt\}" -ge 12/u);
+		expect(actionYml).toMatch(/sleep 10/u);
+	});
+
+	it("validates the SBOM is CycloneDX before attesting it", () => {
+		const syftIdx = actionYml.indexOf("mise exec -- syft");
+		const checkIdx = actionYml.indexOf("is not CycloneDX JSON");
+		const sbomAttestIdx = actionYml.indexOf("attest-sbom");
+		expect(checkIdx).toBeGreaterThan(syftIdx);
+		expect(sbomAttestIdx).toBeGreaterThan(checkIdx);
+		expect(actionYml).toMatch(
+			/"bomFormat"\[\[:space:\]\]\*:\[\[:space:\]\]\*"CycloneDX"/u,
+		);
+	});
+
+	it("installs locked syft before exec (attest jobs run no preflight)", () => {
+		const installIdx = actionYml.indexOf("mise install --locked syft");
+		const execIdx = actionYml.indexOf("mise exec -- syft");
+		expect(installIdx).toBeGreaterThan(0);
+		expect(execIdx).toBeGreaterThan(installIdx);
+	});
+
+	it("attests provenance before SBOM generation so syft failure cannot kill it", () => {
+		const provenanceIdx = actionYml.indexOf("attest-build-provenance");
+		const syftIdx = actionYml.indexOf("mise exec -- syft");
+		expect(syftIdx).toBeGreaterThan(provenanceIdx);
+	});
+
+	it("passes sbom-path into attest-sbom", () => {
+		const sbomAttestIdx = actionYml.indexOf("attest-sbom");
+		const block = actionYml.slice(sbomAttestIdx);
+		expect(block).toMatch(
+			/sbom-path:\s*\$\{\{\s*steps\.sbom\.outputs\.path\s*\}\}/u,
+		);
+	});
 });
 
 describe("release attest workflow jobs", () => {

@@ -162,12 +162,12 @@ Multi-arch builds are **native-only** on `hobo` runners (amd64 or arm64 per box)
 
 ### Signing, SBOM, and provenance
 
-- **GitHub artifact attestations** (keyless, no cosign secret): `actions/attest-build-provenance` + `actions/attest-sbom` after push, one attestation per image digest (pinned SHAs in [`.github/workflows/release-hobo.yml`](../../.github/workflows/release-hobo.yml)). The shared [`.github/actions/release-oci-attest`](../../.github/actions/release-oci-attest/action.yml) composite **docker-logs into GHCR first** (`~/.docker/config.json`) because `push-to-registry: true` on self-hosted **`hobo`** runners does not inherit login from the publish job; attest jobs use **`packages: write`**.
+- **GitHub artifact attestations** (keyless, no cosign secret): after GHCR push and `docker login`, [`.github/actions/release-oci-attest`](../../.github/actions/release-oci-attest) resolves each digest, runs `actions/attest-build-provenance`, then runs **pinned `syft`** from root [`mise.toml`](../../mise.toml) to emit a CycloneDX JSON SBOM for `subject-name@subject-digest` (the scan retries on a bounded budget while a just-pushed GHCR digest becomes readable; provenance attests first so a syft failure cannot kill it), then `actions/attest-sbom` (with `sbom-path`) — one provenance + SBOM attestation pair per image (pinned SHAs in [`.github/workflows/release-hobo.yml`](../../.github/workflows/release-hobo.yml)). The shared [`.github/actions/release-oci-attest`](../../.github/actions/release-oci-attest/action.yml) composite **docker-logs into GHCR first** (`~/.docker/config.json`) because `push-to-registry: true` on self-hosted **`hobo`** runners does not inherit login from the publish job; attest jobs use **`packages: write`**. Release contract jobs (not the attest jobs) run **`ci-runner-preflight`** first: `syncMissingMiseTools` prepends the bin dir of each `mise.toml` tool that `PATH` cannot already see (on a stale image, **`syft`**) onto `PATH` and `$GITHUB_PATH` via `mise which`, so `command -v syft` succeeds after a shell-level `mise install` on an image that predates the syft layer; tools already visible keep their existing resolution. Attest jobs run no preflight: the composite installs locked `syft` itself (`mise install --locked syft`), so it needs `mise` on `PATH` and the root `mise.toml` in the checkout. Adding a tool to `mise.toml` changes the runner-image version, so merge it with (or before) a runner-image rebuild; until then fresh-container jobs pay a per-job locked install of the new tool.
 - npm packages continue to use **`npm publish --provenance`** (OIDC) on the same release train.
 
 ### Contract tests
 
-[`scripts/test/release-oci-image-contract.test.ts`](../../scripts/test/release-oci-image-contract.test.ts) and [`scripts/test/release-version.test.ts`](../../scripts/test/release-version.test.ts) validate:
+[`scripts/test/release-oci-image-contract.test.ts`](../../scripts/test/release-oci-image-contract.test.ts), [`scripts/test/release-oci-attest-contract.test.ts`](../../scripts/test/release-oci-attest-contract.test.ts) (SBOM/provenance composite: `registry:` scan source, locked syft install, provenance-before-SBOM order, bounded retry, CycloneDX shape, `sbom-path` wiring; run by the `release-hobo.yml` release-contract step and listed in `RELEASE_CONTRACT_VITEST_FILES` for sparse-cone derivation), [`scripts/test/ci-runner-image-contract.test.ts`](../../scripts/test/ci-runner-image-contract.test.ts) (preflight missing-tool install + PATH-invisible-only bin export), and [`scripts/test/release-version.test.ts`](../../scripts/test/release-version.test.ts) validate:
 
 1. Manifest + Dockerfile presence (always), including each image's entrypoint, state volume, and environment documentation
 2. Release ref parsing, npm dist-tag selection, and GHCR tag rules (no `:latest` on prereleases)
@@ -178,6 +178,13 @@ Local:
 
 ```bash
 pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts
+```
+
+The `overlays SDK tarballs into a pnpm-deploy app without npm install` case in `scripts/test/stage-release-oci-app.test.ts` runs a full `pnpm deploy` plus tarball overlay on the runner host; its Vitest timeout is **360s** so ARC and other slow self-hosted runners stay inside the release job's 20-minute budget.
+
+`releasePnpmStore` runs `pnpm store path` in the workspace so the returned directory matches pnpm v10's versioned store (for example `/pnpm-store/v10` when `npm_config_store_dir=/pnpm-store` is mounted on the box worker). It falls back to `npm_config_store_dir` only when `pnpm` is unavailable. Release workflows wrap the Vitest lane in [`scripts/ci/run-job-command-report.mts`](../../scripts/ci/run-job-command-report.mts) so failures still write the tail of the log to `$GITHUB_STEP_SUMMARY` and upload `/tmp/hobo-ci-job-logs/release-contract-vitest.log` when GitHub does not retain runner logs.
+
+```bash
 bash packages/ci-gh-actions/deploy/ci-runner/build.sh
 node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --keep-candidate
 HOBO_RELEASE_OCI_CONTRACT=live HOBO_RELEASE_OCI_IMAGE_ID=hobo-cli pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts

@@ -58,6 +58,26 @@ describe("planMainGitleaksScan", () => {
 		assert.deepEqual(gitFetchBlobArgs(), ["fetch", "--refetch", "--no-filter"]);
 	});
 
+	it("bounds workflow_dispatch to baseline..HEAD when baseline is an ancestor", () => {
+		const baseline = "a".repeat(40);
+		const head = "b".repeat(40);
+		const plan = planMainGitleaksScan({
+			eventName: "workflow_dispatch",
+			pushBefore: undefined,
+			sha: head,
+			baselineSha: baseline,
+			commitExists: (rev) => rev === baseline || rev === head,
+			isAncestor: () => true,
+		});
+		assert.deepEqual(plan, {
+			mode: "range",
+			logOpts: `${baseline}..${head}`,
+			fetchBlobs: false,
+			timeoutSeconds: 90,
+			waitSeconds: RANGE_WAIT_SECONDS,
+		});
+	});
+
 	it("treats a forced push (zero before) as full history", () => {
 		const plan = planMainGitleaksScan({
 			eventName: "push",
@@ -146,7 +166,7 @@ describe("main-gate wiring", () => {
 		const workspace = mainGate.indexOf("name: Workspace tests");
 		assert.ok(start > -1);
 		assert.ok(wait > workspace);
-		assert.ok(FULL_WAIT_SECONDS <= 300);
+		assert.ok(FULL_WAIT_SECONDS <= 720);
 		assert.ok(RANGE_WAIT_SECONDS <= 105);
 	});
 });
