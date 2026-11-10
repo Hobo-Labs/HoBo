@@ -201,7 +201,7 @@ pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts scripts/tes
 
 The `overlays SDK tarballs into a pnpm-deploy app without npm install` case in `scripts/test/stage-release-oci-app.test.ts` runs a full `pnpm deploy` plus tarball overlay on the runner host; its Vitest timeout is **360s** so ARC and other slow self-hosted runners stay inside the release job's 20-minute budget.
 
-`releasePnpmStore` reads `npm_config_store_dir` when the box worker mounts `/pnpm-store`, then falls back to `pnpm store path`. Release workflows wrap the Vitest lane in [`scripts/ci/run-job-command-report.mts`](../../scripts/ci/run-job-command-report.mts) so failures still write the tail of the log to `$GITHUB_STEP_SUMMARY` and upload `/tmp/hobo-ci-job-logs/release-contract-vitest.log` when GitHub does not retain runner logs.
+`releasePnpmStore` runs `pnpm store path` in the workspace so the returned directory matches pnpm v10's versioned store (for example `/pnpm-store/v10` when `npm_config_store_dir=/pnpm-store` is mounted on the box worker). It falls back to `npm_config_store_dir` only when `pnpm` is unavailable. Release workflows wrap the Vitest lane in [`scripts/ci/run-job-command-report.mts`](../../scripts/ci/run-job-command-report.mts) so failures still write the tail of the log to `$GITHUB_STEP_SUMMARY` and upload `/tmp/hobo-ci-job-logs/release-contract-vitest.log` when GitHub does not retain runner logs.
 
 ```bash
 bash packages/ci-gh-actions/deploy/ci-runner/build.sh
