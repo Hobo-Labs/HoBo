@@ -197,6 +197,8 @@ Local:
 
 ```bash
 pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts
+
+The full `@hobo/hobo` pnpm deploy + SDK overlay probe lives in `scripts/test/stage-release-oci-app.deploy-integration.test.ts` (main-gate / local; too slow for release contract). Release workflows include `release-contract-vitest-scope.test.ts` so that file never joins the PR release vitest list.
 bash packages/ci-gh-actions/deploy/ci-runner/build.sh
 node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --keep-candidate
 HOBO_RELEASE_OCI_CONTRACT=live HOBO_RELEASE_OCI_IMAGE_ID=hobo-cli pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts

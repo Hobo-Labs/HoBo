@@ -264,7 +264,7 @@ jobs:
         if: github.event_name != 'push'
         run: pnpm run lint:shell:changed -- --base=HEAD^1
       - name: npm scope map + OCI manifest contract
-        run: pnpm exec vitest run scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/stage-sdk-artifacts.test.ts scripts/test/build-release-site-prebuild.test.ts scripts/test/nbgv-release-version.test.ts
+        run: pnpm exec vitest run scripts/test/release-contract-vitest-scope.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/stage-sdk-artifacts.test.ts scripts/test/build-release-site-prebuild.test.ts scripts/test/nbgv-release-version.test.ts
       - name: npm pack dry-run (allowlist staging)
         run: |
           set -euo pipefail
