@@ -21,6 +21,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   (an `if: env.X` expression never sees container env) and skips `actions/cache`. A self-hosted runner
   without the mount installs from the registry: a cold `pnpm install` measured ~21s, while restoring the
   1.3 GB cache archive took 31–52s and main's save took 142s. Only GitHub-hosted runners use the cache.
+  **`hobo-ci-deps:local` must stay selectable after a worker toolchain promotion** — a label-only lag on
+  `hobo.ci.toolchain` used to drop `HOBO_CI_DEPS_LAYER`, force a ~5m install, and leave S0 cold
+  ([finding 83](../ci/findings/0083-main-full-gate-paid-for-missing-deps-layer-and-trunk-serialization.md)).
+  Trunk admission now prefers `merge_group` over `push` at the same rank so merge-queue shards are not
+  stuck behind a long main push gate when trunk slots are scarce (finding 83).
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob
   lazily at checkout and timed out with HTTP 408 on this repo.
 - **Turbo cache saves even when the job fails.** `.github/actions/turbo-cache` restores at job start and
@@ -76,6 +81,24 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   (an inert PR diff skips install in the off-path job). With `zod` it failed `ERR_MODULE_NOT_FOUND`
   there and turned a skipped job red (#1653's run 41583817166). `scripts/test/ci-trace.test.ts` pins
   the import rule; the hand-written parser emits byte-identical spans and summaries.
+- **Relay and worker traces.** The box worker exports its own OpenTelemetry spans when an OTLP
+  endpoint or `HOBO_CI_TRACE_FILE` is set: every GitHub call that changes something (runner created,
+  runner deleted, run force-cancelled or re-run) and every structured log event, with a job's pickup
+  split into queue, container start and runner registration. A run's trace id comes from its run id,
+  and `ci-trace.mts` now uses the same id, so the job's Turbo spans and the worker's spans for that
+  run form one trace. Runs were being cancelled with nothing recording by whom; a cancelled run whose
+  trace has no `force-cancel` span was not cancelled by the worker. Settings and the span list are in
+  [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
+- **Regenerated proxy bundle passes the generated-file guard.** `sandbox-proxy-bundle.ts` embeds relay
+  sources, so changing them regenerates it with no generator change to stage, which the guard used to
+  refuse. It now runs `generate-proxy-bundle.mts --check` for that file and allows the commit only when
+  the bundle on disk is exactly what the generator emits.
+- **Image builds read the checkout's pins.** `build.sh` runs inside a job container that carries the
+  tool pins of whichever commit last built `hobo-ci-worker:local`. After a pull request pinned `syft`
+  and rebuilt the shared image, `mise install --locked` failed on every branch without that pin
+  (`syft@1.56.0 is not in the lockfile`, release run 42741596338). The script now ignores the image's
+  baked `/etc/mise/config.toml`, and `scripts/test/ci-runner-image-contract.test.ts` pins that it does
+  so before its first mise call.
 - **No serial PR jobs.** `artifact-trust` and `dev-cold-loop-gate` do their own checkout and install and
   read nothing from the PR impact gate, so they no longer `needs: pr-gate`. On a two-slot box that
   dependency left a slot idle while the gate ran, then queued both behind it. `ci-runner-image` and
