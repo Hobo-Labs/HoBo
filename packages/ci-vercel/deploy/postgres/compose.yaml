@@ -1,0 +1,40 @@
+# Self-hosted Postgres for the hosted relay.
+#
+#   printf '%s' "$(openssl rand -base64 32)" > postgres_password.txt
+#   docker compose up -d
+#
+# The relay creates its own tables on first start. It needs two variables,
+# which are the same URL when no pooler sits in front of the database:
+#
+#   DATABASE_URL=postgres://hobo_ci:<password>@<host>:5432/hobo_ci
+#   DATABASE_URL_UNPOOLED=<the same>
+#
+# The port is bound to localhost. A relay that runs somewhere else needs the
+# database reachable from there over TLS: put it behind a TLS-terminating
+# proxy or a private network, and do not publish 5432 to the internet.
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hobo_ci
+      POSTGRES_USER: hobo_ci
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - hobo-ci-postgres:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hobo_ci -d hobo_ci"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+secrets:
+  postgres_password:
+    file: ./postgres_password.txt
+
+volumes:
+  hobo-ci-postgres: {}

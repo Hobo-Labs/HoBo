@@ -34,6 +34,9 @@ export const POSTGRES_DATA_ERROR_CODES = [
 	// A subscription was disabled and a worker is still attached to it: the
 	// transfer cannot be shown to have stopped delivering.
 	"NATIVE_PAUSE_FAILED",
+	// Fleet (src/fleet): a configuration or a log record that does not parse.
+	"FLEET_CONFIGURATION_INVALID",
+	"FLEET_RECORD_INVALID",
 ] as const;
 
 export type PostgresDataErrorCode = (typeof POSTGRES_DATA_ERROR_CODES)[number];
