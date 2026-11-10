@@ -231,6 +231,7 @@ export async function withRepairPool<T extends { end(): Promise<void> }, R>(
 }
 
 /** The marker table `verifyRepairDatabase` uses, created on first use. */
+// public-contract: the probe table's DDL, shared with the database fleet so both create the same table.
 export const DATABASE_PROBE_TABLE = `CREATE TABLE IF NOT EXISTS hobo_ci_database_probes (
 			id uuid PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now()
 		)`;
