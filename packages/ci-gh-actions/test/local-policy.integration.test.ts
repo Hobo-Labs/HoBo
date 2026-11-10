@@ -19,6 +19,7 @@ import {
 	ciEnvironmentPolicySha256,
 	parseCiProjectConfig,
 } from "../src/project-config.js";
+import { LeaseStore } from "../src/store.js";
 import {
 	controlHttp,
 	initialConfiguration,
@@ -163,53 +164,57 @@ it("applies a pinned repo profile to the real local relay, enforces budget and p
 		| Awaited<ReturnType<typeof startRelayFromEnvironment>>
 		| undefined;
 	try {
-		running = await startRelayFromEnvironment(env);
-		await running.service.checkReadiness();
 		const api = new ContractApi();
-		running.relay.options.github = api;
-		const store = running.relay.options.store;
+		running = await startRelayFromEnvironment(env, { github: api });
+		await running.service.checkReadiness();
+		const store = running.store;
 		await apply(false, 50000);
 		expect(
-			store.reserve(staleAccount, job(), new Date().toISOString()),
+			await store.reserve(staleAccount, job(), new Date().toISOString()),
 		).toBeUndefined();
 		await apply(true, 20000);
 		expect(
-			store.reserve(staleAccount, job(), new Date().toISOString()),
+			await store.reserve(staleAccount, job(), new Date().toISOString()),
 		).toBeUndefined();
 		await apply(true, 50000);
 		const alteredInstallation = job();
 		alteredInstallation.installationId = 11;
-		expect(
+		// The store refuses demand that no connection binds, rather than queueing it.
+		await expect(
 			store.reserve(
 				staleAccount,
 				alteredInstallation,
 				new Date().toISOString(),
 			),
-		).toBeUndefined();
+		).rejects.toThrow("connection revoked");
 		const alteredRepository = job();
 		alteredRepository.repository = "other/repository";
-		expect(
+		await expect(
 			store.reserve(staleAccount, alteredRepository, new Date().toISOString()),
-		).toBeUndefined();
-		const beforeRevocation = store.configuration();
+		).rejects.toThrow("connection revoked");
+		const beforeRevocation = await store.configuration();
 		if (!beforeRevocation?.configuration)
 			throw new Error("missing configuration");
 		const removed = clone(ConfigurationSchema, beforeRevocation.configuration);
 		removed.connections = [];
-		const afterRevocation = store.configure(
+		const afterRevocation = await store.configure(
 			removed,
 			beforeRevocation.revision,
 			new Date().toISOString(),
 		);
-		expect(
+		await expect(
 			store.reserve(staleAccount, job(), new Date().toISOString()),
-		).toBeUndefined();
-		store.configure(
+		).rejects.toThrow("connection revoked");
+		await store.configure(
 			beforeRevocation.configuration,
 			afterRevocation.revision,
 			new Date().toISOString(),
 		);
-		const lease = store.reserve(staleAccount, job(), new Date().toISOString());
+		const lease = await store.reserve(
+			staleAccount,
+			job(),
+			new Date().toISOString(),
+		);
 		expect(lease).toBeDefined();
 		if (!lease) throw new Error("expected eligible lease");
 		api.leaseId = lease.id;
@@ -245,41 +250,50 @@ it("applies a pinned repo profile to the real local relay, enforces budget and p
 		});
 		expect(oldV1.status).toBe(410);
 		await apply(false, 50000);
-		await running.relay.dispatchPending();
+		// The relay's own tick drains the outbox under the policy now in force.
+		await running.runtime.tick();
 		expect(api.dispatches).toBe(0);
-		expect(store.get(lease.id)?.state).toBe("cancelled");
-		const before = store.configuration();
+		expect((await store.get(lease.id))?.state).toBe("cancelled");
+		const before = await store.configuration();
 		if (!before?.configuration) throw new Error("missing saved configuration");
-		expect(() =>
+		const saved = before.configuration;
+		await expect(
 			store.configureWithRecord(
-				before.configuration,
+				saved,
 				before.revision,
 				new Date().toISOString(),
 				"ci-policy:account-a",
 				"different-account",
 				"{}",
 			),
-		).toThrow(/another account/);
-		expect(store.configuration()?.revision).toBe(before.revision);
-		store.rebuild();
-		expect(store.configuration()?.revision).toBe(before.revision);
-		expect(store.controlRecord("ci-policy:account-a")).toBeDefined();
+		).rejects.toThrow(/another account/);
+		expect((await store.configuration())?.revision).toBe(before.revision);
 		expect(
-			store.reserve(staleAccount, job(), new Date().toISOString()),
+			await store.reserve(staleAccount, job(), new Date().toISOString()),
 		).toBeUndefined();
 		await running.stop();
 		running = undefined;
-		running = await startRelayFromEnvironment(env);
+		// With the relay stopped, the read model is rebuilt from the event log of
+		// the same file: the policy revision and the desired-policy record survive.
+		const journal = new LeaseStore(db);
+		try {
+			journal.rebuild();
+			expect(journal.configuration()?.revision).toBe(before.revision);
+			expect(journal.controlRecord("ci-policy:account-a")).toBeDefined();
+		} finally {
+			journal.close();
+		}
+		running = await startRelayFromEnvironment(env, { github: api });
 		await running.service.checkReadiness();
 		expect(
-			running.relay.options.store.reserve(
+			await running.store.reserve(
 				staleAccount,
 				job(),
 				new Date().toISOString(),
 			),
 		).toBeUndefined();
 		expect(
-			running.relay.options.store.controlRecord("ci-policy:account-a"),
+			await running.store.controlRecord("ci-policy:account-a"),
 		).toBeDefined();
 	} finally {
 		await running?.stop();

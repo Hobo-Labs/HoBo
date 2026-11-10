@@ -77,6 +77,7 @@ function isIsolatedCiOffer(offer: Offer | undefined): boolean {
 }
 
 const Body = z.object({ body: z.string() });
+const RecordStatus = z.object({ status: z.string() });
 const Count = z.number().int().nonnegative();
 const InboxRow = z.object({
 	delivery_id: z.string(),
@@ -269,6 +270,33 @@ export class SqliteCiStore {
 		return this.tx(() =>
 			this.leases.putControlRecord(key, accountId, bodyJson, at),
 		);
+	}
+	/**
+	 * Write a record whose `status` never leaves `terminalStatus` once it is
+	 * there: a late writer carrying an earlier status gets the stored record back.
+	 */
+	putControlRecordMonotonic(
+		key: string,
+		accountId: string,
+		bodyJson: string,
+		at: string,
+		terminalStatus: string,
+	): Promise<ControlRecord | undefined> {
+		return this.tx(() => {
+			const incoming = RecordStatus.parse(JSON.parse(bodyJson));
+			const old = this.leases.controlRecord(key);
+			if (old && old.accountId !== accountId)
+				throw new Error("control record belongs to another account");
+			if (
+				old &&
+				RecordStatus.parse(JSON.parse(old.bodyJson)).status ===
+					terminalStatus &&
+				incoming.status !== terminalStatus
+			)
+				return old;
+			this.leases.putControlRecord(key, accountId, bodyJson, at);
+			return this.leases.controlRecord(key);
+		});
 	}
 	all(): Promise<Lease[]> {
 		return this.read(() => this.leases.all());

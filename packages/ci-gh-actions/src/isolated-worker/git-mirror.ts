@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -18,6 +19,35 @@ export type GitRunner = (
 	args: readonly string[],
 	cwd?: string,
 ) => Promise<{ status: number; stdout: string; stderr: string }>;
+
+/** Prefer a durable mirror root; fall back when the preferred path is not writable. */
+export function resolveGitMirrorRoot(
+	preferred: string,
+	fallback: string,
+): string {
+	const tryRoot = (root: string) => {
+		if (!isAbsolute(root) || root.split(/[\\/]+/).includes(".."))
+			throw new Error("git mirror root must be absolute and contain no '..' segments");
+		mkdirSync(root, { recursive: true, mode: 0o755 });
+		return root;
+	};
+	try {
+		return tryRoot(preferred);
+	} catch (error: unknown) {
+		if (!(error instanceof Error)) throw error;
+		if (!("code" in error)) throw error;
+		// SAFETY: only `mkdirSync` is in try; its failures are Node system errors with string `code`.
+		const code = (error as Error & { code: string }).code;
+		if (code === "EACCES" || code === "EROFS" || code === "EPERM")
+			return tryRoot(fallback);
+		throw error;
+	}
+}
+
+export function defaultGitMirrorFallbackRoot(): string {
+	const base = process.env.HOBO_HOME?.trim() || homedir();
+	return join(resolve(base), ".cache", "hobo-ci", "git");
+}
 
 export function boxGitMirrorPath(root: string, repository: string): string {
 	if (

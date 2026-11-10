@@ -40,21 +40,15 @@ export function activeLeaseCoversJob(
 	);
 }
 
-/** Box JIT runner or an in-flight isolated launch still holding the reservation. */
+/** Any active isolated lease covering this job (reserved through running). */
 export function hasOutstandingBoxCustody(
 	lease: Lease,
 	repositoryId: number,
 	jobId: number,
 	runAttempt: number | undefined,
 ): boolean {
-	if (!ACTIVE_STATES.has(lease.state)) return false;
-	if (!activeLeaseCoversJob(lease, repositoryId, jobId, runAttempt))
-		return false;
-	if (lease.runnerId > 0) return true;
-	if (lease.runnerName !== "") return true;
 	return (
-		lease.state !== "reserved" ||
-		lease.sandboxName !== "" ||
-		lease.dispatchingAt !== ""
+		ACTIVE_STATES.has(lease.state) &&
+		activeLeaseCoversJob(lease, repositoryId, jobId, runAttempt)
 	);
 }

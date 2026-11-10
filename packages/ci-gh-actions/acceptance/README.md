@@ -7,9 +7,10 @@ act v0.2.89 with the package's `act:install` script:
 node --import tsx packages/ci-gh-actions/scripts/acceptance.ts --act /tmp/hobo-ci-tools/act --evidence /tmp/hobo-ci-acceptance
 ```
 
-This lane runs the shipped `createRelayService`, its HTTP readiness endpoint,
-automatic outbox/reconciliation worker, signed webhook intake, durable
-SQLite reservations, provider dispatch, RS256 OIDC verifier against a locally
+This lane runs the shipped `createRelayHost` (the relay core, its durable
+webhook inbox, the shared HTTP handler and `createRelayService`), its HTTP
+readiness endpoint, automatic outbox/reconciliation worker, signed webhook
+intake, durable SQLite reservations, provider dispatch, RS256 OIDC verifier against a locally
 served JWKS, JIT registration, shipped `runHostProcess`, and actual act execution.
 A strict local GitHub/provider boundary supplies the remote account API. It never
 uses live credentials or treats mocked dispatch alone as executed work. New jobs
@@ -24,21 +25,26 @@ shell step emits those same identities into a unique completion marker. The
 harness refuses missing JIT, a mismatched host label, a skipped original job or
 an unexpected marker. It does not run a separate multi-job graph under one lease.
 
-Seven actual executions share one relay and durable ledger. Two free minutes on
-each of WarpBuild, Depot, Kubernetes, Blacksmith and GitHub are consumed first.
-The sixth execution bills the cheapest provider (WarpBuild); its provider budget
-then forces Depot for the seventh. The exhausted account refuses the eighth
-job with no dispatch or launch. Completion is signed, host shutdown and runner
+Six actual executions share one relay and durable ledger. Two free minutes on
+each of WarpBuild, Depot, Blacksmith and GitHub are consumed first. The fifth
+execution bills the cheapest provider (WarpBuild); its provider budget then
+forces Depot for the sixth. The exhausted account refuses the seventh job with
+no dispatch or launch. The configuration is stored and so validated: a
+Kubernetes bridge host must name the `gh-actions` backend, and then ranks
+GitHub-hosted runners behind it, so it is not part of this free-first scenario.
+A signed delivery is acknowledged as `accepted` once it is in the inbox; the
+harness then waits for the worker tick to reserve, dispatch or settle it. Completion is signed, host shutdown and runner
 cleanup are checked. The service drains accepted HTTP/worker activity and closes
-its own database, then a new service reopens it through startup recovery. All
-seven signed completions are replayed over the restarted HTTP service while its
+its own database, then a new service reopens it. All six signed completions
+are replayed over the restarted HTTP service, where the inbox recognises each
+signed body as a `duplicate`, while its
 worker revisits pending budget-denied demand. Two clean service drains and no
 duplicate dispatch or billing are required. Meter timestamps and provider accounts are local
 fixtures; actual vendor free allowances and invoices are not inferred.
 
 The evidence directory retains the workflow copy, per-job identity markers,
 relay database, `service-events.json` and `report.json` (including worker, restart
-and drain counts). All seven jobs use native act execution on the
+and drain counts). All six jobs use native act execution on the
 local machine. Provider routing and execution linkage are proved; compatibility
 of nested runners on vendor-hosted machines and live GitHub queue consumption
 require live acceptance.

@@ -1,4 +1,3 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { clone, create } from "@bufbuild/protobuf";
 import type { Account, ConfigurationState } from "@hobo/ci";
 import {
@@ -46,6 +45,7 @@ import {
 import type { IdentityVerifier } from "./oidc.js";
 import {
 	activeLeaseCoversJob,
+	hasOutstandingBoxCustody,
 	leaseIdFromBoxRunnerName,
 	runnerCustody,
 } from "./job-runner-custody.js";
@@ -54,6 +54,7 @@ import {
 	servedRunnerLabel,
 	TRUNK_RUNNER_LABEL,
 } from "./runner-labels.js";
+import { verifyWebhookSignature } from "./webhook-signature.js";
 
 /** Isolated executions are supplied by the hosting runtime and must fail closed. */
 export interface IsolatedRunnerHost {
@@ -360,12 +361,9 @@ export class HostedRelay {
 			)
 		)
 			return this.processWebhook(raw, event);
-		const expected = createHmac("sha256", this.options.webhookSecret)
-			.update(raw)
-			.digest();
 		if (
-			!/^sha256=[a-f0-9]{64}$/.test(signature) ||
-			!timingSafeEqual(expected, Buffer.from(signature.slice(7), "hex"))
+			verifyWebhookSignature(this.options.webhookSecret, raw, signature) !==
+			"valid"
 		)
 			throw new Error("invalid webhook signature");
 		return this.processWebhook(raw, event);
@@ -970,6 +968,17 @@ export class HostedRelay {
 				continue;
 			}
 			if ((await this.options.isolatedHost?.isLaunchParked?.(job)) === true)
+				continue;
+			if (
+				active.some((lease) =>
+					hasOutstandingBoxCustody(
+						lease,
+						job.repositoryId,
+						job.id,
+						job.runAttempt,
+					),
+				)
+			)
 				continue;
 			const rank = await this.admissionOrder.rank(refOf(job));
 			const trunk = servedRunnerLabel(job.labels) === TRUNK_RUNNER_LABEL;

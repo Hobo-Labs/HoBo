@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
-import type { ControlAuthenticator } from "./control-plane.js";
+import type { ControlAuthenticator } from "./control-auth.js";
 import {
 	appInstallationPage,
 	appOwnerInstallationPage,

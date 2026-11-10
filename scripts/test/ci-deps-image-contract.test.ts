@@ -349,7 +349,7 @@ describe("CI deps workflow contract", () => {
 		assert.ok(start > -1);
 		assert.ok(end > start);
 		includes(job, "name: CI deps layer (pnpm)");
-		includes(job, "needs: ci-runner-image");
+		includes(job, "needs: [route, ci-runner-image]");
 		includes(job, "needs.ci-runner-image.result != 'failure'");
 		includes(job, "packages/ci-gh-actions/deploy/ci-runner/deps");
 		includes(job, "scripts/ci/deps-layer-buckets.mts");
@@ -436,7 +436,7 @@ describe("CI deps workflow contract", () => {
 		const mainStart = workflow.indexOf("  main-gate:");
 		const mainEnd = workflow.indexOf("  artifact-trust:", mainStart);
 		const main = workflow.slice(mainStart, mainEnd);
-		includes(main, "needs: ci-runner-image");
+		includes(main, "needs: [route, ci-runner-image]");
 		assert.ok(!main.includes("ci-deps-image"));
 		includes(workflow, "Check deps layer match");
 	});

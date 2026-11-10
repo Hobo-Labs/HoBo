@@ -56,6 +56,13 @@ overrides belong in gitignored **`.hobo/ci.local.json`** or `HOBO_CI_ENVIRONMENT
 
 ## Host a local relay
 
+`hobo ci serve` runs the same relay as the hosted one: the same core, account
+API and HTTP routes, over a local SQLite file. It adds the listener, a
+5-second worker tick and, with pull admission, the same GitHub job poller the
+box worker runs. It does not have the GitHub App bootstrap and OAuth
+onboarding or the delivery repair, which are Postgres-only today. See [one
+relay, thin hosts](../ci-gh-actions/README.md#one-relay-thin-hosts).
+
 When the `local` environment (or any profile with loopback `relayOrigin` and
 `jobAdmission: "pull"`) should admit jobs without a public webhook URL, run the
 relay on your machine:

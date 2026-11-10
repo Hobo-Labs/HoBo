@@ -12,6 +12,8 @@ import {
 	boxGitMirrorPath,
 	ciEventSinkFromEnv,
 	createBoxGitMirror,
+	defaultGitMirrorFallbackRoot,
+	resolveGitMirrorRoot,
 	createCiEventEmitter,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
@@ -453,8 +455,18 @@ try {
 		string,
 		{ event?: string; jobCreatedAt?: string }
 	>();
-	const gitMirrorRoot =
+	const preferredGitMirrorRoot =
 		process.env.HOBO_CI_GIT_MIRROR_ROOT ?? "/var/lib/hobo-ci/git";
+	const gitMirrorRoot = resolveGitMirrorRoot(
+		preferredGitMirrorRoot,
+		defaultGitMirrorFallbackRoot(),
+	);
+	if (gitMirrorRoot !== preferredGitMirrorRoot) {
+		log("hobo_ci_git_mirror_root_fallback", {
+			preferred: preferredGitMirrorRoot,
+			root: gitMirrorRoot,
+		});
+	}
 	const gitMirrorEnabled = process.env.HOBO_CI_GIT_MIRROR !== "0";
 	const gitMirrors = new Map<string, ReturnType<typeof createBoxGitMirror>>();
 	function gitMirrorFor(repository: string) {
