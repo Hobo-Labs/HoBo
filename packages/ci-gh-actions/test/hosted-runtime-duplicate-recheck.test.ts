@@ -135,9 +135,9 @@ it("does not queue a duplicate whose GitHub job is no longer queued", async () =
 	expect(h.request).toHaveBeenCalledTimes(2);
 });
 
-it("contains a failed duplicate re-check", async () => {
+it("requeues when duplicate re-check fails (poll must not strand)", async () => {
 	const h = await fixture();
 	expect(await h.runtime.ingestWebhook(h.input)).toBe("accepted");
 	h.request.mockRejectedValue(new Error("GitHub unavailable"));
-	expect(await h.runtime.ingestWebhook(h.input)).toBe("duplicate");
+	expect(await h.runtime.ingestWebhook(h.input)).toBe("requeued");
 });
