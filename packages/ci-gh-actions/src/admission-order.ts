@@ -13,6 +13,19 @@ export type AdmissionKey = Readonly<{
 /** The rank of merge_group, push and workflow_dispatch runs: the ones that gate trunk. */
 export const TRUNK_RANK = 0;
 
+/** Merge-group checks outrank main-push gates on a shared trunk host. */
+export function trunkEventPriority(event: string): number {
+	switch (event) {
+		case "merge_group":
+			return 0;
+		case "push":
+		case "workflow_dispatch":
+			return 1;
+		default:
+			return 2;
+	}
+}
+
 /**
  * Merge-queue entries and trunk runs gate every other merge, so a shared host
  * admits them before pull-request work. A weekly sweep waits for both.
@@ -128,6 +141,8 @@ export function createAdmissionOrder(
 			.sort(
 				(a, b) =>
 					a.key.rank - b.key.rank ||
+					trunkEventPriority(a.key.event) -
+						trunkEventPriority(b.key.event) ||
 					a.key.startedAtMs - b.key.startedAtMs ||
 					b.expectedMs - a.expectedMs ||
 					a.jobId - b.jobId,
