@@ -464,7 +464,7 @@
               "waitDefaultSeconds": 25,
               "waitMaxSeconds": 50,
               "accountCalls": 8,
-              "accountWaits": 4,
+              "accountWaits": 8,
               "requestMessages": 8
             }
           }

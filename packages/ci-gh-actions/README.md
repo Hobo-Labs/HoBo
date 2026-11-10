@@ -178,6 +178,7 @@ of a session.
 | Credential holds neither `policy:read` nor `operations:write` | 403 `{"error":"account scope required"}` |
 | `Origin` header that is not the relay's public origin | 403 `{"error":"origin not allowed"}` |
 | Body over 1 MiB | 413 `{"error":"request body too large"}` |
+| Body that is not strict UTF-8 JSON (a byte-order mark included) | 400 `{"error":"request body is not JSON"}` |
 
 The account comes from the credential, never from an argument. A tool or
 resource sees only that account's leases, queued jobs and events; another
@@ -286,16 +287,28 @@ bounded amount of work. `get_relay_status` reports the first three.
 
 | Limit | Value | Beyond it |
 | --- | --- | --- |
-| JSON-RPC messages in one request | 8 | 400 `{"error":"too many JSON-RPC messages in one request; at most 8"}` |
+| JSON-RPC messages in one request, whatever their methods | 8 | 400 `{"error":"too many JSON-RPC messages in one request; at most 8"}` |
 | Tools and resource reads in progress for one account | 8 | Tool error to retry; the call does not reach the store |
-| `wait_for_events` blocked for one account | 4 | Tool error to retry |
-| `wait_for_events` blocked in one process | 32 | Tool error to retry |
+| `wait_for_events` blocked for one account | 8, as many as it may hold sessions | Tool error to retry |
+| `wait_for_events` blocked in one process | 64, as many as the host holds sessions | Tool error to retry |
 | Events in one result | 200 (default 50) | `more: true` and the cursor to continue |
 | Reads by one `wait_for_events` while behind the journal's end | 8 | `more: true`, `timedOut: false` |
 
+The relay parses a request body once and hands the transport that parsed
+value, so the messages it counts are exactly the ones that run; a body its
+one parse does not accept is refused, not passed to a more lenient parser.
+The count covers every method: `tools/list`, `resources/list` and `ping` are
+bounded by it as tool calls are.
+
+Every agent an account may connect can follow the journal at once: a parked
+wait takes one of the account's wait places and none of its call places, so
+eight agents waiting do not keep any of them from calling a tool.
+
 A wait hands the event loop back before every read, so a long catch-up on a
 store that answers in the same turn (SQLite) does not hold up webhooks, health
-checks or the worker, and a caller's cancellation is seen between reads.
+checks or the worker, and a caller's cancellation is seen between reads. A
+lease's events are read through the lease index on both engines; on SQLite the
+statement names the index, so it cannot fall back to walking the journal.
 
 On Postgres the server reads through `PostgresCiStore.observer()`: the last
 committed state, without the partition lock the relay's own reads and writes
@@ -328,10 +341,23 @@ its leases through whichever HTTP host shares its store.
 A session belongs to the account that opened it: another account naming its
 id gets 404, as for an unknown id. The Node service holds at most 64 sessions
 and 8 for one account, counting the ones an account is still opening (429
-beyond that). When all 64 are taken, an account holding less than its share
-is not refused: the least recently used session of whichever account holds
-the most is closed to make room, and that client initializes again. A
-session's event stream is closed after 30 minutes for its client to open
+beyond that). Only an `initialize` request opens a session; any other request
+without one is refused before it can cost anybody a place.
+
+When all 64 are taken, a session gives way to a new one only under this rule:
+
+- the caller holds fewer sessions than a fair share, the host's places
+  divided among the accounts that hold or ask for one;
+- some other account holds more than that share: its least recently used
+  session gives way, one with no open stream or call if it has one;
+- the caller has not displaced a session in the last 60 seconds;
+- the new session is opened first. Only once it is initialized is the other
+  closed, so no session is ever ended for a request that opened nothing.
+
+Otherwise the caller is answered 429. The client whose session gave way
+initializes again and continues from its cursor.
+
+A session's event stream is closed after 30 minutes for its client to open
 another, so a stream nobody is reading cannot hold a session for ever; a
 session with no open stream and no request for 15 minutes is closed; every
 session and stream is closed when the host drains. A process restart ends its
@@ -362,15 +388,25 @@ fails if the declared duration and the one the code assumes differ.
 - **Job events journalled before this was recorded are in no feed.** They name
   no account, and who owned the repository then cannot be known from them, so
   they are not returned to anyone. Lease events always named their account and
-  are unaffected. The account API's `GET /v1/accounts/self/leases` lists an
-  account's newest 100 events by the same field, so it now includes the job
-  events recorded for the account.
+  are unaffected.
+- **The account API's snapshot is unchanged.** `GET /v1/accounts/self/leases`
+  still returns an account's newest 100 lease and record events and no job
+  events, so a busy account's jobs cannot push its lease events out of that
+  window. Job events are served here.
 - **Nothing about other accounts from a cursor.** A cursor is not a journal
   position: two cursors cannot be subtracted, and two accounts at the same
-  place in the journal hold different tokens.
-- **Residual.** `more: true` on a read from far behind says the shared journal
-  is longer than one read covers, which bounds other accounts' activity only
-  very loosely (in steps of 10,000 rows).
+  place in the journal hold different tokens. A cursor moves only with the
+  account's own events: it stands for the newest of them the read saw, so
+  while other accounts journal and this one does not, every read and every
+  wait that times out hands back the same cursor. The relay itself reads on
+  from the journal's end between passes of a wait; that position is never
+  handed out.
+- **Residual.** A read that is cut short (`more: true`, or `truncated: true`
+  on the newest read) hands back how far it got, because the caller could
+  otherwise never get past that stretch. That happens only when more than
+  10,000 journal rows lie between the account's events, and it tells the
+  account that the shared journal grew by at least that much, in steps of
+  that size.
 
 ### Client configuration
 

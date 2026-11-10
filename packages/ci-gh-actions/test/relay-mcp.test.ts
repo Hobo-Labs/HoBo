@@ -495,7 +495,7 @@ describe("relay MCP tools and resources", () => {
 			waitDefaultSeconds: 25,
 			waitMaxSeconds: 50,
 			accountCalls: 8,
-			accountWaits: 4,
+			accountWaits: 8,
 			requestMessages: 8,
 		});
 
@@ -1392,6 +1392,7 @@ describe("relay MCP bounds on one caller's work", () => {
 		const h = await setup({
 			sessions: "none",
 			maxWaits: 5,
+			maxWaitsPerAccount: 4,
 			now: () => clock,
 			sleep: () =>
 				new Promise<void>((resolve) => {
@@ -1448,6 +1449,54 @@ describe("relay MCP bounds on one caller's work", () => {
 			error: "too many JSON-RPC messages in one request; at most 8",
 		});
 		expect((await rpc(h, h.tokens.a.authorization, pings(8))).status).toBe(200);
+		// The cap is on what the transport is given to run, whatever the method
+		// and however the body is dressed. A byte-order mark, which one JSON
+		// parser rejects and another skips, does not get a batch past the count:
+		// the body is parsed once, and what that parse refuses is refused.
+		const lists = Array.from({ length: 9 }, (_, index) => ({
+			jsonrpc: "2.0",
+			id: index + 1,
+			method: "tools/list",
+		}));
+		const authorization = h.tokens.a.authorization;
+		const marked = await h.handle(
+			post(`\uFEFF${JSON.stringify(lists)}`, { authorization }),
+		);
+		expect(marked.status).toBe(400);
+		expect(await marked.json()).toEqual({ error: "request body is not JSON" });
+		expect(
+			(await h.handle(post(`\uFEFF${PING}`, { authorization }))).status,
+		).toBe(400);
+		expect(
+			(await h.handle(post(JSON.stringify(lists), { authorization }))).status,
+		).toBe(400);
+		const within = await h.handle(
+			post(JSON.stringify(lists.slice(0, 8)), { authorization }),
+		);
+		expect(within.status).toBe(200);
+		expect(
+			z.array(z.object({ id: z.number() })).parse(await within.json()).length,
+		).toBe(8);
+		for (const body of ["", "{", "[1,2", "\uFFFE"]) {
+			const refused = await h.handle(post(body, { authorization }));
+			expect(refused.status, body).toBe(400);
+			expect(await refused.json(), body).toEqual({
+				error: "request body is not JSON",
+			});
+		}
+		const mangled = await h.handle(
+			new Request(`${ORIGIN}/mcp`, {
+				method: "POST",
+				headers: {
+					authorization,
+					accept: "application/json, text/event-stream",
+					"content-type": "application/json",
+				},
+				// Not UTF-8 at all.
+				body: new Uint8Array([0x5b, 0xff, 0xfe, 0x5d]),
+			}),
+		);
+		expect(mangled.status).toBe(400);
 
 		// Four reads in one request, each held at the store.
 		const batch = rpc(
@@ -1561,6 +1610,56 @@ describe("relay MCP journal bounds", () => {
 		).toMatchObject({ truncated: true });
 	});
 
+	it("moves an account's cursor only with the account's own events", async () => {
+		let clock = 0;
+		const h = await setup({
+			sessions: "none",
+			now: () => clock,
+			sleep: async (ms) => {
+				clock += ms;
+			},
+		});
+		const { mine, theirs } = await seed(h);
+		const a = await h.connect(h.tokens.a.authorization);
+		const cursorOf = async (name: string, input: JsonObject = {}) =>
+			Events.parse(
+				(await a.client.callTool({ name, arguments: input })).structuredContent,
+			);
+		const before = await cursorOf("list_events");
+		// Another account journals: a lease moves, a job is queued, records change.
+		await dispatch(h, theirs);
+		await h.store.queue(foreignJob(30), LATER, h.revision);
+		await neighbourWrites(h, 25);
+		// None of that shows in what this account is handed: the same cursor,
+		// from the newest read, from a read after it, and from waits that time out.
+		expect((await cursorOf("list_events")).cursor).toBe(before.cursor);
+		const idle = await cursorOf("list_events", { cursor: before.cursor });
+		expect(idle).toMatchObject({ events: [], cursor: before.cursor });
+		expect(
+			await cursorOf("wait_for_events", {
+				cursor: before.cursor,
+				timeoutSeconds: 2,
+			}),
+		).toMatchObject({ events: [], cursor: before.cursor, timedOut: true });
+		expect(
+			await cursorOf("wait_for_events", { timeoutSeconds: 2 }),
+		).toMatchObject({ events: [], cursor: before.cursor, timedOut: true });
+		expect(
+			JSON.parse((await a.read("hobo-ci://events")).contents[0]?.text ?? ""),
+		).toMatchObject({ cursor: before.cursor });
+		// The account's own next event moves it, and nothing was skipped.
+		await dispatch(h, mine);
+		const next = await cursorOf("list_events", { cursor: before.cursor });
+		expect(next.events.map((event) => event.type)).toEqual([
+			"ci.DispatchRequested",
+		]);
+		expect(next.cursor).not.toBe(before.cursor);
+		expect((await cursorOf("list_events")).cursor).toBe(next.cursor);
+		expect(
+			await cursorOf("list_events", { cursor: next.cursor }),
+		).toMatchObject({ events: [], cursor: next.cursor });
+	});
+
 	it("hands out cursors that say nothing of the journal and work for one account only", async () => {
 		const h = await setup({ sessions: "none" });
 		await seed(h);
@@ -1670,6 +1769,162 @@ describe("relay MCP session shares", () => {
 			expect((await openSession(h, authorization)).status).toBe(429);
 		expect((await ping(h.tokens.a.authorization, newer.id)).status).toBe(200);
 		expect((await ping(h.tokens.b.authorization, theirs.id)).status).toBe(200);
+	});
+
+	it("lets only an initialize make room, once per cool-down, and only from an account over its share", async () => {
+		let clock = 0;
+		const h = await setup({
+			sessions: "memory",
+			maxSessions: 2,
+			maxSessionsPerAccount: 2,
+			displaceCooldownMs: 60_000,
+			now: () => clock,
+		});
+		const alive = async (authorization: string, id: string | null) => {
+			const response = await rpc(
+				h,
+				authorization,
+				{ jsonrpc: "2.0", id: 5, method: "ping" },
+				{ "mcp-session-id": id ?? "" },
+			);
+			await response.body?.cancel();
+			return response.status === 200;
+		};
+		const a = h.tokens.a.authorization;
+		const b = h.tokens.b.authorization;
+		const first = await openSession(h, a);
+		clock = 1_000;
+		const second = await openSession(h, a);
+		clock = 2_000;
+
+		// A request that is not an initialize opens nothing and costs nobody a
+		// place, however often it is sent to a full host.
+		for (const body of [
+			{ jsonrpc: "2.0", id: 1, method: "tools/list" },
+			{ jsonrpc: "2.0", id: 1, method: "ping" },
+			[INITIALIZE, { jsonrpc: "2.0", id: 2, method: "ping" }],
+		]) {
+			const refused = await rpc(h, b, body);
+			expect(refused.status).toBe(400);
+			expect(await refused.json()).toEqual({
+				error: "MCP session required; initialize first",
+			});
+		}
+		// Nor does an initialize the transport refuses: no session, no eviction.
+		const malformed = await rpc(h, b, {
+			jsonrpc: "2.0",
+			id: 1,
+			method: "initialize",
+		});
+		expect(malformed.status).toBe(400);
+		await malformed.body?.cancel();
+		expect(await alive(a, first.id)).toBe(true);
+		expect(await alive(a, second.id)).toBe(true);
+
+		// A real initialize from an account below its share displaces the
+		// least recently used session of the account above it.
+		clock = 3_000;
+		const theirs = await openSession(h, b);
+		expect(theirs.status).toBe(200);
+		expect(await alive(a, second.id)).toBe(true);
+		const firstGone = !(await alive(a, first.id));
+		expect(firstGone).toBe(true);
+
+		// Opening and closing in a loop does not keep doing it. The session is
+		// ended, its holder opens one again, and the host is full once more...
+		const ended = await h.handle(
+			new Request(`${ORIGIN}/mcp`, {
+				method: "DELETE",
+				headers: { authorization: b, "mcp-session-id": theirs.id ?? "" },
+			}),
+		);
+		expect(ended.status).toBe(200);
+		clock = 4_000;
+		const again = await openSession(h, a);
+		expect(again.status).toBe(200);
+		// ...but the account that displaced a session a moment ago must wait.
+		clock = 5_000;
+		const soon = await openSession(h, b);
+		expect(soon.status).toBe(429);
+		expect(await alive(a, second.id)).toBe(true);
+		expect(await alive(a, again.id)).toBe(true);
+		clock = 64_000;
+		expect((await openSession(h, b)).status).toBe(200);
+	});
+
+	it("displaces nobody for an account when no holder is over its share", async () => {
+		const h = await setup({
+			sessions: "memory",
+			maxSessions: 2,
+			maxSessionsPerAccount: 2,
+		});
+		const mine = await openSession(h, h.tokens.a.authorization);
+		const theirs = await openSession(h, h.tokens.b.authorization);
+		expect([mine.status, theirs.status]).toEqual([200, 200]);
+		// Two places, two accounts with one each: neither holds more than its
+		// share, so neither gives a place up to the other.
+		expect((await openSession(h, h.tokens.a.authorization)).status).toBe(429);
+		expect((await openSession(h, h.tokens.b.authorization)).status).toBe(429);
+		for (const [authorization, id] of [
+			[h.tokens.a.authorization, mine.id],
+			[h.tokens.b.authorization, theirs.id],
+		] as const) {
+			const response = await rpc(
+				h,
+				authorization,
+				{ jsonrpc: "2.0", id: 5, method: "ping" },
+				{ "mcp-session-id": id ?? "" },
+			);
+			await response.body?.cancel();
+			expect(response.status).toBe(200);
+		}
+	});
+
+	it("lets every agent an account may connect wait at once, without taking its calls", async () => {
+		const sleepers: Array<() => void> = [];
+		let clock = 0;
+		const h = await setup({
+			sessions: "memory",
+			now: () => clock,
+			sleep: () =>
+				new Promise<void>((resolve) => {
+					sleepers.push(resolve);
+				}),
+		});
+		await seed(h);
+		const authorization = h.tokens.a.authorization;
+		// As many sessions as one account may hold, each following the journal.
+		const sessions: string[] = [];
+		for (let agent = 0; agent < 8; agent++) {
+			const opened = await openSession(h, authorization);
+			expect(opened.status).toBe(200);
+			sessions.push(opened.id ?? "");
+		}
+		expect((await openSession(h, authorization)).status).toBe(429);
+		const waiting = await Promise.all(
+			sessions.map((id, agent) =>
+				rpc(h, authorization, call(agent + 1, "wait_for_events"), {
+					"mcp-session-id": id,
+				}),
+			),
+		);
+		while (sleepers.length < 8) await turns(1);
+		// All eight are parked; none was refused.
+		expect(sleepers.length).toBe(8);
+		// A wait holds no place a call needs: each agent can still ask.
+		const asked = await rpc(h, authorization, call(50, "list_leases"), {
+			"mcp-session-id": sessions[0] ?? "",
+		});
+		expect(await asked.text()).not.toMatch(/too many/);
+		// A ninth wait is one more than the account has agents.
+		const ninth = await rpc(h, authorization, call(51, "wait_for_events"), {
+			"mcp-session-id": sessions[0] ?? "",
+		});
+		expect(await ninth.text()).toMatch(/too many callers are waiting/);
+		clock = 60_000;
+		for (const wake of sleepers.splice(0)) wake();
+		for (const response of waiting)
+			expect(await response.text()).toMatch(/timedOut\\?":true/);
 	});
 
 	it("closes an event stream that has been open for its lifetime", async () => {

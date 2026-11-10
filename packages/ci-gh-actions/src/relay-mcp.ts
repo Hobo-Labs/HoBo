@@ -50,16 +50,25 @@ export type RelayMcpOptions = Readonly<{
 	/** A session's event stream is closed after this long; its client opens another. */
 	streamMaxMs?: number;
 	/**
+	 * How long an account waits, after a session of another account gave way to
+	 * one of its own, before it may displace another.
+	 */
+	displaceCooldownMs?: number;
+	/**
 	 * How long `wait_for_events` blocks when the caller names no timeout, and
 	 * at most. The host names the ceiling: it must fit inside whatever limits
 	 * how long that host may hold one request.
 	 */
 	waitDefaultMs?: number;
 	waitMaxMs?: number;
-	/** `wait_for_events` calls blocked at once, in all and for one account. */
+	/**
+	 * `wait_for_events` calls blocked at once, in all and for one account.
+	 * By default as many as there may be sessions, so every agent an account
+	 * may connect can follow the journal.
+	 */
 	maxWaits?: number;
 	maxWaitsPerAccount?: number;
-	/** Tools and resource reads one account may have in progress at once. */
+	/** Other tools and resource reads one account may have in progress at once. */
 	maxCallsPerAccount?: number;
 	/** JSON-RPC messages one HTTP request may carry. */
 	maxRequestMessages?: number;
@@ -83,7 +92,9 @@ const MAX_SUBSCRIPTIONS = 100;
 const PUMP_PAGE = 500;
 /** The longest the subscription pump waits between tries while the store fails. */
 const PUMP_BACKOFF_MAX_MS = 60_000;
+const Json = z.json();
 const Batch = z.array(z.unknown());
+const Initialize = z.object({ method: z.literal("initialize") });
 
 /** Whether a request path is the MCP endpoint, at the root or under an engine mount. */
 export function isRelayMcpPath(pathname: string): boolean {
@@ -145,17 +156,38 @@ async function boundedBody(request: Request) {
 	return body;
 }
 
-/** How many JSON-RPC messages a body carries; one unless it is a batch. */
-function messageCount(body: Uint8Array): number {
+/**
+ * A POST's body, parsed here and nowhere else. The transport is handed this
+ * value, so the messages that are counted are exactly the ones it runs.
+ */
+type Posted = Readonly<{
+	message: z.infer<typeof Json>;
+	/** One unless the body is a batch. */
+	messages: number;
+	/** The body is one `initialize` request: the only one that opens a session. */
+	opensSession: boolean;
+}>;
+
+/** The body as JSON, or undefined when this one parse does not accept it. */
+function parsePosted(body: Uint8Array): Posted | undefined {
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(Buffer.from(body).toString("utf8"));
+		// Strict UTF-8, and a byte-order mark is not skipped: a body another
+		// parser would accept after stripping one is refused here.
+		parsed = JSON.parse(
+			new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(body),
+		);
 	} catch {
-		// Not JSON: the transport answers that.
-		return 1;
+		return undefined;
 	}
-	const batch = Batch.safeParse(parsed);
-	return batch.success ? batch.data.length : 1;
+	const message = Json.safeParse(parsed);
+	if (!message.success) return undefined;
+	const batch = Batch.safeParse(message.data);
+	return {
+		message: message.data,
+		messages: batch.success ? batch.data.length : 1,
+		opensSession: Initialize.safeParse(message.data).success,
+	};
 }
 
 function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -292,9 +324,17 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 		waitMaxMs,
 		bounded(options.waitDefaultMs, 25_000, "wait default"),
 	);
+	const displaceCooldownMs = bounded(
+		options.displaceCooldownMs,
+		60_000,
+		"displacement cool-down",
+	);
+	// An agent follows the journal with one wait at a time, so an account may
+	// have as many waiting as it may have sessions, and the host as many as
+	// it holds sessions.
 	const maxWaitsPerAccount = bounded(
 		options.maxWaitsPerAccount,
-		4,
+		maxSessionsPerAccount,
 		"account wait limit",
 	);
 	const maxCallsPerAccount = bounded(
@@ -309,7 +349,7 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 	);
 	const waits = shares(
 		maxWaitsPerAccount,
-		bounded(options.maxWaits, 32, "wait limit"),
+		bounded(options.maxWaits, maxSessions, "wait limit"),
 	);
 	const calls = shares(maxCallsPerAccount, Number.POSITIVE_INFINITY);
 	const pollMs = bounded(options.pollMs, 1_000, "poll interval");
@@ -319,7 +359,10 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 	const sessions = new Map<string, Session>();
 	/** Sessions each account is in the middle of opening. */
 	const opening = shares(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
-	let openingTotal = 0;
+	/** Sessions are opened one at a time, so a place is never promised twice. */
+	let openingTurn: Promise<void> = Promise.resolve();
+	/** When each account last had another's session give way to it. */
+	const displacedAt = new Map<string, number>();
 	/** Where each subscribed account's journal has been read up to. */
 	const cursors = new Map<string, number>();
 	let pump: Promise<void> | undefined;
@@ -453,6 +496,8 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 			if (session.streams === 0 && session.lastSeenAt <= at - sessionIdleMs)
 				await endSession(session);
 		}
+		for (const [accountId, displaced] of displacedAt)
+			if (at - displaced >= displaceCooldownMs) displacedAt.delete(accountId);
 	}
 
 	/** How many sessions an account holds or is opening. */
@@ -464,28 +509,34 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 	}
 
 	/**
-	 * With every place taken, free one for an account that holds less than
-	 * its fair share: the least recently used session of whichever account
-	 * holds the most, when that is at least two more than the caller held
-	 * before this request. No account can keep another out by filling the
-	 * host; the account that loses a session opens it again.
+	 * On a full host, the session that gives way to a new one of `accountId`:
+	 * the least recently used session of the account holding the most, and one
+	 * with no open stream or call if that account has one. There is one only
+	 * when the caller holds less than a fair share (the host's places divided
+	 * among the accounts holding or asking for one) and that holder has more
+	 * than a fair share. Nobody is displaced by an account already at its share.
 	 */
-	async function makeRoom(accountId: string): Promise<boolean> {
+	function overShare(accountId: string): Session | undefined {
 		const held = new Map<string, Session[]>();
 		for (const session of sessions.values())
 			held.set(session.accountId, [
 				...(held.get(session.accountId) ?? []),
 				session,
 			]);
-		const largest = [...held.values()].sort((a, b) => b.length - a.length)[0];
-		// `sessionsOf` already counts the session this request is opening.
-		if (!largest || largest.length <= sessionsOf(accountId)) return false;
-		const [victim] = largest.sort(
-			(a, b) => a.streams - b.streams || a.lastSeenAt - b.lastSeenAt,
+		const mine = held.get(accountId)?.length ?? 0;
+		const fair = Math.max(
+			1,
+			Math.floor(maxSessions / (held.size + (mine === 0 ? 1 : 0))),
 		);
-		if (!victim) return false;
-		await endSession(victim);
-		return true;
+		if (mine >= fair) return undefined;
+		const [largest] = [...held.entries()]
+			.filter(
+				([holder, theirs]) => holder !== accountId && theirs.length > fair,
+			)
+			.sort((a, b) => b[1].length - a[1].length);
+		return largest?.[1].sort(
+			(a, b) => a.streams - b.streams || a.lastSeenAt - b.lastSeenAt,
+		)[0];
 	}
 
 	async function openSession(accountId: string): Promise<Session> {
@@ -546,10 +597,12 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 		session: Session,
 		request: Request,
 		authInfo: AuthInfo,
+		posted: Posted | undefined,
 	): Promise<Response> {
 		session.lastSeenAt = now();
 		const response = await session.transport.handleRequest(request, {
 			authInfo,
+			parsedBody: posted?.message,
 		});
 		if (
 			!response.body ||
@@ -585,6 +638,7 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 		request: Request,
 		accountId: string,
 		authInfo: AuthInfo,
+		posted: Posted | undefined,
 	): Promise<Response> {
 		await sweep();
 		const id = request.headers.get("mcp-session-id");
@@ -593,9 +647,11 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 			// Another account's session is as absent as one that never existed.
 			if (!session || session.accountId !== accountId)
 				return refuse(404, "session not found");
-			return inSession(session, request, authInfo);
+			return inSession(session, request, authInfo, posted);
 		}
-		if (request.method !== "POST")
+		// Only an `initialize` request opens a session. Anything else without
+		// one is refused here, before it can cost anybody a place.
+		if (!posted?.opensSession)
 			return refuse(400, "MCP session required; initialize first");
 		const crowded = () =>
 			refuse(429, "too many MCP sessions; close one or retry later", {
@@ -603,24 +659,42 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 			});
 		// The account's own share counts the sessions it is still opening.
 		if (sessionsOf(accountId) >= maxSessionsPerAccount) return crowded();
-		// Taken before anything is awaited, so two requests cannot both take
-		// the last place.
 		opening.take(accountId);
-		openingTotal += 1;
-		try {
+		const opened = openingTurn.then(async () => {
+			// On a full host a session of an account over its share gives way,
+			// and no more often than the cool-down allows this caller.
+			const giving =
+				sessions.size >= maxSessions ? overShare(accountId) : undefined;
+			const displaced = displacedAt.get(accountId);
 			if (
-				sessions.size + openingTotal > maxSessions &&
-				!(await makeRoom(accountId))
+				sessions.size >= maxSessions &&
+				(!giving ||
+					(displaced !== undefined && now() - displaced < displaceCooldownMs))
 			)
 				return crowded();
 			const session = await openSession(accountId);
-			const response = await inSession(session, request, authInfo);
-			// Only an initialize request opens a session; anything else was refused.
-			if (session.id === undefined) await endSession(session);
+			const response = await inSession(session, request, authInfo, posted);
+			// The transport refused the request: no session, and nobody gives way.
+			if (session.id === undefined) {
+				await endSession(session);
+				return response;
+			}
+			// The caller holds its session now; only now does the other give way,
+			// so a place is never taken for a session that was not opened.
+			if (giving?.id !== undefined && sessions.get(giving.id) === giving) {
+				displacedAt.set(accountId, now());
+				await endSession(giving);
+			}
 			return response;
+		});
+		openingTurn = opened.then(
+			() => undefined,
+			() => undefined,
+		);
+		try {
+			return await opened;
 		} finally {
 			opening.release(accountId);
-			openingTotal -= 1;
 		}
 	}
 
@@ -628,6 +702,7 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 	async function standalone(
 		request: Request,
 		authInfo: AuthInfo,
+		posted: Posted | undefined,
 	): Promise<Response> {
 		const server = createRelayMcpServer(shared);
 		const transport = new WebStandardStreamableHTTPServerTransport({
@@ -637,7 +712,10 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 		let abandon = (): void => undefined;
 		try {
 			return await Promise.race([
-				transport.handleRequest(request, { authInfo }),
+				transport.handleRequest(request, {
+					authInfo,
+					parsedBody: posted?.message,
+				}),
 				// A caller that hung up gets no answer; stop working on one.
 				new Promise<Response>((resolve) => {
 					abandon = () => resolve(refuse(400, "request abandoned"));
@@ -678,27 +756,29 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 				return refuse(405, "method not allowed", {
 					Allow: allowed.join(", "),
 				});
-			// The credential has done its work; no tool or resource is handed it.
-			const headers = new Headers(request.headers);
-			headers.delete("authorization");
-			const init: RequestInit = {
-				method: request.method,
-				headers,
-				signal: request.signal,
-			};
+			let posted: Posted | undefined;
 			if (request.method === "POST") {
 				const body = await boundedBody(request).catch(() => undefined);
 				if (!body) return refuse(413, "request body too large");
-				// One request is a bounded amount of work: the transport runs
-				// every message of a batch at once.
-				if (messageCount(body) > maxRequestMessages)
+				posted = parsePosted(body);
+				if (!posted) return refuse(400, "request body is not JSON");
+				// One request is a bounded amount of work, whatever its methods:
+				// the transport runs every message of a batch at once.
+				if (posted.messages > maxRequestMessages)
 					return refuse(
 						400,
 						`too many JSON-RPC messages in one request; at most ${maxRequestMessages}`,
 					);
-				init.body = body;
 			}
-			const framed = new Request(request.url, init);
+			// The credential has done its work; no tool or resource is handed it.
+			// The body has been read: the transport is given what it parsed to.
+			const headers = new Headers(request.headers);
+			headers.delete("authorization");
+			const framed = new Request(request.url, {
+				method: request.method,
+				headers,
+				signal: request.signal,
+			});
 			// The transport hands this to every tool and resource of the request.
 			const authInfo: AuthInfo = {
 				token: "",
@@ -708,8 +788,8 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 			};
 			return noStore(
 				stateless
-					? await standalone(framed, authInfo)
-					: await withSessions(framed, principal.accountId, authInfo),
+					? await standalone(framed, authInfo, posted)
+					: await withSessions(framed, principal.accountId, authInfo, posted),
 			);
 		},
 		async close() {
