@@ -121,7 +121,9 @@ rejects that OCI index because its attestation children are OCI manifests, which
 `CI runner image (mise oci)` job on every dispatch. `scripts/test/ci-runner-image-contract.test.ts` pins
 the check offline with a synthetic registry; `HOBO_CI_VERIFY_BASE_DIGEST=1` runs it live. The same
 contract file expects every `mise.lock` tool (including `syft`) to be installed and version-probed in
-`Dockerfile.monolithic` when the OCI path is not used.
+`Dockerfile.monolithic` when the OCI path is not used. Until every box worker retags a syft-era image,
+`ci-runner-preflight` also exports checkout `mise bin-paths` onto `PATH` when an older tag already ran
+`mise install` but did not ship the new tool directory.
 
 The same job runs inside a `--network bridge` container, where `127.0.0.1:5000` is the container's own
 loopback rather than the host's local registry, so `mise oci build` failed after six seconds. `build.sh`

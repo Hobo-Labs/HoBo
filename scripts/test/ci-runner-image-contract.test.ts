@@ -58,7 +58,16 @@ describe("ci-runner tool command diagnostics", () => {
 
 	it("reports ENOENT, the attempted command, and the remedy", () => {
 		const missing = `hobo-shellcheck-not-installed-${process.pid}`;
-		const check = probeWith(spawnCommand(missing, ["--version"]));
+		const check = probeMiseTool(
+			"shellcheck",
+			(cmd, args) => {
+				if (cmd === "mise" && args.includes("which")) {
+					return { ok: true, out: missing };
+				}
+				return spawnCommand(cmd, args);
+			},
+			root,
+		);
 		expect(check.ok).toBe(false);
 		expect(check.name).toBe("mise-tool:shellcheck");
 		expect(check.detail).toContain(`${missing} --version`);
@@ -97,7 +106,6 @@ describe("ci-runner tool command diagnostics", () => {
 			"shellcheck",
 			(cmd, args) => {
 				calls.push({ cmd, args });
-				if (cmd === "sh") return { ok: true, out: "/usr/bin/shellcheck" };
 				if (cmd === "mise") return { ok: true, out: executable };
 				return { ok: true, out: "ShellCheck 0.10.0" };
 			},
@@ -105,7 +113,6 @@ describe("ci-runner tool command diagnostics", () => {
 		);
 		expect(check.ok).toBe(true);
 		expect(calls).toEqual([
-			{ cmd: "sh", args: ["-c", "command -v shellcheck || true"] },
 			{ cmd: "mise", args: ["--cd", root, "which", "shellcheck"] },
 			{ cmd: executable, args: ["--version"] },
 		]);
@@ -119,6 +126,7 @@ describe("ci-runner mise tool sync", () => {
 		const times = [100, 175];
 		const executable = "/opt/mise/installs/shellcheck/0.10.0/bin/shellcheck";
 		const binDir = "/opt/mise/installs/shellcheck/0.10.0/bin";
+		const shimDir = "/opt/mise/shims";
 		const env = {
 			PATH: "/usr/bin",
 			GITHUB_ACTIONS: "true",
@@ -131,9 +139,13 @@ describe("ci-runner mise tool sync", () => {
 					ok: true,
 					out: args.includes("which")
 						? executable
-						: args.includes("ls")
-							? "shellcheck 0.10.0 (missing) /checkout/mise.toml 0.10.0\nnot-in-mise-toml 1 (missing)"
-							: "",
+						: args.includes("bin-paths")
+							? `${binDir}\n`
+							: args[0] === "data-dir"
+								? "/opt/mise"
+								: args.includes("ls")
+									? "shellcheck 0.10.0 (missing) /checkout/mise.toml 0.10.0\nnot-in-mise-toml 1 (missing)"
+									: "",
 				};
 			},
 			now: () => times.shift() ?? 175,
@@ -144,9 +156,9 @@ describe("ci-runner mise tool sync", () => {
 		expect(result.installed).toEqual(["shellcheck"]);
 		expect(result.elapsedMs).toBe(75);
 		expect(result.detail).toContain("installed shellcheck");
-		expect(env.PATH).toBe([binDir, "/usr/bin"].join(delimiter));
+		expect(env.PATH).toBe([shimDir, binDir, "/usr/bin"].join(delimiter));
 		expect(appended).toEqual([
-			{ path: "/runner/github-path", data: `${binDir}\n` },
+			{ path: "/runner/github-path", data: `${shimDir}\n${binDir}\n` },
 		]);
 		expect(calls).toEqual([
 			{ cmd: "mise", args: ["--cd", root, "trust", "./mise.toml"] },
@@ -159,6 +171,9 @@ describe("ci-runner mise tool sync", () => {
 				args: ["--cd", root, "install", "--locked", "shellcheck"],
 			},
 			{ cmd: "mise", args: ["--cd", root, "which", "shellcheck"] },
+			{ cmd: "mise", args: ["--cd", root, "reshim"] },
+			{ cmd: "mise", args: ["--cd", root, "bin-paths"] },
+			{ cmd: "mise", args: ["data-dir"] },
 		]);
 	});
 
@@ -193,15 +208,42 @@ describe("ci-runner mise tool sync", () => {
 
 	it("does not invoke the installer when no checkout tool is missing", () => {
 		const calls: string[][] = [];
+		const env = { PATH: "/usr/bin" };
 		const result = syncMissingMiseTools(root, {
 			run: (_cmd, args) => {
 				calls.push(args);
+				if (args.includes("bin-paths")) {
+					return {
+						ok: true,
+						out: "/opt/mise/installs/syft/1.56.0\n",
+					};
+				}
+				if (args[0] === "data-dir") {
+					return { ok: true, out: "/opt/mise" };
+				}
 				return { ok: true, out: "" };
 			},
+			env,
 		});
 		expect(result.ok).toBe(true);
 		expect(result.installed).toEqual([]);
 		expect(calls.some((args) => args.includes("install"))).toBe(false);
+		expect(calls.some((args) => args.includes("bin-paths"))).toBe(true);
+		expect(env.PATH).toContain("/opt/mise/installs/syft/1.56.0");
+	});
+
+	it("probes aqua tools through mise which when they are installed but not on PATH", () => {
+		const executable = "/opt/mise/installs/syft/1.56.0/syft";
+		const check = probeMiseTool(
+			"syft",
+			(cmd, _args) => {
+				if (cmd === "sh") return { ok: true, out: "" };
+				if (cmd === "mise") return { ok: true, out: executable };
+				return { ok: true, out: "syft 1.56.0" };
+			},
+			root,
+		);
+		expect(check.ok).toBe(true);
 	});
 });
 

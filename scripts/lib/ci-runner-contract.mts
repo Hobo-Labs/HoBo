@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
-import { delimiter, dirname, isAbsolute, join } from "node:path";
+import { delimiter, isAbsolute, join } from "node:path";
 
 export const CI_RUNNER_BASE_DOCKERFILE =
 	"packages/ci-gh-actions/deploy/ci-runner/base/Dockerfile";
@@ -280,27 +280,21 @@ export function probeMiseTool(
 	run: CommandRunner,
 	root: string = process.cwd(),
 ): ContractCheck {
-	const whichArgs = ["-c", `command -v ${tool} || true`];
-	const which = run("sh", whichArgs);
-	const path = which.out.split("\n")[0]?.trim() ?? "";
-	if (!path) {
-		return {
-			ok: false,
-			name: `mise-tool:${tool}`,
-			detail: `${commandLine("sh", whichArgs)}: ${tool} not on PATH (not installed in runner image)\n    ${MISE_TOOL_REMEDY}`,
-		};
-	}
 	const resolveArgs = ["--cd", root, "which", tool];
 	const resolved = run("mise", resolveArgs);
 	const executable = resolved.out.split("\n")[0]?.trim() ?? "";
 	if (!resolved.ok || !isAbsolute(executable)) {
+		const whichArgs = ["-c", `command -v ${tool} || true`];
+		const onPath = run("sh", whichArgs).out.split("\n")[0]?.trim() ?? "";
 		const failure = resolved.ok
 			? `${commandLine("mise", resolveArgs)}: expected an absolute executable path for ${tool}, got ${executable || "(empty)"}`
 			: commandFailure(resolved, commandLine("mise", resolveArgs));
 		return {
 			ok: false,
 			name: `mise-tool:${tool}`,
-			detail: `${failure}\n    ${MISE_TOOL_REMEDY}`,
+			detail: onPath
+				? `${failure}\n    ${MISE_TOOL_REMEDY}`
+				: `${failure}\n    ${tool} not on PATH and ${commandLine("mise", resolveArgs)} failed\n    ${MISE_TOOL_REMEDY}`,
 		};
 	}
 	const versionArgs =
@@ -321,6 +315,58 @@ export type MiseToolSyncResult = {
 	readonly elapsedMs: number;
 	readonly detail: string;
 };
+
+function readMiseBinPathDirs(root: string, run: CommandRunner): string[] {
+	const binPaths = run("mise", ["--cd", root, "bin-paths"]);
+	if (!binPaths.ok) return [];
+	return [
+		...new Set(
+			binPaths.out
+				.split("\n")
+				.map((line) => line.trim())
+				.filter(Boolean),
+		),
+	];
+}
+
+function readMiseShimDir(run: CommandRunner): string | undefined {
+	const data = run("mise", ["data-dir"]);
+	const dir = data.out.split("\n")[0]?.trim() ?? "";
+	if (!data.ok || !dir) return undefined;
+	return join(dir, "shims");
+}
+
+function prependPathDirs(
+	env: NodeJS.ProcessEnv,
+	appendFile: (path: string, data: string) => void,
+	dirs: readonly string[],
+): void {
+	const unique = [...new Set(dirs)];
+	if (unique.length === 0) return;
+	const existing = env.PATH ? env.PATH.split(delimiter) : [];
+	const merged = [
+		...unique,
+		...existing.filter((dir) => !unique.includes(dir)),
+	];
+	env.PATH = merged.join(delimiter);
+	if (env.GITHUB_ACTIONS === "true" && env.GITHUB_PATH) {
+		appendFile(env.GITHUB_PATH, unique.map((dir) => `${dir}\n`).join(""));
+	}
+}
+
+/** Makes checkout-selected mise tools visible on PATH for preflight and later job steps. */
+export function exportMiseToolchainPath(
+	root: string,
+	run: CommandRunner,
+	env: NodeJS.ProcessEnv,
+	appendFile: (path: string, data: string) => void,
+): void {
+	run("mise", ["--cd", root, "reshim"]);
+	const dirs = readMiseBinPathDirs(root, run);
+	const shimDir = readMiseShimDir(run);
+	if (shimDir) dirs.unshift(shimDir);
+	prependPathDirs(env, appendFile, dirs);
+}
 
 export function syncMissingMiseTools(
 	root: string,
@@ -382,42 +428,37 @@ export function syncMissingMiseTools(
 			}),
 		),
 	];
-	if (missing.length === 0) {
-		return finish(true, [], "all mise.toml tools are already installed");
-	}
-	const installArgs = ["--cd", root, "install", "--locked", ...missing];
-	const install = run("mise", installArgs);
-	const installCommand = commandLine("mise", installArgs);
-	if (!install.ok) {
+	if (missing.length > 0) {
+		const installArgs = ["--cd", root, "install", "--locked", ...missing];
+		const install = run("mise", installArgs);
+		const installCommand = commandLine("mise", installArgs);
+		if (!install.ok) {
+			return finish(
+				false,
+				[],
+				`${commandFailure(install, installCommand)}\n    ${MISE_TOOL_REMEDY}`,
+			);
+		}
+		for (const tool of missing) {
+			const resolveArgs = ["--cd", root, "which", tool];
+			const resolved = run("mise", resolveArgs);
+			const executable = resolved.out.split("\n")[0]?.trim() ?? "";
+			if (!resolved.ok || !isAbsolute(executable)) {
+				const failure = resolved.ok
+					? `${commandLine("mise", resolveArgs)}: expected an absolute executable path for ${tool}, got ${executable || "(empty)"}`
+					: commandFailure(resolved, commandLine("mise", resolveArgs));
+				return finish(false, missing, `${failure}\n    ${MISE_TOOL_REMEDY}`);
+			}
+		}
+		exportMiseToolchainPath(root, run, env, appendFile);
 		return finish(
-			false,
-			[],
-			`${commandFailure(install, installCommand)}\n    ${MISE_TOOL_REMEDY}`,
+			true,
+			missing,
+			`installed ${missing.join(", ")} with ${installCommand}`,
 		);
 	}
-	const binDirs: string[] = [];
-	for (const tool of missing) {
-		const resolveArgs = ["--cd", root, "which", tool];
-		const resolved = run("mise", resolveArgs);
-		const executable = resolved.out.split("\n")[0]?.trim() ?? "";
-		if (!resolved.ok || !isAbsolute(executable)) {
-			const failure = resolved.ok
-				? `${commandLine("mise", resolveArgs)}: expected an absolute executable path for ${tool}, got ${executable || "(empty)"}`
-				: commandFailure(resolved, commandLine("mise", resolveArgs));
-			return finish(false, missing, `${failure}\n    ${MISE_TOOL_REMEDY}`);
-		}
-		binDirs.push(dirname(executable));
-	}
-	const pathDirs = [...new Set(binDirs)];
-	env.PATH = [...pathDirs, ...(env.PATH ? [env.PATH] : [])].join(delimiter);
-	if (env.GITHUB_ACTIONS === "true" && env.GITHUB_PATH) {
-		appendFile(env.GITHUB_PATH, pathDirs.map((dir) => `${dir}\n`).join(""));
-	}
-	return finish(
-		true,
-		missing,
-		`installed ${missing.join(", ")} with ${installCommand}`,
-	);
+	exportMiseToolchainPath(root, run, env, appendFile);
+	return finish(true, [], "all mise.toml tools are already installed");
 }
 
 const SYSTEM_COMMANDS = {
