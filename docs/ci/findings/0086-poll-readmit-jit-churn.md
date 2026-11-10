@@ -35,6 +35,8 @@ Box evidence (2026-11-10): repeated pickups ~39s apart with zero `hobo_ci_launch
 
 Second box trial: `emptyExitCount` rose but `hobo_ci_jit_empty_exit_backoff` never logged — `createCompositeIsolatedHost` did not forward `isLaunchParked`, and empty exits still called `queueInside`, re-admitting demand before backoff could bite.
 
+Third box trial (`33958657c`): backoff honored, but a 21s double pickup could land between settle finishing and the second `recordJitEmptyExit` — fix records backoff at the exit marker before stop/settle. When GitHub run jobs show the JIT runner served a **sibling** job (`hobo_ci_jit_runner_served_other_job`), skip penalizing the reserved job’s backoff (shared-label mesh queue stole the session).
+
 ## Fix (fleet cooperation)
 
 Each worker must treat a job taken by **any other** `hobo` runner as normal fleet behavior:

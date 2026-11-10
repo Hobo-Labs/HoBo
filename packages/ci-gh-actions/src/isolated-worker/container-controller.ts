@@ -12,7 +12,11 @@ import {
 } from "@hobo/ci";
 import { z } from "zod";
 import { runnerDownloadFor } from "../bootstrap.js";
-import { type GithubTransport, getJob } from "../github.js";
+import {
+	type GithubTransport,
+	getJob,
+	listRunWorkflowJobs,
+} from "../github.js";
 import { heldRoutingOptions } from "../held-routing.js";
 import { runnerCustody } from "../job-runner-custody.js";
 import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
@@ -28,6 +32,7 @@ import {
 	jitEmptyExitLaunchBlocked,
 	recordJitEmptyExit,
 } from "../jit-empty-exit-backoff.js";
+import { correlateRunnerOnRun } from "../jit-runner-correlation.js";
 import {
 	jitRunnerRegistrationLabels,
 	RUNNER_LABEL,
@@ -344,6 +349,7 @@ export function createIsolatedContainerController(options: {
 			| "hobo_ci_launch_yielded_foreign_runner"
 			| "hobo_ci_jit_empty_exit"
 			| "hobo_ci_jit_empty_exit_backoff"
+			| "hobo_ci_jit_runner_served_other_job"
 			| "hobo_ci_work_dir_retired"
 			| "hobo_ci_work_dir_removed"
 			| "hobo_ci_work_dir_remove_failed"
@@ -759,6 +765,8 @@ export function createIsolatedContainerController(options: {
 		string,
 		Awaited<ReturnType<typeof readRunnerExitEvidence>>
 	>();
+	/** Backoff recorded at exit-marker so settle/stop cannot release a slot first. */
+	const eagerEmptyExitBackoff = new Set<string>();
 	const launchKey = (repositoryId: number, jobId: number, runAttempt: number) =>
 		`${repositoryId}:${jobId}:${runAttempt}`;
 	const logLaunch = (
@@ -999,30 +1007,63 @@ export function createIsolatedContainerController(options: {
 				undefined,
 				lease.id,
 			);
-			const empty = recordJitEmptyExit(
-				emptyExitLoops,
-				emptyKey,
-				observedMs,
-			);
+			let penalizeBackoff = true;
+			if (lease.runnerId > 0 || lease.runnerName) {
+				try {
+					const runJobs = await listRunWorkflowJobs(
+						options.github,
+						lease.installationId,
+						lease.repository,
+						lease.originalRunId,
+					);
+					const correlation = correlateRunnerOnRun(
+						runJobs,
+						lease.jobId,
+						lease.runnerName,
+						lease.runnerId,
+					);
+					if (correlation.kind === "served-other") {
+						penalizeBackoff = false;
+						clearJitEmptyExit(emptyExitLoops, emptyKey);
+						options.log?.("hobo_ci_jit_runner_served_other_job", {
+							reservedJobId: lease.jobId,
+							servedJobId: correlation.jobId,
+							servedStatus: correlation.status,
+							runId: lease.originalRunId,
+							runAttempt: lease.runAttempt,
+							runnerName: lease.runnerName,
+							runnerId: lease.runnerId,
+						});
+					}
+				} catch {
+					/* correlation is best-effort; empty-exit backoff stays conservative */
+				}
+			}
 			const evidence = pendingExitEvidence.get(lease.id) ?? {};
 			pendingExitEvidence.delete(lease.id);
-			const emptyExitLog: JitEmptyExitLogFields = {
-				jobId: lease.jobId,
-				runId: lease.originalRunId,
-				runAttempt: lease.runAttempt,
-				repository: lease.repository,
-				runnerName: lease.runnerName,
-				emptyExitCount: empty.count,
-				nextLaunchMs: empty.nextLaunchMs,
-				githubStatus: original.status,
-				githubRunnerName: original.runner_name ?? "",
-				jobLabels: original.labels.join(","),
-			};
-			if (evidence.runShExit !== undefined)
-				emptyExitLog.runShExit = evidence.runShExit;
-			if (evidence.summary !== undefined)
-				emptyExitLog.runnerDiagTail = evidence.summary;
-			options.log?.("hobo_ci_jit_empty_exit", emptyExitLog);
+			eagerEmptyExitBackoff.delete(lease.id);
+			if (penalizeBackoff) {
+				const empty =
+					emptyExitLoops.get(emptyKey) ??
+					recordJitEmptyExit(emptyExitLoops, emptyKey, observedMs);
+				const emptyExitLog: JitEmptyExitLogFields = {
+					jobId: lease.jobId,
+					runId: lease.originalRunId,
+					runAttempt: lease.runAttempt,
+					repository: lease.repository,
+					runnerName: lease.runnerName,
+					emptyExitCount: empty.count,
+					nextLaunchMs: empty.nextLaunchMs,
+					githubStatus: original.status,
+					githubRunnerName: original.runner_name ?? "",
+					jobLabels: original.labels.join(","),
+				};
+				if (evidence.runShExit !== undefined)
+					emptyExitLog.runShExit = evidence.runShExit;
+				if (evidence.summary !== undefined)
+					emptyExitLog.runnerDiagTail = evidence.summary;
+				options.log?.("hobo_ci_jit_empty_exit", emptyExitLog);
+			}
 		}
 		await options.store.settle(
 			lease.id,
@@ -1600,7 +1641,7 @@ export function createIsolatedContainerController(options: {
 				}
 			}
 			let stop = forceStop === true || hasIsolatedStopIntent(lease);
-			if (!stop && lease.state === "running" && running) {
+			if (!stop && lease.state === "running") {
 				// The runner takes one job and exits, so its marker frees the slot on this
 				// tick instead of after GitHub reports the job (a poll interval later). A
 				// runner that died without a job lands here too; settle requeues its job.
@@ -1613,18 +1654,32 @@ export function createIsolatedContainerController(options: {
 							RUNNER_EXITED_PATH,
 						)) === true;
 				} catch {
-					// Same as a failed inspect: not proof of anything, retry next tick.
+					if (running) return;
 				}
-				if (!exited) return;
-				pendingExitEvidence.set(
-					lease.id,
-					await readRunnerExitEvidence(
-						options.docker,
-						lease.sandboxName,
-						lease.sandboxSessionId,
-					),
-				);
-				stop = true;
+				if (exited) {
+					const emptyKey = jitEmptyExitKey(
+						lease.repositoryId,
+						lease.jobId,
+						lease.runAttempt,
+					);
+					if (!eagerEmptyExitBackoff.has(lease.id)) {
+						recordJitEmptyExit(
+							emptyExitLoops,
+							emptyKey,
+							Date.parse(now()),
+						);
+						eagerEmptyExitBackoff.add(lease.id);
+					}
+					pendingExitEvidence.set(
+						lease.id,
+						await readRunnerExitEvidence(
+							options.docker,
+							lease.sandboxName,
+							lease.sandboxSessionId,
+						),
+					);
+					stop = true;
+				} else if (running) return;
 			}
 			if (running && stop) await measureMemoryPeak(lease);
 			const deadWhileRunning = !stop && lease.state === "running" && !running;

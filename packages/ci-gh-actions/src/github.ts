@@ -88,6 +88,34 @@ export async function getHostJob(
 		throw new Error("unexpected host job graph");
 	return result.jobs[0];
 }
+const RunWorkflowJob = z.object({
+	id: z.number().int().positive(),
+	run_id: z.number().int().positive(),
+	run_attempt: z.number().int().positive().optional(),
+	status: z.string(),
+	labels: z.array(z.string()).optional(),
+	runner_name: z.string().nullable().optional(),
+	runner_id: z.number().int().positive().nullable().optional(),
+});
+
+export type GithubRunWorkflowJob = z.infer<typeof RunWorkflowJob>;
+
+export async function listRunWorkflowJobs(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	runId: number,
+): Promise<readonly GithubRunWorkflowJob[]> {
+	const response = await api.request(
+		installationId,
+		`/repos/${repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
+	);
+	if (!response.ok)
+		throw new Error(`GitHub run jobs lookup failed (${response.status})`);
+	const result = z.object({ jobs: z.array(RunWorkflowJob) }).parse(await response.json());
+	return result.jobs;
+}
+
 export async function getJob(
 	api: GithubTransport,
 	installationId: number,
