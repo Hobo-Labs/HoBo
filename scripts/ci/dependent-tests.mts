@@ -18,7 +18,9 @@
  * path stands for the `src/` file built into it. A literal naming another package's file
  * (`hobo ci serve --with-worker` spawning the worker daemon) is that one file,
  * not its imports: it runs as its own process and its package's suite covers
- * it. A package entry that maps to no source file stands for the whole package
+ * it. Entering a package either way also reaches its `package.json`, its
+ * `tsconfig.json` and every tsconfig its scripts name: they shape what an
+ * importer gets. A package entry that maps to no source file stands for the whole package
  * and its workspace dependencies. A dependent's test with a computed `import()`
  * or a relative import that resolves to nothing runs. A dependent runs in full
  * when its `test` script is not plain `vitest run` or its vitest config's
@@ -167,6 +169,7 @@ const DYNAMIC_IMPORT = /\bimport\s*\(\s*(?:(["'])([^"'\n]+)\1\s*\))?/g;
 const RESOLVE_CALL = /\bresolve\(\s*["']([^"'\n]+)["']\s*\)/g;
 const PATH_LITERAL = /["'`]((?:\.\.?\/|packages\/|examples\/)[^"'`\n$]*)["'`]/g;
 const BARE_DIR = /^\.\.?\/$/;
+const TSCONFIG = /\btsconfig(?:\.[\w-]+)?\.json\b/g;
 
 /** Whether the literal `match` is the base of `new URL(literal, import.meta.url)`. */
 function isUrlBase(
@@ -302,6 +305,39 @@ export function createWalker(repo: Repo) {
 			manifests.set(ws.dir, parseManifest(repo.read(`${ws.dir}/package.json`)));
 		return manifests.get(ws.dir);
 	};
+
+	/**
+	 * The files that shape what an importer of `ws` gets without being imported:
+	 * its manifest (`exports`, `type`, dependencies), its `tsconfig.json` and
+	 * every tsconfig one of its scripts names (`tsc -p tsconfig.build.json`).
+	 */
+	const inputs = new Map<string, readonly string[]>();
+	function packageInputs(ws: Workspace): readonly string[] {
+		const cached = inputs.get(ws.dir);
+		if (cached) return cached;
+		const scripts = manifestOf(ws)?.scripts;
+		const named = isObject(scripts)
+			? Object.values(scripts).flatMap((script) =>
+					isString(script) ? (script.match(TSCONFIG) ?? []) : [],
+				)
+			: [];
+		const found = [
+			`${ws.dir}/package.json`,
+			...[...new Set(["tsconfig.json", ...named])]
+				.map((name) => `${ws.dir}/${name}`)
+				.filter((path) => repo.files.has(path)),
+		];
+		inputs.set(ws.dir, found);
+		return found;
+	}
+	/** The changed manifest or build config of the package `path` sits in. */
+	function changedInput(
+		path: string,
+		changed: ReadonlySet<string>,
+	): string | undefined {
+		const owner = ownerOf(path);
+		return owner && packageInputs(owner).find((input) => changed.has(input));
+	}
 
 	/** The tracked source file `path` names, or the one a `dist/` path is built from. */
 	function sourceFile(path: string): string | undefined {
@@ -474,9 +510,17 @@ export function createWalker(repo: Repo) {
 			if (seen.has(file)) continue;
 			seen.add(file);
 			if (changed.has(file)) return file;
+			// Entering a package, by import or by a file it names, takes what
+			// that package's manifest and build config make of it.
+			const input = changedInput(file, changed);
+			if (input) return input;
 			const next = edges(file);
 			if (next.unscoped && !lenient) return next.unscoped;
-			for (const path of next.named ?? []) if (changed.has(path)) return path;
+			for (const path of next.named ?? []) {
+				if (changed.has(path)) return path;
+				const namedInput = changedInput(path, changed);
+				if (namedInput) return namedInput;
+			}
 			for (const dir of next.dirs) {
 				const prefix = dir === "." ? "" : `${dir}/`;
 				for (const path of changed) if (path.startsWith(prefix)) return path;

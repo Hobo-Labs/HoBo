@@ -387,6 +387,89 @@ describe("a bare ./ or ../ literal", () => {
 	});
 });
 
+describe("a package's manifest and build config", () => {
+	// `@t/top` imports `@t/app`, which imports `@t/lib/client`; `packages/none`
+	// imports lib's source by relative path and declares nothing.
+	const built: Repo = {
+		...extend(repo, {
+			"packages/lib/package.json": manifest("@t/lib", "vitest run", {
+				scripts: {
+					test: "vitest run",
+					build: "tsc -p tsconfig.build.json",
+					typecheck: "tsc -p tsconfig.json --noEmit",
+				},
+				exports: {
+					".": "./dist/index.js",
+					"./client": "./dist/client.js",
+					"./feat/*": "./dist/feat/*.js",
+				},
+			}),
+			"packages/lib/tsconfig.json": "{}\n",
+			"packages/lib/tsconfig.build.json": "{}\n",
+			"packages/lib/tsconfig.unused.json": "{}\n",
+			"packages/app/tsconfig.json": "{}\n",
+			"packages/top/package.json": manifest("@t/top", "vitest run"),
+			"packages/top/test/top.test.ts": 'import "@t/app";\n',
+			"packages/top/test/pure.test.ts":
+				'import { strict } from "node:assert";\n',
+			"packages/none/test/reach.test.ts": 'import "../../lib/src/worker.js";\n',
+		}),
+		workspaces: [
+			...repo.workspaces,
+			{ dir: "packages/top", name: "@t/top", dependencies: ["@t/app"] },
+		],
+	};
+	const importersOfLib = {
+		full: ["packages/conf", "packages/lib", "packages/tool"],
+		subsets: {
+			"packages/app": [
+				"test/cli.test.ts",
+				"test/computed.test.ts",
+				"test/feat.test.ts",
+				"test/root.test.ts",
+			],
+			"packages/none": ["test/reach.test.ts"],
+			"packages/top": ["test/top.test.ts"],
+		},
+		skipped: [],
+	};
+
+	for (const path of [
+		"packages/lib/package.json",
+		"packages/lib/tsconfig.json",
+		"packages/lib/tsconfig.build.json",
+	])
+		it(`runs everything that imports the package when ${path} changes`, () => {
+			assert.deepEqual(
+				scoped(planDependentTests([path], built)),
+				importersOfLib,
+			);
+			// A tsconfig no script builds with is the package's own business.
+			assert.deepEqual(
+				scoped(
+					planDependentTests(["packages/lib/tsconfig.unused.json"], built),
+				),
+				{
+					full: ["packages/lib", "packages/tool"],
+					subsets: { "packages/app": ["test/computed.test.ts"] },
+					skipped: ["packages/conf", "packages/top"],
+				},
+			);
+		});
+
+	it("runs the importers of a package that is itself a dependent", () => {
+		for (const path of [
+			"packages/app/package.json",
+			"packages/app/tsconfig.json",
+		])
+			assert.deepEqual(scoped(planDependentTests([path], built)), {
+				full: ["packages/app"],
+				subsets: { "packages/top": ["test/top.test.ts"] },
+				skipped: [],
+			});
+	});
+});
+
 describe("planDependentTests", () => {
 	it("runs only the dependent tests whose closure reaches a worker-only file", () => {
 		assert.deepEqual(
@@ -681,6 +764,31 @@ describe("the repository's own plans", { concurrency: true }, () => {
 			]?.includes("test/happy-path-run.test.ts"),
 		);
 	});
+
+	for (const dir of ["packages/core", "packages/cli", "packages/policy"])
+		it(`runs the dependents of ${dir} when its manifest or tsconfig changes`, () => {
+			// What importing the package selects: a change to its source entry.
+			const manifestOf = JSON.parse(
+				(tree ??= readRepo()).read(`${dir}/package.json`) ?? "{}",
+			);
+			const entry = exportTarget(manifestOf, ".") ?? "";
+			const source = `${dir}/${entry.replace(/^\.\/dist\//u, "src/").replace(/\.js$/u, ".ts")}`;
+			assert.ok(tree.files.has(source), source);
+			const byEntry = plan(source);
+			assert.ok(byEntry.full.length + Object.keys(byEntry.subsets).length > 1);
+			for (const input of [`${dir}/package.json`, `${dir}/tsconfig.json`]) {
+				const byInput = plan(input);
+				for (const whole of byEntry.full)
+					assert.ok(byInput.full.includes(whole), `${input}: ${whole}`);
+				for (const [pkg, files] of Object.entries(byEntry.subsets))
+					for (const file of files)
+						assert.ok(
+							byInput.full.includes(pkg) ||
+								byInput.subsets[pkg]?.includes(file),
+							`${input}: ${pkg}/${file}`,
+						);
+			}
+		});
 
 	it("plans a generated @hobo/core leaf by what imports it, not by core's `./`", () => {
 		const { full, subsets, skipped } = plan(
