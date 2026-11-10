@@ -7,6 +7,7 @@ import {
 	collectStream,
 	foldRegistryStream,
 	registerProviderFact,
+	registryCatalogProjection,
 } from "@hobo/cloud";
 import type { PrincipalRef } from "@hobo/core";
 import {
@@ -140,23 +141,58 @@ export async function runRegistryAdd(
 			: { pricingCatalogHash: billing.catalog.catalogHash }),
 	};
 
-	// The catalog is persisted when the provider is first registered — and, for
-	// a provider registered before catalogs were stored, on the next run.
-	const catalogFacts = (() => {
-		if (billing === undefined) return [];
-		if (storedCatalogs(events).has(provider.id)) return [];
-		return [
-			catalogRegisteredFact(
-				provider.id,
-				billing.catalog,
-				(input.now ?? (() => new Date().toISOString()))(),
-			),
-		];
-	})();
+	// What this run has to write, decided from what the stream already holds.
+	//
+	// Pricing catalog: absent -> store it (a first registration, or a provider
+	// registered before catalogs were stored); present with a different hash ->
+	// the manifest's prices changed, store the new one; same hash -> nothing.
+	// Facts are append-only: the new catalog supersedes the old and the old one
+	// stays in the stream.
+	//
+	// Registration: the ranking facts (`cost.json` prices, capability mappings)
+	// ride `provider.Registered`, which is derived from the same manifest. If
+	// the manifest's digest moved, re-register so those facts and the stored
+	// catalog never disagree. Approval is a separate fact and is not reset.
+	const stored = storedCatalogs(events).get(provider.id);
+	const catalogStatus: "none" | "unchanged" | "added" | "updated" =
+		billing === undefined
+			? "none"
+			: stored === undefined
+				? "added"
+				: stored.catalogHash === billing.catalog.catalogHash
+					? "unchanged"
+					: "updated";
+	const catalogFacts =
+		billing !== undefined &&
+		(catalogStatus === "added" || catalogStatus === "updated")
+			? [
+					catalogRegisteredFact(
+						provider.id,
+						billing.catalog,
+						(input.now ?? (() => new Date().toISOString()))(),
+					),
+				]
+			: [];
+	const registered = registerProviderFact(provider);
+	const storedRow = registryCatalogProjection
+		.query(registryCatalogProjection.fold(events))
+		.find((row) => row.providerId === provider.id);
+	// SAFETY: registerProviderFact builds this body with a manifestIndexDigest.
+	const newDigest = (registered.data as { manifestIndexDigest: string })
+		.manifestIndexDigest;
+	const registrationChanged =
+		installed && storedRow?.manifestIndexDigest !== newDigest;
+	const refreshFacts = [
+		...(registrationChanged ? [registered] : []),
+		...catalogFacts,
+	];
 	const pricingCatalog = {
 		persisted: billing !== undefined,
 		appended: catalogFacts.length > 0,
+		status: catalogStatus,
+		previousHash: stored?.catalogHash,
 	};
+	const registration = { refreshed: registrationChanged };
 	const lastSeq = events.at(-1)?.seq ?? 0;
 	const append = {
 		expectedSeq: lastSeq,
@@ -165,23 +201,40 @@ export async function runRegistryAdd(
 	};
 
 	if (installed && approved) {
-		if (catalogFacts.length > 0) {
-			await runtime.store.append(REGISTRY_STREAM, catalogFacts, append);
-			emitProgress(`stored pricing catalog for ${provider.id}`);
+		if (refreshFacts.length === 0) {
+			return {
+				ok: true,
+				status: "already_installed",
+				code: "HOBO_OK",
+				message: `hobo registry add: provider "${provider.id}" is already registered and approved, and ${file} matches what is stored.`,
+				data: { ...data, approved: true, pricingCatalog, registration },
+			};
 		}
+		await runtime.store.append(REGISTRY_STREAM, refreshFacts, append);
+		await runtime.registry.refresh?.();
+		const what = [
+			...(catalogStatus === "updated"
+				? [
+						`pricing catalog ${stored?.catalogHash} -> ${billing?.catalog.catalogHash}`,
+					]
+				: []),
+			...(catalogStatus === "added" ? ["pricing catalog stored"] : []),
+			...(registrationChanged ? ["registration refreshed"] : []),
+		];
+		emitProgress(`updated ${provider.id}: ${what.join("; ")}`);
 		return {
 			ok: true,
-			status: "already_installed",
+			status: "updated",
 			code: "HOBO_OK",
-			message: `hobo registry add: provider "${provider.id}" is already registered and approved.`,
-			data: { ...data, approved: true, pricingCatalog },
+			message: `hobo registry add: updated provider "${provider.id}" from ${file} (${what.join("; ")}). It stays approved; the Planner ranks on the new facts from now on.`,
+			data: { ...data, approved: true, pricingCatalog, registration },
 		};
 	}
 
 	if (installed) {
 		await runtime.store.append(
 			REGISTRY_STREAM,
-			[approveProviderFact(provider.id, REGISTRY_ACTOR.id), ...catalogFacts],
+			[approveProviderFact(provider.id, REGISTRY_ACTOR.id), ...refreshFacts],
 			append,
 		);
 		await runtime.registry.refresh?.();
@@ -191,7 +244,7 @@ export async function runRegistryAdd(
 			status: "approved",
 			code: "HOBO_OK",
 			message: `hobo registry add: approved provider "${provider.id}" — it is now matchable. It was registered from a manifest, which declares capabilities but cannot provision them.`,
-			data: { ...data, approved: true, pricingCatalog },
+			data: { ...data, approved: true, pricingCatalog, registration },
 		};
 	}
 
@@ -199,7 +252,7 @@ export async function runRegistryAdd(
 	// at all, so a held provider never exists without the prices it was ranked on.
 	await runtime.store.append(
 		REGISTRY_STREAM,
-		[registerProviderFact(provider), ...catalogFacts],
+		[registered, ...catalogFacts],
 		append,
 	);
 	await runtime.registry.refresh?.();
@@ -214,6 +267,6 @@ export async function runRegistryAdd(
 		status: "installed",
 		code: "HOBO_OK",
 		message: `hobo registry add: registered provider "${provider.id}" (${ports.join(", ")}) — held; run \`hobo registry add ${file}\` again to approve it for matching.`,
-		data: { ...data, approved: false, pricingCatalog },
+		data: { ...data, approved: false, pricingCatalog, registration },
 	};
 }

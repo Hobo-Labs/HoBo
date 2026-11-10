@@ -1,6 +1,6 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { collectStream } from "@hobo/cloud";
 import { PRICING_EVENT_CONTRACTS, validateEventBody } from "@hobo/events";
@@ -172,9 +172,10 @@ describe("hobo registry add: pricing catalog persistence", () => {
 	it("appends the catalog beside the registration, in one append", async () => {
 		const { run, runtime } = cli();
 		const first = await run("registry", "add", MANIFEST);
-		expect(first.data.pricingCatalog).toEqual({
+		expect(first.data.pricingCatalog).toMatchObject({
 			persisted: true,
 			appended: true,
+			status: "added",
 		});
 
 		const events = await stream(runtime);
@@ -250,11 +251,13 @@ describe("hobo registry add: pricing catalog persistence", () => {
 		expect(storedCatalogs(await stream(legacy.runtime)).size).toBe(0);
 
 		const result = await legacy.run("registry", "add", MANIFEST);
-		expect(result.status).toBe("already_installed");
-		expect(result.data.pricingCatalog).toEqual({
-			persisted: true,
+		expect(result.status).toBe("updated");
+		expect(result.data.pricingCatalog).toMatchObject({
 			appended: true,
+			status: "added",
 		});
+		// Same registration, so only the catalog was missing.
+		expect(result.data.registration).toEqual({ refreshed: false });
 		expect(storedCatalogs(await stream(legacy.runtime)).has("acme-cloud")).toBe(
 			true,
 		);
@@ -267,9 +270,10 @@ describe("hobo registry add: pricing catalog persistence", () => {
 			"schema: hobo.provider-manifest/v1\nprovider: { id: free-host, displayName: Free Host }\ncapabilities:\n  regions: [r]\n  mappings:\n    - { id: kv, port: kv, providerService: free.kv }\n",
 		);
 		const result = await run("registry", "add", file);
-		expect(result.data.pricingCatalog).toEqual({
+		expect(result.data.pricingCatalog).toMatchObject({
 			persisted: false,
 			appended: false,
+			status: "none",
 		});
 		expect((await stream(runtime)).map((event) => event.type)).toEqual([
 			"provider.Registered",
@@ -365,5 +369,183 @@ describe("pricing catalog fact", () => {
 			ok: false,
 			reason: "no pricing catalog stored for acme-cloud",
 		});
+	});
+});
+
+describe("hobo registry add: refreshing when the manifest's prices change", () => {
+	const MANIFEST_TEXT = readFileSync(MANIFEST, "utf8");
+	const OLD_RATE = "package: { per: 3600, amount: 1.80 }";
+	const NEW_RATE = "package: { per: 3600, amount: 2.16 }";
+
+	// Copy the example (and the spec it references) beside an edited manifest.
+	function edited(replace: (text: string) => string): string {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-registry-add-"));
+		const file = join(dir, "acme.provider.yaml");
+		writeFileSync(file, replace(MANIFEST_TEXT));
+		writeFileSync(
+			join(dir, "petstore.openapi.yaml"),
+			readFileSync(join(dirname(MANIFEST), "petstore.openapi.yaml")),
+		);
+		return file;
+	}
+
+	async function catalogFacts(runtime: ReturnType<typeof cli>["runtime"]) {
+		return (await collectStream(runtime.store, REGISTRY_STREAM)).filter(
+			(event) => event.type === "pricing.CatalogRegistered",
+		);
+	}
+
+	function gpuRate(runtime: ReturnType<typeof cli>["runtime"]) {
+		return runtime.registry
+			.definitions()
+			.find(
+				(definition) =>
+					definition.providerId === "acme-cloud" &&
+					definition.port === "compute",
+			)?.cost.marginalPrice;
+	}
+
+	it("stores the new catalog and re-ranks, keeping approval", async () => {
+		const { run, runtime } = cli();
+		const original = await run("registry", "add", MANIFEST);
+		await run("registry", "add", MANIFEST);
+		expect(gpuRate(runtime)).toBe("0.0005");
+
+		const updated = edited((text) => {
+			expect(text).toContain(OLD_RATE);
+			return text.replace(OLD_RATE, NEW_RATE);
+		});
+		const result = await run("registry", "add", updated);
+
+		expect(result.ok).toBe(true);
+		expect(result.status).toBe("updated");
+		expect(result.data.approved).toBe(true);
+		expect(result.data.pricingCatalog).toMatchObject({
+			appended: true,
+			status: "updated",
+			previousHash: original.data.pricingCatalogHash,
+		});
+		expect(result.data.pricingCatalogHash).not.toBe(
+			original.data.pricingCatalogHash,
+		);
+		// The ranking price rides the registration, so it moved with the catalog.
+		expect(result.data.registration).toEqual({ refreshed: true });
+		expect(gpuRate(runtime)).toBe("0.0006");
+		expect(runtime.registry.providers()).toContain("acme-cloud");
+	});
+
+	it("appends rather than rewrites, and reads back the latest", async () => {
+		const { run, runtime } = cli();
+		const original = await run("registry", "add", MANIFEST);
+		await run(
+			"registry",
+			"add",
+			edited((text) => text.replace(OLD_RATE, NEW_RATE)),
+		);
+
+		const facts = await catalogFacts(runtime);
+		expect(facts).toHaveLength(2);
+		// SAFETY: catalog fact bodies are string-field records (see the contract).
+		const hashes = facts.map(
+			(fact) => (fact.data as Record<string, string>).catalogHash,
+		);
+		expect(hashes[0]).toBe(original.data.pricingCatalogHash);
+		expect(hashes[1]).not.toBe(hashes[0]);
+
+		const read = readStoredCatalog(
+			await collectStream(runtime.store, REGISTRY_STREAM),
+			"acme-cloud",
+		);
+		if (!read.ok) throw new Error(read.reason);
+		expect(read.catalog.catalogHash).toBe(hashes[1]);
+		const card = read.catalog.rateCards.find((c) =>
+			c.id.includes("gpu-a1/on-demand"),
+		);
+		const charge = card?.charges[0]?.variant;
+		expect(
+			charge?.case === "usage" &&
+				charge.value.price.case === "perUnit" &&
+				charge.value.price.value.decimal,
+		).toBe("0.0006");
+	});
+
+	it("does nothing when the manifest has not changed", async () => {
+		const { run, runtime } = cli();
+		await run("registry", "add", MANIFEST);
+		await run("registry", "add", MANIFEST);
+		const before = (await collectStream(runtime.store, REGISTRY_STREAM)).length;
+
+		const again = await run("registry", "add", MANIFEST);
+		expect(again.status).toBe("already_installed");
+		expect(again.data.pricingCatalog).toMatchObject({
+			appended: false,
+			status: "unchanged",
+		});
+		expect(again.data.registration).toEqual({ refreshed: false });
+		expect((await collectStream(runtime.store, REGISTRY_STREAM)).length).toBe(
+			before,
+		);
+	});
+
+	it("refreshes a held provider without approving it", async () => {
+		const { run, runtime } = cli();
+		await run("registry", "add", MANIFEST); // registered, held
+		const result = await run(
+			"registry",
+			"add",
+			edited((text) => text.replace(OLD_RATE, NEW_RATE)),
+		);
+		// A second run is the approval step; it also carries the new prices.
+		expect(result.status).toBe("approved");
+		expect(result.data.pricingCatalog).toMatchObject({ status: "updated" });
+		expect(gpuRate(runtime)).toBe("0.0006");
+	});
+
+	it("re-registers without a new catalog when only capabilities change", async () => {
+		const { run, runtime } = cli();
+		await run("registry", "add", MANIFEST);
+		await run("registry", "add", MANIFEST);
+		const result = await run(
+			"registry",
+			"add",
+			edited((text) =>
+				text.replace(
+					"features: [managed, ha]",
+					"features: [managed, ha, vector]",
+				),
+			),
+		);
+		expect(result.status).toBe("updated");
+		expect(result.data.pricingCatalog).toMatchObject({
+			appended: false,
+			status: "unchanged",
+		});
+		expect(result.data.registration).toEqual({ refreshed: true });
+		expect(await catalogFacts(runtime)).toHaveLength(1);
+		expect(
+			runtime.registry
+				.definitions()
+				.find((d) => d.providerId === "acme-cloud" && d.port === "database")
+				?.features,
+		).toEqual(["managed", "ha", "vector"]);
+	});
+
+	it("keeps the stored catalog when a manifest drops its billing section", async () => {
+		const { run, runtime } = cli();
+		await run("registry", "add", MANIFEST);
+		await run("registry", "add", MANIFEST);
+		const noBilling = edited((text) =>
+			text
+				.slice(0, text.indexOf("\nbilling:"))
+				// Mappings may only name products that billing declares.
+				.replace(/^ +products: \[[^\]]*\]\n/gm, ""),
+		);
+		const result = await run("registry", "add", noBilling);
+		expect(result.data.pricingCatalog).toMatchObject({
+			persisted: false,
+			status: "none",
+		});
+		// Append-only: there is no "cleared" fact yet, so the last catalog stays.
+		expect(await catalogFacts(runtime)).toHaveLength(1);
 	});
 });

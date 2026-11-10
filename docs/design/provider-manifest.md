@@ -256,9 +256,21 @@ source (`readStoredCatalog` in `@hobo/hobo`). A reader recomputes the hash and
 **fails closed** on a body that does not decode or does not match — altered
 prices must not rank anything. The wire shape is pinned append-only in
 `@hobo/events` (`PRICING_EVENT_CONTRACTS`, golden corpus). `hobo registry`
-lists the stored hash on each installed provider. Facts are never rewritten:
-a provider registered before catalogs were stored gets its catalog appended on
-the next `hobo registry add`, and an unchanged catalog is not appended twice.
+lists the stored hash on each installed provider.
+
+**Changing prices.** Editing a manifest and running `hobo registry add` again
+refreshes what is stored. The catalog hash is compared with the stored one: if
+it differs, a new `pricing.CatalogRegistered` fact is appended and supersedes
+the old (the old one stays in the stream; facts are never rewritten). The
+ranking facts the Planner reads (`cost.json` prices, capability mappings) ride
+`provider.Registered`, which is derived from the same manifest, so when the
+manifest's digest moved that fact is re-appended **in the same append** — the
+stored catalog and the ranking price cannot disagree. Approval is a separate
+fact and is **kept**: an approved provider stays approved and is ranked on the
+new facts from then on (the result says `updated` and prints the old and new
+catalog hash). A held provider is refreshed too, and the second run still is the
+approval. An unchanged manifest appends nothing, and a provider registered
+before catalogs were stored gets its catalog on the next run.
 
 ## Gates
 
@@ -277,10 +289,10 @@ Implemented: the schema, parser, lowerings, `hobo registry add`, OpenAPI client
 and code-mode MCP server generation, a `check`/`lower`/`generate` CLI, and a
 worked example.
 
-Not implemented: signing of the published index; refreshing a stored catalog
-when a manifest's prices change after registration (the first stored catalog
-is kept; re-registering with new prices is not yet a command); consumption of
-the stored catalog by the quote engine's financial-state views; generation from AsyncAPI,
+Not implemented: signing of the published index; clearing a stored catalog when
+a manifest drops its billing section (append-only, and there is no "cleared"
+fact yet, so the last catalog stays); consumption of the stored catalog by the
+quote engine's financial-state views; generation from AsyncAPI,
 GraphQL, or gRPC; schema-typed request and response bodies; and realization —
 a data-only provider can be found, authenticated against, ranked, quoted, and
 called through its API, but provisioning its resources through HoBo still
