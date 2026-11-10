@@ -208,6 +208,10 @@ Configs resolve the smaller of their own cap and this value; CI does not export 
 
 Jobs waiting for another worker's turn show in `hobo_ci_isolated_worker_jobs_polled` as `mesh-deferred`.
 
+**Capacity and availability.** On the same 10-second beat each worker reads the board and reports what changed: `hobo_ci_mesh_node_joined`, `hobo_ci_mesh_node_lost` (an advertisement aged out), `hobo_ci_mesh_node_unhealthy` and `hobo_ci_mesh_node_recovered`, `hobo_ci_mesh_capacity_exhausted` and `hobo_ci_mesh_capacity_restored` (no healthy worker has a free slot), and `hobo_ci_mesh_capacity` with live, healthy and available workers and total and free slots, on every change and once a minute. Only the live worker with the lowest id reports about the others, so each fact appears once.
+
+**Shared configuration.** The mesh keeps one configuration in `<namespace>-mesh-config`. A worker with `HOBO_CI_CONFIG` or `HOBO_CI_CONFIG_JSON` runs its own and publishes it if the mesh has none; if the two differ it logs `hobo_ci_mesh_config_drift` and keeps its own. A worker with neither reads the mesh's at start (`hobo_ci_mesh` logs `configuration: mesh`), so a new box needs only the NATS address and App credentials. Replacing the stored configuration requires naming its current revision.
+
 **No hosted database needed.** A worker with `HOBO_CI_STORE` unset keeps its lease journal in SQLite on the box and polls GitHub itself, so neither the hosted relay nor its Postgres is in the path from a queued job to a running runner. `HOBO_CI_STORE=postgres` or `HOBO_CI_JOB_ADMISSION=push` puts them back in it; the mesh needs neither.
 
 Legacy path `packages/ci-gh-actions/deploy/worker/Dockerfile` is deprecated; use **`build.sh`** above.

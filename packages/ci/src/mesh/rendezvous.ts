@@ -31,6 +31,8 @@ export type MeshNode = Readonly<{
 	id: string;
 	/** Free runner slots right now. Zero takes the node out of the ordering. */
 	freeSlots: number;
+	/** All runner slots the node has, busy or free; for capacity reporting only. */
+	totalSlots?: number | undefined;
 	/** False while the node is draining or its host is under pressure. */
 	healthy: boolean;
 	/** Runner labels the node starts runners for. */

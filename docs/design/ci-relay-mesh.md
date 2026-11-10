@@ -111,16 +111,55 @@ The settings that would tie a worker to the hosted database are
 `HOBO_CI_STORE=postgres` and `HOBO_CI_JOB_ADMISSION=push`. Neither is a
 default, and a mesh needs neither; the mesh gate applies only to `pull`.
 
-The hosted relay still exists for what a worker cannot do alone: receiving
-webhooks for push admission, the account control API behind `hobo ci`, GitHub
-App onboarding, and the Vercel Sandbox host. It is built on Postgres, and
-unless App credentials are set directly in its environment it reads them from a
-runtime-config broker whose Neon address is fixed in
-`packages/ci-vercel/src/entry.ts`. Removing that dependency means moving its
-state somewhere else (JetStream key-value and object stores are the natural
-home now that the mesh uses NATS) or retiring it. Neither is done here; until
-then it is optional, and it now reports why it is unready instead of failing
-silently.
+## Retiring the hosted relay
+
+**Decision:** the hosted relay on Vercel is retired from the CI path. What it
+held that several nodes must agree on moves to JetStream; what one node needs
+stays on that node.
+
+| State | Was | Now |
+|---|---|---|
+| Who has which job | Leases in hosted Postgres, when admission was `push` | `<namespace>-mesh-claims`, an atomic create per job, aged out |
+| Which nodes exist and what they can take | Not recorded | `<namespace>-mesh-nodes`, one advertisement per node with total and free slots, aged out |
+| Account configuration (offers, connections, policy) | Hosted Postgres, edited through the control API | `<namespace>-mesh-config`, one key with history; replaced only by naming the current revision |
+| Lease journal and budget ledger | Hosted Postgres | Each node's SQLite file (ADR-0135: one partition, one writer) |
+| Queued-job inbox from webhooks | Hosted Postgres | Nothing: each node polls GitHub |
+| GitHub App credentials | Encrypted in hosted Postgres, served by a config broker on Neon | Files on each node (`HOBO_CI_GITHUB_APP_ID`, `…_PRIVATE_KEY_FILE`); never written to NATS |
+| OAuth sessions and App onboarding pages | Hosted Postgres | Retired with the relay; the App is already registered |
+
+**Configuration.** A node with its own file runs that file and is never
+overwritten. The first node to connect publishes its configuration if the mesh
+has none. A node whose file differs from the mesh's logs
+`hobo_ci_mesh_config_drift` and keeps running; an operator decides which side is
+right. A node with no configuration of its own reads the mesh's at start, so
+adding a box takes a NATS address and App credentials. A changed configuration
+takes effect at the next start.
+
+**Not moved, on purpose.** Private keys stay out of NATS. A shared budget across
+nodes is not solved by this: each node meters its own spend, so priced offers
+belong on one node until per-node allowances exist (increment 5).
+
+**What is lost with the relay.** Webhook-driven pickup (nodes poll every 5 s
+instead), the hosted account API behind `hobo ci`, and the Vercel Sandbox host.
+The `@hobo/ci-vercel` package stays in the repository until those are either
+re-homed or deleted; it is no longer deployed.
+
+## Watching capacity and availability
+
+Ranking reads the board at the moment a job is queued. Operating a mesh needs
+the changes, so every node also runs a monitor on its 10-second beat:
+
+| Event | Means |
+|---|---|
+| `hobo_ci_mesh_node_joined` | A node started advertising |
+| `hobo_ci_mesh_node_lost` | A node's advertisement aged out: it stopped, crashed or was cut off |
+| `hobo_ci_mesh_node_unhealthy`, `…_recovered` | A node is draining or under pressure, or is back |
+| `hobo_ci_mesh_capacity_exhausted`, `…_restored` | No healthy node has a free slot: a queued job waits for a slot, not a turn |
+| `hobo_ci_mesh_capacity` | Live, healthy and available nodes, total and free slots; on every change and once a minute |
+
+Only the live node with the lowest id reports changes about others, so one fact
+is reported once; if that node dies, the next takes over on its following
+reading and reports the loss.
 
 ## Membership without a centre
 
@@ -170,7 +209,7 @@ interface.
 | 1 | The claiming core: `rankNodes` and `claimTurn` in `@hobo/ci/mesh`, pure functions with property tests | Done |
 | 2 | Board and claim ports, a coordinator that falls back to ranking when they fail, an in-memory adapter, and a NATS key-value adapter (`@hobo/ci-gh-actions/mesh-nats`) | Done |
 | 3 | The worker asks the mesh before it takes a queued job, advertises its free slots, and says so when it drains; settings in the runbook | Done; needs a second box to run for real |
-| 4 | The hosted relay only forwards wake-up hints; a node treats a missing hint as a slower poll | Not started |
+| 4 | The hosted relay retired from the CI path; shared configuration in JetStream; a monitor for node capacity and availability | Done; wake-up hints on a NATS subject not started |
 | 5 | Per-node budget allowances so priced offers survive a partition | Not started |
 | 6 | The advertisement as a protobuf and CUE record; it is JSON checked at the NATS boundary today | Not started |
 

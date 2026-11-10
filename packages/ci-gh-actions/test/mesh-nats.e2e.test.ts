@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	createMeshCoordinator,
+	createMeshMonitor,
 	type MeshEvent,
 	type MeshJob,
 	type MeshNode,
@@ -141,6 +142,52 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 			a.board.advertise({ ...node("bad id with spaces"), id: "bad id" }),
 		).rejects.toThrow();
 	});
+
+	it("keeps a shared configuration that only its current revision can replace", async () => {
+		const a = await connect("config");
+		const b = await connect("config");
+		expect(await a.config.read()).toBeUndefined();
+		const first = await a.config.publish('{"accounts":[]}');
+		expect(first).not.toBe("conflict");
+		const revision = first === "conflict" ? 0 : first.revision;
+		// Another node sees it, and cannot start over with something else.
+		expect(await b.config.read()).toEqual({
+			value: '{"accounts":[]}',
+			revision,
+		});
+		expect(await b.config.publish('{"accounts":[1]}')).toBe("conflict");
+		// Publishing what is already there is agreement, not a conflict.
+		expect(await b.config.publish('{"accounts":[]}')).toEqual({ revision });
+		const second = await b.config.publish('{"accounts":[1]}', revision);
+		expect(second).not.toBe("conflict");
+		// "a" still holds the old revision: its write is refused.
+		expect(await a.config.publish('{"accounts":[2]}', revision)).toBe(
+			"conflict",
+		);
+		expect((await a.config.read())?.value).toBe('{"accounts":[1]}');
+	});
+
+	it("reports a node joining and then being lost when it stops advertising", async () => {
+		const a = await connect("monitor", { advertTtlMs: 1_500 });
+		const events: string[] = [];
+		const monitor = createMeshMonitor({
+			selfId: "box-a",
+			board: a.board,
+			log: (event, fields) => events.push(`${event}:${fields.nodeId ?? ""}`),
+		});
+		const live = () => ({ validUntilMs: Date.now() + 60_000 });
+		await a.board.advertise({ ...node("box-a"), ...live(), totalSlots: 4 });
+		expect(await monitor.observe()).toMatchObject({ nodes: 1, totalSlots: 4 });
+		await a.board.advertise({ ...node("box-b"), ...live() });
+		await monitor.observe();
+		expect(events).toContain("hobo_ci_mesh_node_joined:box-b");
+		// "box-a" keeps advertising; "box-b" does not, and ages out of the bucket.
+		await until(async () => {
+			await a.board.advertise({ ...node("box-a"), ...live() });
+			await monitor.observe();
+			return events.includes("hobo_ci_mesh_node_lost:box-b");
+		}, 10_000);
+	}, 20_000);
 
 	it("forgets a node that stops advertising", async () => {
 		const a = await connect("expiry", { advertTtlMs: 1_000 });

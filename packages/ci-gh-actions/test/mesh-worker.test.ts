@@ -82,6 +82,7 @@ describe("createWorkerMesh", () => {
 			board: ports.board,
 			claims: ports.claims,
 			freeSlots: () => state.free,
+			totalSlots: 4,
 			healthy: () => state.healthy,
 			servesTrunk,
 			now: () => NOW,
@@ -107,6 +108,7 @@ describe("createWorkerMesh", () => {
 			{
 				id: "box-a",
 				freeSlots: 3,
+				totalSlots: 4,
 				healthy: true,
 				labels: ["hobo", "hobo-trunk"],
 				validUntilMs: NOW + 45_000,

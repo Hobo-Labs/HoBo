@@ -30,6 +30,41 @@ export interface MeshClaims {
 /** The two things a mesh shares, however they are stored. */
 export type MeshPorts = Readonly<{ board: MeshBoard; claims: MeshClaims }>;
 
+/**
+ * The configuration every node of a mesh should run with, kept where all of
+ * them can read it. A revision makes updates compare-and-set, so two
+ * operators cannot silently overwrite each other.
+ */
+export interface MeshConfigStore {
+	read(): Promise<{ value: string; revision: number } | undefined>;
+	/**
+	 * Stores `value`. With no `expectedRevision` it only succeeds when nothing
+	 * is stored yet; with one, only when that is still the current revision.
+	 */
+	publish(
+		value: string,
+		expectedRevision?: number,
+	): Promise<{ revision: number } | "conflict">;
+}
+
+/** A configuration store held in this process, for tests and the demo. */
+export function createMemoryMeshConfig(): MeshConfigStore {
+	let current: { value: string; revision: number } | undefined;
+	return {
+		async read() {
+			return current;
+		},
+		async publish(value, expectedRevision) {
+			if ((current?.revision ?? undefined) !== expectedRevision)
+				return current?.value === value
+					? { revision: current.revision }
+					: "conflict";
+			current = { value, revision: (current?.revision ?? 0) + 1 };
+			return { revision: current.revision };
+		},
+	};
+}
+
 export type MeshDecision = Readonly<
 	| {
 			start: true;

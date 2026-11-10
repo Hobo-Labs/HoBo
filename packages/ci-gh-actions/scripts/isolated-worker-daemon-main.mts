@@ -147,10 +147,27 @@ const appId = required("HOBO_CI_GITHUB_APP_ID");
 const privateKey = process.env.HOBO_CI_GITHUB_APP_KEY_FILE
 	? readFileSync(process.env.HOBO_CI_GITHUB_APP_KEY_FILE, "utf8")
 	: secretOrFile("HOBO_CI_GITHUB_APP_PRIVATE_KEY");
+// A worker's configuration is its own file or variable. One that has
+// neither and is told where a mesh is asks the mesh, so adding a box takes a
+// NATS address and App credentials and nothing else.
+const meshBootSettings = meshSettingsFromEnv(process.env, hostname());
+const localConfiguration = process.env.HOBO_CI_CONFIG
+	? readFileSync(process.env.HOBO_CI_CONFIG, "utf8")
+	: process.env.HOBO_CI_CONFIG_JSON;
+const sharedConfiguration =
+	localConfiguration === undefined && meshBootSettings
+		? await (await import("@hobo/ci-gh-actions/mesh-nats")).readNatsMeshConfig({
+				servers: meshBootSettings.servers,
+				namespace: meshBootSettings.namespace,
+				replicas: meshBootSettings.replicas,
+				name: `hobo-ci-worker ${meshBootSettings.nodeId} (configuration)`,
+				...natsCredentials(),
+			})
+		: undefined;
 const configuration = parseConfiguration(
-	process.env.HOBO_CI_CONFIG
-		? readFileSync(process.env.HOBO_CI_CONFIG, "utf8")
-		: required("HOBO_CI_CONFIG_JSON"),
+	localConfiguration ??
+		sharedConfiguration?.value ??
+		required("HOBO_CI_CONFIG_JSON"),
 );
 const workerAccountId = required("HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID");
 // No ingress in pull mode, so the origin is informational (runner container env).
@@ -590,6 +607,7 @@ try {
 					board: natsMesh.board,
 					claims: natsMesh.claims,
 					freeSlots: () => slots - liveWorkerLeaseIds.size,
+					totalSlots: slots,
 					healthy: () => !meshDraining,
 					servesTrunk: trunkSlots > 0,
 					log,
@@ -597,18 +615,58 @@ try {
 			: undefined;
 	log("hobo_ci_mesh", {
 		enabled: mesh !== undefined,
+		configuration:
+			localConfiguration !== undefined
+				? "local"
+				: sharedConfiguration
+					? "mesh"
+					: "none",
 		nodeId: meshSettings?.nodeId ?? "",
 		namespace: meshSettings?.namespace ?? "",
 		servers: meshSettings?.servers.length ?? 0,
 		stepMs: meshSettings?.stepMs ?? 0,
 	});
+	// Every 10 s: say what this worker can take, then read what the mesh can.
+	const meshBeat = async () => {
+		await mesh?.advertise();
+		await mesh?.observe();
+	};
 	const meshAdvertTimer = mesh
-		? setInterval(() => void mesh.advertise(), 10_000)
+		? setInterval(() => void meshBeat(), 10_000)
 		: undefined;
 	meshAdvertTimer?.unref();
+	// Keep the mesh's copy of the configuration in step with this worker's.
+	// A worker with its own file never has it overwritten: a difference is
+	// reported, and an operator decides which side is right.
+	const syncMeshConfiguration = async () => {
+		if (!natsMesh) return;
+		const mine = toJsonString(ConfigurationSchema, configuration);
+		const shared = await natsMesh.config.read();
+		if (!shared) {
+			const published = await natsMesh.config.publish(mine);
+			log("hobo_ci_mesh_config_published", {
+				revision: published === "conflict" ? 0 : published.revision,
+				conflict: published === "conflict",
+			});
+		} else if (
+			toJsonString(ConfigurationSchema, parseConfiguration(shared.value)) !==
+			mine
+		)
+			log("hobo_ci_mesh_config_drift", {
+				revision: shared.revision,
+				source: localConfiguration === undefined ? "mesh" : "local",
+			});
+	};
 	// The first connection is made in the background; advertise as soon as it is up.
 	void natsMesh?.ready.then(
-		() => mesh?.advertise(),
+		async () => {
+			await meshBeat();
+			await syncMeshConfiguration().catch((error) =>
+				log("hobo_ci_mesh_config_sync_failed", {
+					message: error instanceof Error ? error.message : "unknown",
+				}),
+			);
+		},
 		(error) =>
 			log("hobo_ci_mesh_nats", {
 				status: "failed",

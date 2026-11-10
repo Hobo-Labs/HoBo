@@ -17,16 +17,23 @@
  * The client packages are imported on first use, so a worker with no mesh
  * configured never loads them.
  */
-import type { MeshBoard, MeshClaims, MeshNode } from "@hobo/ci/mesh";
+import type {
+	MeshBoard,
+	MeshClaims,
+	MeshConfigStore,
+	MeshNode,
+} from "@hobo/ci/mesh";
 import { z } from "zod";
 
 /** Node ids are bucket keys and hash inputs: a short, plain token. */
 export const MESH_NODE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const NAMESPACE = /^[A-Za-z0-9_-]{1,32}$/;
+const CONFIG_KEY = "configuration";
 
 const Advert = z.object({
 	id: z.string().regex(MESH_NODE_ID),
 	freeSlots: z.number().int().min(0).max(4096),
+	totalSlots: z.number().int().min(0).max(4096).optional(),
 	healthy: z.boolean(),
 	labels: z.array(z.string().min(1).max(80)).max(32),
 	validUntilMs: z.number().int().nonnegative(),
@@ -56,7 +63,9 @@ export type NatsMeshOptions = Readonly<{
 export type NatsMesh = Readonly<{
 	board: MeshBoard;
 	claims: MeshClaims;
-	/** Resolves once the first connection and both buckets are ready. */
+	/** The configuration the mesh's nodes share; kept until replaced, with history. */
+	config: MeshConfigStore;
+	/** Resolves once the first connection and the buckets are ready. */
 	ready: Promise<void>;
 	close(): Promise<void>;
 }>;
@@ -64,9 +73,12 @@ export type NatsMesh = Readonly<{
 type Bucket = Readonly<{
 	create(key: string, value: string): Promise<number>;
 	put(key: string, value: string): Promise<number>;
+	update(key: string, value: string, revision: number): Promise<number>;
 	get(
 		key: string,
-	): Promise<{ operation: string; string(): string } | null | undefined>;
+	): Promise<
+		{ operation: string; revision: number; string(): string } | null | undefined
+	>;
 	keys(): Promise<AsyncIterable<string>>;
 }>;
 
@@ -76,7 +88,7 @@ export function createNatsMesh(options: NatsMeshOptions): NatsMesh {
 	if (options.servers.length === 0) throw new Error("no NATS servers");
 	const replicas = options.replicas ?? 1;
 	const timeout = options.requestTimeoutMs ?? 2_000;
-	let buckets: { nodes: Bucket; claims: Bucket } | undefined;
+	let buckets: { nodes: Bucket; claims: Bucket; config: Bucket } | undefined;
 	let connected = false;
 	let closing = false;
 	let disconnect: (() => Promise<void>) | undefined;
@@ -117,9 +129,17 @@ export function createNatsMesh(options: NatsMeshOptions): NatsMesh {
 			options.onStatus?.("closed");
 		})();
 		const kvm = new Kvm(jetstream(connection, { timeout }));
-		const open = async (name: string, ttl: number): Promise<Bucket> => {
+		const open = async (
+			name: string,
+			ttl: number,
+			history = 1,
+		): Promise<Bucket> => {
 			try {
-				return await kvm.create(name, { ttl, replicas, history: 1 });
+				// A TTL of zero keeps entries until they are replaced.
+				return await kvm.create(
+					name,
+					ttl > 0 ? { ttl, replicas, history } : { replicas, history },
+				);
 			} catch {
 				// Another node created it with other settings; use theirs.
 				return await kvm.open(name);
@@ -134,6 +154,8 @@ export function createNatsMesh(options: NatsMeshOptions): NatsMesh {
 				`${namespace}-mesh-claims`,
 				options.claimTtlMs ?? 120_000,
 			),
+			// No TTL, and the last few revisions kept so a bad change can be read back.
+			config: await open(`${namespace}-mesh-config`, 0, 10),
 		};
 		connected = true;
 		options.onStatus?.("connected");
@@ -141,7 +163,7 @@ export function createNatsMesh(options: NatsMeshOptions): NatsMesh {
 	// A failed first connect surfaces through `ready`; calls just see "not connected".
 	ready.catch(() => undefined);
 
-	function use(): { nodes: Bucket; claims: Bucket } {
+	function use(): { nodes: Bucket; claims: Bucket; config: Bucket } {
 		if (!buckets || !connected) throw new Error("NATS not connected");
 		return buckets;
 	}
@@ -192,10 +214,63 @@ export function createNatsMesh(options: NatsMeshOptions): NatsMesh {
 				}
 			},
 		},
+		config: {
+			async read() {
+				const entry = await use().config.get(CONFIG_KEY);
+				return entry && entry.operation === "PUT"
+					? { value: entry.string(), revision: entry.revision }
+					: undefined;
+			},
+			async publish(value, expectedRevision) {
+				const { config } = use();
+				try {
+					return {
+						revision:
+							expectedRevision === undefined
+								? await config.create(CONFIG_KEY, value)
+								: await config.update(CONFIG_KEY, value, expectedRevision),
+					};
+				} catch (error) {
+					// Someone else wrote first. If they wrote the same thing there is
+					// nothing to reconcile; otherwise the caller must read and decide.
+					const entry = await config.get(CONFIG_KEY);
+					if (!entry || entry.operation !== "PUT") throw error;
+					return entry.string() === value
+						? { revision: entry.revision }
+						: "conflict";
+				}
+			},
+		},
 		async close() {
 			closing = true;
 			connected = false;
 			await disconnect?.();
 		},
 	};
+}
+
+/**
+ * The mesh's shared configuration, read over a connection made just for
+ * this: a node with no configuration of its own asks before it has started
+ * anything else. `undefined` when none is stored or NATS does not answer in
+ * `timeoutMs`.
+ */
+export async function readNatsMeshConfig(
+	options: NatsMeshOptions,
+	timeoutMs = 5000,
+): Promise<{ value: string; revision: number } | undefined> {
+	const mesh = createNatsMesh(options);
+	try {
+		const ready = await Promise.race([
+			mesh.ready.then(() => true),
+			new Promise<boolean>((resolve) =>
+				setTimeout(() => resolve(false), timeoutMs).unref(),
+			),
+		]);
+		return ready ? await mesh.config.read() : undefined;
+	} catch {
+		return undefined;
+	} finally {
+		await mesh.close().catch(() => undefined);
+	}
 }

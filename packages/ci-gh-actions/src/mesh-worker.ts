@@ -9,9 +9,12 @@
  */
 import {
 	createMeshCoordinator,
+	createMeshMonitor,
 	type MeshBoard,
+	type MeshCapacity,
 	type MeshClaims,
 	type MeshEvent,
+	type MeshMonitorEvent,
 } from "@hobo/ci/mesh";
 import { RUNNER_LABEL, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
@@ -98,7 +101,10 @@ export function meshSettingsFromEnv(
 	};
 }
 
-export type WorkerMeshEvent = MeshEvent | "hobo_ci_mesh_job_taken";
+export type WorkerMeshEvent =
+	| MeshEvent
+	| MeshMonitorEvent
+	| "hobo_ci_mesh_job_taken";
 
 export function createWorkerMesh(options: {
 	settings: MeshSettings;
@@ -106,6 +112,8 @@ export function createWorkerMesh(options: {
 	claims: MeshClaims;
 	/** Runner slots not in use right now. */
 	freeSlots: () => number;
+	/** All runner slots this worker has, for the mesh's capacity figures. */
+	totalSlots: number;
 	/** False while draining or under host pressure: others stop deferring to this node. */
 	healthy: () => boolean;
 	/** True when this worker also starts trunk-label runners. */
@@ -127,6 +135,7 @@ export function createWorkerMesh(options: {
 		self: () => ({
 			id: options.settings.nodeId,
 			freeSlots: Math.max(0, Math.floor(options.freeSlots())),
+			totalSlots: options.totalSlots,
 			healthy: options.healthy(),
 			labels,
 			validUntilMs: now() + advertTtlMs,
@@ -137,11 +146,22 @@ export function createWorkerMesh(options: {
 		now,
 		log: (event, fields) => options.log?.(event, fields),
 	});
+	const monitor = createMeshMonitor({
+		selfId: options.settings.nodeId,
+		board: options.board,
+		now,
+		log: (event, fields) => options.log?.(event, fields),
+	});
 	// One line per job taken, not one per poll that sees it.
 	const reported = new Set<number>();
 
 	return {
 		advertise: () => coordinator.advertise(),
+		/**
+		 * Reads the board and reports what changed: nodes joining, going
+		 * unhealthy or disappearing, and the mesh running out of free slots.
+		 */
+		observe: (): Promise<MeshCapacity | undefined> => monitor.observe(),
 		/** The poller's gate: whether this worker takes a queued job now. */
 		async claim(job: {
 			jobId: number;
