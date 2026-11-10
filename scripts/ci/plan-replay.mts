@@ -13,7 +13,11 @@
  * prints both. `--check` replays a second import graph, read from the syntax
  * tree by `scripts/lib/test-import-specifiers.mts` and independent of the
  * planner's own edges: every test file whose static or dynamic imports, or its
- * package's vitest config, reach a changed file must be in the plan. A test
+ * package's vitest config, reach a changed file must be in the plan. An import
+ * of a workspace package by name also reaches that package's `package.json`
+ * and `tsconfig.json`. The graph holds nothing else: a path literal, a
+ * directory or data file a test reads, a spawned program and a tsconfig a
+ * script names are edges of the planner that `--check` does not check. A test
  * missing from either plan is printed; the exit status is 1 when the current
  * planner misses one, whatever the planner at `--before` missed.
  *
@@ -148,6 +152,11 @@ export function importGraph(repo: Repo) {
 				: (parts[0] ?? "");
 			const ws = byName.get(name);
 			if (!ws) continue;
+			// What the importer gets is also made by the package's manifest and
+			// the tsconfig it builds with.
+			for (const input of ["package.json", "tsconfig.json"])
+				if (repo.files.has(`${ws.dir}/${input}`))
+					link(file, `${ws.dir}/${input}`);
 			const entry = exportTarget(
 				manifestOf(ws.dir),
 				`.${specifier.slice(name.length)}`,

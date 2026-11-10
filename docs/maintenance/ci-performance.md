@@ -124,20 +124,40 @@ one, not only when a path outside every package changed: `packages/code` imports
 `../../cli/src/cloud/loader.js` without depending on `@hobo/cli`, and 3317dcc2 changed `packages/cli`
 without running `packages/code/test/happy-path-run.test.ts`. Only a concrete reach counts there.
 
-A bare `"./"` or `"../"` string literal is no longer an edge to its directory.
+A bare `"./"` or `"../"` string literal is an edge to its directory only where it can be a path.
 `entry.startsWith("./")` in `packages/core/src/plugin-manifest.ts` read as reaching every file of
 `@hobo/core`, so any core change ran 53 whole suites and 53 subsets; a change to
 `packages/core/src/_generated/actor_host_port_pb.ts` now plans 13 whole suites and 14 subsets and
-skips 106 dependents (10 and 13 of them without the wider bystander check above). The base of a module-relative URL (`new URL("../", import.meta.url)`, a package
-root its module reads computed paths under) stays an edge. An unknown or unmapped change still runs
-everything.
+skips 106 dependents (10 and 13 of them without the wider bystander check above). The edge is dropped
+only where the literal is provably a string test: a direct argument of `startsWith`, `endsWith`,
+`includes`, `replace` or `replaceAll`, an operand of `===`, `!==`, `==` or `!=`, or a `case` label.
+Everywhere else it stays (`new URL("../", import.meta.url)` with or without a comment or a cast,
+`join(__dirname, "./")`, `resolve(import.meta.dirname, "../")`, `cwd: "../"`, `"../" + name`), and it
+is the directory itself, not the `index.ts` inside it. The rule reads text, not a syntax tree, since
+the planner runs on Node builtins before `pnpm install`; what it cannot tell (a call or a comma in an
+earlier argument, such as `.replace(/^(?!\.)/, "./")`) keeps the edge. An unknown or unmapped change
+still runs everything.
+
+A package's `package.json`, its `tsconfig.json` and every tsconfig one of its scripts names
+(`tsc -p tsconfig.build.json`) are inputs to whatever imports the package: `exports`, `type` and the
+compiler options decide what an importer gets. A closure that enters a package, by import or by naming
+one of its files, reaches them. Before this, nothing led from an `@hobo/x` import to
+`packages/x/package.json`; the bare `./` edge hid that for core and cli, and without it a
+`packages/core/package.json` change planned 13 whole suites and 14 subsets. It now plans 70 and 56, a
+`packages/cli/package.json` change 6 and 3, and a `packages/policy/package.json` change 25 and 13
+(5 and 8 before, when its importers were never selected).
 
 `scripts/ci/plan-replay.mts` replays the planner over the last N main commits (`--count=100`), each
 with its parent as the base, and prints whole/subset counts. `--before=REF` compares against the
 planner at REF. `--check` reads a second import graph from the syntax tree
 (`scripts/lib/test-import-specifiers.mts`) and fails if a test whose imports or vitest config reach a
-changed file is not in the plan. Run against the old planner, it reports the 41 `packages/cli` tests a
-root config change missed. `scripts/test/dependent-tests.test.ts` pins both fixes on the real tree.
+changed file is not in the current planner's plan; the misses of the planner at `--before` are printed
+and do not fail the run. Run against the old planner, it reports the 41 `packages/cli` tests a root
+config change missed. The check graph covers import edges only, plus one manifest edge: an import of a
+workspace package by name reaches that package's `package.json` and `tsconfig.json`. Path literals,
+directories and data files a test reads, spawned programs and a tsconfig only a script names are edges
+of the planner that `--check` does not check; `scripts/test/dependent-tests.test.ts` pins those on a
+fixture and on the real tree, and `scripts/test/plan-replay.test.ts` pins the check graph.
 
 ## Frozen proofs and live-repo tests
 
