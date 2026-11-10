@@ -131,13 +131,16 @@ export function mountTrail(band: HTMLElement): Trail {
 	let lastMove = 0;
 	let resting = true;
 	let here = "";
+	/** False while another design's world is showing and the band is hidden. */
+	let live = false;
 	const listeners: Array<(dx: number) => void> = [];
 
 	// ---------------------------------------------------------------- layout
 
 	const measure = () => {
 		const box = scene.getBoundingClientRect();
-		if (box.width === 0) return false; // another world is showing; band is hidden
+		live = box.width !== 0;
+		if (!live) return false; // another world is showing; band is hidden
 		unit = box.height / 300;
 		width = box.width;
 		const boBox = bo.getBoundingClientRect();
@@ -217,21 +220,25 @@ export function mountTrail(band: HTMLElement): Trail {
 		}
 	};
 
-	/** The band with nothing moving: every layer home, this stop's props in place. */
-	const drawStill = () => {
+	/**
+	 * The band with nothing moving: every layer home, this stop's props in
+	 * place. Composed for the section being read, not for the scroll position:
+	 * with motion off the scenery changes when the section does and never
+	 * slides along under the page.
+	 */
+	const drawStill = (remeasure = true) => {
 		cancelAnimationFrame(raf);
 		raf = 0;
-		if (!measure()) return;
+		if (remeasure ? !measure() : !live) return;
 		for (const layer of layers) layer.el.style.transform = "";
-		// Composed for where the page is, without anything having travelled:
-		// the trail is simply in the right place whenever it is looked at.
-		world = window.scrollY * GROUND_PER_SCROLL;
+		world = (stopFor(window.scrollY)?.scroll ?? 0) * GROUND_PER_SCROLL;
 		placeMarks(world);
 		announce(window.scrollY);
 		lean = 0;
 		bo.style.setProperty("--lean", "0deg");
 		setResting(true);
-		bo.classList.remove("is-settle");
+		// A hop or blink caught mid-way has no animation left to end it.
+		bo.classList.remove("is-settle", "is-hop", "is-blink");
 	};
 
 	const tick = (now: number) => {
@@ -272,12 +279,14 @@ export function mountTrail(band: HTMLElement): Trail {
 			setResting(true);
 		}
 
-		if (Math.abs(target - world) > 0.01 || lean !== 0 || !resting) schedule();
+		if (Math.abs(target - world) > 0.01 || lean !== 0 || !resting) schedule(true);
 	};
 
-	const schedule = () => {
-		if (raf || isStill()) return;
-		last = performance.now() - 16;
+	/** `running` is the loop asking for its next frame: its clock is already set. */
+	const schedule = (running = false) => {
+		if (raf || isStill() || !live) return;
+		// A fresh start has no previous frame; pretend one just happened.
+		if (!running) last = performance.now() - 16;
 		raf = requestAnimationFrame(tick);
 	};
 
@@ -292,7 +301,8 @@ export function mountTrail(band: HTMLElement): Trail {
 		window.setTimeout(fidget, 2400 + Math.random() * 5200);
 	};
 	const play = (name: "is-hop" | "is-blink") => {
-		if (!resting || bo.classList.contains("is-hop") || bo.classList.contains("is-blink")) return;
+		if (isStill() || !resting) return;
+		if (bo.classList.contains("is-hop") || bo.classList.contains("is-blink")) return;
 		bo.classList.remove("is-settle");
 		bo.classList.add(name);
 	};
@@ -327,8 +337,11 @@ export function mountTrail(band: HTMLElement): Trail {
 	window.addEventListener(
 		"scroll",
 		() => {
-			if (isStill()) drawStill();
-			else schedule();
+			if (!live) return;
+			if (!isStill()) schedule();
+			// Still: nothing is re-measured per scroll event, and the picture
+			// changes only when the page reaches another stop.
+			else if (stopFor(window.scrollY)?.key !== here) drawStill(false);
 		},
 		{ passive: true },
 	);

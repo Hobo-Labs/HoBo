@@ -549,6 +549,26 @@ const shikiThemes = {
 		z-index: 40;
 	}
 
+	/* A short viewport (a zoomed page, a phone on its side) has no room to
+	   give up: the band lets go and sits at the foot of the page instead. */
+	@media (max-height: 420px) {
+		.trail-dock {
+			position: static;
+		}
+
+		:global(html:has(.trail-dock)) {
+			scroll-padding-bottom: 0;
+		}
+	}
+
+	/* The hero's calls to action have to be above the band on arrival, so on
+	   a laptop-height screen the hero gives back its top margin first. */
+	@media (min-width: 900px) and (min-height: 421px) {
+		.hero {
+			padding-top: clamp(0.75rem, calc((100vh - 760px) / 2), 6rem);
+		}
+	}
+
 	@keyframes postcard-sway {
 		from {
 			transform: rotate(-1.5deg);

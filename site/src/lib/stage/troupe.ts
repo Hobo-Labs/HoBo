@@ -382,6 +382,13 @@ export function mountTroupe(trail: Trail): void {
 	window.addEventListener("keydown", stir);
 	onMotionChange(() => cue?.end());
 	document.addEventListener("visibilitychange", () => cue?.end());
+	// A visitor is placed once, against the box he is behind. Anything that
+	// moves that box or hides its world leaves him standing in mid-air.
+	window.addEventListener("resize", () => cue?.end());
+	new MutationObserver(() => cue?.end()).observe(document.documentElement, {
+		attributes: true,
+		attributeFilter: ["data-design"],
+	});
 
 	const send = async () => {
 		const who = pick(CAST.filter((m) => m !== lastWho || CAST.length === 1));

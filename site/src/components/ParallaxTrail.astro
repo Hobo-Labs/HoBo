@@ -779,11 +779,23 @@ const firstStop = TRAIL_STOPS[0].label;
 
 	/* ---------- sizes ---------- */
 
+	/* The band covers the foot of the viewport for the whole page. Whatever
+	   the keyboard focuses or an anchor jumps to must come to rest above it,
+	   the same promise scroll-padding-top makes about the header. Each value
+	   is the band at that size plus its rule. */
+	:global(html:has(.trail-dock)) {
+		scroll-padding-bottom: calc(168px + var(--rule) + 0.75rem);
+	}
+
 	/* Room to be the picture: on a tall, wide screen the band can afford to
 	   be a scene rather than a strip. */
 	@media (min-width: 1000px) and (min-height: 860px) {
 		.plx {
 			--band-h: 204px;
+		}
+
+		:global(html:has(.trail-dock)) {
+			scroll-padding-bottom: calc(204px + var(--rule) + 0.75rem);
 		}
 	}
 
@@ -794,10 +806,14 @@ const firstStop = TRAIL_STOPS[0].label;
 	}
 
 	/* Small or short: the page needs the room more than the trail does. */
-	@media (max-width: 560px), (max-height: 620px) {
+	@media (max-width: 560px), (max-height: 780px) {
 		.plx {
 			--band-h: 132px;
 			--bo-x: 12%;
+		}
+
+		:global(html:has(.trail-dock)) {
+			scroll-padding-bottom: calc(132px + var(--rule) + 0.75rem);
 		}
 
 		.plx-pause {
@@ -807,6 +823,18 @@ const firstStop = TRAIL_STOPS[0].label;
 
 		.plx-where {
 			top: 0.4rem;
+		}
+	}
+
+	/* A laptop with its browser chrome: shorter again, so the hero's calls to
+	   action are not under the band on arrival. */
+	@media (max-height: 740px) {
+		.plx {
+			--band-h: 108px;
+		}
+
+		:global(html:has(.trail-dock)) {
+			scroll-padding-bottom: calc(108px + var(--rule) + 0.75rem);
 		}
 	}
 

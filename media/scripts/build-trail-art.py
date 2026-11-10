@@ -452,7 +452,8 @@ def build_cast() -> None:
 		drawn["blink"] = np.dstack([_blink(grey, eyes), alpha])
 		# A character drawn with one run pose repeats it rather than shipping
 		# an empty cell; the troupe gives a run its second beat by motion.
-		drawn.setdefault("runB", drawn["run"])
+		if "run" in drawn:
+			drawn.setdefault("runB", drawn["run"])
 
 		# One scale for the whole character, so he is the same size in every
 		# cell — set by the standing pose, then eased down until the widest

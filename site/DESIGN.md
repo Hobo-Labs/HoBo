@@ -441,6 +441,21 @@ the trail.
 - **When the page stops, he stops,** lands with the small boing, and stands
   about until it moves again.
 
+**The band never takes the page's own controls.** It covers the foot of the
+viewport, so three things are part of it, not optional extras:
+
+- `scroll-padding-bottom` on the page equals the band at that size, so keyboard
+  focus and anchor jumps come to rest above it, the same promise
+  `scroll-padding-top` makes about the header.
+- The band steps down with the viewport (204 → 168 → 132 → 108px) and the hero
+  gives back its top margin on a laptop-height screen, so the hero's calls to
+  action are above the band on arrival.
+- Under 420px of height (a zoomed page, a phone on its side) it stops being
+  sticky and sits at the foot of the page.
+
+A visitor's click target is the figure, not his sprite cell: the air around him
+must not swallow a click meant for the page.
+
 It is **ambient by definition**: it carries no information the page does not
 already carry in its headings, so every part of it survives being removed.
 With no script the band falls back to walking itself on a timer, exactly as it

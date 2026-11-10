@@ -41,8 +41,17 @@
 }
 
 .troupe-clip .sprite {
-	pointer-events: auto;
 	translate: 0 100%;
+}
+
+/* Only the figure can be poked. A cell is mostly air around him, and that air
+   must not swallow a click meant for the page: this is the area the director
+   checked was clear before sending him up. */
+.troupe-clip .sprite::after {
+	content: "";
+	position: absolute;
+	inset: 30% 22% 6%;
+	pointer-events: auto;
 }
 
 /* Asleep on the ledge: a slow breath, anchored at the seat. */
