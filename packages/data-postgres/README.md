@@ -328,7 +328,22 @@ connection — any session that can run a query can tail the log.
   replication slot, and records the slot's consistent point as the start
   position in `hobo_data_subscriptions`. Starting an existing subscription —
   from this binding or another — returns that original position. A change
-  committed before `start` is never returned.
+  committed before `start` is never returned. A subscription name is bound to
+  the scope it was started for: starting it again for another dataset or
+  tenant is refused (`CAPTURE_SUBSCRIPTION_CONFLICT`) rather than answered
+  with the other scope's position.
+- **A slot is proven before its position is handed to anyone.** A slot
+  created while a transaction that created or rewrote a table is still open
+  can be poisoned: every read from it then fails with the server's "could not
+  map filenumber", for ever. So `start` (and a native `publish`, which makes
+  its slot the same way) waits for the transactions that were open at the
+  slot's consistent point to end, then runs one decoding probe over it. A slot
+  that fails the probe has had nothing read from it, so it is dropped and
+  another is created — the one statement the binding ever repeats, and only
+  for that one failure. If the open transactions do not end, or several slots
+  in a row are poisoned, `start` fails with `CAPTURE_SLOT_UNPROVEN`
+  (`detail.reason`: `TRANSACTIONS_STILL_OPEN` or `UNDECODABLE`) and nothing is
+  left started; start the subscription again later.
 - **`read`** peeks the slot without consuming it and decodes the binary
   messages with the pure decoder in `src/engine/pgoutput.ts`. It returns changes
   strictly after `after`, in **commit order** (the order transactions committed,
@@ -421,6 +436,17 @@ const target = createPostgresEngine({
 - **Progress:** the target says when every table of the subscription is ready
   (`seeded`); the source writes a transactional logical message as a mark and
   says when its slot's confirmed position has passed it (`reached`).
+- **Pause and resume.** A held migration moves nothing, so when a native run
+  holds the executor calls `pause` on the target: `ALTER SUBSCRIPTION …
+  DISABLE`, then a wait until `pg_stat_subscription` shows no worker left
+  attached — disabling stops new work, and a worker already running only
+  notices when it next looks. If a worker never lets go, `pause` fails with
+  `NATIVE_PAUSE_FAILED` rather than reporting a pause that did not happen.
+  `resume` is `ALTER SUBSCRIPTION … ENABLE`. Both do nothing for a transfer
+  that was never subscribed or was stopped. The source's slot keeps retaining
+  the log while paused. PostgreSQL restarts an unfinished initial table copy
+  when a subscription is re-enabled, which is why the executor leaves the
+  transfer running through a hold that only says the copy has not finished.
 - **The connection string is a secret.** It is given as a function, resolved
   only when a subscription is created, and sent as one bind parameter into a
   transaction-local setting; no statement text contains it and the statement
@@ -429,6 +455,25 @@ const target = createPostgresEngine({
   otherwise report the whole statement as error context. Whatever the driver
   throws is discarded but for that SQLSTATE. It is never in a ticket, an
   error, or a fact.
+- **…and is kept out of the target server's log.** A server that logs
+  statements (`log_statement`, `log_min_duration_statement`,
+  `log_min_duration_sample`) logs their bind parameters with them. The
+  transaction that carries the string therefore first sets, for itself only,
+  `log_parameter_max_length = 0`, `log_parameter_max_length_on_error = 0`,
+  `log_statement = 'none'` and both duration thresholds to `-1`
+  (`QUIET_NATIVE_LOGGING`) — each on its own, so one the role may not change
+  does not take the others with it — and then *reads the settings back*
+  (`NATIVE_LOGGING_STATE`). The string is sent only if the answer is quiet:
+  either no statement line would be written, or it would be written without
+  parameters, and an error would carry none. All but the on-error length need
+  a superuser or, from PostgreSQL 15, `GRANT SET ON PARAMETER`. A role that
+  cannot quiet a server that logs is **refused**
+  (`NATIVE_TRANSFER_REFUSED`, reason `CONNECTION_WOULD_BE_LOGGED`) before the
+  string leaves the process: grant the role `SET` on
+  `log_parameter_max_length`, subscribe as a superuser, or turn statement
+  logging off for that role or database. A role on a server that logs nothing
+  needs no privilege. What this cannot see: an extension that logs parameters
+  by its own settings (pgaudit's `pgaudit.log_parameter`).
 - **Cleanup.** The executor drops the subscription (which drops the slot, and
   any slot an unfinished copy made), then the publication and the registry
   row: after the cutover is journaled, before the source is retired, and on a
@@ -462,8 +507,9 @@ Each is a real limit, stated so nobody over-claims fidelity.
 | `POSTGRES_RETIRE_IS_LOGGED_AS_DELETES` | `retire` deletes rows and the write-ahead log records deletes, so a subscription still reading the dataset captures them. The copy executors drop a migration's own forward channel before retiring, so the retirement never follows the data to the new authority; a reader of someone else's sees the scope leave the store. |
 | `POSTGRES_NATIVE_COPY_WHOLE_DATASET_SAME_NAME` | `logical-copy` moves a whole dataset table into an empty table of the same schema-qualified name in another database. One tenant of a pooled table, a renamed namespace or dataset, a target that already holds rows, and the source database as its own target are refused by name. |
 | `POSTGRES_NATIVE_COPY_NO_REVERSE_TAIL` | The transfer is dropped at cutover and nothing tails back, so a rollback from soak is to-snapshot. |
-| `POSTGRES_NATIVE_COPY_TARGET_HOLDS_SOURCE_CONNECTION` | The target server keeps the source connection string in `pg_subscription` until cutover drops the subscription. Its superusers can read it, and a target that logs statement parameters records it. |
+| `POSTGRES_NATIVE_COPY_TARGET_HOLDS_SOURCE_CONNECTION` | The target server keeps the source connection string in `pg_subscription` until cutover drops the subscription. Its superusers can read it. |
 | `POSTGRES_NATIVE_COPY_NEEDS_REPLICATION_CAPACITY` | `wal_level = logical`, a free replication slot and sender on the source (one more while the initial copy runs), a free logical-replication worker on the target, and a target role that may create subscriptions (a superuser, or `pg_create_subscription` from PostgreSQL 16). |
+| `POSTGRES_NATIVE_COPY_REFUSED_WHERE_CONNECTION_WOULD_BE_LOGGED` | The connection string is a bind parameter, and a server that logs statements logs parameters. The subscribing transaction turns that off for itself first, which takes a superuser or `SET ON PARAMETER`; a role that cannot, on a server that logs, is refused (`CONNECTION_WOULD_BE_LOGGED`) instead of logged. Parameter logging by an extension (pgaudit) is outside what the binding can check. |
 
 ### Running the live lane
 
@@ -504,9 +550,12 @@ one extra database per test file and drop it. Re-record the fixture with
 `CONFORMANCE_EXECUTOR_MISSING`, and — from the engine binding —
 `ENGINE_OPTIONS_INVALID`, `ENGINE_EXECUTOR_CONTRACT`, `CAPTURE_POSITION_INVALID`,
 `CAPTURE_SUBSCRIPTION_LOST`, `CAPTURE_STREAM_UNDECODABLE`,
-`NATIVE_SUBSCRIBE_FAILED`, `NATIVE_STOP_FAILED`. Each carries a structured
-`detail` naming the offending field; the two native codes carry a SQLSTATE and
+`CAPTURE_SLOT_UNPROVEN`, `NATIVE_SUBSCRIBE_FAILED`, `NATIVE_STOP_FAILED`,
+`NATIVE_PAUSE_FAILED`. Each carries a structured `detail` naming the offending
+field; `NATIVE_SUBSCRIBE_FAILED` and `NATIVE_STOP_FAILED` carry a SQLSTATE and
 nothing else, because the server's own text can quote the connection string.
+`CAPTURE_POSITION_INVALID` is raised as `@hobo/data-core`'s
+`CapturePositionError`, the same class every engine raises.
 A native transfer the binding will not attempt is a `@hobo/data-core`
 `NATIVE_TRANSFER_REFUSED` whose `detail.reason` says why, and one whose server
 objects are gone is `NATIVE_TRANSFER_LOST`.

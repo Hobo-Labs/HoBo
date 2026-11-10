@@ -34,6 +34,11 @@ package trails
 	contract: [...string & !=""]
 	verify_after_backfill: string & !=""
 	verify_after_contract?: string
+	// Per phase, a violations query that returns no rows exactly when the
+	// phase's statements are in effect.
+	probe_expand?:   string & !=""
+	probe_backfill?: string & !=""
+	probe_contract?: string & !=""
 }
 
 #CompatGateEvidenceRecord: {
@@ -60,6 +65,17 @@ package trails
 	statements:   uint32
 	changes?:     uint32
 	applied_at:   string & !=""
+	recovered?:   bool
+}
+
+// Written before a phase runs its statements, as a compare-and-set on the
+// journal head.
+#MigrationPhaseIntendedEventData: {
+	migrationId: string & !=""
+	phase:       "expand" | "backfill" | "contract"
+	statements:  uint32
+	intendedAt:  string & !=""
+	retry?:      bool
 }
 
 #MigrationVerifiedEventData: {
@@ -111,6 +127,8 @@ package trails
 	phase:  "plan" | "gate" | "prepare" | "seed" | "converge" | "verify" | "shift-reads" | "soak"
 	reason: string & !=""
 	heldAt: string & !=""
+	// The phase whose statements the port reported as failed.
+	failedPhase?: "expand" | "backfill" | "contract"
 }
 
 #MigrationResumedEventData: {

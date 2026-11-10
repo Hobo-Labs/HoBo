@@ -126,10 +126,17 @@ volume's job.)
 
 ## Capture positions and batches
 
+**A subscription name is bound to its scope.** `capture.start` records the
+dataset and tenant a name was started for. Starting the same name again for
+that scope answers its original position; starting it for another dataset or
+tenant is refused with `DataCoreError` `CAPTURE_SUBSCRIPTION_CONFLICT` — it
+never answers the other scope's position. A subscription recorded before
+tenants were kept is bound to the first scope that names it.
+
 A position is a journal sequence number in decimal. `capture.read`,
 `capture.acknowledge` and the store's `pending` refuse anything else with
-`SqliteDataError` code `CAPTURE_POSITION_INVALID` — the code the PostgreSQL
-binding uses for the same refusal:
+`@hobo/data-core`'s `CapturePositionError` (`CAPTURE_POSITION_INVALID`) — the
+class and code every engine raises for the same refusal:
 
 - text that is not a sequence number (`"garbage"` used to come back as
   position `"NaN"`);

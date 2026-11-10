@@ -1,5 +1,6 @@
 export * from "./canonical.js";
 export * from "./conformance.js";
+export * from "./crash-injection.js";
 export * from "./custody.js";
 export * from "./digest.js";
 export * from "./envelope.js";

@@ -27,8 +27,10 @@ import {
 	DatasetDigestBuilder,
 	type DatasetSchema,
 	type DatasetScope,
+	decodeRecordKey,
 	deleteMutation,
 	type EngineBinding,
+	encodeRecordKey,
 	envelopeOf,
 	FencedWriteError,
 	type JsonValue,
@@ -323,6 +325,20 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 	): MongoWriteOperation[] =>
 		mutations.map((mutation): MongoWriteOperation => {
 			if (mutation.op === "delete") {
+				// A record's `_id` holds its canonical key as text, so a key in
+				// any other spelling matches no document: the delete would
+				// succeed and delete nothing, while an engine that parses keys
+				// deleted the record. It is refused instead.
+				if (
+					encodeRecordKey(schema, decodeRecordKey(schema, mutation.key)) !==
+					mutation.key
+				) {
+					throw new DataCoreError(
+						"INVALID_RECORD",
+						"a delete names a record by its canonical key",
+						{ detail: { field: "key" } },
+					);
+				}
 				return {
 					kind: "delete",
 					id: documentId(mutation.tenant, mutation.key),

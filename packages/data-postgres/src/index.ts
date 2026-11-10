@@ -56,7 +56,11 @@ export {
 } from "./conformance.js";
 export {
 	CAPTURE_SESSION_SETTINGS,
+	isUndecodableSlotError,
 	mutationsOf,
+	SLOT_HORIZON,
+	SLOT_PROBE,
+	SLOT_SETTLED,
 } from "./engine/capture.js";
 export {
 	createPostgresEngine,
@@ -98,16 +102,20 @@ export {
 export { formatLsn, parseLsn } from "./engine/lsn.js";
 export {
 	createSubscriptionStatement,
+	NATIVE_LOGGING_STATE,
 	NATIVE_MARK,
 	NATIVE_MARK_PREFIX,
 	NATIVE_REACHED,
 	NATIVE_REFUSALS,
 	NATIVE_SOURCE_SETTING,
 	NATIVE_SUBSCRIPTION_STATE,
+	NATIVE_SUBSCRIPTION_WORKERS,
 	type NativeRefusal,
+	nativeLoggingIsQuiet,
 	type PostgresNativeTicket,
 	PRESENT_NATIVE_SOURCE,
 	parsePostgresNativeTicket,
+	QUIET_NATIVE_LOGGING,
 } from "./engine/native.js";
 export {
 	decodePgOutputMessage,

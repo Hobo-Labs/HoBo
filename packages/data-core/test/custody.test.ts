@@ -346,7 +346,9 @@ describe("a custody path must name every role its migration creates", () => {
 				"retiring-source",
 			],
 			"log-pivot": ["source", "target", "event-log", "relay", "capture-log"],
-			"stream-handoff": ["event-log", "relay"],
+			// The log it leaves and the log it moves into: two roles, so a
+			// path that names only one of them does not cover the handoff.
+			"stream-handoff": ["event-log", "relay", "target-event-log"],
 		} satisfies Record<MigrationPatternId, readonly string[]>;
 		for (const pattern of MIGRATION_PATTERNS) {
 			assert.deepEqual(
@@ -355,6 +357,67 @@ describe("a custody path must name every role its migration creates", () => {
 				pattern,
 			);
 		}
+	});
+
+	test("a stream-handoff path that names only the log it leaves is incomplete: the destination log is a custody point of its own", () => {
+		const handoff = { pattern: "stream-handoff" } as const;
+		// The reviewer's path: the source log and the runner, nothing else.
+		const leaving = verdictFor(["event-log", "relay"], handoff);
+		assert.equal(leaving.ok, false);
+		assert.deepEqual(
+			leaving.findings.map((finding) => finding.detail),
+			[
+				"stream-handoff creates a target-event-log (it moves the journal's streams into another log) and the path names none",
+			],
+		);
+		// The same path, judged with no migration named, is positive — and the
+		// roles it lists are what a gate reads to refuse the handoff anyway.
+		const bare = verdictFor(["event-log", "relay"]);
+		assert.equal(bare.ok, true);
+		assert.deepEqual(uncoveredCustodyRoles(bare, handoff), [
+			"target-event-log",
+		]);
+		// Two points both called `event-log` do not stand in for it: a verdict
+		// lists roles, and a list of roles cannot show two different logs.
+		const twice = evaluateCustodyPath({
+			path: parseCustodyPath({
+				points: [
+					{ ...point("event-log"), id: "log-eu" },
+					{ ...point("event-log"), id: "log-us" },
+					point("relay"),
+				],
+			}),
+			policy: EU_PII,
+			now: NOW,
+		});
+		assert.deepEqual(uncoveredCustodyRoles(twice, handoff), [
+			"target-event-log",
+		]);
+		// Named, the destination is judged like any other point — here it is
+		// outside the residency constraint, and that is now a finding.
+		const complete = verdictFor(
+			["event-log", "relay", "target-event-log"],
+			handoff,
+		);
+		assert.equal(complete.ok, true, JSON.stringify(complete.findings));
+		assert.deepEqual(uncoveredCustodyRoles(complete, handoff), []);
+		const abroad = evaluateCustodyPath({
+			path: parseCustodyPath({
+				points: [
+					point("event-log"),
+					point("relay"),
+					{ ...point("target-event-log"), region: "us-east-1" },
+				],
+			}),
+			policy: EU_PII,
+			now: NOW,
+			migration: handoff,
+		});
+		assert.equal(abroad.ok, false);
+		assert.deepEqual(
+			abroad.findings.map((finding) => `${finding.code}@${finding.role}`),
+			["CUSTODY_RESIDENCY_CONFLICT@target-event-log"],
+		);
 	});
 
 	test("the realization and the reverse tail change what is created", () => {

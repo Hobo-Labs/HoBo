@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+	admitAuthorityMove,
 	type ChangeEnvelope,
 	CUSTODY_ROLES,
 	compareDigests,
@@ -267,6 +268,7 @@ describe("event-log patterns on the real event store and real SQLite engines", (
 						},
 					];
 		};
+		const applied = new Map<string, number>();
 		let flipped = false;
 		const afterPhase = async (phase: MigrationPhase): Promise<void> => {
 			if (flipped) return;
@@ -295,7 +297,10 @@ describe("event-log patterns on the real event store and real SQLite engines", (
 			target,
 			targetSchema: ORDERS,
 			targetScope: scopeOf("orders"),
-			flipAuthority: () => {
+			flipAuthority: (flip) => {
+				// The router's half of the contract: remember the highest journal
+				// head applied, and refuse a move decided at a lower one.
+				admitAuthorityMove(applied, flip);
 				flipped = true;
 			},
 			chunkSize: 6,

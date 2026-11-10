@@ -369,10 +369,11 @@ The closed impedance list in the declaration (`MONGO_IMPEDANCE_CODES`,
 | `MONGODB_FENCE_ENTRY_POINT` | the fence stops writers that go through the binding, not a client with its own connection |
 | `MONGODB_REPLICA_SET_REQUIRED` | change streams and transactions need a replica set or sharded cluster; a standalone server is not supported |
 | `MONGODB_CAPTURE_OPLOG_WINDOW` | a position is resumable only while the oplog holds it |
+| `MONGODB_CAPTURE_ACKNOWLEDGE_RELEASES_NOTHING` | MongoDB keeps no per-reader log and a resume token is opaque, so `acknowledge` releases nothing, records nothing and checks nothing: any position is accepted, and a read from before an acknowledged one still succeeds while the oplog holds it. The conformance kit reports `capture.acknowledged-positions-are-final` as `declared-limit` for this engine (`MONGO_CONFORMANCE_DECLARED_LIMITS`) — recorded in the report, not counted as a pass — and would fail it if the engine turned out to hold the property |
 | `MONGODB_CAPTURE_SKIPS_NOOP_WRITES` | a write that changes nothing produces no change event |
 | `MONGODB_CAPTURE_NEEDS_CHANGE_IMAGES` | an in-place update by another client is captured as of the change only while the collection has `changeStreamPreAndPostImages` on; the server then stores a pre-image for every change, which costs a write per change |
 | `MONGODB_TRANSACTION_BOUNDS` | one atomic unit is one transaction: bounded in lifetime and size |
-| `MONGODB_DOCUMENT_SIZE_LIMIT` | a record is one BSON document: under 16 MiB |
+| `MONGODB_DOCUMENT_SIZE_LIMIT` | a record is one BSON document: under 16 MiB. The declaration states the bound as `maxRecordBytes` (`MONGO_MAX_RECORD_BYTES`, 16 MiB); a batch carrying a larger record is refused whole, since a batch is one transaction |
 | `MONGODB_DECIMAL128_PRECISION` | 34 significant digits; longer decimals are refused |
 | `MONGODB_TIMESTAMP_STORED_AS_TEXT` | timestamps are canonical text, not BSON dates, to native queries |
 | `MONGODB_TEXT_WELL_FORMED_ONLY` | text with an unpaired surrogate is refused |

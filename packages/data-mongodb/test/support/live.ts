@@ -3,7 +3,11 @@
 // HOBO_TEST_MONGODB_URL is set.
 import type { EngineBinding, EngineHarness } from "@hobo/data-core";
 import { type Db, MongoClient } from "mongodb";
-import { createMongoEngine, type MongoExecutor } from "../../src/index.js";
+import {
+	createMongoEngine,
+	MONGO_CONFORMANCE_DECLARED_LIMITS,
+	type MongoExecutor,
+} from "../../src/index.js";
 import { createMongoDriverExecutor } from "./driver-executor.js";
 
 /** The connection string, from the environment only; never logged. */
@@ -45,6 +49,7 @@ export async function connectLive(): Promise<LiveMongo> {
 		native: (name) => client.db(name),
 		executor,
 		harness: () => ({
+			declaredLimits: MONGO_CONFORMANCE_DECLARED_LIMITS,
 			create: (): EngineBinding =>
 				createMongoEngine({ executor: executor(database(), true) }),
 		}),

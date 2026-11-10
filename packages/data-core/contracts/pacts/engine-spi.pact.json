@@ -286,6 +286,62 @@
 					"total": "1"
 				}
 			}
+		},
+		{
+			"description": "a paused native transfer delivers nothing until it is resumed",
+			"providerState": "a subscribed transfer whose initial copy is done, and a source that has written o-10 since",
+			"request": {
+				"method": "POST",
+				"path": "/datasets/orders/native/hobo_migration_m1_native/pause",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"profile": "migration.reference.direct/v1",
+					"tenant": ""
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"paused": true,
+					"deliveredWhilePaused": 0,
+					"deliveredAfterResume": 1
+				}
+			}
+		},
+		{
+			"description": "a router refuses an authority move decided at a journal head lower than one it has applied",
+			"providerState": "the router has applied a move for migration m1 decided at journal head 14",
+			"request": {
+				"method": "POST",
+				"path": "/migrations/m1/authority",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"migrationId": "m1",
+					"head": 11,
+					"direction": "to-target"
+				}
+			},
+			"response": {
+				"status": 409,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"error": {
+						"code": "STALE_AUTHORITY_MOVE",
+						"migrationId": "m1",
+						"head": 11,
+						"appliedHead": 14
+					}
+				}
+			}
 		}
 	]
 }

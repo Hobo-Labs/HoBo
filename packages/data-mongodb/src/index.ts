@@ -25,9 +25,11 @@ export {
 	toDecimal128Text,
 } from "./decimal.js";
 export {
+	MONGO_CONFORMANCE_DECLARED_LIMITS,
 	MONGO_ENGINE_ID,
 	MONGO_ENGINE_PROFILE,
 	MONGO_IMPEDANCE_CODES,
+	MONGO_MAX_RECORD_BYTES,
 	MONGO_TYPE_MAPPING,
 	type MongoDeclarationOptions,
 	type MongoImpedanceCode,

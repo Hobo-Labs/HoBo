@@ -119,6 +119,8 @@ test("the migration contracts that changed are versioned, each with one upcaster
 		"migration.Completed": 1,
 		"migration.FenceRequested": 1,
 		"migration.RollbackDecided": 1,
+		"migration.FenceRaised": 1,
+		"migration.PhaseIntended": 1,
 	});
 	for (const contract of MIGRATION_EVENT_CONTRACTS) {
 		assert.equal(contract.upcasters.length, contract.currentVersion - 1);
@@ -131,7 +133,7 @@ test("the migration contracts that changed are versioned, each with one upcaster
 	}
 });
 
-test("migration.Planned v1 lifts to the list the executors emit; RolledBack and PhaseApplied v1 lift unchanged", () => {
+test("migration.Planned v1 lifts to the list the executors emit, named as the in-place plan it was; RolledBack and a statement-count PhaseApplied v1 lift unchanged", () => {
 	const lift = (type: string, body: Record<string, string | number>) => {
 		const contract = MIGRATION_EVENT_CONTRACTS.find(
 			(entry) => entry.type === type,
@@ -155,6 +157,9 @@ test("migration.Planned v1 lifts to the list the executors emit; RolledBack and 
 			migrationId: "m",
 			plannedAt: "t",
 			phases: ["expand", "backfill", "contract"],
+			// Only the in-place executor plans these three phases; the lifted
+			// plan says so, which is what a resume is checked against.
+			pattern: "in-place-evolve",
 		},
 	);
 	const rolled = {

@@ -11,7 +11,6 @@ import {
 	type CanonicalRecord,
 	type CaptureBatch,
 	canonicalEncode,
-	createReferenceEngine,
 	DataCoreError,
 	type DatasetSchema,
 	ENGINE_CONFORMANCE_CASE_IDS,
@@ -22,6 +21,7 @@ import {
 	parseCanonicalRecord,
 	parseDatasetSchema,
 	type RecordMutation,
+	referenceEngineHarness,
 	requirePort,
 	runEngineConformance,
 	scopeOf,
@@ -50,9 +50,18 @@ import { replayExecutorPact } from "./support/pact.js";
 const UNDECLARED_CASES = [
 	"pattern.snapshot-and-tail.native.zero-loss-under-load",
 	"pattern.snapshot-and-tail.native.resumes-at-every-boundary",
+	"pattern.snapshot-and-tail.native.crash-windows.cutover",
 	"pattern.in-place-evolve.gated-and-restorable",
 	"pattern.in-place-evolve.failure-restores",
+	"schema.snapshots-are-per-binding",
+	"schema.multi-statement-entry-is-whole-or-refused",
+	"schema.verify-refuses-a-trailing-statement",
 ];
+
+// Run, and reported as a limit rather than a pass: MongoDB keeps no
+// per-reader log, so an acknowledgement releases, records and checks nothing.
+const DECLARED_LIMIT_CASE = "capture.acknowledged-positions-are-final";
+const DECLARED_LIMIT = "MONGODB_CAPTURE_ACKNOWLEDGE_RELEASES_NOTHING";
 
 const DOCUMENT_LIMIT = 16 * 1024 * 1024;
 
@@ -170,12 +179,25 @@ describe.skipIf(LIVE_URL === "")("MongoDB engine (live replica set)", () => {
 				report.results.length + report.skipped.length,
 				ENGINE_CONFORMANCE_CASE_IDS.length,
 			);
+			// 44 cases run against the real server: 43 pass, and one is the
+			// limit the declaration states.
+			assert.deepEqual(
+				report.results
+					.filter((result) => result.status !== "pass")
+					.map((result) => [result.caseId, result.status]),
+				[[DECLARED_LIMIT_CASE, "declared-limit"]],
+			);
+			assert.match(
+				report.results.find((result) => result.caseId === DECLARED_LIMIT_CASE)
+					?.detail ?? "",
+				new RegExp(`^${DECLARED_LIMIT}: `, "u"),
+			);
 		}, 300_000);
 
 		test("MongoDB → reference engine: cross-engine through the hub", async () => {
 			const report = await runEngineConformance({
 				engine: live.harness(),
-				peer: { create: () => createReferenceEngine() },
+				peer: referenceEngineHarness(),
 				now: NOW,
 			});
 			console.info(
@@ -186,7 +208,7 @@ describe.skipIf(LIVE_URL === "")("MongoDB engine (live replica set)", () => {
 
 		test("reference engine → MongoDB: the other direction", async () => {
 			const report = await runEngineConformance({
-				engine: { create: () => createReferenceEngine() },
+				engine: referenceEngineHarness(),
 				peer: live.harness(),
 				now: NOW,
 			});

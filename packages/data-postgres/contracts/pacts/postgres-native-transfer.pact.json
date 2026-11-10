@@ -66,6 +66,71 @@
 			}
 		},
 		{
+			"description": "before the connection string is sent, the transaction turns statement and parameter logging off for itself, each setting on its own",
+			"providerState": "target database",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "DO $hobo$\nBEGIN\n\tBEGIN PERFORM set_config('log_parameter_max_length', '0', true); EXCEPTION WHEN OTHERS THEN NULL; END;\n\tBEGIN PERFORM set_config('log_parameter_max_length_on_error', '0', true); EXCEPTION WHEN OTHERS THEN NULL; END;\n\tBEGIN PERFORM set_config('log_statement', 'none', true); EXCEPTION WHEN OTHERS THEN NULL; END;\n\tBEGIN PERFORM set_config('log_min_duration_statement', '-1', true); EXCEPTION WHEN OTHERS THEN NULL; END;\n\tBEGIN PERFORM set_config('log_min_duration_sample', '-1', true); EXCEPTION WHEN OTHERS THEN NULL; END;\nEND\n$hobo$",
+					"parameters": [],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [],
+					"rowCount": 0
+				}
+			}
+		},
+		{
+			"description": "the transaction reads back what the server will log, and the connection string is sent only when the answer is nothing",
+			"providerState": "target database",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "SELECT current_setting('log_statement', true) AS log_statement, current_setting('log_min_duration_statement', true) AS log_min_duration_statement, current_setting('log_min_duration_sample', true) AS log_min_duration_sample, current_setting('log_parameter_max_length', true) AS log_parameter_max_length, current_setting('log_parameter_max_length_on_error', true) AS log_parameter_max_length_on_error",
+					"parameters": [],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [
+						{
+							"cells": [
+								{
+									"column": "log_statement",
+									"text": "none"
+								},
+								{
+									"column": "log_min_duration_statement",
+									"text": "-1"
+								},
+								{
+									"column": "log_min_duration_sample",
+									"text": "-1"
+								},
+								{
+									"column": "log_parameter_max_length",
+									"text": "0"
+								},
+								{
+									"column": "log_parameter_max_length_on_error",
+									"text": "0"
+								}
+							]
+						}
+					],
+					"rowCount": 1
+				}
+			}
+		},
+		{
 			"description": "the connection string reaches the target server as a bind parameter into a transaction-local setting, and does not come back",
 			"providerState": "target database",
 			"request": {
@@ -225,6 +290,79 @@
 						}
 					],
 					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "a pause disables the subscription",
+			"providerState": "target database",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "ALTER SUBSCRIPTION \"hobo_n_966916441a53_57bb141229af718542f248ab\" DISABLE",
+					"parameters": [],
+					"inTransaction": false
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [],
+					"rowCount": 0
+				}
+			}
+		},
+		{
+			"description": "a pause returns only once no worker is left attached to the subscription",
+			"providerState": "target database",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "SELECT count(*)::text AS workers FROM pg_stat_subscription w JOIN pg_subscription s ON s.oid = w.subid WHERE s.subname = $1::name AND s.subdbid = (SELECT d.oid FROM pg_database d WHERE d.datname = current_database()) AND w.pid IS NOT NULL",
+					"parameters": [
+						{
+							"text": "hobo_n_966916441a53_57bb141229af718542f248ab"
+						}
+					],
+					"inTransaction": false
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [
+						{
+							"cells": [
+								{
+									"column": "workers",
+									"text": "0"
+								}
+							]
+						}
+					],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "a resume enables the subscription",
+			"providerState": "target database",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "ALTER SUBSCRIPTION \"hobo_n_966916441a53_57bb141229af718542f248ab\" ENABLE",
+					"parameters": [],
+					"inTransaction": false
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [],
+					"rowCount": 0
 				}
 			}
 		},

@@ -99,6 +99,19 @@ Trails composes data migrations; it does not implement a storage engine.
   callback — recomputed before every phase, a negative verdict holds the
   migration at its last safe state — and a `replayErasures` callback, called
   after every restore so a rollback cannot resurrect an erased subject.
+- **Every phase is write-ahead.** The fact ladder is `Planned`,
+  `SnapshotTaken`, then for each of expand, backfill and contract a
+  `PhaseIntended` followed by its `PhaseApplied`, with `Verified` after
+  backfill and after contract, and `CutOver`. `PhaseIntended` is journaled
+  before the statements run. A run that finds an intent with no
+  `PhaseApplied` after it — the process died in between, and the application
+  has been writing since — neither runs the statements again on a guess nor
+  restores the snapshot. It asks the plan's probe for that phase
+  (`DataMigrationPlan.probes`: a violations query that returns no rows
+  exactly when the phase is in effect) and records the phase as applied or
+  applies it; with no probe it holds with `PHASE_OUTCOME_UNKNOWN`, and a
+  re-applied phase that fails holds with `PHASE_REAPPLY_FAILED`. Neither is
+  ever answered by a restore.
 - **Evidence, not rows.** A dual-run port that offers `evidence()` is judged on
   counts and digests; no row leaves the store. `snapshot()` remains for the
   simulated-fixture oracle.

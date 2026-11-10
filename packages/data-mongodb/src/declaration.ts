@@ -30,6 +30,8 @@ export const MONGO_IMPEDANCE_CODES = [
 	"MONGODB_REPLICA_SET_REQUIRED",
 	/** A capture position is resumable only while the oplog still holds it; a reader that falls outside the window must re-seed. */
 	"MONGODB_CAPTURE_OPLOG_WINDOW",
+	/** MongoDB keeps no per-reader log, and a resume token is opaque: `acknowledge` releases nothing, records nothing and checks nothing, so any position is accepted and a read from before an acknowledged one still succeeds while the oplog holds it. */
+	"MONGODB_CAPTURE_ACKNOWLEDGE_RELEASES_NOTHING",
 	/** A write that changes nothing (an identical replace, a delete of an absent record) produces no change event. */
 	"MONGODB_CAPTURE_SKIPS_NOOP_WRITES",
 	/** An in-place update by another client is captured as of the change only while the collection has `changeStreamPreAndPostImages` on, which costs a stored pre-image per change. */
@@ -55,6 +57,26 @@ export const MONGO_IMPEDANCE_CODES = [
 ] as const;
 
 export type MongoImpedanceCode = (typeof MONGO_IMPEDANCE_CODES)[number];
+
+/**
+ * The record bound the declaration states: a BSON document is under 16 MiB
+ * (`MONGODB_DOCUMENT_SIZE_LIMIT`). A batch carrying a larger record is
+ * refused whole — it is one transaction.
+ */
+export const MONGO_MAX_RECORD_BYTES = 16 * 1024 * 1024;
+
+/**
+ * What the conformance kit is told this engine does not hold, by case id: the
+ * impedance code above that states it. A harness passes this as
+ * `declaredLimits`; the kit then reports the case `declared-limit` — and
+ * fails it if the engine turns out to hold the property after all.
+ */
+export const MONGO_CONFORMANCE_DECLARED_LIMITS: Readonly<
+	Record<string, MongoImpedanceCode>
+> = Object.freeze({
+	"capture.acknowledged-positions-are-final":
+		"MONGODB_CAPTURE_ACKNOWLEDGE_RELEASES_NOTHING",
+});
 
 const WELL_FORMED_NOTE =
 	"text must be well-formed Unicode: an unpaired surrogate has no UTF-8 encoding and is refused";
@@ -198,5 +220,6 @@ export function mongoEngineDeclaration(
 		nativeProfiles: [],
 		typeMapping: MONGO_TYPE_MAPPING,
 		impedance: [...MONGO_IMPEDANCE_CODES],
+		maxRecordBytes: MONGO_MAX_RECORD_BYTES,
 	});
 }

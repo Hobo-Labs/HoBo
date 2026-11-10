@@ -263,7 +263,13 @@ describe("erasure replay is fail-closed and windowed from before the fence", () 
 			},
 		});
 		assert.equal(rolled.status, "rolled-back");
-		assert.deepEqual(asked, [requested], "windowed from the fence request");
+		// Asked twice — before authority goes back, and again after it has,
+		// while the source is still fenced — and windowed the same both times.
+		assert.deepEqual(
+			asked,
+			[requested, requested],
+			"windowed from the fence request",
+		);
 		assert.equal(
 			await totalOf(staged.source, "o-3"),
 			undefined,

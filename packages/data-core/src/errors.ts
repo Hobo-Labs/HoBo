@@ -35,6 +35,16 @@ export const DATA_CORE_ERROR_CODES = [
 	// A journal append named a head the journal is no longer at: another
 	// driver of the same migration appended first. Nothing was appended.
 	"JOURNAL_CONFLICT",
+	// A router was asked to move write authority on a decision older than one
+	// it has already applied for the same migration. Nothing moved.
+	"STALE_AUTHORITY_MOVE",
+	// A capture position the engine never minted, one beyond its head, or one
+	// whose changes were acknowledged and released. Never answered with an
+	// empty "caught up" batch, and never accepted as an acknowledgement.
+	"CAPTURE_POSITION_INVALID",
+	// A capture subscription name that is already bound to another scope. The
+	// name's position belongs to that scope and is never handed to this one.
+	"CAPTURE_SUBSCRIPTION_CONFLICT",
 ] as const;
 
 export type DataCoreErrorCode = (typeof DATA_CORE_ERROR_CODES)[number];
@@ -111,6 +121,29 @@ export class StaleApplyError extends DataCoreError {
 }
 
 /**
+ * A capture position that cannot be read from or acknowledged: text the
+ * engine never minted, a position past its head, or one below what the
+ * subscription already acknowledged. Answering any of them with an empty,
+ * caught-up batch would tell a tail it had finished when it had read nothing.
+ */
+export class CapturePositionError extends DataCoreError {
+	readonly subscription: string;
+
+	constructor(
+		subscription: string,
+		message: string,
+		options: { readonly cause?: unknown } = {},
+	) {
+		super("CAPTURE_POSITION_INVALID", message, {
+			detail: { subscription },
+			...(options.cause === undefined ? undefined : { cause: options.cause }),
+		});
+		this.name = "CapturePositionError";
+		this.subscription = subscription;
+	}
+}
+
+/**
  * A journal append lost its compare-and-set: the journal no longer ends where
  * the run that tried to append had read it to. Another driver is running the
  * same migration and got there first. The loser has appended nothing and must
@@ -140,15 +173,42 @@ export class JournalConflictError extends DataCoreError {
 }
 
 /**
- * True for the two refusals that tell a driver it has been superseded. A run
- * that meets either stops where it is: it records nothing further and
+ * A router refused to move write authority: the move names a journal head
+ * lower than one the router has already applied for this migration, so the
+ * decision behind it has been overtaken — by a rollback, say. Thrown by the
+ * router (`admitAuthorityMove`), and read by an executor as supersession.
+ * Nothing moved.
+ */
+export class StaleAuthorityMoveError extends DataCoreError {
+	readonly migrationId: string;
+	readonly head: number;
+	readonly appliedHead: number;
+
+	constructor(migrationId: string, head: number, appliedHead: number) {
+		super(
+			"STALE_AUTHORITY_MOVE",
+			`an authority move for migration ${migrationId} was decided at journal head ${head}; the router has already applied one decided at ${appliedHead}`,
+			{ detail: { migrationId, head, appliedHead } },
+		);
+		this.name = "StaleAuthorityMoveError";
+		this.migrationId = migrationId;
+		this.head = head;
+		this.appliedHead = appliedHead;
+	}
+}
+
+/**
+ * True for the three refusals that tell a driver it has been superseded. A
+ * run that meets one stops where it is: it records nothing further and
  * compensates nothing, because the driver that superseded it owns the
  * migration now.
  */
 export function isSupersededError(
 	value: DataCoreError | Error | null | undefined,
-): value is StaleApplyError | JournalConflictError {
+): value is StaleApplyError | JournalConflictError | StaleAuthorityMoveError {
 	return (
-		value instanceof StaleApplyError || value instanceof JournalConflictError
+		value instanceof StaleApplyError ||
+		value instanceof JournalConflictError ||
+		value instanceof StaleAuthorityMoveError
 	);
 }

@@ -19,13 +19,17 @@ import {
 	encodeRecordKey,
 	engineDeclarationToJson,
 	evaluateCustodyPath,
+	isJsonObject,
 	type JsonObject,
 	MIGRATION_EVENTS,
 	parseCanonicalRecord,
 	parseCustodyPath,
 	parseDatasetSchema,
+	parseJsonText,
 	policyVerdictToJson,
 	REFERENCE_NATIVE_PROFILE,
+	referenceEngineHarness,
+	runEngineConformance,
 	runSnapshotAndTail,
 	scopeOf,
 	upsertMutation,
@@ -91,6 +95,13 @@ function rejects(definition: string, record: JsonObject): void {
 }
 
 const NOW = "2026-11-10T00:00:00.000Z";
+
+/** A record as it would cross a wire: through JSON, and nothing else. */
+function plain<T>(value: T): JsonObject {
+	const parsed = parseJsonText(JSON.stringify(value));
+	assert.ok(isJsonObject(parsed));
+	return parsed;
+}
 
 describe.skipIf(cue === undefined)(
 	"CUE constraints against real records",
@@ -169,6 +180,78 @@ describe.skipIf(cue === undefined)(
 			accepts("#MigrationHeldEventData", { ...held, phase: "converge" });
 			accepts("#MigrationHeldEventData", { ...held, phase: "soak" });
 			rejects("#MigrationHeldEventData", { ...held, phase: "fence-and-flip" });
+		});
+
+		test("the write-ahead and ownership facts: an intent names an in-place phase, a raised fence carries a digest and never a token, and only a rollback to a stale source may leave the target unfenced", () => {
+			const intent = {
+				migrationId: "m",
+				phase: "contract",
+				statements: 1,
+				intendedAt: NOW,
+			};
+			accepts("#MigrationPhaseIntendedEventData", intent);
+			accepts("#MigrationPhaseIntendedEventData", { ...intent, retry: true });
+			rejects("#MigrationPhaseIntendedEventData", { ...intent, phase: "soak" });
+			const raised = {
+				migrationId: "m",
+				side: "target",
+				phase: "soak",
+				fenceTokenDigest: `sha256:${"a".repeat(64)}`,
+				raisedAt: NOW,
+			};
+			accepts("#MigrationFenceRaisedEventData", raised);
+			rejects("#MigrationFenceRaisedEventData", {
+				...raised,
+				fenceToken: "fence:orders::1",
+			});
+			rejects("#MigrationFenceRaisedEventData", {
+				...raised,
+				fenceTokenDigest: "fence:orders::1",
+			});
+			const decided = { migrationId: "m", decidedAt: NOW };
+			accepts("#MigrationRollbackDecidedEventData", {
+				...decided,
+				lossless: false,
+				targetFenced: false,
+				erasuresFrom: NOW,
+				policyFindings: ["CUSTODY_RESIDENCY_CONFLICT"],
+			});
+			accepts("#MigrationRollbackDecidedEventData", {
+				...decided,
+				lossless: true,
+				targetFenced: true,
+			});
+			rejects("#MigrationRollbackDecidedEventData", {
+				...decided,
+				lossless: true,
+				targetFenced: false,
+			});
+			// A checkpoint names its fence by digest.
+			const applied = {
+				migrationId: "m",
+				phase: "fence-and-flip",
+				appliedAt: NOW,
+			};
+			accepts("#MigrationPhaseAppliedEventData", {
+				...applied,
+				checkpoint: { fenceTokenDigest: `sha256:${"a".repeat(64)}` },
+			});
+			rejects("#MigrationPhaseAppliedEventData", {
+				...applied,
+				checkpoint: { fenceToken: "fence:orders::1" },
+			});
+			// What a router compares-and-sets on: an identity, never the token.
+			const move = { migrationId: "m", head: 14, direction: "to-target" };
+			accepts("#AuthorityMoveRef", move);
+			rejects("#AuthorityMoveRef", { ...move, head: 0 });
+			rejects("#AuthorityMoveRef", { ...move, fenceToken: "fence:orders::1" });
+			// The destination log of a stream handoff is a role of its own.
+			accepts("#CustodyPoint", {
+				id: "log-us",
+				role: "target-event-log",
+				region: "us-east-1",
+				protections: [],
+			});
 		});
 
 		test("an eligible candidate has no reasons, and a rejected one has at least one", () => {
@@ -281,6 +364,55 @@ describe.skipIf(cue === undefined)(
 				dataset: "orders",
 				tenant: "",
 			});
+		});
+
+		test("a conformance report from the kit is accepted; a filtered run that claims to pass, or a status nobody defined, is refused", async () => {
+			const whole = plain(
+				await runEngineConformance({
+					engine: referenceEngineHarness(),
+					now: NOW,
+				}),
+			);
+			accepts("#EngineConformanceReport", whole);
+			const only = ["declaration.matches-binding"];
+			const filtered = plain(
+				await runEngineConformance({
+					engine: referenceEngineHarness(),
+					now: NOW,
+					only,
+				}),
+			);
+			assert.equal(filtered.outcome, "unknown");
+			accepts("#EngineConformanceReport", filtered);
+			// One case run on its own cannot be presented as conformance.
+			rejects("#EngineConformanceReport", { ...filtered, outcome: "pass" });
+			accepts("#EngineConformanceReport", {
+				...whole,
+				results: [
+					{
+						caseId: "capture.acknowledged-positions-are-final",
+						status: "declared-limit",
+						detail: "ENGINE_ACKNOWLEDGE_RELEASES_NOTHING: refused",
+					},
+				],
+			});
+			rejects("#EngineConformanceReport", {
+				...whole,
+				results: [{ caseId: "a", status: "waived", detail: "" }],
+			});
+		});
+
+		test("a declaration may state a record bound, and it has to be a positive integer", () => {
+			const declaration = engineDeclarationToJson(
+				createReferenceEngine().declaration,
+			);
+			accepts("#EngineDeclaration", {
+				...declaration,
+				maxRecordBytes: 16777216,
+			});
+			rejects("#EngineDeclaration", { ...declaration, maxRecordBytes: 0 });
+			rejects("#EngineDeclaration", { ...declaration, maxRecordBytes: 1.5 });
+			rejects("#EngineDeclaration", { ...declaration, maxRecordBytes: "big" });
 		});
 
 		test("a dataset schema needs a key and portable names", () => {

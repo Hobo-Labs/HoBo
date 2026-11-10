@@ -26,7 +26,7 @@ import {
 	type RecordMutation,
 } from "../envelope.js";
 import { DataCoreError } from "../errors.js";
-import { MIGRATION_EVENTS } from "../facts.js";
+import { fenceTokenDigest, MIGRATION_EVENTS } from "../facts.js";
 import {
 	canonicalEncode,
 	type JsonObject,
@@ -42,8 +42,8 @@ import {
 } from "../spi.js";
 import type { SoakDecision } from "./copy.js";
 import {
+	type AuthorityHandover,
 	decidedFenceToken,
-	fenceTokenDigest,
 	MigrationHold,
 	MigrationRollback,
 	MigrationRun,
@@ -352,9 +352,11 @@ export interface LogPivotOptions {
 	readonly target: EngineBinding;
 	readonly targetSchema: DatasetSchema;
 	readonly targetScope: DatasetScope;
-	readonly flipAuthority: (flip: {
-		readonly fenceToken: string;
-	}) => Awaitable<void>;
+	/**
+	 * Move write authority into the log. Idempotent at a head, and a
+	 * compare-and-set on it: see `AuthorityMoveRef` for the router's contract.
+	 */
+	readonly flipAuthority: (flip: AuthorityHandover) => Awaitable<void>;
 	readonly chunkSize?: number;
 	readonly tailBatch?: number;
 	readonly maxRounds?: number;
@@ -644,6 +646,8 @@ export async function runLogPivot(
 				// journal. The journaled decision is what authorizes it.
 				const held = await raise();
 				await options.flipAuthority({
+					migrationId: options.runtime.migrationId,
+					head: run.decisionHead(MIGRATION_EVENTS.CutOver),
 					fenceToken: decidedFenceToken(decided, held.fenceToken),
 				});
 				return decided;
@@ -680,7 +684,11 @@ export async function runLogPivot(
 				cutOverAt: options.runtime.clock(),
 			};
 			await run.emit(MIGRATION_EVENTS.CutOver, decision);
-			await options.flipAuthority({ fenceToken: grant.fenceToken });
+			await options.flipAuthority({
+				migrationId: options.runtime.migrationId,
+				head: run.decisionHead(MIGRATION_EVENTS.CutOver),
+				fenceToken: grant.fenceToken,
+			});
 			return decision;
 		});
 		await run.phase("finalize", async () => {
@@ -720,9 +728,11 @@ export interface StreamHandoffOptions {
 	 */
 	readonly quiesce: () => Awaitable<{ readonly fenceToken: string }>;
 	readonly unquiesce: (fenceToken: string) => Awaitable<void>;
-	readonly flipWriter: (flip: {
-		readonly fenceToken: string;
-	}) => Awaitable<void>;
+	/**
+	 * Hand the partition's single writer to the target log. Idempotent at a
+	 * head, and a compare-and-set on it: see `AuthorityMoveRef`.
+	 */
+	readonly flipWriter: (flip: AuthorityHandover) => Awaitable<void>;
 	readonly batch?: number;
 	readonly maxRounds?: number;
 	readonly plan?: PlannedDetails;
@@ -920,6 +930,8 @@ export async function runStreamHandoff(
 			if (decided !== undefined) {
 				const held = await options.quiesce();
 				await options.flipWriter({
+					migrationId: options.runtime.migrationId,
+					head: run.decisionHead(MIGRATION_EVENTS.CutOver),
 					fenceToken: decidedFenceToken(decided, held.fenceToken),
 				});
 				return decided;
@@ -948,7 +960,11 @@ export async function runStreamHandoff(
 				cutOverAt: options.runtime.clock(),
 			};
 			await run.emit(MIGRATION_EVENTS.CutOver, decision);
-			await options.flipWriter({ fenceToken: grant.fenceToken });
+			await options.flipWriter({
+				migrationId: options.runtime.migrationId,
+				head: run.decisionHead(MIGRATION_EVENTS.CutOver),
+				fenceToken: grant.fenceToken,
+			});
 			return decision;
 		});
 		await run.phase("finalize", async () => ({}));

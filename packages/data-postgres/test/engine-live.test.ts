@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import {
 	type Awaitable,
 	assertBindingMatchesDeclaration,
+	CapturePositionError,
 	type ChangeEnvelope,
 	canonicalEncode,
 	compareDigests,
@@ -29,6 +30,7 @@ import {
 	parseCanonicalRecord,
 	parseDatasetSchema,
 	type RecordMutation,
+	referenceEngineHarness,
 	requirePort,
 	runEngineConformance,
 	scopeOf,
@@ -50,6 +52,7 @@ import {
 } from "../src/index.js";
 import {
 	type CompanionDatabase,
+	conformanceFailureSink,
 	createCompanionDatabase,
 	EVERY_TYPE_RECORD,
 	EVERY_TYPE_SCHEMA,
@@ -70,6 +73,18 @@ import {
 const FIXTURE_PATH = fileURLToPath(
 	new URL("./fixtures/pgoutput-v1.recorded.json", import.meta.url),
 );
+
+/** Skipped by an engine whose declaration states no record bound; PostgreSQL states none. */
+const SIZE_CASE_ID = "records.oversize-record-refuses-the-batch";
+
+/** Skipped by an engine with no `schema` port. */
+const SCHEMA_CASE_IDS = [
+	"pattern.in-place-evolve.gated-and-restorable",
+	"pattern.in-place-evolve.failure-restores",
+	"schema.snapshots-are-per-binding",
+	"schema.multi-statement-entry-is-whole-or-refused",
+	"schema.verify-refuses-a-trailing-statement",
+];
 
 const SMALL_SCHEMA: DatasetSchema = parseDatasetSchema({
 	name: "hobo_live_items",
@@ -205,13 +220,24 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 	// ── the conformance kit, three ways ───────────────────────────────────────
 
 	test("PostgreSQL passes every conformance case against itself", async () => {
-		const report = await runEngineConformance({ engine: harness, now: NOW });
+		const report = await runEngineConformance({
+			engine: harness,
+			now: NOW,
+			onFailure: conformanceFailureSink(),
+		});
 		assert.equal(report.outcome, "pass", failures(report.results));
 		assert.equal(report.engine, "postgres");
-		// Nothing is skipped: PostgreSQL declares logical-copy, so the native
-		// cases run too — between two databases, over logical replication.
-		assert.deepEqual(report.skipped, []);
-		assert.equal(report.results.length, ENGINE_CONFORMANCE_CASE_IDS.length);
+		// PostgreSQL declares every port and logical-copy, so the native cases
+		// run too — between two databases, over logical replication. The one
+		// case skipped is the size probe: the declaration states no record
+		// bound, and the kit invents none.
+		assert.deepEqual(report.skipped, [SIZE_CASE_ID]);
+		assert.equal(report.results.length, 51);
+		assert.equal(
+			report.results.length + report.skipped.length,
+			ENGINE_CONFORMANCE_CASE_IDS.length,
+		);
+		assert.deepEqual(report.only, []);
 		for (const id of NATIVE_CONFORMANCE_CASE_IDS) {
 			assert.equal(
 				report.results.find((result) => result.caseId === id)?.status,
@@ -224,12 +250,16 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 	test("PostgreSQL → reference engine: cross-engine through the hub", async () => {
 		const report = await runEngineConformance({
 			engine: harness,
-			peer: { create: () => createReferenceEngine() },
+			peer: referenceEngineHarness(),
 			now: NOW,
+			onFailure: conformanceFailureSink(),
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
 		// A native fast path exists only within one engine.
-		assert.deepEqual(report.skipped, NATIVE_CONFORMANCE_CASE_IDS);
+		assert.deepEqual(report.skipped, [
+			SIZE_CASE_ID,
+			...NATIVE_CONFORMANCE_CASE_IDS,
+		]);
 		assert.equal(
 			report.results.length + report.skipped.length,
 			ENGINE_CONFORMANCE_CASE_IDS.length,
@@ -238,22 +268,25 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 
 	test("reference engine → PostgreSQL: the other direction", async () => {
 		const report = await runEngineConformance({
-			engine: { create: () => createReferenceEngine() },
+			engine: referenceEngineHarness(),
 			peer: harness,
 			now: NOW,
+			onFailure: conformanceFailureSink(),
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
-		// The reference engine has no schema port and shares no native
-		// profile with PostgreSQL; nothing else is skipped.
+		// The reference engine states no record bound, has no schema port and
+		// shares no native profile with PostgreSQL; nothing else is skipped.
 		assert.deepEqual(report.skipped, [
+			SIZE_CASE_ID,
 			...NATIVE_CONFORMANCE_CASE_IDS,
-			"pattern.in-place-evolve.gated-and-restorable",
-			"pattern.in-place-evolve.failure-restores",
+			...SCHEMA_CASE_IDS,
 		]);
 	}, 300_000);
 
 	test("without capture the declaration says so, and capture-free patterns still pass", async () => {
+		// The live harness with capture left out of every binding it creates.
 		const withoutCapture = {
+			...harness,
 			schemaFixture: POSTGRES_SCHEMA_FIXTURE,
 			create: () => harness.open({ capture: false }),
 		};
@@ -264,6 +297,7 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		const report = await runEngineConformance({
 			engine: withoutCapture,
 			now: NOW,
+			onFailure: conformanceFailureSink(),
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
 		assert.ok(report.skipped.includes("capture.ordered-and-resumable"));
@@ -515,7 +549,8 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		const released = await rejection(() =>
 			capture.read({ scope, subscription: "durable", after: start, limit: 10 }),
 		);
-		assert.ok(released instanceof PostgresDataError);
+		// The shared refusal from `@hobo/data-core`, not a package-local copy.
+		assert.ok(released instanceof CapturePositionError);
 		assert.equal(released.code, "CAPTURE_POSITION_INVALID");
 
 		// The slot vanishing underneath the subscription is reported, never
@@ -549,7 +584,7 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		const foreign = await rejection(() =>
 			capture.acknowledge({ subscription: "durable", position: "41" }),
 		);
-		assert.ok(foreign instanceof PostgresDataError);
+		assert.ok(foreign instanceof CapturePositionError);
 		assert.equal(foreign.code, "CAPTURE_POSITION_INVALID");
 	}, 60_000);
 

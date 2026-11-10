@@ -25,4 +25,14 @@ export const SQLITE_SCHEMA_FIXTURE: SchemaFixture = Object.freeze({
 	provesContractApplied:
 		"SELECT 1 AS applied WHERE NOT EXISTS (SELECT 1 FROM pragma_table_info('checkout') WHERE name = 'email')",
 	failingStatement: "ALTER TABLE checkout DROP COLUMN no_such_column",
+	// Two statements with separate effects, for the probes that put more than
+	// one statement where one belongs.
+	probes: {
+		first: "CREATE TABLE checkout_probe_first (id TEXT PRIMARY KEY)",
+		second: "CREATE TABLE checkout_probe_second (id TEXT PRIMARY KEY)",
+		provesFirst:
+			"SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'checkout_probe_first'",
+		provesSecond:
+			"SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'checkout_probe_second'",
+	},
 });

@@ -8,6 +8,7 @@ import type {
 import {
 	createMemoryMongoExecutor,
 	createMongoEngine,
+	MONGO_CONFORMANCE_DECLARED_LIMITS,
 	type MongoExecutor,
 } from "../../src/index.js";
 
@@ -44,6 +45,8 @@ export function memoryHarness(
 	options: MemoryHarnessOptions = {},
 ): EngineHarness {
 	return {
+		// What MongoDB does not hold and declares: see the declaration.
+		declaredLimits: MONGO_CONFORMANCE_DECLARED_LIMITS,
 		create(): EngineBinding {
 			const executor = createMemoryMongoExecutor();
 			return createMongoEngine({

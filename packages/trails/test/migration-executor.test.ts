@@ -77,9 +77,13 @@ test("milestone: full expand→backfill→contract completes with the migration.
 		[
 			MIGRATION_EVENTS.Planned,
 			MIGRATION_EVENTS.SnapshotTaken,
+			// Every phase is write-ahead: its intent, then its fact.
+			MIGRATION_EVENTS.PhaseIntended,
 			MIGRATION_EVENTS.PhaseApplied,
+			MIGRATION_EVENTS.PhaseIntended,
 			MIGRATION_EVENTS.PhaseApplied,
 			MIGRATION_EVENTS.Verified,
+			MIGRATION_EVENTS.PhaseIntended,
 			MIGRATION_EVENTS.PhaseApplied,
 			MIGRATION_EVENTS.Verified,
 			MIGRATION_EVENTS.CutOver,
@@ -230,6 +234,7 @@ test("a migration held before backfill resumes from its journal: expand runs onc
 		[
 			MIGRATION_EVENTS.Planned,
 			MIGRATION_EVENTS.SnapshotTaken,
+			MIGRATION_EVENTS.PhaseIntended,
 			MIGRATION_EVENTS.PhaseApplied,
 			MIGRATION_EVENTS.Held,
 		],
@@ -252,7 +257,7 @@ test("a migration held before backfill resumes from its journal: expand runs onc
 		1,
 	);
 	assert.deepEqual(
-		done.facts.slice(3, 5).map((fact) => fact.type),
+		done.facts.slice(4, 6).map((fact) => fact.type),
 		[MIGRATION_EVENTS.Held, MIGRATION_EVENTS.Resumed],
 	);
 
@@ -324,3 +329,154 @@ test("without an erasure replay a failed phase holds instead of restoring; no fa
 	cleanups.push(() => db.close());
 	assert.throws(() => db.prepare("SELECT requester_ref FROM checkout").all());
 });
+
+// ── a crash between a phase and its fact ─────────────────────────────────────
+//
+// The phase commits, the process dies before `PhaseApplied` is journaled, and
+// the application keeps writing. The resumed run finds the phase's intent
+// with no answer. It must not run the statements again on a guess, and it
+// must never answer them with a restore: the snapshot predates every write
+// the application has made since.
+
+/** A journal that dies on the `PhaseApplied` of one phase, once. */
+function dyingAfter(phase: string) {
+	const inner = createMemoryMigrationJournal();
+	let armed = true;
+	return {
+		load: (id: string) => inner.load(id),
+		append(
+			id: string,
+			fact: Parameters<typeof inner.append>[1],
+			expectedCount: number,
+		) {
+			if (
+				armed &&
+				fact.type === MIGRATION_EVENTS.PhaseApplied &&
+				fact.data.phase === phase
+			) {
+				armed = false;
+				throw new Error("process died after the phase committed");
+			}
+			return inner.append(id, fact, expectedCount);
+		},
+	};
+}
+
+/** What the application writes while the migration's process is down. */
+function applicationWrites(storePath: string): void {
+	const db = new DatabaseSync(storePath);
+	const columns = db
+		.prepare("SELECT name FROM pragma_table_info('checkout')")
+		.all()
+		.map((row) => String(row.name));
+	// The application writes whichever columns the store has now.
+	db.exec(
+		columns.includes("email")
+			? "INSERT INTO checkout (id, email) VALUES ('c3', 'c@example.test')"
+			: "INSERT INTO checkout (id, requester_ref) VALUES ('c3', 'email:c@example.test')",
+	);
+	db.close();
+}
+
+function idsOf(storePath: string): string[] {
+	const db = new DatabaseSync(storePath);
+	const ids = db
+		.prepare("SELECT id FROM checkout ORDER BY id")
+		.all()
+		.map((row) => String(row.id));
+	db.close();
+	return ids;
+}
+
+/** No rows exactly when the phase's statements are in effect. */
+const PROBES = {
+	expand:
+		"SELECT 'requester_ref' AS missing WHERE NOT EXISTS (SELECT 1 FROM pragma_table_info('checkout') WHERE name = 'requester_ref')",
+	backfill: "SELECT id FROM checkout WHERE requester_ref IS NULL",
+	contract:
+		"SELECT name FROM pragma_table_info('checkout') WHERE name = 'email'",
+} as const;
+
+for (const crashed of ["expand", "contract"] as const) {
+	test(`a crash after ${crashed} committed and before its fact: the resumed run holds, restores nothing, and the write made since is still there`, async () => {
+		const storePath = seededStore();
+		const journal = dyingAfter(crashed);
+		let restores = 0;
+		const run = async (probes?: typeof PROBES) => {
+			const port = createSqliteSchemaApplyPort({ path: storePath });
+			try {
+				return await executeDataMigration({
+					port: {
+						snapshot: () => port.snapshot(),
+						applyPhase: (phase, statements) =>
+							port.applyPhase(phase, statements),
+						verify: (query) => port.verify(query),
+						restore: (ref) => {
+							restores += 1;
+							return port.restore(ref);
+						},
+					},
+					plan: {
+						...PLAN,
+						migrationId: `mig-crash-${crashed}`,
+						...(probes === undefined ? undefined : { probes }),
+					},
+					compatGate: gate([]),
+					journal,
+					// Wired: before the fix this is what let the restore happen.
+					replayErasures: () => 0,
+				});
+			} finally {
+				port.close();
+			}
+		};
+		await assert.rejects(run(), /process died/u);
+		applicationWrites(storePath);
+		assert.deepEqual(idsOf(storePath), ["c1", "c2", "c3"]);
+
+		// No probe: nothing says whether the phase committed. Hold.
+		const held = await run();
+		assert.equal(held.status, "held");
+		assert.match(held.blockedReasons[0] ?? "", /^PHASE_OUTCOME_UNKNOWN: /u);
+		assert.equal(restores, 0, "the snapshot was restored");
+		assert.deepEqual(
+			idsOf(storePath),
+			["c1", "c2", "c3"],
+			"an acknowledged write made after the phase committed was lost",
+		);
+		assert.deepEqual(
+			held.facts.filter(
+				(fact) =>
+					fact.type === MIGRATION_EVENTS.RollbackDecided ||
+					fact.type === MIGRATION_EVENTS.RolledBack,
+			),
+			[],
+		);
+
+		// With the probe the run finds the phase in effect, records it without
+		// running it again, and carries on to the end.
+		const done = await run(PROBES);
+		assert.equal(done.status, "completed", done.blockedReasons.join("; "));
+		assert.equal(restores, 0);
+		const recovered = done.facts.find(
+			(fact) =>
+				fact.type === MIGRATION_EVENTS.PhaseApplied &&
+				fact.data.phase === crashed,
+		);
+		assert.equal(recovered?.data.recovered, true);
+		const db = new DatabaseSync(storePath);
+		cleanups.push(() => db.close());
+		assert.deepEqual(
+			db
+				.prepare("SELECT id, requester_ref FROM checkout ORDER BY id")
+				.all()
+				.map((row) => ({ ...row })),
+			[
+				{ id: "c1", requester_ref: "email:a@example.test" },
+				{ id: "c2", requester_ref: "email:b@example.test" },
+				{ id: "c3", requester_ref: "email:c@example.test" },
+			],
+		);
+		assert.throws(() => db.prepare("SELECT email FROM checkout").all());
+	});
+}

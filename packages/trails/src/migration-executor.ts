@@ -14,6 +14,13 @@
  * Given a `journal`, a migration is resumable: run again after a hold, it
  * skips the phases already applied and never re-applies `expand`, and the
  * snapshot it restores on failure is the first one taken.
+ *
+ * Every phase is write-ahead: `migration.PhaseIntended` is journaled before
+ * its statements run. A run that finds an intent with no `PhaseApplied` after
+ * it — the process died in between — does not know whether the statements
+ * committed. It neither runs them again nor restores the snapshot: it asks
+ * the plan's probe for that phase, and without one it holds
+ * (`PHASE_OUTCOME_UNKNOWN`).
  */
 
 import {
@@ -47,6 +54,8 @@ export const MIGRATION_EVENTS = Object.freeze({
 	Completed: "migration.Completed",
 	FenceRequested: "migration.FenceRequested",
 	RollbackDecided: "migration.RollbackDecided",
+	FenceRaised: "migration.FenceRaised",
+	PhaseIntended: "migration.PhaseIntended",
 } as const);
 
 export interface MigrationFact {
@@ -79,6 +88,21 @@ export interface DataMigrationPlan {
 		readonly afterBackfill: string;
 		readonly afterContract?: string;
 	};
+	/**
+	 * One probe per phase: a violations query that returns no rows exactly
+	 * when the phase's statements are fully in effect. Asked only when a run
+	 * cannot know whether a phase committed — an earlier run died between the
+	 * statements and their fact. No rows: the phase is recorded as applied
+	 * and not run again. Rows: it is applied. Without a probe such a run
+	 * holds; it never re-applies on a guess and never restores for it.
+	 */
+	readonly probes?: DataMigrationProbes;
+}
+
+export interface DataMigrationProbes {
+	readonly expand?: string;
+	readonly backfill?: string;
+	readonly contract?: string;
 }
 
 export type DataMigrationStatus =

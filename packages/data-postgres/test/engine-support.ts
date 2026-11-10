@@ -2,8 +2,10 @@
 // test calls it; the live helpers are only reached when
 // HOBO_TEST_POSTGRES_URL names a real server.
 import { randomUUID } from "node:crypto";
+import { appendFileSync } from "node:fs";
 import {
 	type DatasetSchema,
+	type EngineBinding,
 	type EngineConformanceResult,
 	type EngineHarness,
 	type NativePair,
@@ -22,6 +24,7 @@ import {
 	POSTGRES_SCHEMA_FIXTURE_TABLE,
 	type PostgresEngine,
 	type PostgresExecutor,
+	parseLsn,
 	quoteIdentifier,
 } from "../src/index.js";
 
@@ -89,6 +92,9 @@ export function livePool(max = 12): pg.Pool {
 	return pool;
 }
 
+/** The one namespace with a fixed name; declared here because the leak check below needs it. */
+const FIXTURE_NAMESPACE = "hobo_fixture_capture";
+
 let namespaceCounter = 0;
 // Random, not derived from the clock and the process id: two test files can
 // start in the same millisecond, and a worker thread shares its parent's pid.
@@ -147,6 +153,38 @@ export async function createCompanionDatabase(
 	};
 }
 
+/**
+ * A well-formed write-ahead-log location past `head`: 4 GiB further on, which
+ * no test run writes. Positions are opaque to the conformance kit, so the
+ * harness is what makes one.
+ */
+export function postgresPositionPastHead(head: string): string {
+	const ahead = parseLsn(head) + (1n << 32n);
+	return `${(ahead >> 32n).toString(16).toUpperCase()}/${(ahead & 0xffff_ffffn).toString(16).toUpperCase()}`;
+}
+
+/** Where a conformance run sends the raw error of a case that failed. */
+export function conformanceFailureSink(): (
+	caseId: string,
+	error: Error,
+) => void {
+	const file = process.env.HOBO_TEST_CONFORMANCE_ERRORS;
+	return (caseId, error) => {
+		if (file === undefined || file === "") return;
+		appendFileSync(
+			file,
+			`${JSON.stringify({
+				at: new Date().toISOString(),
+				caseId,
+				name: error.name,
+				sqlState: "code" in error ? String(error.code) : undefined,
+				message: error.message,
+				stack: error.stack?.split("\n").slice(0, 8),
+			})}\n`,
+		);
+	};
+}
+
 export interface LiveHarness extends EngineHarness {
 	readonly executor: PostgresExecutor;
 	/** A binding in its own namespace, dropped on close. */
@@ -167,10 +205,11 @@ export function postgresHarness(
 	companion?: CompanionDatabase,
 ): LiveHarness {
 	const executor = createPgExecutor(pool);
+	const opened = new WeakMap<EngineBinding, string>();
 	const open: LiveHarness["open"] = (options = {}) => {
 		const namespace = options.namespace ?? freshNamespace();
 		OWN_NAMESPACES.add(namespace);
-		return createPostgresEngine({
+		const binding = createPostgresEngine({
 			executor,
 			namespace,
 			capture: options.capture ?? true,
@@ -178,12 +217,29 @@ export function postgresHarness(
 			ephemeral: true,
 			clock: () => NOW,
 		});
+		opened.set(binding, namespace);
+		return binding;
 	};
 	const base = {
 		executor,
 		open,
 		schemaFixture: POSTGRES_SCHEMA_FIXTURE,
+		positionPastHead: postgresPositionPastHead,
 		create: () => open(),
+		// A second binding on the same namespace. Not ephemeral: the first
+		// binding owns the namespace and drops it.
+		attach(binding: EngineBinding): EngineBinding {
+			const first = opened.get(binding);
+			if (first === undefined) {
+				throw new Error("the binding was not created by this harness");
+			}
+			return createPostgresEngine({
+				executor,
+				namespace: first,
+				schemaTables: [POSTGRES_SCHEMA_FIXTURE_TABLE],
+				clock: () => NOW,
+			});
+		},
 	};
 	if (companion === undefined) return base;
 	const companionExecutor = createPgExecutor(companion.pool);
@@ -225,6 +281,19 @@ export function claimNamespace(namespace: string): string {
 export async function leftoverCaptureObjects(
 	...pools: readonly pg.Pool[]
 ): Promise<readonly string[]> {
+	const first = pools[0];
+	// The fixture namespace has one name for every run (see below). While
+	// another run is recording into it, its slot is that run's work in
+	// progress and not this file's leak, so the count waits its turn.
+	if (first !== undefined && OWN_NAMESPACES.has(FIXTURE_NAMESPACE)) {
+		return withFixtureLock(first, () => listCaptureObjects(pools));
+	}
+	return listCaptureObjects(pools);
+}
+
+async function listCaptureObjects(
+	pools: readonly pg.Pool[],
+): Promise<readonly string[]> {
 	const found: string[] = [];
 	for (const pool of pools) {
 		const current = await pool.query(
@@ -265,7 +334,36 @@ export async function leftoverCaptureObjects(
 // ── the recorded pgoutput scenario ──────────────────────────────────────────
 
 // public-contract: namespace the recorded pgoutput fixture was captured in; the bytes carry it.
-export const PGOUTPUT_FIXTURE_NAMESPACE = "hobo_fixture_capture";
+export const PGOUTPUT_FIXTURE_NAMESPACE = FIXTURE_NAMESPACE;
+
+/**
+ * Run `body` holding the server-wide lock on the fixture namespace.
+ *
+ * Every other namespace a test uses is random, so two runs against one server
+ * never meet. The fixture's cannot be: the recorded bytes carry its name. Two
+ * runs recording at once would drop each other's tables and slot, and each
+ * would count the other's as a leak. A session advisory lock, held on one
+ * connection for as long as `body` runs, takes them in turn.
+ */
+async function withFixtureLock<T>(
+	pool: pg.Pool,
+	body: () => Promise<T>,
+): Promise<T> {
+	const key = `hobo-test:${FIXTURE_NAMESPACE}`;
+	const session = await pool.connect();
+	try {
+		await session.query("SELECT pg_advisory_lock(hashtext($1::text))", [key]);
+		try {
+			return await body();
+		} finally {
+			await session.query("SELECT pg_advisory_unlock(hashtext($1::text))", [
+				key,
+			]);
+		}
+	} finally {
+		session.release();
+	}
+}
 // public-contract: subscription name used to record the pgoutput fixture.
 export const PGOUTPUT_FIXTURE_SUBSCRIPTION = "fixture_reader";
 
@@ -287,10 +385,15 @@ export const LARGE_NOTE = Array.from(
  * TRUNCATE with the guard disabled — because those are exactly the messages
  * a binding-only workload never produces and a decoder still has to survive.
  */
-export async function recordPgOutputScenario(
+export function recordPgOutputScenario(
 	pool: pg.Pool,
 ): Promise<readonly string[]> {
-	const namespace = claimNamespace(PGOUTPUT_FIXTURE_NAMESPACE);
+	claimNamespace(PGOUTPUT_FIXTURE_NAMESPACE);
+	return withFixtureLock(pool, () => recordScenario(pool));
+}
+
+async function recordScenario(pool: pg.Pool): Promise<readonly string[]> {
+	const namespace = PGOUTPUT_FIXTURE_NAMESPACE;
 	const executor = createPgExecutor(pool);
 	await pool.query(
 		`DROP SCHEMA IF EXISTS ${quoteIdentifier(namespace)} CASCADE`,

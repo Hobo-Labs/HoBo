@@ -11,12 +11,17 @@
  * `Resumed`, and `Completed`, and `PhaseApplied` carries the phase names of
  * the uniform phase model alongside the original expand/backfill/contract.
  *
- * Two facts are written *ahead* of what they describe. `FenceRequested` is
- * appended before a write fence is raised, and `RollbackDecided` before write
- * authority is handed back — as `CutOver` is appended before it is handed
- * over. Every append is a compare-and-set on the head the run read, so a
- * driver whose view of the migration is out of date loses the append and stops
- * before it touches a store.
+ * Three facts are written *ahead* of what they describe. `FenceRequested` is
+ * appended before a write fence is raised, `PhaseIntended` before an in-place
+ * phase runs its statements, and `RollbackDecided` before write authority is
+ * handed back — as `CutOver` is appended before it is handed over. Every
+ * append is a compare-and-set on the head the run read, so a driver whose view
+ * of the migration is out of date loses the append and stops before it touches
+ * a store.
+ *
+ * `FenceRaised` follows a raise and records the digest of the token it
+ * answered. That digest is how a later run proves a fence it finds standing is
+ * this migration's own before it writes through it, adopts it or releases it.
  */
 import {
 	type EventStore,
@@ -25,10 +30,12 @@ import {
 } from "@hobo/core";
 import { DataCoreError, JournalConflictError } from "./errors.js";
 import {
+	isJsonArray,
 	isJsonObject,
 	isJsonString,
 	type JsonObject,
 	type JsonValue,
+	sha256Hex,
 } from "./json.js";
 import {
 	isMigrationPatternId,
@@ -54,6 +61,8 @@ export const MIGRATION_EVENTS = Object.freeze({
 	Completed: "migration.Completed",
 	FenceRequested: "migration.FenceRequested",
 	RollbackDecided: "migration.RollbackDecided",
+	FenceRaised: "migration.FenceRaised",
+	PhaseIntended: "migration.PhaseIntended",
 } as const);
 
 export type MigrationEventType =
@@ -82,6 +91,97 @@ export const MIGRATION_FACT_VERSIONS: Readonly<Record<string, number>> =
 /** The body version a fact of this type is appended at; 1 unless listed. */
 export function migrationFactVersion(type: string): number {
 	return MIGRATION_FACT_VERSIONS[type] ?? 1;
+}
+
+/**
+ * What a journal records of a fence token. A fence token is a write-authority
+ * credential: whoever presents it writes through the fence. A journal is
+ * evidence, read by people and systems that must not gain that authority, so
+ * it carries only this digest — enough for a resumed run to recognise the
+ * fence a decision was made under, not enough to write through it.
+ */
+export function fenceTokenDigest(fenceToken: string): string {
+	return `sha256:${sha256Hex(fenceToken)}`;
+}
+
+/** The phase names an in-place migration plans; no other pattern uses them. */
+const IN_PLACE_PLAN_PHASES: readonly string[] = Object.freeze([
+	"expand",
+	"backfill",
+	"contract",
+]);
+
+/** A body with its fence token replaced by the token's digest. */
+function withoutFenceToken(body: JsonObject): JsonObject | undefined {
+	const { fenceToken, ...kept } = body;
+	if (!isJsonString(fenceToken)) return undefined;
+	// The token is what was written; a digest beside it is derived from it.
+	return { ...kept, fenceTokenDigest: fenceTokenDigest(fenceToken) };
+}
+
+/**
+ * Lift one fact to the body its type is written at today. Journals outlive
+ * the code that wrote them, so every run lifts what it loads before it folds:
+ *
+ * - `Planned` without a `pattern` whose phases are expand, backfill and
+ *   contract was written by the in-place executor before it named its
+ *   pattern; it is `in-place-evolve`. (A v1 body pinned `phases` as one
+ *   comma-joined string; that is read as the list it stood for.)
+ * - `CutOver` and `PhaseApplied`'s checkpoint once carried the fence token
+ *   itself. The token is a credential: it is replaced by its digest, so it
+ *   never reaches a fold, a result or a re-appended journal.
+ *
+ * Idempotent, and the identity for a body already at its current version. It
+ * mirrors the upcasters pinned in `@hobo/events`; a test there holds the two
+ * together over a recorded old journal.
+ */
+export function liftMigrationFact(fact: MigrationFact): MigrationFact {
+	const { type, data } = fact;
+	if (type === MIGRATION_EVENTS.Planned) {
+		const phases = isJsonString(data.phases)
+			? data.phases.split(",")
+			: data.phases;
+		const inPlace =
+			data.pattern === undefined &&
+			isJsonArray(phases) &&
+			phases.length === IN_PLACE_PLAN_PHASES.length &&
+			phases.every((phase, index) => phase === IN_PLACE_PLAN_PHASES[index]);
+		if (!inPlace && phases === data.phases) return fact;
+		return Object.freeze({
+			type,
+			data: Object.freeze({
+				...data,
+				...(phases === undefined ? undefined : { phases }),
+				...(inPlace ? { pattern: "in-place-evolve" } : undefined),
+			}),
+		});
+	}
+	if (type === MIGRATION_EVENTS.CutOver) {
+		const lifted = withoutFenceToken(data);
+		return lifted === undefined
+			? fact
+			: Object.freeze({ type, data: Object.freeze(lifted) });
+	}
+	if (type === MIGRATION_EVENTS.PhaseApplied) {
+		const checkpoint = data.checkpoint;
+		const lifted = isJsonObject(checkpoint)
+			? withoutFenceToken(checkpoint)
+			: undefined;
+		return lifted === undefined
+			? fact
+			: Object.freeze({
+					type,
+					data: Object.freeze({ ...data, checkpoint: lifted }),
+				});
+	}
+	return fact;
+}
+
+/** `liftMigrationFact` over a loaded journal; one fact in, one fact out. */
+export function liftMigrationFacts(
+	facts: readonly MigrationFact[],
+): readonly MigrationFact[] {
+	return Object.freeze(facts.map((fact) => liftMigrationFact(fact)));
 }
 
 /** Which store a write fence is requested on. */
@@ -332,7 +432,9 @@ export function createEventStoreMigrationJournal(
 					}),
 				);
 			}
-			return Object.freeze(facts);
+			// A stream written by an earlier release holds bodies of an earlier
+			// version: lifted here, before anything folds them.
+			return liftMigrationFacts(facts);
 		},
 		async append(
 			migrationId: string,

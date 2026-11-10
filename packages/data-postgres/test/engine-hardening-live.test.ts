@@ -29,11 +29,15 @@ import {
 import type pg from "pg";
 import { afterAll, beforeAll, describe, test } from "vitest";
 import {
+	createPgExecutor,
 	createPostgresEngine,
 	FENCED_WRITE_SQLSTATE,
 	type PostgresEngine,
+	type PostgresExecutor,
 	quoteIdentifier,
 	SCHEMA_SNAPSHOT_REFUSALS,
+	SLOT_PROBE,
+	SLOT_SETTLED,
 	sqlStateOf,
 } from "../src/index.js";
 import {
@@ -716,6 +720,160 @@ describe.skipIf(!LIVE_URL)(
 				`SELECT subscription FROM ${quoteIdentifier(source.namespace)}.hobo_data_subscriptions`,
 			);
 			assert.deepEqual(remaining.rows, []);
+		}, 120_000);
+
+		// ── 8. a slot created at a bad moment ───────────────────────────────────
+
+		test("a slot created while another session creates a table and writes to it is replaced before anyone reads it (every read of it failed for ever: could not map filenumber)", async () => {
+			// The choreography below is the whole cause, on tables this binding
+			// has nothing to do with. While the slot is being created:
+			//   C creates a table and stays open past the point where the slot
+			//     starts tracking catalog changes, so the slot never learns of it;
+			//   T writes to that table before the slot is consistent, and commits
+			//     after — so the slot decodes T, with a catalog that has no such
+			//     table, and the server gives up: SQLSTATE XX000.
+			// A and D are only there to hold the slot in each stage long enough.
+			const bindingPool = livePool(1);
+			const sessions = livePool(4);
+			const foreign = `hobo_meanwhile_${suffix}`;
+			schemas.push(foreign);
+			const made = `${quoteIdentifier(foreign)}.made_meanwhile`;
+			const other = `${quoteIdentifier(foreign)}.other`;
+			const issued: string[] = [];
+			const watch = (inner: PostgresExecutor): PostgresExecutor => ({
+				query(sql, parameters = []) {
+					issued.push(sql);
+					return inner.query(sql, parameters);
+				},
+				transaction: (body) => inner.transaction((tx) => body(watch(tx))),
+			});
+			const times = (sql: string): number =>
+				issued.filter((entry) => entry === sql || entry.includes(sql)).length;
+			const until = async (
+				what: string,
+				holds: () => Promise<boolean>,
+			): Promise<void> => {
+				for (let round = 0; round < 400; round += 1) {
+					if (await holds()) return;
+					await new Promise((resolve) => {
+						setTimeout(resolve, 25);
+					});
+				}
+				throw new Error(`timed out waiting until ${what}`);
+			};
+			const binding = createPostgresEngine({
+				executor: watch(createPgExecutor(bindingPool)),
+				namespace: freshNamespace(),
+				ephemeral: true,
+				clock: () => NOW,
+				nativePollIntervalMs: 10,
+			});
+			const [a, c, d, t] = await Promise.all([
+				sessions.connect(),
+				sessions.connect(),
+				sessions.connect(),
+				sessions.connect(),
+			]);
+			const xidOf = async (session: pg.PoolClient): Promise<string> => {
+				const result = await session.query(
+					"SELECT pg_current_xact_id()::text AS xid",
+				);
+				return String(result.rows[0]?.xid ?? "");
+			};
+			try {
+				await pool.query(`CREATE SCHEMA ${quoteIdentifier(foreign)}`);
+				await pool.query(`CREATE TABLE ${other} (id integer)`);
+				await binding.datasets.ensureDataset(EVENTS);
+				const backend = await bindingPool.query(
+					"SELECT pg_backend_pid()::text AS pid",
+				);
+				const pid = String(backend.rows[0]?.pid ?? "");
+				const waitingOn = async (xids: readonly string[]): Promise<boolean> => {
+					const found = await pool.query(
+						"SELECT 1 FROM pg_locks WHERE pid = $1::integer AND NOT granted AND locktype = 'transactionid' AND transactionid::text = ANY($2::text[])",
+						[pid, xids],
+					);
+					return found.rows.length > 0;
+				};
+
+				await a.query("BEGIN");
+				await a.query(`INSERT INTO ${other} VALUES (1)`);
+				const scope = scopeOf(EVENTS.name);
+				const capture = requirePort(binding, "capture");
+				const starting = capture.start({ scope, subscription: "meanwhile" });
+				// A failure below must not leave this as an unhandled rejection.
+				starting.catch(() => undefined);
+				await until("the slot waits for the first open transaction", async () =>
+					waitingOn([await xidOf(a)]),
+				);
+				await c.query("BEGIN");
+				await c.query(`CREATE TABLE ${made} (id integer PRIMARY KEY)`);
+				await d.query("BEGIN");
+				await d.query(`INSERT INTO ${other} VALUES (2)`);
+				const later = [await xidOf(c), await xidOf(d)];
+				await a.query("COMMIT");
+				// The slot now has a full snapshot and waits for C and D — the
+				// transactions that were open when it got one.
+				await until(
+					"the slot waits for the transactions open at its snapshot",
+					() => waitingOn(later),
+				);
+				await c.query("COMMIT");
+				await t.query("BEGIN");
+				await t.query(`INSERT INTO ${made} VALUES (1)`);
+				await d.query("COMMIT");
+				// The slot is consistent and the server has answered. The binding
+				// now waits for T, which was open at that moment, before it
+				// decodes anything.
+				await until(
+					"the binding asks whether open transactions have ended",
+					async () => times(SLOT_SETTLED) > 0,
+				);
+				assert.equal(
+					times(SLOT_PROBE),
+					0,
+					"nothing is decoded while T is open",
+				);
+				await t.query("COMMIT");
+
+				const position = await starting;
+				const created = times("pg_create_logical_replication_slot");
+				const probes = times(SLOT_PROBE);
+				assert.ok(probes >= 1, "the slot was proven before being answered");
+				assert.equal(created, probes, "every slot created was probed");
+				console.info(
+					`live slot proof: ${created} slot(s) created, ${probes} decoding probe(s); ${probes > 1 ? "the first slot could not decode and was replaced" : "this server decoded the first slot"}`,
+				);
+				// The subscription that was answered works: it reads a write made
+				// after it, and keeps reading. Unproven, this read threw XX000 —
+				// and so did every read after it.
+				await binding.records.write({
+					dataset: EVENTS.name,
+					mutations: [event("after-start", "2026-01-01T00:00:00Z")],
+				});
+				for (let round = 0; round < 2; round += 1) {
+					const batch = await capture.read({
+						scope,
+						subscription: "meanwhile",
+						after: position,
+						limit: 10,
+					});
+					assert.deepEqual(
+						batch.changes.map((change) => change.key),
+						[canonicalEncode(["after-start"])],
+					);
+					assert.equal(batch.caughtUp, true);
+				}
+				await capture.stop("meanwhile");
+			} finally {
+				for (const session of [a, c, d, t]) {
+					await session.query("ROLLBACK").catch(() => undefined);
+					session.release();
+				}
+				await binding.close();
+				await sessions.end();
+				await bindingPool.end();
+			}
 		}, 120_000);
 	},
 );

@@ -376,6 +376,20 @@ export class DatasetStore {
 			// would alter or reject is refused before it is sent.
 			assertStorableText(mutation.tenant, "tenant");
 			const upsert = mutation.op === "upsert" && mutation.record !== undefined;
+			if (
+				!upsert &&
+				encodeRecordKey(schema, decodeRecordKey(schema, mutation.key)) !==
+					mutation.key
+			) {
+				// A delete names a key and nothing else. Read leniently, an
+				// uppercase uuid or a spaced-out key would delete here and
+				// delete nothing in an engine that compares keys as text.
+				throw new DataCoreError(
+					"INVALID_RECORD",
+					"a delete names a record by its canonical key",
+					{ detail: { dataset: schema.name, field: "key" } },
+				);
+			}
 			const parameters = upsert
 				? this.upsertParameters(schema, mutation)
 				: [mutation.tenant, ...this.keyParameters(schema, mutation.key)];
@@ -648,6 +662,9 @@ export class DatasetStore {
 					scope,
 					expected.buckets.length,
 				);
+				// Redelivery: the scope is already empty behind the caller's
+				// own fence. There is nothing left to compare or to remove.
+				if (current.count === 0) return 0;
 				if (
 					current.count !== expected.count ||
 					current.digest !== expected.digest

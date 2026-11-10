@@ -94,8 +94,24 @@
 			"bodyDigest": "sha256:eac3338164aee6e0550c198691b7225969890bfbd51d5c6d402207cd8568120b"
 		},
 		{
+			"key": "migration.FenceRaised@v1#migration-FenceRaised-v1",
+			"bodyDigest": "sha256:962db258229c2b2d2dda0cf64b7e09f2d4b44a683f5d3e575d0a3b0382e94d3c"
+		},
+		{
+			"key": "migration.PhaseIntended@v1#migration-PhaseIntended-v1",
+			"bodyDigest": "sha256:60ea9ff0d31856e5b99f2a4b46f4707ba15d27dc96b15388a30afcc64c5cb4ff"
+		},
+		{
+			"key": "migration.Planned@v1#migration-Planned-v1-executor",
+			"bodyDigest": "sha256:86e2642375d672aef57141c14b6599793038526c15e0ed4b84c59ff041592560"
+		},
+		{
 			"key": "migration.Planned@v2#migration-Planned-v2",
 			"bodyDigest": "sha256:032327295d2e76c7e7e50dbfe5911af902b51432be0f054418041b9f7ee30135"
+		},
+		{
+			"key": "migration.PhaseApplied@v1#migration-PhaseApplied-v1-fence-token",
+			"bodyDigest": "sha256:9c2cdb42d2d6fd6e76a6c622f1b08bd10912515fe3e3fb7a465b395956838616"
 		},
 		{
 			"key": "migration.PhaseApplied@v2#migration-PhaseApplied-v2",

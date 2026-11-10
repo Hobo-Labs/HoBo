@@ -11,6 +11,7 @@
 import {
 	type CanonicalRecord,
 	type DatasetSchema,
+	decodeRecordKey,
 	encodeRecordKey,
 	schemaDigest,
 } from "./canonical.js";
@@ -21,7 +22,12 @@ import {
 	type Position,
 	type RecordMutation,
 } from "./envelope.js";
-import { DataCoreError, FencedWriteError, StaleApplyError } from "./errors.js";
+import {
+	CapturePositionError,
+	DataCoreError,
+	FencedWriteError,
+	StaleApplyError,
+} from "./errors.js";
 import { isJsonString, type JsonObject } from "./json.js";
 import {
 	type CaptureOrdering,
@@ -165,7 +171,8 @@ interface StoredDataset {
 		string,
 		{ tenant: string; key: string; record: CanonicalRecord }
 	>;
-	readonly journal: { seq: number; envelope: ChangeEnvelope }[];
+	/** `write` numbers the write a change landed in: a read never splits one. */
+	readonly journal: { seq: number; write: number; envelope: ChangeEnvelope }[];
 	readonly watermarks: Map<string, Position>;
 	readonly fences: Map<string, string>;
 }
@@ -181,15 +188,30 @@ function slot(tenant: string, key: string): string {
  * by another engine, or by nobody: answering it with "nothing after that"
  * would look exactly like being caught up.
  */
-function positionOf(position: Position): number {
+function positionOf(position: Position, subscription = ""): number {
 	if (!/^(?:0|[1-9][0-9]{0,15})$/u.test(position)) {
-		throw new DataCoreError(
-			"INVALID_ENVELOPE",
+		throw new CapturePositionError(
+			subscription,
 			"a capture position for the reference engine is a journal sequence number",
-			{ detail: { field: "position" } },
 		);
 	}
 	return Number(position);
+}
+
+/** A capture subscription: the scope its name is bound to, and how far it acknowledged. */
+interface ReferenceSubscription {
+	readonly scope: DatasetScope;
+	readonly start: Position;
+	/** Everything at or before this was acknowledged; a read from before it is refused. */
+	floor: number;
+}
+
+/**
+ * A well-formed reference position past `head`: the journal is a sequence, so
+ * any larger number is one this engine could mint later and has not yet.
+ */
+export function referencePositionPastHead(head: Position): Position {
+	return String(positionOf(head) + 1_000_000);
 }
 
 function inScope(scope: DatasetScope, tenant: string): boolean {
@@ -240,8 +262,9 @@ export function createReferenceEngine(
 		(port) => port !== "schema" && !omit.includes(port),
 	);
 	const datasets = new Map<string, StoredDataset>();
-	const subscriptions = new Map<string, Position>();
+	const subscriptions = new Map<string, ReferenceSubscription>();
 	let sequence = 0;
+	let writes = 0;
 	let fenceCounter = 0;
 
 	const dataset = (name: string): StoredDataset => {
@@ -277,23 +300,38 @@ export function createReferenceEngine(
 		mutations: readonly RecordMutation[],
 		fenceToken: string | undefined,
 	): void => {
+		const refuse = (message: string): never => {
+			throw new DataCoreError("INVALID_RECORD", message, {
+				detail: { dataset: stored.schema.name, field: "key" },
+			});
+		};
 		for (const mutation of mutations) {
 			assertWritable(stored, mutation.tenant, fenceToken);
-			// A record is stored where its own key says. A mutation that names
-			// one key and carries the record of another would otherwise sit
-			// under a key no other engine could find it by.
-			if (
-				mutation.op === "upsert" &&
-				mutation.record !== undefined &&
-				encodeRecordKey(stored.schema, mutation.record) !== mutation.key
+			if (mutation.op === "upsert") {
+				if (mutation.record === undefined) {
+					refuse("an upsert carries the record it writes");
+				}
+				// A record is stored where its own key says. A mutation that
+				// names one key and carries the record of another would otherwise
+				// sit under a key no other engine could find it by.
+				else if (
+					encodeRecordKey(stored.schema, mutation.record) !== mutation.key
+				) {
+					refuse("a mutation's key must be the key of its record");
+				}
+			} else if (
+				// A delete names a key and nothing else, so the key has to be in
+				// its one canonical spelling: any other names no record here, and
+				// would silently delete nothing while another engine deleted one.
+				encodeRecordKey(
+					stored.schema,
+					decodeRecordKey(stored.schema, mutation.key),
+				) !== mutation.key
 			) {
-				throw new DataCoreError(
-					"INVALID_RECORD",
-					"a mutation's key must be the key of its record",
-					{ detail: { dataset: stored.schema.name, field: "key" } },
-				);
+				refuse("a delete names a record by its canonical key");
 			}
 		}
+		writes += 1;
 		for (const mutation of mutations) {
 			const at = slot(mutation.tenant, mutation.key);
 			if (mutation.op === "upsert" && mutation.record !== undefined) {
@@ -308,6 +346,7 @@ export function createReferenceEngine(
 			sequence += 1;
 			stored.journal.push({
 				seq: sequence,
+				write: writes,
 				envelope: envelopeOf(stored.schema, mutation, String(sequence)),
 			});
 		}
@@ -335,6 +374,8 @@ export function createReferenceEngine(
 	const originId = `reference-origin-${originCounter}`;
 	const nativePublications = new Map<string, LinkedPublication>();
 	const nativeSubscriptions = new Map<string, { readonly origin: string }>();
+	/** Transfers this engine subscribes to and has been told to stop applying. */
+	const nativePaused = new Set<string>();
 	if (link !== undefined) {
 		link.origins.set(originId, {
 			publications: nativePublications,
@@ -449,7 +490,7 @@ export function createReferenceEngine(
 			let copiedThrough: number | undefined;
 			publication.subscriber = {
 				pull(): void {
-					if (state.stalled) return;
+					if (state.stalled || nativePaused.has(request.transfer)) return;
 					if (copiedThrough === undefined) {
 						commit(stored, origin.rows(publication.scope), undefined);
 					} else {
@@ -475,7 +516,7 @@ export function createReferenceEngine(
 							.get(subscription.origin)
 							?.publications.get(ref.transfer);
 			if (publication?.subscriber === undefined) throw lost(ref);
-			if (state.stalled) return false;
+			if (state.stalled || nativePaused.has(ref.transfer)) return false;
 			publication.subscriber.pull();
 			return true;
 		},
@@ -492,8 +533,16 @@ export function createReferenceEngine(
 				publication.confirmed >= positionOf(request.mark)
 			);
 		},
+		pause(ref): void {
+			// Only a transfer this engine subscribes to has anything to pause.
+			if (nativeSubscriptions.has(ref.transfer)) nativePaused.add(ref.transfer);
+		},
+		resume(ref): void {
+			nativePaused.delete(ref.transfer);
+		},
 		stop(ref): void {
 			// Both halves: whichever this engine holds for the transfer.
+			nativePaused.delete(ref.transfer);
 			const subscription = nativeSubscriptions.get(ref.transfer);
 			if (subscription !== undefined) {
 				const publication = state.origins
@@ -595,34 +644,88 @@ export function createReferenceEngine(
 					capture: {
 						start(request) {
 							const existing = subscriptions.get(request.subscription);
-							if (existing !== undefined) return existing;
+							if (existing !== undefined) {
+								// A name is one reader of one scope. Answering its
+								// position to a reader of another scope would start
+								// that reader somewhere it never asked to be.
+								if (
+									existing.scope.dataset !== request.scope.dataset ||
+									existing.scope.tenant !== request.scope.tenant
+								) {
+									throw new DataCoreError(
+										"CAPTURE_SUBSCRIPTION_CONFLICT",
+										`subscription ${request.subscription} is bound to another scope`,
+										{ detail: { subscription: request.subscription } },
+									);
+								}
+								return existing.start;
+							}
 							dataset(request.scope.dataset);
 							const position = String(sequence);
-							subscriptions.set(request.subscription, position);
+							subscriptions.set(request.subscription, {
+								scope: request.scope,
+								start: position,
+								floor: 0,
+							});
 							return position;
 						},
 						read(request) {
 							const stored = dataset(request.scope.dataset);
-							const after = positionOf(request.after);
+							const after = positionOf(request.after, request.subscription);
+							const floor = subscriptions.get(request.subscription)?.floor ?? 0;
+							if (after > sequence || after < floor) {
+								throw new CapturePositionError(
+									request.subscription,
+									after > sequence
+										? "the position is past the head of the journal; this engine never minted it"
+										: "changes before the acknowledged position were released and cannot be read again",
+								);
+							}
 							const pending = stored.journal.filter(
 								(entry) =>
 									entry.seq > after &&
 									inScope(request.scope, entry.envelope.tenant),
 							);
-							const page = pending.slice(0, request.limit);
-							const caughtUp = pending.length <= request.limit;
+							// Whole writes only: the first is always taken, however
+							// large, and a later one only while it fits the limit.
+							const page: typeof pending = [];
+							let taken = 0;
+							while (taken < pending.length) {
+								const write = pending[taken]?.write;
+								let end = taken;
+								while (pending[end]?.write === write) end += 1;
+								if (page.length > 0 && end > request.limit) break;
+								for (const entry of pending.slice(taken, end)) page.push(entry);
+								taken = end;
+							}
+							const caughtUp = taken >= pending.length;
 							const last = page[page.length - 1];
 							return {
 								changes: page.map((entry) => entry.envelope),
 								// Caught up means everything to the head was considered,
 								// including changes outside this scope.
 								position: caughtUp
-									? String(Math.max(sequence, after))
+									? String(sequence)
 									: String(last?.seq ?? after),
 								caughtUp,
 							};
 						},
-						acknowledge() {},
+						acknowledge(request) {
+							const position = positionOf(
+								request.position,
+								request.subscription,
+							);
+							if (position > sequence) {
+								throw new CapturePositionError(
+									request.subscription,
+									"a position past the head of the journal cannot be acknowledged; nothing was read there",
+								);
+							}
+							const subscription = subscriptions.get(request.subscription);
+							if (subscription !== undefined) {
+								subscription.floor = Math.max(subscription.floor, position);
+							}
+						},
 						stop(subscription) {
 							subscriptions.delete(subscription);
 						},
@@ -713,6 +816,10 @@ export function createReferenceEngine(
 								request.scope,
 								request.expected.buckets.length,
 							);
+							// Redelivery: the scope is already empty behind the
+							// caller's own fence. There is nothing left to compare
+							// and nothing to remove.
+							if (current.count === 0) return { removed: 0 };
 							if (
 								current.count !== request.expected.count ||
 								current.digest !== request.expected.digest

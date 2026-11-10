@@ -17,6 +17,7 @@ import { DataCoreError } from "./errors.js";
 import {
 	isJsonArray,
 	isJsonBoolean,
+	isJsonNumber,
 	isJsonObject,
 	isJsonString,
 	type JsonObject,
@@ -99,6 +100,13 @@ export interface EngineDeclaration {
 	readonly typeMapping: TypeMappingAnnex;
 	/** Closed list of impedance codes this engine can report (ADR-0144). */
 	readonly impedance: readonly string[];
+	/**
+	 * The largest record the engine stores, in bytes of its canonical encoding,
+	 * when the engine has such a bound. A batch carrying a larger record is
+	 * refused whole. Absent means the engine states no bound — not that it has
+	 * none.
+	 */
+	readonly maxRecordBytes?: number;
 }
 
 /** A dataset, optionally narrowed to one tenant of a pooled store. */
@@ -151,7 +159,16 @@ export interface ReadRequest {
 }
 
 export interface RecordPort {
-	/** Atomic. Refuses with `FencedWriteError` when the scope is fenced. */
+	/**
+	 * Atomic. Refuses with `FencedWriteError` when a fence covers a mutation's
+	 * tenant — the tenant's own fence or a dataset-wide one — unless the write
+	 * presents that fence's token. A token of any other fence, or of a fence
+	 * since released, is no token.
+	 *
+	 * A mutation's key is the canonical key of its record; a key in any other
+	 * spelling is refused (or, for an upsert, stored under the canonical key),
+	 * and a delete naming a non-canonical key is refused.
+	 */
 	write(request: WriteRequest): Awaitable<WriteReceipt>;
 	read(request: ReadRequest): Awaitable<CanonicalRecord | undefined>;
 }
@@ -207,7 +224,9 @@ export interface CaptureAckRequest {
 export interface ChangeCapturePort {
 	/**
 	 * Establish the subscription and return the position every not-yet-captured
-	 * change sits after. Idempotent for an existing subscription.
+	 * change sits after. Idempotent for an existing subscription on the same
+	 * scope. A name already bound to another scope is refused, or names an
+	 * independent subscription; it never answers the other scope's position.
 	 */
 	start(request: CaptureStartRequest): Awaitable<Position>;
 	/**
@@ -217,9 +236,13 @@ export interface ChangeCapturePort {
 	 * `limit` changes to keep one whole. `caughtUp` must be accurate regardless.
 	 */
 	read(request: CaptureReadRequest): Awaitable<CaptureBatch>;
-	/** Let the engine release log it retained up to `position`. */
+	/**
+	 * Let the engine release log it retained up to `position`. The position
+	 * must be one the engine minted and not past its head; anything else is
+	 * refused. Once acknowledged, a read from before the position is an error.
+	 */
 	acknowledge(request: CaptureAckRequest): Awaitable<void>;
-	/** Drop the subscription and whatever log it pinned. */
+	/** Drop the subscription and whatever log it pinned. Idempotent. */
 	stop(subscription: string): Awaitable<void>;
 }
 
@@ -260,6 +283,9 @@ export interface ChangeApplyPort {
 	/**
 	 * Apply the changes and record the watermark in one transaction. Redelivery
 	 * of a batch is harmless: upserts and deletes are idempotent in order.
+	 *
+	 * An apply is a write: into a fenced scope it is refused with
+	 * `FencedWriteError` unless it presents the fence's token.
 	 *
 	 * With `expectedWatermark`, the same transaction first checks that the
 	 * recorded watermark is the one named, and refuses the whole batch with
@@ -303,7 +329,9 @@ export interface FenceStatus {
 
 export interface WriteFencePort {
 	/**
-	 * Idempotent: raising a raised fence returns its existing token.
+	 * Idempotent: raising a raised fence returns its existing token. A fence
+	 * raised after a release is a new fence with a new token; the old token
+	 * opens nothing.
 	 *
 	 * `raise` returns only once no write that began before it can still land:
 	 * an in-flight write either commits before `raise` returns or is refused.
@@ -329,7 +357,13 @@ export interface RetireReceipt {
 }
 
 export interface RetirePort {
-	/** Destructive. Refused without a raised fence and a matching digest. */
+	/**
+	 * Destructive. Refused without the token of the fence raised on exactly
+	 * this scope, and without a matching digest. Redelivery after it committed
+	 * is harmless: retiring a scope that is already empty, with the fence's
+	 * token, removes nothing and succeeds. What it removed is not replayed to
+	 * a capture subscription started afterwards.
+	 */
 	retire(request: RetireRequest): Awaitable<RetireReceipt>;
 }
 
@@ -350,6 +384,12 @@ export interface SchemaPhaseResult {
 
 export interface SchemaApplyPort {
 	snapshot(): Awaitable<SchemaSnapshotRef>;
+	/**
+	 * Run a phase's statements. An executor journals its intent first, so a
+	 * call that committed and was never heard back from is not blindly made
+	 * again: the resumed run asks `verify` with the plan's probe for the phase
+	 * whether the statements took effect, and holds when it cannot tell.
+	 */
 	applyPhase(
 		phase: SchemaPhase,
 		statements: readonly string[],
@@ -396,7 +436,8 @@ export interface NativeReachedRequest extends NativeTransferRef {
  * how far it got.
  *
  * One port serves both roles. `publish`, `mark` and `reached` are asked of the
- * source; `subscribe` and `seeded` of the target; `stop` of each.
+ * source; `subscribe`, `seeded`, `pause` and `resume` of the target; `stop` of
+ * each.
  *
  * Nothing that crosses the port may carry a credential or a record: the ticket
  * is journaled. How the target reaches the source — a connection string, a
@@ -430,6 +471,22 @@ export interface NativeTransferPort {
 	 * before `mark`. May wait a bounded time before answering false.
 	 */
 	reached(request: NativeReachedRequest): Awaitable<boolean>;
+	/**
+	 * Target. Stop delivering: once it returns, no further change — and no
+	 * further part of an initial copy — reaches the target until `resume`. The
+	 * source keeps retaining what was not delivered. An executor calls it when
+	 * a migration holds, so that nothing moves while nobody has approved it
+	 * moving. Idempotent, and harmless for a transfer that never started or was
+	 * stopped. An engine may have to start an unfinished initial copy again
+	 * after a pause; it must not deliver while paused.
+	 */
+	pause(request: NativeTransferRef): Awaitable<void>;
+	/**
+	 * Target. Deliver again from where `pause` stopped. Idempotent, and
+	 * harmless for a transfer that is not paused, never started, or was
+	 * stopped.
+	 */
+	resume(request: NativeTransferRef): Awaitable<void>;
 	/**
 	 * Either side. Drop whatever this side holds for the transfer, and the log
 	 * it pinned. Idempotent, and harmless for a transfer that never started.
@@ -562,6 +619,15 @@ export function parseEngineDeclaration(
 		}
 		return Object.freeze({ profile: entry.profile, pattern: entry.pattern });
 	});
+	const maxRecordBytes = value.maxRecordBytes;
+	if (
+		maxRecordBytes !== undefined &&
+		(!isJsonNumber(maxRecordBytes) ||
+			!Number.isSafeInteger(maxRecordBytes) ||
+			maxRecordBytes < 1)
+	) {
+		invalid("maxRecordBytes must be a positive integer", "maxRecordBytes");
+	}
 	return Object.freeze({
 		contract: ENGINE_DECLARATION_CONTRACT,
 		engine,
@@ -575,6 +641,7 @@ export function parseEngineDeclaration(
 		nativeProfiles: Object.freeze(nativeProfiles),
 		typeMapping: parseTypeMappingAnnex(value.typeMapping),
 		impedance: Object.freeze(stringList(value.impedance ?? [], "impedance")),
+		...(maxRecordBytes === undefined ? undefined : { maxRecordBytes }),
 	});
 }
 
@@ -597,6 +664,9 @@ export function engineDeclarationToJson(
 		})),
 		typeMapping: typeMappingToJson(declaration.typeMapping),
 		impedance: [...declaration.impedance],
+		...(declaration.maxRecordBytes === undefined
+			? undefined
+			: { maxRecordBytes: declaration.maxRecordBytes }),
 	};
 }
 

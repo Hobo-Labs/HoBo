@@ -23,15 +23,19 @@
  *   restore — the one step that destroys work — has its decision journaled
  *   first. A second run of the same migration whose view is out of date loses
  *   that append and restores nothing.
+ * - A phase is write-ahead too: `migration.PhaseIntended` is journaled, as a
+ *   compare-and-set, before its statements run. A run that finds an intent
+ *   with no answer — the process died between the statements and their fact —
+ *   does not know whether they committed. It does not run them again on a
+ *   guess, and it never restores the snapshot because of them: the store has
+ *   been taking writes since. It asks the plan's probe for the phase, and
+ *   holds when there is none.
  */
 import { requiredCustodyRoles } from "../custody.js";
-import {
-	DataCoreError,
-	isSupersededError,
-	JournalConflictError,
-} from "../errors.js";
+import { DataCoreError, isSupersededError } from "../errors.js";
 import {
 	createMemoryMigrationJournal,
+	liftMigrationFacts,
 	MIGRATION_EVENTS,
 	type MigrationFact,
 	type MigrationJournal,
@@ -65,6 +69,24 @@ export interface CompatGateEvidence {
 	readonly verifiedAt: string;
 }
 
+/**
+ * One probe per phase: a violations query, run through the port's `verify`,
+ * that returns **no rows exactly when the phase's statements are fully in
+ * effect**. For `ALTER TABLE users DROP COLUMN full_name`: the rows of the
+ * catalog that still describe `full_name`.
+ *
+ * A probe is how a run that cannot know whether a phase committed finds out
+ * (see `PHASE_OUTCOME_UNKNOWN`). No rows: the phase is recorded as applied and
+ * not run again. Rows: it is not in effect, and is applied. A caller who knows
+ * the statements are safe to run twice can say so with a probe that always
+ * returns a row.
+ */
+export interface InPlacePhaseProbes {
+	readonly expand?: string;
+	readonly backfill?: string;
+	readonly contract?: string;
+}
+
 export interface InPlaceEvolvePlan {
 	readonly migrationId: string;
 	readonly expand: readonly string[];
@@ -75,6 +97,8 @@ export interface InPlaceEvolvePlan {
 		readonly afterBackfill: string;
 		readonly afterContract?: string;
 	};
+	/** How to tell whether a phase took effect; see `InPlacePhaseProbes`. */
+	readonly probes?: InPlacePhaseProbes;
 }
 
 export const IN_PLACE_EVOLVE_STATUSES = [
@@ -170,6 +194,14 @@ interface Progress {
 	/** The first snapshot taken: the one that predates every change. */
 	snapshot: SchemaSnapshotRef | undefined;
 	readonly applied: Map<SchemaPhase, SchemaPhaseResult>;
+	/**
+	 * Phases with an intent on record and no answer after it: neither a
+	 * `PhaseApplied` nor a failure the port reported. Whether their statements
+	 * committed is not known.
+	 */
+	readonly unanswered: Set<SchemaPhase>;
+	/** The pattern the journal was planned as, when it says. */
+	pattern: string | undefined;
 	readonly verified: Set<string>;
 	heldAt: string | undefined;
 	reason: string | undefined;
@@ -187,6 +219,8 @@ function progressOf(facts: readonly MigrationFact[]): Progress {
 		planned: false,
 		snapshot: undefined,
 		applied: new Map(),
+		unanswered: new Set(),
+		pattern: undefined,
 		verified: new Set(),
 		heldAt: undefined,
 		reason: undefined,
@@ -201,6 +235,10 @@ function progressOf(facts: readonly MigrationFact[]): Progress {
 			case MIGRATION_EVENTS.Planned:
 				progress.planned = true;
 				progress.status = "running";
+				if (isJsonString(data.pattern)) progress.pattern = data.pattern;
+				break;
+			case MIGRATION_EVENTS.PhaseIntended:
+				if (isSchemaPhase(data.phase)) progress.unanswered.add(data.phase);
 				break;
 			case MIGRATION_EVENTS.SnapshotTaken:
 				if (
@@ -218,6 +256,7 @@ function progressOf(facts: readonly MigrationFact[]): Progress {
 						statements: count(data.statements),
 						changes: count(data.changes),
 					});
+					progress.unanswered.delete(data.phase);
 					progress.status = "running";
 				}
 				break;
@@ -227,6 +266,10 @@ function progressOf(facts: readonly MigrationFact[]): Progress {
 			case MIGRATION_EVENTS.Held:
 				progress.status = "held";
 				progress.heldAt = isJsonString(data.phase) ? data.phase : undefined;
+				// The port answered: the phase failed. That is an answer.
+				if (isSchemaPhase(data.failedPhase)) {
+					progress.unanswered.delete(data.failedPhase);
+				}
 				break;
 			case MIGRATION_EVENTS.Resumed:
 				progress.status = "running";
@@ -262,15 +305,45 @@ interface Outcome {
 export const NO_ERASURE_REPLAY_REASON =
 	"the snapshot was not restored: no erasure replay was supplied, and a restore without one would bring back every subject erased since the snapshot";
 
+/**
+ * A phase's intent is journaled and nothing answers it: an earlier run died
+ * between running the statements and recording that it had. They may have
+ * committed. The run holds; it neither runs them again nor restores. Resolved
+ * by a probe for the phase in the plan (`InPlacePhaseProbes`).
+ */
+// public-contract: hold code for a phase whose statements may or may not have committed.
+export const PHASE_OUTCOME_UNKNOWN = "PHASE_OUTCOME_UNKNOWN";
+
+/**
+ * A phase that was applied again after an unanswered intent failed. The
+ * snapshot is not restored for it — the store has been taking writes since
+ * the first attempt — and the run holds for a person.
+ */
+// public-contract: hold code for a re-applied phase that failed; never answered by a restore.
+export const PHASE_REAPPLY_FAILED = "PHASE_REAPPLY_FAILED";
+
+/** What a lifted in-place plan names as its pattern; see `liftMigrationFact`. */
+const IN_PLACE_PATTERN = "in-place-evolve";
+
 export async function runInPlaceEvolve(
 	options: InPlaceEvolveOptions,
 ): Promise<InPlaceEvolveResult> {
 	const clock = options.clock ?? (() => new Date().toISOString());
 	const { plan, port } = options;
 	const journal = options.journal ?? createMemoryMigrationJournal();
-	const facts: MigrationFact[] = [...(await journal.load(plan.migrationId))];
+	// Lifted before they are folded: see `liftMigrationFact`.
+	const facts: MigrationFact[] = [
+		...liftMigrationFacts(await journal.load(plan.migrationId)),
+	];
 	const progress = progressOf(facts);
-	const { applied, verified } = progress;
+	const { applied, verified, unanswered } = progress;
+	if (progress.pattern !== undefined && progress.pattern !== IN_PLACE_PATTERN) {
+		throw new DataCoreError(
+			"INVALID_MIGRATION_PLAN",
+			`migration ${plan.migrationId} was planned as ${progress.pattern}; it cannot continue as ${IN_PLACE_PATTERN}`,
+			{ detail: { migrationId: plan.migrationId, pattern: IN_PLACE_PATTERN } },
+		);
+	}
 
 	const emit = async (type: string, data: JsonObject): Promise<void> => {
 		const fact = Object.freeze({ type, data: Object.freeze({ ...data }) });
@@ -335,11 +408,13 @@ export async function runInPlaceEvolve(
 	const hold = async (
 		reasons: readonly string[],
 		violations: readonly JsonObject[] = [],
+		failedPhase?: SchemaPhase,
 	): Promise<InPlaceEvolveResult> => {
 		await emit(MIGRATION_EVENTS.Held, {
 			migrationId: plan.migrationId,
 			phase: sitsAt(),
 			reason: reasons.join("; "),
+			...(failedPhase === undefined ? undefined : { failedPhase }),
 			heldAt: clock(),
 		});
 		return finish({
@@ -379,11 +454,12 @@ export async function runInPlaceEvolve(
 		snapshot: SchemaSnapshotRef,
 		reason: string,
 		violations: readonly JsonObject[] = [],
+		failedPhase?: SchemaPhase,
 	): Promise<InPlaceEvolveResult> => {
 		// Fail closed. No way to replay erasures is not the same as no
 		// erasures: the store stays as it is and the run holds for one.
 		if (options.replayErasures === undefined) {
-			return hold([reason, NO_ERASURE_REPLAY_REASON], violations);
+			return hold([reason, NO_ERASURE_REPLAY_REASON], violations, failedPhase);
 		}
 		await proceed();
 		// Decide, record, then act. The decision is a compare-and-set, so a run
@@ -432,9 +508,98 @@ export async function runInPlaceEvolve(
 		});
 	};
 
+	const intend = (
+		phase: SchemaPhase,
+		statements: readonly string[],
+		retry: boolean,
+	): Promise<void> =>
+		// Written first, as a compare-and-set: a run that has been overtaken
+		// loses it here and runs no statement, and a run that dies after its
+		// statements leaves this behind to say that they may have committed.
+		emit(MIGRATION_EVENTS.PhaseIntended, {
+			migrationId: plan.migrationId,
+			phase,
+			statements: statements.length,
+			...(retry ? { retry } : undefined),
+			intendedAt: clock(),
+		});
+	const record = async (
+		phase: SchemaPhase,
+		statements: readonly string[],
+		result: SchemaPhaseResult | undefined,
+	): Promise<void> => {
+		applied.set(
+			phase,
+			result ?? { phase, statements: statements.length, changes: 0 },
+		);
+		unanswered.delete(phase);
+		await emit(MIGRATION_EVENTS.PhaseApplied, {
+			migrationId: plan.migrationId,
+			phase,
+			statements: statements.length,
+			...(phase === "backfill" && result !== undefined
+				? { changes: result.changes }
+				: undefined),
+			// Found in effect by the probe; this run did not run it.
+			...(result === undefined ? { recovered: true } : undefined),
+			appliedAt: clock(),
+		});
+	};
 	/**
-	 * Apply one phase and record it. A failure is answered by the rollback and
-	 * its result is returned; `undefined` means the phase holds.
+	 * Ask the plan's probe whether a phase is in effect. `undefined` when
+	 * there is no probe, or it could not be asked: nothing is known.
+	 */
+	const inEffect = async (phase: SchemaPhase): Promise<boolean | undefined> => {
+		const probe = plan.probes?.[phase];
+		if (probe === undefined) return undefined;
+		try {
+			return (await port.verify(probe)).length === 0;
+		} catch (error) {
+			if (error instanceof Error && isSupersededError(error)) throw error;
+			return undefined;
+		}
+	};
+
+	/**
+	 * A phase with an intent on record and no answer. Never applied on a
+	 * guess, and never answered by a restore: `undefined` means it is settled
+	 * and the run goes on; anything else is the hold.
+	 */
+	const settle = async (
+		phase: SchemaPhase,
+		statements: readonly string[],
+	): Promise<InPlaceEvolveResult | undefined> => {
+		const effective = await inEffect(phase);
+		if (effective === undefined) {
+			return hold([
+				`${PHASE_OUTCOME_UNKNOWN}: an earlier run started the ${phase} phase and never recorded finishing it; its statements may have committed. They were not run again and nothing was restored. Give the plan a probe for ${phase} (a query that returns no rows once the phase is in effect) and run again`,
+			]);
+		}
+		await proceed();
+		if (effective) {
+			await record(phase, statements, undefined);
+			return undefined;
+		}
+		await intend(phase, statements, true);
+		let result: SchemaPhaseResult;
+		try {
+			result = await port.applyPhase(phase, statements);
+		} catch (error) {
+			if (error instanceof Error && isSupersededError(error)) throw error;
+			// Not a restore, whatever is wired: the store has been written to
+			// since the first attempt, and the snapshot predates all of it.
+			return hold([
+				`${PHASE_REAPPLY_FAILED}: the ${phase} phase was applied again after an unrecorded attempt and failed: ${failureReason(error)}. Nothing was restored`,
+			]);
+		}
+		await record(phase, statements, result);
+		return undefined;
+	};
+
+	/**
+	 * Apply one phase and record it. A failure the port reports is answered by
+	 * the rollback and its result is returned; `undefined` means the phase is
+	 * applied and the run goes on.
 	 */
 	const applyPhase = async (
 		snapshot: SchemaSnapshotRef,
@@ -442,31 +607,30 @@ export async function runInPlaceEvolve(
 		statements: readonly string[],
 		failed: string,
 	): Promise<InPlaceEvolveResult | undefined> => {
+		if (unanswered.has(phase)) return settle(phase, statements);
 		await proceed();
-		// Not a compare-and-set — the phase's fact follows the phase — but a
-		// run that can see it has been overtaken does not run statements the
-		// migration has already run. The restore, below, is the step guarded
-		// by a fact of its own.
-		const journaled = await journal.load(plan.migrationId);
-		if (journaled.length !== facts.length) {
-			throw new JournalConflictError(plan.migrationId, facts.length);
-		}
+		await intend(phase, statements, false);
 		let result: SchemaPhaseResult;
 		try {
 			result = await port.applyPhase(phase, statements);
 		} catch (error) {
 			// A superseded driver stops; it does not restore anything.
 			if (error instanceof Error && isSupersededError(error)) throw error;
-			return rollback(snapshot, `${failed}: ${failureReason(error)}`);
+			// A throw is the port's answer that the phase is not in effect —
+			// unless the plan can check, and the check says it is: the answer
+			// was lost on the way back, not the phase.
+			if ((await inEffect(phase)) === true) {
+				await record(phase, statements, undefined);
+				return undefined;
+			}
+			return rollback(
+				snapshot,
+				`${failed}: ${failureReason(error)}`,
+				[],
+				phase,
+			);
 		}
-		applied.set(phase, result);
-		await emit(MIGRATION_EVENTS.PhaseApplied, {
-			migrationId: plan.migrationId,
-			phase,
-			statements: statements.length,
-			...(phase === "backfill" ? { changes: result.changes } : undefined),
-			appliedAt: clock(),
-		});
+		await record(phase, statements, result);
 		return undefined;
 	};
 

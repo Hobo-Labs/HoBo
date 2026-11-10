@@ -22,6 +22,12 @@
  *   driver throws is discarded but for its SQLSTATE. It is never placed in a
  *   ticket, an error, or a fact. (The target server itself necessarily keeps
  *   it, in `pg_subscription`, until the subscription is dropped.)
+ *
+ *   A server that logs statements logs their bind parameters with them. So
+ *   the transaction that carries the string first turns that logging off for
+ *   itself, reads back whether it is off, and only then sends the string. A
+ *   role that may not turn it off, on a server that has it on, is refused:
+ *   the string is not sent to be logged.
  * - **A table lands under the name it was published as.** Logical replication
  *   maps tables by schema-qualified name, so the two bindings must use the
  *   same namespace in two different databases, and the target table must be
@@ -76,6 +82,7 @@ export const NATIVE_REFUSALS = [
 	"SAME_DATABASE",
 	"TARGET_NOT_EMPTY",
 	"SOURCE_CONNECTION_MISSING",
+	"CONNECTION_WOULD_BE_LOGGED",
 ] as const;
 export type NativeRefusal = (typeof NATIVE_REFUSALS)[number];
 
@@ -86,6 +93,62 @@ export type NativeRefusal = (typeof NATIVE_REFUSALS)[number];
  */
 // public-contract: the one statement that carries the source connection string, as a bind parameter; recorded in the native-transfer pact.
 export const PRESENT_NATIVE_SOURCE = `SELECT (set_config('${NATIVE_SOURCE_SETTING}', $1::text, true) IS NOT NULL)::text AS presented`;
+
+/**
+ * Turn statement and bind-parameter logging off for the rest of the
+ * transaction. Each setting is tried on its own, in a block of its own: a role
+ * that may not change one, or a server too old to have it, still gets the
+ * others. Nothing is assumed from this statement having run —
+ * `NATIVE_LOGGING_STATE` reads back what actually took.
+ *
+ * `log_parameter_max_length = 0` is the one that keeps a bind parameter out of
+ * a statement's log line; `log_statement` and the two duration thresholds keep
+ * the line itself from being written; `log_parameter_max_length_on_error`
+ * keeps the parameter out of an error report. The first four need a superuser
+ * or, from PostgreSQL 15, `GRANT SET ON PARAMETER`; the last any role may set.
+ */
+// public-contract: the statement that silences statement logging for the transaction carrying the source connection string; recorded in the native-transfer pact.
+export const QUIET_NATIVE_LOGGING = `DO $hobo$
+BEGIN
+	BEGIN PERFORM set_config('log_parameter_max_length', '0', true); EXCEPTION WHEN OTHERS THEN NULL; END;
+	BEGIN PERFORM set_config('log_parameter_max_length_on_error', '0', true); EXCEPTION WHEN OTHERS THEN NULL; END;
+	BEGIN PERFORM set_config('log_statement', 'none', true); EXCEPTION WHEN OTHERS THEN NULL; END;
+	BEGIN PERFORM set_config('log_min_duration_statement', '-1', true); EXCEPTION WHEN OTHERS THEN NULL; END;
+	BEGIN PERFORM set_config('log_min_duration_sample', '-1', true); EXCEPTION WHEN OTHERS THEN NULL; END;
+END
+$hobo$`;
+
+/** What the server will log for the rest of this transaction; null where the server has no such setting. */
+// public-contract: the read-back of the logging settings inside the transaction; recorded in the native-transfer pact.
+export const NATIVE_LOGGING_STATE =
+	"SELECT current_setting('log_statement', true) AS log_statement, current_setting('log_min_duration_statement', true) AS log_min_duration_statement, current_setting('log_min_duration_sample', true) AS log_min_duration_sample, current_setting('log_parameter_max_length', true) AS log_parameter_max_length, current_setting('log_parameter_max_length_on_error', true) AS log_parameter_max_length_on_error";
+
+/**
+ * Whether a bind parameter sent now would stay out of the server's log, given
+ * what `NATIVE_LOGGING_STATE` answered. Either no statement line is written
+ * at all, or it is written without its parameters; and an error report
+ * carries none. A setting the server does not have reads as null: before
+ * PostgreSQL 13 there is no parameter length to lower, so only a server that
+ * logs no statements is safe, and an error never carried parameters.
+ */
+export function nativeLoggingIsQuiet(
+	state: Readonly<Record<string, string | null | undefined>>,
+): boolean {
+	const off = (name: string): boolean => (state[name] ?? "-1") === "-1";
+	const noStatementLine =
+		state.log_statement === "none" &&
+		off("log_min_duration_statement") &&
+		off("log_min_duration_sample");
+	const noParameters = state.log_parameter_max_length === "0";
+	const noParametersOnError =
+		(state.log_parameter_max_length_on_error ?? "0") === "0";
+	return (noStatementLine || noParameters) && noParametersOnError;
+}
+
+/** Whether a subscription still has a worker attached, and so may still apply. */
+// public-contract: the target-side "is anything still applying" query a pause waits on; recorded in the native-transfer pact.
+export const NATIVE_SUBSCRIPTION_WORKERS =
+	"SELECT count(*)::text AS workers FROM pg_stat_subscription w JOIN pg_subscription s ON s.oid = w.subid WHERE s.subname = $1::name AND s.subdbid = (SELECT d.oid FROM pg_database d WHERE d.datname = current_database()) AND w.pid IS NOT NULL";
 
 const SLOT_NAME = /^hobo_s_[0-9a-f]{12}_[0-9a-f]{24}$/u;
 const PUBLICATION_NAME = /^hobo_p_[0-9a-f]{12}_[0-9a-f]{24}$/u;
@@ -426,10 +489,19 @@ export function createNativeTransferPort(
 			});
 			let sqlState: string | undefined;
 			let failed = false;
+			let logged = false;
 			try {
 				// Resolved here and nowhere else, and held only for this call.
 				const connection = await input.sourceConnection();
 				await executor.transaction(async (tx) => {
+					// Before the string is sent: silence what would log it, and
+					// read back that it is silenced. Not assumed.
+					await tx.query(QUIET_NATIVE_LOGGING);
+					const state = await tx.query(NATIVE_LOGGING_STATE);
+					if (!nativeLoggingIsQuiet(state.rows[0] ?? {})) {
+						logged = true;
+						return;
+					}
 					await tx.query(PRESENT_NATIVE_SOURCE, [connection]);
 					await tx.query(statement);
 				});
@@ -439,6 +511,12 @@ export function createNativeTransferPort(
 				// the connection string.
 				failed = true;
 				sqlState = sqlStateOf(cause);
+			}
+			if (logged) {
+				throw refused(
+					"CONNECTION_WOULD_BE_LOGGED",
+					"the target server logs statements with their bind parameters, and this role may not turn that off for its own transaction; the source connection string was not sent. Subscribe as a role that may set log_parameter_max_length (a superuser, or from PostgreSQL 15 one granted SET ON PARAMETER), or turn statement logging off for this role or database",
+				);
 			}
 			if (!failed || sqlState === DUPLICATE_OBJECT) return;
 			throw new PostgresDataError(
@@ -488,6 +566,38 @@ export function createNativeTransferPort(
 			const reached = row.reached === "true";
 			if (!reached) await wait(pollIntervalMs);
 			return reached;
+		},
+
+		async pause(ref): Promise<void> {
+			const name = nativeSubscriptionName(namespace, ref.transfer);
+			if (!(await subscriptionExists(name))) return;
+			await executor.query(
+				`ALTER SUBSCRIPTION ${quoteIdentifier(name)} DISABLE`,
+			);
+			// Disabling stops new work being started; a worker already running
+			// notices only when it next looks. "Paused" means nothing more
+			// arrives, so wait until no worker is left — the apply worker and any
+			// copy still in flight.
+			for (let attempt = 1; ; attempt += 1) {
+				const state = await executor.query(NATIVE_SUBSCRIPTION_WORKERS, [name]);
+				if ((state.rows[0]?.workers ?? "0") === "0") return;
+				if (attempt >= RELEASE_ATTEMPTS) {
+					throw new PostgresDataError(
+						"NATIVE_PAUSE_FAILED",
+						"the subscription behind a native transfer was disabled but a worker is still attached; it may still be applying changes from the source",
+						{ detail: { transfer: ref.transfer } },
+					);
+				}
+				await wait(pollIntervalMs);
+			}
+		},
+
+		async resume(ref): Promise<void> {
+			const name = nativeSubscriptionName(namespace, ref.transfer);
+			if (!(await subscriptionExists(name))) return;
+			await executor.query(
+				`ALTER SUBSCRIPTION ${quoteIdentifier(name)} ENABLE`,
+			);
 		},
 
 		async stop(ref): Promise<void> {

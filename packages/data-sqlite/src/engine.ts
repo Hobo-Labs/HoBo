@@ -331,10 +331,7 @@ export function createSqliteEngine(options: SqliteEngineOptions): SqliteEngine {
 		},
 		capture: {
 			start(request) {
-				return store.startSubscription(
-					request.subscription,
-					request.scope.dataset,
-				);
+				return store.startSubscription(request.subscription, request.scope);
 			},
 			read(request) {
 				return store.readChanges(request.scope, request.after, request.limit);

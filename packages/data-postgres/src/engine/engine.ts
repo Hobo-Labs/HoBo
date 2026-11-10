@@ -75,10 +75,16 @@ export const POSTGRES_IMPEDANCE_CODES = [
 	"POSTGRES_NATIVE_COPY_WHOLE_DATASET_SAME_NAME",
 	/** Logical-copy carries no reverse tail: the transfer is dropped at cutover, so a rollback from soak is to-snapshot. */
 	"POSTGRES_NATIVE_COPY_NO_REVERSE_TAIL",
-	/** The target server keeps the source connection string in `pg_subscription` until cutover drops the subscription; its superusers can read it, and its statement log can record it. */
+	/** The target server keeps the source connection string in `pg_subscription` until cutover drops the subscription; its superusers can read it. */
 	"POSTGRES_NATIVE_COPY_TARGET_HOLDS_SOURCE_CONNECTION",
 	/** Logical-copy needs `wal_level = logical`, a free replication slot and sender on the source, a free worker on the target, and a target role allowed to create subscriptions. */
 	"POSTGRES_NATIVE_COPY_NEEDS_REPLICATION_CAPACITY",
+	/**
+	 * The connection string reaches the target server as a bind parameter, and a server that logs statements logs their parameters.
+	 * The subscribing transaction turns that logging off for itself first (`log_parameter_max_length`, `log_statement`, the duration thresholds), which needs a superuser or, from PostgreSQL 15, `SET ON PARAMETER`.
+	 * A role that may not, on a server that logs statements, is refused (`CONNECTION_WOULD_BE_LOGGED`) rather than logged. An extension that logs parameters by its own settings — pgaudit — is outside what this can see.
+	 */
+	"POSTGRES_NATIVE_COPY_REFUSED_WHERE_CONNECTION_WOULD_BE_LOGGED",
 ] as const;
 
 export type PostgresImpedanceCode = (typeof POSTGRES_IMPEDANCE_CODES)[number];
@@ -232,7 +238,9 @@ export function createPostgresEngine(
 	});
 	// The capture machinery exists either way, so an ephemeral close can
 	// clean up subscriptions an earlier binding left in this namespace.
-	const capture = createCapturePort(store);
+	const pollIntervalMs = parsePollInterval(options.nativePollIntervalMs);
+	const wait = options.nativeWait ?? timer;
+	const capture = createCapturePort(store, { pollIntervalMs, wait });
 	const schema = createSchemaPort({
 		store,
 		tables: (options.schemaTables ?? []).map(parseTableName),
@@ -244,8 +252,8 @@ export function createPostgresEngine(
 		store,
 		capture,
 		sourceConnection: options.nativeSourceConnection,
-		pollIntervalMs: parsePollInterval(options.nativePollIntervalMs),
-		wait: options.nativeWait ?? timer,
+		pollIntervalMs,
+		wait,
 	});
 
 	const binding: PostgresEngine = {
@@ -350,6 +358,8 @@ export function createPostgresEngine(
 						seeded: native.seeded,
 						mark: native.mark,
 						reached: native.reached,
+						pause: native.pause,
+						resume: native.resume,
 						stop: native.stop,
 					},
 				}
@@ -401,4 +411,12 @@ export const POSTGRES_SCHEMA_FIXTURE: SchemaFixture = Object.freeze({
 	plan: FIXTURE_PLAN,
 	provesContractApplied: `SELECT 1 AS applied WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = '${POSTGRES_SCHEMA_FIXTURE_TABLE}' AND column_name = 'email')`,
 	failingStatement: `ALTER TABLE ${POSTGRES_SCHEMA_FIXTURE_TABLE} DROP COLUMN no_such_column`,
+	// Two statements with separate effects, for the probes that put more than
+	// one statement where one belongs. Unqualified, like the rest.
+	probes: {
+		first: `CREATE TABLE ${POSTGRES_SCHEMA_FIXTURE_TABLE}_probe_first (id bigint PRIMARY KEY)`,
+		second: `CREATE TABLE ${POSTGRES_SCHEMA_FIXTURE_TABLE}_probe_second (id bigint PRIMARY KEY)`,
+		provesFirst: `SELECT table_name::text AS present FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = '${POSTGRES_SCHEMA_FIXTURE_TABLE}_probe_first'`,
+		provesSecond: `SELECT table_name::text AS present FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = '${POSTGRES_SCHEMA_FIXTURE_TABLE}_probe_second'`,
+	},
 });

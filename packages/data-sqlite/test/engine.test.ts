@@ -40,8 +40,9 @@ const ORDERS = parseDatasetSchema({
 	open: true,
 });
 
+// The shared refusal from `@hobo/data-core`, not a package-local copy.
 const POSITION_REFUSED = {
-	name: "SqliteDataError",
+	name: "CapturePositionError",
 	code: "CAPTURE_POSITION_INVALID",
 };
 
@@ -657,6 +658,112 @@ describe("journal retention", () => {
 			"no version of the record survives in the file",
 		);
 		assert.ok(bytes.includes("kept@example.test"));
+	});
+});
+
+describe("what the strengthened conformance kit found", () => {
+	test("a subscription name is one reader of one scope: another tenant or dataset is refused, and the first reader is undisturbed", async () => {
+		const { engine } = await open();
+		const second = parseDatasetSchema({
+			name: "invoices",
+			keyFields: ["id"],
+			fields: [{ name: "id", type: "string" }],
+		});
+		await engine.datasets.ensureDataset(second);
+		const capture = requirePort(engine, "capture");
+		const home = scopeOf("orders", "acme");
+		const start = await capture.start({ scope: home, subscription: "sub_a" });
+		// Written before anyone asks for the name elsewhere. Answered the first
+		// scope's position, a reader of globex would be handed this change —
+		// one made before it existed.
+		await engine.records.write({
+			dataset: "orders",
+			mutations: [put("globex", { id: "order-early" })],
+		});
+		for (const other of [scopeOf("orders", "globex"), scopeOf("invoices")]) {
+			await assert.rejects(
+				async () => {
+					await capture.start({ scope: other, subscription: "sub_a" });
+				},
+				{ name: "DataCoreError", code: "CAPTURE_SUBSCRIPTION_CONFLICT" },
+			);
+		}
+		assert.equal(
+			await capture.start({ scope: home, subscription: "sub_a" }),
+			start,
+			"the name still answers its own scope",
+		);
+		// Stopped, the name is free again — for any scope.
+		await capture.stop("sub_a");
+		await capture.start({
+			scope: scopeOf("orders", "globex"),
+			subscription: "sub_a",
+		});
+	});
+
+	test("a subscription recorded before its tenant was kept is bound by the next scope that names it", async () => {
+		const { file, close } = await open();
+		close();
+		const db = new DatabaseSync(file);
+		db.exec(
+			"INSERT INTO hobo_data_subscriptions (name, dataset, tenant_id, start_position, ack_position) VALUES ('sub_old', 'orders', NULL, 0, 0)",
+		);
+		db.close();
+		const { engine } = await open(file);
+		const capture = requirePort(engine, "capture");
+		assert.equal(
+			await capture.start({
+				scope: scopeOf("orders", "acme"),
+				subscription: "sub_old",
+			}),
+			"0",
+		);
+		await assert.rejects(
+			async () => {
+				await capture.start({
+					scope: scopeOf("orders", "globex"),
+					subscription: "sub_old",
+				});
+			},
+			{ code: "CAPTURE_SUBSCRIPTION_CONFLICT" },
+		);
+	});
+
+	test("a retire delivered again after it committed removes nothing and succeeds; a wrong token is still refused", async () => {
+		const { engine } = await open();
+		const scope = scopeOf("orders", "acme");
+		await engine.records.write({
+			dataset: "orders",
+			mutations: [
+				put("acme", { id: "order-1" }),
+				put("globex", { id: "order-2" }),
+			],
+		});
+		const { fenceToken } = await requirePort(engine, "fence").raise({
+			scope,
+			reason: "move",
+		});
+		const expected = await requirePort(engine, "verify").digest({
+			scope,
+			buckets: 16,
+		});
+		const retire = requirePort(engine, "retire");
+		assert.equal(
+			(await retire.retire({ scope, fenceToken, expected })).removed,
+			1,
+		);
+		// The answer was lost, and the same request is sent again. It used to
+		// be refused: the empty scope no longer matched the digest it named.
+		assert.equal(
+			(await retire.retire({ scope, fenceToken, expected })).removed,
+			0,
+		);
+		await assert.rejects(
+			async () => {
+				await retire.retire({ scope, fenceToken: "not-it", expected });
+			},
+			{ code: "RETIRE_REFUSED" },
+		);
 	});
 });
 

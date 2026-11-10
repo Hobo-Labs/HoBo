@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+	ENGINE_CONFORMANCE_CASE_IDS,
 	type EngineBinding,
 	type EngineHarness,
 	NATIVE_CONFORMANCE_CASE_IDS,
@@ -19,6 +20,7 @@ import { createSqliteEngine, SQLITE_SCHEMA_FIXTURE } from "@hobo/data-sqlite";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, test } from "vitest";
 import {
+	conformanceFailureSink,
 	failures,
 	LIVE_URL,
 	leftoverCaptureObjects,
@@ -27,19 +29,35 @@ import {
 	postgresHarness,
 } from "./engine-support.js";
 
+/** Skipped by an engine whose declaration states no record bound. */
+const SIZE_CASE_ID = "records.oversize-record-refuses-the-batch";
+
 /** One SQLite file per binding, each in its own temp directory. */
 function sqliteHarness(): EngineHarness {
 	const dirs = new Map<EngineBinding, string>();
+	const file = (dir: string): string => path.join(dir, "store.db");
 	return {
 		schemaFixture: SQLITE_SCHEMA_FIXTURE,
+		// Names SQLite keeps for itself; a dataset must never land on one.
+		reservedDatasetNames: ["sqlite_sequence", "sqlite_master"],
+		// A SQLite position is a journal sequence.
+		positionPastHead: (head) => String(Number(head) + 1_000_000),
 		create() {
 			const dir = mkdtempSync(path.join(tmpdir(), "hobo-cross-engine-"));
 			const binding = createSqliteEngine({
-				path: path.join(dir, "store.db"),
+				path: file(dir),
 				clock: () => NOW,
 			});
 			dirs.set(binding, dir);
 			return binding;
+		},
+		// A second connection to the same file.
+		attach(binding) {
+			const dir = dirs.get(binding);
+			if (dir === undefined) {
+				throw new Error("the binding was not created by this harness");
+			}
+			return createSqliteEngine({ path: file(dir), clock: () => NOW });
 		},
 		dispose(binding) {
 			const dir = dirs.get(binding);
@@ -70,9 +88,18 @@ describe.skipIf(!LIVE_URL)("SQLite ↔ PostgreSQL — live, cross-engine", () =>
 			engine: sqliteHarness(),
 			peer: postgresHarness(pool),
 			now: NOW,
+			onFailure: conformanceFailureSink(),
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
 		assert.equal(report.engine, "sqlite");
+		assert.deepEqual(report.skipped, [
+			SIZE_CASE_ID,
+			...NATIVE_CONFORMANCE_CASE_IDS,
+		]);
+		assert.equal(
+			report.results.length + report.skipped.length,
+			ENGINE_CONFORMANCE_CASE_IDS.length,
+		);
 		assert.ok(
 			report.results.some(
 				(result) =>
@@ -87,10 +114,15 @@ describe.skipIf(!LIVE_URL)("SQLite ↔ PostgreSQL — live, cross-engine", () =>
 			engine: postgresHarness(pool),
 			peer: sqliteHarness(),
 			now: NOW,
+			onFailure: conformanceFailureSink(),
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
 		assert.equal(report.engine, "postgres");
-		// A native fast path exists only within one engine.
-		assert.deepEqual(report.skipped, NATIVE_CONFORMANCE_CASE_IDS);
+		// PostgreSQL states no record bound, and a native fast path exists
+		// only within one engine.
+		assert.deepEqual(report.skipped, [
+			SIZE_CASE_ID,
+			...NATIVE_CONFORMANCE_CASE_IDS,
+		]);
 	}, 300_000);
 });

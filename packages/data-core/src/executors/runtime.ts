@@ -25,23 +25,21 @@ import {
 	DataCoreError,
 	isSupersededError,
 	JournalConflictError,
+	StaleAuthorityMoveError,
 } from "../errors.js";
 import {
 	assertHoldable,
 	type FenceSide,
+	fenceTokenDigest,
 	foldMigration,
+	liftMigrationFacts,
 	MIGRATION_EVENTS,
 	type MigrationFact,
 	type MigrationJournal,
 	type MigrationRealization,
 	type MigrationState,
 } from "../facts.js";
-import {
-	isJsonString,
-	type JsonObject,
-	type JsonValue,
-	sha256Hex,
-} from "../json.js";
+import { isJsonString, type JsonObject, type JsonValue } from "../json.js";
 import {
 	getPattern,
 	isSafeHold,
@@ -110,6 +108,14 @@ export interface MigrationHoldOptions {
 	readonly between?: boolean;
 	/** The phase the run was about to enter, for a hold between two phases. */
 	readonly before?: MigrationPhase;
+	/**
+	 * The engine is still doing work the last verdict approved — an initial
+	 * copy that has not finished, a tail that still lags — and the run stops
+	 * only because its bounded wait is spent. A native transfer is left running
+	 * through such a hold: pausing it would restart the copy, or let the lag
+	 * grow, every time the run came back. Every other hold pauses it.
+	 */
+	readonly working?: boolean;
 }
 
 /** Thrown to stop the run at a safe hold. */
@@ -119,6 +125,7 @@ export class MigrationHold extends Error {
 	readonly recorded: boolean;
 	readonly between: boolean;
 	readonly before?: MigrationPhase;
+	readonly working: boolean;
 
 	constructor(
 		phase: MigrationPhase,
@@ -131,6 +138,7 @@ export class MigrationHold extends Error {
 		this.reason = reason;
 		this.recorded = options.recorded === true;
 		this.between = options.between === true;
+		this.working = options.working === true;
 		if (options.before !== undefined) this.before = options.before;
 	}
 }
@@ -162,14 +170,90 @@ export function failureReason(cause: unknown): string {
 }
 
 /**
- * What a journal records of a fence token. A fence token is a write-authority
- * credential: whoever presents it writes through the fence. A journal is
- * evidence, read by people and systems that must not gain that authority, so
- * it carries only this digest — enough for a resumed run to recognise the
- * fence its cutover was decided under, not enough to write through it.
+ * What a router compares-and-sets on when a migration asks it to move write
+ * authority: which migration, and the journal head — the number of facts up
+ * to and including the journaled decision — the move was decided at.
+ *
+ * The journal is a compare-and-set, so exactly one decision exists at any
+ * head, and a later decision always has a higher one. A router keeps, per
+ * migration, the highest head it has applied and refuses a move that names a
+ * lower one with `StaleAuthorityMoveError` (`admitAuthorityMove` is that rule,
+ * ready to call). A move at the head already applied is the same decision
+ * again — a resumed run finishing what a crashed one started — and is applied
+ * again; that is the idempotence a router must have.
+ *
+ * The refusal is how a driver that journaled a decision, stalled inside the
+ * router call, and was overtaken — by a rollback, say — is kept from landing
+ * its move after the fact. The executor treats the refusal as supersession:
+ * it stops, records nothing and compensates nothing.
  */
-export function fenceTokenDigest(fenceToken: string): string {
-	return `sha256:${sha256Hex(fenceToken)}`;
+// domain-view: in-process identity of an authority move; wire form is AuthorityMoveRef in data-models/data_core.proto.
+export interface AuthorityMoveRef {
+	readonly migrationId: string;
+	/** The journal head the decision was made at; higher outranks lower. */
+	readonly head: number;
+}
+
+/** An authority move into the event log, or of a log's single writer. */
+export interface AuthorityHandover extends AuthorityMoveRef {
+	/** The token of the fence on the old authority. */
+	readonly fenceToken: string;
+}
+
+/**
+ * The router's side of the contract, as one call: admit a move at or above
+ * the highest head applied for its migration and remember it; refuse a lower
+ * one. `applied` is the router's own durable state — one number per
+ * migration — and must be updated in the same step that moves authority.
+ */
+export function admitAuthorityMove(
+	applied: Map<string, number>,
+	move: AuthorityMoveRef,
+): void {
+	const highest = applied.get(move.migrationId) ?? 0;
+	if (move.head < highest) {
+		throw new StaleAuthorityMoveError(move.migrationId, move.head, highest);
+	}
+	applied.set(move.migrationId, move.head);
+}
+
+/** What the journal says about the fence this migration last raised on a side. */
+export interface FenceClaim {
+	/** Digest of the token the last journaled raise answered. */
+	readonly digest?: string;
+	/** A raise was requested and what it answered was never journaled. */
+	readonly pending: boolean;
+	/**
+	 * A hold was journaled after the raise. Whoever held may still be about to
+	 * release that fence, so nothing new is decided under it.
+	 */
+	readonly abandoned: boolean;
+}
+
+/** What a phase is told when the verdict in front of it is negative. */
+export interface PhaseDenial {
+	/** The hold reason, as it would be journaled. */
+	readonly reason: string;
+	/** Finding codes of the verdict; `CUSTODY_PATH_INCOMPLETE` for an uncovered role. */
+	readonly findings: readonly string[];
+}
+
+export interface PhaseOptions {
+	/**
+	 * Asked when the verdict before the phase is negative. Answering `true`
+	 * runs the phase anyway. For the one case where going ahead reduces
+	 * exposure rather than adding to it: a rollback out of the soak window,
+	 * which moves authority back to where the data already was.
+	 */
+	readonly underDenial?: (denial: PhaseDenial) => Awaitable<boolean>;
+}
+
+export interface DriveHooks {
+	/**
+	 * Runs once a hold is journaled and before the run reports it. A copy
+	 * executor pauses its native transfer here.
+	 */
+	readonly held?: (hold: MigrationHold) => Awaitable<void>;
 }
 
 /**
@@ -233,7 +317,12 @@ export class MigrationRun {
 		pattern: MigrationPatternId,
 		details: PlannedDetails = {},
 	): Promise<MigrationRun> {
-		const facts = await runtime.journal.load(runtime.migrationId);
+		// Lifted before anything folds them: a journal written by an earlier
+		// release is read as the bodies written today, so its plan is checked
+		// against this run's pattern and its fence tokens never reach a fold.
+		const facts = liftMigrationFacts(
+			await runtime.journal.load(runtime.migrationId),
+		);
 		const run = new MigrationRun(runtime, pattern, facts);
 		run.reverseTail = details.reverseTail;
 		if (run.current.pattern !== undefined && run.current.pattern !== pattern) {
@@ -320,6 +409,75 @@ export class MigrationRun {
 		return undefined;
 	}
 
+	/**
+	 * The head a journaled decision was made at: the number of facts up to and
+	 * including the last fact of this type. What an authority move is stamped
+	 * with — the same number whichever run finishes the move.
+	 */
+	decisionHead(type: string): number {
+		for (let index = this.facts.length - 1; index >= 0; index -= 1) {
+			if (this.facts[index]?.type === type) return index + 1;
+		}
+		throw new DataCoreError(
+			"ILLEGAL_PHASE_TRANSITION",
+			`no ${type} is journaled; authority cannot move without its decision`,
+			{ detail: { type } },
+		);
+	}
+
+	/**
+	 * What this migration can prove about the fence on a side, from its own
+	 * journal. `undefined` when it never asked for one there: a fence found
+	 * standing is then somebody else's.
+	 */
+	fenceClaim(side: FenceSide): FenceClaim | undefined {
+		let requested = false;
+		let pending = false;
+		let abandoned = false;
+		let digest: string | undefined;
+		for (const { type, data } of this.facts) {
+			if (type === MIGRATION_EVENTS.FenceRequested && data.side === side) {
+				requested = true;
+				pending = true;
+			} else if (
+				(type === MIGRATION_EVENTS.FenceRaised && data.side === side) ||
+				// A journal from before raises were recorded: the cutover names
+				// the source fence it was decided under.
+				(type === MIGRATION_EVENTS.CutOver && side === "source")
+			) {
+				if (isJsonString(data.fenceTokenDigest)) {
+					requested = true;
+					pending = false;
+					abandoned = false;
+					digest = data.fenceTokenDigest;
+				}
+			} else if (type === MIGRATION_EVENTS.Held && digest !== undefined) {
+				abandoned = true;
+			}
+		}
+		if (!requested) return undefined;
+		return {
+			...(digest === undefined ? undefined : { digest }),
+			pending,
+			abandoned,
+		};
+	}
+
+	/** Journal the digest of the token a raise answered; see `FenceClaim`. */
+	async recordFence(
+		side: FenceSide,
+		phase: MigrationPhase,
+		fenceToken: string,
+	): Promise<void> {
+		await this.emit(MIGRATION_EVENTS.FenceRaised, {
+			migrationId: this.runtime.migrationId,
+			side,
+			phase,
+			fenceTokenDigest: fenceTokenDigest(fenceToken),
+			raisedAt: this.runtime.clock(),
+		});
+	}
+
 	/** A string the first fact of a type recorded, if any did. */
 	firstText(type: string, key: string, side?: FenceSide): string | undefined {
 		for (const fact of this.facts) {
@@ -376,6 +534,7 @@ export class MigrationRun {
 		phase: MigrationPhase,
 		reason: string,
 		details: JsonObject = {},
+		working = false,
 	): Promise<MigrationHold> {
 		assertHoldable(phase);
 		await this.emit(MIGRATION_EVENTS.Held, {
@@ -385,7 +544,7 @@ export class MigrationRun {
 			...details,
 			heldAt: this.runtime.clock(),
 		});
-		return new MigrationHold(phase, reason, { recorded: true });
+		return new MigrationHold(phase, reason, { recorded: true, working });
 	}
 
 	/**
@@ -436,18 +595,12 @@ export class MigrationRun {
 	}
 
 	/**
-	 * Run one phase. Skipped when already complete; held when policy says no;
-	 * otherwise the body runs and its checkpoint is journaled.
+	 * The verdict in front of a phase, when it does not let the phase run:
+	 * negative, or silent about a place this run puts data.
 	 */
-	async phase(
+	private async denial(
 		phase: MigrationPhase,
-		body: () => Promise<JsonObject>,
-	): Promise<JsonObject> {
-		const recorded = this.checkpoint(phase);
-		if (recorded !== undefined) {
-			this.lastPhase = phase;
-			return recorded;
-		}
+	): Promise<PhaseDenial | undefined> {
 		const verdict = await this.runtime.policy(phase);
 		// A verdict judges the path it was given. The roles this run creates
 		// that the path never named were not judged at all, so a positive
@@ -461,22 +614,56 @@ export class MigrationRun {
 				? undefined
 				: { reverseTail: this.reverseTail }),
 		});
-		if (!verdict.ok || uncovered.length > 0) {
-			const reasons = [
-				...(verdict.ok
-					? []
-					: [
-							`policy verdict is negative before ${phase}: ${verdict.findings
-								.map((finding) => finding.code)
-								.join(", ")}`,
-						]),
-				...(uncovered.length === 0
-					? []
-					: [
-							`policy verdict does not cover this migration before ${phase}: CUSTODY_PATH_INCOMPLETE (no custody point for ${uncovered.join(", ")})`,
-						]),
-			];
-			throw new MigrationHold(this.holdBetween(phase), reasons.join("; "), {
+		if (verdict.ok && uncovered.length === 0) return undefined;
+		const codes = verdict.ok ? [] : verdict.findings.map((found) => found.code);
+		const reasons = [
+			...(verdict.ok
+				? []
+				: [`policy verdict is negative before ${phase}: ${codes.join(", ")}`]),
+			...(uncovered.length === 0
+				? []
+				: [
+						`policy verdict does not cover this migration before ${phase}: CUSTODY_PATH_INCOMPLETE (no custody point for ${uncovered.join(", ")})`,
+					]),
+		];
+		return {
+			reason: reasons.join("; "),
+			findings: [
+				...new Set([
+					...codes,
+					...(uncovered.length === 0 ? [] : ["CUSTODY_PATH_INCOMPLETE"]),
+				]),
+			],
+		};
+	}
+
+	/**
+	 * Run one phase. Skipped when already complete; held when policy says no;
+	 * otherwise the body runs and its checkpoint is journaled.
+	 *
+	 * One thing is not put to policy: a rollback that is already decided and
+	 * journaled. Its decision binds, and what is left of it — handing write
+	 * authority back and releasing the fence — is what ends the exposure a
+	 * negative verdict objects to. Holding it would leave both stores fenced.
+	 */
+	async phase(
+		phase: MigrationPhase,
+		body: () => Promise<JsonObject>,
+		options: PhaseOptions = {},
+	): Promise<JsonObject> {
+		const recorded = this.checkpoint(phase);
+		if (recorded !== undefined) {
+			this.lastPhase = phase;
+			return recorded;
+		}
+		const denial = this.current.rollbackDecided
+			? undefined
+			: await this.denial(phase);
+		if (
+			denial !== undefined &&
+			(await options.underDenial?.(denial)) !== true
+		) {
+			throw new MigrationHold(this.holdBetween(phase), denial.reason, {
 				between: true,
 				before: phase,
 			});
@@ -550,6 +737,7 @@ export class MigrationRun {
 	async drive(
 		body: () => Promise<RollbackPosture>,
 		rollbackAt: (phase: MigrationPhase) => RollbackPosture,
+		hooks: DriveHooks = {},
 	): Promise<MigrationRunResult> {
 		// A finished migration is finished: re-running it is a no-op, not a
 		// second cutover.
@@ -588,6 +776,9 @@ export class MigrationRun {
 						heldAt: this.runtime.clock(),
 					});
 				}
+				// After the fact, never before it: a driver that lost the append
+				// above is no longer the one to act on the migration's transfer.
+				await hooks.held?.(error);
 				return this.result("held", rollbackAt(error.phase), error.reason);
 			}
 			if (error instanceof MigrationRollback) {

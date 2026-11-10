@@ -36,6 +36,21 @@
  *   under a fence, the driver stamps its own head on the leg; from then on a
  *   driver with an older view can neither apply over it nor mistake it for
  *   its own.
+ *
+ * Two more close what a fact in front of a side effect cannot: a driver that
+ * won its append and then stalled *inside* the side effect.
+ *
+ * - **A late authority move is refused by the router.** Every move carries the
+ *   journal head its decision was made at (`AuthorityMoveRef`). The router
+ *   keeps the highest head it has applied and refuses a lower one, so a flip
+ *   that lands after a later decision — a rollback — moves nothing.
+ * - **A fence is used only by the migration that can prove it raised it.** The
+ *   digest of every token a raise answers is journaled (`FenceRaised`). A
+ *   fence found standing is written through, adopted or released only when
+ *   its token's digest is one this migration journaled; otherwise the run
+ *   holds. And nothing new is decided under a fence a hold was journaled
+ *   against: it is released and raised afresh, so the release a stalled
+ *   driver still has in flight names a token that opens nothing.
  */
 import type { DatasetSchema } from "../canonical.js";
 import {
@@ -44,8 +59,17 @@ import {
 	DEFAULT_DIGEST_BUCKETS,
 } from "../digest.js";
 import type { Position, RecordMutation } from "../envelope.js";
-import { DataCoreError, StaleApplyError } from "../errors.js";
-import { MIGRATION_EVENTS, type MigrationRealization } from "../facts.js";
+import {
+	DataCoreError,
+	isSupersededError,
+	StaleApplyError,
+} from "../errors.js";
+import {
+	type FenceSide,
+	fenceTokenDigest,
+	MIGRATION_EVENTS,
+	type MigrationRealization,
+} from "../facts.js";
 import { isJsonNumber, isJsonString, type JsonObject } from "../json.js";
 import type { MigrationPhase, RollbackPosture } from "../patterns.js";
 import {
@@ -59,12 +83,13 @@ import {
 	requirePort,
 } from "../spi.js";
 import {
-	fenceTokenDigest,
+	type AuthorityMoveRef,
 	MigrationHold,
 	MigrationRollback,
 	MigrationRun,
 	type MigrationRunResult,
 	type MigrationRuntime,
+	type PhaseDenial,
 	type PlannedDetails,
 } from "./runtime.js";
 
@@ -76,7 +101,13 @@ export interface ErasureLedger {
 export const AUTHORITY_DIRECTIONS = ["to-target", "to-source"] as const;
 export type AuthorityDirection = (typeof AUTHORITY_DIRECTIONS)[number];
 
-export interface AuthorityFlip {
+/**
+ * One move of write authority. `migrationId` and `head` are what the router
+ * compares-and-sets on (see `AuthorityMoveRef`): the same decision always
+ * carries the same head, whichever run delivers it, and a later decision a
+ * higher one.
+ */
+export interface AuthorityFlip extends AuthorityMoveRef {
 	readonly direction: AuthorityDirection;
 	/** The token of the fence on the source — the old authority's. */
 	readonly fenceToken: string;
@@ -106,8 +137,20 @@ export interface CopyMigrationOptions {
 	/** Move a share of reads to the target. Reversible at any percentage. */
 	readonly shiftReads?: (percent: number) => Awaitable<void>;
 	/**
-	 * Move write authority. Called once per direction and must be idempotent:
-	 * a crash between the flip and its fact re-runs it.
+	 * Move write authority. The router's contract has two halves:
+	 *
+	 * - **Idempotent at a head.** A crash between the flip and its fact re-runs
+	 *   it with the same `head`; applying it again changes nothing.
+	 * - **Compare-and-set on the head.** Keep the highest `head` applied for
+	 *   `migrationId`, in the same step that moves authority, and refuse a flip
+	 *   that names a lower one by throwing `StaleAuthorityMoveError` —
+	 *   `admitAuthorityMove(applied, flip)` does both. A driver that journaled
+	 *   its cutover and then stalled in this call is otherwise free to land the
+	 *   flip after the migration has been rolled back.
+	 *
+	 * A refusal is supersession: the run stops, records nothing and
+	 * compensates nothing. A router that ignores `head` still works for a
+	 * single driver; it does not protect against a late one.
 	 */
 	readonly flipAuthority: (flip: AuthorityFlip) => Awaitable<void>;
 	/**
@@ -160,8 +203,16 @@ interface ForwardChannel {
 	claim(): Promise<void>;
 	/** Bring the target level with everything the source has committed. */
 	drain(): Promise<DrainOutcome>;
-	/** Drop the channel and the log it pinned. Idempotent. */
-	close(): Promise<void>;
+	/**
+	 * Drop the channel and the log it pinned. Idempotent. With
+	 * `targetBestEffort`, a target that cannot be asked does not stop the
+	 * source's half from being dropped; the answer is whether the target's was.
+	 */
+	close(options?: ChannelCloseOptions): Promise<boolean>;
+}
+
+interface ChannelCloseOptions {
+	readonly targetBestEffort?: boolean;
 }
 
 interface CopyContext {
@@ -579,6 +630,7 @@ function hubChannel(context: CopyContext): ForwardChannel {
 			),
 		async close() {
 			await options.source.capture?.stop(forward);
+			return true;
 		},
 	};
 }
@@ -594,6 +646,17 @@ function nativeChannel(
 	native: NativeLeg,
 ): ForwardChannel {
 	const rounds = context.maxTailRounds;
+	let resumed = false;
+	/**
+	 * A transfer is paused whenever the run holds (see `pauseTransfer`), so the
+	 * first thing a phase that needs it does is let it deliver again. Only a
+	 * phase body calls this, and a phase body runs only behind a verdict.
+	 */
+	const resume = async (): Promise<void> => {
+		if (resumed) return;
+		await native.target.resume(native.targetRef);
+		resumed = true;
+	};
 	return {
 		async open() {
 			const ticket = await native.source.publish(native.sourceRef);
@@ -608,6 +671,7 @@ function nativeChannel(
 			};
 		},
 		async seed() {
+			await resume();
 			for (let round = 0; round < rounds; round += 1) {
 				if (await native.target.seeded(native.targetRef)) {
 					return { copied: "native" };
@@ -619,6 +683,7 @@ function nativeChannel(
 		async drain() {
 			// A mark, then the question "has the target applied up to it": the
 			// engine's own equivalent of tailing until caught up.
+			await resume();
 			const mark = await native.source.mark(native.sourceRef);
 			for (let round = 0; round < rounds; round += 1) {
 				if (await native.source.reached({ ...native.sourceRef, mark })) {
@@ -627,12 +692,37 @@ function nativeChannel(
 			}
 			return { position: mark, caughtUp: false };
 		},
-		async close() {
+		async close(closing = {}) {
 			// The target first: its side reads from what the source retains.
-			await native.target.stop(native.targetRef);
+			let targetStopped = true;
+			try {
+				await native.target.stop(native.targetRef);
+			} catch (error) {
+				if (closing.targetBestEffort !== true) throw error;
+				targetStopped = false;
+			}
+			// Always: with the source's half gone, a target that comes back has
+			// nothing left to read from.
 			await native.source.stop(native.sourceRef);
+			return targetStopped;
 		},
 	};
+}
+
+/**
+ * Stop a native transfer delivering while the run is held. A held migration
+ * moves nothing: the hub is driven by this module and stops with it, and the
+ * engine's own transport is told to. The one exception is a hold that only
+ * says "the engine has not finished yet" (`MigrationHold.working`) — there the
+ * transfer is the work, and it carries on under the verdict it started with.
+ */
+async function pauseTransfer(
+	context: CopyContext,
+	hold: MigrationHold,
+): Promise<void> {
+	const { native } = context;
+	if (native === undefined || hold.working) return;
+	await native.target.pause(native.targetRef);
 }
 
 function channelOf(context: CopyContext): ForwardChannel {
@@ -705,13 +795,77 @@ function cutOverCheckpoint(context: CopyContext): JsonObject {
  * arrives while the source is fenced is dated before the cutover, yet never
  * reached the source.
  */
-async function fenceSource(context: CopyContext): Promise<string> {
-	const { options, run } = context;
-	await run.requestFence("source", "fence-and-flip");
-	const grant = await requirePort(options.source, "fence").raise({
-		scope: options.scope,
-		reason: `migration ${options.runtime.migrationId}`,
-	});
+async function fenceSource(
+	context: CopyContext,
+	holdAt: MigrationPhase,
+): Promise<string> {
+	return raiseOwnedFence(context, "source", "fence-and-flip", holdAt);
+}
+
+// public-contract: hold code for a fence this migration cannot prove it raised; it is neither adopted nor released.
+export const FENCE_NOT_OWNED = "FENCE_NOT_OWNED";
+
+// public-contract: impedance code of a rollback that could not fence, or stop the transfer on, an unreachable target.
+export const ROLLBACK_TARGET_UNREACHABLE = "ROLLBACK_TARGET_UNREACHABLE";
+
+/**
+ * Raise this migration's fence on a side and answer its token — or hold,
+ * when a fence is already standing there that the journal cannot show to be
+ * this migration's own.
+ *
+ * The port cannot say who raised a fence; raising a raised one answers its
+ * token to anyone. So ownership is proven from the journal: the digest of
+ * every token a raise answered is recorded (`FenceRaised`), and a standing
+ * fence is this migration's when its token digests to the last one recorded
+ * for the side. Three cases follow from what the journal holds:
+ *
+ * - **No request on record** — the fence is somebody else's. Hold.
+ * - **A request whose answer was never recorded** — the run died between the
+ *   raise and its record. The fence went up after this migration's journaled
+ *   request, so it is taken to be the one requested and its digest is recorded
+ *   now. (A fence someone else raised in that same instant cannot be told
+ *   apart; the port offers nothing to tell them apart with.)
+ * - **A recorded digest** — a match is this migration's fence; anything else
+ *   is somebody else's, and the run holds. A matching fence that a hold was
+ *   journaled against is not decided under again: the driver that held may
+ *   still have its release in flight. It is released and raised afresh, so
+ *   that late release names a token that no longer opens anything.
+ */
+async function raiseOwnedFence(
+	context: CopyContext,
+	side: FenceSide,
+	phase: MigrationPhase,
+	holdAt: MigrationPhase,
+): Promise<string> {
+	const { options, run, targetScope } = context;
+	const port = requirePort(
+		side === "source" ? options.source : options.target,
+		"fence",
+	);
+	const scope = side === "source" ? options.scope : targetScope;
+	const reason = `migration ${options.runtime.migrationId}`;
+	const status = await port.status(scope);
+	if (status.fenced) {
+		const claim = run.fenceClaim(side);
+		const foreign = (): MigrationHold =>
+			new MigrationHold(
+				holdAt,
+				`${FENCE_NOT_OWNED}: the ${side} is already fenced, and not by a fence this migration can prove it raised; it was neither adopted nor released`,
+			);
+		if (claim === undefined) throw foreign();
+		// Raising a raised fence answers its token and changes nothing.
+		const standing = await port.raise({ scope, reason });
+		if (claim.pending) {
+			await run.recordFence(side, phase, standing.fenceToken);
+			return standing.fenceToken;
+		}
+		if (fenceTokenDigest(standing.fenceToken) !== claim.digest) throw foreign();
+		if (!claim.abandoned) return standing.fenceToken;
+		await port.release({ scope, fenceToken: standing.fenceToken });
+	}
+	await run.requestFence(side, phase);
+	const grant = await port.raise({ scope, reason });
+	await run.recordFence(side, phase, grant.fenceToken);
 	return grant.fenceToken;
 }
 
@@ -727,9 +881,15 @@ async function compensate(
 	fenceToken: string,
 	phase: MigrationPhase,
 	reason: string,
+	working = false,
 ): Promise<MigrationHold> {
 	const { options, run } = context;
-	const hold = await run.recordHold(phase, reason, { compensated: true });
+	const hold = await run.recordHold(
+		phase,
+		reason,
+		{ compensated: true },
+		working,
+	);
 	// Reads go home where a ramp moved them; an offline copy never did.
 	if (context.pattern === "snapshot-and-tail") await options.shiftReads?.(0);
 	await requirePort(options.source, "fence").release({
@@ -766,7 +926,14 @@ async function completeFlip(
 	const channel = channelOf(context);
 	if (context.native === undefined) await channel.claim();
 	else await channel.close();
-	await context.options.flipAuthority({ direction: "to-target", fenceToken });
+	await context.options.flipAuthority({
+		migrationId: context.options.runtime.migrationId,
+		// The head of the journaled cutover: the same for the run that decided
+		// it and for every run that finishes it.
+		head: context.run.decisionHead(MIGRATION_EVENTS.CutOver),
+		direction: "to-target",
+		fenceToken,
+	});
 }
 
 /**
@@ -818,7 +985,9 @@ async function flip(
 
 /**
  * Finish a cutover an earlier run decided but did not complete. The flip is
- * idempotent by contract, so repeating it is safe whether or not it landed.
+ * idempotent at its head by contract, so repeating it is safe whether or not
+ * it landed — and it carries the head of the decision, so a router that has
+ * since applied a later one refuses it.
  */
 async function resumeFlip(
 	context: CopyContext,
@@ -838,31 +1007,55 @@ async function resumeFlip(
 async function releaseStrandedTargetFence(context: CopyContext): Promise<void> {
 	const { options, run, targetScope } = context;
 	const fence = options.target.fence;
-	if (
-		fence === undefined ||
-		run.firstText(MIGRATION_EVENTS.FenceRequested, "requestedAt", "target") ===
-			undefined
-	) {
-		return;
-	}
+	// Only a fence this migration asked for can be one it stranded. With no
+	// request on record a fence on the target is somebody else's business.
+	const claim = run.fenceClaim("target");
+	if (fence === undefined || claim === undefined) return;
 	const status = await fence.status(targetScope);
 	if (!status.fenced) return;
+	// Raising a raised fence answers its token and changes nothing.
+	const standing = await fence.raise({
+		scope: targetScope,
+		reason: `migration ${options.runtime.migrationId}`,
+	});
+	if (
+		!claim.pending &&
+		fenceTokenDigest(standing.fenceToken) !== claim.digest
+	) {
+		// Fenced, but not by the fence this migration recorded raising: it is
+		// someone else's, and is left exactly as it stands.
+		throw new MigrationHold(
+			"soak",
+			`${FENCE_NOT_OWNED}: the new authority is fenced, and not by a fence this migration can prove it raised; it was not released`,
+		);
+	}
 	const hold = await run.recordHold(
 		"soak",
 		"an interrupted rollback attempt left the new authority fenced; its fence was released",
 	);
-	const grant = await fence.raise({ scope: targetScope, reason: "rollback" });
-	await fence.release({ scope: targetScope, fenceToken: grant.fenceToken });
+	await fence.release({ scope: targetScope, fenceToken: standing.fenceToken });
 	throw hold;
 }
 
-async function soak(context: CopyContext): Promise<JsonObject> {
+/** What the run loop learned before the soak phase's body runs. */
+interface SoakEntry {
+	/** The soak decision, when it was already asked for. */
+	decision?: SoakDecision;
+	/** The negative verdict the phase is running under, when it is. */
+	denial?: PhaseDenial;
+}
+
+async function soak(
+	context: CopyContext,
+	entry: SoakEntry = {},
+): Promise<JsonObject> {
 	const { options, run, reverseTail, tailBatch, maxTailRounds } = context;
 	// A rollback an earlier run decided is finished, not reconsidered: the
 	// soak decision is not asked again.
 	const decided = run.rollbackDecision();
 	if (decided !== undefined) return finishRollback(context, decided);
-	const decision = (await options.soakDecision?.()) ?? "finalize";
+	const decision =
+		entry.decision ?? (await options.soakDecision?.()) ?? "finalize";
 	if (decision !== "rollback") await releaseStrandedTargetFence(context);
 	if (reverseTail) {
 		const reversePosition = run.checkpointText(
@@ -882,8 +1075,29 @@ async function soak(context: CopyContext): Promise<JsonObject> {
 	if (decision === "hold") {
 		throw new MigrationHold("soak", "soak window left open");
 	}
-	if (decision === "rollback") return rollbackFromSoak(context);
+	if (decision === "rollback") return rollbackFromSoak(context, entry.denial);
 	return { decision };
+}
+
+/**
+ * The soak phase, with the one thing a negative verdict does not stop: a
+ * rollback. Going back moves write authority to the store the data already
+ * lived in and ends the copy the verdict objects to, so a rollback that is
+ * asked for runs — and the decision records the findings it ran under. Any
+ * other answer holds as before, after a fence an interrupted rollback left on
+ * the authority has been let go.
+ */
+function soakPhase(context: CopyContext): Promise<JsonObject> {
+	const entry: SoakEntry = {};
+	return context.run.phase("soak", async () => soak(context, entry), {
+		underDenial: async (denial) => {
+			entry.decision = (await context.options.soakDecision?.()) ?? "finalize";
+			entry.denial = denial;
+			if (entry.decision === "rollback") return true;
+			await releaseStrandedTargetFence(context);
+			return false;
+		},
+	});
 }
 
 /** Where erasure replay is windowed from: before the source was fenced. */
@@ -906,20 +1120,30 @@ function erasureWindowStart(context: CopyContext): string {
  * undone by a hold; everything after it is `finishRollback`, which any later
  * run repeats until it is done.
  */
-async function rollbackFromSoak(context: CopyContext): Promise<never> {
+async function rollbackFromSoak(
+	context: CopyContext,
+	denial?: PhaseDenial,
+): Promise<never> {
 	const { options, run, reverseTail, targetScope, tailBatch, maxTailRounds } =
 		context;
 	const fenceToken = await cutOverFenceToken(
 		context,
 		cutOverCheckpoint(context),
 	);
-	const reason = `migration ${options.runtime.migrationId} rollback`;
+	// The verdict the rollback was asked for under, when it was negative.
+	const underVerdict =
+		denial === undefined ? undefined : { policyFindings: [...denial.findings] };
 	if (reverseTail) {
 		// Quiesce the target, then prove the source is current before it
-		// becomes the authority again.
+		// becomes the authority again. A lossless rollback needs the target
+		// to answer: there is no proving the source current without it.
 		const targetFence = requirePort(options.target, "fence");
-		await run.requestFence("target", "soak");
-		const targetGrant = await targetFence.raise({ scope: targetScope, reason });
+		const targetToken = await raiseOwnedFence(
+			context,
+			"target",
+			"soak",
+			"soak",
+		);
 		const reversePosition = run.checkpointText(
 			"fence-and-flip",
 			"reversePosition",
@@ -937,15 +1161,17 @@ async function rollbackFromSoak(context: CopyContext): Promise<never> {
 			);
 			await targetFence.release({
 				scope: targetScope,
-				fenceToken: targetGrant.fenceToken,
+				fenceToken: targetToken,
 			});
 			throw hold;
 		}
 		const decision: JsonObject = {
 			migrationId: options.runtime.migrationId,
 			lossless: true,
+			targetFenced: true,
 			count: pair.source.count,
 			digest: pair.source.digest,
+			...underVerdict,
 			decidedAt: options.runtime.clock(),
 		};
 		await run.emit(MIGRATION_EVENTS.RollbackDecided, decision);
@@ -961,19 +1187,63 @@ async function rollbackFromSoak(context: CopyContext): Promise<never> {
 		);
 	}
 	// Stop the target acknowledging writes that are about to be abandoned,
-	// where the engine can.
+	// where the engine can — and where it answers. This rollback abandons the
+	// target, and the usual reason to abandon it is that it has failed; a
+	// rollback that waited for a dead store to be fenced would leave authority
+	// on that store. So the target's side is best effort, and the decision
+	// records whether it was fenced. A fence someone else holds there is not
+	// "unreachable": that is a hold, like anywhere else.
+	let targetFenced = false;
 	if (options.target.fence !== undefined) {
-		await run.requestFence("target", "soak");
-		await options.target.fence.raise({ scope: targetScope, reason });
+		try {
+			await raiseOwnedFence(context, "target", "soak", "soak");
+			targetFenced = true;
+		} catch (error) {
+			if (
+				error instanceof MigrationHold ||
+				(error instanceof Error && isSupersededError(error))
+			) {
+				throw error;
+			}
+			run.noteImpedance(ROLLBACK_TARGET_UNREACHABLE);
+		}
 	}
 	const decision: JsonObject = {
 		migrationId: options.runtime.migrationId,
 		lossless: false,
+		targetFenced,
 		erasuresFrom: erasureWindowStart(context),
+		...underVerdict,
 		decidedAt: options.runtime.clock(),
 	};
 	await run.emit(MIGRATION_EVENTS.RollbackDecided, decision);
 	return finishRollback(context, decision);
+}
+
+/**
+ * Re-apply to the fenced source every erasure the ledger holds since the
+ * rollback's window opened. Deletes are idempotent, so reading and applying
+ * the whole window twice is harmless. Returns how many the ledger held.
+ */
+async function replayErasures(
+	context: CopyContext,
+	decision: JsonObject,
+	fenceToken: string,
+): Promise<number> {
+	const { options } = context;
+	if (options.erasures === undefined) return 0;
+	const from = isJsonString(decision.erasuresFrom)
+		? decision.erasuresFrom
+		: erasureWindowStart(context);
+	const mutations = await options.erasures.since(from);
+	if (mutations.length > 0) {
+		await options.source.records.write({
+			dataset: options.scope.dataset,
+			mutations,
+			fenceToken,
+		});
+	}
+	return mutations.length;
 }
 
 /**
@@ -1009,25 +1279,35 @@ async function finishRollback(
 					"the decided rollback must re-apply the erasures recorded since the cutover, and no erasure ledger was supplied; authority has not moved",
 				);
 			}
-			const from = isJsonString(decision.erasuresFrom)
-				? decision.erasuresFrom
-				: erasureWindowStart(context);
-			const mutations = await options.erasures.since(from);
-			if (mutations.length > 0) {
-				await options.source.records.write({
-					dataset: options.scope.dataset,
-					mutations,
-					fenceToken,
-				});
-			}
-			erased = mutations.length;
+			erased = await replayErasures(context, decision, fenceToken);
 		}
 		// The forward channel ends with the migration: a native transfer left
 		// open would start copying the restored authority's writes to the
 		// abandoned target, and a hub subscription would pin the source's log
-		// for ever. Dropped before authority moves.
-		await channelOf(context).close();
-		await options.flipAuthority({ direction: "to-source", fenceToken });
+		// for ever. Dropped before authority moves. Going back to a stale
+		// source does not wait for the target to answer; the source's half is
+		// dropped regardless.
+		const targetClosed = await channelOf(context).close({
+			targetBestEffort: !lossless,
+		});
+		if (!targetClosed) run.noteImpedance(ROLLBACK_TARGET_UNREACHABLE);
+		await options.flipAuthority({
+			migrationId: options.runtime.migrationId,
+			head: run.decisionHead(MIGRATION_EVENTS.RollbackDecided),
+			direction: "to-source",
+			fenceToken,
+		});
+		if (!lossless) {
+			// Read the ledger again now that authority is back and the source
+			// is still fenced. An erasure that reached the abandoned target
+			// between the first read and the flip is in the ledger and not on
+			// the source; from here on an erasure is sent to the source, which
+			// refuses it until the fence is released and is asked again after.
+			erased = Math.max(
+				erased ?? 0,
+				await replayErasures(context, decision, fenceToken),
+			);
+		}
 		await fence.release({ scope: options.scope, fenceToken });
 	}
 	if (lossless) {
@@ -1123,90 +1403,96 @@ export async function runSnapshotAndTail(
 	const context = await open(options, "snapshot-and-tail");
 	const { run } = context;
 	const channel = channelOf(context);
-	return run.drive(async () => {
-		await run.phase("gate", async () => ({}));
-		await run.phase("prepare", async () => {
-			await options.target.datasets.ensureDataset(options.schema);
-			return channel.open();
-		});
-		await run.phase("seed", async () => {
-			const seeded = await channel.seed();
-			if (seeded === undefined) {
-				throw new MigrationHold(
-					"prepare",
-					"the native initial copy has not finished; seed will resume",
-				);
-			}
-			return seeded;
-		});
-		await run.phase("converge", async () => {
-			const outcome = await channel.drain();
-			if (!outcome.caughtUp) {
-				throw new MigrationHold(
-					"seed",
-					"lag did not fall within bound; converge will resume",
-				);
-			}
-			return {
-				position: outcome.position,
-				...(outcome.applied === undefined
-					? undefined
-					: { applied: outcome.applied }),
-			};
-		});
-		await run.phase("verify", async () => {
-			const attempts = (options.verifyRechecks ?? 3) + 1;
-			for (let attempt = 0; attempt < attempts; attempt += 1) {
-				await channel.drain();
-				const pair = await digests(context);
-				if (compareDigests(pair.source, pair.target).equal) {
-					await run.emit(MIGRATION_EVENTS.Verified, {
-						migrationId: options.runtime.migrationId,
-						point: "pre-flip",
-						count: pair.target.count,
-						digest: pair.target.digest,
-						verifiedAt: options.runtime.clock(),
-					});
-					return { count: pair.target.count, digest: pair.target.digest };
+	return run.drive(
+		async () => {
+			await run.phase("gate", async () => ({}));
+			await run.phase("prepare", async () => {
+				await options.target.datasets.ensureDataset(options.schema);
+				return channel.open();
+			});
+			await run.phase("seed", async () => {
+				const seeded = await channel.seed();
+				if (seeded === undefined) {
+					throw new MigrationHold(
+						"prepare",
+						"the native initial copy has not finished; seed will resume",
+						{ working: true },
+					);
 				}
-			}
-			throw new MigrationHold(
-				"converge",
-				"source and target digests did not agree after re-checks",
-			);
-		});
-		await run.phase("shift-reads", async () => {
-			const steps = options.rampSteps ?? [10, 50, 100];
-			for (const percent of steps) await options.shiftReads?.(percent);
-			return { percent: steps[steps.length - 1] ?? 100 };
-		});
-		await run.phase("fence-and-flip", async () => {
-			const decided = run.cutOverDecision();
-			if (decided !== undefined) return resumeFlip(context, decided);
-			const fenceToken = await fenceSource(context);
-			// This driver's head on the leg, before anything is compared: a
-			// driver with an older view can no longer apply to the target.
-			await channel.claim();
-			const drained = await channel.drain();
-			const pair = await digests(context);
-			if (
-				!drained.caughtUp ||
-				!compareDigests(pair.source, pair.target).equal
-			) {
-				// Compensate: the source stays the authority and reads go home.
-				throw await compensate(
-					context,
-					fenceToken,
-					"shift-reads",
-					"exact verification under the fence failed; the source remains the authority",
+				return seeded;
+			});
+			await run.phase("converge", async () => {
+				const outcome = await channel.drain();
+				if (!outcome.caughtUp) {
+					throw new MigrationHold(
+						"seed",
+						"lag did not fall within bound; converge will resume",
+						{ working: true },
+					);
+				}
+				return {
+					position: outcome.position,
+					...(outcome.applied === undefined
+						? undefined
+						: { applied: outcome.applied }),
+				};
+			});
+			await run.phase("verify", async () => {
+				const attempts = (options.verifyRechecks ?? 3) + 1;
+				for (let attempt = 0; attempt < attempts; attempt += 1) {
+					await channel.drain();
+					const pair = await digests(context);
+					if (compareDigests(pair.source, pair.target).equal) {
+						await run.emit(MIGRATION_EVENTS.Verified, {
+							migrationId: options.runtime.migrationId,
+							point: "pre-flip",
+							count: pair.target.count,
+							digest: pair.target.digest,
+							verifiedAt: options.runtime.clock(),
+						});
+						return { count: pair.target.count, digest: pair.target.digest };
+					}
+				}
+				throw new MigrationHold(
+					"converge",
+					"source and target digests did not agree after re-checks",
 				);
-			}
-			return flip(context, fenceToken, pair.target);
-		});
-		await run.phase("soak", async () => soak(context));
-		await run.phase("finalize", async () => finalize(context));
-		return "none";
-	}, rollbackAt(context));
+			});
+			await run.phase("shift-reads", async () => {
+				const steps = options.rampSteps ?? [10, 50, 100];
+				for (const percent of steps) await options.shiftReads?.(percent);
+				return { percent: steps[steps.length - 1] ?? 100 };
+			});
+			await run.phase("fence-and-flip", async () => {
+				const decided = run.cutOverDecision();
+				if (decided !== undefined) return resumeFlip(context, decided);
+				const fenceToken = await fenceSource(context, "shift-reads");
+				// This driver's head on the leg, before anything is compared: a
+				// driver with an older view can no longer apply to the target.
+				await channel.claim();
+				const drained = await channel.drain();
+				const pair = await digests(context);
+				if (
+					!drained.caughtUp ||
+					!compareDigests(pair.source, pair.target).equal
+				) {
+					// Compensate: the source stays the authority and reads go home.
+					throw await compensate(
+						context,
+						fenceToken,
+						"shift-reads",
+						"exact verification under the fence failed; the source remains the authority",
+					);
+				}
+				return flip(context, fenceToken, pair.target);
+			});
+			await soakPhase(context);
+			await run.phase("finalize", async () => finalize(context));
+			return "none";
+		},
+		rollbackAt(context),
+		{ held: (hold) => pauseTransfer(context, hold) },
+	);
 }
 
 /**
@@ -1220,52 +1506,58 @@ export async function runOfflineCopy(
 	const context = await open(options, "offline-copy");
 	const { run } = context;
 	const channel = channelOf(context);
-	return run.drive(async () => {
-		await run.phase("gate", async () => ({}));
-		await run.phase("prepare", async () => {
-			await options.target.datasets.ensureDataset(options.schema);
-			return {};
-		});
-		await run.phase("fence-and-flip", async () => {
-			const decided = run.cutOverDecision();
-			if (decided !== undefined) return resumeFlip(context, decided);
-			const fenceToken = await fenceSource(context);
-			let seeded: number | undefined;
-			if (context.native === undefined) {
-				await channel.claim();
-				seeded = await seed(context);
-			} else {
-				// Opening is idempotent, so an attempt that ran out of time is
-				// continued by the next one rather than started again: the
-				// transfer is left in place when the fence is released.
-				await channel.open();
-				const copied = await channel.seed();
-				const level = copied === undefined ? undefined : await channel.drain();
-				if (level?.caughtUp !== true) {
+	return run.drive(
+		async () => {
+			await run.phase("gate", async () => ({}));
+			await run.phase("prepare", async () => {
+				await options.target.datasets.ensureDataset(options.schema);
+				return {};
+			});
+			await run.phase("fence-and-flip", async () => {
+				const decided = run.cutOverDecision();
+				if (decided !== undefined) return resumeFlip(context, decided);
+				const fenceToken = await fenceSource(context, "prepare");
+				let seeded: number | undefined;
+				if (context.native === undefined) {
+					await channel.claim();
+					seeded = await seed(context);
+				} else {
+					// Opening is idempotent, so an attempt that ran out of time is
+					// continued by the next one rather than started again: the
+					// transfer is left in place when the fence is released.
+					await channel.open();
+					const copied = await channel.seed();
+					const level =
+						copied === undefined ? undefined : await channel.drain();
+					if (level?.caughtUp !== true) {
+						throw await compensate(
+							context,
+							fenceToken,
+							"prepare",
+							"the native copy did not finish inside the fence window; the source remains the authority",
+							true,
+						);
+					}
+				}
+				const pair = await digests(context);
+				if (!compareDigests(pair.source, pair.target).equal) {
 					throw await compensate(
 						context,
 						fenceToken,
 						"prepare",
-						"the native copy did not finish inside the fence window; the source remains the authority",
+						"copy verification failed; the source remains the authority",
 					);
 				}
-			}
-			const pair = await digests(context);
-			if (!compareDigests(pair.source, pair.target).equal) {
-				throw await compensate(
-					context,
-					fenceToken,
-					"prepare",
-					"copy verification failed; the source remains the authority",
-				);
-			}
-			return {
-				...(await flip(context, fenceToken, pair.target)),
-				...(seeded === undefined ? undefined : { seeded }),
-			};
-		});
-		await run.phase("soak", async () => soak(context));
-		await run.phase("finalize", async () => finalize(context));
-		return "none";
-	}, rollbackAt(context));
+				return {
+					...(await flip(context, fenceToken, pair.target)),
+					...(seeded === undefined ? undefined : { seeded }),
+				};
+			});
+			await soakPhase(context);
+			await run.phase("finalize", async () => finalize(context));
+			return "none";
+		},
+		rollbackAt(context),
+		{ held: (hold) => pauseTransfer(context, hold) },
+	);
 }

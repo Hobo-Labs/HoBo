@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
 	assertBindingMatchesDeclaration,
+	CapturePositionError,
 	canonicalEncode,
 	DataCoreError,
 	encodeRecordKey,
@@ -723,14 +724,14 @@ describe("capture read loop — recorded bytes, scripted server", () => {
 					limit: 100,
 				}),
 			(cause) =>
-				cause instanceof PostgresDataError &&
+				cause instanceof CapturePositionError &&
 				cause.code === "CAPTURE_POSITION_INVALID",
 		);
 		await assert.rejects(
 			async () =>
 				capture.read({ scope, subscription: "s", after: "41", limit: 100 }),
 			(cause) =>
-				cause instanceof PostgresDataError &&
+				cause instanceof CapturePositionError &&
 				cause.code === "CAPTURE_POSITION_INVALID",
 		);
 	});

@@ -178,6 +178,8 @@ message EngineDeclaration {
   repeated NativeMigrationProfile native_profiles = 10;
   TypeMappingAnnex type_mapping = 11;
   repeated string impedance = 12;
+  // The engine's bound on one stored record, in bytes, when it states one.
+  optional uint64 max_record_bytes = 13;
 }
 
 // ── custody and policy ──────────────────────────────────────────────────────
@@ -192,6 +194,9 @@ enum CustodyRole {
   CUSTODY_ROLE_CAPTURE_LOG = 6;
   CUSTODY_ROLE_ROLLBACK_SNAPSHOT = 7;
   CUSTODY_ROLE_RETIRING_SOURCE = 8;
+  // The log a stream-handoff moves the journal into: a custody point of its
+  // own, so that naming only the log being left does not cover the handoff.
+  CUSTODY_ROLE_TARGET_EVENT_LOG = 9;
 }
 
 message CustodyPoint {
@@ -224,6 +229,19 @@ message PolicyVerdict {
   string evaluated_at = 6; // RFC 3339, explicit offset
   // The roles the path named: what the verdict judged, and all it judged.
   repeated CustodyRole roles = 7;
+}
+
+// What a router compares-and-sets on when a migration asks it to move write
+// authority. `head` is the journal head — the count of facts up to and
+// including the journaled decision — the move was decided at. A router keeps
+// the highest head it has applied per migration and refuses a lower one; a
+// move at the head already applied is the same decision again. The fence
+// token that accompanies the call in process is a credential and is not part
+// of this record.
+message AuthorityMoveRef {
+  string migration_id = 1;
+  uint64 head = 2;
+  optional string direction = 3; // to-target | to-source; absent for a move into the log
 }
 
 // ── pattern catalog and selection ───────────────────────────────────────────
@@ -334,7 +352,7 @@ message InPlaceEvolveResult {
 
 message EngineConformanceResult {
   string case_id = 1;
-  string status = 2; // pass | fail | blocked | not-run
+  string status = 2; // pass | fail | blocked | not-run | declared-limit
   string detail = 3;
 }
 
@@ -345,6 +363,9 @@ message EngineConformanceReport {
   repeated EngineConformanceResult results = 4;
   repeated string skipped = 5;
   string checked_at = 6;
+  // The case ids the run was restricted to; empty when the whole suite ran.
+  // A restricted run never has outcome "pass".
+  repeated string only = 7;
 }
 
 // ── migration.* fact bodies emitted by the pattern executors ────────────────
@@ -379,6 +400,22 @@ message MigrationPhaseAppliedEventData {
   // records a checkpoint instead.
   optional uint32 statements = 5;
   optional uint32 changes = 6;
+  // An in-place phase found already in effect by the plan's probe after an
+  // unanswered intent; this run did not run its statements.
+  optional bool recovered = 7;
+}
+
+// Written before an in-place phase runs its statements, as a compare-and-set
+// on the journal head. An intent with no PhaseApplied after it means the
+// statements may have committed: the next run asks the plan's probe, and
+// holds when it has none. It never restores the snapshot on that account.
+message MigrationPhaseIntendedEventData {
+  string migration_id = 1;
+  string phase = 2; // expand | backfill | contract
+  uint32 statements = 3;
+  string intended_at = 4;
+  // The phase is being applied again after the probe found it not in effect.
+  optional bool retry = 5;
 }
 
 message MigrationVerifiedEventData {
@@ -428,6 +465,9 @@ message MigrationHeldEventData {
   optional bool compensated = 5;
   // The phase the run was about to enter, for a hold between two phases.
   optional MigrationPhase before = 6;
+  // The in-place phase whose statements the port reported as failed. That is
+  // an answer to its intent: the phase is not in effect.
+  optional string failed_phase = 7; // expand | backfill | contract
 }
 
 // Written before a write fence is raised, as a compare-and-set on the journal
@@ -450,6 +490,23 @@ message MigrationRollbackDecidedEventData {
   // What both sides digested to, for a rollback under a reverse tail.
   optional uint64 count = 5;
   optional string digest = 6;
+  // Whether the target was fenced before authority went back. A rollback to a
+  // stale source does not wait for a target that cannot be reached, and says
+  // so here; a lossless one always has it fenced.
+  optional bool target_fenced = 7;
+  // Finding codes of the negative verdict the rollback was asked for under.
+  repeated string policy_findings = 8;
+}
+
+// Written after a write fence is raised: the digest of the token the raise
+// answered. How a later run proves a fence it finds standing is this
+// migration's own before it writes through it, adopts it or releases it.
+message MigrationFenceRaisedEventData {
+  string migration_id = 1;
+  string side = 2; // source | target
+  MigrationPhase phase = 3;
+  string fence_token_digest = 4; // sha256 of the token; never the token
+  string raised_at = 5;
 }
 
 message MigrationResumedEventData {

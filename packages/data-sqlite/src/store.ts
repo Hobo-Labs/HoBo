@@ -28,6 +28,7 @@ import {
 import {
 	type CanonicalRecord,
 	type CaptureBatch,
+	CapturePositionError,
 	type ChangeEnvelope,
 	canonicalEncode,
 	DataCoreError,
@@ -49,7 +50,6 @@ import {
 	StaleApplyError,
 	schemaDigest,
 } from "@hobo/data-core";
-import { SqliteDataError } from "./errors.js";
 
 const tagOf = Object.prototype.toString;
 
@@ -248,10 +248,23 @@ export class SqliteDatasetStore {
 			CREATE TABLE IF NOT EXISTS hobo_data_subscriptions (
 				name TEXT PRIMARY KEY,
 				dataset TEXT NOT NULL,
+				tenant_id TEXT,
 				start_position INTEGER NOT NULL,
 				ack_position INTEGER NOT NULL
 			);
 		`);
+		// A subscription recorded before its tenant was kept gains the column;
+		// its row stays unbound and is bound by the next scope that names it.
+		const bound = this.db
+			.prepare(
+				"SELECT 1 AS present FROM pragma_table_info('hobo_data_subscriptions') WHERE name = 'tenant_id'",
+			)
+			.get();
+		if (bound === undefined) {
+			this.db.exec(
+				"ALTER TABLE hobo_data_subscriptions ADD COLUMN tenant_id TEXT",
+			);
+		}
 		// A journal written before transactions were marked gains the column;
 		// its existing rows stay unmarked and read as one transaction each.
 		const marked = this.db
@@ -673,15 +686,14 @@ export class SqliteDatasetStore {
 	}
 
 	/** The one constructor for a position this store minted. */
-	private parsePosition(position: Position): number {
+	private parsePosition(position: Position, subscription = ""): number {
 		const head = this.head();
 		// A position past the head was minted by some other store, or by this
 		// one before it was restored; changes at or before it would be skipped.
 		if (!POSITION.test(position) || !(Number(position) <= head)) {
-			throw new SqliteDataError(
-				"CAPTURE_POSITION_INVALID",
+			throw new CapturePositionError(
+				subscription,
 				`a capture position for this store is a journal sequence from 0 to its head, ${head}`,
-				{ detail: { field: "position" } },
 			);
 		}
 		return Number(position);
@@ -692,10 +704,9 @@ export class SqliteDatasetStore {
 		const from = this.parsePosition(after);
 		const floor = this.journalFloor();
 		if (from < floor) {
-			throw new SqliteDataError(
-				"CAPTURE_POSITION_INVALID",
+			throw new CapturePositionError(
+				"",
 				`changes at or before ${floor} were released; the journal cannot be read from ${from}`,
-				{ detail: { field: "position" } },
 			);
 		}
 		return from;
@@ -717,18 +728,47 @@ export class SqliteDatasetStore {
 		return row === undefined || row.head === null ? 0 : Number(row.head);
 	}
 
-	startSubscription(name: string, dataset: string): Position {
-		this.schema(dataset);
+	/**
+	 * A name is one reader of one scope. Started again on that scope it
+	 * answers its original position; named on another dataset or another
+	 * tenant it is refused — answering would start that reader at a position
+	 * it never asked for, with changes from before it existed.
+	 */
+	startSubscription(name: string, scope: DatasetScope): Position {
+		this.schema(scope.dataset);
 		const existing = this.get(
-			"SELECT start_position FROM hobo_data_subscriptions WHERE name = ?",
+			"SELECT dataset, tenant_id, start_position FROM hobo_data_subscriptions WHERE name = ?",
 			name,
 		);
-		if (existing !== undefined) return String(existing.start_position);
+		if (existing !== undefined) {
+			const bound = existing.tenant_id;
+			if (
+				String(existing.dataset) !== scope.dataset ||
+				(bound !== null && String(bound) !== scope.tenant)
+			) {
+				throw new DataCoreError(
+					"CAPTURE_SUBSCRIPTION_CONFLICT",
+					`subscription ${name} is bound to another scope`,
+					{ detail: { subscription: name } },
+				);
+			}
+			if (bound === null) {
+				// Recorded before tenants were kept: bound to the scope that
+				// names it now.
+				this.run(
+					"UPDATE hobo_data_subscriptions SET tenant_id = ? WHERE name = ? AND tenant_id IS NULL",
+					scope.tenant,
+					name,
+				);
+			}
+			return String(existing.start_position);
+		}
 		const head = this.head();
 		this.run(
-			"INSERT INTO hobo_data_subscriptions (name, dataset, start_position, ack_position) VALUES (?, ?, ?, ?)",
+			"INSERT INTO hobo_data_subscriptions (name, dataset, tenant_id, start_position, ack_position) VALUES (?, ?, ?, ?, ?)",
 			name,
-			dataset,
+			scope.dataset,
+			scope.tenant,
 			head,
 			head,
 		);
@@ -849,7 +889,7 @@ export class SqliteDatasetStore {
 	acknowledge(name: string, position: Position): void {
 		this.run(
 			"UPDATE hobo_data_subscriptions SET ack_position = MAX(ack_position, ?) WHERE name = ?",
-			this.parsePosition(position),
+			this.parsePosition(position, name),
 			name,
 		);
 		this.prune();
@@ -1032,6 +1072,9 @@ export class SqliteDatasetStore {
 				);
 			}
 			const current = this.digest(scope, expected.buckets.length);
+			// Redelivery: the scope is already empty behind the caller's own
+			// fence. There is nothing left to compare and nothing to remove.
+			if (current.count === 0) return 0;
 			if (
 				current.count !== expected.count ||
 				current.digest !== expected.digest

@@ -23,8 +23,10 @@ import {
 	captureObjectPrefixes,
 	createPgExecutor,
 	createPostgresEngine,
+	formatLsn,
 	POSTGRES_SCHEMA_FIXTURE,
 	POSTGRES_SCHEMA_FIXTURE_TABLE,
+	parseLsn,
 } from "@hobo/data-postgres";
 import { createSqliteEngine, SQLITE_SCHEMA_FIXTURE } from "@hobo/data-sqlite";
 import pg from "pg";
@@ -50,16 +52,29 @@ function failures(results: readonly EngineConformanceResult[]): string {
 /** One SQLite file per binding, each in its own temp directory. */
 function sqliteHarness(): EngineHarness {
 	const dirs = new Map<EngineBinding, string>();
+	const file = (dir: string): string => path.join(dir, "store.db");
 	return {
 		schemaFixture: SQLITE_SCHEMA_FIXTURE,
+		// Names SQLite keeps for itself; a dataset must never land on one.
+		reservedDatasetNames: ["sqlite_sequence", "sqlite_master"],
+		// A SQLite position is a journal sequence.
+		positionPastHead: (head) => String(Number(head) + 1_000_000),
 		create() {
 			const dir = mkdtempSync(path.join(tmpdir(), "hobo-cross-engine-"));
 			const binding = createSqliteEngine({
-				path: path.join(dir, "store.db"),
+				path: file(dir),
 				clock: () => NOW,
 			});
 			dirs.set(binding, dir);
 			return binding;
+		},
+		// A second connection to the same file.
+		attach(binding) {
+			const dir = dirs.get(binding);
+			if (dir === undefined) {
+				throw new Error("the binding was not created by this harness");
+			}
+			return createSqliteEngine({ path: file(dir), clock: () => NOW });
 		},
 		dispose(binding) {
 			const dir = dirs.get(binding);
@@ -72,19 +87,39 @@ function sqliteHarness(): EngineHarness {
 /** One PostgreSQL namespace per binding, dropped — slots included — on close. */
 function postgresHarness(pool: pg.Pool): EngineHarness {
 	const executor = createPgExecutor(pool);
+	const namespaces = new WeakMap<EngineBinding, string>();
 	let counter = 0;
 	return {
 		schemaFixture: POSTGRES_SCHEMA_FIXTURE,
+		// A write-ahead-log location 4 GiB past the head: well-formed, and one
+		// no test run reaches.
+		positionPastHead: (head) => formatLsn(parseLsn(head) + (1n << 32n)),
 		create() {
 			counter += 1;
 			const namespace = `hobo_x_${RUN_ID}_${counter}`;
 			OWN_NAMESPACES.push(namespace);
-			return createPostgresEngine({
+			const binding = createPostgresEngine({
 				executor,
 				namespace,
 				capture: true,
 				schemaTables: [POSTGRES_SCHEMA_FIXTURE_TABLE],
 				ephemeral: true,
+				clock: () => NOW,
+			});
+			namespaces.set(binding, namespace);
+			return binding;
+		},
+		// A second binding on the same namespace. Not ephemeral: the first
+		// binding owns the namespace and drops it.
+		attach(binding) {
+			const namespace = namespaces.get(binding);
+			if (namespace === undefined) {
+				throw new Error("the binding was not created by this harness");
+			}
+			return createPostgresEngine({
+				executor,
+				namespace,
+				schemaTables: [POSTGRES_SCHEMA_FIXTURE_TABLE],
 				clock: () => NOW,
 			});
 		},
@@ -181,11 +216,13 @@ describe.skipIf(LIVE_URL === "" || POSTGRES_URL === "")(
 			assert.equal(report.outcome, "pass", failures(report.results));
 			assert.equal(report.engine, "postgres");
 			// PostgreSQL has every port, the schema port included, so nothing is
-			// skipped for want of one. The native cases are an engine moving its
-			// own records to itself: they cannot apply to a cross-engine pair.
+			// skipped for want of one. It states no record bound, so the size
+			// case has nothing to probe; and the native cases are an engine
+			// moving its own records to itself, which cannot apply to a
+			// cross-engine pair.
 			assert.deepEqual(
 				report.skipped.filter((caseId) => !caseId.includes(".native.")),
-				[],
+				["records.oversize-record-refuses-the-batch"],
 			);
 		}, 300_000);
 

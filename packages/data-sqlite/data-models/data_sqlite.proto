@@ -55,6 +55,9 @@ message SqliteSubscriptionRow {
   string dataset = 2;
   uint64 start_position = 3;
   uint64 ack_position = 4;
+  // The tenant the name is bound to ("" spans the dataset); unset on a row
+  // written before the tenant was kept.
+  optional string tenant_id = 5;
 }
 
 message SqliteDualSideEvidence {

@@ -44,6 +44,10 @@ export const CUSTODY_ROLES = [
 	"capture-log",
 	"rollback-snapshot",
 	"retiring-source",
+	// The log a `stream-handoff` moves the journal *into*. Its own role, not a
+	// second `event-log` point: a verdict lists the roles it judged, and a list
+	// of roles cannot say that two different logs were both among them.
+	"target-event-log",
 ] as const;
 export type CustodyRole = (typeof CUSTODY_ROLES)[number];
 
@@ -52,6 +56,7 @@ const PERMANENT_ROLES: readonly CustodyRole[] = Object.freeze([
 	"source",
 	"target",
 	"event-log",
+	"target-event-log",
 ]);
 
 export const CUSTODY_PROTECTIONS = [
@@ -132,6 +137,7 @@ const ROLE_ORIGIN: Readonly<Record<CustodyRole, string>> = Object.freeze({
 	"rollback-snapshot": "the store is snapshotted before it is changed",
 	"retiring-source":
 		"the old source is kept through the soak window until it is retired",
+	"target-event-log": "it moves the journal's streams into another log",
 });
 
 /**
@@ -148,6 +154,7 @@ const ROLE_ORIGIN: Readonly<Record<CustodyRole, string>> = Object.freeze({
  * | `capture-log` | the source's `capture` port; a reverse tail (the target's); a native transfer, which retains the log itself |
  * | `rollback-snapshot` | the source's `schema` port, which snapshots before any change |
  * | `retiring-source` | the source's `retire` port |
+ * | `target-event-log` | the authority being moved is the journal itself: its streams land in another log |
  *
  * A `staging-artifact` is never implied: no pattern has to write one. When a
  * plan does, the path names it like any other point.
@@ -179,6 +186,9 @@ export function requiredCustodyRoles(
 			(native && !readsLog && !inPlace),
 		"rollback-snapshot": pattern.sourcePorts.includes("schema"),
 		"retiring-source": pattern.sourcePorts.includes("retire"),
+		// The journal is what moves, so where it lands is a second log — and
+		// a path that names only the log it leaves has not judged the move.
+		"target-event-log": pattern.authorities.includes("journal"),
 	} satisfies Record<CustodyRole, boolean>;
 	return Object.freeze(CUSTODY_ROLES.filter((role) => created[role]));
 }
@@ -412,7 +422,11 @@ export function evaluateCustodyPath(
 				),
 			);
 		}
-		if (!named.has("target") && !named.has("event-log")) {
+		if (
+			!named.has("target") &&
+			!named.has("event-log") &&
+			!named.has("target-event-log")
+		) {
 			findings.push(
 				incomplete(
 					"the path names no target custody point",

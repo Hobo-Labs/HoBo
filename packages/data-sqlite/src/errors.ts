@@ -2,14 +2,18 @@
  * Stable error codes for failures that are the SQLite binding's own.
  *
  * The engine-neutral refusals — a fenced write, an invalid record, a refused
- * retire — are `DataCoreError`s from `@hobo/data-core`. These are the ones the
- * neutral contract has no code for. `CAPTURE_POSITION_INVALID` is spelled as
- * the PostgreSQL binding spells it, so a caller can match either engine.
+ * retire, a capture position that cannot be read or acknowledged — are
+ * `DataCoreError`s from `@hobo/data-core`. These are the ones the neutral
+ * contract has no code for.
+ *
+ * `CAPTURE_POSITION_INVALID` stays in the list so the exported names keep
+ * meaning what they did, but the binding no longer raises a `SqliteDataError`
+ * with it: the code is shared now, and a refused position is the
+ * `CapturePositionError` every engine raises (`code` is the same text).
  */
 
 export const SQLITE_DATA_ERROR_CODES = [
-	// A capture position this store never minted, or one whose changes it has
-	// already released. Never answered with an empty "caught up" batch.
+	// Shared since `@hobo/data-core` owns it; see the module note.
 	"CAPTURE_POSITION_INVALID",
 	// A verify query carried SQL after its first statement; SQLite would have
 	// compiled the first and silently ignored the rest.

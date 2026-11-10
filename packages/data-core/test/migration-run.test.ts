@@ -482,9 +482,12 @@ describe("in-place-evolve policy and erasure", () => {
 			[
 				"migration.Planned",
 				"migration.SnapshotTaken",
+				"migration.PhaseIntended",
 				"migration.PhaseApplied",
+				"migration.PhaseIntended",
 				"migration.PhaseApplied",
 				"migration.Verified",
+				"migration.PhaseIntended",
 				"migration.PhaseApplied",
 				"migration.CutOver",
 			],

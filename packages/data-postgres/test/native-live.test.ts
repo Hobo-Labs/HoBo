@@ -13,6 +13,7 @@
 import assert from "node:assert/strict";
 import {
 	type Awaitable,
+	admitAuthorityMove,
 	type CopyMigrationOptions,
 	CUSTODY_ROLES,
 	canonicalEncode,
@@ -39,18 +40,22 @@ import {
 	selectMigrationPattern,
 	upsertMutation,
 } from "@hobo/data-core";
-import type pg from "pg";
-import { afterAll, beforeAll, describe, test } from "vitest";
+import pg from "pg";
+import { afterAll, afterEach, beforeAll, describe, test } from "vitest";
 import {
 	createPgExecutor,
 	createPostgresEngine,
 	FENCED_WRITE_SQLSTATE,
 	LOGICAL_COPY_PROFILE,
+	NATIVE_LOGGING_STATE,
+	nativeLoggingIsQuiet,
+	nativeSubscriptionName,
 	PostgresDataError,
 	type PostgresEngine,
 	type PostgresExecutor,
 	type PostgresParameter,
 	PRESENT_NATIVE_SOURCE,
+	QUIET_NATIVE_LOGGING,
 	quoteIdentifier,
 	sqlStateOf,
 } from "../src/index.js";
@@ -63,6 +68,7 @@ import {
 	LIVE_URL,
 	leftoverCaptureObjects,
 	livePool,
+	liveUrlFor,
 	NOW,
 } from "./engine-support.js";
 
@@ -130,6 +136,12 @@ function watched(executor: PostgresExecutor, seen: Seen[]): PostgresExecutor {
 	return wrap(executor);
 }
 
+function requireNative(binding: PostgresEngine) {
+	const port = binding.nativeTransfer;
+	assert.ok(port, "the binding provides the native-transfer port");
+	return port;
+}
+
 async function rejection<T>(action: () => Awaitable<T>): Promise<Error> {
 	try {
 		await action();
@@ -144,6 +156,8 @@ describe.skipIf(!LIVE_URL)("PostgreSQL logical-copy — live", () => {
 	let pool: pg.Pool;
 	let companion: CompanionDatabase;
 	const opened: PostgresEngine[] = [];
+	/** The routers' durable state: the highest journal head applied, per migration. */
+	const applied = new Map<string, number>();
 
 	interface Staged {
 		readonly namespace: string;
@@ -235,8 +249,25 @@ describe.skipIf(!LIVE_URL)("PostgreSQL logical-copy — live", () => {
 		companion = await createCompanionDatabase(pool);
 	});
 
+	// Every test closes what it staged, whether it passed or not. Each test
+	// below asserts that nothing of this file is left on the server; with the
+	// bindings of a failed test still open, its slot, publication and
+	// subscription would fail every test after it for a reason that is not
+	// theirs. Each binding is tried even when an earlier close throws.
+	afterEach(async () => {
+		const failed: Error[] = [];
+		for (const binding of opened.splice(0)) {
+			try {
+				await binding.close();
+			} catch (cause) {
+				failed.push(cause instanceof Error ? cause : new Error(String(cause)));
+			}
+		}
+		const first = failed[0];
+		if (first !== undefined) throw first;
+	});
+
 	afterAll(async () => {
-		for (const binding of opened) await binding.close();
 		const left = await leftovers();
 		await companion.drop(pool);
 		await pool.end();
@@ -336,6 +367,8 @@ describe.skipIf(!LIVE_URL)("PostgreSQL logical-copy — live", () => {
 				ITEMS,
 				{
 					flipAuthority: (flip) => {
+						// The router's half of the contract: refuse a stale head.
+						admitAuthorityMove(applied, flip);
 						flips.push(flip.direction);
 					},
 				},
@@ -586,6 +619,7 @@ describe.skipIf(!LIVE_URL)("PostgreSQL logical-copy — live", () => {
 					],
 				},
 				flipAuthority: (flip) => {
+					admitAuthorityMove(applied, flip);
 					directions.push(flip.direction);
 				},
 			}),
@@ -642,6 +676,235 @@ describe.skipIf(!LIVE_URL)("PostgreSQL logical-copy — live", () => {
 		await abandoned.source.nativeTransfer?.stop(ref);
 		await abandoned.target.nativeTransfer?.stop({ ...ref, transfer: "never" });
 		assert.deepEqual(await leftovers(), []);
+	}, 120_000);
+
+	test("a native run held by a negative verdict stops delivering: nothing written to the source reaches the target until the run resumes", async () => {
+		const staged = stage();
+		const { source, target } = staged;
+		await source.datasets.ensureDataset(ITEMS);
+		await source.records.write({
+			dataset: ITEMS.name,
+			mutations: [item("a", 1), item("b", 2), item("c", 3)],
+		});
+		const deny = {
+			...ALLOW,
+			ok: false,
+			findings: [
+				{
+					code: "CUSTODY_RESIDENCY_CONFLICT" as const,
+					point: "target",
+					role: "target" as const,
+					detail: "",
+					remediation: "",
+				},
+			],
+		};
+		let verdict = deny;
+		const policy = (phase: MigrationPhase) =>
+			phase === "converge" || phase === "verify" ? verdict : ALLOW;
+		const options = () => native(staged, "paused", ITEMS, {}, { policy });
+		const held = await runSnapshotAndTail(options());
+		assert.equal(held.status, "held");
+		assert.match(
+			held.reason ?? "",
+			/policy verdict is negative before converge/u,
+		);
+		// The initial copy ran — the transfer works — and then the run held.
+		assert.equal((await digestOf(target, ITEMS.name)).count, 3);
+
+		const read = (id: string) =>
+			target.records.read({
+				dataset: ITEMS.name,
+				tenant: "",
+				key: canonicalEncode([id]),
+			});
+		const subscription = nativeSubscriptionName(
+			staged.namespace,
+			nativeTransferName("paused"),
+		);
+		const state = async () => {
+			const found = await companion.pool.query(
+				"SELECT s.subenabled AS enabled, (SELECT count(*)::int FROM pg_stat_subscription w WHERE w.subid = s.oid AND w.pid IS NOT NULL) AS workers FROM pg_subscription s WHERE s.subname = $1",
+				[subscription],
+			);
+			return found.rows[0];
+		};
+		assert.deepEqual(await state(), { enabled: false, workers: 0 });
+
+		// The source keeps taking writes while the migration is held.
+		await source.records.write({
+			dataset: ITEMS.name,
+			mutations: [
+				item("written-while-held", 9),
+				{ tenant: "", key: canonicalEncode(["a"]), op: "delete" },
+			],
+		});
+		// Far longer than logical replication takes to deliver two changes
+		// between databases of one cluster. Nothing may arrive.
+		for (let look = 0; look < 30; look += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 100));
+			assert.equal(
+				await read("written-while-held"),
+				undefined,
+				"a record written to the source reached the target while the run was held",
+			);
+			assert.ok(
+				(await read("a")) !== undefined,
+				"a delete on the source was applied on the target while the run was held",
+			);
+		}
+		assert.deepEqual(await state(), { enabled: false, workers: 0 });
+
+		// A second held run changes nothing: still paused.
+		assert.equal((await runSnapshotAndTail(options())).status, "held");
+		assert.deepEqual(await state(), { enabled: false, workers: 0 });
+
+		// The verdict clears; the run resumes the transfer and finishes.
+		verdict = ALLOW;
+		const done = await runSnapshotAndTail(options());
+		assert.equal(done.status, "completed", done.reason);
+		assert.ok((await read("written-while-held")) !== undefined);
+		assert.equal(await read("a"), undefined);
+		assert.equal((await digestOf(target, ITEMS.name)).count, 3);
+		assert.equal((await digestOf(source, ITEMS.name)).count, 0);
+		assert.deepEqual(await leftovers(), []);
+	}, 120_000);
+
+	test("the transaction that carries the connection string turns the server's statement logging off for itself first — and a role that cannot is refused before the string is sent", async () => {
+		const database = quoteIdentifier(companion.name);
+		const role = `hobo_trole_${companion.name.slice(-12)}`;
+		// A server that would log the string: every statement, with its
+		// parameters, for every new session of this database.
+		await pool.query(`ALTER DATABASE ${database} SET log_statement = 'all'`);
+		await pool.query(
+			`ALTER DATABASE ${database} SET log_min_duration_statement = 0`,
+		);
+		const logging = new pg.Pool({
+			connectionString: liveUrlFor(companion.name),
+			max: 2,
+		});
+		logging.on("error", () => {});
+		let unprivileged: pg.Pool | undefined;
+		try {
+			// 1. As a role that may change the settings (here a superuser).
+			const settings = async (client: pg.PoolClient) =>
+				(await client.query(NATIVE_LOGGING_STATE)).rows[0];
+			const client = await logging.connect();
+			try {
+				await client.query("BEGIN");
+				const before = await settings(client);
+				assert.equal(before.log_statement, "all");
+				assert.equal(before.log_min_duration_statement, "0");
+				assert.equal(nativeLoggingIsQuiet(before), false);
+				await client.query(QUIET_NATIVE_LOGGING);
+				assert.deepEqual(await settings(client), {
+					log_statement: "none",
+					log_min_duration_statement: "-1",
+					log_min_duration_sample: "-1",
+					log_parameter_max_length: "0",
+					log_parameter_max_length_on_error: "0",
+				});
+				await client.query("COMMIT");
+				// Local to that transaction: the session logs again after it.
+				assert.equal((await settings(client)).log_statement, "all");
+			} finally {
+				client.release();
+			}
+
+			// The real subscribe, on that logging database: silenced and read
+			// back inside the transaction, immediately before the string.
+			const staged = stage();
+			const seen: Seen[] = [];
+			const quietTarget = createPostgresEngine({
+				executor: watched(createPgExecutor(logging), seen),
+				namespace: staged.namespace,
+				clock: () => NOW,
+				nativeSourceConnection: secretConnection,
+			});
+			await staged.source.datasets.ensureDataset(ITEMS);
+			await quietTarget.datasets.ensureDataset(ITEMS);
+			const ref = {
+				profile: LOGICAL_COPY_PROFILE,
+				transfer: nativeTransferName("quiet"),
+				scope: scopeOf(ITEMS.name),
+			};
+			const ticket = await requireNative(staged.source).publish(ref);
+			await requireNative(quietTarget).subscribe({ ...ref, ticket });
+			const order = seen.map((entry) => entry.sql);
+			const sent = order.indexOf(PRESENT_NATIVE_SOURCE);
+			assert.ok(sent >= 2);
+			assert.deepEqual(order.slice(sent - 2, sent), [
+				QUIET_NATIVE_LOGGING,
+				NATIVE_LOGGING_STATE,
+			]);
+			await requireNative(quietTarget).stop(ref);
+			await requireNative(staged.source).stop(ref);
+
+			// 2. As a role that may not: it can lower nothing that matters, the
+			// read-back says the server still logs, and the subscribe is refused
+			// with the string never handed to the server.
+			await pool.query(`CREATE ROLE ${quoteIdentifier(role)}`);
+			await logging.query(
+				`GRANT USAGE ON SCHEMA ${quoteIdentifier(staged.namespace)} TO ${quoteIdentifier(role)}`,
+			);
+			await logging.query(
+				`GRANT SELECT ON ALL TABLES IN SCHEMA ${quoteIdentifier(staged.namespace)} TO ${quoteIdentifier(role)}`,
+			);
+			unprivileged = new pg.Pool({
+				connectionString: liveUrlFor(companion.name),
+				max: 2,
+				options: `-c role=${role}`,
+			});
+			unprivileged.on("error", () => {});
+			const whoami = await unprivileged.query(
+				"SELECT current_user::text AS role, current_setting('is_superuser') AS superuser",
+			);
+			assert.deepEqual(whoami.rows[0], { role, superuser: "off" });
+			const lone = await unprivileged.connect();
+			try {
+				await lone.query("BEGIN");
+				await lone.query(QUIET_NATIVE_LOGGING);
+				const after = await settings(lone);
+				// The one setting any role may change did change; the rest did not.
+				assert.equal(after.log_parameter_max_length_on_error, "0");
+				assert.equal(after.log_statement, "all");
+				assert.equal(after.log_parameter_max_length, "-1");
+				assert.equal(nativeLoggingIsQuiet(after), false);
+				await lone.query("ROLLBACK");
+			} finally {
+				lone.release();
+			}
+			const handed: Seen[] = [];
+			const refusedTarget = createPostgresEngine({
+				executor: watched(createPgExecutor(unprivileged), handed),
+				namespace: staged.namespace,
+				clock: () => NOW,
+				nativeSourceConnection: secretConnection,
+			});
+			const again = { ...ref, transfer: nativeTransferName("loud") };
+			const second = await requireNative(staged.source).publish(again);
+			const refused = await rejection(() =>
+				requireNative(refusedTarget).subscribe({ ...again, ticket: second }),
+			);
+			assert.ok(refused instanceof DataCoreError, String(refused));
+			assert.equal(refused.code, "NATIVE_TRANSFER_REFUSED");
+			assert.equal(refused.detail.reason, "CONNECTION_WOULD_BE_LOGGED");
+			assert.ok(!JSON.stringify(handed).includes(SECRET_MARKER));
+			assert.ok(handed.every((entry) => entry.sql !== PRESENT_NATIVE_SOURCE));
+			await requireNative(staged.source).stop(again);
+			assert.deepEqual(await leftovers(), []);
+		} finally {
+			await unprivileged?.end();
+			await logging.end();
+			await pool.query(`ALTER DATABASE ${database} RESET log_statement`);
+			await pool.query(
+				`ALTER DATABASE ${database} RESET log_min_duration_statement`,
+			);
+			await companion.pool.query(
+				`DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${role}') THEN EXECUTE 'DROP OWNED BY ${quoteIdentifier(role)}'; END IF; END $$`,
+			);
+			await pool.query(`DROP ROLE IF EXISTS ${quoteIdentifier(role)}`);
+		}
 	}, 120_000);
 
 	test("an ephemeral close drops a live transfer, whichever side closes first", async () => {

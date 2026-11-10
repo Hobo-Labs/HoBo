@@ -163,6 +163,9 @@ import "list"
 	nativeProfiles:      [...#NativeMigrationProfile]
 	typeMapping:         #TypeMappingAnnex
 	impedance:           [...string]
+	// The engine's bound on one stored record, in bytes, when it states one.
+	// Absent means no bound is stated — not that there is none.
+	maxRecordBytes?: int & >=1
 
 	// Every engine provides datasets and records. The length guard keeps the
 	// definition itself evaluable before any instance is unified with it.
@@ -195,8 +198,11 @@ import "list"
 
 // ── custody and policy ─────────────────────────────────────────────────────
 
+// `target-event-log` is the log a stream-handoff moves the journal into: a
+// role of its own, so a path that names only the log being left does not
+// cover the handoff.
 #CustodyRole: "source" | "target" | "event-log" | "staging-artifact" | "relay" |
-	"capture-log" | "rollback-snapshot" | "retiring-source"
+	"capture-log" | "rollback-snapshot" | "retiring-source" | "target-event-log"
 
 #CustodyProtection: "encryptedAtRest" | "encryptedInTransit" | "accessScoped" |
 	"auditLogged" | "fieldLevelKeys"
@@ -234,6 +240,17 @@ import "list"
 	evaluatedAt:    #OffsetInstant
 	// A verdict is ok exactly when it has no findings.
 	ok: len(findings) == 0
+}
+
+// What a router compares-and-sets on when asked to move write authority: the
+// migration, and the journal head its decision was made at. A router keeps
+// the highest head applied per migration and refuses a lower one. No token:
+// the fence token that accompanies the call is a credential.
+#AuthorityMoveRef: {
+	migrationId: string & !=""
+	head:        int & >=1
+	direction?:  "to-target" | "to-source"
+	fenceToken?: _|_
 }
 
 // ── pattern catalog and selection ──────────────────────────────────────────
@@ -338,7 +355,9 @@ import "list"
 
 #EngineConformanceResult: {
 	caseId: string & !=""
-	status: "pass" | "fail" | "blocked" | "not-run"
+	// declared-limit: the engine does not hold the property and its
+	// declaration says so; the detail then begins with the impedance code.
+	status: "pass" | "fail" | "blocked" | "not-run" | "declared-limit"
 	// Never record payload and never a credential.
 	detail: string
 }
@@ -349,7 +368,14 @@ import "list"
 	outcome:   "pass" | "fail" | "unknown"
 	results:   [...#EngineConformanceResult]
 	skipped:   [...string]
+	// The case ids the run was restricted to; empty when the whole suite ran.
+	only:      [...string]
 	checkedAt: #Instant
+
+	// A restricted run proves what it ran and nothing else: it never passes.
+	if len(only) > 0 {
+		outcome: "fail" | "unknown"
+	}
 }
 
 // ── migration.* fact bodies ────────────────────────────────────────────────
@@ -377,8 +403,24 @@ import "list"
 	// records a checkpoint instead.
 	statements?: int & >=0
 	changes?:    int & >=0
-	// Positions, counts, and digests — never a record.
-	checkpoint?: {...}
+	// An in-place phase the plan's probe found already in effect.
+	recovered?: bool
+	// Positions, counts, and digests — never a record, and never a fence
+	// token: a checkpoint names the fence it was taken under by digest.
+	checkpoint?: {
+		fenceToken?: _|_
+		...
+	}
+}
+
+// Written before an in-place phase runs its statements, as a
+// compare-and-set on the journal head.
+#MigrationPhaseIntendedEventData: {
+	migrationId: string & !=""
+	phase:       "expand" | "backfill" | "contract"
+	statements:  int & >=0
+	intendedAt:  #Instant
+	retry?:      bool
 }
 
 #MigrationVerifiedEventData: {
@@ -425,6 +467,8 @@ import "list"
 	// The hold followed a failed verification under a fence, and write
 	// authority was given back.
 	compensated?: bool
+	// The in-place phase whose statements the port reported as failed.
+	failedPhase?: "expand" | "backfill" | "contract"
 	// A migration may hold only in a safe-hold phase; the fence-and-flip step
 	// completes or compensates. The one other form is a hold *between* two
 	// phases of a pattern with no soak window: the flip is complete, nothing
@@ -459,6 +503,24 @@ import "list"
 	// What both sides digested to, for a rollback under a reverse tail.
 	count?:  int & >=0
 	digest?: #HexDigest
+	// Whether the target was fenced before authority went back. Only a
+	// rollback to a stale source may go ahead without it.
+	targetFenced?: bool
+	if lossless {
+		targetFenced?: true
+	}
+	// Finding codes of the negative verdict the rollback was asked for under.
+	policyFindings?: [...string]
+}
+
+// Written after a write fence is raised: the digest of the token it answered.
+#MigrationFenceRaisedEventData: {
+	migrationId:      string & !=""
+	side:             "source" | "target"
+	phase:            #MigrationPhase
+	fenceTokenDigest: #Sha256Ref
+	fenceToken?:      _|_
+	raisedAt:         #Instant
 }
 
 #MigrationResumedEventData: {

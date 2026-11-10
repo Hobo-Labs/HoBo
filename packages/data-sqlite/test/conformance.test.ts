@@ -4,8 +4,9 @@
 import assert from "node:assert/strict";
 import {
 	assertBindingMatchesDeclaration,
-	createReferenceEngine,
 	ENGINE_CONFORMANCE_CASE_IDS,
+	NATIVE_CONFORMANCE_CASE_IDS,
+	referenceEngineHarness,
 	runEngineConformance,
 } from "@hobo/data-core";
 import { describe, test } from "vitest";
@@ -21,22 +22,25 @@ describe("SQLite engine conformance", () => {
 		assert.equal(report.outcome, "pass", failures(report.results));
 		assert.equal(report.engine, "sqlite");
 		// SQLite declares every port, so no case is skipped for a missing one.
-		// It declares no native fast path, so a case that proves one does not
-		// apply — and nothing else may hide behind that.
-		assert.deepEqual(
-			report.skipped.filter((id) => !id.includes(".native.")),
-			[],
-		);
+		// It states no record bound, so the size case has nothing to probe,
+		// and it declares no native fast path, so a case that proves one does
+		// not apply — and nothing else may hide behind either.
+		assert.deepEqual(report.skipped, [
+			"records.oversize-record-refuses-the-batch",
+			...NATIVE_CONFORMANCE_CASE_IDS,
+		]);
+		assert.equal(report.results.length, 48);
 		assert.equal(
 			report.results.length + report.skipped.length,
 			ENGINE_CONFORMANCE_CASE_IDS.length,
 		);
+		assert.deepEqual(report.only, []);
 	}, 120_000);
 
 	test("SQLite → reference engine: cross-engine through the hub", async () => {
 		const report = await runEngineConformance({
 			engine: sqliteHarness(),
-			peer: { create: () => createReferenceEngine() },
+			peer: referenceEngineHarness(),
 			now: NOW,
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
@@ -44,7 +48,7 @@ describe("SQLite engine conformance", () => {
 
 	test("reference engine → SQLite: the other direction", async () => {
 		const report = await runEngineConformance({
-			engine: { create: () => createReferenceEngine() },
+			engine: referenceEngineHarness(),
 			peer: sqliteHarness(),
 			now: NOW,
 		});

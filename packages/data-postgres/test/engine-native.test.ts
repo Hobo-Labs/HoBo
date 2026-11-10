@@ -18,6 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	assertBindingMatchesDeclaration,
+	CapturePositionError,
 	CUSTODY_ROLES,
 	createMemoryMigrationJournal,
 	DataCoreError,
@@ -36,9 +37,12 @@ import {
 	createPostgresEngine,
 	createSubscriptionStatement,
 	LOGICAL_COPY_PROFILE,
+	NATIVE_LOGGING_STATE,
 	NATIVE_MARK,
 	NATIVE_REACHED,
 	NATIVE_SUBSCRIPTION_STATE,
+	NATIVE_SUBSCRIPTION_WORKERS,
+	nativeLoggingIsQuiet,
 	nativeSubscriptionName,
 	nativeTransferKey,
 	PG_DUMP_PROFILE,
@@ -53,6 +57,7 @@ import {
 	PRESENT_NATIVE_SOURCE,
 	parsePostgresNativeTicket,
 	postgresEngineDeclaration,
+	QUIET_NATIVE_LOGGING,
 } from "../src/index.js";
 import {
 	EVERY_TYPE_SCHEMA,
@@ -152,7 +157,22 @@ interface Scripted {
 	tableRows: number;
 	/** Statements that fail, by a fragment of their text. */
 	readonly failures: Map<string, Error[]>;
+	/** What the server says it will log, once asked to be quiet. */
+	logging: PostgresRow;
+	/** Subscriptions that are disabled. */
+	readonly disabled: Set<string>;
+	/** How many more times a disabled subscription still reports a worker. */
+	lingering: number;
 }
+
+/** A server on which the role could turn statement logging off. */
+const QUIET: PostgresRow = {
+	log_statement: "none",
+	log_min_duration_statement: "-1",
+	log_min_duration_sample: "-1",
+	log_parameter_max_length: "0",
+	log_parameter_max_length_on_error: "0",
+};
 
 const rows = (...entries: PostgresRow[]): PostgresQueryResult => ({
 	rows: entries,
@@ -177,6 +197,9 @@ function scripted(database: string, state: string): Scripted {
 		subscriptions: new Set(),
 		tableRows: 0,
 		failures: new Map(),
+		logging: QUIET,
+		disabled: new Set(),
+		lingering: 0,
 		executor: {
 			query: (sql, parameters = []) => answer(sql, parameters),
 			async transaction(body) {
@@ -203,6 +226,12 @@ function scripted(database: string, state: string): Scripted {
 		if (sql.startsWith("DROP SUBSCRIPTION")) {
 			self.subscriptions.delete(quotedName);
 		}
+		if (sql.startsWith("ALTER SUBSCRIPTION") && sql.endsWith(" DISABLE")) {
+			self.disabled.add(quotedName);
+		}
+		if (sql.startsWith("ALTER SUBSCRIPTION") && sql.endsWith(" ENABLE")) {
+			self.disabled.delete(quotedName);
+		}
 	};
 	const answer = async (
 		sql: string,
@@ -224,6 +253,15 @@ function scripted(database: string, state: string): Scripted {
 		for (const [fragment, queue] of self.failures) {
 			const failure = sql.includes(fragment) ? queue.shift() : undefined;
 			if (failure !== undefined) throw failure;
+		}
+		// Staged answers come before the pact's: a test that makes the server
+		// log, or a worker linger, is asking about exactly those statements.
+		if (sql === NATIVE_LOGGING_STATE && self.logging !== QUIET) {
+			return rows(self.logging);
+		}
+		if (sql === NATIVE_SUBSCRIPTION_WORKERS && self.lingering > 0) {
+			self.lingering -= 1;
+			return rows({ workers: "1" });
 		}
 		const interaction = PACT.interactions.find(
 			(candidate) =>
@@ -284,6 +322,8 @@ function scripted(database: string, state: string): Scripted {
 		if (sql.includes("pg_create_logical_replication_slot")) {
 			return rows({ lsn: "0/387C000" });
 		}
+		if (sql === NATIVE_LOGGING_STATE) return rows(self.logging);
+		if (sql === NATIVE_SUBSCRIPTION_WORKERS) return rows({ workers: "0" });
 		if (sql === NATIVE_MARK) return rows({ mark: "0/387C1A8" });
 		if (sql.includes("pg_terminate_backend")) {
 			const slot = self.slots.get(parameters[0] ?? "");
@@ -514,7 +554,7 @@ describe("logical-copy — the statements each side is sent", () => {
 	test("the pact names both sides and carries no credential", () => {
 		assert.equal(PACT.consumer.name, "hobo-data-postgres-native-transfer");
 		assert.equal(PACT.provider.name, "hobo-postgres-executor");
-		assert.equal(PACT.interactions.length, 9);
+		assert.equal(PACT.interactions.length, 14);
 		const text = JSON.stringify(PACT.interactions);
 		assert.doesNotMatch(text, /postgres(ql)?:\/\//u);
 		assert.doesNotMatch(text, /password|hunter2/iu);
@@ -565,12 +605,15 @@ describe("logical-copy — the statements each side is sent", () => {
 				.every((sql) => !/^(CREATE|DROP|INSERT)/u.test(sql)),
 		);
 
-		// subscribe: one transaction — the setting, then the subscription.
+		// subscribe: one transaction — logging silenced and read back, then
+		// the setting, then the subscription.
 		await targetPort.subscribe({ ...REF, ticket });
 		const inTransaction = target.issued.filter((entry) => entry.inTransaction);
 		assert.deepEqual(
 			inTransaction.map((entry) => entry.sql),
 			[
+				QUIET_NATIVE_LOGGING,
+				NATIVE_LOGGING_STATE,
 				PRESENT_NATIVE_SOURCE,
 				createSubscriptionStatement({
 					subscription: SUBSCRIPTION,
@@ -600,6 +643,14 @@ describe("logical-copy — the statements each side is sent", () => {
 		const mark = await sourcePort.mark(REF);
 		assert.equal(mark, "0/387C1A8");
 		assert.equal(await sourcePort.reached({ ...REF, mark }), true);
+		assert.deepEqual(waits, []);
+
+		// pause and resume: the subscription is disabled, the port waits
+		// until no worker is attached, and enabling it is one statement.
+		await targetPort.pause(REF);
+		assert.deepEqual([...target.disabled], [SUBSCRIPTION]);
+		await targetPort.resume(REF);
+		assert.deepEqual([...target.disabled], []);
 		assert.deepEqual(waits, []);
 
 		// stop: the target drops its subscription, the source its publication,
@@ -665,6 +716,118 @@ describe("logical-copy — the connection string is a secret", () => {
 		assert.ok(!JSON.stringify(ticket).includes("hunter2"));
 		// The source side never sees it at all.
 		assert.ok(!JSON.stringify(source.issued).includes("hunter2"));
+	});
+
+	test("the transaction silences statement logging and reads it back before the connection string is sent", async () => {
+		const { sourcePort, targetPort, target } = pair();
+		const ticket = await sourcePort.publish(REF);
+		await targetPort.subscribe({ ...REF, ticket });
+		const order = target.issued
+			.filter((entry) => entry.inTransaction)
+			.map((entry) => entry.sql);
+		const sent = order.indexOf(PRESENT_NATIVE_SOURCE);
+		assert.deepEqual(
+			[
+				order.indexOf(QUIET_NATIVE_LOGGING),
+				order.indexOf(NATIVE_LOGGING_STATE),
+			],
+			[sent - 2, sent - 1],
+			"logging is silenced and checked in the same transaction, immediately before",
+		);
+		// Every setting the review named, each tried on its own so that one a
+		// role may not change does not take the others with it.
+		for (const [setting, value] of [
+			["log_statement", "none"],
+			["log_min_duration_statement", "-1"],
+			["log_min_duration_sample", "-1"],
+			["log_parameter_max_length", "0"],
+			["log_parameter_max_length_on_error", "0"],
+		]) {
+			assert.ok(
+				QUIET_NATIVE_LOGGING.includes(
+					`BEGIN PERFORM set_config('${setting}', '${value}', true); EXCEPTION WHEN OTHERS THEN NULL; END;`,
+				),
+				setting,
+			);
+			assert.ok(NATIVE_LOGGING_STATE.includes(`'${setting}'`), setting);
+		}
+	});
+
+	test("a role that cannot silence a server that logs statements is refused, and the connection string is never sent", async () => {
+		// What an unprivileged role is left with on a server that logs every
+		// statement: it could lower the on-error length and nothing else.
+		for (const logging of [
+			{ ...QUIET, log_statement: "all", log_parameter_max_length: "-1" },
+			{
+				...QUIET,
+				log_min_duration_statement: "0",
+				log_parameter_max_length: "-1",
+			},
+			{
+				...QUIET,
+				log_min_duration_sample: "100",
+				log_parameter_max_length: "64",
+			},
+			// Statements are not logged, but a failure would carry the parameter.
+			{ ...QUIET, log_parameter_max_length_on_error: "-1" },
+			// A server too old to have the parameter-length setting, and logging.
+			{
+				log_statement: "ddl",
+				log_min_duration_statement: "-1",
+				log_min_duration_sample: null,
+				log_parameter_max_length: null,
+				log_parameter_max_length_on_error: null,
+			},
+		]) {
+			const { sourcePort, targetPort, target } = pair();
+			const ticket = await sourcePort.publish(REF);
+			target.logging = logging;
+			const refused = await refusal(() =>
+				targetPort.subscribe({ ...REF, ticket }),
+			);
+			assert.equal(refused.code, "NATIVE_TRANSFER_REFUSED");
+			assert.equal(refused.detail.reason, "CONNECTION_WOULD_BE_LOGGED");
+			assert.ok(!JSON.stringify(target.issued).includes("hunter2"));
+			assert.ok(
+				target.issued.every(
+					(entry) =>
+						entry.sql !== PRESENT_NATIVE_SOURCE &&
+						!entry.sql.includes("CREATE SUBSCRIPTION"),
+				),
+				"nothing that carries or uses the string was issued",
+			);
+			assert.deepEqual([...target.subscriptions], []);
+		}
+	});
+
+	test("what counts as quiet: no statement line at all, or a line without its parameters — and never a parameter in an error", () => {
+		assert.equal(nativeLoggingIsQuiet(QUIET), true);
+		// Statements are logged, but without their parameters.
+		assert.equal(
+			nativeLoggingIsQuiet({
+				...QUIET,
+				log_statement: "all",
+				log_min_duration_statement: "0",
+			}),
+			true,
+		);
+		// No statement line is written, whatever the parameter length says.
+		assert.equal(
+			nativeLoggingIsQuiet({ ...QUIET, log_parameter_max_length: "-1" }),
+			true,
+		);
+		// Before PostgreSQL 13: no parameter settings; quiet only if no line.
+		const old = {
+			log_statement: "none",
+			log_min_duration_statement: "-1",
+			log_min_duration_sample: null,
+			log_parameter_max_length: null,
+			log_parameter_max_length_on_error: null,
+		};
+		assert.equal(nativeLoggingIsQuiet(old), true);
+		assert.equal(nativeLoggingIsQuiet({ ...old, log_statement: "mod" }), false);
+		// Nothing answered is not quiet.
+		assert.equal(nativeLoggingIsQuiet({}), false);
 	});
 
 	test("it is resolved only when a subscription is created, and not for one that exists", async () => {
@@ -808,6 +971,70 @@ describe("logical-copy — the connection string is a secret", () => {
 	});
 });
 
+// ── pause and resume ────────────────────────────────────────────────────────
+
+describe("logical-copy — a held migration stops delivering", () => {
+	test("pause disables the subscription and returns only once no worker is attached; resume enables it", async () => {
+		const { sourcePort, targetPort, target, waits } = pair();
+		const ticket = await sourcePort.publish(REF);
+		await targetPort.subscribe({ ...REF, ticket });
+		// The apply worker is still attached for two looks after the disable.
+		target.lingering = 2;
+		const before = target.issued.length;
+		await targetPort.pause(REF);
+		const issued = target.issued.slice(before).map((entry) => entry.sql);
+		assert.equal(issued[1], `ALTER SUBSCRIPTION "${SUBSCRIPTION}" DISABLE`);
+		assert.deepEqual(
+			issued.slice(2),
+			[
+				NATIVE_SUBSCRIPTION_WORKERS,
+				NATIVE_SUBSCRIPTION_WORKERS,
+				NATIVE_SUBSCRIPTION_WORKERS,
+			],
+			"asked until no worker was left",
+		);
+		assert.deepEqual(waits, [7, 7], "it waited between looks, and not after");
+		assert.deepEqual([...target.disabled], [SUBSCRIPTION]);
+		await targetPort.resume(REF);
+		assert.equal(
+			target.issued[target.issued.length - 1]?.sql,
+			`ALTER SUBSCRIPTION "${SUBSCRIPTION}" ENABLE`,
+		);
+		assert.deepEqual([...target.disabled], []);
+	});
+
+	test("a worker that never lets go is an error, not a pause that quietly did not happen", async () => {
+		const { sourcePort, targetPort, target } = pair();
+		const ticket = await sourcePort.publish(REF);
+		await targetPort.subscribe({ ...REF, ticket });
+		target.lingering = Number.MAX_SAFE_INTEGER;
+		await assert.rejects(
+			async () => targetPort.pause(REF),
+			(cause) =>
+				cause instanceof PostgresDataError &&
+				cause.code === "NATIVE_PAUSE_FAILED" &&
+				cause.detail.transfer === TRANSFER,
+		);
+	});
+
+	test("pause and resume are harmless for a transfer that was never subscribed, or was stopped", async () => {
+		const { sourcePort, targetPort, target } = pair();
+		await targetPort.pause(REF);
+		await targetPort.resume(REF);
+		const ticket = await sourcePort.publish(REF);
+		await targetPort.subscribe({ ...REF, ticket });
+		await targetPort.stop(REF);
+		await targetPort.pause(REF);
+		await targetPort.resume(REF);
+		assert.ok(
+			target.issued.every(
+				(entry) => !entry.sql.startsWith("ALTER SUBSCRIPTION"),
+			),
+			"nothing was altered: there was nothing to alter",
+		);
+	});
+});
+
 // ── refusals ────────────────────────────────────────────────────────────────
 
 describe("logical-copy — what it will not approximate", () => {
@@ -937,7 +1164,7 @@ describe("logical-copy — progress is asked, waited for, and never invented", (
 		await assert.rejects(
 			async () => sourcePort.reached({ ...REF, mark: "41" }),
 			(cause) =>
-				cause instanceof PostgresDataError &&
+				cause instanceof CapturePositionError &&
 				cause.code === "CAPTURE_POSITION_INVALID",
 		);
 	});

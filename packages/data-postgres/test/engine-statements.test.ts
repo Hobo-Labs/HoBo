@@ -1,7 +1,11 @@
 // Statement text, identifiers and log positions. Always on: everything here
 // is pure, so the exact SQL a dataset produces is pinned without a server.
 import assert from "node:assert/strict";
-import { DataCoreError, parseDatasetSchema } from "@hobo/data-core";
+import {
+	CapturePositionError,
+	DataCoreError,
+	parseDatasetSchema,
+} from "@hobo/data-core";
 import { describe, test } from "vitest";
 import { BOOTSTRAP_MARKER, bootstrapProbe } from "../src/engine/statements.js";
 import {
@@ -324,7 +328,7 @@ describe("log positions", () => {
 			assert.throws(
 				() => parseLsn(text),
 				(cause) =>
-					cause instanceof PostgresDataError &&
+					cause instanceof CapturePositionError &&
 					cause.code === "CAPTURE_POSITION_INVALID",
 				text,
 			);

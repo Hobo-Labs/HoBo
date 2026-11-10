@@ -22,6 +22,15 @@
  * `test/migration-fact-contracts.test.ts` runs every `@hobo/data-core`
  * executor and validates each fact it emits against the current version here,
  * so the two cannot drift apart unnoticed.
+ *
+ * v1 is what was written, not what was first pinned. The first pins of
+ * `migration.Planned` and `migration.PhaseApplied` described bodies no
+ * executor emitted — `phases` as one comma-joined string, a `PhaseApplied`
+ * that always had `statements` and never a checkpoint. Their v1 schemas now
+ * read the bodies the 65a46a72 executors appended (recorded in
+ * `test/fixtures/journal-65a46a72.json`), with one of each pinned beside the
+ * original. The original pins are untouched on the wire: a string and a
+ * one-element list of strings are the same bytes, so their digests stand.
  */
 import { createHash } from "node:crypto";
 import {
@@ -34,6 +43,7 @@ import {
 	type EventBodyUpcaster,
 	type EventEvolutionContract,
 	type EventFieldSpec,
+	type EventJsonObject,
 	eventSchema,
 	jsonField,
 	stringField,
@@ -107,22 +117,90 @@ function fenceTokenDigest(fenceToken: string): string {
 	return `sha256:${createHash("sha256").update(fenceToken, "utf8").digest("hex")}`;
 }
 
+/** The phases only the in-place executor plans. */
+const IN_PLACE_PHASES = ["expand", "backfill", "contract"];
+
+/**
+ * `phases` as the list it stands for. The first v1 pin wrote it as one
+ * comma-joined string, which on the wire is a list of one.
+ */
+function phaseList(phases: EventBody[string]): readonly string[] {
+	const listed = Array.isArray(phases) ? phases : [phases];
+	return listed.flatMap((entry) => String(entry).split(","));
+}
+
+/** A checkpoint with its fence token replaced by the token's digest. */
+function withoutFenceToken(checkpoint: EventJsonObject): EventJsonObject {
+	const { fenceToken, ...kept } = checkpoint;
+	return fenceToken === undefined
+		? checkpoint
+		: { ...kept, fenceTokenDigest: fenceTokenDigest(String(fenceToken)) };
+}
+
+function isJsonObject(value: EventBody[string]): value is EventJsonObject {
+	return (
+		value !== undefined &&
+		Object(value) === value &&
+		!Array.isArray(value) &&
+		Object.getPrototypeOf(value) === Object.prototype
+	);
+}
+
 /** One evolution contract per `migration.*` event type. */
 export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 	Object.freeze([
 		contract("migration.Planned", [
 			{
+				// What v1 executors wrote: `phases` as a list, and — from the
+				// pattern executors — the pattern, the decision and custody
+				// digests, and the two engines and the dataset.
 				fields: [
 					stringField("migrationId", 1),
-					stringField("phases", 2),
+					stringsField("phases", 2),
 					stringField("plannedAt", 3),
+					stringField("pattern", 5, OPTIONAL),
+					stringField("decisionDigest", 8, OPTIONAL),
+					stringField("custodyDigest", 9, OPTIONAL),
+					stringField("source", 10, OPTIONAL),
+					stringField("target", 11, OPTIONAL),
+					stringField("dataset", 12, OPTIONAL),
 				],
 				pinned: [
 					{
+						// The first pin: one comma-joined string, which is these
+						// same bytes read as a list of one.
 						body: {
 							migrationId: "mig-001",
-							phases: "expand,backfill,contract",
+							phases: ["expand,backfill,contract"],
 							plannedAt: "2026-08-03T00:00:00.000Z",
+						},
+					},
+					{
+						// Recorded from a 65a46a72 snapshot-and-tail run.
+						id: "executor",
+						body: {
+							migrationId: "m",
+							pattern: "snapshot-and-tail",
+							phases: [
+								"plan",
+								"gate",
+								"prepare",
+								"seed",
+								"converge",
+								"verify",
+								"shift-reads",
+								"fence-and-flip",
+								"soak",
+								"finalize",
+							],
+							decisionDigest:
+								"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+							custodyDigest:
+								"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+							source: "src",
+							target: "tgt",
+							dataset: "orders",
+							plannedAt: "2026-01-01T00:00:00Z",
 						},
 					},
 				],
@@ -148,12 +226,22 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				],
 				from: {
 					reason:
-						"phases was pinned as one comma-joined string; it is a list of phase names",
-					upcast: (body) => ({
-						migrationId: body.migrationId,
-						plannedAt: body.plannedAt,
-						phases: String(body.phases).split(","),
-					}),
+						"phases moved to its own tag as a list of phase names, and a plan names its pattern: one that planned expand, backfill and contract was the in-place executor's",
+					// Everything a v1 plan said is carried: the pattern above all,
+					// which is what a resume is checked against, and the digests
+					// that tie the run to its decision.
+					upcast: ({ phases, ...kept }) => {
+						const listed = phaseList(phases);
+						const inPlace =
+							kept.pattern === undefined &&
+							listed.length === IN_PLACE_PHASES.length &&
+							listed.every((phase, index) => phase === IN_PLACE_PHASES[index]);
+						return {
+							...kept,
+							phases: listed,
+							...(inPlace ? { pattern: "in-place-evolve" } : undefined),
+						};
+					},
 				},
 				pinned: [
 					{
@@ -197,12 +285,16 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 		),
 		contract("migration.PhaseApplied", [
 			{
+				// What v1 executors wrote: an in-place phase its statement count,
+				// a phase of the uniform model a checkpoint — which, for the
+				// fence-and-flip phase, carried the fence token itself.
 				fields: [
 					stringField("migrationId", 1),
 					stringField("phase", 2),
-					u32Field("statements", 3),
+					u32Field("statements", 3, OPTIONAL),
 					u32Field("changes", 4, OPTIONAL),
 					stringField("appliedAt", 5),
+					jsonField("checkpoint", 6, OPTIONAL),
 				],
 				pinned: [
 					{
@@ -213,12 +305,33 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 							appliedAt: "2026-08-03T00:00:02.000Z",
 						},
 					},
+					{
+						// Recorded from a 65a46a72 snapshot-and-tail run.
+						id: "fence-token",
+						body: {
+							migrationId: "m",
+							phase: "fence-and-flip",
+							checkpoint: {
+								migrationId: "m",
+								fenceToken: "fence:orders::1",
+								count: 3,
+								digest:
+									"9d97301592dcb87bcb7d57f003c02d9da7e766814a9d8abc27c8d8c3b5e6661c",
+								reverseTail: true,
+								reversePosition: "3",
+								cutOverAt: "2026-01-01T00:00:00Z",
+							},
+							appliedAt: "2026-01-01T00:00:00Z",
+						},
+					},
 				],
 			},
 			{
-				// A phase of the uniform model runs no statements; it records a
-				// checkpoint — positions, counts and digests — instead. So
-				// `statements` is no longer required, and `checkpoint` joins it.
+				// A checkpoint holds positions, counts and digests. v2 withdraws
+				// the one thing a v1 checkpoint held that is none of those: the
+				// fence token, a write-authority credential, replaced by its
+				// digest. `recovered` marks an in-place phase the plan's probe
+				// found already in effect.
 				fields: [
 					stringField("migrationId", 1),
 					stringField("phase", 2),
@@ -226,11 +339,17 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 					u32Field("changes", 4, OPTIONAL),
 					stringField("appliedAt", 5),
 					jsonField("checkpoint", 6, OPTIONAL),
+					boolField("recovered", 7, OPTIONAL),
 				],
 				from: {
 					reason:
-						"statements stopped being required: a phase of the uniform model records a checkpoint instead",
-					upcast: (body) => ({ ...body }),
+						"a checkpoint's fenceToken was withdrawn — it is a credential — and replaced by fenceTokenDigest",
+					upcast: ({ checkpoint, ...kept }) => ({
+						...kept,
+						...(isJsonObject(checkpoint)
+							? { checkpoint: withoutFenceToken(checkpoint) }
+							: undefined),
+					}),
 				},
 				pinned: [
 					{
@@ -456,6 +575,9 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				// hold that fell between two phases.
 				boolField("compensated", 5, OPTIONAL),
 				stringField("before", 6, OPTIONAL),
+				// The in-place phase whose statements the port reported as
+				// failed: an answer to that phase's intent.
+				stringField("failedPhase", 7, OPTIONAL),
 			],
 			{
 				migrationId: "mig-001",
@@ -491,7 +613,7 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				completedAt: "2026-11-10T01:00:00.000Z",
 			},
 		),
-		// The two write-ahead facts: each is journaled, as a compare-and-set,
+		// Two of the write-ahead facts: each is journaled, as a compare-and-set,
 		// before the side effect it names.
 		v1Contract(
 			"migration.FenceRequested",
@@ -521,12 +643,61 @@ export const MIGRATION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 				// What both sides digested to, for a rollback under a reverse tail.
 				u32Field("count", 5, OPTIONAL),
 				stringField("digest", 6, OPTIONAL),
+				// Optional additions. `targetFenced`: whether the target was
+				// fenced before authority went back — a rollback to a stale
+				// source does not wait for a target that cannot be reached.
+				// `policyFindings`: the finding codes of the negative verdict
+				// the rollback was asked for under.
+				boolField("targetFenced", 7, OPTIONAL),
+				stringsField("policyFindings", 8, OPTIONAL),
 			],
 			{
 				migrationId: "mig-002",
 				lossless: false,
 				erasuresFrom: "2026-11-10T00:00:03.000Z",
 				decidedAt: "2026-11-10T00:30:00.000Z",
+			},
+		),
+		// Written after a fence is raised: the digest of the token the raise
+		// answered — never the token — so a later run can prove a fence it
+		// finds standing is this migration's own.
+		v1Contract(
+			"migration.FenceRaised",
+			[
+				stringField("migrationId", 1),
+				stringField("side", 2),
+				stringField("phase", 3),
+				stringField("fenceTokenDigest", 4),
+				stringField("raisedAt", 5),
+			],
+			{
+				migrationId: "mig-003",
+				side: "source",
+				phase: "fence-and-flip",
+				fenceTokenDigest:
+					"sha256:eca55ad89a60a18a449cd4da50a108405ee0824b7c596696c25a0d9ba8340859",
+				raisedAt: "2026-11-10T00:00:03.500Z",
+			},
+		),
+		// The third write-ahead fact: journaled, as a compare-and-set, before
+		// an in-place phase runs its statements.
+		v1Contract(
+			"migration.PhaseIntended",
+			[
+				stringField("migrationId", 1),
+				// `expand`, `backfill` or `contract`.
+				stringField("phase", 2),
+				u32Field("statements", 3),
+				stringField("intendedAt", 4),
+				// The phase is applied again after its probe found it not in
+				// effect.
+				boolField("retry", 5, OPTIONAL),
+			],
+			{
+				migrationId: "mig-003",
+				phase: "contract",
+				statements: 1,
+				intendedAt: "2026-11-10T00:00:02.500Z",
 			},
 		),
 	]);

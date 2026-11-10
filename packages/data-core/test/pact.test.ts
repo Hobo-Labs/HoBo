@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { describe, test } from "vitest";
 import {
 	type Authority,
+	admitAuthorityMove,
 	type ChangeKind,
 	CUSTODY_ROLES,
 	createReferenceEngine,
@@ -24,6 +25,7 @@ import {
 	type RecordMutation,
 	type RollbackPosture,
 	requirePort,
+	StaleAuthorityMoveError,
 	scopeOf,
 	selectMigrationPattern,
 } from "../src/index.js";
@@ -174,8 +176,17 @@ describe("pact: migration selector", () => {
 });
 
 describe("pact: engine SPI", () => {
-	const [fenced, captured, applied, digested, published, subscribed, stale] =
-		loadPact("engine-spi.pact.json");
+	const [
+		fenced,
+		captured,
+		applied,
+		digested,
+		published,
+		subscribed,
+		stale,
+		paused,
+		staleMove,
+	] = loadPact("engine-spi.pact.json");
 
 	test(fenced?.description ?? "fenced write", async () => {
 		assert.ok(fenced);
@@ -422,5 +433,94 @@ describe("pact: engine SPI", () => {
 		}
 		assert.deepEqual(refusal, subscribed.response.body);
 		assert.equal(subscribed.response.status, 409);
+	});
+
+	test(paused?.description ?? "native pause", async () => {
+		assert.ok(paused);
+		const link = createReferenceNativeLink();
+		const source = createReferenceEngine({ native: link });
+		const target = createReferenceEngine({ native: link });
+		const row = (id: string): JsonObject[] => [
+			{
+				tenant: "",
+				key: `["${id}"]`,
+				op: "upsert",
+				record: { id, total: "1" },
+			},
+		];
+		await source.datasets.ensureDataset(ORDERS);
+		await target.datasets.ensureDataset(ORDERS);
+		await source.records.write({
+			dataset: "orders",
+			mutations: mutations(row("o-9")),
+		});
+		const ref = {
+			profile: String(paused.request.body.profile),
+			transfer: transferOf(paused.request.path),
+			scope: scopeOf("orders", String(paused.request.body.tenant)),
+		};
+		const from = source.nativeTransfer;
+		const into = target.nativeTransfer;
+		assert.ok(from && into);
+		await into.subscribe({ ...ref, ticket: await from.publish(ref) });
+		assert.equal(await into.seeded(ref), true);
+		const held = async (): Promise<number> => {
+			const digest = await requirePort(target, "verify").digest({
+				scope: scopeOf("orders"),
+				buckets: 2,
+			});
+			return digest.count;
+		};
+		const before = await held();
+		await into.pause(ref);
+		await source.records.write({
+			dataset: "orders",
+			mutations: mutations(row("o-10")),
+		});
+		// Asking how far it has got is what moves a reference transfer.
+		const reached = await from.reached({ ...ref, mark: await from.mark(ref) });
+		const whilePaused = (await held()) - before;
+		await into.resume(ref);
+		await from.reached({ ...ref, mark: await from.mark(ref) });
+		assert.deepEqual(
+			{
+				paused: !reached,
+				deliveredWhilePaused: whilePaused,
+				deliveredAfterResume: (await held()) - before,
+			},
+			paused.response.body,
+		);
+		assert.equal(paused.response.status, 200);
+	});
+
+	test(staleMove?.description ?? "stale authority move", () => {
+		assert.ok(staleMove);
+		const body = staleMove.request.body;
+		const router = new Map<string, number>();
+		// The provider state: a move decided at head 14 was applied.
+		admitAuthorityMove(router, { migrationId: "m1", head: 14 });
+		// The same decision again is the same head, and is applied again.
+		admitAuthorityMove(router, { migrationId: "m1", head: 14 });
+		let refusal: JsonObject = {};
+		try {
+			admitAuthorityMove(router, {
+				migrationId: String(body.migrationId),
+				head: Number(body.head),
+			});
+		} catch (error) {
+			assert.ok(error instanceof StaleAuthorityMoveError);
+			refusal = {
+				error: {
+					code: error.code,
+					migrationId: error.migrationId,
+					head: error.head,
+					appliedHead: error.appliedHead,
+				},
+			};
+		}
+		assert.deepEqual(refusal, staleMove.response.body);
+		assert.equal(staleMove.response.status, 409);
+		// Nothing moved: the router still holds the higher head.
+		assert.equal(router.get("m1"), 14);
 	});
 });

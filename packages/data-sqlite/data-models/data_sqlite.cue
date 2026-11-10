@@ -42,6 +42,9 @@ package data_models
 #SqliteSubscriptionRow: {
 	name:           string & !=""
 	dataset:        =~"^[a-z][a-z0-9_]{0,62}$"
+	// The tenant the name is bound to ("" spans the dataset). Absent only on a
+	// row written before the tenant was kept; the next scope to name it binds it.
+	tenant_id?:     string
 	start_position: int & >=0
 	ack_position:   int & >=0
 	// Progress never moves behind where the subscription started.

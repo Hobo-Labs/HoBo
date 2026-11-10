@@ -37,6 +37,12 @@ message MigrationPlanRecord {
   repeated string contract = 4;
   string verify_after_backfill = 5;
   string verify_after_contract = 6;
+  // Per phase, a violations query that returns no rows exactly when the
+  // phase's statements are in effect. Asked when a run cannot know whether a
+  // phase committed; without one such a run holds.
+  string probe_expand = 7;
+  string probe_backfill = 8;
+  string probe_contract = 9;
 }
 
 message CompatGateEvidenceRecord {
@@ -63,6 +69,20 @@ message MigrationPhaseAppliedEventData {
   uint32 statements = 3;
   uint32 changes = 4;
   string applied_at = 5;
+  // The plan's probe found the phase already in effect after an unanswered
+  // intent; this run did not run its statements.
+  bool recovered = 6;
+}
+
+// Written before a phase runs its statements, as a compare-and-set on the
+// journal head. An intent with no PhaseApplied after it means the statements
+// may have committed.
+message MigrationPhaseIntendedEventData {
+  string migration_id = 1;
+  string phase = 2; // expand | backfill | contract
+  uint32 statements = 3;
+  string intended_at = 4;
+  bool retry = 5;
 }
 
 message MigrationVerifiedEventData {
@@ -117,6 +137,9 @@ message MigrationHeldEventData {
   string phase = 2; // the safe-hold phase the migration is sitting in
   string reason = 3;
   string held_at = 4;
+  // The phase whose statements the port reported as failed, when that is why
+  // the migration holds.
+  string failed_phase = 5; // expand | backfill | contract
 }
 
 message MigrationResumedEventData {

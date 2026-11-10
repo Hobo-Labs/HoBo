@@ -132,7 +132,22 @@ the tail — and nothing else.
 | `seeded` | target | true once the initial copy is complete |
 | `mark` | source | a position every change committed so far sits at or before |
 | `reached` | source | true once the target has durably applied everything up to a mark |
+| `pause` | target | stop delivering: once it returns, nothing more reaches the target until `resume`. The source keeps retaining. Idempotent; harmless for a transfer that never started or was stopped |
+| `resume` | target | deliver again from where `pause` stopped. Idempotent |
 | `stop` | either | drop what this side holds, and the log it pinned. Idempotent |
+
+**A held migration moves nothing.** The hub is driven by the executor and
+stops with it; a native transfer is the engine's own and has to be told. So
+whenever a native run holds — a negative verdict, a requested pause, a failed
+verification, a fence it does not own — the executor journals the hold and
+then calls `pause`, and the first phase that needs the transfer again calls
+`resume` (only ever behind a positive verdict). The one exception is a hold
+that says nothing more than "the engine has not finished yet"
+(`MigrationHold.working`: the initial copy is still running, the lag has not
+fallen within bound, the copy did not fit the fence window). There the
+transfer *is* the work, approved by the verdict the phase started under, and
+pausing it would restart an initial copy or let the lag grow every time the
+run came back.
 
 The ticket is journaled, so nothing that crosses the port may carry a
 credential or a record. How the target reaches the source — a connection
@@ -212,15 +227,16 @@ it, and every fact is a compare-and-set on the journal head the run read:
 
 | Before | the run journals |
 |---|---|
-| a write fence is raised (source at the cutover, target at a rollback) | `migration.FenceRequested` |
+| a write fence is raised (source at the cutover, target at a rollback) | `migration.FenceRequested` — and, once it is up, `migration.FenceRaised` with the digest of its token |
 | a fence is released because verification under it failed | `migration.Held`, with `compensated: true` |
 | authority moves to the target | `migration.CutOver` |
 | authority moves back to the source | `migration.RollbackDecided` |
+| an in-place phase runs its statements | `migration.PhaseIntended` |
 
 A crash between a fact and its side effect is resumed by *finishing* what the
-fact says — `flipAuthority` must be idempotent — never by re-verifying against
-a store that has since taken writes, failing, and releasing a fence into two
-writable stores. A journaled rollback is finished by whichever run comes next
+fact says — `flipAuthority` must be idempotent at a head — never by
+re-verifying against a store that has since taken writes, failing, and
+releasing a fence into two writable stores. A journaled rollback is finished by whichever run comes next
 and `soakDecision` is not asked again; a crash after the source's `retire`
 committed finds the scope empty behind the migration's own fence and completes.
 At every point either exactly one side is writable, or the run is in a hold a
@@ -245,11 +261,55 @@ cutting-over driver stamps its own head on the leg before anything is compared.
 A driver that meets either refusal (`isSupersededError`) records nothing,
 compensates nothing, and rethrows it.
 
-What this does not close: a driver that wins a fact and then stalls *between*
-that fact and the side effect it authorizes, while a third run finishes the
-step and moves on, still performs that one side effect late. `flipAuthority`
-and `fence.release` are the caller's and the engine's; they take no head to be
-refused by. Run one driver per migration; this is the safety net, not a lease.
+A fact in front of a side effect does not stop a driver that wins the fact and
+then stalls *inside* the side effect while another run finishes the step and
+moves on. Two further rules close that for the two side effects that move
+write authority.
+
+**The router compares-and-sets on the journal head.** Every authority move —
+`flipAuthority` (`AuthorityFlip`), and `flipAuthority` / `flipWriter` of the
+log patterns (`AuthorityHandover`) — carries `migrationId` and `head`: the
+number of facts up to and including the journaled decision (`CutOver`,
+`RollbackDecided`) the move carries out. The journal is a compare-and-set, so
+one decision exists at any head and a later decision has a higher one. What a
+router must implement:
+
+1. keep, durably and per migration, the highest `head` it has applied;
+2. apply a move whose `head` is that or higher, and record the head **in the
+   same step that moves authority**;
+3. refuse a move whose `head` is lower, by throwing `StaleAuthorityMoveError`
+   (`STALE_AUTHORITY_MOVE`), and move nothing.
+
+`admitAuthorityMove(applied, move)` is steps 1–3 over a `Map`. A move at the
+head already applied is the same decision delivered again — a resumed run
+finishing a crashed flip — and must be applied again (idempotence). The
+executor reads the refusal as supersession (`isSupersededError`): it stops,
+records nothing and compensates nothing. So a driver that journaled a cutover,
+stalled in the router call, and was overtaken by a rollback has its flip
+refused when it finally lands. A router that ignores `head` still serves a
+single driver; it does not protect against a late one.
+
+**A fence is used only by the migration that can prove it raised it.** The
+fence port cannot say who raised a fence — raising a raised one answers its
+token to anyone — so ownership is proven from the journal. Before raising,
+the run asks `status`; a fence already standing is written through, adopted
+or released only when its token digests to the last `FenceRaised` this
+migration journaled for that side (for the source after the cutover, to
+`CutOver.fenceTokenDigest`). Anything else holds with `FENCE_NOT_OWNED`, and
+the fence is left exactly as it stands. Two refinements:
+
+- A request with no recorded answer — the run died between the raise and
+  `FenceRaised` — is taken to be this migration's and its digest is recorded
+  then. A fence someone else raised in that same instant cannot be told
+  apart; the port offers nothing to tell them apart with.
+- Nothing new is decided under a fence a hold was journaled against. The
+  driver that held may still have its release in flight, so the next attempt
+  releases that fence and raises a fresh one — and the late release then
+  names a token that opens nothing.
+
+What is still open: `shiftReads` carries no head, so a compensation's
+"reads go home" that lands late moves reads, not writes, to a fenced old
+side. Run one driver per migration; these are the safety net, not a lease.
 
 ## Selection
 
@@ -324,6 +384,13 @@ the ports a pattern drives are the places it puts data:
 | `capture-log` | the source's `capture` port; a reverse tail (the target's log); a `native` transfer, which retains the log itself | `snapshot-and-tail`, `log-pivot`; `offline-copy` with a reverse tail or `native` |
 | `rollback-snapshot` | the source's `schema` port snapshots before any change | `in-place-evolve` |
 | `retiring-source` | the source's `retire` port | `offline-copy`, `snapshot-and-tail` |
+| `target-event-log` | the authority being moved is the journal itself: its streams land in another log | `stream-handoff` |
+
+`stream-handoff` reads one log and writes another, so it needs both
+`event-log` (the log it leaves) and `target-event-log` (the log it moves
+into). The destination is a role of its own rather than a second `event-log`
+point because a verdict lists the *roles* it judged: two points with one role
+would look exactly like one.
 
 A `staging-artifact` is never implied; a plan that writes one names it.
 
@@ -342,8 +409,21 @@ Two things enforce the table:
 
 Executors recompute the verdict before **every** phase. A negative verdict
 holds the migration at its last safe state and records why; nothing in the
-phase runs. Only the fence-and-flip step is not a safe hold — it completes or
-compensates.
+phase runs, and a native transfer is paused. Only the fence-and-flip step is
+not a safe hold — it completes or compensates.
+
+A rollback is the exception, twice over, because going back moves write
+authority to the store the data already lived in and ends the copy a verdict
+objects to:
+
+- A rollback that is **decided** (`RollbackDecided` is journaled) is finished
+  by the next run whatever the verdict says. Policy is not consulted for it:
+  what is left is handing authority back and releasing the fence, and holding
+  that would leave both stores refusing writes.
+- A rollback that is **asked for** in the soak window (`soakDecision` answers
+  `rollback`) under a negative verdict goes ahead, and `RollbackDecided`
+  records the verdict's finding codes in `policyFindings`. Any other soak
+  answer under a negative verdict holds as before.
 
 ## Parse, don't validate
 
@@ -372,14 +452,21 @@ two cannot drift apart unnoticed.
   id, and re-running a completed migration is a no-op rather than a second
   cutover.
 - **Events.** Executors emit `migration.*` facts: `Planned`, `SnapshotTaken`,
-  `PhaseApplied`, `Verified`, `FenceRequested`, `CutOver`, `Held`, `Resumed`,
-  `RollbackDecided`, `RolledBack`, `Completed`, `Failed`. Facts carry
+  `PhaseIntended`, `PhaseApplied`, `Verified`, `FenceRequested`,
+  `FenceRaised`, `CutOver`, `Held`, `Resumed`, `RollbackDecided`,
+  `RolledBack`, `Completed`, `Failed`. Facts carry
   positions, counts, and digests — never a record, never a credential, and
   never a thrown message: a failure is the error's class name, plus its code
   when the error is this package's own. The bodies are pinned in
   `@hobo/events` (`MIGRATION_EVENT_CONTRACTS`); `MIGRATION_FACT_VERSIONS` is
   the version each is journaled at, and a test in `@hobo/events` runs every
-  executor and holds each emitted fact to its contract.
+  executor and holds each emitted fact to its contract. A journal outlives
+  the code that wrote it, so every run lifts what it loads before it folds
+  (`liftMigrationFact`): a plan that named no pattern and planned expand,
+  backfill and contract is `in-place-evolve`, and a fence token an earlier
+  release journaled in `CutOver` or in a `PhaseApplied` checkpoint is replaced
+  by its digest. A resume is therefore always checked against the pattern the
+  journal was planned as, and no token reaches a fold or a result.
 - **Actor.** A migration is an aggregate keyed by its id: a single-writer
   **actor** whose state is `foldMigration` over its facts. The executor is the
   only writer of that stream.
@@ -415,37 +502,62 @@ const report = await runEngineConformance({
 // report.outcome: "pass" | "fail" | "unknown"
 ```
 
-The suite proves the ports, then the patterns built on them: zero loss under
-load, a single write authority, resume after a crash at every phase boundary,
-a lossless soak rollback, a rollback that cannot resurrect an erased subject,
-a pooled-to-silo tenant move, and gated in-place evolution. Thirty cases;
-`ENGINE_CONFORMANCE_CASE_IDS` lists them. `apply.stale-watermark-is-refused`
-is the conditional apply: a batch that names a watermark the store has moved
-past is refused with `StaleApplyError`, changes neither a record nor the
-watermark, and of two appliers naming the same watermark exactly one lands.
+The kit is what "this engine is safe to migrate to and from" means. It proves
+each port holds the property an executor relies on, then runs the executors
+themselves over the engine — including with the process killed at the side
+effects where a crash is dangerous. Fifty-two cases;
+`ENGINE_CONFORMANCE_CASE_IDS` lists them.
 
-Six of them are probes for defects found in one engine and worth holding every
-engine to: a first-century timestamp round-trips or is refused when written
-(never accepted and then unreadable); an undeclared open-schema field named
-`__proto__` survives; a write whose key disagrees with its record's key is
-refused; a dataset named after an engine's own bookkeeping is refused or
-harmless; capture survives an update of a record with a very large key; and
-reading capture from a position the engine never minted is an error, not an
-empty caught-up batch.
+| Family | What a pass proves |
+|---|---|
+| `declaration.*`, `datasets.*` | the binding provides exactly the ports and native profiles it declares; `ensureDataset` is idempotent; a dataset named after the engine's own bookkeeping is refused or harmless |
+| `records.*`, `mapping.*` | canonical records round-trip, tenants are isolated, null and empty stay distinct, an open-schema field named `__proto__` survives; a key is the canonical key of its record (a mismatched or non-canonical one is refused); a constrained type is never silently altered, and a first-century timestamp round-trips or is refused, never accepted and then unreadable; a record over the declared `maxRecordBytes` refuses its whole batch |
+| `apply.*` | redelivery is harmless and the watermark lands with the batch; a conditional apply naming a watermark the store has moved past is refused, changes nothing, and of two appliers naming the same watermark exactly one lands |
+| `verify.*`, `snapshot.*` | digests are engine-independent; a scan returns the scope |
+| `capture.*` | changes are ordered and resumable, scoped to a tenant, whole per write; an update of a very large key is captured; a position the engine never minted, one past its head, or one already acknowledged is an error and never an empty "caught up"; a subscription name is bound to its scope |
+| `fence.*` | one write authority: a fenced write is refused, a dataset-wide fence covers every tenant, the wrong token opens nothing, an apply honours the fence, `raise` waits for in-flight writes, and a fence raised after a release has a new token |
+| `retire.*` | refused without the fence's own token and a matching digest; redelivery is harmless; what it removed is not replayed to a later subscription |
+| `errors.*` | a refusal carries no secret |
+| `schema.*` | snapshots are per binding; a multi-statement entry is whole or refused; a verify query cannot smuggle a second statement |
+| `pattern.snapshot-and-tail.*` | zero loss under load, resume at every phase boundary, a lossless soak rollback, a rollback that cannot resurrect an erased subject, a pooled-to-silo tenant move, a retirement that stays on the source — and `crash-windows.{cutover,compensation,rollback}`: the run killed before and after each named side effect, every resumed run held to one outcome and never two writable stores |
+| `pattern.snapshot-and-tail.native.*` | the same for the engine's own transport: zero loss with writers racing the fence, resume at every boundary, the cutover's crash windows (`NATIVE_CONFORMANCE_CASE_IDS`) |
+| `pattern.offline-copy.*`, `pattern.in-place-evolve.*` | an exact copy under a fence; gated, restorable in-place evolution |
 
-Two more prove a `native` realization (`NATIVE_CONFORMANCE_CASE_IDS`): zero
-loss with writers running during the engine's own copy and racing the fence,
-and resume after a crash at every phase boundary. They run only when engine
-and peer declare a shared native profile for the pattern, and are reported as
-skipped otherwise. An engine whose two sides must be placed specially — the
-same schema name in two databases, the target told how to reach the source —
-supplies `createNativePair` on its harness.
+The native cases run only when engine and peer declare a shared native profile
+for the pattern, and are reported as skipped otherwise. An engine whose two
+sides must be placed specially — the same schema name in two databases, the
+target told how to reach the source — supplies `createNativePair` on its
+harness.
+
+**Crash injection** is part of the package (`crash-injection.ts`):
+`crashingBinding`, `crashingJournal` and a `CrashInjector` sit in front of
+every port — `nativeTransfer`'s `pause` and `resume` included — the journal
+and the caller's callbacks, count side effects, and kill the run at one of
+them, either before it ran or after it ran and before anyone heard back. The
+kit uses it for the crash-window cases; the executor tests use it to sweep
+every side effect of the reference engine. The kit's routers keep the
+highest journal head they applied (`admitAuthorityMove`), as a real one must.
+
+**The kit is tested against itself.** `test/conformance-self-test.test.ts`
+runs it over deliberately broken engines — a reference engine with one defect
+each (`test/support/broken-engines.ts`) — and requires every one to fail, at
+the case written to catch that defect. A variant that passes is a hole in the
+kit.
 
 The fold is pessimistic. A failure is `fail`; a case that applies but could not
-run is `not-run`, which makes the outcome `unknown`; and `unknown` is as
-non-selectable as `fail`. A case whose port the engine does not declare is
-skipped — which is not forgiveness: the pattern needing that port is then
-ineligible at selection.
+run is `not-run` (or `blocked`), which makes the outcome `unknown`; and
+`unknown` is as non-selectable as `fail`. A run restricted with `only` proves
+what it ran and nothing else, so it never folds to `pass`. A case whose port
+the engine does not declare is skipped — which is not forgiveness: the pattern
+needing that port is then ineligible at selection.
+
+`declared-limit` is the one status that is neither. An engine that does not
+hold a property, and says so with an impedance code in its declaration, lists
+the case in its harness's `declaredLimits`. The case still runs: failing its
+expectations it is reported `declared-limit`, recorded for whoever selects the
+engine and not counted against the outcome; passing, it *fails* — the
+declaration then states a limit the engine does not have. Only cases the kit
+allows a limit on, and only codes the declaration really lists, are honoured.
 
 Pass `peer` to prove a cross-engine move: the engine under test is the source
 and the peer is the target.
@@ -496,11 +608,41 @@ and the peer is the target.
   `migration.Held`, `CUSTODY_PATH_INCOMPLETE` — when a relay, a retained log or
   the retiring source was never on the path.
 - `in-place-evolve` is resumable only with a `journal`. With one, phases that
-  have a `PhaseApplied` fact are skipped and a failure restores the first
-  snapshot. A phase's fact follows the phase, so a crash between the two
-  re-applies that phase on resume; if its statements are not repeatable the
-  phase fails and the run restores the snapshot. The restore itself is decided
-  first (`RollbackDecided`), and is finished by the next run.
+  have a `PhaseApplied` fact are skipped and a failure the port reports
+  restores the first snapshot. Every phase is write-ahead:
+  `migration.PhaseIntended` is journaled, as a compare-and-set, before its
+  statements run. A run that finds an intent with no answer after it — the
+  process died between the statements and their fact — cannot know whether
+  they committed, and the store has been taking writes since. It does not run
+  them again on a guess and it never restores the snapshot on their account.
+  It asks the plan's probe for that phase (`InPlaceEvolvePlan.probes`: a
+  violations query, run through the port's `verify`, that returns no rows
+  exactly when the phase is in effect). No rows: the phase is recorded as
+  applied (`recovered: true`) and not run again. Rows: it is applied under a
+  fresh intent, and if that fails the run holds with `PHASE_REAPPLY_FAILED` —
+  still no restore. With no probe the run holds with `PHASE_OUTCOME_UNKNOWN`
+  until the plan is given one; a caller who knows the statements are safe to
+  run twice says so with a probe that always returns a row. A throw from
+  `applyPhase` is the port's answer that the phase is not in effect (recorded
+  as `Held.failedPhase` when the run then holds), unless the probe says it is:
+  then the answer was lost, not the phase, and it is recorded as applied. A
+  port that cannot tell and has no probe to be checked by is the remaining
+  gap. The restore itself is decided first (`RollbackDecided`), and is
+  finished by the next run.
+- A `to-snapshot` rollback does not wait for a target that is gone. Fencing
+  the target and stopping the target's half of a native transfer are best
+  effort there; `RollbackDecided.targetFenced` records whether the target was
+  fenced and the result's impedance lists `ROLLBACK_TARGET_UNREACHABLE` when
+  it could not be reached. The source's side — the erasure replay, dropping
+  its half of the transfer, the flip, releasing its fence — always runs. A
+  lossless rollback still needs the target: there is no proving the source
+  current without it. (To abandon a dead target that has a reverse tail, run
+  the rollback with a target binding that hides `capture`: the posture is then
+  `to-snapshot` and needs the erasure ledger.)
+- The erasure ledger is read twice in a `to-snapshot` rollback: before
+  authority goes back, and again after it has and before the source's fence is
+  released — so an erasure that reached the abandoned target between the first
+  read and the flip is replayed too.
 - An `offline-copy` whose verification fails releases the fence and holds; the
   next attempt copies again but only upserts, so records deleted on the source
   in between stay on the target and the comparison fails again until they are
@@ -517,3 +659,6 @@ Offline and deterministic. Gates protecting this package: TypeScript (`strict`,
 `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`), the protobuf records
 and CUE invariants in `data-models/`, and the two Pact contracts in
 `contracts/pacts/`, both replayed against the code by `test/pact.test.ts`.
+`test/second-review.test.ts` holds the late authority move, the rollback
+exceptions, fence ownership, the erasure window, the paused transfer and a
+journal recorded from an earlier release (`test/fixtures/journal-65a46a72.json`).

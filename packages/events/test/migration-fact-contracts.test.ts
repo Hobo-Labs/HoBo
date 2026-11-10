@@ -8,7 +8,7 @@
 // on it. An executor that grows a field, or a contract that loses one, fails
 // here rather than in whoever reads the journal next.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -24,8 +24,11 @@ import {
 	encodeRecordKey,
 	evaluateCustodyPath,
 	fenceTokenDigest,
+	foldMigration,
+	liftMigrationFacts,
 	MIGRATION_EVENTS,
 	MIGRATION_FACT_VERSIONS,
+	type MigrationFact,
 	type MigrationJournal,
 	type MigrationRuntime,
 	migrationFactVersion,
@@ -638,5 +641,140 @@ describe("the two packages agree on what they cannot import from each other", ()
 			fenceTokenDigest("fence:orders::1"),
 		);
 		assert.ok(!JSON.stringify(lifted.currentBody).includes("fence:orders::1"));
+	});
+});
+
+// A journal outlives the code that wrote it. `fixtures/journal-65a46a72.json`
+// is what the executors at 65a46a72 appended — every body at v1 — recorded
+// once and never edited. Each body must be a valid v1 body, lift through the
+// pinned upcasters to a valid current one, and come out exactly as
+// `@hobo/data-core` lifts it when it loads the journal.
+interface RecordedJournal {
+	readonly facts: readonly MigrationFact[];
+}
+
+interface RecordedJournals {
+	readonly snapshotAndTail: RecordedJournal;
+	readonly inPlaceEvolve: RecordedJournal;
+}
+
+// SAFETY: the committed fixture has this layout; every body in it is validated against its v1 contract below.
+const RECORDED = JSON.parse(
+	readFileSync(
+		path.join(import.meta.dirname, "fixtures", "journal-65a46a72.json"),
+		"utf8",
+	),
+) as RecordedJournals;
+
+function liftThroughContracts(fact: MigrationFact): MigrationFact {
+	const contract = MIGRATION_EVENT_CONTRACTS.find(
+		(entry) => entry.type === fact.type,
+	);
+	assert.ok(contract, `no pinned contract for ${fact.type}`);
+	const schemaAt = (version: number) => {
+		const schema = contract.schemas.find((entry) => entry.version === version);
+		assert.ok(schema, `${fact.type} has no v${version}`);
+		return schema;
+	};
+	// SAFETY: a fact body is a JSON object, which is what an event body is.
+	let body = fact.data as EventBody;
+	assert.deepEqual(
+		validateEventBody(schemaAt(1), body).errors,
+		[],
+		`${fact.type}: what 65a46a72 wrote is not a valid v1 body`,
+	);
+	for (let version = 1; version < contract.currentVersion; version += 1) {
+		const upcaster = contract.upcasters.find((entry) => entry.from === version);
+		assert.ok(upcaster, `${fact.type} has no upcaster from v${version}`);
+		body = upcaster.upcast(body);
+		assert.deepEqual(
+			validateEventBody(schemaAt(upcaster.to), body).errors,
+			[],
+			`${fact.type}: the upcaster produced an invalid v${upcaster.to} body`,
+		);
+	}
+	// SAFETY: an upcast event body is a JSON object, which is what a fact carries.
+	return { type: fact.type, data: body as MigrationFact["data"] };
+}
+
+describe("a journal recorded from the 65a46a72 executors", () => {
+	const recorded = [
+		...RECORDED.snapshotAndTail.facts,
+		...RECORDED.inPlaceEvolve.facts,
+	];
+
+	test("every recorded body is a valid v1 body and lifts to a valid current one", () => {
+		assert.ok(recorded.length >= 15, "the fixture is the two recorded runs");
+		for (const fact of recorded) liftThroughContracts(fact);
+	});
+
+	test("the lifted plan keeps its pattern and its digests; an in-place plan, which named no pattern, is named one", () => {
+		const [planned] = RECORDED.snapshotAndTail.facts;
+		assert.ok(planned);
+		const lifted = liftThroughContracts(planned).data;
+		assert.equal(lifted.pattern, "snapshot-and-tail");
+		assert.equal(lifted.decisionDigest, planned.data.decisionDigest);
+		assert.equal(lifted.custodyDigest, planned.data.custodyDigest);
+		assert.deepEqual(lifted.phases, planned.data.phases);
+		assert.deepEqual(
+			[lifted.source, lifted.target, lifted.dataset],
+			["src", "tgt", "orders"],
+		);
+		const [inPlace] = RECORDED.inPlaceEvolve.facts;
+		assert.ok(inPlace);
+		assert.equal(inPlace.data.pattern, undefined);
+		assert.equal(liftThroughContracts(inPlace).data.pattern, "in-place-evolve");
+	});
+
+	test("no fence token survives the lift: the cutover and the fence-and-flip checkpoint carry its digest", () => {
+		const cutOver = RECORDED.snapshotAndTail.facts.find(
+			(fact) => fact.type === MIGRATION_EVENTS.CutOver,
+		);
+		const token = String(cutOver?.data.fenceToken);
+		assert.equal(token, "fence:orders::1");
+		// It is there twice in what was written: the reviewer's point.
+		assert.equal(
+			JSON.stringify(RECORDED.snapshotAndTail.facts).split(token).length - 1,
+			2,
+		);
+		const lifted = RECORDED.snapshotAndTail.facts.map((fact) =>
+			liftThroughContracts(fact),
+		);
+		assert.ok(!JSON.stringify(lifted).includes(token));
+		const checkpoint = lifted.find(
+			(fact) =>
+				fact.type === MIGRATION_EVENTS.PhaseApplied &&
+				fact.data.phase === "fence-and-flip",
+		)?.data.checkpoint;
+		assert.deepEqual(
+			[
+				lifted.find((fact) => fact.type === MIGRATION_EVENTS.CutOver)?.data
+					.fenceTokenDigest,
+				Object(checkpoint).fenceTokenDigest,
+			],
+			[fenceTokenDigest(token), fenceTokenDigest(token)],
+		);
+	});
+
+	test("data-core lifts a loaded journal to exactly what the pinned upcasters produce, and folds it to the pattern it was planned as", () => {
+		for (const journal of [RECORDED.snapshotAndTail, RECORDED.inPlaceEvolve]) {
+			assert.deepEqual(
+				liftMigrationFacts(journal.facts),
+				journal.facts.map((fact) => liftThroughContracts(fact)),
+			);
+		}
+		assert.equal(
+			foldMigration("m", liftMigrationFacts(RECORDED.snapshotAndTail.facts))
+				.pattern,
+			"snapshot-and-tail",
+		);
+		assert.equal(
+			foldMigration("evolve", liftMigrationFacts(RECORDED.inPlaceEvolve.facts))
+				.pattern,
+			"in-place-evolve",
+		);
+		// Lifting is idempotent: a lifted journal lifts to itself.
+		const once = liftMigrationFacts(RECORDED.snapshotAndTail.facts);
+		assert.deepEqual(liftMigrationFacts(once), once);
 	});
 });

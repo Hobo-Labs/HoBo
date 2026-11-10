@@ -4,7 +4,7 @@
  * mints. Text comparison would order `9/0` after `10/0`, so every comparison
  * goes through the parsed integer.
  */
-import { PostgresDataError } from "../errors.js";
+import { CapturePositionError } from "@hobo/data-core";
 
 const LSN_PATTERN = /^([0-9A-Fa-f]{1,8})\/([0-9A-Fa-f]{1,8})$/u;
 
@@ -12,10 +12,9 @@ const LSN_PATTERN = /^([0-9A-Fa-f]{1,8})\/([0-9A-Fa-f]{1,8})$/u;
 export function parseLsn(text: string): bigint {
 	const match = LSN_PATTERN.exec(text);
 	if (match === null) {
-		throw new PostgresDataError(
-			"CAPTURE_POSITION_INVALID",
+		throw new CapturePositionError(
+			"",
 			"a capture position for this engine is a write-ahead-log location such as 16/B374D848",
-			{ detail: { field: "position" } },
 		);
 	}
 	return (BigInt(`0x${match[1]}`) << 32n) | BigInt(`0x${match[2]}`);
