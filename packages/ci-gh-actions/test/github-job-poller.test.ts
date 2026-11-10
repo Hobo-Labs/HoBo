@@ -240,6 +240,69 @@ class FakeGithub implements GithubTransport {
 }
 
 describe("GitHub job poller", () => {
+	it("leaves a queued job in GitHub's queue until the claim gate lets it in", async () => {
+		const github = new FakeGithub(
+			{ queued: [900], in_progress: [901] },
+			{
+				900: [
+					{
+						id: 1,
+						status: "queued",
+						labels: ["hobo"],
+						created_at: "2026-11-02T11:59:00Z",
+					},
+					{ id: 2, status: "queued", labels: ["hobo"] },
+				],
+				901: [
+					{
+						id: 3,
+						status: "in_progress",
+						labels: ["hobo"],
+						runner_name: "hobo-r3",
+					},
+				],
+			},
+		);
+		const asked: unknown[] = [];
+		let turn = false;
+		const ingested: string[] = [];
+		const poller = createGithubJobPoller({
+			github,
+			connections: async () => [CONNECTION],
+			ingest: async (delivery) => {
+				ingested.push(delivery.deliveryId);
+				return "accepted";
+			},
+			claim: async (job) => {
+				asked.push(job);
+				if (job.jobId === 2) throw new Error("gate broke");
+				return turn;
+			},
+			now: () => NOW,
+		});
+		const first = await poller.poll();
+		// Job 1 waits its turn. Job 2's gate threw, which must not strand it.
+		// Job 3 is already running: the gate is only for queued jobs.
+		expect(first.waiting).toEqual([
+			{ jobId: 1, runId: 900, result: "mesh-deferred" },
+		]);
+		expect(ingested).toEqual([
+			"poll-2-1-q",
+			expect.stringMatching(/^poll-3-1-p-/),
+		]);
+		expect(asked[0]).toEqual({
+			jobId: 1,
+			runId: 900,
+			repository: REPO,
+			label: "hobo",
+			createdAt: "2026-11-02T11:59:00Z",
+		});
+		// Nothing remembered the refusal: the next poll asks again and takes it.
+		turn = true;
+		await poller.poll();
+		expect(ingested).toContain("poll-1-1-q");
+	});
+
 	it("turns runs-on: hobo jobs into one durable delivery per job state", async () => {
 		const github = new FakeGithub(
 			{ queued: [900], in_progress: [901] },

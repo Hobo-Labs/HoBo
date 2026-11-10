@@ -63,6 +63,9 @@ export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
 	["hobo_ci_mesh_capacity_exhausted", "ci.MeshCapacityExhausted"],
 	["hobo_ci_mesh_capacity_restored", "ci.MeshCapacityRestored"],
 	["hobo_ci_mesh_capacity", "ci.MeshCapacityReported"],
+	// A node's record of the jobs it took
+	["hobo_ci_mesh_job_dropped", "ci.MeshJobDropped"],
+	["hobo_ci_mesh_reliability", "ci.MeshReliabilityChanged"],
 	["hobo_ci_mesh_config_published", "ci.MeshConfigPublished"],
 	["hobo_ci_mesh_config_drift", "ci.MeshConfigDrifted"],
 	// Telemetry about telemetry

@@ -16,6 +16,7 @@ import { collectStream } from "@hobo/cloud";
 import { createRuntimeLocalEventStore } from "@hobo/runtime-local";
 import { describe, expect, it } from "vitest";
 import { initBareMetalYard } from "../src/bare-metal-yard.js";
+import { isJsonObject } from "../src/json.js";
 import {
 	readLocalDeployment,
 	startLocalDeployment,
@@ -88,7 +89,11 @@ return {web: b.web(() => handler)};
 	try {
 		await run(project, env, command);
 	} finally {
-		await command(["down"]).catch(() => undefined);
+		// The local deployment's `down` acts on its receipt; with none left it
+		// falls through to the runtime `down`, which these deployments never
+		// used. Most cases have already stopped or expired theirs.
+		const live = await readLocalDeployment(project).catch(() => true);
+		if (live) await command(["down"]).catch(() => undefined);
 		await rm(project, { recursive: true, force: true });
 	}
 }
@@ -125,66 +130,26 @@ return new Response("application unavailable", {status: 503});
 		});
 	}, 300_000);
 
-	it("deploys edited application code in a new worker and reuses only unchanged inputs", async () => {
+	// One deployment walks the whole lifecycle: it serves after `up` exits, a
+	// second `up` reuses the same worker, the control plane refuses an
+	// unauthenticated caller and a different placement, an edit replaces the
+	// worker, an unrelated file does not, and `down` stops it. Each `up` and
+	// `down` is a CLI child process, so the checks share one deployment.
+	it("serves after up exits, reuses an unchanged worker, rejects unauthenticated control, deploys edits in a new worker, and down stops it", async () => {
 		await setup(async (project, _env, command) => {
 			const first = await command(["up"]);
-			const source = join(project, "src/bindle.mjs");
-			expect(await (await fetch(first.data.primaryUrl)).json()).toMatchObject({
-				served: true,
-			});
-			await writeFile(
-				source,
-				(await readFile(source, "utf8")).replace(
-					"served: true",
-					'served: "v2"',
-				),
-			);
-			const updated = await command(["up"]);
-			expect(updated.data.reused).toBe(false);
-			expect(updated.data.deploymentId).not.toBe(first.data.deploymentId);
-			expect(await (await fetch(updated.data.primaryUrl)).json()).toMatchObject(
-				{
-					served: "v2",
-				},
-			);
-			await expect(
-				fetch(first.data.primaryUrl, { signal: AbortSignal.timeout(1000) }),
-			).rejects.toThrow();
-			await writeFile(
-				join(project, "editor.tmp"),
-				"unrelated temporary output",
-			);
-			const unchanged = await command(["up"]);
-			expect(unchanged.data).toMatchObject({
-				deploymentId: updated.data.deploymentId,
-				pid: updated.data.pid,
-				reused: true,
-			});
-			expect(await command(["down"])).toMatchObject({
-				ok: true,
-				status: "destroyed",
-			});
-			await expect(
-				fetch(updated.data.primaryUrl, { signal: AbortSignal.timeout(1000) }),
-			).rejects.toThrow();
-		});
-	}, 300_000);
-
-	it("serves after up exits, reuses the same worker, rejects unauthenticated control, and down stops the server", async () => {
-		await setup(async (project, _env, command) => {
-			const up = await command(["up"]);
-			expect(up).toMatchObject({
+			expect(first).toMatchObject({
 				ok: true,
 				status: "deployed",
 				data: { persistent: true, reused: false },
 			});
-			const url = up.data.primaryUrl;
+			const url = first.data.primaryUrl;
 			expect(await (await fetch(url)).json()).toMatchObject({ served: true });
 			const again = await command(["up"]);
 			expect(again.data).toMatchObject({
 				primaryUrl: url,
-				deploymentId: up.data.deploymentId,
-				pid: up.data.pid,
+				deploymentId: first.data.deploymentId,
+				pid: first.data.pid,
 				reused: true,
 			});
 			const privateToken = await readFile(
@@ -228,12 +193,42 @@ return new Response("application unavailable", {status: 503});
 					.status,
 			).toBe(401);
 			expect((await fetch(url)).status).toBe(200);
+
+			const source = join(project, "src/bindle.mjs");
+			await writeFile(
+				source,
+				(await readFile(source, "utf8")).replace(
+					"served: true",
+					'served: "v2"',
+				),
+			);
+			const updated = await command(["up"]);
+			expect(updated.data.reused).toBe(false);
+			expect(updated.data.deploymentId).not.toBe(first.data.deploymentId);
+			expect(await (await fetch(updated.data.primaryUrl)).json()).toMatchObject(
+				{
+					served: "v2",
+				},
+			);
+			await expect(
+				fetch(url, { signal: AbortSignal.timeout(1000) }),
+			).rejects.toThrow();
+			await writeFile(
+				join(project, "editor.tmp"),
+				"unrelated temporary output",
+			);
+			const unchanged = await command(["up"]);
+			expect(unchanged.data).toMatchObject({
+				deploymentId: updated.data.deploymentId,
+				pid: updated.data.pid,
+				reused: true,
+			});
 			expect(await command(["down"])).toMatchObject({
 				ok: true,
 				status: "destroyed",
 			});
 			await expect(
-				fetch(url, { signal: AbortSignal.timeout(1000) }),
+				fetch(updated.data.primaryUrl, { signal: AbortSignal.timeout(1000) }),
 			).rejects.toThrow();
 			const store = createRuntimeLocalEventStore({
 				dataDir: join(project, ".hobo/local-deployment-events"),
@@ -243,17 +238,32 @@ return new Response("application unavailable", {status: 503});
 					store,
 					`local:${createHash("sha256").update(project).digest("hex")}`,
 				);
-				expect(events.map((event) => event.type)).toEqual([
-					"deployment.LocalStarted",
-					"deployment.LocalStopped",
+				// The edit stops the first worker before the second starts.
+				expect(
+					events.map((event) => [
+						event.type,
+						isJsonObject(event.data) ? event.data.reason : undefined,
+					]),
+				).toEqual([
+					["deployment.LocalStarted", "up"],
+					["deployment.LocalStopped", "down"],
+					["deployment.LocalStarted", "up"],
+					["deployment.LocalStopped", "down"],
 				]);
 				expect(events[0]?.data).toMatchObject({
-					reason: "up",
-					receipt: { leaseId: up.data.deploymentId, primaryUrl: url },
+					receipt: { leaseId: first.data.deploymentId, primaryUrl: url },
 				});
 				expect(events[1]?.data).toMatchObject({
-					reason: "down",
-					receipt: { leaseId: up.data.deploymentId },
+					receipt: { leaseId: first.data.deploymentId },
+				});
+				expect(events[2]?.data).toMatchObject({
+					receipt: {
+						leaseId: updated.data.deploymentId,
+						primaryUrl: updated.data.primaryUrl,
+					},
+				});
+				expect(events[3]?.data).toMatchObject({
+					receipt: { leaseId: updated.data.deploymentId },
 				});
 				expect(JSON.stringify(events)).not.toContain(privateToken);
 			} finally {
@@ -262,13 +272,14 @@ return new Response("application unavailable", {status: 503});
 		});
 	}, 300_000);
 
-	it.each([
-		"--anonymous",
-		"--temporary",
-	])("expires a real self-hosted %s deployment without a hosted service", async (flag) => {
+	// --anonymous and --temporary are one switch (`anonymous || temporary` in
+	// src/broker-up-command.ts and wantsAnonymousMode in src/broker-target.ts),
+	// and self-hosted-broker.test.ts places with each in-process, so one flag
+	// carries the real expiry.
+	it("expires a real self-hosted --anonymous deployment without a hosted service", async () => {
 		await setup(async (project, env, command) => {
 			env.HOBO_LOCAL_DEPLOYMENT_TTL_SECONDS = "3";
-			const up = await command(["up", flag]);
+			const up = await command(["up", "--anonymous"]);
 			expect(up).toMatchObject({
 				ok: true,
 				data: { persistent: true, expiresAt: expect.any(String) },

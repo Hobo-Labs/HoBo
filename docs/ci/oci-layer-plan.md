@@ -367,7 +367,7 @@ probes `HOBO_CI_GIT_MIRROR` and the mounted path.
 **Status (2026-11-05): worker fetch + read-only mount.** The isolated worker owns
 `/var/lib/hobo-ci/git/<owner>/<repo>.git` (`HOBO_CI_GIT_MIRROR_ROOT`, disable with
 `HOBO_CI_GIT_MIRROR=0`):
-- It creates the mirror with `git clone --bare --filter=blob:none` once, then backfills blobs for `main`.
+- It creates the mirror with `git clone --bare` (no promisor / `blob:none` filter), refreshes `main` on every locked `ensure`, and repairs legacy partial mirrors.
 - It runs `git fetch --no-filter origin <sha>:refs/hobo/sha/<sha>` for each admitted run's `head_sha` before
   `docker create`, through one queue per repository. `gc.auto` is off. Fork / PR objects never land on
   `refs/heads/*`.

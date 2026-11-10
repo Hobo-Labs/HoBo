@@ -131,6 +131,11 @@ trap cleanup EXIT
 toolchain="$(node --no-warnings scripts/ci-runner-image-version.mts)"
 base="hobo-ci-worker:${toolchain}"
 if ! docker image inspect "$base" >/dev/null 2>&1; then
+  export GITHUB_TOKEN="${GITHUB_TOKEN:-${GHCR_TOKEN:-}}"
+  echo "Toolchain ${base} not in this Docker context; resolving via ensure-ci-worker-image"
+  node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+fi
+if ! docker image inspect "$base" >/dev/null 2>&1; then
   computed_toolchain="$toolchain"
   toolchain=""
   if worker_tags="$(docker image inspect hobo-ci-worker:local --format '{{range .RepoTags}}{{println .}}{{end}}' 2>/dev/null)"; then

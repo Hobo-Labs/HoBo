@@ -94,6 +94,7 @@ unindexed new finding files as notices.
 - [Finding 81: a CI-only tool pin planned the whole workspace](./findings/0081-a-ci-only-tool-pin-planned-the-whole-workspace.md)
 - [Finding 82: eight test shards started for plans of zero to four suites](./findings/0082-eight-test-shards-started-for-plans-of-zero-to-four-suites.md)
 - [Finding 83: main full gate paid for missing deps layer and trunk serialization](./findings/0083-main-full-gate-paid-for-missing-deps-layer-and-trunk-serialization.md)
+- [Finding 84: deps publisher missed host worker tags in job docker context](./findings/0084-deps-publisher-missed-host-worker-tags-in-job-docker-context.md)
 - [Finding 85: poll coalesce stranded queued jobs on GitHub](./findings/0085-poll-coalesce-stranded-queued-jobs-on-github.md)
 <!-- findings-index:end -->
 

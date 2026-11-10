@@ -40,6 +40,7 @@ import {
 	type IsolatedWorkerStore,
 } from "../src/isolated-worker/container-controller.js";
 import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
+import { startContainer } from "./fixtures/start-container.js";
 
 /** One behavioural contract for every engine behind the box worker and hosted runtime. */
 type ContractStore = HostedInboxStore &
@@ -532,20 +533,21 @@ describe.runIf(postgresAvailable)("Postgres engine", () => {
 				pinnedContainerImages.postgres17Alpine,
 			);
 			const password = randomUUID();
-			container = await new GenericContainer(`${repository}@${digest}`)
-				.withEnvironment({
-					POSTGRES_DB: "contract",
-					POSTGRES_USER: "contract",
-					POSTGRES_PASSWORD: password,
-				})
-				.withWaitStrategy(
-					Wait.forLogMessage(
-						/database system is ready to accept connections/,
-						2,
-					),
-				)
-				.withExposedPorts(5432)
-				.start();
+			container = await startContainer(() =>
+				new GenericContainer(`${repository}@${digest}`)
+					.withEnvironment({
+						POSTGRES_DB: "contract",
+						POSTGRES_USER: "contract",
+						POSTGRES_PASSWORD: password,
+					})
+					.withWaitStrategy(
+						Wait.forLogMessage(
+							/database system is ready to accept connections/,
+							2,
+						),
+					)
+					.withExposedPorts(5432),
+			);
 			connectionString = `postgresql://contract:${password}@${container.getHost()}:${container.getMappedPort(5432)}/contract`;
 		}
 		pool = new pg.Pool({ connectionString, max: 4 });

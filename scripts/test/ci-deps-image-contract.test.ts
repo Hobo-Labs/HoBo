@@ -163,12 +163,14 @@ describe("CI deps image build contract", () => {
 		const computed = build.indexOf(
 			'toolchain="$(node --no-warnings scripts/ci-runner-image-version.mts)"',
 		);
+		const ensure = build.indexOf("scripts/ci/ensure-ci-worker-image.mts");
 		const fallback = build.indexOf(
 			"docker image inspect hobo-ci-worker:local --format",
 		);
 		const key = build.indexOf('--toolchain "${toolchain}"');
 		assert.ok(computed > -1);
-		assert.ok(fallback > computed);
+		assert.ok(ensure > computed);
+		assert.ok(fallback > ensure);
 		assert.ok(key > fallback);
 		includes(build, "^hobo-ci-worker:(v[0-9a-f]{12})$");
 		includes(build, "Using toolchain image");
@@ -529,6 +531,7 @@ describe("CI deps publisher contract", () => {
 	});
 
 	it("skips an existing GHCR tag and builds only after a confirmed miss", () => {
+		includes(publish, 'export GITHUB_TOKEN="${GITHUB_TOKEN:-${GHCR_TOKEN:-}}"');
 		includes(publish, 'key="$(node --no-warnings scripts/ci/deps-key.mts)"');
 		includes(publish, 'candidate="hobo-ci-deps:${key}"');
 		includes(publish, "docker image inspect hobo-ci-deps:local");
