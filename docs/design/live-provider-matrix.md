@@ -59,6 +59,19 @@ here means the kit ran against a real server.
 The default CI lane does not provide either server, so the two live lanes run only where someone
 supplies one. A regression in live change capture is therefore caught by that run, not by every push.
 
+To run both live lanes locally:
+
+```bash
+docker compose -f packages/data-core/deploy/compose.live-engines.yml up -d --wait
+pnpm run test:data-live
+docker compose -f packages/data-core/deploy/compose.live-engines.yml down -v
+```
+
+`test:data-live` defaults the two URLs to the compose ports and honours values already set, so it also
+works against servers started another way. It calls `pnpm --filter … test` rather than turbo on
+purpose: turbo passes `HOBO_*` through without keying its cache on them, so a cached offline result
+could be replayed as if it were a live one.
+
 ## IaC engines (`packages/iac/`)
 
 | Adapter | Default | Live |
