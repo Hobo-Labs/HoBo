@@ -6,6 +6,7 @@ import { createHostedAppBootstrap } from "@hobo/ci-gh-actions";
 import pg from "pg";
 import { z } from "zod";
 import { createBootstrapEntry } from "../src/bootstrap-entry.js";
+import { databaseConnection } from "../src/database-connections.js";
 import { createNodeRelayHandler } from "../src/node-handler.js";
 
 const postgres = process.env.HOBO_CI_TEST_POSTGRES;
@@ -13,7 +14,23 @@ if (!postgres)
 	throw new Error(
 		"HOBO_CI_TEST_POSTGRES must name a fresh disposable database",
 	);
-const pool = new pg.Pool({ connectionString: postgres, max: 12 });
+// Optional: a private certificate authority for the server, and the variable
+// names of a Vercel storage integration, to prove the relay runs unchanged on
+// a Marketplace PostgreSQL. HOBO_CI_TEST_POSTGRES_BINDING is `explicit`
+// (default), `supabase` or `prisma-postgres`.
+const caFile = process.env.HOBO_CI_TEST_POSTGRES_CA_FILE;
+const ca = caFile ? await readFile(caFile, "utf8") : undefined;
+const bindings = {
+	explicit: { DATABASE_URL: postgres, DATABASE_URL_UNPOOLED: postgres },
+	supabase: { POSTGRES_URL: postgres, POSTGRES_URL_NON_POOLING: postgres },
+	"prisma-postgres": { DATABASE_URL_POOLED: postgres, DATABASE_URL: postgres },
+};
+const bindingName = process.env.HOBO_CI_TEST_POSTGRES_BINDING ?? "explicit";
+if (!Object.hasOwn(bindings, bindingName))
+	throw new Error("unknown HOBO_CI_TEST_POSTGRES_BINDING");
+// SAFETY: membership was checked on the line above.
+const databaseEnv = bindings[bindingName as keyof typeof bindings];
+const pool = new pg.Pool({ ...databaseConnection(postgres, ca), max: 12 });
 const originalFetch = globalThis.fetch;
 const { privateKey } = generateKeyPairSync("rsa", {
 	modulusLength: 2048,
@@ -29,8 +46,8 @@ const tokenHash = createHash("sha256").update(account).digest("hex");
 const env = {
 	HOBO_CI_PUBLIC_URL: origin,
 	HOBO_CI_SESSION_KEY: key.toString("base64url"),
-	DATABASE_URL: postgres,
-	DATABASE_URL_UNPOOLED: postgres,
+	...databaseEnv,
+	...(ca ? { HOBO_CI_DATABASE_CA_CERT: ca } : undefined),
 	CRON_SECRET: "c".repeat(40),
 	HOBO_CI_CONFIG_JSON: await readFile(
 		new URL(

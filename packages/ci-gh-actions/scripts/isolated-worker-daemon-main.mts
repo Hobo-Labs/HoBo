@@ -745,9 +745,16 @@ try {
 	let jobPollInFlight: Promise<void> | undefined;
 	let gcInFlight: Promise<void> | undefined;
 	let orphanReconcileInFlight: Promise<void> | undefined;
+	let lastOrphanReconcileAt = 0;
+	const orphanReconcileMinMs = Number(
+		process.env.HOBO_CI_ORPHAN_RECONCILE_MIN_MS ?? "60_000",
+	);
 
 	function runOrphanJobReconcile(): void {
 		if (draining || orphanReconcileInFlight) return;
+		const now = Date.now();
+		if (now - lastOrphanReconcileAt < orphanReconcileMinMs) return;
+		lastOrphanReconcileAt = now;
 		orphanReconcileInFlight = worker
 			.reconcileOrphanJobs()
 			.catch((error) => {
