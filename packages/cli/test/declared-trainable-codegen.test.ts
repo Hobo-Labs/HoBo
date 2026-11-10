@@ -27,6 +27,7 @@ import { mayHoldMarkedClass } from "../src/codegen/marker-prefilter.js";
 import { runCodegen } from "../src/codegen/run-codegen.js";
 import { defaultCodegenLayout } from "../src/codegen/types.js";
 import { createHoboCli } from "../src/index.js";
+import { slow } from "./support/slow.js";
 
 // Plan 2 Syntax 0 through `hobo stub` (ADR-0128): an ambient
 // `@trainable declare class` is erased at compile time, so codegen scans it
@@ -261,44 +262,56 @@ describe("the marker prefilter", () => {
 	});
 
 	it("takes what TypeScript's scanner takes for whitespace and a line terminator, and nothing else", () => {
+		// One assertion over every mismatch: 131k `expect` calls cost ~3.5 s of the
+		// ~3.8 s this case took, and a failure still names each code point.
+		const mismatches: string[] = [];
 		for (let code = 0; code <= 0xffff; code++) {
 			// A lone surrogate is no character; a second @ starts a decorator of its own.
 			if ((code >= 0xd800 && code <= 0xdfff) || code === 0x40) continue;
 			const char = String.fromCharCode(code);
-			expect(
-				mayHoldMarkedClass(ambient(`@${char}trainable`)),
-				`U+${code.toString(16)} after @`,
-			).toBe(ts.isWhiteSpaceLike(code));
-			expect(
-				mayHoldMarkedClass(ambient(`@// note${char}trainable`)),
-				`U+${code.toString(16)} after a line comment`,
-			).toBe(ts.isLineBreak(code));
+			if (
+				mayHoldMarkedClass(ambient(`@${char}trainable`)) !==
+				ts.isWhiteSpaceLike(code)
+			)
+				mismatches.push(`U+${code.toString(16)} after @`);
+			if (
+				mayHoldMarkedClass(ambient(`@// note${char}trainable`)) !==
+				ts.isLineBreak(code)
+			)
+				mismatches.push(`U+${code.toString(16)} after a line comment`);
 		}
+		expect(mismatches).toEqual([]);
 	});
 
-	it("reads a file in time linear in its length", () => {
-		// Each `@` here starts trivia that runs on to a point many other `@`s
-		// share (the end of the text, the end of one long line, one long
-		// escape), so a reader that walks it again from every `@` is quadratic:
-		// a backtracking prefilter took 44 s on the conflict-marker text.
-		const cases: readonly (readonly [string, string])[] = [
-			["conflict markers with no end", "@\n||||||| x\n".repeat(32_000)],
-			["unterminated block comments", "@/*".repeat(125_000)],
-			[
-				"line comments on one line, then whitespace",
-				`${"@//".repeat(62_500)}\n${" ".repeat(187_500)}x`,
-			],
-			[
-				"line comments on one line, then one long escape",
-				`${"@//".repeat(62_500)}\n\\u{${"0".repeat(187_500)}74}rainablex`,
-			],
-		];
-		for (const [label, text] of cases) {
-			const started = performance.now();
-			expect(mayHoldMarkedClass(text), label).toBe(false);
-			expect(performance.now() - started, label).toBeLessThan(2_000);
-		}
-	}, 600_000);
+	it(
+		"reads a file in time linear in its length",
+		() => {
+			// Each `@` here starts trivia that runs on to a point many other `@`s
+			// share (the end of the text, the end of one long line, one long
+			// escape), so a reader that walks it again from every `@` is quadratic:
+			// a backtracking prefilter took 44 s on the conflict-marker text.
+			const cases: readonly (readonly [string, string])[] = [
+				["conflict markers with no end", "@\n||||||| x\n".repeat(32_000)],
+				["unterminated block comments", "@/*".repeat(125_000)],
+				[
+					"line comments on one line, then whitespace",
+					`${"@//".repeat(62_500)}\n${" ".repeat(187_500)}x`,
+				],
+				[
+					"line comments on one line, then one long escape",
+					`${"@//".repeat(62_500)}\n\\u{${"0".repeat(187_500)}74}rainablex`,
+				],
+			];
+			for (const [label, text] of cases) {
+				const started = performance.now();
+				expect(mayHoldMarkedClass(text), label).toBe(false);
+				expect(performance.now() - started, label).toBeLessThan(2_000);
+			}
+			// Each case reads in 18-120 ms; a quadratic reader fails here in seconds
+			// instead of holding the runner for ten minutes.
+		},
+		slow(30_000),
+	);
 
 	it("skips a file that only names a marker without decorating with it", () => {
 		for (const prefix of [

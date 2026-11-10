@@ -65,7 +65,11 @@ ships from `@hobo/hobo` (`hobo-mcp`).
 
 ## Usage
 
-Library consumers import from `@hobo/cli`. For a local shell binary without the
+Library consumers import from `@hobo/cli`. A caller that only needs the verb
+catalogue and the argv parser imports `@hobo/cli/argv` (`CANONICAL_VERBS`,
+`parseArgv`), which loads neither the commands nor the compiler.
+
+For a local shell binary without the
 composition root, run the built entry with Node (factories may return stubs
 until runtimes are injected):
 

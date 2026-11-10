@@ -93,15 +93,61 @@ export function databaseConnection(url: string, ca: string | undefined) {
 	return { connectionString: parsed.toString(), ssl: { ca } };
 }
 
+/** One address pattern that identifies a transaction-mode pooler. Every field
+ * that is set must match. */
+export type TransactionPoolerRule = {
+	host?: string;
+	hostSuffix?: string;
+	firstLabelSuffix?: string;
+	port?: string;
+};
+
+/** The transaction-mode poolers that can be recognised by address, per
+ * provider: Neon's `-pooler` endpoints, Prisma Postgres's
+ * `pooled.db.prisma.io`, and Supabase's pooler host on its transaction port
+ * 6543 (its port 5432 is session mode). Data, so a provider is added by adding
+ * a row. Matched against every connection, whichever backend it belongs to. */
+export const KNOWN_TRANSACTION_POOLERS = {
+	neon: [{ hostSuffix: ".neon.tech", firstLabelSuffix: "-pooler" }],
+	"prisma-postgres": [{ host: "pooled.db.prisma.io" }],
+	// Port 6543 is transaction mode on the shared pooler host and on the
+	// project host (the dedicated pooler); port 5432 is session or direct.
+	supabase: [
+		{ hostSuffix: ".pooler.supabase.com", port: "6543" },
+		{ hostSuffix: ".supabase.co", port: "6543" },
+	],
+} satisfies { [provider: string]: TransactionPoolerRule[] };
+
+/** A pooler that shares its host with the direct endpoint and differs only by
+ * port. It cannot go in the table above, which is matched against every
+ * connection: a port alone says nothing without knowing whose host it is. A
+ * backend profile carries it, and it is applied to that backend only. */
+export const PGBOUNCER_PORT_POOLER = [
+	{ port: "6432" },
+] satisfies TransactionPoolerRule[];
+
+function matchesPooler(
+	rule: TransactionPoolerRule,
+	host: string,
+	port: string,
+): boolean {
+	return (
+		(rule.host === undefined || host === rule.host) &&
+		(rule.hostSuffix === undefined || host.endsWith(rule.hostSuffix)) &&
+		(rule.firstLabelSuffix === undefined ||
+			host.split(".")[0]?.endsWith(rule.firstLabelSuffix) === true) &&
+		(rule.port === undefined || port === rule.port)
+	);
+}
+
 /** Session advisory locks must use a session-scoped PostgreSQL connection, not
- * a transaction-mode pooler. The known poolers are refused by address: Neon's
- * `-pooler` endpoints, Prisma Postgres's `pooled.db.prisma.io`, and Supabase's
- * pooler host on its transaction port 6543 (its port 5432 is session mode).
- * Other endpoints are supplied by the operator and cannot be identified
- * reliably from a URL. */
+ * a transaction-mode pooler. The known poolers are refused by address (see
+ * `KNOWN_TRANSACTION_POOLERS`). Other endpoints are supplied by the operator
+ * and cannot be identified reliably from a URL. */
 export function validateDirectDatabaseUrl(
 	value: string | undefined,
 	name = "DATABASE_URL_UNPOOLED",
+	backendPoolers: readonly TransactionPoolerRule[] = [],
 ): string {
 	if (!value) throw new Error(`${name} is required for repair`);
 	let parsed: URL;
@@ -120,12 +166,45 @@ export function validateDirectDatabaseUrl(
 		parsed.searchParams.has("host") ||
 		parsed.searchParams.has("hostaddr") ||
 		parsed.searchParams.has("service") ||
-		(host.endsWith(".neon.tech") && host.split(".")[0]?.endsWith("-pooler")) ||
-		host === "pooled.db.prisma.io" ||
-		(host.endsWith(".pooler.supabase.com") && parsed.port === "6543")
+		Object.values(KNOWN_TRANSACTION_POOLERS).some((rules) =>
+			rules.some((rule) => matchesPooler(rule, host, parsed.port)),
+		) ||
+		backendPoolers.some((rule) => matchesPooler(rule, host, parsed.port))
 	)
 		throw new Error("repair requires a direct PostgreSQL URL");
 	return value;
+}
+
+/** The two pools' settings for one relay database. A provider whose credential
+ * is a short-lived token can supply these from a function instead of from
+ * connection strings: `pg` accepts `password` as an async function. */
+export type RelayDatabase = {
+	/** Pooled settings, for HTTP traffic and ordinary queries. */
+	primary: PoolSettings;
+	/** Session-scoped settings, for repair. */
+	direct: PoolSettings;
+};
+type PoolSettings = ReturnType<typeof databaseConnection> & {
+	Client?: typeof import("pg").Client;
+};
+
+/** The relay database named by the environment, validated as before: the
+ * session-scoped connection is required and must not be a known pooler. */
+export function relayDatabase(
+	env: NodeJS.ProcessEnv,
+	backendPoolers: readonly TransactionPoolerRule[] = [],
+): RelayDatabase {
+	const urls = resolveDatabaseUrls(env);
+	const ca = env.HOBO_CI_DATABASE_CA_CERT;
+	const direct = validateDirectDatabaseUrl(
+		urls.direct,
+		urls.directName,
+		backendPoolers,
+	);
+	return {
+		primary: databaseConnection(urls.primary, ca),
+		direct: databaseConnection(direct, ca),
+	};
 }
 
 type Result = {
@@ -151,6 +230,12 @@ export async function withRepairPool<T extends { end(): Promise<void> }, R>(
 	}
 }
 
+/** The marker table `verifyRepairDatabase` uses, created on first use. */
+// public-contract: the probe table's DDL, shared with the database fleet so both create the same table.
+export const DATABASE_PROBE_TABLE = `CREATE TABLE IF NOT EXISTS hobo_ci_database_probes (
+			id uuid PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now()
+		)`;
+
 /** Verify two endpoints reach the same database and role. A random committed
  * marker prevents separate servers with matching database names and roles from
  * passing. Old markers are bounded after an interrupted startup. */
@@ -171,9 +256,7 @@ export async function verifyRepairDatabase(
 		await client.query(
 			"SELECT pg_advisory_xact_lock(hashtext('hobo-ci-database-probe-v1'))",
 		);
-		await client.query(`CREATE TABLE IF NOT EXISTS hobo_ci_database_probes (
-			id uuid PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now()
-		)`);
+		await client.query(DATABASE_PROBE_TABLE);
 		await client.query(
 			"DELETE FROM hobo_ci_database_probes WHERE created_at < now() - interval '1 day'",
 		);

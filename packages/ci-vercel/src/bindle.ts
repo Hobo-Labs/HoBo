@@ -100,6 +100,27 @@ export const relayConfig = config({
 	HOBO_CI_DATABASE_CA_CERT: env
 		.string()
 		.docs("A PEM root certificate for a database whose chain is private."),
+	HOBO_CI_DATABASE_BACKENDS: env
+		.string()
+		.docs(
+			"The database fleet, as `name=PREFIX_[:profile]` entries; not with HOBO_CI_DATABASE_ENV_PREFIX.",
+		),
+	HOBO_CI_DATABASE_RPO_SECONDS: env
+		.string()
+		.docs("The oldest standby a failover may promote; 1200 if unset."),
+	HOBO_CI_DATABASE_FAILOVER_AFTER_SECONDS: env
+		.string()
+		.docs("How long the writer must fail before a failover; 60 if unset."),
+	HOBO_CI_DATABASE_LEASE_SECONDS: env
+		.string()
+		.docs(
+			"How long an instance trusts the assignment it last confirmed; 30 if unset.",
+		),
+	HOBO_CI_DATABASE_MONTHLY_BUDGET_MICROS: env
+		.string()
+		.docs(
+			"Monthly budget for the relay database, in millionths of a US dollar; 0 if unset.",
+		),
 	HOBO_CI_EVENTS_URL: env
 		.string()
 		.docs("Where relay failures are also delivered as CloudEvents."),

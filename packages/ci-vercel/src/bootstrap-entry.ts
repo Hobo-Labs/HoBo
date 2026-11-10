@@ -3,6 +3,7 @@ import pg from "pg";
 import { createVercelApplication } from "./composition.js";
 import {
 	databaseConnection,
+	type RelayDatabase,
 	resolveDatabaseUrls,
 } from "./database-connections.js";
 import type { QueueMessage } from "./worker.js";
@@ -42,6 +43,8 @@ export function createBootstrapEntry(options: {
 	expectedGithubOwnerId?: number;
 	bootstrap?: Bootstrap;
 	createApplication?: typeof createVercelApplication;
+	/** The database to run on. Defaults to the one the environment names. */
+	database?: RelayDatabase;
 	/** Clock for the store back-off; injectable for tests. */
 	now?: () => number;
 }) {
@@ -82,14 +85,16 @@ export function createBootstrapEntry(options: {
 	const pool = options.bootstrap
 		? undefined
 		: new pg.Pool({
-				...databaseConnection(
-					resolveDatabaseUrls(env).primary,
-					env.HOBO_CI_DATABASE_CA_CERT,
-				),
+				...(options.database?.primary ??
+					databaseConnection(
+						resolveDatabaseUrls(env).primary,
+						env.HOBO_CI_DATABASE_CA_CERT,
+					)),
 				max: 2,
 				connectionTimeoutMillis: 5000,
 				idleTimeoutMillis: 10000,
 			});
+	if (options.database) pool?.on("error", () => {});
 	let bootstrap = options.bootstrap;
 	if (!bootstrap && pool) {
 		const bootstrapOptions: Parameters<typeof createHostedAppBootstrap>[0] = {
@@ -145,6 +150,7 @@ export function createBootstrapEntry(options: {
 					continueRepair: options.continueRepair,
 					scheduledRepair: options.scheduledRepair,
 				};
+			if (options.database) applicationOptions.database = options.database;
 			if (ownerControlToken && bootstrapStore.isVerifiedOwner)
 				applicationOptions.trustedBootstrapControl = async (
 					request: Request,
