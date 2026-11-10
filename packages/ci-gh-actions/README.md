@@ -120,6 +120,7 @@ What a host can turn on, and who does:
 | `fullAccountUpdates` (`PUT /v1/accounts/self/policy`) | on | off (410) |
 | `isolatedHost` (Sandbox runner; also lets a desired policy name a Sandbox provider) | none | Vercel Sandbox |
 | `denyUnisolated` (no workflow bridge) | off | on |
+| MCP `sessions` (see [MCP server](#mcp-server)) | `memory`: sessions, streams and resource subscriptions | `none`: every request stands alone |
 
 Everything else, routes included, is the same code with the same behaviour:
 the `/engines/gh-actions` mount and the per-engine health map are served by
@@ -140,6 +141,7 @@ Every host of the relay serves the same Fetch handler, `createRelayHandler`
 | `POST /github/webhooks` | Signed delivery intake; the delivery is committed before it is acknowledged |
 | `POST /v1/leases/{id}/jit` | Runner claim with a GitHub OIDC bearer |
 | `/v1/accounts/self/…`, `/v2/accounts/self/…`, `/v1/app-registration/…` | Handed to the host's control plane |
+| `/mcp` | The relay's [MCP server](#mcp-server) (Streamable HTTP), when the host mounts one |
 
 A delivery is authenticated by GitHub's `X-Hub-Signature-256`, or, when the host
 configures an ingress forward secret, by `X-Hobo-Ingress-Forward` from
@@ -152,6 +154,160 @@ package compares a webhook signature. With `trustProxy`, a request whose
 `contracts/http-boundary.pact.json` pins this boundary and is executed by
 `contracts/http-boundary.provider.test.ts` through the Node adapter;
 `test/http-handler.test.ts` covers the engine mount, the forward and the proxy check.
+
+## MCP server
+
+The relay is an MCP server (Model Context Protocol, Streamable HTTP) at `/mcp`
+and `/engines/gh-actions/mcp`, so an agent can read job state, be told when it
+changes, and act on it without polling the account API or setting itself a
+reminder. It is one module, `createRelayMcp` (`src/relay-mcp.ts`, tools and
+resources in `src/relay-mcp-server.ts`, views in `src/relay-mcp-views.ts`),
+built on the official `@modelcontextprotocol/sdk` (`McpServer` over
+`WebStandardStreamableHTTPServerTransport`) and mounted by every HTTP host
+through `HostedRelayApplication.mcp`. A host that mounts none answers 404.
+
+### Authentication and scope
+
+`/mcp` takes the account API's bearer credentials, resolved by the same
+`ControlAuthenticator`. Every request is authenticated, including each request
+of a session.
+
+| Refusal | Answer |
+| --- | --- |
+| No or unknown credential | 401 `{"error":"account authentication required"}` with `WWW-Authenticate: Bearer` |
+| Credential holds neither `policy:read` nor `operations:write` | 403 `{"error":"account scope required"}` |
+| `Origin` header that is not the relay's public origin | 403 `{"error":"origin not allowed"}` |
+| Body over 1 MiB | 413 `{"error":"request body too large"}` |
+
+The account comes from the credential, never from an argument. A tool or
+resource sees only that account's leases, queued jobs and events; another
+account's lease is reported as `lease not found`, exactly like one that does
+not exist. Read tools and every resource need `policy:read`; a tool that
+changes something needs `operations:write`. A caller without a tool's scope
+gets a tool error naming it, and the operation is not attempted. The writes
+call the same functions as the account API (`src/account-operations.ts`), so
+the ownership checks are written once.
+
+The `Origin` check is the DNS-rebinding guard: a browser page on another
+origin cannot drive a relay on `localhost`. The SDK's own
+`allowedHosts`/`allowedOrigins` options are deprecated in favour of a check in
+front of the transport, which is what this is. `Host` is not compared: the
+Node adapter already resolves every request against the configured origin.
+
+### Tools
+
+| Tool | Scope | What it does |
+| --- | --- | --- |
+| `list_leases` | `policy:read` | The account's leases, newest first. Filters: `state`, `repository`, `runId`, `activeOnly`; `limit` 1 to 200 (default 50) |
+| `get_lease` | `policy:read` | One lease by id, with its latest 20 events found among the account's newest 500 |
+| `list_pending_jobs` | `policy:read` | Jobs queued for the account's repositories that have no lease yet. Filter: `repository` |
+| `list_events` | `policy:read` | Events after `cursor`, oldest first; without a cursor, the newest. Filters: `leaseId`, `repository`, `types` |
+| `wait_for_events` | `policy:read` | Blocks until an event after `cursor` matches the filters, or `timeoutSeconds` passes. Returns `{events, cursor, timedOut}` |
+| `get_relay_status` | `policy:read` | Readiness, engines, whether this host pushes resource updates, and the wait default and ceiling |
+| `reconcile_lease` | `operations:write` | `POST /v1/accounts/self/leases/{id}/reconcile`: settle a lease against a verified `hostRunId` |
+| `list_quarantined_webhooks` | `operations:write` | The account's quarantined deliveries (identity and attempts, never the body) |
+| `retry_quarantined_webhook` | `operations:write` | Put one quarantined delivery back in the inbox |
+
+The inbox tools need `operations:write` to read as well as to retry, as the
+account API's `/v2/accounts/self/inbox/…` routes do.
+
+### Resources
+
+| Resource | Content (`application/json`) |
+| --- | --- |
+| `hobo-ci://leases` | The account's 100 newest leases |
+| `hobo-ci://leases/{leaseId}` | One lease and its latest events |
+| `hobo-ci://events` | The account's 100 newest events and the cursor to read on from |
+
+Results are protobuf JSON of the `RelayMcp*` messages in
+[`data-models/relay_mcp.proto`](data-models/relay_mcp.proto), written with zero
+and empty fields present. Each view is assembled field by field: a lease view
+carries no sandbox identity or budget digest, an event view carries the
+event's type, time, lease, repository and job and never its stored detail,
+and no view can carry a credential or a JIT configuration, which the relay
+does not journal. CUE closes the views, and two invalid fixtures pin that a
+`detail` or a sandbox identity does not fit.
+
+### Following job state
+
+Every lease and job change is an event appended to the store's journal in the
+transaction that makes it (`ci.JobQueued`, `ci.LeaseReserved`,
+`ci.DispatchRequested`, `ci.RunnerClaimed`, `ci.HostSettled`,
+`ci.LeaseUncertain`, `ci.LeaseCancelled`, `ci.LeaseExpired`, `ci.JobExpired`,
+`ci.JobCompleted` and the rest). The MCP feed is a projection over that event
+store, read with the store's cursor (`eventsSince`, see
+[`@hobo/ci`](../ci/README.md#event-cursor)); it is not a second bus, and it
+replays from any cursor because the journal is the source.
+
+**`wait_for_events` on every host.** Call it with the `cursor` of your last
+result. The relay polls its own journal once a second inside the call and
+answers as soon as there is a matching event, or with `timedOut: true` and the
+cursor to continue from. Without a cursor it waits for what happens next.
+
+```text
+list_events {}                                   -> { events: […], cursor: "412" }
+wait_for_events { cursor: "412", leaseId: "…" }  -> { events: [ci.RunnerClaimed], cursor: "415", timedOut: false }
+wait_for_events { cursor: "415", leaseId: "…" }  -> { events: [], cursor: "415", timedOut: true }
+```
+
+The wait is 25 seconds unless `timeoutSeconds` says otherwise and never more
+than 50: under the 60-second default request timeout of the MCP TypeScript
+SDK's client, and within a serverless function limited to one minute. At most
+32 calls wait at once in one process; one more is refused with a tool error
+to retry. A caller that hangs up, or cancels the request, ends its wait.
+
+**Resource subscriptions on a host that keeps sessions.** With
+`sessions: "memory"` the server advertises `resources.subscribe`. Subscribe to
+`hobo-ci://events`, `hobo-ci://leases` or `hobo-ci://leases/{leaseId}`, keep
+the session's event stream open (`GET /mcp`), and the relay sends
+`notifications/resources/updated` for a subscribed resource when the
+account's journal moves; read the resource for the change. One pump per
+process reads the journal for the accounts that have a subscriber, and stops
+when the last subscription goes.
+
+| | Node service (`hobo ci serve`, container) | Vercel |
+| --- | --- | --- |
+| `sessions` | `memory` | `none` |
+| Tools and resources | yes | yes |
+| `wait_for_events` | yes | yes |
+| `resources/subscribe` and `notifications/resources/updated` | yes | not advertised |
+| Responses | event streams (`/mcp` is a streaming path of the Node adapter) | JSON |
+| `GET /mcp`, `DELETE /mcp` | the session's stream; end the session | 405 |
+
+The box worker daemon has no HTTP listener and serves no MCP; an agent reads
+its leases through whichever HTTP host shares its store.
+
+A session belongs to the account that opened it: another account naming its
+id gets 404, as for an unknown id. The Node service holds at most 64 sessions
+and 16 for one account (429 beyond that), closes a session that has no open
+stream and has made no request for 15 minutes, and closes every session and
+stream when it drains. A process restart ends its sessions; a client
+initializes again and continues from its last cursor, which the journal still
+answers. On Vercel a wait occupies the function for its duration, so the
+project's function duration limit must be above the 50-second ceiling.
+
+### Client configuration
+
+An HTTP MCP server entry, with the account token read from the environment
+(never written into the file):
+
+```json
+{
+  "mcpServers": {
+    "hobo-ci": {
+      "type": "http",
+      "url": "https://<relay-origin>/mcp",
+      "headers": { "Authorization": "Bearer ${HOBO_CI_ACCOUNT_TOKEN}" }
+    }
+  }
+}
+```
+
+`contracts/mcp-boundary.pact.json` pins the boundary every host honours and is
+executed by `contracts/mcp-boundary.provider.test.ts` through the Node
+adapter; `test/relay-mcp.test.ts` drives the SDK's own client against the
+shared handler for each tool and resource, account isolation, the wait and its
+timeout on an injected clock, and sessions, subscriptions and their limits.
 
 ## Deploy the relay
 

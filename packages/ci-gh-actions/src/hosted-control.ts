@@ -32,6 +32,15 @@ import {
 	SnapshotSchema,
 } from "@hobo/ci";
 import { z } from "zod";
+import {
+	accountLease,
+	ControlError,
+	configurationState,
+	type QuarantinedDelivery,
+	quarantinedDeliveries,
+	reconcileAccountLease,
+	retryQuarantinedDelivery,
+} from "./account-operations.js";
 import type { ControlAuthenticator, ControlPrincipal } from "./control-auth.js";
 import type { HostedRelay, HostedRelayStore } from "./hosted-relay.js";
 import {
@@ -91,29 +100,12 @@ export interface HostedControlStore extends HostedRelayStore {
 	quarantinedWebhooks(
 		accountId: string,
 		expectedRevision: number,
-	): Promise<
-		Array<{
-			deliveryId: string;
-			event: string;
-			installationId: number;
-			repositoryId: number;
-			receivedAt: string;
-			attempts: number;
-		}>
-	>;
+	): Promise<QuarantinedDelivery[]>;
 	retryQuarantinedWebhook(
 		accountId: string,
 		expectedRevision: number,
 		deliveryId: string,
 	): Promise<boolean>;
-}
-class ControlError extends Error {
-	constructor(
-		readonly status: number,
-		message: string,
-	) {
-		super(message);
-	}
 }
 function response(status: number, value: string, revision?: number): Response {
 	const headers = new Headers({
@@ -210,12 +202,7 @@ export function createHostedControlPlane(options: {
 	};
 }) {
 	const { store, relay } = options;
-	async function state(): Promise<ConfigurationState> {
-		const result = await store.configuration();
-		if (!result?.configuration)
-			throw new ControlError(503, "configuration unavailable");
-		return result;
-	}
+	const state = (): Promise<ConfigurationState> => configurationState(store);
 	async function scope(
 		principal: ControlPrincipal,
 		repositoryId: number,
@@ -739,12 +726,11 @@ export function createHostedControlPlane(options: {
 				path === "/v2/accounts/self/inbox/quarantined" &&
 				request.method === "GET"
 			) {
-				const current = await state();
-				const deliveries = await store.quarantinedWebhooks(
+				const { revision: current, deliveries } = await quarantinedDeliveries(
+					store,
 					principal.accountId,
-					current.revision,
 				);
-				return response(200, JSON.stringify({ deliveries }), current.revision);
+				return response(200, JSON.stringify({ deliveries }), current);
 			}
 			const retry =
 				/^\/v2\/accounts\/self\/inbox\/([A-Za-z0-9-]{1,100})\/retry$/.exec(
@@ -754,13 +740,12 @@ export function createHostedControlPlane(options: {
 				if ((await readBody(request)).trim())
 					throw new ControlError(400, "retry request must have an empty body");
 				const expected = revision(request);
-				const done = await store.retryQuarantinedWebhook(
+				await retryQuarantinedDelivery(
+					store,
 					principal.accountId,
 					expected,
 					retry[1],
 				);
-				if (!done)
-					throw new ControlError(404, "quarantined delivery not found");
 				return response(200, JSON.stringify({ status: "queued" }), expected);
 			}
 			if (path === "/v1/accounts/self/leases" && request.method === "GET") {
@@ -1170,9 +1155,7 @@ export function createHostedControlPlane(options: {
 				);
 			}
 			if (lease?.[1]) {
-				const found = await store.get(lease[1]);
-				if (!found || found.accountId !== principal.accountId)
-					throw new ControlError(404, "lease not found");
+				const found = await accountLease(store, principal.accountId, lease[1]);
 				if (request.method === "GET" && !lease[2])
 					return response(200, toJsonString(LeaseSchema, found));
 				if (request.method === "POST" && lease[2] === "reconcile") {
@@ -1180,12 +1163,18 @@ export function createHostedControlPlane(options: {
 						ReconcileRequestSchema,
 						await readBody(request),
 					);
-					if (!Number.isSafeInteger(input.hostRunId) || input.hostRunId < 1)
-						throw new ControlError(400, "positive host run id required");
-					await relay.reconcile(found.id, input.hostRunId);
 					return response(
 						200,
-						toJsonString(LeaseSchema, (await store.get(found.id)) ?? found),
+						toJsonString(
+							LeaseSchema,
+							await reconcileAccountLease(
+								relay,
+								store,
+								principal.accountId,
+								found.id,
+								input.hostRunId,
+							),
+						),
 					);
 				}
 				throw new ControlError(405, "method not allowed");

@@ -10,6 +10,7 @@ import {
 	createHostedRelayRuntime,
 	createQueuedJobRepair,
 	createRelayHandler,
+	createRelayMcp,
 	createWebhookRepair,
 	HostedRelay,
 	type HostedRelayApplication,
@@ -307,10 +308,21 @@ export async function createVercelApplication(options: {
 			secret: required(env, "CRON_SECRET"),
 			run: (message) => worker.run(message),
 		});
+		// A function instance does not outlive its request: MCP runs without
+		// sessions here, and `wait_for_events` is the change feed.
+		const mcp = createRelayMcp({
+			store,
+			relay,
+			authenticate,
+			ready: () => execution.ready(runtime.ready, () => health.ready()),
+			publicOrigin: url.origin,
+			sessions: "none",
+		});
 		const handler = createRelayHandler({
 			application: withWakeup(
 				{
 					...runtime,
+					mcp: mcp.handle,
 					// A configured host and fresh worker health are required in addition
 					// to the database and configuration checks in the runtime.
 					ready: () => execution.ready(runtime.ready, () => health.ready()),

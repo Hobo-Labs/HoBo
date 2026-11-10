@@ -312,6 +312,17 @@ Without them, a box job's Turbo local cache is **`hobo-turbo-cache`** inside the
    node --import tsx packages/ci-gh-actions/scripts/acceptance.ts --live-verify --repository Hobo-Labs/HoBo
    ```
 
+## Follow a job from an agent (MCP)
+
+An agent with an account token does not need to poll these endpoints. The
+relay is an MCP server at `https://<relay-origin>/mcp` (`hobo ci serve`:
+`http://127.0.0.1:8787/mcp`): `list_pending_jobs` shows what is queued without
+a lease, `list_leases` and `get_lease` show where a lease is stuck, and
+`wait_for_events` returns the moment a job is queued, reserved, claimed,
+settled, cancelled or expired. Setup, the tool list and the client
+configuration are in
+[`packages/ci-gh-actions/README.md`](../ci-gh-actions/README.md#mcp-server).
+
 ## What repo CI cannot fix
 
 These require org admin / platform operator action, not a workflow edit:

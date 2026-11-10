@@ -1,0 +1,7 @@
+{
+  "ready": true,
+  "engines": [{ "id": "gh-actions", "ready": true }],
+  "subscriptions": true,
+  "waitDefaultSeconds": 25,
+  "waitMaxSeconds": 50
+}

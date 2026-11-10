@@ -71,6 +71,7 @@
     "@hobo/broker": "workspace:*",
     "@hobo/ci": "workspace:*",
     "@hobo/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "pg": "8.22.0",
     "zod": "^4.1.13"
   },

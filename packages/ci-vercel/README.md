@@ -124,6 +124,14 @@ this host is the `PostgresCiStore`, the queue wake-up and 15-minute schedule
 that call the worker tick, the Sandbox runner backend, the GitHub App bootstrap
 and OAuth onboarding, and the webhook and queued-job repair.
 
+The relay's [MCP server](../ci-gh-actions/README.md#mcp-server) is mounted at
+`/mcp` with `sessions: "none"`: a function instance does not outlive its
+request, so each request stands alone and is answered with JSON, `/mcp` is not
+a streaming path, and resource subscriptions are not advertised. Tools and
+resources work as on the Node service, and `wait_for_events` is the change
+feed. A wait holds the function for up to 50 seconds, so the project's
+function duration limit must be above that; `vercel.json` does not set one.
+
 This package provides a Vercel Node Function entrypoint, a Postgres-backed
 relay, a private queue consumer, and an independent scheduler. Signed
 GitHub deliveries are committed before acknowledgement. Queue notifications

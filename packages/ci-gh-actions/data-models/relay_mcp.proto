@@ -1,0 +1,108 @@
+syntax = "proto3";
+package hobo.ci.gh_actions.v1;
+
+// What the relay's MCP server returns from its tools and resources. Each view
+// is built field by field from a lease, a job or an event. None carries a
+// credential, a JIT configuration, a sandbox identity or an event's stored
+// detail.
+
+// A lease as an agent needs it to triage a job.
+message RelayMcpLease {
+  string id = 1;
+  string state = 2;
+  // Whether the lease still holds capacity (not completed, cancelled or expired).
+  bool active = 3;
+  string repository = 4;
+  double job_id = 5;
+  string job_name = 6;
+  double run_id = 7;
+  uint32 run_attempt = 8;
+  string provider = 9;
+  string offer_id = 10;
+  string runner_name = 11;
+  string created_at = 12;
+  string dispatching_at = 13;
+  string settled_at = 14;
+  string queue_deadline_at = 15;
+  // The host workflow run, and the job GitHub actually gave the runner.
+  double host_run_id = 16;
+  double actual_job_id = 17;
+  double billed_minutes = 18;
+  double paid_micros = 19;
+  string memory_class = 20;
+  string sandbox_stage = 21;
+}
+// A job that is queued and has no lease yet.
+message RelayMcpJob {
+  double id = 1;
+  double run_id = 2;
+  uint32 run_attempt = 3;
+  string repository = 4;
+  string name = 5;
+  repeated string labels = 6;
+  bool isolated_required = 7;
+  string memory_class = 8;
+  string queue_deadline_at = 9;
+}
+// One journal event. `cursor` is its position: pass it back to read what follows.
+message RelayMcpEvent {
+  string cursor = 1;
+  string type = 2;
+  string at = 3;
+  string lease_id = 4;
+  // The lease's state once the event was recorded; empty for a job event.
+  string state = 5;
+  string repository = 6;
+  double job_id = 7;
+  string job_name = 8;
+  double run_id = 9;
+  uint32 run_attempt = 10;
+}
+message RelayMcpLeases {
+  repeated RelayMcpLease leases = 1;
+  // More leases matched than were returned.
+  bool truncated = 2;
+}
+message RelayMcpLeaseDetail {
+  RelayMcpLease lease = 1;
+  repeated RelayMcpEvent events = 2;
+}
+message RelayMcpJobs {
+  repeated RelayMcpJob jobs = 1;
+  bool truncated = 2;
+}
+// Events after a cursor. `cursor` is where to read from next, also when no
+// event matched; `timed_out` says a wait ended without one.
+message RelayMcpEvents {
+  repeated RelayMcpEvent events = 1;
+  string cursor = 2;
+  bool timed_out = 3;
+}
+message RelayMcpEngine {
+  string id = 1;
+  bool ready = 2;
+}
+message RelayMcpStatus {
+  bool ready = 1;
+  repeated RelayMcpEngine engines = 2;
+  // Whether this host pushes resource updates to subscribed sessions.
+  bool subscriptions = 3;
+  uint32 wait_default_seconds = 4;
+  uint32 wait_max_seconds = 5;
+}
+// A webhook delivery set aside after repeated failures. Never its body.
+message RelayMcpQuarantinedDelivery {
+  string delivery_id = 1;
+  string event = 2;
+  double installation_id = 3;
+  double repository_id = 4;
+  string received_at = 5;
+  uint32 attempts = 6;
+}
+message RelayMcpQuarantine {
+  repeated RelayMcpQuarantinedDelivery deliveries = 1;
+}
+message RelayMcpRetry {
+  string delivery_id = 1;
+  string status = 2;
+}

@@ -219,6 +219,9 @@ When a draft package, validation script, workflow, or public contract changes, u
 [HoBo.CI contracts and routing](../../packages/ci/README.md),
 [GitHub Actions relay](../../packages/ci-gh-actions/README.md) (one core; hosted
 as a Node service by `hobo ci serve` and the container image, on
-[Vercel](../../packages/ci-vercel/README.md), and by the box worker daemon),
+[Vercel](../../packages/ci-vercel/README.md), and by the box worker daemon; it
+is also an [MCP server](../../packages/ci-gh-actions/README.md#mcp-server) at
+`/mcp`, whose `wait_for_events` tool and resource subscriptions are a
+projection over the lease journal's [event cursor](../../packages/ci/README.md#event-cursor)),
 [Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md), and
 [implementation plan with live acceptance gates](../plans/hobo-ci/README.md).
