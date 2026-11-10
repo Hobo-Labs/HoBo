@@ -6,8 +6,12 @@ name: Fleet probe
 # label no runner has been seen on is not sent work.
 #
 # Started by each CI run, so the record is fresh whenever it is needed and
-# nothing runs while the repository is quiet. A newer probe replaces an older
-# one, so a label that is down holds one waiting job, not one per run.
+# nothing runs while the repository is quiet.
+#
+# Each label has its own concurrency group and nothing is cancelled once it
+# is waiting for a runner. A label that is down therefore holds one job that
+# goes on waiting, which is what the route job needs to see, plus at most one
+# behind it; and a label that is down does not hold up the probe of another.
 on:
   workflow_run:
     workflows: ["HoBo CI Fabric"]
@@ -16,14 +20,13 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: fleet-probe
-  cancel-in-progress: true
-
 jobs:
   pr-fleet:
     name: hobo picks a job up
     runs-on: hobo
+    concurrency:
+      group: fleet-probe-hobo
+      cancel-in-progress: false
     timeout-minutes: 2
     steps:
       - run: "true"
@@ -32,6 +35,9 @@ jobs:
     name: hobo-trunk picks a job up
     if: vars.HOBO_CI_TRUNK_RUNNER != 'false'
     runs-on: hobo-trunk
+    concurrency:
+      group: fleet-probe-hobo-trunk
+      cancel-in-progress: false
     timeout-minutes: 2
     steps:
       - run: "true"
@@ -40,6 +46,9 @@ jobs:
     name: hobo-local-host picks a job up
     if: vars.HOBO_CI_LOCAL_RUNNER == 'true'
     runs-on: hobo-local-host
+    concurrency:
+      group: fleet-probe-hobo-local-host
+      cancel-in-progress: false
     timeout-minutes: 2
     steps:
       - run: "true"

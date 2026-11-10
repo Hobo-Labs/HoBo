@@ -173,8 +173,10 @@ machine. The run's jobs ask for the label it chose: the fleet (`hobo`, or
 backend is taking jobs when a runner took a job for its label in the last 15
 minutes, no such job has waited 120 seconds, none it took in that time had,
 and fewer than 4 are waiting. The **Fleet probe** workflow, started by each CI
-run, keeps a pickup on record for every label that has a runner behind it;
-after a quiet spell a run waits up to 60 seconds for that probe before giving
+run, keeps a pickup on record for every label that has a runner behind it. A
+label that is down holds one probe job that goes on waiting, which reads as a
+label past its limit; it has its own concurrency group, so it does not hold
+up the probe of another label. After a quiet spell a run waits up to 60 seconds for that probe before giving
 up on the fleet. Runs that start together take turns: one that started just
 after another that has not chosen yet goes to GitHub-hosted. The two required
 gates are always GitHub-hosted. A run that says `runner: ubuntu-24.04 (github)`
