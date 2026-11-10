@@ -89,6 +89,39 @@ Three things must not be decided per node on a guess.
 - **Configuration.** Nodes read the same account policy. A node on an old
   revision still makes safe decisions, because admission fails closed.
 
+## No hosted database in the job path
+
+**Decision:** taking a job from GitHub's queue to a running runner must not
+depend on the hosted relay or on any hosted database. On 2026-11-10 the hosted
+relay's Postgres on Neon went over its plan quota and the relay answered 503
+to everything, GitHub's webhook deliveries included.
+
+A worker already has what it needs to stand alone, and the mesh keeps it that
+way:
+
+| Piece | In this topology | Needs |
+|---|---|---|
+| Lease journal | SQLite file on the box (`HOBO_CI_STORE` unset; the default) | Local disk |
+| Finding jobs | The worker polls GitHub (`pull` admission; the default with SQLite) | GitHub |
+| Starting runners | The worker mints just-in-time runners with its own App credentials | GitHub |
+| Sharing a queue between workers | Relay mesh | NATS, or nothing: ranking alone still works |
+| Hosted relay on Vercel | Not involved | — |
+
+The settings that would tie a worker to the hosted database are
+`HOBO_CI_STORE=postgres` and `HOBO_CI_JOB_ADMISSION=push`. Neither is a
+default, and a mesh needs neither; the mesh gate applies only to `pull`.
+
+The hosted relay still exists for what a worker cannot do alone: receiving
+webhooks for push admission, the account control API behind `hobo ci`, GitHub
+App onboarding, and the Vercel Sandbox host. It is built on Postgres, and
+unless App credentials are set directly in its environment it reads them from a
+runtime-config broker whose Neon address is fixed in
+`packages/ci-vercel/src/entry.ts`. Removing that dependency means moving its
+state somewhere else (JetStream key-value and object stores are the natural
+home now that the mesh uses NATS) or retiring it. Neither is done here; until
+then it is optional, and it now reports why it is unready instead of failing
+silently.
+
 ## Membership without a centre
 
 Nodes need a place to leave advertisements that every node can already reach.

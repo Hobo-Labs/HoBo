@@ -208,6 +208,8 @@ Configs resolve the smaller of their own cap and this value; CI does not export 
 
 Jobs waiting for another worker's turn show in `hobo_ci_isolated_worker_jobs_polled` as `mesh-deferred`.
 
+**No hosted database needed.** A worker with `HOBO_CI_STORE` unset keeps its lease journal in SQLite on the box and polls GitHub itself, so neither the hosted relay nor its Postgres is in the path from a queued job to a running runner. `HOBO_CI_STORE=postgres` or `HOBO_CI_JOB_ADMISSION=push` puts them back in it; the mesh needs neither.
+
 Legacy path `packages/ci-gh-actions/deploy/worker/Dockerfile` is deprecated; use **`build.sh`** above.
 
 This preserves PR isolation without Sandbox spend.
