@@ -47,21 +47,97 @@ allocates nothing. Selection among them happens at resolution time under
 [ADR-0151](../../docs/design/adr/07-portability-extensibility.md#adr-0151)'s
 hard gates and lexicographic ranking, never here.
 
+## Parity: how far each namespace is proven
+
+`providerParity()` returns one row per namespace, derived — never typed by
+hand — from two live sources: the product ids in the namespace's full
+allocatable catalog (`PARITY_SOURCES`; the parsed `Yard().bindings`), and the
+provider package's exported `*_RESOLVED_PRODUCT_IDS` constant.
+`providerProfileParity()` applies the same derivation per `(provider, profile)`,
+ordered by provider then lexicographic profile. `formatParityClaim(row)`
+re-derives a row before rendering it, so supplied level or denominator fields
+cannot fabricate a claim.
+
+| Level | Meaning | Who may claim it |
+|---|---|---|
+| `P0` | Catalog only — declarable, no resolver | this package |
+| `L1-DECLARED` | At least one resolver id is declared; conformance is not asserted | this package's constants-only projection |
+| `L1` | Simulated — a fake-transport resolver **plus** the six lifecycle conformance cases (create/update/replace/delete-idempotent/adopt/crash-resume) **plus** a PACT | conformance evidence (later layers) |
+| `L2` | Local-live — the six lifecycle cases against real local processes, loopback only | executed evidence (later layers) |
+| `L3` | Local-DX — timed offline script, minutes recorded | executed evidence (later layers) |
+| `P2` | Cloud live — **fallback** claim only | cred-gated executed evidence |
+| `P3` | Cloud DX — **fallback** claim only | cred-gated executed evidence |
+
+This package can see only constants. It sees that a resolver is *declared*;
+it cannot see a conformance run or a pact. It therefore emits `L1-DECLARED`,
+not full `L1`, and every rendered claim says "conformance not asserted here".
+It never emits `L2`/`L3`/`P2`/`P3`: a higher level printed from static data
+would be an overclaim; it needs a run.
+
+How to read a claim — example format, not a current claim:
+`acme L1-DECLARED: 1/3 resolvers declared (conformance not asserted here)` means one of
+the three product ids acme's catalog declares has a declared resolver, and
+nothing here asserts that resolver passes conformance. The denominator is
+always present — a level without one is not a claim. Blank provider or product
+ids and empty catalogs are refused (`PARITY_PROVIDER_EMPTY`,
+`PARITY_PRODUCT_ID_EMPTY`, `PARITY_CATALOG_EMPTY`). A resolved id the catalog
+does not declare is refused (`PARITY_RESOLVED_NOT_IN_CATALOG`) rather than
+dropped, because dropping it would tidy the denominator.
+
+Grain: provider rows count each **product** once across the whole catalog, so
+a product listed under two profiles counts once (AWS's DynamoDB backs both a
+document and a key-value profile). Profile rows instead contain only that
+profile's catalog ids and the resolved subset. One resolved product makes its
+row `L1-DECLARED`; zero makes it `P0`, even when the provider overall is
+`L1-DECLARED`. The denominator always says how much is covered.
+
+Vercel is measured against its full allocatable catalog: the bare
+`vercel.Yard()` holds the default targets only and omits the opt-in
+`project()` row, but `vercel.project/v1` has a shipped resolver, so measuring
+against the bare default would refuse with `PARITY_RESOLVED_NOT_IN_CATALOG`.
+Vercel's denominator is therefore the default *plus* `project()`. Every other
+namespace is measured against its bare `Yard()`.
+
+The current projection, pinned to the code by `test/parity.test.ts` (the test
+fails if this block and `providerParity()` disagree):
+
+<!-- parity:begin -->
+```text
+aws L1-DECLARED: 8/19 resolvers declared (conformance not asserted here)
+azure L1-DECLARED: 9/16 resolvers declared (conformance not asserted here)
+cloudflare L1-DECLARED: 6/6 resolvers declared (conformance not asserted here)
+digitalocean L1-DECLARED: 15/15 resolvers declared (conformance not asserted here)
+gcp L1-DECLARED: 9/14 resolvers declared (conformance not asserted here)
+hetzner L1-DECLARED: 5/5 resolvers declared (conformance not asserted here)
+hostinger L1-DECLARED: 5/5 resolvers declared (conformance not asserted here)
+kubernetes L1-DECLARED: 9/9 resolvers declared (conformance not asserted here)
+vercel L1-DECLARED: 3/5 resolvers declared (conformance not asserted here)
+```
+<!-- parity:end -->
+
+Parity is an in-process pure read model: it crosses no integration or
+persistence boundary, so it has no protobuf record or CUE wire schema. The
+TypeScript row interface therefore duplicates no wire contract. Protobuf-first
+applies to the provider-catalog boundary, whose records and constraints remain
+in `data-models/`.
+
 ## HONEST SCOPE
 
-| Namespace | Products with a resolver | What a deploy does today |
-|---|---|---|
-| `cloudflare` | all — Cloudflare API v4 drivers | Drivers are proven against an **injected fake transport**. No live deploy is proven in this repo: that additionally needs real credentials and network egress. |
-| `vercel` | all — Vercel API drivers | Same: fake-transport proof only. |
-| `gcp` | **9 of 14** — Google REST drivers | Same: fake-transport proof only. The other 5 fail closed. See `GCP_RESOLVED_PRODUCT_IDS` / `GCP_UNRESOLVED_PRODUCT_IDS`. |
-| `azure` | **9 of 16** — ARM drivers | Same: fake-transport proof only. The other 7 fail closed. See `AZURE_RESOLVED_PRODUCT_IDS` / `AZURE_UNRESOLVED_PRODUCT_IDS`. |
-| `aws` | **7 of 19** — SigV4-signed drivers | Same: fake-transport proof only. The other 12 fail closed. See `AWS_RESOLVED_PRODUCT_IDS` / `AWS_UNRESOLVED_PRODUCT_IDS`. |
-| `digitalocean` | **12 of 15** — v2 bearer-token drivers + Spaces over SigV4 | Same: fake-transport proof only. The 3 without drivers are non-convergent by DigitalOcean's API shape, not by omission. `queue`, `topic` and `secretRef` carry no rows at all, because DigitalOcean sells none of them. |
-| `kubernetes` | **8 of 9** — apiserver drivers | Same: fake-transport proof only. The 9th is the Secret, which ships no driver by design. This namespace also has a placement driver that does reach a real apiserver. Catalog is built-ins only: databases, caches and queues arrive through operators. |
-| `hetzner` | **4 of 5** — Cloud API drivers + Object Storage over SigV4 | Same: fake-transport proof only. The 5th is the Storage Box, which is not on the Cloud API at all (404 there, vs 401 for `/v1/volumes`) — it is Robot-administered behind a console password. Five slots carry no rows: Hetzner sells no managed database, cache, queue, topic or secret store. |
-| `hostinger` | **2 of 5** — adopt-and-converge drivers | The odd one out. On Hostinger allocation is a **billing order**, so these resolvers converge an instance you already bought and refuse to purchase one — a refusal the transport guard enforces by not allowlisting `/api/billing/v1/`. Fake-transport proof only. |
+Counts live in the parity block above; this table carries what a count cannot.
 
-Two limits apply to every row above, including the ones marked "all":
+| Namespace | Resolver transport | What a deploy does today |
+|---|---|---|
+| `cloudflare` | Cloudflare API v4 drivers | Drivers are proven against an **injected fake transport**. No live deploy is proven in this repo: that additionally needs real credentials and network egress. |
+| `vercel` | Vercel REST drivers | Same: fake-transport proof only. `vercel.blob/v1` and `vercel.edge-function/v1` have no driver — see `VERCEL_UNRESOLVED_PRODUCT_IDS`. |
+| `gcp` | Google REST drivers | Same: fake-transport proof only. The rest fail closed. See `GCP_RESOLVED_PRODUCT_IDS` / `GCP_UNRESOLVED_PRODUCT_IDS`. |
+| `azure` | ARM drivers | Same: fake-transport proof only. The rest fail closed. See `AZURE_RESOLVED_PRODUCT_IDS` / `AZURE_UNRESOLVED_PRODUCT_IDS`. |
+| `aws` | SigV4-signed drivers | Same: fake-transport proof only. The rest fail closed. See `AWS_RESOLVED_PRODUCT_IDS` / `AWS_UNRESOLVED_PRODUCT_IDS`. |
+| `digitalocean` | v2 bearer-token drivers, Spaces over SigV4, Functions over OpenWhisk | Same: fake-transport proof only. `queue`, `topic` and `secretRef` carry no rows at all, because DigitalOcean sells none of them. |
+| `kubernetes` | apiserver drivers | Same: fake-transport proof only. The Secret's contents arrive through an injected `resolveSecretData` and never through `desired`. This namespace also has a placement driver (`provisionWorkload`), not a resolver, written to place onto a real cluster through an injected transport (opt-in `kubectl proxy`); no live apply is proven here, and the resolvers above remain fake-transport only. Catalog is built-ins only: databases, caches and queues arrive through operators. |
+| `hetzner` | Cloud API drivers, Object Storage over SigV4, Storage Box on `api.hetzner.com` | Same: fake-transport proof only. Robot stays unreachable. Five slots carry no rows: Hetzner sells no managed database, cache, queue, topic or secret store. |
+| `hostinger` | adopt-and-converge drivers | The odd one out. On Hostinger allocation is a **billing order**, so these resolvers converge an instance you already bought and refuse to purchase one — a refusal the transport guard enforces by not allowlisting `/api/billing/v1/`. Fake-transport proof only. |
+
+Two limits apply to every row above, including namespaces whose whole catalog resolves:
 
 1. **No provider's product ids are registered in the definition catalog.** So even a product with a working resolver refuses at resolution
    today. That is a deliberate fail-closed gap, not a silent one: a deploy
@@ -80,10 +156,8 @@ may not carry credential-shaped keys. Others are identity limits:
 `aws.api-gateway/v1` mints a fresh random id per call with no name uniqueness,
 so a retry after a lost response would create a second API rather than
 converge. And some are refusals this repo chose on purpose:
-`kubernetes.secret/v1` ships no resolver because creating a Secret means
-putting its contents in a `desired` record that is written to the event log,
-and `hostinger.vps/v1` will not place the billing order that would allocate
-one. The
+`hostinger.vps/v1` is adopt-only and will not place the billing order that
+would allocate one. The
 `*_UNRESOLVED_PRODUCT_IDS` declarations carry the reason per id, and distinguish
 the two cases.
 

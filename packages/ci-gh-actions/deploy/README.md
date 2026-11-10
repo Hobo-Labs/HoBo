@@ -196,6 +196,7 @@ active lease or container and retires them through the same path. Startup and sc
 drain-mode shutdown awaits it, and handoff mode leaves it for the successor. Watch `hobo_ci_work_dir_retired`,
 `hobo_ci_work_dir_removed` and `hobo_ci_work_dir_remove_failed`. Ticks over five seconds also log
 `hobo_ci_isolated_worker_tick_slow` with delivery, worker/lease reconciliation and dispatch timings.
+Orphan-job GitHub recovery (`reconcileOrphanJobs`) runs off the dispatch tick (same interval as job poll) so long force-cancel/rerun chains do not hold the worker slot while live runners finish uploading logs.
 All jobs install from the shared `/pnpm-store` with `npm_config_package_import_method=hardlink`; cross-filesystem
 store/work-root configurations fail startup. Jobs and admission-pressure maintenance never prune the store. Only
 scheduled GC requests pnpm pruning, and only with no active leases and no running container mounting the store;

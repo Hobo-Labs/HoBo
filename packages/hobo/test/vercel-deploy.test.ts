@@ -45,7 +45,7 @@ function mockFetch(responseBody: JsonObject, status = 200) {
 			url,
 			method: init.method,
 			headers: init.headers,
-			body: init.body,
+			body: init.body ?? "",
 		});
 		const response: VercelFetchResponse = {
 			ok: status >= 200 && status < 300,
@@ -304,7 +304,7 @@ describe("selectIacProvider env-gated selection (fallback intact)", () => {
 					return { resources: {} };
 				},
 				async destroy() {
-					return undefined;
+					return null;
 				},
 				async refresh() {
 					return { drifted: false };

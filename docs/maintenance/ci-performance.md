@@ -39,7 +39,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   packages and examples, including the packages inside a pnpm-workspace group such as
   `packages/providers/<name>` (the groups are read from `pnpm-workspace.yaml`; before that, any change
   under a group read as a removed package and ran the whole workspace). Root build inputs (workspace, behavior-changing turbo config, tsconfig, biome, toolchain pins,
-  vendored sources) run the whole workspace. Scripts-only root manifest edits and root `//#` task edits
+  vendored sources) run the whole workspace. A `mise.toml` or `mise.lock` diff that only touches a tool no
+  Main-gate full-history gitleaks uses `scripts/ci/gitleaks-main-scan.mts` with a committed baseline
+  (`docs/ci/gitleaks-main-baseline.sha`) so `workflow_dispatch` scans `baseline..HEAD` without
+  `--refetch`, and raises full-scan timeouts when no baseline applies. Package task runs (`gitleaks`, `shellcheck`, `syft`; the list is explicit in the script) does not
+  ([finding 81](../ci/findings/0081-a-ci-only-tool-pin-planned-the-whole-workspace.md)). Scripts-only root manifest edits and root `//#` task edits
   stay scoped by comparing root files with the diff base; `globalDependencies` additions and removals
   run the whole workspace because they change every task's hash inputs. Missing or invalid base content
   fails closed. A lockfile-only diff runs everything, but lockfile plus package
@@ -52,25 +56,26 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   referenced by root tests resolve its declarations from `dist` on a clean worker.
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
-  now delegate workspace tests to eight bounded shards; the PR's build, lint, schema, and contract lanes
+  now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes
   get a separate job. `dependent-tests.mts` assigns each whole suite or dependent subset to exactly one
-  shard and verifies that a repo-wide run discovers every Turbo test workspace. Shards prefer the
+  shard and verifies that a repo-wide run discovers every Turbo test workspace. The validation job
+  plans the matrix (`--plan-shards=8`): one shard per four planned suites, eight for a repo-wide plan or
+  whenever the plan is missing. Each shard splits by its position in the matrix GitHub built, so the
+  list cannot drop a suite
+  ([finding 82](../ci/findings/0082-eight-test-shards-started-for-plans-of-zero-to-four-suites.md)). Shards prefer the
   validation job's same-run Turbo cache but run their complete selected plan on a cache miss. The required
   `PR impact gate` fails unless validation, every workspace shard, and the event's other required lanes
   succeed. The PR merge base is pinned from the event's base SHA and passed to every job, so a later
   target-branch update cannot silently change their test scope. `scripts/test/merge-group-gate.test.ts`
   covers failed, cancelled, skipped, and missing results.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
+  (artifact names include a per-matrix `disambiguator`, usually `matrix.shard`, so parallel workspace shards
+  do not collide on `upload-artifact`)
   from each job, so queue time and run time can be compared before and after a change. The script
   imports node builtins only, because the step also runs on jobs that skipped or failed `pnpm install`
   (an inert PR diff skips install in the off-path job). With `zod` it failed `ERR_MODULE_NOT_FOUND`
   there and turned a skipped job red (#1653's run 41583817166). `scripts/test/ci-trace.test.ts` pins
   the import rule; the hand-written parser emits byte-identical spans and summaries.
-- **Preflight puts every pinned tool on `PATH`.** It used to export only the tools it had just
-  installed. A job that started from an image built before `syft` was pinned, over a tool directory
-  that already held it, found nothing missing, exported nothing, and then failed the contract with
-  `syft not on PATH` (run 42738777301, after another branch rebuilt the shared image). The sync now
-  resolves each pinned tool and adds any directory `PATH` lacks.
 - **No serial PR jobs.** `artifact-trust` and `dev-cold-loop-gate` do their own checkout and install and
   read nothing from the PR impact gate, so they no longer `needs: pr-gate`. On a two-slot box that
   dependency left a slot idle while the gate ran, then queued both behind it. `ci-runner-image` and

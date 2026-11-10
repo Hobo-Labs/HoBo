@@ -61,10 +61,12 @@ describe("merge-group required gate", () => {
 		assert.match(workspace, /needs\.pr_gate_validation\.outputs\.merge_base/u);
 		assert.match(workspace, /needs\.pr_gate_validation\.outputs\.merge_tests/u);
 		assert.match(workspace, /needs\.pr_gate_validation\.outputs\.pr_base/u);
-		assert.match(workspace, /shard: \[0, 1, 2, 3, 4, 5, 6, 7\]/u);
+		assert.match(
+			validation,
+			/shards: \$\{\{ steps\.shard-plan\.outputs\.shards \}\}/u,
+		);
 		assert.match(workspace, /fail-fast: false/u);
 		assert.match(workspace, /scripts\/ci\/dependent-tests\.mts/u);
-		assert.match(workspace, /--shard="\$SHARD\/8"/u);
 		assert.match(affected, /needs: pr_gate_validation/u);
 		assert.match(
 			affected,
@@ -75,6 +77,33 @@ describe("merge-group required gate", () => {
 			/needs: \[pr_gate_validation, workspace_tests, pr_affected\]/u,
 		);
 		assert.match(gate, /if: \$\{\{ always\(\)/u);
+	});
+
+	it("runs the planned shards, all eight when the plan is missing, and splits by job position", () => {
+		const plan = validation.slice(
+			validation.indexOf("name: Plan workspace test shards"),
+		);
+		// Every way of not having a plan keeps the eight shards.
+		assert.match(plan, /shards='\[0, 1, 2, 3, 4, 5, 6, 7\]'/u);
+		assert.match(plan, /--plan-shards=8\)" \|\| planned=""/u);
+		assert.match(
+			plan,
+			/\[\[ "\$planned" =~ \^\\\[\[0-7\]\(,\\ \[0-7\]\)\*\\\]\$ \]\]/u,
+		);
+		assert.match(plan, /\[ "\$TESTS" = "affected" \] && \[ -n "\$BASE" \]/u);
+		assert.match(
+			workspace,
+			/shard: \$\{\{ fromJSON\(needs\.pr_gate_validation\.outputs\.shards \|\| '\[0, 1, 2, 3, 4, 5, 6, 7\]'\) \}\}/u,
+		);
+		// The split follows the matrix GitHub actually built, not the plan's
+		// own count: a list and a count could disagree and drop a suite.
+		assert.match(workspace, /SHARD: \$\{\{ strategy\.job-index \}\}/u);
+		assert.match(workspace, /SHARD_TOTAL: \$\{\{ strategy\.job-total \}\}/u);
+		assert.equal(
+			workspace.match(/--shard="\$SHARD\/\$SHARD_TOTAL"/gu)?.length,
+			2,
+		);
+		assert.doesNotMatch(workspace, /--shard="\$SHARD\/8"/u);
 	});
 
 	it("never treats a failed, cancelled, skipped, or unknown prerequisite as success", () => {
@@ -220,6 +249,22 @@ describe("merge-group required gate", () => {
 			]);
 			assert.equal(run.status, 2);
 		}
+	});
+
+	it("builds @hobo/core and @hobo/data before the bindles schema lane", () => {
+		const pkg = readFileSync("package.json", "utf8");
+		const marker = pkg.indexOf('"test:schema":');
+		assert.ok(marker >= 0, "missing root test:schema script");
+		const script = pkg.slice(marker, pkg.indexOf("\n", marker));
+		const build = script.indexOf(
+			"turbo run build --filter=@hobo/core --filter=@hobo/data",
+		);
+		const bindles = script.indexOf("--filter @hobo/bindles run test:schema");
+		assert.ok(build >= 0, "test:schema does not build core/data first");
+		assert.ok(
+			bindles > build,
+			"bindles test:schema must run after the core/data build",
+		);
 	});
 
 	it("prefers the same-run validation cache before older cache entries", () => {

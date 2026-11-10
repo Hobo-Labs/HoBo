@@ -1,5 +1,5 @@
 name: Attest GHCR release images
-description: Keyless GitHub artifact attestations (provenance + SBOM) for pushed GHCR digests.
+description: Keyless GitHub artifact attestations (provenance + SBOM) for pushed GHCR digests. Requires a checked-out workspace with root mise.toml and mise on PATH (installs locked syft itself; attest jobs run no preflight).
 inputs:
   digest-list-path:
     description: Newline-separated ghcr.io/.../name@sha256:... references
@@ -52,9 +52,43 @@ runs:
         subject-name: ${{ steps.meta.outputs.subject-name }}
         subject-digest: ${{ steps.meta.outputs.subject-digest }}
         push-to-registry: true
+    - name: Generate CycloneDX SBOM for pushed digest
+      id: sbom
+      shell: bash
+      env:
+        SUBJECT_NAME: ${{ steps.meta.outputs.subject-name }}
+        SUBJECT_DIGEST: ${{ steps.meta.outputs.subject-digest }}
+      run: |
+        set -euo pipefail
+        mise trust ./mise.toml
+        mise install --locked syft
+        sbom_path="${RUNNER_TEMP}/oci-sbom.cdx.json"
+        image_ref="${SUBJECT_NAME}@${SUBJECT_DIGEST}"
+        # GHCR can lag a few seconds in making a just-pushed digest readable;
+        # retry the scan on a bounded budget instead of failing the attest.
+        attempt=1
+        until mise exec -- syft "registry:${image_ref}" -o "cyclonedx-json=${sbom_path}"; do
+          if [ "${attempt}" -ge 12 ]; then
+            echo "::error::syft could not read ${image_ref} after ${attempt} attempts"
+            exit 1
+          fi
+          echo "syft attempt ${attempt} failed; retrying in 10s"
+          attempt=$((attempt + 1))
+          sleep 10
+        done
+        if [ ! -s "${sbom_path}" ]; then
+          echo "::error::syft produced empty SBOM at ${sbom_path}"
+          exit 1
+        fi
+        if ! grep -q '"bomFormat"[[:space:]]*:[[:space:]]*"CycloneDX"' "${sbom_path}"; then
+          echo "::error::syft SBOM at ${sbom_path} is not CycloneDX JSON"
+          exit 1
+        fi
+        echo "path=${sbom_path}" >> "$GITHUB_OUTPUT"
     - name: SBOM attestation
       uses: actions/attest-sbom@115c3be05ff3974bcbd596578934b3f9ce39bf68
       with:
         subject-name: ${{ steps.meta.outputs.subject-name }}
         subject-digest: ${{ steps.meta.outputs.subject-digest }}
+        sbom-path: ${{ steps.sbom.outputs.path }}
         push-to-registry: true
