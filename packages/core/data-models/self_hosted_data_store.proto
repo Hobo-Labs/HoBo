@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+// Self-hosted data-store assessment: what a registered compute provider has
+// declared (Capability Manifest compute features, Yard catalog profiles) and
+// the verdict derived from it. No provider id is ever a rule input.
+
+message RegisteredComputeCapabilityRecord {
+  string resource_class = 1;
+  string provider_service = 2;
+  repeated string features = 3;
+}
+
+message RegisteredCatalogRowRecord {
+  string profile = 1;
+  string product_id = 2;
+}
+
+message RegisteredHostDeclarationRecord {
+  string provider_id = 1;
+  repeated RegisteredComputeCapabilityRecord compute = 2;
+  repeated RegisteredCatalogRowRecord catalog = 3;
+}
+
+message SelfHostFacetFindingRecord {
+  string facet = 1; // long-running-compute | persistent-volume | inbound-tcp | operator-control
+  string state = 2; // declared | undeclared | absent
+  string reason = 3;
+}
+
+message SelfHostAssessmentRecord {
+  string provider_id = 1;
+  string verdict = 2; // can | cannot | undetermined
+  string resource_class = 3;
+  repeated SelfHostFacetFindingRecord findings = 4;
+  repeated string missing = 5;
+  repeated string caveats = 6;
+  string summary = 7;
+}

@@ -121,6 +121,57 @@ TypeScript row interface therefore duplicates no wire contract. Protobuf-first
 applies to the provider-catalog boundary, whose records and constraints remain
 in `data-models/`.
 
+## PostgreSQL backend catalog
+
+`POSTGRES_BACKEND_CATALOG` names every PostgreSQL backend HoBo can describe —
+Neon, Prisma Postgres, Supabase, pgEdge Cloud, PlanetScale Postgres, Azure
+Database for PostgreSQL flexible server, Azure HorizonDB (preview), Amazon RDS
+for PostgreSQL, Aurora PostgreSQL, Cloud SQL for PostgreSQL, AlloyDB, and
+self-hosted PostgreSQL — as `@hobo/core` `DataStoreCatalogEntry` records. Each
+entry answers the same fourteen offering questions (point-in-time restore,
+replicas, multi-region, multi-writer, failover, logical replication in and out,
+transaction pooler, password and identity-token auth, public CA), and every
+answer carries the vendor documentation URL it was read from and the date.
+
+```ts
+import { postgresBackendProfiles } from "@hobo/cloud-providers";
+import { resolveDataStore } from "@hobo/core";
+
+const resolved = resolveDataStore(postgresBackendProfiles(), {
+  features: ["sql.relational", "backup.pitr", "replicate.logical-subscribe"],
+  negotiation: "require",
+});
+```
+
+**This is a catalog of cited claims, not a readiness claim.** Nothing in it has
+been provisioned or connected to from this repository. A claim that could not
+be confirmed from a primary source is `unknown`, says what is missing, and is
+never matched; `postgresBackendEvidence()` reports cited-versus-unknown counts
+per entry. No prices or free-tier allowances are recorded. Amazon Aurora DSQL
+is recorded in `POSTGRES_BACKEND_EXCLUSIONS` rather than given a provider id,
+because it is PostgreSQL-compatible rather than PostgreSQL. The full table, the
+naming decision and the sources' date are in
+[`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
+
+## Self-hosted PostgreSQL: which registered providers could host it
+
+`selfHostedPostgresHosts()` answers from what each provider package declares —
+the `compute` classes of its `EQUIVALENCE_CLASSES` and the capability profiles
+of its Yard catalog — through `assessSelfHostedDataStore` in `@hobo/core`,
+which holds no list of provider names. It assesses the nine parity namespaces
+plus Netlify and Railway (equivalence classes only; no Yard catalog here):
+
+| Verdict | Providers | Why |
+|---|---|---|
+| `can` | `hetzner`, `hostinger` | The declared compute class is a VM. Hetzner also declares an attachable `bucket.filesystem/v1` volume; Hostinger does not, so its data shares the VM's lifetime (reported as a caveat). |
+| `cannot` | `cloudflare`, `vercel`, `netlify` | Nothing declared is a VM or a container (edge workers; static and HTTP compute). |
+| `undetermined` | `aws`, `azure`, `digitalocean`, `gcp`, `kubernetes`, `railway` | A container is declared, but nothing declares that it is long-running, keeps a disk, accepts TCP, or can run backup tooling. |
+
+A verdict describes the declaration, not the vendor. `undetermined` is resolved
+by enriching the provider's declaration with the facet tokens
+(`long-running`, `persistent-volume`, `tcp`, `exec`) backed by its
+documentation, never by special-casing the provider here.
+
 ## HONEST SCOPE
 
 Counts live in the parity block above; this table carries what a count cannot.

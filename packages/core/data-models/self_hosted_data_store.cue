@@ -1,0 +1,46 @@
+// CUE constraints for every protobuf type in self_hosted_data_store.proto.
+// The dependent rules pin the verdict to its evidence: `can` leaves nothing
+// missing, `undetermined` names at least one missing facet.
+
+package core
+
+#SelfHostFacet: "long-running-compute" | "persistent-volume" | "inbound-tcp" | "operator-control"
+
+#RegisteredComputeCapabilityRecord: {
+	resource_class:   string & !=""
+	provider_service: string & !=""
+	features: [...string & !=""]
+}
+
+#RegisteredCatalogRowRecord: {
+	profile:     string & !=""
+	product_id?: string & !=""
+}
+
+#RegisteredHostDeclarationRecord: {
+	provider_id: string & !=""
+	compute: [...#RegisteredComputeCapabilityRecord]
+	catalog: [...#RegisteredCatalogRowRecord]
+}
+
+#SelfHostFacetFindingRecord: {
+	facet:  #SelfHostFacet
+	state:  "declared" | "undeclared" | "absent"
+	reason: string & !=""
+}
+
+#SelfHostAssessmentRecord: {
+	provider_id:     string & !=""
+	verdict:         "can" | "cannot" | "undetermined"
+	resource_class?: string & !=""
+	findings: [...#SelfHostFacetFindingRecord]
+	missing: [...#SelfHostFacet]
+	caveats: [...string & !=""]
+	summary: string & !=""
+	if verdict == "can" {
+		missing: []
+	}
+	if verdict == "undetermined" {
+		missing: [#SelfHostFacet, ...#SelfHostFacet]
+	}
+}

@@ -109,4 +109,23 @@ export {
 	providerProfileParity,
 	type SimulatedParityLevel,
 } from "./parity.js";
+export {
+	POSTGRES_BACKEND_CATALOG,
+	POSTGRES_BACKEND_CATALOG_OBSERVED_ON,
+	POSTGRES_BACKEND_EXCLUSIONS,
+	postgresBackend,
+	postgresBackendEvidence,
+	postgresBackendProfiles,
+} from "./postgres-backends.js";
+export {
+	COMPUTE_PORT,
+	type EquivalenceClassLike,
+	registeredHostDeclaration,
+	registeredHostDeclarations,
+	SELF_HOST_PROVIDERS,
+	SELF_HOST_SOURCES,
+	type SelfHostProvider,
+	type SelfHostSource,
+	selfHostedPostgresHosts,
+} from "./self-hosted-postgres.js";
 export * as vercel from "./vercel.js";
