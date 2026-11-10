@@ -72,6 +72,11 @@ export type FleetDemand = Readonly<{
 	forkPullRequest: boolean;
 	needsDocker: boolean;
 	/**
+	 * The smallest machine the job can run on. Absent parts constrain nothing:
+	 * a job that says nothing about its size fits every machine class.
+	 */
+	machine?: Readonly<{ vcpus?: number; memoryGb?: number }>;
+	/**
 	 * The job must run on a machine nothing else shares: admission requires it
 	 * for public repositories, pull requests and isolated-only connections.
 	 */
@@ -159,6 +164,16 @@ export const FLEET_REFUSAL_CODES = {
 	},
 	"fleet.isolation": {
 		meaning: "The job needs its own machine and this provider is shared",
+		retry: "No: a fact about the provider",
+	},
+	"fleet.machine": {
+		meaning:
+			"The job needs more CPU or memory than this provider's machine class has",
+		retry: "No: a fact about the machine class",
+	},
+	"fleet.runtime": {
+		meaning:
+			"The job's reserved minutes exceed the longest the provider lets one machine run",
 		retry: "No: a fact about the provider",
 	},
 	"fleet.capacity": {
@@ -266,6 +281,24 @@ function ineligible(
 		return refuse(
 			"fleet.isolation",
 			"job requires a machine nothing else shares; this member is shared",
+		);
+	const { machine } = model;
+	const needs = demand.machine;
+	if (needs?.vcpus !== undefined && needs.vcpus > machine.vcpus)
+		return refuse(
+			"fleet.machine",
+			`job needs ${needs.vcpus} vCPU; this machine class has ${machine.vcpus}`,
+		);
+	if (needs?.memoryGb !== undefined && needs.memoryGb > machine.memoryGb)
+		return refuse(
+			"fleet.machine",
+			`job needs ${needs.memoryGb} GB; this machine class has ${machine.memoryGb}`,
+		);
+	const longest = model.capabilities?.maxRuntimeMinutes;
+	if (longest !== undefined && demand.minutes > longest)
+		return refuse(
+			"fleet.runtime",
+			`job reserves ${demand.minutes} minutes; one machine runs at most ${longest}`,
 		);
 	const ceiling = ceilingOf(member);
 	if (ceiling !== undefined && member.activeJobs >= ceiling)

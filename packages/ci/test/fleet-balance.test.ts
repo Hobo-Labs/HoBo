@@ -108,14 +108,22 @@ describe("runner financial models", () => {
 		expect(FLEET_PROVIDER_KINDS).toEqual([
 			"agent37",
 			"blacksmith",
+			"blaxel",
 			"boat",
+			"cloudflare-sandbox",
+			"daytona",
 			"depot",
+			"e2b",
+			"freestyle",
 			"github",
 			"hobo-box-worker",
 			"jog",
 			"kubernetes",
+			"lizard",
 			"local",
 			"modal",
+			"northflank",
+			"runloop",
 		]);
 	});
 
@@ -127,6 +135,37 @@ describe("runner financial models", () => {
 			);
 			expect(model.evidence.note.length, model.id).toBeGreaterThan(20);
 		}
+	});
+
+	it("record documented limits that agree with the machine they price", () => {
+		const read: string[] = [];
+		for (const { id } of RUNNER_FINANCIAL_MODELS) {
+			const model = runnerFinancialModel(id);
+			const limits = model?.capabilities;
+			if (!model || !limits) continue;
+			read.push(id);
+			expect(limits.source, id).toMatch(/^https:\/\//);
+			if (limits.maxRuntimeMinutes !== undefined)
+				expect(limits.maxRuntimeMinutes, id).toBeGreaterThan(0);
+			// The priced class cannot be larger than the provider's largest.
+			if (limits.maxMachine) {
+				expect(model.machine.vcpus, id).toBeLessThanOrEqual(
+					limits.maxMachine.vcpus,
+				);
+				expect(model.machine.memoryGb, id).toBeLessThanOrEqual(
+					limits.maxMachine.memoryGb,
+				);
+			}
+			// Only a machine with its own kernel is a machine of its own.
+			if (model.eligibility.isolated) expect(limits.isolation, id).toBe("vm");
+		}
+		expect(read).toEqual(
+			expect.arrayContaining([
+				"daytona-vm-4vcpu",
+				"e2b-hobby-4vcpu",
+				"lizard-runner-4vcpu",
+			]),
+		);
 	});
 
 	it("are all priced by the quote engine without rejection", () => {
@@ -304,6 +343,112 @@ describe("fleet eligibility", () => {
 			"fleet.disabled",
 			"fleet.capacity",
 		]);
+	});
+
+	it("keeps a job off a machine class too small for it", () => {
+		const privateJob = (machine: FleetDemand["machine"]) =>
+			balance(all, {
+				demand: {
+					...PUBLIC_ORG_PR,
+					repository: { visibility: "private", ownerType: "organization" },
+					machine,
+				},
+			});
+		// 2 vCPU / 8 GB cannot hold a 16 GB job; a 16 GB class can.
+		const memory = privateJob({ memoryGb: 16 });
+		expect(refusal(memory, "github-hosted-private")).toBe("fleet.machine");
+		expect(refusal(memory, "modal-sandbox-4vcpu")).toBe("fleet.machine");
+		expect(refusal(memory, "jog-4vcpu")).toBeUndefined();
+		const reason = memory.refusals.find(
+			(entry) => entry.memberId === "github-hosted-private",
+		)?.reason;
+		expect(reason).toBe("job needs 16 GB; this machine class has 8");
+		// CPU is checked the same way, on its own.
+		const cpu = privateJob({ vcpus: 4 });
+		expect(refusal(cpu, "github-hosted-private")).toBe("fleet.machine");
+		expect(refusal(cpu, "jog-4vcpu")).toBeUndefined();
+		// A job that states no size fits every class.
+		expect(refusal(privateJob(undefined), "github-hosted-private")).toBe(
+			undefined,
+		);
+		expect(refusal(privateJob({}), "github-hosted-private")).toBeUndefined();
+	});
+
+	it("keeps a job off a provider that would stop its machine first", () => {
+		const base = runnerFinancialModel("modal-sandbox-4vcpu");
+		if (!base) throw new Error("no model");
+		const hourLimit = (minutes: number) =>
+			balance(
+				[
+					{
+						...member("modal-sandbox-4vcpu"),
+						model: {
+							...base,
+							capabilities: {
+								isolation: "vm",
+								architectures: ["x64"],
+								maxRuntimeMinutes: 60,
+								customImage: true,
+								outboundInternet: true,
+								egressControl: false,
+								selfHostable: false,
+								source: "https://example.com/limits",
+							},
+						},
+					},
+				],
+				{ demand: { ...PUBLIC_ORG_PR, minutes } },
+			);
+		expect(hourLimit(60).selected?.memberId).toBe("modal-sandbox-4vcpu");
+		const over = hourLimit(61);
+		expect(over.selected).toBeUndefined();
+		expect(over.refusals[0]?.code).toBe("fleet.runtime");
+		expect(over.refusals[0]?.reason).toBe(
+			"job reserves 61 minutes; one machine runs at most 60",
+		);
+		// No published limit means none is assumed.
+		expect(
+			balance([member("modal-sandbox-4vcpu")], {
+				demand: { ...PUBLIC_ORG_PR, minutes: 600 },
+			}).selected?.memberId,
+		).toBe("modal-sandbox-4vcpu");
+	});
+
+	it("applies the sandbox providers' documented limits", () => {
+		const isolatedJob = (minutes: number, needsDocker = true) =>
+			balance(all, {
+				demand: {
+					...PUBLIC_ORG_PR,
+					minutes,
+					needsDocker,
+					isolationRequired: true,
+				},
+			});
+		// E2B stops a Hobby sandbox after an hour and a Pro one after a day.
+		const ninety = isolatedJob(90);
+		expect(refusal(ninety, "e2b-hobby-4vcpu")).toBe("fleet.runtime");
+		expect(refusal(ninety, "e2b-pro-4vcpu")).toBeUndefined();
+		expect(refusal(isolatedJob(60), "e2b-hobby-4vcpu")).toBeUndefined();
+		expect(refusal(isolatedJob(1441), "e2b-pro-4vcpu")).toBe("fleet.runtime");
+		// Daytona's default class shares the host's kernel; its VM class does not.
+		expect(refusal(ninety, "daytona-container-4vcpu")).toBe("fleet.isolation");
+		expect(refusal(ninety, "daytona-vm-4vcpu")).toBeUndefined();
+		// Lizard documents Docker on its runners, not inside its sandboxes.
+		expect(refusal(ninety, "lizard-sandbox-4vcpu")).toBe("fleet.docker");
+		expect(refusal(ninety, "lizard-runner-4vcpu")).toBeUndefined();
+		expect(
+			refusal(isolatedJob(90, false), "lizard-sandbox-4vcpu"),
+		).toBeUndefined();
+		// None of them has a 16 GB machine in the class the fleet prices.
+		const large = balance(all, {
+			demand: { ...PUBLIC_ORG_PR, machine: { memoryGb: 16 } },
+		});
+		for (const id of [
+			"daytona-vm-4vcpu",
+			"e2b-pro-4vcpu",
+			"lizard-runner-4vcpu",
+		] as const)
+			expect(refusal(large, id), id).toBe("fleet.machine");
 	});
 
 	it("does not open a paid plan unless that is allowed", () => {

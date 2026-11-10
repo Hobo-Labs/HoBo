@@ -45,10 +45,18 @@ A pull request on a public, organization-owned repository. The box is first beca
 | --- | --- | --- | --- | --- |
 | 1 | HoBo box worker | primary | `hobo` | $0 |
 | 2 | Blacksmith runner | overflow | `blacksmith-4vcpu-ubuntu-2404` | $0 (included minutes) |
-| 3 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
-| 4 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
-| 5 | Modal Sandbox | overflow | `hobo` | $0.15864 |
-| 6 | GitHub-hosted runner (public repository) | last-resort | `ubuntu-24.04` | $0 |
+| 3 | Lizard runner | overflow | `lizard-medium-ubuntu-2404` | $0 (included minutes) |
+| 4 | Cloudflare Sandbox | overflow | `hobo` | $0 (included minutes) |
+| 5 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
+| 6 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
+| 7 | Freestyle VM | overflow | `hobo` | $0.08816 |
+| 8 | Daytona sandbox (Linux VM) | overflow | `hobo` | $0.1104 |
+| 9 | E2B sandbox (Hobby) | overflow | `hobo` | $0.1104 |
+| 10 | E2B sandbox (Pro) | overflow | `hobo` | $0.1104 |
+| 11 | Blaxel sandbox | overflow | `hobo` | $0.1104 |
+| 12 | Modal Sandbox | overflow | `hobo` | $0.15864 |
+| 13 | Runloop Devbox | overflow | `hobo` | $0.2112 |
+| 14 | GitHub-hosted runner (public repository) | last-resort | `ubuntu-24.04` | $0 |
 
 | Not chosen | Code | Why |
 | --- | --- | --- |
@@ -56,6 +64,9 @@ A pull request on a public, organization-owned repository. The box is first beca
 | Remote actions-runner-controller scale set | `fleet.isolation` | job requires a machine nothing else shares; this member is shared |
 | Boat CI runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
 | Jog runner | `fleet.visibility` | provider does not serve public repositories |
+| Daytona sandbox (container) | `fleet.isolation` | job requires a machine nothing else shares; this member is shared |
+| Lizard sandbox (API) | `fleet.docker` | member has no Docker daemon |
+| Northflank sandbox | `fleet.docker` | member has no Docker daemon |
 | Depot runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
 | GitHub-hosted runner (private repository) | `fleet.visibility` | provider does not serve public repositories |
 
@@ -71,10 +82,18 @@ The box drops out with `fleet.capacity`. The cheapest rented provider that may s
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
 | 1 | Blacksmith runner | overflow | `blacksmith-4vcpu-ubuntu-2404` | $0 (included minutes) |
-| 2 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
-| 3 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
-| 4 | Modal Sandbox | overflow | `hobo` | $0.15864 |
-| 5 | GitHub-hosted runner (public repository) | last-resort | `ubuntu-24.04` | $0 |
+| 2 | Lizard runner | overflow | `lizard-medium-ubuntu-2404` | $0 (included minutes) |
+| 3 | Cloudflare Sandbox | overflow | `hobo` | $0 (included minutes) |
+| 4 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
+| 5 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
+| 6 | Freestyle VM | overflow | `hobo` | $0.08816 |
+| 7 | Daytona sandbox (Linux VM) | overflow | `hobo` | $0.1104 |
+| 8 | E2B sandbox (Hobby) | overflow | `hobo` | $0.1104 |
+| 9 | E2B sandbox (Pro) | overflow | `hobo` | $0.1104 |
+| 10 | Blaxel sandbox | overflow | `hobo` | $0.1104 |
+| 11 | Modal Sandbox | overflow | `hobo` | $0.15864 |
+| 12 | Runloop Devbox | overflow | `hobo` | $0.2112 |
+| 13 | GitHub-hosted runner (public repository) | last-resort | `ubuntu-24.04` | $0 |
 
 | Not chosen | Code | Why |
 | --- | --- | --- |
@@ -83,6 +102,9 @@ The box drops out with `fleet.capacity`. The cheapest rented provider that may s
 | Remote actions-runner-controller scale set | `fleet.isolation` | job requires a machine nothing else shares; this member is shared |
 | Boat CI runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
 | Jog runner | `fleet.visibility` | provider does not serve public repositories |
+| Daytona sandbox (container) | `fleet.isolation` | job requires a machine nothing else shares; this member is shared |
+| Lizard sandbox (API) | `fleet.docker` | member has no Docker daemon |
+| Northflank sandbox | `fleet.docker` | member has no Docker daemon |
 | Depot runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
 | GitHub-hosted runner (private repository) | `fleet.visibility` | provider does not serve public repositories |
 
@@ -101,16 +123,27 @@ A private repository's trunk job does not need its own machine, so the shared AR
 | 2 | Jog runner | overflow | `jog-4vcpu` | $0 (included minutes) |
 | 3 | Blacksmith runner | overflow | `blacksmith-4vcpu-ubuntu-2404` | $0 (included minutes) |
 | 4 | Depot runner | overflow | `depot-ubuntu-24.04-4` | $0 (included minutes) |
-| 5 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
-| 6 | Boat CI runner | overflow | `boat` | $0.012 |
-| 7 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
-| 8 | Modal Sandbox | overflow | `hobo` | $0.15864 |
-| 9 | GitHub-hosted runner (private repository) | last-resort | `ubuntu-24.04` | $0.12 |
+| 5 | Lizard runner | overflow | `lizard-medium-ubuntu-2404` | $0 (included minutes) |
+| 6 | Cloudflare Sandbox | overflow | `hobo` | $0 (included minutes) |
+| 7 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
+| 8 | Boat CI runner | overflow | `boat` | $0.012 |
+| 9 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
+| 10 | Freestyle VM | overflow | `hobo` | $0.08816 |
+| 11 | Daytona sandbox (Linux VM) | overflow | `hobo` | $0.1104 |
+| 12 | Daytona sandbox (container) | overflow | `hobo` | $0.1104 |
+| 13 | E2B sandbox (Hobby) | overflow | `hobo` | $0.1104 |
+| 14 | E2B sandbox (Pro) | overflow | `hobo` | $0.1104 |
+| 15 | Blaxel sandbox | overflow | `hobo` | $0.1104 |
+| 16 | Modal Sandbox | overflow | `hobo` | $0.15864 |
+| 17 | Runloop Devbox | overflow | `hobo` | $0.2112 |
+| 18 | GitHub-hosted runner (private repository) | last-resort | `ubuntu-24.04` | $0.12 |
 
 | Not chosen | Code | Why |
 | --- | --- | --- |
 | HoBo box worker | `fleet.capacity` | all 3 slots are in use |
 | Box of the agent that opened the pull request | `fleet.docker` | member has no Docker daemon |
+| Lizard sandbox (API) | `fleet.docker` | member has no Docker daemon |
+| Northflank sandbox | `fleet.docker` | member has no Docker daemon |
 | GitHub-hosted runner (public repository) | `fleet.visibility` | this machine class serves public repositories only |
 
 <!-- generated:private-trunk:end -->
@@ -124,9 +157,16 @@ The job is queued on the label `hobo`. A queued job cannot change its label, so 
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
-| 1 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
-| 2 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
-| 3 | Modal Sandbox | overflow | `hobo` | $0.15864 |
+| 1 | Cloudflare Sandbox | overflow | `hobo` | $0 (included minutes) |
+| 2 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
+| 3 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
+| 4 | Freestyle VM | overflow | `hobo` | $0.08816 |
+| 5 | Daytona sandbox (Linux VM) | overflow | `hobo` | $0.1104 |
+| 6 | E2B sandbox (Hobby) | overflow | `hobo` | $0.1104 |
+| 7 | E2B sandbox (Pro) | overflow | `hobo` | $0.1104 |
+| 8 | Blaxel sandbox | overflow | `hobo` | $0.1104 |
+| 9 | Modal Sandbox | overflow | `hobo` | $0.15864 |
+| 10 | Runloop Devbox | overflow | `hobo` | $0.2112 |
 
 | Not chosen | Code | Why |
 | --- | --- | --- |
@@ -135,8 +175,12 @@ The job is queued on the label `hobo`. A queued job cannot change its label, so 
 | Remote actions-runner-controller scale set | `fleet.label-bound` | job is already queued on hobo; this member serves hobo-arc |
 | Boat CI runner | `fleet.label-bound` | job is already queued on hobo; this member serves boat |
 | Jog runner | `fleet.label-bound` | job is already queued on hobo; this member serves jog-4vcpu |
+| Daytona sandbox (container) | `fleet.isolation` | job requires a machine nothing else shares; this member is shared |
+| Lizard sandbox (API) | `fleet.docker` | member has no Docker daemon |
+| Northflank sandbox | `fleet.docker` | member has no Docker daemon |
 | Blacksmith runner | `fleet.label-bound` | job is already queued on hobo; this member serves blacksmith-4vcpu-ubuntu-2404 |
 | Depot runner | `fleet.label-bound` | job is already queued on hobo; this member serves depot-ubuntu-24.04-4 |
+| Lizard runner | `fleet.label-bound` | job is already queued on hobo; this member serves lizard-medium-ubuntu-2404 |
 | GitHub-hosted runner (public repository) | `fleet.label-bound` | job is already queued on hobo; this member serves ubuntu-24.04 |
 | GitHub-hosted runner (private repository) | `fleet.label-bound` | job is already queued on hobo; this member serves ubuntu-24.04 |
 
@@ -152,7 +196,9 @@ A $5 budget with $5 committed. Every provider that would add to the bill is refu
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
 | 1 | Blacksmith runner | overflow | `blacksmith-4vcpu-ubuntu-2404` | $0 (included minutes) |
-| 2 | GitHub-hosted runner (public repository) | last-resort | `ubuntu-24.04` | $0 |
+| 2 | Lizard runner | overflow | `lizard-medium-ubuntu-2404` | $0 (included minutes) |
+| 3 | Cloudflare Sandbox | overflow | `hobo` | $0 (included minutes) |
+| 4 | GitHub-hosted runner (public repository) | last-resort | `ubuntu-24.04` | $0 |
 
 | Not chosen | Code | Why |
 | --- | --- | --- |
@@ -161,11 +207,20 @@ A $5 budget with $5 committed. Every provider that would add to the bill is refu
 | Remote actions-runner-controller scale set | `fleet.isolation` | job requires a machine nothing else shares; this member is shared |
 | Boat CI runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
 | Jog runner | `fleet.visibility` | provider does not serve public repositories |
+| Daytona sandbox (container) | `fleet.isolation` | job requires a machine nothing else shares; this member is shared |
+| Lizard sandbox (API) | `fleet.docker` | member has no Docker daemon |
+| Northflank sandbox | `fleet.docker` | member has no Docker daemon |
 | Depot runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
 | GitHub-hosted runner (private repository) | `fleet.visibility` | provider does not serve public repositories |
 | Agent37 VM instance | `budget.policy.exhausted` | projected commitments exceed the budget |
 | Boat sandbox (API) | `budget.policy.exhausted` | projected commitments exceed the budget |
+| Freestyle VM | `budget.policy.exhausted` | projected commitments exceed the budget |
+| Blaxel sandbox | `budget.policy.exhausted` | projected commitments exceed the budget |
+| Daytona sandbox (Linux VM) | `budget.policy.exhausted` | projected commitments exceed the budget |
+| E2B sandbox (Hobby) | `budget.policy.exhausted` | projected commitments exceed the budget |
+| E2B sandbox (Pro) | `budget.policy.exhausted` | projected commitments exceed the budget |
 | Modal Sandbox | `budget.policy.exhausted` | projected commitments exceed the budget |
+| Runloop Devbox | `budget.policy.exhausted` | projected commitments exceed the budget |
 
 <!-- generated:budget-spent:end -->
 
@@ -179,10 +234,18 @@ The box has free slots, but its [host health](/HoBo/ci/host-health/) is critical
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
 | 1 | Blacksmith runner | overflow | `blacksmith-4vcpu-ubuntu-2404` | $0 (included minutes) |
-| 2 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
-| 3 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
-| 4 | Modal Sandbox | overflow | `hobo` | $0.15864 |
-| 5 | GitHub-hosted runner (public repository) | last-resort | `ubuntu-24.04` | $0 |
+| 2 | Lizard runner | overflow | `lizard-medium-ubuntu-2404` | $0 (included minutes) |
+| 3 | Cloudflare Sandbox | overflow | `hobo` | $0 (included minutes) |
+| 4 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
+| 5 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
+| 6 | Freestyle VM | overflow | `hobo` | $0.08816 |
+| 7 | Daytona sandbox (Linux VM) | overflow | `hobo` | $0.1104 |
+| 8 | E2B sandbox (Hobby) | overflow | `hobo` | $0.1104 |
+| 9 | E2B sandbox (Pro) | overflow | `hobo` | $0.1104 |
+| 10 | Blaxel sandbox | overflow | `hobo` | $0.1104 |
+| 11 | Modal Sandbox | overflow | `hobo` | $0.15864 |
+| 12 | Runloop Devbox | overflow | `hobo` | $0.2112 |
+| 13 | GitHub-hosted runner (public repository) | last-resort | `ubuntu-24.04` | $0 |
 
 | Not chosen | Code | Why |
 | --- | --- | --- |
@@ -191,6 +254,9 @@ The box has free slots, but its [host health](/HoBo/ci/host-health/) is critical
 | Remote actions-runner-controller scale set | `fleet.isolation` | job requires a machine nothing else shares; this member is shared |
 | Boat CI runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
 | Jog runner | `fleet.visibility` | provider does not serve public repositories |
+| Daytona sandbox (container) | `fleet.isolation` | job requires a machine nothing else shares; this member is shared |
+| Lizard sandbox (API) | `fleet.docker` | member has no Docker daemon |
+| Northflank sandbox | `fleet.docker` | member has no Docker daemon |
 | Depot runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
 | GitHub-hosted runner (private repository) | `fleet.visibility` | provider does not serve public repositories |
 

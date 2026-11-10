@@ -94,6 +94,7 @@ export function parseConfiguration(json: string): Configuration {
 					"warpbuild",
 					"jog",
 					"boat",
+					"lizard",
 					"kubernetes",
 					"hobo-box-worker",
 					"local",

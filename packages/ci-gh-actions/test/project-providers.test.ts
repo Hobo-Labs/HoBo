@@ -20,6 +20,7 @@ const KINDS = [
 	"warpbuild",
 	"jog",
 	"boat",
+	"lizard",
 	"kubernetes",
 	"hobo-box-worker",
 	"vercel",
@@ -99,7 +100,7 @@ describe("shipped provider schema", () => {
 		expect(JSON.stringify(schema)).not.toContain("KubernetesScaleSet");
 	});
 
-	it("is a oneOf of ten closed kind-specific shapes", () => {
+	it("is a oneOf of eleven closed kind-specific shapes", () => {
 		const schema = ciProjectProvidersJsonSchema();
 		expect(schema.oneOf).toHaveLength(KINDS.length);
 		for (const entry of schema.oneOf ?? []) {

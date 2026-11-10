@@ -15,8 +15,11 @@ export {
 	type FleetRole,
 	type PublicRepositorySupport,
 	RUNNER_FINANCIAL_MODELS,
+	type RunnerArchitecture,
 	type RunnerBilling,
+	type RunnerCapabilities,
 	type RunnerFinancialModel,
+	type RunnerIsolation,
 	type RunnerModelId,
 	runnerFinancialModel,
 } from "./models.js";

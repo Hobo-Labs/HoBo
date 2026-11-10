@@ -29,8 +29,8 @@ queued. That splits every provider into one of two kinds.
 
 | Binding | How the job gets a runner | Providers |
 | --- | --- | --- |
-| **Inject** | The job stays on `hobo`. The relay starts a one-shot runner with that label on compute it controls. | Box worker, Vercel Sandbox, Kubernetes isolated pods; Boat sandboxes, Agent37 VMs and Modal Sandboxes once they have a host driver |
-| **Label** | The provider's GitHub App brings the runner. The job must ask for the provider's label before it is queued. | GitHub-hosted, Blacksmith, Depot, Jog, Boat CI, a remote ARC scale set, the trusted runner on an agent's own box |
+| **Inject** | The job stays on `hobo`. The relay starts a one-shot runner with that label on compute it controls. | Box worker, Vercel Sandbox, Kubernetes isolated pods; the sandbox providers (Boat, Daytona, E2B, Lizard, Northflank, Freestyle, Blaxel, Cloudflare Sandbox, Runloop, Agent37 and Modal) once they have a host driver |
+| **Label** | The provider's GitHub App brings the runner. The job must ask for the provider's label before it is queued. | GitHub-hosted, Blacksmith, Depot, Jog, Boat CI, Lizard runners, a remote ARC scale set, the trusted runner on an agent's own box |
 
 Injected capacity is the only kind that can rescue a job that is already
 waiting. Label capacity has to be chosen ahead of the queue, so the relay
@@ -43,12 +43,24 @@ machine class per provider: the rate per runner minute, whether the provider
 rounds each job up to a minute, the plan fee, the minutes included each month,
 the provider's own ceiling on jobs at once, and which repositories it serves.
 Each model names the page its numbers were read from and the day they were read.
+
+A model can also carry the machine's documented **capabilities**: what keeps
+one job apart from the provider's other tenants (its own kernel, a user-space
+kernel, or a kernel shared with other containers), the longest one machine may
+run, the largest machine one job can have, the CPU architectures, and whether
+the vendor documents an operator-supplied image, outbound internet, an egress
+allow list and self-hosting. Each names the vendor page it was read from. A
+flag is true only where the vendor documents the ability, and an absent limit
+means none is published, never that there is none. The providers read on
+2026-11-10 carry them (Daytona, E2B, Lizard, Northflank, Freestyle, Blaxel,
+Cloudflare Sandbox and Runloop); a model without them has no recorded limit.
 A figure the vendor does not print for that machine class is marked `derived`
 with its arithmetic, and a model past its `validUntil` is refused by the quote
 engine, which takes the provider out of rotation instead of trusting a stale
 price.
 
-Rates below are for the 4 vCPU class, read on 2026-11-09.
+Rates below are for the 4 vCPU class, read on 2026-11-09; the rows from Lizard
+to Runloop were read on 2026-11-10.
 
 | Provider | Binding | USD per minute | Included each month | Plan fee | Limits that matter |
 | --- | --- | --- | --- | --- | --- |
@@ -59,6 +71,14 @@ Rates below are for the 4 vCPU class, read on 2026-11-09.
 | Boat | Label or inject | 0.0006 (derived) | — | $20 | Public repositories are opt-in; 100 sandboxes |
 | Jog | Label | 0.0024 | 2,500 minutes | — | No public repositories |
 | Modal Sandbox | Inject | 0.007932 (derived) | — | — | 100 containers on Starter |
+| Lizard | Label or inject | 0.00054 | 35,185 minutes | $19 | Runners serve organizations only; Docker inside a sandbox is not documented |
+| Northflank sandbox | Inject | 0.002222 (derived) | — | — | Docker inside a sandbox and outbound network are not stated |
+| Freestyle VM | Inject | 0.004408 (derived) | — | — | 10 VMs of at most 4 vCPU / 8 GiB on the free plan; no outbound network until the firewall allows it |
+| Daytona sandbox | Inject | 0.00552 (derived) | — | — | 4 vCPU / 8 GB is the largest Linux machine; the default class is a container on a shared kernel |
+| E2B sandbox | Inject | 0.00552 (derived) | — | — on Hobby, $150 on Pro | One hour a sandbox on Hobby, 24 on Pro |
+| Blaxel sandbox | Inject | 0.00552 (derived) | — | — | Billed on memory alone; a sandbox limit of 10 on the free tier |
+| Cloudflare Sandbox | Inject | 0.0066 (derived, a ceiling) | 93 minutes | $5 | 4 vCPU / 12 GiB is the largest instance; never stopped for running too long |
+| Runloop Devbox | Inject | 0.01056 (derived) | — | — | The plan a 4 CPU size needs is not printed |
 | Blacksmith | Label | 0.008 (derived) | 1,500 minutes | — | Organizations only |
 | Depot | Label | 0.012 | 1,000 minutes | $20 | Organizations only; public repositories are opt-in |
 | GitHub-hosted, public repository | Label | 0 | — | — | 20 jobs at once on the Free plan |
@@ -84,10 +104,13 @@ out of that without special cases:
 in order and never merges them.
 
 1. **Can this member run the job at all?** Repository visibility and ownership,
-   Docker, forks, whether the job needs a machine nothing else shares, the
+   Docker, forks, whether the job needs a machine nothing else shares, whether
+   the machine class is large enough for what the job says it needs, whether
+   the provider lets one machine run for as long as the job reserves, the
    member's circuit breaker, its free slots, and whether the label the job is
    queued on can still reach it. A refusal here carries a
-   code such as `fleet.capacity` or `fleet.visibility`.
+   code such as `fleet.capacity`, `fleet.visibility`, `fleet.machine` or
+   `fleet.runtime`.
 2. **What does the job cost there?** Dispatcher v2 rates every remaining member
    through the pricing engine and ranks them by incremental billed amount. A
    pricing rejection carries the engine's code behind a `pricing.` prefix.
@@ -164,10 +187,15 @@ would post for a new offer.
   `hobo` or `hobo-trunk`, so publishing the table changes nothing until a
   workflow indexes it. That change also needs jobs that run off the box: today
   they assume its toolchain image and mounts.
-- **Host drivers for Agent37, Modal and Boat sandboxes.** They are modelled and
-  balanced, but the relay cannot start a runner on them, so they are not
-  accepted as policy provider kinds. Running the Actions runner on Agent37 is
-  untested.
+- **Host drivers for the sandbox providers** (Agent37, Modal, Boat, Daytona,
+  E2B, Lizard, Northflank, Freestyle, Blaxel, Cloudflare Sandbox and Runloop).
+  They are modelled and balanced, but the relay
+  cannot start a runner on them, so they are not accepted as policy provider
+  kinds. Running the Actions runner on any of them is untested. Lizard's
+  runners are a label provider and are accepted as the kind `lizard`.
+- **A job's own size.** `fleet.machine` compares a job's stated CPU and memory
+  need with the machine class, but the relay does not yet state one for a
+  routed job, so the check constrains only callers that supply it.
 - **Circuit breakers for rented members.** The box daemon marks its own offers
   unhealthy while its host is critically short of CPU, memory, disk or inodes
   (see *Host health* in the runner queue guide). Nothing yet opens a breaker for

@@ -81,6 +81,8 @@ Why a runner provider was not chosen for a job. [Fleet balancing](/HoBo/ci/fleet
 | `fleet.docker` | The job needs Docker and the provider has none | No: a fact about the provider |
 | `fleet.fork` | The provider does not run jobs from forks | No: a fact about the provider |
 | `fleet.isolation` | The job needs its own machine and this provider is shared | No: a fact about the provider |
+| `fleet.machine` | The job needs more CPU or memory than this provider's machine class has | No: a fact about the machine class |
+| `fleet.runtime` | The job's reserved minutes exceed the longest the provider lets one machine run | No: a fact about the provider |
 | `fleet.capacity` | Every slot is in use | Yes, when a slot frees |
 | `fleet.agreement.new-denied` | Placing the job would open a new paid plan | No: open the plan, or allow it |
 | `fleet.payer-budget` | The job would exceed the operator's ceiling for that provider account | No: raise the ceiling or wait for the period |

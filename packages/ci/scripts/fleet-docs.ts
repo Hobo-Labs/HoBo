@@ -239,6 +239,55 @@ function eligibility(): string {
 	);
 }
 
+const ISOLATION_WORDS = {
+	vm: "own kernel (VM)",
+	"sandboxed-container": "container on a user-space kernel",
+	container: "container on a shared kernel",
+} as const;
+
+function duration(minutes: number | undefined): string {
+	if (minutes === undefined) return "no published limit";
+	if (minutes < 120 || minutes % 60 !== 0) return `${minutes} min`;
+	const hours = minutes / 60;
+	return hours % 24 === 0 && hours > 24 ? `${hours / 24} days` : `${hours} h`;
+}
+
+/** What each machine can do, for every model whose limits have been read. */
+function capabilities(): string {
+	return table(
+		[
+			"Provider",
+			"Kept apart by",
+			"Longest run",
+			"Largest machine",
+			"CPU",
+			"Own image",
+			"Internet out",
+			"Egress allow list",
+			"Self-hostable",
+		],
+		RUNNER_FINANCIAL_MODELS.flatMap((model: RunnerFinancialModel) => {
+			const limits = model.capabilities;
+			if (!limits) return [];
+			return [
+				[
+					`[${model.displayName}](${limits.source})`,
+					ISOLATION_WORDS[limits.isolation],
+					duration(limits.maxRuntimeMinutes),
+					limits.maxMachine
+						? `${limits.maxMachine.vcpus} vCPU, ${limits.maxMachine.memoryGb} GB`
+						: "not published",
+					limits.architectures?.join(", ") ?? "not published",
+					yesNo(limits.customImage),
+					yesNo(limits.outboundInternet),
+					yesNo(limits.egressControl),
+					yesNo(limits.selfHostable),
+				],
+			];
+		}),
+	);
+}
+
 function sources(): string {
 	return RUNNER_FINANCIAL_MODELS.map(
 		(model) =>
@@ -336,6 +385,7 @@ export function renderFleetDocs() {
 		"ci/providers.md": {
 			providers: providers(),
 			eligibility: eligibility(),
+			capabilities: capabilities(),
 			pricing: pricing(),
 			sources: sources(),
 		},

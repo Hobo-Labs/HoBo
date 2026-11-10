@@ -60,7 +60,7 @@ Pre-release, like the rest of HoBo; the [Trail map](/HoBo/guide/status/) lists w
 |---|---|
 | Box admission on `hobo` and `hobo-trunk` | A workflow that reads the route table |
 | Provider models, pricing and fleet balancing | Counting label-routed jobs against the budget |
-| Route table publishing (off by default) | Host drivers for Agent37, Modal and Boat sandboxes |
+| Route table publishing (off by default) | Host drivers for the eleven sandbox providers, from Agent37 to Runloop |
 | Box host health | Health for rented providers |
 
 ## Related
