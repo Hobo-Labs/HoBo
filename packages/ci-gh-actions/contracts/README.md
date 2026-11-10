@@ -21,6 +21,7 @@ GitHub or vendor verification, a published Pact broker, or a live runner pass.
 | --- | --- |
 | `github-app-boundary.pact.json` | Signed App JWT exchange, installation credentials, dispatch and JIT registration, error and redirect handling |
 | `relay-boundary.pact.json` | Signed webhook intake and single-use authenticated JIT claims |
+| `http-boundary.pact.json` | The shared Fetch handler behind the Node adapter: committed and duplicate deliveries, an unsigned delivery, readiness with its engine map, and the JIT claim envelope. Every host of the relay serves this handler |
 | `onboarding-boundary.pact.json` | App/installation/repository discovery, reviewed setup branch and pull request, merged-source verification and protected bridge connection |
 | `control-plane-boundary.pact.json` | Account authentication and scopes, revisioned policy, stored setup operations and lease reconciliation |
 | `scoped-budget-signals.pact.json` | Current-period reset, crossing, recovery, ordered replay, and refusal of foreign-period or legacy recovery facts over local HTTP |

@@ -1,4 +1,3 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import {
 	type Configuration,
@@ -29,6 +28,7 @@ import { heldRoutingOptions } from "./held-routing.js";
 import { verifyIngressForward } from "./ingress-forward.js";
 import type { IdentityVerifier } from "./oidc.js";
 import type { LeaseStore } from "./store.js";
+import { verifyWebhookSignature } from "./webhook-signature.js";
 
 const JobWebhook = z.object({
 	action: z.enum(["queued", "in_progress", "completed"]),
@@ -156,12 +156,9 @@ export class Relay {
 		) {
 			return this.processWebhook(raw, event);
 		}
-		const expected = createHmac("sha256", this.options.webhookSecret)
-			.update(raw)
-			.digest();
 		if (
-			!/^sha256=[a-f0-9]{64}$/.test(signature) ||
-			!timingSafeEqual(expected, Buffer.from(signature.slice(7), "hex"))
+			verifyWebhookSignature(this.options.webhookSecret, raw, signature) !==
+			"valid"
 		)
 			throw new Error("invalid webhook signature");
 		return this.processWebhook(raw, event);

@@ -76,6 +76,33 @@ replay cannot undo a newer transition. CAS conflicts are retried by the journal
 consumer, and `reconcile()` applies rule changes to existing signal state.
 Already running jobs retain their reservation and finish on their chosen host.
 
+## One HTTP layer
+
+Every host of the relay serves the same Fetch handler, `createRelayHandler`
+(`src/http-handler.ts`). A Node server or function entrypoint puts
+`createNodeRelayHandler` (`src/node-http.ts`) in front of it. The handler owns:
+
+| Route | Behaviour |
+| --- | --- |
+| `GET /healthz`, `GET /readyz` | Process liveness and readiness, each with an `engines` map (`gh-actions` plus any stub engine the host declares) |
+| `GET /engines/{stub}/healthz`, `/readyz` | Health of an engine the host reports but this relay does not serve |
+| `/engines/gh-actions/…` | The same routes as the root |
+| `POST /github/webhooks` | Signed delivery intake; the delivery is committed before it is acknowledged |
+| `POST /v1/leases/{id}/jit` | Runner claim with a GitHub OIDC bearer |
+| `/v1/accounts/self/…`, `/v2/accounts/self/…`, `/v1/app-registration/…` | Handed to the host's control plane |
+
+A delivery is authenticated by GitHub's `X-Hub-Signature-256`, or, when the host
+configures an ingress forward secret, by `X-Hobo-Ingress-Forward` from
+[`createWebhookIngressHandler`](src/webhook-ingress.ts). Both are the same
+HMAC-SHA256 over the exact body bytes and are checked by one function,
+`verifyWebhookSignature` in `src/webhook-signature.ts`; nothing else in the
+package compares a webhook signature. With `trustProxy`, a request whose
+`X-Forwarded-Proto` is not `https` is refused with 403.
+
+`contracts/http-boundary.pact.json` pins this boundary and is executed by
+`contracts/http-boundary.provider.test.ts` through the Node adapter;
+`test/http-handler.test.ts` covers the engine mount, the forward and the proxy check.
+
 ## Deploy the relay
 
 For **`hobo ci serve`** in a checkout (bind/public origin split, ingress HMAC,

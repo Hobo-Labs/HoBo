@@ -9,8 +9,10 @@ import {
 	createHostedControlPlane,
 	createHostedRelayRuntime,
 	createQueuedJobRepair,
+	createRelayHandler,
 	createWebhookRepair,
 	HostedRelay,
+	type HostedRelayApplication,
 	PostgresQueuedJobRepairClaims,
 	PostgresWebhookRepairClaims,
 } from "@hobo/ci-gh-actions";
@@ -27,10 +29,6 @@ import {
 	denyDirectSandboxEgress,
 	isolatedExecutionWiring,
 } from "./execution-wiring.js";
-import {
-	createVercelRelayHandler,
-	type HostedRelayApplication,
-} from "./handler.js";
 import { createOwnerControlDelegation } from "./owner-control.js";
 import { createQueueWakeupHandler } from "./queue-forwarding.js";
 import { runtimeDiagnostic } from "./runtime-diagnostic.js";
@@ -320,7 +318,7 @@ export async function createVercelApplication(options: {
 			secret: required(env, "CRON_SECRET"),
 			run: (message) => worker.run(message),
 		});
-		const handler = createVercelRelayHandler({
+		const handler = createRelayHandler({
 			application: withWakeup(
 				{
 					...runtime,

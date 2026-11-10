@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { expect, it } from "vitest";
 import { z } from "zod";
-import { createVercelRelayHandler } from "../src/handler.js";
-import { createNodeRelayHandler } from "../src/node-handler.js";
+import { createRelayHandler } from "../src/http-handler.js";
+import { createNodeRelayHandler } from "../src/node-http.js";
 
 it("executes every declared GitHub and client interaction over the Node HTTP boundary", async () => {
 	// SAFETY: this is a test-only, hand-authored Pact fixture; response bodies
@@ -25,11 +25,11 @@ it("executes every declared GitHub and client interaction over the Node HTTP bou
 		}[];
 	};
 	expect(pact.consumer.name).toBe("GitHubActionsAndHoboCiClient");
-	expect(pact.provider.name).toBe("HoboCiVercelHttp");
+	expect(pact.provider.name).toBe("HoboCiRelayHttp");
 	expect(pact.interactions).toHaveLength(6);
 	let persisted = 0;
 	let claims = 0;
-	const handle = createVercelRelayHandler({
+	const handle = createRelayHandler({
 		webhookSecret: "a-webhook-test-secret-with-32-bytes",
 		application: {
 			async ingestWebhook(input) {

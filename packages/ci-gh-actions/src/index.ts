@@ -28,6 +28,14 @@ export {
 	resolveEnvironmentEngines,
 } from "./engine-relay-routing.js";
 export {
+	createFailureLog,
+	describeFailure,
+	type FailureEvents,
+	failureRoute,
+	reportRelayFailure,
+	setRelayFailureEvents,
+} from "./failure-log.js";
+export {
 	createGithubAppTransport,
 	type GithubAppTransport,
 	type GithubTransport,
@@ -49,6 +57,12 @@ export {
 	type HostedInboxStore,
 	type HostedRelayTickTiming,
 } from "./hosted-runtime.js";
+export {
+	createRelayHandler,
+	type HostedRelayApplication,
+	type StubEngine,
+	type VerifiedWebhook,
+} from "./http-handler.js";
 export { signIngressForward, verifyIngressForward } from "./ingress-forward.js";
 export {
 	isIsolatedContainerOffer,
@@ -162,6 +176,7 @@ export {
 } from "./job-durations.js";
 export { createJobPollAdmissionWorker } from "./job-poll-admission.js";
 export { startRelayFromEnvironment } from "./main.js";
+export { createNodeRelayHandler } from "./node-http.js";
 export {
 	createGithubOidcVerifier,
 	type GithubClaims,
