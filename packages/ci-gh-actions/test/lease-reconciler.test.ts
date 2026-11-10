@@ -684,11 +684,10 @@ describe("worker lease reconciliation", () => {
 		);
 	});
 
-	it("stops and removes a worker container that has no lease", async () => {
+	it("leaves a running worker container that has no lease until it exits", async () => {
 		const store = storeWith([]);
 		const stop = vi.fn(async () => undefined);
 		const remove = vi.fn(async () => undefined);
-		const log = vi.fn();
 		const reconciler = createWorkerLeaseReconciler({
 			store,
 			docker: {
@@ -705,26 +704,12 @@ describe("worker lease reconciliation", () => {
 			workerAccountId: "worker-a",
 			workerMemoryMb: 6_144,
 			now: () => NOW,
-			log,
 		});
 
 		await reconciler.reconcile();
 
-		expect(stop).toHaveBeenCalledWith(
-			"hobo-00000000-0000-4000-8000-000000000099",
-			"c".repeat(64),
-		);
-		expect(remove).toHaveBeenCalledWith(
-			"hobo-00000000-0000-4000-8000-000000000099",
-			"c".repeat(64),
-		);
-		expect(log).toHaveBeenCalledWith(
-			"hobo_ci_container_orphan_removed",
-			expect.objectContaining({
-				containerId: "c".repeat(64),
-				name: "hobo-00000000-0000-4000-8000-000000000099",
-			}),
-		);
+		expect(stop).not.toHaveBeenCalled();
+		expect(remove).not.toHaveBeenCalled();
 	});
 
 	it("keeps a lease whose container is running", async () => {

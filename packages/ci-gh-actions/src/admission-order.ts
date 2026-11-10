@@ -77,8 +77,7 @@ function mergeGroupSortKey(
 ): MergeGroupSortKey {
 	if (!headSha || headSha.length < 40)
 		return { position: Number.POSITIVE_INFINITY, stale: false };
-	if (!snapshot)
-		return { position: Number.POSITIVE_INFINITY, stale: false };
+	if (!snapshot) return { position: Number.POSITIVE_INFINITY, stale: false };
 	const position = snapshot.byHeadSha.get(headSha);
 	if (position !== undefined) return { position, stale: false };
 	return { position: Number.POSITIVE_INFINITY, stale: true };
@@ -166,7 +165,9 @@ export function createAdmissionOrder(
 					const ga = mergeGroupSortKey(a.key.headSha, mqSnapshot);
 					const gb = mergeGroupSortKey(b.key.headSha, mqSnapshot);
 					if (ga.stale !== gb.stale) return ga.stale ? 1 : -1;
-					if (ga.position !== gb.position) return ga.position - gb.position;
+					if (mqSnapshot && ga.position !== gb.position)
+						return ga.position - gb.position;
+					return a.jobId - b.jobId;
 				}
 				if (a.key.startedAtMs !== b.key.startedAtMs)
 					return a.key.startedAtMs - b.key.startedAtMs;
@@ -188,6 +189,35 @@ export function createAdmissionOrder(
 		event: async (ref: AdmissionRef) => (await keyFor(ref)).event,
 		headSha: async (ref: AdmissionRef) => (await keyFor(ref)).headSha,
 		mergeGroupKey: async (ref: AdmissionRef) => {
+			const key = await keyFor(ref);
+			if (key.event !== "merge_group") return undefined;
+			return key.headSha ?? `run:${ref.runId}`;
+		},
+		mergeGroupKeyForLease: async (lease: {
+			installationId: number;
+			repository: string;
+			originalRunId: number;
+			jobId: number;
+			actualJobId: number;
+			labels?: readonly string[];
+		}) => {
+			const ref: AdmissionRef =
+				lease.labels === undefined
+					? {
+							installationId: lease.installationId,
+							repository: lease.repository,
+							runId: lease.originalRunId,
+							jobId:
+								lease.actualJobId > 0 ? lease.actualJobId : lease.jobId,
+						}
+					: {
+							installationId: lease.installationId,
+							repository: lease.repository,
+							runId: lease.originalRunId,
+							jobId:
+								lease.actualJobId > 0 ? lease.actualJobId : lease.jobId,
+							labels: lease.labels,
+						};
 			const key = await keyFor(ref);
 			if (key.event !== "merge_group") return undefined;
 			return key.headSha ?? `run:${ref.runId}`;

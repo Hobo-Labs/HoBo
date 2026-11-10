@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import type {
 	ContainerResourceWeights,
+	DockerContainer,
 	DockerDriver,
 	IsolatedContainerSpec,
 } from "./docker-driver.js";
@@ -95,6 +96,48 @@ function blkioWeightUnsupported(message: string): boolean {
 	return /blkio|block i\/o|io\.weight|unknown flag|not supported/iu.test(
 		message,
 	);
+}
+
+function parseDockerPsJson(stdout: string): DockerContainer[] {
+	return (stdout.trim() ? stdout.trim().split("\n") : []).map((line) => {
+		const parsed = dockerContainer.parse(JSON.parse(line));
+		const labels: Record<string, string> = {};
+		for (const entry of (parsed.Labels ?? "").split(",")) {
+			const eq = entry.indexOf("=");
+			if (eq <= 0) continue;
+			labels[entry.slice(0, eq)] = entry.slice(eq + 1);
+		}
+		const timeoutRaw = labels["hobo.ci/timeout-ms"];
+		const timeoutMs =
+			timeoutRaw !== undefined && /^\d+$/u.test(timeoutRaw)
+				? Number(timeoutRaw)
+				: undefined;
+		const createdAtMs = parsed.CreatedAt
+			? Date.parse(parsed.CreatedAt.replace(/ UTC$/u, " Z"))
+			: Number.NaN;
+		const name = parsed.Names.replace(/^\//u, "");
+		const containerId = parsed.ID;
+		const state = parsed.State;
+		if (
+			timeoutMs !== undefined &&
+			Number.isFinite(createdAtMs) &&
+			Object.keys(labels).length > 0
+		)
+			return { name, containerId, state, createdAtMs, timeoutMs, labels };
+		if (timeoutMs !== undefined && Number.isFinite(createdAtMs))
+			return { name, containerId, state, createdAtMs, timeoutMs };
+		if (Number.isFinite(createdAtMs) && Object.keys(labels).length > 0)
+			return { name, containerId, state, createdAtMs, labels };
+		if (timeoutMs !== undefined && Object.keys(labels).length > 0)
+			return { name, containerId, state, timeoutMs, labels };
+		if (Number.isFinite(createdAtMs))
+			return { name, containerId, state, createdAtMs };
+		if (timeoutMs !== undefined)
+			return { name, containerId, state, timeoutMs };
+		if (Object.keys(labels).length > 0)
+			return { name, containerId, state, labels };
+		return { name, containerId, state };
+	});
 }
 
 /** Operator-owned Docker engine on a free VM; not invoked from Vercel serverless. */
@@ -306,45 +349,47 @@ export function createCliDockerDriver(options: {
 				],
 				{ env, timeout: 30_000, maxBuffer: 16 * 1024 * 1024 },
 			);
-			return (stdout.trim() ? stdout.trim().split("\n") : []).map((line) => {
-				const parsed = dockerContainer.parse(JSON.parse(line));
-				const labels: Record<string, string> = {};
-				for (const entry of (parsed.Labels ?? "").split(",")) {
-					const eq = entry.indexOf("=");
-					if (eq <= 0) continue;
-					labels[entry.slice(0, eq)] = entry.slice(eq + 1);
+			return parseDockerPsJson(stdout);
+		},
+		async listWorkerContainers() {
+			const merged = new Map<string, DockerContainer>();
+			const { stdout: labeled } = await exec(
+				docker,
+				[
+					"ps",
+					"-a",
+					"--no-trunc",
+					"--filter",
+					"label=hobo.ci/isolated=1",
+					"--format",
+					"json",
+				],
+				{ env, timeout: 30_000, maxBuffer: 16 * 1024 * 1024 },
+			);
+			for (const container of parseDockerPsJson(labeled))
+				merged.set(container.containerId, container);
+			try {
+				const { stdout } = await exec(
+					docker,
+					[
+						"ps",
+						"-a",
+						"--no-trunc",
+						"--filter",
+						"name=hobo-",
+						"--format",
+						"json",
+					],
+					{ env, timeout: 30_000, maxBuffer: 16 * 1024 * 1024 },
+				);
+				for (const container of parseDockerPsJson(stdout)) {
+					if (container.name.startsWith("hobo-"))
+						merged.set(container.containerId, container);
 				}
-				const timeoutRaw = labels["hobo.ci/timeout-ms"];
-				const timeoutMs =
-					timeoutRaw !== undefined && /^\d+$/u.test(timeoutRaw)
-						? Number(timeoutRaw)
-						: undefined;
-				const createdAtMs = parsed.CreatedAt
-					? Date.parse(parsed.CreatedAt.replace(/ UTC$/u, " Z"))
-					: Number.NaN;
-				const name = parsed.Names.replace(/^\//u, "");
-				const containerId = parsed.ID;
-				const state = parsed.State;
-				if (
-					timeoutMs !== undefined &&
-					Number.isFinite(createdAtMs) &&
-					Object.keys(labels).length > 0
-				)
-					return { name, containerId, state, createdAtMs, timeoutMs, labels };
-				if (timeoutMs !== undefined && Number.isFinite(createdAtMs))
-					return { name, containerId, state, createdAtMs, timeoutMs };
-				if (Number.isFinite(createdAtMs) && Object.keys(labels).length > 0)
-					return { name, containerId, state, createdAtMs, labels };
-				if (timeoutMs !== undefined && Object.keys(labels).length > 0)
-					return { name, containerId, state, timeoutMs, labels };
-				if (Number.isFinite(createdAtMs))
-					return { name, containerId, state, createdAtMs };
-				if (timeoutMs !== undefined)
-					return { name, containerId, state, timeoutMs };
-				if (Object.keys(labels).length > 0)
-					return { name, containerId, state, labels };
-				return { name, containerId, state };
-			});
+			} catch {
+				/* legacy worker containers may lack the isolated label */
+			}
+			return [...merged.values()];
 		},
 		async create(spec: IsolatedContainerSpec) {
 			return withBlkioFallback(spec, async (includeBlkio) => {

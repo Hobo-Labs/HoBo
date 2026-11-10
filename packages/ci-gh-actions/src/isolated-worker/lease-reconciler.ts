@@ -419,23 +419,10 @@ export function createWorkerLeaseReconciler(options: {
 				protectedNames.has(container.name)
 			)
 				continue;
-			if (reconcileOptions.draining && container.state === "running") continue;
-			const staleTimedOut =
-				container.state === "running" &&
-				container.timeoutMs !== undefined &&
-				container.createdAtMs !== undefined &&
-				containerPastHardTimeout(
-					container.createdAtMs,
-					container.timeoutMs,
-					now(),
-				);
+			if (container.state === "running") continue;
 			try {
-				if (container.state === "running")
-					await options.docker.stop(container.name, container.containerId);
 				await options.docker.remove(container.name, container.containerId);
-				const event = staleTimedOut
-					? "hobo_ci_container_timeout_enforced"
-					: "hobo_ci_container_orphan_removed";
+				const event = "hobo_ci_container_orphan_removed";
 				if (container.timeoutMs !== undefined) {
 					options.log?.(event, {
 						name: container.name,

@@ -1,3 +1,5 @@
+import type { Lease } from "@hobo/ci";
+import { leaseOccupiesWorkerResources } from "../lease-resource-occupancy.js";
 import type {
 	WorkerMemoryClassName,
 	WorkerMemoryConfig,
@@ -10,6 +12,10 @@ export type MemoryLease = Readonly<{
 	memoryClass: string;
 	state: string;
 	sandboxName?: string;
+	sandboxSessionId?: string;
+	sandboxStage?: string;
+	provider?: string;
+	pipelineId?: string;
 }>;
 export type MemoryAdmissionLog = (
 	event: "hobo_ci_memory_admission_wait" | "hobo_ci_memory_admitted",
@@ -82,9 +88,11 @@ export function createWorkerMemoryAdmission(
 	}
 
 	function launchingLeases(activeLeases: readonly MemoryLease[]) {
-		return activeLeases.filter(
-			(lease) => lease.state !== "reserved" || (lease.sandboxName ?? "") !== "",
-		);
+		return activeLeases.filter((lease) => {
+			// SAFETY: MemoryLease carries the occupancy fields `leaseOccupiesWorkerResources` reads.
+			const full = lease as Lease;
+			return leaseOccupiesWorkerResources(full);
+		});
 	}
 
 	function inUseMb(

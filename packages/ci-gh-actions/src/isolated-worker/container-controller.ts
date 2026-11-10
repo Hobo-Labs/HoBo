@@ -1676,6 +1676,11 @@ export function createIsolatedContainerController(options: {
 						);
 						eagerEmptyExitBackoff.add(lease.id);
 					}
+					try {
+						lease = await markStopRequested(lease);
+					} catch {
+						if (running) return;
+					}
 					pendingExitEvidence.set(
 						lease.id,
 						await readRunnerExitEvidence(

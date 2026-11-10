@@ -110,6 +110,16 @@ ensure_deps_build_headroom() {
     echo "deps rebuild headroom recovered after builder prune (inodes=${iavail} bytes=${avail})"
     return 0
   fi
+  if [[ -f "$root/scripts/ci-runner-image-gc.mts" ]]; then
+    keep_tag="${HOBO_CI_DEPS_GC_KEEP_TAG:-hobo-ci-deps:local}"
+    echo "deps rebuild evicting unused hobo-ci-deps images (keep=${keep_tag})"
+    node --import tsx "$root/scripts/ci-runner-image-gc.mts" "$keep_tag" || true
+    read -r iavail avail < <(sample_docker_headroom "$sample_path")
+    if (( iavail >= inode_headroom && avail >= byte_headroom )); then
+      echo "deps rebuild headroom recovered after deps image gc (inodes=${iavail} bytes=${avail})"
+      return 0
+    fi
+  fi
   echo "refusing deps rebuild: Docker data root still below headroom after builder prune (inodes=${iavail} need ${inode_headroom}; bytes=${avail} need ${byte_headroom})" >&2
   exit 1
 }

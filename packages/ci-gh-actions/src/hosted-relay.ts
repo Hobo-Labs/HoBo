@@ -42,13 +42,17 @@ import {
 	type JobPickupMetadataCache,
 	observeJobPickupMetadata,
 } from "./job-pickup.js";
-import type { IdentityVerifier } from "./oidc.js";
 import {
 	activeLeaseCoversJob,
 	hasOutstandingBoxCustody,
 	leaseIdFromBoxRunnerName,
 	runnerCustody,
 } from "./job-runner-custody.js";
+import {
+	leaseOccupiesMergeGroupCap,
+	leaseOccupiesWorkerResources,
+} from "./lease-resource-occupancy.js";
+import type { IdentityVerifier } from "./oidc.js";
 import {
 	type RunnerLabel,
 	servedRunnerLabel,
@@ -380,12 +384,7 @@ export class HostedRelay {
 		const active = await this.options.store.activeLeases();
 		for (const lease of active) {
 			if (
-				!activeLeaseCoversJob(
-					lease,
-					job.repositoryId,
-					job.id,
-					job.runAttempt,
-				)
+				!activeLeaseCoversJob(lease, job.repositoryId, job.id, job.runAttempt)
 			)
 				continue;
 			await this.options.isolatedHost?.reconcile(lease.id, true);
@@ -925,8 +924,8 @@ export class HostedRelay {
 			labels: job.labels,
 		});
 		const active = await this.options.store.activeLeases();
-		const memoryActive = active.filter(
-			(lease) => lease.state !== "reserved" || (lease.sandboxName ?? "") !== "",
+		const memoryActive = active.filter((lease) =>
+			leaseOccupiesWorkerResources(lease),
 		);
 		const memoryGeneral = this.options.memoryAdmission
 			? await this.generalLeaseIds()
@@ -943,12 +942,8 @@ export class HostedRelay {
 		const activeMergeGroups = new Set<string>();
 		if (mergeGroupLimit !== undefined)
 			for (const lease of active) {
-				const groupKey = await this.admissionOrder.mergeGroupKey({
-					installationId: lease.installationId,
-					repository: lease.repository,
-					runId: lease.originalRunId,
-					jobId: lease.jobId,
-				});
+				if (!leaseOccupiesMergeGroupCap(lease)) continue;
+				const groupKey = await this.admissionOrder.mergeGroupKeyForLease(lease);
 				if (groupKey !== undefined) activeMergeGroups.add(groupKey);
 			}
 		let general: Set<string> | undefined;

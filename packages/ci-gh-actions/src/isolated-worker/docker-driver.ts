@@ -71,6 +71,8 @@ export interface DockerDriver {
 		runAsUser: string,
 	): Promise<{ exitCode: number }>;
 	list?(label: string): Promise<readonly DockerContainer[]>;
+	/** Labeled worker containers plus legacy `hobo-*` names missing the label. */
+	listWorkerContainers?(): Promise<readonly DockerContainer[]>;
 	containerExists?(name: string): Promise<boolean>;
 	create(spec: IsolatedContainerSpec): Promise<IsolatedContainerHandle>;
 	start(name: string, containerId: string): Promise<void>;

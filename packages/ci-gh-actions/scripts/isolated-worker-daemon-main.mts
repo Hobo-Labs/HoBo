@@ -452,8 +452,12 @@ try {
 		},
 		log,
 	});
+	const listWorkerContainers = () =>
+		docker.listWorkerContainers
+			? docker.listWorkerContainers()
+			: docker.list!("hobo.ci/isolated=1");
 	try {
-		for (const container of await docker.list()) {
+		for (const container of await listWorkerContainers()) {
 			if (container.state !== "running" || !container.name.startsWith("hobo-"))
 				continue;
 			log("hobo_ci_worker_adopt_running_container", {
@@ -857,7 +861,7 @@ try {
 				await worker.reconcileOrphanJobs();
 				if (reconciliation.inventoryKnown) await runtime.tick({ admit: false });
 				try {
-					const listed = await docker.list();
+					const listed = await listWorkerContainers();
 					runningWorkerContainers = listed.filter(
 						(c) => c.state === "running" && c.name.startsWith("hobo-"),
 					).length;
