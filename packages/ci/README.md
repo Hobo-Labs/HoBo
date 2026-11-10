@@ -414,6 +414,15 @@ are published list prices read by hand, each with a source and an expiry; they
 are not live provider billing. See
 [CI fleet balancing](../../docs/design/ci-fleet-balancing.md).
 
+The docs site's **HoBo CI** section (`site/src/pages/ci/`) shows these decisions
+as worked examples. Its provider tables and rankings are generated from this
+module by `scripts/fleet-docs.ts` and checked by `test/fleet-docs.test.ts`;
+after changing a model or a rule, regenerate them:
+
+```sh
+node --import tsx packages/ci/scripts/fleet-docs.ts
+```
+
 Authoring does not itself create provider Connections or publish policy. A
 managed host must authorize each Connection, store operator intent separately
 from dynamic budget/health eligibility, and expose a server-side desired-policy

@@ -20,4 +20,4 @@ Placement and delivery are **standing decisions**. Deploy, migrate, and progress
 
 ## Related
 
-[Control plane](/HoBo/architecture/control-plane/) · [Trails](/HoBo/primitives/trails/) · [Harness reference](/HoBo/reference/harness/) · [Operations](/HoBo/operations/)
+[HoBo CI](/HoBo/ci/) (where CI jobs run) · [Control plane](/HoBo/architecture/control-plane/) · [Trails](/HoBo/primitives/trails/) · [Harness reference](/HoBo/reference/harness/) · [Operations](/HoBo/operations/)

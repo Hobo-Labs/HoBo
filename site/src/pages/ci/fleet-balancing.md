@@ -1,0 +1,251 @@
+---
+layout: ../../layouts/Docs.astro
+title: Fleet balancing
+description: "How HoBo CI picks a runner provider for a job: eligibility, price from the pricing engine, then the budget policy, shown on worked decisions."
+---
+
+# Fleet balancing
+
+Given a job and the providers you have connected, the balancer returns every provider that could take the job, best first, and a coded reason for each one that could not. Nothing is chosen silently.
+
+It asks three questions in order and never merges them:
+
+1. **Can this provider run the job at all?** Visibility, ownership, Docker, forks, isolation, health, free slots, and whether the label the job is queued on can still reach it.
+2. **What does the job cost there?** Each remaining provider is rated by the pricing engine and ranked by what the job adds to this month's bill.
+3. **Does the budget policy allow that cost?** Every ranked provider is evaluated against the policy, with the same measurements CI admission uses.
+
+## Tiers come before price
+
+Each provider sits in a tier, and a cheaper provider in a later tier never jumps the queue.
+
+| Tier | Meaning | Default members |
+|---|---|---|
+| `primary` | Capacity you already pay for | The box, an agent's own box |
+| `overflow` | Rented capacity, ranked by price | A remote ARC scale set, Boat, Agent37, Jog, Modal, Blacksmith, Depot |
+| `last-resort` | Considered only when nothing else is admitted | GitHub-hosted runners |
+
+GitHub-hosted runners are last by default even on a public repository, where they are free. Policy can move a provider to another tier. Providers that cost the same keep the order you listed them in.
+
+## Worked decisions
+
+Every table below is the balancer's real output for a 20-minute job, with the whole catalog connected, a three-slot box, and every paid plan already open. They are regenerated from the code, so they change when the models or the rules do.
+
+### A pull request while the box has room
+
+A pull request on a public, organization-owned repository. The box is first because it is already paid for. Everything after it is what the job would fall to.
+
+<!-- generated:box-free:start -->
+
+| Rank | Member | Tier | Job asks for | Adds to the bill |
+| --- | --- | --- | --- | --- |
+| 1 | HoBo box worker | primary | `hobo` | $0 |
+| 2 | Blacksmith runner | overflow | `blacksmith-4vcpu-ubuntu-2404` | $0 (included minutes) |
+| 3 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
+| 4 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
+| 5 | Modal Sandbox | overflow | `hobo` | $0.15864 |
+| 6 | GitHub-hosted runner (public repository) | last-resort | `ubuntu-24.04` | $0 |
+
+| Not chosen | Code | Why |
+| --- | --- | --- |
+| Box of the agent that opened the pull request | `fleet.docker` | member has no Docker daemon |
+| Remote actions-runner-controller scale set | `fleet.isolation` | job requires a machine nothing else shares; this member is shared |
+| Boat CI runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
+| Jog runner | `fleet.visibility` | provider does not serve public repositories |
+| Depot runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
+| GitHub-hosted runner (private repository) | `fleet.visibility` | provider does not serve public repositories |
+
+<!-- generated:box-free:end -->
+
+### The same pull request when the box is full
+
+The box drops out with `fleet.capacity`, and the cheapest rented provider that may serve a public repository takes the job. Blacksmith is first because the job fits inside its included minutes.
+
+<!-- generated:box-full:start -->
+
+| Rank | Member | Tier | Job asks for | Adds to the bill |
+| --- | --- | --- | --- | --- |
+| 1 | Blacksmith runner | overflow | `blacksmith-4vcpu-ubuntu-2404` | $0 (included minutes) |
+| 2 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
+| 3 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
+| 4 | Modal Sandbox | overflow | `hobo` | $0.15864 |
+| 5 | GitHub-hosted runner (public repository) | last-resort | `ubuntu-24.04` | $0 |
+
+| Not chosen | Code | Why |
+| --- | --- | --- |
+| HoBo box worker | `fleet.capacity` | all 3 slots are in use |
+| Box of the agent that opened the pull request | `fleet.docker` | member has no Docker daemon |
+| Remote actions-runner-controller scale set | `fleet.isolation` | job requires a machine nothing else shares; this member is shared |
+| Boat CI runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
+| Jog runner | `fleet.visibility` | provider does not serve public repositories |
+| Depot runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
+| GitHub-hosted runner (private repository) | `fleet.visibility` | provider does not serve public repositories |
+
+<!-- generated:box-full:end -->
+
+### A push to main on a private repository, box full
+
+A private repository's trunk job does not need its own machine, so the shared ARC cluster is allowed and wins: it is rented-tier capacity that adds nothing to the bill.
+
+<!-- generated:private-trunk:start -->
+
+| Rank | Member | Tier | Job asks for | Adds to the bill |
+| --- | --- | --- | --- | --- |
+| 1 | Remote actions-runner-controller scale set | overflow | `hobo-arc` | $0 |
+| 2 | Jog runner | overflow | `jog-4vcpu` | $0 (included minutes) |
+| 3 | Blacksmith runner | overflow | `blacksmith-4vcpu-ubuntu-2404` | $0 (included minutes) |
+| 4 | Depot runner | overflow | `depot-ubuntu-24.04-4` | $0 (included minutes) |
+| 5 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
+| 6 | Boat CI runner | overflow | `boat` | $0.012 |
+| 7 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
+| 8 | Modal Sandbox | overflow | `hobo` | $0.15864 |
+| 9 | GitHub-hosted runner (private repository) | last-resort | `ubuntu-24.04` | $0.12 |
+
+| Not chosen | Code | Why |
+| --- | --- | --- |
+| HoBo box worker | `fleet.capacity` | all 3 slots are in use |
+| Box of the agent that opened the pull request | `fleet.docker` | member has no Docker daemon |
+| GitHub-hosted runner (public repository) | `fleet.visibility` | this machine class serves public repositories only |
+
+<!-- generated:private-trunk:end -->
+
+### A job that is already waiting
+
+The job is already queued on the label `hobo`. GitHub does not let a queued job change its label, so every label provider is out with `fleet.label-bound` and only injected capacity can still reach it.
+
+<!-- generated:queued:start -->
+
+| Rank | Member | Tier | Job asks for | Adds to the bill |
+| --- | --- | --- | --- | --- |
+| 1 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
+| 2 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
+| 3 | Modal Sandbox | overflow | `hobo` | $0.15864 |
+
+| Not chosen | Code | Why |
+| --- | --- | --- |
+| HoBo box worker | `fleet.capacity` | all 3 slots are in use |
+| Box of the agent that opened the pull request | `fleet.label-bound` | job is already queued on hobo; this member serves hobo-local-host |
+| Remote actions-runner-controller scale set | `fleet.label-bound` | job is already queued on hobo; this member serves hobo-arc |
+| Boat CI runner | `fleet.label-bound` | job is already queued on hobo; this member serves boat |
+| Jog runner | `fleet.label-bound` | job is already queued on hobo; this member serves jog-4vcpu |
+| Blacksmith runner | `fleet.label-bound` | job is already queued on hobo; this member serves blacksmith-4vcpu-ubuntu-2404 |
+| Depot runner | `fleet.label-bound` | job is already queued on hobo; this member serves depot-ubuntu-24.04-4 |
+| GitHub-hosted runner (public repository) | `fleet.label-bound` | job is already queued on hobo; this member serves ubuntu-24.04 |
+| GitHub-hosted runner (private repository) | `fleet.label-bound` | job is already queued on hobo; this member serves ubuntu-24.04 |
+
+<!-- generated:queued:end -->
+
+### The budget is spent
+
+A $5 budget with $5 already committed. Every provider that would add to the bill is refused by the budget policy, and the job falls through to capacity that costs nothing.
+
+<!-- generated:budget-spent:start -->
+
+| Rank | Member | Tier | Job asks for | Adds to the bill |
+| --- | --- | --- | --- | --- |
+| 1 | Blacksmith runner | overflow | `blacksmith-4vcpu-ubuntu-2404` | $0 (included minutes) |
+| 2 | GitHub-hosted runner (public repository) | last-resort | `ubuntu-24.04` | $0 |
+
+| Not chosen | Code | Why |
+| --- | --- | --- |
+| HoBo box worker | `fleet.capacity` | all 3 slots are in use |
+| Box of the agent that opened the pull request | `fleet.docker` | member has no Docker daemon |
+| Remote actions-runner-controller scale set | `fleet.isolation` | job requires a machine nothing else shares; this member is shared |
+| Boat CI runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
+| Jog runner | `fleet.visibility` | provider does not serve public repositories |
+| Depot runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
+| GitHub-hosted runner (private repository) | `fleet.visibility` | provider does not serve public repositories |
+| Agent37 VM instance | `budget.policy.exhausted` | projected commitments exceed the budget |
+| Boat sandbox (API) | `budget.policy.exhausted` | projected commitments exceed the budget |
+| Modal Sandbox | `budget.policy.exhausted` | projected commitments exceed the budget |
+
+<!-- generated:budget-spent:end -->
+
+### The box is short of a resource
+
+The box has free slots, but its [host health](/HoBo/ci/host-health/) is critical. It is skipped with `fleet.unhealthy` and the job goes to the next provider.
+
+<!-- generated:box-unhealthy:start -->
+
+| Rank | Member | Tier | Job asks for | Adds to the bill |
+| --- | --- | --- | --- | --- |
+| 1 | Blacksmith runner | overflow | `blacksmith-4vcpu-ubuntu-2404` | $0 (included minutes) |
+| 2 | Agent37 VM instance | overflow | `hobo` | $0.01044 |
+| 3 | Boat sandbox (API) | overflow | `hobo` | $0.012 |
+| 4 | Modal Sandbox | overflow | `hobo` | $0.15864 |
+| 5 | GitHub-hosted runner (public repository) | last-resort | `ubuntu-24.04` | $0 |
+
+| Not chosen | Code | Why |
+| --- | --- | --- |
+| HoBo box worker | `fleet.unhealthy` | member's circuit breaker is open |
+| Box of the agent that opened the pull request | `fleet.docker` | member has no Docker daemon |
+| Remote actions-runner-controller scale set | `fleet.isolation` | job requires a machine nothing else shares; this member is shared |
+| Boat CI runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
+| Jog runner | `fleet.visibility` | provider does not serve public repositories |
+| Depot runner | `fleet.visibility` | public repositories are off at this provider until the owner turns them on |
+| GitHub-hosted runner (private repository) | `fleet.visibility` | provider does not serve public repositories |
+
+<!-- generated:box-unhealthy:end -->
+
+## Refusal codes
+
+| Code | Meaning |
+|---|---|
+| `fleet.disabled` | The provider is not enabled in policy |
+| `fleet.unhealthy` | The provider's host is critically short of a resource |
+| `fleet.capacity` | Every slot is in use |
+| `fleet.label-bound` | The job is already queued on a label this provider does not serve |
+| `fleet.visibility` | The provider does not serve this repository's visibility, or public repositories are not turned on there |
+| `fleet.organization-only` | The provider serves organization-owned repositories only |
+| `fleet.docker` | The job needs Docker and the provider has none |
+| `fleet.fork` | The provider does not run jobs from forks |
+| `fleet.isolation` | The job needs its own machine and this provider is shared |
+| `fleet.agreement.new-denied` | Placing the job would open a new paid plan |
+| `fleet.payer-budget` | The job would exceed your ceiling for that provider account |
+| `fleet.account-budget` | The job would exceed the account's ceiling |
+| `pricing.` + a code | The pricing engine could not price the job, for example an expired rate |
+| `budget.` + a code | The budget policy refused the cost, for example `budget.policy.exhausted` |
+
+## Call it yourself
+
+The balancer is a pure function in `@hobo/ci`. It does no I/O and reads no clock.
+
+```ts
+import {
+  balanceFleet,
+  fleetAccountExposure,
+  fleetBudgetPolicy,
+  fleetMembersFromAccount,
+} from "@hobo/ci";
+
+const decision = balanceFleet({
+  members: fleetMembersFromAccount(account, leases, { poolLabel: "hobo" }),
+  demand: {
+    id: "acme/app:1001:1:1",
+    minutes: 20,
+    repository: { visibility: "public", ownerType: "organization" },
+    forkPullRequest: false,
+    needsDocker: true,
+    isolationRequired: true,
+  },
+  policy: fleetBudgetPolicy(account),
+  ...fleetAccountExposure(account, leases),
+  now: new Date().toISOString(),
+  allowNewProviderAgreements: false,
+});
+
+decision.selected; // the best admitted provider, or undefined: the job waits
+decision.ranking; // every admitted provider, best first
+decision.refusals; // [{ memberId, code, reason }]
+```
+
+`fleetMembersFromAccount` builds the fleet from the offers an account really has connected. The rate, included minutes and ceiling come from the offer, which is what was observed for that account. The provider's model supplies what does not vary by account: rounding, plan fee, eligibility and tier.
+
+## What is not done
+
+- **Admission of a queued job is unchanged.** A job already waiting on `hobo` is still admitted by the existing box, then ARC, then GitHub order. The balancer decides ahead of the queue.
+- **Agent37, Modal and Boat sandboxes have no host driver.** They appear in these decisions because they are modelled, but a relay cannot start a runner on them yet.
+- **Only the box reports its health.** Nothing yet marks a rented provider unhealthy after failed launches.
+
+## Related
+
+[Providers](/HoBo/ci/providers/) · [Route table](/HoBo/ci/route-table/) · [Host health](/HoBo/ci/host-health/)
