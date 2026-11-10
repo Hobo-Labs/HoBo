@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkerImage } from "../src/isolated-worker/image-gc.js";
+import { createHostCapacityTracker } from "../src/isolated-worker/host-capacity.js";
 import {
 	createNodeWorkerStorageFileSystem,
 	createWorkerStorageAdmission,
@@ -50,6 +51,7 @@ function usage(percent: number): WorkerFileSystemStats {
 	return {
 		blocks: 100,
 		bfree: 100 - percent,
+		bsize: 4096,
 		files: 100,
 		ffree: 100 - percent,
 	};
@@ -66,6 +68,8 @@ function harness(
 		existingContainers?: ReadonlySet<string>;
 		images?: readonly WorkerImage[];
 		jobInodes?: Readonly<{ workRoot: number; dockerDataRoot: number }>;
+		safetyMarginInodes?: number;
+		capacityTracker?: ReturnType<typeof createHostCapacityTracker>;
 		pnpmStoreIdle?: () => Promise<boolean>;
 		prune?: WorkerStoragePnpmStore["prune"];
 		now?: () => number;
@@ -119,6 +123,8 @@ function harness(
 		pnpmStore,
 		pnpmStoreIdle: input.pnpmStoreIdle,
 		jobInodes: input.jobInodes ?? { workRoot: 0, dockerDataRoot: 0 },
+		safetyMarginInodes: input.safetyMarginInodes,
+		capacityTracker: input.capacityTracker,
 		scheduleRetiredSweep,
 		now: input.now,
 		log: input.log,
@@ -137,7 +143,7 @@ function harness(
 }
 
 function freeInodes(ffree: number): WorkerFileSystemStats {
-	return { blocks: 100, bfree: 100, files: 1_000_000, ffree };
+	return { blocks: 100, bfree: 100, bsize: 4096, files: 1_000_000, ffree };
 }
 
 describe("worker storage admission", () => {
@@ -159,7 +165,7 @@ describe("worker storage admission", () => {
 			root: DOCKER_ROOT,
 			freeInodes: 500_000,
 			outstandingInodes: 370_000,
-			requiredInodes: 370_000,
+			requiredInodes: 740_000,
 			activeGrants: 1,
 		});
 	});
@@ -216,6 +222,65 @@ describe("worker storage admission", () => {
 		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
 		nowMs = 60_001;
 		await expect(h.admission.admit([], "job-2")).resolves.toBe(true);
+	});
+
+	it("refuses admission before pruning when projected inodes exceed free minus the safety margin", async () => {
+		const h = harness({
+			before: freeInodes(390_000),
+			jobInodes: { workRoot: 180_000, dockerDataRoot: 170_000 },
+			safetyMarginInodes: 50_000,
+		});
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(false);
+		expect(h.docker.pruneBuilder).not.toHaveBeenCalled();
+	});
+
+	it("refuses admission after external processes drain inodes between scheduler ticks", async () => {
+		let nowMs = 0;
+		const tracker = createHostCapacityTracker({
+			now: () => nowMs,
+			minInodeMargin: 25_000,
+			maxInodeMargin: 300_000,
+		});
+		const log = vi.fn();
+		const h = harness({
+			before: freeInodes(900_000),
+			jobInodes: { workRoot: 180_000, dockerDataRoot: 170_000 },
+			capacityTracker: tracker,
+			log,
+		});
+		await h.admission.probeHostCapacity([]);
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
+		h.setStats(freeInodes(520_000));
+		nowMs += 10_000;
+		await h.admission.probeHostCapacity([
+			{ id: "lease-1", sandboxName: "", jobId: "job-1" },
+		]);
+		await expect(
+			h.admission.admit(
+				[{ id: "lease-1", sandboxName: "", jobId: "job-1" }],
+				"job-2",
+			),
+		).resolves.toBe(false);
+		expect(
+			log.mock.calls.filter(([event]) => event === "hobo_ci_host_capacity")
+				.length,
+		).toBeGreaterThanOrEqual(2);
+	});
+
+	it("bin-packs standard jobs from live headroom", async () => {
+		const h = harness({
+			before: freeInodes(900_000),
+			jobInodes: { workRoot: 180_000, dockerDataRoot: 170_000 },
+			safetyMarginInodes: 50_000,
+		});
+		await expect(h.admission.binPackSlots()).resolves.toBe(2);
+		await expect(
+			h.admission.admit([], {
+				jobId: "job-1",
+				reserve: { workRoot: 180_000, dockerDataRoot: 170_000 },
+			}),
+		).resolves.toBe(true);
+		await expect(h.admission.binPackSlots()).resolves.toBe(1);
 	});
 
 	it("allows zero to disable both inode reservations", async () => {

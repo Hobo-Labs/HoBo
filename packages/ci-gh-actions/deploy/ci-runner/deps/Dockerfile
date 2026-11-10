@@ -17,6 +17,7 @@ FROM fetch AS install
 ARG SOURCE_DATE_EPOCH=0
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 WORKDIR /opt/actions-runner/_hobo_work/HoBo/HoBo
+ENV npm_config_package_import_method=hardlink
 RUN --network=none --mount=type=cache,id=hobo-pnpm-store,target=/pnpm-store,uid=1000,gid=1000 \
   pnpm install --frozen-lockfile --offline --ignore-scripts \
   && pnpm rebuild @ast-grep/cli @bufbuild/buf esbuild protobufjs \

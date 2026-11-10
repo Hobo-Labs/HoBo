@@ -26,8 +26,11 @@ import {
 	createPollIngestCoalesce,
 	createPollLogFilter,
 	createRetiredWorkDirectorySweeper,
+	createHostCapacityTracker,
 	createWorkerMemoryAdmission,
 	createWorkerStorageAdmission,
+	DEPS_BUILD_ADMISSION_ID,
+	storageReserveForDepsBuild,
 	type DepsImageProcessRequest,
 	defaultDepsRoot,
 	describeWaitingJobs,
@@ -354,6 +357,9 @@ try {
 		log,
 	});
 	retiredSweep.trigger();
+	const hostCapacityTracker = createHostCapacityTracker({
+		minInodeMargin: inodeReserve("HOBO_CI_STORAGE_INODE_SAFETY_MARGIN", 25_000),
+	});
 	const storageAdmission = createWorkerStorageAdmission({
 		dockerDataRoot: await docker.dataRoot(),
 		workRoot,
@@ -385,6 +391,11 @@ try {
 			workRoot: inodeReserve("HOBO_CI_WORKER_WORKDIR_INODES", 200_000),
 			dockerDataRoot: inodeReserve("HOBO_CI_WORKER_CONTAINER_INODES", 170_000),
 		},
+		safetyMarginInodes: inodeReserve(
+			"HOBO_CI_STORAGE_INODE_SAFETY_MARGIN",
+			25_000,
+		),
+		capacityTracker: hostCapacityTracker,
 		log,
 	});
 	await storageAdmission.reap();
@@ -455,6 +466,9 @@ try {
 		workRoot,
 		workFs,
 		scheduleRetiredSweep: retiredSweep.trigger,
+		storageBinPackSlots: () => storageAdmission.binPackSlots(),
+		onStorageGrantRelease: (lease) =>
+			storageAdmission.release(String(lease.jobId)),
 	});
 	let liveWorkerLeaseIds = (await worker.reconcileLeases()).liveLeaseIds;
 	await worker.reconcileOrphanJobs();
@@ -520,10 +534,21 @@ try {
 			processes: { run: runDepsProcess },
 			idleForBuild: async () => {
 				try {
-					return (await store.activeLeases()).length === 0;
+					return (
+						(await store.activeLeases()).length === 0 &&
+						(await storageAdmission.canFit(storageReserveForDepsBuild()))
+					);
 				} catch {
 					return false;
 				}
+			},
+			onBuildSlot: {
+				acquire: () =>
+					storageAdmission.admit([], {
+						jobId: DEPS_BUILD_ADMISSION_ID,
+						reserve: storageReserveForDepsBuild(),
+					}),
+				release: () => storageAdmission.release(DEPS_BUILD_ADMISSION_ID),
 			},
 			onEvent: ({ event, ...fields }) => log(event, fields),
 		});
@@ -607,6 +632,8 @@ try {
 
 	const reconcileAndLaunch = singleFlight(async () => {
 		const workerReconcileStartedAt = Date.now();
+		const activeForCapacity = await store.activeLeases();
+		await storageAdmission.probeHostCapacity(storageLeases(activeForCapacity));
 		const reconciliation = await worker.reconcileLeases();
 		workerReconcileMs = Date.now() - workerReconcileStartedAt;
 		liveWorkerLeaseIds = reconciliation.liveLeaseIds;

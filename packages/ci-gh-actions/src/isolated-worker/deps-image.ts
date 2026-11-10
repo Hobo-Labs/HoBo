@@ -78,6 +78,11 @@ export interface DepsImageEnsurerOptions {
 	readonly processes: DepsImageProcessPort;
 	/** When false, a local build defers with backoff instead of overlapping job leases. */
 	readonly idleForBuild?: () => Promise<boolean>;
+	/** Reserves inode headroom for the build, released in a finally block. */
+	readonly onBuildSlot?: Readonly<{
+		acquire: () => Promise<boolean>;
+		release: () => void;
+	}>;
 	readonly now?: () => number;
 	readonly initialRetryMs?: number;
 	readonly maxRetryMs?: number;
@@ -125,27 +130,34 @@ export function createDepsImageEnsurer(options: DepsImageEnsurerOptions) {
 					if (options.idleForBuild && !(await options.idleForBuild())) {
 						return { status: "backoff", retryMs: idleBuildRetryMs };
 					}
+					if (options.onBuildSlot && !(await options.onBuildSlot.acquire())) {
+						return { status: "backoff", retryMs: idleBuildRetryMs };
+					}
 					action = "build";
-					await options.processes.run({
-						command: "nice",
-						args: [
-							"-n",
-							"10",
-							"ionice",
-							"-c",
-							"2",
-							"-n",
-							"7",
-							"bash",
-							"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
-							"--no-promote",
-						],
-						cwd: options.root,
-						env: {
-							...process.env,
-							HOBO_CI_DEPS_BUILD_MEMORY_MB: String(options.buildMemoryMb),
-						},
-					});
+					try {
+						await options.processes.run({
+							command: "nice",
+							args: [
+								"-n",
+								"10",
+								"ionice",
+								"-c",
+								"2",
+								"-n",
+								"7",
+								"bash",
+								"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
+								"--no-promote",
+							],
+							cwd: options.root,
+							env: {
+								...process.env,
+								HOBO_CI_DEPS_BUILD_MEMORY_MB: String(options.buildMemoryMb),
+							},
+						});
+					} finally {
+						options.onBuildSlot?.release();
+					}
 				}
 			}
 			await options.processes.run({

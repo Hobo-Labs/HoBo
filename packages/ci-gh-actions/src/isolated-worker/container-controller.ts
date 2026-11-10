@@ -282,6 +282,9 @@ export function createIsolatedContainerController(options: {
 	workRoot?: string;
 	workFs?: WorkerStorageFileSystem;
 	scheduleRetiredSweep?: () => void;
+	/** Bin-pack concurrent jobs from live free inodes (caps configured slots). */
+	storageBinPackSlots?: () => Promise<number>;
+	onStorageGrantRelease?: (lease: Lease) => void;
 	/** Only this repository may use the HoBo deps layer; empty depsImage disables it. */
 	depsRepository?: string;
 	depsImage?: string;
@@ -482,6 +485,7 @@ export function createIsolatedContainerController(options: {
 	const workDirectory = (leaseId: string) =>
 		options.workRoot ? join(options.workRoot, `hobo-${leaseId}`) : undefined;
 	const cleanupWorkDirectory = async (lease: Lease) => {
+		options.onStorageGrantRelease?.(lease);
 		const directory = workDirectory(lease.id);
 		if (!directory || !options.workFs || !options.scheduleRetiredSweep) return;
 		const startedAt = Date.now();
@@ -933,7 +937,11 @@ export function createIsolatedContainerController(options: {
 				const initial = await options.store.get(id);
 				if (initial?.state !== "reserved") return;
 				// Slot full: leave the lease reserved; the next relay tick retries it.
-				if ((await liveContainers(id)) >= slots) return;
+				const packed =
+					options.storageBinPackSlots === undefined
+						? slots
+						: Math.min(slots, await options.storageBinPackSlots());
+				if ((await liveContainers(id)) >= packed) return;
 				let auth: Awaited<ReturnType<typeof authorize>>;
 				try {
 					auth = await authorize(id);

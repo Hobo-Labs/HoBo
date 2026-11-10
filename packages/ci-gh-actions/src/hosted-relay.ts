@@ -877,6 +877,10 @@ export class HostedRelay {
 		let trunkWaiting = false;
 		let rankZeroWaiting = false;
 		let storageRefused = false;
+		if (
+			this.options.storageAdmission?.isAdmissionOpen?.() === false
+		)
+			storageRefused = true;
 		const waitingTrunk = new Set<string>();
 		for (const job of pending) {
 			if (this.queueExpired(job.queueDeadlineAt)) {
@@ -953,7 +957,7 @@ export class HostedRelay {
 						sandboxName: lease.sandboxName,
 						jobId: String(lease.jobId),
 					})),
-					storageJobId,
+					{ jobId: storageJobId, jobName: job.name },
 				);
 				if (!admitted) {
 					storageRefused = true;
@@ -1109,6 +1113,7 @@ export class HostedRelay {
 						this.now(),
 						preflightRevision,
 					);
+					this.options.storageAdmission?.release(String(candidate.jobId));
 					continue;
 				}
 				if (isolatedHost) {
