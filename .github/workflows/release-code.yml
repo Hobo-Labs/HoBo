@@ -22,6 +22,7 @@ on:
       - "scripts/test/code-test-build-artifact.test.ts"
       - "scripts/test/release-sparse-cone.test.ts"
       - "scripts/test/release-oci-affected.test.ts"
+      - "scripts/test/release-oci-attest-contract.test.ts"
       - "scripts/test/release-oci-image-contract.test.ts"
       - "scripts/test/stage-release-oci-app.test.ts"
       - ".github/actions/release-oci-attest/**"
@@ -91,7 +92,24 @@ jobs:
       - name: Shell syntax (changed scripts)
         run: pnpm run lint:shell:changed -- --base=HEAD^1
       - name: npm scope map + OCI manifest contract
-        run: pnpm exec vitest run scripts/test/code-test-build-artifact.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/stage-release-oci-app.test.ts
+        id: release_contract_tests
+        run: >-
+          node --no-warnings scripts/ci/run-job-command-report.mts
+          --label release-contract-vitest --
+          pnpm exec vitest run
+          scripts/test/code-test-build-artifact.test.ts
+          scripts/test/release-oci-affected.test.ts
+          scripts/test/release-oci-attest-contract.test.ts
+          scripts/test/release-oci-image-contract.test.ts
+          scripts/test/release-sparse-cone.test.ts
+          scripts/test/stage-release-oci-app.test.ts
+      - name: Upload release contract vitest log
+        if: failure() && steps.release_contract_tests.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vitest-release-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/hobo-ci-job-logs/release-contract-vitest.log
+          if-no-files-found: ignore
       - name: Lint @hobo/code
         run: pnpm --filter @hobo/code lint
       - name: Turbo cache
