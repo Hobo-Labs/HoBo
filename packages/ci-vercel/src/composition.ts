@@ -29,6 +29,10 @@ import {
 	denyDirectSandboxEgress,
 	isolatedExecutionWiring,
 } from "./execution-wiring.js";
+import {
+	mcpWaitCeilingMs,
+	RELAY_FUNCTION_MAX_DURATION_SECONDS,
+} from "./function-limits.js";
 import { createOwnerControlDelegation } from "./owner-control.js";
 import { createQueueWakeupHandler } from "./queue-forwarding.js";
 import { runtimeDiagnostic } from "./runtime-diagnostic.js";
@@ -324,6 +328,8 @@ export async function createVercelApplication(options: {
 			publicOrigin: url.origin,
 			sessions: "none",
 			cursorSecret: secret,
+			// The function's own duration limit decides how long a wait may be.
+			waitMaxMs: mcpWaitCeilingMs(RELAY_FUNCTION_MAX_DURATION_SECONDS),
 		});
 		const handler = createRelayHandler({
 			application: withWakeup(
