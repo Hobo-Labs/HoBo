@@ -142,7 +142,9 @@ belong on one node until per-node allowances exist (increment 5).
 **What is lost with the relay.** Webhook-driven pickup (nodes poll every 5 s
 instead), the hosted account API behind `hobo ci`, and the Vercel Sandbox host.
 The `@hobo/ci-vercel` package stays in the repository until those are either
-re-homed or deleted; it is no longer deployed.
+re-homed or deleted. Taking the deployment itself out of service is an
+operator step: pause the Vercel project and remove the GitHub App's webhook
+URL, which otherwise keeps delivering to it.
 
 ## Watching capacity and availability
 
