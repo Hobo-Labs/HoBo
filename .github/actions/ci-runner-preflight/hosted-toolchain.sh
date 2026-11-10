@@ -32,6 +32,38 @@ if [ -f mise.toml ] && [ -f scripts/lib/mise-path.sh ] && [ -f "${mise_version_f
 	echo "${HOME}/.local/bin" >>"${GITHUB_PATH}"
 	mise bin-paths >>"${GITHUB_PATH}"
 	echo "hosted toolchain: $(mise --version), tools from mise.lock"
+	# The headless shell the image bakes in, at the same path and from the same
+	# pins (the image's Dockerfile is their one source). Only jobs that run
+	# browser tests ask for it: it is a download the others do not need.
+	if [ "${HOBO_CI_HOSTED_BROWSER:-}" = "true" ]; then
+		dockerfile=packages/ci-gh-actions/deploy/ci-runner/base/Dockerfile
+		pin() { sed -n "s/^ARG $1=//p" "${dockerfile}"; }
+		revision="$(pin PLAYWRIGHT_CHROMIUM_REVISION)"
+		case "$(uname -m)" in
+		aarch64 | arm64)
+			url="https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${revision}/chromium-headless-shell-linux-arm64.zip"
+			digest="$(pin PLAYWRIGHT_HEADLESS_SHELL_SHA256_ARM64)"
+			;;
+		*)
+			url="https://cdn.playwright.dev/builds/cft/$(pin PLAYWRIGHT_CHROMIUM_VERSION)/linux64/chrome-headless-shell-linux64.zip"
+			digest="$(pin PLAYWRIGHT_HEADLESS_SHELL_SHA256_X64)"
+			;;
+		esac
+		browsers=/opt/pw-browsers
+		dir="${browsers}/chromium_headless_shell-${revision}"
+		if [ ! -f "${dir}/INSTALLATION_COMPLETE" ]; then
+			archive="$(mktemp)"
+			curl -fsSL "${url}" -o "${archive}"
+			echo "${digest}  ${archive}" | sha256sum -c -
+			sudo mkdir -p "${dir}"
+			sudo chown -R "$(id -u):$(id -g)" "${browsers}"
+			unzip -q "${archive}" -d "${dir}"
+			touch "${dir}/INSTALLATION_COMPLETE" "${dir}/DEPENDENCIES_VALIDATED"
+			rm -f "${archive}"
+		fi
+		echo "PLAYWRIGHT_BROWSERS_PATH=${browsers}" >>"${GITHUB_ENV}"
+		echo "hosted toolchain: headless shell ${revision} at ${dir}"
+	fi
 	exit 0
 fi
 

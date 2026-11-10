@@ -177,7 +177,9 @@ limit, and the same line gives the wait it saw.
 
 On a GitHub-hosted machine a job runs the same steps with no deps layer and a
 cold pnpm store unless main has saved one, so installs are slower and the
-tests are not. The cold dev loop is the one job that differs: with no worker
+tests are not. Jobs that run package tests download the image's pinned headless
+shell first, and one storage test that needs the image's user is skipped
+there. The cold dev loop is the one job that differs: with no worker
 image, it runs in a network namespace whose only interface is loopback.
 Repository variable `HOBO_CI_ROUTE=fleet` turns routing off. The runbook is
 "Runner routing" in [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
