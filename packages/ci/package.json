@@ -45,9 +45,13 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.db.json",
     "lint": "biome check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:generate": "node --import tsx db/tooling/cli.mts generate",
+    "db:check": "node --import tsx db/tooling/cli.mts check",
+    "db:migrate": "node --import tsx db/tooling/cli.mts migrate",
+    "db:verify": "node --import tsx db/tooling/cli.mts verify"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
@@ -59,6 +63,9 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
-    "@types/pg": "8.15.5"
+    "@hobo/adapter-drizzle": "workspace:*",
+    "@types/pg": "8.15.5",
+    "drizzle-kit": "0.31.11",
+    "drizzle-orm": "0.45.4"
   }
 }

@@ -1,9 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
-import { withWakeup } from "../src/composition.js";
 import type {
 	HostedRelayApplication,
 	VerifiedWebhook,
-} from "../src/handler.js";
+} from "@hobo/ci-gh-actions";
+import { describe, expect, it, vi } from "vitest";
+import { withWakeup } from "../src/composition.js";
 
 const delivery: VerifiedWebhook = {
 	deliveryId: "1",

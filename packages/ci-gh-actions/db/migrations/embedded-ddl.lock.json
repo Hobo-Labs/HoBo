@@ -1,0 +1,99 @@
+{
+	"contract": "hobo.ci.embedded-ddl-lock/v1",
+	"provenOn": "PostgreSQL 16.15",
+	"sha256": "f3a2f4842b524b57da704bbacb89f74f3e61158afd008374b2d8286bfbfb29c0",
+	"statements": [
+		{
+			"source": "src/app-registration-postgres.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_app_states (digest text PRIMARY KEY, purpose text NOT NULL, account_id text NOT NULL, subject text NOT NULL, expires_ms bigint NOT NULL)"
+		},
+		{
+			"source": "src/app-registration-postgres.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_app_credentials (app_id bigint PRIMARY KEY, ciphertext bytea NOT NULL)"
+		},
+		{
+			"source": "src/app-registration-postgres.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_app_installations (installation_id bigint PRIMARY KEY, app_id bigint NOT NULL, account_id text NOT NULL)"
+		},
+		{
+			"source": "src/github-oauth-session-postgres.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_oauth_states (digest text PRIMARY KEY, browser_digest text NOT NULL, account_id text NOT NULL, secret bytea NOT NULL, expires_ms bigint NOT NULL)"
+		},
+		{
+			"source": "src/github-oauth-session-postgres.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_oauth_sessions (digest text PRIMARY KEY, account_id text NOT NULL, github_id bigint NOT NULL, secret bytea NOT NULL, expires_ms bigint NOT NULL)"
+		},
+		{
+			"source": "src/github-oauth-session-postgres.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_oauth_states_expires_idx ON hobo_ci_oauth_states(expires_ms)"
+		},
+		{
+			"source": "src/github-oauth-session-postgres.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_oauth_sessions_expires_idx ON hobo_ci_oauth_sessions(expires_ms)"
+		},
+		{
+			"source": "src/hosted-app-bootstrap.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_platform_app (singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton), status text NOT NULL, session_digest text NOT NULL, token_digest text NOT NULL, state_digest text NOT NULL, expires_ms bigint NOT NULL, app_id bigint)"
+		},
+		{
+			"source": "src/hosted-app-bootstrap.ts",
+			"sql": "ALTER TABLE hobo_ci_platform_app ADD COLUMN IF NOT EXISTS owner_metadata jsonb"
+		},
+		{
+			"source": "src/hosted-app-bootstrap.ts",
+			"sql": "ALTER TABLE hobo_ci_platform_app ADD COLUMN IF NOT EXISTS owner_session_started_ms bigint NOT NULL DEFAULT 0"
+		},
+		{
+			"source": "src/hosted-app-bootstrap.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_platform_app_attempts (session_digest text PRIMARY KEY, status text NOT NULL, created_ms bigint NOT NULL, expires_ms bigint NOT NULL, app_id bigint)"
+		},
+		{
+			"source": "src/hosted-app-bootstrap.ts",
+			"sql": "ALTER TABLE hobo_ci_platform_app_attempts ADD COLUMN IF NOT EXISTS created_ms bigint NOT NULL DEFAULT 0"
+		},
+		{
+			"source": "src/hosted-app-bootstrap.ts",
+			"sql": "ALTER TABLE hobo_ci_platform_app_attempts ADD COLUMN IF NOT EXISTS app_id bigint"
+		},
+		{
+			"source": "src/hosted-app-bootstrap.ts",
+			"sql": "ALTER TABLE hobo_ci_platform_app_attempts ADD COLUMN IF NOT EXISTS metadata jsonb"
+		},
+		{
+			"source": "src/hosted-app-bootstrap.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_platform_app_attempts_expiry ON hobo_ci_platform_app_attempts(expires_ms)"
+		},
+		{
+			"source": "src/hosted-app-bootstrap.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_platform_app_invitations (invitation_digest text PRIMARY KEY, session_digest text UNIQUE NOT NULL, expires_ms bigint NOT NULL)"
+		},
+		{
+			"source": "src/hosted-app-bootstrap.ts",
+			"sql": "ALTER TABLE hobo_ci_platform_app_invitations ALTER COLUMN session_digest DROP NOT NULL"
+		},
+		{
+			"source": "src/queued-job-repair.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_queued_scans ( app_id text NOT NULL, scan_key text NOT NULL, cursor jsonb NOT NULL, due_ms bigint NOT NULL DEFAULT 0, touched_ms bigint NOT NULL DEFAULT 0, PRIMARY KEY(app_id,scan_key))"
+		},
+		{
+			"source": "src/queued-job-repair.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_queued_api_budget ( app_id text NOT NULL, used_ms bigint NOT NULL)"
+		},
+		{
+			"source": "src/queued-job-repair.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_queued_api_budget_time ON hobo_ci_queued_api_budget(app_id,used_ms)"
+		},
+		{
+			"source": "src/webhook-repair.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_webhook_repairs ( app_id text NOT NULL, guid text NOT NULL, attempted_ms bigint NOT NULL, PRIMARY KEY (app_id, guid) )"
+		},
+		{
+			"source": "src/webhook-repair.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_webhook_scan_cursors ( app_id text PRIMARY KEY, cursor_url text )"
+		},
+		{
+			"source": "src/webhook-repair.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_webhook_successes ( app_id text NOT NULL, guid text NOT NULL, seen_ms bigint NOT NULL, PRIMARY KEY (app_id, guid) )"
+		}
+	]
+}

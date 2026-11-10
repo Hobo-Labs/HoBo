@@ -9,10 +9,11 @@ import {
 	type IncomingMessage,
 	type ServerResponse,
 } from "node:http";
+import { createNodeRelayHandler } from "@hobo/ci-gh-actions/node-http";
 import type { Session } from "@vercel/sandbox";
 import { defineSandboxProxy, type ProxyHandler } from "@vercel/sandbox/proxy";
 import { z } from "zod";
-import { createNodeRelayHandler } from "./node-handler.js";
+import { streamsBody } from "./relay-streams.js";
 import {
 	createVerifiedSandboxEgressHandler,
 	type SandboxEgressLedger,
@@ -449,6 +450,7 @@ export function createSandboxProxyVmServer(
 	const adapt = createNodeRelayHandler({
 		origin: origin(config.proxyOrigin),
 		handle: handler,
+		streams: streamsBody,
 	});
 	let ingressWindow = Date.now();
 	let ingressCount = 0;
