@@ -8,7 +8,7 @@ No provider name appears anywhere in this package, and nothing in `src/` imports
 a provider. That is enforced by a test, not by convention — `test/neutrality.test.ts`
 scans the built API surface and the source tree for provider identifiers.
 
-## The four things this package owns
+## The five things this package owns
 
 | Concern | Entry point |
 |---|---|
@@ -16,6 +16,7 @@ scans the built API surface and the source tree for provider identifiers.
 | The advertised vocabulary | `POSTGRES_GUARANTEES`, `POSTGRES_FEATURES`, `postgresCapability(key)` |
 | Proving the advertisement | `postgresConformanceSuite`, `planPostgresConformance`, `runPostgresConformance` |
 | Getting the data out | `POSTGRES_MIGRATION_PROFILES`, `buildPgDumpArgv`, `buildPgRestoreArgv`, `buildLogicalCopyPlan` |
+| Running on several backends at once | [the fleet](#the-fleet): `proposeAssignment`, `readCurrentAssignment`, `sqlAssignmentRegister` |
 
 ## Authoring
 
@@ -164,11 +165,98 @@ the subscription's DSN deliberately left unassembled: the caller composes it
 inside a resolved-secret scope so the connection string never becomes a value
 this package could accidentally log.
 
+## The fleet
+
+A fleet is several interchangeable PostgreSQL backends behind one application:
+one **writer** and any number of **standbys**. The code is under `src/fleet/`.
+It opens no connection. A host gives it one `SqlExecutor` per backend (a
+`query(sql, parameters)` and a `session(run)` that pins one connection) and an
+opaque id for each. Nothing in it knows how many backends there are or what any
+of them is called.
+
+Every statement the fleet sends casts its result columns to `text`, so the port
+does not depend on how a driver decodes a `bigint` or a `timestamptz`.
+
+### The assignment register: who the writer is
+
+Each backend keeps a small append-only log table (the name comes from
+`parseFleetLayout`). An entry names the writer for one **epoch**:
+
+`(epoch, active, sealed, target, reason, loss_window_ms, decided_at, decided_by)`
+
+An epoch is **decided** when a majority of the *configured* backends hold the
+same entry for it. The **current assignment** is the highest decided epoch.
+Three rules, each enforced on one backend alone, are all the safety there is:
+
+1. A backend holds at most one entry per epoch (a primary key).
+2. A backend takes an entry for epoch `e` only when its newest entry is
+   `e - 1`. `sqlAssignmentReplica` checks and inserts in one statement.
+3. An entry that names a backend as the writer is written to that backend
+   first, and to no other backend if it does not take it.
+
+What follows from them:
+
+- **Never two decisions for one epoch.** Two majorities share a backend, and
+  that backend holds one entry.
+- **The decided epoch never goes backwards.** Logs are append-only.
+- **A proposal made on a stale view is never decided.** If a newer epoch is
+  already decided, a majority already hold an entry for the proposer's epoch,
+  so its entry can land only on the backends that were behind: a minority.
+- **A backend knows when it is the writer.** By rule 3 its own log holds every
+  decided entry that names it, which is what lets replication refuse to
+  overwrite a writer using a check on that one backend.
+
+| Function | What it does |
+|---|---|
+| `readCurrentAssignment` | Majority read. Returns `current`, `empty`, `undecided` or `no-majority` |
+| `proposeAssignment` | Compare-and-set on the current epoch; writes `current + 1` |
+| `bootstrapAssignment` | The first epoch. The entry is the same bytes whoever writes it |
+| `completeAssignment` | Copies an interrupted proposer's entry (same epoch, same value) onto more backends, and repairs short logs |
+| `overrideAssignment` | Operator only: writes above everything visible, without the compare-and-set |
+
+A reader **fails closed**. With answers from fewer than a majority the result is
+`no-majority`. When the newest epoch it can see is held by fewer than a
+majority the result is `undecided`, and the decided epoch below it is *not*
+returned instead, because something newer may already be decided out of sight.
+A caller that gets either stops writing.
+
+A proposer does not decide on older information either. If the newest epoch is
+undecided it returns `unavailable` and writes nothing; `completeAssignment`
+finishes that entry first. Only the outcome `decided` means an entry is the
+current assignment. `undecided`, `stale`, `refused` and `unavailable` all mean
+"read again".
+
+**Counting backends.** A majority of `n` is `floor(n / 2) + 1`. Three backends
+tolerate one being down, five tolerate two. An even count buys nothing: four
+tolerate one, like three, and two tolerate none (both must answer). Prefer an
+odd count.
+
+**What it does not do.**
+
+- A backend that returns having *lost its log table* breaks the argument above,
+  like amnesia in any quorum. Remove it from the configuration or restore its
+  log before it rejoins.
+- Changing the list of backends changes what a majority is. Do it while every
+  backend is healthy and no decision is in flight, one backend at a time.
+- A fully split epoch (every backend holds a different entry for it, which
+  needs proposers that could each reach a different backend first) cannot be
+  completed. Readers stay `undecided` until a person calls
+  `overrideAssignment`. In the 400 randomized runs below, which keep taking
+  backends down, 29 ended that way; 25 of those were fleets of two or four.
+
+`test/fleet-assignment.test.ts` checks the invariants after every step of 400
+seeded interleavings of concurrent proposers, completers and overrides against
+an in-memory fleet of two to five backends that go down and come back,
+including writes that were applied but whose answer was lost.
+`contracts/pacts/postgres-fleet.pact.json` is the boundary contract for one
+backend's log and for a majority read; `test/fleet-contract.test.ts` replays it.
+
 ## Error codes
 
 `PostgresDataError.code` is one of `INVALID_POSTGRES_REQUIREMENT`,
 `UNSAFE_COMMAND_ARGUMENT`, `MIGRATION_FAILED`, `CONFORMANCE_SUITE_INVALID`,
-`CONFORMANCE_EXECUTOR_MISSING`. Each carries a structured `detail` naming the
+`CONFORMANCE_EXECUTOR_MISSING`, `FLEET_CONFIGURATION_INVALID`,
+`FLEET_RECORD_INVALID`. Each carries a structured `detail` naming the
 offending field.
 
 ## Parse, don't validate
@@ -183,6 +271,8 @@ that the rest of the package accepts as-is:
 | host / port / db / user | `parsePostgresTarget` | `PostgresTarget` | a shell metacharacter, a leading dash, or `..` reaching an argv element |
 | artifact path | `parseArtifactPath` | a checked absolute path | traversal out of the export directory |
 | a suite | `assertConformanceSuiteWellFormed` | a well-formed `PostgresConformanceSuite` | an unknown capability key or a dependency cycle |
+| table prefixes | `parseFleetLayout` | `FleetLayout` | a control table that replication would copy, or an identifier that is not plain |
+| a log row or a proposal | `parseFleetAssignment` | `PostgresFleetAssignment` | a sealed entry with no target, a target on an unsealed entry, a negative loss window |
 
 `buildPgDumpArgv` and its siblings take the parsed target, never the raw fields,
 so there is no code path that re-checks an identifier and no code path that
@@ -236,7 +326,9 @@ pnpm --filter @hobo/data-postgres run build
 pnpm --filter @hobo/data-postgres run test
 ```
 
-Offline and deterministic; no database is started and no clock is read. The
+Offline and deterministic; no database is started and no clock is read (the
+fleet takes `nowMs` as an argument; its SQL runs against real PostgreSQL in
+`@hobo/ci-vercel`'s gated tests). The
 lanes pin, among other things: a SQLite/D1-shaped candidate never satisfies
 `data.postgres/v1` while Neon-shaped and Prisma-shaped candidates do; every
 argv builder rejects each injection class in every interpolated field; and the
@@ -245,6 +337,8 @@ missing.
 
 Gates protecting this package: TypeScript (`strict`,
 `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`), the protobuf records
-in `data-models/postgres_capability.proto`, the CUE invariants in
-`data-models/postgres_capability.cue`, and the Pact-shaped boundary contract in
-`contracts/pacts/postgres-conformance.pact.json`.
+in `data-models/postgres_capability.proto` and `data-models/postgres_fleet.proto`,
+the CUE invariants in `data-models/postgres_capability.cue` and
+`data-models/postgres_fleet.cue`, and the Pact-shaped boundary contracts in
+`contracts/pacts/postgres-conformance.pact.json` and
+`contracts/pacts/postgres-fleet.pact.json`.
