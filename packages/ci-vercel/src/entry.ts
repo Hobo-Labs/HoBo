@@ -6,7 +6,7 @@ import { createVercelApplication } from "./composition.js";
 import { createNodeRelayHandler } from "./node-handler.js";
 import { forwardQueueWakeup } from "./queue-forwarding.js";
 import { loadBrokerRuntimeConfig } from "./runtime-config-client.js";
-import { QueueMessageSchema } from "./worker.js";
+import { isPlatformScheduleRun, QueueMessageSchema } from "./worker.js";
 
 // Keep Vercel's default deployment pinning: the callback hands each wakeup to
 // the current production relay before acknowledging its original delivery.
@@ -131,7 +131,11 @@ export function reportQueueBinding(metadata: MessageMetadata) {
 export const consume = queue.handleNodeCallback(async (message, metadata) => {
 	reportQueueBinding(metadata);
 	if (process.env.VERCEL_ENV !== "production") {
-		await (await application()).tick(QueueMessageSchema.parse(message));
+		const parsed = QueueMessageSchema.parse(message);
+		// Every deployment declares the static schedule in vercel.json. Only
+		// production repairs on a timer; a preview acknowledges the run unworked.
+		if (isPlatformScheduleRun(parsed)) return;
+		await (await application()).tick(parsed);
 		return;
 	}
 	let origin = process.env.HOBO_CI_PUBLIC_URL;

@@ -1,6 +1,10 @@
 import { createHostedAppBootstrap } from "@hobo/ci-gh-actions";
 import pg from "pg";
 import { createVercelApplication } from "./composition.js";
+import {
+	databaseConnection,
+	resolveDatabaseUrls,
+} from "./database-connections.js";
 import type { QueueMessage } from "./worker.js";
 
 type App = Awaited<ReturnType<typeof createVercelApplication>>;
@@ -68,7 +72,10 @@ export function createBootstrapEntry(options: {
 	const pool = options.bootstrap
 		? undefined
 		: new pg.Pool({
-				connectionString: required(env, "DATABASE_URL"),
+				...databaseConnection(
+					resolveDatabaseUrls(env).primary,
+					env.HOBO_CI_DATABASE_CA_CERT,
+				),
 				max: 2,
 				connectionTimeoutMillis: 5000,
 				idleTimeoutMillis: 10000,
