@@ -1,0 +1,35 @@
+{
+	"name": "@hobo/data-core",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo engine-neutral data contract: the canonical record model and change envelope, the engine SPI every @hobo/data-<engine> package implements, the continuous-migration pattern catalog with a deterministic selector, the custody-path policy verdict, the pattern executors that run over those ports, and the conformance kit that proves an engine.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/",
+		"test:unit": "vitest run test/"
+	}
+}

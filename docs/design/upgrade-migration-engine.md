@@ -197,11 +197,23 @@ as gated saga steps over a real store (ADR-0032 §3-4), delivered as
    not failure.
 3. Verification points (`after-backfill`, `after-contract`) run violations queries; any violation
    restores the pre-migration snapshot (`migration.RolledBack`; forward-only, no `.down` scripts).
+   Since [ADR-0177](./adr/03-data-plane.md#adr-0177) the restore is decided first
+   (`migration.RollbackDecided`) and needs a `replayErasures` callback: without one a failed phase
+   holds instead of restoring, so a rollback cannot bring back an erased subject. Every phase is
+   write-ahead (`migration.PhaseIntended` before its statements): a run that finds an intent with
+   no `migration.PhaseApplied` after it asks the plan's probe for that phase
+   (`DataMigrationPlan.probes`) instead of re-applying or restoring, and holds with
+   `PHASE_OUTCOME_UNKNOWN` when the plan has none. A held or interrupted migration resumes only
+   when `executeDataMigration` is given a `journal`; without one every call starts from nothing.
 4. The full `migration.*` event family is emitted and catalogued in
    [event-families.md](./event-families.md); shapes are pinned in
    `packages/trails/data-models/migration.proto`.
 5. Carried risk: SQLite is the only live `SchemaApplyPort` binding; managed-Postgres bindings stay
-   with Data Plane per the owning-initiative table.
+   with Data Plane per the owning-initiative table. **Resolved by
+   [ADR-0177](./adr/03-data-plane.md#adr-0177):** the SQLite binding moved to
+   `@hobo/data-sqlite`, `@hobo/data-postgres` and `@hobo/data-mongodb` implement the same
+   `@hobo/data-core` contract, and `@hobo/trails` imports no engine
+   ([data-engines-continuous-migration](./data-engines-continuous-migration.md)).
 
 ## M3 Release Candidate Evidence
 
@@ -233,14 +245,27 @@ Accepted state: schema-evolution safety is a CI gate, and the evidence mapping i
    (type, version) pins a real encoded body; CI replays all entries through the current upcaster
    chain; coverage, totality, purity, and append-only baseline violations fail the test lane and
    with it can-deploy.
-2. The `migration.*` v1 wire shapes are pinned in the corpus
+2. The `migration.*` wire shapes are pinned in the corpus
    (`packages/events/corpus/golden-replay-baseline.json`, append-only): bumping any migration
-   event body requires a total upcaster plus a new corpus entry.
+   event body requires a total upcaster plus a new corpus entry. That rule has since been
+   exercised: `migration.Planned`, `migration.PhaseApplied`, `migration.CutOver`, and
+   `migration.RolledBack` are at v2, each with an upcaster from its pinned v1 body, and
+   `migration.FenceRequested`, `migration.FenceRaised`, `migration.PhaseIntended`, and
+   `migration.RollbackDecided` were added at v1
+   ([event-families.md](./event-families.md), [ADR-0177](./adr/03-data-plane.md#adr-0177)).
 3. GA handoff mapping for [release-notes-upgrade-guide.md](./release-notes-upgrade-guide.md) M4:
    the M3 evidence mapping above plus the corpus gate as the "no unliftable stored event" claim.
-4. Carried risks (explicit, not silently closed): live Debezium-class CDC and multi-DB dual-schema
-   beyond SQLite/Postgres-shaped fixtures remain the ADR-0134 residual; production restore
-   orchestration stays with Backup & Restore.
+4. Carried risks (explicit, not silently closed): production restore orchestration stays with
+   Backup & Restore. The ADR-0134 residual — live change capture and dual runs beyond
+   SQLite-shaped fixtures — is addressed by [ADR-0177](./adr/03-data-plane.md#adr-0177): real
+   change capture for PostgreSQL (logical decoding) and MongoDB (change streams) behind one
+   engine contract, each run against the engine conformance kit on a live server (the dated
+   record is in
+   [data-engines-continuous-migration §9](./data-engines-continuous-migration.md#last-recorded-run)).
+   What remains carried is that those live lanes are opt-in (they need a server) rather than
+   part of CI. The intermittent failure once seen in the live PostgreSQL lane has a root cause and
+   a fix — a capture slot is now proven decodable before use — with one residual, the table-sync
+   slots PostgreSQL creates itself ([§10](./data-engines-continuous-migration.md#10-honest-limits)).
 
 ## Follow-Up Gate
 
