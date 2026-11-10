@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "hobo.vercel-git-deployment-plan/v1",
+  "bindle": "hobo-ci-relay",
+  "resources": [
+    {
+      "kind": "queue",
+      "name": "hobo-ci"
+    },
+    {
+      "kind": "schedule",
+      "name": "hobo-ci-repair"
+    },
+    {
+      "kind": "api",
+      "name": "relay"
+    },
+    {
+      "kind": "secret",
+      "name": "secrets"
+    },
+    {
+      "kind": "data",
+      "name": "state"
+    }
+  ],
+  "project": "hobo-ci",
+  "scope": "team_hobo",
+  "target": "preview",
+  "gitSource": {
+    "type": "github",
+    "org": "example",
+    "repo": "hobo",
+    "ref": "main"
+  },
+  "settings": [
+    {
+      "key": "HOBO_CI_PUBLIC_URL",
+      "value": "https://ci.example.test"
+    }
+  ],
+  "operatorSecrets": [
+    "CRON_SECRET",
+    "DATABASE_URL",
+    "DATABASE_URL_UNPOOLED",
+    "HOBO_CI_BOOTSTRAP_TOKEN_SHA256",
+    "HOBO_CI_CONFIG_JSON",
+    "HOBO_CI_CONTROL_TOKENS_JSON",
+    "HOBO_CI_GITHUB_APP_CLIENT_SECRET",
+    "HOBO_CI_GITHUB_APP_PRIVATE_KEY",
+    "HOBO_CI_ONBOARDING_CONTROL_TOKEN",
+    "HOBO_CI_SESSION_KEY",
+    "HOBO_CI_WEBHOOK_SECRET"
+  ],
+  "requests": []
+}

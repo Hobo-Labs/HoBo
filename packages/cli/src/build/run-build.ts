@@ -3,10 +3,17 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import { createRealComponentize } from "@hobo/componentize";
+import { recordedAppInputsMatch } from "../cloud/typescript-app-loader.js";
 import type { CodegenFixtureOptions } from "../codegen/fixture.js";
 import { recoverGeneratedTree, writeGeneratedTree } from "../codegen/tree.js";
 import { CodegenArtifactSchema } from "../codegen/types.js";
-import { isJsonString, type JsonObject, type JsonValue } from "../json.js";
+import {
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	type JsonValue,
+	parseJsonValue,
+} from "../json.js";
 import {
 	assertGeneratedFresh,
 	writeCodegenFixtureProject,
@@ -99,13 +106,26 @@ export async function runBuild(request: RunBuildOptions): Promise<BuildResult> {
 		},
 	];
 
+	// The freshness gate regenerates the whole project, so a request that can
+	// never build is refused first, but only on inputs that are authoritative
+	// without codegen: an explicit empty `services` in hobo.bindle.json, or an
+	// imprint whose recorded inputs all still match. A project codegen has not
+	// generated (just scaffolded, or cloned without the gitignored .hobo/) is
+	// told to run codegen, whatever it asks for.
+	if (await declaresNoServices(projectRoot)) throw noServices();
+	const runtimeInvalid = new BuildError(
+		"HOBO_BUILD_RUNTIME_INVALID",
+		`Plain TypeScript app packaging targets Node; explicit ${targetRuntime} requires declared services with that runtime`,
+		{ runtime: targetRuntime },
+	);
+	if (
+		nodeApp &&
+		targetRuntime !== "auto" &&
+		(await recordedAppInputsMatch(projectRoot))
+	)
+		throw runtimeInvalid;
 	await assertGeneratedFreshWrapper(projectRoot);
-	if (nodeApp && targetRuntime !== "auto")
-		throw new BuildError(
-			"HOBO_BUILD_RUNTIME_INVALID",
-			`Plain TypeScript app packaging targets Node; explicit ${targetRuntime} requires declared services with that runtime`,
-			{ runtime: targetRuntime },
-		);
+	if (nodeApp && targetRuntime !== "auto") throw runtimeInvalid;
 	const services = nodeApp ? [] : await discoverServices(projectRoot);
 	const componentize = services.some(
 		(service) => !fallbackReasonFor(service, targetRuntime),
@@ -255,14 +275,35 @@ async function discoverServices(
 		.map((service) => parseServiceDeclaration(service))
 		.sort((left, right) => left.name.localeCompare(right.name));
 
-	if (services.length === 0) {
-		throw new BuildError(
-			"HOBO_BUILD_NO_SERVICES",
-			"hobo.bindle.json must declare at least one service",
-		);
-	}
+	if (services.length === 0) throw noServices();
 
 	return services;
+}
+
+function noServices(): BuildError {
+	return new BuildError(
+		"HOBO_BUILD_NO_SERVICES",
+		"hobo.bindle.json must declare at least one service",
+	);
+}
+
+/** hobo.bindle.json exists and its own `services` key is an empty list. */
+async function declaresNoServices(projectRoot: string): Promise<boolean> {
+	let bindle: JsonValue;
+	try {
+		bindle = parseJsonValue(
+			await readFile(join(projectRoot, "hobo.bindle.json"), "utf8"),
+		);
+	} catch {
+		// Missing or unreadable: the gate and discoverServices report it as before.
+		return false;
+	}
+	return (
+		isJsonObject(bindle) &&
+		Object.hasOwn(bindle, "services") &&
+		Array.isArray(bindle.services) &&
+		bindle.services.length === 0
+	);
 }
 
 async function buildService(input: {
