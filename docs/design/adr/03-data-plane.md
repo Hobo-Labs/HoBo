@@ -856,3 +856,38 @@ No product in the FinOps corpus compares its own estimate to the bill for the sa
 - **(+)** The three refusals are the difference between a number finance checks once and a number finance checks monthly.
 - **(−)** Callers must convert into minor units at the boundary, and the catalog's decimal-string prices have no converter yet.
 - **(−)** Nothing produces the actuals side yet: `meter.UsageRecorded` has no producer outside tests, and the connectivity billing aggregator is not wired to deployments. The loop is closed as a computation before it is closed as a pipeline, and no surface may claim otherwise.
+
+## ADR-0177
+**Data engines are one package each, derived from a common engine-neutral contract; continuous data migration is a closed pattern catalog selected deterministically and gated by a computed custody-path policy verdict.**
+
+**Status:** Accepted — extends [ADR-0032](#adr-0032) (data portability strategy), [ADR-0134](02-identity-security.md#adr-0134) (Trails), and [ADR-0151](07-portability-extensibility.md#adr-0151) (capability profiles + migration profiles); consumes [ADR-0146](02-identity-security.md#adr-0146) (fail-closed residency) and [ADR-0144](07-portability-extensibility.md#adr-0144) (typed impedance). Design: [data-engines-continuous-migration](../data-engines-continuous-migration.md). **The packages named here are a target topology — `@hobo/data-core`, `@hobo/data-sqlite`, and `@hobo/data-mongodb` do not exist yet**; delivery is the slice plan in that note.
+
+### Context
+[ADR-0032](#adr-0032) settled the *strategy* for application data — declarative diff, expand → backfill → contract, forward-only, export → import within an equivalence class — and left cross-engine movement as "a CDC/dual-write adapter". The implementation that followed is real but has no seam. The live `SchemaApplyPort` and `DataDualPort` bindings import `node:sqlite` from inside `@hobo/trails`, so the runbook engine is where every engine's driver would accumulate. `@hobo/data-postgres` owns a profile, a conformance suite, and two migration profiles, yet implements none of the ports Trails executes. The migration pattern is an untyped step mode with no record of why it was chosen. And the residency input to `can-trail` is a caller-supplied boolean that cannot see a dump file, a relaying runner, or a rollback snapshot.
+
+Engines differ in exactly the things migration depends on — wire protocol, type system, DDL transactionality, replication mechanism, dump format — and products of one engine share them. That is the argument for one package per engine over a common contract, and it is the same three-grain split (paradigm → engine → product) the capability refinement graph already encodes.
+
+### Decision
+1. **One package per engine, derived from `@hobo/data-core`.** The grain is the engine-level node of the refinement graph (`data.postgres/v1`, `data.mysql/v1`, `data.sqlite/v1`, …), not the paradigm and not the product. `@hobo/data` stays the app-authoring kernel and the [ADR-0081](#adr-0081) idiom packages stay the paradigm surface; `@hobo/provider-*` packages declare an engine profile with evidence and hold no engine logic. "SQL" is a paradigm, not a package.
+2. **`@hobo/data-core` is a layer-1 contract package** that imports only `@hobo/core`. It owns the engine SPI (schema-apply, snapshot, change-capture, change-apply, verify, write-fence, retire), the canonical change envelope and type-mapping annex, the pattern catalog, the selector, the policy verdict, and the shared conformance fold. It is not folded into `@hobo/data`: that would merge the app and engine import sites ([ADR-0087](01-architecture-core.md#adr-0087)) and make every engine depend on the SQLite-backed actor host.
+3. **`@hobo/trails` orchestrates and imports no engine.** Engine bindings move to their engine package; the boundary gate forbids the reverse edge.
+4. **Cross-engine movement is hub-and-spoke through the canonical change envelope.** Each engine implements capture into it and apply out of it, so N engines cost N adapters rather than N² migrators. Same-engine moves keep a native fast path as a migration profile. The envelope stream is transport, not event-log facts — only positions, watermarks, and digests are recorded.
+5. **Authority decides the pattern family.** Projected data moves by replay (`rebuild-and-swap`), including across paradigms, because the store was never the truth. Authoritative stores use `in-place-evolve`, `offline-copy`, `snapshot-and-tail`, or `log-pivot`. The journal moves by `stream-handoff`. The catalog is closed and versioned; each migration profile names the pattern it realizes.
+6. **Exactly one write authority at any log position.** The second store is fed by capture and authority changes hands only under a fence token. Application-level dual-write is refused as a pattern.
+7. **One phase model and one aggregate** (`plan → gate → prepare → seed → converge → verify → shift-reads → fence+flip → soak → finalize`), each phase naming its safe hold; rollback posture is a declared class (`lossless` / `to-snapshot` / `none`). No new event family — `migration.*` bodies are extended under the existing upcaster-totality gate.
+8. **Pattern selection is a pure, recorded decision:** hard gates, then lexicographic order, never a weighted score ([ADR-0151](07-portability-extensibility.md#adr-0151) §11), and never a silent downgrade to a pattern needing downtime.
+9. **Policy is computed over a custody path and re-evaluated continuously.** Every place data rests or passes — staging artifacts, relays, capture logs, rollback snapshots, the retiring source — is evaluated for residency and classification, carries a retention deadline and a reap obligation, and is re-checked before each phase transition and on policy-relevant facts. Encrypted fields move as ciphertext so crypto-shredding covers every copy; a restore re-applies erasures so a rollback never resurrects an erased subject. Verification crosses ports as counts and digests, never rows.
+10. **Type-mapping lossiness is impedance.** A composed source → canonical → target mapping with a `lossy` edge fails the gate unless waived.
+
+### Non-goals
+- No automatic cross-paradigm conversion of an authoritative store: `log-pivot` makes the re-model reviewable and replayable, not free ([ADR-0081](#adr-0081) §5 stands).
+- No distributed transaction across source and target, and no multi-region active-active ([ADR-0040](01-architecture-core.md#adr-0040)).
+- No second migration system: Trails stays the runner, `@hobo/claims` stays the claim-migration coordinator, and the schema IR and differ stay in `@hobo/core` ([ADR-0160](#adr-0160)).
+
+### Consequences
+- **(+)** "Supports an engine" gains one meaning — a package that passes one contract — and a new engine is a source and target for every existing one on the day it passes.
+- **(+)** The portability claim extends honestly to data: projected data is portable across engines and paradigms by replay, and every other move states its pattern, its rollback posture, and its losses in the plan.
+- **(+)** A move that is compliant at both ends and non-compliant in the middle becomes a refused plan instead of an undetected one.
+- **(−)** Live change capture is real per-engine work (logical replication, binlog, CDC tables, change streams); only the SQLite journal capture exists today, and the hub is slower and thinner than a native path.
+- **(−)** An engine package is a larger obligation than a profile: SPI, mapping annex, impedance codes, and conformance, with stale evidence removing it from selection.
+- **(−)** The `migration.*` body changes need upcasters and corpus entries, and the SQLite extraction touches every Trails data test.

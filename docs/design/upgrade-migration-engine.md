@@ -201,7 +201,10 @@ as gated saga steps over a real store (ADR-0032 §3-4), delivered as
    [event-families.md](./event-families.md); shapes are pinned in
    `packages/trails/data-models/migration.proto`.
 5. Carried risk: SQLite is the only live `SchemaApplyPort` binding; managed-Postgres bindings stay
-   with Data Plane per the owning-initiative table.
+   with Data Plane per the owning-initiative table. The home for further bindings is one package per
+   engine over a common contract, with `@hobo/trails` importing ports only
+   ([ADR-0177](./adr/03-data-plane.md#adr-0177),
+   [data-engines-continuous-migration](./data-engines-continuous-migration.md)).
 
 ## M3 Release Candidate Evidence
 

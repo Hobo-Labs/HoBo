@@ -179,6 +179,26 @@ The brief named cloud, CI, and AI. Policy and infra are named here because the
 remaining eight packages need a home — leaving them in a flat directory would
 reproduce the problem for the majority of the set.
 
+### Data engines — one package per engine over a common contract
+
+The same reasoning applies to data, and the same asymmetry exists today:
+`@hobo/data-postgres` owns a profile, a conformance suite, and migration
+profiles, while the live schema-apply and dual-run bindings sit inside
+`@hobo/trails` and import `node:sqlite` directly.
+
+| Package | Owns |
+|---|---|
+| `@hobo/data-core` | engine-neutral contract: engine SPI, canonical change envelope, migration pattern catalog + selector, custody-path policy verdict, shared conformance fold |
+| `@hobo/data-<engine>` | one engine's profile, vocabulary, conformance, SPI implementation, migration profiles, type-mapping annex |
+| `@hobo/trails` | the runner; imports ports only, never an engine |
+
+`@hobo/data-core` and the non-Postgres engine packages **do not exist yet**.
+The topology, the pattern catalog, and the slice plan are in
+[data-engines-continuous-migration.md](./data-engines-continuous-migration.md)
+([ADR-0177](./adr/03-data-plane.md#adr-0177)). `@hobo/data` is unchanged: it
+stays the app-authoring kernel and is deliberately not the common engine
+package.
+
 ### Stations
 
 | Package | Owns |
