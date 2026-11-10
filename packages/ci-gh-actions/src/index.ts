@@ -79,6 +79,10 @@ export {
 	defaultDepsRoot,
 } from "./isolated-worker/deps-image.js";
 export {
+	accountForStorageOverflowReserve,
+	selectStorageSpillBackend,
+} from "./isolated-worker/fleet-storage-spill.js";
+export {
 	type BoxGitMirror,
 	type BoxGitMirrorEnsureResult,
 	boxGitMirrorPath,
@@ -93,6 +97,12 @@ export {
 	type GithubReadFailure,
 	type WaitingJob,
 } from "./isolated-worker/github-job-poller.js";
+export {
+	createHostCapacityTracker,
+	type HostCapacitySnapshot,
+	type HostCapacityTracker,
+	readHostCapacitySignals,
+} from "./isolated-worker/host-capacity.js";
 export {
 	selectWorkerImagesForDeletion,
 	selectWorkerImageTagsForDeletion,
@@ -132,12 +142,6 @@ export {
 	redactPoolErrorMessage,
 } from "./isolated-worker/postgres-pool.js";
 export { createRetiredWorkDirectorySweeper } from "./isolated-worker/retired-work-directory-sweeper.js";
-export {
-	createHostCapacityTracker,
-	readHostCapacitySignals,
-	type HostCapacitySnapshot,
-	type HostCapacityTracker,
-} from "./isolated-worker/host-capacity.js";
 export { singleFlight } from "./isolated-worker/single-flight.js";
 export {
 	createNodeWorkerStorageFileSystem,
@@ -146,10 +150,6 @@ export {
 	type StorageAdmissionTarget,
 	type WorkerStorageAdmission,
 } from "./isolated-worker/storage-admission.js";
-export {
-	accountForStorageOverflowReserve,
-	selectStorageSpillBackend,
-} from "./isolated-worker/fleet-storage-spill.js";
 export {
 	DEPS_BUILD_ADMISSION_ID,
 	STORAGE_CLASS_RESERVES,

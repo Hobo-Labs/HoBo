@@ -75,10 +75,7 @@ export function buildHostCapacityRecord(
 	freeBytes: number,
 	signals: HostCapacitySignals,
 ): Omit<HostCapacitySample, "atMs"> {
-	if (
-		signals.memAvailableMb !== undefined &&
-		signals.psiMemory !== undefined
-	)
+	if (signals.memAvailableMb !== undefined && signals.psiMemory !== undefined)
 		return {
 			freeInodes,
 			freeBytes,
@@ -233,7 +230,8 @@ export function createHostCapacityTracker(options: {
 			if (!head || atMs - head.atMs <= windowMs) break;
 			samples.shift();
 		}
-		if (samples.length > maxSamples) samples.splice(0, samples.length - maxSamples);
+		if (samples.length > maxSamples)
+			samples.splice(0, samples.length - maxSamples);
 	}
 
 	function volatilityMargin(): number {

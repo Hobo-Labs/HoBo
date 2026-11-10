@@ -57,7 +57,7 @@ export function selectStorageSpillBackend(
 		),
 		currentLabels: job.labels,
 	});
-	if (!selection || !selection.spilled) return undefined;
+	if (!selection?.spilled) return undefined;
 	if (isOverflowRunnerLabel([selection.runsOn])) return selection;
 	return undefined;
 }
@@ -76,7 +76,10 @@ export function accountForStorageOverflowReserve(account: Account): Account {
 	};
 }
 
-export function spillDemandLabelsForLease(lease: Lease, account: Account): string[] {
+export function spillDemandLabelsForLease(
+	lease: Lease,
+	account: Account,
+): string[] {
 	const offer = providerOffer(account, lease);
 	return queuedDemandLabels(lease.provider, offer.backend, offer.runsOn, [
 		"hobo",
