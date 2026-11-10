@@ -269,14 +269,16 @@ A workflow run no longer waits on a fleet that is not taking jobs. Every routed 
 
 | Tier | Label | Chosen when |
 |---|---|---|
-| Fleet | `hobo`, or `hobo-trunk` for trunk events | No job asking for that label has waited past the limit |
-| Local box | `hobo-local-host` | The fleet is past the limit, a local box is enrolled, and no job asking for its label has waited past the limit |
+| Fleet | `hobo`, or `hobo-trunk` for trunk events | It is taking jobs (below) |
+| Local box | `hobo-local-host` | The fleet is not taking jobs, a local box is enrolled, and it is |
 | GitHub-hosted | `ubuntu-24.04` | Neither of the above |
 
-- **How availability is read.** From GitHub's queue, which every backend shares: the oldest queued job whose only label is the tier's label. A fleet that is down, full, or cut off from its relay looks the same there, and nothing has to be asked of it. The limit is 300 seconds; repository variable **`HOBO_CI_ROUTE_MAX_WAIT_SECONDS`** changes it. A job queued for more than a day is treated as abandoned and ignored.
+- **How availability is read.** From GitHub's queue, which every backend shares, looking only at jobs whose one label is the tier's label. A backend is taking jobs when all three hold: no such job has waited 120 seconds; no job it took in the last 15 minutes had waited that long; and fewer than 4 are already waiting. A fleet that is down, full, or cut off from its relay looks the same there, and nothing has to be asked of it. A job queued for more than a day is treated as abandoned and ignored.
+- **Why three signals.** The wait alone was the first rule, with a 300 second limit. After a round of cancelled runs emptied the queue, it refilled with eleven jobs, the oldest 283 seconds old, and the next run joined them. A queue that was just emptied is full long before its oldest job is old, and a slow fleet with nothing waiting at this moment is still slow.
+- **Limits.** Repository variables **`HOBO_CI_ROUTE_MAX_WAIT_SECONDS`** (120) and **`HOBO_CI_ROUTE_MAX_QUEUED`** (4; the box has two slots, so four waiting is two rounds).
 - **The local box.** Set repository variable **`HOBO_CI_LOCAL_RUNNER=true`** once a box is registered under `hobo-local-host` (the `local` provider kind's label, see `packages/ci-gh-actions/LOCAL-DEVELOPMENT.md`). The variable says a box is enrolled, not that it is connected: a box that is enrolled and offline is passed over as soon as one job has waited for it past the limit.
 - **Pinning.** Repository variable **`HOBO_CI_ROUTE`**: `fleet` restores the behaviour before routing (the kill switch), `github` or `local` sends everything to that tier, and unset or `auto` falls back as above.
-- **It cannot fail a run.** If the queue cannot be read, or the machine has no Node able to run the script, the fleet's label is returned with a warning. If the route job itself does not succeed, jobs ask for the fleet's label and both required gates fail closed.
+- **It cannot fail a run.** If the queue cannot be read, or the script cannot run, GitHub-hosted is chosen: the route job is running there, so it is the one tier known to be up. Pinned to the fleet, the run stays on the fleet. If the route job itself does not succeed, jobs ask for the fleet's label and both required gates fail closed.
 - **The decision is made once per run**, when it starts. A run routed to the fleet that then stalls stays there; re-running the workflow routes it again.
 - **On a GitHub-hosted machine** the job runs the same steps. `ci-runner-preflight` installs the pinned mise and the tools in `mise.lock` first (`.github/actions/ci-runner-preflight/hosted-toolchain.sh`); the pnpm store and Turbo cache use their `actions/cache` paths; there is no deps layer, so dependencies are installed from the lockfile.
 - **Browser tests there** use the same pinned headless shell the image bakes in: jobs that run package tests pass `browser: "true"` to `ci-runner-preflight`, which downloads it to `/opt/pw-browsers` and checks its digest against the image's Dockerfile.
