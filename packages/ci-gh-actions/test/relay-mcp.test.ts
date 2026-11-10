@@ -137,6 +137,9 @@ afterEach(async () => {
 
 async function setup(
 	overrides: Partial<RelayMcpOptions> & Pick<RelayMcpOptions, "sessions">,
+	/** Runs before each journal read, to move the journal under a reader. */
+	beforeJournalRead: (store: SqliteCiStore) => Promise<void> = async () =>
+		undefined,
 ) {
 	const store = new SqliteCiStore(":memory:");
 	const configuration = twoAccounts();
@@ -161,8 +164,9 @@ async function setup(
 				store.quarantinedWebhooks(accountId, expected),
 			retryQuarantinedWebhook: (accountId, expected, deliveryId) =>
 				store.retryQuarantinedWebhook(accountId, expected, deliveryId),
-			eventsSince: (cursor) => {
+			eventsSince: async (cursor) => {
 				journalReads++;
+				await beforeJournalRead(store);
 				return store.eventsSince(cursor);
 			},
 		},
@@ -711,6 +715,47 @@ describe("relay MCP change feed", () => {
 		const instant = time.slept.length;
 		await a.call("wait_for_events", { timeoutSeconds: 0 });
 		expect(time.slept.length).toBe(instant);
+	});
+
+	it("ends at its timeout even while events it did not ask for keep arriving", async () => {
+		let clock = 0;
+		let queued = 100;
+		const h = await setup(
+			{
+				sessions: "none",
+				now: () => {
+					clock += 1_000;
+					return clock;
+				},
+				sleep: async () => {
+					throw new Error(
+						"a journal that keeps moving is read on, not slept on",
+					);
+				},
+			},
+			// Every look at the journal finds one more job queued.
+			async (store) => {
+				await store.queue(job(queued++), LATER, 1);
+			},
+		);
+		const a = await h.connect(h.tokens.a.authorization);
+		const waited = Events.parse(
+			(
+				await a.client.callTool({
+					name: "wait_for_events",
+					arguments: {
+						cursor: "0",
+						types: ["ci.LeaseCancelled"],
+						timeoutSeconds: 5,
+					},
+				})
+			).structuredContent,
+		);
+		expect(waited.events).toEqual([]);
+		expect(waited.timedOut).toBe(true);
+		expect(h.journalReads()).toBeLessThan(10);
+		// The cursor moved past what was looked at: the next call reads on.
+		expect(Number(waited.cursor)).toBeGreaterThan(1);
 	});
 
 	it("waits only for the lease, repository and event types asked for", async () => {

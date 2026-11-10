@@ -330,11 +330,8 @@ async function waitForEvents(
 					cursor: String(read.cursor),
 				}),
 			);
-		// The journal moved but nothing matched: there may be more to read.
-		if (read.cursor > after) {
-			after = read.cursor;
-			continue;
-		}
+		const moved = read.cursor > after;
+		after = read.cursor;
 		const remaining = deadline - now();
 		if (remaining <= 0)
 			return result(
@@ -344,7 +341,9 @@ async function waitForEvents(
 					timedOut: true,
 				}),
 			);
-		await sleep(Math.min(pollMs, remaining), caller.signal);
+		// The journal moved but nothing matched: there may be more to read at
+		// once. Otherwise wait for the next look.
+		if (!moved) await sleep(Math.min(pollMs, remaining), caller.signal);
 	}
 }
 
