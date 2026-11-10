@@ -1,12 +1,15 @@
+import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { ciEventSinkFromEnv, createCiEventEmitter } from "@hobo/ci-gh-actions";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { type MessageMetadata, QueueClient } from "@vercel/queue";
 import { createBootstrapEntry } from "./bootstrap-entry.js";
 import { createVercelApplication } from "./composition.js";
+import { reportRelayFailure, setRelayFailureEvents } from "./failure-log.js";
 import { createNodeRelayHandler } from "./node-handler.js";
 import { forwardQueueWakeup } from "./queue-forwarding.js";
 import { loadBrokerRuntimeConfig } from "./runtime-config-client.js";
-import { QueueMessageSchema } from "./worker.js";
+import { isPlatformScheduleRun, QueueMessageSchema } from "./worker.js";
 
 // Keep Vercel's default deployment pinning: the callback hands each wakeup to
 // the current production relay before acknowledging its original delivery.
@@ -17,6 +20,18 @@ const brokerOrigin =
 const brokerAudience = "https://hobo-ci.vercel.app/internal/runtime-config";
 // Owner bootstrap requires converted-App metadata and browser identity checks.
 const ownerBootstrapEnabled = true;
+// With HOBO_CI_EVENTS_URL set, each relay failure is also a CloudEvent.
+setRelayFailureEvents(
+	createCiEventEmitter({
+		source: {
+			tenant: process.env.HOBO_CI_EVENTS_TENANT || "hobo-ci",
+			// One ordered stream per function instance of a deployment.
+			streamId: `ci-relay/${process.env.VERCEL_DEPLOYMENT_ID || "local"}/${randomBytes(4).toString("hex")}`,
+			actorId: "hobo-ci-relay",
+		},
+		sink: ciEventSinkFromEnv(process.env).sink,
+	}),
+);
 let startup: ReturnType<typeof createVercelApplication> | undefined;
 function application() {
 	const options = {
@@ -43,6 +58,8 @@ function application() {
 			);
 		},
 	};
+	// Which step of startup was running when it failed: the log line names it.
+	let stage = "runtime-config";
 	startup ??= Promise.resolve()
 		.then(async () => {
 			let env = process.env;
@@ -61,6 +78,7 @@ function application() {
 				env = { ...env, ...config };
 				ownerVerifiedBootstrap = ownerBootstrapEnabled;
 			}
+			stage = "application";
 			const resolved = { ...options, env };
 			if (!env.HOBO_CI_BOOTSTRAP_TOKEN_SHA256)
 				return createVercelApplication(resolved);
@@ -70,7 +88,13 @@ function application() {
 				bootstrapOptions.expectedGithubOwnerId = 145080887;
 			return createBootstrapEntry(bootstrapOptions);
 		})
-		.catch(() => {
+		.catch((error) => {
+			// Every request answers 503 until this succeeds; say why.
+			reportRelayFailure(
+				"hobo_ci_relay_init_failed",
+				{ stage },
+				error instanceof Error ? error : undefined,
+			);
 			startup = undefined;
 			throw new Error("relay initialization failed");
 		});
@@ -131,7 +155,11 @@ export function reportQueueBinding(metadata: MessageMetadata) {
 export const consume = queue.handleNodeCallback(async (message, metadata) => {
 	reportQueueBinding(metadata);
 	if (process.env.VERCEL_ENV !== "production") {
-		await (await application()).tick(QueueMessageSchema.parse(message));
+		const parsed = QueueMessageSchema.parse(message);
+		// Every deployment declares the static schedule in vercel.json. Only
+		// production repairs on a timer; a preview acknowledges the run unworked.
+		if (isPlatformScheduleRun(parsed)) return;
+		await (await application()).tick(parsed);
 		return;
 	}
 	let origin = process.env.HOBO_CI_PUBLIC_URL;

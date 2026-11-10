@@ -124,6 +124,7 @@ describe("bootstrap entry", () => {
 			.fn()
 			.mockRejectedValueOnce(new Error("transient"))
 			.mockResolvedValue(app);
+		let clock = 1_000_000;
 		const entry = createBootstrapEntry({
 			env,
 			notify,
@@ -131,14 +132,29 @@ describe("bootstrap entry", () => {
 			scheduledRepair,
 			bootstrap,
 			createApplication: create,
+			now: () => clock,
 		});
-		await expect(
-			entry.handle(new Request(`${env.HOBO_CI_PUBLIC_URL}/readyz`)),
-		).rejects.toThrow("transient");
-		expect(
-			(await entry.handle(new Request(`${env.HOBO_CI_PUBLIC_URL}/readyz`)))
-				.status,
-		).toBe(204);
+		const get = (path: string) =>
+			entry.handle(new Request(`${env.HOBO_CI_PUBLIC_URL}${path}`));
+		// Readiness names the reason and says when to come back.
+		const unready = await get("/readyz");
+		expect(unready.status).toBe(503);
+		expect(await unready.json()).toEqual({
+			ready: false,
+			reason: "store-unavailable",
+		});
+		expect(unready.headers.get("retry-after")).toBe("5");
+		// Liveness is about the process: it stays up while the store is down.
+		expect((await get("/healthz")).status).toBe(200);
+		// Any other request fails, and the store is not dialled again yet.
+		await expect(get("/v1/accounts/self/policy")).rejects.toThrow(
+			"store unavailable; not retried yet",
+		);
+		expect((await get("/readyz")).status).toBe(503);
+		expect(create).toHaveBeenCalledTimes(1);
+		// After the back-off it is tried again and recovers.
+		clock += 5_000;
+		expect((await get("/readyz")).status).toBe(204);
 		expect(create).toHaveBeenCalledTimes(2);
 		await entry.close();
 		expect(() =>
