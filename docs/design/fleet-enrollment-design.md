@@ -462,6 +462,8 @@ The hook:
 
 The controller verifies current assignment with GitHub using central credentials: installation/repository, job ID, run ID, run attempt, assigned runner name, status, runner group, and required execution profile. A worker-supplied local payload alone is insufficient because a malicious worker could forge it.
 
+Implementation note: `authorizeStartFence` in `packages/ci-gh-actions/src/fleet-v2/start-fence.ts` is the parse boundary for the hook body — it zod-`safeParse`s the untrusted `unknown` input before any field is read (an `anti-slop/no-unknown-parameters` boundary waiver, mirroring `packages/ci/src/fleet-v2/parse.ts`), then cross-checks every claimed identity field against the GitHub assignment lookup.
+
 ### 9.4 Start-binding transaction
 
 Use one global lock order: RunnerSlot → ExecutionClaim/Demand → events/outbox.

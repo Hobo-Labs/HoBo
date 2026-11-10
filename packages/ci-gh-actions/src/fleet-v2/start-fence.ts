@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-unknown-parameters -- fleet v2 parse boundary; authorizeStartFence zod-parses the untrusted hook body before any use, mirroring packages/ci/src/fleet-v2/parse.ts */
 import { createHash } from "node:crypto";
 import * as z from "zod";
 
