@@ -25,4 +25,4 @@ The FinOps Crew member **advises** on cost and efficiency. It does not auto-spen
 
 ## Related
 
-[Metering](/HoBo/reference/metering/) · [FinOps role](/HoBo/roles/finops/) · [Continuous migration](/HoBo/cicd/migration/)
+[Metering](/HoBo/reference/metering/) · [FinOps role](/HoBo/roles/finops/) · [Continuous migration](/HoBo/cicd/migration/) · [CI providers](/HoBo/ci/providers/) (dated runner prices)
