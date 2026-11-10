@@ -14,7 +14,8 @@
  * tree by `scripts/lib/test-import-specifiers.mts` and independent of the
  * planner's own edges: every test file whose static or dynamic imports, or its
  * package's vitest config, reach a changed file must be in the plan. A test
- * missing from it is printed, and the exit status is 1.
+ * missing from either plan is printed; the exit status is 1 when the current
+ * planner misses one, whatever the planner at `--before` missed.
  *
  * CLI: `node --import tsx scripts/ci/plan-replay.mts [--count=100] [--ref=origin/main] [--before=REF] [--check]`
  */
@@ -203,6 +204,16 @@ export function missed(
 	});
 }
 
+/** The planner under test is `after`; `before` is only what it is compared with. */
+const CURRENT = "after";
+
+/** Whether the replay fails: the current planner missed a test. */
+export function replayFailed(
+	totals: ReadonlyMap<string, { readonly misses: number }>,
+): boolean {
+	return (totals.get(CURRENT)?.misses ?? 0) > 0;
+}
+
 const size = (plan: TestPlan) =>
 	plan.mode === "all"
 		? { all: 1, whole: 0, subsets: 0 }
@@ -222,7 +233,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
 	const ref = option("ref") ?? "origin/main";
 	const beforeRef = option("before");
 	const check = process.argv.includes("--check");
-	const planners: [string, Planner][] = [["after", planDependentTests]];
+	const planners: [string, Planner][] = [[CURRENT, planDependentTests]];
 	if (beforeRef !== undefined)
 		planners.unshift(["before", await plannerAt(beforeRef)]);
 	const repo = readRepo();
@@ -271,6 +282,5 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
 		console.log(
 			`${label}: ${commits.length} commits, ${total.all} whole-workspace, ${total.whole} whole suites, ${total.subsets} subsets${graph ? `, ${total.misses} missed tests` : ""}`,
 		);
-	if ([...totals.values()].some((total) => total.misses > 0))
-		process.exitCode = 1;
+	if (replayFailed(totals)) process.exitCode = 1;
 }
