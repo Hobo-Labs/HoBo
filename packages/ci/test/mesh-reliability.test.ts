@@ -112,9 +112,10 @@ describe("mesh reliability score", () => {
 		const lost = retractMeshDelivery(picked, NOW, NOW + 10 * MINUTE, OPTIONS);
 		expect(lost.delivered).toBeCloseTo(0, 10);
 		expect(lost.dropped).toBe(1);
-		expect(
-			meshReliabilityScore(lost, NOW + 10 * MINUTE, OPTIONS),
-		).toBeCloseTo(4 / 5, 10);
+		expect(meshReliabilityScore(lost, NOW + 10 * MINUTE, OPTIONS)).toBeCloseTo(
+			4 / 5,
+			10,
+		);
 		// Exactly what recording a drop in the first place would have given.
 		const direct = recordMeshOutcome(
 			newMeshReliability(NOW),
@@ -189,8 +190,11 @@ describe("ranking by reliability", () => {
 
 	it("combines with capacity: more room can outweigh a worse record", () => {
 		// Eight copies at 0.5 is a weight of 4, against 2 at full trust.
-		const mesh = [node("small"), node("large", { freeSlots: 8, reliability: 0.5 })];
+		const mesh = [
+			node("small"),
+			node("large", { freeSlots: 8, reliability: 0.5 }),
+		];
 		expect(share(mesh, "large")).toBeGreaterThan(0.63);
-		expect(share(mesh, "large")).toBeLessThan(0.70);
+		expect(share(mesh, "large")).toBeLessThan(0.7);
 	});
 });
