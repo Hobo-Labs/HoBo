@@ -294,6 +294,7 @@ type JobPickupLogFields = {
 	runEvent?: string;
 	label?: string;
 	jitLabels?: string;
+	jobLabels?: string;
 	jobCreatedAt?: string;
 	admittedAt?: string;
 	containerStartedAt?: string;
@@ -320,6 +321,8 @@ export function createIsolatedContainerController(options: {
 		activeLeases: readonly Lease[],
 	) => Promise<ReadonlySet<string>>;
 	jobPickupMetadata?: Readonly<JobPickupMetadataCache>;
+	/** @internal Test-only shared empty-exit backoff state. */
+	jitEmptyExitLoops?: Map<string, JitEmptyExitState>;
 	/** Host bare mirror mounted read-only at the same path the job-side probe uses. */
 	gitMirror?: {
 		pathFor(repository: string): string | undefined;
@@ -750,7 +753,8 @@ export function createIsolatedContainerController(options: {
 		parkedAtMs?: number;
 	};
 	const launchLoops = new Map<string, LaunchLoopState>();
-	const emptyExitLoops = new Map<string, JitEmptyExitState>();
+	const emptyExitLoops =
+		options.jitEmptyExitLoops ?? new Map<string, JitEmptyExitState>();
 	const pendingExitEvidence = new Map<
 		string,
 		Awaited<ReturnType<typeof readRunnerExitEvidence>>
@@ -978,18 +982,23 @@ export function createIsolatedContainerController(options: {
 		);
 		if (original.status !== "queued") clearJitEmptyExit(emptyExitLoops, emptyKey);
 		// Fleet mesh: another `hobo` runner may hold the job; withdraw instead of re-admitting.
-		const unmet =
-			original.status === "queued" && custody !== "foreign"
-				? requeueJob(lease, original.labels)
-				: undefined;
+		// Empty JIT exit: job still queued on GitHub — withdraw local demand; poll re-ingest later.
+		const emptyJitExit =
+			original.status === "queued" && custody !== "foreign";
+		const unmet: ReturnType<typeof requeueJob> | undefined = undefined;
 		if (original.status === "queued" && custody === "foreign") {
 			await options.store.withdrawQueuedJob?.(
 				requeueJob(lease, original.labels),
 				observedAt,
 			);
 			clearJitEmptyExit(emptyExitLoops, emptyKey);
-		}
-		if (unmet) {
+		} else if (emptyJitExit) {
+			await options.store.withdrawQueuedJob?.(
+				requeueJob(lease, original.labels),
+				observedAt,
+				undefined,
+				lease.id,
+			);
 			const empty = recordJitEmptyExit(
 				emptyExitLoops,
 				emptyKey,
@@ -1081,6 +1090,27 @@ export function createIsolatedContainerController(options: {
 				const weights = containerResourceWeightsForRank(rank);
 				const initial = await options.store.get(id);
 				if (initial?.state !== "reserved") return;
+				const emptyBlocked = jitEmptyExitLaunchBlocked(
+					emptyExitLoops,
+					jitEmptyExitKey(
+						initial.repositoryId,
+						initial.jobId,
+						initial.runAttempt,
+					),
+					Date.parse(now()),
+				);
+				if (emptyBlocked) {
+					options.log?.("hobo_ci_jit_empty_exit_backoff", {
+						jobId: initial.jobId,
+						runId: initial.originalRunId,
+						runAttempt: initial.runAttempt,
+						emptyExitCount: emptyBlocked.count,
+						nextLaunchMs: emptyBlocked.nextLaunchMs,
+						waitMs: emptyBlocked.nextLaunchMs - Date.parse(now()),
+						stage: "launch",
+					});
+					return;
+				}
 				// Slot full: leave the lease reserved; the next relay tick retries it.
 				if ((await liveContainers(id)) >= slots) return;
 				let auth: Awaited<ReturnType<typeof authorize>>;
@@ -1368,6 +1398,7 @@ export function createIsolatedContainerController(options: {
 					if (metadata?.event !== undefined) fields.runEvent = metadata.event;
 					fields.label = label;
 					fields.jitLabels = jitLabels.join(",");
+					fields.jobLabels = (jobLabels ?? []).join(",");
 					if (metadata?.jobCreatedAt !== undefined)
 						fields.jobCreatedAt = metadata.jobCreatedAt;
 					fields.admittedAt = registered.createdAt;

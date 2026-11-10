@@ -232,10 +232,7 @@ describe("isolated container controller reconcile", () => {
 		expect(stop).toHaveBeenCalledWith(lease.sandboxName, "observed-id");
 		expect(remove).toHaveBeenCalledWith(lease.sandboxName, "observed-id");
 		expect(settle).toHaveBeenCalledOnce();
-		expect(settle.mock.calls[0]?.[4]).toMatchObject({
-			id: lease.jobId,
-			action: "queued",
-		});
+		expect(settle.mock.calls[0]?.[4]).toBeUndefined();
 	});
 
 	it("does not bind an uncertain create when inventory is ambiguous or registration may have started", async () => {
@@ -363,7 +360,7 @@ describe("isolated container controller reconcile", () => {
 			0,
 			2,
 			clock,
-			expect.objectContaining({ id: lease.jobId }),
+			undefined,
 			"2026-10-26T12:02:00Z",
 		);
 	});
@@ -526,7 +523,7 @@ describe("isolated container controller reconcile", () => {
 			});
 			expect(
 				(await store.pendingJobs()).map((pending) => pending.id),
-			).toContain(job.id);
+			).not.toContain(job.id);
 			expect(await store.reserve(account, next, clock, 1)).toBeDefined();
 		} finally {
 			if (open) store.close();
@@ -764,11 +761,13 @@ describe("isolated container controller reconcile", () => {
 	it("force-stop settle requeues when GitHub assigned a different job to the runner", async () => {
 		const lease = runningLease({ jobId: 100, actualJobId: 999 });
 		const settle = vi.fn(async () => lease);
-		// SAFETY: force-stop reconcile uses get(), transition(), and settle(); this stub implements those methods.
+		const withdrawQueuedJob = vi.fn(async () => true);
+		// SAFETY: force-stop reconcile uses get(), transition(), settle(); this stub implements those methods.
 		const relayStore = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			transition: transitionFor(lease),
 			settle,
+			withdrawQueuedJob,
 		} as PostgresCiStore & HostedRelayStore;
 		const docker: DockerDriver = {
 			create: vi.fn(),
@@ -794,21 +793,20 @@ describe("isolated container controller reconcile", () => {
 		});
 		await controller.host.reconcile(lease.id, true);
 		expect(settle).toHaveBeenCalledTimes(1);
-		expect(settle.mock.calls[0]?.[4]).toMatchObject({
-			id: lease.jobId,
-			action: "queued",
-			isolatedRequired: true,
-		});
+		expect(settle.mock.calls[0]?.[4]).toBeUndefined();
+		expect(withdrawQueuedJob).toHaveBeenCalledOnce();
 	});
 
-	it("force-stop settle requeues when the reserved job is still queued and unassigned", async () => {
+	it("force-stop settle withdraws when the reserved job is still queued and unassigned", async () => {
 		const lease = runningLease({ jobId: 100, actualJobId: 0 });
 		const settle = vi.fn(async () => lease);
-		// SAFETY: force-stop reconcile uses get(), transition(), and settle(); this stub implements those methods.
+		const withdrawQueuedJob = vi.fn(async () => true);
+		// SAFETY: force-stop reconcile uses get(), transition(), settle(); this stub implements those methods.
 		const relayStore = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			transition: transitionFor(lease),
 			settle,
+			withdrawQueuedJob,
 		} as PostgresCiStore & HostedRelayStore;
 		const docker: DockerDriver = {
 			create: vi.fn(),
@@ -834,10 +832,8 @@ describe("isolated container controller reconcile", () => {
 		});
 		await controller.host.reconcile(lease.id, true);
 		expect(settle).toHaveBeenCalledTimes(1);
-		expect(settle.mock.calls[0]?.[4]).toMatchObject({
-			id: lease.jobId,
-			labels: ["hobo"],
-		});
+		expect(settle.mock.calls[0]?.[4]).toBeUndefined();
+		expect(withdrawQueuedJob).toHaveBeenCalledOnce();
 	});
 
 	it("does not abort a running lease when docker inspect fails", async () => {
@@ -895,6 +891,7 @@ describe("isolated container controller reconcile", () => {
 			transition: transitionFor(lease),
 			settle,
 			abortIsolatedAndRequeue,
+			withdrawQueuedJob: vi.fn(async () => true),
 		} as PostgresCiStore & HostedRelayStore;
 		const docker: DockerDriver = {
 			create: vi.fn(),
@@ -939,7 +936,15 @@ describe("isolated container controller reconcile", () => {
 				scheduleRetiredSweep: work.scheduleRetiredSweep,
 			});
 		const controller = createIsolatedContainerController(controllerOptions);
-		return { lease, settle, abortIsolatedAndRequeue, docker, controller, work };
+		return {
+			lease,
+			settle,
+			abortIsolatedAndRequeue,
+			docker,
+			controller,
+			work,
+			store: relayStore,
+		};
 	}
 
 	it("logs the job memory class when docker reports an exit-137 OOM kill", async () => {
@@ -1081,17 +1086,17 @@ describe("isolated container controller reconcile", () => {
 		);
 	});
 
-	it("requeues the reserved job when the runner exited without taking it", async () => {
+	it("withdraws local demand when the runner exited without taking the job", async () => {
 		const s = markerScenario(vi.fn(async () => true));
+		const withdrawQueuedJob = vi.fn(async () => true);
+		// SAFETY: optional withdraw hook on the HostedRelay store surface.
+		s.store.withdrawQueuedJob = withdrawQueuedJob;
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(s.lease.jobId, "queued"),
 		);
 		await s.controller.host.reconcile(s.lease.id);
-		expect(s.settle.mock.calls[0]?.[4]).toMatchObject({
-			id: s.lease.jobId,
-			action: "queued",
-			isolatedRequired: true,
-		});
+		expect(s.settle.mock.calls[0]?.[4]).toBeUndefined();
+		expect(withdrawQueuedJob).toHaveBeenCalledOnce();
 	});
 
 	it.each([
@@ -1156,7 +1161,7 @@ describe("isolated container controller reconcile", () => {
 			0,
 			2,
 			expect.any(String),
-			expect.objectContaining({ id: s.lease.jobId }),
+			undefined,
 			expect.any(String),
 		);
 		expect(s.work?.retireJobDirectory).toHaveBeenCalledWith(

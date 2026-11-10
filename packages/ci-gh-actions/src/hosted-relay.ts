@@ -111,6 +111,7 @@ export interface HostedRelayStore {
 		job: Job,
 		at: string,
 		expectedRevision?: number,
+		exceptLeaseId?: string,
 	): Promise<boolean>;
 	abortIsolatedAndRequeue(id: string, job: Job, at: string): Promise<void>;
 	settleObserved(

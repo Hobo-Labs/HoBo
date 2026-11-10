@@ -1940,7 +1940,12 @@ export class LeaseStore {
 		});
 	}
 	/** Drop box demand when GitHub assigned the job elsewhere; never re-queue. */
-	withdrawQueuedJob(job: Job, at: string, expectedRevision?: number): boolean {
+	withdrawQueuedJob(
+		job: Job,
+		at: string,
+		expectedRevision?: number,
+		exceptLeaseId?: string,
+	): boolean {
 		return this.transaction(() => {
 			if (
 				expectedRevision !== undefined &&
@@ -1958,6 +1963,7 @@ export class LeaseStore {
 					!ACTIVE_STATES.has(lease.state)
 				)
 					continue;
+				if (exceptLeaseId && lease.id === exceptLeaseId) continue;
 				const offer = configuration?.accounts
 					.find((account) => account.id === lease.accountId)
 					?.offers.find((candidate) => candidate.id === lease.offerId);

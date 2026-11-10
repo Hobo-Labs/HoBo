@@ -31,7 +31,9 @@ Isolated JIT containers run `./run.sh || true`. Two fleet-mesh cases look the sa
 
 Registration can succeed while GitHub never delivers the job to **this** runner. **Before custody fixes**, settle treated “job still `queued`” as **unmet demand** and `queueInside` re-admitted it; Finding 85 coalesce re-poll amplified that into ~35s pickup loops (`hobo_ci_job_pickup`).
 
-Box evidence (2026-11-10 post-#1792 trial): repeated pickups ~39s apart with zero `hobo_ci_launch_yielded_foreign_runner` → case (2).
+Box evidence (2026-11-10): repeated pickups ~39s apart with zero `hobo_ci_launch_yielded_foreign_runner` → case (2). Runner `_diag` may show `Job request … processed succeed` while GitHub REST still reports `queued` — the mesh assigned work elsewhere or the session ended before REST bound `runner_name`. Labels matching (`jitLabels` = `jobLabels`) ruled out label skew on trunk jobs.
+
+Second box trial: `emptyExitCount` rose but `hobo_ci_jit_empty_exit_backoff` never logged — `createCompositeIsolatedHost` did not forward `isLaunchParked`, and empty exits still called `queueInside`, re-admitting demand before backoff could bite.
 
 ## Fix (fleet cooperation)
 

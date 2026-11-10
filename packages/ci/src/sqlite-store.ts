@@ -538,9 +538,10 @@ export class SqliteCiStore {
 		job: Job,
 		at: string,
 		expectedRevision?: number,
+		exceptLeaseId?: string,
 	): Promise<boolean> {
 		return this.tx(() =>
-			this.leases.withdrawQueuedJob(job, at, expectedRevision),
+			this.leases.withdrawQueuedJob(job, at, expectedRevision, exceptLeaseId),
 		);
 	}
 	abortIsolatedAndRequeue(id: string, job: Job, at: string): Promise<void> {

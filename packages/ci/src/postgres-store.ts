@@ -1451,7 +1451,12 @@ export class PostgresCiStore {
 			await this.queueInside(c, job, at);
 		});
 	}
-	withdrawQueuedJob(job: Job, at: string, expectedRevision?: number) {
+	withdrawQueuedJob(
+		job: Job,
+		at: string,
+		expectedRevision?: number,
+		exceptLeaseId?: string,
+	) {
 		return this.tx(async (c) => {
 			if (
 				expectedRevision !== undefined &&
@@ -1469,6 +1474,7 @@ export class PostgresCiStore {
 					!ACTIVE_STATES.has(lease.state)
 				)
 					continue;
+				if (exceptLeaseId && lease.id === exceptLeaseId) continue;
 				const offer = configuration?.accounts
 					.find((account) => account.id === lease.accountId)
 					?.offers.find((candidate) => candidate.id === lease.offerId);
