@@ -174,13 +174,13 @@ export {
 	type JobObservation,
 } from "./job-durations.js";
 export { startRelayFromEnvironment } from "./main.js";
-export { createNodeRelayHandler } from "./node-http.js";
 export {
 	createWorkerMesh,
 	type MeshSettings,
 	meshSettingsFromEnv,
 	type WorkerMesh,
 } from "./mesh-worker.js";
+export { createNodeRelayHandler } from "./node-http.js";
 export {
 	createGithubOidcVerifier,
 	type GithubClaims,
