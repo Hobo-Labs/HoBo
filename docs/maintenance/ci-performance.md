@@ -66,6 +66,12 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   (an inert PR diff skips install in the off-path job). With `zod` it failed `ERR_MODULE_NOT_FOUND`
   there and turned a skipped job red (#1653's run 41583817166). `scripts/test/ci-trace.test.ts` pins
   the import rule; the hand-written parser emits byte-identical spans and summaries.
+- **Image builds read the checkout's pins.** `build.sh` runs inside a job container that carries the
+  tool pins of whichever commit last built `hobo-ci-worker:local`. After a pull request pinned `syft`
+  and rebuilt the shared image, `mise install --locked` failed on every branch without that pin
+  (`syft@1.56.0 is not in the lockfile`, release run 42741596338). The script now ignores the image's
+  baked `/etc/mise/config.toml`, and `scripts/test/ci-runner-image-contract.test.ts` pins that it does
+  so before its first mise call.
 - **No serial PR jobs.** `artifact-trust` and `dev-cold-loop-gate` do their own checkout and install and
   read nothing from the PR impact gate, so they no longer `needs: pr-gate`. On a two-slot box that
   dependency left a slot idle while the gate ran, then queued both behind it. `ci-runner-image` and
