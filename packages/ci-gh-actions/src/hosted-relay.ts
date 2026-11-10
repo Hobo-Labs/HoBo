@@ -37,7 +37,10 @@ import { verifyIngressForward } from "./ingress-forward.js";
 import { isIsolatedHostOffer } from "./isolated-backend.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
-import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
+import {
+	releaseWorkerStorageGrants,
+	type WorkerStorageAdmission,
+} from "./isolated-worker/storage-admission.js";
 import type { JobDurations } from "./job-durations.js";
 import {
 	type JobPickupMetadataCache,
@@ -832,6 +835,11 @@ export class HostedRelay {
 		}
 		return key;
 	}
+
+	private releaseInodeGrants(lease: Readonly<{ id: string; jobId: number }>) {
+		releaseWorkerStorageGrants(this.options.storageAdmission, lease);
+	}
+
 	/** Durable outbox drain. A launch intent is committed before network I/O. */
 	async dispatchPending(): Promise<number> {
 		const reservationRevision = await this.refreshConfig();
@@ -946,6 +954,23 @@ export class HostedRelay {
 			const storageJobId = String(job.id);
 			if (storageAdmission) {
 				if (storageRefused) continue;
+				try {
+					const currentJob = await getJob(
+						this.options.github,
+						job.installationId,
+						job.repository,
+						job.id,
+					);
+					if (
+						currentJob.status !== "queued" ||
+						currentJob.id !== job.id ||
+						currentJob.run_id !== job.runId ||
+						(currentJob.run_attempt ?? 1) !== job.runAttempt
+					)
+						continue;
+				} catch {
+					continue;
+				}
 				const storageLeases = await this.options.store.activeLeases();
 				const admitted = await storageAdmission.admit(
 					storageLeases.map((lease) => ({
@@ -1008,6 +1033,7 @@ export class HostedRelay {
 				if (trunk)
 					waitingTrunk.add(this.reportTrunkWait(job, "lease-capacity"));
 			} else {
+				storageAdmission?.bindGrant(storageJobId, lease.id);
 				this.servedRunnerLabels.set(
 					`${job.repository}:${job.id}`,
 					servedRunnerLabel(job.labels),
@@ -1042,6 +1068,7 @@ export class HostedRelay {
 						this.queuedDemand(candidate),
 						this.now(),
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				this.binding(candidate);
@@ -1067,6 +1094,7 @@ export class HostedRelay {
 						this.now(),
 						preflightRevision,
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				const connection = this.binding(candidate);
@@ -1085,6 +1113,7 @@ export class HostedRelay {
 						demand,
 						this.now(),
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				if (
@@ -1109,6 +1138,7 @@ export class HostedRelay {
 						this.now(),
 						preflightRevision,
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				if (isolatedHost) {
@@ -1133,6 +1163,7 @@ export class HostedRelay {
 						this.queuedDemand(candidate),
 						this.now(),
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				const lease = await this.options.store.transition(
@@ -1466,5 +1497,6 @@ export class HostedRelay {
 				runnerId: lease.runnerId,
 			},
 		);
+		this.releaseInodeGrants(lease);
 	}
 }

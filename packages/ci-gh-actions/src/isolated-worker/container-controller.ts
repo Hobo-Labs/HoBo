@@ -44,7 +44,11 @@ import {
 	type OrphanJobEvent,
 	orphanJobCandidateForLease,
 } from "./orphan-jobs.js";
-import type { WorkerStorageFileSystem } from "./storage-admission.js";
+import {
+	releaseWorkerStorageGrants,
+	type WorkerStorageAdmission,
+	type WorkerStorageFileSystem,
+} from "./storage-admission.js";
 
 const JIT_PATH = "/tmp/hobo-ci-jit";
 const WORK_TARGET = "/opt/actions-runner/_hobo_work";
@@ -280,6 +284,7 @@ export function createIsolatedContainerController(options: {
 	containerEnv?: Readonly<Record<string, string>>;
 	workRoot?: string;
 	workFs?: WorkerStorageFileSystem;
+	storageAdmission?: WorkerStorageAdmission;
 	scheduleRetiredSweep?: () => void;
 	/** Only this repository may use the HoBo deps layer; empty depsImage disables it. */
 	depsRepository?: string;
@@ -742,6 +747,7 @@ export function createIsolatedContainerController(options: {
 					);
 			}
 		} finally {
+			releaseWorkerStorageGrants(options.storageAdmission, lease);
 			await cleanupWorkDirectory(lease);
 		}
 	};
@@ -889,6 +895,7 @@ export function createIsolatedContainerController(options: {
 			unmet,
 			completedAt,
 		);
+		releaseWorkerStorageGrants(options.storageAdmission, lease);
 	};
 
 	const host: IsolatedRunnerHost = {

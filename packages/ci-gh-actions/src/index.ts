@@ -136,6 +136,7 @@ export { singleFlight } from "./isolated-worker/single-flight.js";
 export {
 	createNodeWorkerStorageFileSystem,
 	createWorkerStorageAdmission,
+	releaseWorkerStorageGrants,
 	type WorkerStorageAdmission,
 } from "./isolated-worker/storage-admission.js";
 export { resolveWorkerSlotConfig } from "./isolated-worker/worker-slots.js";

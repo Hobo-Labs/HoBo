@@ -164,6 +164,11 @@ const workRoot =
 		"work",
 	);
 mkdirSync(workRoot, { recursive: true, mode: 0o755 });
+const gitMirrorRoot =
+	process.env.HOBO_CI_GIT_MIRROR_ROOT ?? "/var/lib/hobo-ci/git";
+const gitMirrorEnabled = process.env.HOBO_CI_GIT_MIRROR !== "0";
+if (gitMirrorEnabled)
+	mkdirSync(gitMirrorRoot, { recursive: true, mode: 0o755 });
 const memoryPeaks = createMemoryPeaks({
 	path: join(workRoot, "memory-peaks.json"),
 	log,
@@ -392,9 +397,6 @@ try {
 		string,
 		{ event?: string; jobCreatedAt?: string }
 	>();
-	const gitMirrorRoot =
-		process.env.HOBO_CI_GIT_MIRROR_ROOT ?? "/var/lib/hobo-ci/git";
-	const gitMirrorEnabled = process.env.HOBO_CI_GIT_MIRROR !== "0";
 	const gitMirrors = new Map<string, ReturnType<typeof createBoxGitMirror>>();
 	function gitMirrorFor(repository: string) {
 		const key = repository.toLowerCase();
@@ -454,6 +456,7 @@ try {
 			: {},
 		workRoot,
 		workFs,
+		storageAdmission,
 		scheduleRetiredSweep: retiredSweep.trigger,
 	});
 	let liveWorkerLeaseIds = (await worker.reconcileLeases()).liveLeaseIds;
