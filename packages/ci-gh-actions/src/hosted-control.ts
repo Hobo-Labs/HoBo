@@ -52,7 +52,8 @@ import {
 	prepareOnboarding,
 } from "./onboarding.js";
 
-interface HostedControlStore extends HostedRelayStore {
+/** What the account control plane needs from a store beyond the relay's own port. */
+export interface HostedControlStore extends HostedRelayStore {
 	reattestRate(
 		input: {
 			accountId: string;
@@ -317,7 +318,14 @@ export function createHostedControlPlane(options: {
 				);
 			if (path === "/v2/accounts/self/policy" && request.method === "PUT") {
 				const expected = revision(request);
-				const desired = parseCiPolicy(await readBody(request));
+				const input = await readBody(request);
+				let desired: ReturnType<typeof parseCiPolicy>;
+				try {
+					desired = parseCiPolicy(input);
+				} catch {
+					// A policy the parser refuses is the caller's to fix, not to retry.
+					throw new ControlError(400, "invalid desired CI policy");
+				}
 				if (desired.accountId !== principal.accountId)
 					throw new ControlError(
 						403,

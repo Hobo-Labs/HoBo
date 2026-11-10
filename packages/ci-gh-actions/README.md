@@ -37,10 +37,10 @@ pnpm --filter @hobo/ci-gh-actions test:acceptance --local --act /tmp/hobo-ci-too
 
 This is a connected test of signed HTTP intake, durable reservations, dispatch,
 RS256 OIDC/JWKS, JIT authorization, the shipped host process launcher, actual act
-workflow execution, signed completion, runner cleanup and settlement. Seven
-original jobs consume five providers' free allocations, select the cheapest paid
+workflow execution, signed completion, runner cleanup and settlement. Six
+original jobs consume four providers' free allocations, select the cheapest paid
 provider and exercise provider-budget fallback. The exhausted account launches
-no eighth job. Reopening and replaying the database preserves billing and results.
+no seventh job. Reopening and replaying the database preserves billing and results.
 Missing JIT authorization, provider mismatch and skipped execution fail the test.
 See [acceptance evidence](acceptance/README.md).
 
@@ -75,6 +75,33 @@ Signal cycles and crossed state persist with account policy; delayed facts and
 replay cannot undo a newer transition. CAS conflicts are retried by the journal
 consumer, and `reconcile()` applies rule changes to existing signal state.
 Already running jobs retain their reservation and finish on their chosen host.
+
+## One relay, thin hosts
+
+There is one relay. Its core is `HostedRelay` (`src/hosted-relay.ts`:
+admission, reservation, dispatch, runner claim, reconciliation), driven by
+`createHostedRelayRuntime` (`src/hosted-runtime.ts`: the durable webhook inbox
+and the worker tick), with `createHostedControlPlane` (`src/hosted-control.ts`:
+the account API) and `createRelayHandler` (the HTTP surface, below). They are
+written against the `HostedInboxStore` port, which `SqliteCiStore` and
+`PostgresCiStore` in [`@hobo/ci`](../ci/README.md) both implement.
+
+A host supplies a store, something that calls `runtime.tick`, and runner
+backends. Nothing else differs between them:
+
+| Host | Entry | Store | What calls the tick | Runner backends |
+| --- | --- | --- | --- | --- |
+| Node service: `hobo ci serve`, the container image | `createRelayHost` (`src/relay-host.ts`), started from `HOBO_CI_*` by `startRelayFromEnvironment` (`src/main.ts`) | `SqliteCiStore`, one file fenced by a lock file | A 5-second timer in `createRelayService` | Workflow bridge |
+| Vercel | `createVercelApplication` in [`@hobo/ci-vercel`](../ci-vercel/README.md) | `PostgresCiStore` | A queue wake-up per delivery and a 15-minute schedule | Vercel Sandbox |
+| Box worker daemon | `scripts/isolated-worker-daemon-main.mts` (no HTTP; admission by polling) | `SqliteCiStore` or `PostgresCiStore` | Its own loop | Isolated containers |
+
+The Node service adds two things of its own to the shared handler: a cached
+readiness probe that also gates admission (`admitWhenReady`: while the probe
+fails or the service drains, a delivery answers 503 for GitHub to redeliver and
+a runner claim is refused; the account API stays reachable), and a bounded
+drain on SIGTERM. The Vercel host adds the GitHub App bootstrap and OAuth
+onboarding, the queue wake-up and the webhook and queued-job repair; those are
+Postgres-only today and the Node service does not have them.
 
 ## One HTTP layer
 
@@ -118,7 +145,10 @@ unsafe stale-PID removal. Kubernetes uses one replica and `Recreate`.
 The tested container lifecycle includes authenticated policy changes, restart
 persistence, duplicate-owner refusal, online backup, graceful SIGTERM and offline
 restore from a read-only backup. `/healthz` reports process liveness; `/readyz`
-reports recovered local partition readiness and becomes unavailable during drain.
+reports local partition readiness (the store answers and holds a configuration)
+and becomes unavailable during drain. A dispatch or runner claim that a crash
+interrupted is marked uncertain by the worker tick once it is two minutes old,
+never retried.
 External provider execution is verified by the separate runner acceptance path.
 A failed or hanging readiness probe cannot keep admissions open indefinitely.
 Process-spawning restore tests use a 15-second Vitest deadline for slow local

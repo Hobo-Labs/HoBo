@@ -116,7 +116,7 @@ export function createRelayHandler(options: {
 	application: HostedRelayApplication;
 	webhookSecret: string;
 	/** Accept `X-Hobo-Ingress-Forward` from a webhook ingress in place of GitHub's signature. */
-	ingressForwardSecret?: string;
+	ingressForwardSecret?: string | undefined;
 	/** This relay's engine: `/engines/{id}/…` serves the same routes as the root. */
 	engineId?: string;
 	/** Other engines the host reports at `/engines/{id}/healthz` and `/readyz`. */

@@ -9,7 +9,7 @@ import {
 	OfferSchema,
 } from "@hobo/ci";
 
-import type { GithubTransport } from "../src/github.js";
+import type { GithubAppTransport } from "../src/github.js";
 import type { GithubClaims, IdentityVerifier } from "../src/oidc.js";
 import { Relay } from "../src/relay.js";
 import { LeaseStore } from "../src/store.js";
@@ -132,7 +132,7 @@ export function claims(): GithubClaims {
 		event_name: "workflow_dispatch",
 	};
 }
-export class ContractApi implements GithubTransport {
+export class ContractApi implements GithubAppTransport {
 	original = run();
 	host = {
 		...run(),
@@ -159,6 +159,10 @@ export class ContractApi implements GithubTransport {
 			this.violations.push(`expected ${expected}; received ${actual}`);
 			throw new Error("contract mismatch");
 		}
+	}
+	async appRequest(path: string): Promise<Response> {
+		this.violations.push(`unmatched contract: App ${path}`);
+		throw new Error(`unmatched contract: App ${path}`);
 	}
 	async request(
 		installation: number,

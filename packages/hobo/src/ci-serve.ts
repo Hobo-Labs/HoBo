@@ -629,8 +629,8 @@ export async function startCiServe(input: {
 			github,
 			repository: plan.repository,
 			installationId: plan.installationId,
-			processWorkflowJobWebhook: (body) =>
-				running.relay.processWebhook(body, "workflow_job"),
+			processWorkflowJobWebhook: async (body) =>
+				(await running.relay()).processWebhook(body, "workflow_job"),
 			logger: (line) => input.emitProgress?.(line),
 		});
 		poll.start();

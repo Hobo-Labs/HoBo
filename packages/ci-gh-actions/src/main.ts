@@ -3,17 +3,13 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { create } from "@bufbuild/protobuf";
 import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
+import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { relayInstallAssets } from "./assets.js";
-import {
-	createControlAuthenticator,
-	createControlPlane,
-} from "./control-plane.js";
-import { createGithubAppTransport } from "./github.js";
+import { createControlAuthenticator } from "./control-plane.js";
+import { createGithubAppTransport, type GithubAppTransport } from "./github.js";
 import { createGithubOidcVerifier } from "./oidc.js";
 import { acquirePartitionLock } from "./partition-lock.js";
-import { Relay } from "./relay.js";
-import { createRelayService } from "./service.js";
-import { LeaseStore } from "./store.js";
+import { createRelayHost } from "./relay-host.js";
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
 	const value = env[name];
@@ -25,9 +21,15 @@ function secret(env: NodeJS.ProcessEnv, name: string): string {
 	return file ? readFileSync(file, "utf8").trimEnd() : required(env, name);
 }
 
-/** Compose the deployable service without registering process-global signal handlers. */
+/**
+ * Start the relay's Node host from `HOBO_CI_*` configuration: one SQLite
+ * partition, fenced by its lock file. No process-global signal handler is
+ * registered here.
+ */
 export async function startRelayFromEnvironment(
 	env: NodeJS.ProcessEnv = process.env,
+	/** A host embedding the relay may supply its own GitHub App transport. */
+	ports: { github?: GithubAppTransport } = {},
 ) {
 	const publicUrl = new URL(required(env, "HOBO_CI_PUBLIC_URL"));
 	const requestedHost = env.HOBO_CI_HOST ?? "127.0.0.1";
@@ -71,84 +73,56 @@ export async function startRelayFromEnvironment(
 	const assets = relayInstallAssets();
 	const database = required(env, "HOBO_CI_DB");
 	const lock = await acquirePartitionLock(database);
-	let store: LeaseStore;
+	let store: SqliteCiStore;
 	try {
-		store = new LeaseStore(database);
+		store = new SqliteCiStore(database);
 	} catch (error) {
 		await lock.release();
 		throw error;
 	}
 	try {
-		const snapshot =
-			store.configuration() ??
-			store.configure(
+		if (!(await store.configuration()))
+			await store.configure(
 				env.HOBO_CI_CONFIG
 					? parseConfiguration(readFileSync(env.HOBO_CI_CONFIG, "utf8"))
 					: create(ConfigurationSchema),
 				0,
 				new Date().toISOString(),
 			);
-		if (!snapshot.configuration)
-			throw new Error("configuration snapshot missing");
-		const github = createGithubAppTransport({
-			appId: required(env, "HOBO_CI_GITHUB_APP_ID"),
-			privateKey,
-		});
-		const relayBase = {
-			config: snapshot.configuration,
+		const { service, runtime, relay } = createRelayHost({
 			store,
-			github,
+			github:
+				ports.github ??
+				createGithubAppTransport({
+					appId: required(env, "HOBO_CI_GITHUB_APP_ID"),
+					privateKey,
+				}),
 			identity: createGithubOidcVerifier(publicUrl.origin),
 			webhookSecret,
-		};
-		const relay = new Relay(
-			ingressForwardSecret === undefined
-				? relayBase
-				: { ...relayBase, ingressForwardSecret },
-		);
-		const controlHandler = createControlPlane({
-			relay,
-			github,
+			ingressForwardSecret,
 			authenticate,
 			publicOrigin: publicUrl.origin,
+			allowLoopbackHttp: localHttp,
 			assets,
-		});
-		const stubEngineIds = (env.HOBO_CI_STUB_ENGINES ?? "")
-			.split(",")
-			.map((value) => value.trim())
-			.filter(Boolean);
-		const stubEngines = Object.fromEntries(
-			stubEngineIds.map((id) => [id, { ready: () => true }]),
-		);
-		const service = createRelayService({
-			relay,
-			store,
 			host,
 			port,
-			engineId: "gh-actions",
-			mountPath: "/engines/gh-actions",
-			legacyRootPaths: env.HOBO_CI_LEGACY_ROOT_PATHS !== "0",
-			stubEngines,
-			controlHandler,
+			stubEngines: Object.fromEntries(
+				(env.HOBO_CI_STUB_ENGINES ?? "")
+					.split(",")
+					.map((value) => value.trim())
+					.filter(Boolean)
+					.map((id) => [id, { ready: () => true }]),
+			),
 			trustProxy: env.HOBO_CI_TRUST_PROXY === "1",
-			// Deployment readiness is local partition integrity. A real runner acceptance
-			// workflow separately verifies external installation permissions and execution.
-			readinessProbe: async (signal) => {
-				signal.throwIfAborted();
-				return store.configuration()?.configuration !== undefined;
-			},
-			beforeDispatch: async () => {
-				const current = store.configuration()?.configuration;
-				if (!current) throw new Error("configuration snapshot missing");
-				relay.options.config = current;
-			},
 			logger: (entry) => process.stdout.write(`${JSON.stringify(entry)}\n`),
 		});
 		await service.start();
 		let stopping: Promise<{ drained: boolean }> | undefined;
 		return {
 			service,
+			runtime,
 			relay,
+			store,
 			stop() {
 				stopping ??= (async () => {
 					const result = await service.stop();
