@@ -184,6 +184,14 @@ A feasible rank-0 job waiting for memory, the distinct-merge-group cap, or a slo
 | `HOBO_CI_MESH_NAMESPACE` | `hobo-ci` | Prefix of the two bucket names; workers sharing a namespace form one mesh |
 | `HOBO_CI_MESH_STEP_MS` | `20000` | How long each rank waits before taking a job the node ahead of it has not started; 1000 to 300000 |
 | `HOBO_CI_MESH_RELIABILITY_HALF_LIFE_MS` | `1800000` | How long until a job this worker took counts for half as much in its reliability score; 60000 to 86400000 |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | OTLP/HTTP base URL; the worker posts traces as JSON to `<base>/v1/traces`. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is used as given instead. Unset means no export |
+| `OTEL_EXPORTER_OTLP_HEADERS` | unset | `key=value,key=value` request headers for the export (values percent-encoded); `OTEL_EXPORTER_OTLP_TRACES_HEADERS` wins |
+| `OTEL_SERVICE_NAME` | `hobo-ci-worker` | `service.name` on every span |
+| `OTEL_SDK_DISABLED` | unset | `true` turns tracing off whatever else is set |
+| `HOBO_CI_EVENTS_URL` | unset | CloudEvents receiver. Infrastructure events are POSTed there as `application/cloudevents-batch+json`; unset means none are sent |
+| `HOBO_CI_EVENTS_HEADERS` | unset | `key=value,key=value` request headers for that receiver (values percent-encoded) |
+| `HOBO_CI_EVENTS_TENANT` | `hobo-ci` | The authority in each event's `source` (`hobo://<tenant>/<stream>`) |
+| `HOBO_CI_TRACE_FILE` | unset | Also append each export as one line of OTLP/JSON to this file (mode 0600); rotated to `<file>.1` past 64 MiB |
 
 Startup fails unless every general class fits outside the trunk reservation and the heavy trunk class fits the full budget. Wait/admit decisions log `hobo_ci_memory_admission_wait` / `hobo_ci_memory_admitted` with `classMb` and `learned`; Docker-confirmed exit-137 OOM kills log `hobo_ci_container_oom` with the class and job name.
 
@@ -224,6 +232,19 @@ Jobs waiting for another worker's turn show in `hobo_ci_isolated_worker_jobs_pol
 **Shared configuration.** The mesh keeps one configuration in `<namespace>-mesh-config`. A worker with `HOBO_CI_CONFIG` or `HOBO_CI_CONFIG_JSON` runs its own and publishes it if the mesh has none; if the two differ it logs `hobo_ci_mesh_config_drift` and keeps its own. A worker with neither reads the mesh's at start (`hobo_ci_mesh` logs `configuration: mesh`), so a new box needs only the NATS address and App credentials. Replacing the stored configuration requires naming its current revision.
 
 **No hosted database needed.** A worker with `HOBO_CI_STORE` unset keeps its lease journal in SQLite on the box and polls GitHub itself, so neither the hosted relay nor its Postgres is in the path from a queued job to a running runner. `HOBO_CI_STORE=postgres` or `HOBO_CI_JOB_ADMISSION=push` puts them back in it; the mesh needs neither.
+
+**Tracing:** with an OTLP endpoint or a trace file set, the daemon exports OpenTelemetry spans (`packages/ci-gh-actions/src/relay-trace.ts`; no SDK, no collector of its own). Startup logs `hobo_ci_trace_export` with what is enabled. Two things become spans:
+
+- **Every GitHub call that changes something**, and every call GitHub refused or never answered: `POST …/actions/runners/generate-jitconfig`, `DELETE …/actions/runners/{runner_id}`, `POST …/actions/runs/{run_id}/force-cancel`, `POST …/actions/runs/{run_id}/rerun-failed-jobs`. Each carries the method, the route with ids replaced, the status, the repository and the run, job and runner ids. Successful reads are left out: the worker polls.
+- **Every log event in this document.** An event that names a run joins that run's trace. `hobo_ci_job_pickup` becomes a span over the whole wait with three children: `ci.job.queue` (job created to admitted), `ci.job.container_start` and `ci.job.runner_register`.
+
+A run's trace id is derived from its run id alone, and each job's Turbo trace (`scripts/ci/ci-trace.mts`, uploaded as the `ci-trace-*` artifact) uses the same id. Load both into one backend and a run reads top to bottom: queued, admitted, runner registered, Turbo tasks, runner deleted.
+
+To answer "who cancelled this run?", open the run's trace. The only code that cancels a run is the lost-runner path, and it leaves `hobo_ci_orphan_job_confirmed`, a `DELETE` on the runner and a `POST …/force-cancel` span. A cancelled run with no `force-cancel` span was cancelled by someone else: a newer push, a person, or another tool using a token with `actions: write`.
+
+**Events:** traces and logs are for reading; CloudEvents are for reacting. With `HOBO_CI_EVENTS_URL` set, the daemon also delivers the infrastructure facts among its log events as CloudEvents 1.0, mapped from the platform's event envelope as ADR-0046 prescribes. Each has a past-tense type, for example `ci.RunForceCancelled`, `ci.ContainerOomKilled`, `ci.RunnerLaunchFailed`, `ci.JobPickedUp`, `ci.WorkerDrainStarted` and `ci.HostInodePressureDetected`; the full table is `CI_INFRA_EVENT_TYPES` in `packages/ci-gh-actions/src/cloud-events.ts`. A worker in a relay mesh also emits its capacity and availability: `ci.MeshNodeJoined`, `ci.MeshNodeLost`, `ci.MeshNodeDegraded`, `ci.MeshNodeRecovered`, `ci.MeshCapacityExhausted`, `ci.MeshCapacityRestored` and a periodic `ci.MeshCapacityReported`, and what became of the jobs it took: `ci.MeshJobDropped` with the reason, and `ci.MeshReliabilityChanged` each time its score moves a twentieth. `source` is `hobo://<tenant>/ci-worker/<host>/<start>`, `hoboseq` orders one worker start, and an event about a workflow run carries `hobocorrelationid: github-actions-run:<run id>`. Delivery is the CloudEvents HTTP binding in batched structured mode, best effort: a bounded queue, no retry, and `hobo_ci_events_export_problem` when batches fail. The hosted relay emits `ci.RelayStartFailed`, `ci.RelayRequestFailed`, `ci.WebhookIngestFailed`, `ci.ControlRequestFailed` and `ci.ReadinessCheckFailed` the same way.
+
+No request body, response body, header or query string is recorded; JIT runner configs and tokens travel in those. Spans do carry repository names, run and job ids, runner names and job names, so point the endpoint at a backend that may hold them. A slow or dead endpoint cannot stall the worker: spans queue up to 4096, the oldest are dropped past that, a failed batch is not retried, and `hobo_ci_trace_export_problem` reports the counts at most once a minute. Shutdown waits at most 3 s for the last export.
 
 Legacy path `packages/ci-gh-actions/deploy/worker/Dockerfile` is deprecated; use **`build.sh`** above.
 

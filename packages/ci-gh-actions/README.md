@@ -531,6 +531,15 @@ cluster with `HOBO_CI_NATS_REPLICAS=3`, and connect boxes behind NAT as leaf nod
 out. `createNatsMesh` is exported from `@hobo/ci-gh-actions/mesh-nats`; `createMemoryMesh` in
 `@hobo/ci/mesh` is the same contract in one process.
 
+## Tracing
+
+The box worker exports OpenTelemetry traces when `OTEL_EXPORTER_OTLP_ENDPOINT` or
+`HOBO_CI_TRACE_FILE` is set: one span for each GitHub call that changes something and one for each
+structured log event, grouped by workflow run. `createRelayTrace`, `traceGithubTransport` and
+`relayTraceSinkFromEnv` are exported for other hosts of the relay. See
+[Tracing in the runner queue runbook](../ci/RUNNER-QUEUE.md) for the settings, the span list and how
+to tell who cancelled a run.
+
 ## Supported runner hosts
 
 | Provider | Host selected by the relay |

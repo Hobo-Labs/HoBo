@@ -26,6 +26,14 @@ function required(env: NodeJS.ProcessEnv, name: string): string {
 	return value;
 }
 /** Serve first-App setup before the relay exists, then load the encrypted App into the runtime. */
+/** The store failed recently and is being left alone; `retryAfterMs` says for how long. */
+export class StoreUnavailable extends Error {
+	constructor(readonly retryAfterMs: number) {
+		super("store unavailable; not retried yet");
+		this.name = "StoreUnavailable";
+	}
+}
+
 export function createBootstrapEntry(options: {
 	env: NodeJS.ProcessEnv;
 	notify: (deliveryId: string) => Promise<void>;
@@ -34,6 +42,8 @@ export function createBootstrapEntry(options: {
 	expectedGithubOwnerId?: number;
 	bootstrap?: Bootstrap;
 	createApplication?: typeof createVercelApplication;
+	/** Clock for the store back-off; injectable for tests. */
+	now?: () => number;
 }) {
 	const { env } = options;
 	const url = new URL(required(env, "HOBO_CI_PUBLIC_URL"));
@@ -107,8 +117,16 @@ export function createBootstrapEntry(options: {
 	let started: Promise<App | undefined> | undefined,
 		closed = false;
 	const make = options.createApplication ?? createVercelApplication;
+	// After the store fails, leave it alone for a while instead of dialling it
+	// again on every request: 5 s, doubling to a minute. A store that is down
+	// (or over its quota) answers no faster for being asked more often.
+	const clock = options.now ?? Date.now;
+	let storeRetryAt = 0;
+	let storeFailures = 0;
 	async function app(): Promise<App | undefined> {
 		if (closed) throw new Error("bootstrap entry closed");
+		if (!started && clock() < storeRetryAt)
+			throw new StoreUnavailable(storeRetryAt - clock());
 		started ??= (async () => {
 			const credentials = await bootstrapStore.load();
 			if (!credentials) return undefined;
@@ -140,9 +158,13 @@ export function createBootstrapEntry(options: {
 		try {
 			const result = await pending;
 			if (!result && started === pending) started = undefined;
+			storeFailures = 0;
 			return result;
 		} catch (error) {
 			if (started === pending) started = undefined;
+			storeFailures += 1;
+			storeRetryAt =
+				clock() + Math.min(60_000, 5_000 * 2 ** (storeFailures - 1));
 			throw error;
 		}
 	}
@@ -155,6 +177,13 @@ export function createBootstrapEntry(options: {
 					{ status: 503, headers: { "cache-control": "no-store" } },
 				);
 			const path = new URL(request.url).pathname;
+			// Liveness is about this process, not its database: a probe must be
+			// able to tell "restart me" from "my store is down".
+			if (path === "/healthz" && request.method === "GET")
+				return Response.json(
+					{ ok: true },
+					{ status: 200, headers: { "cache-control": "no-store" } },
+				);
 			if (path.startsWith("/v1/app-bootstrap/"))
 				return (
 					(await bootstrapStore.handle(request)) ??
@@ -163,16 +192,25 @@ export function createBootstrapEntry(options: {
 						{ status: 404, headers: { "cache-control": "no-store" } },
 					)
 				);
-			const current = await app();
+			let current: App | undefined;
+			try {
+				current = await app();
+			} catch (error) {
+				// Readiness says what is wrong, in a word a probe can act on.
+				if (path === "/readyz" && request.method === "GET")
+					return Response.json(
+						{ ready: false, reason: "store-unavailable" },
+						{
+							status: 503,
+							headers: { "cache-control": "no-store", "retry-after": "5" },
+						},
+					);
+				throw error;
+			}
 			if (current) return current.handle(request);
-			if (path === "/healthz" && request.method === "GET")
-				return Response.json(
-					{ ok: true },
-					{ status: 200, headers: { "cache-control": "no-store" } },
-				);
 			if (path === "/readyz" && request.method === "GET")
 				return Response.json(
-					{ ready: false },
+					{ ready: false, reason: "bootstrap-required" },
 					{ status: 503, headers: { "cache-control": "no-store" } },
 				);
 			return Response.json(
