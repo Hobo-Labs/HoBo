@@ -505,6 +505,15 @@ The publisher must supply complete snapshots and normalized prices for all bille
 components. Provider-native spending controls remain the external billing ceiling.
 Admission budgets do not migrate or terminate a running GitHub job mid-step.
 
+## Tracing
+
+The box worker exports OpenTelemetry traces when `OTEL_EXPORTER_OTLP_ENDPOINT` or
+`HOBO_CI_TRACE_FILE` is set: one span for each GitHub call that changes something and one for each
+structured log event, grouped by workflow run. `createRelayTrace`, `traceGithubTransport` and
+`relayTraceSinkFromEnv` are exported for other hosts of the relay. See
+[Tracing in the runner queue runbook](../ci/RUNNER-QUEUE.md) for the settings, the span list and how
+to tell who cancelled a run.
+
 ## Supported runner hosts
 
 | Provider | Host selected by the relay |
