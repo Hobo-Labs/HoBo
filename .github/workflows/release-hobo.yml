@@ -271,6 +271,7 @@ jobs:
           node --no-warnings scripts/ci/run-job-command-report.mts
           --label release-contract-vitest --
           pnpm exec vitest run
+          scripts/test/release-contract-vitest-scope.test.ts
           scripts/test/release-oci-affected.test.ts
           scripts/test/release-oci-attest-contract.test.ts
           scripts/test/release-oci-image-contract.test.ts
