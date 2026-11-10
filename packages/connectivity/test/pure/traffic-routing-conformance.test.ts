@@ -1,10 +1,10 @@
+import { createMeteringBus, parseRoutingPlan } from "@hobo/core";
+import { describe, expect, it } from "vitest";
 import {
 	createCloudflareTrafficRouting,
 	createInMemoryMeteringSink,
 	createSimpleTrafficRouting,
-} from "@hobo/connectivity";
-import { createMeteringBus, parseRoutingPlan } from "@hobo/core";
-import { describe, expect, it } from "vitest";
+} from "../../src/index.js";
 
 function sharedPlan() {
 	return parseRoutingPlan({
