@@ -147,7 +147,7 @@ The canonical event-family index used by `docs:design-lint` is [`event-families.
 `gen.Requested` · `gen.CandidateGenerated` · `gen.Validated` · `gen.ValidationFailed` · `gen.Repaired` (iteration n + failing-assertion set) · `gen.NeedsHuman` · `gen.Certified` (extends the Registry's `gen.PluginCertified` + `impl.*`)
 
 **App-data migrations** ([Plan 32](#plan-32)) — the developer's `sql`-resource schema/data, *not* this log's own upcasting (see Schema evolution below)
-`migration.Planned` · `migration.SnapshotTaken` · `migration.PhaseApplied` (phase = `expand`/`backfill`/`contract` + the diff) · `migration.Verified` · `migration.RolledBack` · `migration.Failed` · **(cross-cloud move)** `migration.Exported` · `migration.Imported` · `migration.CutOver`
+`migration.Planned` · `migration.SnapshotTaken` · `migration.PhaseApplied` (phase = `expand`/`backfill`/`contract` + the diff) · `migration.Verified` · `migration.RolledBack` · `migration.Failed` · **(cross-cloud move)** `migration.Exported` · `migration.Imported` · `migration.CutOver` · plus the hold, resume, completion, and write-ahead facts of ADR-0177 ([event-families](./event-families.md))
 
 **Custom domains & ingress** ([Plan 12](./security-networking.md#plan-12)/[ADR-0035](./adr/07-portability-extensibility.md#adr-0035))
 `domain.Registered` · `domain.Validated` (DNS/ACME challenge passed) · `domain.CertIssued` · `domain.CertRotated` · `domain.RoutingChanged` (routing-policy decision + chosen target Camps → "why traffic went where")
@@ -558,7 +558,7 @@ A **projection sink** (§Projections/[ADR-0050](./adr/03-data-plane.md#adr-0050)
 Cross-cloud sink moves use the export→import path above within an equivalence class.
 
 #### Migration events ([Plan 11](#plan-11))
-`migration.Planned` · `migration.SnapshotTaken` · `migration.PhaseApplied` (phase = `expand`/`backfill`/`contract`, with the diff) · `migration.Verified` · `migration.RolledBack` · `migration.Failed` · (cross-cloud move) `migration.Exported` · `migration.Imported` · `migration.CutOver`. Every phase, snapshot, and cutover is an immutable, replayable fact → "what changed the schema, when, and could it be rolled back?" is answerable from the log.
+`migration.Planned` · `migration.SnapshotTaken` · `migration.PhaseApplied` (phase = `expand`/`backfill`/`contract`, with the diff) · `migration.Verified` · `migration.RolledBack` · `migration.Failed` · (cross-cloud move) `migration.Exported` · `migration.Imported` · `migration.CutOver`. The pattern executors of [ADR-0177](./adr/03-data-plane.md#adr-0177) add `migration.Held`, `migration.Resumed`, `migration.Completed`, `migration.FenceRequested`, and `migration.RollbackDecided`, and four of the bodies above are at v2 with upcasters; the current list and versions are in [event-families](./event-families.md). Every phase, snapshot, and cutover is an immutable, replayable fact → "what changed the schema, when, and could it be rolled back?" is answerable from the log.
 
 #### Migration verification ([Plan 9](./generated-stack.md#plan-09))
 - **Migration test:** declare schema vN→vN+1 → assert the diff engine produces the expected **expand/backfill/contract** phases; assert a **destructive contract phase that breaks a still-running version is blocked** by `can-deploy` (`compat.GateFailed`); assert **snapshot + restore** rollback returns the prior state.

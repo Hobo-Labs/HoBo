@@ -189,12 +189,15 @@ profiles, while the live schema-apply and dual-run bindings sat inside
 
 | Package | Owns |
 |---|---|
-| `@hobo/data-core` | engine-neutral contract: canonical records and change envelope, engine SPI, pattern catalog + selector, custody-path policy verdict, pattern executors, migration aggregate, conformance kit, reference engine |
-| `@hobo/data-sqlite`, `@hobo/data-postgres`, `@hobo/data-mongodb` | one engine each: the SPI binding, its declaration, its type-mapping annex, its impedance codes |
+| `@hobo/data-core` | engine-neutral contract: canonical records and change envelope, engine SPI (including the optional native-transfer port), pattern catalog + selector, custody-path policy verdict, pattern executors, migration aggregate and its compare-and-set journal, conformance kit, reference engine |
+| `@hobo/data-sqlite`, `@hobo/data-postgres`, `@hobo/data-mongodb` | one engine each: the SPI binding, its declaration, its type-mapping annex, its impedance codes; PostgreSQL also the one native realization (logical-copy) |
 | `@hobo/trails` | the runbook engine; imports `@hobo/data-core` and never an engine at runtime |
 
-The boundary gate enforces the last row: `packages/trails → packages/data-<engine>`
-is refused as a runtime edge and allowed only as a test edge. `@hobo/data` is
+The boundary gate enforces the last row: from an orchestrator's `src/`, an import of
+a `@hobo/data-<engine>` package, a database driver (`node:sqlite`, `pg`, `mongodb`, …),
+or engine-specific storage is refused in any form — static, dynamic `import()`, or
+`require()` — and allowed only from tests; one engine package importing another at
+runtime is refused too. `@hobo/data` is
 unchanged — it stays the app-authoring kernel and is deliberately not the
 common engine package. Detail, evidence, and limits are in
 [data-engines-continuous-migration.md](./data-engines-continuous-migration.md).
