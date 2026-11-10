@@ -18,6 +18,14 @@ export {
 	resolveEnvironmentEngines,
 } from "./engine-relay-routing.js";
 export {
+	createFleetRoutePublisher,
+	type FleetRouteEvent,
+	type FleetRouteLog,
+	type FleetRoutePublication,
+	type FleetRoutePublisher,
+	type FleetRoutePublishInput,
+} from "./fleet-routes.js";
+export {
 	createGithubAppTransport,
 	type GithubAppTransport,
 	type GithubTransport,

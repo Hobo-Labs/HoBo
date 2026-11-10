@@ -1416,3 +1416,50 @@ it("launches reserved trunk leases before pull-request leases", async () => {
 		"dispatched",
 	);
 });
+
+it("hands each connected repository's account and leases to the fleet route publisher after a dispatch pass", async () => {
+	const h = setup();
+	const published: {
+		repository: string;
+		accountId: string;
+		leases: number;
+		at: string;
+	}[] = [];
+	const relay = new HostedRelay({
+		...h.relay.options,
+		fleetRoutes: {
+			async publish(input) {
+				published.push({
+					repository: input.repository,
+					accountId: input.account.id,
+					leases: input.leases.length,
+					at: input.at,
+				});
+				return undefined;
+			},
+		},
+	});
+	await relay.dispatchPending();
+	const connection = h.configuration.connections[0];
+	expect(published).toEqual([
+		{
+			repository: connection?.repository,
+			accountId: connection?.accountId,
+			leases: 0,
+			at: NOW,
+		},
+	]);
+});
+
+it("finishes the dispatch pass when the fleet route publisher throws", async () => {
+	const h = setup();
+	const relay = new HostedRelay({
+		...h.relay.options,
+		fleetRoutes: {
+			async publish() {
+				throw new Error("variables API unavailable");
+			},
+		},
+	});
+	await expect(relay.dispatchPending()).resolves.toBe(0);
+});

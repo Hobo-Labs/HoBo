@@ -33,6 +33,8 @@ const providers = new Set([
 	"blacksmith",
 	"depot",
 	"warpbuild",
+	"jog",
+	"boat",
 	"kubernetes",
 	"hobo-box-worker",
 	"local",

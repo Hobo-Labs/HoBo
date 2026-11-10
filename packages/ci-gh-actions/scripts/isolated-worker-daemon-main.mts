@@ -14,6 +14,7 @@ import {
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createDepsImageEnsurer,
+	createFleetRoutePublisher,
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
@@ -191,6 +192,13 @@ const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
 	throw new Error("invalid HOBO_CI_WORKER_TRUNK_LEND");
 const lendTrunkSlots = trunkLend === "1";
+// Off unless set: the relay then keeps HOBO_CI_FLEET_ROUTES current so new jobs
+// can ask a label provider for a runner while the box is full. The App needs
+// repository "Variables: write" for it; a refused write is logged and ignored.
+const fleetRoutesFlag = process.env.HOBO_CI_FLEET_ROUTES ?? "0";
+if (fleetRoutesFlag !== "0" && fleetRoutesFlag !== "1")
+	throw new Error("invalid HOBO_CI_FLEET_ROUTES");
+const publishFleetRoutes = fleetRoutesFlag === "1";
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
@@ -539,6 +547,9 @@ try {
 		lendTrunkSlots,
 		memoryAdmission,
 		storageAdmission,
+		fleetRoutes: publishFleetRoutes
+			? createFleetRoutePublisher({ github, log })
+			: undefined,
 		control: async () => undefined,
 		onTickTiming: (timing) =>
 			log("hobo_ci_isolated_worker_tick_slow", {
@@ -685,6 +696,7 @@ try {
 		trunkSlots,
 		mergeGroupLeases,
 		lendTrunkSlots,
+		publishFleetRoutes,
 		workRoot,
 		pnpmStoreMounted: pnpmStore !== "",
 		pnpmStorePruneIntervalMs,

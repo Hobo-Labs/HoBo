@@ -77,6 +77,8 @@ export const CiProjectProviderSchema = z
 		plain("blacksmith", "BlacksmithProvider"),
 		plain("depot", "DepotProvider"),
 		plain("warpbuild", "WarpbuildProvider"),
+		plain("jog", "JogProvider"),
+		plain("boat", "BoatProvider"),
 		CiKubernetesProviderSchema,
 		plain("hobo-box-worker", "HoboBoxWorkerProvider"),
 		CiVercelProviderSchema,

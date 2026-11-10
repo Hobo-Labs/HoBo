@@ -25,6 +25,7 @@ import {
 	createAdmissionOrder,
 	TRUNK_RANK,
 } from "./admission-order.js";
+import type { FleetRoutePublisher } from "./fleet-routes.js";
 import {
 	type GithubRun,
 	type GithubTransport,
@@ -228,6 +229,12 @@ export class HostedRelay {
 			lendTrunkSlots?: boolean;
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
+			/**
+			 * Publishes the fleet route table after each dispatch pass. Unset: the
+			 * relay balances nothing ahead of the queue and every job stays on its
+			 * hobo label.
+			 */
+			fleetRoutes?: Pick<FleetRoutePublisher, "publish">;
 			now?: () => string;
 		},
 	) {
@@ -1200,7 +1207,30 @@ export class HostedRelay {
 		}
 		for (const key of this.trunkWaits.keys())
 			if (!waitingTrunk.has(key)) this.trunkWaits.delete(key);
+		await this.publishFleetRoutes();
 		return pending.length;
+	}
+	/** One table per connected repository, from the state this pass just left. */
+	private async publishFleetRoutes(): Promise<void> {
+		const publisher = this.options.fleetRoutes;
+		if (!publisher) return;
+		for (const connection of this.options.config.connections) {
+			const account = this.options.config.accounts.find(
+				(entry) => entry.id === connection.accountId,
+			);
+			if (!account) continue;
+			try {
+				await publisher.publish({
+					installationId: connection.installationId,
+					repository: connection.repository,
+					account,
+					leases: await this.options.store.accountLeases(account.id),
+					at: this.now(),
+				});
+			} catch {
+				/* Routing ahead of the queue is advisory; admission already ran. */
+			}
+		}
 	}
 	async claim(id: string, token: string): Promise<JitBootstrapResponse> {
 		const lease = await this.options.store.get(id);

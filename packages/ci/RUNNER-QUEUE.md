@@ -240,6 +240,16 @@ Overflow is off until you enable it. While the hobo fleet has a free slot, jobs 
 
 Anti-loop: a job already labeled `ubuntu-24.04` or `hobo-arc` stays on that member and is not sent back to hobo. Queued demand for a GitHub-hosted or ARC offer keeps that concrete label instead of `hobo`. Isolated abort covers Vercel Sandbox, `hobo-box-worker`, and kubernetes `isolated-container` on `hobo-isolated-worker`. It does not cancel kubernetes `gh-actions` ARC leases, and it skips kubernetes when the offer backend is unknown.
 
+#### Fleet balancing and the route table
+
+The fixed box → ARC → GitHub order above is what admission applies to a job that is already queued. Ahead of the queue, the relay can balance every connected offer through the budget policy and publish which label a new job should ask for; see [CI fleet balancing](../../docs/design/ci-fleet-balancing.md).
+
+- Set **`HOBO_CI_FLEET_ROUTES=1`** on the box daemon (`0` or unset is off; any other value refuses to start). After each dispatch pass it writes the repository variable **`HOBO_CI_FLEET_ROUTES`**, for example `{"fork":"hobo","pr":"ubuntu-24.04","trunk":"hobo-trunk"}`. The daemon's startup record reports `publishFleetRoutes`.
+- The HoBo CI GitHub App needs repository **Variables: write**. Without it each refused write logs **`hobo_ci_fleet_routes_error`** with the HTTP `status` and is not retried until the table next changes or a minute passes; admission is unaffected.
+- A successful write logs **`hobo_ci_fleet_routes_published`** with `repository`, `variable` and `value`. The variable changes only when the table does, and at most once a minute.
+- **No workflow reads the variable yet**, so turning this on changes no job's runner. It is safe to enable for observing what the fleet would choose.
+- `.hobo/ci.json` accepts provider kinds **`jog`** and **`boat`** from a relay built at or after this change. Do not add them to the file an older deployed relay reads: an unknown kind fails policy parsing.
+
 ### 7. Merge queue (landing, not pickup)
 
 **Merge queue** requires branch protection on `main` with merge queue enabled and the required HoBo CI checks. **Main full gate** is not one of them and does not run on `merge_group` (it runs on the push to `main`), so a queue entry holds no slot for it. Instead, the required **PR impact gate** runs on `merge_group` and executes Main full gate's affected S0 and dependent workspace-test lanes against the merge group's base SHA. That gates **merge** after jobs complete; it does not cause **`queued`** by itself. The required **CI fabric contract guard** runs only on `pull_request`; its two contract steps run inside **Main full gate** on push, schedule and dispatch, and inside **PR impact gate** on `merge_group`.
