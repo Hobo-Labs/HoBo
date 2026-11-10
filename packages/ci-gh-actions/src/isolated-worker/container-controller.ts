@@ -381,16 +381,10 @@ export function createIsolatedContainerController(options: {
 				.find((tag) => tag !== undefined);
 			const depsKey = deps.labels["hobo.ci.deps-key"];
 			const depsToolchain = deps.labels["hobo.ci.toolchain"];
-			const candidate = depsKey
-				? { image: depsImage, depsKey }
-				: undefined;
+			const candidate = depsKey ? { image: depsImage, depsKey } : undefined;
 			let selection = workerSelection;
 			if (candidate) {
-				if (
-					toolchain &&
-					depsToolchain &&
-					depsToolchain !== toolchain
-				) {
+				if (toolchain && depsToolchain && depsToolchain !== toolchain) {
 					options.log?.("hobo_ci_deps_toolchain_drift", {
 						workerToolchain: toolchain,
 						depsToolchain: depsToolchain ?? "none",

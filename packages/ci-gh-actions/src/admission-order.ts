@@ -141,8 +141,7 @@ export function createAdmissionOrder(
 			.sort(
 				(a, b) =>
 					a.key.rank - b.key.rank ||
-					trunkEventPriority(a.key.event) -
-						trunkEventPriority(b.key.event) ||
+					trunkEventPriority(a.key.event) - trunkEventPriority(b.key.event) ||
 					a.key.startedAtMs - b.key.startedAtMs ||
 					b.expectedMs - a.expectedMs ||
 					a.jobId - b.jobId,
