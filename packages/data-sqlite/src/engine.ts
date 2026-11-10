@@ -5,8 +5,9 @@
  * it is what lets the same store back the synchronous ports `@hobo/trails`
  * runs its live lanes on.
  */
-import { copyFileSync, existsSync } from "node:fs";
-import type { DatabaseSync, SQLInputValue } from "node:sqlite";
+import { randomUUID } from "node:crypto";
+import { constants, copyFileSync, existsSync } from "node:fs";
+import type { DatabaseSync, SQLInputValue, StatementSync } from "node:sqlite";
 import {
 	type DatasetSchema,
 	type EngineBinding,
@@ -21,6 +22,7 @@ import {
 	type SnapshotRequest,
 	schemaToJson,
 } from "@hobo/data-core";
+import { SqliteDataError } from "./errors.js";
 import { SqliteDatasetStore } from "./store.js";
 
 // public-contract: capability profile id the SQLite engine implements.
@@ -189,6 +191,34 @@ export interface SyncSchemaApplyPort {
 	restore(ref: SchemaSnapshotRef): void;
 }
 
+/** Whitespace, statement terminators and comments: SQL that does nothing. */
+const SQL_TRIVIA = /--[^\n]*|\/\*[\s\S]*?\*\/|[\s;]+/gu;
+
+/**
+ * Prepare a query that must be exactly one statement. SQLite compiles the
+ * first statement of a string and ignores the rest, so a second violations
+ * query would never run and its violations would read as none.
+ */
+function prepareSole(db: DatabaseSync, sql: string): StatementSync {
+	const statement = db.prepare(sql);
+	const compiled = statement.sourceSQL;
+	// Anything that is not a prefix is treated as wholly uncompiled.
+	const tail = sql.startsWith(compiled) ? sql.slice(compiled.length) : sql;
+	if (tail.replace(SQL_TRIVIA, "") !== "") {
+		throw new SqliteDataError(
+			"SCHEMA_QUERY_NOT_SINGLE",
+			"a verify query must be a single statement; the SQL after the first would not have run",
+			{ detail: { field: "violationsQuery" } },
+		);
+	}
+	return statement;
+}
+
+function totalChanges(db: DatabaseSync): number {
+	const row = db.prepare("SELECT total_changes() AS total").get();
+	return Number(row?.total ?? 0);
+}
+
 /**
  * Schema apply over a SQLite connection (ADR-0032 §3-4): real expand /
  * backfill / contract SQL, a mandatory restorable snapshot, and a restore
@@ -199,14 +229,17 @@ export function createSchemaPort(
 	host: SqliteSchemaHost,
 	clock: () => string,
 ): SyncSchemaApplyPort {
-	let snapshots = 0;
 	return {
 		snapshot(): SchemaSnapshotRef {
-			snapshots += 1;
-			const ref = `${host.path}.snapshot-${snapshots}`;
+			// A random ref, never a per-port counter: a counter restarts with the
+			// process, so re-running a crashed migration would snapshot the
+			// half-migrated store over the pre-migration copy and a later
+			// rollback would restore the damage.
+			const ref = `${host.path}.snapshot-${randomUUID()}`;
 			// Checkpoint any WAL state so the file copy is the full store.
 			host.connection().exec("PRAGMA wal_checkpoint(TRUNCATE)");
-			copyFileSync(host.path, ref);
+			// Exclusive: an existing snapshot is never written over.
+			copyFileSync(host.path, ref, constants.COPYFILE_EXCL);
 			return Object.freeze({ ref, takenAt: clock() });
 		},
 		applyPhase(
@@ -219,19 +252,25 @@ export function createSchemaPort(
 			// One transaction per phase: SQLite DDL is transactional, so a
 			// failing statement leaves nothing of the phase behind.
 			const changes = host.transaction(() => {
-				let total = 0;
+				const db = host.connection();
+				const before = totalChanges(db);
 				for (const statement of statements) {
-					const result = host.connection().prepare(statement).run();
-					total += Number(result.changes ?? 0);
+					// `exec`, not `prepare().run()`: an entry may hold several
+					// statements, and preparing it would run the first and report
+					// success for the rest.
+					db.exec(statement);
 				}
-				return total;
+				// Rows the phase inserted, updated or deleted. A statement's own
+				// `changes` is the count of the last DML before it, so DDL
+				// would repeat a stale number.
+				return totalChanges(db) - before;
 			});
 			return Object.freeze({ phase, statements: statements.length, changes });
 		},
 		verify(violationsQuery: string): readonly JsonObject[] {
 			return Object.freeze(
 				// SAFETY: SQL result rows are JSON-shaped evidence records.
-				host.connection().prepare(violationsQuery).all() as JsonObject[],
+				prepareSole(host.connection(), violationsQuery).all() as JsonObject[],
 			);
 		},
 		restore(ref: SchemaSnapshotRef): void {

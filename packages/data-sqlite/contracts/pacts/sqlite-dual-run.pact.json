@@ -34,7 +34,7 @@
 			}
 		},
 		{
-			"description": "a write for a fenced tenant is refused and names the fence",
+			"description": "a write for a fenced tenant is refused and names the tenant, never the fence token",
 			"providerState": "tenant acme is fenced on the source",
 			"request": {
 				"method": "POST",

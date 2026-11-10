@@ -21,6 +21,13 @@ export {
 	type SyncSchemaApplyPort,
 } from "./engine.js";
 export {
+	SQLITE_DATA_ERROR_CODES,
+	SqliteDataError,
+	type SqliteDataErrorCode,
+	type SqliteDataErrorDetail,
+	type SqliteDataErrorOptions,
+} from "./errors.js";
+export {
 	type CreateSqliteSchemaApplyPortOptions,
 	createSqliteSchemaApplyPort,
 	type SqliteSchemaApplyPort,

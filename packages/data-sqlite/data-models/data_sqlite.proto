@@ -19,7 +19,8 @@ message SqliteEngineOptions {
 }
 
 // One row of hobo_data_journal: the transactional outbox capture reads.
-// `record_json` is the canonical record; absent for a delete.
+// `record_json` is the canonical record; absent for a delete. A row exists
+// only while some subscription has yet to acknowledge it.
 message SqliteJournalRow {
   uint64 seq = 1;
   string dataset = 2;
@@ -27,13 +28,17 @@ message SqliteJournalRow {
   string key = 4;
   string op = 5; // upsert | delete
   optional string record_json = 6;
+  // The journal head when the row's write began: rows that share it are one
+  // transaction, which a capture batch never splits. Absent on a row written
+  // before writes were marked.
+  optional uint64 tx = 7;
 }
 
 // One row of hobo_data_fences: a durable write fence.
 message SqliteFenceRow {
   string dataset = 1;
   string tenant_id = 2; // empty string fences the whole dataset
-  string fence_token = 3;
+  string fence_token = 3; // random; a credential, never derived or logged
   string fenced_at = 4;
 }
 

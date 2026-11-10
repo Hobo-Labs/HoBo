@@ -6,9 +6,19 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import type { JsonObject } from "@hobo/data-core";
+import {
+	encodeRecordKey,
+	type JsonObject,
+	parseCanonicalRecord,
+	parseDatasetSchema,
+	upsertMutation,
+} from "@hobo/data-core";
 import { afterEach, describe, test } from "vitest";
-import { createSqliteDataDualPort, FencedTenantError } from "../src/index.js";
+import {
+	createSqliteDataDualPort,
+	createSqliteEngine,
+	FencedTenantError,
+} from "../src/index.js";
 import { tempDir } from "./support.js";
 
 const cleanups: (() => void)[] = [];
@@ -142,7 +152,14 @@ describe("SQLite dual-run port", () => {
 			dual.writeSource([{ id: "order-9", doc: { total: 9 }, tenant: "acme" }]),
 		);
 		assert.ok(error instanceof FencedTenantError);
-		assert.equal(error.fenceToken, fenceToken);
+		// The refused writer is exactly who must not learn the token.
+		assert.ok(
+			!`${error.message} ${JSON.stringify(error)} ${JSON.stringify(error.detail)}`.includes(
+				fenceToken,
+			),
+			"the error does not carry the fence token",
+		);
+		assert.ok(!Object.values(error).includes(fenceToken));
 		assert.deepEqual(
 			{ error: { name: error.name, code: error.code, tenant: error.tenant } },
 			fencedPact.response.body,
@@ -182,6 +199,86 @@ describe("SQLite dual-run port", () => {
 			.run(JSON.stringify({ total: 2 }));
 		rogue.close();
 		assert.throws(() => dual.reapSource("acme"), /not checksum-equal/u);
+	});
+
+	test("a port with no tenant also refuses to reap rows the target does not hold", () => {
+		const paths = stores();
+		// Rows that predate the journal: nothing to replicate, nothing pending.
+		const legacy = new DatabaseSync(paths.sourcePath);
+		legacy.exec(`
+			CREATE TABLE records (
+				tenant_id TEXT NOT NULL, id TEXT NOT NULL, doc TEXT NOT NULL,
+				PRIMARY KEY (tenant_id, id)
+			);
+			INSERT INTO records (tenant_id, id, doc) VALUES
+				('acme', 'legacy-1', '{"total":1}'),
+				('acme', 'legacy-2', '{"total":2}');
+		`);
+		legacy.close();
+		const { dual } = open(undefined, paths);
+		dual.raiseFence("acme");
+		assert.equal(dual.lag(), 0);
+		assert.throws(() => dual.reapSource("acme"), /not checksum-equal/u);
+		assert.equal(dual.evidence().source.count, 2, "the source rows are intact");
+		assert.equal(dual.evidence().target.count, 0);
+		// Once the target really holds them, the reap goes through.
+		dual.backfill();
+		assert.deepEqual(dual.reapSource("acme"), { reaped: 2 });
+	});
+
+	test("a reap leaves none of the tenant's changes in the source journal", () => {
+		const { paths } = open();
+		const { dual } = open("acme", paths);
+		dual.writeSource([
+			{ id: "order-1", doc: { email: "pii-marker@example.test" } },
+			{ id: "order-2", doc: { total: 2 }, tenant: "globex" },
+		]);
+		dual.replicate();
+		dual.raiseFence("acme");
+		assert.deepEqual(dual.reapSource("acme"), { reaped: 1 });
+		const source = new DatabaseSync(paths.sourcePath);
+		const left = source
+			.prepare("SELECT tenant_id FROM hobo_data_journal")
+			.all()
+			.map((row) => String(row.tenant_id));
+		source.close();
+		assert.deepEqual(left, ["globex"]);
+	});
+
+	test("changes released before the port pinned the journal are backfill's, not the tail's", () => {
+		const paths = stores();
+		// Written through the engine with no subscription: applied, not kept.
+		const engine = createSqliteEngine({ path: paths.sourcePath });
+		const schema = parseDatasetSchema({
+			name: "records",
+			version: 1,
+			keyFields: ["id"],
+			fields: [
+				{ name: "id", type: "string", nullable: false },
+				{ name: "doc", type: "json", nullable: false },
+			],
+		});
+		engine.datasets.ensureDataset(schema);
+		const record = parseCanonicalRecord(schema, {
+			id: "early-1",
+			doc: { total: 1 },
+		});
+		engine.records.write({
+			dataset: "records",
+			mutations: [
+				upsertMutation("default", encodeRecordKey(schema, record), record),
+			],
+		});
+		engine.close();
+		const { dual } = open(undefined, paths);
+		assert.equal(dual.lag(), 0);
+		assert.equal(dual.replicate(), 0);
+		assert.equal(dual.evidence().consistent, false);
+		assert.equal(dual.backfill(), 1);
+		dual.writeSource([{ id: "late-1", doc: { total: 2 } }]);
+		assert.equal(dual.lag(), 1);
+		assert.equal(dual.replicate(), 1);
+		assert.equal(dual.evidence().consistent, true);
 	});
 
 	test("a tenant-scoped port replicates only its tenant, and its head is its own", () => {

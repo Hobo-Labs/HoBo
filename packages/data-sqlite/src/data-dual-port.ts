@@ -88,7 +88,8 @@ export interface SqliteDataDualPort {
 	/**
 	 * Raise a write fence for a tenant on the SOURCE store. Subsequent
 	 * `writeSource` calls for that tenant throw `FencedTenantError`.
-	 * Idempotent — re-raising returns the existing token.
+	 * Idempotent — re-raising returns the existing token. The token is random
+	 * and is returned here only; no error or message repeats it.
 	 */
 	raiseFence(tenant: string): { readonly fenceToken: string };
 	isFenced(tenant: string): boolean;
@@ -104,15 +105,17 @@ export interface SqliteDataDualPort {
 	close(): void;
 }
 
-/** A write arrived for a tenant whose rows are fenced (moved to a silo). */
+/**
+ * A write arrived for a tenant whose rows are fenced (moved to a silo).
+ *
+ * It carries no fence token: the token is what lets its holder write through
+ * the fence, and an error is read by exactly the writer the fence refused.
+ */
 export class FencedTenantError extends FencedWriteError {
-	readonly fenceToken: string;
-
-	constructor(dataset: string, tenant: string, fenceToken: string) {
+	constructor(dataset: string, tenant: string) {
 		super(dataset, tenant);
 		this.name = "FencedTenantError";
-		this.fenceToken = fenceToken;
-		this.message = `tenant ${tenant} is fenced (${fenceToken}); its writes now belong to the silo`;
+		this.message = `tenant ${tenant} is fenced; its writes now belong to the silo`;
 	}
 }
 
@@ -155,6 +158,15 @@ export function createSqliteDataDualPort(
 
 	const watermark = (): number =>
 		Number(target.watermark(table, DUAL_SOURCE) ?? "0");
+
+	/**
+	 * Where the tail resumes: the target's watermark, or the source journal's
+	 * floor when that is later. Changes below the floor were released before
+	 * this port pinned the journal; like rows written outside the port they
+	 * were never this port's to tail, and `backfill` covers them.
+	 */
+	const cursor = (): string =>
+		String(Math.max(watermark(), source.journalFloor()));
 
 	const allRows = (store: SqliteDatasetStore): RecordMutation[] => {
 		const rows: RecordMutation[] = [];
@@ -207,12 +219,7 @@ export function createSqliteDataDualPort(
 			} catch (error) {
 				if (error instanceof FencedWriteError) {
 					// Fail closed: a fenced tenant's writes belong to its silo.
-					const fence = source.fenceCovering(table, error.tenant);
-					throw new FencedTenantError(
-						table,
-						error.tenant,
-						fence?.fenceToken ?? "",
-					);
+					throw new FencedTenantError(table, error.tenant);
 				}
 				throw error;
 			}
@@ -220,7 +227,7 @@ export function createSqliteDataDualPort(
 		replicate() {
 			let applied = 0;
 			for (;;) {
-				const batch = source.readChanges(scope, String(watermark()), PAGE);
+				const batch = source.readChanges(scope, cursor(), PAGE);
 				const last = batch.changes[batch.changes.length - 1];
 				if (last === undefined) break;
 				// The watermark is the last change applied — not the journal
@@ -235,7 +242,7 @@ export function createSqliteDataDualPort(
 			return applied;
 		},
 		lag() {
-			return source.pending(scope, String(watermark()));
+			return source.pending(scope, cursor());
 		},
 		backfill() {
 			const rows = allRows(source);
@@ -267,17 +274,17 @@ export function createSqliteDataDualPort(
 					`reap refused: tenant ${forTenant} is not fenced; the pooled store may still be authoritative`,
 				);
 			}
-			const pending = source.pending(scope, String(watermark()));
+			const pending = source.pending(scope, cursor());
 			if (pending > 0) {
 				throw new Error(
 					`reap refused: ${pending} un-replicated change(s) would be lost`,
 				);
 			}
+			// Always, tenant-scoped port or not: an empty journal says nothing
+			// about rows that predate it, and only the digests can tell that
+			// the target holds what is about to be deleted.
 			const pair = digests(within);
-			if (
-				tenant !== undefined &&
-				!compareDigests(pair.source, pair.target).equal
-			) {
+			if (!compareDigests(pair.source, pair.target).equal) {
 				throw new Error(
 					"reap refused: source and silo row sets are not checksum-equal",
 				);

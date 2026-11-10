@@ -51,7 +51,10 @@ Trails is the runbook engine and holds no storage-engine code. The live
 schema-apply and dual-run bindings that once imported `node:sqlite` from this
 package now live in `@hobo/data-sqlite`; this package keeps only the port
 shapes (`SchemaApplyPort`, `DataDualPort`, `LiveDataDualPort`), declared
-locally so the sealed public surface re-exports no foreign type.
+locally so the sealed public surface re-exports no foreign type. The
+package-boundary gate holds that line: nothing under `src/` may import a
+`@hobo/data-<engine>` package, a database driver, or `@hobo/storage-sqlite`,
+by any import form; only tests may.
 
 `executeDataMigration` delegates to the `in-place-evolve` pattern executor in
 `@hobo/data-core`, so there is one implementation of expand → backfill →
@@ -63,6 +66,10 @@ is a **projection** over them; and each phase's checkpoint is the **snapshot**
 a resumed run continues from.
 
 The dual oracle prefers digest evidence over a row view, and `can-trail`
-accepts a policy verdict computed over the migration's custody path in place
-of caller-supplied booleans. Both are structural mirrors of `@hobo/data-core`
-records, pinned in `data-models/migration.proto`.
+accepts a policy verdict computed over the migration's custody path alongside
+the caller-supplied `policyAllows` and `residencyConflict` booleans. The three
+are combined, not ranked: any one of them denying denies the trail, so a
+passing verdict cannot erase an explicit denial, and a verdict that does not
+parse as its record is itself a denial rather than an exception. Both the
+evidence and the verdict are structural mirrors of `@hobo/data-core` records,
+pinned in `data-models/migration.proto`.

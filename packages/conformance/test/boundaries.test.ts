@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
 	canonicalWorkspaceEdges,
 	classifyPackage,
+	databaseDriverOf,
 	detectWorkspaceCycles,
 	isDataEnginePackage,
 	mergeWorkspaceEdges,
@@ -428,6 +429,39 @@ describe("data engine packages and the engine-neutral orchestrator rule", () => 
 		expect(isDataEnginePackage("packages/storage-sqlite")).toBe(false);
 	});
 
+	// What the name rule matches is a decision, pinned here so it cannot drift
+	// back into an accident. It used to be "anything under packages/data- that
+	// is not exactly data-core", which made a companion of the contract an
+	// engine and missed an engine filed under an adapter tier.
+	it.each([
+		// An engine that does not exist yet is covered the day it is created.
+		["packages/data-mysql", true],
+		["packages/data-cockroach-db", true],
+		// Filed under an adapter tier, a data-<engine> package is still one.
+		["packages/adapters/data-mysql", true],
+		["packages/providers/data-dynamo", true],
+		// The contract and every companion of it: `data-core-<anything>`.
+		["packages/data-core", false],
+		["packages/data-core-testing", false],
+		["packages/data-core-kit", false],
+		["packages/adapters/data-core-testing", false],
+		// `core` has to be the whole word for the exclusion to apply.
+		["packages/data-coredb", true],
+		// Not package directories of the family at all.
+		["packages/data", false],
+		["packages/data-", false],
+		["packages/data-sqlite/src", false],
+		["packages/trails/data-models", false],
+		["packages/code/examples/data-grid", false],
+		["packages/adapters/nested/data-mysql", false],
+		["packages/data-SQLite", false],
+		["data-sqlite", false],
+		["examples/data-sqlite", false],
+		["node:sqlite", false],
+	] as const)("isDataEnginePackage(%s) is %s", (path, expected) => {
+		expect(isDataEnginePackage(path)).toBe(expected);
+	});
+
 	it("an engine imports the contract and core, and the contract imports only core", () => {
 		expect(
 			validateBoundaryImports([
@@ -491,6 +525,231 @@ describe("data engine packages and the engine-neutral orchestrator rule", () => 
 					from: "packages/data-postgres",
 					to: "packages/data-sqlite",
 					dev: true,
+				}),
+			]).errors,
+		).toEqual([]);
+	});
+
+	it("an engine filed under an adapter tier is still out of the orchestrator's reach", () => {
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({
+					from: "packages/trails",
+					to: "packages/adapters/data-mysql",
+				}),
+			]).errors,
+		).toEqual([
+			"orchestrators must not import a data engine at runtime: packages/trails -> packages/adapters/data-mysql",
+		]);
+	});
+
+	// A devDependency says where a package is *allowed* to import the engine
+	// from, not where it does. One sighting under `src/` is a runtime edge, and
+	// the scanner reports that sighting with no `dev` marker.
+	it.each([
+		["declared first", 0],
+		["source first", 1],
+	] as const)("a src/ sighting of a devDependency engine is a runtime edge (%s)", (_name, rotate) => {
+		const sightings = [
+			parseWorkspaceEdge({
+				from: "packages/trails",
+				to: "packages/data-sqlite",
+				dev: true,
+			}),
+			parseWorkspaceEdge({
+				from: "packages/trails",
+				to: "packages/data-sqlite",
+			}),
+		];
+		const ordered = [...sightings.slice(rotate), ...sightings.slice(0, rotate)];
+		expect(
+			validateBoundaryImports(mergeWorkspaceEdges(ordered)).errors,
+		).toEqual([
+			"orchestrators must not import a data engine at runtime: packages/trails -> packages/data-sqlite",
+		]);
+	});
+});
+
+/**
+ * The defect ADR-0177 decision 3 removed was `node:sqlite` bindings living in
+ * the runbook engine. The rule written to keep it out only knew `@hobo/*`
+ * engine packages, so the original import — a builtin, not a workspace package
+ * — was never an edge, and neither was the driver of any other engine or the
+ * SQLite storage package.
+ */
+describe("orchestrators import no database driver and no engine-specific storage", () => {
+	const FORBIDDEN = [
+		"node:sqlite",
+		"pg",
+		"mongodb",
+		"packages/storage-sqlite",
+	] as const;
+
+	it.each(FORBIDDEN)("packages/trails -> %s is refused at runtime", (to) => {
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({ from: "packages/trails", to }),
+			]).errors,
+		).toEqual([
+			`orchestrators must not import a database driver or engine-specific storage at runtime: packages/trails -> ${to}`,
+		]);
+	});
+
+	it.each(
+		FORBIDDEN,
+	)("packages/trails -> %s is allowed from tests only", (to) => {
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({ from: "packages/trails", to, dev: true }),
+			]).errors,
+		).toEqual([]);
+	});
+
+	it("a src/ sighting of a devDependency driver is a runtime edge", () => {
+		expect(
+			validateBoundaryImports(
+				mergeWorkspaceEdges([
+					parseWorkspaceEdge({ from: "packages/trails", to: "pg", dev: true }),
+					parseWorkspaceEdge({ from: "packages/trails", to: "pg" }),
+				]),
+			).errors,
+		).toEqual([
+			"orchestrators must not import a database driver or engine-specific storage at runtime: packages/trails -> pg",
+		]);
+	});
+
+	it("the packages whose job is a driver keep theirs", () => {
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({
+					from: "packages/storage-sqlite",
+					to: "node:sqlite",
+				}),
+				parseWorkspaceEdge({ from: "packages/data-sqlite", to: "node:sqlite" }),
+				parseWorkspaceEdge({ from: "packages/data-postgres", to: "pg" }),
+				parseWorkspaceEdge({ from: "packages/data-mongodb", to: "mongodb" }),
+				parseWorkspaceEdge({ from: "packages/hobo", to: "node:sqlite" }),
+				parseWorkspaceEdge({
+					from: "packages/runtimes/runtime-local",
+					to: "packages/storage-sqlite",
+				}),
+			]).errors,
+		).toEqual([]);
+	});
+
+	it("a driver edge is judged by the engine rules only, not as a layering edge", () => {
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({
+					from: "packages/runtimes/runtime-rivet",
+					to: "node:sqlite",
+				}),
+				parseWorkspaceEdge({
+					from: "packages/providers/provider-neon",
+					to: "pg",
+				}),
+				parseWorkspaceEdge({ from: "packages/core", to: "node:sqlite" }),
+			]).errors,
+		).toEqual([]);
+	});
+
+	it("names the driver a module specifier belongs to, subpaths included", () => {
+		expect(databaseDriverOf("node:sqlite")).toBe("node:sqlite");
+		expect(databaseDriverOf("pg")).toBe("pg");
+		expect(databaseDriverOf("pg/lib/native")).toBe("pg");
+		expect(databaseDriverOf("mongodb")).toBe("mongodb");
+		expect(databaseDriverOf("mongodb/lib/bson")).toBe("mongodb");
+		expect(databaseDriverOf("better-sqlite3")).toBe("better-sqlite3");
+	});
+
+	it("does not mistake a neighbouring name for a driver", () => {
+		for (const specifier of [
+			"pgvector",
+			"pg-connection-string",
+			"mongodb-connection-string-url",
+			"node:sqlite3",
+			"node:fs",
+			"sqlite",
+			"@hobo/storage-sqlite",
+			"@hobo/data-core",
+			"./pg",
+			"",
+		]) {
+			expect(databaseDriverOf(specifier)).toBeUndefined();
+		}
+	});
+});
+
+/**
+ * Engines are layer-1 contract packages, so the layering rules never stood
+ * between two of them: `data-sqlite -> data-postgres` passed. The registration
+ * comment said each engine "imports only" the contract; nothing enforced it.
+ */
+describe("data engines meet only through the contract", () => {
+	it("an engine importing another engine at runtime is refused", () => {
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({
+					from: "packages/data-sqlite",
+					to: "packages/data-postgres",
+				}),
+				parseWorkspaceEdge({
+					from: "packages/data-mongodb",
+					to: "packages/data-sqlite",
+				}),
+			]).errors,
+		).toEqual([
+			"data engines must not import each other at runtime: packages/data-sqlite -> packages/data-postgres",
+			"data engines must not import each other at runtime: packages/data-mongodb -> packages/data-sqlite",
+		]);
+	});
+
+	it("a test-only edge between engines stays allowed", () => {
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({
+					from: "packages/data-postgres",
+					to: "packages/data-sqlite",
+					dev: true,
+				}),
+			]).errors,
+		).toEqual([]);
+	});
+
+	it("a src/ sighting withdraws the test-only claim between engines too", () => {
+		expect(
+			validateBoundaryImports(
+				mergeWorkspaceEdges([
+					parseWorkspaceEdge({
+						from: "packages/data-postgres",
+						to: "packages/data-sqlite",
+					}),
+					parseWorkspaceEdge({
+						from: "packages/data-postgres",
+						to: "packages/data-sqlite",
+						dev: true,
+					}),
+				]),
+			).errors,
+		).toEqual([
+			"data engines must not import each other at runtime: packages/data-postgres -> packages/data-sqlite",
+		]);
+	});
+
+	it("the contract, core, and an engine's own name are not another engine", () => {
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({
+					from: "packages/data-sqlite",
+					to: "packages/data-core",
+				}),
+				parseWorkspaceEdge({
+					from: "packages/data-sqlite",
+					to: "packages/core",
+				}),
+				parseWorkspaceEdge({
+					from: "packages/data-sqlite",
+					to: "packages/data-sqlite",
 				}),
 			]).errors,
 		).toEqual([]);

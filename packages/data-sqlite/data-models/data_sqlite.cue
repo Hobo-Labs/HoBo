@@ -15,6 +15,8 @@ package data_models
 	key:       string & !=""
 	op:        "upsert" | "delete"
 	record_json?: string
+	// The head the row's write started from, so always behind the row.
+	tx?: int & >=0 & <seq
 	// An upsert is journaled with its record; a delete with none.
 	if op == "upsert" {
 		record_json!: string & !=""

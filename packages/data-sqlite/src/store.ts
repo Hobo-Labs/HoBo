@@ -8,7 +8,9 @@
  *
  * - **Capture is a transactional outbox.** A change is journaled in the same
  *   transaction as the write that caused it. A write that bypasses this store
- *   is not captured.
+ *   is not captured. A journal row is kept only while a subscription has yet
+ *   to acknowledge it: a subscription starts at the head, so with no
+ *   subscription nobody is entitled to a change and none is retained.
  * - **The fence is enforced at the write entry point.** It is a durable row
  *   checked inside the write transaction — but a process with its own
  *   connection to the file is not stopped by it.
@@ -16,6 +18,7 @@
  *   executors take a capture position first and replay from it, which
  *   converges regardless.
  */
+import { randomUUID } from "node:crypto";
 import {
 	DatabaseSync,
 	type SQLInputValue,
@@ -45,6 +48,7 @@ import {
 	type RecordMutation,
 	schemaDigest,
 } from "@hobo/data-core";
+import { SqliteDataError } from "./errors.js";
 
 const tagOf = Object.prototype.toString;
 
@@ -54,6 +58,28 @@ type Row = Record<string, SQLOutputValue>;
 const EXTRA_COLUMN = "hobo_extra";
 const TENANT_COLUMN = "tenant_id";
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+/**
+ * Table names a dataset may not take: this binding's own metadata tables and
+ * SQLite's internal ones. A dataset named after the fence table would hand
+ * the records port every fence token, and the means to delete a fence.
+ */
+const RESERVED_TABLE_PREFIXES: readonly string[] = Object.freeze([
+	"hobo_data_",
+	"sqlite_",
+]);
+/** A journal position as this store mints it: a sequence number in decimal. */
+const POSITION = /^(0|[1-9][0-9]*)$/u;
+
+function assertNotReserved(dataset: string): void {
+	const name = dataset.toLowerCase();
+	if (RESERVED_TABLE_PREFIXES.some((prefix) => name.startsWith(prefix))) {
+		throw new DataCoreError(
+			"INVALID_DATASET_SCHEMA",
+			`dataset name ${dataset} is reserved by the SQLite binding`,
+			{ detail: { dataset } },
+		);
+	}
+}
 
 const NATIVE_TYPES: Readonly<Record<DatasetField["type"], string>> =
 	Object.freeze({
@@ -186,6 +212,9 @@ export class SqliteDatasetStore {
 	}
 
 	private bootstrap(): void {
+		// Erasure has to hold in the file, not only in its tables: without this
+		// a deleted row stays readable in the page it was freed from.
+		this.db.exec("PRAGMA secure_delete = ON");
 		this.db.exec(`
 			CREATE TABLE IF NOT EXISTS hobo_data_datasets (
 				name TEXT PRIMARY KEY,
@@ -197,7 +226,8 @@ export class SqliteDatasetStore {
 				tenant_id TEXT NOT NULL,
 				key TEXT NOT NULL,
 				op TEXT NOT NULL CHECK (op IN ('upsert', 'delete')),
-				record TEXT
+				record TEXT,
+				tx INTEGER
 			);
 			CREATE INDEX IF NOT EXISTS hobo_data_journal_scope
 				ON hobo_data_journal (dataset, tenant_id, seq);
@@ -221,6 +251,25 @@ export class SqliteDatasetStore {
 				ack_position INTEGER NOT NULL
 			);
 		`);
+		// A journal written before transactions were marked gains the column;
+		// its existing rows stay unmarked and read as one transaction each.
+		const marked = this.db
+			.prepare(
+				"SELECT 1 AS present FROM pragma_table_info('hobo_data_journal') WHERE name = 'tx'",
+			)
+			.get();
+		if (marked === undefined) {
+			this.db.exec("ALTER TABLE hobo_data_journal ADD COLUMN tx INTEGER");
+		}
+		// A store left by an earlier version may hold journal no reader is
+		// entitled to; it is released on open rather than at the next write.
+		// Looked for first, so that opening a store with nothing to release
+		// takes no write lock.
+		const unowed = this.get(
+			"SELECT seq FROM hobo_data_journal WHERE seq <= ? LIMIT 1",
+			this.journalFloor(),
+		);
+		if (unowed !== undefined) this.prune();
 	}
 
 	/** The raw connection, for the schema-apply port's arbitrary statements. */
@@ -295,6 +344,9 @@ export class SqliteDatasetStore {
 	}
 
 	schema(name: string): DatasetSchema {
+		// Checked here as well as in `ensure`: a store that registered a
+		// reserved name before it was refused must not serve it either.
+		assertNotReserved(name);
 		const found = this.describe(name);
 		if (found === undefined) {
 			throw new DataCoreError(
@@ -314,6 +366,7 @@ export class SqliteDatasetStore {
 	 * existed comes under it without a copy.
 	 */
 	ensure(schema: DatasetSchema, serialized: JsonObject): boolean {
+		assertNotReserved(schema.name);
 		const existing = this.describe(schema.name);
 		if (existing !== undefined) {
 			if (schemaDigest(existing) !== schemaDigest(schema)) {
@@ -351,19 +404,21 @@ export class SqliteDatasetStore {
 	// ── records ───────────────────────────────────────────────────────────────
 
 	private rowToRecord(schema: DatasetSchema, row: Row): CanonicalRecord {
-		const raw: { [key: string]: JsonValue } = {};
-		for (const field of schema.fields) {
-			raw[field.name] = fromNative(field, row[field.name] ?? null);
-		}
+		// Entries, not property assignment or Object.assign: either would treat
+		// an undeclared field named `__proto__` as the prototype and drop it.
+		const entries: [string, JsonValue][] = schema.fields.map((field) => [
+			field.name,
+			fromNative(field, row[field.name] ?? null),
+		]);
 		const extra = row[EXTRA_COLUMN];
 		if (schema.open && isText(extra)) {
 			const parsed = parseJson(extra);
 			if (parsed !== null && tagOf.call(parsed) === "[object Object]") {
 				// SAFETY: the tag check above proves a JSON object.
-				Object.assign(raw, parsed as JsonObject);
+				entries.push(...Object.entries(parsed as JsonObject));
 			}
 		}
-		return parseCanonicalRecord(schema, raw);
+		return parseCanonicalRecord(schema, Object.fromEntries(entries));
 	}
 
 	private keyParams(
@@ -411,13 +466,6 @@ export class SqliteDatasetStore {
 		}));
 	}
 
-	/** The fence that covers a tenant: the dataset-wide one, or the tenant's own. */
-	fenceCovering(dataset: string, tenant: string): FenceRow | undefined {
-		return this.fences(dataset).find(
-			(fence) => fence.tenant === "" || fence.tenant === tenant,
-		);
-	}
-
 	private assertWritable(
 		dataset: string,
 		mutations: readonly RecordMutation[],
@@ -459,10 +507,11 @@ export class SqliteDatasetStore {
 			),
 		];
 		if (schema.open) {
-			const extra: { [key: string]: JsonValue } = {};
-			for (const key of Object.keys(record)) {
-				if (!declared.has(key)) extra[key] = record[key] ?? null;
-			}
+			// Entries again: assigning a field named `__proto__` would drop it
+			// here while the journal still carried it.
+			const extra = Object.fromEntries(
+				Object.entries(record).filter(([key]) => !declared.has(key)),
+			);
 			columns.push(EXTRA_COLUMN);
 			values.push(canonicalEncode(extra));
 		}
@@ -490,29 +539,70 @@ export class SqliteDatasetStore {
 	}
 
 	/**
+	 * The one constructor for a mutation this store will apply. The record is
+	 * parsed again rather than trusted, and the key must be the canonical key:
+	 * a caller's uppercase uuid and its canonical lowercase would otherwise be
+	 * two rows that read back under one key, and a mutation whose key named a
+	 * different record than it carried would land under the record's.
+	 */
+	private parseMutation(
+		schema: DatasetSchema,
+		mutation: RecordMutation,
+	): RecordMutation {
+		const refuse = (message: string): never => {
+			throw new DataCoreError("INVALID_RECORD", message, {
+				detail: { dataset: schema.name, field: "key" },
+			});
+		};
+		if (mutation.op === "delete") {
+			const key = encodeRecordKey(
+				schema,
+				decodeRecordKey(schema, mutation.key),
+			);
+			if (key !== mutation.key) {
+				refuse("a delete must name its record by the canonical key");
+			}
+			return { tenant: mutation.tenant, key, op: "delete" };
+		}
+		const record = parseCanonicalRecord(schema, mutation.record);
+		const key = encodeRecordKey(schema, record);
+		if (key !== mutation.key) {
+			refuse("a mutation's key must be the canonical key of its record");
+		}
+		return { tenant: mutation.tenant, key, op: "upsert", record };
+	}
+
+	/**
 	 * The one write path. Fence check, the mutations, and their journal rows
 	 * are one transaction: a change is captured if and only if it landed.
 	 */
 	commit(
 		dataset: string,
-		mutations: readonly RecordMutation[],
+		requested: readonly RecordMutation[],
 		fenceToken: string | undefined,
 		watermark?: { readonly source: string; readonly position: Position },
 	): Position {
 		const schema = this.schema(dataset);
+		const mutations = requested.map((mutation) =>
+			this.parseMutation(schema, mutation),
+		);
 		return this.transaction(() => {
 			this.assertWritable(dataset, mutations, fenceToken);
+			// Every row of this transaction carries the head it started from, so
+			// capture can tell where one transaction ends and the next begins.
+			const tx = this.head();
 			for (const mutation of mutations) {
 				this.applyMutation(schema, mutation);
 				this.run(
-					"INSERT INTO hobo_data_journal (dataset, tenant_id, key, op, record) VALUES (?, ?, ?, ?, ?)",
+					"INSERT INTO hobo_data_journal (dataset, tenant_id, key, op, record, tx) VALUES (?, ?, ?, ?, ?, ?)",
 					dataset,
 					mutation.tenant,
 					mutation.key,
 					mutation.op,
-					mutation.op === "upsert" && mutation.record !== undefined
-						? canonicalEncode(mutation.record)
-						: null,
+					mutation.record === undefined
+						? null
+						: canonicalEncode(mutation.record),
+					tx,
 				);
 			}
 			if (watermark !== undefined) {
@@ -524,6 +614,9 @@ export class SqliteDatasetStore {
 					watermark.position,
 				);
 			}
+			// With no subscription the rows just written are owed to nobody and
+			// leave with the transaction; the head they advanced stays.
+			this.prune();
 			return String(this.head());
 		});
 	}
@@ -547,7 +640,52 @@ export class SqliteDatasetStore {
 		return row === undefined ? 0 : Number(row.seq);
 	}
 
-	/** Highest journal sequence assigned within a scope. */
+	/**
+	 * The position at or before which every change has been released: the
+	 * least any subscription has acknowledged, or the head when there is no
+	 * subscription — a subscription starts at the head, so none that starts
+	 * later is entitled to a change made before it.
+	 */
+	journalFloor(): number {
+		const head = this.head();
+		const row = this.get(
+			"SELECT MIN(ack_position) AS floor FROM hobo_data_subscriptions",
+		);
+		return row === undefined || row.floor === null
+			? head
+			: Math.min(Number(row.floor), head);
+	}
+
+	/** The one constructor for a position this store minted. */
+	private parsePosition(position: Position): number {
+		const head = this.head();
+		// A position past the head was minted by some other store, or by this
+		// one before it was restored; changes at or before it would be skipped.
+		if (!POSITION.test(position) || !(Number(position) <= head)) {
+			throw new SqliteDataError(
+				"CAPTURE_POSITION_INVALID",
+				`a capture position for this store is a journal sequence from 0 to its head, ${head}`,
+				{ detail: { field: "position" } },
+			);
+		}
+		return Number(position);
+	}
+
+	/** A position the journal can still be read from. */
+	private parseReadPosition(after: Position): number {
+		const from = this.parsePosition(after);
+		const floor = this.journalFloor();
+		if (from < floor) {
+			throw new SqliteDataError(
+				"CAPTURE_POSITION_INVALID",
+				`changes at or before ${floor} were released; the journal cannot be read from ${from}`,
+				{ detail: { field: "position" } },
+			);
+		}
+		return from;
+	}
+
+	/** Highest journal sequence still retained within a scope. */
 	headOf(scope: DatasetScope): number {
 		const row =
 			scope.tenant === ""
@@ -581,42 +719,68 @@ export class SqliteDatasetStore {
 		return String(head);
 	}
 
-	/** Hold the journal from position zero for a reader that keeps its own cursor. */
+	/**
+	 * Hold everything the journal still retains for a reader that keeps its
+	 * own cursor: from the floor, which is zero for a store that never had a
+	 * change released.
+	 */
 	pinJournal(name: string, dataset: string): void {
+		const floor = this.journalFloor();
 		this.run(
 			`INSERT INTO hobo_data_subscriptions (name, dataset, start_position, ack_position)
-			 VALUES (?, ?, 0, 0) ON CONFLICT (name) DO NOTHING`,
+			 VALUES (?, ?, ?, ?) ON CONFLICT (name) DO NOTHING`,
 			name,
 			dataset,
+			floor,
+			floor,
 		);
 	}
 
+	/**
+	 * Ordered changes in scope strictly after `after`. A batch never splits a
+	 * transaction: when the limit falls inside one, the rest of it is returned
+	 * too, so the batch may hold more than `limit` changes.
+	 */
 	readChanges(
 		scope: DatasetScope,
 		after: Position,
 		limit: number,
 	): CaptureBatch {
 		const schema = this.schema(scope.dataset);
-		const from = Number(after);
-		const rows =
-			scope.tenant === ""
-				? this.all(
-						`SELECT seq, tenant_id, key, op, record FROM hobo_data_journal
-						 WHERE dataset = ? AND seq > ? ORDER BY seq LIMIT ?`,
-						scope.dataset,
-						from,
-						limit + 1,
-					)
-				: this.all(
-						`SELECT seq, tenant_id, key, op, record FROM hobo_data_journal
-						 WHERE dataset = ? AND seq > ? AND tenant_id = ? ORDER BY seq LIMIT ?`,
-						scope.dataset,
-						from,
-						scope.tenant,
-						limit + 1,
-					);
-		const caughtUp = rows.length <= limit;
-		const page = rows.slice(0, limit);
+		const from = this.parseReadPosition(after);
+		const inScope =
+			scope.tenant === "" ? "dataset = ?" : "dataset = ? AND tenant_id = ?";
+		const scopeParams: SQLInputValue[] =
+			scope.tenant === "" ? [scope.dataset] : [scope.dataset, scope.tenant];
+		const select = `SELECT seq, tenant_id, key, op, record, tx FROM hobo_data_journal WHERE ${inScope}`;
+		const rows = this.all(
+			`${select} AND seq > ? ORDER BY seq LIMIT ?`,
+			...scopeParams,
+			from,
+			limit + 1,
+		);
+		let caughtUp = rows.length <= limit;
+		let page = rows.slice(0, limit);
+		const boundary = page[page.length - 1];
+		const tx = boundary?.tx ?? null;
+		if (boundary !== undefined && tx !== null && rows[limit]?.tx === tx) {
+			// The limit fell inside a transaction; the rest of it comes too.
+			page = [
+				...page,
+				...this.all(
+					`${select} AND tx = ? AND seq > ? ORDER BY seq`,
+					...scopeParams,
+					Number(tx),
+					Number(boundary.seq),
+				),
+			];
+			caughtUp =
+				this.get(
+					`SELECT seq FROM hobo_data_journal WHERE ${inScope} AND seq > ? LIMIT 1`,
+					...scopeParams,
+					Number(page[page.length - 1]?.seq ?? boundary.seq),
+				) === undefined;
+		}
 		const changes: ChangeEnvelope[] = page.map((row) => {
 			const tenant = String(row.tenant_id);
 			const key = String(row.key);
@@ -640,7 +804,7 @@ export class SqliteDatasetStore {
 			// Caught up means everything to the head was considered, including
 			// changes outside this scope; otherwise resume after the last row.
 			position: caughtUp
-				? String(Math.max(this.head(), from))
+				? String(this.head())
 				: String(last === undefined ? from : Number(last.seq)),
 			caughtUp,
 		};
@@ -648,17 +812,18 @@ export class SqliteDatasetStore {
 
 	/** Changes in scope not yet behind a position. */
 	pending(scope: DatasetScope, after: Position): number {
+		const from = this.parseReadPosition(after);
 		const row =
 			scope.tenant === ""
 				? this.get(
 						"SELECT COUNT(*) AS pending FROM hobo_data_journal WHERE dataset = ? AND seq > ?",
 						scope.dataset,
-						Number(after),
+						from,
 					)
 				: this.get(
 						"SELECT COUNT(*) AS pending FROM hobo_data_journal WHERE dataset = ? AND seq > ? AND tenant_id = ?",
 						scope.dataset,
-						Number(after),
+						from,
 						scope.tenant,
 					);
 		return row === undefined ? 0 : Number(row.pending);
@@ -668,25 +833,28 @@ export class SqliteDatasetStore {
 	acknowledge(name: string, position: Position): void {
 		this.run(
 			"UPDATE hobo_data_subscriptions SET ack_position = MAX(ack_position, ?) WHERE name = ?",
-			Number(position),
+			this.parsePosition(position),
 			name,
 		);
 		this.prune();
 	}
 
+	/** Drop the subscription and release whatever journal only it was holding. */
 	stopSubscription(name: string): void {
 		this.run("DELETE FROM hobo_data_subscriptions WHERE name = ?", name);
+		this.prune();
 	}
 
+	/**
+	 * Release every journal row at or before the floor. Run wherever the floor
+	 * can rise — a write with no subscription, an acknowledgement, a stop — so
+	 * a payload never outlives the last reader entitled to it.
+	 */
 	private prune(): void {
-		// With no reader left there is nobody to say what is safe to drop, so
-		// nothing is dropped; a later reader may still want the tail.
-		const row = this.get(
-			"SELECT MIN(ack_position) AS floor, COUNT(*) AS readers FROM hobo_data_subscriptions",
+		this.run(
+			"DELETE FROM hobo_data_journal WHERE seq <= ?",
+			this.journalFloor(),
 		);
-		if (row === undefined || Number(row.readers) === 0 || row.floor === null)
-			return;
-		this.run("DELETE FROM hobo_data_journal WHERE seq <= ?", Number(row.floor));
 	}
 
 	// ── scans ─────────────────────────────────────────────────────────────────
@@ -781,7 +949,10 @@ export class SqliteDatasetStore {
 				(fence) => fence.tenant === scope.tenant,
 			);
 			if (existing !== undefined) return existing.fenceToken;
-			const fenceToken = `fence:${scope.dataset}:${scope.tenant}:${this.head()}:${this.clock()}`;
+			// Random, never derived: a token built from the scope, the head and
+			// the clock repeats when a fence is released and raised again, and
+			// the previous holder would pass the new fence.
+			const fenceToken = randomUUID();
 			this.run(
 				"INSERT INTO hobo_data_fences (dataset, tenant_id, fence_token, fenced_at) VALUES (?, ?, ?, ?)",
 				scope.dataset,
@@ -822,6 +993,11 @@ export class SqliteDatasetStore {
 	 * Destructive. Refused unless the caller holds the raised fence and the
 	 * scope still digests to the verified value. A physical reap, so it is not
 	 * journaled: nothing downstream should replay it as a logical delete.
+	 *
+	 * The scope's journal rows go in the same transaction — every version of
+	 * every record, and the keys of its deletes. Erasing the table while the
+	 * outbox still held the payloads would not be an erasure. A subscription
+	 * that had not read them yet never will.
 	 */
 	retire(
 		scope: DatasetScope,
@@ -851,12 +1027,22 @@ export class SqliteDatasetStore {
 				);
 			}
 			const table = quoteIdentifier(scope.dataset);
-			return scope.tenant === ""
-				? this.run(`DELETE FROM ${table}`)
-				: this.run(
-						`DELETE FROM ${table} WHERE ${quoteIdentifier(TENANT_COLUMN)} = ?`,
-						scope.tenant,
-					);
+			if (scope.tenant === "") {
+				this.run(
+					"DELETE FROM hobo_data_journal WHERE dataset = ?",
+					scope.dataset,
+				);
+				return this.run(`DELETE FROM ${table}`);
+			}
+			this.run(
+				"DELETE FROM hobo_data_journal WHERE dataset = ? AND tenant_id = ?",
+				scope.dataset,
+				scope.tenant,
+			);
+			return this.run(
+				`DELETE FROM ${table} WHERE ${quoteIdentifier(TENANT_COLUMN)} = ?`,
+				scope.tenant,
+			);
 		});
 	}
 }

@@ -20,8 +20,17 @@ describe("SQLite engine conformance", () => {
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
 		assert.equal(report.engine, "sqlite");
-		assert.deepEqual(report.skipped, []);
-		assert.equal(report.results.length, ENGINE_CONFORMANCE_CASE_IDS.length);
+		// SQLite declares every port, so no case is skipped for a missing one.
+		// It declares no native fast path, so a case that proves one does not
+		// apply — and nothing else may hide behind that.
+		assert.deepEqual(
+			report.skipped.filter((id) => !id.includes(".native.")),
+			[],
+		);
+		assert.equal(
+			report.results.length + report.skipped.length,
+			ENGINE_CONFORMANCE_CASE_IDS.length,
+		);
 	}, 120_000);
 
 	test("SQLite → reference engine: cross-engine through the hub", async () => {
