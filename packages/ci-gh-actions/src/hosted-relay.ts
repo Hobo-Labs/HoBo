@@ -1,4 +1,3 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { clone, create } from "@bufbuild/protobuf";
 import type { Account, ConfigurationState } from "@hobo/ci";
 import {
@@ -49,6 +48,7 @@ import {
 	servedRunnerLabel,
 	TRUNK_RUNNER_LABEL,
 } from "./runner-labels.js";
+import { verifyWebhookSignature } from "./webhook-signature.js";
 
 /** Isolated executions are supplied by the hosting runtime and must fail closed. */
 export interface IsolatedRunnerHost {
@@ -349,12 +349,9 @@ export class HostedRelay {
 			)
 		)
 			return this.processWebhook(raw, event);
-		const expected = createHmac("sha256", this.options.webhookSecret)
-			.update(raw)
-			.digest();
 		if (
-			!/^sha256=[a-f0-9]{64}$/.test(signature) ||
-			!timingSafeEqual(expected, Buffer.from(signature.slice(7), "hex"))
+			verifyWebhookSignature(this.options.webhookSecret, raw, signature) !==
+			"valid"
 		)
 			throw new Error("invalid webhook signature");
 		return this.processWebhook(raw, event);

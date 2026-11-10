@@ -52,7 +52,7 @@ Schema codegen and drift gates:
 
 - `pnpm run codegen` — regenerate checked-in `src/_generated/` TypeScript views from protobuf sources via `packages/schema-tools` (promoted from the s0-04 POC); coverage is opt-in per package via `data-models/buf.yaml`, including nested category packages (`packages/{providers,runtimes,iac,build}/*`).
 - `pnpm run codegen:check` — regenerate to a temp tree, byte-compare, exit non-zero on drift; never mutates the working tree.
-- `pnpm run test:schema` — includes SDK/deployment validators plus `codegen:check` and the CUE vet lane.
+- `pnpm run test:schema` — includes SDK/deployment validators plus `codegen:check` and the CUE vet lane. It builds `@hobo/core` and `@hobo/data` (Turbo) before the `@hobo/bindles` manifest lane, whose tests import their `dist` entries; a fresh checkout has no `dist` yet, which is what merge-group runs on a clean trunk runner hit.
 - `pnpm run generated:guard` — pre-commit guard blocking hand-edits under `generated/`, `_generated/`, or `src/gen/` unless matching `.proto`/`.cue`/generator sources are staged.
 
 ## Agent checklist

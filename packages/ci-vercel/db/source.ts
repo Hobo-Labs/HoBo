@@ -1,0 +1,29 @@
+/**
+ * Where `@hobo/ci-vercel`'s schema lives and how its embedded DDL is run.
+ *
+ * The probe table is created by `verifyRepairDatabase` on its way to comparing
+ * two connections, and the health table by `PostgresWorkerHealth.initialize`.
+ * The tooling reads their DDL from `src/`, and runs both through
+ * `initializeEmbedded` against a scratch database, to prove the migrations
+ * match it.
+ */
+
+import type { RelaySchemaSource } from "../../ci/db/tooling/index.js";
+import { verifyRepairDatabase } from "../src/database-connections.js";
+import { PostgresWorkerHealth } from "../src/worker-health.js";
+
+export const schemaSource: RelaySchemaSource = {
+	scope: "@hobo/ci-vercel",
+	// The lock `verifyRepairDatabase` creates its table under. The health
+	// store takes none.
+	advisoryLocks: ["hobo-ci-database-probe-v1"],
+	packageRoot: new URL("../", import.meta.url),
+	directory: new URL("./migrations/", import.meta.url),
+	loadSchema: () => import("./schema.js"),
+	initializeEmbedded: async (pool) => {
+		// Both arguments are the same database, so the probe succeeds and
+		// removes its own marker row.
+		await verifyRepairDatabase(pool, pool);
+		await new PostgresWorkerHealth(pool).initialize();
+	},
+};
