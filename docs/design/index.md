@@ -220,5 +220,8 @@ When a draft package, validation script, workflow, or public contract changes, u
 [GitHub Actions relay](../../packages/ci-gh-actions/README.md) (one core; hosted
 as a Node service by `hobo ci serve` and the container image, on
 [Vercel](../../packages/ci-vercel/README.md), and by the box worker daemon),
-[Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md), and
+[Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md),
+the optional [CI agent](../../packages/ci-agent/README.md) (merge-queue planning
+and model-backed conflict resolution beside the Node relay; not yet run against
+GitHub or a live model), and
 [implementation plan with live acceptance gates](../plans/hobo-ci/README.md).

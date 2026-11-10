@@ -12,6 +12,7 @@ export type RelayServiceLog = Readonly<{
 		| "service.http_failed"
 		| "worker.lease_failed"
 		| "worker.tick_failed"
+		| "agent.tick_failed"
 		| "readiness.failed";
 	leaseId?: string;
 }>;
@@ -28,6 +29,15 @@ export type RelayServiceOptions = {
 	handle: (ready: () => boolean) => (request: Request) => Promise<Response>;
 	/** One pass of the relay worker: inbox, lease reconciliation, dispatch. */
 	tick: () => Promise<void>;
+	/**
+	 * An optional second worker (the CI agent) on its own cadence. It runs only
+	 * while the service is ready, one pass at a time, and never delays `tick`:
+	 * a pass can wait minutes on a model while jobs keep being dispatched. A
+	 * failed pass is logged and the next one runs as scheduled. The drain waits
+	 * for a pass in flight.
+	 */
+	agentTick?: () => Promise<void>;
+	agentIntervalMs?: number;
 	/** Releases the store once every accepted request and the worker are done. */
 	close: () => void;
 	host?: string;
@@ -97,8 +107,14 @@ export function createRelayService(options: RelayServiceOptions) {
 		options.drainTimeoutMs ?? 30_000,
 		"drain timeout",
 	);
+	const agentIntervalMs = interval(
+		options.agentIntervalMs ?? 60_000,
+		"agent interval",
+	);
 	let stopping = false;
 	let isReady = false;
+	let agentWorker: Promise<void> | undefined;
+	let agentTimer: ReturnType<typeof setInterval> | undefined;
 	let started: Promise<void> | undefined;
 	let stoppingResult: Promise<{ drained: boolean }> | undefined;
 	let worker: Promise<void> | undefined;
@@ -214,6 +230,18 @@ export function createRelayService(options: RelayServiceOptions) {
 				worker = undefined;
 			});
 	}
+	function agentTick(): void {
+		const pass = options.agentTick;
+		if (!pass || stopping || agentWorker || !ready()) return;
+		agentWorker = Promise.resolve()
+			.then(pass)
+			.catch(() => {
+				log({ level: "error", event: "agent.tick_failed" });
+			})
+			.finally(() => {
+				agentWorker = undefined;
+			});
+	}
 	function start(): Promise<void> {
 		if (started) return started;
 		if (stopping) return Promise.reject(new Error("relay service is stopped"));
@@ -227,6 +255,8 @@ export function createRelayService(options: RelayServiceOptions) {
 			});
 			if (stopping) return;
 			timer = setInterval(tick, tickIntervalMs);
+			if (options.agentTick)
+				agentTimer = setInterval(agentTick, agentIntervalMs);
 			tick();
 			log({ level: "info", event: "service.started" });
 		})();
@@ -237,6 +267,7 @@ export function createRelayService(options: RelayServiceOptions) {
 		stopping = true;
 		isReady = false;
 		clearInterval(timer);
+		clearInterval(agentTimer);
 		for (const response of responses)
 			if (!response.headersSent) response.setHeader("Connection", "close");
 		log({ level: "info", event: "service.draining" });
@@ -248,7 +279,7 @@ export function createRelayService(options: RelayServiceOptions) {
 				const closed = new Promise<void>((resolve) => {
 					server.close(() => resolve());
 				});
-				await Promise.all([closed, worker, probe, ...requests]);
+				await Promise.all([closed, worker, agentWorker, probe, ...requests]);
 				options.close();
 				log({ level: "info", event: "service.drained" });
 				return { drained: true };

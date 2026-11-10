@@ -206,7 +206,14 @@ export function createGithubAppTransport(options: {
 	privateKey: string;
 	fetch?: typeof fetch;
 	now?: () => number;
-}): GithubAppTransport {
+}): GithubAppTransport & {
+	/**
+	 * A short-lived installation token for an in-process caller that speaks a
+	 * protocol this transport does not (GraphQL, git over HTTPS). The App key
+	 * still never leaves the relay.
+	 */
+	installationToken(installationId: number): Promise<string>;
+} {
 	const send = options.fetch ?? fetch;
 	const now = options.now ?? Date.now;
 	const tokens = new Map<number, { token: string; expiresAt: number }>();
@@ -265,6 +272,7 @@ export function createGithubAppTransport(options: {
 		return task;
 	}
 	return {
+		installationToken,
 		async appRequest(path) {
 			const url = githubApiUrl(path);
 			if (

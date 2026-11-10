@@ -1,0 +1,579 @@
+{
+ "consumer": {
+  "name": "HoboCiAgent"
+ },
+ "provider": {
+  "name": "GithubGraphqlApi"
+ },
+ "metadata": {
+  "pactSpecification": {
+   "version": "3.0.0"
+  },
+  "evidence": "Hand-authored consumer expectations from GitHub's published GraphQL schema; mocked transport only; no provider verification or captured traffic.",
+  "consumerFixtures": {
+   "repository": "hobo-labs/hobo",
+   "baseRef": "main",
+   "label": "hobo-queue",
+   "observedAt": "2026-11-10T12:00:00.000Z"
+  }
+ },
+ "interactions": [
+  {
+   "description": "read the merge queue and the labelled pull requests waiting behind it",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentQueue",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "branch": "main",
+      "ref": "refs/heads/main",
+      "label": "hobo-queue"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "target": {
+         "oid": "9999999999999999999999999999999999999999"
+        }
+       },
+       "mergeQueue": {
+        "entries": {
+         "nodes": [
+          {
+           "position": 1,
+           "enqueuedAt": "2026-11-10T11:30:00Z",
+           "pullRequest": {
+            "id": "PR_node_12",
+            "number": 12,
+            "headRefOid": "2222222222222222222222222222222222222222",
+            "headRefName": "feat/b",
+            "baseRefName": "main",
+            "isCrossRepository": false,
+            "isDraft": false,
+            "createdAt": "2026-11-09T08:00:00Z",
+            "labels": {
+             "nodes": []
+            },
+            "files": {
+             "nodes": [
+              {
+               "path": "src/b.ts"
+              }
+             ],
+             "pageInfo": {
+              "hasNextPage": false
+             }
+            },
+            "timelineItems": {
+             "nodes": []
+            }
+           }
+          },
+          {
+           "position": 0,
+           "enqueuedAt": "2026-11-10T11:00:00Z",
+           "pullRequest": {
+            "id": "PR_node_11",
+            "number": 11,
+            "headRefOid": "1111111111111111111111111111111111111111",
+            "headRefName": "feat/a",
+            "baseRefName": "main",
+            "isCrossRepository": false,
+            "isDraft": false,
+            "createdAt": "2026-11-09T08:00:00Z",
+            "labels": {
+             "nodes": [
+              {
+               "name": "hotfix"
+              }
+             ]
+            },
+            "files": {
+             "nodes": [
+              {
+               "path": "src/a.ts"
+              }
+             ],
+             "pageInfo": {
+              "hasNextPage": false
+             }
+            },
+            "timelineItems": {
+             "nodes": []
+            }
+           }
+          }
+         ]
+        }
+       },
+       "pullRequests": {
+        "nodes": [
+         {
+          "id": "PR_node_13",
+          "number": 13,
+          "headRefOid": "3333333333333333333333333333333333333333",
+          "headRefName": "feat/c",
+          "baseRefName": "main",
+          "isCrossRepository": true,
+          "isDraft": false,
+          "createdAt": "2026-11-09T08:00:00Z",
+          "labels": {
+           "nodes": [
+            {
+             "name": "hobo-queue"
+            }
+           ]
+          },
+          "files": {
+           "nodes": [
+            {
+             "path": "src/c.ts"
+            }
+           ],
+           "pageInfo": {
+            "hasNextPage": false
+           }
+          },
+          "timelineItems": {
+           "nodes": [
+            {
+             "createdAt": "2026-11-10T11:50:00Z",
+             "label": {
+              "name": "hobo-queue"
+             }
+            }
+           ]
+          }
+         },
+         {
+          "id": "PR_node_14",
+          "number": 14,
+          "headRefOid": "4444444444444444444444444444444444444444",
+          "headRefName": "feat/d",
+          "baseRefName": "main",
+          "isCrossRepository": false,
+          "isDraft": false,
+          "createdAt": "2026-11-09T08:00:00Z",
+          "labels": {
+           "nodes": [
+            {
+             "name": "hobo-queue"
+            }
+           ]
+          },
+          "files": {
+           "nodes": [
+            {
+             "path": "src/d.ts"
+            }
+           ],
+           "pageInfo": {
+            "hasNextPage": true
+           }
+          },
+          "timelineItems": {
+           "nodes": [
+            {
+             "createdAt": "2026-11-10T11:40:00Z",
+             "label": {
+              "name": "hobo-queue"
+             }
+            }
+           ]
+          }
+         },
+         {
+          "id": "PR_node_15",
+          "number": 15,
+          "headRefOid": "5555555555555555555555555555555555555555",
+          "headRefName": "feat/e",
+          "baseRefName": "main",
+          "isCrossRepository": false,
+          "isDraft": true,
+          "createdAt": "2026-11-09T08:00:00Z",
+          "labels": {
+           "nodes": [
+            {
+             "name": "hobo-queue"
+            }
+           ]
+          },
+          "files": {
+           "nodes": [
+            {
+             "path": "src/e.ts"
+            }
+           ],
+           "pageInfo": {
+            "hasNextPage": false
+           }
+          },
+          "timelineItems": {
+           "nodes": [
+            {
+             "createdAt": "2026-11-10T11:10:00Z",
+             "label": {
+              "name": "hobo-queue"
+             }
+            }
+           ]
+          }
+         },
+         {
+          "id": "PR_node_12",
+          "number": 12,
+          "headRefOid": "2222222222222222222222222222222222222222",
+          "headRefName": "feat/b",
+          "baseRefName": "main",
+          "isCrossRepository": false,
+          "isDraft": false,
+          "createdAt": "2026-11-09T08:00:00Z",
+          "labels": {
+           "nodes": [
+            {
+             "name": "hobo-queue"
+            }
+           ]
+          },
+          "files": {
+           "nodes": [
+            {
+             "path": "src/b.ts"
+            }
+           ],
+           "pageInfo": {
+            "hasNextPage": false
+           }
+          },
+          "timelineItems": {
+           "nodes": [
+            {
+             "createdAt": "2026-11-10T11:20:00Z",
+             "label": {
+              "name": "hobo-queue"
+             }
+            }
+           ]
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "baseSha": "9999999999999999999999999999999999999999",
+    "entries": [
+     {
+      "number": 11,
+      "position": 0,
+      "started": true,
+      "headRef": "feat/a",
+      "labels": [
+       "hotfix"
+      ],
+      "changedPaths": [
+       "src/a.ts"
+      ],
+      "fork": false,
+      "enqueuedAt": "2026-11-10T11:00:00Z"
+     },
+     {
+      "number": 12,
+      "position": 1,
+      "started": true,
+      "headRef": "feat/b",
+      "labels": [],
+      "changedPaths": [
+       "src/b.ts"
+      ],
+      "fork": false,
+      "enqueuedAt": "2026-11-10T11:30:00Z"
+     },
+     {
+      "number": 14,
+      "position": 2,
+      "started": false,
+      "headRef": "feat/d",
+      "labels": [
+       "hobo-queue"
+      ],
+      "changedPaths": [],
+      "fork": false,
+      "enqueuedAt": "2026-11-10T11:40:00Z"
+     },
+     {
+      "number": 13,
+      "position": 3,
+      "started": false,
+      "headRef": "feat/c",
+      "labels": [
+       "hobo-queue"
+      ],
+      "changedPaths": [
+       "src/c.ts"
+      ],
+      "fork": true,
+      "enqueuedAt": "2026-11-10T11:50:00Z"
+     }
+    ]
+   }
+  },
+  {
+   "description": "a branch without a merge queue reports only labelled pull requests",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentQueue",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "branch": "main",
+      "ref": "refs/heads/main",
+      "label": "hobo-queue"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "target": {
+         "oid": "9999999999999999999999999999999999999999"
+        }
+       },
+       "mergeQueue": null,
+       "pullRequests": {
+        "nodes": [
+         {
+          "id": "PR_node_13",
+          "number": 13,
+          "headRefOid": "3333333333333333333333333333333333333333",
+          "headRefName": "feat/c",
+          "baseRefName": "main",
+          "isCrossRepository": false,
+          "isDraft": false,
+          "createdAt": "2026-11-09T08:00:00Z",
+          "labels": {
+           "nodes": [
+            {
+             "name": "hobo-queue"
+            }
+           ]
+          },
+          "files": {
+           "nodes": [
+            {
+             "path": "src/c.ts"
+            }
+           ],
+           "pageInfo": {
+            "hasNextPage": false
+           }
+          },
+          "timelineItems": {
+           "nodes": []
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "baseSha": "9999999999999999999999999999999999999999",
+    "entries": [
+     {
+      "number": 13,
+      "position": 0,
+      "started": false,
+      "headRef": "feat/c",
+      "labels": [
+       "hobo-queue"
+      ],
+      "changedPaths": [
+       "src/c.ts"
+      ],
+      "fork": false,
+      "enqueuedAt": "2026-11-09T08:00:00Z"
+     }
+    ]
+   }
+  },
+  {
+   "description": "enqueue an observed pull request at exactly its observed head commit",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentEnqueue",
+     "variables": {
+      "pullRequest": "PR_node_13",
+      "head": "3333333333333333333333333333333333333333"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "enqueuePullRequest": {
+       "mergeQueueEntry": {
+        "position": 2
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "description": "comment on an observed pull request",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentComment",
+     "variables": {
+      "subject": "PR_node_13",
+      "body": "**hobo-ci-agent** fixture comment"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "addComment": {
+       "clientMutationId": null
+      }
+     }
+    }
+   }
+  },
+  {
+   "description": "a refused mutation is an error that carries no response text",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentEnqueue",
+     "variables": {
+      "pullRequest": "PR_node_13",
+      "head": "3333333333333333333333333333333333333333"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": null,
+     "errors": [
+      {
+       "type": "UNPROCESSABLE",
+       "message": "Pull request is not mergeable: review required for SECRET-PROJECT"
+      }
+     ]
+    }
+   },
+   "expectedError": "GitHub GraphQL request was refused (UNPROCESSABLE)"
+  },
+  {
+   "description": "an HTTP failure is an error that names only the status",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentQueue",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "branch": "main",
+      "ref": "refs/heads/main",
+      "label": "hobo-queue"
+     }
+    }
+   },
+   "response": {
+    "status": 502,
+    "body": {
+     "message": "upstream text"
+    }
+   },
+   "expectedError": "GitHub GraphQL request failed (502)"
+  },
+  {
+   "description": "read the default branch of a connected repository",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentDefaultBranch",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "defaultBranchRef": {
+        "name": "main"
+       }
+      }
+     }
+    }
+   }
+  }
+ ]
+}

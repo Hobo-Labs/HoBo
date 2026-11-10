@@ -110,6 +110,29 @@ drain on SIGTERM. The Vercel host adds the GitHub App bootstrap and OAuth
 onboarding, the queue wake-up and the webhook and queued-job repair; those are
 Postgres-only today and the Node service does not have them.
 
+### The optional CI agent
+
+The Node service can run a second worker beside its tick: the
+[CI agent](../ci-agent/README.md), which plans the merge queue and resolves
+merge conflicts with a configured model. It is off unless a host passes
+`agent` to `createRelayHost` (or `ports.agent` to `startRelayFromEnvironment`).
+`@hobo/ci-agent` ships an entry that does so from `HOBO_CI_AGENT_CONFIG` and
+`HOBO_CI_AGENT_DIR`; `hobo ci serve` does not start it yet, and Vercel and the
+box worker daemon cannot.
+
+The relay only schedules the agent. A pass runs at most once a minute by
+default, never overlaps another, runs only while the service is ready, and
+never delays the worker tick. A failed pass is logged as `agent.tick_failed`
+with no detail and the next one runs as scheduled; shutdown waits for a pass
+in flight. This package does not depend on `@hobo/ci-agent`.
+
+`.hobo/ci.json` may carry an `agent` block. `parseCiProjectConfig` accepts it
+and ignores its contents, except that a credential-shaped value anywhere in it
+rejects the document, as for `integrations`. `parseCiAgentBlock` returns the
+block as JSON text for `@hobo/ci-agent` to parse. `createGithubAppTransport`
+also returns `installationToken`, so an in-process agent can speak GraphQL and
+git over HTTPS with the same short-lived tokens.
+
 What a host can turn on, and who does:
 
 | Option | Node service | Vercel |

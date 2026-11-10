@@ -18,6 +18,16 @@ import {
 } from "./service.js";
 
 /**
+ * An optional CI agent beside the relay (see `@hobo/ci-agent`). The relay
+ * only schedules it; what a pass does is the agent's own business.
+ */
+export type RelayAgent = Readonly<{
+	tick(): Promise<void>;
+	/** How often a pass starts; one minute when omitted. */
+	intervalMs?: number;
+}>;
+
+/**
  * The relay as a long-running Node service over one store partition: the host
  * behind `hobo ci serve` and the container image. It composes the same relay
  * core, control plane and HTTP handler as every other host, and adds the
@@ -42,6 +52,8 @@ export function createRelayHost(options: {
 	probeIntervalMs?: number;
 	probeTimeoutMs?: number;
 	drainTimeoutMs?: number;
+	/** Off unless supplied. It never delays the worker tick or fails the relay. */
+	agent?: RelayAgent | undefined;
 	logger?: (entry: RelayServiceLog) => void;
 	now?: () => string;
 }) {
@@ -87,6 +99,13 @@ export function createRelayHost(options: {
 			log({ level: "error", event: "worker.lease_failed", leaseId }),
 		now,
 	});
+	const { agent } = options;
+	const agentOptions = agent
+		? {
+				agentTick: () => agent.tick(),
+				agentIntervalMs: agent.intervalMs ?? 60_000,
+			}
+		: {};
 	const service = createRelayService({
 		origin: options.publicOrigin,
 		allowLoopbackHttp: options.allowLoopbackHttp === true,
@@ -107,6 +126,7 @@ export function createRelayHost(options: {
 				now,
 			}),
 		tick: () => runtime.tick(),
+		...agentOptions,
 		close: () => store.close(),
 		// Deployment readiness is local partition integrity. A real runner acceptance
 		// workflow separately verifies external installation permissions and execution.

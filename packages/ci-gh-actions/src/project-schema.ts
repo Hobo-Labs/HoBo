@@ -244,6 +244,12 @@ export const CiProjectDocumentSchema = z
 			.refine((entries) => Object.keys(entries).length <= 32)
 			.meta({ maxProperties: 32 })
 			.optional(),
+		/**
+		 * The optional CI agent (`@hobo/ci-agent`): merge-queue planning and
+		 * model-backed conflict resolution. This package only carries the block
+		 * and refuses credential values in it; the agent package owns its shape.
+		 */
+		agent: z.record(z.string(), z.json()).optional(),
 	})
 	.strict();
 
@@ -342,6 +348,7 @@ export function resolveCiProjectReferences(
 		definitions: _definitions,
 		$schema: _schema,
 		integrations: _integrations,
+		agent: _agent,
 		...document
 	} = input;
 	return expand(z.json().parse(document), 0);
