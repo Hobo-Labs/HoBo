@@ -20,7 +20,9 @@ import type { JsonValue } from "../src/json.js";
 // LocalWorkspace over the same rendered YAML programs and file:// state
 // backend as the CLI engine). Offline tests prove the engine shape, the
 // adapter handshake, and the typed fail-closed gating; the live conformance
-// lane runs only where the pulumi engine binary is present.
+// lane runs only where it is asked for and the pulumi engine binary is present.
+
+const LIVE_LANE_TIMEOUT_MS = 180_000;
 
 function freshWorkDir(): string {
 	return mkdtempSync(join(tmpdir(), "hobo-pulumi-auto-"));
@@ -33,6 +35,16 @@ function pulumiBinaryAvailable(): boolean {
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * The live lane is asked for the way the composed runtime's is, with
+ * `HOBO_PULUMI_LIVE=1`. A binary on PATH is not a request: GitHub-hosted
+ * runners ship one, and a test shard that landed there started downloading a
+ * provider plugin inside a unit-test timeout.
+ */
+function liveLaneRequested(): boolean {
+	return process.env.HOBO_PULUMI_LIVE === "1" && pulumiBinaryAvailable();
 }
 
 // A cloudflare-typed program (the engine renders YAML only for real tokens);
@@ -171,12 +183,14 @@ describe("createPulumiAutomationApiEngine", () => {
 	});
 
 	// The live lane: real @pulumi/pulumi Automation API + real engine binary.
-	// Runs the shared IaC-backend conformance smoke only where `pulumi` exists
-	// (CI installs it on the deploy-hello-bindle-pulumi lane; dev machines may
-	// not have it). Cloud credentials are NOT required: conformance would need
-	// a live provider, so this lane asserts the typed unsupported-resource gate
-	// instead when only the binary (no creds) is present.
-	it.runIf(pulumiBinaryAvailable())(
+	// Runs the shared IaC-backend conformance smoke only under
+	// `HOBO_PULUMI_LIVE=1` where `pulumi` exists (the deploy-hello-bindle-pulumi
+	// lane installs it and sets the variable; dev machines may have neither).
+	// Cloud credentials are NOT required: conformance would need a live
+	// provider, so this lane asserts the typed unsupported-resource gate
+	// instead when only the binary (no creds) is present. The engine may
+	// download a provider plugin, so it gets a budget to match.
+	it.runIf(liveLaneRequested())(
 		"creates a real LocalWorkspace when the pulumi engine is present",
 		async () => {
 			const engine = createPulumiAutomationApiEngine({
@@ -194,6 +208,7 @@ describe("createPulumiAutomationApiEngine", () => {
 				),
 			).resolves.toMatch(/diff|engaged-error/);
 		},
+		LIVE_LANE_TIMEOUT_MS,
 	);
 });
 

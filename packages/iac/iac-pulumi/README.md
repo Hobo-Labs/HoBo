@@ -36,6 +36,12 @@ The composed runtime's live lane (`HOBO_PULUMI_LIVE=1`, see `@hobo/hobo`
 `compose.ts`) defaults to the Automation API engine; `HOBO_PULUMI_LIVE_ENGINE=cli`
 (or setting `HOBO_PULUMI_BIN`) selects the CLI engine instead.
 
+The package's own live test follows the same selection: it runs only under
+`HOBO_PULUMI_LIVE=1` with a `pulumi` binary on PATH. A binary alone does not
+select it, because GitHub-hosted runners ship one and CI test shards can run
+there (see "Runner routing" in
+[`packages/ci/RUNNER-QUEUE.md`](../../ci/RUNNER-QUEUE.md)).
+
 ## Exports
 
 - `createPulumiAutomationAdapter` — the `IacProvider` adapter.
