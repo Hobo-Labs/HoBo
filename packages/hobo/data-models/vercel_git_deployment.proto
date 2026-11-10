@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package hobo.hobo.vercel.v1;
+
+// What `hobo ci deploy` sends to Vercel for one git-source deployment, as its
+// dry run prints it and its tests pin it.
+//
+// Names and non-secret values only. No credential enters this record: the
+// access token is never read into it, a setting whose name or value looks
+// like a secret is refused before the record is formed, and the secrets the
+// app declares appear by name alone.
+message VercelGitDeploymentPlan {
+  string schema_version = 1;                    // "hobo.vercel-git-deployment-plan/v1"
+  string bindle = 2;                            // the Bindle the deployment realizes
+  repeated VercelPlanResource resources = 3;    // its resources, each applied through the provider
+  string project = 4;                           // the Vercel project name or id
+  string scope = 5;                             // the team id, or "token-default"
+  string target = 6;                            // "preview" | "production"
+  VercelPlanGitSource git_source = 7;
+  bool create_missing_project = 8;
+  repeated VercelPlanSetting settings = 9;      // non-secret configuration set before deploying
+  repeated string operator_secrets = 10;        // declared secret names; never set by this path
+  repeated VercelPlanRequest requests = 11;     // the requests, in the order they are sent
+}
+
+message VercelPlanResource {
+  string kind = 1;
+  string name = 2;
+}
+
+message VercelPlanGitSource {
+  string type = 1;            // "github"
+  string org = 2;
+  string repo = 3;
+  string ref = 4;             // a branch, a tag or a commit sha
+  string sha = 5;             // the pinned commit, when one was given
+  string root_directory = 6;  // saved on the project when given
+}
+
+message VercelPlanSetting {
+  string key = 1;
+  string value = 2;
+}
+
+message VercelPlanRequest {
+  string method = 1;  // "GET" | "POST" | "PATCH"
+  string path = 2;    // under https://api.vercel.com, team query included
+  string body = 3;    // the JSON body, as sent; empty for a GET
+  string when = 4;    // whether the request is always sent, or on what condition
+}

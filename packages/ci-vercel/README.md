@@ -153,6 +153,40 @@ relay is ticked by an external trigger, which `test/scheduled-repair.test.ts`
 pins), so the schedule's name, cadence and topic are compared with
 `vercel.json` only once it declares one, and then must match exactly.
 
+### Deploying the relay with HoBo
+
+`hobo ci deploy` reads this declaration and deploys the relay to Vercel from a
+git ref, through HoBo's own Vercel provider
+([`@hobo/hobo`](../hobo/README.md), `createVercelDeployProvider`'s git-artifact
+mode):
+
+```sh
+# From the repository root: print the plan; nothing is sent, no token is read.
+hobo ci deploy --cwd packages/ci-vercel \
+  --repo <owner>/<repository> --ref main --project hobo-ci \
+  --team team_… --set HOBO_CI_PUBLIC_URL=https://… --dry-run
+
+# A real run reads VERCEL_TOKEN from the environment. Preview is the default;
+# production has to be asked for, and --sha pins the commit.
+VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel \
+  --repo <owner>/<repository> --ref main --sha <40-hex commit> \
+  --project hobo-ci --team team_… --target production
+```
+
+It needs a Vercel access token for the project's scope, the project's own
+settings to build this directory (root directory `packages/ci-vercel`, or pass
+`--root-directory`), and Vercel's GitHub integration able to read the
+repository. `--set` takes only the `env.*` fields of `relayConfig`; a
+`secret.*` field, an undeclared name or a credential-shaped value is refused
+before anything is sent. It does not set `DATABASE_URL`,
+`DATABASE_URL_UNPOOLED`, `CRON_SECRET` or any other secret, does not create or
+connect a database, queue or storage integration, does not create the project
+unless `--create-project` is given, and does not create the schedule or its
+external trigger. Those stay with the operator, as described below.
+
+**Status: exercised against a fake transport only. No live deployment of the
+relay was made from this repository by this change.**
+
 ## Hosted relay
 
 This package provides a Vercel Node Function HTTP boundary, a Postgres-backed

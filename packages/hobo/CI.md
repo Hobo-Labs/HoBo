@@ -314,3 +314,22 @@ Secrets never pass through HoBo:
 - The CLI never prompts for, reads or prints a credential. For `secret-ref` you store the value yourself (`gh secret set NAME` prompts).
 - `--launch` runs the provider CLI with credential-like environment variables (`*TOKEN*`, `*SECRET*`, `*API_KEY*` …) removed, and output is redacted.
 - `packages/hobo/test/ci-connect-leak.test.ts` generates synthetic, real-looking tokens at runtime (never written to disk) and asserts that none appear in CLI output, progress or the written config.
+
+## Deploying the hosted relay with HoBo
+
+`hobo ci deploy` deploys the hosted relay (`packages/ci-vercel`, declared as a
+HoBo app in its `src/bindle.ts`) to Vercel from a git ref. Run it in the relay's
+project directory or pass `--cwd packages/ci-vercel`:
+
+```sh
+hobo ci deploy --cwd packages/ci-vercel --repo <owner>/<repository> \
+  --ref main --project hobo-ci --team team_… --dry-run
+```
+
+`--dry-run` prints every request it would send and sends none; a real run reads
+`VERCEL_TOKEN` from the environment and deploys to **preview** unless
+`--target production` is given. It sets only non-secret settings the relay
+declares (`--set NAME=value`), never a secret, and provisions no storage. See
+[the README](README.md) for the options, the plan record and its gates. It has
+been exercised against a fake transport only.
+

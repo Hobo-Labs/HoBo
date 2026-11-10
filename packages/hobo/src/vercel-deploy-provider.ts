@@ -123,7 +123,7 @@ export interface VercelGitArtifact {
 }
 
 // What `planVercelGitDeployment` says a git-artifact `apply` would send.
-export interface VercelGitDeploymentPlan {
+export interface VercelGitRequestPlan {
 	readonly project: string;
 	readonly scope: string;
 	readonly target: "preview" | "production";
@@ -226,7 +226,7 @@ function gitDeploymentOf(
 // holds, so each possible create is listed and says when it is sent.
 export function planVercelGitDeployment(
 	options: Omit<VercelDeployProviderOptions, "token" | "fetch">,
-): VercelGitDeploymentPlan {
+): VercelGitRequestPlan {
 	if (options.gitArtifact === undefined)
 		throw new TypeError("planVercelGitDeployment: gitArtifact is required");
 	const git = gitDeploymentOf(options, options.gitArtifact);

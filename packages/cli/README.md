@@ -52,7 +52,7 @@ repository; `list`/`ls`, `inspect`, `logs`, `grep`, and `rerun` operate on its
 GitHub Actions runs using the authenticated GitHub CLI (`gh`). `status` inspects
 the relay connection. A sole Git remote is selected automatically; pass
 `--remote <name>` to select among several. After connection, use `runs-on: hobo`
-in an Actions workflow and push a commit.
+in an Actions workflow and push a commit. `hobo ci --help` also lists `hobo ci deploy` and its options: the composed product's verb for deploying the hosted relay to Vercel from a git ref (preview by default, `--dry-run` sends nothing); this package only owns its help text and passes its options through to the `ci` command untouched.
 
 CI works in ordinary Git repositories without a Bindle. The shell handles output,
 cwd and help flags;

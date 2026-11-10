@@ -139,6 +139,10 @@ export {
 	createCanDeployCommand,
 } from "./can-deploy-command.js";
 export {
+	type CiRelayDeployInput,
+	runCiRelayDeploy,
+} from "./ci-relay-deploy.js";
+export {
 	type ClaimCommandDeps,
 	createClaimCommand,
 	createClaimCommandWithMock,
@@ -528,7 +532,7 @@ export {
 	planVercelGitDeployment,
 	type VercelDeployProviderOptions,
 	type VercelGitArtifact,
-	type VercelGitDeploymentPlan,
+	type VercelGitRequestPlan,
 } from "./vercel-deploy-provider.js";
 export {
 	isRefusedEnvKey,

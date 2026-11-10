@@ -1541,6 +1541,9 @@ importers:
         specifier: ^4.1.13
         version: 4.4.3
     devDependencies:
+      '@hobo/ci-vercel':
+        specifier: workspace:*
+        version: link:../ci-vercel
       '@hobo/contract-harness':
         specifier: workspace:*
         version: link:../contract-harness

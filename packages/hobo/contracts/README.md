@@ -51,3 +51,13 @@ unmatched calls. It is a hand-authored consumer expectation checked against
 Vercel's REST reference: not captured traffic, and not verified by Vercel. The
 project-create, conflict, refusal and redaction cases use a scripted transport
 in the same file.
+
+`hobo ci deploy` adds no endpoint to that pact: `test/ci-relay-deploy.test.ts`
+drives the real CLI against the real relay declaration
+(`../../ci-vercel/src/bindle.ts`) and the same pact-backed transport, and
+checks the request sequence, the outputs, and that a second run writes nothing.
+Its dry-run record is `data-models/vercel_git_deployment.proto`
+(`VercelGitDeploymentPlan`), constrained by `vercel_git_deployment.cue` with
+valid fixtures that are the command's own output and invalid ones for a
+secret-named setting, a credentialed value, an implied or unknown target, a
+slug scope, another git host, a short sha, no requests and a path off the API.
