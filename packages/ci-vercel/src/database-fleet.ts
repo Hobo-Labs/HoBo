@@ -428,6 +428,8 @@ export function createDatabaseFleet(options: {
 		origin,
 		tick,
 		reconcile,
+		/** The backend this instance's application is running on, if any. */
+		writer: () => running?.backendId,
 		/** The assignment this instance last confirmed, if it still holds. */
 		assignment: () =>
 			lease && now() - lease.confirmedAtMs < config.leaseMs

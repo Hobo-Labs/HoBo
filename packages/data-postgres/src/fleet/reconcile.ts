@@ -119,8 +119,8 @@ export type FleetReconcileOptions = {
 	/** Added to a lease when waiting for writers to stop after sealing. */
 	readonly graceMs: number;
 	/**
-	 * Create the application's tables on a backend. Called only when a copy
-	 * found the standby's schema different from the writer's.
+	 * Create the application's tables on a backend. Called for both sides, and
+	 * only when a copy found the standby's schema different from the writer's.
 	 */
 	readonly ensureSchema: (backend: FleetBackend) => Promise<void>;
 	readonly checkBudget: FleetBudgetCheck;
@@ -263,7 +263,10 @@ export async function reconcileFleet(
 				outcome.status === "refused" &&
 				outcome.refusal === "schema-mismatch"
 			) {
+				// Either side may be the one that lacks a table: a writer creates
+				// some of its tables only when it first needs them.
 				await options.ensureSchema(target);
+				await options.ensureSchema(source);
 				outcome = await replicateSnapshot({
 					source,
 					target,
@@ -372,6 +375,9 @@ export async function reconcileFleet(
 		sealed: PostgresFleetAssignment,
 	): Promise<PostgresFleetAssignment | undefined> => {
 		await options.sleep(options.leaseMs + options.graceMs);
+		// The target takes a copy only when its own log holds the sealed entry;
+		// it may have missed it while another copy held its lock.
+		await completeAssignment(register);
 		const source = byId(sealed.active);
 		const target = byId(sealed.target);
 		let copied =
@@ -389,11 +395,9 @@ export async function reconcileFleet(
 			await options.sleep(2000);
 			copied = await copy(sealed, source, target);
 		}
-		if (
-			copied?.refusal === "busy" ||
-			copied?.refusal === "target-is-writer" ||
-			copied?.refusal === "target-log-differs"
-		)
+		// Still busy, or the target is already the writer: another reconciler
+		// is finishing or has finished this switch. Leave it alone.
+		if (copied?.refusal === "busy" || copied?.refusal === "target-is-writer")
 			return undefined;
 		const outcome =
 			copied?.status === "replicated"

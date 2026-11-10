@@ -84,6 +84,7 @@ export function createBootstrapEntry(options: {
 				connectionTimeoutMillis: 5000,
 				idleTimeoutMillis: 10000,
 			});
+	if (options.database) pool?.on("error", () => {});
 	let bootstrap = options.bootstrap;
 	if (!bootstrap && pool) {
 		const bootstrapOptions: Parameters<typeof createHostedAppBootstrap>[0] = {

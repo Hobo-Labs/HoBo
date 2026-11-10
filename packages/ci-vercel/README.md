@@ -385,7 +385,15 @@ a connection string, a host name or an error message.
 | `hobo_ci_database_fleet_unsettled` | A tick stopped: `undecided` or `no-majority` |
 | `hobo_ci_database_fleet_failure` | A tick threw |
 
-#### Tests on real PostgreSQL
+#### Admission by HoBo's own conformance suite
+
+`src/database-fleet-conformance.ts` runs `conformance.data.postgres/v1` from
+`@hobo/data-postgres` against a backend (`qualifyBackend`), with the suite's
+`sql` cases executed verbatim on one session. The proof below runs it against
+all three servers before using them. It is not yet a gate at startup: the
+relay does not refuse a backend that was never qualified.
+
+#### Tests and proof on real PostgreSQL
 
 `test/database-fleet-postgres.test.ts` and
 `test/database-fleet-reconcile-postgres.test.ts` run the fleet's SQL, the
@@ -394,9 +402,38 @@ skipped unless `HOBO_CI_TEST_FLEET_POSTGRES` names three separate servers,
 comma-separated; each test creates and drops its own databases:
 
 ```bash
-HOBO_CI_TEST_FLEET_POSTGRES="postgres://hobo_ci@127.0.0.1:15441/postgres,postgres://hobo_ci@127.0.0.1:15442/postgres,postgres://hobo_ci@127.0.0.1:15443/postgres" \
-  pnpm --filter @hobo/ci-vercel exec vitest run test/database-fleet-postgres.test.ts test/database-fleet-reconcile-postgres.test.ts
+export HOBO_CI_TEST_FLEET_POSTGRES="postgres://hobo_ci@127.0.0.1:15441/postgres,postgres://hobo_ci@127.0.0.1:15442/postgres,postgres://hobo_ci@127.0.0.1:15443/postgres"
+pnpm --filter @hobo/ci-vercel exec vitest run test/database-fleet-postgres.test.ts test/database-fleet-reconcile-postgres.test.ts
 ```
+
+`scripts/database-fleet-proof.ts` is the end-to-end proof. It runs the real
+relay (bootstrap entry, GitHub App creation against a stubbed GitHub, signed
+webhook deliveries into the real inbox) behind the fleet on three servers and
+**stops and starts the servers**. It also needs one stop and one start shell
+command per server, in the same order, as a JSON array:
+
+```bash
+export HOBO_CI_TEST_FLEET_CONTROL='[{"stop":"…pg_ctl -D <data-a> -m fast -w stop","start":"…pg_ctl -D <data-a> -o \"-p 15441 …\" -w start"},{…},{…}]'
+node --import tsx packages/ci-vercel/scripts/database-fleet-proof.ts
+```
+
+It creates and drops its own databases, leaves every server running, prints
+no connection string, and asserts, in order:
+
+| # | Property | How it is shown |
+| --- | --- | --- |
+| 1 | Empty backends become a fleet | First assignment decided on 3 of 3 logs; the relay's tables created on every backend; deliveries committed on the writer |
+| 2 | Standbys equal the writer | Per-table digests and sequence positions equal on all three; watermark and lag recorded |
+| 3 | Planned switch on a budget signal | Usage pushed past a placeholder allowance: sealed, final copy, new writer; every acknowledged delivery present on the new writer; a second relay instance refused within one lease and serving again on the new writer; no sequence collision |
+| 5 | Recovery point guard | Writer's server stopped, objective of one second: decision `hold`, assignment unchanged |
+| 4 | Unplanned failover | Same outage, normal objective: freshest standby promoted after the threshold; `loss_window_ms` equals its lag; the missing deliveries are exactly those acknowledged after the last copy, listed by id |
+| 6 | The old writer returns | A copy into it is refused on itself until its log is repaired; then it is overwritten; a forged copy into the real writer is refused |
+| 7 | Loss of majority | Two of three servers stopped: `503` with `Retry-After` although the writer is up; a tick changes nothing; recovery when one returns |
+| 8 | Two reconcilers at once | At most one decided entry per epoch; the three logs identical |
+
+Every plan number in the proof is a placeholder. It passed on 2026-11-10
+against three local PostgreSQL 16 clusters. It has not been run against a
+hosted Neon, Supabase or Prisma Postgres database.
 
 One dependency on Neon remains outside the database. Production reads its
 GitHub App and control secrets from a broker hosted on Neon when

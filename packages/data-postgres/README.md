@@ -242,7 +242,8 @@ odd count.
   needs proposers that could each reach a different backend first) cannot be
   completed. Readers stay `undecided` until a person calls
   `overrideAssignment`. In the 400 randomized runs below, which keep taking
-  backends down, 29 ended that way; 25 of those were fleets of two or four.
+  backends down and include overrides fired at random, 26 ended that way: 25
+  were fleets of two or four, one a fleet of five, none a fleet of three.
 
 `test/fleet-assignment.test.ts` checks the invariants after every step of 400
 seeded interleavings of concurrent proposers, completers and overrides against

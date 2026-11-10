@@ -125,6 +125,9 @@ export async function createVercelApplication(options: {
 		connectionTimeoutMillis: 5000,
 		idleTimeoutMillis: 10000,
 	});
+	// On a fleet a backend going away is an expected event: an idle connection
+	// that breaks must not take the process down with it.
+	if (options.database) pool.on("error", () => {});
 	try {
 		const store = new PostgresCiStore(pool);
 		if (!(await store.configuration())) {
@@ -248,6 +251,7 @@ export async function createVercelApplication(options: {
 				connectionTimeoutMillis: 5000,
 				idleTimeoutMillis: 10000,
 			});
+			if (options.database) repairPool.on("error", () => {});
 			try {
 				return await withRepairPool(repairPool, async (direct) => {
 					await withRepairStage("repair-database", () =>

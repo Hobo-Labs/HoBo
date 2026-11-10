@@ -353,8 +353,11 @@ function project(
 
 const FEASIBILITY_RANK = { feasible: 0, unknown: 1, infeasible: 2 } as const;
 
-function minutes(ms: number): string {
-	return `${Math.round(ms / 60_000)}m`;
+/** A duration for a reason string: seconds when short, minutes otherwise. */
+function span(ms: number): string {
+	return ms < 120_000
+		? `${Math.round(ms / 1000)}s`
+		: `${Math.round(ms / 60_000)}m`;
 }
 
 /** Decide what the fleet should do now. Pure: same input, same decision. */
@@ -396,7 +399,7 @@ export function decideFleet(input: FleetDecisionInput): PostgresFleetDecision {
 				if (entry.standbyLagMs === undefined) reasons.push("never-copied");
 				else if (entry.standbyLagMs > policy.rpoMs)
 					reasons.push(
-						`lag ${minutes(entry.standbyLagMs)} exceeds rpo ${minutes(policy.rpoMs)}`,
+						`lag ${span(entry.standbyLagMs)} exceeds rpo ${span(policy.rpoMs)}`,
 					);
 			}
 			const eligibleSoFar = reasons.length === 0;
@@ -412,7 +415,7 @@ export function decideFleet(input: FleetDecisionInput): PostgresFleetDecision {
 						: "feasible";
 			if (short)
 				reasons.push(
-					`${projection.exhaustedUnit ?? "allowance"} runs out in ${minutes(Number(projection.exhaustsInMs))}`,
+					`${projection.exhaustedUnit ?? "allowance"} runs out in ${span(Number(projection.exhaustsInMs))}`,
 				);
 			if (!projection.verdict.ok) reasons.push(projection.verdict.code);
 			reasons.push(...projection.unknowns);
