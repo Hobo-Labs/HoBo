@@ -57,6 +57,12 @@ export function ensureCiWorkerImage(): string {
 		}
 	}
 
+	if (process.env.HOBO_CI_REQUIRE_PUBLISHED_WORKER === "1") {
+		throw new Error(
+			`published ghcr.io hobo-ci-worker:${version} required; refusing local build.sh (HOBO_CI_SKIP_GHCR_PULL=${process.env.HOBO_CI_SKIP_GHCR_PULL ?? ""})`,
+		);
+	}
+
 	run("bash", ["packages/ci-gh-actions/deploy/ci-runner/build.sh"]);
 	if (!dockerInspect(candidate) && !dockerInspect("hobo-ci-worker:local")) {
 		throw new Error("worker image build did not produce hobo-ci-worker:local");

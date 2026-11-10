@@ -53,7 +53,20 @@ if [ -f mise.toml ] && [ -f scripts/lib/mise-path.sh ] && [ -f "${mise_version_f
 		dir="${browsers}/chromium_headless_shell-${revision}"
 		if [ ! -f "${dir}/INSTALLATION_COMPLETE" ]; then
 			archive="$(mktemp)"
-			curl -fsSL "${url}" -o "${archive}"
+			attempt=1
+			while [ "${attempt}" -le 5 ]; do
+				if curl -fsSL --connect-timeout 30 --max-time 600 --retry 3 --retry-delay 5 \
+					"${url}" -o "${archive}"; then
+					break
+				fi
+				if [ "${attempt}" -eq 5 ]; then
+					echo "::error::Playwright headless shell download failed after ${attempt} attempts (${url})" >&2
+					rm -f "${archive}"
+					exit 1
+				fi
+				attempt=$((attempt + 1))
+				sleep 15
+			done
 			echo "${digest}  ${archive}" | sha256sum -c -
 			sudo mkdir -p "${dir}"
 			sudo chown -R "$(id -u):$(id -g)" "${browsers}"

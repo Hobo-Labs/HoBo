@@ -2,6 +2,11 @@
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
+- **Release OCI builds on the fleet, not one trunk slot.** `release-hobo.yml` job
+  `release-oci-build-tag` runs `runs-on: hobo` with `strategy.max-parallel: 6` so the
+  six release images can land on distinct box workers. It resolves
+  `hobo-ci-worker` from GHCR via `scripts/ci/ensure-ci-worker-image.mts` (no cold
+  `build.sh` on tag/release paths when `HOBO_CI_REQUIRE_PUBLISHED_WORKER=1`).
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
   runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, subject to both slot and memory admission. Exact job names
   select light/standard/heavy hard container limits (3072/4096/6144 MiB); active, reserved and warm requests

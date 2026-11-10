@@ -420,6 +420,22 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				);
 				continue;
 			}
+			if (
+				file === "release-hobo.yml" &&
+				(lines[start] ?? "").startsWith("  release-oci-build-tag:")
+			) {
+				assert.equal(
+					runsOn,
+					"hobo",
+					`${file}:${lines[start]} release OCI matrix fans out across the fleet`,
+				);
+				assert.match(
+					block,
+					/^    needs: .*route/m,
+					`${file}:${lines[start]} must need route`,
+				);
+				continue;
+			}
 			const condition =
 				block.match(/^    if:([^\n]*(?:\n      [^\n]*)*)/m)?.[1] ?? "";
 			// The route job chooses the runner, so it cannot wait on one.
