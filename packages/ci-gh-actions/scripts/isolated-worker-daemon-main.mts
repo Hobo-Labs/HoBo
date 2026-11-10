@@ -99,11 +99,23 @@ function secretOrFile(name: string): string {
 	return file ? readFileSync(file, "utf8").trimEnd() : required(name);
 }
 
+/**
+ * Set once the worker has joined a mesh: its own log events say what became
+ * of the jobs it took, and that is what its reliability is scored from.
+ */
+let meshOutcomes:
+	| ((
+			event: string,
+			fields: Readonly<Record<string, string | number | boolean>>,
+	  ) => void)
+	| undefined;
+
 function log(
 	event: string,
 	fields: Readonly<Record<string, string | number | boolean>> = {},
 ) {
 	console.error(JSON.stringify({ event, ...fields }));
+	meshOutcomes?.(event, fields);
 }
 
 async function output(
@@ -641,6 +653,7 @@ try {
 					log,
 				})
 			: undefined;
+	meshOutcomes = mesh?.record;
 	log("hobo_ci_mesh", {
 		enabled: mesh !== undefined,
 		configuration:

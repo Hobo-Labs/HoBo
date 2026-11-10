@@ -405,7 +405,7 @@ inherits only host plumbing and explicit step environments. The Worker-safe
 ## Relay mesh (proposed)
 
 `@hobo/ci/mesh` holds the claiming core for a relay with no central node. `rankNodes(job, nodes, now)`
-orders the nodes a job fits (a free slot and enough free memory for that job) by weighted rendezvous hashing over how many copies of it each could start, and
+orders the nodes a job fits (a free slot and enough free memory for that job) by weighted rendezvous hashing over how many copies of it each could start, scaled by the share of its recent jobs each node delivered (`./mesh/reliability.ts`: a decayed score that falls when a node drops jobs and recovers when it stops), and
 `claimTurn(...)` tells one node whether to start a runner now or how long to wait for its turn. Both
 are pure functions; nothing calls them yet. The design, its failure table and the remaining
 increments are in [CI Relay Mesh](../../docs/design/ci-relay-mesh.md).

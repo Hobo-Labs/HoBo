@@ -181,6 +181,7 @@ A feasible rank-0 job waiting for memory, the distinct-merge-group cap, or a slo
 | `HOBO_CI_MESH_NODE_ID` | host name | This worker's id in the mesh (letters, digits, `-`, `_`). Two workers on one host need different ids |
 | `HOBO_CI_MESH_NAMESPACE` | `hobo-ci` | Prefix of the two bucket names; workers sharing a namespace form one mesh |
 | `HOBO_CI_MESH_STEP_MS` | `20000` | How long each rank waits before taking a job the node ahead of it has not started; 1000 to 300000 |
+| `HOBO_CI_MESH_RELIABILITY_HALF_LIFE_MS` | `1800000` | How long until a job this worker took counts for half as much in its reliability score; 60000 to 86400000 |
 
 Startup fails unless every general class fits outside the trunk reservation and the heavy trunk class fits the full budget. Wait/admit decisions log `hobo_ci_memory_admission_wait` / `hobo_ci_memory_admitted` with `classMb` and `learned`; Docker-confirmed exit-137 OOM kills log `hobo_ci_container_oom` with the class and job name.
 
@@ -207,6 +208,14 @@ Configs resolve the smaller of their own cap and this value; CI does not export 
 - **Startup does not wait for NATS.** The connection is made in the background and re-made for the life of the process (`hobo_ci_mesh_nats` logs each change).
 
 Jobs waiting for another worker's turn show in `hobo_ci_isolated_worker_jobs_polled` as `mesh-deferred`.
+
+**Reliability.** Each worker advertises the share of its recent jobs it delivered, and its place in the ranking is its capacity for the job times that share: a worker that has been dropping jobs is first for fewer.
+
+- **Delivered:** one of its runners picked the job up, whatever the job's result.
+- **Dropped:** the job is still queued ten minutes after the worker claimed it (`never-started`), the launch was given up (`launch-failed`), the container was killed for memory (`out-of-memory`), or the runner was lost mid-job (`runner-lost`). `hobo_ci_mesh_job_dropped` logs each with its reason and the score it left.
+- **Not counted:** a job that was cancelled or started elsewhere, and any job the worker did not claim.
+- **Recovery:** the record halves every `HOBO_CI_MESH_RELIABILITY_HALF_LIFE_MS`, so a worker that stops dropping jobs is trusted again without anyone resetting it, and sooner if it delivers jobs meanwhile. After ten drops in a row it is ranked with 0.29 of its capacity; an hour after the cause is fixed, 0.62 with nothing delivered; six hours, above 0.99. It never falls below 0.05, so it always gets enough work to prove itself.
+- **After a repair:** restarting the worker clears the record at once. `hobo_ci_mesh_reliability` logs the score each time it moves a twentieth.
 
 **Capacity and availability.** On the same 10-second beat each worker reads the board and reports what changed: `hobo_ci_mesh_node_joined`, `hobo_ci_mesh_node_lost` (an advertisement aged out), `hobo_ci_mesh_node_unhealthy` and `hobo_ci_mesh_node_recovered`, `hobo_ci_mesh_capacity_exhausted` and `hobo_ci_mesh_capacity_restored` (no healthy worker has a free slot), and `hobo_ci_mesh_capacity` with live, healthy and available workers and total and free slots, on every change and once a minute. Only the live worker with the lowest id reports about the others, so each fact appears once.
 

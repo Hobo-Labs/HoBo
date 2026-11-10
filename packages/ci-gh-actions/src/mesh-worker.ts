@@ -18,6 +18,11 @@ import {
 	type MeshMonitorEvent,
 	type MeshNeeds,
 	type MeshPlatform,
+	type MeshReliabilityOptions,
+	meshReliabilityScore,
+	newMeshReliability,
+	recordMeshOutcome,
+	retractMeshDelivery,
 } from "@hobo/ci/mesh";
 import { RUNNER_LABEL, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
@@ -30,6 +35,8 @@ export type MeshSettings = Readonly<{
 	namespace: string;
 	replicas: number;
 	stepMs: number;
+	/** How long until a job this worker took counts for half as much. */
+	reliabilityHalfLifeMs: number;
 }>;
 
 function integer(
@@ -101,6 +108,13 @@ export function meshSettingsFromEnv(
 			1_000,
 			300_000,
 		),
+		reliabilityHalfLifeMs: integer(
+			"HOBO_CI_MESH_RELIABILITY_HALF_LIFE_MS",
+			env.HOBO_CI_MESH_RELIABILITY_HALF_LIFE_MS,
+			30 * 60_000,
+			60_000,
+			24 * 60 * 60_000,
+		),
 	};
 }
 
@@ -108,7 +122,39 @@ export type WorkerMeshEvent =
 	| MeshEvent
 	| MeshMonitorEvent
 	| "hobo_ci_mesh_job_taken"
-	| "hobo_ci_mesh_job_unfit";
+	| "hobo_ci_mesh_job_unfit"
+	| "hobo_ci_mesh_job_dropped"
+	| "hobo_ci_mesh_reliability";
+
+/** Why this worker counts a job it took as dropped. */
+export type MeshDropReason =
+	/** The job is still queued long after this worker claimed it. */
+	| "never-started"
+	/** Starting the runner failed repeatedly and the launch was given up. */
+	| "launch-failed"
+	/** The job's container was killed for using more memory than it had. */
+	| "out-of-memory"
+	/** The runner disappeared while the job was running. */
+	| "runner-lost";
+
+/**
+ * What one of the worker's own log events says about a job it took. The
+ * worker already reports each of these; nothing new has to be measured.
+ */
+function outcomeOf(event: string): "delivered" | MeshDropReason | undefined {
+	switch (event) {
+		case "hobo_ci_job_pickup":
+			return "delivered";
+		case "hobo_ci_launch_parked":
+			return "launch-failed";
+		case "hobo_ci_container_oom":
+			return "out-of-memory";
+		case "hobo_ci_orphan_job_confirmed":
+			return "runner-lost";
+		default:
+			return undefined;
+	}
+}
 
 export function createWorkerMesh(options: {
 	settings: MeshSettings;
@@ -136,6 +182,14 @@ export function createWorkerMesh(options: {
 	needs?: (job: { name: string; label: string }) => MeshNeeds | undefined;
 	/** How long an advertisement is trusted; refresh well inside it. */
 	advertTtlMs?: number;
+	/**
+	 * How long a job this worker claimed may stay queued before it counts as
+	 * dropped. Only a job the poller still sees queued counts: one that left
+	 * the queue some other way (cancelled, or taken elsewhere) is forgotten.
+	 */
+	startDeadlineMs?: number;
+	/** Imaginary deliveries standing behind a worker with no history. */
+	reliabilityPriorWeight?: number;
 	now?: () => number;
 	log?: (
 		event: WorkerMeshEvent,
@@ -147,6 +201,69 @@ export function createWorkerMesh(options: {
 	const labels = options.servesTrunk
 		? [RUNNER_LABEL, TRUNK_RUNNER_LABEL]
 		: [RUNNER_LABEL];
+	const startDeadlineMs = options.startDeadlineMs ?? 10 * 60_000;
+	const scoring: MeshReliabilityOptions = {
+		halfLifeMs: options.settings.reliabilityHalfLifeMs,
+		priorWeight: options.reliabilityPriorWeight ?? 4,
+	};
+	// What became of the jobs this worker took. Kept in memory: a restart
+	// starts the record again, which is also how an operator who has fixed the
+	// box clears it at once.
+	let record = newMeshReliability(now());
+	/**
+	 * Jobs claimed and not yet picked up by one of this worker's runners, with
+	 * when each was claimed and when the poller last saw it queued.
+	 */
+	const claimed = new Map<number, { claimedAtMs: number; seenAtMs: number }>();
+	// A queued job is seen on every poll; one unseen this long has left the queue.
+	const forgetUnseenMs = Math.max(120_000, 3 * options.settings.stepMs);
+	/** Jobs counted as delivered, by when; a runner can still be lost later. */
+	const delivered = new Map<number, number>();
+	/** Jobs already counted as dropped, so no second reason counts again. */
+	const dropped = new Set<number>();
+	let reportedScore = 1;
+	const reliability = () => meshReliabilityScore(record, now(), scoring);
+	// One line when the score has moved a twentieth since the last line.
+	const reportScore = () => {
+		const score = reliability();
+		if (Math.abs(score - reportedScore) < 0.05) return;
+		reportedScore = score;
+		options.log?.("hobo_ci_mesh_reliability", {
+			nodeId: options.settings.nodeId,
+			reliability: Math.round(score * 1000) / 1000,
+			delivered: Math.round(record.delivered * 100) / 100,
+			dropped: Math.round(record.dropped * 100) / 100,
+		});
+	};
+	const drop = (jobId: number, reason: MeshDropReason) => {
+		if (dropped.has(jobId)) return;
+		if (dropped.size >= 5000) dropped.clear();
+		dropped.add(jobId);
+		claimed.delete(jobId);
+		const deliveredAtMs = delivered.get(jobId);
+		delivered.delete(jobId);
+		record =
+			deliveredAtMs === undefined
+				? recordMeshOutcome(record, "dropped", now(), scoring)
+				: retractMeshDelivery(record, deliveredAtMs, now(), scoring);
+		options.log?.("hobo_ci_mesh_job_dropped", {
+			jobId,
+			reason,
+			reliability: Math.round(reliability() * 1000) / 1000,
+		});
+		reportScore();
+	};
+	/** Forgets claims on jobs that left the queue, and deliveries long past. */
+	const settle = () => {
+		const at = now();
+		// Cancelled, or started by another node: not this worker's drop.
+		for (const [jobId, claim] of claimed)
+			if (at - claim.seenAtMs >= forgetUnseenMs) claimed.delete(jobId);
+		// Past eight half-lives a delivery counts for under half a percent.
+		for (const [jobId, deliveredAtMs] of delivered)
+			if (at - deliveredAtMs >= 8 * scoring.halfLifeMs) delivered.delete(jobId);
+		reportScore();
+	};
 	const coordinator = createMeshCoordinator({
 		self: () => ({
 			id: options.settings.nodeId,
@@ -157,6 +274,7 @@ export function createWorkerMesh(options: {
 			validUntilMs: now() + advertTtlMs,
 			free: options.free?.(),
 			platform: options.platform,
+			reliability: reliability(),
 		}),
 		board: options.board,
 		claims: options.claims,
@@ -176,7 +294,35 @@ export function createWorkerMesh(options: {
 	const unfit = new Set<string>();
 
 	return {
-		advertise: () => coordinator.advertise(),
+		advertise: () => {
+			settle();
+			return coordinator.advertise();
+		},
+		/** The share of its recent jobs this worker delivered, in (0, 1]. */
+		reliability,
+		/**
+		 * Feed the worker's own log events here. The ones that say what became
+		 * of a job this worker claimed move its reliability; the rest are
+		 * ignored, as is any event about a job it did not claim.
+		 */
+		record(
+			event: string,
+			fields: Readonly<Record<string, string | number | boolean>>,
+		): void {
+			const outcome = outcomeOf(event);
+			const jobId = fields.jobId;
+			if (outcome === undefined || !Number.isSafeInteger(jobId)) return;
+			if (outcome !== "delivered") {
+				// A drop counts only for a job this worker took through the mesh.
+				if (claimed.has(Number(jobId)) || delivered.has(Number(jobId)))
+					drop(Number(jobId), outcome);
+				return;
+			}
+			if (!claimed.delete(Number(jobId))) return;
+			delivered.set(Number(jobId), now());
+			record = recordMeshOutcome(record, "delivered", now(), scoring);
+			reportScore();
+		},
 		/**
 		 * Reads the board and reports what changed: nodes joining, going
 		 * unhealthy or disappearing, and the mesh running out of free slots.
@@ -226,12 +372,23 @@ export function createWorkerMesh(options: {
 			if (decision.start && !reported.has(job.jobId)) {
 				if (reported.size >= 5000) reported.clear();
 				reported.add(job.jobId);
+				// From here the job is this worker's to deliver or drop.
+				if (!dropped.has(job.jobId) && !delivered.has(job.jobId))
+					claimed.set(job.jobId, { claimedAtMs: now(), seenAtMs: now() });
 				options.log?.("hobo_ci_mesh_job_taken", {
 					jobId: job.jobId,
 					runId: job.runId,
 					rank: decision.rank,
 					reason: decision.reason,
 				});
+			}
+			// Still queued, and still this worker's: note it was seen, and count
+			// it as dropped once it has waited past the deadline.
+			const claim = claimed.get(job.jobId);
+			if (decision.start && claim) {
+				claim.seenAtMs = now();
+				if (now() - claim.claimedAtMs >= startDeadlineMs)
+					drop(job.jobId, "never-started");
 			}
 			return decision.start;
 		},

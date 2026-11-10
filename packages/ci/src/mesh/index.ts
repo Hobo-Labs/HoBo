@@ -18,6 +18,19 @@ export {
 	meshCapacity,
 } from "./monitor.js";
 export {
+	decayMeshReliability,
+	MESH_MIN_RELIABILITY,
+	MESH_RELIABILITY_DEFAULTS,
+	type MeshOutcome,
+	type MeshReliability,
+	type MeshReliabilityOptions,
+	meshReliabilityScore,
+	meshReliabilityWeight,
+	newMeshReliability,
+	recordMeshOutcome,
+	retractMeshDelivery,
+} from "./reliability.js";
+export {
 	type ClaimTurn,
 	claimTurn,
 	fitJob,

@@ -51,6 +51,9 @@ const Advert = z.object({
 			arch: z.string().min(1).max(32),
 		})
 		.optional(),
+	// The share of its recent jobs the node delivered. Optional for the same
+	// reason: a node that does not send it is fully trusted.
+	reliability: z.number().min(0).max(1).optional(),
 });
 
 export type NatsMeshOptions = Readonly<{

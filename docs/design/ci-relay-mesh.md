@@ -201,6 +201,68 @@ Only the live node with the lowest id reports changes about others, so one fact
 is reported once; if that node dies, the next takes over on its following
 reading and reports the loss.
 
+## Reliability: a node that drops jobs gets fewer
+
+Capacity says what a node could take. It does not say whether the node will
+see the job through. A box with a full disk still has free slots; it claims a
+job, fails to start a runner, and the job waits until another node's turn.
+Every job it is ranked first for pays that delay.
+
+So each node keeps a record of the jobs it took and advertises one number,
+the share of its recent jobs it **delivered**:
+
+| Counted as | When |
+|---|---|
+| Delivered | One of the node's runners picked the job up (`hobo_ci_job_pickup`), whatever the job's own result. A failing test is the job's business |
+| Dropped, `never-started` | The job is still queued ten minutes after the node claimed it |
+| Dropped, `launch-failed` | Starting the runner failed repeatedly and the launch was given up (`hobo_ci_launch_parked`) |
+| Dropped, `out-of-memory` | The job's container was killed for memory (`hobo_ci_container_oom`) |
+| Dropped, `runner-lost` | The runner disappeared mid-job (`hobo_ci_orphan_job_confirmed`). The delivery it was credited with is taken back |
+
+A job that leaves the queue some other way (cancelled, or started by another
+node) is neither: the node stops seeing it queued and forgets its claim.
+
+**How it changes ranking.** A node's weight in the rendezvous order is the
+copies of the job it could start *times* this number. Two equal nodes, one of
+which drops half of what it takes, are first for two thirds and one third of
+jobs. Capacity still counts: eight free copies at one half outweigh two at
+full trust. A node that says nothing (an older version) is fully trusted.
+
+**How it recovers.** The record decays: every half-life (30 minutes by
+default, `HOBO_CI_MESH_RELIABILITY_HALF_LIFE_MS`) a past job counts for half
+as much. Nothing is reset by hand and nothing is held against a node forever.
+
+| After ten jobs dropped in a row (a disk fills) | Share of capacity it is ranked with |
+|---|---|
+| At once | 0.29 |
+| 30 minutes after the drops stop, nothing delivered since | 0.44 |
+| The same 30 minutes, with ten jobs delivered since the fix | 0.74 |
+| 1 hour, nothing delivered | 0.62 |
+| 2 hours, nothing delivered | 0.86 |
+| 3 hours, nothing delivered | 0.96 |
+| 6 hours, nothing delivered | above 0.99 |
+
+- **Four imaginary deliveries** stand behind every node, so one early drop on
+  a new node costs a fifth of its share, not all of it.
+- **A floor of 0.05.** However poor the record, the node is still ranked with a
+  twentieth of its capacity. A node that got no work could never deliver a
+  job, and its score could only come back by waiting; a small share keeps real
+  evidence arriving. If it is still broken, those few jobs fall to the next
+  node one step later, as any failed first choice does.
+- **Old deliveries fade too**, so a long good record does not hide a node that
+  has just started failing.
+- **A restart clears the record.** It is kept in the worker's memory. That is
+  the fast path after a repair: fix the box, restart the worker, and it is
+  trusted again at once. It is also a gap: a worker that crashes and restarts
+  in a loop starts each time with a clean record. A node that is down does not
+  advertise and is not ranked; one that is up between crashes is.
+- **The number is the node's own word**, like its free slots: advice other
+  nodes rank by, never a lock. A node cannot observe another's drops.
+
+`hobo_ci_mesh_job_dropped` reports each drop with its reason and the score it
+left, and `hobo_ci_mesh_reliability` reports the score each time it has moved
+a twentieth, down or back up.
+
 ## Membership without a centre
 
 Nodes need a place to leave advertisements that every node can already reach.
@@ -291,7 +353,31 @@ The ranking itself:
   step.
 - In a mesh of 40 with `maxRank` 3, no node waits more than three steps.
 
+Reliability (`packages/ci/test/mesh-reliability.test.ts` and
+`packages/ci-gh-actions/test/mesh-worker.test.ts`):
+
+- The score is the decayed share of jobs delivered, never zero, and 1 for a
+  node with no drops; ten drops in a row take it to 0.29.
+- It rises on its own once drops stop, at every step of a ten-hour check, and
+  faster when jobs are delivered after the fix.
+- Over 8,000 job ids, a node that delivers half its jobs is first for a third
+  of them against an equal peer; a node with a ruined record keeps about one
+  job in twenty-one; a node that says nothing splits evenly with one at 1.
+- A worker counts a drop for a launch given up, a container killed for memory,
+  a runner lost after pickup (taking the delivery back) and a job still queued
+  ten minutes after it claimed it, each once; it counts nothing for a job it
+  never took or one that was cancelled.
+- Through two workers on one board, the one that dropped ten jobs is first for
+  about a fifth of new jobs instead of half.
+
 ## Open questions
+
+- **Reliability across restarts.** The record is in memory. Keeping it in the
+  worker's journal would close the crash-loop gap, at the cost of a repair no
+  longer clearing it by restart.
+- **Rented providers.** The fleet balancer has a circuit breaker per member
+  (healthy or not). The same decayed score could rank rented providers by how
+  often their runners arrive; it does not yet.
 
 - **Step length.** Twenty seconds trades duplicate starts against failover time.
   The worker's measured pickup time (`hobo_ci_job_pickup`) should set it.

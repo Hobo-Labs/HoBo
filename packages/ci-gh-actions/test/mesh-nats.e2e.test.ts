@@ -147,13 +147,22 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 			...node("box-a", 3),
 			free: { memoryMb: 12_288 },
 			platform: { os: "linux", arch: "x64" },
+			reliability: 0.625,
 		});
 		const sized = await b.board.nodes();
 		expect(sized.find((each) => each.id === "box-a")).toMatchObject({
 			free: { memoryMb: 12_288 },
 			platform: { os: "linux", arch: "x64" },
+			reliability: 0.625,
 		});
 		expect(sized.find((each) => each.id === "box-b")?.free).toBeUndefined();
+		// A node that sends no record is read as saying nothing, not as zero.
+		expect(
+			sized.find((each) => each.id === "box-b")?.reliability,
+		).toBeUndefined();
+		await expect(
+			a.board.advertise({ ...node("box-a", 3), reliability: 1.5 }),
+		).rejects.toThrow();
 	});
 
 	it("keeps a shared configuration that only its current revision can replace", async () => {

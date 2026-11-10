@@ -24,6 +24,7 @@ describe("meshSettingsFromEnv", () => {
 			namespace: "hobo-ci",
 			replicas: 1,
 			stepMs: 20_000,
+			reliabilityHalfLifeMs: 1_800_000,
 		});
 		expect(
 			meshSettingsFromEnv(
@@ -33,6 +34,7 @@ describe("meshSettingsFromEnv", () => {
 					HOBO_CI_MESH_NAMESPACE: "staging",
 					HOBO_CI_NATS_REPLICAS: "3",
 					HOBO_CI_MESH_STEP_MS: "5000",
+					HOBO_CI_MESH_RELIABILITY_HALF_LIFE_MS: "600000",
 				},
 				"box",
 			),
@@ -41,6 +43,7 @@ describe("meshSettingsFromEnv", () => {
 			namespace: "staging",
 			replicas: 3,
 			stepMs: 5000,
+			reliabilityHalfLifeMs: 600_000,
 		});
 	});
 
@@ -53,6 +56,10 @@ describe("meshSettingsFromEnv", () => {
 			{ HOBO_CI_NATS_URL: "nats://a:4222", HOBO_CI_MESH_NAMESPACE: "a/b" },
 			{ HOBO_CI_NATS_URL: "nats://a:4222", HOBO_CI_NATS_REPLICAS: "0" },
 			{ HOBO_CI_NATS_URL: "nats://a:4222", HOBO_CI_MESH_STEP_MS: "fast" },
+			{
+				HOBO_CI_NATS_URL: "nats://a:4222",
+				HOBO_CI_MESH_RELIABILITY_HALF_LIFE_MS: "5",
+			},
 		])
 			expect(() => meshSettingsFromEnv(env, "box")).toThrow(/HOBO_CI_/);
 		// The message never repeats the URL it refused.
@@ -68,6 +75,7 @@ describe("createWorkerMesh", () => {
 		namespace: "hobo-ci",
 		replicas: 1,
 		stepMs: 20_000,
+		reliabilityHalfLifeMs: 30 * 60_000,
 	};
 
 	function worker(
@@ -112,6 +120,7 @@ describe("createWorkerMesh", () => {
 				healthy: true,
 				labels: ["hobo", "hobo-trunk"],
 				validUntilMs: NOW + 45_000,
+				reliability: 1,
 			},
 		]);
 		// A lease count above the slot count never advertises negative capacity.
@@ -245,5 +254,231 @@ describe("createWorkerMesh", () => {
 			if (results[0] && results[1]) both += 1;
 		}
 		expect(both).toBe(0);
+	});
+});
+
+describe("a worker's reliability", () => {
+	const MINUTE = 60_000;
+
+	function setup(overrides: { startDeadlineMs?: number } = {}) {
+		let at = NOW;
+		const ports = createMemoryMesh({ now: () => at });
+		const events: {
+			event: string;
+			jobId?: unknown;
+			reason?: unknown;
+			reliability?: unknown;
+		}[] = [];
+		const mesh = createWorkerMesh({
+			settings: {
+				servers: ["nats://127.0.0.1:4222"],
+				namespace: "hobo-ci",
+				replicas: 1,
+				stepMs: 20_000,
+				reliabilityHalfLifeMs: 30 * MINUTE,
+				nodeId: "box-a",
+			},
+			board: ports.board,
+			claims: ports.claims,
+			freeSlots: () => 4,
+			totalSlots: 4,
+			healthy: () => true,
+			servesTrunk: false,
+			now: () => at,
+			...overrides,
+			log: (event, fields) =>
+				events.push({
+					event,
+					jobId: fields.jobId,
+					reason: fields.reason,
+					reliability: fields.reliability,
+				}),
+		});
+		const queued = (jobId: number) => ({
+			jobId,
+			runId: 900,
+			label: "hobo",
+			createdAt: new Date(at).toISOString(),
+		});
+		const advertised = async () => {
+			await mesh.advertise();
+			const [self] = await ports.board.nodes();
+			return self?.reliability;
+		};
+		const drops = () =>
+			events
+				.filter((entry) => entry.event === "hobo_ci_mesh_job_dropped")
+				.map((entry) => `${String(entry.jobId)}:${String(entry.reason)}`);
+		return {
+			mesh,
+			events,
+			queued,
+			advertised,
+			drops,
+			advance: (ms: number) => {
+				at += ms;
+			},
+		};
+	}
+
+	it("stays at 1 while every job it takes gets a runner", async () => {
+		const h = setup();
+		for (const jobId of [1, 2, 3]) {
+			expect(await h.mesh.claim(h.queued(jobId))).toBe(true);
+			h.mesh.record("hobo_ci_job_pickup", { jobId, runId: 900 });
+		}
+		expect(h.mesh.reliability()).toBe(1);
+		expect(await h.advertised()).toBe(1);
+		expect(h.drops()).toEqual([]);
+	});
+
+	it("counts a job as dropped when its launch is given up, its container is killed for memory, or its runner is lost", async () => {
+		const h = setup();
+		for (const jobId of [1, 2, 3, 4]) await h.mesh.claim(h.queued(jobId));
+		// Job 1: the runner never came up.
+		h.mesh.record("hobo_ci_launch_parked", { jobId: 1, attempt: 3 });
+		// Jobs 2 and 3 got a runner and lost it; job 4 kept its runner.
+		for (const jobId of [2, 3, 4])
+			h.mesh.record("hobo_ci_job_pickup", { jobId, runId: 900 });
+		h.mesh.record("hobo_ci_container_oom", { jobId: 2, exitCode: 137 });
+		h.mesh.record("hobo_ci_orphan_job_confirmed", { jobId: 3, runnerId: 7 });
+		expect(h.drops()).toEqual([
+			"1:launch-failed",
+			"2:out-of-memory",
+			"3:runner-lost",
+		]);
+		// One delivered, three dropped, four imagined deliveries: 5 / 8.
+		expect(h.mesh.reliability()).toBeCloseTo(5 / 8, 10);
+		expect(await h.advertised()).toBeCloseTo(5 / 8, 10);
+		// A second report about a job already counted changes nothing.
+		h.mesh.record("hobo_ci_orphan_job_confirmed", { jobId: 2, runnerId: 7 });
+		h.mesh.record("hobo_ci_launch_parked", { jobId: 1, attempt: 4 });
+		expect(h.drops()).toHaveLength(3);
+		expect(h.mesh.reliability()).toBeCloseTo(5 / 8, 10);
+	});
+
+	it("ignores what happens to jobs it never took, and events that say nothing about a job", async () => {
+		const h = setup();
+		h.mesh.record("hobo_ci_container_oom", { jobId: 99, exitCode: 137 });
+		h.mesh.record("hobo_ci_job_pickup", { jobId: 98, runId: 1 });
+		h.mesh.record("hobo_ci_launch_failed", { jobId: 1, attempt: 1 });
+		h.mesh.record("hobo_ci_host_health", { verdict: "critical" });
+		h.mesh.record("hobo_ci_container_oom", { jobName: "no id" });
+		expect(h.mesh.reliability()).toBe(1);
+		expect(h.events).toEqual([]);
+	});
+
+	it("counts a job still queued ten minutes after it claimed it, once", async () => {
+		const h = setup();
+		expect(await h.mesh.claim(h.queued(5))).toBe(true);
+		for (let minute = 1; minute <= 9; minute += 1) {
+			h.advance(MINUTE);
+			await h.mesh.claim(h.queued(5));
+			await h.advertised();
+		}
+		expect(h.drops()).toEqual([]);
+		h.advance(MINUTE);
+		await h.mesh.claim(h.queued(5));
+		expect(h.drops()).toEqual(["5:never-started"]);
+		expect(h.mesh.reliability()).toBeCloseTo(4 / 5, 10);
+		// It stays queued and is seen again; it is not counted again.
+		h.advance(5 * MINUTE);
+		await h.mesh.claim(h.queued(5));
+		expect(h.drops()).toHaveLength(1);
+		// A runner that finally arrives does not undo the drop.
+		h.mesh.record("hobo_ci_job_pickup", { jobId: 5, runId: 900 });
+		expect(h.mesh.reliability()).toBeLessThan(1);
+	});
+
+	it("does not blame itself for a job that left the queue some other way", async () => {
+		const h = setup();
+		// Claimed, then cancelled before any runner started: never seen again.
+		expect(await h.mesh.claim(h.queued(6))).toBe(true);
+		for (let minute = 1; minute <= 15; minute += 1) {
+			h.advance(MINUTE);
+			await h.advertised();
+		}
+		expect(h.drops()).toEqual([]);
+		expect(h.mesh.reliability()).toBe(1);
+		// Nor for a late report about it.
+		h.mesh.record("hobo_ci_launch_parked", { jobId: 6, attempt: 3 });
+		expect(h.drops()).toEqual([]);
+	});
+
+	it("recovers without a restart once it stops dropping jobs, faster when it delivers", async () => {
+		const h = setup();
+		// The disk fills: ten jobs in a row never get a runner.
+		for (let jobId = 10; jobId < 20; jobId += 1) {
+			await h.mesh.claim(h.queued(jobId));
+			h.mesh.record("hobo_ci_launch_parked", { jobId, attempt: 3 });
+		}
+		expect(await h.advertised()).toBeCloseTo(4 / 14, 10);
+		// The disk is fixed. Half an hour later, with nothing delivered yet:
+		h.advance(30 * MINUTE);
+		expect(await h.advertised()).toBeCloseTo(4 / 9, 10);
+		// Ten jobs delivered since: (10 + 4) / (10 + 5 + 4).
+		for (let jobId = 20; jobId < 30; jobId += 1) {
+			await h.mesh.claim(h.queued(jobId));
+			h.mesh.record("hobo_ci_job_pickup", { jobId, runId: 900 });
+		}
+		expect(await h.advertised()).toBeCloseTo(14 / 19, 10);
+		// Left alone for the rest of the day it is trusted again.
+		h.advance(8 * 60 * MINUTE);
+		expect(await h.advertised()).toBeGreaterThan(0.99);
+		// The log says where the score went, in steps, down and back up.
+		const reported = h.events
+			.filter((entry) => entry.event === "hobo_ci_mesh_reliability")
+			.map((entry) => Number(entry.reliability));
+		// A line is written each time the score has moved a twentieth.
+		expect(Math.min(...reported)).toBeLessThan(0.35);
+		expect(reported.at(-1)).toBeGreaterThan(0.99);
+	});
+
+	it("takes the job that fits it less often once its record is poor", async () => {
+		// Two workers, same capacity, one board. One has dropped ten jobs.
+		let at = NOW;
+		const ports = createMemoryMesh({ now: () => at });
+		const make = (nodeId: string) =>
+			createWorkerMesh({
+				settings: {
+					servers: ["nats://127.0.0.1:4222"],
+					namespace: "hobo-ci",
+					replicas: 1,
+					stepMs: 20_000,
+					reliabilityHalfLifeMs: 30 * MINUTE,
+					nodeId,
+				},
+				board: ports.board,
+				claims: ports.claims,
+				freeSlots: () => 4,
+				totalSlots: 4,
+				healthy: () => true,
+				servesTrunk: false,
+				now: () => at,
+			});
+		const steady = make("steady");
+		const flaky = make("flaky");
+		const job = (jobId: number) => ({
+			jobId,
+			runId: 900,
+			label: "hobo",
+			createdAt: new Date(at).toISOString(),
+		});
+		for (let jobId = 1; jobId <= 10; jobId += 1) {
+			await flaky.claim(job(jobId));
+			flaky.record("hobo_ci_launch_parked", { jobId, attempt: 3 });
+		}
+		await steady.advertise();
+		await flaky.advertise();
+		// Past the few seconds a worker keeps its last view of the board.
+		at += 6000;
+		// Fresh jobs, asked of the flaky worker first: how many is it first for?
+		let first = 0;
+		const jobs = 600;
+		for (let jobId = 1000; jobId < 1000 + jobs; jobId += 1)
+			if (await flaky.claim(job(jobId))) first += 1;
+		// Weight 4 x 4/14 against 4: about 22%, not the half it had before.
+		expect(first / jobs).toBeGreaterThan(0.16);
+		expect(first / jobs).toBeLessThan(0.29);
 	});
 });

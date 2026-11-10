@@ -9,7 +9,8 @@
  * They get it from arithmetic. For one job, every node computes the same
  * ordering of the nodes it knows about (weighted rendezvous hashing: a node
  * that could start twice as many copies of this job is first for twice as many
- * jobs). Capacity is judged against the job, not counted in the abstract: a
+ * jobs, and a node that has been dropping the jobs it takes is first for
+ * fewer). Capacity is judged against the job, not counted in the abstract: a
  * node with a free slot but too little free memory for this job is not a
  * candidate for it, and is still a candidate for a smaller one. The node
  * ranked first starts at once. The node ranked `r` waits `r` steps from the
@@ -27,6 +28,7 @@
  * Pure functions: no clock, network or store.
  */
 import { createHash } from "node:crypto";
+import { meshReliabilityWeight } from "./reliability.js";
 
 /** One relay node as another node sees it. */
 export type MeshNode = Readonly<{
@@ -50,6 +52,11 @@ export type MeshNode = Readonly<{
 	free?: MeshFree | undefined;
 	/** What the node runs on. Absent means it does not say. */
 	platform?: MeshPlatform | undefined;
+	/**
+	 * The share of its recent jobs the node delivered, in (0, 1]; see
+	 * `./reliability.ts`. Absent means it does not say, and is full trust.
+	 */
+	reliability?: number | undefined;
 }>;
 
 /** Free capacity a job can be sized against. */
@@ -173,8 +180,12 @@ export function rankNodes(
 			// Weighted rendezvous: the largest -w / ln(u) wins, and a node's
 			// share of first places is its share of the total weight. The weight
 			// is how many copies of this job the node could start, so a node
-			// with eight slots and memory for one of these counts as one.
-			score: -copies / Math.log(unit(job.jobId, node.id)),
+			// with eight slots and memory for one of these counts as one; and
+			// that is scaled by the share of its recent jobs it delivered, so a
+			// node that drops half of what it takes is first for half as many.
+			score:
+				-(copies * meshReliabilityWeight(node.reliability)) /
+				Math.log(unit(job.jobId, node.id)),
 		}))
 		.sort((a, b) => b.score - a.score || a.node.id.localeCompare(b.node.id))
 		.map((entry) => entry.node);
