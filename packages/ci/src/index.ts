@@ -20,7 +20,6 @@ export {
 	shellQuote,
 	supportsPipeline,
 } from "./execution.js";
-export * from "./fleet-v2/index.js";
 export {
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetBackend,
@@ -33,6 +32,7 @@ export {
 	selectFleetBackend,
 	shouldAbortIsolatedFleetLease,
 } from "./fleet-overflow.js";
+export * from "./fleet-v2/index.js";
 export {
 	ciBudgetIdentity,
 	ciBudgetPolicy,
