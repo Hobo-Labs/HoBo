@@ -42,9 +42,14 @@ const JOB_EVENT_TYPES: ReadonlySet<string> = new Set([
 	"ci.JobAssignmentCleared",
 ]);
 
+/** Whether an event is about a job itself, before or apart from any lease. */
+export function isJobEvent(event: CiEvent): boolean {
+	return JOB_EVENT_TYPES.has(event.type);
+}
+
 /** The job a job event was recorded for; undefined for every other event. */
 export function eventJob(event: CiEvent): Job | undefined {
-	if (!JOB_EVENT_TYPES.has(event.type)) return undefined;
+	if (!isJobEvent(event)) return undefined;
 	try {
 		return fromJsonString(JobSchema, event.detail);
 	} catch {

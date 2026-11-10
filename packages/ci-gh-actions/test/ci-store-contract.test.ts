@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { create } from "@bufbuild/protobuf";
 import {
 	AccountSchema,
@@ -737,6 +738,42 @@ storeContract("SqliteCiStore", async () => {
 	return { store, close: async () => store.close() };
 });
 
+it("reads a lease's events on SQLite through the lease index, never by walking the journal", async () => {
+	const path = join(sqliteRoot, `${randomUUID()}.sqlite`);
+	const store = new SqliteCiStore(path);
+	const other = new DatabaseSync(path);
+	try {
+		const { revision } = await store.configure(configuration(), 0, NOW);
+		const account = configuration().accounts[0];
+		if (!account) throw new Error("fixture account");
+		const lease = await store.reserve(account, job(1), NOW, revision);
+		if (!lease) throw new Error("reservation");
+		const query = { accountId: "hobo-labs", leaseId: lease.id, limit: 20 };
+		expect(
+			(await store.leaseEvents(query)).map((entry) => entry.event?.type),
+		).toEqual(["ci.LeaseReserved"]);
+		// The read is bound to the index: SQLite's own plan for it searches the
+		// index for the lease and never scans the journal.
+		const plan = other
+			.prepare(
+				"EXPLAIN QUERY PLAN SELECT seq, body FROM events INDEXED BY events_lease_type WHERE json_extract(body,'$.leaseId')=? AND json_extract(body,'$.accountId')=? ORDER BY seq DESC LIMIT ?",
+			)
+			.all(lease.id, "hobo-labs", 20)
+			.map((step) => String(step.detail));
+		expect(plan.join("\n")).toMatch(
+			/SEARCH events USING INDEX events_lease_type/,
+		);
+		expect(plan.join("\n")).not.toMatch(/SCAN events/);
+		// Without the index the read fails. It does not quietly fall back to a
+		// walk of the whole journal, which would stop the host while it ran.
+		other.exec("DROP INDEX events_lease_type");
+		await expect(store.leaseEvents(query)).rejects.toThrow(/no such index/);
+	} finally {
+		other.close();
+		store.close();
+	}
+});
+
 function dockerAvailable(): boolean {
 	if (process.env.HOBO_FUZZ_DOCKER === "0") return false;
 	if (!existsSync("/var/run/docker.sock")) return false;
@@ -853,6 +890,65 @@ describe.runIf(postgresAvailable)("Postgres engine", () => {
 			await writer.query("ROLLBACK").catch(() => undefined);
 			writer.release();
 		}
+	});
+
+	it("reads the configuration no more often to record who owns a job", async () => {
+		if (!pool) throw new Error("postgres pool unavailable");
+		const real = pool;
+		const statements: string[] = [];
+		// The store's pool, with each statement a transaction runs noted.
+		const counting = {
+			query: (text: string, values?: readonly string[]) =>
+				real.query(text, values ? [...values] : undefined),
+			connect: async () => {
+				const client = await real.connect();
+				return {
+					query: (text: string, values?: readonly (string | number)[]) => {
+						statements.push(text);
+						return client.query(text, values ? [...values] : undefined);
+					},
+					release: () => client.release(),
+				};
+			},
+		};
+		const store = new PostgresCiStore(
+			// SAFETY: the store uses only `query` and `connect` of its pool, and
+			// only `query` and `release` of a client; both are passed through.
+			counting as pg.Pool,
+			`contract-${randomUUID()}`,
+		);
+		const { revision } = await store.configure(configuration(), 0, NOW);
+		const reads = async (run: () => Promise<void>) => {
+			statements.length = 0;
+			await run();
+			return statements.filter((text) =>
+				text.includes("FROM hobo_ci_configuration"),
+			).length;
+		};
+		// Queueing reads it to check the revision and to find the binding, as
+		// it did before job events named their owner: not once more for that.
+		expect(await reads(() => store.queue(job(1), NOW, revision))).toBe(2);
+		const completed = job(1, "completed");
+		expect(await reads(() => store.observe(completed, LATER, revision))).toBe(
+			1,
+		);
+		// A job whose queue deadline has passed, expired before it was queued.
+		const overdue = job(3);
+		overdue.queueDeadlineAt = NOW;
+		expect(
+			await reads(async () => {
+				expect(await store.expireQueued(overdue, LATER, revision)).toBe(true);
+			}),
+		).toBe(1);
+		expect(
+			(
+				await store.eventsSince({ accountId: "hobo-labs", after: 0, limit: 10 })
+			).events.map((entry) => [entry.event?.type, entry.event?.accountId]),
+		).toEqual([
+			["ci.JobQueued", "hobo-labs"],
+			["ci.JobCompleted", "hobo-labs"],
+			["ci.JobExpired", "hobo-labs"],
+		]);
 	});
 
 	it("says when a read stopped short of the journal's end, whoever filled it", async () => {

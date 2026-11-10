@@ -10,6 +10,7 @@ export {
 	eventCursorBounds,
 	eventJob,
 	eventScan,
+	isJobEvent,
 	jobAccountId,
 	type LeaseEventsQuery,
 	leaseEventsBounds,

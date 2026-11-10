@@ -20,8 +20,6 @@ import {
 	eventCursorBounds,
 	eventScan,
 	jobAccountId,
-	type LeaseEventsQuery,
-	leaseEventsBounds,
 } from "./event-log.js";
 import type { PipelineUsageObservation } from "./execution.js";
 import { shouldAbortIsolatedFleetLease } from "./fleet-overflow.js";
@@ -385,17 +383,6 @@ export class LeaseStore {
 				this.db.prepare("SELECT coalesce(max(seq),0) AS head FROM events").get()
 					?.head,
 			);
-	}
-	/** The newest events of one of an account's leases, in journal order. */
-	leaseEvents(query: LeaseEventsQuery): SequencedCiEvent[] {
-		const { accountId, leaseId, limit } = leaseEventsBounds(query);
-		return this.db
-			.prepare(
-				"SELECT seq, body FROM events WHERE json_extract(body,'$.leaseId')=? AND json_extract(body,'$.accountId')=? ORDER BY seq DESC LIMIT ?",
-			)
-			.all(leaseId, accountId, limit)
-			.reverse()
-			.map(sequenced);
 	}
 	/** The account whose connection holds this job's repository right now. */
 	private jobOwner(job: Job): string {

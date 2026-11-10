@@ -19,6 +19,7 @@ import {
 	ciBudgetSignalUpdate,
 	DesiredCiPolicySchema,
 	effectiveCiAccount,
+	isJobEvent,
 	LeaseSchema,
 	OfferSchema,
 	parseCiPolicy,
@@ -748,8 +749,15 @@ export function createHostedControlPlane(options: {
 				const leases = (await store.all())
 					.filter((entry) => entry.accountId === principal.accountId)
 					.slice(-100);
+				// The account's lease and record events, as this route has always
+				// returned them. A job's own events (queued, completed, expired)
+				// now name their account too; they are served by the relay's MCP
+				// server and must not crowd the lease events out of this window.
 				const events = (await store.events())
-					.filter((entry) => entry.accountId === principal.accountId)
+					.filter(
+						(entry) =>
+							entry.accountId === principal.accountId && !isJobEvent(entry),
+					)
 					.slice(-100);
 				return response(
 					200,

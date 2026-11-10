@@ -55,7 +55,10 @@ changed. `eventsSince({accountId, after, limit})` on `LeaseStore`,
 events after a journal position, oldest first, with the position to read after
 next (`CiEventPage`, each event a `SequencedCiEvent`). Without `after` it
 returns the account's newest events. `leaseEvents({accountId, leaseId, limit})`
-reads one lease's newest events by the lease's id, through the lease index.
+reads one lease's newest events by the lease's id, through the lease index
+(`hobo_ci_events_lease_type_seq` on Postgres; `events_lease_type` on SQLite,
+which the statement names, so the read fails if the index is missing and
+never walks the journal instead).
 Both are projections over the journal, not a second bus: nothing is written
 to serve them, and no schema changed.
 
@@ -70,8 +73,11 @@ to serve them, and no schema changed.
   `ci.JobAssignmentCleared`) is written with the account whose connection
   holds the job's repository and installation at that moment (`jobAccountId`
   in `src/event-log.ts`), so it stays that account's however the connection
-  moves later. Job events journalled before this was recorded name no account
-  and are in nobody's feed. Partition events such as `ci.ConfigurationChanged`
+  moves later. Writing the owner costs the Postgres admission path no extra
+  read: it comes from the configuration the transaction has already read.
+  Job events journalled before this was recorded name no account and are in
+  nobody's feed. `isJobEvent` tells them apart for a reader, such as the
+  account API's snapshot, that lists lease events only. Partition events such as `ci.ConfigurationChanged`
   name no account and are never returned.
 - **Bounds.** A page holds at most 500 events. One read looks along at most
   10,000 of the partition's journal rows (`EVENT_SCAN_SPAN`), by the journal's

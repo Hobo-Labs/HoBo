@@ -17,6 +17,7 @@ import {
 	type CiEventPage,
 	CiEventSchema,
 	type Configuration,
+	type ConfigurationState,
 	ConfigurationStateSchema,
 	ControlRecordSchema,
 	type Job,
@@ -477,15 +478,19 @@ export class PostgresCiStore {
 		).rows[0];
 		return row ? fromJsonString(ConfigurationStateSchema, row.body) : undefined;
 	}
+	/**
+	 * Refuse a write decided under another configuration revision. Returns the
+	 * configuration it read to check, so the transaction need not read it again.
+	 */
 	private async checkRevision(
 		client: PoolClient,
 		expected: number | undefined,
-	) {
-		if (
-			expected !== undefined &&
-			(await this.readConfiguration(client))?.revision !== expected
-		)
+	): Promise<ConfigurationState | undefined> {
+		if (expected === undefined) return undefined;
+		const state = await this.readConfiguration(client);
+		if (state?.revision !== expected)
 			throw new Error("configuration revision conflict");
+		return state;
 	}
 	private async readLeases(client: PoolClient): Promise<Lease[]> {
 		return (
@@ -894,12 +899,18 @@ export class PostgresCiStore {
 				read((db) => this.readQuarantined(db, accountId, expectedRevision)),
 		};
 	}
-	/** The account whose connection holds this job's repository right now. */
-	private async jobOwner(client: Queryable, job: Job): Promise<string> {
-		return jobAccountId(
-			(await this.readConfiguration(client))?.configuration?.connections ?? [],
-			job,
-		);
+	/**
+	 * The account whose connection holds this job's repository right now.
+	 * `known` is the configuration this transaction has already read; only a
+	 * transaction that has not read it yet reads it here.
+	 */
+	private async jobOwner(
+		client: Queryable,
+		job: Job,
+		known: ConfigurationState | undefined,
+	): Promise<string> {
+		const state = known ?? (await this.readConfiguration(client));
+		return jobAccountId(state?.configuration?.connections ?? [], job);
 	}
 	private async readPendingJobs(db: Queryable): Promise<Job[]> {
 		return (
@@ -1000,7 +1011,7 @@ export class PostgresCiStore {
 	}
 	expireQueued(job: Job, at: string, expectedRevision?: number) {
 		return this.tx(async (client) => {
-			await this.checkRevision(client, expectedRevision);
+			const checked = await this.checkRevision(client, expectedRevision);
 			const key = this.jobKey(job);
 			const row = (
 				await client.query<{ body: string }>(
@@ -1046,7 +1057,7 @@ export class PostgresCiStore {
 				"ci.JobExpired",
 				at,
 				toJsonString(JobSchema, pending),
-				await this.jobOwner(client, pending),
+				await this.jobOwner(client, pending, checked),
 			);
 			return true;
 		});
@@ -1101,7 +1112,8 @@ export class PostgresCiStore {
 				: account);
 		const pinned = await this.pinnedQueuedJob(c, job, at, effective);
 		const body = toJsonString(JobSchema, pinned);
-		const owner = await this.jobOwner(c, pinned);
+		// The configuration read above for the binding names the owner too.
+		const owner = jobAccountId(config?.connections ?? [], pinned);
 		if (
 			pinned.queueDeadlineAt &&
 			Date.parse(pinned.queueDeadlineAt) <= Date.parse(at)
@@ -1169,7 +1181,7 @@ export class PostgresCiStore {
 	}
 	observe(job: Job, at: string, expectedRevision?: number) {
 		return this.tx(async (c) => {
-			await this.checkRevision(c, expectedRevision);
+			const checked = await this.checkRevision(c, expectedRevision);
 			if (job.action === "completed") {
 				const key = this.jobKey(job);
 				await c.query(
@@ -1189,7 +1201,7 @@ export class PostgresCiStore {
 					"ci.JobCompleted",
 					at,
 					toJsonString(JobSchema, job),
-					await this.jobOwner(c, job),
+					await this.jobOwner(c, job, checked),
 				);
 			}
 			if (job.runnerName) {

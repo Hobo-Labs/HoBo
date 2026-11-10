@@ -28,8 +28,13 @@ import {
 	SandboxAllowanceSchema,
 	SandboxPricingSchema,
 	type SequencedCiEvent,
+	SequencedCiEventSchema,
 } from "./_generated/ci_pb.js";
-import type { EventCursor, LeaseEventsQuery } from "./event-log.js";
+import {
+	type EventCursor,
+	type LeaseEventsQuery,
+	leaseEventsBounds,
+} from "./event-log.js";
 import {
 	ciBudgetIdentity,
 	ciBudgetPolicy,
@@ -80,6 +85,7 @@ function isIsolatedCiOffer(offer: Offer | undefined): boolean {
 }
 
 const Body = z.object({ body: z.string() });
+const SequencedBody = z.object({ seq: z.number().int(), body: z.string() });
 const RecordStatus = z.object({ status: z.string() });
 const Count = z.number().int().nonnegative();
 const InboxRow = z.object({
@@ -326,9 +332,32 @@ export class SqliteCiStore {
 	eventsSince(cursor: EventCursor): Promise<CiEventPage> {
 		return this.read(() => this.leases.eventsSince(cursor));
 	}
-	/** The newest events of one of an account's leases, in journal order. */
+	/**
+	 * The newest events of one of an account's leases, in journal order.
+	 *
+	 * The statement names the lease index it reads through. Left to choose,
+	 * SQLite walks the whole journal backwards to satisfy the ordering, which
+	 * stops this single-threaded store, and its host, for as long as the
+	 * journal is long. Through the index it touches the lease's own events and
+	 * sorts those; without the index it fails, and does not fall back to the walk.
+	 */
 	leaseEvents(query: LeaseEventsQuery): Promise<SequencedCiEvent[]> {
-		return this.read(() => this.leases.leaseEvents(query));
+		return this.read(() => {
+			const { accountId, leaseId, limit } = leaseEventsBounds(query);
+			return this.db
+				.prepare(
+					"SELECT seq, body FROM events INDEXED BY events_lease_type WHERE json_extract(body,'$.leaseId')=? AND json_extract(body,'$.accountId')=? ORDER BY seq DESC LIMIT ?",
+				)
+				.all(leaseId, accountId, limit)
+				.reverse()
+				.map((row) => {
+					const { seq, body } = SequencedBody.parse(row);
+					return create(SequencedCiEventSchema, {
+						seq,
+						event: fromJsonString(CiEventSchema, body),
+					});
+				});
+		});
 	}
 	/** Latest dispatch/claim intent for each lease, without scanning history. */
 	latestLeaseIntents(ids: readonly string[]): Promise<CiEvent[]> {
