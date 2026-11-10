@@ -141,6 +141,19 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 		await expect(
 			a.board.advertise({ ...node("bad id with spaces"), id: "bad id" }),
 		).rejects.toThrow();
+		// What a job is sized against travels with the advertisement, and a
+		// node that does not send it is still read.
+		await a.board.advertise({
+			...node("box-a", 3),
+			free: { memoryMb: 12_288 },
+			platform: { os: "linux", arch: "x64" },
+		});
+		const sized = await b.board.nodes();
+		expect(sized.find((each) => each.id === "box-a")).toMatchObject({
+			free: { memoryMb: 12_288 },
+			platform: { os: "linux", arch: "x64" },
+		});
+		expect(sized.find((each) => each.id === "box-b")?.free).toBeUndefined();
 	});
 
 	it("keeps a shared configuration that only its current revision can replace", async () => {

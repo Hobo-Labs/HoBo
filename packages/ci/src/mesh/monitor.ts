@@ -25,6 +25,10 @@ export type MeshCapacity = Readonly<{
 	totalSlots: number;
 	/** Free runner slots across healthy nodes. */
 	freeSlots: number;
+	/** Free memory across the healthy nodes that report it. */
+	freeMemoryMb: number;
+	/** The most free memory on any one healthy node: the largest job that fits. */
+	largestFreeMemoryMb: number;
 }>;
 
 /** What the board says the mesh can do right now. */
@@ -43,6 +47,14 @@ export function meshCapacity(
 			0,
 		),
 		freeSlots: healthy.reduce((sum, node) => sum + node.freeSlots, 0),
+		freeMemoryMb: healthy.reduce(
+			(sum, node) => sum + (node.free?.memoryMb ?? 0),
+			0,
+		),
+		largestFreeMemoryMb: healthy.reduce(
+			(most, node) => Math.max(most, node.free?.memoryMb ?? 0),
+			0,
+		),
 	};
 }
 

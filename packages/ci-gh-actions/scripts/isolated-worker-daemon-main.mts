@@ -36,6 +36,7 @@ import {
 	type HostedInboxStore,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
+	memoryRequestForJob,
 	meshSettingsFromEnv,
 	parseWorkerStopMode,
 	readAvailableMemoryMb,
@@ -491,7 +492,9 @@ try {
 		workFs,
 		scheduleRetiredSweep: retiredSweep.trigger,
 	});
-	let liveWorkerLeaseIds = (await worker.reconcileLeases()).liveLeaseIds;
+	const firstReconciliation = await worker.reconcileLeases();
+	let liveWorkerLeaseIds = firstReconciliation.liveLeaseIds;
+	let inUseWorkerMemoryMb = firstReconciliation.inUseMemoryMb;
 	await worker.reconcileOrphanJobs();
 	let depsImageEnsurer: ReturnType<typeof createDepsImageEnsurer> | undefined;
 	if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
@@ -610,6 +613,31 @@ try {
 					totalSlots: slots,
 					healthy: () => !meshDraining,
 					servesTrunk: trunkSlots > 0,
+					// Memory a new job could have: what the worker's budget has
+					// left, and no more than the host can spare above its reserve.
+					free: () => {
+						const budgetLeftMb = memoryConfig.budgetMb - inUseWorkerMemoryMb;
+						const availableMb = readAvailableMemoryMb();
+						return {
+							memoryMb: Math.max(
+								0,
+								Math.floor(
+									availableMb === undefined
+										? budgetLeftMb
+										: Math.min(
+												budgetLeftMb,
+												availableMb - memoryConfig.reserveMb,
+											),
+								),
+							),
+						};
+					},
+					platform: { os: process.platform, arch: process.arch },
+					// A job is sized by the same memory class the worker would
+					// reserve for it at launch.
+					needs: (job) => ({
+						memoryMb: memoryRequestForJob(job.name, memoryConfig).memoryMb,
+					}),
 					log,
 				})
 			: undefined;
@@ -709,6 +737,7 @@ try {
 		const reconciliation = await worker.reconcileLeases();
 		workerReconcileMs = Date.now() - workerReconcileStartedAt;
 		liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+		inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 		await worker.reconcileOrphanJobs();
 		if (!reconciliation.inventoryKnown) return;
 		// In push mode the hosted relay drains the shared inbox; in pull mode
@@ -861,6 +890,7 @@ try {
 				const reconciliation = await worker.reconcileLeases({ draining: true });
 				workerReconcileMs = Date.now() - workerReconcileStartedAt;
 				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
+				inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 				await worker.reconcileOrphanJobs();
 				if (reconciliation.inventoryKnown) await runtime.tick({ admit: false });
 			};

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	claimTurn,
+	fitJob,
 	type MeshJob,
 	type MeshNode,
 	rankNodes,
@@ -178,14 +179,20 @@ describe("claimTurn", () => {
 	});
 
 	it("does not start a job it cannot run", () => {
-		for (const self of [
-			node("box-a", { freeSlots: 0 }),
-			node("box-a", { healthy: false }),
-			node("box-a", { labels: ["hobo-trunk"] }),
-		])
+		for (const [self, lacking] of [
+			[node("box-a", { freeSlots: 0 }), "slots"],
+			[node("box-a", { healthy: false }), "unhealthy"],
+			[node("box-a", { labels: ["hobo-trunk"] }), "label"],
+		] as const)
 			expect(
 				claimTurn({ job: job(7), self, peers, nowMs: NOW, stepMs: 20_000 }),
-			).toEqual({ start: false, rank: -1, waitMs: 0, reason: "not-eligible" });
+			).toEqual({
+				start: false,
+				rank: -1,
+				waitMs: 0,
+				reason: "not-eligible",
+				lacking,
+			});
 	});
 
 	it("bounds the wait in a large mesh", () => {
@@ -234,5 +241,142 @@ describe("claimTurn", () => {
 				expect(starting(each, lost, NOW + 20_000)).toBeGreaterThanOrEqual(1);
 			}
 		}
+	});
+});
+
+describe("fitting a job to a node", () => {
+	const heavy = (jobId: number) => job(jobId, { needs: { memoryMb: 6_144 } });
+	const light = (jobId: number) => job(jobId, { needs: { memoryMb: 1_024 } });
+
+	it("counts how many copies of this job fit, and names what bounds it", () => {
+		const roomy = node("roomy", { freeSlots: 4, free: { memoryMb: 32_768 } });
+		const tight = node("tight", { freeSlots: 4, free: { memoryMb: 7_000 } });
+		expect(fitJob(heavy(1), roomy, NOW)).toEqual({
+			copies: 4,
+			limitedBy: "slots",
+		});
+		expect(fitJob(heavy(1), tight, NOW)).toEqual({
+			copies: 1,
+			limitedBy: "memory",
+		});
+		// The same tight node has room for four of a smaller job.
+		expect(fitJob(light(1), tight, NOW)).toEqual({
+			copies: 4,
+			limitedBy: "slots",
+		});
+	});
+
+	it("says what a node lacks, most basic reason first", () => {
+		const cases: [Partial<MeshNode>, MeshJob, string][] = [
+			[{ validUntilMs: NOW - 1 }, heavy(1), "stale"],
+			[{ healthy: false }, heavy(1), "unhealthy"],
+			[{ labels: ["other"] }, heavy(1), "label"],
+			[
+				{ platform: { os: "linux", arch: "arm64" } },
+				job(1, { needs: { arch: "x64" } }),
+				"platform",
+			],
+			[{ freeSlots: 0, free: { memoryMb: 99_999 } }, heavy(1), "slots"],
+			[{ freeSlots: 3, free: { memoryMb: 4_000 } }, heavy(1), "memory"],
+			[
+				{ freeSlots: 3, free: { memoryMb: 99_999, diskMb: 100 } },
+				job(1, { needs: { memoryMb: 1_024, diskMb: 2_048 } }),
+				"disk",
+			],
+		];
+		for (const [overrides, each, lacking] of cases)
+			expect(fitJob(each, node("n", overrides), NOW)).toEqual({
+				copies: 0,
+				lacking,
+			});
+	});
+
+	it("treats what is not reported as unknown, not as zero", () => {
+		// A node on an older version reports no memory: slots alone decide.
+		expect(fitJob(heavy(1), node("old", { freeSlots: 2 }), NOW)).toEqual({
+			copies: 2,
+			limitedBy: "slots",
+		});
+		// A job with no stated needs fits any node with a slot.
+		expect(fitJob(job(1), node("n", { free: { memoryMb: 1 } }), NOW)).toEqual({
+			copies: 2,
+			limitedBy: "slots",
+		});
+		// A node that does not say its platform is not ruled out by it.
+		expect(
+			fitJob(job(1, { needs: { arch: "x64" } }), node("n"), NOW).copies,
+		).toBe(2);
+	});
+
+	it("leaves a node with a free slot but no room for this job out of the order", () => {
+		const full = node("full", { freeSlots: 8, free: { memoryMb: 2_000 } });
+		const fits = node("fits", { freeSlots: 1, free: { memoryMb: 8_000 } });
+		for (const each of JOBS.slice(0, 300)) {
+			expect(
+				ids(
+					rankNodes({ ...each, needs: { memoryMb: 6_144 } }, [full, fits], NOW),
+				),
+			).toEqual(["fits"]);
+			// For a job that fits both, the node with more room for it leads more often.
+			expect(
+				ids(
+					rankNodes({ ...each, needs: { memoryMb: 1_024 } }, [full, fits], NOW),
+				).sort(),
+			).toEqual(["fits", "full"]);
+		}
+	});
+
+	it("shares jobs by how many of that job each node could start", () => {
+		// Eight slots but memory for one heavy job, against two slots with
+		// memory for two: the second node should lead about twice as often.
+		const wide = node("wide", { freeSlots: 8, free: { memoryMb: 7_000 } });
+		const deep = node("deep", { freeSlots: 2, free: { memoryMb: 16_000 } });
+		let deepFirst = 0;
+		for (const each of JOBS) {
+			const order = rankNodes(
+				{ ...each, needs: { memoryMb: 6_144 } },
+				[wide, deep],
+				NOW,
+			);
+			if (order[0]?.id === "deep") deepFirst++;
+		}
+		const share = deepFirst / JOBS.length;
+		expect(share).toBeGreaterThan(0.62);
+		expect(share).toBeLessThan(0.71);
+	});
+
+	it("does not wait for a node that cannot fit the job", () => {
+		// `self` would rank behind `big` on slots, but `big` has no memory for
+		// this job, so `self` is alone in the order and starts at once.
+		const self = node("self", { freeSlots: 1, free: { memoryMb: 8_000 } });
+		const big = node("big", { freeSlots: 16, free: { memoryMb: 1_000 } });
+		expect(
+			claimTurn({
+				job: heavy(42),
+				self,
+				peers: [big],
+				nowMs: NOW,
+				stepMs: 20_000,
+			}),
+		).toEqual({ start: true, rank: 0, reason: "alone" });
+	});
+
+	it("tells a node why a job is not its to take", () => {
+		const self = node("self", { freeSlots: 3, free: { memoryMb: 2_000 } });
+		expect(
+			claimTurn({
+				job: heavy(42),
+				self,
+				peers: [],
+				nowMs: NOW,
+				stepMs: 20_000,
+			}),
+		).toEqual({
+			start: false,
+			rank: -1,
+			waitMs: 0,
+			reason: "not-eligible",
+			lacking: "memory",
+		});
 	});
 });

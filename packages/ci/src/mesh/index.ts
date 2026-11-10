@@ -20,7 +20,13 @@ export {
 export {
 	type ClaimTurn,
 	claimTurn,
+	fitJob,
+	type MeshFit,
+	type MeshFree,
 	type MeshJob,
+	type MeshLack,
+	type MeshNeeds,
 	type MeshNode,
+	type MeshPlatform,
 	rankNodes,
 } from "./rendezvous.js";

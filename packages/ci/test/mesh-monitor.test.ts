@@ -43,9 +43,14 @@ describe("meshCapacity", () => {
 		expect(
 			meshCapacity(
 				[
-					node("a", { freeSlots: 1, totalSlots: 4 }),
-					node("b", { freeSlots: 0, totalSlots: 2 }),
-					node("c", { healthy: false, freeSlots: 3 }),
+					node("a", { freeSlots: 1, totalSlots: 4, free: { memoryMb: 6_000 } }),
+					node("b", { freeSlots: 0, totalSlots: 2, free: { memoryMb: 2_000 } }),
+					// Unhealthy: neither its slots nor its memory count.
+					node("c", {
+						healthy: false,
+						freeSlots: 3,
+						free: { memoryMb: 9_999 },
+					}),
 					node("d", { validUntilMs: NOW }),
 					// No total advertised: its free slots are all that is known.
 					node("e", { freeSlots: 2, totalSlots: undefined }),
@@ -58,6 +63,9 @@ describe("meshCapacity", () => {
 			available: 2,
 			totalSlots: 8,
 			freeSlots: 3,
+			// Node e reports no memory: it adds nothing rather than a guess.
+			freeMemoryMb: 8_000,
+			largestFreeMemoryMb: 6_000,
 		});
 	});
 });

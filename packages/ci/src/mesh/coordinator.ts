@@ -9,7 +9,12 @@
  * ranking in `rendezvous.ts` over the last view it had, which still starts
  * every job and at worst starts a runner twice.
  */
-import { claimTurn, type MeshJob, type MeshNode } from "./rendezvous.js";
+import {
+	claimTurn,
+	type MeshJob,
+	type MeshLack,
+	type MeshNode,
+} from "./rendezvous.js";
 
 /** Where nodes leave advertisements for each other. */
 export interface MeshBoard {
@@ -76,9 +81,17 @@ export type MeshDecision = Readonly<
 	  }
 	| {
 			start: false;
-			reason: "waiting-turn" | "claimed-elsewhere" | "not-eligible";
+			reason: "waiting-turn" | "claimed-elsewhere";
 			rank: number;
 			waitMs: number;
+	  }
+	| {
+			start: false;
+			reason: "not-eligible";
+			rank: number;
+			waitMs: number;
+			/** What this node lacks for the job: a slot, memory, the platform... */
+			lacking: MeshLack;
 	  }
 >;
 
@@ -184,12 +197,20 @@ export function createMeshCoordinator(options: {
 				maxRank: options.maxRank ?? 4,
 			});
 			if (!turn.start)
-				return {
-					start: false,
-					reason: turn.reason,
-					rank: turn.rank,
-					waitMs: turn.waitMs,
-				};
+				return turn.reason === "not-eligible"
+					? {
+							start: false,
+							reason: turn.reason,
+							rank: turn.rank,
+							waitMs: turn.waitMs,
+							lacking: turn.lacking,
+						}
+					: {
+							start: false,
+							reason: turn.reason,
+							rank: turn.rank,
+							waitMs: turn.waitMs,
+						};
 			if (nowMs < claimsRetryAt)
 				return { start: true, reason: "claims-unreachable", rank: turn.rank };
 			try {

@@ -14,7 +14,10 @@ import {
 	type MeshCapacity,
 	type MeshClaims,
 	type MeshEvent,
+	type MeshFree,
 	type MeshMonitorEvent,
+	type MeshNeeds,
+	type MeshPlatform,
 } from "@hobo/ci/mesh";
 import { RUNNER_LABEL, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
@@ -104,7 +107,8 @@ export function meshSettingsFromEnv(
 export type WorkerMeshEvent =
 	| MeshEvent
 	| MeshMonitorEvent
-	| "hobo_ci_mesh_job_taken";
+	| "hobo_ci_mesh_job_taken"
+	| "hobo_ci_mesh_job_unfit";
 
 export function createWorkerMesh(options: {
 	settings: MeshSettings;
@@ -118,6 +122,18 @@ export function createWorkerMesh(options: {
 	healthy: () => boolean;
 	/** True when this worker also starts trunk-label runners. */
 	servesTrunk: boolean;
+	/**
+	 * What this worker has free besides slots (memory it could give a new job
+	 * right now). Left out, the worker is ranked by free slots alone.
+	 */
+	free?: () => MeshFree;
+	/** What this worker runs on, for jobs that need a particular platform. */
+	platform?: MeshPlatform;
+	/**
+	 * What a queued job needs, from what the poller knows about it. Left out,
+	 * or returning nothing, the job fits any worker with a free slot.
+	 */
+	needs?: (job: { name: string; label: string }) => MeshNeeds | undefined;
 	/** How long an advertisement is trusted; refresh well inside it. */
 	advertTtlMs?: number;
 	now?: () => number;
@@ -139,6 +155,8 @@ export function createWorkerMesh(options: {
 			healthy: options.healthy(),
 			labels,
 			validUntilMs: now() + advertTtlMs,
+			free: options.free?.(),
+			platform: options.platform,
 		}),
 		board: options.board,
 		claims: options.claims,
@@ -154,6 +172,8 @@ export function createWorkerMesh(options: {
 	});
 	// One line per job taken, not one per poll that sees it.
 	const reported = new Set<number>();
+	// One line per job and reason this worker could not fit, for the same reason.
+	const unfit = new Set<string>();
 
 	return {
 		advertise: () => coordinator.advertise(),
@@ -167,15 +187,42 @@ export function createWorkerMesh(options: {
 			jobId: number;
 			runId: number;
 			label: string;
+			/** The job's name, which is what its size is known by. */
+			name?: string | undefined;
 			createdAt: string | undefined;
 		}): Promise<boolean> {
 			const created = Date.parse(job.createdAt ?? "");
+			const needs =
+				job.name === undefined
+					? undefined
+					: options.needs?.({ name: job.name, label: job.label });
 			const decision = await coordinator.shouldStart({
 				jobId: job.jobId,
 				label: job.label,
 				// No queue time in the list: treat the job as queued just now.
 				queuedAtMs: Number.isFinite(created) ? created : now(),
+				needs,
 			});
+			// A worker with a free slot that still cannot take the job says why:
+			// "no memory for this job" is a different problem from "no slot".
+			if (
+				!decision.start &&
+				decision.reason === "not-eligible" &&
+				decision.lacking !== "slots"
+			) {
+				const key = `${job.jobId}:${decision.lacking}`;
+				if (!unfit.has(key)) {
+					if (unfit.size >= 5000) unfit.clear();
+					unfit.add(key);
+					options.log?.("hobo_ci_mesh_job_unfit", {
+						jobId: job.jobId,
+						runId: job.runId,
+						lacking: decision.lacking,
+						needsMemoryMb: needs?.memoryMb ?? 0,
+						freeMemoryMb: options.free?.().memoryMb ?? 0,
+					});
+				}
+			}
 			if (decision.start && !reported.has(job.jobId)) {
 				if (reported.size >= 5000) reported.clear();
 				reported.add(job.jobId);

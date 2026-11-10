@@ -123,6 +123,69 @@ describe("createWorkerMesh", () => {
 		]);
 	});
 
+	it("gives a job to the worker it fits, not the one with the most free slots", async () => {
+		const ports = createMemoryMesh({ now: () => NOW });
+		const logs: { node: string; event: string; lacking?: unknown }[] = [];
+		const sized = (nodeId: string, freeSlots: number, memoryMb: number) =>
+			createWorkerMesh({
+				settings: { ...settings, nodeId },
+				board: ports.board,
+				claims: ports.claims,
+				freeSlots: () => freeSlots,
+				totalSlots: 8,
+				healthy: () => true,
+				servesTrunk: false,
+				free: () => ({ memoryMb }),
+				platform: { os: "linux", arch: "x64" },
+				// The worker sizes a job by its name, as its memory classes do.
+				needs: (job) => ({
+					memoryMb: job.name.startsWith("Workspace test shard") ? 6_144 : 1_024,
+				}),
+				now: () => NOW,
+				log: (event, fields) =>
+					logs.push({ node: nodeId, event, lacking: fields.lacking }),
+			});
+		// Eight free slots but memory for no heavy job, against one slot with room.
+		const wide = sized("wide", 8, 2_000);
+		const deep = sized("deep", 1, 8_000);
+		await wide.advertise();
+		await deep.advertise();
+		const advertised = [...(await ports.board.nodes())].sort((a, b) =>
+			a.id.localeCompare(b.id),
+		);
+		expect(advertised).toMatchObject([
+			{ id: "deep", free: { memoryMb: 8_000 }, platform: { arch: "x64" } },
+			{ id: "wide", free: { memoryMb: 2_000 } },
+		]);
+		for (let jobId = 1; jobId <= 50; jobId += 1) {
+			const heavy = { ...queued(jobId), name: "Workspace test shard 0" };
+			expect(await wide.claim(heavy)).toBe(false);
+			// Asking again does not log again.
+			expect(await wide.claim(heavy)).toBe(false);
+			expect(await deep.claim(heavy)).toBe(true);
+		}
+		expect(
+			logs.filter((entry) => entry.event === "hobo_ci_mesh_job_unfit"),
+		).toHaveLength(50);
+		expect(
+			logs.every(
+				(entry) =>
+					entry.event !== "hobo_ci_mesh_job_unfit" ||
+					(entry.node === "wide" && entry.lacking === "memory"),
+			),
+		).toBe(true);
+		// A light job fits both, so the wide worker is back in the running.
+		let wideTook = 0;
+		for (let jobId = 1000; jobId < 1100; jobId += 1) {
+			const light = { ...queued(jobId), name: "Secret scan" };
+			const results = [await wide.claim(light), await deep.claim(light)];
+			expect(results.filter(Boolean)).toHaveLength(1);
+			if (results[0]) wideTook++;
+		}
+		// Room for two of these on the wide worker, one on the deep one.
+		expect(wideTook).toBeGreaterThan(50);
+	});
+
 	it("takes a job once across two workers and logs it once", async () => {
 		const ports = createMemoryMesh({ now: () => NOW });
 		const a = worker("box-a", ports, { free: 2, healthy: true });

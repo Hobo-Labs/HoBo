@@ -48,14 +48,36 @@ node's answer, so a dead node costs the job one step.
 | 2 steps | the node ranked third, if still queued |
 | `maxRank` steps (4 proposed) | every remaining node, if still queued |
 
-**Capacity decides the order.** The ordering is weighted rendezvous hashing over
-each node's free runner slots. A node with twice the free capacity is first for
-twice as many jobs. A node that is full, draining or under host pressure
-advertises no free slots and drops out of the ordering; its jobs go to the next
-node. When a node leaves, only the jobs it was first for move.
+**Capacity for this job decides the order.** A free slot is not enough: the
+job has to fit. Each node advertises what it has free besides slots (today, the
+memory it could give a new job), and each job is sized by the memory class the
+worker would reserve for it at launch. A node is a candidate for a job only when
+that job fits it, and it is weighted by how many copies of that job it could
+start, the smaller of its free slots and what its free memory holds.
+
+| Node | Free slots | Free memory | A 6 GB test shard | A 1 GB scan |
+|---|---|---|---|---|
+| wide | 8 | 2 GB | not a candidate: no memory for it | candidate, weight 2 |
+| deep | 1 | 8 GB | candidate, weight 1 | candidate, weight 1 |
+
+So the heavy job goes to `deep` at once instead of waiting a turn on `wide`,
+which would have claimed it and then been unable to start it. The ordering is
+weighted rendezvous hashing over those weights: a node that could start twice
+as many of this job is first for twice as many of them. A node that is full,
+draining or under host pressure drops out of the ordering; its jobs go to the
+next node. When a node leaves, only the jobs it was first for move.
+
+The same check covers disk and platform (operating system and architecture)
+when a node reports them and a job asks for them. Today the worker reports
+memory and platform, and sizes jobs by memory only. Anything not reported is
+unknown, not zero: a node on an older version that advertises only slots is
+ranked by slots alone, and a job with no stated size fits any node with a slot.
+A node that cannot take a job says which thing it lacks
+(`hobo_ci_mesh_job_unfit`), so "no memory for this job" is not mistaken for "no
+slot".
 
 **What nodes know about each other is advice.** A node advertises its id, free
-slots, health, labels and an expiry. A missing or expired advertisement removes
+slots, free memory, platform, health, labels and an expiry. A missing or expired advertisement removes
 that node from the ordering and nothing else. A node that knows of no one ranks
 itself first and starts immediately, which is exactly what a single box does
 today. The mesh degrades to independent nodes, never to a stopped queue.
@@ -172,7 +194,8 @@ the changes, so every node also runs a monitor on its 10-second beat:
 | `hobo_ci_mesh_node_lost` | A node's advertisement aged out: it stopped, crashed or was cut off |
 | `hobo_ci_mesh_node_unhealthy`, `…_recovered` | A node is draining or under pressure, or is back |
 | `hobo_ci_mesh_capacity_exhausted`, `…_restored` | No healthy node has a free slot: a queued job waits for a slot, not a turn |
-| `hobo_ci_mesh_capacity` | Live, healthy and available nodes, total and free slots; on every change and once a minute |
+| `hobo_ci_mesh_capacity` | Live, healthy and available nodes, total and free slots, free memory across the mesh and the most on any one node (the largest job that fits anywhere); on every change and once a minute |
+| `hobo_ci_mesh_job_unfit` | This node has a free slot but cannot take a job, and what it lacks: memory, disk or platform. Once per job and reason |
 
 Only the live node with the lowest id reports changes about others, so one fact
 is reported once; if that node dies, the next takes over on its following

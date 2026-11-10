@@ -45,6 +45,8 @@ export interface GithubJobPollerOptions {
 		runId: number;
 		repository: string;
 		label: string;
+		/** The job's name, when the list carried it: what its size is known by. */
+		name: string | undefined;
 		/** GitHub's `created_at`, when the list carried it. */
 		createdAt: string | undefined;
 	}) => Promise<boolean>;
@@ -355,6 +357,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 									runId: job.run_id,
 									repository: connection.repository,
 									label: servedRunnerLabel(job.labels) ?? "",
+									name: job.name,
 									createdAt: job.created_at,
 								})
 								.catch(() => true);

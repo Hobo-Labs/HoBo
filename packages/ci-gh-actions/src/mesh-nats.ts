@@ -37,6 +37,20 @@ const Advert = z.object({
 	healthy: z.boolean(),
 	labels: z.array(z.string().min(1).max(80)).max(32),
 	validUntilMs: z.number().int().nonnegative(),
+	// What a job is sized against. Optional: a node on an older version does
+	// not send these and is ranked by slots alone.
+	free: z
+		.object({
+			memoryMb: z.number().int().min(0).max(16_777_216).optional(),
+			diskMb: z.number().int().min(0).max(1_073_741_824).optional(),
+		})
+		.optional(),
+	platform: z
+		.object({
+			os: z.string().min(1).max(32),
+			arch: z.string().min(1).max(32),
+		})
+		.optional(),
 });
 
 export type NatsMeshOptions = Readonly<{
