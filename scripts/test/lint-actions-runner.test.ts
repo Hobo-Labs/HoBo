@@ -31,6 +31,21 @@ function lintJobs(jobs: string): number | null {
 	}
 }
 
+function lintFile(file: string, text: string): number | null {
+	const root = mkdtempSync(join(tmpdir(), "hobo-actions-lint-"));
+	try {
+		const dir = join(root, ".github", "workflows");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, file), text);
+		return spawnSync(process.execPath, ["--experimental-strip-types", lint], {
+			cwd: root,
+			encoding: "utf8",
+		}).status;
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+}
+
 const routeJob =
 	"  route:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
 
@@ -130,6 +145,48 @@ describe("Actions runner policy", () => {
 			lintJobs(
 				"  gate:\n    if: ${{ always() }}\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
 			),
+			0,
+		);
+	});
+	const probe = (job: string, head = "permissions: {}\n") =>
+		lintFile(
+			"fleet-probe.yml",
+			`name: fixture\non:\n  workflow_dispatch:\n${head}jobs:\n  probe:\n${job}`,
+		);
+
+	it("lets the probe ask for each self-hosted label by name, and do nothing", () => {
+		for (const label of ["hobo", "hobo-trunk", "hobo-local-host"])
+			assert.equal(
+				probe(`    runs-on: ${label}\n    steps:\n      - run: "true"\n`),
+				0,
+				label,
+			);
+	});
+
+	it("rejects a probe that asks for another runner, runs something, or holds permissions", () => {
+		assert.notEqual(
+			probe('    runs-on: ubuntu-24.04\n    steps:\n      - run: "true"\n'),
+			0,
+		);
+		assert.notEqual(
+			probe("    runs-on: hobo\n    steps:\n      - run: echo ok\n"),
+			0,
+		);
+		assert.notEqual(
+			probe(
+				"    runs-on: hobo\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n",
+			),
+			0,
+		);
+		assert.notEqual(
+			probe('    runs-on: hobo\n    steps:\n      - run: "true"\n', ""),
+			0,
+		);
+	});
+
+	it("keeps label-by-name out of every other workflow", () => {
+		assert.notEqual(
+			lintRunner("pricing-ci.yml", "probe", "hobo-local-host"),
 			0,
 		);
 	});

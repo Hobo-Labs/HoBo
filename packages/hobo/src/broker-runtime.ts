@@ -31,6 +31,7 @@ import {
 	resolveBindleDeployment,
 	type YardPlacementReceipt,
 } from "@hobo/broker";
+import type { HoboRuntimeHost } from "@hobo/core";
 import { must } from "@hobo/core/total-access";
 import {
 	initStation,
@@ -309,6 +310,8 @@ export async function ensureEmbeddedBroker(
 		readonly hoboHome?: string;
 		readonly preferWasmSandbox?: boolean;
 		readonly emitProgress?: (message: string) => void;
+		/** Where a runtime host comes from; defaults to the composition's registry. */
+		readonly runtimeHost?: (kind: ComponentHostKind) => HoboRuntimeHost;
 	} = {},
 ): Promise<{
 	readonly state: EmbeddedBrokerState;
@@ -347,7 +350,9 @@ export async function ensureEmbeddedBroker(
 	let ociReady = false;
 	if (ociInstalled) {
 		try {
-			const ensure = await getRuntimeHost("oci").ensure({
+			const ensure = await (options.runtimeHost ?? getRuntimeHost)(
+				"oci",
+			).ensure({
 				hoboHome,
 				emitProgress: emit,
 			});
@@ -467,6 +472,8 @@ export async function resolveBindlePlacement(options: {
 	readonly providerId?: string;
 	readonly selectionMode?: "exact" | "compatible" | "compatible-or-generate";
 	readonly emitProgress?: (message: string) => void;
+	/** Where a runtime host comes from; defaults to the composition's registry. */
+	readonly runtimeHost?: (kind: ComponentHostKind) => HoboRuntimeHost;
 }): Promise<PlacementResult> {
 	const hoboHome = options.hoboHome ?? defaultHoboHome();
 	const emit = options.emitProgress ?? (() => {});
@@ -562,6 +569,7 @@ export async function resolveBindlePlacement(options: {
 	const { state, broker, catalog, pins } = await ensureEmbeddedBroker({
 		hoboHome,
 		emitProgress: emit,
+		runtimeHost: options.runtimeHost ?? getRuntimeHost,
 	});
 
 	const yardName = yardConfig?.name ?? "local";

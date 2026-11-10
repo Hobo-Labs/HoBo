@@ -33,7 +33,7 @@ import {
 	runProxied,
 	SURROGATE_PATTERN,
 } from "@hobo/adapter-opensesame";
-import { CANONICAL_VERBS, parseArgv } from "@hobo/cli";
+import { CANONICAL_VERBS, parseArgv } from "@hobo/cli/argv";
 import { AMBIENT_CREDENTIAL_KEYS } from "@hobo/cloud";
 
 import type { DefaultYardRuntimeOptions } from "./compose.js";
