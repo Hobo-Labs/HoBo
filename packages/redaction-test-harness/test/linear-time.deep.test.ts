@@ -10,6 +10,7 @@ import {
 	SWEEP_LENGTH,
 	SWEEP_SCREEN_RATIO,
 	SweepGrowthError,
+	screenGrowth,
 	screenRatio,
 	sweepInputs,
 } from "../src/linear-sweep.js";
@@ -139,5 +140,24 @@ describe("the sweep", () => {
 			Math.min(...[0, 1, 2, 3, 4].map(() => screenRatio(run, runs)));
 		expect(best(quadratic)).toBeGreaterThan(4 * SWEEP_SCREEN_RATIO);
 		expect(best(linear)).toBeLessThan(SWEEP_SCREEN_RATIO / 2);
+	});
+
+	it("screens a search that starts once a period by its growth, whatever its ratio", () => {
+		// A search that starts once in sixteen characters costs sixteen times
+		// fewer reference scans than one that starts at every character, and
+		// where the engine is quick that is under SWEEP_SCREEN_RATIO (28 on
+		// the machine this was written on). Its growth is the same anywhere.
+		const periodic = (length: number) =>
+			`a${"b".repeat(15)}`.repeat(length / 16);
+		const growth = (pattern: RegExp) =>
+			screenGrowth(
+				(text) => {
+					text.replace(pattern, "");
+				},
+				periodic(2 * SWEEP_LENGTH),
+				periodic(8 * SWEEP_LENGTH),
+			);
+		expect(growth(/ab{7}[ab]*!/gu)).toBeGreaterThanOrEqual(LINEAR_GROWTH_LIMIT);
+		expect(growth(/ab{7}[ab]*/gu)).toBeLessThan(LINEAR_GROWTH_LIMIT);
 	});
 });
