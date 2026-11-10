@@ -18,7 +18,7 @@ export const fleetServersAvailable = fleetServers.length >= 3;
 export const testLayout = parseFleetLayout({
 	dataPrefix: "hobo_ci_",
 	controlPrefix: "hobo_ci_fleet_",
-	excludedTables: ["hobo_ci_migrations"],
+	excludedTables: ["hobo_ci_schema_migrations"],
 });
 
 export type TestBackend = {

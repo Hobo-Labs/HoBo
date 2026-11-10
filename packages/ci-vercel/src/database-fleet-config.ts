@@ -23,11 +23,13 @@ import {
 } from "./database-connections.js";
 
 /** The relay's tables. Everything under `hobo_ci_` is copied to standbys,
- * except the fleet's own control tables and migration bookkeeping. */
+ * except the fleet's own control tables and the schema migration ledger
+ * (`hobo_ci_schema_migrations`, written by the migration runner): what has
+ * been applied to one database says nothing about another. */
 export const RELAY_FLEET_LAYOUT = parseFleetLayout({
 	dataPrefix: "hobo_ci_",
 	controlPrefix: "hobo_ci_fleet_",
-	excludedTables: ["hobo_ci_migrations"],
+	excludedTables: ["hobo_ci_schema_migrations"],
 });
 
 /** Find one backend's connections in the environment, under its prefix. The

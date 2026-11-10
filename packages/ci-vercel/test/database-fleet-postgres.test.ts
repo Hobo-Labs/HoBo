@@ -50,7 +50,7 @@ async function dataTables(backend: TestBackend) {
 		"CREATE TABLE hobo_ci_plain (name text PRIMARY KEY, body text NOT NULL)",
 	);
 	await backend.pool.query(
-		"CREATE TABLE hobo_ci_migrations (id integer PRIMARY KEY, name text)",
+		"CREATE TABLE hobo_ci_schema_migrations (id integer PRIMARY KEY, name text)",
 	);
 }
 
@@ -172,14 +172,14 @@ describe.skipIf(!fleetServersAvailable)("database fleet on PostgreSQL", () => {
 				"INSERT INTO hobo_ci_plain VALUES ('a', 'one'), ('b', 'two')",
 			);
 			await writer.pool.query(
-				"INSERT INTO hobo_ci_migrations VALUES (1, 'writer-only')",
+				"INSERT INTO hobo_ci_schema_migrations VALUES (1, 'writer-only')",
 			);
 			// Stale standby content, and a sequence already ahead of the source.
 			await retargeted.pool.query(
 				"INSERT INTO hobo_ci_plain VALUES ('stale', 'gone')",
 			);
 			await retargeted.pool.query(
-				"INSERT INTO hobo_ci_migrations VALUES (7, 'standby-only')",
+				"INSERT INTO hobo_ci_schema_migrations VALUES (7, 'standby-only')",
 			);
 			const register = sqlAssignmentRegister(backends, testLayout);
 			await bootstrapAssignment(register, "b0");
@@ -212,7 +212,7 @@ describe.skipIf(!fleetServersAvailable)("database fleet on PostgreSQL", () => {
 			);
 			// The excluded table and the control tables are not copied.
 			const excluded = await retargeted.pool.query(
-				"SELECT name FROM hobo_ci_migrations",
+				"SELECT name FROM hobo_ci_schema_migrations",
 			);
 			expect(excluded.rows).toEqual([{ name: "standby-only" }]);
 			const sequences = await readSequencePositions(retargeted, testLayout);
