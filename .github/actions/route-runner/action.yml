@@ -2,8 +2,9 @@ name: Route runners
 description: >-
   Chooses the runner label this run's jobs ask for: the hobo fleet while it is
   taking jobs, an enrolled local box when it is not, GitHub-hosted when neither
-  is. Never fails: when the queue cannot be read, or no Node on the machine can
-  run the script, the fleet label is returned and a warning says why.
+  is. Never fails: when the queue cannot be read, or the script cannot run,
+  GitHub-hosted is chosen (this step is running there, so it is the one tier
+  known to be up) and a warning says why. Pinned to the fleet, it stays there.
 inputs:
   token:
     description: A token that can read this repository's Actions runs and jobs.
@@ -18,6 +19,10 @@ inputs:
     default: ""
   max-wait-seconds:
     description: A job waiting this long for a label means that backend is not taking jobs.
+    required: false
+    default: ""
+  max-queued:
+    description: This many jobs already waiting for a label means that backend is not taking jobs.
     required: false
     default: ""
   trunk-runner:
@@ -41,6 +46,7 @@ runs:
         HOBO_CI_ROUTE: ${{ inputs.mode }}
         HOBO_CI_LOCAL_RUNNER: ${{ inputs.local-runner }}
         HOBO_CI_ROUTE_MAX_WAIT_SECONDS: ${{ inputs.max-wait-seconds }}
+        HOBO_CI_ROUTE_MAX_QUEUED: ${{ inputs.max-queued }}
         HOBO_CI_TRUNK_RUNNER: ${{ inputs.trunk-runner }}
       run: |
         set -uo pipefail
@@ -49,9 +55,16 @@ runs:
           *" ${GITHUB_EVENT_NAME} "*)
             if [ "${HOBO_CI_TRUNK_RUNNER}" != "false" ]; then fleet=hobo-trunk; fi ;;
         esac
-        stay_on_fleet() {
-          echo "::warning::runner routing did not run ($1); staying on the fleet"
-          { echo "runner=${fleet}"; echo "tier=fleet"; } >> "$GITHUB_OUTPUT"
+        # Without a decision, the one tier known to be up is the one this step is
+        # running on. A run pinned to the fleet stays on the fleet.
+        without_a_decision() {
+          if [ "${HOBO_CI_ROUTE}" = "fleet" ]; then
+            echo "::warning::runner routing did not run ($1); pinned to the fleet"
+            { echo "runner=${fleet}"; echo "tier=fleet"; } >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::runner routing did not run ($1); using GitHub-hosted runners"
+            { echo "runner=ubuntu-24.04"; echo "tier=github"; } >> "$GITHUB_OUTPUT"
+          fi
         }
         # The script is TypeScript run as written, which needs Node 22.18 or later.
         cache="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
@@ -65,7 +78,7 @@ runs:
           fi
         done
         if [ -z "${node_bin}" ]; then
-          stay_on_fleet "no Node 22.18 or later on this machine"
+          without_a_decision "no Node 22.18 or later on this machine"
           exit 0
         fi
-        "${node_bin}" --no-warnings scripts/ci/route-runner.mts || stay_on_fleet "the routing script failed"
+        "${node_bin}" --no-warnings scripts/ci/route-runner.mts || without_a_decision "the routing script failed"

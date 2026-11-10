@@ -9,8 +9,9 @@
  *
  * Availability is read from GitHub's queue, the one thing every backend
  * shares: a backend is taking jobs when no job asking for its label has waited
- * longer than the limit. Nothing is asked of the fleet itself, so a fleet that
- * is down, saturated, or cut off from its relay reads the same way.
+ * past the limit, it has not been slow to pick up what it took recently, and
+ * few jobs are already waiting for it. Nothing is asked of the fleet itself,
+ * so a fleet that is down, saturated, or cut off from its relay reads the same.
  */
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -28,19 +29,38 @@ export type RouteMode = (typeof ROUTE_MODES)[number];
 export type RouteTier = "fleet" | "local" | "github";
 
 /** A job has waited this long for a label: that backend is not taking jobs. */
-export const DEFAULT_MAX_WAIT_SECONDS = 300;
+export const DEFAULT_MAX_WAIT_SECONDS = 120;
+/**
+ * This many jobs already waiting for a label: a new run's jobs would queue
+ * behind them. The fleet's box has two slots, so four waiting is two rounds.
+ */
+export const DEFAULT_MAX_QUEUED = 4;
+/** How far back a started job still says how quickly the backend picks jobs up. */
+export const RECENT_PICKUP_SECONDS = 15 * 60;
 /** A job queued this long was abandoned, not kept waiting; it says nothing about now. */
 export const STALE_WAIT_SECONDS = 24 * 60 * 60;
-/** Job lists read per decision; the oldest unfinished runs are read first. */
-export const MAX_RUN_LOOKUPS = 12;
+/** Job lists read per decision, split between the oldest and the newest unfinished runs. */
+export const MAX_RUN_LOOKUPS = 8;
 
-export type QueuedJob = Readonly<{
+/** A job seen in the queue; `startedAtMs` is set once a runner has taken it. */
+export type SeenJob = Readonly<{
 	runId: number;
 	labels: readonly string[];
 	createdAtMs: number;
+	startedAtMs?: number;
 }>;
 
-export type LabelWait = Readonly<{ queued: number; oldestWaitSeconds: number }>;
+export type RouteLimits = Readonly<{
+	maxWaitSeconds: number;
+	maxQueued: number;
+}>;
+
+/** What the queue shows for one label. */
+export type LabelLoad = Readonly<{
+	queued: number;
+	oldestWaitSeconds: number;
+	slowestRecentPickupSeconds: number;
+}>;
 
 export type RouteDecision = Readonly<{
 	tier: RouteTier;
@@ -48,26 +68,52 @@ export type RouteDecision = Readonly<{
 	reason: string;
 }>;
 
-/** How long jobs asking for exactly `label` have waited, ignoring abandoned ones. */
-export function labelWait(
-	jobs: readonly QueuedJob[],
+const seconds = (fromMs: number, toMs: number) =>
+	Math.max(0, Math.floor((toMs - fromMs) / 1000));
+
+/**
+ * The load on exactly `label`: jobs still waiting (ignoring abandoned ones)
+ * and how long the jobs a runner took recently had to wait.
+ */
+export function labelLoad(
+	jobs: readonly SeenJob[],
 	label: string,
 	nowMs: number,
-): LabelWait {
-	const waits = jobs
-		.filter(
-			(job) =>
-				job.labels.length === 1 && job.labels[0]?.toLowerCase() === label,
-		)
-		.map((job) => Math.max(0, Math.floor((nowMs - job.createdAtMs) / 1000)))
-		.filter((seconds) => seconds < STALE_WAIT_SECONDS);
+): LabelLoad {
+	const asking = jobs.filter(
+		(job) => job.labels.length === 1 && job.labels[0]?.toLowerCase() === label,
+	);
+	const waits = asking
+		.filter((job) => job.startedAtMs === undefined)
+		.map((job) => seconds(job.createdAtMs, nowMs))
+		.filter((wait) => wait < STALE_WAIT_SECONDS);
+	const pickups = asking.flatMap((job) =>
+		job.startedAtMs !== undefined &&
+		seconds(job.startedAtMs, nowMs) <= RECENT_PICKUP_SECONDS
+			? [seconds(job.createdAtMs, job.startedAtMs)]
+			: [],
+	);
+	const longest = (values: readonly number[]) =>
+		values.reduce((most, value) => Math.max(most, value), 0);
 	return {
 		queued: waits.length,
-		oldestWaitSeconds: waits.reduce(
-			(oldest, wait) => Math.max(oldest, wait),
-			0,
-		),
+		oldestWaitSeconds: longest(waits),
+		slowestRecentPickupSeconds: longest(pickups),
 	};
+}
+
+/**
+ * A backend is taking jobs when nothing has waited for it past the limit, it
+ * has not been slow to pick up what it took recently, and fewer jobs than the
+ * limit are already waiting. The last is what a wait alone misses: a queue
+ * that was just emptied and refilled is full long before its oldest job is old.
+ */
+export function takingJobs(load: LabelLoad, limits: RouteLimits): boolean {
+	return (
+		load.oldestWaitSeconds < limits.maxWaitSeconds &&
+		load.slowestRecentPickupSeconds < limits.maxWaitSeconds &&
+		load.queued < limits.maxQueued
+	);
 }
 
 export function parseRouteMode(value: string | undefined): RouteMode {
@@ -75,10 +121,14 @@ export function parseRouteMode(value: string | undefined): RouteMode {
 	return mode ?? "auto";
 }
 
-function describeWait(name: string, wait: LabelWait): string {
-	return wait.queued === 0
-		? `${name} has nothing waiting`
-		: `${name} has ${wait.queued} waiting, the oldest for ${wait.oldestWaitSeconds} s`;
+function describeLoad(name: string, load: LabelLoad): string {
+	const waiting =
+		load.queued === 0
+			? `${name} has nothing waiting`
+			: `${name} has ${load.queued} waiting, the oldest for ${load.oldestWaitSeconds} s`;
+	return load.slowestRecentPickupSeconds === 0
+		? waiting
+		: `${waiting}, and recently took ${load.slowestRecentPickupSeconds} s to pick a job up`;
 }
 
 /**
@@ -89,11 +139,11 @@ export function routeRunner(input: {
 	mode: RouteMode;
 	fleetLabel: string;
 	localEnrolled: boolean;
-	maxWaitSeconds: number;
-	fleet: LabelWait;
-	local: LabelWait;
+	limits: RouteLimits;
+	fleet: LabelLoad;
+	local: LabelLoad;
 }): RouteDecision {
-	const { mode, fleetLabel, maxWaitSeconds } = input;
+	const { mode, fleetLabel, limits } = input;
 	if (mode === "fleet")
 		return {
 			tier: "fleet",
@@ -112,22 +162,20 @@ export function routeRunner(input: {
 			runner: LOCAL_HOST_RUNNER_LABEL,
 			reason: "routing is pinned to the local box",
 		};
-	const taking = (wait: LabelWait) =>
-		wait.oldestWaitSeconds < maxWaitSeconds ? 1 : 0;
 	const members = [
 		{
 			id: "fleet",
 			backend: "hobo",
 			enabled: true,
 			runsOn: fleetLabel,
-			freeSlots: taking(input.fleet),
+			freeSlots: takingJobs(input.fleet, limits) ? 1 : 0,
 		},
 		{
 			id: "local",
 			backend: "local",
 			enabled: input.localEnrolled,
 			runsOn: LOCAL_HOST_RUNNER_LABEL,
-			freeSlots: taking(input.local),
+			freeSlots: takingJobs(input.local, limits) ? 1 : 0,
 		},
 		{
 			id: "github",
@@ -138,18 +186,18 @@ export function routeRunner(input: {
 		},
 	] satisfies FleetMember[];
 	const selected = selectFleetBackend({ members, currentLabels: [] });
-	const waits = [
-		describeWait("the fleet", input.fleet),
+	const loads = [
+		describeLoad("the fleet", input.fleet),
 		input.localEnrolled
-			? describeWait("the local box", input.local)
+			? describeLoad("the local box", input.local)
 			: "no local box is enrolled",
 	].join("; ");
 	if (!selected || selected.backend === "hobo")
-		return { tier: "fleet", runner: fleetLabel, reason: waits };
+		return { tier: "fleet", runner: fleetLabel, reason: loads };
 	return {
 		tier: selected.backend === "local" ? "local" : "github",
 		runner: selected.runsOn,
-		reason: `${waits}; the limit is ${maxWaitSeconds} s`,
+		reason: `${loads}; the limits are ${limits.maxWaitSeconds} s and ${limits.maxQueued} waiting`,
 	};
 }
 
@@ -202,29 +250,41 @@ export function unfinishedRunIds(
 		.sort((left, right) => left - right);
 }
 
-/** The queued jobs on one page of a run's job list. */
-export function queuedJobs(jobsPage: JsonValue): QueuedJob[] {
+/**
+ * The jobs on one page of a run's job list that say something about a
+ * backend: those still queued, and those a runner has taken.
+ */
+export function seenJobs(jobsPage: JsonValue): SeenJob[] {
 	return asList(asObject(jobsPage)?.jobs).flatMap((entry) => {
 		const job = asObject(entry);
-		const createdAt = Date.parse(asText(job?.created_at) ?? "");
+		const createdAtMs = Date.parse(asText(job?.created_at) ?? "");
 		const runId = asNumber(job?.run_id);
-		if (!job || asText(job.status) !== "queued") return [];
-		if (runId === undefined || Number.isNaN(createdAt)) return [];
-		return [
-			{
-				runId,
-				labels: asList(job.labels).flatMap((label) => asText(label) ?? []),
-				createdAtMs: createdAt,
-			},
-		];
+		if (!job || runId === undefined || Number.isNaN(createdAtMs)) return [];
+		const labels = asList(job.labels).flatMap((label) => asText(label) ?? []);
+		if (asText(job.status) === "queued")
+			return [{ runId, labels, createdAtMs }];
+		const startedAtMs = Date.parse(asText(job.started_at) ?? "");
+		// A job that was skipped or cancelled before it ran never had a runner.
+		if (!asText(job.runner_name) || Number.isNaN(startedAtMs)) return [];
+		return [{ runId, labels, createdAtMs, startedAtMs }];
 	});
+}
+
+/** Oldest and newest alternately: old runs show long waits, new ones a queue filling up. */
+export function lookupOrder(runIds: readonly number[]): number[] {
+	const ordered: number[] = [];
+	for (let low = 0, high = runIds.length - 1; low <= high; low++, high--) {
+		ordered.push(runIds[low] ?? 0);
+		if (high > low) ordered.push(runIds[high] ?? 0);
+	}
+	return ordered;
 }
 
 export type QueueReader = (path: string) => Promise<JsonValue>;
 
 /**
- * Reads the queue until a label is seen waiting past the limit, or the oldest
- * runs are exhausted. The unfiltered run list is used because the
+ * Reads the queue until every label is seen not taking jobs, or the runs to
+ * read are exhausted. The unfiltered run list is used because the
  * status-filtered one has gone on reporting no runs while runs were queued.
  */
 export async function observeQueue(input: {
@@ -232,28 +292,28 @@ export async function observeQueue(input: {
 	repository: string;
 	ownRunId: number;
 	labels: readonly string[];
-	maxWaitSeconds: number;
+	limits: RouteLimits;
 	nowMs: number;
-}): Promise<QueuedJob[]> {
-	const runs = unfinishedRunIds(
-		await input.read(`/repos/${input.repository}/actions/runs?per_page=100`),
-		input.ownRunId,
+}): Promise<SeenJob[]> {
+	const runs = lookupOrder(
+		unfinishedRunIds(
+			await input.read(`/repos/${input.repository}/actions/runs?per_page=100`),
+			input.ownRunId,
+		),
 	);
-	const seen: QueuedJob[] = [];
+	const seen: SeenJob[] = [];
 	for (const runId of runs.slice(0, MAX_RUN_LOOKUPS)) {
 		seen.push(
-			...queuedJobs(
+			...seenJobs(
 				await input.read(
 					`/repos/${input.repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
 				),
 			),
 		);
-		const everyLabelPastLimit = input.labels.every(
-			(label) =>
-				labelWait(seen, label, input.nowMs).oldestWaitSeconds >=
-				input.maxWaitSeconds,
+		const noneTaking = input.labels.every(
+			(label) => !takingJobs(labelLoad(seen, label, input.nowMs), input.limits),
 		);
-		if (everyLabelPastLimit) break;
+		if (noneTaking) break;
 	}
 	return seen;
 }
@@ -291,6 +351,11 @@ export function fleetLabelFor(
 		: "hobo";
 }
 
+function positiveInteger(value: string | undefined, fallback: number): number {
+	const parsed = Number(value);
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export async function main(
 	env: NodeJS.ProcessEnv = process.env,
 ): Promise<RouteDecision> {
@@ -300,11 +365,16 @@ export async function main(
 	);
 	const mode = parseRouteMode(env.HOBO_CI_ROUTE);
 	const localEnrolled = env.HOBO_CI_LOCAL_RUNNER === "true";
-	const requested = Number(env.HOBO_CI_ROUTE_MAX_WAIT_SECONDS);
-	const maxWaitSeconds =
-		Number.isInteger(requested) && requested > 0
-			? requested
-			: DEFAULT_MAX_WAIT_SECONDS;
+	const limits = {
+		maxWaitSeconds: positiveInteger(
+			env.HOBO_CI_ROUTE_MAX_WAIT_SECONDS,
+			DEFAULT_MAX_WAIT_SECONDS,
+		),
+		maxQueued: positiveInteger(
+			env.HOBO_CI_ROUTE_MAX_QUEUED,
+			DEFAULT_MAX_QUEUED,
+		),
+	};
 	const nowMs = Date.now();
 	let decision: RouteDecision;
 	try {
@@ -320,7 +390,7 @@ export async function main(
 						labels: localEnrolled
 							? [fleetLabel, LOCAL_HOST_RUNNER_LABEL]
 							: [fleetLabel],
-						maxWaitSeconds,
+						limits,
 						nowMs,
 					})
 				: [];
@@ -328,15 +398,16 @@ export async function main(
 			mode,
 			fleetLabel,
 			localEnrolled,
-			maxWaitSeconds,
-			fleet: labelWait(jobs, fleetLabel, nowMs),
-			local: labelWait(jobs, LOCAL_HOST_RUNNER_LABEL, nowMs),
+			limits,
+			fleet: labelLoad(jobs, fleetLabel, nowMs),
+			local: labelLoad(jobs, LOCAL_HOST_RUNNER_LABEL, nowMs),
 		});
 	} catch (error) {
-		// A queue that cannot be read is no evidence against the fleet.
+		// This job is running on a GitHub-hosted machine, so that tier is known
+		// to be up; with the queue unreadable, nothing is known about the others.
 		decision = {
-			tier: "fleet",
-			runner: fleetLabel,
+			tier: "github",
+			runner: DEFAULT_GITHUB_MACHINE_TYPE,
 			reason: `the queue could not be read (${error instanceof Error ? error.message : "unknown error"})`,
 		};
 	}
