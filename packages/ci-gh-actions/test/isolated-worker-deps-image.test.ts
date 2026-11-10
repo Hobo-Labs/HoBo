@@ -297,8 +297,12 @@ describe("isolated worker deps image selection", () => {
 		const lease = await reservedLease("hobo-labs/hobo", deadline);
 		const docker = fakeDocker();
 		let clock = NOW;
-		vi.spyOn(github, "request").mockImplementation(async () => {
-			if (stage === "registration") clock = deadline;
+		vi.spyOn(github, "request").mockImplementation(async (_installationId, path) => {
+			if (
+				stage === "registration" &&
+				path.includes("/actions/runners/generate-jitconfig")
+			)
+				clock = deadline;
 			return Response.json(
 				{ encoded_jit_config: "c2VjcmV0", runner: { id: 42 } },
 				{ status: 201 },

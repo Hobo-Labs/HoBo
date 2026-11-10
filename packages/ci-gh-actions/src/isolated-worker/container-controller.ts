@@ -14,6 +14,7 @@ import { z } from "zod";
 import { runnerDownloadFor } from "../bootstrap.js";
 import { type GithubTransport, getJob } from "../github.js";
 import { heldRoutingOptions } from "../held-routing.js";
+import { runnerCustody } from "../job-runner-custody.js";
 import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
 import {
@@ -261,6 +262,7 @@ export function createIsolatedContainerController(options: {
 			| "hobo_ci_job_pickup"
 			| "hobo_ci_launch_failed"
 			| "hobo_ci_launch_parked"
+			| "hobo_ci_launch_yielded_foreign_runner"
 			| "hobo_ci_work_dir_retired"
 			| "hobo_ci_work_dir_removed"
 			| "hobo_ci_work_dir_remove_failed"
@@ -885,8 +887,18 @@ export function createIsolatedContainerController(options: {
 			lease.repository,
 			lease.jobId,
 		);
-		// GitHub can assign a different job sharing the runner label.
-		const unmet = original.status === "queued" ? requeueJob(lease) : undefined;
+		const custody = runnerCustody(original.runner_name);
+		// GitHub can assign a different runner with the same `hobo` label (ARC, other box JIT).
+		const unmet =
+			original.status === "queued" && custody !== "foreign"
+				? requeueJob(lease)
+				: undefined;
+		if (original.status === "queued" && custody === "foreign") {
+			await options.store.withdrawQueuedJob?.(
+				requeueJob(lease),
+				observedAt,
+			);
+		}
 		await options.store.settle(
 			lease.id,
 			0,
@@ -1080,6 +1092,63 @@ export function createIsolatedContainerController(options: {
 					);
 					if (!claiming)
 						throw new Error("reservation changed before runner registration");
+					let githubJob: Awaited<ReturnType<typeof getJob>> | undefined;
+					try {
+						githubJob = await getJob(
+							options.github,
+							claiming.installationId,
+							claiming.repository,
+							claiming.actualJobId > 0
+								? claiming.actualJobId
+								: claiming.jobId,
+						);
+					} catch {
+						/* registration may still fail closed into uncertain */
+					}
+					const custody = runnerCustody(githubJob?.runner_name);
+					if (
+						githubJob &&
+						(custody === "foreign" ||
+							(githubJob.status === "in_progress" &&
+								githubJob.runner_name &&
+								githubJob.runner_name !== claiming.runnerName))
+					) {
+						options.log?.("hobo_ci_launch_yielded_foreign_runner", {
+							jobId: claiming.jobId,
+							runId: claiming.originalRunId,
+							runnerName: githubJob.runner_name ?? "",
+							status: githubJob.status,
+						});
+						try {
+							await options.docker.stop(name, containerId);
+							await options.docker.remove(name, containerId);
+						} catch {
+							/* recovery tick retries */
+						}
+						await options.store.withdrawQueuedJob?.(
+							requeueJob(claiming),
+							now(),
+							auth.revision,
+						);
+						await options.store.transition(
+							id,
+							["claiming"],
+							(entry) => {
+								entry.state = "cancelled";
+							},
+							"ci.LeaseCancelled",
+							now(),
+							auth.revision,
+						);
+						launchLoops.delete(
+							launchKey(
+								claiming.repositoryId,
+								claiming.jobId,
+								claiming.runAttempt,
+							),
+						);
+						return;
+					}
 					stage = "jit";
 					assertQueueDeadline(planned, now());
 					registrationAttempted = true;
