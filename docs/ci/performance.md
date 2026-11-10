@@ -88,6 +88,11 @@ unindexed new finding files as notices.
 - [Finding 75: blobless gitleaks never wrote an exit file](./findings/0075-blobless-gitleaks-never-wrote-an-exit-file.md)
 - [Finding 76: scripts/ci and docs rebuilt every release image](./findings/0076-scripts-ci-and-docs-rebuilt-every-release-image.md)
 - [Finding 77: Fabric rebuilt deps on an unauthenticated GHCR miss](./findings/0077-fabric-rebuilt-deps-on-an-unauthenticated-ghcr-miss.md)
+- [Finding 78: sparse S0 omitted media/package.json](./findings/0078-sparse-s0-omitted-media-package-json.md)
+- [Finding 79: box git mirror not mounted](./findings/0079-box-git-mirror-not-mounted.md)
+- [Finding 80: sparse S0 nested file pathspec](./findings/0080-sparse-s0-nested-file-pathspec.md)
+- [Finding 81: a CI-only tool pin planned the whole workspace](./findings/0081-a-ci-only-tool-pin-planned-the-whole-workspace.md)
+- [Finding 82: eight test shards started for plans of zero to four suites](./findings/0082-eight-test-shards-started-for-plans-of-zero-to-four-suites.md)
 <!-- findings-index:end -->
 
 ## Data

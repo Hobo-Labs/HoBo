@@ -202,7 +202,7 @@ describe("release OCI app staging", () => {
 				spec.packageName,
 				"deploy",
 				"--prod",
-				"--offline",
+				"--prefer-offline",
 				"--config.inject-workspace-packages=true",
 				"--cpu=current",
 				"--os=current",
