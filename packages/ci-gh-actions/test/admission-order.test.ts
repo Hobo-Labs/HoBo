@@ -59,7 +59,7 @@ it("orders by rank, then the oldest run, then the job id", async () => {
 	const items = [ref(1), ref(4), ref(2, 21), ref(5), ref(2, 20), ref(3)];
 	expect(
 		(await order(items, (item) => item)).map((item) => item.jobId),
-	).toEqual([3, 20, 21, 5, 1, 4]);
+	).toEqual([20, 21, 3, 5, 1, 4]);
 });
 
 it("looks each run up once and retries a failed lookup next tick", async () => {

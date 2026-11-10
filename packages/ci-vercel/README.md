@@ -140,11 +140,17 @@ the latest successful and failed processing times. The Vercel function is
 stateless: it reads the current policy snapshot from PostgreSQL on each operation,
 and never treats a process-local cache or a queue wakeup as the event-store.
 
-A scheduler calls the authenticated repair endpoint every 15 minutes; it submits
-a repair message to the private queue. Normal work uses an immediate queue
-wakeup. The HoBo deployment uses a Neon scheduled trigger; operators using Vercel
-Cron must configure it explicitly and observe their plan's schedule limits. The
-queue schedules a delayed continuation for larger delivery histories.
+A Vercel Schedule named `hobo-ci-repair`, declared in `vercel.json`, publishes a
+repair message to the private `hobo-ci` queue every 15 minutes. The target is
+the queue topic, not a URL, so no shared secret is involved and nothing public
+can trigger it; the consumer accepts only that schedule name. Fifteen minutes is
+the shortest interval Vercel's Hobby plan allows, and that plan adds up to 15
+minutes of jitter. Every deployment declares the schedule, so a deployment
+outside production acknowledges the scheduler's run without working it. Normal
+work uses an immediate queue wakeup, and the queue schedules a delayed
+continuation for larger delivery histories. `GET /internal/tick` remains for an
+operator's own scheduler; an earlier Neon scheduled trigger used it and can be
+retired once the schedule is seen running.
 
 Production queue messages stay pinned to their publishing deployment. Each
 new callback forwards a validated wakeup to the canonical relay and acknowledges
@@ -158,19 +164,83 @@ queue operations and Functions can incur usage charges according to the chosen
 plans. A temporary deployment or Vercel Drop alone is not a durable inbound App
 endpoint.
 
+## Hosting the relay and its database on Vercel
+
+The relay is a Vercel Function plus a private queue consumer and a schedule; all
+three are declared in `vercel.json` and need nothing outside Vercel. Its
+database cannot be a container on Vercel. Vercel's container runtime and
+Daemons have no persistent disk; Vercel's own guide says "You can't run your
+own Postgres or Redis container with local disk" and that durable storage
+attached to containers "has not shipped". Vercel's first-party storage is Blob
+and Global Config, neither of which is a database. PostgreSQL on Vercel is a
+Marketplace store (Storage tab), and the ones that are not Neon are Supabase,
+Prisma Postgres and Amazon Aurora PostgreSQL.
+
+| Store | Fit | Watch for |
+| --- | --- | --- |
+| Supabase | Always-on instance; a session-mode endpoint for repair | If the connection fails with `unable to verify the first certificate`, its certificates chain to Supabase's own root: set `HOBO_CI_DATABASE_CA_CERT` |
+| Prisma Postgres | Direct and pooled strings | The free plan is metered by operations (200,000 a month); a relay that polls can exhaust it, the same kind of plan quota that stopped the Neon database |
+| Aurora PostgreSQL | Durable, billed by AWS | Authenticates with short-lived IAM tokens instead of a URL; the relay does not support that yet |
+
+To move the relay onto one:
+
+1. In the Vercel project, open Storage, create the store and connect it to the
+   project's Production environment. If the old store is still connected, give
+   the new one a prefix and set `HOBO_CI_DATABASE_ENV_PREFIX` to it.
+2. If the provider's certificates chain to its own root, add that root
+   certificate as `HOBO_CI_DATABASE_CA_CERT`.
+3. Redeploy. The relay creates its tables on first use. A new database has no
+   GitHub App record, so the relay starts in bootstrap mode; complete
+   [GitHub onboarding](../ci-gh-actions/ONBOARDING.md) again, or restore the old
+   database into the new one first to keep the existing App.
+4. Confirm `GET /readyz` and disconnect the old store.
+
+`scripts/bootstrap-postgres-contract.ts` runs the whole relay flow against a
+real PostgreSQL. `HOBO_CI_TEST_POSTGRES_BINDING` (`supabase`,
+`prisma-postgres`) makes it use a provider's variable names and
+`HOBO_CI_TEST_POSTGRES_CA_FILE` a private certificate authority; it passes
+under all three bindings against a TLS-only PostgreSQL 16. It has not been run
+against a hosted Supabase or Prisma Postgres database.
+
+One dependency on Neon remains outside the database. Production reads its
+GitHub App and control secrets from a broker hosted on Neon when
+`HOBO_CI_GITHUB_APP_ID` and `HOBO_CI_BOOTSTRAP_TOKEN_SHA256` are both unset;
+setting the relay's secrets as Vercel environment variables takes that path
+out of use. The Neon scheduled trigger is replaced by the Vercel Schedule
+above.
+
 Node 24 is required. Bootstrap mode uses these Vercel secret bindings:
 
-- `DATABASE_URL`: a PostgreSQL connection, preferably pooled.
-- `DATABASE_URL_UNPOOLED`: a direct connection to the same PostgreSQL database
-  and role, required after GitHub App bootstrap. Repair scanners hold session
-  advisory locks across requests; transaction-pooling endpoints cannot provide
-  this guarantee. Neon supplies both variables through its Vercel integration.
-  Neon pooler URLs are rejected for the direct connection. Each repair checks
-  the two connections against a committed random database marker before using
-  it. For other providers, the operator must supply a true direct endpoint.
-  A repair invocation opens at most one direct connection and closes it after
-  use. Concurrent repair invocations each require a separate connection; there
-  is no global concurrency cap, so database connection limits constrain scale.
+- The database, as one pooled and one session-scoped connection string to the
+  same PostgreSQL database and role. The relay reads the names a Vercel storage
+  integration injects, so connecting a store needs no hand-copied value:
+
+  | Store | Pooled (HTTP traffic) | Session-scoped (repair) |
+  | --- | --- | --- |
+  | Any PostgreSQL, set by hand | `DATABASE_URL` | `DATABASE_URL_UNPOOLED` |
+  | Prisma Postgres | `DATABASE_URL_POOLED` | `DATABASE_URL` |
+  | Supabase | `POSTGRES_URL` | `POSTGRES_URL_NON_POOLING` |
+
+  The first row wins when both of its names are set. The session-scoped
+  connection is required after GitHub App bootstrap: repair scanners hold
+  session advisory locks across requests, which a transaction-mode pooler
+  cannot provide. Known poolers are refused for it by address (Neon `-pooler`
+  hosts, `pooled.db.prisma.io`, and Supabase's pooler host on port 6543; its
+  port 5432 is session mode). Each repair checks the two connections against a
+  committed random database marker before using it. For any other provider the
+  operator must supply a true session endpoint. A repair invocation opens at
+  most one such connection and closes it after use. Concurrent repair
+  invocations each require a separate connection; there is no global
+  concurrency cap, so database connection limits constrain scale.
+- `HOBO_CI_DATABASE_ENV_PREFIX` (optional): read the names above under this
+  prefix, for a store connected with one (`RELAY_` reads `RELAY_POSTGRES_URL`).
+  This is how a new store is attached and selected while the old one is still
+  connected.
+- `HOBO_CI_DATABASE_CA_CERT` (optional): the PEM certificate authority of a
+  database whose server certificate chains to the provider's own root, as
+  Supabase's and Amazon RDS's do. The certificate is verified against it;
+  verification is never switched off. Without it such a connection fails with
+  `unable to verify the first certificate`.
 - `HOBO_CI_PUBLIC_URL`: the stable HTTPS origin used by GitHub.
 - `HOBO_CI_SESSION_KEY`: a canonical, unpadded base64url encoding of 32 random bytes.
 - `HOBO_CI_BOOTSTRAP_ACCOUNT_ID` and `HOBO_CI_BOOTSTRAP_TOKEN_SHA256`: the owner
@@ -279,6 +349,42 @@ The sandbox proxy bundle also lives in `src/_generated-assets/`: this directory
 keeps non-protobuf generators out of the protobuf-owned `src/_generated/` tree.
 The local persistent listener can wait without an age-based deadline; the
 embedded hosted bridge still supplies and enforces its lease timeout.
+
+### Liveness, readiness and back-off
+
+- `/healthz` answers 200 from the process alone. It never touches the database, so a probe can tell
+  "restart me" from "my store is down".
+- `/readyz` answers 503 with a `reason` a probe can act on: `store-unavailable` when the GitHub App
+  bootstrap store cannot be reached, `bootstrap-required` when no App is registered yet.
+- After the store fails it is left alone before the next attempt: 5 s, doubling to a minute. Every
+  request used to dial it again.
+- A 503 for an unavailable store carries `Retry-After: 5`.
+
+With `HOBO_CI_EVENTS_URL` set, each failure below is also delivered as a CloudEvent (see the
+[runner queue runbook](../ci/RUNNER-QUEUE.md)).
+
+### Failure log
+
+Every path that refuses a request with a fixed 503 body also writes one JSON line to stderr, so the
+platform's runtime logs show why. Before this the relay failed silently: a relay that could not
+start looked like a relay nobody was calling.
+
+| Event | When | Fields |
+|---|---|---|
+| `hobo_ci_relay_init_failed` | Startup failed; every request answers 503 until it succeeds | `stage`: `runtime-config` (identity token, runtime broker) or `application` |
+| `hobo_ci_relay_request_failed` | A request threw after startup, including the GitHub App bootstrap store failing to load | `method`, `route`, `headersSent` |
+| `hobo_ci_webhook_ingest_failed` | A signed delivery could not be committed (GitHub redelivers) | `event` |
+| `hobo_ci_control_failed` | An account or registration API call threw | `method`, `route` |
+| `hobo_ci_ready_check_failed` | The readiness check itself threw | none |
+
+The GitHub App bootstrap store reports `bootstrap store initialization failed` with the database
+error as its cause, so the line shows why the store could not be reached.
+
+Each line carries the error's class, its message and its cause's message, with URL credentials and
+anything shaped like a token removed and the text capped at 300 characters. A route has its
+identifiers replaced. One line per event name is written every 10 seconds per instance; `suppressed`
+counts the ones held back since the last line. No request body, header or credential is logged, and
+a failing logger never changes the response.
 
 ## Postgres schema
 

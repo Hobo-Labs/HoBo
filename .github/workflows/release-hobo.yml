@@ -48,6 +48,7 @@ on:
       - "scripts/lib/release-version.mts"
       - "scripts/lib/release-oci-contract.mts"
       - "scripts/test/release-oci-affected.test.ts"
+      - "scripts/test/release-oci-attest-contract.test.ts"
       - "scripts/test/release-oci-image-contract.test.ts"
       - "scripts/test/release-sparse-cone.test.ts"
       - "scripts/test/release-version.test.ts"
@@ -103,6 +104,7 @@ on:
       - "scripts/lib/release-version.mts"
       - "scripts/lib/release-oci-contract.mts"
       - "scripts/test/release-oci-affected.test.ts"
+      - "scripts/test/release-oci-attest-contract.test.ts"
       - "scripts/test/release-oci-image-contract.test.ts"
       - "scripts/test/release-sparse-cone.test.ts"
       - "scripts/test/release-version.test.ts"
@@ -264,7 +266,28 @@ jobs:
         if: github.event_name != 'push'
         run: pnpm run lint:shell:changed -- --base=HEAD^1
       - name: npm scope map + OCI manifest contract
-        run: pnpm exec vitest run scripts/test/release-oci-affected.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/stage-sdk-artifacts.test.ts scripts/test/build-release-site-prebuild.test.ts scripts/test/nbgv-release-version.test.ts
+        id: release_contract_tests
+        run: >-
+          node --no-warnings scripts/ci/run-job-command-report.mts
+          --label release-contract-vitest --
+          pnpm exec vitest run
+          scripts/test/release-contract-vitest-scope.test.ts
+          scripts/test/release-oci-affected.test.ts
+          scripts/test/release-oci-attest-contract.test.ts
+          scripts/test/release-oci-image-contract.test.ts
+          scripts/test/release-sparse-cone.test.ts
+          scripts/test/release-version.test.ts
+          scripts/test/stage-release-oci-app.test.ts
+          scripts/test/stage-sdk-artifacts.test.ts
+          scripts/test/build-release-site-prebuild.test.ts
+          scripts/test/nbgv-release-version.test.ts
+      - name: Upload release contract vitest log
+        if: failure() && steps.release_contract_tests.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vitest-release-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/hobo-ci-job-logs/release-contract-vitest.log
+          if-no-files-found: ignore
       - name: npm pack dry-run (allowlist staging)
         run: |
           set -euo pipefail

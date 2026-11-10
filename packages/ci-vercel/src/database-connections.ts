@@ -1,10 +1,109 @@
 import { randomUUID } from "node:crypto";
 
-/** Session advisory locks must use a direct PostgreSQL connection, not Neon's
- * transaction-mode PgBouncer endpoint. Other direct endpoints are supplied by
- * the operator and cannot be identified reliably from a URL. */
-export function validateDirectDatabaseUrl(value: string | undefined): string {
-	if (!value) throw new Error("DATABASE_URL_UNPOOLED is required for repair");
+/** The pooled and direct connection strings of one PostgreSQL database, and
+ * the variable names they were read from. Names only: a value never leaves. */
+export type DatabaseUrls = {
+	binding: "explicit" | "prisma-postgres" | "supabase";
+	primary: string;
+	primaryName: string;
+	direct: string | undefined;
+	directName: string;
+};
+
+/** Find the relay's database in the variables a Vercel storage integration
+ * injects, so connecting a store needs no hand-copied connection string.
+ *
+ * `DATABASE_URL` + `DATABASE_URL_UNPOOLED` is the explicit pair (any
+ * self-managed PostgreSQL). Prisma Postgres inverts the meaning of
+ * `DATABASE_URL`: it is the direct string and `DATABASE_URL_POOLED` the pooled
+ * one. Supabase supplies `POSTGRES_URL` and `POSTGRES_URL_NON_POOLING`.
+ * `HOBO_CI_DATABASE_ENV_PREFIX` selects a store connected under a prefix, which
+ * is how two stores coexist while one replaces the other. */
+export function resolveDatabaseUrls(env: NodeJS.ProcessEnv): DatabaseUrls {
+	const prefix = env.HOBO_CI_DATABASE_ENV_PREFIX ?? "";
+	if (prefix && !/^[A-Za-z][A-Za-z0-9_]*$/.test(prefix))
+		throw new Error("invalid HOBO_CI_DATABASE_ENV_PREFIX");
+	const read = (name: string) => env[`${prefix}${name}`] || undefined;
+	const named = (name: string) => `${prefix}${name}`;
+	const explicit = read("DATABASE_URL");
+	const unpooled = read("DATABASE_URL_UNPOOLED");
+	if (explicit && unpooled)
+		return {
+			binding: "explicit",
+			primary: explicit,
+			primaryName: named("DATABASE_URL"),
+			direct: unpooled,
+			directName: named("DATABASE_URL_UNPOOLED"),
+		};
+	const prismaPooled = read("DATABASE_URL_POOLED");
+	if (prismaPooled)
+		return {
+			binding: "prisma-postgres",
+			primary: prismaPooled,
+			primaryName: named("DATABASE_URL_POOLED"),
+			direct: explicit,
+			directName: named("DATABASE_URL"),
+		};
+	const supabase = read("POSTGRES_URL");
+	if (supabase && !explicit)
+		return {
+			binding: "supabase",
+			primary: supabase,
+			primaryName: named("POSTGRES_URL"),
+			direct: read("POSTGRES_URL_NON_POOLING"),
+			directName: named("POSTGRES_URL_NON_POOLING"),
+		};
+	if (explicit)
+		return {
+			binding: "explicit",
+			primary: explicit,
+			primaryName: named("DATABASE_URL"),
+			direct: undefined,
+			directName: named("DATABASE_URL_UNPOOLED"),
+		};
+	throw new Error(`missing configuration: ${named("DATABASE_URL")}`);
+}
+
+/** Connection parameters that would replace a configured certificate
+ * authority if left in the connection string. */
+const TLS_PARAMETERS = [
+	"ssl",
+	"sslmode",
+	"sslrootcert",
+	"sslcert",
+	"sslkey",
+	"uselibpqcompat",
+];
+
+/** Pool settings for one connection string. A provider whose server
+ * certificate chains to its own root (Supabase, Amazon RDS) needs that root:
+ * `HOBO_CI_DATABASE_CA_CERT` carries the PEM and the certificate is then
+ * verified against it. Verification is never switched off. */
+export function databaseConnection(url: string, ca: string | undefined) {
+	if (!ca) return { connectionString: url };
+	if (!ca.includes("-----BEGIN CERTIFICATE-----"))
+		throw new Error("HOBO_CI_DATABASE_CA_CERT is not a PEM certificate");
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		throw new Error("invalid database URL");
+	}
+	for (const name of TLS_PARAMETERS) parsed.searchParams.delete(name);
+	return { connectionString: parsed.toString(), ssl: { ca } };
+}
+
+/** Session advisory locks must use a session-scoped PostgreSQL connection, not
+ * a transaction-mode pooler. The known poolers are refused by address: Neon's
+ * `-pooler` endpoints, Prisma Postgres's `pooled.db.prisma.io`, and Supabase's
+ * pooler host on its transaction port 6543 (its port 5432 is session mode).
+ * Other endpoints are supplied by the operator and cannot be identified
+ * reliably from a URL. */
+export function validateDirectDatabaseUrl(
+	value: string | undefined,
+	name = "DATABASE_URL_UNPOOLED",
+): string {
+	if (!value) throw new Error(`${name} is required for repair`);
 	let parsed: URL;
 	try {
 		parsed = new URL(value);
@@ -21,7 +120,9 @@ export function validateDirectDatabaseUrl(value: string | undefined): string {
 		parsed.searchParams.has("host") ||
 		parsed.searchParams.has("hostaddr") ||
 		parsed.searchParams.has("service") ||
-		(host.endsWith(".neon.tech") && host.split(".")[0]?.endsWith("-pooler"))
+		(host.endsWith(".neon.tech") && host.split(".")[0]?.endsWith("-pooler")) ||
+		host === "pooled.db.prisma.io" ||
+		(host.endsWith(".pooler.supabase.com") && parsed.port === "6543")
 	)
 		throw new Error("repair requires a direct PostgreSQL URL");
 	return value;
