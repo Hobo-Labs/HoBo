@@ -83,6 +83,13 @@ describe("toCiCloudEvent", () => {
 		expect(CI_INFRA_EVENT_TYPES.get("hobo_ci_relay_init_failed")).toBe(
 			"ci.RelayStartFailed",
 		);
+		// What a mesh node says about the jobs it took is delivered too.
+		expect(CI_INFRA_EVENT_TYPES.get("hobo_ci_mesh_job_dropped")).toBe(
+			"ci.MeshJobDropped",
+		);
+		expect(CI_INFRA_EVENT_TYPES.get("hobo_ci_mesh_reliability")).toBe(
+			"ci.MeshReliabilityChanged",
+		);
 	});
 });
 

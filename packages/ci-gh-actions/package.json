@@ -4,7 +4,9 @@
   "description": "HoBo CI GitHub Actions webhook relay and ephemeral runner providers",
   "license": "MIT",
   "type": "module",
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "LICENSE",
     "dist",
@@ -29,6 +31,10 @@
       "types": "./dist/runner-integrations.d.ts",
       "default": "./dist/runner-integrations.js"
     },
+    "./mesh-nats": {
+      "types": "./dist/mesh-nats.d.ts",
+      "default": "./dist/mesh-nats.js"
+    },
     "./cli-serve": {
       "types": "./dist/cli-serve-entry.d.ts",
       "default": "./dist/cli-serve-entry.js"
@@ -44,6 +50,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.db.json",
     "lint": "biome check .",
+    "mesh:demo": "node --experimental-strip-types --no-warnings scripts/mesh-demo.mts",
     "test": "vitest run",
     "test:deep": "vitest run --config vitest.deep.config.ts",
     "db:generate": "node --import tsx ../ci/db/tooling/cli.mts generate",
@@ -73,6 +80,9 @@
     "@hobo/ci": "workspace:*",
     "@hobo/core": "workspace:*",
     "@hobo/provider-redaction": "workspace:*",
+    "@nats-io/jetstream": "3.4.0",
+    "@nats-io/kv": "3.4.0",
+    "@nats-io/transport-node": "3.4.0",
     "pg": "8.22.0",
     "zod": "^4.1.13"
   },
@@ -83,6 +93,7 @@
     "@hobo/ci-cf": "workspace:*",
     "@hobo/ci-dagger": "workspace:*",
     "@hobo/redaction-test-harness": "workspace:*",
+    "@hobo/stations": "workspace:*",
     "@pact-foundation/pact": "17.1.4",
     "@types/pg": "8.15.5",
     "drizzle-orm": "0.45.4",

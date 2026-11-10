@@ -58,7 +58,9 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`provider-pricing-commercial-terms.md`](./provider-pricing-commercial-terms.md) | Provider commercial terms and deterministic fail-closed quotes in `@hobo/pricing`; dispatcher v1 unchanged (ADR-0176) | — |
 | [`provider-pricing-scorecard.md`](./provider-pricing-scorecard.md) | Acceptance scorecard for provider pricing design (§1, §10, §12–§14); CI-enforced via `@hobo/pricing` design-scorecard eval | — |
 | [`hosting-budget-transitions.md`](./hosting-budget-transitions.md) | Budgeted hosting placement and movement: effects, financial reservations, durable reconciliation, observed recovery and settlement | — |
+| [`ci-fleet-balancing.md`](./ci-fleet-balancing.md) | CI fleet balancing: per-provider runner financial models rated by `@hobo/pricing`, admission through the shared budget policy, and the `HOBO_CI_FLEET_ROUTES` route table for label providers (`packages/ci/src/fleet/`) | — |
 | [`ci-runner-balancing-example.md`](./ci-runner-balancing-example.md) | CI runner balancing reference example + dogfood record: credit-aware dispatch of this repo's CI across GitHub-hosted, self-hosted, and third-party runner providers (`examples/ci-runner-balancing/`) | — |
+| [`ci-relay-mesh.md`](./ci-relay-mesh.md) | Proposal: the CI relay as a mesh of equal nodes. Each node reads GitHub's queue and starts its own runners; nodes agree on who starts a job by weighted rendezvous ranking and a per-rank delay, so no relay is a single point of failure. Claiming core implemented in `@hobo/ci/mesh`; not yet wired | — |
 | [`security-networking.md`](./security-networking.md#plan-12) | Security, networking & multi-tenant applications | 12, 50 |
 | [`developer-experience.md`](./developer-experience.md#plan-07) | Developer experience: dashboards, CLI, status pages & availability | 07, 49 |
 | [`cli-spec.md`](./cli-spec.md) | Canonical CLI verb surface + lifecycle semantics | — |

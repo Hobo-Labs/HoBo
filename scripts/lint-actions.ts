@@ -36,7 +36,39 @@ const activeCiFiles = new Set([
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
 ]);
-const allowedEnabled = new Set([acceptanceFile, ...activeCiFiles]);
+/**
+ * The probe: one job per self-hosted label, there only to be picked up, so the
+ * route job can tell which labels have a runner behind them.
+ */
+const probeFile = "fleet-probe.yml";
+const PROBE_RUNS_ON = new Set(["hobo", "hobo-trunk", "hobo-local-host"]);
+const allowedEnabled = new Set([acceptanceFile, probeFile, ...activeCiFiles]);
+
+/**
+ * The probe asks for each label by name, which no other workflow may, so it
+ * may do nothing else: no action, no checkout, no repository code.
+ */
+function lintProbeWorkflow(errors: string[], text: string): void {
+	const lines = text.split("\n");
+	for (const [index, line] of lines.entries()) {
+		const runsOn = /^\s*runs-on:\s*(.*?)\s*$/.exec(line)?.[1];
+		if (runsOn !== undefined && !PROBE_RUNS_ON.has(runsOn))
+			errors.push(
+				`${probeFile}:${index + 1}: a probe job must ask for one self-hosted label by name (${[...PROBE_RUNS_ON].join(", ")})`,
+			);
+		if (/^\s*-?\s*uses:/.test(line))
+			errors.push(
+				`${probeFile}:${index + 1}: the probe must not use an action or check anything out`,
+			);
+		const run = /^\s*-?\s*run:\s*(.*?)\s*$/.exec(line)?.[1];
+		if (run !== undefined && run !== '"true"')
+			errors.push(
+				`${probeFile}:${index + 1}: a probe step must do nothing (run: "true")`,
+			);
+	}
+	if (!/^permissions: \{\}$/m.test(text))
+		errors.push(`${probeFile}: the probe must hold no permissions`);
+}
 
 /** The one runner choice besides `hobo`: trunk events may ask for the box's trunk label. */
 const TRUNK_RUNS_ON =
@@ -251,6 +283,10 @@ function lintWorkflowYaml(
 	requireDisabledJobs: boolean,
 ) {
 	lintWorkflowYamlStrict(errors, file, text);
+	if (file === probeFile && !requireDisabledJobs) {
+		lintProbeWorkflow(errors, text);
+		return;
+	}
 	const lines = text.split(/\r?\n/);
 	const jobsIndex = lines.findIndex((line) => line === "jobs:");
 	if (jobsIndex === -1) {

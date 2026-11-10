@@ -536,6 +536,57 @@ const policy = defineCiPolicy({
 
 Optional fleet overflow stays disabled in [`.hobo/ci.json`](../../.hobo/ci.json). Enable `github-hosted` (`ubuntu-24.04`) or `hostinger-arc` (kubernetes scale set, `runsOn: hobo-arc`) only when a full hobo fleet should spill. The default machine type is `ubuntu-24.04`. Policy and `#CiPolicyProvider` CUE both reject `ubuntu-latest` (invalid fixture `desired-policy-github-latest.json`). Bound overflow labels are not re-relayed to hobo, and ARC leases are not aborted as isolated hosts. See [RUNNER-QUEUE.md](./RUNNER-QUEUE.md).
 
+### Balance a fleet
+
+`balanceFleet` chooses a runner provider for a job from `RUNNER_FINANCIAL_MODELS`,
+one model per provider machine class with its rate, rounding, plan fee, included
+minutes, limits and source. Each candidate is rated by the `@hobo/pricing` quote
+engine through dispatcher v2 and then admitted or refused by
+`evaluateBudgetPolicy`; the result lists every admitted member, best first, and
+a coded refusal for each of the others.
+
+```ts
+import {
+  balanceFleet,
+  fleetAccountExposure,
+  fleetBudgetPolicy,
+  fleetMembersFromAccount,
+} from "@hobo/ci";
+
+const decision = balanceFleet({
+  members: fleetMembersFromAccount(account, leases, { poolLabel: "hobo" }),
+  demand: {
+    id: "Hobo-Labs/HoBo:42:7:1",
+    minutes: 20,
+    repository: { visibility: "public", ownerType: "organization" },
+    forkPullRequest: false,
+    needsDocker: true,
+  },
+  policy: fleetBudgetPolicy(account),
+  ...fleetAccountExposure(account, leases),
+  now: new Date().toISOString(),
+  allowNewProviderAgreements: false,
+});
+decision.selected?.runsOn; // label a new job should ask for
+decision.refusals; // [{ memberId, code: "fleet.capacity" | "pricing.…" | "budget.…", reason }]
+```
+
+`fleetRouteTable` runs the same decision per job class and yields the value the
+relay publishes to the `HOBO_CI_FLEET_ROUTES` repository variable. The models
+are published list prices read by hand, each with a source and an expiry; they
+are not live provider billing. See
+[CI fleet balancing](../../docs/design/ci-fleet-balancing.md).
+
+The docs site's **HoBo CI** section (`site/src/pages/ci/`) shows these decisions
+as worked examples. Its provider tables and rankings, and the CI fleet codes in
+the site's errors reference, are generated from this module by
+`scripts/fleet-docs.ts` and checked by `test/fleet-docs.test.ts`;
+after changing a model or a rule, regenerate them:
+
+```sh
+node --import tsx packages/ci/scripts/fleet-docs.ts
+```
+
 Authoring does not itself create provider Connections or publish policy. A
 managed host must authorize each Connection, store operator intent separately
 from dynamic budget/health eligibility, and expose a server-side desired-policy
@@ -564,6 +615,14 @@ The Node-only `@hobo/ci/workspace-backend` entrypoint owns shared POSIX process,
 path, cancellation and bounded-file artifact handling for Actions and ADO. It
 inherits only host plumbing and explicit step environments. The Worker-safe
 `@hobo/ci/execution` entrypoint remains free of Node process/filesystem imports.
+
+## Relay mesh (proposed)
+
+`@hobo/ci/mesh` holds the claiming core for a relay with no central node. `rankNodes(job, nodes, now)`
+orders the nodes a job fits (a free slot and enough free memory for that job) by weighted rendezvous hashing over how many copies of it each could start, scaled by the share of its recent jobs each node delivered (`./mesh/reliability.ts`: a decayed score that falls when a node drops jobs and recovers when it stops), and
+`claimTurn(...)` tells one node whether to start a runner now or how long to wait for its turn. Both
+are pure functions; nothing calls them yet. The design, its failure table and the remaining
+increments are in [CI Relay Mesh](../../docs/design/ci-relay-mesh.md).
 
 ## GitHub Actions fabric (Hobo-Labs/HoBo)
 

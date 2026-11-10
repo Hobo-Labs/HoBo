@@ -57,8 +57,13 @@ escapes, the other case under `i`), so a class that holds `ſ` and `K` puts runs
 of them in the sweep without anyone listing them. Each input's call on 2 Ki
 characters is screened against the fastest of 32 reference scans of as many
 characters (`referenceFloor`, cached per process): under 32 times that, the
-better of three calls, it is linear. Linear patterns cost up to about 23,
-quadratic ones 160 or more. The screen is in wall time, since a call that short
+better of three calls, and growing less than 8 times when called on four times
+the length (`screenGrowth`, the better of up to three calls each), it is linear.
+Linear patterns cost up to about 23, quadratic ones 160 or more where the ratio
+was set; how many reference scans a quadratic call costs is the machine's (a
+search that starts once a period, `ab{7}[ab]*!`, reads 28 on one), which is why
+the growth is screened too: it reads about 4 for linear work and 16 for
+quadratic anywhere. The screen is in wall time, since a call that short
 reads 0 on the CPU clock; load only ever slows a run, so it cannot lift the
 fastest of many scans, and a slowed call only costs a growth measurement, in
 CPU time (`judgeInput`), and offends only if it grows past the limit when

@@ -16,10 +16,22 @@
  * 2 Ki takes well under the CPU clock's tick (Linux counts a thread's CPU in
  * ticks of a few milliseconds, so most calls read 0). Load only ever slows a
  * run, so it cannot lift the fastest of many scans, and a slowed call only
- * sends an input to be measured. An input above the ratio is measured as growth
- * with `measureGrowth`, in CPU time over runs long enough for that clock, and
- * must grow by less than LINEAR_GROWTH_LIMIT. A call that reaches the hang
- * backstop is an offender too, named.
+ * sends an input to be measured.
+ *
+ * How many reference scans a quadratic call costs depends on the machine: the
+ * regular expression engine's inner loop against the reference's. Where the
+ * engine is quick, a search that starts once a period reads under the ratio
+ * (28 for `ab{7}[ab]*!` on one machine, 160 on another). So an input under
+ * the ratio is also called on four times the length, the better of up to
+ * SCREEN_GROWTH_CALLS calls at each (`screenGrowth`): a call that grew
+ * LINEAR_GROWTH_LIMIT times or more is not settled either, whatever its ratio.
+ * That is a ratio of two calls of the same search, which no machine's speed
+ * changes.
+ *
+ * An input the screen does not settle is measured as growth with
+ * `measureGrowth`, in CPU time over runs long enough for that clock, and must
+ * grow by less than LINEAR_GROWTH_LIMIT. A call that reaches the hang backstop
+ * is an offender too, named.
  *
  * Reached through the `@hobo/redaction-test-harness/linear-sweep` subpath, for tests.
  */
@@ -198,12 +210,18 @@ export function sweepInputs(spec: SweepSpec): readonly SweepInput[] {
 export const SWEEP_LENGTH = 2048;
 
 /**
- * An input whose call costs under this many times the reference scan's
- * (`referenceFloor`) is linear on it. Linear patterns on every input of their
- * sweeps cost up to about 23 at SWEEP_LENGTH characters, and quadratic ones 160
- * to 440 (`test/linear-time.test.ts` pins the margin).
+ * An input whose call costs this many times the reference scan's
+ * (`referenceFloor`) or more is measured. Linear patterns on every input of
+ * their sweeps cost up to about 23 at SWEEP_LENGTH characters, and quadratic
+ * ones 160 to 440 where this was set (`test/linear-time.deep.test.ts` pins the
+ * margin for a search that starts at every character). The margin is the
+ * machine's, so an input under the ratio is screened by its growth too
+ * (`screenGrowth`).
  */
 export const SWEEP_SCREEN_RATIO = 32;
+
+/** The most calls at each of the two lengths `screenGrowth` takes the best of. */
+export const SCREEN_GROWTH_CALLS = 3;
 
 /**
  * The CPU time a timed run of a screened-out input's growth must reach, and the
@@ -216,6 +234,11 @@ export type SweepResult = {
 	readonly input: string;
 	/** The call's cost over the reference scan's best (`screenRatio`). */
 	readonly ratio?: number;
+	/**
+	 * The call's cost on four times the length over its cost on the length
+	 * (`screenGrowth`), for an input under the ratio.
+	 */
+	readonly screenGrowth?: number;
 	/** How long one call ran before the hang backstop stopped it. */
 	readonly hungMs?: number;
 	/** The growth, measured only for an input the screen could not settle. */
@@ -264,6 +287,36 @@ export function screenRatio(
 	)
 		call = Math.min(call, wallOnce(run, text));
 	return call / floor;
+}
+
+/**
+ * How a call's cost grows from `small` to `large`, a text four times as long,
+ * in wall time: the better of up to `calls` calls on each, the two taking
+ * turns, and `smallMs`, a call on `small` already timed (`screenRatio`'s).
+ * Linear work reads about 4 and quadratic about 16, on any machine. A reading
+ * under LINEAR_GROWTH_LIMIT ends it: load only slows a call, so a quadratic
+ * call reads under the limit only with every call on `small` so far slowed to
+ * twice its cost, and a reading at or over it is taken again, since one slowed
+ * call on `large` gives that too. A call too quick for the clock counts as one
+ * microsecond, which only lowers the ratio of a call that costs next to
+ * nothing at both lengths.
+ */
+export function screenGrowth(
+	run: (input: string) => void,
+	small: string,
+	large: string,
+	smallMs = Number.POSITIVE_INFINITY,
+	calls = SCREEN_GROWTH_CALLS,
+): number {
+	let shortMs = smallMs;
+	let longMs = Number.POSITIVE_INFINITY;
+	const growth = (): number => longMs / Math.max(shortMs, 0.001);
+	for (let call = 0; call < calls; call++) {
+		longMs = Math.min(longMs, wallOnce(run, large));
+		shortMs = Math.min(shortMs, wallOnce(run, small));
+		if (growth() < LINEAR_GROWTH_LIMIT) break;
+	}
+	return growth();
 }
 
 /**
@@ -371,10 +424,11 @@ export function offends(result: SweepResult): boolean {
 
 /**
  * One input: its call on `length` characters over `floor`, the reference scan's
- * best (`referenceFloor`), the better of up to three calls (`screenRatio`). Under
- * SWEEP_SCREEN_RATIO it is linear. Above it, the growth from n to 4n is
- * measured in CPU time (`measureGrowth`), where linear work gives about 4 and
- * quadratic about 16.
+ * best (`referenceFloor`), the better of up to three calls (`screenRatio`), and,
+ * under SWEEP_SCREEN_RATIO, how the call grows to four times the length
+ * (`screenGrowth`). Under the ratio and under LINEAR_GROWTH_LIMIT it is linear.
+ * Otherwise the growth from n to 4n is measured in CPU time (`measureGrowth`),
+ * where linear work gives about 4 and quadratic about 16.
  */
 export function judgeInput(
 	run: (input: string) => void,
@@ -382,8 +436,24 @@ export function judgeInput(
 	length = SWEEP_LENGTH,
 	floor = referenceFloor(length),
 ): SweepResult {
-	const ratio = screenRatio(run, input.text(length), floor);
-	if (ratio < SWEEP_SCREEN_RATIO) return { input: input.name, ratio };
+	const text = input.text(length);
+	const ratio = screenRatio(run, text, floor);
+	const screened =
+		ratio < SWEEP_SCREEN_RATIO
+			? {
+					screenGrowth: screenGrowth(
+						run,
+						text,
+						input.text(4 * length),
+						ratio * floor,
+					),
+				}
+			: {};
+	if (
+		screened.screenGrowth !== undefined &&
+		screened.screenGrowth < LINEAR_GROWTH_LIMIT
+	)
+		return { input: input.name, ratio, ...screened };
 	const options = {
 		startLength: Math.max(256, length / 8),
 		maxLength: length,
@@ -392,7 +462,7 @@ export function judgeInput(
 	};
 	const growth = measureGrowth(run, input.text, options);
 	if (grewLinearly(growth, SWEEP_GROWTH_MIN_MS))
-		return { input: input.name, ratio, growth };
+		return { input: input.name, ratio, ...screened, growth };
 	// A heavily loaded machine can lift a CPU-time ratio past the limit too
 	// (one read 8.6 at load 27 where the input grows 4.0): measured again with
 	// longer runs, an input offends only if it grows past the limit both times.
@@ -406,6 +476,7 @@ export function judgeInput(
 	return {
 		input: input.name,
 		ratio,
+		...screened,
 		growth: again.ratio < growth.ratio ? again : growth,
 	};
 }

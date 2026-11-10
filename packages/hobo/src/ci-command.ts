@@ -21,8 +21,14 @@ import { defaultHoboHome } from "./bare-metal-yard.js";
 import { runCiConnect } from "./ci-connect.js";
 import { runGithubCeremony } from "./ci-github-connect.js";
 import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
+import {
+	CI_DEPLOY_ONLY_OPTIONS,
+	CI_DEPLOY_OPTIONS,
+	runCiRelayDeploy,
+} from "./ci-relay-deploy.js";
 import { runCiRuns } from "./ci-runs.js";
 import { type CiServeOptions, runCiServe } from "./ci-serve.js";
+import type { VercelFetch } from "./vercel-client.js";
 
 const execute = promisify(execFile);
 type CiLink = ReturnType<typeof create<typeof CiRepositoryLinkSchema>>;
@@ -223,6 +229,14 @@ function parseCiArgs(args: readonly string[]) {
 			id: { type: "string" },
 			"dry-run": { type: "boolean" },
 			launch: { type: "boolean" },
+			ref: { type: "string" },
+			sha: { type: "string" },
+			project: { type: "string" },
+			target: { type: "string" },
+			team: { type: "string" },
+			set: { type: "string", multiple: true },
+			"root-directory": { type: "string" },
+			"create-project": { type: "boolean" },
 		},
 	});
 }
@@ -270,6 +284,8 @@ export function createCiCommand(
 		openBrowser?: (url: string) => void;
 		sleep?: (ms: number) => Promise<void>;
 		now?: () => number;
+		/** The Vercel transport of `hobo ci deploy`; the global fetch when absent. */
+		vercelFetch?: VercelFetch;
 	} = {},
 ): CommandModule {
 	return {
@@ -309,9 +325,36 @@ export function createCiCommand(
 					"rerun",
 					"serve",
 					"github",
+					"deploy",
 				].includes(command)
 			)
 				return usage("Unknown CI command. Run hobo ci --help.");
+			if (command === "deploy") {
+				if (positionals.length !== 1)
+					return usage("hobo ci deploy takes no positional arguments.");
+				const allowed = new Set<string>(CI_DEPLOY_OPTIONS);
+				const unsupported = Object.entries(values).find(
+					([key, value]) => value !== undefined && !allowed.has(key),
+				);
+				if (unsupported)
+					return usage(`--${unsupported[0]} does not apply to hobo ci deploy.`);
+				return runCiRelayDeploy({
+					cwd: flags.cwd,
+					values,
+					env: deps.env ?? process.env,
+					...(deps.vercelFetch !== undefined
+						? { fetch: deps.vercelFetch }
+						: undefined),
+					emitProgress,
+				});
+			}
+			{
+				const misplaced = CI_DEPLOY_ONLY_OPTIONS.find(
+					(key) => values[key] !== undefined,
+				);
+				if (misplaced)
+					return usage(`--${misplaced} only applies to hobo ci deploy.`);
+			}
 			if (command === "github") {
 				if (
 					positionals.length !== 2 ||

@@ -266,7 +266,7 @@ schemas and never fetches the `$schema` URL while loading configuration.
 
 ### Provider shapes
 
-A policy provider is one of eight closed, kind-specific shapes defined in the
+A policy provider is one of ten closed, kind-specific shapes defined in the
 sibling [provider schema](schema/ci-project-providers.schema.json) (exported as
 `@hobo/ci-gh-actions/schema/ci-project-providers.schema.json`). The project
 schema's `Provider` is a relative `$ref` to that file, which is a `oneOf` with
@@ -276,7 +276,7 @@ five-field providers of every kind except `vercel` stay valid unchanged.
 
 | Kind | Extra fields |
 |---|---|
-| `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `hobo-box-worker` | none; `scaleSet`, `engine` and `location` are rejected |
+| `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `jog`, `boat`, `hobo-box-worker` | none; `scaleSet`, `engine` and `location` are rejected |
 | `kubernetes` | optional `scaleSet` **or** optional `engine` (never both); neither keeps the existing disposable-pod path |
 | `vercel` | required `location`: `vercel`, `local` or `remote`; `scaleSet` and `engine` are rejected |
 
@@ -590,6 +590,38 @@ The publisher must supply complete snapshots and normalized prices for all bille
 components. Provider-native spending controls remain the external billing ceiling.
 Admission budgets do not migrate or terminate a running GitHub job mid-step.
 
+## Relay mesh
+
+Several box workers can share one queue with no central relay. Each reads GitHub's queue itself;
+NATS carries their advertisements and makes "one worker starts this job" exact. Without NATS they
+still agree by ranking, so NATS being down costs a duplicate runner start, not a stopped queue.
+The design is in [CI Relay Mesh](../../docs/design/ci-relay-mesh.md); settings and behaviour are in
+the [runner queue runbook](../ci/RUNNER-QUEUE.md).
+
+**Try it on one machine.** No NATS needed for the first command:
+
+```sh
+pnpm --filter @hobo/ci-gh-actions run mesh:demo
+docker run --rm -p 4222:4222 nats:2 -js   # or: nats-server -js
+HOBO_CI_NATS_URL=nats://127.0.0.1:4222 pnpm --filter @hobo/ci-gh-actions run mesh:demo
+```
+
+The demo queues jobs across three nodes with 1, 2 and 5 free slots, then kills the largest and
+queues again. It prints who took what; every job is taken once.
+
+**Run the end-to-end test** against a real server (it is skipped when no binary is found):
+
+```sh
+HOBO_CI_NATS_SERVER_BIN="$(command -v nats-server)" \
+  pnpm --filter @hobo/ci-gh-actions exec vitest run test/mesh-nats.e2e.test.ts
+```
+
+**Join a worker to a mesh.** Set `HOBO_CI_NATS_URL` on each worker and restart it. One server with
+`HOBO_CI_NATS_REPLICAS=1` is enough for two boxes on a LAN. For more, run three NATS servers as a
+cluster with `HOBO_CI_NATS_REPLICAS=3`, and connect boxes behind NAT as leaf nodes: they only dial
+out. `createNatsMesh` is exported from `@hobo/ci-gh-actions/mesh-nats`; `createMemoryMesh` in
+`@hobo/ci/mesh` is the same contract in one process.
+
 ## Tracing
 
 The box worker exports OpenTelemetry traces when `OTEL_EXPORTER_OTLP_ENDPOINT` or
@@ -607,6 +639,8 @@ to tell who cancelled a run.
 | Blacksmith | Account-connected Blacksmith Linux x64 label |
 | Depot | Account-connected Depot Linux x64 label |
 | WarpBuild | Account-connected WarpBuild Linux x64 label |
+| Jog | Account-connected Jog Linux x64 label (private repositories only) |
+| Boat | Account-connected Boat CI Linux x64 label |
 | Kubernetes | Operator-owned isolated, disposable Linux x64 host runner label |
 
 These are implementations of the reviewed companion-workflow/JIT host protocol.
