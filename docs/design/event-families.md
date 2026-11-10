@@ -31,7 +31,6 @@ This catalog is the canonical event-family inventory for design docs. Add a fami
 | `compat.*` | `compat.GatePassed`, `compat.GateFailed` |
 | `config.*` | `config.Resolved` |
 | `conformance.*` | `conformance.RunStarted`, `conformance.CaseChecked`, `conformance.RunCompleted` — replayable port-suite verification in `packages/conformance` |
-| `code.*` | `code.HarnessEnabled`, `code.EvidenceCaptured`, `code.DispatchStarted`, `code.DispatchCompleted` (OpenFeature keys `code.harness.enabled`, `code.evidence.visual`, `code.monetization.surface`, `code.isolation.rift`, `code.distributed` are flag keys; durable facts use past-tense `code.*` events when emitted) |
 | `connector.*` | `connector.Registered`, `connector.Disabled` |
 | `contract.*` | `contract.Observed`, `contract.Verified`, `contract.EffectDeclared`, `contract.EffectInvoked` |
 | `cost.*` | `cost.AnomalyDetected`, `cost.AnomalyResolved`, `cost.ForecastUpdated`, `cost.RecommendationIssued` |

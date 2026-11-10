@@ -1032,11 +1032,11 @@ describe("the repository's own plans", { concurrency: true }, () => {
 		["vitest.config.ts", withTiered("packages/cli", "packages/hobo")],
 		[
 			"test/setup/hobo-test-homes.ts",
-			withTiered("packages/cli", "packages/code", "packages/hobo"),
+			withTiered("packages/cli", "packages/hobo"),
 		],
 		[
 			"test/setup/isolate-hobo-home.ts",
-			withTiered("packages/cli", "packages/code", "packages/hobo"),
+			withTiered("packages/cli", "packages/hobo"),
 		],
 	] as const)
 		it(`runs the suites whose config reaches ${path}`, () => {
@@ -1044,12 +1044,12 @@ describe("the repository's own plans", { concurrency: true }, () => {
 		});
 
 	it("runs a test that imports another package's source by relative path", () => {
-		// `packages/code` imports `../../cli/src/cloud/loader.js` and declares no
-		// dependency on @hobo/cli; 3317dcc2 changed cli and missed it.
+		// `packages/stations` imports `../../broker/src/budget-signals.js` and
+		// declares no dependency on @hobo/broker.
 		assert.ok(
-			plan("packages/cli/src/cloud/loader.ts").subsets[
-				"packages/code"
-			]?.includes("test/happy-path-run.test.ts"),
+			plan("packages/broker/src/budget-signals.ts").subsets[
+				"packages/stations"
+			]?.includes("test/ci-routing.test.ts"),
 		);
 	});
 
@@ -1084,7 +1084,7 @@ describe("the repository's own plans", { concurrency: true }, () => {
 		);
 		assert.deepEqual(
 			[full.length, Object.keys(subsets).length, skipped.length],
-			[13, 14, 106],
+			[13, 13, 103],
 		);
 		assert.ok(full.includes("packages/core"));
 	});

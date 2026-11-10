@@ -12,7 +12,6 @@ import {
 	initBareMetalYard,
 	loadBareMetalYardConfig,
 	openBareMetalYard,
-	serveBindleOnLocalYard,
 	serveProjectOnBareMetalYard,
 } from "../src/index.js";
 
@@ -194,88 +193,6 @@ describe("bare-metal yard e2e", () => {
 		} finally {
 			if (previous === undefined) delete process.env.HOBO_HOME;
 			else process.env.HOBO_HOME = previous;
-		}
-	});
-
-	it("keeps Evidence overlay parentOrigin on the bound TCP port", async () => {
-		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-home-"));
-		cleanups.push(() => rm(hoboHome, { recursive: true, force: true }));
-		initBareMetalYard({ hoboHome });
-
-		const cli = createComposedHoboCli();
-		const previousHome = process.env.HOBO_HOME;
-		const previousControls = process.env.HOBO_CODE_EVIDENCE_CONTROLS_URL;
-		process.env.HOBO_HOME = hoboHome;
-		process.env.HOBO_CODE_EVIDENCE_CONTROLS_URL =
-			"http://127.0.0.1:4319/__hobo/evidence/controls";
-		try {
-			const result = await cli.run(
-				["dev", "--once", "--port", "0", "--cwd", helloBindleDir, "--json"],
-				{ cwd: helloBindleDir },
-			);
-			// SAFETY: assertion required at this I/O or test boundary.
-			const envelope = JSON.parse(result.stdout) as {
-				ok: boolean;
-				data: {
-					endpoints: Array<{
-						resourceName: string;
-						external: boolean;
-						port: number | null;
-						url: string;
-					}>;
-					served: { status: number; body: string };
-				};
-			};
-			const web = envelope.data.endpoints.find(
-				(endpoint) => endpoint.resourceName === "web",
-			);
-			expect(envelope.ok).toBe(true);
-			expect(web?.port).toBeGreaterThan(0);
-			expect(envelope.data.served.status).toBe(200);
-			expect(envelope.data.served.body).toContain(
-				"data-hobo-evidence-overlay-bridge",
-			);
-			expect(envelope.data.served.body).toContain('class=\\"bo\\"');
-			expect(envelope.data.served.body).toContain(
-				`parentOrigin=${encodeURIComponent(`http://127.0.0.1:${web?.port}`)}`,
-			);
-			expect(envelope.data.served.body).not.toContain("127.0.0.1%3A0");
-			expect(envelope.data.served.body).not.toContain("http://127.0.0.1:0");
-		} finally {
-			if (previousHome === undefined) delete process.env.HOBO_HOME;
-			else process.env.HOBO_HOME = previousHome;
-			if (previousControls === undefined)
-				delete process.env.HOBO_CODE_EVIDENCE_CONTROLS_URL;
-			else process.env.HOBO_CODE_EVIDENCE_CONTROLS_URL = previousControls;
-		}
-	});
-
-	it("serves the Bo idle sprite as an intact PNG on the public Yard port", async () => {
-		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-home-"));
-		cleanups.push(() => rm(hoboHome, { recursive: true, force: true }));
-		initBareMetalYard({ hoboHome });
-		const previousControls = process.env.HOBO_CODE_EVIDENCE_CONTROLS_URL;
-		process.env.HOBO_CODE_EVIDENCE_CONTROLS_URL =
-			"http://127.0.0.1:4319/__hobo/evidence/controls";
-		try {
-			const serve = await serveBindleOnLocalYard({
-				projectDir: helloBindleDir,
-				hoboHome,
-				port: 0,
-			});
-			cleanups.push(() => serve.close());
-			const bo = await fetch(
-				`${serve.primaryUrl.replace(/\/$/u, "")}/__hobo/evidence/bo-idle.png`,
-			);
-			expect(bo.status).toBe(200);
-			expect(bo.headers.get("content-type")).toBe("image/png");
-			expect(new Uint8Array(await bo.arrayBuffer()).slice(0, 8)).toEqual(
-				Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-			);
-		} finally {
-			if (previousControls === undefined)
-				delete process.env.HOBO_CODE_EVIDENCE_CONTROLS_URL;
-			else process.env.HOBO_CODE_EVIDENCE_CONTROLS_URL = previousControls;
 		}
 	});
 

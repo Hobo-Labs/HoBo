@@ -25,6 +25,7 @@ const REAL_PROFILES: readonly string[] = [
 	"data.vector/v1",
 	"kv.key-value/v1",
 	"kv.redis-compatible/v1",
+	"bucket.filesystem/v1",
 	"bucket.object/v1",
 	"bucket.s3-compatible/v1",
 	"bucket.file-storage/v1",
@@ -146,5 +147,29 @@ describe("gcpYardSpec emits raw, canonical rows", () => {
 		expect(Object.isFrozen(spec)).toBe(true);
 		expect(Object.isFrozen(spec.bindings)).toBe(true);
 		expect(Object.isFrozen(spec.regions)).toBe(true);
+	});
+});
+
+describe("virtual machine and block storage are catalog rows", () => {
+	it("registers the VM as a service worker and the disk as a filesystem volume", () => {
+		const rows = Object.values(GCP_DEFAULT_BINDINGS)
+			.flatMap((entries) => entries ?? [])
+			.map((entry) => [entry.slot, entry.profile, entry.productId]);
+		expect(rows).toContainEqual([
+			"service",
+			"service.worker/v1",
+			"gcp.compute-engine-instance/v1",
+		]);
+		expect(rows).toContainEqual([
+			"bucket",
+			"bucket.filesystem/v1",
+			"gcp.persistent-disk/v1",
+		]);
+		// Deliberately not a web origin row.
+		expect(rows).not.toContainEqual([
+			"web",
+			"web.hosted/v1",
+			"gcp.compute-engine-instance/v1",
+		]);
 	});
 });

@@ -210,7 +210,7 @@ composition root *and* the CLI binary. Split it:
 |---|---|
 | `@hobo/host` | composition root **library**: wires manifests, broker, resolvers, station-local, runtimes into a runnable local stack |
 | `@hobo/hobo` | the `hobo` CLI binary, over `@hobo/host` |
-| `@hobo/station-cli`, `@hobo/code`, `@hobo/rift`, `@hobo/stage-gate`, `@hobo/conformance` | the other binaries, over `@hobo/host` or the core packages directly |
+| `@hobo/station-cli`, `@hobo/rift`, `@hobo/stage-gate`, `@hobo/conformance` | the other binaries, over `@hobo/host` or the core packages directly |
 | `@hobo/control-yard`, `@hobo/status-page`, `site` | web apps, over `@hobo/host` or core packages directly |
 
 That gives the brief's outcome — every CLI and web app on one composition

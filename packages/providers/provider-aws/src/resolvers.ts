@@ -195,10 +195,17 @@ export const AWS_RESOLVED_PRODUCT_IDS = Object.freeze(
  * `aws.cloudfront-site/v1`: `CreateDistribution` returns a new distribution id
  * per call; the only name-ish handle is a caller reference AWS uses for
  * *deduplication windows*, not for identity, so it cannot carry convergence.
+ * `aws.ec2-instance/v1`, `aws.ebs-volume/v1`: catalog and declaration only. An
+ * instance needs a subnet, a security group and an image, and a volume needs
+ * the instance's Availability Zone; a Yard binding names none of them, and
+ * choosing them here would be a network decision this resolver is not
+ * entitled to take. No resolver is shipped.
  */
 export const AWS_UNRESOLVED_PRODUCT_IDS = Object.freeze(
 	[
 		"aws.amplify-hosting/v1",
+		"aws.ebs-volume/v1",
+		"aws.ec2-instance/v1",
 		"aws.api-gateway/v1",
 		"aws.app-runner/v1",
 		"aws.aurora-serverless-postgres/v1",

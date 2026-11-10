@@ -178,5 +178,4 @@ Requires **at least two** member yards. Continuous migration then has a bigger m
 - Worked examples ship with the product docs and starter templates.
 - [Core concepts](/HoBo/guide/concepts/) — the vocabulary in one sitting.
 - [The hobo CLI](/HoBo/guide/cli/) — the whole verb surface (it's deliberately small).
-- [hobo-code](/HoBo/guide/hobo-code/) — talk to Bo after `hobo-code` starts the session.
 - [HoBo for agents](/HoBo/agents/) — pointing an AI agent at HoBo? It gets its own credentials, not yours.

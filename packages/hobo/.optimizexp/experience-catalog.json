@@ -126,7 +126,7 @@
     {
       "experienceId": "guide-cursor-map",
       "personaId": "agent-operator",
-      "intent": "Map Cursor features to hobo-code verbs",
+      "intent": "Map Cursor features to product verbs",
       "entryCommand": "hobo guide --cursor",
       "driver": "cli",
       "observableSuccess": "Cursor map with honest residual",
@@ -525,7 +525,7 @@
     {
       "experienceId": "guide-cursor-map",
       "personaId": "platform-engineer",
-      "intent": "Map Cursor features to hobo-code verbs",
+      "intent": "Map Cursor features to product verbs",
       "entryCommand": "hobo guide --cursor",
       "driver": "cli",
       "observableSuccess": "Cursor map with honest residual",
@@ -1356,7 +1356,7 @@
     {
       "experienceId": "guide-cursor-map",
       "personaId": "advanced-cli-native-vim-engineer",
-      "intent": "Map Cursor features to hobo-code verbs",
+      "intent": "Map Cursor features to product verbs",
       "entryCommand": "hobo guide --cursor",
       "driver": "cli",
       "observableSuccess": "Cursor map with honest residual",
@@ -1659,7 +1659,7 @@
     {
       "experienceId": "guide-cursor-map",
       "personaId": "cursor-power-user",
-      "intent": "Map Cursor features to hobo-code verbs",
+      "intent": "Map Cursor features to product verbs",
       "entryCommand": "hobo guide --cursor",
       "driver": "cli",
       "observableSuccess": "Cursor map with honest residual",
@@ -2362,7 +2362,7 @@
     {
       "experienceId": "guide-cursor-map",
       "personaId": "senior-engineer-advanced-herdr-user",
-      "intent": "Map Cursor features to hobo-code verbs",
+      "intent": "Map Cursor features to product verbs",
       "entryCommand": "hobo guide --cursor",
       "driver": "cli",
       "observableSuccess": "Cursor map with honest residual",
