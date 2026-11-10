@@ -20,8 +20,7 @@ export {
 	type ControlAuthenticator,
 	type ControlPrincipal,
 	createControlAuthenticator,
-	createControlPlane,
-} from "./control-plane.js";
+} from "./control-auth.js";
 export {
 	collectAllowedRelayOrigins,
 	resolveEngineRelayOrigin,
@@ -213,7 +212,7 @@ export {
 	createQueuedJobRepair,
 	PostgresQueuedJobRepairClaims,
 } from "./queued-job-repair.js";
-export { Relay } from "./relay.js";
+export { createRelayHost } from "./relay-host.js";
 export {
 	assertRelayOriginAllowed,
 	CI_PROJECT_LOCAL_OVERRIDE_PATH,
@@ -245,8 +244,8 @@ export {
 	toOtlpTraces,
 	traceGithubTransport,
 } from "./relay-trace.js";
-export { createRelayRequestHandler, createRelayServer } from "./server.js";
 export {
+	admitWhenReady,
 	createRelayService,
 	type RelayServiceLog,
 	type RelayServiceOptions,

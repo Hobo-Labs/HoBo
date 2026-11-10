@@ -1,4 +1,7 @@
 import { createHmac } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
 	AccountSchema,
@@ -8,10 +11,10 @@ import {
 	JobSchema,
 	OfferSchema,
 } from "@hobo/ci";
-
+import { SqliteCiStore } from "@hobo/ci/sqlite";
 import type { GithubAppTransport } from "../src/github.js";
+import { HostedRelay } from "../src/hosted-relay.js";
 import type { GithubClaims, IdentityVerifier } from "../src/oidc.js";
-import { Relay } from "../src/relay.js";
 import { LeaseStore } from "../src/store.js";
 
 export const NOW = "2026-10-26T12:00:00Z";
@@ -144,6 +147,15 @@ export class ContractApi implements GithubAppTransport {
 	jobStatus = "queued";
 	/** The one label the original job asks for; the JIT runner must register with it. */
 	jobLabel = "hobo";
+	/**
+	 * What GitHub's REST API says about one job, where it differs from the
+	 * defaults above. The relay trusts this over a webhook's own fields, so a
+	 * test that sends a webhook about a job makes GitHub agree with it here.
+	 */
+	jobs = new Map<
+		number,
+		{ status?: string; labels?: string[]; runner_name?: string }
+	>();
 	dispatches = 0;
 	registrations = 0;
 	deletes = 0;
@@ -195,14 +207,18 @@ export class ContractApi implements GithubAppTransport {
 		if (
 			method === "GET" &&
 			/^\/repos\/org\/repo\/actions\/jobs\/\d+$/.test(path)
-		)
+		) {
+			const id = Number(path.split("/").at(-1));
+			const known = this.jobs.get(id);
 			return Response.json({
-				id: Number(path.split("/").at(-1)),
+				id,
 				run_id: 11,
 				run_attempt: 1,
-				status: this.jobStatus,
-				labels: [this.jobLabel],
+				status: known?.status ?? this.jobStatus,
+				labels: known?.labels ?? [this.jobLabel],
+				runner_name: known?.runner_name ?? null,
 			});
+		}
 		if (
 			method === "POST" &&
 			path === "/repos/org/repo/actions/workflows/host.yml/dispatches"
@@ -257,8 +273,30 @@ export class ContractApi implements GithubAppTransport {
 		throw new Error(`unmatched contract: ${method} ${path}`);
 	}
 }
-export function harness(path = ":memory:", sharedBudget?: CiSharedBudgetHooks) {
-	const store = new LeaseStore(path, undefined, { sharedBudget });
+const partitions: string[] = [];
+process.once("exit", () => {
+	for (const directory of partitions)
+		rmSync(directory, { recursive: true, force: true });
+});
+
+/**
+ * The relay over a real SQLite partition. `ledger` is the store the relay
+ * writes through; `store` is a second, synchronous connection to the same
+ * file, for arranging state and asserting on it without awaiting.
+ */
+export function harness(path?: string, sharedBudget?: CiSharedBudgetHooks) {
+	let file = path;
+	if (file === undefined) {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-ci-relay-"));
+		partitions.push(directory);
+		file = join(directory, "relay.sqlite");
+	}
+	const ledger = new SqliteCiStore(file, sharedBudget ? { sharedBudget } : {});
+	const store = new LeaseStore(
+		file,
+		undefined,
+		sharedBudget ? { sharedBudget } : {},
+	);
 	const api = new ContractApi();
 	const identityClaims = claims();
 	const identity: IdentityVerifier = {
@@ -268,16 +306,45 @@ export function harness(path = ":memory:", sharedBudget?: CiSharedBudgetHooks) {
 		},
 	};
 	const configuration = config();
+	// A test may adjust `configuration` before the relay first reads its policy.
+	// That first read stores it as revision 1, the way a host seeds a new
+	// partition from its configuration file; a test that calls
+	// `store.configure` itself, or reopens a partition, is left alone.
+	const seed = () => {
+		if (!store.configuration()) store.configure(configuration, 0, NOW);
+	};
+	const policySnapshot = ledger.policySnapshot.bind(ledger);
+	ledger.policySnapshot = () => {
+		seed();
+		return policySnapshot();
+	};
+	const readConfiguration = ledger.configuration.bind(ledger);
+	ledger.configuration = () => {
+		seed();
+		return readConfiguration();
+	};
 	const clock = { now: NOW };
-	const relay = new Relay({
+	const relay = new HostedRelay({
 		config: configuration,
-		store,
+		store: ledger,
 		github: api,
 		identity,
 		webhookSecret: SECRET,
 		now: () => clock.now,
 	});
-	return { store, api, relay, configuration, identityClaims, clock };
+	return { store, ledger, api, relay, configuration, identityClaims, clock };
+}
+/**
+ * Store `h.configuration` as it now stands. The relay reads its policy from
+ * the store, so a test that changes policy after the relay's first read
+ * persists the change, as an operator's update would be.
+ */
+export function persist(h: ReturnType<typeof harness>) {
+	return h.store.configure(
+		h.configuration,
+		h.store.configuration()?.revision ?? 0,
+		h.clock.now,
+	);
 }
 export async function reserve(h: ReturnType<typeof harness>, id = 1) {
 	const request = signed(queued(id));

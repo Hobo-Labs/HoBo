@@ -30,10 +30,7 @@ import {
 	SnapshotSchema,
 } from "@hobo/ci";
 import { z } from "zod";
-import type {
-	ControlAuthenticator,
-	ControlPrincipal,
-} from "./control-plane.js";
+import type { ControlAuthenticator, ControlPrincipal } from "./control-auth.js";
 import type { HostedRelay, HostedRelayStore } from "./hosted-relay.js";
 import {
 	IsolatedOnboardingError,
@@ -195,6 +192,13 @@ export function createHostedControlPlane(options: {
 	authenticate: ControlAuthenticator;
 	publicOrigin: string;
 	assets: { workflow: string; bootstrap: string };
+	/**
+	 * Let an account replace its whole policy, offers included, through
+	 * `PUT /v1/accounts/self/policy`. For a relay whose operator owns the
+	 * provider inventory. Off, that route answers 410 and an account can only
+	 * change its v2 desired policy.
+	 */
+	fullAccountUpdates?: boolean;
 	runtimeDiagnostic?: () => {
 		sandboxEnabled: boolean;
 		allowedDomains: readonly string[];
@@ -311,11 +315,47 @@ export function createHostedControlPlane(options: {
 					current.revision,
 				);
 			}
-			if (path === "/v1/accounts/self/policy" && request.method === "PUT")
-				throw new ControlError(
-					410,
-					"use v2 desired policy; full account updates are disabled",
+			if (path === "/v1/accounts/self/policy" && request.method === "PUT") {
+				if (!options.fullAccountUpdates)
+					throw new ControlError(
+						410,
+						"use v2 desired policy; full account updates are disabled",
+					);
+				const expected = revision(request);
+				const account = fromJsonString(AccountSchema, await readBody(request));
+				if (account.id !== principal.accountId)
+					throw new ControlError(
+						403,
+						"account policy belongs to another account",
+					);
+				const latest = (await state()).configuration;
+				if (
+					(await store.controlRecord(`ci-policy:${principal.accountId}`)) ||
+					latest?.accounts.find((entry) => entry.id === principal.accountId)
+						?.budgetPolicy
+				)
+					throw new ControlError(410, "use v2 desired policy for this account");
+				const next = create(ConfigurationSchema, {
+					accounts: [
+						...(latest?.accounts ?? []).filter(
+							(entry) => entry.id !== principal.accountId,
+						),
+						account,
+					],
+					connections: latest?.connections ?? [],
+				});
+				try {
+					parseConfiguration(toJsonString(ConfigurationSchema, next));
+				} catch {
+					throw new ControlError(400, "invalid account policy");
+				}
+				const saved = await store.configure(next, expected, relay.now());
+				return response(
+					200,
+					policyState(saved, principal.accountId),
+					saved.revision,
 				);
+			}
 			if (path === "/v2/accounts/self/policy" && request.method === "PUT") {
 				const expected = revision(request);
 				const input = await readBody(request);
@@ -361,6 +401,11 @@ export function createHostedControlPlane(options: {
 						throw new ControlError(
 							409,
 							"provider binding requires trusted provisioning",
+						);
+					if (offer.backend === "sandbox" && !relay.options.isolatedHost)
+						throw new ControlError(
+							409,
+							"sandbox providers are unavailable on this relay",
 						);
 				}
 				if (!desired.budget) throw new ControlError(400, "budget required");
@@ -963,7 +1008,7 @@ export function createHostedControlPlane(options: {
 				if ((await readBody(request)).trim())
 					throw new ControlError(
 						400,
-						"setup actions use the stored reviewed plan",
+						"setup actions use the stored reviewed plan, not request JSON",
 					);
 				if (!op.plan) throw new Error("setup plan missing");
 				const plan = parseOnboardingPlan(

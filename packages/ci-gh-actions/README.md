@@ -488,7 +488,11 @@ On Vercel, the runtime endpoint returns the Sandbox enablement flag, loaded
 allowed-domain patterns, and deployment ID for the process serving the request.
 It does not report credentials, URLs, or settings of an individual runner.
 
-`putPolicy(account, {revision})` changes budgets and publishes fresh allocation
+`putPolicy(account, {revision})` (`PUT /v1/accounts/self/policy`) replaces the
+whole account, offers included, so it is served only where the operator owns
+the provider inventory: the Node service enables it (`fullAccountUpdates`), for
+accounts that have no v2 desired policy; the Vercel host answers 410 and takes
+`putDesiredPolicy` only. It changes budgets and publishes fresh allocation
 facts without restarting the relay. Configuration and its audit event commit
 atomically in the lease journal. Read models, setup records and policy can be rebuilt.
 Changing/removing an active provider identity or repository bridge pin is refused;

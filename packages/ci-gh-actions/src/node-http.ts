@@ -123,7 +123,12 @@ export function createNodeRelayHandler(options: {
 				const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
 				length += value.length;
 				if (length > MAX_BODY) {
-					response.writeHead(413, { "Cache-Control": "no-store" }).end();
+					response
+						.writeHead(413, {
+							"Cache-Control": "no-store",
+							"Content-Type": "application/json",
+						})
+						.end('{"error":"request body too large"}');
 					return;
 				}
 				chunks.push(value);

@@ -13,7 +13,7 @@ import {
 	SnapshotSchema,
 } from "@hobo/ci";
 import { afterEach, describe, expect, it } from "vitest";
-import { createControlAuthenticator } from "../src/control-plane.js";
+import { createControlAuthenticator } from "../src/control-auth.js";
 import {
 	OnboardingOperationSchema,
 	OnboardingPrincipalSchema,
@@ -233,7 +233,10 @@ describe("authenticated account control plane over actual HTTP", () => {
 			["neighbor", 2_000_200],
 			["tenant", 1_000_100],
 		]);
-		expect(h.relay.options.config).toEqual(saved?.configuration);
+		// The relay reads its policy from the store on every operation.
+		expect((await h.ledger.configuration())?.configuration).toEqual(
+			saved?.configuration,
+		);
 	});
 	it("re-reads other tenant policy after a delayed request body rather than committing a stale snapshot", async () => {
 		const h = await setup();
@@ -495,7 +498,9 @@ describe("authenticated account control plane over actual HTTP", () => {
 				await connected.text(),
 			);
 			expect(ready.status).toBe("ready");
-			expect(h.relay.options.config.connections[0]).toMatchObject({
+			expect(
+				(await h.ledger.configuration())?.configuration?.connections[0],
+			).toMatchObject({
 				accountId: "tenant",
 				repositoryId: 42,
 				bridgeSha: "7".repeat(40),
@@ -820,7 +825,7 @@ describe("authenticated account control plane over actual HTTP", () => {
 		});
 		const github = strictGithub([]);
 		const http = await setup({
-			relay: h.relay,
+			relay: h,
 			github: github.github,
 			credentialJson,
 		});

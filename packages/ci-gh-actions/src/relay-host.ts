@@ -1,4 +1,4 @@
-import type { ControlAuthenticator } from "./control-plane.js";
+import type { ControlAuthenticator } from "./control-auth.js";
 import type { GithubAppTransport } from "./github.js";
 import {
 	createHostedControlPlane,
@@ -80,6 +80,8 @@ export function createRelayHost(options: {
 				authenticate: options.authenticate,
 				publicOrigin: options.publicOrigin,
 				assets: options.assets,
+				// This host's operator owns its provider inventory.
+				fullAccountUpdates: true,
 			})(request),
 		onLeaseFailure: (leaseId) =>
 			log({ level: "error", event: "worker.lease_failed", leaseId }),

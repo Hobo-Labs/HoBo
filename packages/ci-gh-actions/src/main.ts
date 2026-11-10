@@ -5,7 +5,7 @@ import { create } from "@bufbuild/protobuf";
 import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { relayInstallAssets } from "./assets.js";
-import { createControlAuthenticator } from "./control-plane.js";
+import { createControlAuthenticator } from "./control-auth.js";
 import { createGithubAppTransport, type GithubAppTransport } from "./github.js";
 import { createGithubOidcVerifier } from "./oidc.js";
 import { acquirePartitionLock } from "./partition-lock.js";
