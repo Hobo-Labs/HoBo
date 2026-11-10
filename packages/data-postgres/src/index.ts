@@ -100,6 +100,30 @@ export {
 	parseFleetLayout,
 } from "./fleet/layout.js";
 export {
+	DEFAULT_FLEET_POLICY,
+	decideFleet,
+	FLEET_ACTIONS,
+	FLEET_FEASIBILITIES,
+	FLEET_OVERAGE_KINDS,
+	type FleetAction,
+	type FleetBackendHealth,
+	type FleetBudgetCheck,
+	type FleetBudgetRequest,
+	type FleetBudgetVerdict,
+	type FleetDecisionInput,
+	type FleetFeasibility,
+	type FleetOverageKind,
+	type FleetPolicy,
+	type FleetUsageMeasurement,
+	type PostgresFleetAllowance,
+	type PostgresFleetCandidate,
+	type PostgresFleetDecision,
+	type PostgresFleetFinancialModel,
+	type PostgresFleetObservation,
+	parseFleetFinancialModel,
+	parseFleetPolicy,
+} from "./fleet/policy.js";
+export {
 	DEFAULT_REPLICATION_LIMITS,
 	type PostgresFleetWatermark,
 	REPLICATION_REFUSALS,
@@ -131,6 +155,18 @@ export {
 	type SqlSession,
 	sqlState,
 } from "./fleet/sql.js";
+export {
+	addUsage,
+	type BillingPeriod,
+	billingPeriod,
+	createUsageMeter,
+	FLEET_USAGE_UNITS,
+	type FleetUsageUnit,
+	measureStorageBytes,
+	type PostgresFleetUsage,
+	readUsage,
+	type UsageMeter,
+} from "./fleet/usage.js";
 export {
 	assertArgvSafe,
 	buildLibpqEnvironment,

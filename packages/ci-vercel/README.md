@@ -207,7 +207,19 @@ against a hosted Supabase or Prisma Postgres database.
 `src/database-fleet-executor.ts` adapts `pg` to the SQL executor port of
 `@hobo/data-postgres`'s fleet (several interchangeable PostgreSQL backends, one
 writer, standbys kept current by snapshot replication). It is not wired into
-the relay yet. `test/database-fleet-postgres.test.ts` runs the fleet's SQL
+the relay yet.
+
+`src/database-fleet-config.ts` parses `HOBO_CI_DATABASE_BACKENDS`
+(`id=PREFIX` or `id=PREFIX:profile`, comma-separated; any number of backends)
+and holds the provider profiles as data: how a backend's connections are found,
+its transaction-pooler addresses, whether it needs a private certificate
+authority, managed or self-hosted, and its financial model with the source and
+date of every number. Only Prisma Postgres's free plan has recorded numbers
+(200,000 operations a month, 2 GB); Neon's and Supabase's are recorded as
+unknown. `createFleetBudgetCheck` answers the fleet policy's budget question
+with `evaluateBudgetPolicy` from `@hobo/core`.
+
+`test/database-fleet-postgres.test.ts` runs the fleet's SQL
 against real PostgreSQL and is skipped unless `HOBO_CI_TEST_FLEET_POSTGRES`
 names three separate servers, comma-separated; each test creates and drops its
 own databases:

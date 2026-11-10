@@ -58,3 +58,134 @@ message PostgresFleetWatermark {
   // SHA-256 over every table's name, row count and digest, lower-case hex.
   string digest = 7;
 }
+
+// The units an allowance, and therefore a measurement, is stated in.
+enum PostgresFleetUsageUnit {
+  POSTGRES_FLEET_USAGE_UNIT_UNSPECIFIED = 0;
+  // One statement sent to the backend.
+  POSTGRES_FLEET_USAGE_UNIT_OPERATIONS = 1;
+  POSTGRES_FLEET_USAGE_UNIT_COMPUTE_HOURS = 2;
+  POSTGRES_FLEET_USAGE_UNIT_STORAGE_BYTES = 3;
+}
+
+// One backend's counter for one billing period, kept on that backend.
+message PostgresFleetUsage {
+  // YYYY-MM of the UTC calendar month.
+  string period = 1;
+  PostgresFleetUsageUnit unit = 2;
+  uint64 used = 3;
+}
+
+// A measured quantity: this period's total for a rate, the size for a level.
+message PostgresFleetUsageMeasurement {
+  PostgresFleetUsageUnit unit = 1;
+  uint64 used = 2;
+}
+
+enum PostgresFleetBackendHealth {
+  POSTGRES_FLEET_BACKEND_HEALTH_UNSPECIFIED = 0;
+  POSTGRES_FLEET_BACKEND_HEALTH_REACHABLE = 1;
+  POSTGRES_FLEET_BACKEND_HEALTH_UNREACHABLE = 2;
+  // The server answered that a plan quota is spent.
+  POSTGRES_FLEET_BACKEND_HEALTH_QUOTA_EXHAUSTED = 3;
+  POSTGRES_FLEET_BACKEND_HEALTH_AUTH = 4;
+  // A failure nobody has classified. Never treated as healthy.
+  POSTGRES_FLEET_BACKEND_HEALTH_UNKNOWN = 5;
+}
+
+// What one tick saw of one backend.
+message PostgresFleetObservation {
+  string backend = 1;
+  PostgresFleetBackendHealth health = 2;
+  optional uint64 probe_latency_ms = 3;
+  // How long it has been failing without a success. Zero when reachable.
+  uint64 failing_for_ms = 4;
+  // The copied tables exist with the writer's columns and types.
+  bool schema_current = 5;
+  // Time since the standby's snapshot. Unset when it was never copied.
+  optional uint64 standby_lag_ms = 6;
+  repeated PostgresFleetUsageMeasurement usage = 7;
+}
+
+// What happens beyond an allowance.
+enum PostgresFleetOverageKind {
+  POSTGRES_FLEET_OVERAGE_KIND_UNSPECIFIED = 0;
+  // The service stops until the period ends or the plan changes.
+  POSTGRES_FLEET_OVERAGE_KIND_HARD_STOP = 1;
+  // Use beyond the allowance is billed per unit.
+  POSTGRES_FLEET_OVERAGE_KIND_METERED = 2;
+  // Nobody has verified it. Treated as not provably affordable.
+  POSTGRES_FLEET_OVERAGE_KIND_UNKNOWN = 3;
+}
+
+message PostgresFleetAllowance {
+  PostgresFleetUsageUnit unit = 1;
+  // Included per period, or in total for storage. Unset means unknown.
+  optional uint64 included = 2;
+  PostgresFleetOverageKind beyond = 3;
+  // Millionths of a US dollar per unit. Set exactly when `beyond` is METERED.
+  optional uint64 metered_micros_per_unit = 4;
+}
+
+// Where a financial model's numbers came from.
+message PostgresFleetEvidence {
+  string source = 1;
+  // YYYY-MM-DD: the day somebody read the source.
+  string observed_at = 2;
+}
+
+// What running on one backend costs and how much it allows.
+message PostgresFleetFinancialModel {
+  string backend = 1;
+  string plan = 2;
+  // Millionths of a US dollar per month. Unset means unknown.
+  optional uint64 fixed_monthly_fee_micros = 3;
+  repeated PostgresFleetAllowance allowances = 4;
+  PostgresFleetEvidence evidence = 5;
+}
+
+enum PostgresFleetFeasibility {
+  POSTGRES_FLEET_FEASIBILITY_UNSPECIFIED = 0;
+  POSTGRES_FLEET_FEASIBILITY_FEASIBLE = 1;
+  // A needed fact is missing. Never chosen for a planned switch.
+  POSTGRES_FLEET_FEASIBILITY_UNKNOWN = 2;
+  POSTGRES_FLEET_FEASIBILITY_INFEASIBLE = 3;
+}
+
+// One standby as the policy ranked it.
+message PostgresFleetCandidate {
+  string backend = 1;
+  bool eligible = 2;
+  PostgresFleetFeasibility feasibility = 3;
+  optional uint64 lag_ms = 4;
+  // Time until its first hard allowance runs out under the fleet's workload.
+  optional uint64 exhausts_in_ms = 5;
+  repeated string reasons = 6;
+}
+
+enum PostgresFleetAction {
+  POSTGRES_FLEET_ACTION_UNSPECIFIED = 0;
+  POSTGRES_FLEET_ACTION_KEEP = 1;
+  // Something is wrong and no move is allowed.
+  POSTGRES_FLEET_ACTION_HOLD = 2;
+  // Planned move. Nothing is lost.
+  POSTGRES_FLEET_ACTION_SWITCH = 3;
+  // Unplanned promotion. Up to `loss_window_ms` of writes are lost.
+  POSTGRES_FLEET_ACTION_FAILOVER = 4;
+}
+
+// The policy's answer for one tick.
+message PostgresFleetDecision {
+  PostgresFleetAction action = 1;
+  // The epoch of the assignment the decision was made about.
+  uint64 epoch = 2;
+  optional string writer = 3;
+  // Set exactly for SWITCH and FAILOVER.
+  optional string target = 4;
+  // Set exactly for FAILOVER: the promoted standby's lag.
+  optional uint64 loss_window_ms = 5;
+  repeated string reasons = 6;
+  // Every standby, best first.
+  repeated PostgresFleetCandidate candidates = 7;
+  uint64 decided_at_ms = 8;
+}

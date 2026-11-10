@@ -324,6 +324,69 @@ count of lost writes.
 - Lag compares the caller's clock with the source's. Skew between them shifts
   it by the same amount.
 
+### Policy: keep, switch, or fail over
+
+`decideFleet(input)` is a pure function over the current assignment, one
+observation per backend, one financial model per backend, the policy, the
+billing period and the instant. It returns one action, its reasons, and every
+standby ranked, so one log line of its result explains the decision.
+
+| Action | When | What is lost |
+|---|---|---|
+| `keep` | The writer is healthy and nothing known is wrong with it, or something is and no standby is provably better | nothing |
+| `switch` (planned) | The writer is healthy but a hard allowance is projected to run out within `exhaustionHorizonMs`, or the injected budget check refuses its next period; and a healthy, schema-current standby is feasible | nothing |
+| `failover` (unplanned) | The writer has been failing for at least `failoverAfterMs`, and a reachable, schema-current standby has lag within `rpoMs` | up to the promoted standby's lag |
+| `hold` | The writer is failing and it is too early, or no standby is within the objective; or a switch is in flight | nothing, and nothing moves |
+
+**Observations** (`PostgresFleetObservation`): health (`reachable`, or the
+failure class `unreachable`, `quota-exhausted`, `auth`, `unknown` from
+`classifyFleetFailure`), probe latency, how long it has been failing, whether
+its schema matches the writer's, its standby lag, and measured usage.
+
+**Financial model** (`PostgresFleetFinancialModel`): a fixed monthly fee, and
+allowances each in a named unit (`operations`, `compute-hours`,
+`storage-bytes`) with what happens beyond (`hard-stop`, `metered` with a price,
+or `unknown`), plus the evidence source and the day somebody read it. This
+package holds no provider's numbers; a host supplies them.
+
+**Unknown is a value.** A fee or an allowance that nobody has verified is
+`undefined`, never a guess. The policy treats it the same way in both
+directions: an unknown about the writer is not a reason to leave it, and a
+standby with an unknown is never the target of a planned switch. A known
+allowance whose overage is `unknown` is treated as a hard stop. A failover does
+take a standby with unknowns, after any affordable one, because a relay that is
+down costs more than a plan.
+
+**Projection.** The fleet's workload is what the writer is measured to do: its
+use this period divided by the time elapsed. On a candidate, time to exhaustion
+is what remains of its allowance (after its own use so far) divided by that
+rate. Storage is a level, compared with the writer's database size.
+
+**No flapping.** A standby is switched to only if its hard allowances last
+`hysteresisFactor` horizons (default 2), and a planned switch waits
+`minDwellMs` after the previous decision. A backend the fleet just left stays
+nearly spent until its period resets, so it is not a place to go back to.
+
+**The budget is not decided here.** `checkBudget` is injected and is asked,
+only when every fact is known, whether a period with a given cost bound and
+projected use is affordable. `@hobo/ci-vercel` wires it to
+`evaluateBudgetPolicy` from `@hobo/core`. This package cannot import it: the
+neutrality test pins its one runtime dependency.
+
+**The recovery point objective is not overridden here.** With every standby
+older than `rpoMs` the answer is `hold`. Promoting anyway is
+`overrideAssignment`, called by a person.
+
+### Usage metering
+
+`createUsageMeter()` counts the statements a host sends per backend and
+`flush` adds each count to a per-period row on that backend (`addUsage`,
+`readUsage`, period ids from `billingPeriod`: the UTC calendar month). One
+statement is one operation. A backend that cannot be reached keeps its count
+for the next flush. The total is a lower bound: an instance stopped before it
+flushes loses what it had not written. `measureStorageBytes` reads the
+database size for a storage allowance.
+
 ## Error codes
 
 `PostgresDataError.code` is one of `INVALID_POSTGRES_REQUIREMENT`,
@@ -346,6 +409,8 @@ that the rest of the package accepts as-is:
 | a suite | `assertConformanceSuiteWellFormed` | a well-formed `PostgresConformanceSuite` | an unknown capability key or a dependency cycle |
 | table prefixes | `parseFleetLayout` | `FleetLayout` | a control table that replication would copy, or an identifier that is not plain |
 | a log row or a proposal | `parseFleetAssignment` | `PostgresFleetAssignment` | a sealed entry with no target, a target on an unsealed entry, a negative loss window |
+| a plan's numbers | `parseFleetFinancialModel` | `PostgresFleetFinancialModel` | a metered allowance without a price, two allowances for one unit, numbers with no source or date |
+| policy settings | `parseFleetPolicy` | `FleetPolicy` | a negative objective, a hysteresis factor below 1 |
 
 `buildPgDumpArgv` and its siblings take the parsed target, never the raw fields,
 so there is no code path that re-checks an identifier and no code path that

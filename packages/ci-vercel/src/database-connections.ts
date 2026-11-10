@@ -93,12 +93,44 @@ export function databaseConnection(url: string, ca: string | undefined) {
 	return { connectionString: parsed.toString(), ssl: { ca } };
 }
 
+/** One address pattern that identifies a transaction-mode pooler. Every field
+ * that is set must match. */
+export type TransactionPoolerRule = {
+	host?: string;
+	hostSuffix?: string;
+	firstLabelSuffix?: string;
+	port?: string;
+};
+
+/** The transaction-mode poolers that can be recognised by address, per
+ * provider: Neon's `-pooler` endpoints, Prisma Postgres's
+ * `pooled.db.prisma.io`, and Supabase's pooler host on its transaction port
+ * 6543 (its port 5432 is session mode). Data, so a provider is added by adding
+ * a row. */
+export const KNOWN_TRANSACTION_POOLERS = {
+	neon: [{ hostSuffix: ".neon.tech", firstLabelSuffix: "-pooler" }],
+	"prisma-postgres": [{ host: "pooled.db.prisma.io" }],
+	supabase: [{ hostSuffix: ".pooler.supabase.com", port: "6543" }],
+} satisfies { [provider: string]: TransactionPoolerRule[] };
+
+function matchesPooler(
+	rule: TransactionPoolerRule,
+	host: string,
+	port: string,
+): boolean {
+	return (
+		(rule.host === undefined || host === rule.host) &&
+		(rule.hostSuffix === undefined || host.endsWith(rule.hostSuffix)) &&
+		(rule.firstLabelSuffix === undefined ||
+			host.split(".")[0]?.endsWith(rule.firstLabelSuffix) === true) &&
+		(rule.port === undefined || port === rule.port)
+	);
+}
+
 /** Session advisory locks must use a session-scoped PostgreSQL connection, not
- * a transaction-mode pooler. The known poolers are refused by address: Neon's
- * `-pooler` endpoints, Prisma Postgres's `pooled.db.prisma.io`, and Supabase's
- * pooler host on its transaction port 6543 (its port 5432 is session mode).
- * Other endpoints are supplied by the operator and cannot be identified
- * reliably from a URL. */
+ * a transaction-mode pooler. The known poolers are refused by address (see
+ * `KNOWN_TRANSACTION_POOLERS`). Other endpoints are supplied by the operator
+ * and cannot be identified reliably from a URL. */
 export function validateDirectDatabaseUrl(
 	value: string | undefined,
 	name = "DATABASE_URL_UNPOOLED",
@@ -120,12 +152,37 @@ export function validateDirectDatabaseUrl(
 		parsed.searchParams.has("host") ||
 		parsed.searchParams.has("hostaddr") ||
 		parsed.searchParams.has("service") ||
-		(host.endsWith(".neon.tech") && host.split(".")[0]?.endsWith("-pooler")) ||
-		host === "pooled.db.prisma.io" ||
-		(host.endsWith(".pooler.supabase.com") && parsed.port === "6543")
+		Object.values(KNOWN_TRANSACTION_POOLERS).some((rules) =>
+			rules.some((rule) => matchesPooler(rule, host, parsed.port)),
+		)
 	)
 		throw new Error("repair requires a direct PostgreSQL URL");
 	return value;
+}
+
+/** The two pools' settings for one relay database. A provider whose credential
+ * is a short-lived token can supply these from a function instead of from
+ * connection strings: `pg` accepts `password` as an async function. */
+export type RelayDatabase = {
+	/** Pooled settings, for HTTP traffic and ordinary queries. */
+	primary: PoolSettings;
+	/** Session-scoped settings, for repair. */
+	direct: PoolSettings;
+};
+type PoolSettings = ReturnType<typeof databaseConnection> & {
+	Client?: typeof import("pg").Client;
+};
+
+/** The relay database named by the environment, validated as before: the
+ * session-scoped connection is required and must not be a known pooler. */
+export function relayDatabase(env: NodeJS.ProcessEnv): RelayDatabase {
+	const urls = resolveDatabaseUrls(env);
+	const ca = env.HOBO_CI_DATABASE_CA_CERT;
+	const direct = validateDirectDatabaseUrl(urls.direct, urls.directName);
+	return {
+		primary: databaseConnection(urls.primary, ca),
+		direct: databaseConnection(direct, ca),
+	};
 }
 
 type Result = {
