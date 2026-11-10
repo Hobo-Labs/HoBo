@@ -551,6 +551,69 @@ describe("a package's manifest and build config", () => {
 			);
 		});
 
+	describe("beyond the root tsconfig", () => {
+		const configured = extend(built, {
+			"packages/lib/package.json": manifest("@t/lib", "vitest run", {
+				scripts: {
+					test: "vitest run",
+					build: "tsc -p tsconfig.json && tsup",
+					types: "tsc -p config/tsconfig.types.json",
+				},
+				exports: {
+					".": "./dist/index.js",
+					"./client": "./dist/client.js",
+					"./feat/*": "./dist/feat/*.js",
+				},
+			}),
+			// JSONC, as tsconfig files are.
+			"packages/lib/tsconfig.json":
+				'{\n\t// shared options\n\t"extends": "./config/tsconfig.shared.json",\n}\n',
+			"packages/lib/config/tsconfig.shared.json":
+				'{ "extends": ["./base/strict", "../../../tsconfig.base.json"] }\n',
+			"packages/lib/config/base/strict.json": "{}\n",
+			"packages/lib/config/tsconfig.types.json": "{}\n",
+			"packages/lib/config/tsconfig.unused.json": "{}\n",
+			"packages/lib/turbo.json": '{ "extends": ["//"] }\n',
+			"packages/lib/tsup.config.ts": "export default {};\n",
+			// No lib script runs vite: `vitest run` is not it.
+			"packages/lib/vite.config.ts": "export default {};\n",
+			"packages/app/package.json": manifest("@t/app", "vitest run", {
+				scripts: { test: "vitest run", build: "tsc -b && vite build" },
+				exports: { ".": "./dist/cli.js" },
+			}),
+			"packages/app/vite.config.mts": "export default {};\n",
+			"tsconfig.base.json": "{}\n",
+		});
+		const plan = (path: string) =>
+			scoped(planDependentTests([path], configured));
+
+		for (const [what, path] of [
+			["a tsconfig a script names by path", "config/tsconfig.types.json"],
+			["a tsconfig the root one extends", "config/tsconfig.shared.json"],
+			["a config at the end of an extends chain", "config/base/strict.json"],
+			["the package's turbo.json", "turbo.json"],
+			["the config of a bundler a script runs", "tsup.config.ts"],
+		] as const)
+			it(`runs everything that imports the package when ${what} changes`, () => {
+				assert.deepEqual(plan(`packages/lib/${path}`), importersOfLib);
+				// Neither named nor extended, and a bundler no script runs.
+				for (const own of ["config/tsconfig.unused.json", "vite.config.ts"])
+					assert.deepEqual(
+						plan(`packages/lib/${own}`).subsets["packages/top"],
+						undefined,
+						own,
+					);
+			});
+
+		it("runs the importers of a package when its vite config changes and a script runs vite", () => {
+			assert.deepEqual(plan("packages/app/vite.config.mts"), {
+				full: ["packages/app"],
+				subsets: { "packages/top": ["test/top.test.ts"] },
+				skipped: [],
+			});
+		});
+	});
+
 	it("does not count a directory read as entering the package", () => {
 		// `data.test.ts` reads `../../lib/fixtures`: lib's data, not its build.
 		const plan = (path: string) =>

@@ -21,8 +21,9 @@
  * (`hobo ci serve --with-worker` spawning the worker daemon) is that one file,
  * not its imports: it runs as its own process and its package's suite covers
  * it. Entering a package by importing it or naming one of its files also
- * reaches its `package.json`, its `tsconfig.json` and every tsconfig its
- * scripts name: they shape what an importer gets. A directory read does not:
+ * reaches its `package.json`, its `turbo.json`, its `tsconfig.json`, every
+ * tsconfig its scripts name, what those extend inside the package and the
+ * config of a bundler its scripts run: they shape what an importer gets. A directory read does not:
  * `join(here, "../../lib/fixtures")` reads data the manifest does not shape.
  * A package entry that maps to no source file stands for the whole package
  * and its workspace dependencies. A dependent's test with a computed `import()`
@@ -173,7 +174,11 @@ const DYNAMIC_IMPORT = /\bimport\s*\(\s*(?:(["'])([^"'\n]+)\1\s*\))?/g;
 const RESOLVE_CALL = /\bresolve\(\s*["']([^"'\n]+)["']\s*\)/g;
 const PATH_LITERAL = /["'`]((?:\.\.?\/|packages\/|examples\/)[^"'`\n$]*)["'`]/g;
 const BARE_DIR = /^\.\.?\/$/;
-const TSCONFIG = /\btsconfig(?:\.[\w-]+)?\.json\b/g;
+const TSCONFIG = /(?:[\w.-]+\/)*tsconfig(?:\.[\w-]+)?\.json\b/g;
+const EXTENDS = /"extends"\s*:\s*(\[[^\]]*\]|"[^"\n]*")/;
+/** Bundlers whose config beside the manifest shapes the build, when a script runs one. */
+const BUNDLERS = ["tsup", "vite"];
+const CONFIG_EXTENSIONS = ["ts", "mts", "js", "mjs", "cjs"];
 
 const STRING_TEST_ARGUMENT =
 	/\.(?:startsWith|endsWith|includes|replace|replaceAll)\(\s*$/;
@@ -329,27 +334,54 @@ export function createWalker(repo: Repo) {
 
 	/**
 	 * The files that shape what an importer of `ws` gets without being imported:
-	 * its manifest (`exports`, `type`, dependencies), its `tsconfig.json` and
-	 * every tsconfig one of its scripts names (`tsc -p tsconfig.build.json`).
+	 * its manifest (`exports`, `type`, dependencies), its `turbo.json`, its
+	 * `tsconfig.json`, every tsconfig one of its scripts names
+	 * (`tsc -p config/tsconfig.types.json`), what those extend inside the
+	 * package, and the config of a bundler one of its scripts runs.
 	 */
 	const inputs = new Map<string, readonly string[]>();
 	function packageInputs(ws: Workspace): readonly string[] {
 		const cached = inputs.get(ws.dir);
 		if (cached) return cached;
 		const scripts = manifestOf(ws)?.scripts;
-		const named = isObject(scripts)
-			? Object.values(scripts).flatMap((script) =>
-					isString(script) ? (script.match(TSCONFIG) ?? []) : [],
-				)
+		const commands = isObject(scripts)
+			? Object.values(scripts).filter(isString)
 			: [];
-		const found = [
-			`${ws.dir}/package.json`,
-			...[...new Set(["tsconfig.json", ...named])]
+		const inside = (path: string) =>
+			path.startsWith(`${ws.dir}/`) && repo.files.has(path);
+		const found = new Set(
+			[
+				"package.json",
+				"turbo.json",
+				...BUNDLERS.filter((tool) =>
+					commands.some((command) =>
+						new RegExp(`(?:^|[\\s;&|])${tool}(?:[\\s;&|]|$)`).test(command),
+					),
+				).flatMap((tool) =>
+					CONFIG_EXTENSIONS.map((extension) => `${tool}.config.${extension}`),
+				),
+			]
 				.map((name) => `${ws.dir}/${name}`)
-				.filter((path) => repo.files.has(path)),
-		];
-		inputs.set(ws.dir, found);
-		return found;
+				.filter(inside),
+		);
+		const tsconfigs = ["tsconfig.json"]
+			.concat(commands.flatMap((command) => command.match(TSCONFIG) ?? []))
+			.map((name) => posix.normalize(posix.join(ws.dir, name)));
+		for (let path = tsconfigs.shift(); path; path = tsconfigs.shift()) {
+			if (found.has(path) || !inside(path)) continue;
+			found.add(path);
+			// A tsconfig is JSONC, so `extends` is read as text. One that leaves
+			// the package (the root base config) is a path outside every package.
+			const extended = EXTENDS.exec(repo.read(path) ?? "")?.[1] ?? "";
+			for (const [, target = ""] of extended.matchAll(/"([^"]*)"/g)) {
+				if (!target.startsWith(".")) continue;
+				const next = posix.normalize(posix.join(posix.dirname(path), target));
+				tsconfigs.push(next.endsWith(".json") ? next : `${next}.json`);
+			}
+		}
+		const list = [...found];
+		inputs.set(ws.dir, list);
+		return list;
 	}
 	/** The changed manifest or build config of the package `path` sits in. */
 	function changedInput(

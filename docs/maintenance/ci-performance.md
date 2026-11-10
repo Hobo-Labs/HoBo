@@ -138,9 +138,13 @@ the planner runs on Node builtins before `pnpm install`; what it cannot tell (a 
 earlier argument, such as `.replace(/^(?!\.)/, "./")`) keeps the edge. An unknown or unmapped change
 still runs everything.
 
-A package's `package.json`, its `tsconfig.json` and every tsconfig one of its scripts names
-(`tsc -p tsconfig.build.json`) are inputs to whatever imports the package: `exports`, `type` and the
-compiler options decide what an importer gets. A closure that enters a package reaches them, and
+A package's `package.json`, its `turbo.json`, its `tsconfig.json`, every tsconfig one of its scripts
+names by path (`tsc -p tsconfig.build.json`, `tsc -p config/tsconfig.types.json`), whatever those
+extend inside the package, and the `tsup.config.*` or `vite.config.*` beside the manifest when a script
+runs that tool are inputs to whatever imports the package: `exports`, `type`, the task definition and
+the compiler and bundler options decide what an importer gets. An `extends` that leaves the package
+(the root `tsconfig.base.json`) is a path outside every package and is planned as one. No other
+bundler config is followed (`esbuild.js`, a rollup config), nor a config a bundler config imports. A closure that enters a package reaches them, and
 entering means importing it or naming one of its files; a directory read does not
 (`join(here, "../../connectivity/contracts/pacts")` reads data the manifest does not shape, so only a
 change under that directory selects the reader). Before this, nothing led from an `@hobo/x` import to
