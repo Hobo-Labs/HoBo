@@ -56,7 +56,7 @@ describe("merge-group required gate", () => {
 			validation,
 			/merge_tests: \$\{\{ steps\.merge-group-base\.outputs\.tests \}\}/u,
 		);
-		assert.match(workspace, /needs: pr_gate_validation/u);
+		assert.match(workspace, /needs: \[route, pr_gate_validation\]/u);
 		assert.match(workspace, /needs\.pr_gate_validation\.result == 'success'/u);
 		assert.match(workspace, /needs\.pr_gate_validation\.outputs\.merge_base/u);
 		assert.match(workspace, /needs\.pr_gate_validation\.outputs\.merge_tests/u);
@@ -67,7 +67,7 @@ describe("merge-group required gate", () => {
 		);
 		assert.match(workspace, /fail-fast: false/u);
 		assert.match(workspace, /scripts\/ci\/dependent-tests\.mts/u);
-		assert.match(affected, /needs: pr_gate_validation/u);
+		assert.match(affected, /needs: \[route, pr_gate_validation\]/u);
 		assert.match(
 			affected,
 			/turbo run build typecheck lint test:unit test:schema test:contract:consumer/u,
