@@ -243,6 +243,16 @@ describe("release OCI app staging", () => {
 		).toContain("--config.package-import-method=hardlink");
 	});
 
+	it("prefers npm_config_store_dir without shelling out to pnpm", () => {
+		const storeDir = resolve("/pnpm-store");
+		expect(
+			releasePnpmStore(root, {
+				npm_config_store_dir: storeDir,
+				PATH: "/usr/bin",
+			}),
+		).toBe(storeDir);
+	});
+
 	it("pins the workspace store for a deployment on another filesystem", () => {
 		const storeDir = releasePnpmStore(root);
 		const target = mkdtempSync(join(tmpdir(), "hobo-release-store-"));
