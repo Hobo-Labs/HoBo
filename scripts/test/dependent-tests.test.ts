@@ -416,6 +416,12 @@ describe("a bare ./ or ../ literal", () => {
 		'spawnSync("node", ["x"], { cwd: "../" });',
 		'const path = (n: string) => "../" + n;',
 		"const root = path.resolve(here, `../`);",
+		// A replacement is a value, and the value may be a path.
+		'const t = (s: string) => s.replace(/^src/u, "./");',
+		'const t = (s: string) => s.replaceAll(sep, "../");',
+		'const t = (s: string) => s.replace("@/", "../");',
+		'const t = (s: string) =>\n\ts.replace(\n\t\t"@/",\n\t\t"../",\n\t);',
+		'const text = readFileSync(new URL(s.replace("@/", "../"), import.meta.url));',
 		// A path call inside a string test still reads the directory.
 		'const inside = (p: string) => p.startsWith(resolve(here, "../"));',
 		'const listed = (n: string) => readdirSync("./").includes(n);',
@@ -432,9 +438,7 @@ describe("a bare ./ or ../ literal", () => {
 			'const t = (s: string) => s?.endsWith("../");',
 			'const t = (s: string) => s.includes("../");',
 			'const t = (s: string) => s.replace("./", "");',
-			'const t = (s: string) => s.replace(/^src/u, "./");',
 			'const t = (s: string) => s.replaceAll("../", "");',
-			'const t = (s: string) => s.replaceAll(sep, "../");',
 			'const t = (s: string) => s === "./";',
 			'const t = (s: string) => s !== "../";',
 			'const t = (s: string) => s == "./";',

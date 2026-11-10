@@ -14,8 +14,9 @@
  * naming an existing repository path relative to the file, its package or the
  * repository root (`new URL("../dist/bin/hobo.js", import.meta.url)`,
  * `join(here, "../../connectivity/contracts/pacts")`). A bare `"./"` or
- * `"../"` is that directory, unless it only tests a string (an argument of
- * `startsWith` and its kin, an operand of `===`, a `case` label). A `dist/`
+ * `"../"` is that directory, unless it only tests a string (the first
+ * argument of `startsWith`, `endsWith`, `includes`, `replace` or `replaceAll`,
+ * an operand of `===`, a `case` label). A `dist/`
  * path stands for the `src/` file built into it. A literal naming another package's file
  * (`hobo ci serve --with-worker` spawning the worker daemon) is that one file,
  * not its imports: it runs as its own process and its package's suite covers
@@ -173,17 +174,17 @@ const BARE_DIR = /^\.\.?\/$/;
 const TSCONFIG = /\btsconfig(?:\.[\w-]+)?\.json\b/g;
 
 const STRING_TEST_ARGUMENT =
-	/\.(?:startsWith|endsWith|includes|replace|replaceAll)\(\s*(?:[^(),]*,\s*)?$/;
+	/\.(?:startsWith|endsWith|includes|replace|replaceAll)\(\s*$/;
 const COMPARED_TO = /[!=]==?\s*$/;
 const COMPARED_WITH = /^\s*[!=]==?/;
 const CASE_LABEL = /\bcase\s+$/;
 
 /**
- * Whether the literal `match` only tests a string: a direct argument of
- * `startsWith`, `endsWith`, `includes`, `replace` or `replaceAll`, an operand
- * of an equality, or a `case` label. Anything this cannot tell (a call or a
- * comma inside the earlier argument, an array, a property, a concatenation)
- * is not one, and the literal stays a path.
+ * Whether the literal `match` only tests a string: the first argument of
+ * `startsWith`, `endsWith`, `includes`, `replace` or `replaceAll` (what is
+ * searched for), an operand of an equality, or a `case` label. A replacement
+ * (`s.replace("@/", "../")`) is a value that may be a path, and like an
+ * array element, a property or a concatenation it stays one.
  */
 function isStringTest(
 	text: string,
