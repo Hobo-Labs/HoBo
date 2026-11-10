@@ -279,3 +279,17 @@ The sandbox proxy bundle also lives in `src/_generated-assets/`: this directory
 keeps non-protobuf generators out of the protobuf-owned `src/_generated/` tree.
 The local persistent listener can wait without an age-based deadline; the
 embedded hosted bridge still supplies and enforces its lease timeout.
+
+## Postgres schema
+
+The two PostgreSQL tables this package owns (`hobo_ci_database_probes` and
+`hobo_ci_worker_health`) are declared in [`db/schema.ts`](db/schema.ts), with
+migrations in `db/migrations/`. `pnpm --filter @hobo/ci-vercel run db:generate`,
+`db:check`, `db:migrate` and `db:verify` run the tooling `@hobo/ci` provides.
+The code still creates both tables from the DDL embedded in `src/`;
+`db/migrations/embedded-ddl.lock.json` and `db:verify` hold that DDL to the
+declared schema. The full description, including how to migrate a database the
+relay is already using, is in
+[`@hobo/ci`](../ci/README.md#postgres-schema-and-migrations). A deployed relay
+needs all three packages' migrations: `@hobo/ci`, `@hobo/ci-gh-actions` and this
+one.

@@ -38,9 +38,13 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.db.json",
     "lint": "biome check .",
     "test": "vitest run",
+    "db:generate": "node --import tsx ../ci/db/tooling/cli.mts generate",
+    "db:check": "node --import tsx ../ci/db/tooling/cli.mts check",
+    "db:migrate": "node --import tsx ../ci/db/tooling/cli.mts migrate",
+    "db:verify": "node --import tsx ../ci/db/tooling/cli.mts verify",
     "start": "node dist/main.js",
     "test:act": "node --import tsx scripts/act-harness.ts",
     "act:install": "node --import tsx scripts/act-install.ts",
@@ -69,10 +73,12 @@
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260730.1",
     "@dagger.io/dagger": "0.21.11",
+    "@hobo/adapter-drizzle": "workspace:*",
     "@hobo/ci-cf": "workspace:*",
     "@hobo/ci-dagger": "workspace:*",
     "@pact-foundation/pact": "17.1.4",
     "@types/pg": "8.15.5",
+    "drizzle-orm": "0.45.4",
     "testcontainers": "11.8.1",
     "yaml": "2.9.0"
   }
