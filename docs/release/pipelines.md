@@ -197,6 +197,11 @@ Local:
 
 ```bash
 pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts
+```
+
+The `overlays SDK tarballs into a pnpm-deploy app without npm install` case in `scripts/test/stage-release-oci-app.test.ts` runs a full `pnpm deploy` plus tarball overlay on the runner host; its Vitest timeout is **360s** so ARC and other slow self-hosted runners stay inside the release job's 20-minute budget.
+
+```bash
 bash packages/ci-gh-actions/deploy/ci-runner/build.sh
 node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --keep-candidate
 HOBO_RELEASE_OCI_CONTRACT=live HOBO_RELEASE_OCI_IMAGE_ID=hobo-cli pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts

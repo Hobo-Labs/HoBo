@@ -283,12 +283,10 @@ export function probeMiseTool(
 	const resolveArgs = ["--cd", root, "which", tool];
 	const resolved = run("mise", resolveArgs);
 	const executable = resolved.out.split("\n")[0]?.trim() ?? "";
-	if (!resolved.ok || !isAbsolute(executable)) {
+	if (!resolved.ok) {
 		const whichArgs = ["-c", `command -v ${tool} || true`];
 		const onPath = run("sh", whichArgs).out.split("\n")[0]?.trim() ?? "";
-		const failure = resolved.ok
-			? `${commandLine("mise", resolveArgs)}: expected an absolute executable path for ${tool}, got ${executable || "(empty)"}`
-			: commandFailure(resolved, commandLine("mise", resolveArgs));
+		const failure = commandFailure(resolved, commandLine("mise", resolveArgs));
 		return {
 			ok: false,
 			name: `mise-tool:${tool}`,
@@ -297,15 +295,35 @@ export function probeMiseTool(
 				: `${failure}\n    ${tool} not on PATH and ${commandLine("mise", resolveArgs)} failed\n    ${MISE_TOOL_REMEDY}`,
 		};
 	}
+	if (!executable) {
+		return {
+			ok: false,
+			name: `mise-tool:${tool}`,
+			detail: `${commandLine("mise", resolveArgs)}: expected an absolute executable path for ${tool}, got (empty)\n    ${MISE_TOOL_REMEDY}`,
+		};
+	}
 	const versionArgs =
 		tool === "cue" || tool === "gitleaks" ? ["version"] : ["--version"];
+	const versionCommand = commandLine(executable, versionArgs);
 	const ver = run(executable, versionArgs);
+	if (ver.ok) {
+		if (!isAbsolute(executable)) {
+			return {
+				ok: false,
+				name: `mise-tool:${tool}`,
+				detail: `${commandLine("mise", resolveArgs)}: expected an absolute executable path for ${tool}, got ${executable}\n    ${MISE_TOOL_REMEDY}`,
+			};
+		}
+		return {
+			ok: true,
+			name: `mise-tool:${tool}`,
+			detail: ver.out.split("\n")[0] ?? `${tool} reported success`,
+		};
+	}
 	return {
-		ok: ver.ok,
+		ok: false,
 		name: `mise-tool:${tool}`,
-		detail: ver.ok
-			? (ver.out.split("\n")[0] ?? `${tool} reported success`)
-			: `${commandFailure(ver, commandLine(executable, versionArgs))}\n    ${MISE_TOOL_REMEDY}`,
+		detail: `${commandFailure(ver, versionCommand)}\n    ${MISE_TOOL_REMEDY}`,
 	};
 }
 

@@ -438,7 +438,7 @@ describe("release OCI app staging", () => {
 			else process.env.HOBO_RELEASE_SEMVER = previousSemver;
 			rmSync(fixtureRoot, { recursive: true, force: true });
 		}
-	}, 240_000);
+	}, 360_000);
 
 	it("uses an overlay temp dir under the deploy app (same device as node_modules)", () => {
 		const appDir = mkdtempSync(join(tmpdir(), "hobo-overlay-root-"));
