@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
-import { cpus, homedir, loadavg } from "node:os";
+import { cpus, homedir, hostname, loadavg } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
@@ -10,7 +10,9 @@ import { ConfigurationSchema, type Lease, parseConfiguration } from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
 	boxGitMirrorPath,
+	ciEventSinkFromEnv,
 	createBoxGitMirror,
+	createCiEventEmitter,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createDepsImageEnsurer,
@@ -27,6 +29,7 @@ import {
 	createPnpmStoreMaintenance,
 	createPollIngestCoalesce,
 	createPollLogFilter,
+	createRelayTrace,
 	createRetiredWorkDirectorySweeper,
 	createWorkerMemoryAdmission,
 	createWorkerStorageAdmission,
@@ -41,11 +44,13 @@ import {
 	readAvailableMemoryMb,
 	readHostHealthSample,
 	readHostMemory,
+	relayTraceSinkFromEnv,
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
 	singleFlight,
 	stopIsolatedWorker,
+	traceGithubTransport,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
@@ -83,11 +88,55 @@ function secretOrFile(name: string): string {
 	return file ? readFileSync(file, "utf8").trimEnd() : required(name);
 }
 
+// Off unless OTEL_EXPORTER_OTLP_ENDPOINT (or the traces-specific variable) or
+// HOBO_CI_TRACE_FILE is set. Every log event below is also a span, and so is
+// every GitHub call that changes something: see src/relay-trace.ts.
+const traceExport = relayTraceSinkFromEnv(process.env);
+const relayTrace = createRelayTrace({
+	sink: traceExport.sink,
+	resource: {
+		"service.name": process.env.OTEL_SERVICE_NAME || "hobo-ci-worker",
+		"service.instance.id": hostname(),
+	},
+	// Written directly: sending it through log() would trace the trace.
+	onProblem: (problem) =>
+		console.error(
+			JSON.stringify({ event: "hobo_ci_trace_export_problem", ...problem }),
+		),
+});
+
+// CloudEvents for the infrastructure facts among those log events, delivered
+// to HOBO_CI_EVENTS_URL when it is set: see src/cloud-events.ts.
+const eventExport = ciEventSinkFromEnv(process.env);
+const ciEvents = createCiEventEmitter({
+	source: {
+		tenant: process.env.HOBO_CI_EVENTS_TENANT || "hobo-ci",
+		// One ordered stream per start of this worker on this host.
+		streamId: `ci-worker/${hostname()}/${randomBytes(4).toString("hex")}`,
+		actorId: process.env.OTEL_SERVICE_NAME || "hobo-ci-worker",
+	},
+	sink: eventExport.sink,
+	onProblem: (problem) =>
+		console.error(
+			JSON.stringify({ event: "hobo_ci_events_export_problem", ...problem }),
+		),
+});
+
+/** Sends what is queued, without letting a dead endpoint hold up the exit. */
+async function closeTrace(): Promise<void> {
+	await Promise.race([
+		Promise.all([relayTrace.close(), ciEvents.close()]),
+		new Promise((resolve) => setTimeout(resolve, 3000).unref()),
+	]);
+}
+
 function log(
 	event: string,
 	fields: Readonly<Record<string, string | number | boolean>> = {},
 ) {
 	console.error(JSON.stringify({ event, ...fields }));
+	relayTrace.event(event, fields);
+	ciEvents.emit(event, fields);
 }
 
 async function output(
@@ -335,7 +384,19 @@ try {
 			});
 		}
 
-	const github = createGithubAppTransport({ appId, privateKey });
+	log("hobo_ci_trace_export", {
+		enabled: relayTrace.enabled,
+		endpoint: traceExport.targets.endpoint,
+		file: traceExport.targets.file,
+	});
+	log("hobo_ci_events_export", {
+		enabled: ciEvents.enabled,
+		target: eventExport.target,
+	});
+	const github = traceGithubTransport(
+		createGithubAppTransport({ appId, privateKey }),
+		relayTrace,
+	);
 	// The poller learns job durations from the jobs lists it already reads; the
 	// relay admits each run's longest expected job first.
 	const jobDurations = createJobDurations();
@@ -867,12 +928,14 @@ try {
 					});
 			}
 			await closeStore();
+			await closeTrace();
 			process.exit(result.mode === "handoff" || result.drained ? 0 : 1);
 		})().catch(async (error) => {
 			await closeStore().catch(() => undefined);
 			log("hobo_ci_isolated_worker_shutdown_failed", {
 				message: error instanceof Error ? error.message : "unknown",
 			});
+			await closeTrace();
 			process.exit(1);
 		});
 		return shutdownOnce;

@@ -7,6 +7,16 @@ export {
 } from "./ci-engine-inventory.js";
 export { CiRelayClientError, createCiRelayClient } from "./client.js";
 export {
+	CI_INFRA_EVENT_TYPES,
+	type CiEventEmitter,
+	type CiEventSink,
+	type CiEventSource,
+	ciEventSinkFromEnv,
+	cloudEventsHttpSink,
+	createCiEventEmitter,
+	toCiCloudEvent,
+} from "./cloud-events.js";
+export {
 	type ControlAuthenticator,
 	type ControlPrincipal,
 	createControlAuthenticator,
@@ -228,6 +238,19 @@ export {
 	resolveExplicitCiEnvironmentName,
 	selectEnvironmentForWebhook,
 } from "./relay-routing.js";
+export {
+	createRelayTrace,
+	githubRoute,
+	otlpFileSink,
+	otlpHttpSink,
+	type RelaySpan,
+	type RelayTrace,
+	type RelayTraceSink,
+	relayTraceSinkFromEnv,
+	runTraceId,
+	toOtlpTraces,
+	traceGithubTransport,
+} from "./relay-trace.js";
 export { createRelayRequestHandler, createRelayServer } from "./server.js";
 export {
 	createRelayService,
