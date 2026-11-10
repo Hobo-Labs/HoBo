@@ -17,6 +17,10 @@ import type { JsonObject, JsonValue } from "../src/json.js";
 // INJECTED fetch — no network, no real timers (injected sleep/clock seam).
 // The fixture session stays the offline default when no issuer is configured;
 // once an issuer IS configured every failure is typed and fail-closed.
+// The grant's own protocol cases (slow_down, expiry, discovery and metadata
+// refusals) are in oidc-device-grant.test.ts; this file keeps what the command
+// adds: the session it persists, one typed refusal that writes nothing, the
+// audience it verifies against, and refusing without a fetch.
 
 const ISSUER = "https://issuer.test";
 const NOW_MS = 1_754_000_000_000;
@@ -200,6 +204,9 @@ describe("hobo login — device-code grant (issuer configured)", () => {
 		);
 		expect(profile.session.token).toBe(jwt);
 		expect(profile.session.tenant).toBe("acme");
+		// The command handed its sleep seam to the grant: one interval before
+		// the first poll, one after authorization_pending.
+		expect(sleeps).toEqual([5000, 5000]);
 		// Full RFC 8628 leg order through the injected fetch only.
 		expect(requests).toEqual([
 			`${ISSUER}/.well-known/openid-configuration`,
@@ -208,28 +215,6 @@ describe("hobo login — device-code grant (issuer configured)", () => {
 			`${ISSUER}/token`,
 			`${ISSUER}/.well-known/jwks.json`,
 		]);
-	});
-
-	it("honors interval and slow_down while polling (RFC 8628 §3.5)", async () => {
-		const jwt = await issuer.signJwtSvid(svidClaims());
-		const { fetchImpl } = createFakeIssuerFetch({
-			tokenResponses: [
-				jsonResponse(400, { error: "authorization_pending" }),
-				jsonResponse(400, { error: "slow_down" }),
-				jsonResponse(400, { error: "authorization_pending" }),
-				jsonResponse(200, { access_token: jwt }),
-			],
-		});
-		const command = createBrokerAwareLoginCommand({
-			env,
-			fetchImpl,
-			persist: false,
-			...seams(),
-		});
-		const result = await command.run(runInput());
-		expect(result.ok).toBe(true);
-		// interval=5s until slow_down, then +5s for every later wait.
-		expect(sleeps).toEqual([5000, 5000, 10000, 10000]);
 	});
 
 	it("access_denied is a typed failure with remediation (no fixture fallback)", async () => {
@@ -250,77 +235,6 @@ describe("hobo login — device-code grant (issuer configured)", () => {
 		// SAFETY: assertion required at this I/O or test boundary.
 		expect((result.data as JsonObject).token).toBeUndefined();
 		expect(existsSync(path.join(home, "profile.json"))).toBe(false);
-	});
-
-	it("expired_token from the issuer is a typed expiry failure", async () => {
-		const { fetchImpl } = createFakeIssuerFetch({
-			tokenResponses: [jsonResponse(400, { error: "expired_token" })],
-		});
-		const command = createBrokerAwareLoginCommand({
-			env,
-			fetchImpl,
-			persist: false,
-			...seams(),
-		});
-		const result = await command.run(runInput());
-		expect(result.ok).toBe(false);
-		expect(result.code).toBe("HOBO_OIDC_EXPIRED");
-		expect(result.remediation?.length).toBeGreaterThan(0);
-	});
-
-	it("stops polling when the device code's expires_in window elapses", async () => {
-		const pending = () => jsonResponse(400, { error: "authorization_pending" });
-		const { fetchImpl } = createFakeIssuerFetch({
-			tokenResponses: [pending(), pending()],
-			deviceOverride: { expires_in: 8, interval: 5 },
-		});
-		const command = createBrokerAwareLoginCommand({
-			env,
-			fetchImpl,
-			persist: false,
-			...seams(),
-		});
-		const result = await command.run(runInput());
-		expect(result.ok).toBe(false);
-		expect(result.code).toBe("HOBO_OIDC_EXPIRED");
-		// sleep(5s) -> poll pending; sleep(5s) -> clock past the 8s deadline.
-		expect(sleeps).toEqual([5000, 5000]);
-	});
-
-	it("discovery failure is typed and fail-closed", async () => {
-		const { fetchImpl } = createFakeIssuerFetch({
-			tokenResponses: [],
-			discoveryOverride: "unreachable",
-		});
-		const command = createBrokerAwareLoginCommand({
-			env,
-			fetchImpl,
-			persist: false,
-			...seams(),
-		});
-		const result = await command.run(runInput());
-		expect(result.ok).toBe(false);
-		expect(result.code).toBe("HOBO_OIDC_DISCOVERY_FAILED");
-		expect(result.remediation?.length).toBeGreaterThan(0);
-	});
-
-	it("metadata without a device_authorization_endpoint is rejected", async () => {
-		const { fetchImpl } = createFakeIssuerFetch({
-			tokenResponses: [],
-			discoveryOverride: {
-				...issuer.discovery(),
-				token_endpoint: `${ISSUER}/token`,
-			},
-		});
-		const command = createBrokerAwareLoginCommand({
-			env,
-			fetchImpl,
-			persist: false,
-			...seams(),
-		});
-		const result = await command.run(runInput());
-		expect(result.ok).toBe(false);
-		expect(result.code).toBe("HOBO_OIDC_METADATA_INVALID");
 	});
 
 	it("a minted token that fails JWKS verification is rejected (wrong audience)", async () => {

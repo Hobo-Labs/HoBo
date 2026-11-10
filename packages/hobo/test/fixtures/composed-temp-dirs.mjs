@@ -1,7 +1,10 @@
 // Composes what the composed binaries compose, as they do (signal handlers
 // asked for first), and selects the live Pulumi lane over it, then ends the way
 // it is told:
-//   node --import tsx composed-temp-dirs.mts <normal|throw|wait> <report file> <data dir|default>
+//   node composed-temp-dirs.mjs <normal|throw|wait> <report file> <data dir|default>
+// It loads the built composition (`dist`, which turbo builds before `test`):
+// what is checked is the directories, not how TypeScript is loaded, and a
+// loader would compile the composition again in every child.
 // With `default` the runtime makes its own event-store directory. The live lane
 // is pointed at a pulumi that is not there: it is built, never run. It is given
 // this process's HOBO_PULUMI_WORKDIR, when there is one. Once the lane is built,
@@ -14,8 +17,8 @@ import { join } from "node:path";
 import {
 	createDefaultYardRuntime,
 	selectPulumiEstateAdapter,
-} from "../../src/compose.ts";
-import { removeOwnedDirsOnSignals } from "../../src/owned-temp-dir.ts";
+} from "../../dist/compose.js";
+import { removeOwnedDirsOnSignals } from "../../dist/owned-temp-dir.js";
 
 const [mode, report, dataDir] = process.argv.slice(2);
 // As the bins do before they compose.
