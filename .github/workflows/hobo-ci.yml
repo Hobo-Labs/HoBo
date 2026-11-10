@@ -246,6 +246,7 @@ jobs:
       merge_base: ${{ steps.merge-group-base.outputs.base }}
       merge_tests: ${{ steps.merge-group-base.outputs.tests }}
       pr_base: ${{ steps.scm-base.outputs.base }}
+      shards: ${{ steps.shard-plan.outputs.shards }}
     env:
       GITHUB_EVENT_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
     steps:
@@ -363,6 +364,32 @@ jobs:
             echo "scope=${scope}"
             echo "tests=${tests}"
           } >> "$GITHUB_OUTPUT"
+      # One shard per four planned suites, eight at most (finding 82). The fixed
+      # matrix started eight runners for every change; 13 of the last 20 merges
+      # planned four suites or fewer. Any doubt keeps all eight: a repo-wide
+      # scope, a missing base, a planner failure, an odd answer.
+      - name: Plan workspace test shards
+        id: shard-plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ steps.scm-base.outputs.base }}
+          MERGE_TESTS: ${{ steps.merge-group-base.outputs.tests }}
+          MERGE_BASE: ${{ steps.merge-group-base.outputs.base }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request) TESTS=affected; BASE="$PR_BASE" ;;
+            *) TESTS="$MERGE_TESTS"; BASE="$MERGE_BASE" ;;
+          esac
+          shards='[0, 1, 2, 3, 4, 5, 6, 7]'
+          if [ "$TESTS" = "affected" ] && [ -n "$BASE" ] && git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            planned="$(git diff --name-only "$BASE" HEAD |
+              node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
+                --base="$BASE" --plan-shards=8)" || planned=""
+            if [[ "$planned" =~ ^\[[0-7](,\ [0-7])*\]$ ]]; then shards="$planned"; fi
+          fi
+          echo "workspace test shards: ${shards}"
+          echo "shards=${shards}" >> "$GITHUB_OUTPUT"
       - name: Impact classification (shadow)
         if: github.event_name == 'merge_group' && steps.merge-group-base.outputs.base != '' && vars.HOBO_IMPACT_GATE != 'off'
         continue-on-error: true
@@ -413,10 +440,13 @@ jobs:
     # The required gate accepts validation only when every shard succeeds.
     needs: pr_gate_validation
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_validation.result == 'success' }}
+    # The shard list is the planner's; each job splits by its own position in
+    # that list (strategy.job-index of strategy.job-total), so whatever list
+    # arrives, every planned suite lands in exactly one job.
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        shard: ${{ fromJSON(needs.pr_gate_validation.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]') }}
     runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
@@ -456,7 +486,8 @@ jobs:
           PR_BASE: ${{ needs.pr_gate_validation.outputs.pr_base }}
           MERGE_TESTS: ${{ needs.pr_gate_validation.outputs.merge_tests }}
           MERGE_BASE: ${{ needs.pr_gate_validation.outputs.merge_base }}
-          SHARD: ${{ matrix.shard }}
+          SHARD: ${{ strategy.job-index }}
+          SHARD_TOTAL: ${{ strategy.job-total }}
           HOBO_TURBO_CONCURRENCY: "1"
         run: |
           set -euo pipefail
@@ -475,11 +506,11 @@ jobs:
               fi
               git diff --name-only "$BASE" HEAD |
                 node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
-                  --base="$BASE" --shard="$SHARD/8" --run --anon-profile=turbo-profile.json
+                  --base="$BASE" --shard="$SHARD/$SHARD_TOTAL" --run --anon-profile=turbo-profile.json
               ;;
             all)
               printf '' | node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \
-                --shard="$SHARD/8" --run --anon-profile=turbo-profile.json
+                --shard="$SHARD/$SHARD_TOTAL" --run --anon-profile=turbo-profile.json
               ;;
             *) echo "Invalid or missing merge-group test scope: $TESTS" >&2; exit 1 ;;
           esac
