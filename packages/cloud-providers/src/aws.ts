@@ -5,9 +5,13 @@
  * Which offering a given resource gets is decided later, by ADR-0151 selection,
  * against the requirements the app actually states.
  *
- * HONEST SCOPE: `@hobo/provider-aws` ships no deployment resolvers, so nothing
- * here deploys. A deploy against this Yard fails closed at resolution until
- * Resource Definitions and resolvers land for the `aws.*` product ids.
+ * HONEST SCOPE: `@hobo/provider-aws` ships resolvers for part of this
+ * catalog (`AWS_RESOLVED_PRODUCT_IDS`; the rest, with reasons, in
+ * `AWS_UNRESOLVED_PRODUCT_IDS`), proven only against an injected fake
+ * transport. The current count is `providerParity()` in `./parity.js`, derived from
+ * those constants rather than restated here, because a restated count drifts.
+ * No Resource Definitions are registered for the `aws.*` product ids, so a
+ * deploy against this Yard still fails closed at resolution.
  */
 import { type AwsYardSpecOptions, awsYardSpec } from "@hobo/provider-aws";
 import type { Yard as ParsedYard } from "@hobo/yards";

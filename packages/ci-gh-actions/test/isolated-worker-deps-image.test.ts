@@ -762,7 +762,7 @@ describe("isolated worker deps image selection", () => {
 		expect(docker.probeCalls).toEqual(["hobo-ci-deps:local"]);
 	});
 
-	it("falls back when the deps toolchain does not match", async () => {
+	it("keeps the deps image when the toolchain label lags the worker", async () => {
 		const lease = await reservedLease("Hobo-Labs/HoBo");
 		const docker = fakeDocker();
 		const deps = docker.images.get("hobo-ci-deps:local");
@@ -771,9 +771,15 @@ describe("isolated worker deps image selection", () => {
 			...deps,
 			labels: { ...deps.labels, "hobo.ci.toolchain": "v111111111111" },
 		});
-		await controller(docker.driver).host.launch(lease.id);
-		expect(docker.specs[0]?.image).toBe("hobo-ci-worker:local");
-		expect(docker.specs[0]?.env.HOBO_CI_DEPS_LAYER).toBeUndefined();
+		const drift: unknown[] = [];
+		await controller(docker.driver, root, undefined, {
+			log: (event, fields) => {
+				if (event === "hobo_ci_deps_toolchain_drift") drift.push(fields);
+			},
+		}).host.launch(lease.id);
+		expect(docker.specs[0]?.image).toBe("hobo-ci-deps:local");
+		expect(docker.specs[0]?.env.HOBO_CI_DEPS_LAYER).toBe(DEPS_KEY);
+		expect(drift).toHaveLength(1);
 	});
 
 	it("never selects the HoBo deps image for another repository", async () => {

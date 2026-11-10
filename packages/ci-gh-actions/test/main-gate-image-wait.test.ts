@@ -98,7 +98,7 @@ describe("Main full gate image dependency", () => {
 	});
 
 	it("still builds the image before main-gate when image inputs change", () => {
-		expect(mainGate.needs).toBe("ci-runner-image");
+		expect(mainGate.needs).toEqual(["route", "ci-runner-image"]);
 		expect(mainGate.if).toContain("!cancelled()");
 	});
 });

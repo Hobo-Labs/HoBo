@@ -46,7 +46,7 @@ async function setup(budget = commonBudget()) {
 		],
 	});
 	const http = await controlHttp({
-		relay: h.relay,
+		relay: h,
 		configuration: h.configuration,
 		credentialJson: credentials,
 		github: strictGithub([]).github,
