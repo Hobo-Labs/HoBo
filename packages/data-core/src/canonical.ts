@@ -88,8 +88,20 @@ const BASE64_PATTERN =
 const DATE_PATTERN = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/u;
 const UUID_PATTERN =
 	/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/u;
+/**
+ * RFC 3339, strictly: the offset is mandatory and is bounded to ±23:59 with
+ * minutes at most 59, as the grammar's `time-hour` and `time-minute` are. A
+ * looser offset is not a notation — `+99:99` would shift the instant by four
+ * days and normalise to a value nobody wrote.
+ */
 const TIMESTAMP_PATTERN =
-	/^([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt ]([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,9}))?(Z|z|[+-][0-9]{2}:?[0-9]{2})$/u;
+	/^([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt ]([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,9}))?(Z|z|[+-](?:[01][0-9]|2[0-3]):?[0-5][0-9])$/u;
+/** The only members an `encrypted` value has. */
+const ENCRYPTED_MEMBERS: readonly string[] = Object.freeze([
+	"alg",
+	"keyRef",
+	"ciphertext",
+]);
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 
@@ -308,33 +320,48 @@ function normalizeDate(value: JsonValue, field: string): string {
 	return `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`;
 }
 
+/** A strict RFC 3339 instant, read: whole UTC seconds and the sub-second digits. */
+interface InstantReading {
+	readonly ok: true;
+	/** Milliseconds since the epoch of the whole second, in UTC. */
+	readonly utcMs: number;
+	/** Exactly six digits. */
+	readonly micros: string;
+}
+
+/** Why a text is not a strict RFC 3339 instant. */
+interface InstantRefusal {
+	readonly ok: false;
+	readonly message: string;
+}
+
 /**
- * RFC 3339 → UTC with exactly six fractional digits.
- *
- * Microseconds is the canonical precision because it is the finest every
- * relational engine here stores exactly. Nanosecond digits are accepted only
- * when they are zero: silently truncating them would be data loss wearing a
- * normalisation label.
+ * Read one RFC 3339 instant. This is the only place in the package that turns
+ * instant text into a number, and it never asks the host: `Date.parse` reads a
+ * text with no offset as local time, so the same record would mean a different
+ * instant in Tokyo than in UTC. A text with no offset is refused instead.
  */
-function normalizeTimestamp(value: JsonValue, field: string): string {
-	const match = isJsonString(value) ? TIMESTAMP_PATTERN.exec(value) : null;
+function readInstant(value: string): InstantReading | InstantRefusal {
+	const match = TIMESTAMP_PATTERN.exec(value);
 	if (match === null) {
-		return invalidRecord(
-			"timestamp must be RFC 3339 with an explicit offset",
-			field,
-		);
+		return {
+			ok: false,
+			message:
+				"timestamp must be RFC 3339 with an explicit offset of at most ±23:59",
+		};
 	}
 	const fractionDigits = (match[7] ?? "").padEnd(9, "0");
 	if (fractionDigits.slice(6) !== "000") {
-		invalidRecord(
-			"timestamp precision beyond microseconds is not representable",
-			field,
-		);
+		return {
+			ok: false,
+			message: "timestamp precision beyond microseconds is not representable",
+		};
 	}
 	const micros = fractionDigits.slice(0, 6);
 	const offsetText = match[8] ?? "Z";
 	let offsetMinutes = 0;
 	if (offsetText !== "Z" && offsetText !== "z") {
+		// The pattern has already bounded these digits to 23 and 59.
 		const sign = offsetText.startsWith("-") ? -1 : 1;
 		const digits = offsetText.slice(1).replace(":", "");
 		offsetMinutes =
@@ -357,28 +384,84 @@ function normalizeTimestamp(value: JsonValue, field: string): string {
 		local.getUTCMinutes() !== minute ||
 		local.getUTCSeconds() !== second
 	) {
-		invalidRecord("timestamp is not a real instant", field);
+		return { ok: false, message: "timestamp is not a real instant" };
 	}
-	const wholeSeconds = local.getTime() - offsetMinutes * 60_000;
-	const utc = new Date(wholeSeconds);
-	if (utc.getUTCFullYear() < 0 || utc.getUTCFullYear() > 9999) {
-		invalidRecord("timestamp is outside years 0000-9999 in UTC", field);
+	const utcMs = local.getTime() - offsetMinutes * 60_000;
+	const utcYear = new Date(utcMs).getUTCFullYear();
+	if (utcYear < 0 || utcYear > 9999) {
+		return {
+			ok: false,
+			message: "timestamp is outside years 0000-9999 in UTC",
+		};
 	}
+	return { ok: true, utcMs, micros };
+}
+
+/**
+ * RFC 3339 → UTC with exactly six fractional digits.
+ *
+ * Microseconds is the canonical precision because it is the finest every
+ * relational engine here stores exactly. Nanosecond digits are accepted only
+ * when they are zero: silently truncating them would be data loss wearing a
+ * normalisation label.
+ */
+function normalizeTimestamp(value: JsonValue, field: string): string {
+	if (!isJsonString(value)) {
+		return invalidRecord(
+			"timestamp must be RFC 3339 with an explicit offset of at most ±23:59",
+			field,
+		);
+	}
+	const reading = readInstant(value);
+	if (!reading.ok) return invalidRecord(reading.message, field);
+	const utc = new Date(reading.utcMs);
 	return (
 		`${pad(utc.getUTCFullYear(), 4)}-${pad(utc.getUTCMonth() + 1, 2)}-${pad(utc.getUTCDate(), 2)}` +
-		`T${pad(utc.getUTCHours(), 2)}:${pad(utc.getUTCMinutes(), 2)}:${pad(utc.getUTCSeconds(), 2)}.${micros}Z`
+		`T${pad(utc.getUTCHours(), 2)}:${pad(utc.getUTCMinutes(), 2)}:${pad(utc.getUTCSeconds(), 2)}.${reading.micros}Z`
 	);
+}
+
+/**
+ * Microseconds since the epoch for a strict RFC 3339 instant, or `undefined`
+ * when the text is not one. Every gate that compares instants — a retention
+ * deadline, the age of conformance evidence — reads them through this, so a
+ * malformed instant is one answer (`undefined`) the gate must refuse, and the
+ * answer never depends on the process time zone.
+ *
+ * A `bigint`, because microseconds since the epoch pass 2^53 in the year 2255.
+ */
+export function instantMicros(value: string): bigint | undefined {
+	const reading = readInstant(value);
+	return reading.ok
+		? BigInt(reading.utcMs) * 1000n + BigInt(reading.micros)
+		: undefined;
 }
 
 /**
  * An encrypted value is opaque by contract (ADR-0177 decision 9): it moves as
  * ciphertext, so destroying the forgetting key erases every copy at once and
  * no engine, relay, or artifact ever needs the key.
+ *
+ * It has exactly three members. Anything a cipher needs beside the ciphertext
+ * — a nonce, an authentication tag, associated data — is packed into the
+ * `ciphertext` bytes by whoever encrypted it. A fourth member is refused, not
+ * dropped: dropping `iv` or `tag` would leave a value nobody can decrypt whose
+ * digest still agrees on both sides of a move.
  */
 function normalizeEncrypted(value: JsonValue, field: string): JsonObject {
 	if (!isJsonObject(value)) {
 		return invalidRecord(
 			"encrypted value must be { alg, keyRef, ciphertext }",
+			field,
+		);
+	}
+	const unknown = Object.keys(value).filter(
+		(member) => !ENCRYPTED_MEMBERS.includes(member),
+	);
+	if (unknown.length > 0) {
+		// Member names only: an unknown member may be carrying key material.
+		invalidRecord(
+			`encrypted value has ${unknown.length} member(s) other than ${ENCRYPTED_MEMBERS.join(", ")}; pack a nonce or tag into the ciphertext`,
 			field,
 		);
 	}
@@ -416,15 +499,45 @@ function wellFormed(value: string, field: string): string {
 	return value;
 }
 
-function wellFormedJson(value: JsonValue, field: string): JsonValue {
+/**
+ * The one normal form of a number. Negative zero becomes zero: `-0` and `0`
+ * encode to the same canonical bytes (`0`), so they digest equal, yet an
+ * engine may store them apart (a document store keeps the sign, SQLite's REAL
+ * and a text-encoded parameter do not). One value, one form. NaN and the
+ * infinities have no JSON encoding at all — they would digest as `null` — so
+ * they are refused, never rounded to anything.
+ */
+function finiteNumber(value: number, what: string, field: string): number {
+	if (!Number.isFinite(value)) {
+		return invalidRecord(
+			`${what} must be finite; NaN and the infinities have no canonical form`,
+			field,
+		);
+	}
+	// `-0 === 0`, so this is the whole normalisation.
+	return value === 0 ? 0 : value;
+}
+
+/**
+ * A `json` value in normal form: every string well formed, every number
+ * finite and never negative zero. Rebuilt rather than checked in place, so
+ * what is returned is the normal form and not the caller's value.
+ */
+function normalizeJson(value: JsonValue, field: string): JsonValue {
 	if (isJsonString(value)) return wellFormed(value, field);
+	if (isJsonNumber(value))
+		return finiteNumber(value, "a number in a json value", field);
 	if (isJsonArray(value)) {
-		for (const item of value) wellFormedJson(item, field);
-	} else if (isJsonObject(value)) {
-		for (const key of Object.keys(value)) {
-			wellFormed(key, field);
-			wellFormedJson(value[key] ?? null, field);
-		}
+		return value.map((item) => normalizeJson(item, field));
+	}
+	if (isJsonObject(value)) {
+		// Entries, not property assignment: a member named `__proto__` is data.
+		return Object.fromEntries(
+			Object.keys(value).map((key) => [
+				wellFormed(key, field),
+				normalizeJson(value[key] ?? null, field),
+			]),
+		);
 	}
 	return value;
 }
@@ -443,9 +556,9 @@ export function normalizeCanonicalValue(
 		case "int64":
 			return normalizeInt64(value, field);
 		case "float64":
-			return isJsonNumber(value) && Number.isFinite(value)
-				? value
-				: invalidRecord("float64 must be a finite number", field);
+			return isJsonNumber(value)
+				? finiteNumber(value, "float64", field)
+				: invalidRecord("float64 must be a number", field);
 		case "decimal":
 			return normalizeDecimal(value, field);
 		case "string":
@@ -463,7 +576,7 @@ export function normalizeCanonicalValue(
 				? value.toLowerCase()
 				: invalidRecord("uuid must be 8-4-4-4-12 hexadecimal", field);
 		case "json":
-			return wellFormedJson(value, field);
+			return normalizeJson(value, field);
 		case "encrypted":
 			return normalizeEncrypted(value, field);
 	}
@@ -504,7 +617,7 @@ export function parseCanonicalRecord(
 			invalidRecord(`${key} is not declared by schema ${schema.name}`, key);
 		}
 		wellFormed(key, key);
-		entries.push([key, wellFormedJson(value[key] ?? null, key)]);
+		entries.push([key, normalizeJson(value[key] ?? null, key)]);
 	}
 	return freezeDeep(Object.fromEntries(entries));
 }

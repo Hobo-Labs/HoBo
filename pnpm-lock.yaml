@@ -1395,6 +1395,9 @@ importers:
         specifier: workspace:*
         version: link:../data
     devDependencies:
+      '@hobo/data-core':
+        specifier: workspace:*
+        version: link:../data-core
       '@hobo/runtime-local':
         specifier: workspace:*
         version: link:../runtimes/runtime-local

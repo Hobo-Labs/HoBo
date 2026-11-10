@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import type { PrincipalRef } from "@hobo/core";
 import { describe, test } from "vitest";
 import {
+	CUSTODY_ROLES,
 	createEventStoreMigrationJournal,
 	createMemoryMigrationJournal,
 	createReferenceEngine,
@@ -50,21 +51,18 @@ const FULL = [
 
 function verdict(targetRegion: string): PolicyVerdict {
 	return evaluateCustodyPath({
+		// One point per role: a run holds on a path that leaves out a copy it
+		// creates. Only the target's region varies.
 		path: parseCustodyPath({
-			points: [
-				{
-					id: "source",
-					role: "source",
-					region: "eu-west-1",
-					protections: FULL,
-				},
-				{
-					id: "target",
-					role: "target",
-					region: targetRegion,
-					protections: FULL,
-				},
-			],
+			points: CUSTODY_ROLES.map((role) => ({
+				id: role,
+				role,
+				region: role === "target" ? targetRegion : "eu-west-1",
+				protections: FULL,
+				...(role === "source" || role === "target" || role === "event-log"
+					? undefined
+					: { retainUntil: "2026-11-17T00:00:00.000Z" }),
+			})),
 		}),
 		policy: {
 			classification: "pii",
@@ -325,10 +323,14 @@ describe("migration journal", () => {
 
 	test("a migration cannot continue as a different pattern", async () => {
 		const journal = createMemoryMigrationJournal();
-		await journal.append("mixed", {
-			type: MIGRATION_EVENTS.Planned,
-			data: { migrationId: "mixed", pattern: "offline-copy" },
-		});
+		await journal.append(
+			"mixed",
+			{
+				type: MIGRATION_EVENTS.Planned,
+				data: { migrationId: "mixed", pattern: "offline-copy" },
+			},
+			0,
+		);
 		await assert.rejects(
 			runSnapshotAndTail({
 				source: await seeded(1),
@@ -441,6 +443,8 @@ describe("in-place-evolve policy and erasure", () => {
 				ok: phase !== "contract",
 				findings:
 					phase === "contract" ? [{ code: "CUSTODY_RETENTION_EXPIRED" }] : [],
+				// The two places an in-place migration keeps data.
+				roles: ["source", "rollback-snapshot"],
 			}),
 		});
 		assert.equal(result.status, "held");

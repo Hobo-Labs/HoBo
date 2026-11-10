@@ -303,6 +303,7 @@ export function createPostgresEngine(
 					request.source,
 					request.position,
 					request.fenceToken,
+					request.expectedWatermark,
 				);
 				return { applied: request.changes.length };
 			},

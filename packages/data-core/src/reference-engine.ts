@@ -21,7 +21,7 @@ import {
 	type Position,
 	type RecordMutation,
 } from "./envelope.js";
-import { DataCoreError, FencedWriteError } from "./errors.js";
+import { DataCoreError, FencedWriteError, StaleApplyError } from "./errors.js";
 import { isJsonString, type JsonObject } from "./json.js";
 import {
 	type CaptureOrdering,
@@ -634,6 +634,15 @@ export function createReferenceEngine(
 					apply: {
 						apply(request) {
 							const stored = dataset(request.dataset);
+							// Compared and written with no await in between: this
+							// is the reference engine's one transaction.
+							if (
+								request.expectedWatermark !== undefined &&
+								(stored.watermarks.get(request.source) ?? null) !==
+									request.expectedWatermark
+							) {
+								throw new StaleApplyError(request.dataset, request.source);
+							}
 							commit(stored, request.changes, request.fenceToken);
 							stored.watermarks.set(request.source, request.position);
 							return { applied: request.changes.length };

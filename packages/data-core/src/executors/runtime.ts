@@ -8,16 +8,27 @@
  *   executor after a crash or a hold continues instead of restarting.
  * - **Continuous policy.** The verdict is recomputed before every phase
  *   (ADR-0177 decision 9). A negative verdict holds the migration at its
- *   last safe state; nothing in the phase runs.
+ *   last safe state; nothing in the phase runs. So does a verdict whose
+ *   custody path leaves out a place this run puts data — a relay, a retained
+ *   change log, the retiring source: a copy nobody judged is not approved.
  * - **Safe holds.** A hold is recorded as a fact with its reason, and only in
  *   a phase the catalog marks holdable.
  * - **Facts, not logs.** Everything observable about a run is a
  *   `migration.*` fact in the journal.
+ * - **One driver.** Every fact is appended as a compare-and-set on the head
+ *   this run read. A run that loses it — another driver appended first — or
+ *   whose conditional apply is refused as stale, has been superseded: it
+ *   records nothing further, compensates nothing, and rethrows the refusal.
  */
-import type { PolicyVerdict } from "../custody.js";
-import { DataCoreError } from "../errors.js";
+import { type PolicyVerdict, uncoveredCustodyRoles } from "../custody.js";
+import {
+	DataCoreError,
+	isSupersededError,
+	JournalConflictError,
+} from "../errors.js";
 import {
 	assertHoldable,
+	type FenceSide,
 	foldMigration,
 	MIGRATION_EVENTS,
 	type MigrationFact,
@@ -84,16 +95,43 @@ export interface MigrationRunResult {
 	readonly state: MigrationState;
 }
 
-/** Thrown inside a phase to stop the run at a safe hold. */
+export interface MigrationHoldOptions {
+	/**
+	 * The `migration.Held` fact is already journaled. A compensation writes
+	 * its hold *before* it gives write authority back, so the run loop must
+	 * not write it a second time.
+	 */
+	readonly recorded?: boolean;
+	/**
+	 * Raised by the run loop between two phases — a negative verdict, a
+	 * requested pause — rather than from inside one. Nothing is half-done, so
+	 * the hold is safe wherever it falls, including after the flip.
+	 */
+	readonly between?: boolean;
+	/** The phase the run was about to enter, for a hold between two phases. */
+	readonly before?: MigrationPhase;
+}
+
+/** Thrown to stop the run at a safe hold. */
 export class MigrationHold extends Error {
 	readonly phase: MigrationPhase;
 	readonly reason: string;
+	readonly recorded: boolean;
+	readonly between: boolean;
+	readonly before?: MigrationPhase;
 
-	constructor(phase: MigrationPhase, reason: string) {
+	constructor(
+		phase: MigrationPhase,
+		reason: string,
+		options: MigrationHoldOptions = {},
+	) {
 		super(`migration held at ${phase}: ${reason}`);
 		this.name = "MigrationHold";
 		this.phase = phase;
 		this.reason = reason;
+		this.recorded = options.recorded === true;
+		this.between = options.between === true;
+		if (options.before !== undefined) this.before = options.before;
 	}
 }
 
@@ -101,12 +139,15 @@ export class MigrationHold extends Error {
 export class MigrationRollback extends Error {
 	readonly reason: string;
 	readonly lossless: boolean;
+	/** Counts to record with the fact; never a record, never a message. */
+	readonly details: JsonObject;
 
-	constructor(reason: string, lossless: boolean) {
+	constructor(reason: string, lossless: boolean, details: JsonObject = {}) {
 		super(`migration rolled back: ${reason}`);
 		this.name = "MigrationRollback";
 		this.reason = reason;
 		this.lossless = lossless;
+		this.details = details;
 	}
 }
 
@@ -115,7 +156,7 @@ export class MigrationRollback extends Error {
  * this package's own — a code comes from a closed list, so it is safe to
  * journal. Never a message: a thrown message can carry a connection string.
  */
-function failureReason(cause: unknown): string {
+export function failureReason(cause: unknown): string {
 	if (cause instanceof DataCoreError) return `${cause.name}: ${cause.code}`;
 	return cause instanceof Error ? cause.name : "non-Error thrown";
 }
@@ -161,6 +202,12 @@ export interface PlannedDetails {
 	readonly source?: string;
 	readonly target?: string;
 	readonly dataset?: string;
+	/**
+	 * Whether this run keeps a reverse tail. Not journaled: it is read only to
+	 * decide which custody roles the run creates, and so which a verdict must
+	 * have judged. Absent takes the more demanding reading.
+	 */
+	readonly reverseTail?: boolean;
 }
 
 export class MigrationRun {
@@ -168,6 +215,7 @@ export class MigrationRun {
 	private current: MigrationState;
 	private lastPhase: MigrationPhase = "plan";
 	private readonly impedance = new Set<string>();
+	private reverseTail: boolean | undefined;
 
 	private constructor(
 		readonly runtime: MigrationRuntime,
@@ -187,6 +235,7 @@ export class MigrationRun {
 	): Promise<MigrationRun> {
 		const facts = await runtime.journal.load(runtime.migrationId);
 		const run = new MigrationRun(runtime, pattern, facts);
+		run.reverseTail = details.reverseTail;
 		if (run.current.pattern !== undefined && run.current.pattern !== pattern) {
 			throw new DataCoreError(
 				"INVALID_MIGRATION_PLAN",
@@ -254,17 +303,99 @@ export class MigrationRun {
 	}
 
 	/**
+	 * How many facts this run holds: the head its next append is conditional
+	 * on. It only grows, and only one driver can have appended the fact at any
+	 * given count, so it also serves as the run's fencing epoch — an executor
+	 * stamps it on what it applies, and a higher one outranks a lower one.
+	 */
+	get head(): number {
+		return this.facts.length;
+	}
+
+	private lastFact(type: string): JsonObject | undefined {
+		for (let index = this.facts.length - 1; index >= 0; index -= 1) {
+			const fact = this.facts[index];
+			if (fact?.type === type) return fact.data;
+		}
+		return undefined;
+	}
+
+	/** A string the first fact of a type recorded, if any did. */
+	firstText(type: string, key: string, side?: FenceSide): string | undefined {
+		for (const fact of this.facts) {
+			if (fact.type !== type) continue;
+			if (side !== undefined && fact.data.side !== side) continue;
+			const value = fact.data[key];
+			if (isJsonString(value)) return value;
+		}
+		return undefined;
+	}
+
+	/**
+	 * The recorded rollback decision, if one was journaled and not yet carried
+	 * out. Like the cutover decision it is written *before* write authority
+	 * moves, so a run that crashed in between finishes handing authority back
+	 * instead of asking again whether to.
+	 */
+	rollbackDecision(): JsonObject | undefined {
+		if (!this.current.rollbackDecided) return undefined;
+		return this.lastFact(MIGRATION_EVENTS.RollbackDecided);
+	}
+
+	/**
+	 * True when an earlier attempt compensated: verification under the fence
+	 * failed, reads were sent home and the fence was released.
+	 */
+	compensated(): boolean {
+		return this.facts.some(
+			(fact) =>
+				fact.type === MIGRATION_EVENTS.Held && fact.data.compensated === true,
+		);
+	}
+
+	/**
+	 * Journal that a write fence is about to be raised. Written first, as a
+	 * compare-and-set: a driver that is no longer the migration's driver loses
+	 * the append here and never reaches the fence.
+	 */
+	async requestFence(side: FenceSide, phase: MigrationPhase): Promise<void> {
+		await this.emit(MIGRATION_EVENTS.FenceRequested, {
+			migrationId: this.runtime.migrationId,
+			side,
+			phase,
+			requestedAt: this.runtime.clock(),
+		});
+	}
+
+	/**
+	 * Journal a hold *now*, ahead of the side effects that give write authority
+	 * back. Returns the hold for the caller to throw once it has compensated;
+	 * the run loop then knows not to record it twice.
+	 */
+	async recordHold(
+		phase: MigrationPhase,
+		reason: string,
+		details: JsonObject = {},
+	): Promise<MigrationHold> {
+		assertHoldable(phase);
+		await this.emit(MIGRATION_EVENTS.Held, {
+			migrationId: this.runtime.migrationId,
+			phase,
+			reason,
+			...details,
+			heldAt: this.runtime.clock(),
+		});
+		return new MigrationHold(phase, reason, { recorded: true });
+	}
+
+	/**
 	 * The recorded cutover decision, if one was journaled. The decision is
 	 * written *before* write authority moves, so a run that crashed between
 	 * the two finds it here and completes the move instead of re-litigating it.
 	 */
 	cutOverDecision(): JsonObject | undefined {
 		if (!this.current.cutOver) return undefined;
-		for (let index = this.facts.length - 1; index >= 0; index -= 1) {
-			const fact = this.facts[index];
-			if (fact?.type === MIGRATION_EVENTS.CutOver) return fact.data;
-		}
-		return undefined;
+		return this.lastFact(MIGRATION_EVENTS.CutOver);
 	}
 
 	noteImpedance(code: string): void {
@@ -293,7 +424,12 @@ export class MigrationRun {
 			type,
 			data: Object.freeze({ ...data }),
 		});
-		await this.runtime.journal.append(this.runtime.migrationId, fact);
+		// Conditional on the head this run holds: see `MigrationJournal.append`.
+		await this.runtime.journal.append(
+			this.runtime.migrationId,
+			fact,
+			this.facts.length,
+		);
 		this.facts.push(fact);
 		this.current = foldMigration(this.runtime.migrationId, this.facts);
 		this.runtime.onFact?.(fact);
@@ -313,16 +449,37 @@ export class MigrationRun {
 			return recorded;
 		}
 		const verdict = await this.runtime.policy(phase);
-		if (!verdict.ok) {
-			// Hold where the migration actually sits: the last completed phase,
-			// or — straight after the one non-holdable step — the phase it has
-			// already entered in effect (the soak window).
-			throw new MigrationHold(
-				isSafeHold(this.lastPhase) ? this.lastPhase : phase,
-				`policy verdict is negative before ${phase}: ${verdict.findings
-					.map((finding) => finding.code)
-					.join(", ")}`,
-			);
+		// A verdict judges the path it was given. The roles this run creates
+		// that the path never named were not judged at all, so a positive
+		// verdict says nothing about them: fail closed.
+		const uncovered = uncoveredCustodyRoles(verdict, {
+			pattern: this.pattern,
+			...(this.current.realization === undefined
+				? undefined
+				: { realization: this.current.realization }),
+			...(this.reverseTail === undefined
+				? undefined
+				: { reverseTail: this.reverseTail }),
+		});
+		if (!verdict.ok || uncovered.length > 0) {
+			const reasons = [
+				...(verdict.ok
+					? []
+					: [
+							`policy verdict is negative before ${phase}: ${verdict.findings
+								.map((finding) => finding.code)
+								.join(", ")}`,
+						]),
+				...(uncovered.length === 0
+					? []
+					: [
+							`policy verdict does not cover this migration before ${phase}: CUSTODY_PATH_INCOMPLETE (no custody point for ${uncovered.join(", ")})`,
+						]),
+			];
+			throw new MigrationHold(this.holdBetween(phase), reasons.join("; "), {
+				between: true,
+				before: phase,
+			});
 		}
 		if (this.current.status === "held") {
 			await this.emit(MIGRATION_EVENTS.Resumed, {
@@ -341,16 +498,30 @@ export class MigrationRun {
 		this.lastPhase = phase;
 		await this.runtime.afterPhase?.(phase);
 		if (this.runtime.pauseAfter === phase) {
-			// Pausing after the one non-holdable step means waiting in the phase
-			// that follows it — the soak window.
 			const phases = getPattern(this.pattern).phases;
 			const next = phases[phases.indexOf(phase) + 1];
 			throw new MigrationHold(
-				isSafeHold(phase) || next === undefined ? phase : next,
+				this.holdBetween(next),
 				`paused after ${phase} as requested`,
+				{
+					between: true,
+					...(next === undefined ? undefined : { before: next }),
+				},
 			);
 		}
 		return checkpoint;
+	}
+
+	/**
+	 * Where a run that stops between two phases sits: the last completed
+	 * phase. The one exception keeps its established name — straight after the
+	 * flip, a pattern with a soak window is already in it. A pattern without
+	 * one sits after its completed flip; nothing is half-done there, which is
+	 * what makes it safe to wait.
+	 */
+	private holdBetween(next: MigrationPhase | undefined): MigrationPhase {
+		if (isSafeHold(this.lastPhase)) return this.lastPhase;
+		return next === "soak" ? next : this.lastPhase;
 	}
 
 	result(
@@ -397,14 +568,26 @@ export class MigrationRun {
 			});
 			return this.result("completed", posture);
 		} catch (error) {
+			// Superseded: another driver owns the migration now. Nothing is
+			// recorded and nothing is compensated — a fact would lose the same
+			// compare-and-set, and a compensation would act on a view of the
+			// migration that is no longer true.
+			if (error instanceof Error && isSupersededError(error)) throw error;
 			if (error instanceof MigrationHold) {
-				assertHoldable(error.phase);
-				await this.emit(MIGRATION_EVENTS.Held, {
-					migrationId: this.runtime.migrationId,
-					phase: error.phase,
-					reason: error.reason,
-					heldAt: this.runtime.clock(),
-				});
+				if (!error.recorded) {
+					// A hold between two phases is safe wherever it falls; one
+					// raised inside a phase must name a phase that can be held.
+					if (!error.between) assertHoldable(error.phase);
+					await this.emit(MIGRATION_EVENTS.Held, {
+						migrationId: this.runtime.migrationId,
+						phase: error.phase,
+						reason: error.reason,
+						...(error.before === undefined
+							? undefined
+							: { before: error.before }),
+						heldAt: this.runtime.clock(),
+					});
+				}
 				return this.result("held", rollbackAt(error.phase), error.reason);
 			}
 			if (error instanceof MigrationRollback) {
@@ -412,15 +595,29 @@ export class MigrationRun {
 					migrationId: this.runtime.migrationId,
 					reason: error.reason,
 					lossless: error.lossless,
+					...error.details,
 					rolledBackAt: this.runtime.clock(),
 				});
 				return this.result("rolled-back", "none", error.reason);
 			}
-			await this.emit(MIGRATION_EVENTS.Failed, {
-				migrationId: this.runtime.migrationId,
-				reason: failureReason(error),
-				failedAt: this.runtime.clock(),
-			});
+			try {
+				await this.emit(MIGRATION_EVENTS.Failed, {
+					migrationId: this.runtime.migrationId,
+					reason: failureReason(error),
+					failedAt: this.runtime.clock(),
+				});
+			} catch (journalError) {
+				if (journalError instanceof JournalConflictError) {
+					// The failure could not be recorded because this driver was
+					// superseded; that, not the failure, is what the caller acts on.
+					throw new JournalConflictError(
+						this.runtime.migrationId,
+						this.facts.length,
+						{ cause: error },
+					);
+				}
+				throw journalError;
+			}
 			throw error;
 		}
 	}

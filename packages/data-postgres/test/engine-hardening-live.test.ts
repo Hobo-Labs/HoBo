@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {
 	type Awaitable,
+	CUSTODY_ROLES,
 	canonicalEncode,
 	createMemoryMigrationJournal,
 	DataCoreError,
@@ -656,21 +657,20 @@ describe.skipIf(!LIVE_URL)(
 					clock: () => NOW,
 					policy: () =>
 						evaluateCustodyPath({
+							// One point per role: the run holds on a path that leaves out
+							// a copy it creates.
 							path: parseCustodyPath({
-								points: [
-									{
-										id: "s",
-										role: "source",
-										region: "eu-west-1",
-										protections: [],
-									},
-									{
-										id: "t",
-										role: "target",
-										region: "eu-west-1",
-										protections: [],
-									},
-								],
+								points: CUSTODY_ROLES.map((role) => ({
+									id: role,
+									role,
+									region: "eu-west-1",
+									protections: [],
+									...(role === "source" ||
+									role === "target" ||
+									role === "event-log"
+										? undefined
+										: { retainUntil: "2099-01-01T00:00:00.000Z" }),
+								})),
 							}),
 							policy: { classification: "public" },
 							now: NOW,

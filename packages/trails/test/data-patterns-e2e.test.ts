@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
 	type ChangeEnvelope,
+	CUSTODY_ROLES,
 	compareDigests,
 	createEventStoreMigrationJournal,
 	createMemoryMigrationJournal,
@@ -84,11 +85,18 @@ const ORDERS: DatasetSchema = parseDatasetSchema({
 	],
 });
 
+// One point per role: a run holds on a path that leaves out a copy it
+// creates — the relay, a retained change log.
 const PATH = parseCustodyPath({
-	points: [
-		{ id: "log", role: "event-log", region: "eu-west-1", protections: [] },
-		{ id: "sink", role: "target", region: "eu-west-1", protections: [] },
-	],
+	points: CUSTODY_ROLES.map((role) => ({
+		id: role,
+		role,
+		region: "eu-west-1",
+		protections: [],
+		...(role === "source" || role === "target" || role === "event-log"
+			? undefined
+			: { retainUntil: "2026-11-17T00:00:00.000Z" }),
+	})),
 });
 
 function runtime(

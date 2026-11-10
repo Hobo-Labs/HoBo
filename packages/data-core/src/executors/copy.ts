@@ -19,6 +19,23 @@
  * before: every phase, the policy verdict in front of each, the digests, the
  * fence, the cutover decision, the soak. A native realization that cannot run
  * is an error. It is never answered by running the hub instead.
+ *
+ * Three rules hold for both realizations, and together they are why a crash
+ * or a second driver cannot leave two writable stores:
+ *
+ * - **Decide, record, then act.** Whatever moves or releases write authority —
+ *   raising a fence, releasing one in a compensation, the flip in either
+ *   direction — is preceded by a journaled fact, and every fact is a
+ *   compare-and-set on the head the run read. A driver that is no longer the
+ *   migration's driver loses the append and stops before it acts.
+ * - **A decision binds.** A journaled cutover or rollback is finished by
+ *   whichever run comes next; it is not put to the question again.
+ * - **A superseded applier is refused by the store.** Every batch this module
+ *   applies is conditional on the leg's watermark, and that watermark carries
+ *   the journal head of the driver that wrote it. Before anything is compared
+ *   under a fence, the driver stamps its own head on the leg; from then on a
+ *   driver with an older view can neither apply over it nor mistake it for
+ *   its own.
  */
 import type { DatasetSchema } from "../canonical.js";
 import {
@@ -27,9 +44,9 @@ import {
 	DEFAULT_DIGEST_BUCKETS,
 } from "../digest.js";
 import type { Position, RecordMutation } from "../envelope.js";
-import { DataCoreError } from "../errors.js";
+import { DataCoreError, StaleApplyError } from "../errors.js";
 import { MIGRATION_EVENTS, type MigrationRealization } from "../facts.js";
-import { isJsonString, type JsonObject } from "../json.js";
+import { isJsonNumber, isJsonString, type JsonObject } from "../json.js";
 import type { MigrationPhase, RollbackPosture } from "../patterns.js";
 import {
 	type Awaitable,
@@ -61,7 +78,7 @@ export type AuthorityDirection = (typeof AUTHORITY_DIRECTIONS)[number];
 
 export interface AuthorityFlip {
 	readonly direction: AuthorityDirection;
-	/** The token guarding the side that just lost write authority. */
+	/** The token of the fence on the source — the old authority's. */
 	readonly fenceToken: string;
 }
 
@@ -93,9 +110,16 @@ export interface CopyMigrationOptions {
 	 * a crash between the flip and its fact re-runs it.
 	 */
 	readonly flipAuthority: (flip: AuthorityFlip) => Awaitable<void>;
-	/** Consulted in the soak window. Defaults to `finalize`. */
+	/**
+	 * Consulted in the soak window. Defaults to `finalize`. Once a rollback is
+	 * journaled it is not consulted again: the decision binds.
+	 */
 	readonly soakDecision?: () => Awaitable<SoakDecision>;
-	/** Needed for a `to-snapshot` rollback so it cannot resurrect a subject. */
+	/**
+	 * Required for a `to-snapshot` rollback, so that it cannot resurrect a
+	 * subject. Without it such a rollback holds instead of proceeding: no
+	 * ledger is not the same as no erasures.
+	 */
 	readonly erasures?: ErasureLedger;
 	/**
 	 * How records travel: `hub` (the default) or `native`. Take it from the
@@ -107,6 +131,8 @@ export interface CopyMigrationOptions {
 	readonly profile?: string;
 	readonly plan?: PlannedDetails;
 }
+
+type CopyPattern = "snapshot-and-tail" | "offline-copy";
 
 /** The two halves of a native transfer, as this run addresses them. */
 interface NativeLeg {
@@ -126,6 +152,12 @@ interface ForwardChannel {
 	open(): Promise<JsonObject>;
 	/** The initial copy: its checkpoint, or `undefined` while it still runs. */
 	seed(): Promise<JsonObject | undefined>;
+	/**
+	 * Take the channel for this driver, so that no driver with an older view
+	 * of the migration can still write through it. A native transfer has
+	 * nothing to take: the engine applies its own records, not this module.
+	 */
+	claim(): Promise<void>;
 	/** Bring the target level with everything the source has committed. */
 	drain(): Promise<DrainOutcome>;
 	/** Drop the channel and the log it pinned. Idempotent. */
@@ -134,6 +166,7 @@ interface ForwardChannel {
 
 interface CopyContext {
 	readonly options: CopyMigrationOptions;
+	readonly pattern: CopyPattern;
 	readonly run: MigrationRun;
 	readonly targetScope: DatasetScope;
 	readonly forward: string;
@@ -146,13 +179,20 @@ interface CopyContext {
 	readonly native?: NativeLeg;
 }
 
-interface TailLeg {
-	readonly capture: ChangeCapturePort;
+/** One direction of the copy, as far as applying to it goes. */
+interface ApplyLeg {
 	readonly apply: ChangeApplyPort;
-	readonly from: DatasetScope;
 	readonly into: string;
 	readonly subscription: string;
 	readonly fenceToken?: string;
+	/** The journal head of the driver applying: its fencing epoch. */
+	epoch(): number;
+}
+
+/** A leg that is also tailed from the other side's capture. */
+interface TailLeg extends ApplyLeg {
+	readonly capture: ChangeCapturePort;
+	readonly from: DatasetScope;
 }
 
 interface DrainOutcome {
@@ -162,6 +202,91 @@ interface DrainOutcome {
 	readonly caughtUp: boolean;
 }
 
+/**
+ * What a migration leg keeps as its watermark: the position it has applied
+ * through, stamped with the journal head of the driver that wrote it —
+ * `<head>@<position>`. The stamp is what a conditional apply compares, so two
+ * drivers that both believe a leg is theirs cannot both write to it, and a
+ * driver that finds a head newer than its own knows it has been superseded.
+ */
+interface LegMark {
+	/** The watermark exactly as stored; what a conditional apply names. */
+	readonly raw: Position | undefined;
+	readonly epoch: number;
+	readonly position: Position | undefined;
+}
+
+const LEG_MARK = /^(0|[1-9][0-9]{0,14})@(.*)$/su;
+
+function stamp(epoch: number, position: Position): Position {
+	return `${epoch}@${position}`;
+}
+
+function legMarkOf(raw: Position | undefined): LegMark {
+	if (raw === undefined) return { raw, epoch: 0, position: undefined };
+	const match = LEG_MARK.exec(raw);
+	// A watermark written before legs were stamped is a bare position.
+	if (match === null) return { raw, epoch: 0, position: raw };
+	return { raw, epoch: Number(match[1]), position: match[2] ?? "" };
+}
+
+/** Read a leg's watermark; a head newer than this driver's ends the run. */
+async function readLeg(leg: ApplyLeg): Promise<LegMark> {
+	const mark = legMarkOf(
+		await leg.apply.watermark({ dataset: leg.into, source: leg.subscription }),
+	);
+	if (mark.epoch > leg.epoch()) {
+		throw new StaleApplyError(leg.into, leg.subscription);
+	}
+	return mark;
+}
+
+async function applyTo(
+	leg: ApplyLeg,
+	changes: readonly RecordMutation[],
+	position: Position,
+	mark: LegMark,
+): Promise<LegMark> {
+	const raw = stamp(leg.epoch(), position);
+	await leg.apply.apply({
+		dataset: leg.into,
+		changes,
+		source: leg.subscription,
+		position: raw,
+		// The store compares and writes in one transaction: see `ApplyRequest`.
+		expectedWatermark: mark.raw ?? null,
+		...(leg.fenceToken === undefined
+			? undefined
+			: { fenceToken: leg.fenceToken }),
+	});
+	return { raw, epoch: leg.epoch(), position };
+}
+
+const CLAIM_ATTEMPTS = 8;
+
+/**
+ * Stamp this driver's head on a leg without moving its position. After it, a
+ * driver with an older view is refused by the store — its conditional apply
+ * names a watermark that is gone — and one that reads the leg afresh sees a
+ * head newer than its own and stops.
+ */
+async function claim(leg: ApplyLeg, start: Position): Promise<void> {
+	for (let attempt = 1; ; attempt += 1) {
+		const mark = await readLeg(leg);
+		if (mark.epoch === leg.epoch() && mark.raw !== undefined) return;
+		try {
+			await applyTo(leg, [], mark.position ?? start, mark);
+			return;
+		} catch (error) {
+			// Someone applied between the read and the stamp. Look again: either
+			// they outrank this driver, and the read says so, or the stamp lands.
+			if (!(error instanceof StaleApplyError) || attempt >= CLAIM_ATTEMPTS) {
+				throw error;
+			}
+		}
+	}
+}
+
 /** Tail one leg until it is caught up or the round budget is spent. */
 async function drain(
 	leg: TailLeg,
@@ -169,11 +294,8 @@ async function drain(
 	limit: number,
 	rounds: number,
 ): Promise<DrainOutcome> {
-	let position =
-		(await leg.apply.watermark({
-			dataset: leg.into,
-			source: leg.subscription,
-		})) ?? start;
+	let mark = await readLeg(leg);
+	let position = mark.position ?? start;
 	let applied = 0;
 	for (let round = 0; round < rounds; round += 1) {
 		const batch = await leg.capture.read({
@@ -182,16 +304,12 @@ async function drain(
 			after: position,
 			limit,
 		});
-		if (batch.changes.length > 0) {
-			await leg.apply.apply({
-				dataset: leg.into,
-				changes: batch.changes,
-				source: leg.subscription,
-				position: batch.position,
-				...(leg.fenceToken === undefined
-					? undefined
-					: { fenceToken: leg.fenceToken }),
-			});
+		// A batch with nothing in scope still moves the resume point. Recording
+		// it keeps a quiet leg's durable position from falling out of the log
+		// the engine retains — a leg that was never behind must not come back
+		// from a long hold to a position that is gone.
+		if (batch.changes.length > 0 || batch.position !== position) {
+			mark = await applyTo(leg, batch.changes, batch.position, mark);
 			await leg.capture.acknowledge({
 				subscription: leg.subscription,
 				position: batch.position,
@@ -219,19 +337,28 @@ async function digests(
 	return { source, target };
 }
 
-function forwardLeg(context: CopyContext): TailLeg {
-	const { options, targetScope, forward } = context;
+/** The forward leg as the seed and the stamp use it: no capture needed. */
+function forwardApply(context: CopyContext): ApplyLeg {
+	const { options, targetScope, forward, run } = context;
 	return {
-		capture: requirePort(options.source, "capture"),
 		apply: requirePort(options.target, "apply"),
-		from: options.scope,
 		into: targetScope.dataset,
 		subscription: forward,
+		epoch: () => run.head,
+	};
+}
+
+function forwardLeg(context: CopyContext): TailLeg {
+	const { options } = context;
+	return {
+		...forwardApply(context),
+		capture: requirePort(options.source, "capture"),
+		from: options.scope,
 	};
 }
 
 function reverseLeg(context: CopyContext, fenceToken: string): TailLeg {
-	const { options, targetScope, reverse } = context;
+	const { options, targetScope, reverse, run } = context;
 	return {
 		capture: requirePort(options.target, "capture"),
 		apply: requirePort(options.source, "apply"),
@@ -239,12 +366,23 @@ function reverseLeg(context: CopyContext, fenceToken: string): TailLeg {
 		into: options.scope.dataset,
 		subscription: reverse,
 		fenceToken,
+		epoch: () => run.head,
 	};
 }
 
+/**
+ * A reverse tail keeps the old side current, and a rollback under one is
+ * `lossless` — but only if the target can be fenced while authority goes
+ * back. Without that fence the target can acknowledge a write between the
+ * rollback's last digest and the flip, and that write is lost. So the target's
+ * `fence` port is part of what a reverse tail needs; lacking it, the posture
+ * is `to-snapshot` and says so.
+ */
 function hasReverseTail(options: CopyMigrationOptions): boolean {
 	return (
-		options.target.capture !== undefined && options.source.apply !== undefined
+		options.target.capture !== undefined &&
+		options.target.fence !== undefined &&
+		options.source.apply !== undefined
 	);
 }
 
@@ -268,7 +406,7 @@ export function nativeTransferName(migrationId: string): string {
  */
 function resolveNative(
 	options: CopyMigrationOptions,
-	pattern: "snapshot-and-tail" | "offline-copy",
+	pattern: CopyPattern,
 	targetScope: DatasetScope,
 ): NativeLeg | undefined {
 	const { source, target, profile } = options;
@@ -336,10 +474,13 @@ function resolveNative(
 
 async function open(
 	options: CopyMigrationOptions,
-	pattern: "snapshot-and-tail" | "offline-copy",
+	pattern: CopyPattern,
 ): Promise<CopyContext> {
 	const targetScope = options.targetScope ?? options.scope;
 	const native = resolveNative(options, pattern, targetScope);
+	// A native transfer is torn down at the cutover and nothing tails back,
+	// so the old side goes stale there: the posture is `to-snapshot`.
+	const reverseTail = native === undefined && hasReverseTail(options);
 	const run = await MigrationRun.open(options.runtime, pattern, {
 		source: options.source.declaration.engine,
 		target: options.target.declaration.engine,
@@ -347,10 +488,12 @@ async function open(
 		...options.plan,
 		realization: native === undefined ? "hub" : "native",
 		...(native === undefined ? undefined : { profile: native.profile }),
+		reverseTail,
 	});
 	const id = options.runtime.migrationId;
 	return {
 		options,
+		pattern,
 		run,
 		targetScope,
 		forward: `hobo_migration_${id}_forward`,
@@ -358,37 +501,50 @@ async function open(
 		buckets: options.buckets ?? DEFAULT_DIGEST_BUCKETS,
 		tailBatch: options.tailBatch ?? 500,
 		maxTailRounds: options.maxTailRounds ?? 1000,
-		// A native transfer is torn down at the cutover and nothing tails back,
-		// so the old side goes stale there: the posture is `to-snapshot`.
-		reverseTail: native === undefined && hasReverseTail(options),
+		reverseTail,
 		...(native === undefined ? undefined : { native }),
 	};
 }
 
-/** Copy the whole scope through the hub. Returns records applied. */
-async function seed(
-	context: CopyContext,
-	position: Position,
-	subscription: string,
-): Promise<number> {
-	const { options, targetScope } = context;
+// public-contract: the forward leg's position for an offline copy, which has no capture position to start from.
+export const OFFLINE_COPY_POSITION = "offline-copy";
+
+/** Where the forward leg starts: what its watermark holds before any tail. */
+function forwardStart(context: CopyContext): Position {
+	return context.pattern === "offline-copy"
+		? OFFLINE_COPY_POSITION
+		: context.run.checkpointText("prepare", "startPosition");
+}
+
+/**
+ * Copy the whole scope through the hub. Returns records applied.
+ *
+ * Every chunk is a conditional apply on the forward leg. The leg is read
+ * *before* the scan opens, so whatever the scan returns is at least as new as
+ * the watermark the chunks are conditional on — and once a tail has moved
+ * that watermark, a chunk still in a slower driver's hands is refused instead
+ * of landing on top of the changes that superseded it.
+ */
+async function seed(context: CopyContext): Promise<number> {
+	const { options } = context;
+	const leg = forwardApply(context);
+	const position = forwardStart(context);
+	let mark = await readLeg(leg);
+	if (mark.position !== undefined && mark.position !== position) {
+		// The tail has moved the leg on: this seed is another driver's past.
+		throw new StaleApplyError(leg.into, leg.subscription);
+	}
 	const cursor = await requirePort(options.source, "snapshot").openSnapshot({
 		scope: options.scope,
 		chunkSize: options.chunkSize ?? 500,
 	});
-	const apply = requirePort(options.target, "apply");
 	let seeded = 0;
 	try {
 		for (;;) {
 			const chunk = await cursor.next();
 			if (chunk === undefined) break;
 			if (chunk.length === 0) continue;
-			await apply.apply({
-				dataset: targetScope.dataset,
-				changes: chunk,
-				source: subscription,
-				position,
-			});
+			mark = await applyTo(leg, chunk, position, mark);
 			seeded += chunk.length;
 		}
 	} finally {
@@ -399,8 +555,7 @@ async function seed(
 
 /** The hub: scan, tail and apply canonical records over the ports. */
 function hubChannel(context: CopyContext): ForwardChannel {
-	const { options, run, forward, tailBatch, maxTailRounds } = context;
-	const start = (): Position => run.checkpointText("prepare", "startPosition");
+	const { options, forward, tailBatch, maxTailRounds } = context;
 	return {
 		async open() {
 			// Position first, scan second: this ordering is the correctness
@@ -412,9 +567,16 @@ function hubChannel(context: CopyContext): ForwardChannel {
 			return { startPosition };
 		},
 		async seed() {
-			return { seeded: await seed(context, start(), forward) };
+			return { seeded: await seed(context) };
 		},
-		drain: () => drain(forwardLeg(context), start(), tailBatch, maxTailRounds),
+		claim: () => claim(forwardApply(context), forwardStart(context)),
+		drain: () =>
+			drain(
+				forwardLeg(context),
+				forwardStart(context),
+				tailBatch,
+				maxTailRounds,
+			),
 		async close() {
 			await options.source.capture?.stop(forward);
 		},
@@ -453,6 +615,7 @@ function nativeChannel(
 			}
 			return undefined;
 		},
+		async claim() {},
 		async drain() {
 			// A mark, then the question "has the target applied up to it": the
 			// engine's own equivalent of tailing until caught up.
@@ -484,9 +647,14 @@ function channelOf(context: CopyContext): ForwardChannel {
  * The journal holds only the token's digest — a fence token is a credential
  * and a journal is evidence. So a later phase, or a resumed run, asks the
  * store again: raising a raised fence answers its token. The digest then says
- * whether that fence is still the one the decision was made under. If it is
- * not, the fence was lifted and raised again behind the migration's back, and
- * the old authority may have taken writes; the run holds for a person.
+ * whether that fence is still the one the decision was made under.
+ *
+ * The store is asked first whether the fence is up at all, and it is "raised"
+ * only when it is. A fence that is down was lifted behind the migration's
+ * back — or the migration has since been rolled back and this driver has not
+ * noticed — and raising a fresh one would refuse writes on a store that may
+ * be the authority. Either way the old side may have taken writes, and the
+ * run holds for a person.
  */
 async function cutOverFenceToken(
 	context: CopyContext,
@@ -496,7 +664,15 @@ async function cutOverFenceToken(
 	// A journal written before tokens were kept out of it.
 	const legacy = recorded.fenceToken;
 	if (isJsonString(legacy)) return legacy;
-	const grant = await requirePort(options.source, "fence").raise({
+	const fence = requirePort(options.source, "fence");
+	const status = await fence.status(options.scope);
+	if (!status.fenced) {
+		throw new MigrationHold(
+			"soak",
+			"the fence the cutover was decided under is no longer raised on the old authority; it may have taken writes",
+		);
+	}
+	const grant = await fence.raise({
 		scope: options.scope,
 		reason: `migration ${options.runtime.migrationId}`,
 	});
@@ -522,16 +698,74 @@ function cutOverCheckpoint(context: CopyContext): JsonObject {
 }
 
 /**
+ * Journal that the source is about to be fenced, then fence it. The fact is
+ * first, and conditional: a driver that has been superseded loses it and
+ * never refuses a write on a store it no longer has any business with. Its
+ * instant is also where erasure replay is windowed from — an erasure that
+ * arrives while the source is fenced is dated before the cutover, yet never
+ * reached the source.
+ */
+async function fenceSource(context: CopyContext): Promise<string> {
+	const { options, run } = context;
+	await run.requestFence("source", "fence-and-flip");
+	const grant = await requirePort(options.source, "fence").raise({
+		scope: options.scope,
+		reason: `migration ${options.runtime.migrationId}`,
+	});
+	return grant.fenceToken;
+}
+
+/**
+ * Give write authority back to the source because verification under the
+ * fence failed. The hold is journaled first — a compare-and-set, like every
+ * fact — so a driver acting on a view that is no longer true stops here, with
+ * the fence still up, instead of releasing it under a cutover another driver
+ * has since completed.
+ */
+async function compensate(
+	context: CopyContext,
+	fenceToken: string,
+	phase: MigrationPhase,
+	reason: string,
+): Promise<MigrationHold> {
+	const { options, run } = context;
+	const hold = await run.recordHold(phase, reason, { compensated: true });
+	// Reads go home where a ramp moved them; an offline copy never did.
+	if (context.pattern === "snapshot-and-tail") await options.shiftReads?.(0);
+	await requirePort(options.source, "fence").release({
+		scope: options.scope,
+		fenceToken,
+	});
+	return hold;
+}
+
+/**
+ * A compensation sends reads home, and the ramp that moved them is already
+ * checkpointed, so nothing would move them back. Before a cutover is decided
+ * they are put where the ramp left them: authority must not move to a store
+ * that is serving no reads.
+ */
+async function restoreReads(context: CopyContext): Promise<void> {
+	const { options, run } = context;
+	if (!run.compensated()) return;
+	const percent = run.checkpoint("shift-reads")?.percent;
+	if (isJsonNumber(percent)) await options.shiftReads?.(percent);
+}
+
+/**
  * What follows a journaled cutover decision, the first time and on every
- * resume: a native transfer is closed, then write authority moves. Closing
- * first matters — a transfer left open would carry the old side's retirement
- * to the new authority as deletes.
+ * resume. A native transfer is closed — left open, it would carry the old
+ * side's retirement to the new authority as deletes. A hub leg is stamped
+ * with this driver's head, so no driver that has not seen the decision can
+ * apply to the new authority. Then write authority moves.
  */
 async function completeFlip(
 	context: CopyContext,
 	fenceToken: string,
 ): Promise<void> {
-	if (context.native !== undefined) await channelOf(context).close();
+	const channel = channelOf(context);
+	if (context.native === undefined) await channel.claim();
+	else await channel.close();
 	await context.options.flipAuthority({ direction: "to-target", fenceToken });
 }
 
@@ -558,6 +792,14 @@ async function flip(
 			subscription: reverse,
 		});
 	}
+	await restoreReads(context);
+	// The first time this run asked for the source's fence: nothing the source
+	// refused since then can have reached it.
+	const fencedFrom = run.firstText(
+		MIGRATION_EVENTS.FenceRequested,
+		"requestedAt",
+		"source",
+	);
 	const decision: JsonObject = {
 		migrationId: options.runtime.migrationId,
 		// The digest, never the token: see `fenceTokenDigest`.
@@ -566,6 +808,7 @@ async function flip(
 		digest: equal.digest,
 		reverseTail,
 		...(reversePosition === undefined ? undefined : { reversePosition }),
+		...(fencedFrom === undefined ? undefined : { fencedFrom }),
 		cutOverAt: options.runtime.clock(),
 	};
 	await run.emit(MIGRATION_EVENTS.CutOver, decision);
@@ -585,9 +828,42 @@ async function resumeFlip(
 	return decision;
 }
 
+/**
+ * An interrupted rollback attempt can leave the target — the authority —
+ * fenced with nothing journaled after the request. A run that is not going to
+ * roll back must not carry on with the authority refusing writes, so it
+ * journals a hold, releases that fence, and stops; the next run finds the
+ * target writable.
+ */
+async function releaseStrandedTargetFence(context: CopyContext): Promise<void> {
+	const { options, run, targetScope } = context;
+	const fence = options.target.fence;
+	if (
+		fence === undefined ||
+		run.firstText(MIGRATION_EVENTS.FenceRequested, "requestedAt", "target") ===
+			undefined
+	) {
+		return;
+	}
+	const status = await fence.status(targetScope);
+	if (!status.fenced) return;
+	const hold = await run.recordHold(
+		"soak",
+		"an interrupted rollback attempt left the new authority fenced; its fence was released",
+	);
+	const grant = await fence.raise({ scope: targetScope, reason: "rollback" });
+	await fence.release({ scope: targetScope, fenceToken: grant.fenceToken });
+	throw hold;
+}
+
 async function soak(context: CopyContext): Promise<JsonObject> {
 	const { options, run, reverseTail, tailBatch, maxTailRounds } = context;
+	// A rollback an earlier run decided is finished, not reconsidered: the
+	// soak decision is not asked again.
+	const decided = run.rollbackDecision();
+	if (decided !== undefined) return finishRollback(context, decided);
 	const decision = (await options.soakDecision?.()) ?? "finalize";
+	if (decision !== "rollback") await releaseStrandedTargetFence(context);
 	if (reverseTail) {
 		const reversePosition = run.checkpointText(
 			"fence-and-flip",
@@ -606,86 +882,168 @@ async function soak(context: CopyContext): Promise<JsonObject> {
 	if (decision === "hold") {
 		throw new MigrationHold("soak", "soak window left open");
 	}
-	if (decision === "rollback") {
-		await rollbackFromSoak(
-			context,
-			await cutOverFenceToken(context, cutOverCheckpoint(context)),
-		);
-	}
+	if (decision === "rollback") return rollbackFromSoak(context);
 	return { decision };
 }
 
-async function rollbackFromSoak(
-	context: CopyContext,
-	fenceToken: string,
-): Promise<never> {
+/** Where erasure replay is windowed from: before the source was fenced. */
+function erasureWindowStart(context: CopyContext): string {
+	const { run } = context;
+	const cutOver = cutOverCheckpoint(context);
+	if (isJsonString(cutOver.fencedFrom)) return cutOver.fencedFrom;
+	// A journal from before the fence request was a fact: the plan's instant
+	// is earlier than any fence, so the window is wider than needed, never
+	// narrower.
+	return (
+		run.firstText(MIGRATION_EVENTS.Planned, "plannedAt") ??
+		run.checkpointText("fence-and-flip", "cutOverAt")
+	);
+}
+
+/**
+ * Decide a rollback: establish that it is safe, journal the decision, and
+ * only then start moving authority. Everything before the decision can be
+ * undone by a hold; everything after it is `finishRollback`, which any later
+ * run repeats until it is done.
+ */
+async function rollbackFromSoak(context: CopyContext): Promise<never> {
 	const { options, run, reverseTail, targetScope, tailBatch, maxTailRounds } =
 		context;
-	const fence = requirePort(options.source, "fence");
+	const fenceToken = await cutOverFenceToken(
+		context,
+		cutOverCheckpoint(context),
+	);
+	const reason = `migration ${options.runtime.migrationId} rollback`;
 	if (reverseTail) {
-		// Quiesce the target where the engine can, then prove the source is
-		// current before it becomes the authority again.
-		const targetFence = options.target.fence;
-		const targetGrant =
-			targetFence === undefined
-				? undefined
-				: await targetFence.raise({ scope: targetScope, reason: "rollback" });
+		// Quiesce the target, then prove the source is current before it
+		// becomes the authority again.
+		const targetFence = requirePort(options.target, "fence");
+		await run.requestFence("target", "soak");
+		const targetGrant = await targetFence.raise({ scope: targetScope, reason });
 		const reversePosition = run.checkpointText(
 			"fence-and-flip",
 			"reversePosition",
 		);
-		const drained = await drain(
-			reverseLeg(context, fenceToken),
-			reversePosition,
-			tailBatch,
-			maxTailRounds,
-		);
+		const leg = reverseLeg(context, fenceToken);
+		await claim(leg, reversePosition);
+		const drained = await drain(leg, reversePosition, tailBatch, maxTailRounds);
 		const pair = await digests(context);
 		if (!drained.caughtUp || !compareDigests(pair.source, pair.target).equal) {
 			// Not safe to hand authority back yet: let the target keep writing.
-			if (targetFence !== undefined && targetGrant !== undefined) {
-				await targetFence.release({
-					scope: targetScope,
-					fenceToken: targetGrant.fenceToken,
-				});
-			}
-			throw new MigrationHold(
+			// The hold is journaled before its fence is released.
+			const hold = await run.recordHold(
 				"soak",
 				"reverse tail has not converged; the source is not yet current",
 			);
+			await targetFence.release({
+				scope: targetScope,
+				fenceToken: targetGrant.fenceToken,
+			});
+			throw hold;
 		}
-		// The forward channel ends with the migration. Dropped before authority
-		// moves, so a failure here leaves nothing half-done.
+		const decision: JsonObject = {
+			migrationId: options.runtime.migrationId,
+			lossless: true,
+			count: pair.source.count,
+			digest: pair.source.digest,
+			decidedAt: options.runtime.clock(),
+		};
+		await run.emit(MIGRATION_EVENTS.RollbackDecided, decision);
+		return finishRollback(context, decision);
+	}
+	// No reverse tail: writes since the flip are lost, and the plan said so.
+	// What must not happen is an erased subject coming back with the stale
+	// source. That needs the ledger; without one the rollback does not start.
+	if (options.erasures === undefined) {
+		throw new MigrationHold(
+			"soak",
+			"a rollback to the stale source must re-apply the erasures recorded since the cutover, and no erasure ledger was supplied; nothing was rolled back",
+		);
+	}
+	// Stop the target acknowledging writes that are about to be abandoned,
+	// where the engine can.
+	if (options.target.fence !== undefined) {
+		await run.requestFence("target", "soak");
+		await options.target.fence.raise({ scope: targetScope, reason });
+	}
+	const decision: JsonObject = {
+		migrationId: options.runtime.migrationId,
+		lossless: false,
+		erasuresFrom: erasureWindowStart(context),
+		decidedAt: options.runtime.clock(),
+	};
+	await run.emit(MIGRATION_EVENTS.RollbackDecided, decision);
+	return finishRollback(context, decision);
+}
+
+/**
+ * Carry out a journaled rollback, the first time and on every resume. Each
+ * step is idempotent, and the source's fence is released last — so a run that
+ * finds it down knows authority is already back and only the record is
+ * missing. Until then the source is fenced and the target, where it can be,
+ * is too: at no point are both writable.
+ */
+async function finishRollback(
+	context: CopyContext,
+	decision: JsonObject,
+): Promise<never> {
+	const { options, run } = context;
+	const lossless = decision.lossless === true;
+	const fence = requirePort(options.source, "fence");
+	const cutOver = cutOverCheckpoint(context);
+	let erased: number | undefined;
+	const status = await fence.status(options.scope);
+	if (status.fenced) {
+		const fenceToken = await cutOverFenceToken(context, cutOver);
+		if (lossless) {
+			// Close the reverse leg before the source takes writes of its own:
+			// a driver still tailing with an older view is refused from here.
+			await claim(
+				reverseLeg(context, fenceToken),
+				run.checkpointText("fence-and-flip", "reversePosition"),
+			);
+		} else {
+			if (options.erasures === undefined) {
+				throw new MigrationHold(
+					"soak",
+					"the decided rollback must re-apply the erasures recorded since the cutover, and no erasure ledger was supplied; authority has not moved",
+				);
+			}
+			const from = isJsonString(decision.erasuresFrom)
+				? decision.erasuresFrom
+				: erasureWindowStart(context);
+			const mutations = await options.erasures.since(from);
+			if (mutations.length > 0) {
+				await options.source.records.write({
+					dataset: options.scope.dataset,
+					mutations,
+					fenceToken,
+				});
+			}
+			erased = mutations.length;
+		}
+		// The forward channel ends with the migration: a native transfer left
+		// open would start copying the restored authority's writes to the
+		// abandoned target, and a hub subscription would pin the source's log
+		// for ever. Dropped before authority moves.
 		await channelOf(context).close();
 		await options.flipAuthority({ direction: "to-source", fenceToken });
 		await fence.release({ scope: options.scope, fenceToken });
-		await requirePort(options.target, "capture").stop(context.reverse);
+	}
+	if (lossless) {
+		await options.target.capture?.stop(context.reverse);
 		throw new MigrationRollback(
 			"rolled back from soak under a reverse tail",
 			true,
 		);
 	}
-	// No reverse tail: writes since the flip are lost, and the plan said so.
-	// What must not happen is an erased subject coming back with the stale
-	// source, so erasures recorded since the cutover are re-applied first.
-	const cutOverAt = run.checkpointText("fence-and-flip", "cutOverAt");
-	const erased = (await options.erasures?.since(cutOverAt)) ?? [];
-	if (erased.length > 0) {
-		await options.source.records.write({
-			dataset: options.scope.dataset,
-			mutations: erased,
-			fenceToken,
-		});
-	}
-	// The forward channel ends with the migration: a native transfer left open
-	// would start copying the restored authority's writes to the abandoned
-	// target, and a hub subscription would pin the source's log for ever.
-	await channelOf(context).close();
-	await options.flipAuthority({ direction: "to-source", fenceToken });
-	await fence.release({ scope: options.scope, fenceToken });
+	const since = run.checkpointText("fence-and-flip", "cutOverAt");
 	throw new MigrationRollback(
-		`rolled back from soak without a reverse tail; writes since ${cutOverAt} are lost, ${erased.length} erasure(s) re-applied`,
+		erased === undefined
+			? `rolled back from soak without a reverse tail; writes since ${since} are lost, erasures were re-applied before authority returned`
+			: `rolled back from soak without a reverse tail; writes since ${since} are lost, ${erased} erasure(s) re-applied`,
 		false,
+		erased === undefined ? {} : { erasuresReplayed: erased },
 	);
 }
 
@@ -696,8 +1054,13 @@ async function finalize(context: CopyContext): Promise<JsonObject> {
 		cutOverCheckpoint(context),
 	);
 	// The reverse tail ends here: once the source is about to be retired there
-	// is nothing left for it to keep current.
+	// is nothing left for it to keep current. Its leg is stamped first, so a
+	// driver still tailing with an older view cannot write to a retired store.
 	if (reverseTail) {
+		await claim(
+			reverseLeg(context, fenceToken),
+			run.checkpointText("fence-and-flip", "reversePosition"),
+		);
 		await requirePort(options.target, "capture").stop(context.reverse);
 	}
 	// The safety of deleting the source was proven at cutover, when both sides
@@ -708,6 +1071,19 @@ async function finalize(context: CopyContext): Promise<JsonObject> {
 		scope: options.scope,
 		buckets,
 	});
+	// The forward channel is dropped before the source is emptied, never
+	// after. An engine whose log records the retirement as deletes would
+	// otherwise hand them to whatever still reads that channel — and what
+	// reads it is the new authority.
+	await channelOf(context).close();
+	// An empty scope behind the migration's own fence was emptied by this
+	// migration: nothing else writes through that fence. So a run that died
+	// after the retire committed and before the phase was recorded finds the
+	// work done, instead of mistaking it for a source that changed.
+	const decided = cutOverCheckpoint(context).count;
+	if (expected.count === 0 && isJsonNumber(decided) && decided > 0) {
+		return { removed: 0, alreadyRetired: true };
+	}
 	if (
 		!reverseTail &&
 		expected.digest !== run.checkpointText("fence-and-flip", "digest")
@@ -717,11 +1093,6 @@ async function finalize(context: CopyContext): Promise<JsonObject> {
 			"the fenced source changed after cutover; refusing to retire it",
 		);
 	}
-	// The forward channel is dropped before the source is emptied, never
-	// after. An engine whose log records the retirement as deletes would
-	// otherwise hand them to whatever still reads that channel — and what
-	// reads it is the new authority.
-	await channelOf(context).close();
 	const receipt = await requirePort(options.source, "retire").retire({
 		scope: options.scope,
 		fenceToken,
@@ -812,11 +1183,10 @@ export async function runSnapshotAndTail(
 		await run.phase("fence-and-flip", async () => {
 			const decided = run.cutOverDecision();
 			if (decided !== undefined) return resumeFlip(context, decided);
-			const fence = requirePort(options.source, "fence");
-			const grant = await fence.raise({
-				scope: options.scope,
-				reason: `migration ${options.runtime.migrationId}`,
-			});
+			const fenceToken = await fenceSource(context);
+			// This driver's head on the leg, before anything is compared: a
+			// driver with an older view can no longer apply to the target.
+			await channel.claim();
 			const drained = await channel.drain();
 			const pair = await digests(context);
 			if (
@@ -824,17 +1194,14 @@ export async function runSnapshotAndTail(
 				!compareDigests(pair.source, pair.target).equal
 			) {
 				// Compensate: the source stays the authority and reads go home.
-				await options.shiftReads?.(0);
-				await fence.release({
-					scope: options.scope,
-					fenceToken: grant.fenceToken,
-				});
-				throw new MigrationHold(
+				throw await compensate(
+					context,
+					fenceToken,
 					"shift-reads",
 					"exact verification under the fence failed; the source remains the authority",
 				);
 			}
-			return flip(context, grant.fenceToken, pair.target);
+			return flip(context, fenceToken, pair.target);
 		});
 		await run.phase("soak", async () => soak(context));
 		await run.phase("finalize", async () => finalize(context));
@@ -862,16 +1229,11 @@ export async function runOfflineCopy(
 		await run.phase("fence-and-flip", async () => {
 			const decided = run.cutOverDecision();
 			if (decided !== undefined) return resumeFlip(context, decided);
-			const fence = requirePort(options.source, "fence");
-			const grant = await fence.raise({
-				scope: options.scope,
-				reason: `migration ${options.runtime.migrationId}`,
-			});
-			const release = (): Awaitable<void> =>
-				fence.release({ scope: options.scope, fenceToken: grant.fenceToken });
+			const fenceToken = await fenceSource(context);
 			let seeded: number | undefined;
 			if (context.native === undefined) {
-				seeded = await seed(context, "offline-copy", context.forward);
+				await channel.claim();
+				seeded = await seed(context);
 			} else {
 				// Opening is idempotent, so an attempt that ran out of time is
 				// continued by the next one rather than started again: the
@@ -880,8 +1242,9 @@ export async function runOfflineCopy(
 				const copied = await channel.seed();
 				const level = copied === undefined ? undefined : await channel.drain();
 				if (level?.caughtUp !== true) {
-					await release();
-					throw new MigrationHold(
+					throw await compensate(
+						context,
+						fenceToken,
 						"prepare",
 						"the native copy did not finish inside the fence window; the source remains the authority",
 					);
@@ -889,14 +1252,15 @@ export async function runOfflineCopy(
 			}
 			const pair = await digests(context);
 			if (!compareDigests(pair.source, pair.target).equal) {
-				await release();
-				throw new MigrationHold(
+				throw await compensate(
+					context,
+					fenceToken,
 					"prepare",
 					"copy verification failed; the source remains the authority",
 				);
 			}
 			return {
-				...(await flip(context, grant.fenceToken, pair.target)),
+				...(await flip(context, fenceToken, pair.target)),
 				...(seeded === undefined ? undefined : { seeded }),
 			};
 		});

@@ -244,6 +244,48 @@
 					}
 				}
 			}
+		},
+		{
+			"description": "a conditional apply that names a watermark the store has moved past is refused, and nothing of it lands",
+			"providerState": "dataset orders has applied upstream through position 41",
+			"request": {
+				"method": "POST",
+				"path": "/datasets/orders/apply",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"source": "upstream",
+					"position": "57",
+					"expectedWatermark": "12",
+					"changes": [
+						{
+							"tenant": "",
+							"key": "[\"o-9\"]",
+							"op": "upsert",
+							"record": {
+								"id": "o-9",
+								"total": "2"
+							}
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 409,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"error": {
+						"code": "STALE_APPLY",
+						"dataset": "orders",
+						"source": "upstream"
+					},
+					"watermark": "41",
+					"total": "1"
+				}
+			}
 		}
 	]
 }

@@ -84,6 +84,34 @@
 		{
 			"key": "pricing.ReconciliationRecorded@v1#pricing-ReconciliationRecorded-v1",
 			"bodyDigest": "sha256:b43f709ab93050c0af3d3f3c8abd665d3936bf30aa152bb6dc65ad5d0a572063"
+		},
+		{
+			"key": "migration.FenceRequested@v1#migration-FenceRequested-v1",
+			"bodyDigest": "sha256:e6ac0b5ebae630d68d73c6e1e02b8ee3decf49c1684622652fd8963283423822"
+		},
+		{
+			"key": "migration.RollbackDecided@v1#migration-RollbackDecided-v1",
+			"bodyDigest": "sha256:eac3338164aee6e0550c198691b7225969890bfbd51d5c6d402207cd8568120b"
+		},
+		{
+			"key": "migration.Planned@v2#migration-Planned-v2",
+			"bodyDigest": "sha256:032327295d2e76c7e7e50dbfe5911af902b51432be0f054418041b9f7ee30135"
+		},
+		{
+			"key": "migration.PhaseApplied@v2#migration-PhaseApplied-v2",
+			"bodyDigest": "sha256:74d13cc7c7b483618fd96bc48af6239a93397d365db7e20f27c609ad938487e1"
+		},
+		{
+			"key": "migration.CutOver@v1#migration-CutOver-v1-fence-token",
+			"bodyDigest": "sha256:9948aa201cc1a01e2386d9c3bf0e28a720c11e40b936422b8c2d98a61786d20f"
+		},
+		{
+			"key": "migration.CutOver@v2#migration-CutOver-v2",
+			"bodyDigest": "sha256:4a95c91f50fba961d30e2bde4d5fa72ba0a62dea679febe1551f3775bfaa8efc"
+		},
+		{
+			"key": "migration.RolledBack@v2#migration-RolledBack-v2",
+			"bodyDigest": "sha256:f53df2b41665ce4b15722ed506593a16df17be27a4631f38d9913cb43b161e9d"
 		}
 	]
 }

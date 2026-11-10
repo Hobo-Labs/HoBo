@@ -351,6 +351,9 @@ export function createSqliteEngine(options: SqliteEngineOptions): SqliteEngine {
 				store.commit(request.dataset, request.changes, request.fenceToken, {
 					source: request.source,
 					position: request.position,
+					...(request.expectedWatermark === undefined
+						? undefined
+						: { expected: request.expectedWatermark }),
 				});
 				return { applied: request.changes.length };
 			},

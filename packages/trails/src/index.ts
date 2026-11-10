@@ -81,6 +81,7 @@ export {
 } from "./identity-trail.js";
 export {
 	type CompatGateEvidence,
+	type DataMigrationJournal,
 	type DataMigrationPlan,
 	type DataMigrationPolicyVerdict,
 	type DataMigrationResult,

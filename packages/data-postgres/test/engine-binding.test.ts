@@ -16,6 +16,7 @@ import {
 	parseEngineDeclaration,
 	requirePort,
 	SPI_PORTS,
+	StaleApplyError,
 	schemaToJson,
 	scopeOf,
 	upsertMutation,
@@ -825,6 +826,7 @@ const PACT = JSON.parse(
 ) as ExecutorPact;
 
 const FENCED_STATE = "the dataset is fenced and the session presents no token";
+const MOVED_STATE = "another applier has moved the watermark";
 
 /**
  * An executor that answers exactly as the pact says a provider does, and
@@ -903,7 +905,7 @@ describe("executor pact", () => {
 	test("names both sides of the boundary", () => {
 		assert.equal(PACT.consumer.name, "hobo-data-postgres-engine");
 		assert.equal(PACT.provider.name, "hobo-postgres-executor");
-		assert.equal(PACT.interactions.length, 9);
+		assert.equal(PACT.interactions.length, 11);
 	});
 
 	test("the binding issues every request in the pact, and reads every response as the pact means it", async () => {
@@ -938,6 +940,32 @@ describe("executor pact", () => {
 			fenceToken: "fence:hobo_fixture_orders::example",
 		});
 		assert.deepEqual(applied, { applied: 1 });
+
+		// A conditional apply: the watermark statement runs first and takes
+		// effect only from the position the applier named.
+		const next = await requirePort(binding, "apply").apply({
+			dataset: schema.name,
+			changes: [],
+			source: "hobo_migration_m1_forward",
+			position: "57",
+			expectedWatermark: "41",
+		});
+		assert.deepEqual(next, { applied: 0 });
+		// The same request once another applier has moved the watermark: no
+		// row matches, and that alone is the refusal.
+		provider.enter(MOVED_STATE);
+		await assert.rejects(
+			async () =>
+				requirePort(binding, "apply").apply({
+					dataset: schema.name,
+					changes: [upsertMutation("", key, record)],
+					source: "hobo_migration_m1_forward",
+					position: "57",
+					expectedWatermark: "41",
+				}),
+			(cause) => cause instanceof StaleApplyError,
+		);
+		provider.enter(undefined);
 
 		// The decoding call: hex text in, one whole transaction out.
 		const batch = await requirePort(binding, "capture").read({

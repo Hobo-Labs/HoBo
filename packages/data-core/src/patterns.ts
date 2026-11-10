@@ -98,8 +98,11 @@ export interface MigrationPattern {
 	readonly targetPorts: readonly SpiPortName[];
 	/**
 	 * Ports that upgrade the soak-window rollback from `to-snapshot` to
-	 * `lossless` when both are present: capture on the target and apply on the
-	 * source — a reverse tail.
+	 * `lossless` when all are present: apply on the source, and capture *and
+	 * fence* on the target. Capture and apply are the reverse tail itself. The
+	 * fence is what makes going back lossless: without it the target can
+	 * acknowledge a write between the rollback's last digest and the flip, and
+	 * that write is gone. A target that cannot be fenced gets `to-snapshot`.
 	 */
 	readonly reverseTailPorts: {
 		readonly source: readonly SpiPortName[];
@@ -183,7 +186,7 @@ export const PATTERN_CATALOG: readonly MigrationPattern[] = Object.freeze([
 		phases: ["plan", "gate", "prepare", "fence-and-flip", "soak", "finalize"],
 		sourcePorts: ["snapshot", "verify", "fence", "retire"],
 		targetPorts: ["datasets", "records", "apply", "verify"],
-		reverseTailPorts: { source: ["apply"], target: ["capture"] },
+		reverseTailPorts: { source: ["apply"], target: ["capture", "fence"] },
 		writeFreeze: "window",
 		rollbackBeforeFlip: "lossless",
 		rollbackInSoak: "to-snapshot",
@@ -210,7 +213,7 @@ export const PATTERN_CATALOG: readonly MigrationPattern[] = Object.freeze([
 		],
 		sourcePorts: ["snapshot", "capture", "verify", "fence", "retire"],
 		targetPorts: ["datasets", "records", "apply", "verify"],
-		reverseTailPorts: { source: ["apply"], target: ["capture"] },
+		reverseTailPorts: { source: ["apply"], target: ["capture", "fence"] },
 		writeFreeze: "bounded",
 		rollbackBeforeFlip: "lossless",
 		rollbackInSoak: "to-snapshot",

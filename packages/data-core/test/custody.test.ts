@@ -3,10 +3,18 @@
 import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 import {
+	CUSTODY_ROLES,
+	type CustodyMigration,
 	type CustodyPolicy,
 	custodyPathDigest,
 	evaluateCustodyPath,
+	type JsonObject,
+	MIGRATION_PATTERNS,
+	type MigrationPatternId,
 	parseCustodyPath,
+	policyVerdictToJson,
+	requiredCustodyRoles,
+	uncoveredCustodyRoles,
 } from "../src/index.js";
 
 const NOW = "2026-11-10T00:00:00.000Z";
@@ -23,7 +31,7 @@ const EU_PII: CustodyPolicy = {
 	residency: { classifications: ["pii"], allowedJurisdictions: ["eu"] },
 };
 
-function path(extra: object[] = []) {
+function path(extra: JsonObject[] = []) {
 	return parseCustodyPath({
 		points: [
 			{ id: "source", role: "source", region: "eu-west-1", protections: FULL },
@@ -39,7 +47,7 @@ function path(extra: object[] = []) {
 }
 
 function codes(
-	extra: object[],
+	extra: JsonObject[],
 	policy: CustodyPolicy = EU_PII,
 	now = NOW,
 ): string[] {
@@ -241,5 +249,247 @@ describe("evaluateCustodyPath", () => {
 			() => parseCustodyPath({ points: [{ ...point, retainUntil: "soon" }] }),
 			/RFC 3339/u,
 		);
+	});
+});
+
+// `Date.parse` reads an instant with no offset as local time, so the same
+// path expired in Tokyo and passed in Los Angeles. Instants are read strictly;
+// `instants-timezone.test.ts` runs the same cases under three real zones.
+describe("custody instants are strict RFC 3339", () => {
+	function relay(retainUntil: string): JsonObject {
+		return {
+			id: "runner",
+			role: "relay",
+			region: "eu-west-1",
+			protections: FULL,
+			retainUntil,
+		};
+	}
+
+	test("a retention deadline without an offset is malformed", () => {
+		for (const retainUntil of [
+			"2026-11-10T05:00:00", // local time to Date.parse
+			"2026-11-17",
+			"2026-11-17T00:00:00+99:99",
+			"Tue, 17 Nov 2026 00:00:00 GMT",
+		]) {
+			assert.throws(
+				() => path([relay(retainUntil)]),
+				/retainUntil must be an RFC 3339 instant with an explicit offset/u,
+				retainUntil,
+			);
+		}
+	});
+
+	test("the injected instant must carry an offset too", () => {
+		assert.throws(
+			() =>
+				evaluateCustodyPath({
+					path: path(),
+					policy: EU_PII,
+					now: "2026-11-10T00:00:00",
+				}),
+			/now must be an RFC 3339 instant with an explicit offset/u,
+		);
+	});
+
+	test("one deadline in three spellings is one deadline, compared to the microsecond", () => {
+		for (const [retainUntil, expected] of [
+			// One microsecond after NOW.
+			["2026-11-10T00:00:00.000001Z", []],
+			["2026-11-10T09:00:00.000001+09:00", []],
+			["2026-11-09T16:00:00.000001-08:00", []],
+			// Exactly NOW: a deadline reached is a deadline passed.
+			["2026-11-10T09:00:00+09:00", ["CUSTODY_RETENTION_EXPIRED@runner"]],
+		] as const) {
+			assert.deepEqual(codes([relay(retainUntil)]), expected, retainUntil);
+		}
+	});
+});
+
+// A pattern creates copies beyond its two ends. A path that leaves one out
+// was never judged there, so it cannot be `ok` for that pattern.
+describe("a custody path must name every role its migration creates", () => {
+	const HUB_NO_REVERSE = { realization: "hub", reverseTail: false } as const;
+
+	function point(role: string): JsonObject {
+		return {
+			id: role,
+			role,
+			region: "eu-west-1",
+			protections: FULL,
+			...(role === "source" || role === "target" || role === "event-log"
+				? undefined
+				: { retainUntil: LATER }),
+		};
+	}
+
+	function verdictFor(roles: readonly string[], migration?: CustodyMigration) {
+		return evaluateCustodyPath({
+			path: parseCustodyPath({ points: roles.map((role) => point(role)) }),
+			policy: EU_PII,
+			now: NOW,
+			...(migration === undefined ? undefined : { migration }),
+		});
+	}
+
+	test("the roles each pattern creates are derived from the catalog", () => {
+		const table = {
+			"in-place-evolve": ["source", "rollback-snapshot"],
+			"rebuild-and-swap": ["target", "event-log", "relay"],
+			"offline-copy": ["source", "target", "relay", "retiring-source"],
+			"snapshot-and-tail": [
+				"source",
+				"target",
+				"relay",
+				"capture-log",
+				"retiring-source",
+			],
+			"log-pivot": ["source", "target", "event-log", "relay", "capture-log"],
+			"stream-handoff": ["event-log", "relay"],
+		} satisfies Record<MigrationPatternId, readonly string[]>;
+		for (const pattern of MIGRATION_PATTERNS) {
+			assert.deepEqual(
+				requiredCustodyRoles({ pattern, ...HUB_NO_REVERSE }),
+				table[pattern],
+				pattern,
+			);
+		}
+	});
+
+	test("the realization and the reverse tail change what is created", () => {
+		// A reverse tail retains the target's change log.
+		assert.deepEqual(
+			requiredCustodyRoles({
+				pattern: "offline-copy",
+				realization: "hub",
+				reverseTail: true,
+			}),
+			["source", "target", "relay", "capture-log", "retiring-source"],
+		);
+		// A native transfer carries no record through the runner, and retains
+		// the log itself; it has no reverse tail whatever the caller says.
+		assert.deepEqual(
+			requiredCustodyRoles({
+				pattern: "offline-copy",
+				realization: "native",
+				reverseTail: true,
+			}),
+			["source", "target", "capture-log", "retiring-source"],
+		);
+		// Unstated means the more demanding reading of each.
+		assert.deepEqual(requiredCustodyRoles({ pattern: "offline-copy" }), [
+			"source",
+			"target",
+			"relay",
+			"capture-log",
+			"retiring-source",
+		]);
+	});
+
+	test("a path of only source and target is not ok for any pattern", () => {
+		for (const pattern of MIGRATION_PATTERNS) {
+			const verdict = verdictFor(["source", "target"], {
+				pattern,
+				...HUB_NO_REVERSE,
+			});
+			assert.equal(verdict.ok, false, pattern);
+			assert.ok(
+				verdict.findings.every(
+					(finding) =>
+						finding.code === "CUSTODY_PATH_INCOMPLETE" &&
+						finding.point === "path",
+				),
+				pattern,
+			);
+		}
+		const verdict = verdictFor(["source", "target"], {
+			pattern: "snapshot-and-tail",
+			...HUB_NO_REVERSE,
+		});
+		assert.deepEqual(
+			verdict.findings.map((finding) => finding.detail),
+			[
+				"snapshot-and-tail creates a relay (the hub carries every record through the runner) and the path names none",
+				"snapshot-and-tail creates a capture-log (a change log is retained for the tail) and the path names none",
+				"snapshot-and-tail creates a retiring-source (the old source is kept through the soak window until it is retired) and the path names none",
+			],
+		);
+	});
+
+	test("a path that names every created role passes, and one missing role fails it", () => {
+		for (const pattern of MIGRATION_PATTERNS) {
+			const migration = { pattern, ...HUB_NO_REVERSE };
+			const roles = requiredCustodyRoles(migration);
+			assert.equal(verdictFor(roles, migration).ok, true, pattern);
+			for (const omitted of roles) {
+				const verdict = verdictFor(
+					roles.filter((role) => role !== omitted),
+					migration,
+				);
+				assert.equal(verdict.ok, false, `${pattern} without ${omitted}`);
+				assert.match(
+					verdict.findings.map((finding) => finding.detail).join("\n"),
+					new RegExp(`creates a ${omitted} `, "u"),
+				);
+			}
+		}
+	});
+
+	test("in-place-evolve needs no target: the store is changed where it stands", () => {
+		const migration = {
+			pattern: "in-place-evolve",
+			...HUB_NO_REVERSE,
+		} as const;
+		assert.equal(
+			verdictFor(["source", "rollback-snapshot"], migration).ok,
+			true,
+		);
+		// With no migration stated the path is judged as a path: two ends.
+		assert.deepEqual(
+			verdictFor(["source", "rollback-snapshot"]).findings.map(
+				(finding) => finding.detail,
+			),
+			["the path names no target custody point"],
+		);
+	});
+
+	test("a created role is still judged: an intermediate copy cannot hide behind completeness", () => {
+		const migration = {
+			pattern: "snapshot-and-tail",
+			...HUB_NO_REVERSE,
+		} as const;
+		const points = requiredCustodyRoles(migration).map((role) =>
+			role === "relay" ? { ...point(role), region: "us-east-1" } : point(role),
+		);
+		const verdict = evaluateCustodyPath({
+			path: parseCustodyPath({ points }),
+			policy: EU_PII,
+			now: NOW,
+			migration,
+		});
+		assert.deepEqual(
+			verdict.findings.map((finding) => `${finding.code}@${finding.point}`),
+			["CUSTODY_RESIDENCY_CONFLICT@relay"],
+		);
+	});
+
+	test("a verdict says which roles it judged, so a gate can refuse what it did not", () => {
+		const twoEnds = verdictFor(["target", "source"]);
+		assert.equal(twoEnds.ok, true);
+		assert.deepEqual(twoEnds.roles, ["source", "target"]);
+		assert.deepEqual(policyVerdictToJson(twoEnds).roles, ["source", "target"]);
+		assert.deepEqual(
+			uncoveredCustodyRoles(twoEnds, {
+				pattern: "snapshot-and-tail",
+				...HUB_NO_REVERSE,
+			}),
+			["relay", "capture-log", "retiring-source"],
+		);
+		const full = verdictFor([...CUSTODY_ROLES]);
+		assert.deepEqual(full.roles, [...CUSTODY_ROLES]);
+		for (const pattern of MIGRATION_PATTERNS) {
+			assert.deepEqual(uncoveredCustodyRoles(full, { pattern }), [], pattern);
+		}
 	});
 });

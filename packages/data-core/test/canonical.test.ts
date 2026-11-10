@@ -11,6 +11,7 @@ import {
 	DatasetDigestBuilder,
 	decodeRecordKey,
 	encodeRecordKey,
+	instantMicros,
 	normalizeCanonicalValue,
 	parseCanonicalRecord,
 	parseChangeEnvelope,
@@ -404,5 +405,176 @@ describe("type-mapping annex", () => {
 				}),
 			/must explain itself/u,
 		);
+	});
+});
+
+// Each of these normalised to a value nobody wrote while both sides of a move
+// still digested equal. A normal form either keeps the value or refuses it.
+describe("normal forms never alter a value silently", () => {
+	const n = normalizeCanonicalValue;
+	const ENCRYPTED = { alg: "AES-256-GCM", keyRef: "key:7", ciphertext: "QQ==" };
+
+	test("an encrypted value has exactly alg, keyRef and ciphertext; any other member is refused, never dropped", () => {
+		assert.deepEqual(n("encrypted", ENCRYPTED, "f"), ENCRYPTED);
+		for (const extra of [
+			{ iv: "AAAA" },
+			{ tag: "BBBB" },
+			{ iv: "AAAA", tag: "BBBB" },
+			{ aad: null },
+		]) {
+			assert.throws(
+				() => n("encrypted", { ...ENCRYPTED, ...extra }, "f"),
+				/member\(s\) other than alg, keyRef, ciphertext/u,
+			);
+		}
+		// The refusal names no member and no value: either may be key material.
+		assert.throws(
+			() => n("encrypted", { ...ENCRYPTED, wrappedKey: "c2VjcmV0" }, "f"),
+			(error: Error) =>
+				!error.message.includes("wrappedKey") &&
+				!error.message.includes("c2VjcmV0"),
+		);
+		const schema = parseDatasetSchema({
+			name: "vault",
+			keyFields: ["id"],
+			fields: [
+				{ name: "id", type: "string", nullable: false },
+				{ name: "secret", type: "encrypted", nullable: false },
+			],
+		});
+		assert.throws(
+			() =>
+				parseCanonicalRecord(schema, {
+					id: "a",
+					secret: { ...ENCRYPTED, iv: "AAAA", tag: "BBBB" },
+				}),
+			/member\(s\) other than/u,
+		);
+	});
+
+	test("a timestamp offset is bounded to ±23:59 with minutes at most 59", () => {
+		for (const offset of ["+99:99", "+24:00", "-24:00", "+23:60", "-00:60"]) {
+			assert.throws(
+				() => n("timestamp", `2026-01-02T05:04:05${offset}`, "f"),
+				/explicit offset of at most ±23:59/u,
+				offset,
+			);
+			assert.throws(
+				() =>
+					n("timestamp", `2026-01-02T05:04:05${offset.replace(":", "")}`, "f"),
+				/explicit offset of at most ±23:59/u,
+				offset,
+			);
+		}
+		assert.equal(
+			n("timestamp", "2026-01-02T05:04:05+23:59", "f"),
+			"2026-01-01T05:05:05.000000Z",
+		);
+		assert.equal(
+			n("timestamp", "2026-01-02T05:04:05-2359", "f"),
+			"2026-01-03T05:03:05.000000Z",
+		);
+		assert.equal(
+			n("timestamp", "2026-01-02T05:04:05-00:00", "f"),
+			"2026-01-02T05:04:05.000000Z",
+		);
+	});
+
+	test("float64 has no negative zero: -0 normalises to 0, as it already digests", () => {
+		assert.ok(Object.is(n("float64", -0, "f"), 0));
+		assert.ok(Object.is(n("float64", 0, "f"), 0));
+		assert.equal(n("float64", -1.5, "f"), -1.5);
+		assert.equal(n("float64", 5e-324, "f"), 5e-324);
+		const schema = parseDatasetSchema({
+			name: "scale",
+			keyFields: ["id"],
+			fields: [
+				{ name: "id", type: "string", nullable: false },
+				{ name: "weight", type: "float64", nullable: false },
+				{ name: "attrs", type: "json", nullable: true },
+			],
+		});
+		const negative = parseCanonicalRecord(schema, {
+			id: "a",
+			weight: -0,
+			attrs: { readings: [-0, 1.5] },
+		});
+		const positive = parseCanonicalRecord(schema, {
+			id: "a",
+			weight: 0,
+			attrs: { readings: [0, 1.5] },
+		});
+		// Equal digests now describe equal values, not two values an engine
+		// may store apart.
+		assert.deepEqual(negative, positive);
+		assert.ok(Object.is(negative.weight, 0));
+		const key = encodeRecordKey(schema, negative);
+		assert.equal(
+			recordDigest("", key, negative),
+			recordDigest("", key, positive),
+		);
+	});
+
+	test("NaN and the infinities are refused wherever a number can appear", () => {
+		for (const value of [
+			Number.NaN,
+			Number.POSITIVE_INFINITY,
+			Number.NEGATIVE_INFINITY,
+		]) {
+			assert.throws(() => n("float64", value, "f"), /no canonical form/u);
+			// Inside a json value they would digest as `null`.
+			assert.throws(() => n("json", { a: [value] }, "f"), /no canonical form/u);
+		}
+		assert.throws(() => n("float64", "1.5", "f"), /must be a number/u);
+	});
+
+	test("a json value comes back in normal form without touching the caller's value", () => {
+		// A member named `__proto__` is data, and survives the rebuild.
+		const output = n(
+			"json",
+			JSON.parse('{"__proto__":{"x":-0},"list":[1,{"y":"z"}]}'),
+			"f",
+		);
+		assert.equal(
+			canonicalEncode(output),
+			'{"__proto__":{"x":0},"list":[1,{"y":"z"}]}',
+		);
+		const reading = { x: -0 };
+		const normal = n("json", { readings: [reading] }, "f");
+		assert.deepEqual(normal, { readings: [{ x: 0 }] });
+		assert.ok(Object.is(reading.x, -0));
+	});
+});
+
+describe("instantMicros", () => {
+	test("reads an RFC 3339 instant to microseconds since the epoch", () => {
+		assert.equal(instantMicros("1970-01-01T00:00:00Z"), 0n);
+		assert.equal(instantMicros("1970-01-01T00:00:00.000001Z"), 1n);
+		assert.equal(instantMicros("1969-12-31T23:59:59.999999Z"), -1n);
+		assert.equal(
+			instantMicros("2026-11-10T09:00:00+09:00"),
+			instantMicros("2026-11-10T00:00:00.000Z"),
+		);
+		// Exact past 2^53 microseconds, where a double would round.
+		assert.equal(
+			instantMicros("9999-12-31T23:59:59.999999Z"),
+			253402300799999999n,
+		);
+	});
+
+	test("anything that is not a strict instant is undefined, never a guess", () => {
+		for (const text of [
+			"2026-11-10T00:00:00", // no offset: local time to Date.parse
+			"2026-11-10", // a date
+			"2026-11-10T00:00:00+99:99",
+			"2026-02-30T00:00:00Z",
+			"2026-11-10T00:00:00.1234567Z",
+			"Tue, 10 Nov 2026 00:00:00 GMT",
+			"1762732800000",
+			"soon",
+			"",
+		]) {
+			assert.equal(instantMicros(text), undefined, text);
+		}
 	});
 });

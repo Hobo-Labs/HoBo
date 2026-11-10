@@ -233,6 +233,18 @@ export interface ApplyRequest {
 	/** Source position after the last change in this batch. */
 	readonly position: Position;
 	readonly fenceToken?: string;
+	/**
+	 * A conditional watermark. When present, the batch lands only if the
+	 * watermark recorded for `source` is exactly this — `null` meaning none
+	 * has been recorded yet. Anything else is refused with `StaleApplyError`,
+	 * and nothing of the batch lands. Absent, the apply is unconditional.
+	 *
+	 * The comparison and the write are one transaction: of two appliers that
+	 * name the same watermark, exactly one lands. That is what lets a
+	 * migration keep a driver that has been superseded from writing over the
+	 * one that superseded it.
+	 */
+	readonly expectedWatermark?: Position | null;
 }
 
 export interface ApplyReceipt {
@@ -248,6 +260,10 @@ export interface ChangeApplyPort {
 	/**
 	 * Apply the changes and record the watermark in one transaction. Redelivery
 	 * of a batch is harmless: upserts and deletes are idempotent in order.
+	 *
+	 * With `expectedWatermark`, the same transaction first checks that the
+	 * recorded watermark is the one named, and refuses the whole batch with
+	 * `StaleApplyError` when it is not.
 	 */
 	apply(request: ApplyRequest): Awaitable<ApplyReceipt>;
 	watermark(request: WatermarkRequest): Awaitable<Position | undefined>;

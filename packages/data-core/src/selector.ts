@@ -11,8 +11,8 @@
  * rejection that names a reason for every candidate, in the same
  * agent-correctable form as `deployment.PlanRejected`.
  */
-import type { DatasetSchema } from "./canonical.js";
-import type { PolicyVerdict } from "./custody.js";
+import { type DatasetSchema, instantMicros } from "./canonical.js";
+import { type PolicyVerdict, uncoveredCustodyRoles } from "./custody.js";
 import { DataCoreError } from "./errors.js";
 import { MIGRATION_REALIZATIONS, type MigrationRealization } from "./facts.js";
 import { digestOf, type JsonObject } from "./json.js";
@@ -49,16 +49,23 @@ export type Realization = MigrationRealization;
 export const CONFORMANCE_OUTCOMES = ["pass", "fail", "unknown"] as const;
 export type ConformanceOutcome = (typeof CONFORMANCE_OUTCOMES)[number];
 
-/** What a conformance run recorded for one engine. */
+/**
+ * What a conformance run recorded for one engine.
+ *
+ * An engine may have several entries. The one that counts is the most recent;
+ * when several share that instant, the worst of them. An entry whose
+ * `checkedAt` is unreadable or lies after `now` fails the engine outright —
+ * it could otherwise pose as the most recent run for ever.
+ */
 export interface ConformanceEvidence {
 	readonly engine: string;
 	readonly outcome: ConformanceOutcome;
-	/** RFC 3339 instant the suite ran. */
+	/** RFC 3339 instant, with an explicit offset, at which the suite ran. */
 	readonly checkedAt: string;
 }
 
 export interface SelectionConstraints {
-	/** Longest the application may be refused writes, in milliseconds. */
+	/** Longest the application may be refused writes: finite milliseconds, zero or more. */
 	readonly maxWriteFreezeMs: number;
 	/** Weakest rollback posture acceptable during the soak window. */
 	readonly requiredRollback: RollbackPosture;
@@ -67,7 +74,8 @@ export interface SelectionConstraints {
 /**
  * Estimates the planner supplies per pattern. An absent estimate is never
  * treated as zero: an unestimated freeze fails its gate and an unestimated
- * cost ranks last.
+ * cost ranks last. An estimate that is not a finite number of zero or more —
+ * `NaN`, an infinity, a negative — is not an estimate, and is read as absent.
  */
 export interface SelectionEstimates {
 	readonly flipMs?: number;
@@ -88,9 +96,9 @@ export interface SelectionRequest {
 	readonly verdict: PolicyVerdict;
 	readonly waivers?: readonly string[];
 	readonly evidence?: readonly ConformanceEvidence[];
-	/** Injected instant, RFC 3339. */
+	/** Injected instant, RFC 3339 with an explicit offset. */
 	readonly now: string;
-	/** How old conformance evidence may be before it is stale. */
+	/** How old conformance evidence may be before it is stale: finite milliseconds, zero or more. */
 	readonly evidenceMaxAgeMs: number;
 }
 
@@ -103,7 +111,9 @@ export const SELECTION_REASON_CODES = [
 	"EVIDENCE_MISSING",
 	"EVIDENCE_FAILED",
 	"EVIDENCE_STALE",
+	"EVIDENCE_POSTDATED",
 	"POLICY_DENIED",
+	"CUSTODY_INCOMPLETE",
 	"FREEZE_UNESTIMATED",
 	"FREEZE_EXCEEDS_BUDGET",
 	"ROLLBACK_INSUFFICIENT",
@@ -178,39 +188,100 @@ export const NATIVE_TRANSPORT_PORTS: {
 	target: Object.freeze(["apply"] as const),
 });
 
+/** How bad an outcome is. Anything that is not a known better outcome is the worst. */
+function severity(outcome: ConformanceOutcome): number {
+	if (outcome === "pass") return 0;
+	return outcome === "unknown" ? 1 : 2;
+}
+
+/**
+ * The evidence gate for each engine involved.
+ *
+ * Every entry for the engine is read, never the first one found: `[pass,
+ * fail]` and `[fail, pass]` are the same evidence. The entry that counts is
+ * the most recent, and the worst of those that share its instant. An entry
+ * the gate cannot place in time — an unreadable `checkedAt`, or one after
+ * `now` — fails the engine, because it cannot be shown to be older than a
+ * passing run and so cannot be outvoted by one.
+ */
 function evidenceReasons(
 	request: SelectionRequest,
-	now: number,
+	now: bigint,
 	engines: readonly string[],
 ): SelectionReason[] {
 	const reasons: SelectionReason[] = [];
+	// In microseconds, as instants are. The request was refused unless the
+	// limit is finite and zero or more.
+	const maxAgeMicros = request.evidenceMaxAgeMs * 1000;
 	for (const engine of engines) {
-		const evidence = (request.evidence ?? []).find(
+		const entries = (request.evidence ?? []).filter(
 			(entry) => entry.engine === engine,
 		);
-		if (evidence === undefined) {
+		if (entries.length === 0) {
 			reasons.push({
 				code: "EVIDENCE_MISSING",
 				detail: `no conformance evidence for ${engine}`,
 			});
 			continue;
 		}
-		if (evidence.outcome !== "pass") {
+		let counted: ConformanceEvidence | undefined;
+		let countedAt = 0n;
+		let unplaced = false;
+		for (const entry of entries) {
+			const checkedAt = instantMicros(entry.checkedAt);
+			if (checkedAt === undefined) {
+				unplaced = true;
+				reasons.push({
+					code: "EVIDENCE_STALE",
+					detail: `conformance for ${engine} has no readable checkedAt (${entry.checkedAt}); an RFC 3339 instant with an explicit offset is required`,
+				});
+				continue;
+			}
+			if (checkedAt > now) {
+				unplaced = true;
+				reasons.push({
+					code: "EVIDENCE_POSTDATED",
+					detail: `conformance for ${engine} is dated ${entry.checkedAt}, after ${request.now}`,
+				});
+				continue;
+			}
+			if (
+				counted === undefined ||
+				checkedAt > countedAt ||
+				(checkedAt === countedAt &&
+					severity(entry.outcome) > severity(counted.outcome))
+			) {
+				counted = entry;
+				countedAt = checkedAt;
+			}
+		}
+		if (unplaced || counted === undefined) continue;
+		if (counted.outcome !== "pass") {
 			reasons.push({
 				code: "EVIDENCE_FAILED",
-				detail: `conformance for ${engine} is ${evidence.outcome}`,
+				detail: `conformance for ${engine} is ${counted.outcome}`,
 			});
 			continue;
 		}
-		const checkedAt = Date.parse(evidence.checkedAt);
-		if (Number.isNaN(checkedAt) || now - checkedAt > request.evidenceMaxAgeMs) {
+		if (Number(now - countedAt) > maxAgeMicros) {
 			reasons.push({
 				code: "EVIDENCE_STALE",
-				detail: `conformance for ${engine} was last checked ${evidence.checkedAt}`,
+				detail: `conformance for ${engine} was last checked ${counted.checkedAt}`,
 			});
 		}
 	}
 	return reasons;
+}
+
+/**
+ * An estimate a gate may use: a finite number, zero or more. `NaN` compares
+ * false against every budget and a negative is under every budget, so either
+ * would walk through a `>` check; neither is an estimate.
+ */
+function usableEstimate(value: number | undefined): number | undefined {
+	return value !== undefined && Number.isFinite(value) && value >= 0
+		? value
+		: undefined;
 }
 
 function freezeMs(
@@ -218,9 +289,9 @@ function freezeMs(
 	estimates: SelectionEstimates | undefined,
 ): number | undefined {
 	if (pattern.writeFreeze === "none") return 0;
-	return pattern.writeFreeze === "bounded"
-		? estimates?.flipMs
-		: estimates?.copyMs;
+	return usableEstimate(
+		pattern.writeFreeze === "bounded" ? estimates?.flipMs : estimates?.copyMs,
+	);
 }
 
 function rank(posture: RollbackPosture): number {
@@ -238,7 +309,7 @@ function evaluateCandidate(
 	pattern: MigrationPattern,
 	realization: Realization,
 	mapping: readonly MappingFinding[] | undefined,
-	now: number,
+	now: bigint,
 ): MigrationCandidate {
 	const reasons: SelectionReason[] = [];
 	const legal =
@@ -350,7 +421,7 @@ function evaluateCandidate(
 	if (estimatedFreeze === undefined) {
 		reasons.push({
 			code: "FREEZE_UNESTIMATED",
-			detail: `${pattern.id} refuses writes (${pattern.writeFreeze}) and no estimate was supplied`,
+			detail: `${pattern.id} refuses writes (${pattern.writeFreeze}) and no usable estimate was supplied: a finite number of milliseconds, zero or more`,
 		});
 	} else if (estimatedFreeze > request.constraints.maxWriteFreezeMs) {
 		reasons.push({
@@ -375,6 +446,21 @@ function evaluateCandidate(
 			detail: `${pattern.id} offers ${rollbackInSoak} rollback in soak; ${request.constraints.requiredRollback} is required`,
 		});
 	}
+	// The verdict judged the places its path named and no others. A pattern
+	// that creates a copy the path left out — a relay, a retained change log,
+	// a rollback snapshot, the retiring source — was never judged there, so an
+	// `ok` verdict says nothing about it and the candidate is not eligible.
+	const uncovered = uncoveredCustodyRoles(request.verdict, {
+		pattern: pattern.id,
+		realization,
+		reverseTail,
+	});
+	if (uncovered.length > 0) {
+		reasons.push({
+			code: "CUSTODY_INCOMPLETE",
+			detail: `${pattern.id} (${realization}) creates ${uncovered.join(", ")}; the custody path behind the verdict names no such point`,
+		});
+	}
 	return Object.freeze({
 		pattern: pattern.id,
 		realization,
@@ -391,8 +477,13 @@ function orderKey(
 	candidate: MigrationCandidate,
 	estimates: SelectionEstimates | undefined,
 ): readonly (number | string)[] {
-	const custody = estimates?.custodyPoints?.[candidate.pattern];
-	const cost = estimates?.costMinorUnits?.[candidate.pattern];
+	// An estimate that is not a finite, non-negative number is no estimate: it
+	// ranks last, as an absent one does. Raw, a NaN compares neither below nor
+	// above anything, so the order — and with it the selection — would depend
+	// on where the candidate happened to stand in the list; a negative one
+	// would win.
+	const custody = usableEstimate(estimates?.custodyPoints?.[candidate.pattern]);
+	const cost = usableEstimate(estimates?.costMinorUnits?.[candidate.pattern]);
 	return [
 		-rank(candidate.rollbackInSoak),
 		FREEZE_RANK[candidate.writeFreeze],
@@ -442,16 +533,25 @@ function candidateToJson(candidate: MigrationCandidate): JsonObject {
 export function selectMigrationPattern(
 	request: SelectionRequest,
 ): MigrationDecision {
-	const now = Date.parse(request.now);
-	if (Number.isNaN(now)) invalid("now must be an RFC 3339 instant", "now");
-	if (!(request.constraints.maxWriteFreezeMs >= 0)) {
+	// Read strictly, never through `Date.parse`: an instant with no offset is
+	// local time there, and the decision would depend on the host's time zone.
+	const now = instantMicros(request.now);
+	if (now === undefined) {
+		invalid("now must be an RFC 3339 instant with an explicit offset", "now");
+	}
+	// Finite as well as non-negative: an infinite budget has no JSON form, so
+	// it would enter the decision digest as `null`.
+	if (usableEstimate(request.constraints.maxWriteFreezeMs) === undefined) {
 		invalid(
-			"maxWriteFreezeMs must be zero or more",
+			"maxWriteFreezeMs must be a finite number, zero or more",
 			"constraints.maxWriteFreezeMs",
 		);
 	}
-	if (!(request.evidenceMaxAgeMs >= 0)) {
-		invalid("evidenceMaxAgeMs must be zero or more", "evidenceMaxAgeMs");
+	if (usableEstimate(request.evidenceMaxAgeMs) === undefined) {
+		invalid(
+			"evidenceMaxAgeMs must be a finite number, zero or more",
+			"evidenceMaxAgeMs",
+		);
 	}
 	const { source, target, schema } = request;
 	const sameEngine =

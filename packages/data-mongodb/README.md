@@ -346,7 +346,12 @@ Within that limit it is exact:
 
 `write`, `apply` (changes and watermark together; an empty batch still advances
 the watermark), fence release, and `retire` (token check, digest, and delete in
-one snapshot) are each one multi-document transaction. A mutation whose key is
+one snapshot) are each one multi-document transaction. A conditional apply
+(`expectedWatermark`) reads the watermark entry inside the transaction that
+replaces it and refuses with `StaleApplyError` when it is not the one named.
+Two appliers naming the same watermark both write that one entry, so the
+server commits one and makes the other run again, and its second reading finds
+the watermark moved. A mutation whose key is
 not the key of its record is refused (`INVALID_RECORD`) before the transaction
 opens. That is also the bound:
 one transaction lives at most 60 seconds by default and is limited by cache, so

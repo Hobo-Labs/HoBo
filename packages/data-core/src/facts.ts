@@ -10,9 +10,20 @@
  * No new event family. The existing `migration.*` family gains `Held`,
  * `Resumed`, and `Completed`, and `PhaseApplied` carries the phase names of
  * the uniform phase model alongside the original expand/backfill/contract.
+ *
+ * Two facts are written *ahead* of what they describe. `FenceRequested` is
+ * appended before a write fence is raised, and `RollbackDecided` before write
+ * authority is handed back — as `CutOver` is appended before it is handed
+ * over. Every append is a compare-and-set on the head the run read, so a
+ * driver whose view of the migration is out of date loses the append and stops
+ * before it touches a store.
  */
-import type { EventStore, PrincipalRef } from "@hobo/core";
-import { DataCoreError } from "./errors.js";
+import {
+	type EventStore,
+	isEventStoreOptimisticConflict,
+	type PrincipalRef,
+} from "@hobo/core";
+import { DataCoreError, JournalConflictError } from "./errors.js";
 import {
 	isJsonObject,
 	isJsonString,
@@ -41,6 +52,8 @@ export const MIGRATION_EVENTS = Object.freeze({
 	Held: "migration.Held",
 	Resumed: "migration.Resumed",
 	Completed: "migration.Completed",
+	FenceRequested: "migration.FenceRequested",
+	RollbackDecided: "migration.RollbackDecided",
 } as const);
 
 export type MigrationEventType =
@@ -51,6 +64,29 @@ export interface MigrationFact {
 	readonly type: string;
 	readonly data: JsonObject;
 }
+
+/**
+ * The version each fact body is at. A durable journal stamps it on the event,
+ * so a reader lifting an old stream knows which upcasters to run. The pinned
+ * contracts live in `@hobo/events` (`MIGRATION_EVENT_CONTRACTS`); a test there
+ * holds this table and the bodies the executors emit to them.
+ */
+export const MIGRATION_FACT_VERSIONS: Readonly<Record<string, number>> =
+	Object.freeze({
+		[MIGRATION_EVENTS.Planned]: 2,
+		[MIGRATION_EVENTS.PhaseApplied]: 2,
+		[MIGRATION_EVENTS.CutOver]: 2,
+		[MIGRATION_EVENTS.RolledBack]: 2,
+	});
+
+/** The body version a fact of this type is appended at; 1 unless listed. */
+export function migrationFactVersion(type: string): number {
+	return MIGRATION_FACT_VERSIONS[type] ?? 1;
+}
+
+/** Which store a write fence is requested on. */
+export const FENCE_SIDES = ["source", "target"] as const;
+export type FenceSide = (typeof FENCE_SIDES)[number];
 
 export const MIGRATION_REALIZATIONS = ["native", "hub"] as const;
 /** `native` is an engine's own fast path; `hub` is the canonical envelope. */
@@ -93,6 +129,11 @@ export interface MigrationState {
 	/** Checkpoint each completed phase recorded, by phase. */
 	readonly checkpoints: Readonly<Partial<Record<MigrationPhase, JsonObject>>>;
 	readonly cutOver: boolean;
+	/**
+	 * A rollback was decided and journaled. Until `RolledBack` follows, a
+	 * resumed run finishes handing authority back; it consults nobody again.
+	 */
+	readonly rollbackDecided: boolean;
 	readonly heldAt?: MigrationPhase;
 	readonly heldReason?: string;
 }
@@ -104,6 +145,7 @@ export function initialMigrationState(migrationId: string): MigrationState {
 		completedPhases: Object.freeze([]),
 		checkpoints: Object.freeze({}),
 		cutOver: false,
+		rollbackDecided: false,
 	});
 }
 
@@ -118,11 +160,18 @@ function isPhase(value: JsonValue | undefined): value is MigrationPhase {
 /**
  * The aggregate's fold. Total over every `migration.*` fact: an unrecognised
  * type leaves the state unchanged rather than wedging a replay.
+ *
+ * `completed` and `rolled-back` are absorbing. A fact that arrives after
+ * either — a late `Held`, a stray `PhaseApplied` — changes nothing, so a
+ * finished migration cannot be reopened by whatever is appended next.
  */
 export function evolveMigration(
 	state: MigrationState,
 	fact: MigrationFact,
 ): MigrationState {
+	if (state.status === "completed" || state.status === "rolled-back") {
+		return state;
+	}
 	const { data } = fact;
 	switch (fact.type) {
 		case MIGRATION_EVENTS.Planned: {
@@ -175,6 +224,8 @@ export function evolveMigration(
 			const { heldAt: _heldAt, heldReason: _heldReason, ...rest } = state;
 			return Object.freeze({ ...rest, status: "running" });
 		}
+		case MIGRATION_EVENTS.RollbackDecided:
+			return Object.freeze({ ...state, rollbackDecided: true });
 		case MIGRATION_EVENTS.Completed:
 			return Object.freeze({ ...state, status: "completed" });
 		case MIGRATION_EVENTS.RolledBack:
@@ -213,7 +264,19 @@ export function assertHoldable(phase: MigrationPhase): void {
 /** Where a migration's facts are appended and replayed from. */
 export interface MigrationJournal {
 	load(migrationId: string): Awaitable<readonly MigrationFact[]>;
-	append(migrationId: string, fact: MigrationFact): Awaitable<void>;
+	/**
+	 * Append one fact, on the condition that the journal holds exactly
+	 * `expectedCount` facts for this migration — the number the caller loaded,
+	 * plus those it has appended itself. Any other count is refused with
+	 * `JournalConflictError` and nothing is appended: a compare-and-set on the
+	 * head, which is what keeps two drivers of one migration from both
+	 * deciding from a view only one of them still has.
+	 */
+	append(
+		migrationId: string,
+		fact: MigrationFact,
+		expectedCount: number,
+	): Awaitable<void>;
 }
 
 export function createMemoryMigrationJournal(): MigrationJournal {
@@ -222,8 +285,15 @@ export function createMemoryMigrationJournal(): MigrationJournal {
 		load(migrationId: string): readonly MigrationFact[] {
 			return Object.freeze([...(streams.get(migrationId) ?? [])]);
 		},
-		append(migrationId: string, fact: MigrationFact): void {
+		append(
+			migrationId: string,
+			fact: MigrationFact,
+			expectedCount: number,
+		): void {
 			const existing = streams.get(migrationId) ?? [];
+			if (existing.length !== expectedCount) {
+				throw new JournalConflictError(migrationId, expectedCount);
+			}
 			existing.push(fact);
 			streams.set(migrationId, existing);
 		},
@@ -241,10 +311,11 @@ export const MIGRATION_STREAM_PREFIX = "migration:";
 /**
  * A journal over the durable event store: one stream per migration, appended
  * under optimistic `seq`. This is the production journal — a migration's
- * state then survives a restart and replays like any other aggregate.
+ * state then survives a restart and replays like any other aggregate. The
+ * stream must hold this migration's facts and nothing else.
  */
 export function createEventStoreMigrationJournal(
-	store: EventStore,
+	store: Pick<EventStore, "append" | "read">,
 	context: EventStoreJournalContext,
 ): MigrationJournal {
 	const streamId = (migrationId: string) =>
@@ -263,16 +334,40 @@ export function createEventStoreMigrationJournal(
 			}
 			return Object.freeze(facts);
 		},
-		async append(migrationId: string, fact: MigrationFact): Promise<void> {
-			let expectedSeq = 0;
-			for await (const event of store.read(streamId(migrationId))) {
-				expectedSeq = event.seq;
+		async append(
+			migrationId: string,
+			fact: MigrationFact,
+			expectedCount: number,
+		): Promise<void> {
+			// One fact is one event and a stream's sequence starts at one, so
+			// the count the run holds is the sequence the stream must be at.
+			// The store's own optimistic check is the compare-and-set; the head
+			// is never read again here, because re-reading it is what let a
+			// stale driver's append succeed.
+			try {
+				await store.append(
+					streamId(migrationId),
+					[
+						{
+							type: fact.type,
+							v: migrationFactVersion(fact.type),
+							data: fact.data,
+						},
+					],
+					{
+						expectedSeq: expectedCount,
+						actor: context.actor,
+						tenant: context.tenant,
+					},
+				);
+			} catch (error) {
+				if (error instanceof Error && isEventStoreOptimisticConflict(error)) {
+					throw new JournalConflictError(migrationId, expectedCount, {
+						cause: error,
+					});
+				}
+				throw error;
 			}
-			await store.append(
-				streamId(migrationId),
-				[{ type: fact.type, v: 1, data: fact.data }],
-				{ expectedSeq, actor: context.actor, tenant: context.tenant },
-			);
 		},
 	});
 }

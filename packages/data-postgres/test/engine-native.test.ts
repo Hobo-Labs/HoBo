@@ -18,6 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	assertBindingMatchesDeclaration,
+	CUSTODY_ROLES,
 	createMemoryMigrationJournal,
 	DataCoreError,
 	evaluateCustodyPath,
@@ -765,21 +766,20 @@ describe("logical-copy — the connection string is a secret", () => {
 				clock: () => "2026-11-10T00:00:00.000Z",
 				policy: () =>
 					evaluateCustodyPath({
+						// One point per role: the run holds on a path that leaves out
+						// a copy it creates.
 						path: parseCustodyPath({
-							points: [
-								{
-									id: "s",
-									role: "source",
-									region: "eu-west-1",
-									protections: [],
-								},
-								{
-									id: "t",
-									role: "target",
-									region: "eu-west-1",
-									protections: [],
-								},
-							],
+							points: CUSTODY_ROLES.map((role) => ({
+								id: role,
+								role,
+								region: "eu-west-1",
+								protections: [],
+								...(role === "source" ||
+								role === "target" ||
+								role === "event-log"
+									? undefined
+									: { retainUntil: "2099-01-01T00:00:00.000Z" }),
+							})),
 						}),
 						policy: { classification: "public" },
 						now: "2026-11-10T00:00:00.000Z",

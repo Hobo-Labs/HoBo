@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import {
 	type Awaitable,
 	type CopyMigrationOptions,
+	CUSTODY_ROLES,
 	canonicalEncode,
 	compareDigests,
 	createMemoryMigrationJournal,
@@ -83,10 +84,18 @@ function item(id: string, qty: number, note: string | null = null) {
 
 const ALLOW = evaluateCustodyPath({
 	path: parseCustodyPath({
-		points: [
-			{ id: "s", role: "source", region: "eu-west-1", protections: [] },
-			{ id: "t", role: "target", region: "eu-west-1", protections: [] },
-		],
+		// One point per role: the selector refuses a pattern that creates a
+		// copy the path does not name (a native transfer retains a change log
+		// and keeps the retiring source through the soak window).
+		points: CUSTODY_ROLES.map((role) => ({
+			id: role,
+			role,
+			region: "eu-west-1",
+			protections: [],
+			...(role === "source" || role === "target" || role === "event-log"
+				? undefined
+				: { retainUntil: "2026-11-17T00:00:00.000Z" }),
+		})),
 	}),
 	policy: { classification: "public" },
 	now: NOW,

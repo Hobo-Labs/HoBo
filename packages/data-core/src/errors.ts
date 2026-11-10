@@ -29,6 +29,12 @@ export const DATA_CORE_ERROR_CODES = [
 	"NATIVE_TRANSFER_REFUSED",
 	// The objects behind a native transfer are gone; what it retained is lost.
 	"NATIVE_TRANSFER_LOST",
+	// A conditional apply found a watermark other than the one it named: some
+	// other applier has written since. Nothing of the batch landed.
+	"STALE_APPLY",
+	// A journal append named a head the journal is no longer at: another
+	// driver of the same migration appended first. Nothing was appended.
+	"JOURNAL_CONFLICT",
 ] as const;
 
 export type DataCoreErrorCode = (typeof DATA_CORE_ERROR_CODES)[number];
@@ -79,4 +85,70 @@ export class FencedWriteError extends DataCoreError {
 		this.dataset = dataset;
 		this.tenant = tenant;
 	}
+}
+
+/**
+ * A conditional apply was refused: the watermark recorded for the source is
+ * not the one the applier named, so another applier has written since it last
+ * looked. Like a fenced write, this is the contract working — it is how a
+ * driver that has been superseded is kept from writing over its successor —
+ * and nothing of the refused batch has landed.
+ */
+export class StaleApplyError extends DataCoreError {
+	readonly dataset: string;
+	readonly source: string;
+
+	constructor(dataset: string, source: string) {
+		super(
+			"STALE_APPLY",
+			`the watermark for ${source} on dataset ${dataset} is not the one this apply named; another applier has written since`,
+			{ detail: { dataset, source } },
+		);
+		this.name = "StaleApplyError";
+		this.dataset = dataset;
+		this.source = source;
+	}
+}
+
+/**
+ * A journal append lost its compare-and-set: the journal no longer ends where
+ * the run that tried to append had read it to. Another driver is running the
+ * same migration and got there first. The loser has appended nothing and must
+ * stop without touching either store.
+ */
+export class JournalConflictError extends DataCoreError {
+	readonly migrationId: string;
+	readonly expectedCount: number;
+
+	constructor(
+		migrationId: string,
+		expectedCount: number,
+		options: { readonly cause?: unknown } = {},
+	) {
+		super(
+			"JOURNAL_CONFLICT",
+			`migration ${migrationId} was advanced by another driver; this one read ${expectedCount} fact(s) and the journal has moved on`,
+			{
+				detail: { migrationId, expectedCount },
+				...(options.cause === undefined ? undefined : { cause: options.cause }),
+			},
+		);
+		this.name = "JournalConflictError";
+		this.migrationId = migrationId;
+		this.expectedCount = expectedCount;
+	}
+}
+
+/**
+ * True for the two refusals that tell a driver it has been superseded. A run
+ * that meets either stops where it is: it records nothing further and
+ * compensates nothing, because the driver that superseded it owns the
+ * migration now.
+ */
+export function isSupersededError(
+	value: DataCoreError | Error | null | undefined,
+): value is StaleApplyError | JournalConflictError {
+	return (
+		value instanceof StaleApplyError || value instanceof JournalConflictError
+	);
 }

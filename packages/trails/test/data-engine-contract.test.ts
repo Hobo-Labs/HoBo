@@ -320,6 +320,8 @@ describe("the migration executor over a real SQLite store", () => {
 				ok: phase !== "contract",
 				findings:
 					phase === "contract" ? [{ code: "CUSTODY_RETENTION_EXPIRED" }] : [],
+				// The two places an in-place migration keeps data.
+				roles: ["source", "rollback-snapshot"],
 			}),
 		});
 		assert.equal(result.status, "held");

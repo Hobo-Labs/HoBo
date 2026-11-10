@@ -139,6 +139,11 @@ binding uses for the same refusal:
   empty "caught up" batch would tell a tail it had finished when it had read
   nothing.
 
+An apply that names `expectedWatermark` is conditional: the watermark is
+compared inside the `BEGIN IMMEDIATE` transaction that writes the batch, and a
+batch naming any other watermark is refused with `StaleApplyError`, leaving
+neither a record nor the watermark changed.
+
 A batch never splits a write. Every row of one `records.write` or
 `apply.apply` is marked with the transaction it belongs to, and when `limit`
 falls inside one the rest of it is returned too, so a batch may hold more than

@@ -9,6 +9,7 @@ import { describe, test } from "vitest";
 import {
 	type Authority,
 	type ChangeKind,
+	CUSTODY_ROLES,
 	createReferenceEngine,
 	createReferenceNativeLink,
 	DataCoreError,
@@ -81,10 +82,18 @@ function mutations(raw: JsonValue | undefined): RecordMutation[] {
 describe("pact: migration selector", () => {
 	const verdict = evaluateCustodyPath({
 		path: parseCustodyPath({
-			points: [
-				{ id: "s", role: "source", region: "eu-west-1", protections: [] },
-				{ id: "t", role: "target", region: "eu-west-1", protections: [] },
-			],
+			// One point per role: the selector refuses a pattern that creates a
+			// copy the path does not name, and these interactions are about the
+			// other gates.
+			points: CUSTODY_ROLES.map((role) => ({
+				id: role,
+				role,
+				region: "eu-west-1",
+				protections: [],
+				...(role === "source" || role === "target" || role === "event-log"
+					? undefined
+					: { retainUntil: "2026-11-17T00:00:00.000Z" }),
+			})),
 		}),
 		policy: { classification: "public" },
 		now: NOW,
@@ -165,9 +174,8 @@ describe("pact: migration selector", () => {
 });
 
 describe("pact: engine SPI", () => {
-	const [fenced, captured, applied, digested, published, subscribed] = loadPact(
-		"engine-spi.pact.json",
-	);
+	const [fenced, captured, applied, digested, published, subscribed, stale] =
+		loadPact("engine-spi.pact.json");
 
 	test(fenced?.description ?? "fenced write", async () => {
 		assert.ok(fenced);
@@ -256,6 +264,50 @@ describe("pact: engine SPI", () => {
 			},
 			applied.response.body,
 		);
+	});
+
+	test(stale?.description ?? "stale apply", async () => {
+		assert.ok(applied);
+		assert.ok(stale);
+		const engine = createReferenceEngine();
+		await engine.datasets.ensureDataset(ORDERS);
+		const apply = requirePort(engine, "apply");
+		// The provider state: the earlier interaction, applied.
+		await apply.apply({
+			dataset: "orders",
+			changes: mutations(applied.request.body.changes),
+			source: String(applied.request.body.source),
+			position: String(applied.request.body.position),
+		});
+		const source = String(stale.request.body.source);
+		let refusal: JsonObject = {};
+		try {
+			await apply.apply({
+				dataset: "orders",
+				changes: mutations(stale.request.body.changes),
+				source,
+				position: String(stale.request.body.position),
+				expectedWatermark: String(stale.request.body.expectedWatermark),
+			});
+		} catch (error) {
+			assert.ok(error instanceof DataCoreError);
+			refusal = { error: { code: error.code, ...error.detail } };
+		}
+		const kept = await engine.records.read({
+			dataset: "orders",
+			tenant: "",
+			key: '["o-9"]',
+		});
+		assert.deepEqual(
+			{
+				...refusal,
+				watermark:
+					(await apply.watermark({ dataset: "orders", source })) ?? null,
+				total: kept?.total ?? null,
+			},
+			stale.response.body,
+		);
+		assert.equal(stale.response.status, 409);
 	});
 
 	test(digested?.description ?? "digest", async () => {

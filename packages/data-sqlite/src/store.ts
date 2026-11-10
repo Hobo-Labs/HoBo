@@ -46,6 +46,7 @@ import {
 	parseCanonicalRecord,
 	parseDatasetSchema,
 	type RecordMutation,
+	StaleApplyError,
 	schemaDigest,
 } from "@hobo/data-core";
 import { SqliteDataError } from "./errors.js";
@@ -580,7 +581,12 @@ export class SqliteDatasetStore {
 		dataset: string,
 		requested: readonly RecordMutation[],
 		fenceToken: string | undefined,
-		watermark?: { readonly source: string; readonly position: Position },
+		watermark?: {
+			readonly source: string;
+			readonly position: Position;
+			/** The watermark the batch is conditional on; absent is unconditional. */
+			readonly expected?: Position | null;
+		},
 	): Position {
 		const schema = this.schema(dataset);
 		const mutations = requested.map((mutation) =>
@@ -588,6 +594,16 @@ export class SqliteDatasetStore {
 		);
 		return this.transaction(() => {
 			this.assertWritable(dataset, mutations, fenceToken);
+			// A conditional apply: the comparison is inside the transaction that
+			// writes, so of two appliers naming one watermark only one lands,
+			// and a refusal rolls back with nothing written.
+			if (
+				watermark?.expected !== undefined &&
+				(this.watermark(dataset, watermark.source) ?? null) !==
+					watermark.expected
+			) {
+				throw new StaleApplyError(dataset, watermark.source);
+			}
 			// Every row of this transaction carries the head it started from, so
 			// capture can tell where one transaction ends and the next begins.
 			const tx = this.head();

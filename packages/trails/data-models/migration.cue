@@ -145,5 +145,8 @@ package trails
 	custodyDigest: =~"^sha256:[0-9a-f]{64}$"
 	// A verdict is ok exactly when it has no findings.
 	ok: len(findings) == 0
+	// The custody roles the path behind the verdict named. A verdict without
+	// the member names none, and so covers no migration pattern.
+	roles?: [...string & !=""]
 }
 

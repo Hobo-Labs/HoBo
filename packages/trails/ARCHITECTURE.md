@@ -62,8 +62,14 @@ contract. The **command** is still "run this migration"; the **events** are
 still the `migration.*` family, now including `migration.Held`,
 `migration.Resumed`, and `migration.Completed`; the migration aggregate is the
 single-writer **actor**; its facts are appended to the **event store**; status
-is a **projection** over them; and each phase's checkpoint is the **snapshot**
-a resumed run continues from.
+is a **projection** over them; and each phase's fact is the **snapshot** a
+resumed run continues from. Resuming needs the facts to be kept:
+`executeDataMigration` takes a `journal`, and a migration run again with the
+same journal skips the phases already applied (it never re-applies `expand`)
+and restores, on failure, the first snapshot taken. Without a journal each
+call starts from nothing. A restore also needs `replayErasures`; without it a
+failed phase holds instead of restoring, and no fact or result carries the
+store's error text — only the error's class name.
 
 The dual oracle prefers digest evidence over a row view, and `can-trail`
 accepts a policy verdict computed over the migration's custody path alongside

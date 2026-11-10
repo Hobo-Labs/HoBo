@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 import {
 	type CopyMigrationOptions,
+	CUSTODY_ROLES,
 	createMemoryMigrationJournal,
 	createReferenceEngine,
 	createReferenceNativeLink,
@@ -48,11 +49,18 @@ const ORDERS: DatasetSchema = parseDatasetSchema({
 });
 
 const ALLOW = evaluateCustodyPath({
+	// One point per role: a run holds on a path that leaves out a copy it
+	// creates — the relay, the retained log, the retiring source.
 	path: parseCustodyPath({
-		points: [
-			{ id: "s", role: "source", region: "eu-west-1", protections: [] },
-			{ id: "t", role: "target", region: "eu-west-1", protections: [] },
-		],
+		points: CUSTODY_ROLES.map((role) => ({
+			id: role,
+			role,
+			region: "eu-west-1",
+			protections: [],
+			...(role === "source" || role === "target" || role === "event-log"
+				? undefined
+				: { retainUntil: "2026-11-17T00:00:00.000Z" }),
+		})),
 	}),
 	policy: { classification: "public" },
 	now: NOW,
@@ -890,7 +898,7 @@ describe("the journal carries no fence token", () => {
 		const token = await raw(stage.source);
 		// Rewrite the journal into the form it used to have.
 		const legacy = createMemoryMigrationJournal();
-		for (const fact of await stage.journal.load("m1")) {
+		for (const [index, fact] of (await stage.journal.load("m1")).entries()) {
 			const { fenceTokenDigest: digest, ...rest } = fact.data;
 			const carried =
 				fact.type === MIGRATION_EVENTS.CutOver ||
@@ -909,7 +917,7 @@ describe("the journal carries no fence token", () => {
 					},
 				};
 			}
-			await legacy.append("m1", { type: fact.type, data });
+			await legacy.append("m1", { type: fact.type, data }, index);
 		}
 		const done = await runSnapshotAndTail(hub({ ...stage, journal: legacy }));
 		assert.equal(done.status, "completed", done.reason);
@@ -1013,6 +1021,8 @@ describe("retirement cannot reach the new authority", () => {
 			scope: scopeOf("orders"),
 			flipAuthority: () => {},
 			soakDecision: () => decision,
+			// A to-snapshot rollback needs the ledger; here nothing was erased.
+			erasures: { since: () => [] },
 		});
 		assert.equal((await runSnapshotAndTail(options("hold"))).status, "held");
 		assert.deepEqual(stopped, []);

@@ -16,7 +16,9 @@ import {
 	type ResidencyConstraint,
 	type TransferMechanismMode,
 } from "@hobo/core";
+import { instantMicros } from "./canonical.js";
 import { DataCoreError } from "./errors.js";
+import type { MigrationRealization } from "./facts.js";
 import {
 	digestOf,
 	isJsonArray,
@@ -26,6 +28,7 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "./json.js";
+import { getPattern, type MigrationPatternId } from "./patterns.js";
 
 // public-contract: the schema id a custody path is published under.
 export const CUSTODY_PATH_CONTRACT = "hobo.custody-path/v1";
@@ -66,7 +69,7 @@ export interface CustodyPoint {
 	readonly role: CustodyRole;
 	readonly region: string;
 	readonly protections: readonly CustodyProtection[];
-	/** RFC 3339 instant by which a bounded copy is reaped. */
+	/** RFC 3339 instant, with an explicit offset, by which a bounded copy is reaped. */
 	readonly retainUntil?: string;
 }
 
@@ -102,6 +105,84 @@ export const DEFAULT_PROTECTION_REQUIREMENTS: ProtectionRequirements =
 		secret: Object.freeze([...BASELINE, "fieldLevelKeys"] as const),
 	});
 
+/**
+ * What a custody path is the path *of*. A pattern creates copies beyond its
+ * two ends — the runner that relays rows, a retained change log, a snapshot to
+ * roll back to, the old source through the soak window — and a path that
+ * leaves one out has not been judged at that place.
+ *
+ * Absent members take the more demanding reading: with no `realization` the
+ * roles of both are required, and with no `reverseTail` one is assumed
+ * wherever the pattern can have one.
+ */
+export interface CustodyMigration {
+	readonly pattern: MigrationPatternId;
+	readonly realization?: MigrationRealization;
+	readonly reverseTail?: boolean;
+}
+
+/** Why a pattern necessarily creates each role, for a finding's detail. */
+const ROLE_ORIGIN: Readonly<Record<CustodyRole, string>> = Object.freeze({
+	source: "it reads a source store",
+	target: "it writes a target store",
+	"event-log": "it reads the event log, or moves authority into it",
+	"staging-artifact": "it stages an artifact",
+	relay: "the hub carries every record through the runner",
+	"capture-log": "a change log is retained for the tail",
+	"rollback-snapshot": "the store is snapshotted before it is changed",
+	"retiring-source":
+		"the old source is kept through the soak window until it is retired",
+});
+
+/**
+ * The custody roles a migration necessarily creates, in `CUSTODY_ROLES`
+ * order. Derived from the pattern catalog — the ports a pattern drives are
+ * the places it puts data:
+ *
+ * | Role | Created when |
+ * |---|---|
+ * | `source` | the pattern drives source ports |
+ * | `target` | the pattern drives target ports |
+ * | `event-log` | it drives no source port (the log is what it reads), or authority moves into the log |
+ * | `relay` | the hub realization, unless one store is changed where it stands |
+ * | `capture-log` | the source's `capture` port; a reverse tail (the target's); a native transfer, which retains the log itself |
+ * | `rollback-snapshot` | the source's `schema` port, which snapshots before any change |
+ * | `retiring-source` | the source's `retire` port |
+ *
+ * A `staging-artifact` is never implied: no pattern has to write one. When a
+ * plan does, the path names it like any other point.
+ */
+export function requiredCustodyRoles(
+	migration: CustodyMigration,
+): readonly CustodyRole[] {
+	const pattern = getPattern(migration.pattern);
+	const hub = migration.realization !== "native";
+	const native = migration.realization !== "hub";
+	// No source port: what the pattern reads is the event log.
+	const readsLog = pattern.sourcePorts.length === 0;
+	// One store, changed where it stands: nothing travels.
+	const inPlace = !readsLog && pattern.targetPorts.length === 0;
+	// A native transfer has no reverse tail: it is torn down at the cutover.
+	const reverseTail =
+		hub &&
+		pattern.reverseTailPorts.target.includes("capture") &&
+		(migration.reverseTail ?? true);
+	const created = {
+		source: !readsLog,
+		target: pattern.targetPorts.length > 0,
+		"event-log": readsLog || pattern.authorityAfter === "log",
+		"staging-artifact": false,
+		relay: hub && !inPlace,
+		"capture-log":
+			pattern.sourcePorts.includes("capture") ||
+			reverseTail ||
+			(native && !readsLog && !inPlace),
+		"rollback-snapshot": pattern.sourcePorts.includes("schema"),
+		"retiring-source": pattern.sourcePorts.includes("retire"),
+	} satisfies Record<CustodyRole, boolean>;
+	return Object.freeze(CUSTODY_ROLES.filter((role) => created[role]));
+}
+
 export interface CustodyPolicy {
 	readonly classification: DataClassification;
 	/** Absent means no residency rule applies to this dataset. */
@@ -135,6 +216,12 @@ export interface PolicyVerdict {
 	readonly ok: boolean;
 	readonly classification: DataClassification;
 	readonly findings: readonly CustodyFinding[];
+	/**
+	 * The roles the path named, in `CUSTODY_ROLES` order. A verdict judges only
+	 * the places it was shown: a gate that picks a pattern reads this to refuse
+	 * one that creates a role the path left out (`uncoveredCustodyRoles`).
+	 */
+	readonly roles: readonly CustodyRole[];
 	/** Digest of the path the verdict was computed over. */
 	readonly custodyDigest: `sha256:${string}`;
 	readonly evaluatedAt: string;
@@ -156,10 +243,19 @@ function isProtection(value: string): value is CustodyProtection {
 	return (CUSTODY_PROTECTIONS as readonly string[]).includes(value);
 }
 
-function parseInstant(value: string, field: string): number {
-	const instant = Date.parse(value);
-	if (Number.isNaN(instant))
-		invalid(`${field} must be an RFC 3339 instant`, field);
+/**
+ * Microseconds since the epoch, read strictly. `Date.parse` is not used: it
+ * reads an instant with no offset as local time, so a retention deadline
+ * would expire nine hours sooner on a host in Tokyo than on one in UTC.
+ */
+function parseInstant(value: string, field: string): bigint {
+	const instant = instantMicros(value);
+	if (instant === undefined) {
+		invalid(
+			`${field} must be an RFC 3339 instant with an explicit offset`,
+			field,
+		);
+	}
 	return instant;
 }
 
@@ -241,8 +337,41 @@ export function custodyPathDigest(path: CustodyPath): `sha256:${string}` {
 export interface EvaluateCustodyPathInput {
 	readonly path: CustodyPath;
 	readonly policy: CustodyPolicy;
-	/** Injected instant, RFC 3339. */
+	/** Injected instant, RFC 3339 with an explicit offset. */
 	readonly now: string;
+	/**
+	 * The migration the path is for. Given, every role it necessarily creates
+	 * must be on the path or the verdict is negative. Absent, the verdict is
+	 * for the path as declared and no more — `roles` says what that was, and
+	 * the selector refuses a pattern the path does not cover.
+	 */
+	readonly migration?: CustodyMigration;
+}
+
+/**
+ * The roles a migration creates that the path behind a verdict did not name.
+ * Empty means the verdict covers the migration; anything else means some copy
+ * of the data was never judged, so the verdict says nothing about it.
+ */
+export function uncoveredCustodyRoles(
+	verdict: PolicyVerdict,
+	migration: CustodyMigration,
+): readonly CustodyRole[] {
+	// A verdict that arrived as evidence may predate `roles`. It names none.
+	const named: readonly CustodyRole[] = verdict.roles ?? [];
+	return requiredCustodyRoles(migration).filter(
+		(role) => !named.includes(role),
+	);
+}
+
+function incomplete(detail: string, remediation: string): CustodyFinding {
+	return {
+		code: "CUSTODY_PATH_INCOMPLETE",
+		point: "path",
+		role: "path",
+		detail,
+		remediation,
+	};
 }
 
 function residencyApplies(
@@ -261,8 +390,9 @@ function residencyApplies(
 
 /**
  * Compute the verdict. Fail-closed throughout: an unmapped region is a
- * conflict, a bounded copy with no deadline is a finding, and a path with no
- * source or no destination is not a path.
+ * conflict, a bounded copy with no deadline is a finding, a path with no
+ * source or no destination is not a path, and a path that omits a copy its
+ * migration creates is incomplete.
  */
 export function evaluateCustodyPath(
 	input: EvaluateCustodyPathInput,
@@ -270,24 +400,36 @@ export function evaluateCustodyPath(
 	const { path, policy } = input;
 	const now = parseInstant(input.now, "now");
 	const findings: CustodyFinding[] = [];
-	const roles = new Set(path.points.map((point) => point.role));
-	if (!roles.has("source") && !roles.has("event-log")) {
-		findings.push({
-			code: "CUSTODY_PATH_INCOMPLETE",
-			point: "path",
-			role: "path",
-			detail: "the path names no source or event-log custody point",
-			remediation: "declare where the data is read from",
-		});
-	}
-	if (!roles.has("target") && !roles.has("event-log")) {
-		findings.push({
-			code: "CUSTODY_PATH_INCOMPLETE",
-			point: "path",
-			role: "path",
-			detail: "the path names no target custody point",
-			remediation: "declare where the data lands",
-		});
+	const named = new Set(path.points.map((point) => point.role));
+	const roles = CUSTODY_ROLES.filter((role) => named.has(role));
+	const { migration } = input;
+	if (migration === undefined) {
+		if (!named.has("source") && !named.has("event-log")) {
+			findings.push(
+				incomplete(
+					"the path names no source or event-log custody point",
+					"declare where the data is read from",
+				),
+			);
+		}
+		if (!named.has("target") && !named.has("event-log")) {
+			findings.push(
+				incomplete(
+					"the path names no target custody point",
+					"declare where the data lands",
+				),
+			);
+		}
+	} else {
+		for (const role of requiredCustodyRoles(migration)) {
+			if (named.has(role)) continue;
+			findings.push(
+				incomplete(
+					`${migration.pattern} creates a ${role} (${ROLE_ORIGIN[role]}) and the path names none`,
+					`declare the ${role} custody point, with its region, its protections and, for a bounded copy, its retention deadline`,
+				),
+			);
+		}
 	}
 	const constraint = residencyApplies(policy);
 	const required = (policy.requirements ?? DEFAULT_PROTECTION_REQUIREMENTS)[
@@ -352,6 +494,7 @@ export function evaluateCustodyPath(
 		ok: findings.length === 0,
 		classification: policy.classification,
 		findings: Object.freeze(findings.map((finding) => Object.freeze(finding))),
+		roles: Object.freeze(roles),
 		custodyDigest: custodyPathDigest(path),
 		evaluatedAt: input.now,
 	});
@@ -369,6 +512,7 @@ export function policyVerdictToJson(verdict: PolicyVerdict): JsonObject {
 			detail: finding.detail,
 			remediation: finding.remediation,
 		})),
+		roles: [...verdict.roles],
 		custodyDigest: verdict.custodyDigest,
 		evaluatedAt: verdict.evaluatedAt,
 	};

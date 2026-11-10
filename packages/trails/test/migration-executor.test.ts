@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { createMemoryMigrationJournal } from "@hobo/data-core";
 import { createSqliteSchemaApplyPort } from "@hobo/data-sqlite";
 import { afterEach, test } from "vitest";
 import {
@@ -152,6 +153,8 @@ test("milestone: failed verification restores the pre-migration snapshot", async
 			],
 		},
 		compatGate: gate([]),
+		// A restore needs the erasure replay; nothing was erased here.
+		replayErasures: () => 0,
 	});
 
 	assert.equal(result.status, "rolled-back");
@@ -182,11 +185,142 @@ test("a failing contract statement rolls back to the snapshot", async () => {
 			contract: ["ALTER TABLE checkout DROP COLUMN does_not_exist"],
 		},
 		compatGate: gate([]),
+		// A restore needs the erasure replay; nothing was erased here.
+		replayErasures: () => 0,
 	});
 
 	assert.equal(result.status, "rolled-back");
 	const db = new DatabaseSync(storePath);
 	cleanups.push(() => db.close());
 	// Snapshot state: no requester_ref, email intact.
+	assert.throws(() => db.prepare("SELECT requester_ref FROM checkout").all());
+});
+
+// M6: a held migration is resumable. Before the journal was threaded through,
+// running the same plan again re-applied `expand` ("duplicate column"), took a
+// second snapshot after that first expand, "restored" it, and reported
+// rolled-back over a store that was still expanded.
+test("a migration held before backfill resumes from its journal: expand runs once and the first snapshot is the one kept", async () => {
+	const storePath = seededStore();
+	const port = createSqliteSchemaApplyPort({ path: storePath });
+	cleanups.push(() => port.close());
+	const journal = createMemoryMigrationJournal();
+	let allowed = false;
+	const run = () =>
+		executeDataMigration({
+			port,
+			plan: { ...PLAN, migrationId: "mig-checkout-resumed" },
+			compatGate: gate([]),
+			journal,
+			replayErasures: () => 0,
+			policy: (phase) => ({
+				ok: phase !== "backfill" || allowed,
+				findings:
+					phase !== "backfill" || allowed
+						? []
+						: [{ code: "CUSTODY_RETENTION_EXPIRED" }],
+				roles: ["source", "rollback-snapshot"],
+			}),
+		});
+
+	const held = await run();
+	assert.equal(held.status, "held");
+	assert.deepEqual(
+		held.facts.map((fact) => fact.type),
+		[
+			MIGRATION_EVENTS.Planned,
+			MIGRATION_EVENTS.SnapshotTaken,
+			MIGRATION_EVENTS.PhaseApplied,
+			MIGRATION_EVENTS.Held,
+		],
+	);
+
+	allowed = true;
+	const done = await run();
+	assert.equal(done.status, "completed", done.blockedReasons.join("; "));
+	assert.equal(done.snapshot?.ref, held.snapshot?.ref);
+	const applied = done.facts.filter(
+		(fact) => fact.type === MIGRATION_EVENTS.PhaseApplied,
+	);
+	assert.deepEqual(
+		applied.map((fact) => fact.data.phase),
+		["expand", "backfill", "contract"],
+	);
+	assert.equal(
+		done.facts.filter((fact) => fact.type === MIGRATION_EVENTS.SnapshotTaken)
+			.length,
+		1,
+	);
+	assert.deepEqual(
+		done.facts.slice(3, 5).map((fact) => fact.type),
+		[MIGRATION_EVENTS.Held, MIGRATION_EVENTS.Resumed],
+	);
+
+	// The store really is migrated: the new column is filled, the old is gone.
+	const db = new DatabaseSync(storePath);
+	cleanups.push(() => db.close());
+	const rows = db
+		.prepare("SELECT id, requester_ref FROM checkout ORDER BY id")
+		.all();
+	assert.deepEqual(
+		rows.map((row) => ({ ...row })),
+		[
+			{ id: "c1", requester_ref: "email:a@example.test" },
+			{ id: "c2", requester_ref: "email:b@example.test" },
+		],
+	);
+	assert.throws(() => db.prepare("SELECT email FROM checkout").all());
+
+	// And a third run is a no-op.
+	const again = await run();
+	assert.equal(again.status, "completed");
+	assert.equal(again.facts.length, done.facts.length);
+});
+
+test("without an erasure replay a failed phase holds instead of restoring; no fact or result carries the store's error text", async () => {
+	const storePath = seededStore();
+	const port = createSqliteSchemaApplyPort({ path: storePath });
+	cleanups.push(() => port.close());
+	const journal = createMemoryMigrationJournal();
+	const plan = {
+		...PLAN,
+		migrationId: "mig-checkout-no-ledger",
+		contract: ["ALTER TABLE checkout DROP COLUMN does_not_exist"],
+	};
+	const held = await executeDataMigration({
+		port,
+		plan,
+		compatGate: gate([]),
+		journal,
+	});
+	assert.equal(held.status, "held");
+	assert.match(
+		held.blockedReasons.join("; "),
+		/no erasure replay was supplied/u,
+	);
+	// M10: SQLite's message names the column; none of it is recorded.
+	assert.doesNotMatch(JSON.stringify(held), /does_not_exist|no such column/u);
+	assert.match(held.blockedReasons[0] ?? "", /^contract phase failed: \w+$/u);
+	{
+		// Not restored: the new column is still there.
+		const db = new DatabaseSync(storePath);
+		assert.equal(
+			db.prepare("SELECT requester_ref FROM checkout").all().length,
+			2,
+		);
+		db.close();
+	}
+	// Supplied with one, the next run restores the first snapshot.
+	const rolled = await executeDataMigration({
+		port,
+		plan,
+		compatGate: gate([]),
+		journal,
+		replayErasures: () => 0,
+	});
+	assert.equal(rolled.status, "rolled-back");
+	assert.equal(rolled.snapshot?.ref, held.snapshot?.ref);
+	const db = new DatabaseSync(storePath);
+	cleanups.push(() => db.close());
 	assert.throws(() => db.prepare("SELECT requester_ref FROM checkout").all());
 });

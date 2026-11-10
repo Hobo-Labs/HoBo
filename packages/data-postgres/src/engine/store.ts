@@ -20,6 +20,7 @@ import {
 	parseCanonicalRecord,
 	parseDatasetSchema,
 	type RecordMutation,
+	StaleApplyError,
 	schemaDigest,
 	schemaToJson,
 	upsertMutation,
@@ -400,21 +401,45 @@ export class DatasetStore {
 		);
 	}
 
-	/** Changes and their watermark, in one transaction. */
+	/**
+	 * Changes and their watermark, in one transaction.
+	 *
+	 * With `expected` the apply is conditional, and the watermark is written
+	 * *first*: one statement that only takes effect when the row is what the
+	 * applier named. It takes the row's lock, so a second applier naming the
+	 * same watermark waits for the first to commit, then matches nothing and
+	 * is refused before it has written a record; a refusal rolls back.
+	 */
 	async apply(
 		dataset: string,
 		changes: readonly RecordMutation[],
 		source: string,
 		position: string,
 		fenceToken: string | undefined,
+		expected?: string | null,
 	): Promise<void> {
 		const stored = await this.dataset(dataset);
 		await this.executor.transaction(async (tx) => {
+			if (expected === undefined) {
+				await this.applyOn(tx, stored, changes, fenceToken);
+				await tx.query(
+					`INSERT INTO ${this.meta("watermarks")} (dataset, source, log_position) VALUES ($1::text, $2::text, $3::text) ON CONFLICT (dataset, source) DO UPDATE SET log_position = EXCLUDED.log_position`,
+					[dataset, source, position],
+				);
+				return;
+			}
+			const moved =
+				expected === null
+					? await tx.query(
+							`INSERT INTO ${this.meta("watermarks")} (dataset, source, log_position) VALUES ($1::text, $2::text, $3::text) ON CONFLICT (dataset, source) DO NOTHING`,
+							[dataset, source, position],
+						)
+					: await tx.query(
+							`UPDATE ${this.meta("watermarks")} SET log_position = $3::text WHERE dataset = $1::text AND source = $2::text AND log_position = $4::text`,
+							[dataset, source, position, expected],
+						);
+			if (moved.rowCount !== 1) throw new StaleApplyError(dataset, source);
 			await this.applyOn(tx, stored, changes, fenceToken);
-			await tx.query(
-				`INSERT INTO ${this.meta("watermarks")} (dataset, source, log_position) VALUES ($1::text, $2::text, $3::text) ON CONFLICT (dataset, source) DO UPDATE SET log_position = EXCLUDED.log_position`,
-				[dataset, source, position],
-			);
 		});
 	}
 

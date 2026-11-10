@@ -371,8 +371,14 @@ port. `snapshot` is the same keyset scan without the single transaction, which i
 why the declaration says `fuzzy`: the copy executors take a capture position
 first and replay from it, which converges either way. `apply` writes its changes
 and its watermark in one transaction, so redelivery is harmless and an empty
-batch still advances the watermark. `retire` re-digests under the fence and
-refuses on any difference before it deletes.
+batch still advances the watermark. A conditional apply (`expectedWatermark`)
+writes the watermark *first*, in a statement that only takes effect from the
+position the applier named — an `UPDATE … WHERE log_position = $4`, or an
+`INSERT … ON CONFLICT DO NOTHING` when it named none. That statement takes the
+row's lock, so a second applier naming the same watermark waits for the first
+to commit, matches no row, and is refused with `StaleApplyError` before it has
+written a record; the refusal rolls the transaction back. `retire` re-digests
+under the fence and refuses on any difference before it deletes.
 
 ### Schema apply
 

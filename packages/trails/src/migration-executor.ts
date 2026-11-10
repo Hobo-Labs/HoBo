@@ -10,9 +10,14 @@
  * PACT — a drop that would break a still-running consumer never executes).
  * Failure compensates by restoring the pre-migration snapshot (forward-only
  * recovery: snapshot + redeploy last-good Set; no `.down` scripts).
+ *
+ * Given a `journal`, a migration is resumable: run again after a hold, it
+ * skips the phases already applied and never re-applies `expand`, and the
+ * snapshot it restores on failure is the first one taken.
  */
 
 import {
+	type MigrationJournal as EngineMigrationJournal,
 	type SchemaApplyPort as EngineSchemaApplyPort,
 	runInPlaceEvolve,
 } from "@hobo/data-core";
@@ -40,6 +45,8 @@ export const MIGRATION_EVENTS = Object.freeze({
 	Held: "migration.Held",
 	Resumed: "migration.Resumed",
 	Completed: "migration.Completed",
+	FenceRequested: "migration.FenceRequested",
+	RollbackDecided: "migration.RollbackDecided",
 } as const);
 
 export interface MigrationFact {
@@ -85,6 +92,35 @@ export type DataMigrationStatus =
 export interface DataMigrationPolicyVerdict {
 	readonly ok: boolean;
 	readonly findings: readonly { readonly code: string }[];
+	/**
+	 * The custody roles the path behind the verdict named. The migration keeps
+	 * data in the store (`source`) and in the snapshot it rolls back to
+	 * (`rollback-snapshot`); a verdict that names neither, or only one, does
+	 * not cover it and the migration holds. Absent names none.
+	 */
+	readonly roles?: readonly string[];
+}
+
+/**
+ * Where a migration's facts are kept between runs. Structurally the
+ * `@hobo/data-core` migration journal, declared here so the sealed Trails
+ * surface stays its own.
+ */
+export interface DataMigrationJournal {
+	load(
+		migrationId: string,
+	): readonly MigrationFact[] | Promise<readonly MigrationFact[]>;
+	/**
+	 * Append one fact, on the condition that the journal holds exactly
+	 * `expectedCount` facts for this migration; refuse otherwise. That
+	 * compare-and-set is what stops two runs of one migration from both
+	 * acting on a view only one of them still has.
+	 */
+	append(
+		migrationId: string,
+		fact: MigrationFact,
+		expectedCount: number,
+	): void | Promise<void>;
 }
 
 export interface DataMigrationResult {
@@ -116,16 +152,29 @@ export interface ExecuteDataMigrationOptions {
 	/**
 	 * Re-apply erasures recorded since the snapshot. Called after every
 	 * successful restore so a rollback cannot resurrect an erased subject.
+	 *
+	 * A rollback needs it: without the hook a failed phase does not restore
+	 * the snapshot — the migration holds instead, because a restore with
+	 * nothing to replay would bring back every subject erased since. A caller
+	 * with no erasures to replay says so by returning zero.
 	 */
 	readonly replayErasures?: (
 		snapshot: SchemaSnapshotRef,
 	) => number | Promise<number>;
+	/**
+	 * Where the migration's facts are kept. With a journal, running the same
+	 * plan again resumes it — phases already applied are skipped, `expand` is
+	 * never applied twice, and a failure restores the first snapshot. Without
+	 * one every call starts from nothing, so a held migration must not simply
+	 * be run again.
+	 */
+	readonly journal?: DataMigrationJournal;
 }
 
 export async function executeDataMigration(
 	options: ExecuteDataMigrationOptions,
 ): Promise<DataMigrationResult> {
-	const { policy, replayErasures } = options;
+	const { policy, replayErasures, journal } = options;
 	const result = await runInPlaceEvolve({
 		// SAFETY: the two port shapes are identical except that Trails' JSON type also admits `undefined`, which a JSON evidence row never contains.
 		port: options.port as EngineSchemaApplyPort,
@@ -135,6 +184,12 @@ export async function executeDataMigration(
 		...(options.onFact === undefined ? undefined : { onFact: options.onFact }),
 		...(policy === undefined ? undefined : { policy }),
 		...(replayErasures === undefined ? undefined : { replayErasures }),
+		...(journal === undefined
+			? undefined
+			: {
+					// SAFETY: the two journals differ only in that Trails' JSON type also admits `undefined`, which a journaled fact never contains.
+					journal: journal as EngineMigrationJournal,
+				}),
 	});
 	return Object.freeze({
 		schemaVersion: MIGRATION_EXECUTOR_SCHEMA,

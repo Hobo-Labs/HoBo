@@ -87,15 +87,22 @@ const OVERLAY_SEPARATOR = "\u0000";
  * Fold one batch of the log into the sink. The batch's mutations and its
  * watermark land in one `apply`, so a redelivered batch is harmless and a
  * crash never leaves the sink ahead of its recorded position.
+ *
+ * The apply is conditional on the watermark the batch was read after
+ * (`known`; `null` before the first). A batch is a deterministic function of
+ * that position, so one that still finds it is the next batch whoever applies
+ * it — and one that does not was overtaken, and is refused rather than laid
+ * over what came after.
  */
 async function projectBatch(
 	log: LogReader,
 	fold: ProjectionFold,
 	sink: EngineBinding,
 	scope: DatasetScope,
-	after: Position,
+	known: Position | null,
 	limit: number,
 ): Promise<ProjectOutcome> {
+	const after = known ?? "0";
 	const overlay = new Map<string, CanonicalRecord | undefined>();
 	const read: SinkReader = async (tenant, key) => {
 		const slot = `${tenant}${OVERLAY_SEPARATOR}${key}`;
@@ -125,6 +132,7 @@ async function projectBatch(
 			changes: mutations,
 			source: fold.name,
 			position,
+			expectedWatermark: known,
 		});
 	}
 	return { position, events, caughtUp: events < limit };
@@ -138,19 +146,22 @@ async function projectToHead(
 	limit: number,
 	rounds: number,
 ): Promise<ProjectOutcome> {
-	let position =
+	let known: Position | null =
 		(await requirePort(sink, "apply").watermark({
 			dataset: scope.dataset,
 			source: fold.name,
-		})) ?? "0";
+		})) ?? null;
 	let events = 0;
 	for (let round = 0; round < rounds; round += 1) {
-		const outcome = await projectBatch(log, fold, sink, scope, position, limit);
-		position = outcome.position;
+		const outcome = await projectBatch(log, fold, sink, scope, known, limit);
+		// Only a batch that applied something moved the watermark.
+		if (outcome.events > 0) known = outcome.position;
 		events += outcome.events;
-		if (outcome.caughtUp) return { position, events, caughtUp: true };
+		if (outcome.caughtUp) {
+			return { position: known ?? "0", events, caughtUp: true };
+		}
 	}
-	return { position, events, caughtUp: false };
+	return { position: known ?? "0", events, caughtUp: false };
 }
 
 // ── rebuild-and-swap ────────────────────────────────────────────────────────
@@ -229,9 +240,14 @@ export async function runRebuildAndSwap(
 		});
 		await run.phase("verify", async () => {
 			const attempts = (options.verifyRechecks ?? 3) + 1;
-			let position = "0";
+			let behind = false;
 			for (let attempt = 0; attempt < attempts; attempt += 1) {
-				position = (await toHead()).position;
+				const outcome = await toHead();
+				const position = outcome.position;
+				// A sink that has not reached the log head proves nothing yet,
+				// with or without an older sink to compare it to.
+				behind = !outcome.caughtUp;
+				if (behind) continue;
 				const target = await requirePort(options.target, "verify").digest({
 					scope: options.scope,
 					buckets,
@@ -268,7 +284,9 @@ export async function runRebuildAndSwap(
 			}
 			throw new MigrationHold(
 				"converge",
-				"the rebuilt sink does not digest equal to the sink it replaces",
+				behind
+					? "the log is still ahead of the new sink; nothing was verified"
+					: "the rebuilt sink does not digest equal to the sink it replaces",
 			);
 		});
 		await run.phase("shift-reads", async () => {
@@ -441,11 +459,12 @@ async function captureToLog(
 	const marker = requirePort(options.target, "apply");
 	// The capture leg's progress is recorded beside the sink's own watermark,
 	// under the subscription's name, so both survive together.
-	let position =
+	let known: Position | null =
 		(await marker.watermark({
 			dataset: options.targetScope.dataset,
 			source: subscription,
-		})) ?? start;
+		})) ?? null;
+	let position = known ?? start;
 	let changes = 0;
 	for (let round = 0; round < rounds; round += 1) {
 		const read = await capture.read({
@@ -457,12 +476,16 @@ async function captureToLog(
 		for (const change of read.changes) await appendChange(context, change);
 		changes += read.changes.length;
 		position = read.position;
+		// Conditional on the progress this driver read: a second driver of the
+		// same pivot loses here instead of moving the marker under the first.
 		await marker.apply({
 			dataset: options.targetScope.dataset,
 			changes: [],
 			source: subscription,
 			position,
+			expectedWatermark: known,
 		});
+		known = position;
 		await capture.acknowledge({ subscription, position });
 		if (read.caughtUp) return { position, caughtUp: true, changes };
 	}
@@ -472,6 +495,16 @@ async function captureToLog(
 export async function runLogPivot(
 	options: LogPivotOptions,
 ): Promise<MigrationRunResult> {
+	// Digests are comparable only when the sink keeps the source's own schema;
+	// a re-model changes the records, and then the evidence is positional.
+	const comparable =
+		schemaDigest({ ...options.schema, name: "_" }) ===
+		schemaDigest({ ...options.targetSchema, name: "_" });
+	// A pivot that keeps the schema is verified by digest, so the store being
+	// adopted must be able to give one. Without the port there is nothing to
+	// compare the sink against, and "equal" would be a claim nobody checked;
+	// the run is refused before anything is journaled.
+	if (comparable) requirePort(options.source, "verify");
 	const run = await MigrationRun.open(options.runtime, "log-pivot", {
 		source: options.source.declaration.engine,
 		target: options.target.declaration.engine,
@@ -486,11 +519,6 @@ export async function runLogPivot(
 		rounds: options.maxRounds ?? 1000,
 	};
 	const buckets = options.buckets ?? DEFAULT_DIGEST_BUCKETS;
-	// Digests are comparable only when the sink keeps the source's own schema;
-	// a re-model changes the records, and then the evidence is positional.
-	const comparable =
-		schemaDigest({ ...options.schema, name: "_" }) ===
-		schemaDigest({ ...options.targetSchema, name: "_" });
 	const project = () =>
 		projectToHead(
 			options.log,
@@ -509,10 +537,10 @@ export async function runLogPivot(
 			scope: options.targetScope,
 			buckets,
 		});
-		if (!comparable || options.source.verify === undefined) {
+		if (!comparable) {
 			return { equal: true, count: target.count, digest: target.digest };
 		}
-		const source = await options.source.verify.digest({
+		const source = await requirePort(options.source, "verify").digest({
 			scope: options.scope,
 			buckets,
 		});
@@ -605,30 +633,40 @@ export async function runLogPivot(
 			// A cutover an earlier run decided is finished, not re-verified.
 			const decided = run.cutOverDecision();
 			const fence = requirePort(options.source, "fence");
-			// Raising a raised fence answers its token, so a resumed run gets
-			// the token back from the store rather than from the journal.
-			const grant = await fence.raise({
-				scope: options.scope,
-				reason: `migration ${options.runtime.migrationId}`,
-			});
+			const raise = () =>
+				fence.raise({
+					scope: options.scope,
+					reason: `migration ${options.runtime.migrationId}`,
+				});
 			if (decided !== undefined) {
+				// Raising a raised fence answers its token, so a resumed run
+				// gets the token back from the store rather than from the
+				// journal. The journaled decision is what authorizes it.
+				const held = await raise();
 				await options.flipAuthority({
-					fenceToken: decidedFenceToken(decided, grant.fenceToken),
+					fenceToken: decidedFenceToken(decided, held.fenceToken),
 				});
 				return decided;
 			}
+			// Journaled before the fence goes up, as a compare-and-set: a
+			// driver that has been superseded stops here.
+			await run.requestFence("source", "fence-and-flip");
+			const grant = await raise();
 			const tail = await captureToLog(context, startPosition);
 			const projected = await project();
 			const verdict = await equalDigests();
 			if (!tail.caughtUp || !projected.caughtUp || !verdict.equal) {
+				// The hold is journaled before the fence is released.
+				const hold = await run.recordHold(
+					"verify",
+					"exact verification under the fence failed; the store remains the authority",
+					{ compensated: true },
+				);
 				await fence.release({
 					scope: options.scope,
 					fenceToken: grant.fenceToken,
 				});
-				throw new MigrationHold(
-					"verify",
-					"exact verification under the fence failed; the store remains the authority",
-				);
+				throw hold;
 			}
 			// Decide, record, then act — see the copy executors for why.
 			const decision: JsonObject = {
@@ -879,21 +917,27 @@ export async function runStreamHandoff(
 		});
 		await run.phase("fence-and-flip", async () => {
 			const decided = run.cutOverDecision();
-			const grant = await options.quiesce();
 			if (decided !== undefined) {
+				const held = await options.quiesce();
 				await options.flipWriter({
-					fenceToken: decidedFenceToken(decided, grant.fenceToken),
+					fenceToken: decidedFenceToken(decided, held.fenceToken),
 				});
 				return decided;
 			}
+			// Journaled before the writer is stopped, as a compare-and-set.
+			await run.requestFence("source", "fence-and-flip");
+			const grant = await options.quiesce();
 			const outcome = await copy();
 			const verdict = await compare();
 			if (!outcome.caughtUp || !verdict.equal) {
-				await options.unquiesce(grant.fenceToken);
-				throw new MigrationHold(
+				// The hold is journaled before the writer is let go again.
+				const hold = await run.recordHold(
 					"verify",
 					"exact verification under quiescence failed; the source stays the writer",
+					{ compensated: true },
 				);
+				await options.unquiesce(grant.fenceToken);
+				throw hold;
 			}
 			const decision: JsonObject = {
 				migrationId: options.runtime.migrationId,

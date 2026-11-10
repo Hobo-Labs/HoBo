@@ -153,4 +153,6 @@ message CanTrailPolicyVerdictRecord {
   bool ok = 1;
   repeated CanTrailPolicyFindingRecord findings = 2;
   string custody_digest = 3;
+  // The custody roles the path behind the verdict named; none when absent.
+  repeated string roles = 4;
 }

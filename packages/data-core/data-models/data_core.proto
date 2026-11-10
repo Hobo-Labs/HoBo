@@ -199,7 +199,7 @@ message CustodyPoint {
   CustodyRole role = 2;
   string region = 3;
   repeated string protections = 4;
-  optional string retain_until = 5; // RFC 3339
+  optional string retain_until = 5; // RFC 3339, explicit offset of at most ±23:59
 }
 
 message CustodyPath {
@@ -221,7 +221,9 @@ message PolicyVerdict {
   string classification = 3;
   repeated CustodyFinding findings = 4;
   string custody_digest = 5;
-  string evaluated_at = 6;
+  string evaluated_at = 6; // RFC 3339, explicit offset
+  // The roles the path named: what the verdict judged, and all it judged.
+  repeated CustodyRole roles = 7;
 }
 
 // ── pattern catalog and selection ───────────────────────────────────────────
@@ -306,6 +308,9 @@ message MigrationState {
   // predates the field, which ran the hub.
   optional string realization = 8; // native | hub
   optional string profile = 9; // the native migration profile, when native
+  // A rollback was decided and journaled; until RolledBack follows, a resumed
+  // run finishes handing authority back.
+  bool rollback_decided = 10;
 }
 
 message MigrationRunResult {
@@ -370,6 +375,10 @@ message MigrationPhaseAppliedEventData {
   string phase = 2;
   string applied_at = 3;
   optional string checkpoint_json = 4;
+  // An in-place phase records what it ran; a phase of the uniform model
+  // records a checkpoint instead.
+  optional uint32 statements = 5;
+  optional uint32 changes = 6;
 }
 
 message MigrationVerifiedEventData {
@@ -394,6 +403,9 @@ message MigrationCutOverEventData {
   optional string reverse_position = 8;
   // Log position the projection had reached, when a log-pivot moved authority.
   optional string log_position = 9;
+  // When the source's fence was first requested: where a rollback's erasure
+  // replay is windowed from.
+  optional string fenced_from = 10;
 }
 
 message MigrationRolledBackEventData {
@@ -402,6 +414,8 @@ message MigrationRolledBackEventData {
   string rolled_back_at = 3;
   optional bool lossless = 4;
   optional uint32 erasures_replayed = 5;
+  // An in-place rollback restores a snapshot; a copy pattern names none.
+  optional string snapshot_ref = 6;
 }
 
 message MigrationHeldEventData {
@@ -409,6 +423,33 @@ message MigrationHeldEventData {
   MigrationPhase phase = 2;
   string reason = 3;
   string held_at = 4;
+  // The hold followed a failed verification under a fence, and write
+  // authority was given back.
+  optional bool compensated = 5;
+  // The phase the run was about to enter, for a hold between two phases.
+  optional MigrationPhase before = 6;
+}
+
+// Written before a write fence is raised, as a compare-and-set on the journal
+// head.
+message MigrationFenceRequestedEventData {
+  string migration_id = 1;
+  string side = 2; // source | target
+  MigrationPhase phase = 3;
+  string requested_at = 4;
+}
+
+// Written before write authority is handed back, as a compare-and-set on the
+// journal head. A journaled rollback is finished, never reconsidered.
+message MigrationRollbackDecidedEventData {
+  string migration_id = 1;
+  bool lossless = 2;
+  string decided_at = 3;
+  // Where erasure replay is windowed from, for a rollback to a stale store.
+  optional string erasures_from = 4;
+  // What both sides digested to, for a rollback under a reverse tail.
+  optional uint64 count = 5;
+  optional string digest = 6;
 }
 
 message MigrationResumedEventData {

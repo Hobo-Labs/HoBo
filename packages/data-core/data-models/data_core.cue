@@ -15,6 +15,11 @@ import "list"
 #HexDigest:  =~"^[0-9a-f]{64}$"
 #Instant:    =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
 
+// An instant a gate compares: RFC 3339 with a mandatory offset bounded to
+// ±23:59. Without the offset the text is local time, and a retention deadline
+// would mean a different instant on every host.
+#OffsetInstant: =~#"^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?([Zz]|[+-]([01][0-9]|2[0-3]):?[0-5][0-9])$"#
+
 // ── canonical model ────────────────────────────────────────────────────────
 
 #CanonicalType: "bool" | "int64" | "float64" | "decimal" | "string" | "bytes" |
@@ -201,7 +206,7 @@ import "list"
 	role:        #CustodyRole
 	region:      string & !=""
 	protections: [...#CustodyProtection]
-	retainUntil?: #Instant
+	retainUntil?: #OffsetInstant
 }
 
 #CustodyPath: {
@@ -223,8 +228,10 @@ import "list"
 	ok:             bool
 	classification: #DataClassification
 	findings:       [...#CustodyFinding]
+	// The roles the path named: what the verdict judged, and all it judged.
+	roles:          [...#CustodyRole] & list.UniqueItems()
 	custodyDigest:  #Sha256Ref
-	evaluatedAt:    #Instant
+	evaluatedAt:    #OffsetInstant
 	// A verdict is ok exactly when it has no findings.
 	ok: len(findings) == 0
 }
@@ -262,8 +269,8 @@ import "list"
 #SelectionReason: {
 	code: "PATTERN_ILLEGAL_FOR_CELL" | "ENGINE_DECLARATION_MISSING" | "PORT_MISSING" |
 		"MAPPING_UNVERIFIED" | "MAPPING_BLOCKED" | "EVIDENCE_MISSING" | "EVIDENCE_FAILED" |
-		"EVIDENCE_STALE" | "POLICY_DENIED" | "FREEZE_UNESTIMATED" | "FREEZE_EXCEEDS_BUDGET" |
-		"ROLLBACK_INSUFFICIENT"
+		"EVIDENCE_STALE" | "EVIDENCE_POSTDATED" | "POLICY_DENIED" | "CUSTODY_INCOMPLETE" |
+		"FREEZE_UNESTIMATED" | "FREEZE_EXCEEDS_BUDGET" | "ROLLBACK_INSUFFICIENT"
 	detail: string
 }
 
@@ -299,6 +306,9 @@ import "list"
 	pattern?:        #MigrationPatternId
 	completedPhases: [...#MigrationPhase]
 	cutOver:         bool
+	// A rollback was decided and journaled; until RolledBack follows, a
+	// resumed run finishes handing authority back.
+	rollbackDecided: bool
 	heldAt?:         #MigrationPhase
 	heldReason?:     string
 	// How records travel, as the plan recorded it. A native realization
@@ -363,6 +373,10 @@ import "list"
 	migrationId: string & !=""
 	phase:       #MigrationPhase | "expand" | "backfill" | "contract"
 	appliedAt:   #Instant
+	// An in-place phase records what it ran; a phase of the uniform model
+	// records a checkpoint instead.
+	statements?: int & >=0
+	changes?:    int & >=0
 	// Positions, counts, and digests — never a record.
 	checkpoint?: {...}
 }
@@ -388,23 +402,63 @@ import "list"
 	fenceToken?:       _|_
 	reversePosition?:  string & !=""
 	logPosition?:      string & !=""
+	// When the source's fence was first requested: where a rollback's erasure
+	// replay is windowed from.
+	fencedFrom?: #Instant
 }
 
 #MigrationRolledBackEventData: {
-	migrationId:       string & !=""
-	reason:            string & !=""
-	rolledBackAt:      #Instant
+	migrationId:  string & !=""
+	reason:       string & !=""
+	rolledBackAt: #Instant
+	// An in-place rollback restores a snapshot; a copy pattern goes back to
+	// the old store and names none.
+	snapshotRef?:      string & !=""
 	lossless?:         bool
 	erasuresReplayed?: int & >=0
 }
 
 #MigrationHeldEventData: {
 	migrationId: string & !=""
+	reason:      string & !=""
+	heldAt:      #Instant
+	// The hold followed a failed verification under a fence, and write
+	// authority was given back.
+	compensated?: bool
 	// A migration may hold only in a safe-hold phase; the fence-and-flip step
-	// completes or compensates.
-	phase:  "plan" | "gate" | "prepare" | "seed" | "converge" | "verify" | "shift-reads" | "soak"
-	reason: string & !=""
-	heldAt: #Instant
+	// completes or compensates. The one other form is a hold *between* two
+	// phases of a pattern with no soak window: the flip is complete, nothing
+	// is half-done, and the fact says which phase was about to start.
+	{
+		phase: "plan" | "gate" | "prepare" | "seed" | "converge" | "verify" | "shift-reads" | "soak"
+		// The phase the run was about to enter, for a hold between two phases.
+		before?: #MigrationPhase
+	} | {
+		phase:   "fence-and-flip"
+		before!: "finalize"
+	}
+}
+
+// Written before a write fence is raised, as a compare-and-set on the
+// journal head.
+#MigrationFenceRequestedEventData: {
+	migrationId: string & !=""
+	side:        "source" | "target"
+	phase:       #MigrationPhase
+	requestedAt: #Instant
+}
+
+// Written before write authority is handed back, as a compare-and-set on the
+// journal head. A journaled rollback is finished, never reconsidered.
+#MigrationRollbackDecidedEventData: {
+	migrationId: string & !=""
+	lossless:    bool
+	decidedAt:   #Instant
+	// Where erasure replay is windowed from, for a rollback to a stale store.
+	erasuresFrom?: #Instant
+	// What both sides digested to, for a rollback under a reverse tail.
+	count?:  int & >=0
+	digest?: #HexDigest
 }
 
 #MigrationResumedEventData: {

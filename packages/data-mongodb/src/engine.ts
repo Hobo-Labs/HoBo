@@ -35,6 +35,7 @@ import {
 	parseDatasetSchema,
 	type RecordMutation,
 	type SnapshotCursor,
+	StaleApplyError,
 	schemaDigest,
 	schemaToJson,
 	upsertMutation,
@@ -690,6 +691,24 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 							request.changes,
 							request.fenceToken,
 						);
+						// A conditional apply reads the watermark inside the
+						// transaction that replaces it. Two appliers naming the
+						// same watermark both write that one entry, so the
+						// server lets one commit and makes the other run again
+						// — and the second reading finds the watermark moved.
+						if (request.expectedWatermark !== undefined) {
+							const recorded =
+								textField(
+									await entry(
+										session,
+										metadataId("watermark", request.dataset, request.source),
+									),
+									"position",
+								) ?? null;
+							if (recorded !== request.expectedWatermark) {
+								throw new StaleApplyError(request.dataset, request.source);
+							}
+						}
 						if (operations.length > 0) {
 							await session.bulkWrite({
 								collection: request.dataset,

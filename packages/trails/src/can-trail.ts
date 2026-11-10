@@ -2,6 +2,7 @@
  * can-trail Gatekeeper dimension — compatible with can-deploy / can-migrate shapes.
  * Offline-capable dry-run evidence.
  */
+import { requiredCustodyRoles } from "@hobo/data-core";
 import type { TrailDefinition } from "./definition.js";
 import { orderTrailSteps } from "./definition.js";
 import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
@@ -73,6 +74,11 @@ export type CanTrailInput = Readonly<{
 	 * finding. A passing verdict cannot lift a denial stated beside it. A
 	 * verdict that is not the record `#CanTrailPolicyVerdictRecord` pins is a
 	 * `policy-denied` reason, never an exception and never a pass.
+	 *
+	 * A verdict judges the path it was given. When a step names its migration
+	 * pattern (`data.pattern`), every custody role that pattern creates must be
+	 * among the verdict's `roles`, or the trail is denied: a relay or a
+	 * retained change log the path never named was never judged.
 	 */
 	policyVerdict?: CanTrailPolicyVerdict;
 }>;
@@ -89,6 +95,11 @@ export type CanTrailPolicyVerdict = Readonly<{
 		detail: string;
 	}>[];
 	custodyDigest: string;
+	/**
+	 * The custody roles the path behind the verdict named. A verdict without
+	 * the member names none, so it covers no pattern.
+	 */
+	roles?: readonly string[];
 }>;
 
 /** Finding codes that are a residency conflict rather than a general denial. */
@@ -104,11 +115,14 @@ const CUSTODY_DIGEST = /^sha256:[0-9a-f]{64}$/u;
 type VerdictDenials = Readonly<{
 	policy: readonly string[];
 	residency: readonly string[];
+	/** The custody roles the verdict's path named. */
+	roles: readonly string[];
 }>;
 
 const NO_DENIALS: VerdictDenials = Object.freeze({
 	policy: Object.freeze([]),
 	residency: Object.freeze([]),
+	roles: Object.freeze([]),
 });
 
 /**
@@ -116,7 +130,11 @@ const NO_DENIALS: VerdictDenials = Object.freeze({
  * claims to be may be carrying anything.
  */
 function malformedVerdict(defect: string): VerdictDenials {
-	return { policy: [`policy verdict is malformed: ${defect}`], residency: [] };
+	return {
+		policy: [`policy verdict is malformed: ${defect}`],
+		residency: [],
+		roles: [],
+	};
 }
 
 function isJsonArray(value: JsonValue): value is readonly JsonValue[] {
@@ -144,7 +162,7 @@ function verdictDenials(verdict: JsonValue): VerdictDenials {
 	if (!isJsonObject(verdict)) {
 		return malformedVerdict("it must be a record");
 	}
-	const { ok, findings, custodyDigest } = verdict;
+	const { ok, findings, custodyDigest, roles } = verdict;
 	if (ok !== true && ok !== false) {
 		return malformedVerdict("ok must be a boolean");
 	}
@@ -155,6 +173,12 @@ function verdictDenials(verdict: JsonValue): VerdictDenials {
 		return malformedVerdict(
 			"custodyDigest must be the sha256 digest of the custody path",
 		);
+	}
+	// Absent is not malformed — a verdict may predate the member — but it
+	// names no role, and so covers no pattern.
+	const named = roles === undefined ? [] : roles;
+	if (!isJsonArray(named) || !named.every(isNonEmptyString)) {
+		return malformedVerdict("roles must be a list of custody role names");
 	}
 	const policy: string[] = [];
 	const residency: string[] = [];
@@ -182,7 +206,35 @@ function verdictDenials(verdict: JsonValue): VerdictDenials {
 	if (!ok && findings.length === 0) {
 		policy.push("policy verdict over the custody path is negative");
 	}
-	return { policy, residency };
+	return { policy, residency, roles: named };
+}
+
+/**
+ * What the patterns a trail names create that the verdict's path left out.
+ * The realization and the reverse tail are not known at a dry run, so each
+ * pattern is read at its most demanding: every role it can create.
+ */
+function uncoveredByVerdict(
+	trail: TrailDefinition,
+	roles: readonly string[],
+): readonly string[] {
+	const patterns = [
+		...new Set(
+			trail.steps.flatMap((step) =>
+				step.data?.pattern === undefined ? [] : [step.data.pattern],
+			),
+		),
+	];
+	return patterns.flatMap((pattern) => {
+		const missing = requiredCustodyRoles({ pattern }).filter(
+			(role) => !roles.includes(role),
+		);
+		return missing.length === 0
+			? []
+			: [
+					`the custody path does not cover ${pattern}: no custody point for ${missing.join(", ")}`,
+				];
+	});
 }
 
 /**
@@ -260,7 +312,13 @@ export function evaluateCanTrail(input: CanTrailInput): CanTrailResult {
 		input.policyVerdict !== undefined
 			? verdictDenials(input.policyVerdict)
 			: NO_DENIALS;
-	const policyDenials = [...fromVerdict.policy];
+	const policyDenials = [
+		...fromVerdict.policy,
+		// A verdict that passes over a path with a copy missing has not judged
+		// that copy. Checked only against a supplied verdict: with none there
+		// is no path to be incomplete.
+		...(verdictSupplied ? uncoveredByVerdict(composed, fromVerdict.roles) : []),
+	];
 	if (input.policyAllows === false) {
 		policyDenials.unshift("policy pack denies this trail");
 	}

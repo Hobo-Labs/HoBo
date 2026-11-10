@@ -22,6 +22,7 @@ import {
 	schemaDigest,
 } from "./canonical.js";
 import {
+	CUSTODY_ROLES,
 	type CustodyPath,
 	evaluateCustodyPath,
 	type PolicyVerdict,
@@ -33,7 +34,7 @@ import {
 	type RecordMutation,
 	upsertMutation,
 } from "./envelope.js";
-import { DataCoreError, FencedWriteError } from "./errors.js";
+import { DataCoreError, FencedWriteError, StaleApplyError } from "./errors.js";
 import {
 	type CopyMigrationOptions,
 	runOfflineCopy,
@@ -326,21 +327,34 @@ async function refuses(
 	return undefined;
 }
 
-const ALLOWING_PATH: CustodyPath = parseCustodyPath({
-	points: [
-		{ id: "source", role: "source", region: "eu-west-1", protections: [] },
-		{ id: "target", role: "target", region: "eu-west-1", protections: [] },
-	],
-});
+const RETENTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * A custody path the kit's migrations are allowed over: one point for every
+ * role, so whichever pattern and realization a case runs, no copy it creates
+ * is off the path. A bounded copy is retained for a week past `now`.
+ */
+function allowingPath(now: string): CustodyPath {
+	const retainUntil = new Date(
+		Date.parse(now) + RETENTION_WINDOW_MS,
+	).toISOString();
+	return parseCustodyPath({
+		points: CUSTODY_ROLES.map((role) => ({
+			id: role,
+			role,
+			region: "eu-west-1",
+			protections: [],
+			...(role === "source" || role === "target" || role === "event-log"
+				? undefined
+				: { retainUntil }),
+		})),
+	});
+}
 
 function allow(now: string): () => PolicyVerdict {
 	const classification: DataClassification = "public";
-	return () =>
-		evaluateCustodyPath({
-			path: ALLOWING_PATH,
-			policy: { classification },
-			now,
-		});
+	const path = allowingPath(now);
+	return () => evaluateCustodyPath({ path, policy: { classification }, now });
 }
 
 function runtime(
@@ -985,6 +999,166 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			expect(
 				(await apply.watermark({ dataset: schema.name, source: "s" })) === "57",
 				"an empty batch still advances the watermark",
+			);
+		},
+	},
+	{
+		// A conditional apply is how a migration keeps a driver that has been
+		// superseded from writing over its successor: it names the watermark it
+		// believes is current, and the store refuses the batch when it is not.
+		id: "apply.stale-watermark-is-refused",
+		requires: ["apply"],
+		dependsOn: ["apply.idempotent-with-watermark"],
+		async run(context) {
+			const binding = await context.open("a");
+			const schema = conformanceSchema([binding]);
+			await binding.datasets.ensureDataset(schema);
+			const apply = requirePort(binding, "apply");
+			const dataset = schema.name;
+			const watermark = () => apply.watermark({ dataset, source: "s" });
+			const qty = async (id: string) =>
+				(
+					await binding.records.read({
+						dataset,
+						tenant: "",
+						key: keyOf(schema, id),
+					})
+				)?.qty;
+			await apply.apply({
+				dataset,
+				changes: [upsert(schema, "", "order-1", { qty: "1" })],
+				source: "s",
+				position: "10",
+				expectedWatermark: null,
+			});
+			expect(
+				(await watermark()) === "10" && (await qty("order-1")) === "1",
+				"a first batch that expects no watermark lands",
+			);
+			const second = await refuses(async () => {
+				await apply.apply({
+					dataset,
+					changes: [
+						upsert(schema, "", "order-1", { qty: "9" }),
+						upsert(schema, "", "order-late", { qty: "9" }),
+					],
+					source: "s",
+					position: "11",
+					expectedWatermark: null,
+				});
+			});
+			expect(
+				second instanceof StaleApplyError,
+				"a batch that expects no watermark where one is recorded must be refused with StaleApplyError",
+			);
+			expect(
+				(await qty("order-1")) === "1" &&
+					(await qty("order-late")) === undefined,
+				"nothing of a refused batch may land",
+			);
+			expect(
+				(await watermark()) === "10",
+				"a refused batch must not move the watermark",
+			);
+			await apply.apply({
+				dataset,
+				changes: [upsert(schema, "", "order-1", { qty: "2" })],
+				source: "s",
+				position: "20",
+				expectedWatermark: "10",
+			});
+			expect(
+				(await watermark()) === "20" && (await qty("order-1")) === "2",
+				"a batch that names the recorded watermark lands and advances it",
+			);
+			// The stale driver: it still holds a batch read after "10".
+			const stale = await refuses(async () => {
+				await apply.apply({
+					dataset,
+					changes: [
+						upsert(schema, "", "order-1", { qty: "7" }),
+						deleteMutation("", keyOf(schema, "order-1")),
+						upsert(schema, "", "order-late", { qty: "7" }),
+					],
+					source: "s",
+					position: "15",
+					expectedWatermark: "10",
+				});
+			});
+			expect(
+				stale instanceof StaleApplyError,
+				"a batch that names a watermark the store has moved past must be refused with StaleApplyError",
+			);
+			expect(
+				(await qty("order-1")) === "2" &&
+					(await qty("order-late")) === undefined &&
+					(await watermark()) === "20",
+				"a stale batch changes neither a record nor the watermark",
+			);
+			const empty = await refuses(async () => {
+				await apply.apply({
+					dataset,
+					changes: [],
+					source: "s",
+					position: "30",
+					expectedWatermark: "10",
+				});
+			});
+			expect(
+				empty instanceof StaleApplyError && (await watermark()) === "20",
+				"an empty stale batch is refused too: it would move the watermark",
+			);
+			// Two appliers that both name the current watermark: one lands.
+			const racers = await Promise.allSettled(
+				["a", "b"].map(async (id) => {
+					await apply.apply({
+						dataset,
+						changes: [upsert(schema, "", `order-${id}`, { qty: "5" })],
+						source: "s",
+						position: `50-${id}`,
+						expectedWatermark: "20",
+					});
+					return id;
+				}),
+			);
+			const landed = racers.flatMap((racer) =>
+				racer.status === "fulfilled" ? [racer.value] : [],
+			);
+			expect(
+				landed.length === 1 &&
+					racers.every(
+						(racer) =>
+							racer.status === "fulfilled" ||
+							racer.reason instanceof StaleApplyError,
+					),
+				"of two appliers naming the same watermark exactly one lands, and the other is refused with StaleApplyError",
+			);
+			const winner = landed[0] ?? "";
+			const loser = winner === "a" ? "b" : "a";
+			expect(
+				(await watermark()) === `50-${winner}` &&
+					(await qty(`order-${winner}`)) === "5" &&
+					(await qty(`order-${loser}`)) === undefined,
+				"the watermark and the records are the winner's, and only the winner's",
+			);
+			// Watermarks are per source, and an apply that names none is
+			// unconditional, as it always was.
+			await apply.apply({
+				dataset,
+				changes: [],
+				source: "t",
+				position: "1",
+				expectedWatermark: null,
+			});
+			await apply.apply({
+				dataset,
+				changes: [upsert(schema, "", "order-1", { qty: "3" })],
+				source: "s",
+				position: "60",
+			});
+			expect(
+				(await watermark()) === "60" && (await qty("order-1")) === "3",
+				"an apply that names no watermark is unconditional",
 			);
 		},
 	},

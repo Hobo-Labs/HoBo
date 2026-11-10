@@ -236,6 +236,71 @@
 			}
 		},
 		{
+			"description": "a conditional apply moves the watermark only from the position the applier named",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "UPDATE \"hobo_fixture_capture\".\"hobo_data_watermarks\" SET log_position = $3::text WHERE dataset = $1::text AND source = $2::text AND log_position = $4::text",
+					"parameters": [
+						{
+							"text": "hobo_fixture_orders"
+						},
+						{
+							"text": "hobo_migration_m1_forward"
+						},
+						{
+							"text": "57"
+						},
+						{
+							"text": "41"
+						}
+					],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "a conditional apply that names a watermark the store has moved past matches no row",
+			"providerState": "another applier has moved the watermark",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "UPDATE \"hobo_fixture_capture\".\"hobo_data_watermarks\" SET log_position = $3::text WHERE dataset = $1::text AND source = $2::text AND log_position = $4::text",
+					"parameters": [
+						{
+							"text": "hobo_fixture_orders"
+						},
+						{
+							"text": "hobo_migration_m1_forward"
+						},
+						{
+							"text": "57"
+						},
+						{
+							"text": "41"
+						}
+					],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [],
+					"rowCount": 0
+				}
+			}
+		},
+		{
 			"description": "the decoding call's session settings are pinned for its transaction",
 			"request": {
 				"method": "POST",
