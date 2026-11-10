@@ -909,6 +909,56 @@ describe("worker lease reconciliation", () => {
 		expect(active).toEqual([lease]);
 	});
 
+	it("does not release a running lease with a missing container while draining", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000002", 1);
+		lease.state = "running";
+		const active = [lease];
+		const store = storeWith(active);
+		const afterRelease = vi.fn(async () => undefined);
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => []),
+				stop: vi.fn(async () => undefined),
+				remove: vi.fn(async () => undefined),
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			afterRelease,
+		});
+		const result = await reconciler.reconcile({ draining: true });
+		expect(result.liveLeaseIds.has(lease.id)).toBe(true);
+		expect(store.abortIsolatedAndRequeue).not.toHaveBeenCalled();
+		expect(afterRelease).not.toHaveBeenCalled();
+		expect(active).toEqual([lease]);
+	});
+
+	it("does not stop unleased running containers while draining", async () => {
+		const stop = vi.fn(async () => undefined);
+		const remove = vi.fn(async () => undefined);
+		const reconciler = createWorkerLeaseReconciler({
+			store: storeWith([]),
+			docker: {
+				list: vi.fn(async () => [
+					{
+						name: "hobo-orphan",
+						containerId: "cid",
+						state: "running" as const,
+					},
+				]),
+				stop,
+				remove,
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+		});
+		await reconciler.reconcile({ draining: true });
+		expect(stop).not.toHaveBeenCalled();
+		expect(remove).not.toHaveBeenCalled();
+	});
+
 	it("recovers a restarted SQLite journal full of stale leases on the first reconciliation", async () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-ci-lease-restart-"));
 		const path = join(root, "worker.sqlite");

@@ -34,6 +34,8 @@ export interface GithubJobPollerOptions {
 	durations?: Pick<JobDurations, "observe">;
 	/** Primed from the run lists already read here, at no extra GitHub request. */
 	admissionOrder?: Pick<AdmissionOrder, "prime">;
+	/** Runs before each poll (merge queue positions, etc.). */
+	beforePoll?: () => Promise<void>;
 	ingestCoalesce?: PollIngestCoalesce;
 	now?: () => number;
 }
@@ -230,6 +232,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 		readThisPoll = new Map();
 		const stillSettled = new Set<string>();
 		try {
+			await options.beforePoll?.();
 			for (const connection of await options.connections()) {
 				if (seen.has(connection.repositoryId)) continue;
 				seen.add(connection.repositoryId);

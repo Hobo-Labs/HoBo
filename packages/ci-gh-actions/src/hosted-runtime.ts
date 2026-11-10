@@ -3,6 +3,7 @@ import type { CiEvent } from "@hobo/ci";
 import { z } from "zod";
 import { JitBootstrapResponseSchema } from "./_generated/jit_bootstrap_response_pb.js";
 import { createAdmissionOrder } from "./admission-order.js";
+import type { MergeQueuePositionSource } from "./merge-queue-order.js";
 import { type GithubTransport, getJob } from "./github.js";
 import {
 	HostedRelay,
@@ -103,6 +104,7 @@ export function createHostedRelayRuntime(options: {
 	lendTrunkSlots?: boolean;
 	memoryAdmission?: WorkerMemoryAdmission;
 	storageAdmission?: WorkerStorageAdmission;
+	mergeQueuePositions?: MergeQueuePositionSource;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
@@ -122,6 +124,7 @@ export function createHostedRelayRuntime(options: {
 	const admissionOrder = createAdmissionOrder(
 		options.github,
 		options.jobDurations,
+		options.mergeQueuePositions,
 	);
 	async function relay() {
 		const state = await options.store.configuration();

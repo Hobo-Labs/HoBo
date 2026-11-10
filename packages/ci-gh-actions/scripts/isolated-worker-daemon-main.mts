@@ -23,6 +23,7 @@ import {
 	createGithubOidcVerifier,
 	createHostedRelayRuntime,
 	createIsolatedContainerController,
+	createMergeQueuePositionCache,
 	createJobDurations,
 	createMemoryPeaks,
 	createNodeWorkerStorageFileSystem,
@@ -48,6 +49,7 @@ import {
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
 	singleFlight,
+	mergeDrainInFlightCount,
 	stopIsolatedWorker,
 	traceGithubTransport,
 } from "@hobo/ci-gh-actions";
@@ -450,6 +452,20 @@ try {
 		},
 		log,
 	});
+	try {
+		for (const container of await docker.list()) {
+			if (container.state !== "running" || !container.name.startsWith("hobo-"))
+				continue;
+			log("hobo_ci_worker_adopt_running_container", {
+				name: container.name,
+				containerId: container.containerId,
+			});
+		}
+	} catch (error) {
+		log("hobo_ci_worker_adopt_failed", {
+			message: error instanceof Error ? error.message : "unknown",
+		});
+	}
 	await storageAdmission.reap();
 	const jobPickupMetadata = new Map<
 		string,
@@ -597,6 +613,13 @@ try {
 	const host = createCompositeIsolatedHost({ store, worker: worker.host });
 	if (!host) throw new Error("worker host unavailable");
 	let workerReconcileMs = 0;
+	const mergeQueueBranch = process.env.HOBO_CI_MERGE_QUEUE_BRANCH ?? "main";
+	const mergeQueueCache = createMergeQueuePositionCache({
+		github,
+		branch: mergeQueueBranch,
+		connections: async () =>
+			(await store.configuration())?.configuration?.connections ?? [],
+	});
 	const runtime = createHostedRelayRuntime({
 		store,
 		github,
@@ -612,6 +635,7 @@ try {
 		lendTrunkSlots,
 		memoryAdmission,
 		storageAdmission,
+		mergeQueuePositions: () => mergeQueueCache.snapshot(),
 		control: async () => undefined,
 		onTickTiming: (timing) =>
 			log("hobo_ci_isolated_worker_tick_slow", {
@@ -637,6 +661,7 @@ try {
 						}),
 					onGithubError: (failure) =>
 						log("hobo_ci_isolated_worker_github_read_failed", { ...failure }),
+					beforePoll: () => mergeQueueCache.refresh(),
 				})
 			: undefined;
 	const pollWorthLogging = createPollLogFilter();
@@ -806,6 +831,7 @@ try {
 	runDepsImageEnsure();
 
 	let shutdownOnce: Promise<void> | undefined;
+	let runningWorkerContainers = 0;
 
 	async function shutdown(signal: string) {
 		if (shutdownOnce) return shutdownOnce;
@@ -830,8 +856,20 @@ try {
 				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
 				await worker.reconcileOrphanJobs();
 				if (reconciliation.inventoryKnown) await runtime.tick({ admit: false });
+				try {
+					const listed = await docker.list();
+					runningWorkerContainers = listed.filter(
+						(c) => c.state === "running" && c.name.startsWith("hobo-"),
+					).length;
+				} catch {
+					runningWorkerContainers = 0;
+				}
 			};
-			const inFlight = async () => liveWorkerLeaseIds.size;
+			const inFlight = async () =>
+				mergeDrainInFlightCount(
+					liveWorkerLeaseIds.size,
+					runningWorkerContainers,
+				);
 			await reconcileDrain();
 			if (stopMode === "drain")
 				log("hobo_ci_isolated_worker_drain_started", {

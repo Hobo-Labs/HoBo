@@ -1,5 +1,6 @@
 import { type GithubTransport, getRun } from "./github.js";
 import type { JobDurations } from "./job-durations.js";
+import type { MergeQueuePositionSource } from "./merge-queue-order.js";
 import { servedRunnerLabel, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
 /** Where a job's run stands in line for a host: lower `rank` first, then the older run. */
@@ -68,9 +69,25 @@ export type AdmissionRef = Readonly<{
  * on a freed slot; a job with no history expects 0 and the job id breaks
  * remaining ties.
  */
+type MergeGroupSortKey = Readonly<{ position: number; stale: boolean }>;
+
+function mergeGroupSortKey(
+	headSha: string | undefined,
+	snapshot: ReturnType<MergeQueuePositionSource> | undefined,
+): MergeGroupSortKey {
+	if (!headSha || headSha.length < 40)
+		return { position: Number.POSITIVE_INFINITY, stale: false };
+	if (!snapshot)
+		return { position: Number.POSITIVE_INFINITY, stale: false };
+	const position = snapshot.byHeadSha.get(headSha);
+	if (position !== undefined) return { position, stale: false };
+	return { position: Number.POSITIVE_INFINITY, stale: true };
+}
+
 export function createAdmissionOrder(
 	github: GithubTransport,
 	durations?: Pick<JobDurations, "expectedMs">,
+	mergeQueuePositions?: MergeQueuePositionSource,
 ) {
 	const runs = new Map<number, AdmissionKey>();
 	function remember(
@@ -137,15 +154,25 @@ export function createAdmissionOrder(
 				jobId: ref.jobId,
 			});
 		}
+		const mqSnapshot = mergeQueuePositions?.();
 		return keyed
-			.sort(
-				(a, b) =>
-					a.key.rank - b.key.rank ||
-					trunkEventPriority(a.key.event) - trunkEventPriority(b.key.event) ||
-					a.key.startedAtMs - b.key.startedAtMs ||
-					b.expectedMs - a.expectedMs ||
-					a.jobId - b.jobId,
-			)
+			.sort((a, b) => {
+				if (a.key.rank !== b.key.rank) return a.key.rank - b.key.rank;
+				if (trunkEventPriority(a.key.event) !== trunkEventPriority(b.key.event))
+					return (
+						trunkEventPriority(a.key.event) - trunkEventPriority(b.key.event)
+					);
+				if (a.key.event === "merge_group" && b.key.event === "merge_group") {
+					const ga = mergeGroupSortKey(a.key.headSha, mqSnapshot);
+					const gb = mergeGroupSortKey(b.key.headSha, mqSnapshot);
+					if (ga.stale !== gb.stale) return ga.stale ? 1 : -1;
+					if (ga.position !== gb.position) return ga.position - gb.position;
+				}
+				if (a.key.startedAtMs !== b.key.startedAtMs)
+					return a.key.startedAtMs - b.key.startedAtMs;
+				if (b.expectedMs !== a.expectedMs) return b.expectedMs - a.expectedMs;
+				return a.jobId - b.jobId;
+			})
 			.map((entry) => entry.item);
 	}
 	return Object.assign(order, {

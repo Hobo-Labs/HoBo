@@ -93,6 +93,19 @@ export function hasIsolatedStopIntent(lease: Lease): boolean {
 	);
 }
 
+/** A lease that may still be executing a GitHub job; drain must not drop it. */
+export function leaseHoldDuringWorkerDrain(lease: Lease): boolean {
+	if (["running", "dispatched", "claiming"].includes(lease.state)) return true;
+	if (
+		lease.state === "reserved" &&
+		(lease.sandboxSessionId !== "" ||
+			lease.actualJobId > 0 ||
+			lease.runnerId > 0)
+	)
+		return true;
+	return false;
+}
+
 export function createWorkerLeaseReconciler(options: {
 	store: WorkerLeaseReconciliationStore;
 	docker: Pick<DockerDriver, "list" | "stop" | "remove">;
@@ -352,6 +365,13 @@ export function createWorkerLeaseReconciler(options: {
 				continue;
 			} else {
 				reason = "container-missing";
+				if (
+					reconcileOptions.draining &&
+					leaseHoldDuringWorkerDrain(lease)
+				) {
+					liveLeaseIds.add(lease.id);
+					continue;
+				}
 				if (!reconcileOptions.draining && ageMs < orphanGraceMs) continue;
 				await options.store.abortIsolatedAndRequeue(
 					lease.id,
@@ -361,7 +381,11 @@ export function createWorkerLeaseReconciler(options: {
 			}
 			const current = await options.store.get(lease.id);
 			if (current && ACTIVE_STATES.has(current.state)) continue;
-			if (reason === "container-missing") await options.afterRelease?.(lease);
+			if (
+				reason === "container-missing" &&
+				!reconcileOptions.draining
+			)
+				await options.afterRelease?.(lease);
 			const orphan =
 				reason !== "container-exited" && lease.runnerName === `hobo-${lease.id}`
 					? orphanJobCandidateForLease(lease, now())
@@ -395,6 +419,7 @@ export function createWorkerLeaseReconciler(options: {
 				protectedNames.has(container.name)
 			)
 				continue;
+			if (reconcileOptions.draining && container.state === "running") continue;
 			const staleTimedOut =
 				container.state === "running" &&
 				container.timeoutMs !== undefined &&

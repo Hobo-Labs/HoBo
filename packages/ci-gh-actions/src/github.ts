@@ -152,7 +152,8 @@ export function githubApiUrl(path: string): string {
 	if (
 		!pathname ||
 		(!/^\/(?:repos|app|users)\b\/[A-Za-z0-9_.%/-]+$/.test(pathname) &&
-			pathname !== "/app")
+			pathname !== "/app" &&
+			pathname !== "/graphql")
 	)
 		throw new Error("invalid GitHub API path");
 	if (

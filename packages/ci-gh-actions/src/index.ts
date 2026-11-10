@@ -1,5 +1,11 @@
 export { createActionsBackend } from "./actions-backend.js";
 export { createAdmissionOrder } from "./admission-order.js";
+export {
+	createMergeQueuePositionCache,
+	fetchMergeQueuePositions,
+	type MergeQueuePositionSource,
+	type MergeQueuePositions,
+} from "./merge-queue-order.js";
 export { relayInstallAssets } from "./assets.js";
 export {
 	inventoryCiEnginesFromRepository,
@@ -82,6 +88,7 @@ export {
 } from "./isolated-worker/container-timeout.js";
 export {
 	countInFlightWorkerLeases,
+	mergeDrainInFlightCount,
 	parseWorkerStopMode,
 	stopIsolatedWorker,
 	type WorkerStopMode,

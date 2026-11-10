@@ -573,6 +573,12 @@ export function createIsolatedContainerController(options: {
 	const cleanupWorkDirectory = async (lease: Lease) => {
 		const directory = workDirectory(lease.id);
 		if (!directory || !options.workFs || !options.scheduleRetiredSweep) return;
+		const containerName = lease.sandboxName || `hobo-${lease.id}`;
+		if (
+			options.docker.containerExists &&
+			(await options.docker.containerExists(containerName))
+		)
+			return;
 		const startedAt = Date.now();
 		try {
 			const retired = await options.workFs.retireJobDirectory(directory);

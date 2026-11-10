@@ -71,6 +71,7 @@ export interface DockerDriver {
 		runAsUser: string,
 	): Promise<{ exitCode: number }>;
 	list?(label: string): Promise<readonly DockerContainer[]>;
+	containerExists?(name: string): Promise<boolean>;
 	create(spec: IsolatedContainerSpec): Promise<IsolatedContainerHandle>;
 	start(name: string, containerId: string): Promise<void>;
 	exec(
