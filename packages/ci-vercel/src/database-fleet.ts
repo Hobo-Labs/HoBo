@@ -128,7 +128,8 @@ function sleep(ms: number): Promise<void> {
  *   the lease by this instance's wall clock. Every statement is checked, so an
  *   instance that was frozen and resumed cannot write on an old assignment.
  * - When the assignment is unknown, sealed or without a writer, requests get
- *   503 with `Retry-After`.
+ *   503 with `Retry-After`. `GET /readyz` says so in its body; `GET /healthz`
+ *   still answers 200, because it reports on this process, not its database.
  * - When the writer changes, the old pools are closed and the application is
  *   built again on the new writer.
  * - A scheduled repair message first runs one reconcile tick, which copies the
@@ -344,14 +345,18 @@ export function createDatabaseFleet(options: {
 		}
 	}
 
-	const unavailable = () =>
-		new Response(null, {
-			status: 503,
-			headers: {
-				"cache-control": "no-store",
-				"retry-after": String(Math.max(1, Math.ceil(config.leaseMs / 1000))),
-			},
-		});
+	const refusal = () => ({
+		status: 503,
+		headers: {
+			"cache-control": "no-store",
+			"retry-after": String(Math.max(1, Math.ceil(config.leaseMs / 1000))),
+		},
+	});
+	const unavailable = () => new Response(null, refusal());
+
+	/** The same refusal for a readiness probe, with a reason it can act on. */
+	const notReady = () =>
+		Response.json({ ready: false, reason: "store-unavailable" }, refusal());
 
 	let reconciling: Promise<FleetReconcileReport | undefined> | undefined;
 	/** One reconcile tick. A failure is reported and never stops the relay. */
@@ -439,21 +444,32 @@ export function createDatabaseFleet(options: {
 			const pathname = new URL(request.url).pathname;
 			if (pathname === "/internal/queue-wakeup") return queueWakeup(request);
 			if (pathname === "/internal/tick") return scheduledRepair(request);
+			// Liveness is about this process. With no writer assigned the relay
+			// is alive and waiting; restarting it would not find one.
+			if (request.method === "GET" && pathname === "/healthz")
+				return Response.json(
+					{ ok: true },
+					{ status: 200, headers: { "cache-control": "no-store" } },
+				);
+			const refuse =
+				request.method === "GET" && pathname === "/readyz"
+					? notReady
+					: unavailable;
 			return withLease(async () => {
 				let application: FleetApplication | undefined;
 				try {
 					application = await acquire();
 				} catch {
-					return unavailable();
+					return refuse();
 				}
-				if (!application) return unavailable();
+				if (!application) return refuse();
 				const backendId = running?.backendId;
 				try {
 					const response = await application.handle(request);
 					// A request the fence cut off mid-way did not complete.
 					return response.status >= 500 &&
 						(backendId === undefined || !permits(backendId))
-						? unavailable()
+						? refuse()
 						: response;
 				} catch (error) {
 					if (
@@ -461,7 +477,7 @@ export function createDatabaseFleet(options: {
 						backendId === undefined ||
 						!permits(backendId)
 					)
-						return unavailable();
+						return refuse();
 					throw error;
 				}
 			});

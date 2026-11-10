@@ -721,9 +721,12 @@ try {
 	);
 	assert.ok(closedAfter <= LEASE_MS + 1500);
 	assert.equal(second.assignment(), undefined);
-	const blocked = await second.handle(new Request(`${origin}/healthz`));
+	const blocked = await second.handle(new Request(`${origin}/readyz`));
 	assert.equal(blocked.status, 503);
 	assert.ok(blocked.headers.get("retry-after"));
+	// The process is alive; only its database assignment is missing.
+	const alive = await second.handle(new Request(`${origin}/healthz`));
+	assert.equal(alive.status, 200);
 	// A tick without a majority changes nothing.
 	const stuck = await settled(await first.reconcile());
 	assert.equal(stuck.status, "no-majority");

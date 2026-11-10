@@ -90,7 +90,7 @@ function harness() {
 			};
 		},
 	});
-	const get = (path = "/healthz") =>
+	const get = (path = "/v1/work") =>
 		fleet.handle(new Request(`https://relay.example${path}`));
 	const move = (expectedEpoch: number, value: Partial<FleetAssignmentValue>) =>
 		proposeAssignment(register, {
@@ -198,6 +198,37 @@ describe("database fleet fence", () => {
 		await h.move(2, { active: "c" });
 		h.advance(15_000);
 		expect(await (await h.get()).text()).toBe("app-1");
+		await h.fleet.close();
+	});
+
+	it("stays live and says why it is not ready while no writer is assigned", async () => {
+		const h = harness();
+		await h.get();
+		await h.move(1, { sealed: true, target: "c" });
+		h.advance(15_000);
+		// Liveness is the process: a probe must not restart a relay that is
+		// only waiting for a writer.
+		const live = await h.get("/healthz");
+		expect(live.status).toBe(200);
+		expect(await live.json()).toEqual({ ok: true });
+		expect(live.headers.get("cache-control")).toBe("no-store");
+		const ready = await h.get("/readyz");
+		expect(ready.status).toBe(503);
+		expect(await ready.json()).toEqual({
+			ready: false,
+			reason: "store-unavailable",
+		});
+		expect(ready.headers.get("retry-after")).toBe("30");
+		// Liveness never reaches the application or the backends.
+		const before = h.reads();
+		await h.get("/healthz");
+		expect(h.reads()).toBe(before);
+		// A request that is not a probe is still refused without a body.
+		const post = await h.fleet.handle(
+			new Request("https://relay.example/readyz", { method: "POST" }),
+		);
+		expect(post.status).toBe(503);
+		expect(await post.text()).toBe("");
 		await h.fleet.close();
 	});
 

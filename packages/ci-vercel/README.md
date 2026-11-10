@@ -304,8 +304,11 @@ the entry it confirmed names that backend, is not sealed, and is younger than
 the lease by its own wall clock. That is checked before every statement, so
 an instance that was frozen and resumed cannot write on an old assignment. In
 every other case (no majority, an undecided newest entry, a sealed fleet) it
-answers `503` with `Retry-After`. When the writer changes it closes its pools
-and builds the application again on the new writer.
+answers `503` with `Retry-After`. `GET /readyz` then carries
+`{"ready": false, "reason": "store-unavailable"}`, and `GET /healthz` still
+answers `200`: it reports on the process, and restarting a relay that is
+waiting for a writer would not find one. When the writer changes it closes its
+pools and builds the application again on the new writer.
 
 **Keeping standbys current.** The Vercel Schedule's repair message (every 15
 minutes) first runs one reconcile tick: it copies the writer to each standby
@@ -445,7 +448,7 @@ no connection string, and asserts, in order:
 | 5 | Recovery point guard | Writer's server stopped, objective of one second: decision `hold`, assignment unchanged |
 | 4 | Unplanned failover | Same outage, normal objective: freshest standby promoted after the threshold; `loss_window_ms` equals its lag; the missing deliveries are exactly those acknowledged after the last copy, listed by id |
 | 6 | The old writer returns | A copy into it is refused on itself until its log is repaired; then it is overwritten; a forged copy into the real writer is refused |
-| 7 | Loss of majority | Two of three servers stopped: `503` with `Retry-After` although the writer is up; a tick changes nothing; recovery when one returns |
+| 7 | Loss of majority | Two of three servers stopped: `503` with `Retry-After` although the writer is up, while `/healthz` stays `200`; a tick changes nothing; recovery when one returns |
 | 8 | Two reconcilers at once | At most one decided entry per epoch; the three logs identical |
 
 Every plan number in the proof is a placeholder. It passed on 2026-11-10
