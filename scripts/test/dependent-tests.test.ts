@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
 	exportTarget,
 	planCommands,
 	planDependentTests,
+	planShardCount,
 	type Repo,
 	shardTestPlan,
 	type TestGraph,
@@ -84,6 +87,7 @@ const sources = new Map([
 	["packages/none/package.json", manifest("@t/none", "vitest run")],
 	["packages/none/test/x.test.ts", 'const guide = "../../../docs/guide.md";\n'],
 	["packages/none/test/y.test.ts", "await import(name);\n"],
+	["packages/conf/README.md", "# conf\n"],
 	["docs/guide.md", "# guide\n"],
 	["docs/other.md", "# other\n"],
 	["pnpm-lock.yaml", "lockfileVersion: 9\n"],
@@ -163,6 +167,108 @@ describe("workspace test shards", () => {
 				),
 			/both a whole suite and a subset/u,
 		);
+	});
+});
+
+describe("planShardCount", () => {
+	const of = (suites: number): TestPlan => ({
+		mode: "scoped",
+		full: Array.from({ length: suites }, (_, index) => `packages/p${index}`),
+		subsets: new Map(),
+		skipped: [],
+	});
+
+	it("takes every shard for a repo-wide plan", () => {
+		assert.equal(planShardCount({ mode: "all", reason: "lockfile" }, 8), 8);
+	});
+
+	it("takes one shard per four suites or subsets, one at least and the cap at most", () => {
+		assert.equal(planShardCount(of(0), 8), 1);
+		assert.equal(planShardCount(of(4), 8), 1);
+		assert.equal(planShardCount(of(5), 8), 2);
+		assert.equal(planShardCount(of(32), 8), 8);
+		assert.equal(planShardCount(of(500), 8), 8);
+		assert.equal(
+			planShardCount(
+				{
+					mode: "scoped",
+					full: ["packages/a"],
+					subsets: new Map(
+						Array.from({ length: 4 }, (_, index) => [
+							`packages/s${index}`,
+							["test/x.test.ts"],
+						]),
+					),
+					skipped: ["packages/skipped"],
+				},
+				8,
+			),
+			2,
+		);
+	});
+
+	it("covers the plan with the shards it asked for", () => {
+		const plan = of(13);
+		const count = planShardCount(plan, 8);
+		const full = Array.from({ length: count }, (_, index) =>
+			shardTestPlan(plan, [], index, count),
+		).flatMap((part) => (part.mode === "scoped" ? part.full : []));
+		assert.equal(count, 4);
+		assert.deepEqual(
+			[...full].sort(),
+			Array.from({ length: 13 }, (_, index) => `packages/p${index}`).sort(),
+		);
+	});
+
+	it("rejects a cap outside the shard range", () => {
+		for (const max of [0, 65, 1.5, Number.NaN])
+			assert.throws(
+				() => planShardCount(of(1), max),
+				/invalid workspace test shard/u,
+			);
+	});
+});
+
+describe("--plan-shards", () => {
+	const script = fileURLToPath(
+		new URL("../ci/dependent-tests.mts", import.meta.url),
+	);
+	const plan = (flag: string, changed: string) =>
+		spawnSync(
+			process.execPath,
+			["--experimental-strip-types", "--no-warnings", script, flag],
+			{
+				cwd: fileURLToPath(new URL("../..", import.meta.url)),
+				input: changed,
+				encoding: "utf8",
+			},
+		);
+
+	// The workflow takes stdout as the matrix and falls back to eight shards
+	// on anything else, so a stray line here would go unnoticed.
+	it("prints the shard list alone on stdout and the plan on stderr", () => {
+		const scopedPlan = plan("--plan-shards=8", "docs/ci/performance.md\n");
+		assert.equal(scopedPlan.status, 0, scopedPlan.stderr);
+		assert.match(scopedPlan.stdout, /^\[0(?:, [1-7])*\]\n$/u);
+		assert.match(scopedPlan.stderr, /^dependent-tests: /u);
+		const repoWide = plan("--plan-shards=3", "pnpm-lock.yaml\n");
+		assert.equal(repoWide.stdout, "[0, 1, 2]\n");
+		assert.match(repoWide.stderr, /whole workspace/u);
+	});
+
+	it("rejects a cap that is not a count", () => {
+		for (const flag of [
+			"--plan-shards",
+			"--plan-shards=",
+			"--plan-shards=x",
+			"--plan-shards=0",
+			"--plan-shards=65",
+		]) {
+			const bad = plan(flag, "docs/ci/performance.md\n");
+			assert.equal(bad.status, 2, flag);
+			assert.equal(bad.stdout, "", flag);
+			assert.match(bad.stderr, /expected --plan-shards=MAX/u, flag);
+		}
 	});
 });
 
@@ -248,6 +354,18 @@ describe("planDependentTests", () => {
 			subsets: {},
 			skipped: [],
 		});
+	});
+
+	it("runs a changed package whole even when only a test or a doc changed", () => {
+		// Its tests read siblings by names the walk cannot follow, such as
+		// `readPackageFile("README.md")` or a scan of the test directory.
+		for (const changed of [
+			"packages/app/test/pure.test.ts",
+			"packages/conf/README.md",
+		])
+			assert.deepEqual(scoped(planDependentTests([changed], repo)).full, [
+				changed.split("/").slice(0, 2).join("/"),
+			]);
 	});
 
 	it("runs the whole workspace for a workspace-wide input or an empty diff", () => {

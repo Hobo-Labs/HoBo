@@ -38,6 +38,10 @@ if ! command -v mise >/dev/null 2>&1 || [[ "$(mise --version | awk '{print $1}')
   echo "pinned mise ${mise_version} required on the host (no runtime curl install in release path)" >&2
   exit 1
 fi
+# Resolve tools from this checkout alone. A job container carries the pins of
+# whichever commit last built the image in /etc/mise/config.toml; a tool pinned
+# there and absent from this checkout's mise.lock fails every --locked call below.
+export MISE_IGNORED_CONFIG_PATHS="/etc/mise/config.toml${MISE_IGNORED_CONFIG_PATHS:+:${MISE_IGNORED_CONFIG_PATHS}}"
 mise trust ./mise.toml
 mise install --locked
 mise exec -- shellcheck --version
