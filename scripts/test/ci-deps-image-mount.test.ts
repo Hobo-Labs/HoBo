@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { describe, it } from "node:test";
-import { createNodeWorkerStorageFileSystem } from "../../packages/ci-gh-actions/src/isolated-worker/storage-admission.ts";
+import { createNodeWorkerStorageFileSystem } from "../../packages/ci-gh-actions/src/isolated-worker/worker-storage-fs.ts";
 
 const required = process.env.HOBO_CI_DEPS_MOUNT_CONTRACT === "1";
 const root = join(import.meta.dirname, "..", "..");

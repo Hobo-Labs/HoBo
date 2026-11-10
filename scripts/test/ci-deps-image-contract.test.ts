@@ -1,7 +1,25 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+
+const WORKER_STORAGE_FS =
+	"packages/ci-gh-actions/src/isolated-worker/worker-storage-fs.ts";
+const STORAGE_ADMISSION =
+	"packages/ci-gh-actions/src/isolated-worker/storage-admission.ts";
+const HOST_CAPACITY =
+	"packages/ci-gh-actions/src/isolated-worker/host-capacity.ts";
+const MOUNT_TEST = "scripts/test/ci-deps-image-mount.test.ts";
+
+function importSpecifiers(source: string): readonly string[] {
+	return [
+		...source.matchAll(
+			/^import\s+(?:type\s+)?[\s\w{},*]*\s+from\s+["']([^"']+)["']/gm,
+		),
+	].map((match) => match[1]!);
+}
 
 const root = join(import.meta.dirname, "..", "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -434,6 +452,75 @@ describe("CI deps workflow contract", () => {
 		includes(main, "needs: [route, ci-runner-image]");
 		assert.ok(!main.includes("ci-deps-image"));
 		includes(workflow, "Check deps layer match");
+	});
+});
+
+describe("CI deps mount probe contract", () => {
+	it("mount verify imports worker-storage-fs only (not storage-admission)", () => {
+		const mount = read(MOUNT_TEST);
+		includes(mount, WORKER_STORAGE_FS);
+		assert.ok(
+			!mount.includes(STORAGE_ADMISSION),
+			"mount verify must not load storage-admission (zod and admission graph)",
+		);
+	});
+
+	it("worker-storage-fs imports only node built-ins", () => {
+		for (const specifier of importSpecifiers(read(WORKER_STORAGE_FS))) {
+			assert.match(
+				specifier,
+				/^node:/u,
+				`worker-storage-fs must not import ${specifier}`,
+			);
+		}
+	});
+
+	it("host-capacity stays node-only when present (safe for future mount probes)", () => {
+		if (!existsSync(join(root, HOST_CAPACITY))) return;
+		for (const specifier of importSpecifiers(read(HOST_CAPACITY))) {
+			assert.match(
+				specifier,
+				/^node:/u,
+				`host-capacity must not import ${specifier} on the mount path`,
+			);
+		}
+	});
+
+	it("storage-admission mount probe runs with no workspace node_modules", () => {
+		const probeCwd = mkdtempSync(join(tmpdir(), "hobo-deps-mount-probe-"));
+		const jobDir = join(probeCwd, "hobo-00000000-0000-4000-8000-000000000099");
+		try {
+			const modulePath = join(root, WORKER_STORAGE_FS);
+			const result = spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					"--import",
+					join(root, "scripts/lib/ts-source-resolve.mts"),
+					"-e",
+					[
+						`import { createNodeWorkerStorageFileSystem } from ${JSON.stringify(modulePath)};`,
+						`await createNodeWorkerStorageFileSystem().prepareJobDirectory(${JSON.stringify(jobDir)});`,
+					].join(" "),
+				],
+				{
+					cwd: probeCwd,
+					env: {
+						PATH: process.env.PATH ?? "",
+						HOME: process.env.HOME ?? "",
+						USER: process.env.USER ?? "",
+						LANG: process.env.LANG ?? "C.UTF-8",
+					},
+					encoding: "utf8",
+				},
+			);
+			const combined = `${result.stdout}\n${result.stderr}`;
+			assert.equal(result.status, 0, combined);
+			assert.doesNotMatch(combined, /ERR_MODULE_NOT_FOUND.*['"]zod['"]/u);
+			assert.ok(existsSync(join(jobDir, "HoBo", "HoBo")));
+		} finally {
+			rmSync(probeCwd, { recursive: true, force: true });
+		}
 	});
 });
 
