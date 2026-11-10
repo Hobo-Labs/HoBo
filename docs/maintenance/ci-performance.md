@@ -40,7 +40,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   `packages/providers/<name>` (the groups are read from `pnpm-workspace.yaml`; before that, any change
   under a group read as a removed package and ran the whole workspace). Root build inputs (workspace, behavior-changing turbo config, tsconfig, biome, toolchain pins,
   vendored sources) run the whole workspace. A `mise.toml` or `mise.lock` diff that only touches a tool no
-  package task runs (`gitleaks`, `shellcheck`, `syft`; the list is explicit in the script) does not
+  Main-gate full-history gitleaks uses `scripts/ci/gitleaks-main-scan.mts` with a committed baseline
+  (`docs/ci/gitleaks-main-baseline.sha`) so `workflow_dispatch` scans `baseline..HEAD` without
+  `--refetch`, and raises full-scan timeouts when no baseline applies. Package task runs (`gitleaks`, `shellcheck`, `syft`; the list is explicit in the script) does not
   ([finding 81](../ci/findings/0081-a-ci-only-tool-pin-planned-the-whole-workspace.md)). Scripts-only root manifest edits and root `//#` task edits
   stay scoped by comparing root files with the diff base; `globalDependencies` additions and removals
   run the whole workspace because they change every task's hash inputs. Missing or invalid base content
@@ -67,6 +69,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   target-branch update cannot silently change their test scope. `scripts/test/merge-group-gate.test.ts`
   covers failed, cancelled, skipped, and missing results.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
+  (artifact names include a per-matrix `disambiguator`, usually `matrix.shard`, so parallel workspace shards
+  do not collide on `upload-artifact`)
   from each job, so queue time and run time can be compared before and after a change. The script
   imports node builtins only, because the step also runs on jobs that skipped or failed `pnpm install`
   (an inert PR diff skips install in the off-path job). With `zod` it failed `ERR_MODULE_NOT_FOUND`
