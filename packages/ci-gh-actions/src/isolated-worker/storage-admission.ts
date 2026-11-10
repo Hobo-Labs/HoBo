@@ -27,6 +27,8 @@ import {
 const SOFT_LIMIT = 0.85;
 const HARD_LIMIT = 0.95;
 const INODE_GRANT_GRACE_MS = 60_000;
+const BYTE_SAFETY_MARGIN_FLOOR = 2 * 1024 * 1024 * 1024;
+const IMMINENT_INODE_BUFFER = 50_000;
 const JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}$/u;
 const RETIRED_JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}-[0-9a-z]+$/u;
 const RETIRED_ROOT = ".retired";
@@ -116,10 +118,12 @@ type ResolvedStorageAdmission = Readonly<{
 const StorageAdmissionRequestSchema = z.object({
 	jobId: z.string(),
 	jobName: z.string().optional(),
-	reserve: z
+		reserve: z
 		.object({
 			workRoot: z.number().int().nonnegative(),
 			dockerDataRoot: z.number().int().nonnegative(),
+			workRootBytes: z.number().int().nonnegative(),
+			dockerDataRootBytes: z.number().int().nonnegative(),
 		})
 		.optional(),
 });
@@ -303,7 +307,9 @@ export function createWorkerStorageAdmission(options: {
 	builderCacheCap?: string;
 	softLimit?: number;
 	hardLimit?: number;
-	jobInodes?: Readonly<{ workRoot: number; dockerDataRoot: number }>;
+	jobInodes?: Partial<
+		Pick<WorkerStorageReserve, "workRoot" | "dockerDataRoot">
+	>;
 	safetyMarginInodes?: number;
 	capacityTracker?: HostCapacityTracker;
 	admitMaintainIntervalMs?: number;
@@ -315,10 +321,17 @@ export function createWorkerStorageAdmission(options: {
 	const hardLimit = options.hardLimit ?? HARD_LIMIT;
 	if (!(softLimit > 0) || !(hardLimit > softLimit) || !(hardLimit < 1))
 		throw new Error("invalid worker storage thresholds");
-	const defaultReserve: WorkerStorageReserve = options.jobInodes ?? {
-		workRoot: 200_000,
-		dockerDataRoot: 170_000,
-	};
+	const classDefault = storageReserveForClass("standard");
+	const inodeOverride = options.jobInodes;
+	const defaultReserve: WorkerStorageReserve =
+		inodeOverride?.workRoot !== undefined &&
+		inodeOverride.dockerDataRoot !== undefined
+			? {
+					...classDefault,
+					workRoot: inodeOverride.workRoot,
+					dockerDataRoot: inodeOverride.dockerDataRoot,
+				}
+			: classDefault;
 	for (const reserve of [defaultReserve.workRoot, defaultReserve.dockerDataRoot])
 		if (!Number.isSafeInteger(reserve) || reserve < 0)
 			throw new Error("invalid worker job inode reservation");
@@ -402,6 +415,33 @@ export function createWorkerStorageAdmission(options: {
 		reserve: WorkerStorageReserve,
 	): number {
 		return sample.index === 0 ? reserve.dockerDataRoot : reserve.workRoot;
+	}
+
+	function reserveBytesForSample(
+		sample: StorageSample,
+		reserve: WorkerStorageReserve,
+	): number {
+		return sample.index === 0
+			? reserve.dockerDataRootBytes
+			: reserve.workRootBytes;
+	}
+
+	function byteSafetyMargin(): number {
+		return BYTE_SAFETY_MARGIN_FLOOR;
+	}
+
+	function reservedBytesOnDevice(
+		samples: readonly StorageSample[],
+		device: number,
+	): number {
+		let total = 0;
+		for (const grant of grants.values()) {
+			for (const sample of samples) {
+				if (sample.device !== device) continue;
+				total += reserveBytesForSample(sample, grant.reserve);
+			}
+		}
+		return total;
 	}
 
 	function reservedInodesOnDevice(
@@ -500,6 +540,12 @@ export function createWorkerStorageAdmission(options: {
 			const consumption = Math.max(0, baseline - first.ffree);
 			const outstandingInodes = Math.max(0, outstandingReserved - consumption);
 			const requiredInodes = incomingRequired + outstandingInodes;
+			const incomingBytes = group.reduce(
+				(total, entry) => total + reserveBytesForSample(entry, incoming),
+				0,
+			);
+			const outstandingBytes = reservedBytesOnDevice(samples, first.device);
+			const requiredBytes = incomingBytes + outstandingBytes;
 			if (
 				incomingRequired > 0 &&
 				first.ffree - inodeSafetyMargin() < requiredInodes
@@ -511,8 +557,58 @@ export function createWorkerStorageAdmission(options: {
 					requiredInodes,
 					activeGrants: grants.size,
 				} satisfies InodeReserveWait;
+			if (
+				incomingBytes > 0 &&
+				first.freeBytes - byteSafetyMargin() < requiredBytes
+			)
+				return {
+					root: first.root,
+					freeInodes: first.ffree,
+					outstandingInodes: requiredInodes - incomingRequired,
+					requiredInodes,
+					activeGrants: grants.size,
+				} satisfies InodeReserveWait;
 		}
 		return undefined;
+	}
+
+	function imminentPressureFromSamples(
+		samples: readonly StorageSample[],
+	): Readonly<{
+		preempt: boolean;
+		observedFreeInodes: number;
+		floorInodes: number;
+		observedFreeBytes: number;
+		floorBytes: number;
+	}> | undefined {
+		const freeInodes = observedFreeInodes(samples);
+		const freeBytes = observedFreeBytes(samples);
+		const reservedInodes = totalReservedInodes(samples);
+		const margin = inodeSafetyMargin();
+		const template = storageReserveForClass("light");
+		const floorInodes =
+			reservedInodes + margin + template.workRoot + template.dockerDataRoot;
+		const reservedBytes = samples.reduce(
+			(max, sample) =>
+				Math.max(max, reservedBytesOnDevice(samples, sample.device)),
+			0,
+		);
+		const floorBytes =
+			reservedBytes +
+			byteSafetyMargin() +
+			template.workRootBytes +
+			template.dockerDataRootBytes;
+		const preempt =
+			freeInodes < floorInodes + IMMINENT_INODE_BUFFER ||
+			freeBytes < floorBytes + BYTE_SAFETY_MARGIN_FLOOR / 4;
+		if (!preempt) return undefined;
+		return {
+			preempt: true,
+			observedFreeInodes: freeInodes,
+			floorInodes,
+			observedFreeBytes: freeBytes,
+			floorBytes,
+		};
 	}
 
 	function grant(
@@ -545,12 +641,25 @@ export function createWorkerStorageAdmission(options: {
 				(total, entry) => total + reserveForSample(entry, template),
 				0,
 			);
-			if (perJob <= 0) continue;
+			const perJobBytes = group.reduce(
+				(total, entry) => total + reserveBytesForSample(entry, template),
+				0,
+			);
+			if (perJob <= 0 && perJobBytes <= 0) continue;
 			const first = group[0];
 			if (!first) continue;
 			const reserved = reservedInodesOnDevice(samples, first.device);
-			const headroom = first.ffree - inodeSafetyMargin() - reserved;
-			limit = Math.min(limit, Math.floor(headroom / perJob));
+			const reservedBytes = reservedBytesOnDevice(samples, first.device);
+			const headroomInodes = first.ffree - inodeSafetyMargin() - reserved;
+			const headroomBytes =
+				first.freeBytes - byteSafetyMargin() - reservedBytes;
+			const byInodes =
+				perJob > 0 ? Math.floor(headroomInodes / perJob) : Number.POSITIVE_INFINITY;
+			const byBytes =
+				perJobBytes > 0
+					? Math.floor(headroomBytes / perJobBytes)
+					: Number.POSITIVE_INFINITY;
+			limit = Math.min(limit, byInodes, byBytes);
 		}
 		return Number.isFinite(limit) ? Math.max(0, limit) : 0;
 	}
@@ -570,6 +679,14 @@ export function createWorkerStorageAdmission(options: {
 			ourReservedInodes: reserved,
 			activeGrants: grants.size,
 			maxConcurrentStandard: concurrent,
+			maxConcurrentHeavy: binPackConcurrent(
+				samples,
+				storageReserveForClass("heavy"),
+			),
+			maxConcurrentLight: binPackConcurrent(
+				samples,
+				storageReserveForClass("light"),
+			),
 			templateWork: template.workRoot,
 			templateDocker: template.dockerDataRoot,
 		});
@@ -685,6 +802,16 @@ export function createWorkerStorageAdmission(options: {
 			return capacityTracker?.shouldBlockAdmission() !== true;
 		},
 		probeHostCapacity,
+		async evaluateImminentPressure(
+			activeLeases: readonly WorkerStorageLease[],
+		) {
+			reconcile(activeLeases);
+			try {
+				return imminentPressureFromSamples(await sample());
+			} catch {
+				return undefined;
+			}
+		},
 		async admit(
 			activeLeases: readonly WorkerStorageLease[],
 			target: StorageAdmissionTarget,

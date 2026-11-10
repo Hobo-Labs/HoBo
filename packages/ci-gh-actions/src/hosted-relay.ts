@@ -36,6 +36,7 @@ import { verifyIngressForward } from "./ingress-forward.js";
 import { isIsolatedHostOffer } from "./isolated-backend.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
+import { accountForStorageOverflowReserve } from "./isolated-worker/fleet-storage-spill.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
 import type { JobDurations } from "./job-durations.js";
 import {
@@ -802,6 +803,28 @@ export class HostedRelay {
 	private trunkWaitKey(job: Pick<Job, "repository" | "id" | "runAttempt">) {
 		return `${job.repository}:${job.id}:${job.runAttempt}`;
 	}
+	private overflowReserveEnabled(account: Account): boolean {
+		return accountForStorageOverflowReserve(account).offers.some(
+			(offer) => offer.enabled,
+		);
+	}
+
+	private async reserveStorageOverflow(
+		account: Account,
+		job: Job,
+		expectedRevision?: number,
+	): Promise<Lease | undefined> {
+		if (job.isolatedRequired || !this.overflowReserveEnabled(account))
+			return undefined;
+		const overflowAccount = accountForStorageOverflowReserve(account);
+		return this.options.store.reserve(
+			overflowAccount,
+			job,
+			this.now(),
+			expectedRevision,
+		);
+	}
+
 	private reportTrunkWait(
 		job: Job,
 		reason: "lease-capacity" | "storage",
@@ -873,11 +896,9 @@ export class HostedRelay {
 		// only after trunk-label demand misses a lease. Both free capacity in this pass.
 		let trunkWaiting = false;
 		let rankZeroWaiting = false;
+		const hoboStorageOpen =
+			this.options.storageAdmission?.isAdmissionOpen?.() !== false;
 		let storageRefused = false;
-		if (
-			this.options.storageAdmission?.isAdmissionOpen?.() === false
-		)
-			storageRefused = true;
 		const waitingTrunk = new Set<string>();
 		for (const job of pending) {
 			if (this.queueExpired(job.queueDeadlineAt)) {
@@ -945,18 +966,61 @@ export class HostedRelay {
 			if (connection.isolatedOnly) job.isolatedRequired = true;
 			const storageAdmission = this.options.storageAdmission;
 			const storageJobId = String(job.id);
+			let hoboStorageGranted = true;
 			if (storageAdmission) {
-				if (storageRefused) continue;
-				const storageLeases = await this.options.store.activeLeases();
-				const admitted = await storageAdmission.admit(
-					storageLeases.map((lease) => ({
-						id: lease.id,
-						sandboxName: lease.sandboxName,
-						jobId: String(lease.jobId),
-					})),
-					{ jobId: storageJobId, jobName: job.name },
-				);
-				if (!admitted) {
+				if (hoboStorageOpen && !storageRefused) {
+					const storageLeases = await this.options.store.activeLeases();
+					hoboStorageGranted = await storageAdmission.admit(
+						storageLeases.map((lease) => ({
+							id: lease.id,
+							sandboxName: lease.sandboxName,
+							jobId: String(lease.jobId),
+						})),
+						{ jobId: storageJobId, jobName: job.name },
+					);
+				} else hoboStorageGranted = false;
+				if (!hoboStorageGranted) {
+					if (connection.isolatedOnly) {
+						storageRefused = true;
+						rankZeroWaiting ||= rank === TRUNK_RANK;
+						trunkWaiting ||= trunk;
+						if (trunk) waitingTrunk.add(this.reportTrunkWait(job, "storage"));
+						continue;
+					}
+					const spilled = await this.reserveStorageOverflow(
+						account,
+						job,
+						reservationRevision,
+					);
+					if (spilled) {
+						console.error(
+							JSON.stringify({
+								event: "hobo_ci_storage_overflow_spill",
+								repository: job.repository,
+								runId: job.runId,
+								jobId: job.id,
+								offerId: spilled.offerId,
+								provider: spilled.provider,
+								runnerName: spilled.runnerName,
+							}),
+						);
+						this.servedRunnerLabels.set(
+							`${job.repository}:${job.id}`,
+							servedRunnerLabel(job.labels),
+						);
+						if (!active.some((entry) => entry.id === spilled.id)) {
+							active.push(spilled);
+							memoryActive.push({ ...spilled, state: "dispatching" });
+						}
+						if (rank === TRUNK_RANK) memoryTrunk?.add(spilled.id);
+						if (!trunk) {
+							general?.add(spilled.id);
+							memoryGeneral?.add(spilled.id);
+						}
+						if (mergeGroupKey !== undefined)
+							activeMergeGroups.add(mergeGroupKey);
+						continue;
+					}
 					storageRefused = true;
 					rankZeroWaiting ||= rank === TRUNK_RANK;
 					trunkWaiting ||= trunk;

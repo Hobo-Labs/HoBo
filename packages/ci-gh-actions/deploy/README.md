@@ -112,7 +112,7 @@ non-secret settings:
 | `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; the startup check still applies |
 | `HOBO_CI_WORKER_MEMORY_LEARN` | `1` | `0` disables unmeasured and learned reservations, restoring full class admission |
 | `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Time smaller same-rank jobs may backfill behind a non-fitting head job |
-| `HOBO_CI_JOB_POLL_MS` | `5000` | GitHub list-poll interval; minimum 5000, maximum 300000; every list uses its cached ETag and unchanged 304 responses do not consume primary rate limit |
+| `HOBO_CI_JOB_POLL_MS` | `2000` | GitHub list-poll interval; minimum 2000, maximum 300000; every list uses its cached ETag and unchanged 304 responses do not consume primary rate limit. The daemon also polls once per reconcile tick so pickup is not gated on this interval alone. |
 | `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum distinct merge groups with active leases, grouped by `head_sha`; zero and invalid values are rejected |
 | `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK` | `1` | Maximum new non-trunk leases while a trunk lease is active; strict integer 0–8; zero pauses them; uncapped when trunk is idle |
 | `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host per-job work mounts, teardown and pressure checks; same filesystem as pnpm store |
