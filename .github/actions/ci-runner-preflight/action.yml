@@ -19,6 +19,13 @@ runs:
             || echo "::warning::docker container prune failed"
           docker system df || true
         fi
+    # A job routed to a GitHub-hosted machine gets the pinned toolchain here;
+    # a no-op on the fleet's image. Its PATH additions reach the next step.
+    - name: Toolchain for a GitHub-hosted machine
+      shell: bash
+      env:
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
+      run: bash "${GITHUB_ACTION_PATH}/hosted-toolchain.sh"
     - shell: bash
       run: |
         set -euo pipefail
