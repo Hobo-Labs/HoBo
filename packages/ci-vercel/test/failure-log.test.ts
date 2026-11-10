@@ -111,6 +111,44 @@ describe("createFailureLog", () => {
 		]);
 	});
 
+	it("also emits each line as an event and flushes it at once", () => {
+		const emitted: { name: string; fields: unknown }[] = [];
+		let flushes = 0;
+		const report = createFailureLog({
+			write: () => undefined,
+			now: () => 0,
+			events: () => ({
+				emit: (name, fields) => emitted.push({ name, fields }),
+				flush: async () => {
+					flushes += 1;
+				},
+			}),
+		});
+		report(
+			"hobo_ci_relay_request_failed",
+			{ method: "POST", route: "/github/webhooks" },
+			new Error("bootstrap store initialization failed", {
+				cause: new Error("Your account or project has exceeded the quota."),
+			}),
+		);
+		// Held back by the window: no line, so no event either.
+		report("hobo_ci_relay_request_failed", { method: "GET" }, new Error("x"));
+		expect(emitted).toEqual([
+			{
+				name: "hobo_ci_relay_request_failed",
+				fields: {
+					method: "POST",
+					route: "/github/webhooks",
+					error: "Error",
+					message: "bootstrap store initialization failed",
+					cause: "Error: Your account or project has exceeded the quota.",
+					suppressed: 0,
+				},
+			},
+		]);
+		expect(flushes).toBe(1);
+	});
+
 	it("never throws when the writer does", () => {
 		const report = createFailureLog({
 			write: () => {

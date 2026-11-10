@@ -10,7 +10,9 @@ import { ConfigurationSchema, type Lease, parseConfiguration } from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
 	boxGitMirrorPath,
+	ciEventSinkFromEnv,
 	createBoxGitMirror,
+	createCiEventEmitter,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
 	createDepsImageEnsurer,
@@ -100,10 +102,27 @@ const relayTrace = createRelayTrace({
 		),
 });
 
+// CloudEvents for the infrastructure facts among those log events, delivered
+// to HOBO_CI_EVENTS_URL when it is set: see src/cloud-events.ts.
+const eventExport = ciEventSinkFromEnv(process.env);
+const ciEvents = createCiEventEmitter({
+	source: {
+		tenant: process.env.HOBO_CI_EVENTS_TENANT || "hobo-ci",
+		// One ordered stream per start of this worker on this host.
+		streamId: `ci-worker/${hostname()}/${randomBytes(4).toString("hex")}`,
+		actorId: process.env.OTEL_SERVICE_NAME || "hobo-ci-worker",
+	},
+	sink: eventExport.sink,
+	onProblem: (problem) =>
+		console.error(
+			JSON.stringify({ event: "hobo_ci_events_export_problem", ...problem }),
+		),
+});
+
 /** Sends what is queued, without letting a dead endpoint hold up the exit. */
 async function closeTrace(): Promise<void> {
 	await Promise.race([
-		relayTrace.close(),
+		Promise.all([relayTrace.close(), ciEvents.close()]),
 		new Promise((resolve) => setTimeout(resolve, 3000).unref()),
 	]);
 }
@@ -114,6 +133,7 @@ function log(
 ) {
 	console.error(JSON.stringify({ event, ...fields }));
 	relayTrace.event(event, fields);
+	ciEvents.emit(event, fields);
 }
 
 async function output(
@@ -357,6 +377,10 @@ try {
 		enabled: relayTrace.enabled,
 		endpoint: traceExport.targets.endpoint,
 		file: traceExport.targets.file,
+	});
+	log("hobo_ci_events_export", {
+		enabled: ciEvents.enabled,
+		target: eventExport.target,
 	});
 	const github = traceGithubTransport(
 		createGithubAppTransport({ appId, privateKey }),

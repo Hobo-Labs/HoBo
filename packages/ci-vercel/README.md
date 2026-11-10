@@ -280,6 +280,19 @@ keeps non-protobuf generators out of the protobuf-owned `src/_generated/` tree.
 The local persistent listener can wait without an age-based deadline; the
 embedded hosted bridge still supplies and enforces its lease timeout.
 
+### Liveness, readiness and back-off
+
+- `/healthz` answers 200 from the process alone. It never touches the database, so a probe can tell
+  "restart me" from "my store is down".
+- `/readyz` answers 503 with a `reason` a probe can act on: `store-unavailable` when the GitHub App
+  bootstrap store cannot be reached, `bootstrap-required` when no App is registered yet.
+- After the store fails it is left alone before the next attempt: 5 s, doubling to a minute. Every
+  request used to dial it again.
+- A 503 for an unavailable store carries `Retry-After: 5`.
+
+With `HOBO_CI_EVENTS_URL` set, each failure below is also delivered as a CloudEvent (see the
+[runner queue runbook](../ci/RUNNER-QUEUE.md)).
+
 ### Failure log
 
 Every path that refuses a request with a fixed 503 body also writes one JSON line to stderr, so the

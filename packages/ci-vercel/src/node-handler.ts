@@ -150,7 +150,11 @@ export function createNodeRelayHandler(options: {
 				response.destroy();
 				return;
 			}
-			response.writeHead(503, { "Cache-Control": "no-store" });
+			// Tell the caller when to come back; GitHub and the worker both honour it.
+			response.writeHead(503, {
+				"Cache-Control": "no-store",
+				"Retry-After": "5",
+			});
 			response.end('{"error":"service unavailable"}');
 		}
 	};

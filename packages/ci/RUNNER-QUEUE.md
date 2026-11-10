@@ -179,6 +179,9 @@ A feasible rank-0 job waiting for memory, the distinct-merge-group cap, or a slo
 | `OTEL_EXPORTER_OTLP_HEADERS` | unset | `key=value,key=value` request headers for the export (values percent-encoded); `OTEL_EXPORTER_OTLP_TRACES_HEADERS` wins |
 | `OTEL_SERVICE_NAME` | `hobo-ci-worker` | `service.name` on every span |
 | `OTEL_SDK_DISABLED` | unset | `true` turns tracing off whatever else is set |
+| `HOBO_CI_EVENTS_URL` | unset | CloudEvents receiver. Infrastructure events are POSTed there as `application/cloudevents-batch+json`; unset means none are sent |
+| `HOBO_CI_EVENTS_HEADERS` | unset | `key=value,key=value` request headers for that receiver (values percent-encoded) |
+| `HOBO_CI_EVENTS_TENANT` | `hobo-ci` | The authority in each event's `source` (`hobo://<tenant>/<stream>`) |
 | `HOBO_CI_TRACE_FILE` | unset | Also append each export as one line of OTLP/JSON to this file (mode 0600); rotated to `<file>.1` past 64 MiB |
 
 Startup fails unless every general class fits outside the trunk reservation and the heavy trunk class fits the full budget. Wait/admit decisions log `hobo_ci_memory_admission_wait` / `hobo_ci_memory_admitted` with `classMb` and `learned`; Docker-confirmed exit-137 OOM kills log `hobo_ci_container_oom` with the class and job name.
@@ -205,6 +208,8 @@ Configs resolve the smaller of their own cap and this value; CI does not export 
 A run's trace id is derived from its run id alone, and each job's Turbo trace (`scripts/ci/ci-trace.mts`, uploaded as the `ci-trace-*` artifact) uses the same id. Load both into one backend and a run reads top to bottom: queued, admitted, runner registered, Turbo tasks, runner deleted.
 
 To answer "who cancelled this run?", open the run's trace. The only code that cancels a run is the lost-runner path, and it leaves `hobo_ci_orphan_job_confirmed`, a `DELETE` on the runner and a `POST …/force-cancel` span. A cancelled run with no `force-cancel` span was cancelled by someone else: a newer push, a person, or another tool using a token with `actions: write`.
+
+**Events:** traces and logs are for reading; CloudEvents are for reacting. With `HOBO_CI_EVENTS_URL` set, the daemon also delivers the infrastructure facts among its log events as CloudEvents 1.0, mapped from the platform's event envelope as ADR-0046 prescribes. Each has a past-tense type, for example `ci.RunForceCancelled`, `ci.ContainerOomKilled`, `ci.RunnerLaunchFailed`, `ci.JobPickedUp`, `ci.WorkerDrainStarted` and `ci.HostInodePressureDetected`; the full table is `CI_INFRA_EVENT_TYPES` in `packages/ci-gh-actions/src/cloud-events.ts`. `source` is `hobo://<tenant>/ci-worker/<host>/<start>`, `hoboseq` orders one worker start, and an event about a workflow run carries `hobocorrelationid: github-actions-run:<run id>`. Delivery is the CloudEvents HTTP binding in batched structured mode, best effort: a bounded queue, no retry, and `hobo_ci_events_export_problem` when batches fail. The hosted relay emits `ci.RelayStartFailed`, `ci.RelayRequestFailed`, `ci.WebhookIngestFailed`, `ci.ControlRequestFailed` and `ci.ReadinessCheckFailed` the same way.
 
 No request body, response body, header or query string is recorded; JIT runner configs and tokens travel in those. Spans do carry repository names, run and job ids, runner names and job names, so point the endpoint at a backend that may hold them. A slow or dead endpoint cannot stall the worker: spans queue up to 4096, the oldest are dropped past that, a failed batch is not retried, and `hobo_ci_trace_export_problem` reports the counts at most once a minute. Shutdown waits at most 3 s for the last export.
 

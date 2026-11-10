@@ -74,6 +74,10 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   run form one trace. Runs were being cancelled with nothing recording by whom; a cancelled run whose
   trace has no `force-cancel` span was not cancelled by the worker. Settings and the span list are in
   [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
+- **Regenerated proxy bundle passes the generated-file guard.** `sandbox-proxy-bundle.ts` embeds relay
+  sources, so changing them regenerates it with no generator change to stage, which the guard used to
+  refuse. It now runs `generate-proxy-bundle.mts --check` for that file and allows the commit only when
+  the bundle on disk is exactly what the generator emits.
 - **No serial PR jobs.** `artifact-trust` and `dev-cold-loop-gate` do their own checkout and install and
   read nothing from the PR impact gate, so they no longer `needs: pr-gate`. On a two-slot box that
   dependency left a slot idle while the gate ran, then queued both behind it. `ci-runner-image` and

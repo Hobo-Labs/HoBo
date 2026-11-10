@@ -7,6 +7,16 @@ export {
 } from "./ci-engine-inventory.js";
 export { CiRelayClientError, createCiRelayClient } from "./client.js";
 export {
+	CI_INFRA_EVENT_TYPES,
+	type CiEventEmitter,
+	type CiEventSink,
+	type CiEventSource,
+	ciEventSinkFromEnv,
+	cloudEventsHttpSink,
+	createCiEventEmitter,
+	toCiCloudEvent,
+} from "./cloud-events.js";
+export {
 	type ControlAuthenticator,
 	type ControlPrincipal,
 	createControlAuthenticator,

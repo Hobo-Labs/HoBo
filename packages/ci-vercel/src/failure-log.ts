@@ -7,6 +7,18 @@
  * never carries a request body, a header or a credential.
  */
 
+/**
+ * What a failure is also handed to. Declared here, not imported: this file
+ * is bundled into the sandbox proxy, which must not pull in the relay.
+ */
+export type FailureEvents = Readonly<{
+	emit(
+		name: string,
+		fields: Readonly<Record<string, string | number | boolean>>,
+	): void;
+	flush(): Promise<void>;
+}>;
+
 /** A run of 24 or more token characters: a key, a JWT segment, a digest. */
 const SECRET_LIKE = /[A-Za-z0-9+/_=-]{24,}/g;
 const URL_USERINFO = /\/\/[^/@\s]+@/g;
@@ -46,6 +58,11 @@ export function failureRoute(path: string | undefined): string {
 export function createFailureLog(options?: {
 	write?: (line: string) => void;
 	now?: () => number;
+	/**
+	 * Also emitted as a CloudEvent, for something that reacts and not only
+	 * reads. Flushed at once: a function instance may not live to a timer.
+	 */
+	events?: () => FailureEvents | undefined;
 	/** One line per event name in this window; a relay that is down fails every request. */
 	minIntervalMs?: number;
 }) {
@@ -68,20 +85,33 @@ export function createFailureLog(options?: {
 				return;
 			}
 			last.set(event, now());
-			write(
-				JSON.stringify({
-					event,
-					...fields,
-					...describeFailure(error),
-					suppressed: suppressed.get(event) ?? 0,
-				}),
-			);
+			const body = {
+				...fields,
+				...describeFailure(error),
+				suppressed: suppressed.get(event) ?? 0,
+			};
+			write(JSON.stringify({ event, ...body }));
 			suppressed.delete(event);
+			const events = options?.events?.();
+			events?.emit(event, body);
+			void events?.flush().catch(() => undefined);
 		} catch {
 			// A failed logger is not a failed request.
 		}
 	};
 }
 
+let relayEvents: FailureEvents | undefined;
+
+/**
+ * Where the relay's failures are also delivered as CloudEvents. Set once by
+ * the entrypoint, which owns the configuration.
+ */
+export function setRelayFailureEvents(events: FailureEvents | undefined): void {
+	relayEvents = events;
+}
+
 /** The process-wide log the relay's entrypoints share. */
-export const reportRelayFailure = createFailureLog();
+export const reportRelayFailure = createFailureLog({
+	events: () => relayEvents,
+});
