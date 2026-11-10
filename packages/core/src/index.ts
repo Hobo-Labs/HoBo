@@ -307,6 +307,26 @@ export type {
 } from "./ports/component-host.js";
 export { parseInterfaceId } from "./ports/component-host.js";
 export type {
+	DataStoreCatalogClaim,
+	DataStoreCatalogEntry,
+	DataStoreCatalogEvidenceSummary,
+	DataStoreClaimRealization,
+	DataStoreClaimSource,
+	DataStoreManagement,
+	DataStoreStabilityBasis,
+} from "./ports/data-store-catalog.js";
+export {
+	DATA_STORE_CLAIM_REALIZATIONS,
+	DATA_STORE_MANAGEMENT_MODES,
+	DATA_STORE_STABILITY_BASES,
+	dataStoreCatalogEvidence,
+	dataStoreProfileOf,
+	operatorOwnedOfferings,
+	parseDataStoreCatalogClaim,
+	parseDataStoreCatalogEntry,
+	parseDataStoreClaimSource,
+} from "./ports/data-store-catalog.js";
+export type {
 	DataStoreMatch,
 	DataStoreOffering,
 	DataStoreOfferingId,
@@ -316,15 +336,21 @@ export type {
 	DataStoreResolveResult,
 } from "./ports/data-store-offerings.js";
 export {
+	DATA_STORE_OFFERING_IDS,
+	DATA_STORE_PROVIDER_FAMILIES,
+	DATA_STORE_PROVIDERS,
 	DATA_STORE_RESOURCE_CLASS,
 	DataStoreOfferingParseError,
 	DEFAULT_DATA_STORE_FALLBACKS,
 	dataStoreOffering,
 	matchDataStoreOfferings,
+	parseDataStoreFeatures,
+	parseDataStoreFidelity,
 	parseDataStoreOffering,
 	parseDataStoreOfferingId,
 	parseDataStoreProvider,
 	parseDataStoreProviderProfile,
+	parseDataStoreStability,
 	resolveDataStore,
 } from "./ports/data-store-offerings.js";
 export type {
@@ -665,6 +691,28 @@ export {
 	SCHEMA_IR_CONTRACT,
 	SchemaIrParseError,
 } from "./ports/schema-diff.js";
+export type {
+	RegisteredCatalogRow,
+	RegisteredComputeCapability,
+	RegisteredHostDeclaration,
+	RegisteredHostFacetClaim,
+	RegisteredHostForm,
+	SelfHostAssessment,
+	SelfHostFacet,
+	SelfHostFacetFinding,
+	SelfHostFacetState,
+	SelfHostForm,
+	SelfHostFormAssessment,
+	SelfHostVerdict,
+} from "./ports/self-hosted-data-store.js";
+export {
+	assessSelfHostedDataStore,
+	assessSelfHostedDataStores,
+	parseRegisteredHostForm,
+	SELF_HOST_FACETS,
+	SELF_HOST_FEATURE_TOKENS,
+	SELF_HOST_FORMS,
+} from "./ports/self-hosted-data-store.js";
 export type {
 	RunId,
 	Seq,

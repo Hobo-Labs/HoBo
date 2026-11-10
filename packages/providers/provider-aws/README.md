@@ -293,3 +293,24 @@ different suffix — is refused rather than interpolated into a hostname.
 - Secrets Manager secrets are created **without a version**, and SSM
   `SecureString` parameters are **refused**: in both cases the value is
   credential material, and this resolver never carries it.
+
+## Host forms for self-hosted data stores
+
+`AWS_HOST_FORMS` (`src/host-forms.ts`) states, for compute products this
+package already declares, whether each could host a self-managed, stateful,
+TCP-served data store such as PostgreSQL: a long-running VM or container, a
+persistent volume, inbound TCP, and enough control to run backups. Every facet
+is cited to the vendor's documentation with the date it was read. It adds no
+product and does not change the published Capability Manifest; it is read by
+`assessSelfHostedDataStore` in `@hobo/core`. Cited documentation only — nothing
+has been deployed onto these products from this repository. See
+[`docs/design/postgres-backend-catalog.md`](../../../docs/design/postgres-backend-catalog.md).
+
+### Virtual machine and block storage (catalog only)
+
+`ec2Instance()` (`aws.ec2-instance/v1`, slot `service`, `service.worker/v1`) and `ebsVolume()`
+(`aws.ebs-volume/v1`, slot `bucket`, `bucket.filesystem/v1`) are in the default Yard so
+the VM-plus-block-storage form can be declared and assessed. They are catalog
+only: both ids are in `AWS_UNRESOLVED_PRODUCT_IDS`, no resolver ships, and
+nothing here provisions either. `AWS_HOST_FORMS` cites the vendor's
+documentation for the VM and for the attached volume.

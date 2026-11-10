@@ -938,6 +938,12 @@ importers:
       '@hobo/provider-kubernetes':
         specifier: workspace:*
         version: link:../providers/provider-kubernetes
+      '@hobo/provider-netlify':
+        specifier: workspace:*
+        version: link:../providers/provider-netlify
+      '@hobo/provider-railway':
+        specifier: workspace:*
+        version: link:../providers/provider-railway
       '@hobo/provider-vercel':
         specifier: workspace:*
         version: link:../providers/provider-vercel
