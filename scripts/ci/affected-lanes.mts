@@ -136,7 +136,12 @@ const CI_ONLY_TOOLS: ReadonlySet<string> = new Set([
 	"syft",
 ]);
 
-const TOML_HEADER = /^\s*\[+\s*([^\]]+?)\s*\]+\s*$/;
+// A header may carry a comment. One this missed would leave a CI-only block
+// open and hide the lines after it.
+const TOML_HEADER = /^\s*\[+\s*([^\]]+?)\s*\]+\s*(?:#.*)?$/;
+// `tools.syft`, `tools.syft."platforms.linux-x64"`, `tools."aqua:x/y"`. A
+// quoted name is taken whole: `tools."syft.plugin"` is not syft.
+const LOCK_TOOL = /^tools\.(?:"([^"]+)"|([^."\s]+))\s*(?:\.|$)/;
 const TOML_KEY = /^\s*"?([A-Za-z0-9_.:/@-]+)"?\s*=/;
 
 /** mise.toml without the `[tools]` pins of CI-only tools, blank lines dropped. */
@@ -167,7 +172,8 @@ function withoutCiOnlyLocks(lock: string): string {
 			if (line.trim() === "") return false;
 			const header = TOML_HEADER.exec(line)?.[1];
 			if (header !== undefined) {
-				const tool = /^tools\."?([^."]+)"?(?:\.|$)/.exec(header)?.[1];
+				const match = LOCK_TOOL.exec(header);
+				const tool = match?.[1] ?? match?.[2];
 				dropping = tool !== undefined && CI_ONLY_TOOLS.has(tool);
 			}
 			return !dropping;

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
 	exportTarget,
 	planCommands,
@@ -224,6 +226,49 @@ describe("planShardCount", () => {
 				() => planShardCount(of(1), max),
 				/invalid workspace test shard/u,
 			);
+	});
+});
+
+describe("--plan-shards", () => {
+	const script = fileURLToPath(
+		new URL("../ci/dependent-tests.mts", import.meta.url),
+	);
+	const plan = (flag: string, changed: string) =>
+		spawnSync(
+			process.execPath,
+			["--experimental-strip-types", "--no-warnings", script, flag],
+			{
+				cwd: fileURLToPath(new URL("../..", import.meta.url)),
+				input: changed,
+				encoding: "utf8",
+			},
+		);
+
+	// The workflow takes stdout as the matrix and falls back to eight shards
+	// on anything else, so a stray line here would go unnoticed.
+	it("prints the shard list alone on stdout and the plan on stderr", () => {
+		const scopedPlan = plan("--plan-shards=8", "docs/ci/performance.md\n");
+		assert.equal(scopedPlan.status, 0, scopedPlan.stderr);
+		assert.match(scopedPlan.stdout, /^\[0(?:, [1-7])*\]\n$/u);
+		assert.match(scopedPlan.stderr, /^dependent-tests: /u);
+		const repoWide = plan("--plan-shards=3", "pnpm-lock.yaml\n");
+		assert.equal(repoWide.stdout, "[0, 1, 2]\n");
+		assert.match(repoWide.stderr, /whole workspace/u);
+	});
+
+	it("rejects a cap that is not a count", () => {
+		for (const flag of [
+			"--plan-shards",
+			"--plan-shards=",
+			"--plan-shards=x",
+			"--plan-shards=0",
+			"--plan-shards=65",
+		]) {
+			const bad = plan(flag, "docs/ci/performance.md\n");
+			assert.equal(bad.status, 2, flag);
+			assert.equal(bad.stdout, "", flag);
+			assert.match(bad.stderr, /expected --plan-shards=MAX/u, flag);
+		}
 	});
 });
 

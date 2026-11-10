@@ -367,10 +367,10 @@ jobs:
             echo "scope=${scope}"
             echo "tests=${tests}"
           } >> "$GITHUB_OUTPUT"
-      # One shard per four planned suites, eight at most (finding 82). Eight fixed
-      # shards started eight runners for a change that planned two suites; six of
-      # them checked out, installed and ran nothing. Any doubt keeps all eight:
-      # a repo-wide scope, a missing base, a planner failure, an odd answer.
+      # One shard per four planned suites, eight at most (finding 82). The fixed
+      # matrix started eight runners for every change; 13 of the last 20 merges
+      # planned four suites or fewer. Any doubt keeps all eight: a repo-wide
+      # scope, a missing base, a planner failure, an odd answer.
       - name: Plan workspace test shards
         id: shard-plan
         env:

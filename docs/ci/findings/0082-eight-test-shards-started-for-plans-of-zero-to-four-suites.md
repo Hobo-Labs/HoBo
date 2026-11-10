@@ -11,9 +11,9 @@ tags: [hobo, ci, performance, planner, shards, capacity]
 
 PR run [42700351496](https://github.com/Hobo-Labs/HoBo/actions/runs/42700351496)
 finished green. Its eight `Workspace test shard` jobs each spent 2 to 6 s in
-the **Workspace tests** step. Six of them took about 25 s in all (checkout,
-deps layer, install); shards 1 and 3 took 352 s and 391 s because checkout
-and the cache restore stalled on a busy host.
+the **Workspace tests** step. Five took 24 to 42 s in all (checkout, deps
+layer, install) and one took 106 s; shards 1 and 3 took 352 s and 391 s
+because checkout and the cache restore stalled on a busy host.
 
 PR run [42692342678](https://github.com/Hobo-Labs/HoBo/actions/runs/42692342678)
 had work in three shards (152 s, 78 s, 36 s) and 2 to 7 s in the other five.
@@ -46,8 +46,8 @@ shard per four suites or subsets, at least one, eight for a repo-wide plan.
   to be `success`. An empty plan runs one shard, so the result is never
   `skipped`.
 
-Four per shard: shards run suites one at a time under a 19-minute step limit,
-and the longest suite (`@hobo/hobo`) takes about three minutes cold.
+Four per shard is the load the fixed matrix already gave each shard for a
+32-suite plan, so no shard carries more than shards have carried before.
 
 ## Result
 

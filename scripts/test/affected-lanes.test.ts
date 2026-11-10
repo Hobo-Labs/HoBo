@@ -511,6 +511,38 @@ describe("main-gate scope", () => {
 				"repo-wide",
 			);
 		});
+
+		it("ends a CI-only block at a commented header and reads a quoted name whole", () => {
+			const scope = (base: string, head: string) =>
+				mainGateScope(
+					["mise.lock"],
+					present,
+					rootReader({ "mise.lock": { base, head } }),
+				).mode;
+			// The node block follows syft's; its header carries a comment.
+			const commented = `${SYFT_LOCK}\n${LOCK.replace("[[tools.node]]", "[[tools.node]] # pinned")}`;
+			assert.equal(
+				scope(commented, commented.replace("24.22.2", "24.23.0")),
+				"repo-wide",
+			);
+			// `syft.plugin` is another tool, not syft.
+			const plugin = `${LOCK}\n[[tools."syft.plugin"]]\nversion = "1"\n`;
+			assert.equal(
+				scope(plugin, plugin.replace('version = "1"', 'version = "2"')),
+				"repo-wide",
+			);
+			// [tools] ends at `[env] # shell`: the key below it is an env var.
+			const env = `${TOML.replace("[env]", "[env] # shell")}syft = "1"\n`;
+			assert.equal(
+				lanesWithRoots(["mise.toml"], {
+					"mise.toml": {
+						base: env,
+						head: env.replace('syft = "1"', 'syft = "2"'),
+					},
+				}).mode,
+				"all",
+			);
+		});
 	});
 
 	it("is repo-wide for an empty diff or a deleted package", () => {

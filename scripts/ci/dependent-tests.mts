@@ -112,11 +112,11 @@ export function shardTestPlan(
 }
 
 /**
- * Suites one scoped shard carries. Shards run their suites one at a time under
- * a 19-minute step limit and the longest suite takes about three minutes cold,
- * so four leaves room for the builds they depend on and a slow host.
+ * Suites one scoped shard carries. Four is what the fixed eight-shard matrix
+ * already gave each shard for a 32-suite plan, so no shard is asked for more
+ * than shards have carried before; raise it only with shard timings in hand.
  */
-export const SUITES_PER_SHARD = 4;
+const SUITES_PER_SHARD = 4;
 
 /**
  * How many shards a plan is worth, `max` at most. A repo-wide plan takes them
@@ -735,7 +735,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 	const args = process.argv.slice(2);
 	const baseArgument = args.find((arg) => arg.startsWith("--base="));
 	const shardArgs = args.filter((arg) => arg.startsWith("--shard"));
-	const planShards = args.find((arg) => arg.startsWith("--plan-shards="));
+	const planShards = args.find((arg) => arg.startsWith("--plan-shards"));
+	const shardCap = Number(/^--plan-shards=(\d+)$/u.exec(planShards ?? "")?.[1]);
+	if (planShards !== undefined && !(shardCap >= 1 && shardCap <= 64)) {
+		console.error(
+			"dependent-tests: invalid shard cap; expected --plan-shards=MAX, 1 to 64",
+		);
+		process.exit(2);
+	}
 	if (
 		shardArgs.length > 1 ||
 		(shardArgs.length === 1 && !/^--shard=\d+\/\d+$/u.test(shardArgs[0] ?? ""))
@@ -753,8 +760,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 			: cliRootFileReader(baseArgument.slice("--base=".length)),
 	);
 	if (planShards !== undefined) {
-		const max = Number(planShards.slice("--plan-shards=".length));
-		const count = planShardCount(plan, max);
+		const count = planShardCount(plan, shardCap);
 		console.error(describePlan(plan));
 		console.log(
 			`[${Array.from({ length: count }, (_, index) => index).join(", ")}]`,
