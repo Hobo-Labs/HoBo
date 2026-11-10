@@ -115,6 +115,8 @@ jobs:
           clean: false
           fetch-depth: 2
       - uses: ./.github/actions/ci-runner-preflight
+        with:
+          browser: "true"
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
       - uses: ./.github/actions/pnpm-store
