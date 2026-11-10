@@ -3,6 +3,7 @@ import { getVercelOidcToken } from "@vercel/oidc";
 import { type MessageMetadata, QueueClient } from "@vercel/queue";
 import { createBootstrapEntry } from "./bootstrap-entry.js";
 import { createVercelApplication } from "./composition.js";
+import { reportRelayFailure } from "./failure-log.js";
 import { createNodeRelayHandler } from "./node-handler.js";
 import { forwardQueueWakeup } from "./queue-forwarding.js";
 import { loadBrokerRuntimeConfig } from "./runtime-config-client.js";
@@ -43,6 +44,8 @@ function application() {
 			);
 		},
 	};
+	// Which step of startup was running when it failed: the log line names it.
+	let stage = "runtime-config";
 	startup ??= Promise.resolve()
 		.then(async () => {
 			let env = process.env;
@@ -61,6 +64,7 @@ function application() {
 				env = { ...env, ...config };
 				ownerVerifiedBootstrap = ownerBootstrapEnabled;
 			}
+			stage = "application";
 			const resolved = { ...options, env };
 			if (!env.HOBO_CI_BOOTSTRAP_TOKEN_SHA256)
 				return createVercelApplication(resolved);
@@ -70,7 +74,13 @@ function application() {
 				bootstrapOptions.expectedGithubOwnerId = 145080887;
 			return createBootstrapEntry(bootstrapOptions);
 		})
-		.catch(() => {
+		.catch((error) => {
+			// Every request answers 503 until this succeeds; say why.
+			reportRelayFailure(
+				"hobo_ci_relay_init_failed",
+				{ stage },
+				error instanceof Error ? error : undefined,
+			);
 			startup = undefined;
 			throw new Error("relay initialization failed");
 		});

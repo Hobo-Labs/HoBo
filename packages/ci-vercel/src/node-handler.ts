@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
+import { failureRoute, reportRelayFailure } from "./failure-log.js";
 
 const MAX_BODY = 1024 * 1024;
 
@@ -135,7 +136,16 @@ export function createNodeRelayHandler(options: {
 			const cookies = result.headers.getSetCookie();
 			if (cookies.length) response.setHeader("set-cookie", cookies);
 			response.end(Buffer.from(await result.arrayBuffer()));
-		} catch {
+		} catch (error) {
+			reportRelayFailure(
+				"hobo_ci_relay_request_failed",
+				{
+					method: request.method ?? "",
+					route: failureRoute(request.url),
+					headersSent: response.headersSent,
+				},
+				error instanceof Error ? error : undefined,
+			);
 			if (response.headersSent) {
 				response.destroy();
 				return;

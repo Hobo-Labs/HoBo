@@ -279,3 +279,23 @@ The sandbox proxy bundle also lives in `src/_generated-assets/`: this directory
 keeps non-protobuf generators out of the protobuf-owned `src/_generated/` tree.
 The local persistent listener can wait without an age-based deadline; the
 embedded hosted bridge still supplies and enforces its lease timeout.
+
+### Failure log
+
+Every path that refuses a request with a fixed 503 body also writes one JSON line to stderr, so the
+platform's runtime logs show why. Before this the relay failed silently: a relay that could not
+start looked like a relay nobody was calling.
+
+| Event | When | Fields |
+|---|---|---|
+| `hobo_ci_relay_init_failed` | Startup failed; every request answers 503 until it succeeds | `stage`: `runtime-config` (identity token, runtime broker) or `application` |
+| `hobo_ci_relay_request_failed` | A request threw after startup, including the GitHub App bootstrap store failing to load | `method`, `route`, `headersSent` |
+| `hobo_ci_webhook_ingest_failed` | A signed delivery could not be committed (GitHub redelivers) | `event` |
+| `hobo_ci_control_failed` | An account or registration API call threw | `method`, `route` |
+| `hobo_ci_ready_check_failed` | The readiness check itself threw | none |
+
+Each line carries the error's class, its message and its cause's message, with URL credentials and
+anything shaped like a token removed and the text capped at 300 characters. A route has its
+identifiers replaced. One line per event name is written every 10 seconds per instance; `suppressed`
+counts the ones held back since the last line. No request body, header or credential is logged, and
+a failing logger never changes the response.

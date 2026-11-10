@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { failureRoute, reportRelayFailure } from "./failure-log.js";
 
 /** An authenticated transport envelope; the application owns durable admission. */
 export type VerifiedWebhook = Readonly<{
@@ -94,7 +95,12 @@ export function createVercelRelayHandler(options: {
 			try {
 				const ready = await options.application.ready();
 				return json(ready ? 200 : 503, { ready });
-			} catch {
+			} catch (error) {
+				reportRelayFailure(
+					"hobo_ci_ready_check_failed",
+					{},
+					error instanceof Error ? error : undefined,
+				);
 				return json(503, { ready: false });
 			}
 		}
@@ -139,7 +145,14 @@ export function createVercelRelayHandler(options: {
 					receivedAt: now(),
 				});
 				return json(202, { status });
-			} catch {
+			} catch (error) {
+				// GitHub redelivers on a 503, so the delivery is not lost; the
+				// reason it was refused was.
+				reportRelayFailure(
+					"hobo_ci_webhook_ingest_failed",
+					{ event },
+					error instanceof Error ? error : undefined,
+				);
 				return json(503, { error: "webhook rejected" });
 			}
 		}
@@ -165,7 +178,12 @@ export function createVercelRelayHandler(options: {
 			try {
 				const response = await options.application.control(request);
 				return response ? noStore(response) : json(404, { error: "not found" });
-			} catch {
+			} catch (error) {
+				reportRelayFailure(
+					"hobo_ci_control_failed",
+					{ method: request.method, route: failureRoute(path) },
+					error instanceof Error ? error : undefined,
+				);
 				return json(503, { error: "service unavailable" });
 			}
 		}
