@@ -530,13 +530,13 @@ describe("ci-runner image contract (host smoke)", () => {
 			join(root, ".github/workflows/hobo-ci.yml"),
 			"utf8",
 		);
-		const install = workflow.indexOf(
-			"run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false",
-		);
-		expect(install).toBeGreaterThan(-1);
-		expect(
-			workflow.indexOf("pnpm run lint:shell:changed", install),
-		).toBeGreaterThan(install);
+		const anchor = workflow.indexOf("Install root deps for shell lint");
+		expect(anchor).toBeGreaterThan(-1);
+		const section = workflow.slice(anchor, anchor + 600);
+		expect(section).toMatch(/--frozen-lockfile/);
+		expect(section).toMatch(/--ignore-scripts/);
+		const lint = workflow.indexOf("pnpm run lint:shell:changed", anchor);
+		expect(lint).toBeGreaterThan(anchor);
 	});
 
 	it("preflight composite action does not depend on tsx", () => {

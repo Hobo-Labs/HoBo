@@ -22,7 +22,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   without the mount installs from the registry: a cold `pnpm install` measured ~21s, while restoring the
   1.3 GB cache archive took 31–52s and main's save took 142s. Only GitHub-hosted runners use the cache.
   Every box `hobo-ci.yml` install uses `scripts/ci/pnpm-install.mts` (default **180 s** timeout via
-  `HOBO_PNPM_INSTALL_TIMEOUT_S`). The worker daemon calls `ensureBoxGitMirrorRoot` on
+  `HOBO_PNPM_INSTALL_TIMEOUT_S`), including the CI runner image job's root install before
+  `lint:shell:changed` (still `--frozen-lockfile --ignore-scripts`). The worker daemon calls
+  `ensureBoxGitMirrorRoot` on
   `HOBO_CI_GIT_MIRROR_ROOT` (default `/var/lib/hobo-ci/git`) so lazy mirror clone does not throw
   **EACCES** when the host path is missing or not writable; failures become mirror **miss** + checkout
   fallback.
