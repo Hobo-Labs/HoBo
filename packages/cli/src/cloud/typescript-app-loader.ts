@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import {
 	basename,
 	dirname,
@@ -218,6 +218,41 @@ async function sourceSnapshot(project: string): Promise<{
 		}
 	}
 	return { files, rawBytes: manifest.sourceDigestEncoding === "raw" };
+}
+
+/**
+ * Whether every input the codegen manifest recorded still has the digest it
+ * recorded. False when there is no manifest, it records nothing, an input is
+ * missing or changed, or the manifest is malformed: the imprint is then not
+ * evidence of anything, and only a codegen pass can say what the app is.
+ */
+export async function recordedAppInputsMatch(
+	project: string,
+): Promise<boolean> {
+	let snapshot: Awaited<ReturnType<typeof sourceSnapshot>>;
+	try {
+		snapshot = await sourceSnapshot(project);
+	} catch {
+		return false;
+	}
+	if (snapshot.files.length === 0) return false;
+	for (const { file, expected } of snapshot.files) {
+		// Any input that is gone, not a regular file (a directory, or a FIFO a
+		// read would block on) or unreadable is a mismatch: the freshness gate
+		// then decides, and reports it the way it reports any other drift.
+		let bytes: Buffer;
+		try {
+			if (!(await stat(file)).isFile()) return false;
+			bytes = await readFile(file);
+		} catch {
+			return false;
+		}
+		const actual = snapshot.rawBytes
+			? sha256Bytes(bytes)
+			: digest(bytes.toString("utf8"));
+		if (actual !== expected) return false;
+	}
+	return true;
 }
 
 async function packagedModule(

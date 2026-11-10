@@ -33,6 +33,7 @@ export {
 	shellQuote,
 	supportsPipeline,
 } from "./execution.js";
+export * from "./fleet/index.js";
 export {
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetBackend,

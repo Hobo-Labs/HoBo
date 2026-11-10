@@ -203,6 +203,80 @@
         }
       },
       "response": { "status": 304, "headers": { "ETag": "W/\"0123456789abcdef\"", "x-ratelimit-remaining": "4999" } }
+    },
+    {
+      "description": "read the repository's visibility and owner type before routing",
+      "request": {
+        "method": "GET",
+        "path": "/repos/hobo-fixture/ci-example",
+        "headers": {
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2026-03-10",
+          "Content-Type": "application/json",
+          "Authorization": "Bearer ghs_consumer_fixture_only"
+        }
+      },
+      "response": { "status": 200, "body": { "private": true, "owner": { "type": "Organization" } } }
+    },
+    {
+      "description": "update the fleet route table repository variable",
+      "request": {
+        "method": "PATCH",
+        "path": "/repos/hobo-fixture/ci-example/actions/variables/HOBO_CI_FLEET_ROUTES",
+        "headers": {
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2026-03-10",
+          "Content-Type": "application/json",
+          "Authorization": "Bearer ghs_consumer_fixture_only"
+        },
+        "body": { "name": "HOBO_CI_FLEET_ROUTES", "value": "{\"fork\":\"hobo\",\"pr\":\"hobo\",\"trunk\":\"hobo-trunk\"}" }
+      },
+      "response": { "status": 204 }
+    },
+    {
+      "description": "report a missing fleet route table repository variable",
+      "request": {
+        "method": "PATCH",
+        "path": "/repos/hobo-fixture/ci-example/actions/variables/HOBO_CI_FLEET_ROUTES",
+        "headers": {
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2026-03-10",
+          "Content-Type": "application/json",
+          "Authorization": "Bearer ghs_consumer_fixture_only"
+        },
+        "body": { "name": "HOBO_CI_FLEET_ROUTES", "value": "{\"fork\":\"hobo\",\"pr\":\"hobo\",\"trunk\":\"hobo-trunk\"}" }
+      },
+      "response": { "status": 404, "body": { "message": "Not Found" } }
+    },
+    {
+      "description": "create the fleet route table repository variable",
+      "request": {
+        "method": "POST",
+        "path": "/repos/hobo-fixture/ci-example/actions/variables",
+        "headers": {
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2026-03-10",
+          "Content-Type": "application/json",
+          "Authorization": "Bearer ghs_consumer_fixture_only"
+        },
+        "body": { "name": "HOBO_CI_FLEET_ROUTES", "value": "{\"fork\":\"hobo\",\"pr\":\"hobo\",\"trunk\":\"hobo-trunk\"}" }
+      },
+      "response": { "status": 201, "body": {} }
+    },
+    {
+      "description": "refuse the fleet route table write without Variables permission",
+      "request": {
+        "method": "PATCH",
+        "path": "/repos/hobo-fixture/ci-example/actions/variables/HOBO_CI_FLEET_ROUTES",
+        "headers": {
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2026-03-10",
+          "Content-Type": "application/json",
+          "Authorization": "Bearer ghs_consumer_fixture_only"
+        },
+        "body": { "name": "HOBO_CI_FLEET_ROUTES", "value": "{\"fork\":\"hobo\",\"pr\":\"hobo\",\"trunk\":\"hobo-trunk\"}" }
+      },
+      "response": { "status": 403, "body": { "message": "Resource not accessible by integration" } }
     }
   ]
 }
