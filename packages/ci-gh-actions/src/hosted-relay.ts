@@ -369,7 +369,10 @@ export class HostedRelay {
 			throw new Error("invalid webhook signature");
 		return this.processWebhook(raw, event);
 	}
-	/** Called only after ingress authenticated and durably recorded the exact body. */
+	/**
+	 * Another fleet runner on the shared `hobo` label holds this job; release this
+	 * worker's leases and pending demand without requeueing (mesh cooperation).
+	 */
 	private async yieldForeignRunnerCustody(
 		job: Job,
 		expectedRevision: number,

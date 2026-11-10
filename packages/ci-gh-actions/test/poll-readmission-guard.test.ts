@@ -70,7 +70,7 @@ async function isolatedRelay(github: GithubTransport) {
 	return { store, relay, reconcile };
 }
 
-it("yields box custody when GitHub queued job names an ARC runner", async () => {
+it("yields box custody when GitHub queued job names another fleet runner", async () => {
 	const github = {
 		request: async (_installation: number, path: string) => {
 			if (path === "/repos/org/repo/actions/runs/11")

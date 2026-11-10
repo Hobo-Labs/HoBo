@@ -1,9 +1,10 @@
 import { ACTIVE_STATES, type Lease } from "@hobo/ci";
 
-/** JIT runners the box worker registers: `hobo-<lease-uuid>`. */
+/** JIT runners this isolated worker registers: `hobo-<lease-uuid>`. */
 const BOX_LEASE_RUNNER =
 	/^hobo-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/** `box` = this host; `foreign` = any other fleet runner on the shared `hobo` label (ARC, peer box, mesh). */
 export type RunnerCustody = "unassigned" | "box" | "foreign";
 
 export function runnerCustody(

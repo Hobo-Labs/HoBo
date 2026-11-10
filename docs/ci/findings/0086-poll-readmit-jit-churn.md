@@ -1,39 +1,41 @@
 ---
 type: CI Performance Finding
 title: "Finding 86: poll readmit jit churn"
-description: "Coalesce fixes re-ingested queued jobs while a JIT runner or foreign ARC assignment already held custody, repeating 4 GB reservations."
-tags: [hobo, ci, worker, polling]
+description: "Coalesce without fleet custody dedupe re-ingested jobs another hobo runner already held, repeating isolated reservations."
+tags: [hobo, ci, worker, polling, fleet]
 ---
 
 # Finding 86: poll readmit jit churn
 
 ## Evidence
 
-After the Finding 85 coalesce fix, box workers repeated JIT registration for the same queued job every ~15–20 s (#1814 job `130022163439`: 27 pickups; #1792/#1816 Fabric runs starved). GitHub later assigned ARC runners (`hobo-runner-*`) sharing the `hobo` label.
+After the Finding 85 coalesce fix, box workers repeated JIT registration for the same queued job every ~15–20 s (#1814 job `130022163439`: 27 pickups; #1792/#1816 Fabric runs starved). GitHub had already bound another fleet runner on the shared `hobo` label (`hobo-runner-*` on Hostinger ARC, another box's `hobo-<uuid>`, or mesh peers).
 
 ## Cause
 
-1. Poll `deliveryId` included a hash of **our own** `hobo-<lease-uuid>` runner name once GitHub reflected JIT registration, so each poll looked like a **new** webhook and re-queued demand.
-2. Duplicate **requeue** ignored **dispatching/claiming** reservations and foreign runner custody, so poll coalesce still re-ingested after every `requeued` result.
+1. Poll `deliveryId` included a hash of **this worker's own** `hobo-<lease-uuid>` runner name once GitHub reflected JIT registration, so each poll looked like a **new** webhook and re-queued demand.
+2. Duplicate **requeue** ignored **dispatching/claiming** reservations and custody held by **any other** `hobo` runner, so poll coalesce still re-ingested after every `requeued` result.
 
-## Why JIT runners retire in seconds without the job
+## Fleet context: shared `hobo` is intentional
 
-JIT containers run `./run.sh || true`. When GitHub assigns the queued job to **another** online runner with the same label (`hobo` — including ARC `hobo-runner-*` on a shared group), the box JIT never receives work, `run.sh` exits quickly, writes `/tmp/hobo-ci-runner-exited`, and reconcile settles the lease.
+HoBo CI is a **fleet mesh**: many nodes carry the `hobo` label (box workers, Hostinger ARC, future mesh members). GitHub assigns each queued job to **one** online runner among them. That cooperation is a product feature, not a misconfiguration.
 
-That is usually **not** a wrong JIT label or `runner_group_id` mismatch (registration still succeeds). It is **label collision + GitHub dispatch** to whichever runner wins the queue. Box then treated “job still `queued`” as **unmet demand** and `queueInside` re-admitted it; Finding 85 coalesce re-poll amplified that into ~35s pickup loops (`hobo_ci_job_pickup`).
+The defect was **this worker fighting the mesh**—treating “another fleet member took the job” as local unmet demand and re-admitting in a loop—not the shared label itself.
 
-## Fix
+## Why JIT runners exit in seconds without work
 
-- Classify runner custody (`box` vs `foreign`).
-- `yieldForeignRunnerCustody` cancels isolated leases without `queueInside` and deletes pending demand (`withdrawQueuedJob`).
-- Skip `queue`/`reserve` when an active lease already covers the job or GitHub names our JIT runner.
-- Poll delivery ids hash **foreign** runner names only; box JIT and unassigned share one id.
-- Treat `requeued` and `foreign-runner` as quiet coalesce results.
-- **Pre-JIT** `getJob`: if custody is `foreign` or the job is `in_progress` on another runner, cancel the lease (`hobo_ci_launch_yielded_foreign_runner`) instead of registering another JIT.
-- **settleStopped**: do not `requeue` when GitHub still shows `queued` but names a foreign runner; `withdrawQueuedJob` instead.
+Isolated JIT containers run `./run.sh || true`. When GitHub assigns the job to a **peer** runner, this box's JIT never receives work, exits quickly, writes `/tmp/hobo-ci-runner-exited`, and reconcile settles the lease.
 
-Coalesce-only deploys without the custody/dedupe/yield bundle **increase** churn (box telemetry 2026-11-10: 8→10 pickups / 3.9 min, jobs `130022163396` / `130017909867` repeating ~35s).
+Registration still succeeds (`runner_group_id` and labels are correct). The runner simply lost the dispatch race fairly. **Before custody fixes**, settle treated “job still `queued`” as **unmet demand** and `queueInside` re-admitted it; Finding 85 coalesce re-poll amplified that into ~35s pickup loops (`hobo_ci_job_pickup`).
 
-## Shared `hobo` label (ARC + box)
+## Fix (fleet cooperation)
 
-ARC and the box worker **both** keep the `hobo` label. GitHub will keep racing dispatch across `hobo-runner-*` and box JIT (`hobo-<uuid>`); that is expected. Churn is stopped only by the worker paths above (custody classification, poll dedupe, pre-JIT foreign yield, `settleStopped` withdraw)—not by relabeling ARC.
+Each worker must treat a job taken by **any other** `hobo` runner as normal fleet behavior:
+
+- **Classify custody** (`box` = this host's JIT `hobo-<uuid>`; `foreign` = any other fleet runner name GitHub reports).
+- **Yield before JIT**: `getJob` before `generate-jitconfig`; if custody is `foreign` or the job is `in_progress` on a peer, cancel this host's lease (`hobo_ci_launch_yielded_foreign_runner`)—do not register another JIT.
+- **Withdraw, don't requeue**: `yieldForeignRunnerCustody` and `settleStopped` call `withdrawQueuedJob` instead of `queueInside` when GitHub names a peer runner; **release the slot** (cancel isolated leases covering the job).
+- **Dedupe admission**: skip `queue`/`reserve` when an active lease on this worker already covers the job, or when GitHub names **this** box JIT runner.
+- **Poll coalesce**: delivery ids hash **peer** runner names only (this box's JIT and unassigned share one id); treat `requeued` and `foreign-runner` as quiet coalesce results.
+
+Coalesce-only deploys without this bundle **increase** churn (box telemetry 2026-11-10: 8→10 pickups / 3.9 min, jobs `130022163396` / `130017909867` repeating ~35s).

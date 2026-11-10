@@ -888,7 +888,7 @@ export function createIsolatedContainerController(options: {
 			lease.jobId,
 		);
 		const custody = runnerCustody(original.runner_name);
-		// GitHub can assign a different runner with the same `hobo` label (ARC, other box JIT).
+		// Fleet mesh: another `hobo` runner may hold the job; withdraw instead of re-admitting.
 		const unmet =
 			original.status === "queued" && custody !== "foreign"
 				? requeueJob(lease)
