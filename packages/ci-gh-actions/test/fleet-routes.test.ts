@@ -243,6 +243,37 @@ describe("fleet route publisher", () => {
 		expect(reads).toBe(2);
 	});
 
+	it("routes new jobs away from a box whose host is critically short, even with free slots", async () => {
+		let critical = false;
+		const api = github();
+		const publisher = createFleetRoutePublisher({
+			github: api.transport,
+			minIntervalMs: 0,
+			minComputeIntervalMs: 0,
+			unhealthyOfferIds: (current) =>
+				critical
+					? new Set(
+							current.offers
+								.filter((offer) => offer.backend === "isolated-container")
+								.map((offer) => offer.id),
+						)
+					: new Set(),
+		});
+		expect((await publisher.publish(input(0)))?.table.routes.pr).toBe("hobo");
+		critical = true;
+		const rerouted = await publisher.publish(input(0, "2026-11-10T00:00:10Z"));
+		expect(rerouted?.table.routes).toEqual({
+			pr: "ubuntu-24.04",
+			fork: "ubuntu-24.04",
+			trunk: "ubuntu-24.04",
+		});
+		expect(
+			rerouted?.table.decisions.pr?.refusals.find(
+				(entry) => entry.memberId === "box",
+			)?.code,
+		).toBe("fleet.unhealthy");
+	});
+
 	it("keeps pull requests and public-repository trunk jobs off a shared ARC scale set", async () => {
 		const withArc = () => {
 			const current = account();

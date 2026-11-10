@@ -167,8 +167,10 @@ would post for a new offer.
   balanced, but the relay cannot start a runner on them, so they are not
   accepted as policy provider kinds. Running the Actions runner on Agent37 is
   untested.
-- **Circuit breakers.** The balancer honors a member's health; nothing sets it
-  yet.
+- **Circuit breakers for rented members.** The box daemon marks its own offers
+  unhealthy while its host is critically short of CPU, memory, disk or inodes
+  (see *Host health* in the runner queue guide). Nothing yet opens a breaker for
+  a rented provider after failed launches or slow pickups.
 - **Live vendor billing.** The models are published list prices read by hand.
   No provider account, invoice or usage API was exercised.
 

@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { availableParallelism, homedir, loadavg } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
@@ -19,6 +19,7 @@ import {
 	createGithubJobPoller,
 	createGithubOidcVerifier,
 	createHostedRelayRuntime,
+	createHostHealthMonitor,
 	createIsolatedContainerController,
 	createJobDurations,
 	createMemoryPeaks,
@@ -38,6 +39,7 @@ import {
 	isIsolatedContainerOffer,
 	parseWorkerStopMode,
 	readAvailableMemoryMb,
+	readHostHealthSample,
 	readHostMemory,
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
@@ -199,6 +201,7 @@ const fleetRoutesFlag = process.env.HOBO_CI_FLEET_ROUTES ?? "0";
 if (fleetRoutesFlag !== "0" && fleetRoutesFlag !== "1")
 	throw new Error("invalid HOBO_CI_FLEET_ROUTES");
 const publishFleetRoutes = fleetRoutesFlag === "1";
+const NO_OFFERS: ReadonlySet<string> = new Set();
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
@@ -395,6 +398,28 @@ try {
 		},
 		log,
 	});
+	const hostHealthPaths = [await docker.dataRoot(), workRoot];
+	const hostHealth = createHostHealthMonitor({
+		sample: () => {
+			const availableMb = readAvailableMemoryMb();
+			return readHostHealthSample({
+				loadAverage1m: loadavg()[0] ?? 0,
+				cpus: availableParallelism(),
+				memory:
+					availableMb === undefined
+						? undefined
+						: { availableMb, totalMb: hostMemorySample.totalMemoryMb },
+				paths: hostHealthPaths,
+				statfs: workFs.statfs,
+			});
+		},
+		log,
+		// Collect now, not at the next interval: a job is about to need the room.
+		onPressure: (verdict) => {
+			if (verdict.reasons.some((reason) => reason.startsWith("storage")))
+				runGc();
+		},
+	});
 	await storageAdmission.reap();
 	const jobPickupMetadata = new Map<
 		string,
@@ -548,7 +573,19 @@ try {
 		memoryAdmission,
 		storageAdmission,
 		fleetRoutes: publishFleetRoutes
-			? createFleetRoutePublisher({ github, log })
+			? createFleetRoutePublisher({
+					github,
+					log,
+					// A critically short host stops being the fleet's first choice.
+					unhealthyOfferIds: (account) =>
+						hostHealth.current().state === "critical"
+							? new Set(
+									account.offers
+										.filter(isIsolatedContainerOffer)
+										.map((offer) => offer.id),
+								)
+							: NO_OFFERS,
+				})
 			: undefined,
 		control: async () => undefined,
 		onTickTiming: (timing) =>
@@ -588,6 +625,8 @@ try {
 	let gcInFlight: Promise<void> | undefined;
 
 	const reconcileAndLaunch = singleFlight(async () => {
+		// Sampled at most every ten seconds; never fails the tick.
+		await hostHealth.observe();
 		const workerReconcileStartedAt = Date.now();
 		const reconciliation = await worker.reconcileLeases();
 		workerReconcileMs = Date.now() - workerReconcileStartedAt;

@@ -102,6 +102,18 @@ export {
 	type WaitingJob,
 } from "./isolated-worker/github-job-poller.js";
 export {
+	classifyHostHealth,
+	createHostHealthMonitor,
+	DEFAULT_HOST_HEALTH_THRESHOLDS,
+	type HostHealthMonitor,
+	type HostHealthReason,
+	type HostHealthSample,
+	type HostHealthState,
+	type HostHealthThresholds,
+	type HostHealthVerdict,
+	readHostHealthSample,
+} from "./isolated-worker/host-health.js";
+export {
 	selectWorkerImagesForDeletion,
 	selectWorkerImageTagsForDeletion,
 	type WorkerImage,

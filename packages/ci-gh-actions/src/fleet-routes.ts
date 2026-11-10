@@ -61,6 +61,7 @@ const Repository = z.object({
 });
 
 const FACTS_TTL_MS = 10 * 60_000;
+const NONE: ReadonlySet<string> = new Set();
 /** A label that changes more often than this would chase individual jobs. */
 const DEFAULT_MIN_INTERVAL_MS = 60_000;
 /** The dispatch pass runs every couple of seconds; a table need not. */
@@ -72,6 +73,11 @@ export function createFleetRoutePublisher(options: {
 	minIntervalMs?: number;
 	/** Minimum gap between computations for one repository, failed or not. */
 	minComputeIntervalMs?: number;
+	/**
+	 * Offers the fleet should not send new work to right now, for example the
+	 * box's own while its host is critically short of a resource.
+	 */
+	unhealthyOfferIds?: (account: Account) => ReadonlySet<string>;
 	log?: FleetRouteLog;
 }) {
 	const variable = options.variable ?? FLEET_ROUTES_VARIABLE;
@@ -174,6 +180,7 @@ export function createFleetRoutePublisher(options: {
 				members: fleetMembersFromAccount(account, leases, {
 					poolLabel: RUNNER_LABEL,
 					extraPoolLabels: [TRUNK_RUNNER_LABEL],
+					unhealthyOfferIds: options.unhealthyOfferIds?.(account) ?? NONE,
 				}),
 				classes: [
 					{
