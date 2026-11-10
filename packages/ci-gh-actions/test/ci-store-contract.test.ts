@@ -506,7 +506,11 @@ function storeContract(
 				["hobo-labs", lease.id, 1],
 				["other-co", foreign.id, 2],
 			] as const) {
-				const page = await store.eventsSince({ accountId, after: 0, limit: 50 });
+				const page = await store.eventsSince({
+					accountId,
+					after: 0,
+					limit: 50,
+				});
 				expect(
 					page.events.map((entry) => [
 						entry.event?.type,
