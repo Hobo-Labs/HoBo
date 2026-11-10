@@ -18,6 +18,7 @@ import { type BudgetPolicy, parseBudgetPolicy } from "@hobo/core";
 import { isQuoteVector, QuoteEngine } from "@hobo/pricing";
 import {
 	balanceFleet,
+	FLEET_REFUSAL_CODES,
 	type FleetBalance,
 	type FleetBalanceInput,
 	type FleetDemand,
@@ -30,13 +31,25 @@ import {
 	runnerQuoteScenario,
 } from "../src/fleet/index.js";
 
-/** Every example is priced at this instant, inside the models' evidence. */
-const AT = "2026-11-10T00:00:00Z";
+/**
+ * Every example is priced the day after the newest price was read, so the
+ * instant is inside every model's evidence and moves with it when a price is
+ * refreshed.
+ */
+const AT = new Date(
+	Math.max(
+		...RUNNER_FINANCIAL_MODELS.map((model) =>
+			Date.parse(model.evidence.observedAt),
+		),
+	) + 86_400_000,
+)
+	.toISOString()
+	.replace(".000Z", "Z");
 const BOX_SLOTS = 3;
 
 const PAGES = join(
 	dirname(fileURLToPath(import.meta.url)),
-	"../../../site/src/pages/ci",
+	"../../../site/src/pages",
 );
 
 function policy(limitMicros: number): BudgetPolicy {
@@ -155,37 +168,49 @@ function decision(result: FleetBalance): string {
 
 // -------------------------------------------------------------- fragments
 
-/** A provider can be named in policy today when the relay can reach it. */
+/**
+ * How a relay can use the provider today. Admission reaches every label
+ * provider through the companion-workflow bridge, which serves trusted private
+ * repositories only; choosing one directly needs a workflow to read the route
+ * table, which none does yet.
+ */
 function policyStatus(model: RunnerFinancialModel): string {
 	if (model.provider === "hobo-box-worker") return "yes";
-	if (model.binding === "inject") return "modelled only (no host driver)";
-	if (model.provider === "jog" || model.provider === "boat")
-		return "yes, through the bridge";
-	return "yes";
+	if (model.binding === "inject") return "no: modelled only, no host driver";
+	if (model.provider === "local") return "yes, on a local relay";
+	return "yes, through the bridge";
+}
+
+/** Where a ceiling the provider does not publish comes from instead. */
+function ceiling(model: RunnerFinancialModel): string {
+	if (model.concurrency !== undefined) return String(model.concurrency);
+	if (model.id === "hobo-box") return "the worker's slots";
+	if (model.id === "arc-remote") return "the scale set's size";
+	return "no published limit";
 }
 
 function providers(): string {
 	return table(
 		[
 			"Provider",
+			"Machine",
 			"Reaches a job by",
 			"USD per minute",
 			"Included each month",
 			"Plan fee",
 			"Jobs at once",
-			"Usable in policy today",
+			"Usable today",
 		],
 		RUNNER_FINANCIAL_MODELS.map((model) => [
 			model.displayName,
+			`${model.machine.vcpus} vCPU, ${model.machine.memoryGb} GB`,
 			model.binding,
 			model.evidence.derived
 				? `${model.usdPerMinute} (derived)`
 				: model.usdPerMinute,
 			model.monthlyFreeMinutes ? `${model.monthlyFreeMinutes} min` : "—",
 			model.monthlyFeeUsd ? `$${model.monthlyFeeUsd}` : "—",
-			model.concurrency === undefined
-				? "set in policy"
-				: String(model.concurrency),
+			ceiling(model),
 			policyStatus(model),
 		]),
 	);
@@ -298,13 +323,23 @@ export function renderFleetDocs() {
 		isolationRequired: false,
 	};
 	return {
-		"providers.md": {
+		"reference/errors.md": {
+			"ci-fleet-codes": table(
+				["Code", "Meaning", "Typical retry"],
+				Object.entries(FLEET_REFUSAL_CODES).map(([code, entry]) => [
+					`\`${code}\``,
+					entry.meaning,
+					entry.retry,
+				]),
+			),
+		},
+		"ci/providers.md": {
 			providers: providers(),
 			eligibility: eligibility(),
 			pricing: pricing(),
 			sources: sources(),
 		},
-		"fleet-balancing.md": {
+		"ci/fleet-balancing.md": {
 			"box-free": decision(decide(fleet(), PULL_REQUEST)),
 			"box-full": decision(decide(fleet(BOX_FULL), PULL_REQUEST)),
 			"private-trunk": decision(decide(fleet(BOX_FULL), privateTrunk)),
@@ -321,12 +356,15 @@ export function renderFleetDocs() {
 				decide(fleet({ "hobo-box": { healthy: false } }), PULL_REQUEST),
 			),
 		},
-		"route-table.md": {
+		"ci/route-table.md": {
 			"routes-box-free": routes(fleet()),
 			"routes-box-full": routes(fleet(BOX_FULL)),
 		},
 	};
 }
+
+const NOTICE =
+	"<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->";
 
 const marker = (id: string, edge: "start" | "end") =>
 	`<!-- generated:${id}:${edge} -->`;
@@ -342,7 +380,7 @@ export function applyFleetDocs(
 		const end = next.indexOf(marker(id, "end"));
 		if (start < 0 || end < start)
 			throw new Error(`page has no generated:${id} markers`);
-		next = `${next.slice(0, start)}${marker(id, "start")}\n\n${body}\n\n${next.slice(end)}`;
+		next = `${next.slice(0, start)}${marker(id, "start")}\n${NOTICE}\n\n${body}\n\n${next.slice(end)}`;
 	}
 	return next;
 }

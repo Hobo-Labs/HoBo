@@ -1,51 +1,61 @@
 ---
 layout: ../../layouts/Docs.astro
 title: CI providers
-description: "Every runner provider the HoBo CI fleet can price: rate, included minutes, plan fee, limits, who each serves, and how to connect one."
+description: "Every runner provider the HoBo CI fleet can price: machine, rate, included minutes, plan fee, limits, who each serves, and how to connect one."
 ---
 
 # CI providers
 
-The fleet has a financial model for each provider below. A model is one machine class at one provider: what a minute costs, what is included each month, what the plan costs, how many jobs it runs at once, and which repositories it will serve.
+The fleet holds a **financial model** for each provider: one machine class, what a minute costs, what is included each month, the plan fee, the limit on jobs at once, and which repositories it serves.
 
-The tables on this page are generated from those models, so they are what the balancer actually uses. Rates are for the 4 vCPU class and were read from each vendor's own page on 2026-11-09. They are published list prices, not your invoice.
+These are **ranking inputs with dated sources**, not billing: published list prices read from each vendor's own page, each with the day it was read. The tables are generated from the models, so they are what the balancer uses.
 
 ## What each provider costs
 
 <!-- generated:providers:start -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
-| Provider | Reaches a job by | USD per minute | Included each month | Plan fee | Jobs at once | Usable in policy today |
-| --- | --- | --- | --- | --- | --- | --- |
-| HoBo box worker | inject | 0 | — | — | set in policy | yes |
-| Box of the agent that opened the pull request | label | 0 | — | — | 1 | yes |
-| Remote actions-runner-controller scale set | label | 0 | — | — | set in policy | yes |
-| Boat CI runner | label | 0.0006 (derived) | — | $20.00 | 100 | yes, through the bridge |
-| Boat sandbox (API) | inject | 0.0006 (derived) | — | $20.00 | 100 | modelled only (no host driver) |
-| Agent37 VM instance | inject | 0.000522 (derived) | — | — | 3 | modelled only (no host driver) |
-| Jog runner | label | 0.0024 (derived) | 2500 min | — | set in policy | yes, through the bridge |
-| Modal Sandbox | inject | 0.007932 (derived) | — | — | 100 | modelled only (no host driver) |
-| Blacksmith runner | label | 0.008 (derived) | 1500 min | — | set in policy | yes |
-| Depot runner | label | 0.012 | 1000 min | $20.00 | set in policy | yes |
-| GitHub-hosted runner (public repository) | label | 0 | — | — | 20 | yes |
-| GitHub-hosted runner (private repository) | label | 0.006 | — | — | 20 | yes |
+| Provider | Machine | Reaches a job by | USD per minute | Included each month | Plan fee | Jobs at once | Usable today |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| HoBo box worker | 4 vCPU, 16 GB | inject | 0 | — | — | the worker's slots | yes |
+| Box of the agent that opened the pull request | 4 vCPU, 8 GB | label | 0 | — | — | 1 | yes, on a local relay |
+| Remote actions-runner-controller scale set | 4 vCPU, 16 GB | label | 0 | — | — | the scale set's size | yes, through the bridge |
+| Boat CI runner | 4 vCPU, 8 GB | label | 0.0006 (derived) | — | $20.00 | 100 | yes, through the bridge |
+| Boat sandbox (API) | 4 vCPU, 8 GB | inject | 0.0006 (derived) | — | $20.00 | 100 | no: modelled only, no host driver |
+| Agent37 VM instance | 4 vCPU, 8 GB | inject | 0.000522 (derived) | — | — | 3 | no: modelled only, no host driver |
+| Jog runner | 4 vCPU, 16 GB | label | 0.0024 (derived) | 2500 min | — | no published limit | yes, through the bridge |
+| Modal Sandbox | 4 vCPU, 8 GB | inject | 0.007932 (derived) | — | — | 100 | no: modelled only, no host driver |
+| Blacksmith runner | 4 vCPU, 16 GB | label | 0.008 (derived) | 1500 min | — | no published limit | yes, through the bridge |
+| Depot runner | 4 vCPU, 16 GB | label | 0.012 | 1000 min | $20.00 | no published limit | yes, through the bridge |
+| GitHub-hosted runner (public repository) | 4 vCPU, 16 GB | label | 0 | — | — | 20 | yes, through the bridge |
+| GitHub-hosted runner (private repository) | 2 vCPU, 8 GB | label | 0.006 | — | — | 20 | yes, through the bridge |
 
 <!-- generated:providers:end -->
 
-**Reaches a job by** is the provider's kind: `inject` means the relay starts the runner, `label` means the job asks for the provider's label. See [HoBo CI](/HoBo/ci/) for the difference.
+| Column | Meaning |
+|---|---|
+| **Reaches a job by** | `inject`: the relay starts the runner. `label`: the job asks for the provider's label. See [HoBo CI](/HoBo/ci/). |
+| **(derived)** | The vendor prints no rate for this machine. It was computed from one the vendor does print; the arithmetic is under [Sources](#sources). |
+| **Jobs at once** | The provider's own ceiling. Where it publishes none, your policy and budget are the limit. |
+| **Usable today** | How a relay can use the provider now; see below. |
 
-**Derived** marks a rate the vendor does not print for this machine class. It was computed from a figure the vendor does print, and the arithmetic is in [Sources](#sources).
+### Usable today
 
-**Usable in policy today** is whether a relay can be given this provider now:
+| Value | Meaning |
+|---|---|
+| *yes* | The relay starts runners there directly, for any repository it admits |
+| *yes, through the bridge* | Accepted in policy. The relay reaches it through a companion workflow that hosts the runner, and that bridge serves **trusted private repositories only** |
+| *yes, on a local relay* | The trusted runner on a workstation, for local environments |
+| *no: modelled only* | The fleet can price and rank it, but no host driver exists, so policy does not accept it |
 
-- *yes* — name it as a provider in your CI policy.
-- *yes, through the bridge* — accepted in policy, and reached through a companion workflow that hosts the runner. The bridge only serves trusted private repositories.
-- *modelled only* — the fleet can price and rank it, but the relay has no driver to start a runner there yet, so policy does not accept it.
+For a **public repository**, that leaves the box as the only provider admission can use today. A label provider can take public-repository jobs once a workflow asks for its label, which is what the [route table](/HoBo/ci/route-table/) prepares and no workflow does yet.
 
-## Who each provider will serve
+## Who each provider serves
 
-A provider that cannot run a job is never priced for it. These are the facts the balancer checks first.
+A provider that cannot run a job is never priced for it.
 
 <!-- generated:eligibility:start -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
 | Provider | Public repos | Private repos | Orgs only | Docker | Fork PRs | Own machine |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -64,15 +74,16 @@ A provider that cannot run a job is never priced for it. These are the facts the
 
 <!-- generated:eligibility:end -->
 
-- **Public repos: opt-in** means the provider serves public repositories only after the account owner turns that on.
-- **Orgs only** means the provider serves repositories owned by an organization, not a personal account.
-- **Own machine** means each job gets a machine nothing else shares and that is discarded afterwards. Public repositories and pull requests require it, so a shared cluster or a workstation is never chosen for them.
+- **Public repos: opt-in** — served only after the account owner turns that on at the provider.
+- **Orgs only** — repositories owned by an organization, not a personal account.
+- **Own machine** — each job gets a machine nothing else shares, discarded afterwards. Public repositories and pull requests require it, so a shared cluster or a workstation is never chosen for them.
 
 ## How a job is priced
 
-The fleet does not multiply a rate by a duration. Each model becomes a rate card in HoBo's pricing engine, and the engine rates the month with and without the job. The difference is the job's cost.
+The fleet does not multiply a rate by a duration. Each model becomes a rate card in the pricing engine, which rates the month **with and without** the job. The difference is the job's cost.
 
 <!-- generated:pricing:start -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
 | Provider | 20-minute job | Same job after the included minutes are gone | Same job if it opens the plan |
 | --- | --- | --- | --- |
@@ -91,15 +102,13 @@ The fleet does not multiply a rate by a duration. Each model becomes a rate card
 
 <!-- generated:pricing:end -->
 
-Three things fall out of pricing it that way, with no special cases:
-
-- A job inside the included minutes costs nothing. The first minute past them costs the overage rate.
-- A plan fee you are already paying is not the job's cost. A plan the job would have to open is, in full. The relay never opens a paid plan on its own.
-- A price that was read too long ago has expired and is not used. A provider with no current price is not chosen.
+- **Included minutes** — a job inside them costs nothing; the first minute past them costs the overage rate.
+- **Plan fees** — a fee you already pay is not the job's cost. A plan the job would have to open is, in full. The relay never opens a paid plan on its own.
+- **Stale prices** — a price past its expiry is not used, and a provider with no current price is not chosen.
 
 ## Connect a provider
 
-Providers are listed in your CI policy file, `.hobo/ci.json`, each with a `kind`, a connection, and the label a job would ask for. A provider is off until `enabled` is `true`.
+Providers are listed in the CI policy file, `.hobo/ci.json`: a `kind`, a connection, and the label a job would ask for. A provider is off until `enabled` is `true`.
 
 ```json
 {
@@ -124,21 +133,27 @@ A remote actions-runner-controller scale set is a `kubernetes` provider that nam
 }
 ```
 
-Jog and Boat are accepted as kinds `jog` and `boat`:
+Jog and Boat are the kinds `jog` and `boat`:
 
 ```json
 { "id": "boat", "kind": "boat", "connectionRef": "boat", "runsOn": "boat", "enabled": false }
 ```
 
-> **Upgrade the relay first.** A relay built before these kinds existed rejects the whole policy file when it meets one it does not know. Add `jog` or `boat` only once the relay reading the file includes them.
+| Rule | Why |
+|---|---|
+| Upgrade the relay before adding `jog` or `boat` | An older relay rejects the whole policy file at a kind it does not know |
+| Never `ubuntu-latest` | A route has to name a concrete machine |
 
-`ubuntu-latest` is rejected everywhere: a route has to name a concrete machine.
+## What a model is not
+
+- Not your invoice: list prices, not negotiated or metered ones.
+- Not a live feed: read by hand, dated, and expiring.
+- Not free-tier pooling: included minutes are one account's, never shared across tenants.
 
 ## Sources
 
-Every model carries the page its numbers came from and the day they were read.
-
 <!-- generated:sources:start -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
 - **HoBo box worker** — read 2026-11-09 from <https://github.com/Hobo-Labs/HoBo/blob/main/packages/ci/RUNNER-QUEUE.md>. Operator-owned host; a job adds no marginal charge. Slots come from HOBO_CI_WORKER_SLOTS, not from this model.
 - **Box of the agent that opened the pull request** — read 2026-11-09 from <https://github.com/Hobo-Labs/HoBo/blob/main/packages/ci-gh-actions/README.md>. The agent's session already pays for the machine; a job adds no marginal charge. One job at a time.
@@ -157,4 +172,4 @@ Every model carries the page its numbers came from and the day they were read.
 
 ## Related
 
-[Fleet balancing](/HoBo/ci/fleet-balancing/) · [Route table](/HoBo/ci/route-table/) · [FinOps](/HoBo/operations/finops/)
+[Fleet balancing](/HoBo/ci/fleet-balancing/) · [Route table](/HoBo/ci/route-table/) · [FinOps](/HoBo/operations/finops/) · [Metering](/HoBo/reference/metering/)

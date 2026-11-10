@@ -1,11 +1,13 @@
 export {
 	balanceFleet,
+	FLEET_REFUSAL_CODES,
 	type FleetBalance,
 	type FleetBalanceInput,
 	type FleetChoice,
 	type FleetDemand,
 	type FleetMemberState,
 	type FleetRefusal,
+	type FleetRefusalCode,
 } from "./balance.js";
 export {
 	FLEET_PROVIDER_KINDS,

@@ -1,22 +1,26 @@
 ---
 layout: ../../layouts/Docs.astro
 title: Fleet balancing
-description: "How HoBo CI picks a runner provider for a job: eligibility, price from the pricing engine, then the budget policy, shown on worked decisions."
+description: "How HoBo CI picks a runner provider for a job: eligibility, price ranked by the Dispatcher, then the budget policy, shown on worked decisions."
 ---
 
 # Fleet balancing
 
-Given a job and the providers you have connected, the balancer returns every provider that could take the job, best first, and a coded reason for each one that could not. Nothing is chosen silently.
+Given a job and the providers an account has connected, the balancer returns **every provider that could take the job, best first**, and a **coded reason** for each one that could not. Nothing is chosen silently.
 
-It asks three questions in order and never merges them:
+## Same path as placement
 
-1. **Can this provider run the job at all?** Visibility, ownership, Docker, forks, isolation, health, free slots, and whether the label the job is queued on can still reach it.
-2. **What does the job cost there?** Each remaining provider is rated by the pricing engine and ranked by what the job adds to this month's bill.
-3. **Does the budget policy allow that cost?** Every ranked provider is evaluated against the policy, with the same measurements CI admission uses.
+| Step | Question | Decided by |
+|---|---|---|
+| Eligibility | Can this provider run the job at all? | Visibility, ownership, Docker, forks, isolation, health, free slots, and whether the queued label can still reach it |
+| Price | What does the job add to this month's bill? | The pricing engine, ranked by the [Dispatcher](/HoBo/reference/packages/) |
+| Policy | Is that cost allowed? | The budget policy, with the same measurements CI admission uses |
+
+The three are asked in order and never merged: a provider that cannot run the job is not priced, and a price is not an admission.
 
 ## Tiers come before price
 
-Each provider sits in a tier, and a cheaper provider in a later tier never jumps the queue.
+A cheaper provider in a later tier never jumps the queue.
 
 | Tier | Meaning | Default members |
 |---|---|---|
@@ -24,17 +28,18 @@ Each provider sits in a tier, and a cheaper provider in a later tier never jumps
 | `overflow` | Rented capacity, ranked by price | A remote ARC scale set, Boat, Agent37, Jog, Modal, Blacksmith, Depot |
 | `last-resort` | Considered only when nothing else is admitted | GitHub-hosted runners |
 
-GitHub-hosted runners are last by default even on a public repository, where they are free. Policy can move a provider to another tier. Providers that cost the same keep the order you listed them in.
+GitHub-hosted runners are last by default even on a public repository, where they are free. Policy can move a provider to another tier. Providers that cost the same keep the order they were listed in.
 
 ## Worked decisions
 
-Every table below is the balancer's real output for a 20-minute job, with the whole catalog connected, a three-slot box, and every paid plan already open. They are regenerated from the code, so they change when the models or the rules do.
+Each table is the balancer's **real output** for a 20-minute job: the whole catalog connected, a three-slot box, every paid plan already open. They are regenerated from the code.
 
 ### A pull request while the box has room
 
-A pull request on a public, organization-owned repository. The box is first because it is already paid for. Everything after it is what the job would fall to.
+A pull request on a public, organization-owned repository. The box is first because it is already paid for; everything after it is what the job would fall to.
 
 <!-- generated:box-free:start -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -56,11 +61,12 @@ A pull request on a public, organization-owned repository. The box is first beca
 
 <!-- generated:box-free:end -->
 
-### The same pull request when the box is full
+### The same pull request, box full
 
-The box drops out with `fleet.capacity`, and the cheapest rented provider that may serve a public repository takes the job. Blacksmith is first because the job fits inside its included minutes.
+The box drops out with `fleet.capacity`. The cheapest rented provider that may serve a public repository takes the job: Blacksmith, because the job fits inside its included minutes.
 
 <!-- generated:box-full:start -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -84,9 +90,10 @@ The box drops out with `fleet.capacity`, and the cheapest rented provider that m
 
 ### A push to main on a private repository, box full
 
-A private repository's trunk job does not need its own machine, so the shared ARC cluster is allowed and wins: it is rented-tier capacity that adds nothing to the bill.
+A private repository's trunk job does not need its own machine, so the shared ARC cluster is allowed, and wins: rented-tier capacity that adds nothing to the bill.
 
 <!-- generated:private-trunk:start -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -110,9 +117,10 @@ A private repository's trunk job does not need its own machine, so the shared AR
 
 ### A job that is already waiting
 
-The job is already queued on the label `hobo`. GitHub does not let a queued job change its label, so every label provider is out with `fleet.label-bound` and only injected capacity can still reach it.
+The job is queued on the label `hobo`. A queued job cannot change its label, so every label provider is out with `fleet.label-bound`; only injected capacity can still reach it.
 
 <!-- generated:queued:start -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -136,9 +144,10 @@ The job is already queued on the label `hobo`. GitHub does not let a queued job 
 
 ### The budget is spent
 
-A $5 budget with $5 already committed. Every provider that would add to the bill is refused by the budget policy, and the job falls through to capacity that costs nothing.
+A $5 budget with $5 committed. Every provider that would add to the bill is refused by the budget policy, and the job falls through to capacity that costs nothing.
 
 <!-- generated:budget-spent:start -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -162,9 +171,10 @@ A $5 budget with $5 already committed. Every provider that would add to the bill
 
 ### The box is short of a resource
 
-The box has free slots, but its [host health](/HoBo/ci/host-health/) is critical. It is skipped with `fleet.unhealthy` and the job goes to the next provider.
+The box has free slots, but its [host health](/HoBo/ci/host-health/) is critical. It is skipped with `fleet.unhealthy`.
 
 <!-- generated:box-unhealthy:start -->
+<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -188,26 +198,17 @@ The box has free slots, but its [host health](/HoBo/ci/host-health/) is critical
 
 ## Refusal codes
 
-| Code | Meaning |
-|---|---|
-| `fleet.disabled` | The provider is not enabled in policy |
-| `fleet.unhealthy` | The provider's host is critically short of a resource |
-| `fleet.capacity` | Every slot is in use |
-| `fleet.label-bound` | The job is already queued on a label this provider does not serve |
-| `fleet.visibility` | The provider does not serve this repository's visibility, or public repositories are not turned on there |
-| `fleet.organization-only` | The provider serves organization-owned repositories only |
-| `fleet.docker` | The job needs Docker and the provider has none |
-| `fleet.fork` | The provider does not run jobs from forks |
-| `fleet.isolation` | The job needs its own machine and this provider is shared |
-| `fleet.agreement.new-denied` | Placing the job would open a new paid plan |
-| `fleet.payer-budget` | The job would exceed your ceiling for that provider account |
-| `fleet.account-budget` | The job would exceed the account's ceiling |
-| `pricing.` + a code | The pricing engine could not price the job, for example an expired rate |
-| `budget.` + a code | The budget policy refused the cost, for example `budget.policy.exhausted` |
+Three families, all stable. The full list with retry guidance is in [Errors & codes](/HoBo/reference/errors/#ci-fleet).
+
+| Family | Raised by | Example |
+|---|---|---|
+| `fleet.` | The fleet's own eligibility and ceilings | `fleet.capacity` |
+| `pricing.` | The pricing engine, with its own code after the prefix | an expired rate |
+| `budget.` | The budget policy, with its own code after the prefix | `budget.policy.exhausted` |
 
 ## Call it yourself
 
-The balancer is a pure function in `@hobo/ci`. It does no I/O and reads no clock.
+The balancer is a pure function in `@hobo/ci`: no I/O, no clock.
 
 ```ts
 import {
@@ -238,14 +239,15 @@ decision.ranking; // every admitted provider, best first
 decision.refusals; // [{ memberId, code, reason }]
 ```
 
-`fleetMembersFromAccount` builds the fleet from the offers an account really has connected. The rate, included minutes and ceiling come from the offer, which is what was observed for that account. The provider's model supplies what does not vary by account: rounding, plan fee, eligibility and tier.
+`fleetMembersFromAccount` builds the fleet from the offers an account really has. The **offer** supplies what was observed for that account: rate, included minutes, ceiling. The **model** supplies what does not vary by account: rounding, plan fee, eligibility, tier.
 
-## What is not done
+## What balancing is not
 
-- **Admission of a queued job is unchanged.** A job already waiting on `hobo` is still admitted by the existing box, then ARC, then GitHub order. The balancer decides ahead of the queue.
-- **Agent37, Modal and Boat sandboxes have no host driver.** They appear in these decisions because they are modelled, but a relay cannot start a runner on them yet.
-- **Only the box reports its health.** Nothing yet marks a rented provider unhealthy after failed launches.
+- Not admission of a queued job: a job already waiting on `hobo` is still admitted in the existing box → ARC → GitHub order. The balancer decides ahead of the queue.
+- Not a launcher: Agent37, Modal and Boat sandboxes appear in these decisions because they are modelled, but no host driver starts a runner on them yet.
+- Not a health monitor for rented providers: only the box reports its health.
+- Not a way to open paid plans: placing a job never subscribes to anything unless policy allows it.
 
 ## Related
 
-[Providers](/HoBo/ci/providers/) · [Route table](/HoBo/ci/route-table/) · [Host health](/HoBo/ci/host-health/)
+[Providers](/HoBo/ci/providers/) · [Route table](/HoBo/ci/route-table/) · [Host health](/HoBo/ci/host-health/) · [Continuous migration](/HoBo/cicd/migration/)

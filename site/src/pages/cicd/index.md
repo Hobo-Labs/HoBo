@@ -8,6 +8,15 @@ description: "Continuous migration, progressive delivery, generation, and delive
 
 Placement and delivery are **standing decisions**. Deploy, migrate, and progressive rollout share one gated path.
 
+## CI and CD
+
+| Half | Question | Where |
+|---|---|---|
+| **CI** | Where do build and test jobs run, and what do they cost? | [HoBo CI](/HoBo/ci/) |
+| **CD** | How does a change reach its home, and move when a better one opens? | This section |
+
+Both are placed the same way: ranked by the Dispatcher, admitted by policy.
+
 ## In this section
 
 | Page | Topic |
@@ -20,4 +29,4 @@ Placement and delivery are **standing decisions**. Deploy, migrate, and progress
 
 ## Related
 
-[HoBo CI](/HoBo/ci/) (where CI jobs run) · [Control plane](/HoBo/architecture/control-plane/) · [Trails](/HoBo/primitives/trails/) · [Harness reference](/HoBo/reference/harness/) · [Operations](/HoBo/operations/)
+[HoBo CI](/HoBo/ci/) · [Control plane](/HoBo/architecture/control-plane/) · [Trails](/HoBo/primitives/trails/) · [Harness reference](/HoBo/reference/harness/) · [Operations](/HoBo/operations/)

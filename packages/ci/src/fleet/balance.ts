@@ -118,6 +118,70 @@ export type FleetChoice = Readonly<{
 	quoteHash: string;
 }>;
 
+/**
+ * The codes the fleet's own gates refuse a member with: what each means, and
+ * whether asking again can help.
+ * One list: the gates below can only use a code that is in it, and the docs
+ * site's error reference is generated from it. Pricing and budget refusals
+ * carry their own engines' codes behind a `pricing.` or `budget.` prefix.
+ */
+// public-contract: stable refusal codes callers and the docs site rely on.
+export const FLEET_REFUSAL_CODES = {
+	"fleet.disabled": {
+		meaning: "The provider is not enabled in policy",
+		retry: "No: enable the provider",
+	},
+	"fleet.unhealthy": {
+		meaning: "The provider's host is critically short of a resource",
+		retry: "Yes, when the host recovers",
+	},
+	"fleet.label-bound": {
+		meaning:
+			"The job is already queued on a label this provider does not serve",
+		retry: "No: the label is fixed once queued",
+	},
+	"fleet.visibility": {
+		meaning:
+			"The provider does not serve this repository's visibility, or public repositories are not turned on there",
+		retry: "No: a fact about the provider",
+	},
+	"fleet.organization-only": {
+		meaning: "The provider serves organization-owned repositories only",
+		retry: "No: a fact about the provider",
+	},
+	"fleet.docker": {
+		meaning: "The job needs Docker and the provider has none",
+		retry: "No: a fact about the provider",
+	},
+	"fleet.fork": {
+		meaning: "The provider does not run jobs from forks",
+		retry: "No: a fact about the provider",
+	},
+	"fleet.isolation": {
+		meaning: "The job needs its own machine and this provider is shared",
+		retry: "No: a fact about the provider",
+	},
+	"fleet.capacity": {
+		meaning: "Every slot is in use",
+		retry: "Yes, when a slot frees",
+	},
+	"fleet.agreement.new-denied": {
+		meaning: "Placing the job would open a new paid plan",
+		retry: "No: open the plan, or allow it",
+	},
+	"fleet.payer-budget": {
+		meaning:
+			"The job would exceed the operator's ceiling for that provider account",
+		retry: "No: raise the ceiling or wait for the period",
+	},
+	"fleet.account-budget": {
+		meaning: "The job would exceed the account's ceiling",
+		retry: "No: raise the ceiling or wait for the period",
+	},
+} as const;
+
+export type FleetRefusalCode = keyof typeof FLEET_REFUSAL_CODES;
+
 export type FleetRefusal = Readonly<{
 	memberId: string;
 	code: string;
@@ -152,7 +216,7 @@ function ineligible(
 ): Omit<FleetRefusal, "memberId"> | undefined {
 	const { model } = member;
 	const { demand } = input;
-	const refuse = (code: string, reason: string) => ({ code, reason });
+	const refuse = (code: FleetRefusalCode, reason: string) => ({ code, reason });
 	if (!member.enabled)
 		return refuse("fleet.disabled", "member is not enabled in policy");
 	if (!member.healthy)
@@ -338,7 +402,7 @@ export function balanceFleet(input: FleetBalanceInput): FleetBalance {
 			) {
 				refusals.push({
 					memberId: member.model.id,
-					code: "fleet.payer-budget",
+					code: "fleet.payer-budget" satisfies FleetRefusalCode,
 					reason: "job would exceed the operator's ceiling for this payer",
 				});
 				continue;
@@ -349,7 +413,7 @@ export function balanceFleet(input: FleetBalanceInput): FleetBalance {
 			) {
 				refusals.push({
 					memberId: member.model.id,
-					code: "fleet.account-budget",
+					code: "fleet.account-budget" satisfies FleetRefusalCode,
 					reason: "job would exceed the account's legacy ceiling",
 				});
 				continue;

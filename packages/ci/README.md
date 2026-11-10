@@ -415,8 +415,9 @@ are not live provider billing. See
 [CI fleet balancing](../../docs/design/ci-fleet-balancing.md).
 
 The docs site's **HoBo CI** section (`site/src/pages/ci/`) shows these decisions
-as worked examples. Its provider tables and rankings are generated from this
-module by `scripts/fleet-docs.ts` and checked by `test/fleet-docs.test.ts`;
+as worked examples. Its provider tables and rankings, and the CI fleet codes in
+the site's errors reference, are generated from this module by
+`scripts/fleet-docs.ts` and checked by `test/fleet-docs.test.ts`;
 after changing a model or a rule, regenerate them:
 
 ```sh
