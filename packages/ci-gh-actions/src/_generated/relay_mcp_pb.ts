@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file relay_mcp.proto.
  */
 export const file_relay_mcp: GenFile = /*@__PURE__*/
-  fileDesc("Cg9yZWxheV9tY3AucHJvdG8SFWhvYm8uY2kuZ2hfYWN0aW9ucy52MSKvAwoNUmVsYXlNY3BMZWFzZRIKCgJpZBgBIAEoCRINCgVzdGF0ZRgCIAEoCRIOCgZhY3RpdmUYAyABKAgSEgoKcmVwb3NpdG9yeRgEIAEoCRIOCgZqb2JfaWQYBSABKAESEAoIam9iX25hbWUYBiABKAkSDgoGcnVuX2lkGAcgASgBEhMKC3J1bl9hdHRlbXB0GAggASgNEhAKCHByb3ZpZGVyGAkgASgJEhAKCG9mZmVyX2lkGAogASgJEhMKC3J1bm5lcl9uYW1lGAsgASgJEhIKCmNyZWF0ZWRfYXQYDCABKAkSFgoOZGlzcGF0Y2hpbmdfYXQYDSABKAkSEgoKc2V0dGxlZF9hdBgOIAEoCRIZChFxdWV1ZV9kZWFkbGluZV9hdBgPIAEoCRITCgtob3N0X3J1bl9pZBgQIAEoARIVCg1hY3R1YWxfam9iX2lkGBEgASgBEhYKDmJpbGxlZF9taW51dGVzGBIgASgBEhMKC3BhaWRfbWljcm9zGBMgASgBEhQKDG1lbW9yeV9jbGFzcxgUIAEoCRIVCg1zYW5kYm94X3N0YWdlGBUgASgJIrwBCgtSZWxheU1jcEpvYhIKCgJpZBgBIAEoARIOCgZydW5faWQYAiABKAESEwoLcnVuX2F0dGVtcHQYAyABKA0SEgoKcmVwb3NpdG9yeRgEIAEoCRIMCgRuYW1lGAUgASgJEg4KBmxhYmVscxgGIAMoCRIZChFpc29sYXRlZF9yZXF1aXJlZBgHIAEoCBIUCgxtZW1vcnlfY2xhc3MYCCABKAkSGQoRcXVldWVfZGVhZGxpbmVfYXQYCSABKAkitQEKDVJlbGF5TWNwRXZlbnQSDgoGY3Vyc29yGAEgASgJEgwKBHR5cGUYAiABKAkSCgoCYXQYAyABKAkSEAoIbGVhc2VfaWQYBCABKAkSDQoFc3RhdGUYBSABKAkSEgoKcmVwb3NpdG9yeRgGIAEoCRIOCgZqb2JfaWQYByABKAESEAoIam9iX25hbWUYCCABKAkSDgoGcnVuX2lkGAkgASgBEhMKC3J1bl9hdHRlbXB0GAogASgNIlkKDlJlbGF5TWNwTGVhc2VzEjQKBmxlYXNlcxgBIAMoCzIkLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcExlYXNlEhEKCXRydW5jYXRlZBgCIAEoCCKAAQoTUmVsYXlNY3BMZWFzZURldGFpbBIzCgVsZWFzZRgBIAEoCzIkLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcExlYXNlEjQKBmV2ZW50cxgCIAMoCzIkLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcEV2ZW50IlMKDFJlbGF5TWNwSm9icxIwCgRqb2JzGAEgAygLMiIuaG9iby5jaS5naF9hY3Rpb25zLnYxLlJlbGF5TWNwSm9iEhEKCXRydW5jYXRlZBgCIAEoCCJpCg5SZWxheU1jcEV2ZW50cxI0CgZldmVudHMYASADKAsyJC5ob2JvLmNpLmdoX2FjdGlvbnMudjEuUmVsYXlNY3BFdmVudBIOCgZjdXJzb3IYAiABKAkSEQoJdGltZWRfb3V0GAMgASgIIisKDlJlbGF5TWNwRW5naW5lEgoKAmlkGAEgASgJEg0KBXJlYWR5GAIgASgIIqYBCg5SZWxheU1jcFN0YXR1cxINCgVyZWFkeRgBIAEoCBI2CgdlbmdpbmVzGAIgAygLMiUuaG9iby5jaS5naF9hY3Rpb25zLnYxLlJlbGF5TWNwRW5naW5lEhUKDXN1YnNjcmlwdGlvbnMYAyABKAgSHAoUd2FpdF9kZWZhdWx0X3NlY29uZHMYBCABKA0SGAoQd2FpdF9tYXhfc2Vjb25kcxgFIAEoDSKYAQobUmVsYXlNY3BRdWFyYW50aW5lZERlbGl2ZXJ5EhMKC2RlbGl2ZXJ5X2lkGAEgASgJEg0KBWV2ZW50GAIgASgJEhcKD2luc3RhbGxhdGlvbl9pZBgDIAEoARIVCg1yZXBvc2l0b3J5X2lkGAQgASgBEhMKC3JlY2VpdmVkX2F0GAUgASgJEhAKCGF0dGVtcHRzGAYgASgNIlwKElJlbGF5TWNwUXVhcmFudGluZRJGCgpkZWxpdmVyaWVzGAEgAygLMjIuaG9iby5jaS5naF9hY3Rpb25zLnYxLlJlbGF5TWNwUXVhcmFudGluZWREZWxpdmVyeSI0Cg1SZWxheU1jcFJldHJ5EhMKC2RlbGl2ZXJ5X2lkGAEgASgJEg4KBnN0YXR1cxgCIAEoCWIGcHJvdG8z");
+  fileDesc("Cg9yZWxheV9tY3AucHJvdG8SFWhvYm8uY2kuZ2hfYWN0aW9ucy52MSKvAwoNUmVsYXlNY3BMZWFzZRIKCgJpZBgBIAEoCRINCgVzdGF0ZRgCIAEoCRIOCgZhY3RpdmUYAyABKAgSEgoKcmVwb3NpdG9yeRgEIAEoCRIOCgZqb2JfaWQYBSABKAESEAoIam9iX25hbWUYBiABKAkSDgoGcnVuX2lkGAcgASgBEhMKC3J1bl9hdHRlbXB0GAggASgNEhAKCHByb3ZpZGVyGAkgASgJEhAKCG9mZmVyX2lkGAogASgJEhMKC3J1bm5lcl9uYW1lGAsgASgJEhIKCmNyZWF0ZWRfYXQYDCABKAkSFgoOZGlzcGF0Y2hpbmdfYXQYDSABKAkSEgoKc2V0dGxlZF9hdBgOIAEoCRIZChFxdWV1ZV9kZWFkbGluZV9hdBgPIAEoCRITCgtob3N0X3J1bl9pZBgQIAEoARIVCg1hY3R1YWxfam9iX2lkGBEgASgBEhYKDmJpbGxlZF9taW51dGVzGBIgASgBEhMKC3BhaWRfbWljcm9zGBMgASgBEhQKDG1lbW9yeV9jbGFzcxgUIAEoCRIVCg1zYW5kYm94X3N0YWdlGBUgASgJIrwBCgtSZWxheU1jcEpvYhIKCgJpZBgBIAEoARIOCgZydW5faWQYAiABKAESEwoLcnVuX2F0dGVtcHQYAyABKA0SEgoKcmVwb3NpdG9yeRgEIAEoCRIMCgRuYW1lGAUgASgJEg4KBmxhYmVscxgGIAMoCRIZChFpc29sYXRlZF9yZXF1aXJlZBgHIAEoCBIUCgxtZW1vcnlfY2xhc3MYCCABKAkSGQoRcXVldWVfZGVhZGxpbmVfYXQYCSABKAkitQEKDVJlbGF5TWNwRXZlbnQSDgoGY3Vyc29yGAEgASgJEgwKBHR5cGUYAiABKAkSCgoCYXQYAyABKAkSEAoIbGVhc2VfaWQYBCABKAkSDQoFc3RhdGUYBSABKAkSEgoKcmVwb3NpdG9yeRgGIAEoCRIOCgZqb2JfaWQYByABKAESEAoIam9iX25hbWUYCCABKAkSDgoGcnVuX2lkGAkgASgBEhMKC3J1bl9hdHRlbXB0GAogASgNIlkKDlJlbGF5TWNwTGVhc2VzEjQKBmxlYXNlcxgBIAMoCzIkLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcExlYXNlEhEKCXRydW5jYXRlZBgCIAEoCCKAAQoTUmVsYXlNY3BMZWFzZURldGFpbBIzCgVsZWFzZRgBIAEoCzIkLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcExlYXNlEjQKBmV2ZW50cxgCIAMoCzIkLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcEV2ZW50IlMKDFJlbGF5TWNwSm9icxIwCgRqb2JzGAEgAygLMiIuaG9iby5jaS5naF9hY3Rpb25zLnYxLlJlbGF5TWNwSm9iEhEKCXRydW5jYXRlZBgCIAEoCCKKAQoOUmVsYXlNY3BFdmVudHMSNAoGZXZlbnRzGAEgAygLMiQuaG9iby5jaS5naF9hY3Rpb25zLnYxLlJlbGF5TWNwRXZlbnQSDgoGY3Vyc29yGAIgASgJEhEKCXRpbWVkX291dBgDIAEoCBIMCgRtb3JlGAQgASgIEhEKCXRydW5jYXRlZBgFIAEoCCIrCg5SZWxheU1jcEVuZ2luZRIKCgJpZBgBIAEoCRINCgVyZWFkeRgCIAEoCCLuAQoOUmVsYXlNY3BTdGF0dXMSDQoFcmVhZHkYASABKAgSNgoHZW5naW5lcxgCIAMoCzIlLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcEVuZ2luZRIVCg1zdWJzY3JpcHRpb25zGAMgASgIEhwKFHdhaXRfZGVmYXVsdF9zZWNvbmRzGAQgASgNEhgKEHdhaXRfbWF4X3NlY29uZHMYBSABKA0SFQoNYWNjb3VudF9jYWxscxgGIAEoDRIVCg1hY2NvdW50X3dhaXRzGAcgASgNEhgKEHJlcXVlc3RfbWVzc2FnZXMYCCABKA0imAEKG1JlbGF5TWNwUXVhcmFudGluZWREZWxpdmVyeRITCgtkZWxpdmVyeV9pZBgBIAEoCRINCgVldmVudBgCIAEoCRIXCg9pbnN0YWxsYXRpb25faWQYAyABKAESFQoNcmVwb3NpdG9yeV9pZBgEIAEoARITCgtyZWNlaXZlZF9hdBgFIAEoCRIQCghhdHRlbXB0cxgGIAEoDSJcChJSZWxheU1jcFF1YXJhbnRpbmUSRgoKZGVsaXZlcmllcxgBIAMoCzIyLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5SZWxheU1jcFF1YXJhbnRpbmVkRGVsaXZlcnkiNAoNUmVsYXlNY3BSZXRyeRITCgtkZWxpdmVyeV9pZBgBIAEoCRIOCgZzdGF0dXMYAiABKAliBnByb3RvMw");
 
 /**
  * A lease as an agent needs it to triage a job.
@@ -195,7 +195,8 @@ export const RelayMcpJobSchema: GenMessage<RelayMcpJob> = /*@__PURE__*/
   messageDesc(file_relay_mcp, 1);
 
 /**
- * One journal event. `cursor` is its position: pass it back to read what follows.
+ * One journal event. `cursor` stands for its position: pass it back to read
+ * what follows. It is opaque, and issued for the calling account only.
  *
  * @generated from message hobo.ci.gh_actions.v1.RelayMcpEvent
  */
@@ -330,7 +331,7 @@ export const RelayMcpJobsSchema: GenMessage<RelayMcpJobs> = /*@__PURE__*/
 
 /**
  * Events after a cursor. `cursor` is where to read from next, also when no
- * event matched; `timed_out` says a wait ended without one.
+ * event matched; `timed_out` says a wait ended, caught up, without one.
  *
  * @generated from message hobo.ci.gh_actions.v1.RelayMcpEvents
  */
@@ -349,6 +350,22 @@ export type RelayMcpEvents = Message<"hobo.ci.gh_actions.v1.RelayMcpEvents"> & {
    * @generated from field: bool timed_out = 3;
    */
   timedOut: boolean;
+
+  /**
+   * The read stopped before the end of the journal: an empty `events` is not
+   * "caught up". Read again from `cursor` at once.
+   *
+   * @generated from field: bool more = 4;
+   */
+  more: boolean;
+
+  /**
+   * A read of the newest events did not look back to the start of the journal
+   * and did not fill the page: older events may exist.
+   *
+   * @generated from field: bool truncated = 5;
+   */
+  truncated: boolean;
 };
 
 /**
@@ -410,6 +427,25 @@ export type RelayMcpStatus = Message<"hobo.ci.gh_actions.v1.RelayMcpStatus"> & {
    * @generated from field: uint32 wait_max_seconds = 5;
    */
   waitMaxSeconds: number;
+
+  /**
+   * What one account may have in progress at once on this host.
+   *
+   * @generated from field: uint32 account_calls = 6;
+   */
+  accountCalls: number;
+
+  /**
+   * @generated from field: uint32 account_waits = 7;
+   */
+  accountWaits: number;
+
+  /**
+   * The most JSON-RPC messages one HTTP request may carry.
+   *
+   * @generated from field: uint32 request_messages = 8;
+   */
+  requestMessages: number;
 };
 
 /**

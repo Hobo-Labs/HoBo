@@ -199,11 +199,11 @@ Node adapter already resolves every request against the configured origin.
 | Tool | Scope | What it does |
 | --- | --- | --- |
 | `list_leases` | `policy:read` | The account's leases, newest first. Filters: `state`, `repository`, `runId`, `activeOnly`; `limit` 1 to 200 (default 50) |
-| `get_lease` | `policy:read` | One lease by id, with its latest 20 events found among the account's newest 500 |
+| `get_lease` | `policy:read` | One lease by id, with its latest 20 events, read by the lease's id |
 | `list_pending_jobs` | `policy:read` | Jobs queued for the account's repositories that have no lease yet. Filter: `repository` |
-| `list_events` | `policy:read` | Events after `cursor`, oldest first; without a cursor, the newest. Filters: `leaseId`, `repository`, `types` |
-| `wait_for_events` | `policy:read` | Blocks until an event after `cursor` matches the filters, or `timeoutSeconds` passes. Returns `{events, cursor, timedOut}` |
-| `get_relay_status` | `policy:read` | Readiness, engines, whether this host pushes resource updates, and the wait default and ceiling |
+| `list_events` | `policy:read` | Events after `cursor`, oldest first; without a cursor, the newest. Filters: `leaseId`, `repository`, `types`. Returns `{events, cursor, more, truncated}` |
+| `wait_for_events` | `policy:read` | Blocks until an event after `cursor` matches the filters, or `timeoutSeconds` passes. Returns `{events, cursor, timedOut, more}` |
+| `get_relay_status` | `policy:read` | Readiness, engines, whether this host pushes resource updates, the wait default and ceiling, and the per-account and per-request limits |
 | `reconcile_lease` | `operations:write` | `POST /v1/accounts/self/leases/{id}/reconcile`: settle a lease against a verified `hostRunId` |
 | `list_quarantined_webhooks` | `operations:write` | The account's quarantined deliveries (identity and attempts, never the body) |
 | `retry_quarantined_webhook` | `operations:write` | Put one quarantined delivery back in the inbox |
@@ -216,8 +216,8 @@ account API's `/v2/accounts/self/inbox/…` routes do.
 | Resource | Content (`application/json`) |
 | --- | --- |
 | `hobo-ci://leases` | The account's 100 newest leases |
-| `hobo-ci://leases/{leaseId}` | One lease and its latest events |
-| `hobo-ci://events` | The account's 100 newest events and the cursor to read on from |
+| `hobo-ci://leases/{leaseId}` | One lease and its latest 20 events, read by the lease's id |
+| `hobo-ci://events` | The account's 100 newest events, the cursor to read on from, and `truncated` when older ones went unread |
 
 Results are protobuf JSON of the `RelayMcp*` messages in
 [`data-models/relay_mcp.proto`](data-models/relay_mcp.proto), written with zero
@@ -245,16 +245,64 @@ answers as soon as there is a matching event, or with `timedOut: true` and the
 cursor to continue from. Without a cursor it waits for what happens next.
 
 ```text
-list_events {}                                   -> { events: […], cursor: "412" }
-wait_for_events { cursor: "412", leaseId: "…" }  -> { events: [ci.RunnerClaimed], cursor: "415", timedOut: false }
-wait_for_events { cursor: "415", leaseId: "…" }  -> { events: [], cursor: "415", timedOut: true }
+list_events {}                                -> { events: […], cursor: "k3…Qw" }
+wait_for_events { cursor: "k3…Qw", leaseId }  -> { events: [ci.RunnerClaimed], cursor: "Zt…8A", timedOut: false }
+wait_for_events { cursor: "Zt…8A", leaseId }  -> { events: [], cursor: "Zt…8A", timedOut: true }
 ```
 
 The wait is 25 seconds unless `timeoutSeconds` says otherwise and never more
-than 50: under the 60-second default request timeout of the MCP TypeScript
-SDK's client, and within a serverless function limited to one minute. At most
-32 calls wait at once in one process; one more is refused with a tool error
-to retry. A caller that hangs up, or cancels the request, ends its wait.
+than the host's ceiling, 50 seconds: under the 60-second default request
+timeout of the MCP TypeScript SDK's client. A host passes the ceiling in
+(`waitMaxMs`); the Vercel host derives its own from the duration its function
+is given. A caller that hangs up, or cancels the request, ends its wait.
+
+**Cursors.** A cursor is an opaque token, issued to one account. It stands for
+a position in the journal, enciphered under a key derived for that account
+from a secret the host's instances share (`cursorSecret`; both hosts pass the
+webhook secret, which is only ever the input to that derivation). Pass back
+the `cursor` of an earlier result, or `"0"` to read from the start of the
+account's journal. Anything else, another account's cursor included, is
+refused as invalid input. Changing the secret invalidates issued cursors; a
+client then starts again from `list_events`.
+
+**`more` and `truncated`.** The journal holds every account's events, so one
+read looks along a bounded stretch of it (10,000 of its rows) and says when
+that cut it short:
+
+| Field | Meaning | What to do |
+| --- | --- | --- |
+| `more: true` | The read stopped before the end of the journal, so an empty `events` is not "caught up" | Read again from `cursor` at once |
+| `timedOut: true` | A wait reached the end of the journal and nothing matched before its timeout | Wait again from `cursor` |
+| `truncated: true` | A read of the newest events (no cursor) did not fill the page and did not look back to the journal's start | Older events may exist; read from `"0"` or an earlier cursor for them |
+
+`wait_for_events` keeps reading while there is `more`; if it is still behind
+after eight reads it returns the cursor with `more: true` and
+`timedOut: false`, so that no call works without end.
+
+### Limits
+
+One account cannot take the server from the others, and one request is a
+bounded amount of work. `get_relay_status` reports the first three.
+
+| Limit | Value | Beyond it |
+| --- | --- | --- |
+| JSON-RPC messages in one request | 8 | 400 `{"error":"too many JSON-RPC messages in one request; at most 8"}` |
+| Tools and resource reads in progress for one account | 8 | Tool error to retry; the call does not reach the store |
+| `wait_for_events` blocked for one account | 4 | Tool error to retry |
+| `wait_for_events` blocked in one process | 32 | Tool error to retry |
+| Events in one result | 200 (default 50) | `more: true` and the cursor to continue |
+| Reads by one `wait_for_events` while behind the journal's end | 8 | `more: true`, `timedOut: false` |
+
+A wait hands the event loop back before every read, so a long catch-up on a
+store that answers in the same turn (SQLite) does not hold up webhooks, health
+checks or the worker, and a caller's cancellation is seen between reads.
+
+On Postgres the server reads through `PostgresCiStore.observer()`: the last
+committed state, without the partition lock the relay's own reads and writes
+take. Nothing an agent asks is queued in front of webhook admission, and a
+long mutation does not hold an agent's read. `reconcile_lease` and
+`retry_quarantined_webhook` are writes and take the lock, as the account API's
+do.
 
 **Resource subscriptions on a host that keeps sessions.** With
 `sessions: "memory"` the server advertises `resources.subscribe`. Subscribe to
@@ -279,12 +327,50 @@ its leases through whichever HTTP host shares its store.
 
 A session belongs to the account that opened it: another account naming its
 id gets 404, as for an unknown id. The Node service holds at most 64 sessions
-and 16 for one account (429 beyond that), closes a session that has no open
-stream and has made no request for 15 minutes, and closes every session and
-stream when it drains. A process restart ends its sessions; a client
-initializes again and continues from its last cursor, which the journal still
-answers. On Vercel a wait occupies the function for its duration, so the
-project's function duration limit must be above the 50-second ceiling.
+and 8 for one account, counting the ones an account is still opening (429
+beyond that). When all 64 are taken, an account holding less than its share
+is not refused: the least recently used session of whichever account holds
+the most is closed to make room, and that client initializes again. A
+session's event stream is closed after 30 minutes for its client to open
+another, so a stream nobody is reading cannot hold a session for ever; a
+session with no open stream and no request for 15 minutes is closed; every
+session and stream is closed when the host drains. A process restart ends its
+sessions; a client initializes again and continues from its last cursor, which
+the journal still answers.
+
+While the store fails, the subscription pump asks it once per pass, not once
+per subscribed account, waits twice as long after each failure (up to a
+minute) and returns to its interval when a read succeeds. The failure log
+writes one `hobo_ci_mcp_pump_failed` line per window.
+
+On Vercel a wait occupies the function for its duration. `vercel.json` gives
+`api/relay.ts` a `maxDuration` of 300 seconds, and the host derives its wait
+ceiling from that number with 30 seconds kept back (`mcpWaitCeilingMs` in
+`@hobo/ci-vercel`): 50 seconds today. `test/function-limits.test.ts` there
+fails if the declared duration and the one the code assumes differ.
+
+### What an account can and cannot learn
+
+- **Only its own records.** Leases, queued jobs, quarantined deliveries and
+  events are read by the account the credential names.
+- **Events keep the owner they were written under.** A job event
+  (`ci.JobQueued`, `ci.JobExpired`, `ci.JobCompleted`,
+  `ci.JobAssignmentCleared`) is recorded for the account whose connection held
+  the job's repository at that moment. If a repository's connection moves to
+  another account, the earlier events stay with the earlier account and the
+  new one reads only what happens after the move.
+- **Job events journalled before this was recorded are in no feed.** They name
+  no account, and who owned the repository then cannot be known from them, so
+  they are not returned to anyone. Lease events always named their account and
+  are unaffected. The account API's `GET /v1/accounts/self/leases` lists an
+  account's newest 100 events by the same field, so it now includes the job
+  events recorded for the account.
+- **Nothing about other accounts from a cursor.** A cursor is not a journal
+  position: two cursors cannot be subtracted, and two accounts at the same
+  place in the journal hold different tokens.
+- **Residual.** `more: true` on a read from far behind says the shared journal
+  is longer than one read covers, which bounds other accounts' activity only
+  very loosely (in steps of 10,000 rows).
 
 ### Client configuration
 
@@ -307,7 +393,10 @@ An HTTP MCP server entry, with the account token read from the environment
 executed by `contracts/mcp-boundary.provider.test.ts` through the Node
 adapter; `test/relay-mcp.test.ts` drives the SDK's own client against the
 shared handler for each tool and resource, account isolation, the wait and its
-timeout on an injected clock, and sessions, subscriptions and their limits.
+timeout on an injected clock, sessions and subscriptions, and each limit
+above: the per-account shares, the request and catch-up bounds, the event-loop
+turns of a wait, opaque cursors, session shares and stream lifetime, and the
+pump's backoff.
 
 ## Deploy the relay
 

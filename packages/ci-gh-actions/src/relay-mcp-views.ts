@@ -19,6 +19,7 @@ import {
 	RelayMcpQuarantinedDeliverySchema,
 } from "./_generated/relay_mcp_pb.js";
 import type { QuarantinedDelivery } from "./account-operations.js";
+import type { CursorCodec } from "./relay-mcp-cursor.js";
 
 /**
  * The views the relay's MCP server returns. Each is assembled one named field
@@ -80,11 +81,17 @@ function eventLease(event: CiEvent): Lease | undefined {
 	}
 }
 
-/** One journal event: its position, type and time, and the job or lease it is about. */
-export function eventView(entry: SequencedCiEvent): RelayMcpEvent {
+/**
+ * One journal event: its cursor, type and time, and the job or lease it is
+ * about. The cursor is the account's own; the journal position is not shown.
+ */
+export function eventView(
+	entry: SequencedCiEvent,
+	cursors: Pick<CursorCodec, "encode">,
+): RelayMcpEvent {
 	const event = entry.event;
 	const view = create(RelayMcpEventSchema, {
-		cursor: String(entry.seq),
+		cursor: cursors.encode(entry.seq),
 		type: event?.type ?? "",
 		at: event?.at ?? "",
 		leaseId: event?.leaseId ?? "",

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
 import {
 	clone,
 	create,
@@ -16,9 +16,12 @@ import { z } from "zod";
 import { allocationQuote } from "./accounting.js";
 import {
 	accountEventPage,
-	EVENT_SCAN_LIMIT,
 	type EventCursor,
 	eventCursorBounds,
+	eventScan,
+	jobAccountId,
+	type LeaseEventsQuery,
+	leaseEventsBounds,
 } from "./event-log.js";
 import type { PipelineUsageObservation } from "./execution.js";
 import { shouldAbortIsolatedFleetLease } from "./fleet-overflow.js";
@@ -46,6 +49,7 @@ import {
 	SandboxAllowanceSchema,
 	type SandboxPricing,
 	SandboxPricingSchema,
+	type SequencedCiEvent,
 	SequencedCiEventSchema,
 } from "./index.js";
 import { isIsolatedRetirementTransition } from "./isolated-retirement.js";
@@ -264,6 +268,14 @@ export interface RateReattestation {
 	sourceUrl: string;
 }
 
+/** A journal row as the event it stores and its position. */
+function sequenced(row: Record<string, SQLOutputValue>): SequencedCiEvent {
+	return create(SequencedCiEventSchema, {
+		seq: z.number().int().parse(row.seq),
+		event: fromJsonString(CiEventSchema, z.string().parse(row.body)),
+	});
+}
+
 /** Single-writer partition. Events and their materialized lease view commit together. */
 export class LeaseStore {
 	private readonly db: DatabaseSync;
@@ -342,37 +354,54 @@ export class LeaseStore {
 			.map((row) => fromJsonString(CiEventSchema, z.string().parse(row.body)));
 	}
 	/**
-	 * An account's events after a log position, oldest first; without a
-	 * position, its newest ones. `seq` is the log's own key, so a position
-	 * handed back as `after` never skips or repeats an event.
+	 * An account's events after a journal position, oldest first; without a
+	 * position, its newest ones. `seq` is the journal's own key, so a position
+	 * handed back as `after` never skips or repeats an event. One read looks
+	 * along a bounded span of the journal and the page says when that cut it
+	 * short.
 	 */
 	eventsSince(cursor: EventCursor): CiEventPage {
-		const { accountId, after } = eventCursorBounds(cursor);
-		// Another account's events are left out by the query; a job event names
-		// no account and is attributed through the repository's connection.
-		const mine = "coalesce(json_extract(body,'$.accountId'),'') IN (?,'')";
+		const { accountId, after, limit } = eventCursorBounds(cursor);
+		const scan = eventScan(cursor, this.journalHead());
+		const mine =
+			"seq>? AND seq<=? AND json_extract(body,'$.accountId')=? ORDER BY seq";
 		const rows =
 			after === undefined
 				? this.db
-						.prepare(
-							`SELECT seq, body FROM events WHERE ${mine} ORDER BY seq DESC LIMIT ?`,
-						)
-						.all(accountId, EVENT_SCAN_LIMIT)
+						.prepare(`SELECT seq, body FROM events WHERE ${mine} DESC LIMIT ?`)
+						.all(scan.from, scan.to, accountId, limit)
 						.reverse()
 				: this.db
-						.prepare(
-							`SELECT seq, body FROM events WHERE seq>? AND ${mine} ORDER BY seq LIMIT ?`,
-						)
-						.all(after, accountId, EVENT_SCAN_LIMIT);
-		return accountEventPage(
-			rows.map((row) =>
-				create(SequencedCiEventSchema, {
-					seq: z.number().int().parse(row.seq),
-					event: fromJsonString(CiEventSchema, z.string().parse(row.body)),
-				}),
-			),
+						.prepare(`SELECT seq, body FROM events WHERE ${mine} LIMIT ?`)
+						.all(scan.from, scan.to, accountId, limit + 1);
+		return accountEventPage(rows.map(sequenced), cursor, scan);
+	}
+	/** The journal's newest position; zero while it is empty. */
+	journalHead(): number {
+		return z
+			.number()
+			.int()
+			.parse(
+				this.db.prepare("SELECT coalesce(max(seq),0) AS head FROM events").get()
+					?.head,
+			);
+	}
+	/** The newest events of one of an account's leases, in journal order. */
+	leaseEvents(query: LeaseEventsQuery): SequencedCiEvent[] {
+		const { accountId, leaseId, limit } = leaseEventsBounds(query);
+		return this.db
+			.prepare(
+				"SELECT seq, body FROM events WHERE json_extract(body,'$.leaseId')=? AND json_extract(body,'$.accountId')=? ORDER BY seq DESC LIMIT ?",
+			)
+			.all(leaseId, accountId, limit)
+			.reverse()
+			.map(sequenced);
+	}
+	/** The account whose connection holds this job's repository right now. */
+	private jobOwner(job: Job): string {
+		return jobAccountId(
 			this.configuration()?.configuration?.connections ?? [],
-			cursor,
+			job,
 		);
 	}
 	configuration(): ConfigurationState | undefined {
@@ -1514,6 +1543,7 @@ export class LeaseStore {
 					create(CiEventSchema, {
 						type: "ci.JobExpired",
 						at,
+						accountId: this.jobOwner(pending),
 						detail: toJsonString(JobSchema, pending),
 					}),
 				),
@@ -1562,14 +1592,17 @@ export class LeaseStore {
 			return;
 		}
 		const detail = toJsonString(JobSchema, pinned);
-		this.db
-			.prepare("INSERT INTO events(body) VALUES (?)")
-			.run(
-				toJsonString(
-					CiEventSchema,
-					create(CiEventSchema, { type: "ci.JobQueued", at, detail }),
-				),
-			);
+		this.db.prepare("INSERT INTO events(body) VALUES (?)").run(
+			toJsonString(
+				CiEventSchema,
+				create(CiEventSchema, {
+					type: "ci.JobQueued",
+					at,
+					accountId: this.jobOwner(pinned),
+					detail,
+				}),
+			),
+		);
 		this.db
 			.prepare("INSERT INTO pending_jobs(job_key,body) VALUES (?,?)")
 			.run(key, detail);
@@ -1615,6 +1648,7 @@ export class LeaseStore {
 						create(CiEventSchema, {
 							type: "ci.JobAssignmentCleared",
 							at,
+							accountId: lease.accountId,
 							leaseId,
 							detail: toJsonString(JobSchema, job),
 						}),
@@ -1639,6 +1673,7 @@ export class LeaseStore {
 						create(CiEventSchema, {
 							type: "ci.JobCompleted",
 							at,
+							accountId: this.jobOwner(job),
 							detail: toJsonString(JobSchema, job),
 						}),
 					),

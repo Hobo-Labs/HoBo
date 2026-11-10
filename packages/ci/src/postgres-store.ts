@@ -34,12 +34,17 @@ import {
 import { allocationQuote } from "./accounting.js";
 import {
 	accountEventPage,
-	EVENT_SCAN_LIMIT,
+	EVENT_SCAN_SPAN,
 	type EventCursor,
+	type EventScan,
 	eventCursorBounds,
+	jobAccountId,
+	type LeaseEventsQuery,
+	leaseEventsBounds,
 } from "./event-log.js";
 import { shouldAbortIsolatedFleetLease } from "./fleet-overflow.js";
 import { isIsolatedRetirementTransition } from "./isolated-retirement.js";
+import type { CiObserver } from "./observer.js";
 import {
 	ciBudgetIdentity,
 	ciBudgetPolicy,
@@ -127,6 +132,20 @@ function measuredUsage(
 }
 interface SnapshotDatabase extends DatabaseSync {
 	deserialize(data: Uint8Array): void;
+}
+
+/** A pool or one of its clients: whatever can run a statement. */
+type Queryable = Pick<Pool, "query">;
+
+/** A journal row as the event it stores and its position. */
+function sequenced(row: { seq: string; body: string }) {
+	const seq = Number(row.seq);
+	if (!Number.isSafeInteger(seq))
+		throw new Error("event position out of range");
+	return create(SequencedCiEventSchema, {
+		seq,
+		event: fromJsonString(CiEventSchema, row.body),
+	});
 }
 
 /** Native PostgreSQL journal. Each partition's mutations serialize at its lock row. */
@@ -449,7 +468,7 @@ export class PostgresCiStore {
 			client.release();
 		}
 	}
-	private async readConfiguration(client: PoolClient) {
+	private async readConfiguration(client: Queryable) {
 		const row = (
 			await client.query<{ body: string }>(
 				"SELECT body FROM hobo_ci_configuration WHERE partition_id=$1",
@@ -494,7 +513,7 @@ export class PostgresCiStore {
 		return rows.rows.map((row) => fromJsonString(LeaseSchema, row.body));
 	}
 	private async readAccountLeases(
-		client: PoolClient,
+		client: Queryable,
 		accountId: string,
 	): Promise<Lease[]> {
 		const rows = await client.query<{ body: string }>(
@@ -504,7 +523,7 @@ export class PostgresCiStore {
 		return rows.rows.map((row) => fromJsonString(LeaseSchema, row.body));
 	}
 	private async readLease(
-		client: PoolClient,
+		client: Queryable,
 		id: string,
 	): Promise<Lease | undefined> {
 		const row = (
@@ -762,57 +781,133 @@ export class PostgresCiStore {
 		);
 	}
 	/**
-	 * An account's events after a log position, oldest first; without a
+	 * An account's events after a journal position, oldest first; without a
 	 * position, its newest ones. A partition's transactions serialize at its
 	 * lock row, so `seq` order is commit order and a position handed back as
 	 * `after` never skips an event. The read itself takes no partition lock: a
-	 * caller waiting for news polls it, and must not stall admission.
+	 * caller waiting for news polls it, and must not stall admission. It looks
+	 * along a bounded number of the partition's journal rows, by the
+	 * `(partition_id, seq)` index, and the page says when that cut it short.
 	 */
 	async eventsSince(cursor: EventCursor): Promise<CiEventPage> {
-		const { accountId, after } = eventCursorBounds(cursor);
-		await this.initialize();
-		// Another account's events are left out by the query; a job event names
-		// no account and is attributed through the repository's connection.
-		const mine = "coalesce(body::jsonb ->> 'accountId','') IN ($2,'')";
+		const { accountId, after, limit } = eventCursorBounds(cursor);
+		// The head is read first and bounds the scan, so a row committed while
+		// this read runs is left for the next one, not half seen.
+		const head = await this.journalHead();
+		// `seq` is one sequence for every partition of the table, so the span is
+		// counted in this partition's rows, by its index, not in positions: the
+		// row that many past the cursor, or that many back from the head.
+		const edge = Number(
+			(
+				await this.pool.query<{ seq: string }>(
+					after === undefined
+						? "SELECT seq::text AS seq FROM hobo_ci_events WHERE partition_id=$1 AND seq<=$2 ORDER BY seq DESC OFFSET $3 LIMIT 1"
+						: "SELECT seq::text AS seq FROM hobo_ci_events WHERE partition_id=$1 AND seq>$2 ORDER BY seq OFFSET $3 LIMIT 1",
+					[this.partition, after ?? head, EVENT_SCAN_SPAN - 1],
+				)
+			).rows[0]?.seq ?? "NaN",
+		);
+		const scan: EventScan =
+			after === undefined
+				? { from: Number.isSafeInteger(edge) ? edge - 1 : 0, to: head, head }
+				: {
+						from: after,
+						to: Math.max(
+							after,
+							Number.isSafeInteger(edge) ? Math.min(edge, head) : head,
+						),
+						head,
+					};
+		const mine =
+			"SELECT seq::text AS seq,body FROM hobo_ci_events WHERE partition_id=$1 AND seq>$2 AND seq<=$3 AND body::jsonb ->> 'accountId'=$4 ORDER BY seq";
 		const rows =
 			after === undefined
 				? (
 						await this.pool.query<{ seq: string; body: string }>(
-							`SELECT seq::text AS seq,body FROM hobo_ci_events WHERE partition_id=$1 AND ${mine} ORDER BY seq DESC LIMIT $3`,
-							[this.partition, accountId, EVENT_SCAN_LIMIT],
+							`${mine} DESC LIMIT $5`,
+							[this.partition, scan.from, scan.to, accountId, limit],
 						)
 					).rows.reverse()
 				: (
 						await this.pool.query<{ seq: string; body: string }>(
-							`SELECT seq::text AS seq,body FROM hobo_ci_events WHERE partition_id=$1 AND ${mine} AND seq>$3 ORDER BY seq LIMIT $4`,
-							[this.partition, accountId, after, EVENT_SCAN_LIMIT],
+							`${mine} LIMIT $5`,
+							[this.partition, scan.from, scan.to, accountId, limit + 1],
 						)
 					).rows;
-		const connections = rows.length
-			? ((
-					await this.pool.query<{ body: string }>(
-						"SELECT body FROM hobo_ci_configuration WHERE partition_id=$1",
-						[this.partition],
-					)
-				).rows.map(
-					(row) =>
-						fromJsonString(ConfigurationStateSchema, row.body).configuration
-							?.connections ?? [],
-				)[0] ?? [])
-			: [];
-		return accountEventPage(
-			rows.map((row) => {
-				const seq = Number(row.seq);
-				if (!Number.isSafeInteger(seq))
-					throw new Error("event position out of range");
-				return create(SequencedCiEventSchema, {
-					seq,
-					event: fromJsonString(CiEventSchema, row.body),
-				});
-			}),
-			connections,
-			cursor,
+		return accountEventPage(rows.map(sequenced), cursor, scan);
+	}
+	/**
+	 * The journal's newest position, by the `(partition_id, seq)` index; zero
+	 * while the partition's journal is empty. No partition lock.
+	 */
+	async journalHead(): Promise<number> {
+		await this.initialize();
+		const head = Number(
+			(
+				await this.pool.query<{ head: string }>(
+					"SELECT coalesce(max(seq),0)::text AS head FROM hobo_ci_events WHERE partition_id=$1",
+					[this.partition],
+				)
+			).rows[0]?.head ?? "0",
 		);
+		if (!Number.isSafeInteger(head))
+			throw new Error("event position out of range");
+		return head;
+	}
+	/**
+	 * The newest events of one of an account's leases, in journal order, found
+	 * by the lease index; no partition lock.
+	 */
+	async leaseEvents(query: LeaseEventsQuery) {
+		const { accountId, leaseId, limit } = leaseEventsBounds(query);
+		await this.initialize();
+		return (
+			await this.pool.query<{ seq: string; body: string }>(
+				"SELECT seq::text AS seq,body FROM hobo_ci_events WHERE partition_id=$1 AND body::jsonb ->> 'leaseId'=$2 AND body::jsonb ->> 'accountId'=$3 ORDER BY seq DESC LIMIT $4",
+				[this.partition, leaseId, accountId, limit],
+			)
+		).rows
+			.reverse()
+			.map(sequenced);
+	}
+	/**
+	 * The store as an observer reads it: the last committed state, without the
+	 * partition lock every other method takes. However many agents or
+	 * dashboards read, webhook admission and the worker are not queued behind
+	 * them, and they are not queued behind a long mutation.
+	 */
+	observer(): CiObserver {
+		const read = async <T>(run: (db: Queryable) => Promise<T>): Promise<T> => {
+			await this.initialize();
+			return run(this.pool);
+		};
+		return {
+			configuration: () => read((db) => this.readConfiguration(db)),
+			get: (id) => read((db) => this.readLease(db, id)),
+			accountLeases: (accountId) =>
+				read((db) => this.readAccountLeases(db, accountId)),
+			pendingJobs: () => read((db) => this.readPendingJobs(db)),
+			journalHead: () => this.journalHead(),
+			eventsSince: (cursor) => this.eventsSince(cursor),
+			leaseEvents: (query) => this.leaseEvents(query),
+			quarantinedWebhooks: (accountId, expectedRevision) =>
+				read((db) => this.readQuarantined(db, accountId, expectedRevision)),
+		};
+	}
+	/** The account whose connection holds this job's repository right now. */
+	private async jobOwner(client: Queryable, job: Job): Promise<string> {
+		return jobAccountId(
+			(await this.readConfiguration(client))?.configuration?.connections ?? [],
+			job,
+		);
+	}
+	private async readPendingJobs(db: Queryable): Promise<Job[]> {
+		return (
+			await db.query<{ body: string }>(
+				"SELECT body FROM hobo_ci_pending_jobs WHERE partition_id=$1 ORDER BY seq",
+				[this.partition],
+			)
+		).rows.map((row) => fromJsonString(JobSchema, row.body));
 	}
 	/** Latest dispatch/claim intent for each active lease, without scanning history. */
 	latestLeaseIntents(ids: readonly string[]) {
@@ -833,14 +928,7 @@ export class PostgresCiStore {
 		});
 	}
 	pendingJobs() {
-		return this.tx(async (c) =>
-			(
-				await c.query<{ body: string }>(
-					"SELECT body FROM hobo_ci_pending_jobs WHERE partition_id=$1 ORDER BY seq",
-					[this.partition],
-				)
-			).rows.map((r) => fromJsonString(JobSchema, r.body)),
-		);
+		return this.tx((c) => this.readPendingJobs(c));
 	}
 	private jobKey(job: Job) {
 		return `${job.repositoryId}:${job.id}:${job.runAttempt}`;
@@ -958,6 +1046,7 @@ export class PostgresCiStore {
 				"ci.JobExpired",
 				at,
 				toJsonString(JobSchema, pending),
+				await this.jobOwner(client, pending),
 			);
 			return true;
 		});
@@ -1012,18 +1101,19 @@ export class PostgresCiStore {
 				: account);
 		const pinned = await this.pinnedQueuedJob(c, job, at, effective);
 		const body = toJsonString(JobSchema, pinned);
+		const owner = await this.jobOwner(c, pinned);
 		if (
 			pinned.queueDeadlineAt &&
 			Date.parse(pinned.queueDeadlineAt) <= Date.parse(at)
 		) {
-			await this.event(c, "ci.JobExpired", at, body);
+			await this.event(c, "ci.JobExpired", at, body, owner);
 			await c.query(
 				"INSERT INTO hobo_ci_terminal_jobs(partition_id,job_key) VALUES($1,$2) ON CONFLICT DO NOTHING",
 				[this.partition, key],
 			);
 			return;
 		}
-		await this.event(c, "ci.JobQueued", at, body);
+		await this.event(c, "ci.JobQueued", at, body, owner);
 		await c.query(
 			"INSERT INTO hobo_ci_pending_jobs(partition_id,job_key,body) VALUES($1,$2,$3)",
 			[this.partition, key, body],
@@ -1064,7 +1154,7 @@ export class PostgresCiStore {
 					"ci.JobAssignmentCleared",
 					at,
 					toJsonString(JobSchema, job),
-					"",
+					lease.accountId,
 					leaseId,
 				);
 			return removed.rowCount === 1;
@@ -1099,6 +1189,7 @@ export class PostgresCiStore {
 					"ci.JobCompleted",
 					at,
 					toJsonString(JobSchema, job),
+					await this.jobOwner(c, job),
 				);
 			}
 			if (job.runnerName) {
@@ -2643,42 +2734,48 @@ export class PostgresCiStore {
 		});
 	}
 	quarantinedWebhooks(accountId: string, expectedRevision: number) {
-		return this.tx(async (c) => {
-			await this.checkRevision(c, expectedRevision);
-			const connections =
-				(await this.readConfiguration(c))?.configuration?.connections ?? [];
-			const rows = (
-				await c.query<{
-					delivery_id: string;
-					event: string;
-					installation_id: string;
-					repository_id: string;
-					received_at: string;
-					attempts: number;
-				}>(
-					"SELECT delivery_id,event,installation_id,repository_id,received_at,attempts FROM hobo_ci_inbox WHERE partition_id=$1 AND NOT completed AND quarantined ORDER BY seq",
-					[this.partition],
-				)
-			).rows;
-			return rows
-				.filter((row) =>
-					connections.some(
-						(connection) =>
-							connection.accountId === accountId &&
-							connection.installationId === Number(row.installation_id) &&
-							connection.repositoryId === Number(row.repository_id),
-					),
-				)
-				.slice(0, 100)
-				.map((row) => ({
-					deliveryId: row.delivery_id,
-					event: row.event,
-					installationId: Number(row.installation_id),
-					repositoryId: Number(row.repository_id),
-					receivedAt: row.received_at,
-					attempts: row.attempts,
-				}));
-		});
+		return this.tx((c) => this.readQuarantined(c, accountId, expectedRevision));
+	}
+	private async readQuarantined(
+		db: Queryable,
+		accountId: string,
+		expectedRevision: number,
+	) {
+		const state = await this.readConfiguration(db);
+		if (state?.revision !== expectedRevision)
+			throw new Error("configuration revision conflict");
+		const connections = state.configuration?.connections ?? [];
+		const rows = (
+			await db.query<{
+				delivery_id: string;
+				event: string;
+				installation_id: string;
+				repository_id: string;
+				received_at: string;
+				attempts: number;
+			}>(
+				"SELECT delivery_id,event,installation_id,repository_id,received_at,attempts FROM hobo_ci_inbox WHERE partition_id=$1 AND NOT completed AND quarantined ORDER BY seq",
+				[this.partition],
+			)
+		).rows;
+		return rows
+			.filter((row) =>
+				connections.some(
+					(connection) =>
+						connection.accountId === accountId &&
+						connection.installationId === Number(row.installation_id) &&
+						connection.repositoryId === Number(row.repository_id),
+				),
+			)
+			.slice(0, 100)
+			.map((row) => ({
+				deliveryId: row.delivery_id,
+				event: row.event,
+				installationId: Number(row.installation_id),
+				repositoryId: Number(row.repository_id),
+				receivedAt: row.received_at,
+				attempts: row.attempts,
+			}));
 	}
 	retryQuarantinedWebhook(
 		accountId: string,

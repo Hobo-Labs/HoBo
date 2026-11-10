@@ -1,4 +1,4 @@
-import type { ConfigurationState, Lease } from "@hobo/ci";
+import type { ConfigurationState, Lease, QuarantinedWebhook } from "@hobo/ci";
 import type { HostedRelay, HostedRelayStore } from "./hosted-relay.js";
 
 /**
@@ -18,14 +18,7 @@ export class ControlError extends Error {
 }
 
 /** A webhook delivery set aside after it failed too many times. */
-export type QuarantinedDelivery = Readonly<{
-	deliveryId: string;
-	event: string;
-	installationId: number;
-	repositoryId: number;
-	receivedAt: string;
-	attempts: number;
-}>;
+export type QuarantinedDelivery = QuarantinedWebhook;
 
 /** The store reads and writes these operations need. */
 export type AccountOperationsStore = Pick<

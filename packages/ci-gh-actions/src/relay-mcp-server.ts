@@ -1,9 +1,9 @@
 import { create, type DescMessage, toJsonString } from "@bufbuild/protobuf";
 import {
 	accountOwnsJob,
-	type CiEventPage,
-	type EventCursor,
+	type CiObserver,
 	type Lease,
+	type SequencedCiEvent,
 } from "@hobo/ci";
 import {
 	McpServer,
@@ -42,7 +42,8 @@ import {
 	retryQuarantinedDelivery,
 } from "./account-operations.js";
 import { reportRelayFailure } from "./failure-log.js";
-import type { HostedRelay, HostedRelayStore } from "./hosted-relay.js";
+import type { HostedRelay } from "./hosted-relay.js";
+import { CURSOR_START, type CursorCodec } from "./relay-mcp-cursor.js";
 import {
 	eventView,
 	jobView,
@@ -60,8 +61,14 @@ export const RELAY_MCP_LEASE_URI_TEMPLATE = "hobo-ci://leases/{leaseId}";
 const LEASE_ID =
 	/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const LEASE_URI = /^hobo-ci:\/\/leases\/([a-f0-9-]{36})$/;
-/** How many journal events one read looks through for the ones a caller asked for. */
+/** How many of the account's events one read looks through for the ones a caller asked for. */
 const EVENT_WINDOW = 500;
+/**
+ * How many reads in a row one `wait_for_events` call makes while it is still
+ * behind the end of the journal. Past that it hands the cursor back and says
+ * there is more, so that no call works without end.
+ */
+const WAIT_CATCH_UP_READS = 8;
 /** How many of a lease's latest events `get_lease` returns. */
 const LEASE_EVENTS = 20;
 const READ_SCOPE = "policy:read";
@@ -81,11 +88,13 @@ export function isRelayMcpResource(uri: string): boolean {
 	);
 }
 
-/** The store reads the MCP server makes, all of them scoped to one account. */
-export type RelayMcpStore = AccountOperationsStore &
-	Pick<HostedRelayStore, "accountLeases" | "pendingJobs"> & {
-		eventsSince(cursor: EventCursor): Promise<CiEventPage>;
-	};
+/**
+ * What the MCP server reads and the one thing it writes itself. The reads are
+ * an observer's: they take no partition lock, so nothing an agent asks is
+ * queued in front of webhook admission.
+ */
+export type RelayMcpStore = CiObserver &
+	Pick<AccountOperationsStore, "retryQuarantinedWebhook">;
 
 /** What a tool or resource is given by the host that serves it. */
 export type RelayMcpServices = Readonly<{
@@ -97,12 +106,26 @@ export type RelayMcpServices = Readonly<{
 	waitDefaultMs: number;
 	waitMaxMs: number;
 	pollMs: number;
-	/** Admit one more blocked `wait_for_events`; false when too many are waiting. */
-	beginWait: () => boolean;
-	endWait: () => void;
+	/** The cursors of one account: a journal position as the caller holds it. */
+	cursors: (accountId: string) => CursorCodec;
+	/**
+	 * Take one of the account's places for a tool or resource in progress;
+	 * false when the account already holds all of them.
+	 */
+	beginCall: (accountId: string) => boolean;
+	endCall: (accountId: string) => void;
+	/** Admit one more blocked `wait_for_events`: the account's share, then the host's. */
+	beginWait: (accountId: string) => boolean;
+	endWait: (accountId: string) => void;
+	/** The limits above, as `get_relay_status` reports them. */
+	accountCalls: number;
+	accountWaits: number;
+	requestMessages: number;
 	now: () => number;
 	/** Resolves after `ms`, or as soon as the signal aborts. */
 	sleep: (ms: number, signal: AbortSignal) => Promise<void>;
+	/** Hands the event loop back: resolves on a later turn, not in this one. */
+	pause: () => Promise<void>;
 	/** Present on a host that keeps sessions: resource subscriptions for one session. */
 	subscriptions?: Readonly<{
 		subscribe(accountId: string, uri: string): Promise<void>;
@@ -183,8 +206,33 @@ function refusal(message: string): CallToolResult {
 const UNCONFIRMED =
 	"relay operation could not be confirmed; retry or inspect its state";
 
-/** Run a tool for a caller holding `scope`; a refusal is a tool error, not a thrown one. */
+const BUSY =
+	"too many calls in progress for this account; retry when one has finished";
+
+/**
+ * Run one tool or resource read for a caller holding `scope`, inside the
+ * account's share of what may run at once. However many calls one request or
+ * one account sends, only that many touch the store together.
+ */
+async function forCaller<Answer>(
+	services: RelayMcpServices,
+	scope: string,
+	caller: Caller,
+	run: (caller: Caller) => Promise<Answer>,
+): Promise<Answer> {
+	if (!caller.scopes.includes(scope))
+		throw new ControlError(403, `account scope required: ${scope}`);
+	if (!services.beginCall(caller.accountId)) throw new ControlError(429, BUSY);
+	try {
+		return await run(caller);
+	} finally {
+		services.endCall(caller.accountId);
+	}
+}
+
+/** Run a tool; a refusal is a tool error, not a thrown one. */
 async function asTool(
+	services: RelayMcpServices,
 	name: string,
 	scope: string,
 	extra: Extra,
@@ -193,9 +241,7 @@ async function asTool(
 	let caller: Caller | undefined;
 	try {
 		caller = callerOf(extra);
-		if (!caller.scopes.includes(scope))
-			throw new ControlError(403, `account scope required: ${scope}`);
-		return await run(caller);
+		return await forCaller(services, scope, caller, run);
 	} catch (error) {
 		if (error instanceof ControlError) return refusal(error.message);
 		// The caller went away; there is nobody to answer.
@@ -211,14 +257,12 @@ async function asTool(
 
 /** Read a resource for a caller holding the read scope. */
 async function asResource(
+	services: RelayMcpServices,
 	extra: Extra,
 	read: (caller: Caller) => Promise<ReadResourceResult>,
 ): Promise<ReadResourceResult> {
 	try {
-		const caller = callerOf(extra);
-		if (!caller.scopes.includes(READ_SCOPE))
-			throw new ControlError(403, `account scope required: ${READ_SCOPE}`);
-		return await read(caller);
+		return await forCaller(services, READ_SCOPE, callerOf(extra), read);
 	} catch (error) {
 		if (error instanceof ControlError)
 			throw new McpError(
@@ -254,48 +298,102 @@ function matches(event: RelayMcpEvent, filter: EventFilter): boolean {
 	);
 }
 
+/** What one read of the account's journal found, and where the next one starts. */
+type EventRead = Readonly<{
+	events: RelayMcpEvent[];
+	/** The journal position to read after next. */
+	position: number;
+	/** The read stopped before the end of the journal. */
+	more: boolean;
+	/** A read of the newest events left older ones unread. */
+	truncated: boolean;
+}>;
+
+/** The position a caller's cursor stands for; a cursor not issued to it is refused. */
+function positionOf(codec: CursorCodec, cursor: string): number {
+	const position = codec.decode(cursor);
+	if (position === undefined)
+		throw new ControlError(
+			400,
+			`invalid cursor: pass the cursor of an earlier result, or "${CURSOR_START}" to read from the start`,
+		);
+	return position;
+}
+
 /**
  * One read of the account's journal: the matching events after `after`, or
- * the newest matching ones without it, and the position to read from next.
+ * the newest matching ones without it.
  */
 async function readEvents(
-	store: RelayMcpStore,
+	services: RelayMcpServices,
 	accountId: string,
 	after: number | undefined,
 	filter: EventFilter,
 	limit: number,
-): Promise<{ events: RelayMcpEvent[]; cursor: number }> {
-	if (after === undefined) {
-		const page = await store.eventsSince({ accountId, limit: EVENT_WINDOW });
-		return {
-			events: page.events
-				.map(eventView)
-				.filter((event) => matches(event, filter))
-				.slice(-limit),
-			cursor: page.cursor,
-		};
-	}
-	const page = await store.eventsSince({
-		accountId,
-		after,
-		limit: EVENT_WINDOW,
-	});
+): Promise<EventRead> {
+	const codec = services.cursors(accountId);
+	const page = await services.store.eventsSince(
+		after === undefined
+			? { accountId, limit: EVENT_WINDOW }
+			: { accountId, after, limit: EVENT_WINDOW },
+	);
 	const found = page.events
-		.map(eventView)
-		.filter((event) => matches(event, filter));
+		.map((entry: SequencedCiEvent) => ({
+			position: entry.seq,
+			view: eventView(entry, codec),
+		}))
+		.filter((entry) => matches(entry.view, filter));
+	if (after === undefined)
+		return {
+			events: found.slice(-limit).map((entry) => entry.view),
+			position: page.cursor,
+			more: false,
+			// Older events went unread when the store stopped looking back, or
+			// when a full window held fewer matches than were asked for.
+			truncated:
+				page.truncated ||
+				(page.events.length === EVENT_WINDOW && found.length < limit),
+		};
 	// More matched than fit: resume after the last one returned, not after
 	// the ones left behind.
 	const last = found.length > limit ? found[limit - 1] : undefined;
 	return {
-		events: found.slice(0, limit),
-		cursor: last ? Number(last.cursor) : page.cursor,
+		events: found.slice(0, limit).map((entry) => entry.view),
+		position: last ? last.position : page.cursor,
+		more: last !== undefined || page.more,
+		truncated: false,
 	};
+}
+
+/** A read as the caller receives it: the views, and the cursor to continue from. */
+function eventsResult(
+	services: RelayMcpServices,
+	accountId: string,
+	read: EventRead,
+	timedOut: boolean,
+): CallToolResult {
+	return result(
+		RelayMcpEventsSchema,
+		create(RelayMcpEventsSchema, {
+			events: read.events,
+			cursor: services.cursors(accountId).encode(read.position),
+			timedOut,
+			more: read.more,
+			truncated: read.truncated,
+		}),
+	);
 }
 
 /**
  * Hold the request until the account's journal has a matching event after
  * the cursor, or the timeout passes. The journal is polled here, once, so
  * that no client has to poll the relay.
+ *
+ * Every pass begins by handing the event loop back, so a store that answers
+ * in the same turn cannot keep webhooks, health checks, the worker or this
+ * caller's own cancellation waiting while the wait catches up. A pass reads
+ * one bounded span of the journal, and a call that is still behind after
+ * `WAIT_CATCH_UP_READS` of them returns the cursor with `more` set.
  */
 async function waitForEvents(
 	services: RelayMcpServices,
@@ -307,43 +405,36 @@ async function waitForEvents(
 		limit: number;
 	}>,
 ): Promise<CallToolResult> {
-	const { store, now, sleep, pollMs } = services;
+	const { store, now, sleep, pollMs, pause } = services;
+	const { accountId, signal } = caller;
 	const deadline = now() + wait.timeoutMs;
 	// Without a cursor the wait starts now: only what happens next counts.
-	let after =
-		wait.after ??
-		(await store.eventsSince({ accountId: caller.accountId, limit: 1 })).cursor;
+	let after = wait.after ?? (await store.journalHead());
+	let behind = 0;
 	for (;;) {
-		caller.signal.throwIfAborted();
+		await pause();
+		signal.throwIfAborted();
 		const read = await readEvents(
-			store,
-			caller.accountId,
+			services,
+			accountId,
 			after,
 			wait.filter,
 			wait.limit,
 		);
 		if (read.events.length > 0)
-			return result(
-				RelayMcpEventsSchema,
-				create(RelayMcpEventsSchema, {
-					events: read.events,
-					cursor: String(read.cursor),
-				}),
-			);
-		const moved = read.cursor > after;
-		after = read.cursor;
+			return eventsResult(services, accountId, read, false);
+		after = read.position;
 		const remaining = deadline - now();
-		if (remaining <= 0)
-			return result(
-				RelayMcpEventsSchema,
-				create(RelayMcpEventsSchema, {
-					cursor: String(after),
-					timedOut: true,
-				}),
-			);
-		// The journal moved but nothing matched: there may be more to read at
-		// once. Otherwise wait for the next look.
-		if (!moved) await sleep(Math.min(pollMs, remaining), caller.signal);
+		if (read.more) {
+			// Not at the end of the journal yet, so not a timeout either: read
+			// on, within this call's share of work and time.
+			behind += 1;
+			if (behind >= WAIT_CATCH_UP_READS || remaining <= 0)
+				return eventsResult(services, accountId, read, false);
+			continue;
+		}
+		if (remaining <= 0) return eventsResult(services, accountId, read, true);
+		await sleep(Math.min(pollMs, remaining), signal);
 	}
 }
 
@@ -356,29 +447,31 @@ function newestFirst(
 }
 
 async function leaseDetail(
-	store: RelayMcpStore,
+	services: RelayMcpServices,
 	accountId: string,
 	leaseId: string,
 ) {
-	const lease = await accountLease(store, accountId, leaseId);
-	const recent = await readEvents(
-		store,
+	const lease = await accountLease(services.store, accountId, leaseId);
+	const codec = services.cursors(accountId);
+	// By the lease's id, so they are found whatever else the journal holds.
+	const events = await services.store.leaseEvents({
 		accountId,
-		undefined,
-		{ leaseId: lease.id },
-		LEASE_EVENTS,
-	);
+		leaseId: lease.id,
+		limit: LEASE_EVENTS,
+	});
 	return create(RelayMcpLeaseDetailSchema, {
 		lease: leaseView(lease),
-		events: recent.events,
+		events: events.map((entry) => eventView(entry, codec)),
 	});
 }
 
+// The pattern admits what a cursor can look like; whether it is one this
+// relay issued to this account is decided when it is deciphered.
 const Cursor = z
 	.string()
-	.regex(/^(0|[1-9]\d{0,15})$/)
+	.regex(/^(0|[A-Za-z0-9_-]{22})$/)
 	.describe(
-		"A position in the account's event journal: the `cursor` of an earlier result.",
+		`Where to read from: the \`cursor\` of an earlier result, or "${CURSOR_START}" for the start of the account's journal. Opaque; only this account's cursors work.`,
 	);
 const LeaseId = z.string().regex(LEASE_ID).describe("The lease's id (a UUID).");
 const Repository = z
@@ -446,7 +539,7 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 			annotations: readOnly,
 		},
 		(input, extra) =>
-			asTool("list_leases", READ_SCOPE, extra, async (caller) => {
+			asTool(services, "list_leases", READ_SCOPE, extra, async (caller) => {
 				const limit = input.limit ?? 50;
 				const repository = input.repository?.toLowerCase();
 				const found = (await store.accountLeases(caller.accountId))
@@ -480,10 +573,10 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 			annotations: readOnly,
 		},
 		(input, extra) =>
-			asTool("get_lease", READ_SCOPE, extra, async (caller) =>
+			asTool(services, "get_lease", READ_SCOPE, extra, async (caller) =>
 				result(
 					RelayMcpLeaseDetailSchema,
-					await leaseDetail(store, caller.accountId, input.leaseId),
+					await leaseDetail(services, caller.accountId, input.leaseId),
 				),
 			),
 	);
@@ -501,25 +594,31 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 			annotations: readOnly,
 		},
 		(input, extra) =>
-			asTool("list_pending_jobs", READ_SCOPE, extra, async (caller) => {
-				const limit = input.limit ?? 50;
-				const repository = input.repository?.toLowerCase();
-				const connections =
-					(await configurationState(store)).configuration?.connections ?? [];
-				const found = (await store.pendingJobs()).filter(
-					(job) =>
-						accountOwnsJob(connections, caller.accountId, job) &&
-						(repository === undefined ||
-							job.repository.toLowerCase() === repository),
-				);
-				return result(
-					RelayMcpJobsSchema,
-					create(RelayMcpJobsSchema, {
-						jobs: found.slice(0, limit).map(jobView),
-						truncated: found.length > limit,
-					}),
-				);
-			}),
+			asTool(
+				services,
+				"list_pending_jobs",
+				READ_SCOPE,
+				extra,
+				async (caller) => {
+					const limit = input.limit ?? 50;
+					const repository = input.repository?.toLowerCase();
+					const connections =
+						(await configurationState(store)).configuration?.connections ?? [];
+					const found = (await store.pendingJobs()).filter(
+						(job) =>
+							accountOwnsJob(connections, caller.accountId, job) &&
+							(repository === undefined ||
+								job.repository.toLowerCase() === repository),
+					);
+					return result(
+						RelayMcpJobsSchema,
+						create(RelayMcpJobsSchema, {
+							jobs: found.slice(0, limit).map(jobView),
+							truncated: found.length > limit,
+						}),
+					);
+				},
+			),
 	);
 
 	server.registerTool(
@@ -527,7 +626,7 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 		{
 			title: "List journal events",
 			description:
-				"The account's events after a cursor, oldest first; without a cursor, its newest ones. The returned cursor is where to read from next.",
+				"The account's events after a cursor, oldest first; without a cursor, its newest ones. The returned cursor is where to read from next. `more: true` means the read stopped before the end of the journal (read again at once, even if `events` is empty); `truncated: true` means a read of the newest events left older ones unread.",
 			inputSchema: {
 				cursor: Cursor.optional(),
 				leaseId: LeaseId.optional(),
@@ -538,22 +637,22 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 			annotations: readOnly,
 		},
 		(input, extra) =>
-			asTool("list_events", READ_SCOPE, extra, async (caller) => {
-				const read = await readEvents(
-					store,
+			asTool(services, "list_events", READ_SCOPE, extra, async (caller) =>
+				eventsResult(
+					services,
 					caller.accountId,
-					input.cursor === undefined ? undefined : Number(input.cursor),
-					input,
-					input.limit ?? 50,
-				);
-				return result(
-					RelayMcpEventsSchema,
-					create(RelayMcpEventsSchema, {
-						events: read.events,
-						cursor: String(read.cursor),
-					}),
-				);
-			}),
+					await readEvents(
+						services,
+						caller.accountId,
+						input.cursor === undefined
+							? undefined
+							: positionOf(services.cursors(caller.accountId), input.cursor),
+						input,
+						input.limit ?? 50,
+					),
+					false,
+				),
+			),
 	);
 
 	server.registerTool(
@@ -561,7 +660,7 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 		{
 			title: "Wait for the next events",
 			description:
-				"Blocks until the account has an event after the cursor that matches the filters, or the timeout passes (timedOut: true). Call it again with the returned cursor to keep following; no polling or reminder is needed. Without a cursor it waits for what happens next.",
+				"Blocks until the account has an event after the cursor that matches the filters, or the timeout passes (timedOut: true). Call it again with the returned cursor to keep following; no polling or reminder is needed. Without a cursor it waits for what happens next. An empty result with `more: true` is neither: the journal is longer than one call reads, so call again at once.",
 			inputSchema: {
 				cursor: Cursor.optional(),
 				timeoutSeconds: z
@@ -580,16 +679,19 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 			annotations: readOnly,
 		},
 		(input, extra) =>
-			asTool("wait_for_events", READ_SCOPE, extra, async (caller) => {
-				if (!services.beginWait())
+			asTool(services, "wait_for_events", READ_SCOPE, extra, async (caller) => {
+				const after =
+					input.cursor === undefined
+						? undefined
+						: positionOf(services.cursors(caller.accountId), input.cursor);
+				if (!services.beginWait(caller.accountId))
 					throw new ControlError(
 						429,
 						"too many callers are waiting on this relay; retry shortly",
 					);
 				try {
 					return await waitForEvents(services, caller, {
-						after:
-							input.cursor === undefined ? undefined : Number(input.cursor),
+						after,
 						timeoutMs: Math.min(
 							services.waitMaxMs,
 							input.timeoutSeconds === undefined
@@ -600,7 +702,7 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 						limit: input.limit ?? 50,
 					});
 				} finally {
-					services.endWait();
+					services.endWait(caller.accountId);
 				}
 			}),
 	);
@@ -610,11 +712,11 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 		{
 			title: "Relay status",
 			description:
-				"Whether the relay is ready to admit work, its engines, whether this host pushes resource updates, and how long wait_for_events may block.",
+				"Whether the relay is ready to admit work, its engines, whether this host pushes resource updates, how long wait_for_events may block, and how many calls and waits one account may have in progress.",
 			annotations: readOnly,
 		},
 		(extra) =>
-			asTool("get_relay_status", READ_SCOPE, extra, async () => {
+			asTool(services, "get_relay_status", READ_SCOPE, extra, async () => {
 				const ready = await services.ready().catch(() => false);
 				return result(
 					RelayMcpStatusSchema,
@@ -624,6 +726,9 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 						subscriptions: services.subscriptions !== undefined,
 						waitDefaultSeconds: Math.round(services.waitDefaultMs / 1000),
 						waitMaxSeconds: Math.round(services.waitMaxMs / 1000),
+						accountCalls: services.accountCalls,
+						accountWaits: services.accountWaits,
+						requestMessages: services.requestMessages,
 					}),
 				);
 			}),
@@ -651,7 +756,7 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 			},
 		},
 		(input, extra) =>
-			asTool("reconcile_lease", WRITE_SCOPE, extra, async (caller) =>
+			asTool(services, "reconcile_lease", WRITE_SCOPE, extra, async (caller) =>
 				result(
 					RelayMcpLeaseSchema,
 					leaseView(
@@ -676,15 +781,20 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 			annotations: readOnly,
 		},
 		(extra) =>
-			asTool("list_quarantined_webhooks", WRITE_SCOPE, extra, async (caller) =>
-				result(
-					RelayMcpQuarantineSchema,
-					create(RelayMcpQuarantineSchema, {
-						deliveries: (
-							await quarantinedDeliveries(store, caller.accountId)
-						).deliveries.map(quarantinedDeliveryView),
-					}),
-				),
+			asTool(
+				services,
+				"list_quarantined_webhooks",
+				WRITE_SCOPE,
+				extra,
+				async (caller) =>
+					result(
+						RelayMcpQuarantineSchema,
+						create(RelayMcpQuarantineSchema, {
+							deliveries: (
+								await quarantinedDeliveries(store, caller.accountId)
+							).deliveries.map(quarantinedDeliveryView),
+						}),
+					),
 			),
 	);
 
@@ -709,6 +819,7 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 		},
 		(input, extra) =>
 			asTool(
+				services,
 				"retry_quarantined_webhook",
 				WRITE_SCOPE,
 				extra,
@@ -741,7 +852,7 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 			mimeType: "application/json",
 		},
 		(uri, extra) =>
-			asResource(extra, async (caller) => {
+			asResource(services, extra, async (caller) => {
 				const found = (await store.accountLeases(caller.accountId)).sort(
 					newestFirst,
 				);
@@ -765,14 +876,14 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 			mimeType: "application/json",
 		},
 		(uri, variables, extra) =>
-			asResource(extra, async (caller) => {
+			asResource(services, extra, async (caller) => {
 				const leaseId = [variables.leaseId].flat()[0] ?? "";
 				if (!LEASE_ID.test(leaseId))
 					throw new ControlError(404, "lease not found");
 				return resource(
 					uri,
 					RelayMcpLeaseDetailSchema,
-					await leaseDetail(store, caller.accountId, leaseId),
+					await leaseDetail(services, caller.accountId, leaseId),
 				);
 			}),
 	);
@@ -787,9 +898,9 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 			mimeType: "application/json",
 		},
 		(uri, extra) =>
-			asResource(extra, async (caller) => {
+			asResource(services, extra, async (caller) => {
 				const read = await readEvents(
-					store,
+					services,
 					caller.accountId,
 					undefined,
 					{},
@@ -800,7 +911,8 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 					RelayMcpEventsSchema,
 					create(RelayMcpEventsSchema, {
 						events: read.events,
-						cursor: String(read.cursor),
+						cursor: services.cursors(caller.accountId).encode(read.position),
+						truncated: read.truncated,
 					}),
 				);
 			}),

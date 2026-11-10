@@ -44,7 +44,8 @@ message RelayMcpJob {
   string memory_class = 8;
   string queue_deadline_at = 9;
 }
-// One journal event. `cursor` is its position: pass it back to read what follows.
+// One journal event. `cursor` stands for its position: pass it back to read
+// what follows. It is opaque, and issued for the calling account only.
 message RelayMcpEvent {
   string cursor = 1;
   string type = 2;
@@ -72,11 +73,17 @@ message RelayMcpJobs {
   bool truncated = 2;
 }
 // Events after a cursor. `cursor` is where to read from next, also when no
-// event matched; `timed_out` says a wait ended without one.
+// event matched; `timed_out` says a wait ended, caught up, without one.
 message RelayMcpEvents {
   repeated RelayMcpEvent events = 1;
   string cursor = 2;
   bool timed_out = 3;
+  // The read stopped before the end of the journal: an empty `events` is not
+  // "caught up". Read again from `cursor` at once.
+  bool more = 4;
+  // A read of the newest events did not look back to the start of the journal
+  // and did not fill the page: older events may exist.
+  bool truncated = 5;
 }
 message RelayMcpEngine {
   string id = 1;
@@ -89,6 +96,11 @@ message RelayMcpStatus {
   bool subscriptions = 3;
   uint32 wait_default_seconds = 4;
   uint32 wait_max_seconds = 5;
+  // What one account may have in progress at once on this host.
+  uint32 account_calls = 6;
+  uint32 account_waits = 7;
+  // The most JSON-RPC messages one HTTP request may carry.
+  uint32 request_messages = 8;
 }
 // A webhook delivery set aside after repeated failures. Never its body.
 message RelayMcpQuarantinedDelivery {

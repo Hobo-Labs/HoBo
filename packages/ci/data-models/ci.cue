@@ -216,7 +216,7 @@ package ci
 #CiRoutingRefusal: {code: string & !="", reason: string & !="", offerId: string}
 #Snapshot: {leases: [...#Lease], events: [...#CiEvent]}
 #SequencedCiEvent: {seq: int & >0, event: #CiEvent}
-#CiEventPage: {events?: [...#SequencedCiEvent], cursor?: int & >=0}
+#CiEventPage: {events?: [...#SequencedCiEvent], cursor?: int & >=0, more?: bool, truncated?: bool}
 
 #Ci: #SandboxMeasuredUsage | #SandboxAllowance | #SandboxPricing | #DesiredCiPolicy | #BudgetSignal | #BudgetRoutingPolicy | #Offer | #Account | #Connection | #Configuration | #ConfigurationState | #ControlRecord | #AccountState | #RepositorySetupRequest | #ReconcileRequest | #ControlCredential | #ControlCredentials | #Job | #Lease | #CiEvent | #Snapshot | #SequencedCiEvent | #CiEventPage | #PipelineStep | #Pipeline | #PipelineStepResult | #PipelineArtifact | #PipelineResult
 

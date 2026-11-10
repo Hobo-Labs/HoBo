@@ -311,12 +311,19 @@ export async function createVercelApplication(options: {
 		// A function instance does not outlive its request: MCP runs without
 		// sessions here, and `wait_for_events` is the change feed.
 		const mcp = createRelayMcp({
-			store,
+			// An observer's reads: they never take the partition lock, so an
+			// agent's questions are not queued in front of webhook admission.
+			store: {
+				...store.observer(),
+				retryQuarantinedWebhook: (accountId, revision, deliveryId) =>
+					store.retryQuarantinedWebhook(accountId, revision, deliveryId),
+			},
 			relay,
 			authenticate,
 			ready: () => execution.ready(runtime.ready, () => health.ready()),
 			publicOrigin: url.origin,
 			sessions: "none",
+			cursorSecret: secret,
 		});
 		const handler = createRelayHandler({
 			application: withWakeup(

@@ -247,10 +247,16 @@ message SequencedCiEvent {
   CiEvent event = 2;
 }
 // One cursor read of an account's events, oldest first. `cursor` is the
-// position to read after next; it advances past rows that did not match.
+// position to read after next; it advances past positions that held nothing
+// of the account's.
 message CiEventPage {
   repeated SequencedCiEvent events = 1;
   double cursor = 2;
+  // The read stopped before the end of the journal: read again from `cursor`.
+  bool more = 3;
+  // A read of the newest events did not look back to the start of the journal
+  // and did not fill the page: older events may exist.
+  bool truncated = 4;
 }
 
 

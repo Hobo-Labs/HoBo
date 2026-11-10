@@ -27,8 +27,9 @@ import {
 	type PipelineResult,
 	SandboxAllowanceSchema,
 	SandboxPricingSchema,
+	type SequencedCiEvent,
 } from "./_generated/ci_pb.js";
-import type { EventCursor } from "./event-log.js";
+import type { EventCursor, LeaseEventsQuery } from "./event-log.js";
 import {
 	ciBudgetIdentity,
 	ciBudgetPolicy,
@@ -317,9 +318,17 @@ export class SqliteCiStore {
 	events(): Promise<CiEvent[]> {
 		return this.read(() => this.leases.events());
 	}
-	/** An account's events after a log position, or its newest ones. */
+	/** The journal's newest position: where "from now on" starts. */
+	journalHead(): Promise<number> {
+		return this.read(() => this.leases.journalHead());
+	}
+	/** An account's events after a journal position, or its newest ones. */
 	eventsSince(cursor: EventCursor): Promise<CiEventPage> {
 		return this.read(() => this.leases.eventsSince(cursor));
+	}
+	/** The newest events of one of an account's leases, in journal order. */
+	leaseEvents(query: LeaseEventsQuery): Promise<SequencedCiEvent[]> {
+		return this.read(() => this.leases.leaseEvents(query));
 	}
 	/** Latest dispatch/claim intent for each lease, without scanning history. */
 	latestLeaseIntents(ids: readonly string[]): Promise<CiEvent[]> {

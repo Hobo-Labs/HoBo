@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { z } from "zod";
 import type { ControlAuthenticator } from "./control-auth.js";
 import { reportRelayFailure } from "./failure-log.js";
 import type { HostedRelay } from "./hosted-relay.js";
+import { createCursorCodecs } from "./relay-mcp-cursor.js";
 import {
 	createRelayMcpServer,
 	RELAY_MCP_EVENTS_URI,
@@ -33,21 +35,40 @@ export type RelayMcpOptions = Readonly<{
 	/** The relay's public origin: the only `Origin` a browser may send. */
 	publicOrigin: string;
 	sessions: RelayMcpSessions;
+	/**
+	 * A secret every instance of this host shares. The cursors callers hold are
+	 * journal positions enciphered under per-account keys derived from it; it
+	 * is never used as a key itself. Changing it invalidates issued cursors.
+	 */
+	cursorSecret: string;
 	engineId?: string;
 	/** Sessions held at once, in all and for one account. */
 	maxSessions?: number;
 	maxSessionsPerAccount?: number;
 	/** A session with no open stream is closed after this long without a request. */
 	sessionIdleMs?: number;
-	/** How long `wait_for_events` blocks when the caller names no timeout, and at most. */
+	/** A session's event stream is closed after this long; its client opens another. */
+	streamMaxMs?: number;
+	/**
+	 * How long `wait_for_events` blocks when the caller names no timeout, and
+	 * at most. The host names the ceiling: it must fit inside whatever limits
+	 * how long that host may hold one request.
+	 */
 	waitDefaultMs?: number;
 	waitMaxMs?: number;
-	/** `wait_for_events` calls blocked at once. */
+	/** `wait_for_events` calls blocked at once, in all and for one account. */
 	maxWaits?: number;
+	maxWaitsPerAccount?: number;
+	/** Tools and resource reads one account may have in progress at once. */
+	maxCallsPerAccount?: number;
+	/** JSON-RPC messages one HTTP request may carry. */
+	maxRequestMessages?: number;
 	/** How often a wait or the subscription pump reads the journal. */
 	pollMs?: number;
 	now?: () => number;
 	sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+	/** Hands the event loop back; resolves on a later turn. */
+	pause?: () => Promise<void>;
 }>;
 
 /** The MCP endpoint a host mounts, and the shutdown that ends its sessions. */
@@ -60,6 +81,9 @@ export type RelayMcp = Readonly<{
 const MAX_BODY = 1024 * 1024;
 const MAX_SUBSCRIPTIONS = 100;
 const PUMP_PAGE = 500;
+/** The longest the subscription pump waits between tries while the store fails. */
+const PUMP_BACKOFF_MAX_MS = 60_000;
+const Batch = z.array(z.unknown());
 
 /** Whether a request path is the MCP endpoint, at the root or under an engine mount. */
 export function isRelayMcpPath(pathname: string): boolean {
@@ -121,6 +145,19 @@ async function boundedBody(request: Request) {
 	return body;
 }
 
+/** How many JSON-RPC messages a body carries; one unless it is a batch. */
+function messageCount(body: Uint8Array): number {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(Buffer.from(body).toString("utf8"));
+	} catch {
+		// Not JSON: the transport answers that.
+		return 1;
+	}
+	const batch = Batch.safeParse(parsed);
+	return batch.success ? batch.data.length : 1;
+}
+
 function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
 	return new Promise((resolve) => {
 		if (signal.aborted) {
@@ -135,6 +172,40 @@ function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
 		const timer = setTimeout(done, ms);
 		signal.addEventListener("abort", done, { once: true });
 	});
+}
+
+/** A real turn of the event loop: timers, sockets and signals run before it resolves. */
+function nextTurn(): Promise<void> {
+	return new Promise((resolve) => {
+		setImmediate(resolve);
+	});
+}
+
+/**
+ * What each account has in progress, held to its own share and to a ceiling
+ * for everyone. An account that has taken its share is refused while the
+ * others still have theirs.
+ */
+function shares(perAccount: number, overall: number) {
+	const held = new Map<string, number>();
+	let total = 0;
+	return {
+		take(accountId: string): boolean {
+			const mine = held.get(accountId) ?? 0;
+			if (mine >= perAccount || total >= overall) return false;
+			held.set(accountId, mine + 1);
+			total += 1;
+			return true;
+		},
+		release(accountId: string): void {
+			const mine = held.get(accountId) ?? 0;
+			if (mine === 0) return;
+			if (mine === 1) held.delete(accountId);
+			else held.set(accountId, mine - 1);
+			total -= 1;
+		},
+		held: (accountId: string): number => held.get(accountId) ?? 0,
+	};
 }
 
 function bounded(value: number | undefined, fallback: number, name: string) {
@@ -154,12 +225,19 @@ type Session = {
 	lastSeenAt: number;
 	/** Event streams the client holds open; a listening session is not idle. */
 	streams: number;
+	/** When the session's own event stream (its GET) was opened, while it is open. */
+	listeningSince: number | undefined;
 };
 
-/** Pass a stream through, and say once when the client or the server ends it. */
+/**
+ * Pass a stream through, and say once when the client or the server ends it.
+ * `afterChunk` runs as each chunk goes by: a stream that outlives its time is
+ * noticed at its next keep-alive at the latest.
+ */
 function tracked(
 	body: ReadableStream<Uint8Array>,
 	ended: () => void,
+	afterChunk: () => void,
 ): ReadableStream<Uint8Array> {
 	const reader = body.getReader();
 	let open = true;
@@ -173,7 +251,10 @@ function tracked(
 			if (chunk.done) {
 				end();
 				controller.close();
-			} else controller.enqueue(chunk.value);
+				return;
+			}
+			controller.enqueue(chunk.value);
+			afterChunk();
 		},
 		async cancel(reason) {
 			end();
@@ -193,7 +274,7 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 	const maxSessions = bounded(options.maxSessions, 64, "session limit");
 	const maxSessionsPerAccount = bounded(
 		options.maxSessionsPerAccount,
-		16,
+		8,
 		"account session limit",
 	);
 	const sessionIdleMs = bounded(
@@ -201,21 +282,46 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 		15 * 60_000,
 		"session idle time",
 	);
-	const maxWaits = bounded(options.maxWaits, 32, "wait limit");
+	const streamMaxMs = bounded(
+		options.streamMaxMs,
+		30 * 60_000,
+		"stream lifetime",
+	);
 	const waitMaxMs = bounded(options.waitMaxMs, 50_000, "wait ceiling");
 	const waitDefaultMs = Math.min(
 		waitMaxMs,
 		bounded(options.waitDefaultMs, 25_000, "wait default"),
 	);
+	const maxWaitsPerAccount = bounded(
+		options.maxWaitsPerAccount,
+		4,
+		"account wait limit",
+	);
+	const maxCallsPerAccount = bounded(
+		options.maxCallsPerAccount,
+		8,
+		"account call limit",
+	);
+	const maxRequestMessages = bounded(
+		options.maxRequestMessages,
+		8,
+		"request message limit",
+	);
+	const waits = shares(
+		maxWaitsPerAccount,
+		bounded(options.maxWaits, 32, "wait limit"),
+	);
+	const calls = shares(maxCallsPerAccount, Number.POSITIVE_INFINITY);
 	const pollMs = bounded(options.pollMs, 1_000, "poll interval");
 	const now = options.now ?? Date.now;
 	const sleep = options.sleep ?? defaultSleep;
 	const closing = new AbortController();
 	const sessions = new Map<string, Session>();
+	/** Sessions each account is in the middle of opening. */
+	const opening = shares(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
+	let openingTotal = 0;
 	/** Where each subscribed account's journal has been read up to. */
 	const cursors = new Map<string, number>();
-	let opening = 0;
-	let waits = 0;
 	let pump: Promise<void> | undefined;
 
 	const shared = {
@@ -226,16 +332,17 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 		waitDefaultMs,
 		waitMaxMs,
 		pollMs,
-		beginWait: () => {
-			if (waits >= maxWaits) return false;
-			waits++;
-			return true;
-		},
-		endWait: () => {
-			waits--;
-		},
+		cursors: createCursorCodecs(options.cursorSecret),
+		beginCall: calls.take,
+		endCall: calls.release,
+		beginWait: waits.take,
+		endWait: waits.release,
+		accountCalls: maxCallsPerAccount,
+		accountWaits: maxWaitsPerAccount,
+		requestMessages: maxRequestMessages,
 		now,
 		sleep,
+		pause: options.pause ?? nextTurn,
 	} satisfies RelayMcpServices;
 
 	function subscribers(accountId: string): Session[] {
@@ -245,8 +352,13 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 		);
 	}
 
-	/** Read each subscribed account's journal once and tell its sessions what changed. */
-	async function pumpOnce(): Promise<void> {
+	/**
+	 * Read each subscribed account's journal once and tell its sessions what
+	 * changed. False when the store failed: the pass stops there, since the
+	 * next account would fail the same way, and nothing is lost because every
+	 * cursor stays where it was.
+	 */
+	async function pumpOnce(): Promise<boolean> {
 		for (const [accountId, after] of cursors) {
 			const listening = subscribers(accountId);
 			if (listening.length === 0) {
@@ -275,25 +387,33 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 								.sendResourceUpdated({ uri })
 								.catch(() => undefined);
 			} catch (error) {
-				// The next pass reads from the same position; nothing is lost.
+				// One line however many accounts are subscribed; the failure log
+				// itself writes at most one per window.
 				reportRelayFailure(
 					"hobo_ci_mcp_pump_failed",
 					{},
 					error instanceof Error ? error : undefined,
 				);
+				return false;
 			}
 		}
+		return true;
 	}
 
 	/** One pump for the process, and only while somebody is subscribed. */
 	function ensurePump(): void {
 		if (pump || closing.signal.aborted) return;
 		pump = (async () => {
+			let failures = 0;
 			while (!closing.signal.aborted && cursors.size > 0) {
-				await closeIdle();
-				await pumpOnce();
+				await sweep();
+				failures = (await pumpOnce()) ? 0 : failures + 1;
 				if (cursors.size === 0) break;
-				await sleep(pollMs, closing.signal);
+				// A store that is down is asked again less and less often.
+				await sleep(
+					Math.min(pollMs * 2 ** failures, PUMP_BACKOFF_MAX_MS),
+					closing.signal,
+				);
 			}
 		})()
 			.catch((error) => {
@@ -317,11 +437,55 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 		await session.server.close().catch(() => undefined);
 	}
 
-	async function closeIdle(): Promise<void> {
-		const cutoff = now() - sessionIdleMs;
-		for (const session of sessions.values())
-			if (session.streams === 0 && session.lastSeenAt <= cutoff)
+	/**
+	 * End what has outstayed its time: an event stream past its lifetime is
+	 * closed for its client to open another, and a session that holds no
+	 * stream and has made no request for the idle time is closed.
+	 */
+	async function sweep(): Promise<void> {
+		const at = now();
+		for (const session of sessions.values()) {
+			if (
+				session.listeningSince !== undefined &&
+				at - session.listeningSince >= streamMaxMs
+			)
+				session.transport.closeStandaloneSSEStream();
+			if (session.streams === 0 && session.lastSeenAt <= at - sessionIdleMs)
 				await endSession(session);
+		}
+	}
+
+	/** How many sessions an account holds or is opening. */
+	function sessionsOf(accountId: string): number {
+		let held = opening.held(accountId);
+		for (const session of sessions.values())
+			if (session.accountId === accountId) held += 1;
+		return held;
+	}
+
+	/**
+	 * With every place taken, free one for an account that holds less than
+	 * its fair share: the least recently used session of whichever account
+	 * holds the most, when that is at least two more than the caller held
+	 * before this request. No account can keep another out by filling the
+	 * host; the account that loses a session opens it again.
+	 */
+	async function makeRoom(accountId: string): Promise<boolean> {
+		const held = new Map<string, Session[]>();
+		for (const session of sessions.values())
+			held.set(session.accountId, [
+				...(held.get(session.accountId) ?? []),
+				session,
+			]);
+		const largest = [...held.values()].sort((a, b) => b.length - a.length)[0];
+		// `sessionsOf` already counts the session this request is opening.
+		if (!largest || largest.length <= sessionsOf(accountId)) return false;
+		const [victim] = largest.sort(
+			(a, b) => a.streams - b.streams || a.lastSeenAt - b.lastSeenAt,
+		);
+		if (!victim) return false;
+		await endSession(victim);
+		return true;
 	}
 
 	async function openSession(accountId: string): Promise<Session> {
@@ -338,11 +502,8 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 					// Follow the journal from now: a subscriber reads the resource
 					// for what came before.
 					if (!cursors.has(account)) {
-						const head = await options.store.eventsSince({
-							accountId: account,
-							limit: 1,
-						});
-						if (!cursors.has(account)) cursors.set(account, head.cursor);
+						const head = await options.store.journalHead();
+						if (!cursors.has(account)) cursors.set(account, head);
 					}
 					subscriptions.add(uri);
 					ensurePump();
@@ -367,6 +528,7 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 			id: undefined,
 			lastSeenAt: now(),
 			streams: 0,
+			listeningSince: undefined,
 		};
 		// However the session ends (a DELETE, a close, the host draining), it
 		// leaves the registry and stops being notified.
@@ -395,11 +557,26 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 		)
 			return response;
 		session.streams++;
+		// The session's own stream is the one a client can hold open for ever.
+		const listening = request.method === "GET";
+		if (listening) session.listeningSince = now();
 		return new Response(
-			tracked(response.body, () => {
-				session.streams--;
-				session.lastSeenAt = now();
-			}),
+			tracked(
+				response.body,
+				() => {
+					session.streams--;
+					session.lastSeenAt = now();
+					if (listening) session.listeningSince = undefined;
+				},
+				() => {
+					if (
+						listening &&
+						session.listeningSince !== undefined &&
+						now() - session.listeningSince >= streamMaxMs
+					)
+						session.transport.closeStandaloneSSEStream();
+				},
+			),
 			{ status: response.status, headers: response.headers },
 		);
 	}
@@ -409,7 +586,7 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 		accountId: string,
 		authInfo: AuthInfo,
 	): Promise<Response> {
-		await closeIdle();
+		await sweep();
 		const id = request.headers.get("mcp-session-id");
 		if (id !== null) {
 			const session = sessions.get(id);
@@ -420,24 +597,30 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 		}
 		if (request.method !== "POST")
 			return refuse(400, "MCP session required; initialize first");
-		if (
-			sessions.size + opening >= maxSessions ||
-			[...sessions.values()].filter(
-				(session) => session.accountId === accountId,
-			).length >= maxSessionsPerAccount
-		)
-			return refuse(429, "too many MCP sessions; close one or retry later", {
+		const crowded = () =>
+			refuse(429, "too many MCP sessions; close one or retry later", {
 				"Retry-After": "30",
 			});
-		opening++;
+		// The account's own share counts the sessions it is still opening.
+		if (sessionsOf(accountId) >= maxSessionsPerAccount) return crowded();
+		// Taken before anything is awaited, so two requests cannot both take
+		// the last place.
+		opening.take(accountId);
+		openingTotal += 1;
 		try {
+			if (
+				sessions.size + openingTotal > maxSessions &&
+				!(await makeRoom(accountId))
+			)
+				return crowded();
 			const session = await openSession(accountId);
 			const response = await inSession(session, request, authInfo);
 			// Only an initialize request opens a session; anything else was refused.
 			if (session.id === undefined) await endSession(session);
 			return response;
 		} finally {
-			opening--;
+			opening.release(accountId);
+			openingTotal -= 1;
 		}
 	}
 
@@ -506,6 +689,13 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 			if (request.method === "POST") {
 				const body = await boundedBody(request).catch(() => undefined);
 				if (!body) return refuse(413, "request body too large");
+				// One request is a bounded amount of work: the transport runs
+				// every message of a batch at once.
+				if (messageCount(body) > maxRequestMessages)
+					return refuse(
+						400,
+						`too many JSON-RPC messages in one request; at most ${maxRequestMessages}`,
+					);
 				init.body = body;
 			}
 			const framed = new Request(request.url, init);

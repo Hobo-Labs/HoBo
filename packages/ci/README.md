@@ -52,30 +52,53 @@ Every lease and job change is appended to the partition's event journal inside
 the transaction that makes it, so the journal is already the record of what
 changed. `eventsSince({accountId, after, limit})` on `LeaseStore`,
 `SqliteCiStore` and `PostgresCiStore` reads it as a change feed: an account's
-events after a log position, oldest first, with the position to read after
+events after a journal position, oldest first, with the position to read after
 next (`CiEventPage`, each event a `SequencedCiEvent`). Without `after` it
-returns the account's newest events. It is a projection over the journal, not
-a second bus: nothing is written to serve it, and no schema changed.
+returns the account's newest events. `leaseEvents({accountId, leaseId, limit})`
+reads one lease's newest events by the lease's id, through the lease index.
+Both are projections over the journal, not a second bus: nothing is written
+to serve them, and no schema changed.
 
 - **Order.** The position is the journal's own key (`seq`). A partition has one
   writer at a time (SQLite) or serializes its transactions at the partition
   lock row (Postgres), so `seq` order is commit order and a cursor never skips
-  an event. The Postgres read takes no partition lock: a caller polling for
-  news cannot stall admission.
-- **Scope.** An event belongs to the account it names. A job event recorded
-  before or apart from a lease (`ci.JobQueued`, `ci.JobExpired`,
-  `ci.JobCompleted`, `ci.JobAssignmentCleared`) names none and belongs to the
-  account whose connection holds the job's repository and installation.
-  Partition events such as `ci.ConfigurationChanged` belong to no account and
-  are never returned. `accountOwnsEvent` and `accountOwnsJob`
-  (`src/event-log.ts`) are that rule for both engines.
-- **Bounds.** A page holds at most 500 events and one read examines at most
-  1000 journal rows. The cursor advances past rows that did not match, so a
-  reader keeps making progress through other accounts' activity.
+  an event. The Postgres read fixes the journal's head first and scans up to
+  it, so a row committed while it runs is left whole for the next read.
+- **Scope.** An event belongs to the account it names, and the query selects
+  by that name. A job event recorded before or apart from a lease
+  (`ci.JobQueued`, `ci.JobExpired`, `ci.JobCompleted`,
+  `ci.JobAssignmentCleared`) is written with the account whose connection
+  holds the job's repository and installation at that moment (`jobAccountId`
+  in `src/event-log.ts`), so it stays that account's however the connection
+  moves later. Job events journalled before this was recorded name no account
+  and are in nobody's feed. Partition events such as `ci.ConfigurationChanged`
+  name no account and are never returned.
+- **Bounds.** A page holds at most 500 events. One read looks along at most
+  10,000 of the partition's journal rows (`EVENT_SCAN_SPAN`), by the journal's
+  own index, so its cost does not depend on how much other accounts, or other
+  partitions sharing the table's sequence, have written. The page
+  says when that cut it short: `more` when a cursor read stopped before the
+  end of the journal (an empty page is then not "caught up"; read again from
+  `cursor`), `truncated` when a read of the newest events did not fill the
+  page and did not look back to the journal's start. Reading an account's
+  events by an index on the account would lift the bound; the events table has
+  none, and the generator refuses an expression index on an existing table, so
+  that is a hand-written migration and has not been done.
+
+**Observers.** `PostgresCiStore.observer()` is the store as something that
+only watches reads it (`CiObserver`): configuration, a lease, an account's
+leases, pending jobs, quarantined deliveries, the journal's head and the two
+event reads, each
+returning the last committed state without the partition lock every other
+method takes. An agent or a dashboard reading through it is never queued in
+front of webhook admission or the worker, nor behind a long mutation.
+`SqliteCiStore` satisfies the same port directly.
 
 The shared store contract (`packages/ci-gh-actions/test/ci-store-contract.test.ts`)
-holds both engines to this behaviour; `test/event-log.test.ts` covers the page
-arithmetic. The relay's MCP server is the consumer: see
+holds both engines to this behaviour, and on Postgres also proves an observer
+reads while the partition lock is held and that a read says when a neighbour's
+volume cut it short; `test/event-log.test.ts` covers the page arithmetic and
+ownership at write time. The relay's MCP server is the consumer: see
 [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#mcp-server).
 
 ## PostgreSQL hosting adapter

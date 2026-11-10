@@ -129,8 +129,15 @@ The relay's [MCP server](../ci-gh-actions/README.md#mcp-server) is mounted at
 request, so each request stands alone and is answered with JSON, `/mcp` is not
 a streaming path, and resource subscriptions are not advertised. Tools and
 resources work as on the Node service, and `wait_for_events` is the change
-feed. A wait holds the function for up to 50 seconds, so the project's
-function duration limit must be above that; `vercel.json` does not set one.
+feed. A wait holds the function for its duration, so its ceiling comes from
+the function's own limit: `vercel.json` gives `api/relay.ts` a `maxDuration`
+of 300 seconds (the limit the queue consumer's two-minute wait for a worker
+pass already assumes), `src/function-limits.ts` holds the same number, and
+`mcpWaitCeilingMs` keeps 30 seconds of it back and never exceeds 50, the most
+an MCP client waits by default. `test/function-limits.test.ts` fails if the
+two numbers differ. The server reads through `PostgresCiStore.observer()`, so
+an agent's reads take no partition lock and are never queued in front of
+webhook admission.
 
 This package provides a Vercel Node Function entrypoint, a Postgres-backed
 relay, a private queue consumer, and an independent scheduler. Signed

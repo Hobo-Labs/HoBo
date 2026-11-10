@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { create } from "@bufbuild/protobuf";
+import { create, type JsonObject } from "@bufbuild/protobuf";
 import {
 	AccountSchema,
 	ConfigurationSchema,
@@ -14,7 +14,7 @@ import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ResourceUpdatedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createControlAuthenticator } from "../src/control-auth.js";
 import { createRelayHandler } from "../src/http-handler.js";
@@ -102,7 +102,7 @@ const Text = z.object({
 	structuredContent: z.record(z.string(), z.unknown()).optional(),
 });
 const EventView = z.object({
-	cursor: z.string(),
+	cursor: z.string().regex(/^[A-Za-z0-9_-]{22}$/),
 	type: z.string(),
 	at: z.string(),
 	leaseId: z.string(),
@@ -110,10 +110,13 @@ const EventView = z.object({
 	repository: z.string(),
 	jobId: z.number(),
 });
+const CURSOR = /^[A-Za-z0-9_-]{22}$/;
 const Events = z.object({
 	events: z.array(EventView),
-	cursor: z.string(),
+	cursor: z.string().regex(CURSOR),
 	timedOut: z.boolean(),
+	more: z.boolean(),
+	truncated: z.boolean(),
 });
 const LeaseView = z.object({
 	id: z.string(),
@@ -130,16 +133,28 @@ const Resource = z.object({
 	),
 });
 
+/** Let the event loop turn a few times: timers, sockets and queued passes run. */
+async function turns(count = 4): Promise<void> {
+	for (let turn = 0; turn < count; turn++)
+		await new Promise((done) => setImmediate(done));
+}
+
 const closers: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	for (const close of closers.splice(0).reverse()) await close();
 });
 
+/** What a test may do to the store the server reads, to hold or fail a read. */
+type StoreHooks = {
+	/** Runs before each journal read, to move the journal under a reader. */
+	beforeJournalRead?: (store: SqliteCiStore) => Promise<void>;
+	/** Runs before each read of an account's leases. */
+	beforeLeaseRead?: () => Promise<void>;
+};
+
 async function setup(
 	overrides: Partial<RelayMcpOptions> & Pick<RelayMcpOptions, "sessions">,
-	/** Runs before each journal read, to move the journal under a reader. */
-	beforeJournalRead: (store: SqliteCiStore) => Promise<void> = async () =>
-		undefined,
+	hooks: StoreHooks = {},
 ) {
 	const store = new SqliteCiStore(":memory:");
 	const configuration = twoAccounts();
@@ -158,17 +173,25 @@ async function setup(
 		store: {
 			configuration: () => store.configuration(),
 			get: (id) => store.get(id),
-			accountLeases: (accountId) => store.accountLeases(accountId),
+			accountLeases: async (accountId) => {
+				await hooks.beforeLeaseRead?.();
+				return store.accountLeases(accountId);
+			},
 			pendingJobs: () => store.pendingJobs(),
 			quarantinedWebhooks: (accountId, expected) =>
 				store.quarantinedWebhooks(accountId, expected),
 			retryQuarantinedWebhook: (accountId, expected, deliveryId) =>
 				store.retryQuarantinedWebhook(accountId, expected, deliveryId),
+			journalHead: async () => {
+				await hooks.beforeJournalRead?.(store);
+				return store.journalHead();
+			},
 			eventsSince: async (cursor) => {
 				journalReads++;
-				await beforeJournalRead(store);
+				await hooks.beforeJournalRead?.(store);
 				return store.eventsSince(cursor);
 			},
+			leaseEvents: (query) => store.leaseEvents(query),
 		},
 		relay: async () => ({
 			reconcile: async (id, hostRunId) => {
@@ -182,6 +205,7 @@ async function setup(
 		),
 		ready: async () => true,
 		publicOrigin: ORIGIN,
+		cursorSecret: SECRET,
 		...overrides,
 	});
 	const handle = createRelayHandler({
@@ -454,7 +478,9 @@ describe("relay MCP tools and resources", () => {
 		expect(next.events).toMatchObject([
 			{ type: "ci.DispatchRequested", leaseId: mine.id, state: "dispatching" },
 		]);
-		expect(Number(next.cursor)).toBeGreaterThan(Number(newest.cursor));
+		// A cursor is a token, not a number: it only says "after here".
+		expect(next.cursor).not.toBe(newest.cursor);
+		expect(next.more).toBe(false);
 		expect(
 			Events.parse(
 				(await a.call("list_events", { cursor: "0", limit: 2 }))
@@ -468,6 +494,9 @@ describe("relay MCP tools and resources", () => {
 			subscriptions: false,
 			waitDefaultSeconds: 25,
 			waitMaxSeconds: 50,
+			accountCalls: 8,
+			accountWaits: 4,
+			requestMessages: 8,
 		});
 
 		const reconciled = await a.call("reconcile_lease", {
@@ -688,6 +717,8 @@ describe("relay MCP change feed", () => {
 			events: [],
 			cursor: waited.cursor,
 			timedOut: true,
+			more: false,
+			truncated: false,
 		});
 	});
 
@@ -708,7 +739,7 @@ describe("relay MCP change feed", () => {
 		expect(idle.events).toEqual([]);
 		expect(idle.timedOut).toBe(true);
 		expect(time.now() - before).toBe(25_000);
-		expect(Number(idle.cursor)).toBeGreaterThan(0);
+		expect(idle.cursor).toMatch(CURSOR);
 		const capped = time.now();
 		await a.call("wait_for_events", { timeoutSeconds: 3600 });
 		expect(time.now() - capped).toBe(50_000);
@@ -723,19 +754,16 @@ describe("relay MCP change feed", () => {
 		const h = await setup(
 			{
 				sessions: "none",
-				now: () => {
-					clock += 1_000;
-					return clock;
-				},
-				sleep: async () => {
-					throw new Error(
-						"a journal that keeps moving is read on, not slept on",
-					);
+				now: () => clock,
+				sleep: async (ms) => {
+					clock += ms;
 				},
 			},
-			// Every look at the journal finds one more job queued.
-			async (store) => {
-				await store.queue(job(queued++), LATER, 1);
+			{
+				// Every look at the journal finds one more job queued.
+				beforeJournalRead: async (store) => {
+					await store.queue(job(queued++), LATER, 1);
+				},
 			},
 		);
 		const a = await h.connect(h.tokens.a.authorization);
@@ -753,9 +781,10 @@ describe("relay MCP change feed", () => {
 		);
 		expect(waited.events).toEqual([]);
 		expect(waited.timedOut).toBe(true);
-		expect(h.journalReads()).toBeLessThan(10);
-		// The cursor moved past what was looked at: the next call reads on.
-		expect(Number(waited.cursor)).toBeGreaterThan(1);
+		expect(waited.more).toBe(false);
+		// One read a second for five seconds, and the one at the deadline.
+		expect(h.journalReads()).toBe(6);
+		expect(clock).toBe(5_000);
 	});
 
 	it("waits only for the lease, repository and event types asked for", async () => {
@@ -847,7 +876,8 @@ describe("relay MCP change feed", () => {
 		expect((await waiting).status).toBe(400);
 		release();
 		time.whenSleeping(async () => undefined);
-		// The abandoned wait gave its place back.
+		// The abandoned wait notices at its next pass and gives its place back.
+		await turns();
 		expect(
 			(await a.call("wait_for_events", { timeoutSeconds: 1 })).isError,
 		).toBe(undefined);
@@ -1099,7 +1129,7 @@ describe("relay MCP sessions", () => {
 		hangUp.abort();
 		await waiting.body?.cancel();
 		release();
-		await new Promise((done) => setImmediate(done));
+		await turns();
 		const next = await a.call("wait_for_events", { timeoutSeconds: 0 });
 		expect(next.isError).toBe(undefined);
 		expect(next.structuredContent).toMatchObject({ timedOut: true });
@@ -1180,5 +1210,574 @@ describe("relay MCP sessions", () => {
 				.structuredContent,
 		);
 		expect(leases.leases[0]?.state).toBe("dispatching");
+	});
+});
+
+/** One JSON-RPC request as a test writes it. */
+type RpcMessage = Readonly<{
+	jsonrpc: string;
+	id: number;
+	method: string;
+	params?: JsonObject;
+}>;
+
+/** A JSON-RPC request, or a batch of them, as one POST of one credential. */
+function rpc(
+	h: Awaited<ReturnType<typeof setup>>,
+	authorization: string,
+	body: RpcMessage | readonly RpcMessage[],
+	headers: Record<string, string> = {},
+	signal?: AbortSignal,
+) {
+	const request = post(JSON.stringify(body), { authorization, ...headers });
+	return h.handle(signal ? new Request(request, { signal }) : request);
+}
+const call = (
+	id: number,
+	name: string,
+	input: JsonObject = {},
+): RpcMessage => ({
+	jsonrpc: "2.0",
+	id,
+	method: "tools/call",
+	params: { name, arguments: input },
+});
+const INITIALIZE = {
+	jsonrpc: "2.0",
+	id: 1,
+	method: "initialize",
+	params: {
+		protocolVersion: "2025-06-18",
+		capabilities: {},
+		clientInfo: { name: "raw", version: "1.0.0" },
+	},
+};
+/** Open a session by hand and return its id, leaving no stream behind. */
+async function openSession(
+	h: Awaited<ReturnType<typeof setup>>,
+	authorization: string,
+) {
+	const response = await rpc(h, authorization, INITIALIZE);
+	await response.body?.cancel();
+	return {
+		status: response.status,
+		id: response.headers.get("mcp-session-id"),
+	};
+}
+const Answers = z.array(
+	z.object({
+		id: z.number(),
+		result: z.object({
+			isError: z.boolean().optional(),
+			content: z.array(z.object({ text: z.string() })),
+		}),
+	}),
+);
+/** Journal rows of another account: the neighbour's volume. */
+async function neighbourWrites(
+	h: Awaited<ReturnType<typeof setup>>,
+	count: number,
+) {
+	for (let index = 0; index < count; index++)
+		await h.store.putControlRecord(`n:${index}`, "account-b", "{}", NOW);
+}
+
+describe("relay MCP bounds on one caller's work", () => {
+	it("hands the event loop back on every pass of a wait that is catching up", async () => {
+		let clock = 0;
+		const h = await setup({
+			sessions: "none",
+			now: () => clock,
+			sleep: async (ms) => {
+				clock += ms;
+			},
+		});
+		// The account's own journal is long, and none of it is what is waited for.
+		for (let index = 0; index < 2_600; index++)
+			await h.store.putControlRecord(`note:${index}`, "account-a", "{}", NOW);
+		const a = await h.connect(h.tokens.a.authorization);
+		// Something else that needs the event loop: it must keep getting turns.
+		let ticks = 0;
+		let waiting = true;
+		const tick = () => {
+			ticks += 1;
+			if (waiting) setImmediate(tick);
+		};
+		const before = h.journalReads();
+		setImmediate(tick);
+		const waited = Events.parse(
+			(
+				await a.client.callTool({
+					name: "wait_for_events",
+					arguments: {
+						cursor: "0",
+						types: ["ci.LeaseCancelled"],
+						timeoutSeconds: 2,
+					},
+				})
+			).structuredContent,
+		);
+		waiting = false;
+		const reads = h.journalReads() - before;
+		// Six reads to reach the end of the journal, then one a second.
+		expect(reads).toBe(8);
+		expect(ticks).toBeGreaterThanOrEqual(reads);
+		expect(waited).toMatchObject({ events: [], timedOut: true, more: false });
+	});
+
+	it("bounds the reads of one wait, and sees its caller leave between them", async () => {
+		let passes = 0;
+		const hangUp = new AbortController();
+		const h = await setup({
+			sessions: "none",
+			now: () => 0,
+			sleep: async () => {
+				throw new Error("a wait that is behind reads on; it does not sleep");
+			},
+			pause: async () => {
+				passes += 1;
+				if (hangUp.signal.reason === "at the third pass" && passes === 3)
+					hangUp.abort();
+				await new Promise((done) => setImmediate(done));
+			},
+		});
+		for (let index = 0; index < 4_600; index++)
+			await h.store.putControlRecord(`note:${index}`, "account-a", "{}", NOW);
+		const a = await h.connect(h.tokens.a.authorization);
+		const wait = {
+			cursor: "0",
+			types: ["ci.LeaseCancelled"],
+			timeoutSeconds: 30,
+		};
+		const before = h.journalReads();
+		const behind = Events.parse(
+			(await a.client.callTool({ name: "wait_for_events", arguments: wait }))
+				.structuredContent,
+		);
+		// Still behind after its share of reads: not a timeout, and not the end.
+		expect(h.journalReads() - before).toBe(8);
+		expect(behind).toMatchObject({ events: [], timedOut: false, more: true });
+		// The cursor it hands back continues where it stopped.
+		const rest = Events.parse(
+			(
+				await a.client.callTool({
+					name: "wait_for_events",
+					arguments: { ...wait, cursor: behind.cursor, timeoutSeconds: 0 },
+				})
+			).structuredContent,
+		);
+		expect(rest).toMatchObject({ events: [], more: true });
+
+		// A caller that leaves is noticed at the next pass, not after the work.
+		const leaving = new AbortController();
+		passes = 0;
+		const left = h.journalReads();
+		const pending = rpc(
+			h,
+			h.tokens.a.authorization,
+			call(7, "wait_for_events", wait),
+			{},
+			leaving.signal,
+		);
+		while (passes < 3) await turns(1);
+		leaving.abort();
+		expect((await pending).status).toBe(400);
+		await turns();
+		expect(h.journalReads() - left).toBeLessThan(5);
+	});
+
+	it("gives each account its own share of the waits", async () => {
+		const sleepers: Array<() => void> = [];
+		let clock = 0;
+		const h = await setup({
+			sessions: "none",
+			maxWaits: 5,
+			now: () => clock,
+			sleep: () =>
+				new Promise<void>((resolve) => {
+					sleepers.push(resolve);
+				}),
+		});
+		await seed(h);
+		// One request, five waits: the transport starts them all at once.
+		const batch = rpc(
+			h,
+			h.tokens.a.authorization,
+			[1, 2, 3, 4, 5].map((id) => call(id, "wait_for_events")),
+		);
+		while (sleepers.length < 4) await turns(1);
+		await turns();
+		// Four are waiting. The fifth was refused: the account has its share.
+		expect(sleepers.length).toBe(4);
+		// The place the account could not take is there for another account.
+		const b = await h.connect(h.tokens.b.authorization);
+		const other = await b.call("wait_for_events", { timeoutSeconds: 0 });
+		expect(other.isError).toBe(undefined);
+		// Past every deadline: each wait wakes, finds nothing and times out.
+		clock = 60_000;
+		for (const wake of sleepers.splice(0)) wake();
+		const answered = batch.then((response) => response.json());
+		const answers = Answers.parse(await answered);
+		expect(answers.length).toBe(5);
+		const refused = answers.filter((answer) => answer.result.isError);
+		expect(refused.length).toBe(1);
+		expect(refused[0]?.result.content[0]?.text).toMatch(
+			/too many callers are waiting/,
+		);
+	});
+
+	it("bounds the messages of one request and the calls one account has in progress", async () => {
+		let open = (): void => undefined;
+		const gate = new Promise<void>((resolve) => {
+			open = resolve;
+		});
+		const h = await setup(
+			{ sessions: "none", maxCallsPerAccount: 2 },
+			{ beforeLeaseRead: () => gate },
+		);
+		await seed(h);
+		const pings = (count: number) =>
+			Array.from({ length: count }, (_, index) => ({
+				jsonrpc: "2.0",
+				id: index + 1,
+				method: "ping",
+			}));
+		const tooMany = await rpc(h, h.tokens.a.authorization, pings(9));
+		expect(tooMany.status).toBe(400);
+		expect(await tooMany.json()).toEqual({
+			error: "too many JSON-RPC messages in one request; at most 8",
+		});
+		expect((await rpc(h, h.tokens.a.authorization, pings(8))).status).toBe(200);
+
+		// Four reads in one request, each held at the store.
+		const batch = rpc(
+			h,
+			h.tokens.a.authorization,
+			[1, 2, 3, 4].map((id) => call(id, "list_leases")),
+		);
+		const other = rpc(h, h.tokens.b.authorization, call(9, "list_leases"));
+		await turns();
+		open();
+		const answers = Answers.parse(await (await batch).json());
+		// Two ran; two were refused before they reached the store.
+		expect(
+			answers.map((answer) => answer.result.isError === true).sort(),
+		).toEqual([false, false, true, true]);
+		expect(
+			answers.find((answer) => answer.result.isError)?.result.content[0]?.text,
+		).toBe(
+			"too many calls in progress for this account; retry when one has finished",
+		);
+		// Another account's call was never in that queue.
+		const theirs = z
+			.object({ result: z.object({ isError: z.boolean().optional() }) })
+			.parse(await (await other).json());
+		expect(theirs.result.isError).toBe(undefined);
+		// The places are free again.
+		const a = await h.connect(h.tokens.a.authorization);
+		expect((await a.call("list_leases")).isError).toBe(undefined);
+	});
+});
+
+describe("relay MCP journal bounds", () => {
+	it("finds an account's events behind a neighbour's volume, and says what it did not read", async () => {
+		const h = await setup({
+			sessions: "none",
+			now: () => 0,
+			sleep: async () => {
+				throw new Error("a wait that is behind reads on; it does not sleep");
+			},
+		});
+		const { mine } = await seed(h);
+		const a = await h.connect(h.tokens.a.authorization);
+		const types = (text: z.infer<typeof Events>) =>
+			text.events.map((event) => event.type);
+
+		// A busy neighbour: more rows than the newest-events read used to see.
+		await neighbourWrites(h, 1_500);
+		const recent = Events.parse(
+			(await a.call("list_events")).structuredContent,
+		);
+		expect(types(recent)).toEqual([
+			"ci.JobQueued",
+			"ci.JobQueued",
+			"ci.LeaseReserved",
+		]);
+		expect(recent.truncated).toBe(false);
+
+		// Now more than two scans of the journal lie between the account's
+		// first events and its next one.
+		await neighbourWrites(h, 20_000);
+		await h.store.queue(job(9), LATER, h.revision);
+		const newest = Events.parse(
+			(await a.call("list_events")).structuredContent,
+		);
+		expect(newest.events.map((event) => event.jobId)).toEqual([9]);
+		// Older events exist; the read says it did not look that far back.
+		expect(newest.truncated).toBe(true);
+
+		const first = Events.parse(
+			(await a.call("list_events", { cursor: "0" })).structuredContent,
+		);
+		expect(types(first).length).toBe(3);
+		expect(first.more).toBe(true);
+		// A scan that holds nothing of the account's is not "caught up".
+		const empty = Events.parse(
+			(await a.call("list_events", { cursor: first.cursor })).structuredContent,
+		);
+		expect(empty.events).toEqual([]);
+		expect(empty.more).toBe(true);
+		expect(empty.timedOut).toBe(false);
+		const last = Events.parse(
+			(await a.call("list_events", { cursor: empty.cursor })).structuredContent,
+		);
+		expect(last.events.map((event) => event.jobId)).toEqual([9]);
+		expect(last.more).toBe(false);
+
+		// A wait reads on through the empty stretch instead of timing out.
+		const waited = Events.parse(
+			(
+				await a.call("wait_for_events", {
+					cursor: first.cursor,
+					timeoutSeconds: 30,
+				})
+			).structuredContent,
+		);
+		expect(waited.events.map((event) => event.jobId)).toEqual([9]);
+		expect(waited.timedOut).toBe(false);
+
+		// A lease's events are read by its id, however old they are.
+		expect(
+			(await a.call("get_lease", { leaseId: mine.id })).structuredContent,
+		).toMatchObject({
+			events: [{ type: "ci.LeaseReserved", leaseId: mine.id }],
+		});
+		const resource = await a.read(`hobo-ci://leases/${mine.id}`);
+		expect(JSON.parse(resource.contents[0]?.text ?? "")).toMatchObject({
+			events: [{ type: "ci.LeaseReserved" }],
+		});
+		expect(
+			JSON.parse((await a.read("hobo-ci://events")).contents[0]?.text ?? ""),
+		).toMatchObject({ truncated: true });
+	});
+
+	it("hands out cursors that say nothing of the journal and work for one account only", async () => {
+		const h = await setup({ sessions: "none" });
+		await seed(h);
+		const a = await h.connect(h.tokens.a.authorization);
+		const b = await h.connect(h.tokens.b.authorization);
+		const mine = Events.parse((await a.call("list_events")).structuredContent);
+		const theirs = Events.parse(
+			(await b.call("list_events")).structuredContent,
+		);
+		// Both are at the same place in the journal, and neither can tell.
+		expect(mine.cursor).toMatch(CURSOR);
+		expect(theirs.cursor).toMatch(CURSOR);
+		expect(mine.cursor).not.toBe(theirs.cursor);
+		expect(
+			Events.parse((await a.call("list_events")).structuredContent).cursor,
+		).toBe(mine.cursor);
+		for (const text of [
+			JSON.stringify(mine),
+			JSON.stringify(theirs),
+			(await a.read("hobo-ci://events")).contents[0]?.text ?? "",
+		])
+			expect(text).not.toMatch(/"cursor":"\d+"/);
+
+		// Refusing a cursor is the caller's mistake, not the relay's failure:
+		// nothing is written to the failure log however often it is repeated.
+		const lines: string[] = [];
+		const log = vi.spyOn(console, "error").mockImplementation((line) => {
+			lines.push(String(line));
+		});
+		try {
+			for (const cursor of [
+				// Another account's cursor.
+				theirs.cursor,
+				// The right look, never issued.
+				"AAAAAAAAAAAAAAAAAAAAAA",
+				// A journal position, as it once was; one past any safe number.
+				"42",
+				"9999999999999999",
+				"",
+			])
+				for (const name of ["list_events", "wait_for_events"]) {
+					const refused = await a.call(name, { cursor, timeoutSeconds: 0 });
+					expect(refused.isError, `${name} ${cursor}`).toBe(true);
+					expect(refused.content[0]?.text, `${name} ${cursor}`).toMatch(
+						/invalid cursor|Invalid arguments/i,
+					);
+				}
+			expect(lines).toEqual([]);
+		} finally {
+			log.mockRestore();
+		}
+		// The documented start still works, as does the account's own cursor.
+		expect((await a.call("list_events", { cursor: "0" })).isError).toBe(
+			undefined,
+		);
+		expect((await a.call("list_events", { cursor: mine.cursor })).isError).toBe(
+			undefined,
+		);
+	});
+});
+
+describe("relay MCP session shares", () => {
+	it("counts the sessions an account is still opening", async () => {
+		const h = await setup({ sessions: "memory", maxSessionsPerAccount: 1 });
+		const both = await Promise.all([
+			openSession(h, h.tokens.a.authorization),
+			openSession(h, h.tokens.a.authorization),
+		]);
+		expect(both.map((opened) => opened.status).sort()).toEqual([200, 429]);
+	});
+
+	it("makes room for an account that holds less than its share", async () => {
+		let clock = 0;
+		const h = await setup({
+			sessions: "memory",
+			maxSessions: 2,
+			maxSessionsPerAccount: 2,
+			now: () => clock,
+		});
+		const ping = (authorization: string, id: string | null) =>
+			rpc(
+				h,
+				authorization,
+				{ jsonrpc: "2.0", id: 5, method: "ping" },
+				{
+					"mcp-session-id": id ?? "",
+				},
+			);
+		// One account takes every place.
+		const older = await openSession(h, h.tokens.a.authorization);
+		clock = 1_000;
+		const newer = await openSession(h, h.tokens.a.authorization);
+		expect([older.status, newer.status]).toEqual([200, 200]);
+		// Another account is not locked out: the holder's least recently used
+		// session gives way.
+		clock = 2_000;
+		const theirs = await openSession(h, h.tokens.b.authorization);
+		expect(theirs.status).toBe(200);
+		expect((await ping(h.tokens.a.authorization, older.id)).status).toBe(404);
+		expect((await ping(h.tokens.a.authorization, newer.id)).status).toBe(200);
+		expect((await ping(h.tokens.b.authorization, theirs.id)).status).toBe(200);
+		// Each holds one now: neither may take the other's.
+		for (const authorization of [
+			h.tokens.a.authorization,
+			h.tokens.b.authorization,
+		])
+			expect((await openSession(h, authorization)).status).toBe(429);
+		expect((await ping(h.tokens.a.authorization, newer.id)).status).toBe(200);
+		expect((await ping(h.tokens.b.authorization, theirs.id)).status).toBe(200);
+	});
+
+	it("closes an event stream that has been open for its lifetime", async () => {
+		let clock = 0;
+		const h = await setup({
+			sessions: "memory",
+			streamMaxMs: 60_000,
+			sessionIdleMs: 30_000,
+			now: () => clock,
+		});
+		const { id } = await openSession(h, h.tokens.a.authorization);
+		const session = { "mcp-session-id": id ?? "" };
+		const stream = await h.handle(
+			new Request(`${ORIGIN}/mcp`, {
+				headers: {
+					authorization: h.tokens.a.authorization,
+					accept: "text/event-stream",
+					...session,
+				},
+			}),
+		);
+		expect(stream.status).toBe(200);
+		const reader = stream.body?.getReader();
+		const ping = async () => {
+			const response = await rpc(
+				h,
+				h.tokens.a.authorization,
+				{ jsonrpc: "2.0", id: 5, method: "ping" },
+				session,
+			);
+			await response.body?.cancel();
+			return response.status;
+		};
+		// A listening session is not idle, however long it makes no request.
+		clock = 59_000;
+		expect(await ping()).toBe(200);
+		let ended = false;
+		const end = reader?.read().then((chunk) => {
+			ended = chunk.done;
+		});
+		await turns();
+		expect(ended).toBe(false);
+		// At its lifetime the server ends the stream; the client opens another.
+		clock = 60_000;
+		expect(await ping()).toBe(200);
+		await end;
+		expect(ended).toBe(true);
+		// Left without a stream and without a request, the session idles out.
+		clock = 91_000;
+		expect(await ping()).toBe(404);
+	});
+
+	it("backs the pump off while the store fails, and asks once per pass", async () => {
+		const slept: number[] = [];
+		const sleepers: Array<() => void> = [];
+		let failing = false;
+		const h = await setup(
+			{
+				sessions: "memory",
+				pollMs: 1_000,
+				sleep: (ms, signal) =>
+					new Promise<void>((resolve) => {
+						slept.push(ms);
+						sleepers.push(resolve);
+						signal.addEventListener("abort", () => resolve(), { once: true });
+					}),
+			},
+			{
+				beforeJournalRead: async () => {
+					if (failing) throw new Error("store unavailable");
+				},
+			},
+		);
+		await seed(h);
+		const a = await h.connect(h.tokens.a.authorization);
+		const b = await h.connect(h.tokens.b.authorization);
+		await a.client.subscribeResource({ uri: "hobo-ci://events" });
+		await b.client.subscribeResource({ uri: "hobo-ci://events" });
+		const pass = async () => {
+			while (sleepers.length === 0) await turns(1);
+			const reads = h.journalReads();
+			for (const wake of sleepers.splice(0)) wake();
+			while (sleepers.length === 0) await turns(1);
+			return h.journalReads() - reads;
+		};
+		const lines: string[] = [];
+		const log = vi.spyOn(console, "error").mockImplementation((line) => {
+			lines.push(String(line));
+		});
+		try {
+			// Healthy: both subscribed accounts are read each pass.
+			expect(await pass()).toBe(2);
+			failing = true;
+			slept.length = 0;
+			const attempts = [await pass(), await pass(), await pass(), await pass()];
+			// One read per pass: the next account would fail the same way.
+			expect(attempts).toEqual([1, 1, 1, 1]);
+			expect(slept).toEqual([2_000, 4_000, 8_000, 16_000]);
+			// The failure log writes one line for the outage, not one per pass.
+			expect(
+				lines.filter((line) => line.includes("hobo_ci_mcp_pump_failed")).length,
+			).toBeLessThanOrEqual(1);
+			failing = false;
+			slept.length = 0;
+			expect(await pass()).toBe(2);
+			expect(slept).toEqual([1_000]);
+		} finally {
+			log.mockRestore();
+		}
 	});
 });

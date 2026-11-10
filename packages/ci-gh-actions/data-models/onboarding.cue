@@ -81,7 +81,7 @@ package ghactions
  queueDeadlineAt?: string
 }
 #RelayMcpEvent: {
- cursor: string & =~"^[1-9][0-9]{0,15}$"
+ cursor: string & =~"^[A-Za-z0-9_-]{22}$"
  type: string & =~"^ci\\.[A-Za-z]+$"
  at: string & !=""
  leaseId?: string, state?: string, repository?: string
@@ -90,9 +90,9 @@ package ghactions
 #RelayMcpLeases: {leases?: [...#RelayMcpLease], truncated?: bool}
 #RelayMcpLeaseDetail: {lease: #RelayMcpLease, events?: [...#RelayMcpEvent]}
 #RelayMcpJobs: {jobs?: [...#RelayMcpJob], truncated?: bool}
-#RelayMcpEvents: {events?: [...#RelayMcpEvent], cursor: string & =~"^(0|[1-9][0-9]{0,15})$", timedOut?: bool}
+#RelayMcpEvents: {events?: [...#RelayMcpEvent], cursor: string & =~"^[A-Za-z0-9_-]{22}$", timedOut?: bool, more?: bool, truncated?: bool}
 #RelayMcpEngine: {id: string & =~"^[a-z0-9-]{1,40}$", ready?: bool}
-#RelayMcpStatus: {ready?: bool, engines: [#RelayMcpEngine, ...#RelayMcpEngine], subscriptions?: bool, waitDefaultSeconds: int & >=1, waitMaxSeconds: int & >=1}
+#RelayMcpStatus: {ready?: bool, engines: [#RelayMcpEngine, ...#RelayMcpEngine], subscriptions?: bool, waitDefaultSeconds: int & >=1, waitMaxSeconds: int & >=1, accountCalls: int & >=1, accountWaits: int & >=1, requestMessages: int & >=1}
 #RelayMcpQuarantinedDelivery: {deliveryId: string & =~"^[A-Za-z0-9-]{1,100}$", event: string & !="", installationId: int & >0, repositoryId: int & >0, receivedAt: string & !="", attempts?: int & >=0}
 #RelayMcpQuarantine: {deliveries?: [...#RelayMcpQuarantinedDelivery]}
 #RelayMcpRetry: {deliveryId: string & =~"^[A-Za-z0-9-]{1,100}$", status: "queued"}

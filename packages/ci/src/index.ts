@@ -3,12 +3,16 @@ export * from "./_generated/policy_pb.js";
 export { parseConfiguration, positiveId } from "./config.js";
 export {
 	accountEventPage,
-	accountOwnsEvent,
 	accountOwnsJob,
-	EVENT_SCAN_LIMIT,
+	EVENT_SCAN_SPAN,
 	type EventCursor,
+	type EventScan,
 	eventCursorBounds,
 	eventJob,
+	eventScan,
+	jobAccountId,
+	type LeaseEventsQuery,
+	leaseEventsBounds,
 } from "./event-log.js";
 export {
 	type BackendKind,
@@ -41,6 +45,7 @@ export {
 	selectFleetBackend,
 	shouldAbortIsolatedFleetLease,
 } from "./fleet-overflow.js";
+export type { CiObserver, QuarantinedWebhook } from "./observer.js";
 export {
 	ciBudgetIdentity,
 	ciBudgetPolicy,

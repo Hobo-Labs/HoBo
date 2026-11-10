@@ -51,7 +51,7 @@ const pact = z
 	);
 
 it("executes every declared MCP interaction over the Node HTTP boundary", async () => {
-	expect(pact.interactions).toHaveLength(14);
+	expect(pact.interactions).toHaveLength(16);
 	const { credentials } = pact.metadata.consumerFixtures;
 	const store = new SqliteCiStore(":memory:");
 	// One account with one queued job: the journal holds exactly one event of its own.
@@ -82,6 +82,7 @@ it("executes every declared MCP interaction over the Node HTTP boundary", async 
 		publicOrigin: "https://ci.example.test",
 		// The contract every host honours: no session, JSON answers.
 		sessions: "none",
+		cursorSecret: SECRET,
 	});
 	const handle = createRelayHandler({
 		webhookSecret: SECRET,
@@ -120,12 +121,21 @@ it("executes every declared MCP interaction over the Node HTTP boundary", async 
 			for (const [name, value] of Object.entries(interaction.response.headers))
 				expect(response.headers.get(name), interaction.description).toBe(value);
 			// A consumer names what it relies on; the provider may say more.
-			expect(await response.json(), interaction.description).toMatchObject(
+			const answered = await response.text();
+			expect(JSON.parse(answered), interaction.description).toMatchObject(
 				interaction.response.body,
 			);
+			// A cursor is a token issued to the account, never a journal position:
+			// the contract pins that it is there and what it looks like, not its value.
+			for (const cursor of answered.matchAll(/\\?"cursor\\?":\\?"([^"\\]*)/g))
+				expect(cursor[1], interaction.description).toMatch(
+					/^[A-Za-z0-9_-]{22}$/,
+				);
+			if (interaction.description.includes("events"))
+				expect(answered, interaction.description).toContain("cursor");
 			matched++;
 		}
-		expect(matched).toBe(14);
+		expect(matched).toBe(16);
 	} finally {
 		server.close();
 		await once(server, "close");
