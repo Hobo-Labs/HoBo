@@ -1,10 +1,10 @@
+import { create } from "@bufbuild/protobuf";
+import { AccountSchema, JobSchema, OfferSchema } from "@hobo/ci";
 import { describe, expect, it } from "vitest";
 import {
 	accountForStorageOverflowReserve,
 	selectStorageSpillBackend,
 } from "../src/isolated-worker/fleet-storage-spill.js";
-import { create } from "@bufbuild/protobuf";
-import { AccountSchema, JobSchema, OfferSchema } from "@hobo/ci";
 
 function accountWithOverflow() {
 	return create(AccountSchema, {
@@ -73,10 +73,12 @@ describe("fleet storage spill", () => {
 		const spill = selectStorageSpillBackend(account, job, 0);
 		expect(spill?.backend).toBe("arc");
 		const overflowAccount = accountForStorageOverflowReserve(account);
-		const box = overflowAccount.offers.find((o) => o.provider === "hobo-box-worker");
-		expect(box?.enabled).toBe(false);
-		expect(overflowAccount.offers.some((o) => o.enabled && o.id === "arc")).toBe(
-			true,
+		const box = overflowAccount.offers.find(
+			(o) => o.provider === "hobo-box-worker",
 		);
+		expect(box?.enabled).toBe(false);
+		expect(
+			overflowAccount.offers.some((o) => o.enabled && o.id === "arc"),
+		).toBe(true);
 	});
 });

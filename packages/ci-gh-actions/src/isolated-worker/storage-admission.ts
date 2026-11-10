@@ -1,5 +1,16 @@
 import { z } from "zod";
+import {
+	buildHostCapacityRecord,
+	type HostCapacityTracker,
+	readHostCapacitySignals,
+} from "./host-capacity.js";
 import { selectWorkerImagesForDeletion, type WorkerImage } from "./image-gc.js";
+import {
+	DEPS_BUILD_ADMISSION_ID,
+	storageReserveForClass,
+	storageReserveForJob,
+	type WorkerStorageReserve,
+} from "./storage-job-classes.js";
 import {
 	createNodeWorkerStorageFileSystem,
 	type WorkerFileSystemStats,
@@ -13,17 +24,6 @@ export {
 	type WorkerStorageFileSystem,
 	type WorkerWorkDirectoryRemoval,
 };
-import {
-	buildHostCapacityRecord,
-	type HostCapacityTracker,
-	readHostCapacitySignals,
-} from "./host-capacity.js";
-import {
-	DEPS_BUILD_ADMISSION_ID,
-	storageReserveForClass,
-	storageReserveForJob,
-	type WorkerStorageReserve,
-} from "./storage-job-classes.js";
 
 const SOFT_LIMIT = 0.85;
 const HARD_LIMIT = 0.95;
@@ -93,7 +93,7 @@ type ResolvedStorageAdmission = Readonly<{
 const StorageAdmissionRequestSchema = z.object({
 	jobId: z.string(),
 	jobName: z.string().optional(),
-		reserve: z
+	reserve: z
 		.object({
 			workRoot: z.number().int().nonnegative(),
 			dockerDataRoot: z.number().int().nonnegative(),
@@ -193,7 +193,10 @@ export function createWorkerStorageAdmission(options: {
 					dockerDataRoot: inodeOverride.dockerDataRoot,
 				}
 			: classDefault;
-	for (const reserve of [defaultReserve.workRoot, defaultReserve.dockerDataRoot])
+	for (const reserve of [
+		defaultReserve.workRoot,
+		defaultReserve.dockerDataRoot,
+	])
 		if (!Number.isSafeInteger(reserve) || reserve < 0)
 			throw new Error("invalid worker job inode reservation");
 	const safetyMarginFloor = options.safetyMarginInodes ?? 25_000;
@@ -243,7 +246,9 @@ export function createWorkerStorageAdmission(options: {
 		);
 	}
 
-	function resolveTarget(target: StorageAdmissionTarget): ResolvedStorageAdmission {
+	function resolveTarget(
+		target: StorageAdmissionTarget,
+	): ResolvedStorageAdmission {
 		const stringTarget = z.string().safeParse(target);
 		if (stringTarget.success)
 			return { jobId: stringTarget.data, reserve: defaultReserve };
@@ -433,15 +438,15 @@ export function createWorkerStorageAdmission(options: {
 		return undefined;
 	}
 
-	function imminentPressureFromSamples(
-		samples: readonly StorageSample[],
-	): Readonly<{
-		preempt: boolean;
-		observedFreeInodes: number;
-		floorInodes: number;
-		observedFreeBytes: number;
-		floorBytes: number;
-	}> | undefined {
+	function imminentPressureFromSamples(samples: readonly StorageSample[]):
+		| Readonly<{
+				preempt: boolean;
+				observedFreeInodes: number;
+				floorInodes: number;
+				observedFreeBytes: number;
+				floorBytes: number;
+		  }>
+		| undefined {
 		const freeInodes = observedFreeInodes(samples);
 		const freeBytes = observedFreeBytes(samples);
 		const reservedInodes = totalReservedInodes(samples);
@@ -515,7 +520,9 @@ export function createWorkerStorageAdmission(options: {
 			const headroomBytes =
 				first.freeBytes - byteSafetyMargin() - reservedBytes;
 			const byInodes =
-				perJob > 0 ? Math.floor(headroomInodes / perJob) : Number.POSITIVE_INFINITY;
+				perJob > 0
+					? Math.floor(headroomInodes / perJob)
+					: Number.POSITIVE_INFINITY;
 			const byBytes =
 				perJobBytes > 0
 					? Math.floor(headroomBytes / perJobBytes)
@@ -525,7 +532,10 @@ export function createWorkerStorageAdmission(options: {
 		return Number.isFinite(limit) ? Math.max(0, limit) : 0;
 	}
 
-	function logCapacity(samples: readonly StorageSample[], template: WorkerStorageReserve) {
+	function logCapacity(
+		samples: readonly StorageSample[],
+		template: WorkerStorageReserve,
+	) {
 		const concurrent = binPackConcurrent(samples, template);
 		const docker = samples.find((entry) => entry.index === 0);
 		const work = samples.find((entry) => entry.index === 1);

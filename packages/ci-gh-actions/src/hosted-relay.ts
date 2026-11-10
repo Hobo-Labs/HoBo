@@ -34,9 +34,9 @@ import {
 import { heldRoutingOptions } from "./held-routing.js";
 import { verifyIngressForward } from "./ingress-forward.js";
 import { isIsolatedHostOffer } from "./isolated-backend.js";
+import { accountForStorageOverflowReserve } from "./isolated-worker/fleet-storage-spill.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
-import { accountForStorageOverflowReserve } from "./isolated-worker/fleet-storage-spill.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
 import type { JobDurations } from "./job-durations.js";
 import {

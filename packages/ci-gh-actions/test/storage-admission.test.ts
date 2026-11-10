@@ -18,8 +18,8 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { WorkerImage } from "../src/isolated-worker/image-gc.js";
 import { createHostCapacityTracker } from "../src/isolated-worker/host-capacity.js";
+import type { WorkerImage } from "../src/isolated-worker/image-gc.js";
 import {
 	storageReserveForClass,
 	type WorkerStorageReserve,
@@ -30,6 +30,7 @@ function jobReserve(
 ): WorkerStorageReserve {
 	return { ...storageReserveForClass("standard"), ...overrides };
 }
+
 import {
 	createNodeWorkerStorageFileSystem,
 	createWorkerStorageAdmission,
@@ -314,7 +315,12 @@ describe("worker storage admission", () => {
 	it("allows zero to disable both inode reservations", async () => {
 		const h = harness({
 			before: { ...freeInodes(100), files: 1_000 },
-			jobInodes: jobReserve({ workRoot: 0, dockerDataRoot: 0, workRootBytes: 0, dockerDataRootBytes: 0 }),
+			jobInodes: jobReserve({
+				workRoot: 0,
+				dockerDataRoot: 0,
+				workRootBytes: 0,
+				dockerDataRootBytes: 0,
+			}),
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
 		await expect(h.admission.admit([], "job-2")).resolves.toBe(true);

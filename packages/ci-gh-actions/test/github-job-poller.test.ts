@@ -637,23 +637,21 @@ describe("pull-mode box worker over SQLite", () => {
 		} = {},
 	) {
 		const store = new SqliteCiStore(path);
-		const offers =
-			input.offers ??
-			[
-				create(OfferSchema, {
-					id: "box-isolated",
-					provider: "kubernetes",
-					providerAccountId: "box",
-					enabled: true,
-					runsOn: "hobo-isolated-worker",
-					backend: "isolated-container",
-					concurrency,
-					observedAt: "2026-11-02T00:00:00Z",
-					validUntil: "2026-12-31T23:59:59Z",
-					sourceUrl: "https://example.test/box-evidence",
-					bridgeAcknowledged: true,
-				}),
-			];
+		const offers = input.offers ?? [
+			create(OfferSchema, {
+				id: "box-isolated",
+				provider: "kubernetes",
+				providerAccountId: "box",
+				enabled: true,
+				runsOn: "hobo-isolated-worker",
+				backend: "isolated-container",
+				concurrency,
+				observedAt: "2026-11-02T00:00:00Z",
+				validUntil: "2026-12-31T23:59:59Z",
+				sourceUrl: "https://example.test/box-evidence",
+				bridgeAcknowledged: true,
+			}),
+		];
 		await store.configure(
 			create(ConfigurationSchema, {
 				accounts: [
@@ -968,37 +966,41 @@ describe("pull-mode box worker over SQLite", () => {
 	});
 
 	it("reserves ARC overflow when box storage refuses instead of re-queuing on hobo", async () => {
-		const store = await configuredStore(2, join(root, `${randomUUID()}.sqlite`), {
-			isolatedOnly: false,
-			offers: [
-				create(OfferSchema, {
-					id: "box",
-					provider: "hobo-box-worker",
-					providerAccountId: "box",
-					enabled: true,
-					runsOn: "hobo-isolated-worker",
-					backend: "isolated-container",
-					concurrency: 2,
-					observedAt: "2026-11-02T00:00:00Z",
-					validUntil: "2026-12-31T23:59:59Z",
-					sourceUrl: "https://example.test/box-evidence",
-					bridgeAcknowledged: true,
-				}),
-				create(OfferSchema, {
-					id: "arc",
-					provider: "kubernetes",
-					providerAccountId: "arc",
-					enabled: true,
-					runsOn: "hobo-arc",
-					backend: "gh-actions",
-					concurrency: 4,
-					observedAt: "2026-11-02T00:00:00Z",
-					validUntil: "2026-12-31T23:59:59Z",
-					sourceUrl: "https://example.test/arc-evidence",
-					bridgeAcknowledged: true,
-				}),
-			],
-		});
+		const store = await configuredStore(
+			2,
+			join(root, `${randomUUID()}.sqlite`),
+			{
+				isolatedOnly: false,
+				offers: [
+					create(OfferSchema, {
+						id: "box",
+						provider: "hobo-box-worker",
+						providerAccountId: "box",
+						enabled: true,
+						runsOn: "hobo-isolated-worker",
+						backend: "isolated-container",
+						concurrency: 2,
+						observedAt: "2026-11-02T00:00:00Z",
+						validUntil: "2026-12-31T23:59:59Z",
+						sourceUrl: "https://example.test/box-evidence",
+						bridgeAcknowledged: true,
+					}),
+					create(OfferSchema, {
+						id: "arc",
+						provider: "kubernetes",
+						providerAccountId: "arc",
+						enabled: true,
+						runsOn: "hobo-arc",
+						backend: "gh-actions",
+						concurrency: 4,
+						observedAt: "2026-11-02T00:00:00Z",
+						validUntil: "2026-12-31T23:59:59Z",
+						sourceUrl: "https://example.test/arc-evidence",
+						bridgeAcknowledged: true,
+					}),
+				],
+			},
+		);
 		const github = new FakeGithub(
 			{ queued: [900], in_progress: [] },
 			{ 900: [{ id: 1, status: "queued", labels: ["hobo"] }] },

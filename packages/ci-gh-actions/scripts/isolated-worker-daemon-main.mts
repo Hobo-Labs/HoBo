@@ -19,6 +19,7 @@ import {
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
+	createHostCapacityTracker,
 	createHostedRelayRuntime,
 	createIsolatedContainerController,
 	createJobDurations,
@@ -29,11 +30,9 @@ import {
 	createPollLogFilter,
 	createRelayTrace,
 	createRetiredWorkDirectorySweeper,
-	createHostCapacityTracker,
 	createWorkerMemoryAdmission,
 	createWorkerStorageAdmission,
 	DEPS_BUILD_ADMISSION_ID,
-	storageReserveForDepsBuild,
 	type DepsImageProcessRequest,
 	defaultDepsRoot,
 	describeWaitingJobs,
@@ -50,6 +49,7 @@ import {
 	resolveWorkerStorePlan,
 	singleFlight,
 	stopIsolatedWorker,
+	storageReserveForDepsBuild,
 	traceGithubTransport,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
