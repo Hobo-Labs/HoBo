@@ -266,9 +266,14 @@ describe("CI deps image build contract", () => {
 		const guard = build.indexOf("ensure_deps_build_headroom");
 		const call = build.lastIndexOf("ensure_deps_build_headroom");
 		const buildCommand = build.indexOf('"${build_command[@]}" \\');
+		const preBuildGc = build.indexOf(
+			'scripts/ci-runner-image-gc.mts "$candidate" || true',
+		);
 		assert.ok(guard > -1);
 		assert.ok(call > guard);
 		assert.ok(buildCommand > call);
+		assert.ok(preBuildGc > -1);
+		assert.ok(preBuildGc < call);
 	});
 
 	it("lets the worker cap build and verification memory", () => {
@@ -284,7 +289,7 @@ describe("CI deps image build contract", () => {
 		const gc = read("scripts/ci-runner-image-gc.mts");
 		const command =
 			'node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"';
-		assert.equal(build.split(command).length, 3);
+		assert.equal(build.split(command).length, 4);
 		includes(
 			gc,
 			"selectWorkerImagesForDeletion(inventoryWithUsage, currentDepsTag)",
@@ -453,6 +458,8 @@ describe("CI deps publisher contract", () => {
 		const login = publish.indexOf("docker login ghcr.io");
 		const manifest = publish.indexOf('docker manifest inspect "$image"');
 		const local = publish.indexOf("docker image inspect hobo-ci-deps:local");
+		includes(workflow, "scripts/ci/wait-deps-build-window.mts");
+		includes(publish, "scripts/ci/wait-deps-build-window.mts");
 		const build = publish.indexOf(
 			"bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
 		);

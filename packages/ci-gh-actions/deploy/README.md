@@ -124,6 +124,8 @@ non-secret settings:
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cache cap with no age exemption; `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` remains a deprecated alias |
 | `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | `400000` | Free inodes required on Docker's data root before a deps rebuild; digits only |
 | `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | `8589934592` | Free bytes required on Docker's data root before a deps rebuild; digits only |
+| `HOBO_CI_DEPS_BUILD_WAIT_MS` | `900000` | Maximum wait in `scripts/ci/wait-deps-build-window.mts` before a publisher or PR miss build |
+| `HOBO_CI_DEPS_BUILD_WAIT_POLL_MS` | `10000` | Poll interval for the deps build window script; digits only |
 
 One `hobo_ci_job_pickup` log per lease records job/run identity, workflow event, runner label, admission,
 container-start and registration timestamps, and their millisecond deltas. Polled job creation time and total

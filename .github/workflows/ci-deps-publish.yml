@@ -33,6 +33,8 @@ jobs:
           submodules: recursive
           clean: false
           fetch-depth: 1
+      - name: Wait for isolated jobs and inode headroom
+        run: node --experimental-strip-types --no-warnings scripts/ci/wait-deps-build-window.mts
       - name: Publish missing deps tag with a bounded wall clock
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}

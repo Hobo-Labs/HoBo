@@ -26,6 +26,7 @@ if ! docker image inspect "$candidate" >/dev/null 2>&1; then
     source="hobo-ci-deps:local"
   else
     echo "No local deps image for ${key}; building before GHCR publish"
+    node --experimental-strip-types --no-warnings scripts/ci/wait-deps-build-window.mts
     bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh
   fi
 fi
