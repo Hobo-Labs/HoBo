@@ -69,6 +69,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   target-branch update cannot silently change their test scope. `scripts/test/merge-group-gate.test.ts`
   covers failed, cancelled, skipped, and missing results.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
+  (artifact names include a per-matrix `disambiguator`, usually `matrix.shard`, so parallel workspace shards
+  do not collide on `upload-artifact`)
   from each job, so queue time and run time can be compared before and after a change. The script
   imports node builtins only, because the step also runs on jobs that skipped or failed `pnpm install`
   (an inert PR diff skips install in the off-path job). With `zod` it failed `ERR_MODULE_NOT_FOUND`

@@ -530,6 +530,8 @@ jobs:
       - name: CI trace
         if: always()
         uses: ./.github/actions/ci-trace
+        with:
+          disambiguator: ${{ matrix.shard }}
 
   pr_affected:
     name: PR affected package lanes
