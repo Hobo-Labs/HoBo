@@ -26,6 +26,9 @@ runs:
         if [ "${HOBO_CI_PNPM_STORE_MOUNTED:-}" = "1" ]; then
           echo "use-cache=false" >> "$GITHUB_OUTPUT"
           echo "npm_config_package_import_method=hardlink" >> "$GITHUB_ENV"
+          if [ -n "${npm_config_store_dir:-}" ]; then
+            echo "npm_config_store_dir=${npm_config_store_dir}" >> "$GITHUB_ENV"
+          fi
           echo "pnpm store is host-mounted (${npm_config_store_dir:-unset}); using hardlinks, skipping actions/cache"
         elif [ "${RUNNER_ENVIRONMENT}" != "github-hosted" ]; then
           echo "use-cache=false" >> "$GITHUB_OUTPUT"
