@@ -100,6 +100,22 @@ export {
 	parseFleetLayout,
 } from "./fleet/layout.js";
 export {
+	DEFAULT_REPLICATION_LIMITS,
+	type PostgresFleetWatermark,
+	REPLICATION_REFUSALS,
+	type ReplicatedTable,
+	type ReplicationLimits,
+	type ReplicationOutcome,
+	type ReplicationRefusal,
+	type ReplicationRequest,
+	readDataDigests,
+	readSequencePositions,
+	readWatermark,
+	replicateSnapshot,
+	type SequencePosition,
+	standbyLagMs,
+} from "./fleet/replication.js";
+export {
 	classifyFleetFailure,
 	FLEET_FAILURE_CLASSES,
 	type FleetBackend,

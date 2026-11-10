@@ -724,6 +724,12 @@ importers:
       '@hobo/ci-gh-actions':
         specifier: workspace:*
         version: link:../ci-gh-actions
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hobo/data-postgres':
+        specifier: workspace:*
+        version: link:../data-postgres
       '@neon/functions':
         specifier: 0.11.0
         version: 0.11.0(hono@4.12.27)

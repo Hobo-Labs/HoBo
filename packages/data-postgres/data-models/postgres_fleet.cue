@@ -1,5 +1,7 @@
 package data_models
 
+import "list"
+
 // Invariants for the fleet records. Each mirrors a check the TypeScript
 // parsers make, so a record `parseFleetAssignment` refuses is refused here too.
 
@@ -26,4 +28,26 @@ package data_models
 	if !sealed {
 		target?: _|_
 	}
+}
+
+#PostgresFleetDigest: string & =~"^[0-9a-f]{64}$"
+
+#PostgresFleetReplicatedTable: {
+	name:   string & =~"^[a-z_][a-z0-9_]{0,62}$"
+	rows:   int & >=0
+	digest: #PostgresFleetDigest
+}
+
+#PostgresFleetWatermark: {
+	source:       #PostgresFleetBackendId
+	sourceEpoch:  int & >=1
+	snapshotAtMs: int & >=0
+	tables: [...#PostgresFleetReplicatedTable]
+	rowCount:  int & >=0
+	byteCount: int & >=0
+	digest:    #PostgresFleetDigest
+
+	// The total is the sum of its parts; a watermark cannot claim more rows
+	// than its tables hold.
+	rowCount: list.Sum([for t in tables {t.rows}])
 }

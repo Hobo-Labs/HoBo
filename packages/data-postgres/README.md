@@ -16,7 +16,7 @@ scans the built API surface and the source tree for provider identifiers.
 | The advertised vocabulary | `POSTGRES_GUARANTEES`, `POSTGRES_FEATURES`, `postgresCapability(key)` |
 | Proving the advertisement | `postgresConformanceSuite`, `planPostgresConformance`, `runPostgresConformance` |
 | Getting the data out | `POSTGRES_MIGRATION_PROFILES`, `buildPgDumpArgv`, `buildPgRestoreArgv`, `buildLogicalCopyPlan` |
-| Running on several backends at once | [the fleet](#the-fleet): `proposeAssignment`, `readCurrentAssignment`, `sqlAssignmentRegister` |
+| Running on several backends at once | [the fleet](#the-fleet): `proposeAssignment`, `readCurrentAssignment`, `replicateSnapshot` |
 
 ## Authoring
 
@@ -250,6 +250,79 @@ an in-memory fleet of two to five backends that go down and come back,
 including writes that were applied but whose answer was lost.
 `contracts/pacts/postgres-fleet.pact.json` is the boundary contract for one
 backend's log and for a majority read; `test/fleet-contract.test.ts` replays it.
+
+### Replication: keeping standbys current
+
+`replicateSnapshot({ source, target, layout, assignment })` replaces a
+standby's copied tables with one consistent snapshot of the writer's. It uses
+two ordinary connections: no replication role, no publication, no extension.
+
+**What is copied.** Every ordinary table in the current schema whose name
+starts with the layout's `dataPrefix`, discovered from the catalog, minus the
+fleet's own control tables and the layout's `excludedTables` (migration
+bookkeeping). The fleet's control tables are never copied, so one backend can
+never overwrite another's log.
+
+**Source.** One `REPEATABLE READ READ ONLY` transaction. Rows are read through
+a cursor in bounded batches, each row as a JSON object of its columns' *text*
+forms.
+
+**Target.** One transaction that either commits everything or leaves the
+standby as it was:
+
+1. Takes the fleet's exclusive advisory lock, without waiting. An assignment
+   entry cannot arrive on this backend while the lock is held (the accept
+   statement takes the shared form), and a second copy gets `busy`.
+2. Reads the target's own newest log entry on the same session. It must be the
+   assignment the caller resolved, and that assignment must name another
+   backend as the writer. Otherwise: `target-is-writer` or `target-log-differs`.
+3. Compares the catalog of the copied tables on both sides: same tables, same
+   columns, same types. Otherwise `schema-mismatch`, naming the table or column.
+4. Truncates the copied tables together and inserts the rows, casting each
+   text value back to its column type.
+5. Moves every sequence owned by a copied column to at least the source's
+   position, and never backwards, so inserts on a promoted standby cannot
+   collide with copied rows.
+6. Digests every copied table again on the target and compares with the
+   source. Otherwise `digest-mismatch`.
+7. Writes the **watermark**: source backend, assignment epoch, snapshot time
+   on the source's clock, rows and digest per table, and one digest over all.
+
+Step 2 is what makes it impossible to overwrite the writer. A backend that is
+the writer, or has been offered the entry that makes it one, holds that entry
+(rule 3 above), so it refuses however stale the caller's view is.
+
+**Why text and not JSON values.** `row_to_json` writes an SQL `NULL` and a
+`json` column containing `null` identically, and `json_populate_recordset`
+reads both back as SQL `NULL`. Sending each column as the text PostgreSQL
+prints for its type, and casting it back, round-trips `bytea`, `bigint`,
+`timestamptz`, `uuid`, `json`, `jsonb`, `numeric`, arrays and intervals
+exactly. The session's `TimeZone`, `DateStyle`, `IntervalStyle`,
+`extra_float_digits` and `bytea_output` are pinned in both transactions so two
+servers with different defaults print the same bytes.
+
+**The digest** is computed by the server in one pass with constant memory:
+SHA-256 of each row, split into four 64-bit words, summed per word, hashed
+again with the row count. It does not depend on row order. `readDataDigests`
+returns the same list for any backend, so "these two backends hold the same
+data" is one comparison.
+
+**Lag.** `standbyLagMs(watermark, nowMs)` is the time since the snapshot was
+taken. It is an upper bound on what promoting that standby would lose, not a
+count of lost writes.
+
+**Limits, stated plainly.**
+
+- Cost grows with the size of the database, not with how much changed: every
+  run reads and rewrites every row. `limits.maxRows` and `limits.maxBytes`
+  (defaults 2,000,000 rows and 512 MiB of row text) turn a database that has
+  outgrown this into the refusal `oversized` instead of a crash or a timeout.
+- A standby is as stale as the interval between runs. That interval is the
+  floor of any recovery point objective built on this.
+- A foreign key from a table that is not copied into one that is makes the
+  truncate fail; the copy is then rolled back and the error is thrown.
+- Lag compares the caller's clock with the source's. Skew between them shifts
+  it by the same amount.
 
 ## Error codes
 

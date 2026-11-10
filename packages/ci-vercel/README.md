@@ -202,6 +202,21 @@ real PostgreSQL. `HOBO_CI_TEST_POSTGRES_BINDING` (`supabase`,
 under all three bindings against a TLS-only PostgreSQL 16. It has not been run
 against a hosted Supabase or Prisma Postgres database.
 
+### Database fleet (building blocks)
+
+`src/database-fleet-executor.ts` adapts `pg` to the SQL executor port of
+`@hobo/data-postgres`'s fleet (several interchangeable PostgreSQL backends, one
+writer, standbys kept current by snapshot replication). It is not wired into
+the relay yet. `test/database-fleet-postgres.test.ts` runs the fleet's SQL
+against real PostgreSQL and is skipped unless `HOBO_CI_TEST_FLEET_POSTGRES`
+names three separate servers, comma-separated; each test creates and drops its
+own databases:
+
+```bash
+HOBO_CI_TEST_FLEET_POSTGRES="postgres://hobo_ci@127.0.0.1:15441/postgres,postgres://hobo_ci@127.0.0.1:15442/postgres,postgres://hobo_ci@127.0.0.1:15443/postgres" \
+  pnpm --filter @hobo/ci-vercel exec vitest run test/database-fleet-postgres.test.ts
+```
+
 One dependency on Neon remains outside the database. Production reads its
 GitHub App and control secrets from a broker hosted on Neon when
 `HOBO_CI_GITHUB_APP_ID` and `HOBO_CI_BOOTSTRAP_TOKEN_SHA256` are both unset;

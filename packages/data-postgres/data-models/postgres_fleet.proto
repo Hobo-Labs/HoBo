@@ -34,3 +34,27 @@ message PostgresFleetAssignment {
   // Which process proposed the entry. Never a person's name or a credential.
   string decided_by = 8;
 }
+
+// One copied table of a standby: how many rows, and what they hash to.
+message PostgresFleetReplicatedTable {
+  string name = 1;
+  uint64 rows = 2;
+  // Order-independent SHA-256 over every row in text form, lower-case hex.
+  string digest = 3;
+}
+
+// What a standby holds: which writer it was copied from, under which
+// assignment, and as of when. A standby's lag is the time since `snapshot_at_ms`.
+message PostgresFleetWatermark {
+  // The backend the standby was copied from.
+  string source = 1;
+  // The assignment epoch the copy was made under.
+  uint64 source_epoch = 2;
+  // When the snapshot was taken, on the source's clock.
+  uint64 snapshot_at_ms = 3;
+  repeated PostgresFleetReplicatedTable tables = 4;
+  uint64 row_count = 5;
+  uint64 byte_count = 6;
+  // SHA-256 over every table's name, row count and digest, lower-case hex.
+  string digest = 7;
+}
