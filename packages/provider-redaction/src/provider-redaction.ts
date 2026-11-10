@@ -18,9 +18,11 @@
 import { anyCase, SECRET_KEY_NAMES } from "./any-case.js";
 import { LOCATOR, LOCATOR_END, LOCATOR_PATH } from "./locator.js";
 /** What a redacted span becomes. */
+// public-contract: the placeholder callers and tests assert on in redacted output.
 export const REDACTION_MARKER = "[redacted]";
 
 /** The mark a cut text ends with. */
+// public-contract: the mark callers and tests assert a cut text ends with.
 export const CUT_MARKER = "…";
 
 /**
