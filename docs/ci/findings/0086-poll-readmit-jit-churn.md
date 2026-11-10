@@ -34,4 +34,6 @@ That is usually **not** a wrong JIT label or `runner_group_id` mismatch (registr
 
 Coalesce-only deploys without the custody/dedupe/yield bundle **increase** churn (box telemetry 2026-11-10: 8→10 pickups / 3.9 min, jobs `130022163396` / `130017909867` repeating ~35s).
 
-**Ops follow-up:** confirm ARC runners intended for isolated-only work use a distinct label (e.g. `hobo-arc`) so they do not compete with box JIT for `hobo`-labeled jobs.
+## Shared `hobo` label (ARC + box)
+
+ARC and the box worker **both** keep the `hobo` label. GitHub will keep racing dispatch across `hobo-runner-*` and box JIT (`hobo-<uuid>`); that is expected. Churn is stopped only by the worker paths above (custody classification, poll dedupe, pre-JIT foreign yield, `settleStopped` withdraw)—not by relabeling ARC.
