@@ -656,6 +656,78 @@ describe("a package's manifest and build config", () => {
 	});
 });
 
+describe("the walk's cost", () => {
+	// The planner reads stdin under a 20 s guard in read-stdin.test.ts, on a
+	// runner that is also type-checking: its work has to stay proportional to
+	// the tree, not to tree × workspaces.
+	const packages = Array.from(
+		{ length: 40 },
+		(_, index) => `packages/p${index}`,
+	);
+	const files = new Map<string, string>();
+	for (const dir of packages) {
+		files.set(
+			`${dir}/package.json`,
+			manifest(`@t/${dir.slice(9)}`, "vitest run"),
+		);
+		files.set(`${dir}/src/index.ts`, "export const value = 1;\n");
+		for (let index = 0; index < 50; index++)
+			files.set(
+				`${dir}/test/t${index}.test.ts`,
+				'import "../src/index.js";\nconst guide = "../../../docs/guide.md";\n',
+			);
+	}
+	files.set("docs/guide.md", "# guide\n");
+	files.set("docs/other.md", "# other\n");
+
+	const counting = () => {
+		let workspaceReads = 0;
+		const lookups = new Map<string, number>();
+		const tracked = new Set(files.keys());
+		// Each read of a workspace's `dir` is one comparison against a path.
+		const workspaces = packages.map((dir) => ({
+			get dir() {
+				workspaceReads++;
+				return dir;
+			},
+			name: `@t/${dir.slice(9)}`,
+			dependencies: [],
+		}));
+		const tree: Repo = {
+			files: {
+				has: (path: string) => {
+					lookups.set(path, (lookups.get(path) ?? 0) + 1);
+					return tracked.has(path);
+				},
+				[Symbol.iterator]: () => tracked[Symbol.iterator](),
+			} as ReadonlySet<string>,
+			read: (path) => files.get(path),
+			workspaces,
+		};
+		return { tree, lookups, workspaceReads: () => workspaceReads };
+	};
+
+	it("finds a path's package without scanning every workspace", () => {
+		const { tree, workspaceReads } = counting();
+		const plan = scoped(planDependentTests(["docs/other.md"], tree));
+		assert.deepEqual(plan, { full: [], subsets: {}, skipped: [] });
+		// 2 081 files in 40 packages: a scan per path is over 40 000 reads.
+		assert.ok(workspaceReads() < 20_000, `${workspaceReads()} workspace reads`);
+	});
+
+	it("resolves a path many files name once", () => {
+		const { tree, lookups } = counting();
+		const plan = scoped(planDependentTests(["docs/guide.md"], tree));
+		assert.equal(plan.full.length, 40);
+		// 2 000 tests name `docs/guide.md`; each package's 50 name its index.
+		assert.ok((lookups.get("docs/guide.md") ?? 0) < 20, "docs/guide.md");
+		assert.ok(
+			(lookups.get("packages/p0/src/index.ts") ?? 0) < 10,
+			"packages/p0/src/index.ts",
+		);
+	});
+});
+
 describe("planDependentTests", () => {
 	it("runs only the dependent tests whose closure reaches a worker-only file", () => {
 		assert.deepEqual(

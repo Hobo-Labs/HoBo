@@ -161,6 +161,16 @@ change under that directory selects the reader). Before this, nothing led from a
 `packages/cli/package.json` change 6 and 3, and a `packages/policy/package.json` change 25 and 13
 (5 and 8 before, when its importers were never selected).
 
+The planner's own time matters: `scripts/test/read-stdin.test.ts` runs it behind a late writer under
+a 20 s guard, in the same step as the root type-check and the root tests. On an idle runner that test
+took the step 12 s in all; on a busy one the planner alone passed 20 s and failed "PR impact
+validation" (run 42824059139). A plan for a path outside every package walks every package's tests,
+about 2 s here when idle. Three changes bring that to about 1.1 s: a path's package is found by walking
+up its directories instead of scanning every workspace, a path many files name is resolved once, and
+the comment strip no longer backtracks over blank lines. `dependent-tests.test.ts` ("the walk's cost")
+counts workspace comparisons and file lookups on a 40-package fixture, since a time budget would be
+the same flake again.
+
 `pnpm-lock.yaml` plans the whole workspace only when it is the whole diff. Beside changed package
 paths it widens nothing: the plan is the one those paths give, so `packages/core/package.json` with
 the lockfile plans what `packages/core/package.json` alone does. That rule is `affected-lanes.mts`'s

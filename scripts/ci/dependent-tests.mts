@@ -250,8 +250,8 @@ const CONDITIONS = ["import", "node", "default", "require"];
  */
 function withoutComments(source: string): string {
 	return source
-		.replace(/^\s*\/\*[\s\S]*?\*\//gm, "")
-		.replace(/^\s*\/\/.*$/gm, "");
+		.replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, "")
+		.replace(/^[ \t]*\/\/.*$/gm, "");
 }
 
 function packageName(specifier: string): string {
@@ -332,9 +332,6 @@ type Edges = Readonly<{
 
 export function createWalker(repo: Repo) {
 	const byName = new Map(repo.workspaces.map((ws) => [ws.name, ws]));
-	const byDepth = [...repo.workspaces].sort(
-		(a, b) => b.dir.length - a.dir.length,
-	);
 	const dirs = new Set<string>(["."]);
 	for (const file of repo.files)
 		for (let dir = posix.dirname(file); dir !== "."; dir = posix.dirname(dir))
@@ -342,14 +339,20 @@ export function createWalker(repo: Repo) {
 	const manifests = new Map<string, JsonObject | undefined>();
 	const edgeCache = new Map<string, Edges>();
 
+	// The deepest workspace directory at or above the path. Looked up by
+	// walking up from it: a scan of every workspace per path was a fifth of
+	// the planner's time.
+	const byDir = new Map(repo.workspaces.map((ws) => [ws.dir, ws]));
 	const owners = new Map<string, Workspace | undefined>();
-	const ownerOf = (path: string) => {
-		if (!owners.has(path))
-			owners.set(
-				path,
-				byDepth.find((ws) => path === ws.dir || path.startsWith(`${ws.dir}/`)),
-			);
-		return owners.get(path);
+	const ownerOf = (path: string): Workspace | undefined => {
+		if (owners.has(path)) return owners.get(path);
+		let owner: Workspace | undefined;
+		for (let dir = path; dir !== "." && dir !== "/"; dir = posix.dirname(dir)) {
+			owner = byDir.get(dir);
+			if (owner) break;
+		}
+		owners.set(path, owner);
+		return owner;
 	};
 	const manifestOf = (ws: Workspace) => {
 		if (!manifests.has(ws.dir))
@@ -418,7 +421,12 @@ export function createWalker(repo: Repo) {
 	}
 
 	/** The tracked source file `path` names, or the one a `dist/` path is built from. */
+	const sources = new Map<string, string | undefined>();
 	function sourceFile(path: string): string | undefined {
+		if (!sources.has(path)) sources.set(path, findSourceFile(path));
+		return sources.get(path);
+	}
+	function findSourceFile(path: string): string | undefined {
 		const owner = ownerOf(path);
 		const bases = [path];
 		if (owner && path.startsWith(`${owner.dir}/dist/`)) {
