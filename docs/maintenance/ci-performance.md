@@ -164,6 +164,26 @@ store cannot `docker load` an OCI layout), and retags
 `hobo-ci-worker:local` only after the live preflight contract passes. Its change detection greps a
 depth-2 diff of `HEAD~1`; before, it used `rg`, which the worker does not ship, so it never fired.
 
+## Which runner a run uses
+
+Every routed workflow starts with a **Route runners** job on a GitHub-hosted
+machine. The run's jobs ask for the label it chose: the fleet (`hobo`, or
+`hobo-trunk` for trunk events) while no job asking for that label has waited
+more than 300 seconds, an enrolled local box (`hobo-local-host`) when the fleet
+is past that, and `ubuntu-24.04` when neither is taking jobs. The two required
+gates are always GitHub-hosted. A run that says `runner: ubuntu-24.04 (github)`
+in its Route runners log was sent there because the fleet's queue was past the
+limit, and the same line gives the wait it saw.
+
+On a GitHub-hosted machine a job runs the same steps with no deps layer and a
+cold pnpm store unless main has saved one, so installs are slower and the
+tests are not. Jobs that run package tests download the image's pinned headless
+shell first, and one storage test that needs the image's user is skipped
+there. The cold dev loop is the one job that differs: with no worker
+image, it runs in a network namespace whose only interface is loopback.
+Repository variable `HOBO_CI_ROUTE=fleet` turns routing off. The runbook is
+"Runner routing" in [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
+
 ## Reading a main failure
 
 `gh run view --log` and the web viewer can drop the tail of a long step, so a step can look as if it

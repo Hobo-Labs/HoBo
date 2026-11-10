@@ -581,3 +581,16 @@ The bound Actions/act command adapter delegates to the shared Node workspace
 backend in `@hobo/ci/workspace-backend`. The Azure Pipelines sibling
 [`@hobo/ci-ado`](../ci-ado/README.md) uses that same execution implementation;
 GitHub relay, runner authorization and account routing remain in this package.
+
+## Postgres schema
+
+The 13 PostgreSQL tables this package owns (App registration, OAuth sessions,
+the platform-App bootstrap fence, and the webhook and queued-job repair state)
+are declared in [`db/schema.ts`](db/schema.ts). Their migrations are in
+`db/migrations/`, generated and applied with the tooling `@hobo/ci` provides:
+`pnpm --filter @hobo/ci-gh-actions run db:generate`, `db:check`, `db:migrate`
+and `db:verify`. The stores still create their tables from the DDL embedded in
+`src/`; `db/migrations/embedded-ddl.lock.json` and `db:verify` hold that DDL to
+the declared schema. How a migration is produced and applied, how an existing
+database is baselined, and what is not done yet are described once, in
+[`@hobo/ci`](../ci/README.md#postgres-schema-and-migrations).
