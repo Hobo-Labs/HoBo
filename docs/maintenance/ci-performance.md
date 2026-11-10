@@ -81,6 +81,18 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   (an inert PR diff skips install in the off-path job). With `zod` it failed `ERR_MODULE_NOT_FOUND`
   there and turned a skipped job red (#1653's run 41583817166). `scripts/test/ci-trace.test.ts` pins
   the import rule; the hand-written parser emits byte-identical spans and summaries.
+- **Relay and worker traces.** The box worker exports its own OpenTelemetry spans when an OTLP
+  endpoint or `HOBO_CI_TRACE_FILE` is set: every GitHub call that changes something (runner created,
+  runner deleted, run force-cancelled or re-run) and every structured log event, with a job's pickup
+  split into queue, container start and runner registration. A run's trace id comes from its run id,
+  and `ci-trace.mts` now uses the same id, so the job's Turbo spans and the worker's spans for that
+  run form one trace. Runs were being cancelled with nothing recording by whom; a cancelled run whose
+  trace has no `force-cancel` span was not cancelled by the worker. Settings and the span list are in
+  [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
+- **Regenerated proxy bundle passes the generated-file guard.** `sandbox-proxy-bundle.ts` embeds relay
+  sources, so changing them regenerates it with no generator change to stage, which the guard used to
+  refuse. It now runs `generate-proxy-bundle.mts --check` for that file and allows the commit only when
+  the bundle on disk is exactly what the generator emits.
 - **Image builds read the checkout's pins.** `build.sh` runs inside a job container that carries the
   tool pins of whichever commit last built `hobo-ci-worker:local`. After a pull request pinned `syft`
   and rebuilt the shared image, `mise install --locked` failed on every branch without that pin
