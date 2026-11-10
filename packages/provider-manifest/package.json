@@ -1,0 +1,44 @@
+{
+	"name": "@hobo/provider-manifest",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"description": "Provider manifest: auth flows, capability mappings, and billing models declared as one YAML/JSON document and deserialized into the existing pricing-catalog and capability-manifest types.",
+	"files": [
+		"dist",
+		"LICENSE"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"bin": {
+		"hobo-provider-manifest": "./dist/cli.js"
+	},
+	"scripts": {
+		"codegen": "pnpm --dir ../.. exec node --import tsx packages/schema-tools/src/cli.ts --packages-root packages --filter packages/provider-manifest",
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"test:contract:consumer": "vitest run contracts/consumer",
+		"test:schema": "pnpm --dir ../.. exec node --import tsx packages/schema-tools/src/cli.ts --check --packages-root packages --filter packages/provider-manifest"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/auth-md": "workspace:*",
+		"@hobo/core": "workspace:*",
+		"@hobo/manifest-capability": "workspace:*",
+		"@hobo/pricing": "workspace:*",
+		"yaml": "2.9.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.9"
+	}
+}

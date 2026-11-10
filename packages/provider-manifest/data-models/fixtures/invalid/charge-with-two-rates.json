@@ -1,0 +1,376 @@
+{
+  "schema": "hobo.provider-manifest/v1",
+  "provider": {
+    "id": "acme-cloud",
+    "displayName": "Acme Cloud",
+    "homepage": "https://acme-cloud.example.com",
+    "description": "Fictional provider used to exercise the manifest format."
+  },
+  "auth": {
+    "issuer": "https://auth.acme-cloud.example.com",
+    "flows": [
+      {
+        "id": "console-oauth",
+        "description": "A human grants an agent scoped access.",
+        "scopes": [
+          {
+            "name": "compute:deploy",
+            "description": "Create and replace compute instances."
+          },
+          {
+            "name": "inference:invoke"
+          }
+        ],
+        "oauth2": {
+          "grant": "authorization-code",
+          "metadataUrl": "https://auth.acme-cloud.example.com/.well-known/oauth-authorization-server",
+          "clientRegistration": "dynamic"
+        }
+      },
+      {
+        "id": "device",
+        "oauth2": {
+          "grant": "device-code",
+          "tokenEndpoint": "https://auth.acme-cloud.example.com/oauth/token",
+          "deviceAuthorizationEndpoint": "https://auth.acme-cloud.example.com/oauth/device"
+        }
+      },
+      {
+        "id": "agent-registration",
+        "scopes": [
+          {
+            "name": "inference:invoke"
+          }
+        ],
+        "authMd": {
+          "resource": "https://api.acme-cloud.example.com",
+          "anonymousRegistration": true,
+          "humanClaim": true
+        }
+      },
+      {
+        "id": "workload-federation",
+        "oidcFederation": {
+          "audience": "hobo",
+          "exchange": "urn:ietf:params:oauth:grant-type:token-exchange"
+        }
+      },
+      {
+        "id": "legacy-key",
+        "apiKey": {
+          "header": "X-Api-Key",
+          "rotation": "manual"
+        }
+      }
+    ],
+    "resourceIndicators": [
+      "urn:acme:compute",
+      "urn:acme:inference"
+    ],
+    "tokenLifetimeSec": 3600
+  },
+  "capabilities": {
+    "regions": [
+      "us-east",
+      "eu-west"
+    ],
+    "mappings": [
+      {
+        "id": "compute/gpu",
+        "port": "compute",
+        "resourceClass": "gpu",
+        "providerService": "acme.gpu.a1",
+        "features": [
+          "container",
+          "gpu"
+        ],
+        "stability": "stable",
+        "products": [
+          "gpu-a1"
+        ]
+      },
+      {
+        "id": "database/postgres",
+        "port": "database",
+        "resourceClass": "postgres",
+        "providerService": "acme.pg.flex",
+        "features": [
+          "managed",
+          "ha"
+        ],
+        "profiles": [
+          "data.postgres/v1"
+        ],
+        "products": [
+          "pg-flex"
+        ]
+      },
+      {
+        "id": "ai/chat",
+        "port": "inference",
+        "resourceClass": "chat",
+        "providerService": "acme.llm.large",
+        "regions": [
+          "us-east"
+        ],
+        "stability": "preview",
+        "products": [
+          "llm-large"
+        ]
+      }
+    ]
+  },
+  "billing": {
+    "currency": "USD",
+    "version": "2026.11",
+    "effectiveFrom": "2026-11-01T00:00:00Z",
+    "source": {
+      "url": "https://acme-cloud.example.com/pricing",
+      "checkedAt": "2026-11-10",
+      "note": "Fictional list prices."
+    },
+    "billables": [
+      {
+        "id": "gpu-time",
+        "category": "hardware",
+        "unit": "second",
+        "description": "Wall-clock seconds an A1 GPU is attached."
+      },
+      {
+        "id": "instance",
+        "category": "hardware",
+        "unit": "instance",
+        "aggregation": "max"
+      },
+      {
+        "id": "storage",
+        "category": "hardware",
+        "unit": "GB",
+        "aggregation": "max"
+      },
+      {
+        "id": "input-tokens",
+        "category": "ai",
+        "unit": "token"
+      },
+      {
+        "id": "output-tokens",
+        "category": "ai",
+        "unit": "token"
+      },
+      {
+        "id": "workload",
+        "category": "ai",
+        "unit": "workload",
+        "description": "One completed batch job, whatever its size."
+      },
+      {
+        "id": "seat",
+        "category": "license",
+        "unit": "seat",
+        "aggregation": "max"
+      },
+      {
+        "id": "filament",
+        "category": "material",
+        "unit": "kg",
+        "increment": "0.25"
+      }
+    ],
+    "products": [
+      {
+        "id": "gpu-a1",
+        "kind": "hardware",
+        "plans": [
+          {
+            "id": "on-demand",
+            "charges": [
+              {
+                "id": "gpu-seconds",
+                "metered": {
+                  "billable": "gpu-time",
+                  "package": {
+                    "per": "3600",
+                    "amount": "1.80"
+                  },
+                  "unitPrice": "0.01"
+                }
+              }
+            ]
+          },
+          {
+            "id": "reserved-monthly",
+            "charges": [
+              {
+                "id": "reservation",
+                "recurring": {
+                  "interval": "monthly",
+                  "amount": "900.00",
+                  "per": "instance"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "pg-flex",
+        "kind": "service",
+        "billables": [
+          "instance"
+        ],
+        "plans": [
+          {
+            "id": "standard",
+            "charges": [
+              {
+                "id": "base",
+                "recurring": {
+                  "interval": "monthly",
+                  "amount": "25.00"
+                }
+              },
+              {
+                "id": "storage",
+                "metered": {
+                  "billable": "storage",
+                  "graduated": {
+                    "tiers": [
+                      {
+                        "upTo": "10",
+                        "unitPrice": "0"
+                      },
+                      {
+                        "upTo": "500",
+                        "unitPrice": "0.12"
+                      },
+                      {
+                        "unitPrice": "0.09"
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            "included": [
+              {
+                "billable": "storage",
+                "quantity": "10",
+                "reset": "none"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "llm-large",
+        "kind": "ai",
+        "plans": [
+          {
+            "id": "pay-as-you-go",
+            "charges": [
+              {
+                "id": "input",
+                "metered": {
+                  "billable": "input-tokens",
+                  "package": {
+                    "per": "1000000",
+                    "amount": "3.00"
+                  }
+                }
+              },
+              {
+                "id": "output",
+                "metered": {
+                  "billable": "output-tokens",
+                  "package": {
+                    "per": "1000000",
+                    "amount": "15.00"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "id": "batch",
+            "charges": [
+              {
+                "id": "per-job",
+                "metered": {
+                  "billable": "workload",
+                  "unitPrice": "0.40"
+                }
+              }
+            ]
+          },
+          {
+            "id": "team-monthly",
+            "charges": [
+              {
+                "id": "seats",
+                "recurring": {
+                  "interval": "monthly",
+                  "amount": "30.00",
+                  "per": "seat"
+                }
+              },
+              {
+                "id": "input-overage",
+                "metered": {
+                  "billable": "input-tokens",
+                  "package": {
+                    "per": "1000000",
+                    "amount": "2.50"
+                  }
+                }
+              }
+            ],
+            "included": [
+              {
+                "billable": "input-tokens",
+                "quantity": "50000000",
+                "reset": "monthly"
+              }
+            ]
+          },
+          {
+            "id": "spot",
+            "charges": [
+              {
+                "id": "auction",
+                "external": {
+                  "model": "x-spot-auction",
+                  "params": {
+                    "floor": "0.20"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "print-farm",
+        "kind": "material",
+        "plans": [
+          {
+            "id": "per-spool",
+            "charges": [
+              {
+                "id": "filament",
+                "metered": {
+                  "billable": "filament",
+                  "package": {
+                    "per": "0.25",
+                    "amount": "6.00",
+                    "whole": true
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

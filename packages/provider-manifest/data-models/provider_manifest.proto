@@ -1,0 +1,219 @@
+syntax = "proto3";
+
+// The provider manifest: one serialized document (YAML or JSON) in which a
+// provider or community author declares auth flows, capability mappings, and
+// billing models as data. The JSON form of ProviderManifest IS the authoring
+// format; closed vocabularies are plain strings pinned in provider_manifest.cue
+// (a proto3 enum would add an UNSPECIFIED zero an unset field decodes to).
+package hobo.providermanifest.v1;
+
+message ProviderManifest {
+  string schema = 1;
+  ProviderIdentity provider = 2;
+  AuthSection auth = 3;
+  CapabilitySection capabilities = 4;
+  BillingSection billing = 5;
+}
+
+message ProviderIdentity {
+  string id = 1;
+  string display_name = 2;
+  string homepage = 3;
+  string description = 4;
+}
+
+// Where a transcribed third-party fact came from and the date a human checked it.
+message SourceRef {
+  string url = 1;
+  string checked_at = 2;
+  string note = 3;
+}
+
+// ---------------------------------------------------------------- auth
+
+message AuthSection {
+  string issuer = 1;
+  repeated AuthFlow flows = 2;
+  repeated string resource_indicators = 3;
+  int32 token_lifetime_sec = 4;
+}
+
+message AuthScope {
+  string name = 1;
+  string description = 2;
+}
+
+message AuthFlow {
+  string id = 1;
+  string description = 2;
+  repeated AuthScope scopes = 3;
+  oneof flow {
+    OAuth2Flow oauth2 = 10;
+    AuthMdFlow auth_md = 11;
+    OidcFederationFlow oidc_federation = 12;
+    ApiKeyFlow api_key = 13;
+    ExtensionAuthFlow extension = 14;
+  }
+}
+
+message OAuth2Flow {
+  string grant = 1;
+  string authorization_endpoint = 2;
+  string token_endpoint = 3;
+  string device_authorization_endpoint = 4;
+  string metadata_url = 5;
+  string pkce = 6;
+  string audience = 7;
+  string client_registration = 8;
+  string registration_endpoint = 9;
+}
+
+// auth.md agent registration: the protected resource whose OAuth Protected
+// Resource Metadata and auth.md document an agent discovers.
+message AuthMdFlow {
+  string resource = 1;
+  string document_url = 2;
+  bool anonymous_registration = 3;
+  bool human_claim = 4;
+}
+
+message OidcFederationFlow {
+  string audience = 1;
+  string exchange = 2;
+}
+
+message ApiKeyFlow {
+  string header = 1;
+  string prefix = 2;
+  string rotation = 3;
+}
+
+// A flow type this schema does not model. Parsed and published, never brokered.
+message ExtensionAuthFlow {
+  string type = 1;
+  map<string, string> params = 2;
+}
+
+// ---------------------------------------------------------------- capabilities
+
+message CapabilitySection {
+  repeated string regions = 1;
+  repeated CapabilityMapping mappings = 2;
+}
+
+// One HoBo port/resource class and the provider service that realizes it.
+message CapabilityMapping {
+  string id = 1;
+  string port = 2;
+  string resource_class = 3;
+  string provider_service = 4;
+  repeated string features = 5;
+  repeated string regions = 6;
+  string stability = 7;
+  string version = 8;
+  repeated string profiles = 9;
+  repeated string products = 10;
+}
+
+// ---------------------------------------------------------------- billing
+
+message BillingSection {
+  string currency = 1;
+  string version = 2;
+  string effective_from = 3;
+  optional string effective_until = 4;
+  SourceRef source = 5;
+  repeated BillableDefinition billables = 6;
+  repeated BillingProduct products = 7;
+}
+
+// A billable thing, defined by the author: GPU time, input tokens, workloads,
+// seats, kilograms of filament. Category and unit are open vocabularies.
+message BillableDefinition {
+  string id = 1;
+  string category = 2;
+  string unit = 3;
+  string aggregation = 4;
+  string increment = 5;
+  string description = 6;
+  map<string, string> attributes = 7;
+}
+
+message BillingProduct {
+  string id = 1;
+  string display_name = 2;
+  string kind = 3;
+  repeated string billables = 4;
+  repeated BillingPlan plans = 5;
+  map<string, string> attributes = 6;
+}
+
+message BillingPlan {
+  string id = 1;
+  string display_name = 2;
+  repeated Charge charges = 3;
+  repeated IncludedUsage included = 4;
+}
+
+message Charge {
+  string id = 1;
+  string description = 2;
+  map<string, string> when = 3;
+  oneof model {
+    RecurringCharge recurring = 10;
+    MeteredCharge metered = 11;
+    ExternalCharge external = 12;
+  }
+}
+
+// A flat fee per interval (monthly, yearly, once ...), optionally per seat/node.
+message RecurringCharge {
+  string interval = 1;
+  string amount = 2;
+  string timing = 3;
+  string per = 4;
+}
+
+// Usage of one billable times a rate: per unit, per package of N units
+// (e.g. per 1,000,000 tokens), or tiered.
+message MeteredCharge {
+  string billable = 1;
+  string timing = 2;
+  oneof rate {
+    string unit_price = 3;
+    PackageRate package = 4;
+    TierList graduated = 5;
+    TierList volume = 6;
+  }
+}
+
+// `amount` per `per` units. Pro-rata by default ("3.00 per 1000000 tokens");
+// `whole` sells indivisible packages and rounds partial usage up.
+message PackageRate {
+  string per = 1;
+  string amount = 2;
+  bool whole = 3;
+}
+
+message TierList {
+  repeated RateTier tiers = 1;
+}
+
+message RateTier {
+  optional string up_to = 1;
+  string unit_price = 2;
+  string flat_fee = 3;
+}
+
+// A pricing model the rating kernel cannot execute. Declared for humans and
+// agents; a plan carrying one is reported as unrated, never priced as zero.
+message ExternalCharge {
+  string model = 1;
+  map<string, string> params = 2;
+}
+
+message IncludedUsage {
+  string billable = 1;
+  string quantity = 2;
+  string reset = 3;
+}
