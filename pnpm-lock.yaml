@@ -746,6 +746,12 @@ importers:
         specifier: ^4.1.13
         version: 4.4.3
     devDependencies:
+      '@hobo/bindles':
+        specifier: workspace:*
+        version: link:../bindles
+      '@hobo/data-postgres':
+        specifier: workspace:*
+        version: link:../data-postgres
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5

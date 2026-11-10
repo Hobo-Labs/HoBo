@@ -31,6 +31,8 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@hobo/bindles": "workspace:*",
+    "@hobo/data-postgres": "workspace:*",
     "@types/pg": "8.15.5",
     "esbuild": "0.28.1"
   },

@@ -108,6 +108,51 @@ the generated plan is printed by `--dry-run` and is not accepted as executable
 input. The existing relay command/event and PostgreSQL replay semantics remain
 independent.
 
+## The relay as a HoBo app
+
+HoBo deploys its own relay, so the relay is declared in HoBo's own app model.
+[`src/bindle.ts`](src/bindle.ts) is the Bindle (`hobo-ci-relay`), at the path the
+CLI's project loader looks for (`src/bindle.ts`), so this directory is a HoBo
+project:
+
+| Resource | Kind | What it is here |
+|---|---|---|
+| `relay` | `api` | the HTTP entry, `api/relay.ts`, which every route is rewritten to |
+| `hobo-ci` | `queue` | the private queue topic `api/queue.ts` consumes |
+| `hobo-ci-repair` | `schedule` | the repair tick, every 15 minutes, onto that queue |
+| `state` | `data` | the PostgreSQL event store, inbox and projections |
+| `secrets` | `secret` | where the relay's secrets are held |
+
+The Bindle names no provider (`assertNoBindleProviderSelection` holds, and the
+test below also scans the declaration for provider names): the target is chosen
+where the deploy is run. Two facts the Bindle model cannot carry yet are
+exported beside it, keyed by its resource names: `RELAY_REPAIR_SCHEDULE` (the
+cadence `*/15 * * * *`; `b.schedule()` takes none) and `relayState`
+(`postgres.database({ jsonb, pooling, connectivity: ["tls-tcp"] })` from
+`@hobo/data-postgres`, a `data.postgres/v1` capability requirement; `b.data()`
+takes none). `relayConfig` is the relay's `config()` schema: every setting the
+source reads, by name and with no value. Its `env.*` fields are the non-secret
+configuration a deploy may set; its `secret.*` fields (`DATABASE_URL`,
+`DATABASE_URL_UNPOOLED`, `CRON_SECRET`, the session key, tokens, the GitHub App
+key and secrets) are named only: the operator, the storage integration or the
+relay's own vault holds them.
+
+The declaration is not deployed code. No entry file and no other source imports
+it, and the package's build (`tsconfig.json`) leaves it out, so what Vercel
+compiles and bundles for the relay is unchanged and needs neither
+`@hobo/bindles` nor `@hobo/data-postgres` (devDependencies); `tsconfig.check.json`
+type-checks it.
+
+`test/relay-bindle.test.ts` ties the declaration to the relay so it cannot
+drift: the queue topic and its consumer file equal `vercel.json`'s queue
+trigger, the route destination equals the HTTP entry, every `queue.send` topic
+and repair name in `src/entry.ts` equals the declared ones, and the declared
+settings are exactly the `HOBO_CI_*`, `CRON_SECRET` and `DATABASE_URL*` names
+the source reads. `vercel.json` declares no schedule on this branch (the hosted
+relay is ticked by an external trigger, which `test/scheduled-repair.test.ts`
+pins), so the schedule's name, cadence and topic are compared with
+`vercel.json` only once it declares one, and then must match exactly.
+
 ## Hosted relay
 
 This package provides a Vercel Node Function HTTP boundary, a Postgres-backed
