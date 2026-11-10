@@ -40,7 +40,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   `packages/providers/<name>` (the groups are read from `pnpm-workspace.yaml`; before that, any change
   under a group read as a removed package and ran the whole workspace). Root build inputs (workspace, behavior-changing turbo config, tsconfig, biome, toolchain pins,
   vendored sources) run the whole workspace. A `mise.toml` or `mise.lock` diff that only touches a tool no
-  package task runs (`gitleaks`, `shellcheck`, `syft`; the list is explicit in the script) does not
+  Main-gate full-history gitleaks uses `scripts/ci/gitleaks-main-scan.mts` with a committed baseline
+  (`docs/ci/gitleaks-main-baseline.sha`) so `workflow_dispatch` scans `baseline..HEAD` without
+  `--refetch`, and raises full-scan timeouts when no baseline applies. Package task runs (`gitleaks`, `shellcheck`, `syft`; the list is explicit in the script) does not
   ([finding 81](../ci/findings/0081-a-ci-only-tool-pin-planned-the-whole-workspace.md)). Scripts-only root manifest edits and root `//#` task edits
   stay scoped by comparing root files with the diff base; `globalDependencies` additions and removals
   run the whole workspace because they change every task's hash inputs. Missing or invalid base content
