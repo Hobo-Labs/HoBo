@@ -575,13 +575,28 @@ try {
 	let tickInFlight: Promise<void> | undefined;
 	let jobPollInFlight: Promise<void> | undefined;
 	let gcInFlight: Promise<void> | undefined;
+	let orphanReconcileInFlight: Promise<void> | undefined;
+
+	function runOrphanJobReconcile(): void {
+		if (draining || orphanReconcileInFlight) return;
+		orphanReconcileInFlight = worker
+			.reconcileOrphanJobs()
+			.catch((error) => {
+				log("hobo_ci_orphan_job_reconcile_failed", {
+					message: error instanceof Error ? error.message : "unknown",
+				});
+			})
+			.finally(() => {
+				orphanReconcileInFlight = undefined;
+			});
+	}
 
 	const reconcileAndLaunch = singleFlight(async () => {
 		const workerReconcileStartedAt = Date.now();
 		const reconciliation = await worker.reconcileLeases();
 		workerReconcileMs = Date.now() - workerReconcileStartedAt;
 		liveWorkerLeaseIds = reconciliation.liveLeaseIds;
-		await worker.reconcileOrphanJobs();
+		runOrphanJobReconcile();
 		if (!reconciliation.inventoryKnown) return;
 		// In push mode the hosted relay drains the shared inbox; in pull mode
 		// this worker is the only consumer of its own.
@@ -703,7 +718,10 @@ try {
 	}, intervalMs);
 	if (poller) {
 		runJobPoll();
-		jobPollTimer = setInterval(runJobPoll, plan.jobPollMs);
+		jobPollTimer = setInterval(() => {
+			runJobPoll();
+			runOrphanJobReconcile();
+		}, plan.jobPollMs);
 	}
 	runDepsImageEnsure();
 
@@ -720,6 +738,7 @@ try {
 			await worker.discardWarm().catch(() => undefined);
 			log("hobo_ci_isolated_worker_draining", { signal });
 			await jobPollInFlight;
+			await orphanReconcileInFlight;
 			await gcInFlight;
 			if (tickInFlight) {
 				await tickInFlight.catch(() => undefined);
