@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
-	type GithubAssignmentLookup,
 	authorizeStartFence,
+	type GithubAssignmentLookup,
 	hashBindingSecret,
 	runnerSlotName,
 	START_FENCE_EXIT,
