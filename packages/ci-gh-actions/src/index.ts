@@ -147,6 +147,10 @@ export {
 	type WorkerStorageAdmission,
 } from "./isolated-worker/storage-admission.js";
 export {
+	accountForStorageOverflowReserve,
+	selectStorageSpillBackend,
+} from "./isolated-worker/fleet-storage-spill.js";
+export {
 	DEPS_BUILD_ADMISSION_ID,
 	STORAGE_CLASS_RESERVES,
 	storageClassForJob,

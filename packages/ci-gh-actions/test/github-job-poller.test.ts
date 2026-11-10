@@ -631,8 +631,29 @@ describe("pull-mode box worker over SQLite", () => {
 	async function configuredStore(
 		concurrency: number,
 		path = join(root, `${randomUUID()}.sqlite`),
+		input: {
+			offers?: ReturnType<typeof create<typeof OfferSchema>>[];
+			isolatedOnly?: boolean;
+		} = {},
 	) {
 		const store = new SqliteCiStore(path);
+		const offers =
+			input.offers ??
+			[
+				create(OfferSchema, {
+					id: "box-isolated",
+					provider: "kubernetes",
+					providerAccountId: "box",
+					enabled: true,
+					runsOn: "hobo-isolated-worker",
+					backend: "isolated-container",
+					concurrency,
+					observedAt: "2026-11-02T00:00:00Z",
+					validUntil: "2026-12-31T23:59:59Z",
+					sourceUrl: "https://example.test/box-evidence",
+					bridgeAcknowledged: true,
+				}),
+			];
 		await store.configure(
 			create(ConfigurationSchema, {
 				accounts: [
@@ -640,21 +661,7 @@ describe("pull-mode box worker over SQLite", () => {
 						id: "hobo-labs",
 						maxRuntimeMinutes: 30,
 						startupMinutes: 5,
-						offers: [
-							create(OfferSchema, {
-								id: "box-isolated",
-								provider: "kubernetes",
-								providerAccountId: "box",
-								enabled: true,
-								runsOn: "hobo-isolated-worker",
-								backend: "isolated-container",
-								concurrency,
-								observedAt: "2026-11-02T00:00:00Z",
-								validUntil: "2026-12-31T23:59:59Z",
-								sourceUrl: "https://example.test/box-evidence",
-								bridgeAcknowledged: true,
-							}),
-						],
+						offers,
 					}),
 				],
 				connections: [
@@ -662,10 +669,23 @@ describe("pull-mode box worker over SQLite", () => {
 						accountId: "hobo-labs",
 						...CONNECTION,
 						runnerGroupId: 1,
-						isolatedOnly: true,
-						acceptAllMatchingRepositoryJobs: true,
-						trustedRepositoryAcknowledged: true,
-						publicRepositoryAcknowledged: true,
+						isolatedOnly: input.isolatedOnly ?? true,
+						...(input.isolatedOnly === false
+							? {
+									acceptAllMatchingRepositoryJobs: false,
+									bridgeWorkflow: "host.yml",
+									bridgeSha: "a".repeat(40),
+									bridgeRef: "hobo-ci-v1",
+									dispatcherActorId: 123,
+									allowedEvents: ["push"],
+									allowedRefs: ["refs/heads/main"],
+									trustedRepositoryAcknowledged: true,
+								}
+							: {
+									acceptAllMatchingRepositoryJobs: true,
+									trustedRepositoryAcknowledged: true,
+									publicRepositoryAcknowledged: true,
+								}),
 					}),
 				],
 			}),
@@ -944,6 +964,77 @@ describe("pull-mode box worker over SQLite", () => {
 			1,
 		]);
 		expect(launched).toHaveLength(1);
+		store.close();
+	});
+
+	it("reserves ARC overflow when box storage refuses instead of re-queuing on hobo", async () => {
+		const store = await configuredStore(2, join(root, `${randomUUID()}.sqlite`), {
+			isolatedOnly: false,
+			offers: [
+				create(OfferSchema, {
+					id: "box",
+					provider: "hobo-box-worker",
+					providerAccountId: "box",
+					enabled: true,
+					runsOn: "hobo-isolated-worker",
+					backend: "isolated-container",
+					concurrency: 2,
+					observedAt: "2026-11-02T00:00:00Z",
+					validUntil: "2026-12-31T23:59:59Z",
+					sourceUrl: "https://example.test/box-evidence",
+					bridgeAcknowledged: true,
+				}),
+				create(OfferSchema, {
+					id: "arc",
+					provider: "kubernetes",
+					providerAccountId: "arc",
+					enabled: true,
+					runsOn: "hobo-arc",
+					backend: "gh-actions",
+					concurrency: 4,
+					observedAt: "2026-11-02T00:00:00Z",
+					validUntil: "2026-12-31T23:59:59Z",
+					sourceUrl: "https://example.test/arc-evidence",
+					bridgeAcknowledged: true,
+				}),
+			],
+		});
+		const github = new FakeGithub(
+			{ queued: [900], in_progress: [] },
+			{ 900: [{ id: 1, status: "queued", labels: ["hobo"] }] },
+		);
+		const storageAdmission: WorkerStorageAdmission = {
+			admit: vi.fn(async () => false),
+			release: vi.fn(),
+			reap: vi.fn(async () => undefined),
+			maintain: vi.fn(async () => undefined),
+			isAdmissionOpen: () => true,
+		};
+		const runtime = boxRuntime(store, github, [], undefined, {
+			labels: new Map(),
+			storageAdmission,
+		});
+		await store.queue(
+			create(JobSchema, {
+				id: 1,
+				runId: 900,
+				runAttempt: 1,
+				repositoryId: CONNECTION.repositoryId,
+				installationId: CONNECTION.installationId,
+				repository: CONNECTION.repository,
+				name: "PR impact gate",
+				labels: ["hobo"],
+				isolatedRequired: false,
+			}),
+			new Date(NOW).toISOString(),
+		);
+		await runtime.tick({ maxDeliveries: 10 });
+		expect(await store.pendingJobs()).toEqual([]);
+		const leases = await store.all();
+		expect(leases).toHaveLength(1);
+		expect(leases[0]?.offerId).toBe("arc");
+		expect(leases[0]?.provider).toBe("kubernetes");
+		expect(storageAdmission.admit).toHaveBeenCalled();
 		store.close();
 	});
 

@@ -21,6 +21,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkerImage } from "../src/isolated-worker/image-gc.js";
 import { createHostCapacityTracker } from "../src/isolated-worker/host-capacity.js";
 import {
+	storageReserveForClass,
+	type WorkerStorageReserve,
+} from "../src/isolated-worker/storage-job-classes.js";
+
+function jobReserve(
+	overrides: Partial<WorkerStorageReserve>,
+): WorkerStorageReserve {
+	return { ...storageReserveForClass("standard"), ...overrides };
+}
+import {
 	createNodeWorkerStorageFileSystem,
 	createWorkerStorageAdmission,
 	type WorkerFileSystemStats,
@@ -47,13 +57,15 @@ afterEach(() => {
 		rmSync(root, { recursive: true, force: true });
 });
 
-function usage(percent: number): WorkerFileSystemStats {
+function usage(diskPercent: number, inodePercent = 20): WorkerFileSystemStats {
+	const inodeScale = 1_000_000;
+	const byteBlocks = 200_000_000;
 	return {
-		blocks: 100,
-		bfree: 100 - percent,
+		blocks: byteBlocks,
+		bfree: byteBlocks - Math.floor((byteBlocks * diskPercent) / 100),
 		bsize: 4096,
-		files: 100,
-		ffree: 100 - percent,
+		files: inodeScale,
+		ffree: inodeScale - Math.floor((inodeScale * inodePercent) / 100),
 	};
 }
 
@@ -67,7 +79,7 @@ function harness(
 		activeLeases?: () => Promise<readonly WorkerStorageLease[]>;
 		existingContainers?: ReadonlySet<string>;
 		images?: readonly WorkerImage[];
-		jobInodes?: Readonly<{ workRoot: number; dockerDataRoot: number }>;
+		jobInodes?: Partial<WorkerStorageReserve>;
 		safetyMarginInodes?: number;
 		capacityTracker?: ReturnType<typeof createHostCapacityTracker>;
 		pnpmStoreIdle?: () => Promise<boolean>;
@@ -122,7 +134,16 @@ function harness(
 		activeLeases: input.activeLeases ?? (async () => []),
 		pnpmStore,
 		pnpmStoreIdle: input.pnpmStoreIdle,
-		jobInodes: input.jobInodes ?? { workRoot: 0, dockerDataRoot: 0 },
+		jobInodes: input.jobInodes
+			? {
+					workRoot:
+						input.jobInodes.workRoot ??
+						storageReserveForClass("standard").workRoot,
+					dockerDataRoot:
+						input.jobInodes.dockerDataRoot ??
+						storageReserveForClass("standard").dockerDataRoot,
+				}
+			: undefined,
 		safetyMarginInodes: input.safetyMarginInodes,
 		capacityTracker: input.capacityTracker,
 		scheduleRetiredSweep,
@@ -143,7 +164,14 @@ function harness(
 }
 
 function freeInodes(ffree: number): WorkerFileSystemStats {
-	return { blocks: 100, bfree: 100, bsize: 4096, files: 1_000_000, ffree };
+	const blocks = 10_000_000;
+	return {
+		blocks,
+		bfree: blocks,
+		bsize: 4096,
+		files: 1_000_000,
+		ffree,
+	};
 }
 
 describe("worker storage admission", () => {
@@ -151,7 +179,7 @@ describe("worker storage admission", () => {
 		const log = vi.fn();
 		const h = harness({
 			before: freeInodes(500_000),
-			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+			jobInodes: jobReserve({ workRoot: 200_000, dockerDataRoot: 170_000 }),
 			log,
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
@@ -173,7 +201,7 @@ describe("worker storage admission", () => {
 	it("subtracts consumption since the oldest grant from outstanding growth", async () => {
 		const h = harness({
 			before: freeInodes(870_000),
-			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+			jobInodes: jobReserve({ workRoot: 200_000, dockerDataRoot: 170_000 }),
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
 		h.setStats(freeInodes(500_000));
@@ -189,7 +217,7 @@ describe("worker storage admission", () => {
 		const h = harness({
 			before: freeInodes(500_000),
 			devices: { [DOCKER_ROOT]: 1, [WORK_ROOT]: 2 },
-			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+			jobInodes: jobReserve({ workRoot: 200_000, dockerDataRoot: 170_000 }),
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
 		await expect(
@@ -203,7 +231,7 @@ describe("worker storage admission", () => {
 	it("releases a grant when its reservation fails", async () => {
 		const h = harness({
 			before: freeInodes(500_000),
-			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+			jobInodes: jobReserve({ workRoot: 200_000, dockerDataRoot: 170_000 }),
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
 		h.admission.release("job-1");
@@ -214,7 +242,7 @@ describe("worker storage admission", () => {
 		let nowMs = 0;
 		const h = harness({
 			before: freeInodes(500_000),
-			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+			jobInodes: jobReserve({ workRoot: 200_000, dockerDataRoot: 170_000 }),
 			now: () => nowMs,
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
@@ -227,7 +255,7 @@ describe("worker storage admission", () => {
 	it("refuses admission before pruning when projected inodes exceed free minus the safety margin", async () => {
 		const h = harness({
 			before: freeInodes(390_000),
-			jobInodes: { workRoot: 180_000, dockerDataRoot: 170_000 },
+			jobInodes: jobReserve({ workRoot: 180_000, dockerDataRoot: 170_000 }),
 			safetyMarginInodes: 50_000,
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(false);
@@ -244,7 +272,7 @@ describe("worker storage admission", () => {
 		const log = vi.fn();
 		const h = harness({
 			before: freeInodes(900_000),
-			jobInodes: { workRoot: 180_000, dockerDataRoot: 170_000 },
+			jobInodes: jobReserve({ workRoot: 180_000, dockerDataRoot: 170_000 }),
 			capacityTracker: tracker,
 			log,
 		});
@@ -270,14 +298,14 @@ describe("worker storage admission", () => {
 	it("bin-packs standard jobs from live headroom", async () => {
 		const h = harness({
 			before: freeInodes(900_000),
-			jobInodes: { workRoot: 180_000, dockerDataRoot: 170_000 },
+			jobInodes: jobReserve({ workRoot: 180_000, dockerDataRoot: 170_000 }),
 			safetyMarginInodes: 50_000,
 		});
 		await expect(h.admission.binPackSlots()).resolves.toBe(2);
 		await expect(
 			h.admission.admit([], {
 				jobId: "job-1",
-				reserve: { workRoot: 180_000, dockerDataRoot: 170_000 },
+				reserve: jobReserve({ workRoot: 180_000, dockerDataRoot: 170_000 }),
 			}),
 		).resolves.toBe(true);
 		await expect(h.admission.binPackSlots()).resolves.toBe(1);
@@ -286,7 +314,7 @@ describe("worker storage admission", () => {
 	it("allows zero to disable both inode reservations", async () => {
 		const h = harness({
 			before: { ...freeInodes(100), files: 1_000 },
-			jobInodes: { workRoot: 0, dockerDataRoot: 0 },
+			jobInodes: jobReserve({ workRoot: 0, dockerDataRoot: 0, workRootBytes: 0, dockerDataRootBytes: 0 }),
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
 		await expect(h.admission.admit([], "job-2")).resolves.toBe(true);
@@ -296,11 +324,11 @@ describe("worker storage admission", () => {
 		for (const reserve of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, NaN])
 			expect(() =>
 				harness({
-					jobInodes: { workRoot: reserve, dockerDataRoot: 0 },
+					jobInodes: jobReserve({ workRoot: reserve, dockerDataRoot: 0 }),
 				}),
 			).toThrow("invalid worker job inode reservation");
 		expect(() =>
-			harness({ jobInodes: { workRoot: 0, dockerDataRoot: -1 } }),
+			harness({ jobInodes: jobReserve({ workRoot: 0, dockerDataRoot: -1 }) }),
 		).toThrow("invalid worker job inode reservation");
 	});
 
@@ -416,8 +444,8 @@ describe("worker storage admission", () => {
 	it("runs admission maintenance at most once per interval", async () => {
 		let nowMs = 1_000;
 		const h = harness({
-			before: usage(96),
-			after: usage(96),
+			before: usage(96, 20),
+			after: usage(96, 20),
 			now: () => nowMs,
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(false);
@@ -431,7 +459,7 @@ describe("worker storage admission", () => {
 
 	it("blocks still-high filesystems and logs one pressure event per episode", async () => {
 		const log = vi.fn();
-		const h = harness({ before: usage(96), after: usage(96), log });
+		const h = harness({ before: usage(96, 20), after: usage(96, 20), log });
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(false);
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(false);
 		expect(
@@ -440,9 +468,9 @@ describe("worker storage admission", () => {
 		expect(log).toHaveBeenCalledWith(
 			"hobo_ci_inode_pressure",
 			expect.objectContaining({
-				pressureKind: "both",
+				pressureKind: "disk",
 				diskUsagePercent: 96,
-				inodeUsagePercent: 96,
+				inodeUsagePercent: 20,
 			}),
 		);
 	});
@@ -548,7 +576,7 @@ describe("worker storage admission", () => {
 	it("never prunes the pnpm store from admission, even with a reserve shortage", async () => {
 		const h = harness({
 			before: freeInodes(0),
-			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+			jobInodes: jobReserve({ workRoot: 200_000, dockerDataRoot: 170_000 }),
 		});
 
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(false);

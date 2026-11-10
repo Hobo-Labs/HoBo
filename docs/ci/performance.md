@@ -94,6 +94,8 @@ unindexed new finding files as notices.
 - [Finding 81: a CI-only tool pin planned the whole workspace](./findings/0081-a-ci-only-tool-pin-planned-the-whole-workspace.md)
 - [Finding 82: eight test shards started for plans of zero to four suites](./findings/0082-eight-test-shards-started-for-plans-of-zero-to-four-suites.md)
 - [Finding 83: main full gate paid for missing deps layer and trunk serialization](./findings/0083-main-full-gate-paid-for-missing-deps-layer-and-trunk-serialization.md)
+- [Finding 85: proactive inode admission and box packing](./findings/0085-proactive-inode-admission-and-box-packing.md)
+- [Finding 86: storage overflow, byte floors, imminent preemption, queue pickup](./findings/0086-storage-overflow-byte-floors-imminent-preemption-queue-pickup.md)
 <!-- findings-index:end -->
 
 ## Data

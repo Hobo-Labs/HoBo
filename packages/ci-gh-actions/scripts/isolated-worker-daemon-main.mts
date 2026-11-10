@@ -631,9 +631,41 @@ try {
 	}
 
 	const reconcileAndLaunch = singleFlight(async () => {
+		runJobPoll();
 		const workerReconcileStartedAt = Date.now();
 		const activeForCapacity = await store.activeLeases();
 		await storageAdmission.probeHostCapacity(storageLeases(activeForCapacity));
+		const imminent = await storageAdmission.evaluateImminentPressure(
+			storageLeases(activeForCapacity),
+		);
+		if (imminent) {
+			const leases = activeForCapacity;
+			const ranked = await Promise.all(
+				leases.map(async (lease) => ({
+					lease,
+					rank: await runtime.admissionOrder.rank({
+						installationId: lease.installationId,
+						repository: lease.repository,
+						runId: lease.originalRunId,
+						jobId: lease.jobId,
+						labels: [],
+					}),
+				})),
+			);
+			ranked.sort((left, right) => right.rank - left.rank);
+			const victim = ranked[0]?.lease;
+			if (victim) {
+				log("hobo_ci_imminent_pressure_preempt", {
+					leaseId: victim.id,
+					jobId: victim.jobId,
+					observedFreeInodes: imminent.observedFreeInodes,
+					floorInodes: imminent.floorInodes,
+					observedFreeBytes: imminent.observedFreeBytes,
+					floorBytes: imminent.floorBytes,
+				});
+				await host.reconcile(victim.id, true);
+			}
+		}
 		const reconciliation = await worker.reconcileLeases();
 		workerReconcileMs = Date.now() - workerReconcileStartedAt;
 		liveWorkerLeaseIds = reconciliation.liveLeaseIds;

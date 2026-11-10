@@ -55,6 +55,7 @@ describe("CI deps image build contract", () => {
 			"node --experimental-strip-types scripts/ci/deps-layer-buckets.mts partition",
 		);
 		includes(installRun, '-exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +');
+		includes(installRun, 'cp -al "$source" "$target"');
 		const move = installRun.indexOf("'set -e; for source do");
 		const partition = installRun.indexOf(
 			"node --experimental-strip-types scripts/ci/deps-layer-buckets.mts partition",
