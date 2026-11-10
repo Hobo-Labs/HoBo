@@ -20,9 +20,11 @@
  * path stands for the `src/` file built into it. A literal naming another package's file
  * (`hobo ci serve --with-worker` spawning the worker daemon) is that one file,
  * not its imports: it runs as its own process and its package's suite covers
- * it. Entering a package either way also reaches its `package.json`, its
- * `tsconfig.json` and every tsconfig its scripts name: they shape what an
- * importer gets. A package entry that maps to no source file stands for the whole package
+ * it. Entering a package by importing it or naming one of its files also
+ * reaches its `package.json`, its `tsconfig.json` and every tsconfig its
+ * scripts name: they shape what an importer gets. A directory read does not:
+ * `join(here, "../../lib/fixtures")` reads data the manifest does not shape.
+ * A package entry that maps to no source file stands for the whole package
  * and its workspace dependencies. A dependent's test with a computed `import()`
  * or a relative import that resolves to nothing runs. A dependent runs in full
  * when its `test` script is not plain `vitest run` or its vitest config's
@@ -543,6 +545,8 @@ export function createWalker(repo: Repo) {
 				const namedInput = changedInput(path, changed);
 				if (namedInput) return namedInput;
 			}
+			// A directory is data read from disk: a change under it counts, the
+			// manifest of the package it sits in does not.
 			for (const dir of next.dirs) {
 				const prefix = dir === "." ? "" : `${dir}/`;
 				for (const path of changed) if (path.startsWith(prefix)) return path;

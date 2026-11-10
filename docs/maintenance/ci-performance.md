@@ -140,8 +140,10 @@ still runs everything.
 
 A package's `package.json`, its `tsconfig.json` and every tsconfig one of its scripts names
 (`tsc -p tsconfig.build.json`) are inputs to whatever imports the package: `exports`, `type` and the
-compiler options decide what an importer gets. A closure that enters a package, by import or by naming
-one of its files, reaches them. Before this, nothing led from an `@hobo/x` import to
+compiler options decide what an importer gets. A closure that enters a package reaches them, and
+entering means importing it or naming one of its files; a directory read does not
+(`join(here, "../../connectivity/contracts/pacts")` reads data the manifest does not shape, so only a
+change under that directory selects the reader). Before this, nothing led from an `@hobo/x` import to
 `packages/x/package.json`; the bare `./` edge hid that for core and cli, and without it a
 `packages/core/package.json` change planned 13 whole suites and 14 subsets. It now plans 70 and 56, a
 `packages/cli/package.json` change 6 and 3, and a `packages/policy/package.json` change 25 and 13

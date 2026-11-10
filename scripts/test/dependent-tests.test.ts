@@ -551,6 +551,20 @@ describe("a package's manifest and build config", () => {
 			);
 		});
 
+	it("does not count a directory read as entering the package", () => {
+		// `data.test.ts` reads `../../lib/fixtures`: lib's data, not its build.
+		const plan = (path: string) =>
+			scoped(planDependentTests([path], built)).subsets["packages/app"] ?? [];
+		assert.ok(
+			plan("packages/lib/fixtures/x.json").includes("test/data.test.ts"),
+		);
+		for (const input of [
+			"packages/lib/package.json",
+			"packages/lib/tsconfig.json",
+		])
+			assert.ok(!plan(input).includes("test/data.test.ts"), input);
+	});
+
 	it("runs the importers of a package that is itself a dependent", () => {
 		for (const path of [
 			"packages/app/package.json",
