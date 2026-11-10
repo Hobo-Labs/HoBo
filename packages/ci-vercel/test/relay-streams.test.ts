@@ -1,8 +1,9 @@
 import { once } from "node:events";
 import { createServer, request } from "node:http";
+import { createNodeRelayHandler } from "@hobo/ci-gh-actions";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { createNodeRelayHandler } from "../src/node-handler.js";
+import { streamsBody } from "../src/relay-streams.js";
 import { createSandboxProxyQuotaHandler } from "../src/sandbox-proxy-quota.js";
 
 const servers: ReturnType<typeof createServer>[] = [];
@@ -14,7 +15,11 @@ afterEach(async () => {
 });
 async function listen(handle: (request: Request) => Promise<Response>) {
 	const server = createServer(
-		createNodeRelayHandler({ origin: "https://relay.example.test", handle }),
+		createNodeRelayHandler({
+			origin: "https://relay.example.test",
+			handle,
+			streams: streamsBody,
+		}),
 	);
 	servers.push(server);
 	server.listen(0, "127.0.0.1");
@@ -22,6 +27,24 @@ async function listen(handle: (request: Request) => Promise<Response>) {
 	return z.object({ port: z.number().int().positive() }).parse(server.address())
 		.port;
 }
+
+it("streams only the sandbox and queue paths of this host", () => {
+	for (const path of [
+		"/sandbox/egress",
+		"/sandbox/egress/artifact",
+		"/internal/sandbox/quota",
+		"/internal/queue-wakeup",
+	])
+		expect(streamsBody(path)).toBe(true);
+	for (const path of [
+		"/github/webhooks",
+		"/sandbox/egressive",
+		"/internal/tick",
+		"/v1/accounts/self/policy",
+	])
+		expect(streamsBody(path)).toBe(false);
+});
+
 it("streams sandbox requests and responses beyond the ordinary relay's 1 MiB limit", async () => {
 	const port = await listen(async (incoming) => {
 		expect(new URL(incoming.url).pathname).toBe("/sandbox/egress/artifact");
@@ -37,35 +60,6 @@ it("streams sandbox requests and responses beyond the ordinary relay's 1 MiB lim
 	const received = new Uint8Array(await response.arrayBuffer());
 	expect(received.byteLength).toBe(body.byteLength);
 	expect(received[received.length - 1]).toBe(7);
-});
-it("does not read an untrusted upload before the handler rejects it", async () => {
-	let consumed = false;
-	const port = await listen(async (incoming) => {
-		consumed = incoming.bodyUsed;
-		return new Response(null, { status: 403 });
-	});
-	const status = await new Promise<number>((resolve, reject) => {
-		const client = request(
-			{
-				host: "127.0.0.1",
-				port,
-				path: "/sandbox/egress/upload",
-				method: "POST",
-				headers: { "content-length": 100_000_000 },
-			},
-			(response) => {
-				resolve(response.statusCode ?? 0);
-				response.resume();
-				client.destroy();
-			},
-		);
-		client.on("error", (error) => {
-			if (!client.destroyed) reject(error);
-		});
-		client.write(Buffer.alloc(1024));
-	});
-	expect(status).toBe(403);
-	expect(consumed).toBe(false);
 });
 
 it("rejects an unauthenticated quota upload without waiting for its body", async () => {

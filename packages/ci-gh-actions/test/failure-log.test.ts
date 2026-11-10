@@ -4,7 +4,7 @@ import {
 	describeFailure,
 	failureRoute,
 } from "../src/failure-log.js";
-import { createVercelRelayHandler } from "../src/handler.js";
+import { createRelayHandler } from "../src/http-handler.js";
 
 function capture(now = () => 0) {
 	const lines: string[] = [];
@@ -161,7 +161,7 @@ describe("createFailureLog", () => {
 
 describe("relay handler", () => {
 	it("still answers 503 with a fixed body when the control plane throws", async () => {
-		const handle = createVercelRelayHandler({
+		const handle = createRelayHandler({
 			// Only `control` is reached by this request.
 			application: {
 				ready: async () => true,

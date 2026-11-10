@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { createHostedAppBootstrap } from "@hobo/ci-gh-actions";
+import {
+	createHostedAppBootstrap,
+	createNodeRelayHandler,
+} from "@hobo/ci-gh-actions";
 import pg from "pg";
 import { z } from "zod";
 import { createBootstrapEntry } from "../src/bootstrap-entry.js";
 import { databaseConnection } from "../src/database-connections.js";
-import { createNodeRelayHandler } from "../src/node-handler.js";
+import { streamsBody } from "../src/relay-streams.js";
 
 const postgres = process.env.HOBO_CI_TEST_POSTGRES;
 if (!postgres)
@@ -118,7 +121,11 @@ function session(response: Response, name: string) {
 }
 async function serve(entry: ReturnType<typeof createBootstrapEntry>) {
 	const server = createServer(
-		createNodeRelayHandler({ origin: entry.origin, handle: entry.handle }),
+		createNodeRelayHandler({
+			origin: entry.origin,
+			handle: entry.handle,
+			streams: streamsBody,
+		}),
 	);
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	const address = z.object({ port: z.number() }).parse(server.address());

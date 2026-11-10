@@ -109,6 +109,8 @@ export function createHostedRelayRuntime(options: {
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
 	onTickTiming?: (timing: HostedRelayTickTiming) => void;
+	/** A lease whose reconciliation threw this tick; the lease is retained and retried. */
+	onLeaseFailure?: (leaseId: string) => void;
 	now?: () => string;
 }) {
 	const now = options.now ?? (() => new Date().toISOString());
@@ -425,6 +427,7 @@ export function createHostedRelayRuntime(options: {
 					else await controller.discover(lease.id);
 				} catch {
 					/* Retain ambiguous reservations until a later verified reconciliation. */
+					options.onLeaseFailure?.(lease.id);
 				}
 			}
 			const leaseReconcileMs = Date.now() - leaseReconcileStartedAt;

@@ -25,6 +25,12 @@ export const DRIZZLE_IMPEDANCE_CODES = Object.freeze([
 	"DRIZZLE_EXTRA_CONFIG_UNREAD",
 	/** Inline foreign keys are declared; the canonical IR has no foreign-key concept. */
 	"DRIZZLE_FOREIGN_KEY_UNREAD",
+	/** An index keys on a SQL expression; the IR indexes declared columns only, so the index was not ingested. */
+	"DRIZZLE_INDEX_EXPRESSION_UNREPRESENTABLE",
+	/** An index key has a non-default sort order, nulls order, or operator class; the index is ingested without it. */
+	"DRIZZLE_INDEX_KEY_ORDER_UNREPRESENTABLE",
+	/** An index has a `WHERE` predicate (partial index); the index is ingested without it. */
+	"DRIZZLE_INDEX_PREDICATE_UNREPRESENTABLE",
 	/** Columns carry a non-postgres dialect marker; this adapter ingests postgres only. */
 	"DRIZZLE_NON_POSTGRES_TABLE",
 	/** A table-shaped export yielded zero readable columns, so no table was emitted. */

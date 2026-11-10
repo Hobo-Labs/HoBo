@@ -310,6 +310,21 @@ describe("release-hobo affected image job", () => {
 		"utf8",
 	);
 
+	it("nbgv gate uses runner preflight instead of jdx/mise-action", () => {
+		const jobMarker = "release-main-train-gate:";
+		const jobStart = hoboWorkflow.indexOf(jobMarker);
+		expect(jobStart).toBeGreaterThan(0);
+		const nextJob = hoboWorkflow.indexOf("\n  release-contract:", jobStart + 1);
+		const block = hoboWorkflow.slice(
+			jobStart,
+			nextJob === -1 ? undefined : nextJob,
+		);
+		expect(block).toContain("./.github/actions/ci-runner-preflight");
+		expect(block).toContain("scripts/ci/ensure-nbgv-toolchain.mts");
+		expect(block).toMatch(/Prepare nbgv dotnet[\s\S]*timeout-minutes: 5/u);
+		expect(block).not.toMatch(/jdx\/mise-action@/u);
+	});
+
 	it("nbgv gate fetches ts-autocode before install in Resolve fixed alpha train version", () => {
 		const stepMarker = "name: Resolve fixed alpha train version";
 		const stepStart = hoboWorkflow.indexOf(stepMarker);
