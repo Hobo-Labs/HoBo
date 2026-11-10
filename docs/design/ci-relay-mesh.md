@@ -102,12 +102,39 @@ Two candidates, usable together:
 
 Neither is required for correctness. With no board at all, each node runs alone.
 
+### NATS as the transport
+
+HoBo's default host already meshes over NATS and JetStream
+([ADR-0031](./adr/01-architecture-core.md#adr-0031)), so a mesh of CI
+nodes can use the same substrate instead of a second one. It maps onto this
+design directly:
+
+| Need | NATS feature |
+|---|---|
+| Advertisements with an expiry | A JetStream key-value bucket with a per-key TTL |
+| "One node starts this job" | A work-queue stream: one consumer receives each message, and an unacknowledged one is redelivered to another node |
+| Wake-up hints instead of webhooks to one relay | A subject each node subscribes to |
+| Nodes behind NAT | Leaf nodes, which only connect outward |
+
+NATS makes the claim exact where the arithmetic is approximate: while the
+cluster has quorum, one node starts each job and no runner is started twice.
+What it does not remove is the question of what happens without it. JetStream
+needs a majority of its servers, so a NATS cluster is a replicated centre, not
+the absence of one, and a single box gains a dependency rather than losing one.
+
+The two compose. NATS is the fast path and the bulletin board. `claimTurn` is
+what a node does when it cannot reach NATS, or when the cluster has lost quorum:
+it ranks on its last view and waits its turn. With that fallback a NATS outage
+costs duplicate start-up work, not a stopped queue. Increment 2's bulletin-board
+port should therefore have two adapters, GitHub variables and NATS, behind one
+interface.
+
 ## Increments
 
 | # | Adds | State |
 |---|---|---|
 | 1 | The claiming core: `rankNodes` and `claimTurn` in `@hobo/ci/mesh`, pure functions with property tests | Done |
-| 2 | The advertisement record (protobuf and CUE) and a bulletin-board port with a GitHub-variable adapter | Not started |
+| 2 | The advertisement record (protobuf and CUE) and a bulletin-board port with GitHub-variable and NATS key-value adapters | Not started |
 | 3 | The worker asks `claimTurn` before it mints a runner; `stepMs` and `maxRank` become settings; a second box joins | Not started |
 | 4 | The hosted relay only forwards wake-up hints; a node treats a missing hint as a slower poll | Not started |
 | 5 | Per-node budget allowances so priced offers survive a partition | Not started |
