@@ -175,6 +175,11 @@ A feasible rank-0 job waiting for memory, the distinct-merge-group cap, or a slo
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cap independent of age; deprecated alias `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` |
 | `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | `400000` | Free inodes required on Docker's data root before a deps rebuild; digits only |
 | `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | `8589934592` | Free bytes required on Docker's data root before a deps rebuild; digits only |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | OTLP/HTTP base URL; the worker posts traces as JSON to `<base>/v1/traces`. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is used as given instead. Unset means no export |
+| `OTEL_EXPORTER_OTLP_HEADERS` | unset | `key=value,key=value` request headers for the export (values percent-encoded); `OTEL_EXPORTER_OTLP_TRACES_HEADERS` wins |
+| `OTEL_SERVICE_NAME` | `hobo-ci-worker` | `service.name` on every span |
+| `OTEL_SDK_DISABLED` | unset | `true` turns tracing off whatever else is set |
+| `HOBO_CI_TRACE_FILE` | unset | Also append each export as one line of OTLP/JSON to this file (mode 0600); rotated to `<file>.1` past 64 MiB |
 
 Startup fails unless every general class fits outside the trunk reservation and the heavy trunk class fits the full budget. Wait/admit decisions log `hobo_ci_memory_admission_wait` / `hobo_ci_memory_admitted` with `classMb` and `learned`; Docker-confirmed exit-137 OOM kills log `hobo_ci_container_oom` with the class and job name.
 
@@ -191,6 +196,17 @@ The memory-class re-export is blank-line separated from the memory-peaks import 
 Configs resolve the smaller of their own cap and this value; CI does not export `VITEST_MAX_WORKERS`, which Vitest would apply after config resolution and after `fileParallelism: false`, overriding correctness-critical single-worker pins. Workflows retain a conservative 1-worker/1024 MiB fallback if preflight is skipped. The Main full gate's `check:all` step also sets **`HOBO_RELEVANT_CHECK_CONCURRENCY=1`**. If `test:unit` ends with exit 1 and no Vitest summary, look for `run-tests: vitest was killed by <SIGNAL>` in the log.
 
 **Disk and inode admission:** before each reservation, the daemon samples bytes and inodes on Docker's data root and the work root. Above 85% for either resource it runs the full non-pnpm GC described above at most once per 60 seconds, then samples again; decisions within that interval still use a fresh sample. Above 95% after pruning, the job waits and `hobo_ci_inode_pressure` is logged once per episode. A dispatch pass stops calling storage admission after its first refusal because pressure is host-wide. A trunk-label storage refusal blocks lower ranks and records `hobo_ci_trunk_wait` with `reason: "storage"`. Each admitted job also reserves its expected inode growth, defaulting to **200000** workdir plus **170000** container inodes. Reservations on the same device add together; consumption since the oldest live grant reduces the outstanding estimate. If free inodes minus outstanding growth cannot fit the new job, the same rate-limited GC/recheck runs before the daemon waits and logs `hobo_ci_inode_reserve_wait` once per episode. Grants without an active lease expire after a 60-second grace, and failed lease reservations release immediately. A live job's directory is never retired or deleted. See [finding 25](../../docs/ci/findings/0025-inode-exhaustion-made-pr-installs-fail-with-enospc.md), [finding 58](../../docs/ci/findings/0058-two-concurrent-jobs-exhausted-inodes-mid-run.md) and [finding 68](../../docs/ci/findings/0068-finished-jobs-held-trunk-slots-while-their-work-dirs-were-deleted.md).
+
+**Tracing:** with an OTLP endpoint or a trace file set, the daemon exports OpenTelemetry spans (`packages/ci-gh-actions/src/relay-trace.ts`; no SDK, no collector of its own). Startup logs `hobo_ci_trace_export` with what is enabled. Two things become spans:
+
+- **Every GitHub call that changes something**, and every call GitHub refused or never answered: `POST …/actions/runners/generate-jitconfig`, `DELETE …/actions/runners/{runner_id}`, `POST …/actions/runs/{run_id}/force-cancel`, `POST …/actions/runs/{run_id}/rerun-failed-jobs`. Each carries the method, the route with ids replaced, the status, the repository and the run, job and runner ids. Successful reads are left out: the worker polls.
+- **Every log event in this document.** An event that names a run joins that run's trace. `hobo_ci_job_pickup` becomes a span over the whole wait with three children: `ci.job.queue` (job created to admitted), `ci.job.container_start` and `ci.job.runner_register`.
+
+A run's trace id is derived from its run id alone, and each job's Turbo trace (`scripts/ci/ci-trace.mts`, uploaded as the `ci-trace-*` artifact) uses the same id. Load both into one backend and a run reads top to bottom: queued, admitted, runner registered, Turbo tasks, runner deleted.
+
+To answer "who cancelled this run?", open the run's trace. The only code that cancels a run is the lost-runner path, and it leaves `hobo_ci_orphan_job_confirmed`, a `DELETE` on the runner and a `POST …/force-cancel` span. A cancelled run with no `force-cancel` span was cancelled by someone else: a newer push, a person, or another tool using a token with `actions: write`.
+
+No request body, response body, header or query string is recorded; JIT runner configs and tokens travel in those. Spans do carry repository names, run and job ids, runner names and job names, so point the endpoint at a backend that may hold them. A slow or dead endpoint cannot stall the worker: spans queue up to 4096, the oldest are dropped past that, a failed batch is not retried, and `hobo_ci_trace_export_problem` reports the counts at most once a minute. Shutdown waits at most 3 s for the last export.
 
 Legacy path `packages/ci-gh-actions/deploy/worker/Dockerfile` is deprecated; use **`build.sh`** above.
 
