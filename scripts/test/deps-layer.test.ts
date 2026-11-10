@@ -173,6 +173,80 @@ describe("deps layer linking", () => {
 		}
 	});
 
+	it("reads the payload key when HOBO_CI_DEPS_LAYER is unset", () => {
+		const temporary = mkdtempSync(
+			join(tmpdir(), "hobo-deps-layer-payload-key-"),
+		);
+		try {
+			const checkout = join(temporary, "checkout");
+			const payload = join(temporary, "payload");
+			mkdirSync(join(checkout, "packages", "ci-gh-actions"), {
+				recursive: true,
+			});
+			write(join(checkout, "package.json"), '{"private":true}\n');
+			write(
+				join(checkout, "packages", "ci-gh-actions", "package.json"),
+				'{"name":"@hobo/ci-gh-actions","private":true}\n',
+			);
+			write(
+				join(checkout, "packages", "ci", "package.json"),
+				'{"name":"@hobo/ci","private":true}\n',
+			);
+			write(join(payload, ".hobo-ci-deps-key"), `${key}\n`);
+			write(
+				join(payload, "node_modules", ".modules.yaml"),
+				`${JSON.stringify({ storeDir: "/pnpm-store/v10", virtualStoreDir: ".pnpm" }, null, 2)}\n`,
+			);
+			write(
+				join(payload, "node_modules", ".pnpm", "tsx", "package.json"),
+				'{"name":"tsx","version":"4.22.4","main":"index.js","bin":{"tsx":"index.js"}}\n',
+			);
+			write(
+				join(payload, "node_modules", ".pnpm", "tsx", "index.js"),
+				'#!/usr/bin/env node\nconsole.log("tsx-test");\n',
+			);
+			chmodSync(
+				join(payload, "node_modules", ".pnpm", "tsx", "index.js"),
+				0o755,
+			);
+			link(join(payload, "node_modules", "tsx"), ".pnpm/tsx");
+			link(join(payload, "node_modules", ".bin", "tsx"), "../tsx/index.js");
+			link(
+				join(
+					payload,
+					"packages",
+					"ci-gh-actions",
+					"node_modules",
+					"@hobo",
+					"ci",
+				),
+				"../../../ci",
+			);
+			const env = {
+				...process.env,
+				HOBO_CI_DEPS_EXPECTED_KEY: key,
+				HOBO_CI_DEPS_PAYLOAD: payload,
+			};
+			const linked = run(
+				process.execPath,
+				["--experimental-strip-types", script, "link"],
+				checkout,
+				env,
+			);
+			assert.equal(linked.status, 0, linked.stderr);
+			const checked = run(
+				process.execPath,
+				["--experimental-strip-types", script, "check", "--require"],
+				checkout,
+				env,
+			);
+			assert.equal(checked.status, 0, checked.stderr);
+			assert.match(checked.stdout, /match=true/);
+		} finally {
+			rmSync(temporary, { recursive: true, force: true });
+		}
+	});
+
 	it("names the missing checkout file when the sparse tree cannot hash", () => {
 		const temporary = mkdtempSync(join(tmpdir(), "hobo-deps-layer-miss-"));
 		try {

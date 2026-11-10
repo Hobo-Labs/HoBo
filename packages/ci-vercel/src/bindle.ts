@@ -94,6 +94,18 @@ export const relayConfig = config({
 	HOBO_CI_SANDBOX_PLAN: env
 		.string()
 		.docs("The Sandbox plan; `hobby` if unset."),
+	HOBO_CI_DATABASE_ENV_PREFIX: env
+		.string()
+		.docs("The prefix a second connected Postgres store was given."),
+	HOBO_CI_DATABASE_CA_CERT: env
+		.string()
+		.docs("A PEM root certificate for a database whose chain is private."),
+	HOBO_CI_EVENTS_URL: env
+		.string()
+		.docs("Where relay failures are also delivered as CloudEvents."),
+	HOBO_CI_EVENTS_TENANT: env
+		.string()
+		.docs("The tenant those events carry; `hobo-ci` if unset."),
 
 	DATABASE_URL: secret
 		.string()

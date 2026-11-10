@@ -19,10 +19,11 @@ import { pathToFileURL } from "node:url";
 
 export const ZERO_SHA = "0".repeat(40);
 export const RANGE_TIMEOUT_SECONDS = 90;
-export const FULL_FETCH_TIMEOUT_SECONDS = 120;
-export const FULL_SCAN_TIMEOUT_SECONDS = 90;
+export const FULL_FETCH_TIMEOUT_SECONDS = 300;
+export const FULL_SCAN_TIMEOUT_SECONDS = 600;
 export const RANGE_WAIT_SECONDS = 105;
-export const FULL_WAIT_SECONDS = 240;
+export const FULL_WAIT_SECONDS = 720;
+export const GITLEAKS_BASELINE_REL = "docs/ci/gitleaks-main-baseline.sha";
 
 export type GitleaksScanPlan =
 	| {
@@ -47,12 +48,32 @@ export type WaitVerdict =
 	| "timeout"
 	| "waiting";
 
+export function readGitleaksBaselineSha(
+	root: string = process.cwd(),
+): string | undefined {
+	const path = join(root, GITLEAKS_BASELINE_REL);
+	if (!existsSync(path)) return undefined;
+	const sha = readFileSync(path, "utf8").trim();
+	return /^[0-9a-f]{40}$/iu.test(sha) ? sha : undefined;
+}
+
+export function isAncestor(ancestor: string, commit: string): boolean {
+	return (
+		spawnSync("git", ["merge-base", "--is-ancestor", ancestor, commit], {
+			stdio: "ignore",
+		}).status === 0
+	);
+}
+
 export function planMainGitleaksScan(input: {
 	eventName: string;
 	pushBefore: string | undefined;
 	sha: string;
 	commitExists: (rev: string) => boolean;
+	baselineSha?: string;
+	isAncestor?: (ancestor: string, commit: string) => boolean;
 }): GitleaksScanPlan {
+	const ancestorOk = input.isAncestor ?? isAncestor;
 	const before = input.pushBefore?.trim() ?? "";
 	if (
 		input.eventName === "push" &&
@@ -63,6 +84,21 @@ export function planMainGitleaksScan(input: {
 		return {
 			mode: "range",
 			logOpts: `${before}..${input.sha}`,
+			fetchBlobs: false,
+			timeoutSeconds: RANGE_TIMEOUT_SECONDS,
+			waitSeconds: RANGE_WAIT_SECONDS,
+		};
+	}
+	const baseline = input.baselineSha?.trim();
+	if (
+		baseline &&
+		baseline !== input.sha &&
+		input.commitExists(baseline) &&
+		ancestorOk(baseline, input.sha)
+	) {
+		return {
+			mode: "range",
+			logOpts: `${baseline}..${input.sha}`,
 			fetchBlobs: false,
 			timeoutSeconds: RANGE_TIMEOUT_SECONDS,
 			waitSeconds: RANGE_WAIT_SECONDS,
@@ -182,12 +218,15 @@ export async function runBackgroundScan(dir: string): Promise<void> {
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, "pid"), `${process.pid}\n`);
 	writeFileSync(join(dir, "log"), "");
-	const plan = planMainGitleaksScan({
+	const baselineSha = readGitleaksBaselineSha();
+	const planInput: Parameters<typeof planMainGitleaksScan>[0] = {
 		eventName: process.env.EVENT_NAME ?? process.env.GITHUB_EVENT_NAME ?? "",
 		pushBefore: process.env.PUSH_BEFORE ?? process.env.GITHUB_EVENT_BEFORE,
 		sha: process.env.SCAN_SHA ?? process.env.GITHUB_SHA ?? "",
 		commitExists,
-	});
+	};
+	if (baselineSha !== undefined) planInput.baselineSha = baselineSha;
+	const plan = planMainGitleaksScan(planInput);
 	writeFileSync(join(dir, "plan.json"), `${JSON.stringify(plan)}\n`);
 	writeFileSync(join(dir, "wait"), `${plan.waitSeconds}\n`);
 	appendLog(
