@@ -27,14 +27,6 @@ import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 
-function runQuiet(cwd: string, command: string, args: readonly string[]): void {
-	const result = spawnSync(command, args, { cwd, encoding: "utf8" });
-	expect(
-		result.status,
-		`${result.stdout}\n${result.stderr}\n${result.error?.message ?? ""}`,
-	).toBe(0);
-}
-
 describe("release OCI app staging", () => {
 	it("resolves the Turbo base on a sparse PR checkout", () => {
 		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-base-"));
@@ -236,6 +228,16 @@ describe("release OCI app staging", () => {
 		expect(
 			releaseOciDeployArgs("@hobo/hobo", "app", storeDir, location.hardlink),
 		).toContain("--config.package-import-method=hardlink");
+	});
+
+	it("prefers npm_config_store_dir without shelling out to pnpm", () => {
+		const storeDir = resolve("/pnpm-store");
+		expect(
+			releasePnpmStore(root, {
+				npm_config_store_dir: storeDir,
+				PATH: "/usr/bin",
+			}),
+		).toBe(storeDir);
 	});
 
 	it("pins the workspace store for a deployment on another filesystem", () => {

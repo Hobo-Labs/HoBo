@@ -21,6 +21,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   (an `if: env.X` expression never sees container env) and skips `actions/cache`. A self-hosted runner
   without the mount installs from the registry: a cold `pnpm install` measured ~21s, while restoring the
   1.3 GB cache archive took 31–52s and main's save took 142s. Only GitHub-hosted runners use the cache.
+  **`hobo-ci-deps:local` must stay selectable after a worker toolchain promotion** — a label-only lag on
+  `hobo.ci.toolchain` used to drop `HOBO_CI_DEPS_LAYER`, force a ~5m install, and leave S0 cold
+  ([finding 83](../ci/findings/0083-main-full-gate-paid-for-missing-deps-layer-and-trunk-serialization.md)).
+  Trunk admission now prefers `merge_group` over `push` at the same rank so merge-queue shards are not
+  stuck behind a long main push gate when trunk slots are scarce (finding 83).
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob
   lazily at checkout and timed out with HTTP 408 on this repo.
 - **Turbo cache saves even when the job fails.** `.github/actions/turbo-cache` restores at job start and
@@ -40,7 +45,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   `packages/providers/<name>` (the groups are read from `pnpm-workspace.yaml`; before that, any change
   under a group read as a removed package and ran the whole workspace). Root build inputs (workspace, behavior-changing turbo config, tsconfig, biome, toolchain pins,
   vendored sources) run the whole workspace. A `mise.toml` or `mise.lock` diff that only touches a tool no
-  package task runs (`gitleaks`, `shellcheck`, `syft`; the list is explicit in the script) does not
+  Main-gate full-history gitleaks uses `scripts/ci/gitleaks-main-scan.mts` with a committed baseline
+  (`docs/ci/gitleaks-main-baseline.sha`) so `workflow_dispatch` scans `baseline..HEAD` without
+  `--refetch`, and raises full-scan timeouts when no baseline applies. Package task runs (`gitleaks`, `shellcheck`, `syft`; the list is explicit in the script) does not
   ([finding 81](../ci/findings/0081-a-ci-only-tool-pin-planned-the-whole-workspace.md)). Scripts-only root manifest edits and root `//#` task edits
   stay scoped by comparing root files with the diff base; `globalDependencies` additions and removals
   run the whole workspace because they change every task's hash inputs. Missing or invalid base content
@@ -67,6 +74,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   target-branch update cannot silently change their test scope. `scripts/test/merge-group-gate.test.ts`
   covers failed, cancelled, skipped, and missing results.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
+  (artifact names include a per-matrix `disambiguator`, usually `matrix.shard`, so parallel workspace shards
+  do not collide on `upload-artifact`)
   from each job, so queue time and run time can be compared before and after a change. The script
   imports node builtins only, because the step also runs on jobs that skipped or failed `pnpm install`
   (an inert PR diff skips install in the off-path job). With `zod` it failed `ERR_MODULE_NOT_FOUND`
