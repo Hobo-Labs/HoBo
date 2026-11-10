@@ -341,7 +341,7 @@ export function releaseOciStagingLocation(
 }
 
 /** Resolve from the workspace: pnpm otherwise chooses a different store for
- * a deployment target on another filesystem, breaking offline deployment. */
+ * a deployment target on another filesystem, breaking deployment from the workspace store. */
 export function releasePnpmStore(root: string): string {
 	const result = spawnSync("pnpm", ["store", "path", "--silent"], {
 		cwd: root,
@@ -355,6 +355,11 @@ export function releasePnpmStore(root: string): string {
 	return path;
 }
 
+/** Deploy is `--prefer-offline`, never `--offline`: deploy re-resolves direct
+ * dependencies and a frozen install caches no registry metadata, so a cold
+ * ephemeral runner must be allowed to fetch missing metadata/tarballs.
+ * Versions and integrity
+ * stay pinned by the shared workspace lockfile deploy resolves against. */
 export function releaseOciDeployArgs(
 	packageName: string,
 	appDir: string,
@@ -368,7 +373,7 @@ export function releaseOciDeployArgs(
 		packageName,
 		"deploy",
 		"--prod",
-		"--offline",
+		"--prefer-offline",
 		"--config.inject-workspace-packages=true",
 		"--cpu=current",
 		"--os=current",
