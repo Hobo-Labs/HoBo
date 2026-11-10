@@ -10,7 +10,7 @@ description: Google DESIGN.md visual identity for coding agents. HoBo truth is s
 **Always, without being asked**, when the change is visual:
 
 - Editing `site/` UI, CSS, scenes, or components
-- Editing `hobo-code` TUI, occupancy dashboard, or Evidence HTML (`packages/code`)
+- Editing the status page HTML (`packages/status-page`) or control-yard (`packages/control-yard`)
 - Generating UI that must match the public Pages aesthetic
 - Changing design tokens or theme (light/dark inversion)
 - Adding a new web UI package (must ship `DESIGN.md`)
@@ -22,7 +22,7 @@ Do not wait for “run design lint” or “use /impeccable”. Read the owning 
 | Artifact | Role |
 |---|---|
 | **`site/DESIGN.md`** | Public product identity (ADR-0149) |
-| **`packages/code/DESIGN.md`** | `hobo-code` TUI, dashboard, Evidence |
+| **`packages/status-page/DESIGN.md`** | Status page HTML |
 | **`packages/control-yard/DESIGN.md`** | Control-yard only |
 | **`pnpm run design:lint`** | Repo-wide gate — every web UI `DESIGN.md` (pre-commit + agent done-check) |
 
@@ -70,9 +70,9 @@ Package: `@google/design.md` (bins `designmd` / `design.md`).
 ## Workflow
 
 1. Read the **owning** `DESIGN.md` front matter + Overview before the first visual edit.
-2. Use that package’s tokens and shared components (`TUI_TOKENS`, `tui-components.tsx`, `evidence-chrome.ts` for `@hobo/code`). Do not invent hex or skip the component tree.
+2. Use that package’s tokens and shared components. Do not invent hex or skip the component tree.
 3. Run impeccable `critique` then `audit` on the files you changed (polish if P0/P1).
-4. Run `pnpm run design:lint` and the package design-lint tests (`tui-design-lint`, `evidence-design-lint` when those surfaces moved). Pre-commit re-runs via `check:relevant:staged`; that does not replace the explicit lint.
+4. Run `pnpm run design:lint` and the package design-lint tests (`status-page-design-lint` when that surface moved). Pre-commit re-runs via `check:relevant:staged`; that does not replace the explicit lint.
 5. Site content still follows `site/README.md` (base `/HoBo/`, no raw `docs/design/` links in prose).
 
 ## Spec

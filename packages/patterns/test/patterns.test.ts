@@ -58,7 +58,6 @@ describe("@hobo/patterns", () => {
 			"starter.cli.api",
 			"starter.cli.agent",
 			"starter.cli.fullstack",
-			"starter.code.openui-astryx-bindle",
 			"bindle.web-api",
 			"bindle.web-only",
 			"http.api.hello",

@@ -69,10 +69,9 @@ between "registered" and "selected".
 
 | Extension point | Seam owner | Reg. semantics | Discovery | Gate | Status |
 |---|---|---|---|---|---|
-| `hobo.code.harness-spec/v1` — agent-harness plugins | `@hobo/code` (`agent-harness-catalog.ts`) | 4 layers, later id wins: bundled JSON → `$HOBO_HOME/durable/code/harnesses/` → `<cwd>/.hobo/harnesses/` → in-process `registerHarness()` | **filesystem JSON discovery** (the only one in the repo besides patterns) | parse-don't-validate spec with surfaced diagnostics (was: silent `catch { }`) | schema landed with ADR-0156; kind-enum collapse landed |
 | `hobo.conformance-suite/v1` / `hobo.conformance-adapter/v1` | `@hobo/conformance` `src/registry.ts` | mutable `register`; duplicate id: throw; suites list id-sorted | passed by host; live CLI dynamic-imports `--adapter <module>` (the one pre-existing dynamic-load seam) | the suites *are* the gate | catalog row |
 | `hobo.pattern/v1` — scaffolding patterns | `@hobo/patterns` | filesystem walk from catalog root; content-digested | directory convention | `parsePatternManifest` | catalog row |
-| `hobo.skill-manifest/v1` — agent skills | `@hobo/agent-skills` (`hobo.agent-skills-manifest/v1`) | frontmatter parse of `SKILL.md` | directory convention | `checkSkillsConformance` | **orphaned**: `packages/code/src/harness.ts` re-implements discovery inline and never runs conformance — see Follow-ups |
+| `hobo.skill-manifest/v1` — agent skills | `@hobo/agent-skills` (`hobo.agent-skills-manifest/v1`) | frontmatter parse of `SKILL.md` | directory convention | `checkSkillsConformance` | **orphaned**: no consumer routes skill discovery through it or runs conformance — see Follow-ups |
 | `hobo.connector/v1` — app-declared connectors | `@hobo/bindles` `defineConnector` (globalThis symbol registry) vs `@hobo/broker` `createConnectorRegistry` (closed `ConnectorKind` union) vs `packages/connectors/*` (ACP/vendor packages registering through neither) | three disjoint mechanisms | import side effect / config / static | `REQUIRED_SETTINGS` gate (broker only) | **divergent** — unification is a recorded follow-up, not silently resolved here |
 
 ### Deliberately closed surfaces (governance, not gaps)
@@ -114,8 +113,7 @@ between "registered" and "selected".
 | F2 | `actor-host` conformance suite + call `evaluateActorResolver` on the placement path (ADR-0031 §5 parity) | `@hobo/conformance`, `@hobo/runtime` |
 | F3 | Rivet runtime: journal onto `@hobo/storage-sqlite` schema v2 (or implement `DurableEventStore`), durable `state()` path, per-key fence epochs; celld: ship an `ActorHost` or remove the selectable placement mode | `@hobo/runtime-rivet`, `@hobo/runtime-celld` |
 | F4 | Unify the three connector mechanisms behind one extension point | `@hobo/bindles`, `@hobo/broker`, `packages/connectors` |
-| F5 | Route `packages/code` skill discovery through `@hobo/agent-skills`; one slug rule; one `llms.txt` producer (`packages/cli` agent-docs is the drift-gated one) | `@hobo/code`, `@hobo/cli`, `@hobo/agent-skills` |
-| F6 | Join the agent-id namespaces (harness id, connector target, Eve id, `WorkClaim.agentId`, `DevMachine.agents[]`, `AgentRun.provider`) on the harness-catalog id | `@hobo/code` |
+| F5 | Route skill discovery through `@hobo/agent-skills`; one slug rule; one `llms.txt` producer (`packages/cli` agent-docs is the drift-gated one) | `@hobo/cli`, `@hobo/agent-skills` |
 | F7 | Lift the `IacProvider` port type from `iac-pulumi` (and its two copies) onto core alongside `CloudProvider` | `packages/iac/*`, `@hobo/core` |
 | F8 | Reconcile `SecretCustodyPort`/`SecretResolverPort` (seven verbatim copies) into a core port | `@hobo/core`, provider packages |
 | F9 | `sdk-api.md` names runtime backends (`runtime-postgres`, `runtime-temporal`, `runtime-restate`, `runtime-cloudflare`) that do not exist; `architecture.md` lists `runtime-cloudflare` — correct the docs to the shipped set | design suite |

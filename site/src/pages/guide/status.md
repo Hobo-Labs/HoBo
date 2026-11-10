@@ -11,7 +11,7 @@ Where is HoBo on the road? Here's the honest itinerary.
 | Area | State |
 |---|---|
 | **Product** | **Pre-release.** Not accepting tenants; `@hobo/*` packages are **not published to npm** yet. |
-| **Developer surface** | SDK primitives, the **canonical `hobo` verb set** (source: `packages/cli/src/shell/verbs.ts`), and the MCP surface documented here are **contract-pinned**: specified, validated, and stable to learn against. Product binary: `@hobo/hobo`; shell/factories: `@hobo/cli`. Interactive authoring is [`hobo-code`](/HoBo/guide/hobo-code/), a different binary. |
+| **Developer surface** | SDK primitives, the **canonical `hobo` verb set** (source: `packages/cli/src/shell/verbs.ts`), and the MCP surface documented here are **contract-pinned**: specified, validated, and stable to learn against. Product binary: `@hobo/hobo`; shell/factories: `@hobo/cli`. |
 | **Implementation** | Progressing through staged build gates (below). Default deploy is an **in-memory Pulumi stand-in**, not live multi-cloud apply. See "What runs today" and ship targets. |
 | **This site** | The canonical public developer documentation — for humans and agents. |
 

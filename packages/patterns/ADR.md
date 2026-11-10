@@ -62,3 +62,12 @@ offline-packaged encoder can be measured without changing call sites.
 - One proto+CUE package, receipts, calibrated abstention.
 - Atoms stay until a dedicated delete; adapters must not fork new bodies.
 - Chat create/run/debug from ADR-0152 is unchanged.
+
+## Amendment (2026-11-08: hobo-code leaves main)
+
+`hobo-code` and `@hobo/code` are developed on the long-lived
+`feature/hobo-code` branch and are not part of `main`. Decisions 3, 4, 5 and
+6 above name `hobo-code template`, `hobo-code scaffold`, `hobo-code promote`
+and the OpenUI starter; those describe that branch. On `main` the catalog is
+reached through `hobo new` and the library API, the OpenUI starter is not in
+the catalog, and apply receipts carry `promotionRef: "caller-promotes"`.
