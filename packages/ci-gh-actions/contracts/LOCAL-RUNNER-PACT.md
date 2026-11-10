@@ -44,7 +44,7 @@ verification is honored; the validation lane never fabricates it.
 | Scenarios | Pact participant boundary | Execution |
 | --- | --- | --- |
 | Zero-budget admission, busy host, duplicate delivery, disabled/expired capacity | `HoboCiLocalWorkflowAcceptance` → `HoboCiLocalRelay` | Generated consumer Pact and actual relay HTTP verification |
-| Public/fork/PR demand, revoked connection | Same | Independent provider states and ignored admission |
+| Public/fork/PR demand, revoked connection | Same | Independent provider states; no demand recorded after the tick |
 | Valid JIT, disabled/expired/revoked authority, wrong host, repeated/completed claim | Same | Shipped `claimRunnerJit` consumer and actual relay HTTP verification |
 | Repository/attempt/SHA/workflow identity mismatch, completed host, revoked original workflow | Same | Separate negative JIT provider states |
 | Invalid identity, unknown lease, malformed/unsigned/bad-signature webhook, API outage, health and unknown route | Same | Status, response body and no-store headers verified |
@@ -57,6 +57,19 @@ verification is honored; the validation lane never fabricates it.
 | Missing JIT, wrong provider and skipped original job | Acceptance fault prerequisites | All three executions must fail |
 | Missing/failed verification, version skew and changed contract under the same version | Real broker matrix and publication client | Missing/failed/skewed pairs block; immutable-version replacement is refused |
 | Broker URL/credential/response guards and independent upstream version selection | Broker-client prerequisites | Real loopback client/CLI tests run before publication, including a mocked verified upstream version without publishing a fake GitHub result |
+
+A signed delivery is committed to the relay's inbox and acknowledged before it
+is admitted, so the HTTP answer of an admission interaction is `accepted`
+(`ignored` when no connection binds the repository) and an outage of the GitHub
+API no longer turns the delivery away. The admission decision of each state is
+asserted after the relay's worker tick, in the provider state's teardown: one
+dispatched `local` lease for an available or redelivered job, queued demand
+and no lease for a busy, disabled or expired host, and no recorded demand for
+public, fork, pull-request or revoked demand. A state handler that throws
+fails the verification; Pact alone only logs it. Policy changes are stored
+through the same rules a host applies: the store refuses to remove a connection
+under an active lease, so the revoked claim state narrows the connection's
+trusted branches instead.
 
 The relay contract contains 31 separately generated interactions; the GitHub
 consumer contract contains 16. Tests assert exact scenario inventories, so a

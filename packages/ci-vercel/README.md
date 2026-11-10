@@ -110,7 +110,21 @@ independent.
 
 ## Hosted relay
 
-This package provides a Vercel Node Function HTTP boundary, a Postgres-backed
+The relay's HTTP surface is not this package's: `createRelayHandler` (Fetch),
+`createNodeRelayHandler` (Node adapter) and the failure log live in
+[`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#one-http-layer) and are the
+same code `hobo ci serve` and the container image run. This package is the
+Vercel host around it: the function entrypoint, which paths stream
+(`src/relay-streams.ts`), the queue consumer, the scheduler, the Postgres store
+wiring and the Sandbox runner.
+
+It runs the same relay core as the Node service ([one relay, thin
+hosts](../ci-gh-actions/README.md#one-relay-thin-hosts)); what is specific to
+this host is the `PostgresCiStore`, the queue wake-up and 15-minute schedule
+that call the worker tick, the Sandbox runner backend, the GitHub App bootstrap
+and OAuth onboarding, and the webhook and queued-job repair.
+
+This package provides a Vercel Node Function entrypoint, a Postgres-backed
 relay, a private queue consumer, and an independent scheduler. Signed
 GitHub deliveries are committed before acknowledgement. Queue notifications
 wake the worker immediately; the scheduler recovers committed work whose wakeup
@@ -366,7 +380,8 @@ With `HOBO_CI_EVENTS_URL` set, each failure below is also delivered as a CloudEv
 ### Failure log
 
 Every path that refuses a request with a fixed 503 body also writes one JSON line to stderr, so the
-platform's runtime logs show why. Before this the relay failed silently: a relay that could not
+platform's runtime logs show why. The log is the relay's (`@hobo/ci-gh-actions` `src/failure-log.ts`),
+so every host of the relay writes the same lines; `hobo_ci_relay_init_failed` is this host's own. Before this the relay failed silently: a relay that could not
 start looked like a relay nobody was calling.
 
 | Event | When | Fields |
@@ -385,3 +400,17 @@ anything shaped like a token removed and the text capped at 300 characters. A ro
 identifiers replaced. One line per event name is written every 10 seconds per instance; `suppressed`
 counts the ones held back since the last line. No request body, header or credential is logged, and
 a failing logger never changes the response.
+
+## Postgres schema
+
+The two PostgreSQL tables this package owns (`hobo_ci_database_probes` and
+`hobo_ci_worker_health`) are declared in [`db/schema.ts`](db/schema.ts), with
+migrations in `db/migrations/`. `pnpm --filter @hobo/ci-vercel run db:generate`,
+`db:check`, `db:migrate` and `db:verify` run the tooling `@hobo/ci` provides.
+The code still creates both tables from the DDL embedded in `src/`;
+`db/migrations/embedded-ddl.lock.json` and `db:verify` hold that DDL to the
+declared schema. The full description, including how to migrate a database the
+relay is already using, is in
+[`@hobo/ci`](../ci/README.md#postgres-schema-and-migrations). A deployed relay
+needs all three packages' migrations: `@hobo/ci`, `@hobo/ci-gh-actions` and this
+one.

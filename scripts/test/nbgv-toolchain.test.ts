@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
 	NBGV_MISE_DIR,
 	NBGV_MISE_TOML,
+	nbgvDotnetResolvable,
 	nbgvMiseExecEnv,
 	nbgvMiseInstallArgv,
 	nbgvMiseReleaseDir,
@@ -28,6 +29,16 @@ describe("nbgv toolchain scope", () => {
 		expect(nbgvMiseExecEnv(root)).toMatchObject({
 			MISE_CONFIG_DIR: releaseDir,
 		});
+	});
+
+	it("exposes nbgvDotnetResolvable probe (no throw when dotnet missing)", () => {
+		const logs: string[] = [];
+		expect(() =>
+			nbgvDotnetResolvable(root, (line) => logs.push(line)),
+		).not.toThrow();
+		expect(logs.some((l) => l.includes("probing mise which dotnet"))).toBe(
+			true,
+		);
 	});
 
 	it("pins dotnet only under release/mise.toml (not CI runner contract)", () => {

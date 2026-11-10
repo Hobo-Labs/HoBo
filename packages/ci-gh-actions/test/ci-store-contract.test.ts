@@ -56,6 +56,13 @@ type ContractStore = HostedInboxStore &
 			bodyJson: string,
 			at: string,
 		): Promise<void>;
+		putControlRecordMonotonic(
+			key: string,
+			accountId: string,
+			bodyJson: string,
+			at: string,
+			terminalStatus: string,
+		): Promise<{ bodyJson: string } | undefined>;
 		controlRecord(key: string): Promise<{ bodyJson: string } | undefined>;
 		hasWebhook(deliveryId: string): Promise<boolean>;
 	};
@@ -247,6 +254,44 @@ function storeContract(
 			).rejects.toThrow(/another account/);
 		});
 
+		it("keeps a control record's terminal status against a late earlier writer", async () => {
+			const put = (status: string, step: number) =>
+				store.putControlRecordMonotonic(
+					"contract:operation",
+					"hobo-labs",
+					JSON.stringify({ status, step }),
+					NOW,
+					"ready",
+				);
+			expect((await put("planned", 1))?.bodyJson).toBe(
+				'{"status":"planned","step":1}',
+			);
+			expect((await put("applied", 2))?.bodyJson).toBe(
+				'{"status":"applied","step":2}',
+			);
+			expect((await put("ready", 3))?.bodyJson).toBe(
+				'{"status":"ready","step":3}',
+			);
+			// A slower request that still carries the earlier status loses.
+			expect((await put("applied", 4))?.bodyJson).toBe(
+				'{"status":"ready","step":3}',
+			);
+			expect((await store.controlRecord("contract:operation"))?.bodyJson).toBe(
+				'{"status":"ready","step":3}',
+			);
+			expect((await put("ready", 5))?.bodyJson).toBe(
+				'{"status":"ready","step":5}',
+			);
+			await expect(
+				store.putControlRecordMonotonic(
+					"contract:operation",
+					"other",
+					'{"status":"ready"}',
+					NOW,
+					"ready",
+				),
+			).rejects.toThrow(/another account/);
+		});
 		it("dedupes queued demand", async () => {
 			await store.queue(job(1), NOW, revision);
 			await store.queue(job(1), NOW, revision);
