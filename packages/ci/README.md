@@ -197,6 +197,12 @@ Validation: `pnpm --filter @hobo/ci build`, `pnpm --filter @hobo/ci test`,
 
 ## Local development machines
 
+A local box is also a tier in runner routing: when the fleet is not taking
+jobs, a run's jobs ask an enrolled local box (`hobo-local-host`) before they
+ask GitHub-hosted runners. `selectFleetBackend` orders the fleet, ARC, the
+local box, then GitHub-hosted; see "Runner routing" in
+[RUNNER-QUEUE.md](RUNNER-QUEUE.md).
+
 An account can offer its own development machine with `provider: "local"`,
 `backend: "gh-actions"`, `runsOn: "hobo-local-host"`, and `concurrency: 1`.
 The workstation has zero provider runner-minute price and zero free-minute
