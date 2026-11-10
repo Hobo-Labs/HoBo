@@ -32,9 +32,9 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`adr/yard-first-placement.md`](./adr/yard-first-placement.md) | Yard-first placement: Yard owns provider selection; Camp provider-neutral until attached; Camps movable via Trails | — |
 | [`devx-devenv-nix.md`](./devx-devenv-nix.md) | DevX: devenv-first local shells; Nix optional IaC only — never default multi-cloud path ([ADR-0006](./adr/01-architecture-core.md#adr-0006)) | — |
 | [`adr/01-architecture-core.md`](./adr/01-architecture-core.md#adr-0131) | **ADR-0131** — Station occupancy (hard control-plane isolation; Rails; pure Conductor) | — |
-| [`stations.md`](./stations.md) | Station narrative home: occupancy, capabilities (`hobo.station-capability/v1`), localhost discovery (`hobo-code init`), dev-scenario dogfooding (ADR-0131/0155) | — |
+| [`stations.md`](./stations.md) | Station narrative home: occupancy, capabilities (`hobo.station-capability/v1`), localhost capability discovery (ADR-0131/0155) | — |
 | [`yard-bindings.md`](./yard-bindings.md) | Yard bindings narrative home: the Yard as capability→product binding authority, the seeded localhost Yard on Station init, `plan`/`init`/`handle` phases, the OOB test harness + CI preview lanes, and the drizzle-kit/Better Auth defaults (ADR-0157–0161; Alchemy-informed) | — |
-| [`adr/01-architecture-core.md`](./adr/01-architecture-core.md#adr-0155) | **ADR-0155** — Station capabilities typed manifest; discovery-gated `hobo-code init`; dogfooded dev-scenario `station()` declarations | — |
+| [`adr/01-architecture-core.md`](./adr/01-architecture-core.md#adr-0155) | **ADR-0155** — Station capabilities typed manifest; localhost capability discovery | — |
 | [`adr/02-identity-security.md`](./adr/02-identity-security.md#adr-0132) | **ADR-0132** — Continuous identity migration (dual-path; zero Bindle config) | — |
 | [`adr/02-identity-security.md`](./adr/02-identity-security.md#adr-0134) | **ADR-0134** — HoBo Trails (app-owned continuous migration recipes; composes `identity.continuous`) | — |
 | [`adr/07-portability-extensibility.md`](./adr/07-portability-extensibility.md#adr-0130) | **ADR-0130** — Hierarchical DNS-valid naming (`.hobo.localhost` / `.hobo.test`; never bare `.hobo`) | — |
@@ -63,13 +63,12 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`security-networking.md`](./security-networking.md#plan-12) | Security, networking & multi-tenant applications | 12, 50 |
 | [`developer-experience.md`](./developer-experience.md#plan-07) | Developer experience: dashboards, CLI, status pages & availability | 07, 49 |
 | [`cli-spec.md`](./cli-spec.md) | Canonical CLI verb surface + lifecycle semantics | — |
-| [`hobo-code-isolation-runbook.md`](./hobo-code-isolation-runbook.md) | HoBo Code isolation platform matrix, promotion, and mandatory cleanup runbook (`hobo-code` binary / `@hobo/code`, ADR-0139) | — |
 | [`deployment-dashboard-topology-explorer.md`](./deployment-dashboard-topology-explorer.md) | Productization M0 scope and acceptance for Deployment Dashboard & Topology Explorer | — |
 | [`plan-diff-viewer.md`](./plan-diff-viewer.md) | Productization M0 scope and acceptance for Plan/Diff Viewer | — |
 | [`security-verification.md`](./security-verification.md) | V1 vulnerability disclosure and security launch-blocker process | — |
 | [`threat-model-security-review.md`](./threat-model-security-review.md) | Productization M0 scope and acceptance for v1 threat-model and security-review gates | — |
 | [`anonymous-claim-threat-model.md`](./anonymous-claim-threat-model.md) | Threat boundaries and required controls for guest leases, claim bundles, sponsor-backed deployment, and migrate-on-claim (ADR-0151) | — |
-| [`adr/03-data-plane.md`](./adr/03-data-plane.md#adr-0153) | **ADR-0153** — `@hobo/patterns` catalog, ontology-vector retrieval, explicit `hobo-code template` / `/template` zero-LLM route | — |
+| [`adr/03-data-plane.md`](./adr/03-data-plane.md#adr-0153) | **ADR-0153** — `@hobo/patterns` catalog, ontology-vector retrieval, zero-LLM receipts | — |
 | [`pre-launch-outcome-contract.md`](./pre-launch-outcome-contract.md) | Productization M0 contract for pre-launch outcome baselines and v1 value evidence | — |
 | [`ai-generation-launch-posture.md`](./ai-generation-launch-posture.md) | Productization M0 launch posture for AI-generation safety claims, limitations, and review routing | — |
 | [`launch-blocker-taxonomy.md`](./launch-blocker-taxonomy.md) | Productization M0 launch-blocker severity taxonomy and go/no-go exception posture | — |

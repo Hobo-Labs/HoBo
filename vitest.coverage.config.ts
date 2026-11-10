@@ -199,9 +199,8 @@ export default defineConfig({
 			 * deleted, not met. Raise each number as the real one improves; never
 			 * lower one to make a red build green.
 			 *
-			 * The remaining sub-80 packages are runtime-wasm (shells out to jco/wasmtime) and
-			 * `packages/code` at ~79.5 (CLI entrypoints and interactive
-			 * closures) — each needs a harness, not more of the same tests.
+			 * The remaining sub-80 package is runtime-wasm (shells out to
+			 * jco/wasmtime) — it needs a harness, not more of the same tests.
 			 */
 			thresholds: {
 				statements: 87,
@@ -251,7 +250,6 @@ export default defineConfig({
 				"packages/claims/**": { statements: 87, branches: 81, functions: 96, lines: 90 },
 				"packages/cli/**": { statements: 89, branches: 79, functions: 93, lines: 89 },
 				"packages/cloud/**": { statements: 90, branches: 79, functions: 92, lines: 91 },
-				"packages/code/**": { statements: 85, branches: 77, functions: 87, lines: 87 },
 				"packages/componentize/**": { statements: 91, branches: 83, functions: 93, lines: 91 },
 				"packages/conformance/**": { statements: 89, branches: 78, functions: 92, lines: 89 },
 				"packages/connectivity/**": { statements: 85, branches: 78, functions: 87, lines: 87 },

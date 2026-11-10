@@ -1,21 +1,21 @@
 # EXPERIENCE: cli-product
 
-- entryCommand: `hobo --help` and `hobo-code --help`
+- entryCommand: `hobo --help`
 - driver: cli
-- intent: # Feature seed  A developer or agent runs the real product CLIs (`hobo` from `@hobo/cli`, `hobo-code` from `@hobo/code`) and gets discoverable help, honest JSON
+- intent: # Feature seed  A developer or agent runs the real product CLI (`hobo` from `@hobo/cli`) and gets discoverable help, honest JSON
 
 ## Rubber-duck (explain to a new teammate)
 
 1. Who is the persona and what are they trying to finish in the next 2 minutes?
-   - The product app developer must discover the canonical `hobo` lifecycle verbs; the product coding agent must discover the `hobo-code` harness verbs and its machine-readable contract without reading source.
+   - The product app developer must discover the canonical `hobo` lifecycle verbs and their machine-readable contract without reading source.
 2. What exact command / UI path do they take from a clean machine?
-   - Build the owning package, then invoke its actual package bin launcher with `hobo --help` or `hobo-code --help`; follow with one verb help command and one `--json` status/failure command.
+   - Build the owning package, then invoke its actual package bin launcher with `hobo --help`; follow with one verb help command and one `--json` failure command.
 3. What do they see first? (quote expected chrome, not vibes)
-   - `hobo --help` visibly names `Start here:` before `Canonical verbs:`; `hobo-code --help` visibly names `hobo-code`, `Start here:`, and the `dispatch`, `guide`, and `harness` verbs.
+   - `hobo --help` visibly names `Start here:` before `Canonical verbs:`.
 4. What would make them think they opened the wrong product?
-   - Stock Pi/third-party TUI branding, a generic monorepo script help page, `hobo code` instead of the `hobo-code` binary, or help that omits the documented canonical verbs.
+   - Third-party branding, a generic monorepo script help page, or help that omits the documented canonical verbs.
 5. Happy path: step-by-step (Given/When/Then in prose first).
-   - Given the package bin is built, when the persona invokes the real binary help and a documented subcommand, then it exits zero and prints the concrete verbs/flags; when `status --json` is requested, stdout is a stable JSON envelope.
+   - Given the package bin is built, when the persona invokes the real binary help and a documented subcommand, then it exits zero and prints the concrete verbs/flags; when `--json` is requested, stdout is a stable JSON envelope.
 6. Failure path: how do they break it, what must the product say?
    - An unknown verb or flag must exit non-zero and return a stable machine code plus a non-empty remediation array; no stack trace, silent acceptance, or mutation is permitted.
 7. What evidence will prove a human/agent actually ran this? (driver + command)
@@ -40,4 +40,4 @@
 - accept
 - primaryCommand: `hobo --help`
 - driver: cli
-- scenarios: help discoverability, verb-specific help, stable JSON status, and actionable unknown verb/flag recovery for both product binaries
+- scenarios: help discoverability, verb-specific help, a stable JSON envelope, and actionable unknown verb/flag recovery for the product binary

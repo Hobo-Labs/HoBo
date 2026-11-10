@@ -241,8 +241,8 @@ function gherkinForPersona(input: {
 	const entry =
 		input.entryCommand ||
 		input.seed.match(/`([^`]+)`/)?.[1] ||
-		"hobo-code help";
-	const bin = entry.split(/\s+/)[0] ?? "hobo-code";
+		"hobo --help";
+	const bin = entry.split(/\s+/)[0] ?? "hobo";
 	return gherkinTemplate({
 		kind,
 		featureId: input.featureId,
@@ -736,10 +736,7 @@ function planExperience(args: Record<string, string>) {
 	const selection = resolveProjects(args.projects ?? "all", root);
 	const writeScope = writeScopeFromSelection(selection, root);
 	const projects = listProjects(root);
-	const project =
-		selection.projects[0] ??
-		projects.find((p) => p.id === "code") ??
-		projects[0];
+	const project = selection.projects[0] ?? projects[0];
 	if (!project) {
 		console.error("No project for plan");
 		process.exit(2);
@@ -768,7 +765,7 @@ function planExperience(args: Record<string, string>) {
 		featureId,
 		experienceId: row?.experienceId || experienceId || featureId,
 		personaId: row?.personaId || personaId,
-		entryCommand: row?.entryCommand || args.seed || "hobo-code help",
+		entryCommand: row?.entryCommand || args.seed || "hobo --help",
 		driver: row?.driver || args.driver || "cli",
 		intent: row?.intent || args.seed || "TODO intent",
 	});
@@ -844,13 +841,12 @@ function rubberduckCheck(args: Record<string, string>) {
 function fromCatalog(args: Record<string, string>) {
 	const root = repoRoot();
 	const selection = resolveProjects(args.projects ?? "all", root);
-	const projects = listProjects(root);
 	const project =
-		selection.projects.find((p) => p.id !== "root") ??
-		projects.find((p) => p.id === "code") ??
-		selection.projects[0];
+		selection.projects.find((p) => p.id !== "root") ?? selection.projects[0];
 	if (!project) {
-		console.error("No project; pass --project code");
+		console.error(
+			"No project; pass --project <id> (list them: init.mts --mode list-projects)",
+		);
 		process.exit(2);
 	}
 	const catalog = readExperienceCatalog(project, root);

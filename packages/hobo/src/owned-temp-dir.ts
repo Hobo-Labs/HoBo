@@ -9,17 +9,17 @@
  *   event, which a normal end and an uncaught error both reach. It touches no
  *   signal: a library does not decide how its host ends.
  * - `removeOwnedDirsOnSignals`, for a process's entry point only (`hobo`,
- *   `hobo-mcp`, and `hobo-code` when a /hobo verb loads the composition, through
- *   the export in cli.ts): also on SIGTERM, SIGHUP, SIGINT and SIGQUIT. When
- *   nothing else in the process listens for the signal, every owned directory
- *   is removed and the signal raised again with these handlers off, so the
- *   process still ends by it (status 128+n), as it would have. When something
- *   else listens (a server's graceful stop), that handler decides how the
- *   process ends, and `exit` removes the directories then. These handlers run
- *   before any other listener, so they also count one installed before them.
- *   Run after it, they missed a `once` handler, which is removed before it is
- *   called: hobo-code's shell installs its own before a /hobo verb loads the
- *   composition. Each handler knows its own signal: one emitted with
+ *   `hobo-mcp`, and any shell that loads the composition in its own process,
+ *   through the export in cli.ts): also on SIGTERM, SIGHUP, SIGINT and
+ *   SIGQUIT. When nothing else in the process listens for the signal, every
+ *   owned directory is removed and the signal raised again with these handlers
+ *   off, so the process still ends by it (status 128+n), as it would have.
+ *   When something else listens (a server's graceful stop), that handler
+ *   decides how the process ends, and `exit` removes the directories then.
+ *   These handlers run before any other listener, so they also count one
+ *   installed before them. Run after it, they missed a `once` handler, which
+ *   is removed before it is called: a shell may install its own before it
+ *   loads the composition. Each handler knows its own signal: one emitted with
  *   `process.emit` carries no name. It does nothing in a worker thread, which
  *   shares its pid with the whole process.
  *
