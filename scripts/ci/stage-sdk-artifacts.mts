@@ -12,7 +12,6 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { releaseSemverFromEnv } from "../lib/release-version.mts";
-import { turboConcurrencyArg } from "../lib/turbo-concurrency.ts";
 import { applyScopeToManifest, loadNpmScopeMap } from "./npm-publish-scope.mts";
 
 const root = join(import.meta.dirname, "..", "..");
@@ -30,30 +29,14 @@ export const SDK_PACKAGES = [
 	"@hobo/cli",
 ] as const;
 
-/** Turbo argv for the SDK allowlist build (honors `HOBO_TURBO_CONCURRENCY`). */
-export function releaseSdkTurboBuildArgv(
-	env: NodeJS.ProcessEnv = process.env,
-): string[] {
-	const filters = SDK_PACKAGES.map((pkg) => `--filter=${pkg}`);
-	return [
-		"exec",
-		"turbo",
-		"run",
-		"build",
-		turboConcurrencyArg(env),
-		...filters,
-	];
-}
-
 /** Turbo-build every allowlisted SDK package before `npm pack` staging. */
-export function buildReleaseSdkPackages(
-	env: NodeJS.ProcessEnv = process.env,
-): void {
-	const result = spawnSync("pnpm", releaseSdkTurboBuildArgv(env), {
-		cwd: root,
-		stdio: "inherit",
-		env: process.env,
-	});
+export function buildReleaseSdkPackages(): void {
+	const filters = SDK_PACKAGES.map((pkg) => `--filter=${pkg}`);
+	const result = spawnSync(
+		"pnpm",
+		["exec", "turbo", "run", "build", ...filters],
+		{ cwd: root, stdio: "inherit" },
+	);
 	if (result.status !== 0) {
 		throw new Error("turbo build failed for SDK allowlist before npm pack");
 	}
