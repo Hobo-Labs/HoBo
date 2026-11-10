@@ -305,6 +305,8 @@ jobs:
           clean: false
           fetch-depth: 0
       - uses: ./.github/actions/ci-runner-preflight
+        with:
+          browser: "true"
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
         with:
@@ -507,6 +509,8 @@ jobs:
           clean: false
           fetch-depth: 0
       - uses: ./.github/actions/ci-runner-preflight
+        with:
+          browser: "true"
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
         with:
@@ -594,6 +598,8 @@ jobs:
           clean: false
           fetch-depth: 0
       - uses: ./.github/actions/ci-runner-preflight
+        with:
+          browser: "true"
       - name: Turbo cache
         uses: ./.github/actions/turbo-cache
         with:
@@ -867,6 +873,8 @@ jobs:
           sparse-paths: ${{ env.S0_SPARSE_PATHS }}
           submodules: "false"
       - uses: ./.github/actions/ci-runner-preflight
+        with:
+          browser: "true"
       - name: Start secret scan (full history, background)
         env:
           EVENT_NAME: ${{ github.event_name }}
