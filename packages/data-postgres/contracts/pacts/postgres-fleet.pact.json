@@ -1,0 +1,351 @@
+{
+	"consumer": {
+		"name": "hobo-database-fleet-reconciler"
+	},
+	"provider": {
+		"name": "hobo-postgres-fleet-backend"
+	},
+	"interactions": [
+		{
+			"description": "a backend takes the entry that directly follows its newest one",
+			"request": {
+				"method": "POST",
+				"path": "/fleet/assignments/accept",
+				"body": {
+					"held": [
+						{
+							"epoch": 1,
+							"active": "a",
+							"sealed": false,
+							"reason": "test",
+							"decidedAtMs": 1,
+							"decidedBy": "bootstrap"
+						}
+					],
+					"entry": {
+						"epoch": 2,
+						"active": "b",
+						"sealed": false,
+						"reason": "test",
+						"decidedAtMs": 1,
+						"decidedBy": "reconciler"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"outcome": "accepted"
+				}
+			}
+		},
+		{
+			"description": "a backend refuses an entry that skips an epoch",
+			"request": {
+				"method": "POST",
+				"path": "/fleet/assignments/accept",
+				"body": {
+					"held": [
+						{
+							"epoch": 1,
+							"active": "a",
+							"sealed": false,
+							"reason": "test",
+							"decidedAtMs": 1,
+							"decidedBy": "bootstrap"
+						}
+					],
+					"entry": {
+						"epoch": 3,
+						"active": "b",
+						"sealed": false,
+						"reason": "test",
+						"decidedAtMs": 1,
+						"decidedBy": "reconciler"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"outcome": "gap"
+				}
+			}
+		},
+		{
+			"description": "a backend that already holds the identical entry reports a duplicate",
+			"request": {
+				"method": "POST",
+				"path": "/fleet/assignments/accept",
+				"body": {
+					"held": [
+						{
+							"epoch": 1,
+							"active": "a",
+							"sealed": false,
+							"reason": "test",
+							"decidedAtMs": 1,
+							"decidedBy": "bootstrap"
+						}
+					],
+					"entry": {
+						"epoch": 1,
+						"active": "a",
+						"sealed": false,
+						"reason": "test",
+						"decidedAtMs": 1,
+						"decidedBy": "bootstrap"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"outcome": "duplicate"
+				}
+			}
+		},
+		{
+			"description": "a backend that holds a different entry for the epoch reports a conflict",
+			"request": {
+				"method": "POST",
+				"path": "/fleet/assignments/accept",
+				"body": {
+					"held": [
+						{
+							"epoch": 1,
+							"active": "a",
+							"sealed": false,
+							"reason": "test",
+							"decidedAtMs": 1,
+							"decidedBy": "bootstrap"
+						},
+						{
+							"epoch": 2,
+							"active": "a",
+							"sealed": false,
+							"reason": "test",
+							"decidedAtMs": 1,
+							"decidedBy": "first"
+						}
+					],
+					"entry": {
+						"epoch": 2,
+						"active": "b",
+						"sealed": false,
+						"reason": "test",
+						"decidedAtMs": 1,
+						"decidedBy": "second"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"outcome": "conflict"
+				}
+			}
+		},
+		{
+			"description": "a majority holding the same newest entry is the current assignment",
+			"request": {
+				"method": "POST",
+				"path": "/fleet/assignments/resolve",
+				"body": {
+					"members": [
+						"a",
+						"b",
+						"c"
+					],
+					"replies": [
+						{
+							"replica": "a",
+							"rows": [
+								{
+									"epoch": 1,
+									"active": "a",
+									"sealed": false,
+									"reason": "test",
+									"decidedAtMs": 1,
+									"decidedBy": "bootstrap"
+								}
+							]
+						},
+						{
+							"replica": "b",
+							"rows": [
+								{
+									"epoch": 1,
+									"active": "a",
+									"sealed": false,
+									"reason": "test",
+									"decidedAtMs": 1,
+									"decidedBy": "bootstrap"
+								}
+							]
+						},
+						{
+							"replica": "c",
+							"failure": "unreachable"
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"status": "current",
+					"epoch": 1,
+					"active": "a"
+				}
+			}
+		},
+		{
+			"description": "fewer answers than a majority is no answer",
+			"request": {
+				"method": "POST",
+				"path": "/fleet/assignments/resolve",
+				"body": {
+					"members": [
+						"a",
+						"b",
+						"c"
+					],
+					"replies": [
+						{
+							"replica": "a",
+							"rows": [
+								{
+									"epoch": 1,
+									"active": "a",
+									"sealed": false,
+									"reason": "test",
+									"decidedAtMs": 1,
+									"decidedBy": "bootstrap"
+								}
+							]
+						},
+						{
+							"replica": "b",
+							"failure": "quota-exhausted"
+						},
+						{
+							"replica": "c",
+							"failure": "unreachable"
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"status": "no-majority"
+				}
+			}
+		},
+		{
+			"description": "a newest epoch held by a minority is undecided, and the epoch below it is not used instead",
+			"request": {
+				"method": "POST",
+				"path": "/fleet/assignments/resolve",
+				"body": {
+					"members": [
+						"a",
+						"b",
+						"c"
+					],
+					"replies": [
+						{
+							"replica": "a",
+							"rows": [
+								{
+									"epoch": 1,
+									"active": "a",
+									"sealed": false,
+									"reason": "test",
+									"decidedAtMs": 1,
+									"decidedBy": "bootstrap"
+								},
+								{
+									"epoch": 2,
+									"active": "b",
+									"sealed": false,
+									"reason": "test",
+									"decidedAtMs": 1,
+									"decidedBy": "reconciler"
+								}
+							]
+						},
+						{
+							"replica": "b",
+							"rows": [
+								{
+									"epoch": 1,
+									"active": "a",
+									"sealed": false,
+									"reason": "test",
+									"decidedAtMs": 1,
+									"decidedBy": "bootstrap"
+								}
+							]
+						},
+						{
+							"replica": "c",
+							"rows": [
+								{
+									"epoch": 1,
+									"active": "a",
+									"sealed": false,
+									"reason": "test",
+									"decidedAtMs": 1,
+									"decidedBy": "bootstrap"
+								}
+							]
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"status": "undecided",
+					"epoch": 2
+				}
+			}
+		},
+		{
+			"description": "a majority that holds nothing is an empty fleet",
+			"request": {
+				"method": "POST",
+				"path": "/fleet/assignments/resolve",
+				"body": {
+					"members": [
+						"a",
+						"b"
+					],
+					"replies": [
+						{
+							"replica": "a",
+							"rows": []
+						},
+						{
+							"replica": "b",
+							"rows": []
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"status": "empty"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "2.0.0"
+		}
+	}
+}
