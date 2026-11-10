@@ -199,9 +199,12 @@ as gated saga steps over a real store (ADR-0032 §3-4), delivered as
    restores the pre-migration snapshot (`migration.RolledBack`; forward-only, no `.down` scripts).
    Since [ADR-0177](./adr/03-data-plane.md#adr-0177) the restore is decided first
    (`migration.RollbackDecided`) and needs a `replayErasures` callback: without one a failed phase
-   holds instead of restoring, so a rollback cannot bring back an erased subject. A held or
-   interrupted migration resumes only when `executeDataMigration` is given a `journal`; without
-   one every call starts from nothing.
+   holds instead of restoring, so a rollback cannot bring back an erased subject. Every phase is
+   write-ahead (`migration.PhaseIntended` before its statements): a run that finds an intent with
+   no `migration.PhaseApplied` after it asks the plan's probe for that phase
+   (`DataMigrationPlan.probes`) instead of re-applying or restoring, and holds with
+   `PHASE_OUTCOME_UNKNOWN` when the plan has none. A held or interrupted migration resumes only
+   when `executeDataMigration` is given a `journal`; without one every call starts from nothing.
 4. The full `migration.*` event family is emitted and catalogued in
    [event-families.md](./event-families.md); shapes are pinned in
    `packages/trails/data-models/migration.proto`.
@@ -247,7 +250,8 @@ Accepted state: schema-evolution safety is a CI gate, and the evidence mapping i
    event body requires a total upcaster plus a new corpus entry. That rule has since been
    exercised: `migration.Planned`, `migration.PhaseApplied`, `migration.CutOver`, and
    `migration.RolledBack` are at v2, each with an upcaster from its pinned v1 body, and
-   `migration.FenceRequested` and `migration.RollbackDecided` were added at v1
+   `migration.FenceRequested`, `migration.FenceRaised`, `migration.PhaseIntended`, and
+   `migration.RollbackDecided` were added at v1
    ([event-families.md](./event-families.md), [ADR-0177](./adr/03-data-plane.md#adr-0177)).
 3. GA handoff mapping for [release-notes-upgrade-guide.md](./release-notes-upgrade-guide.md) M4:
    the M3 evidence mapping above plus the corpus gate as the "no unliftable stored event" claim.
@@ -259,8 +263,9 @@ Accepted state: schema-evolution safety is a CI gate, and the evidence mapping i
    record is in
    [data-engines-continuous-migration §9](./data-engines-continuous-migration.md#last-recorded-run)).
    What remains carried is that those live lanes are opt-in (they need a server) rather than
-   part of CI, and that one intermittent failure in the live PostgreSQL lane is unexplained
-   ([§10](./data-engines-continuous-migration.md#10-honest-limits)).
+   part of CI. The intermittent failure once seen in the live PostgreSQL lane has a root cause and
+   a fix — a capture slot is now proven decodable before use — with one residual, the table-sync
+   slots PostgreSQL creates itself ([§10](./data-engines-continuous-migration.md#10-honest-limits)).
 
 ## Follow-Up Gate
 

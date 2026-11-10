@@ -544,9 +544,9 @@ each (`test/support/broken-engines.ts`) — and requires every one to fail, at
 the case written to catch that defect. A variant that passes is a hole in the
 kit.
 
-The fold is pessimistic. A failure is `fail`; a case that applies but could not
-run is `not-run` (or `blocked`), which makes the outcome `unknown`; and
-`unknown` is as non-selectable as `fail`. A run restricted with `only` proves
+The fold is pessimistic. A failed or `blocked` case makes the outcome `fail`; a
+case that applies but could not run is `not-run`, which makes the outcome
+`unknown`; and `unknown` is as non-selectable as `fail`. A run restricted with `only` proves
 what it ran and nothing else, so it never folds to `pass`. A case whose port
 the engine does not declare is skipped — which is not forgiveness: the pattern
 needing that port is then ineligible at selection.
