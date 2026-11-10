@@ -73,7 +73,12 @@ function packageDeclaration(
 	return output;
 }
 
-/** The caller must run the shared codegen freshness gate before selecting this lane. */
+/**
+ * Whether the project's generated output says it is a plain TypeScript app.
+ * It reads generated files, so it is evidence only when they are fresh:
+ * `runBuild` acts on it before the freshness gate only when every recorded
+ * input still matches (`recordedAppInputsMatch`), and otherwise after the gate.
+ */
 export async function hasGeneratedTypeScriptApp(
 	projectRoot: string,
 ): Promise<boolean> {
