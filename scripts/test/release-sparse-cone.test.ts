@@ -36,9 +36,15 @@ function parseWorkflowEnvMultiline(
 		.filter((line) => line.length > 0);
 }
 
-function parseInlineSparseCheckout(workflowText: string): string[] {
+/** The sparse-checkout block of one job; the route job has a small one of its own. */
+function parseInlineSparseCheckout(
+	workflowText: string,
+	jobId: string,
+): string[] {
 	const marker = "sparse-checkout: |";
-	const start = workflowText.indexOf(marker);
+	const job = workflowText.indexOf(`\n  ${jobId}:\n`);
+	if (job < 0) throw new Error(`workflow missing job ${jobId}`);
+	const start = workflowText.indexOf(marker, job);
 	if (start < 0) {
 		throw new Error("workflow missing sparse-checkout block");
 	}
@@ -423,7 +429,10 @@ describe("release workflow sparse-checkout sync", () => {
 	});
 
 	it("release-ts-autocode sparse-checkout matches canonical cone", () => {
-		const inWorkflow = parseInlineSparseCheckout(tsWorkflow);
+		const inWorkflow = parseInlineSparseCheckout(
+			tsWorkflow,
+			"ts-autocode-release-contract",
+		);
 		expect(sortedPaths(inWorkflow)).toEqual(
 			sortedPaths(tsAutocodeReleaseSparseCones()),
 		);

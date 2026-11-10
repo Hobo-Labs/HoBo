@@ -1090,8 +1090,22 @@ jobs:
           --filter "ts-autocode-*..."
       - name: Cold hobo dev gate (network disabled)
         if: steps.scope.outputs.run == 'true'
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           set -euo pipefail
+          if [ "${RUNNER_ENVIRONMENT}" = "github-hosted" ]; then
+            # No worker image on a GitHub-hosted machine, and the toolchain is already on
+            # PATH: the same commands on a copy of the tree, in a network namespace whose
+            # only interface is loopback.
+            work="$(mktemp -d)"
+            tar -c --exclude=./.git . | tar -x -C "$work"
+            sudo --preserve-env unshare --net -- bash -c \
+              'ip link set lo up && cd "$1" && exec sudo --preserve-env -u "#$2" env "PATH=$3" bash -c "$4"' \
+              cold "$work" "$(id -u)" "$PATH" \
+              'set -euo pipefail; pnpm --filter "ts-autocode-*" run build; node --import tsx scripts/ci/dev-cold-loop-timing.mts'
+            exit 0
+          fi
           image="hobo-ci-worker:local"
           tar -c --exclude=./.git . | docker run -i --rm --network=none \
             "$image" \
