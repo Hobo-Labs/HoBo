@@ -16,6 +16,7 @@ import {
 } from "@hobo/data-postgres";
 import {
 	KNOWN_TRANSACTION_POOLERS,
+	PGBOUNCER_PORT_POOLER,
 	type RelayDatabase,
 	relayDatabase,
 	type TransactionPoolerRule,
@@ -35,12 +36,16 @@ export const RELAY_FLEET_LAYOUT = parseFleetLayout({
 export function environmentConnection(
 	env: NodeJS.ProcessEnv,
 	prefix: string,
+	transactionPoolers: readonly TransactionPoolerRule[] = [],
 ): RelayDatabase {
-	return relayDatabase({
-		...env,
-		HOBO_CI_DATABASE_ENV_PREFIX: prefix,
-		HOBO_CI_DATABASE_CA_CERT: env[`${prefix}HOBO_CI_DATABASE_CA_CERT`],
-	});
+	return relayDatabase(
+		{
+			...env,
+			HOBO_CI_DATABASE_ENV_PREFIX: prefix,
+			HOBO_CI_DATABASE_CA_CERT: env[`${prefix}HOBO_CI_DATABASE_CA_CERT`],
+		},
+		transactionPoolers,
+	);
 }
 
 /** Everything the relay knows about one kind of PostgreSQL backend, as data.
@@ -50,8 +55,13 @@ export type DatabaseBackendProfile = {
 	/** How its connections are found. A provider whose credential is a
 	 * short-lived token minted per connection supplies a function that returns
 	 * pool settings with an async `password`; none does today. */
-	connection: (env: NodeJS.ProcessEnv, prefix: string) => RelayDatabase;
-	/** Addresses of its transaction-mode poolers, refused for session work. */
+	connection: (
+		env: NodeJS.ProcessEnv,
+		prefix: string,
+		transactionPoolers: readonly TransactionPoolerRule[],
+	) => RelayDatabase;
+	/** Addresses of its transaction-mode poolers, refused for this backend's
+	 * session connection. */
 	transactionPoolers: readonly TransactionPoolerRule[];
 	/** Whether its server certificate chains to the provider's own root. */
 	privateCertificateAuthority: "yes" | "no" | "depends";
@@ -63,6 +73,15 @@ const UNVERIFIED = {
 		"not verified: no plan number has been read from the provider and recorded here",
 	observedAt: "2026-11-10",
 };
+
+/** A plan with nothing recorded: the policy neither moves away from such a
+ * backend on budget grounds nor moves to it. */
+const UNVERIFIED_PLAN = {
+	plan: "unverified",
+	fixedMonthlyFeeMicros: undefined,
+	allowances: [],
+	evidence: UNVERIFIED,
+} satisfies Omit<PostgresFleetFinancialModel, "backend">;
 
 /** The provider profiles. Financial numbers are recorded only where a source
  * states them; everything else is `undefined` (unknown), which the policy
@@ -141,6 +160,70 @@ export const DATABASE_BACKEND_PROFILES = {
 				observedAt: "2026-11-10",
 			},
 		},
+	},
+	// The four below share one fact from the PostgreSQL backend catalog: the
+	// managed pooler is PgBouncer on port 6432 of the same host as the direct
+	// endpoint on 5432. No plan number is recorded for any of them.
+	"planetscale-postgres": {
+		hosting: "managed",
+		connection: environmentConnection,
+		transactionPoolers: PGBOUNCER_PORT_POOLER,
+		privateCertificateAuthority: "no",
+		financial: UNVERIFIED_PLAN,
+	},
+	"azure-postgres-flexible": {
+		hosting: "managed",
+		connection: environmentConnection,
+		transactionPoolers: PGBOUNCER_PORT_POOLER,
+		privateCertificateAuthority: "no",
+		financial: UNVERIFIED_PLAN,
+	},
+	"gcp-cloudsql-postgres": {
+		hosting: "managed",
+		connection: environmentConnection,
+		transactionPoolers: PGBOUNCER_PORT_POOLER,
+		privateCertificateAuthority: "depends",
+		financial: UNVERIFIED_PLAN,
+	},
+	"gcp-alloydb": {
+		hosting: "managed",
+		connection: environmentConnection,
+		transactionPoolers: PGBOUNCER_PORT_POOLER,
+		privateCertificateAuthority: "depends",
+		financial: UNVERIFIED_PLAN,
+	},
+	// Amazon RDS and Aurora: the pooler (RDS Proxy) is a separate resource with
+	// its own hostname, and no address pattern for it is recorded, so nothing
+	// is refused by address. Their certificates chain to Amazon's own root.
+	"aws-rds-postgres": {
+		hosting: "managed",
+		connection: environmentConnection,
+		transactionPoolers: [],
+		privateCertificateAuthority: "yes",
+		financial: UNVERIFIED_PLAN,
+	},
+	"aws-aurora-postgres": {
+		hosting: "managed",
+		connection: environmentConnection,
+		transactionPoolers: [],
+		privateCertificateAuthority: "yes",
+		financial: UNVERIFIED_PLAN,
+	},
+	// Preview. No built-in pooler; its certificate authority is not recorded.
+	"azure-horizondb": {
+		hosting: "managed",
+		connection: environmentConnection,
+		transactionPoolers: [],
+		privateCertificateAuthority: "depends",
+		financial: UNVERIFIED_PLAN,
+	},
+	// Little about its cloud service is confirmed from a primary source.
+	"pgedge-cloud": {
+		hosting: "managed",
+		connection: environmentConnection,
+		transactionPoolers: [],
+		privateCertificateAuthority: "depends",
+		financial: UNVERIFIED_PLAN,
 	},
 	/** Any PostgreSQL the operator runs or rents, with no known plan. */
 	postgres: {
@@ -235,7 +318,7 @@ export function parseDatabaseFleet(
 			prefix,
 			profileName,
 			profile,
-			database: profile.connection(env, prefix),
+			database: profile.connection(env, prefix, profile.transactionPoolers),
 			model: parseFleetFinancialModel({ ...profile.financial, backend: id }),
 		});
 	}

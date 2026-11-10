@@ -173,6 +173,62 @@ describe("backend profiles", () => {
 		expect(DATABASE_BACKEND_PROFILES.postgres.transactionPoolers).toEqual([]);
 	});
 
+	it("refuses a same-host pooler port for the backend that has one, and for no other", () => {
+		const direct = "postgres://u:p@db.example.test:5432/app";
+		const pooled = "postgres://u:p@db.example.test:6432/app";
+		for (const name of [
+			"planetscale-postgres",
+			"azure-postgres-flexible",
+			"gcp-cloudsql-postgres",
+			"gcp-alloydb",
+		] as const) {
+			const env = { X_DATABASE_URL: pooled, X_DATABASE_URL_UNPOOLED: direct };
+			const fleet = parseDatabaseFleet({
+				...env,
+				Y_DATABASE_URL: direct,
+				Y_DATABASE_URL_UNPOOLED: direct,
+				HOBO_CI_DATABASE_BACKENDS: `a=X_:${name},b=Y_:postgres`,
+			});
+			expect(fleet?.backends.map((backend) => backend.profileName)).toEqual([
+				name,
+				"postgres",
+			]);
+			// The session connection on the pooler port is refused for it...
+			expect(() =>
+				parseDatabaseFleet({
+					X_DATABASE_URL: pooled,
+					X_DATABASE_URL_UNPOOLED: pooled,
+					HOBO_CI_DATABASE_BACKENDS: `a=X_:${name}`,
+				}),
+			).toThrow("repair requires a direct PostgreSQL URL");
+		}
+		// ...and allowed for a backend whose provider has no such pooler: a port
+		// alone says nothing about a host this relay knows nothing about.
+		expect(
+			parseDatabaseFleet({
+				X_DATABASE_URL: pooled,
+				X_DATABASE_URL_UNPOOLED: pooled,
+				HOBO_CI_DATABASE_BACKENDS: "a=X_:postgres",
+			})?.backends,
+		).toHaveLength(1);
+		expect(validateDirectDatabaseUrl(pooled)).toBe(pooled);
+	});
+
+	it("refuses Supabase's dedicated pooler as well as the shared one", () => {
+		for (const url of [
+			"postgres://u@aws-0.pooler.supabase.com:6543/db",
+			"postgres://u@db.abcdefghijkl.supabase.co:6543/db",
+		])
+			expect(() => validateDirectDatabaseUrl(url)).toThrow(
+				"repair requires a direct PostgreSQL URL",
+			);
+		for (const url of [
+			"postgres://u@aws-0.pooler.supabase.com:5432/db",
+			"postgres://u@db.abcdefghijkl.supabase.co:5432/db",
+		])
+			expect(validateDirectDatabaseUrl(url)).toBe(url);
+	});
+
 	it("records a number only with a source, and unknown otherwise", () => {
 		for (const [name, profile] of Object.entries(DATABASE_BACKEND_PROFILES)) {
 			const model = parseFleetFinancialModel({

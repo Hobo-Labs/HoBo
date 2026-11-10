@@ -106,12 +106,25 @@ export type TransactionPoolerRule = {
  * provider: Neon's `-pooler` endpoints, Prisma Postgres's
  * `pooled.db.prisma.io`, and Supabase's pooler host on its transaction port
  * 6543 (its port 5432 is session mode). Data, so a provider is added by adding
- * a row. */
+ * a row. Matched against every connection, whichever backend it belongs to. */
 export const KNOWN_TRANSACTION_POOLERS = {
 	neon: [{ hostSuffix: ".neon.tech", firstLabelSuffix: "-pooler" }],
 	"prisma-postgres": [{ host: "pooled.db.prisma.io" }],
-	supabase: [{ hostSuffix: ".pooler.supabase.com", port: "6543" }],
+	// Port 6543 is transaction mode on the shared pooler host and on the
+	// project host (the dedicated pooler); port 5432 is session or direct.
+	supabase: [
+		{ hostSuffix: ".pooler.supabase.com", port: "6543" },
+		{ hostSuffix: ".supabase.co", port: "6543" },
+	],
 } satisfies { [provider: string]: TransactionPoolerRule[] };
+
+/** A pooler that shares its host with the direct endpoint and differs only by
+ * port. It cannot go in the table above, which is matched against every
+ * connection: a port alone says nothing without knowing whose host it is. A
+ * backend profile carries it, and it is applied to that backend only. */
+export const PGBOUNCER_PORT_POOLER = [
+	{ port: "6432" },
+] satisfies TransactionPoolerRule[];
 
 function matchesPooler(
 	rule: TransactionPoolerRule,
@@ -134,6 +147,7 @@ function matchesPooler(
 export function validateDirectDatabaseUrl(
 	value: string | undefined,
 	name = "DATABASE_URL_UNPOOLED",
+	backendPoolers: readonly TransactionPoolerRule[] = [],
 ): string {
 	if (!value) throw new Error(`${name} is required for repair`);
 	let parsed: URL;
@@ -154,7 +168,8 @@ export function validateDirectDatabaseUrl(
 		parsed.searchParams.has("service") ||
 		Object.values(KNOWN_TRANSACTION_POOLERS).some((rules) =>
 			rules.some((rule) => matchesPooler(rule, host, parsed.port)),
-		)
+		) ||
+		backendPoolers.some((rule) => matchesPooler(rule, host, parsed.port))
 	)
 		throw new Error("repair requires a direct PostgreSQL URL");
 	return value;
@@ -175,10 +190,17 @@ type PoolSettings = ReturnType<typeof databaseConnection> & {
 
 /** The relay database named by the environment, validated as before: the
  * session-scoped connection is required and must not be a known pooler. */
-export function relayDatabase(env: NodeJS.ProcessEnv): RelayDatabase {
+export function relayDatabase(
+	env: NodeJS.ProcessEnv,
+	backendPoolers: readonly TransactionPoolerRule[] = [],
+): RelayDatabase {
 	const urls = resolveDatabaseUrls(env);
 	const ca = env.HOBO_CI_DATABASE_CA_CERT;
-	const direct = validateDirectDatabaseUrl(urls.direct, urls.directName);
+	const direct = validateDirectDatabaseUrl(
+		urls.direct,
+		urls.directName,
+		backendPoolers,
+	);
 	return {
 		primary: databaseConnection(urls.primary, ca),
 		direct: databaseConnection(direct, ca),

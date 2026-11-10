@@ -261,16 +261,33 @@ backend as data, one record per profile; no code branches on a provider.
 | Field | What it says |
 | --- | --- |
 | `connection` | How its connections are found: today, variables under the prefix. It is a function, so a provider whose credential is a short-lived token minted per connection can supply pool settings with an async `password`. None does yet |
-| `transactionPoolers` | Addresses of its transaction-mode poolers, refused for session work (`KNOWN_TRANSACTION_POOLERS`) |
+| `transactionPoolers` | Addresses of its transaction-mode poolers, refused for that backend's session connection. A pooler with its own hostname is also in `KNOWN_TRANSACTION_POOLERS`, matched against every connection; one that differs from the direct endpoint only by port (PgBouncer on 6432) is refused only for the backend whose profile names it |
 | `privateCertificateAuthority` | Whether its certificates chain to its own root |
 | `hosting` | `managed` or `self-hosted` |
 | `financial` | Plan, fixed monthly fee, allowances per unit and what happens beyond them, with the source and the date of every number |
 
-Profiles today: `neon`, `supabase`, `prisma-postgres`, and `postgres` for any
-PostgreSQL the operator runs or rents. **Only Prisma Postgres's free plan has
+Profiles today:
+
+| Profile | Pooler refused for session work | Private certificate authority |
+| --- | --- | --- |
+| `neon` | `-pooler` hosts | no |
+| `supabase` | port 6543 on the shared pooler host and on the project host | yes |
+| `prisma-postgres` | `pooled.db.prisma.io` | no |
+| `planetscale-postgres` | port 6432 | no |
+| `azure-postgres-flexible` | port 6432 | no |
+| `gcp-cloudsql-postgres`, `gcp-alloydb` | port 6432 | depends |
+| `aws-rds-postgres`, `aws-aurora-postgres` | none by address: RDS Proxy has its own hostname and no pattern for it is recorded | yes |
+| `azure-horizondb` (preview) | none: no built-in pooler | depends |
+| `pgedge-cloud` | none recorded | depends |
+| `postgres` | none: any PostgreSQL the operator runs or rents | depends |
+
+The pooler and certificate facts come from the PostgreSQL backend catalog,
+which cites each to the provider's documentation. Every provider here is
+reached with a password connection string; identity-token authentication (AWS
+IAM, Google IAM, Microsoft Entra) is not implemented. **Only Prisma Postgres's free plan has
 recorded numbers** (200,000 operations a month and 2 GB, from the Vercel
 Marketplace page, as recorded by the project owner; what happens beyond them
-is recorded as unknown and treated as a hard stop). Neon's and Supabase's fees
+is recorded as unknown and treated as a hard stop). Every other profile's fees
 and allowances are recorded as unknown. The policy does not guess: it neither
 leaves a writer because of an unknown nor makes a planned switch to a standby
 with one. Until those numbers are recorded, the only planned switch this
@@ -458,8 +475,8 @@ Node 24 is required. Bootstrap mode uses these Vercel secret bindings:
   connection is required after GitHub App bootstrap: repair scanners hold
   session advisory locks across requests, which a transaction-mode pooler
   cannot provide. Known poolers are refused for it by address (Neon `-pooler`
-  hosts, `pooled.db.prisma.io`, and Supabase's pooler host on port 6543; its
-  port 5432 is session mode). Each repair checks the two connections against a
+  hosts, `pooled.db.prisma.io`, and port 6543 on Supabase's pooler host and
+  project host; its port 5432 is session mode or direct). Each repair checks the two connections against a
   committed random database marker before using it. For any other provider the
   operator must supply a true session endpoint. A repair invocation opens at
   most one such connection and closes it after use. Concurrent repair
