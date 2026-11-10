@@ -129,14 +129,18 @@ A bare `"./"` or `"../"` string literal is an edge to its directory only where i
 `@hobo/core`, so any core change ran 53 whole suites and 53 subsets; a change to
 `packages/core/src/_generated/actor_host_port_pb.ts` now plans 13 whole suites and 14 subsets and
 skips 106 dependents (10 and 13 of them without the wider bystander check above). The edge is dropped
-only where the literal is provably a string test: a direct argument of `startsWith`, `endsWith`,
-`includes`, `replace` or `replaceAll`, an operand of `===`, `!==`, `==` or `!=`, or a `case` label.
-Everywhere else it stays (`new URL("../", import.meta.url)` with or without a comment or a cast,
-`join(__dirname, "./")`, `resolve(import.meta.dirname, "../")`, `cwd: "../"`, `"../" + name`), and it
-is the directory itself, not the `index.ts` inside it. The rule reads text, not a syntax tree, since
-the planner runs on Node builtins before `pnpm install`; what it cannot tell (a call or a comma in an
-earlier argument, such as `.replace(/^(?!\.)/, "./")`) keeps the edge. An unknown or unmapped change
-still runs everything.
+only where the literal is provably a string test: the first argument of `startsWith`, `endsWith`,
+`includes`, `replace` or `replaceAll` (what is searched for), an operand of `===`, `!==`, `==` or
+`!=`, or a `case` label. Everywhere else it stays (`new URL("../", import.meta.url)` with or without a
+comment or a cast, `join(__dirname, "./")`, `resolve(import.meta.dirname, "../")`, `cwd: "../"`,
+`"../" + name`, and a replacement value such as `s.replace("@/", "../")`, which may be a path), and
+it is the directory itself, not the `index.ts` inside it. The rule reads text, not a syntax tree,
+since the planner runs on Node builtins before `pnpm install`; what it cannot tell keeps the edge. A trailing `// …` comment
+between a call and the literal is read past before the literal is judged, so it can neither hide a
+string test nor fake one; a `//` inside a string on that line is not a comment, and a literal that
+sits in a trailing comment is still an edge. A template literal with a substitution
+(`` `../${name}` ``) is no edge, as on main: the planner cannot tell what it names. An unknown or
+unmapped change still runs everything.
 
 A package's `package.json`, its `turbo.json`, its `tsconfig.json`, every tsconfig one of its scripts
 names by path (`tsc -p tsconfig.build.json`, `tsc -p config/tsconfig.types.json`), whatever those

@@ -198,17 +198,40 @@ function isStringTest(
 	match: RegExpExecArray | RegExpMatchArray,
 ): boolean {
 	const start = match.index ?? 0;
-	const before = text.slice(Math.max(0, start - 200), start);
-	const after = text.slice(
-		start + match[0].length,
-		start + match[0].length + 8,
-	);
+	const end = start + match[0].length;
+	// Whole lines, so a comment's `//` is judged from its line's first quote.
+	const from = text.lastIndexOf("\n", Math.max(0, start - 200)) + 1;
+	const before = text
+		.slice(from, start)
+		.split("\n")
+		.map(withoutTrailingComment)
+		.join("\n");
+	const after = text.slice(end, end + 200).replace(/^\s*\/\/.*\n/, "");
 	return (
 		STRING_TEST_ARGUMENT.test(before) ||
 		COMPARED_TO.test(before) ||
 		COMPARED_WITH.test(after) ||
 		(CASE_LABEL.test(before) && /^\s*:/.test(after))
 	);
+}
+
+/**
+ * `line` without the `//` comment that ends it. A `//` inside a string on
+ * the line (`"http://…"`) is not one. Only the text a literal is judged by
+ * goes through this: a cut in the wrong place cannot hide a literal.
+ */
+function withoutTrailingComment(line: string): string {
+	let quote = "";
+	for (let index = 0; index < line.length; index++) {
+		const char = line[index];
+		if (quote !== "") {
+			if (char === "\\") index++;
+			else if (char === quote) quote = "";
+		} else if (char === '"' || char === "'" || char === "`") quote = char;
+		else if (char === "/" && line[index + 1] === "/")
+			return line.slice(0, index);
+	}
+	return line;
 }
 
 const VITEST_CONFIGS = [
@@ -221,7 +244,9 @@ const CONDITIONS = ["import", "node", "default", "require"];
 
 /**
  * `source` without the comments that start a line. Only those: `"src/**\/*.ts"`
- * opens and closes a block comment mid-line.
+ * opens and closes a block comment mid-line, and cutting a `//` that sits in a
+ * string would lose the literals after it. A literal in a trailing comment is
+ * therefore still an edge; `isStringTest` reads past such a comment.
  */
 function withoutComments(source: string): string {
 	return source

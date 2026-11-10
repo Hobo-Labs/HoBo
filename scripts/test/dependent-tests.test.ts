@@ -422,6 +422,9 @@ describe("a bare ./ or ../ literal", () => {
 		'const t = (s: string) => s.replace("@/", "../");',
 		'const t = (s: string) =>\n\ts.replace(\n\t\t"@/",\n\t\t"../",\n\t);',
 		'const text = readFileSync(new URL(s.replace("@/", "../"), import.meta.url));',
+		// A trailing comment is not code: it cannot make a string test.
+		'const root = join(here, // was: root ===\n\t"../");',
+		'const root = join(here, // not s.startsWith(\n\t"../");',
 		// A path call inside a string test still reads the directory.
 		'const inside = (p: string) => p.startsWith(resolve(here, "../"));',
 		'const listed = (n: string) => readdirSync("./").includes(n);',
@@ -448,6 +451,18 @@ describe("a bare ./ or ../ literal", () => {
 			'switch (s) {\n\tcase "./":\n\tcase "../":\n\t\tbreak;\n}',
 		])
 			assert.equal(reads(source), false, source);
+		// A trailing comment between the call and its argument hides nothing.
+		for (const source of [
+			'const t = (s: string) => s.startsWith( // relative\n\t"./");',
+			'const t = (s: string) =>\n\ts === // the root\n\t"../";',
+			'const t = (s: string) => "../" // the root\n\t=== s;',
+		])
+			assert.equal(reads(source), false, source);
+		// `//` inside a string is not a comment.
+		assert.equal(
+			reads('const roots = [\n\t"compared with === //",\n\t"../",\n];'),
+			true,
+		);
 		// The same literal one token away from a string test is kept.
 		for (const source of [
 			'const t = (s: string) => s.startsWith(join(here, "../"));',
