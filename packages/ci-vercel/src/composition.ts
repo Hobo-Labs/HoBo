@@ -17,6 +17,8 @@ import {
 import pg from "pg";
 import { bootstrap, workflow } from "./_generated-assets/relay-assets.js";
 import {
+	databaseConnection,
+	resolveDatabaseUrls,
 	validateDirectDatabaseUrl,
 	verifyRepairDatabase,
 	withRepairPool,
@@ -115,9 +117,14 @@ export async function createVercelApplication(options: {
 		required(env, "HOBO_CI_CONTROL_TOKENS_JSON"),
 	);
 	const seed = parseConfiguration(required(env, "HOBO_CI_CONFIG_JSON"));
-	const repairUrl = validateDirectDatabaseUrl(env.DATABASE_URL_UNPOOLED);
+	const database = resolveDatabaseUrls(env);
+	const databaseCa = env.HOBO_CI_DATABASE_CA_CERT;
+	const repairUrl = validateDirectDatabaseUrl(
+		database.direct,
+		database.directName,
+	);
 	const pool = new pg.Pool({
-		connectionString: required(env, "DATABASE_URL"),
+		...databaseConnection(database.primary, databaseCa),
 		max: 2,
 		connectionTimeoutMillis: 5000,
 		idleTimeoutMillis: 10000,
@@ -240,7 +247,7 @@ export async function createVercelApplication(options: {
 			// Direct sessions exist only while a repair invocation is active. The
 			// primary pool remains pooled for HTTP traffic and ordinary queries.
 			const repairPool = new pg.Pool({
-				connectionString: repairUrl,
+				...databaseConnection(repairUrl, databaseCa),
 				max: 1,
 				connectionTimeoutMillis: 5000,
 				idleTimeoutMillis: 10000,

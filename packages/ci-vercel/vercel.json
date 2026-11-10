@@ -10,6 +10,12 @@
       ]
     }
   },
+  "schedules": {
+    "hobo-ci-repair": {
+      "schedule": "*/15 * * * *",
+      "topic": "hobo-ci"
+    }
+  },
   "routes": [
     {
       "src": "/(.*)",
