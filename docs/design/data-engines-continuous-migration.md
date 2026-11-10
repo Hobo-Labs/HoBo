@@ -22,11 +22,11 @@ profiles, the residency evaluator, the Trail runner. What was missing was the se
 
 | Finding before | What changed |
 |---|---|
-| Engine code lived inside the orchestrator: `@hobo/trails` imported `node:sqlite` for its schema-apply and dual-run ports, so a second engine would have been added *to the runbook engine* | The SQLite bindings moved to `@hobo/data-sqlite`. `@hobo/trails` keeps port shapes only, and the package-boundary gate refuses a runtime import of any `@hobo/data-<engine>` package from it |
+| Engine code lived inside the orchestrator: `@hobo/trails` imported `node:sqlite` for its schema-apply and dual-run ports, so a second engine would have been added *to the runbook engine* | The SQLite bindings moved to `@hobo/data-sqlite`. `@hobo/trails` keeps port shapes only. The package-boundary gate refuses, from an orchestrator's `src/`, any import of a `@hobo/data-<engine>` package, a database driver (`node:sqlite`, `pg`, `mongodb`, …), or engine-specific storage — static, dynamic, or `require` — and refuses one engine importing another. Test-only edges are allowed |
 | No shared engine contract: `@hobo/data-postgres` owned a profile, a conformance suite, and migration profiles, but implemented none of the ports Trails executes | `@hobo/data-core` defines one SPI. SQLite, PostgreSQL, and MongoDB implement it and pass one conformance kit |
 | The migration pattern was an untyped mode string (`"bulk" \| "delta" \| "cdc-dual"`) with no record of why it was chosen | A closed pattern catalog and a pure selector whose decision — every candidate, every reason — is a digested record |
-| Policy inputs were asserted: `CanTrailInput.residencyConflict?: boolean`, `policyAllows?: boolean` | A verdict computed over a custody path — every place the data rests or passes — and recomputed before every phase. `can-trail` accepts it in place of the booleans |
-| Verification moved rows into the control plane (`DataDualView.sourceRows`) | A `verify` port that returns counts and digests. The Trails oracle judges a live store on digest evidence and never reads its rows |
+| Policy inputs were asserted: `CanTrailInput.residencyConflict?: boolean`, `policyAllows?: boolean` | A verdict computed over a custody path — every place the data rests or passes — and recomputed before every phase. `can-trail` takes it alongside the booleans: any one of them denying denies the trail, and a malformed verdict is a denial |
+| Verification moved rows into the control plane (`DataDualView.sourceRows`) | A `verify` port that returns counts and digests. The Trails oracle judges a live store on digest evidence when its port provides `evidence()`; a port without it still falls back to comparing snapshot rows |
 | Engine and product shared one closed enum (`DataStoreProvider`) | `@hobo/core` gains `DataStoreEngine` and `engineOfDataStoreProvider`; a product that hosts several engines is `other`, not guessed |
 
 ## 2. Three grains, three audiences
@@ -109,28 +109,30 @@ real limits; a type-mapping annex; a closed list of impedance codes
 | `datasets` | create a dataset from a canonical schema, idempotently and additively; describe it |
 | `records` | the single write entry point (atomic, fence-aware), and point reads |
 | `snapshot` | scan a scope in chunks; may be fuzzy |
-| `capture` | ordered changes strictly after a position; durable, resumable, non-consuming; `start` is idempotent and returns the original position |
+| `capture` | ordered changes strictly after a position; durable, resumable, non-consuming; `start` is idempotent and returns the original position; a batch never splits a source transaction and may exceed its limit to keep one whole; a position the engine did not issue is an error, never an empty batch |
 | `apply` | apply changes and record the watermark in one transaction; idempotent under redelivery |
 | `verify` | counts and bucketed digests for a scope — a record never crosses this port |
 | `fence` | raise a write fence with a token; a fenced writer is refused; only the token holder releases |
 | `retire` | destructive removal; refused without the raised fence's token and a still-matching digest |
 | `schema` | expand / backfill / contract statements, a restorable snapshot, a violations query |
+| `nativeTransfer` | the engine's own bulk transport for a declared native profile: `publish`, `subscribe`, `seeded`, `mark`, `reached`, `stop` — it replaces only seed and converge |
 
 `datasets` and `records` are mandatory. For the rest, **absence is a declaration**: a port an engine
 cannot provide makes the patterns that need it ineligible in §7, by name.
 `assertBindingMatchesDeclaration` refuses a binding that provides a port it does not declare or
-declares one it does not provide.
+declares one it does not provide, and the same in both directions for native profiles.
 
 What the three engines declare:
 
 | | SQLite | PostgreSQL | MongoDB |
 |---|---|---|---|
-| Change capture | transactional outbox, journaled with the write | logical decoding (`pgoutput`) through a replication slot | change streams with pre/post images (needs a replica set) |
+| Change capture | transactional outbox, journaled with the write; a row is kept only while a subscription is owed it | logical decoding (`pgoutput`) through a replication slot | change streams over a collection with change images enabled (needs a replica set) |
 | Capture ordering | global | global, in commit order | global |
-| Fence enforcement | `entry-point` — stops writers through the binding, not another process on the file | `store` — a trigger refuses any session without the token (a table owner or superuser can still disable it) | `entry-point` — MongoDB has no triggers |
+| Fence enforcement | `entry-point` — stops writers through the binding, not another process on the file | `store` — a `SECURITY DEFINER` trigger with a pinned search path refuses any session without the token; the table owner, a superuser, or a role granted the fence table can still get past it | `entry-point` — MongoDB has no triggers |
 | Snapshot | fuzzy | fuzzy | fuzzy |
-| DDL transactional | yes | yes | n/a |
+| DDL transactional | yes | yes | no |
 | `schema` port | yes, for a file-backed store | yes | no — there is no SQL surface |
+| Native fast path | none | `migration.postgres.logical-copy/v1` — a whole dataset, between two databases | none |
 | Driver dependency at runtime | `node:sqlite` (built in) | none — an injected executor | none — an injected executor |
 
 **The canonical model is the hub.** A dataset schema gives each field a canonical type (`bool`,
@@ -143,9 +145,17 @@ pairwise migrators, and a new engine is a source and target for every existing o
 conformance. Normal form is also what makes verification possible: two engines that store one value
 differently must digest it to the same bytes.
 
-A same-engine move may still use the engine's **native fast path** (Postgres logical replication,
-`pg_dump`), declared as a migration profile that names the pattern it realizes. The selector prefers
-it when rollback strength is equal.
+A same-engine move may use the engine's **native fast path**, declared as a migration profile that
+names the pattern it realizes and run through the `nativeTransfer` port. The engine moves the bytes;
+the executor keeps everything that makes the move safe — phases, the policy verdict, digest
+verification, the fence, the journaled cutover, soak. A run records the realization it used, a run
+resumed under the other realization is refused, and there is no fallback from `native` to `hub`: an
+unavailable native path is `NATIVE_REALIZATION_UNAVAILABLE`, not a quiet downgrade. PostgreSQL
+implements `migration.postgres.logical-copy/v1` with a publication, a separately created slot, and a
+subscription. `pg_dump` stays a migration profile with its argument builders, but the binding cannot
+run a process, so it is not declared as a native realization. A native run has no reverse tail, so
+its soak rollback is `to-snapshot`; the selector therefore ranks a hub run with a reverse tail above
+it, and native wins only when chosen explicitly or when the hub cannot offer one.
 
 The envelope stream is a transport channel, **not** event-log facts: payload in the log would make the
 log a custody point for data in flight. Only positions, watermarks, counts, and digests are recorded.
