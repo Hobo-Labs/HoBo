@@ -165,10 +165,16 @@ const round = (value: number) => Math.round(value * 1000) / 1000;
 /**
  * Holds the host's state between samples.
  *
- * Going up needs `escalateAfter` consecutive samples at the worse level, and
- * coming down needs `recoverAfter` at the better one: load and available
- * memory both swing within a single job, and a fleet that reroutes on every
- * swing is worse than one that never does. A failed sample changes nothing.
+ * Going up needs `escalateAfter` consecutive samples worse than the held
+ * level, and coming down needs `recoverAfter` better than it: load and
+ * available memory both swing within a single job, and a fleet that reroutes
+ * on every swing is worse than one that never does. The run does not have to
+ * sit at one level. A host that alternates between pressured and critical is
+ * at least pressured the whole time, so it moves to the mildest level the run
+ * sustained going up and the worst going down.
+ *
+ * A sample that fails or takes too long changes nothing and never holds up
+ * the caller: a stalled disk is when the dispatch loop must keep turning.
  */
 export function createHostHealthMonitor(options: {
 	sample: () => Promise<HostHealthSample>;
@@ -179,6 +185,8 @@ export function createHostHealthMonitor(options: {
 	recoverAfter?: number;
 	/** A steady state is logged again this often. */
 	reportEveryMs?: number;
+	/** A sample slower than this is treated as failed. */
+	sampleTimeoutMs?: number;
 	now?: () => number;
 	log?: HostHealthLog;
 	/** Called when the host enters `pressured` or `critical`. */
@@ -188,10 +196,26 @@ export function createHostHealthMonitor(options: {
 	const escalateAfter = options.escalateAfter ?? 3;
 	const recoverAfter = options.recoverAfter ?? 6;
 	const reportEveryMs = options.reportEveryMs ?? 5 * 60_000;
+	const sampleTimeoutMs = options.sampleTimeoutMs ?? 2_000;
 	const now = options.now ?? Date.now;
 	let held: HostHealthVerdict = { state: "ok", reasons: [] };
-	let pending: HostHealthState = "ok";
-	let streak = 0;
+	/** Consecutive samples on one side of the held level, and their bound. */
+	let run:
+		| { direction: 1 | -1; length: number; bound: HostHealthVerdict }
+		| undefined;
+
+	function bounded(): Promise<HostHealthSample> {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const timeout = new Promise<never>((_resolve, reject) => {
+			timer = setTimeout(
+				() => reject(new Error("host health sample timed out")),
+				sampleTimeoutMs,
+			);
+		});
+		return Promise.race([options.sample(), timeout]).finally(() =>
+			clearTimeout(timer),
+		);
+	}
 	let sampledAtMs: number | undefined;
 	let reportedAtMs: number | undefined;
 
@@ -216,7 +240,7 @@ export function createHostHealthMonitor(options: {
 		sampledAtMs = at;
 		let sample: HostHealthSample;
 		try {
-			sample = await options.sample();
+			sample = await bounded();
 		} catch (error) {
 			options.log?.("hobo_ci_host_health_sample_failed", {
 				message: error instanceof Error ? error.message : "unknown",
@@ -225,19 +249,27 @@ export function createHostHealthMonitor(options: {
 		}
 		const verdict = classifyHostHealth(sample, options.thresholds);
 		const previous = held.state;
-		if (verdict.state === held.state) {
+		const side = Math.sign(RANK[verdict.state] - RANK[held.state]);
+		if (side === 0) {
 			// Same level; the resources behind it may have changed.
 			held = verdict;
-			pending = verdict.state;
-			streak = 0;
+			run = undefined;
 		} else {
-			streak = verdict.state === pending ? streak + 1 : 1;
-			pending = verdict.state;
-			const needed =
-				RANK[verdict.state] > RANK[held.state] ? escalateAfter : recoverAfter;
-			if (streak >= needed) {
-				held = verdict;
-				streak = 0;
+			const direction = side > 0 ? 1 : -1;
+			const continuing = run?.direction === direction ? run : undefined;
+			// Going up, the level every sample reached; going down, the level
+			// none of them fell short of.
+			const closer =
+				continuing === undefined ||
+				(RANK[verdict.state] - RANK[continuing.bound.state]) * direction < 0;
+			run = {
+				direction,
+				length: (continuing?.length ?? 0) + 1,
+				bound: closer || continuing === undefined ? verdict : continuing.bound,
+			};
+			if (run.length >= (direction > 0 ? escalateAfter : recoverAfter)) {
+				held = run.bound;
+				run = undefined;
 			}
 		}
 		const changed = held.state !== previous;

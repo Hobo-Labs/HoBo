@@ -330,8 +330,9 @@ export function balanceFleet(input: FleetBalanceInput): FleetBalance {
 				continue;
 			}
 			const payerSpent = payerExposure.get(member.payer) ?? 0;
+			// As in admission: a payer or account already past its ceiling takes
+			// no more work, free or not.
 			if (
-				micros > 0 &&
 				member.payerBudgetMicros !== undefined &&
 				payerSpent + micros > member.payerBudgetMicros
 			) {
@@ -343,7 +344,6 @@ export function balanceFleet(input: FleetBalanceInput): FleetBalance {
 				continue;
 			}
 			if (
-				micros > 0 &&
 				input.ceilingMicros !== undefined &&
 				input.exposureMicros + micros > input.ceilingMicros
 			) {

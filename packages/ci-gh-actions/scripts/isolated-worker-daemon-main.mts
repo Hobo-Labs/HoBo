@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
-import { availableParallelism, homedir, loadavg } from "node:os";
+import { cpus, homedir, loadavg } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
@@ -365,8 +365,9 @@ try {
 		log,
 	});
 	retiredSweep.trigger();
+	const dockerDataRoot = await docker.dataRoot();
 	const storageAdmission = createWorkerStorageAdmission({
-		dockerDataRoot: await docker.dataRoot(),
+		dockerDataRoot,
 		workRoot,
 		fs: workFs,
 		docker,
@@ -398,13 +399,18 @@ try {
 		},
 		log,
 	});
-	const hostHealthPaths = [await docker.dataRoot(), workRoot];
+	const hostHealthPaths = [dockerDataRoot, workRoot];
+	// Collection cannot start inside the tick that noticed the pressure; it is
+	// asked for here and started when that tick ends.
+	let gcRequested = false;
 	const hostHealth = createHostHealthMonitor({
 		sample: () => {
 			const availableMb = readAvailableMemoryMb();
 			return readHostHealthSample({
 				loadAverage1m: loadavg()[0] ?? 0,
-				cpus: availableParallelism(),
+				// Load average is the whole host's, so the divisor is too: not the
+				// daemon's own cgroup share.
+				cpus: cpus().length,
 				memory:
 					availableMb === undefined
 						? undefined
@@ -417,7 +423,7 @@ try {
 		// Collect now, not at the next interval: a job is about to need the room.
 		onPressure: (verdict) => {
 			if (verdict.reasons.some((reason) => reason.startsWith("storage")))
-				runGc();
+				gcRequested = true;
 		},
 	});
 	await storageAdmission.reap();
@@ -557,6 +563,26 @@ try {
 	const host = createCompositeIsolatedHost({ store, worker: worker.host });
 	if (!host) throw new Error("worker host unavailable");
 	let workerReconcileMs = 0;
+	const fleetRoutes = publishFleetRoutes
+		? createFleetRoutePublisher({
+				github,
+				log,
+				// A critically short host stops being the fleet's first choice.
+				// Only this worker's offers: another host's health is its own.
+				unhealthyOfferIds: (account) =>
+					hostHealth.current().state === "critical"
+						? new Set(
+								account.offers
+									.filter(
+										(offer) =>
+											isIsolatedContainerOffer(offer) &&
+											offer.providerAccountId === workerAccountId,
+									)
+									.map((offer) => offer.id),
+							)
+						: NO_OFFERS,
+			})
+		: undefined;
 	const runtime = createHostedRelayRuntime({
 		store,
 		github,
@@ -572,21 +598,7 @@ try {
 		lendTrunkSlots,
 		memoryAdmission,
 		storageAdmission,
-		fleetRoutes: publishFleetRoutes
-			? createFleetRoutePublisher({
-					github,
-					log,
-					// A critically short host stops being the fleet's first choice.
-					unhealthyOfferIds: (account) =>
-						hostHealth.current().state === "critical"
-							? new Set(
-									account.offers
-										.filter(isIsolatedContainerOffer)
-										.map((offer) => offer.id),
-								)
-							: NO_OFFERS,
-				})
-			: undefined,
+		fleetRoutes,
 		control: async () => undefined,
 		onTickTiming: (timing) =>
 			log("hobo_ci_isolated_worker_tick_slow", {
@@ -644,6 +656,10 @@ try {
 		const current = reconcileAndLaunch();
 		const tracked = current.finally(() => {
 			if (tickInFlight === tracked) tickInFlight = undefined;
+			if (gcRequested) {
+				gcRequested = false;
+				runGc();
+			}
 		});
 		tickInFlight = tracked;
 		return tracked;
@@ -813,6 +829,17 @@ try {
 				});
 			}
 			if (stopMode === "drain") await retiredSweep.drain();
+			if (stopMode === "drain" && fleetRoutes) {
+				// Leaving for good: nobody will keep the route table current, so
+				// every class goes back to its hobo label. A handoff leaves it,
+				// because the successor takes over within seconds.
+				const state = await store.configuration().catch(() => undefined);
+				for (const connection of state?.configuration?.connections ?? [])
+					await fleetRoutes.reset({
+						installationId: connection.installationId,
+						repository: connection.repository,
+					});
+			}
 			await closeStore();
 			process.exit(result.mode === "handoff" || result.drained ? 0 : 1);
 		})().catch(async (error) => {

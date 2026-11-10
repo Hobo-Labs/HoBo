@@ -99,7 +99,8 @@ in order and never merges them.
 
 Two ceilings that admission applies outside the policy are applied here too: the
 operator's own ceiling on each payer, and the account's legacy ceiling, which
-intersects an authored policy's limit. A free member is never refused for money.
+intersects an authored policy's limit. As in admission, a payer or account
+already past its ceiling takes no more work, free or not.
 
 Isolation follows admission's rule. A public repository's jobs and every pull
 request must run on a machine nothing else shares, so a shared ARC cluster or an

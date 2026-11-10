@@ -64,6 +64,8 @@ const FACTS_TTL_MS = 10 * 60_000;
 const NONE: ReadonlySet<string> = new Set();
 /** A label that changes more often than this would chase individual jobs. */
 const DEFAULT_MIN_INTERVAL_MS = 60_000;
+/** A write the App is not allowed to make will not succeed a minute later. */
+const REFUSED_WRITE_BACKOFF_MS = 10 * 60_000;
 /** The dispatch pass runs every couple of seconds; a table need not. */
 const DEFAULT_MIN_COMPUTE_INTERVAL_MS = 15_000;
 
@@ -94,6 +96,7 @@ export function createFleetRoutePublisher(options: {
 	const minComputeIntervalMs =
 		options.minComputeIntervalMs ?? DEFAULT_MIN_COMPUTE_INTERVAL_MS;
 	const attempted = new Map<string, number>();
+	const refusedUntil = new Map<string, number>();
 
 	async function repositoryFacts(
 		installationId: number,
@@ -150,8 +153,9 @@ export function createFleetRoutePublisher(options: {
 		const nowMs = Date.parse(input.at);
 		const lastAttemptMs = attempted.get(input.repository);
 		if (
-			lastAttemptMs !== undefined &&
-			nowMs - lastAttemptMs < minComputeIntervalMs
+			(lastAttemptMs !== undefined &&
+				nowMs - lastAttemptMs < minComputeIntervalMs) ||
+			nowMs < (refusedUntil.get(input.repository) ?? 0)
 		)
 			return undefined;
 		// Recorded first, so a failing lookup backs off like a successful one.
@@ -230,11 +234,8 @@ export function createFleetRoutePublisher(options: {
 					variable,
 					status,
 				});
-				// Do not retry a refused write on every pass.
-				published.set(input.repository, {
-					value: last?.value ?? "",
-					atMs: nowMs,
-				});
+				// A refusal is a permission the App lacks, not a blip: wait.
+				refusedUntil.set(input.repository, nowMs + REFUSED_WRITE_BACKOFF_MS);
 				return { value, outcome: "failed", table };
 			}
 			published.set(input.repository, { value, atMs: nowMs });
@@ -254,7 +255,45 @@ export function createFleetRoutePublisher(options: {
 		}
 	}
 
-	return { publish, variable };
+	/**
+	 * Puts every class back on its hobo label. For a publisher that is going
+	 * away for good: the variable outlives the process, and a route nobody is
+	 * keeping current must not keep sending work to an overflow provider.
+	 */
+	async function reset(target: {
+		installationId: number;
+		repository: string;
+	}): Promise<boolean> {
+		const value = JSON.stringify({
+			fork: RUNNER_LABEL,
+			pr: RUNNER_LABEL,
+			trunk: TRUNK_RUNNER_LABEL,
+		});
+		try {
+			const status = await write(
+				target.installationId,
+				target.repository,
+				value,
+			);
+			const ok = status === 201 || status === 204;
+			options.log?.(
+				ok ? "hobo_ci_fleet_routes_published" : "hobo_ci_fleet_routes_error",
+				{ repository: target.repository, variable, value, status, reset: true },
+			);
+			if (ok) published.set(target.repository, { value, atMs: 0 });
+			return ok;
+		} catch (error) {
+			options.log?.("hobo_ci_fleet_routes_error", {
+				repository: target.repository,
+				variable,
+				reset: true,
+				message: error instanceof Error ? error.message : "unknown failure",
+			});
+			return false;
+		}
+	}
+
+	return { publish, reset, variable };
 }
 
 export type FleetRoutePublisher = ReturnType<typeof createFleetRoutePublisher>;

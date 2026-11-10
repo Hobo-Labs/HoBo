@@ -197,7 +197,11 @@ export function fleetMembersFromAccount(
 				model,
 				enabled: offer.enabled,
 				concurrency: offer.concurrency,
-				activeJobs: holding.length,
+				// Admission holds an offer's ceiling against every lease on its
+				// provider account, not only its own.
+				activeJobs: payerLeases.filter((lease) =>
+					ACTIVE_STATES.has(lease.state),
+				).length,
 				healthy: facts.unhealthyOfferIds?.has(offer.id) !== true,
 				commercial,
 				publicRepositoriesEnabled:

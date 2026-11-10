@@ -151,6 +151,61 @@ describe("host health monitor", () => {
 		expect(h.pressure).toHaveLength(1);
 	});
 
+	it("counts a run that moves between bad levels, and settles on the mildest it sustained", async () => {
+		const PRESSURED = sample({ loadPerCpu: 2 });
+		const h = monitor([
+			PRESSURED,
+			OVERLOADED,
+			PRESSURED,
+			OVERLOADED,
+			PRESSURED,
+			OVERLOADED,
+			PRESSURED,
+			OVERLOADED,
+			PRESSURED,
+		]);
+		// Pressured, critical, pressured: at least pressured three times running.
+		expect((await h.step(3)).state).toBe("pressured");
+		// Critical needs its own three in a row; alternating never gets there.
+		expect((await h.step(6)).state).toBe("pressured");
+		expect(h.pressure).toEqual([{ state: "pressured", reasons: ["load"] }]);
+	});
+
+	it("recovers through a run that moves between better levels, to the worst of them", async () => {
+		const PRESSURED = sample({ loadPerCpu: 2 });
+		const h = monitor([
+			OVERLOADED,
+			OVERLOADED,
+			OVERLOADED,
+			HEALTHY,
+			PRESSURED,
+			HEALTHY,
+			PRESSURED,
+			HEALTHY,
+			PRESSURED,
+			HEALTHY,
+		]);
+		expect((await h.step(3)).state).toBe("critical");
+		expect((await h.step(5)).state).toBe("critical");
+		expect((await h.step(1)).state).toBe("pressured");
+	});
+
+	it("gives up on a sample that does not come back and keeps the loop turning", async () => {
+		const events: string[] = [];
+		const health = createHostHealthMonitor({
+			sample: () => new Promise<HostHealthSample>(() => undefined),
+			sampleTimeoutMs: 20,
+			log: (event, fields) => events.push(`${event}:${fields.message}`),
+		});
+		await expect(health.observe()).resolves.toEqual({
+			state: "ok",
+			reasons: [],
+		});
+		expect(events).toEqual([
+			"hobo_ci_host_health_sample_failed:host health sample timed out",
+		]);
+	});
+
 	it("logs the first sample, every change, and a lasting bad state every five minutes", async () => {
 		const h = monitor([HEALTHY, OVERLOADED]);
 		await h.step(1);

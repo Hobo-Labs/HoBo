@@ -272,7 +272,8 @@ describe("fleet offers", () => {
 		expect(members.map((member) => member.payerExposureMicros)).toEqual([
 			1_200_000, 1_200_000,
 		]);
-		expect(members.map((member) => member.activeJobs)).toEqual([1, 1]);
+		// Both offers answer to the one account's ceiling, as in admission.
+		expect(members.map((member) => member.activeJobs)).toEqual([2, 2]);
 	});
 
 	it("takes the ceiling the operator set, not the catalog's, and carries the offer's budget", () => {

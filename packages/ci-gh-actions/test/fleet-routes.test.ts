@@ -198,11 +198,43 @@ describe("fleet route publisher", () => {
 				},
 			],
 		]);
+		// Not asked again, or logged again, for ten minutes.
 		const before = api.calls.length;
-		expect(
-			(await publisher.publish(input(0, "2026-11-10T00:00:05Z")))?.outcome,
-		).toBe("deferred");
+		await expect(
+			publisher.publish(input(0, "2026-11-10T00:01:05Z")),
+		).resolves.toBeUndefined();
+		await expect(
+			publisher.publish(input(2, "2026-11-10T00:09:59Z")),
+		).resolves.toBeUndefined();
 		expect(api.calls.length).toBe(before);
+		expect(events).toHaveLength(1);
+		expect(
+			(await publisher.publish(input(0, "2026-11-10T00:10:00Z")))?.outcome,
+		).toBe("failed");
+		expect(events).toHaveLength(2);
+	});
+
+	it("puts every class back on its hobo label when asked to reset", async () => {
+		const api = github();
+		const publisher = createFleetRoutePublisher({ github: api.transport });
+		await publisher.publish(input(2));
+		expect(
+			await publisher.reset({ installationId: 7, repository: REPOSITORY }),
+		).toBe(true);
+		expect(api.calls.at(-1)).toMatchObject({
+			method: "PATCH",
+			body: JSON.stringify({
+				name: "HOBO_CI_FLEET_ROUTES",
+				value: '{"fork":"hobo","pr":"hobo","trunk":"hobo-trunk"}',
+			}),
+		});
+		const refused = github({ variableStatus: 403 });
+		expect(
+			await createFleetRoutePublisher({ github: refused.transport }).reset({
+				installationId: 7,
+				repository: REPOSITORY,
+			}),
+		).toBe(false);
 	});
 
 	it("never throws when GitHub cannot be read", async () => {

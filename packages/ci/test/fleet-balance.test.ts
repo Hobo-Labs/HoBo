@@ -452,8 +452,16 @@ describe("fleet budget policy", () => {
 			member("github-hosted-public"),
 		]);
 		expect(capped.refusals[0]?.code).toBe("fleet.payer-budget");
-		// A free member is never refused for money.
 		expect(capped.selected?.memberId).toBe("github-hosted-public");
+		// A payer already past its ceiling takes no more work, even free work.
+		const overrun = balance([
+			member("blacksmith-4vcpu", {
+				payerExposureMicros: 1_200_000,
+				payerBudgetMicros: 1_000_000,
+			}),
+		]);
+		expect(overrun.selected).toBeUndefined();
+		expect(overrun.refusals[0]?.code).toBe("fleet.payer-budget");
 		const legacy = balance(rented, {
 			exposureMicros: 4_999_000,
 			ceilingMicros: 5_000_000,
