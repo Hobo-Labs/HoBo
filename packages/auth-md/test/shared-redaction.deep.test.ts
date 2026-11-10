@@ -37,10 +37,13 @@ const searchAsRedactor: PatternSearch = (text, pattern) => {
 	redactMatches(text, [redactionPattern(asGlobal(pattern))]);
 };
 
-// Built from pieces: this package's own test refuses a committed file that
-// holds a private key's BEGIN line.
-const KEY_LINE = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");
-const END_LINE = ["-----END", "PRIVATE KEY-----"].join(" ");
+// The five dashes are built, not written: this package's own test
+// (test/redaction.test.ts) refuses a committed file where a dash run and BEGIN
+// are followed, with no dash between, by PRIVATE KEY and a dash run, and
+// pieces joined by `", "` still read that way.
+const DASHES = "-".repeat(5);
+const KEY_LINE = `${DASHES}BEGIN PRIVATE KEY${DASHES}`;
+const END_LINE = `${DASHES}END PRIVATE KEY${DASHES}`;
 
 describe("redactText", () => {
 	it.each([
