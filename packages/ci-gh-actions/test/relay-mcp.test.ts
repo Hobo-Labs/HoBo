@@ -1001,6 +1001,65 @@ describe("relay MCP sessions", () => {
 		expect((await list(h.tokens.a.authorization, sessionId)).status).toBe(404);
 	});
 
+	it("ends a session's wait when the caller of that request hangs up", async () => {
+		let clock = 0;
+		let release = (): void => undefined;
+		let entered = (): void => undefined;
+		const h = await setup({
+			sessions: "memory",
+			maxWaits: 1,
+			now: () => clock,
+			// Every sleep holds until the test lets it go: a wait that kept
+			// going after its caller left would stay blocked in the next one.
+			sleep: async (ms) => {
+				clock += ms;
+				entered();
+				await new Promise<void>((done) => {
+					release = done;
+				});
+			},
+		});
+		await seed(h);
+		const a = await h.connect(h.tokens.a.authorization);
+		const sleeping = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		const hangUp = new AbortController();
+		const waiting = await h.handle(
+			new Request(`${ORIGIN}/mcp`, {
+				method: "POST",
+				headers: {
+					authorization: h.tokens.a.authorization,
+					accept: "application/json, text/event-stream",
+					"content-type": "application/json",
+					"mcp-session-id": a.transport.sessionId ?? "",
+				},
+				body: JSON.stringify({
+					jsonrpc: "2.0",
+					id: 91,
+					method: "tools/call",
+					params: { name: "wait_for_events", arguments: {} },
+				}),
+				signal: hangUp.signal,
+			}),
+		);
+		// The answer is an event stream that stays open while the tool waits.
+		expect(waiting.status).toBe(200);
+		expect(waiting.headers.get("content-type")).toBe("text/event-stream");
+		await sleeping;
+		expect((await a.call("wait_for_events")).content[0]?.text).toMatch(
+			/too many callers are waiting/,
+		);
+		// Only that request ended: the session itself is still there.
+		hangUp.abort();
+		await waiting.body?.cancel();
+		release();
+		await new Promise((done) => setImmediate(done));
+		const next = await a.call("wait_for_events", { timeoutSeconds: 0 });
+		expect(next.isError).toBe(undefined);
+		expect(next.structuredContent).toMatchObject({ timedOut: true });
+	});
+
 	it("ends every session when the host shuts down", async () => {
 		const pump = manualPump();
 		const h = await setup({ sessions: "memory", sleep: pump.sleep });
