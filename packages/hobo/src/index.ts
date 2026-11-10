@@ -501,22 +501,40 @@ export {
 } from "./trails-command.js";
 export {
 	type CreateDeploymentInput,
+	type CreateGitDeploymentInput,
 	createVercelClient,
 	isProjectNotFound,
+	type SetProjectEnvInput,
 	VercelApiError,
 	type VercelClient,
 	type VercelClientOptions,
 	type VercelDeploymentFile,
 	type VercelDeploymentResult,
+	VercelEnvRefusal,
+	type VercelEnvTarget,
 	type VercelFetch,
 	type VercelFetchResponse,
+	type VercelGitSource,
+	type VercelPlannedRequest,
+	type VercelProjectEnvResult,
 	type VercelProjectResult,
 	VercelTransportError,
+	vercelEnvCreateRequest,
+	vercelEnvListRequest,
+	vercelGitDeploymentRequest,
 } from "./vercel-client.js";
 export {
 	createVercelDeployProvider,
+	planVercelGitDeployment,
 	type VercelDeployProviderOptions,
+	type VercelGitArtifact,
+	type VercelGitDeploymentPlan,
 } from "./vercel-deploy-provider.js";
+export {
+	isRefusedEnvKey,
+	refusedEnvKeyReason,
+	refusedEnvValueReason,
+} from "./vercel-env-policy.js";
 export {
 	createVerifyCommand,
 	type VerifyCommandDeps,

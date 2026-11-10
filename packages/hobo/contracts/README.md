@@ -37,3 +37,17 @@ package schema gate and reject insecure origins, malformed identities and embedd
 credentials. Credentials stay outside the link. Relay writes
 continue through the existing durable account/setup commands and projections;
 the CLI does not introduce a parallel event journal or read model.
+
+`vercel-git-deploy.pact.json` pins the Vercel REST requests of a git-source
+deployment and of non-secret project configuration: the environment-variable
+read, a `plain` create for one environment, a value edit, and Create Deployment
+with a `gitSource` for preview (no `target`), for production pinned to a commit,
+in the token's own scope, and refused with "Project not found".
+`test/vercel-git-deploy.test.ts` replays it through `pactBackedTransport`
+(`@hobo/testing`) with a lifecycle over the three recorded listings (the setting
+absent, as asked, and under an older value), compares each request the client
+sent with the recorded one, and requires zero fidelity violations and zero
+unmatched calls. It is a hand-authored consumer expectation checked against
+Vercel's REST reference: not captured traffic, and not verified by Vercel. The
+project-create, conflict, refusal and redaction cases use a scripted transport
+in the same file.

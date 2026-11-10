@@ -266,6 +266,73 @@ not credentials, are on that allowlist. The helper's outputs say what happened:
 there is none: the scope Vercel gives a request with no `teamId`, which for a
 team's token need not be a personal account.
 
+**Deploying a commit instead of a file tree (`gitArtifact`).** A workspace
+package that Vercel has to build from the repository is not a file tree to
+upload: it is a commit. `createVercelDeployProvider({ token, projectName,
+gitArtifact: { org, repo, ref, sha? } })` is the explicit alternative to
+`fixtureArtifact` (the two together, or a git artifact with no `projectName`,
+are refused when the provider is made). Its `apply` sends one
+`POST /v13/deployments` whose body carries a `gitSource`
+(`{ type: "github", org, repo, ref, sha? }`) in place of `files`:
+`createVercelClient().createDeployment` takes either shape, and the file-tree
+request is unchanged byte for byte. What a git deployment does differently:
+
+- **Preview unless told otherwise.** The default target is `preview`, sent as a
+  request with no `target` (Vercel reads that as preview); `target:
+  "production"` is the only way to production, and any other target is refused
+  when the provider is made.
+- **No project settings unless given.** Vercel saves a deployment's
+  `projectSettings` on the project, so a git deployment sends none and an
+  existing project keeps its own; `gitArtifact.rootDirectory` sends
+  `{ rootDirectory }` for a project that has none yet.
+- **Configuration first, and only non-secret configuration.** `configuration`
+  (a name-to-value map) is set on the project for the target's environment
+  before the deployment, through `createVercelClient().setProjectEnv`: one
+  `GET /v10/projects/{project}/env`, then a `POST` to the same path
+  (`{ key, value, type: "plain", target: [environment] }`) for each name that
+  environment lacks, and a `PATCH /v9/projects/{project}/env/{id}`
+  (`{ value }`) for each plain variable of that environment alone whose value
+  differs. A name already as asked is left alone, so a second run sends the
+  read and the deployment and nothing else. It never asks Vercel to decrypt a
+  value. Refused with a `VercelEnvRefusal`, before any write: a variable the
+  project already holds encrypted or sensitive (the operator's), one shared
+  with another environment under a different value (editing it would change an
+  environment nobody asked to configure), and a listing that runs past one
+  page.
+- **Secrets are refused by name.** `src/vercel-env-policy.ts` screens every
+  name and value before the first request: `isForbiddenSecretEnvKey` from
+  `@hobo/bindles`, a storage integration's names (`DATABASE_*`, `POSTGRES_*`,
+  `PG*`, `REDIS_*`, …), and any name with a credential word in it (`TOKEN`,
+  `SECRET`, `KEY`, `PASSWORD`, `PRIVATE`, `CREDENTIAL`, `AUTH`, …); a value
+  that looks like a connection string, a bearer header, a private key or a JWT,
+  or that holds the client's own token; and a value with a control character.
+  The refusal names the variable and never quotes a value. Connection strings
+  and tokens reach a project from its operator or a storage integration; this
+  path is never handed one, sends none, and provisions no storage.
+- **`createMissingProject: false`** turns off the project create on "Project
+  not found" (it defaults to `true`, the fixture path's behaviour). For a
+  project that must already exist, such as a live service in a team, a wrong or
+  missing `teamId` is then a refusal instead of a second project.
+
+The outputs add, in the same string form: `artifact` (`"git"`),
+`gitRepository` (`org/repo`), `gitRef`, `gitSha` (empty when not pinned), and
+`configCreated`, `configUpdated` and `configUnchanged`, each the variable
+names comma-joined. `planVercelGitDeployment(options)` returns the requests an
+`apply` would send (method, path with the team query, JSON body, and when each
+is sent), formed by the functions the client sends with and with no token, no
+client and no network. A credential binding's scope for this mode needs `POST`
+on `/v13/deployments`, and for configuration `GET` and `POST` on
+`/v10/projects/{project}/env` and `PATCH` on `/v9/projects/{project}/env/*`.
+
+Each request shape was checked against Vercel's REST reference (the pages are
+named in `src/vercel-client.ts`). `contracts/vercel-git-deploy.pact.json` is
+the hand-authored consumer pact for this boundary, and
+`test/vercel-git-deploy.test.ts` replays it through `pactBackedTransport`
+(`@hobo/testing`), which sequences the pact's own recorded listings so the
+second-run claim is made against recorded states. **Status: exercised against
+a fake transport only. No live deployment has been made from this repository
+through this mode, and Vercel has not verified the pact.**
+
 **Credentials from OpenSesame (`HOBO_CREDENTIALS=opensesame`, [ADR-0170](../../docs/design/adr/02-identity-security.md#adr-0170)).**
 The composed `hobo` then relaunches itself once, before composing anything, as
 `opensesame dev --agent --schema <generated> run -- <this invocation>` (through
