@@ -17,6 +17,6 @@ describe("storage job classes", () => {
 			"deps_build",
 		);
 		expect(STORAGE_CLASS_RESERVES.standard.workRoot).toBe(180_000);
-		expect(STORAGE_CLASS_RESERVES.deps_build.dockerDataRoot).toBe(420_000);
+		expect(STORAGE_CLASS_RESERVES.deps_build.dockerDataRoot).toBe(210_000);
 	});
 });

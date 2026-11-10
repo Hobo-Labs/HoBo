@@ -90,27 +90,24 @@ describe("CI deps image push scope", () => {
 			group: "ci-deps-publish-${{ github.repository }}",
 			"cancel-in-progress": true,
 		});
+		expect(publisher.jobs.route["timeout-minutes"]).toBe(5);
 		const job = publisher.jobs.publish;
+		expect([job.needs].flat()).toEqual(["route"]);
 		expect(job["timeout-minutes"]).toBe(20);
-		// The publisher pushes the fleet's own image, so it is not routed: it
-		// asks for the fleet's label, which is what a routed job falls back to.
-		const fleetLabel: string = job["runs-on"].slice(4, -3);
-		expect(depsJob["runs-on"]).toBe(
-			["$", "{{ needs.route.outputs.runner || (", fleetLabel, ") }}"].join(""),
-		);
+		expect(job["runs-on"]).toContain("needs.route.outputs.runner");
+		expect(depsJob["runs-on"]).toContain("needs.route.outputs.runner");
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
 		expect(job.if).toContain(
 			"github.event.workflow_run.conclusion == 'success'",
 		);
-		expect(job.steps[0].with.ref).toContain(
-			"github.event.workflow_run.head_sha",
-		);
-		expect(job.steps[1].run).toBe(
-			"node --experimental-strip-types --no-warnings scripts/ci/wait-deps-build-window.mts",
-		);
-		expect(job.steps[2].run).toBe(
-			"bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh",
-		);
+		const checkout = job.steps[0];
+		expect(checkout.with.ref).toContain("github.event.workflow_run.head_sha");
+		const publish = job.steps[1];
+		expect(publish.run).toContain("publish-deps.sh");
+		expect(publish.env.HOBO_CI_DEPS_BUILD_SPILL_OK).toBe("1");
+		const overflow = publisher.jobs["publish-overflow"];
+		expect(overflow["runs-on"]).toBe("ubuntu-24.04");
+		expect(overflow.if).toContain("needs.publish.outputs.spill == 'true'");
 	});
 
 	it("does not make either gate wait for the deps image", () => {

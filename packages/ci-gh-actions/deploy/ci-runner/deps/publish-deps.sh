@@ -27,7 +27,15 @@ if ! docker image inspect "$candidate" >/dev/null 2>&1; then
   else
     echo "No local deps image for ${key}; building before GHCR publish"
     node --experimental-strip-types --no-warnings scripts/ci/wait-deps-build-window.mts
-    bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh
+    export HOBO_CI_DEPS_BUILD_SPILL_OK=1
+    if ! bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh; then
+      status=$?
+      if [ "$status" -eq 2 ]; then
+        echo "deps build spilled: box inode/disk headroom exhausted" >&2
+        exit 2
+      fi
+      exit "$status"
+    fi
   fi
 fi
 

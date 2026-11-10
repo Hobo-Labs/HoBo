@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import { z } from "zod";
 import {
 	buildHostCapacityRecord,
@@ -30,8 +31,6 @@ const HARD_LIMIT = 0.95;
 const INODE_GRANT_GRACE_MS = 60_000;
 const BYTE_SAFETY_MARGIN_FLOOR = 2 * 1024 * 1024 * 1024;
 const IMMINENT_INODE_BUFFER = 50_000;
-const ErrnoCode = z.object({ code: z.string() });
-
 export type WorkerStorageDockerDriver = Readonly<{
 	dataRoot(): Promise<string>;
 	pruneBuilder(keepStorage: string): Promise<void>;

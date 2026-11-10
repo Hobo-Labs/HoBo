@@ -262,16 +262,10 @@ describe("CI deps image build contract", () => {
 	});
 
 	it("guards Docker inode and disk headroom before a deps rebuild", () => {
-		includes(
-			build,
-			'inode_headroom="${HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-400000}"',
-		);
-		includes(
-			build,
-			'byte_headroom="${HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-8589934592}"',
-		);
-		includes(build, "invalid HOBO_CI_DEPS_BUILD_INODE_HEADROOM");
-		includes(build, "invalid HOBO_CI_DEPS_BUILD_BYTE_HEADROOM");
+		includes(build, "resolve_headroom_thresholds");
+		includes(build, "scripts/lib/deps-build-headroom.mts");
+		includes(build, "registry_image_gc");
+		includes(build, "HOBO_CI_DEPS_BUILD_SPILL_OK");
 		includes(build, "df --output=iavail");
 		includes(build, "df -B1 --output=avail");
 		assert.ok(!build.includes("df -P --output"));

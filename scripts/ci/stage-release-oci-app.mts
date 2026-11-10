@@ -483,7 +483,21 @@ function stageSite(
 export function releaseOciDockerignore(spec: ReleaseOciStageSpec): string {
 	switch (spec.kind) {
 		case "deploy":
-			return "*\n!.dockerignore\n!app/\n!app/**\n!app/bin/\n!app/bin/**\n";
+			return [
+				"*",
+				"!.dockerignore",
+				"!app/",
+				"!app/**",
+				"!app/bin/",
+				"!app/bin/**",
+				"app/**/*.map",
+				"app/**/test/**",
+				"app/**/*.test.*",
+				"app/**/*.spec.*",
+				"app/**/__tests__/**",
+				"app/**/*.md",
+				"app/**/DESIGN.md",
+			].join("\n");
 		case "sdk":
 			return "*\n!.dockerignore\n!artifacts/\n!artifacts/**\n";
 		case "site":

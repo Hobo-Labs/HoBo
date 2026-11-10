@@ -15,13 +15,83 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  route:
+    name: Route deps publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      runner: ${{ steps.route.outputs.runner }}
+      tier: ${{ steps.route.outputs.tier }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/route-runner
+            scripts/ci/route-runner.mts
+            packages/ci/src/fleet-overflow.ts
+      - id: route
+        uses: ./.github/actions/route-runner
+        with:
+          token: ${{ github.token }}
+          mode: ${{ vars.HOBO_CI_ROUTE }}
+          local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}
+          max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
+          max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
+          trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
+
   publish:
     name: Publish local deps image (non-blocking)
+    needs: route
     if: >-
       github.repository == 'Hobo-Labs/HoBo' &&
       (github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    runs-on: ${{ needs.route.outputs.runner || 'hobo' }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      spill: ${{ steps.publish.outputs.spill }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+          submodules: recursive
+          clean: false
+          fetch-depth: 1
+      - id: publish
+        name: Publish missing deps tag with a bounded wall clock
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOBO_CI_DEPS_BUILD_SPILL_OK: "1"
+        run: |
+          set -euo pipefail
+          if bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh; then
+            echo "spill=false" >> "$GITHUB_OUTPUT"
+          else
+            status=$?
+            if [ "$status" -eq 2 ]; then
+              echo "::warning::Box lacks inode/disk headroom for deps build; spilling to GitHub-hosted"
+              echo "spill=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            exit "$status"
+          fi
+
+  publish-overflow:
+    name: Publish deps image (fleet overflow)
+    needs: [route, publish]
+    if: >-
+      needs.publish.outputs.spill == 'true' &&
+      github.repository == 'Hobo-Labs/HoBo'
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -33,9 +103,7 @@ jobs:
           submodules: recursive
           clean: false
           fetch-depth: 1
-      - name: Wait for isolated jobs and inode headroom
-        run: node --experimental-strip-types --no-warnings scripts/ci/wait-deps-build-window.mts
-      - name: Publish missing deps tag with a bounded wall clock
+      - name: Publish on GitHub-hosted runner
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh

@@ -97,6 +97,7 @@ unindexed new finding files as notices.
 - [Finding 84: deps publisher missed host worker tags in job docker context](./findings/0084-deps-publisher-missed-host-worker-tags-in-job-docker-context.md)
 - [Finding 85: proactive inode admission and box packing](./findings/0085-proactive-inode-admission-and-box-packing.md)
 - [Finding 86: storage overflow, byte floors, imminent preemption, queue pickup](./findings/0086-storage-overflow-byte-floors-imminent-preemption-queue-pickup.md)
+- [Finding 87: deps rebuild measured headroom, registry GC, and publisher overflow](./findings/0087-deps-rebuild-measured-headroom-registry-gc-and-publisher-overflow.md)
 <!-- findings-index:end -->
 
 ## Data

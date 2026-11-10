@@ -19,16 +19,19 @@ if [[ ! "$cap" =~ ^[0-9]+([.][0-9]+)?[KMGT]B$ ]]; then
   echo "invalid BuildKit cache cap: ${cap}" >&2
   exit 1
 fi
-inode_headroom="${HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-400000}"
-byte_headroom="${HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-8589934592}"
-if [[ ! "$inode_headroom" =~ ^[0-9]+$ ]]; then
-  echo "invalid HOBO_CI_DEPS_BUILD_INODE_HEADROOM" >&2
-  exit 1
-fi
-if [[ ! "$byte_headroom" =~ ^[0-9]+$ ]]; then
-  echo "invalid HOBO_CI_DEPS_BUILD_BYTE_HEADROOM" >&2
-  exit 1
-fi
+resolve_headroom_thresholds() {
+  local sample_path="${1:-/}"
+  if ! read -r inode_headroom byte_headroom < <(
+    node --no-warnings scripts/lib/deps-build-headroom.mts --print "$sample_path" | tail -n1
+  ); then
+    echo "cannot resolve deps build headroom thresholds" >&2
+    exit 1
+  fi
+  if [[ ! "$inode_headroom" =~ ^[0-9]+$ || ! "$byte_headroom" =~ ^[0-9]+$ ]]; then
+    echo "invalid deps build headroom thresholds" >&2
+    exit 1
+  fi
+}
 
 sample_docker_headroom() {
   local sample_path="$1"
@@ -95,20 +98,35 @@ resolve_deps_headroom_sample_path() {
 # That overlay can exhaust the box and red concurrent main jobs. Prune only
 # the builder cache (never an unfiltered image prune) and refuse the rebuild
 # if headroom is still short.
+registry_image_gc() {
+  local keep_tag="$1"
+  if [[ ! -f "$root/scripts/ci-runner-image-gc.mts" ]]; then
+    return 0
+  fi
+  echo "deps rebuild evicting unused CI/release images (keep=${keep_tag})"
+  node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$keep_tag" || true
+}
+
 ensure_deps_build_headroom() {
-  local docker_root sample_path iavail avail
+  local docker_root sample_path iavail avail inode_headroom byte_headroom before_iavail before_avail
   docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
   sample_path="$(resolve_deps_headroom_sample_path "$docker_root" "$base")" || exit 1
+  resolve_headroom_thresholds "$sample_path"
   read -r iavail avail < <(sample_docker_headroom "$sample_path")
   if (( iavail >= inode_headroom && avail >= byte_headroom )); then
     return 0
   fi
-  echo "deps rebuild headroom low (dockerRoot=${docker_root} samplePath=${sample_path} inodes=${iavail} bytes=${avail}); pruning BuildKit cache"
+  echo "deps rebuild headroom low (dockerRoot=${docker_root} samplePath=${sample_path} inodes=${iavail} need ${inode_headroom} bytes=${avail} need ${byte_headroom}); pruning BuildKit cache"
   docker builder prune -f --keep-storage "$cap"
+  registry_image_gc "${candidate:-hobo-ci-deps:local}"
   read -r iavail avail < <(sample_docker_headroom "$sample_path")
   if (( iavail >= inode_headroom && avail >= byte_headroom )); then
-    echo "deps rebuild headroom recovered after builder prune (inodes=${iavail} bytes=${avail})"
+    echo "deps rebuild headroom recovered after cache and image gc (inodes=${iavail} bytes=${avail})"
     return 0
+  fi
+  if [[ "${HOBO_CI_DEPS_BUILD_SPILL_OK:-}" == "1" ]]; then
+    echo "deps rebuild needs off-box runner (inodes=${iavail} need ${inode_headroom}; bytes=${avail} need ${byte_headroom})" >&2
+    exit 2
   fi
   echo "refusing deps rebuild: Docker data root still below headroom after builder prune (inodes=${iavail} need ${inode_headroom}; bytes=${avail} need ${byte_headroom})" >&2
   exit 1
@@ -203,6 +221,9 @@ fi
 
 echo "Building $candidate (fetch network restricted to lockfile-verified downloads; install offline)"
 node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate" || true
+before_iavail=0
+before_avail=0
+read -r before_iavail before_avail < <(sample_docker_headroom "$(resolve_deps_headroom_sample_path "$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)" "$base")" || echo "0 0")
 ensure_deps_build_headroom
 "${build_command[@]}" \
   "${docker_memory_args[@]}" \
@@ -243,3 +264,7 @@ else
 fi
 node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
 "${prune_command[@]}" -f --keep-storage "$cap"
+sample_path="$(resolve_deps_headroom_sample_path "$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)" "$base")" || sample_path="/"
+if [[ "$before_iavail" =~ ^[0-9]+$ && "$before_avail" =~ ^[0-9]+$ ]]; then
+  node --no-warnings scripts/lib/deps-build-headroom.mts --record "$sample_path" "$before_iavail" "$before_avail" || true
+fi

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	selectReleaseImageTagsForDeletion,
 	selectWorkerImagesForDeletion,
 	selectWorkerImageTagsForDeletion,
 	type WorkerImage,
@@ -93,6 +94,25 @@ describe("worker image garbage collection", () => {
 		]);
 		expect(selectWorkerImagesForDeletion(images)).toEqual([
 			"hobo-ci-worker:v000000000001",
+		]);
+	});
+
+	it("keeps only the newest local release candidate per image name", () => {
+		const images = [
+			image("hobo-cli:candidate", "2026-01-01T00:00:00Z"),
+			image(
+				"ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.1",
+				"2026-01-02T00:00:00Z",
+			),
+			image(
+				"ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.2",
+				"2026-03-01T00:00:00Z",
+			),
+			image("hobo-code:candidate", "2026-02-01T00:00:00Z", true),
+		];
+		expect(selectReleaseImageTagsForDeletion(images)).toEqual([
+			"ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.1",
+			"hobo-cli:candidate",
 		]);
 	});
 

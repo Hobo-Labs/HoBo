@@ -123,8 +123,11 @@ non-secret settings:
 | `HOBO_CI_PNPM_STORE_PRUNE_INTERVAL_MS` | `21600000` | Minimum interval between idle-only store prunes; integer at least 60000, persisted across failures and restarts |
 | `HOBO_CI_WORKER_GC_MS` | `300000` | Scheduled image/builder/store/dead-workdir GC interval; minimum 60000, capped at 300000 |
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cache cap with no age exemption; `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` remains a deprecated alias |
-| `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | `400000` | Free inodes required on Docker's data root before a deps rebuild; digits only |
-| `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | `8589934592` | Free bytes required on Docker's data root before a deps rebuild; digits only |
+| `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | _(measured × 1.2, default ~210k)_ | Override only: free inodes required before a deps rebuild (`scripts/lib/deps-build-headroom.mts`) |
+| `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | _(measured × 1.1)_ | Override only: free bytes required before a deps rebuild |
+| `HOBO_CI_DEPS_BUILD_TELEMETRY_PATH` | `$HOBO_HOME/ci/deps-build-telemetry.json` | Rolling peak inode/byte consumption recorded after successful deps builds |
+| `HOBO_CI_DEPS_BUILD_SPILL_OK` | unset | When `1`, exit **2** instead of refusing when headroom is still short (publisher overflows to GitHub-hosted) |
+| `HOBO_RELEASE_BUILDER_CACHE_CAP` | `2GB` | `docker builder prune --keep-storage` cap after release OCI builds on shared boxes |
 | `HOBO_CI_DEPS_BUILD_WAIT_MS` | `900000` | Maximum wait in `scripts/ci/wait-deps-build-window.mts` before a publisher or PR miss build |
 | `HOBO_CI_DEPS_BUILD_WAIT_POLL_MS` | `10000` | Poll interval for the deps build window script; digits only |
 

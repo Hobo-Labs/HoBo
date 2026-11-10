@@ -1,5 +1,9 @@
 /** Measured / budgeted inode growth per CI job class (worker admission). */
 
+import { depsBuildDockerReserve } from "./deps-build-budget.js";
+
+const DEPS_BUILD_RESERVE = depsBuildDockerReserve();
+
 export type WorkerStorageReserve = Readonly<{
 	workRoot: number;
 	dockerDataRoot: number;
@@ -35,12 +39,12 @@ export const STORAGE_CLASS_RESERVES = {
 		workRootBytes: 12 * 1024 * 1024 * 1024,
 		dockerDataRootBytes: 8 * 1024 * 1024 * 1024,
 	},
-	// build-deps.sh headroom default plus BuildKit overlay slack (finding 71, run 42838687335).
+	// Measured deps overlay peak × volatility (packages/ci-gh-actions/deps-build-budget.ts).
 	deps_build: {
 		workRoot: 0,
-		dockerDataRoot: 420_000,
+		dockerDataRoot: DEPS_BUILD_RESERVE.dockerDataRoot,
 		workRootBytes: 0,
-		dockerDataRootBytes: 28 * 1024 * 1024 * 1024,
+		dockerDataRootBytes: DEPS_BUILD_RESERVE.dockerDataRootBytes,
 	},
 	runner_image: {
 		workRoot: 40_000,

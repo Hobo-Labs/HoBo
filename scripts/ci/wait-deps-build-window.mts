@@ -2,6 +2,10 @@
 /** Wait until no isolated job containers run and deps-build inode headroom is available. */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import {
+	depsBuildHeadroomSatisfied,
+	depsBuildHeadroomThresholds,
+} from "../lib/deps-build-headroom.mts";
 
 const exec = promisify(execFile);
 
@@ -9,9 +13,8 @@ const ISOLATED_JOB =
 	/^hobo-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 const POLL_MS = Number(process.env.HOBO_CI_DEPS_BUILD_WAIT_POLL_MS ?? 10_000);
 const MAX_WAIT_MS = Number(process.env.HOBO_CI_DEPS_BUILD_WAIT_MS ?? 900_000);
-const INODE_HEADROOM = Number(
-	process.env.HOBO_CI_DEPS_BUILD_INODE_HEADROOM ?? "400000",
-);
+const { inodes: INODE_HEADROOM, bytes: BYTE_HEADROOM } =
+	depsBuildHeadroomThresholds();
 
 function parsePositiveInt(name: string, value: number) {
 	if (!Number.isFinite(value) || value < 0 || !Number.isInteger(value))
@@ -21,7 +24,6 @@ function parsePositiveInt(name: string, value: number) {
 
 parsePositiveInt("HOBO_CI_DEPS_BUILD_WAIT_POLL_MS", POLL_MS);
 parsePositiveInt("HOBO_CI_DEPS_BUILD_WAIT_MS", MAX_WAIT_MS);
-parsePositiveInt("HOBO_CI_DEPS_BUILD_INODE_HEADROOM", INODE_HEADROOM);
 
 async function listIsolatedJobContainers(): Promise<string[]> {
 	const { stdout } = await exec("docker", ["ps", "--format", "{{.Names}}"]);
@@ -31,7 +33,7 @@ async function listIsolatedJobContainers(): Promise<string[]> {
 		.filter((name) => ISOLATED_JOB.test(name));
 }
 
-async function sampleInodeAvailability(): Promise<number> {
+async function dockerSamplePath(): Promise<string> {
 	let dockerRoot = "";
 	try {
 		const { stdout } = await exec("docker", [
@@ -43,15 +45,7 @@ async function sampleInodeAvailability(): Promise<number> {
 	} catch {
 		dockerRoot = "";
 	}
-	const samplePath =
-		dockerRoot && (await fileExists(dockerRoot)) ? dockerRoot : "/";
-	const { stdout } = await exec("df", ["--output=iavail", samplePath]);
-	const lines = stdout.trim().split("\n");
-	const last = lines.at(-1)?.trim() ?? "";
-	const iavail = Number(last);
-	if (!Number.isFinite(iavail))
-		throw new Error(`invalid inode sample for ${samplePath}`);
-	return iavail;
+	return dockerRoot && (await fileExists(dockerRoot)) ? dockerRoot : "/";
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -71,11 +65,11 @@ async function ready(): Promise<{ ok: true } | { ok: false; reason: string }> {
 			ok: false,
 			reason: `isolated job containers: ${running.join(", ")}`,
 		};
-	const iavail = await sampleInodeAvailability();
-	if (iavail < INODE_HEADROOM)
+	const samplePath = await dockerSamplePath();
+	if (!depsBuildHeadroomSatisfied(samplePath))
 		return {
 			ok: false,
-			reason: `free inodes ${iavail} below ${INODE_HEADROOM}`,
+			reason: `docker data root below measured deps headroom (need inodes>=${INODE_HEADROOM} bytes>=${BYTE_HEADROOM})`,
 		};
 	return { ok: true };
 }
