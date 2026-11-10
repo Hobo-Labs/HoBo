@@ -22,6 +22,37 @@ export type WorkspaceEdge = {
 	readonly dev?: boolean;
 };
 
+/**
+ * The rule a refusal is filed under in the gate's machine-readable event.
+ *
+ * Closed, and the same list as `rule` in `data-models/conformance.cue`. A
+ * refusal cannot be raised without one of these names (`refuse` below takes
+ * it), so every line the gate prints on stderr is also a record in the event's
+ * `violations`. It was not always so: the three engine-neutrality rules had no
+ * name, the script that built the event matched on message text, and a
+ * refusal it did not recognise was printed and then left out of the JSON.
+ */
+export const BOUNDARY_RULES = [
+	"core-imports-hobo",
+	"adapter-imports-adapter",
+	"adapter-imports-non-core",
+	"outward-dependency",
+	"workspace-cycle",
+	"unknown-package",
+	"orchestrator-imports-engine",
+	"orchestrator-imports-engine-storage",
+	"engine-imports-engine",
+] as const;
+export type BoundaryRule = (typeof BOUNDARY_RULES)[number];
+
+/** One refusal, as `BoundaryViolationRecord` in `data-models/conformance.proto` carries it. */
+export type BoundaryViolation = {
+	readonly rule: BoundaryRule;
+	readonly from_path: string;
+	readonly to_path: string;
+	readonly effect: "deny";
+};
+
 export type PackageKind =
 	| "core"
 	| "contract"
@@ -595,11 +626,42 @@ export function classifyPackage(path: string): PackageClassification {
 	return { kind: "unknown", layer: Number.POSITIVE_INFINITY };
 }
 
+/**
+ * Record one refusal: the line for stderr and the record for the event, made
+ * together so neither can exist without the other.
+ */
+function refuse(
+	issues: WorkspaceIssues,
+	rule: BoundaryRule,
+	message: string,
+	from_path: string,
+	to_path: string,
+): void {
+	issues.errors.push(message);
+	issues.violations.push({ rule, from_path, to_path, effect: "deny" });
+}
+
+/** Refuse an edge: `<sentence>: <from> -> <to>`. */
+function refuseEdge(
+	issues: WorkspaceIssues,
+	rule: BoundaryRule,
+	sentence: string,
+	edge: WorkspaceEdge,
+): void {
+	refuse(
+		issues,
+		rule,
+		`${sentence}: ${edge.from} -> ${edge.to}`,
+		edge.from,
+		edge.to,
+	);
+}
+
 export function validateBoundaryImports(
 	edges: readonly WorkspaceEdge[],
 	extra: readonly WorkspaceEdge[] = [],
 ): WorkspaceIssues {
-	const errors: string[] = [];
+	const issues: WorkspaceIssues = { errors: [], violations: [] };
 	const imports = [...edges, ...extra];
 
 	for (const edge of imports) {
@@ -607,12 +669,24 @@ export function validateBoundaryImports(
 		const to = classifyPackage(edge.to);
 
 		if (from.kind === "unknown") {
-			errors.push(`unknown import source ${edge.from}`);
+			refuse(
+				issues,
+				"unknown-package",
+				`unknown import source ${edge.from}`,
+				edge.from,
+				edge.from,
+			);
 			continue;
 		}
 
 		if (to.kind === "unknown") {
-			errors.push(`unknown import target ${edge.to}`);
+			refuse(
+				issues,
+				"unknown-package",
+				`unknown import target ${edge.to}`,
+				edge.to,
+				edge.to,
+			);
 			continue;
 		}
 
@@ -625,13 +699,19 @@ export function validateBoundaryImports(
 
 		if (runtime && ENGINE_NEUTRAL_ORCHESTRATORS.has(edge.from)) {
 			if (isDataEnginePackage(edge.to)) {
-				errors.push(
-					`orchestrators must not import a data engine at runtime: ${edge.from} -> ${edge.to}`,
+				refuseEdge(
+					issues,
+					"orchestrator-imports-engine",
+					"orchestrators must not import a data engine at runtime",
+					edge,
 				);
 			}
 			if (isEngineSpecificStorage(edge.to)) {
-				errors.push(
-					`orchestrators must not import a database driver or engine-specific storage at runtime: ${edge.from} -> ${edge.to}`,
+				refuseEdge(
+					issues,
+					"orchestrator-imports-engine-storage",
+					"orchestrators must not import a database driver or engine-specific storage at runtime",
+					edge,
 				);
 			}
 		}
@@ -644,8 +724,11 @@ export function validateBoundaryImports(
 			isDataEnginePackage(edge.from) &&
 			isDataEnginePackage(edge.to)
 		) {
-			errors.push(
-				`data engines must not import each other at runtime: ${edge.from} -> ${edge.to}`,
+			refuseEdge(
+				issues,
+				"engine-imports-engine",
+				"data engines must not import each other at runtime",
+				edge,
 			);
 		}
 
@@ -653,8 +736,11 @@ export function validateBoundaryImports(
 			if (isDevOnlyTestHarnessEdge(edge)) {
 				continue;
 			}
-			errors.push(
-				`core must not import HoBo packages: ${edge.from} -> ${edge.to}`,
+			refuseEdge(
+				issues,
+				"core-imports-hobo",
+				"core must not import HoBo packages",
+				edge,
 			);
 		}
 
@@ -664,8 +750,11 @@ export function validateBoundaryImports(
 			edge.from !== edge.to &&
 			!isAcceptedAdapterPackageEdge(edge.from, edge.to)
 		) {
-			errors.push(
-				`adapters must not import each other: ${edge.from} -> ${edge.to}`,
+			refuseEdge(
+				issues,
+				"adapter-imports-adapter",
+				"adapters must not import each other",
+				edge,
 			);
 		}
 
@@ -687,8 +776,11 @@ export function validateBoundaryImports(
 			!isDevOnlyTestHarnessEdge(edge) &&
 			!isAcceptedAdapterPackageEdge(edge.from, edge.to)
 		) {
-			errors.push(
-				`adapters may import only core ports: ${edge.from} -> ${edge.to}`,
+			refuseEdge(
+				issues,
+				"adapter-imports-non-core",
+				"adapters may import only core ports",
+				edge,
 			);
 		}
 
@@ -697,22 +789,33 @@ export function validateBoundaryImports(
 			edge.to !== "packages/conformance" &&
 			!isAcceptedAdapterPackageEdge(edge.from, edge.to)
 		) {
-			errors.push(`dependency points outward: ${edge.from} -> ${edge.to}`);
+			refuseEdge(
+				issues,
+				"outward-dependency",
+				"dependency points outward",
+				edge,
+			);
 		}
 	}
 
-	return { errors };
+	return issues;
 }
 
 export interface WorkspaceIssues {
+	/** One line per refusal, as the gate prints it on stderr. */
 	errors: string[];
+	/**
+	 * The same refusals as records, one per line of `errors` and in the same
+	 * order, each under the rule that refused it.
+	 */
+	violations: BoundaryViolation[];
 }
 
 export function detectWorkspaceCycles(
 	edges: readonly WorkspaceEdge[],
 ): WorkspaceIssues {
 	const graph = new Map<string, string[]>();
-	const errors: string[] = [];
+	const issues: WorkspaceIssues = { errors: [], violations: [] };
 
 	for (const { from, to } of edges) {
 		const next = graph.get(from) ?? [];
@@ -725,8 +828,16 @@ export function detectWorkspaceCycles(
 
 	const visit = (node: string, trail: string[]): void => {
 		if (visiting.has(node)) {
-			const cycle = trail.slice(trail.indexOf(node)).join(" -> ");
-			errors.push(`workspace dependency cycle: ${cycle}`);
+			const cycle = trail.slice(trail.indexOf(node));
+			// The record names the edge that closes the cycle: the last package
+			// on the trail, importing the one the trail started from.
+			refuse(
+				issues,
+				"workspace-cycle",
+				`workspace dependency cycle: ${cycle.join(" -> ")}`,
+				cycle[cycle.length - 2] ?? node,
+				node,
+			);
 			return;
 		}
 
@@ -746,7 +857,7 @@ export function detectWorkspaceCycles(
 		visit(node, [node]);
 	}
 
-	return { errors };
+	return issues;
 }
 
 export const canonicalWorkspaceEdges: readonly WorkspaceEdge[] = [

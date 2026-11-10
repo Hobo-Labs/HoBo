@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+	BOUNDARY_RULES,
+	type BoundaryRule,
 	canonicalWorkspaceEdges,
 	classifyPackage,
 	databaseDriverOf,
@@ -12,6 +14,7 @@ import {
 	mergeWorkspaceEdges,
 	parseWorkspaceEdge,
 	validateBoundaryImports,
+	type WorkspaceEdge,
 } from "../src/boundaries.js";
 
 describe("validateBoundaryImports", () => {
@@ -342,6 +345,7 @@ describe("dev-only marker survives only a genuinely dev-only edge", () => {
 		]);
 		expect(validateBoundaryImports(mergeWorkspaceEdges([declared]))).toEqual({
 			errors: [],
+			violations: [],
 		});
 	});
 
@@ -753,5 +757,171 @@ describe("data engines meet only through the contract", () => {
 				}),
 			]).errors,
 		).toEqual([]);
+	});
+});
+
+/**
+ * The gate's machine-readable event lists its refusals under a rule name. The
+ * names were matched from the printed text by the script that built the event,
+ * and it knew six of them: every engine-neutrality refusal was printed on
+ * stderr, failed the gate, and was absent from `violations`. A refusal is now
+ * raised with its rule, so the line and the record cannot come apart.
+ */
+describe("every refusal is a record under the rule that raised it", () => {
+	const deny = (rule: BoundaryRule, from_path: string, to_path: string) => ({
+		rule,
+		from_path,
+		to_path,
+		effect: "deny",
+	});
+
+	it("an orchestrator importing an engine, a driver or engine-specific storage is recorded under its own rule", () => {
+		const result = validateBoundaryImports([
+			parseWorkspaceEdge({
+				from: "packages/trails",
+				to: "packages/data-sqlite",
+			}),
+			parseWorkspaceEdge({ from: "packages/trails", to: "node:sqlite" }),
+			parseWorkspaceEdge({
+				from: "packages/trails",
+				to: "packages/storage-sqlite",
+			}),
+		]);
+
+		expect(result.errors).toEqual([
+			"orchestrators must not import a data engine at runtime: packages/trails -> packages/data-sqlite",
+			"orchestrators must not import a database driver or engine-specific storage at runtime: packages/trails -> node:sqlite",
+			"orchestrators must not import a database driver or engine-specific storage at runtime: packages/trails -> packages/storage-sqlite",
+		]);
+		expect(result.violations).toEqual([
+			deny(
+				"orchestrator-imports-engine",
+				"packages/trails",
+				"packages/data-sqlite",
+			),
+			deny(
+				"orchestrator-imports-engine-storage",
+				"packages/trails",
+				"node:sqlite",
+			),
+			deny(
+				"orchestrator-imports-engine-storage",
+				"packages/trails",
+				"packages/storage-sqlite",
+			),
+		]);
+	});
+
+	it("an engine importing another engine is recorded under its own rule", () => {
+		const result = validateBoundaryImports([
+			parseWorkspaceEdge({
+				from: "packages/data-postgres",
+				to: "packages/data-sqlite",
+			}),
+		]);
+
+		expect(result.violations).toEqual([
+			deny(
+				"engine-imports-engine",
+				"packages/data-postgres",
+				"packages/data-sqlite",
+			),
+		]);
+	});
+
+	it("a test-only edge is allowed: no line and no record", () => {
+		const result = validateBoundaryImports([
+			parseWorkspaceEdge({
+				from: "packages/trails",
+				to: "packages/data-sqlite",
+				dev: true,
+			}),
+			parseWorkspaceEdge({ from: "packages/trails", to: "pg", dev: true }),
+			parseWorkspaceEdge({
+				from: "packages/data-postgres",
+				to: "packages/data-sqlite",
+				dev: true,
+			}),
+		]);
+
+		expect(result).toEqual({ errors: [], violations: [] });
+	});
+
+	it("a cycle is recorded as the edge that closes it, never with an empty path", () => {
+		const result = detectWorkspaceCycles([
+			parseWorkspaceEdge({ from: "packages/cli", to: "packages/runtime" }),
+			parseWorkspaceEdge({ from: "packages/runtime", to: "packages/mcp" }),
+			parseWorkspaceEdge({ from: "packages/mcp", to: "packages/cli" }),
+		]);
+
+		expect(result.errors).toEqual([
+			"workspace dependency cycle: packages/cli -> packages/runtime -> packages/mcp -> packages/cli",
+		]);
+		expect(result.violations).toEqual([
+			deny("workspace-cycle", "packages/mcp", "packages/cli"),
+		]);
+	});
+
+	it("every rule can be raised, and each line printed has exactly one record", () => {
+		// `parseWorkspaceEdge` refuses a path nobody classified; the rule that
+		// reports one is reached by an edge that was never parsed.
+		const unclassified: WorkspaceEdge = {
+			from: "packages/not-a-package",
+			to: "packages/core",
+		};
+		const edges = [
+			unclassified,
+			...[
+				["packages/core", "packages/cli"],
+				[
+					"packages/providers/provider-aws",
+					"packages/providers/provider-azure",
+				],
+				["packages/trails", "packages/data-mongodb"],
+				["packages/trails", "mongodb"],
+				["packages/data-mongodb", "packages/data-postgres"],
+				["packages/cli", "packages/runtime"],
+				["packages/runtime", "packages/cli"],
+			].map(([from, to]) => parseWorkspaceEdge({ from, to })),
+		];
+		const boundary = validateBoundaryImports(edges);
+		const cycles = detectWorkspaceCycles(edges);
+		const errors = [...boundary.errors, ...cycles.errors];
+		const violations = [...boundary.violations, ...cycles.violations];
+
+		expect(violations).toHaveLength(errors.length);
+		expect(new Set(violations.map((violation) => violation.rule))).toEqual(
+			new Set(BOUNDARY_RULES),
+		);
+		for (const [index, violation] of violations.entries()) {
+			expect(violation.effect).toBe("deny");
+			expect(violation.from_path).not.toBe("");
+			expect(violation.to_path).not.toBe("");
+			// The record is the edge its line ends with.
+			expect(errors[index]).toContain(violation.to_path);
+			expect(errors[index]).toContain(violation.from_path);
+		}
+	});
+
+	it("the CUE constraint and the proto comment list exactly the rules the gate can raise", () => {
+		const models = join(
+			dirname(fileURLToPath(import.meta.url)),
+			"../data-models",
+		);
+		const cue = readFileSync(join(models, "conformance.cue"), "utf8");
+		const definition = /#BoundaryRule:([^#]+)/u.exec(cue)?.[1] ?? "";
+		expect(
+			[...definition.matchAll(/"([a-z-]+)"/gu)].map((match) => match[1]),
+		).toEqual([...BOUNDARY_RULES]);
+		expect(cue).toMatch(/rule:\s+#BoundaryRule/u);
+
+		const proto = readFileSync(join(models, "conformance.proto"), "utf8");
+		const comment =
+			/message BoundaryViolationRecord \{([^}]*?)string rule = 1;/u.exec(
+				proto,
+			)?.[1] ?? "";
+		expect(
+			[...comment.matchAll(/([a-z]+(?:-[a-z]+)+)/gu)].map((match) => match[1]),
+		).toEqual([...BOUNDARY_RULES]);
 	});
 });

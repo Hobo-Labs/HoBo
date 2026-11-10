@@ -29,7 +29,22 @@ interface Report {
 		readonly from_path: string;
 		readonly to_path: string;
 	}>;
-	readonly violations: ReadonlyArray<{ readonly rule: string }>;
+	readonly violations: ReadonlyArray<{
+		readonly rule: string;
+		readonly from_path: string;
+		readonly to_path: string;
+		readonly effect: string;
+	}>;
+}
+
+/** The report's refusals, one per line: `<rule> <from> -> <to>`, sorted. */
+function recorded(report: Report): string[] {
+	return report.violations
+		.map((violation) => {
+			assert.equal(violation.effect, "deny");
+			return `${violation.rule} ${violation.from_path} -> ${violation.to_path}`;
+		})
+		.sort();
 }
 
 type BoundaryRun = {
@@ -297,6 +312,7 @@ describe("engine-neutrality on a workspace that breaks it", () => {
 		const { status, report, refusals } = run(workspace([]));
 
 		assert.deepEqual(refusals, []);
+		assert.deepEqual(report.violations, []);
 		assert.equal(status, 0);
 		// The clean result is not for want of seeing the packages: the
 		// devDependency edges are in the graph, as test-only edges.
@@ -316,7 +332,7 @@ describe("engine-neutrality on a workspace that breaks it", () => {
 	});
 
 	it("refuses every way an orchestrator can reach an engine or a driver from src/", () => {
-		const { status, refusals } = run(
+		const { status, report, refusals } = run(
 			workspace([
 				[
 					// Dynamic import, written as a later argument: the old "is there
@@ -370,10 +386,24 @@ describe("engine-neutrality on a workspace that breaks it", () => {
 			].sort(),
 		);
 		assert.equal(status, 1);
+		// Every refusal printed is in the JSON event, under its rule. These
+		// seven were printed, failed the gate, and were missing from it.
+		assert.deepEqual(
+			recorded(report),
+			[
+				"orchestrator-imports-engine packages/trails -> packages/data-sqlite",
+				"orchestrator-imports-engine packages/trails -> packages/data-postgres",
+				"orchestrator-imports-engine packages/trails -> packages/data-mongodb",
+				"orchestrator-imports-engine-storage packages/trails -> node:sqlite",
+				"orchestrator-imports-engine-storage packages/trails -> pg",
+				"orchestrator-imports-engine-storage packages/trails -> mongodb",
+				"orchestrator-imports-engine-storage packages/trails -> packages/storage-sqlite",
+			].sort(),
+		);
 	});
 
 	it("refuses a driver the orchestrator ships as a dependency, imported or not", () => {
-		const { status, refusals } = run(
+		const { status, report, refusals } = run(
 			workspace([
 				[
 					"packages/trails/package.json",
@@ -386,6 +416,9 @@ describe("engine-neutrality on a workspace that breaks it", () => {
 			"orchestrators must not import a database driver or engine-specific storage at runtime: packages/trails -> better-sqlite3",
 		]);
 		assert.equal(status, 1);
+		assert.deepEqual(recorded(report), [
+			"orchestrator-imports-engine-storage packages/trails -> better-sqlite3",
+		]);
 	});
 
 	it("does not let one unclassifiable import hide the rest of a package's src/", () => {
@@ -412,7 +445,7 @@ describe("engine-neutrality on a workspace that breaks it", () => {
 	});
 
 	it("refuses an engine that imports another engine from src/, devDependency or not", () => {
-		const { status, refusals } = run(
+		const { status, report, refusals } = run(
 			workspace([
 				[
 					"packages/data-postgres/src/fallback.ts",
@@ -425,5 +458,8 @@ describe("engine-neutrality on a workspace that breaks it", () => {
 			"data engines must not import each other at runtime: packages/data-postgres -> packages/data-sqlite",
 		]);
 		assert.equal(status, 1);
+		assert.deepEqual(recorded(report), [
+			"engine-imports-engine packages/data-postgres -> packages/data-sqlite",
+		]);
 	});
 });

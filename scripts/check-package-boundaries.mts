@@ -5,6 +5,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+	type BoundaryViolation,
 	databaseDriverOf,
 	detectWorkspaceCycles,
 	mergeWorkspaceEdges,
@@ -30,17 +31,11 @@ const repoRoot =
 		: resolve(rootArg);
 const packagesRoot = join(repoRoot, "packages");
 
-type BoundaryViolationRecord = {
-	rule: string;
-	from_path: string;
-	to_path: string;
-	effect: "deny";
-};
-
 type WorkspaceSkeletonValidatedEvent = {
 	workspace_rev: string;
 	edges: Array<{ from_path: string; to_path: string }>;
-	violations: BoundaryViolationRecord[];
+	/** One record per refusal printed on stderr, in the order they are printed. */
+	violations: BoundaryViolation[];
 };
 
 function workspaceRev(): string {
@@ -302,57 +297,6 @@ function collectSourceEdges(
 	return edges;
 }
 
-function classifyViolation(error: string): BoundaryViolationRecord | null {
-	const edgeMatch = /: ([^ ]+) -> ([^ ]+)$/.exec(error);
-	const from_path = edgeMatch?.[1] ?? "";
-	const to_path = edgeMatch?.[2] ?? "";
-
-	if (error.startsWith("core must not import HoBo packages:")) {
-		return { rule: "core-imports-hobo", from_path, to_path, effect: "deny" };
-	}
-
-	if (error.startsWith("adapters must not import each other:")) {
-		return {
-			rule: "adapter-imports-adapter",
-			from_path,
-			to_path,
-			effect: "deny",
-		};
-	}
-
-	if (error.startsWith("adapters may import only core ports:")) {
-		return {
-			rule: "adapter-imports-non-core",
-			from_path,
-			to_path,
-			effect: "deny",
-		};
-	}
-
-	if (error.startsWith("dependency points outward:")) {
-		return { rule: "outward-dependency", from_path, to_path, effect: "deny" };
-	}
-
-	if (error.startsWith("workspace dependency cycle:")) {
-		return { rule: "workspace-cycle", from_path, to_path, effect: "deny" };
-	}
-
-	if (
-		error.startsWith("unknown import source ") ||
-		error.startsWith("unknown import target ")
-	) {
-		const path = error.replace(/^unknown import (source|target) /, "");
-		return {
-			rule: "unknown-package",
-			from_path: path,
-			to_path: path,
-			effect: "deny",
-		};
-	}
-
-	return null;
-}
-
 function main(): void {
 	const packageJsonFiles = listPackageJsonFiles(packagesRoot);
 	const packageMap = new Map<string, string>();
@@ -384,13 +328,14 @@ function main(): void {
 	// strictest provenance instead, which makes the outcome independent of the
 	// order these two collectors are called in.
 	const edges = mergeWorkspaceEdges(discovered);
-	const boundaryErrors = validateBoundaryImports(edges).errors;
-	const cycleErrors = detectWorkspaceCycles(edges).errors;
-	const allErrors = [...boundaryErrors, ...cycleErrors];
-
-	const violations = allErrors
-		.map((error) => classifyViolation(error))
-		.filter((record): record is BoundaryViolationRecord => record !== null);
+	// The rules name each refusal as they raise it. The event used to be built
+	// by matching the printed text against the rules this script knew of, and a
+	// refusal it did not recognise — every engine-neutrality one — was printed
+	// below and left out of `violations`.
+	const boundary = validateBoundaryImports(edges);
+	const cycles = detectWorkspaceCycles(edges);
+	const allErrors = [...boundary.errors, ...cycles.errors];
+	const violations = [...boundary.violations, ...cycles.violations];
 
 	const event: WorkspaceSkeletonValidatedEvent = {
 		workspace_rev: workspaceRev(),
