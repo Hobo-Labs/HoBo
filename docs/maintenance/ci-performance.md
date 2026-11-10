@@ -157,6 +157,12 @@ change under that directory selects the reader). Before this, nothing led from a
 `packages/cli/package.json` change 6 and 3, and a `packages/policy/package.json` change 25 and 13
 (5 and 8 before, when its importers were never selected).
 
+`pnpm-lock.yaml` plans the whole workspace only when it is the whole diff. Beside changed package
+paths it widens nothing: the plan is the one those paths give, so `packages/core/package.json` with
+the lockfile plans what `packages/core/package.json` alone does. That rule is `affected-lanes.mts`'s
+(a lockfile-only diff runs everything; Turbo still hashes the lockfile into every task), and the
+planner takes it unchanged.
+
 `scripts/ci/plan-replay.mts` replays the planner over the last N main commits (`--count=100`), each
 with its parent as the base, and prints whole/subset counts. `--before=REF` compares against the
 planner at REF. `--check` reads a second import graph from the syntax tree

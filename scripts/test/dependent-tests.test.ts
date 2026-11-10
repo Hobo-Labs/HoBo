@@ -744,6 +744,15 @@ describe("planDependentTests", () => {
 
 	it("runs the whole workspace for a workspace-wide input or an empty diff", () => {
 		assert.equal(planDependentTests(["pnpm-lock.yaml"], repo).mode, "all");
+		// Beside a package path the lockfile widens nothing: that rule is
+		// affected-lanes.mts's.
+		assert.deepEqual(
+			planDependentTests(
+				["pnpm-lock.yaml", "packages/lib/src/worker.ts"],
+				repo,
+			),
+			planDependentTests(["packages/lib/src/worker.ts"], repo),
+		);
 		assert.equal(planDependentTests([""], repo).mode, "all");
 	});
 
