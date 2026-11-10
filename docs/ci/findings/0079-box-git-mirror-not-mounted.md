@@ -34,8 +34,11 @@ landed with Phase 1. The worker fetch, mount, and `HOBO_CI_GIT_MIRROR` env did n
 
 ## Fix
 
-`createBoxGitMirror` owns `/var/lib/hobo-ci/git/<owner>/<repo>.git`:
-- clone `--bare --filter=blob:none` once, then `--no-filter` backfill of `main`;
+`createBoxGitMirror` owns `/var/lib/hobo-ci/git/<owner>/<repo>.git` (or the
+resolved `HOBO_CI_GIT_MIRROR_ROOT` fallback under `~/.cache/hobo-ci/git`):
+- clone `--bare` with **no** `blob:none` / promisor filter (upload-pack must serve full objects);
+- refresh `refs/heads/main` with `git fetch --no-filter` on every locked `ensure`;
+- repair legacy partial mirrors by stripping promisor config and re-fetching;
 - one writer per repository;
 - `git fetch --no-filter origin <sha>:refs/hobo/sha/<sha>` before `docker create`
   (never a branch name for a PR / fork object);

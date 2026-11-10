@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { isCompleteGitMirror } from "./git-mirror-usability.js";
 
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const SHA = /^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/;
@@ -98,6 +99,10 @@ function originUrl(repository: string): string {
 	return `https://github.com/${repository}.git`;
 }
 
+function formatGitFailure(stderr: string): string {
+	return stderr.replace(/[\r\n]+/g, " ").trim();
+}
+
 export function createBoxGitMirror(options: {
 	readonly root: string;
 	readonly repository: string;
@@ -128,16 +133,61 @@ export function createBoxGitMirror(options: {
 		return checked.status === 0;
 	}
 
+	async function stripPartialCloneMarkers(): Promise<void> {
+		await git([`--git-dir=${path}`, "config", "--unset-all", "remote.origin.promisor"]);
+		await git([
+			`--git-dir=${path}`,
+			"config",
+			"--unset-all",
+			"extensions.partialclonefilter",
+		]);
+	}
+
+	async function refreshMain(): Promise<BoxGitMirrorEnsureResult | undefined> {
+		const fetched = await git([
+			`--git-dir=${path}`,
+			"-c",
+			"gc.auto=0",
+			"fetch",
+			"--no-tags",
+			"--no-filter",
+			"origin",
+			"+refs/heads/main:refs/heads/main",
+		]);
+		if (fetched.status !== 0) {
+			return {
+				status: "miss",
+				reason: `main ref refresh failed: ${formatGitFailure(fetched.stderr)}`,
+			};
+		}
+		return undefined;
+	}
+
+	async function ensureCompleteMirror(): Promise<
+		BoxGitMirrorEnsureResult | undefined
+	> {
+		if (!existsSync(path) || isCompleteGitMirror(path)) return undefined;
+		await stripPartialCloneMarkers();
+		const repaired = await refreshMain();
+		if (repaired) return repaired;
+		if (!isCompleteGitMirror(path)) {
+			return {
+				status: "miss",
+				reason: "mirror is incomplete after repair (promisor/partial clone)",
+			};
+		}
+		return undefined;
+	}
+
 	async function ensureMirror(): Promise<BoxGitMirrorEnsureResult | undefined> {
 		if (existsSync(path)) {
 			await git([`--git-dir=${path}`, "config", "gc.auto", "0"]);
-			return undefined;
+			return ensureCompleteMirror();
 		}
 		mkdirSync(dirname(path), { recursive: true, mode: 0o755 });
 		const cloned = await git([
 			"clone",
 			"--bare",
-			"--filter=blob:none",
 			"--origin",
 			"origin",
 			remote,
@@ -146,26 +196,20 @@ export function createBoxGitMirror(options: {
 		if (cloned.status !== 0) {
 			return {
 				status: "miss",
-				reason: `clone failed: ${cloned.stderr.replace(/[\r\n]+/g, " ").trim()}`,
+				reason: `clone failed: ${formatGitFailure(cloned.stderr)}`,
 			};
 		}
 		await git([`--git-dir=${path}`, "config", "gc.auto", "0"]);
-		await git([
-			`--git-dir=${path}`,
-			"-c",
-			"gc.auto=0",
-			"fetch",
-			"--no-tags",
-			"--no-filter",
-			"origin",
-			"HEAD:refs/heads/main",
-		]);
-		return undefined;
+		return refreshMain();
 	}
 
 	async function fetchSha(sha: string): Promise<BoxGitMirrorEnsureResult> {
 		const prepared = await ensureMirror();
-		if (prepared) return prepared;
+		if (prepared?.status === "miss") return prepared;
+
+		const refreshed = await refreshMain();
+		if (refreshed) return refreshed;
+
 		if (!(await hasCommit(sha))) {
 			const fetched = await git([
 				`--git-dir=${path}`,
@@ -180,7 +224,7 @@ export function createBoxGitMirror(options: {
 			if (fetched.status !== 0) {
 				return {
 					status: "miss",
-					reason: `fetch failed: ${fetched.stderr.replace(/[\r\n]+/g, " ").trim()}`,
+					reason: `fetch failed: ${formatGitFailure(fetched.stderr)}`,
 				};
 			}
 		}
@@ -190,6 +234,7 @@ export function createBoxGitMirror(options: {
 				reason: `mirror does not contain the triggering commit: ${path}`,
 			};
 		}
+
 		await git([`--git-dir=${path}`, "update-ref", shaRef(sha), sha]);
 		return { status: "hit", mirror: path };
 	}

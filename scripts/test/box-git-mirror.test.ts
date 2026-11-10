@@ -68,6 +68,45 @@ afterAll(() => {
 });
 
 describe("resolveBoxGitMirror", () => {
+	it("misses a promisor blob:none bare mirror", () => {
+		const partial = join(temp, "partial.git");
+		execFileSync("git", ["clone", "--bare", source, partial]);
+		execFileSync("git", [
+			"--git-dir",
+			partial,
+			"config",
+			"remote.origin.promisor",
+			"true",
+		]);
+		execFileSync("git", [
+			"--git-dir",
+			partial,
+			"config",
+			"extensions.partialclonefilter",
+			"blob:none",
+		]);
+		const result = resolveBoxGitMirror(env(sha, partial));
+		expect(result.status).toBe("miss");
+		if (result.status === "miss") {
+			expect(result.reason).toContain("partial or promisor");
+		}
+	});
+
+	it("uses HOBO_CI_GIT_MIRROR_ROOT before legacy /var/lib paths", () => {
+		const root = join(temp, "mirror-root");
+		mkdirSync(root, { recursive: true });
+		const rooted = join(root, `${repository}.git`);
+		execFileSync("git", ["clone", "--bare", source, rooted]);
+		const result = resolveBoxGitMirror({
+			GITHUB_REPOSITORY: repository,
+			GITHUB_SHA: sha,
+			HOBO_CI_GIT_MIRROR_ROOT: root,
+		});
+		expect(result.status).toBe("hit");
+		if (result.status === "hit") {
+			expect(result.mirror).toBe(realpathSync(rooted));
+		}
+	});
 	it("misses without throwing when the path does not exist", () => {
 		const result = resolveBoxGitMirror(env(sha, join(temp, "missing.git")));
 		expect(result.status).toBe("miss");
