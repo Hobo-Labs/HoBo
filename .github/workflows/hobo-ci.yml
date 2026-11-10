@@ -99,16 +99,27 @@ jobs:
         if: steps.rebuild.outputs.needed == 'true'
         run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
       - name: Build base + mise oci layers (native arch)
+        id: ci_runner_image_build
         if: steps.rebuild.outputs.needed == 'true'
         timeout-minutes: 15
         env:
           MISE_EXPERIMENTAL: "1"
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
+        run: >-
+          node --no-warnings scripts/ci/run-job-command-report.mts
+          --label ci-runner-oci-build --
+          bash -lc
+          "set -euo pipefail
           bash -n packages/ci-gh-actions/deploy/ci-runner/build.sh
           pnpm run lint:shell:changed -- --base=HEAD~1
-          bash packages/ci-gh-actions/deploy/ci-runner/build.sh
+          bash packages/ci-gh-actions/deploy/ci-runner/build.sh"
+      - name: Upload CI runner image build log
+        if: failure() && steps.ci_runner_image_build.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ci-runner-oci-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/hobo-ci-job-logs/ci-runner-oci-build.log
+          if-no-files-found: ignore
       # Published from main only; a pull request's image is tried on the box, not shipped.
       - name: Push runner image to GHCR (optional)
         if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'

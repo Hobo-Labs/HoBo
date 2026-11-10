@@ -188,6 +188,7 @@ export const TS_AUTOCODE_PNPM_PREPARE_REQUIRED = [
 /** Vitest files run by HoBo / HoBo Code release contract jobs (static manifest checks). */
 export const RELEASE_CONTRACT_VITEST_FILES = [
 	"scripts/test/release-oci-affected.test.ts",
+	"scripts/test/release-oci-attest-contract.test.ts",
 	"scripts/test/release-oci-image-contract.test.ts",
 	"scripts/test/release-version.test.ts",
 	"scripts/test/release-sparse-cone.test.ts",
