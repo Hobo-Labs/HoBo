@@ -1,47 +1,45 @@
 ---
 // ==========================================================================
-// The open road: a side-scrolling parallax band with Bo walking the trail.
+// The open road: the trail Bo walks, docked to the bottom of the page.
+//
+// This band is the landing page's imagery. It stays put while the page
+// scrolls over it, and the scrolling is what moves it: reading down the page
+// walks Bo down the trail, and each section's landmarks pull alongside him
+// as that section arrives (see ../lib/stage/trail.ts, which does the moving).
 //
 // Nearly all of it is supplied artwork. Clouds, the horizon, the telephone
-// poles and the ground itself are plates dropped into public/parallax/plates/
-// and looped as given, at their own aspect ratios (see ../lib/trail-plates.ts).
-// The only thing drawn here is the wire strung between the poles, which has to
-// be generated because it spans the gap and closes across the tile seam (see
-// ../lib/trail-art.ts). This file is the machinery that moves both.
+// poles, the ground and everything standing beside the path are files in
+// public/parallax/, used as given at their own aspect ratios (see
+// ../lib/trail-plates.ts and ../lib/trail-landmarks.ts). The only thing drawn
+// here is the wire strung between the poles, which has to be generated
+// because it spans the gap and closes across the tile seam (see
+// ../lib/trail-art.ts). This file is the stage; it draws nothing itself.
 //
-// A layer scrolls by translating exactly one of its own tile widths, over and
-// over, so the wrap always lands on identical pixels. Layers stay in vertical
-// alignment because every tile — drawn or supplied — is pinned to the band
-// height and composed against the same 300-unit scene. What differs is only
-// how long one tile takes to go by.
+// Two ways it runs, and the first is the fallback for the second:
+//
+//   on a timer   With no script, CSS walks Bo along a looping trail exactly
+//                as it always did. Every layer translates by one of its own
+//                tile widths, over and over, so the wrap lands on identical
+//                pixels.
+//   on the page  Once the controller mounts it adds `is-driven`, the timers
+//                stop, and each layer's offset comes from how far the page
+//                has scrolled instead. Same tiles, same speeds — the slot
+//                speeds now multiply distance rather than time.
 //
 // Bo is the uploaded 36-frame walk sprite (6x6 grid, repacked to 160x157 per
-// frame and posterized to the four tones the drawing actually uses). He holds
-// one spot while the world slides past, and his stride is timed against the
-// ground plate so his feet plant instead of skating.
-//
-// He can walk either way. `facing` picks the sheet and reverses every layer,
-// so the world slides the other way and his feet still plant. The two sheets
-// are separate drawings, not one flipped: Bo is not symmetric, and mirroring
-// hands the bindle to the wrong arm (see ../lib/bo-walk.ts).
+// frame). He holds one spot while the world slides past, and his stride is
+// taken from the ground that went by so his feet plant instead of skating.
+// Scrolling back up runs the reel backwards: the same frames in reverse. He
+// is never mirrored — Bo is not symmetric, and a flip hands the bindle to the
+// wrong arm (see public/parallax/README.md).
 // ==========================================================================
 
 import { href } from "../lib/url";
 import { BO_FEET, TH, TRAIL_LAYERS, TRAIL_SECONDS } from "../lib/trail-art";
 import { plates } from "../lib/trail-plates";
 import { CLOUD_SPEED, CLOUD_TILE, CLOUD_TONE, clouds } from "../lib/trail-clouds";
-import { type Facing, WALK_SHEETS, hasWalkSheet, walkSheet } from "../lib/bo-walk";
-
-interface Props {
-	/** Which way Bo walks. The whole band reverses with him. */
-	facing?: Facing;
-}
-
-const { facing = "east" } = Astro.props;
-const west = facing === "west";
-
-// Throws, with the reason, if the sheet for this direction is not on disk.
-const sheet = walkSheet(facing);
+import { landmarks } from "../lib/trail-landmarks";
+import { TRAIL_STOPS } from "../lib/trail-stops";
 
 const round = (v: number) => Math.round(v * 100) / 100;
 
@@ -52,22 +50,30 @@ const round = (v: number) => Math.round(v * 100) / 100;
 const seconds = (tileUnits: number, speed: number) =>
 	round((TRAIL_SECONDS * (tileUnits / 1200)) / speed);
 
-type Layer = {
+type Item = {
 	key: string;
 	order: number;
 	front: boolean;
-	href?: string;
-	style: string;
-	kind: "plate" | "drawn" | "clouds";
+	kind: "plate" | "drawn" | "clouds" | "mark";
 	night: string;
+	style: string;
+	/** Parallax speed and tile width in tile units, for the controller. */
+	speed: number;
+	tile: number;
+	href?: string;
+	stop?: string;
+	along?: number;
+	idle?: string;
 };
 
-const supplied: Layer[] = plates().map((p) => ({
+const supplied: Item[] = plates().map((p) => ({
 	key: p.key,
 	order: p.order,
 	front: p.front,
 	kind: "plate",
 	night: p.night,
+	speed: p.speed,
+	tile: round(p.aspect * TH),
 	href: href(`/parallax/plates/${p.file}`),
 	style: [
 		`--plate:url("${href(`/parallax/plates/${p.file}`)}")`,
@@ -78,7 +84,7 @@ const supplied: Layer[] = plates().map((p) => ({
 	].join(";"),
 }));
 
-const drawn: Layer[] = TRAIL_LAYERS.map((layer) => ({
+const drawn: Item[] = TRAIL_LAYERS.map((layer) => ({
 	key: layer.key,
 	order: layer.order,
 	front: false,
@@ -86,6 +92,8 @@ const drawn: Layer[] = TRAIL_LAYERS.map((layer) => ({
 	// Already themed at the source — the route serves a light tile and a dark
 	// one and the swap happens above. Filtering as well would invert twice.
 	night: "keep",
+	speed: layer.speed,
+	tile: 1200,
 	style: [
 		`--art-light:url("${href(`/parallax/${layer.key}-light.svg`)}")`,
 		`--art-dark:url("${href(`/parallax/${layer.key}-dark.svg`)}")`,
@@ -98,21 +106,50 @@ const drawn: Layer[] = TRAIL_LAYERS.map((layer) => ({
 // track is a row of identical segments scrolling by exactly one of them —
 // same loop guarantee as a tiled plate, just built out of elements.
 const sky = clouds();
-const SKY_SEGMENTS = 6; // one tile is 4x the band height, so six spans any viewport
-const cloudLayer: Layer | null = sky.length
+// One tile is 4x the band height. The page-driven band shifts the layer by up
+// to a tile and the clouds' own drift shifts the track by up to another, so
+// the row has to cover the viewport plus two.
+const SKY_SEGMENTS = 8;
+const cloudLayer: Item | null = sky.length
 	? {
 			key: "clouds",
 			order: 20,
 			front: false,
 			kind: "clouds",
 			night: "keep",
+			speed: CLOUD_SPEED,
+			tile: CLOUD_TILE,
 			style: `--plx-dur:${seconds(CLOUD_TILE, CLOUD_SPEED)}s;--tone:${CLOUD_TONE}`,
 		}
 	: null;
 
-// One depth order over all three sources, so a drawn layer can sit between two
-// plates — the wires hang in front of the poles and behind the ground.
-const ordered = [...supplied, ...drawn, ...(cloudLayer ? [cloudLayer] : [])].sort(
+// Landmarks: somewhere, not everywhere. Each belongs to a stop and is placed
+// by the controller; with no script they stay hidden rather than tiling.
+const placed: Item[] = landmarks().map((m) => ({
+	key: m.key,
+	order: m.order,
+	front: false,
+	kind: "mark",
+	night: m.night,
+	speed: m.speed,
+	tile: 0,
+	stop: m.stop,
+	along: m.along,
+	idle: m.idle,
+	href: href(`/parallax/landmarks/${m.file}`),
+	style: [
+		`--mark:url("${href(`/parallax/landmarks/${m.file}`)}")`,
+		`--mw:${m.w}`,
+		`--mh:${m.h}`,
+		`--mbase:${m.base}`,
+		`--tone:${m.tone}`,
+	].join(";"),
+}));
+
+// One depth order over every source, so a drawn layer can sit between two
+// plates — the wires hang in front of the poles and behind the ground — and a
+// landmark can stand between the path and Bo.
+const ordered = [...supplied, ...drawn, ...(cloudLayer ? [cloudLayer] : []), ...placed].sort(
 	(a, b) => a.order - b.order,
 );
 const behind = ordered.filter((l) => !l.front);
@@ -127,21 +164,30 @@ const BO_BOTTOM = TH - BO_FEET - (1 - 524 / 542) * BO_FRAME_H;
 // also what TRAIL_SECONDS is derived from — change one and change the other.
 const BO_FRAME = 0.05;
 
+// The idle strip (bo-idle.png: 12 frames of 207x230, rest / hop / blink) is a
+// different export of the same character, so it is registered to the walk
+// sheet rather than assumed to match. Measured off both: the standing figure
+// is 149px of a 157px walk frame and 213px of a 230px idle frame, and the two
+// drawings' ink centres sit 0.2 units apart at that scale.
+const IDLE_H = round((BO_FRAME_H * (149 / 157) * 230) / 213);
+const IDLE_W = round((IDLE_H * 207) / 230);
+const IDLE_TOP = round(BO_FRAME_H * (153.5 / 157) - IDLE_H * (227.5 / 230));
+const IDLE_LEFT = round(BO_FRAME_W * 0.528 - IDLE_W * 0.587);
+
 const rootStyle = [
 	`--bo-frame-h:${BO_FRAME_H}`,
-	`--bo-frame-w:${Math.round(BO_FRAME_W * 100) / 100}`,
-	`--bo-bottom:${Math.round(BO_BOTTOM * 100) / 100}`,
+	`--bo-frame-w:${round(BO_FRAME_W)}`,
+	`--bo-bottom:${round(BO_BOTTOM)}`,
 	`--bo-frame:${BO_FRAME}s`,
-	// Only the matching rule resolves its var(), so the sheet for the other
-	// direction is never fetched. The one for a direction with no artwork is
-	// simply not declared, rather than pointing at a 404.
-	`--bo-sprite-east:url("${href(`/parallax/${WALK_SHEETS.east}`)}")`,
-	...(hasWalkSheet("west")
-		? [`--bo-sprite-west:url("${href(`/parallax/${WALK_SHEETS.west}`)}")`]
-		: []),
+	`--bo-sprite:url("${href("/parallax/bo-walk.png")}")`,
+	`--bo-idle:url("${href("/parallax/bo-idle.png")}")`,
+	`--idle-h:${IDLE_H}`,
+	`--idle-w:${IDLE_W}`,
+	`--idle-top:${IDLE_TOP}`,
+	`--idle-left:${IDLE_LEFT}`,
 ].join(";");
 
-const preloadSheet = href(`/parallax/${sheet}`);
+const firstStop = TRAIL_STOPS[0].label;
 ---
 
 {
@@ -154,27 +200,44 @@ const preloadSheet = href(`/parallax/${sheet}`);
 		<link rel="preload" as="image" href={href(`/parallax/clouds/${c.file}`)} />
 	))
 }
-<link rel="preload" as="image" href={preloadSheet} />
-<div class:list={["plx", west && "is-west"]} data-plx style={rootStyle}>
+<link rel="preload" as="image" href={href("/parallax/bo-walk.png")} />
+<div class="plx" data-plx style={rootStyle}>
 	<div
 		class="plx-scene"
 		role="img"
-		aria-label={`Bo the bindlebug walking ${west ? "west" : "east"} along a country trail past telephone poles and drifting clouds`}
+		aria-label="Bo the bindlebug walking a country trail past telephone poles and drifting clouds; the trail moves as the page scrolls"
 	>
 		{
 			behind.map((l) =>
 				l.kind === "clouds" ? (
-					<div class:list={["plx-layer", "plx-sky", `is-${l.night}`]} style={l.style}>
-						{Array.from({ length: SKY_SEGMENTS }, () => (
-							<div class="plx-sky-seg">
-								{sky.map((c) => (
-									<span
-										class="plx-cloud"
-										style={`--cx:${c.x};--cy:${c.y};--cw:${c.w};--ch:${c.h};--cloud:url("${href(`/parallax/clouds/${c.file}`)}")`}
-									/>
-								))}
-							</div>
-						))}
+					<div
+						class:list={["plx-layer", "plx-sky", `is-${l.night}`]}
+						style={l.style}
+						data-plx-speed={l.speed}
+						data-plx-tile={l.tile}
+					>
+						<div class="plx-sky-track">
+							{Array.from({ length: SKY_SEGMENTS }, () => (
+								<div class="plx-sky-seg">
+									{sky.map((c) => (
+										<span
+											class="plx-cloud"
+											style={`--cx:${c.x};--cy:${c.y};--cw:${c.w};--ch:${c.h};--cloud:url("${href(`/parallax/clouds/${c.file}`)}")`}
+										/>
+									))}
+								</div>
+							))}
+						</div>
+					</div>
+				) : l.kind === "mark" ? (
+					<div
+						class:list={["plx-mark", `plx-mark-${l.key}`, l.idle && `does-${l.idle}`]}
+						style={l.style}
+						data-plx-stop={l.stop}
+						data-plx-along={l.along}
+						data-plx-mark-speed={l.speed}
+					>
+						<span class:list={["plx-mark-art", `is-${l.night}`]} />
 					</div>
 				) : (
 					<div
@@ -185,11 +248,17 @@ const preloadSheet = href(`/parallax/${sheet}`);
 							`is-${l.night}`,
 						]}
 						style={l.style}
+						data-plx-speed={l.speed}
+						data-plx-tile={l.tile}
 					/>
 				),
 			)
 		}
-		<div class="plx-bo"></div>
+		<div class="plx-actors"></div>
+		<div class="plx-bo">
+			<div class="plx-bo-walk"></div>
+			<div class="plx-bo-idle"></div>
+		</div>
 		{
 			inFront.map((l) => (
 				<div
@@ -200,23 +269,29 @@ const preloadSheet = href(`/parallax/${sheet}`);
 						`is-${l.night}`,
 					]}
 					style={l.style}
+					data-plx-speed={l.speed}
+					data-plx-tile={l.tile}
 				/>
 			))
 		}
 	</div>
+	<p class="plx-where" aria-hidden="true">{firstStop}</p>
 	<button class="plx-pause" type="button" aria-pressed="false">
 		<span class="plx-pause-icon" aria-hidden="true"></span>
-		<span class="plx-pause-label">Pause the trail animation</span>
+		<span class="plx-pause-label">Pause the trail and its travelers</span>
 	</button>
 </div>
 
 <style>
 	.plx {
-		--band-h: 155px;
+		/* A whole number at every breakpoint on purpose: the tile is four band
+		   heights, and a fractional tile brings back sub-pixel seams. */
+		--band-h: 168px;
 		--tile: calc(var(--band-h) * 4);
 		--u: calc(var(--band-h) / 300); /* one tile unit, in CSS pixels */
 		--bo-h: calc(var(--u) * var(--bo-frame-h));
 		--bo-w: calc(var(--u) * var(--bo-frame-w));
+		--bo-x: 24%;
 
 		/* --band-h is the scene, not the scene plus its rule: the layers are
 		   sized in tile units off it, so the border must not eat into it. */
@@ -224,7 +299,7 @@ const preloadSheet = href(`/parallax/${sheet}`);
 		position: relative;
 		height: var(--band-h);
 		overflow: hidden;
-		border-bottom: 3px dashed var(--border-strong);
+		border-top: var(--rule) solid var(--ink);
 		background: var(--bg);
 		contain: layout paint style;
 	}
@@ -249,6 +324,7 @@ const preloadSheet = href(`/parallax/${sheet}`);
 		animation: plx-scroll var(--plx-dur) linear infinite;
 		animation-play-state: var(--plx-play, running);
 		will-change: transform;
+		pointer-events: none;
 	}
 
 	:global(:root:not([data-theme="dark"])) .plx-layer {
@@ -277,6 +353,24 @@ const preloadSheet = href(`/parallax/${sheet}`);
 		}
 	}
 
+	/* Exactly one tile of travel, so the wrap lands on identical pixels. */
+	@keyframes plx-scroll {
+		from {
+			transform: translate3d(0, 0, 0);
+		}
+		to {
+			transform: translate3d(calc(var(--tile) * -1), 0, 0);
+		}
+	}
+
+	/* ---------- driven by the page ---------- */
+
+	/* The controller has the wheel: no layer runs on a timer any more, each
+	   one is placed from the scroll position instead. */
+	.plx.is-driven .plx-layer {
+		animation: none;
+	}
+
 	/* ---------- night ---------- */
 
 	/* Three treatments, one per layer, because the scene is not all one kind
@@ -285,20 +379,20 @@ const preloadSheet = href(`/parallax/${sheet}`);
 	   same brilliant white and flattening the depth the parallax just built.
 	   By day none of this applies: paper is behind everything and distance
 	   already reads without help. */
-	:global(:root[data-theme="dark"]) .plx-layer.is-invert {
+	:global(:root[data-theme="dark"]) .plx .is-invert {
 		filter: invert(1) brightness(var(--tone, 1));
 	}
 
 	/* Keeping means keeping the ink, not keeping the brightness — a cloud that
 	   stays paper-white is a cut-out pasted on the night. */
-	:global(:root[data-theme="dark"]) .plx-layer.is-keep {
+	:global(:root[data-theme="dark"]) .plx .is-keep {
 		opacity: var(--tone, 1);
 	}
 
 	/* A solid silhouette stays solid and gets an ink outline instead — the
 	   same four-way rim Bo takes, so a black post reads against a black sky
 	   without turning into a white one. */
-	:global(:root[data-theme="dark"]) .plx-layer.is-rim {
+	:global(:root[data-theme="dark"]) .plx .is-rim {
 		/* Scaled off the tile unit rather than fixed: a pole shaft is only a
 		   few pixels across at this band height, so a rim that does not shrink
 		   with the band eats the black it is supposed to be outlining. */
@@ -318,10 +412,22 @@ const preloadSheet = href(`/parallax/${sheet}`);
 	   track is a row of identical segments and scrolls by exactly one of
 	   them, which is the same loop guarantee a tiled plate gets. */
 	.plx-sky {
-		display: flex;
 		width: max-content;
 		background-image: none;
-		animation-name: plx-scroll;
+	}
+
+	.plx-sky-track {
+		display: flex;
+		width: max-content;
+		height: 100%;
+	}
+
+	/* Page-driven, the layer is placed by the scroll — so the weather moves to
+	   the track inside it. Clouds keep drifting when the page is at rest: the
+	   one thing in the band that is never waiting for the reader. */
+	.plx.is-driven .plx-sky-track {
+		animation: plx-scroll 190s linear infinite;
+		animation-play-state: var(--plx-play, running);
 	}
 
 	.plx-sky-seg {
@@ -367,27 +473,103 @@ const preloadSheet = href(`/parallax/${sheet}`);
 		}
 	}
 
-	/* Exactly one tile of travel, so the wrap lands on identical pixels. */
-	@keyframes plx-scroll {
-		from {
-			transform: translate3d(0, 0, 0);
-		}
-		to {
-			transform: translate3d(calc(var(--tile) * -1), 0, 0);
+	/* ---------- landmarks ---------- */
+
+	/* Somewhere, not everywhere: placed by the controller against the section
+	   each one stands for. With no script there is no "where", so they wait
+	   out of sight rather than being tiled into a pattern that means nothing. */
+	.plx-mark {
+		position: absolute;
+		left: 0;
+		top: calc(var(--u) * (var(--mbase) - var(--mh)));
+		width: calc(var(--u) * var(--mw));
+		height: calc(var(--u) * var(--mh));
+		visibility: hidden;
+		cursor: pointer;
+		will-change: transform;
+	}
+
+	.plx-mark.is-on {
+		visibility: visible;
+	}
+
+	.plx-mark-art {
+		display: block;
+		width: 100%;
+		height: 100%;
+		background: var(--mark) no-repeat center / 100% 100%;
+		transform-origin: 50% 100%;
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.plx-mark:hover .plx-mark-art {
+			animation: boing 550ms var(--ease-boing);
 		}
 	}
 
-	/* Bo: 36 frames in a 6x6 grid. One animation walks the columns; a second,
-	   exactly six times slower, steps down the rows. */
+	/* What floats, bobs; what is afloat, rocks. Planted things stay planted. */
+	.plx-mark.does-bob .plx-mark-art {
+		animation: plx-bob 5.2s ease-in-out infinite;
+		animation-play-state: var(--plx-play, running);
+	}
+
+	.plx-mark.does-sway .plx-mark-art {
+		animation: plx-sway 4.1s ease-in-out infinite;
+		animation-play-state: var(--plx-play, running);
+	}
+
+	@keyframes plx-bob {
+		0%,
+		100% {
+			transform: translateY(0) rotate(-0.6deg);
+		}
+		50% {
+			transform: translateY(calc(var(--u) * -5)) rotate(0.8deg);
+		}
+	}
+
+	@keyframes plx-sway {
+		0%,
+		100% {
+			transform: rotate(-1.4deg) translateY(0);
+		}
+		50% {
+			transform: rotate(1.4deg) translateY(calc(var(--u) * 1.4));
+		}
+	}
+
+	/* ---------- travelers ---------- */
+
+	/* Whoever wanders onto the trail stands here: in front of the path and
+	   the landmarks, behind Bo. Placed by ../lib/stage/troupe.ts. */
+	.plx-actors {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+	}
+
+	/* ---------- Bo ---------- */
+
 	.plx-bo {
 		position: absolute;
-		left: var(--bo-x, 26%);
+		left: var(--bo-x);
 		bottom: calc(var(--u) * var(--bo-bottom));
 		width: var(--bo-w);
 		height: var(--bo-h);
-		background-image: var(--bo-sprite-east);
+		/* He leans into a run from the ankles, not the waist. */
+		transform-origin: 53% 96%;
+		rotate: var(--lean, 0deg);
+	}
+
+	/* 36 frames in a 6x6 grid. On a timer one animation walks the columns and
+	   a second, exactly six times slower, steps down the rows; page-driven,
+	   the controller sets the frame from the ground covered instead. */
+	.plx-bo-walk {
+		position: absolute;
+		inset: 0;
+		background-image: var(--bo-sprite);
 		background-repeat: no-repeat;
-		background-size: calc(var(--bo-w) * 6) calc(var(--bo-h) * 6);
+		background-size: 600% 600%;
 		background-position: 0 0;
 		animation:
 			bo-col calc(var(--bo-frame) * 6) steps(6) infinite,
@@ -395,22 +577,64 @@ const preloadSheet = href(`/parallax/${sheet}`);
 		animation-play-state: var(--plx-play, running);
 	}
 
-	/* Walking the other way. The sprite sheet is the same drawing mirrored per
-	   frame — mirroring the whole sheet would reverse the column order, and the
-	   column is the frame index, so the walk would run backwards. Every layer
-	   reverses with him; his own two animations do not, because the gait plays
-	   forward whichever way he is pointed. animation-direction does not
-	   inherit, so the cloud squash inside the track is left alone too. */
-	.plx.is-west .plx-bo {
-		background-image: var(--bo-sprite-west);
+	.plx.is-driven .plx-bo-walk {
+		animation: none;
 	}
 
-	.plx.is-west .plx-layer {
-		animation-direction: reverse;
+	/* Standing about: frame 0 rests, 1-10 are one hop that lands back on
+	   rest, 11 is a blink — the contract BoIdle.astro documents. Only shown
+	   once the page is driving and the ground has stopped. */
+	.plx-bo-idle {
+		position: absolute;
+		left: calc(var(--u) * var(--idle-left));
+		top: calc(var(--u) * var(--idle-top));
+		width: calc(var(--u) * var(--idle-w));
+		height: calc(var(--u) * var(--idle-h));
+		background-image: var(--bo-idle);
+		background-repeat: no-repeat;
+		background-size: 1200% 100%;
+		background-position: 0 0;
+		visibility: hidden;
 	}
 
-	.plx.is-west {
-		--bo-x: 62%;
+	.plx.is-driven .plx-bo:not(.is-walking) .plx-bo-idle {
+		visibility: visible;
+	}
+
+	.plx.is-driven .plx-bo:not(.is-walking) .plx-bo-walk {
+		visibility: hidden;
+	}
+
+	.plx-bo.is-hop .plx-bo-idle {
+		animation: plx-bo-hop 950ms steps(10) 1;
+	}
+
+	.plx-bo.is-blink .plx-bo-idle {
+		animation: plx-bo-blink 190ms steps(1) 1;
+	}
+
+	/* The stop itself: a walking pose swapped for a standing one is a pop,
+	   and a squash is how a cartoon lands. The site's own small boing, so
+	   this is the signature bounce and not a second one. His lean lives on
+	   `rotate`, which leaves `transform` free for it. */
+	.plx-bo.is-settle {
+		animation: boing-sm 450ms var(--ease-boing) 1;
+	}
+
+	@keyframes plx-bo-hop {
+		from {
+			background-position-x: calc(100% / 11);
+		}
+		to {
+			background-position-x: 100%;
+		}
+	}
+
+	@keyframes plx-bo-blink {
+		from,
+		to {
+			background-position-x: 100%;
+		}
 	}
 
 	/* At night the soot silhouette gets the cream rim the SVG Bo already has. */
@@ -437,36 +661,62 @@ const preloadSheet = href(`/parallax/${sheet}`);
 		}
 	}
 
-	/* ---------- stopping ---------- */
+	/* ---------- where you are ---------- */
 
-	/* A hovering cursor, a held finger, a tap, the pause button, a hidden tab
-	   or a band scrolled off screen: every one of them freezes Bo and the
-	   parallax together, because they all resolve to the same inherited
-	   property and every animation in here reads it. */
-	.plx.is-held,
-	.plx.is-paused,
-	.plx.is-idle {
-		--plx-play: paused;
+	/* An inert marker, so flat ink: no shadow, no chamfer (see DESIGN.md,
+	   "Pressable = raised"). It names the stretch of trail the page is on. */
+	.plx-where {
+		position: absolute;
+		left: clamp(0.6rem, 2vw, 1.25rem);
+		top: 0.55rem;
+		margin: 0;
+		padding: 0.16rem 0.6rem;
+		border: 1.5px solid var(--border-strong);
+		border-radius: 999px;
+		background: var(--bg);
+		color: var(--text-mute);
+		/* DESIGN.md's label-caps step, not a size of its own. */
+		font-size: 0.75rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		line-height: 1.5;
+		text-transform: uppercase;
+		white-space: nowrap;
+		pointer-events: none;
 	}
 
-	/* Hover only where hover is real. On a touchscreen :hover latches after a
-	   tap, which would leave the scene stuck the moment someone tapped it to
-	   start it again — there, the tap toggle below is the whole story. */
-	@media (hover: hover) and (pointer: fine) {
-		.plx:hover {
-			--plx-play: paused;
-		}
+	.plx:not(.is-driven) .plx-where {
+		display: none;
+	}
 
-		.plx:hover .plx-pause {
+	.plx-where.is-flip {
+		animation: plx-where-flip var(--dur-move) var(--ease) 1;
+	}
+
+	@keyframes plx-where-flip {
+		from {
+			translate: 0 -0.4rem;
+			opacity: 0;
+		}
+		to {
+			translate: 0 0;
 			opacity: 1;
 		}
 	}
 
-	/* Keyboard focus too — but only the keyboard kind. Plain :focus-within
-	   would leave the scene frozen after a mouse click on the button, which
-	   makes pressing "play" look broken. */
-	.plx:has(:focus-visible) {
+	/* ---------- stopping ---------- */
+
+	/* The pause button and the reader's own motion preference resolve to one
+	   inherited property that every animation in the band reads, so nothing
+	   can freeze Bo without freezing the scenery with him. */
+	.plx.is-still {
 		--plx-play: paused;
+	}
+
+	.plx.is-still .plx-mark-art,
+	.plx.is-still .plx-bo-idle,
+	.plx.is-still .plx-bo {
+		animation: none;
 	}
 
 	.plx-pause {
@@ -484,17 +734,23 @@ const preloadSheet = href(`/parallax/${sheet}`);
 		color: var(--ink);
 		cursor: pointer;
 		opacity: 0;
-		transition: opacity 0.18s var(--ease);
+		transition: opacity var(--dur-move) var(--ease);
 	}
 
 	.plx-pause:focus-visible,
-	.plx.is-paused .plx-pause {
+	.plx-pause[aria-pressed="true"] {
 		opacity: 1;
 	}
 
+	@media (hover: hover) and (pointer: fine) {
+		.plx:hover .plx-pause {
+			opacity: 1;
+		}
+	}
+
 	/* Without a cursor there is nothing to reveal it with, and a pause control
-	   is not optional for something that moves forever — so on touch it just
-	   sits there. */
+	   is not optional for something that moves on its own — so on touch it
+	   just sits there. */
 	@media (hover: none) {
 		.plx-pause {
 			opacity: 0.9;
@@ -508,7 +764,7 @@ const preloadSheet = href(`/parallax/${sheet}`);
 		clip-path: polygon(0 0, 34% 0, 34% 100%, 0 100%, 0 50%, 66% 50%, 66% 0, 100% 0, 100% 100%, 66% 100%, 66% 50%, 0 50%);
 	}
 
-	.plx.is-paused .plx-pause-icon {
+	.plx-pause[aria-pressed="true"] .plx-pause-icon {
 		clip-path: polygon(10% 0, 100% 50%, 10% 100%);
 	}
 
@@ -523,29 +779,62 @@ const preloadSheet = href(`/parallax/${sheet}`);
 
 	/* ---------- sizes ---------- */
 
-	@media (max-width: 900px) {
+	/* The band covers the foot of the viewport for the whole page. Whatever
+	   the keyboard focuses or an anchor jumps to must come to rest above it,
+	   the same promise scroll-padding-top makes about the header. Each value
+	   is the band at that size plus its rule. */
+	:global(html:has(.trail-dock)) {
+		scroll-padding-bottom: calc(168px + var(--rule) + 0.75rem);
+	}
+
+	/* Room to be the picture: on a tall, wide screen the band can afford to
+	   be a scene rather than a strip. */
+	@media (min-width: 1000px) and (min-height: 860px) {
 		.plx {
-			--bo-x: 20%;
+			--band-h: 204px;
 		}
 
-		.plx.is-west {
-			--bo-x: 68%;
+		:global(html:has(.trail-dock)) {
+			scroll-padding-bottom: calc(204px + var(--rule) + 0.75rem);
 		}
 	}
 
-	@media (max-width: 560px) {
+	@media (max-width: 900px) {
 		.plx {
-			--band-h: 135px;
-			--bo-x: 14%;
+			--bo-x: 18%;
+		}
+	}
+
+	/* Small or short: the page needs the room more than the trail does. */
+	@media (max-width: 560px), (max-height: 780px) {
+		.plx {
+			--band-h: 132px;
+			--bo-x: 12%;
 		}
 
-		.plx.is-west {
-			--bo-x: 74%;
+		:global(html:has(.trail-dock)) {
+			scroll-padding-bottom: calc(132px + var(--rule) + 0.75rem);
 		}
 
 		.plx-pause {
 			right: 0.5rem;
 			bottom: 0.5rem;
+		}
+
+		.plx-where {
+			top: 0.4rem;
+		}
+	}
+
+	/* A laptop with its browser chrome: shorter again, so the hero's calls to
+	   action are not under the band on arrival. */
+	@media (max-height: 740px) {
+		.plx {
+			--band-h: 108px;
+		}
+
+		:global(html:has(.trail-dock)) {
+			scroll-padding-bottom: calc(108px + var(--rule) + 0.75rem);
 		}
 	}
 
@@ -554,73 +843,18 @@ const preloadSheet = href(`/parallax/${sheet}`);
 			--plx-play: paused;
 		}
 
+		/* Nothing here moves on its own under this preference, so there is
+		   nothing for the button to pause. */
 		.plx-pause {
 			display: none;
 		}
 	}
 </style>
 
-<script is:inline>
-	// The trail walks itself; everything here is about stopping it. CSS already
-	// covers hover and focus — this adds touch, the pause button, and not
-	// burning frames on a band nobody is looking at.
-	for (const band of document.querySelectorAll("[data-plx]")) {
-		const button = band.querySelector(".plx-pause");
-		const setPaused = (on) => {
-			band.classList.toggle("is-paused", on);
-			button.setAttribute("aria-pressed", String(on));
-		};
+<script>
+	import { mountTrail } from "../lib/stage/trail";
+	import { mountTroupe } from "../lib/stage/troupe";
 
-		button.addEventListener("click", (event) => {
-			event.stopPropagation();
-			setPaused(!band.classList.contains("is-paused"));
-		});
-
-		// Touch and pen: held down stops it; letting go latches the stop on or
-		// off, so a tap is a real toggle rather than a 100ms pause.
-		band.addEventListener(
-			"pointerdown",
-			(event) => {
-				if (event.pointerType !== "mouse") band.classList.add("is-held");
-			},
-			{ passive: true },
-		);
-		band.addEventListener(
-			"pointerup",
-			(event) => {
-				if (event.pointerType === "mouse") return;
-				band.classList.remove("is-held");
-				if (!button.contains(event.target)) {
-					setPaused(!band.classList.contains("is-paused"));
-				}
-			},
-			{ passive: true },
-		);
-		for (const type of ["pointercancel", "pointerleave"]) {
-			band.addEventListener(
-				type,
-				(event) => {
-					if (event.pointerType !== "mouse") band.classList.remove("is-held");
-				},
-				{ passive: true },
-			);
-		}
-
-		// Idle when off screen or on a background tab.
-		const idle = new Set();
-		const flag = (key, on) => {
-			idle[on ? "add" : "delete"](key);
-			band.classList.toggle("is-idle", idle.size > 0);
-		};
-
-		document.addEventListener("visibilitychange", () => {
-			flag("hidden", document.visibilityState === "hidden");
-		});
-
-		if ("IntersectionObserver" in window) {
-			new IntersectionObserver(([entry]) => flag("offscreen", !entry.isIntersecting), {
-				rootMargin: "80px",
-			}).observe(band);
-		}
-	}
+	const band = document.querySelector<HTMLElement>("[data-plx]");
+	if (band) mountTroupe(mountTrail(band));
 </script>

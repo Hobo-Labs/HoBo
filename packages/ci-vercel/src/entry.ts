@@ -9,9 +9,8 @@ import {
 } from "@hobo/ci-gh-actions";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { type MessageMetadata, QueueClient } from "@vercel/queue";
-import { createBootstrapEntry } from "./bootstrap-entry.js";
-import { createVercelApplication } from "./composition.js";
 import { forwardQueueWakeup } from "./queue-forwarding.js";
+import { composeRelay } from "./relay-composition.js";
 import { streamsBody } from "./relay-streams.js";
 import { loadBrokerRuntimeConfig } from "./runtime-config-client.js";
 import { isPlatformScheduleRun, QueueMessageSchema } from "./worker.js";
@@ -37,7 +36,7 @@ setRelayFailureEvents(
 		sink: ciEventSinkFromEnv(process.env).sink,
 	}),
 );
-let startup: ReturnType<typeof createVercelApplication> | undefined;
+let startup: Promise<Awaited<ReturnType<typeof composeRelay>>> | undefined;
 function application() {
 	const options = {
 		env: process.env,
@@ -84,14 +83,9 @@ function application() {
 				ownerVerifiedBootstrap = ownerBootstrapEnabled;
 			}
 			stage = "application";
-			const resolved = { ...options, env };
-			if (!env.HOBO_CI_BOOTSTRAP_TOKEN_SHA256)
-				return createVercelApplication(resolved);
-			const bootstrapOptions: Parameters<typeof createBootstrapEntry>[0] =
-				resolved;
-			if (ownerVerifiedBootstrap)
-				bootstrapOptions.expectedGithubOwnerId = 145080887;
-			return createBootstrapEntry(bootstrapOptions);
+			const resolved: Parameters<typeof composeRelay>[0] = { ...options, env };
+			if (ownerVerifiedBootstrap) resolved.expectedGithubOwnerId = 145080887;
+			return composeRelay(resolved);
 		})
 		.catch((error) => {
 			// Every request answers 503 until this succeeds; say why.

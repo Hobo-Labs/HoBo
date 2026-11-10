@@ -21,6 +21,9 @@ const jobs = [
 	{ from: join(SRC, "plates"), to: join(DEST, "plates"), pick: (f) => f.endsWith(".png") },
 	{ from: join(SRC, "clouds"), to: join(DEST, "clouds"), pick: (f) => f.endsWith(".png") },
 	{ from: SRC, to: join(DEST, "sprites"), pick: (f) => /^bo-.*\.png$/.test(f) },
+	// What stands beside the trail, and the hobits who are not Bo.
+	{ from: join(SRC, "landmarks"), to: join(DEST, "landmarks"), pick: (f) => f.endsWith(".png") },
+	{ from: join(SRC, "..", "cast"), to: join(DEST, "cast"), pick: (f) => f.endsWith(".png") },
 ];
 
 let n = 0;
