@@ -20,6 +20,33 @@ import { parseRegisteredHostForm, type RegisteredHostForm } from "@hobo/core";
 export const AWS_HOST_FORMS: readonly RegisteredHostForm[] = Object.freeze(
 	[
 		{
+			productId: "aws.ec2-instance/v1",
+			providerService: "Amazon EC2 instance",
+			form: "vm",
+			formSources: [
+				{
+					url: "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/concepts.html",
+					checkedAt: "2026-11-10",
+					note: "'An EC2 instance is a virtual server in the AWS Cloud'",
+				},
+			],
+			volumeProductId: "aws.ebs-volume/v1",
+			facets: [
+				{
+					facet: "persistent-volume",
+					holds: true,
+					detail: "an Amazon EBS block-storage volume attached to the instance",
+					sources: [
+						{
+							url: "https://docs.aws.amazon.com/ebs/latest/userguide/what-is-ebs.html",
+							checkedAt: "2026-11-10",
+							note: "'Amazon EBS volumes — These are storage volumes that you attach to Amazon EC2 instances'; EBS 'provides scalable, high-performance block storage resources'",
+						},
+					],
+				},
+			],
+		},
+		{
 			productId: "aws.ecs-service/v1",
 			resourceClass: "aws:fargate-service",
 			providerService: "Amazon ECS service on Fargate",

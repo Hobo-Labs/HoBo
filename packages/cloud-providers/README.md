@@ -103,11 +103,11 @@ fails if this block and `providerParity()` disagree):
 
 <!-- parity:begin -->
 ```text
-aws L1-DECLARED: 8/19 resolvers declared (conformance not asserted here)
-azure L1-DECLARED: 9/16 resolvers declared (conformance not asserted here)
+aws L1-DECLARED: 8/21 resolvers declared (conformance not asserted here)
+azure L1-DECLARED: 9/18 resolvers declared (conformance not asserted here)
 cloudflare L1-DECLARED: 6/6 resolvers declared (conformance not asserted here)
 digitalocean L1-DECLARED: 15/15 resolvers declared (conformance not asserted here)
-gcp L1-DECLARED: 9/14 resolvers declared (conformance not asserted here)
+gcp L1-DECLARED: 9/16 resolvers declared (conformance not asserted here)
 hetzner L1-DECLARED: 5/5 resolvers declared (conformance not asserted here)
 hostinger L1-DECLARED: 5/5 resolvers declared (conformance not asserted here)
 kubernetes L1-DECLARED: 9/9 resolvers declared (conformance not asserted here)
@@ -163,18 +163,23 @@ plus Netlify and Railway (equivalence classes only; no Yard catalog here):
 
 | Verdict | Providers | Why |
 |---|---|---|
-| `can` | `hetzner`, `hostinger` | The declared compute class is a VM. Hetzner also declares an attachable `bucket.filesystem/v1` volume; Hostinger does not, so its data shares the VM's lifetime (a caveat). |
-| `can` | `digitalocean` (Droplet), `kubernetes` (StatefulSet) | A cited host form on a Yard product, with the volume realized by a Yard `bucket.filesystem/v1` product (Block Storage; PersistentVolumeClaim). |
-| `can`, with a caveat | `aws` (ECS service on Fargate), `azure` (Container Apps), `railway` (persistent service) | Every facet is cited, but the volume (EFS, Azure Files, Railway volume) is not a product in that provider's Yard catalog yet. |
+| `can` | `aws` (EC2 instance + EBS volume), `azure` (Virtual Machine + managed disk), `gcp` (Compute Engine VM + Persistent Disk), `digitalocean` (Droplet + Block Storage), `hetzner` (Cloud Server + Volume) | A VM with an attachable block-storage volume, both products in the provider's Yard catalog. Every facet established, no caveat. |
+| `can` | `kubernetes` (StatefulSet + PersistentVolumeClaim) | A cited container form whose volume is a Yard `bucket.filesystem/v1` product. |
+| `can`, with a caveat | `hostinger` (VPS), `railway` (persistent service) | Hostinger declares no volume, so data shares the VM's lifetime. Railway's volume is cited but is not a Yard product. |
 | `cannot` | `cloudflare`, `vercel`, `netlify` | Nothing declared is a VM or a container (edge workers; static and HTTP compute). |
-| `undetermined` | `gcp` | Only Cloud Run's volume facet is cited; long-running, inbound TCP and operator control are not, and the GCP Yard has no VM or Kubernetes product. |
 
-Per product, `SelfHostAssessment.forms` also shows the forms that do not
-qualify: `aws.app-runner/v1` (HTTP only) and
+Per product, `SelfHostAssessment.forms` also shows the other forms. ECS on
+Fargate and Azure Container Apps still qualify, still caveated: their volume
+(EFS, Azure Files) is a network share that is not a Yard product. Cloud Run is
+`undetermined`. `aws.app-runner/v1` (HTTP only) and
 `digitalocean.app-platform-service/v1` (no persistent storage) are `cannot`.
 
-A verdict describes the declaration, not the vendor. The six provider packages
-above publish `*_HOST_FORMS`: cited, per-product statements about products
+The AWS, Azure and GCP VM and block-storage products are **catalog only**, like
+those packages' other unresolved products: no resolver, nothing provisionable
+from here, and each is listed in its package's `*_UNRESOLVED_PRODUCT_IDS`.
+
+A verdict describes the declaration, not the vendor. Six provider packages
+publish `*_HOST_FORMS`: cited, per-product statements about products
 they already declare, read here unchanged. An `undetermined` is resolved by
 citing the missing facets in that provider's host forms, never by
 special-casing the provider here. Citations per facet are in

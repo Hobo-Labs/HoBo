@@ -197,11 +197,11 @@ can and one that cannot, and `SelfHostAssessment.forms` lists both.
 
 | Provider | Verdict | Qualifying form | Other forms assessed | Reason or caveat |
 |---|---|---|---|---|
-| `aws` | can | `aws.ecs-service/v1` (Amazon ECS service on Fargate) | `aws.app-runner/v1` cannot | the persistent volume is cited from vendor documentation, but no bucket.filesystem/v1 product in this provider's Yard catalog realizes it yet |
-| `azure` | can | `azure.container-apps/v1` (Azure Container Apps) | — | the persistent volume is cited from vendor documentation, but no bucket.filesystem/v1 product in this provider's Yard catalog realizes it yet |
+| `aws` | can | `aws.ec2-instance/v1` (Amazon EC2 instance) | `aws.ecs-service/v1` can; `aws.app-runner/v1` cannot | every facet established |
+| `azure` | can | `azure.virtual-machine/v1` (Azure Virtual Machine) | `azure.container-apps/v1` can | every facet established |
 | `cloudflare` | cannot | — | — | declares compute only as Workers [edge, worker, wasm-native, http]: none is a VM or a container |
 | `digitalocean` | can | `digitalocean.droplet/v1` (DigitalOcean Droplet) | `digitalocean.app-platform-service/v1` cannot | every facet established |
-| `gcp` | undetermined | — | `gcp.cloud-run/v1` undetermined | Cloud Run service declares a container but not long-running-compute, inbound-tcp, operator-control |
+| `gcp` | can | `gcp.compute-engine-instance/v1` (Compute Engine VM instance) | `gcp.cloud-run/v1` undetermined | every facet established |
 | `hetzner` | can | `hetzner:cloud-server` (Hetzner Cloud Server) | — | every facet established |
 | `hostinger` | can | `hostinger:vps` (Hostinger VPS) | — | no bucket.filesystem/v1 volume is declared: data lives on the VM's own disk and is lost if the machine is rebuilt or deleted |
 | `kubernetes` | can | `kubernetes.statefulset/v1` (Kubernetes StatefulSet) | `kubernetes:deployment` undetermined | every facet established |
@@ -219,22 +219,27 @@ read 2026-11-10).
 
 Reading the `can` rows honestly:
 
-- **DigitalOcean and Kubernetes** qualify on products and volumes that are
-  both in their Yard catalogs (Droplet + Block Storage; StatefulSet +
-  PersistentVolumeClaim). The matcher reads those rows; the host form only
-  states what kind of product each is.
-- **AWS, Azure and Railway** qualify on a container product whose persistent
-  volume is cited from documentation but is **not a product in that provider's
-  Yard catalog** (Amazon EFS, Azure Files, Railway volumes), so HoBo cannot
-  allocate it yet; that is the caveat on the row. EFS and Azure Files are
-  network file shares, not block storage, and their fitness for a database's
-  durability semantics is not assessed here.
-- **GCP stays undetermined.** Its Yard declares Cloud Run, App Engine and
-  functions, and no VM, Kubernetes or volume product. For Cloud Run only the
-  volume facet could be cited (NFS mounts); the pages read did not settle
-  whether a Cloud Run service accepts raw inbound TCP, so nothing is claimed.
-  Resolving it means either reading that question to a primary source or
-  adding a VM or Kubernetes product to the GCP Yard.
+- **AWS, Azure, GCP, DigitalOcean and Hetzner** qualify on a virtual machine
+  with an attachable block-storage volume, and both products are in the
+  provider's Yard catalog (EC2 + EBS; Virtual Machine + managed disk; Compute
+  Engine VM + Persistent Disk; Droplet + Block Storage; Cloud Server + Volume).
+  Every facet is established and there is no caveat.
+- **The AWS, Azure and GCP VM and disk products are catalog only.** They are
+  registered the way those packages register their other unresolved products:
+  a typed slot factory, a default-Yard row, and an entry in
+  `*_UNRESOLVED_PRODUCT_IDS` with the reason no resolver ships. Nothing can be
+  provisioned from them here. The VM is listed under `service.worker/v1` only;
+  it is not also a `web.hosted/v1` row.
+- **Kubernetes** qualifies on a StatefulSet with a PersistentVolumeClaim, both
+  Yard products.
+- **ECS on Fargate, Azure Container Apps and Railway** also qualify, on a
+  container whose persistent volume is cited from documentation but is **not a
+  product in that provider's Yard catalog** (Amazon EFS, Azure Files, Railway
+  volumes); that caveat stays on the form. EFS and Azure Files are network file
+  shares, not block storage, and are not where a PostgreSQL data directory
+  belongs, which is why the VM form is the qualifying one for AWS and Azure.
+- **Cloud Run** stays `undetermined` beside the Compute Engine VM: only its
+  volume facet (NFS mounts) could be cited.
 - **App Runner and App Platform** are `cannot` per product, each on one cited
   facet (HTTP-only ingress; no persistent storage).
 
@@ -244,6 +249,8 @@ Nothing has been deployed onto any of these products from this repository.
 
 | Provider form | Facet | Holds | Cited statement | Source |
 |---|---|---|---|---|
+| `aws.ec2-instance/v1` | is a vm | yes | 'An EC2 instance is a virtual server in the AWS Cloud' | <https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/concepts.html> |
+| `aws.ec2-instance/v1` | persistent-volume | yes | 'Amazon EBS volumes — These are storage volumes that you attach to Amazon EC2 instances'; EBS 'provides scalable, high-performance block storage resources' | <https://docs.aws.amazon.com/ebs/latest/userguide/what-is-ebs.html> |
 | `aws.ecs-service/v1` | is a container | yes | an ECS service keeps a desired number of tasks running | <https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs_services.html> |
 | `aws.ecs-service/v1` | long-running-compute | yes | 'This helps maintain your desired number of tasks in the service' | <https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs_services.html> |
 | `aws.ecs-service/v1` | persistent-volume | yes | 'your tasks have access to the same persistent storage'; on Fargate, EFS is supported on platform version 1.4.0 or later | <https://docs.aws.amazon.com/AmazonECS/latest/developerguide/efs-volumes.html> |
@@ -251,6 +258,8 @@ Nothing has been deployed onto any of these products from this repository.
 | `aws.ecs-service/v1` | operator-control | yes | 'You can use ECS Exec to run commands in or get a shell to a container running on an Amazon EC2 instance or on AWS Fargate' | <https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html> |
 | `aws.app-runner/v1` | is a container | yes | App Runner runs container instances behind web requests | <https://docs.aws.amazon.com/apprunner/latest/dg/develop.html> |
 | `aws.app-runner/v1` | inbound-tcp | **no** | 'App Runner provides support for HTTP 1.0 and HTTP 1.1 to the container instances' | <https://docs.aws.amazon.com/apprunner/latest/dg/develop.html> |
+| `azure.virtual-machine/v1` | is a vm | yes | 'An Azure virtual machine gives you the flexibility of virtualization without having to buy and maintain the physical hardware that runs it' | <https://learn.microsoft.com/en-us/azure/virtual-machines/overview> |
+| `azure.virtual-machine/v1` | persistent-volume | yes | 'Azure managed disks are block-level storage volumes managed by Azure and used with Azure Virtual Machines' | <https://learn.microsoft.com/en-us/azure/virtual-machines/managed-disks-overview> |
 | `azure.container-apps/v1` | is a container | yes | Container Apps runs containers with managed ingress | <https://learn.microsoft.com/en-us/azure/container-apps/ingress-overview> |
 | `azure.container-apps/v1` | long-running-compute | yes | 'If you want to ensure that an instance of your revision is always running, set the minimum number of replicas to 1 or higher' | <https://learn.microsoft.com/en-us/azure/container-apps/scale-app> |
 | `azure.container-apps/v1` | persistent-volume | yes | storage types table: 'Azure Files | Permanent storage | Data is persisted to Azure Files'; container-scoped storage is ephemeral | <https://learn.microsoft.com/en-us/azure/container-apps/storage-mounts> |
@@ -260,6 +269,8 @@ Nothing has been deployed onto any of these products from this repository.
 | `digitalocean.droplet/v1` | persistent-volume | yes | 'Volumes are network-attached block storage' | <https://docs.digitalocean.com/products/volumes/> |
 | `digitalocean.app-platform-service/v1` | is a container | yes | App Platform runs containers on host instances it manages | <https://docs.digitalocean.com/products/app-platform/details/limits/> |
 | `digitalocean.app-platform-service/v1` | persistent-volume | **no** | 'The host instances running App Platform containers do not provide persistent data storage' | <https://docs.digitalocean.com/products/app-platform/details/limits/> |
+| `gcp.compute-engine-instance/v1` | is a vm | yes | 'A Compute Engine instance can be either a virtual machine (VM) or bare metal instance that is hosted on Google's infrastructure' | <https://cloud.google.com/compute/docs/instances> |
+| `gcp.compute-engine-instance/v1` | persistent-volume | yes | 'If you need block storage for a virtual machine (VM) instance or container, such as for a boot disk or data disk, use Persistent Disk volumes' | <https://cloud.google.com/compute/docs/disks/persistent-disks> |
 | `gcp.cloud-run/v1` | is a container | yes | 'A Cloud Run service starts Cloud Run instances to handle incoming requests' | <https://cloud.google.com/run/docs/container-contract> |
 | `gcp.cloud-run/v1` | persistent-volume | yes | 'To mount an NFS server as a volume in Cloud Run'; 'we recommend Filestore, which is a fully managed NFS offering' | <https://cloud.google.com/run/docs/configuring/services/nfs-volume-mounts> |
 | `kubernetes.statefulset/v1` | is a container | yes | a StatefulSet manages Pods 'that need persistent storage or a stable, unique network identity' | <https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/> |

@@ -261,3 +261,12 @@ product and does not change the published Capability Manifest; it is read by
 `assessSelfHostedDataStore` in `@hobo/core`. Cited documentation only — nothing
 has been deployed onto these products from this repository. See
 [`docs/design/postgres-backend-catalog.md`](../../../docs/design/postgres-backend-catalog.md).
+
+### Virtual machine and block storage (catalog only)
+
+`virtualMachine()` (`azure.virtual-machine/v1`, slot `service`, `service.worker/v1`) and `managedDisk()`
+(`azure.managed-disk/v1`, slot `bucket`, `bucket.filesystem/v1`) are in the default Yard so
+the VM-plus-block-storage form can be declared and assessed. They are catalog
+only: both ids are in `AZURE_UNRESOLVED_PRODUCT_IDS`, no resolver ships, and
+nothing here provisions either. `AZURE_HOST_FORMS` cites the vendor's
+documentation for the VM and for the attached volume.

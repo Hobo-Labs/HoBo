@@ -102,8 +102,9 @@ describe("verdicts", () => {
 
 	it("a provider whose qualifying form is a declared Yard product can", () => {
 		const expected = {
-			aws: "aws.ecs-service/v1",
-			azure: "azure.container-apps/v1",
+			aws: "aws.ec2-instance/v1",
+			azure: "azure.virtual-machine/v1",
+			gcp: "gcp.compute-engine-instance/v1",
 			digitalocean: "digitalocean.droplet/v1",
 			kubernetes: "kubernetes.statefulset/v1",
 			railway: "railway:service",
@@ -121,6 +122,7 @@ describe("verdicts", () => {
 		const forms = (provider: "aws" | "digitalocean" | "kubernetes") =>
 			verdictOf(provider).forms.map((form) => [form.target, form.verdict]);
 		expect(forms("aws")).toEqual([
+			["aws.ec2-instance/v1", "can"],
 			["aws.ecs-service/v1", "can"],
 			["aws.app-runner/v1", "cannot"],
 		]);
@@ -138,6 +140,9 @@ describe("verdicts", () => {
 
 	it("realizes the volume from the Yard where the catalog has one", () => {
 		for (const [provider, product] of [
+			["aws", "aws.ebs-volume/v1"],
+			["azure", "azure.managed-disk/v1"],
+			["gcp", "gcp.persistent-disk/v1"],
 			["digitalocean", "digitalocean.block-storage/v1"],
 			["kubernetes", "kubernetes.persistent-volume-claim/v1"],
 		] as const) {
@@ -147,22 +152,38 @@ describe("verdicts", () => {
 				result.findings.find((f) => f.facet === "persistent-volume")?.reason,
 			).toContain(product);
 		}
-		// AWS, Azure and Railway cite a volume their catalog cannot allocate yet.
-		for (const provider of ["aws", "azure", "railway"] as const) {
-			expect(verdictOf(provider).caveats[0], provider).toContain(
+		// The container forms on a network share stay listed, and stay caveated.
+		for (const [provider, target] of [
+			["aws", "aws.ecs-service/v1"],
+			["azure", "azure.container-apps/v1"],
+		] as const) {
+			const form = verdictOf(provider).forms.find((f) => f.target === target);
+			expect(form?.verdict, provider).toBe("can");
+			expect(form?.caveats[0], provider).toContain(
 				"no bucket.filesystem/v1 product",
 			);
 		}
+		expect(verdictOf("railway").caveats[0]).toContain(
+			"no bucket.filesystem/v1 product",
+		);
 	});
 
-	it("leaves GCP undetermined: only the volume facet of Cloud Run is cited", () => {
-		const gcp = verdictOf("gcp");
-		expect(gcp.verdict).toBe("undetermined");
-		expect(gcp.resourceClass).toBe("gcp.cloud-run/v1");
-		expect(gcp.missing).toEqual([
-			"long-running-compute",
-			"inbound-tcp",
-			"operator-control",
+	it("the three hyperscalers qualify on a VM with every facet established", () => {
+		for (const provider of ["aws", "azure", "gcp"] as const) {
+			const result = verdictOf(provider);
+			expect(result.verdict, provider).toBe("can");
+			expect(result.caveats, provider).toEqual([]);
+			expect(
+				result.findings.map((finding) => finding.state),
+				provider,
+			).toEqual(SELF_HOST_FACETS.map(() => "declared"));
+		}
+		// Cloud Run stays listed and stays undetermined beside the VM.
+		expect(
+			verdictOf("gcp").forms.map((form) => [form.target, form.verdict]),
+		).toEqual([
+			["gcp.compute-engine-instance/v1", "can"],
+			["gcp.cloud-run/v1", "undetermined"],
 		]);
 	});
 
@@ -224,6 +245,7 @@ describe("verdicts", () => {
 			"aws",
 			"azure",
 			"digitalocean",
+			"gcp",
 			"hetzner",
 			"hostinger",
 			"kubernetes",
@@ -234,7 +256,7 @@ describe("verdicts", () => {
 			"vercel",
 			"netlify",
 		]);
-		expect((by.undetermined ?? []).map((a) => a.providerId)).toEqual(["gcp"]);
+		expect(by.undetermined ?? []).toEqual([]);
 		for (const assessment of selfHostedPostgresHosts()) {
 			expect(assessment.summary.length).toBeGreaterThan(20);
 			expect(assessment.findings).toHaveLength(SELF_HOST_FACETS.length);

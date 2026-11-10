@@ -20,6 +20,34 @@ import { parseRegisteredHostForm, type RegisteredHostForm } from "@hobo/core";
 export const AZURE_HOST_FORMS: readonly RegisteredHostForm[] = Object.freeze(
 	[
 		{
+			productId: "azure.virtual-machine/v1",
+			providerService: "Azure Virtual Machine",
+			form: "vm",
+			formSources: [
+				{
+					url: "https://learn.microsoft.com/en-us/azure/virtual-machines/overview",
+					checkedAt: "2026-11-10",
+					note: "'An Azure virtual machine gives you the flexibility of virtualization without having to buy and maintain the physical hardware that runs it'",
+				},
+			],
+			volumeProductId: "azure.managed-disk/v1",
+			facets: [
+				{
+					facet: "persistent-volume",
+					holds: true,
+					detail:
+						"an Azure managed disk (block-level storage) attached to the virtual machine",
+					sources: [
+						{
+							url: "https://learn.microsoft.com/en-us/azure/virtual-machines/managed-disks-overview",
+							checkedAt: "2026-11-10",
+							note: "'Azure managed disks are block-level storage volumes managed by Azure and used with Azure Virtual Machines'",
+						},
+					],
+				},
+			],
+		},
+		{
 			productId: "azure.container-apps/v1",
 			resourceClass: "azure:container-app",
 			providerService: "Azure Container Apps",
