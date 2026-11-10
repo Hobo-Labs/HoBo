@@ -194,11 +194,18 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
-      - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
+      - uses: ./.github/actions/ci-runner-preflight
         if: >-
           github.event_name == 'workflow_run' &&
           github.event.workflow_run.conclusion == 'success' &&
           github.event.workflow_run.event == 'push'
+      - name: Prepare nbgv dotnet (release mise)
+        timeout-minutes: 5
+        if: >-
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push'
+        run: node --no-warnings scripts/ci/ensure-nbgv-toolchain.mts
       - name: Skip when push did not touch release paths
         id: scope
         if: >-
