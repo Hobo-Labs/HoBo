@@ -141,6 +141,7 @@ export function toCapabilitiesDocument(
 	return {
 		schema: CAPABILITIES_SCHEMA,
 		providerId,
+		apis: apiDocument(manifest),
 		equivalenceClasses: mappings.map((mapping) => ({
 			class: mapping.id,
 			port: mapping.port,
@@ -204,6 +205,30 @@ function marginalPrice(
 			return { unit, marginalPrice: formatDecimal(price) };
 	}
 	return undefined;
+}
+
+/** The `apis` block of `capabilities.json`: where specs and MCP servers live. */
+function apiDocument(manifest: ParsedProviderManifest): JsonObject {
+	const api = manifest.api;
+	return {
+		specs: (api?.specs ?? []).map((spec) => {
+			const draft = draftOf({
+				id: spec.id,
+				format: spec.format,
+				auth: [...spec.auth],
+			});
+			setIfDeclared(draft, "url", spec.url);
+			setIfDeclared(draft, "path", spec.path);
+			setIfDeclared(draft, "baseUrl", spec.baseUrl);
+			return Object.fromEntries(draft);
+		}),
+		mcpServers: (api?.mcpServers ?? []).map((server) => ({
+			id: server.id,
+			url: server.url,
+			transport: server.transport === "" ? "streamable-http" : server.transport,
+			auth: [...server.auth],
+		})),
+	};
 }
 
 /** `cost.json`: one ranking fact per capability mapping that names a product. */

@@ -13,6 +13,7 @@ message ProviderManifest {
   AuthSection auth = 3;
   CapabilitySection capabilities = 4;
   BillingSection billing = 5;
+  ApiSection api = 6;
 }
 
 message ProviderIdentity {
@@ -216,4 +217,33 @@ message IncludedUsage {
   string billable = 1;
   string quantity = 2;
   string reset = 3;
+}
+
+// ---------------------------------------------------------------- api
+
+// API descriptions clients are generated from, and MCP servers the provider
+// already runs. A provider with a spec but no MCP server gets a generated
+// code-mode MCP server.
+message ApiSection {
+  repeated ApiSpec specs = 1;
+  repeated McpServer mcp_servers = 2;
+}
+
+// Exactly one of `url` (published location) or `path` (file beside the manifest).
+message ApiSpec {
+  string id = 1;
+  string format = 2;
+  string url = 3;
+  string path = 4;
+  string base_url = 5;
+  repeated string auth = 6;
+  string description = 7;
+}
+
+message McpServer {
+  string id = 1;
+  string url = 2;
+  string transport = 3;
+  repeated string auth = 4;
+  string description = 5;
 }

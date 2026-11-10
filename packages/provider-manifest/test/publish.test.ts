@@ -5,11 +5,12 @@ import {
 } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
+	providerFromManifest,
 	toCapabilitiesDocument,
 	toCapabilityManifest,
 	toCostDocument,
 } from "../src/index.js";
-import { example } from "./support/example.js";
+import { example, mustParse } from "./support/example.js";
 
 describe("toCapabilityManifest", () => {
 	it("publishes a bundle @hobo/core accepts", () => {
@@ -86,6 +87,72 @@ describe("toCapabilitiesDocument", () => {
 			resourceClass: "postgres",
 			providerService: "acme.pg.flex",
 			features: ["managed", "ha"],
+		});
+	});
+});
+
+describe("published API locations", () => {
+	it("lists specs and MCP servers in capabilities.json", () => {
+		expect(toCapabilitiesDocument(example()).apis).toEqual({
+			specs: [
+				{
+					id: "pets",
+					format: "openapi",
+					auth: ["console-oauth", "agent-registration"],
+					path: "petstore.openapi.yaml",
+				},
+				{
+					id: "events",
+					format: "asyncapi",
+					auth: [],
+					url: "https://acme-cloud.example.com/asyncapi.yaml",
+				},
+			],
+			mcpServers: [],
+		});
+	});
+});
+
+describe("providerFromManifest", () => {
+	it("registers one capability per port and reports shadowed mappings", () => {
+		const manifest = mustParse(`
+schema: hobo.provider-manifest/v1
+provider: { id: twin, displayName: Twin }
+capabilities:
+  regions: [r1]
+  mappings:
+    - { id: db/pg, port: database, providerService: twin.pg, features: [ha] }
+    - { id: db/mysql, port: database, providerService: twin.mysql, regions: [r2] }
+`);
+		const provider = providerFromManifest(manifest);
+		expect(provider.id).toBe("twin");
+		expect(provider.regions).toEqual(["r1", "r2"]);
+		expect(provider.capabilities.map((c) => c.port)).toEqual(["database"]);
+		expect(provider.shadowedMappings).toEqual(["db/mysql"]);
+		const [database] = provider.capabilities;
+		expect(database?.satisfies({ port: "database", features: ["ha"] })).toEqual(
+			{ kind: "full" },
+		);
+		expect(
+			database?.satisfies({ port: "database", features: ["ha", "vector"] }),
+		).toEqual({ kind: "partial", missing: ["vector"] });
+		expect(database?.satisfies({ port: "kv" })).toEqual({ kind: "none" });
+		// No billing declared: unknown, which the matcher ranks last.
+		expect(database?.estimateCost({ port: "database" })).toEqual({
+			marginalPrice: "0",
+			sku: "twin:database",
+			unit: "",
+			pricingStatus: "unknown",
+		});
+	});
+
+	it("carries declared prices into cost estimates", () => {
+		const [compute] = providerFromManifest(example()).capabilities;
+		expect(compute?.estimateCost({ port: "compute" })).toEqual({
+			marginalPrice: "0.0005",
+			sku: "acme-cloud/gpu-a1",
+			unit: "second",
+			pricingStatus: "estimate",
 		});
 	});
 });

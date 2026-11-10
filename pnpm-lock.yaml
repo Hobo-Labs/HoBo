@@ -1462,6 +1462,9 @@ importers:
       '@hobo/provider-lakebed':
         specifier: workspace:*
         version: link:../providers/provider-lakebed
+      '@hobo/provider-manifest':
+        specifier: workspace:*
+        version: link:../provider-manifest
       '@hobo/provider-neon':
         specifier: workspace:*
         version: link:../providers/provider-neon

@@ -74,6 +74,19 @@ capabilities:
       stability: preview
       products: [llm-large]
 
+# API descriptions. `hobo-provider-manifest generate` turns an OpenAPI spec
+# into a TypeScript client and, because this provider runs no MCP server of
+# its own, a code-mode MCP server.
+api:
+  specs:
+    - id: pets
+      format: openapi
+      path: petstore.openapi.yaml
+      auth: [console-oauth, agent-registration]
+    - id: events
+      format: asyncapi
+      url: https://acme-cloud.example.com/asyncapi.yaml
+
 billing:
   currency: USD
   version: "2026.11"

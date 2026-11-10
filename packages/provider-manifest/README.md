@@ -10,6 +10,8 @@ deserialized into types HoBo already runs on:
 | `capabilities` | `@hobo/core` `capabilities.json` document | `toCapabilitiesDocument` |
 | `auth` | `@hobo/core` `auth.json` document, flows preference-ordered | `toAuthDocument`, `resolveAuthFlows` |
 | all three | `@hobo/core` `CapabilityManifest` (the four published documents) | `toCapabilityManifest` |
+| all three | a registrable provider for `hobo registry add` | `providerFromManifest` |
+| `api` | a TypeScript API client, a code-mode MCP server, MCP client config | `generateApiClient`, `generateCodeModeServer`, `generateMcpClientConfig` |
 
 Design: [`docs/design/provider-manifest.md`](../../docs/design/provider-manifest.md),
 ADR-0177. A complete worked example is
@@ -19,11 +21,85 @@ ADR-0177. A complete worked example is
 pnpm --filter @hobo/provider-manifest run build
 node packages/provider-manifest/dist/cli.js check my-provider.yaml
 node packages/provider-manifest/dist/cli.js lower my-provider.yaml out/
+node packages/provider-manifest/dist/cli.js generate my-provider.yaml out/   # or a bare OpenAPI file
+hobo registry add my-provider.yaml
 ```
 
 `check` prints every issue with its path (`billing.products[0].plans[1]...`) and
 exits 1; `lower` writes `index.json`, `capabilities.json`, `auth.json`,
-`cost.json`, and `pricing-catalog.json`.
+`cost.json`, and `pricing-catalog.json`; `generate` writes API clients and MCP
+artifacts (below).
+
+## Registering: `hobo registry add`
+
+`hobo registry add <manifest>` parses the manifest and appends a
+`provider.Registered` fact to the registry stream. A manifest declares
+capabilities but cannot provision them, so the provider is registered **held**:
+listed by `hobo registry`, never matched. Running the same command again
+appends `provider.Approved`, which is the explicit decision to make it
+matchable. The command refuses a manifest with issues (whole, listing each
+one), one with no capability mappings, and one whose `provider.id` belongs to
+a provider compiled into the runtime.
+
+The registry catalog keys a provider's definitions by port. When several
+mappings share a port the first is registered and the others are reported as
+`shadowedMappings`.
+
+## API specs, clients, and MCP
+
+```yaml
+api:
+  specs:
+    - { id: pets, format: openapi, path: petstore.openapi.yaml, auth: [console-oauth] }
+    - { id: events, format: asyncapi, url: https://acme.example.com/asyncapi.yaml }
+  mcpServers:
+    - { id: remote, url: https://mcp.acme.example.com/mcp }
+```
+
+A spec names its standard (`openapi`, `asyncapi`, `graphql`, `grpc`, or an
+`x-…` extension) and exactly one location: a `url` where it is published, or a
+`path` beside the manifest. All of them are published in `capabilities.json`
+under `apis`. **Generation covers OpenAPI 3.0/3.1**; other formats are declared
+and reported as skipped.
+
+`generate <file> <outDir>` takes a manifest *or a bare OpenAPI file* and writes:
+
+| Output | When | What it is |
+|---|---|---|
+| `<id>.client.ts` | every OpenAPI spec with a `path` | Dependency-free `fetch` client, one method per operation. Parameters are named and typed required/optional; bodies and responses are `unknown` (schemas are not interpreted). |
+| `<id>.mcp-server.mjs` | the provider declares **no** `mcpServers` — including the bare-spec case | A code-mode MCP server (below). |
+| `mcp.json` | any MCP server exists | Client configuration: the provider's own servers by URL, generated ones by command. |
+
+A provider that already runs an MCP server is used as-is. A `url`-only spec is
+not fetched — the command makes no network call and says what to do instead.
+
+### The code-mode MCP server
+
+Instead of one tool per endpoint, the generated server exposes two:
+
+- `search` — find operations; returns call signatures such as
+  `api.getPet({ petId, X-Trace-Id? })`.
+- `execute` — run model-written JavaScript: the body of an async function with
+  one binding, `api`. Each `api.<operation>(args)` resolves to
+  `{ status, ok, body }`, so a model chains, loops, and filters in one round
+  trip.
+
+It is a single ESM file with no dependencies, speaking MCP over stdio, and
+needs Node 22.13+. Configure it with `API_TOKEN` (and optionally
+`API_BASE_URL`, `API_AUTH_HEADER`, `API_AUTH_PREFIX`, `CODE_TIMEOUT_MS`).
+
+How model code is contained, and where that stops:
+
+- It runs in a separate Node process started with `--permission`: no
+  filesystem, no child processes, no workers, and an empty environment.
+- It never holds the credential. `api.*` calls are messages to the parent,
+  which builds each request from the operation table, pins it to the
+  configured server, and adds the auth header.
+- Each run is killed at the timeout.
+- **It is not a network sandbox.** Node's permission model does not restrict
+  outbound connections here, so code can send what the API returned to another
+  host. Run the server where that egress is acceptable or blocked.
+
 
 ## Auth flows
 
@@ -87,6 +163,9 @@ Fail-closed rules worth knowing:
   one-of rules; `fixtures/{valid,invalid}` exercise it
   (`pnpm --filter @hobo/provider-manifest run test:schema`). `test/parse.test.ts`
   runs the same corpus through the runtime parser so the two cannot disagree.
+- **Generated code is executed in tests** — `test/generate.test.ts` runs the
+  generated client against a local HTTP server and drives the generated MCP
+  server over stdio, including the sandbox refusals.
 - **PACT** — `contracts/pacts/provider-manifest-lowering.pact.json` is the
   hand-authored registry-ingest consumer expectation
   (`pnpm --filter @hobo/provider-manifest run test:contract:consumer`).
@@ -110,8 +189,11 @@ and its `registry-catalog` projection builds the materialized view.
 
 ## Honest scope
 
-- Not wired into `hobo registry add` yet; the registry consumes the lowered
-  `CapabilityManifest` exactly as it does a coded provider's.
+- `hobo registry add` records the capability documents. The pricing catalog
+  is derived and its hash reported, but it is not persisted into pricing state.
+- Client and MCP generation reads OpenAPI 3.0/3.1 only, resolves only local
+  `#/components/parameters` references, and does not type request or response
+  bodies.
 - A manifest declares; it does not realize. A data-only provider can be
   discovered, authenticated against, ranked, and quoted, but provisioning
   resources still needs a `realize()` implementation or a Resource Pack.

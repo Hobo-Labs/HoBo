@@ -17,6 +17,7 @@ import {
 } from "@hobo/pricing";
 import { parseDocument, visit } from "yaml";
 import {
+	type ApiSection,
 	type AuthFlow,
 	type AuthSection,
 	type BillingPlan,
@@ -57,6 +58,9 @@ export const RECURRING_INTERVALS = [
 	"yearly",
 ] as const;
 export const TIMINGS = ["advance", "arrears"] as const;
+/** Spec standards a manifest may name. Generation covers `openapi` today. */
+export const API_FORMATS = ["openapi", "asyncapi", "graphql", "grpc"] as const;
+export const MCP_TRANSPORTS = ["streamable-http", "sse"] as const;
 export const INCLUDED_RESETS = [
 	"none",
 	"daily",
@@ -580,6 +584,61 @@ function checkBilling(c: Checker, billing: BillingSection): void {
 	});
 }
 
+function checkApi(
+	c: Checker,
+	api: ApiSection,
+	flowIds: ReadonlySet<string>,
+): void {
+	if (api.specs.length === 0 && api.mcpServers.length === 0) {
+		c.fail("api", "needs at least one spec or MCP server");
+	}
+	const checkAuth = (path: string, refs: readonly string[]) => {
+		refs.forEach((ref, index) => {
+			if (!flowIds.has(ref)) {
+				c.fail(
+					`${path}.auth[${index}]`,
+					`references unknown auth flow ${JSON.stringify(ref)}`,
+				);
+			}
+		});
+	};
+	c.unique(
+		"api.specs",
+		api.specs.map((spec) => spec.id),
+	);
+	api.specs.forEach((spec, index) => {
+		const path = `api.specs[${index}]`;
+		c.pattern(`${path}.id`, spec.id, SLUG, "a lowercase slug");
+		if (!EXTENSION_TYPE.test(spec.format)) {
+			c.oneOf(`${path}.format`, spec.format, [...API_FORMATS, "x-…"]);
+		}
+		if ((spec.url === "") === (spec.path === "")) {
+			c.fail(path, "must declare exactly one of url, path");
+		}
+		c.optionalHttps(`${path}.url`, spec.url);
+		// A spec file travels with the manifest; it never reaches outside it.
+		if (spec.path.startsWith("/") || spec.path.split(/[\\/]/u).includes("..")) {
+			c.fail(
+				`${path}.path`,
+				"must be a relative path inside the manifest's directory",
+			);
+		}
+		c.optionalHttps(`${path}.baseUrl`, spec.baseUrl);
+		checkAuth(path, spec.auth);
+	});
+	c.unique(
+		"api.mcpServers",
+		api.mcpServers.map((server) => server.id),
+	);
+	api.mcpServers.forEach((server, index) => {
+		const path = `api.mcpServers[${index}]`;
+		c.pattern(`${path}.id`, server.id, SLUG, "a lowercase slug");
+		c.https(`${path}.url`, server.url);
+		c.optionalOneOf(`${path}.transport`, server.transport, MCP_TRANSPORTS);
+		checkAuth(path, server.auth);
+	});
+}
+
 /** Refine a decoded message. Exported for callers that already hold JSON. */
 export function parseProviderManifestJson(value: JsonValue): ParseResult {
 	let manifest: ProviderManifest;
@@ -612,9 +671,17 @@ export function parseProviderManifestJson(value: JsonValue): ParseResult {
 	if (
 		manifest.auth === undefined &&
 		manifest.capabilities === undefined &&
-		manifest.billing === undefined
+		manifest.billing === undefined &&
+		manifest.api === undefined
 	) {
-		c.fail("", "needs at least one of auth, capabilities, billing");
+		c.fail("", "needs at least one of auth, capabilities, billing, api");
+	}
+	if (manifest.api !== undefined) {
+		checkApi(
+			c,
+			manifest.api,
+			new Set(manifest.auth?.flows.map((flow) => flow.id)),
+		);
 	}
 	if (manifest.auth !== undefined) checkAuth(c, manifest.auth);
 	if (manifest.billing !== undefined) checkBilling(c, manifest.billing);

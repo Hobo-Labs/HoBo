@@ -101,8 +101,9 @@ describe("refusals", () => {
 				delete doc.auth;
 				delete doc.capabilities;
 				delete doc.billing;
+				delete doc.api;
 			},
-			"needs at least one of auth, capabilities, billing",
+			"needs at least one of auth, capabilities, billing, api",
 		],
 		[
 			"wrong schema id",
@@ -301,6 +302,50 @@ describe("refusals", () => {
 				];
 			},
 			"a product whose charges name no billable must list at least one",
+		],
+		[
+			"API spec with both a URL and a path",
+			(doc) => {
+				at(doc, "api", "specs", 0).url = "https://x.example.com/api.json";
+			},
+			"api.specs[0]: must declare exactly one of url, path",
+		],
+		[
+			"API spec path that leaves the manifest directory",
+			(doc) => {
+				at(doc, "api", "specs", 0).path = "../../etc/openapi.yaml";
+			},
+			"must be a relative path inside the manifest's directory",
+		],
+		[
+			"API spec in an unknown format",
+			(doc) => {
+				at(doc, "api", "specs", 1).format = "raml";
+			},
+			"api.specs[1].format: must be one of openapi",
+		],
+		[
+			"API spec bound to an undeclared auth flow",
+			(doc) => {
+				at(doc, "api", "specs", 0).auth = ["nope"];
+			},
+			'api.specs[0].auth[0]: references unknown auth flow "nope"',
+		],
+		[
+			"MCP server over plain HTTP",
+			(doc) => {
+				at(doc, "api").mcpServers = [
+					{ id: "remote", url: "http://mcp.example.com" },
+				];
+			},
+			"api.mcpServers[0].url: must be an https URL",
+		],
+		[
+			"empty api section",
+			(doc) => {
+				doc.api = {};
+			},
+			"api: needs at least one spec or MCP server",
 		],
 		[
 			"effective window that ends before it starts",

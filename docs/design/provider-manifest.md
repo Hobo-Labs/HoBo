@@ -11,11 +11,12 @@ repository: "https://github.com/Hobo-Labs/HoBo"
 # HoBo Provider Manifest
 
 A provider manifest is a single YAML or JSON document in which a provider — or
-anyone in the community — declares three things as data:
+anyone in the community — declares four things as data:
 
 1. how to authenticate (OAuth 2.0, [auth.md](../../AUTH.md), OIDC federation, API keys),
 2. which provider services realize which HoBo ports,
-3. what things cost, in whatever units the provider bills.
+3. what things cost, in whatever units the provider bills,
+4. where its API descriptions and MCP servers are.
 
 `@hobo/provider-manifest` parses it and deserializes it into types that already
 exist. No provider package is written and no new runtime type is generated
@@ -29,7 +30,8 @@ flowchart LR
   PM --> B["toPricingCatalog"] --> PC["@hobo/pricing PricingCatalog"]
   PM --> C["toCapabilityManifest"] --> CM["@hobo/core CapabilityManifest<br/>index / capabilities / auth / cost .json"]
   PC --> Q["quoteScenario"]
-  CM --> R["Registry catalog"]
+  CM --> R["hobo registry add → Registry catalog"]
+  PM --> G["generate"] --> A["API client · code-mode MCP server · mcp.json"]
 ```
 
 It is the authoring format for the [Capability Manifest](./ai-native-agent-auth.md#plan-06):
@@ -43,9 +45,10 @@ provider: { id: acme-cloud, displayName: Acme Cloud }
 auth: { issuer: ..., flows: [...] }
 capabilities: { regions: [...], mappings: [...] }
 billing: { currency: USD, source: {...}, billables: [...], products: [...] }
+api: { specs: [...], mcpServers: [...] }
 ```
 
-Any of the three sections may be omitted; at least one is required. The full
+Any of the four sections may be omitted; at least one is required. The full
 worked example is
 [`packages/provider-manifest/examples/acme-cloud.provider.yaml`](../../packages/provider-manifest/examples/acme-cloud.provider.yaml).
 The record source is `data-models/provider_manifest.proto`; the document is the
@@ -171,6 +174,79 @@ deterministic.
   a plan that is exactly one unconditional flat-rate metered charge; otherwise
   `pricingStatus: "unknown"`, which the matcher ranks last.
 
+## API specs and generated clients
+
+```yaml
+api:
+  specs:
+    - { id: pets, format: openapi, path: petstore.openapi.yaml, auth: [console-oauth] }
+    - { id: events, format: asyncapi, url: https://acme.example.com/asyncapi.yaml }
+  mcpServers:
+    - { id: remote, url: https://mcp.acme.example.com/mcp }
+```
+
+A spec names its standard — `openapi`, `asyncapi`, `graphql`, `grpc`, or an
+`x-…` extension — and exactly one location: a published `url`, or a `path`
+beside the manifest (never outside its directory). `auth` lists the flows that
+grant access to it. Specs and MCP servers are published under `apis` in
+`capabilities.json`.
+
+`hobo-provider-manifest generate <file> <outDir>` reads a manifest **or a bare
+OpenAPI document** and writes:
+
+| Output | Condition |
+|---|---|
+| `<id>.client.ts` — a dependency-free `fetch` client, one method per operation | each OpenAPI 3.0/3.1 spec available as a file |
+| `<id>.mcp-server.mjs` — a code-mode MCP server | the provider declares no MCP server of its own, which includes the spec-only case |
+| `mcp.json` — MCP client configuration | any MCP server, declared or generated |
+
+Generation is OpenAPI-only today; other formats are declared, published, and
+reported as skipped. It makes no network call: a `url`-only spec is not fetched.
+
+### Code mode
+
+A tool per endpoint scales badly: a few hundred operations is a few hundred
+tool definitions in context, and every call is a model round trip. The
+generated server instead exposes two tools. `search` returns call signatures
+for matching operations; `execute` runs model-written JavaScript against an
+`api` object with one async method per operation, so a model composes several
+calls, loops, and filters results before anything returns to its context.
+
+```mermaid
+sequenceDiagram
+  participant M as Model (MCP client)
+  participant S as Generated server
+  participant C as Sandbox process
+  participant A as Provider API
+  M->>S: execute(code)
+  S->>C: run code (no credential, no fs, empty env)
+  C->>S: api.getPet({petId}) over IPC
+  S->>A: GET /pets/7 + Authorization
+  A-->>S: response
+  S-->>C: { status, ok, body }
+  C-->>S: returned value
+  S-->>M: JSON result
+```
+
+The containment boundary is deliberate about what it does and does not cover.
+Model code runs in a child Node process under the permission model (no
+filesystem, child processes, or workers) with an empty environment and a
+timeout. It never holds the credential: the parent builds every request from
+the operation table, pinned to the configured server. It is **not** a network
+sandbox — the child can still open outbound connections, so data the API
+returned can be sent elsewhere. Deploy it where that egress is acceptable or
+blocked.
+
+## Registration
+
+`hobo registry add <manifest>` parses the manifest, builds a registrable
+provider (`providerFromManifest`), and appends `provider.Registered` to the
+registry stream. Because a manifest declares capabilities without being able to
+provision them, the provider is registered **held** — listed, never matched.
+Running the command a second time appends `provider.Approved`. A manifest with
+issues, with no capability mappings, or claiming a built-in provider's id is
+refused without writing anything.
+
 ## Gates
 
 | Gate | What it pins |
@@ -179,11 +255,18 @@ deterministic.
 | CUE (`test:schema`) | vocabularies, formats, one-of rules, against `fixtures/{valid,invalid}` |
 | PACT (`test:contract:consumer`) | registry-ingest expectation of the lowered documents and the refusal envelope |
 | TypeScript (`test`) | runtime parser agrees with the CUE corpus; every billing model rated by the real kernel |
+| Executed generated code (`test`) | the generated client against a local HTTP server; the generated MCP server over stdio, including sandbox refusals |
+| `packages/hobo/test/registry-add.test.ts` | held → approved registration, and each refusal, through the composed CLI |
 
 ## Scope
 
-Implemented: the schema, parser, three lowerings, a `check`/`lower` CLI, and a
-worked example. Not implemented: `hobo registry add <manifest>` wiring, signing
-of the published index, and realization — a data-only provider can be found,
-authenticated against, ranked, and quoted, but provisioning its resources still
+Implemented: the schema, parser, lowerings, `hobo registry add`, OpenAPI client
+and code-mode MCP server generation, a `check`/`lower`/`generate` CLI, and a
+worked example.
+
+Not implemented: signing of the published index; persisting the derived
+pricing catalog into pricing state at registration; generation from AsyncAPI,
+GraphQL, or gRPC; schema-typed request and response bodies; and realization —
+a data-only provider can be found, authenticated against, ranked, quoted, and
+called through its API, but provisioning its resources through HoBo still
 requires a `realize()` implementation or a Resource Pack.

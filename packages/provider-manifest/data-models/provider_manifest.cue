@@ -265,12 +265,40 @@ package data_models
 	products: [...#BillingProduct] & [_, ...]
 }
 
+// ---------------------------------------------------------------- api
+
+#ApiSpec: {
+	id:           #Slug
+	format:       "openapi" | "asyncapi" | "graphql" | "grpc" | #ExtensionName
+	url?:         #HttpsUrl
+	path?:        string & !="" & !~"^/" & !~"(^|/)\\.\\.(/|$)"
+	baseUrl?:     #HttpsUrl
+	auth?: [...#Slug]
+	description?: string
+	_hasLocation: true & ((url != _|_) | (path != _|_))
+	if url != _|_ {path?: _|_}
+}
+
+#McpServer: {
+	id:           #Slug
+	url:          #HttpsUrl
+	transport?:   "streamable-http" | "sse"
+	auth?: [...#Slug]
+	description?: string
+}
+
+#ApiSection: {
+	specs?: [...#ApiSpec]
+	mcpServers?: [...#McpServer]
+}
+
 #ProviderManifest: {
 	schema:        "hobo.provider-manifest/v1"
 	provider:      #ProviderIdentity
 	auth?:         #AuthSection
 	capabilities?: #CapabilitySection
 	billing?:      #BillingSection
+	api?:          #ApiSection
 	// "At least one section" is enforced by src/parse.ts only. Written here as
 	// a hidden constraint on the root definition, `cue vet -d` reported it
 	// false for every document, valid fixtures included.

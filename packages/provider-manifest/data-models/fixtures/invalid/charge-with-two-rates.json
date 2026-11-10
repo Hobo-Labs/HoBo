@@ -372,5 +372,23 @@
         ]
       }
     ]
+  },
+  "api": {
+    "specs": [
+      {
+        "id": "pets",
+        "format": "openapi",
+        "path": "petstore.openapi.yaml",
+        "auth": [
+          "console-oauth",
+          "agent-registration"
+        ]
+      },
+      {
+        "id": "events",
+        "format": "asyncapi",
+        "url": "https://acme-cloud.example.com/asyncapi.yaml"
+      }
+    ]
   }
 }
