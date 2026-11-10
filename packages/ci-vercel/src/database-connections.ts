@@ -208,6 +208,11 @@ export async function withRepairPool<T extends { end(): Promise<void> }, R>(
 	}
 }
 
+/** The marker table `verifyRepairDatabase` uses, created on first use. */
+export const DATABASE_PROBE_TABLE = `CREATE TABLE IF NOT EXISTS hobo_ci_database_probes (
+			id uuid PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now()
+		)`;
+
 /** Verify two endpoints reach the same database and role. A random committed
  * marker prevents separate servers with matching database names and roles from
  * passing. Old markers are bounded after an interrupted startup. */
@@ -228,9 +233,7 @@ export async function verifyRepairDatabase(
 		await client.query(
 			"SELECT pg_advisory_xact_lock(hashtext('hobo-ci-database-probe-v1'))",
 		);
-		await client.query(`CREATE TABLE IF NOT EXISTS hobo_ci_database_probes (
-			id uuid PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now()
-		)`);
+		await client.query(DATABASE_PROBE_TABLE);
 		await client.query(
 			"DELETE FROM hobo_ci_database_probes WHERE created_at < now() - interval '1 day'",
 		);

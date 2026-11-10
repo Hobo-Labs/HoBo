@@ -124,6 +124,16 @@ export {
 	parseFleetPolicy,
 } from "./fleet/policy.js";
 export {
+	FLEET_TRANSITION_STEPS,
+	type FleetEvent,
+	type FleetReconcileOptions,
+	type FleetReconcileReport,
+	type FleetReplicationResult,
+	type FleetTransition,
+	type FleetTransitionStep,
+	reconcileFleet,
+} from "./fleet/reconcile.js";
+export {
 	DEFAULT_REPLICATION_LIMITS,
 	type PostgresFleetWatermark,
 	REPLICATION_REFUSALS,

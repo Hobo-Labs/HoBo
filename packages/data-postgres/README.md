@@ -377,6 +377,62 @@ neutrality test pins its one runtime dependency.
 older than `rpoMs` the answer is `hold`. Promoting anyway is
 `overrideAssignment`, called by a person.
 
+### The reconciler: one tick
+
+`reconcileFleet(options)` is the only thing that changes who the writer is. A
+host calls it on a schedule and injects `now`, `sleep`, the executors, the
+schema seam and the budget check. Every tick, in order:
+
+1. **Settle the assignment.** Complete an interrupted entry, repair short
+   logs, write the first entry of an empty fleet (the first configured backend
+   is its writer), and finish or undo a move that an earlier tick sealed.
+   Without a decided assignment the tick stops: `undecided` or `no-majority`.
+2. **Probe** every backend. A failing writer is probed again until it has
+   failed for `failoverAfterMs`, so one tick tells a blip from an outage
+   without remembering anything between ticks. One success ends the wait.
+3. **Copy** the writer to every reachable standby. If a copy is refused for a
+   schema mismatch, `ensureSchema` is called for both sides and the copy is
+   tried once more; `ensureSchema` is not called otherwise.
+4. **Measure**: standby lag from each watermark, operations from each usage
+   counter, storage from the database size.
+5. **Decide** with `decideFleet`.
+6. **Act** through the assignment register.
+
+| Move | Entries written | What bounds the loss |
+|---|---|---|
+| Planned switch | `sealed = true, target = T`; wait `leaseMs + graceMs`; copy once more; `active = T` | Nothing is lost: nobody writes while sealed, and the final copy has lag 0 |
+| Switch that cannot finish | `sealed = true, target = T`; the final copy fails; `active = old writer` again (`switch-aborted:<why>`) | Nothing: the old writer never stopped being the source |
+| Unplanned failover | `active = T, loss_window_ms = T's lag` | Writes after T's snapshot are lost; `loss_window_ms` is the upper bound |
+
+A backend that returns after losing the writer role holds an entry saying it
+was the writer. Its log is repaired with the decided entries it missed, and it
+is then a standby that the next copy overwrites. Until its log is repaired,
+and whenever it really is the writer, the copy is refused on the backend
+itself.
+
+Two reconcilers can run at once. Every change is a compare-and-set on the
+epoch; the loser gets `stale` or `refused` and stops. A reconciler that finds
+another one finishing the same switch does not undo it.
+
+Events are reported through `log` as data (`replication`, `decision`,
+`transition`, `unsettled`): backend ids, numbers and fixed tokens only.
+
+**What the reconciler does not do.**
+
+- It does not promote a standby older than `rpoMs`, and it does not break a
+  split epoch. Both are `overrideAssignment`, called by a person.
+- It does not run between ticks. A writer that dies right after a tick is not
+  replaced until the next one, so recovery time is up to one schedule interval
+  plus `failoverAfterMs`, and what a failover loses is up to one interval of
+  writes. With a recovery point objective smaller than the interval plus the
+  tick's own duration, a failover always holds.
+- With a majority of backends unreachable it changes nothing, and readers fail
+  closed. That is by design: a double fault stops the application instead of
+  risking two writers.
+- Instances that can still reach an old writer the reconciler could not reach
+  keep writing to it for at most one lease after a failover. Those writes are
+  lost and are not counted in `loss_window_ms`.
+
 ### Usage metering
 
 `createUsageMeter()` counts the statements a host sends per backend and
@@ -425,9 +481,10 @@ claim `pg-dump` compatibility.
 
 ## Event architecture
 
-This package is a pure core: it holds no state, opens no connection, reads no
-clock, and appends nothing. Its outputs are what the durable control plane
-carries.
+This package is a pure core: it holds no state, opens no connection of its
+own, reads no clock, and appends nothing by itself. The fleet's statements go
+through an injected executor and its instants through an injected `now`. Its
+outputs are what the durable control plane carries.
 
 - **Commands** — a conformance report is what lets a selection **command** name
   this product at all; a migration plan is the payload of the `@hobo/claims`
@@ -456,6 +513,28 @@ carries.
   conformance reference a product was chosen under auditable after it is
   re-checked, which is why `postgresConformanceRef` pins the suite, the product,
   and the date a human looked.
+
+### The fleet in the same vocabulary
+
+- **Commands** — `proposeAssignment` (compare-and-set on the epoch),
+  `completeAssignment`, `overrideAssignment`, `replicateSnapshot`. The
+  reconciler is the **actor**: it consumes observations and issues these
+  commands; it never edits a read model.
+- **Events** — an assignment entry is the event (`bootstrap`, `seal`,
+  `activate`, `unseal`, `failover` are its kinds, in `reason` and in the
+  `transition` log record). Entries are immutable and totally ordered by epoch.
+- **Event store** — each backend's assignment log table is a small
+  **event store**: append-only, one writer per epoch by primary key, appended
+  under a compare-and-set on the previous epoch. A majority of them agreeing is
+  the commit.
+- **Projections / materialized views** — the current assignment is the
+  **projection** `resolveAssignment` folds from a majority of logs; a relay
+  instance caches it for one lease. Usage counters are a materialized view of
+  statements sent.
+- **Snapshots / read store** — a standby is a **snapshot** of the writer's
+  data and its watermark names the point in time; the standbys together are the
+  **read store** a failover promotes from. Replay is copying decided entries
+  onto a backend whose log is short.
 
 ## Tests
 

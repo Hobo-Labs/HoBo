@@ -39,6 +39,7 @@ export {
 	type HostedInboxStore,
 	type HostedRelayTickTiming,
 } from "./hosted-runtime.js";
+export { initializeHostedRelaySchema } from "./hosted-schema.js";
 export { signIngressForward, verifyIngressForward } from "./ingress-forward.js";
 export {
 	isIsolatedContainerOffer,

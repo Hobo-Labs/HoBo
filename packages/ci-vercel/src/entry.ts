@@ -1,10 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { type MessageMetadata, QueueClient } from "@vercel/queue";
-import { createBootstrapEntry } from "./bootstrap-entry.js";
-import { createVercelApplication } from "./composition.js";
 import { createNodeRelayHandler } from "./node-handler.js";
 import { forwardQueueWakeup } from "./queue-forwarding.js";
+import { composeRelay } from "./relay-composition.js";
 import { loadBrokerRuntimeConfig } from "./runtime-config-client.js";
 import { isPlatformScheduleRun, QueueMessageSchema } from "./worker.js";
 
@@ -17,7 +16,7 @@ const brokerOrigin =
 const brokerAudience = "https://hobo-ci.vercel.app/internal/runtime-config";
 // Owner bootstrap requires converted-App metadata and browser identity checks.
 const ownerBootstrapEnabled = true;
-let startup: ReturnType<typeof createVercelApplication> | undefined;
+let startup: Promise<Awaited<ReturnType<typeof composeRelay>>> | undefined;
 function application() {
 	const options = {
 		env: process.env,
@@ -61,14 +60,9 @@ function application() {
 				env = { ...env, ...config };
 				ownerVerifiedBootstrap = ownerBootstrapEnabled;
 			}
-			const resolved = { ...options, env };
-			if (!env.HOBO_CI_BOOTSTRAP_TOKEN_SHA256)
-				return createVercelApplication(resolved);
-			const bootstrapOptions: Parameters<typeof createBootstrapEntry>[0] =
-				resolved;
-			if (ownerVerifiedBootstrap)
-				bootstrapOptions.expectedGithubOwnerId = 145080887;
-			return createBootstrapEntry(bootstrapOptions);
+			const resolved: Parameters<typeof composeRelay>[0] = { ...options, env };
+			if (ownerVerifiedBootstrap) resolved.expectedGithubOwnerId = 145080887;
+			return composeRelay(resolved);
 		})
 		.catch(() => {
 			startup = undefined;

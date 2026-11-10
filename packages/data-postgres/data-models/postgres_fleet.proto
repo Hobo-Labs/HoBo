@@ -189,3 +189,50 @@ message PostgresFleetDecision {
   repeated PostgresFleetCandidate candidates = 7;
   uint64 decided_at_ms = 8;
 }
+
+enum PostgresFleetReplicationStatus {
+  POSTGRES_FLEET_REPLICATION_STATUS_UNSPECIFIED = 0;
+  POSTGRES_FLEET_REPLICATION_STATUS_REPLICATED = 1;
+  // A check refused the copy; `refusal` names which.
+  POSTGRES_FLEET_REPLICATION_STATUS_REFUSED = 2;
+  // A connection or statement failed; `failure` classifies it.
+  POSTGRES_FLEET_REPLICATION_STATUS_FAILED = 3;
+}
+
+// What one copy from the writer to one standby did. Logged per tick.
+message PostgresFleetReplicationResult {
+  string source = 1;
+  string target = 2;
+  uint64 epoch = 3;
+  PostgresFleetReplicationStatus status = 4;
+  // e.g. target-is-writer, schema-mismatch, oversized, busy.
+  optional string refusal = 5;
+  optional PostgresFleetBackendHealth failure = 6;
+  optional uint64 rows = 7;
+  // Row text rewritten. Zero when nothing had changed.
+  optional uint64 bytes = 8;
+  uint64 duration_ms = 9;
+}
+
+enum PostgresFleetTransitionStep {
+  POSTGRES_FLEET_TRANSITION_STEP_UNSPECIFIED = 0;
+  POSTGRES_FLEET_TRANSITION_STEP_BOOTSTRAP = 1;
+  // Planned move, first half: nobody may write.
+  POSTGRES_FLEET_TRANSITION_STEP_SEAL = 2;
+  // Planned move, second half: the target is the writer.
+  POSTGRES_FLEET_TRANSITION_STEP_ACTIVATE = 3;
+  // Planned move undone: the old writer writes again.
+  POSTGRES_FLEET_TRANSITION_STEP_UNSEAL = 4;
+  POSTGRES_FLEET_TRANSITION_STEP_FAILOVER = 5;
+}
+
+// One attempt to change the assignment. Only status "decided" changed it.
+message PostgresFleetTransition {
+  PostgresFleetTransitionStep step = 1;
+  // decided, undecided, stale, unavailable or refused.
+  string status = 2;
+  optional uint64 epoch = 3;
+  optional string active = 4;
+  optional string target = 5;
+  string reason = 6;
+}

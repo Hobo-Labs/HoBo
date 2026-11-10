@@ -58,6 +58,7 @@ export type PostgresFleetWatermark = {
 	readonly snapshotAtMs: number;
 	readonly tables: readonly ReplicatedTable[];
 	readonly rowCount: number;
+	/** Row text rewritten by the run that produced this watermark. */
 	readonly byteCount: number;
 	/** SHA-256 over every table's name, row count and digest. */
 	readonly digest: string;
@@ -98,7 +99,7 @@ export type ReplicationRequest = {
 	readonly layout: FleetLayout;
 	/** The decided current assignment, as the caller resolved it by majority. */
 	readonly assignment: PostgresFleetAssignment;
-	readonly limits?: Partial<ReplicationLimits>;
+	readonly limits?: Partial<ReplicationLimits> | undefined;
 };
 
 export type ReplicationOutcome =
@@ -126,29 +127,41 @@ type CatalogColumn = {
 	readonly name: string;
 	readonly type: string;
 	readonly generated: boolean;
+	/** The sequence the column owns, and the last value it handed out. */
 	readonly sequence: string | undefined;
+	readonly sequenceValue: number | undefined;
 };
 
 type CatalogTable = {
 	readonly name: string;
 	readonly columns: readonly CatalogColumn[];
+	/** Another table's foreign key points here, so it cannot be truncated alone. */
+	readonly referenced: boolean;
 };
 
 /**
- * Make text output identical on both sides. `row_to_json` writes a
- * `timestamptz` in the session's time zone and a `bytea` in the session's
- * output format, so two servers with different defaults would otherwise
- * describe the same row with different bytes.
+ * Make text output identical on both sides. A `timestamptz` is printed in the
+ * session's time zone and a `bytea` in the session's output format, so two
+ * servers with different defaults would otherwise describe the same row with
+ * different bytes. Returns the transaction's start time on that server.
  */
-async function pinSession(session: SqlSession): Promise<void> {
-	await session.query(
+async function pinSession(session: SqlSession): Promise<number> {
+	const result = await session.query(
 		`SELECT set_config('TimeZone', 'UTC', true), set_config('DateStyle', 'ISO, YMD', true),
 			set_config('IntervalStyle', 'iso_8601', true), set_config('extra_float_digits', '3', true),
-			set_config('bytea_output', 'hex', true)`,
+			set_config('bytea_output', 'hex', true),
+			round(extract(epoch FROM now()) * 1000)::bigint::text AS started_at_ms`,
+	);
+	return parseCount(
+		column(result.rows[0] ?? {}, "started_at_ms"),
+		"snapshotAtMs",
 	);
 }
 
-/** The copied tables of one backend, discovered from its catalog. */
+/**
+ * The copied tables of one backend, their columns and their sequences, from
+ * its catalog in one statement.
+ */
 async function readCatalog(
 	session: SqlSession,
 	layout: FleetLayout,
@@ -157,30 +170,44 @@ async function readCatalog(
 		`SELECT c.relname::text AS table_name, a.attname::text AS column_name,
 			format_type(a.atttypid, a.atttypmod) AS type_name,
 			(a.attgenerated <> '')::text AS generated,
-			pg_get_serial_sequence(quote_ident(n.nspname) || '.' || quote_ident(c.relname), a.attname) AS sequence_name
+			s.sequence_name,
+			pg_sequence_last_value(s.sequence_name::regclass)::text AS sequence_value,
+			EXISTS (SELECT 1 FROM pg_constraint k
+				WHERE k.contype = 'f' AND k.confrelid = c.oid AND k.conrelid <> c.oid)::text AS referenced
 		FROM pg_class c
 		JOIN pg_namespace n ON n.oid = c.relnamespace
 		LEFT JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+		LEFT JOIN LATERAL (SELECT pg_get_serial_sequence(
+			quote_ident(n.nspname) || '.' || quote_ident(c.relname), a.attname) AS sequence_name) s ON true
 		WHERE n.nspname = current_schema() AND c.relkind = 'r' AND starts_with(c.relname, $1)
 		ORDER BY c.relname, a.attname`,
 		[layout.dataPrefix],
 	);
-	const tables = new Map<string, CatalogColumn[]>();
+	const tables = new Map<
+		string,
+		{ columns: CatalogColumn[]; referenced: boolean }
+	>();
 	for (const row of result.rows) {
 		const table = column(row, "table_name");
 		if (!isReplicatedTable(layout, table)) continue;
-		const columns = tables.get(table) ?? [];
+		const entry = tables.get(table) ?? {
+			columns: [],
+			referenced: parseFlag(column(row, "referenced"), "referenced"),
+		};
 		const name = optionalColumn(row, "column_name");
+		const position = optionalColumn(row, "sequence_value");
 		if (name !== undefined)
-			columns.push({
+			entry.columns.push({
 				name,
 				type: column(row, "type_name"),
 				generated: parseFlag(column(row, "generated"), "generated"),
 				sequence: optionalColumn(row, "sequence_name"),
+				sequenceValue:
+					position === undefined ? undefined : parseCount(position, "sequence"),
 			});
-		tables.set(table, columns);
+		tables.set(table, entry);
 	}
-	return [...tables.entries()].map(([name, columns]) => ({ name, columns }));
+	return [...tables.entries()].map(([name, entry]) => ({ name, ...entry }));
 }
 
 /** The first difference between two catalogs, or nothing when they match. */
@@ -200,6 +227,8 @@ function catalogDifference(
 				return `column ${table.name}.${entry.name} is missing on target`;
 			if (match.type !== entry.type || match.generated !== entry.generated)
 				return `column ${table.name}.${entry.name} is ${entry.type} on source and ${match.type} on target`;
+			if ((match.sequence === undefined) !== (entry.sequence === undefined))
+				return `column ${table.name}.${entry.name} owns a sequence on one side only`;
 		}
 		if (other.columns.length !== table.columns.length)
 			return `table ${table.name} has extra columns on target`;
@@ -228,19 +257,26 @@ function textList(columns: readonly CatalogColumn[]): string {
 }
 
 /**
- * Row count and an order-independent digest of one table, computed by the
- * server in one pass: each row, as a JSON object of its columns' text forms, is hashed with SHA-256, the
- * hash is split into four 64-bit words, and the words are summed. Summation
- * makes row order irrelevant and keeps memory constant.
+ * Row count and an order-independent digest of every table, computed by the
+ * server in one statement and one pass per table: each row, as a JSON object
+ * of its columns' text forms, is hashed with SHA-256, the hash is split into
+ * four 64-bit words, and the words are summed. Summation makes row order
+ * irrelevant and keeps memory constant.
  */
-async function digestTable(
+async function digestTables(
 	session: SqlSession,
-	table: CatalogTable,
-): Promise<ReplicatedTable> {
+	tables: readonly CatalogTable[],
+): Promise<readonly ReplicatedTable[]> {
+	if (tables.length === 0) return [];
 	const word = (offset: number) =>
 		`('x' || encode(substring(h FROM ${offset} FOR 8), 'hex'))::bit(64)::bigint::numeric`;
 	const result = await session.query(
-		`SELECT count(*)::text AS row_count,
+		tables
+			.map(
+				(
+					table,
+				) => `SELECT '${table.name.replaceAll("'", "''")}'::text AS table_name,
+			count(*)::text AS row_count,
 			encode(sha256(convert_to(concat_ws(':', count(*)::text,
 				coalesce(sum(w1), 0)::text, coalesce(sum(w2), 0)::text,
 				coalesce(sum(w3), 0)::text, coalesce(sum(w4), 0)::text), 'UTF8')), 'hex') AS digest
@@ -251,18 +287,28 @@ async function digestTable(
 				FROM (SELECT ${textList(table.columns)} FROM ${quoteIdentifier(table.name)}) r
 			) hashed
 		) words`,
+			)
+			.join("\nUNION ALL\n"),
 	);
-	const row = result.rows[0];
-	if (row === undefined)
-		throw new PostgresDataError(
-			"FLEET_RECORD_INVALID",
-			"table digest returned no row",
-		);
-	return {
-		name: table.name,
-		rows: parseCount(column(row, "row_count"), "rowCount"),
-		digest: column(row, "digest"),
-	};
+	const digests = new Map(
+		result.rows.map((row) => [
+			column(row, "table_name"),
+			{
+				rows: parseCount(column(row, "row_count"), "rowCount"),
+				digest: column(row, "digest"),
+			},
+		]),
+	);
+	return tables.map((table) => {
+		const entry = digests.get(table.name);
+		if (entry === undefined)
+			throw new PostgresDataError(
+				"FLEET_RECORD_INVALID",
+				"table digest returned no row",
+				{ detail: { table: table.name } },
+			);
+		return { name: table.name, ...entry };
+	});
 }
 
 /**
@@ -278,10 +324,7 @@ export async function readDataDigests(
 		"BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
 		async (session) => {
 			await pinSession(session);
-			const digests: ReplicatedTable[] = [];
-			for (const table of await readCatalog(session, layout))
-				digests.push(await digestTable(session, table));
-			return digests;
+			return digestTables(session, await readCatalog(session, layout));
 		},
 	);
 }
@@ -293,34 +336,23 @@ export type SequencePosition = {
 	readonly value: number | undefined;
 };
 
-async function sequencePositions(
-	session: SqlSession,
+function sequencePositions(
 	tables: readonly CatalogTable[],
-): Promise<
-	readonly (SequencePosition & {
-		readonly sequence: string;
-	})[]
-> {
-	const positions = [];
-	for (const table of tables)
-		for (const entry of table.columns) {
-			if (entry.sequence === undefined) continue;
-			const result = await session.query(
-				"SELECT pg_sequence_last_value($1::regclass)::text AS last_value",
-				[entry.sequence],
-			);
-			const last =
-				result.rows[0] === undefined
-					? undefined
-					: optionalColumn(result.rows[0], "last_value");
-			positions.push({
-				table: table.name,
-				column: entry.name,
-				sequence: entry.sequence,
-				value: last === undefined ? undefined : parseCount(last, "sequence"),
-			});
-		}
-	return positions;
+): readonly (SequencePosition & { readonly sequence: string })[] {
+	return tables.flatMap((table) =>
+		table.columns.flatMap((entry) =>
+			entry.sequence === undefined
+				? []
+				: [
+						{
+							table: table.name,
+							column: entry.name,
+							sequence: entry.sequence,
+							value: entry.sequenceValue,
+						},
+					],
+		),
+	);
 }
 
 /** Where every sequence owned by a copied table stands on one backend. */
@@ -328,23 +360,16 @@ export async function readSequencePositions(
 	backend: FleetBackend,
 	layout: FleetLayout,
 ): Promise<readonly SequencePosition[]> {
-	return backend.executor.session(async (session) => {
-		const positions = await sequencePositions(
-			session,
-			await readCatalog(session, layout),
-		);
-		return positions.map(({ table, column: name, value }) => ({
-			table,
-			column: name,
-			value,
-		}));
-	});
+	return sequencePositions(await readCatalog(backend.executor, layout)).map(
+		({ table, column: name, value }) => ({ table, column: name, value }),
+	);
 }
 
 async function copyTable(
 	from: SqlSession,
 	to: SqlSession,
 	table: CatalogTable,
+	cursor: string,
 	limits: ReplicationLimits,
 	budget: { bytes: number },
 ): Promise<void> {
@@ -356,14 +381,14 @@ async function copyTable(
 	);
 	const record = names.map((entry) => `${entry} text`);
 	await from.query(
-		`DECLARE fleet_copy NO SCROLL CURSOR FOR
+		`DECLARE ${cursor} NO SCROLL CURSOR FOR
 			SELECT row_to_json(r)::text AS doc FROM (SELECT ${textList(writable)} FROM ${name}) r`,
 	);
 	// Start small: one row can be megabytes, and a fetch is sized from what
 	// the rows so far have actually weighed.
 	let fetchRows = Math.min(16, limits.batchRows);
 	for (;;) {
-		const batch = await from.query(`FETCH ${fetchRows} FROM fleet_copy`);
+		const batch = await from.query(`FETCH ${fetchRows} FROM ${cursor}`);
 		if (batch.rows.length === 0) break;
 		const docs = batch.rows.map((row) => column(row, "doc"));
 		const bytes = docs.reduce((total, doc) => total + doc.length, 0);
@@ -378,13 +403,14 @@ async function copyTable(
 				SELECT ${casts.join(", ")} FROM json_to_recordset($1::json) AS x(${record.join(", ")})`,
 			[`[${docs.join(",")}]`],
 		);
+		// A short batch is the last one; the cursor ends with the transaction.
+		if (docs.length < fetchRows) break;
 		const average = Math.max(1, Math.ceil(bytes / docs.length));
 		fetchRows = Math.max(
 			1,
 			Math.min(limits.batchRows, Math.floor(limits.batchBytes / average)),
 		);
 	}
-	await from.query("CLOSE fleet_copy");
 }
 
 async function writeWatermark(
@@ -423,12 +449,28 @@ async function writeWatermark(
 	return column(row, "digest");
 }
 
+function sameTable(
+	left: ReplicatedTable | undefined,
+	right: ReplicatedTable | undefined,
+): boolean {
+	return (
+		left !== undefined &&
+		right !== undefined &&
+		left.rows === right.rows &&
+		left.digest === right.digest
+	);
+}
+
 /**
  * Replace the target's copied tables with a snapshot of the source's.
  *
  * Returns `refused` with a named reason for every condition this function
  * checks. A failed connection or statement is thrown, and both transactions
  * are rolled back: the target keeps its previous snapshot and watermark.
+ *
+ * Only tables whose digest differs are rewritten, so a run over an unchanged
+ * database costs a fixed handful of statements on each side. That matters on a
+ * plan that meters statements.
  */
 export async function replicateSnapshot(
 	request: ReplicationRequest,
@@ -452,25 +494,15 @@ export async function replicateSnapshot(
 			source.executor,
 			"BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
 			async (from) => {
-				await pinSession(from);
-				const clock = await from.query(
-					"SELECT round(extract(epoch FROM now()) * 1000)::bigint::text AS snapshot_at_ms",
-				);
-				const snapshotAtMs = parseCount(
-					column(clock.rows[0] ?? {}, "snapshot_at_ms"),
-					"snapshotAtMs",
-				);
+				const snapshotAtMs = await pinSession(from);
 				const catalog = await readCatalog(from, layout);
-				const tables: ReplicatedTable[] = [];
-				for (const relation of catalog)
-					tables.push(await digestTable(from, relation));
+				const tables = await digestTables(from, catalog);
 				const rowCount = tables.reduce((total, table) => total + table.rows, 0);
 				if (rowCount > limits.maxRows)
 					throw new Refused(
 						"oversized",
 						`${rowCount} rows exceed the limit of ${limits.maxRows}`,
 					);
-				const sourceSequences = await sequencePositions(from, catalog);
 				return inTransaction(target.executor, "BEGIN", async (to) => {
 					await pinSession(to);
 					const lock = await to.query(
@@ -502,42 +534,73 @@ export async function replicateSnapshot(
 					const difference = catalogDifference(catalog, targetCatalog);
 					if (difference !== undefined)
 						throw new Refused("schema-mismatch", difference);
-					if (catalog.length > 0)
-						await to.query(
-							`TRUNCATE ${catalog.map((relation) => quoteIdentifier(relation.name)).join(", ")}`,
-						);
+					// What the target really holds now, not what a watermark says:
+					// a returned writer's watermark describes an older life.
+					const before = await digestTables(to, targetCatalog);
+					const stale = catalog.filter(
+						(relation, index) =>
+							!sameTable(
+								tables[index],
+								before.find((entry) => entry.name === relation.name),
+							),
+					);
+					// A table another table points at cannot be truncated alone.
+					const rewrite =
+						stale.length > 0 && catalog.some((relation) => relation.referenced)
+							? catalog
+							: stale;
 					const budget = { bytes: 0 };
-					for (const relation of catalog)
-						await copyTable(from, to, relation, limits, budget);
-					for (const position of sourceSequences) {
-						if (position.value === undefined) continue;
+					if (rewrite.length > 0) {
+						await to.query(
+							`TRUNCATE ${rewrite.map((relation) => quoteIdentifier(relation.name)).join(", ")}`,
+						);
+						for (const [index, relation] of rewrite.entries())
+							await copyTable(
+								from,
+								to,
+								relation,
+								`fleet_copy_${index}`,
+								limits,
+								budget,
+							);
+					}
+					const positions = sequencePositions(catalog).flatMap((position) => {
 						const match = targetCatalog
 							.find((relation) => relation.name === position.table)
 							?.columns.find((entry) => entry.name === position.column);
-						if (match?.sequence === undefined)
-							throw new Refused(
-								"schema-mismatch",
-								`column ${position.table}.${position.column} owns no sequence on target`,
-							);
+						return position.value === undefined || match?.sequence === undefined
+							? []
+							: [{ sequence: match.sequence, value: position.value }];
+					});
+					if (positions.length > 0)
 						// Never backwards: a returned writer may have handed out more.
 						await to.query(
-							`SELECT setval($1::regclass, GREATEST($2::bigint,
-								coalesce(pg_sequence_last_value($1::regclass), $2::bigint)), true)::text AS position`,
-							[match.sequence, position.value],
+							`SELECT setval(s.name::regclass, GREATEST(s.position,
+								coalesce(pg_sequence_last_value(s.name::regclass), s.position)), true)::text AS position
+							FROM (VALUES ${positions
+								.map(
+									(_, index) =>
+										`($${index * 2 + 1}::text, $${index * 2 + 2}::bigint)`,
+								)
+								.join(", ")}) AS s(name, position)`,
+							positions.flatMap((position) => [
+								position.sequence,
+								position.value,
+							]),
 						);
-					}
-					for (const [index, relation] of catalog.entries()) {
-						const copied = await digestTable(to, relation);
-						const expected = tables[index];
-						if (
-							expected === undefined ||
-							copied.rows !== expected.rows ||
-							copied.digest !== expected.digest
-						)
-							throw new Refused(
-								"digest-mismatch",
-								`table ${relation.name} differs from the source after the copy`,
-							);
+					if (rewrite.length > 0) {
+						const after = await digestTables(to, rewrite);
+						for (const copied of after)
+							if (
+								!sameTable(
+									copied,
+									tables.find((entry) => entry.name === copied.name),
+								)
+							)
+								throw new Refused(
+									"digest-mismatch",
+									`table ${copied.name} differs from the source after the copy`,
+								);
 					}
 					const record = {
 						source: source.id,

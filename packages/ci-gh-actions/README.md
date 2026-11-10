@@ -136,6 +136,12 @@ adapter. App keys and installation tokens remain in the relay.
 
 The GitHub App needs Actions, Administration, Contents, Workflows and Pull requests
 write access, plus Metadata read. Subscribe to `workflow_job` and `workflow_run`.
+`initializeHostedRelaySchema(pool)` creates every PostgreSQL table the hosted
+relay's GitHub stores use (App registration, OAuth sessions, platform App
+bootstrap, webhook repair and queued-job repair) by running the same
+initialisers each store runs on first use, and stores nothing. The Vercel
+adapter calls it to give a standby database the schema of the serving one.
+
 The hosted Vercel adapter supplies the App bootstrap and OAuth callbacks described
 below. Self-hosted deployments must mount equivalent authenticated callbacks and
 provide encrypted secret storage. Customer repository setup is handled by the

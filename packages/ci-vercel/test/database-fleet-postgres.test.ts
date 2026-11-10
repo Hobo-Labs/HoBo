@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { parseConfiguration } from "@hobo/ci";
+import { PostgresCiStore } from "@hobo/ci/postgres";
 import {
 	bootstrapAssignment,
 	type PostgresFleetAssignment,
@@ -7,11 +10,15 @@ import {
 	readSequencePositions,
 	readWatermark,
 	replicateSnapshot,
+	type SqlParameter,
+	type SqlSession,
 	sqlAssignmentRegister,
 	sqlAssignmentReplica,
 	standbyLagMs,
 } from "@hobo/data-postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ensureRelaySchema } from "../src/database-fleet.js";
+import { PostgresWorkerHealth } from "../src/worker-health.js";
 import {
 	backendAt,
 	createTestFleet,
@@ -227,6 +234,97 @@ describe.skipIf(!fleetServersAvailable)("database fleet on PostgreSQL", () => {
 		}
 	});
 
+	it("rewrites only what changed, in a fixed handful of statements", async () => {
+		for (const backend of backends) await dataTables(backend);
+		await writer.pool.query(TYPES_ROWS);
+		await writer.pool.query("INSERT INTO hobo_ci_plain VALUES ('a', 'one')");
+		const register = sqlAssignmentRegister(backends, testLayout);
+		await bootstrapAssignment(register, "b0");
+		const assignment = current(await readCurrentAssignment(register));
+		const counted = (backend: TestBackend) => {
+			const statements: string[] = [];
+			const count = (sql: string) => {
+				statements.push(sql.trim().split(/\s+/).slice(0, 3).join(" "));
+			};
+			return {
+				statements,
+				backend: {
+					id: backend.id,
+					executor: {
+						query: (sql: string, parameters?: readonly SqlParameter[]) => {
+							count(sql);
+							return backend.executor.query(sql, parameters);
+						},
+						session: <T>(run: (session: SqlSession) => Promise<T>) =>
+							backend.executor.session((session) =>
+								run({
+									query: (sql, parameters) => {
+										count(sql);
+										return session.query(sql, parameters);
+									},
+								}),
+							),
+					},
+				},
+			};
+		};
+		const run = async () => {
+			const from = counted(writer);
+			const to = counted(standby);
+			const outcome = await replicateSnapshot({
+				source: from.backend,
+				target: to.backend,
+				layout: testLayout,
+				assignment,
+			});
+			expect(outcome.status).toBe("replicated");
+			return { from: from.statements, to: to.statements, outcome };
+		};
+		const first = await run();
+		expect(
+			first.to.filter((sql) => sql.startsWith('INSERT INTO "hobo_ci_')),
+		).toHaveLength(2);
+		// Nothing changed: no truncate, no insert, no cursor.
+		const idle = await run();
+		expect(idle.from.map((sql) => sql.split(" ")[0])).toEqual([
+			"BEGIN",
+			"SELECT",
+			"SELECT",
+			"SELECT",
+			"COMMIT",
+		]);
+		expect(idle.to.some((sql) => sql.startsWith("TRUNCATE"))).toBe(false);
+		expect(idle.to.length).toBeLessThanOrEqual(10);
+		if (
+			idle.outcome.status === "replicated" &&
+			first.outcome.status === "replicated"
+		) {
+			expect(idle.outcome.watermark.digest).toBe(
+				first.outcome.watermark.digest,
+			);
+			expect(idle.outcome.watermark.snapshotAtMs).toBeGreaterThanOrEqual(
+				first.outcome.watermark.snapshotAtMs,
+			);
+		}
+		// One table changed: only that table is rewritten.
+		await writer.pool.query("UPDATE hobo_ci_plain SET body = 'two'");
+		const changed = await run();
+		expect(changed.to.filter((sql) => sql.startsWith("TRUNCATE"))).toEqual([
+			'TRUNCATE "hobo_ci_plain"',
+		]);
+		expect(
+			changed.from.filter((sql) => sql.startsWith("DECLARE")),
+		).toHaveLength(1);
+		expect(await readDataDigests(standby, testLayout)).toEqual(
+			await readDataDigests(writer, testLayout),
+		);
+		// A standby changed behind the fleet's back is put right, whatever its
+		// watermark says.
+		await standby.pool.query("DELETE FROM hobo_ci_types");
+		await run();
+		expect(await typesText(standby)).toEqual(await typesText(writer));
+	});
+
 	it("never moves a sequence backwards on the target", async () => {
 		for (const backend of backends) await dataTables(backend);
 		await writer.pool.query("INSERT INTO hobo_ci_types (note) VALUES ('one')");
@@ -392,5 +490,71 @@ describe.skipIf(!fleetServersAvailable)("database fleet on PostgreSQL", () => {
 			await client.query("ROLLBACK");
 			client.release();
 		}
+	});
+	it("creates the relay's own schema on every backend and copies a real relay database", async () => {
+		for (const backend of backends) await ensureRelaySchema(backend.pool);
+		const tables = async (backend: TestBackend) =>
+			(
+				await backend.pool.query(
+					"SELECT tablename FROM pg_tables WHERE schemaname = current_schema() AND tablename LIKE 'hobo_ci_%' ORDER BY 1",
+				)
+			).rows.map((row) => row.tablename);
+		const created = await tables(writer);
+		expect(created).toEqual(await tables(standby));
+		expect(created).toEqual(
+			expect.arrayContaining([
+				"hobo_ci_configuration",
+				"hobo_ci_events",
+				"hobo_ci_inbox",
+				"hobo_ci_leases",
+				"hobo_ci_app_credentials",
+				"hobo_ci_oauth_sessions",
+				"hobo_ci_platform_app",
+				"hobo_ci_webhook_repairs",
+				"hobo_ci_queued_scans",
+				"hobo_ci_worker_health",
+				"hobo_ci_database_probes",
+			]),
+		);
+		// The relay's real store writes its configuration and health evidence.
+		const store = new PostgresCiStore(writer.pool);
+		await store.configure(
+			parseConfiguration(
+				await readFile(
+					new URL(
+						"../../ci/data-models/fixtures/valid/configuration.json",
+						import.meta.url,
+					),
+					"utf8",
+				),
+			),
+			0,
+			new Date().toISOString(),
+		);
+		await new PostgresWorkerHealth(writer.pool).mark("queue", true);
+		const register = sqlAssignmentRegister(backends, testLayout);
+		await bootstrapAssignment(register, "b0");
+		const outcome = await replicateSnapshot({
+			source: writer,
+			target: standby,
+			layout: testLayout,
+			assignment: current(await readCurrentAssignment(register)),
+		});
+		expect(outcome).toMatchObject({ status: "replicated" });
+		if (outcome.status !== "replicated") return;
+		expect(outcome.watermark.rowCount).toBeGreaterThan(0);
+		// The fleet's own tables are under the relay's prefix and never copied.
+		expect(
+			outcome.watermark.tables.some((table) =>
+				table.name.startsWith("hobo_ci_fleet_"),
+			),
+		).toBe(false);
+		expect(await readDataDigests(standby, testLayout)).toEqual(
+			await readDataDigests(writer, testLayout),
+		);
+		// The copy is a working relay database: its store reads it back.
+		expect(
+			(await new PostgresCiStore(standby.pool).configuration())?.configuration,
+		).toEqual((await store.configuration())?.configuration);
 	});
 });

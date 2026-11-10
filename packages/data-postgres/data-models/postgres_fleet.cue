@@ -153,3 +153,47 @@ import (
 		lossWindowMs?: _|_
 	}
 }
+
+#PostgresFleetReplicationStatus: "replicated" | "refused" | "failed"
+
+#PostgresFleetReplicationResult: {
+	source:     #PostgresFleetBackendId
+	target:     #PostgresFleetBackendId & !=source
+	epoch:      int & >=1
+	status:     #PostgresFleetReplicationStatus
+	refusal?:   "same-backend" | "source-is-not-writer" | "target-is-writer" | "target-log-differs" | "schema-mismatch" | "oversized" | "busy" | "digest-mismatch"
+	failure?:   #PostgresFleetBackendHealth & !="reachable"
+	rows?:      int & >=0
+	bytes?:     int & >=0
+	durationMs: int & >=0
+
+	// Each status carries its own detail and no other.
+	if status == "refused" {
+		refusal: string
+	}
+	if status == "failed" {
+		failure: string
+	}
+	if status == "replicated" {
+		rows:     int
+		bytes:    int
+		refusal?: _|_
+		failure?: _|_
+	}
+}
+
+#PostgresFleetTransitionStep: "bootstrap" | "seal" | "activate" | "unseal" | "failover"
+
+#PostgresFleetTransition: {
+	step:    #PostgresFleetTransitionStep
+	status:  "decided" | "undecided" | "stale" | "unavailable" | "refused"
+	epoch?:  int & >=1
+	active?: #PostgresFleetBackendId
+	target?: #PostgresFleetBackendId
+	reason:  string & =~"^[a-z0-9][a-z0-9:._ -]{0,199}$"
+
+	// Only sealing names a target.
+	if step != "seal" {
+		target?: _|_
+	}
+}

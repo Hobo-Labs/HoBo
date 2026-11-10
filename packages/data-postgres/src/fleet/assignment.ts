@@ -329,14 +329,35 @@ export async function readAssignmentReplies(
 	);
 }
 
-/** Majority read of the current assignment. Reads only the newest entry. */
-export async function readCurrentAssignment(
+/**
+ * Majority read of the current assignment. Reads only the newest entry.
+ *
+ * It answers as soon as the replies in hand prove a current assignment, without
+ * waiting for a backend that is slow or gone: a newest entry held by a majority
+ * of the configured members is decided whatever the rest would say, and no
+ * decided epoch above it can exist without one of those members holding it.
+ */
+export function readCurrentAssignment(
 	register: AssignmentRegister,
 ): Promise<AssignmentResolution> {
-	return resolveAssignment(
-		register.replicas.map((replica) => replica.id),
-		await readAssignmentReplies(register, 1),
-	);
+	const members = register.replicas.map((replica) => replica.id);
+	const replies: AssignmentReply[] = [];
+	return new Promise((resolve) => {
+		let settled = false;
+		for (const replica of register.replicas)
+			void readAssignmentReplies({ replicas: [replica] }, 1).then(([reply]) => {
+				if (settled || reply === undefined) return;
+				replies.push(reply);
+				const resolution = resolveAssignment(members, replies);
+				if (
+					resolution.status === "current" ||
+					replies.length === members.length
+				) {
+					settled = true;
+					resolve(resolution);
+				}
+			});
+	});
 }
 
 async function offer(
