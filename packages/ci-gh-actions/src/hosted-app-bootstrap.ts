@@ -78,9 +78,13 @@ export class PostgresAppBootstrapStore {
 	private initialization: Promise<void> | undefined;
 	constructor(private readonly pool: Pool) {}
 	async initialize() {
-		this.initialization ??= this.initializeOnce().catch(() => {
+		this.initialization ??= this.initializeOnce().catch((error) => {
 			this.initialization = undefined;
-			throw new Error("bootstrap store initialization failed");
+			// The cause is for the relay's failure log; callers still see only
+			// the fixed message.
+			throw new Error("bootstrap store initialization failed", {
+				cause: error,
+			});
 		});
 		return this.initialization;
 	}

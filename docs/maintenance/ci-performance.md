@@ -81,6 +81,18 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   (an inert PR diff skips install in the off-path job). With `zod` it failed `ERR_MODULE_NOT_FOUND`
   there and turned a skipped job red (#1653's run 41583817166). `scripts/test/ci-trace.test.ts` pins
   the import rule; the hand-written parser emits byte-identical spans and summaries.
+- **Relay and worker traces.** The box worker exports its own OpenTelemetry spans when an OTLP
+  endpoint or `HOBO_CI_TRACE_FILE` is set: every GitHub call that changes something (runner created,
+  runner deleted, run force-cancelled or re-run) and every structured log event, with a job's pickup
+  split into queue, container start and runner registration. A run's trace id comes from its run id,
+  and `ci-trace.mts` now uses the same id, so the job's Turbo spans and the worker's spans for that
+  run form one trace. Runs were being cancelled with nothing recording by whom; a cancelled run whose
+  trace has no `force-cancel` span was not cancelled by the worker. Settings and the span list are in
+  [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
+- **Regenerated proxy bundle passes the generated-file guard.** `sandbox-proxy-bundle.ts` embeds relay
+  sources, so changing them regenerates it with no generator change to stage, which the guard used to
+  refuse. It now runs `generate-proxy-bundle.mts --check` for that file and allows the commit only when
+  the bundle on disk is exactly what the generator emits.
 - **Image builds read the checkout's pins.** `build.sh` runs inside a job container that carries the
   tool pins of whichever commit last built `hobo-ci-worker:local`. After a pull request pinned `syft`
   and rebuilt the shared image, `mise install --locked` failed on every branch without that pin
@@ -126,6 +138,84 @@ classifier itself reads stdin through counts as a classifier self-change. Edits 
 three callers also select `scripts/test/read-stdin.test.ts` + `job-scope.test.ts` in
 `scripts/relevant-check-policy.ts`, since the broad `test:scripts` lane is not part of the PR gate.
 
+## Planner
+
+`scripts/ci/dependent-tests.mts` plans a changed path outside every package (the root vitest config, a
+shared setup file, a doc) by asking each other package whether its vitest config or a test reaches it.
+It used to skip any package whose `test` script is not plain `vitest run` before asking, so a root
+`vitest.config.ts` change ran `packages/hobo` and missed `packages/cli`
+(`pnpm run build && vitest run`), whose config merges the root one; `test/setup/*` had the same gap.
+Such a package is now asked like any other and runs whole when it is reached, since its script cannot
+take a file list. The same question is now asked of every package that neither changed nor depends on
+one, not only when a path outside every package changed: a package can import another's source by
+relative path without depending on it, as `packages/stations/test/ci-routing.test.ts` imports
+`../../broker/src/budget-signals.js` without depending on `@hobo/broker`, and a change to the imported
+package used to skip that test. Only a concrete reach counts there.
+
+A bare `"./"` or `"../"` string literal is an edge to its directory only where it can be a path.
+`entry.startsWith("./")` in `packages/core/src/plugin-manifest.ts` read as reaching every file of
+`@hobo/core`, so any core change ran 53 whole suites and 53 subsets; a change to
+`packages/core/src/_generated/actor_host_port_pb.ts` now plans 13 whole suites and 14 subsets and
+skips 106 dependents (10 and 13 of them without the wider bystander check above). The edge is dropped
+only where the literal is provably a string test: the first argument of `startsWith`, `endsWith`,
+`includes`, `replace` or `replaceAll` (what is searched for), an operand of `===`, `!==`, `==` or
+`!=`, or a `case` label. Everywhere else it stays (`new URL("../", import.meta.url)` with or without a
+comment or a cast, `join(__dirname, "./")`, `resolve(import.meta.dirname, "../")`, `cwd: "../"`,
+`"../" + name`, and a replacement value such as `s.replace("@/", "../")`, which may be a path), and
+it is the directory itself, not the `index.ts` inside it. The rule reads text, not a syntax tree,
+since the planner runs on Node builtins before `pnpm install`; what it cannot tell keeps the edge. A trailing `// …` comment
+between a call and the literal is read past before the literal is judged, so it can neither hide a
+string test nor fake one; a `//` inside a string on that line is not a comment, and a literal that
+sits in a trailing comment is still an edge. A template literal with a substitution
+(`` `../${name}` ``) is no edge, as on main: the planner cannot tell what it names. An unknown or
+unmapped change still runs everything.
+
+A package's `package.json`, its `turbo.json`, its `tsconfig.json`, every tsconfig one of its scripts
+names by path (`tsc -p tsconfig.build.json`, `tsc -p config/tsconfig.types.json`), whatever those
+extend inside the package, and the `tsup.config.*` or `vite.config.*` beside the manifest when a script
+runs that tool are inputs to whatever imports the package: `exports`, `type`, the task definition and
+the compiler and bundler options decide what an importer gets. An `extends` that leaves the package
+(the root `tsconfig.base.json`) is a path outside every package and is planned as one. No other
+bundler config is followed (`esbuild.js`, a rollup config), nor a config a bundler config imports. A closure that enters a package reaches them, and
+entering means importing it or naming one of its files; a directory read does not
+(`join(here, "../../connectivity/contracts/pacts")` reads data the manifest does not shape, so only a
+change under that directory selects the reader). Before this, nothing led from an `@hobo/x` import to
+`packages/x/package.json`; the bare `./` edge hid that for core and cli, and without it a
+`packages/core/package.json` change planned 13 whole suites and 14 subsets. It now plans 70 and 56, a
+`packages/cli/package.json` change 6 and 3, and a `packages/policy/package.json` change 25 and 13
+(5 and 8 before, when its importers were never selected).
+
+The planner's own time matters: `scripts/test/read-stdin.test.ts` runs it behind a late writer under
+a 20 s guard, in the same step as the root type-check and the root tests. On an idle runner that step
+took 12 s in all; on a busy one the planner alone passed 20 s, was killed (`null !== 0`) and failed
+"PR impact validation" (run 42824059139). Eight busy loops on four cores reproduce it. The test sent
+`docs/a.md`, and a plan for a path outside every package walks every package's tests: about 3 s on
+main and 2 s on this branch when idle. Two changes answer it. The test now sends `pnpm-lock.yaml`,
+which plans the whole workspace without walking a test (0.2 s) and still proves the late path arrived,
+since the reason names it and an empty read says "empty diff". And the walk is about a third cheaper:
+a path's package is found by walking up its directories instead of scanning every workspace, a path
+many files name is resolved once, and the comment strip no longer backtracks over blank lines.
+`dependent-tests.test.ts` ("the walk's cost") counts workspace comparisons and file lookups on a
+40-package fixture, since a time budget would be the same flake again.
+
+`pnpm-lock.yaml` plans the whole workspace only when it is the whole diff. Beside changed package
+paths it widens nothing: the plan is the one those paths give, so `packages/core/package.json` with
+the lockfile plans what `packages/core/package.json` alone does. That rule is `affected-lanes.mts`'s
+(a lockfile-only diff runs everything; Turbo still hashes the lockfile into every task), and the
+planner takes it unchanged.
+
+`scripts/ci/plan-replay.mts` replays the planner over the last N main commits (`--count=100`), each
+with its parent as the base, and prints whole/subset counts. `--before=REF` compares against the
+planner at REF. `--check` reads a second import graph from the syntax tree
+(`scripts/lib/test-import-specifiers.mts`) and fails if a test whose imports or vitest config reach a
+changed file is not in the current planner's plan; the misses of the planner at `--before` are printed
+and do not fail the run. Run against the old planner, it reports the 41 `packages/cli` tests a root
+config change missed. The check graph covers import edges only, plus one manifest edge: an import of a
+workspace package by name reaches that package's `package.json` and `tsconfig.json`. Path literals,
+directories and data files a test reads, spawned programs and a tsconfig only a script names are edges
+of the planner that `--check` does not check; `scripts/test/dependent-tests.test.ts` pins those on a
+fixture and on the real tree, and `scripts/test/plan-replay.test.ts` pins the check graph.
+
 ## Frozen proofs and live-repo tests
 
 `scripts/run-tests.ts` skips a frozen proof test that scans the live repo when its promoted package keeps
@@ -151,6 +241,28 @@ registry with `mise oci push --image-dir` and has the daemon `docker pull` it (t
 store cannot `docker load` an OCI layout), and retags
 `hobo-ci-worker:local` only after the live preflight contract passes. Its change detection greps a
 depth-2 diff of `HEAD~1`; before, it used `rg`, which the worker does not ship, so it never fired.
+
+## Which runner a run uses
+
+Every routed workflow starts with a **Route runners** job on a GitHub-hosted
+machine. The run's jobs ask for the label it chose: the fleet (`hobo`, or
+`hobo-trunk` for trunk events) while it is taking jobs, an enrolled local box
+(`hobo-local-host`) when it is not, and `ubuntu-24.04` when neither is. A
+backend is taking jobs when no job asking for its label has waited 120
+seconds, none it took in the last 15 minutes had, and fewer than 4 are waiting. The two required
+gates are always GitHub-hosted. A run that says `runner: ubuntu-24.04 (github)`
+in its Route runners log was sent there because the fleet's queue was past a
+limit, and the same line gives what it saw.
+
+On a GitHub-hosted machine a job runs the same steps with no deps layer and a
+cold pnpm store unless main has saved one, so installs are slower and the
+tests are not. Jobs that run package tests download the image's pinned headless
+shell first, and one storage test that needs the image's user is skipped
+there. With a Docker engine present, the Postgres container tests run rather
+than skip. The cold dev loop is the one job that differs: with no worker
+image, it runs in a network namespace whose only interface is loopback.
+Repository variable `HOBO_CI_ROUTE=fleet` turns routing off. The runbook is
+"Runner routing" in [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
 
 ## Reading a main failure
 
