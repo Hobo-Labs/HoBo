@@ -168,26 +168,41 @@ type Posted = Readonly<{
 	opensSession: boolean;
 }>;
 
-/** The body as JSON, or undefined when this one parse does not accept it. */
-function parsePosted(body: Uint8Array): Posted | undefined {
-	let parsed: unknown;
+/**
+ * The body as JSON, or undefined when this one parse does not accept it. A
+ * batch over `maxMessages` is counted and not looked into: it is about to be
+ * refused, and walking a megabyte of it first is work an unwelcome caller
+ * should not be able to ask for.
+ */
+function parsePosted(
+	body: Uint8Array,
+	maxMessages: number,
+): Posted | undefined {
 	try {
 		// Strict UTF-8, and a byte-order mark is not skipped: a body another
 		// parser would accept after stripping one is refused here.
-		parsed = JSON.parse(
+		const parsed: unknown = JSON.parse(
 			new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(body),
 		);
+		const batch = Batch.safeParse(parsed);
+		if (batch.success && batch.data.length > maxMessages)
+			return {
+				message: null,
+				messages: batch.data.length,
+				opensSession: false,
+			};
+		// Inside the `try`: nesting deep enough to exhaust the stack in this
+		// walk is a body this parse does not accept, not a relay failure.
+		const message = Json.safeParse(parsed);
+		if (!message.success) return undefined;
+		return {
+			message: message.data,
+			messages: batch.success ? batch.data.length : 1,
+			opensSession: Initialize.safeParse(message.data).success,
+		};
 	} catch {
 		return undefined;
 	}
-	const message = Json.safeParse(parsed);
-	if (!message.success) return undefined;
-	const batch = Batch.safeParse(message.data);
-	return {
-		message: message.data,
-		messages: batch.success ? batch.data.length : 1,
-		opensSession: Initialize.safeParse(message.data).success,
-	};
 }
 
 function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -760,7 +775,7 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 			if (request.method === "POST") {
 				const body = await boundedBody(request).catch(() => undefined);
 				if (!body) return refuse(413, "request body too large");
-				posted = parsePosted(body);
+				posted = parsePosted(body, maxRequestMessages);
 				if (!posted) return refuse(400, "request body is not JSON");
 				// One request is a bounded amount of work, whatever its methods:
 				// the transport runs every message of a batch at once.

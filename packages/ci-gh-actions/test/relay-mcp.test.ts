@@ -1497,6 +1497,25 @@ describe("relay MCP bounds on one caller's work", () => {
 			}),
 		);
 		expect(mangled.status).toBe(400);
+		// Nesting deep enough to exhaust the stack in a walk of the value is a
+		// body this parse does not accept, not a failure of the relay.
+		const nested = await h.handle(
+			post(`${"[".repeat(5000)}${"]".repeat(5000)}`, { authorization }),
+		);
+		expect(nested.status).toBe(400);
+		expect(await nested.json()).toEqual({ error: "request body is not JSON" });
+		// A batch far over the cap is refused on its length; its messages,
+		// here themselves too deep to walk, are not looked into first.
+		const deep = `${"[".repeat(5000)}${"]".repeat(5000)}`;
+		const flooded = await h.handle(
+			post(`[${Array.from({ length: 9 }, () => deep).join(",")}]`, {
+				authorization,
+			}),
+		);
+		expect(flooded.status).toBe(400);
+		expect(await flooded.json()).toEqual({
+			error: "too many JSON-RPC messages in one request; at most 8",
+		});
 
 		// Four reads in one request, each held at the store.
 		const batch = rpc(
