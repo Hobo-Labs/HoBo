@@ -9,8 +9,10 @@ import {
 	createHostedControlPlane,
 	createHostedRelayRuntime,
 	createQueuedJobRepair,
+	createRelayHandler,
 	createWebhookRepair,
 	HostedRelay,
+	type HostedRelayApplication,
 	PostgresQueuedJobRepairClaims,
 	PostgresWebhookRepairClaims,
 } from "@hobo/ci-gh-actions";
@@ -27,10 +29,6 @@ import {
 	denyDirectSandboxEgress,
 	isolatedExecutionWiring,
 } from "./execution-wiring.js";
-import {
-	createVercelRelayHandler,
-	type HostedRelayApplication,
-} from "./handler.js";
 import { createOwnerControlDelegation } from "./owner-control.js";
 import { createQueueWakeupHandler } from "./queue-forwarding.js";
 import { runtimeDiagnostic } from "./runtime-diagnostic.js";
@@ -197,9 +195,9 @@ export async function createVercelApplication(options: {
 		const sandboxQuota = sandbox
 			? createSandboxProxyQuotaHandler(store)
 			: undefined;
-		const control = async (request: Request) => {
-			const registration = await onboarding?.handle(request);
-			if (registration) return registration;
+		// The control plane and the queued-job repair read the same relay; only the
+		// runtime's own relay differs, because it defers reservation to its tick.
+		const relay = async () => {
 			const state = await store.configuration();
 			if (!state?.configuration) throw new Error("configuration unavailable");
 			const relayOptions: ConstructorParameters<typeof HostedRelay>[0] = {
@@ -210,9 +208,13 @@ export async function createVercelApplication(options: {
 				webhookSecret: secret,
 				...execution.relay,
 			};
-			const relay = new HostedRelay(relayOptions);
+			return new HostedRelay(relayOptions);
+		};
+		const control = async (request: Request) => {
+			const registration = await onboarding?.handle(request);
+			if (registration) return registration;
 			return createHostedControlPlane({
-				relay,
+				relay: await relay(),
 				store,
 				github,
 				authenticate,
@@ -280,22 +282,7 @@ export async function createVercelApplication(options: {
 								github,
 								claims: queuedClaims,
 								idleComplete: () => health.repairComplete(1),
-								relay: async () => {
-									const state = await store.configuration();
-									if (!state?.configuration)
-										throw new Error("configuration unavailable");
-									const relayOptions: ConstructorParameters<
-										typeof HostedRelay
-									>[0] = {
-										config: state.configuration,
-										store,
-										github,
-										identity,
-										webhookSecret: secret,
-										...execution.relay,
-									};
-									return new HostedRelay(relayOptions);
-								},
+								relay,
 							}),
 						],
 						{
@@ -320,7 +307,7 @@ export async function createVercelApplication(options: {
 			secret: required(env, "CRON_SECRET"),
 			run: (message) => worker.run(message),
 		});
-		const handler = createVercelRelayHandler({
+		const handler = createRelayHandler({
 			application: withWakeup(
 				{
 					...runtime,

@@ -40,8 +40,11 @@ files are absent.
 ## Reverse proxy and ingress forwarding
 
 **Direct GitHub delivery:** point the App webhook URL at
-`https://ci.example.com/engines/gh-actions/github/webhooks` (legacy
-`/github/webhooks` still works when `HOBO_CI_LEGACY_ROOT_PATHS` is unset).
+`https://ci.example.com/engines/gh-actions/github/webhooks`. The root
+`/github/webhooks` serves the same route; `HOBO_CI_LEGACY_ROOT_PATHS` never
+turned it off and is no longer read. A delivery is committed to the relay's
+inbox before it is acknowledged with `{"status":"accepted"}`, and the worker
+tick reserves and dispatches it; GitHub's `X-GitHub-Delivery` header is required.
 
 **Central ingress:** run the stateless
 [`createWebhookIngressHandler`](src/webhook-ingress.ts) in front of multiple
@@ -66,7 +69,9 @@ SIGINT/SIGTERM start a drain: readiness fails, in-flight HTTP completes within
 the configured timeout, SQLite closes, partition lock releases.
 
 Structured JSON lines are written on serve start (`serve.starting`, `serve.ready`)
-and from the relay service (`service.started`, `service.draining`, …).
+and from the relay service (`service.started`, `service.draining`, …). A request
+the relay refuses with a fixed 503 body also writes one `hobo_ci_*` JSON line to
+stderr; see the [failure log](../ci-vercel/README.md#failure-log).
 
 ## Container image
 
