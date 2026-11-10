@@ -14,7 +14,8 @@
  * naming an existing repository path relative to the file, its package or the
  * repository root (`new URL("../dist/bin/hobo.js", import.meta.url)`,
  * `join(here, "../../connectivity/contracts/pacts")`). A bare `"./"` or
- * `"../"` is no edge unless it is a module-relative URL's base. A `dist/`
+ * `"../"` is that directory, unless it only tests a string (an argument of
+ * `startsWith` and its kin, an operand of `===`, a `case` label). A `dist/`
  * path stands for the `src/` file built into it. A literal naming another package's file
  * (`hobo ci serve --with-worker` spawning the worker daemon) is that one file,
  * not its imports: it runs as its own process and its package's suite covers
@@ -171,17 +172,34 @@ const PATH_LITERAL = /["'`]((?:\.\.?\/|packages\/|examples\/)[^"'`\n$]*)["'`]/g;
 const BARE_DIR = /^\.\.?\/$/;
 const TSCONFIG = /\btsconfig(?:\.[\w-]+)?\.json\b/g;
 
-/** Whether the literal `match` is the base of `new URL(literal, import.meta.url)`. */
-function isUrlBase(
+const STRING_TEST_ARGUMENT =
+	/\.(?:startsWith|endsWith|includes|replace|replaceAll)\(\s*(?:[^(),]*,\s*)?$/;
+const COMPARED_TO = /[!=]==?\s*$/;
+const COMPARED_WITH = /^\s*[!=]==?/;
+const CASE_LABEL = /\bcase\s+$/;
+
+/**
+ * Whether the literal `match` only tests a string: a direct argument of
+ * `startsWith`, `endsWith`, `includes`, `replace` or `replaceAll`, an operand
+ * of an equality, or a `case` label. Anything this cannot tell (a call or a
+ * comma inside the earlier argument, an array, a property, a concatenation)
+ * is not one, and the literal stays a path.
+ */
+function isStringTest(
 	text: string,
 	match: RegExpExecArray | RegExpMatchArray,
 ): boolean {
 	const start = match.index ?? 0;
+	const before = text.slice(Math.max(0, start - 200), start);
+	const after = text.slice(
+		start + match[0].length,
+		start + match[0].length + 8,
+	);
 	return (
-		/\bnew\s+URL\(\s*$/.test(text.slice(Math.max(0, start - 40), start)) &&
-		/^\s*,\s*import\.meta\.url\b/.test(
-			text.slice(start + match[0].length, start + match[0].length + 40),
-		)
+		STRING_TEST_ARGUMENT.test(before) ||
+		COMPARED_TO.test(before) ||
+		COMPARED_WITH.test(after) ||
+		(CASE_LABEL.test(before) && /^\s*:/.test(after))
 	);
 }
 
@@ -456,11 +474,12 @@ export function createWalker(repo: Repo) {
 		const text = withoutComments(source);
 		for (const match of text.matchAll(PATH_LITERAL)) {
 			const literal = match[1] ?? "";
-			// A bare `./` or `../` names no file. `entry.startsWith("./")` tests a
-			// specifier and read as reaching every file of @hobo/core. Only the
-			// base of a module-relative URL (`new URL("../", import.meta.url)`,
-			// a package root a module reads computed paths under) stays an edge.
-			if (BARE_DIR.test(literal) && !isUrlBase(text, match)) continue;
+			// A bare `./` or `../` names the directory a module reads computed
+			// paths under (`new URL("../", import.meta.url)`, `cwd: "../"`),
+			// unless it only tests a string: `entry.startsWith("./")` read as
+			// reaching every file of @hobo/core.
+			const bare = BARE_DIR.test(literal);
+			if (bare && isStringTest(text, match)) continue;
 			// `startsWith("packages/connectors/")` tests a path; it reads nothing.
 			const prefix = literal.endsWith("/");
 			const bases = /^(?:packages|examples)\//.test(literal)
@@ -471,7 +490,9 @@ export function createWalker(repo: Repo) {
 					.normalize(posix.join(base, literal))
 					.replace(/\/$/, "");
 				if (path === ".." || path.startsWith("../")) continue;
-				const target = sourceFile(path);
+				// A bare directory is read, not imported: its `index.ts` is one
+				// file of it.
+				const target = bare ? undefined : sourceFile(path);
 				if (target && (loadsWhatItNames || ownerOf(target) === owner))
 					files.add(target);
 				else if (target) named.add(target);

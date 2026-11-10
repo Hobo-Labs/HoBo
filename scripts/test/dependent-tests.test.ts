@@ -385,6 +385,96 @@ describe("a bare ./ or ../ literal", () => {
 			["test/computed.test.ts", "test/root-url.test.ts", "test/root.test.ts"],
 		);
 	});
+
+	/**
+	 * Whether a test importing a lib module made of `source` runs when a lib
+	 * file changes that nothing imports: `src/feat/a.ts` sits under both `./`
+	 * and `../` of the module, and `src/index.ts` does not import it.
+	 */
+	const reads = (source: string) => {
+		const tree = extend(repo, {
+			"packages/lib/src/feat/form.ts": `${source}\n`,
+			"packages/app/test/form.test.ts": 'import "@t/lib/feat/form";\n',
+		});
+		return (
+			scoped(planDependentTests(["packages/lib/src/feat/a.ts"], tree)).subsets[
+				"packages/app"
+			]?.includes("test/form.test.ts") ?? false
+		);
+	};
+
+	for (const source of [
+		'const root = new URL("../", import.meta.url);',
+		'const root = new URL(/* package root */ "../", import.meta.url);',
+		'const root = new URL("../" as string, import.meta.url);',
+		'const root = new URL("../", pathToFileURL(__filename));',
+		'const root = join(dirname(fileURLToPath(import.meta.url)), "../");',
+		'const root = resolve(import.meta.dirname, "../");',
+		'const here = join(__dirname, "./");',
+		'const names = readdirSync("../");',
+		'spawnSync("node", ["x"], { cwd: join(here, "../") });',
+		'spawnSync("node", ["x"], { cwd: "../" });',
+		'const path = (n: string) => "../" + n;',
+		"const root = path.resolve(here, `../`);",
+		// A path call inside a string test still reads the directory.
+		'const inside = (p: string) => p.startsWith(resolve(here, "../"));',
+		'const listed = (n: string) => readdirSync("./").includes(n);',
+		'const roots = ["./", "../"].map((dir) => readdirSync(join(here, dir)));',
+	])
+		it(`is a directory edge in \`${source}\``, () => {
+			assert.equal(reads(source), true);
+		});
+
+	it("is no edge only as a string test's argument, a comparison's operand or a case label", () => {
+		for (const source of [
+			'const t = (s: string) => s.startsWith("./");',
+			'const t = (s: string) => s.startsWith("../");',
+			'const t = (s: string) => s?.endsWith("../");',
+			'const t = (s: string) => s.includes("../");',
+			'const t = (s: string) => s.replace("./", "");',
+			'const t = (s: string) => s.replace(/^src/u, "./");',
+			'const t = (s: string) => s.replaceAll("../", "");',
+			'const t = (s: string) => s.replaceAll(sep, "../");',
+			'const t = (s: string) => s === "./";',
+			'const t = (s: string) => s !== "../";',
+			'const t = (s: string) => s == "./";',
+			'const t = (s: string) => s != "../";',
+			'const t = (s: string) => "./" === s;',
+			'const t = (s: string) => "../" !== s;',
+			'switch (s) {\n\tcase "./":\n\tcase "../":\n\t\tbreak;\n}',
+		])
+			assert.equal(reads(source), false, source);
+		// The same literal one token away from a string test is kept.
+		for (const source of [
+			'const t = (s: string) => s.startsWith(join(here, "../"));',
+			'const t = (s: string) => s.replace(readFileSync(a, "utf8"), "../");',
+			'const t = (s: string) => (s === "x" ? readdirSync("../") : []);',
+			'const t = { case: "../" };',
+			'const t = s >= "../";',
+		])
+			assert.equal(reads(source), true, source);
+	});
+
+	it("stays a directory edge where the directory holds an index file", () => {
+		// `packages/lib/src/index.ts` exists and does not import `feat/a.ts`:
+		// an edge to it would lose every other file under `src/`.
+		const tree = extend(repo, {
+			"packages/lib/src/feat/root.ts":
+				'export const root = new URL("../", import.meta.url);\n',
+			"packages/app/test/root-url.test.ts": 'import "@t/lib/feat/root";\n',
+		});
+		assert.deepEqual(
+			scoped(planDependentTests(["packages/lib/fixtures/x.json"], tree))
+				.subsets["packages/app"],
+			["test/computed.test.ts", "test/data.test.ts"],
+		);
+		assert.deepEqual(
+			scoped(planDependentTests(["packages/lib/src/feat/a.ts"], tree)).subsets[
+				"packages/app"
+			],
+			["test/computed.test.ts", "test/feat.test.ts", "test/root-url.test.ts"],
+		);
+	});
 });
 
 describe("a package's manifest and build config", () => {
