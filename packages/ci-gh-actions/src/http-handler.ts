@@ -1,6 +1,7 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { failureRoute, reportRelayFailure } from "./failure-log.js";
+import { verifyIngressForward } from "./ingress-forward.js";
+import { verifyWebhookSignature } from "./webhook-signature.js";
 
 /** An authenticated transport envelope; the application owns durable admission. */
 export type VerifiedWebhook = Readonly<{
@@ -20,11 +21,40 @@ export type HostedRelayApplication = Readonly<{
 	ready(): Promise<boolean>;
 }>;
 
+/** An engine a host reports in health but this relay does not serve. */
+export type StubEngine = Readonly<{ ready: () => boolean }>;
+
 const MAX_BODY = 1024 * 1024;
 const LEASE =
 	/^\/v1\/leases\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\/jit$/;
 
-type HttpBody = Record<string, string | boolean>;
+type HttpBody = { readonly [key: string]: string | boolean | HttpBody };
+
+/** The same request addressed to `path`, for a handler that routes on the URL. */
+function remount(request: Request, url: URL, path: string): Request {
+	const target = new URL(url);
+	target.pathname = path;
+	if (!request.body)
+		return new Request(target, {
+			method: request.method,
+			headers: request.headers,
+		});
+	// A streamed body needs `duplex`, which the DOM `RequestInit` does not declare.
+	const init = {
+		method: request.method,
+		headers: request.headers,
+		body: request.body,
+		duplex: "half",
+	} satisfies RequestInit & { duplex: "half" };
+	return new Request(target, init);
+}
+
+/** The path under `/engines/{id}`, when the request is addressed to that engine. */
+function engineSubPath(path: string, id: string): string | undefined {
+	const prefix = `/engines/${id}`;
+	if (path === prefix) return "/";
+	return path.startsWith(`${prefix}/`) ? path.slice(prefix.length) : undefined;
+}
 
 function json(status: number, message: HttpBody): Response {
 	return Response.json(message, {
@@ -77,44 +107,106 @@ async function bytes(request: Request): Promise<Uint8Array | undefined> {
 	return result;
 }
 
-/** Vercel request adapter; no local state or background work survives the request. */
-export function createVercelRelayHandler(options: {
+/**
+ * The relay's HTTP surface as one Fetch handler, shared by every host: the
+ * Node server behind `hobo ci serve` and the container image, and the Vercel
+ * function. No local state or background work survives the request.
+ */
+export function createRelayHandler(options: {
 	application: HostedRelayApplication;
 	webhookSecret: string;
+	/** Accept `X-Hobo-Ingress-Forward` from a webhook ingress in place of GitHub's signature. */
+	ingressForwardSecret?: string | undefined;
+	/** This relay's engine: `/engines/{id}/…` serves the same routes as the root. */
+	engineId?: string;
+	/** Other engines the host reports at `/engines/{id}/healthz` and `/readyz`. */
+	stubEngines?: Readonly<Record<string, StubEngine>>;
+	/** Refuse a request a TLS-terminating proxy says it received over plain HTTP. */
+	trustProxy?: boolean;
 	now?: () => string;
 }): (request: Request) => Promise<Response> {
 	if (Buffer.byteLength(options.webhookSecret, "utf8") < 32)
 		throw new Error("webhook secret must have at least 32 bytes");
+	const forwardSecret = options.ingressForwardSecret;
+	if (forwardSecret !== undefined && Buffer.byteLength(forwardSecret) < 32)
+		throw new Error("ingress forward secret must have at least 32 bytes");
 	const now = options.now ?? (() => new Date().toISOString());
+	const engineId = options.engineId ?? "gh-actions";
+	const stubEngines = Object.entries(options.stubEngines ?? {});
 	return async (request) => {
 		const url = new URL(request.url);
-		const path = url.pathname;
-		if (request.method === "GET" && path === "/healthz")
-			return json(200, { ok: true });
+		if (options.trustProxy) {
+			const proto = request.headers
+				.get("x-forwarded-proto")
+				?.split(",")[0]
+				?.trim()
+				.toLowerCase();
+			if (proto && proto !== "https")
+				return json(403, { error: "insecure proxy forward" });
+		}
+		for (const [id, stub] of stubEngines) {
+			const subPath = engineSubPath(url.pathname, id);
+			if (subPath === undefined) continue;
+			if (request.method === "GET" && subPath === "/healthz")
+				return json(200, { ok: true, engine: id });
+			if (request.method === "GET" && subPath === "/readyz") {
+				const ready = stub.ready();
+				return json(ready ? 200 : 503, { ready, engine: id });
+			}
+			return json(404, { error: "not found" });
+		}
+		const mounted = engineSubPath(url.pathname, engineId);
+		const path = mounted ?? url.pathname;
+		if (request.method === "GET" && path === "/healthz") {
+			const engines = new Map<string, HttpBody>([[engineId, { ok: true }]]);
+			for (const [id] of stubEngines) engines.set(id, { ok: true });
+			return json(200, { ok: true, engines: Object.fromEntries(engines) });
+		}
 		if (request.method === "GET" && path === "/readyz") {
+			let ready = false;
 			try {
-				const ready = await options.application.ready();
-				return json(ready ? 200 : 503, { ready });
+				ready = await options.application.ready();
 			} catch (error) {
 				reportRelayFailure(
 					"hobo_ci_ready_check_failed",
 					{},
 					error instanceof Error ? error : undefined,
 				);
-				return json(503, { ready: false });
 			}
+			const engines = new Map<string, HttpBody>([[engineId, { ready }]]);
+			for (const [id, stub] of stubEngines) {
+				const stubReady = stub.ready();
+				engines.set(id, { ready: stubReady });
+				ready &&= stubReady;
+			}
+			return json(ready ? 200 : 503, {
+				ready,
+				engines: Object.fromEntries(engines),
+			});
 		}
 		if (request.method === "POST" && path === "/github/webhooks") {
 			const raw = await bytes(request).catch(() => undefined);
 			if (!raw) return json(413, { error: "webhook body too large" });
-			const signature = request.headers.get("x-hub-signature-256") ?? "";
-			if (!/^sha256=[a-f0-9]{64}$/.test(signature))
-				return json(401, { error: "signature required" });
-			const expected = createHmac("sha256", options.webhookSecret)
-				.update(raw)
-				.digest();
-			if (!timingSafeEqual(expected, Buffer.from(signature.slice(7), "hex")))
-				return json(401, { error: "webhook rejected" });
+			// A webhook ingress has already checked GitHub's signature over these
+			// bytes; its own HMAC over the same bytes stands in for it.
+			const forwarded =
+				forwardSecret !== undefined &&
+				verifyIngressForward(
+					forwardSecret,
+					raw,
+					request.headers.get("x-hobo-ingress-forward") ?? undefined,
+				);
+			if (!forwarded) {
+				const verdict = verifyWebhookSignature(
+					options.webhookSecret,
+					raw,
+					request.headers.get("x-hub-signature-256") ?? undefined,
+				);
+				if (verdict === "malformed")
+					return json(401, { error: "signature required" });
+				if (verdict === "mismatch")
+					return json(401, { error: "webhook rejected" });
+			}
 			const event = request.headers.get("x-github-event");
 			if (event !== "workflow_job" && event !== "workflow_run")
 				return json(202, { status: "ignored" });
@@ -176,7 +268,9 @@ export function createVercelRelayHandler(options: {
 			!/%2f|%5c/i.test(path)
 		) {
 			try {
-				const response = await options.application.control(request);
+				const response = await options.application.control(
+					mounted === undefined ? request : remount(request, url, path),
+				);
 				return response ? noStore(response) : json(404, { error: "not found" });
 			} catch (error) {
 				reportRelayFailure(

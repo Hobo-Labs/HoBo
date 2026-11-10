@@ -301,7 +301,7 @@ kubectl get pods -l app=hobo-ci
 The Service is `ClusterIP` on port 8787. Configure your cluster's existing TLS
 Ingress or Gateway to route the public origin to that Service, using its managed
 certificate. There is no NodePort or plaintext public LoadBalancer in this
-manifest. `/healthz` checks process liveness; `/readyz` includes recovery/readiness
+manifest. `/healthz` checks process liveness; `/readyz` reports partition readiness
 and becomes unavailable while draining. Recreate updates deliberately incur a
 brief availability gap. Kubernetes secrets, ingress/certificate provisioning,
 registry access and storage lifecycle remain operator-managed infrastructure.
@@ -423,6 +423,6 @@ re-admitting side effects.
 `docker compose stop` and Kubernetes termination send SIGTERM. The relay first
 withdraws readiness, drains in-flight requests/work, closes SQLite and releases
 its process lock. Both manifests allow 90 seconds before forced termination.
-After a forced kill, restart recovery preserves uncertain launches rather than
-blindly retrying them. A healthy readiness response is service evidence; it does
+After a forced kill, the worker tick marks a launch that was in flight uncertain
+once it is two minutes old rather than blindly retrying it. A healthy readiness response is service evidence; it does
 not certify vendor runner availability or final invoices.

@@ -1,0 +1,132 @@
+{
+	"contract": "hobo.ci.schema-snapshot/v1",
+	"schemaIr": {
+		"contract": "hobo.schema-ir/v1",
+		"dialect": "postgres",
+		"tables": [
+			{
+				"name": "hobo_ci_database_probes",
+				"columns": [
+					{
+						"name": "created_at",
+						"type": "timestamp with time zone",
+						"nullable": false,
+						"primaryKey": false,
+						"unique": false
+					},
+					{
+						"name": "id",
+						"type": "uuid",
+						"nullable": false,
+						"primaryKey": true,
+						"unique": false
+					}
+				],
+				"indexes": []
+			},
+			{
+				"name": "hobo_ci_worker_health",
+				"columns": [
+					{
+						"name": "component",
+						"type": "text",
+						"nullable": false,
+						"primaryKey": true,
+						"unique": false
+					},
+					{
+						"name": "failure_at",
+						"type": "timestamp with time zone",
+						"nullable": true,
+						"primaryKey": false,
+						"unique": false
+					},
+					{
+						"name": "success_at",
+						"type": "timestamp with time zone",
+						"nullable": true,
+						"primaryKey": false,
+						"unique": false
+					}
+				],
+				"indexes": []
+			}
+		]
+	},
+	"drizzleKit": {
+		"version": "7",
+		"dialect": "postgresql",
+		"tables": {
+			"public.hobo_ci_database_probes": {
+				"name": "hobo_ci_database_probes",
+				"schema": "",
+				"columns": {
+					"id": {
+						"name": "id",
+						"type": "uuid",
+						"primaryKey": true,
+						"notNull": true
+					},
+					"created_at": {
+						"name": "created_at",
+						"type": "timestamp with time zone",
+						"primaryKey": false,
+						"notNull": true,
+						"default": "now()"
+					}
+				},
+				"indexes": {},
+				"foreignKeys": {},
+				"compositePrimaryKeys": {},
+				"uniqueConstraints": {},
+				"policies": {},
+				"checkConstraints": {},
+				"isRLSEnabled": false
+			},
+			"public.hobo_ci_worker_health": {
+				"name": "hobo_ci_worker_health",
+				"schema": "",
+				"columns": {
+					"component": {
+						"name": "component",
+						"type": "text",
+						"primaryKey": true,
+						"notNull": true
+					},
+					"success_at": {
+						"name": "success_at",
+						"type": "timestamp with time zone",
+						"primaryKey": false,
+						"notNull": false
+					},
+					"failure_at": {
+						"name": "failure_at",
+						"type": "timestamp with time zone",
+						"primaryKey": false,
+						"notNull": false
+					}
+				},
+				"indexes": {},
+				"foreignKeys": {},
+				"compositePrimaryKeys": {},
+				"uniqueConstraints": {},
+				"policies": {},
+				"checkConstraints": {},
+				"isRLSEnabled": false
+			}
+		},
+		"enums": {},
+		"schemas": {},
+		"sequences": {},
+		"roles": {},
+		"policies": {},
+		"views": {},
+		"_meta": {
+			"schemas": {},
+			"tables": {},
+			"columns": {}
+		},
+		"id": "00000000-0000-0000-0000-000000000000",
+		"prevId": "00000000-0000-0000-0000-000000000000"
+	}
+}

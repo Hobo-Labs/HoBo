@@ -3,7 +3,7 @@
     "name": "GitHubActionsAndHoboCiClient"
   },
   "provider": {
-    "name": "HoboCiVercelHttp"
+    "name": "HoboCiRelayHttp"
   },
   "metadata": {
     "pactSpecification": {
@@ -77,7 +77,12 @@
       "response": {
         "status": 200,
         "body": {
-          "ready": true
+          "ready": true,
+          "engines": {
+            "gh-actions": {
+              "ready": true
+            }
+          }
         }
       }
     },
