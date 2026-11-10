@@ -114,5 +114,5 @@ export function createRelayHost(options: {
 		},
 		logger: log,
 	});
-	return { service, runtime, relay };
+	return { service, runtime };
 }

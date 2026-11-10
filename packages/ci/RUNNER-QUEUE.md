@@ -21,7 +21,7 @@ Work through these on **Hobo-Labs/HoBo** after an org/repo transfer:
 
 - HoBo CI GitHub App must be **installed on the Hobo-Labs org** (or updated) with access to **Hobo-Labs/HoBo**.
 - App webhooks must target the **ingress front door** HTTPS origin (`workflow_job`, `workflow_run`), not a relay URL baked into the App settings. The front door reads **`.hobo/ci.json` at the event’s config ref** and forwards signed webhooks to the selected environment’s `relayOrigin`.
-- For **local dev and agents behind NAT**, set `jobAdmission: "pull"` on the `local` environment (or rely on default pull inference for loopback relays). Run `hobo ci enable` against `.hobo/ci.json`, then **`hobo ci serve --environment local --installation-id <id>`** (or `createJobPollAdmissionWorker` in custom hosts) — no public URL on your laptop.
+- For **local dev and agents behind NAT**, set `jobAdmission: "pull"` on the `local` environment (or rely on default pull inference for loopback relays). Run `hobo ci enable` against `.hobo/ci.json`, then **`hobo ci serve --environment local --installation-id <id>`** (or `createGithubJobPoller` in custom hosts) — no public URL on your laptop. `hobo ci serve` runs the same poller as the box worker below, every 15 seconds, for the repository it was started for once the relay holds a connection for it; a polled job goes into the relay's inbox and the relay's own tick admits it, so `hobo-trunk` jobs are admitted the same way as `hobo` ones.
 - **Fork pull requests** never choose a contributor-controlled relay: routing uses the **base-branch** config ref and `selection.forkPullRequestEnvironment` when set.
 - Webhook deliveries should be **200/202** in the GitHub App settings; repeated **401/503** means wrong secret or ingress/relay down.
 

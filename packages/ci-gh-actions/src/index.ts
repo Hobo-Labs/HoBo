@@ -174,7 +174,6 @@ export {
 	type JobDurations,
 	type JobObservation,
 } from "./job-durations.js";
-export { createJobPollAdmissionWorker } from "./job-poll-admission.js";
 export { startRelayFromEnvironment } from "./main.js";
 export { createNodeRelayHandler } from "./node-http.js";
 export {

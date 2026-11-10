@@ -89,7 +89,7 @@ export async function startRelayFromEnvironment(
 				0,
 				new Date().toISOString(),
 			);
-		const { service, runtime, relay } = createRelayHost({
+		const { service, runtime } = createRelayHost({
 			store,
 			github:
 				ports.github ??
@@ -121,7 +121,6 @@ export async function startRelayFromEnvironment(
 		return {
 			service,
 			runtime,
-			relay,
 			store,
 			stop() {
 				stopping ??= (async () => {

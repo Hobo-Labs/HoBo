@@ -11,7 +11,11 @@ import {
 	type CiJobAdmission,
 	type CiWorkerStore,
 	createGithubAppTransport,
-	createJobPollAdmissionWorker,
+	createGithubJobPoller,
+	createPollIngestCoalesce,
+	createPollLogFilter,
+	describeWaitingJobs,
+	type GithubTransport,
 	inferJobAdmission,
 	inventoryCiEnginesFromRepository,
 	loadCiProjectFromDirectory,
@@ -127,6 +131,83 @@ export function ciWorkerEnvironment(input: {
 		delete env.HOBO_CI_STORE_URL_ENV;
 	}
 	return env;
+}
+
+type RunningRelay = Awaited<ReturnType<typeof startRelayFromEnvironment>>;
+
+/**
+ * Pull admission for a relay with no public webhook URL: the same GitHub job
+ * poller the box worker runs, feeding the relay's inbox. Only the repository
+ * this serve was started for is read, and only once the relay holds a
+ * connection for it; the relay's own tick then admits what was accepted.
+ */
+export function startPullAdmission(input: {
+	github: GithubTransport;
+	relay: {
+		runtime: Pick<RunningRelay["runtime"], "admissionOrder" | "ingestWebhook">;
+		store: Pick<RunningRelay["store"], "configuration">;
+	};
+	repository: string;
+	installationId: number;
+	intervalMs?: number;
+	emitProgress?: ((message: string) => void) | undefined;
+}) {
+	const { runtime, store } = input.relay;
+	const repository = input.repository.toLowerCase();
+	const poller = createGithubJobPoller({
+		github: input.github,
+		admissionOrder: runtime.admissionOrder,
+		ingestCoalesce: createPollIngestCoalesce(),
+		connections: async () =>
+			((await store.configuration())?.configuration?.connections ?? []).filter(
+				(connection) =>
+					connection.installationId === input.installationId &&
+					connection.repository.toLowerCase() === repository,
+			),
+		ingest: (delivery) => runtime.ingestWebhook(delivery),
+		onIngestError: (jobId, message) =>
+			input.emitProgress?.(`poll-admission job ${jobId} refused: ${message}`),
+		onGithubError: (failure) =>
+			input.emitProgress?.(
+				`poll-admission GitHub read failed (${failure.status}): ${failure.path}`,
+			),
+	});
+	const worthLogging = createPollLogFilter();
+	let inFlight: Promise<void> | undefined;
+	function poll(): Promise<void> {
+		inFlight ??= poller
+			.poll()
+			.then((summary) => {
+				if (!worthLogging(summary, Date.now())) return;
+				const waiting = describeWaitingJobs(summary.waiting);
+				input.emitProgress?.(
+					[
+						`poll-admission: ${summary.accepted} accepted`,
+						`${summary.failed} refused`,
+						`${summary.githubErrors} GitHub read errors`,
+						waiting ? `waiting ${waiting}` : "",
+						summary.pausedUntil ? `paused until ${summary.pausedUntil}` : "",
+					]
+						.filter(Boolean)
+						.join(", "),
+				);
+			})
+			.catch(() => {
+				// The next poll retries; a failed poll admits nothing.
+			})
+			.finally(() => {
+				inFlight = undefined;
+			});
+		return inFlight;
+	}
+	const timer = setInterval(() => void poll(), input.intervalMs ?? 15_000);
+	void poll();
+	return {
+		poll,
+		stop(): void {
+			clearInterval(timer);
+		},
+	};
 }
 
 function usage(message: string): CommandResult {
@@ -625,15 +706,13 @@ export async function startCiServe(input: {
 			appId: credentials.appId,
 			privateKey: await readFile(credentials.keyPath, "utf8"),
 		});
-		const poll = createJobPollAdmissionWorker({
+		const poll = startPullAdmission({
 			github,
+			relay: running,
 			repository: plan.repository,
 			installationId: plan.installationId,
-			processWorkflowJobWebhook: async (body) =>
-				(await running.relay()).processWebhook(body, "workflow_job"),
-			logger: (line) => input.emitProgress?.(line),
+			emitProgress: input.emitProgress,
 		});
-		poll.start();
 		pollStop = () => poll.stop();
 	}
 	if (input.options.withWorker) {

@@ -95,6 +95,10 @@ backends. Nothing else differs between them:
 | Vercel | `createVercelApplication` in [`@hobo/ci-vercel`](../ci-vercel/README.md) | `PostgresCiStore` | A queue wake-up per delivery and a 15-minute schedule | Vercel Sandbox |
 | Box worker daemon | `scripts/isolated-worker-daemon-main.mts` (no HTTP; admission by polling) | `SqliteCiStore` or `PostgresCiStore` | Its own loop | Isolated containers |
 
+With pull admission, `hobo ci serve` feeds the Node service's inbox from
+`createGithubJobPoller` (`src/isolated-worker/github-job-poller.ts`), the same
+poller the box worker runs; there is no second poller.
+
 The Node service adds two things of its own to the shared handler: a cached
 readiness probe that also gates admission (`admitWhenReady`: while the probe
 fails or the service drains, a delivery answers 503 for GitHub to redeliver and
