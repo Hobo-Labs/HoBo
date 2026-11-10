@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AdmissionOrder } from "../admission-order.js";
 import type { GithubTransport } from "../github.js";
 import type { JobDurations } from "../job-durations.js";
+import { runnerCustody } from "../job-runner-custody.js";
 import { servedRunnerLabel } from "../runner-labels.js";
 import type { PollIngestCoalesce } from "./poll-ingest-coalesce.js";
 
@@ -362,9 +363,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						// The runner name is part of the body, so it is part of the id: a job
 						// GitHub reassigns to another runner is a new observation, not a
 						// conflicting replay of the old one.
-						const runnerKey = job.runner_name
-							? `-${createHash("sha256").update(job.runner_name).digest("hex").slice(0, 12)}`
-							: "";
+						const runnerKey =
+							runnerCustody(job.runner_name) === "foreign"
+								? `-${createHash("sha256").update(job.runner_name ?? "").digest("hex").slice(0, 12)}`
+								: "";
 						let result: Awaited<ReturnType<typeof options.ingest>>;
 						try {
 							result = await options.ingest({

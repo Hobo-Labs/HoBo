@@ -45,6 +45,11 @@ import {
 } from "./job-pickup.js";
 import type { IdentityVerifier } from "./oidc.js";
 import {
+	activeLeaseCoversJob,
+	leaseIdFromBoxRunnerName,
+	runnerCustody,
+} from "./job-runner-custody.js";
+import {
 	type RunnerLabel,
 	servedRunnerLabel,
 	TRUNK_RUNNER_LABEL,
@@ -102,6 +107,11 @@ export interface HostedRelayStore {
 		expectedRevision?: number,
 	): Promise<Lease | undefined>;
 	cancelAndRequeue(id: string, job: Job, at: string): Promise<void>;
+	withdrawQueuedJob?(
+		job: Job,
+		at: string,
+		expectedRevision?: number,
+	): Promise<boolean>;
 	abortIsolatedAndRequeue(id: string, job: Job, at: string): Promise<void>;
 	settleObserved(
 		id: string,
@@ -360,6 +370,44 @@ export class HostedRelay {
 		return this.processWebhook(raw, event);
 	}
 	/** Called only after ingress authenticated and durably recorded the exact body. */
+	private async yieldForeignRunnerCustody(
+		job: Job,
+		expectedRevision: number,
+	): Promise<void> {
+		const at = this.now();
+		const active = await this.options.store.activeLeases();
+		for (const lease of active) {
+			if (
+				!activeLeaseCoversJob(
+					lease,
+					job.repositoryId,
+					job.id,
+					job.runAttempt,
+				)
+			)
+				continue;
+			await this.options.isolatedHost?.reconcile(lease.id, true);
+			await this.options.store.transition(
+				lease.id,
+				[
+					"reserved",
+					"dispatching",
+					"claiming",
+					"dispatched",
+					"running",
+					"uncertain",
+				],
+				(entry) => {
+					entry.state = "cancelled";
+				},
+				"ci.LeaseCancelled",
+				at,
+				expectedRevision,
+			);
+		}
+		await this.options.store.withdrawQueuedJob?.(job, at, expectedRevision);
+	}
+
 	async processWebhook(raw: Buffer, event: string): Promise<string> {
 		await this.refreshConfig();
 		if (event === "workflow_run") {
@@ -438,6 +486,36 @@ export class HostedRelay {
 		job.runAttempt = currentJob.run_attempt;
 		job.runnerName = currentJob.runner_name ?? "";
 		job.name = currentJob.name ?? job.name;
+		const custody = runnerCustody(currentJob.runner_name);
+		if (
+			custody === "foreign" &&
+			(currentJob.status === "queued" || currentJob.status === "in_progress")
+		) {
+			await this.yieldForeignRunnerCustody(job, admittedRevision);
+			return "foreign-runner";
+		}
+		if (custody === "box" && job.action === "queued") {
+			const expectedLeaseId = leaseIdFromBoxRunnerName(
+				currentJob.runner_name?.trim() ?? "",
+			);
+			const leases = await this.options.store.activeLeases();
+			if (
+				leases.some(
+					(lease) =>
+						activeLeaseCoversJob(
+							lease,
+							job.repositoryId,
+							job.id,
+							job.runAttempt,
+						) &&
+						(!expectedLeaseId ||
+							lease.id === expectedLeaseId ||
+							lease.runnerName === currentJob.runner_name?.trim()),
+				)
+			) {
+				return "duplicate";
+			}
+		}
 		if (this.options.jobPickupMetadata)
 			observeJobPickupMetadata(this.options.jobPickupMetadata, {
 				repositoryId: job.repositoryId,

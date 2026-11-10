@@ -16,6 +16,11 @@ import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission
 import type { JobDurations } from "./job-durations.js";
 import type { JobPickupMetadataCache } from "./job-pickup.js";
 import type { IdentityVerifier } from "./oidc.js";
+import {
+	activeLeaseCoversJob,
+	hasOutstandingBoxCustody,
+	runnerCustody,
+} from "./job-runner-custody.js";
 import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
 /** The inbox stores only signature-verified GitHub delivery bytes. */
@@ -215,17 +220,25 @@ export function createHostedRelayRuntime(options: {
 							lease.actualJobId === jobId),
 				);
 			if (covered) return "duplicate" as const;
+			if (
+				leases.some((lease) =>
+					hasOutstandingBoxCustody(
+						lease,
+						identity.repository.id,
+						jobId,
+						runAttempt,
+					),
+				)
+			)
+				return "duplicate" as const;
 			const nowMs = Date.parse(now());
-			const registrationPending = leases.some(
-				(lease) =>
-					lease.repositoryId === identity.repository.id &&
-					matchesAttempt(lease.runAttempt) &&
-					(lease.jobId === jobId || lease.actualJobId === jobId) &&
-					lease.runnerId > 0 &&
-					(lease.state === "claiming" ||
-						lease.state === "running" ||
-						lease.state === "uncertain" ||
-						lease.state === "dispatched"),
+			const registrationPending = leases.some((lease) =>
+				hasOutstandingBoxCustody(
+					lease,
+					identity.repository.id,
+					jobId,
+					runAttempt,
+				),
 			);
 			const recheckMs = registrationPending ? 300_000 : 60_000;
 			const recheckKey = `${identity.repository.id}:${jobId}:${runAttempt ?? 0}`;
@@ -237,10 +250,33 @@ export function createHostedRelayRuntime(options: {
 				return "duplicate" as const;
 			lastDuplicateRecheck.set(recheckKey, nowMs);
 			try {
+					const current = await getJob(
+						options.github,
+						identity.installation.id,
+						identity.repository.full_name,
+						jobId,
+					);
+					if (
+						runnerCustody(current.runner_name) === "foreign" &&
+						(current.status === "queued" ||
+							current.status === "in_progress")
+					) {
+						const controller = await relay();
+						await controller.processWebhook(
+							Buffer.from(input.rawBody),
+							input.event,
+						);
+						return "foreign-runner" as const;
+					}
+			} catch {
+				// GitHub read failure: fall through to duplicate recheck.
+			}
+			try {
 				const recheck = await (await relay()).processWebhook(
 					Buffer.from(input.rawBody),
 					input.event,
 				);
+				if (recheck === "foreign-runner") return "foreign-runner" as const;
 				return recheck === "queued"
 					? ("requeued" as const)
 					: ("duplicate" as const);

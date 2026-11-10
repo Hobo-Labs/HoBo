@@ -91,6 +91,10 @@ function setup() {
 		async abortIsolatedAndRequeue(id, job, at) {
 			h.store.abortIsolatedAndRequeue(id, job, at);
 		},
+		async withdrawQueuedJob(job, at, expectedRevision) {
+			revision(expectedRevision);
+			return h.store.withdrawQueuedJob(job, at);
+		},
 		async settleObserved(id, host, minutes, at, unmet, complete, observed) {
 			const current = h.store.get(id);
 			if (

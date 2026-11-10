@@ -4,6 +4,8 @@ const QUIET_RESULTS = new Set([
 	"waiting-for-budget-or-capacity",
 	"waiting-for-assignment-recovery",
 	"queued",
+	"requeued",
+	"foreign-runner",
 ]);
 
 export type PollIngestCoalesceOptions = Readonly<{
