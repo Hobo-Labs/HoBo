@@ -34,6 +34,20 @@ export interface GithubJobPollerOptions {
 	/** Primed from the run lists already read here, at no extra GitHub request. */
 	admissionOrder?: Pick<AdmissionOrder, "prime">;
 	ingestCoalesce?: PollIngestCoalesce;
+	/**
+	 * Asked once per poll for each queued job before it is taken in. False
+	 * leaves the job in GitHub's queue for another node, or for this node on
+	 * a later poll. With a relay mesh this is where a node waits its turn.
+	 * A rejection counts as true: a broken gate must not strand the queue.
+	 */
+	claim?: (job: {
+		jobId: number;
+		runId: number;
+		repository: string;
+		label: string;
+		/** GitHub's `created_at`, when the list carried it. */
+		createdAt: string | undefined;
+	}) => Promise<boolean>;
 	now?: () => number;
 }
 
@@ -333,6 +347,25 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 								result: "coalesced",
 							});
 							continue;
+						}
+						if (status.data === "queued" && options.claim) {
+							const mine = await options
+								.claim({
+									jobId: job.id,
+									runId: job.run_id,
+									repository: connection.repository,
+									label: servedRunnerLabel(job.labels) ?? "",
+									createdAt: job.created_at,
+								})
+								.catch(() => true);
+							if (!mine) {
+								summary.waiting.push({
+									jobId: job.id,
+									runId: job.run_id,
+									result: "mesh-deferred",
+								});
+								continue;
+							}
 						}
 						const rawBody = Buffer.from(
 							JSON.stringify({

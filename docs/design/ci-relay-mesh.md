@@ -7,9 +7,10 @@ tags: [hobo, design, ci]
 
 # CI Relay Mesh
 
-**Status:** proposed. The claiming core is implemented and tested
-(`@hobo/ci/mesh`); nothing calls it yet. The sections under
-[Increments](#increments) say what each later step adds.
+**Status:** implemented behind a setting. The box worker joins a mesh when
+`HOBO_CI_NATS_URL` is set and is unchanged without it. Proven against a real
+NATS server with several nodes in one process; not yet run with two real boxes.
+[Increments](#increments) lists what is done and what is left.
 
 ## Why
 
@@ -134,15 +135,34 @@ interface.
 | # | Adds | State |
 |---|---|---|
 | 1 | The claiming core: `rankNodes` and `claimTurn` in `@hobo/ci/mesh`, pure functions with property tests | Done |
-| 2 | The advertisement record (protobuf and CUE) and a bulletin-board port with GitHub-variable and NATS key-value adapters | Not started |
-| 3 | The worker asks `claimTurn` before it mints a runner; `stepMs` and `maxRank` become settings; a second box joins | Not started |
+| 2 | Board and claim ports, a coordinator that falls back to ranking when they fail, an in-memory adapter, and a NATS key-value adapter (`@hobo/ci-gh-actions/mesh-nats`) | Done |
+| 3 | The worker asks the mesh before it takes a queued job, advertises its free slots, and says so when it drains; settings in the runbook | Done; needs a second box to run for real |
 | 4 | The hosted relay only forwards wake-up hints; a node treats a missing hint as a slower poll | Not started |
 | 5 | Per-node budget allowances so priced offers survive a partition | Not started |
+| 6 | The advertisement as a protobuf and CUE record; it is JSON checked at the NATS boundary today | Not started |
 
-Increment 3 is the first one that changes behaviour, and it needs a second node
-to prove anything. Until then a single box behaves exactly as it does now.
+A worker with no `HOBO_CI_NATS_URL` behaves exactly as it did. With it and no
+peers, it ranks itself first for every job and takes them all, so turning the
+mesh on for one box changes nothing but the advertisements it writes.
 
 ## What the tests establish
+
+Against a real `nats-server` (`packages/ci-gh-actions/test/mesh-nats.e2e.test.ts`,
+run when a binary is available):
+
+- Four connections racing for 200 jobs: each job is claimed by exactly one.
+- A node that stops advertising is forgotten; a claim ages out and frees the job.
+- Three nodes with 1, 2 and 5 slots take 400 jobs once each, in that proportion.
+- The largest node dies silently: the others take its jobs one step later, once each.
+- The server is killed: every job is still started, and the outage is logged.
+- The server returns on the same address: the clients reconnect on their own and
+  claims are exact again.
+
+On the in-memory mesh (`packages/ci/test/mesh-coordinator.test.ts`), always run:
+the same once-each, capacity and failover properties, plus ranking alone when
+the claim store rejects, and the last view being kept when the board fails.
+
+The ranking itself:
 
 `packages/ci/test/mesh-rendezvous.test.ts`, over 6,000 job ids:
 

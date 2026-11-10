@@ -153,6 +153,12 @@ export {
 export { createJobPollAdmissionWorker } from "./job-poll-admission.js";
 export { startRelayFromEnvironment } from "./main.js";
 export {
+	createWorkerMesh,
+	type MeshSettings,
+	meshSettingsFromEnv,
+	type WorkerMesh,
+} from "./mesh-worker.js";
+export {
 	createGithubOidcVerifier,
 	type GithubClaims,
 	type IdentityVerifier,

@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
@@ -27,6 +27,7 @@ import {
 	createPollLogFilter,
 	createRetiredWorkDirectorySweeper,
 	createWorkerMemoryAdmission,
+	createWorkerMesh,
 	createWorkerStorageAdmission,
 	type DepsImageProcessRequest,
 	defaultDepsRoot,
@@ -35,6 +36,7 @@ import {
 	type HostedInboxStore,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
+	meshSettingsFromEnv,
 	parseWorkerStopMode,
 	readAvailableMemoryMb,
 	readHostMemory,
@@ -65,6 +67,22 @@ function inodeReserve(name: string, fallback: number): number {
 	if (!Number.isSafeInteger(reserve))
 		throw new Error(`invalid ${name}: exceeds safe integer range`);
 	return reserve;
+}
+
+/** Optional NATS credentials, from the variable or its `_FILE`. */
+function natsCredentials() {
+	const read = (name: string) => {
+		const file = process.env[`${name}_FILE`];
+		const value = file
+			? readFileSync(file, "utf8").trimEnd()
+			: process.env[name];
+		return value ? value : undefined;
+	};
+	return {
+		token: read("HOBO_CI_NATS_TOKEN"),
+		user: read("HOBO_CI_NATS_USER"),
+		password: read("HOBO_CI_NATS_PASSWORD"),
+	};
 }
 
 function storageLeases(leases: readonly Lease[]) {
@@ -546,6 +564,57 @@ try {
 				workerReconcileMs,
 			}),
 	});
+	// Relay mesh: off unless HOBO_CI_NATS_URL names a server. With it, this
+	// worker advertises its free slots and takes a queued job only on its turn
+	// (see docs/design/ci-relay-mesh.md). It only applies when the worker reads
+	// GitHub's queue itself.
+	const meshSettings =
+		plan.admission === "pull"
+			? meshSettingsFromEnv(process.env, hostname())
+			: undefined;
+	const natsMesh = meshSettings
+		? (await import("@hobo/ci-gh-actions/mesh-nats")).createNatsMesh({
+				servers: meshSettings.servers,
+				namespace: meshSettings.namespace,
+				replicas: meshSettings.replicas,
+				name: `hobo-ci-worker ${meshSettings.nodeId}`,
+				onStatus: (status) => log("hobo_ci_mesh_nats", { status }),
+				...natsCredentials(),
+			})
+		: undefined;
+	let meshDraining = false;
+	const mesh =
+		meshSettings && natsMesh
+			? createWorkerMesh({
+					settings: meshSettings,
+					board: natsMesh.board,
+					claims: natsMesh.claims,
+					freeSlots: () => slots - liveWorkerLeaseIds.size,
+					healthy: () => !meshDraining,
+					servesTrunk: trunkSlots > 0,
+					log,
+				})
+			: undefined;
+	log("hobo_ci_mesh", {
+		enabled: mesh !== undefined,
+		nodeId: meshSettings?.nodeId ?? "",
+		namespace: meshSettings?.namespace ?? "",
+		servers: meshSettings?.servers.length ?? 0,
+		stepMs: meshSettings?.stepMs ?? 0,
+	});
+	const meshAdvertTimer = mesh
+		? setInterval(() => void mesh.advertise(), 10_000)
+		: undefined;
+	meshAdvertTimer?.unref();
+	// The first connection is made in the background; advertise as soon as it is up.
+	void natsMesh?.ready.then(
+		() => mesh?.advertise(),
+		(error) =>
+			log("hobo_ci_mesh_nats", {
+				status: "failed",
+				message: error instanceof Error ? error.message : "unknown",
+			}),
+	);
 	const pollIngestCoalesce = createPollIngestCoalesce();
 	const poller =
 		plan.admission === "pull"
@@ -557,6 +626,7 @@ try {
 					connections: async () =>
 						(await store.configuration())?.configuration?.connections ?? [],
 					ingest: (delivery) => runtime.ingestWebhook(delivery),
+					claim: async (job) => (mesh ? mesh.claim(job) : true),
 					onIngestError: (jobId, message) =>
 						log("hobo_ci_isolated_worker_job_ingest_failed", {
 							jobId,
@@ -719,6 +789,10 @@ try {
 			if (gcTimer) clearInterval(gcTimer);
 			await worker.discardWarm().catch(() => undefined);
 			log("hobo_ci_isolated_worker_draining", { signal });
+			// Tell the mesh at once: the others stop waiting for this node's turn.
+			meshDraining = true;
+			if (meshAdvertTimer) clearInterval(meshAdvertTimer);
+			await mesh?.advertise();
 			await jobPollInFlight;
 			await gcInFlight;
 			if (tickInFlight) {
@@ -763,6 +837,10 @@ try {
 			}
 			if (stopMode === "drain") await retiredSweep.drain();
 			await closeStore();
+			await Promise.race([
+				natsMesh?.close().catch(() => undefined),
+				new Promise((resolve) => setTimeout(resolve, 2000).unref()),
+			]);
 			process.exit(result.mode === "handoff" || result.drained ? 0 : 1);
 		})().catch(async (error) => {
 			await closeStore().catch(() => undefined);

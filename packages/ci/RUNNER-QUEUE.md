@@ -175,6 +175,12 @@ A feasible rank-0 job waiting for memory, the distinct-merge-group cap, or a slo
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cap independent of age; deprecated alias `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` |
 | `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | `400000` | Free inodes required on Docker's data root before a deps rebuild; digits only |
 | `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | `8589934592` | Free bytes required on Docker's data root before a deps rebuild; digits only |
+| `HOBO_CI_NATS_URL` | unset | One or more `nats://host:port` servers, comma-separated. Set, the worker joins the relay mesh; unset, it takes every job it polls, as before. Must not carry credentials |
+| `HOBO_CI_NATS_TOKEN`, `HOBO_CI_NATS_USER`, `HOBO_CI_NATS_PASSWORD` | unset | NATS credentials; each also reads `<NAME>_FILE` |
+| `HOBO_CI_NATS_REPLICAS` | `1` | JetStream replicas for the mesh buckets: 1 for a single server, 3 for a cluster |
+| `HOBO_CI_MESH_NODE_ID` | host name | This worker's id in the mesh (letters, digits, `-`, `_`). Two workers on one host need different ids |
+| `HOBO_CI_MESH_NAMESPACE` | `hobo-ci` | Prefix of the two bucket names; workers sharing a namespace form one mesh |
+| `HOBO_CI_MESH_STEP_MS` | `20000` | How long each rank waits before taking a job the node ahead of it has not started; 1000 to 300000 |
 
 Startup fails unless every general class fits outside the trunk reservation and the heavy trunk class fits the full budget. Wait/admit decisions log `hobo_ci_memory_admission_wait` / `hobo_ci_memory_admitted` with `classMb` and `learned`; Docker-confirmed exit-137 OOM kills log `hobo_ci_container_oom` with the class and job name.
 
@@ -191,6 +197,16 @@ The memory-class re-export is blank-line separated from the memory-peaks import 
 Configs resolve the smaller of their own cap and this value; CI does not export `VITEST_MAX_WORKERS`, which Vitest would apply after config resolution and after `fileParallelism: false`, overriding correctness-critical single-worker pins. Workflows retain a conservative 1-worker/1024 MiB fallback if preflight is skipped. The Main full gate's `check:all` step also sets **`HOBO_RELEVANT_CHECK_CONCURRENCY=1`**. If `test:unit` ends with exit 1 and no Vitest summary, look for `run-tests: vitest was killed by <SIGNAL>` in the log.
 
 **Disk and inode admission:** before each reservation, the daemon samples bytes and inodes on Docker's data root and the work root. Above 85% for either resource it runs the full non-pnpm GC described above at most once per 60 seconds, then samples again; decisions within that interval still use a fresh sample. Above 95% after pruning, the job waits and `hobo_ci_inode_pressure` is logged once per episode. A dispatch pass stops calling storage admission after its first refusal because pressure is host-wide. A trunk-label storage refusal blocks lower ranks and records `hobo_ci_trunk_wait` with `reason: "storage"`. Each admitted job also reserves its expected inode growth, defaulting to **200000** workdir plus **170000** container inodes. Reservations on the same device add together; consumption since the oldest live grant reduces the outstanding estimate. If free inodes minus outstanding growth cannot fit the new job, the same rate-limited GC/recheck runs before the daemon waits and logs `hobo_ci_inode_reserve_wait` once per episode. Grants without an active lease expire after a 60-second grace, and failed lease reservations release immediately. A live job's directory is never retired or deleted. See [finding 25](../../docs/ci/findings/0025-inode-exhaustion-made-pr-installs-fail-with-enospc.md), [finding 58](../../docs/ci/findings/0058-two-concurrent-jobs-exhausted-inodes-mid-run.md) and [finding 68](../../docs/ci/findings/0068-finished-jobs-held-trunk-slots-while-their-work-dirs-were-deleted.md).
+
+**Relay mesh:** with `HOBO_CI_NATS_URL` set and pull admission, several workers share one queue with no central relay ([design](../../docs/design/ci-relay-mesh.md)). Each worker advertises its free slots every 10 s and, before it takes a queued job from a poll, asks whether it is its turn. Startup logs `hobo_ci_mesh` with whether it is on.
+
+- **Who takes a job.** Workers rank themselves by free slots, the same way everywhere. The first-ranked worker claims the job in NATS at once; each later rank waits one step (`HOBO_CI_MESH_STEP_MS`) and claims only if the job is still queued. The claim is an atomic put-if-absent, so one worker wins. `hobo_ci_mesh_job_taken` records the job, the rank and the reason.
+- **A worker that is full or draining** advertises no free slots and drops out of the ranking; a drain says so immediately.
+- **A worker that dies** stops advertising and is forgotten after a minute. Jobs it was first for start one step later on the next worker. A claim it held ages out after two minutes.
+- **NATS down or unreachable** never stops the queue. The worker logs `hobo_ci_mesh_claims_unreachable` and takes its turn by ranking alone on the last view it had; when that view expires it takes everything, as a single worker does. The cost is that two workers can start a runner for one job; GitHub gives the job to one and the other runner exits.
+- **Startup does not wait for NATS.** The connection is made in the background and re-made for the life of the process (`hobo_ci_mesh_nats` logs each change).
+
+Jobs waiting for another worker's turn show in `hobo_ci_isolated_worker_jobs_polled` as `mesh-deferred`.
 
 Legacy path `packages/ci-gh-actions/deploy/worker/Dockerfile` is deprecated; use **`build.sh`** above.
 
