@@ -56,6 +56,7 @@ export {
 	type HostedInboxStore,
 	type HostedRelayTickTiming,
 } from "./hosted-runtime.js";
+export { initializeHostedRelaySchema } from "./hosted-schema.js";
 export {
 	createRelayHandler,
 	type HostedRelayApplication,

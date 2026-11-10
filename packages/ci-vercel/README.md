@@ -216,6 +216,259 @@ real PostgreSQL. `HOBO_CI_TEST_POSTGRES_BINDING` (`supabase`,
 under all three bindings against a TLS-only PostgreSQL 16. It has not been run
 against a hosted Supabase or Prisma Postgres database.
 
+### Running on several databases: the database fleet
+
+One database on one plan is one quota away from an outage. The relay can run
+on a **fleet** instead: several PostgreSQL databases from different providers,
+exactly one of them the **writer** at any time, the others **standbys** that
+are kept current, and a policy that moves the writer before a quota runs out
+or when the writer is down. The mechanism is the provider-neutral fleet in
+[`@hobo/data-postgres`](../data-postgres/README.md#the-fleet); this package
+supplies the `pg` adapter, the provider profiles, the runtime fence and the
+schedule.
+
+With `HOBO_CI_DATABASE_BACKENDS` unset the relay is the single-database relay
+described above, unchanged. With one backend listed it is the same relay on
+that backend. Everything below applies only with two or more.
+
+#### Configure
+
+Connect each store to the project under its own prefix, then list them:
+
+```text
+HOBO_CI_DATABASE_BACKENDS=neon=NEON_,supabase=SUPABASE_,prisma=PRISMA_:prisma-postgres
+```
+
+Each entry is `id=PREFIX` or `id=PREFIX:profile`. The id is an opaque name
+used in logs and in the assignment. The prefix is how that store's variables
+are read, with the same names as above (`NEON_DATABASE_URL` and
+`NEON_DATABASE_URL_UNPOOLED`, `SUPABASE_POSTGRES_URL` and
+`SUPABASE_POSTGRES_URL_NON_POOLING`, `PRISMA_DATABASE_URL_POOLED` and
+`PRISMA_DATABASE_URL`); one backend may have an empty prefix (`main=`). Every
+backend needs both its pooled and its session-scoped connection. The profile
+defaults to the id when a profile of that name exists and to `postgres`
+otherwise. **The first backend listed is the writer of a fleet that has never
+decided anything**, so list the database that holds the data first.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `HOBO_CI_DATABASE_BACKENDS` | unset | The fleet. Mutually exclusive with `HOBO_CI_DATABASE_ENV_PREFIX` |
+| `<PREFIX>HOBO_CI_DATABASE_CA_CERT` | none | That backend's private certificate authority (Supabase). Per backend, so one provider's root is not imposed on another |
+| `HOBO_CI_DATABASE_RPO_SECONDS` | 1200 | Recovery point objective: the oldest standby a failover may promote |
+| `HOBO_CI_DATABASE_FAILOVER_AFTER_SECONDS` | 60 | How long the writer must fail before a failover |
+| `HOBO_CI_DATABASE_LEASE_SECONDS` | 30 | How long an instance trusts the assignment it last confirmed |
+| `HOBO_CI_DATABASE_MONTHLY_BUDGET_MICROS` | 0 | Monthly budget for the relay database, in millionths of a US dollar |
+
+Anything malformed (a bad pair, a repeated id or prefix, an unknown profile, a
+backend with no connection, a non-numeric setting) stops the relay at startup.
+Errors name variables, never values.
+
+Any number of backends works. A majority of them must answer for the relay to
+run: three tolerate one down, five tolerate two. An even count buys nothing
+(four tolerate one, two tolerate none), so use an odd one.
+
+#### Provider profiles
+
+`src/database-fleet-config.ts` holds what the relay knows about each kind of
+backend as data, one record per profile; no code branches on a provider.
+
+| Field | What it says |
+| --- | --- |
+| `connection` | How its connections are found: today, variables under the prefix. It is a function, so a provider whose credential is a short-lived token minted per connection can supply pool settings with an async `password`. None does yet |
+| `transactionPoolers` | Addresses of its transaction-mode poolers, refused for that backend's session connection. A pooler with its own hostname is also in `KNOWN_TRANSACTION_POOLERS`, matched against every connection; one that differs from the direct endpoint only by port (PgBouncer on 6432) is refused only for the backend whose profile names it |
+| `privateCertificateAuthority` | Whether its certificates chain to its own root |
+| `hosting` | `managed` or `self-hosted` |
+| `financial` | Plan, fixed monthly fee, allowances per unit and what happens beyond them, with the source and the date of every number |
+
+Profiles today:
+
+| Profile | Pooler refused for session work | Private certificate authority |
+| --- | --- | --- |
+| `neon` | `-pooler` hosts | no |
+| `supabase` | port 6543 on the shared pooler host and on the project host | yes |
+| `prisma-postgres` | `pooled.db.prisma.io` | no |
+| `planetscale-postgres` | port 6432 | no |
+| `azure-postgres-flexible` | port 6432 | no |
+| `gcp-cloudsql-postgres`, `gcp-alloydb` | port 6432 | depends |
+| `aws-rds-postgres`, `aws-aurora-postgres` | none by address: RDS Proxy has its own hostname and no pattern for it is recorded | yes |
+| `azure-horizondb` (preview) | none: no built-in pooler | depends |
+| `pgedge-cloud` | none recorded | depends |
+| `postgres` | none: any PostgreSQL the operator runs or rents | depends |
+
+The pooler and certificate facts come from the PostgreSQL backend catalog,
+which cites each to the provider's documentation. Every provider here is
+reached with a password connection string; identity-token authentication (AWS
+IAM, Google IAM, Microsoft Entra) is not implemented. **Only Prisma Postgres's free plan has
+recorded numbers** (200,000 operations a month and 2 GB, from the Vercel
+Marketplace page, as recorded by the project owner; what happens beyond them
+is recorded as unknown and treated as a hard stop). Every other profile's fees
+and allowances are recorded as unknown. The policy does not guess: it neither
+leaves a writer because of an unknown nor makes a planned switch to a standby
+with one. Until those numbers are recorded, the only planned switch this
+configuration can make is *onto* Prisma Postgres, and a failover is the only
+way off it.
+
+#### How it works
+
+**Who the writer is.** Each backend holds a small append-only table,
+`hobo_ci_fleet_assignments`. An entry is decided when a majority of the
+backends hold it. An instance reads the newest entry from a majority when it
+starts and again when its lease is half spent. It uses a backend only while
+the entry it confirmed names that backend, is not sealed, and is younger than
+the lease by its own wall clock. That is checked before every statement, so
+an instance that was frozen and resumed cannot write on an old assignment. In
+every other case (no majority, an undecided newest entry, a sealed fleet) it
+answers `503` with `Retry-After`. `GET /readyz` then carries
+`{"ready": false, "reason": "store-unavailable"}`, and `GET /healthz` still
+answers `200`: it reports on the process, and restarting a relay that is
+waiting for a writer would not find one. When the writer changes it closes its
+pools and builds the application again on the new writer.
+
+**Keeping standbys current.** The Vercel Schedule's repair message (every 15
+minutes) first runs one reconcile tick: it copies the writer to each standby
+in one consistent snapshot, verifies each copy by digest, and records a
+watermark. Only tables that changed are rewritten. The tick is served by the
+fleet, not by the application, so it still runs when the writer is down.
+
+**Choosing the writer.** The same tick measures each backend (reachable or
+why not, standby lag, statements sent this month, database size) and asks the
+policy. The budget question is answered by `evaluateBudgetPolicy` from
+`@hobo/core`, with each recorded allowance as a constraint.
+
+**Metering.** Every statement the relay sends to a backend is counted,
+including lease reads and copies, and added to `hobo_ci_fleet_usage` on that
+backend at most once a minute. One statement is counted as one operation.
+
+#### What the recovery point objective means with a 15-minute schedule
+
+A standby is as fresh as the last tick. If the writer dies just before a tick,
+that tick finds standbys about 15 minutes old, waits out
+`HOBO_CI_DATABASE_FAILOVER_AFTER_SECONDS`, and promotes one. So:
+
+- **What a failover can lose:** up to one schedule interval of writes, about
+  15 minutes. The promoted standby's age is recorded as `loss_window_ms`.
+- **How long the relay is down:** up to one interval plus the failover
+  threshold, about 16 minutes, because nothing looks between ticks.
+- **The objective must exceed the interval.** A standby is always about one
+  interval old when a failure is noticed. The default of 20 minutes allows
+  that. An objective below about 16 minutes means a failover never happens and
+  the relay waits for the writer or for a person.
+- **A planned switch loses nothing** and costs one lease plus a few seconds of
+  `503` (about 35 seconds by default) while writers stop and the final copy
+  runs. GitHub deliveries refused in that window are redelivered by the
+  relay's webhook repair.
+
+#### What happens on each failure
+
+| Failure | What the relay does | What is lost |
+| --- | --- | --- |
+| A standby is unreachable | Keeps running; that standby is not copied to and its lag grows | Nothing |
+| The writer is unreachable, or answers that a quota is exceeded | `503` until the next tick; the tick fails over to the freshest standby within the objective | Up to `loss_window_ms`, at most about one interval |
+| The writer is down and every standby is older than the objective | `503`; the tick logs `hold` with the reason per standby and promotes nothing | Nothing. Waits for the writer or for `overrideAssignment` |
+| The writer's metered allowance is projected to run out within 3 days | Planned switch to a standby with at least 6 days of headroom | Nothing |
+| The writer is over budget and no standby is provably better | Keeps the writer; logs `keep` with `no-feasible-standby` | Nothing, until the plan stops the writer; then it is a failover |
+| A majority of backends are unreachable (a double fault with three) | `503` everywhere, by design; nothing changes until a majority answers again | Nothing |
+| A tick is interrupted after sealing | `503` until the next tick, which finishes or undoes the switch | Nothing |
+| A proposer is interrupted mid-write | `503` (`undecided`) until the next tick completes that same entry | Nothing |
+| The old writer comes back | Its log is repaired; it is a standby and the next copy overwrites it | Its writes after the last copy were already counted as lost |
+| Two ticks run at once | One decision per epoch; the other tick stops | Nothing |
+| Every backend holds a different entry for one epoch | `503` until a person calls `overrideAssignment` | Nothing |
+| A standby's schema differs from the writer's | The tick runs the relay's table initialisers on both and copies again; if it still differs the copy is refused, naming the column | Nothing; that standby is not a failover target |
+| The database outgrows the copy limits (2,000,000 rows or 512 MiB of row text) | The copy is refused as `oversized`; standbys stop advancing | Nothing, but lag grows until the objective forbids failover |
+
+#### Limits
+
+- **Copy cost grows with the database, not with the change.** Every tick
+  digests every copied table on the writer and on each standby, and rewrites
+  each table that changed, whole. An idle tick is five statements on the
+  writer and about ten on each standby.
+- **The recovery point floor is the schedule interval.** A shorter schedule
+  buys a smaller loss and costs more statements.
+- **Statements are money on a metered plan.** Lease reads are one statement
+  per backend each time an active instance's lease is half spent (every 15
+  seconds by default), from every warm instance. On a plan that allows 200,000
+  operations a month, one continuously busy instance spends most of that on
+  lease reads alone. Raise `HOBO_CI_DATABASE_LEASE_SECONDS` to trade a longer
+  switch and a longer window of writes to an old writer for fewer reads.
+- **A double fault stops the relay by design.**
+- **A failover can lose more than `loss_window_ms`** if some instances could
+  still reach the old writer: they keep writing to it for at most one lease.
+- **A backend that returns without its `hobo_ci_fleet_assignments` table** (a
+  restore, a reset) must be removed from the list or have its log restored
+  before it rejoins. Changing the list changes what a majority is: do it one
+  backend at a time while all are healthy.
+- **The usage count is a lower bound** (an instance stopped before it writes
+  its counter loses that count), and Neon's compute-hours are not measured at
+  all.
+- **The schema seam is one function.** `ensureRelaySchema` runs the stores'
+  own table initialisers. When the schema moves to versioned migrations, that
+  function is the one place to change.
+
+#### Structured events
+
+Each is one JSON line, with backend ids, numbers and fixed tokens only: never
+a connection string, a host name or an error message.
+
+| Event | When |
+| --- | --- |
+| `hobo_ci_database_fleet_fence` | An instance's view of the assignment changes |
+| `hobo_ci_database_fleet_application` | The application is built on a writer |
+| `hobo_ci_database_fleet_replication` | Every copy: status, refusal or failure class, rows, bytes rewritten, duration |
+| `hobo_ci_database_fleet_decision` | Every tick: action, reasons, target, loss window, every standby ranked |
+| `hobo_ci_database_fleet_transition` | Every attempt to change the assignment and whether it was decided |
+| `hobo_ci_database_fleet_unsettled` | A tick stopped: `undecided` or `no-majority` |
+| `hobo_ci_database_fleet_failure` | A tick threw |
+
+#### Admission by HoBo's own conformance suite
+
+`src/database-fleet-conformance.ts` runs `conformance.data.postgres/v1` from
+`@hobo/data-postgres` against a backend (`qualifyBackend`), with the suite's
+`sql` cases executed verbatim on one session. The proof below runs it against
+all three servers before using them. It is not yet a gate at startup: the
+relay does not refuse a backend that was never qualified.
+
+#### Tests and proof on real PostgreSQL
+
+`test/database-fleet-postgres.test.ts` and
+`test/database-fleet-reconcile-postgres.test.ts` run the fleet's SQL, the
+reconciler and the relay's real schema against real PostgreSQL. They are
+skipped unless `HOBO_CI_TEST_FLEET_POSTGRES` names three separate servers,
+comma-separated; each test creates and drops its own databases:
+
+```bash
+export HOBO_CI_TEST_FLEET_POSTGRES="postgres://hobo_ci@127.0.0.1:15441/postgres,postgres://hobo_ci@127.0.0.1:15442/postgres,postgres://hobo_ci@127.0.0.1:15443/postgres"
+pnpm --filter @hobo/ci-vercel exec vitest run test/database-fleet-postgres.test.ts test/database-fleet-reconcile-postgres.test.ts
+```
+
+`scripts/database-fleet-proof.ts` is the end-to-end proof. It runs the real
+relay (bootstrap entry, GitHub App creation against a stubbed GitHub, signed
+webhook deliveries into the real inbox) behind the fleet on three servers and
+**stops and starts the servers**. It also needs one stop and one start shell
+command per server, in the same order, as a JSON array:
+
+```bash
+export HOBO_CI_TEST_FLEET_CONTROL='[{"stop":"…pg_ctl -D <data-a> -m fast -w stop","start":"…pg_ctl -D <data-a> -o \"-p 15441 …\" -w start"},{…},{…}]'
+node --import tsx packages/ci-vercel/scripts/database-fleet-proof.ts
+```
+
+It creates and drops its own databases, leaves every server running, prints
+no connection string, and asserts, in order:
+
+| # | Property | How it is shown |
+| --- | --- | --- |
+| 1 | Empty backends become a fleet | First assignment decided on 3 of 3 logs; the relay's tables created on every backend; deliveries committed on the writer |
+| 2 | Standbys equal the writer | Per-table digests and sequence positions equal on all three; watermark and lag recorded |
+| 3 | Planned switch on a budget signal | Usage pushed past a placeholder allowance: sealed, final copy, new writer; every acknowledged delivery present on the new writer; a second relay instance refused within one lease and serving again on the new writer; no sequence collision |
+| 5 | Recovery point guard | Writer's server stopped, objective of one second: decision `hold`, assignment unchanged |
+| 4 | Unplanned failover | Same outage, normal objective: freshest standby promoted after the threshold; `loss_window_ms` equals its lag; the missing deliveries are exactly those acknowledged after the last copy, listed by id |
+| 6 | The old writer returns | A copy into it is refused on itself until its log is repaired; then it is overwritten; a forged copy into the real writer is refused |
+| 7 | Loss of majority | Two of three servers stopped: `503` with `Retry-After` although the writer is up, while `/healthz` stays `200`; a tick changes nothing; recovery when one returns |
+| 8 | Two reconcilers at once | At most one decided entry per epoch; the three logs identical |
+
+Every plan number in the proof is a placeholder. It passed on 2026-11-10
+against three local PostgreSQL 16 clusters. It has not been run against a
+hosted Neon, Supabase or Prisma Postgres database.
+
 One dependency on Neon remains outside the database. Production reads its
 GitHub App and control secrets from a broker hosted on Neon when
 `HOBO_CI_GITHUB_APP_ID` and `HOBO_CI_BOOTSTRAP_TOKEN_SHA256` are both unset;
@@ -239,8 +492,8 @@ Node 24 is required. Bootstrap mode uses these Vercel secret bindings:
   connection is required after GitHub App bootstrap: repair scanners hold
   session advisory locks across requests, which a transaction-mode pooler
   cannot provide. Known poolers are refused for it by address (Neon `-pooler`
-  hosts, `pooled.db.prisma.io`, and Supabase's pooler host on port 6543; its
-  port 5432 is session mode). Each repair checks the two connections against a
+  hosts, `pooled.db.prisma.io`, and port 6543 on Supabase's pooler host and
+  project host; its port 5432 is session mode or direct). Each repair checks the two connections against a
   committed random database marker before using it. For any other provider the
   operator must supply a true session endpoint. A repair invocation opens at
   most one such connection and closes it after use. Concurrent repair
