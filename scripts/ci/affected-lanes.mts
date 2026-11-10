@@ -9,6 +9,10 @@
  * manifest edits and root `//#` task edits do not change workspace package
  * tasks. globalDependencies edits, every other edit to those files, or a missing
  * or unparsable base/head run the whole workspace.
+ * `mise.toml` and `mise.lock` are compared with their base too: a pin of a tool
+ * no workspace task runs (the secret scanner, the shell linter, the SBOM tool)
+ * changes the runner image, not a package's build or test. Any other edit to
+ * them, or a missing base, runs the whole workspace.
  * `pnpm-lock.yaml` alone runs the whole workspace too; with changed
  * package paths it only filters those packages (Turbo still hashes the lockfile).
  * Everything outside packages/ and examples/ (workflows, root
@@ -31,7 +35,11 @@ export type AffectedLanes =
 	| { readonly mode: "all"; readonly reason: string }
 	| { readonly mode: "filtered"; readonly filters: readonly string[] };
 
-export type RootConfigPath = "package.json" | "turbo.json";
+export type RootConfigPath =
+	| "package.json"
+	| "turbo.json"
+	| "mise.toml"
+	| "mise.lock";
 export type ReadRootFile = (
 	path: RootConfigPath,
 	side: "base" | "head",
@@ -116,6 +124,73 @@ function rootConfigIsPackageLaneInput(
 	});
 }
 
+/**
+ * Tools pinned for the runner image and root scripts that no workspace
+ * package task executes. A tool is listed here only after checking that no
+ * package build or test runs it; an unlisted tool widens, so a new pin is
+ * conservative until someone decides otherwise.
+ */
+const CI_ONLY_TOOLS: ReadonlySet<string> = new Set([
+	"gitleaks",
+	"shellcheck",
+	"syft",
+]);
+
+const TOML_HEADER = /^\s*\[+\s*([^\]]+?)\s*\]+\s*$/;
+const TOML_KEY = /^\s*"?([A-Za-z0-9_.:/@-]+)"?\s*=/;
+
+/** mise.toml without the `[tools]` pins of CI-only tools, blank lines dropped. */
+function withoutCiOnlyPins(toml: string): string {
+	let section = "";
+	return toml
+		.split("\n")
+		.filter((line) => {
+			if (line.trim() === "") return false;
+			const header = TOML_HEADER.exec(line);
+			if (header?.[1] !== undefined) {
+				section = header[1];
+				return true;
+			}
+			if (section !== "tools") return true;
+			const key = TOML_KEY.exec(line)?.[1];
+			return key === undefined || !CI_ONLY_TOOLS.has(key);
+		})
+		.join("\n");
+}
+
+/** mise.lock without the `[[tools.<name>]]` blocks of CI-only tools. */
+function withoutCiOnlyLocks(lock: string): string {
+	let dropping = false;
+	return lock
+		.split("\n")
+		.filter((line) => {
+			if (line.trim() === "") return false;
+			const header = TOML_HEADER.exec(line)?.[1];
+			if (header !== undefined) {
+				const tool = /^tools\."?([^."]+)"?(?:\.|$)/.exec(header)?.[1];
+				dropping = tool !== undefined && CI_ONLY_TOOLS.has(tool);
+			}
+			return !dropping;
+		})
+		.join("\n");
+}
+
+/**
+ * Whether a toolchain pin edit can change a workspace package task. False only
+ * when base and head are identical once CI-only tools are set aside.
+ */
+function toolchainIsPackageLaneInput(
+	path: "mise.toml" | "mise.lock",
+	readRootFile: ReadRootFile | undefined,
+): boolean {
+	if (!readRootFile) return true;
+	const base = readRootFile(path, "base");
+	const head = readRootFile(path, "head");
+	if (base === undefined || head === undefined) return true;
+	const strip = path === "mise.toml" ? withoutCiOnlyPins : withoutCiOnlyLocks;
+	return strip(base) !== strip(head);
+}
+
 const GLOBAL_INPUTS = [
 	/^pnpm-workspace\.yaml$/,
 	/^tsconfig[^/]*\.json$/,
@@ -183,6 +258,11 @@ export function affectedLanes(
 			rootConfigIsPackageLaneInput(path, readRootFile)
 		)
 			return { mode: "all", reason: `workspace-wide input changed: ${path}` };
+		if (
+			path === "mise.toml" &&
+			!toolchainIsPackageLaneInput(path, readRootFile)
+		)
+			continue;
 		if (GLOBAL_INPUTS.some((pattern) => pattern.test(path)))
 			return { mode: "all", reason: `workspace-wide input changed: ${path}` };
 		if (LOCKFILE_ONLY_GLOBAL.test(path)) {
@@ -210,8 +290,9 @@ const CI_INPUTS = /^mise\.lock$/;
 /**
  * Whether Main full gate runs every gate (`check:all`) or only the affected ones
  * (`agent:check --base=<previous main commit>`). Repo-wide for behavior-changing
- * root config, globalDependencies edits, the lockfile and toolchain pins;
- * affected for everything else.
+ * root config, globalDependencies edits, the lockfile and toolchain pins a
+ * workspace task runs; affected for everything else, including a pin of a
+ * CI-only tool.
  * Workflow and action files are affected-only: the PR and merge-group runs
  * already executed the changed workflow, agent:check selects the automation
  * lanes for `.github/`, and the weekly schedule still runs the whole sweep.
@@ -223,7 +304,11 @@ export function mainGateScope(
 ): MainGateScope {
 	const ci = paths
 		.map((path) => path.trim())
-		.find((path) => CI_INPUTS.test(path));
+		.find(
+			(path) =>
+				CI_INPUTS.test(path) &&
+				toolchainIsPackageLaneInput("mise.lock", readRootFile),
+		);
 	if (ci) return { mode: "repo-wide", reason: `CI input changed: ${ci}` };
 	const lanes = affectedLanes(paths, exists, WORKSPACE_GROUPS, readRootFile);
 	return lanes.mode === "all"

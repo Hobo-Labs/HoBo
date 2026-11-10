@@ -395,6 +395,124 @@ describe("main-gate scope", () => {
 		});
 	}
 
+	describe("toolchain pins", () => {
+		const TOML = [
+			"[tools]",
+			'cue = "0.14.0"',
+			'gitleaks = "8.22.1"',
+			'node = "24"',
+			'pnpm = "10.33.4"',
+			'shellcheck = "0.10.0"',
+			'turbo = "2.11.10"',
+			"",
+			"[env]",
+			'HOBO_MISE = "1"',
+			"",
+		].join("\n");
+		const LOCK = [
+			"lockfile_version = 3",
+			"",
+			"[[tools.node]]",
+			'version = "24.22.2"',
+			'backend = "core:node"',
+			"",
+			'[tools.node."platforms.linux-x64"]',
+			'checksum = "sha256:aaaa"',
+			"",
+			"[[tools.turbo]]",
+			'version = "2.11.10"',
+			"",
+		].join("\n");
+		const SYFT_LOCK = [
+			"[[tools.syft]]",
+			'version = "1.56.0"',
+			'backend = "aqua:anchore/syft"',
+			"",
+			'[tools.syft."platforms.linux-x64"]',
+			'checksum = "sha256:bbbb"',
+			"",
+		].join("\n");
+		const withSyft = TOML.replace(
+			'shellcheck = "0.10.0"',
+			'shellcheck = "0.10.0"\nsyft = "1.56.0"',
+		);
+		const lanes = (head: string, paths = ["mise.toml"]) =>
+			lanesWithRoots(paths, { "mise.toml": { base: TOML, head } });
+
+		it("does not run the workspace for a pin no package task runs", () => {
+			assert.equal(lanes(withSyft).mode, "skip");
+			assert.deepEqual(lanes(withSyft, ["mise.toml", "packages/ci/src/a.ts"]), {
+				mode: "filtered",
+				filters: ["--filter=./packages/ci"],
+			});
+			// Bumping or dropping one is the same kind of edit.
+			assert.equal(
+				lanes(TOML.replace('gitleaks = "8.22.1"', 'gitleaks = "8.23.0"')).mode,
+				"skip",
+			);
+			assert.equal(
+				lanes(TOML.replace('shellcheck = "0.10.0"\n', "")).mode,
+				"skip",
+			);
+		});
+
+		it("runs the workspace when a tool package tasks run changes", () => {
+			for (const head of [
+				TOML.replace('node = "24"', 'node = "26"'),
+				TOML.replace('pnpm = "10.33.4"', 'pnpm = "10.34.0"'),
+				TOML.replace('turbo = "2.11.10"', 'turbo = "2.12.0"'),
+				TOML.replace('cue = "0.14.0"', 'cue = "0.15.0"'),
+			])
+				assert.equal(lanes(head).mode, "all");
+		});
+
+		it("runs the workspace for an unlisted tool, another section or a missing side", () => {
+			assert.equal(
+				lanes(TOML.replace("[env]", 'zig = "0.13.0"\n\n[env]')).mode,
+				"all",
+			);
+			assert.equal(
+				lanes(withSyft.replace('HOBO_MISE = "1"', 'HOBO_MISE = "0"')).mode,
+				"all",
+			);
+			// A CI-only name outside [tools] is not a pin.
+			assert.equal(lanes(`${TOML}\n[env]\nsyft = "1"\n`).mode, "all");
+			assert.equal(
+				lanesWithRoots(["mise.toml"], {
+					"mise.toml": { head: withSyft },
+				}).mode,
+				"all",
+			);
+			assert.equal(affectedLanes(["mise.toml"], present).mode, "all");
+		});
+
+		it("keeps the main gate affected-only for a CI-only lock entry", () => {
+			const scope = (head: string, toml = withSyft) =>
+				mainGateScope(
+					["mise.lock", "mise.toml"],
+					present,
+					rootReader({
+						"mise.toml": { base: TOML, head: toml },
+						"mise.lock": { base: LOCK, head },
+					}),
+				).mode;
+			assert.equal(
+				scope(LOCK.replace("[[tools.turbo]]", `${SYFT_LOCK}\n[[tools.turbo]]`)),
+				"affected",
+			);
+			assert.equal(scope(LOCK.replace("24.22.2", "24.23.0")), "repo-wide");
+			assert.equal(
+				scope(LOCK.replace("sha256:aaaa", "sha256:cccc")),
+				"repo-wide",
+			);
+			// The lock is CI-only but the manifest moved a real tool.
+			assert.equal(
+				scope(LOCK, TOML.replace('node = "24"', 'node = "26"')),
+				"repo-wide",
+			);
+		});
+	});
+
 	it("is repo-wide for an empty diff or a deleted package", () => {
 		assert.equal(mainGateScope([], present).mode, "repo-wide");
 		assert.equal(

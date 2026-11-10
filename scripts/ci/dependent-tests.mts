@@ -39,6 +39,8 @@
  * call) and exits non-zero when any of it fails.
  * `--shard=INDEX/COUNT` assigns every whole suite and dependent subset to
  * exactly one zero-based shard; a repo-wide plan covers every workspace.
+ * `--plan-shards=MAX` runs nothing: it prints the JSON list of shard indexes
+ * this plan needs (`[0]` to `[0, …, MAX-1]`) and the plan itself on stderr.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -107,6 +109,26 @@ export function shardTestPlan(
 		subsets: new Map([...subsets].filter(([dir]) => selected.has(dir))),
 		skipped: [],
 	};
+}
+
+/**
+ * Suites one scoped shard carries. Shards run their suites one at a time under
+ * a 19-minute step limit and the longest suite takes about three minutes cold,
+ * so four leaves room for the builds they depend on and a slow host.
+ */
+export const SUITES_PER_SHARD = 4;
+
+/**
+ * How many shards a plan is worth, `max` at most. A repo-wide plan takes them
+ * all; a scoped one takes one per `SUITES_PER_SHARD` suites or subsets, and
+ * one when it holds nothing, so the job that reports the result still runs.
+ */
+export function planShardCount(plan: TestPlan, max: number): number {
+	if (!Number.isSafeInteger(max) || max < 1 || max > 64)
+		throw new Error("invalid workspace test shard");
+	if (plan.mode === "all") return max;
+	const units = plan.full.length + plan.subsets.size;
+	return Math.min(max, Math.max(1, Math.ceil(units / SUITES_PER_SHARD)));
 }
 
 type Json =
@@ -502,6 +524,9 @@ export function planDependentTests(
 		if (owner)
 			testsOf.set(owner.dir, [...(testsOf.get(owner.dir) ?? []), path]);
 	}
+	// A changed package runs whole even when only its tests or docs changed:
+	// its tests read sibling files by names this walk cannot follow
+	// (`readPackageFile("README.md")`, a scan of the test directory).
 	const full = [...changedPackages];
 	const subsets = new Map<string, readonly string[]>();
 	const skipped: string[] = [];
@@ -710,6 +735,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 	const args = process.argv.slice(2);
 	const baseArgument = args.find((arg) => arg.startsWith("--base="));
 	const shardArgs = args.filter((arg) => arg.startsWith("--shard"));
+	const planShards = args.find((arg) => arg.startsWith("--plan-shards="));
 	if (
 		shardArgs.length > 1 ||
 		(shardArgs.length === 1 && !/^--shard=\d+\/\d+$/u.test(shardArgs[0] ?? ""))
@@ -726,6 +752,15 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 			? undefined
 			: cliRootFileReader(baseArgument.slice("--base=".length)),
 	);
+	if (planShards !== undefined) {
+		const max = Number(planShards.slice("--plan-shards=".length));
+		const count = planShardCount(plan, max);
+		console.error(describePlan(plan));
+		console.log(
+			`[${Array.from({ length: count }, (_, index) => index).join(", ")}]`,
+		);
+		process.exit(0);
+	}
 	if (shardArgs.length === 1) {
 		const match = /^--shard=(\d+)\/(\d+)$/u.exec(shardArgs[0] ?? "");
 		if (!match) throw new Error("invalid workspace test shard");
