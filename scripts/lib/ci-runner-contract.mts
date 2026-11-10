@@ -255,7 +255,7 @@ function runMiseToolVersion(
 	return run("mise", ["exec", "--", tool, ...versionArgs], { cwd: root });
 }
 
-function parseMiseToolNames(miseToml: string): string[] {
+export function parseMiseToolNames(miseToml: string): string[] {
 	const names: string[] = [];
 	let inTools = false;
 	for (const line of miseToml.split("\n")) {
@@ -386,36 +386,57 @@ export function syncMissingMiseTools(
 			}),
 		),
 	];
-	if (missing.length === 0) {
-		return finish(true, [], "all mise.toml tools are already installed");
-	}
 	const installArgs = ["--cd", root, "install", "--locked", ...missing];
-	const install = run("mise", installArgs);
 	const installCommand = commandLine("mise", installArgs);
-	if (!install.ok) {
-		return finish(
-			false,
-			[],
-			`${commandFailure(install, installCommand)}\n    ${MISE_TOOL_REMEDY}`,
-		);
+	if (missing.length > 0) {
+		const install = run("mise", installArgs);
+		if (!install.ok) {
+			return finish(
+				false,
+				[],
+				`${commandFailure(install, installCommand)}\n    ${MISE_TOOL_REMEDY}`,
+			);
+		}
 	}
+	// Every pinned tool has to be on PATH, not only the ones just installed.
+	// A container can start from an image built before a tool was pinned, over
+	// a tool directory that already holds it: nothing is missing, so nothing
+	// was exported, and the contract check then cannot find the tool.
+	const onPath = new Set((env.PATH ?? "").split(delimiter));
 	const binDirs: string[] = [];
-	for (const tool of missing) {
+	for (const tool of [
+		...missing,
+		...[...configured].filter((name) => !missing.includes(name)),
+	]) {
 		const resolveArgs = ["--cd", root, "which", tool];
 		const resolved = run("mise", resolveArgs);
 		const executable = resolved.out.split("\n")[0]?.trim() ?? "";
 		if (!resolved.ok || !isAbsolute(executable)) {
+			// A tool that was already there and cannot be resolved is left to
+			// the contract check, which names it.
+			if (!missing.includes(tool)) continue;
 			const failure = resolved.ok
 				? `${commandLine("mise", resolveArgs)}: expected an absolute executable path for ${tool}, got ${executable || "(empty)"}`
 				: commandFailure(resolved, commandLine("mise", resolveArgs));
 			return finish(false, missing, `${failure}\n    ${MISE_TOOL_REMEDY}`);
 		}
-		binDirs.push(dirname(executable));
+		if (!onPath.has(dirname(executable))) binDirs.push(dirname(executable));
 	}
 	const pathDirs = [...new Set(binDirs)];
-	env.PATH = [...pathDirs, ...(env.PATH ? [env.PATH] : [])].join(delimiter);
-	if (env.GITHUB_ACTIONS === "true" && env.GITHUB_PATH) {
-		appendFile(env.GITHUB_PATH, pathDirs.map((dir) => `${dir}\n`).join(""));
+	if (pathDirs.length > 0) {
+		env.PATH = [...pathDirs, ...(env.PATH ? [env.PATH] : [])].join(delimiter);
+		if (env.GITHUB_ACTIONS === "true" && env.GITHUB_PATH) {
+			appendFile(env.GITHUB_PATH, pathDirs.map((dir) => `${dir}\n`).join(""));
+		}
+	}
+	if (missing.length === 0) {
+		return finish(
+			true,
+			[],
+			pathDirs.length === 0
+				? "all mise.toml tools are already installed"
+				: `all mise.toml tools are already installed; added ${pathDirs.length} tool dir(s) to PATH`,
+		);
 	}
 	return finish(
 		true,

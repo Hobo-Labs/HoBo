@@ -29,6 +29,7 @@ import {
 	MISE_LOCK,
 	MISE_TOML,
 	parseDockerHubDigestRef,
+	parseMiseToolNames,
 	playwrightHeadlessShellExecutables,
 	probeMiseTool,
 	REQUIRED_COMMANDS,
@@ -159,7 +160,63 @@ describe("ci-runner mise tool sync", () => {
 				args: ["--cd", root, "install", "--locked", "shellcheck"],
 			},
 			{ cmd: "mise", args: ["--cd", root, "which", "shellcheck"] },
+			// Then every other pinned tool, in case it is installed but off PATH.
+			...parseMiseToolNames(readFileSync(join(root, "mise.toml"), "utf8"))
+				.filter((tool) => tool !== "shellcheck")
+				.map((tool) => ({
+					cmd: "mise",
+					args: ["--cd", root, "which", tool],
+				})),
 		]);
+	});
+
+	it("puts an installed tool on PATH when the image was built before it was pinned", () => {
+		// The state after another branch rebuilt the shared image: mise has
+		// every tool (nothing is missing), but the image's PATH lists only the
+		// tools it was built with.
+		const appended: { path: string; data: string }[] = [];
+		const calls: string[][] = [];
+		const env = {
+			PATH: ["/mise/installs/node/24/bin", "/usr/bin"].join(delimiter),
+			GITHUB_ACTIONS: "true",
+			GITHUB_PATH: "/runner/github-path",
+		};
+		const result = syncMissingMiseTools(root, {
+			run: (_cmd, args) => {
+				calls.push(args);
+				const tool = args.at(-1) ?? "";
+				if (!args.includes("which")) return { ok: true, out: "" };
+				// One tool mise cannot resolve is not this step's failure.
+				if (tool === "cue") return { ok: false, out: "", failure: "no cue" };
+				return {
+					ok: true,
+					out: `/mise/installs/${tool}/${tool === "node" ? "24" : "1"}/bin/${tool}`,
+				};
+			},
+			env,
+			appendFile: (path, data) => appended.push({ path, data }),
+		});
+		expect(result.ok).toBe(true);
+		expect(result.installed).toEqual([]);
+		expect(calls.some((args) => args.includes("install"))).toBe(false);
+		const tools = parseMiseToolNames(
+			readFileSync(join(root, "mise.toml"), "utf8"),
+		).filter((tool) => tool !== "node" && tool !== "cue");
+		// Node was already on PATH; everything else resolvable is added once.
+		expect(env.PATH.split(delimiter)).toEqual([
+			...tools.map((tool) => `/mise/installs/${tool}/1/bin`),
+			"/mise/installs/node/24/bin",
+			"/usr/bin",
+		]);
+		expect(appended).toEqual([
+			{
+				path: "/runner/github-path",
+				data: tools.map((tool) => `/mise/installs/${tool}/1/bin\n`).join(""),
+			},
+		]);
+		expect(result.detail).toContain(
+			`added ${tools.length} tool dir(s) to PATH`,
+		);
 	});
 
 	it("keeps resolver failure diagnostics when install succeeds without a usable binary", () => {

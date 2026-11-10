@@ -66,6 +66,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   (an inert PR diff skips install in the off-path job). With `zod` it failed `ERR_MODULE_NOT_FOUND`
   there and turned a skipped job red (#1653's run 41583817166). `scripts/test/ci-trace.test.ts` pins
   the import rule; the hand-written parser emits byte-identical spans and summaries.
+- **Preflight puts every pinned tool on `PATH`.** It used to export only the tools it had just
+  installed. A job that started from an image built before `syft` was pinned, over a tool directory
+  that already held it, found nothing missing, exported nothing, and then failed the contract with
+  `syft not on PATH` (run 42738777301, after another branch rebuilt the shared image). The sync now
+  resolves each pinned tool and adds any directory `PATH` lacks.
 - **No serial PR jobs.** `artifact-trust` and `dev-cold-loop-gate` do their own checkout and install and
   read nothing from the PR impact gate, so they no longer `needs: pr-gate`. On a two-slot box that
   dependency left a slot idle while the gate ran, then queued both behind it. `ci-runner-image` and
