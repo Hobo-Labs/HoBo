@@ -111,21 +111,24 @@ The settings that would tie a worker to the hosted database are
 `HOBO_CI_STORE=postgres` and `HOBO_CI_JOB_ADMISSION=push`. Neither is a
 default, and a mesh needs neither; the mesh gate applies only to `pull`.
 
-## Retiring the hosted relay
+## The hosted relay stays; the mesh does not depend on it
 
-**Decision:** the hosted relay on Vercel is retired from the CI path. What it
-held that several nodes must agree on moves to JetStream; what one node needs
-stays on that node.
+**Decision:** the hosted relay keeps running. The PWA and the account API
+behind `hobo ci` depend on it. What changes is that the path from a queued job
+to a running runner no longer goes through it, and that its database moves off
+Neon to a self-hosted Postgres.
 
-| State | Was | Now |
+What nodes must agree on lives in JetStream; what one node needs stays on that
+node; what the hosted relay serves stays in its Postgres.
+
+| State | Where | Why there |
 |---|---|---|
-| Who has which job | Leases in hosted Postgres, when admission was `push` | `<namespace>-mesh-claims`, an atomic create per job, aged out |
-| Which nodes exist and what they can take | Not recorded | `<namespace>-mesh-nodes`, one advertisement per node with total and free slots, aged out |
-| Account configuration (offers, connections, policy) | Hosted Postgres, edited through the control API | `<namespace>-mesh-config`, one key with history; replaced only by naming the current revision |
-| Lease journal and budget ledger | Hosted Postgres | Each node's SQLite file (ADR-0135: one partition, one writer) |
-| Queued-job inbox from webhooks | Hosted Postgres | Nothing: each node polls GitHub |
-| GitHub App credentials | Encrypted in hosted Postgres, served by a config broker on Neon | Files on each node (`HOBO_CI_GITHUB_APP_ID`, `…_PRIVATE_KEY_FILE`); never written to NATS |
-| OAuth sessions and App onboarding pages | Hosted Postgres | Retired with the relay; the App is already registered |
+| Who has which job | `<namespace>-mesh-claims`, an atomic create per job, aged out | Nodes must agree, without a database |
+| Which nodes exist and what they can take | `<namespace>-mesh-nodes`, one advertisement per node with total and free slots, aged out | Same |
+| The configuration nodes share (offers, connections, policy) | `<namespace>-mesh-config`, one key with history; replaced only by naming the current revision | Same; lets a new box start from a NATS address |
+| Lease journal and budget ledger | Each node's SQLite file (ADR-0135: one partition, one writer) | One writer |
+| GitHub App credentials | Files on each node (`HOBO_CI_GITHUB_APP_ID`, `…_PRIVATE_KEY_FILE`) | Private keys are never written to NATS |
+| Accounts, App registration, sessions, the webhook inbox | The hosted relay's Postgres | What the PWA and the account API read |
 
 **Configuration.** A node with its own file runs that file and is never
 overwritten. The first node to connect publishes its configuration if the mesh
@@ -135,16 +138,28 @@ right. A node with no configuration of its own reads the mesh's at start, so
 adding a box takes a NATS address and App credentials. A changed configuration
 takes effect at the next start.
 
-**Not moved, on purpose.** Private keys stay out of NATS. A shared budget across
-nodes is not solved by this: each node meters its own spend, so priced offers
-belong on one node until per-node allowances exist (increment 5).
+**The hosted relay's database.** The relay speaks plain Postgres through
+`DATABASE_URL` and creates its own tables; nothing in its store is specific to
+Neon. Against a self-hosted PostgreSQL 16.15 the store's 68 real-database tests
+pass, and the relay starts, creates its 18 tables and reports that it is
+waiting for the GitHub App. `packages/ci-vercel/deploy/postgres/compose.yaml`
+runs one. Two things still tie a production relay to Neon, and are the work
+that remains:
 
-**What is lost with the relay.** Webhook-driven pickup (nodes poll every 5 s
-instead), the hosted account API behind `hobo ci`, and the Vercel Sandbox host.
-The `@hobo/ci-vercel` package stays in the repository until those are either
-re-homed or deleted. Taking the deployment itself out of service is an
-operator step: pause the Vercel project and remove the GitHub App's webhook
-URL, which otherwise keeps delivering to it.
+- Its production start-up reads credentials from a runtime-config broker whose
+  Neon address is fixed in `packages/ci-vercel/src/entry.ts`. Setting the App
+  credentials or the bootstrap token directly in the relay's environment
+  bypasses the broker today; removing the broker is a code change.
+- Its schema is 26 `CREATE TABLE IF NOT EXISTS` statements inside the store. The
+  plan is to make that schema a Drizzle definition with generated migrations
+  (`packages/adapters/adapter-drizzle` is the repository's Drizzle home), so a
+  self-hosted database is created and upgraded the same way everywhere.
+
+Neither is done in this change.
+
+**A shared budget across nodes** is not solved either: each node meters its own
+spend, so priced offers belong on one node until per-node allowances exist
+(increment 5).
 
 ## Watching capacity and availability
 
@@ -211,7 +226,8 @@ interface.
 | 1 | The claiming core: `rankNodes` and `claimTurn` in `@hobo/ci/mesh`, pure functions with property tests | Done |
 | 2 | Board and claim ports, a coordinator that falls back to ranking when they fail, an in-memory adapter, and a NATS key-value adapter (`@hobo/ci-gh-actions/mesh-nats`) | Done |
 | 3 | The worker asks the mesh before it takes a queued job, advertises its free slots, and says so when it drains; settings in the runbook | Done; needs a second box to run for real |
-| 4 | The hosted relay retired from the CI path; shared configuration in JetStream; a monitor for node capacity and availability | Done; wake-up hints on a NATS subject not started |
+| 4 | Shared configuration in JetStream and a monitor for node capacity and availability; the hosted relay out of the job path | Done; wake-up hints on a NATS subject not started |
+| 7 | The hosted relay's database on self-hosted Postgres with a Drizzle schema and migrations; the Neon config broker removed | Not started |
 | 5 | Per-node budget allowances so priced offers survive a partition | Not started |
 | 6 | The advertisement as a protobuf and CUE record; it is JSON checked at the NATS boundary today | Not started |
 
