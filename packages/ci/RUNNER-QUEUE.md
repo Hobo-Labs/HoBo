@@ -77,6 +77,8 @@ Each job runs in a **fresh Docker container** with the official Actions runner J
 
 ### Rebuild the runner image (box worker)
 
+`build.sh` reads tool pins from the checkout only (`MISE_IGNORED_CONFIG_PATHS=/etc/mise/config.toml`). The job container it runs in carries the pins of whichever commit last built `hobo-ci-worker:local`; without this, a pull request that pinned a new tool and rebuilt the image made `mise install --locked` fail on every other branch with `<tool> is not in the lockfile` (release run 42741596338, after an image built with `syft` pinned).
+
 Run on a **native-arch Linux** host (arm64 box builds arm64 only; amd64 builds amd64 — no cross-compile). Requires **Docker** and pinned **mise** (`packages/ci-gh-actions/deploy/ci-runner/mise-version.txt`). Set **`MISE_EXPERIMENTAL=1`** only for the build (the build script exports it).
 
 ```sh

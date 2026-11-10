@@ -395,6 +395,13 @@ describe("ci-runner image contract (repo manifests)", () => {
 		const build = readFileSync(join(root, CI_RUNNER_BUILD_SCRIPT), "utf8");
 		expect(build).toContain("mise install --locked\n");
 		expect(build).toContain("mise --locked oci build ");
+		// The image's baked pins come from whichever commit built it last; the
+		// build must read this checkout's. Set before the first mise call.
+		const ignore = build.indexOf(
+			'export MISE_IGNORED_CONFIG_PATHS="/etc/mise/config.toml',
+		);
+		expect(ignore).toBeGreaterThan(-1);
+		expect(ignore).toBeLessThan(build.indexOf("mise trust ./mise.toml"));
 		expect(build).toContain("scripts/ci-runner-preflight.mts");
 		expect(build).toContain("HOBO_CI_RUNNER_CONTRACT=live");
 		const fallback = readFileSync(
