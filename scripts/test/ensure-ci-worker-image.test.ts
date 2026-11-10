@@ -1,10 +1,29 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+	ghcrWorkerManifestPublished,
+	publishedWorkerRequiredMessage,
+} from "../ci/ensure-ci-worker-image.mts";
 
 const script = join(import.meta.dirname, "../ci/ensure-ci-worker-image.mts");
 
 describe("ensure-ci-worker-image", () => {
+	it("rejects invalid GHCR manifest probe inputs", () => {
+		expect(ghcrWorkerManifestPublished("missing-slash", "1.2.3", "token")).toBe(
+			false,
+		);
+		expect(ghcrWorkerManifestPublished("org/repo", "", "token")).toBe(false);
+	});
+
+	it("formats a fail-fast message when the published worker is mandatory", () => {
+		expect(
+			publishedWorkerRequiredMessage("Hobo-Labs/HoBo", "2026.04.1"),
+		).toMatch(/ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker:2026\.04\.1/u);
+		expect(
+			publishedWorkerRequiredMessage("Hobo-Labs/HoBo", "2026.04.1"),
+		).toMatch(/Refusing local build\.sh/u);
+	});
 	it("refuses build.sh when published worker is required", () => {
 		const result = spawnSync(process.execPath, ["--no-warnings", script], {
 			encoding: "utf8",

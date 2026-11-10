@@ -30,6 +30,46 @@ function dockerInspect(ref: string): boolean {
 	);
 }
 
+/** Fast HEAD against GHCR; avoids a long `docker pull` when the tag was never pushed. */
+export function ghcrWorkerManifestPublished(
+	repository: string,
+	version: string,
+	token: string,
+): boolean {
+	const repo = repository.toLowerCase();
+	if (!repo.includes("/") || !version.trim() || !token.trim()) return false;
+	const url = `https://ghcr.io/v2/${repo}/hobo-ci-worker/manifests/${version}`;
+	const result = spawnSync(
+		"curl",
+		[
+			"-fsS",
+			"--max-time",
+			"45",
+			"-o",
+			"/dev/null",
+			"-H",
+			`Authorization: Bearer ${token}`,
+			"-H",
+			"Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json",
+			url,
+		],
+		{ stdio: "ignore" },
+	);
+	return result.status === 0;
+}
+
+export function publishedWorkerRequiredMessage(
+	repository: string,
+	version: string,
+): string {
+	const repo = repository.toLowerCase();
+	return [
+		`CI runner worker image ghcr.io/${repo}/hobo-ci-worker:${version} is not published.`,
+		"Push or run the release workflow publish step for the current ciRunnerImageVersion before tag OCI builds.",
+		"Refusing local build.sh (HOBO_CI_REQUIRE_PUBLISHED_WORKER=1).",
+	].join(" ");
+}
+
 export function ensureCiWorkerImage(): string {
 	const version = ciRunnerImageVersion(root);
 	const candidate = `hobo-ci-worker:${version}`;
@@ -47,8 +87,15 @@ export function ensureCiWorkerImage(): string {
 		Boolean(token) &&
 		event !== "pull_request" &&
 		process.env.HOBO_CI_SKIP_GHCR_PULL !== "1";
-	if (mayPullFromGhcr) {
+	if (mayPullFromGhcr && repo) {
 		const remote = `ghcr.io/${repo}/hobo-ci-worker:${version}`;
+		if (
+			process.env.HOBO_CI_REQUIRE_PUBLISHED_WORKER === "1" &&
+			token &&
+			!ghcrWorkerManifestPublished(repo, version, token)
+		) {
+			throw new Error(publishedWorkerRequiredMessage(repo, version));
+		}
 		if (run("docker", ["pull", remote], true) === 0) {
 			run("docker", ["tag", remote, candidate]);
 			run("docker", ["tag", remote, "hobo-ci-worker:local"]);
