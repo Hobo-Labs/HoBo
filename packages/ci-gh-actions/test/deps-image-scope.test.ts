@@ -101,6 +101,9 @@ describe("CI deps image push scope", () => {
 			"github.event.workflow_run.head_sha",
 		);
 		expect(job.steps[1].run).toBe(
+			"node --experimental-strip-types --no-warnings scripts/ci/wait-deps-build-window.mts",
+		);
+		expect(job.steps[2].run).toBe(
 			"bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh",
 		);
 	});

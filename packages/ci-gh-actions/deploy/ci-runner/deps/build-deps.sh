@@ -197,6 +197,7 @@ else
 fi
 
 echo "Building $candidate (fetch network restricted to lockfile-verified downloads; install offline)"
+node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate" || true
 ensure_deps_build_headroom
 "${build_command[@]}" \
   "${docker_memory_args[@]}" \

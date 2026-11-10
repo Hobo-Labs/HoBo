@@ -518,6 +518,13 @@ try {
 				},
 			},
 			processes: { run: runDepsProcess },
+			idleForBuild: async () => {
+				try {
+					return (await store.activeLeases()).length === 0;
+				} catch {
+					return false;
+				}
+			},
 			onEvent: ({ event, ...fields }) => log(event, fields),
 		});
 	}
