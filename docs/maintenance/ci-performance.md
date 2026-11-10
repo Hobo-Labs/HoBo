@@ -314,6 +314,10 @@ gates are always GitHub-hosted. A run that says `runner: ubuntu-24.04 (github)`
 in its Route runners log was sent there for one of those reasons, and the same
 line says which.
 
+One job in `hobo-ci.yml` is never routed: **CI deps layer (pnpm)** always asks
+for the fleet, because it builds the deps image in the box's own Docker
+context. No gate waits for it.
+
 On a GitHub-hosted machine a job runs the same steps with no deps layer and a
 cold pnpm store unless main has saved one, so installs are slower and the
 tests are not. Jobs that run package tests download the image's pinned headless
