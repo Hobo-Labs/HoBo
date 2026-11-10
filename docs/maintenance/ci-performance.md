@@ -21,6 +21,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   (an `if: env.X` expression never sees container env) and skips `actions/cache`. A self-hosted runner
   without the mount installs from the registry: a cold `pnpm install` measured ~21s, while restoring the
   1.3 GB cache archive took 31–52s and main's save took 142s. Only GitHub-hosted runners use the cache.
+  **`hobo-ci-deps:local` must stay selectable after a worker toolchain promotion** — a label-only lag on
+  `hobo.ci.toolchain` used to drop `HOBO_CI_DEPS_LAYER`, force a ~5m install, and leave S0 cold
+  ([finding 83](../ci/findings/0083-main-full-gate-paid-for-missing-deps-layer-and-trunk-serialization.md)).
+  Trunk admission now prefers `merge_group` over `push` at the same rank so merge-queue shards are not
+  stuck behind a long main push gate when trunk slots are scarce (finding 83).
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob
   lazily at checkout and timed out with HTTP 408 on this repo.
 - **Turbo cache saves even when the job fails.** `.github/actions/turbo-cache` restores at job start and
