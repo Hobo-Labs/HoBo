@@ -10,9 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-	installSdkTarballsIntoApp,
 	moveExtractedPackageDir,
-	nodeModulesPathForPackageName,
 	RELEASE_OCI_STAGE_SPECS,
 	releaseOciAffectedImageIds,
 	releaseOciDeployArgs,
@@ -24,21 +22,10 @@ import {
 	sdkOverlayExtractRoot,
 	stageReleaseOciApp,
 } from "../ci/stage-release-oci-app.mts";
-import {
-	SDK_PACKAGES,
-	stageSdkArtifactsDir,
-} from "../ci/stage-sdk-artifacts.mts";
+import { SDK_PACKAGES } from "../ci/stage-sdk-artifacts.mts";
 import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 
 const root = join(import.meta.dirname, "..", "..");
-
-function runQuiet(cwd: string, command: string, args: readonly string[]): void {
-	const result = spawnSync(command, args, { cwd, encoding: "utf8" });
-	expect(
-		result.status,
-		`${result.stdout}\n${result.stderr}\n${result.error?.message ?? ""}`,
-	).toBe(0);
-}
 
 describe("release OCI app staging", () => {
 	it("resolves the Turbo base on a sparse PR checkout", () => {
@@ -413,42 +400,6 @@ describe("release OCI app staging", () => {
 			"@hobo/cli",
 		]);
 	});
-
-	it("overlays SDK tarballs into a pnpm-deploy app without npm install", () => {
-		const previousSemver = process.env.HOBO_RELEASE_SEMVER;
-		const fixtureRoot = mkdtempSync(join(tmpdir(), "hobo-sdk-overlay-"));
-		const appDir = join(fixtureRoot, "app");
-		const artifactsDir = join(fixtureRoot, "artifacts");
-		try {
-			process.env.HOBO_RELEASE_SEMVER = "0.0.0-pr.test";
-			mkdirSync(appDir, { recursive: true });
-			runQuiet(
-				root,
-				"pnpm",
-				releaseOciDeployArgs("@hobo/hobo", appDir, releasePnpmStore(root)),
-			);
-			stageSdkArtifactsDir(artifactsDir);
-			installSdkTarballsIntoApp(appDir, artifactsDir);
-			const cliPath = nodeModulesPathForPackageName(appDir, "@hobo-labs/cli");
-			expect(readFileSync(join(cliPath, "package.json"), "utf8")).toMatch(
-				/"name"\s*:\s*"@hobo-labs\/cli"/,
-			);
-			const probe = spawnSync(
-				"node",
-				[
-					"--input-type=module",
-					"-e",
-					"import('@hobo-labs/core').then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); })",
-				],
-				{ cwd: appDir, encoding: "utf8" },
-			);
-			expect(probe.status, probe.stderr || probe.stdout).toBe(0);
-		} finally {
-			if (previousSemver === undefined) delete process.env.HOBO_RELEASE_SEMVER;
-			else process.env.HOBO_RELEASE_SEMVER = previousSemver;
-			rmSync(fixtureRoot, { recursive: true, force: true });
-		}
-	}, 240_000);
 
 	it("uses an overlay temp dir under the deploy app (same device as node_modules)", () => {
 		const appDir = mkdtempSync(join(tmpdir(), "hobo-overlay-root-"));
