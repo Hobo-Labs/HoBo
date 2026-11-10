@@ -21,6 +21,10 @@ tags: [hobo, design, providers, honesty]
 | **In-memory** | Deterministic offline stand-in (default for plan/up) |
 | **Stub** | Explicit unimplemented refuse |
 
+> **Not a readiness claim:** the [PostgreSQL backend catalog](./postgres-backend-catalog.md)
+> names managed and self-hosted PostgreSQL offerings from cited vendor
+> documentation only. It provisions nothing and adds no row to this matrix.
+
 ## Cloud providers (`packages/providers/`)
 
 | Adapter | Realize IR | Live apply | Notes |

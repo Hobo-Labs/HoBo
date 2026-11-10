@@ -294,6 +294,31 @@ Overflow is off until you enable it. While the hobo fleet has a free slot, jobs 
 
 Anti-loop: a job already labeled `ubuntu-24.04` or `hobo-arc` stays on that member and is not sent back to hobo. Queued demand for a GitHub-hosted or ARC offer keeps that concrete label instead of `hobo`. Isolated abort covers Vercel Sandbox, `hobo-box-worker`, and kubernetes `isolated-container` on `hobo-isolated-worker`. It does not cancel kubernetes `gh-actions` ARC leases, and it skips kubernetes when the offer backend is unknown.
 
+#### Host health
+
+Memory and storage admission answer for one job at a time. The daemon also watches the machine as a whole and logs **`hobo_ci_host_health`** with `state`, `previous`, `reasons`, `loadPerCpu`, `memoryAvailableFraction`, `storageFreeBytesFraction` and `storageFreeInodesFraction` (the worst of Docker's data root and the work root). It samples at most every 10 s from the dispatch tick.
+
+| State | When (defaults) | What the daemon does |
+| --- | --- | --- |
+| `ok` | below every threshold | nothing |
+| `pressured` | 1-minute load ≥ 1.5 per CPU, available memory ≤ 15%, or free bytes or inodes ≤ 15% | runs storage collection as soon as the current tick ends when the reason is storage, instead of at the next `gcIntervalMs` |
+| `critical` | load ≥ 3 per CPU, available memory ≤ 7%, or free bytes or inodes ≤ 5% | also marks the box's offers unhealthy for the fleet route table, so new jobs are routed elsewhere when another member is admitted |
+
+The state rises only after three consecutive samples worse than the held level and falls only after six better than it, so a single spike or a single quiet sample does not move it; a run that moves between two bad levels settles on the milder one. Load is divided by the host's logical CPUs, not the daemon's cgroup share. A sample that takes longer than two seconds counts as unread, so a stalled disk cannot hold up the dispatch tick. A lasting `pressured` or `critical` state is logged again every five minutes; a sample that cannot be read logs **`hobo_ci_host_health_sample_failed`** and leaves the state as it was. A job that was assigned a runner and then failed in **Set up job** with no log, minutes later, is the signature to check this record against: the runner died with the job, and a dead runner's run is force-cancelled and re-run ([finding 63](../../docs/ci/findings/0063-a-dead-runner-left-its-github-job-in-progress.md)).
+
+Host health does not stop admission by itself: memory and storage admission still decide whether a job launches. It changes where the fleet sends work that has not been queued yet, and that only takes effect once a workflow reads the route table.
+
+#### Fleet balancing and the route table
+
+The fixed box → ARC → GitHub order above is what admission applies to a job that is already queued. Ahead of the queue, the relay can balance every connected offer through the budget policy and publish which label a new job should ask for; see [CI fleet balancing](../../docs/design/ci-fleet-balancing.md).
+
+- Set **`HOBO_CI_FLEET_ROUTES=1`** on the box daemon (`0` or unset is off; any other value refuses to start). After each dispatch pass it writes the repository variable **`HOBO_CI_FLEET_ROUTES`**, for example `{"fork":"hobo","pr":"ubuntu-24.04","trunk":"hobo-trunk"}`. The daemon's startup record reports `publishFleetRoutes`.
+- The HoBo CI GitHub App needs repository **Variables: write**. Without it a refused write logs **`hobo_ci_fleet_routes_error`** with the HTTP `status` and is not attempted again for ten minutes; admission is unaffected.
+- The variable outlives the daemon. A `drain` stop puts every class back on its hobo label (logged with `reset: true`); a `handoff` leaves the table for the successor. **To turn publishing off, delete the variable** (or drain first): a daemon restarted with `HOBO_CI_FLEET_ROUTES=0` does not touch it, and a crash leaves the last table in force.
+- A successful write logs **`hobo_ci_fleet_routes_published`** with `repository`, `variable` and `value`. The variable changes only when the table does, and at most once a minute.
+- **No workflow reads the variable yet**, so turning this on changes no job's runner. It is safe to enable for observing what the fleet would choose.
+- `.hobo/ci.json` accepts provider kinds **`jog`** and **`boat`** from a relay built at or after this change. Do not add them to the file an older deployed relay reads: an unknown kind fails policy parsing.
+
 ### Runner routing: the fleet, then a local box, then GitHub-hosted
 
 A workflow run no longer waits on a fleet that is not taking jobs. Every routed workflow starts with a **Route runners** job on `ubuntu-24.04`, and every other job asks for the label that job chose.
@@ -321,6 +346,7 @@ A workflow run no longer waits on a fleet that is not taking jobs. Every routed 
 - **The one job that differs there** is the cold dev loop. On the fleet it runs in the worker image with the network disabled; a GitHub-hosted machine has no worker image, so it runs the same commands on a copy of the tree in a network namespace whose only interface is loopback.
 - **Always GitHub-hosted:** the route job, and the two required gates (**PR impact gate**, **HoBo release PR gate**). The gates run no repository code and only add up other jobs' results. On the fleet, a superseded run's gate had to find a runner before the next run could start, which held one pull request for 30 minutes.
 - **Not routed:** tag, publish and attest jobs in the release workflows, and `ci-deps-publish.yml`. They build or push the fleet's own images.
+- **It does not read `HOBO_CI_FLEET_ROUTES`.** The route table the relay can publish (above) says what the fleet would choose when the relay is up; this job has to decide when it is not, so it reads the queue. Feeding the table in as a second input is the next step.
 - **Where it lives:** `scripts/ci/route-runner.mts` (decision and queue reading), `.github/actions/route-runner` (the step), `.github/workflows/fleet-probe.yml` (the probe), `selectFleetBackend` in `packages/ci/src/fleet-overflow.ts` (the order: fleet, ARC, local box, GitHub-hosted), and `scripts/lint-actions.ts` (which labels a workflow may ask for).
 
 ### 7. Merge queue (landing, not pickup)

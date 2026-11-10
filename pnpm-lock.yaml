@@ -712,6 +712,9 @@ importers:
       '@hobo/ci-dagger':
         specifier: workspace:*
         version: link:../ci-dagger
+      '@hobo/stations':
+        specifier: workspace:*
+        version: link:../stations
       '@pact-foundation/pact':
         specifier: 17.1.4
         version: 17.1.4
@@ -935,6 +938,12 @@ importers:
       '@hobo/provider-kubernetes':
         specifier: workspace:*
         version: link:../providers/provider-kubernetes
+      '@hobo/provider-netlify':
+        specifier: workspace:*
+        version: link:../providers/provider-netlify
+      '@hobo/provider-railway':
+        specifier: workspace:*
+        version: link:../providers/provider-railway
       '@hobo/provider-vercel':
         specifier: workspace:*
         version: link:../providers/provider-vercel

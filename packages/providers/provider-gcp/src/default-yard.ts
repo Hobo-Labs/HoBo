@@ -44,8 +44,10 @@ import {
 	cloudStorage,
 	cloudStorageSite,
 	cloudTasks,
+	computeEngineInstance,
 	firestore,
 	memorystoreRedis,
+	persistentDisk,
 	pubsub,
 	secretManager,
 } from "./slots.js";
@@ -81,10 +83,14 @@ export interface GcpYardSpecOptions {
 export const GCP_DEFAULT_BINDINGS: GcpSlotCatalog = Object.freeze({
 	web: Object.freeze([cloudRun(), appEngine(), cloudStorageSite()]),
 	api: Object.freeze([apiGateway()]),
-	service: Object.freeze([cloudFunctions(), cloudRunJob()]),
+	service: Object.freeze([
+		computeEngineInstance(),
+		cloudFunctions(),
+		cloudRunJob(),
+	]),
 	data: Object.freeze([cloudSqlPostgres(), cloudSqlMysql(), firestore()]),
 	kv: Object.freeze([memorystoreRedis()]),
-	bucket: Object.freeze([cloudStorage()]),
+	bucket: Object.freeze([persistentDisk(), cloudStorage()]),
 	queue: Object.freeze([cloudTasks()]),
 	topic: Object.freeze([pubsub()]),
 	secretRef: Object.freeze([secretManager()]),

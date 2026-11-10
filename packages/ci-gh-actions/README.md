@@ -266,7 +266,7 @@ schemas and never fetches the `$schema` URL while loading configuration.
 
 ### Provider shapes
 
-A policy provider is one of eight closed, kind-specific shapes defined in the
+A policy provider is one of ten closed, kind-specific shapes defined in the
 sibling [provider schema](schema/ci-project-providers.schema.json) (exported as
 `@hobo/ci-gh-actions/schema/ci-project-providers.schema.json`). The project
 schema's `Provider` is a relative `$ref` to that file, which is a `oneOf` with
@@ -276,7 +276,7 @@ five-field providers of every kind except `vercel` stay valid unchanged.
 
 | Kind | Extra fields |
 |---|---|
-| `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `hobo-box-worker` | none; `scaleSet`, `engine` and `location` are rejected |
+| `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `jog`, `boat`, `hobo-box-worker` | none; `scaleSet`, `engine` and `location` are rejected |
 | `kubernetes` | optional `scaleSet` **or** optional `engine` (never both); neither keeps the existing disposable-pod path |
 | `vercel` | required `location`: `vercel`, `local` or `remote`; `scaleSet` and `engine` are rejected |
 
@@ -639,6 +639,8 @@ to tell who cancelled a run.
 | Blacksmith | Account-connected Blacksmith Linux x64 label |
 | Depot | Account-connected Depot Linux x64 label |
 | WarpBuild | Account-connected WarpBuild Linux x64 label |
+| Jog | Account-connected Jog Linux x64 label (private repositories only) |
+| Boat | Account-connected Boat CI Linux x64 label |
 | Kubernetes | Operator-owned isolated, disposable Linux x64 host runner label |
 
 These are implementations of the reviewed companion-workflow/JIT host protocol.
