@@ -16,11 +16,7 @@ import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission
 import type { JobDurations } from "./job-durations.js";
 import type { JobPickupMetadataCache } from "./job-pickup.js";
 import type { IdentityVerifier } from "./oidc.js";
-import {
-	activeLeaseCoversJob,
-	hasOutstandingBoxCustody,
-	runnerCustody,
-} from "./job-runner-custody.js";
+import { hasOutstandingBoxCustody, runnerCustody } from "./job-runner-custody.js";
 import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
 /** The inbox stores only signature-verified GitHub delivery bytes. */
