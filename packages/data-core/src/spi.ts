@@ -71,7 +71,10 @@ export type FenceEnforcement = (typeof FENCE_ENFORCEMENTS)[number];
 export const SNAPSHOT_CONSISTENCIES = ["consistent", "fuzzy", "none"] as const;
 export type SnapshotConsistency = (typeof SNAPSHOT_CONSISTENCIES)[number];
 
-/** An engine-native fast path, named by the pattern it realizes. */
+/**
+ * An engine-native fast path, named by the pattern it realizes. Declaring one
+ * is a promise that the binding's `nativeTransfer` port can run it.
+ */
 // domain-view: parsed profile reference; wire form is NativeMigrationProfile in data-models/data_core.proto.
 export interface NativeMigrationProfile {
 	readonly profile: string;
@@ -343,6 +346,81 @@ export interface SchemaApplyPort {
 	restore(ref: SchemaSnapshotRef): Awaitable<void>;
 }
 
+// ── native transfer (an engine's own bulk transport) ────────────────────────
+
+/** One native transfer, as either side of it is asked about it. */
+// domain-view: port request; wire form is NativeTransferRef in data-models/data_core.proto.
+export interface NativeTransferRef {
+	/** The native migration profile being realized. */
+	readonly profile: string;
+	/** Durable name of the transfer; an executor derives it from the migration id. */
+	readonly transfer: string;
+	/** The scope on the side being asked. */
+	readonly scope: DatasetScope;
+}
+
+export interface NativeSubscribeRequest extends NativeTransferRef {
+	/** What the source side's `publish` answered. */
+	readonly ticket: JsonObject;
+}
+
+export interface NativeReachedRequest extends NativeTransferRef {
+	/** A position `mark` minted. */
+	readonly mark: Position;
+}
+
+/**
+ * An engine moving its own records: the transport of a `native` realization.
+ *
+ * The port replaces exactly two things the hub does — the seed and the tail —
+ * and nothing else. An executor still owns the phase model, the policy verdict
+ * before every phase, digest verification through `verify`, the fence, the
+ * cutover decision and the flip, the soak posture, and the journal. So the
+ * port never decides that a copy is correct; it only moves records and says
+ * how far it got.
+ *
+ * One port serves both roles. `publish`, `mark` and `reached` are asked of the
+ * source; `subscribe` and `seeded` of the target; `stop` of each.
+ *
+ * Nothing that crosses the port may carry a credential or a record: the ticket
+ * is journaled. How the target reaches the source — a connection string, a
+ * network path — is given to the binding when it is constructed.
+ */
+export interface NativeTransferPort {
+	/** The native migration profiles this port runs; exactly the declared ones. */
+	readonly profiles: readonly string[];
+	/**
+	 * Source. Start retaining every change to the scope for this transfer and
+	 * answer the ticket the target subscribes with. Idempotent: publishing a
+	 * published transfer answers the same ticket.
+	 */
+	publish(request: NativeTransferRef): Awaitable<JsonObject>;
+	/**
+	 * Target. Begin the engine's own copy of what was published: everything in
+	 * the scope, then every change after it. Idempotent for a transfer already
+	 * subscribed. Refused, never approximated, when the engine cannot copy this
+	 * scope faithfully.
+	 */
+	subscribe(request: NativeSubscribeRequest): Awaitable<void>;
+	/**
+	 * Target. True once the initial copy is complete. May wait a bounded time
+	 * before answering false; an executor polls and never sleeps itself.
+	 */
+	seeded(request: NativeTransferRef): Awaitable<boolean>;
+	/** Source. A position every change committed so far sits at or before. */
+	mark(request: NativeTransferRef): Awaitable<Position>;
+	/**
+	 * Source. True once the target has durably applied every change at or
+	 * before `mark`. May wait a bounded time before answering false.
+	 */
+	reached(request: NativeReachedRequest): Awaitable<boolean>;
+	/**
+	 * Either side. Drop whatever this side holds for the transfer, and the log
+	 * it pinned. Idempotent, and harmless for a transfer that never started.
+	 */
+	stop(request: NativeTransferRef): Awaitable<void>;
+}
+
 // ── the binding ─────────────────────────────────────────────────────────────
 
 export interface EngineBinding {
@@ -356,6 +434,8 @@ export interface EngineBinding {
 	readonly fence?: WriteFencePort;
 	readonly retire?: RetirePort;
 	readonly schema?: SchemaApplyPort;
+	/** Present exactly when the declaration lists a native profile. */
+	readonly nativeTransfer?: NativeTransferPort;
 	close(): Awaitable<void>;
 }
 
@@ -523,19 +603,76 @@ const PORT_OF: Readonly<
  * port that is absent would make the selector pick a pattern the engine
  * cannot run; an undeclared port that is present is a capability nobody
  * proved. Both are refused.
+ *
+ * Native profiles follow the same rule, profile by profile: every declared
+ * profile is one the `nativeTransfer` port runs, and the port runs none that
+ * is not declared. A declared fast path with nothing behind it is how a
+ * decision comes to say `native` while nothing can execute it.
  */
 export function assertBindingMatchesDeclaration(binding: EngineBinding): void {
+	const { engine } = binding.declaration;
 	for (const port of SPI_PORTS) {
 		const declared = binding.declaration.ports.includes(port);
 		const present = PORT_OF[port](binding);
 		if (declared !== present) {
 			throw new DataCoreError(
 				"INVALID_ENGINE_DECLARATION",
-				`${binding.declaration.engine} ${declared ? "declares" : "provides"} the ${port} port but does not ${declared ? "provide" : "declare"} it`,
-				{ detail: { engine: binding.declaration.engine, port } },
+				`${engine} ${declared ? "declares" : "provides"} the ${port} port but does not ${declared ? "provide" : "declare"} it`,
+				{ detail: { engine, port } },
 			);
 		}
 	}
+	const declared = new Set(
+		binding.declaration.nativeProfiles.map((entry) => entry.profile),
+	);
+	const runnable = new Set(binding.nativeTransfer?.profiles ?? []);
+	for (const profile of declared) {
+		if (!runnable.has(profile)) {
+			throw new DataCoreError(
+				"INVALID_ENGINE_DECLARATION",
+				`${engine} declares the native profile ${profile} but its nativeTransfer port does not run it`,
+				{ detail: { engine, port: "nativeTransfer", profile } },
+			);
+		}
+	}
+	for (const profile of runnable) {
+		if (!declared.has(profile)) {
+			throw new DataCoreError(
+				"INVALID_ENGINE_DECLARATION",
+				`${engine} provides a nativeTransfer port that runs ${profile} but does not declare that profile`,
+				{ detail: { engine, port: "nativeTransfer", profile } },
+			);
+		}
+	}
+	if (binding.nativeTransfer !== undefined && declared.size === 0) {
+		throw new DataCoreError(
+			"INVALID_ENGINE_DECLARATION",
+			`${engine} provides the nativeTransfer port but declares no native profile`,
+			{ detail: { engine, port: "nativeTransfer" } },
+		);
+	}
+}
+
+/**
+ * The native profile two declarations share for a pattern, if any. A native
+ * fast path is an engine's own, so it exists only between two stores of the
+ * same engine that both declare it for that pattern.
+ */
+export function sharedNativeProfile(
+	source: EngineDeclaration | undefined,
+	target: EngineDeclaration | undefined,
+	pattern: string,
+): string | undefined {
+	if (source === undefined || target === undefined) return undefined;
+	if (source.engine !== target.engine) return undefined;
+	const offered = source.nativeProfiles.find(
+		(entry) =>
+			entry.pattern === pattern &&
+			target.nativeProfiles.some(
+				(other) => other.pattern === pattern && other.profile === entry.profile,
+			),
+	);
+	return offered?.profile;
 }
 
 /** Fetch a port an executor needs, or fail naming the engine and the port. */

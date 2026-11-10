@@ -25,6 +25,7 @@ import {
 	encodeRecordKey,
 	FencedWriteError,
 	type JsonObject,
+	NATIVE_CONFORMANCE_CASE_IDS,
 	parseCanonicalRecord,
 	parseDatasetSchema,
 	type RecordMutation,
@@ -48,6 +49,8 @@ import {
 	TRUNCATE_REFUSED_SQLSTATE,
 } from "../src/index.js";
 import {
+	type CompanionDatabase,
+	createCompanionDatabase,
 	EVERY_TYPE_RECORD,
 	EVERY_TYPE_SCHEMA,
 	failures,
@@ -179,19 +182,23 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 	const table = (binding: PostgresEngine, name: string): string =>
 		`${quoteIdentifier(binding.namespace)}.${quoteIdentifier(name)}`;
 
-	beforeAll(() => {
+	let companion: CompanionDatabase;
+
+	beforeAll(async () => {
 		pool = livePool();
-		harness = postgresHarness(pool);
+		companion = await createCompanionDatabase(pool);
+		harness = postgresHarness(pool, companion);
 	});
 
 	afterAll(async () => {
 		for (const binding of opened) await binding.close();
-		const leftovers = await leftoverCaptureObjects(pool);
+		const leftovers = await leftoverCaptureObjects(pool, companion.pool);
+		await companion.drop(pool);
 		await pool.end();
-		assert.equal(
+		assert.deepEqual(
 			leftovers,
-			0,
-			"no replication slot or publication may outlive the run",
+			[],
+			"no replication slot, publication or subscription of this suite may outlive the run",
 		);
 	});
 
@@ -201,9 +208,18 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 		const report = await runEngineConformance({ engine: harness, now: NOW });
 		assert.equal(report.outcome, "pass", failures(report.results));
 		assert.equal(report.engine, "postgres");
+		// Nothing is skipped: PostgreSQL declares logical-copy, so the native
+		// cases run too — between two databases, over logical replication.
 		assert.deepEqual(report.skipped, []);
 		assert.equal(report.results.length, ENGINE_CONFORMANCE_CASE_IDS.length);
-	}, 300_000);
+		for (const id of NATIVE_CONFORMANCE_CASE_IDS) {
+			assert.equal(
+				report.results.find((result) => result.caseId === id)?.status,
+				"pass",
+				id,
+			);
+		}
+	}, 600_000);
 
 	test("PostgreSQL → reference engine: cross-engine through the hub", async () => {
 		const report = await runEngineConformance({
@@ -212,8 +228,12 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			now: NOW,
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
-		assert.deepEqual(report.skipped, []);
-		assert.equal(report.results.length, ENGINE_CONFORMANCE_CASE_IDS.length);
+		// A native fast path exists only within one engine.
+		assert.deepEqual(report.skipped, NATIVE_CONFORMANCE_CASE_IDS);
+		assert.equal(
+			report.results.length + report.skipped.length,
+			ENGINE_CONFORMANCE_CASE_IDS.length,
+		);
 	}, 300_000);
 
 	test("reference engine → PostgreSQL: the other direction", async () => {
@@ -223,8 +243,10 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			now: NOW,
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
-		// The reference engine has no schema port; nothing else is skipped.
+		// The reference engine has no schema port and shares no native
+		// profile with PostgreSQL; nothing else is skipped.
 		assert.deepEqual(report.skipped, [
+			...NATIVE_CONFORMANCE_CASE_IDS,
 			"pattern.in-place-evolve.gated-and-restorable",
 			"pattern.in-place-evolve.failure-restores",
 		]);
@@ -698,6 +720,11 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			{ id: "edge-ts-micro", placed_at: "9999-12-31T23:59:59.999999Z" },
 			{ id: "edge-ts-early", placed_at: "0100-01-01T00:00:00.000001-11:59" },
 			{ id: "edge-date", due: "0100-03-01" },
+			// The first century: years the server writes with leading zeros.
+			{ id: "edge-ts-year-1", placed_at: "0001-01-01T00:00:00Z" },
+			{ id: "edge-ts-year-99", placed_at: "0099-12-31T23:59:59.999999Z" },
+			{ id: "edge-date-year-1", due: "0001-01-01" },
+			{ id: "edge-date-year-99", due: "0099-12-31" },
 			{ id: "edge-bytes-empty", blob: "" },
 			{ id: "edge-string-empty", note: "" },
 			{ id: "edge-string-astral", note: "𝒳 \u{10FFFF} tab\there \\x00 %s $1" },
@@ -801,7 +828,6 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			"placed_at = 'infinity'",
 			"placed_at = '0044-03-15 12:00:00+00 BC'",
 			"placed_at = '10000-01-01 00:00:00+00'",
-			"placed_at = '0050-01-01 00:00:00+00'",
 			"due = '0044-03-15 BC'",
 			'card = \'{"alg": "x"}\'::jsonb',
 		];

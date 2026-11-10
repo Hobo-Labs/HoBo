@@ -74,11 +74,14 @@ const ROWS_PER_CHANGE = 4;
 const MINIMUM_ROW_BUDGET = 64;
 const MAXIMUM_ROW_BUDGET = 1_000_000_000;
 
-interface Subscription {
+/** A durable reader of one dataset's log, as the registry records it. */
+export interface CaptureSubscription {
 	readonly dataset: string;
 	readonly start: string;
 	readonly objects: PostgresCaptureObjects;
 }
+
+type Subscription = CaptureSubscription;
 
 function lost(subscription: string, message: string): PostgresDataError {
 	return new PostgresDataError("CAPTURE_SUBSCRIPTION_LOST", message, {
@@ -92,15 +95,41 @@ function cellOf(tuple: PgOutputTuple, column: string): NativeCell {
 	return cell.kind === "null" ? null : cell.text;
 }
 
-function tenantOf(tuple: PgOutputTuple): string {
-	return cellOf(tuple, TENANT_COLUMN) ?? "";
+/**
+ * One column of a new row, falling back to the old image where the server
+ * sent a placeholder. A value stored out of line that an update left alone is
+ * not resent in the new row; when that value belongs to the replica identity
+ * the server logs it in the old-key image instead, and when the identity is
+ * full, in the old row. Either way the real value is in `old`.
+ */
+function settledCell(
+	tuple: PgOutputTuple,
+	old: PgOutputTuple | undefined,
+	column: string,
+): NativeCell {
+	if (tuple.get(column)?.kind === "unchanged" && old !== undefined) {
+		return cellOf(old, column);
+	}
+	return cellOf(tuple, column);
 }
 
-/** The canonical key of a decoded tuple, from its key columns alone. */
-function keyOf(schema: DatasetSchema, tuple: PgOutputTuple): string {
+function tenantOf(tuple: PgOutputTuple, old?: PgOutputTuple): string {
+	return settledCell(tuple, old, TENANT_COLUMN) ?? "";
+}
+
+/**
+ * The canonical key of a decoded tuple, from its key columns alone. `old` is
+ * the image to complete an update's new row from: a large key the update did
+ * not touch arrives there, not in the row.
+ */
+function keyOf(
+	schema: DatasetSchema,
+	tuple: PgOutputTuple,
+	old?: PgOutputTuple,
+): string {
 	return canonicalEncode(
 		keyFieldsOf(schema).map((field) => {
-			const text = cellOf(tuple, field.name);
+			const text = settledCell(tuple, old, field.name);
 			if (text === null || text === undefined) {
 				throw new PostgresDataError(
 					"CAPTURE_STREAM_UNDECODABLE",
@@ -149,24 +178,35 @@ export async function mutationsOf(
 	if (change.op === "delete") {
 		return [deleteMutation(tenantOf(change.old), keyOf(schema, change.old))];
 	}
-	const tenant = tenantOf(change.row);
-	const key = keyOf(schema, change.row);
+	// The old image of an update, whichever kind: enough to complete the key.
+	const image = change.op === "update" ? change.old : undefined;
+	const tenant = tenantOf(change.row, image);
+	const key = keyOf(schema, change.row, image);
 	const out: RecordMutation[] = [];
-	if (change.op === "update" && change.old !== undefined) {
-		const oldTenant = tenantOf(change.old);
-		const oldKey = keyOf(schema, change.old);
+	if (image !== undefined) {
+		const oldTenant = tenantOf(image);
+		const oldKey = keyOf(schema, image);
 		// A changed key is a move: the record leaves one key and lands on
 		// another, in that order.
 		if (oldTenant !== tenant || oldKey !== key) {
 			out.push(deleteMutation(oldTenant, oldKey));
 		}
 	}
-	const missing = unchangedColumns(change.row);
-	const old =
+	// A full old row completes any column; a key image completes the key
+	// columns and nothing else. What neither covers is re-read from the store.
+	const full =
 		change.op === "update" && change.oldImage === "full"
 			? change.old
 			: undefined;
-	if (missing.length > 0 && old === undefined) {
+	const identity = new Set([
+		TENANT_COLUMN,
+		...keyFieldsOf(schema).map((field) => field.name),
+	]);
+	const settled = full ?? image;
+	const covered = (column: string): boolean =>
+		full !== undefined || (image !== undefined && identity.has(column));
+	const missing = unchangedColumns(change.row);
+	if (missing.some((column) => !covered(column))) {
 		const current = await reread(tenant, key);
 		// Gone by now: its delete follows later in the log.
 		if (current !== undefined) out.push(current);
@@ -174,10 +214,7 @@ export async function mutationsOf(
 	}
 	const record = canonicalFromNative(
 		schema,
-		(column) =>
-			old !== undefined && missing.includes(column)
-				? cellOf(old, column)
-				: cellOf(change.row, column),
+		(column) => settledCell(change.row, settled, column),
 		"decoded",
 	);
 	out.push(upsertMutation(tenant, key, record));
@@ -192,6 +229,8 @@ interface Peek {
 }
 
 export interface CapturePort extends ChangeCapturePort {
+	/** The registry's record of one subscription, when there is one. */
+	describe(subscription: string): Promise<CaptureSubscription | undefined>;
 	/** Drop every subscription this namespace holds, and the log each pinned. */
 	stopAll(): Promise<void>;
 }
@@ -472,6 +511,7 @@ export function createCapturePort(store: DatasetStore): CapturePort {
 			);
 		},
 		stop,
+		describe: find,
 		async stopAll() {
 			await store.ready();
 			const all = await executor.query(

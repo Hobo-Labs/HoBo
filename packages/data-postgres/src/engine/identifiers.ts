@@ -96,3 +96,47 @@ export function captureObjectNames(
 export function snapshotNamespace(namespace: string, nonce: string): string {
 	return `hobo_snap_${sha256Hex(namespace).slice(0, 12)}_${nonce}`;
 }
+
+/**
+ * The prefix every slot and publication one namespace owns shares. An
+ * operator lists a namespace's objects by it, and a test that checks for
+ * leaked objects counts only its own namespaces' with it.
+ */
+export function captureObjectPrefixes(
+	database: string,
+	namespace: string,
+): PostgresCaptureObjects {
+	const owner = sha256Hex(`${database}\u0000${namespace}`).slice(0, 12);
+	return Object.freeze({
+		slot: `hobo_s_${owner}_`,
+		publication: `hobo_p_${owner}_`,
+	});
+}
+
+/** What every native subscription one namespace created is named after. */
+export function nativeSubscriptionPrefix(namespace: string): string {
+	return `hobo_n_${sha256Hex(namespace).slice(0, 12)}_`;
+}
+
+/**
+ * The name of the server-side subscription behind a native transfer.
+ *
+ * A subscription is database-wide on the target, and the target derives the
+ * name from what it knows on its own — its namespace and the transfer — so it
+ * can find and drop the subscription again without being told anything by the
+ * source.
+ */
+export function nativeSubscriptionName(
+	namespace: string,
+	transfer: string,
+): string {
+	return `${nativeSubscriptionPrefix(namespace)}${sha256Hex(transfer).slice(0, 24)}`;
+}
+
+// public-contract: prefix of the hobo_data_subscriptions key a native transfer's source half is recorded under.
+export const NATIVE_TRANSFER_KEY_PREFIX = "native:";
+
+/** The key a native transfer's publication and slot are recorded under. */
+export function nativeTransferKey(transfer: string): string {
+	return `${NATIVE_TRANSFER_KEY_PREFIX}${transfer}`;
+}

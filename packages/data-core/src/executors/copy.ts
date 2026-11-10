@@ -11,6 +11,14 @@
  * change the scan could have missed or seen half-applied is re-applied in
  * order. That converges whether or not the engine can give a consistent
  * snapshot, which is why no engine is required to.
+ *
+ * Records travel one of two ways, and the plan says which. Through the `hub`,
+ * this module scans, tails and applies canonical records over the ports. With
+ * a `native` realization the engine moves its own records through its
+ * `nativeTransfer` port, and this module does everything else exactly as
+ * before: every phase, the policy verdict in front of each, the digests, the
+ * fence, the cutover decision, the soak. A native realization that cannot run
+ * is an error. It is never answered by running the hub instead.
  */
 import type { DatasetSchema } from "../canonical.js";
 import {
@@ -19,8 +27,9 @@ import {
 	DEFAULT_DIGEST_BUCKETS,
 } from "../digest.js";
 import type { Position, RecordMutation } from "../envelope.js";
-import { MIGRATION_EVENTS } from "../facts.js";
-import type { JsonObject } from "../json.js";
+import { DataCoreError } from "../errors.js";
+import { MIGRATION_EVENTS, type MigrationRealization } from "../facts.js";
+import { isJsonString, type JsonObject } from "../json.js";
 import type { MigrationPhase, RollbackPosture } from "../patterns.js";
 import {
 	type Awaitable,
@@ -28,9 +37,12 @@ import {
 	type ChangeCapturePort,
 	type DatasetScope,
 	type EngineBinding,
+	type NativeTransferPort,
+	type NativeTransferRef,
 	requirePort,
 } from "../spi.js";
 import {
+	fenceTokenDigest,
 	MigrationHold,
 	MigrationRollback,
 	MigrationRun,
@@ -66,7 +78,10 @@ export interface CopyMigrationOptions {
 	readonly targetScope?: DatasetScope;
 	readonly chunkSize?: number;
 	readonly tailBatch?: number;
-	/** Tail rounds before a still-lagging converge holds instead of spinning. */
+	/**
+	 * Tail rounds — or, natively, progress polls — before a still-lagging
+	 * converge holds instead of spinning.
+	 */
 	readonly maxTailRounds?: number;
 	readonly buckets?: number;
 	readonly verifyRechecks?: number;
@@ -82,7 +97,39 @@ export interface CopyMigrationOptions {
 	readonly soakDecision?: () => Awaitable<SoakDecision>;
 	/** Needed for a `to-snapshot` rollback so it cannot resurrect a subject. */
 	readonly erasures?: ErasureLedger;
+	/**
+	 * How records travel: `hub` (the default) or `native`. Take it from the
+	 * selected candidate. It is recorded in the plan, and a run planned one
+	 * way cannot be resumed the other.
+	 */
+	readonly realization?: MigrationRealization;
+	/** The native migration profile to run; required when `realization` is `native`. */
+	readonly profile?: string;
 	readonly plan?: PlannedDetails;
+}
+
+/** The two halves of a native transfer, as this run addresses them. */
+interface NativeLeg {
+	readonly profile: string;
+	readonly source: NativeTransferPort;
+	readonly target: NativeTransferPort;
+	readonly sourceRef: NativeTransferRef;
+	readonly targetRef: NativeTransferRef;
+}
+
+/**
+ * The forward channel: how the target is brought level with the source. The
+ * one seam between the two realizations — everything outside it is shared.
+ */
+interface ForwardChannel {
+	/** `prepare`: open the channel. The answer is the phase checkpoint. */
+	open(): Promise<JsonObject>;
+	/** The initial copy: its checkpoint, or `undefined` while it still runs. */
+	seed(): Promise<JsonObject | undefined>;
+	/** Bring the target level with everything the source has committed. */
+	drain(): Promise<DrainOutcome>;
+	/** Drop the channel and the log it pinned. Idempotent. */
+	close(): Promise<void>;
 }
 
 interface CopyContext {
@@ -95,6 +142,8 @@ interface CopyContext {
 	readonly tailBatch: number;
 	readonly maxTailRounds: number;
 	readonly reverseTail: boolean;
+	/** Present exactly when the run's realization is `native`. */
+	readonly native?: NativeLeg;
 }
 
 interface TailLeg {
@@ -108,7 +157,8 @@ interface TailLeg {
 
 interface DrainOutcome {
 	readonly position: Position;
-	readonly applied: number;
+	/** Changes this module applied; absent when the engine applied them. */
+	readonly applied?: number;
 	readonly caughtUp: boolean;
 }
 
@@ -198,27 +248,120 @@ function hasReverseTail(options: CopyMigrationOptions): boolean {
 	);
 }
 
+// public-contract: the durable name a migration's native transfer is published and subscribed under.
+export const NATIVE_TRANSFER_SUFFIX = "_native";
+
+/**
+ * The name a migration's native transfer goes by on both engines. Exported so
+ * an operator abandoning a migration can `stop` its transfer by name.
+ */
+export function nativeTransferName(migrationId: string): string {
+	return `hobo_migration_${migrationId}${NATIVE_TRANSFER_SUFFIX}`;
+}
+
+/**
+ * Resolve the realization before anything is journaled. `hub` needs nothing.
+ * `native` needs a named profile both engines declare for this pattern, the
+ * port on both bindings, and the ports this module still drives itself. When
+ * any of that is missing the run does not start: falling back to the hub would
+ * carry out a different plan from the one that was decided and recorded.
+ */
+function resolveNative(
+	options: CopyMigrationOptions,
+	pattern: "snapshot-and-tail" | "offline-copy",
+	targetScope: DatasetScope,
+): NativeLeg | undefined {
+	const { source, target, profile } = options;
+	if ((options.realization ?? "hub") === "hub") {
+		if (profile !== undefined) {
+			throw new DataCoreError(
+				"INVALID_MIGRATION_PLAN",
+				`a native profile (${profile}) was named for a hub realization; name the realization the decision selected`,
+				{ detail: { pattern, profile } },
+			);
+		}
+		return undefined;
+	}
+	const unavailable = (why: string): DataCoreError =>
+		new DataCoreError(
+			"NATIVE_REALIZATION_UNAVAILABLE",
+			`${pattern} cannot run natively from ${source.declaration.engine} to ${target.declaration.engine}: ${why}. The hub realization is not substituted; select it explicitly`,
+			{
+				detail: {
+					pattern,
+					source: source.declaration.engine,
+					target: target.declaration.engine,
+					profile: profile ?? "",
+				},
+			},
+		);
+	if (profile === undefined) throw unavailable("no native profile was named");
+	if (source.declaration.engine !== target.declaration.engine) {
+		throw unavailable("a native fast path exists only within one engine");
+	}
+	for (const side of [source, target]) {
+		const declared = side.declaration.nativeProfiles.some(
+			(entry) => entry.profile === profile && entry.pattern === pattern,
+		);
+		if (!declared) {
+			throw unavailable(
+				`${side === source ? "the source" : "the target"} does not declare ${profile} for ${pattern}`,
+			);
+		}
+		if (side.nativeTransfer?.profiles.includes(profile) !== true) {
+			throw unavailable(
+				`${side === source ? "the source" : "the target"} binding provides no nativeTransfer port that runs ${profile}`,
+			);
+		}
+	}
+	const sourcePort = source.nativeTransfer;
+	const targetPort = target.nativeTransfer;
+	if (sourcePort === undefined || targetPort === undefined) {
+		throw unavailable("a binding provides no nativeTransfer port");
+	}
+	// What this module still drives itself, whoever carries the records.
+	requirePort(source, "verify");
+	requirePort(source, "fence");
+	requirePort(source, "retire");
+	requirePort(target, "verify");
+	const transfer = nativeTransferName(options.runtime.migrationId);
+	return {
+		profile,
+		source: sourcePort,
+		target: targetPort,
+		sourceRef: { profile, transfer, scope: options.scope },
+		targetRef: { profile, transfer, scope: targetScope },
+	};
+}
+
 async function open(
 	options: CopyMigrationOptions,
 	pattern: "snapshot-and-tail" | "offline-copy",
 ): Promise<CopyContext> {
+	const targetScope = options.targetScope ?? options.scope;
+	const native = resolveNative(options, pattern, targetScope);
 	const run = await MigrationRun.open(options.runtime, pattern, {
 		source: options.source.declaration.engine,
 		target: options.target.declaration.engine,
 		dataset: options.schema.name,
 		...options.plan,
+		realization: native === undefined ? "hub" : "native",
+		...(native === undefined ? undefined : { profile: native.profile }),
 	});
 	const id = options.runtime.migrationId;
 	return {
 		options,
 		run,
-		targetScope: options.targetScope ?? options.scope,
+		targetScope,
 		forward: `hobo_migration_${id}_forward`,
 		reverse: `hobo_migration_${id}_reverse`,
 		buckets: options.buckets ?? DEFAULT_DIGEST_BUCKETS,
 		tailBatch: options.tailBatch ?? 500,
 		maxTailRounds: options.maxTailRounds ?? 1000,
-		reverseTail: hasReverseTail(options),
+		// A native transfer is torn down at the cutover and nothing tails back,
+		// so the old side goes stale there: the posture is `to-snapshot`.
+		reverseTail: native === undefined && hasReverseTail(options),
+		...(native === undefined ? undefined : { native }),
 	};
 }
 
@@ -254,6 +397,144 @@ async function seed(
 	return seeded;
 }
 
+/** The hub: scan, tail and apply canonical records over the ports. */
+function hubChannel(context: CopyContext): ForwardChannel {
+	const { options, run, forward, tailBatch, maxTailRounds } = context;
+	const start = (): Position => run.checkpointText("prepare", "startPosition");
+	return {
+		async open() {
+			// Position first, scan second: this ordering is the correctness
+			// argument for a fuzzy seed.
+			const startPosition = await requirePort(options.source, "capture").start({
+				scope: options.scope,
+				subscription: forward,
+			});
+			return { startPosition };
+		},
+		async seed() {
+			return { seeded: await seed(context, start(), forward) };
+		},
+		drain: () => drain(forwardLeg(context), start(), tailBatch, maxTailRounds),
+		async close() {
+			await options.source.capture?.stop(forward);
+		},
+	};
+}
+
+/**
+ * A native realization: the engine copies and tails its own records. This
+ * module only opens the transfer, asks how far it has got, and closes it. It
+ * never sleeps — each question may wait a bounded time inside the engine — and
+ * it asks a bounded number of times before reporting that the copy lags.
+ */
+function nativeChannel(
+	context: CopyContext,
+	native: NativeLeg,
+): ForwardChannel {
+	const rounds = context.maxTailRounds;
+	return {
+		async open() {
+			const ticket = await native.source.publish(native.sourceRef);
+			await native.target.subscribe({ ...native.targetRef, ticket });
+			// The ticket is journaled. By the port's contract it carries no
+			// credential and no record.
+			return {
+				realization: "native",
+				profile: native.profile,
+				transfer: native.sourceRef.transfer,
+				ticket,
+			};
+		},
+		async seed() {
+			for (let round = 0; round < rounds; round += 1) {
+				if (await native.target.seeded(native.targetRef)) {
+					return { copied: "native" };
+				}
+			}
+			return undefined;
+		},
+		async drain() {
+			// A mark, then the question "has the target applied up to it": the
+			// engine's own equivalent of tailing until caught up.
+			const mark = await native.source.mark(native.sourceRef);
+			for (let round = 0; round < rounds; round += 1) {
+				if (await native.source.reached({ ...native.sourceRef, mark })) {
+					return { position: mark, caughtUp: true };
+				}
+			}
+			return { position: mark, caughtUp: false };
+		},
+		async close() {
+			// The target first: its side reads from what the source retains.
+			await native.target.stop(native.targetRef);
+			await native.source.stop(native.sourceRef);
+		},
+	};
+}
+
+function channelOf(context: CopyContext): ForwardChannel {
+	return context.native === undefined
+		? hubChannel(context)
+		: nativeChannel(context, context.native);
+}
+
+/**
+ * The token of the fence a cutover was decided under.
+ *
+ * The journal holds only the token's digest — a fence token is a credential
+ * and a journal is evidence. So a later phase, or a resumed run, asks the
+ * store again: raising a raised fence answers its token. The digest then says
+ * whether that fence is still the one the decision was made under. If it is
+ * not, the fence was lifted and raised again behind the migration's back, and
+ * the old authority may have taken writes; the run holds for a person.
+ */
+async function cutOverFenceToken(
+	context: CopyContext,
+	recorded: JsonObject,
+): Promise<string> {
+	const { options } = context;
+	// A journal written before tokens were kept out of it.
+	const legacy = recorded.fenceToken;
+	if (isJsonString(legacy)) return legacy;
+	const grant = await requirePort(options.source, "fence").raise({
+		scope: options.scope,
+		reason: `migration ${options.runtime.migrationId}`,
+	});
+	if (fenceTokenDigest(grant.fenceToken) !== recorded.fenceTokenDigest) {
+		throw new MigrationHold(
+			"soak",
+			"the fence on the old authority is not the one the cutover was decided under; it was lifted and raised again, and the old side may have taken writes",
+		);
+	}
+	return grant.fenceToken;
+}
+
+function cutOverCheckpoint(context: CopyContext): JsonObject {
+	const recorded = context.run.checkpoint("fence-and-flip");
+	if (recorded === undefined) {
+		throw new DataCoreError(
+			"ILLEGAL_PHASE_TRANSITION",
+			"fence-and-flip recorded no cutover; it must complete before a later phase reads it",
+			{ detail: { phase: "fence-and-flip" } },
+		);
+	}
+	return recorded;
+}
+
+/**
+ * What follows a journaled cutover decision, the first time and on every
+ * resume: a native transfer is closed, then write authority moves. Closing
+ * first matters — a transfer left open would carry the old side's retirement
+ * to the new authority as deletes.
+ */
+async function completeFlip(
+	context: CopyContext,
+	fenceToken: string,
+): Promise<void> {
+	if (context.native !== undefined) await channelOf(context).close();
+	await context.options.flipAuthority({ direction: "to-target", fenceToken });
+}
+
 /**
  * The step both patterns share once the two sides are equal under a fence:
  * start the reverse tail at this quiesced point (so nothing is echoed back),
@@ -279,7 +560,8 @@ async function flip(
 	}
 	const decision: JsonObject = {
 		migrationId: options.runtime.migrationId,
-		fenceToken,
+		// The digest, never the token: see `fenceTokenDigest`.
+		fenceTokenDigest: fenceTokenDigest(fenceToken),
 		count: equal.count,
 		digest: equal.digest,
 		reverseTail,
@@ -287,7 +569,7 @@ async function flip(
 		cutOverAt: options.runtime.clock(),
 	};
 	await run.emit(MIGRATION_EVENTS.CutOver, decision);
-	await options.flipAuthority({ direction: "to-target", fenceToken });
+	await completeFlip(context, fenceToken);
 	return decision;
 }
 
@@ -299,16 +581,12 @@ async function resumeFlip(
 	context: CopyContext,
 	decision: JsonObject,
 ): Promise<JsonObject> {
-	await context.options.flipAuthority({
-		direction: "to-target",
-		fenceToken: String(decision.fenceToken),
-	});
+	await completeFlip(context, await cutOverFenceToken(context, decision));
 	return decision;
 }
 
 async function soak(context: CopyContext): Promise<JsonObject> {
 	const { options, run, reverseTail, tailBatch, maxTailRounds } = context;
-	const fenceToken = run.checkpointText("fence-and-flip", "fenceToken");
 	const decision = (await options.soakDecision?.()) ?? "finalize";
 	if (reverseTail) {
 		const reversePosition = run.checkpointText(
@@ -316,7 +594,10 @@ async function soak(context: CopyContext): Promise<JsonObject> {
 			"reversePosition",
 		);
 		await drain(
-			reverseLeg(context, fenceToken),
+			reverseLeg(
+				context,
+				await cutOverFenceToken(context, cutOverCheckpoint(context)),
+			),
 			reversePosition,
 			tailBatch,
 			maxTailRounds,
@@ -326,7 +607,10 @@ async function soak(context: CopyContext): Promise<JsonObject> {
 		throw new MigrationHold("soak", "soak window left open");
 	}
 	if (decision === "rollback") {
-		await rollbackFromSoak(context, fenceToken);
+		await rollbackFromSoak(
+			context,
+			await cutOverFenceToken(context, cutOverCheckpoint(context)),
+		);
 	}
 	return { decision };
 }
@@ -370,6 +654,9 @@ async function rollbackFromSoak(
 				"reverse tail has not converged; the source is not yet current",
 			);
 		}
+		// The forward channel ends with the migration. Dropped before authority
+		// moves, so a failure here leaves nothing half-done.
+		await channelOf(context).close();
 		await options.flipAuthority({ direction: "to-source", fenceToken });
 		await fence.release({ scope: options.scope, fenceToken });
 		await requirePort(options.target, "capture").stop(context.reverse);
@@ -390,6 +677,10 @@ async function rollbackFromSoak(
 			fenceToken,
 		});
 	}
+	// The forward channel ends with the migration: a native transfer left open
+	// would start copying the restored authority's writes to the abandoned
+	// target, and a hub subscription would pin the source's log for ever.
+	await channelOf(context).close();
 	await options.flipAuthority({ direction: "to-source", fenceToken });
 	await fence.release({ scope: options.scope, fenceToken });
 	throw new MigrationRollback(
@@ -400,7 +691,10 @@ async function rollbackFromSoak(
 
 async function finalize(context: CopyContext): Promise<JsonObject> {
 	const { options, run, reverseTail, buckets } = context;
-	const fenceToken = run.checkpointText("fence-and-flip", "fenceToken");
+	const fenceToken = await cutOverFenceToken(
+		context,
+		cutOverCheckpoint(context),
+	);
 	// The reverse tail ends here: once the source is about to be retired there
 	// is nothing left for it to keep current.
 	if (reverseTail) {
@@ -423,12 +717,16 @@ async function finalize(context: CopyContext): Promise<JsonObject> {
 			"the fenced source changed after cutover; refusing to retire it",
 		);
 	}
+	// The forward channel is dropped before the source is emptied, never
+	// after. An engine whose log records the retirement as deletes would
+	// otherwise hand them to whatever still reads that channel — and what
+	// reads it is the new authority.
+	await channelOf(context).close();
 	const receipt = await requirePort(options.source, "retire").retire({
 		scope: options.scope,
 		fenceToken,
 		expected,
 	});
-	await options.source.capture?.stop(context.forward);
 	return { removed: receipt.removed };
 }
 
@@ -452,47 +750,43 @@ export async function runSnapshotAndTail(
 	options: CopyMigrationOptions,
 ): Promise<MigrationRunResult> {
 	const context = await open(options, "snapshot-and-tail");
-	const { run, forward, tailBatch, maxTailRounds } = context;
+	const { run } = context;
+	const channel = channelOf(context);
 	return run.drive(async () => {
 		await run.phase("gate", async () => ({}));
-		const prepared = await run.phase("prepare", async () => {
+		await run.phase("prepare", async () => {
 			await options.target.datasets.ensureDataset(options.schema);
-			// Position first, scan second: this ordering is the correctness
-			// argument for a fuzzy seed.
-			const startPosition = await requirePort(options.source, "capture").start({
-				scope: options.scope,
-				subscription: forward,
-			});
-			return { startPosition };
+			return channel.open();
 		});
-		const startPosition = String(prepared.startPosition);
-		await run.phase("seed", async () => ({
-			seeded: await seed(context, startPosition, forward),
-		}));
+		await run.phase("seed", async () => {
+			const seeded = await channel.seed();
+			if (seeded === undefined) {
+				throw new MigrationHold(
+					"prepare",
+					"the native initial copy has not finished; seed will resume",
+				);
+			}
+			return seeded;
+		});
 		await run.phase("converge", async () => {
-			const outcome = await drain(
-				forwardLeg(context),
-				startPosition,
-				tailBatch,
-				maxTailRounds,
-			);
+			const outcome = await channel.drain();
 			if (!outcome.caughtUp) {
 				throw new MigrationHold(
 					"seed",
 					"lag did not fall within bound; converge will resume",
 				);
 			}
-			return { position: outcome.position, applied: outcome.applied };
+			return {
+				position: outcome.position,
+				...(outcome.applied === undefined
+					? undefined
+					: { applied: outcome.applied }),
+			};
 		});
 		await run.phase("verify", async () => {
 			const attempts = (options.verifyRechecks ?? 3) + 1;
 			for (let attempt = 0; attempt < attempts; attempt += 1) {
-				await drain(
-					forwardLeg(context),
-					startPosition,
-					tailBatch,
-					maxTailRounds,
-				);
+				await channel.drain();
 				const pair = await digests(context);
 				if (compareDigests(pair.source, pair.target).equal) {
 					await run.emit(MIGRATION_EVENTS.Verified, {
@@ -523,12 +817,7 @@ export async function runSnapshotAndTail(
 				scope: options.scope,
 				reason: `migration ${options.runtime.migrationId}`,
 			});
-			const drained = await drain(
-				forwardLeg(context),
-				startPosition,
-				tailBatch,
-				maxTailRounds,
-			);
+			const drained = await channel.drain();
 			const pair = await digests(context);
 			if (
 				!drained.caughtUp ||
@@ -563,6 +852,7 @@ export async function runOfflineCopy(
 ): Promise<MigrationRunResult> {
 	const context = await open(options, "offline-copy");
 	const { run } = context;
+	const channel = channelOf(context);
 	return run.drive(async () => {
 		await run.phase("gate", async () => ({}));
 		await run.phase("prepare", async () => {
@@ -577,13 +867,29 @@ export async function runOfflineCopy(
 				scope: options.scope,
 				reason: `migration ${options.runtime.migrationId}`,
 			});
-			const seeded = await seed(context, "offline-copy", context.forward);
+			const release = (): Awaitable<void> =>
+				fence.release({ scope: options.scope, fenceToken: grant.fenceToken });
+			let seeded: number | undefined;
+			if (context.native === undefined) {
+				seeded = await seed(context, "offline-copy", context.forward);
+			} else {
+				// Opening is idempotent, so an attempt that ran out of time is
+				// continued by the next one rather than started again: the
+				// transfer is left in place when the fence is released.
+				await channel.open();
+				const copied = await channel.seed();
+				const level = copied === undefined ? undefined : await channel.drain();
+				if (level?.caughtUp !== true) {
+					await release();
+					throw new MigrationHold(
+						"prepare",
+						"the native copy did not finish inside the fence window; the source remains the authority",
+					);
+				}
+			}
 			const pair = await digests(context);
 			if (!compareDigests(pair.source, pair.target).equal) {
-				await fence.release({
-					scope: options.scope,
-					fenceToken: grant.fenceToken,
-				});
+				await release();
 				throw new MigrationHold(
 					"prepare",
 					"copy verification failed; the source remains the authority",
@@ -591,7 +897,7 @@ export async function runOfflineCopy(
 			}
 			return {
 				...(await flip(context, grant.fenceToken, pair.target)),
-				seeded,
+				...(seeded === undefined ? undefined : { seeded }),
 			};
 		});
 		await run.phase("soak", async () => soak(context));

@@ -8,9 +8,13 @@
  * differing schema) stay `DataCoreError`s from `@hobo/data-core`, so they mean
  * the same thing on every engine.
  *
- * Neither class ever carries a server message. MongoDB quotes the offending
- * key in a duplicate-key error and the offending document in a validation
- * error, and both are payload.
+ * Neither class ever carries a server message, and neither carries a `cause`.
+ * MongoDB quotes the offending key in a duplicate-key error and the offending
+ * document in a validation error, and a driver error can hold the address it
+ * dialled; all of that is payload or deployment detail. A chained `cause` is
+ * printed by `util.inspect`, by every logger, and by an uncaught-exception
+ * report, so the only safe chain is no chain: what survives a refused command
+ * is its numeric code, its code name, and its labels.
  */
 
 export const MONGO_DATA_ERROR_CODES = [
@@ -24,7 +28,7 @@ export const MONGO_DATA_ERROR_CODES = [
 	"MONGODB_NON_CANONICAL_VALUE",
 	/** The collection's validator refused the document. */
 	"MONGODB_DOCUMENT_REJECTED",
-	/** The document exceeds the 16 MiB BSON limit. */
+	/** The document reaches the 16 MiB BSON limit. */
 	"MONGODB_DOCUMENT_TOO_LARGE",
 	/** Multi-document transactions are not available (a standalone server). */
 	"MONGODB_TRANSACTIONS_UNAVAILABLE",
@@ -36,6 +40,8 @@ export const MONGO_DATA_ERROR_CODES = [
 	"MONGODB_CAPTURE_POSITION_LOST",
 	/** The stream reported an event that is not a record change (drop, rename). */
 	"MONGODB_CAPTURE_UNSUPPORTED_EVENT",
+	/** The subscription name already belongs to a reader of another scope. */
+	"MONGODB_CAPTURE_SUBSCRIPTION_CONFLICT",
 	/** Any other refused command; `detail.serverCode` names it. */
 	"MONGODB_COMMAND_FAILED",
 ] as const;
@@ -48,7 +54,6 @@ export type MongoDataErrorDetail = Readonly<
 
 export type MongoDataErrorOptions = {
 	readonly detail?: MongoDataErrorDetail;
-	readonly cause?: unknown;
 };
 
 export class MongoDataError extends Error {
@@ -60,7 +65,7 @@ export class MongoDataError extends Error {
 		message: string,
 		options: MongoDataErrorOptions = {},
 	) {
-		super(message, options.cause === undefined ? {} : { cause: options.cause });
+		super(message);
 		this.name = "MongoDataError";
 		this.code = code;
 		this.detail = Object.freeze(options.detail ?? {});
@@ -76,7 +81,11 @@ export function isMongoDataError(
 /** What an executor knows about a refused command: codes, never messages. */
 // domain-view: the thrown form of the wire record MongoCommandFailure in data-models/data_mongodb.proto.
 export interface MongoCommandFailure {
-	/** The server's numeric error code; 0 when the refusal was client-side. */
+	/**
+	 * The server's numeric error code. 0 when the refusal was client-side and
+	 * has no server code; an adapter that knows which server refusal a
+	 * client-side one stands in for reports that code instead.
+	 */
 	readonly code: number;
 	/** The server's code name, or the client error class when `code` is 0. */
 	readonly codeName: string;
@@ -84,28 +93,38 @@ export interface MongoCommandFailure {
 	readonly labels?: readonly string[];
 }
 
-export type MongoCommandErrorOptions = {
-	readonly cause?: unknown;
-};
+/** A code name or a label: an identifier, so it cannot smuggle a message. */
+const NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/u;
 
-/** Thrown by a `MongoExecutor` when the server (or the driver) refuses. */
+function nameOnly(text: string): string {
+	return NAME_PATTERN.test(text) ? text : "";
+}
+
+/**
+ * Thrown by a `MongoExecutor` when the server (or the driver) refuses.
+ *
+ * It takes a failure record and nothing else — there is deliberately no way
+ * to chain the driver's own error, whose message quotes keys, documents, and
+ * addresses. A code name or label that is not a plain identifier is dropped.
+ */
 export class MongoCommandError extends Error {
 	readonly code: number;
 	readonly codeName: string;
 	readonly labels: readonly string[];
 
-	constructor(
-		failure: MongoCommandFailure,
-		options: MongoCommandErrorOptions = {},
-	) {
+	constructor(failure: MongoCommandFailure) {
+		const code =
+			Number.isInteger(failure.code) && failure.code >= 0 ? failure.code : 0;
+		const codeName = nameOnly(failure.codeName);
 		super(
-			`MongoDB refused the command (code ${failure.code}${failure.codeName === "" ? "" : ` ${failure.codeName}`})`,
-			options.cause === undefined ? {} : { cause: options.cause },
+			`MongoDB refused the command (code ${code}${codeName === "" ? "" : ` ${codeName}`})`,
 		);
 		this.name = "MongoCommandError";
-		this.code = failure.code;
-		this.codeName = failure.codeName;
-		this.labels = Object.freeze([...(failure.labels ?? [])]);
+		this.code = code;
+		this.codeName = codeName;
+		this.labels = Object.freeze(
+			(failure.labels ?? []).map(nameOnly).filter((label) => label !== ""),
+		);
 	}
 }
 
@@ -113,6 +132,7 @@ export class MongoCommandError extends Error {
 export const MONGO_SERVER_CODES = Object.freeze({
 	illegalOperation: 20,
 	namespaceExists: 48,
+	writeConflict: 112,
 	documentValidationFailure: 121,
 	transactionTooLarge: 257,
 	invalidResumeToken: 260,
@@ -200,9 +220,10 @@ const CODE_MEANING: ReadonlyMap<number, readonly [MongoDataErrorCode, string]> =
 	]);
 
 /**
- * Give a refused command the meaning a caller can act on. The server message
- * is deliberately dropped; the numeric code and its name are kept as detail
- * and the original error as `cause`.
+ * Give a refused command the meaning a caller can act on. Only the numeric
+ * code and its name cross over, as detail. The refusal itself is not chained
+ * as `cause`: an executor is foreign code, and whatever it hung on its error
+ * would otherwise be one `util.inspect` away from a log.
  */
 export function toMongoDataError(failure: MongoCommandError): MongoDataError {
 	const [code, message] = CODE_MEANING.get(failure.code) ?? [
@@ -210,8 +231,10 @@ export function toMongoDataError(failure: MongoCommandError): MongoDataError {
 		"MongoDB refused the command",
 	];
 	return new MongoDataError(code, message, {
-		cause: failure,
-		detail: { serverCode: failure.code, codeName: failure.codeName },
+		detail: {
+			serverCode: failure.code,
+			codeName: nameOnly(failure.codeName),
+		},
 	});
 }
 

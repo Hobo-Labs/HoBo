@@ -145,6 +145,26 @@ message NativeMigrationProfile {
   string pattern = 2;
 }
 
+// One native transfer, as either side of it is asked about it. The transfer
+// is named by the migration; the scope is the one on the side being asked.
+message NativeTransferRef {
+  string profile = 1; // a declared native migration profile
+  string transfer = 2;
+  string dataset = 3;
+  string tenant = 4; // empty spans every tenant
+}
+
+// What the prepare phase of a native realization checkpoints. `ticket_json`
+// is what the source's native-transfer port answered and the target was
+// subscribed with. It names server objects; by the port's contract it never
+// carries a credential, a connection string, or a record.
+message NativeTransferCheckpoint {
+  string realization = 1; // always "native"
+  string profile = 2;
+  string transfer = 3;
+  string ticket_json = 4;
+}
+
 message EngineDeclaration {
   string contract = 1; // hobo.data-engine/v1
   string engine = 2;
@@ -282,6 +302,10 @@ message MigrationState {
   bool cut_over = 5;
   optional MigrationPhase held_at = 6;
   optional string held_reason = 7;
+  // How records travel, as the plan recorded it. Absent for a plan that
+  // predates the field, which ran the hub.
+  optional string realization = 8; // native | hub
+  optional string profile = 9; // the native migration profile, when native
 }
 
 message MigrationRunResult {
@@ -334,6 +358,10 @@ message MigrationPlannedEventData {
   optional string source = 7;
   optional string target = 8;
   optional string dataset = 9;
+  // The realization that runs. Binding on every resume: a run planned one
+  // way is never continued the other.
+  optional string realization = 10; // native | hub
+  optional string profile = 11; // the native migration profile, when native
 }
 
 // `checkpoint_json` holds positions, counts, and digests — never a record.
@@ -359,6 +387,13 @@ message MigrationCutOverEventData {
   optional string digest = 4;
   optional bool reverse_tail = 5;
   optional string authority = 6; // "log" when a log-pivot moved it
+  // sha256 of the fence token the cutover was decided under. The token itself
+  // is a write-authority credential and is never journaled.
+  optional string fence_token_digest = 7;
+  // Where the reverse tail starts on the new authority, when there is one.
+  optional string reverse_position = 8;
+  // Log position the projection had reached, when a log-pivot moved authority.
+  optional string log_position = 9;
 }
 
 message MigrationRolledBackEventData {

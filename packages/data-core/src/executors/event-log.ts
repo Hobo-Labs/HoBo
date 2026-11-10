@@ -42,6 +42,8 @@ import {
 } from "../spi.js";
 import type { SoakDecision } from "./copy.js";
 import {
+	decidedFenceToken,
+	fenceTokenDigest,
 	MigrationHold,
 	MigrationRollback,
 	MigrationRun,
@@ -602,15 +604,19 @@ export async function runLogPivot(
 		await run.phase("fence-and-flip", async () => {
 			// A cutover an earlier run decided is finished, not re-verified.
 			const decided = run.cutOverDecision();
-			if (decided !== undefined) {
-				await options.flipAuthority({ fenceToken: String(decided.fenceToken) });
-				return decided;
-			}
 			const fence = requirePort(options.source, "fence");
+			// Raising a raised fence answers its token, so a resumed run gets
+			// the token back from the store rather than from the journal.
 			const grant = await fence.raise({
 				scope: options.scope,
 				reason: `migration ${options.runtime.migrationId}`,
 			});
+			if (decided !== undefined) {
+				await options.flipAuthority({
+					fenceToken: decidedFenceToken(decided, grant.fenceToken),
+				});
+				return decided;
+			}
 			const tail = await captureToLog(context, startPosition);
 			const projected = await project();
 			const verdict = await equalDigests();
@@ -628,7 +634,8 @@ export async function runLogPivot(
 			const decision: JsonObject = {
 				migrationId: options.runtime.migrationId,
 				authority: "log",
-				fenceToken: grant.fenceToken,
+				// The digest, never the token: a journal is evidence.
+				fenceTokenDigest: fenceTokenDigest(grant.fenceToken),
 				count: verdict.count,
 				digest: verdict.digest,
 				logPosition: projected.position,
@@ -669,6 +676,9 @@ export interface StreamHandoffOptions {
 	/**
 	 * Stop the single writer of the source partition. Partition ownership is
 	 * the runtime's to hand over; this executor only asks for it.
+	 *
+	 * Idempotent: quiescing a quiesced partition answers the same token. The
+	 * journal records only the token's digest, so a resumed run asks again.
 	 */
 	readonly quiesce: () => Awaitable<{ readonly fenceToken: string }>;
 	readonly unquiesce: (fenceToken: string) => Awaitable<void>;
@@ -869,11 +879,13 @@ export async function runStreamHandoff(
 		});
 		await run.phase("fence-and-flip", async () => {
 			const decided = run.cutOverDecision();
+			const grant = await options.quiesce();
 			if (decided !== undefined) {
-				await options.flipWriter({ fenceToken: String(decided.fenceToken) });
+				await options.flipWriter({
+					fenceToken: decidedFenceToken(decided, grant.fenceToken),
+				});
 				return decided;
 			}
-			const grant = await options.quiesce();
 			const outcome = await copy();
 			const verdict = await compare();
 			if (!outcome.caughtUp || !verdict.equal) {
@@ -885,7 +897,8 @@ export async function runStreamHandoff(
 			}
 			const decision: JsonObject = {
 				migrationId: options.runtime.migrationId,
-				fenceToken: grant.fenceToken,
+				// The digest, never the token: a journal is evidence.
+				fenceTokenDigest: fenceTokenDigest(grant.fenceToken),
 				count: verdict.count,
 				digest: verdict.digest,
 				cutOverAt: options.runtime.clock(),

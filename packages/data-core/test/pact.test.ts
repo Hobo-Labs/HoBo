@@ -10,6 +10,7 @@ import {
 	type Authority,
 	type ChangeKind,
 	createReferenceEngine,
+	createReferenceNativeLink,
 	DataCoreError,
 	type DatasetSchema,
 	envelopeToJson,
@@ -164,7 +165,7 @@ describe("pact: migration selector", () => {
 });
 
 describe("pact: engine SPI", () => {
-	const [fenced, captured, applied, digested] = loadPact(
+	const [fenced, captured, applied, digested, published, subscribed] = loadPact(
 		"engine-spi.pact.json",
 	);
 
@@ -290,5 +291,84 @@ describe("pact: engine SPI", () => {
 			!JSON.stringify(digest).includes("o-9"),
 			"no record payload in a digest",
 		);
+	});
+	const transferOf = (requestPath: string): string =>
+		requestPath.split("/")[4] ?? "";
+
+	test(published?.description ?? "native publish", async () => {
+		assert.ok(published);
+		const engine = createReferenceEngine({
+			native: createReferenceNativeLink(),
+		});
+		await engine.datasets.ensureDataset(ORDERS);
+		await engine.records.write({
+			dataset: "orders",
+			mutations: mutations([
+				{
+					tenant: "",
+					key: '["o-9"]',
+					op: "upsert",
+					record: { id: "o-9", total: "1" },
+				},
+			]),
+		});
+		const ticket = await engine.nativeTransfer?.publish({
+			profile: String(published.request.body.profile),
+			transfer: transferOf(published.request.path),
+			scope: scopeOf("orders", String(published.request.body.tenant)),
+		});
+		assert.ok(ticket);
+		// The origin is an opaque name minted per engine; its presence is the
+		// contract, its value is not.
+		const { origin: _origin, ...stable } = ticket;
+		assert.deepEqual(
+			{ ticket: stable, keys: Object.keys(ticket).sort() },
+			published.response.body,
+		);
+		assert.ok(!JSON.stringify(ticket).includes("o-9"), "no record in a ticket");
+	});
+
+	test(subscribed?.description ?? "native subscribe", async () => {
+		assert.ok(subscribed);
+		const link = createReferenceNativeLink();
+		const source = createReferenceEngine({ native: link });
+		const target = createReferenceEngine({ native: link });
+		const row: JsonObject[] = [
+			{
+				tenant: "",
+				key: '["o-9"]',
+				op: "upsert",
+				record: { id: "o-9", total: "1" },
+			},
+		];
+		for (const engine of [source, target]) {
+			await engine.datasets.ensureDataset(ORDERS);
+			await engine.records.write({
+				dataset: "orders",
+				mutations: mutations(row),
+			});
+		}
+		const ref = {
+			profile: String(subscribed.request.body.profile),
+			transfer: transferOf(subscribed.request.path),
+			scope: scopeOf("orders", String(subscribed.request.body.tenant)),
+		};
+		const ticket = await source.nativeTransfer?.publish(ref);
+		assert.ok(ticket);
+		let refusal: JsonObject = {};
+		try {
+			await target.nativeTransfer?.subscribe({ ...ref, ticket });
+		} catch (error) {
+			assert.ok(error instanceof DataCoreError);
+			refusal = {
+				error: {
+					code: error.code,
+					reason: error.detail.reason ?? "",
+					profile: error.detail.profile ?? "",
+				},
+			};
+		}
+		assert.deepEqual(refusal, subscribed.response.body);
+		assert.equal(subscribed.response.status, 409);
 	});
 });

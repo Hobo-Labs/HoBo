@@ -32,6 +32,12 @@ message PostgresEngineOptions {
   // True makes close() drop the namespace, its subscriptions and their
   // replication slots, and its schema snapshots.
   optional bool ephemeral = 5;
+  // How long a native-transfer progress question waits before answering
+  // "not yet", in milliseconds. Defaults to 50.
+  optional uint32 native_poll_interval_ms = 6;
+  // The connection string a native transfer's target reaches the source with
+  // is, like the executor, not part of the record: it is a credential, given
+  // to the binding as a function and resolved only when it is used.
 }
 
 // A closed list: an engine may only report impedance it has declared.
@@ -52,6 +58,11 @@ enum PostgresImpedanceCode {
   POSTGRES_IMPEDANCE_CODE_SCHEMA_SNAPSHOT_IS_A_COPY = 13;
   POSTGRES_IMPEDANCE_CODE_SCHEMA_SNAPSHOT_REFUSES_DEPENDENT_OBJECTS = 14;
   POSTGRES_IMPEDANCE_CODE_SCHEMA_RESTORE_RECREATES_TABLE = 15;
+  POSTGRES_IMPEDANCE_CODE_RETIRE_IS_LOGGED_AS_DELETES = 16;
+  POSTGRES_IMPEDANCE_CODE_NATIVE_COPY_WHOLE_DATASET_SAME_NAME = 17;
+  POSTGRES_IMPEDANCE_CODE_NATIVE_COPY_NO_REVERSE_TAIL = 18;
+  POSTGRES_IMPEDANCE_CODE_NATIVE_COPY_TARGET_HOLDS_SOURCE_CONNECTION = 19;
+  POSTGRES_IMPEDANCE_CODE_NATIVE_COPY_NEEDS_REPLICATION_CAPACITY = 20;
 }
 
 // ── the executor boundary ───────────────────────────────────────────────────
@@ -60,6 +71,10 @@ enum PostgresImpedanceCode {
 // by the statement, so no type travels with it.
 message PostgresExecutorParameter {
   optional string text = 1;
+  // True when the parameter is a credential: the connection string a native
+  // transfer hands the target server. A recorded contract, a log, or a trace
+  // carries this flag in place of the text, never the text.
+  optional bool secret = 2;
 }
 
 // One statement for the injected executor to run.
@@ -115,6 +130,28 @@ message PostgresSubscription {
   PostgresCaptureObjects objects = 4;
   // The write-ahead-log location every not-yet-captured change sits after.
   string start_position = 5;
+}
+
+// ── native transfer (logical-copy) ──────────────────────────────────────────
+
+// What the source side of a logical-copy answers and the target side
+// subscribes with. It is journaled with the migration, so it names server
+// objects and nothing else: no connection string, no credential, no row.
+message PostgresNativeTicket {
+  string profile = 1; // migration.postgres.logical-copy/v1
+  // Publication on the source database covering the one dataset table.
+  string publication = 2;
+  // Replication slot on the source cluster, created before any subscription.
+  string slot = 3;
+  // Server-side schema the table is published under; the target must use
+  // the same name, because logical replication maps tables by name.
+  string namespace = 4;
+  string dataset = 5;
+  // Always empty: logical-copy moves a whole dataset, never one tenant.
+  string tenant = 6;
+  // A digest naming the source cluster and database, so that a database is
+  // never subscribed to itself.
+  string origin = 7;
 }
 
 // ── metadata rows ───────────────────────────────────────────────────────────

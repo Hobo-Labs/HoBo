@@ -21,8 +21,10 @@
 import {
 	type CanonicalRecord,
 	type CanonicalType,
+	DataCoreError,
 	type DatasetField,
 	type DatasetSchema,
+	encodeRecordKey,
 	type JsonObject,
 	type JsonValue,
 	parseCanonicalRecord,
@@ -438,6 +440,15 @@ export function encodeDocument(
 	// Parse, don't validate: whatever arrives is put in normal form first, so
 	// the encoders below only ever see canonical values.
 	const canonical = parseCanonicalRecord(schema, record);
+	// A record is stored where its own key says. One filed under another
+	// key would sit where no other engine, and no later read, looks for it.
+	if (encodeRecordKey(schema, canonical) !== key) {
+		throw new DataCoreError(
+			"INVALID_RECORD",
+			"a mutation's key must be the key of its record",
+			{ detail: { dataset: schema.name, field: "key" } },
+		);
+	}
 	const declared = new Set(schema.fields.map((field) => field.name));
 	const fields = schema.fields.map((field): [string, MongoValue] => {
 		const value = canonical[field.name] ?? null;

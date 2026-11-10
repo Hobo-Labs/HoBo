@@ -84,6 +84,11 @@ export {
 } from "./engine/executor.js";
 export {
 	captureObjectNames,
+	captureObjectPrefixes,
+	NATIVE_TRANSFER_KEY_PREFIX,
+	nativeSubscriptionName,
+	nativeSubscriptionPrefix,
+	nativeTransferKey,
 	OPEN_FIELDS_COLUMN,
 	type PostgresCaptureObjects,
 	parseNamespace,
@@ -91,6 +96,19 @@ export {
 	TENANT_COLUMN,
 } from "./engine/identifiers.js";
 export { formatLsn, parseLsn } from "./engine/lsn.js";
+export {
+	createSubscriptionStatement,
+	NATIVE_MARK,
+	NATIVE_MARK_PREFIX,
+	NATIVE_REACHED,
+	NATIVE_REFUSALS,
+	NATIVE_SOURCE_SETTING,
+	NATIVE_SUBSCRIPTION_STATE,
+	type NativeRefusal,
+	type PostgresNativeTicket,
+	PRESENT_NATIVE_SOURCE,
+	parsePostgresNativeTicket,
+} from "./engine/native.js";
 export {
 	decodePgOutputMessage,
 	decodePgOutputTransactions,

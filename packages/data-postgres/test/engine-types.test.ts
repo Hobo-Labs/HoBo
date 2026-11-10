@@ -285,8 +285,6 @@ describe("native → canonical", () => {
 			["timestamp", "0044-03-15T12:00:00 BC", "select"],
 			["timestamp", "0044-03-15 12:00:00+00 BC", "decoded"],
 			["timestamp", "10000-01-01T00:00:00", "select"],
-			// A two-digit year would be read as 19xx by the canonical normaliser.
-			["timestamp", "0050-01-01T00:00:00", "select"],
 			// Not UTC: the capture session pins UTC, so anything else is wrong.
 			["timestamp", "2026-01-02 05:04:05+02", "decoded"],
 			["json", "{not json", "select"],

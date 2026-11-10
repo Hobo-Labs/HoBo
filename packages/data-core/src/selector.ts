@@ -14,6 +14,7 @@
 import type { DatasetSchema } from "./canonical.js";
 import type { PolicyVerdict } from "./custody.js";
 import { DataCoreError } from "./errors.js";
+import { MIGRATION_REALIZATIONS, type MigrationRealization } from "./facts.js";
 import { digestOf, type JsonObject } from "./json.js";
 import {
 	type Authority,
@@ -27,7 +28,11 @@ import {
 	type RollbackPosture,
 	type WriteFreeze,
 } from "./patterns.js";
-import type { EngineDeclaration, SpiPortName } from "./spi.js";
+import {
+	type EngineDeclaration,
+	type SpiPortName,
+	sharedNativeProfile,
+} from "./spi.js";
 import {
 	blockingMappingFindings,
 	composeTypeMapping,
@@ -37,9 +42,9 @@ import {
 // public-contract: the schema id a migration decision is published under.
 export const MIGRATION_DECISION_CONTRACT = "hobo.migration-decision/v1";
 
-export const REALIZATIONS = ["native", "hub"] as const;
+export const REALIZATIONS = MIGRATION_REALIZATIONS;
 /** `native` is an engine's own fast path; `hub` is the canonical envelope. */
-export type Realization = (typeof REALIZATIONS)[number];
+export type Realization = MigrationRealization;
 
 export const CONFORMANCE_OUTCOMES = ["pass", "fail", "unknown"] as const;
 export type ConformanceOutcome = (typeof CONFORMANCE_OUTCOMES)[number];
@@ -156,19 +161,22 @@ function nativeProfileFor(
 	request: SelectionRequest,
 	pattern: MigrationPatternId,
 ): string | undefined {
-	const { source, target } = request;
-	if (source === undefined || target === undefined) return undefined;
-	if (source.engine !== target.engine) return undefined;
-	const offered = source.nativeProfiles.find(
-		(entry) => entry.pattern === pattern,
-	);
-	if (offered === undefined) return undefined;
-	return target.nativeProfiles.some(
-		(entry) => entry.profile === offered.profile,
-	)
-		? offered.profile
-		: undefined;
+	return sharedNativeProfile(request.source, request.target, pattern);
 }
+
+/**
+ * Ports a `native` realization does not use: the engine moves the records
+ * itself, so the scan, the capture log and the apply path are not asked for.
+ * Everything else a pattern needs — verification, the fence, retirement — it
+ * still needs, whoever carries the records.
+ */
+export const NATIVE_TRANSPORT_PORTS: {
+	readonly source: readonly SpiPortName[];
+	readonly target: readonly SpiPortName[];
+} = Object.freeze({
+	source: Object.freeze(["snapshot", "capture"] as const),
+	target: Object.freeze(["apply"] as const),
+});
 
 function evidenceReasons(
 	request: SelectionRequest,
@@ -281,14 +289,21 @@ function evaluateCandidate(
 			engines.push(request.target.engine);
 		}
 	}
-	if (realization === "hub") {
+	const native = realization === "native";
+	{
+		const sourcePorts = pattern.sourcePorts.filter(
+			(port) => !native || !NATIVE_TRANSPORT_PORTS.source.includes(port),
+		);
+		const targetPorts = pattern.targetPorts.filter(
+			(port) => !native || !NATIVE_TRANSPORT_PORTS.target.includes(port),
+		);
 		const missingSource =
 			needsSource && request.source !== undefined
-				? hasPorts(request.source, pattern.sourcePorts)
+				? hasPorts(request.source, sourcePorts)
 				: [];
 		const missingTarget =
 			needsTarget && request.target !== undefined
-				? hasPorts(request.target, pattern.targetPorts)
+				? hasPorts(request.target, targetPorts)
 				: [];
 		if (missingSource.length > 0) {
 			reasons.push({
@@ -302,6 +317,8 @@ function evaluateCandidate(
 				detail: `target ${request.target?.engine ?? "engine"} lacks ${missingTarget.join(", ")}`,
 			});
 		}
+	}
+	if (!native) {
 		const crossEngine =
 			request.source !== undefined &&
 			request.target !== undefined &&
@@ -341,8 +358,10 @@ function evaluateCandidate(
 			detail: `${pattern.id} needs about ${estimatedFreeze} ms of refused writes; the budget is ${request.constraints.maxWriteFreezeMs} ms`,
 		});
 	}
+	// A native realization carries no reverse tail: the engine's transport is
+	// torn down at the cutover, so the old side goes stale there.
 	const reverseTail =
-		realization === "hub" &&
+		!native &&
 		(pattern.reverseTailPorts.source.length > 0 ||
 			pattern.reverseTailPorts.target.length > 0) &&
 		hasPorts(request.source, pattern.reverseTailPorts.source).length === 0 &&

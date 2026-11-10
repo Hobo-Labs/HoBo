@@ -10,9 +10,24 @@ import {
 import { describe, test } from "vitest";
 import { failures, memoryHarness, NOW } from "./support/harness.js";
 
-const SCHEMA_CASES = [
+// Skipped, never passed: MongoDB declares no native migration profile and has
+// no SQL surface, so it has neither a `nativeTransfer` nor a `schema` port.
+const UNDECLARED_CASES = [
+	"pattern.snapshot-and-tail.native.zero-loss-under-load",
+	"pattern.snapshot-and-tail.native.resumes-at-every-boundary",
 	"pattern.in-place-evolve.gated-and-restorable",
 	"pattern.in-place-evolve.failure-restores",
+];
+
+const RACE_CASE = "fence.raise-waits-for-in-flight-writes";
+
+/** The race case and the cases it depends on, and nothing else. */
+const RACE_CASES = [
+	"declaration.matches-binding",
+	"datasets.ensure-idempotent",
+	"records.round-trip-canonical",
+	"fence.single-write-authority",
+	RACE_CASE,
 ];
 
 describe("MongoDB engine conformance (in-memory executor)", () => {
@@ -23,8 +38,7 @@ describe("MongoDB engine conformance (in-memory executor)", () => {
 		});
 		assert.equal(report.outcome, "pass", failures(report));
 		assert.equal(report.engine, "mongodb");
-		// No SQL surface: the schema cases are skipped, never passed.
-		assert.deepEqual(report.skipped, SCHEMA_CASES);
+		assert.deepEqual(report.skipped, UNDECLARED_CASES);
 		assert.equal(
 			report.results.length + report.skipped.length,
 			ENGINE_CONFORMANCE_CASE_IDS.length,
@@ -47,6 +61,34 @@ describe("MongoDB engine conformance (in-memory executor)", () => {
 			now: NOW,
 		});
 		assert.equal(report.outcome, "pass", failures(report));
+	});
+
+	test("the race case is not vacuous offline: a fence that does not wait fails it, every time", async () => {
+		// The in-memory executor interleaves transactions and its commits take
+		// a turn of the event loop, so a writer that read "not fenced" is still
+		// in flight when a `raise` that skips the wait returns.
+		for (let round = 0; round < 5; round += 1) {
+			const broken = await runEngineConformance({
+				engine: memoryHarness({
+					wrap: (executor) => ({
+						...executor,
+						awaitTransactions: async () => undefined,
+					}),
+				}),
+				now: NOW,
+				only: RACE_CASES,
+			});
+			const result = broken.results.find((entry) => entry.caseId === RACE_CASE);
+			assert.equal(result?.status, "fail", `round ${round}`);
+			assert.match(result?.detail ?? "", /no write may land after raise/u);
+			assert.equal(broken.outcome, "fail");
+		}
+		const sound = await runEngineConformance({
+			engine: memoryHarness(),
+			now: NOW,
+			only: RACE_CASES,
+		});
+		assert.equal(sound.outcome, "pass", failures(sound));
 	});
 
 	test("without capture the tail cases are skipped, and offline copy still passes", async () => {

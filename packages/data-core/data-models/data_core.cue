@@ -127,6 +127,24 @@ import "list"
 	pattern: #MigrationPatternId
 }
 
+#NativeProfileId: =~"^migration\\.[a-z0-9.-]+/v[0-9]+$"
+
+#NativeTransferRef: {
+	profile:  #NativeProfileId
+	transfer: string & !=""
+	dataset:  #Identifier
+	tenant:   string
+}
+
+// The prepare checkpoint of a native realization. The ticket names server
+// objects. It is journaled, so it never carries a connection string.
+#NativeTransferCheckpoint: {
+	realization: "native"
+	profile:     #NativeProfileId
+	transfer:    string & !=""
+	ticket: {[string]: (string & !~"(?i)(postgres(ql)?|mongodb(\\+srv)?)://") | number | bool | null | [...] | {...}}
+}
+
 #EngineDeclaration: {
 	contract:            "hobo.data-engine/v1"
 	engine:              =~"^[a-z][a-z0-9-]{0,31}$"
@@ -283,6 +301,10 @@ import "list"
 	cutOver:         bool
 	heldAt?:         #MigrationPhase
 	heldReason?:     string
+	// How records travel, as the plan recorded it. A native realization
+	// names its profile; the hub — or a plan that predates the field — has
+	// none to name.
+	*{realization?: "hub"} | {realization!: "native", profile!: #NativeProfileId}
 }
 
 #MigrationRunResult: {
@@ -332,6 +354,9 @@ import "list"
 	source?:         string
 	target?:         string
 	dataset?:        #Identifier
+	// A native realization names its profile; the hub — or a plan that
+	// predates the field — has none to name.
+	*{realization?: "hub"} | {realization!: "native", profile!: #NativeProfileId}
 }
 
 #MigrationPhaseAppliedEventData: {
@@ -357,6 +382,12 @@ import "list"
 	digest?:      #HexDigest
 	reverseTail?: bool
 	authority?:   "log"
+	// A digest of the fence token, never the token: a fence token is a
+	// write-authority credential and a journal is evidence.
+	fenceTokenDigest?: #Sha256Ref
+	fenceToken?:       _|_
+	reversePosition?:  string & !=""
+	logPosition?:      string & !=""
 }
 
 #MigrationRolledBackEventData: {

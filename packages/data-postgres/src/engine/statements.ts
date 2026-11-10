@@ -29,7 +29,7 @@ export const FENCE_TRIGGER = "hobo_fence_guard";
 // public-contract: name of the statement trigger that refuses TRUNCATE on a dataset table.
 export const TRUNCATE_TRIGGER = "hobo_truncate_guard";
 // public-contract: comment stamped on the last object the bootstrap creates; a binding that finds it skips the DDL.
-export const BOOTSTRAP_MARKER = "hobo-data-postgres bootstrap 1";
+export const BOOTSTRAP_MARKER = "hobo-data-postgres bootstrap 2";
 
 /**
  * The object whose comment says a namespace is bootstrapped, as text the
@@ -84,11 +84,22 @@ export function bootstrapStatements(namespace: string): readonly string[] {
 	taken_at text NOT NULL,
 	tables_json text NOT NULL
 )`,
+		// The metadata tables belong to the binding's role alone. The fence
+		// table holds tokens — whoever reads one writes through the fence —
+		// and a lock on a registry row is what `raise` waits on, so neither
+		// may be reachable by a role that merely writes a dataset.
+		`REVOKE ALL ON TABLE ${Object.values(METADATA_TABLES).map(meta).join(", ")} FROM PUBLIC`,
 		// The fence, enforced by the store. The share lock on the dataset's
 		// metadata row is what makes raising a fence a real barrier: `raise`
 		// updates that row, so it waits for every in-flight writer to finish
 		// and every later writer waits for it — and then sees the fence.
-		`CREATE OR REPLACE FUNCTION ${meta(FENCE_TRIGGER)}() RETURNS trigger LANGUAGE plpgsql AS $hobo$
+		//
+		// SECURITY DEFINER, so a writing role needs — and is given — no
+		// privilege on the metadata tables: it cannot read a token or hold the
+		// registry lock itself. And a pinned search path, so the comparisons
+		// below resolve to the system's own operators whatever the writer's
+		// session put on its path; every table is named in full.
+		`CREATE OR REPLACE FUNCTION ${meta(FENCE_TRIGGER)}() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $hobo$
 DECLARE
 	presented text := nullif(current_setting('${FENCE_TOKEN_SETTING}', true), '');
 	blocked boolean;
@@ -113,7 +124,7 @@ END
 $hobo$`,
 		// TRUNCATE fires no row trigger and carries no keys, so it would slip
 		// past the fence and could not be captured as record changes.
-		`CREATE OR REPLACE FUNCTION ${meta(TRUNCATE_TRIGGER)}() RETURNS trigger LANGUAGE plpgsql AS $hobo$
+		`CREATE OR REPLACE FUNCTION ${meta(TRUNCATE_TRIGGER)}() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $hobo$
 BEGIN
 	RAISE EXCEPTION 'dataset % cannot be truncated; delete its records so the change is fenced and captured', TG_TABLE_NAME
 		USING ERRCODE = '${TRUNCATE_REFUSED_SQLSTATE}';

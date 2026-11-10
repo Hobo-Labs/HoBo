@@ -23,13 +23,13 @@ package data_models
 	// The binding's own metadata tables are not the schema port's to snapshot.
 	schemaTables?: [...(#PostgresIdentifier & !~"^hobo_data_(datasets|fences|watermarks|subscriptions|schema_snapshots)$")]
 	pageSize?:  int & >=1 & <=100000
-	ephemeral?: bool
+	nativePollIntervalMs?: int & >=0 & <=60000
 
 	// An ephemeral binding drops its namespace on close, so it needs one of
 	// its own: never the default, and never an unnamed (defaulted) one.
-	if ephemeral != _|_ && ephemeral {
-		namespace: !="public"
-	}
+	// Written as two alternatives rather than a guard on the field: a guard
+	// that reads an optional field fails for a record that omits it.
+	*{ephemeral?: false} | {ephemeral!: true, namespace!: !="public"}
 }
 
 #PostgresImpedanceCode: "POSTGRES_RESERVED_COLUMN_NAMES" |
@@ -46,15 +46,21 @@ package data_models
 	"POSTGRES_CAPTURE_SLOT_NOT_FAILOVER_SAFE" |
 	"POSTGRES_SCHEMA_SNAPSHOT_IS_A_COPY" |
 	"POSTGRES_SCHEMA_SNAPSHOT_REFUSES_DEPENDENT_OBJECTS" |
-	"POSTGRES_SCHEMA_RESTORE_RECREATES_TABLE"
+	"POSTGRES_SCHEMA_RESTORE_RECREATES_TABLE" |
+	"POSTGRES_RETIRE_IS_LOGGED_AS_DELETES" |
+	"POSTGRES_NATIVE_COPY_WHOLE_DATASET_SAME_NAME" |
+	"POSTGRES_NATIVE_COPY_NO_REVERSE_TAIL" |
+	"POSTGRES_NATIVE_COPY_TARGET_HOLDS_SOURCE_CONNECTION" |
+	"POSTGRES_NATIVE_COPY_NEEDS_REPLICATION_CAPACITY"
 
 // ── the executor boundary ───────────────────────────────────────────────────
 
 // An absent `text` is SQL NULL. Text never contains U+0000: the server
 // cannot hold it, and the binding refuses it before it is sent.
-#PostgresExecutorParameter: {
-	text?: string & !~"\u0000"
-}
+//
+// A credential — the connection string a native transfer hands the target
+// server — is recorded as the flag alone, never with its text.
+#PostgresExecutorParameter: *{text?: string & !~"\u0000"} | {secret!: true}
 
 #PostgresExecutorRequest: {
 	sql:           string & !=""
@@ -90,6 +96,9 @@ package data_models
 	publication: string & =~"^hobo_p_[0-9a-f]{12}_[0-9a-f]{24}$"
 }
 
+// A native transfer's source half is recorded here too, under a key that
+// starts with "native:": it is the same two objects, read by a PostgreSQL
+// subscription instead of by the capture port.
 #PostgresSubscription: {
 	subscription:  string
 	dataset:       #PostgresIdentifier
@@ -97,6 +106,24 @@ package data_models
 	objects:       #PostgresCaptureObjects
 	startPosition: #PostgresLogPosition
 }
+
+// ── native transfer (logical-copy) ──────────────────────────────────────────
+
+// The ticket is journaled, and its names are placed in statement text, so
+// every name is exactly a name the binding derives.
+#PostgresNativeTicket: {
+	profile:     "migration.postgres.logical-copy/v1"
+	publication: string & =~"^hobo_p_[0-9a-f]{12}_[0-9a-f]{24}$"
+	slot:        string & =~"^hobo_s_[0-9a-f]{12}_[0-9a-f]{24}$"
+	namespace:   #PostgresIdentifier & !~"^pg_"
+	dataset:     #PostgresIdentifier
+	// One tenant of a pooled table is refused, not approximated.
+	tenant: ""
+	origin: string & =~"^[0-9a-f]{32}$"
+}
+
+// The server-side subscription behind a native transfer, on the target.
+#PostgresNativeSubscriptionName: string & =~"^hobo_n_[0-9a-f]{12}_[0-9a-f]{24}$"
 
 // ── metadata rows ───────────────────────────────────────────────────────────
 

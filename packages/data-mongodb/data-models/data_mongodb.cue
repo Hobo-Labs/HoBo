@@ -29,10 +29,13 @@ package data_models
 }
 
 // Codes, never messages: a server message can quote a key or a document.
+// A code name or a label is an identifier, so it cannot carry one either.
+#MongoCommandName: string & =~"^[A-Za-z][A-Za-z0-9_]{0,63}$"
+
 #MongoCommandFailure: {
 	code:     int & >=0
-	codeName: string
-	labels?: [...string]
+	codeName: "" | #MongoCommandName
+	labels?: [...#MongoCommandName]
 }
 
 #MongoEnsureCollectionRequest: {
@@ -115,11 +118,13 @@ package data_models
 }
 
 // A delete carries no document; an insert, replace, or update carries one.
+// An event made inside a transaction names it; the name is never empty.
 #MongoChangeEvent: {
-	token:     string & !=""
-	operation: string & !=""
-	id?:       #MongoExtendedJson
-	document?: #MongoStoredDocument
+	token:        string & !=""
+	operation:    string & !=""
+	id?:          #MongoExtendedJson
+	document?:    #MongoStoredDocument
+	transaction?: string & !=""
 }
 
 #MongoChangeBatch: {

@@ -128,6 +128,13 @@ Two profiles, both exported as constants and both usable as
 - `migration.postgres.logical-copy/v1` — publication/subscription copy, for
   moves that cannot take downtime.
 
+Only `logical-copy` is declared in the engine binding's `nativeProfiles`, and
+so offered by the pattern selector as a `native` realization: the binding's
+`nativeTransfer` port runs it (see [Native transfer](#native-transfer-logical-copy)).
+`pg-dump` is a migration profile with the argv builders below; running it takes
+a process runner this package does not have, so nothing declares it as a native
+realization and no decision can select one that could not be executed.
+
 ### Commands are argv arrays, and credentials are not in them
 
 `buildPgDumpArgv`, `buildPgRestoreArgv`, and `buildPsqlArgv` return
@@ -224,7 +231,9 @@ against the real binding.
 | `capture` | `true` | `false` omits the capture port for a product without logical decoding; the declaration then drops the port and the `logical-copy` fast path, and capture-dependent patterns become ineligible at selection instead of failing at run time. |
 | `schemaTables` | `[]` | Tables the schema port snapshots and restores. |
 | `pageSize` | `1000` | Rows per keyset page when digesting. |
-| `ephemeral` | `false` | `true` makes `close()` drop the namespace, its subscriptions and replication slots, and its schema snapshots. For tests and previews; refused for `public`. |
+| `ephemeral` | `false` | `true` makes `close()` drop the namespace, its subscriptions, native transfers and replication slots, and its schema snapshots. For tests and previews; refused for `public`. |
+| `nativeSourceConnection` | none | A function resolving the libpq connection string the *target server* reaches the source with, for a native `logical-copy`. A secret: resolved only when a subscription is created, sent as one bind parameter, kept nowhere else. Only the target of a native transfer needs it. |
+| `nativePollIntervalMs` | `50` | How long a native progress question waits before answering "not yet". |
 
 By default `close()` drops nothing: a dataset outlives the process, and so does a
 capture subscription — it is a durable reader and holds its replication slot
@@ -253,10 +262,10 @@ or a pre-existing table that is not a dataset — is refused with
 | `decimal` | `numeric` | constrained | widening | Unconstrained `numeric` holds 131072 digits before and 16383 after the point; the server refuses more. Native `NaN`/infinity is refused on read. |
 | `string` | `text` | constrained | exact | `text` cannot hold U+0000 or an unpaired surrogate. Either is refused at write, never stored altered. |
 | `bytes` | `bytea` | exact | exact | |
-| `timestamp` | `timestamptz` | constrained | widening | Microsecond-exact. Year 0000 is refused by the server; a native instant outside years 0100–9999, or an infinity, is refused on read. |
+| `timestamp` | `timestamptz` | constrained | widening | Microsecond-exact for years 0001–9999. The server has no year 0000 and refuses it at write — an instant whose UTC form falls in year 0000 included. A native BC instant, one past year 9999, or an infinity is refused on read. |
 | `date` | `date` | constrained | widening | Same range rule as `timestamp`. |
 | `uuid` | `uuid` | exact | exact | |
-| `json` | `jsonb` | constrained | widening | `jsonb` refuses U+0000 inside a string. It keeps numbers at arbitrary precision, so a natively written number beyond float64 reads as the nearest float64. |
+| `json` | `jsonb` | constrained | widening | `jsonb` refuses U+0000 inside a string. It keeps numbers at arbitrary precision, so a natively written number float64 cannot hold exactly reads as the nearest float64, and one beyond float64's range (`1e400`) is refused on read. |
 | `encrypted` | `jsonb` | constrained | widening | An opaque `{ alg, keyRef, ciphertext }` envelope; the ciphertext is never interpreted. `jsonb` refuses U+0000 inside `alg` or `keyRef`, and a natively written value of another form is refused on read. |
 
 No edge is `lossy`. "Constrained" means a value outside the constraint is
@@ -286,6 +295,18 @@ that one transaction and never leaks to the session's next user.
 A client holding its own connection is refused too — that is the difference
 from an entry-point fence. So is a session in replica mode: the trigger is
 `ENABLE ALWAYS`, which is how a native logical-replication apply worker writes.
+
+The trigger function is `SECURITY DEFINER` with `search_path` pinned to
+`pg_catalog, pg_temp`, and the binding's metadata tables are revoked from
+`PUBLIC`. So a role that only writes a dataset needs — and is given — no
+privilege on them: it cannot read a token out of `hobo_data_fences`, cannot
+lock the registry row `raise` waits on, and cannot shadow an operator the
+trigger compares with through its own search path. What can still get past the
+fence is the table's owner or a superuser (who can disable the trigger, read a
+token, or delete the fence row), and any role the owner later grants the fence
+table to. The token is kept there in the clear, because raising a raised fence
+has to be able to answer it; a namespace bootstrapped by an older binding is
+brought up to this by the next binding that opens it.
 
 Raising a fence is a real barrier, not a flag. The trigger takes a share lock on
 the dataset's registry row before it looks for a fence, and `raise` updates that
@@ -367,6 +388,49 @@ check and key constraints, indexes and data all return, and a table that did not
 exist at the snapshot is dropped. A snapshot is kept until
 `dropSchemaSnapshot(ref)`.
 
+### Native transfer: logical-copy
+
+`migration.postgres.logical-copy/v1` is the binding's one native realization:
+PostgreSQL's built-in logical replication carries the records, and the copy
+executors in `@hobo/data-core` keep every phase, the digests, the fence, the
+cutover and the journal (`runSnapshotAndTail({ realization: "native", profile:
+LOGICAL_COPY_PROFILE, … })`).
+
+```ts
+const source = createPostgresEngine({ executor: sourceExecutor, namespace: "app" });
+const target = createPostgresEngine({
+	executor: targetExecutor,
+	namespace: "app", // the same name, in another database
+	nativeSourceConnection: () => secrets.resolve("source-replication-dsn"),
+});
+```
+
+- **Source:** a publication for the dataset's table and a logical replication
+  slot — the two objects a capture subscription is made of, recorded in the
+  same registry under a `native:` key. The slot is created by its own
+  statement and the subscription is told `create_slot = false`: a subscription
+  that creates its own slot hangs when both databases share a cluster.
+- **Target:** a server-side subscription with `copy_data = true`. The target
+  server connects to the source, copies the table, then applies every change.
+- **Progress:** the target says when every table of the subscription is ready
+  (`seeded`); the source writes a transactional logical message as a mark and
+  says when its slot's confirmed position has passed it (`reached`).
+- **The connection string is a secret.** It is given as a function, resolved
+  only when a subscription is created, and sent as one bind parameter into a
+  transaction-local setting; no statement text contains it and the statement
+  answers a boolean. `CREATE SUBSCRIPTION` runs inside a block whose handler
+  re-raises a failure with its SQLSTATE alone, because the server would
+  otherwise report the whole statement as error context. Whatever the driver
+  throws is discarded but for that SQLSTATE. It is never in a ticket, an
+  error, or a fact.
+- **Cleanup.** The executor drops the subscription (which drops the slot, and
+  any slot an unfinished copy made), then the publication and the registry
+  row: after the cutover is journaled, before the source is retired, and on a
+  rollback. An ephemeral binding's `close()` drops every transfer its
+  namespace holds. When the source cannot be reached the subscription is
+  detached and dropped locally and the source's half is left to its own
+  `stop`; a slot from an unfinished copy can then remain on the source.
+
 ### Honest limits
 
 These are the engine's declared impedance codes (`POSTGRES_IMPEDANCE_CODES`).
@@ -379,7 +443,7 @@ Each is a real limit, stated so nobody over-claims fidelity.
 | `POSTGRES_JSONB_NUMBERS_READ_AS_FLOAT64` | See the `json` edge above. |
 | `POSTGRES_NATIVE_VALUES_BEYOND_CANONICAL_RANGE` | Native `NaN`, infinities, BC and five-digit years fail a read instead of being altered. One such row therefore also fails the digest and stalls capture until it is fixed. |
 | `POSTGRES_SNAPSHOT_IS_FUZZY` | The snapshot scan is keyset pagination, not one MVCC snapshot. |
-| `POSTGRES_FENCE_TRIGGER_OWNER_CAN_DISABLE` | The fence is a trigger. The table owner or a superuser can disable it, and a role that can write `hobo_data_fences` can lift a fence. Withhold those privileges from application roles. |
+| `POSTGRES_FENCE_TRIGGER_OWNER_CAN_DISABLE` | The fence is a trigger that runs with its owner's rights over metadata tables no other role is granted. The table's owner or a superuser can still disable it, read a token from `hobo_data_fences` (kept in the clear), or delete the fence row; so can a role the owner grants that table to. A writer that keeps a transaction open after writing keeps `raise` waiting until it ends. |
 | `POSTGRES_TRUNCATE_REFUSED_ON_DATASETS` | Delete records instead. |
 | `POSTGRES_CAPTURE_NEEDS_LOGICAL_DECODING` | `wal_level = logical`, the `REPLICATION` privilege, and one replication slot per subscription. Creating a slot waits for transactions already open to finish. |
 | `POSTGRES_CAPTURE_SLOT_PINS_LOG` | An unacknowledged or abandoned subscription retains write-ahead log until it is stopped. |
@@ -387,8 +451,13 @@ Each is a real limit, stated so nobody over-claims fidelity.
 | `POSTGRES_CAPTURE_UNCHANGED_TOAST_REREAD` | A native `UPDATE` that leaves a large out-of-line value untouched does not log that value. The binding completes the row by re-reading it, so that one change may carry a newer row than the log position it sits at; later changes still arrive in order and the stream converges. With `REPLICA IDENTITY FULL` the value is taken from the old image instead and no re-read happens. Writes through the binding always log every column. |
 | `POSTGRES_CAPTURE_SLOT_NOT_FAILOVER_SAFE` | A slot is not carried to a standby; after a failover the subscription is lost and says so. |
 | `POSTGRES_SCHEMA_SNAPSHOT_IS_A_COPY` | A snapshot is a table copy in the same database, not a provider point-in-time restore: it costs space and time in proportion to the data. |
-| `POSTGRES_SCHEMA_SNAPSHOT_REFUSES_DEPENDENT_OBJECTS` | `snapshot()` refuses, by name, a table with foreign keys (either direction), triggers, identity or sequence-backed columns, row security, grants, partitions or inheritance — none of which survive drop-and-recreate — and a dataset table, which carries the fence. It refuses rather than restoring something quietly different. |
+| `POSTGRES_SCHEMA_SNAPSHOT_REFUSES_DEPENDENT_OBJECTS` | `snapshot()` refuses, by name, a table with foreign keys (either direction), triggers, identity or sequence-backed columns, row security, grants, partitions or inheritance, a table owned by another role, a table in a publication — none of which survive drop-and-recreate — and a dataset table, which carries the fence. It refuses rather than restoring something quietly different. |
 | `POSTGRES_SCHEMA_RESTORE_RECREATES_TABLE` | A restored table is a new relation: index and key-constraint names are regenerated and its object id changes. A view that came to depend on the table fails the restore loudly. |
+| `POSTGRES_RETIRE_IS_LOGGED_AS_DELETES` | `retire` deletes rows and the write-ahead log records deletes, so a subscription still reading the dataset captures them. The copy executors drop a migration's own forward channel before retiring, so the retirement never follows the data to the new authority; a reader of someone else's sees the scope leave the store. |
+| `POSTGRES_NATIVE_COPY_WHOLE_DATASET_SAME_NAME` | `logical-copy` moves a whole dataset table into an empty table of the same schema-qualified name in another database. One tenant of a pooled table, a renamed namespace or dataset, a target that already holds rows, and the source database as its own target are refused by name. |
+| `POSTGRES_NATIVE_COPY_NO_REVERSE_TAIL` | The transfer is dropped at cutover and nothing tails back, so a rollback from soak is to-snapshot. |
+| `POSTGRES_NATIVE_COPY_TARGET_HOLDS_SOURCE_CONNECTION` | The target server keeps the source connection string in `pg_subscription` until cutover drops the subscription. Its superusers can read it, and a target that logs statement parameters records it. |
+| `POSTGRES_NATIVE_COPY_NEEDS_REPLICATION_CAPACITY` | `wal_level = logical`, a free replication slot and sender on the source (one more while the initial copy runs), a free logical-replication worker on the target, and a target role that may create subscriptions (a superuser, or `pg_create_subscription` from PostgreSQL 16). |
 
 ### Running the live lane
 
@@ -414,8 +483,13 @@ engine and peer; PostgreSQL → reference engine; reference engine → PostgreSQ
 a concurrency lane that replays decoded changes from eight competing writers
 onto the reference engine and compares digests, and direct proofs of the fence,
 the type edges, and schema restore. Every binding gets its own namespace and
-drops it on close; the lane fails if a replication slot or publication outlives
-it. Re-record the fixture with `HOBO_RECORD_PGOUTPUT=1`.
+drops it on close; the lane fails if a replication slot, publication or
+subscription of its own outlives it. The check is attributable: slot names are
+cluster-wide and other suites share a server, so each test file counts only the
+objects carrying the digests of the namespaces it used itself
+(`captureObjectPrefixes`, `nativeSubscriptionPrefix`). The native lanes create
+one extra database per test file and drop it. Re-record the fixture with
+`HOBO_RECORD_PGOUTPUT=1`.
 
 ## Error codes
 
@@ -423,8 +497,13 @@ it. Re-record the fixture with `HOBO_RECORD_PGOUTPUT=1`.
 `UNSAFE_COMMAND_ARGUMENT`, `MIGRATION_FAILED`, `CONFORMANCE_SUITE_INVALID`,
 `CONFORMANCE_EXECUTOR_MISSING`, and — from the engine binding —
 `ENGINE_OPTIONS_INVALID`, `ENGINE_EXECUTOR_CONTRACT`, `CAPTURE_POSITION_INVALID`,
-`CAPTURE_SUBSCRIPTION_LOST`, `CAPTURE_STREAM_UNDECODABLE`. Each carries a
-structured `detail` naming the offending field.
+`CAPTURE_SUBSCRIPTION_LOST`, `CAPTURE_STREAM_UNDECODABLE`,
+`NATIVE_SUBSCRIBE_FAILED`, `NATIVE_STOP_FAILED`. Each carries a structured
+`detail` naming the offending field; the two native codes carry a SQLSTATE and
+nothing else, because the server's own text can quote the connection string.
+A native transfer the binding will not attempt is a `@hobo/data-core`
+`NATIVE_TRANSFER_REFUSED` whose `detail.reason` says why, and one whose server
+objects are gone is `NATIVE_TRANSFER_LOST`.
 
 The engine binding raises the engine-neutral refusals as `@hobo/data-core`
 errors, so every engine reports them the same way: `FencedWriteError`

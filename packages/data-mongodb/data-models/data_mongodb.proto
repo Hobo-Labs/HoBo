@@ -14,7 +14,8 @@
 // No field here is a credential, a connection string, or a server error
 // message. A refused command is its numeric code and its code name: MongoDB
 // quotes the offending key in a duplicate-key message and the offending
-// document in a validation message, and both are payload.
+// document in a validation message, and both are payload. For the same reason
+// a refusal has no field for the driver's own error, and none is chained.
 
 syntax = "proto3";
 
@@ -34,7 +35,8 @@ message MongoEngineSettings {
 
 // What an executor knows about a refused command.
 message MongoCommandFailure {
-  // The server's numeric code; 0 when the refusal was client-side.
+  // The server's numeric code. 0 when the refusal was client-side and stands
+  // in for no server code.
   int32 code = 1;
   string code_name = 2;
   repeated string labels = 3;
@@ -46,8 +48,9 @@ message MongoEnsureCollectionRequest {
   string collection = 1;
   // A `{ "$jsonSchema": … }` document; absent means no validator.
   optional google.protobuf.Struct validator = 2;
-  // Keep pre- and post-images so a change stream can return the document as
-  // of each change.
+  // Turn on changeStreamPreAndPostImages so a change stream can return the
+  // document as of each change. Only the post-image is ever read; the server
+  // derives it from the pre-image it stores, which is the cost of the option.
   bool change_images = 3;
 }
 
@@ -130,7 +133,9 @@ message MongoChangeToken {
   string token = 1;
 }
 
-// Keep only events whose document key holds `equals` at a dotted path.
+// Keep only the record events (insert, replace, update, delete) whose document
+// key holds `equals` at a dotted path. Every other event — drop, rename,
+// invalidate — has no document key and is always returned.
 message MongoKeyMatch {
   string path = 1;
   google.protobuf.Value equals = 2;
@@ -152,9 +157,14 @@ message MongoChangeEvent {
   optional google.protobuf.Value id = 3;
   // The whole document as of this change; absent for a delete.
   optional google.protobuf.Struct document = 4;
+  // Present exactly when the change was made inside a multi-document
+  // transaction. Opaque: equal for two events of one transaction, different
+  // between transactions. The events of one transaction are consecutive.
+  optional string transaction = 5;
 }
 
 message MongoChangeBatch {
+  // At most `limit` events. Only a full page may end inside a transaction.
   repeated MongoChangeEvent events = 1;
   // Every event at or before this token, matching or not, has been seen.
   string token = 2;
@@ -217,7 +227,8 @@ message MongoWatermarkEntry {
   string position = 5;
 }
 
-// `_id` is `subscription:<subscription>`.
+// `_id` is `subscription:<subscription>`. One subscription reads one scope:
+// starting the same name on another dataset or tenant is refused.
 message MongoSubscriptionEntry {
   string id = 1;
   MongoMetadataKind kind = 2;

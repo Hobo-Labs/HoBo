@@ -6,10 +6,13 @@
 //   HOBO_TEST_MONGODB_URL='mongodb://127.0.0.1:57017/?replicaSet=rs0&directConnection=true' \
 //     npx vitest run test/
 import assert from "node:assert/strict";
+import { inspect } from "node:util";
 import {
 	type CanonicalRecord,
+	type CaptureBatch,
 	canonicalEncode,
 	createReferenceEngine,
+	DataCoreError,
 	type DatasetSchema,
 	ENGINE_CONFORMANCE_CASE_IDS,
 	type EngineBinding,
@@ -32,6 +35,7 @@ import {
 	MONGO_MAX_KEY,
 	MONGO_METADATA_COLLECTION,
 	MONGO_MIN_KEY,
+	type MongoBulkWriteResult,
 	MongoCommandError,
 	MongoDataError,
 	type MongoDocument,
@@ -41,10 +45,16 @@ import { failures, NOW, tally } from "./support/harness.js";
 import { connectLive, LIVE_URL, type LiveMongo } from "./support/live.js";
 import { replayExecutorPact } from "./support/pact.js";
 
-const SCHEMA_CASES = [
+// Skipped, never passed: MongoDB declares no native migration profile and has
+// no SQL surface, so it has neither a `nativeTransfer` nor a `schema` port.
+const UNDECLARED_CASES = [
+	"pattern.snapshot-and-tail.native.zero-loss-under-load",
+	"pattern.snapshot-and-tail.native.resumes-at-every-boundary",
 	"pattern.in-place-evolve.gated-and-restorable",
 	"pattern.in-place-evolve.failure-restores",
 ];
+
+const DOCUMENT_LIMIT = 16 * 1024 * 1024;
 
 const SCHEMA: DatasetSchema = parseDatasetSchema({
 	name: "orders",
@@ -85,6 +95,19 @@ async function rejection(action: () => Promise<void>): Promise<Error> {
 		return cause;
 	}
 	return assert.fail("expected a rejection");
+}
+
+/** Fails when the error, however deep anyone looks, holds any of the texts. */
+function assertCarriesNone(error: Error, texts: readonly string[]): void {
+	const shown = inspect(error, {
+		depth: Number.POSITIVE_INFINITY,
+		showHidden: true,
+	});
+	for (const text of [...texts, "mongodb://", new URL(LIVE_URL).host]) {
+		// Never interpolate `shown`: it is the thing that must not be printed.
+		assert.ok(!shown.includes(text), "the error carries a value it must not");
+	}
+	assert.equal(error.cause, undefined, "a refusal is never chained");
 }
 
 interface Deferred {
@@ -142,7 +165,7 @@ describe.skipIf(LIVE_URL === "")("MongoDB engine (live replica set)", () => {
 			);
 			assert.equal(report.outcome, "pass", failures(report));
 			assert.equal(report.engine, "mongodb");
-			assert.deepEqual(report.skipped, SCHEMA_CASES);
+			assert.deepEqual(report.skipped, UNDECLARED_CASES);
 			assert.equal(
 				report.results.length + report.skipped.length,
 				ENGINE_CONFORMANCE_CASE_IDS.length,
@@ -256,6 +279,98 @@ describe.skipIf(LIVE_URL === "")("MongoDB engine (live replica set)", () => {
 				await server.close();
 			}
 			assert.equal(answers[0], answers[1]);
+		});
+
+		test("both executors refuse a document at 16 MiB with code 10334 and store one a byte smaller", async () => {
+			// { _id: "big", s: <n bytes> } is 26 + n bytes of BSON.
+			const sized = (bytes: number): MongoDocument => ({
+				_id: "big",
+				s: "x".repeat(bytes - 26),
+			});
+			const server = live.executor(live.database(), true);
+			try {
+				for (const executor of [createMemoryMongoExecutor(), server]) {
+					const attempt = async (
+						kind: "insert" | "replace",
+						bytes: number,
+					): Promise<number> => {
+						try {
+							await executor.bulkWrite({
+								collection: "c",
+								operations: [{ kind, document: sized(bytes) }],
+							});
+							return 0;
+						} catch (cause) {
+							assert.ok(cause instanceof MongoCommandError, String(cause));
+							return cause.code;
+						}
+					};
+					assert.equal(await attempt("insert", DOCUMENT_LIMIT - 1), 0);
+					assert.equal(await attempt("insert", DOCUMENT_LIMIT), 10334);
+					assert.equal(await attempt("replace", DOCUMENT_LIMIT), 10334);
+					assert.equal(await attempt("replace", DOCUMENT_LIMIT + 1), 10334);
+					const { documents } = await executor.find({
+						collection: "c",
+						select: { kind: "range" },
+					});
+					// Lengths only: a failure must not print 16 MiB of text.
+					assert.deepEqual(
+						documents.map((document) => String(document.s).length),
+						[DOCUMENT_LIMIT - 1 - 26],
+					);
+				}
+			} finally {
+				await server.close();
+			}
+		}, 120_000);
+
+		test("both executors name the transaction on its events, and only on those", async () => {
+			const server = live.executor(live.database(), true);
+			try {
+				for (const executor of [createMemoryMongoExecutor(), server]) {
+					await executor.ensureCollection({
+						collection: "c",
+						changeImages: true,
+					});
+					const { token } = await executor.changeHead({ collection: "c" });
+					const inTransaction = (
+						...ids: readonly string[]
+					): Promise<MongoBulkWriteResult> =>
+						executor.transaction((session) =>
+							session.bulkWrite({
+								collection: "c",
+								operations: ids.map((id) => ({
+									kind: "insert",
+									document: { _id: id },
+								})),
+							}),
+						);
+					await inTransaction("a1", "a2");
+					await executor.bulkWrite({
+						collection: "c",
+						operations: [{ kind: "insert", document: { _id: "outside" } }],
+					});
+					await inTransaction("b1");
+					const { events } = await executor.readChanges({
+						collection: "c",
+						after: token,
+						limit: 10,
+					});
+					assert.deepEqual(
+						events.map((event) => event.id),
+						["a1", "a2", "outside", "b1"],
+					);
+					const [a1, a2, outside, b1] = events.map(
+						(event) => event.transaction,
+					);
+					assert.ok(a1 !== undefined && a1 !== "");
+					assert.equal(a2, a1);
+					assert.equal(outside, undefined);
+					assert.ok(b1 !== undefined && b1 !== a1);
+				}
+			} finally {
+				await server.close();
+			}
 		});
 	});
 
@@ -417,6 +532,55 @@ describe.skipIf(LIVE_URL === "")("MongoDB engine (live replica set)", () => {
 				["upsert:2", "upsert:3"],
 			);
 			assert.ok(batch.caughtUp);
+			// What the option made the server keep is the image *before* each
+			// update. The post-images captured above are stored nowhere: the
+			// server built them from these and each update's delta. That is why
+			// the binding needs the option although it never reads a pre-image.
+			const [info] = await live
+				.native(database)
+				.listCollections({ name: SCHEMA.name }, { nameOnly: false })
+				.toArray();
+			const images = await live.client
+				.db("config")
+				.collection("system.preimages")
+				.find({ "_id.nsUUID": info?.info?.uuid })
+				.sort({ "_id.ts": 1 })
+				.toArray();
+			assert.deepEqual(
+				images.map((image) => String(image.preImage?.qty)),
+				["1", "2"],
+			);
+		});
+
+		test("with the change-image option turned off behind the binding, an in-place update is a failed read, never today's document", async () => {
+			const { binding, database } = await open();
+			const capture = requirePort(binding, "capture");
+			const scope = scopeOf(SCHEMA.name);
+			await binding.records.write({
+				dataset: SCHEMA.name,
+				mutations: [upsert("", "a", { qty: "1" })],
+			});
+			const start = await capture.start({ scope, subscription: "no-images" });
+			const native = live.native(database);
+			await native.command({
+				collMod: SCHEMA.name,
+				changeStreamPreAndPostImages: { enabled: false },
+			});
+			await native
+				.collection(SCHEMA.name)
+				.updateOne({}, { $set: { qty: Long.fromString("2") } });
+			const error = await rejection(async () => {
+				await capture.read({
+					scope,
+					subscription: "no-images",
+					after: start,
+					limit: 10,
+				});
+			});
+			assert.ok(error instanceof MongoDataError, String(error));
+			assert.equal(error.code, "MONGODB_COMMAND_FAILED");
+			// NoMatchingDocument: the stream requires a post-image and has none.
+			assert.equal(error.detail.serverCode, 47);
 		});
 
 		test("a write that changes nothing produces no change", async () => {
@@ -440,35 +604,241 @@ describe.skipIf(LIVE_URL === "")("MongoDB engine (live replica set)", () => {
 			assert.equal(batch.changes.length, 1);
 		});
 
-		test("a dropped collection is a refused read, not an empty one", async () => {
+		test("a dropped collection is a refused read, not an empty one — for a tenant-scoped reader too", async () => {
+			const { binding, database } = await open();
+			const capture = requirePort(binding, "capture");
+			const start = await capture.start({
+				scope: scopeOf(SCHEMA.name),
+				subscription: "drop",
+			});
+			await live.native(database).collection(SCHEMA.name).drop();
+			for (const tenant of ["", "tenant-a"]) {
+				const error = await rejection(async () => {
+					await capture.read({
+						scope: scopeOf(SCHEMA.name, tenant),
+						subscription: "drop",
+						after: start,
+						limit: 10,
+					});
+				});
+				assert.ok(error instanceof MongoDataError, `tenant "${tenant}"`);
+				assert.equal(error.code, "MONGODB_CAPTURE_UNSUPPORTED_EVENT");
+				assert.equal(error.detail.operation, "drop");
+			}
+		});
+
+		test("a position that is not a resume token is a lost position, whatever code the server gave it", async () => {
 			const { binding, database } = await open();
 			const capture = requirePort(binding, "capture");
 			const scope = scopeOf(SCHEMA.name);
-			const start = await capture.start({ scope, subscription: "drop" });
-			await live.native(database).collection(SCHEMA.name).drop();
-			const error = await rejection(async () => {
-				await capture.read({
-					scope,
-					subscription: "drop",
-					after: start,
-					limit: 10,
+			const start = await capture.start({ scope, subscription: "x" });
+			const malformed = [
+				"41",
+				"0/16B3748",
+				`82${"0".repeat(16)}`,
+				start.slice(0, 6),
+				start.slice(0, 22),
+				"",
+			];
+			for (const after of malformed) {
+				const error = await rejection(async () => {
+					await capture.read({ scope, subscription: "x", after, limit: 1 });
 				});
+				assert.ok(error instanceof MongoDataError, `after "${after}"`);
+				assert.equal(error.code, "MONGODB_CAPTURE_POSITION_LOST");
+				assert.equal(error.detail.serverCode, 260);
+			}
+			// Why the adapter has to name it: asked directly, the server gives
+			// these six tokens six different codes, and none of them is 260.
+			const serverCodes = new Set<number>();
+			for (const after of malformed) {
+				const refusal = await rejection(async () => {
+					await live.native(database).command({
+						aggregate: SCHEMA.name,
+						pipeline: [{ $changeStream: { resumeAfter: { _data: after } } }],
+						cursor: { batchSize: 0 },
+					});
+				});
+				serverCodes.add("code" in refusal ? Number(refusal.code) : -1);
+			}
+			assert.equal(serverCodes.size, malformed.length);
+			assert.ok(!serverCodes.has(260) && !serverCodes.has(-1));
+			// The stream itself is fine: the same reader, a real position.
+			const batch = await capture.read({
+				scope,
+				subscription: "x",
+				after: start,
+				limit: 1,
 			});
-			assert.ok(error instanceof MongoDataError);
-			assert.equal(error.code, "MONGODB_CAPTURE_UNSUPPORTED_EVENT");
+			assert.deepEqual(batch.changes, []);
 		});
 
-		test("a position that is not a resume token is refused", async () => {
+		test("capture.read never splits a source transaction, and may exceed its limit to keep one whole", async () => {
 			const { binding } = await open();
+			const capture = requirePort(binding, "capture");
+			const scope = scopeOf(SCHEMA.name);
+			const start = await capture.start({ scope, subscription: "whole" });
+			const write = (tenant: string, ...ids: readonly string[]) =>
+				binding.records.write({
+					dataset: SCHEMA.name,
+					mutations: ids.map((id) => upsert(tenant, id)),
+				});
+			const ids = (batch: CaptureBatch) =>
+				batch.changes.map((change) => change.record?.id);
+			const read = (after: string, limit: number, tenant = "") =>
+				capture.read({
+					scope: scopeOf(SCHEMA.name, tenant),
+					subscription: "whole",
+					after,
+					limit,
+				});
+			await write("", "a1", "a2", "a3", "a4", "a5");
+			await write("", "b1");
+			await write("", "c1", "c2");
+
+			const first = await read(start, 2);
+			assert.deepEqual(ids(first), ["a1", "a2", "a3", "a4", "a5"]);
+			assert.equal(first.caughtUp, false);
+			assert.equal(first.position, first.changes[4]?.position);
+			const second = await read(first.position, 1);
+			assert.deepEqual(ids(second), ["b1"]);
+			assert.equal(second.caughtUp, false);
+			const third = await read(second.position, 1);
+			assert.deepEqual(ids(third), ["c1", "c2"]);
+			assert.deepEqual(ids(await read(start, 5)), [
+				"a1",
+				"a2",
+				"a3",
+				"a4",
+				"a5",
+			]);
+			assert.deepEqual(ids(await read(start, 6)), [
+				"a1",
+				"a2",
+				"a3",
+				"a4",
+				"a5",
+				"b1",
+			]);
+
+			// A tenant-scoped reader gets its part of a transaction, whole. It
+			// reads from its own position: a position belongs to the scope that
+			// produced it.
+			const tenantScope = scopeOf(SCHEMA.name, "tenant-a");
+			const tenantStart = await capture.start({
+				scope: tenantScope,
+				subscription: "whole-a",
+			});
+			await binding.records.write({
+				dataset: SCHEMA.name,
+				mutations: [
+					upsert("tenant-a", "t1"),
+					upsert("tenant-b", "t2"),
+					upsert("tenant-a", "t3"),
+					upsert("tenant-b", "t4"),
+					upsert("tenant-a", "t5"),
+				],
+			});
+			await write("tenant-a", "u1");
+			const scoped = await read(tenantStart, 1, "tenant-a");
+			assert.deepEqual(ids(scoped), ["t1", "t3", "t5"]);
+			assert.equal(scoped.caughtUp, false);
+			assert.deepEqual(ids(await read(scoped.position, 1, "tenant-a")), ["u1"]);
+		});
+
+		test("an envelope's position inside a transaction is resumable only under the scope that read it", async () => {
+			const { binding } = await open();
+			const capture = requirePort(binding, "capture");
+			const start = await capture.start({
+				scope: scopeOf(SCHEMA.name),
+				subscription: "everyone",
+			});
+			await binding.records.write({
+				dataset: SCHEMA.name,
+				mutations: [
+					upsert("tenant-a", "ours"),
+					upsert("tenant-b", "theirs"),
+					upsert("tenant-a", "ours-too"),
+				],
+			});
+			const read = (tenant: string, after: string) =>
+				capture.read({
+					scope: scopeOf(SCHEMA.name, tenant),
+					subscription: "everyone",
+					after,
+					limit: 10,
+				});
+			const batch = await read("", start);
+			const inside = batch.changes[1]?.position ?? "";
+			// `inside` is tenant-b's change, in the middle of the transaction.
+			// A stream filtered to tenant-a never contains that event, so the
+			// server has nowhere to resume from. Pinned so the limit is known
+			// rather than discovered: a position belongs to the scope that read
+			// it.
 			const error = await rejection(async () => {
-				await requirePort(binding, "capture").read({
-					scope: scopeOf(SCHEMA.name),
-					subscription: "x",
-					after: "41",
-					limit: 1,
+				await read("tenant-a", inside);
+			});
+			assert.ok(error instanceof MongoDataError, String(error));
+			assert.equal(error.code, "MONGODB_CAPTURE_POSITION_LOST");
+			assert.equal(error.detail.serverCode, 280);
+			// Under the scope that produced it, the same position resumes.
+			assert.deepEqual(
+				(await read("", inside)).changes.map((change) => change.record?.id),
+				["ours-too"],
+			);
+		});
+
+		test("a subscription name belongs to one scope", async () => {
+			const { binding } = await open();
+			const capture = requirePort(binding, "capture");
+			const scope = scopeOf(SCHEMA.name);
+			const start = await capture.start({ scope, subscription: "s1" });
+			const error = await rejection(async () => {
+				await capture.start({
+					scope: scopeOf(SCHEMA.name, "tenant-a"),
+					subscription: "s1",
 				});
 			});
 			assert.ok(error instanceof MongoDataError, String(error));
+			assert.equal(error.code, "MONGODB_CAPTURE_SUBSCRIPTION_CONFLICT");
+			assert.equal(await capture.start({ scope, subscription: "s1" }), start);
+		});
+	});
+
+	describe("retire", () => {
+		test("a redelivered retire of a scope already retired succeeds and removes nothing; a wrong token is still refused", async () => {
+			const { binding } = await open();
+			const scope = scopeOf(SCHEMA.name, "tenant-a");
+			await binding.records.write({
+				dataset: SCHEMA.name,
+				mutations: [
+					upsert("tenant-a", "1"),
+					upsert("tenant-a", "2"),
+					upsert("tenant-b", "3"),
+				],
+			});
+			const retire = requirePort(binding, "retire");
+			const verify = requirePort(binding, "verify");
+			const grant = await requirePort(binding, "fence").raise({
+				scope,
+				reason: "live",
+			});
+			const expected = await verify.digest({ scope, buckets: 4 });
+			const request = { scope, fenceToken: grant.fenceToken, expected };
+			assert.deepEqual(await retire.retire(request), { removed: 2 });
+			assert.deepEqual(await retire.retire(request), { removed: 0 });
+			const refused = await rejection(async () => {
+				await retire.retire({ ...request, fenceToken: "not-the-token" });
+			});
+			assert.ok(
+				refused instanceof DataCoreError && refused.code === "RETIRE_REFUSED",
+				String(refused),
+			);
+			const rest = await verify.digest({
+				scope: scopeOf(SCHEMA.name),
+				buckets: 4,
+			});
+			assert.equal(rest.count, 1);
 		});
 	});
 
@@ -564,7 +934,7 @@ describe.skipIf(LIVE_URL === "")("MongoDB engine (live replica set)", () => {
 	});
 
 	describe("errors", () => {
-		test("a refused command carries the server's code and never its message", async () => {
+		test("a refused command carries the server's code and never its message, at any depth", async () => {
 			const executor = live.executor(live.database(), true);
 			try {
 				const document = { _id: { t: "tenant-a", k: "secret-key-value" } };
@@ -578,11 +948,94 @@ describe.skipIf(LIVE_URL === "")("MongoDB engine (live replica set)", () => {
 				});
 				assert.ok(error instanceof MongoCommandError);
 				assert.equal(error.code, 11000);
-				assert.ok(!error.message.includes("secret-key-value"));
-				assert.ok(!error.message.includes("mongodb://"));
+				assertCarriesNone(error, ["secret-key-value", "E11000"]);
 			} finally {
 				await executor.close();
 			}
+		});
+
+		test("a document the validator refuses is MONGODB_DOCUMENT_REJECTED, and the error holds none of it", async () => {
+			const { binding, database } = await open();
+			// Tighten the validator behind the binding's back, so a record the
+			// binding considers valid is refused by the server — whose message
+			// quotes the whole failing document.
+			await live.native(database).command({
+				collMod: SCHEMA.name,
+				validator: {
+					$jsonSchema: {
+						bsonType: "object",
+						properties: { note: { bsonType: "string", maxLength: 3 } },
+					},
+				},
+			});
+			const sentinel = "PAYLOAD-SENTINEL-4111111111111111";
+			const error = await rejection(async () => {
+				await binding.records.write({
+					dataset: SCHEMA.name,
+					mutations: [
+						upsert("tenant-a", "secret-key-value", { note: sentinel }),
+					],
+				});
+			});
+			assert.ok(error instanceof MongoDataError, String(error));
+			assert.equal(error.code, "MONGODB_DOCUMENT_REJECTED");
+			assert.equal(error.detail.serverCode, 121);
+			assertCarriesNone(error, [sentinel, "SENTINEL", "secret-key-value"]);
+		});
+
+		test("a record of 16 MiB or more is MONGODB_DOCUMENT_TOO_LARGE, and the batch writes nothing", async () => {
+			const { binding } = await open();
+			const error = await rejection(async () => {
+				await binding.records.write({
+					dataset: SCHEMA.name,
+					mutations: [
+						upsert("", "fine"),
+						upsert("", "huge", { note: "x".repeat(DOCUMENT_LIMIT) }),
+					],
+				});
+			});
+			assert.ok(error instanceof MongoDataError, String(error));
+			assert.equal(error.code, "MONGODB_DOCUMENT_TOO_LARGE");
+			assert.equal(error.detail.serverCode, 10334);
+			const digest = await requirePort(binding, "verify").digest({
+				scope: scopeOf(SCHEMA.name),
+				buckets: 4,
+			});
+			assert.equal(digest.count, 0);
+		}, 120_000);
+
+		test("a contract refusal holds no value either", async () => {
+			const { binding } = await open();
+			const scope = scopeOf(SCHEMA.name, "tenant-a");
+			const sentinel = "PAYLOAD-SENTINEL-4111111111111111";
+			await requirePort(binding, "fence").raise({ scope, reason: "live" });
+			const fenced = await rejection(async () => {
+				await binding.records.write({
+					dataset: SCHEMA.name,
+					mutations: [
+						upsert("tenant-a", "secret-key-value", { note: sentinel }),
+					],
+				});
+			});
+			assert.ok(fenced instanceof FencedWriteError);
+			assertCarriesNone(fenced, [sentinel, "secret-key-value"]);
+			const unrepresentable = await rejection(async () => {
+				await binding.records.write({
+					dataset: SCHEMA.name,
+					mutations: [
+						upsert("tenant-b", "secret-key-value", {
+							note: sentinel,
+							price: "41111111111111114111111111111111.4111",
+						}),
+					],
+				});
+			});
+			assert.ok(unrepresentable instanceof MongoDataError);
+			assertCarriesNone(unrepresentable, [
+				sentinel,
+				"secret-key-value",
+				"4111111111111111",
+			]);
 		});
 	});
 });

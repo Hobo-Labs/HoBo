@@ -4,11 +4,16 @@
 import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 import {
+	assertBindingMatchesDeclaration,
 	createReferenceEngine,
+	createReferenceNativeLink,
 	ENGINE_CONFORMANCE_CASE_IDS,
 	type EngineBinding,
 	type EngineConformanceResult,
+	type EngineHarness,
 	foldConformance,
+	NATIVE_CONFORMANCE_CASE_IDS,
+	REFERENCE_NATIVE_PROFILE,
 	runEngineConformance,
 	withoutPorts,
 } from "../src/index.js";
@@ -31,14 +36,126 @@ describe("engine conformance kit", () => {
 		assert.equal(report.outcome, "pass", failures(report.results));
 		assert.equal(report.engine, "reference");
 		// The reference engine has no SQL surface; its schema cases are skipped,
-		// not passed.
+		// not passed. And without the opt-in native profile there is no native
+		// realization to prove, so those cases are skipped too.
 		assert.deepEqual(report.skipped, [
+			...NATIVE_CONFORMANCE_CASE_IDS,
 			"pattern.in-place-evolve.gated-and-restorable",
 			"pattern.in-place-evolve.failure-restores",
 		]);
 		assert.equal(
 			report.results.length + report.skipped.length,
 			ENGINE_CONFORMANCE_CASE_IDS.length,
+		);
+	});
+
+	test("with a shared native profile the native cases run, and pass", async () => {
+		assert.deepEqual(NATIVE_CONFORMANCE_CASE_IDS, [
+			"pattern.snapshot-and-tail.native.zero-loss-under-load",
+			"pattern.snapshot-and-tail.native.resumes-at-every-boundary",
+		]);
+		// One link per pair, as a real engine would be given one connection.
+		const links: ReturnType<typeof createReferenceNativeLink>[] = [];
+		const shared = createReferenceNativeLink();
+		const harness: EngineHarness = {
+			create: () => createReferenceEngine({ native: shared }),
+			createNativePair() {
+				const link = createReferenceNativeLink();
+				links.push(link);
+				return {
+					source: createReferenceEngine({ native: link }),
+					target: createReferenceEngine({ native: link }),
+				};
+			},
+		};
+		const report = await runEngineConformance({ engine: harness, now: NOW });
+		assert.equal(report.outcome, "pass", failures(report.results));
+		assert.deepEqual(report.skipped, [
+			"pattern.in-place-evolve.gated-and-restorable",
+			"pattern.in-place-evolve.failure-restores",
+		]);
+		for (const id of NATIVE_CONFORMANCE_CASE_IDS) {
+			assert.equal(
+				report.results.find((result) => result.caseId === id)?.status,
+				"pass",
+				id,
+			);
+		}
+		// One pair for the load case, one per phase boundary for the resume
+		// case — and every transfer was closed by the run that opened it.
+		assert.equal(links.length, 9);
+		for (const link of links) assert.deepEqual(link.open(), []);
+	});
+
+	test("without a staged pair the native cases run between two bindings from create", async () => {
+		const link = createReferenceNativeLink();
+		const report = await runEngineConformance({
+			engine: { create: () => createReferenceEngine({ native: link }) },
+			now: NOW,
+			only: NATIVE_CONFORMANCE_CASE_IDS,
+		});
+		assert.equal(report.outcome, "pass", failures(report.results));
+		assert.equal(report.results.length, 2);
+		assert.deepEqual(link.open(), []);
+	});
+
+	test("a native profile on one side only is no shared fast path: the cases are skipped", async () => {
+		const link = createReferenceNativeLink();
+		const report = await runEngineConformance({
+			engine: { create: () => createReferenceEngine({ native: link }) },
+			peer: { create: () => createReferenceEngine() },
+			now: NOW,
+			only: NATIVE_CONFORMANCE_CASE_IDS,
+		});
+		assert.deepEqual(report.skipped, NATIVE_CONFORMANCE_CASE_IDS);
+		assert.deepEqual(report.results, []);
+	});
+
+	test("a declared native profile needs the port behind it, and the port a declaration", () => {
+		const native = createReferenceEngine({
+			native: createReferenceNativeLink(),
+		});
+		assertBindingMatchesDeclaration(native);
+		assert.deepEqual(native.nativeTransfer?.profiles, [
+			REFERENCE_NATIVE_PROFILE,
+		]);
+		const plain = createReferenceEngine();
+		assertBindingMatchesDeclaration(plain);
+		assert.equal(plain.nativeTransfer, undefined);
+		assert.deepEqual(plain.declaration.nativeProfiles, []);
+
+		// Declared, no port: the selector would offer what nothing can run.
+		const { nativeTransfer: _port, ...withoutPort } = native;
+		assert.throws(
+			() => assertBindingMatchesDeclaration(withoutPort),
+			/declares the native profile migration\.reference\.direct\/v1 but its nativeTransfer port does not run it/u,
+		);
+		// A port, nothing declared: a capability nobody proved.
+		assert.throws(
+			() =>
+				assertBindingMatchesDeclaration({
+					...plain,
+					...(native.nativeTransfer === undefined
+						? undefined
+						: { nativeTransfer: native.nativeTransfer }),
+				}),
+			/runs migration\.reference\.direct\/v1 but does not declare that profile/u,
+		);
+		// A port that runs something other than what is declared.
+		assert.throws(
+			() =>
+				assertBindingMatchesDeclaration({
+					...native,
+					...(native.nativeTransfer === undefined
+						? undefined
+						: {
+								nativeTransfer: {
+									...native.nativeTransfer,
+									profiles: ["migration.reference.other/v1"],
+								},
+							}),
+				}),
+			/does not run it/u,
 		);
 	});
 

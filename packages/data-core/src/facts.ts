@@ -52,6 +52,20 @@ export interface MigrationFact {
 	readonly data: JsonObject;
 }
 
+export const MIGRATION_REALIZATIONS = ["native", "hub"] as const;
+/** `native` is an engine's own fast path; `hub` is the canonical envelope. */
+export type MigrationRealization = (typeof MIGRATION_REALIZATIONS)[number];
+
+function isRealization(
+	value: JsonValue | undefined,
+): value is MigrationRealization {
+	return (
+		isJsonString(value) &&
+		// SAFETY: membership test against the closed tuple of realizations.
+		(MIGRATION_REALIZATIONS as readonly string[]).includes(value)
+	);
+}
+
 export const MIGRATION_STATUSES = [
 	"new",
 	"running",
@@ -67,6 +81,14 @@ export interface MigrationState {
 	readonly migrationId: string;
 	readonly status: MigrationStatus;
 	readonly pattern?: MigrationPatternId;
+	/**
+	 * How records travel in this run, as the plan recorded it: `hub` through
+	 * the canonical envelope, `native` through the engine's own transport.
+	 * Absent for a plan that predates the field, which ran the hub.
+	 */
+	readonly realization?: MigrationRealization;
+	/** The native migration profile, for a `native` realization. */
+	readonly profile?: string;
 	readonly completedPhases: readonly MigrationPhase[];
 	/** Checkpoint each completed phase recorded, by phase. */
 	readonly checkpoints: Readonly<Partial<Record<MigrationPhase, JsonObject>>>;
@@ -105,12 +127,16 @@ export function evolveMigration(
 	switch (fact.type) {
 		case MIGRATION_EVENTS.Planned: {
 			const pattern = data.pattern;
+			const realization = data.realization;
+			const profile = data.profile;
 			return Object.freeze({
 				...state,
 				status: "running",
 				...(isJsonString(pattern) && isMigrationPatternId(pattern)
 					? { pattern }
 					: undefined),
+				...(isRealization(realization) ? { realization } : undefined),
+				...(isJsonString(profile) ? { profile } : undefined),
 			});
 		}
 		case MIGRATION_EVENTS.PhaseApplied: {

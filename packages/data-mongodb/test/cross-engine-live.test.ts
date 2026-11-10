@@ -9,6 +9,7 @@
 // after a crash at every phase boundary, a lossless soak rollback, and a
 // rollback that cannot resurrect an erased subject.
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -19,6 +20,7 @@ import {
 	runEngineConformance,
 } from "@hobo/data-core";
 import {
+	captureObjectPrefixes,
 	createPgExecutor,
 	createPostgresEngine,
 	POSTGRES_SCHEMA_FIXTURE,
@@ -31,7 +33,12 @@ import { connectLive, LIVE_URL, type LiveMongo } from "./support/live.js";
 
 const NOW = "2026-11-10T00:00:00.000Z";
 const POSTGRES_URL = process.env.HOBO_TEST_POSTGRES_URL ?? "";
-const RUN_ID = `${Date.now().toString(36)}${process.pid.toString(36)}`;
+// Random, not derived from the clock and the process id: two test files can
+// start in the same millisecond, and a worker thread shares its parent's pid.
+const RUN_ID = randomUUID().replaceAll("-", "").slice(0, 12);
+
+/** Every PostgreSQL namespace this file has used; what its leak check covers. */
+const OWN_NAMESPACES: string[] = [];
 
 function failures(results: readonly EngineConformanceResult[]): string {
 	return results
@@ -70,9 +77,11 @@ function postgresHarness(pool: pg.Pool): EngineHarness {
 		schemaFixture: POSTGRES_SCHEMA_FIXTURE,
 		create() {
 			counter += 1;
+			const namespace = `hobo_x_${RUN_ID}_${counter}`;
+			OWN_NAMESPACES.push(namespace);
 			return createPostgresEngine({
 				executor,
-				namespace: `hobo_x_${RUN_ID}_${counter}`,
+				namespace,
 				capture: true,
 				schemaTables: [POSTGRES_SCHEMA_FIXTURE_TABLE],
 				ephemeral: true,
@@ -134,12 +143,33 @@ describe.skipIf(LIVE_URL === "" || POSTGRES_URL === "")(
 		afterAll(async () => {
 			assert.deepEqual(await live.leftovers(), []);
 			await live.close();
+			// A leaked slot pins WAL forever; the lane fails if one of this
+			// file's outlives it. Slot names are cluster-wide and other suites
+			// share the server, so only the objects carrying the digests of the
+			// namespaces this file used are counted — every name the binding
+			// derives starts with one.
+			const current = await pool.query(
+				"SELECT current_database()::text AS database",
+			);
+			const prefixes = OWN_NAMESPACES.map((namespace) =>
+				captureObjectPrefixes(String(current.rows[0]?.database), namespace),
+			);
+			const slotPrefixes = prefixes.map((prefix) => prefix.slot);
+			const publicationPrefixes = prefixes.map((prefix) => prefix.publication);
 			const slots = await pool.query(
-				"SELECT count(*)::int AS leaked FROM pg_replication_slots WHERE slot_name LIKE 'hobo_s_%'",
+				"SELECT slot_name::text AS name FROM pg_replication_slots WHERE left(slot_name::text, $2::integer) = ANY($1::text[])",
+				[slotPrefixes, slotPrefixes[0]?.length ?? 0],
+			);
+			const publications = await pool.query(
+				"SELECT pubname::text AS name FROM pg_publication WHERE left(pubname::text, $2::integer) = ANY($1::text[])",
+				[publicationPrefixes, publicationPrefixes[0]?.length ?? 0],
 			);
 			await pool.end();
-			// A leaked slot pins WAL forever; the lane fails if one outlives it.
-			assert.equal(slots.rows[0]?.leaked, 0);
+			assert.ok(OWN_NAMESPACES.length > 0, "the lane used PostgreSQL");
+			assert.deepEqual(
+				[...slots.rows, ...publications.rows].map((row) => String(row.name)),
+				[],
+			);
 		});
 
 		test("PostgreSQL → MongoDB: captured from the write-ahead log, applied as documents", async () => {
@@ -150,7 +180,13 @@ describe.skipIf(LIVE_URL === "" || POSTGRES_URL === "")(
 			});
 			assert.equal(report.outcome, "pass", failures(report.results));
 			assert.equal(report.engine, "postgres");
-			assert.deepEqual(report.skipped, []);
+			// PostgreSQL has every port, the schema port included, so nothing is
+			// skipped for want of one. The native cases are an engine moving its
+			// own records to itself: they cannot apply to a cross-engine pair.
+			assert.deepEqual(
+				report.skipped.filter((caseId) => !caseId.includes(".native.")),
+				[],
+			);
 		}, 300_000);
 
 		test("MongoDB → PostgreSQL: captured from a change stream, applied as rows", async () => {

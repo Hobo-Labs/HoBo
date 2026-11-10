@@ -12,6 +12,7 @@ import path from "node:path";
 import {
 	type EngineBinding,
 	type EngineHarness,
+	NATIVE_CONFORMANCE_CASE_IDS,
 	runEngineConformance,
 } from "@hobo/data-core";
 import { createSqliteEngine, SQLITE_SCHEMA_FIXTURE } from "@hobo/data-sqlite";
@@ -56,9 +57,12 @@ describe.skipIf(!LIVE_URL)("SQLite ↔ PostgreSQL — live, cross-engine", () =>
 	});
 
 	afterAll(async () => {
-		// A leaked slot pins WAL forever; the lane fails if one outlives it.
-		assert.equal(await leftoverCaptureObjects(pool), 0);
+		// A leaked slot pins WAL forever; the lane fails if one of this file's
+		// outlives it. Other suites share the server, so only the objects of
+		// the namespaces this file used are counted.
+		const leftovers = await leftoverCaptureObjects(pool);
 		await pool.end();
+		assert.deepEqual(leftovers, []);
 	});
 
 	test("SQLite → PostgreSQL: an embedded store moves onto a server", async () => {
@@ -86,6 +90,7 @@ describe.skipIf(!LIVE_URL)("SQLite ↔ PostgreSQL — live, cross-engine", () =>
 		});
 		assert.equal(report.outcome, "pass", failures(report.results));
 		assert.equal(report.engine, "postgres");
-		assert.deepEqual(report.skipped, []);
+		// A native fast path exists only within one engine.
+		assert.deepEqual(report.skipped, NATIVE_CONFORMANCE_CASE_IDS);
 	}, 300_000);
 });

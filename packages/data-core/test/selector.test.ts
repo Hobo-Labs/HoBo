@@ -15,6 +15,7 @@ import {
 	parseEngineDeclaration,
 	patternCatalogDigest,
 	type SelectionRequest,
+	type SpiPortName,
 	selectMigrationPattern,
 } from "../src/index.js";
 
@@ -355,6 +356,54 @@ describe("selectMigrationPattern", () => {
 			}),
 		);
 		assert.equal(noReverse.selected?.realization, "native");
+	});
+
+	test("a native candidate still needs the ports the executor drives itself", () => {
+		const withNative = (omit: readonly SpiPortName[]) =>
+			parseEngineDeclaration({
+				...engineDeclarationToJson(engine("alpha", { omit: [...omit] })),
+				engine: "alpha",
+				nativeProfiles: [
+					{
+						profile: "migration.alpha.replicate/v1",
+						pattern: "snapshot-and-tail",
+					},
+				],
+			});
+		const native = (
+			source: readonly SpiPortName[],
+			target: readonly SpiPortName[],
+		) =>
+			selectMigrationPattern(
+				request({
+					change: "placement",
+					source: withNative(source),
+					target: withNative(target),
+					evidence: fresh("alpha"),
+				}),
+			).candidates.find(
+				(candidate) =>
+					candidate.pattern === "snapshot-and-tail" &&
+					candidate.realization === "native",
+			);
+		// The transport ports are the engine's business: not needed natively.
+		const transportFree = native(["snapshot", "capture"], ["apply", "capture"]);
+		assert.equal(transportFree?.eligible, true);
+		assert.equal(transportFree?.reverseTail, false);
+		assert.equal(transportFree?.rollbackInSoak, "to-snapshot");
+		// The fence and the digest are not: whoever carries the records, the
+		// cutover is still fenced and verified by the executor.
+		const unfenced = native(["fence"], []);
+		assert.equal(unfenced?.eligible, false);
+		assert.deepEqual(
+			unfenced?.reasons.map((reason) => `${reason.code}: ${reason.detail}`),
+			["PORT_MISSING: source alpha lacks fence"],
+		);
+		const unverified = native([], ["verify"]);
+		assert.deepEqual(
+			unverified?.reasons.map((reason) => `${reason.code}: ${reason.detail}`),
+			["PORT_MISSING: target alpha lacks verify"],
+		);
 	});
 
 	test("an unestimated freeze is never treated as zero", () => {

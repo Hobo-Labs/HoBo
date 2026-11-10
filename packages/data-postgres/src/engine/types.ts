@@ -99,14 +99,14 @@ export const POSTGRES_TYPE_MAPPING: JsonObject = Object.freeze({
 			native: "timestamptz",
 			write: "constrained",
 			read: "widening",
-			note: "microsecond-exact; year 0000 is refused by the server at write, and a natively written instant outside years 0100-9999 (or an infinity) is refused on read, never altered",
+			note: "microsecond-exact for years 0001-9999; the server has no year 0000 and refuses it at write (an instant whose UTC form falls in year 0000 included), and a natively written BC instant, one past year 9999, or an infinity is refused on read, never altered",
 		},
 		{
 			canonical: "date",
 			native: "date",
 			write: "constrained",
 			read: "widening",
-			note: "year 0000 is refused by the server at write, and a natively written date outside years 0100-9999 (or an infinity) is refused on read, never altered",
+			note: "exact for years 0001-9999; the server has no year 0000 and refuses it at write, and a natively written BC date, one past year 9999, or an infinity is refused on read, never altered",
 		},
 		{
 			canonical: "uuid",
@@ -120,7 +120,7 @@ export const POSTGRES_TYPE_MAPPING: JsonObject = Object.freeze({
 			native: "jsonb",
 			write: "constrained",
 			read: "widening",
-			note: "jsonb refuses U+0000 inside a string at write; it keeps numbers at arbitrary precision, so a natively written number beyond float64 reads as the nearest float64",
+			note: "jsonb refuses U+0000 inside a string at write; it keeps numbers at arbitrary precision, so a natively written number float64 cannot hold exactly reads as the nearest float64, and one beyond float64's range is refused on read, never altered",
 		},
 		{
 			canonical: "encrypted",
@@ -229,16 +229,33 @@ const HEX_BYTES = /^(?:[0-9a-fA-F]{2})*$/u;
 const TIMESTAMP_TEXT =
 	/^([0-9]{4})-([0-9]{2})-([0-9]{2})[T ]([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,6}))?(?:\+00(?::?00)?)?$/u;
 
+/** True when every number in a parsed document is one JSON can carry. */
+function everyNumberFinite(value: JsonValue): boolean {
+	if (Array.isArray(value)) return value.every(everyNumberFinite);
+	if (isPlainObject(value)) {
+		return Object.values(value).every(everyNumberFinite);
+	}
+	return !Number.isNaN(value) && value !== Infinity && value !== -Infinity;
+}
+
 function parseJson(text: string, field: string): JsonValue {
+	let parsed: JsonValue;
 	try {
 		// SAFETY: JSON.parse yields a JSON value at this document boundary.
-		return JSON.parse(text) as JsonValue;
+		parsed = JSON.parse(text) as JsonValue;
 	} catch (cause) {
 		throw new DataCoreError("INVALID_RECORD", "stored JSON does not parse", {
 			cause,
 			detail: { field },
 		});
 	}
+	// `jsonb` keeps numbers at arbitrary precision. One beyond float64's range
+	// (a natively written 1e400) parses to an infinity, which canonical JSON
+	// has no form for — it would be written back as `null`. Refused instead.
+	if (!everyNumberFinite(parsed)) {
+		refuse("stored JSON holds a number beyond float64's range", field);
+	}
+	return parsed;
 }
 
 function float64From(
@@ -265,12 +282,10 @@ function timestampFrom(text: string, field: string): string {
 		// BC instants, years past 9999, the infinities, and any non-UTC text.
 		return refuse("timestamp is outside the canonical range", field);
 	}
+	// Years 0001–0099 pass through like any other: the pattern holds every
+	// year to four digits, and the canonical normaliser reads them as written.
+	// (The server has no year 0000, so it never sends one.)
 	const [, year, month, day, hour, minute, second, fraction = ""] = match;
-	if (Number(year) < 100) {
-		// The canonical normaliser reads a two-digit year as 19xx; refuse
-		// rather than hand it a value it would move by nineteen centuries.
-		return refuse("timestamp is outside the canonical range", field);
-	}
 	return `${year}-${month}-${day}T${hour}:${minute}:${second}.${fraction.padEnd(6, "0")}Z`;
 }
 
@@ -318,22 +333,27 @@ export function canonicalFromNative(
 	cell: (column: string) => NativeCell,
 	source: NativeTextSource,
 ): CanonicalRecord {
-	const raw: { [field: string]: JsonValue } = {};
+	// Entries, not property assignment: assigning a key named `__proto__`
+	// sets the prototype and silently drops the field. Declared fields come
+	// last, so a stray overflow member can never shadow a typed column.
+	const entries: [string, JsonValue][] = [];
 	if (schema.open) {
 		const extra = cell(OPEN_FIELDS_COLUMN);
 		if (isText(extra)) {
 			const parsed = parseJson(extra, OPEN_FIELDS_COLUMN);
-			if (isPlainObject(parsed)) Object.assign(raw, parsed);
+			if (isPlainObject(parsed)) entries.push(...Object.entries(parsed));
 		}
 	}
 	for (const field of schema.fields) {
 		const text = cell(field.name);
-		raw[field.name] =
+		entries.push([
+			field.name,
 			text === null || text === undefined
 				? null
-				: nativeTextToCanonical(field.type, text, source, field.name);
+				: nativeTextToCanonical(field.type, text, source, field.name),
+		]);
 	}
-	return parseCanonicalRecord(schema, raw);
+	return parseCanonicalRecord(schema, Object.fromEntries(entries));
 }
 
 /** The undeclared fields of an open-schema record, as the overflow object. */
@@ -342,11 +362,11 @@ export function openFieldsOf(
 	record: CanonicalRecord,
 ): JsonObject {
 	const declared = new Set(schema.fields.map((field) => field.name));
-	const extra: { [field: string]: JsonValue } = {};
-	for (const [name, value] of Object.entries(record)) {
-		if (!declared.has(name)) extra[name] = value;
-	}
-	return extra;
+	// Built from entries: `extra.__proto__ = value` would set a prototype and
+	// the field would never reach the overflow column.
+	return Object.fromEntries(
+		Object.entries(record).filter(([name]) => !declared.has(name)),
+	);
 }
 
 // ── DDL ─────────────────────────────────────────────────────────────────────

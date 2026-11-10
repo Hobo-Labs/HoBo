@@ -1,18 +1,22 @@
 // Shared support for the engine-binding lanes. Nothing here runs unless a
 // test calls it; the live helpers are only reached when
 // HOBO_TEST_POSTGRES_URL names a real server.
+import { randomUUID } from "node:crypto";
 import {
 	type DatasetSchema,
 	type EngineConformanceResult,
 	type EngineHarness,
+	type NativePair,
 	parseDatasetSchema,
 } from "@hobo/data-core";
 import pg from "pg";
 import {
 	captureObjectNames,
+	captureObjectPrefixes,
 	createPgExecutor,
 	createPostgresEngine,
 	decodePgOutputTransactions,
+	nativeSubscriptionPrefix,
 	type PgOutputTuple,
 	POSTGRES_SCHEMA_FIXTURE,
 	POSTGRES_SCHEMA_FIXTURE_TABLE,
@@ -73,21 +77,74 @@ export const EVERY_TYPE_RECORD = Object.freeze({
 	},
 });
 
-/** A pool sized for the concurrency lane. The caller ends it. */
-export function livePool(): pg.Pool {
-	const pool = new pg.Pool({ connectionString: LIVE_URL, max: 12 });
+/**
+ * A pool sized for the concurrency lane. The caller ends it. Test files run in
+ * parallel against one server other suites share, so a file that needs fewer
+ * sessions asks for fewer.
+ */
+export function livePool(max = 12): pg.Pool {
+	const pool = new pg.Pool({ connectionString: LIVE_URL, max });
 	// An idle client dropped by the server is not a test failure.
 	pool.on("error", () => {});
 	return pool;
 }
 
 let namespaceCounter = 0;
-const RUN_ID = `${Date.now().toString(36)}${process.pid.toString(36)}`;
+// Random, not derived from the clock and the process id: two test files can
+// start in the same millisecond, and a worker thread shares its parent's pid.
+const RUN_ID = randomUUID().replaceAll("-", "").slice(0, 12);
+
+/**
+ * Every namespace this test file has used. Each test file gets its own copy
+ * of this module, so this is exactly the set of namespaces whose server
+ * objects this file — and nobody else — could have created.
+ */
+const OWN_NAMESPACES = new Set<string>();
 
 /** A namespace no other binding in this run, or any other run, uses. */
 export function freshNamespace(): string {
 	namespaceCounter += 1;
-	return `hobo_t_${RUN_ID}_${namespaceCounter}`;
+	const namespace = `hobo_t_${RUN_ID}_${namespaceCounter}`;
+	OWN_NAMESPACES.add(namespace);
+	return namespace;
+}
+
+/** The connection string of another database on the live server. */
+export function liveUrlFor(database: string): string {
+	const url = new URL(LIVE_URL ?? "");
+	url.pathname = `/${database}`;
+	return url.toString();
+}
+
+/**
+ * A second database on the live server, for a native transfer to land in:
+ * logical replication needs the same schema-qualified table name on both
+ * sides, so the target has to be another database.
+ */
+export interface CompanionDatabase {
+	readonly name: string;
+	readonly pool: pg.Pool;
+	/** End the pool and drop the database. */
+	drop(admin: pg.Pool): Promise<void>;
+}
+
+export async function createCompanionDatabase(
+	admin: pg.Pool,
+): Promise<CompanionDatabase> {
+	const name = `hobo_tdb_${RUN_ID}`;
+	await admin.query(`CREATE DATABASE ${quoteIdentifier(name)}`);
+	const pool = new pg.Pool({ connectionString: liveUrlFor(name), max: 4 });
+	pool.on("error", () => {});
+	return {
+		name,
+		pool,
+		async drop(owner) {
+			await pool.end();
+			await owner.query(
+				`DROP DATABASE IF EXISTS ${quoteIdentifier(name)} WITH (FORCE)`,
+			);
+		},
+	};
 }
 
 export interface LiveHarness extends EngineHarness {
@@ -99,35 +156,110 @@ export interface LiveHarness extends EngineHarness {
 	}): PostgresEngine;
 }
 
-/** One namespace per binding, so no two conformance cases can collide. */
-export function postgresHarness(pool: pg.Pool): LiveHarness {
+/**
+ * One namespace per binding, so no two conformance cases can collide. Given a
+ * companion database, the harness can also stage a native pair: one namespace
+ * name, in the live database and in the companion, with the companion's
+ * binding told how its server reaches the live one.
+ */
+export function postgresHarness(
+	pool: pg.Pool,
+	companion?: CompanionDatabase,
+): LiveHarness {
 	const executor = createPgExecutor(pool);
-	const open: LiveHarness["open"] = (options = {}) =>
-		createPostgresEngine({
+	const open: LiveHarness["open"] = (options = {}) => {
+		const namespace = options.namespace ?? freshNamespace();
+		OWN_NAMESPACES.add(namespace);
+		return createPostgresEngine({
 			executor,
-			namespace: options.namespace ?? freshNamespace(),
+			namespace,
 			capture: options.capture ?? true,
 			schemaTables: [POSTGRES_SCHEMA_FIXTURE_TABLE],
 			ephemeral: true,
 			clock: () => NOW,
 		});
-	return {
+	};
+	const base = {
 		executor,
 		open,
 		schemaFixture: POSTGRES_SCHEMA_FIXTURE,
 		create: () => open(),
 	};
+	if (companion === undefined) return base;
+	const companionExecutor = createPgExecutor(companion.pool);
+	return {
+		...base,
+		createNativePair(): NativePair {
+			const namespace = freshNamespace();
+			return {
+				source: open({ namespace }),
+				target: createPostgresEngine({
+					executor: companionExecutor,
+					namespace,
+					ephemeral: true,
+					clock: () => NOW,
+					nativeSourceConnection: () => LIVE_URL ?? "",
+				}),
+			};
+		},
+	};
 }
 
-/** Replication slots and publications this package's bindings own. */
-export async function leftoverCaptureObjects(pool: pg.Pool): Promise<number> {
-	const slots = await pool.query(
-		"SELECT count(*)::text AS n FROM pg_replication_slots WHERE slot_name LIKE 'hobo\\_s\\_%'",
-	);
-	const publications = await pool.query(
-		"SELECT count(*)::text AS n FROM pg_publication WHERE pubname LIKE 'hobo\\_p\\_%'",
-	);
-	return Number(slots.rows[0]?.n ?? 0) + Number(publications.rows[0]?.n ?? 0);
+/** Note a namespace a test named itself, so the leak check covers it. */
+export function claimNamespace(namespace: string): string {
+	OWN_NAMESPACES.add(namespace);
+	return namespace;
+}
+
+/**
+ * Replication slots, publications and subscriptions left behind by this test
+ * file — and only by this test file.
+ *
+ * Slot names are cluster-wide and other suites, and other processes, share
+ * the server, so counting every `hobo_s_%` slot would fail one suite for
+ * another's work in progress. Every name this package derives starts with a
+ * digest of the database and the namespace that own it; the check lists the
+ * objects carrying the digests of the namespaces this file used, in each of
+ * the databases it used. It is still strict: one object of its own is a leak.
+ */
+export async function leftoverCaptureObjects(
+	...pools: readonly pg.Pool[]
+): Promise<readonly string[]> {
+	const found: string[] = [];
+	for (const pool of pools) {
+		const current = await pool.query(
+			"SELECT current_database()::text AS database",
+		);
+		const database = String(current.rows[0]?.database ?? "");
+		const namespaces = [...OWN_NAMESPACES];
+		const prefixes = namespaces.map((namespace) =>
+			captureObjectPrefixes(database, namespace),
+		);
+		const slotPrefixes = prefixes.map((prefix) => prefix.slot);
+		const publicationPrefixes = prefixes.map((prefix) => prefix.publication);
+		const subscriptionPrefixes = namespaces.map(nativeSubscriptionPrefix);
+		// Every prefix of one kind has the same length; compare on that.
+		const slots = await pool.query(
+			"SELECT slot_name::text AS name FROM pg_replication_slots WHERE left(slot_name::text, $2::integer) = ANY($1::text[])",
+			[slotPrefixes, slotPrefixes[0]?.length ?? 0],
+		);
+		const publications = await pool.query(
+			"SELECT pubname::text AS name FROM pg_publication WHERE left(pubname::text, $2::integer) = ANY($1::text[])",
+			[publicationPrefixes, publicationPrefixes[0]?.length ?? 0],
+		);
+		const subscriptions = await pool.query(
+			"SELECT s.subname::text AS name FROM pg_subscription s WHERE s.subdbid = (SELECT d.oid FROM pg_database d WHERE d.datname = current_database()) AND left(s.subname::text, $2::integer) = ANY($1::text[])",
+			[subscriptionPrefixes, subscriptionPrefixes[0]?.length ?? 0],
+		);
+		for (const row of [
+			...slots.rows,
+			...publications.rows,
+			...subscriptions.rows,
+		]) {
+			found.push(`${database}: ${String(row.name)}`);
+		}
+	}
+	return found;
 }
 
 // ── the recorded pgoutput scenario ──────────────────────────────────────────
@@ -158,7 +290,7 @@ export const LARGE_NOTE = Array.from(
 export async function recordPgOutputScenario(
 	pool: pg.Pool,
 ): Promise<readonly string[]> {
-	const namespace = PGOUTPUT_FIXTURE_NAMESPACE;
+	const namespace = claimNamespace(PGOUTPUT_FIXTURE_NAMESPACE);
 	const executor = createPgExecutor(pool);
 	await pool.query(
 		`DROP SCHEMA IF EXISTS ${quoteIdentifier(namespace)} CASCADE`,

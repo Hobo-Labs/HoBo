@@ -84,6 +84,38 @@ A binding's declaration states the real limits of its engine: `captureOrdering`,
 `assertBindingMatchesDeclaration` refuses a binding that provides a port it
 does not declare, or declares one it does not provide.
 
+### The native-transfer port
+
+An engine that declares a native migration profile (`nativeProfiles`) also
+provides `nativeTransfer`: the engine's own bulk transport, for a `native`
+realization. The port replaces exactly two things the hub does — the seed and
+the tail — and nothing else.
+
+| Method | Asked of | Contract |
+|---|---|---|
+| `publish` | source | start retaining every change to the scope for a named transfer; answer a ticket. Idempotent |
+| `subscribe` | target | begin the engine's own copy of what was published. Idempotent. Refused, never approximated, when the engine cannot copy the scope faithfully |
+| `seeded` | target | true once the initial copy is complete |
+| `mark` | source | a position every change committed so far sits at or before |
+| `reached` | source | true once the target has durably applied everything up to a mark |
+| `stop` | either | drop what this side holds, and the log it pinned. Idempotent |
+
+The ticket is journaled, so nothing that crosses the port may carry a
+credential or a record. How the target reaches the source — a connection
+string, a network path — is given to the binding when it is constructed.
+`seeded` and `reached` may wait a bounded time inside the engine before
+answering false; an executor polls a bounded number of times and never sleeps.
+
+The declaration and the port are held to each other profile by profile:
+`assertBindingMatchesDeclaration` refuses a declared profile the port does not
+run, and a port that runs a profile nobody declared. A declared fast path with
+nothing behind it is how a decision comes to say `native` while nothing can
+execute it.
+
+The reference engine opts in with `createReferenceEngine({ native: link })`,
+where `createReferenceNativeLink()` stands in for the connection two real
+stores would be given.
+
 `createReferenceEngine()` is the executable definition of what each port
 means. When the prose and that file disagree, the file is right.
 
@@ -121,6 +153,18 @@ A *reverse tail* is capture on the target plus apply on the source: after the
 flip the old side keeps receiving the new side's writes, so a rollback loses
 nothing. Without it the old side goes stale at the flip, and the executor says
 so (`rollback: "to-snapshot"`) rather than claiming otherwise.
+
+### Two ways for records to travel
+
+`runSnapshotAndTail` and `runOfflineCopy` take the realization the selector
+chose: `realization: "hub"` (the default) moves canonical records through the
+ports; `realization: "native"`, with the `profile` to run, hands the seed and
+the tail to the engine's `nativeTransfer` port. Either way this package keeps
+every phase, the policy verdict in front of each, the digests through
+`verify`, the fence, the cutover decision and the flip, the soak, and the
+journal. `migration.Planned` records the realization and, for native, the
+profile; a native transfer is closed after the cutover is journaled and before
+write authority moves, and again before the source is retired.
 
 ### The cutover is decided before it is done
 
@@ -226,8 +270,25 @@ const report = await runEngineConformance({
 The suite proves the ports, then the patterns built on them: zero loss under
 load, a single write authority, resume after a crash at every phase boundary,
 a lossless soak rollback, a rollback that cannot resurrect an erased subject,
-a pooled-to-silo tenant move, and gated in-place evolution. Twenty-one cases;
+a pooled-to-silo tenant move, and gated in-place evolution. Twenty-nine cases;
 `ENGINE_CONFORMANCE_CASE_IDS` lists them.
+
+Six of them are probes for defects found in one engine and worth holding every
+engine to: a first-century timestamp round-trips or is refused when written
+(never accepted and then unreadable); an undeclared open-schema field named
+`__proto__` survives; a write whose key disagrees with its record's key is
+refused; a dataset named after an engine's own bookkeeping is refused or
+harmless; capture survives an update of a record with a very large key; and
+reading capture from a position the engine never minted is an error, not an
+empty caught-up batch.
+
+Two more prove a `native` realization (`NATIVE_CONFORMANCE_CASE_IDS`): zero
+loss with writers running during the engine's own copy and racing the fence,
+and resume after a crash at every phase boundary. They run only when engine
+and peer declare a shared native profile for the pattern, and are reported as
+skipped otherwise. An engine whose two sides must be placed specially — the
+same schema name in two databases, the target told how to reach the source —
+supplies `createNativePair` on its harness.
 
 The fold is pessimistic. A failure is `fail`; a case that applies but could not
 run is `not-run`, which makes the outcome `unknown`; and `unknown` is as
@@ -251,8 +312,21 @@ and the peer is the target.
   handoff reports `HANDOFF_EVENT_IDENTITY_REMINTED`.
 - `log-pivot` compares digests only when the sink keeps the source's schema.
   A genuine re-model changes the records, and the evidence is then positional.
-- A `native` realization is selected here and executed by the engine package
-  that owns the profile; this package runs the `hub` realization.
+- A `native` realization carries no reverse tail. The engine's transport is
+  dropped at the cutover, so the old side goes stale there and a rollback from
+  soak is `to-snapshot`; the selector ranks a hub run with a reverse tail above
+  it for exactly that reason.
+- A `native` realization that cannot run is an error
+  (`NATIVE_REALIZATION_UNAVAILABLE`, or the engine's `NATIVE_TRANSFER_REFUSED`),
+  never a quiet hub run. A run planned one way cannot be resumed the other.
+- A failed native run leaves its transfer in place, because that is what lets
+  it be resumed. Abandoning it instead takes one `nativeTransfer.stop` on each
+  side, under `nativeTransferName(migrationId)`.
+- The journal records a digest of the fence token, never the token. A later
+  phase, or a resumed run, gets the token back by raising the fence again —
+  raising a raised fence answers its token — and holds if the digest no longer
+  matches. An engine whose fence does not survive a restart cannot resume a
+  cutover this way.
 
 ## Tests
 

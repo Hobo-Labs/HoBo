@@ -8,10 +8,12 @@ import {
 	createMemoryMongoExecutor,
 	MONGO_MAX_KEY,
 	MONGO_MIN_KEY,
+	type MongoBulkWriteResult,
 	MongoCommandError,
 	type MongoDocument,
 	type MongoExecutor,
 	type MongoValue,
+	wrappedText,
 } from "../src/index.js";
 
 function id(tenant: string, key: string): MongoDocument {
@@ -34,6 +36,26 @@ async function all(executor: MongoExecutor): Promise<readonly MongoDocument[]> {
 		select: { kind: "range" },
 	});
 	return documents;
+}
+
+interface Deferred {
+	readonly promise: Promise<void>;
+	resolve(): void;
+}
+
+function deferred(): Deferred {
+	let release = (): void => undefined;
+	const promise = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	return { promise, resolve: () => release() };
+}
+
+/** A turn of the timer queue: long enough for anything not waiting to finish. */
+function settle(): Promise<void> {
+	return new Promise((resolve) => {
+		setTimeout(resolve, 20);
+	});
 }
 
 async function codeOf(action: () => Promise<void>): Promise<number> {
@@ -347,5 +369,224 @@ describe("in-memory executor: transactions and changes", () => {
 			}),
 			260,
 		);
+	});
+});
+
+describe("in-memory executor: the 16 MiB document limit", () => {
+	// { _id: "big", s: <n bytes> } is 26 + n bytes of BSON.
+	const sized = (bytes: number): MongoDocument => ({
+		_id: "big",
+		s: "x".repeat(bytes - 26),
+	});
+	const limit = 16 * 1024 * 1024;
+
+	test("a document one byte under 16 MiB is stored; at 16 MiB it is refused with code 10334", async () => {
+		const executor = createMemoryMongoExecutor();
+		await put(executor, sized(limit - 1));
+		assert.equal(await codeOf(() => put(executor, sized(limit))), 10334);
+		assert.equal(
+			await codeOf(async () => {
+				await executor.transaction((session) =>
+					session.bulkWrite({
+						collection: "c",
+						operations: [{ kind: "insert", document: sized(limit + 1) }],
+					}),
+				);
+			}),
+			10334,
+		);
+		// Lengths only: a failure here must not print 16 MiB of text.
+		const [stored] = await all(executor);
+		assert.equal(
+			String(stored?.s).length,
+			limit - 1 - 26,
+			"the stored document is still the smaller one",
+		);
+	});
+});
+
+describe("in-memory executor: transactions interleave", () => {
+	const counter = (value: bigint): MongoDocument => ({
+		_id: "counter",
+		n: { $numberLong: String(value) },
+	});
+
+	test("a transaction reads the snapshot taken at its first statement", async () => {
+		const executor = createMemoryMongoExecutor();
+		await put(executor, { _id: "1" });
+		const seen = await executor.transaction(async (session) => {
+			const before = await session.find({
+				collection: "c",
+				select: { kind: "range" },
+			});
+			// Committed by someone else while this transaction is open.
+			await put(executor, { _id: "2" });
+			const after = await session.find({
+				collection: "c",
+				select: { kind: "range" },
+			});
+			return [before.documents.length, after.documents.length];
+		});
+		assert.deepEqual(seen, [1, 1]);
+		assert.equal((await all(executor)).length, 2);
+	});
+
+	test("a commit takes a turn of the event loop, and the transaction is open until it lands", async () => {
+		const executor = createMemoryMongoExecutor();
+		const writing = executor.transaction((session) =>
+			session.bulkWrite({
+				collection: "c",
+				operations: [{ kind: "insert", document: { _id: "1" } }],
+			}),
+		);
+		// The body has returned. A reader that does not wait sees nothing yet…
+		assert.deepEqual(await all(executor), []);
+		// …and one that waits for the collection's transactions sees the commit.
+		await executor.awaitTransactions({ collection: "c" });
+		assert.equal((await all(executor)).length, 1);
+		await writing;
+	});
+
+	test("awaitTransactions waits for an open transaction that touched the collection, and for no other", async () => {
+		const executor = createMemoryMongoExecutor();
+		const reached = deferred();
+		const gate = deferred();
+		const open = executor.transaction(async (session) => {
+			// A read is enough to have touched it.
+			await session.find({ collection: "c", select: { kind: "range" } });
+			reached.resolve();
+			await gate.promise;
+			await session.bulkWrite({
+				collection: "c",
+				operations: [{ kind: "insert", document: { _id: "late" } }],
+			});
+		});
+		await reached.promise;
+		await executor.awaitTransactions({ collection: "elsewhere" });
+		let waited = false;
+		const waiting = executor.awaitTransactions({ collection: "c" }).then(() => {
+			waited = true;
+			return all(executor);
+		});
+		await settle();
+		assert.equal(waited, false, "the transaction is still open");
+		gate.resolve();
+		assert.equal(
+			(await waiting).length,
+			1,
+			"the wait ends only after the commit is visible",
+		);
+		await open;
+	});
+
+	test("a write to a document changed since the snapshot is a conflict: the body is rerun and no update is lost", async () => {
+		const executor = createMemoryMongoExecutor();
+		await put(executor, counter(0n));
+		let runs = 0;
+		const increment = (): Promise<void> =>
+			executor.transaction(async (session) => {
+				runs += 1;
+				const { documents } = await session.find({
+					collection: "c",
+					select: { kind: "ids", ids: ["counter"] },
+				});
+				const current = BigInt(
+					wrappedText(documents[0]?.n ?? null, "$numberLong") ?? "0",
+				);
+				await session.bulkWrite({
+					collection: "c",
+					operations: [{ kind: "replace", document: counter(current + 1n) }],
+				});
+			});
+		await Promise.all([increment(), increment(), increment()]);
+		assert.deepEqual(await all(executor), [counter(3n)]);
+		assert.equal(runs, 6, "three bodies, and three reruns after a conflict");
+	});
+
+	test("a write outside a transaction waits for the transaction that holds its document", async () => {
+		const executor = createMemoryMongoExecutor();
+		const { token } = await executor.changeHead({ collection: "c" });
+		const reached = deferred();
+		const gate = deferred();
+		const holder = executor.transaction(async (session) => {
+			await session.bulkWrite({
+				collection: "c",
+				operations: [{ kind: "replace", document: counter(1n) }],
+			});
+			reached.resolve();
+			await gate.promise;
+		});
+		await reached.promise;
+		let landed = false;
+		const outside = put(executor, counter(2n)).then(() => {
+			landed = true;
+		});
+		await settle();
+		assert.equal(landed, false);
+		assert.deepEqual(await all(executor), []);
+		gate.resolve();
+		await Promise.all([holder, outside]);
+		assert.deepEqual(await all(executor), [counter(2n)]);
+		const { events } = await executor.readChanges({
+			collection: "c",
+			after: token,
+			limit: 10,
+		});
+		assert.deepEqual(
+			events.map((event) => event.operation),
+			["insert", "replace"],
+		);
+	});
+
+	test("the events of one transaction share an identity; a write outside one has none", async () => {
+		const executor = createMemoryMongoExecutor();
+		const { token } = await executor.changeHead({ collection: "c" });
+		const inTransaction = (
+			...ids: readonly string[]
+		): Promise<MongoBulkWriteResult> =>
+			executor.transaction((session) =>
+				session.bulkWrite({
+					collection: "c",
+					operations: ids.map((id) => ({
+						kind: "insert",
+						document: { _id: id },
+					})),
+				}),
+			);
+		await inTransaction("a1", "a2");
+		await put(executor, { _id: "outside" });
+		await inTransaction("b1");
+		const { events } = await executor.readChanges({
+			collection: "c",
+			after: token,
+			limit: 10,
+		});
+		const [a1, a2, outside, b1] = events.map((event) => event.transaction);
+		assert.ok(a1 !== undefined && a1 !== "");
+		assert.equal(a2, a1);
+		assert.equal(outside, undefined);
+		assert.ok(b1 !== undefined && b1 !== a1);
+	});
+
+	test("a dropped collection is reported to every reader, whatever its key filter", async () => {
+		const executor = createMemoryMongoExecutor();
+		await put(executor, { _id: id("a", "1") }, { _id: id("b", "1") });
+		const { token } = await executor.changeHead({ collection: "c" });
+		await put(executor, { _id: id("b", "2") });
+		await executor.dropCollection("c");
+		const batch = await executor.readChanges({
+			collection: "c",
+			after: token,
+			limit: 10,
+			where: { path: "_id.t", equals: "a" },
+		});
+		assert.deepEqual(
+			batch.events.map((event) => [event.operation, event.id]),
+			[
+				["drop", undefined],
+				["invalidate", undefined],
+			],
+		);
+		assert.deepEqual(await all(executor), []);
 	});
 });

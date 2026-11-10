@@ -21,6 +21,14 @@ export const DATA_CORE_ERROR_CODES = [
 	"POLICY_DENIED",
 	"VERIFICATION_FAILED",
 	"CONFORMANCE_SUITE_INVALID",
+	// A `native` realization that cannot run. Never answered by quietly running
+	// the hub instead: the realization is part of the recorded decision.
+	"NATIVE_REALIZATION_UNAVAILABLE",
+	// A native transfer the engine will not attempt, because it could not do it
+	// faithfully; `detail.reason` names why.
+	"NATIVE_TRANSFER_REFUSED",
+	// The objects behind a native transfer are gone; what it retained is lost.
+	"NATIVE_TRANSFER_LOST",
 ] as const;
 
 export type DataCoreErrorCode = (typeof DATA_CORE_ERROR_CODES)[number];

@@ -45,6 +45,10 @@ export const SCHEMA_SNAPSHOT_REFUSALS = Object.freeze({
 		"POSTGRES_SCHEMA_SNAPSHOT_NO_ROW_SECURITY: row security policies are not copied",
 	grant:
 		"POSTGRES_SCHEMA_SNAPSHOT_NO_GRANTS: privileges granted on the table or its columns are not copied",
+	owner:
+		"POSTGRES_SCHEMA_SNAPSHOT_SAME_OWNER_ONLY: a table owned by another role would be recreated owned by the restoring role, and its owner would lose it",
+	publication:
+		"POSTGRES_SCHEMA_SNAPSHOT_NOT_PUBLISHED: a table in a publication would be recreated outside it and silently drop out of logical replication",
 	dataset:
 		"POSTGRES_SCHEMA_SNAPSHOT_NOT_A_DATASET: a dataset table carries the fence and may be captured; it is not evolved through the raw schema port",
 } as const);
@@ -73,7 +77,7 @@ function parseJsonText(text: string): JsonValue {
  */
 const PREFLIGHT = `
 WITH target AS (
-	SELECT c.oid, c.relkind, c.relrowsecurity, c.relacl
+	SELECT c.oid, c.relkind, c.relrowsecurity, c.relacl, c.relowner, c.relnamespace
 	FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 	WHERE n.nspname = $1::text AND c.relname = $2::text
 )
@@ -98,9 +102,29 @@ SELECT 'grant' FROM target t
 	WHERE t.relacl IS NOT NULL
 		OR EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = t.oid AND a.attnum > 0 AND a.attacl IS NOT NULL)
 UNION ALL
+SELECT 'owner' FROM target t
+	WHERE t.relowner <> (SELECT r.oid FROM pg_roles r WHERE r.rolname = current_user)
+UNION ALL
+SELECT 'publication' FROM target t
+	WHERE EXISTS (SELECT 1 FROM pg_publication_rel r WHERE r.prrelid = t.oid)
+		OR EXISTS (SELECT 1 FROM pg_publication p WHERE p.puballtables)%SCHEMA_PUBLICATIONS%
+UNION ALL
 SELECT 'dataset' FROM target t
 	WHERE EXISTS (SELECT 1 FROM %DATASETS% d WHERE d.dataset = $2::text)
 `;
+
+/**
+ * A table can also be published through its schema, from PostgreSQL 15. The
+ * catalog that records it does not exist before then, and a statement that
+ * names a missing catalog does not parse — so the clause is added only on a
+ * server that has it.
+ *
+ * The catalogs are read directly rather than through `pg_publication_tables`:
+ * that view resolves every publication by name as it goes, and fails with
+ * "publication does not exist" when another session drops one meanwhile.
+ */
+const SCHEMA_PUBLICATIONS =
+	"\n\t\tOR EXISTS (SELECT 1 FROM pg_publication_namespace s WHERE s.pnnspid = t.relnamespace)";
 
 /** Columns a plain INSERT may name: live, and not generated. */
 const COPYABLE_COLUMNS = `
@@ -151,7 +175,24 @@ export function createSchemaPort(
 	const { store, tables, clock } = options;
 	const { executor, namespace } = store;
 	const registry = store.meta("schemaSnapshots");
-	const preflight = PREFLIGHT.replace("%DATASETS%", store.meta("datasets"));
+	let preflightText: Promise<string> | undefined;
+	const preflight = (on: PostgresExecutor): Promise<string> => {
+		preflightText ??= on
+			.query(
+				"SELECT (to_regclass('pg_catalog.pg_publication_namespace') IS NOT NULL)::text AS present",
+			)
+			.then((found) =>
+				PREFLIGHT.replace("%DATASETS%", store.meta("datasets")).replace(
+					"%SCHEMA_PUBLICATIONS%",
+					found.rows[0]?.present === "true" ? SCHEMA_PUBLICATIONS : "",
+				),
+			)
+			.catch((cause) => {
+				preflightText = undefined;
+				throw cause;
+			});
+		return preflightText;
+	};
 
 	/**
 	 * Statements in a phase resolve unqualified names in the namespace first.
@@ -242,7 +283,10 @@ export function createSchemaPort(
 				for (const table of tables) {
 					const present = await exists(tx, namespace, table);
 					if (present) {
-						const reasons = await tx.query(preflight, [namespace, table]);
+						const reasons = await tx.query(await preflight(tx), [
+							namespace,
+							table,
+						]);
 						const reason = reasons.rows[0]?.reason;
 						if (reason !== null && reason !== undefined) {
 							throw refusedPlan(

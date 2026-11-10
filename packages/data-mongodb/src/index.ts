@@ -47,7 +47,6 @@ export {
 	MONGO_DATA_ERROR_CODES,
 	MONGO_SERVER_CODES,
 	MongoCommandError,
-	type MongoCommandErrorOptions,
 	type MongoCommandFailure,
 	MongoDataError,
 	type MongoDataErrorCode,
@@ -99,7 +98,10 @@ export {
 	mongoTypeOf,
 	wrappedText,
 } from "./extended-json.js";
-export { createMemoryMongoExecutor } from "./memory-executor.js";
+export {
+	createMemoryMongoExecutor,
+	type MemoryMongoExecutor,
+} from "./memory-executor.js";
 export {
 	parseAwaitTransactionsRequest,
 	parseBulkWriteRequest,

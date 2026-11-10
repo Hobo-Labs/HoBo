@@ -43,13 +43,21 @@ import {
 	type InPlaceEvolvePlan,
 	runInPlaceEvolve,
 } from "./executors/in-place.js";
-import type { MigrationRuntime } from "./executors/runtime.js";
+import type {
+	MigrationRunResult,
+	MigrationRuntime,
+} from "./executors/runtime.js";
 import {
 	createMemoryMigrationJournal,
 	type MigrationJournal,
 } from "./facts.js";
-import { canonicalEncode, type JsonObject, type JsonValue } from "./json.js";
-import type { MigrationPhase } from "./patterns.js";
+import {
+	canonicalEncode,
+	type JsonObject,
+	type JsonValue,
+	sha256Hex,
+} from "./json.js";
+import type { MigrationPatternId, MigrationPhase } from "./patterns.js";
 import { withoutPorts } from "./reference-engine.js";
 import type { ConformanceOutcome } from "./selector.js";
 import {
@@ -59,6 +67,7 @@ import {
 	requirePort,
 	type SpiPortName,
 	scopeOf,
+	sharedNativeProfile,
 } from "./spi.js";
 
 // public-contract: reference id of the engine conformance suite; recorded with every report.
@@ -122,11 +131,30 @@ export interface SchemaFixture {
 	readonly failingStatement: string;
 }
 
+/** Two fresh bindings an engine's native profile can transfer between. */
+export interface NativePair {
+	readonly source: EngineBinding;
+	readonly target: EngineBinding;
+}
+
 export interface EngineHarness {
 	/** A fresh, empty binding. `label` distinguishes several within one case. */
 	create(label: string): Awaitable<EngineBinding>;
 	dispose?(binding: EngineBinding): Awaitable<void>;
 	readonly schemaFixture?: SchemaFixture;
+	/**
+	 * A source and a target, both fresh and empty, placed so the engine's
+	 * native profile can run between them — the same schema name in two
+	 * databases, say, with the target told how to reach the source. Only an
+	 * engine that declares a native profile needs it, and only when two
+	 * bindings from `create` would not already do.
+	 */
+	createNativePair?(label: string): Awaitable<NativePair>;
+	/**
+	 * Names the engine keeps for its own bookkeeping, tried as dataset names
+	 * in addition to the ones the kit already knows engines to use.
+	 */
+	readonly reservedDatasetNames?: readonly string[];
 }
 
 export interface RunEngineConformanceInput {
@@ -144,14 +172,24 @@ export interface RunEngineConformanceInput {
 
 interface CaseContext {
 	readonly input: RunEngineConformanceInput;
+	/** The native profile engine and peer share for the case's pattern. */
+	readonly nativeProfile: string | undefined;
 	open(label: string): Promise<EngineBinding>;
 	openPeer(label: string): Promise<EngineBinding>;
+	openNativePair(label: string): Promise<NativePair>;
 }
 
 interface ConformanceCase {
 	readonly id: string;
 	/** Ports the engine under test must declare for the case to apply. */
 	readonly requires: readonly SpiPortName[];
+	/**
+	 * Set on a case that proves a `native` realization of this pattern. It
+	 * applies only when engine and peer declare a shared native profile for
+	 * the pattern; otherwise it is skipped, exactly as a case whose port the
+	 * engine does not declare is skipped.
+	 */
+	readonly native?: MigrationPatternId;
 	/** Ports the peer must declare; a peer without them makes the case `not-run`. */
 	readonly peerRequires?: readonly SpiPortName[];
 	readonly dependsOn?: readonly string[];
@@ -386,6 +424,107 @@ function copyOptions(
 	};
 }
 
+/** The token of a raised fence: raising a raised fence answers it. */
+async function raisedToken(binding: EngineBinding): Promise<string> {
+	const grant = await requirePort(binding, "fence").raise({
+		scope: scopeOf(CONFORMANCE_DATASET),
+		reason: "conformance",
+	});
+	return grant.fenceToken;
+}
+
+/**
+ * Names engines are known to keep for their own bookkeeping. A dataset given
+ * one of them must be refused, or must be harmless: the engine's own tables
+ * are not a place a caller's schema may land.
+ */
+const KNOWN_METADATA_NAMES: readonly string[] = Object.freeze([
+	"hobo_data_datasets",
+	"hobo_data_fences",
+	"hobo_data_watermarks",
+	"hobo_data_subscriptions",
+	"hobo_data_journal",
+	"hobo_data_journal_scope",
+	"hobo_data_schema_snapshots",
+	"hobo_dual_run_pin",
+]);
+
+/** A long key no engine can compress away: 2,500 characters of digest text. */
+const LARGE_KEY = Array.from({ length: 40 }, (_, index) =>
+	sha256Hex(`hobo-conformance-large-key-${index}`),
+)
+	.join("")
+	.slice(0, 2500);
+
+/** Not a position any engine mints. */
+const GARBAGE_POSITION = "hobo-conformance-not-a-position";
+
+// public-contract: dataset name of the open-schema conformance probe.
+export const CONFORMANCE_OPEN_DATASET = "hobo_conformance_open";
+
+const NATIVE_SOURCE: readonly SpiPortName[] = ["verify", "fence", "retire"];
+const NATIVE_TARGET: readonly SpiPortName[] = ["verify"];
+
+async function seededNativePair(
+	context: CaseContext,
+	rows: number,
+): Promise<Pair> {
+	const { source, target } = await context.openNativePair("native");
+	const schema = conformanceSchema([source, target]);
+	await source.datasets.ensureDataset(schema);
+	const mutations: RecordMutation[] = [];
+	for (let index = 0; index < rows; index += 1) {
+		mutations.push(
+			upsert(schema, "", `order-${index}`, { qty: String(index) }),
+		);
+	}
+	await write(source, mutations);
+	return { source, target, schema };
+}
+
+function nativeOptions(context: CaseContext): Partial<CopyMigrationOptions> {
+	if (context.nativeProfile === undefined) {
+		throw new NotRun("engine and peer share no native profile");
+	}
+	return { realization: "native", profile: context.nativeProfile };
+}
+
+interface WriterTally {
+	/** Ids of writes the source acknowledged, in order. */
+	readonly acknowledged: string[];
+	/** Anything other than "landed" or "refused by the fence". */
+	readonly problems: string[];
+}
+
+/**
+ * A writer that keeps writing to the source until it is told to stop or the
+ * fence refuses it. Every write is its own transaction; some revisit a record
+ * the same writer wrote earlier, so the tail carries updates as well.
+ */
+async function keepWriting(
+	pair: Pair,
+	name: string,
+	tally: WriterTally,
+	stopped: () => boolean,
+): Promise<void> {
+	for (let round = 0; round < 400 && !stopped(); round += 1) {
+		const id = `${name}-${round}`;
+		const mutations = [upsert(pair.schema, "", id, { qty: String(round) })];
+		if (round % 4 === 3) {
+			mutations.push(
+				upsert(pair.schema, "", `${name}-${round - 2}`, { qty: "-1" }),
+			);
+		}
+		const refused = await refuses(() => write(pair.source, mutations));
+		if (refused instanceof FencedWriteError) return;
+		if (refused !== undefined) {
+			tally.problems.push(`${id} threw ${refused.name}`);
+			return;
+		}
+		tally.acknowledged.push(id);
+	}
+}
+
 // ── cases ───────────────────────────────────────────────────────────────────
 
 const CASES: readonly ConformanceCase[] = Object.freeze([
@@ -515,6 +654,281 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 					`${field} was stored altered instead of being refused`,
 				);
 			}
+		},
+	},
+	{
+		id: "mapping.early-years-never-unreadable",
+		requires: ["records"],
+		dependsOn: ["records.round-trip-canonical"],
+		async run(context) {
+			const binding = await context.open("a");
+			const schema = conformanceSchema([binding]);
+			await binding.datasets.ensureDataset(schema);
+			// Years before 0100 are where engines and their drivers disagree
+			// (two-digit-year rules, a missing year zero). Each value must
+			// round-trip exactly or be refused when it is written. What may
+			// never happen is the third thing: accepted on write, and then
+			// every read of the dataset fails.
+			const probes: readonly JsonObject[] = [
+				{ placed_at: "0001-01-01T00:00:00Z" },
+				{ placed_at: "0099-12-31T23:59:59.999999Z" },
+				{ placed_at: "0000-06-15T12:00:00Z" },
+				{ due: "0001-01-01" },
+				{ due: "0099-12-31" },
+				{ due: "0000-03-01" },
+			];
+			const scope = scopeOf(schema.name);
+			for (const [index, probe] of probes.entries()) {
+				const field = Object.keys(probe)[0] ?? "";
+				if (!schema.fields.some((entry) => entry.name === field)) continue;
+				const mutation = upsert(schema, "", `early-${index}`, probe);
+				const refused = await refuses(() => write(binding, [mutation]));
+				if (refused !== undefined) continue;
+				const unreadable = await refuses(async () => {
+					const read = await binding.records.read({
+						dataset: schema.name,
+						tenant: "",
+						key: mutation.key,
+					});
+					expect(
+						read !== undefined &&
+							canonicalEncode(read) ===
+								canonicalEncode(mutation.record ?? null),
+						`${field} ${String(probe[field])} was stored altered instead of being refused`,
+					);
+					await binding.verify?.digest({ scope, buckets: 4 });
+					const cursor = await binding.snapshot?.openSnapshot({
+						scope,
+						chunkSize: 50,
+					});
+					if (cursor !== undefined) {
+						try {
+							for (;;) if ((await cursor.next()) === undefined) break;
+						} finally {
+							await cursor.close();
+						}
+					}
+				});
+				if (unreadable instanceof Expectation) throw unreadable;
+				expect(
+					unreadable === undefined,
+					`${field} ${String(probe[field])} was accepted on write and then made the dataset unreadable`,
+				);
+			}
+		},
+	},
+	{
+		id: "records.open-fields-round-trip",
+		requires: ["records"],
+		dependsOn: ["records.round-trip-canonical"],
+		async run(context) {
+			const binding = await context.open("a");
+			const schema = parseDatasetSchema({
+				name: CONFORMANCE_OPEN_DATASET,
+				version: 1,
+				open: true,
+				keyFields: ["id"],
+				fields: [{ name: "id", type: "string", nullable: false }],
+			});
+			// An engine may refuse an open schema outright. What it may not do
+			// is accept one and then lose a field.
+			const unsupported = await refuses(async () => {
+				await binding.datasets.ensureDataset(schema);
+			});
+			if (unsupported !== undefined) return;
+			// Undeclared fields whose names are also names on every object. A
+			// store that collects fields by assignment silently drops
+			// `__proto__`; built from entries here so the field is really there.
+			const record = parseCanonicalRecord(
+				schema,
+				Object.fromEntries([
+					["id", "open-1"],
+					["__proto__", { nested: [1, "two"] }],
+					["constructor", "c"],
+					["toString", 5],
+					["extra", { a: null }],
+				]),
+			);
+			expect(
+				Object.hasOwn(record, "__proto__"),
+				"the kit's own record must carry the field it probes with",
+			);
+			const key = encodeRecordKey(schema, record);
+			const refused = await refuses(async () => {
+				await binding.records.write({
+					dataset: schema.name,
+					mutations: [upsertMutation("", key, record)],
+				});
+			});
+			if (refused !== undefined) return;
+			const read = await binding.records.read({
+				dataset: schema.name,
+				tenant: "",
+				key,
+			});
+			expect(
+				read !== undefined && Object.hasOwn(read, "__proto__"),
+				"an undeclared field named __proto__ was dropped",
+			);
+			expect(
+				canonicalEncode(read) === canonicalEncode(record),
+				"an open-schema record must read back with every undeclared field intact",
+			);
+			if (binding.verify !== undefined) {
+				const expected = new DatasetDigestBuilder(schema.name, "", 4);
+				expected.add("", key, record);
+				const digest = await binding.verify.digest({
+					scope: scopeOf(schema.name),
+					buckets: 4,
+				});
+				expect(
+					compareDigests(expected.finish(), digest).equal,
+					"the digest of an open-schema record must cover its undeclared fields",
+				);
+			}
+		},
+	},
+	{
+		id: "records.key-must-match-record",
+		requires: ["records"],
+		dependsOn: ["records.round-trip-canonical"],
+		async run(context) {
+			const binding = await context.open("a");
+			const schema = conformanceSchema([binding]);
+			await binding.datasets.ensureDataset(schema);
+			// A mutation that names one key and carries another key's record.
+			// Wherever an engine put it, some other engine would look for it
+			// somewhere else; the only portable answer is to refuse it.
+			const claimed = keyOf(schema, "order-claimed");
+			const carried = recordFor(schema, "order-carried");
+			const refused = await refuses(async () => {
+				await binding.records.write({
+					dataset: schema.name,
+					mutations: [upsertMutation("", claimed, carried)],
+				});
+			});
+			expect(
+				refused !== undefined,
+				"a write whose key disagrees with its record's key must be refused",
+			);
+			for (const key of [claimed, encodeRecordKey(schema, carried)]) {
+				expect(
+					(await binding.records.read({
+						dataset: schema.name,
+						tenant: "",
+						key,
+					})) === undefined,
+					"a refused write must leave nothing behind, under either key",
+				);
+			}
+		},
+	},
+	{
+		id: "datasets.metadata-names-refused-or-harmless",
+		requires: ["datasets", "records"],
+		dependsOn: ["records.round-trip-canonical"],
+		async run(context) {
+			const binding = await context.open("a");
+			const schema = conformanceSchema([binding]);
+			await binding.datasets.ensureDataset(schema);
+			await write(binding, [upsert(schema, "", "before", { qty: "1" })]);
+			const names = [
+				...new Set([
+					...KNOWN_METADATA_NAMES,
+					...(context.input.engine.reservedDatasetNames ?? []),
+				]),
+			];
+			for (const name of names) {
+				const squat = parseDatasetSchema({
+					name,
+					version: 1,
+					keyFields: ["id"],
+					fields: [
+						{ name: "id", type: "string", nullable: false },
+						{ name: "note", type: "string", nullable: true },
+					],
+				});
+				const refused = await refuses(async () => {
+					await binding.datasets.ensureDataset(squat);
+				});
+				if (refused !== undefined) continue;
+				// Accepted: then it has to be an ordinary dataset.
+				const record = parseCanonicalRecord(squat, { id: "s-1", note: "n" });
+				const key = encodeRecordKey(squat, record);
+				await binding.records.write({
+					dataset: name,
+					mutations: [upsertMutation("", key, record)],
+				});
+				const read = await binding.records.read({
+					dataset: name,
+					tenant: "",
+					key,
+				});
+				expect(
+					read !== undefined &&
+						canonicalEncode(read) === canonicalEncode(record),
+					`a dataset named ${name} was accepted but does not behave as a dataset`,
+				);
+			}
+			// Whatever was accepted, the engine's own bookkeeping must still
+			// work: every port that leans on it is exercised once more.
+			const described = await binding.datasets.describeDataset(schema.name);
+			expect(
+				described !== undefined &&
+					schemaDigest(described) === schemaDigest(schema),
+				"the dataset registry must survive a dataset named after it",
+			);
+			const scope = scopeOf(schema.name);
+			const start = await binding.capture?.start({
+				scope,
+				subscription: "sub_meta",
+			});
+			await write(binding, [upsert(schema, "", "after", { qty: "2" })]);
+			if (binding.capture !== undefined && start !== undefined) {
+				const batch = await binding.capture.read({
+					scope,
+					subscription: "sub_meta",
+					after: start,
+					limit: 10,
+				});
+				expect(
+					batch.changes.length === 1,
+					"capture must still see a write after a dataset was named after engine metadata",
+				);
+				await binding.capture.stop("sub_meta");
+			}
+			if (binding.apply !== undefined) {
+				await binding.apply.apply({
+					dataset: schema.name,
+					changes: [upsert(schema, "", "applied", { qty: "3" })],
+					source: "meta",
+					position: "7",
+				});
+				expect(
+					(await binding.apply.watermark({
+						dataset: schema.name,
+						source: "meta",
+					})) === "7",
+					"watermarks must survive a dataset named after engine metadata",
+				);
+			}
+			if (binding.fence !== undefined) {
+				const grant = await binding.fence.raise({ scope, reason: "meta" });
+				const fenced = await refuses(() =>
+					write(binding, [upsert(schema, "", "fenced")]),
+				);
+				expect(
+					fenced instanceof FencedWriteError,
+					"the fence must still hold after a dataset was named after engine metadata",
+				);
+				await binding.fence.release({ scope, fenceToken: grant.fenceToken });
+			}
+			const kept = await binding.records.read({
+				dataset: schema.name,
+				tenant: "",
+				key: keyOf(schema, "before"),
+			});
+			expect(kept?.qty === "1", "records written before must still be there");
 		},
 	},
 	{
@@ -767,6 +1181,79 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		id: "capture.large-key-update",
+		requires: ["capture"],
+		dependsOn: ["capture.ordered-and-resumable"],
+		async run(context) {
+			const binding = await context.open("a");
+			const schema = conformanceSchema([binding]);
+			await binding.datasets.ensureDataset(schema);
+			const capture = requirePort(binding, "capture");
+			const scope = scopeOf(schema.name);
+			const start = await capture.start({ scope, subscription: "sub_k" });
+			// A key long enough that an engine stores it out of line. An update
+			// that leaves such a key alone is where a log may send a placeholder
+			// in the new row and the value only in the old one.
+			const key = keyOf(schema, LARGE_KEY);
+			const refused = await refuses(() =>
+				write(binding, [upsert(schema, "", LARGE_KEY, { qty: "1" })]),
+			);
+			// An engine may bound its key length, loudly. Then there is nothing
+			// to capture and nothing was stored.
+			if (refused !== undefined) {
+				await capture.stop("sub_k");
+				return;
+			}
+			await write(binding, [upsert(schema, "", LARGE_KEY, { qty: "2" })]);
+			await write(binding, [deleteMutation("", key)]);
+			const batch = await capture.read({
+				scope,
+				subscription: "sub_k",
+				after: start,
+				limit: 10,
+			});
+			const seen = batch.changes.map(
+				(change) =>
+					`${change.op}:${change.record?.qty ?? "-"}:${change.key === key}`,
+			);
+			expect(
+				seen.join(",") === "upsert:1:true,upsert:2:true,delete:-:true",
+				`an update of a record with a large key must be captured under that key, got ${seen.join(",")}`,
+			);
+			await capture.stop("sub_k");
+		},
+	},
+	{
+		id: "capture.invalid-position-is-an-error",
+		requires: ["capture"],
+		dependsOn: ["capture.ordered-and-resumable"],
+		async run(context) {
+			const binding = await context.open("a");
+			const schema = conformanceSchema([binding]);
+			await binding.datasets.ensureDataset(schema);
+			const capture = requirePort(binding, "capture");
+			const scope = scopeOf(schema.name);
+			await capture.start({ scope, subscription: "sub_g" });
+			await write(binding, [upsert(schema, "", "order-1")]);
+			// A position this engine never minted. Answering it with an empty,
+			// caught-up batch would tell a tail it had finished when it had
+			// read nothing.
+			const refused = await refuses(async () => {
+				await capture.read({
+					scope,
+					subscription: "sub_g",
+					after: GARBAGE_POSITION,
+					limit: 10,
+				});
+			});
+			expect(
+				refused !== undefined,
+				"reading capture from a position the engine never minted must be an error, not an empty batch",
+			);
+			await capture.stop("sub_g");
+		},
+	},
+	{
 		id: "fence.single-write-authority",
 		requires: ["fence"],
 		dependsOn: ["records.round-trip-canonical"],
@@ -969,6 +1456,10 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 			expect(
 				!JSON.stringify(result.facts).includes(PAYLOAD_SENTINEL),
 				"migration facts must carry no record payload",
+			);
+			expect(
+				!JSON.stringify(result.facts).includes(await raisedToken(pair.source)),
+				"migration facts must not carry the fence token; it is a credential",
 			);
 		},
 	},
@@ -1183,6 +1674,249 @@ const CASES: readonly ConformanceCase[] = Object.freeze([
 		},
 	},
 	{
+		id: "pattern.snapshot-and-tail.native.zero-loss-under-load",
+		native: "snapshot-and-tail",
+		requires: NATIVE_SOURCE,
+		peerRequires: NATIVE_TARGET,
+		dependsOn: [
+			"verify.digest-is-engine-independent",
+			"fence.single-write-authority",
+			"retire.refused-unless-proven",
+		],
+		async run(context) {
+			const pair = await seededNativePair(context, 40);
+			const journal = createMemoryMigrationJournal();
+			const tally: WriterTally = { acknowledged: [], problems: [] };
+			let quiet = false;
+			let flips = 0;
+			let writers: Promise<void>[] = [];
+			const start = (names: readonly string[]): void => {
+				quiet = false;
+				writers = names.map((name) =>
+					keepWriting(pair, name, tally, () => quiet),
+				);
+			};
+			const settle = async (): Promise<void> => {
+				quiet = true;
+				await Promise.all(writers);
+				writers = [];
+			};
+			// Writers run concurrently with the engine's own copy and tail,
+			// pause while the two sides are compared unfenced, and then race
+			// the fence itself: each either lands before it or is refused.
+			const load = async (phase: MigrationPhase): Promise<void> => {
+				if (phase === "gate") start(["during-copy-a", "during-copy-b"]);
+				if (phase === "converge") {
+					await settle();
+					await write(pair.source, [
+						upsert(pair.schema, "", "order-1", { note: "after converge" }),
+						deleteMutation("", keyOf(pair.schema, "order-2")),
+					]);
+				}
+				if (phase === "verify") {
+					await write(pair.source, [
+						upsert(pair.schema, "", "order-new", { qty: "7" }),
+						deleteMutation("", keyOf(pair.schema, "order-3")),
+					]);
+				}
+				if (phase === "shift-reads") {
+					start(["racing-a", "racing-b", "racing-c"]);
+				}
+			};
+			const options = (
+				extra: Partial<MigrationRuntime>,
+			): CopyMigrationOptions =>
+				copyOptions(
+					pair,
+					runtime("native-zero-loss", context.input.now, journal, extra),
+					{
+						...nativeOptions(context),
+						flipAuthority: () => {
+							flips += 1;
+						},
+					},
+				);
+			let result: MigrationRunResult;
+			try {
+				result = await runSnapshotAndTail(
+					options({ afterPhase: load, pauseAfter: "fence-and-flip" }),
+				);
+			} finally {
+				await settle();
+			}
+			expect(
+				tally.problems.length === 0,
+				`a concurrent write either lands or is refused by the fence: ${tally.problems.join("; ")}`,
+			);
+			expect(
+				result.status === "held",
+				`the run pauses in the soak window, got ${result.status}: ${result.reason ?? ""}`,
+			);
+			expect(
+				result.state.realization === "native" &&
+					result.state.profile === context.nativeProfile,
+				"the journal must record the realization that ran",
+			);
+			expect(flips === 1, "write authority moved exactly once");
+			expect(
+				result.rollback === "to-snapshot",
+				"a native realization has no reverse tail, and its soak posture says so",
+			);
+			expect(
+				await digestsEqual(pair.source, pair.target),
+				"source and target must digest equal at the fence position",
+			);
+			expect(
+				tally.acknowledged.length > 0,
+				"the concurrent writers must have landed writes for the case to mean anything",
+			);
+			for (const id of tally.acknowledged.slice(-40)) {
+				expect(
+					(await pair.target.records.read({
+						dataset: CONFORMANCE_DATASET,
+						tenant: "",
+						key: keyOf(pair.schema, id),
+					})) !== undefined,
+					`an acknowledged write (${id}) is missing from the target`,
+				);
+			}
+			const refused = await refuses(() =>
+				write(pair.source, [upsert(pair.schema, "", "late-write")]),
+			);
+			expect(
+				refused instanceof FencedWriteError,
+				"after the flip the old authority must refuse writes",
+			);
+			const facts = JSON.stringify(result.facts);
+			expect(
+				!facts.includes(PAYLOAD_SENTINEL),
+				"migration facts must carry no record payload",
+			);
+			expect(
+				!facts.includes(await raisedToken(pair.source)),
+				"migration facts must not carry the fence token; it is a credential",
+			);
+			// Finishing retires the source. The engine's own transport must be
+			// gone by then: carried across it, the retirement would arrive at
+			// the new authority as deletes.
+			const moved = await requirePort(pair.target, "verify").digest({
+				scope: scopeOf(CONFORMANCE_DATASET),
+				buckets: 8,
+			});
+			const finished = await runSnapshotAndTail(options({}));
+			expect(
+				finished.status === "completed",
+				`the run finishes from the soak window, got ${finished.status}`,
+			);
+			expect(flips === 1, "finishing does not move authority a second time");
+			const emptied = await requirePort(pair.source, "verify").digest({
+				scope: scopeOf(CONFORMANCE_DATASET),
+				buckets: 8,
+			});
+			expect(emptied.count === 0, "a completed migration retires the source");
+			const kept = await requirePort(pair.target, "verify").digest({
+				scope: scopeOf(CONFORMANCE_DATASET),
+				buckets: 8,
+			});
+			expect(
+				compareDigests(moved, kept).equal,
+				"retiring the source must not reach the target through the engine's transport",
+			);
+		},
+	},
+	{
+		id: "pattern.snapshot-and-tail.native.resumes-at-every-boundary",
+		native: "snapshot-and-tail",
+		requires: NATIVE_SOURCE,
+		peerRequires: NATIVE_TARGET,
+		dependsOn: ["pattern.snapshot-and-tail.native.zero-loss-under-load"],
+		async run(context) {
+			const boundaries: readonly MigrationPhase[] = [
+				"gate",
+				"prepare",
+				"seed",
+				"converge",
+				"verify",
+				"shift-reads",
+				"fence-and-flip",
+				"soak",
+			];
+			for (const boundary of boundaries) {
+				const pair = await seededNativePair(context, 12);
+				const journal = createMemoryMigrationJournal();
+				let crashed = false;
+				const crashing = runtime(
+					`native-resume-${boundary}`,
+					context.input.now,
+					journal,
+					{
+						afterPhase: async (phase) => {
+							if (phase === boundary && !crashed) {
+								crashed = true;
+								// A write the crashed run never saw: the resumed run
+								// has to carry it, wherever the crash fell.
+								if (phase !== "fence-and-flip" && phase !== "soak") {
+									await write(pair.source, [
+										upsert(pair.schema, "", "order-0", { note: phase }),
+									]);
+								}
+								throw new Error(`injected crash after ${phase}`);
+							}
+						},
+					},
+				);
+				const first = await refuses(async () => {
+					await runSnapshotAndTail(
+						copyOptions(pair, crashing, nativeOptions(context)),
+					);
+				});
+				expect(
+					first !== undefined,
+					`the injected crash after ${boundary} must surface`,
+				);
+				const resumed = await runSnapshotAndTail(
+					copyOptions(
+						pair,
+						runtime(`native-resume-${boundary}`, context.input.now, journal),
+						nativeOptions(context),
+					),
+				);
+				expect(
+					resumed.status === "completed",
+					`a native run crashed after ${boundary} must resume to completion, got ${resumed.status}: ${resumed.reason ?? ""}`,
+				);
+				expect(
+					resumed.state.realization === "native",
+					"a resumed run keeps the realization it was planned with",
+				);
+				const after = await requirePort(pair.target, "verify").digest({
+					scope: scopeOf(CONFORMANCE_DATASET),
+					buckets: 8,
+				});
+				expect(
+					after.count === 12,
+					`resume after ${boundary} must not lose or duplicate records`,
+				);
+				const carried = await pair.target.records.read({
+					dataset: CONFORMANCE_DATASET,
+					tenant: "",
+					key: keyOf(pair.schema, "order-0"),
+				});
+				expect(
+					boundary === "fence-and-flip" ||
+						boundary === "soak" ||
+						carried?.note === boundary,
+					`a write made before the crash after ${boundary} must reach the target`,
+				);
+				const emptied = await requirePort(pair.source, "verify").digest({
+					scope: scopeOf(CONFORMANCE_DATASET),
+					buckets: 8,
+				});
+				expect(emptied.count === 0, "a completed migration retires the source");
+			}
+		},
+	},
+	{
 		id: "pattern.offline-copy.exact",
 		requires: ["snapshot", "verify", "fence", "retire"],
 		peerRequires: COPY_TARGET,
@@ -1306,6 +2040,14 @@ export const ENGINE_CONFORMANCE_CASE_IDS: readonly string[] = Object.freeze(
 	CASES.map((entry) => entry.id),
 );
 
+/**
+ * The cases that prove a `native` realization. They run only when engine and
+ * peer declare a shared native profile, and are reported as skipped otherwise.
+ */
+export const NATIVE_CONFORMANCE_CASE_IDS: readonly string[] = Object.freeze(
+	CASES.filter((entry) => entry.native !== undefined).map((entry) => entry.id),
+);
+
 function declares(
 	binding: EngineBinding,
 	ports: readonly SpiPortName[],
@@ -1350,6 +2092,20 @@ export async function runEngineConformance(
 				skipped.push(testCase.id);
 				continue;
 			}
+			const nativeProfile =
+				testCase.native === undefined
+					? undefined
+					: sharedNativeProfile(
+							probe.declaration,
+							peerProbe.declaration,
+							testCase.native,
+						);
+			if (testCase.native !== undefined && nativeProfile === undefined) {
+				// No shared fast path is a declaration, like an absent port: the
+				// selector then offers no native candidate for the pattern.
+				skipped.push(testCase.id);
+				continue;
+			}
 			const dependencies = (testCase.dependsOn ?? []).filter(
 				(id) => input.only === undefined || input.only.includes(id),
 			);
@@ -1386,6 +2142,24 @@ export async function runEngineConformance(
 			let counter = 0;
 			const context: CaseContext = {
 				input,
+				nativeProfile,
+				async openNativePair(label) {
+					const stage = input.engine.createNativePair;
+					if (stage === undefined || input.peer !== undefined) {
+						const source = await context.open(`${label}-source`);
+						const target = await context.openPeer(`${label}-target`);
+						return { source, target };
+					}
+					counter += 1;
+					const pair = await stage.call(
+						input.engine,
+						`${testCase.id}:${label}:${counter}`,
+					);
+					// The target is closed first: its side reads from the source.
+					opened.push({ binding: pair.target, harness: input.engine });
+					opened.push({ binding: pair.source, harness: input.engine });
+					return pair;
+				},
 				async open(label) {
 					counter += 1;
 					const binding = await input.engine.create(

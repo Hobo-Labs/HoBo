@@ -11,6 +11,7 @@
 import {
 	type CanonicalRecord,
 	type DatasetSchema,
+	encodeRecordKey,
 	schemaDigest,
 } from "./canonical.js";
 import { type DatasetDigest, DatasetDigestBuilder } from "./digest.js";
@@ -21,12 +22,15 @@ import {
 	type RecordMutation,
 } from "./envelope.js";
 import { DataCoreError, FencedWriteError } from "./errors.js";
+import { isJsonString, type JsonObject } from "./json.js";
 import {
 	type CaptureOrdering,
 	type DatasetScope,
 	type EngineBinding,
 	type EngineDeclaration,
 	type FenceEnforcement,
+	type NativeTransferPort,
+	type NativeTransferRef,
 	parseEngineDeclaration,
 	type SnapshotConsistency,
 	SPI_PORTS,
@@ -67,11 +71,92 @@ export const REFERENCE_TYPE_MAPPING: TypeMappingAnnex = Object.freeze({
 	),
 });
 
+// public-contract: the reference engine's native migration profile; realizes both copy patterns.
+export const REFERENCE_NATIVE_PROFILE = "migration.reference.direct/v1";
+
+/** The patterns the reference engine's native profile realizes. */
+const REFERENCE_NATIVE_PATTERNS = [
+	"snapshot-and-tail",
+	"offline-copy",
+] as const;
+
+/**
+ * How two reference engines reach each other for a native transfer: the
+ * in-memory stand-in for the network path and credential a real engine is
+ * constructed with. Engines given the same link can transfer natively; the
+ * ticket that crosses the port only names the origin, it never carries it.
+ */
+export interface ReferenceNativeLink {
+	/**
+	 * While stalled nothing moves: a copy that has not finished, a tail that
+	 * lags. For proving what an executor does when the engine is slow.
+	 */
+	stall(stalled: boolean): void;
+	/** Names of transfers either side still holds; empty once all were stopped. */
+	open(): readonly string[];
+}
+
+interface LinkedSubscriber {
+	/** Copy the scope once, then apply everything published since. */
+	pull(): void;
+}
+
+interface LinkedPublication {
+	readonly scope: DatasetScope;
+	/** Head of the source's journal the target has applied through. */
+	confirmed: number;
+	subscriber: LinkedSubscriber | undefined;
+}
+
+interface LinkedOrigin {
+	readonly publications: Map<string, LinkedPublication>;
+	head(): number;
+	rows(scope: DatasetScope): readonly RecordMutation[];
+	changesAfter(scope: DatasetScope, after: number): readonly RecordMutation[];
+}
+
+interface LinkState {
+	stalled: boolean;
+	readonly origins: Map<string, LinkedOrigin>;
+	readonly subscriptions: Set<string>;
+}
+
+const LINKS = new WeakMap<ReferenceNativeLink, LinkState>();
+let originCounter = 0;
+
+export function createReferenceNativeLink(): ReferenceNativeLink {
+	const state: LinkState = {
+		stalled: false,
+		origins: new Map(),
+		subscriptions: new Set(),
+	};
+	const link: ReferenceNativeLink = Object.freeze({
+		stall(stalled: boolean): void {
+			state.stalled = stalled;
+		},
+		open(): readonly string[] {
+			const names = new Set(state.subscriptions);
+			for (const origin of state.origins.values()) {
+				for (const name of origin.publications.keys()) names.add(name);
+			}
+			return [...names].sort();
+		},
+	});
+	LINKS.set(link, state);
+	return link;
+}
+
 export interface ReferenceEngineOptions {
 	/** Engine id reported in the declaration. Defaults to `reference`. */
 	readonly engine?: string;
 	/** Ports to leave out, to model an engine that cannot provide them. */
 	readonly omit?: readonly SpiPortName[];
+	/**
+	 * Opt in to the native profile. The engine then declares
+	 * `REFERENCE_NATIVE_PROFILE` and provides the `nativeTransfer` port, and
+	 * can transfer natively with any engine given the same link.
+	 */
+	readonly native?: ReferenceNativeLink;
 }
 
 interface StoredDataset {
@@ -91,6 +176,22 @@ function slot(tenant: string, key: string): string {
 	return `${tenant}${SEPARATOR}${key}`;
 }
 
+/**
+ * A reference position is a journal sequence number. Anything else was minted
+ * by another engine, or by nobody: answering it with "nothing after that"
+ * would look exactly like being caught up.
+ */
+function positionOf(position: Position): number {
+	if (!/^(?:0|[1-9][0-9]{0,15})$/u.test(position)) {
+		throw new DataCoreError(
+			"INVALID_ENVELOPE",
+			"a capture position for the reference engine is a journal sequence number",
+			{ detail: { field: "position" } },
+		);
+	}
+	return Number(position);
+}
+
 function inScope(scope: DatasetScope, tenant: string): boolean {
 	return scope.tenant === "" || scope.tenant === tenant;
 }
@@ -98,6 +199,7 @@ function inScope(scope: DatasetScope, tenant: string): boolean {
 function declarationFor(
 	engine: string,
 	ports: readonly SpiPortName[],
+	native: boolean,
 ): EngineDeclaration {
 	const captureOrdering: CaptureOrdering = ports.includes("capture")
 		? "global"
@@ -117,7 +219,12 @@ function declarationFor(
 		fenceEnforcement,
 		snapshotConsistency,
 		ddlTransactional: false,
-		nativeProfiles: [],
+		nativeProfiles: native
+			? REFERENCE_NATIVE_PATTERNS.map((pattern) => ({
+					profile: REFERENCE_NATIVE_PROFILE,
+					pattern,
+				}))
+			: [],
 		typeMapping: typeMappingToJson({ ...REFERENCE_TYPE_MAPPING, engine }),
 		impedance: [],
 	});
@@ -172,6 +279,20 @@ export function createReferenceEngine(
 	): void => {
 		for (const mutation of mutations) {
 			assertWritable(stored, mutation.tenant, fenceToken);
+			// A record is stored where its own key says. A mutation that names
+			// one key and carries the record of another would otherwise sit
+			// under a key no other engine could find it by.
+			if (
+				mutation.op === "upsert" &&
+				mutation.record !== undefined &&
+				encodeRecordKey(stored.schema, mutation.record) !== mutation.key
+			) {
+				throw new DataCoreError(
+					"INVALID_RECORD",
+					"a mutation's key must be the key of its record",
+					{ detail: { dataset: stored.schema.name, field: "key" } },
+				);
+			}
 		}
 		for (const mutation of mutations) {
 			const at = slot(mutation.tenant, mutation.key);
@@ -208,8 +329,186 @@ export function createReferenceEngine(
 		return builder.finish();
 	};
 
+	const link =
+		options.native === undefined ? undefined : LINKS.get(options.native);
+	originCounter += 1;
+	const originId = `reference-origin-${originCounter}`;
+	const nativePublications = new Map<string, LinkedPublication>();
+	const nativeSubscriptions = new Map<string, { readonly origin: string }>();
+	if (link !== undefined) {
+		link.origins.set(originId, {
+			publications: nativePublications,
+			head: () => sequence,
+			rows: (scope) =>
+				[...dataset(scope.dataset).rows.values()]
+					.filter((row) => inScope(scope, row.tenant))
+					.map((row) => ({
+						tenant: row.tenant,
+						key: row.key,
+						op: "upsert" as const,
+						record: row.record,
+					})),
+			changesAfter: (scope, after) =>
+				dataset(scope.dataset)
+					.journal.filter(
+						(entry) =>
+							entry.seq > after && inScope(scope, entry.envelope.tenant),
+					)
+					.map((entry) => ({
+						tenant: entry.envelope.tenant,
+						key: entry.envelope.key,
+						op: entry.envelope.op,
+						...(entry.envelope.record === undefined
+							? undefined
+							: { record: entry.envelope.record }),
+					})),
+		});
+	}
+
+	const refused = (reason: string, message: string): DataCoreError =>
+		new DataCoreError("NATIVE_TRANSFER_REFUSED", message, {
+			detail: { engine, reason, profile: REFERENCE_NATIVE_PROFILE },
+		});
+	const lost = (ref: NativeTransferRef): DataCoreError =>
+		new DataCoreError(
+			"NATIVE_TRANSFER_LOST",
+			`native transfer ${ref.transfer} was never opened here, or was stopped`,
+			{ detail: { engine, transfer: ref.transfer } },
+		);
+	const assertProfile = (ref: NativeTransferRef): void => {
+		if (ref.profile !== REFERENCE_NATIVE_PROFILE) {
+			throw refused(
+				"PROFILE_UNKNOWN",
+				`the reference engine does not run ${ref.profile}`,
+			);
+		}
+	};
+
+	/**
+	 * The native transfer: a direct copy from one reference engine's rows and
+	 * journal into another's, reached through the link both were given. It
+	 * moves when asked how far it has got, so an executor's waiting is real.
+	 */
+	const nativeTransfer = (state: LinkState): NativeTransferPort => ({
+		profiles: Object.freeze([REFERENCE_NATIVE_PROFILE]),
+		publish(ref): JsonObject {
+			assertProfile(ref);
+			dataset(ref.scope.dataset);
+			if (!nativePublications.has(ref.transfer)) {
+				nativePublications.set(ref.transfer, {
+					scope: ref.scope,
+					confirmed: sequence,
+					subscriber: undefined,
+				});
+			}
+			// The ticket names the origin; it does not carry a way to reach it.
+			return {
+				profile: REFERENCE_NATIVE_PROFILE,
+				origin: originId,
+				dataset: ref.scope.dataset,
+				tenant: ref.scope.tenant,
+			};
+		},
+		subscribe(request): void {
+			assertProfile(request);
+			if (nativeSubscriptions.has(request.transfer)) return;
+			const { ticket, scope } = request;
+			const origin = isJsonString(ticket.origin)
+				? state.origins.get(ticket.origin)
+				: undefined;
+			const publication = origin?.publications.get(request.transfer);
+			if (
+				origin === undefined ||
+				publication === undefined ||
+				!isJsonString(ticket.origin)
+			) {
+				throw refused(
+					"SOURCE_UNREACHABLE",
+					"the ticket names a source this engine was given no link to",
+				);
+			}
+			if (ticket.origin === originId) {
+				throw refused(
+					"SAME_STORE",
+					"a native transfer cannot copy a store into itself",
+				);
+			}
+			if (ticket.dataset !== scope.dataset || ticket.tenant !== scope.tenant) {
+				throw refused(
+					"SCOPE_MISMATCH",
+					"a native transfer lands a scope under the same name it left; renaming a dataset or a tenant needs the hub",
+				);
+			}
+			const stored = dataset(scope.dataset);
+			if ([...stored.rows.values()].some((row) => inScope(scope, row.tenant))) {
+				throw refused(
+					"TARGET_NOT_EMPTY",
+					"a native copy needs an empty target scope; it cannot merge into records already there",
+				);
+			}
+			let copiedThrough: number | undefined;
+			publication.subscriber = {
+				pull(): void {
+					if (state.stalled) return;
+					if (copiedThrough === undefined) {
+						commit(stored, origin.rows(publication.scope), undefined);
+					} else {
+						commit(
+							stored,
+							origin.changesAfter(publication.scope, copiedThrough),
+							undefined,
+						);
+					}
+					copiedThrough = origin.head();
+					publication.confirmed = copiedThrough;
+				},
+			};
+			nativeSubscriptions.set(request.transfer, { origin: ticket.origin });
+			state.subscriptions.add(request.transfer);
+		},
+		seeded(ref): boolean {
+			const subscription = nativeSubscriptions.get(ref.transfer);
+			const publication =
+				subscription === undefined
+					? undefined
+					: state.origins
+							.get(subscription.origin)
+							?.publications.get(ref.transfer);
+			if (publication?.subscriber === undefined) throw lost(ref);
+			if (state.stalled) return false;
+			publication.subscriber.pull();
+			return true;
+		},
+		mark(ref): Position {
+			if (!nativePublications.has(ref.transfer)) throw lost(ref);
+			return String(sequence);
+		},
+		reached(request): boolean {
+			const publication = nativePublications.get(request.transfer);
+			if (publication === undefined) throw lost(request);
+			publication.subscriber?.pull();
+			return (
+				publication.subscriber !== undefined &&
+				publication.confirmed >= positionOf(request.mark)
+			);
+		},
+		stop(ref): void {
+			// Both halves: whichever this engine holds for the transfer.
+			const subscription = nativeSubscriptions.get(ref.transfer);
+			if (subscription !== undefined) {
+				const publication = state.origins
+					.get(subscription.origin)
+					?.publications.get(ref.transfer);
+				if (publication !== undefined) publication.subscriber = undefined;
+				subscriptions.delete(ref.transfer);
+				state.subscriptions.delete(ref.transfer);
+			}
+			nativePublications.delete(ref.transfer);
+		},
+	});
+
 	const binding: EngineBinding = {
-		declaration: declarationFor(engine, ports),
+		declaration: declarationFor(engine, ports, link !== undefined),
 		datasets: {
 			ensureDataset(schema) {
 				const existing = datasets.get(schema.name);
@@ -304,7 +603,7 @@ export function createReferenceEngine(
 						},
 						read(request) {
 							const stored = dataset(request.scope.dataset);
-							const after = Number(request.after);
+							const after = positionOf(request.after);
 							const pending = stored.journal.filter(
 								(entry) =>
 									entry.seq > after &&
@@ -427,6 +726,9 @@ export function createReferenceEngine(
 					},
 				}
 			: undefined),
+		...(link === undefined
+			? undefined
+			: { nativeTransfer: nativeTransfer(link) }),
 		close() {},
 	};
 	return Object.freeze(binding);
@@ -479,6 +781,9 @@ export function withoutPorts(
 		...(fence === undefined ? undefined : { fence }),
 		...(retire === undefined ? undefined : { retire }),
 		...(schema === undefined ? undefined : { schema }),
+		...(binding.nativeTransfer === undefined
+			? undefined
+			: { nativeTransfer: binding.nativeTransfer }),
 		close: () => binding.close(),
 	});
 }

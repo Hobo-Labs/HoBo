@@ -6,7 +6,8 @@
  *
  * - one collection per dataset, named after it, holding one document per
  *   record (`./codec.ts`), created with a `$jsonSchema` validator and — when
- *   capture is on — pre- and post-images;
+ *   capture is on — the change-image option, so an in-place update by another
+ *   client still has a post-image to capture;
  * - one metadata collection holding the dataset schemas, the raised fences,
  *   the apply watermarks, and the capture subscriptions.
  *
@@ -54,6 +55,8 @@ import {
 	toMongoDataError,
 } from "./errors.js";
 import type {
+	MongoChangeBatch,
+	MongoChangeEvent,
 	MongoExecutor,
 	MongoIdRange,
 	MongoSession,
@@ -73,6 +76,7 @@ export const MONGO_METADATA_COLLECTION = "_hobo_data_engine";
 export const MONGO_DEFAULT_SCAN_PAGE = 500;
 
 const METADATA_NAME_PATTERN = /^_[a-z0-9_]{1,62}$/u;
+const OPERATION_PATTERN = /^[A-Za-z]{1,64}$/u;
 
 export interface MongoEngineOptions {
 	/** The executor every operation goes through. The binding owns its close. */
@@ -186,6 +190,17 @@ function scopeRange(scope: DatasetScope, after?: MongoValue): MongoIdRange {
 		after: after ?? { t: tenant, k: MONGO_MIN_KEY },
 		before: { t: tenant, k: MONGO_MAX_KEY },
 	};
+}
+
+/** True when two consecutive events were committed by one transaction. */
+function sameTransaction(
+	earlier: MongoChangeEvent | undefined,
+	later: MongoChangeEvent | undefined,
+): boolean {
+	return (
+		earlier?.transaction !== undefined &&
+		earlier.transaction === later?.transaction
+	);
 }
 
 function retireRefused(dataset: string, message: string): never {
@@ -409,11 +424,87 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 		start,
 	});
 
+	/**
+	 * The start of a stored subscription, for the scope it was started on. A
+	 * subscription is one reader of one scope: the same name on another
+	 * dataset or tenant is refused, because handing back the first scope's
+	 * position would start the second reader at a point that means nothing to
+	 * it.
+	 */
+	const startOf = (
+		stored: MongoDocument | undefined,
+		scope: DatasetScope,
+	): string | undefined => {
+		const start = textField(stored, "start");
+		if (start === undefined) return undefined;
+		if (
+			textField(stored, "dataset") !== scope.dataset ||
+			textField(stored, "tenant") !== scope.tenant
+		) {
+			throw new MongoDataError(
+				"MONGODB_CAPTURE_SUBSCRIPTION_CONFLICT",
+				"the subscription already reads another dataset or tenant; stop it or choose another name",
+				{ detail: { field: "subscription" } },
+			);
+		}
+		return start;
+	};
+
+	/**
+	 * Read up to `limit` events, then on to the end of the transaction the
+	 * last of them belongs to. A resume token can sit in the middle of a
+	 * transaction, so a page cut at `limit` alone could hand a reader half of
+	 * one atomic write.
+	 */
+	const readWholeTransactions = async (
+		scope: DatasetScope,
+		after: string,
+		limit: number,
+	): Promise<MongoChangeBatch> => {
+		// One event more than asked for: in the usual case it is the proof
+		// that the page may end where the limit says.
+		const size = limit + 1;
+		const events: MongoChangeEvent[] = [];
+		let from = after;
+		for (;;) {
+			const batch = await executor.readChanges({
+				collection: scope.dataset,
+				after: from,
+				limit: size,
+				...(scope.tenant === ""
+					? undefined
+					: { where: { path: "_id.t", equals: scope.tenant } }),
+			});
+			events.push(...batch.events);
+			let end = limit;
+			while (
+				end < events.length &&
+				sameTransaction(events[end - 1], events[end])
+			) {
+				end += 1;
+			}
+			const last = events[end - 1];
+			if (end < events.length && last !== undefined) {
+				return {
+					events: events.slice(0, end),
+					token: last.token,
+					drained: false,
+				};
+			}
+			// Everything read is returned. Only a full page can have stopped
+			// inside a transaction; anything shorter ended between two.
+			if (batch.drained || batch.events.length < size) {
+				return { events, token: batch.token, drained: batch.drained };
+			}
+			from = batch.token;
+		}
+	};
+
 	const capture: NonNullable<EngineBinding["capture"]> = {
 		start: (request) =>
 			mapped(async () => {
 				const id = metadataId("subscription", request.subscription);
-				const existing = textField(await entry(executor, id), "start");
+				const existing = startOf(await entry(executor, id), request.scope);
 				if (existing !== undefined) return existing;
 				await requireDataset(request.scope.dataset);
 				// The stream's current resume point. Everything committed before
@@ -429,19 +520,16 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 					return token;
 				}
 				// Lost a race to start the same subscription: its position wins.
-				return textField(await entry(executor, id), "start") ?? token;
+				return startOf(await entry(executor, id), request.scope) ?? token;
 			}),
 		read: (request) =>
 			mapped(async (): Promise<CaptureBatch> => {
 				const schema = await requireDataset(request.scope.dataset);
-				const batch = await executor.readChanges({
-					collection: request.scope.dataset,
-					after: request.after,
-					limit: positiveInteger(request.limit, "limit"),
-					...(request.scope.tenant === ""
-						? undefined
-						: { where: { path: "_id.t", equals: request.scope.tenant } }),
-				});
+				const batch = await readWholeTransactions(
+					request.scope,
+					request.after,
+					positiveInteger(request.limit, "limit"),
+				);
 				const changes = batch.events.map((event): ChangeEnvelope => {
 					if (event.operation === "delete") {
 						const { tenant, key } = identityOf(event.id);
@@ -461,13 +549,18 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 							event.token,
 						);
 					}
-					// A drop, a rename, an invalidate, or an update with no
-					// post-image: not a record change this contract can carry,
-					// and not something to skip silently.
+					// A drop, a rename, an invalidate — or an update an executor
+					// delivered without its post-image: not a record change this
+					// contract can carry, and not something to skip silently.
+					// An operation type is a word. Anything else an executor put
+					// there is not quoted back.
+					const operation = OPERATION_PATTERN.test(event.operation)
+						? event.operation
+						: "unnamed";
 					throw new MongoDataError(
 						"MONGODB_CAPTURE_UNSUPPORTED_EVENT",
-						`the change stream reported a ${event.operation} event that is not a record change`,
-						{ detail: { operation: event.operation } },
+						`the change stream reported a ${operation} event that is not a record change`,
+						{ detail: { operation } },
 					);
 				});
 				return {
@@ -737,6 +830,11 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 							current.count !== expected.count ||
 							current.digest !== expected.digest
 						) {
+							// A redelivered retire. The scope is empty and the
+							// fence is still held by this token, so an earlier
+							// delivery already removed it: nothing is left to
+							// prove, and nothing is left to remove.
+							if (current.count === 0) return { removed: 0 };
 							retireRefused(
 								scope.dataset,
 								"the store no longer matches the verified digest",

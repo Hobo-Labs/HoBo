@@ -9,6 +9,7 @@
  * read back through the same normalisation a record read uses.
  */
 import {
+	type Awaitable,
 	type EngineBinding,
 	type EngineDeclaration,
 	type InPlaceEvolvePlan,
@@ -19,13 +20,11 @@ import {
 } from "@hobo/data-core";
 import { POSTGRES_PROFILE_ID } from "../authoring.js";
 import { PostgresDataError } from "../errors.js";
-import {
-	LOGICAL_COPY_PROFILE,
-	PG_DUMP_PROFILE,
-} from "../migration-profiles.js";
+import { LOGICAL_COPY_PROFILE } from "../migration-profiles.js";
 import { createCapturePort } from "./capture.js";
 import type { PostgresExecutor } from "./executor.js";
 import { parseNamespace, parseTableName } from "./identifiers.js";
+import { createNativeTransferPort } from "./native.js";
 import { createSchemaPort } from "./schema-port.js";
 import { DatasetStore } from "./store.js";
 import { POSTGRES_ENGINE_ID, POSTGRES_TYPE_MAPPING } from "./types.js";
@@ -39,13 +38,18 @@ export const POSTGRES_IMPEDANCE_CODES = [
 	"POSTGRES_RESERVED_COLUMN_NAMES",
 	/** `text` cannot hold U+0000 or an unpaired surrogate; such a string is refused at write. */
 	"POSTGRES_TEXT_REFUSES_NUL_AND_LONE_SURROGATES",
-	/** `jsonb` keeps numbers at arbitrary precision: a natively written number beyond float64 reads as the nearest float64. */
+	/** `jsonb` keeps numbers at arbitrary precision: a natively written number float64 cannot hold exactly reads as the nearest float64, and one beyond float64's range is refused on read. */
 	"POSTGRES_JSONB_NUMBERS_READ_AS_FLOAT64",
 	/** NaN, the infinities, BC and five-digit years exist natively and have no canonical form; reading one is refused. */
 	"POSTGRES_NATIVE_VALUES_BEYOND_CANONICAL_RANGE",
 	/** The snapshot scan is keyset pagination, not one MVCC snapshot. */
 	"POSTGRES_SNAPSHOT_IS_FUZZY",
-	/** The fence is a trigger: the table owner or a superuser can disable it, and a role that can write the fence table can lift it. */
+	/**
+	 * The fence is a trigger that runs with its owner's rights and a pinned search path, over metadata tables no other role is granted.
+	 * What can still get past it: the table's owner or a superuser, who can disable the trigger, read a token from the fence table, or delete the fence row;
+	 * and any role the owner has since granted the fence table to. The token is kept there in the clear so that raising a raised fence can answer it.
+	 * A writer that holds a transaction open after writing keeps `raise` waiting until it ends.
+	 */
 	"POSTGRES_FENCE_TRIGGER_OWNER_CAN_DISABLE",
 	/** TRUNCATE is refused on dataset tables; it names no keys, so it could be neither fenced per tenant nor captured. */
 	"POSTGRES_TRUNCATE_REFUSED_ON_DATASETS",
@@ -65,6 +69,16 @@ export const POSTGRES_IMPEDANCE_CODES = [
 	"POSTGRES_SCHEMA_SNAPSHOT_REFUSES_DEPENDENT_OBJECTS",
 	/** A restored table is a new relation: index and key constraint names are regenerated, and its object id changes. */
 	"POSTGRES_SCHEMA_RESTORE_RECREATES_TABLE",
+	/** `retire` deletes rows, and the log records them as deletes: any subscription still reading the dataset captures them. Executors drop a migration's own forward channel before retiring. */
+	"POSTGRES_RETIRE_IS_LOGGED_AS_DELETES",
+	/** Logical-copy moves a whole dataset table, into an empty table of the same schema-qualified name in another database. One tenant of a pooled table, a rename, or a merge is refused. */
+	"POSTGRES_NATIVE_COPY_WHOLE_DATASET_SAME_NAME",
+	/** Logical-copy carries no reverse tail: the transfer is dropped at cutover, so a rollback from soak is to-snapshot. */
+	"POSTGRES_NATIVE_COPY_NO_REVERSE_TAIL",
+	/** The target server keeps the source connection string in `pg_subscription` until cutover drops the subscription; its superusers can read it, and its statement log can record it. */
+	"POSTGRES_NATIVE_COPY_TARGET_HOLDS_SOURCE_CONNECTION",
+	/** Logical-copy needs `wal_level = logical`, a free replication slot and sender on the source, a free worker on the target, and a target role allowed to create subscriptions. */
+	"POSTGRES_NATIVE_COPY_NEEDS_REPLICATION_CAPACITY",
 ] as const;
 
 export type PostgresImpedanceCode = (typeof POSTGRES_IMPEDANCE_CODES)[number];
@@ -107,6 +121,19 @@ export interface PostgresEngineOptions {
 	readonly ephemeral?: boolean;
 	/** Injected instant for snapshot references. */
 	readonly clock?: () => string;
+	/**
+	 * How the *target server* reaches the source, for a native logical-copy:
+	 * a libpq connection string, resolved when a subscription is created. It
+	 * is a secret. Give it as a function so it is fetched from where secrets
+	 * are kept, at the moment it is needed; the binding sends it to the server
+	 * as one bind parameter and puts it nowhere else. Only a binding that is
+	 * the target of a native transfer needs it.
+	 */
+	readonly nativeSourceConnection?: () => Awaitable<string>;
+	/** How long a native progress question waits before answering "not yet". Defaults to 50 ms. */
+	readonly nativePollIntervalMs?: number;
+	/** Injected wait, so a test does not sleep. Defaults to a timer. */
+	readonly nativeWait?: (milliseconds: number) => Promise<void>;
 }
 
 export interface PostgresEngine extends EngineBinding {
@@ -129,14 +156,16 @@ export function postgresEngineDeclaration(
 		fenceEnforcement: "store",
 		snapshotConsistency: "fuzzy",
 		ddlTransactional: true,
-		// The logical-copy fast path is logical replication; without logical
-		// decoding it is not on offer either.
-		nativeProfiles: [
-			{ profile: PG_DUMP_PROFILE, pattern: "offline-copy" },
-			...(capture
-				? [{ profile: LOGICAL_COPY_PROFILE, pattern: "snapshot-and-tail" }]
-				: []),
-		],
+		// Only what the binding's `nativeTransfer` port can run is declared:
+		// a declared fast path is one the selector may choose and an executor
+		// must then be able to carry out. Logical-copy is logical replication,
+		// so without logical decoding it is not on offer. `pg_dump` is not
+		// declared at all: running it takes a process runner this package does
+		// not have, so it stays a migration profile with argv builders (see
+		// `migration-profiles.ts`) and is never offered as a native candidate.
+		nativeProfiles: capture
+			? [{ profile: LOGICAL_COPY_PROFILE, pattern: "snapshot-and-tail" }]
+			: [],
 		typeMapping: POSTGRES_TYPE_MAPPING,
 		impedance: [...POSTGRES_IMPEDANCE_CODES],
 	});
@@ -152,6 +181,24 @@ function parsePageSize(value: number | undefined): number {
 		);
 	}
 	return size;
+}
+
+function parsePollInterval(value: number | undefined): number {
+	const interval = value ?? 50;
+	if (!Number.isInteger(interval) || interval < 0 || interval > 60_000) {
+		throw new PostgresDataError(
+			"ENGINE_OPTIONS_INVALID",
+			"nativePollIntervalMs must be an integer from 0 to 60000",
+			{ detail: { field: "nativePollIntervalMs" } },
+		);
+	}
+	return interval;
+}
+
+function timer(milliseconds: number): Promise<void> {
+	return new Promise((resolve) => {
+		setTimeout(resolve, milliseconds);
+	});
 }
 
 function parseChunkSize(value: number): number {
@@ -190,6 +237,15 @@ export function createPostgresEngine(
 		store,
 		tables: (options.schemaTables ?? []).map(parseTableName),
 		clock,
+	});
+	// Like capture, the native machinery exists either way, so an ephemeral
+	// close can drop what an earlier binding left behind.
+	const native = createNativeTransferPort({
+		store,
+		capture,
+		sourceConnection: options.nativeSourceConnection,
+		pollIntervalMs: parsePollInterval(options.nativePollIntervalMs),
+		wait: options.nativeWait ?? timer,
 	});
 
 	const binding: PostgresEngine = {
@@ -284,10 +340,26 @@ export function createPostgresEngine(
 			verify: schema.verify,
 			restore: schema.restore,
 		},
+		...(captureEnabled
+			? {
+					nativeTransfer: {
+						profiles: native.profiles,
+						publish: native.publish,
+						subscribe: native.subscribe,
+						seeded: native.seeded,
+						mark: native.mark,
+						reached: native.reached,
+						stop: native.stop,
+					},
+				}
+			: undefined),
 		dropSchemaSnapshot: schema.dropSnapshot,
 		async close() {
 			// A binding that never reached the server has nothing to drop.
 			if (options.ephemeral !== true || !store.touched) return;
+			// Native transfers first: a subscription still attached holds its
+			// slot, which the capture sweep below would then fail to drop.
+			await native.stopAll();
 			await capture.stopAll();
 			await schema.dropAllSnapshots();
 			await store.dropNamespace();

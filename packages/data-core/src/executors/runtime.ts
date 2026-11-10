@@ -22,9 +22,15 @@ import {
 	MIGRATION_EVENTS,
 	type MigrationFact,
 	type MigrationJournal,
+	type MigrationRealization,
 	type MigrationState,
 } from "../facts.js";
-import type { JsonObject, JsonValue } from "../json.js";
+import {
+	isJsonString,
+	type JsonObject,
+	type JsonValue,
+	sha256Hex,
+} from "../json.js";
 import {
 	getPattern,
 	isSafeHold,
@@ -104,7 +110,52 @@ export class MigrationRollback extends Error {
 	}
 }
 
+/**
+ * What a failure is recorded as. A class name, plus the code when the error is
+ * this package's own — a code comes from a closed list, so it is safe to
+ * journal. Never a message: a thrown message can carry a connection string.
+ */
+function failureReason(cause: unknown): string {
+	if (cause instanceof DataCoreError) return `${cause.name}: ${cause.code}`;
+	return cause instanceof Error ? cause.name : "non-Error thrown";
+}
+
+/**
+ * What a journal records of a fence token. A fence token is a write-authority
+ * credential: whoever presents it writes through the fence. A journal is
+ * evidence, read by people and systems that must not gain that authority, so
+ * it carries only this digest — enough for a resumed run to recognise the
+ * fence its cutover was decided under, not enough to write through it.
+ */
+export function fenceTokenDigest(fenceToken: string): string {
+	return `sha256:${sha256Hex(fenceToken)}`;
+}
+
+/**
+ * The token a resumed cutover acts with. `held` is what the store (or the
+ * caller's quiesce) answered when asked again; it is accepted only when it is
+ * the token the journaled decision's digest names. Anything else means the
+ * fence was lifted and raised again behind the migration's back.
+ */
+export function decidedFenceToken(decided: JsonObject, held: string): string {
+	// A journal written before tokens were kept out of it.
+	const legacy = decided.fenceToken;
+	if (isJsonString(legacy)) return legacy;
+	if (fenceTokenDigest(held) !== decided.fenceTokenDigest) {
+		throw new DataCoreError(
+			"FENCE_TOKEN_MISMATCH",
+			"the fence in place is not the one the cutover was decided under",
+			{ detail: { phase: "fence-and-flip" } },
+		);
+	}
+	return held;
+}
+
 export interface PlannedDetails {
+	/** How records travel; recorded in the plan and binding on every resume. */
+	readonly realization?: MigrationRealization;
+	/** The native migration profile, for a `native` realization. */
+	readonly profile?: string;
 	readonly decisionDigest?: string;
 	readonly custodyDigest?: string;
 	readonly source?: string;
@@ -143,11 +194,40 @@ export class MigrationRun {
 				{ detail: { migrationId: runtime.migrationId, pattern } },
 			);
 		}
+		if (run.current.status !== "new" && details.realization !== undefined) {
+			// The realization is part of the plan. A run planned one way is
+			// never continued the other: that would be a downgrade (or an
+			// upgrade) nobody decided, with the first transport's objects
+			// still in place.
+			const planned = run.current.realization ?? "hub";
+			if (
+				planned !== details.realization ||
+				run.current.profile !== details.profile
+			) {
+				throw new DataCoreError(
+					"INVALID_MIGRATION_PLAN",
+					`migration ${runtime.migrationId} was planned with the ${planned} realization; it cannot continue as ${details.realization}`,
+					{
+						detail: {
+							migrationId: runtime.migrationId,
+							pattern,
+							realization: planned,
+						},
+					},
+				);
+			}
+		}
 		if (run.current.status === "new") {
 			await run.emit(MIGRATION_EVENTS.Planned, {
 				migrationId: runtime.migrationId,
 				pattern,
 				phases: [...getPattern(pattern).phases],
+				...(details.realization === undefined
+					? undefined
+					: { realization: details.realization }),
+				...(details.profile === undefined
+					? undefined
+					: { profile: details.profile }),
 				...(details.decisionDigest === undefined
 					? undefined
 					: { decisionDigest: details.decisionDigest }),
@@ -338,7 +418,7 @@ export class MigrationRun {
 			}
 			await this.emit(MIGRATION_EVENTS.Failed, {
 				migrationId: this.runtime.migrationId,
-				reason: error instanceof Error ? error.name : "non-Error thrown",
+				reason: failureReason(error),
 				failedAt: this.runtime.clock(),
 			});
 			throw error;

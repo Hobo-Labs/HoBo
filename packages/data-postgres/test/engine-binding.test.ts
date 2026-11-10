@@ -33,6 +33,7 @@ import {
 	type PgPoolLike,
 	type PgQueryResultLike,
 	POSTGRES_IMPEDANCE_CODES,
+	POSTGRES_MIGRATION_PROFILES,
 	POSTGRES_SCHEMA_FIXTURE,
 	POSTGRES_SCHEMA_FIXTURE_TABLE,
 	PostgresDataError,
@@ -77,10 +78,13 @@ describe("engine declaration", () => {
 		assert.equal(declaration.fenceEnforcement, "store");
 		assert.equal(declaration.snapshotConsistency, "fuzzy");
 		assert.equal(declaration.ddlTransactional, true);
+		// Only what the binding's native-transfer port can run. pg_dump is a
+		// migration profile with argv builders, not a native realization: the
+		// binding has no process runner to carry it out.
 		assert.deepEqual(declaration.nativeProfiles, [
-			{ profile: PG_DUMP_PROFILE, pattern: "offline-copy" },
 			{ profile: LOGICAL_COPY_PROFILE, pattern: "snapshot-and-tail" },
 		]);
+		assert.ok(POSTGRES_MIGRATION_PROFILES.includes(PG_DUMP_PROFILE));
 		assert.equal(declaration.typeMapping.edges.length, 11);
 	});
 
@@ -101,9 +105,7 @@ describe("engine declaration", () => {
 		assert.ok(!declaration.ports.includes("capture"));
 		assert.equal(declaration.ports.length, SPI_PORTS.length - 1);
 		assert.equal(declaration.captureOrdering, "none");
-		assert.deepEqual(declaration.nativeProfiles, [
-			{ profile: PG_DUMP_PROFILE, pattern: "offline-copy" },
-		]);
+		assert.deepEqual(declaration.nativeProfiles, []);
 		// Everything else is unchanged.
 		assert.equal(declaration.fenceEnforcement, "store");
 		assert.equal(declaration.snapshotConsistency, "fuzzy");
@@ -114,6 +116,7 @@ describe("engine declaration", () => {
 		assertBindingMatchesDeclaration(full);
 		assert.equal(full.namespace, "public");
 		for (const port of SPI_PORTS) assert.ok(full[port] !== undefined, port);
+		assert.deepEqual(full.nativeTransfer?.profiles, [LOGICAL_COPY_PROFILE]);
 
 		const reduced = createPostgresEngine({
 			executor: UNREACHABLE,
@@ -122,6 +125,7 @@ describe("engine declaration", () => {
 		});
 		assertBindingMatchesDeclaration(reduced);
 		assert.equal(reduced.capture, undefined);
+		assert.equal(reduced.nativeTransfer, undefined);
 		assert.throws(
 			() => requirePort(reduced, "capture"),
 			(cause) =>

@@ -95,6 +95,9 @@ async function dispatch(
 					...(event.document === undefined
 						? undefined
 						: { document: event.document }),
+					...(event.transaction === undefined
+						? undefined
+						: { transaction: event.transaction }),
 				})),
 				token: batch.token,
 				drained: batch.drained,

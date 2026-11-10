@@ -1,0 +1,271 @@
+{
+	"consumer": {
+		"name": "hobo-data-postgres-native-transfer"
+	},
+	"provider": {
+		"name": "hobo-postgres-executor"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"note": "The statements the logical-copy native-transfer port issues, on the source database and on the target database, expressed over the executor boundary. Four rules are load-bearing. The slot is created on the source by its own statement and the subscription is told create_slot = false, because a subscription that creates its own slot hangs when both databases share a cluster. The connection string to the source is a credential: it crosses the boundary as one bind parameter, marked secret here and never recorded, into a transaction-local setting; no statement text carries it and the statement answers a boolean, not the value. CREATE SUBSCRIPTION runs inside a block whose handler replaces a failure with its SQLSTATE alone, because the server would otherwise report the statement, connection string included, as error context. And readiness is asked in two places: the target says when its initial copy is done, the source says when its slot has been confirmed past a mark. test/engine-native.test.ts replays every interaction against the binding."
+	},
+	"interactions": [
+		{
+			"description": "the source publishes the dataset table and nothing else",
+			"providerState": "source database",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "CREATE PUBLICATION \"hobo_p_8a36b0811d13_fec41b4e19fc6fc601fd8afb\" FOR TABLE \"hobo_fixture_capture\".\"hobo_fixture_orders\"",
+					"parameters": [],
+					"inTransaction": false
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [],
+					"rowCount": 0
+				}
+			}
+		},
+		{
+			"description": "the source creates the slot itself, before any subscription exists",
+			"providerState": "source database",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "SELECT lsn::text AS lsn FROM pg_create_logical_replication_slot($1::name, 'pgoutput')",
+					"parameters": [
+						{
+							"text": "hobo_s_8a36b0811d13_fec41b4e19fc6fc601fd8afb"
+						}
+					],
+					"inTransaction": false
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [
+						{
+							"cells": [
+								{
+									"column": "lsn",
+									"text": "0/387C000"
+								}
+							]
+						}
+					],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "the connection string reaches the target server as a bind parameter into a transaction-local setting, and does not come back",
+			"providerState": "target database",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "SELECT (set_config('hobo.native_source', $1::text, true) IS NOT NULL)::text AS presented",
+					"parameters": [
+						{
+							"secret": true
+						}
+					],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [
+						{
+							"cells": [
+								{
+									"column": "presented",
+									"text": "true"
+								}
+							]
+						}
+					],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "the subscription is created without a slot of its own, by a block that reports a failure as a SQLSTATE and nothing else",
+			"providerState": "target database",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "DO $hobo$\nBEGIN\n\tEXECUTE format(\n\t\t'CREATE SUBSCRIPTION %I CONNECTION %L PUBLICATION %I WITH (create_slot = false, slot_name = %L, copy_data = true, synchronous_commit = %L)',\n\t\t'hobo_n_966916441a53_57bb141229af718542f248ab', current_setting('hobo.native_source'), 'hobo_p_8a36b0811d13_fec41b4e19fc6fc601fd8afb', 'hobo_s_8a36b0811d13_fec41b4e19fc6fc601fd8afb', 'on');\nEXCEPTION WHEN OTHERS THEN\n\tRAISE EXCEPTION 'the subscription could not be created' USING ERRCODE = SQLSTATE;\nEND\n$hobo$",
+					"parameters": [],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [],
+					"rowCount": 0
+				}
+			}
+		},
+		{
+			"description": "the target says when the initial copy is done: every table of the subscription ready",
+			"providerState": "target database",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "SELECT count(DISTINCT s.oid)::text AS subscriptions, count(r.srrelid)::text AS tables, (count(r.srrelid) FILTER (WHERE r.srsubstate = 'r'))::text AS ready FROM pg_subscription s LEFT JOIN pg_subscription_rel r ON r.srsubid = s.oid WHERE s.subname = $1::name AND s.subdbid = (SELECT d.oid FROM pg_database d WHERE d.datname = current_database())",
+					"parameters": [
+						{
+							"text": "hobo_n_966916441a53_57bb141229af718542f248ab"
+						}
+					],
+					"inTransaction": false
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [
+						{
+							"cells": [
+								{
+									"column": "subscriptions",
+									"text": "1"
+								},
+								{
+									"column": "tables",
+									"text": "1"
+								},
+								{
+									"column": "ready",
+									"text": "1"
+								}
+							]
+						}
+					],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "the source marks its log with a transactional message",
+			"providerState": "source database",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "SELECT pg_logical_emit_message(true, 'hobo.native.mark', $1::text)::text AS mark",
+					"parameters": [
+						{
+							"text": "hobo_migration_m1_native"
+						}
+					],
+					"inTransaction": false
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [
+						{
+							"cells": [
+								{
+									"column": "mark",
+									"text": "0/387C1A8"
+								}
+							]
+						}
+					],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "the source says when the subscriber has durably applied everything up to the mark",
+			"providerState": "source database",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "SELECT (confirmed_flush_lsn >= $2::pg_lsn)::text AS reached FROM pg_replication_slots WHERE slot_name = $1::name",
+					"parameters": [
+						{
+							"text": "hobo_s_8a36b0811d13_fec41b4e19fc6fc601fd8afb"
+						},
+						{
+							"text": "0/387C1A8"
+						}
+					],
+					"inTransaction": false
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [
+						{
+							"cells": [
+								{
+									"column": "reached",
+									"text": "true"
+								}
+							]
+						}
+					],
+					"rowCount": 1
+				}
+			}
+		},
+		{
+			"description": "dropping the subscription also drops the slot on the source",
+			"providerState": "target database",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "DROP SUBSCRIPTION IF EXISTS \"hobo_n_966916441a53_57bb141229af718542f248ab\"",
+					"parameters": [],
+					"inTransaction": false
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rows": [],
+					"rowCount": 0
+				}
+			}
+		},
+		{
+			"description": "a subscription the server cannot create is refused with a SQLSTATE and no text",
+			"providerState": "the target server cannot reach the source",
+			"request": {
+				"method": "POST",
+				"path": "/executor/query",
+				"body": {
+					"sql": "DO $hobo$\nBEGIN\n\tEXECUTE format(\n\t\t'CREATE SUBSCRIPTION %I CONNECTION %L PUBLICATION %I WITH (create_slot = false, slot_name = %L, copy_data = true, synchronous_commit = %L)',\n\t\t'hobo_n_966916441a53_57bb141229af718542f248ab', current_setting('hobo.native_source'), 'hobo_p_8a36b0811d13_fec41b4e19fc6fc601fd8afb', 'hobo_s_8a36b0811d13_fec41b4e19fc6fc601fd8afb', 'on');\nEXCEPTION WHEN OTHERS THEN\n\tRAISE EXCEPTION 'the subscription could not be created' USING ERRCODE = SQLSTATE;\nEND\n$hobo$",
+					"parameters": [],
+					"inTransaction": true
+				}
+			},
+			"response": {
+				"status": 500,
+				"body": {
+					"sqlState": "08006"
+				}
+			}
+		}
+	]
+}

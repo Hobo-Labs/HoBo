@@ -12,12 +12,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, test } from "vitest";
 import {
+	createMemoryMigrationJournal,
 	createReferenceEngine,
+	createReferenceNativeLink,
+	encodeRecordKey,
 	engineDeclarationToJson,
 	evaluateCustodyPath,
 	type JsonObject,
+	MIGRATION_EVENTS,
+	parseCanonicalRecord,
 	parseCustodyPath,
+	parseDatasetSchema,
 	policyVerdictToJson,
+	REFERENCE_NATIVE_PROFILE,
+	runSnapshotAndTail,
+	scopeOf,
+	upsertMutation,
 } from "../src/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -182,6 +192,94 @@ describe.skipIf(cue === undefined)(
 				...candidate,
 				eligible: false,
 				reasons: [],
+			});
+		});
+
+		test("the facts of a real native run are accepted; a token or a connection string in them is refused", async () => {
+			const schema = parseDatasetSchema({
+				name: "orders",
+				keyFields: ["id"],
+				fields: [{ name: "id", type: "string", nullable: false }],
+			});
+			const link = createReferenceNativeLink();
+			const source = createReferenceEngine({ native: link });
+			const target = createReferenceEngine({ native: link });
+			await source.datasets.ensureDataset(schema);
+			const record = parseCanonicalRecord(schema, { id: "o-1" });
+			await source.records.write({
+				dataset: "orders",
+				mutations: [
+					upsertMutation("", encodeRecordKey(schema, record), record),
+				],
+			});
+			const result = await runSnapshotAndTail({
+				runtime: {
+					migrationId: "m1",
+					journal: createMemoryMigrationJournal(),
+					clock: () => NOW,
+					policy: () =>
+						evaluateCustodyPath({
+							path: parseCustodyPath({
+								points: [
+									{
+										id: "s",
+										role: "source",
+										region: "eu-west-1",
+										protections: [],
+									},
+									{
+										id: "t",
+										role: "target",
+										region: "eu-west-1",
+										protections: [],
+									},
+								],
+							}),
+							policy: { classification: "public" },
+							now: NOW,
+						}),
+				},
+				source,
+				target,
+				schema,
+				scope: scopeOf("orders"),
+				flipAuthority: () => {},
+				realization: "native",
+				profile: REFERENCE_NATIVE_PROFILE,
+			});
+			assert.equal(result.status, "completed");
+			const dataOf = (type: string): JsonObject => {
+				const fact = result.facts.find((entry) => entry.type === type);
+				assert.ok(fact, type);
+				return fact.data;
+			};
+			const planned = dataOf(MIGRATION_EVENTS.Planned);
+			accepts("#MigrationPlannedEventData", planned);
+			// A native plan names its profile; a hub plan has none to name.
+			const { profile: _profile, ...unnamed } = planned;
+			rejects("#MigrationPlannedEventData", unnamed);
+			rejects("#MigrationPlannedEventData", { ...planned, realization: "hub" });
+			accepts("#MigrationPlannedEventData", { ...unnamed, realization: "hub" });
+
+			const cutOver = dataOf(MIGRATION_EVENTS.CutOver);
+			accepts("#MigrationCutOverEventData", cutOver);
+			rejects("#MigrationCutOverEventData", {
+				...cutOver,
+				fenceToken: "fence:orders::1",
+			});
+
+			const prepare = result.state.checkpoints.prepare;
+			assert.ok(prepare);
+			accepts("#NativeTransferCheckpoint", prepare);
+			rejects("#NativeTransferCheckpoint", {
+				...prepare,
+				ticket: { connection: "postgres://user:pw@host/db" },
+			});
+			accepts("#NativeTransferRef", {
+				profile: REFERENCE_NATIVE_PROFILE,
+				transfer: String(prepare.transfer),
+				dataset: "orders",
+				tenant: "",
 			});
 		});
 

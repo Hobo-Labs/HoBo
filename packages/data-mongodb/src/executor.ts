@@ -4,10 +4,12 @@
  * The binding never imports a driver. It asks an injected `MongoExecutor` for
  * a handful of operations, each a closed request record answered by a closed
  * result record, every value in canonical Extended JSON
- * (`./extended-json.ts`). An adapter over the official driver is about a
- * hundred lines (`test/support/driver-executor.ts` is the reference one); the
- * in-memory executor in `./memory-executor.ts` implements the same port with
- * no server.
+ * (`./extended-json.ts`). `test/support/driver-executor.ts` is the reference
+ * adapter over the official driver. It is not small — some four hundred lines
+ * of code — and only the reads and writes in it are mechanical: the
+ * change-stream half, and what it does with a driver error, are where an
+ * adapter is easy to get wrong. The in-memory executor in
+ * `./memory-executor.ts` implements the same port with no server.
  *
  * The port is deliberately narrower than MongoDB. Documents are addressed by
  * `_id` only — a point lookup, a set of ids, or a contiguous `_id` range — and
@@ -17,7 +19,8 @@
  *
  * An executor reports a refused command by throwing `MongoCommandError` with
  * the server's numeric code. It never puts a server message, a document, or a
- * connection string in an error.
+ * connection string in an error, and it never chains the driver's error as
+ * `cause` — `MongoCommandError` has no way to carry one.
  */
 import type { MongoDocument, MongoValue } from "./extended-json.js";
 
@@ -29,9 +32,16 @@ export interface MongoEnsureCollectionRequest {
 	/** A `{ $jsonSchema: … }` validator, enforced strictly on every write. */
 	readonly validator?: MongoDocument;
 	/**
-	 * Keep pre- and post-images (`changeStreamPreAndPostImages`), so a change
+	 * Turn on the collection option `changeStreamPreAndPostImages`, so a change
 	 * stream can return the document as of each change even for an in-place
-	 * update. Needs a replica set.
+	 * update made by another client. Needs a replica set.
+	 *
+	 * The binding reads the post-image only (`fullDocument`), never the
+	 * pre-image. The option is still the one to set: MongoDB has no
+	 * post-image-only switch, because what the server stores is the pre-image
+	 * of every updated, replaced, or deleted document, and it derives an
+	 * update's post-image from that plus the update's own delta. The cost is
+	 * that stored pre-image — one extra write per change.
 	 */
 	readonly changeImages: boolean;
 }
@@ -136,7 +146,15 @@ export interface MongoChangeToken {
 	readonly token: string;
 }
 
-/** Keep only events whose document key holds `equals` at a dotted `path`. */
+/**
+ * Keep only the record events — insert, replace, update, delete — whose
+ * document key holds `equals` at a dotted `path`.
+ *
+ * The filter never removes any other event. A drop, a rename, or an
+ * invalidate has no document key and concerns every reader of the
+ * collection, so it is returned whatever the filter says; an executor that
+ * filtered it out would turn a destroyed collection into a quiet stream.
+ */
 // domain-view: filter record of MongoChangeReadRequest; wire form is MongoKeyMatch in data-models/data_mongodb.proto.
 export interface MongoKeyMatch {
 	readonly path: string;
@@ -146,7 +164,11 @@ export interface MongoKeyMatch {
 // domain-view: request record of MongoExecutor.readChanges; wire form is MongoChangeReadRequest in data-models/data_mongodb.proto.
 export interface MongoChangeReadRequest {
 	readonly collection: string;
-	/** Return events strictly after this token. */
+	/**
+	 * Return events strictly after this token. A token is resumable under the
+	 * `where` it was read with: a server cannot resume a filtered stream from
+	 * the token of an event that filter excludes (code 280).
+	 */
 	readonly after: string;
 	/** At most this many events; at least 1. */
 	readonly limit: number;
@@ -163,11 +185,22 @@ export interface MongoChangeEvent {
 	readonly id?: MongoValue;
 	/** The whole document as of this change; absent for a delete. */
 	readonly document?: MongoDocument;
+	/**
+	 * Present exactly when the change was made inside a multi-document
+	 * transaction: opaque text that is equal for two events of one
+	 * transaction and differs between transactions. The events of one
+	 * transaction are consecutive in the stream.
+	 */
+	readonly transaction?: string;
 }
 
 // domain-view: result record of MongoExecutor.readChanges; wire form is MongoChangeBatch in data-models/data_mongodb.proto.
 export interface MongoChangeBatch {
-	/** In commit order. */
+	/**
+	 * In commit order, at most `limit` of them. Only a full page — exactly
+	 * `limit` events — may end inside a transaction; a shorter one ends
+	 * between transactions.
+	 */
 	readonly events: readonly MongoChangeEvent[];
 	/** Resume point: every event at or before it, matching or not, was seen. */
 	readonly token: string;
@@ -213,7 +246,13 @@ export interface MongoExecutor extends MongoSession {
 	awaitTransactions(request: MongoAwaitTransactionsRequest): Promise<void>;
 	/** The stream's current resume point: nothing before it is ever returned. */
 	changeHead(request: MongoChangeHeadRequest): Promise<MongoChangeToken>;
-	/** Read forward from a token without consuming anything. */
+	/**
+	 * Read forward from a token without consuming anything.
+	 *
+	 * A token the deployment cannot decode is refused with server code 260
+	 * (`InvalidResumeToken`). A server reports an undecodable token under
+	 * dozens of unrelated codes, so naming it is the executor's job.
+	 */
 	readChanges(request: MongoChangeReadRequest): Promise<MongoChangeBatch>;
 	close(): Promise<void>;
 }

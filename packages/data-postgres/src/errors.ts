@@ -20,6 +20,10 @@ export const POSTGRES_DATA_ERROR_CODES = [
 	"CAPTURE_POSITION_INVALID",
 	"CAPTURE_SUBSCRIPTION_LOST",
 	"CAPTURE_STREAM_UNDECODABLE",
+	// Native transfer (logical-copy). Both carry a SQLSTATE and nothing else:
+	// the server's own text can quote the connection string it was given.
+	"NATIVE_SUBSCRIBE_FAILED",
+	"NATIVE_STOP_FAILED",
 ] as const;
 
 export type PostgresDataErrorCode = (typeof POSTGRES_DATA_ERROR_CODES)[number];

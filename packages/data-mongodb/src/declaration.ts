@@ -32,11 +32,11 @@ export const MONGO_IMPEDANCE_CODES = [
 	"MONGODB_CAPTURE_OPLOG_WINDOW",
 	/** A write that changes nothing (an identical replace, a delete of an absent record) produces no change event. */
 	"MONGODB_CAPTURE_SKIPS_NOOP_WRITES",
-	/** An in-place update is captured as of the change only while the collection keeps pre- and post-images. */
+	/** An in-place update by another client is captured as of the change only while the collection has `changeStreamPreAndPostImages` on, which costs a stored pre-image per change. */
 	"MONGODB_CAPTURE_NEEDS_CHANGE_IMAGES",
 	/** One atomic unit is one transaction: bounded by the 60 s lifetime limit and by cache, so a very large write batch or retire scope is refused. */
 	"MONGODB_TRANSACTION_BOUNDS",
-	/** A record is one BSON document: at most 16 MiB. */
+	/** A record is one BSON document: under 16 MiB. */
 	"MONGODB_DOCUMENT_SIZE_LIMIT",
 	/** Decimal128 holds 34 significant digits; a longer decimal is refused, never rounded. */
 	"MONGODB_DECIMAL128_PRECISION",
