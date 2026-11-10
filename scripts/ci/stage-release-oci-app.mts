@@ -346,10 +346,6 @@ export function releasePnpmStore(
 	root: string,
 	env: NodeJS.ProcessEnv = process.env,
 ): string {
-	const configured = env.npm_config_store_dir?.trim();
-	if (configured && isAbsolute(configured) && !/[\r\n\0]/u.test(configured)) {
-		return resolve(configured);
-	}
 	const which = spawnSync("sh", ["-c", "command -v pnpm || true"], {
 		encoding: "utf8",
 		env,
@@ -366,6 +362,10 @@ export function releasePnpmStore(
 	const path = result.stdout?.trim() ?? "";
 	if (result.status === 0 && isAbsolute(path) && !/[\r\n\0]/u.test(path)) {
 		return path;
+	}
+	const configured = env.npm_config_store_dir?.trim();
+	if (configured && isAbsolute(configured) && !/[\r\n\0]/u.test(configured)) {
+		return resolve(configured);
 	}
 	const detail = (result.stderr || result.stdout || "").trim();
 	throw new Error(
