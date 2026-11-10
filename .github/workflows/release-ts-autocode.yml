@@ -24,9 +24,42 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  route:
+    name: Route runners
+    # GitHub-hosted on purpose: the choice of runner must not wait on the fleet
+    # it is choosing against. The fleet while it takes jobs, an enrolled local
+    # box when it does not, GitHub-hosted when neither does (scripts/ci/route-runner.mts).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      runner: ${{ steps.route.outputs.runner }}
+      tier: ${{ steps.route.outputs.tier }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/route-runner
+            scripts/ci/route-runner.mts
+            packages/ci/src/fleet-overflow.ts
+      - id: route
+        uses: ./.github/actions/route-runner
+        with:
+          token: ${{ github.token }}
+          mode: ${{ vars.HOBO_CI_ROUTE }}
+          local-runner: ${{ vars.HOBO_CI_LOCAL_RUNNER }}
+          max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
+          trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
+
   ts-autocode-release-contract:
     name: ts-autocode pin cone + npm dry-run
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    needs: route
+    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
