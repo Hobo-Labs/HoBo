@@ -20,13 +20,20 @@ export {
 	type ControlAuthenticator,
 	type ControlPrincipal,
 	createControlAuthenticator,
-	createControlPlane,
-} from "./control-plane.js";
+} from "./control-auth.js";
 export {
 	collectAllowedRelayOrigins,
 	resolveEngineRelayOrigin,
 	resolveEnvironmentEngines,
 } from "./engine-relay-routing.js";
+export {
+	createFailureLog,
+	describeFailure,
+	type FailureEvents,
+	failureRoute,
+	reportRelayFailure,
+	setRelayFailureEvents,
+} from "./failure-log.js";
 export {
 	createGithubAppTransport,
 	type GithubAppTransport,
@@ -50,6 +57,12 @@ export {
 	type HostedRelayTickTiming,
 } from "./hosted-runtime.js";
 export { initializeHostedRelaySchema } from "./hosted-schema.js";
+export {
+	createRelayHandler,
+	type HostedRelayApplication,
+	type StubEngine,
+	type VerifiedWebhook,
+} from "./http-handler.js";
 export { signIngressForward, verifyIngressForward } from "./ingress-forward.js";
 export {
 	isIsolatedContainerOffer,
@@ -161,8 +174,8 @@ export {
 	type JobDurations,
 	type JobObservation,
 } from "./job-durations.js";
-export { createJobPollAdmissionWorker } from "./job-poll-admission.js";
 export { startRelayFromEnvironment } from "./main.js";
+export { createNodeRelayHandler } from "./node-http.js";
 export {
 	createGithubOidcVerifier,
 	type GithubClaims,
@@ -200,7 +213,7 @@ export {
 	createQueuedJobRepair,
 	PostgresQueuedJobRepairClaims,
 } from "./queued-job-repair.js";
-export { Relay } from "./relay.js";
+export { createRelayHost } from "./relay-host.js";
 export {
 	assertRelayOriginAllowed,
 	CI_PROJECT_LOCAL_OVERRIDE_PATH,
@@ -232,8 +245,8 @@ export {
 	toOtlpTraces,
 	traceGithubTransport,
 } from "./relay-trace.js";
-export { createRelayRequestHandler, createRelayServer } from "./server.js";
 export {
+	admitWhenReady,
 	createRelayService,
 	type RelayServiceLog,
 	type RelayServiceOptions,

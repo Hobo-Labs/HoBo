@@ -11,8 +11,11 @@ covers these limits and disposal of error/redirect response streams. Product CLI
 HTTPS control plane and native PostgreSQL store in
 [`packages/hobo/e2e/ci.test.ts`](../hobo/e2e/ci.test.ts).
 
-`@hobo/ci-gh-actions` provides the hosted HoBo CI relay, account API, repository
-installer and ephemeral GitHub Actions runner host. Once the repository's setup
+`@hobo/ci-gh-actions` provides the HoBo CI relay, account API, repository
+installer and ephemeral GitHub Actions runner host. There is one relay; it is
+[hosted three ways](#one-relay-thin-hosts) (a Node service behind `hobo ci serve`
+and the container image, Vercel, and the box worker daemon), and each host adds
+only a store, a scheduler and runner backends. Once the repository's setup
 PR is merged and its connection activated, workflows select HoBo with one line:
 
 ```yaml
@@ -37,10 +40,10 @@ pnpm --filter @hobo/ci-gh-actions test:acceptance --local --act /tmp/hobo-ci-too
 
 This is a connected test of signed HTTP intake, durable reservations, dispatch,
 RS256 OIDC/JWKS, JIT authorization, the shipped host process launcher, actual act
-workflow execution, signed completion, runner cleanup and settlement. Seven
-original jobs consume five providers' free allocations, select the cheapest paid
+workflow execution, signed completion, runner cleanup and settlement. Six
+original jobs consume four providers' free allocations, select the cheapest paid
 provider and exercise provider-budget fallback. The exhausted account launches
-no eighth job. Reopening and replaying the database preserves billing and results.
+no seventh job. Reopening and replaying the database preserves billing and results.
 Missing JIT authorization, provider mismatch and skipped execution fail the test.
 See [acceptance evidence](acceptance/README.md).
 
@@ -76,6 +79,80 @@ replay cannot undo a newer transition. CAS conflicts are retried by the journal
 consumer, and `reconcile()` applies rule changes to existing signal state.
 Already running jobs retain their reservation and finish on their chosen host.
 
+## One relay, thin hosts
+
+There is one relay. Its core is `HostedRelay` (`src/hosted-relay.ts`:
+admission, reservation, dispatch, runner claim, reconciliation), driven by
+`createHostedRelayRuntime` (`src/hosted-runtime.ts`: the durable webhook inbox
+and the worker tick), with `createHostedControlPlane` (`src/hosted-control.ts`:
+the account API) and `createRelayHandler` (the HTTP surface, below). They are
+written against the `HostedInboxStore` port, which `SqliteCiStore` and
+`PostgresCiStore` in [`@hobo/ci`](../ci/README.md) both implement.
+
+A host supplies a store, something that calls `runtime.tick`, and runner
+backends. Nothing else differs between them:
+
+| Host | Entry | Store | What calls the tick | Runner backends |
+| --- | --- | --- | --- | --- |
+| Node service: `hobo ci serve`, the container image | `createRelayHost` (`src/relay-host.ts`), started from `HOBO_CI_*` by `startRelayFromEnvironment` (`src/main.ts`) | `SqliteCiStore`, one file fenced by a lock file | A 5-second timer in `createRelayService` | Workflow bridge |
+| Vercel | `createVercelApplication` in [`@hobo/ci-vercel`](../ci-vercel/README.md) | `PostgresCiStore` | A queue wake-up per delivery and a 15-minute schedule | Vercel Sandbox |
+| Box worker daemon | `scripts/isolated-worker-daemon-main.mts` (no HTTP; admission by polling) | `SqliteCiStore` or `PostgresCiStore` | Its own loop | Isolated containers |
+
+With pull admission, `hobo ci serve` feeds the Node service's inbox from
+`createGithubJobPoller` (`src/isolated-worker/github-job-poller.ts`), the same
+poller the box worker runs; there is no second poller.
+
+The Node service adds two things of its own to the shared handler: a cached
+readiness probe that also gates admission (`admitWhenReady`: while the probe
+fails or the service drains, a delivery answers 503 for GitHub to redeliver and
+a runner claim is refused; the account API stays reachable), and a bounded
+drain on SIGTERM. The Vercel host adds the GitHub App bootstrap and OAuth
+onboarding, the queue wake-up and the webhook and queued-job repair; those are
+Postgres-only today and the Node service does not have them.
+
+What a host can turn on, and who does:
+
+| Option | Node service | Vercel |
+| --- | --- | --- |
+| `ingressForwardSecret` (`X-Hobo-Ingress-Forward` intake) | `HOBO_CI_INGRESS_FORWARD_SECRET` | not configured |
+| `trustProxy` (refuse a plain-HTTP forward) | `HOBO_CI_TRUST_PROXY=1` | not configured |
+| `stubEngines` (health of engines it does not serve) | `HOBO_CI_STUB_ENGINES` | none |
+| `fullAccountUpdates` (`PUT /v1/accounts/self/policy`) | on | off (410) |
+| `isolatedHost` (Sandbox runner; also lets a desired policy name a Sandbox provider) | none | Vercel Sandbox |
+| `denyUnisolated` (no workflow bridge) | off | on |
+
+Everything else, routes included, is the same code with the same behaviour:
+the `/engines/gh-actions` mount and the per-engine health map are served by
+every host, and the v2 runtime, providers, rate-observation, observation and
+inbox routes and `isolated-connect` are served by the Node service too.
+
+## One HTTP layer
+
+Every host of the relay serves the same Fetch handler, `createRelayHandler`
+(`src/http-handler.ts`). A Node server or function entrypoint puts
+`createNodeRelayHandler` (`src/node-http.ts`) in front of it. The handler owns:
+
+| Route | Behaviour |
+| --- | --- |
+| `GET /healthz`, `GET /readyz` | Process liveness and readiness, each with an `engines` map (`gh-actions` plus any stub engine the host declares) |
+| `GET /engines/{stub}/healthz`, `/readyz` | Health of an engine the host reports but this relay does not serve |
+| `/engines/gh-actions/…` | The same routes as the root |
+| `POST /github/webhooks` | Signed delivery intake; the delivery is committed before it is acknowledged |
+| `POST /v1/leases/{id}/jit` | Runner claim with a GitHub OIDC bearer |
+| `/v1/accounts/self/…`, `/v2/accounts/self/…`, `/v1/app-registration/…` | Handed to the host's control plane |
+
+A delivery is authenticated by GitHub's `X-Hub-Signature-256`, or, when the host
+configures an ingress forward secret, by `X-Hobo-Ingress-Forward` from
+[`createWebhookIngressHandler`](src/webhook-ingress.ts). Both are the same
+HMAC-SHA256 over the exact body bytes and are checked by one function,
+`verifyWebhookSignature` in `src/webhook-signature.ts`; nothing else in the
+package compares a webhook signature. With `trustProxy`, a request whose
+`X-Forwarded-Proto` is not `https` is refused with 403.
+
+`contracts/http-boundary.pact.json` pins this boundary and is executed by
+`contracts/http-boundary.provider.test.ts` through the Node adapter;
+`test/http-handler.test.ts` covers the engine mount, the forward and the proxy check.
+
 ## Deploy the relay
 
 For **`hobo ci serve`** in a checkout (bind/public origin split, ingress HMAC,
@@ -91,7 +168,10 @@ unsafe stale-PID removal. Kubernetes uses one replica and `Recreate`.
 The tested container lifecycle includes authenticated policy changes, restart
 persistence, duplicate-owner refusal, online backup, graceful SIGTERM and offline
 restore from a read-only backup. `/healthz` reports process liveness; `/readyz`
-reports recovered local partition readiness and becomes unavailable during drain.
+reports local partition readiness (the store answers and holds a configuration)
+and becomes unavailable during drain. A dispatch or runner claim that a crash
+interrupted is marked uncertain by the worker tick once it is two minutes old,
+never retried.
 External provider execution is verified by the separate runner acceptance path.
 A failed or hanging readiness probe cannot keep admissions open indefinitely.
 Process-spawning restore tests use a 15-second Vitest deadline for slow local
@@ -142,9 +222,10 @@ bootstrap, webhook repair and queued-job repair) by running the same
 initialisers each store runs on first use, and stores nothing. The Vercel
 adapter calls it to give a standby database the schema of the serving one.
 
-The hosted Vercel adapter supplies the App bootstrap and OAuth callbacks described
-below. Self-hosted deployments must mount equivalent authenticated callbacks and
-provide encrypted secret storage. Customer repository setup is handled by the
+The Vercel host supplies the App bootstrap and OAuth callbacks described
+below; they are Postgres-only today, so the Node service (`hobo ci serve`, the
+container image) does not serve them and takes an existing App's ID, key and
+webhook secret from its `HOBO_CI_*` bindings instead. Customer repository setup is handled by the
 account APIs below.
 
 [Hosted GitHub App bootstrap and account onboarding](ONBOARDING.md) describes the operator and account flows.
@@ -433,7 +514,11 @@ On Vercel, the runtime endpoint returns the Sandbox enablement flag, loaded
 allowed-domain patterns, and deployment ID for the process serving the request.
 It does not report credentials, URLs, or settings of an individual runner.
 
-`putPolicy(account, {revision})` changes budgets and publishes fresh allocation
+`putPolicy(account, {revision})` (`PUT /v1/accounts/self/policy`) replaces the
+whole account, offers included, so it is served only where the operator owns
+the provider inventory: the Node service enables it (`fullAccountUpdates`), for
+accounts that have no v2 desired policy; the Vercel host answers 410 and takes
+`putDesiredPolicy` only. It changes budgets and publishes fresh allocation
 facts without restarting the relay. Configuration and its audit event commit
 atomically in the lease journal. Read models, setup records and policy can be rebuilt.
 Changing/removing an active provider identity or repository bridge pin is refused;
@@ -450,7 +535,7 @@ any extra Sandbox proxy VM duration. The relay
 reserves worst-case runtime plus startup, checks account/provider budgets and concurrency, and rechecks delayed
 launches. Original Actions jobs and portable native pipelines share the ledger.
 Prices use integer USD microdollars; allocations use normalized runner minutes.
-Both relays reprice held offers with their pinned attempt and queue context, retaining
+The relay reprices held offers with their pinned attempt and queue context, retaining
 other payer measurements for all-of constraints. This preflight checks feasibility;
 the durable store must still claim the financial hold and revalidate strict native
 liability proof before dispatch. A feasible plan cannot authorize provider effects.
@@ -587,3 +672,16 @@ The bound Actions/act command adapter delegates to the shared Node workspace
 backend in `@hobo/ci/workspace-backend`. The Azure Pipelines sibling
 [`@hobo/ci-ado`](../ci-ado/README.md) uses that same execution implementation;
 GitHub relay, runner authorization and account routing remain in this package.
+
+## Postgres schema
+
+The 13 PostgreSQL tables this package owns (App registration, OAuth sessions,
+the platform-App bootstrap fence, and the webhook and queued-job repair state)
+are declared in [`db/schema.ts`](db/schema.ts). Their migrations are in
+`db/migrations/`, generated and applied with the tooling `@hobo/ci` provides:
+`pnpm --filter @hobo/ci-gh-actions run db:generate`, `db:check`, `db:migrate`
+and `db:verify`. The stores still create their tables from the DDL embedded in
+`src/`; `db/migrations/embedded-ddl.lock.json` and `db:verify` hold that DDL to
+the declared schema. How a migration is produced and applied, how an existing
+database is baselined, and what is not done yet are described once, in
+[`@hobo/ci`](../ci/README.md#postgres-schema-and-migrations).

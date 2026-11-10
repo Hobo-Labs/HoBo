@@ -1,0 +1,135 @@
+{
+	"contract": "hobo.ci.embedded-ddl-lock/v1",
+	"provenOn": "PostgreSQL 16.15",
+	"sha256": "3d4f2f4c2313bcc91ba188fa257ad70e09c102f7fb53970175dfe92ad19e5788",
+	"statements": [
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_partitions (id text PRIMARY KEY, snapshot bytea)"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "ALTER TABLE hobo_ci_partitions ADD COLUMN IF NOT EXISTS storage_version integer NOT NULL DEFAULT 0"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_snapshot_backups (partition_id text PRIMARY KEY, snapshot bytea NOT NULL, migrated_at timestamptz NOT NULL DEFAULT now())"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_events (seq bigserial PRIMARY KEY, partition_id text NOT NULL, body text NOT NULL)"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_events_partition_seq ON hobo_ci_events(partition_id,seq)"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_events_lease_type_seq ON hobo_ci_events(partition_id, (body::jsonb ->> 'leaseId'), (body::jsonb ->> 'type'), seq DESC)"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_leases (partition_id text NOT NULL, id text NOT NULL, job_key text NOT NULL, body text NOT NULL, PRIMARY KEY(partition_id,id))"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_leases_job ON hobo_ci_leases(partition_id,job_key)"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_leases_account ON hobo_ci_leases(partition_id,(body::jsonb ->> 'accountId'))"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_leases_state ON hobo_ci_leases(partition_id,(body::jsonb ->> 'state'),id)"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_leases_runner ON hobo_ci_leases(partition_id,(body::jsonb ->> 'runnerName'))"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_terminal_jobs (partition_id text NOT NULL, job_key text NOT NULL, PRIMARY KEY(partition_id,job_key))"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_assigned_jobs (partition_id text NOT NULL, job_key text NOT NULL, lease_id text NOT NULL, PRIMARY KEY(partition_id,job_key))"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "ALTER TABLE hobo_ci_assigned_jobs ADD COLUMN IF NOT EXISTS version text NOT NULL DEFAULT ''"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_pending_jobs (seq bigserial, partition_id text NOT NULL, job_key text NOT NULL, body text NOT NULL, PRIMARY KEY(partition_id,job_key))"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_pending_order ON hobo_ci_pending_jobs(partition_id,seq)"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_configuration (partition_id text PRIMARY KEY, body text NOT NULL)"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_control_records (partition_id text NOT NULL, key text NOT NULL, body text NOT NULL, PRIMARY KEY(partition_id,key))"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_sandbox_egress (partition_id text NOT NULL, sandbox_id text NOT NULL, lease_id text NOT NULL, account_id text NOT NULL, max_bytes bigint NOT NULL, used_bytes bigint NOT NULL DEFAULT 0, PRIMARY KEY(partition_id,sandbox_id), UNIQUE(partition_id,lease_id))"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_sandbox_proxies (partition_id text NOT NULL,lease_id text NOT NULL,account_id text NOT NULL,proxy_session_id text NOT NULL,token_sha256 text NOT NULL,PRIMARY KEY(partition_id,lease_id),UNIQUE(partition_id,proxy_session_id))"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "ALTER TABLE hobo_ci_sandbox_proxies ADD COLUMN IF NOT EXISTS attempted_calls bigint NOT NULL DEFAULT 0"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE UNIQUE INDEX IF NOT EXISTS hobo_ci_sandbox_proxy_secret ON hobo_ci_sandbox_proxies(partition_id,token_sha256)"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_sandbox_proxy_requests (partition_id text NOT NULL,lease_id text NOT NULL,request_id text NOT NULL,created_ms bigint NOT NULL,bytes bigint NOT NULL,PRIMARY KEY(partition_id,lease_id,request_id))"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_proxy_request_rate ON hobo_ci_sandbox_proxy_requests(partition_id,lease_id,created_ms)"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE TABLE IF NOT EXISTS hobo_ci_inbox (seq bigserial, partition_id text NOT NULL, delivery_id text NOT NULL, fingerprint text NOT NULL, event text NOT NULL, installation_id bigint NOT NULL, repository_id bigint NOT NULL, raw_body bytea NOT NULL, received_at text NOT NULL, claim_token text, claim_until bigint NOT NULL DEFAULT 0, completed boolean NOT NULL DEFAULT false, attempts integer NOT NULL DEFAULT 0, quarantined boolean NOT NULL DEFAULT false, PRIMARY KEY(partition_id,delivery_id))"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "ALTER TABLE hobo_ci_inbox ADD COLUMN IF NOT EXISTS body_hash text NOT NULL DEFAULT ''"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "ALTER TABLE hobo_ci_inbox ADD COLUMN IF NOT EXISTS received_ms bigint NOT NULL DEFAULT 0"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_inbox_replay ON hobo_ci_inbox(partition_id,installation_id,body_hash,received_ms) WHERE body_hash <> ''"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_inbox_installation_rate ON hobo_ci_inbox(partition_id,installation_id,received_ms)"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_inbox_installation_outstanding ON hobo_ci_inbox(partition_id,installation_id) WHERE NOT completed"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_inbox_pending ON hobo_ci_inbox(partition_id,seq) WHERE NOT completed AND NOT quarantined"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='hobo_ci_native_snapshot_guard') THEN ALTER TABLE hobo_ci_partitions ADD CONSTRAINT hobo_ci_native_snapshot_guard CHECK (storage_version=0 OR snapshot IS NULL); END IF; END $$"
+		}
+	]
+}

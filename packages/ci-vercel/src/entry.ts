@@ -1,12 +1,17 @@
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { ciEventSinkFromEnv, createCiEventEmitter } from "@hobo/ci-gh-actions";
+import {
+	ciEventSinkFromEnv,
+	createCiEventEmitter,
+	createNodeRelayHandler,
+	reportRelayFailure,
+	setRelayFailureEvents,
+} from "@hobo/ci-gh-actions";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { type MessageMetadata, QueueClient } from "@vercel/queue";
-import { reportRelayFailure, setRelayFailureEvents } from "./failure-log.js";
-import { createNodeRelayHandler } from "./node-handler.js";
 import { forwardQueueWakeup } from "./queue-forwarding.js";
 import { composeRelay } from "./relay-composition.js";
+import { streamsBody } from "./relay-streams.js";
 import { loadBrokerRuntimeConfig } from "./runtime-config-client.js";
 import { isPlatformScheduleRun, QueueMessageSchema } from "./worker.js";
 
@@ -108,10 +113,11 @@ export function createHttpEntry(
 	): Promise<void> => {
 		try {
 			const app = await load();
-			await createNodeRelayHandler({ origin: app.origin, handle: app.handle })(
-				request,
-				response,
-			);
+			await createNodeRelayHandler({
+				origin: app.origin,
+				handle: app.handle,
+				streams: streamsBody,
+			})(request, response);
 		} catch {
 			if (!response.headersSent)
 				response.writeHead(503, { "Cache-Control": "no-store" });

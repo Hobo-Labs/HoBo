@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { ConnectionSchema, type RepositorySetupRequest } from "@hobo/ci";
 import { z } from "zod";
-import type { ControlPrincipal } from "./control-plane.js";
+import type { ControlPrincipal } from "./control-auth.js";
 import type { OnboardingGithubPort } from "./onboarding.js";
 
 const Id = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
