@@ -18,7 +18,7 @@ import { parseConfiguration } from "@hobo/ci";
 import { PostgresCiStore } from "@hobo/ci/postgres";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createControlAuthenticator } from "../../ci-gh-actions/src/control-plane.js";
+import { createControlAuthenticator } from "../../ci-gh-actions/src/control-auth.js";
 import { createHostedControlPlane } from "../../ci-gh-actions/src/hosted-control.js";
 import { HostedRelay } from "../../ci-gh-actions/src/hosted-relay.js";
 import type { OnboardingGithubPort } from "../../ci-gh-actions/src/onboarding.js";

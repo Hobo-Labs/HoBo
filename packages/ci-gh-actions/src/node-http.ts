@@ -29,14 +29,25 @@ function waitForDrain(response: ServerResponse): Promise<void> {
 	});
 }
 
-/** Adapt Node's Vercel HTTP entrypoint to the portable request handler. */
+/** Adapt a Node HTTP server or function entrypoint to the portable request handler. */
 export function createNodeRelayHandler(options: {
 	origin: string;
 	handle: (request: Request) => Promise<Response>;
+	/** A host that explicitly serves plain HTTP on loopback names that origin here. */
+	allowLoopbackHttp?: boolean;
+	/**
+	 * Paths whose bodies are streamed in both directions and not held to the
+	 * 1 MiB limit; the handler behind them owns its own quota.
+	 */
+	streams?: (pathname: string) => boolean;
 }): (request: IncomingMessage, response: ServerResponse) => Promise<void> {
 	const origin = new URL(options.origin);
+	const loopbackHttp =
+		options.allowLoopbackHttp === true &&
+		origin.protocol === "http:" &&
+		(origin.hostname === "127.0.0.1" || origin.hostname === "localhost");
 	if (
-		origin.protocol !== "https:" ||
+		(origin.protocol !== "https:" && !loopbackHttp) ||
 		origin.username ||
 		origin.password ||
 		origin.pathname !== "/" ||
@@ -61,14 +72,7 @@ export function createNodeRelayHandler(options: {
 					for (const item of value) headers.append(name, item);
 				} else if (value !== undefined) headers.set(name, value);
 			}
-			// Sandbox forwarding carries large package artifacts and bounded uploads.
-			// The proxy owns its own streaming quota; other endpoints remain 1 MiB.
-			if (
-				url.pathname === "/sandbox/egress" ||
-				url.pathname.startsWith("/sandbox/egress/") ||
-				url.pathname === "/internal/sandbox/quota" ||
-				url.pathname === "/internal/queue-wakeup"
-			) {
+			if (options.streams?.(url.pathname) === true) {
 				const method = request.method ?? "GET";
 				const abort = new AbortController();
 				response.once("close", () => abort.abort());
@@ -119,7 +123,12 @@ export function createNodeRelayHandler(options: {
 				const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
 				length += value.length;
 				if (length > MAX_BODY) {
-					response.writeHead(413, { "Cache-Control": "no-store" }).end();
+					response
+						.writeHead(413, {
+							"Cache-Control": "no-store",
+							"Content-Type": "application/json",
+						})
+						.end('{"error":"request body too large"}');
 					return;
 				}
 				chunks.push(value);

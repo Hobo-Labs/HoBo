@@ -229,13 +229,25 @@ export interface DrizzleIndexLike {
 	readonly name: string;
 	readonly columns: readonly string[];
 	readonly unique: boolean;
+	/** Key entries that are SQL expressions rather than declared columns. */
+	readonly expressionKeys: number;
+	/** True when the builder carries a `WHERE` predicate (a partial index). */
+	readonly partial: boolean;
+	/** Declared columns keyed with a non-default sort order, nulls order, or operator class. */
+	readonly orderedKeys: readonly string[];
 }
 
 /**
  * Reads an entry returned by a table's extra-config callback. Drizzle index and
  * unique-constraint builders park their state on a `config` property carrying a
- * name, the columns, and (for indexes) a `unique` flag. Anything that does not
- * present all three is refused so the caller can record it as impedance.
+ * name, the key entries, and (for indexes) a `unique` flag. Anything that does
+ * not present all three is refused so the caller can record it as impedance.
+ *
+ * A key entry is either a declared column (a string, or an object with a
+ * `name`) or a SQL expression (Drizzle's `SQL` object, recognised by its
+ * `queryChunks`). Expressions, a `where` predicate, and per-key ordering are
+ * reported alongside the columns rather than dropped: the canonical IR cannot
+ * carry them, and the caller turns each into an impedance finding.
  */
 export function readIndexBuilder<T>(value: T): DrizzleIndexLike | undefined {
 	const builder = asRecord(value);
@@ -248,16 +260,41 @@ export function readIndexBuilder<T>(value: T): DrizzleIndexLike | undefined {
 	if (!Array.isArray(columns) || columns.length === 0) return undefined;
 	if (!isJsonBoolean(unique)) return undefined;
 	const columnNames: string[] = [];
+	const orderedKeys: string[] = [];
+	let expressionKeys = 0;
 	for (const entry of columns) {
-		const columnName = isJsonString(entry) ? entry : asRecord(entry)?.name;
-		if (!isJsonString(columnName) || columnName.length === 0) {
-			return undefined;
+		const record = asRecord(entry);
+		const columnName = isJsonString(entry) ? entry : record?.name;
+		if (isJsonString(columnName) && columnName.length > 0) {
+			columnNames.push(columnName);
+			if (hasKeyOptions(asRecord(record?.indexConfig))) {
+				orderedKeys.push(columnName);
+			}
+			continue;
 		}
-		columnNames.push(columnName);
+		if (!Array.isArray(record?.queryChunks)) return undefined;
+		expressionKeys += 1;
 	}
 	return Object.freeze({
 		name,
 		columns: Object.freeze(columnNames),
 		unique,
+		expressionKeys,
+		partial: config.where !== undefined && config.where !== null,
+		orderedKeys: Object.freeze(orderedKeys),
 	});
+}
+
+/**
+ * Drizzle stamps every indexed column with `{ order: "asc", nulls: "last" }`.
+ * Anything else, or an operator class, changes the index the database builds.
+ */
+function hasKeyOptions(indexConfig: UnknownRecord | undefined): boolean {
+	if (indexConfig === undefined) return false;
+	const { order, nulls, opClass } = indexConfig;
+	return (
+		(isJsonString(order) && order !== "asc") ||
+		(isJsonString(nulls) && nulls !== "last") ||
+		(isJsonString(opClass) && opClass.length > 0)
+	);
 }

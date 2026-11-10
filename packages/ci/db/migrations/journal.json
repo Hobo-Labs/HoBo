@@ -1,0 +1,285 @@
+{
+	"contract": "hobo.ci.schema-journal/v1",
+	"scope": "@hobo/ci",
+	"advisoryLocks": [
+		"hobo-ci-schema-v2"
+	],
+	"migrations": [
+		{
+			"id": "0000_baseline",
+			"sql": {
+				"file": "0000_baseline.sql",
+				"sha256": "4d9a055b609ca74225ba8558e1ca58c9d66fba282030ac89ee16e64d58220a68",
+				"statements": 26
+			},
+			"plan": {
+				"contract": "hobo.migration-plan/v1",
+				"steps": [
+					{
+						"phase": "expand",
+						"kind": "create-table",
+						"table": "hobo_ci_assigned_jobs",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "create-table",
+						"table": "hobo_ci_configuration",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "create-table",
+						"table": "hobo_ci_control_records",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "create-table",
+						"table": "hobo_ci_events",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "add-index",
+						"table": "hobo_ci_events",
+						"index": "hobo_ci_events_partition_seq",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "create-table",
+						"table": "hobo_ci_inbox",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "add-index",
+						"table": "hobo_ci_inbox",
+						"index": "hobo_ci_inbox_installation_outstanding",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "add-index",
+						"table": "hobo_ci_inbox",
+						"index": "hobo_ci_inbox_installation_rate",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "add-index",
+						"table": "hobo_ci_inbox",
+						"index": "hobo_ci_inbox_pending",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "add-index",
+						"table": "hobo_ci_inbox",
+						"index": "hobo_ci_inbox_replay",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "create-table",
+						"table": "hobo_ci_leases",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "add-index",
+						"table": "hobo_ci_leases",
+						"index": "hobo_ci_leases_job",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "create-table",
+						"table": "hobo_ci_partitions",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "create-table",
+						"table": "hobo_ci_pending_jobs",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "add-index",
+						"table": "hobo_ci_pending_jobs",
+						"index": "hobo_ci_pending_order",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "create-table",
+						"table": "hobo_ci_sandbox_egress",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "create-table",
+						"table": "hobo_ci_sandbox_proxies",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "add-index",
+						"table": "hobo_ci_sandbox_proxies",
+						"index": "hobo_ci_sandbox_proxy_secret",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "create-table",
+						"table": "hobo_ci_sandbox_proxy_requests",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "add-index",
+						"table": "hobo_ci_sandbox_proxy_requests",
+						"index": "hobo_ci_proxy_request_rate",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "create-table",
+						"table": "hobo_ci_snapshot_backups",
+						"destructive": false
+					},
+					{
+						"phase": "expand",
+						"kind": "create-table",
+						"table": "hobo_ci_terminal_jobs",
+						"destructive": false
+					}
+				],
+				"engineId": "drizzle-kit",
+				"engineVersion": "0.31.11",
+				"digest": "sha256:ac92e584e059cd954b27d79ddffdf0d4d9d8db586a1005465ca13d5e91b46c7b"
+			},
+			"impedance": [
+				{
+					"code": "DRIZZLE_DEFAULT_UNREPRESENTABLE",
+					"detail": "Column \"migrated_at\" of table \"hobo_ci_snapshot_backups\" has a non-literal default (object<SQL>); it is not carried into the canonical IR."
+				},
+				{
+					"code": "DRIZZLE_DEFAULT_UNREPRESENTABLE",
+					"detail": "Column \"seq\" of table \"hobo_ci_events\" has a non-literal default (undefined); it is not carried into the canonical IR."
+				},
+				{
+					"code": "DRIZZLE_DEFAULT_UNREPRESENTABLE",
+					"detail": "Column \"seq\" of table \"hobo_ci_inbox\" has a non-literal default (undefined); it is not carried into the canonical IR."
+				},
+				{
+					"code": "DRIZZLE_DEFAULT_UNREPRESENTABLE",
+					"detail": "Column \"seq\" of table \"hobo_ci_pending_jobs\" has a non-literal default (undefined); it is not carried into the canonical IR."
+				},
+				{
+					"code": "DRIZZLE_EXTRA_CONFIG_UNREAD",
+					"detail": "Extra-config entry \"0\" of table \"hobo_ci_assigned_jobs\" (object<PrimaryKeyBuilder>) is not a readable index builder; it was not ingested."
+				},
+				{
+					"code": "DRIZZLE_EXTRA_CONFIG_UNREAD",
+					"detail": "Extra-config entry \"0\" of table \"hobo_ci_control_records\" (object<PrimaryKeyBuilder>) is not a readable index builder; it was not ingested."
+				},
+				{
+					"code": "DRIZZLE_EXTRA_CONFIG_UNREAD",
+					"detail": "Extra-config entry \"0\" of table \"hobo_ci_inbox\" (object<PrimaryKeyBuilder>) is not a readable index builder; it was not ingested."
+				},
+				{
+					"code": "DRIZZLE_EXTRA_CONFIG_UNREAD",
+					"detail": "Extra-config entry \"0\" of table \"hobo_ci_leases\" (object<PrimaryKeyBuilder>) is not a readable index builder; it was not ingested."
+				},
+				{
+					"code": "DRIZZLE_EXTRA_CONFIG_UNREAD",
+					"detail": "Extra-config entry \"0\" of table \"hobo_ci_partitions\" (object<CheckBuilder>) is not a readable index builder; it was not ingested."
+				},
+				{
+					"code": "DRIZZLE_EXTRA_CONFIG_UNREAD",
+					"detail": "Extra-config entry \"0\" of table \"hobo_ci_pending_jobs\" (object<PrimaryKeyBuilder>) is not a readable index builder; it was not ingested."
+				},
+				{
+					"code": "DRIZZLE_EXTRA_CONFIG_UNREAD",
+					"detail": "Extra-config entry \"0\" of table \"hobo_ci_sandbox_egress\" (object<PrimaryKeyBuilder>) is not a readable index builder; it was not ingested."
+				},
+				{
+					"code": "DRIZZLE_EXTRA_CONFIG_UNREAD",
+					"detail": "Extra-config entry \"0\" of table \"hobo_ci_sandbox_proxies\" (object<PrimaryKeyBuilder>) is not a readable index builder; it was not ingested."
+				},
+				{
+					"code": "DRIZZLE_EXTRA_CONFIG_UNREAD",
+					"detail": "Extra-config entry \"0\" of table \"hobo_ci_sandbox_proxy_requests\" (object<PrimaryKeyBuilder>) is not a readable index builder; it was not ingested."
+				},
+				{
+					"code": "DRIZZLE_EXTRA_CONFIG_UNREAD",
+					"detail": "Extra-config entry \"0\" of table \"hobo_ci_terminal_jobs\" (object<PrimaryKeyBuilder>) is not a readable index builder; it was not ingested."
+				},
+				{
+					"code": "DRIZZLE_EXTRA_CONFIG_UNREAD",
+					"detail": "Extra-config entry \"1\" of table \"hobo_ci_sandbox_egress\" (object<UniqueConstraintBuilder>) is not a readable index builder; it was not ingested."
+				},
+				{
+					"code": "DRIZZLE_EXTRA_CONFIG_UNREAD",
+					"detail": "Extra-config entry \"1\" of table \"hobo_ci_sandbox_proxies\" (object<UniqueConstraintBuilder>) is not a readable index builder; it was not ingested."
+				},
+				{
+					"code": "DRIZZLE_INDEX_EXPRESSION_UNREPRESENTABLE",
+					"detail": "Index \"hobo_ci_events_lease_type_seq\" of table \"hobo_ci_events\" keys on 2 SQL expression(s); the canonical IR indexes declared columns only, so the index was not ingested."
+				},
+				{
+					"code": "DRIZZLE_INDEX_EXPRESSION_UNREPRESENTABLE",
+					"detail": "Index \"hobo_ci_leases_account\" of table \"hobo_ci_leases\" keys on 1 SQL expression(s); the canonical IR indexes declared columns only, so the index was not ingested."
+				},
+				{
+					"code": "DRIZZLE_INDEX_EXPRESSION_UNREPRESENTABLE",
+					"detail": "Index \"hobo_ci_leases_runner\" of table \"hobo_ci_leases\" keys on 1 SQL expression(s); the canonical IR indexes declared columns only, so the index was not ingested."
+				},
+				{
+					"code": "DRIZZLE_INDEX_EXPRESSION_UNREPRESENTABLE",
+					"detail": "Index \"hobo_ci_leases_state\" of table \"hobo_ci_leases\" keys on 1 SQL expression(s); the canonical IR indexes declared columns only, so the index was not ingested."
+				},
+				{
+					"code": "DRIZZLE_INDEX_PREDICATE_UNREPRESENTABLE",
+					"detail": "Index \"hobo_ci_inbox_installation_outstanding\" of table \"hobo_ci_inbox\" is partial (it has a WHERE predicate); the canonical IR carries its columns but not the predicate."
+				},
+				{
+					"code": "DRIZZLE_INDEX_PREDICATE_UNREPRESENTABLE",
+					"detail": "Index \"hobo_ci_inbox_pending\" of table \"hobo_ci_inbox\" is partial (it has a WHERE predicate); the canonical IR carries its columns but not the predicate."
+				},
+				{
+					"code": "DRIZZLE_INDEX_PREDICATE_UNREPRESENTABLE",
+					"detail": "Index \"hobo_ci_inbox_replay\" of table \"hobo_ci_inbox\" is partial (it has a WHERE predicate); the canonical IR carries its columns but not the predicate."
+				}
+			],
+			"fallbacks": [
+				{
+					"statement": "expand:hobo_ci_events:add-index:hobo_ci_events_lease_type_seq",
+					"boundTo": "expand:hobo_ci_events:create-table:",
+					"reason": "DRIZZLE_INDEX_EXPRESSION_UNREPRESENTABLE: Index \"hobo_ci_events_lease_type_seq\" of table \"hobo_ci_events\" keys on 2 SQL expression(s); the canonical IR indexes declared columns only, so the index was not ingested."
+				},
+				{
+					"statement": "expand:hobo_ci_leases:add-index:hobo_ci_leases_account",
+					"boundTo": "expand:hobo_ci_leases:create-table:",
+					"reason": "DRIZZLE_INDEX_EXPRESSION_UNREPRESENTABLE: Index \"hobo_ci_leases_account\" of table \"hobo_ci_leases\" keys on 1 SQL expression(s); the canonical IR indexes declared columns only, so the index was not ingested."
+				},
+				{
+					"statement": "expand:hobo_ci_leases:add-index:hobo_ci_leases_state",
+					"boundTo": "expand:hobo_ci_leases:create-table:",
+					"reason": "DRIZZLE_INDEX_EXPRESSION_UNREPRESENTABLE: Index \"hobo_ci_leases_state\" of table \"hobo_ci_leases\" keys on 1 SQL expression(s); the canonical IR indexes declared columns only, so the index was not ingested."
+				},
+				{
+					"statement": "expand:hobo_ci_leases:add-index:hobo_ci_leases_runner",
+					"boundTo": "expand:hobo_ci_leases:create-table:",
+					"reason": "DRIZZLE_INDEX_EXPRESSION_UNREPRESENTABLE: Index \"hobo_ci_leases_runner\" of table \"hobo_ci_leases\" keys on 1 SQL expression(s); the canonical IR indexes declared columns only, so the index was not ingested."
+				}
+			],
+			"verify": {
+				"afterBackfill": "WITH expected_columns(table_name, column_name, type_name, nullable) AS (\n\tVALUES ('hobo_ci_assigned_jobs', 'job_key', 'text', false), ('hobo_ci_assigned_jobs', 'lease_id', 'text', false), ('hobo_ci_assigned_jobs', 'partition_id', 'text', false), ('hobo_ci_assigned_jobs', 'version', 'text', false), ('hobo_ci_configuration', 'body', 'text', false), ('hobo_ci_configuration', 'partition_id', 'text', false), ('hobo_ci_control_records', 'body', 'text', false), ('hobo_ci_control_records', 'key', 'text', false), ('hobo_ci_control_records', 'partition_id', 'text', false), ('hobo_ci_events', 'body', 'text', false), ('hobo_ci_events', 'partition_id', 'text', false), ('hobo_ci_events', 'seq', 'bigint', false), ('hobo_ci_inbox', 'attempts', 'integer', false), ('hobo_ci_inbox', 'body_hash', 'text', false), ('hobo_ci_inbox', 'claim_token', 'text', true), ('hobo_ci_inbox', 'claim_until', 'bigint', false), ('hobo_ci_inbox', 'completed', 'boolean', false), ('hobo_ci_inbox', 'delivery_id', 'text', false), ('hobo_ci_inbox', 'event', 'text', false), ('hobo_ci_inbox', 'fingerprint', 'text', false), ('hobo_ci_inbox', 'installation_id', 'bigint', false), ('hobo_ci_inbox', 'partition_id', 'text', false), ('hobo_ci_inbox', 'quarantined', 'boolean', false), ('hobo_ci_inbox', 'raw_body', 'bytea', false), ('hobo_ci_inbox', 'received_at', 'text', false), ('hobo_ci_inbox', 'received_ms', 'bigint', false), ('hobo_ci_inbox', 'repository_id', 'bigint', false), ('hobo_ci_inbox', 'seq', 'bigint', false), ('hobo_ci_leases', 'body', 'text', false), ('hobo_ci_leases', 'id', 'text', false), ('hobo_ci_leases', 'job_key', 'text', false), ('hobo_ci_leases', 'partition_id', 'text', false), ('hobo_ci_partitions', 'id', 'text', false), ('hobo_ci_partitions', 'snapshot', 'bytea', true), ('hobo_ci_partitions', 'storage_version', 'integer', false), ('hobo_ci_pending_jobs', 'body', 'text', false), ('hobo_ci_pending_jobs', 'job_key', 'text', false), ('hobo_ci_pending_jobs', 'partition_id', 'text', false), ('hobo_ci_pending_jobs', 'seq', 'bigint', false), ('hobo_ci_sandbox_egress', 'account_id', 'text', false), ('hobo_ci_sandbox_egress', 'lease_id', 'text', false), ('hobo_ci_sandbox_egress', 'max_bytes', 'bigint', false), ('hobo_ci_sandbox_egress', 'partition_id', 'text', false), ('hobo_ci_sandbox_egress', 'sandbox_id', 'text', false), ('hobo_ci_sandbox_egress', 'used_bytes', 'bigint', false), ('hobo_ci_sandbox_proxies', 'account_id', 'text', false), ('hobo_ci_sandbox_proxies', 'attempted_calls', 'bigint', false), ('hobo_ci_sandbox_proxies', 'lease_id', 'text', false), ('hobo_ci_sandbox_proxies', 'partition_id', 'text', false), ('hobo_ci_sandbox_proxies', 'proxy_session_id', 'text', false), ('hobo_ci_sandbox_proxies', 'token_sha256', 'text', false), ('hobo_ci_sandbox_proxy_requests', 'bytes', 'bigint', false), ('hobo_ci_sandbox_proxy_requests', 'created_ms', 'bigint', false), ('hobo_ci_sandbox_proxy_requests', 'lease_id', 'text', false), ('hobo_ci_sandbox_proxy_requests', 'partition_id', 'text', false), ('hobo_ci_sandbox_proxy_requests', 'request_id', 'text', false), ('hobo_ci_snapshot_backups', 'migrated_at', 'timestamp with time zone', false), ('hobo_ci_snapshot_backups', 'partition_id', 'text', false), ('hobo_ci_snapshot_backups', 'snapshot', 'bytea', false), ('hobo_ci_terminal_jobs', 'job_key', 'text', false), ('hobo_ci_terminal_jobs', 'partition_id', 'text', false)\n), expected_indexes(index_name) AS (\n\tVALUES ('hobo_ci_events_lease_type_seq'), ('hobo_ci_events_partition_seq'), ('hobo_ci_inbox_installation_outstanding'), ('hobo_ci_inbox_installation_rate'), ('hobo_ci_inbox_pending'), ('hobo_ci_inbox_replay'), ('hobo_ci_leases_account'), ('hobo_ci_leases_job'), ('hobo_ci_leases_runner'), ('hobo_ci_leases_state'), ('hobo_ci_pending_order'), ('hobo_ci_proxy_request_rate'), ('hobo_ci_sandbox_proxy_secret')\n), expected_constraints(table_name, constraint_name) AS (\n\tVALUES ('hobo_ci_assigned_jobs', 'hobo_ci_assigned_jobs_pkey'), ('hobo_ci_control_records', 'hobo_ci_control_records_pkey'), ('hobo_ci_inbox', 'hobo_ci_inbox_pkey'), ('hobo_ci_leases', 'hobo_ci_leases_pkey'), ('hobo_ci_partitions', 'hobo_ci_native_snapshot_guard'), ('hobo_ci_pending_jobs', 'hobo_ci_pending_jobs_pkey'), ('hobo_ci_sandbox_egress', 'hobo_ci_sandbox_egress_pkey'), ('hobo_ci_sandbox_egress', 'hobo_ci_sandbox_egress_partition_id_lease_id_key'), ('hobo_ci_sandbox_proxies', 'hobo_ci_sandbox_proxies_pkey'), ('hobo_ci_sandbox_proxies', 'hobo_ci_sandbox_proxies_partition_id_proxy_session_id_key'), ('hobo_ci_sandbox_proxy_requests', 'hobo_ci_sandbox_proxy_requests_pkey'), ('hobo_ci_terminal_jobs', 'hobo_ci_terminal_jobs_pkey')\n), live_relations AS (\n\tSELECT c.oid, c.relname, c.relkind FROM pg_catalog.pg_class c\n\tJOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace\n\tWHERE n.nspname = current_schema()\n), live_columns AS (\n\tSELECT r.relname AS table_name, a.attname AS column_name, a.atttypid, NOT a.attnotnull AS nullable\n\tFROM pg_catalog.pg_attribute a JOIN live_relations r ON r.oid = a.attrelid\n\tWHERE r.relkind = 'r' AND a.attnum > 0 AND NOT a.attisdropped\n)\nSELECT 'column' AS object, e.table_name || '.' || e.column_name AS name,\n\tCASE WHEN l.column_name IS NULL THEN 'missing'\n\t\tWHEN l.atttypid IS DISTINCT FROM pg_catalog.to_regtype(e.type_name) THEN 'type is ' || pg_catalog.format_type(l.atttypid, NULL) || ', expected ' || e.type_name\n\t\tELSE 'nullable is ' || l.nullable || ', expected ' || e.nullable END AS problem\nFROM expected_columns e\nLEFT JOIN live_columns l ON l.table_name = e.table_name AND l.column_name = e.column_name\nWHERE l.column_name IS NULL OR l.atttypid IS DISTINCT FROM pg_catalog.to_regtype(e.type_name) OR l.nullable <> e.nullable\nUNION ALL\nSELECT 'index', e.index_name, 'missing' FROM expected_indexes e\nWHERE NOT EXISTS (SELECT 1 FROM live_relations r WHERE r.relkind = 'i' AND r.relname = e.index_name)\nUNION ALL\nSELECT 'constraint', e.table_name || '.' || e.constraint_name, 'missing' FROM expected_constraints e\nWHERE NOT EXISTS (\n\tSELECT 1 FROM pg_catalog.pg_constraint k JOIN live_relations r ON r.oid = k.conrelid\n\tWHERE r.relname = e.table_name AND k.conname = e.constraint_name\n)\nORDER BY 1, 2"
+			}
+		}
+	]
+}
