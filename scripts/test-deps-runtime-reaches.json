@@ -16,12 +16,13 @@
 		},
 		{
 			"from": "packages/cli/test/typescript-project-codegen.test.ts",
-			"needs": [
-				"@hobo/bindles#build",
-				"@hobo/core#build",
-				"@hobo/runtime#build"
-			],
-			"why": "links packages/bindles, and packages/runtime and packages/core by a name it computes, into generated projects' node_modules/@hobo, compiles the generated code against their dist/ types and imports it, which imports them by name"
+			"needs": ["@hobo/bindles#build"],
+			"why": "links packages/bindles into a generated project's node_modules/@hobo, compiles the generated code against its dist/ types and imports it, which imports it by name"
+		},
+		{
+			"from": "packages/cli/test/typescript-project-codegen-ambient-and-aliases.test.ts",
+			"needs": ["@hobo/core#build", "@hobo/runtime#build"],
+			"why": "links packages/runtime and packages/core by a name it computes into a generated project's node_modules/@hobo, compiles the generated code against their dist/ types and imports it, which imports them by name"
 		},
 		{
 			"from": "packages/hobo/test/persistent-local-deployment.test.ts",

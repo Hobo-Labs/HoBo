@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bindle, collectRequiredRuntimes } from "@hobo/bindles";
+import type { HoboRuntimeHost } from "@hobo/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { initBareMetalYard, resolveBindlePlacement } from "../src/index.js";
@@ -46,7 +47,7 @@ describe("required runtimes + broker hard-fail", () => {
 		);
 	});
 
-	it("accepts placement after hobo add runtime-oci is recorded", async () => {
+	it("passes the runtime check once hobo add runtime-oci is recorded", async () => {
 		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-rt-accept-"));
 		cleanups.push(() => rm(hoboHome, { recursive: true, force: true }));
 		initBareMetalYard({ hoboHome, componentHost: "local" });
@@ -57,20 +58,30 @@ describe("required runtimes + broker hard-fail", () => {
 			const api = b.api().withReference(redis);
 			return { redis, api };
 		});
-
+		// A ready oci host, so its readiness (a kubectl client equipped under
+		// HOBO_HOME) is neither the machine's nor the reason for the outcome.
 		const placement = await resolveBindlePlacement({
 			definition,
 			hoboHome,
+			runtimeHost: (kind): HoboRuntimeHost => {
+				if (kind !== "oci") throw new Error(`unexpected ${kind} host`);
+				return {
+					kind: "oci",
+					ensure: async () => ({ kind: "oci", ready: true, notes: [] }),
+					servePrivate: async () => {
+						throw new Error("placement does not serve");
+					},
+				};
+			},
 		});
-		// May still reject if oci ensure fails (no kubectl) — but not for missing install.
-		if (placement.outcome === "rejected") {
-			expect(placement.message).not.toMatch(/not installed/i);
-		} else {
-			expect(placement.componentHost).toBe("oci");
-			expect(placement.requiredRuntimes).toEqual(["oci"]);
-		}
-		// First placement equips the isolated wasm toolchain (a wasmtime
-		// download) into the throwaway HOBO_HOME — far beyond the 10s default.
+		// Past the runtime check, whatever placement then decides. Today a fresh
+		// HOBO_HOME seeds only a local-provider yard, so an oci bindle (which asks
+		// for @hobo/provider-oci) is refused for the yard inventory; that is
+		// placement's to change, and this case does not pin it.
+		expect(placement.message).not.toMatch(/not installed/i);
+		expect(placement.requiredRuntimes).toEqual(["oci"]);
+		// First placement equips the isolated wasm toolchain into the throwaway
+		// HOBO_HOME, beyond the 10s default when it has to download.
 	}, 300_000);
 
 	it("hard-fails wasm-component when runtime-wasm not installed", async () => {

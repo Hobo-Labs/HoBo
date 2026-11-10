@@ -6,14 +6,19 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, it } from "vitest";
 import { initBareMetalYard } from "../src/bare-metal-yard.js";
+import { readLocalDeployment } from "../src/local-deployment.js";
 
 const exec = promisify(execFile);
 const bin = fileURLToPath(new URL("../dist/bin/hobo.js", import.meta.url));
 
-// Each template has its own root and HOBO_HOME, and the deployment listens on a
-// port the OS picks, so the four run side by side.
-describe.concurrent("canonical starter through real self-hosted deployment", () => {
-	it.for(["todo", "api", "agent", "fullstack"])(
+// One template carries the packaged lifecycle. The four starters share one
+// project tree (packages/patterns/patterns/starter/cli/<template>/project are
+// byte-identical) and differ only in the names and route filled into it, and
+// `new → codegen → build → /proof` for every template runs in-process in
+// packages/cli/test/starter-end-to-end.test.ts. What this file adds, the
+// packaged `up` → HTTP → `down`, does not depend on the template.
+describe("canonical starter through real self-hosted deployment", () => {
+	it.for(["fullstack"])(
 		"new → codegen → build → packaged up → HTTP → down for %s",
 		{ timeout: 300_000 },
 		async (template, { expect }) => {
@@ -80,7 +85,11 @@ describe.concurrent("canonical starter through real self-hosted deployment", () 
 					fetch(up.data.primaryUrl, { signal: AbortSignal.timeout(1000) }),
 				).rejects.toThrow();
 			} finally {
-				await command(["down"]).catch(() => undefined);
+				// The local deployment's `down` acts on its receipt; with none left it
+				// falls through to the runtime `down`, which this deployment never
+				// used. A passing run has already stopped it.
+				const live = await readLocalDeployment(project).catch(() => true);
+				if (live) await command(["down"]).catch(() => undefined);
 				await rm(root, { recursive: true, force: true });
 			}
 		},

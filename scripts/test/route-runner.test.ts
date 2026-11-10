@@ -1,18 +1,29 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+	BURST_SECONDS,
+	chooseRunner,
 	DEFAULT_MAX_QUEUED,
 	DEFAULT_MAX_WAIT_SECONDS,
 	fleetLabelFor,
+	hasChosen,
 	type LabelLoad,
 	labelLoad,
 	lookupOrder,
+	MAX_PROBE_LOOKUPS,
 	MAX_RUN_LOOKUPS,
 	main,
 	observeQueue,
+	PROBE_POLL_SECONDS,
+	PROBE_WAIT_SECONDS,
+	PROBE_WORKFLOW_PATH,
 	parseRouteMode,
+	probeRunIds,
+	type QueueView,
 	RECENT_PICKUP_SECONDS,
+	refusingJobs,
 	routeRunner,
+	runsJustAhead,
 	type SeenJob,
 	STALE_WAIT_SECONDS,
 	seenJobs,
@@ -37,19 +48,24 @@ const taken = (label: string, waited: number, ago: number): SeenJob => ({
 	createdAtMs: NOW - (ago + waited) * 1000,
 	startedAtMs: NOW - ago * 1000,
 });
+/** Nothing waiting and nothing seen: a label no runner is known to serve. */
 const idle: LabelLoad = {
 	queued: 0,
 	oldestWaitSeconds: 0,
+	recentPickups: 0,
 	slowestRecentPickupSeconds: 0,
 };
+/** Nothing waiting, and a runner took a job a moment ago without delay. */
+const up: LabelLoad = { ...idle, recentPickups: 1 };
 const decide = (overrides: Partial<Parameters<typeof routeRunner>[0]> = {}) =>
 	routeRunner({
 		mode: "auto",
 		fleetLabel: "hobo",
 		localEnrolled: false,
 		limits,
-		fleet: idle,
-		local: idle,
+		fleet: up,
+		local: up,
+		undecidedAhead: 0,
 		...overrides,
 	});
 
@@ -64,6 +80,7 @@ describe("the load on a label", () => {
 		assert.deepEqual(labelLoad(jobs, "hobo", NOW), {
 			queued: 2,
 			oldestWaitSeconds: 900,
+			recentPickups: 0,
 			slowestRecentPickupSeconds: 0,
 		});
 		assert.deepEqual(labelLoad(jobs, "hobo-local-host", NOW), idle);
@@ -78,6 +95,7 @@ describe("the load on a label", () => {
 		assert.deepEqual(labelLoad(jobs, "hobo", NOW), {
 			queued: 1,
 			oldestWaitSeconds: 10,
+			recentPickups: 0,
 			slowestRecentPickupSeconds: 0,
 		});
 	});
@@ -92,19 +110,21 @@ describe("the load on a label", () => {
 		assert.deepEqual(labelLoad(jobs, "hobo", NOW), {
 			queued: 0,
 			oldestWaitSeconds: 0,
+			recentPickups: 2,
 			slowestRecentPickupSeconds: 1500,
 		});
 	});
 });
 
 describe("whether a backend is taking jobs", () => {
-	it("is while nothing is past a limit", () => {
-		assert.equal(takingJobs(idle, limits), true);
+	it("is while a runner took a job recently and nothing is past a limit", () => {
+		assert.equal(takingJobs(up, limits), true);
 		assert.equal(
 			takingJobs(
 				{
 					queued: DEFAULT_MAX_QUEUED - 1,
 					oldestWaitSeconds: DEFAULT_MAX_WAIT_SECONDS - 1,
+					recentPickups: 1,
 					slowestRecentPickupSeconds: DEFAULT_MAX_WAIT_SECONDS - 1,
 				},
 				limits,
@@ -113,9 +133,17 @@ describe("whether a backend is taking jobs", () => {
 		);
 	});
 
+	// What happened: the merge queue was rebuilt, ten runs chose in the same
+	// second, each saw nothing waiting for the fleet, and all ten joined a
+	// fleet that was taking minutes to pick a job up.
+	it("is not on an empty queue alone: no runner has been seen to take a job", () => {
+		assert.equal(takingJobs(idle, limits), false);
+		assert.equal(refusingJobs(idle, limits), false);
+	});
+
 	it("is not once a job has waited past the limit", () => {
 		assert.equal(
-			takingJobs({ ...idle, queued: 1, oldestWaitSeconds: 120 }, limits),
+			takingJobs({ ...up, queued: 1, oldestWaitSeconds: 120 }, limits),
 			false,
 		);
 	});
@@ -124,18 +152,18 @@ describe("whether a backend is taking jobs", () => {
 	// jobs, the oldest 283 s old against a 300 s limit, and the next run joined it.
 	it("is not once many jobs are waiting, however young the oldest is", () => {
 		assert.equal(
-			takingJobs({ ...idle, queued: 11, oldestWaitSeconds: 30 }, limits),
+			takingJobs({ ...up, queued: 11, oldestWaitSeconds: 30 }, limits),
 			false,
 		);
 		assert.equal(
-			takingJobs({ ...idle, queued: DEFAULT_MAX_QUEUED }, limits),
+			takingJobs({ ...up, queued: DEFAULT_MAX_QUEUED }, limits),
 			false,
 		);
 	});
 
 	it("is not while it was recently slow to pick a job up, even with nothing waiting", () => {
 		assert.equal(
-			takingJobs({ ...idle, slowestRecentPickupSeconds: 1500 }, limits),
+			takingJobs({ ...up, slowestRecentPickupSeconds: 1500 }, limits),
 			false,
 		);
 	});
@@ -159,10 +187,28 @@ describe("the routing decision", () => {
 
 	it("says so when the reason is a slow recent pickup", () => {
 		const routed = decide({
-			fleet: { ...idle, slowestRecentPickupSeconds: 1500 },
+			fleet: { ...up, slowestRecentPickupSeconds: 1500 },
 		});
 		assert.equal(routed.tier, "github");
-		assert.match(routed.reason, /recently took 1500 s to pick a job up/);
+		assert.match(routed.reason, /recently took up to 1500 s to pick a job up/);
+	});
+
+	it("goes to GitHub-hosted, and says why, when no runner has been seen on the fleet", () => {
+		const routed = decide({ fleet: idle });
+		assert.equal(routed.tier, "github");
+		assert.match(
+			routed.reason,
+			/the fleet has nothing waiting, and has not been seen to pick a job up in the last 15 minutes/,
+		);
+	});
+
+	it("leaves the self-hosted runners to a run that started just ahead and has not chosen", () => {
+		const routed = decide({ localEnrolled: true, undecidedAhead: 2 });
+		assert.equal(routed.tier, "github");
+		assert.match(
+			routed.reason,
+			/2 run\(s\) started in the 60 s before this one and have not chosen a runner yet/,
+		);
 	});
 
 	it("prefers an enrolled local box over GitHub-hosted", () => {
@@ -295,7 +341,7 @@ describe("reading GitHub's queue", () => {
 
 	it("stops reading once the label is seen not taking jobs", async () => {
 		const paths: string[] = [];
-		const jobs = await observeQueue({
+		const { jobs } = await observeQueue({
 			read: async (path) => {
 				paths.push(path);
 				if (path.includes("/jobs")) return jobsPage(10, 4000);
@@ -321,7 +367,7 @@ describe("reading GitHub's queue", () => {
 			})),
 		};
 		let jobLists = 0;
-		const jobs = await observeQueue({
+		const { jobs } = await observeQueue({
 			read: async (path) => {
 				if (!path.includes("/jobs")) return many;
 				jobLists += 1;
@@ -358,6 +404,198 @@ describe("reading GitHub's queue", () => {
 			nowMs: NOW,
 		});
 		assert.equal(jobLists, MAX_RUN_LOOKUPS);
+	});
+
+	const probePage = {
+		workflow_runs: [
+			{ id: 50, status: "in_progress", created_at: at(5) },
+			{ id: 49, status: "queued", created_at: at(20) },
+			{ id: 48, status: "queued", path: PROBE_WORKFLOW_PATH },
+			{ id: 47, status: "in_progress", created_at: at(BURST_SECONDS + 30) },
+			{ id: 46, status: "completed", path: PROBE_WORKFLOW_PATH },
+			{ id: 45, status: "completed", created_at: at(10) },
+			{ id: 44, status: "completed", path: PROBE_WORKFLOW_PATH },
+			{ id: 43, status: "completed", path: PROBE_WORKFLOW_PATH },
+			{ id: 51, status: "queued", created_at: at(2) },
+		],
+	};
+
+	it("takes the newest probe runs, finished or not, and keeps them out of the rest", () => {
+		assert.equal(MAX_PROBE_LOOKUPS, 3);
+		assert.deepEqual(probeRunIds(probePage), [48, 46, 44]);
+		assert.deepEqual(unfinishedRunIds(probePage, 50), [47, 49, 51]);
+	});
+
+	it("finds the unfinished runs that started just ahead of this one", () => {
+		// 51 started after it, 47 too long before it, 45 has finished.
+		assert.deepEqual(runsJustAhead(probePage, 50, NOW), [49]);
+		assert.deepEqual(runsJustAhead(probePage, 51, NOW), [50, 49]);
+		// A run missing from the page is measured from now.
+		assert.deepEqual(runsJustAhead(probePage, 52, NOW), [51, 50, 49]);
+	});
+
+	it("takes a run to have chosen once one of its jobs has finished", () => {
+		assert.equal(hasChosen({ jobs: [{ status: "in_progress" }] }), false);
+		assert.equal(hasChosen({ jobs: [] }), false);
+		assert.equal(
+			hasChosen({ jobs: [{ status: "completed" }, { status: "queued" }] }),
+			true,
+		);
+	});
+
+	it("reads the probe runs first, then the runs just ahead, and counts those that have not chosen", async () => {
+		const read: number[] = [];
+		const pickedUp = (runId: number) => ({
+			jobs: [
+				{
+					run_id: runId,
+					status: "completed",
+					labels: ["hobo"],
+					runner_name: "hobo-1",
+					created_at: at(65),
+					started_at: at(60),
+				},
+			],
+		});
+		const view = await observeQueue({
+			read: async (path) => {
+				const runId = Number(/runs\/(\d+)\/jobs/.exec(path)?.[1]);
+				if (Number.isNaN(runId)) return probePage;
+				read.push(runId);
+				if (runId === 46) return pickedUp(46);
+				// 49 has finished its route job; 50 is still on it.
+				if (runId === 49) return { jobs: [{ status: "completed" }] };
+				return { jobs: [{ status: "in_progress" }] };
+			},
+			repository: "acme/app",
+			ownRunId: 51,
+			labels: ["hobo"],
+			limits,
+			nowMs: NOW,
+		});
+		assert.deepEqual(read, [48, 46, 44, 50, 49, 47]);
+		assert.equal(view.undecidedAhead, 1);
+		assert.equal(view.probeUnderway, true);
+		const load = labelLoad(view.jobs, "hobo", NOW);
+		assert.equal(load.recentPickups, 1);
+		assert.equal(takingJobs(load, limits), true);
+	});
+
+	it("counts a run just ahead as not having chosen when there was no lookup left for it", async () => {
+		const crowd = {
+			workflow_runs: Array.from({ length: 12 }, (_, index) => ({
+				id: index + 100,
+				status: "queued",
+				created_at: at(10),
+			})),
+		};
+		const view = await observeQueue({
+			read: async (path) =>
+				path.includes("/jobs") ? { jobs: [{ status: "completed" }] } : crowd,
+			repository: "acme/app",
+			ownRunId: 111,
+			labels: ["hobo"],
+			limits,
+			nowMs: NOW,
+		});
+		assert.equal(view.undecidedAhead, 11 - MAX_RUN_LOOKUPS);
+	});
+});
+
+describe("waiting for the probe", () => {
+	/** Plays out a list of queue views, one per look, on a clock only `sleep` moves. */
+	const choose = async (
+		views: readonly QueueView[],
+		overrides: { localEnrolled?: boolean } = {},
+	) => {
+		let clock = NOW;
+		let looks = 0;
+		const decision = await chooseRunner({
+			observe: async () => {
+				const view = views[Math.min(looks, views.length - 1)];
+				looks += 1;
+				assert.ok(view);
+				return view;
+			},
+			now: () => clock,
+			sleep: async (wait) => {
+				clock += wait * 1000;
+			},
+			mode: "auto",
+			fleetLabel: "hobo",
+			localEnrolled: overrides.localEnrolled ?? false,
+			limits,
+		});
+		return { decision, looks, waited: (clock - NOW) / 1000 };
+	};
+	const quiet = { jobs: [], undecidedAhead: 0, probeUnderway: false };
+	const probing = { ...quiet, probeUnderway: true };
+	// `taken` is relative to NOW; the clock has moved on by the time it is seen.
+	const answered = { ...probing, jobs: [taken("hobo", 12, -20)] };
+
+	it("decides at once when the fleet has been seen taking jobs", async () => {
+		const seen = await choose([{ ...quiet, jobs: [taken("hobo", 5, 60)] }]);
+		assert.deepEqual([seen.decision.tier, seen.looks], ["fleet", 1]);
+	});
+
+	it("decides at once when nothing is known and no probe is under way", async () => {
+		const seen = await choose([quiet]);
+		assert.deepEqual(
+			[seen.decision.tier, seen.looks, seen.waited],
+			["github", 1, 0],
+		);
+	});
+
+	it("uses the fleet once the probe is picked up", async () => {
+		const seen = await choose([probing, probing, answered]);
+		assert.equal(seen.decision.tier, "fleet");
+		assert.equal(seen.waited, 2 * PROBE_POLL_SECONDS);
+	});
+
+	it("gives up after the wait and says how long it waited", async () => {
+		const seen = await choose([probing]);
+		assert.equal(seen.decision.tier, "github");
+		assert.equal(seen.waited, PROBE_WAIT_SECONDS);
+		assert.match(
+			seen.decision.reason,
+			/waited 60 s for the probe to be picked up/,
+		);
+	});
+
+	it("does not wait on a fleet that is refusing jobs", async () => {
+		const seen = await choose([
+			{ ...probing, jobs: [waiting("hobo", 900), waiting("hobo", 10)] },
+		]);
+		assert.deepEqual([seen.decision.tier, seen.waited], ["github", 0]);
+	});
+
+	it("does not wait while a run ahead has yet to choose", async () => {
+		const seen = await choose([{ ...probing, undecidedAhead: 1 }]);
+		assert.deepEqual([seen.decision.tier, seen.waited], ["github", 0]);
+	});
+
+	it("waits for the fleet even when the local box is already taking jobs", async () => {
+		const local = taken("hobo-local-host", 5, 30);
+		const seen = await choose(
+			[
+				{ ...probing, jobs: [local] },
+				{ ...probing, jobs: [local, taken("hobo", 12, -5)] },
+			],
+			{ localEnrolled: true },
+		);
+		assert.deepEqual(
+			[seen.decision.tier, seen.waited],
+			["fleet", PROBE_POLL_SECONDS],
+		);
+	});
+
+	it("falls back to the local box when the probe finds only that", async () => {
+		const seen = await choose(
+			[probing, { ...probing, jobs: [taken("hobo-local-host", 8, -5)] }],
+			{ localEnrolled: true },
+		);
+		assert.equal(seen.decision.tier, "local");
+		assert.equal(seen.waited, PROBE_WAIT_SECONDS);
 	});
 });
 

@@ -108,6 +108,32 @@ the generated plan is printed by `--dry-run` and is not accepted as executable
 input. The existing relay command/event and PostgreSQL replay semantics remain
 independent.
 
+## Database
+
+The relay speaks plain Postgres through `pg` and creates its own tables on first start. Nothing in
+its store depends on a particular host. Point it at any Postgres with two variables, which are the
+same URL when no pooler sits in front of the database:
+
+```sh
+DATABASE_URL=postgres://hobo_ci:<password>@<host>:5432/hobo_ci
+DATABASE_URL_UNPOOLED=postgres://hobo_ci:<password>@<host>:5432/hobo_ci
+```
+
+[`deploy/postgres/compose.yaml`](deploy/postgres/compose.yaml) runs a self-hosted Postgres 17 with a
+named volume, a password from a file and a health check. The database must be reachable from where
+the relay runs, over TLS.
+
+Checked against a self-hosted PostgreSQL 16.15: the store's real-database tests pass
+(`HOBO_TEST_POSTGRES_URL=… vitest run` in `@hobo/ci`, 68 tests), and the relay starts, creates its
+18 tables and reports that it is waiting for the GitHub App.
+
+Two things still tie a production relay to Neon. Its start-up reads credentials from a
+runtime-config broker whose address is fixed in `src/entry.ts`; setting
+`HOBO_CI_GITHUB_APP_ID` (with its key and webhook secret) or `HOBO_CI_BOOTSTRAP_TOKEN_SHA256` in the
+relay's environment bypasses the broker. And its schema is created by statements inside the store;
+the plan is a Drizzle schema with generated migrations (see
+[CI Relay Mesh](../../docs/design/ci-relay-mesh.md)).
+
 ## Hosted relay
 
 The relay's HTTP surface is not this package's: `createRelayHandler` (Fetch),

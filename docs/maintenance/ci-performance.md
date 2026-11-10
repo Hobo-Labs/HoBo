@@ -120,6 +120,36 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   and checks that both real entries scope without giving up. #1652 (ci-gh-actions) and #1653
   (`scripts/run-tests.ts`) would have skipped both jobs: 1–3 slot-minutes each per run, excluding stalls.
 
+## The hobo package's child-process tests
+
+About 80% of `@hobo/hobo`'s test time went to four files that start the `hobo` binary as child
+processes, each spending seconds loading the CLI before doing any work. The suite now starts fewer of
+them, and each of the rest from the built `dist` where TypeScript loading is not what it tests:
+
+- `starter-deployment-end-to-end` runs the packaged `up` → HTTP → `down` lifecycle for one starter
+  (fullstack). The four starter trees are byte-identical, and `packages/cli/test/starter-end-to-end.test.ts`
+  runs `new → codegen → build → /proof` for all four in-process.
+- `persistent-local-deployment` walks one deployment through serve, reuse, edit and `down`, and
+  expires one `--anonymous` deployment. `--temporary` takes the same TTL rule (`wantsAnonymousMode`), and
+  `self-hosted-broker.test.ts` checks in-process, with the worker start stood in for, that the persistent
+  lane asks for the TTL under each flag. Its cleanup, and the starter test's, runs `down` only while a
+  receipt is left.
+- `composed-temp-dirs` runs its fixture on bare node against `dist`, in seven cases instead of nine.
+- `bin-opensesame` keeps `node --import tsx` only for the case about relaunching with the loader.
+- `ci-runs` passes its no-op `sleep` from the shared harness, and `runtime-requirements` gives the oci
+  placement case a ready stub host instead of equipping kubectl, asserting only that it gets past the
+  runtime check.
+- `login-device-grant` keeps the cases only the command shows; RFC 8628 protocol cases are in
+  `oidc-device-grant.test.ts`.
+
+- The package's `pretest` builds it outside turbo (`scripts/ensure-built.mts`), so a local run does
+  not test a stale `dist`.
+
+Measured back to back on one CPU (`taskset -c 0`, `CI=1`, `HOBO_TEST_MAX_WORKERS=1`) on a shared host,
+whose load rose through both runs: 896.5 s wall and 461.8 s CPU before (load 3.8 → 24.6), 460.4 s wall
+and 241.9 s CPU after (load 24.6 → 37.3). CPU is the steadier figure. The wasm files, `fileParallelism`,
+and the CLI's eager imports are left for later changes.
+
 ## Changed paths on stdin
 
 `job-scope.mts`, `dependent-tests.mts` and `impact-classifier.mts` read the changed paths that a
@@ -248,11 +278,18 @@ Every routed workflow starts with a **Route runners** job on a GitHub-hosted
 machine. The run's jobs ask for the label it chose: the fleet (`hobo`, or
 `hobo-trunk` for trunk events) while it is taking jobs, an enrolled local box
 (`hobo-local-host`) when it is not, and `ubuntu-24.04` when neither is. A
-backend is taking jobs when no job asking for its label has waited 120
-seconds, none it took in the last 15 minutes had, and fewer than 4 are waiting. The two required
+backend is taking jobs when a runner took a job for its label in the last 15
+minutes, no such job has waited 120 seconds, none it took in that time had,
+and fewer than 4 are waiting. The **Fleet probe** workflow, started by each CI
+run, keeps a pickup on record for every label that has a runner behind it. A
+label that is down holds one probe job that goes on waiting, which reads as a
+label past its limit; it has its own concurrency group, so it does not hold
+up the probe of another label. After a quiet spell a run waits up to 60 seconds for that probe before giving
+up on the fleet. Runs that start together take turns: one that started just
+after another that has not chosen yet goes to GitHub-hosted. The two required
 gates are always GitHub-hosted. A run that says `runner: ubuntu-24.04 (github)`
-in its Route runners log was sent there because the fleet's queue was past a
-limit, and the same line gives what it saw.
+in its Route runners log was sent there for one of those reasons, and the same
+line says which.
 
 On a GitHub-hosted machine a job runs the same steps with no deps layer and a
 cold pnpm store unless main has saved one, so installs are slower and the
@@ -288,3 +325,47 @@ done; running: <file> (<age>s)`, so a stuck file is named while it is stuck. A h
 late on the wall clock but not on the monotonic one prints `the host was paused for about Ns`, which
 places the pause in the log. The run ends with the ten slowest files. If the step dies with no summary,
 the last heartbeat names what was running. If the log just stops, the box itself stopped.
+
+## The cli package's test cost
+
+`packages/cli`'s suite spends nearly all of its time compiling TypeScript inside the tests (codegen
+passes over real projects), not sleeping, spawning or waiting on a network. What keeps it down:
+
+- **One module graph per worker.** `packages/cli/vitest.config.ts` keeps the root's `isolate: false`.
+  Per-file isolation re-imported `src/index`, every `@hobo/*` dependency and the compiler for each of
+  the 40-odd files. No file keeps state across files: env changes are restored in `finally`/`afterEach`
+  (to the runner's value, not deleted), and every file that registers trainables or imports generated
+  code in-process calls `resetTrainables()` after each test. The suite passes in file order and
+  shuffled (`--sequence.shuffle --sequence.seed=<n>`).
+- **Shared fixtures.** `test/support/built-starter.ts` builds each starter (`new` → `codegen` →
+  `build`) once per worker and hands each caller a copy; a run-scoped `globalSetup`
+  (`test/support/run-scratch.ts`) removes them. The cli config keeps the root's `globalSetup` list
+  minus its wasmtime warm-up, which no cli test uses, so a setup the root adds later still runs.
+- **Cheaper codegen passes, mostly from the declaration cache.** Codegen's compiler host takes the lib
+  files and installed packages' `.d.ts` from a bounded cache (`src/codegen/declaration-cache.ts`, least
+  recently used out past 2048 entries), so the two programs of a pass, and every later pass, reuse
+  them; that is most of the win. Codegen also type-checks no declaration file, but it must still check
+  tests and every other non-declaration file (`sourceDiagnostics`, so a missing global type a test
+  file needs is still reported), which gives back much of that saving, and a project with
+  `skipLibCheck` gains about nothing from it because the compiler skips declarations anyway. `typescript-app-build`'s fixture uses real
+  `@types/node` (with `skipLibCheck`) only in the case that packages and runs the app.
+- **Cheap refusals first, on authoritative inputs only.** `hobo build` refuses an explicit empty
+  `services` list, or an explicit runtime for a Node app whose imprint's recorded inputs all still
+  match, before its freshness gate regenerates the project. A project codegen has not generated (just
+  scaffolded, or cloned without `.hobo/`) still gets the gate's drift answer
+  (`test/build-before-codegen.test.ts`).
+- **Workers.** CI runs one worker (`CI` set); elsewhere files spread across cores under the
+  memory-derived `HOBO_TEST_MAX_WORKERS` cap. `typescript-project-codegen` is four files so it is not a
+  single critical path. Case timeouts go through `test/support/slow.ts`, so `HOBO_TEST_TIMEOUT` can
+  raise them on a loaded runner.
+- **Lighter `hobo` processes.** `@hobo/cli` loads `ts-autocode-training` only when a codegen
+  directive scan runs, and `@hobo/cli/argv` exports `CANONICAL_VERBS` and `parseArgv` without the CLI.
+  The compiler still loads with `@hobo/cli`: `ts-autocode-grounding`'s only export imports it, and
+  `codegen/text.ts` (used by the cloud loader) takes its digest helpers from there.
+
+Measured on one CPU (`taskset -c 0`, `CI=1`, `HOBO_TEST_MAX_WORKERS=1`, `HOBO_TEST_TIMEOUT=600000`,
+fresh `HOME`/`HOBO_HOME`/`TMPDIR`), back to back on a shared 4-CPU host: origin/main 550 s wall, 519 s
+CPU (545 tests, load 16.5 → 12.5); after these changes 316 s wall, 303 s CPU (562 tests, load 12.7 →
+8.4). Both runs fail the same 2 tests and one file, all because of this host: no `cue` v0.14.0 on
+`PATH` (`codegen-schema-contract`), and a `/tmp/.hobo` marker above `os.tmpdir()` that `ci.test.ts` and
+`shell.test.ts` read as a project root.
