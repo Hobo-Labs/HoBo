@@ -230,6 +230,7 @@ describe("ci-runner image contract (repo manifests)", () => {
 			"node",
 			"pnpm",
 			"shellcheck",
+			"syft",
 			"turbo",
 		]);
 		const platforms = [
@@ -344,7 +345,15 @@ describe("ci-runner image contract (repo manifests)", () => {
 			};
 		};
 		evaluateCiRunnerContract(root, { run });
-		const tools = ["cue", "gitleaks", "node", "pnpm", "shellcheck", "turbo"];
+		const tools = [
+			"cue",
+			"gitleaks",
+			"node",
+			"pnpm",
+			"shellcheck",
+			"syft",
+			"turbo",
+		];
 		const resolveCalls = calls.filter(
 			(call) => call.cmd === "mise" && call.args[2] === "which",
 		);
