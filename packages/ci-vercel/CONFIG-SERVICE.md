@@ -5,10 +5,12 @@ the hosted relay reads its configuration and secrets from a separate service,
 read-only, and holds no secret to do it. The first binding is Infisical Cloud on
 the free plan, through [`@hobo/adapter-infisical`](../adapters/adapter-infisical/README.md).
 
-What exists now: the loader (`src/relay-runtime-config.ts`), the adapter, and
-`hobo ci app create`. Not yet: `entry.ts` still loads its configuration as
-before; a later phase switches it to this loader. Nothing here has been run
-against Infisical, GitHub or Vercel; the tests use local stand-ins.
+What exists now: the loader (`src/relay-runtime-config.ts`), the adapter,
+`hobo ci app create`, and (phase 6) the relay's Yard and the deploy workflow on
+`main` ([below](#the-deploy-workflow-on-main)). Not yet: `entry.ts` still loads
+its configuration as before; a later phase switches it to this loader. Nothing
+here has been run against Infisical, GitHub or Vercel; the tests use local
+stand-ins.
 
 ## How the relay signs in
 
@@ -119,7 +121,72 @@ Plain configuration on the Vercel project, not secrets:
 
 `HOBO_CI_CONFIG_SERVICE` is a setting of the relay's Bindle
 ([`src/bindle.ts`](src/bindle.ts)); the `INFISICAL_*` coordinates belong to the
-config-service binding, which phase 6 declares at Camp scope.
+config-service binding of the relay's Yard ([`deploy/yard.ts`](deploy/yard.ts),
+phase 6). The production Camp chooses that binding: it projects
+`HOBO_CI_CONFIG_SERVICE=infisical`, `INFISICAL_SITE_URL` and
+`INFISICAL_SECRET_PATH`, the Camp adds `INFISICAL_ENVIRONMENT=prod`, and the two
+ids are given at deploy time from repository variables. `hobo ci deploy` sets
+them on the project for production; nobody types them into Vercel.
+
+## The deploy workflow on `main`
+
+[`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)
+deploys the relay to production on every push to `main` that changes it, and on
+a manual run (Actions → HoBo relay deploy → Run workflow). It never asks anyone
+to deploy, and it holds no secret: it signs in to Infisical with the job's GitHub
+Actions OIDC token as `hobo-ci-deploy` (step 4 above) and reads `VERCEL_TOKEN`
+from the `hobo-ci-deploy` project (step 5), masked in the log.
+
+### Repository variables
+
+Settings → Secrets and variables → Actions → **Variables** (not Secrets: these
+are ids and coordinates, and the job reads them as `vars.*`). Until the first
+five are set, the job ends with a notice naming the missing ones, and succeeds.
+
+| Variable | Value | Required |
+|---|---|---|
+| `HOBO_CI_DEPLOY_INFISICAL_IDENTITY_ID` | the id of the `hobo-ci-deploy` identity | yes |
+| `HOBO_CI_DEPLOY_INFISICAL_PROJECT_ID` | the id of the `hobo-ci-deploy` project | yes |
+| `HOBO_CI_RELAY_INFISICAL_IDENTITY_ID` | the id of the `hobo-ci-relay` identity (the relay's `INFISICAL_IDENTITY_ID`) | yes |
+| `HOBO_CI_RELAY_INFISICAL_PROJECT_ID` | the id of the `hobo-ci` project (the relay's `INFISICAL_PROJECT_ID`) | yes |
+| `HOBO_CI_RELAY_VERCEL_TEAM_ID` | the Vercel team id, `team_…` | yes |
+| `HOBO_CI_DEPLOY_INFISICAL_ENVIRONMENT` | the deploy project's environment | no; `prod` |
+| `HOBO_CI_DEPLOY_INFISICAL_SECRET_PATH` | the folder holding `VERCEL_TOKEN` | no; `/` |
+| `HOBO_CI_INFISICAL_SITE_URL` | `https://eu.infisical.com` for EU Cloud | no; US Cloud |
+| `HOBO_CI_DEPLOY_INFISICAL_AUDIENCE` | the audience the deploy identity expects, if not GitHub's default | no |
+| `HOBO_CI_RELAY_URL` | the relay's production origin, for the smoke check | no; the deployment URL, which Deployment Protection may answer 401 |
+
+### What the workflow does, and what stays with the owner
+
+Automated, on every deploy: the setting of the production Camp's non-secret
+configuration, the deployment of the pushed commit, the wait for READY, a smoke
+check (a 5xx from `/healthz` fails the job; `/readyz` is reported, and answers
+`config-unavailable` until the folder above is filled), and the attachment of
+the cache. The cache step runs the Vercel CLI (pinned `vercel@65.2.0`) with the
+deploy token in its environment: it lists the project's `upstash` resources,
+and, when `hobo-ci-cache` is missing, connects the team's resource of that name
+for production or provisions one (`vercel integration add upstash/upstash-kv
+--name hobo-ci-cache --environment production --no-env-pull --non-interactive`).
+Its outcome is in the job summary; a failure there does not stop the deploy.
+
+One-time owner steps, in a browser, besides steps 1–8 above:
+
+1. **Install the Upstash integration on the team** (Vercel accepts an
+   integration's terms only from a person: `vercel integration accept-terms`
+   needs a terminal). Vercel dashboard → the team → **Integrations** →
+   **Browse Marketplace** → **Upstash** → **Install** → accept the terms → choose
+   the team. Stop before creating a database: the workflow provisions
+   `hobo-ci-cache` on its next run. To do it by hand instead: **Storage** →
+   **Create Database** → **Upstash for Redis** → name `hobo-ci-cache`, free plan →
+   **Connect Project** → `hobo-ci`, environments Production and Preview.
+2. **Team issuer for OIDC** on the `hobo-ci` project (step 3 above): Project →
+   Settings → Security → *Secure backend access with OIDC federation* → Team.
+3. **Disconnect what the relay no longer uses** once phase 8 has cut over:
+   Project → Settings → Integrations → Neon and Turso → Disconnect.
+
+Not provisioned by the workflow, by design: Turso, Vercel Blob and Valkey are
+rows of the Yard's catalog that no Camp chooses. Choosing one is a change to
+`deploy/yard.ts` (a Camp's `require`), reviewed like any other.
 
 ## What the folder holds
 

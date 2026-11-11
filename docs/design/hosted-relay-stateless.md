@@ -9,9 +9,10 @@ tags: [hobo, design, ci, relay, twelve-factor]
 # Hosted CI Relay Without Durable State
 
 **Status:** design accepted as
-[ADR-0179](./adr/hosted-relay-stateless.md#adr-0179); nothing in this document
-is implemented yet. Phase 1 of the [delivery plan](#delivery-plan) is this
-document. Until phase 7 lands, the relay still runs on PostgreSQL as
+[ADR-0179](./adr/hosted-relay-stateless.md#adr-0179). Phase 1 of the
+[delivery plan](#delivery-plan) is this document; phase 6 (deployment from a
+Yard, and the deploy workflow on `main`) is implemented and exercised against
+fakes only ([status](#deployment-through-hobo)). Until phase 7 lands, the relay still runs on PostgreSQL as
 [`@hobo/ci-vercel`](../../packages/ci-vercel/README.md) describes, and those
 sections are marked superseded.
 
@@ -417,6 +418,32 @@ workflow on `main` runs it: it authenticates to Infisical with GitHub OIDC,
 reads the Vercel deploy credential, and deploys the commit it was triggered
 by. There are no manual deploys.
 
+**Phase 6 status (implemented, exercised against fakes only).** The Yard is
+[`packages/ci-vercel/deploy/yard.ts`](../../packages/ci-vercel/deploy/yard.ts):
+provider `vercel`, project `hobo-ci`, and a catalog of binding rows for the
+HTTP entry and queue consumer, Vercel Queues (`hobo-ci`), the repair schedule,
+the cache backends (Upstash Redis through the Marketplace; Turso through the
+Marketplace; Vercel Blob; Aiven or self-hosted Valkey through a URL in the
+config service) and the config service (Infisical through OIDC Auth). Two Camps,
+`production` and `preview`, each require the profiles their environment needs;
+both choose the Upstash cache, and only production chooses the config service,
+because the relay's Infisical identity trusts production tokens only.
+`hobo ci deploy` resolves the Camp the target names, takes the provider from the
+Yard, and sets the non-secret settings the chosen rows project, with the two
+Infisical ids given as inputs
+([`ci-relay-yard.ts`](../../packages/hobo/src/ci-relay-yard.ts)). The
+[relay deploy workflow](../../.github/workflows/relay-deploy.yml) runs it on
+every push to `main` that touches the relay's pnpm-lock closure: it reads the
+Vercel token from Infisical with GitHub OIDC, attaches the Upstash cache with
+the Vercel CLI when the project lacks it, deploys with `--target production
+--wait`, and smoke-checks `/healthz` and `/readyz`. Until the owner sets its
+repository variables it ends with a notice. One step stays with the owner:
+installing the Upstash integration on the team, because Vercel accepts an
+integration's terms only from a person
+([owner steps](../../packages/ci-vercel/CONFIG-SERVICE.md#the-deploy-workflow-on-main)).
+The Bindle's `data` resource is still declared until phase 7 rewrites
+`src/bindle.ts`.
+
 **Pay only for what is used.** The relay's deployment includes only what it
 uses. Neon and its Vercel integration, the Neon-hosted config broker and
 Turso (attached to the project but never used) are disconnected.
@@ -430,7 +457,7 @@ Turso (attached to the project but never used) are disconnected.
 | 3 | The config-service client (Infisical OIDC Auth with the Vercel token; GCP Secret Manager behind the same port), and GitHub App creation from `hobo ci` that writes the App's credentials straight into the config service | The relay starts from Infisical with no secret in its environment; App creation lands credentials in custody without passing through the terminal |
 | 4 | A relay store on the cache: deterministic lease ids, per-key compare-and-set, the in-flight index, intent timestamps; Queue intake with delivery-id idempotency; per-lease step messages; rebuild by name | The relay's store contract tests pass on the cache store; killing the cache mid-job loses no job; a duplicated delivery provisions once; GitHub and Vercel name uniqueness verified live |
 | 5 | Helpers on the cache: repair scanners (locks, cursors, rate windows), cookie sessions and OAuth state, bootstrap and onboarding without the platform-App tables, the MCP change ring, provider usage pulls for budgets | Each helper's tests pass on the in-memory cache; the removed control endpoints answer 404 on the hosted relay |
-| 6 | Deployment config (Bindle, Yard, Camp) with cache, queue, schedule and config-service bindings; `hobo ci deploy` planning from it; the deploy workflow on `main`; Marketplace cache provisioning | A merge to `main` deploys the relay with no manual step and no secret in the repository |
+| 6 | Deployment config (Bindle, Yard, Camp) with cache, queue, schedule and config-service bindings; `hobo ci deploy` planning from it; the deploy workflow on `main`; Marketplace cache provisioning | A merge to `main` deploys the relay with no manual step and no secret in the repository. **Yard, Camps, planning, workflow and provisioning implemented ([status](#deployment-through-hobo)); not yet run live, and the Bindle's rewrite is phase 7's** |
 | 7 | Removals ([itemized](#phase-7-removals)) | The hosted relay's bundle has no `pg`, no `@neon/functions` and no `@hobo/data-postgres`; the removed files are gone |
 | 8 | Cutover and an end-to-end job | A real `runs-on: hobo` job runs through the new relay; Neon, the broker and Turso are disconnected |
 

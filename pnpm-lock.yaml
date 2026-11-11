@@ -883,6 +883,15 @@ importers:
       '@hobo/bindles':
         specifier: workspace:*
         version: link:../bindles
+      '@hobo/camps':
+        specifier: workspace:*
+        version: link:../camps
+      '@hobo/provider-vercel':
+        specifier: workspace:*
+        version: link:../providers/provider-vercel
+      '@hobo/yards':
+        specifier: workspace:*
+        version: link:../yards
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
