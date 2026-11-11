@@ -58,8 +58,9 @@ import {
 } from "./job-runner-custody.js";
 import {
 	leaseOccupiesMergeGroupCap,
-	leaseOccupiesWorkerResources,
+	leaseOccupiesWorkerMemory,
 } from "./lease-resource-occupancy.js";
+import { countLiveBoxContainers } from "./live-container-count.js";
 import type { OfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
 import type { IdentityVerifier } from "./oidc.js";
 import {
@@ -68,6 +69,10 @@ import {
 	TRUNK_RUNNER_LABEL,
 } from "./runner-labels.js";
 import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
+import {
+	DEFAULT_UNLAUNCHED_RESERVE_MS,
+	pickUnlaunchedReservationsToRelease,
+} from "./unlaunched-reservation-release.js";
 import { verifyWebhookSignature } from "./webhook-signature.js";
 
 /** Isolated executions are supplied by the hosting runtime and must fail closed. */
@@ -275,6 +280,11 @@ export class HostedRelay {
 			}>;
 			/** Shared witness reruns for jobs bound to offline peer box JIT runners. */
 			offlineJitRecovery?: OfflineJitJobRecovery;
+			unlaunchedReservationRelease?: Readonly<{
+				boundMs?: number;
+				launchSlots: number;
+				backlogImmediate?: boolean;
+			}>;
 			now?: () => string;
 		},
 	) {
@@ -436,6 +446,50 @@ export class HostedRelay {
 		);
 		cache.set(key, bound);
 		return bound;
+	}
+
+	/** Drop reservations that never reached dispatch so fleet runners are not starved. */
+	private async releaseBlockedUnlaunchedReservations(
+		pendingDemand: number,
+	): Promise<void> {
+		const policy = this.options.unlaunchedReservationRelease;
+		if (!policy || policy.launchSlots <= 0) return;
+		const active = await this.options.store.activeLeases();
+		const nowMs = Date.parse(this.now());
+		const releases = pickUnlaunchedReservationsToRelease(active, nowMs, {
+			boundMs: policy.boundMs ?? DEFAULT_UNLAUNCHED_RESERVE_MS,
+			pendingDemand,
+			unlaunchedCount: active.filter(
+				(lease) =>
+					lease.state === "reserved" &&
+					!lease.sandboxName &&
+					lease.runnerId === 0,
+			).length,
+			launchSlots: policy.launchSlots,
+			liveContainerCount: countLiveBoxContainers(active),
+			backlogImmediate: policy.backlogImmediate ?? true,
+		});
+		for (const release of releases) {
+			const lease = active.find((entry) => entry.id === release.leaseId);
+			if (!lease) continue;
+			await this.options.store.cancelAndRequeue(
+				lease.id,
+				this.queuedDemand(lease),
+				this.now(),
+			);
+			console.error(
+				JSON.stringify({
+					event: "hobo_ci_unlaunched_reservation_released",
+					repository: lease.repository,
+					runId: lease.originalRunId,
+					jobId: lease.jobId,
+					leaseId: lease.id,
+					reason: release.reason,
+					ageMs: nowMs - Date.parse(lease.createdAt),
+					pendingDemand,
+				}),
+			);
+		}
 	}
 
 	/** Peer or local ghost box JIT: deregister offline runners so GitHub can re-offer work. */
@@ -1117,6 +1171,8 @@ export class HostedRelay {
 	async dispatchPending(): Promise<number> {
 		this.dispatchGithubJobCache = new Map();
 		const reservationRevision = await this.refreshConfig();
+		const queued = await this.options.store.pendingJobs();
+		await this.releaseBlockedUnlaunchedReservations(queued.length);
 		// Both the reservation (offer concurrency) and the launch (host slots) hand
 		// out capacity in this order, so a freed slot goes to the queue's head.
 		const refOf = (job: Job) => ({
@@ -1129,7 +1185,7 @@ export class HostedRelay {
 		});
 		const active = await this.options.store.activeLeases();
 		const memoryActive = active.filter((lease) =>
-			leaseOccupiesWorkerResources(lease),
+			leaseOccupiesWorkerMemory(lease),
 		);
 		const memoryGeneral = this.options.memoryAdmission
 			? await this.generalLeaseIds()
@@ -1138,7 +1194,6 @@ export class HostedRelay {
 			? await this.trunkLeaseIds(active)
 			: undefined;
 		const memoryBlockedRanks = new Set<number>();
-		const queued = await this.options.store.pendingJobs();
 		await this.requeueSwappedJobs(reservationRevision, active, queued);
 		const pending = await this.admissionOrder(queued, refOf);
 		const limit = this.options.generalLeaseLimit;
@@ -1346,7 +1401,11 @@ export class HostedRelay {
 				}
 				if (!active.some((entry) => entry.id === lease.id)) {
 					active.push(lease);
-					memoryActive.push({ ...lease, state: "dispatching" });
+					if (
+						!memoryActive.some((entry) => entry.id === lease.id) &&
+						leaseOccupiesWorkerMemory(lease)
+					)
+						memoryActive.push(lease);
 				}
 				if (rank === TRUNK_RANK) memoryTrunk?.add(lease.id);
 				if (!trunk) {
@@ -1356,6 +1415,7 @@ export class HostedRelay {
 				if (mergeGroupKey !== undefined) activeMergeGroups.add(mergeGroupKey);
 			}
 		}
+		await this.releaseBlockedUnlaunchedReservations(pending.length);
 		const reserved = await this.admissionOrder(
 			(await this.options.store.activeLeases()).filter(
 				(lease) => lease.state === "reserved",
