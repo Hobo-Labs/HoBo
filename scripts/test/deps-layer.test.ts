@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
+	existsSync,
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
@@ -93,6 +94,13 @@ describe("deps layer linking", () => {
 				join(payload, "packages", "ci-gh-actions", "node_modules", "tsx"),
 				"../../../node_modules/tsx",
 			);
+			// A package the layer was built with and the checkout has since
+			// dropped: `packages/code` left main while layers built before that
+			// were still on the box.
+			link(
+				join(payload, "packages", "dropped", "node_modules", "tsx"),
+				"../../../node_modules/tsx",
+			);
 			const env = {
 				...process.env,
 				HOBO_CI_DEPS_LAYER: key,
@@ -120,6 +128,10 @@ describe("deps layer linking", () => {
 				lstatSync(join(checkout, "node_modules")).isSymbolicLink(),
 				true,
 			);
+			// Linking must not bring a dropped package's directory back: a
+			// directory holding only `node_modules` failed the package-layout
+			// check for a package that no longer exists.
+			assert.equal(existsSync(join(checkout, "packages", "dropped")), false);
 			assert.equal(
 				readlinkSync(
 					join(

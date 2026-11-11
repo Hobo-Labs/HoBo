@@ -19,7 +19,13 @@ export const CORPUS_ENTRY_SCHEMA = "hobo.golden-replay-corpus-entry/v1";
 // public-contract: corpus baseline schema id.
 export const CORPUS_BASELINE_SCHEMA = "hobo.golden-replay-corpus-baseline/v1";
 
-export type EventFieldType = "string" | "u32";
+/**
+ * What a field holds. `string` and `u32` are scalars. `bool` is a flag;
+ * `strings` a list of strings (`repeated string`); `json` a JSON object,
+ * carried on the wire as its canonical text — the form for a small
+ * structured value whose members the contract does not pin one by one.
+ */
+export type EventFieldType = "string" | "u32" | "bool" | "strings" | "json";
 
 export interface EventFieldSpec {
 	readonly name: string;
@@ -34,7 +40,23 @@ export interface EventBodySchema {
 	readonly fields: readonly EventFieldSpec[];
 }
 
-export type EventBodyValue = string | number | undefined;
+/** A JSON value, as a `json` field holds it. */
+export type EventJsonValue =
+	| string
+	| number
+	| boolean
+	| null
+	| readonly EventJsonValue[]
+	| EventJsonObject;
+export type EventJsonObject = { readonly [key: string]: EventJsonValue };
+
+export type EventBodyValue =
+	| string
+	| number
+	| boolean
+	| readonly string[]
+	| EventJsonObject
+	| undefined;
 export type EventBody = Readonly<Record<string, EventBodyValue>>;
 
 export interface EventBodyUpcaster {
@@ -58,7 +80,6 @@ type EventBodyInput =
 type ThrownValue = EventBodyInput;
 type CanonicalValue =
 	| EventBodyValue
-	| boolean
 	| null
 	| readonly CanonicalValue[]
 	| { readonly [key: string]: CanonicalValue };
@@ -133,6 +154,47 @@ export function u32Field(
 		name,
 		tag,
 		type: "u32" as const,
+		required: options.required !== false,
+	});
+}
+
+export function boolField(
+	name: string,
+	tag: number,
+	options: { readonly required?: boolean } = {},
+): EventFieldSpec {
+	return Object.freeze({
+		name,
+		tag,
+		type: "bool" as const,
+		required: options.required !== false,
+	});
+}
+
+/** A list of strings. An empty list is absent on the wire, as in proto3. */
+export function stringsField(
+	name: string,
+	tag: number,
+	options: { readonly required?: boolean } = {},
+): EventFieldSpec {
+	return Object.freeze({
+		name,
+		tag,
+		type: "strings" as const,
+		required: options.required !== false,
+	});
+}
+
+/** A JSON object, carried as its canonical text. */
+export function jsonField(
+	name: string,
+	tag: number,
+	options: { readonly required?: boolean } = {},
+): EventFieldSpec {
+	return Object.freeze({
+		name,
+		tag,
+		type: "json" as const,
 		required: options.required !== false,
 	});
 }
@@ -395,6 +457,18 @@ export function validateEventBody(
 			(!Number.isInteger(value) || Number(value) < 0)
 		) {
 			errors.push(`${field.name} must be a non-negative integer`);
+			continue;
+		}
+		if (field.type === "bool" && value !== true && value !== false) {
+			errors.push(`${field.name} must be a boolean`);
+			continue;
+		}
+		if (field.type === "strings" && !isStringList(value)) {
+			errors.push(`${field.name} must be a list of strings`);
+			continue;
+		}
+		if (field.type === "json" && !isJsonObject(value)) {
+			errors.push(`${field.name} must be a JSON object`);
 		}
 	}
 	for (const key of Object.keys(record)) {
@@ -424,6 +498,35 @@ export function encodeEventBody(
 		if (field.type === "string") {
 			// SAFETY: schema validation immediately above accepts only string values here.
 			const bytes = Buffer.from(value as string, "utf8");
+			chunks.push(
+				encodeVarint((field.tag << 3) | 2),
+				encodeVarint(bytes.length),
+				bytes,
+			);
+			continue;
+		}
+		if (field.type === "bool") {
+			chunks.push(encodeVarint(field.tag << 3), encodeVarint(value ? 1 : 0));
+			continue;
+		}
+		if (field.type === "strings") {
+			// SAFETY: schema validation immediately above accepts only string lists here.
+			for (const item of value as readonly string[]) {
+				const bytes = Buffer.from(item, "utf8");
+				chunks.push(
+					encodeVarint((field.tag << 3) | 2),
+					encodeVarint(bytes.length),
+					bytes,
+				);
+			}
+			continue;
+		}
+		if (field.type === "json") {
+			// SAFETY: schema validation immediately above accepts only JSON objects here.
+			const bytes = Buffer.from(
+				canonicalJson(value as EventJsonObject),
+				"utf8",
+			);
 			chunks.push(
 				encodeVarint((field.tag << 3) | 2),
 				encodeVarint(bytes.length),
@@ -465,6 +568,28 @@ export function decodeEventBody(schema: EventBodySchema, bytes: Buffer) {
 			decoded[field.name] = value.value;
 			continue;
 		}
+		if (wireType === 0 && field.type === "bool") {
+			const value = readVarint(bytes, offset);
+			offset = value.offset;
+			decoded[field.name] = value.value !== 0;
+			continue;
+		}
+		if (wireType === 2 && (field.type === "strings" || field.type === "json")) {
+			const length = readVarint(bytes, offset);
+			offset = length.offset;
+			const text = Buffer.from(
+				bytes.subarray(offset, offset + length.value),
+			).toString("utf8");
+			offset += length.value;
+			if (field.type === "json") {
+				// SAFETY: a json field's wire form is the canonical text of a JSON object, checked by the validator after decoding.
+				decoded[field.name] = JSON.parse(text) as EventJsonObject;
+				continue;
+			}
+			const earlier = decoded[field.name];
+			decoded[field.name] = isStringList(earlier) ? [...earlier, text] : [text];
+			continue;
+		}
 		throw new Error(
 			`protobuf wire type ${wireType} does not match ${field.name}`,
 		);
@@ -502,6 +627,21 @@ function readVarint(bytes: Buffer, startOffset: number) {
 		shift += 7;
 	}
 	throw new Error("unterminated protobuf varint");
+}
+
+function isStringList(value: EventBodyValue): value is readonly string[] {
+	return (
+		Array.isArray(value) && value.every((item) => item?.constructor === String)
+	);
+}
+
+function isJsonObject(value: EventBodyValue): value is EventJsonObject {
+	return (
+		value !== undefined &&
+		Object(value) === value &&
+		!Array.isArray(value) &&
+		Object.getPrototypeOf(value) === Object.prototype
+	);
 }
 
 function corpusKey(entry: CorpusEntry): string {

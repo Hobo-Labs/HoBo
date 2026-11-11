@@ -52,6 +52,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`ai-native-agent-auth.md`](./ai-native-agent-auth.md#plan-06) | AI-native platform, agent auth & end-user auth | 06 |
 | [`stage-3-agent-autonomy-acceptance.md`](./stage-3-agent-autonomy-acceptance.md) | Stage-3 (Agent Autonomy) acceptance record: scope in/out, promoted epic proofs, resolved stage-3 hooks, runnable stage gate | 06 |
 | [`data-plane.md`](./data-plane.md#plan-32) | Event model & the data plane: sourcing/replay, reactivity, projections, migrations, search | 11, 32 |
+| [`data-engines-continuous-migration.md`](./data-engines-continuous-migration.md) | Data engine package family (`@hobo/data-core` + `@hobo/data-sqlite` / `-postgres` / `-mongodb`) and continuous data migration: pattern catalog, deterministic selection, custody-path policy verdict, the conformance kit, and honest limits (ADR-0177) | — |
 | [`reliability-observability-cost.md`](./reliability-observability-cost.md#plan-05) | Reliability/HA, observability & cost/FinOps | 05 |
 | [`finops-budget-routing-control-plane.md`](./finops-budget-routing-control-plane.md) | Post-core standards-first FinOps budget routing control plane: resource intent, metric contracts, Pareto routing, stability, decision graph, feedback governance, and DX/OpsX/FinX surfaces | — |
 | [`provider-pricing-commercial-terms.md`](./provider-pricing-commercial-terms.md) | Provider commercial terms and deterministic fail-closed quotes in `@hobo/pricing`; dispatcher v1 unchanged (ADR-0176) | — |
@@ -222,6 +223,9 @@ When a draft package, validation script, workflow, or public contract changes, u
 [HoBo.CI contracts and routing](../../packages/ci/README.md),
 [GitHub Actions relay](../../packages/ci-gh-actions/README.md) (one core; hosted
 as a Node service by `hobo ci serve` and the container image, on
-[Vercel](../../packages/ci-vercel/README.md), and by the box worker daemon),
+[Vercel](../../packages/ci-vercel/README.md), and by the box worker daemon; it
+is also an [MCP server](../../packages/ci-gh-actions/README.md#mcp-server) at
+`/mcp`, whose `wait_for_events` tool and resource subscriptions are a
+projection over the lease journal's [event cursor](../../packages/ci/README.md#event-cursor)),
 [Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md), and
 [implementation plan with live acceptance gates](../plans/hobo-ci/README.md).

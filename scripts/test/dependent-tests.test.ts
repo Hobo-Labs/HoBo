@@ -1062,7 +1062,7 @@ describe("the repository's own plans", { concurrency: true }, () => {
 		);
 		assert.deepEqual(
 			[full.length, Object.keys(subsets).length, skipped.length],
-			[13, 14, 106],
+			[13, 14, 109],
 		);
 		assert.ok(full.includes("packages/core"));
 	});

@@ -58,4 +58,42 @@ package ghactions
  if provider == "depot" {auth: method: "github-app" | "oidc" | "secret-ref", runsOn: [...=~"^depot-[a-z0-9.-]+$"]}
  if provider == "boat" {auth: method: "device" | "secret-ref", runsOn: [...=~"^boat(-(small|large|xlarge))?$"]}
 }
-#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration
+// Views the relay's MCP server returns. Protobuf JSON leaves out a zero or
+// empty field, so only what identifies a view is required.
+#RelayMcpLease: {
+ id: string & =~"^[a-f0-9-]{36}$"
+ state: string & !=""
+ active?: bool
+ repository?: string
+ jobId?: int & >=0, jobName?: string, runId?: int & >=0, runAttempt?: int & >=0
+ provider?: string, offerId?: string, runnerName?: string
+ createdAt?: string, dispatchingAt?: string, settledAt?: string, queueDeadlineAt?: string
+ hostRunId?: int & >=0, actualJobId?: int & >=0
+ billedMinutes?: number & >=0, paidMicros?: number & >=0
+ memoryClass?: "" | "light" | "standard" | "heavy"
+ sandboxStage?: string
+}
+#RelayMcpJob: {
+ id: int & >0, runId: int & >0, runAttempt?: int & >=0
+ repository: string & !=""
+ name?: string, labels?: [...string], isolatedRequired?: bool
+ memoryClass?: "" | "light" | "standard" | "heavy"
+ queueDeadlineAt?: string
+}
+#RelayMcpEvent: {
+ cursor: string & =~"^[A-Za-z0-9_-]{22}$"
+ type: string & =~"^ci\\.[A-Za-z]+$"
+ at: string & !=""
+ leaseId?: string, state?: string, repository?: string
+ jobId?: int & >=0, jobName?: string, runId?: int & >=0, runAttempt?: int & >=0
+}
+#RelayMcpLeases: {leases?: [...#RelayMcpLease], truncated?: bool}
+#RelayMcpLeaseDetail: {lease: #RelayMcpLease, events?: [...#RelayMcpEvent]}
+#RelayMcpJobs: {jobs?: [...#RelayMcpJob], truncated?: bool}
+#RelayMcpEvents: {events?: [...#RelayMcpEvent], cursor: string & =~"^[A-Za-z0-9_-]{22}$", timedOut?: bool, more?: bool, truncated?: bool}
+#RelayMcpEngine: {id: string & =~"^[a-z0-9-]{1,40}$", ready?: bool}
+#RelayMcpStatus: {ready?: bool, engines: [#RelayMcpEngine, ...#RelayMcpEngine], subscriptions?: bool, waitDefaultSeconds: int & >=1, waitMaxSeconds: int & >=1, accountCalls: int & >=1, accountWaits: int & >=1, requestMessages: int & >=1}
+#RelayMcpQuarantinedDelivery: {deliveryId: string & =~"^[A-Za-z0-9-]{1,100}$", event: string & !="", installationId: int & >0, repositoryId: int & >0, receivedAt: string & !="", attempts?: int & >=0}
+#RelayMcpQuarantine: {deliveries?: [...#RelayMcpQuarantinedDelivery]}
+#RelayMcpRetry: {deliveryId: string & =~"^[A-Za-z0-9-]{1,100}$", status: "queued"}
+#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry
