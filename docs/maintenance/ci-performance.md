@@ -77,6 +77,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   links the deps layer first, and skips pnpm store/install on a layer hit. S0 uses
   `--external-workspace-tests` when affected. Gitleaks stays in `main_gate_finish`
   ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)).
+  Box dispatch latency (early `dispatchPending`, poll-triggered tick, shard index ordering,
+  `hobo_ci_job_reserved`) is [finding 99](../ci/findings/0099-main-gate-job-pickup-latency.md);
+  poll coalesce strand fixes stay [finding 87](../ci/findings/0087-poll-coalesce-stranded-queued-jobs-on-github.md) / [#1819](https://github.com/Hobo-Labs/HoBo/pull/1819).
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
   now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes

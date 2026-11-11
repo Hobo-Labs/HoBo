@@ -108,7 +108,8 @@ unindexed new finding files as notices.
 - [Finding 95: worker custody orphan live shards](./findings/0095-worker-custody-orphan-live-shards.md)
 - [Finding 97: ci runner image ghcr materialize](./findings/0097-ci-runner-image-ghcr-materialize.md)
 - [Finding 98: main gate finish checkout guard](./findings/0098-main-gate-finish-checkout-guard.md)
-- [Finding 99: a failed Pages deploy was never retried](./findings/0099-a-failed-pages-deploy-was-never-retried.md)
+- [Finding 99: main gate job pickup latency](./findings/0099-main-gate-job-pickup-latency.md)
+- [Finding 100: a failed Pages deploy was never retried](./findings/0100-a-failed-pages-deploy-was-never-retried.md)
 <!-- findings-index:end -->
 
 ## Data
