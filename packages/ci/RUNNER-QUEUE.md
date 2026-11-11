@@ -188,6 +188,8 @@ A feasible rank-0 job waiting for memory, the distinct-merge-group cap, or a slo
 | `HOBO_CI_MESH_NAMESPACE` | `hobo-ci` | Prefix of the two bucket names; workers sharing a namespace form one mesh |
 | `HOBO_CI_MESH_STEP_MS` | `20000` | How long each rank waits before taking a job the node ahead of it has not started; 1000 to 300000 |
 | `HOBO_CI_MESH_RELIABILITY_HALF_LIFE_MS` | `1800000` | How long until a job this worker took counts for half as much in its reliability score; 60000 to 86400000 |
+| `HOBO_CI_MESH_RELIABILITY_RESET` | `0` | `1` starts this worker's reliability record again instead of reading it from the journal; for one start after a repair |
+| `HOBO_CI_MESH_KEY_FILE` | `mesh-node.key` beside the SQLite journal | Where the worker's Ed25519 identity key is kept. Made on first start with mode `0600`; never published |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | OTLP/HTTP base URL; the worker posts traces as JSON to `<base>/v1/traces`. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is used as given instead. Unset means no export |
 | `OTEL_EXPORTER_OTLP_HEADERS` | unset | `key=value,key=value` request headers for the export (values percent-encoded); `OTEL_EXPORTER_OTLP_TRACES_HEADERS` wins |
 | `OTEL_SERVICE_NAME` | `hobo-ci-worker` | `service.name` on every span |
@@ -229,9 +231,18 @@ Jobs waiting for another worker's turn show in `hobo_ci_isolated_worker_jobs_pol
 - **Dropped:** the job is still queued ten minutes after the worker claimed it (`never-started`), the launch was given up (`launch-failed`), the container was killed for memory (`out-of-memory`), or the runner was lost mid-job (`runner-lost`). `hobo_ci_mesh_job_dropped` logs each with its reason and the score it left.
 - **Not counted:** a job that was cancelled or started elsewhere, and any job the worker did not claim.
 - **Recovery:** the record halves every `HOBO_CI_MESH_RELIABILITY_HALF_LIFE_MS`, so a worker that stops dropping jobs is trusted again without anyone resetting it, and sooner if it delivers jobs meanwhile. After ten drops in a row it is ranked with 0.29 of its capacity; an hour after the cause is fixed, 0.62 with nothing delivered; six hours, above 0.99. It never falls below 0.05, so it always gets enough work to prove itself.
-- **After a repair:** restarting the worker clears the record at once. `hobo_ci_mesh_reliability` logs the score each time it moves a twentieth.
+- **Across restarts:** the record is kept in the worker's SQLite journal and read back at start, decayed for the time the worker was down (`hobo_ci_mesh` logs `reliabilityRestored`). A restart no longer clears it. After a repair, start once with `HOBO_CI_MESH_RELIABILITY_RESET=1`. `hobo_ci_mesh_reliability` logs the score each time it moves a twentieth.
+- **What is advertised:** the score, the decayed counts of delivered and dropped jobs behind it, and measured free disk on the work root beside free memory.
 
 **Capacity and availability.** On the same 10-second beat each worker reads the board and reports what changed: `hobo_ci_mesh_node_joined`, `hobo_ci_mesh_node_lost` (an advertisement aged out), `hobo_ci_mesh_node_unhealthy` and `hobo_ci_mesh_node_recovered`, `hobo_ci_mesh_capacity_exhausted` and `hobo_ci_mesh_capacity_restored` (no healthy worker has a free slot), and `hobo_ci_mesh_capacity` with live, healthy and available workers and total and free slots, on every change and once a minute. Only the live worker with the lowest id reports about the others, so each fact appears once.
+
+**Identity and trust.** On first start the worker makes an Ed25519 key (`HOBO_CI_MESH_KEY_FILE`) and signs every advertisement with it; `hobo_ci_mesh` logs its `publicKey`. Each reader computes how far it trusts a node: `trusted` when the key is in the mesh's trusted set, `unverified` when it is not (or the node does not sign), `invalid` when the signature fails. An `invalid` advertisement is never ranked and is logged once as `hobo_ci_mesh_node_invalid`.
+
+- **The trusted set** lives in the mesh (`trust` in `<namespace>-mesh-config`). With none, each node trusts only itself and ranking is as it was before signatures. Manage it with `pnpm --filter @hobo/ci-gh-actions run mesh:trust list|add <key> [--node <id>]|remove <key>|require on|off`; nodes pick a change up within 10 s (`hobo_ci_mesh_trust_changed`).
+- **`require on`** makes nodes rank only listed keys. List every node's key first: with the requirement on and a node unlisted, the others stop deferring to it.
+- **What it proves:** which key wrote an advertisement, for which node id, until when. Not what software the node runs, and not that its figures are true. Whoever can write the mesh's config bucket decides whom it trusts; protect it with NATS permissions. See [the design](../../docs/design/ci-relay-mesh.md#trust-whose-advertisement-is-this).
+
+**Listing the nodes.** A relay host started with `HOBO_CI_NATS_URL` is a node too (no slots; its health is its readiness) and serves the list: `GET /v1/mesh/nodes` with a `policy:read` credential, the MCP tool `list_mesh_nodes` and resource `hobo-ci://mesh/nodes`, and `hobo ci status`. Each node shows its state (`live`, `unhealthy`, `lost`) and since when, free and total slots, memory, disk, reliability and trust. A relay with no mesh answers `mesh: "not-configured"`.
 
 **Shared configuration.** The mesh keeps one configuration in `<namespace>-mesh-config`. A worker with `HOBO_CI_CONFIG` or `HOBO_CI_CONFIG_JSON` runs its own and publishes it if the mesh has none; if the two differ it logs `hobo_ci_mesh_config_drift` and keeps its own. A worker with neither reads the mesh's at start (`hobo_ci_mesh` logs `configuration: mesh`), so a new box needs only the NATS address and App credentials. Replacing the stored configuration requires naming its current revision.
 
@@ -353,6 +364,7 @@ A workflow run no longer waits on a fleet that is not taking jobs. Every routed 
 - **Always GitHub-hosted:** the route job, and the two required gates (**PR impact gate**, **HoBo release PR gate**). The gates run no repository code and only add up other jobs' results. On the fleet, a superseded run's gate had to find a runner before the next run could start, which held one pull request for 30 minutes.
 - **Not routed:** tag, publish and attest jobs in the release workflows, `ci-deps-publish.yml`, and **CI deps layer (pnpm)** in `hobo-ci.yml`. They build or push the fleet's own images. The deps layer job was routed at first; on a GitHub-hosted machine it has no worker image and no box Docker context, and failed before it reached the build for every pull request that touched a deps-image input. Neither gate needs it, so on a slow fleet only that check waits.
 - **It does not read `HOBO_CI_FLEET_ROUTES`.** It reads **`HOBO_CI_FLEET_CAPACITY`** when the box publishes it, plus the shared queue, so overflow to GitHub-hosted or ARC happens before jobs park on a label that cannot launch. The route table the relay can publish (above) says what the fleet would choose when the relay is up; this job has to decide when it is not, so it reads the queue.
+- **It reads `HOBO_CI_FLEET_STATE` when it is fresh.** A worker with `HOBO_CI_FLEET_ROUTES=1` in a relay mesh also writes that variable: per label, the live nodes it ranks and their free slots, with when it was published. A snapshot five minutes old or less that shows the run's label with no node or no free slot counts as that backend refusing jobs, at once. One that shows room changes nothing (the queue still decides), and so does a missing, unreadable or older one. The worker rewrites it every two minutes and as it starts to drain; `hobo_ci_fleet_state_published` and `hobo_ci_fleet_state_error` log the writes. It needs the same `Variables: write` permission as the route table.
 - **Where it lives:** `scripts/ci/route-runner.mts` (decision and queue reading), `.github/actions/route-runner` (the step), `.github/workflows/fleet-probe.yml` (the probe), `selectFleetBackend` in `packages/ci/src/fleet-overflow.ts` (the order: fleet, ARC, local box, GitHub-hosted), and `scripts/lint-actions.ts` (which labels a workflow may ask for).
 
 ### 7. Merge queue (landing, not pickup)
@@ -390,7 +402,8 @@ relay is an MCP server at `https://<relay-origin>/mcp` (`hobo ci serve`:
 `http://127.0.0.1:8787/mcp`): `list_pending_jobs` shows what is queued without
 a lease, `list_leases` and `get_lease` show where a lease is stuck, and
 `wait_for_events` returns the moment a job is queued, reserved, claimed,
-settled, cancelled or expired. Setup, the tool list and the client
+settled, cancelled or expired. `list_mesh_nodes` shows the runner nodes behind
+the relay: which are live, their free capacity and how far each is trusted. Setup, the tool list and the client
 configuration are in
 [`packages/ci-gh-actions/README.md`](../ci-gh-actions/README.md#mcp-server).
 

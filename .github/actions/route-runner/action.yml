@@ -29,6 +29,13 @@ inputs:
     description: "`false` keeps trunk events on the shared `hobo` label."
     required: false
     default: ""
+  fleet-state:
+    description: >-
+      The relay mesh's snapshot (the HOBO_CI_FLEET_STATE repository variable): per
+      label, live nodes and free slots. Used only while it is under five minutes
+      old; empty, stale or unreadable, the queue is read as before.
+    required: false
+    default: ""
 outputs:
   runner:
     description: The runs-on label for this run's jobs.
@@ -48,6 +55,7 @@ runs:
         HOBO_CI_ROUTE_MAX_WAIT_SECONDS: ${{ inputs.max-wait-seconds }}
         HOBO_CI_ROUTE_MAX_QUEUED: ${{ inputs.max-queued }}
         HOBO_CI_TRUNK_RUNNER: ${{ inputs.trunk-runner }}
+        HOBO_CI_FLEET_STATE: ${{ inputs.fleet-state }}
       run: |
         set -uo pipefail
         fleet=hobo
