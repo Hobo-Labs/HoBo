@@ -65,7 +65,10 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   base and prints a duration-balanced shard matrix capped by `HOBO_CI_FLEET_CAPACITY` (default four
   parallel slots; see [finding 86](../ci/findings/0086-main-workspace-shards-fleet-parallel-cap.md)).
   Each shard packs several workspace groups (`scripts/ci/workspace-test-durations.json`, target 180s
-  slowest shard when slots allow) while `main-gate` runs S0. `main_workspace_tests` starts after the plan job only,
+  slowest shard when slots allow; weights refreshed from turbo build+test seconds in
+  [run 42951579615](https://github.com/Hobo-Labs/HoBo/actions/runs/42951579615) so
+  `packages/cli`, `packages/hobo`, and `packages/ci-gh-actions` land on different shards)
+  while `main-gate` runs S0. `main_workspace_tests` starts after the plan job only,
   links the deps layer first, and skips pnpm store/install on a layer hit. S0 uses
   `--external-workspace-tests` when affected. Gitleaks stays in `main_gate_finish`
   ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)).

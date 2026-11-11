@@ -3,7 +3,10 @@ import { describe, it } from "node:test";
 import {
 	maxShardLoadSeconds,
 	partitionUnitsByWeight,
+	planDependentTests,
 	planShardCountBalanced,
+	readRepo,
+	testWorkspaceUnits,
 	type TestPlan,
 } from "../ci/dependent-tests.mts";
 import { loadWorkspaceDurations } from "../ci/workspace-test-durations.mts";
@@ -42,5 +45,37 @@ describe("workspace test duration balancing", () => {
 			shard.includes("packages/hobo"),
 		);
 		assert.equal(parts[hoboShard]?.length, 1);
+	});
+
+	it("spreads measured slow workspaces across main shards", () => {
+		const durations = loadWorkspaceDurations();
+		const repo = readRepo();
+		const plan = planDependentTests([], repo);
+		const units = testWorkspaceUnits(plan, repo.workspaces);
+		const parts = partitionUnitsByWeight(units, durations, 4);
+		const heavy = ["packages/cli", "packages/hobo", "packages/ci-gh-actions"];
+		for (const dir of heavy) {
+			const shard = parts.findIndex((part) => part.includes(dir));
+			assert.ok(shard >= 0, `${dir} missing from repo-wide partition`);
+			const collocated = heavy.filter((other) =>
+				parts[shard]?.includes(other),
+			);
+			assert.ok(
+				collocated.length <= 1,
+				`${heavy.join(", ")} collided on shard ${shard}: ${collocated.join(", ")}`,
+			);
+		}
+		const loads = parts.map((part) =>
+			part.reduce(
+				(sum, dir) =>
+					sum + (durations.seconds.get(dir) ?? durations.defaultSeconds),
+				0,
+			),
+		);
+		const spread = Math.max(...loads) - Math.min(...loads);
+		assert.ok(
+			spread <= 5,
+			`repo-wide shard loads diverged by ${spread}s: ${loads.join(", ")}`,
+		);
 	});
 });

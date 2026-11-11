@@ -28,7 +28,7 @@ describe("main workspace shard capacity", () => {
 
 	it("packs multiple workspaces into each shard when the cap is small", () => {
 		const durations = loadWorkspaceDurations();
-		const plan = scoped(8);
+		const plan = scoped(40);
 		const { count } = planMainWorkspaceShardCount(plan, 2, { durations });
 		assert.equal(count, 2);
 	});
