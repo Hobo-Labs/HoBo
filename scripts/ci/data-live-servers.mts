@@ -132,12 +132,26 @@ export function postgresRunArgv(name: string, image: string): string[] {
 }
 
 /**
+ * MongoDB 8's allocator misuses restartable sequences on Linux 6.19 through
+ * 7.0.13 (SERVER-121912), so recent 8.0 releases refuse to start there, and
+ * until 8.0.37 also on Ubuntu kernels that already carry the fix, which is
+ * what a GitHub-hosted runner has. With glibc registering rseq itself the
+ * allocator cannot, falls back to per-thread caches, and neither the bug nor
+ * the refusal applies, whatever kernel the host runs. A fixture does not need
+ * the per-CPU caches this gives up.
+ */
+// public-contract: glibc tunable the MongoDB fixture is started with; the compose file sets the same.
+export const MONGO_RSEQ_TUNABLE = "GLIBC_TUNABLES=glibc.pthread.rseq=1";
+
+/**
  * MongoDB as a one-member replica set: transactions and change streams need
  * one. The cache is bounded because mongod otherwise sizes it from the host.
  */
 export function mongoRunArgv(name: string, image: string): string[] {
 	return [
 		...fixtureFlags(name),
+		"--env",
+		MONGO_RSEQ_TUNABLE,
 		image,
 		"mongod",
 		"--replSet",

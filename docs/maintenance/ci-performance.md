@@ -118,6 +118,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   `--rm`, so a server that dies during start-up leaves its logs for the failure step to print), and a
   container of the lane older than 30 minutes is swept at the next start in case a job never reached
   its teardown. The images are digest-pinned in `packages/data-core/deploy/live-engine-images.json`.
+  MongoDB is started with `GLIBC_TUNABLES=glibc.pthread.rseq=1`: MongoDB 8's allocator misuses
+  restartable sequences on Linux 6.19 through 7.0.13 (SERVER-121912), recent 8.0 releases refuse to
+  start there, and until 8.0.37 they also refused on Ubuntu kernels that already carry the fix — the
+  lane's first run failed on a GitHub-hosted runner for exactly that. With glibc owning rseq the
+  allocator falls back to per-thread caches and the host's kernel stops mattering.
   The suites do not run through turbo: it passes `HOBO_*` through without keying its cache on them,
   so a cached offline result would replay as a live pass. The job is scoped like `artifact-trust`
   (below) to the live test files, so a pull request that cannot reach the data engines frees the slot

@@ -37,6 +37,10 @@ services:
     image: mongo:8.0@sha256:b9924c330a8bbc5800fe9c69f04a84e221eca7b28fd049a0354147d9908fa142
     # Transactions and change streams need a replica set; one member is enough.
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    # MongoDB 8 refuses to start on Linux 6.19+ (SERVER-121912) unless glibc
+    # owns rseq; see scripts/ci/data-live-servers.mts.
+    environment:
+      GLIBC_TUNABLES: glibc.pthread.rseq=1
     ports:
       - "127.0.0.1:57017:27017"
     healthcheck:

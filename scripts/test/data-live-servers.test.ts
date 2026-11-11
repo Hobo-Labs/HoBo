@@ -8,6 +8,7 @@ import {
 	liveContainerNames,
 	liveUrls,
 	MONGO_PRIMARY_PROBE,
+	MONGO_RSEQ_TUNABLE,
 	mongoRunArgv,
 	parseListing,
 	parseLiveEngineImages,
@@ -100,6 +101,16 @@ describe("the containers", () => {
 
 	it("start MongoDB as a replica set with a bounded cache", () => {
 		const argv = mongoRunArgv("mongo", MONGO);
+		// Without this MongoDB 8 refuses to start on Linux 6.19+ (SERVER-121912).
+		assert.equal(MONGO_RSEQ_TUNABLE, "GLIBC_TUNABLES=glibc.pthread.rseq=1");
+		assert.equal(argv[argv.indexOf("--env") + 1], MONGO_RSEQ_TUNABLE);
+		assert.ok(argv.indexOf("--env") < argv.indexOf(MONGO));
+		assert.ok(
+			readFileSync(
+				"packages/data-core/deploy/compose.live-engines.yml",
+				"utf8",
+			).includes("GLIBC_TUNABLES: glibc.pthread.rseq=1"),
+		);
 		assert.deepEqual(argv.slice(argv.indexOf(MONGO) + 1), [
 			"mongod",
 			"--replSet",
