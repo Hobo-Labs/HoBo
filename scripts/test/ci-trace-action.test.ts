@@ -36,6 +36,19 @@ describe("ci-trace action artifact names", () => {
 		expect(ACTION).toMatch(/scripts\/ci\/ci-trace\.mts/u);
 	});
 
+	it("never fails the job it reports on when the upload fails", () => {
+		// Only the upload talks to an outside service; it alone may fail quietly.
+		const upload = ACTION.slice(
+			ACTION.indexOf("- name: Upload trace artifact"),
+		);
+		expect(upload).toMatch(/^\s+continue-on-error: true$/mu);
+		const exportStep = ACTION.slice(
+			ACTION.indexOf("- name: Export OTel trace"),
+			ACTION.indexOf("- name: Upload trace artifact"),
+		);
+		expect(exportStep).not.toMatch(/continue-on-error/u);
+	});
+
 	it("includes the disambiguator between job id and run attempt", () => {
 		expect(ACTION).toMatch(
 			/name: ci-trace-\$\{\{ github\.job \}\}-\$\{\{ inputs\.disambiguator \}\}-\$\{\{ github\.run_attempt \}\}/,
