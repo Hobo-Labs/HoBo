@@ -10,6 +10,7 @@ import {
 	pageKeepsKey,
 	readsDown,
 	scrollAmount,
+	startsGesture,
 	stopFromHash,
 	trailTakes,
 } from "./trail-logic";
@@ -115,5 +116,21 @@ describe("fit and scroll", () => {
 		expect(canScroll(1, 500, 900, 400)).toBe(false);
 		expect(canScroll(-1, 0, 900, 400)).toBe(false);
 		expect(canScroll(-1, 30, 900, 400)).toBe(true);
+	});
+});
+
+describe("startsGesture", () => {
+	it("starts a gesture after the wheel has been quiet", () => {
+		expect(startsGesture(200, 30, 10, 120)).toBe(true);
+		expect(startsGesture(60, 30, 40, 120)).toBe(false);
+	});
+
+	it("counts a flick rising out of the last one's inertia as a new gesture", () => {
+		expect(startsGesture(16, 60, 10, 120)).toBe(true);
+	});
+
+	it("keeps a steady mouse wheel and an inertia tail's jitter as one gesture", () => {
+		expect(startsGesture(30, 100, 100, 100)).toBe(false);
+		expect(startsGesture(16, 9, 5, 120)).toBe(false);
 	});
 });

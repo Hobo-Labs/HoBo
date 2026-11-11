@@ -32,6 +32,7 @@ import {
 	pageKeepsKey,
 	readsDown,
 	scrollAmount,
+	startsGesture,
 	stopFromHash,
 	trailTakes,
 	fits,
@@ -862,43 +863,56 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 	/** May the trail take this step, or does it belong to the page's own scroll? */
 	const takes = (dir: number) => trailTakes(atTop(), dir, atStart(), atEnd());
 
-	let lastWheel = 0;
-	let lastStep = -Infinity;
-	let gesture = { acc: 0, fired: true, stepped: false };
-	page.addEventListener("wheel", (e) => {
-		const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+	// One gesture is one move, however long it runs on. A gesture ends when the
+	// wheel goes quiet, or when a dying stream rises again: a second flick.
+	// Listened for on the window, so a gesture that starts down at the footer
+	// is known for what it is when it reaches the trail.
+	let lastWheel = Number.NEGATIVE_INFINITY;
+	let gesture = { acc: 0, fired: false, stepped: false, fromPage: false, peak: 0, last: 0 };
+	addEventListener("wheel", (e) => {
+		const d = (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) * (e.deltaMode === 1 ? 32 : 1);
 		const dir = Math.sign(d);
 		const n = now();
-		const fresh = n - lastWheel > 160;
-		if (fresh) gesture = { acc: 0, fired: false, stepped: false };
-		// The rest of a burst that already stepped belongs to that step.
-		if (gesture.stepped || n - lastStep < 400) {
+		if (startsGesture(n - lastWheel, Math.abs(d), gesture.last, gesture.peak)) {
+			gesture = { acc: 0, fired: false, stepped: false, fromPage: !atTop(), peak: 0, last: 0 };
+		}
+		lastWheel = n;
+		gesture.peak = Math.max(gesture.peak, Math.abs(d));
+		gesture.last = Math.abs(d);
+		const inside = e.target instanceof Node && page.contains(e.target);
+		// A gesture that began down at the footer only brings the trail back to
+		// where the reader left it. It never steps; the next gesture can.
+		if (gesture.fromPage) {
+			if (!inside) return;
 			e.preventDefault();
-			lastWheel = n;
+			if (scrollY > 0) scrollBy({ top: d, behavior: "instant" });
 			return;
 		}
-		// A stop taller than its area is read first: the wheel scrolls it, and
-		// only a fresh gesture at its edge moves on.
+		if (!inside) return;
+		// The rest of a gesture that already stepped belongs to that step.
+		if (gesture.stepped) {
+			e.preventDefault();
+			return;
+		}
 		// A phone sign taller than the sky scrolls itself.
 		const sign = e.target instanceof Element ? e.target.closest(".tst-world .tst-inner") : null;
 		if (sign && canScroll(dir, sign.scrollTop, sign.scrollHeight, sign.clientHeight)) return;
+		// A stop taller than its area is read first: the wheel scrolls it, and
+		// only a new gesture at its edge moves on.
 		const box = reading();
 		if (atTop() && box && canScroll(dir, box.scrollTop, box.scrollHeight, box.clientHeight)) {
 			e.preventDefault();
-			box.scrollTop += d * (e.deltaMode === 1 ? 32 : 1);
-			lastWheel = n;
-			gesture = { acc: 0, fired: true, stepped: false };
+			box.scrollTop += d;
+			gesture.fired = true;
 			return;
 		}
 		if (!takes(dir)) return;
 		e.preventDefault();
-		lastWheel = n;
 		if (gesture.fired) return;
-		gesture.acc += d * (e.deltaMode === 1 ? 32 : 1);
+		gesture.acc += d;
 		if (Math.abs(gesture.acc) > 20) {
 			gesture.fired = true;
 			gesture.stepped = true;
-			lastStep = n;
 			step(Math.sign(gesture.acc));
 		}
 	}, { passive: false, signal });

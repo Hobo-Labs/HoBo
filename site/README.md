@@ -171,6 +171,12 @@ of fixed length: it starts from rest and arrives at rest, and a new request
 mid-glide bends from the speed it already has, so nothing cuts. Past the last stop
 the page lets go and the footer is a normal scroll away.
 
+A wheel gesture ends when the wheel goes quiet (140ms), or when a stream that was
+dying away rises again — a second flick — so two deliberate flicks are two steps
+and one long burst is one (`startsGesture` in `src/lib/stage/trail-logic.ts`). A
+gesture that begins down at the footer only brings the trail back to the stop the
+reader left; it never steps on past it.
+
 **He turns round.** Heading back, Bo walks on `bo-walk-left.png`, his other side
 drawn as its own sheet. He is never mirrored and never walks backwards: Bo is not
 symmetric, and a flip hands the bindle to the wrong arm (see

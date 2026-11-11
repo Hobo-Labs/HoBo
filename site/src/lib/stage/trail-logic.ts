@@ -103,3 +103,19 @@ export function canScroll(dir: number, scrollTop: number, scrollHeight: number, 
 export function fits(contentHeight: number, available: number): boolean {
 	return contentHeight <= available + 1;
 }
+
+/** How long the wheel has to be quiet before the next event is a new gesture. */
+export const WHEEL_QUIET_MS = 140;
+
+/**
+ * Does this wheel event start a new gesture? It does after a pause, and it
+ * does when a stream that was dying away (a flick's inertia) suddenly rises
+ * again: that is a second flick, not more of the first. A mouse wheel's even
+ * notches never rise like that, and an inertia tail's jitter is too small to.
+ */
+export function startsGesture(gapMs: number, size: number, last: number, peak: number): boolean {
+	if (gapMs > WHEEL_QUIET_MS) return true;
+	const decayed = last < peak * 0.6;
+	const rising = size > last * 1.5 && size - last > 12;
+	return decayed && rising;
+}

@@ -1261,6 +1261,13 @@ html:has(.trail-page:not(.is-staged)) {
 	overflow: visible;
 }
 
+/* The code may still scroll sideways, but an up-or-down swipe that starts on
+   it belongs to the trail. */
+.tst-world .astro-code,
+.tst-world pre {
+	touch-action: pan-x;
+}
+
 /* A sign is too narrow for the whole comparison: it keeps the two columns
    the argument rests on, and the page keeps the rest. */
 .tst-board .table-wrap {

@@ -181,6 +181,25 @@ async function phoneTouch(browser: Browser, origin: string): Promise<void> {
 	const after = await where();
 	check("phone: a swipe over a short sign moves the trail", y > 0 && after !== before, `sign at y ${y}, ${before} → ${after}`);
 
+	// The code sign scrolls sideways, but an up-or-down swipe on it is the trail's.
+	await page.goto("about:blank");
+	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
+	await page.waitForTimeout(1200);
+	await page.keyboard.press("ArrowRight");
+	await page.waitForTimeout(2600);
+	const code = await page.evaluate(() => {
+		for (const pre of document.querySelectorAll<HTMLElement>(".tst-world .tst-board.is-up pre")) {
+			const r = pre.getBoundingClientRect();
+			if (r.left >= 0 && r.right <= innerWidth + 1 && r.top > 0 && r.bottom < innerHeight) return Math.round(r.top + r.height / 2);
+		}
+		return -1;
+	});
+	const onCode = await where();
+	await swipe(page, 200, code, code - 220);
+	await page.waitForTimeout(2600);
+	const offCode = await where();
+	check("phone: a swipe that starts on the code sign moves the trail", code > 0 && offCode !== onCode, `code at y ${code}, ${onCode} → ${offCode}`);
+
 	await page.goto("about:blank");
 	await page.goto(`${origin}/HoBo/#get-started`, { waitUntil: "networkidle" });
 	await page.waitForTimeout(1500);
@@ -264,6 +283,41 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	});
 	check("wheel: a fast burst is one step and lands at the new stop's heading", burst.at === "vocabulary" && burst.inView, JSON.stringify(burst));
 	await page.setViewportSize({ width: 1440, height: 900 });
+
+	// Two deliberate flicks a quarter second apart are two steps.
+	await page.goto("about:blank");
+	await page.goto(`${origin}/HoBo/#why`, { waitUntil: "networkidle" });
+	await page.waitForTimeout(800);
+	await page.mouse.move(700, 300);
+	const flick = async () => {
+		for (const delta of [40, 90, 120, 100, 70, 45, 25, 10]) {
+			await page.mouse.wheel(0, delta);
+			await page.waitForTimeout(14);
+		}
+	};
+	const t0 = Date.now();
+	await flick();
+	await page.waitForTimeout(Math.max(0, 250 - (Date.now() - t0)));
+	await flick();
+	await page.waitForTimeout(3200);
+	const flicked = await page.evaluate(() => [...document.querySelectorAll("[data-trail-stop].is-on")].map((n) => n.id).join(","));
+	check("wheel: two flicks a quarter second apart are two steps", flicked === "vocabulary", `at ${flicked}`);
+
+	// A wheel-up gesture from the footer brings the trail back to its last stop
+	// and never steps on past it, however long it runs.
+	await page.goto("about:blank");
+	await page.goto(`${origin}/HoBo/#get-started`, { waitUntil: "networkidle" });
+	await page.waitForTimeout(800);
+	await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+	await page.waitForTimeout(300);
+	await page.mouse.move(700, 450);
+	for (let i = 0; i < 20; i++) {
+		await page.mouse.wheel(0, -120);
+		await page.waitForTimeout(20);
+	}
+	await page.waitForTimeout(2200);
+	const back = await page.evaluate(() => ({ at: [...document.querySelectorAll("[data-trail-stop].is-on")].map((n) => n.id).join(","), y: scrollY }));
+	check("wheel: a burst up from the footer lands on the last stop", back.at === "get-started" && back.y === 0, JSON.stringify(back));
 
 	// The last stop's Next goes on to the footer.
 	await page.goto("about:blank");
