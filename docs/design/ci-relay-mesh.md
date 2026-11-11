@@ -353,6 +353,11 @@ and every two minutes regardless, and once more as it starts to drain.
 | Fresh and the label has a free slot | Nothing new. The queue still decides: a snapshot never makes a backend look available |
 | Missing, unreadable, or more than five minutes old | Nothing. The queue is read exactly as before |
 
+The snapshot sits beside the box's own memory headroom variable,
+`HOBO_CI_FLEET_CAPACITY`, which the routing job also reads: each can only
+take the fleet out of a decision, and either one saying the fleet cannot
+take the job is enough.
+
 The count is of nodes the publishing worker *ranks*, not only those it
 trusts: with no trusted set every worker trusts only itself, and counting
 only trusted nodes would report a full mesh as one box. `invalid` nodes are

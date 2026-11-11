@@ -363,10 +363,7 @@ export function routeRunner(input: {
 			enabled: true,
 			runsOn: fleetLabel,
 			freeSlots:
-				first &&
-				fleetAdmits &&
-				!fleetRefusal &&
-				takingJobs(input.fleet, limits)
+				first && fleetAdmits && !fleetRefusal && takingJobs(input.fleet, limits)
 					? fleetSlots
 					: 0,
 		},

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
 	BURST_SECONDS,
@@ -358,6 +359,27 @@ describe("the mesh's snapshot", () => {
 				["hobo-trunk", { nodes: 0, freeSlots: 0 }],
 			],
 		);
+	});
+
+	it("is the record the workers publish", () => {
+		// The contract fixture of `MeshFleetState`, as a worker writes it.
+		const value = readFileSync(
+			new URL(
+				"../../packages/ci-gh-actions/data-models/fixtures/valid/mesh-fleet-state.json",
+				import.meta.url,
+			),
+			"utf8",
+		);
+		const state = parseFleetState(
+			value,
+			Date.parse("2026-11-10T02:41:05.000Z"),
+		);
+		assert.equal(state?.ageSeconds, 60);
+		assert.deepEqual(state?.labels.get("hobo"), { nodes: 2, freeSlots: 3 });
+		assert.deepEqual(state?.labels.get("hobo-trunk"), {
+			nodes: 0,
+			freeSlots: 0,
+		});
 	});
 
 	it("is ignored once it is more than five minutes old", () => {
