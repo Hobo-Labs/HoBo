@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 109: a failed Pages deploy was never retried"
+title: "Finding 110: a failed Pages deploy was never retried"
 description: "The landing page merged in #1790 sat unpublished: its one deploy died on a blobless box git mirror, and the release gate only ever asked about the commit that triggered each run."
 tags: [hobo, ci, release, pages, checkout, git, worker]
 ---
 
-# Finding 109: a failed Pages deploy was never retried
+# Finding 110: a failed Pages deploy was never retried
 
 ## Symptom
 

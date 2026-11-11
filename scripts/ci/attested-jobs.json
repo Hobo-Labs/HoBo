@@ -86,9 +86,10 @@
 					"name": "Resolve Turbo SCM base",
 					"id": "scm-base",
 					"if": "github.event_name == 'pull_request'",
-					"run": "set -euo pipefail\nif [[ ! \"$PR_BASE_SHA\" =~ ^[0-9a-f]{40}$ ]]; then\n  echo \"PR base SHA is missing or invalid\" >&2; exit 1\nfi\ngit cat-file -e \"${PR_BASE_SHA}^{commit}\" || git fetch --no-tags origin \"$PR_BASE_SHA\"\nBASE=\"$(git merge-base \"$PR_BASE_SHA\" HEAD)\"\necho \"base=${BASE}\" >> \"$GITHUB_OUTPUT\"\n",
+					"run": "set -euo pipefail\nif [[ ! \"$PR_BASE_SHA\" =~ ^[0-9a-f]{40}$ ]]; then\n  echo \"PR base SHA is missing or invalid\" >&2; exit 1\nfi\n# On GitHub's PR merge commit (second parent: the PR head), the base\n# it was merged into is its first parent. The event's base SHA can be\n# older, and then main's later changes count as the PR's and widen\n# the affected set.\nsecond=\"$(git rev-parse -q --verify 'HEAD^2' || true)\"\nif [[ -n \"$second\" && \"$second\" == \"${PR_HEAD_SHA:-}\" ]]; then\n  BASE=\"$(git rev-parse 'HEAD^1')\"\nelse\n  git cat-file -e \"${PR_BASE_SHA}^{commit}\" || git fetch --no-tags origin \"$PR_BASE_SHA\"\n  BASE=\"$(git merge-base \"$PR_BASE_SHA\" HEAD)\"\nfi\necho \"base=${BASE}\" >> \"$GITHUB_OUTPUT\"\n",
 					"env": {
-						"PR_BASE_SHA": "${{ github.event.pull_request.base.sha }}"
+						"PR_BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+						"PR_HEAD_SHA": "${{ github.event.pull_request.head.sha }}"
 					},
 					"local": "run"
 				},
