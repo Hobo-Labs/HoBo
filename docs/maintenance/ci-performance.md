@@ -456,6 +456,9 @@ What this does not give you:
 - The commands under test run as the same user as the key. Steps get an
   allowlisted environment and a scratch `HOME`, which is hygiene, not a
   sandbox: never attest code you would not give the key to.
+  The attestation tests run inside those steps too (`agent:check` selects
+  them for changes to what they guard), so they set every variable they
+  check and assume nothing about the host's environment.
 - The secret scan is accepted only for the exact head and base commits that
   were scanned; every other covered job is bound to the tree.
 - Protect the `ci-attestations` branch from deletion and force-push with a

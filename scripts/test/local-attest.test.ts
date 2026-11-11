@@ -706,6 +706,12 @@ describe("a local run", () => {
 				env: {
 					...credentials,
 					HOME: realHome,
+					// Unset here, whatever the machine running the test has, so
+					// the caches are found under this test's own home.
+					XDG_CACHE_HOME: undefined,
+					XDG_DATA_HOME: undefined,
+					XDG_STATE_HOME: undefined,
+					npm_config_cache: undefined,
 					TURBO_TEAM: "team-passes",
 					LC_ALL: "C",
 				},
