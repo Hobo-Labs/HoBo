@@ -1908,13 +1908,8 @@ export function createIsolatedContainerController(options: {
 		);
 		const custodyLease =
 			runnerLease ??
-			(resolvedLeaseId
-				? await options.store.get(resolvedLeaseId)
-				: undefined);
-		if (
-			!custodyLease?.runnerName ||
-			custodyLease.runnerName !== container.name
-		)
+			(resolvedLeaseId ? await options.store.get(resolvedLeaseId) : undefined);
+		if (!custodyLease?.runnerName || custodyLease.runnerName !== container.name)
 			return false;
 		try {
 			const assignment = await resolveRunnerAssignedJob(

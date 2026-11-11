@@ -156,7 +156,6 @@ describe("foreign yield vs live box custody", () => {
 		expect(reconcile).not.toHaveBeenCalled();
 		expect(await store.activeLeases()).toHaveLength(1);
 	});
-
 });
 
 describe("orphan sweep during live GitHub job", () => {

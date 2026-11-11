@@ -476,7 +476,8 @@ export function createWorkerLeaseReconciler(options: {
 						ageMs,
 					});
 				} catch (error) {
-					const message = error instanceof Error ? error.message : String(error);
+					const message =
+						error instanceof Error ? error.message : String(error);
 					if (!/already in progress/i.test(message))
 						orphanRemovalsInFlight.delete(removalKey);
 					options.log?.("hobo_ci_container_orphan_remove_failed", {
