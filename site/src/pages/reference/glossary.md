@@ -57,5 +57,9 @@ description: "Site-facing definitions for HoBo primitives, ports, contracts, eff
 | **Kafka capability provider** | Kafka provider exporting the messaging port for Kafka-compatible brokers; secretless bindings |
 | **Dapr runtime adapter** | Optional optional Dapr runtime Camp runtime realizing ActorHost + pubsub; never the default |
 | **Event-log replay** | Folding durable EventStore facts for projections/audit — different from Session Replay |
+| **HoBo CI** | Runs GitHub Actions jobs on capacity you choose: one runner label, admission against the budget policy |
+| **Relay (CI)** | The HoBo CI service that receives GitHub's job events and admits jobs |
+| **Fleet (CI)** | Every runner provider one account has connected, ranked per job by cost |
+| **Route table (CI)** | Published map of job class → runner label, so a job can ask for a label provider before it is queued |
 
 Longer design glossary lives in the repo design suite; this page is the **site-facing** subset for humans and agents reading Pages.

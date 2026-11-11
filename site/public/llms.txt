@@ -45,6 +45,14 @@ The full docs dump is at https://tyler-r-kendrick.github.io/HoBo/llms-full.txt.
 - [Progressive delivery](https://tyler-r-kendrick.github.io/HoBo/cicd/progressive-delivery/)
 - [Generation pipeline](https://tyler-r-kendrick.github.io/HoBo/cicd/generation/)
 
+## HoBo CI
+
+- [HoBo CI overview](https://tyler-r-kendrick.github.io/HoBo/ci/)
+- [Providers](https://tyler-r-kendrick.github.io/HoBo/ci/providers/)
+- [Fleet balancing](https://tyler-r-kendrick.github.io/HoBo/ci/fleet-balancing/)
+- [Route table](https://tyler-r-kendrick.github.io/HoBo/ci/route-table/)
+- [Host health](https://tyler-r-kendrick.github.io/HoBo/ci/host-health/)
+
 ## Primitives
 
 - [Meet the primitives](https://tyler-r-kendrick.github.io/HoBo/primitives/)

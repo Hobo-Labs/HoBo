@@ -29,7 +29,7 @@ tags: [hobo, competitors, matrix]
 
 | Competitor | Canonical doc | Aliases | Primary category | All categories | Directness | Contested HoBo surfaces | Posture | HoBo evidence | Product status | Researched | Contract |
 | ---------- | ------------- | ------- | ---------------- | -------------- | ---------- | ----------------------- | ------- | ------------- | -------------- | ---------- | -------- |
-| **Alchemy** | [`alchemy.md`](alchemy.md) | — | `infrastructure-from-code` | `infrastructure-from-code` · `portable-application-models` | direct | authoring, typed-contracts, reconciliation, extensibility | borrow, benchmark | mixed | active | 2026-08-19 | v1 |
+| **Alchemy** | [`alchemy.md`](alchemy.md) | — | `infrastructure-from-code` | `infrastructure-from-code` · `portable-application-models` | direct | authoring, typed-contracts, reconciliation, extensibility | borrow, benchmark | mixed | active | 2026-11-08 | v1 |
 | **Anonymous container hosts** | [`anon-container-hosts.md`](anon-container-hosts.md) | openpouch, clawdship, ttl.sh, zerodeploy, dockup | `cloud-application-platforms` | `cloud-application-platforms` · `self-hosted-paas` | adjacent | provider-matching, delivery | benchmark, provider-target | mixed | active | 2026-08-20 | v1 |
 | **Antimetal** | [`antimetal.md`](antimetal.md) | — | `agentic-infrastructure` | `agentic-infrastructure` · `finops-governance-placement` | adjacent | observability, agent-surface, finops | benchmark, integrate | mixed | active | 2026-08-20 | v1 |
 | **Appvia Wayfinder** | [`appvia-wayfinder.md`](appvia-wayfinder.md) | wayfinder, appvia | `hybrid-multicloud-enterprise` | `hybrid-multicloud-enterprise` · `platform-orchestrators` · `developer-portals-idps` | overlapping | environments, governance, provider-matching, identity-secrets, app-graph | benchmark, borrow | mixed | active | 2026-08-20 | v1 |
@@ -123,7 +123,6 @@ Captures are considered stale 180 days after their researched date. Staleness ne
 | Competitor | Researched | State |
 | ---------- | ---------- | ----- |
 | [Wasm host landscape](wasm-hosts.md) | 2026-08-12 | pre-v1 — rewrite to contract |
-| [Alchemy](alchemy.md) | 2026-08-19 | contract v1 |
 | [AWS Amplify](aws-amplify.md) | 2026-08-19 | contract v1 |
 | [Backstage](backstage.md) | 2026-08-19 | contract v1 |
 | [Control Plane](control-plane.md) | 2026-08-19 | contract v1 |
@@ -208,6 +207,7 @@ Captures are considered stale 180 days after their researched date. Staleness ne
 | [Vantage](vantage.md) | 2026-08-20 | pre-v1 — rewrite to contract |
 | [wasmCloud](wasmcloud.md) | 2026-08-20 | contract v1 |
 | [Wasp](wasp.md) | 2026-08-20 | contract v1 |
+| [Alchemy](alchemy.md) | 2026-11-08 | contract v1 |
 
 _86 canonical captures across 13 categories; 75 at contract v1._
 

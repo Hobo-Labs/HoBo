@@ -243,17 +243,54 @@ export function spawnCommand(
 	return { ok: true, out, command };
 }
 
+function miseToolVersionArgs(tool: string): string[] {
+	return tool === "cue" || tool === "gitleaks" || tool === "syft"
+		? ["version"]
+		: ["--version"];
+}
+
 function runMiseToolVersion(
 	run: CommandRunner,
 	root: string,
 	tool: string,
 ): CommandResult {
-	const versionArgs =
-		tool === "cue" || tool === "gitleaks" ? ["version"] : ["--version"];
-	return run("mise", ["exec", "--", tool, ...versionArgs], { cwd: root });
+	return run("mise", ["exec", "--", tool, ...miseToolVersionArgs(tool)], {
+		cwd: root,
+	});
 }
 
-function parseMiseToolNames(miseToml: string): string[] {
+function exportMiseToolBinDirsToPath(
+	root: string,
+	tools: readonly string[],
+	run: CommandRunner,
+	env: NodeJS.ProcessEnv,
+	appendFile: (path: string, data: string) => void,
+): { ok: true } | { ok: false; detail: string } {
+	const binDirs: string[] = [];
+	for (const tool of tools) {
+		const resolveArgs = ["--cd", root, "which", tool];
+		const resolved = run("mise", resolveArgs);
+		const executable = resolved.out.split("\n")[0]?.trim() ?? "";
+		if (!resolved.ok || !isAbsolute(executable)) {
+			const failure = resolved.ok
+				? `${commandLine("mise", resolveArgs)}: expected an absolute executable path for ${tool}, got ${executable || "(empty)"}`
+				: commandFailure(resolved, commandLine("mise", resolveArgs));
+			return { ok: false, detail: `${failure}\n    ${MISE_TOOL_REMEDY}` };
+		}
+		binDirs.push(dirname(executable));
+	}
+	const pathDirs = [...new Set(binDirs)];
+	if (pathDirs.length === 0) {
+		return { ok: true };
+	}
+	env.PATH = [...pathDirs, ...(env.PATH ? [env.PATH] : [])].join(delimiter);
+	if (env.GITHUB_ACTIONS === "true" && env.GITHUB_PATH) {
+		appendFile(env.GITHUB_PATH, pathDirs.map((dir) => `${dir}\n`).join(""));
+	}
+	return { ok: true };
+}
+
+export function parseMiseToolNames(miseToml: string): string[] {
 	const names: string[] = [];
 	let inTools = false;
 	for (const line of miseToml.split("\n")) {
@@ -303,15 +340,13 @@ export function probeMiseTool(
 			detail: `${failure}\n    ${MISE_TOOL_REMEDY}`,
 		};
 	}
-	const versionArgs =
-		tool === "cue" || tool === "gitleaks" ? ["version"] : ["--version"];
-	const ver = run(executable, versionArgs);
+	const ver = run(executable, miseToolVersionArgs(tool));
 	return {
 		ok: ver.ok,
 		name: `mise-tool:${tool}`,
 		detail: ver.ok
 			? (ver.out.split("\n")[0] ?? `${tool} reported success`)
-			: `${commandFailure(ver, commandLine(executable, versionArgs))}\n    ${MISE_TOOL_REMEDY}`,
+			: `${commandFailure(ver, commandLine(executable, miseToolVersionArgs(tool)))}\n    ${MISE_TOOL_REMEDY}`,
 	};
 }
 
@@ -371,9 +406,10 @@ export function syncMissingMiseTools(
 			`${commandFailure(listing, commandLine("mise", listArgs))}\n    ${MISE_TOOL_REMEDY}`,
 		);
 	}
-	const configured = new Set(
-		parseMiseToolNames(readFileSync(join(root, MISE_TOML), "utf8")),
+	const configuredTools = parseMiseToolNames(
+		readFileSync(join(root, MISE_TOML), "utf8"),
 	);
+	const configured = new Set(configuredTools);
 	const missing = [
 		...new Set(
 			listing.out.split("\n").flatMap((line) => {
@@ -382,36 +418,39 @@ export function syncMissingMiseTools(
 			}),
 		),
 	];
+	let installCommand = "";
+	if (missing.length > 0) {
+		const installArgs = ["--cd", root, "install", "--locked", ...missing];
+		installCommand = commandLine("mise", installArgs);
+		const install = run("mise", installArgs);
+		if (!install.ok) {
+			return finish(
+				false,
+				[],
+				`${commandFailure(install, installCommand)}\n    ${MISE_TOOL_REMEDY}`,
+			);
+		}
+	}
+	// Export bin dirs only for tools PATH cannot already see: prepending
+	// every tool's real bin dir would shadow shims and system installs on
+	// healthy images, and a `mise which` failure for a visible tool would
+	// fail preflight fleet-wide for no benefit.
+	const invisibleTools = configuredTools.filter((tool) => {
+		const which = run("sh", ["-c", `command -v ${tool} || true`]);
+		return !(which.out.split("\n")[0]?.trim() ?? "");
+	});
+	const pathExport = exportMiseToolBinDirsToPath(
+		root,
+		invisibleTools,
+		run,
+		env,
+		appendFile,
+	);
+	if (!pathExport.ok) {
+		return finish(false, missing, pathExport.detail);
+	}
 	if (missing.length === 0) {
 		return finish(true, [], "all mise.toml tools are already installed");
-	}
-	const installArgs = ["--cd", root, "install", "--locked", ...missing];
-	const install = run("mise", installArgs);
-	const installCommand = commandLine("mise", installArgs);
-	if (!install.ok) {
-		return finish(
-			false,
-			[],
-			`${commandFailure(install, installCommand)}\n    ${MISE_TOOL_REMEDY}`,
-		);
-	}
-	const binDirs: string[] = [];
-	for (const tool of missing) {
-		const resolveArgs = ["--cd", root, "which", tool];
-		const resolved = run("mise", resolveArgs);
-		const executable = resolved.out.split("\n")[0]?.trim() ?? "";
-		if (!resolved.ok || !isAbsolute(executable)) {
-			const failure = resolved.ok
-				? `${commandLine("mise", resolveArgs)}: expected an absolute executable path for ${tool}, got ${executable || "(empty)"}`
-				: commandFailure(resolved, commandLine("mise", resolveArgs));
-			return finish(false, missing, `${failure}\n    ${MISE_TOOL_REMEDY}`);
-		}
-		binDirs.push(dirname(executable));
-	}
-	const pathDirs = [...new Set(binDirs)];
-	env.PATH = [...pathDirs, ...(env.PATH ? [env.PATH] : [])].join(delimiter);
-	if (env.GITHUB_ACTIONS === "true" && env.GITHUB_PATH) {
-		appendFile(env.GITHUB_PATH, pathDirs.map((dir) => `${dir}\n`).join(""));
 	}
 	return finish(
 		true,

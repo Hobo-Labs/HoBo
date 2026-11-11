@@ -562,6 +562,50 @@ describe("worker lease reconciliation", () => {
 		expect(onOrphanJob).not.toHaveBeenCalled();
 	});
 
+	it("stops a running container past its hobo.ci/timeout-ms budget", async () => {
+		const lease = staleLease("00000000-0000-4000-8000-000000000001", 100);
+		lease.runnerId = 42;
+		lease.actualJobId = 200;
+		const store = storeWith([lease]);
+		const createdAtMs = NOW - 70 * 60_000;
+		const container: DockerContainer = {
+			name: lease.sandboxName,
+			containerId: lease.sandboxSessionId,
+			state: "running",
+			createdAtMs,
+			timeoutMs: 65 * 60_000,
+		};
+		const stop = vi.fn(async () => undefined);
+		const remove = vi.fn(async () => undefined);
+		const settleExited = vi.fn(async () => undefined);
+		const log = vi.fn();
+		const reconciler = createWorkerLeaseReconciler({
+			store,
+			docker: {
+				list: vi.fn(async () => [container]),
+				stop,
+				remove,
+			},
+			workerAccountId: "worker-a",
+			workerMemoryMb: 6_144,
+			now: () => NOW,
+			settleExited,
+			log,
+		});
+
+		await reconciler.reconcile();
+
+		expect(stop).toHaveBeenCalledWith(container.name, container.containerId);
+		expect(remove).toHaveBeenCalledWith(container.name, container.containerId);
+		expect(settleExited).toHaveBeenCalledWith(lease);
+		expect(log).toHaveBeenCalledWith("hobo_ci_container_timeout_enforced", {
+			leaseId: lease.id,
+			jobId: lease.jobId,
+			name: container.name,
+			timeoutMs: container.timeoutMs,
+		});
+	});
+
 	it("settles an exited container without enqueueing an orphan", async () => {
 		const active = [staleLease("00000000-0000-4000-8000-000000000001", 1)];
 		const lease = active[0];
@@ -770,10 +814,12 @@ describe("worker lease reconciliation", () => {
 
 		const result = await reconciler.reconcile({ draining: true });
 
-		expect(result).toEqual({
+		expect(result).toMatchObject({
 			inventoryKnown: false,
 			liveLeaseIds: new Set([lease.id]),
 		});
+		// Memory in use is still reported when the container list is unknown.
+		expect(result.inUseMemoryMb).toBeGreaterThanOrEqual(0);
 		expect(active).toEqual([lease]);
 		expect(store.abortIsolatedAndRequeue).not.toHaveBeenCalled();
 		expect(remove).not.toHaveBeenCalled();

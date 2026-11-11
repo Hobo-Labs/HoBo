@@ -19,6 +19,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { posix } from "node:path";
 import process from "node:process";
+import { readStdin } from "../lib/read-stdin.mts";
 import { affectedLanes } from "./affected-lanes.mts";
 
 export type JobScope =
@@ -46,6 +47,7 @@ const ALWAYS = [
 	/^tools\/pins\//,
 	/^vitest\.config\.[^/]+$/,
 	/^scripts\/ci\/(job-scope|affected-lanes)\.mts$/,
+	/^scripts\/lib\/read-stdin\.mts$/,
 	// The runner image the jobs and the cold dev loop's container run in.
 	/^packages\/ci-gh-actions\/deploy\/ci-runner\//,
 	/^scripts\/(lib\/ci-runner-contract|ci-runner-preflight)\.mts$/,
@@ -260,7 +262,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 		console.error("usage: job-scope.mts <entry file>... < changed-paths");
 		process.exit(2);
 	}
-	const input = readFileSync(0, "utf8");
+	const input = readStdin();
 	const tree: Tree = {
 		read: (path) => {
 			try {

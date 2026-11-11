@@ -72,3 +72,16 @@ cycle. Station owns the Broker subscription and maps the highest active threshol
 to eligible offers, leaving financial accounting and the durable reservation
 ledger in CI. This keeps platform routing and CI admission consistent under
 replay, restart, and concurrent policy changes.
+
+
+Fleet balancing adds runner financial models and a pure balancer under
+`src/fleet/`. A model is compiled into an `@hobo/pricing` catalog and rated by
+dispatcher v2; no rate is multiplied in CI. Every ranked member is then put
+through `evaluateBudgetPolicy` with the measurements admission supplies, so a
+route planned ahead of the queue and a lease admitted from it answer to the same
+policy. Eligibility (visibility, ownership, Docker, forks, slots, label reach)
+is decided before price and reported separately from pricing and budget
+refusals. Roles tier members before cost; GitHub-hosted runners default to the
+last tier. The relay publishes the resulting route table to a repository
+variable; legacy admission ranking in `routing.ts` is unchanged. Models are
+hand-read list prices with source and expiry, not live provider billing.

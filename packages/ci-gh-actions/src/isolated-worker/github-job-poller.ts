@@ -4,6 +4,7 @@ import type { AdmissionOrder } from "../admission-order.js";
 import type { GithubTransport } from "../github.js";
 import type { JobDurations } from "../job-durations.js";
 import { servedRunnerLabel } from "../runner-labels.js";
+import type { PollIngestCoalesce } from "./poll-ingest-coalesce.js";
 
 /** Pull-mode admission: GitHub REST stands in for webhook ingress, so a box
  * needs no public URL, relay, or shared database to see `runs-on: hobo` work. */
@@ -32,6 +33,23 @@ export interface GithubJobPollerOptions {
 	durations?: Pick<JobDurations, "observe">;
 	/** Primed from the run lists already read here, at no extra GitHub request. */
 	admissionOrder?: Pick<AdmissionOrder, "prime">;
+	ingestCoalesce?: PollIngestCoalesce;
+	/**
+	 * Asked once per poll for each queued job before it is taken in. False
+	 * leaves the job in GitHub's queue for another node, or for this node on
+	 * a later poll. With a relay mesh this is where a node waits its turn.
+	 * A rejection counts as true: a broken gate must not strand the queue.
+	 */
+	claim?: (job: {
+		jobId: number;
+		runId: number;
+		repository: string;
+		label: string;
+		/** The job's name, when the list carried it: what its size is known by. */
+		name: string | undefined;
+		/** GitHub's `created_at`, when the list carried it. */
+		createdAt: string | undefined;
+	}) => Promise<boolean>;
 	now?: () => number;
 }
 
@@ -317,6 +335,41 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						// Assignment is only useful once GitHub names the runner.
 						if (status.data !== "queued" && !job.runner_name) continue;
 						summary.hoboJobs++;
+						if (
+							status.data === "queued" &&
+							options.ingestCoalesce?.shouldSkip(
+								connection.repositoryId,
+								job.id,
+								job.run_attempt,
+							)
+						) {
+							summary.waiting.push({
+								jobId: job.id,
+								runId: job.run_id,
+								result: "coalesced",
+							});
+							continue;
+						}
+						if (status.data === "queued" && options.claim) {
+							const mine = await options
+								.claim({
+									jobId: job.id,
+									runId: job.run_id,
+									repository: connection.repository,
+									label: servedRunnerLabel(job.labels) ?? "",
+									name: job.name,
+									createdAt: job.created_at,
+								})
+								.catch(() => true);
+							if (!mine) {
+								summary.waiting.push({
+									jobId: job.id,
+									runId: job.run_id,
+									result: "mesh-deferred",
+								});
+								continue;
+							}
+						}
 						const rawBody = Buffer.from(
 							JSON.stringify({
 								action: status.data,
@@ -360,6 +413,12 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 							);
 							result = "failed";
 						}
+						options.ingestCoalesce?.observe(
+							connection.repositoryId,
+							job.id,
+							job.run_attempt,
+							result,
+						);
 						if (result === "accepted" || result === "requeued")
 							summary.accepted++;
 						else if (status.data === "queued")

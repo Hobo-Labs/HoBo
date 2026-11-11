@@ -101,8 +101,10 @@ import {
 	cloudStorage,
 	cloudStorageSite,
 	cloudTasks,
+	computeEngineInstance,
 	firestore,
 	memorystoreRedis,
+	persistentDisk,
 	pubsub,
 	secretManager,
 } from "./slots.js";
@@ -205,10 +207,16 @@ export const GCP_RESOLVED_PRODUCT_IDS: readonly string[] = Object.freeze(
  * `gcp.firestore/v1`: a database's id, location and mode are fixed at creation
  * and deletion is gated on an etag plus a delete-protection override this
  * package does not model, so only half the lifecycle would be expressible.
+ * `gcp.compute-engine-instance/v1`, `gcp.persistent-disk/v1`: catalog and
+ * declaration only. An instance needs a zone, a network and an image, and a
+ * disk needs the instance's zone; a Yard binding names none of them. No
+ * resolver is shipped.
  */
 export const GCP_UNRESOLVED_PRODUCT_IDS: readonly string[] = Object.freeze(
 	[
 		productIdOf(apiGateway(), "apiGateway"),
+		productIdOf(computeEngineInstance(), "computeEngineInstance"),
+		productIdOf(persistentDisk(), "persistentDisk"),
 		productIdOf(appEngine(), "appEngine"),
 		productIdOf(cloudFunctions(), "cloudFunctions"),
 		productIdOf(cloudStorageSite(), "cloudStorageSite"),

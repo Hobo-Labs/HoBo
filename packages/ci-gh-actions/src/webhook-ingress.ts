@@ -1,4 +1,3 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 import type { GithubTransport } from "./github.js";
@@ -14,6 +13,7 @@ import {
 	resolveCiConfigRefForRun,
 	resolveCiRelayRoute,
 } from "./relay-routing.js";
+import { verifyWebhookSignature } from "./webhook-signature.js";
 
 const JobWebhook = z.object({
 	action: z.enum(["queued", "in_progress", "completed"]),
@@ -123,12 +123,9 @@ export function createWebhookIngressHandler(options: {
 			json(413, '{"error":"body too large"}');
 			return;
 		}
-		const expectedGithub = createHmac("sha256", options.githubWebhookSecret)
-			.update(raw)
-			.digest();
 		if (
-			!/^sha256=[a-f0-9]{64}$/.test(signature) ||
-			!timingSafeEqual(expectedGithub, Buffer.from(signature.slice(7), "hex"))
+			verifyWebhookSignature(options.githubWebhookSecret, raw, signature) !==
+			"valid"
 		) {
 			json(401, '{"error":"invalid signature"}');
 			return;

@@ -28,4 +28,4 @@ You care about **MTTR, error budgets, and change safety**. HoBo makes the contro
 
 ## Related
 
-[Crew SRE](/HoBo/operations/sre/) · [Observability](/HoBo/observability/) · [Chaos testing](/HoBo/testing/chaos/) · [Runbooks](/HoBo/operations/runbooks/)
+[Crew SRE](/HoBo/operations/sre/) · [Observability](/HoBo/observability/) · [Chaos testing](/HoBo/testing/chaos/) · [Runbooks](/HoBo/operations/runbooks/) · [CI host health](/HoBo/ci/host-health/)

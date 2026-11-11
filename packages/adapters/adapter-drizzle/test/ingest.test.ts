@@ -9,11 +9,15 @@ import type { ExtraConfigBuilder } from "../src/shape.js";
 import {
 	column,
 	indexBuilder,
+	indexedColumn,
+	partialIndexBuilder,
 	representativeSchemaModule,
+	sqlExpression,
 	table,
 	typelessColumn,
 	view,
 } from "./fixtures.js";
+import * as schemaModule from "./schema-module.fixture.js";
 
 function codes(module: JsonObject): readonly DrizzleImpedanceCode[] {
 	return ingestDrizzleSchema(module).impedance.map((finding) => finding.code);
@@ -313,6 +317,103 @@ describe("ingestDrizzleSchema", () => {
 
 		expect(ingestDrizzleSchema(module).schema.tables[0]?.indexes).toEqual([
 			{ name: "t_id_idx", columns: ["id"], unique: true },
+		]);
+	});
+
+	it("ingests a partial index on its columns and names the dropped predicate", () => {
+		const module = {
+			t: table(
+				"t",
+				{ id: column("id"), deleted_at: column("deleted_at") },
+				{
+					extraConfigBuilder: () => [partialIndexBuilder("t_live", ["id"])],
+				},
+			),
+		};
+
+		const result = ingestDrizzleSchema(module);
+
+		expect(result.schema.tables[0]?.indexes).toEqual([
+			{ name: "t_live", columns: ["id"], unique: false },
+		]);
+		expect(result.impedance).toEqual([
+			{
+				code: "DRIZZLE_INDEX_PREDICATE_UNREPRESENTABLE",
+				detail: expect.stringContaining('"t_live"'),
+			},
+		]);
+	});
+
+	it("ingests an index without its non-default key order and says so", () => {
+		const module = {
+			t: table(
+				"t",
+				{ id: column("id"), seq: column("seq") },
+				{
+					extraConfigBuilder: () => [
+						indexBuilder("t_plain", [indexedColumn("id")]),
+						indexBuilder("t_recent", [
+							indexedColumn("id"),
+							indexedColumn("seq", { order: "desc", nulls: "first" }),
+						]),
+					],
+				},
+			),
+		};
+
+		const result = ingestDrizzleSchema(module);
+
+		expect(result.schema.tables[0]?.indexes).toEqual([
+			{ name: "t_plain", columns: ["id"], unique: false },
+			{ name: "t_recent", columns: ["id", "seq"], unique: false },
+		]);
+		expect(result.impedance).toEqual([
+			{
+				code: "DRIZZLE_INDEX_KEY_ORDER_UNREPRESENTABLE",
+				detail: expect.stringMatching(/"t_recent".*"seq"/u),
+			},
+		]);
+	});
+
+	it("refuses to ingest an expression index rather than record it on fewer keys", () => {
+		const module = {
+			t: table(
+				"t",
+				{ id: column("id"), body: column("body") },
+				{
+					extraConfigBuilder: () => [
+						indexBuilder("t_by_kind", [
+							"id",
+							sqlExpression("(body ->> 'kind')"),
+						]),
+					],
+				},
+			),
+		};
+
+		const result = ingestDrizzleSchema(module);
+
+		expect(result.schema.tables[0]?.indexes).toEqual([]);
+		expect(result.impedance).toEqual([
+			{
+				code: "DRIZZLE_INDEX_EXPRESSION_UNREPRESENTABLE",
+				detail: expect.stringContaining('"t_by_kind"'),
+			},
+		]);
+	});
+
+	it("accepts the module namespace object `import * as schema` yields", () => {
+		expect(Object.prototype.toString.call(schemaModule)).toBe(
+			"[object Module]",
+		);
+
+		const result = ingestDrizzleSchema(schemaModule);
+
+		expect(result.schema.tables.map((entry) => entry.name)).toEqual([
+			"accounts",
+		]);
+		expect(result.impedance.map((finding) => finding.code)).toEqual([
+			"DRIZZLE_EXPORT_UNRECOGNIZED",
 		]);
 	});
 

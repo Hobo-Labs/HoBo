@@ -47,11 +47,7 @@ async function assertFile(root: string, relativePath: string) {
 }
 
 describe("hobo new scaffold", () => {
-	// Runs the scaffolded project's own tests/typecheck as subprocesses;
-	// cold CI runners exceed the 10s default.
-	it("scaffolds an api project through the CLI shell and stays offline", {
-		timeout: 120_000,
-	}, async () => {
+	it("scaffolds an api project through the CLI shell and stays offline", async () => {
 		await withScratch(async (cwd) => {
 			const result = await runHobo(["new", "snapshop", "-t", "api", "--json"], {
 				cwd,
@@ -91,10 +87,10 @@ describe("hobo new scaffold", () => {
 				await assertFile(projectDir, relativePath);
 			}
 
+			// That the api project's own tests and typecheck pass is asserted, with
+			// every other template, in "creates all four templates" below.
 			const report = await validateScaffoldProject(projectDir);
 			expect(report.ok).toBe(true);
-			assertGeneratedProjectRuns(projectDir);
-			assertGeneratedProjectTypechecks(projectDir);
 		});
 	});
 

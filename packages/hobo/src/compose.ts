@@ -142,6 +142,7 @@ function asFetchHandler(
 }
 
 import type { VercelFetch } from "./vercel-client.js";
+import { normalizeVercelTeamId } from "./vercel-client.js";
 
 // @hobo/hobo — the composition root (apps layer). It wires HoBo's default
 // runtimes so the composed `hobo` binary runs the cloud verbs end to end in the
@@ -247,8 +248,9 @@ export interface SelectIacProviderDeps {
 	readonly providers: readonly CloudProvider[];
 	// Optional Pulumi adapter override (forces the Pulumi lane; see above).
 	readonly adapter?: PulumiAutomationAdapter;
-	// The environment consulted for `VERCEL_TOKEN` / `CLOUDFLARE_API_TOKEN` +
-	// `CLOUDFLARE_ACCOUNT_ID`. Defaults to `process.env`.
+	// The environment consulted for `VERCEL_TOKEN` (and `VERCEL_TEAM_ID` /
+	// `VERCEL_ORG_ID`) /
+	// `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`. Defaults to `process.env`.
 	readonly env?: Record<string, string | undefined>;
 	// Optional injected transport for the Vercel client (tests mock the network).
 	readonly vercelFetch?: VercelFetch;
@@ -446,6 +448,48 @@ function hostCredentialResolver(
 	};
 }
 
+// The Vercel team the environment names: `VERCEL_TEAM_ID` (the name
+// `scripts/staging-cutover-demo.mts` already uses), else `VERCEL_ORG_ID`
+// (the Vercel CLI's) when it is a team id. Each is trimmed and taken as unset
+// when blank, the rule `createVercelClient` and `createVercelDeployProvider`
+// apply to their own `teamId`; `undefined` when neither names a team. The
+// Vercel resolver plane reads it, and the resolvers compare it with the
+// canonical `team_…` accountId Vercel returns, so a slug or bare `team_`
+// here would read as a different team on every later read: refuse it now,
+// before anything is sent, instead of after a create succeeded.
+function vercelTeamIdOf(
+	env: Record<string, string | undefined>,
+): string | undefined {
+	const named = normalizeVercelTeamId(env.VERCEL_TEAM_ID);
+	if (named !== undefined) {
+		if (named === "team_" || !named.startsWith("team_")) {
+			throw new Error(
+				"VERCEL_TEAM_ID must be the canonical team id (team_ and the rest), not a slug, a name, or a bare team_: nothing was sent to Vercel. Set VERCEL_TEAM_ID to the team_ id, or unset it to work in the token's own scope",
+			);
+		}
+		return named;
+	}
+	return vercelOrgTeamIdOf(env.VERCEL_ORG_ID);
+}
+
+// The Vercel CLI writes the id of the team or of the personal account a
+// directory is linked to into `VERCEL_ORG_ID`, and the Vercel CLI treats an
+// `orgId` that starts with `team_` as a team and any other as the user (its
+// `getOrgById`, packages/cli/src/util/projects/get-org-by-id.ts in
+// vercel/vercel). So does this: anything else is an account's, and an account
+// is not a team, so it is no `teamId` at all. A bare `team_` is neither, and is
+// refused here rather than sent as `?teamId=team_`. Read only when
+// `VERCEL_TEAM_ID` names no team.
+function vercelOrgTeamIdOf(orgId: string | undefined): string | undefined {
+	const id = normalizeVercelTeamId(orgId);
+	if (id === "team_") {
+		throw new Error(
+			'VERCEL_ORG_ID is "team_" with no id after it, so it names no team and no account: nothing was sent to Vercel. Set VERCEL_ORG_ID to the whole team id the Vercel CLI wrote (team_ and the rest), or set VERCEL_TEAM_ID',
+		);
+	}
+	return id?.startsWith("team_") ? id : undefined;
+}
+
 // Build the exact-artifact resolver-backed deploy provider for whichever cloud the
 // environment has credentials for, or `undefined` when it has none. Cloudflare
 // resolvers take a transport the host must wrap in the Cloudflare guard policy;
@@ -475,6 +519,7 @@ function resolverBackedProviderFor(
 	}
 	const vercelToken = env.VERCEL_TOKEN;
 	if (vercelToken) {
+		const teamId = vercelTeamIdOf(env);
 		return createResolverBackedIacProvider({
 			store: deps.store,
 			registry: vercelResolverRegistry({
@@ -482,6 +527,7 @@ function resolverBackedProviderFor(
 					VERCEL_RESOLVER_CREDENTIAL_REF,
 					vercelToken,
 				),
+				...(teamId !== undefined ? { teamId } : undefined),
 			}),
 			transport,
 			credentialRef: VERCEL_RESOLVER_CREDENTIAL_REF,
@@ -492,6 +538,10 @@ function resolverBackedProviderFor(
 
 // Live credentials select the exact-resource resolver plane. Fixture upload
 // helpers are explicitly opt-in demonstrations and never selected here.
+//
+// The Vercel resolver plane works in the team `VERCEL_TEAM_ID`, else a `team_`
+// `VERCEL_ORG_ID`, names, or in the token's own scope when neither does
+// (`vercelTeamIdOf`).
 export function selectIacProvider(deps: SelectIacProviderDeps): IacProvider {
 	const env = deps.env ?? process.env;
 	if (usesOpenSesameCredentials(env)) requireOpenSesameSurrogate(env);

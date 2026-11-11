@@ -51,5 +51,6 @@ and [repository JIT runner configuration](https://docs.github.com/en/rest/action
 
 Relay HTTP provider boundary: `relay-boundary.pact.json` is exercised by
 `relay.provider.test.ts` over real loopback HTTP with simulated GitHub/identity
-ports. It verifies all declared interactions, JIT authorization and single-use
-claims. This is local provider verification against mocks, not a live integration.
+ports, through the shared HTTP handler and Node adapter. It verifies all
+declared interactions, then that the worker tick reserves and dispatches the
+committed delivery, JIT authorization and single-use claims. This is local provider verification against mocks, not a live integration.

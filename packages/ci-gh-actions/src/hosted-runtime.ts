@@ -3,6 +3,7 @@ import type { CiEvent } from "@hobo/ci";
 import { z } from "zod";
 import { JitBootstrapResponseSchema } from "./_generated/jit_bootstrap_response_pb.js";
 import { createAdmissionOrder } from "./admission-order.js";
+import type { FleetRoutePublisher } from "./fleet-routes.js";
 import { type GithubTransport, getJob } from "./github.js";
 import {
 	HostedRelay,
@@ -102,10 +103,14 @@ export function createHostedRelayRuntime(options: {
 	lendTrunkSlots?: boolean;
 	memoryAdmission?: WorkerMemoryAdmission;
 	storageAdmission?: WorkerStorageAdmission;
+	/** See `HostedRelay`: publishes the fleet route table after each pass. */
+	fleetRoutes?: Pick<FleetRoutePublisher, "publish"> | undefined;
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
 	onTickTiming?: (timing: HostedRelayTickTiming) => void;
+	/** A lease whose reconciliation threw this tick; the lease is retained and retried. */
+	onLeaseFailure?: (leaseId: string) => void;
 	now?: () => string;
 }) {
 	const now = options.now ?? (() => new Date().toISOString());
@@ -152,6 +157,7 @@ export function createHostedRelayRuntime(options: {
 			relayOptions.memoryAdmission = options.memoryAdmission;
 		if (options.storageAdmission)
 			relayOptions.storageAdmission = options.storageAdmission;
+		if (options.fleetRoutes) relayOptions.fleetRoutes = options.fleetRoutes;
 		return new HostedRelay(relayOptions);
 	}
 	return {
@@ -216,14 +222,26 @@ export function createHostedRelayRuntime(options: {
 				);
 			if (covered) return "duplicate" as const;
 			const nowMs = Date.parse(now());
-			for (const [deliveryId, lastRecheckMs] of lastDuplicateRecheck) {
-				if (nowMs - lastRecheckMs >= 60_000)
-					lastDuplicateRecheck.delete(deliveryId);
+			const registrationPending = leases.some(
+				(lease) =>
+					lease.repositoryId === identity.repository.id &&
+					matchesAttempt(lease.runAttempt) &&
+					(lease.jobId === jobId || lease.actualJobId === jobId) &&
+					lease.runnerId > 0 &&
+					(lease.state === "claiming" ||
+						lease.state === "running" ||
+						lease.state === "uncertain" ||
+						lease.state === "dispatched"),
+			);
+			const recheckMs = registrationPending ? 300_000 : 60_000;
+			const recheckKey = `${identity.repository.id}:${jobId}:${runAttempt ?? 0}`;
+			for (const [key, lastMs] of lastDuplicateRecheck) {
+				if (nowMs - lastMs >= recheckMs) lastDuplicateRecheck.delete(key);
 			}
-			const lastRecheckMs = lastDuplicateRecheck.get(input.deliveryId);
-			if (lastRecheckMs !== undefined && nowMs - lastRecheckMs < 60_000)
+			const lastRecheckMs = lastDuplicateRecheck.get(recheckKey);
+			if (lastRecheckMs !== undefined && nowMs - lastRecheckMs < recheckMs)
 				return "duplicate" as const;
-			lastDuplicateRecheck.set(input.deliveryId, nowMs);
+			lastDuplicateRecheck.set(recheckKey, nowMs);
 			try {
 				const recheck = await (await relay()).processWebhook(
 					Buffer.from(input.rawBody),
@@ -409,6 +427,7 @@ export function createHostedRelayRuntime(options: {
 					else await controller.discover(lease.id);
 				} catch {
 					/* Retain ambiguous reservations until a later verified reconciliation. */
+					options.onLeaseFailure?.(lease.id);
 				}
 			}
 			const leaseReconcileMs = Date.now() - leaseReconcileStartedAt;
