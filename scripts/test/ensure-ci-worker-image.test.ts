@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+	materializeCiWorkerImageOnly,
 	releaseWorkerEnsurePath,
 	remoteWorkerTag,
 } from "../ci/ensure-ci-worker-image.mts";
@@ -26,6 +27,13 @@ describe("ensure-ci-worker-image", () => {
 		assert.equal(releaseWorkerEnsurePath(), true);
 		process.env.HOBO_RELEASE_VERSION = prev.ver;
 		process.env.GITHUB_REF = prev.ref;
+	});
+
+	it("exposes materialize-only without throwing on missing image", () => {
+		const prev = process.env.HOBO_CI_SKIP_GHCR_PULL;
+		process.env.HOBO_CI_SKIP_GHCR_PULL = "1";
+		assert.equal(materializeCiWorkerImageOnly(), null);
+		process.env.HOBO_CI_SKIP_GHCR_PULL = prev;
 	});
 
 	it("does not treat ordinary CI as release worker ensure", () => {

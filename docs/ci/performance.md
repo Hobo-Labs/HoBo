@@ -104,7 +104,9 @@ unindexed new finding files as notices.
 - [Finding 91: release playwright CDN stalls GHCR](./findings/0091-release-playwright-cdn-stalls-ghcr.md)
 - [Finding 92: main plan parallel deps affected shards](./findings/0092-main-plan-parallel-deps-affected-shards.md)
 - [Finding 93: main sub3m plan pickup shards](./findings/0093-main-sub3m-plan-pickup-shards.md)
+- [Finding 94: deps publisher docker headroom](./findings/0094-deps-publisher-docker-headroom.md)
 - [Finding 95: worker custody orphan live shards](./findings/0095-worker-custody-orphan-live-shards.md)
+- [Finding 97: ci runner image ghcr materialize](./findings/0097-ci-runner-image-ghcr-materialize.md)
 <!-- findings-index:end -->
 
 ## Data
