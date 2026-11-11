@@ -1,0 +1,78 @@
+{
+	"statement": {
+		"predicateType": "https://hobo.dev/attestations/ci-local-run/v1",
+		"tree": "1899bec35e2e5f595d75d3a0dd31c7a37c89eeb7",
+		"baseTree": "299d2d1c7d42ac838e0a4110606cb3f0c3fec48c",
+		"head": "362e73c300f3f5bc9b28e590c44737a1f360a19e",
+		"base": "d705c58c900db92268c86ef09b734ab1429209e0",
+		"jobs": [
+			"pr-offpath",
+			"artifact-trust",
+			"ci-guard",
+			"secret-scan"
+		],
+		"events": [
+			"pull_request",
+			"merge_group"
+		],
+		"startedAt": "2026-11-11T13:23:33.708Z",
+		"finishedAt": "2026-11-11T13:24:43.650Z",
+		"attestor": "ed25519-3f61033a0ac0391e",
+		"environment": {
+			"platform": "linux-x64",
+			"dockerEngine": false,
+			"tools": {
+				"node": "v22.23.4",
+				"pnpm": "10.33.4",
+				"turbo": "2.11.10"
+			}
+		},
+		"results": [
+			{
+				"id": "pr-offpath",
+				"status": "passed",
+				"events": [
+					"pull_request"
+				],
+				"commands": 4,
+				"durationMs": 44682,
+				"logDigest": "sha256:76059babbfd80d2b20c2b9d479ec4348b9833d8b08f144388bf67ed4942f660f"
+			},
+			{
+				"id": "artifact-trust",
+				"status": "passed",
+				"events": [
+					"pull_request"
+				],
+				"commands": 1,
+				"durationMs": 95,
+				"logDigest": "sha256:c59af33bf57f3e8a01f5b3c12771996f1be03e1f6d4ba0072a61234082586c13"
+			},
+			{
+				"id": "ci-guard",
+				"status": "passed",
+				"events": [
+					"pull_request"
+				],
+				"commands": 2,
+				"durationMs": 4296,
+				"logDigest": "sha256:4312549c9f479786286c0c36b2445844814d38d7d88c5533972fe8335da4e41e"
+			},
+			{
+				"id": "secret-scan",
+				"status": "passed",
+				"events": [
+					"pull_request"
+				],
+				"commands": 1,
+				"durationMs": 1026,
+				"logDigest": "sha256:471729eff15e1413723b1a2d6da130b2850648eb7c3331f4cbb4bad5c6a8a5e8"
+			}
+		]
+	},
+	"signature": {
+		"algorithm": "ed25519",
+		"keyId": "ed25519-3f61033a0ac0391e",
+		"value": "9ETie9DNR/poQlepCx/U3+jjidJI7Z2GkieJcOXOPVvtyhmPyi6t2+ilKrvVA527fvK3q+jNOsRPqy4juPDNDw=="
+	}
+}
