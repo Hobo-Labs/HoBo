@@ -592,6 +592,26 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		).toHaveLength(2);
 	});
 
+	it("does not push a repair that is the same as the failed resolution", async () => {
+		const first = pull(1, "TWO from 1");
+		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });
+		const engine = takeBoth();
+		const { agent, comments, checks } = setup("suggest", [first], {}, [engine]);
+		const ref = `refs/heads/hobo-agent/resolve/1-${first.head.slice(0, 8)}`;
+		const original = (await agent.tick()).resolutions[0]?.commitSha ?? "";
+		checks.set(original, {
+			state: "failure",
+			failures: "check test (FAILURE)",
+		});
+		await agent.tick();
+		await agent.tick();
+		expect(engine.requests).toHaveLength(2);
+		expect(repos.remoteRef(ref)).toBe(original);
+		expect(
+			comments.filter((c) => c.body.includes("kept the same resolution")),
+		).toHaveLength(1);
+	});
+
 	it("reuses a resolution whose checks passed for the same conflict, without the model", async () => {
 		const first = pull(1, "TWO from 1");
 		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });

@@ -99,6 +99,17 @@ type TickProgress = {
 
 const sha256 = (value: readonly (string | number)[]) =>
 	createHash("sha256").update(JSON.stringify(value)).digest("hex");
+/** Whether two resolutions wrote the same content to the same paths. */
+function sameFiles(
+	a: readonly Readonly<{ path: string; contentSha256: string }>[],
+	b: readonly Readonly<{ path: string; contentSha256: string }>[],
+): boolean {
+	const content = new Map(b.map((file) => [file.path, file.contentSha256]));
+	return (
+		a.length === b.length &&
+		a.every((file) => content.get(file.path) === file.contentSha256)
+	);
+}
 const quoted = (path: string) => `\`${path.replace(/[`\r\n]/g, "'")}\``;
 
 /**
@@ -584,6 +595,21 @@ export function createCiAgent(options: {
 					// Deferred by the budget, the per-pass limit or an error: next pass.
 					if (canRepair && repaired === undefined) continue;
 					const resolution = repaired?.resolution;
+					// The same text again: the model sees nothing to correct in the
+					// regions it resolved. Pushing it would only re-run the checks.
+					const unchanged =
+						resolution?.outcome === "resolved" &&
+						sameFiles(resolution.files, published.files);
+					if (unchanged) {
+						await concluded("failure");
+						await attempt(() =>
+							publisher.comment(
+								entry.number,
+								`**hobo-ci-agent**: the required checks failed on its merge commit ${published.commitSha}. Asked again with what the checks reported, the model kept the same resolution, so the failure may be outside the conflicts it resolved, or flaky. Re-run the checks, or resolve the conflict by hand. It will not try again.`,
+							),
+						);
+						continue;
+					}
 					if (resolution?.outcome === "resolved") {
 						const pushed = await attempt(() =>
 							publish(
