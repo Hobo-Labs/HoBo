@@ -1,6 +1,8 @@
 /**
  * Pick the git base Main full gate uses for affected workspace tests: last green
- * main push on HoBo CI Fabric when reachable, else the push parent, else HEAD~1.
+ * push on HoBo CI Fabric for the branch the workflow runs for (main, or a
+ * long-lived branch whose pushes run the gate) when reachable, else the push
+ * parent, else HEAD~1.
  */
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -43,6 +45,12 @@ export type FetchLastGreenOptions = Readonly<{
 	token: string;
 	workflowBasename: string;
 	head: string;
+	/**
+	 * The branch whose pushes are searched. Defaults to `main`. Another branch's
+	 * last green commit can be an ancestor of this head without being this
+	 * branch's last green run: after main is merged in, main's is.
+	 */
+	branch?: string;
 	fetch: (url: string, init: RequestInit) => Promise<Response>;
 }>;
 
@@ -51,7 +59,8 @@ export async function fetchLastGreenMainSha(
 ): Promise<string | undefined> {
 	const [owner, repo] = options.repository.split("/");
 	if (!owner || !repo) return undefined;
-	const url = `https://api.github.com/repos/${owner}/${repo}/actions/runs?branch=main&event=push&status=completed&per_page=30`;
+	const branch = options.branch?.trim() || "main";
+	const url = `https://api.github.com/repos/${owner}/${repo}/actions/runs?branch=${encodeURIComponent(branch)}&event=push&status=completed&per_page=30`;
 	const response = await options.fetch(url, {
 		headers: {
 			Accept: "application/vnd.github+json",
@@ -119,6 +128,8 @@ async function main(): Promise<void> {
 			token,
 			workflowBasename: "hobo-ci.yml",
 			head,
+			// The branch that was pushed. GitHub sets GITHUB_REF_NAME for every step.
+			branch: process.env.GITHUB_REF_NAME?.trim() || "main",
 			fetch: globalThis.fetch,
 		});
 	}

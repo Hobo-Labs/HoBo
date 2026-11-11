@@ -63,7 +63,13 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
 - **Workspace duration table typing.** `scripts/ci/workspace-test-durations.mts` uses pins-json tag narrowing so root `typecheck:root` accepts the JSON leaf parser on CI.
 - **Main full gate workspace sharding.** `main-gate-plan` (route + deps image) resolves the last-green
   base and prints a duration-balanced shard matrix (`scripts/ci/workspace-test-durations.json`,
-  target 90s per shard) while `main-gate` runs S0. `main_workspace_tests` starts after the plan job only,
+  target 90s per shard) while `main-gate` runs S0. The last-green lookup
+  (`fetchLastGreenMainSha`, called by `plan-main-workspace-shards.mts` and
+  `resolve-main-test-base.mts`) asks for the pushed branch's runs, `GITHUB_REF_NAME`, and for `main`
+  when that is unset. Both scripts ask only on a `push` event, and this workflow runs them for pushes
+  to `main` alone, so the request is the one it was (`branch=main`); the parameter is for a
+  long-lived branch that runs the same gate, where main's last green commit is an ancestor of the
+  head after a merge of main and would otherwise be taken as the base. `main_workspace_tests` starts after the plan job only,
   links the deps layer first, and skips pnpm store/install on a layer hit. S0 uses
   `--external-workspace-tests` when affected. Gitleaks stays in `main_gate_finish`
   ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)).

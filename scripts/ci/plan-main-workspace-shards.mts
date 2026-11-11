@@ -45,6 +45,8 @@ async function main(): Promise<void> {
 				token,
 				workflowBasename: "hobo-ci.yml",
 				head,
+				// The branch that was pushed, as in resolve-main-test-base.mts.
+				branch: process.env.GITHUB_REF_NAME?.trim() || "main",
 				fetch: globalThis.fetch,
 			});
 		}
