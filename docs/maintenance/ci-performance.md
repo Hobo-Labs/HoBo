@@ -582,3 +582,11 @@ CPU (545 tests, load 16.5 → 12.5); after these changes 316 s wall, 303 s CPU (
 - **Release sparse cones.** `scripts/test/release-sparse-cone.test.ts` pins the exports in
   `scripts/lib/release-sparse-cone.mts` (for example `hoboReleaseSparseCones` and
   `filePathsRequiredByReleaseOciContractTests`) so release workflows do not drift from the cone list.
+
+### Worker image downloads retry
+
+The worker image's base layer downloads the GitHub Actions runner and Playwright's headless shell
+with `curl`. A single connection reset from the CDN used to fail the whole image build, and with it
+the CI deps layer job (seen on 2026-11-11: `curl: (35) Recv failure: Connection reset by peer`).
+Both downloads now retry five times, on any error, three seconds apart; the pinned SHA-256 check
+after each download is unchanged, so a retry can only produce the same verified file.
