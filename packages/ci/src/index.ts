@@ -4,12 +4,9 @@ export { parseConfiguration, positiveId } from "./config.js";
 export {
 	accountEventPage,
 	accountOwnsJob,
-	EVENT_SCAN_SPAN,
 	type EventCursor,
-	type EventScan,
 	eventCursorBounds,
 	eventJob,
-	eventScan,
 	isJobEvent,
 	jobAccountId,
 	type LeaseEventsQuery,

@@ -1,7 +1,7 @@
 {
 	"contract": "hobo.ci.embedded-ddl-lock/v1",
 	"provenOn": "PostgreSQL 16.15",
-	"sha256": "3d4f2f4c2313bcc91ba188fa257ad70e09c102f7fb53970175dfe92ad19e5788",
+	"sha256": "d2cf9bc7ec3fc7931bbf71cad3f0c868965a2f9215f1b0931f373a61aee6ab0a",
 	"statements": [
 		{
 			"source": "src/postgres-store.ts",
@@ -26,6 +26,14 @@
 		{
 			"source": "src/postgres-store.ts",
 			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_events_lease_type_seq ON hobo_ci_events(partition_id, (body::jsonb ->> 'leaseId'), (body::jsonb ->> 'type'), seq DESC)"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "ALTER TABLE hobo_ci_events ADD COLUMN IF NOT EXISTS account_id text"
+		},
+		{
+			"source": "src/postgres-store.ts",
+			"sql": "CREATE INDEX IF NOT EXISTS hobo_ci_events_account_seq ON hobo_ci_events(partition_id,account_id,seq)"
 		},
 		{
 			"source": "src/postgres-store.ts",

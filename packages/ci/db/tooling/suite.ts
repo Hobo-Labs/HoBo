@@ -37,6 +37,8 @@ const DATABASE_TIMEOUT_MS = 120_000;
 export interface SchemaExpectations {
 	/** Every table the package owns, sorted. */
 	readonly tables: readonly string[];
+	/** Every checked-in migration, in the order the journal applies them. */
+	readonly migrations: readonly string[];
 	/** Impedance findings by code: what the canonical IR could not carry. */
 	readonly impedance: Readonly<Partial<Record<string, number>>>;
 	/** Statements bound to a `create-table` step for want of their own step. */
@@ -91,13 +93,33 @@ export function defineSchemaSuite(
 			expect(await checkEmbeddedDdlLock(source)).toEqual([]);
 		});
 
+		it("plans every later migration as forward-only expand steps too", async () => {
+			const journal = await readJournal(source.directory);
+			const later = journal?.migrations.slice(1) ?? [];
+
+			expect(later.map((entry) => entry.id)).toEqual(
+				expected.migrations.slice(1),
+			);
+			expect(
+				later.flatMap((entry) =>
+					entry.plan.steps.filter(
+						(step) => step.phase !== "expand" || step.destructive,
+					),
+				),
+			).toEqual([]);
+			// A statement with no plan step of its own belongs to the baseline's
+			// tables only; a later migration is planned step for step.
+			expect(later.flatMap((entry) => entry.fallbacks)).toEqual([]);
+		});
+
 		it("plans the baseline as forward-only expand steps under the pinned engine", async () => {
 			const journal = await readJournal(source.directory);
 			const plan = journal?.migrations[0]?.plan;
 
-			expect(journal?.migrations.map((entry) => entry.id)).toEqual([
-				"0000_baseline",
-			]);
+			expect(journal?.migrations.map((entry) => entry.id)).toEqual(
+				expected.migrations,
+			);
+			expect(expected.migrations[0]).toBe("0000_baseline");
 			expect(plan?.engineId).toBe("drizzle-kit");
 			// The version it was generated with, which an upgrade does not rewrite.
 			expect(plan?.engineVersion).toMatch(/^\d+\.\d+\.\d+/u);
@@ -167,12 +189,12 @@ export function defineSchemaSuite(
 				expect(proof.justified[0]).toContain(SCHEMA_LEDGER_TABLE);
 			});
 
-			it("applies the baseline to an empty database", () => {
-				expect(proof.appliedToEmpty).toEqual(["0000_baseline"]);
+			it("applies every migration to an empty database, in order", () => {
+				expect(proof.appliedToEmpty).toEqual(expected.migrations);
 			});
 
 			it("migrates a database the embedded DDL initialised without changing schema or rows", () => {
-				expect(proof.appliedToExisting).toEqual(["0000_baseline"]);
+				expect(proof.appliedToExisting).toEqual(expected.migrations);
 				expect(proof.rowsPreserved).toBeGreaterThanOrEqual(
 					expected.tables.length,
 				);
