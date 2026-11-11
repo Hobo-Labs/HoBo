@@ -717,6 +717,7 @@ try {
 	let liveWorkerLeaseIds = firstReconciliation.liveLeaseIds;
 	let inUseWorkerMemoryMb = firstReconciliation.inUseMemoryMb;
 	await worker.reconcileOrphanJobs();
+	await worker.reconcileStallRecoveries();
 	let depsImageEnsurer: ReturnType<typeof createDepsImageEnsurer> | undefined;
 	if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
 		depsImageEnsurer = createDepsImageEnsurer({
@@ -1136,6 +1137,7 @@ try {
 		lastOrphanReconcileAt = now;
 		orphanReconcileInFlight = worker
 			.reconcileOrphanJobs()
+			.then(() => worker.reconcileStallRecoveries())
 			.catch((error) => {
 				log("hobo_ci_orphan_job_reconcile_failed", {
 					message: error instanceof Error ? error.message : "unknown",
@@ -1329,6 +1331,7 @@ try {
 				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
 				inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 				await worker.reconcileOrphanJobs();
+				await worker.reconcileStallRecoveries();
 				if (reconciliation.inventoryKnown) await runtime.tick({ admit: false });
 				try {
 					const listed = await listWorkerContainers();

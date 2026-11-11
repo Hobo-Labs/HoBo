@@ -1,5 +1,4 @@
 import type { Lease } from "@hobo/ci";
-import { stallOrphanConfirmationGraceMs } from "./host-resource-pressure.js";
 import { type GithubTransport, getJob, getRun } from "../github.js";
 
 export type OrphanJobCandidate = Readonly<{
@@ -31,8 +30,6 @@ type TrackedOrphanJob = Omit<OrphanJobCandidate, "runId"> & {
 	confirmed: boolean;
 	runnerDeleteAttempted: boolean;
 	runForceCancelled: boolean;
-	/** Shorter grace when the worker stopped the runner for host stall recovery. */
-	stallRecovery?: boolean;
 };
 
 const CONFIRMATION_GRACE_MS = 60_000;
@@ -93,29 +90,6 @@ export function createOrphanJobTracker(options: {
 		options.log?.("hobo_ci_orphan_job_dropped", {
 			...candidateFields(candidate),
 			reason,
-		});
-	}
-
-	function enqueueStall(candidate: OrphanJobCandidate): void {
-		const key = candidateKey(candidate);
-		if (candidates.has(key) || retiredCandidates.has(key)) return;
-		while (candidates.size >= MAX_CANDIDATES) {
-			const oldestKey = candidates.keys().next().value;
-			if (oldestKey === undefined) break;
-			const oldest = candidates.get(oldestKey);
-			if (oldest) drop(oldest, "capacity");
-			else candidates.delete(oldestKey);
-		}
-		candidates.set(key, {
-			...candidate,
-			confirmed: false,
-			runnerDeleteAttempted: false,
-			runForceCancelled: false,
-			stallRecovery: true,
-		});
-		options.log?.("hobo_ci_orphan_job_detected", {
-			...candidateFields(candidate),
-			stallRecovery: true,
 		});
 	}
 
@@ -229,12 +203,9 @@ export function createOrphanJobTracker(options: {
 						drop(candidate, "runner-mismatch");
 						continue;
 					}
-					const confirmGraceMs = candidate.stallRecovery
-						? stallOrphanConfirmationGraceMs()
-						: CONFIRMATION_GRACE_MS;
 					if (
 						job.status !== "in_progress" ||
-						now() - candidate.detectedAtMs < confirmGraceMs
+						now() - candidate.detectedAtMs < CONFIRMATION_GRACE_MS
 					)
 						continue;
 					candidate.confirmed = true;
@@ -248,7 +219,7 @@ export function createOrphanJobTracker(options: {
 		}
 	}
 
-	return { enqueue, enqueueStall, reconcile };
+	return { enqueue, reconcile };
 }
 
 export type OrphanJobTracker = ReturnType<typeof createOrphanJobTracker>;

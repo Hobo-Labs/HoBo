@@ -1800,7 +1800,9 @@ describe("pull-mode box worker over SQLite", () => {
 			).length;
 		const afterRequeue = originalJobReads();
 		await runtime.tick({ maxDeliveries: 10 });
-		expect(originalJobReads()).toBe(afterRequeue);
+		expect(originalJobReads()).toBe(
+			afterRequeue + 1,
+		); // one ghost-binding guard read before reserve
 
 		await store.transition(
 			first.id,
@@ -2450,6 +2452,8 @@ describe("pull-mode box worker over SQLite", () => {
 						{ status: 201 },
 					);
 				}
+				if (method === "DELETE" && /\/actions\/runners\/\d+$/u.test(path))
+					return new Response(null, { status: 204 });
 				return fake.request(installationId, path, method, body, ifNoneMatch);
 			},
 		};
@@ -2642,6 +2646,8 @@ describe("pull-mode box worker over SQLite", () => {
 						{ status: 201 },
 					);
 				}
+				if (method === "DELETE" && /\/actions\/runners\/\d+$/u.test(path))
+					return new Response(null, { status: 204 });
 				return fake.request(installationId, path, method, body, ifNoneMatch);
 			},
 		};
@@ -2747,6 +2753,8 @@ describe("pull-mode box worker over SQLite", () => {
 						{ encoded_jit_config: "c2VjcmV0", runner: { id: 42 } },
 						{ status: 201 },
 					);
+				if (method === "DELETE" && /\/actions\/runners\/\d+$/u.test(path))
+					return new Response(null, { status: 204 });
 				throw new Error(`unexpected ${method} ${path}`);
 			},
 		};

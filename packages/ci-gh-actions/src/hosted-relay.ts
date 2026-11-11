@@ -47,6 +47,8 @@ import {
 	jobPickupMetadataKey,
 	observeJobPickupMetadata,
 } from "./job-pickup.js";
+import { deregisterGithubRunner } from "./jit-runner-deregister.js";
+import { decideGhostBoxRunnerBinding } from "./jit-runner-ghost.js";
 import {
 	activeLeaseCoversJob,
 	hasOutstandingBoxCustody,
@@ -212,6 +214,10 @@ export class HostedRelay {
 	private readonly mergeGroupCapWaitJobs: Set<string>;
 	private readonly servedRunnerLabels: ServedRunnerLabelCache;
 	private readonly trunkWaits: TrunkWaitCache;
+	private dispatchGithubJobCache?: Map<
+		string,
+		Awaited<ReturnType<typeof getJob>>
+	>;
 	constructor(
 		readonly options: {
 			config: Configuration;
@@ -397,6 +403,86 @@ export class HostedRelay {
 	 * Another fleet runner on the shared `hobo` label holds this job; release this
 	 * worker's leases and pending demand without requeueing (mesh cooperation).
 	 */
+	private githubJobCacheKey(
+		installationId: number,
+		repository: string,
+		jobId: number,
+	): string {
+		return `${installationId}:${repository}:${jobId}`;
+	}
+
+	private async cachedGithubJob(
+		installationId: number,
+		repository: string,
+		jobId: number,
+	): Promise<Awaited<ReturnType<typeof getJob>>> {
+		const key = this.githubJobCacheKey(installationId, repository, jobId);
+		let cache = this.dispatchGithubJobCache;
+		if (!cache) {
+			cache = new Map();
+			this.dispatchGithubJobCache = cache;
+		}
+		const hit = cache.get(key);
+		if (hit) return hit;
+		const bound = await getJob(
+			this.options.github,
+			installationId,
+			repository,
+			jobId,
+		);
+		cache.set(key, bound);
+		return bound;
+	}
+
+	/** Job bound to a dead box JIT registration: drop it so GitHub can re-offer it. */
+	private async clearGhostRunnerBinding(
+		job: Job,
+		active: readonly Lease[],
+		installationId: number,
+	): Promise<boolean> {
+		try {
+			const bound = await this.cachedGithubJob(
+				installationId,
+				job.repository,
+				job.id,
+			);
+			const decision = decideGhostBoxRunnerBinding(job, bound, active);
+			if (decision.kind === "none") return false;
+			if (decision.kind === "covered") {
+				console.error(
+					JSON.stringify({
+						event: "hobo_ci_job_reserve_duplicate_skipped",
+						repository: job.repository,
+						runId: job.runId,
+						jobId: job.id,
+						leaseId: decision.leaseId,
+					}),
+				);
+				return true;
+			}
+			const outcome = await deregisterGithubRunner(
+				this.options.github,
+				installationId,
+				job.repository,
+				decision.runnerId,
+			);
+			console.error(
+				JSON.stringify({
+					event: "hobo_ci_jit_runner_ghost_binding_cleared",
+					repository: job.repository,
+					runId: job.runId,
+					jobId: job.id,
+					runnerName: decision.runnerName,
+					runnerId: decision.runnerId,
+					outcome,
+				}),
+			);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
 	private async yieldForeignRunnerCustody(
 		job: Job,
 		expectedRevision: number,
@@ -952,6 +1038,7 @@ export class HostedRelay {
 	}
 	/** Durable outbox drain. A launch intent is committed before network I/O. */
 	async dispatchPending(): Promise<number> {
+		this.dispatchGithubJobCache = new Map();
 		const reservationRevision = await this.refreshConfig();
 		// Both the reservation (offer concurrency) and the launch (host slots) hand
 		// out capacity in this order, so a freed slot goes to the queue's head.
@@ -1116,6 +1203,25 @@ export class HostedRelay {
 						continue;
 					}
 				}
+				if (
+					active.some((lease) =>
+						hasOutstandingBoxCustody(
+							lease,
+							job.repositoryId,
+							job.id,
+							job.runAttempt,
+						),
+					)
+				)
+					continue;
+				if (
+					await this.clearGhostRunnerBinding(
+						job,
+						active,
+						connection.installationId,
+					)
+				)
+					continue;
 				lease = await this.options.store.reserve(
 					account,
 					job,
@@ -1193,8 +1299,7 @@ export class HostedRelay {
 				}
 				this.binding(candidate);
 				const [currentJob, originalRun] = await Promise.all([
-					getJob(
-						this.options.github,
+					this.cachedGithubJob(
 						candidate.installationId,
 						candidate.repository,
 						candidate.jobId,

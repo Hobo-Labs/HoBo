@@ -168,8 +168,13 @@ export {
 	type ContainerStallGuard,
 	type HostResourcePressureSample,
 	readHostResourcePressureSample,
-	stallOrphanConfirmationGraceMs,
 } from "./isolated-worker/host-resource-pressure.js";
+export {
+	createStallJobRecovery,
+	stallJobRerunAllowed,
+	stallRecoveryRecordForLease,
+	type StallJobRecovery,
+} from "./isolated-worker/stall-job-recovery.js";
 export {
 	classifyHostHealth,
 	createHostHealthMonitor,

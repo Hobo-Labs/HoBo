@@ -38,7 +38,7 @@ Box at triage: ~16 GiB RAM, ~2.4 GiB available, load ~3.1.
 ## Fix
 
 - Memory admission: `memoryAdmitHeadroom` with `HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB`, plus PSI/swap gates from `/proc/pressure` and meminfo (`host-pressure` reason).
-- Running jobs: `createContainerStallGuard` samples during reconcile; on confirmed stall, log `hobo_ci_container_stall_requeue`, stop cooperatively, and `enqueueStall` orphan recovery (5s confirm → force-cancel + `rerun-failed-jobs` on push/pull_request).
+- Running jobs: `createContainerStallGuard` samples during reconcile; on confirmed stall, log `hobo_ci_container_stall_requeue`, stop the local container only, then `stall-job-recovery` (main push / merge_group within 15m → one `jobs/{id}/rerun`; pull_request → annotate only; never workflow `force-cancel`).
 - Telemetry: periodic `hobo_ci_host_resource_pressure` (PSI, swap, load) separate from `hobo_ci_memory_admitted` / container peak fields.
 
 ## Measure

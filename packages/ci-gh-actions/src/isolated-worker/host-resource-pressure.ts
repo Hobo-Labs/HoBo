@@ -58,12 +58,6 @@ export const DEFAULT_CONTAINER_STALL_THRESHOLDS = {
 	consecutiveSamples: 3,
 } as const satisfies ContainerStallThresholds;
 
-const STALL_ORPHAN_CONFIRM_MS = 5_000;
-
-export function stallOrphanConfirmationGraceMs(): number {
-	return STALL_ORPHAN_CONFIRM_MS;
-}
-
 export function parsePsiAverages(text: string): PsiAverages | undefined {
 	const some = /^some avg10=([\d.]+)/mu.exec(text);
 	const full = /^full avg10=([\d.]+)/mu.exec(text);
