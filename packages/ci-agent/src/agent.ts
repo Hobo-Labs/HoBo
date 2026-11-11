@@ -27,6 +27,7 @@ import {
 	planQueue,
 } from "./planner.js";
 import {
+	type EngineFailure,
 	type PreviousAttempt,
 	type ResolutionEngine,
 	resolveConflicts,
@@ -80,6 +81,8 @@ export type AgentTickReport = Readonly<{
 	ejected: readonly number[];
 	/** Steps that failed and were skipped; the tick itself still completed. */
 	failures: number;
+	/** Each time an engine gave no usable answer, and why. */
+	engineFailures: readonly EngineFailure[];
 }>;
 
 /** A report while its tick is still running. */
@@ -91,6 +94,7 @@ type TickProgress = {
 	applyWithheld: boolean;
 	ejected: number[];
 	failures: number;
+	engineFailures: EngineFailure[];
 };
 
 const sha256 = (value: readonly (string | number)[]) =>
@@ -168,6 +172,9 @@ export function createCiAgent(options: {
 	 * commits and policy. Returns nothing when today's budget is spent, so the
 	 * merge is tried again tomorrow instead of being recorded as declined.
 	 */
+	/** Engine failures of the tick in progress; ticks never overlap. */
+	let engineFailures: EngineFailure[] = [];
+
 	async function settle(input: {
 		repository: string;
 		number: number;
@@ -237,6 +244,7 @@ export function createCiAgent(options: {
 			previous: repair ? previous : undefined,
 			recorded,
 			structured: options.structured,
+			onEngineFailure: (failure) => engineFailures.push(failure),
 		});
 		if (result.outcome !== "resolved" && result.reason === "daily-budget") {
 			const last = await journal.latest(repository, "ci.agent.BudgetExhausted");
@@ -320,7 +328,9 @@ export function createCiAgent(options: {
 				applyWithheld: false,
 				ejected: [],
 				failures: 0,
+				engineFailures: [],
 			};
+			engineFailures = report.engineFailures;
 			if (entries.length === 0) return report;
 			const attempt = async <T>(step: () => Promise<T>) => {
 				try {

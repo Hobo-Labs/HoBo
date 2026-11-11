@@ -52,6 +52,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "biome check .",
     "test": "vitest run",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
     "start": "node dist/relay-main.js",
     "agent": "node dist/daemon-main.js",

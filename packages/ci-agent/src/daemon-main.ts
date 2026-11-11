@@ -9,7 +9,11 @@ import {
 	environmentCredentials,
 } from "./ai-sdk-engine.js";
 import { agentPolicies, parseAgentConfig } from "./config.js";
-import { createRelayAgent, type RelayConnection } from "./relay.js";
+import {
+	createRelayAgent,
+	type RelayConnection,
+	reportLogEntries,
+} from "./relay.js";
 import { parseCommitSigningKey } from "./signing.js";
 import { configuredStructuredMerger } from "./structured-merge.js";
 
@@ -137,13 +141,7 @@ export async function startAgentDaemonFromEnvironment(
 	async function once(): Promise<readonly AgentTickReport[]> {
 		const reports = await agent.pass();
 		for (const report of reports)
-			log({
-				event: "agent.pass",
-				resolutions: report.resolutions.length,
-				enqueued: report.enqueued.length,
-				ejected: report.ejected.length,
-				failures: report.failures,
-			});
+			for (const entry of reportLogEntries(report)) log(entry);
 		return reports;
 	}
 	function tick() {

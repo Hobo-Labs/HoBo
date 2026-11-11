@@ -10,7 +10,7 @@ import {
 	environmentCredentials,
 } from "./ai-sdk-engine.js";
 import { agentPolicies, parseAgentConfig } from "./config.js";
-import { createRelayAgent } from "./relay.js";
+import { createRelayAgent, reportLogEntries } from "./relay.js";
 import { parseCommitSigningKey } from "./signing.js";
 import { configuredStructuredMerger } from "./structured-merge.js";
 
@@ -76,6 +76,12 @@ export async function startRelayWithAgentFromEnvironment(
 				structured,
 				signingKey,
 				intervalMs: seconds * 1000,
+				onReport: (report) => {
+					for (const entry of reportLogEntries(report))
+						process.stdout.write(
+							`${JSON.stringify({ level: "info", ...entry })}\n`,
+						);
+				},
 			});
 			close = () => agent.close();
 			return agent;

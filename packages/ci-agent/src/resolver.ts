@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { z } from "zod";
 import type { AgentBudget, ResolutionPolicy } from "./_generated/agent_pb.js";
 import { matchesAnyPath } from "./config.js";
 import {
@@ -103,6 +104,29 @@ export type ResolutionReason =
 	| "duplicate-declaration"
 	| "engine-unavailable";
 
+/**
+ * Why an engine gave no usable answer, for the operator: the engine, a fixed
+ * reason, and the HTTP status when there was one (402 for an unpaid account,
+ * 401 for a bad key). Never the error's text, which can carry the request.
+ */
+export type EngineFailure = Readonly<{
+	engineId: string;
+	reason: "http" | "timeout" | "malformed-answer" | "error";
+	status: number;
+}>;
+
+const HttpError = z.object({ statusCode: z.number().int().min(100).max(599) });
+
+function engineFailure(engineId: string, error: unknown): EngineFailure {
+	const http = HttpError.safeParse(error);
+	if (http.success)
+		return { engineId, reason: "http", status: http.data.statusCode };
+	const timedOut =
+		error instanceof Error &&
+		(error.name === "TimeoutError" || error.name === "AbortError");
+	return { engineId, reason: timedOut ? "timeout" : "error", status: 0 };
+}
+
 export type ResolvedContent = Readonly<{
 	path: string;
 	content: string;
@@ -202,6 +226,8 @@ export async function resolveConflicts(input: {
 	 * Not used for a repair.
 	 */
 	structured?: StructuredMerger | undefined;
+	/** Told each time an engine fails to answer, before the next is tried. */
+	onEngineFailure?: ((failure: EngineFailure) => void) | undefined;
 }): Promise<ResolveResult> {
 	const { files, policy, budget } = input;
 	const none = { inputTokens: 0, outputTokens: 0 };
@@ -324,7 +350,8 @@ export async function resolveConflicts(input: {
 						maxOutputTokens: budget.maxOutputTokens,
 						signal: AbortSignal.timeout(budget.timeoutSeconds * 1000),
 					});
-				} catch {
+				} catch (error) {
+					input.onEngineFailure?.(engineFailure(engine.id, error));
 					unavailable = true;
 					break;
 				}
@@ -337,6 +364,11 @@ export async function resolveConflicts(input: {
 					ids.size !== entry.pending.length ||
 					entry.pending.some((region) => !ids.has(region.id))
 				) {
+					input.onEngineFailure?.({
+						engineId: engine.id,
+						reason: "malformed-answer",
+						status: 0,
+					});
 					unavailable = true;
 					break;
 				}

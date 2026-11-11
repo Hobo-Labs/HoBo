@@ -50,6 +50,8 @@ export function createRelayAgent(options: {
 	/** Where a repository is fetched from and pushed to; GitHub over HTTPS by default. */
 	remoteUrl?: ((repository: string) => string) | undefined;
 	now?: () => string;
+	/** Told of each repository's report, after its tick. */
+	onReport?: ((report: AgentTickReport) => void) | undefined;
 }) {
 	mkdirSync(join(options.stateDirectory, "repositories"), { recursive: true });
 	const journal = createSqliteJournal(
@@ -121,7 +123,9 @@ export function createRelayAgent(options: {
 		let failed = 0;
 		for (const connection of await options.connections())
 			try {
-				reports.push(await (await agentFor(connection)).tick());
+				const report = await (await agentFor(connection)).tick();
+				reports.push(report);
+				options.onReport?.(report);
 			} catch {
 				failed++;
 			}
@@ -142,4 +146,29 @@ export function createRelayAgent(options: {
 			journal.close();
 		},
 	};
+}
+
+/**
+ * What a tick report says to an operator, as log entries: one summary, and
+ * one entry per engine failure. Counts, ids, fixed reasons and HTTP statuses
+ * only; never repository or model text.
+ */
+export function reportLogEntries(
+	report: AgentTickReport,
+): readonly Readonly<Record<string, string | number>>[] {
+	return [
+		{
+			event: "agent.pass",
+			resolutions: report.resolutions.length,
+			enqueued: report.enqueued.length,
+			ejected: report.ejected.length,
+			failures: report.failures,
+		},
+		...report.engineFailures.map((failure) => ({
+			event: "agent.engine_failed",
+			engine: failure.engineId,
+			reason: failure.reason,
+			status: failure.status,
+		})),
+	];
 }

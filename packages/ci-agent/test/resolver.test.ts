@@ -23,6 +23,8 @@ const file = (
 		bytes: merged.length,
 		...extra,
 	}) satisfies ConflictFile;
+// A mutable list, as a parsed document has (the table below is `as const`).
+const MIGRATIONS = ["**/migrations/**"];
 const conflicted = file(
 	"src/a.ts",
 	`head\n${region("ours 1\n", "theirs 1\n")}middle\n${region("ours 2\n", "theirs 2\n")}tail\n`,
@@ -85,7 +87,7 @@ describe("conflict resolver", () => {
 		[
 			"protected-path",
 			[file("db/migrations/1.sql", conflicted.merged)],
-			{ resolution: { protectedPaths: ["**/migrations/**"] } },
+			{ resolution: { protectedPaths: MIGRATIONS } },
 		],
 		[
 			"unsupported-conflict",
@@ -440,14 +442,48 @@ describe("conflict resolver", () => {
 		expect(asked).toEqual([]);
 	});
 
-	it("fails when no engine answers", async () => {
-		const broken = scriptedEngine(() => {
-			throw new Error("timeout");
-		});
-		expect(await run([conflicted], [broken])).toMatchObject({
-			outcome: "failed",
-			reason: "engine-unavailable",
-		});
+	it("fails when no engine answers, and says why for each engine, without its text", async () => {
+		const unpaid = scriptedEngine(
+			() => {
+				throw Object.assign(new Error("credit required for repo secret"), {
+					statusCode: 402,
+				});
+			},
+			{ id: "gateway", model: "m" },
+		);
+		const slow = scriptedEngine(
+			() => {
+				throw new DOMException("timed out", "TimeoutError");
+			},
+			{ id: "slow", model: "m" },
+		);
+		const wrong = scriptedEngine(() => [], { id: "wrong", model: "m" });
+		const broken = scriptedEngine(
+			() => {
+				throw new Error("boom");
+			},
+			{ id: "broken", model: "m" },
+		);
+		const failures: unknown[] = [];
+		const { resolution, budget } = testPolicies();
+		expect(
+			await resolveConflicts({
+				files: [conflicted],
+				policy: resolution,
+				budget,
+				engines: [unpaid, slow, wrong, broken],
+				remainingTokens: 1_000_000,
+				oursLabel: "a",
+				theirsLabel: "b",
+				onEngineFailure: (failure) => failures.push(failure),
+			}),
+		).toMatchObject({ outcome: "failed", reason: "engine-unavailable" });
+		expect(failures).toEqual([
+			{ engineId: "gateway", reason: "http", status: 402 },
+			{ engineId: "slow", reason: "timeout", status: 0 },
+			{ engineId: "wrong", reason: "malformed-answer", status: 0 },
+			{ engineId: "broken", reason: "error", status: 0 },
+		]);
 	});
 
 	it("passes through a flagged path whose text merged without regions", async () => {

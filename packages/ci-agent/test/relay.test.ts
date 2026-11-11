@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { createRelayAgent } from "../src/relay.js";
+import { createRelayAgent, reportLogEntries } from "../src/relay.js";
 import { testConfig } from "./fixtures/config.js";
 import { takeBoth } from "./fixtures/engine.js";
 import {
@@ -266,5 +266,36 @@ describe("relay agent (real git, GraphQL served from the repository state)", () 
 		);
 		expect(existsSync(join(state, "escape"))).toBe(false);
 		agent.close();
+	});
+});
+
+describe("what an operator sees of a pass", () => {
+	it("logs a summary and each engine failure, with no repository or model text", () => {
+		expect(
+			reportLogEntries({
+				plan: undefined,
+				resolutions: [],
+				enqueued: [3],
+				rollupRef: undefined,
+				applyWithheld: false,
+				ejected: [],
+				failures: 1,
+				engineFailures: [{ engineId: "gateway", reason: "http", status: 402 }],
+			}),
+		).toEqual([
+			{
+				event: "agent.pass",
+				resolutions: 0,
+				enqueued: 1,
+				ejected: 0,
+				failures: 1,
+			},
+			{
+				event: "agent.engine_failed",
+				engine: "gateway",
+				reason: "http",
+				status: 402,
+			},
+		]);
 	});
 });
