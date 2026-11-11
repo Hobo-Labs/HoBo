@@ -539,6 +539,8 @@ describe("cold dev loop gate", () => {
 		image: boolean;
 		/** `ensure-ci-worker-image.mts --materialize-only` can pull it from GHCR. */
 		pullable: boolean;
+		/** `ensure-ci-worker-image.mts` (no flag) can build it with build.sh. */
+		buildable?: boolean;
 		/** The runner has `sudo` (an ARC pod does not). */
 		sudo: boolean;
 	};
@@ -582,7 +584,9 @@ describe("cold dev loop gate", () => {
 					"#!/bin/sh",
 					'echo "node $*" >> "$CALLS"',
 					'echo "node-token ${GITHUB_TOKEN:-}" >> "$CALLS"',
-					'if [ "$PULLABLE" = 1 ]; then touch "$IMAGE"; exit 0; fi',
+					'echo "node-skip-ghcr ${HOBO_CI_SKIP_GHCR_PULL:-0}" >> "$CALLS"',
+					'case " $* " in *" --materialize-only "*) ok="$PULLABLE" ;; *) ok="$BUILDABLE" ;; esac',
+					'if [ "$ok" = 1 ]; then touch "$IMAGE"; exit 0; fi',
 					"exit 2",
 					"",
 				].join("\n"),
@@ -604,6 +608,7 @@ describe("cold dev loop gate", () => {
 					CALLS: calls,
 					IMAGE: image,
 					PULLABLE: runner.pullable ? "1" : "0",
+					BUILDABLE: runner.buildable ? "1" : "0",
 					HOBO_GHCR_PULL_TOKEN: "pull-secret",
 					RUNNER_ENVIRONMENT: runner.environment,
 				},
@@ -664,14 +669,49 @@ describe("cold dev loop gate", () => {
 		assert.doesNotMatch(calls, /^docker run /mu);
 	});
 
-	it("fails with the reason when there is no image, no pull and no sudo", () => {
+	const build =
+		/^node --no-warnings scripts\/ci\/ensure-ci-worker-image\.mts$/mu;
+
+	it("builds the worker image on an ARC pod when GHCR has none for its key", () => {
+		// A PR that changes the runner image's inputs, or a fork PR.
 		const { status, calls, output } = run({
 			environment: "self-hosted",
 			image: false,
 			pullable: false,
+			buildable: true,
+			sudo: false,
+		});
+		assert.equal(status, 0, output);
+		assert.match(calls, materialize);
+		assert.match(calls, build);
+		// The build call does not retry the pull that just failed.
+		assert.match(calls, /^node-skip-ghcr 1$/mu);
+		assert.match(calls, dockerRun);
+	});
+
+	it("does not build when a sudo namespace can stand in", () => {
+		const { status, calls, output } = run({
+			environment: "self-hosted",
+			image: false,
+			pullable: false,
+			buildable: true,
+			sudo: true,
+		});
+		assert.equal(status, 0, output);
+		assert.doesNotMatch(calls, build);
+		assert.match(calls, sudoNamespace);
+	});
+
+	it("fails with the reason when there is no image, no pull, no build and no sudo", () => {
+		const { status, calls, output } = run({
+			environment: "self-hosted",
+			image: false,
+			pullable: false,
+			buildable: false,
 			sudo: false,
 		});
 		assert.equal(status, 1, output);
+		assert.match(calls, build);
 		assert.match(
 			output,
 			/::error title=Cold dev loop cannot isolate the network::/u,
