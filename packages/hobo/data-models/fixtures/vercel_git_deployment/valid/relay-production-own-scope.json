@@ -3,8 +3,24 @@
   "bindle": "hobo-ci-relay",
   "resources": [
     {
+      "kind": "kv",
+      "name": "cache"
+    },
+    {
+      "kind": "secret",
+      "name": "config"
+    },
+    {
       "kind": "queue",
       "name": "hobo-ci"
+    },
+    {
+      "kind": "queue",
+      "name": "hobo-ci-intake"
+    },
+    {
+      "kind": "queue",
+      "name": "hobo-ci-lease-steps"
     },
     {
       "kind": "schedule",
@@ -13,14 +29,6 @@
     {
       "kind": "api",
       "name": "relay"
-    },
-    {
-      "kind": "secret",
-      "name": "secrets"
-    },
-    {
-      "kind": "data",
-      "name": "state"
     }
   ],
   "project": "hobo-ci",
@@ -37,14 +45,13 @@
   "createMissingProject": true,
   "operatorSecrets": [
     "CRON_SECRET",
-    "DATABASE_URL",
-    "DATABASE_URL_UNPOOLED",
     "HOBO_CI_BOOTSTRAP_TOKEN_SHA256",
     "HOBO_CI_CONFIG_JSON",
     "HOBO_CI_CONTROL_TOKENS_JSON",
     "HOBO_CI_GITHUB_APP_CLIENT_SECRET",
     "HOBO_CI_GITHUB_APP_PRIVATE_KEY",
     "HOBO_CI_ONBOARDING_CONTROL_TOKEN",
+    "HOBO_CI_SANDBOX_PROXY_TOKEN_KEY",
     "HOBO_CI_SESSION_KEY",
     "HOBO_CI_WEBHOOK_SECRET"
   ],
