@@ -114,23 +114,12 @@ export function ghcrWorkerManifestReachable(
 	token: string,
 ): boolean {
 	if (!token) return false;
-	const url = `https://ghcr.io/v2/${repo.toLowerCase()}/hobo-ci-worker/manifests/${version}`;
+	// GHCR's registry API refuses the raw GITHUB_TOKEN as a bearer, so a curl probe
+	// read "absent" for a tag `docker pull` fetched two seconds later (run
+	// 43043419831). Ask the Docker CLI, which holds the login made just before.
 	const result = spawnSync(
-		"curl",
-		[
-			"-fsS",
-			"--connect-timeout",
-			"15",
-			"--max-time",
-			"45",
-			"-H",
-			`Authorization: Bearer ${token}`,
-			"-H",
-			"Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json",
-			"-o",
-			"/dev/null",
-			url,
-		],
+		"timeout",
+		["45", "docker", "manifest", "inspect", remoteWorkerTag(repo, version)],
 		{ stdio: "ignore" },
 	);
 	return result.status === 0;

@@ -133,7 +133,10 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   `sudo`, so the job died with `sudo: command not found` before any test ran (runs 43019469092 and
   43036897317), depending only on which runner picked it up. Self-hosted runners now pull the
   content-keyed worker image from GHCR first and run it with `--network=none`; GitHub-hosted runners
-  keep the `sudo` namespace; a runner that can do neither fails with an `::error` naming why.
+  keep the `sudo` namespace; a runner that can do neither fails with an `::error` naming why. The
+  pull had never run anywhere: `ensure-ci-worker-image.mts` probed GHCR with the raw `GITHUB_TOKEN`
+  as a bearer, which the registry refuses, so every probe read "absent" (run 43043419831 logged that
+  two seconds before `docker pull` fetched the same tag). It now asks `docker manifest inspect`.
 - **Slot budget.** The box has two runner slots, so a job that gates nothing still delays every other
   run. Main full gate does not run on `merge_group` (it is not a required check, and the push to `main`
   re-runs the same tree), and `pr-offpath` diffs the PR merge commit against its first parent: when
