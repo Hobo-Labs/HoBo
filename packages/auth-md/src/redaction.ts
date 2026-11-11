@@ -12,6 +12,14 @@
  *    secret-named fields and secret-shaped strings before they are serialized.
  */
 
+import {
+	JWT_PATTERN,
+	PRIVATE_KEY_PATTERN,
+	type RedactionPattern,
+	redactionPattern,
+	redactMatches,
+} from "@hobo/provider-redaction";
+
 // public-contract: callers and tests assert on this exact placeholder in serialized output.
 export const REDACTED = "[redacted]";
 
@@ -36,12 +44,15 @@ export function materialLocator(
 	if (!LOCATOR_PATTERN.test(candidate)) {
 		throw new Error(`invalid material locator handle: ${handle}`);
 	}
+	// SAFETY: the candidate matched LOCATOR_PATTERN, the brand's only invariant.
 	return candidate as MaterialLocator;
 }
 
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters -- SAFETY: a type guard over a value nobody has parsed is the parse. */
 export function isMaterialLocator(value: unknown): value is MaterialLocator {
 	return typeof value === "string" && LOCATOR_PATTERN.test(value);
 }
+/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters */
 
 /**
  * A handle to secret material. Serializing it yields `"[redacted]"`; the
@@ -77,11 +88,13 @@ export function createSensitive<Kind extends SensitiveKind>(
 	return ref;
 }
 
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters -- SAFETY: a type guard over a value nobody has parsed is the parse. */
 export function isSensitiveRef(value: unknown): value is SensitiveRef {
 	return (
 		typeof value === "object" && value !== null && sensitiveRefs.has(value)
 	);
 }
+/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters */
 
 /**
  * Read the material behind a reference. Only mediated ports (verifier,
@@ -100,33 +113,43 @@ export function forgetSensitive(ref: SensitiveRef): void {
 	vault.delete(ref);
 }
 
-const SECRET_KEY_PATTERN =
-	/(assertion|token|secret|password|passphrase|credential|private[_-]?key|authorization|client[_-]?secret|jwk|jwt)/iu;
+export const SECRET_KEY_PATTERN =
+	/(assertion|token|secret|password|passphrase|credential|private[_-]?key|authorization|client[_-]?secret|jwk|jwt)/i;
 
-const SECRET_SHAPED_PATTERNS: readonly RegExp[] = [
-	// Compact JWS/JWT: three base64url segments.
-	/\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b/gu,
-	// PEM blocks of any key type.
-	/-----BEGIN[^-]*PRIVATE KEY-----[\s\S]*?-----END[^-]*PRIVATE KEY-----/gu,
+export const SECRET_TEXT_PATTERNS: readonly RedactionPattern[] = [
+	// PEM blocks of any key type, from `@hobo/provider-redaction`: to the
+	// key's own END line, or the next BEGIN, or the end of the text. The lazy
+	// `[\s\S]*?-----END` this replaced searched from every BEGIN for an END.
+	PRIVATE_KEY_PATTERN,
+	// Compact JWS/JWT, the shared linear pattern: an `ey` header and two dots.
+	JWT_PATTERN,
+	// The same shape with this module's shorter segments (`eyJ` and four
+	// characters each). Like the shared one it starts only where a run of
+	// base64url characters starts and reads that run once, where `\beyJ…`
+	// started again at every `eyJ` and read to the end. It ends with the
+	// signature's run and no `\b`: a `\b` the signature could fail (one ending
+	// in `-`) sent the search back to the next `eyJ`, quadratic again.
+	redactionPattern(
+		/(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4})(?<lead>(?:[A-Za-z0-9_]*-)*?)eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/gu,
+	),
 	// `Bearer <token>` in prose or headers.
-	/\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/giu,
+	redactionPattern(/\bBearer\s+[\u017F\u212AA-Za-z0-9._~+/-]{8,}=*/gi),
 	// Long opaque high-entropy handles (claim/access tokens).
-	/\b[A-Za-z0-9_-]{40,}\b/gu,
+	redactionPattern(/\b[A-Za-z0-9_-]{40,}\b/gu),
 ];
 
 /** Scrub secret-shaped substrings out of a free-text string. */
 export function redactText(value: string): string {
-	let output = value;
-	for (const pattern of SECRET_SHAPED_PATTERNS) {
-		output = output.replace(pattern, REDACTED);
-	}
-	return output;
+	// Every pattern over the same text: replaced in turn, a private key taken
+	// first left a 40-character handle before it too short for the last one.
+	return redactMatches(value, SECRET_TEXT_PATTERNS);
 }
 
 /**
  * Structurally redact a value: sensitive refs collapse to `"[redacted]"`,
  * secret-named fields are replaced, and remaining strings are text-scrubbed.
  */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type, anti-slop/no-known-value-widening -- SAFETY: redactDeep and formatRedacted take whatever value a caller is about to log or serialize, the one boundary where looking at a value's representation is the job. */
 export function redactDeep(
 	value: unknown,
 	seen = new WeakSet<object>(),
@@ -168,3 +191,4 @@ export function redactDeep(
 export function formatRedacted(value: unknown): string {
 	return JSON.stringify(redactDeep(value));
 }
+/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type, anti-slop/no-known-value-widening */

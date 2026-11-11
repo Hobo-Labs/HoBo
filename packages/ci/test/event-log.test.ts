@@ -1,3 +1,4 @@
+import { DatabaseSync } from "node:sqlite";
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -262,15 +263,23 @@ describe("LeaseStore event journal", () => {
 	});
 
 	it("says when a read stopped short, whoever filled the journal", () => {
-		const store = new LeaseStore(":memory:");
+		const database = new DatabaseSync(":memory:");
+		const store = new LeaseStore(":memory:", database);
 		try {
 			store.putControlRecord("first", "mine", "{}", at);
-			// A neighbour writes more than two scans cover.
+			// A neighbour writes more than two scans cover. The store writes the
+			// neighbour's first event; the rest are copies of that row, made in
+			// one statement. 20,500 writes through the store took 1.5 s alone and
+			// passed vitest's 5 s limit on a loaded machine, and the read under
+			// test only needs the rows to be there.
 			const neighbour = 2 * EVENT_SCAN_SPAN + 500;
-			store.atomic(() => {
-				for (let index = 0; index < neighbour; index++)
-					store.putControlRecord(`n:${index}`, "theirs", "{}", at);
-			});
+			store.putControlRecord("n", "theirs", "{}", at);
+			database
+				.prepare(
+					`WITH RECURSIVE copy(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM copy WHERE n < ?)
+					 INSERT INTO events(body) SELECT (SELECT body FROM events WHERE seq = 2) FROM copy`,
+				)
+				.run(neighbour - 1);
 			store.putControlRecord("last", "mine", "{}", at);
 			const head = neighbour + 2;
 

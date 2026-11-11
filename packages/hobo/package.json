@@ -91,6 +91,7 @@
 	"devDependencies": {
 		"@hobo/ci-vercel": "workspace:*",
 		"@hobo/contract-harness": "workspace:*",
+		"@hobo/redaction-test-harness": "workspace:*",
 		"@hobo/testing": "workspace:*",
 		"@types/pg": "8.15.5",
 		"pg": "8.22.0"

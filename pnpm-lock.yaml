@@ -452,7 +452,13 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../provider-redaction
     devDependencies:
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../redaction-test-harness
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
@@ -681,6 +687,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../provider-redaction
       '@modelcontextprotocol/sdk':
         specifier: 1.30.0
         version: 1.30.0(@cfworker/json-schema@4.1.1)(zod@4.4.3)
@@ -715,6 +724,12 @@ importers:
       '@hobo/ci-dagger':
         specifier: workspace:*
         version: link:../ci-dagger
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../redaction-test-harness
+      '@hobo/stations':
+        specifier: workspace:*
+        version: link:../stations
       '@pact-foundation/pact':
         specifier: 17.1.4
         version: 17.1.4
@@ -800,10 +815,16 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../provider-redaction
     devDependencies:
       '@hobo/contract-harness':
         specifier: workspace:*
         version: link:../contract-harness
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../redaction-test-harness
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
@@ -992,6 +1013,9 @@ importers:
       '@hobo/provider-kafka':
         specifier: workspace:*
         version: link:../providers/provider-kafka
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../redaction-test-harness
       '@hobo/runtime-dapr':
         specifier: workspace:*
         version: link:../runtimes/runtime-dapr
@@ -1566,6 +1590,9 @@ importers:
       '@hobo/contract-harness':
         specifier: workspace:*
         version: link:../contract-harness
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../redaction-test-harness
       '@hobo/testing':
         specifier: workspace:*
         version: link:../testing
@@ -1775,6 +1802,9 @@ importers:
       '@hobo/capability-profiles':
         specifier: workspace:*
         version: link:../../capability-profiles
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
     devDependencies:
       '@hobo/cloud':
         specifier: workspace:*
@@ -1782,6 +1812,9 @@ importers:
       '@hobo/contract-harness':
         specifier: workspace:*
         version: link:../../contract-harness
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../../redaction-test-harness
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
@@ -1870,6 +1903,24 @@ importers:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/provider-redaction:
+    devDependencies:
+      '@hobo/contract-harness':
+        specifier: workspace:*
+        version: link:../contract-harness
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../redaction-test-harness
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/providers/provider-agentv:
     dependencies:
       '@agentv/core':
@@ -1903,6 +1954,13 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
+    devDependencies:
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../../redaction-test-harness
 
   packages/providers/provider-ax:
     dependencies:
@@ -1937,12 +1995,22 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
 
   packages/providers/provider-browser-wasm:
     dependencies:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
+    devDependencies:
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../../redaction-test-harness
 
   packages/providers/provider-cedar:
     dependencies:
@@ -1961,6 +2029,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
 
   packages/providers/provider-config:
     devDependencies:
@@ -1992,6 +2063,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
 
   packages/providers/provider-flux:
     dependencies:
@@ -2008,18 +2082,27 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
 
   packages/providers/provider-hetzner:
     dependencies:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
 
   packages/providers/provider-hostinger:
     dependencies:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
 
   packages/providers/provider-kafka:
     dependencies:
@@ -2036,6 +2119,13 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
+    devDependencies:
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../../redaction-test-harness
 
   packages/providers/provider-lakebed:
     dependencies:
@@ -2057,7 +2147,13 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
     devDependencies:
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../../redaction-test-harness
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
@@ -2082,7 +2178,13 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
     devDependencies:
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../../redaction-test-harness
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
@@ -2110,7 +2212,13 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
     devDependencies:
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../../redaction-test-harness
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
@@ -2138,7 +2246,13 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
     devDependencies:
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../../redaction-test-harness
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
@@ -2163,7 +2277,13 @@ importers:
       '@hobo/kv-redis-compatible':
         specifier: workspace:*
         version: link:../../kv-redis-compatible
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
     devDependencies:
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../../redaction-test-harness
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
@@ -2188,7 +2308,13 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../../provider-redaction
     devDependencies:
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../../redaction-test-harness
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
@@ -2241,9 +2367,27 @@ importers:
       '@hobo/claims':
         specifier: workspace:*
         version: link:../claims
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../provider-redaction
       '@hobo/trust':
         specifier: workspace:*
         version: link:../trust
+    devDependencies:
+      '@hobo/contract-harness':
+        specifier: workspace:*
+        version: link:../contract-harness
+      '@hobo/redaction-test-harness':
+        specifier: workspace:*
+        version: link:../redaction-test-harness
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/redaction-test-harness:
     devDependencies:
       '@hobo/contract-harness':
         specifier: workspace:*
@@ -16287,6 +16431,7 @@ snapshots:
   '@hono/node-server@2.0.12(hono@4.12.27)':
     dependencies:
       hono: 4.12.27
+    optional: true
 
   '@hono/zod-openapi@1.6.0(hono@4.12.27)(zod@4.4.3)':
     dependencies:
@@ -16867,6 +17012,7 @@ snapshots:
       '@cfworker/json-schema': 4.1.1
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   '@mongodb-js/saslprep@1.6.3':
     dependencies:
@@ -19083,6 +19229,7 @@ snapshots:
   ajv-formats@3.0.1(ajv@8.20.0):
     optionalDependencies:
       ajv: 8.20.0
+    optional: true
 
   ajv-i18n@4.2.0(ajv@8.20.0):
     dependencies:
@@ -19870,6 +20017,7 @@ snapshots:
     dependencies:
       object-assign: 4.1.1
       vary: 1.1.2
+    optional: true
 
   cpu-features@0.0.10:
     dependencies:
@@ -20641,11 +20789,13 @@ snapshots:
 
   events@3.3.0: {}
 
-  eventsource-parser@3.1.0: {}
+  eventsource-parser@3.1.0:
+    optional: true
 
   eventsource@3.0.7:
     dependencies:
       eventsource-parser: 3.1.0
+    optional: true
 
   evp_bytestokey@1.0.3:
     dependencies:
@@ -20692,6 +20842,7 @@ snapshots:
       ip-address: 10.3.1
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   express@5.2.1:
     dependencies:
@@ -21695,7 +21846,8 @@ snapshots:
 
   json-schema-traverse@1.0.0: {}
 
-  json-schema-typed@8.0.2: {}
+  json-schema-typed@8.0.2:
+    optional: true
 
   json-stable-stringify-without-jsonify@1.0.1: {}
 
@@ -23231,7 +23383,8 @@ snapshots:
     dependencies:
       pngjs: 7.0.0
 
-  pkce-challenge@5.0.1: {}
+  pkce-challenge@5.0.1:
+    optional: true
 
   pkg-dir@5.0.0:
     dependencies:
