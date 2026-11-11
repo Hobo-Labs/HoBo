@@ -529,6 +529,8 @@ describe("ci-runner image contract (repo manifests)", () => {
 		expect(dockerfile).toContain(
 			`ENV PLAYWRIGHT_BROWSERS_PATH=${pins.browsersPath}\n`,
 		);
+		expect(dockerfile).toContain("install-playwright-headless-shell.sh");
+		expect(dockerfile).not.toContain("--retry-all-errors");
 
 		const packages = readFileSync(join(root, CI_RUNNER_SYSTEM_PACKAGES), "utf8")
 			.split("\n")

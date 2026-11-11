@@ -45,6 +45,8 @@ sandboxes/
 .tools/
 # Local `mise oci build` output (see packages/ci-gh-actions/deploy/ci-runner/build.sh)
 packages/ci-gh-actions/deploy/ci-runner/oci-layout/
+packages/ci-gh-actions/deploy/ci-runner/base/playwright-cache/*
+!packages/ci-gh-actions/deploy/ci-runner/base/playwright-cache/.gitkeep
 # Local mise install cache (commit turbo lock sidecars under .mise/locks/)
 .mise/*
 !.mise/locks/

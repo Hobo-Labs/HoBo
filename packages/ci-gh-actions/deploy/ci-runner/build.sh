@@ -112,6 +112,14 @@ case "$(uname -m)" in
   *) echo "unsupported host architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 echo "Building base image (native ${target_arch}), tag ${base_image}:local"
+export TARGETARCH="${target_arch}"
+if [[ "${HOBO_CI_SKIP_PLAYWRIGHT_STAGING:-}" != "1" ]]; then
+  node --no-warnings scripts/ci/prepare-playwright-runner-cache.mts || {
+    echo "playwright archive staging failed; set HOBO_CI_SKIP_PLAYWRIGHT_STAGING=1 only when cache is pre-staged" >&2
+    exit 1
+  }
+fi
+mkdir -p "${runner_ctx}/base/playwright-cache"
 # The legacy builder (Debian's docker.io CLI) does not set TARGETARCH.
 docker build --build-arg "TARGETARCH=${target_arch}" \
   -f "${base_dockerfile}" -t "${base_image}:local" "${runner_ctx}"
