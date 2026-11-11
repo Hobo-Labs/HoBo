@@ -1110,6 +1110,17 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Bootstrap repo-local composite actions
+        if: always()
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
       - name: Require main gate and workspace shards
         env:
           MAIN_RESULT: ${{ needs.main-gate.result }}

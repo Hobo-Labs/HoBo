@@ -63,7 +63,10 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
 - **Main full gate workspace sharding.** Main push no longer runs workspace tests inside the S0 job.
   `resolve-main-test-base.mts` picks last-green Fabric `main` when reachable, then `main_workspace_tests`
   runs the same eight-shard plan as PR validation in parallel on fleet runners; S0 uses
-  `--external-workspace-tests` when affected. Gitleaks runs in `main_gate_finish` after shards
+  `--external-workspace-tests` when affected. S0 prunes stray `packages/*` directories without
+  `package.json` before konsistent (`scripts/ci/prune-stray-workspace-packages.mts`). Gitleaks runs
+  in `main_gate_finish` after shards; that job sparse-checks `.github/actions` at `${{ github.sha }}`
+  first so `ci-trace` resolves when an earlier step fails
   ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)).
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
