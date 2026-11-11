@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, it } from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
 	DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP,
 	parseFleetCapacityPublished,

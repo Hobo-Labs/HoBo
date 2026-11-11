@@ -86,6 +86,7 @@ async function main(): Promise<void> {
 					encoding: "utf8",
 				}).stdout
 			: "";
+	if (base) process.env.TURBO_SCM_BASE = base;
 	const plan =
 		tests === "affected" && base
 			? planDependentTestsForTurboAffected(

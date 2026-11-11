@@ -10,8 +10,8 @@ import {
 } from "../ci/attestation.mts";
 import {
 	conditionHolds,
-	evaluateExpression,
 	ExpressionError,
+	evaluateExpression,
 	expressionsOf,
 	loadPlan,
 	parsePlan,

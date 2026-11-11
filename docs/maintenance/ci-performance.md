@@ -61,7 +61,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   Root typechecking builds the Redis-compatible package first because the Upstash provider sources
   referenced by root tests resolve its declarations from `dist` on a clean worker.
 - **Workspace duration table typing.** `scripts/ci/workspace-test-durations.mts` uses pins-json tag narrowing so root `typecheck:root` accepts the JSON leaf parser on CI.
-- **Main full gate workspace sharding.** `main-gate-plan` (route + deps image) resolves the last-green
+- **Main full gate workspace sharding.** `main-gate-plan` (route + runner image; [finding 92](../ci/findings/0092-main-plan-parallel-deps-affected-shards.md)) resolves the last-green
   base and prints a duration-balanced shard matrix capped by `HOBO_CI_FLEET_CAPACITY` (default four
   parallel slots; see [finding 86](../ci/findings/0086-main-workspace-shards-fleet-parallel-cap.md)).
   Each shard packs several workspace groups (`scripts/ci/workspace-test-durations.json`, target 180s
@@ -581,7 +581,7 @@ checks failed on main before anyone saw them:
   `main-gate:` to `artifact-trust:` and required that text not to mention `ci-deps-image`. #1840 put
   `main_workspace_tests` inside that slice, and it waits for the image on purpose. The test now reads
   each job's `needs`: the required PR jobs and `main-gate` must not wait for the image even through
-  another job, exactly `main-gate-plan` and `main_workspace_tests` do, and neither is gated on the
+  another job; only `main_workspace_tests` does (the plan job runs beside it). Neither is gated on the
   deps job's result, so a failed deps job leaves the shards to install for themselves.
 - **Deps layout recipe digest.** `DEPS_LAYOUT.recipeSha256` was last right at #1741. #1740, #1747,
   #1816 and #1792 edited `build-deps.sh` only: disk and inode headroom checks before a rebuild, an

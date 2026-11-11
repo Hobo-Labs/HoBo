@@ -20,7 +20,13 @@ describe("main full gate workspace sharding", () => {
 			workflow.indexOf("  main_workspace_tests:", mainStart),
 		);
 		assert.match(plan, /plan-main-workspace-shards\.mts/u);
-		assert.match(plan, /needs: \[route, ci-runner-image, ci-deps-image\]/u);
+		assert.match(plan, /needs: \[route, ci-runner-image\]/u);
+		assert.doesNotMatch(
+			plan,
+			/needs: \[route, ci-runner-image, ci-deps-image\]/u,
+		);
+		assert.match(plan, /deps-layer\.mts link/u);
+		assert.match(plan, /turbo-cache/u);
 		assert.match(main, /resolve-main-test-base\.mts/u);
 		assert.match(main, /--external-workspace-tests/u);
 		assert.doesNotMatch(main, /name: Workspace tests/u);

@@ -801,7 +801,7 @@ jobs:
 
   main-gate-plan:
     name: Main workspace plan
-    needs: [route, ci-runner-image, ci-deps-image]
+    needs: [route, ci-runner-image]
     if: >-
       !cancelled() && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
@@ -832,7 +832,21 @@ jobs:
           submodules: recursive
           clean: false
           fetch-depth: 0
+      - name: Link deps layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check deps layer match
+        id: deps-layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
       - uses: ./.github/actions/ci-runner-preflight
+      - name: Turbo cache
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: remote:rw
+      - name: Install dependencies
+        if: steps.deps-layer.outputs.match != 'true'
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
       - name: Plan workspace shards
         id: plan
         env:
@@ -843,6 +857,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAIN_SHARD_TARGET_SECONDS: "180"
         run: node --experimental-strip-types --no-warnings scripts/ci/plan-main-workspace-shards.mts
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && steps.turbo-prune.outputs.save != 'false'
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
 
   main-gate:
     name: Main full gate
