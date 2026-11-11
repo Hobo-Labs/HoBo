@@ -99,6 +99,7 @@ import "list"
 #RelayMcpQuarantinedDelivery: {deliveryId: string & =~"^[A-Za-z0-9-]{1,100}$", event: string & !="", installationId: int & >0, repositoryId: int & >0, receivedAt: string & !="", attempts?: int & >=0}
 #RelayMcpQuarantine: {deliveries?: [...#RelayMcpQuarantinedDelivery]}
 #RelayMcpRetry: {deliveryId: string & =~"^[A-Za-z0-9-]{1,100}$", status: "queued"}
+#MeshRepository: string & =~"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+$"
 #MeshNodeId: string & =~"^[A-Za-z0-9_-]{1,64}$"
 #MeshPublicKey: string & =~"^[A-Za-z0-9_-]{43}$"
 #MeshLabel: string & =~"^.{1,80}$"
@@ -119,10 +120,11 @@ import "list"
 	samples?: #MeshReliabilitySamples
 	sinceMs?: int & >=0
 	identity?: #MeshIdentityProof
+	repository?: "" | #MeshRepository
 }
 #MeshTrustedKey: {publicKey: #MeshPublicKey, nodeId?: "" | #MeshNodeId}
 #MeshTrustConfig: {trustedKeys: [...#MeshTrustedKey] & list.MaxItems(256), requireTrusted?: bool}
-#MeshReliabilityRecord: {delivered: number & >=0, dropped: number & >=0, atMs: number & >=0}
+#MeshReliabilityRecord: {delivered: number & >=0, dropped: number & >=0, atMs: number & >=0, resetToken?: string & =~"^[A-Za-z0-9._:-]{0,64}$"}
 #MeshNodeReport: {
 	id: #MeshNodeId
 	state: "live" | "unhealthy" | "lost"
@@ -141,9 +143,10 @@ import "list"
 	reliability?: number & >=0 & <=1
 	delivered?: number & >=0
 	dropped?: number & >=0
+	repository?: "" | #MeshRepository
 }
 #MeshCapacitySummary: {nodes?: int & >=0, healthy?: int & >=0, available?: int & >=0, totalSlots?: int & >=0, freeSlots?: int & >=0, freeMemoryMb?: int & >=0, largestFreeMemoryMb?: int & >=0, freeDiskMb?: int & >=0}
-#MeshNodeReports: {mesh: "configured" | "not-configured" | "unreachable", nodes?: [...#MeshNodeReport], capacity?: #MeshCapacitySummary, readAt?: string, requireTrusted?: bool}
+#MeshNodeReports: {mesh: "configured" | "not-configured" | "unreachable", nodes?: [...#MeshNodeReport], capacity?: #MeshCapacitySummary, readAt?: string, requireTrusted?: bool, truncated?: bool}
 #MeshFleetLabelState: {nodes?: int & >=0, trustedNodes?: int & >=0, freeSlots?: int & >=0}
 #MeshFleetState: {publishedAt: string & =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$", labels: {[=~"^[A-Za-z0-9_.-]{1,80}$"]: #MeshFleetLabelState}}
 #Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState

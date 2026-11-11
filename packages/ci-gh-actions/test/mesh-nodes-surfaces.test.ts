@@ -28,6 +28,12 @@ const SCOPES = new Map([
 	[WRITER, ["policy:write"]],
 ]);
 
+const Structured = z.object({
+	isError: z.boolean().optional(),
+	content: z.array(z.object({ type: z.literal("text"), text: z.string() })),
+	structuredContent: z.record(z.string(), z.unknown()).optional(),
+});
+
 const stops: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	await Promise.all(stops.splice(0).map((stop) => stop()));
@@ -181,6 +187,7 @@ describe("GET /v1/mesh/nodes", () => {
 				nodes: [],
 				readAt: "",
 				requireTrusted: false,
+				truncated: false,
 			});
 		}
 	});
@@ -217,9 +224,11 @@ describe("GET /v1/mesh/nodes", () => {
 			delivered: 18,
 			dropped: 2,
 		});
+		// The fleet: the relay is on the list but runs no jobs, so it is not
+		// capacity.
 		expect(body.capacity).toMatchObject({
-			nodes: 3,
-			healthy: 3,
+			nodes: 2,
+			healthy: 2,
 			available: 2,
 			totalSlots: 8,
 			freeSlots: 3,
@@ -255,7 +264,62 @@ describe("GET /v1/mesh/nodes", () => {
 		expect(seen.get("box-forged")).toMatchObject({ trust: "invalid" });
 		expect(seen.get("box-b")).toMatchObject({ state: "live" });
 		// Neither the lost node nor the forgery is capacity.
-		expect(body.capacity).toMatchObject({ nodes: 2, freeSlots: 1 });
+		expect(body.capacity).toMatchObject({ nodes: 1, freeSlots: 1 });
+	});
+
+	it("shows a local runner in full only to the account that owns its repository", async () => {
+		const m = await mesh();
+		const laptop = (repository: string, nodeId: string) =>
+			createMeshNode({
+				nodeId,
+				identity: generateMeshIdentity().identity,
+				mesh: { board: m.memory.board, trust: createMemoryMeshConfig() },
+				describe: () => ({
+					freeSlots: 1,
+					totalSlots: 1,
+					healthy: true,
+					labels: ["hobo-local-host"],
+					platform: { os: "darwin", arch: "arm64" },
+					repository,
+				}),
+				now: () => m.clock.now,
+			});
+		// account-a owns org/repo; somebody else's laptop serves other/repo.
+		await laptop("org/repo", "local-alices-mbp").beat();
+		await laptop("other/repo", "local-bobs-mbp").beat();
+		const h = await relay(m.nodes.relay.reports);
+		const body = parseMeshNodeReports(
+			await (await h.get("/v1/mesh/nodes", READER)).text(),
+		);
+		const ids = body.nodes.map((node) => node.id);
+		expect(ids).toContain("local-alices-mbp");
+		expect(ids).not.toContain("local-bobs-mbp");
+		expect(JSON.stringify(body)).not.toContain("bobs");
+		const own = body.nodes.find((node) => node.id === "local-alices-mbp");
+		expect(own).toMatchObject({
+			repository: "org/repo",
+			platform: { os: "darwin", arch: "arm64" },
+		});
+		const other = body.nodes.find(
+			(node) => node.labels.includes("hobo-local-host") && node !== own,
+		);
+		expect(other).toMatchObject({
+			id: expect.stringMatching(/^local-[0-9a-f]{16}$/),
+			repository: "",
+			publicKey: "",
+			state: "live",
+			freeSlots: 1,
+		});
+		expect(other?.platform).toBeUndefined();
+		// Laptops are not fleet capacity, whosever they are.
+		expect(body.capacity).toMatchObject({ nodes: 2, freeSlots: 3 });
+		// The MCP tool answers the same way.
+		const client = await h.mcp(READER);
+		const called = Structured.parse(
+			await client.callTool({ name: "list_mesh_nodes", arguments: {} }),
+		);
+		expect(called.content[0]?.text).toContain("local-alices-mbp");
+		expect(called.content[0]?.text).not.toContain("bobs");
 	});
 
 	it("is what the relay client reads", async () => {
@@ -277,11 +341,6 @@ describe("GET /v1/mesh/nodes", () => {
 });
 
 describe("the MCP server's list_mesh_nodes and hobo-ci://mesh/nodes", () => {
-	const Structured = z.object({
-		isError: z.boolean().optional(),
-		content: z.array(z.object({ type: z.literal("text"), text: z.string() })),
-		structuredContent: z.record(z.string(), z.unknown()).optional(),
-	});
 	const Contents = z.object({
 		contents: z.array(z.object({ uri: z.string(), text: z.string() })),
 	});
@@ -321,7 +380,7 @@ describe("the MCP server's list_mesh_nodes and hobo-ci://mesh/nodes", () => {
 		]);
 		expect(called.structuredContent).toMatchObject({
 			mesh: "configured",
-			capacity: { nodes: 3, freeSlots: 3 },
+			capacity: { nodes: 2, freeSlots: 3 },
 		});
 		const status = Structured.parse(
 			await client.callTool({ name: "get_relay_status", arguments: {} }),
@@ -341,6 +400,7 @@ describe("the MCP server's list_mesh_nodes and hobo-ci://mesh/nodes", () => {
 			nodes: [],
 			readAt: "",
 			requireTrusted: false,
+			truncated: false,
 		});
 	});
 

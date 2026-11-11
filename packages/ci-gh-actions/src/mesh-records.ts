@@ -4,6 +4,7 @@
  * inside. Each `parse*` either returns a value the rest of the code can use
  * without checking again, or nothing.
  */
+import { createHash } from "node:crypto";
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import type {
 	MeshCapacity,
@@ -27,6 +28,7 @@ import {
 /** Node ids are bucket keys and hash inputs: a short, plain token. */
 export const MESH_NODE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const PUBLIC_KEY = /^[A-Za-z0-9_-]{43}$/;
+const REPOSITORY = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]{1,100}$/;
 
 const within = (value: number, max: number) =>
 	Number.isSafeInteger(value) && value >= 0 && value <= max;
@@ -75,6 +77,8 @@ function advertProblem(node: MeshNode): string | undefined {
 		(identity.publicKey.length > 128 || identity.signature.length > 256)
 	)
 		return "identity";
+	if (node.repository !== undefined && !REPOSITORY.test(node.repository))
+		return "repository";
 	return undefined;
 }
 
@@ -106,6 +110,7 @@ export function meshAdvertJson(node: MeshNode): string {
 			samples: node.samples,
 			sinceMs: node.sinceMs,
 			identity: node.identity,
+			repository: node.repository,
 		}),
 		// A node on an older version reads `freeSlots: 0` and `healthy: false`,
 		// not their absence.
@@ -153,6 +158,7 @@ export function parseMeshAdvert(text: string): MeshNode | undefined {
 			publicKey: advert.identity.publicKey,
 			signature: advert.identity.signature,
 		},
+		repository: advert.repository,
 	};
 	return advertProblem(node) === undefined ? node : undefined;
 }
@@ -187,7 +193,11 @@ export function parseMeshTrustConfig(
 	text: string,
 ): MeshTrustPolicy | undefined {
 	try {
-		const config = fromJsonString(MeshTrustConfigSchema, text);
+		// A field a newer version added is ignored: the keys this version
+		// understands still apply.
+		const config = fromJsonString(MeshTrustConfigSchema, text, {
+			ignoreUnknownFields: true,
+		});
 		if (
 			config.trustedKeys.length > 256 ||
 			config.trustedKeys.some(
@@ -210,14 +220,25 @@ export function parseMeshTrustConfig(
 	}
 }
 
+/** A node's reliability record as its journal keeps it. */
+export type StoredMeshReliability = Readonly<{
+	record: MeshReliability;
+	/** The reset value last applied; empty when none was. */
+	resetToken: string;
+}>;
+
 /** A node's reliability record as it is kept in its journal. */
-export function meshReliabilityRecordJson(record: MeshReliability): string {
+export function meshReliabilityRecordJson(
+	record: MeshReliability,
+	resetToken = "",
+): string {
 	return toJsonString(
 		MeshReliabilityRecordSchema,
 		create(MeshReliabilityRecordSchema, {
 			delivered: record.delivered,
 			dropped: record.dropped,
 			atMs: record.atMs,
+			resetToken,
 		}),
 		{ alwaysEmitImplicit: true },
 	);
@@ -226,17 +247,22 @@ export function meshReliabilityRecordJson(record: MeshReliability): string {
 /** The stored record, or nothing when it is missing a count or cannot be read. */
 export function parseMeshReliabilityRecord(
 	text: string,
-): MeshReliability | undefined {
+): StoredMeshReliability | undefined {
 	try {
-		const record = fromJsonString(MeshReliabilityRecordSchema, text);
-		const usable = [record.delivered, record.dropped, record.atMs].every(
+		const stored = fromJsonString(MeshReliabilityRecordSchema, text, {
+			ignoreUnknownFields: true,
+		});
+		const usable = [stored.delivered, stored.dropped, stored.atMs].every(
 			(value) => Number.isFinite(value) && value >= 0,
 		);
 		return usable
 			? {
-					delivered: record.delivered,
-					dropped: record.dropped,
-					atMs: record.atMs,
+					record: {
+						delivered: stored.delivered,
+						dropped: stored.dropped,
+						atMs: stored.atMs,
+					},
+					resetToken: stored.resetToken,
 				}
 			: undefined;
 	} catch {
@@ -273,6 +299,7 @@ function reportMessage(report: MeshNodeReportView) {
 		reliability: report.reliability,
 		delivered: report.delivered,
 		dropped: report.dropped,
+		repository: report.repository ?? "",
 	};
 }
 
@@ -292,6 +319,12 @@ function capacityMessage(capacity: MeshCapacity) {
 /** How a host stands to a mesh; see `MeshNodeReports.mesh`. */
 export type MeshReading = "configured" | "not-configured" | "unreachable";
 
+/**
+ * The most nodes one answer lists. Nodes that are there come before nodes
+ * that are lost; the capacity summary always covers every node read.
+ */
+export const MESH_REPORT_MAX_NODES = 256;
+
 /** The one answer every surface gives: the reports, the summary, and how the host stands to a mesh. */
 export function meshNodeReportsMessage(input: {
 	mesh: MeshReading;
@@ -299,13 +332,60 @@ export function meshNodeReportsMessage(input: {
 	nowMs: number;
 	requireTrusted?: boolean | undefined;
 }): MeshNodeReports {
+	const all = input.view?.nodes ?? [];
+	const listed =
+		all.length <= MESH_REPORT_MAX_NODES
+			? all
+			: [
+					...all.filter((node) => node.state !== "lost"),
+					...all.filter((node) => node.state === "lost"),
+				]
+					.slice(0, MESH_REPORT_MAX_NODES)
+					.sort((a, b) => a.id.localeCompare(b.id));
 	return create(MeshNodeReportsSchema, {
 		mesh: input.mesh,
-		nodes: (input.view?.nodes ?? []).map(reportMessage),
+		nodes: listed.map(reportMessage),
+		truncated: listed.length < all.length,
 		capacity: input.view && capacityMessage(input.view.capacity),
 		// A host with no mesh and no node of its own read nothing, at no time.
 		readAt: input.view === undefined ? "" : instant(input.nowMs),
 		requireTrusted: input.requireTrusted === true,
+	});
+}
+
+/** The label a machine running jobs for one repository serves. */
+const LOCAL_HOST_LABEL = "hobo-local-host";
+
+/**
+ * The answer as one account may see it. Fleet nodes and relay hosts belong
+ * to the relay and are shown to every account. A machine running jobs for
+ * one repository is somebody's own computer: its id (derived from its host
+ * name), platform and key are shown only to the account that owns that
+ * repository. For anyone else, and for such a machine that does not say
+ * which repository it serves, it is listed under a stable opaque id with
+ * its state, capacity and trust only.
+ */
+export function meshNodeReportsForAccount(
+	reports: MeshNodeReports,
+	ownRepositories: ReadonlySet<string>,
+): MeshNodeReports {
+	const owned = new Set(
+		[...ownRepositories].map((repository) => repository.toLowerCase()),
+	);
+	return create(MeshNodeReportsSchema, {
+		...reports,
+		nodes: reports.nodes.map((node) => {
+			const local =
+				node.repository !== "" || node.labels.includes(LOCAL_HOST_LABEL);
+			if (!local || owned.has(node.repository.toLowerCase())) return node;
+			return {
+				...node,
+				id: `local-${createHash("sha256").update(node.id).digest("hex").slice(0, 16)}`,
+				platform: undefined,
+				publicKey: "",
+				repository: "",
+			};
+		}),
 	});
 }
 

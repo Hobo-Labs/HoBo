@@ -11,7 +11,7 @@
  * two, `createMeshNode` is the whole of their membership.
  */
 import { statfsSync } from "node:fs";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
 	assessMeshTrust,
@@ -61,30 +61,64 @@ export type MeshNodeEvent =
 	| "hobo_ci_mesh_trust_unreadable"
 	| "hobo_ci_mesh_trust_changed";
 
+/** The file operations loading an identity key needs; replaced in tests. */
+export type MeshKeyFiles = Readonly<{
+	chmod: typeof chmod;
+}>;
+
+/** The system error code an fs call failed with, when it was a system error. */
+function errorCode(error: Error | undefined): string | undefined {
+	return error && "code" in error ? String(error.code) : undefined;
+}
+
 /**
  * The node's identity key, read from `path` or made there on first start.
  * The file holds the private key as PKCS#8 PEM and is readable by its owner
  * only; it is never published, logged or sent. Losing it gives the node a
  * new identity, which the mesh's operator must list again to trust.
+ *
+ * The directory holding it must not be writable by group or others (anyone
+ * who can write there can swap the key): that is refused, not repaired. A
+ * key file others can read or write is tightened to 0600; if it cannot be,
+ * the key is refused. A key already private is never touched, so one on a
+ * read-only filesystem loads.
  */
-export async function loadMeshIdentity(path: string): Promise<MeshIdentity> {
+export async function loadMeshIdentity(
+	path: string,
+	files: MeshKeyFiles = { chmod },
+): Promise<MeshIdentity> {
+	const directory = dirname(path);
+	await mkdir(directory, { recursive: true, mode: 0o700 });
+	if ((await stat(directory)).mode & 0o022)
+		throw new Error(
+			`mesh identity key directory ${directory} is writable by group or others; make it private (chmod go-w) or set HOBO_CI_MESH_KEY_FILE elsewhere`,
+		);
+	let text: string | undefined;
 	try {
-		const identity = meshIdentityFromPem(await readFile(path, "utf8"));
-		// A key that was readable by others is tightened; it is still the key.
-		await chmod(path, 0o600);
-		return identity;
+		text = await readFile(path, "utf8");
 	} catch (error) {
-		if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
+		if (errorCode(error instanceof Error ? error : undefined) !== "ENOENT")
 			throw error;
 	}
+	if (text !== undefined) {
+		const identity = meshIdentityFromPem(text);
+		if ((await stat(path)).mode & 0o077)
+			try {
+				await files.chmod(path, 0o600);
+			} catch (error) {
+				throw new Error(
+					`mesh identity key ${path} is readable by others and could not be made private (${errorCode(error instanceof Error ? error : undefined) ?? "unknown"}); chmod 600 it`,
+				);
+			}
+		return identity;
+	}
 	const created = generateMeshIdentity();
-	await mkdir(dirname(path), { recursive: true, mode: 0o700 });
 	try {
 		// `wx`: two processes starting together must not each write a key.
 		await writeFile(path, created.privateKeyPem, { mode: 0o600, flag: "wx" });
 		return created.identity;
 	} catch (error) {
-		if (!(error instanceof Error && "code" in error && error.code === "EEXIST"))
+		if (errorCode(error instanceof Error ? error : undefined) !== "EEXIST")
 			throw error;
 		return meshIdentityFromPem(await readFile(path, "utf8"));
 	}
@@ -127,40 +161,79 @@ export type MeshJournal = Readonly<{
 const JOURNAL_OWNER = "hobo-ci-mesh";
 
 /**
+ * The reset an operator asked for, from `HOBO_CI_MESH_RELIABILITY_RESET`:
+ * unset or `0` asks for none; any other value (`1`, a date) is a token, and
+ * the record is cleared once per token.
+ */
+export function meshReliabilityResetToken(
+	value: string | undefined,
+): string | undefined {
+	if (value === undefined || value === "" || value === "0") return undefined;
+	if (!/^[A-Za-z0-9._:-]{1,64}$/.test(value))
+		throw new Error(
+			"invalid HOBO_CI_MESH_RELIABILITY_RESET: 0, or a token of letters, digits, . _ : -",
+		);
+	return value;
+}
+
+/**
  * A node's reliability record in its SQLite journal, so the record of the
  * jobs it dropped outlives the process. Reading or writing never fails the
  * node: without the journal it carries on with what it has in memory.
+ *
+ * `resetToken` clears the record at load, once: the token is kept with the
+ * record, and a load with the token already applied leaves the record as
+ * it is. So a reset variable left set does not clear every restart.
  */
 export function meshReliabilityJournal(
 	journal: MeshJournal,
 	nodeId: string,
 	onError?: (message: string) => void,
+	resetToken?: string | undefined,
 ) {
 	const key = `mesh-reliability:${nodeId}`;
 	const failed = (error: Error | undefined) =>
 		onError?.(error?.message ?? "unknown");
+	/** The token kept with every write: the one applied, or the one found. */
+	let token = "";
+	const write = async (record: MeshReliability) => {
+		try {
+			await journal.putControlRecord(
+				key,
+				JOURNAL_OWNER,
+				meshReliabilityRecordJson(record, token),
+				new Date(record.atMs).toISOString(),
+			);
+		} catch (error) {
+			failed(error instanceof Error ? error : undefined);
+		}
+	};
 	return {
-		async load(): Promise<MeshReliability | undefined> {
+		/**
+		 * The record kept, or nothing to start from: none kept, or a reset
+		 * just applied. `reset` says which.
+		 */
+		async load(
+			nowMs: number = Date.now(),
+		): Promise<{ record: MeshReliability | undefined; reset: boolean }> {
+			let stored: ReturnType<typeof parseMeshReliabilityRecord>;
 			try {
-				const stored = await journal.controlRecord(key);
-				return stored ? parseMeshReliabilityRecord(stored.bodyJson) : undefined;
+				const row = await journal.controlRecord(key);
+				stored = row ? parseMeshReliabilityRecord(row.bodyJson) : undefined;
 			} catch (error) {
 				failed(error instanceof Error ? error : undefined);
-				return undefined;
+				return { record: undefined, reset: false };
 			}
-		},
-		async save(record: MeshReliability): Promise<void> {
-			try {
-				await journal.putControlRecord(
-					key,
-					JOURNAL_OWNER,
-					meshReliabilityRecordJson(record),
-					new Date(record.atMs).toISOString(),
-				);
-			} catch (error) {
-				failed(error instanceof Error ? error : undefined);
+			token = stored?.resetToken ?? "";
+			if (resetToken !== undefined && resetToken !== token) {
+				token = resetToken;
+				// Recorded now, so a crash before the first job does not reset again.
+				await write({ delivered: 0, dropped: 0, atMs: nowMs });
+				return { record: undefined, reset: true };
 			}
+			return { record: stored?.record, reset: false };
 		},
+		save: write,
 	};
 }
 
@@ -212,9 +285,24 @@ export function createMeshTrust(options: {
 	log?: ((event: MeshNodeEvent, fields: Fields) => void) | undefined;
 }) {
 	let configured: MeshTrustPolicy | undefined;
+	/**
+	 * Settings are stored and this node has never been able to read them:
+	 * it fails closed, trusting only itself and ranking only trusted nodes,
+	 * until it reads settings it understands.
+	 */
+	let unreadable = false;
 	/** The revision last read; zero is "nothing stored". */
 	let revision: number | undefined;
-	const policy = () => effectiveMeshTrust(configured, options.selfPublicKey);
+	const policy = (): MeshTrustPolicy =>
+		unreadable && configured === undefined
+			? {
+					trustedKeys:
+						options.selfPublicKey === undefined
+							? []
+							: [{ publicKey: options.selfPublicKey }],
+					requireTrusted: true,
+				}
+			: effectiveMeshTrust(configured, options.selfPublicKey);
 	return {
 		policy,
 		requireTrusted: () => policy().requireTrusted,
@@ -233,10 +321,16 @@ export function createMeshTrust(options: {
 			revision = next;
 			const parsed = stored ? parseMeshTrustConfig(stored.value) : undefined;
 			if (stored && !parsed) {
-				// Unreadable settings are not half-applied; the last good ones stand.
-				options.log?.("hobo_ci_mesh_trust_unreadable", { revision: next });
+				// Unreadable settings are not half-applied. The last good ones
+				// stand; with none, the node fails closed (see `policy`).
+				unreadable = true;
+				options.log?.("hobo_ci_mesh_trust_unreadable", {
+					revision: next,
+					failedClosed: configured === undefined,
+				});
 				return;
 			}
+			unreadable = false;
 			configured = parsed;
 			// Nothing stored at the first read is the default, not a change.
 			if (first && !parsed) return;
@@ -258,6 +352,12 @@ export type MeshTrustChange = Readonly<
 			publicKey: string;
 			/** Trust the key for this node id only. */
 			nodeId?: string | undefined;
+			/**
+			 * Trust the key under any node id no entry binds. Required to add a
+			 * key without `nodeId`: a key some job could read (a local runner's
+			 * is in the repository's checkout tree) must never be trusted so.
+			 */
+			anyNode?: boolean | undefined;
 	  }
 	| { kind: "remove"; publicKey: string }
 	| { kind: "require"; requireTrusted: boolean }
@@ -277,6 +377,10 @@ export async function changeMeshTrust(
 	store: MeshConfigStore,
 	change: MeshTrustChange,
 ): Promise<MeshTrustPolicy> {
+	if (change.kind === "add" && change.nodeId === undefined && !change.anyNode)
+		throw new Error(
+			"a key is trusted for one node id (--node <id>); trusting it under any id needs --any-node",
+		);
 	for (let attempt = 0; attempt < 5; attempt += 1) {
 		const stored = await store.read();
 		const current: MeshTrustPolicy | undefined = stored
@@ -322,6 +426,8 @@ export type MeshNodeDescription = Readonly<{
 	platform?: MeshPlatform | undefined;
 	reliability?: number | undefined;
 	samples?: MeshReliabilitySamples | undefined;
+	/** For a machine running jobs for one repository, that repository. */
+	repository?: string | undefined;
 }>;
 
 /**
@@ -386,12 +492,14 @@ export function createMeshNode(options: {
 			reliability: state.reliability,
 			samples: state.samples,
 			sinceMs: since(state.healthy),
+			repository: state.repository,
 		};
 	};
 	const monitor = board
 		? createMeshMonitor({
 				selfId: options.nodeId,
 				board,
+				requireTrusted: trust.requireTrusted,
 				now,
 				log: (event, fields) => options.log?.(event, fields),
 			})

@@ -50,7 +50,10 @@ import {
 	createMeshNodesReader,
 	type MeshNodesReader,
 } from "./mesh-nodes-reader.js";
-import { meshNodeReportsJson } from "./mesh-records.js";
+import {
+	meshNodeReportsForAccount,
+	meshNodeReportsJson,
+} from "./mesh-records.js";
 import {
 	applyOnboarding,
 	connectRepository,
@@ -291,7 +294,23 @@ export function createHostedControlPlane(options: {
 			if (path === MESH_NODES_PATH) {
 				if (request.method !== "GET")
 					throw new ControlError(405, "method not allowed");
-				return response(200, meshNodeReportsJson(await meshNodes()));
+				// A machine running jobs for one repository is shown in full only
+				// to the account that owns that repository.
+				const connections =
+					(await store.configuration())?.configuration?.connections ?? [];
+				return response(
+					200,
+					meshNodeReportsJson(
+						meshNodeReportsForAccount(
+							await meshNodes(),
+							new Set(
+								connections
+									.filter((entry) => entry.accountId === principal.accountId)
+									.map((entry) => entry.repository),
+							),
+						),
+					),
+				);
 			}
 			if (path === "/v2/accounts/self/runtime" && request.method === "GET") {
 				if (!options.runtimeDiagnostic)

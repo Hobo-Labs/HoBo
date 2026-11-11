@@ -49,6 +49,9 @@ message MeshAdvert {
   // Epoch milliseconds since which the node has been in its health state.
   optional double since_ms = 11;
   MeshIdentityProof identity = 12;
+  // The one repository a machine running jobs for one repository serves.
+  // Box workers serve many and leave it empty. Signed with the rest.
+  optional string repository = 13;
 }
 
 // One key the mesh's operator vouches for.
@@ -72,6 +75,9 @@ message MeshReliabilityRecord {
   double dropped = 2;
   // Epoch milliseconds the counts were last decayed to.
   double at_ms = 3;
+  // The HOBO_CI_MESH_RELIABILITY_RESET value last applied. A reset happens
+  // once per value, so a variable left set does not clear every restart.
+  string reset_token = 4;
 }
 
 // One node as a reader reports it: availability, capacity and trust.
@@ -99,6 +105,10 @@ message MeshNodeReport {
   optional double reliability = 15;
   optional double delivered = 16;
   optional double dropped = 17;
+  // For a machine running jobs for one repository: that repository. Empty
+  // for fleet nodes, and for a caller whose account does not own it (the
+  // node's id, platform and key are then withheld too).
+  string repository = 18;
 }
 // What the live, validly signed nodes add up to.
 message MeshCapacitySummary {
@@ -125,18 +135,23 @@ message MeshNodeReports {
   string read_at = 4;
   // Whether the answering host ranks only nodes whose key it trusts.
   bool require_trusted = 5;
+  // More nodes were known than one answer lists. `capacity` still covers all.
+  bool truncated = 6;
 }
 
 // What the mesh offers one runner label.
 message MeshFleetLabelState {
-  // Live, healthy nodes serving the label that the publisher ranks.
+  // Live, healthy nodes serving the label, trusted or not: an unlisted node
+  // still picks up a job GitHub hands it. Rejected adverts never count.
   uint32 nodes = 1;
   // Of those, the ones whose key the publisher trusts.
   uint32 trusted_nodes = 2;
   uint32 free_slots = 3;
 }
-// The snapshot a worker publishes to the `HOBO_CI_FLEET_STATE` repository
-// variable for runner routing. Small, and nothing in it is secret.
+// The snapshot one elected worker publishes to the `HOBO_CI_FLEET_STATE`
+// repository variable for runner routing. It lists exactly the fleet labels
+// the publisher serves, never `hobo-local-host`. Small, and nothing in it is
+// secret.
 message MeshFleetState {
   // RFC 3339; a reader ignores a snapshot older than five minutes.
   string published_at = 1;

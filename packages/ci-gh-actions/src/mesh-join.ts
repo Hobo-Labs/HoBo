@@ -11,9 +11,9 @@ import { createNatsMesh, type NatsMesh } from "./mesh-nats.js";
 import {
 	createMeshNode,
 	loadMeshIdentity,
+	type MeshNodeDescription,
 	type MeshNodeEvent,
 	type MeshNodeHandle,
-	type MeshNodeDescription,
 } from "./mesh-node.js";
 import { type MeshSettings, meshSettingsFromEnv } from "./mesh-worker.js";
 
@@ -73,7 +73,10 @@ export async function joinMeshFromEnv(options: {
 	afterBeat?: (node: MeshNodeHandle) => Promise<void>;
 	log?:
 		| ((
-				event: MeshNodeEvent | "hobo_ci_mesh_nats",
+				event:
+					| MeshNodeEvent
+					| "hobo_ci_mesh_nats"
+					| "hobo_ci_mesh_nodes_capped",
 				fields: Readonly<Record<string, string | number | boolean>>,
 		  ) => void)
 		| undefined;
@@ -88,6 +91,8 @@ export async function joinMeshFromEnv(options: {
 				replicas: settings.replicas,
 				name: options.connectionName,
 				onStatus: (status) => options.log?.("hobo_ci_mesh_nats", { status }),
+				onNodesCapped: (limit) =>
+					options.log?.("hobo_ci_mesh_nodes_capped", { limit }),
 				...natsCredentialsFromEnv(options.env),
 			})
 		: undefined;

@@ -48,6 +48,7 @@ import {
 	createMeshNodesReader,
 	type MeshNodesReader,
 } from "./mesh-nodes-reader.js";
+import { meshNodeReportsForAccount } from "./mesh-records.js";
 import { CURSOR_START, type CursorCodec } from "./relay-mcp-cursor.js";
 import {
 	eventView,
@@ -553,6 +554,20 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 	// The same reader the HTTP route uses; a host without a mesh has the one
 	// that answers "not-configured".
 	const meshNodes = services.meshNodes ?? createMeshNodesReader();
+	// A machine running jobs for one repository is shown in full only to the
+	// account that owns that repository; see `meshNodeReportsForAccount`.
+	const meshNodesFor = async (accountId: string) => {
+		const connections =
+			(await store.configuration())?.configuration?.connections ?? [];
+		return meshNodeReportsForAccount(
+			await meshNodes(),
+			new Set(
+				connections
+					.filter((entry) => entry.accountId === accountId)
+					.map((entry) => entry.repository),
+			),
+		);
+	};
 	const server = new McpServer(
 		{ name: "hobo-ci-relay", version: "1.0.0" },
 		{
@@ -795,8 +810,8 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 			annotations: readOnly,
 		},
 		(extra) =>
-			asTool(services, "list_mesh_nodes", READ_SCOPE, extra, async () =>
-				result(MeshNodeReportsSchema, await meshNodes()),
+			asTool(services, "list_mesh_nodes", READ_SCOPE, extra, async (caller) =>
+				result(MeshNodeReportsSchema, await meshNodesFor(caller.accountId)),
 			),
 	);
 
@@ -994,8 +1009,12 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 			mimeType: "application/json",
 		},
 		(uri, extra) =>
-			asResource(services, extra, async () =>
-				resource(uri, MeshNodeReportsSchema, await meshNodes()),
+			asResource(services, extra, async (caller) =>
+				resource(
+					uri,
+					MeshNodeReportsSchema,
+					await meshNodesFor(caller.accountId),
+				),
 			),
 	);
 

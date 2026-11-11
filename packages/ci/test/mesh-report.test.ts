@@ -170,6 +170,33 @@ describe("createMeshNodeTracker", () => {
 		expect(tracker2.observe([], NOW + 110_000).nodes).toEqual([]);
 	});
 
+	it("reports a node asking to be believed for a year as invalid, and not as capacity", () => {
+		const view = createMeshNodeTracker().observe(
+			[
+				node("a"),
+				node("forever", {
+					trust: "trusted",
+					freeSlots: 64,
+					validUntilMs: NOW + 365 * 24 * 3_600_000,
+				}),
+			],
+			NOW,
+		);
+		expect(view.nodes.find((each) => each.id === "forever")).toMatchObject({
+			trust: "invalid",
+		});
+		expect(view.capacity).toMatchObject({ nodes: 1, freeSlots: 2 });
+	});
+
+	it("counts only trusted nodes as capacity when trust is required", () => {
+		const view = createMeshNodeTracker({ requireTrusted: () => true }).observe(
+			[node("a", { trust: "trusted" }), node("b", { trust: "unverified" })],
+			NOW,
+		);
+		expect(view.capacity).toMatchObject({ nodes: 1, freeSlots: 2 });
+		expect(view.nodes).toHaveLength(2);
+	});
+
 	it("reports an invalid node without counting it as capacity", () => {
 		const view = createMeshNodeTracker().observe(
 			[node("a"), node("forged", { trust: "invalid", freeSlots: 64 })],
@@ -215,18 +242,31 @@ describe("meshLabelStates", () => {
 		});
 	});
 
-	it("counts only trusted nodes when trust is required", () => {
-		expect(
-			Object.fromEntries(
-				meshLabelStates(nodes, NOW, {
-					labels: ["hobo"],
-					requireTrusted: true,
-				}),
-			),
-		).toEqual({
-			hobo: { nodes: 1, trustedNodes: 1, freeSlots: 2 },
-			"hobo-trunk": { nodes: 1, trustedNodes: 1, freeSlots: 2 },
+	it("reports only the labels asked for, never another label a node serves", () => {
+		const states = meshLabelStates(
+			[...nodes, node("laptop", { labels: ["hobo-local-host"], freeSlots: 0 })],
+			NOW,
+			{ labels: ["hobo"] },
+		);
+		// Neither hobo-trunk (a's other label) nor hobo-local-host is reported.
+		expect([...states.keys()]).toEqual(["hobo"]);
+		// Unverified and unchecked nodes count: trust does not filter routing
+		// counts, since an unlisted worker still picks up jobs.
+		expect(states.get("hobo")).toEqual({
+			nodes: 3,
+			trustedNodes: 1,
+			freeSlots: 6,
 		});
+	});
+
+	it("leaves out an advertisement that asks to be believed for a year", () => {
+		expect(
+			meshLabelStates(
+				[node("forever", { validUntilMs: NOW + 365 * 24 * 3_600_000 })],
+				NOW,
+				{ labels: ["hobo"] },
+			).get("hobo"),
+		).toEqual({ nodes: 0, trustedNodes: 0, freeSlots: 0 });
 	});
 
 	it("counts a node once however often it is listed or repeats a label", () => {

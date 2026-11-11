@@ -237,46 +237,46 @@ export function parseFleetState(
 		ageMs < -FLEET_STATE_MAX_SKEW_SECONDS * 1000
 	)
 		return undefined;
+	// A count that is there and a number; anything else is not a count.
 	const count = (entry: JsonObject | undefined, name: string) => {
 		const number = asNumber(entry?.[name]);
-		return number !== undefined && Number.isFinite(number) && number > 0
-			? Math.floor(number)
-			: 0;
+		return number !== undefined && Number.isFinite(number)
+			? Math.max(0, Math.floor(number))
+			: undefined;
 	};
 	return {
 		ageSeconds: Math.max(0, Math.floor(ageMs / 1000)),
+		// A label whose entry does not carry both counts says nothing, so it
+		// is left out and is as unknown as a label not listed at all.
 		labels: new Map(
-			Object.entries(labels).map(([label, entry]) => [
-				label.toLowerCase(),
-				{
-					nodes: count(asObject(entry), "nodes"),
-					freeSlots: count(asObject(entry), "freeSlots"),
-				},
-			]),
+			Object.entries(labels).flatMap(([label, value]) => {
+				const entry = asObject(value);
+				const nodes = count(entry, "nodes");
+				const freeSlots = count(entry, "freeSlots");
+				return nodes === undefined || freeSlots === undefined
+					? []
+					: [[label.toLowerCase(), { nodes, freeSlots }] as const];
+			}),
 		),
 	};
 }
 
 /**
  * Why the mesh snapshot says a label is refusing jobs, or `undefined` when
- * it does not: no snapshot, or the label has a node with a free slot.
+ * it does not: no snapshot, the label has a node with a free slot, or the
+ * snapshot does not list the label.
  *
- * `whenAbsent` says what a label missing from a fresh snapshot means. For a
- * fleet label it is `refusing`: the workers list every label they serve, so
- * one that is not there has no node. For the local box it is `unknown`: a
- * local runner need not be in the mesh at all.
+ * The worker that publishes the snapshot lists exactly the fleet labels it
+ * serves, with zeros when nobody serves them. A label it does not list is
+ * one it does not speak for (another worker's label, or the local box), so
+ * its absence is unknown, never a refusal.
  */
 export function fleetStateRefusal(
 	state: FleetState | undefined,
 	label: string,
-	whenAbsent: "refusing" | "unknown",
 ): string | undefined {
-	if (!state) return undefined;
-	const entry = state.labels.get(label.toLowerCase());
-	if (!entry)
-		return whenAbsent === "refusing"
-			? `the mesh snapshot (${state.ageSeconds} s old) lists no node for ${label}`
-			: undefined;
+	const entry = state?.labels.get(label.toLowerCase());
+	if (!state || !entry) return undefined;
 	if (entry.nodes === 0)
 		return `the mesh snapshot (${state.ageSeconds} s old) shows no live node for ${label}`;
 	if (entry.freeSlots === 0)
@@ -346,15 +346,10 @@ export function routeRunner(input: {
 		capacity === undefined ? 1 : Math.min(1, Math.max(0, capacity.freeSlots));
 	// What the nodes themselves report, when they reported recently: a label
 	// with no node or no free slot is refusing, whatever the queue shows.
-	const fleetRefusal = fleetStateRefusal(
-		input.fleetState,
-		fleetLabel,
-		"refusing",
-	);
+	const fleetRefusal = fleetStateRefusal(input.fleetState, fleetLabel);
 	const localRefusal = fleetStateRefusal(
 		input.fleetState,
 		LOCAL_HOST_RUNNER_LABEL,
-		"unknown",
 	);
 	const members = [
 		{
@@ -737,12 +732,12 @@ export async function chooseRunner(input: {
 			view.probeUnderway &&
 			view.undecidedAhead === 0 &&
 			((decision.tier !== "fleet" &&
-				unseen(fleet, fleetStateRefusal(fleetState, fleetLabel, "refusing"))) ||
+				unseen(fleet, fleetStateRefusal(fleetState, fleetLabel))) ||
 				(decision.tier === "github" &&
 					localEnrolled &&
 					unseen(
 						local,
-						fleetStateRefusal(fleetState, LOCAL_HOST_RUNNER_LABEL, "unknown"),
+						fleetStateRefusal(fleetState, LOCAL_HOST_RUNNER_LABEL),
 					)));
 		const waitedSeconds = seconds(startMs, nowMs);
 		if (!probeMayHelp) return decision;

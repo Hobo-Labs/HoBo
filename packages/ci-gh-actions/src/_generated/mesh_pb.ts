@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file mesh.proto.
  */
 export const file_mesh: GenFile = /*@__PURE__*/
-  fileDesc("CgptZXNoLnByb3RvEhVob2JvLmNpLmdoX2FjdGlvbnMudjEiUgoITWVzaEZyZWUSFgoJbWVtb3J5X21iGAEgASgNSACIAQESFAoHZGlza19tYhgCIAEoDUgBiAEBQgwKCl9tZW1vcnlfbWJCCgoIX2Rpc2tfbWIiKAoMTWVzaFBsYXRmb3JtEgoKAm9zGAEgASgJEgwKBGFyY2gYAiABKAkiPAoWTWVzaFJlbGlhYmlsaXR5U2FtcGxlcxIRCglkZWxpdmVyZWQYASABKAESDwoHZHJvcHBlZBgCIAEoASI6ChFNZXNoSWRlbnRpdHlQcm9vZhISCgpwdWJsaWNfa2V5GAEgASgJEhEKCXNpZ25hdHVyZRgCIAEoCSK/AwoKTWVzaEFkdmVydBIKCgJpZBgBIAEoCRISCgpmcmVlX3Nsb3RzGAIgASgNEhgKC3RvdGFsX3Nsb3RzGAMgASgNSACIAQESDwoHaGVhbHRoeRgEIAEoCBIOCgZsYWJlbHMYBSADKAkSFgoOdmFsaWRfdW50aWxfbXMYBiABKAESLQoEZnJlZRgHIAEoCzIfLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5NZXNoRnJlZRI1CghwbGF0Zm9ybRgIIAEoCzIjLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5NZXNoUGxhdGZvcm0SGAoLcmVsaWFiaWxpdHkYCSABKAFIAYgBARI+CgdzYW1wbGVzGAogASgLMi0uaG9iby5jaS5naF9hY3Rpb25zLnYxLk1lc2hSZWxpYWJpbGl0eVNhbXBsZXMSFQoIc2luY2VfbXMYCyABKAFIAogBARI6CghpZGVudGl0eRgMIAEoCzIoLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5NZXNoSWRlbnRpdHlQcm9vZkIOCgxfdG90YWxfc2xvdHNCDgoMX3JlbGlhYmlsaXR5QgsKCV9zaW5jZV9tcyI1Cg5NZXNoVHJ1c3RlZEtleRISCgpwdWJsaWNfa2V5GAEgASgJEg8KB25vZGVfaWQYAiABKAkiZwoPTWVzaFRydXN0Q29uZmlnEjsKDHRydXN0ZWRfa2V5cxgBIAMoCzIlLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5NZXNoVHJ1c3RlZEtleRIXCg9yZXF1aXJlX3RydXN0ZWQYAiABKAgiSgoVTWVzaFJlbGlhYmlsaXR5UmVjb3JkEhEKCWRlbGl2ZXJlZBgBIAEoARIPCgdkcm9wcGVkGAIgASgBEg0KBWF0X21zGAMgASgBItcDCg5NZXNoTm9kZVJlcG9ydBIKCgJpZBgBIAEoCRINCgVzdGF0ZRgCIAEoCRINCgVzaW5jZRgDIAEoCRIPCgdoZWFsdGh5GAQgASgIEhQKDGxhc3Rfc2Vlbl9hdBgFIAEoCRITCgt2YWxpZF91bnRpbBgGIAEoCRITCgt0b3RhbF9zbG90cxgHIAEoDRISCgpmcmVlX3Nsb3RzGAggASgNEhsKDmZyZWVfbWVtb3J5X21iGAkgASgNSACIAQESGQoMZnJlZV9kaXNrX21iGAogASgNSAGIAQESNQoIcGxhdGZvcm0YCyABKAsyIy5ob2JvLmNpLmdoX2FjdGlvbnMudjEuTWVzaFBsYXRmb3JtEg4KBmxhYmVscxgMIAMoCRINCgV0cnVzdBgNIAEoCRISCgpwdWJsaWNfa2V5GA4gASgJEhgKC3JlbGlhYmlsaXR5GA8gASgBSAKIAQESFgoJZGVsaXZlcmVkGBAgASgBSAOIAQESFAoHZHJvcHBlZBgRIAEoAUgEiAEBQhEKD19mcmVlX21lbW9yeV9tYkIPCg1fZnJlZV9kaXNrX21iQg4KDF9yZWxpYWJpbGl0eUIMCgpfZGVsaXZlcmVkQgoKCF9kcm9wcGVkIr8BChNNZXNoQ2FwYWNpdHlTdW1tYXJ5Eg0KBW5vZGVzGAEgASgNEg8KB2hlYWx0aHkYAiABKA0SEQoJYXZhaWxhYmxlGAMgASgNEhMKC3RvdGFsX3Nsb3RzGAQgASgNEhIKCmZyZWVfc2xvdHMYBSABKA0SFgoOZnJlZV9tZW1vcnlfbWIYBiABKA0SHgoWbGFyZ2VzdF9mcmVlX21lbW9yeV9tYhgHIAEoDRIUCgxmcmVlX2Rpc2tfbWIYCCABKA0ivQEKD01lc2hOb2RlUmVwb3J0cxIMCgRtZXNoGAEgASgJEjQKBW5vZGVzGAIgAygLMiUuaG9iby5jaS5naF9hY3Rpb25zLnYxLk1lc2hOb2RlUmVwb3J0EjwKCGNhcGFjaXR5GAMgASgLMiouaG9iby5jaS5naF9hY3Rpb25zLnYxLk1lc2hDYXBhY2l0eVN1bW1hcnkSDwoHcmVhZF9hdBgEIAEoCRIXCg9yZXF1aXJlX3RydXN0ZWQYBSABKAgiTwoTTWVzaEZsZWV0TGFiZWxTdGF0ZRINCgVub2RlcxgBIAEoDRIVCg10cnVzdGVkX25vZGVzGAIgASgNEhIKCmZyZWVfc2xvdHMYAyABKA0ixAEKDk1lc2hGbGVldFN0YXRlEhQKDHB1Ymxpc2hlZF9hdBgBIAEoCRJBCgZsYWJlbHMYAiADKAsyMS5ob2JvLmNpLmdoX2FjdGlvbnMudjEuTWVzaEZsZWV0U3RhdGUuTGFiZWxzRW50cnkaWQoLTGFiZWxzRW50cnkSCwoDa2V5GAEgASgJEjkKBXZhbHVlGAIgASgLMiouaG9iby5jaS5naF9hY3Rpb25zLnYxLk1lc2hGbGVldExhYmVsU3RhdGU6AjgBYgZwcm90bzM");
+  fileDesc("CgptZXNoLnByb3RvEhVob2JvLmNpLmdoX2FjdGlvbnMudjEiUgoITWVzaEZyZWUSFgoJbWVtb3J5X21iGAEgASgNSACIAQESFAoHZGlza19tYhgCIAEoDUgBiAEBQgwKCl9tZW1vcnlfbWJCCgoIX2Rpc2tfbWIiKAoMTWVzaFBsYXRmb3JtEgoKAm9zGAEgASgJEgwKBGFyY2gYAiABKAkiPAoWTWVzaFJlbGlhYmlsaXR5U2FtcGxlcxIRCglkZWxpdmVyZWQYASABKAESDwoHZHJvcHBlZBgCIAEoASI6ChFNZXNoSWRlbnRpdHlQcm9vZhISCgpwdWJsaWNfa2V5GAEgASgJEhEKCXNpZ25hdHVyZRgCIAEoCSLnAwoKTWVzaEFkdmVydBIKCgJpZBgBIAEoCRISCgpmcmVlX3Nsb3RzGAIgASgNEhgKC3RvdGFsX3Nsb3RzGAMgASgNSACIAQESDwoHaGVhbHRoeRgEIAEoCBIOCgZsYWJlbHMYBSADKAkSFgoOdmFsaWRfdW50aWxfbXMYBiABKAESLQoEZnJlZRgHIAEoCzIfLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5NZXNoRnJlZRI1CghwbGF0Zm9ybRgIIAEoCzIjLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5NZXNoUGxhdGZvcm0SGAoLcmVsaWFiaWxpdHkYCSABKAFIAYgBARI+CgdzYW1wbGVzGAogASgLMi0uaG9iby5jaS5naF9hY3Rpb25zLnYxLk1lc2hSZWxpYWJpbGl0eVNhbXBsZXMSFQoIc2luY2VfbXMYCyABKAFIAogBARI6CghpZGVudGl0eRgMIAEoCzIoLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5NZXNoSWRlbnRpdHlQcm9vZhIXCgpyZXBvc2l0b3J5GA0gASgJSAOIAQFCDgoMX3RvdGFsX3Nsb3RzQg4KDF9yZWxpYWJpbGl0eUILCglfc2luY2VfbXNCDQoLX3JlcG9zaXRvcnkiNQoOTWVzaFRydXN0ZWRLZXkSEgoKcHVibGljX2tleRgBIAEoCRIPCgdub2RlX2lkGAIgASgJImcKD01lc2hUcnVzdENvbmZpZxI7Cgx0cnVzdGVkX2tleXMYASADKAsyJS5ob2JvLmNpLmdoX2FjdGlvbnMudjEuTWVzaFRydXN0ZWRLZXkSFwoPcmVxdWlyZV90cnVzdGVkGAIgASgIIl8KFU1lc2hSZWxpYWJpbGl0eVJlY29yZBIRCglkZWxpdmVyZWQYASABKAESDwoHZHJvcHBlZBgCIAEoARINCgVhdF9tcxgDIAEoARITCgtyZXNldF90b2tlbhgEIAEoCSLrAwoOTWVzaE5vZGVSZXBvcnQSCgoCaWQYASABKAkSDQoFc3RhdGUYAiABKAkSDQoFc2luY2UYAyABKAkSDwoHaGVhbHRoeRgEIAEoCBIUCgxsYXN0X3NlZW5fYXQYBSABKAkSEwoLdmFsaWRfdW50aWwYBiABKAkSEwoLdG90YWxfc2xvdHMYByABKA0SEgoKZnJlZV9zbG90cxgIIAEoDRIbCg5mcmVlX21lbW9yeV9tYhgJIAEoDUgAiAEBEhkKDGZyZWVfZGlza19tYhgKIAEoDUgBiAEBEjUKCHBsYXRmb3JtGAsgASgLMiMuaG9iby5jaS5naF9hY3Rpb25zLnYxLk1lc2hQbGF0Zm9ybRIOCgZsYWJlbHMYDCADKAkSDQoFdHJ1c3QYDSABKAkSEgoKcHVibGljX2tleRgOIAEoCRIYCgtyZWxpYWJpbGl0eRgPIAEoAUgCiAEBEhYKCWRlbGl2ZXJlZBgQIAEoAUgDiAEBEhQKB2Ryb3BwZWQYESABKAFIBIgBARISCgpyZXBvc2l0b3J5GBIgASgJQhEKD19mcmVlX21lbW9yeV9tYkIPCg1fZnJlZV9kaXNrX21iQg4KDF9yZWxpYWJpbGl0eUIMCgpfZGVsaXZlcmVkQgoKCF9kcm9wcGVkIr8BChNNZXNoQ2FwYWNpdHlTdW1tYXJ5Eg0KBW5vZGVzGAEgASgNEg8KB2hlYWx0aHkYAiABKA0SEQoJYXZhaWxhYmxlGAMgASgNEhMKC3RvdGFsX3Nsb3RzGAQgASgNEhIKCmZyZWVfc2xvdHMYBSABKA0SFgoOZnJlZV9tZW1vcnlfbWIYBiABKA0SHgoWbGFyZ2VzdF9mcmVlX21lbW9yeV9tYhgHIAEoDRIUCgxmcmVlX2Rpc2tfbWIYCCABKA0i0AEKD01lc2hOb2RlUmVwb3J0cxIMCgRtZXNoGAEgASgJEjQKBW5vZGVzGAIgAygLMiUuaG9iby5jaS5naF9hY3Rpb25zLnYxLk1lc2hOb2RlUmVwb3J0EjwKCGNhcGFjaXR5GAMgASgLMiouaG9iby5jaS5naF9hY3Rpb25zLnYxLk1lc2hDYXBhY2l0eVN1bW1hcnkSDwoHcmVhZF9hdBgEIAEoCRIXCg9yZXF1aXJlX3RydXN0ZWQYBSABKAgSEQoJdHJ1bmNhdGVkGAYgASgIIk8KE01lc2hGbGVldExhYmVsU3RhdGUSDQoFbm9kZXMYASABKA0SFQoNdHJ1c3RlZF9ub2RlcxgCIAEoDRISCgpmcmVlX3Nsb3RzGAMgASgNIsQBCg5NZXNoRmxlZXRTdGF0ZRIUCgxwdWJsaXNoZWRfYXQYASABKAkSQQoGbGFiZWxzGAIgAygLMjEuaG9iby5jaS5naF9hY3Rpb25zLnYxLk1lc2hGbGVldFN0YXRlLkxhYmVsc0VudHJ5GlkKC0xhYmVsc0VudHJ5EgsKA2tleRgBIAEoCRI5CgV2YWx1ZRgCIAEoCzIqLmhvYm8uY2kuZ2hfYWN0aW9ucy52MS5NZXNoRmxlZXRMYWJlbFN0YXRlOgI4AWIGcHJvdG8z");
 
 /**
  * Free capacity a job is sized against. An absent field is unknown, not zero.
@@ -187,6 +187,14 @@ export type MeshAdvert = Message<"hobo.ci.gh_actions.v1.MeshAdvert"> & {
    * @generated from field: hobo.ci.gh_actions.v1.MeshIdentityProof identity = 12;
    */
   identity?: MeshIdentityProof | undefined;
+
+  /**
+   * The one repository a machine running jobs for one repository serves.
+   * Box workers serve many and leave it empty. Signed with the rest.
+   *
+   * @generated from field: optional string repository = 13;
+   */
+  repository?: string | undefined;
 };
 
 /**
@@ -272,6 +280,14 @@ export type MeshReliabilityRecord = Message<"hobo.ci.gh_actions.v1.MeshReliabili
    * @generated from field: double at_ms = 3;
    */
   atMs: number;
+
+  /**
+   * The HOBO_CI_MESH_RELIABILITY_RESET value last applied. A reset happens
+   * once per value, so a variable left set does not clear every restart.
+   *
+   * @generated from field: string reset_token = 4;
+   */
+  resetToken: string;
 };
 
 /**
@@ -383,6 +399,15 @@ export type MeshNodeReport = Message<"hobo.ci.gh_actions.v1.MeshNodeReport"> & {
    * @generated from field: optional double dropped = 17;
    */
   dropped?: number | undefined;
+
+  /**
+   * For a machine running jobs for one repository: that repository. Empty
+   * for fleet nodes, and for a caller whose account does not own it (the
+   * node's id, platform and key are then withheld too).
+   *
+   * @generated from field: string repository = 18;
+   */
+  repository: string;
 };
 
 /**
@@ -486,6 +511,13 @@ export type MeshNodeReports = Message<"hobo.ci.gh_actions.v1.MeshNodeReports"> &
    * @generated from field: bool require_trusted = 5;
    */
   requireTrusted: boolean;
+
+  /**
+   * More nodes were known than one answer lists. `capacity` still covers all.
+   *
+   * @generated from field: bool truncated = 6;
+   */
+  truncated: boolean;
 };
 
 /**
@@ -502,7 +534,8 @@ export const MeshNodeReportsSchema: GenMessage<MeshNodeReports> = /*@__PURE__*/
  */
 export type MeshFleetLabelState = Message<"hobo.ci.gh_actions.v1.MeshFleetLabelState"> & {
   /**
-   * Live, healthy nodes serving the label that the publisher ranks.
+   * Live, healthy nodes serving the label, trusted or not: an unlisted node
+   * still picks up a job GitHub hands it. Rejected adverts never count.
    *
    * @generated from field: uint32 nodes = 1;
    */
@@ -529,8 +562,10 @@ export const MeshFleetLabelStateSchema: GenMessage<MeshFleetLabelState> = /*@__P
   messageDesc(file_mesh, 11);
 
 /**
- * The snapshot a worker publishes to the `HOBO_CI_FLEET_STATE` repository
- * variable for runner routing. Small, and nothing in it is secret.
+ * The snapshot one elected worker publishes to the `HOBO_CI_FLEET_STATE`
+ * repository variable for runner routing. It lists exactly the fleet labels
+ * the publisher serves, never `hobo-local-host`. Small, and nothing in it is
+ * secret.
  *
  * @generated from message hobo.ci.gh_actions.v1.MeshFleetState
  */

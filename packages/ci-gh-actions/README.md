@@ -951,11 +951,17 @@ in the mesh serves one list of them:
 - **No mesh:** a relay without `HOBO_CI_NATS_URL` (the hosted relay on Vercel) answers
   `mesh: "not-configured"`, not an error.
 
+- **Per account:** fleet workers and relay hosts are shown to every account; a machine running jobs
+  for one repository is shown in full only to the account that owns that repository, and to others
+  under an opaque id without its platform or key. One answer lists at most 256 nodes (`truncated`).
+
 **Trust.** Each node makes an Ed25519 key on first start (`mesh-node.key` beside its SQLite journal,
-mode `0600`, never published) and signs what it advertises. A reader calls a node `trusted` when its
-key is in the mesh's trusted set, `unverified` when it is not or the node does not sign, and `invalid`
-when the signature fails; an `invalid` node is never ranked. With no set, each node trusts only
-itself and ranking is unchanged.
+mode `0600`, never published; refused in a directory others can write) and signs what it advertises.
+A reader calls a node `trusted` when its key is listed for its node id, `unverified` when it is not
+listed or the node does not sign, and `invalid` when the signature fails, the id is bound to another
+key, or the expiry is further ahead than any node advertises; an `invalid` node is never ranked. With
+no set, each node trusts only itself and ranking is unchanged. Bind keys to node ids; `--any-node` is
+needed to list one unbound, and a local runner's key (readable by jobs on its machine) must never be.
 
 ```sh
 export HOBO_CI_NATS_URL=nats://127.0.0.1:4222

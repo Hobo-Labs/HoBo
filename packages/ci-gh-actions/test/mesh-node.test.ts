@@ -1,4 +1,7 @@
 import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
@@ -25,6 +28,7 @@ import {
 	freeDiskMb,
 	loadMeshIdentity,
 	meshReliabilityJournal,
+	meshReliabilityResetToken,
 } from "../src/mesh-node.js";
 import { meshTrustConfigJson } from "../src/mesh-records.js";
 import { createWorkerMesh } from "../src/mesh-worker.js";
@@ -63,6 +67,50 @@ describe("a node's identity key", () => {
 		await expect(loadMeshIdentity(garbage)).rejects.toThrow();
 		// The unreadable file is left alone: it is never overwritten with a new key.
 		expect(readFileSync(garbage, "utf8")).toBe("not a key");
+	});
+
+	it("loads a private key it cannot change (read-only) without touching it", async () => {
+		const folder = directory();
+		const path = join(folder, "readonly.key");
+		writeFileSync(path, generateMeshIdentity().privateKeyPem, { mode: 0o400 });
+		const refused = async () => {
+			const error = new Error("read-only file system");
+			Object.assign(error, { code: "EROFS" });
+			throw error;
+		};
+		const identity = await loadMeshIdentity(path, { chmod: refused });
+		expect(identity.publicKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
+		expect(statSync(path).mode & 0o777).toBe(0o400);
+		// The same for a 0600 key: already private, so left alone.
+		const tight = join(folder, "tight.key");
+		writeFileSync(tight, generateMeshIdentity().privateKeyPem, { mode: 0o600 });
+		await loadMeshIdentity(tight, { chmod: refused });
+	});
+
+	it("refuses a key others can read when it cannot be made private", async () => {
+		const path = join(directory(), "loose.key");
+		writeFileSync(path, generateMeshIdentity().privateKeyPem, { mode: 0o644 });
+		await expect(
+			loadMeshIdentity(path, {
+				chmod: async () => {
+					const error = new Error("not permitted");
+					Object.assign(error, { code: "EPERM" });
+					throw error;
+				},
+			}),
+		).rejects.toThrow(
+			/readable by others and could not be made private \(EPERM\)/,
+		);
+	});
+
+	it("refuses a key in a directory group or others can write", async () => {
+		const shared = join(directory(), "shared");
+		mkdirSync(shared, { mode: 0o777 });
+		chmodSync(shared, 0o777);
+		await expect(
+			loadMeshIdentity(join(shared, "mesh-node.key")),
+		).rejects.toThrow(/writable by group or others/);
+		expect(existsSync(join(shared, "mesh-node.key"))).toBe(false);
 	});
 
 	it("gives two nodes two identities", async () => {
@@ -109,11 +157,17 @@ describe("a worker's reliability across a restart", () => {
 		path: string,
 		clock: { now: number },
 		run: (mesh: ReturnType<typeof createWorkerMesh>) => Promise<void>,
-		options: { reset?: boolean } = {},
+		options: { resetToken?: string } = {},
 	) {
 		const journal = new SqliteCiStore(path);
 		try {
-			const stored = meshReliabilityJournal(journal, settings.nodeId);
+			const stored = meshReliabilityJournal(
+				journal,
+				settings.nodeId,
+				undefined,
+				options.resetToken,
+			);
+			const loaded = await stored.load(clock.now);
 			const ports = createMemoryMesh({ now: () => clock.now });
 			const writes: Promise<void>[] = [];
 			const mesh = createWorkerMesh({
@@ -125,7 +179,7 @@ describe("a worker's reliability across a restart", () => {
 				healthy: () => true,
 				servesTrunk: false,
 				free: () => ({ memoryMb: 8_192, diskMb: freeDiskMb(tmpdir()) }),
-				initialReliability: options.reset ? undefined : await stored.load(),
+				initialReliability: loaded.record,
 				persistReliability: (record) => {
 					writes.push(stored.save(record));
 				},
@@ -139,6 +193,7 @@ describe("a worker's reliability across a restart", () => {
 				reliability: mesh.reliability(),
 				samples: mesh.samples(),
 				advertised: self,
+				reset: loaded.reset,
 			};
 		} finally {
 			journal.close();
@@ -190,10 +245,51 @@ describe("a worker's reliability across a restart", () => {
 		expect(
 			(await life(path, clock, async () => undefined)).reliability,
 		).toBeLessThan(1);
-		expect(
-			(await life(path, clock, async () => undefined, { reset: true }))
-				.reliability,
-		).toBe(1);
+		const reset = await life(path, clock, async () => undefined, {
+			resetToken: "1",
+		});
+		expect([reset.reliability, reset.reset]).toEqual([1, true]);
+	});
+
+	it("applies a reset once per token, so a variable left set does not clear every restart", async () => {
+		const path = join(directory(), "journal.sqlite");
+		const clock = { now: NOW };
+		const drop = async (
+			mesh: ReturnType<typeof createWorkerMesh>,
+			jobId: number,
+		) => {
+			await mesh.claim(queued(jobId));
+			mesh.record("hobo_ci_launch_parked", { jobId });
+		};
+		await life(path, clock, (mesh) => drop(mesh, 1));
+		const first = await life(path, clock, (mesh) => drop(mesh, 2), {
+			resetToken: "1",
+		});
+		// Cleared at start; the drop after the reset is kept.
+		expect(first.reset).toBe(true);
+		expect(first.samples).toEqual({ delivered: 0, dropped: 1 });
+		// HOBO_CI_MESH_RELIABILITY_RESET=1 is still set at the next start.
+		const again = await life(path, clock, async () => undefined, {
+			resetToken: "1",
+		});
+		expect(again.reset).toBe(false);
+		expect(again.samples).toEqual({ delivered: 0, dropped: 1 });
+		// A new token resets once more.
+		const fresh = await life(path, clock, async () => undefined, {
+			resetToken: "2026-11-11",
+		});
+		expect([fresh.reset, fresh.reliability]).toEqual([true, 1]);
+	});
+
+	it("reads the reset variable: off for unset or 0, a token otherwise", () => {
+		expect(meshReliabilityResetToken(undefined)).toBeUndefined();
+		expect(meshReliabilityResetToken("")).toBeUndefined();
+		expect(meshReliabilityResetToken("0")).toBeUndefined();
+		expect(meshReliabilityResetToken("1")).toBe("1");
+		expect(meshReliabilityResetToken("2026-11-11")).toBe("2026-11-11");
+		expect(() => meshReliabilityResetToken("not a token!")).toThrow(
+			"HOBO_CI_MESH_RELIABILITY_RESET",
+		);
 	});
 
 	it("advertises measured free disk beside free memory", async () => {
@@ -221,7 +317,7 @@ describe("a worker's reliability across a restart", () => {
 			"box-a",
 			(message) => failures.push(message),
 		);
-		expect(await broken.load()).toBeUndefined();
+		expect(await broken.load()).toEqual({ record: undefined, reset: false });
 		await broken.save({ delivered: 1, dropped: 0, atMs: NOW });
 		expect(failures).toEqual(["disk gone", "disk full"]);
 		// A record that is not one reads as no record.
@@ -232,7 +328,7 @@ describe("a worker's reliability across a restart", () => {
 			},
 			"box-a",
 		);
-		expect(await garbled.load()).toBeUndefined();
+		expect((await garbled.load()).record).toBeUndefined();
 	});
 
 	it("counts a simple node's sessions the same way", () => {
@@ -322,7 +418,11 @@ describe("the trust settings a node works by", () => {
 	it("lets an operator list, bind, unlist and require keys, one revision at a time", async () => {
 		const store = createMemoryMeshConfig();
 		expect(
-			await changeMeshTrust(store, { kind: "add", publicKey: self }),
+			await changeMeshTrust(store, {
+				kind: "add",
+				publicKey: self,
+				anyNode: true,
+			}),
 		).toEqual({
 			trustedKeys: [{ publicKey: self }],
 			requireTrusted: false,
@@ -365,7 +465,11 @@ describe("the trust settings a node works by", () => {
 
 	it("reapplies an edit when another operator wrote first, and never overwrites what it cannot read", async () => {
 		const store = createMemoryMeshConfig();
-		await changeMeshTrust(store, { kind: "add", publicKey: self });
+		await changeMeshTrust(store, {
+			kind: "add",
+			publicKey: self,
+			anyNode: true,
+		});
 		let raced = false;
 		const racing = {
 			read: () => store.read(),
@@ -382,7 +486,11 @@ describe("the trust settings a node works by", () => {
 			},
 		};
 		expect(
-			await changeMeshTrust(racing, { kind: "add", publicKey: other }),
+			await changeMeshTrust(racing, {
+				kind: "add",
+				publicKey: other,
+				anyNode: true,
+			}),
 		).toEqual({
 			trustedKeys: [{ publicKey: self }, { publicKey: other }],
 			// The other operator's change survived.
@@ -392,12 +500,65 @@ describe("the trust settings a node works by", () => {
 		const garbled = createMemoryMeshConfig();
 		await garbled.publish('{"trustedKeys":[{"publicKey":"garbage"}]}');
 		await expect(
-			changeMeshTrust(garbled, { kind: "add", publicKey: self }),
+			changeMeshTrust(garbled, { kind: "add", publicKey: self, anyNode: true }),
 		).rejects.toThrow("cannot be read");
 		expect((await garbled.read())?.revision).toBe(1);
 		await expect(
-			changeMeshTrust(store, { kind: "add", publicKey: "too-short" }),
+			changeMeshTrust(store, {
+				kind: "add",
+				publicKey: "too-short",
+				nodeId: "box-a",
+			}),
 		).rejects.toThrow("invalid mesh public key");
+	});
+
+	it("refuses to trust a key under any node id unless that is asked for explicitly", async () => {
+		const store = createMemoryMeshConfig();
+		await expect(
+			changeMeshTrust(store, { kind: "add", publicKey: self }),
+		).rejects.toThrow("--any-node");
+		expect(await store.read()).toBeUndefined();
+	});
+
+	it("fails closed when settings are stored and it has never read them", async () => {
+		const store = createMemoryMeshConfig();
+		await store.publish("{ not trust settings");
+		const events: { event: string; failedClosed?: unknown }[] = [];
+		const trust = createMeshTrust({
+			store,
+			selfPublicKey: self,
+			log: (event, fields) =>
+				events.push({ event, failedClosed: fields.failedClosed }),
+		});
+		await trust.refresh();
+		expect(trust.policy()).toEqual({
+			trustedKeys: [{ publicKey: self }],
+			requireTrusted: true,
+		});
+		expect(events).toEqual([
+			{ event: "hobo_ci_mesh_trust_unreadable", failedClosed: true },
+		]);
+		// Settings it can read lift it.
+		const listed = {
+			trustedKeys: [{ publicKey: other }],
+			requireTrusted: false,
+		};
+		await store.publish(meshTrustConfigJson(listed), 1);
+		await trust.refresh();
+		expect(trust.policy()).toEqual(listed);
+	});
+
+	it("reads settings with a field a newer version added", async () => {
+		const store = createMemoryMeshConfig();
+		await store.publish(
+			`{"trustedKeys":[{"publicKey":"${other}","nodeId":"box-b","note":"rack 3"}],"requireTrusted":true,"rotateBy":"2027-01-01"}`,
+		);
+		const trust = createMeshTrust({ store, selfPublicKey: self });
+		await trust.refresh();
+		expect(trust.policy()).toEqual({
+			trustedKeys: [{ publicKey: other, nodeId: "box-b" }],
+			requireTrusted: true,
+		});
 	});
 
 	it("trusts only its own key when it has no mesh at all", async () => {

@@ -178,7 +178,7 @@ describe("createMeshMonitor", () => {
 
 	it("summarises on a schedule when nothing changes, and stays quiet between", async () => {
 		const { board, clock, monitor, names } = watch("a");
-		await board.advertise(node("a", { validUntilMs: NOW + 3_600_000 }));
+		await board.advertise(node("a", { validUntilMs: NOW + 300_000 }));
 		await monitor.observe();
 		await monitor.observe();
 		clock.now += 59_000;

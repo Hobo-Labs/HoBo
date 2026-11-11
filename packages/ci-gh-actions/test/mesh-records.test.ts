@@ -3,6 +3,7 @@ import {
 	assessMeshTrust,
 	generateMeshIdentity,
 	type MeshNode,
+	type MeshNodeReport,
 	meshNodeReport,
 	signMeshAdvert,
 	verifyMeshAdvert,
@@ -10,8 +11,10 @@ import {
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+	MESH_REPORT_MAX_NODES,
 	meshAdvertJson,
 	meshFleetStateJson,
+	meshNodeReportsForAccount,
 	meshNodeReportsJson,
 	meshNodeReportsMessage,
 	meshReliabilityRecordJson,
@@ -114,7 +117,8 @@ describe("the advertisement record", () => {
 				requireTrusted: false,
 			}),
 		).toBe("unverified");
-		expect(meshNodeReport(read, 0)).toMatchObject({
+		// Read as the node meant it: shortly before its advertisement runs out.
+		expect(meshNodeReport(read, read.validUntilMs - 10_000)).toMatchObject({
 			trust: "unverified",
 			state: "unhealthy",
 		});
@@ -254,9 +258,14 @@ describe("the trust settings record", () => {
 			"not json",
 			'{"trustedKeys":[{"publicKey":"too-short"}]}',
 			`{"trustedKeys":[{"publicKey":"${key}","nodeId":"bad id"}]}`,
-			`{"trustedKeys":[{"publicKey":"${key}"}],"allowEveryone":true}`,
 		])
 			expect(parseMeshTrustConfig(unusable), unusable).toBeUndefined();
+		// A field a newer version added is ignored; the keys still apply.
+		expect(
+			parseMeshTrustConfig(
+				`{"trustedKeys":[{"publicKey":"${key}","comment":"box a"}],"requireTrusted":true,"rotation":{"next":"x"}}`,
+			),
+		).toEqual({ trustedKeys: [{ publicKey: key }], requireTrusted: true });
 		expect(() =>
 			meshTrustConfigJson({
 				trustedKeys: [{ publicKey: "short" }],
@@ -267,19 +276,27 @@ describe("the trust settings record", () => {
 });
 
 describe("the reliability record", () => {
-	it("round-trips, and reads a damaged record as no record", () => {
+	it("round-trips with its reset token, and reads a damaged record as no record", () => {
 		const record = { delivered: 9.5, dropped: 0.25, atMs: NOW };
 		expect(
 			parseMeshReliabilityRecord(meshReliabilityRecordJson(record)),
-		).toEqual(record);
+		).toEqual({ record, resetToken: "" });
+		expect(
+			parseMeshReliabilityRecord(
+				meshReliabilityRecordJson(record, "2026-11-11"),
+			),
+		).toEqual({ record, resetToken: "2026-11-11" });
 		expect(
 			parseMeshReliabilityRecord(fixture("valid/mesh-reliability-record.json")),
-		).toEqual({ delivered: 9.5, dropped: 0.25, atMs: 1_794_268_000_000 });
+		).toEqual({
+			record: { delivered: 9.5, dropped: 0.25, atMs: 1_794_268_000_000 },
+			resetToken: "",
+		});
 		// Zeros survive the trip: a clean record is a record.
 		expect(
 			parseMeshReliabilityRecord(
 				meshReliabilityRecordJson({ delivered: 0, dropped: 0, atMs: 0 }),
-			),
+			)?.record,
 		).toEqual({ delivered: 0, dropped: 0, atMs: 0 });
 		for (const damaged of ["", "{", '{"delivered":-1,"dropped":0,"atMs":1}'])
 			expect(parseMeshReliabilityRecord(damaged)).toBeUndefined();
@@ -299,6 +316,7 @@ describe("the report every surface answers with", () => {
 			nodes: [],
 			readAt: "",
 			requireTrusted: false,
+			truncated: false,
 		});
 		expect(
 			parseMeshNodeReports(
@@ -368,6 +386,7 @@ describe("the report every surface answers with", () => {
 					reliability: 0.875,
 					delivered: 10,
 					dropped: 2,
+					repository: "",
 				},
 				{
 					id: "relay-host",
@@ -382,6 +401,7 @@ describe("the report every surface answers with", () => {
 					labels: [],
 					trust: "unverified",
 					publicKey: "",
+					repository: "",
 				},
 			],
 			capacity: {
@@ -396,6 +416,7 @@ describe("the report every surface answers with", () => {
 			},
 			readAt: "2026-11-10T02:40:05.000Z",
 			requireTrusted: true,
+			truncated: false,
 		});
 		expect(parseMeshNodeReports(written).nodes[1]?.freeMemoryMb).toBe(
 			undefined,
@@ -403,6 +424,105 @@ describe("the report every surface answers with", () => {
 		expect(
 			parseMeshNodeReports(fixture("valid/mesh-node-reports.json")).nodes,
 		).toHaveLength(2);
+	});
+});
+
+describe("bounding and scoping the report", () => {
+	const report = (
+		id: string,
+		overrides: Partial<MeshNodeReport> = {},
+	): MeshNodeReport => ({
+		...meshNodeReport(
+			{
+				id,
+				freeSlots: 1,
+				totalSlots: 1,
+				healthy: true,
+				labels: ["hobo"],
+				validUntilMs: NOW + 45_000,
+			},
+			NOW,
+		),
+		...overrides,
+	});
+	const capacity = {
+		nodes: 0,
+		healthy: 0,
+		available: 0,
+		totalSlots: 0,
+		freeSlots: 0,
+		freeMemoryMb: 0,
+		largestFreeMemoryMb: 0,
+		freeDiskMb: 0,
+	};
+
+	it("lists at most MESH_REPORT_MAX_NODES, nodes that are there before lost ones", () => {
+		const live = Array.from({ length: MESH_REPORT_MAX_NODES }, (_, index) =>
+			report(`box-${String(index).padStart(4, "0")}`),
+		);
+		const lost = report("aaa-lost", { state: "lost" });
+		const answer = meshNodeReportsMessage({
+			mesh: "configured",
+			view: { nodes: [lost, ...live], capacity },
+			nowMs: NOW,
+		});
+		expect(answer.nodes).toHaveLength(MESH_REPORT_MAX_NODES);
+		expect(answer.truncated).toBe(true);
+		expect(answer.nodes.some((node) => node.id === "aaa-lost")).toBe(false);
+		const small = meshNodeReportsMessage({
+			mesh: "configured",
+			view: { nodes: live.slice(0, 3), capacity },
+			nowMs: NOW,
+		});
+		expect(small.truncated).toBe(false);
+	});
+
+	it("shows a local runner in full only to the account that owns its repository", () => {
+		const answer = meshNodeReportsMessage({
+			mesh: "configured",
+			view: {
+				nodes: [
+					report("box-a"),
+					report("local-alices-laptop", {
+						labels: ["hobo-local-host"],
+						repository: "acme/app",
+						platform: { os: "darwin", arch: "arm64" },
+						publicKey: "K".repeat(43),
+					}),
+					report("local-unnamed", { labels: ["hobo-local-host"] }),
+				],
+				capacity,
+			},
+			nowMs: NOW,
+		});
+		const own = meshNodeReportsForAccount(answer, new Set(["Acme/App"]));
+		expect(own.nodes.map((node) => node.id)).toEqual([
+			"box-a",
+			"local-alices-laptop",
+			expect.stringMatching(/^local-[0-9a-f]{16}$/),
+		]);
+		expect(own.nodes[1]).toMatchObject({
+			repository: "acme/app",
+			publicKey: "K".repeat(43),
+			platform: { os: "darwin", arch: "arm64" },
+		});
+		const other = meshNodeReportsForAccount(answer, new Set(["other/repo"]));
+		const hidden = other.nodes[1];
+		expect(hidden?.id).toMatch(/^local-[0-9a-f]{16}$/);
+		expect(hidden?.id).not.toContain("alice");
+		expect(hidden).toMatchObject({
+			repository: "",
+			publicKey: "",
+			platform: undefined,
+			state: "live",
+			freeSlots: 1,
+		});
+		// The same opaque id each time, and the fleet node unchanged.
+		expect(meshNodeReportsForAccount(answer, new Set()).nodes[1]?.id).toBe(
+			hidden?.id,
+		);
+		expect(other.nodes[0]).toEqual(answer.nodes[0]);
+		expect(JSON.stringify(meshNodeReportsJson(other))).not.toContain("alice");
 	});
 });
 

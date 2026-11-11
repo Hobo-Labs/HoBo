@@ -89,7 +89,11 @@ export function meshNodesTable(reports: MeshNodeReports): string {
 	const trust = reports.requireTrusted
 		? "Only trusted nodes are ranked for jobs."
 		: "Trust: trusted = key in the mesh's trusted set; unverified = signed by an unlisted key, or unsigned; invalid = signature failed, never ranked.";
-	return [heading, ...lines, summary, trust]
+	// The relay lists at most a few hundred nodes; the summary covers them all.
+	const truncated = reports.truncated
+		? `More nodes are known than are listed; ${reports.nodes.length} shown.`
+		: "";
+	return [heading, ...lines, truncated, summary, trust]
 		.filter((line) => line !== "")
 		.join("\n");
 }

@@ -59,6 +59,7 @@ import {
 	memoryRequestForJob,
 	mergeDrainInFlightCount,
 	meshReliabilityJournal,
+	meshReliabilityResetToken,
 	meshSettingsFromEnv,
 	parseWorkerStopMode,
 	readAvailableMemoryMb,
@@ -867,6 +868,7 @@ try {
 				replicas: meshSettings.replicas,
 				name: `hobo-ci-worker ${meshSettings.nodeId}`,
 				onStatus: (status) => log("hobo_ci_mesh_nats", { status }),
+				onNodesCapped: (limit) => log("hobo_ci_mesh_nodes_capped", { limit }),
 				...natsCredentials(),
 			})
 		: undefined;
@@ -900,19 +902,19 @@ try {
 			})
 		: undefined;
 	// The record of the jobs this worker took, kept in its journal so a
-	// restart does not clear it. HOBO_CI_MESH_RELIABILITY_RESET=1 starts it
-	// again, for an operator who has repaired the box.
+	// restart does not clear it. HOBO_CI_MESH_RELIABILITY_RESET=<token> starts
+	// it again once per token, for an operator who has repaired the box.
 	const meshReliability =
 		meshSettings && meshJournal
-			? meshReliabilityJournal(meshJournal, meshSettings.nodeId, (message) =>
-					log("hobo_ci_mesh_reliability_journal_failed", { message }),
+			? meshReliabilityJournal(
+					meshJournal,
+					meshSettings.nodeId,
+					(message) =>
+						log("hobo_ci_mesh_reliability_journal_failed", { message }),
+					meshReliabilityResetToken(process.env.HOBO_CI_MESH_RELIABILITY_RESET),
 				)
 			: undefined;
-	const reliabilityReset = process.env.HOBO_CI_MESH_RELIABILITY_RESET ?? "0";
-	if (reliabilityReset !== "0" && reliabilityReset !== "1")
-		throw new Error("invalid HOBO_CI_MESH_RELIABILITY_RESET");
-	const storedReliability =
-		reliabilityReset === "1" ? undefined : await meshReliability?.load();
+	const storedReliability = await meshReliability?.load();
 	mesh =
 		meshSettings && natsMesh && meshBoard
 			? createWorkerMesh({
@@ -920,7 +922,7 @@ try {
 					board: meshBoard,
 					claims: natsMesh.claims,
 					requireTrusted: meshTrust.requireTrusted,
-					initialReliability: storedReliability,
+					initialReliability: storedReliability?.record,
 					persistReliability: (record) => void meshReliability?.save(record),
 					freeSlots: () => slots - liveWorkerLeaseIds.size,
 					totalSlots: slots,
@@ -968,7 +970,8 @@ try {
 		nodeId: meshSettings?.nodeId ?? "",
 		// The public half of the identity key, to list in the trusted set.
 		publicKey: meshIdentity?.publicKey ?? "",
-		reliabilityRestored: storedReliability !== undefined,
+		reliabilityRestored: storedReliability?.record !== undefined,
+		reliabilityReset: storedReliability?.reset ?? false,
 		namespace: meshSettings?.namespace ?? "",
 		servers: meshSettings?.servers.length ?? 0,
 		stepMs: meshSettings?.stepMs ?? 0,

@@ -744,7 +744,8 @@
               "mesh": "not-configured",
               "nodes": [],
               "readAt": "",
-              "requireTrusted": false
+              "requireTrusted": false,
+              "truncated": false
             }
           }
         }
@@ -783,7 +784,7 @@
               {
                 "uri": "hobo-ci://mesh/nodes",
                 "mimeType": "application/json",
-                "text": "{\"mesh\":\"not-configured\",\"nodes\":[],\"readAt\":\"\",\"requireTrusted\":false}"
+                "text": "{\"mesh\":\"not-configured\",\"nodes\":[],\"readAt\":\"\",\"requireTrusted\":false,\"truncated\":false}"
               }
             ]
           }

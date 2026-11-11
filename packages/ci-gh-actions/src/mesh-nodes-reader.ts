@@ -43,11 +43,10 @@ export function createMeshNodesReader(
 	} = {},
 ): MeshNodesReader {
 	const now = options.now ?? Date.now;
-	const tracker = createMeshNodeTracker(
-		options.retainLostMs === undefined
-			? undefined
-			: { retainLostMs: options.retainLostMs },
-	);
+	const tracker = createMeshNodeTracker({
+		retainLostMs: options.retainLostMs,
+		requireTrusted: options.requireTrusted,
+	});
 	let last: readonly MeshNode[] = [];
 	const withSelf = (nodes: readonly MeshNode[]): readonly MeshNode[] => {
 		const self = options.self?.();

@@ -15,7 +15,7 @@
       "platform": { "os": "linux", "arch": "x64" },
       "labels": ["hobo", "hobo-trunk"],
       "trust": "trusted",
-      "publicKey": "VSNn3iuVbd1OfiTuvGUqGt-LkNsAzEKJHjEWjlFjb3M",
+      "publicKey": "pd9eXPPYfLVgqaVhrA0ACZA8nfqeSr-azekKYv3TGM4",
       "reliability": 0.875,
       "delivered": 10,
       "dropped": 2

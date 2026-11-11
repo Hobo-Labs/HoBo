@@ -31,7 +31,7 @@
     {
       "description": "read the relay mesh's nodes on a relay with no mesh",
       "request": { "method": "GET", "path": "/v1/mesh/nodes", "headers": { "Authorization": "Bearer cli-test-token" } },
-      "response": { "status": 200, "body": { "mesh": "not-configured", "nodes": [], "readAt": "", "requireTrusted": false } }
+      "response": { "status": 200, "body": { "mesh": "not-configured", "nodes": [], "readAt": "", "requireTrusted": false, "truncated": false } }
     }
   ]
 }

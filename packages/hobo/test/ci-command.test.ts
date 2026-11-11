@@ -328,6 +328,24 @@ describe("hobo ci setup", () => {
 			"Trust: trusted = key in the mesh's trusted set; unverified = signed by an unlisted key, or unsigned; invalid = signature failed, never ranked.",
 		]);
 	});
+	it("says when the relay listed only some of the mesh's nodes", async () => {
+		const reports = JSON.parse(await readFile(MESH_REPORTS_FIXTURE, "utf8"));
+		const { cli, home } = await fixture({
+			fetch: async (url) =>
+				new URL(String(url)).pathname === "/v1/mesh/nodes"
+					? // A newer relay's field this CLI does not know is read past.
+						Response.json({ ...reports, truncated: true, newerField: 1 })
+					: Response.json(pact.interactions[3]?.response.body),
+		});
+		const result = await cli.run(
+			["ci", "status", "--relay", "https://relay.example"],
+			{ cwd: home },
+		);
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain(
+			"More nodes are known than are listed; 2 shown.",
+		);
+	});
 	it("keeps the connection status when the relay is too old to list its mesh", async () => {
 		const { cli, home } = await fixture({
 			fetch: async (url) =>

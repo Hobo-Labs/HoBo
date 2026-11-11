@@ -37,6 +37,8 @@ import {
 } from "./mesh-records.js";
 
 export { MESH_NODE_ID };
+/** The most advertisements one read of the board takes in, unless told otherwise. */
+export const MESH_MAX_ADVERTS_READ = 1024;
 
 const NAMESPACE = /^[A-Za-z0-9_-]{1,32}$/;
 const CONFIG_KEY = "configuration";
@@ -60,6 +62,14 @@ export type NatsMeshOptions = Readonly<{
 	password?: string | undefined;
 	/** Shown in the server's connection list. */
 	name?: string;
+	/**
+	 * The most advertisements one read of the board takes in: a bucket
+	 * flooded with keys costs a reader this many reads, not all of them.
+	 * 1024 when omitted.
+	 */
+	maxNodes?: number;
+	/** Called when a read stopped at `maxNodes`, with the limit; at most once a minute. */
+	onNodesCapped?: (limit: number) => void;
 	onStatus?: (status: "connected" | "disconnected" | "closed") => void;
 }>;
 
@@ -102,6 +112,8 @@ export function createNatsMesh(options: NatsMeshOptions): NatsMesh {
 	if (options.servers.length === 0) throw new Error("no NATS servers");
 	const replicas = options.replicas ?? 1;
 	const timeout = options.requestTimeoutMs ?? 2_000;
+	const maxNodes = options.maxNodes ?? MESH_MAX_ADVERTS_READ;
+	let cappedAt = Number.NEGATIVE_INFINITY;
 	let buckets: { nodes: Bucket; claims: Bucket; config: Bucket } | undefined;
 	let connected = false;
 	let closing = false;
@@ -222,7 +234,16 @@ export function createNatsMesh(options: NatsMeshOptions): NatsMesh {
 			async nodes() {
 				const { nodes } = use();
 				const found: MeshNode[] = [];
+				let read = 0;
 				for await (const key of await nodes.keys()) {
+					if (read >= maxNodes) {
+						if (Date.now() - cappedAt >= 60_000) {
+							cappedAt = Date.now();
+							options.onNodesCapped?.(maxNodes);
+						}
+						break;
+					}
+					read += 1;
 					const entry = await nodes.get(key);
 					if (!entry || entry.operation !== "PUT") continue;
 					// An advertisement this version cannot read is a node it cannot rank.

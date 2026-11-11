@@ -11,7 +11,7 @@
   "samples": { "delivered": 10, "dropped": 2 },
   "sinceMs": 1794268000000,
   "identity": {
-    "publicKey": "VSNn3iuVbd1OfiTuvGUqGt-LkNsAzEKJHjEWjlFjb3M",
-    "signature": "p8RV3N-LMH2URVVaX_l2yVA41ONUEi8heqEKSTUzsUor4IomYz4n8W7iq2VU2MsIt61VDC7Xocd7Hkps-n5fDg"
+    "publicKey": "pd9eXPPYfLVgqaVhrA0ACZA8nfqeSr-azekKYv3TGM4",
+    "signature": "TemP2UCWJOUGehK7UZ_v9lYmQ600P5GHLaBsJxv3fjsKnsI0hwGE6AI77gwUgQ2p7C8GyIeU0phH3xj_NlEoAQ"
   }
 }

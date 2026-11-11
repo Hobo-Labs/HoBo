@@ -13,7 +13,11 @@
  * `createMeshNodeTracker`, so they cannot disagree.
  */
 import { type MeshCapacity, meshCapacity } from "./monitor.js";
-import type { MeshNode, MeshPlatform } from "./rendezvous.js";
+import {
+	type MeshNode,
+	type MeshPlatform,
+	meshAdvertRejected,
+} from "./rendezvous.js";
 import type { MeshTrust } from "./trust.js";
 
 /** `live`: advertising and healthy. `unhealthy`: advertising, draining or under pressure. `lost`: its last advertisement expired. */
@@ -48,6 +52,8 @@ export type MeshNodeReport = Readonly<{
 	/** The decayed counts behind that share. */
 	delivered?: number | undefined;
 	dropped?: number | undefined;
+	/** For a machine running jobs for one repository, that repository. */
+	repository?: string | undefined;
 }>;
 
 /** The report for one advertisement as of `nowMs`. */
@@ -66,12 +72,17 @@ export function meshNodeReport(node: MeshNode, nowMs: number): MeshNodeReport {
 		freeDiskMb: node.free?.diskMb,
 		platform: node.platform,
 		labels: [...node.labels],
-		// Nobody checked: no better than an unknown key.
-		trust: node.trust ?? "unverified",
+		// A rejected advertisement is reported as invalid whatever its key
+		// (`meshAdvertRejected`); one nobody checked is no better than an
+		// unknown key.
+		trust: meshAdvertRejected(node, nowMs)
+			? "invalid"
+			: (node.trust ?? "unverified"),
 		publicKey: node.identity?.publicKey,
 		reliability: node.reliability,
 		delivered: node.samples?.delivered,
 		dropped: node.samples?.dropped,
+		repository: node.repository,
 	};
 }
 
@@ -88,7 +99,9 @@ export type MeshNodesView = Readonly<{
  */
 export function createMeshNodeTracker(options?: {
 	/** How long a lost node stays on the list. An hour when omitted. */
-	retainLostMs?: number;
+	retainLostMs?: number | undefined;
+	/** Whether this mesh ranks only trusted nodes, for the capacity summary. */
+	requireTrusted?: (() => boolean) | undefined;
 }) {
 	const retainLostMs = options?.retainLostMs ?? 60 * 60_000;
 	const known = new Map<string, MeshNode>();
@@ -115,7 +128,9 @@ export function createMeshNodeTracker(options?: {
 			}
 			return {
 				nodes: reports.sort((a, b) => a.id.localeCompare(b.id)),
-				capacity: meshCapacity(nodes, nowMs),
+				capacity: meshCapacity(nodes, nowMs, {
+					requireTrusted: options?.requireTrusted?.() ?? false,
+				}),
 			};
 		},
 	};
@@ -125,7 +140,7 @@ export type MeshNodeTracker = ReturnType<typeof createMeshNodeTracker>;
 
 /** What the mesh offers one runner label right now. */
 export type MeshLabelState = Readonly<{
-	/** Live, healthy nodes serving the label that the reader ranks. */
+	/** Live, healthy nodes serving the label. */
 	nodes: number;
 	/** Of those, the ones whose key the reader trusts. */
 	trustedNodes: number;
@@ -134,16 +149,24 @@ export type MeshLabelState = Readonly<{
 }>;
 
 /**
- * Per label, the nodes a reader would rank for a job and their free slots.
- * A node counts when its advertisement has not expired, it is healthy, and
- * its signature is not invalid; with `requireTrusted`, only when its key is
- * trusted. Every label in `labels` is present, with zeros when no node
- * serves it, so "nobody serves this" is said and not left out.
+ * Per label in `labels`, and only those, the nodes that would pick up a job
+ * asking for it, and their free slots. A node counts when its advertisement
+ * has not expired, it is healthy, and the reader does not reject it
+ * (`meshAdvertRejected`).
+ *
+ * Trust is counted (`trustedNodes`) but does not filter. `requireTrusted`
+ * decides which peers a worker defers to when ranking; it does not stop an
+ * unlisted worker from taking a job GitHub hands it. So for "will a job on
+ * this label start", an unlisted node is as real as a listed one.
+ *
+ * Every label in `labels` is present, with zeros when no node serves it, so
+ * "nobody serves this" is said and not left out. A label not in `labels` is
+ * never reported, whatever nodes advertise it.
  */
 export function meshLabelStates(
 	nodes: readonly MeshNode[],
 	nowMs: number,
-	options: { labels: readonly string[]; requireTrusted?: boolean | undefined },
+	options: { labels: readonly string[] },
 ): ReadonlyMap<string, MeshLabelState> {
 	const states = new Map<string, MeshLabelState>(
 		options.labels.map((label) => [
@@ -158,16 +181,12 @@ export function meshLabelStates(
 		if (
 			node.validUntilMs <= nowMs ||
 			!node.healthy ||
-			node.trust === "invalid" ||
-			(options.requireTrusted === true && node.trust !== "trusted")
+			meshAdvertRejected(node, nowMs)
 		)
 			continue;
 		for (const label of new Set(node.labels)) {
-			const state = states.get(label) ?? {
-				nodes: 0,
-				trustedNodes: 0,
-				freeSlots: 0,
-			};
+			const state = states.get(label);
+			if (!state) continue;
 			states.set(label, {
 				nodes: state.nodes + 1,
 				trustedNodes: state.trustedNodes + (node.trust === "trusted" ? 1 : 0),

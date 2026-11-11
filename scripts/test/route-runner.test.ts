@@ -421,51 +421,52 @@ describe("the mesh's snapshot", () => {
 			assert.equal(parseFleetState(value, NOW), undefined, String(value));
 	});
 
-	it("reads a count that is missing or is not a count as zero", () => {
+	it("reads a label without both counts as unknown, not as refusing", () => {
 		const state = parseFleetState(
 			JSON.stringify({
 				publishedAt: new Date(NOW).toISOString(),
 				labels: {
-					HOBO: { nodes: 2.9, freeSlots: "many" },
-					"hobo-trunk": { nodes: -4 },
+					HOBO: { nodes: 2.9, freeSlots: -1 },
+					"hobo-trunk": { nodes: 0 },
+					partial: { freeSlots: 0 },
+					text: { nodes: "many", freeSlots: "none" },
 					odd: 7,
 				},
 			}),
 			NOW,
 		);
+		// Counts that are numbers are read, whole and not below zero.
 		assert.deepEqual(state?.labels.get("hobo"), { nodes: 2, freeSlots: 0 });
-		assert.deepEqual(state?.labels.get("hobo-trunk"), {
-			nodes: 0,
-			freeSlots: 0,
-		});
-		assert.deepEqual(state?.labels.get("odd"), { nodes: 0, freeSlots: 0 });
+		// The rest say nothing: left out, so nothing is refused on them.
+		for (const label of ["hobo-trunk", "partial", "text", "odd"]) {
+			assert.equal(state?.labels.has(label), false, label);
+			assert.equal(fleetStateRefusal(state, label), undefined, label);
+		}
+		assert.equal(
+			decide({ fleetLabel: "hobo-trunk", fleetState: state }).tier,
+			"fleet",
+		);
 	});
 
 	it("says a label is refusing when it has no node or no free slot", () => {
 		const state = fresh({ hobo: FULL, "hobo-trunk": NOBODY, spare: ROOM });
 		assert.match(
-			fleetStateRefusal(state, "hobo", "refusing") ?? "",
+			fleetStateRefusal(state, "hobo") ?? "",
 			/mesh snapshot \(30 s old\) shows no free slot on 2 node\(s\) for hobo/,
 		);
 		assert.match(
-			fleetStateRefusal(state, "hobo-trunk", "refusing") ?? "",
+			fleetStateRefusal(state, "hobo-trunk") ?? "",
 			/shows no live node for hobo-trunk/,
 		);
-		assert.equal(fleetStateRefusal(state, "spare", "refusing"), undefined);
-		assert.equal(fleetStateRefusal(state, "SPARE", "refusing"), undefined);
+		assert.equal(fleetStateRefusal(state, "spare"), undefined);
+		assert.equal(fleetStateRefusal(state, "SPARE"), undefined);
 	});
 
-	it("reads a label the snapshot does not list as told: no node, or not known", () => {
+	it("reads a label the snapshot does not list as unknown: the publisher does not speak for it", () => {
 		const state = fresh({ hobo: ROOM });
-		assert.match(
-			fleetStateRefusal(state, "hobo-trunk", "refusing") ?? "",
-			/lists no node for hobo-trunk/,
-		);
-		assert.equal(
-			fleetStateRefusal(state, "hobo-local-host", "unknown"),
-			undefined,
-		);
-		assert.equal(fleetStateRefusal(undefined, "hobo", "refusing"), undefined);
+		assert.equal(fleetStateRefusal(state, "hobo-trunk"), undefined);
+		assert.equal(fleetStateRefusal(state, "hobo-local-host"), undefined);
+		assert.equal(fleetStateRefusal(undefined, "hobo"), undefined);
 	});
 });
 
@@ -495,11 +496,11 @@ describe("the routing decision with the mesh's snapshot", () => {
 			decide({ fleetLabel: "hobo-trunk", fleetState: state }).tier,
 			"github",
 		);
-		// A trunk label no worker lists is served by nobody.
-		assert.equal(
-			decide({ fleetLabel: "hobo-trunk", fleetState: fresh({ hobo: ROOM }) })
-				.tier,
-			"github",
+		// A trunk label the publisher does not list is not its to refuse: the
+		// queue decides, as without a snapshot.
+		assert.deepEqual(
+			decide({ fleetLabel: "hobo-trunk", fleetState: fresh({ hobo: ROOM }) }),
+			decide({ fleetLabel: "hobo-trunk" }),
 		);
 	});
 

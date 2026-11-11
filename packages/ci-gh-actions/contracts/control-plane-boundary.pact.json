@@ -561,7 +561,8 @@
           "mesh": "not-configured",
           "nodes": [],
           "readAt": "",
-          "requireTrusted": false
+          "requireTrusted": false,
+          "truncated": false
         }
       }
     }

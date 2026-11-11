@@ -31,6 +31,7 @@ import {
 	type MeshJournal,
 	type MeshNodeEvent,
 	meshReliabilityJournal,
+	meshReliabilityResetToken,
 } from "./mesh-node.js";
 import { meshNodeReportsJson } from "./mesh-records.js";
 
@@ -407,6 +408,7 @@ export async function createLocalRunnerMeshNode(options: {
 				event:
 					| MeshNodeEvent
 					| "hobo_ci_mesh_nats"
+					| "hobo_ci_mesh_nodes_capped"
 					| "hobo_ci_mesh_reliability_journal_failed",
 				fields: Readonly<Record<string, string | number | boolean>>,
 		  ) => void)
@@ -427,10 +429,15 @@ export async function createLocalRunnerMeshNode(options: {
 				meshNodeIdFromEnv(options.env, defaultNodeId),
 				(message) =>
 					options.log?.("hobo_ci_mesh_reliability_journal_failed", { message }),
+				// The same one-shot reset a box worker takes.
+				meshReliabilityResetToken(options.env.HOBO_CI_MESH_RELIABILITY_RESET),
 			)
 		: undefined;
+	// Advertised so the relay can show this machine in full to the account
+	// that owns the repository, and only to it.
+	const served = repositoryName.safeParse(options.env.HOBO_CI_LOCAL_REPOSITORY);
 	const ledger = createMeshReliabilityLedger({
-		initial: await stored?.load(),
+		initial: (await stored?.load(now()))?.record,
 		persist: (record) => void stored?.save(record),
 		now,
 	});
@@ -455,6 +462,7 @@ export async function createLocalRunnerMeshNode(options: {
 			platform: { os: process.platform, arch: process.arch },
 			reliability: ledger.score(),
 			samples: ledger.samples(),
+			repository: served.success ? served.data : undefined,
 		}),
 		afterBeat: async (node) => {
 			// Written whole or not at all: `status` may read it at any moment.

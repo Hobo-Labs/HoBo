@@ -16,7 +16,8 @@ const node = (id: string, freeSlots = 2): MeshNode => ({
 	freeSlots,
 	healthy: true,
 	labels: ["hobo"],
-	validUntilMs: START + 3_600_000,
+	// As long as any advertisement may ask to be believed.
+	validUntilMs: START + 300_000,
 });
 
 const job = (jobId: number): MeshJob => ({

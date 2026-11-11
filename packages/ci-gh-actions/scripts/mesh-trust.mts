@@ -2,15 +2,22 @@
  * Read or change whom a relay mesh trusts.
  *
  *   HOBO_CI_NATS_URL=nats://127.0.0.1:4222 pnpm --filter @hobo/ci-gh-actions run mesh:trust list
- *   ... run mesh:trust add <publicKey> [--node <nodeId>]
+ *   ... run mesh:trust add <publicKey> --node <nodeId>
+ *   ... run mesh:trust add <publicKey> --any-node
  *   ... run mesh:trust remove <publicKey>
  *   ... run mesh:trust require on|off
  *
  * Every node makes an Ed25519 identity key on first start and signs what it
  * advertises with it. `list` shows the nodes on the board with their public
- * keys and how far this settings would trust each; `add` lists a key (for
- * one node id with `--node`), `remove` takes one off, and `require on` makes
+ * keys and how far these settings would trust each; `add` lists a key for
+ * one node id (`--node`), `remove` takes one off, and `require on` makes
  * nodes rank only listed keys.
+ *
+ * A key is bound to a node id unless `--any-node` says otherwise. Once an id
+ * is bound, only its bound keys make it trusted, and an advertisement under
+ * it with another key is invalid. Never trust a local runner's key with
+ * `--any-node`: it sits in `.hobo/ci-local/` inside the repository's
+ * checkout, where any job running on that machine can read it.
  *
  * The settings live in the mesh itself (`trust` in `<namespace>-mesh-config`),
  * so every node reads the same set; nodes pick a change up within a beat (10 s).
@@ -29,7 +36,7 @@ import {
 import { createNatsMesh } from "@hobo/ci-gh-actions/mesh-nats";
 
 const USAGE =
-	"usage: mesh:trust list | add <publicKey> [--node <nodeId>] | remove <publicKey> | require on|off";
+	"usage: mesh:trust list | add <publicKey> --node <nodeId> | add <publicKey> --any-node | remove <publicKey> | require on|off";
 const [command, argument, ...rest] = process.argv.slice(2);
 const settings = meshSettingsFromEnv(process.env, "mesh-trust");
 if (!settings) {
@@ -37,12 +44,16 @@ if (!settings) {
 	process.exit(2);
 }
 const node = rest[0] === "--node" ? rest[1] : undefined;
+const anyNode = rest.length === 1 && rest[0] === "--any-node";
 const key = /^[A-Za-z0-9_-]{43}$/;
 if (
 	!["list", "add", "remove", "require"].includes(command ?? "") ||
 	((command === "add" || command === "remove") && !key.test(argument ?? "")) ||
 	(command === "require" && argument !== "on" && argument !== "off") ||
-	(rest.length > 0 && (command !== "add" || rest[0] !== "--node" || !node))
+	(command === "add" && !node && !anyNode) ||
+	(rest.length > 0 &&
+		(command !== "add" ||
+			!(anyNode || (rest.length === 2 && rest[0] === "--node" && node))))
 ) {
 	console.error(USAGE);
 	process.exit(2);
@@ -70,6 +81,7 @@ try {
 			kind: "add",
 			publicKey: argument ?? "",
 			nodeId: node,
+			anyNode,
 		});
 	if (command === "remove")
 		await changeMeshTrust(mesh.trust, {

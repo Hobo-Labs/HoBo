@@ -134,6 +134,7 @@ export function meshAdvertSigningPayload(
 		node.samples?.delivered ?? null,
 		node.samples?.dropped ?? null,
 		node.sinceMs ?? null,
+		node.repository ?? null,
 		publicKey,
 	]);
 }
@@ -195,9 +196,15 @@ export function verifyMeshAdvert(
 }
 
 /**
- * What a reader holding `policy` makes of an advertisement. A key bound to a
- * node id is trusted for that id only: under any other id it is an unknown
- * key, not a forgery.
+ * What a reader holding `policy` makes of an advertisement.
+ *
+ * An entry that names a node id pins that id to its key. Once any entry
+ * names this node's id, only those entries can make it trusted: an unbound
+ * entry does not apply to it, and an advertisement under that id with any
+ * other key, or with none, is `invalid`, because it claims a node whose key
+ * the operator has named. An id no entry names is trusted by an unbound
+ * entry for its key, and is otherwise `unverified`. A key bound to another
+ * node id says nothing about this one.
  */
 export function assessMeshTrust(
 	node: MeshNode,
@@ -205,12 +212,16 @@ export function assessMeshTrust(
 ): MeshTrust {
 	const verdict = verifyMeshAdvert(node);
 	if (verdict === "invalid") return "invalid";
-	if (verdict === "unsigned") return "unverified";
 	const publicKey = node.identity?.publicKey;
+	const bound = policy.trustedKeys.filter((entry) => entry.nodeId === node.id);
+	if (bound.length > 0)
+		return verdict === "valid" &&
+			bound.some((entry) => entry.publicKey === publicKey)
+			? "trusted"
+			: "invalid";
+	if (verdict === "unsigned") return "unverified";
 	return policy.trustedKeys.some(
-		(entry) =>
-			entry.publicKey === publicKey &&
-			(entry.nodeId === undefined || entry.nodeId === node.id),
+		(entry) => entry.nodeId === undefined && entry.publicKey === publicKey,
 	)
 		? "trusted"
 		: "unverified";

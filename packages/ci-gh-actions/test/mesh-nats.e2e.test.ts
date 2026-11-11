@@ -36,7 +36,8 @@ const node = (id: string, freeSlots = 2): MeshNode => ({
 	freeSlots,
 	healthy: true,
 	labels: ["hobo"],
-	validUntilMs: START + 3_600_000,
+	// As long as any advertisement may ask to be believed.
+	validUntilMs: START + 300_000,
 });
 const job = (jobId: number): MeshJob => ({
 	jobId,
@@ -273,6 +274,20 @@ describe.skipIf(!binary)("relay mesh on NATS", () => {
 		// And box-a's next advertisement puts it right.
 		await boardA.advertise(node("box-a", 3));
 		expect((await trustOf(boardB))["box-a"]).toBe("trusted");
+	});
+
+	it("reads at most maxNodes advertisements in one pass, and says so once", async () => {
+		const capped: number[] = [];
+		const a = await connect("capped", {
+			maxNodes: 3,
+			onNodesCapped: (limit: number) => capped.push(limit),
+		});
+		for (const id of ["n1", "n2", "n3", "n4", "n5"])
+			await a.board.advertise(node(id));
+		expect(await a.board.nodes()).toHaveLength(3);
+		expect(await a.board.nodes()).toHaveLength(3);
+		// Logged at most once a minute, however many passes are cut short.
+		expect(capped).toEqual([3]);
 	});
 
 	it("keeps a shared configuration that only its current revision can replace", async () => {

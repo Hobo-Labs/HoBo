@@ -10,12 +10,16 @@ import {
 	effectiveMeshTrust,
 	fitJob,
 	generateMeshIdentity,
+	MESH_MAX_ADVERT_TTL_MS,
+	MESH_MAX_CLOCK_SKEW_MS,
 	MESH_PUBLIC_KEY,
 	MESH_SIGNATURE,
 	type MeshJob,
 	type MeshNode,
 	type MeshTrustPolicy,
+	meshAdvertRejected,
 	meshAdvertSigningPayload,
+	meshCapacity,
 	meshIdentityFromPem,
 	rankNodes,
 	signMeshAdvert,
@@ -115,6 +119,7 @@ describe("signing an advertisement", () => {
 			10,
 			2,
 			NOW - 60_000,
+			null,
 			"KEY",
 		]);
 		// An absent figure is null, which a zero is not.
@@ -147,8 +152,15 @@ describe("signing an advertisement", () => {
 			null,
 			null,
 			null,
+			null,
 			"KEY",
 		]);
+		// The repository a local runner serves is signed too.
+		expect(
+			JSON.parse(
+				meshAdvertSigningPayload(node("local-a", { repository: "o/r" }), "K"),
+			).at(-2),
+		).toBe("o/r");
 	});
 
 	it("does not sign what only a reader computes, and drops it from what is sent", () => {
@@ -282,6 +294,37 @@ describe("how far a reader trusts a node", () => {
 		).toBe("unverified");
 	});
 
+	it("lets only an id's bound keys trust it, and calls any other key on it invalid", () => {
+		const policy: MeshTrustPolicy = {
+			// box-a is bound to a; b is listed for any id no entry binds.
+			trustedKeys: [
+				{ publicKey: a.identity.publicKey, nodeId: "box-a" },
+				{ publicKey: b.identity.publicKey },
+			],
+			requireTrusted: false,
+		};
+		expect(assessMeshTrust(signed, policy)).toBe("trusted");
+		// b's key is trusted for unbound ids, but box-a is bound: it may not
+		// claim box-a, and the claim is invalid, not merely unknown.
+		const impostor = signMeshAdvert(node("box-a"), b.identity);
+		expect(assessMeshTrust(impostor, policy)).toBe("invalid");
+		expect(fitJob(job(1), { ...impostor, trust: "invalid" }, NOW)).toEqual({
+			copies: 0,
+			lacking: "trust",
+		});
+		// An unsigned advertisement under a bound id cannot be that node either.
+		const { identity: _identity, ...unsigned } = signed;
+		expect(assessMeshTrust(unsigned, policy)).toBe("invalid");
+		// Under an id nobody binds, the unbound entry applies as before.
+		expect(
+			assessMeshTrust(signMeshAdvert(node("box-z"), b.identity), policy),
+		).toBe("trusted");
+		// And a key bound elsewhere is only unknown there.
+		expect(
+			assessMeshTrust(signMeshAdvert(node("box-z"), a.identity), policy),
+		).toBe("unverified");
+	});
+
 	it("trusts a key bound to a node id for that id only", () => {
 		const bound: MeshTrustPolicy = {
 			trustedKeys: [{ publicKey: a.identity.publicKey, nodeId: "box-a" }],
@@ -321,6 +364,34 @@ describe("ranking by trust", () => {
 	const unchecked = node("unchecked");
 	const invalid = node("invalid", { trust: "invalid", freeSlots: 64 });
 	const all = [trusted, unverified, unchecked, invalid];
+
+	it("never ranks or counts a node asking to be believed for a year, however trusted", () => {
+		const forever = node("forever", {
+			trust: "trusted",
+			freeSlots: 64,
+			validUntilMs: NOW + 365 * 24 * 3_600_000,
+		});
+		expect(meshAdvertRejected(forever, NOW)).toBe(true);
+		expect(fitJob(job(1), forever, NOW)).toEqual({
+			copies: 0,
+			lacking: "trust",
+		});
+		expect(ids(rankNodes(job(1), [trusted, forever], NOW))).toEqual([
+			"trusted",
+		]);
+		expect(meshCapacity([trusted, forever], NOW)).toMatchObject({
+			nodes: 1,
+			freeSlots: 2,
+		});
+		// The bound is the longest advertisement plus a minute of skew.
+		const edge = NOW + MESH_MAX_ADVERT_TTL_MS + MESH_MAX_CLOCK_SKEW_MS;
+		expect(meshAdvertRejected(node("edge", { validUntilMs: edge }), NOW)).toBe(
+			false,
+		);
+		expect(
+			meshAdvertRejected(node("past", { validUntilMs: edge + 1 }), NOW),
+		).toBe(true);
+	});
 
 	it("never ranks a node whose signature failed", () => {
 		for (let jobId = 1; jobId <= 500; jobId += 1)

@@ -247,19 +247,23 @@ export {
 	freeDiskMb,
 	loadMeshIdentity,
 	type MeshJournal,
+	type MeshKeyFiles,
+	type MeshNodeDescription,
 	type MeshNodeEvent,
 	type MeshNodeHandle,
-	type MeshNodeDescription,
 	type MeshNodesReader,
 	type MeshTrustChange,
 	type MeshTrustSettings,
 	meshReliabilityJournal,
+	meshReliabilityResetToken,
 } from "./mesh-node.js";
 export {
 	MESH_NODE_ID,
+	MESH_REPORT_MAX_NODES,
 	type MeshReading,
 	meshAdvertJson,
 	meshFleetStateJson,
+	meshNodeReportsForAccount,
 	meshNodeReportsJson,
 	meshNodeReportsMessage,
 	meshReliabilityRecordJson,
@@ -268,6 +272,7 @@ export {
 	parseMeshNodeReports,
 	parseMeshReliabilityRecord,
 	parseMeshTrustConfig,
+	type StoredMeshReliability,
 } from "./mesh-records.js";
 export {
 	createWorkerMesh,

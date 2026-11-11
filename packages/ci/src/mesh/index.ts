@@ -12,6 +12,7 @@ export {
 } from "./coordinator.js";
 export {
 	createMeshMonitor,
+	isMeshFleetNode,
 	type MeshCapacity,
 	type MeshMonitor,
 	type MeshMonitorEvent,
@@ -34,6 +35,8 @@ export {
 	type ClaimTurn,
 	claimTurn,
 	fitJob,
+	MESH_MAX_ADVERT_TTL_MS,
+	MESH_MAX_CLOCK_SKEW_MS,
 	type MeshFit,
 	type MeshFree,
 	type MeshJob,
@@ -43,6 +46,7 @@ export {
 	type MeshPlatform,
 	type MeshRankPolicy,
 	type MeshReliabilitySamples,
+	meshAdvertRejected,
 	rankNodes,
 } from "./rendezvous.js";
 export {

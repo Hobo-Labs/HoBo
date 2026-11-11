@@ -84,7 +84,37 @@ export type MeshNode = Readonly<{
 	 * board's clock. Set by the board on a read; never sent by the node.
 	 */
 	seenAtMs?: number | undefined;
+	/**
+	 * The one repository a machine running jobs for one repository serves
+	 * (`owner/name`). Box workers serve many and leave it out.
+	 */
+	repository?: string | undefined;
 }>;
+
+/**
+ * The longest an advertisement may ask to be believed. Nodes advertise for
+ * 45 seconds and the board forgets an entry after 60; anything asking for
+ * more than this is not a node's own advertisement.
+ */
+export const MESH_MAX_ADVERT_TTL_MS = 5 * 60_000;
+/** How far a node's clock may run ahead of a reader's. */
+export const MESH_MAX_CLOCK_SKEW_MS = 60_000;
+
+/**
+ * Whether a reader must disregard an advertisement whatever it says: its
+ * signature failed, or it asks to be believed further ahead than any node
+ * advertises (a replay kept alive, or a clock gone wrong). Such a node is
+ * never ranked, never counted as capacity, and is reported as `invalid`.
+ */
+export function meshAdvertRejected(node: MeshNode, nowMs: number): boolean {
+	return (
+		node.trust === "invalid" ||
+		!(
+			node.validUntilMs <=
+			nowMs + MESH_MAX_ADVERT_TTL_MS + MESH_MAX_CLOCK_SKEW_MS
+		)
+	);
+}
 
 /** What became of the jobs a node took, decayed; see `./reliability.ts`. */
 export type MeshReliabilitySamples = Readonly<{
@@ -173,10 +203,11 @@ export function fitJob(
 	policy: MeshRankPolicy = {},
 ): MeshFit {
 	if (node.validUntilMs <= nowMs) return { copies: 0, lacking: "stale" };
-	// A forged or altered advertisement says nothing about any node, so it is
-	// never deferred to; an unknown key is, unless the mesh requires trust.
+	// A forged, altered or overlong advertisement says nothing about any node,
+	// so it is never deferred to; an unknown key is, unless the mesh requires
+	// trust.
 	if (
-		node.trust === "invalid" ||
+		meshAdvertRejected(node, nowMs) ||
 		(policy.requireTrusted === true && node.trust !== "trusted")
 	)
 		return { copies: 0, lacking: "trust" };
@@ -288,10 +319,11 @@ export function claimTurn(input: {
 }): ClaimTurn {
 	const { job, self, nowMs } = input;
 	const policy: MeshRankPolicy = { requireTrusted: input.requireTrusted };
-	// A node needs nobody's signature to believe its own state.
+	// A node needs nobody's signature to believe its own state, and its own
+	// state is current now, whatever expiry it advertises.
 	const own: MeshNode = {
 		...self,
-		validUntilMs: Number.POSITIVE_INFINITY,
+		validUntilMs: nowMs + 1,
 		trust: "trusted",
 	};
 	const order = rankNodes(
@@ -308,8 +340,8 @@ export function claimTurn(input: {
 			rank: -1,
 			waitMs: 0,
 			reason: "not-eligible",
-			// `own` never expires, so a node absent from its own order always
-			// lacks something nameable.
+			// `own` is current and trusted, so a node absent from its own order
+			// always lacks something nameable.
 			lacking: "lacking" in fit ? fit.lacking : "slots",
 		};
 	}

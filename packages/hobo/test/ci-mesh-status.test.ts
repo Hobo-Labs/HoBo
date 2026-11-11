@@ -209,7 +209,7 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 			free: () => ({ memoryMb: capacity.memoryMb, diskMb: freeDiskMb(home) }),
 			platform: { os: process.platform, arch: process.arch },
 			requireTrusted: trust.requireTrusted,
-			initialReliability: await stored.load(),
+			initialReliability: (await stored.load()).record,
 			persistReliability: (record) => void stored.save(record),
 			// Short, so a worker that dies is seen to be lost within the test.
 			advertTtlMs: 2_500,
@@ -273,7 +273,9 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 			meshTrustConfigJson({
 				trustedKeys: [
 					{ publicKey: keys.boxA, nodeId: "box-a" },
-					{ publicKey: keys.local },
+					// A local runner's key is readable by jobs on its machine: it is
+					// only ever trusted for its own node id.
+					{ publicKey: keys.local, nodeId: "local-devbox" },
 					{ publicKey: keys.relay, nodeId: "relay-a" },
 				],
 				requireTrusted: false,
@@ -304,6 +306,9 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 				HOBO_CI_NATS_URL: natsUrl,
 				HOBO_CI_MESH_NAMESPACE: NAMESPACE,
 				HOBO_CI_MESH_NODE_ID: "local-devbox",
+				// The repository the account in the relay's configuration owns,
+				// so the relay shows this machine to it in full.
+				HOBO_CI_LOCAL_REPOSITORY: "example/repository",
 			},
 			state: localState,
 			hostname: "devbox",
@@ -519,14 +524,17 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 		// Reliability, with the counts behind it.
 		expect(boxA).toMatchObject({ reliability: 1, delivered: 0, dropped: 0 });
 		expect(local).toMatchObject({ reliability: 1, delivered: 0, dropped: 0 });
+		// Capacity is the fleet's: the two workers. The relay and the local
+		// machine are listed but run no fleet jobs.
 		expect(reports.capacity).toMatchObject({
-			nodes: 4,
-			healthy: 4,
+			nodes: 2,
+			healthy: 2,
 			available: 2,
-			totalSlots: 7,
+			totalSlots: 6,
 			freeSlots: 3,
-			freeMemoryMb: 12_288 + 4_096 + (local?.freeMemoryMb ?? 0),
+			freeMemoryMb: 12_288 + 4_096,
 		});
+		expect(local?.repository).toBe("example/repository");
 		// Nothing private travels: the identity keys stay in their files.
 		const answer = JSON.stringify(reports);
 		for (const home of ["box-a", "box-b", "local", "relay"]) {
@@ -549,7 +557,7 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 			keys.local,
 			keys.relay,
 		]);
-		expect(reports.capacity).toMatchObject({ nodes: 4, freeSlots: 3 });
+		expect(reports.capacity).toMatchObject({ nodes: 2, freeSlots: 3 });
 	}, 30_000);
 
 	it("gives the same list through hobo ci status, as a table and as JSON", async () => {
@@ -575,7 +583,7 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 		expect(line("local-devbox").at(-1)).toBe("trusted");
 		expect(line("relay-a").slice(0, 3)).toEqual(["relay-a", "live", "0/0"]);
 		expect(line("relay-a").at(-1)).toBe("trusted");
-		expect(table.stdout).toContain("3/7 slots free on 4 healthy node(s)");
+		expect(table.stdout).toContain("3/6 slots free on 2 healthy node(s)");
 
 		const asked = cli(online);
 		const json = await asked.run([...relayArgs, "--json"]);
@@ -648,7 +656,7 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 		expect(
 			reports.nodes.find((node) => node.id === "box-forged"),
 		).toMatchObject({ trust: "invalid" });
-		expect(reports.capacity).toMatchObject({ nodes: 4, freeSlots: 3 });
+		expect(reports.capacity).toMatchObject({ nodes: 2, freeSlots: 3 });
 		// An unsigned node (an older version) is unverified, and still counted.
 		await admin.board.advertise({
 			id: "box-old",
@@ -662,7 +670,7 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 			trust: "unverified",
 			publicKey: "",
 		});
-		expect(withOld.capacity).toMatchObject({ nodes: 5, freeSlots: 4 });
+		expect(withOld.capacity).toMatchObject({ nodes: 3, freeSlots: 4 });
 		// A real signature replayed with a later expiry does not help either.
 		const boxA = (await admin.board.nodes()).find(
 			(node) => node.id === "box-a",
@@ -696,6 +704,8 @@ describe.skipIf(!binary)("the relay mesh's nodes, on every surface", () => {
 		// The other three carry on.
 		for (const id of ["box-a", "local-devbox", "relay-a"])
 			expect(lost.nodes.find((node) => node.id === id)?.state).toBe("live");
+		// box-b's slot is gone from the fleet's capacity; box-a's two remain
+		// (and the unsigned box-old's one, while it lasts).
 		expect(lost.capacity?.freeSlots).toBeGreaterThanOrEqual(2);
 		expect(lost.capacity?.freeSlots).toBeLessThanOrEqual(3);
 

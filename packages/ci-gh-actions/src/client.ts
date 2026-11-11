@@ -149,6 +149,8 @@ export function createCiRelayClient(
 		// The account's own routes, or the relay's (its mesh), which no
 		// account owns.
 		root: "accounts/self" | "mesh" = "accounts/self",
+		/** Read past fields a newer relay adds, for an answer that is a report, not an instruction. */
+		lenient = false,
 	): Promise<ProtobufMessage<Desc>> {
 		const headers = new Headers();
 		if (options.ownerSession) {
@@ -201,7 +203,9 @@ export function createCiRelayClient(
 		if (!response.ok)
 			return refuseResponse(`relay request failed (${response.status})`);
 		try {
-			return fromJsonString(schema, await responseText(response));
+			return fromJsonString(schema, await responseText(response), {
+				ignoreUnknownFields: lenient,
+			});
 		} catch {
 			throw new CiRelayClientError(
 				response.status,
@@ -363,6 +367,8 @@ export function createCiRelayClient(
 				undefined,
 				"v1",
 				"mesh",
+				// A newer relay may add fields; the nodes are still shown.
+				true,
 			);
 		},
 		getLease(id: string) {

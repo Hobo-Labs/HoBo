@@ -123,7 +123,9 @@ describe("a local runner as a mesh node", () => {
 		expect(self?.freeDiskMb).toBeGreaterThan(0);
 		expect(self?.freeMemoryMb).toBeGreaterThan(0);
 		expect(self?.publicKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
-		expect(written.capacity).toMatchObject({ nodes: 1, totalSlots: 1 });
+		// A machine running jobs for one repository is listed, but is not
+		// fleet capacity.
+		expect(written.capacity).toMatchObject({ nodes: 0, totalSlots: 0 });
 
 		// The identity key is beside the node's journal, private to its owner,
 		// and no part of it is in the report.
@@ -137,6 +139,53 @@ describe("a local runner as a mesh node", () => {
 		expect(
 			readFileSync(join(state, LOCAL_RUNNER_MESH_REPORT), "utf8"),
 		).not.toContain(secret);
+	});
+
+	it("says which repository it serves, signed, so only that repository's account sees it in full", async () => {
+		const { state } = fixture();
+		const node = await meshNode(state, {
+			HOBO_CI_LOCAL_REPOSITORY: "owner/repo",
+		});
+		expect(node.node.self().repository).toBe("owner/repo");
+		await node.beat();
+		expect(report(state).nodes[0]?.repository).toBe("owner/repo");
+		// Something that is not a repository is not advertised as one.
+		const other = await meshNode(fixture().state, {
+			HOBO_CI_LOCAL_REPOSITORY: "../etc",
+		});
+		expect(other.node.self().repository).toBeUndefined();
+	});
+
+	it("takes the same one-shot reliability reset as a box worker", async () => {
+		const f = fixture(1);
+		const first = await meshNode(f.state);
+		const session = runLocalRunnerSession({
+			repository: "owner/repo",
+			state: f.state,
+			archive: f.archive,
+			api: f.api,
+			env: { PATH: process.env.PATH },
+			observer: first.observer,
+		});
+		await f.reached("waiting");
+		f.ask("assign");
+		f.ask("finish");
+		await expect(session).rejects.toThrow();
+		for (const close of closers.splice(0)) close();
+		const reset = { HOBO_CI_MESH_RELIABILITY_RESET: "1" };
+		expect((await meshNode(f.state, reset)).node.self().samples).toEqual({
+			delivered: 0,
+			dropped: 0,
+		});
+		for (const close of closers.splice(0)) close();
+		// Still set at the next start: already applied, nothing more is cleared.
+		const again = await meshNode(f.state, reset);
+		again.observer.ended("dropped");
+		for (const close of closers.splice(0)) close();
+		expect((await meshNode(f.state, reset)).node.self().samples).toEqual({
+			delivered: 0,
+			dropped: 1,
+		});
 	});
 
 	it("names the node as told, and reports a controller that cannot run jobs as unhealthy", async () => {
