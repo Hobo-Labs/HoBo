@@ -215,6 +215,7 @@ function parseCiArgs(args: readonly string[]) {
 			admission: { type: "string" },
 			"allow-insecure": { type: "boolean" },
 			"with-worker": { type: "boolean" },
+			"no-agent": { type: "boolean" },
 			"print-config": { type: "boolean" },
 			origin: { type: "string" },
 			"base-url": { type: "string" },
@@ -262,6 +263,7 @@ function ciServeOptions(values: CiOptions): CiServeOptions {
 		options.admission = String(values.admission);
 	if (values["allow-insecure"] === true) options.allowInsecure = true;
 	if (values["with-worker"] === true) options.withWorker = true;
+	if (values["no-agent"] === true) options.noAgent = true;
 	if (values["print-config"] === true) options.printConfig = true;
 	if (values.repo !== undefined) options.repo = String(values.repo);
 	if (values.remote !== undefined) options.remote = String(values.remote);
