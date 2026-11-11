@@ -362,6 +362,9 @@ registry with `mise oci push --image-dir` and has the daemon `docker pull` it (t
 store cannot `docker load` an OCI layout), and retags
 `hobo-ci-worker:local` only after the live preflight contract passes. Its change detection greps a
 depth-2 diff of `HEAD~1`; before, it used `rg`, which the worker does not ship, so it never fired.
+The optional GHCR push step calls `scripts/ci/push-ci-runner-image-ghcr.mts`, which retags
+`hobo-ci-worker:local`, pulls, or rebuilds on the runner executing the push and emits a notice
+instead of failing when the version tag is absent on that box.
 
 ## Which runner a run uses
 

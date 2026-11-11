@@ -22,7 +22,7 @@ function run(cmd: string, args: string[], allowFail = false): number {
 	return result.status ?? 1;
 }
 
-function dockerInspect(ref: string): boolean {
+export function dockerImagePresent(ref: string): boolean {
 	return (
 		spawnSync("docker", ["image", "inspect", ref], {
 			cwd: root,
@@ -54,7 +54,7 @@ export function sameRepositoryPullRequest(): boolean {
 export function ensureCiWorkerImage(): string {
 	const version = ciRunnerImageVersion(root);
 	const candidate = `hobo-ci-worker:${version}`;
-	if (dockerInspect(candidate)) {
+	if (dockerImagePresent(candidate)) {
 		run("docker", ["tag", candidate, "hobo-ci-worker:local"]);
 		console.log(`using pinned worker ${candidate}`);
 		return candidate;
@@ -79,10 +79,10 @@ export function ensureCiWorkerImage(): string {
 	}
 
 	run("bash", ["packages/ci-gh-actions/deploy/ci-runner/build.sh"]);
-	if (!dockerInspect(candidate) && !dockerInspect("hobo-ci-worker:local")) {
+	if (!dockerImagePresent(candidate) && !dockerImagePresent("hobo-ci-worker:local")) {
 		throw new Error("worker image build did not produce hobo-ci-worker:local");
 	}
-	if (dockerInspect(candidate)) {
+	if (dockerImagePresent(candidate)) {
 		run("docker", ["tag", candidate, "hobo-ci-worker:local"]);
 	}
 	return candidate;
