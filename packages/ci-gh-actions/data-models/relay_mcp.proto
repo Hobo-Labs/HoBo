@@ -5,6 +5,9 @@ package hobo.ci.gh_actions.v1;
 // is built field by field from a lease, a job or an event. None carries a
 // credential, a JIT configuration, a sandbox identity or an event's stored
 // detail.
+//
+// `list_mesh_nodes` and `hobo-ci://mesh/nodes` return `MeshNodeReports` from
+// `mesh.proto`: the same message `GET /v1/mesh/nodes` serves.
 
 // A lease as an agent needs it to triage a job.
 message RelayMcpLease {
@@ -103,6 +106,9 @@ message RelayMcpStatus {
   uint32 account_waits = 7;
   // The most JSON-RPC messages one HTTP request may carry.
   uint32 request_messages = 8;
+  // Whether this host reads a relay mesh: configured or not-configured.
+  // `list_mesh_nodes` answers either way.
+  string mesh = 9;
 }
 // A webhook delivery set aside after repeated failures. Never its body.
 message RelayMcpQuarantinedDelivery {

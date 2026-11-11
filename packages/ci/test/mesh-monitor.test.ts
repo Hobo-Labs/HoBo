@@ -43,8 +43,18 @@ describe("meshCapacity", () => {
 		expect(
 			meshCapacity(
 				[
-					node("a", { freeSlots: 1, totalSlots: 4, free: { memoryMb: 6_000 } }),
+					node("a", {
+						freeSlots: 1,
+						totalSlots: 4,
+						free: { memoryMb: 6_000, diskMb: 50_000 },
+					}),
 					node("b", { freeSlots: 0, totalSlots: 2, free: { memoryMb: 2_000 } }),
+					// A failed signature: the advertisement is nobody's capacity.
+					node("forged", {
+						trust: "invalid",
+						freeSlots: 64,
+						free: { memoryMb: 512_000, diskMb: 900_000 },
+					}),
 					// Unhealthy: neither its slots nor its memory count.
 					node("c", {
 						healthy: false,
@@ -66,6 +76,8 @@ describe("meshCapacity", () => {
 			// Node e reports no memory: it adds nothing rather than a guess.
 			freeMemoryMb: 8_000,
 			largestFreeMemoryMb: 6_000,
+			// Only node a measures its disk.
+			freeDiskMb: 50_000,
 		});
 	});
 });
@@ -166,7 +178,7 @@ describe("createMeshMonitor", () => {
 
 	it("summarises on a schedule when nothing changes, and stays quiet between", async () => {
 		const { board, clock, monitor, names } = watch("a");
-		await board.advertise(node("a", { validUntilMs: NOW + 3_600_000 }));
+		await board.advertise(node("a", { validUntilMs: NOW + 300_000 }));
 		await monitor.observe();
 		await monitor.observe();
 		clock.now += 59_000;

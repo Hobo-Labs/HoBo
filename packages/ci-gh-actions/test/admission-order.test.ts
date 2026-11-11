@@ -110,6 +110,59 @@ it("ranks the trunk-only label ahead of pull requests when run lookups fail", as
 	expect(await order.rank(general)).toBe(1);
 });
 
+it("admits Main workspace plan before Main full gate on the same push run", async () => {
+	const { github } = transport(
+		new Map([[1, { event: "push", startedAt: "2026-10-26T12:00:00Z" }]]),
+	);
+	const expected = new Map([
+		[10, 120_000],
+		[11, 600_000],
+		[12, 90_000],
+	]);
+	const order = createAdmissionOrder(github, {
+		expectedMs: (_repository, jobId) => expected.get(jobId) ?? 0,
+	});
+	const fabric = (jobId: number, jobName: string) => ({
+		...ref(1, jobId),
+		jobName,
+	});
+	expect(
+		(
+			await order(
+				[
+					fabric(11, "Main full gate"),
+					fabric(12, "Main workspace test shard 1"),
+					fabric(10, "Main workspace plan"),
+				],
+				(item) => item,
+			)
+		).map((item) => item.jobId),
+	).toEqual([10, 11, 12]);
+});
+
+it("orders main workspace shards by index within a run before duration ties", async () => {
+	const { github } = transport(
+		new Map([[1, { event: "push", startedAt: "2026-10-26T12:00:00Z" }]]),
+	);
+	const expected = new Map([
+		[100, 200_000],
+		[101, 50_000],
+		[102, 150_000],
+	]);
+	const order = createAdmissionOrder(github, {
+		expectedMs: (_repository, jobId) => expected.get(jobId) ?? 0,
+	});
+	const shard = (jobId: number, index: number) => ({
+		...ref(1, jobId),
+		jobName: `Main workspace test shard ${index}`,
+	});
+	expect(
+		(
+			await order([shard(100, 2), shard(101, 0), shard(102, 1)], (item) => item)
+		).map((item) => item.jobId),
+	).toEqual([101, 102, 100]);
+});
+
 it("admits a run's longest expected job first, inside the rank and run order", async () => {
 	const { github } = transport(
 		new Map([
@@ -136,12 +189,11 @@ it("admits a run's longest expected job first, inside the rank and run order", a
 		ref(1, 13),
 		ref(1, 12),
 	];
-	// Run 1 is older than run 2, and both are trunk runs ahead of the PR run,
-	// however long their jobs are. Inside run 1, the 85 s job leads and the
-	// job with no history (14) goes last.
+	// Newer push run 2 leads the older run 1; both outrank the pull request.
+	// Inside run 1, the 85 s job leads and the job with no history (14) goes last.
 	expect(
 		(await order(items, (item) => item)).map((item) => item.jobId),
-	).toEqual([12, 13, 11, 14, 21, 31]);
+	).toEqual([21, 12, 13, 11, 14, 31]);
 });
 
 it("puts a run with no start time behind started runs of the same rank", async () => {

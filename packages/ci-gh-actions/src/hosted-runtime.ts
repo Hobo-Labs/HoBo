@@ -22,6 +22,7 @@ import {
 	runnerCustody,
 } from "./job-runner-custody.js";
 import type { MergeQueuePositionSource } from "./merge-queue-order.js";
+import { createOfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
 import type { IdentityVerifier } from "./oidc.js";
 import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
@@ -108,8 +109,13 @@ export function createHostedRelayRuntime(options: {
 	jobPickupMetadata?: JobPickupMetadataCache;
 	/** See `HostedRelay`: whether shared-label runs may borrow trunk slots. */
 	lendTrunkSlots?: boolean;
+	/** See `HostedRelay`: local trunk slot count for fleet deferral. */
+	trunkSlots?: number;
 	memoryAdmission?: WorkerMemoryAdmission;
 	storageAdmission?: WorkerStorageAdmission;
+	storageJobReserve?: ConstructorParameters<
+		typeof HostedRelay
+	>[0]["storageJobReserve"];
 	mergeQueuePositions?: MergeQueuePositionSource;
 	/** See `HostedRelay`: publishes the fleet route table after each pass. */
 	fleetRoutes?: Pick<FleetRoutePublisher, "publish"> | undefined;
@@ -123,6 +129,10 @@ export function createHostedRelayRuntime(options: {
 			Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>
 		>;
 	}>;
+	/** Release reservations that never launch within policy bounds. */
+	unlaunchedReservationRelease?: ConstructorParameters<
+		typeof HostedRelay
+	>[0]["unlaunchedReservationRelease"];
 	/** Recovery-only access never admits work or starts a runner. */
 	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
 	control: (request: Request) => Promise<Response | undefined>;
@@ -144,6 +154,10 @@ export function createHostedRelayRuntime(options: {
 		options.jobDurations,
 		options.mergeQueuePositions,
 	);
+	const offlineJitRecovery = createOfflineJitJobRecovery({
+		github: options.github,
+		now: () => Date.parse(now()),
+	});
 	async function relay() {
 		const state = await options.store.configuration();
 		if (!state?.configuration) throw new Error("configuration unavailable");
@@ -161,6 +175,7 @@ export function createHostedRelayRuntime(options: {
 			servedRunnerLabels,
 			trunkWaits,
 			jobPickupMetadata,
+			offlineJitRecovery,
 			now,
 		};
 		if (options.denyUnisolated) relayOptions.denyUnisolated = true;
@@ -172,15 +187,22 @@ export function createHostedRelayRuntime(options: {
 			relayOptions.mergeGroupLeaseLimit = options.mergeGroupLeaseLimit;
 		if (options.lendTrunkSlots !== undefined)
 			relayOptions.lendTrunkSlots = options.lendTrunkSlots;
+		if (options.trunkSlots !== undefined)
+			relayOptions.trunkSlots = options.trunkSlots;
 		if (options.memoryAdmission)
 			relayOptions.memoryAdmission = options.memoryAdmission;
 		if (options.storageAdmission)
 			relayOptions.storageAdmission = options.storageAdmission;
+		if (options.storageJobReserve)
+			relayOptions.storageJobReserve = options.storageJobReserve;
 		if (options.fleetRoutes) relayOptions.fleetRoutes = options.fleetRoutes;
 		if (options.headroomTrunkOverflow)
 			relayOptions.headroomTrunkOverflow = options.headroomTrunkOverflow;
 		if (options.fleetCapacity)
 			relayOptions.fleetCapacity = options.fleetCapacity;
+		if (options.unlaunchedReservationRelease)
+			relayOptions.unlaunchedReservationRelease =
+				options.unlaunchedReservationRelease;
 		return new HostedRelay(relayOptions);
 	}
 	return {
@@ -391,14 +413,24 @@ export function createHostedRelayRuntime(options: {
 				);
 			}
 			let deliveryFailed = false;
+			let ingressWantsDispatch = false;
+			const ingressRequestsDispatch = (outcome: string) => {
+				if (
+					outcome === "queued" ||
+					outcome === "requeued" ||
+					outcome.startsWith("reserved:")
+				)
+					ingressWantsDispatch = true;
+			};
 			for (let processed = 0; processed < limit; processed++) {
 				const claim = await options.store.claimWebhook(now(), 120_000);
 				if (!claim) break;
 				try {
-					await (await relay()).processWebhook(
+					const outcome = await (await relay()).processWebhook(
 						Buffer.from(claim.rawBody),
 						claim.event,
 					);
+					ingressRequestsDispatch(outcome);
 					if (!(await options.store.ackWebhook(claim.deliveryId, claim.token)))
 						throw new Error("inbox claim lost");
 				} catch {
@@ -417,8 +449,12 @@ export function createHostedRelayRuntime(options: {
 			}
 			const deliveriesMs = Date.now() - tickStartedAt;
 			const controller = await relay();
+			let earlyDispatchCount = 0;
+			if (admit && ingressWantsDispatch)
+				earlyDispatchCount = await controller.dispatchPending();
 			const leaseReconcileStartedAt = Date.now();
 			const activeLeases = await options.store.activeLeases();
+			let reconcileDispatched = false;
 			for (const entry of activeLeases) {
 				let lease = entry;
 				if (
@@ -432,6 +468,7 @@ export function createHostedRelayRuntime(options: {
 					)
 				)
 					continue;
+				reconcileDispatched = true;
 				try {
 					if (
 						(lease.provider === "vercel" ||
@@ -533,7 +570,11 @@ export function createHostedRelayRuntime(options: {
 			}
 			const leaseReconcileMs = Date.now() - leaseReconcileStartedAt;
 			const dispatchStartedAt = Date.now();
-			const pendingCount = admit ? await controller.dispatchPending() : 0;
+			let lateDispatchCount = 0;
+			if (admit && (!ingressWantsDispatch || reconcileDispatched))
+				lateDispatchCount = await controller.dispatchPending();
+			await offlineJitRecovery.reconcile();
+			const pendingCount = admit ? earlyDispatchCount + lateDispatchCount : 0;
 			const dispatchMs = Date.now() - dispatchStartedAt;
 			const totalMs = Date.now() - tickStartedAt;
 			if (totalMs > 5_000)

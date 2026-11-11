@@ -93,9 +93,14 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 		jobText("pr_gate_validation"),
 		/- name: Assert CI fabric contract\n[ \t]+if: github\.event_name == 'merge_group'/u,
 	);
-	assert.match(
-		jobText("ci-guard"),
-		/^ {4}if: github\.event_name == 'pull_request'$/mu,
+	// Pull requests only, and skipped there only for a signed local run the
+	// route job verified as covering this job by id.
+	assert.ok(
+		jobText("ci-guard")
+			.split("\n")
+			.includes(
+				"    if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"ci-guard\"')) }}",
+			),
 	);
 });
 
@@ -443,12 +448,12 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				);
 				continue;
 			}
-			// Everything in hobo-ci.yml is routed except the job that builds the
-			// deps image in the box's own Docker context.
+			// Everything in hobo-ci.yml is routed except deps-image (box Docker) and
+			// main trunk jobs that pin hobo-trunk to skip the route pickup gate.
 			if (file === "hobo-ci.yml")
 				assert.match(
 					lines[start] ?? "",
-					/^  ci-deps-image:$/,
+					/^  (ci-deps-image|main-gate-plan|main-gate|main_workspace_tests|main_gate_finish):$/,
 					`${file}:${lines[start]} is not routed`,
 				);
 			const prOnly =

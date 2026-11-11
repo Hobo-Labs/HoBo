@@ -48,6 +48,11 @@ export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
 	// Host pressure
 	["hobo_ci_inode_pressure", "ci.HostInodePressureDetected"],
 	["hobo_ci_memory_admission_wait", "ci.MemoryAdmissionDelayed"],
+	["hobo_ci_host_resource_pressure", "ci.HostResourcePressureReported"],
+	["hobo_ci_container_stall_requeue", "ci.ContainerStallRequeue"],
+	["hobo_ci_stall_job_annotated", "ci.StallJobAnnotated"],
+	["hobo_ci_stall_job_rerun", "ci.StallJobRerunRequested"],
+	["hobo_ci_stall_job_rerun_skipped", "ci.StallJobRerunSkipped"],
 	["hobo_ci_storage_admission_wait", "ci.StorageAdmissionDelayed"],
 	// Relay mesh
 	["hobo_ci_mesh_job_taken", "ci.MeshJobTaken"],
@@ -60,6 +65,9 @@ export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
 	["hobo_ci_mesh_node_lost", "ci.MeshNodeLost"],
 	["hobo_ci_mesh_node_unhealthy", "ci.MeshNodeDegraded"],
 	["hobo_ci_mesh_node_recovered", "ci.MeshNodeRecovered"],
+	// Trust: an advertisement whose signature failed, and a changed trusted-key set
+	["hobo_ci_mesh_node_invalid", "ci.MeshNodeRejected"],
+	["hobo_ci_mesh_trust_changed", "ci.MeshTrustChanged"],
 	["hobo_ci_mesh_capacity_exhausted", "ci.MeshCapacityExhausted"],
 	["hobo_ci_mesh_capacity_restored", "ci.MeshCapacityRestored"],
 	["hobo_ci_mesh_capacity", "ci.MeshCapacityReported"],

@@ -28,6 +28,7 @@ import {
 	type WorkerStorageLease,
 	type WorkerStoragePnpmStore,
 } from "../src/isolated-worker/storage-admission.js";
+import { storageReserveForJob } from "../src/isolated-worker/storage-job-classes.js";
 
 const nodeFs = {
 	chown: vi.fn<typeof chown>(),
@@ -48,10 +49,11 @@ afterEach(() => {
 
 function usage(percent: number): WorkerFileSystemStats {
 	return {
-		blocks: 100,
-		bfree: 100 - percent,
+		blocks: 1_000_000,
+		bfree: Math.floor(1_000_000 * (1 - percent / 100)),
 		files: 100,
 		ffree: 100 - percent,
+		bsize: 4096,
 	};
 }
 
@@ -66,6 +68,7 @@ function harness(
 		existingContainers?: ReadonlySet<string>;
 		images?: readonly WorkerImage[];
 		jobInodes?: Readonly<{ workRoot: number; dockerDataRoot: number }>;
+		defaultJobReserve?: import("../src/isolated-worker/storage-job-classes.js").WorkerStorageReserve;
 		pnpmStoreIdle?: () => Promise<boolean>;
 		prune?: WorkerStoragePnpmStore["prune"];
 		now?: () => number;
@@ -119,6 +122,12 @@ function harness(
 		pnpmStore,
 		pnpmStoreIdle: input.pnpmStoreIdle,
 		jobInodes: input.jobInodes ?? { workRoot: 0, dockerDataRoot: 0 },
+		defaultJobReserve: input.defaultJobReserve ?? {
+			workRoot: input.jobInodes?.workRoot ?? 0,
+			dockerDataRoot: input.jobInodes?.dockerDataRoot ?? 0,
+			workRootBytes: 0,
+			dockerDataRootBytes: 0,
+		},
 		scheduleRetiredSweep,
 		now: input.now,
 		log: input.log,
@@ -137,31 +146,35 @@ function harness(
 }
 
 function freeInodes(ffree: number): WorkerFileSystemStats {
-	return { blocks: 100, bfree: 100, files: 1_000_000, ffree };
+	return {
+		blocks: 10_000_000,
+		bfree: 10_000_000,
+		files: 1_000_000,
+		ffree,
+		bsize: 4096,
+	};
 }
 
 describe("worker storage admission", () => {
-	it("reserves both roots' inode growth on a shared device", async () => {
+	it("dedupes shared-device inode reserves and bins packs concurrent jobs", async () => {
 		const log = vi.fn();
 		const h = harness({
-			before: freeInodes(500_000),
+			before: freeInodes(497_710),
 			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
 			log,
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
-		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
-		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
-		const waits = log.mock.calls.filter(
-			([event]) => event === "hobo_ci_inode_reserve_wait",
-		);
-		expect(waits).toHaveLength(1);
-		expect(waits[0]?.[1]).toEqual({
-			root: DOCKER_ROOT,
-			freeInodes: 500_000,
-			outstandingInodes: 370_000,
-			requiredInodes: 370_000,
-			activeGrants: 1,
-		});
+		await expect(
+			h.admission.admit(
+				[{ id: "lease-1", sandboxName: "", jobId: "job-1" }],
+				"job-2",
+			),
+		).resolves.toBe(true);
+		expect(
+			log.mock.calls.filter(
+				([event]) => event === "hobo_ci_inode_reserve_wait",
+			),
+		).toHaveLength(0);
 	});
 
 	it("subtracts consumption since the oldest grant from outstanding growth", async () => {
@@ -207,21 +220,57 @@ describe("worker storage admission", () => {
 	it("expires a grant without an active lease after the grace period", async () => {
 		let nowMs = 0;
 		const h = harness({
-			before: freeInodes(500_000),
+			before: freeInodes(380_000),
 			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
 			now: () => nowMs,
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
-		nowMs = 60_000;
+		nowMs = 15_000;
 		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
-		nowMs = 60_001;
+		nowMs = 15_001;
 		await expect(h.admission.admit([], "job-2")).resolves.toBe(true);
+	});
+
+	it("refuses a second release job when byte headroom is short", async () => {
+		const log = vi.fn();
+		const releaseReserve = storageReserveForJob("Publish GitHub Pages (site/)");
+		const neededBytes = Math.max(
+			releaseReserve.workRootBytes,
+			releaseReserve.dockerDataRootBytes,
+		);
+		const bfree = Math.floor(neededBytes / 4096) + 500_000;
+		const h = harness({
+			before: {
+				blocks: bfree + 1_000_000,
+				bfree,
+				files: 2_000_000,
+				ffree: 1_500_000,
+				bsize: 4096,
+			},
+			defaultJobReserve: releaseReserve,
+			log,
+		});
+		await expect(h.admission.admit([], "job-1", releaseReserve)).resolves.toBe(
+			true,
+		);
+		await expect(h.admission.admit([], "job-2", releaseReserve)).resolves.toBe(
+			false,
+		);
+		expect(
+			log.mock.calls.some(([event]) => event === "hobo_ci_disk_reserve_wait"),
+		).toBe(true);
 	});
 
 	it("allows zero to disable both inode reservations", async () => {
 		const h = harness({
 			before: { ...freeInodes(100), files: 1_000 },
 			jobInodes: { workRoot: 0, dockerDataRoot: 0 },
+			defaultJobReserve: {
+				workRoot: 0,
+				dockerDataRoot: 0,
+				workRootBytes: 0,
+				dockerDataRootBytes: 0,
+			},
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
 		await expect(h.admission.admit([], "job-2")).resolves.toBe(true);
@@ -233,10 +282,10 @@ describe("worker storage admission", () => {
 				harness({
 					jobInodes: { workRoot: reserve, dockerDataRoot: 0 },
 				}),
-			).toThrow("invalid worker job inode reservation");
+			).toThrow("invalid worker job storage reservation");
 		expect(() =>
 			harness({ jobInodes: { workRoot: 0, dockerDataRoot: -1 } }),
-		).toThrow("invalid worker job inode reservation");
+		).toThrow("invalid worker job storage reservation");
 	});
 
 	// The job mount belongs to the runner image's user, 1000. Only that user

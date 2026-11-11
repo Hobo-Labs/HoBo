@@ -52,6 +52,10 @@ jobs:
     outputs:
       runner: ${{ steps.route.outputs.runner }}
       tier: ${{ steps.route.outputs.tier }}
+      # A signed local run verified for this tree (scripts/ci/verify-attestation.mts):
+      # the jobs it covers are skipped. `false` and `[]` when there is none.
+      attested: ${{ steps.route.outputs.attested }}
+      attested-jobs: ${{ steps.route.outputs.attested-jobs }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -61,7 +65,10 @@ jobs:
           sparse-checkout: |
             .github/actions/route-runner
             scripts/ci/route-runner.mts
+            scripts/ci/attestation.mts
+            scripts/ci/verify-attestation.mts
             packages/ci/src/fleet-overflow.ts
+            packages/ci/src/fleet/capacity.ts
       - id: route
         uses: ./.github/actions/route-runner
         with:
@@ -71,6 +78,7 @@ jobs:
           max-wait-seconds: ${{ vars.HOBO_CI_ROUTE_MAX_WAIT_SECONDS }}
           max-queued: ${{ vars.HOBO_CI_ROUTE_MAX_QUEUED }}
           trunk-runner: ${{ vars.HOBO_CI_TRUNK_RUNNER }}
+          fleet-state: ${{ vars.HOBO_CI_FLEET_STATE }}
 
   ci-runner-image:
     name: CI runner image (mise oci)
@@ -127,16 +135,24 @@ jobs:
           else
             echo "needed=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Materialize runner image (host cache or GHCR)
+        id: materialize
+        if: steps.rebuild.outputs.needed == 'true'
+        timeout-minutes: 5
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts --materialize-only
       - uses: ./.github/actions/ci-runner-preflight
-        if: steps.rebuild.outputs.needed == 'true'
+        if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
       - uses: ./.github/actions/pnpm-store
-        if: steps.rebuild.outputs.needed == 'true'
+        if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
       - name: Install root deps for shell lint
-        if: steps.rebuild.outputs.needed == 'true'
+        if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
         run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
       - name: Build base + mise oci layers (native arch)
         id: ci_runner_image_build
-        if: steps.rebuild.outputs.needed == 'true'
+        if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
         timeout-minutes: 15
         env:
           MISE_EXPERIMENTAL: "1"
@@ -158,7 +174,7 @@ jobs:
           if-no-files-found: ignore
       # Published from main only; a pull request's image is tried on the box, not shipped.
       - name: Push runner image to GHCR (optional)
-        if: steps.rebuild.outputs.needed == 'true' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
+        if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success' && github.repository == 'Hobo-Labs/HoBo' && github.event_name != 'pull_request'
         env:
           MISE_EXPERIMENTAL: "1"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -167,9 +183,9 @@ jobs:
 
   ci-deps-image:
     name: CI deps layer (pnpm)
-    needs: [ci-runner-image]
+    needs: [route]
     if: >-
-      !cancelled() && needs.ci-runner-image.result != 'failure' && (
+      !cancelled() && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
@@ -299,7 +315,8 @@ jobs:
     # validation running, never skipped, when the image build fails. The
     # required PR impact gate below combines this result with merge-group tests.
     needs: [route, ci-runner-image]
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
+    # Skipped when the route job verified a signed local run of this job for this tree.
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr_gate_validation"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     # Large affected sets can need a cold-cache run; retain the workflow-wide cap.
     timeout-minutes: 20
@@ -524,7 +541,7 @@ jobs:
     name: Workspace test shard ${{ matrix.shard }}
     # The required gate accepts validation only when every shard succeeds.
     needs: [route, pr_gate_validation]
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_validation.result == 'success' }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"workspace_tests"')) }}
     # The shard list is the planner's; each job splits by its own position in
     # that list (strategy.job-index of strategy.job-total), so whatever list
     # arrives, every planned suite lands in exactly one job.
@@ -620,7 +637,7 @@ jobs:
   pr_affected:
     name: PR affected package lanes
     needs: [route, pr_gate_validation]
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.pr_gate_validation.result == 'success' }}
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr_affected"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     permissions:
@@ -696,8 +713,10 @@ jobs:
   pr-gate:
     name: PR impact gate
     # This is the required check. It runs even if a prerequisite was skipped,
-    # failed, or cancelled, and accepts only the event's complete validation.
-    needs: [pr_gate_validation, workspace_tests, pr_affected]
+    # failed, or cancelled, and accepts only the event's complete validation:
+    # each job succeeded, or the route job succeeded, reported a verified signed
+    # local run covering that job, and the job was skipped for it.
+    needs: [route, pr_gate_validation, workspace_tests, pr_affected]
     if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
@@ -712,18 +731,41 @@ jobs:
           VALIDATION_RESULT: ${{ needs.pr_gate_validation.result }}
           WORKSPACE_RESULT: ${{ needs.workspace_tests.result }}
           AFFECTED_RESULT: ${{ needs.pr_affected.result }}
+          ROUTE_RESULT: ${{ needs.route.result }}
+          ATTESTED: ${{ needs.route.outputs.attested }}
+          ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}
         run: |
           set -euo pipefail
-          if [ "$VALIDATION_RESULT" != "success" ]; then
+          # A skipped job counts only when the route job itself succeeded and
+          # reported a verified signed local run that covers that job by id.
+          attested() {
+            [ "${ROUTE_RESULT:-}" = "success" ] || return 1
+            [ "${ATTESTED:-}" = "true" ] || return 1
+            case "${ATTESTED_JOBS:-}" in
+              *"\"$1\""*) return 0 ;;
+            esac
+            return 1
+          }
+          passed() {
+            [ "$1" = "success" ] && return 0
+            [ "$1" = "skipped" ] && attested "$2"
+          }
+          if ! passed "$VALIDATION_RESULT" pr_gate_validation; then
             echo "PR impact validation did not succeed: $VALIDATION_RESULT" >&2
             exit 1
           fi
-          if [ "$WORKSPACE_RESULT" != "success" ]; then
+          if ! passed "$WORKSPACE_RESULT" workspace_tests; then
             echo "Workspace test shards did not all succeed: $WORKSPACE_RESULT" >&2
             exit 1
           fi
           case "$EVENT_NAME:$AFFECTED_RESULT" in
             pull_request:success|merge_group:skipped) ;;
+            pull_request:skipped)
+              if ! attested pr_affected; then
+                echo "Affected lanes were skipped without a verified local run" >&2
+                exit 1
+              fi
+              ;;
             *) echo "Unexpected affected-lanes result for $EVENT_NAME: $AFFECTED_RESULT" >&2; exit 1 ;;
           esac
 
@@ -731,7 +773,7 @@ jobs:
     # Off the critical path: these used to run inside the PR impact gate.
     name: PR off-path checks (ts-autocode surface, production packages)
     needs: route
-    if: github.event_name == 'pull_request'
+    if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr-offpath"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     permissions:
@@ -797,13 +839,13 @@ jobs:
 
   main-gate-plan:
     name: Main workspace plan
-    needs: [route, ci-runner-image, ci-deps-image]
+    needs: [ci-runner-image]
     if: >-
       !cancelled() && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 12
     permissions:
       contents: read
@@ -829,6 +871,14 @@ jobs:
           clean: false
           fetch-depth: 0
       - uses: ./.github/actions/ci-runner-preflight
+      - name: Restore main workspace plan cache
+        id: plan-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/hobo-main-gate-plan
+          key: main-gate-plan-${{ github.sha }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
+          restore-keys: |
+            main-gate-plan-${{ github.sha }}-
       - name: Plan workspace shards
         id: plan
         env:
@@ -838,7 +888,15 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAIN_SHARD_TARGET_SECONDS: "180"
+          HOBO_TURBO_INVOKER: mise
+          MAIN_GATE_PLAN_CACHE_DIR: ${{ runner.temp }}/hobo-main-gate-plan
         run: node --experimental-strip-types --no-warnings scripts/ci/plan-main-workspace-shards.mts
+      - name: Save main workspace plan cache
+        if: always() && steps.plan-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/hobo-main-gate-plan
+          key: main-gate-plan-${{ github.sha }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
 
   main-gate:
     name: Main full gate
@@ -847,13 +905,13 @@ jobs:
     # Those jobs mirror this job's main-base, S0 gate set and Workspace tests steps.
     # A push that changes the image inputs tests on the image it built; an unchanged push skips
     # the image job, which satisfies this dependency immediately.
-    needs: [route, ci-runner-image]
+    needs: [ci-runner-image]
     if: >-
       !cancelled() && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     # A main run past 20 minutes is a failure; the step timeouts below fail a hang sooner.
     # The daily schedule is the one whole-workspace sweep and gets an hour.
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 20 }}
@@ -1068,7 +1126,7 @@ jobs:
 
   main_workspace_tests:
     name: Main workspace test shard ${{ matrix.shard }}
-    needs: [route, ci-runner-image, ci-deps-image, main-gate-plan]
+    needs: [ci-runner-image, ci-deps-image, main-gate-plan]
     if: >-
       !cancelled() && needs.main-gate-plan.result == 'success' && (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
@@ -1078,7 +1136,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: ${{ fromJSON(needs.main-gate-plan.outputs.shards || '[0]') }}
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -1168,15 +1226,17 @@ jobs:
 
   main_gate_finish:
     name: Main full gate (finish)
-    needs: [route, main-gate, main_workspace_tests]
+    needs: [main-gate, main_workspace_tests]
     if: ${{ always() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
-    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
       contents: read
     steps:
       - name: Bootstrap repo-local composite actions
+        id: bootstrap_actions
         if: always()
+        continue-on-error: true
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.sha }}
@@ -1186,6 +1246,20 @@ jobs:
           fetch-tags: false
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
+      - name: Bootstrap composite actions (git fallback)
+        id: bootstrap_actions_git
+        if: always() && steps.bootstrap_actions.outcome != 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE}"
+          rm -rf .git
+          git init -q
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          git -c protocol.version=2 fetch --no-tags --prune --depth=1 --filter=blob:none origin "${GITHUB_SHA}"
+          git sparse-checkout init --cone
+          git sparse-checkout set .github/actions
+          git checkout FETCH_HEAD
       - name: Require main gate and workspace shards
         env:
           MAIN_RESULT: ${{ needs.main-gate.result }}
@@ -1201,11 +1275,56 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        id: repo_checkout
+        continue-on-error: true
         with:
           clean: false
           fetch-depth: 0
           filter: blob:none
           fetch-tags: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        id: repo_checkout_retry
+        if: steps.repo_checkout.outcome != 'success'
+        continue-on-error: true
+        with:
+          clean: false
+          fetch-depth: 0
+          filter: blob:none
+          fetch-tags: false
+      - name: Ensure finish workspace checkout
+        id: workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker="scripts/ci/gitleaks-main-scan.mts"
+          if [ -f "$marker" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cd "${GITHUB_WORKSPACE}"
+          repo="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          for attempt in 1 2 3 4; do
+            rm -rf .git
+            git init -q
+            if git remote get-url origin >/dev/null 2>&1; then
+              git remote set-url origin "$repo"
+            else
+              git remote add origin "$repo"
+            fi
+            if git -c protocol.version=2 fetch --no-tags --prune origin "${GITHUB_SHA}" \
+              && git checkout -f FETCH_HEAD; then
+              if [ -f "$marker" ]; then
+                echo "ready=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              echo "finish workspace checkout retry ${attempt}/4 (git fallback)"
+              sleep $(( attempt * 4 ))
+            fi
+          done
+          echo "::error title=Finish workspace checkout failed::${marker} is still missing after actions/checkout retries and git fallback (metadata download timeout or fetch failure)."
+          exit 1
       - uses: ./.github/actions/ci-runner-preflight
       - name: Secret scan (full history)
         env:
@@ -1230,7 +1349,7 @@ jobs:
   artifact-trust:
     name: artifact signing and install verification
     needs: route
-    if: github.event_name == 'pull_request'
+    if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"artifact-trust"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 10
     permissions:
@@ -1337,13 +1456,14 @@ jobs:
     # The data engines against real servers: the conformance kit, change
     # capture, the write fence under load and the native logical-copy path only
     # mean something on a real PostgreSQL and a real MongoDB replica set. On a
-    # pull request it runs when the diff can reach those suites; the nightly and
-    # manual runs always do. Not on merge_group: the merge queue's required set
+    # pull request it runs when the diff can reach those suites; a manual run
+    # always does. Never on a schedule: the job depends on a runner that can
+    # start containers, which is not always the case. Not on merge_group: the merge queue's required set
     # does not include it, and it would hold a box slot there for nothing.
     # The name is also a key in the worker's memory classes (`heavy`).
     name: Live data engines (PostgreSQL 16, MongoDB 8)
     needs: route
-    if: github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     permissions:
@@ -1360,8 +1480,8 @@ jobs:
         id: scope
         run: |
           set -euo pipefail
-          # Only a pull request is scoped by its diff. A nightly or a manual run
-          # whose tip happens to be a merge commit must not take that path.
+          # Only a pull request is scoped by its diff. A manual run whose tip
+          # happens to be a merge commit must not take that path.
           if [ "$GITHUB_EVENT_NAME" != "pull_request" ] || ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then
             echo "not a pull request's merge commit; running the lane"
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -1453,7 +1573,7 @@ jobs:
     name: CI fabric contract guard
     needs: route
     # On other events, these steps run inside Main full gate or PR impact gate.
-    if: github.event_name == 'pull_request'
+    if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"ci-guard"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 10
     permissions:
@@ -1475,7 +1595,7 @@ jobs:
     needs: route
     # Skipped (which satisfies the required check) on merge_group and trunk events; trunk runs
     # scan the full history inside Main full gate in parallel with its checks.
-    if: github.event_name == 'pull_request'
+    if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"secret-scan"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 10
     permissions:

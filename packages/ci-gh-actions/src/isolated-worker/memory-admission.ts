@@ -1,5 +1,13 @@
 import type { Lease } from "@hobo/ci";
-import { leaseOccupiesWorkerResources } from "../lease-resource-occupancy.js";
+import {
+	leaseOccupiesWorkerMemory,
+	leaseOccupiesWorkerResources,
+} from "../lease-resource-occupancy.js";
+import {
+	type HostResourcePressureSample,
+	hostMemoryAdmitFits,
+	hostPressureBlocksAdmission,
+} from "./host-resource-pressure.js";
 import type {
 	WorkerMemoryClassName,
 	WorkerMemoryConfig,
@@ -31,14 +39,15 @@ type MemoryAdmissionWaitFields = {
 	budgetMb: number;
 	availableMb?: number;
 	waitedMs: number;
-	reason: "trunk-pr-cap" | "memory-budget" | "host-available";
+	reason: "trunk-pr-cap" | "memory-budget" | "host-available" | "host-pressure";
 	activeGeneral: number;
 	prCapWithTrunk: number;
 };
 export type MemoryAdmissionRejectReason =
 	| "trunk-pr-cap"
 	| "memory-budget"
-	| "host-available";
+	| "host-available"
+	| "host-pressure";
 
 export type MemoryAdmissionDecision = Readonly<{
 	admitted: boolean;
@@ -63,6 +72,8 @@ export function createWorkerMemoryAdmission(
 		log?: MemoryAdmissionLog;
 		prCapWithTrunk?: number;
 		availableMemoryMb?: () => number | undefined;
+		volatilityMb?: number;
+		hostPressure?: () => HostResourcePressureSample | undefined;
 	} = {},
 ) {
 	const now = options.now ?? Date.now;
@@ -73,6 +84,13 @@ export function createWorkerMemoryAdmission(
 		prCapWithTrunk > 8
 	)
 		throw new Error("invalid PR cap with trunk");
+	const volatilityMb = options.volatilityMb ?? 0;
+	if (
+		!Number.isFinite(volatilityMb) ||
+		volatilityMb < 0 ||
+		!Number.isInteger(volatilityMb)
+	)
+		throw new Error("invalid memory admission volatilityMb");
 	const waiting = new Map<number, { sinceMs: number; signature: string }>();
 	let warmMb = 0;
 
@@ -101,13 +119,36 @@ export function createWorkerMemoryAdmission(
 		});
 	}
 
+	function admittedMemoryLeases(activeLeases: readonly MemoryLease[]) {
+		return activeLeases.filter((lease) => {
+			// SAFETY: MemoryLease carries the occupancy fields worker memory reads.
+			const full = lease as Lease;
+			return leaseOccupiesWorkerMemory(full);
+		});
+	}
+
+	function unlaunchedReservedLeases(activeLeases: readonly MemoryLease[]) {
+		return activeLeases.filter((lease) => {
+			// SAFETY: MemoryLease carries reserved/sandbox fields for unlaunched detection.
+			const full = lease as Lease;
+			return (
+				full.state === "reserved" && !full.sandboxName && !full.sandboxSessionId
+			);
+		});
+	}
+
 	function inUseMb(
 		activeLeases: readonly MemoryLease[],
 		generalLeaseIds: ReadonlySet<string>,
 		includeTrunkReservation = true,
 	): number {
 		const launching = launchingLeases(activeLeases);
+		const reserved = unlaunchedReservedLeases(activeLeases);
 		const leasesMb = launching.reduce(
+			(total, lease) => total + leaseMemoryMb(lease),
+			0,
+		);
+		const reservedMb = reserved.reduce(
 			(total, lease) => total + leaseMemoryMb(lease),
 			0,
 		);
@@ -116,6 +157,7 @@ export function createWorkerMemoryAdmission(
 			.reduce((total, lease) => total + leaseMemoryMb(lease), 0);
 		return (
 			leasesMb +
+			reservedMb +
 			warmMb +
 			(includeTrunkReservation
 				? Math.max(0, trunkReservationMb() - trunkMb)
@@ -124,23 +166,23 @@ export function createWorkerMemoryAdmission(
 	}
 
 	function admit(request: MemoryAdmissionRequest): MemoryAdmissionDecision {
-		const activeLeases = launchingLeases(request.activeLeases);
+		const admittedLeases = admittedMemoryLeases(request.activeLeases);
 		const inUse = inUseMb(
-			activeLeases,
+			request.activeLeases,
 			request.generalLeaseIds,
 			request.rank !== 0,
 		);
 		const trunkLeaseIds =
 			request.trunkLeaseIds ??
 			new Set(
-				activeLeases
+				admittedLeases
 					.filter((lease) => !request.generalLeaseIds.has(lease.id))
 					.map((lease) => lease.id),
 			);
-		const trunkActive = activeLeases.some((lease) =>
+		const trunkActive = admittedLeases.some((lease) =>
 			trunkLeaseIds.has(lease.id),
 		);
-		const activeNonTrunk = activeLeases.filter(
+		const activeNonTrunk = admittedLeases.filter(
 			(lease) => !trunkLeaseIds.has(lease.id),
 		).length;
 		const capBlocked =
@@ -148,11 +190,18 @@ export function createWorkerMemoryAdmission(
 		const classMb = config.classes[request.memoryClass];
 		const learned = config.learn && request.memoryMb < classMb;
 		const availableMb = options.availableMemoryMb?.();
+		const pressure = options.hostPressure?.();
+		const pressureBlocked =
+			pressure !== undefined && hostPressureBlocksAdmission(pressure);
 		const budgetFits = inUse + request.memoryMb <= config.budgetMb;
-		const hostFits =
-			availableMb === undefined ||
-			availableMb - request.memoryMb >= config.reserveMb;
-		const admitted = !capBlocked && budgetFits && hostFits;
+		const hostFits = hostMemoryAdmitFits(
+			availableMb,
+			request.memoryMb,
+			config.reserveMb,
+			volatilityMb,
+			pressure,
+		);
+		const admitted = !capBlocked && budgetFits && hostFits && !pressureBlocked;
 		if (admitted) {
 			const previous = waiting.get(request.jobId);
 			waiting.delete(request.jobId);
@@ -184,9 +233,11 @@ export function createWorkerMemoryAdmission(
 				: waitedMs > config.holMs;
 		const reason = capBlocked
 			? "trunk-pr-cap"
-			: !budgetFits
-				? "memory-budget"
-				: "host-available";
+			: pressureBlocked
+				? "host-pressure"
+				: !budgetFits
+					? "memory-budget"
+					: "host-available";
 		const availabilitySignature =
 			reason === "host-available" && availableMb !== undefined
 				? `:${Math.floor(availableMb / 512) * 512}`
@@ -227,12 +278,22 @@ export function createWorkerMemoryAdmission(
 			generalLeaseIds: ReadonlySet<string>,
 		) {
 			const availableMb = options.availableMemoryMb?.();
+			const pressure = options.hostPressure?.();
 			const budgetFits =
 				inUseMb(activeLeases, generalLeaseIds) + requestMb <= config.budgetMb;
-			const hostFits =
-				availableMb === undefined ||
-				availableMb - requestMb >= config.reserveMb;
-			if (!budgetFits || !hostFits) return false;
+			const hostFits = hostMemoryAdmitFits(
+				availableMb,
+				requestMb,
+				config.reserveMb,
+				volatilityMb,
+				pressure,
+			);
+			if (
+				!budgetFits ||
+				!hostFits ||
+				(pressure !== undefined && hostPressureBlocksAdmission(pressure))
+			)
+				return false;
 			warmMb += requestMb;
 			return true;
 		},

@@ -1,13 +1,20 @@
 /**
  * The relay mesh's board and claims on NATS JetStream key-value buckets.
  *
- * Two buckets, both with a TTL so nothing here needs cleaning up:
+ * Two buckets with a TTL, so nothing in them needs cleaning up:
  *
- * - `<namespace>-mesh-nodes`: one key per node, its advertisement. A node
- *   that stops writing disappears when its entry ages out.
+ * - `<namespace>-mesh-nodes`: one key per node, its advertisement
+ *   (`MeshAdvert` in `data-models/mesh.proto`, as protobuf JSON). A node that
+ *   stops writing disappears when its entry ages out.
  * - `<namespace>-mesh-claims`: one key per job, the node that took it.
  *   `create` is atomic put-if-absent, so exactly one node wins a job. The
  *   entry ages out, which frees a job whose claimant died before starting it.
+ *
+ * And one without: `<namespace>-mesh-config` holds what the nodes share and
+ * keep, the configuration under one key and the trusted-key set under another.
+ *
+ * This adapter carries advertisements; it does not judge them. Signing and
+ * the trust level are `createTrustedMeshBoard` in `@hobo/ci/mesh`.
  *
  * The connection is made in the background and re-made for as long as the
  * process lives. Until it is up, and whenever it is down, every call rejects
@@ -23,38 +30,19 @@ import type {
 	MeshConfigStore,
 	MeshNode,
 } from "@hobo/ci/mesh";
-import { z } from "zod";
+import {
+	MESH_NODE_ID,
+	meshAdvertJson,
+	parseMeshAdvert,
+} from "./mesh-records.js";
 
-/** Node ids are bucket keys and hash inputs: a short, plain token. */
-export const MESH_NODE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+export { MESH_NODE_ID };
+/** The most advertisements one read of the board takes in, unless told otherwise. */
+export const MESH_MAX_ADVERTS_READ = 1024;
+
 const NAMESPACE = /^[A-Za-z0-9_-]{1,32}$/;
 const CONFIG_KEY = "configuration";
-
-const Advert = z.object({
-	id: z.string().regex(MESH_NODE_ID),
-	freeSlots: z.number().int().min(0).max(4096),
-	totalSlots: z.number().int().min(0).max(4096).optional(),
-	healthy: z.boolean(),
-	labels: z.array(z.string().min(1).max(80)).max(32),
-	validUntilMs: z.number().int().nonnegative(),
-	// What a job is sized against. Optional: a node on an older version does
-	// not send these and is ranked by slots alone.
-	free: z
-		.object({
-			memoryMb: z.number().int().min(0).max(16_777_216).optional(),
-			diskMb: z.number().int().min(0).max(1_073_741_824).optional(),
-		})
-		.optional(),
-	platform: z
-		.object({
-			os: z.string().min(1).max(32),
-			arch: z.string().min(1).max(32),
-		})
-		.optional(),
-	// The share of its recent jobs the node delivered. Optional for the same
-	// reason: a node that does not send it is fully trusted.
-	reliability: z.number().min(0).max(1).optional(),
-});
+const TRUST_KEY = "trust";
 
 export type NatsMeshOptions = Readonly<{
 	/** One or more `nats://host:port` servers of the same cluster. */
@@ -74,6 +62,14 @@ export type NatsMeshOptions = Readonly<{
 	password?: string | undefined;
 	/** Shown in the server's connection list. */
 	name?: string;
+	/**
+	 * The most advertisements one read of the board takes in: a bucket
+	 * flooded with keys costs a reader this many reads, not all of them.
+	 * 1024 when omitted.
+	 */
+	maxNodes?: number;
+	/** Called when a read stopped at `maxNodes`, with the limit; at most once a minute. */
+	onNodesCapped?: (limit: number) => void;
 	onStatus?: (status: "connected" | "disconnected" | "closed") => void;
 }>;
 
@@ -82,6 +78,11 @@ export type NatsMesh = Readonly<{
 	claims: MeshClaims;
 	/** The configuration the mesh's nodes share; kept until replaced, with history. */
 	config: MeshConfigStore;
+	/**
+	 * The mesh's trust settings (`MeshTrustConfig`): which identity keys its
+	 * operator vouches for. Same bucket and rules as `config`, its own key.
+	 */
+	trust: MeshConfigStore;
 	/** Resolves once the first connection and the buckets are ready. */
 	ready: Promise<void>;
 	close(): Promise<void>;
@@ -91,10 +92,16 @@ type Bucket = Readonly<{
 	create(key: string, value: string): Promise<number>;
 	put(key: string, value: string): Promise<number>;
 	update(key: string, value: string, revision: number): Promise<number>;
-	get(
-		key: string,
-	): Promise<
-		{ operation: string; revision: number; string(): string } | null | undefined
+	get(key: string): Promise<
+		| {
+				operation: string;
+				revision: number;
+				/** When the server stored this revision. */
+				created: Date;
+				string(): string;
+		  }
+		| null
+		| undefined
 	>;
 	keys(): Promise<AsyncIterable<string>>;
 }>;
@@ -105,6 +112,8 @@ export function createNatsMesh(options: NatsMeshOptions): NatsMesh {
 	if (options.servers.length === 0) throw new Error("no NATS servers");
 	const replicas = options.replicas ?? 1;
 	const timeout = options.requestTimeoutMs ?? 2_000;
+	const maxNodes = options.maxNodes ?? MESH_MAX_ADVERTS_READ;
+	let cappedAt = Number.NEGATIVE_INFINITY;
 	let buckets: { nodes: Bucket; claims: Bucket; config: Bucket } | undefined;
 	let connected = false;
 	let closing = false;
@@ -185,28 +194,62 @@ export function createNatsMesh(options: NatsMeshOptions): NatsMesh {
 		return buckets;
 	}
 
+	/** One key of the config bucket, replaced only by naming its current revision. */
+	function keyed(key: string): MeshConfigStore {
+		return {
+			async read() {
+				const entry = await use().config.get(key);
+				return entry && entry.operation === "PUT"
+					? { value: entry.string(), revision: entry.revision }
+					: undefined;
+			},
+			async publish(value, expectedRevision) {
+				const { config } = use();
+				try {
+					return {
+						revision:
+							expectedRevision === undefined
+								? await config.create(key, value)
+								: await config.update(key, value, expectedRevision),
+					};
+				} catch (error) {
+					// Someone else wrote first. If they wrote the same thing there is
+					// nothing to reconcile; otherwise the caller must read and decide.
+					const entry = await config.get(key);
+					if (entry?.operation !== "PUT") throw error;
+					return entry.string() === value
+						? { revision: entry.revision }
+						: "conflict";
+				}
+			},
+		};
+	}
+
 	return {
 		ready,
 		board: {
 			async advertise(node) {
-				const advert = Advert.parse(node);
-				await use().nodes.put(advert.id, JSON.stringify(advert));
+				await use().nodes.put(node.id, meshAdvertJson(node));
 			},
 			async nodes() {
 				const { nodes } = use();
 				const found: MeshNode[] = [];
+				let read = 0;
 				for await (const key of await nodes.keys()) {
+					if (read >= maxNodes) {
+						if (Date.now() - cappedAt >= 60_000) {
+							cappedAt = Date.now();
+							options.onNodesCapped?.(maxNodes);
+						}
+						break;
+					}
+					read += 1;
 					const entry = await nodes.get(key);
 					if (entry?.operation !== "PUT") continue;
-					let value: unknown;
-					try {
-						value = JSON.parse(entry.string());
-					} catch {
-						continue;
-					}
 					// An advertisement this version cannot read is a node it cannot rank.
-					const advert = Advert.safeParse(value);
-					if (advert.success && advert.data.id === key) found.push(advert.data);
+					const advert = parseMeshAdvert(entry.string());
+					if (advert?.id === key)
+						found.push({ ...advert, seenAtMs: entry.created.getTime() });
 				}
 				return found;
 			},
@@ -231,33 +274,8 @@ export function createNatsMesh(options: NatsMeshOptions): NatsMesh {
 				}
 			},
 		},
-		config: {
-			async read() {
-				const entry = await use().config.get(CONFIG_KEY);
-				return entry && entry.operation === "PUT"
-					? { value: entry.string(), revision: entry.revision }
-					: undefined;
-			},
-			async publish(value, expectedRevision) {
-				const { config } = use();
-				try {
-					return {
-						revision:
-							expectedRevision === undefined
-								? await config.create(CONFIG_KEY, value)
-								: await config.update(CONFIG_KEY, value, expectedRevision),
-					};
-				} catch (error) {
-					// Someone else wrote first. If they wrote the same thing there is
-					// nothing to reconcile; otherwise the caller must read and decide.
-					const entry = await config.get(CONFIG_KEY);
-					if (entry?.operation !== "PUT") throw error;
-					return entry.string() === value
-						? { revision: entry.revision }
-						: "conflict";
-				}
-			},
-		},
+		config: keyed(CONFIG_KEY),
+		trust: keyed(TRUST_KEY),
 		async close() {
 			closing = true;
 			connected = false;

@@ -6,6 +6,7 @@ import {
 	type RelayDatabase,
 	resolveDatabaseUrls,
 } from "./database-connections.js";
+import { createQueueWakeupHandler } from "./queue-forwarding.js";
 import { StoreUnavailable } from "./store-unavailable.js";
 import type { QueueMessage } from "./worker.js";
 
@@ -26,6 +27,12 @@ function required(env: NodeJS.ProcessEnv, name: string): string {
 	const value = env[name];
 	if (!value) throw new Error(`missing configuration: ${name}`);
 	return value;
+}
+
+/** How long a store that has failed `failures` times in a row is left alone:
+ * 5 s, doubling to a minute. */
+export function storeBackoffMs(failures: number): number {
+	return Math.min(60_000, 5_000 * 2 ** (failures - 1));
 }
 
 export { StoreUnavailable };
@@ -165,11 +172,25 @@ export function createBootstrapEntry(options: {
 		} catch (error) {
 			if (started === pending) started = undefined;
 			storeFailures += 1;
-			storeRetryAt =
-				clock() + Math.min(60_000, 5_000 * 2 ** (storeFailures - 1));
+			storeRetryAt = clock() + storeBackoffMs(storeFailures);
 			throw error;
 		}
 	}
+	async function tick(message: QueueMessage) {
+		const current = await app();
+		if (!current) throw new Error("GitHub App bootstrap required");
+		return current.tick(message);
+	}
+	// Served here, not by the application: while the store is down there is
+	// no application, and a wakeup refused before the handler sees it is held
+	// and retried even when it is a repair tick the handler would drop.
+	const queueWakeup = env.CRON_SECRET
+		? createQueueWakeupHandler({
+				origin: url.origin,
+				secret: env.CRON_SECRET,
+				run: tick,
+			})
+		: undefined;
 	return {
 		origin: url.origin,
 		async handle(request: Request): Promise<Response> {
@@ -179,6 +200,8 @@ export function createBootstrapEntry(options: {
 					{ status: 503, headers: { "cache-control": "no-store" } },
 				);
 			const path = new URL(request.url).pathname;
+			if (path === "/internal/queue-wakeup" && queueWakeup)
+				return queueWakeup(request);
 			// Liveness is about this process, not its database: a probe must be
 			// able to tell "restart me" from "my store is down".
 			if (path === "/healthz" && request.method === "GET")
@@ -220,11 +243,7 @@ export function createBootstrapEntry(options: {
 				{ status: 503, headers: { "cache-control": "no-store" } },
 			);
 		},
-		async tick(message: QueueMessage) {
-			const current = await app();
-			if (!current) throw new Error("GitHub App bootstrap required");
-			return current.tick(message);
-		},
+		tick,
 		async close() {
 			closed = true;
 			const current = started

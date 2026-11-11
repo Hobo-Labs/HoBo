@@ -10,7 +10,7 @@ const workflow = parse(
 );
 const imageJob = workflow.jobs["ci-runner-image"];
 const mainGate = workflow.jobs["main-gate"];
-const mainFinish = workflow.jobs["main_gate_finish"];
+const mainFinish = workflow.jobs.main_gate_finish;
 const imageInputPrefixes = [
 	"mise.toml",
 	"mise.lock",
@@ -93,7 +93,7 @@ describe("Main full gate image dependency", () => {
 	});
 
 	it("still builds the image before main-gate when image inputs change", () => {
-		expect(mainGate.needs).toEqual(["route", "ci-runner-image"]);
+		expect(mainGate.needs).toEqual(["ci-runner-image"]);
 		expect(mainGate.if).toContain("!cancelled()");
 	});
 });

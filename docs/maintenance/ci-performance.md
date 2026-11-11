@@ -9,7 +9,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   13941 MiB, so three mixed classes can fit but three heavy jobs cannot. Job preflight derives the Node heap,
   serial turbo and `HOBO_TEST_MAX_WORKERS` from the admitted container limit; CI never exports
   `VITEST_MAX_WORKERS`, preserving single-worker config pins. Byte or inode usage above 85% triggers safe
-  pruning before admission, and usage above 95% after pruning leaves the job queued.
+  pruning before admission, and usage above 95% after pruning leaves the job queued. Inode and byte
+  grants bin-pack against live `statfs` headroom (shared-root dedupe, measured peaks, 15s grant release);
+  idle JIT listeners release after three minutes when the fleet mesh already holds the
+  job, or after ten minutes when GitHub never assigns work
+  ([finding 100](../ci/findings/0100-inode-grant-idle-reconcile.md)).
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
   SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
   GitHub every `HOBO_CI_JOB_POLL_MS` for queued `runs-on: hobo` jobs, so CI does not stop when a hosted
@@ -61,7 +65,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   Root typechecking builds the Redis-compatible package first because the Upstash provider sources
   referenced by root tests resolve its declarations from `dist` on a clean worker.
 - **Workspace duration table typing.** `scripts/ci/workspace-test-durations.mts` uses pins-json tag narrowing so root `typecheck:root` accepts the JSON leaf parser on CI.
-- **Main full gate workspace sharding.** `main-gate-plan` (route + deps image) resolves the last-green
+- **Main full gate workspace sharding.** `main-gate-plan` (runner image only; install-free mise turbo — [finding 93](../ci/findings/0093-main-sub3m-plan-pickup-shards.md), [finding 92](../ci/findings/0092-main-plan-parallel-deps-affected-shards.md)) resolves the last-green
   base and prints a duration-balanced shard matrix capped by `HOBO_CI_FLEET_CAPACITY` (default four
   parallel slots; see [finding 86](../ci/findings/0086-main-workspace-shards-fleet-parallel-cap.md)).
   Each shard packs several workspace groups (`scripts/ci/workspace-test-durations.json`, target 180s
@@ -77,6 +81,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   links the deps layer first, and skips pnpm store/install on a layer hit. S0 uses
   `--external-workspace-tests` when affected. Gitleaks stays in `main_gate_finish`
   ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)).
+  Box dispatch latency (early `dispatchPending`, poll-triggered tick, shard index ordering,
+  `hobo_ci_job_reserved`) is [finding 99](../ci/findings/0099-main-gate-job-pickup-latency.md);
+  poll coalesce strand fixes stay [finding 87](../ci/findings/0087-poll-coalesce-stranded-queued-jobs-on-github.md) / [#1819](https://github.com/Hobo-Labs/HoBo/pull/1819).
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
   now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes
@@ -163,8 +170,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   forbids in any workflow. The job is scoped like `artifact-trust` (below) to the live test files, so a
   pull request that cannot reach the data engines frees the slot after checkout
   (`scripts/test/job-scope.test.ts` pins the entry list and checks it against the repository, so
-  changing the entries means changing that test); the nightly schedule
-  and a manual dispatch always run it, whatever their tip commit is, and `merge_group` never does.
+  changing the entries means changing that test); a manual dispatch always runs it, whatever its tip
+  commit is. It never runs on the schedule or on `merge_group`: it needs a runner that can start
+  containers, and a scheduled run would fail on its own whenever none is available.
   On a GitHub-hosted runner the servers are up in under half a minute and the suites take about a
   minute and a half.
 - **PR jobs skip what the diff cannot reach.** `artifact-trust` and `dev-cold-loop-gate` each test a
@@ -400,6 +408,8 @@ gates are always GitHub-hosted. A run that says `runner: ubuntu-24.04 (github)`
 in its Route runners log was sent there for one of those reasons, and the same
 line says which.
 
+The deps image publisher samples Docker headroom with bind-mount and host-root
+fallbacks ([finding 94](../ci/findings/0094-deps-publisher-docker-headroom.md)).
 One job in `hobo-ci.yml` is never routed: **CI deps layer (pnpm)** always asks
 for the fleet, because it builds the deps image in the box's own Docker
 context. No gate waits for it.
@@ -419,6 +429,69 @@ than skip. The cold dev loop is the one job that differs: with no worker
 image, it runs in a network namespace whose only interface is loopback.
 Repository variable `HOBO_CI_ROUTE=fleet` turns routing off. The runbook is
 "Runner routing" in [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
+
+## Running a pull request's CI on your own machine
+
+The slowest part of a pull request is often not the tests but the wait for a
+runner. `pnpm ci:attest run` runs the covered CI jobs on the machine you are
+sitting at, signs the result, and `pnpm ci:attest publish` pushes that record
+to the `ci-attestations` branch. The **Route runners** job of the next CI run
+verifies the record and the covered jobs are skipped: they need no runner, and
+the few jobs left go to GitHub-hosted machines.
+
+Covered: `pr_gate_validation`, `workspace_tests`, `pr_affected`, `pr-offpath`,
+`artifact-trust`, `ci-guard` and `secret-scan` in `hobo-ci.yml`, and
+`release-contract` in `release-hobo.yml` when no release image is affected. Not
+covered: `ci-runner-image`, `ci-deps-image`, `dev-cold-loop-gate`, the route
+job and the gates.
+
+The record is bound to one git tree and one base tree, and it is signed with a
+key listed in `.hobo/ci-attestors.json`. The workflow reads that list at the
+pull request's base commit, never from the pull request itself. The local run
+executes the same commands as the workflow jobs, read from
+`scripts/ci/attested-jobs.json`; a test fails when that file and a workflow
+drift apart. When `main` changes a covered job, that test fails on a branch
+rebased onto it until the file is updated, so a local run never signs for an
+older version of a job. It has caught two such changes already: the stray-package
+prune added to the S0 gate set, and the DCO check that now skips merge
+commits.
+
+What this does not give you:
+
+- It does not make a pull request more trustworthy than before. A
+  same-repository pull request can already edit the workflow that tests it.
+  Reading keys at the base commit only stops a pull request adding its own key.
+- Whoever holds a trusted private key can make the covered checks pass without
+  running them. Keep the list short. Every entry has an expiry of at most 90
+  days, which the verifier enforces, and removing an entry only affects events
+  whose base no longer lists it.
+- The commands under test run as the same user as the key. Steps get an
+  allowlisted environment and a scratch `HOME`, which is hygiene, not a
+  sandbox: never attest code you would not give the key to.
+  The attestation tests run inside those steps too (`agent:check` selects
+  them for changes to what they guard), so they set every variable they
+  check and assume nothing about the host's environment.
+- The secret scan is accepted only for the exact head and base commits that
+  were scanned; every other covered job is bound to the tree.
+- Protect the `ci-attestations` branch from deletion and force-push with a
+  ruleset. An unsigned or altered record is refused regardless.
+- Container-backed tests are skipped on a machine with no Docker engine. The
+  record says whether there was one. Turbo still replays cached results, so
+  `pnpm ci:attest run --fresh` is the way to run every task again.
+- The pull request that adds a machine's key cannot be attested with that key:
+  the key has to be on the base first.
+- A merge-group run matches the record only when the queue builds the same
+  tree. When it does not, the merge group runs in CI as before.
+- If `main` moves after the local run, the trees no longer match and CI runs
+  normally.
+
+The full procedure and every limit are under "Signed local runs" in
+[`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
+
+`pnpm ci:attest publish` pushes from a scratch bare repository that borrows the checkout's
+objects. Newer git (2.56 on GitHub's runners) moves a remote's tracking ref when a push names
+that remote's URL, so a push by URL from the checkout itself would leave a new
+`origin/ci-attestations` behind.
 
 ## Reading a main failure
 
@@ -509,12 +582,15 @@ checks failed on main before anyone saw them:
 
 - **`actions:lint` on the real workflows.** `main_gate_finish`'s second checkout lacked
   `clean: false` (a box checkout at the default path must set it). The lint's tests only linted
-  fixtures; `lint-actions-runner.test.ts` now also runs it on the repository.
+  fixtures; `lint-actions-runner.test.ts` now also runs it on the repository. The lint also refuses a
+  checkout that sets `clean: false` twice: two branches that each add the line to the same checkout
+  merge without a git conflict into a duplicate YAML key, which GitHub cannot parse, so the workflow
+  does not run at all.
 - **Who waits for the deps image.** `ci-deps-image-contract.test.ts` sliced the workflow from
   `main-gate:` to `artifact-trust:` and required that text not to mention `ci-deps-image`. #1840 put
   `main_workspace_tests` inside that slice, and it waits for the image on purpose. The test now reads
   each job's `needs`: the required PR jobs and `main-gate` must not wait for the image even through
-  another job, exactly `main-gate-plan` and `main_workspace_tests` do, and neither is gated on the
+  another job; only `main_workspace_tests` does (the plan job runs beside it). Neither is gated on the
   deps job's result, so a failed deps job leaves the shards to install for themselves.
 - **Deps layout recipe digest.** `DEPS_LAYOUT.recipeSha256` was last right at #1741. #1740, #1747,
   #1816 and #1792 edited `build-deps.sh` only: disk and inode headroom checks before a rebuild, an

@@ -33,6 +33,7 @@ const TOOLS = [
 	"get_relay_status",
 	"list_events",
 	"list_leases",
+	"list_mesh_nodes",
 	"list_pending_jobs",
 	"list_quarantined_webhooks",
 	"reconcile_lease",
@@ -411,7 +412,7 @@ describe("relay MCP tools and resources", () => {
 			(await a.client.listResources()).resources
 				.map((entry) => entry.uri)
 				.sort(),
-		).toEqual(["hobo-ci://events", "hobo-ci://leases"]);
+		).toEqual(["hobo-ci://events", "hobo-ci://leases", "hobo-ci://mesh/nodes"]);
 		expect(
 			(await a.client.listResourceTemplates()).resourceTemplates.map(
 				(entry) => entry.uriTemplate,
@@ -497,6 +498,8 @@ describe("relay MCP tools and resources", () => {
 			accountCalls: 8,
 			accountWaits: 8,
 			requestMessages: 8,
+			// This host reads no mesh, and says so.
+			mesh: "not-configured",
 		});
 
 		const reconciled = await a.call("reconcile_lease", {

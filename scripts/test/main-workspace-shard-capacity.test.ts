@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+	minimumScopedShardCount,
 	planMainWorkspaceShardCount,
 	type TestPlan,
 } from "../ci/dependent-tests.mts";
@@ -24,6 +25,27 @@ describe("main workspace shard capacity", () => {
 			);
 			assert.equal(planned.parallelCap, cap);
 		}
+	});
+
+	it("raises shard floor when many scoped suites are in the plan", () => {
+		const plan: TestPlan = {
+			mode: "scoped",
+			full: [
+				"packages/ci",
+				"packages/ci-gh-actions",
+				"packages/ci-vercel",
+				"packages/hobo",
+				"packages/data-postgres",
+			],
+			subsets: new Map([
+				["packages/ci-agent", ["test/daemon.test.ts"]],
+				["packages/ci-ado", ["test/ado.test.ts"]],
+			]),
+			skipped: [],
+		};
+		assert.equal(minimumScopedShardCount(plan, 4), 4);
+		const { count } = planMainWorkspaceShardCount(plan, 4);
+		assert.equal(count, 4);
 	});
 
 	it("packs multiple workspaces into each shard when the cap is small", () => {

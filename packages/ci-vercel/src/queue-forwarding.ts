@@ -262,11 +262,13 @@ export function createQueueWakeupHandler(options: {
 				return new Response(null, { status: 204, headers });
 			} catch (error) {
 				// A repair tick is periodic and only re-reads the store, so one that
-				// lands while the store is down is acknowledged and dropped: the next
-				// tick does the same work. Holding it would keep every deployment
-				// that ever scheduled it (old production deployments keep their
-				// queue consumers and schedules) retrying against this relay.
-				if (error instanceof StoreUnavailable && isRepairTick(parsed.data))
+				// fails is acknowledged and dropped: the next tick does the same
+				// work. Holding it would keep every deployment that ever scheduled
+				// it (old production deployments keep their queue consumers and
+				// schedules) retrying against this relay. Whatever the failure: the
+				// first attempt after a store back-off fails with the store's own
+				// error, not `StoreUnavailable`, and is no more worth repeating.
+				if (isRepairTick(parsed.data))
 					return new Response(null, { status: 204, headers });
 				// The store back-off knows when it will look again; say so, and the
 				// queue consumer holds the message until then.

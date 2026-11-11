@@ -27,7 +27,7 @@ RUN case "${TARGETARCH:-amd64}" in \
     esac \
   && archive="actions-runner-linux-${runner_arch}-${RUNNER_VERSION}.tar.gz" \
   && url="https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${archive}" \
-  && curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 "$url" -o "/tmp/${archive}" \
+  && curl -fsSL --retry 3 --retry-connrefused --retry-delay 2 --connect-timeout 15 --max-time 120 "$url" -o "/tmp/${archive}" \
   && echo "${digest}  /tmp/${archive}" | sha256sum -c - \
   && mkdir -p /opt/actions-runner \
   && tar -xzf "/tmp/${archive}" -C /opt/actions-runner \
@@ -44,19 +44,11 @@ ARG PLAYWRIGHT_HEADLESS_SHELL_SHA256_X64=3cfc2bd00d1bafcf8a68dc74c9c92bb7150ddc8
 ARG PLAYWRIGHT_HEADLESS_SHELL_SHA256_ARM64=b03443e1e1a60d06e07b6cdfe650b8c2bfcbb3db497d2b652f73dc6912f4ae15
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
 
-RUN case "${TARGETARCH:-amd64}" in \
-      arm64) url="https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${PLAYWRIGHT_CHROMIUM_REVISION}/chromium-headless-shell-linux-arm64.zip"; digest="${PLAYWRIGHT_HEADLESS_SHELL_SHA256_ARM64}" ;; \
-      amd64) url="https://cdn.playwright.dev/builds/cft/${PLAYWRIGHT_CHROMIUM_VERSION}/linux64/chrome-headless-shell-linux64.zip"; digest="${PLAYWRIGHT_HEADLESS_SHELL_SHA256_X64}" ;; \
-      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
-    esac \
-  && curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 "$url" -o /tmp/headless-shell.zip \
-  && echo "${digest}  /tmp/headless-shell.zip" | sha256sum -c - \
-  && dir="${PLAYWRIGHT_BROWSERS_PATH}/chromium_headless_shell-${PLAYWRIGHT_CHROMIUM_REVISION}" \
-  && mkdir -p "$dir" \
-  && unzip -q /tmp/headless-shell.zip -d "$dir" \
-  && touch "$dir/INSTALLATION_COMPLETE" "$dir/DEPENDENCIES_VALIDATED" \
-  && rm /tmp/headless-shell.zip \
-  && chmod -R a+rX "${PLAYWRIGHT_BROWSERS_PATH}"
+COPY base/install-playwright-headless-shell.sh /tmp/install-playwright-headless-shell.sh
+COPY base/playwright-cache /tmp/playwright-cache
+RUN chmod +x /tmp/install-playwright-headless-shell.sh \
+  && PLAYWRIGHT_CACHE_DIR=/tmp/playwright-cache /tmp/install-playwright-headless-shell.sh \
+  && rm -f /tmp/install-playwright-headless-shell.sh
 
 USER runner
 WORKDIR /home/runner

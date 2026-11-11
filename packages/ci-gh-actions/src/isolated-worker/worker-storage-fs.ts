@@ -8,6 +8,7 @@ import {
 	lstat,
 	mkdir,
 	readdir,
+	readlink,
 	rename,
 	rm,
 	rmdir,
@@ -15,6 +16,8 @@ import {
 	statfs,
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { measureWorkDirInodeBreakdown } from "./work-dir-inode-breakdown.js";
+import { workDirLocalInodeEstimate } from "./work-dir-local-inodes.js";
 
 const JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}$/u;
 const RETIRED_JOB_DIRECTORY = /^hobo-[0-9a-f-]{36}-[0-9a-z]+$/u;
@@ -25,11 +28,15 @@ export type WorkerFileSystemStats = Readonly<{
 	bfree: number;
 	files: number;
 	ffree: number;
+	/** Fundamental file-system block size in bytes (`statfs.bsize`). */
+	bsize: number;
 }>;
 
 export type WorkerWorkDirectoryRemoval = Readonly<{
 	bytes: number;
 	entries: number;
+	localInodes?: number;
+	inodeBreakdown?: Awaited<ReturnType<typeof measureWorkDirInodeBreakdown>>;
 }>;
 
 export type WorkerStorageFileSystem = Readonly<{
@@ -40,6 +47,7 @@ export type WorkerStorageFileSystem = Readonly<{
 	prepareJobDirectory(path: string): Promise<void>;
 	retireJobDirectory(path: string): Promise<string | undefined>;
 	removeJobDirectory(path: string): Promise<WorkerWorkDirectoryRemoval>;
+	measureJobDirectory(path: string): Promise<WorkerWorkDirectoryRemoval>;
 }>;
 
 export function createNodeWorkerStorageFileSystem(
@@ -68,6 +76,44 @@ export function createNodeWorkerStorageFileSystem(
 				bfree: stats.bfree,
 				files: stats.files,
 				ffree: stats.ffree,
+				bsize: stats.bsize,
+			};
+		},
+		async measureJobDirectory(
+			path: string,
+		): Promise<WorkerWorkDirectoryRemoval> {
+			const name = basename(path);
+			const valid =
+				basename(dirname(path)) === RETIRED_ROOT
+					? RETIRED_JOB_DIRECTORY.test(name)
+					: JOB_DIRECTORY.test(name);
+			if (!valid) throw new Error("invalid worker job directory");
+			const measure = async (
+				entryPath: string,
+			): Promise<WorkerWorkDirectoryRemoval> => {
+				const metadata = await io.lstat(entryPath);
+				if (!metadata.isDirectory()) {
+					return { bytes: metadata.size, entries: 1 };
+				}
+				let bytes = 0;
+				let entries = 1;
+				for (const entry of await io.readdir(entryPath)) {
+					const child = await measure(join(entryPath, entry));
+					bytes += child.bytes;
+					entries += child.entries;
+				}
+				return { bytes, entries };
+			};
+			const sizes = await measure(path);
+			const breakdown = await measureWorkDirInodeBreakdown(path, {
+				lstat: io.lstat,
+				readdir: async (entryPath) => io.readdir(entryPath),
+				readlink,
+			});
+			return {
+				...sizes,
+				localInodes: workDirLocalInodeEstimate(breakdown),
+				inodeBreakdown: breakdown,
 			};
 		},
 		async device(path) {

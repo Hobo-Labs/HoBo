@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+	CI_DEPS_LAYER_JOB_NAME,
+	CI_DEPS_LAYER_MEMORY_FLOOR_MB,
+	CI_DEPS_LAYER_MEMORY_LEARNED_MIN_MB,
 	memoryClassForJob,
 	memoryRequestForJob,
 	parseAvailableMemoryMb,
@@ -22,6 +25,27 @@ describe("worker memory config", () => {
 			holMs: 60_000,
 			learn: true,
 		});
+	});
+
+	it("raises CI deps layer memory above the 4096 MiB floor before peaks exist", () => {
+		const config = resolveWorkerMemoryConfig(
+			{},
+			{ totalMemoryMb: 15_989, trunkSlots: 1 },
+		);
+		const request = memoryRequestForJob(CI_DEPS_LAYER_JOB_NAME, config);
+		expect(request.memoryClass).toBe("heavy");
+		expect(request.memoryMb).toBeGreaterThanOrEqual(
+			CI_DEPS_LAYER_MEMORY_LEARNED_MIN_MB,
+		);
+		expect(request.memoryMb).toBeGreaterThan(CI_DEPS_LAYER_MEMORY_FLOOR_MB);
+		expect(
+			memoryRequestForJob(CI_DEPS_LAYER_JOB_NAME, {
+				...config,
+				memoryPeaks: {
+					[CI_DEPS_LAYER_JOB_NAME]: { peaksMb: [4097, 4100, 4098] },
+				},
+			}).memoryMb,
+		).toBeGreaterThan(CI_DEPS_LAYER_MEMORY_LEARNED_MIN_MB);
 	});
 
 	it("uses per-class reserves for unmeasured jobs", () => {

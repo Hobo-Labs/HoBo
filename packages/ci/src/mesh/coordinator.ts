@@ -113,6 +113,11 @@ export function createMeshCoordinator(options: {
 	viewMaxAgeMs?: number;
 	/** How long the claim store is left alone after it fails. */
 	claimsRetryMs?: number;
+	/**
+	 * Rank only peers whose key this node trusts, as the mesh's trust
+	 * settings say right now. Off when omitted.
+	 */
+	requireTrusted?: (() => boolean) | undefined;
 	now?: () => number;
 	log?: (
 		event: MeshEvent,
@@ -195,6 +200,7 @@ export function createMeshCoordinator(options: {
 				nowMs,
 				stepMs,
 				maxRank: options.maxRank ?? 4,
+				requireTrusted: options.requireTrusted?.() ?? false,
 			});
 			if (!turn.start)
 				return turn.reason === "not-eligible"
@@ -255,7 +261,9 @@ export function createMemoryMesh(options?: {
 	return {
 		board: {
 			async advertise(node) {
-				adverts.set(node.id, node);
+				// A node never says how far it is trusted or when it was seen.
+				const { trust: _trust, seenAtMs: _seenAtMs, ...sent } = node;
+				adverts.set(node.id, sent);
 			},
 			async nodes() {
 				return [...adverts.values()];

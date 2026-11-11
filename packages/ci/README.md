@@ -328,7 +328,7 @@ declaration. Three packages own tables, and each keeps its own `db/` directory:
 |---|---|---|
 | `@hobo/ci` | [`db/schema.ts`](db/schema.ts) | the 13 `PostgresCiStore` tables: partitions, snapshot backups, events, leases, terminal/assigned/pending jobs, configuration, control records, sandbox egress, sandbox proxies and their requests, inbox |
 | `@hobo/ci-gh-actions` | [`../ci-gh-actions/db/schema.ts`](../ci-gh-actions/db/schema.ts) | 13 tables: App states, credentials and installations; OAuth states and sessions; the platform-App fence, attempts and invitations; queued-scan cursors and API budget; webhook repairs, scan cursors and successes |
-| `@hobo/ci-vercel` | [`../ci-vercel/db/schema.ts`](../ci-vercel/db/schema.ts) | 2 tables: database probes, worker health |
+| `@hobo/ci-vercel` | [`../ci-vercel/db/schema.ts`](../ci-vercel/db/schema.ts) | 3 tables: database probes, worker health, store selection marker (the last added by the package's second migration, `0001_store_selection`) |
 
 The shared tooling is in [`db/tooling/`](db/tooling/index.ts). It is development
 and operations code: nothing under `src/` imports it, `drizzle-orm` and
@@ -354,6 +354,7 @@ applies migrations at run time (see [Standbys](#standbys-get-their-schema-from-t
 |---|---|---|
 | `0000_baseline` | all three | Every table as the stores' embedded DDL creates it |
 | `0001_events_account` | `@hobo/ci` | `hobo_ci_events.account_id` (nullable `text`) and `hobo_ci_events_account_seq (partition_id, account_id, seq)`, for the [exact per-account event read](#event-cursor). Two additive statements; it rewrites and fills in no row |
+| `0001_store_selection` | `@hobo/ci-vercel` | `hobo_ci_store_selection`, the generation a store holds when the relay [chooses between attached stores](../ci-vercel/README.md#a-second-store-attached-to-the-project). One `CREATE TABLE`; the ledger is keyed by scope and id, so it and `@hobo/ci`'s `0001_events_account` are separate rows |
 
 ### How a migration is produced
 
@@ -741,13 +742,26 @@ path, cancellation and bounded-file artifact handling for Actions and ADO. It
 inherits only host plumbing and explicit step environments. The Worker-safe
 `@hobo/ci/execution` entrypoint remains free of Node process/filesystem imports.
 
-## Relay mesh (proposed)
+## Relay mesh
 
 `@hobo/ci/mesh` holds the claiming core for a relay with no central node. `rankNodes(job, nodes, now)`
 orders the nodes a job fits (a free slot and enough free memory for that job) by weighted rendezvous hashing over how many copies of it each could start, scaled by the share of its recent jobs each node delivered (`./mesh/reliability.ts`: a decayed score that falls when a node drops jobs and recovers when it stops), and
 `claimTurn(...)` tells one node whether to start a runner now or how long to wait for its turn. Both
-are pure functions; nothing calls them yet. The design, its failure table and the remaining
-increments are in [CI Relay Mesh](../../docs/design/ci-relay-mesh.md).
+are pure functions; the box worker in `@hobo/ci-gh-actions` calls them when `HOBO_CI_NATS_URL` is set.
+
+- **Trust** (`./mesh/trust.ts`): a node's Ed25519 identity, the signature over a fixed encoding of
+  its advertisement (node id and expiry included), and what a reader makes of it: `trusted` when the
+  key is in the mesh's set, `unverified` when it is not or the node does not sign, `invalid` when the
+  signature fails. `createTrustedMeshBoard` signs on the way out and assesses on the way in. `fitJob`
+  never fits a job to an `invalid` node, and with `requireTrusted` only to trusted ones.
+- **Reports** (`./mesh/report.ts`): `meshNodeReport` turns one advertisement into what a person or an
+  agent is shown (state `live`, `unhealthy` or `lost` and since when, capacity, trust, reliability);
+  `createMeshNodeTracker` keeps a node that stopped advertising on the list as `lost`; and
+  `meshLabelStates` counts, per runner label, the nodes a reader ranks and their free slots.
+
+A signature says which key wrote an advertisement, not what software the node runs. The design, its
+failure table, the trust model's limits and the remaining increments are in
+[CI Relay Mesh](../../docs/design/ci-relay-mesh.md).
 
 ## GitHub Actions fabric (Hobo-Labs/HoBo)
 

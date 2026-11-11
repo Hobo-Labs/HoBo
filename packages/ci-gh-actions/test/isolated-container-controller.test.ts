@@ -22,6 +22,7 @@ import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
 import type { MemoryPeaks } from "../src/isolated-worker/memory-peaks.js";
 import type { WorkerStorageFileSystem } from "../src/isolated-worker/storage-admission.js";
 import { NOW } from "./fixtures.js";
+import { jitRunnerDeregisterGithub } from "./github-deregister-mock.js";
 
 function workDirectory() {
 	const retireJobDirectory = vi.fn(async (path: string) => `${path}-retired`);
@@ -111,11 +112,7 @@ function mockedLeaseStore(lease: Lease) {
 }
 
 function deniedGithub(): GithubTransport {
-	return {
-		async request() {
-			throw new Error("unexpected GitHub request");
-		},
-	};
+	return jitRunnerDeregisterGithub();
 }
 
 describe("isolated container controller reconcile", () => {
@@ -691,7 +688,7 @@ describe("isolated container controller reconcile", () => {
 			isRunning: vi.fn(),
 		};
 		// SAFETY: reconcile() does not call github in this scenario.
-		const github = {} as GithubTransport;
+		const github = jitRunnerDeregisterGithub();
 		const early = createIsolatedContainerController({
 			store: relayStore,
 			github,
@@ -740,7 +737,7 @@ describe("isolated container controller reconcile", () => {
 			isRunning: vi.fn(async () => true),
 		};
 		// SAFETY: force-stop reconcile uses getJob(), not github.request().
-		const github = {} as GithubTransport;
+		const github = jitRunnerDeregisterGithub();
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(lease.jobId, "completed", lease.runnerName),
 		);
@@ -778,7 +775,7 @@ describe("isolated container controller reconcile", () => {
 			isRunning: vi.fn(async () => true),
 		};
 		// SAFETY: force-stop reconcile uses getJob(), not github.request().
-		const github = {} as GithubTransport;
+		const github = jitRunnerDeregisterGithub();
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(lease.jobId, "queued"),
 		);
@@ -817,7 +814,7 @@ describe("isolated container controller reconcile", () => {
 			isRunning: vi.fn(async () => true),
 		};
 		// SAFETY: force-stop reconcile uses getJob(), not github.request().
-		const github = {} as GithubTransport;
+		const github = jitRunnerDeregisterGithub();
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(lease.jobId, "queued"),
 		);
@@ -855,7 +852,7 @@ describe("isolated container controller reconcile", () => {
 			}),
 		};
 		// SAFETY: non-forced reconcile never touches GitHub.
-		const github = {} as GithubTransport;
+		const github = jitRunnerDeregisterGithub();
 		const controller = createIsolatedContainerController({
 			store: relayStore,
 			github,
@@ -905,7 +902,7 @@ describe("isolated container controller reconcile", () => {
 		};
 		if (memory?.peak) docker.memoryPeak = memory.peak;
 		// SAFETY: settle after a stop uses the mocked getJob() seam.
-		const github = {} as GithubTransport;
+		const github = jitRunnerDeregisterGithub();
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(lease.jobId, "queued"),
 		);

@@ -99,6 +99,21 @@ unindexed new finding files as notices.
 - [Finding 86: main workspace shards fleet parallel cap](./findings/0086-main-workspace-shards-fleet-parallel-cap.md)
 - [Finding 87: poll coalesce stranded queued jobs on GitHub](./findings/0087-poll-coalesce-stranded-queued-jobs-on-github.md)
 - [Finding 88: poll readmit jit churn](./findings/0088-poll-readmit-jit-churn.md)
+- [Finding 89: superseded main push held trunk slots](./findings/0089-superseded-main-push-held-trunk-slots.md)
+- [Finding 90: release ENOSPC byte admission](./findings/0090-release-enospc-byte-admission.md)
+- [Finding 91: release playwright CDN stalls GHCR](./findings/0091-release-playwright-cdn-stalls-ghcr.md)
+- [Finding 92: main plan parallel deps affected shards](./findings/0092-main-plan-parallel-deps-affected-shards.md)
+- [Finding 93: main sub3m plan pickup shards](./findings/0093-main-sub3m-plan-pickup-shards.md)
+- [Finding 94: deps publisher docker headroom](./findings/0094-deps-publisher-docker-headroom.md)
+- [Finding 95: worker custody orphan live shards](./findings/0095-worker-custody-orphan-live-shards.md)
+- [Finding 96: main fabric workspace shard regression](./findings/0096-main-fabric-workspace-shard-regression.md)
+- [Finding 97: ci runner image ghcr materialize](./findings/0097-ci-runner-image-ghcr-materialize.md)
+- [Finding 98: main gate finish checkout guard](./findings/0098-main-gate-finish-checkout-guard.md)
+- [Finding 99: main gate job pickup latency](./findings/0099-main-gate-job-pickup-latency.md)
+- [Finding 100: inode grant idle reconcile](./findings/0100-inode-grant-idle-reconcile.md)
+- [Finding 101: shared box memory stall on shard 1](./findings/0101-shared-box-memory-stall-on-shard-1.md)
+- [Finding 102: dead JIT runner shard two checkout](./findings/0102-dead-jit-runner-shard-two-checkout.md)
+- [Finding 103: offline peer JIT shard two](./findings/0103-offline-peer-jit-shard-two.md)
 <!-- findings-index:end -->
 
 ## Data

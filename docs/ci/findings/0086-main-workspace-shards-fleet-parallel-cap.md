@@ -33,6 +33,29 @@ turn.
 - `Main workspace test shard` jobs use standard-class memory with learned peaks
   (floor 4096 MiB, never below measured peak + margin).
 
+## Measured vs expected (main push run 42968518079)
+
+Before this fix, **Main full gate** wall time was about **500s** (~8m20s). The four
+`Main workspace test shard` jobs on the critical path were **387s**, **279s**,
+**274s**, and **199s** (slowest **387s**), each running a broad slice with limited
+parallelism on ~three live slots.
+
+With fleet cap default **4**, duration table weights from
+[run 42951579615](https://github.com/Hobo-Labs/HoBo/actions/runs/42951579615),
+**180s** slowest-shard target, turbo `--affected` vs last-green main, and
+box-local turbo cache:
+
+- **Expected** slowest shard (planner `peakShardSeconds` at cap 4 on current repo
+  tree): about **120–180s** for typical doc-only or single-package pushes; repo-wide
+  pushes still approach the **180s** cap per shard but run at most **four** shards
+  in parallel when `HOBO_CI_FLEET_CAPACITY` admits four slots.
+- **Expected** main-gate workspace leg (parallel shards, not serial queue): about
+  **3–4 minutes** when four slots are live; bounded by slowest shard, not the sum
+  of four shard durations.
+- **Measured** post-merge: re-run main push and compare `peakShardSeconds` in
+  `main-gate-plan` logs with the slowest shard job duration (target under **180s**
+  slowest shard, **20m** rule unchanged).
+
 ## Verification
 
 - `packages/ci/test/fleet-capacity-input.test.ts`

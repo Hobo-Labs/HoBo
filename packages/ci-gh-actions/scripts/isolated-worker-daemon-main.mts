@@ -12,6 +12,7 @@ import {
 	memoryAdmitHeadroom,
 	parseConfiguration,
 } from "@hobo/ci";
+import { createTrustedMeshBoard } from "@hobo/ci/mesh";
 import {
 	attachPostgresPoolErrorHandler,
 	boxGitMirrorPath,
@@ -20,9 +21,11 @@ import {
 	createCiEventEmitter,
 	createCliDockerDriver,
 	createCompositeIsolatedHost,
+	createContainerStallGuard,
 	createDepsImageEnsurer,
 	createFleetCapacityPublisher,
 	createFleetRoutePublisher,
+	createFleetStatePublisher,
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
@@ -33,12 +36,14 @@ import {
 	createJobDurations,
 	createMemoryPeaks,
 	createMergeQueuePositionCache,
+	createMeshTrust,
 	createNodeWorkerStorageFileSystem,
 	createPnpmStoreMaintenance,
 	createPollIngestCoalesce,
 	createPollLogFilter,
 	createRelayTrace,
 	createRetiredWorkDirectorySweeper,
+	createStoragePeaks,
 	createWorkerMemoryAdmission,
 	createWorkerMesh,
 	createWorkerStorageAdmission,
@@ -47,25 +52,37 @@ import {
 	defaultGitMirrorFallbackRoot,
 	defaultGitMirrorPreferredRoot,
 	describeWaitingJobs,
+	freeDiskMb,
 	generalLeaseIdsFor,
 	type HostedInboxStore,
+	hostPressureBlocksAdmission,
+	hostResourcePressureLogFields,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
+	loadMeshIdentity,
+	type MeshJournal,
 	memoryRequestForJob,
 	mergeDrainInFlightCount,
+	meshReliabilityJournal,
+	meshReliabilityResetToken,
 	meshSettingsFromEnv,
 	parseWorkerStopMode,
 	readAvailableMemoryMb,
 	readHostHealthSample,
 	readHostMemory,
+	readHostResourcePressureSample,
 	relayTraceSinkFromEnv,
+	resolvedStorageReserve,
 	resolveGitMirrorRoot,
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
 	singleFlight,
 	stopIsolatedWorker,
+	storageReserveForClass,
+	storageReserveForJob,
 	traceGithubTransport,
+	withGithubReadCache,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
@@ -294,10 +311,26 @@ const hostMemMb = Math.min(
 	hostMemorySample.cgroupMemoryLimitMb ?? Number.MAX_SAFE_INTEGER,
 );
 const workerMemoryMb = memoryConfig.classes.heavy;
+const capacityVolatilityMb = Number(
+	process.env.HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB ?? "1024",
+);
+if (
+	!Number.isFinite(capacityVolatilityMb) ||
+	capacityVolatilityMb < 0 ||
+	!Number.isInteger(capacityVolatilityMb)
+)
+	throw new Error("invalid HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB");
+let lastHostPressureLogAt = 0;
+const hostPressureSample = () => readHostResourcePressureSample(Date.now());
+const containerStallGuard = createContainerStallGuard({
+	read: hostPressureSample,
+});
 const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, {
 	log,
 	prCapWithTrunk,
 	availableMemoryMb: readAvailableMemoryMb,
+	volatilityMb: capacityVolatilityMb,
+	hostPressure: hostPressureSample,
 });
 const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
 if (trunkLend !== "0" && trunkLend !== "1")
@@ -344,6 +377,9 @@ if (
 
 let store: HostedInboxStore & IsolatedWorkerStore;
 let closeStore: () => Promise<void> = async () => {};
+// The worker's own SQLite journal, when it has one: where its mesh
+// reliability record is kept, and beside which its identity key lives.
+let meshJournal: MeshJournal | undefined;
 const budgetAdapter = await loadWorkerBudgetAdapter(
 	process.env.HOBO_CI_TRUSTED_BUDGET_ADAPTER,
 	plan.store.kind,
@@ -360,6 +396,7 @@ try {
 		);
 		store = sqlite;
 		closeStore = async () => sqlite.close();
+		meshJournal = sqlite;
 		// This worker owns its journal, so the operator's config file is the policy
 		// source: apply it when it changed. A refused change (for example an active
 		// lease pinning a provider identity) keeps the stored policy and says why.
@@ -453,7 +490,7 @@ try {
 		target: eventExport.target,
 	});
 	const github = traceGithubTransport(
-		createGithubAppTransport({ appId, privateKey }),
+		withGithubReadCache(createGithubAppTransport({ appId, privateKey })),
 		relayTrace,
 	);
 	// The poller learns job durations from the jobs lists it already reads; the
@@ -486,6 +523,8 @@ try {
 	});
 	retiredSweep.trigger();
 	const dockerDataRoot = await docker.dataRoot();
+	const storagePeaksPath = join(workRoot, "storage-peaks.json");
+	const storagePeaks = createStoragePeaks({ path: storagePeaksPath, log });
 	const storageAdmission = createWorkerStorageAdmission({
 		dockerDataRoot,
 		workRoot,
@@ -493,6 +532,7 @@ try {
 		docker,
 		activeLeases: async () => storageLeases(await store.activeLeases()),
 		scheduleRetiredSweep: retiredSweep.trigger,
+		defaultJobReserve: storageReserveForClass("standard"),
 		pnpmStore: pnpmStore
 			? createPnpmStoreMaintenance({
 					path: pnpmStore,
@@ -519,6 +559,12 @@ try {
 		},
 		log,
 	});
+	const storageJobReserve = (jobName: string) =>
+		resolvedStorageReserve(
+			jobName,
+			storagePeaks.history[jobName],
+			storageReserveForJob(jobName),
+		);
 	const listWorkerContainers = () => {
 		if (docker.listWorkerContainers) return docker.listWorkerContainers();
 		if (!docker.list) throw new Error("docker driver missing list");
@@ -612,6 +658,7 @@ try {
 	const worker = createIsolatedContainerController({
 		store,
 		github,
+		onStorageGrantRelease: (jobId) => storageAdmission.release(String(jobId)),
 		publicOrigin,
 		docker,
 		workerAccountId,
@@ -622,6 +669,7 @@ try {
 		prewarmMemoryMb: memoryConfig.classes.standard,
 		memoryClasses: memoryConfig.classes,
 		memoryPeaks,
+		storagePeaks,
 		memoryAdmission,
 		generalLeaseIds: (activeLeases) =>
 			generalLeaseIdsFor(activeLeases, github, workerRunnerLabels),
@@ -663,11 +711,13 @@ try {
 		workRoot,
 		workFs,
 		scheduleRetiredSweep: retiredSweep.trigger,
+		containerStallGuard,
 	});
 	const firstReconciliation = await worker.reconcileLeases();
 	let liveWorkerLeaseIds = firstReconciliation.liveLeaseIds;
 	let inUseWorkerMemoryMb = firstReconciliation.inUseMemoryMb;
 	await worker.reconcileOrphanJobs();
+	await worker.reconcileStallRecoveries();
 	let depsImageEnsurer: ReturnType<typeof createDepsImageEnsurer> | undefined;
 	if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
 		depsImageEnsurer = createDepsImageEnsurer({
@@ -741,15 +791,6 @@ try {
 		connections: async () =>
 			(await store.configuration())?.configuration?.connections ?? [],
 	});
-	const capacityVolatilityMb = Number(
-		process.env.HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB ?? "1024",
-	);
-	if (
-		!Number.isFinite(capacityVolatilityMb) ||
-		capacityVolatilityMb < 0 ||
-		!Number.isInteger(capacityVolatilityMb)
-	)
-		throw new Error("invalid HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB");
 	const fleetRoutes = publishFleetRoutes
 		? createFleetRoutePublisher({
 				github,
@@ -766,7 +807,9 @@ try {
 						return bad;
 					}
 					const availableMb = readAvailableMemoryMb();
+					const pressure = hostPressureSample();
 					if (
+						hostPressureBlocksAdmission(pressure) ||
 						!memoryAdmitHeadroom(
 							availableMb,
 							memoryConfig.classes.heavy,
@@ -792,6 +835,34 @@ try {
 		!Number.isInteger(trunkHeadroomOverflowMs)
 	)
 		throw new Error("invalid HOBO_CI_TRUNK_HEADROOM_OVERFLOW_MS");
+	const unlaunchedReserveMs = Number(
+		process.env.HOBO_CI_UNLAUNCHED_RESERVE_MS ?? "25000",
+	);
+	if (
+		!Number.isFinite(unlaunchedReserveMs) ||
+		unlaunchedReserveMs < 0 ||
+		!Number.isInteger(unlaunchedReserveMs)
+	)
+		throw new Error("invalid HOBO_CI_UNLAUNCHED_RESERVE_MS");
+	const unlaunchedBacklogMinAgeMs = Number(
+		process.env.HOBO_CI_UNLAUNCHED_BACKLOG_MIN_AGE_MS ??
+			String(unlaunchedReserveMs),
+	);
+	if (
+		!Number.isFinite(unlaunchedBacklogMinAgeMs) ||
+		unlaunchedBacklogMinAgeMs < 0 ||
+		!Number.isInteger(unlaunchedBacklogMinAgeMs)
+	)
+		throw new Error("invalid HOBO_CI_UNLAUNCHED_BACKLOG_MIN_AGE_MS");
+	const unlaunchedReReserveCooldownMs = Number(
+		process.env.HOBO_CI_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS ?? "30000",
+	);
+	if (
+		!Number.isFinite(unlaunchedReReserveCooldownMs) ||
+		unlaunchedReReserveCooldownMs < 0 ||
+		!Number.isInteger(unlaunchedReReserveCooldownMs)
+	)
+		throw new Error("invalid HOBO_CI_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS");
 	const headroomTrunkOverflow = createHeadroomTrunkOverflow({
 		github,
 		memoryAdmission,
@@ -815,11 +886,21 @@ try {
 		mergeGroupLeaseLimit: mergeGroupLeases,
 		jobPickupMetadata,
 		lendTrunkSlots,
+		trunkSlots,
 		memoryAdmission,
 		storageAdmission,
+		storageJobReserve,
 		mergeQueuePositions: () => mergeQueueCache.snapshot(),
 		fleetRoutes,
 		headroomTrunkOverflow,
+		unlaunchedReservationRelease: {
+			boundMs: unlaunchedReserveMs,
+			backlogMinAgeMs: unlaunchedBacklogMinAgeMs,
+			reReserveCooldownMs: unlaunchedReReserveCooldownMs,
+			launchSlots: slots,
+			backlogImmediate:
+				process.env.HOBO_CI_UNLAUNCHED_BACKLOG_IMMEDIATE !== "0",
+		},
 		fleetCapacity: fleetCapacity
 			? {
 					publish: (input) => fleetCapacity.publish(input),
@@ -856,16 +937,62 @@ try {
 				replicas: meshSettings.replicas,
 				name: `hobo-ci-worker ${meshSettings.nodeId}`,
 				onStatus: (status) => log("hobo_ci_mesh_nats", { status }),
+				onNodesCapped: (limit) => log("hobo_ci_mesh_nodes_capped", { limit }),
 				...natsCredentials(),
 			})
 		: undefined;
 	let meshDraining = false;
+	// The worker's identity: an Ed25519 key made on first start and kept
+	// beside its journal, readable by its owner only. The private half never
+	// leaves this file; the public half travels with every advertisement.
+	const meshIdentity = meshSettings
+		? await loadMeshIdentity(
+				process.env.HOBO_CI_MESH_KEY_FILE ??
+					join(
+						plan.store.kind === "sqlite" ? dirname(plan.store.path) : workRoot,
+						"mesh-node.key",
+					),
+			)
+		: undefined;
+	// Which keys the mesh's operator vouches for, read from the mesh on every
+	// beat. With none listed this worker trusts only its own key.
+	const meshTrust = createMeshTrust({
+		store: natsMesh?.trust,
+		selfPublicKey: meshIdentity?.publicKey,
+		log,
+	});
+	// Signs what this worker advertises, and says of every advertisement it
+	// reads how far it is trusted. One whose signature fails is never ranked.
+	const meshBoard = natsMesh
+		? createTrustedMeshBoard({
+				board: natsMesh.board,
+				identity: meshIdentity,
+				policy: meshTrust.policy,
+			})
+		: undefined;
+	// The record of the jobs this worker took, kept in its journal so a
+	// restart does not clear it. HOBO_CI_MESH_RELIABILITY_RESET=<token> starts
+	// it again once per token, for an operator who has repaired the box.
+	const meshReliability =
+		meshSettings && meshJournal
+			? meshReliabilityJournal(
+					meshJournal,
+					meshSettings.nodeId,
+					(message) =>
+						log("hobo_ci_mesh_reliability_journal_failed", { message }),
+					meshReliabilityResetToken(process.env.HOBO_CI_MESH_RELIABILITY_RESET),
+				)
+			: undefined;
+	const storedReliability = await meshReliability?.load();
 	mesh =
-		meshSettings && natsMesh
+		meshSettings && natsMesh && meshBoard
 			? createWorkerMesh({
 					settings: meshSettings,
-					board: natsMesh.board,
+					board: meshBoard,
 					claims: natsMesh.claims,
+					requireTrusted: meshTrust.requireTrusted,
+					initialReliability: storedReliability?.record,
+					persistReliability: (record) => void meshReliability?.save(record),
 					freeSlots: () => slots - liveWorkerLeaseIds.size,
 					totalSlots: slots,
 					healthy: () => !meshDraining,
@@ -883,10 +1010,14 @@ try {
 										? budgetLeftMb
 										: Math.min(
 												budgetLeftMb,
-												availableMb - memoryConfig.reserveMb,
+												availableMb -
+													memoryConfig.reserveMb -
+													capacityVolatilityMb,
 											),
 								),
 							),
+							// Measured on the filesystem jobs check out and build on.
+							diskMb: freeDiskMb(workRoot),
 						};
 					},
 					platform: { os: process.platform, arch: process.arch },
@@ -908,14 +1039,46 @@ try {
 					? "mesh"
 					: "none",
 		nodeId: meshSettings?.nodeId ?? "",
+		// The public half of the identity key, to list in the trusted set.
+		publicKey: meshIdentity?.publicKey ?? "",
+		reliabilityRestored: storedReliability?.record !== undefined,
+		reliabilityReset: storedReliability?.reset ?? false,
 		namespace: meshSettings?.namespace ?? "",
 		servers: meshSettings?.servers.length ?? 0,
 		stepMs: meshSettings?.stepMs ?? 0,
 	});
-	// Every 10 s: say what this worker can take, then read what the mesh can.
+	// The snapshot runner routing reads: per label, the nodes this worker
+	// ranks and their free slots. Published with the route table's flag, to
+	// each connected repository; see src/fleet-state.ts.
+	const fleetState =
+		publishFleetRoutes && mesh && meshBoard
+			? createFleetStatePublisher({
+					github,
+					board: meshBoard,
+					self: mesh.self,
+					labels: trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"],
+					requireTrusted: meshTrust.requireTrusted,
+					log,
+				})
+			: undefined;
+	// Every 10 s: read the trust settings, say what this worker can take,
+	// read what the mesh can, and keep the routing snapshot fresh.
+	const publishFleetState = async (timing: { now?: boolean } = {}) => {
+		if (!fleetState) return;
+		const state = await store.configuration().catch(() => undefined);
+		await fleetState.publish(
+			(state?.configuration?.connections ?? []).map((connection) => ({
+				installationId: connection.installationId,
+				repository: connection.repository,
+			})),
+			timing,
+		);
+	};
 	const meshBeat = async () => {
+		await meshTrust.refresh();
 		await mesh?.advertise();
 		await mesh?.observe();
+		await publishFleetState();
 	};
 	const meshAdvertTimer = mesh
 		? setInterval(() => void meshBeat(), 10_000)
@@ -979,6 +1142,14 @@ try {
 					onGithubError: (failure) =>
 						log("hobo_ci_isolated_worker_github_read_failed", { ...failure }),
 					beforePoll: () => mergeQueueCache.refresh(),
+					onMainFabricTrunkQueued: (repository) => {
+						void worker.prewarm(repository).catch((error) =>
+							log("hobo_ci_main_fabric_prewarm_failed", {
+								repository,
+								message: error instanceof Error ? error.message : "unknown",
+							}),
+						);
+					},
 				})
 			: undefined;
 	const pollWorthLogging = createPollLogFilter();
@@ -1003,6 +1174,7 @@ try {
 		lastOrphanReconcileAt = now;
 		orphanReconcileInFlight = worker
 			.reconcileOrphanJobs()
+			.then(() => worker.reconcileStallRecoveries())
 			.catch((error) => {
 				log("hobo_ci_orphan_job_reconcile_failed", {
 					message: error instanceof Error ? error.message : "unknown",
@@ -1016,6 +1188,14 @@ try {
 	const reconcileAndLaunch = singleFlight(async () => {
 		// Sampled at most every ten seconds; never fails the tick.
 		await hostHealth.observe();
+		const pressureAt = Date.now();
+		if (pressureAt - lastHostPressureLogAt >= 10_000) {
+			lastHostPressureLogAt = pressureAt;
+			log(
+				"hobo_ci_host_resource_pressure",
+				hostResourcePressureLogFields(hostPressureSample()),
+			);
+		}
 		const workerReconcileStartedAt = Date.now();
 		const reconciliation = await worker.reconcileLeases();
 		workerReconcileMs = Date.now() - workerReconcileStartedAt;
@@ -1048,6 +1228,7 @@ try {
 		jobPollInFlight = poller
 			.poll()
 			.then((summary) => {
+				if (summary.accepted > 0) void runTick().catch(() => undefined);
 				if (!pollWorthLogging(summary, Date.now())) return;
 				const { waiting, ...counts } = summary;
 				log("hobo_ci_isolated_worker_jobs_polled", {
@@ -1172,6 +1353,8 @@ try {
 			meshDraining = true;
 			if (meshAdvertTimer) clearInterval(meshAdvertTimer);
 			await mesh?.advertise();
+			// And tell routing: this worker no longer counts towards its labels.
+			await publishFleetState({ now: true }).catch(() => undefined);
 			await jobPollInFlight;
 			await orphanReconcileInFlight;
 			await gcInFlight;
@@ -1185,6 +1368,7 @@ try {
 				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
 				inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 				await worker.reconcileOrphanJobs();
+				await worker.reconcileStallRecoveries();
 				if (reconciliation.inventoryKnown) await runtime.tick({ admit: false });
 				try {
 					const listed = await listWorkerContainers();

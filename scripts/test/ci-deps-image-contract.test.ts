@@ -263,14 +263,9 @@ describe("CI deps image build contract", () => {
 	});
 
 	it("guards Docker inode and disk headroom before a deps rebuild", () => {
-		includes(
-			build,
-			'inode_headroom="${HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-400000}"',
-		);
-		includes(
-			build,
-			'byte_headroom="${HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-8589934592}"',
-		);
+		includes(build, "deps-build-headroom-defaults.mts");
+		includes(build, "HOBO_CI_DEPS_BUILD_INODE_HEADROOM:-");
+		includes(build, "HOBO_CI_DEPS_BUILD_BYTE_HEADROOM:-");
 		includes(build, "invalid HOBO_CI_DEPS_BUILD_INODE_HEADROOM");
 		includes(build, "invalid HOBO_CI_DEPS_BUILD_BYTE_HEADROOM");
 		includes(build, "df --output=iavail");
@@ -286,6 +281,9 @@ describe("CI deps image build contract", () => {
 			"refusing deps rebuild: Docker data root still below headroom after builder prune",
 		);
 		includes(build, "cannot sample Docker data root for deps build headroom");
+		includes(build, "sample_docker_headroom_via_host");
+		includes(build, "host:");
+		includes(build, "no device-matched bind mount");
 		assert.ok(!build.includes("docker image prune -af"));
 		assert.ok(!build.includes("docker image prune -a"));
 		const guard = build.indexOf("ensure_deps_build_headroom");
@@ -360,9 +358,8 @@ describe("CI deps workflow contract", () => {
 		includes(job, "name: CI deps layer (pnpm)");
 		// Not routed: it builds in the box's Docker context, which a
 		// GitHub-hosted machine does not have.
-		includes(job, "needs: [ci-runner-image]");
+		includes(job, "needs: [route]");
 		assert.ok(!job.includes("needs.route.outputs.runner"));
-		includes(job, "needs.ci-runner-image.result != 'failure'");
 		includes(job, "packages/ci-gh-actions/deploy/ci-runner/deps");
 		includes(job, "scripts/ci/deps-layer-buckets.mts");
 		includes(
@@ -570,7 +567,7 @@ describe("CI deps workflow contract", () => {
 				!waitsFor(id).has("ci-deps-image"),
 				`${id} waits for the deps image`,
 			);
-		assert.deepEqual(job("main-gate").needs, ["route", "ci-runner-image"]);
+		assert.deepEqual(job("main-gate").needs, ["ci-runner-image"]);
 		assert.ok(!job("main-gate").block.includes("ci-deps-image"));
 		includes(job("main-gate").block, "Check deps layer match");
 
@@ -582,11 +579,13 @@ describe("CI deps workflow contract", () => {
 			[...jobs]
 				.filter(([, { needs }]) => needs.includes("ci-deps-image"))
 				.map(([id]) => id),
-			["main-gate-plan", "main_workspace_tests"],
+			["main_workspace_tests"],
 		);
-		// A failed or skipped deps job must not take them with it: both run
+		// Plan is install-free and runs beside the deps image job; only shards wait for it.
+		assert.deepEqual(job("main-gate-plan").needs, ["ci-runner-image"]);
+		// A failed or skipped deps job must not take shards with it: they run
 		// unless the run is cancelled, and a shard installs on a layer miss.
-		for (const id of ["main-gate-plan", "main_workspace_tests"]) {
+		for (const id of ["main_workspace_tests"]) {
 			assert.match(job(id).block, /^ {4}if: >-\n {6}!cancelled\(\) && /mu, id);
 			assert.doesNotMatch(
 				job(id).block,
