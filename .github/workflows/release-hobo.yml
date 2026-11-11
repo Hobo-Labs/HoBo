@@ -143,8 +143,14 @@ on:
 permissions:
   contents: read
 
+# Main-train runs (workflow_run after a green main push) share one queue: one runs, the
+# newest waits, and GitHub drops any older waiting run. The gate measures from the last
+# release tag, so the run that goes next releases everything the dropped ones would have,
+# and it asks after the running release has tagged, not before (two releases of
+# overlapping changes, or an older one finishing last). Keyed by the CI run's event so a
+# scheduled or dispatched CI completion, which the gate skips, never displaces a push.
 concurrency:
-  group: hobo-release-${{ github.workflow }}-${{ github.event.workflow_run.head_sha || github.ref }}
+  group: ${{ github.event_name == 'workflow_run' && format('hobo-release-train-{0}', github.event.workflow_run.event) || format('hobo-release-{0}-{1}', github.workflow, github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:

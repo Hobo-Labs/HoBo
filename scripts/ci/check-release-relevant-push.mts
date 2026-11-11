@@ -2,7 +2,7 @@
 /**
  * Whether the main train has something to release.
  *
- * `--since-last-release` asks "did a release path change since the last
+ * `--since-last-release` asks "did a release path change since the nearest
  * release tag in this commit's history?". The older `--from <rev>` form asked
  * only about one range, usually `head^..head`: a commit whose CI run was
  * cancelled by the next push, or that reached `main` behind another in one
@@ -31,7 +31,12 @@ export interface ReleaseScope {
 }
 
 function git(cwd: string, args: readonly string[]) {
-	return spawnSync("git", args, { cwd, encoding: "utf8" });
+	// C locale: the "nothing matches" check below reads git's English message.
+	return spawnSync("git", args, {
+		cwd,
+		encoding: "utf8",
+		env: { ...process.env, LC_ALL: "C" },
+	});
 }
 
 function gitDiffNameOnly(cwd: string, from: string, to: string): string[] {
@@ -47,8 +52,16 @@ function gitDiffNameOnly(cwd: string, from: string, to: string): string[] {
 		.filter((line) => line.length > 0);
 }
 
-/** The newest release tag reachable from `to`, or undefined when there is none. */
+/** The nearest release tag in `to`'s history, or undefined when there is none. */
 export function lastReleaseTag(cwd: string, to: string): string | undefined {
+	// A shallow clone hides older tags, which would read as "never released"
+	// and release everything; the gate checks out full history.
+	const shallow = git(cwd, ["rev-parse", "--is-shallow-repository"]);
+	if (shallow.status !== 0 || shallow.stdout.trim() !== "false") {
+		throw new Error(
+			"release scope: the checkout is shallow (or not a repository); it needs full history and tags",
+		);
+	}
 	// describe says "no names found" before it reads the revision, so a bad
 	// one would read as "never released" without this.
 	const commit = git(cwd, [
@@ -58,7 +71,7 @@ export function lastReleaseTag(cwd: string, to: string): string | undefined {
 		`${to}^{commit}`,
 	]);
 	if (commit.status !== 0) {
-		throw new Error(`git describe ${to}: not a commit`);
+		throw new Error(`release scope: not a commit: ${to}`);
 	}
 	const result = git(cwd, [
 		"describe",
@@ -97,7 +110,7 @@ export function releaseScopeBetween(
 	};
 }
 
-/** Decide from what changed since the last release tag in `to`'s history. */
+/** Decide from what changed since the nearest release tag in `to`'s history. */
 export function releaseScopeSinceLastRelease(
 	cwd: string,
 	to: string,

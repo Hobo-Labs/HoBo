@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -116,7 +122,81 @@ describe("main train release scope", () => {
 		const { dir, commit } = repo();
 		commit("README.md");
 		expect(() => lastReleaseTag(dir, "no-such-rev")).toThrow(
-			/git describe no-such-rev/,
+			/not a commit: no-such-rev/,
 		);
+	});
+
+	it("reads a repository with no tags at all as never released", () => {
+		const { dir, commit } = repo();
+		const head = commit("README.md");
+		expect(lastReleaseTag(dir, head)).toBeUndefined();
+	});
+
+	it("refuses a shallow checkout, whose missing history would hide the tags", () => {
+		const { dir, git, commit } = repo();
+		commit("site/a.html");
+		git("tag", "v0.0.0-alpha.5");
+		commit("docs/b.md");
+		const shallow = mkdtempSync(join(tmpdir(), "hobo-release-shallow-"));
+		repos.push(shallow);
+		const clone = spawnSync(
+			"git",
+			["clone", "-q", "--depth=1", `file://${dir}`, shallow],
+			{ encoding: "utf8" },
+		);
+		expect(clone.status, clone.stderr).toBe(0);
+		expect(() =>
+			releaseScopeSinceLastRelease(shallow, "HEAD", FILTERS),
+		).toThrow(/checkout is shallow/);
+	});
+});
+
+describe("as the release workflow runs it", () => {
+	const root = join(import.meta.dirname, "..", "..");
+	const workflow = readFileSync(
+		join(root, ".github/workflows/release-hobo.yml"),
+		"utf8",
+	);
+
+	it("asks since the last release, from the green commit", () => {
+		expect(workflow).toMatch(
+			/check-release-relevant-push\.mts \\\n\s+--since-last-release \\\n\s+--to "\$\{head_sha\}" \\\n\s+--github-output "\$GITHUB_OUTPUT"/,
+		);
+		expect(workflow).not.toMatch(/--from "\$\{head_sha\}\^"/);
+	});
+
+	it("queues main-train runs in one group, never cancelling a running release", () => {
+		expect(workflow).toContain(
+			"group: ${{ github.event_name == 'workflow_run' && format('hobo-release-train-{0}', github.event.workflow_run.event) || format('hobo-release-{0}-{1}', github.workflow, github.ref) }}",
+		);
+		expect(workflow).toContain(
+			"cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+		);
+	});
+
+	it("writes run= for the gate under plain node", () => {
+		const out = join(
+			mkdtempSync(join(tmpdir(), "hobo-release-output-")),
+			"out",
+		);
+		repos.push(dirname(out));
+		writeFileSync(out, "");
+		const run = spawnSync(
+			process.execPath,
+			[
+				"--no-warnings",
+				"scripts/ci/check-release-relevant-push.mts",
+				"--from",
+				"HEAD",
+				"--to",
+				"HEAD",
+				"--github-output",
+				out,
+			],
+			{ cwd: root, encoding: "utf8" },
+		);
+		expect(run.stderr).toBe("");
+		expect(run.status).toBe(0);
+		expect(readFileSync(out, "utf8")).toBe("run=false\n");
 	});
 });
