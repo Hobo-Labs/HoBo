@@ -836,14 +836,13 @@ describe("worker lease reconciliation", () => {
 			orphanGraceMs: 120_000,
 			now: () => NOW,
 		});
-		let liveLeaseIds = new Set([lease.id]);
+		let drainJobs = 1;
 		const sleep = vi.fn(async () => undefined);
 		const result = await waitForIsolatedWorkerDrain({
-			inFlight: async () => liveLeaseIds.size,
+			inFlight: async () => drainJobs,
 			reconcile: async () => {
-				liveLeaseIds = new Set(
-					(await reconciler.reconcile({ draining: true })).liveLeaseIds,
-				);
+				drainJobs = (await reconciler.reconcile({ draining: true }))
+					.drainJobInFlight;
 			},
 			pollMs: 500,
 			timeoutMs: 1_800_000,
@@ -1006,7 +1005,7 @@ describe("worker lease reconciliation", () => {
 			workerMemoryMb: 6_144,
 			github: {} as GithubTransport,
 			cancelStaleGithubLease,
-			noContainerDrainMaxMs: 60_000,
+			noContainerDrainMaxMs: 30_000,
 			now: () => NOW,
 		});
 		const early = await reconciler.reconcile({
@@ -1014,9 +1013,10 @@ describe("worker lease reconciliation", () => {
 			drainStartedAtMs: NOW,
 		});
 		expect(early.liveLeaseIds.has(lease.id)).toBe(true);
+		expect(early.drainJobInFlight).toBe(0);
 		const late = await reconciler.reconcile({
 			draining: true,
-			drainStartedAtMs: NOW - 61_000,
+			drainStartedAtMs: NOW - 31_000,
 		});
 		expect(late.liveLeaseIds.has(lease.id)).toBe(false);
 		expect(cancelStaleGithubLease).toHaveBeenCalledWith(
