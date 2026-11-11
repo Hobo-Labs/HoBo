@@ -113,6 +113,7 @@ unindexed new finding files as notices.
 - [Finding 100: inode grant idle reconcile](./findings/0100-inode-grant-idle-reconcile.md)
 - [Finding 101: shared box memory stall on shard 1](./findings/0101-shared-box-memory-stall-on-shard-1.md)
 - [Finding 102: dead JIT runner shard two checkout](./findings/0102-dead-jit-runner-shard-two-checkout.md)
+- [Finding 103: offline peer JIT shard two](./findings/0103-offline-peer-jit-shard-two.md)
 <!-- findings-index:end -->
 
 ## Data

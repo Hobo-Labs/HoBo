@@ -42,7 +42,8 @@ import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
 import type { WorkerStorageReserve } from "./isolated-worker/storage-job-classes.js";
 import { deregisterGithubRunner } from "./jit-runner-deregister.js";
-import { decideGhostBoxRunnerBinding } from "./jit-runner-ghost.js";
+import { decideFleetGhostRecovery } from "./jit-runner-fleet-recovery.js";
+import { fetchGithubRunnerPresence } from "./jit-runner-presence.js";
 import type { JobDurations } from "./job-durations.js";
 import {
 	type JobPickupMetadataCache,
@@ -59,6 +60,7 @@ import {
 	leaseOccupiesMergeGroupCap,
 	leaseOccupiesWorkerResources,
 } from "./lease-resource-occupancy.js";
+import type { OfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
 import type { IdentityVerifier } from "./oidc.js";
 import {
 	type RunnerLabel,
@@ -271,6 +273,8 @@ export class HostedRelay {
 					Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>
 				>;
 			}>;
+			/** Shared witness reruns for jobs bound to offline peer box JIT runners. */
+			offlineJitRecovery?: OfflineJitJobRecovery;
 			now?: () => string;
 		},
 	) {
@@ -434,11 +438,13 @@ export class HostedRelay {
 		return bound;
 	}
 
-	/** Job bound to a dead box JIT registration: drop it so GitHub can re-offer it. */
-	private async clearGhostRunnerBinding(
+	/** Peer or local ghost box JIT: deregister offline runners so GitHub can re-offer work. */
+	private async releaseFleetGhostBinding(
 		job: Job,
 		active: readonly Lease[],
 		installationId: number,
+		localAccountId: string | undefined,
+		mode: "reserve" | "observe",
 	): Promise<boolean> {
 		try {
 			const bound = await this.cachedGithubJob(
@@ -446,16 +452,61 @@ export class HostedRelay {
 				job.repository,
 				job.id,
 			);
-			const decision = decideGhostBoxRunnerBinding(job, bound, active);
+			const runnerId = bound.runner_id ?? 0;
+			const leaseId = leaseIdFromBoxRunnerName(bound.runner_name ?? "");
+			const shared = leaseId
+				? await this.options.store.get(leaseId)
+				: undefined;
+			const sharedHint = shared
+				? {
+						id: shared.id,
+						state: shared.state,
+						accountId: shared.accountId,
+					}
+				: undefined;
+			const presence =
+				Number.isInteger(runnerId) && runnerId > 0
+					? await fetchGithubRunnerPresence(
+							this.options.github,
+							installationId,
+							job.repository,
+							runnerId,
+						)
+					: undefined;
+			const decision = decideFleetGhostRecovery(
+				job,
+				bound,
+				active,
+				sharedHint,
+				presence,
+				localAccountId,
+			);
 			if (decision.kind === "none") return false;
 			if (decision.kind === "covered") {
+				if (mode === "reserve") {
+					console.error(
+						JSON.stringify({
+							event: "hobo_ci_job_reserve_duplicate_skipped",
+							repository: job.repository,
+							runId: job.runId,
+							jobId: job.id,
+							leaseId: decision.leaseId,
+						}),
+					);
+					return true;
+				}
+				return false;
+			}
+			if (decision.kind === "defer") {
 				console.error(
 					JSON.stringify({
-						event: "hobo_ci_job_reserve_duplicate_skipped",
+						event: "hobo_ci_fleet_ghost_defer",
 						repository: job.repository,
 						runId: job.runId,
 						jobId: job.id,
 						leaseId: decision.leaseId,
+						reason: decision.reason,
+						runnerPresence: presence?.status ?? "unknown",
 					}),
 				);
 				return true;
@@ -474,9 +525,22 @@ export class HostedRelay {
 					jobId: job.id,
 					runnerName: decision.runnerName,
 					runnerId: decision.runnerId,
+					leaseId: decision.leaseId,
+					recoveryRole: decision.role,
+					runnerPresence: "offline",
 					outcome,
 				}),
 			);
+			this.options.offlineJitRecovery?.register({
+				repository: job.repository,
+				installationId,
+				runId: bound.run_id,
+				jobId: job.id,
+				runnerName: decision.runnerName,
+				leaseId: decision.leaseId,
+				recoveryRole: decision.role,
+				registeredAtMs: Date.parse(this.now()),
+			});
 			return true;
 		} catch {
 			return false;
@@ -619,6 +683,19 @@ export class HostedRelay {
 		) {
 			await this.yieldForeignRunnerCustody(job, admittedRevision);
 			return "foreign-runner";
+		}
+		if (custody === "box" && currentJob.status === "in_progress") {
+			const active = await this.options.store.activeLeases();
+			if (
+				await this.releaseFleetGhostBinding(
+					job,
+					active,
+					job.installationId,
+					admitted?.accountId,
+					"observe",
+				)
+			)
+				return "fleet-ghost-peer";
 		}
 		if (custody === "box" && job.action === "queued") {
 			const expectedLeaseId = leaseIdFromBoxRunnerName(
@@ -1152,6 +1229,16 @@ export class HostedRelay {
 				(account) => account.id === connection.accountId,
 			);
 			if (!account) continue;
+			if (
+				await this.releaseFleetGhostBinding(
+					job,
+					active,
+					connection.installationId,
+					account.id,
+					"reserve",
+				)
+			)
+				continue;
 			// A policy can become stricter while demand is queued. Never reserve a
 			// bridge from a pending job admitted under the previous connection.
 			if (connection.isolatedOnly) job.isolatedRequired = true;
@@ -1211,14 +1298,6 @@ export class HostedRelay {
 							job.id,
 							job.runAttempt,
 						),
-					)
-				)
-					continue;
-				if (
-					await this.clearGhostRunnerBinding(
-						job,
-						active,
-						connection.installationId,
 					)
 				)
 					continue;
