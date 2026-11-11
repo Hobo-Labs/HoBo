@@ -130,7 +130,16 @@ test("feature/hobo-code gets the PR and push gates but publishes nothing", async
 	);
 	assert.match(
 		shards,
-		/^ {4}if: >-\n {6}!cancelled\(\) && needs\.main-gate\.result == 'success' && \(\n {6}\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'\) \|\|\n {6}\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/feature\/hobo-code'\) \|\|$/mu,
+		/^ {4}if: >-\n {6}!cancelled\(\) && needs\.main-gate-plan\.result == 'success' && \(\n {6}\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'\) \|\|\n {6}\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/feature\/hobo-code'\) \|\|$/mu,
+	);
+	// The shards need the plan job, so it runs for the feature push too.
+	const plan = hoboCi.slice(
+		hoboCi.indexOf("\n  main-gate-plan:\n"),
+		hoboCi.indexOf("\n  main-gate:\n"),
+	);
+	assert.match(
+		plan,
+		/^ {6}\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/feature\/hobo-code'\) \|\|$/mu,
 	);
 	assert.match(hoboCi, /^ {6}group: \$\{\{ github\.workflow \}\}-main-gate$/mu);
 	assert.doesNotMatch(hoboCi, /-main-gate\$\{\{/u);

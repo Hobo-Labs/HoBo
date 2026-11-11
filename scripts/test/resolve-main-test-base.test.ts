@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
 	fetchLastGreenMainSha,
@@ -73,6 +75,29 @@ describe("fetchLastGreenMainSha", () => {
 			fetch: api.fetch,
 		});
 		assert.equal(sha, undefined);
+	});
+});
+
+describe("the callers of the last-green lookup", () => {
+	it("pass the pushed branch", () => {
+		// Left out, the lookup searches main's runs whatever was pushed.
+		for (const script of [
+			"resolve-main-test-base.mts",
+			"plan-main-workspace-shards.mts",
+		]) {
+			const source = readFileSync(
+				join(import.meta.dirname, "..", "ci", script),
+				"utf8",
+			);
+			const call = source.slice(
+				source.indexOf("await fetchLastGreenMainSha({"),
+			);
+			assert.match(
+				call.slice(0, call.indexOf("});")),
+				/\bbranch: process\.env\.GITHUB_REF_NAME\?\.trim\(\) \|\| "main",/u,
+				script,
+			);
+		}
 	});
 });
 
