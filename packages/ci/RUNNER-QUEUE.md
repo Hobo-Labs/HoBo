@@ -60,6 +60,8 @@ The daemon imports `@hobo/ci-gh-actions` and `@hobo/ci` from their built `dist`,
 
 On start the daemon applies the config to the journal when it changed (a change refused because an active lease pins the provider identity keeps the stored policy and logs `hobo_ci_isolated_worker_configuration_kept`), and logs one `hobo_ci_isolated_worker_offer` line per offer with `launchable`, `enabled`, `concurrency`, `validUntil`, and `expired`. An expired `validUntil`, or one closer than `maxRuntimeMinutes + startupMinutes`, makes routing skip the offer.
 
+> **Superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179).** The hosted relay keeps no database, so this mode is removed in phase 7 of the [design](../../docs/design/hosted-relay-stateless.md); use the default SQLite journal with pull admission.
+
 **Shared relay mode (opt-in): Postgres + webhooks.** A worker that serves a hosted relay's partition sets **`HOBO_CI_STORE=postgres`**; the URL is read from the env var named by **`HOBO_CI_STORE_URL_ENV`** (default `DATABASE_URL`) and admission defaults to **push** (the relay ingests signed webhooks into the shared inbox):
 
 ```sh

@@ -128,6 +128,10 @@ resolves, per `packages/cloud-providers/test/postgres-backends.test.ts`:
   replication not confirmed), `pgedge-cloud` (both unknown). A refusal here
   means *not confirmed from a primary source*, not *the vendor cannot*.
 
+The hosted CI relay itself no longer makes this request:
+[ADR-0179](./adr/hosted-relay-stateless.md#adr-0179) removes its database. The
+request stays as a realistic example of what the catalog resolves.
+
 ## Naming decision
 
 Provider ids come in two grains, and both stay valid:

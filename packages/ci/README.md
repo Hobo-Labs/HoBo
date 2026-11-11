@@ -172,6 +172,8 @@ and a SQLite journal written before the index existed. The relay's MCP server is
 
 ## PostgreSQL hosting adapter
 
+> **Superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179).** The hosted relay stops using `PostgresCiStore`: it keeps no durable state, holding in-flight job state in a Redis-protocol cache and config in a separate service ([design](../../docs/design/hosted-relay-stateless.md)). `PostgresCiStore` and the box worker's shared Postgres partition are removed in phase 7 of that plan; until then this section describes the code as it stands.
+
 `PostgresCiStore` (`@hobo/ci/postgres`) stores journal events, leases, queued
 jobs, terminal tombstones, policy records, and verified webhook deliveries in
 PostgreSQL tables. Mutations lock a partition row, check policy revisions and
@@ -326,6 +328,8 @@ Validation: `pnpm --filter @hobo/ci build`, `pnpm --filter @hobo/ci test`,
 
 
 ## Postgres schema and migrations
+
+> **Superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179).** The relay's Drizzle schema and migrations, and the migration ledger, are removed with the relay's database ([design](../../docs/design/hosted-relay-stateless.md)). This section describes the code as it stands until phase 7.
 
 The relay's PostgreSQL tables are declared in Drizzle and migrated from that
 declaration. Three packages own tables, and each keeps its own `db/` directory:

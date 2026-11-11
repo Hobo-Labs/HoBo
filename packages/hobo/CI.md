@@ -87,6 +87,7 @@ GitHub for `runs-on: hobo` jobs, unless the environment's
 `"store": { "kind": "postgres", "urlEnv": "<ENV_NAME>" }` points it at a shared
 relay partition (the config holds the env var name, never the URL). Graceful
 shutdown on SIGINT/SIGTERM.
+The `postgres` store kind is superseded by [ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179) (the hosted relay keeps no database) and is removed in phase 7 of its [delivery plan](../../docs/design/hosted-relay-stateless.md#delivery-plan).
 
 When `.hobo/ci.json` has an `agent` block, `hobo ci serve` also starts the
 [CI agent](../ci-agent/README.md) beside the relay: it plans the merge queue
