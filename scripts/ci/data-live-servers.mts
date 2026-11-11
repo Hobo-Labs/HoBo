@@ -10,8 +10,10 @@
  *
  * The containers carry their own label, never the worker's
  * `hobo.ci/isolated`: the box daemon removes containers under that label that
- * have no lease, and these have none. `up` first removes containers of this
- * lane that outlived a job which never reached its teardown.
+ * have no lease, and these have none. They are not started with `--rm`, so a
+ * server that dies during start-up leaves its logs; `down` removes them, and
+ * `up` first removes containers of this lane that outlived a job which never
+ * reached its teardown.
  *
  * Both servers are test fixtures: PostgreSQL trusts every connection and
  * MongoDB runs without access control, reachable only on the box's bridge
@@ -93,7 +95,8 @@ function fixtureFlags(name: string): readonly string[] {
 	return [
 		"run",
 		"--detach",
-		"--rm",
+		// Not `--rm`: a server that exits during start-up must leave its logs
+		// behind. `down` and the stale sweep remove the containers instead.
 		"--name",
 		name,
 		"--label",
@@ -236,16 +239,30 @@ function pause(ms: number): Promise<void> {
 	});
 }
 
+function running(name: string): boolean {
+	return (
+		docker([
+			"inspect",
+			"--format",
+			"{{.State.Running}}",
+			name,
+		]).stdout.trim() === "true"
+	);
+}
+
 async function until(
 	what: string,
+	name: string,
 	probe: () => boolean,
 	attempts: number,
 ): Promise<void> {
 	for (let attempt = 0; attempt < attempts; attempt += 1) {
 		if (probe()) return;
+		// A server that has exited will never answer; say so at once.
+		if (!running(name)) throw new Error(`${what} exited during start-up`);
 		await pause(1000);
 	}
-	throw new Error(`${what} was not ready after ${attempts} s`);
+	throw new Error(`${what} was not ready after ${attempts} attempts`);
 }
 
 function runToken(): string {
@@ -304,6 +321,7 @@ async function up(): Promise<void> {
 		// means the real server is up, not the bootstrap one.
 		await until(
 			"PostgreSQL",
+			names.postgres,
 			() =>
 				docker([
 					"exec",
@@ -322,6 +340,7 @@ async function up(): Promise<void> {
 		);
 		await until(
 			"the MongoDB replica set",
+			names.mongodb,
 			() =>
 				docker([
 					"exec",

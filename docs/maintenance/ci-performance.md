@@ -114,7 +114,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   hands the suites their bridge addresses: a published port, or `services:`, would bind the host's
   loopback, which is not the job's. The containers carry the lane's own label (`hobo.data-live`), not
   the worker's — the daemon removes lease-less containers under `hobo.ci/isolated` — are bounded at
-  1 GiB each because they sit outside the job's cgroup, are removed by an `always()` step, and a
+  1 GiB each because they sit outside the job's cgroup, are removed by an `always()` step (not by
+  `--rm`, so a server that dies during start-up leaves its logs for the failure step to print), and a
   container of the lane older than 30 minutes is swept at the next start in case a job never reached
   its teardown. The images are digest-pinned in `packages/data-core/deploy/live-engine-images.json`.
   The suites do not run through turbo: it passes `HOBO_*` through without keying its cache on them,

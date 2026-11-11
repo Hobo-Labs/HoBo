@@ -74,7 +74,8 @@ describe("the containers", () => {
 			assert.ok(argv.includes(`${DATA_LIVE_LABEL}=1`));
 			// The box daemon removes lease-less containers under this label.
 			assert.ok(!argv.join(" ").includes("hobo.ci/isolated"));
-			assert.ok(argv.includes("--rm"));
+			// A server that exits during start-up must leave its logs behind.
+			assert.ok(!argv.includes("--rm"));
 			assert.ok(argv.includes("--detach"));
 			// Sibling containers are outside the job's cgroup, so each is bounded.
 			assert.equal(argv[argv.indexOf("--memory") + 1], "1024m");
