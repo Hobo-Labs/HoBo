@@ -23,10 +23,10 @@ import {
 	HANG_BACKSTOP_MS,
 	logLogSlope,
 	MAX_REPEAT,
+	MissingCpuClockError,
 	measureGrowth,
 	medianCpuMs,
 	minCpuMs,
-	MissingCpuClockError,
 	NEGATIVE_CONTROL,
 	NonLinearGrowthError,
 	OperationHangError,
@@ -75,12 +75,12 @@ describe("measureGrowth", () => {
 			logLogSlope: 2,
 		};
 		expect(grewLinearly(uncalibratedGrowth, 30)).toBe(true);
-		expect(
-			grewLinearly({ ...uncalibratedGrowth, largeMs: 400 }, 30),
-		).toBe(false);
-		expect(
-			grewLinearly({ ...uncalibratedGrowth, calibrated: true }, 30),
-		).toBe(false);
+		expect(grewLinearly({ ...uncalibratedGrowth, largeMs: 400 }, 30)).toBe(
+			false,
+		);
+		expect(grewLinearly({ ...uncalibratedGrowth, calibrated: true }, 30)).toBe(
+			false,
+		);
 	});
 
 	it("calls an operation calibrated by its calibrating run, not its best", () => {
@@ -125,8 +125,7 @@ describe("measureGrowth", () => {
 			const scale = text.length / 4096;
 			largeMeasures += 1;
 			// One doubled size at 2.25×; minimum samples keep doubling near 2×.
-			cpu +=
-				largeMeasures === 3 ? smallCost * scale * 2.25 : smallCost * scale;
+			cpu += largeMeasures === 3 ? smallCost * scale * 2.25 : smallCost * scale;
 		};
 		const growth = measureGrowth(linear, repeatedTo("a"), {
 			startLength: 4096,

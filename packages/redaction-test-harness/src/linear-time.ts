@@ -143,9 +143,7 @@ export function minCpuMs(samples: readonly number[]): number {
 
 /** Least-squares slope of log(minMs) vs log(length); linear ≈ 1, quadratic ≈ 2. */
 export function logLogSlope(points: readonly GrowthPoint[]): number {
-	const valid = points.filter(
-		(point) => point.length > 0 && point.minMs > 0,
-	);
+	const valid = points.filter((point) => point.length > 0 && point.minMs > 0);
 	if (valid.length < 2) return Number.NaN;
 	const logs = valid.map((point) => ({
 		x: Math.log(point.length),
