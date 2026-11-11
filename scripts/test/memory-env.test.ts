@@ -14,6 +14,7 @@ import { expect } from "vitest";
 import {
 	computeJobMemoryConfig,
 	jobMemoryEnvLines,
+	recentPeakMbForJob,
 	resolveJobMemoryLimitMb,
 } from "../ci/memory-env.mts";
 
@@ -155,6 +156,30 @@ describe("job memory environment", () => {
 				`limitMb=${limitMb}`,
 			).toBeLessThanOrEqual(limitMb);
 		}
+	});
+
+	it("reads learned job peaks for turbo concurrency", () => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-memory-peaks-read-"));
+		temporaryDirectories.push(directory);
+		const peaksPath = join(directory, "memory-peaks.json");
+		writeFileSync(
+			peaksPath,
+			JSON.stringify({
+				"Main workspace test shard 0": { peaksMb: [2400, 2450, 2380] },
+			}),
+		);
+		expect(recentPeakMbForJob("Main workspace test shard 0", peaksPath)).toBe(
+			2450,
+		);
+		expect(recentPeakMbForJob("Main workspace test shard 1", peaksPath)).toBe(
+			undefined,
+		);
+		const config = computeJobMemoryConfig({
+			limitMb: 4096,
+			cpuCount: 8,
+			recentPeakMb: 2400,
+		});
+		expect(config.turboConcurrency).toBe(2);
 	});
 
 	it("appends resolved values to GITHUB_ENV without installed dependencies", () => {

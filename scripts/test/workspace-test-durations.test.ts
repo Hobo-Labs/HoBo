@@ -57,9 +57,7 @@ describe("workspace test duration balancing", () => {
 		for (const dir of heavy) {
 			const shard = parts.findIndex((part) => part.includes(dir));
 			assert.ok(shard >= 0, `${dir} missing from repo-wide partition`);
-			const collocated = heavy.filter((other) =>
-				parts[shard]?.includes(other),
-			);
+			const collocated = heavy.filter((other) => parts[shard]?.includes(other));
 			assert.ok(
 				collocated.length <= 1,
 				`${heavy.join(", ")} collided on shard ${shard}: ${collocated.join(", ")}`,
