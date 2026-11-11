@@ -10,7 +10,9 @@
  * It carries refs only. Never a secret, a claim URL, a token, or a connection
  * string; {@link assertOfferIsSecretFree} is the executable form of that rule.
  */
+
 import type { ClaimAtomicity, Instant } from "@hobo/claims";
+import { JWT_DETECTOR, PRIVATE_KEY_DETECTOR } from "@hobo/provider-redaction";
 import type { CanonicalValue } from "@hobo/trust";
 import { canonicalize, DIGEST_PATTERN, sha256Of } from "@hobo/trust";
 
@@ -178,21 +180,20 @@ const FORBIDDEN_VALUE_PATTERNS: readonly {
 }[] = [
 	{
 		name: "connection-string",
-		pattern:
-			/(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?):\/\//iu,
+		pattern: /(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?):\/\//i,
 	},
-	{ name: "url", pattern: /\bhttps?:\/\//iu },
-	{ name: "websocket-url", pattern: /\bwss?:\/\//iu },
-	{ name: "private-key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/u },
-	{ name: "bearer-token", pattern: /\bbearer\s+\S+/iu },
+	{ name: "url", pattern: /\bhttps?:\/\//i },
+	{ name: "websocket-url", pattern: /\bwss?:\/\//i },
+	{ name: "private-key", pattern: PRIVATE_KEY_DETECTOR },
+	{ name: "bearer-token", pattern: /\bbearer\s+\S+/i },
 	{
 		name: "api-key",
 		pattern: /\b(?:sk|pk|ghp|gho|xox[abpsr])[-_][A-Za-z0-9_-]{8,}/u,
 	},
-	{ name: "jwt", pattern: /\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./u },
+	{ name: "jwt", pattern: JWT_DETECTOR },
 	{
 		name: "credential-query-parameter",
-		pattern: /[?&](?:token|code|secret|key|password|signature)=/iu,
+		pattern: /[?&](?:token|code|secret|key|password|signature)=/i,
 	},
 ];
 

@@ -288,7 +288,10 @@ config change missed. The check graph covers import edges only, plus one manifes
 workspace package by name reaches that package's `package.json` and `tsconfig.json`. Path literals,
 directories and data files a test reads, spawned programs and a tsconfig only a script names are edges
 of the planner that `--check` does not check; `scripts/test/dependent-tests.test.ts` pins those on a
-fixture and on the real tree, and `scripts/test/plan-replay.test.ts` pins the check graph.
+fixture and on the real tree, and `scripts/test/plan-replay.test.ts` pins the check graph. The
+real-tree pins count packages, so a change that adds or removes one re-pins them: #1803 added three
+packages a generated `@hobo/core` leaf does not reach and left that plan's skipped count at 103, where
+the planner gives 106.
 
 ## Frozen proofs and live-repo tests
 
@@ -337,6 +340,10 @@ after another that has not chosen yet goes to GitHub-hosted. The two required
 gates are always GitHub-hosted. A run that says `runner: ubuntu-24.04 (github)`
 in its Route runners log was sent there for one of those reasons, and the same
 line says which.
+
+One job in `hobo-ci.yml` is never routed: **CI deps layer (pnpm)** always asks
+for the fleet, because it builds the deps image in the box's own Docker
+context. No gate waits for it.
 
 On the fleet, the deps layer is linked only into package directories the
 checkout still has. A layer built before a package was removed from the tree
