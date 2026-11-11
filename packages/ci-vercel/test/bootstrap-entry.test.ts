@@ -224,6 +224,60 @@ describe("bootstrap entry", () => {
 		).resolves.toBe(controlToken);
 		await entry.close();
 	});
+	it("answers queue wakeups itself while the store is down: ticks are dropped, deliveries held", async () => {
+		const secret = "c".repeat(40);
+		const create = vi
+			.fn()
+			.mockRejectedValue(new Error("bootstrap store initialization failed"));
+		let clock = 1_000_000;
+		const entry = createBootstrapEntry({
+			env: { ...env, CRON_SECRET: secret },
+			notify,
+			continueRepair,
+			scheduledRepair,
+			bootstrap: {
+				async load() {
+					return credentials;
+				},
+				async handle() {
+					return undefined;
+				},
+			},
+			createApplication: create,
+			now: () => clock,
+		});
+		const wakeup = (body: string) =>
+			entry.handle(
+				new Request(`${env.HOBO_CI_PUBLIC_URL}/internal/queue-wakeup`, {
+					method: "POST",
+					headers: {
+						authorization: `Bearer ${secret}`,
+						"content-type": "application/json",
+					},
+					body,
+				}),
+			);
+		const tick = '{"source":"static","name":"hobo-ci-repair"}';
+		// The store's own error on the first attempt, then the back-off.
+		expect((await wakeup(tick)).status).toBe(204);
+		expect((await wakeup(tick)).status).toBe(204);
+		expect(create).toHaveBeenCalledTimes(1);
+		clock += 1_000;
+		const delivery = await wakeup('{"deliveryId":"one"}');
+		expect(delivery.status).toBe(503);
+		expect(delivery.headers.get("retry-after")).toBe("4");
+		// Still authenticated before anything else.
+		const forged = await entry.handle(
+			new Request(`${env.HOBO_CI_PUBLIC_URL}/internal/queue-wakeup`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: tick,
+			}),
+		);
+		expect(forged.status).toBe(403);
+		expect(create).toHaveBeenCalledTimes(1);
+		await entry.close();
+	});
 	it("states the remaining store back-off in Retry-After on the wire", async () => {
 		const log = vi.spyOn(console, "error").mockImplementation(() => {});
 		const bootstrap = {

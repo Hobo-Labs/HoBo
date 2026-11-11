@@ -278,8 +278,8 @@ describe("database fleet fence", () => {
 			);
 			expect(scheduled.status).toBe(204);
 			// The repair message reaches the reconciler even though no
-			// application can be built; with nothing reachable the handoff
-			// fails and the queue will deliver it again.
+			// application can be built. With nothing reachable the tick fails
+			// and is acknowledged, not held: the next scheduled tick repeats it.
 			const wakeup = await h.fleet.handle(
 				new Request("https://relay.example/internal/queue-wakeup", {
 					method: "POST",
@@ -290,7 +290,7 @@ describe("database fleet fence", () => {
 					body: JSON.stringify({ source: "static", name: "hobo-ci-repair" }),
 				}),
 			);
-			expect(wakeup.status).toBe(503);
+			expect(wakeup.status).toBe(204);
 			const events = info.mock.calls.map(([line]) => JSON.parse(String(line)));
 			expect(events).toContainEqual(
 				expect.objectContaining({
