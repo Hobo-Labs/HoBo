@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createCiAgent } from "../src/agent.js";
+import { type CommitChecks, createCiAgent } from "../src/agent.js";
 import type { MergeWorkspace } from "../src/git-workspace.js";
 import { createMemoryJournal } from "../src/journal.js";
 import { observeQueue } from "../src/planner.js";
@@ -19,6 +19,8 @@ type Pull = {
 	started?: boolean;
 	fork?: boolean;
 	paths?: string[];
+	/** The branch it targets; another pull request's branch for a stack. */
+	base?: string;
 };
 
 describe("CI agent tick (real git, scripted engine)", () => {
@@ -51,6 +53,8 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		const enqueued: number[] = [];
 		const refuseEnqueue = new Set<number>();
 		const base = { requiresChecks: true, lookupFails: false };
+		/** The repository's checks per commit; unlisted commits have none. */
+		const checks = new Map<string, CommitChecks>();
 		const agent = createCiAgent({
 			config: testConfig(mode, overrides),
 			queue: {
@@ -58,6 +62,8 @@ describe("CI agent tick (real git, scripted engine)", () => {
 					if (base.lookupFails) throw new Error("lookup failed");
 					return base.requiresChecks;
 				},
+				commitChecks: async (sha) =>
+					checks.get(sha) ?? { state: "none", failures: "" },
 				snapshot: async () =>
 					observeQueue({
 						repository: "hobo-labs/hobo",
@@ -68,7 +74,7 @@ describe("CI agent tick (real git, scripted engine)", () => {
 							number: entry.number,
 							headSha: entry.head,
 							headRef: entry.branch,
-							baseRef: "main",
+							baseRef: entry.base ?? "main",
 							position,
 							enqueuedAt: "2026-11-10T11:00:00.000Z",
 							changedPaths: entry.paths ?? [],
@@ -95,7 +101,16 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		});
 		const types = async () =>
 			(await journal.events()).map((event) => event.type);
-		return { agent, journal, comments, enqueued, refuseEnqueue, base, types };
+		return {
+			agent,
+			journal,
+			comments,
+			enqueued,
+			refuseEnqueue,
+			base,
+			checks,
+			types,
+		};
 	}
 	const branches = () =>
 		repos
@@ -507,6 +522,162 @@ describe("CI agent tick (real git, scripted engine)", () => {
 		await new Promise((resolve) => setTimeout(resolve, 1100));
 		await agent.tick();
 		expect(unsure.requests).toHaveLength(1);
+	});
+
+	it("repairs a published resolution whose checks failed, once, on top of its own commit", async () => {
+		const first = pull(1, "TWO from 1");
+		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });
+		const engine = scriptedEngine((request) =>
+			request.regions.map((region) => ({
+				id: region.id,
+				resolution: request.previous
+					? "TWO repaired\n"
+					: region.ours + region.theirs,
+				confidence: 0.95,
+			})),
+		);
+		const { agent, comments, checks, types } = setup("suggest", [first], {}, [
+			engine,
+		]);
+		const ref = `refs/heads/hobo-agent/resolve/1-${first.head.slice(0, 8)}`;
+		const original = (await agent.tick()).resolutions[0]?.commitSha ?? "";
+		expect(repos.remoteRef(ref)).toBe(original);
+
+		// Checks still running: nothing happens.
+		checks.set(original, { state: "pending", failures: "" });
+		expect((await agent.tick()).resolutions).toEqual([]);
+		checks.set(original, {
+			state: "failure",
+			failures:
+				"check test (FAILURE): duplicate line\n  a.txt:2 expected one TWO",
+		});
+		const repair = (await agent.tick()).resolutions[0];
+		expect(repair).toMatchObject({ outcome: "resolved", attempt: 1 });
+		// The engine saw what it wrote last time and what the checks said.
+		expect(engine.requests[1]?.previous).toEqual({
+			regions: [{ id: 0, resolution: "TWO from 1\nTWO from main\n" }],
+			checkFailures:
+				"check test (FAILURE): duplicate line\n  a.txt:2 expected one TWO",
+		});
+		// A fast-forward of the same branch, on top of the failed commit.
+		expect(repos.remoteRef(ref)).toBe(repair?.commitSha);
+		expect(
+			repos.git(
+				repos.remote,
+				"log",
+				"-1",
+				"--format=%P",
+				repair?.commitSha ?? "",
+			),
+		).toBe(original);
+		expect(repos.remoteFile(ref, "a.txt")).toBe(
+			"one\nTWO repaired\nthree\nfour\nfive\n",
+		);
+		expect(comments.at(-1)?.body).toContain("pushed a corrected merge commit");
+
+		// The repair fails too: one repair is the limit, so a person is told.
+		checks.set(repair?.commitSha ?? "", { state: "failure", failures: "x" });
+		await agent.tick();
+		expect(engine.requests).toHaveLength(2);
+		expect(comments.at(-1)?.body).toContain("will not try again");
+		await agent.tick();
+		expect(
+			comments.filter((c) => c.body.includes("will not try again")),
+		).toHaveLength(1);
+		expect(
+			(await types()).filter((type) => type === "ci.agent.ResolutionChecked"),
+		).toHaveLength(2);
+	});
+
+	it("records passing checks once and does not repair", async () => {
+		const first = pull(1, "TWO from 1");
+		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });
+		const engine = takeBoth();
+		const { agent, checks, journal } = setup("suggest", [first], {}, [engine]);
+		const original = (await agent.tick()).resolutions[0]?.commitSha ?? "";
+		checks.set(original, { state: "success", failures: "" });
+		await agent.tick();
+		await agent.tick();
+		expect(engine.requests).toHaveLength(1);
+		expect(
+			(await journal.events()).filter(
+				(event) => event.type === "ci.agent.ResolutionChecked",
+			),
+		).toMatchObject([{ checksState: "success" }]);
+	});
+
+	it("apply: does not repair a pull request branch someone else has moved", async () => {
+		const first = pull(1, "TWO from 1");
+		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });
+		const engine = takeBoth();
+		const { agent, checks, comments } = setup("apply", [first], {}, [engine]);
+		const original = (await agent.tick()).resolutions[0]?.commitSha ?? "";
+		// The author pushed on top of the agent's commit.
+		const tree = repos.git(repos.remote, "rev-parse", `${original}^{tree}`);
+		first.head = repos.git(
+			repos.remote,
+			"commit-tree",
+			tree,
+			"-p",
+			original,
+			"-m",
+			"author fix",
+		);
+		repos.git(repos.remote, "update-ref", "refs/heads/pr-1", first.head);
+		repos.git(repos.remote, "update-ref", "refs/pull/1/head", first.head);
+		checks.set(original, { state: "failure", failures: "x" });
+		await agent.tick();
+		expect(engine.requests).toHaveLength(1);
+		expect(comments.some((c) => c.body.includes("will not try again"))).toBe(
+			false,
+		);
+	});
+
+	it("apply: isolates and does not re-add a pull request the merge queue ejected", async () => {
+		const first = pull(1, "two", { paths: ["x.txt"] });
+		const second = pull(2, "two", { paths: ["y.txt"] });
+		const { agent, enqueued, comments } = setup("apply", [first, second]);
+		expect((await agent.tick()).enqueued).toEqual([1, 2]);
+		// The queue removed #1; #2 is still in it.
+		enqueued.splice(enqueued.indexOf(1), 1);
+		clock = "2026-11-10T12:05:00.000Z";
+		const report = await agent.tick();
+		expect(report.ejected).toEqual([1]);
+		expect(report.enqueued).toEqual([]);
+		expect(comments.filter((c) => c.number === 1)).toHaveLength(1);
+		expect(comments[0]?.body).toContain("the queue removed it");
+		// Batched alone, and noticed once.
+		expect(
+			report.plan?.batches.find((batch) => batch.numbers.includes(1))?.numbers,
+		).toEqual([1]);
+		expect((await agent.tick()).ejected).toEqual([]);
+	});
+
+	it("apply: does not put two conflicting pull requests in the queue together", async () => {
+		const first = pull(1, "TWO from 1");
+		const second = pull(2, "TWO from 2");
+		const { agent, enqueued } = setup("apply", [first, second]);
+		expect((await agent.tick()).enqueued).toEqual([1]);
+		expect(enqueued).toEqual([1]);
+		// Once #1 has merged, #2 conflicts with the base branch and is resolved there.
+		repos.git(repos.remote, "update-ref", "refs/heads/main", first.head);
+		enqueued.splice(0);
+		const { agent: next } = setup("apply", [second]);
+		expect((await next.tick()).resolutions).toMatchObject([
+			{ number: 2, outcome: "resolved" },
+		]);
+	});
+
+	it("leaves a stacked pull request to its parent: not resolved, not enqueued", async () => {
+		const parent = pull(1, "TWO from 1");
+		const child = { ...pull(2, "TWO from 2"), base: "pr-1", paths: ["a.txt"] };
+		repos.commit("main", { "a.txt": BASE.replace("two", "TWO from main") });
+		const { agent, enqueued } = setup("apply", [parent, child]);
+		const report = await agent.tick();
+		expect(report.resolutions.map((resolution) => resolution.number)).toEqual([
+			1,
+		]);
+		expect(enqueued).not.toContain(2);
 	});
 
 	it("records a failed engine and does not publish anything", async () => {

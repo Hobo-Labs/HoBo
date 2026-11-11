@@ -23,10 +23,13 @@ export interface MergeWorkspace {
 	trial(ours: string, theirs: string): Promise<TrialMerge>;
 	commit(input: {
 		tree: string;
-		parents: readonly [string, string];
+		/** One parent for a repair on top of an earlier commit, two for a merge. */
+		parents: readonly [string] | readonly [string, string];
 		files: ReadonlyMap<string, string>;
 		message: string;
 	}): Promise<string>;
+	/** A text file at a commit, or nothing when it is absent or not text. */
+	read(commit: string, path: string): Promise<string | undefined>;
 	/** Create or fast-forward `ref`. A push that would rewrite history fails. */
 	push(commit: string, ref: string): Promise<void>;
 }
@@ -218,6 +221,8 @@ export function createGitWorkspace(options: {
 				merged: stdout.toString("utf8"),
 				markerSize,
 				bytes: Math.max(...sides.map((text) => Buffer.byteLength(text ?? ""))),
+				ours: oursText,
+				theirs: theirsText,
 			};
 		} finally {
 			await rm(directory, { recursive: true, force: true });
@@ -353,6 +358,17 @@ export function createGitWorkspace(options: {
 				return id;
 			} finally {
 				await rm(directory, { recursive: true, force: true });
+			}
+		},
+		async read(commit, path) {
+			try {
+				const { stdout } = await run(
+					["cat-file", "blob", `${object(commit)}:${path}`],
+					{ maxBuffer: maxBlobBytes },
+				);
+				return new TextDecoder("utf-8", { fatal: true }).decode(stdout);
+			} catch {
+				return undefined;
 			}
 		},
 		async push(commit, ref) {

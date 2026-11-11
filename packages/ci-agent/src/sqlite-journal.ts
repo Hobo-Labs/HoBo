@@ -87,6 +87,14 @@ export function createSqliteJournal(
 				type,
 			);
 		},
+		async recent(repository, type, since) {
+			return db
+				.prepare(
+					"SELECT body FROM agent_events WHERE repository = ? AND type = ? AND at >= ? ORDER BY position",
+				)
+				.all(repository, type, since)
+				.map((row) => decode(Row.parse(row)));
+		},
 		async events() {
 			return db
 				.prepare("SELECT body FROM agent_events ORDER BY position")

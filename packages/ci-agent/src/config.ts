@@ -120,6 +120,7 @@ export const AgentConfigDocumentSchema = z
 				maxFileBytes: count(1_048_576).optional(),
 				minConfidence: z.number().min(0).max(1).optional(),
 				contextLines: z.number().int().min(0).max(200).optional(),
+				maxRepairs: z.number().int().min(0).max(3).optional(),
 			})
 			.strict()
 			.optional(),
@@ -188,6 +189,7 @@ export function parseAgentConfig(json: string): ParsedAgentConfig {
 			maxFileBytes: resolution?.maxFileBytes ?? 262_144,
 			minConfidence: resolution?.minConfidence ?? 0.8,
 			contextLines: resolution?.contextLines ?? 12,
+			maxRepairs: resolution?.maxRepairs ?? 1,
 		},
 		budget: {
 			maxInputTokens: budget?.maxInputTokens ?? 60_000,

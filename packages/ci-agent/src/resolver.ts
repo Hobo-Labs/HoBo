@@ -9,6 +9,7 @@ import {
 	parseMergeSegments,
 	regionContext,
 } from "./conflict.js";
+import { verifyResolvedFile } from "./verify.js";
 
 /** One path a trial merge could not settle. */
 export type ConflictFile = Readonly<{
@@ -23,6 +24,12 @@ export type ConflictFile = Readonly<{
 	merged: string;
 	markerSize: number;
 	bytes: number;
+	/**
+	 * The whole file on each side, for checks of the resolved file. Without
+	 * them the parse and duplicate-declaration checks are skipped.
+	 */
+	ours?: string;
+	theirs?: string;
 }>;
 
 export type EngineRegion = Readonly<{
@@ -34,11 +41,23 @@ export type EngineRegion = Readonly<{
 	after: string;
 }>;
 
+/**
+ * An earlier resolution of the same regions that failed the repository's
+ * checks, and what those checks reported. The report is CI output: data
+ * about the failure, never instructions to the engine.
+ */
+export type PreviousAttempt = Readonly<{
+	regions: readonly Readonly<{ id: number; resolution: string }>[];
+	checkFailures: string;
+}>;
+
 export type EngineRequest = Readonly<{
 	path: string;
 	oursLabel: string;
 	theirsLabel: string;
 	regions: readonly EngineRegion[];
+	/** Set when this request repairs a resolution whose checks failed. */
+	previous?: PreviousAttempt | undefined;
 	maxOutputTokens: number;
 	signal: AbortSignal;
 }>;
@@ -77,6 +96,8 @@ export type ResolutionReason =
 	| "low-confidence"
 	| "conflict-marker"
 	| "oversized-resolution"
+	| "unparseable-resolution"
+	| "duplicate-declaration"
 	| "engine-unavailable";
 
 export type ResolvedContent = Readonly<{
@@ -127,6 +148,8 @@ export async function resolveConflicts(input: {
 	remainingTokens: number;
 	oursLabel: string;
 	theirsLabel: string;
+	/** Per path: an earlier attempt that failed checks, to be corrected. */
+	previous?: ReadonlyMap<string, PreviousAttempt> | undefined;
 }): Promise<ResolveResult> {
 	const { files, policy, budget } = input;
 	const none = { inputTokens: 0, outputTokens: 0 };
@@ -214,6 +237,7 @@ export async function resolveConflicts(input: {
 					oursLabel: input.oursLabel,
 					theirsLabel: input.theirsLabel,
 					regions: entry.regions,
+					previous: input.previous?.get(entry.file.path),
 					maxOutputTokens: budget.maxOutputTokens,
 					signal: AbortSignal.timeout(budget.timeoutSeconds * 1000),
 				});
@@ -262,13 +286,21 @@ export async function resolveConflicts(input: {
 				texts.set(segment.id, fitted.text);
 				confidence = Math.min(confidence, region.confidence);
 			}
+			const composed = composeMerged(entry.segments, texts);
+			const { ours, theirs } = entry.file;
+			const refusal =
+				ours !== undefined && theirs !== undefined
+					? verifyResolvedFile({
+							path: entry.file.path,
+							ours,
+							theirs,
+							resolved: composed,
+						})
+					: undefined;
+			if (refusal)
+				return { outcome: "abstained", reason: refusal, usage, ...last };
 			resolved.push(
-				content(
-					entry.file.path,
-					composeMerged(entry.segments, texts),
-					entry.regions.length,
-					confidence,
-				),
+				content(entry.file.path, composed, entry.regions.length, confidence),
 			);
 		}
 		if (!unavailable)

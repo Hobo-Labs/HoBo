@@ -234,6 +234,28 @@ describe("conflict resolver", () => {
 		expect(fallback.requests).toHaveLength(0);
 	});
 
+	it.each([
+		["unparseable-resolution", "export const a = (1;\n"],
+		["duplicate-declaration", "export const a = 1;\nexport const a = 2;\n"],
+	])("abstains with %s when the resolved file fails its checks", async (reason, text) => {
+		const source = file(
+			"src/a.ts",
+			region("export const a = 1;\n", "export const a = 2;\n"),
+			{ ours: "export const a = 1;\n", theirs: "export const a = 2;\n" },
+		);
+		const engine = scriptedEngine((request) =>
+			request.regions.map((entry) => ({
+				id: entry.id,
+				resolution: text,
+				confidence: 1,
+			})),
+		);
+		expect(await run([source], [engine])).toMatchObject({
+			outcome: "abstained",
+			reason,
+		});
+	});
+
 	it("fails when no engine answers", async () => {
 		const broken = scriptedEngine(() => {
 			throw new Error("timeout");

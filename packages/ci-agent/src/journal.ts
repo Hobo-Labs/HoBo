@@ -8,6 +8,8 @@ export const AGENT_EVENT_TYPES = [
 	"ci.agent.EntryEnqueued",
 	"ci.agent.BudgetExhausted",
 	"ci.agent.ApplyWithheld",
+	"ci.agent.ResolutionChecked",
+	"ci.agent.EntryEjected",
 ] as const;
 export type AgentEventType = (typeof AGENT_EVENT_TYPES)[number];
 
@@ -36,6 +38,12 @@ export interface AgentJournal {
 		repository: string,
 		type: AgentEventType,
 	): Promise<AgentEvent | undefined>;
+	/** Events of one type for a repository at or after `since`, oldest first. */
+	recent(
+		repository: string,
+		type: AgentEventType,
+		since: string,
+	): Promise<readonly AgentEvent[]>;
 	events(): Promise<readonly AgentEvent[]>;
 }
 
@@ -52,6 +60,10 @@ export function eventKey(event: AgentEvent): string {
 		return publishedKey(event.resolution?.key ?? "");
 	if (event.type === "ci.agent.EntryEnqueued")
 		return enqueuedKey(event.repository, event.numbers[0] ?? 0, event.headSha);
+	if (event.type === "ci.agent.EntryEjected")
+		return ejectedKey(event.repository, event.numbers[0] ?? 0, event.headSha);
+	if (event.type === "ci.agent.ResolutionChecked")
+		return checkedKey(event.resolution?.key ?? "");
 	return "";
 }
 
@@ -62,6 +74,13 @@ export const enqueuedKey = (
 	number: number,
 	headSha: string,
 ) => `enqueued:${repository}#${number}@${headSha}`;
+
+export const ejectedKey = (
+	repository: string,
+	number: number,
+	headSha: string,
+) => `ejected:${repository}#${number}@${headSha}`;
+export const checkedKey = (resolutionKey: string) => `checked:${resolutionKey}`;
 
 export function eventTokens(event: AgentEvent): number {
 	if (event.type !== "ci.agent.ResolutionSettled") return 0;
@@ -98,6 +117,14 @@ export function createMemoryJournal(): AgentJournal {
 					(event) => event.repository === repository && event.type === type,
 				)
 				.at(-1);
+		},
+		async recent(repository, type, since) {
+			return events.filter(
+				(event) =>
+					event.repository === repository &&
+					event.type === type &&
+					event.at >= since,
+			);
 		},
 		async events() {
 			return [...events];

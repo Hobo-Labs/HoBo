@@ -650,6 +650,12 @@ importers:
       ai:
         specifier: 7.0.169
         version: 7.0.169(zod@4.4.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
       zod:
         specifier: ^4.1.13
         version: 4.4.3

@@ -55,6 +55,8 @@
     "@bufbuild/protobuf": "2.12.1",
     "@hobo/ci-gh-actions": "workspace:*",
     "ai": "7.0.169",
+    "typescript": "^6.0.3",
+    "yaml": "2.9.0",
     "zod": "^4.1.13"
   },
   "peerDependencies": {

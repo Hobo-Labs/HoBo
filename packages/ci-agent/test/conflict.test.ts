@@ -6,6 +6,7 @@ import {
 	markerSizeFor,
 	parseMergeSegments,
 	regionContext,
+	regionTexts,
 } from "../src/conflict.js";
 
 const merged = [
@@ -104,5 +105,20 @@ describe("conflict regions", () => {
 		expect(fitRegionResolution(region, "Title\n=======\n")).toEqual({
 			text: "Title\n=======\n",
 		});
+	});
+
+	it("recovers the text a committed file put in each region", () => {
+		const segments = parseMergeSegments(merged, 7);
+		expect(regionTexts(segments, "one\nTWO both\nthree\nfour\n")).toEqual(
+			new Map([[0, "TWO both\n"]]),
+		);
+		// An empty resolution, and a file whose settled text changed since.
+		expect(regionTexts(segments, "one\nthree\nfour\n")).toEqual(
+			new Map([[0, ""]]),
+		);
+		expect(regionTexts(segments, "ONE\nTWO\nthree\nfour\n")).toBeUndefined();
+		expect(
+			regionTexts(segments, "one\nTWO\nthree\nfour\nextra\n"),
+		).toBeUndefined();
 	});
 });

@@ -49,6 +49,8 @@ message ResolutionPolicy {
   double min_confidence = 5;
   // Lines of unconflicted text shown on each side of a conflict region.
   uint32 context_lines = 6;
+  // Corrected resolutions tried after the repository's checks fail on one.
+  uint32 max_repairs = 7;
 }
 
 message AgentBudget {
@@ -155,6 +157,10 @@ message Resolution {
   string commit_sha = 12;
   // Where it was published; empty in observe mode.
   string published_ref = 13;
+  // The key of the resolution whose failed checks this one repairs.
+  string repairs = 14;
+  // 0 for a first resolution; one more for each repair.
+  uint32 attempt = 15;
 }
 
 // The agent's journal record. Replay rebuilds spent budget and attempted keys.
@@ -163,7 +169,8 @@ message AgentEvent {
   // "ci.agent.PlanProposed" | "ci.agent.ResolutionSettled" |
   // "ci.agent.ResolutionPublished" | "ci.agent.RollupPublished" |
   // "ci.agent.EntryEnqueued" | "ci.agent.BudgetExhausted" |
-  // "ci.agent.ApplyWithheld"
+  // "ci.agent.ApplyWithheld" | "ci.agent.ResolutionChecked" |
+  // "ci.agent.EntryEjected"
   string type = 2;
   string at = 3;
   string repository = 4;
@@ -173,4 +180,6 @@ message AgentEvent {
   repeated uint32 numbers = 7;
   // The commit an EntryEnqueued event enqueued. It is never enqueued again.
   string head_sha = 8;
+  // A ResolutionChecked event's result: "success" | "failure".
+  string checks_state = 9;
 }
