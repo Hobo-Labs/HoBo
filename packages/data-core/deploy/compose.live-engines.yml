@@ -11,7 +11,8 @@ name: hobo-data-engines-live
 
 services:
   postgres:
-    image: postgres:16
+    # Pinned in live-engine-images.json; CI starts the same images.
+    image: postgres:16@sha256:f9a7b9ebf6f56201f949db745e47bc423c0f0f8294bafe991cc10bf74b029657
     # Logical decoding (change capture) and the logical-copy fast path need
     # wal_level=logical; every capture subscription holds a replication slot.
     command:
@@ -33,7 +34,7 @@ services:
       retries: 30
 
   mongodb:
-    image: mongo:8.0
+    image: mongo:8.0@sha256:b9924c330a8bbc5800fe9c69f04a84e221eca7b28fd049a0354147d9908fa142
     # Transactions and change streams need a replica set; one member is enough.
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
     ports:

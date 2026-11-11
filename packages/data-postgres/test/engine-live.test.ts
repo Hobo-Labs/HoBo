@@ -1,7 +1,7 @@
-// The engine binding against a real PostgreSQL server. Gated: CI has no
-// database, so every test here is skipped unless HOBO_TEST_POSTGRES_URL names
-// one (PostgreSQL 14 or later with wal_level = logical, and a role allowed to
-// create schemas, publications and replication slots).
+// The engine binding against a real PostgreSQL server. Gated: every test here
+// is skipped unless HOBO_TEST_POSTGRES_URL names one (PostgreSQL 14 or later
+// with wal_level = logical, and a role allowed to create schemas, publications
+// and replication slots). CI's `Live data engines` job provides one.
 //
 // No simulation: datasets are real tables, the fence is a real trigger, and
 // capture is real logical decoding. Every binding gets its own namespace and

@@ -108,6 +108,21 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   re-runs the same tree), and `pr-offpath` diffs the PR merge commit against its first parent: when
   `affected-lanes.mts` prints nothing and no pin, submodule or package-boundary path changed, it skips
   install, the ts-autocode surface tests and `build:packages` and frees its slot in seconds.
+- **Live data engines.** `data-live` runs the data packages' suites against a real PostgreSQL 16 and a
+  real MongoDB 8 replica set (`pnpm run test:data-live`). A fleet job is a container on the host
+  engine, so `scripts/ci/data-live-servers.mts` starts the two servers as *sibling* containers and
+  hands the suites their bridge addresses: a published port, or `services:`, would bind the host's
+  loopback, which is not the job's. The containers carry the lane's own label (`hobo.data-live`), not
+  the worker's — the daemon removes lease-less containers under `hobo.ci/isolated` — are bounded at
+  1 GiB each because they sit outside the job's cgroup, are removed by an `always()` step, and a
+  container of the lane older than 30 minutes is swept at the next start in case a job never reached
+  its teardown. The images are digest-pinned in `packages/data-core/deploy/live-engine-images.json`.
+  The suites do not run through turbo: it passes `HOBO_*` through without keying its cache on them,
+  so a cached offline result would replay as a live pass. The job is scoped like `artifact-trust`
+  (below) to the live test files, so a pull request that cannot reach the data engines frees the slot
+  after checkout; it also runs on the nightly schedule and on dispatch, and never on `merge_group`.
+  Locally, with CI's single-worker setting, the suites take a little over a minute once the servers
+  are up.
 - **PR jobs skip what the diff cannot reach.** `artifact-trust` and `dev-cold-loop-gate` each test a
   fixed subject (the artifact trust proof's `publish-verify.test.ts` with the root `vitest.config.ts` and
   its setup files; `scripts/ci/dev-cold-loop-timing.mts`). `scripts/ci/job-scope.mts` walks those

@@ -92,7 +92,7 @@
 		"test:contract:consumer": "node --import tsx scripts/run-tests.ts --category=contract-consumer && pnpm exec turbo run test:contract:consumer --filter \"./packages/*\" --concurrency=100%",
 		"test:contract:provider": "node --import tsx scripts/run-tests.ts --category=contract-provider && pnpm exec turbo run test:contract:provider --filter \"./packages/*\" --concurrency=100%",
 		"test:coverage": "vitest run --config vitest.coverage.config.ts",
-		"test:data-live": "HOBO_TEST_POSTGRES_URL=\"${HOBO_TEST_POSTGRES_URL:-postgres://postgres@127.0.0.1:55432/postgres}\" HOBO_TEST_MONGODB_URL=\"${HOBO_TEST_MONGODB_URL:-mongodb://127.0.0.1:57017/?replicaSet=rs0&directConnection=true}\" pnpm --filter @hobo/data-core --filter @hobo/data-sqlite --filter @hobo/data-postgres --filter @hobo/data-mongodb --filter @hobo/trails test",
+		"test:data-live": "HOBO_TEST_POSTGRES_URL=\"${HOBO_TEST_POSTGRES_URL:-postgres://postgres@127.0.0.1:55432/postgres}\" HOBO_TEST_MONGODB_URL=\"${HOBO_TEST_MONGODB_URL:-mongodb://127.0.0.1:57017/?replicaSet=rs0&directConnection=true}\" pnpm --workspace-concurrency=1 --filter @hobo/data-core --filter @hobo/data-sqlite --filter @hobo/data-postgres --filter @hobo/data-mongodb --filter @hobo/trails test",
 		"test:dom": "node --import tsx scripts/run-tests.ts --category=dom",
 		"test:fast": "node --import tsx scripts/run-tests.ts --root-only --quiet --no-artifacts",
 		"test:file": "vitest run --no-isolate --passWithNoTests",

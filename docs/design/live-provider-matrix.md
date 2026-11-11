@@ -63,10 +63,14 @@ does not repeat a case count per engine: the one dated table of kit and test num
 | `@hobo/data-postgres` | Offline: decoder against recorded `pgoutput` bytes, statement and type tests, the executor Pact | **Cred-gated**: `HOBO_TEST_POSTGRES_URL` (needs `wal_level=logical`) | Last live run 2026-11-10, PostgreSQL 16.15: PostgreSQL ↔ PostgreSQL passes every case that applies, the native and crash-window cases included, and skips only the size case (it states no `maxRecordBytes`). The live package total also covers the kit against the reference engine and the cross-engine files with SQLite and MongoDB, both directions; per-pair kit counts were not recorded separately. Only PostgreSQL 16.15 was run; the SQL needs 14+. No driver dependency — an injected executor |
 | `@hobo/data-mongodb` | Offline: the whole kit over an in-memory executor | **Cred-gated**: `HOBO_TEST_MONGODB_URL` (needs a replica set) | Last live run 2026-11-10, MongoDB 8.0.4 single-node replica set: MongoDB ↔ MongoDB passes every case that applies and skips the native cases and the cases that need the `schema` port (MongoDB declares neither). One case is reported `declared-limit`, not passed: `capture.acknowledged-positions-are-final`, under `MONGODB_CAPTURE_ACKNOWLEDGE_RELEASES_NOTHING`. The live package total also covers the cross-engine files with SQLite and PostgreSQL, both directions. Sharded clusters and failover are untested. No driver dependency — an injected executor |
 
-The default CI lane does not provide either server and no workflow sets the two variables, so the
-live lanes run only where someone supplies a server. A regression in live change capture, in the
-fence under real concurrency, or in the native path is therefore caught by that run, not by every
-push. The intermittent failure seen in the live PostgreSQL lane at `85ae5267` was traced to a
+CI provides both servers in one job. `Live data engines` in `.github/workflows/hobo-ci.yml` starts a
+digest-pinned PostgreSQL 16 (`wal_level=logical`) and a one-member MongoDB 8 replica set as sibling
+containers — the images are pinned in `packages/data-core/deploy/live-engine-images.json`, the same
+ones the compose file runs — and runs `pnpm run test:data-live` against them. It runs on a pull
+request whose diff reaches the live suites, and nightly on `main`; it does not run in the merge
+queue, and it blocks a merge only if the branch ruleset lists it as required. A regression in live
+change capture, in the fence under real concurrency, or in the native path is therefore caught on
+the pull request that touches those packages, or by the next nightly run otherwise. The intermittent failure seen in the live PostgreSQL lane at `85ae5267` was traced to a
 replication slot created at a bad moment and is fixed by proving a slot decodable before use; the
 residual is the table-sync slots PostgreSQL creates itself
 ([honest limits](./data-engines-continuous-migration.md#10-honest-limits)).
