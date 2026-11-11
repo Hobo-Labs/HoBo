@@ -64,6 +64,11 @@ import {
 	type ReadRootFile,
 } from "./affected-lanes.mts";
 import { readWorkspaces, type Workspace } from "./job-scope.mts";
+import {
+	loadWorkspaceDurations,
+	type WorkspaceDurationTable,
+	workspaceTestSeconds,
+} from "./workspace-test-durations.mts";
 
 /** Repository access, injectable so tests can describe a tree in memory. */
 export type Repo = Readonly<{
@@ -85,12 +90,96 @@ export type TestPlan =
 			readonly skipped: readonly string[];
 	  };
 
+export function planUnits(
+	plan: TestPlan,
+	workspaces: readonly Workspace[],
+): string[] {
+	const full =
+		plan.mode === "all"
+			? [...new Set(workspaces.map((ws) => ws.dir))]
+			: [...plan.full];
+	const subsets =
+		plan.mode === "all" ? new Map<string, readonly string[]>() : plan.subsets;
+	const wholeDirs = new Set(full);
+	if ([...subsets.keys()].some((dir) => wholeDirs.has(dir)))
+		throw new Error("workspace cannot be both a whole suite and a subset");
+	return [...new Set([...full, ...subsets.keys()])].sort();
+}
+
+/** Workspaces Turbo would run for this plan (test tasks only for repo-wide plans). */
+export function testWorkspaceUnits(
+	plan: TestPlan,
+	workspaces: readonly Workspace[],
+): string[] {
+	if (plan.mode !== "all") return planUnits(plan, workspaces);
+	const workspaceDirs = new Set(workspaces.map((ws) => ws.dir));
+	const tests = turboTestGraph([]).filter((task) => task.task === "test");
+	const dirs = tests
+		.map((task) => task.directory)
+		.filter((dir) => workspaceDirs.has(dir));
+	if (
+		tests.length === 0 ||
+		tests.some((task) => !workspaceDirs.has(task.directory))
+	)
+		throw new Error("repo-wide test graph includes an undiscovered workspace");
+	return [...new Set(dirs)].sort();
+}
+
+/** Longest-processing-time-first multi-way partition by measured workspace seconds. */
+export function partitionUnitsByWeight(
+	units: readonly string[],
+	durations: WorkspaceDurationTable,
+	count: number,
+): readonly (readonly string[])[] {
+	if (count < 1 || count > 64) throw new Error("invalid workspace test shard");
+	const shards: Array<{ load: number; units: string[] }> = Array.from(
+		{ length: count },
+		() => ({
+			load: 0,
+			units: [],
+		}),
+	);
+	const sorted = [...units].sort(
+		(a, b) =>
+			workspaceTestSeconds(b, durations) - workspaceTestSeconds(a, durations),
+	);
+	for (const unit of sorted) {
+		const weight = workspaceTestSeconds(unit, durations);
+		let targetIdx = 0;
+		for (let index = 1; index < shards.length; index++) {
+			const shard = shards[index];
+			const best = shards[targetIdx];
+			if (shard && best && shard.load < best.load) targetIdx = index;
+		}
+		const target = shards[targetIdx];
+		if (!target) throw new Error("partitionUnitsByWeight: empty shard set");
+		target.units.push(unit);
+		target.load += weight;
+	}
+	return shards.map((shard) => shard.units);
+}
+
+export function maxShardLoadSeconds(
+	units: readonly string[],
+	durations: WorkspaceDurationTable,
+	count: number,
+): number {
+	const parts = partitionUnitsByWeight(units, durations, count);
+	return Math.max(
+		0,
+		...parts.map((part) =>
+			part.reduce((sum, dir) => sum + workspaceTestSeconds(dir, durations), 0),
+		),
+	);
+}
+
 /** Partition by workspace so a suite or dependent subset is never split or dropped. */
 export function shardTestPlan(
 	plan: TestPlan,
 	workspaces: readonly Workspace[],
 	index: number,
 	count: number,
+	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
 ): TestPlan {
 	if (
 		!Number.isSafeInteger(index) ||
@@ -102,17 +191,12 @@ export function shardTestPlan(
 	)
 		throw new Error("invalid workspace test shard");
 	const full =
-		plan.mode === "all"
-			? [...new Set(workspaces.map((ws) => ws.dir))]
-			: [...plan.full];
+		plan.mode === "all" ? testWorkspaceUnits(plan, workspaces) : [...plan.full];
 	const subsets =
 		plan.mode === "all" ? new Map<string, readonly string[]>() : plan.subsets;
-	const wholeDirs = new Set(full);
-	if ([...subsets.keys()].some((dir) => wholeDirs.has(dir)))
-		throw new Error("workspace cannot be both a whole suite and a subset");
-	const dirs = [...new Set([...full, ...subsets.keys()])].sort();
+	const dirs = testWorkspaceUnits(plan, workspaces);
 	const selected = new Set(
-		dirs.filter((_, position) => position % count === index),
+		partitionUnitsByWeight(dirs, durations, count)[index],
 	);
 	return {
 		mode: "scoped",
@@ -123,23 +207,103 @@ export function shardTestPlan(
 }
 
 /**
- * Suites one scoped shard carries. Four is what the fixed eight-shard matrix
- * already gave each shard for a 32-suite plan, so no shard is asked for more
- * than shards have carried before; raise it only with shard timings in hand.
+ * Suites one scoped shard carries when no duration table is used (legacy cap).
  */
 const SUITES_PER_SHARD = 4;
 
 /**
- * How many shards a plan is worth, `max` at most. A repo-wide plan takes them
- * all; a scoped one takes one per `SUITES_PER_SHARD` suites or subsets, and
- * one when it holds nothing, so the job that reports the result still runs.
+ * How many shards a plan needs so no shard exceeds `targetSeconds` wall budget.
  */
-export function planShardCount(plan: TestPlan, max: number): number {
+export function planShardCountBalanced(
+	plan: TestPlan,
+	workspaces: readonly Workspace[],
+	max: number,
+	targetSeconds: number,
+	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
+): number {
 	if (!Number.isSafeInteger(max) || max < 1 || max > 64)
 		throw new Error("invalid workspace test shard");
+	if (!(targetSeconds > 0)) throw new Error("invalid workspace shard target");
+	const units = testWorkspaceUnits(plan, workspaces);
+	if (units.length === 0) return 1;
+	let count = 1;
+	while (count < max) {
+		if (maxShardLoadSeconds(units, durations, count) <= targetSeconds)
+			return count;
+		count += 1;
+	}
+	return max;
+}
+
+/**
+ * How many shards a plan is worth, `max` at most. With `targetSeconds`, uses the
+ * duration table; otherwise scoped plans use `SUITES_PER_SHARD`.
+ */
+export function planShardCount(
+	plan: TestPlan,
+	max: number,
+	options?: Readonly<{
+		targetSeconds?: number;
+		workspaces?: readonly Workspace[];
+		durations?: WorkspaceDurationTable;
+	}>,
+): number {
+	if (!Number.isSafeInteger(max) || max < 1 || max > 64)
+		throw new Error("invalid workspace test shard");
+	const target = options?.targetSeconds;
+	if (target !== undefined) {
+		return planShardCountBalanced(
+			plan,
+			options?.workspaces ?? readWorkspaces(),
+			max,
+			target,
+			options?.durations,
+		);
+	}
 	if (plan.mode === "all") return max;
 	const units = plan.full.length + plan.subsets.size;
 	return Math.min(max, Math.max(1, Math.ceil(units / SUITES_PER_SHARD)));
+}
+
+/** Slowest-shard wall budget the main train targets when slots are available. */
+export const MAIN_WORKSPACE_SHARD_TARGET_SECONDS = 180;
+
+export type MainWorkspaceShardPlan = Readonly<{
+	count: number;
+	parallelCap: number;
+	peakShardSeconds: number;
+}>;
+
+/**
+ * Plans main-push workspace shards: at most `parallelCap` jobs, each packing
+ * several duration-balanced workspace groups, targeting roughly
+ * `targetSeconds` on the slowest shard when capacity allows.
+ */
+export function planMainWorkspaceShardCount(
+	plan: TestPlan,
+	parallelCap: number,
+	options?: Readonly<{
+		targetSeconds?: number;
+		workspaces?: readonly Workspace[];
+		durations?: WorkspaceDurationTable;
+	}>,
+): MainWorkspaceShardPlan {
+	if (!Number.isSafeInteger(parallelCap) || parallelCap < 1 || parallelCap > 64)
+		throw new Error("invalid main workspace parallel cap");
+	const workspaces = options?.workspaces ?? readWorkspaces();
+	const durations = options?.durations ?? loadWorkspaceDurations();
+	const targetSeconds =
+		options?.targetSeconds ?? MAIN_WORKSPACE_SHARD_TARGET_SECONDS;
+	const count = planShardCountBalanced(
+		plan,
+		workspaces,
+		parallelCap,
+		targetSeconds,
+		durations,
+	);
+	const units = testWorkspaceUnits(plan, workspaces);
+	const peakShardSeconds = maxShardLoadSeconds(units, durations, count);
+	return { count, parallelCap, peakShardSeconds };
 }
 
 type Json =
@@ -912,6 +1076,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 	const baseArgument = args.find((arg) => arg.startsWith("--base="));
 	const shardArgs = args.filter((arg) => arg.startsWith("--shard"));
 	const planShards = args.find((arg) => arg.startsWith("--plan-shards"));
+	const targetSecondsArg = args.find((arg) =>
+		arg.startsWith("--target-seconds="),
+	);
+	const targetSeconds = Number(
+		/^--target-seconds=(\d+(?:\.\d+)?)$/u.exec(targetSecondsArg ?? "")?.[1],
+	);
 	const shardCap = Number(/^--plan-shards=(\d+)$/u.exec(planShards ?? "")?.[1]);
 	if (planShards !== undefined && !(shardCap >= 1 && shardCap <= 64)) {
 		console.error(
@@ -936,7 +1106,23 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 			: cliRootFileReader(baseArgument.slice("--base=".length)),
 	);
 	if (planShards !== undefined) {
-		const count = planShardCount(plan, shardCap);
+		const count = planShardCount(
+			plan,
+			shardCap,
+			targetSecondsArg
+				? { targetSeconds, workspaces: repo.workspaces }
+				: undefined,
+		);
+		if (targetSecondsArg) {
+			const units =
+				plan.mode === "all"
+					? testWorkspaceUnits(plan, repo.workspaces)
+					: planUnits(plan, repo.workspaces);
+			const peak = maxShardLoadSeconds(units, loadWorkspaceDurations(), count);
+			console.error(
+				`dependent-tests: balanced ${count} shard(s), peak ${peak.toFixed(1)}s (target ${targetSeconds}s)`,
+			);
+		}
 		console.error(describePlan(plan));
 		console.log(
 			`[${Array.from({ length: count }, (_, index) => index).join(", ")}]`,

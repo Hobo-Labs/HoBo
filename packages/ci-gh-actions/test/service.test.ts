@@ -496,3 +496,77 @@ it("starts from an empty configuration and reports the engine map", async () => 
 		engines: { "gh-actions": { ready: true }, vercel: { ready: true } },
 	});
 });
+
+it("runs the optional agent beside the worker: never overlapping, never delaying a tick, and drained on stop", async () => {
+	const gate = deferred();
+	finish.push(gate.resolve);
+	let ticks = 0;
+	let passes = 0;
+	let active = 0;
+	let overlapped = false;
+	const h = setup({
+		tick: async () => {
+			ticks++;
+		},
+		agentIntervalMs: 10,
+		agentTick: async () => {
+			passes++;
+			active++;
+			overlapped ||= active > 1;
+			if (passes === 1) await gate.promise;
+			active--;
+			if (passes === 2) throw new Error("model said: secret repository text");
+		},
+	});
+	await h.service.start();
+	await vi.waitFor(() => expect(passes).toBe(1));
+	// The first pass is still waiting on its model; the relay keeps ticking.
+	const before = ticks;
+	await vi.waitFor(() => expect(ticks).toBeGreaterThan(before + 3));
+	expect(passes).toBe(1);
+	gate.resolve();
+	await vi.waitFor(() => expect(passes).toBeGreaterThanOrEqual(3));
+	expect(overlapped).toBe(false);
+	// A failed pass is logged without its reason, and the next one still ran.
+	expect(h.logs.filter((entry) => entry.event === "agent.tick_failed")).toEqual(
+		[{ level: "error", event: "agent.tick_failed" }],
+	);
+	expect(h.logs.some((entry) => entry.event === "worker.tick_failed")).toBe(
+		false,
+	);
+
+	const slow = deferred();
+	finish.push(slow.resolve);
+	let finished = false;
+	const draining = setup({
+		agentIntervalMs: 5,
+		agentTick: async () => {
+			await slow.promise;
+			finished = true;
+		},
+	});
+	await draining.service.start();
+	await vi.waitFor(() => expect(draining.service.ready()).toBe(true));
+	await new Promise((resolve) => setTimeout(resolve, 30));
+	const stopped = draining.service.stop();
+	expect(draining.history).toEqual([]);
+	slow.resolve();
+	expect(await stopped).toEqual({ drained: true });
+	expect(finished).toBe(true);
+	expect(draining.history).toEqual(["close"]);
+});
+
+it("does not schedule an agent that was not configured, and does not run one before readiness", async () => {
+	let passes = 0;
+	const h = setup({
+		agentIntervalMs: 5,
+		agentTick: async () => {
+			passes++;
+		},
+		readinessProbe: async () => false,
+	});
+	await h.service.start();
+	await new Promise((resolve) => setTimeout(resolve, 60));
+	expect(passes).toBe(0);
+	expect(() => setup({ agentIntervalMs: 0 })).toThrow("invalid agent interval");
+});

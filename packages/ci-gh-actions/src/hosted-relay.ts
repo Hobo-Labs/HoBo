@@ -24,6 +24,7 @@ import {
 	createAdmissionOrder,
 	TRUNK_RANK,
 } from "./admission-order.js";
+import type { FleetCapacityPublisher } from "./fleet-capacity.js";
 import type { FleetRoutePublisher } from "./fleet-routes.js";
 import {
 	type GithubRun,
@@ -235,6 +236,12 @@ export class HostedRelay {
 			 * hobo label.
 			 */
 			fleetRoutes?: Pick<FleetRoutePublisher, "publish">;
+			fleetCapacity?: Readonly<{
+				publish: FleetCapacityPublisher["publish"];
+				snapshot: () => Promise<
+					Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>
+				>;
+			}>;
 			now?: () => string;
 		},
 	) {
@@ -1205,6 +1212,7 @@ export class HostedRelay {
 		for (const key of this.trunkWaits.keys())
 			if (!waitingTrunk.has(key)) this.trunkWaits.delete(key);
 		await this.publishFleetRoutes();
+		await this.publishFleetCapacity();
 		return pending.length;
 	}
 	/** One table per connected repository, from the state this pass just left. */
@@ -1227,6 +1235,37 @@ export class HostedRelay {
 				});
 			} catch {
 				/* Routing ahead of the queue is advisory; admission already ran. */
+			}
+		}
+	}
+	private async publishFleetCapacity(): Promise<void> {
+		const publisher = this.options.fleetCapacity;
+		if (!publisher) return;
+		let snapshot: Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>;
+		try {
+			snapshot = await publisher.snapshot();
+		} catch {
+			return;
+		}
+		const at = this.now();
+		for (const connection of this.options.config.connections) {
+			try {
+				const base = {
+					installationId: connection.installationId,
+					repository: connection.repository,
+					hoboFreeSlots: snapshot.hoboFreeSlots,
+					at,
+				};
+				if (snapshot.arcFreeSlots === undefined) {
+					await publisher.publish(base);
+					continue;
+				}
+				await publisher.publish({
+					...base,
+					arcFreeSlots: snapshot.arcFreeSlots,
+				});
+			} catch {
+				/* Advisory only. */
 			}
 		}
 	}

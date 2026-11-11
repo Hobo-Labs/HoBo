@@ -57,6 +57,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`reliability-observability-cost.md`](./reliability-observability-cost.md#plan-05) | Reliability/HA, observability & cost/FinOps | 05 |
 | [`finops-budget-routing-control-plane.md`](./finops-budget-routing-control-plane.md) | Post-core standards-first FinOps budget routing control plane: resource intent, metric contracts, Pareto routing, stability, decision graph, feedback governance, and DX/OpsX/FinX surfaces | — |
 | [`provider-pricing-commercial-terms.md`](./provider-pricing-commercial-terms.md) | Provider commercial terms and deterministic fail-closed quotes in `@hobo/pricing`; dispatcher v1 unchanged (ADR-0176) | — |
+| [`provider-manifest.md`](./provider-manifest.md) | Provider manifest: auth flows (OAuth, auth.md), capability mappings, and extensible billing models declared as one YAML/JSON document and deserialized into existing types by `@hobo/provider-manifest` (ADR-0178) | — |
 | [`provider-pricing-scorecard.md`](./provider-pricing-scorecard.md) | Acceptance scorecard for provider pricing design (§1, §10, §12–§14); CI-enforced via `@hobo/pricing` design-scorecard eval | — |
 | [`hosting-budget-transitions.md`](./hosting-budget-transitions.md) | Budgeted hosting placement and movement: effects, financial reservations, durable reconciliation, observed recovery and settlement | — |
 | [`ci-fleet-balancing.md`](./ci-fleet-balancing.md) | CI fleet balancing: per-provider runner financial models rated by `@hobo/pricing`, admission through the shared budget policy, and the `HOBO_CI_FLEET_ROUTES` route table for label providers (`packages/ci/src/fleet/`) | — |
@@ -227,5 +228,8 @@ as a Node service by `hobo ci serve` and the container image, on
 is also an [MCP server](../../packages/ci-gh-actions/README.md#mcp-server) at
 `/mcp`, whose `wait_for_events` tool and resource subscriptions are a
 projection over the lease journal's [event cursor](../../packages/ci/README.md#event-cursor)),
-[Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md), and
+[Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md),
+the optional [CI agent](../../packages/ci-agent/README.md) (merge-queue planning
+and model-backed conflict resolution beside the Node relay; not yet run against
+GitHub or a live model), and
 [implementation plan with live acceptance gates](../plans/hobo-ci/README.md).

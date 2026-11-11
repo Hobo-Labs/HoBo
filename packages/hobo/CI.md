@@ -88,6 +88,17 @@ GitHub for `runs-on: hobo` jobs, unless the environment's
 relay partition (the config holds the env var name, never the URL). Graceful
 shutdown on SIGINT/SIGTERM.
 
+When `.hobo/ci.json` has an `agent` block, `hobo ci serve` also starts the
+[CI agent](../ci-agent/README.md) beside the relay: it plans the merge queue
+and resolves merge conflicts with the configured model, in the mode the block
+sets (`observe` writes nothing to GitHub). The agent keeps its journal and
+clones under `<HOBO_HOME>/ci/serve/agent`, and reads each model credential
+from this process's environment by the name the block references; a name that
+is not set stops the serve. **`--no-agent`** serves without it. The agent is a
+separate package, `@hobo/ci-agent`, loaded only when a block is present; a
+`hobo` install without it refuses to serve such a project unless `--no-agent`
+is passed. It has not yet been run against GitHub or a live model.
+
 Alternatively, import a self-hosted App's key and webhook secret from files:
 
 ```sh

@@ -149,6 +149,8 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	// HoBo.CI application SDKs compose the existing Dispatcher at layer 3.
 	"packages/ci",
 	"packages/ci-gh-actions",
+	// The optional relay agent composes the relay; nothing depends on it.
+	"packages/ci-agent",
 	"packages/ci-ado",
 	"packages/ci-dagger",
 	"packages/ci-cf",
@@ -191,6 +193,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/stage-gate",
 	"packages/policy",
 	"packages/pricing",
+	"packages/provider-manifest",
 	"packages/data",
 	"packages/events",
 	"packages/identity",

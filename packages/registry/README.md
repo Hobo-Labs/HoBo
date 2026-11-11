@@ -22,8 +22,9 @@ surface unduplicated and adds the missing thirds:
   deterministic ranking and codepoint tie-breaks.
 
 **Honest scope note:** the mutating admin surface of `hobo registry add`
-remains in the CLI (`packages/hobo/src/registry-command.ts`); this package is
-the engine that command will call. It appends nothing itself — callers own
+lives in the CLI (`packages/hobo/src/registry-add.ts`), where it registers a
+provider described by a `@hobo/provider-manifest` data file; bundle import
+through this package's engine is not wired to it yet. It appends nothing itself — callers own
 the event-store write.
 
 Wire forms of the bundle manifest, `BundleImported` fact, provenance

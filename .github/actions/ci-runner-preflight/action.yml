@@ -40,7 +40,7 @@ runs:
         export MISE_EXPERIMENTAL=1
         if command -v mise >/dev/null 2>&1; then
           mise trust ./mise.toml
-          mise install
+          mise install --locked
         fi
         node --no-warnings scripts/ci-runner-preflight.mts
         node --experimental-strip-types scripts/ci/memory-env.mts

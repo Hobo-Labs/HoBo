@@ -1,0 +1,176 @@
+syntax = "proto3";
+package hobo.ci.agent.v1;
+
+// The authored `agent` block of `.hobo/ci.json`. It holds references only: a
+// credential is named (`env:NAME`, `github-secret:NAME`), never written here.
+message AgentConfig {
+  // "observe" records plans and resolutions and changes nothing on GitHub.
+  // "suggest" pushes candidate refs and comments; "apply" updates PR branches.
+  string mode = 1;
+  // Ordered: a later engine is tried only when an earlier one fails to answer.
+  repeated AgentEngine engines = 2;
+  QueuePolicy queue = 3;
+  ResolutionPolicy resolution = 4;
+  AgentBudget budget = 5;
+}
+
+message AgentEngine {
+  string id = 1;
+  // "gateway" | "openai" | "anthropic" | "google" | "openai-compatible" | "harness"
+  string kind = 2;
+  // Provider model id, or the harness adapter id for kind "harness".
+  string model = 3;
+  // "env:NAME" or "github-secret:NAME"; empty selects the provider default.
+  string credential = 4;
+  // Only for "openai-compatible": an https origin plus path.
+  string base_url = 5;
+}
+
+message QueuePolicy {
+  uint32 max_depth = 1;
+  uint32 max_batch_size = 2;
+  // An entry that has waited this long keeps its place ahead of younger work.
+  uint32 max_wait_minutes = 3;
+  // Lane order: an entry carrying an earlier label is planned first.
+  repeated string priority_labels = 4;
+  // Allow a batch to be published as one combined candidate branch.
+  bool rollup = 5;
+  // Open pull requests carrying this label wait for the agent to enqueue them.
+  string label = 6;
+}
+
+message ResolutionPolicy {
+  // Glob patterns the agent never resolves; a match abstains the whole merge.
+  repeated string protected_paths = 1;
+  uint32 max_conflicted_files = 2;
+  uint32 max_conflict_regions = 3;
+  uint32 max_file_bytes = 4;
+  // A region answered below this confidence abstains the whole merge.
+  double min_confidence = 5;
+  // Lines of unconflicted text shown on each side of a conflict region.
+  uint32 context_lines = 6;
+}
+
+message AgentBudget {
+  uint32 max_input_tokens = 1;
+  uint32 max_output_tokens = 2;
+  uint64 max_tokens_per_day = 3;
+  uint32 timeout_seconds = 4;
+  // Resolutions started in one tick.
+  uint32 max_resolutions_per_tick = 5;
+}
+
+// One pull request waiting to merge, as observed at `QueueSnapshot.observed_at`.
+message QueueEntry {
+  uint32 number = 1;
+  string head_sha = 2;
+  string head_ref = 3;
+  string base_ref = 4;
+  // Zero-based position in the provider's queue; the provider's order is FIFO.
+  uint32 position = 5;
+  string enqueued_at = 6;
+  repeated string labels = 7;
+  // Pull requests that must merge first (a stacked branch's parents).
+  repeated uint32 depends_on = 8;
+  repeated string changed_paths = 9;
+  // The head branch lives in another repository; the agent never pushes to it.
+  bool fork = 10;
+  // The provider has already started checks for this entry. Moving it would
+  // discard that work, so the planner keeps started entries where they are.
+  bool started = 11;
+}
+
+message QueueSnapshot {
+  string repository = 1;
+  string base_ref = 2;
+  string base_sha = 3;
+  string observed_at = 4;
+  repeated QueueEntry entries = 5;
+}
+
+// Whether two entries merge together. "unknown" is planned as a conflict.
+message PairVerdict {
+  uint32 first = 1;
+  uint32 second = 2;
+  // "clean" | "conflict" | "unknown"
+  string verdict = 3;
+  repeated string paths = 4;
+}
+
+message PlanBatch {
+  repeated uint32 numbers = 1;
+}
+
+// An entry that cannot merge on top of what is planned ahead of it as it stands.
+message PlanResolution {
+  uint32 number = 1;
+  // Entries ahead whose changes it conflicts with; empty means the base branch.
+  repeated uint32 against = 2;
+  repeated string paths = 3;
+}
+
+message QueuePlan {
+  string repository = 1;
+  string base_sha = 2;
+  // The planned merge order, front of the queue first.
+  repeated uint32 order = 3;
+  repeated PlanBatch batches = 4;
+  repeated PlanResolution resolutions = 5;
+  // Entries whose planned position differs from the observed one.
+  repeated uint32 moved = 6;
+  // SHA-256 over the plan's inputs; equal digests are the same plan.
+  string digest = 7;
+}
+
+message TokenUsage {
+  uint64 input_tokens = 1;
+  uint64 output_tokens = 2;
+}
+
+message ResolvedFile {
+  string path = 1;
+  uint32 regions = 2;
+  // The lowest confidence the engine reported for a region of this file.
+  double confidence = 3;
+  string content_sha256 = 4;
+}
+
+// The outcome of one attempt to merge `ours_sha` and `theirs_sha`.
+message Resolution {
+  // SHA-256 over repository, both commits and the policy: one attempt per key.
+  string key = 1;
+  string repository = 2;
+  uint32 number = 3;
+  string ours_sha = 4;
+  string theirs_sha = 5;
+  // "resolved" | "abstained" | "failed"
+  string outcome = 6;
+  // A fixed code, never model or repository text.
+  string reason = 7;
+  repeated ResolvedFile files = 8;
+  string engine_id = 9;
+  string model = 10;
+  TokenUsage usage = 11;
+  // The local merge commit; empty unless the outcome is "resolved".
+  string commit_sha = 12;
+  // Where it was published; empty in observe mode.
+  string published_ref = 13;
+}
+
+// The agent's journal record. Replay rebuilds spent budget and attempted keys.
+message AgentEvent {
+  string id = 1;
+  // "ci.agent.PlanProposed" | "ci.agent.ResolutionSettled" |
+  // "ci.agent.ResolutionPublished" | "ci.agent.RollupPublished" |
+  // "ci.agent.EntryEnqueued" | "ci.agent.BudgetExhausted" |
+  // "ci.agent.ApplyWithheld"
+  string type = 2;
+  string at = 3;
+  string repository = 4;
+  QueuePlan plan = 5;
+  Resolution resolution = 6;
+  // The entry an EntryEnqueued event is about, and the members of a rollup.
+  repeated uint32 numbers = 7;
+  // The commit an EntryEnqueued event enqueued. It is never enqueued again.
+  string head_sha = 8;
+}

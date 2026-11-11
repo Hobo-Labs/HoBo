@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+	createWalker,
 	exportTarget,
 	planCommands,
 	planDependentTests,
@@ -1040,7 +1041,14 @@ describe("the repository's own plans", { concurrency: true }, () => {
 		],
 	] as const)
 		it(`runs the suites whose config reaches ${path}`, () => {
-			assert.deepEqual(plan(path), { full, subsets: {}, skipped: [] });
+			const planned = plan(path);
+			// A list of names, not a count: it changes only when a package starts
+			// or stops reaching the root config, and then this says what to edit.
+			assert.deepEqual(
+				planned,
+				{ full, subsets: {}, skipped: [] },
+				`a change to ${path} plans ${JSON.stringify(planned)}, and this case expects the whole suites ${JSON.stringify(full)} and nothing else. If a package's vitest config now merges the root config (or one stopped), or a test now reads ${path}, update the list for ${path} in this file; otherwise the planner's reach changed and that is the bug.`,
+			);
 		});
 
 	it("runs a test that imports another package's source by relative path", () => {
@@ -1079,13 +1087,42 @@ describe("the repository's own plans", { concurrency: true }, () => {
 		});
 
 	it("plans a generated @hobo/core leaf by what imports it, not by core's `./`", () => {
-		const { full, subsets, skipped } = plan(
-			"packages/core/src/_generated/actor_host_port_pb.ts",
+		// No module of @hobo/core imports this generated file. `startsWith("./")`
+		// in core's plugin-manifest.ts once read as an edge to all of
+		// `packages/core/src`, so core's entry reached the file and every
+		// importer of @hobo/core ran. No package is counted here: the workspace
+		// grows, and a count went red on every unrelated addition.
+		const leaf = "packages/core/src/_generated/actor_host_port_pb.ts";
+		const repo = (tree ??= readRepo());
+		assert.ok(
+			repo.files.has(leaf),
+			`${leaf} is gone: use another generated file of @hobo/core that none of its modules imports`,
 		);
+		const { reaches } = createWalker(repo);
+		const through = [...repo.files]
+			.filter(
+				(file) =>
+					file.startsWith("packages/core/src/") &&
+					file !== leaf &&
+					reaches(file, new Set([leaf]), true) === leaf,
+			)
+			.sort();
 		assert.deepEqual(
-			[full.length, Object.keys(subsets).length, skipped.length],
-			[13, 13, 106],
+			through,
+			[],
+			`these modules of @hobo/core reach ${leaf}: ${through.join(", ")}. If one now imports it, the file is no longer a leaf: list its importers here or use another leaf. If none does, a string literal is read as a path again (the bare \`./\` edge).`,
 		);
+		const { full, skipped } = plan(leaf);
 		assert.ok(full.includes("packages/core"));
+		// Dependents that import @hobo/core and whose tests name nothing wider.
+		for (const dir of [
+			"packages/broker",
+			"packages/contracts",
+			"packages/events",
+		])
+			assert.ok(
+				skipped.includes(dir),
+				`${dir} is not skipped for a change to ${leaf}. If one of its tests now reaches that file, or the walk gives up on one (a computed import(), a literal naming a directory that holds packages), name another dependent that only imports @hobo/core; otherwise importing @hobo/core selects every dependent again.`,
+			);
 	});
 });
