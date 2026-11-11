@@ -52,6 +52,14 @@ export function countInFlightWorkerLeases(
 	).length;
 }
 
+/** Running worker containers without a counted lease still block drain. */
+export function mergeDrainInFlightCount(
+	leaseCount: number,
+	runningWorkerContainers: number,
+): number {
+	return Math.max(leaseCount, runningWorkerContainers);
+}
+
 /**
  * Waits until nothing this worker launched is still in flight, running jobs
  * included. A lease leaves `running` only when a reconcile sees its runner

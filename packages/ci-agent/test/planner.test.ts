@@ -147,6 +147,22 @@ describe("queue planner", () => {
 		expect(plan(entries, [], { maxDepth: 3 }).order).toEqual([1, 2, 3]);
 	});
 
+	it("batches an entry the merge queue ejected on its own", () => {
+		const result = planQueue({
+			snapshot: queue([{ number: 1 }, { number: 2 }, { number: 3 }]),
+			verdicts: [],
+			baseConflicts: new Map(),
+			policy: policy(),
+			isolated: new Set([2]),
+		});
+		expect(result.order).toEqual([1, 2, 3]);
+		expect(result.batches.map((batch) => batch.numbers)).toEqual([
+			[1],
+			[2],
+			[3],
+		]);
+	});
+
 	it("is deterministic: the same inputs give the same digest", () => {
 		const entries = [{ number: 1 }, { number: 2 }];
 		const first = plan(entries, [conflict(1, 2)]);

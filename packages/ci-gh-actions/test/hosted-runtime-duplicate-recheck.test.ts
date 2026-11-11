@@ -109,7 +109,7 @@ it("requeues a duplicate whose lease runner was taken by another job", async () 
 	);
 	expect(await h.runtime.ingestWebhook(h.input)).toBe("accepted");
 	expect(await h.runtime.ingestWebhook(h.input)).toBe("requeued");
-	expect(h.request).toHaveBeenCalledTimes(2);
+	expect(h.request).toHaveBeenCalledTimes(3);
 });
 
 it("limits an uncovered duplicate to one GitHub re-check per minute", async () => {
@@ -117,12 +117,12 @@ it("limits an uncovered duplicate to one GitHub re-check per minute", async () =
 	vi.spyOn(h.store, "pendingJobs").mockResolvedValue([]);
 	expect(await h.runtime.ingestWebhook(h.input)).toBe("accepted");
 	expect(await h.runtime.ingestWebhook(h.input)).toBe("requeued");
-	expect(h.request).toHaveBeenCalledTimes(2);
+	expect(h.request).toHaveBeenCalledTimes(3);
 	expect(await h.runtime.ingestWebhook(h.input)).toBe("duplicate");
-	expect(h.request).toHaveBeenCalledTimes(2);
+	expect(h.request).toHaveBeenCalledTimes(3);
 	h.advance(60_000);
 	expect(await h.runtime.ingestWebhook(h.input)).toBe("requeued");
-	expect(h.request).toHaveBeenCalledTimes(4);
+	expect(h.request).toHaveBeenCalledTimes(6);
 });
 
 it("does not queue a duplicate whose GitHub job is no longer queued", async () => {
@@ -132,12 +132,12 @@ it("does not queue a duplicate whose GitHub job is no longer queued", async () =
 	h.github.jobStatus = "completed";
 	expect(await h.runtime.ingestWebhook(h.input)).toBe("duplicate");
 	expect(queue).not.toHaveBeenCalled();
-	expect(h.request).toHaveBeenCalledTimes(2);
+	expect(h.request).toHaveBeenCalledTimes(3);
 });
 
-it("contains a failed duplicate re-check", async () => {
+it("requeues when duplicate re-check fails (poll must not strand)", async () => {
 	const h = await fixture();
 	expect(await h.runtime.ingestWebhook(h.input)).toBe("accepted");
 	h.request.mockRejectedValue(new Error("GitHub unavailable"));
-	expect(await h.runtime.ingestWebhook(h.input)).toBe("duplicate");
+	expect(await h.runtime.ingestWebhook(h.input)).toBe("requeued");
 });

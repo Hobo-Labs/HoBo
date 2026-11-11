@@ -24,6 +24,8 @@ const EARLIER_TABLES = [
 	"CREATE TABLE hobo_ci_inbox (seq bigserial, partition_id text NOT NULL, delivery_id text NOT NULL, fingerprint text NOT NULL, event text NOT NULL, installation_id bigint NOT NULL, repository_id bigint NOT NULL, raw_body bytea NOT NULL, received_at text NOT NULL, claim_token text, claim_until bigint NOT NULL DEFAULT 0, completed boolean NOT NULL DEFAULT false, attempts integer NOT NULL DEFAULT 0, quarantined boolean NOT NULL DEFAULT false, PRIMARY KEY(partition_id,delivery_id))",
 ];
 
+const MIGRATIONS = ["0000_baseline", "0001_events_account"];
+
 interface LedgerRow {
 	readonly scope: string;
 	readonly id: string;
@@ -56,7 +58,7 @@ describe.skipIf(!TEST_POSTGRES_URL)(
 						"SELECT job_key, lease_id FROM hobo_ci_assigned_jobs",
 					);
 
-					expect(result.applied).toEqual(["0000_baseline"]);
+					expect(result.applied).toEqual(MIGRATIONS);
 					expect(kept.rows).toEqual([
 						{ job_key: "job-1", lease_id: "lease-1" },
 					]);
@@ -91,9 +93,10 @@ describe.skipIf(!TEST_POSTGRES_URL)(
 		}, 120_000);
 
 		it("records each applied migration once per scope and holds later runs to it", async () => {
-			const set = await loadMigrationSet(schemaSource.directory);
-			const baseline = set.migrations[0];
+			const checkedIn = await loadMigrationSet(schemaSource.directory);
+			const baseline = checkedIn.migrations[0];
 			if (!baseline) throw new Error("baseline missing");
+			const set = { ...checkedIn, migrations: [baseline] };
 			await withScratchDatabases(url, ["ledger"], async ([database]) => {
 				if (!database) throw new Error("scratch database missing");
 				await applyMigrations(database.pool, set);
@@ -145,31 +148,70 @@ describe.skipIf(!TEST_POSTGRES_URL)(
 			const set = await loadMigrationSet(schemaSource.directory);
 			const baseline = set.migrations[0];
 			if (!baseline) throw new Error("baseline missing");
-			const later = {
-				...baseline,
-				id: "0001_note",
-				statements: [
-					'ALTER TABLE "hobo_ci_configuration" ADD COLUMN IF NOT EXISTS "note" text;',
-				],
-				sqlSha256: "1".repeat(64),
-			};
 			await withScratchDatabases(url, ["later"], async ([database]) => {
 				if (!database) throw new Error("scratch database missing");
-				await applyMigrations(database.pool, set);
-				const extended = { ...set, migrations: [baseline, later] };
-				const first = await applyMigrations(database.pool, extended);
-				const second = await applyMigrations(database.pool, extended);
-				const column = await database.pool.query(
-					"SELECT 1 FROM information_schema.columns WHERE table_name = 'hobo_ci_configuration' AND column_name = 'note'",
-				);
+				// A database one migration behind: only the baseline is recorded.
+				await applyMigrations(database.pool, {
+					...set,
+					migrations: [baseline],
+				});
+				const first = await applyMigrations(database.pool, set);
+				const second = await applyMigrations(database.pool, set);
 
 				expect(first).toEqual({
 					scope: "@hobo/ci",
-					applied: ["0001_note"],
+					applied: MIGRATIONS.slice(1),
 					alreadyApplied: ["0000_baseline"],
 				});
-				expect(second.applied).toEqual([]);
-				expect(column.rowCount).toBe(1);
+				expect(second).toEqual({
+					scope: "@hobo/ci",
+					applied: [],
+					alreadyApplied: MIGRATIONS,
+				});
+			});
+		}, 120_000);
+
+		it("adds the events account column and index to a journal with rows, and rewrites none", async () => {
+			const set = await loadMigrationSet(schemaSource.directory);
+			const baseline = set.migrations[0];
+			if (!baseline) throw new Error("baseline missing");
+			await withScratchDatabases(url, ["journal"], async ([database]) => {
+				if (!database) throw new Error("scratch database missing");
+				await applyMigrations(database.pool, {
+					...set,
+					migrations: [baseline],
+				});
+				// What a release from before the column journalled.
+				await database.pool.query(
+					`INSERT INTO hobo_ci_events(partition_id,body)
+					 SELECT 'default', '{"type":"ci.ControlRecordUpdated","accountId":"mine"}'
+					 FROM generate_series(1,500)`,
+				);
+				const before = await database.pool.query(
+					"SELECT ctid::text AS place, seq::text AS seq FROM hobo_ci_events ORDER BY seq",
+				);
+				await applyMigrations(database.pool, set);
+				const after = await database.pool.query(
+					"SELECT ctid::text AS place, seq::text AS seq FROM hobo_ci_events ORDER BY seq",
+				);
+				const stamped = await database.pool.query(
+					"SELECT count(*)::text AS rows FROM hobo_ci_events WHERE account_id IS NOT NULL",
+				);
+				const index = await database.pool.query(
+					"SELECT indexdef FROM pg_indexes WHERE indexname = 'hobo_ci_events_account_seq'",
+				);
+
+				// Every row is the tuple it was: the migration is two catalog
+				// changes and an index build, never a rewrite or a fill-in. The
+				// store stamps old rows afterwards, in batches, on the writer.
+				expect(after.rows).toEqual(before.rows);
+				expect(stamped.rows).toEqual([{ rows: "0" }]);
+				expect(index.rows).toEqual([
+					{
+						indexdef:
+							"CREATE INDEX hobo_ci_events_account_seq ON public.hobo_ci_events USING btree (partition_id, account_id, seq)",
+					},
+				]);
 			});
 		}, 120_000);
 	},

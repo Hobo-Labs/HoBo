@@ -1,5 +1,12 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { describe, expect, it, vi } from "vitest";
-import { createBootstrapEntry } from "../src/bootstrap-entry.js";
+import { z } from "zod";
+import {
+	createBootstrapEntry,
+	StoreUnavailable,
+} from "../src/bootstrap-entry.js";
+import { createHttpEntry } from "../src/entry.js";
 
 const env = {
 	HOBO_CI_PUBLIC_URL: "https://ci.hobo.test",
@@ -216,5 +223,67 @@ describe("bootstrap entry", () => {
 			),
 		).resolves.toBe(controlToken);
 		await entry.close();
+	});
+	it("states the remaining store back-off in Retry-After on the wire", async () => {
+		const log = vi.spyOn(console, "error").mockImplementation(() => {});
+		const bootstrap = {
+			async load() {
+				return credentials;
+			},
+			async handle() {
+				return undefined;
+			},
+		};
+		const create = vi.fn().mockRejectedValue(new Error("store down"));
+		let clock = 1_000_000;
+		const entry = createBootstrapEntry({
+			env,
+			notify,
+			continueRepair,
+			scheduledRepair,
+			bootstrap,
+			createApplication: create,
+			now: () => clock,
+		});
+		// The thrown back-off carries the wait; the HTTP adapter states it.
+		await entry.tick(null).catch(() => {});
+		const backingOff = await entry.tick(null).then(
+			() => undefined,
+			(error: Error) => error,
+		);
+		expect(backingOff).toBeInstanceOf(StoreUnavailable);
+		expect(backingOff).toMatchObject({ retryAfterMs: 5_000 });
+
+		const server = createServer(createHttpEntry(async () => entry));
+		server.listen(0, "127.0.0.1");
+		await once(server, "listening");
+		try {
+			const { port } = z.object({ port: z.number() }).parse(server.address());
+			const wakeup = async () => {
+				const response = await fetch(
+					`http://127.0.0.1:${port}/internal/queue-wakeup`,
+					{ method: "POST", body: "{}" },
+				);
+				await response.arrayBuffer();
+				return [response.status, response.headers.get("retry-after")];
+			};
+			// 1 s into the first 5 s back-off: four seconds left, store not dialled.
+			clock += 1_000;
+			expect(await wakeup()).toEqual([503, "4"]);
+			expect(create).toHaveBeenCalledTimes(1);
+			// Past it: the store is dialled, fails again, and the back-off doubles.
+			clock += 4_000;
+			expect((await wakeup())[0]).toBe(503);
+			expect(create).toHaveBeenCalledTimes(2);
+			expect(await wakeup()).toEqual([503, "10"]);
+			clock += 9_500;
+			expect(await wakeup()).toEqual([503, "1"]);
+			expect(create).toHaveBeenCalledTimes(2);
+		} finally {
+			server.close();
+			await once(server, "close");
+			log.mockRestore();
+			await entry.close();
+		}
 	});
 });

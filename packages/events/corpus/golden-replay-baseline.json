@@ -128,6 +128,10 @@
 		{
 			"key": "migration.RolledBack@v2#migration-RolledBack-v2",
 			"bodyDigest": "sha256:f53df2b41665ce4b15722ed506593a16df17be27a4631f38d9913cb43b161e9d"
+		},
+		{
+			"key": "pricing.CatalogRegistered@v1#pricing-CatalogRegistered-v1",
+			"bodyDigest": "sha256:634ba394ac6bb83c088cfba13a87f36a531eb45965674dab1722080ce90486ea"
 		}
 	]
 }

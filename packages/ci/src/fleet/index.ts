@@ -10,6 +10,14 @@ export {
 	type FleetRefusalCode,
 } from "./balance.js";
 export {
+	buildFleetCapacitySnapshot,
+	type FleetCapacitySnapshot,
+	type FleetLabelCapacity,
+	fleetLabelCapacity,
+	memoryAdmitHeadroom,
+	parseFleetCapacityVariable,
+} from "./capacity.js";
+export {
 	DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP,
 	FLEET_CAPACITY_VARIABLE,
 	type FleetCapacityPublished,

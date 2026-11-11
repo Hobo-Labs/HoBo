@@ -3,19 +3,17 @@
  * by how long it takes, so the verdict does not depend on how fast or how
  * loaded the machine is.
  *
- * `measureGrowth` times the operation on an input of length n and on one of
- * length 4n, the better of two runs each, the two sizes taking turns, in the
- * CPU time of the thread that runs it (a runtime without that clock is
- * refused). Linear work grows about 4×, and quadratic work about 16×;
- * LINEAR_GROWTH_LIMIT (8) sits between them with a factor of two either side.
+ * `measureGrowth` times the operation at three or more input lengths in a 1:2:4
+ * (or wider) ladder. Each length is warmed up, then measured in several
+ * interleaved rounds; the **minimum** CPU time at each length feeds a log–log
+ * slope and doubling-step ratios, so a single inflated sample on a loaded box
+ * cannot trip the cap. Default calibration targets about 100 ms of CPU on the
+ * smallest length (a runtime without per-thread CPU time is refused).
  *
- * Each timed run must be long against the clock's tick (Linux counts a
- * thread's CPU time in scheduler ticks of a few milliseconds), so n doubles
- * from 4096 until a run takes 30 ms. A quadratic operation reaches that at a
- * size it still finishes at, rather than being left to stall on a megabyte.
- * An operation so quick that n reaches its cap first is repeated within each
- * timed run instead, the same number of times at both sizes, so its ratio is
- * still a ratio of long runs.
+ * Linear work has log–log slope near 1 and about 2× cost per doubled length;
+ * quadratic work has slope near 2 and about 4× per doubling.
+ * LINEAR_GROWTH_LIMIT (8) bounds the overall 4× size jump; step limits sit
+ * between linear and quadratic doubling.
  *
  * One bound is absolute, HANG_BACKSTOP_MS (20 s) for a single run: it catches
  * only an operation that has stopped returning, not a slow machine.
@@ -27,39 +25,60 @@
 
 export const LINEAR_GROWTH_LIMIT = 8;
 
+/** Max allowed cost ratio when input length doubles (linear ≈ 2, quadratic ≈ 4). */
+export const LINEAR_DOUBLING_LIMIT = 3.25;
+
+/** Max log–log slope (linear ≈ 1, quadratic ≈ 2). */
+export const LINEAR_LOG_SLOPE_LIMIT = 1.55;
+
 export const HANG_BACKSTOP_MS = 20_000;
 
+export type GrowthPoint = Readonly<{
+	readonly length: number;
+	readonly minMs: number;
+}>;
+
 export type Growth = {
-	/** n: the smaller input's length. The larger one is 4n. */
+	/** Smallest measured input length. */
 	readonly length: number;
 	/** How many times the operation ran within each timed run. */
 	readonly repeat: number;
 	/**
-	 * False when even `MAX_REPEAT` runs on n took under `minMs`: the operation
-	 * costs next to nothing, and its ratio is a ratio of clock ticks.
+	 * False when even `MAX_REPEAT` runs on the smallest size took under `minMs`:
+	 * the operation costs next to nothing, and its shape is mostly clock noise.
 	 */
 	readonly calibrated: boolean;
+	/** Minimum CPU ms at `length` (smallest size). */
 	readonly smallMs: number;
+	/** Minimum CPU ms at the largest measured size. */
 	readonly largeMs: number;
-	/** largeMs / smallMs. */
+	/** largeMs / smallMs (largest over smallest in the ladder). */
 	readonly ratio: number;
+	/** Every length in the ladder with its minimum CPU ms. */
+	readonly points: readonly GrowthPoint[];
+	/** Least-squares slope of log(ms) vs log(length). */
+	readonly logLogSlope: number;
 };
 
 export type GrowthOptions = {
 	/**
-	 * The first n tried (default 4096: below it, a quadratic term is too small
-	 * to tell from timer noise, and one slow run at a tiny size could pass).
+	 * The first length tried (default 4096: below it, a quadratic term is too
+	 * small to tell from timer noise, and one slow run at a tiny size could pass).
 	 */
 	readonly startLength?: number;
-	/** n doubles until a timed run takes this much CPU time (default 30 ms). */
+	/** Smallest length must reach this much CPU time before measuring (default 100 ms). */
 	readonly minMs?: number;
 	/**
-	 * n stops doubling here (default 2^18, so 4n is at most 1 Mi characters:
-	 * larger texts add garbage-collection costs that grow faster than the work).
+	 * Length stops doubling here (default 2^18, so the largest ladder step is at
+	 * most 1 Mi characters: larger texts add GC costs that grow faster than the work).
 	 */
 	readonly maxLength?: number;
-	/** Runs per size once calibrated; the fastest counts (default 2). */
+	/** Interleaved measurement rounds per length once calibrated (default 7). */
 	readonly runs?: number;
+	/** Discarded warmup rounds across the ladder before measuring (default 1). */
+	readonly warmupRuns?: number;
+	/** How many doubling steps after the smallest length (default 2 → lengths L, 2L, 4L). */
+	readonly ladderSteps?: number;
 };
 
 export class OperationHangError extends Error {
@@ -105,6 +124,43 @@ export class MissingCpuClockError extends Error {
 /** The most times one timed run repeats the operation. */
 export const MAX_REPEAT = 1024;
 
+/** Middle value; even-length inputs use the mean of the two central samples. */
+export function medianCpuMs(samples: readonly number[]): number {
+	if (samples.length === 0) return 0;
+	const sorted = [...samples].sort((left, right) => left - right);
+	const mid = Math.floor(sorted.length / 2);
+	if (sorted.length % 2 === 1) return sorted[mid] ?? 0;
+	const lower = sorted[mid - 1];
+	const upper = sorted[mid];
+	if (lower === undefined || upper === undefined) return 0;
+	return (lower + upper) / 2;
+}
+
+export function minCpuMs(samples: readonly number[]): number {
+	if (samples.length === 0) return 0;
+	return Math.min(...samples);
+}
+
+/** Least-squares slope of log(minMs) vs log(length); linear ≈ 1, quadratic ≈ 2. */
+export function logLogSlope(points: readonly GrowthPoint[]): number {
+	const valid = points.filter((point) => point.length > 0 && point.minMs > 0);
+	if (valid.length < 2) return Number.NaN;
+	const logs = valid.map((point) => ({
+		x: Math.log(point.length),
+		y: Math.log(point.minMs),
+	}));
+	const meanX = logs.reduce((sum, point) => sum + point.x, 0) / logs.length;
+	const meanY = logs.reduce((sum, point) => sum + point.y, 0) / logs.length;
+	let numerator = 0;
+	let denominator = 0;
+	for (const point of logs) {
+		const dx = point.x - meanX;
+		numerator += dx * (point.y - meanY);
+		denominator += dx * dx;
+	}
+	return denominator === 0 ? Number.NaN : numerator / denominator;
+}
+
 /**
  * One timed run, `repeat` calls of the operation: its CPU time. Each call's
  * wall time is held to the hang backstop.
@@ -143,7 +199,28 @@ async function onceAsync(
 }
 
 /** One timed run the measurement asks for. */
-type TimedRun = { readonly input: string; readonly repeat: number };
+type TimedRun = {
+	readonly input: string;
+	readonly length: number;
+	readonly repeat: number;
+	/** When true the caller records no sample from this run. */
+	readonly warmup?: boolean;
+};
+
+function ladderLengths(
+	smallest: number,
+	steps: number,
+	maxLength: number,
+): number[] {
+	const lengths: number[] = [];
+	let length = smallest;
+	for (let step = 0; step <= steps; step++) {
+		if (length > maxLength) break;
+		lengths.push(length);
+		if (step < steps) length *= 2;
+	}
+	return lengths;
+}
 
 /**
  * The measurement, written once for both kinds of operation: it yields each
@@ -153,47 +230,83 @@ function* growthPlan(
 	input: (length: number) => string,
 	options: GrowthOptions,
 ): Generator<TimedRun, Growth, number> {
-	const minMs = options.minMs ?? 30;
+	const minMs = options.minMs ?? 100;
 	const maxLength = options.maxLength ?? 262_144;
-	const runs = options.runs ?? 2;
+	const runs = options.runs ?? 7;
+	const warmupRuns = options.warmupRuns ?? 1;
+	const ladderSteps = Math.max(2, options.ladderSteps ?? 2);
+	const maxSmallest = Math.max(
+		options.startLength ?? 4096,
+		maxLength >> ladderSteps,
+	);
 	let length = options.startLength ?? 4096;
 	let repeat = 1;
-	// Calibrating takes one run a step: only the final sizes need the best of
-	// several.
-	let smallMs = yield { input: input(length), repeat };
-	while (smallMs < minMs && length * 2 <= maxLength) {
+	let smallMs = yield {
+		input: input(length),
+		length,
+		repeat,
+	};
+	while (smallMs < minMs && length * 2 <= maxSmallest) {
 		length *= 2;
-		smallMs = yield { input: input(length), repeat };
+		smallMs = yield { input: input(length), length, repeat };
 	}
-	const small = input(length);
+	const smallest = length;
+	const smallInput = input(smallest);
 	while (smallMs < minMs && repeat * 2 <= MAX_REPEAT) {
 		repeat *= 2;
-		smallMs = yield { input: small, repeat };
+		smallMs = yield { input: smallInput, length: smallest, repeat };
 	}
-	// Whether calibration reached minMs, read before the timed runs below: their
-	// best can come in under it, which says the calibrating run was slowed, not
-	// that the operation costs next to nothing.
 	const calibrated = smallMs >= minMs;
-	// The two sizes take turns, so anything that slows the machine for a while
-	// slows both rather than one.
-	const large = input(4 * length);
-	let largeMs = Number.POSITIVE_INFINITY;
-	for (let attempt = 0; attempt < runs; attempt++) {
-		largeMs = Math.min(largeMs, yield { input: large, repeat });
-		smallMs = Math.min(smallMs, yield { input: small, repeat });
+	const lengths = ladderLengths(smallest, ladderSteps, maxLength);
+	if (lengths.length < 2) {
+		throw new Error("growth ladder must include at least two lengths");
 	}
+	const samples = new Map<number, number[]>(
+		lengths.map((ladderLength) => [ladderLength, []]),
+	);
+	for (let round = 0; round < warmupRuns; round++) {
+		for (const ladderLength of lengths) {
+			yield {
+				input: input(ladderLength),
+				length: ladderLength,
+				repeat,
+				warmup: true,
+			};
+		}
+	}
+	for (let round = 0; round < runs; round++) {
+		for (const ladderLength of lengths) {
+			const ms = yield {
+				input: input(ladderLength),
+				length: ladderLength,
+				repeat,
+			};
+			samples.get(ladderLength)?.push(ms);
+		}
+	}
+	const points: GrowthPoint[] = lengths.map((ladderLength) => ({
+		length: ladderLength,
+		minMs: minCpuMs(samples.get(ladderLength) ?? []),
+	}));
+	const first = points[0];
+	const last = points.at(-1);
+	if (!first || !last) throw new Error("growth ladder produced no points");
+	const largeMs = last.minMs;
+	smallMs = first.minMs;
+	const slope = logLogSlope(points);
 	return {
-		length,
+		length: smallest,
 		repeat,
 		calibrated,
 		smallMs,
 		largeMs,
-		// A run too quick for the clock to see counts as one microsecond.
 		ratio: largeMs / Math.max(smallMs, 0.001),
+		points,
+		logLogSlope: slope,
 	};
 }
 
-/** How `run`'s cost grows from `input(n)` to `input(4n)`. */
+/** How `run`'s cost grows across the measurement ladder. */
 export function measureGrowth(
 	run: (input: string) => void,
 	input: (length: number) => string,
@@ -201,8 +314,10 @@ export function measureGrowth(
 ): Growth {
 	const plan = growthPlan(input, options);
 	let step = plan.next();
-	while (step.done !== true)
-		step = plan.next(once(run, step.value.input, step.value.repeat));
+	while (step.done !== true) {
+		const ms = once(run, step.value.input, step.value.repeat);
+		step = step.value.warmup ? plan.next() : plan.next(ms);
+	}
 	return step.value;
 }
 
@@ -214,8 +329,10 @@ export async function measureGrowthAsync(
 ): Promise<Growth> {
 	const plan = growthPlan(input, options);
 	let step = plan.next();
-	while (step.done !== true)
-		step = plan.next(await onceAsync(run, step.value.input, step.value.repeat));
+	while (step.done !== true) {
+		const ms = await onceAsync(run, step.value.input, step.value.repeat);
+		step = step.value.warmup ? plan.next() : plan.next(ms);
+	}
 	return step.value;
 }
 
@@ -229,21 +346,40 @@ export const NEGATIVE_CONTROL: GrowthOptions = Object.freeze({
 	startLength: 1024,
 	maxLength: 32_768,
 	minMs: 20,
-	runs: 1,
+	runs: 3,
+	ladderSteps: 2,
 });
 
+function doublingRatios(points: readonly GrowthPoint[]): number[] {
+	const ratios: number[] = [];
+	for (let index = 1; index < points.length; index++) {
+		const prev = points[index - 1];
+		const next = points[index];
+		if (!prev || !next || prev.minMs <= 0) continue;
+		ratios.push(next.minMs / prev.minMs);
+	}
+	return ratios;
+}
+
 /**
- * Linear: the cost grew by less than LINEAR_GROWTH_LIMIT, or the operation
- * costs next to nothing (`calibrated` false) and 4n took under
- * LINEAR_GROWTH_LIMIT × `minMs`. No quadratic operation is uncalibrated: one
- * that costs under 30 µs on a quarter megabyte, repeated MAX_REPEAT times, is not
- * reading the megabyte.
+ * Linear: log–log slope and doubling steps stay below the linear caps, or the
+ * operation costs next to nothing (`calibrated` false) and the largest size
+ * stayed under LINEAR_GROWTH_LIMIT × `minMs`.
  */
-export function grewLinearly(growth: Growth, minMs = 30): boolean {
-	return (
-		growth.ratio < LINEAR_GROWTH_LIMIT ||
-		(!growth.calibrated && growth.largeMs < LINEAR_GROWTH_LIMIT * minMs)
-	);
+export function grewLinearly(growth: Growth, minMs = 100): boolean {
+	if (!growth.calibrated) {
+		return growth.largeMs < LINEAR_GROWTH_LIMIT * minMs;
+	}
+	if (growth.ratio >= LINEAR_GROWTH_LIMIT) return false;
+	if (
+		Number.isFinite(growth.logLogSlope) &&
+		growth.logLogSlope > LINEAR_LOG_SLOPE_LIMIT
+	)
+		return false;
+	for (const step of doublingRatios(growth.points)) {
+		if (step >= LINEAR_DOUBLING_LIMIT) return false;
+	}
+	return true;
 }
 
 /** A text of `length` characters: `unit` repeated, after an optional prefix. */
@@ -261,8 +397,9 @@ export class NonLinearGrowthError extends Error {
 	readonly growth: Growth;
 
 	constructor(growth: Growth) {
+		const largest = growth.points.at(-1)?.length ?? 4 * growth.length;
 		super(
-			`cost grew ${growth.ratio.toFixed(1)}x from ${growth.length} to ${4 * growth.length} characters (${growth.smallMs.toFixed(2)} ms to ${growth.largeMs.toFixed(2)} ms of CPU, ${growth.repeat} call(s) a run); linear grows about 4x, and the limit is ${LINEAR_GROWTH_LIMIT}x`,
+			`cost grew ${growth.ratio.toFixed(1)}x from ${growth.length} to ${largest} characters (${growth.smallMs.toFixed(2)} ms to ${growth.largeMs.toFixed(2)} ms of CPU at minimum samples, slope ${growth.logLogSlope.toFixed(2)}, ${growth.repeat} call(s) a run); linear log-slope ≈ 1 and the caps are slope ${LINEAR_LOG_SLOPE_LIMIT}, ${LINEAR_DOUBLING_LIMIT}x per doubling, ${LINEAR_GROWTH_LIMIT}x overall`,
 		);
 		this.name = "NonLinearGrowthError";
 		this.growth = growth;

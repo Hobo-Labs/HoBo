@@ -136,12 +136,11 @@ it("admits a run's longest expected job first, inside the rank and run order", a
 		ref(1, 13),
 		ref(1, 12),
 	];
-	// Run 1 is older than run 2, and both are trunk runs ahead of the PR run,
-	// however long their jobs are. Inside run 1, the 85 s job leads and the
-	// job with no history (14) goes last.
+	// Newer push run 2 leads the older run 1; both outrank the pull request.
+	// Inside run 1, the 85 s job leads and the job with no history (14) goes last.
 	expect(
 		(await order(items, (item) => item)).map((item) => item.jobId),
-	).toEqual([12, 13, 11, 14, 21, 31]);
+	).toEqual([21, 12, 13, 11, 14, 31]);
 });
 
 it("puts a run with no start time behind started runs of the same rank", async () => {
@@ -182,6 +181,56 @@ it("keeps a seen trunk rank when the next lookup fails", async () => {
 	expect(
 		(await order([ref(2), ref(1)], (item) => item)).map((item) => item.jobId),
 	).toEqual([1, 2]);
+});
+
+it("does not sort merge_group jobs by run started time before queue positions exist", async () => {
+	const runs = new Map([
+		[1, { event: "merge_group", startedAt: "2026-10-26T14:00:00Z" }],
+		[2, { event: "merge_group", startedAt: "2026-10-26T11:00:00Z" }],
+	]);
+	const { github } = transport(runs);
+	const order = createAdmissionOrder(github, undefined, () => undefined);
+	expect(
+		(await order([ref(1), ref(2)], (item) => item)).map((item) => item.runId),
+	).toEqual([1, 2]);
+});
+
+it("orders merge_group jobs by merge queue position and deprioritizes stale heads", async () => {
+	const runs = new Map([
+		[10, { event: "merge_group", startedAt: "2026-10-26T14:00:00Z" }],
+		[20, { event: "merge_group", startedAt: "2026-10-26T12:00:00Z" }],
+		[30, { event: "merge_group", startedAt: "2026-10-26T11:00:00Z" }],
+	]);
+	const { github } = transport(runs);
+	const order = createAdmissionOrder(github, undefined, () => ({
+		byHeadSha: new Map([
+			["a".repeat(40), 1],
+			["b".repeat(40), 2],
+		]),
+		fetchedAtMs: Date.now(),
+	}));
+	order.prime({
+		runId: 10,
+		event: "merge_group",
+		runStartedAt: "2026-10-26T14:00:00Z",
+		headSha: "a".repeat(40),
+	});
+	order.prime({
+		runId: 20,
+		event: "merge_group",
+		runStartedAt: "2026-10-26T12:00:00Z",
+		headSha: "b".repeat(40),
+	});
+	order.prime({
+		runId: 30,
+		event: "merge_group",
+		runStartedAt: "2026-10-26T11:00:00Z",
+		headSha: "c".repeat(40),
+	});
+	const items = [ref(30), ref(10, 101), ref(20), ref(10, 100)];
+	expect(
+		(await order(items, (item) => item)).map((item) => item.jobId),
+	).toEqual([100, 101, 20, 30]);
 });
 
 it("uses primed run data without another GitHub request", async () => {

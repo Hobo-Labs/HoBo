@@ -54,6 +54,7 @@
     "test": "vitest run",
     "test:deep": "vitest run --config vitest.deep.config.ts",
     "db:generate": "node --import tsx ../ci/db/tooling/cli.mts generate",
+    "db:ship": "node --import tsx ../ci/db/tooling/cli.mts ship",
     "db:check": "node --import tsx ../ci/db/tooling/cli.mts check",
     "db:migrate": "node --import tsx ../ci/db/tooling/cli.mts migrate",
     "db:verify": "node --import tsx ../ci/db/tooling/cli.mts verify",

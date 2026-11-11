@@ -42,6 +42,9 @@ describe("worker memory config", () => {
 		expect(memoryClassForJob("PR impact gate")).toBe("light");
 		expect(memoryClassForJob("PR impact validation")).toBe("heavy");
 		expect(memoryClassForJob("PR affected package lanes")).toBe("heavy");
+		expect(
+			memoryClassForJob("Live data engines (PostgreSQL 16, MongoDB 8)"),
+		).toBe("heavy");
 		for (let shard = 0; shard < 8; shard++)
 			expect(memoryClassForJob(`Workspace test shard ${shard}`)).toBe("heavy");
 		expect(memoryClassForJob("Workspace test shard 0 (0)")).toBe("heavy");

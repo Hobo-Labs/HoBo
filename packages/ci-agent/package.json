@@ -41,6 +41,10 @@
     "./relay-main": {
       "types": "./dist/relay-main.d.ts",
       "default": "./dist/relay-main.js"
+    },
+    "./daemon": {
+      "types": "./dist/daemon-main.d.ts",
+      "default": "./dist/daemon-main.js"
     }
   },
   "scripts": {
@@ -48,20 +52,32 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "biome check .",
     "test": "vitest run",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
-    "start": "node dist/relay-main.js"
+    "start": "node dist/relay-main.js",
+    "agent": "node dist/daemon-main.js",
+    "acceptance:live": "node dist/daemon-main.js --once",
+    "contracts:github-schema": "curl -fsSL https://docs.github.com/public/fpt/schema.docs.graphql | gzip -9n > contracts/github-schema.graphql.gz"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
     "@hobo/ci-gh-actions": "workspace:*",
     "ai": "7.0.169",
+    "typescript": "^6.0.3",
+    "yaml": "2.9.0",
     "zod": "^4.1.13"
   },
   "peerDependencies": {
     "@ai-sdk/anthropic": "^4.0.102",
     "@ai-sdk/google": "^4.0.117",
+    "@ai-sdk/harness": "^1.0.180",
+    "@ai-sdk/harness-claude-code": "^1.0.184",
+    "@ai-sdk/harness-codex": "^1.0.182",
+    "@ai-sdk/harness-opencode": "^1.0.183",
+    "@ai-sdk/harness-pi": "^1.0.183",
     "@ai-sdk/openai": "^4.0.114",
-    "@ai-sdk/openai-compatible": "^3.0.90"
+    "@ai-sdk/openai-compatible": "^3.0.90",
+    "@ai-sdk/sandbox-just-bash": "^1.0.180"
   },
   "peerDependenciesMeta": {
     "@ai-sdk/anthropic": {
@@ -70,17 +86,39 @@
     "@ai-sdk/google": {
       "optional": true
     },
+    "@ai-sdk/harness": {
+      "optional": true
+    },
+    "@ai-sdk/harness-claude-code": {
+      "optional": true
+    },
+    "@ai-sdk/harness-codex": {
+      "optional": true
+    },
+    "@ai-sdk/harness-opencode": {
+      "optional": true
+    },
+    "@ai-sdk/harness-pi": {
+      "optional": true
+    },
     "@ai-sdk/openai": {
       "optional": true
     },
     "@ai-sdk/openai-compatible": {
+      "optional": true
+    },
+    "@ai-sdk/sandbox-just-bash": {
       "optional": true
     }
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "4.0.102",
     "@ai-sdk/google": "4.0.117",
+    "@ai-sdk/harness": "1.0.180",
+    "@ai-sdk/harness-claude-code": "1.0.184",
     "@ai-sdk/openai": "4.0.114",
-    "@ai-sdk/openai-compatible": "3.0.90"
+    "@ai-sdk/openai-compatible": "3.0.90",
+    "@ai-sdk/sandbox-just-bash": "1.0.180",
+    "graphql": "16.14.2"
   }
 }

@@ -6,6 +6,7 @@ import {
 	markerSizeFor,
 	parseMergeSegments,
 	regionContext,
+	regionTexts,
 } from "../src/conflict.js";
 
 const merged = [
@@ -104,5 +105,53 @@ describe("conflict regions", () => {
 		expect(fitRegionResolution(region, "Title\n=======\n")).toEqual({
 			text: "Title\n=======\n",
 		});
+	});
+
+	it("refuses a replacement that repeats the settled line next to its region", () => {
+		// zdiff3 moved the line both sides share out of the region.
+		const segments = parseMergeSegments(
+			"type P = {\n\tamount: number;\n<<<<<<< ours\n\tcurrency: string;\n||||||| base\n=======\n\tdiscount?: number;\n>>>>>>> theirs\n};\n",
+			7,
+		);
+		const region = segments[1];
+		if (region?.kind !== "conflict") throw new Error("expected a region");
+		const context = {
+			before: "type P = {\n\tamount: number;\n",
+			after: "};\n",
+		};
+		const fit = (text: string) => fitRegionResolution(region, text, context);
+		expect(
+			fit("\tamount: number;\n\tcurrency: string;\n\tdiscount?: number;\n"),
+		).toEqual({ refusal: "repeated-context" });
+		expect(fit("\tcurrency: string;\n\tdiscount?: number;\n};\n")).toEqual({
+			refusal: "repeated-context",
+		});
+		expect(fit("\tcurrency: string;\n\tdiscount?: number;\n")).toEqual({
+			text: "\tcurrency: string;\n\tdiscount?: number;\n",
+		});
+		// A line one side itself starts with is that side's, not a repeat.
+		const [own] = parseMergeSegments(
+			"<<<<<<< ours\n}\nx\n||||||| base\n=======\ny\n>>>>>>> theirs\n",
+			7,
+		);
+		if (own?.kind !== "conflict") throw new Error("expected a region");
+		expect(
+			fitRegionResolution(own, "}\nx\ny\n", { before: "}\n", after: "" }),
+		).toEqual({ text: "}\nx\ny\n" });
+	});
+
+	it("recovers the text a committed file put in each region", () => {
+		const segments = parseMergeSegments(merged, 7);
+		expect(regionTexts(segments, "one\nTWO both\nthree\nfour\n")).toEqual(
+			new Map([[0, "TWO both\n"]]),
+		);
+		// An empty resolution, and a file whose settled text changed since.
+		expect(regionTexts(segments, "one\nthree\nfour\n")).toEqual(
+			new Map([[0, ""]]),
+		);
+		expect(regionTexts(segments, "ONE\nTWO\nthree\nfour\n")).toBeUndefined();
+		expect(
+			regionTexts(segments, "one\nTWO\nthree\nfour\nextra\n"),
+		).toBeUndefined();
 	});
 });

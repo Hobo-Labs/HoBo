@@ -293,6 +293,35 @@ broker-held `CRON_SECRET` stable while those messages can be retried. The
 handoff does not change callbacks from deployments predating this mechanism;
 retire or drain those separately. Messages expire after one hour, while the
 database inbox remains the source of truth for recovery.
+
+The handoff is one request, never retried inside the function. Any answer but
+`204` fails with `queue handoff failed: status <code>`, plus
+`, retry-after <n>s` when the relay stated one: two numbers, never the response
+body, a header's text or the secret. What happens next is the queue's job, set
+by the consumer's `retry` policy (`@vercel/queue`'s `handleNodeCallback`
+option; `redeliverRefusedWakeup` in `src/queue-forwarding.ts`):
+
+| The callback failed with | The queue is told | Next delivery |
+| --- | --- | --- |
+| `503` from the relay, or the store back-off in-process | `{ afterSeconds }`: the message's lease is moved out and the callback answers `200` | After the larger of the relay's `Retry-After` and 5 s doubling per delivery of that message (5, 10, 20, 40, 80, 160), never more than 300 s |
+| Any other status, a network failure, a timeout, missing configuration | Nothing: the error propagates and the callback answers `500` | The queue's default interval |
+
+Before this, every failure was thrown straight back, and while the relay's
+store was down each wakeup came round again about every 15 seconds until it
+expired. The doubling is there because the relay's generic 503 says
+`Retry-After: 5`: honoured alone, that would be a five-second loop. A
+rescheduled message leaves no error in the queue's own log, so the consumer
+writes `hobo_ci_queue_handoff_deferred` for it (see the failure log below).
+`test/queue-redelivery.test.ts` runs the installed queue client against a
+stand-in for the queue service and checks the lease change it sends.
+
+A repair tick (`{"source": ..., "name": "hobo-ci-repair"}`) that lands while
+the store is in back-off is answered `204` and dropped, because the next tick
+does the same work. That matters for old production deployments: each keeps
+its own queue consumer and schedule, still forwards to the current relay, and
+retries a refusal at once with the code it was built from. Acknowledging the
+tick is the one thing that stops those retries from here. A webhook delivery
+wakeup is never dropped; it is held as above.
 Vercel's Hobby plan is limited to personal, non-commercial use. PostgreSQL,
 queue operations and Functions can incur usage charges according to the chosen
 plans. A temporary deployment or Vercel Drop alone is not a durable inbound App
@@ -520,9 +549,40 @@ that tick finds standbys about 15 minutes old, waits out
 - **The usage count is a lower bound** (an instance stopped before it writes
   its counter loses that count), and Neon's compute-hours are not measured at
   all.
-- **The schema seam is one function.** `ensureRelaySchema` runs the stores'
-  own table initialisers. When the schema moves to versioned migrations, that
-  function is the one place to change.
+- **A standby's schema comes from the checked-in migrations.**
+  `prepareRelaySchema` (`src/relay-schema.ts`) is the fleet's schema seam. On
+  a standby it applies `RELAY_SCHEMA_MIGRATIONS`, the migration sets
+  `@hobo/ci`, `@hobo/ci-gh-actions` and this package ship from their
+  `db/migrations/`, with the one runner (`applyMigrations` in
+  `@hobo/ci/schema-migrations`), over the fleet's control connection. No
+  relay store is opened on a standby, so the application writes nothing
+  there: the runner's writes are DDL and its ledger,
+  `hobo_ci_schema_migrations`, which the fleet does not copy. There is no
+  second list of DDL: the sets are copies of the reviewed SQL, held to it by
+  `db:check`, and the same SQL the writer's embedded DDL is proven to equal.
+  - *When.* For both sides of a copy that found the standby's columns
+    different from the writer's (the standby first), and, because a standby
+    that lacks only an index would never be offered that way, once per
+    instance for each standby whose ledger is not at this release: one read
+    of the ledger, and a migration run only if it is behind.
+  - *The writer's side* runs the stores' own initialisers first, as the
+    application does when it starts there, and then the same migrations. Only
+    the initialisers can move a table from an earlier release's layout
+    forward; the migrations then record what the writer holds.
+  - *Repeating and racing.* Each set is one transaction under the migration
+    lock and the locks the stores' initialisation takes, so several
+    instances, or a writer starting meanwhile, apply once.
+  - *A backend ahead of this release* (its ledger holds a migration this
+    release does not have, because a newer relay prepared it) is refused
+    before any statement and left exactly as it is; nothing is downgraded.
+    The error names the backend by its fleet id and the migration ids, never
+    a host or a connection string. While its columns still match the writer's
+    it keeps receiving copies; once they differ, its copies fail until the
+    newer release is deployed here or the backend leaves the fleet.
+  - *A standby that cannot converge* (a table at a layout older than the
+    baseline, which the guarded `CREATE TABLE` skips) is refused the same
+    way, with nothing recorded. It holds only copies: drop that table on the
+    standby and the next tick creates and refills it.
 
 #### Structured events
 
@@ -537,6 +597,7 @@ a connection string, a host name or an error message.
 | `hobo_ci_database_fleet_decision` | Every tick: action, reasons, target, loss window, every standby ranked |
 | `hobo_ci_database_fleet_transition` | Every attempt to change the assignment and whether it was decided |
 | `hobo_ci_database_fleet_unsettled` | A tick stopped: `undecided` or `no-majority` |
+| `hobo_ci_database_fleet_schema` | A backend's schema was prepared or could not be: `backend`, `role` (`writer`/`standby`), `status` (`applied`, `ahead`, `refused`, `failed`), and migration ids (those applied, or the unknown ones of a backend that is ahead). Nothing is written when there was nothing to apply |
 | `hobo_ci_database_fleet_failure` | A tick threw |
 
 #### Admission by HoBo's own conformance suite
@@ -628,6 +689,18 @@ Node 24 is required. Bootstrap mode uses these Vercel secret bindings:
   Supabase's and Amazon RDS's do. The certificate is verified against it;
   verification is never switched off. Without it such a connection fails with
   `unable to verify the first certificate`.
+
+  Without it, a connection string that asks for TLS is held to `verify-full`:
+  the system trust store and a hostname check. `sslmode=prefer`, `require` and
+  `verify-ca` are rewritten to `verify-full` before `pg` sees them, as are
+  `sslmode=no-verify` and `ssl=no-verify`, and `uselibpqcompat` is dropped.
+  `pg` 8 already reads the first three as `verify-full` unless
+  `uselibpqcompat=true` is set, in which case `require` and `prefer` accept any
+  certificate and `verify-ca` skips the hostname check; `pg` 9 is announced to
+  make that the default. `sslmode=disable` and a string with no TLS parameter still connect
+  without TLS, and a string that is not a URL is refused, since it cannot be
+  inspected. `PGSSLMODE` in the environment is not covered: `pg` reads it only
+  when the string names no TLS setting.
 - `HOBO_CI_PUBLIC_URL`: the stable HTTPS origin used by GitHub.
 - `HOBO_CI_SESSION_KEY`: a canonical, unpadded base64url encoding of 32 random bytes.
 - `HOBO_CI_BOOTSTRAP_ACCOUNT_ID` and `HOBO_CI_BOOTSTRAP_TOKEN_SHA256`: the owner
@@ -745,7 +818,10 @@ embedded hosted bridge still supplies and enforces its lease timeout.
   bootstrap store cannot be reached, `bootstrap-required` when no App is registered yet.
 - After the store fails it is left alone before the next attempt: 5 s, doubling to a minute. Every
   request used to dial it again.
-- A 503 for an unavailable store carries `Retry-After: 5`.
+- A 503 for a store in back-off carries the time left in `Retry-After` (whole seconds, 1 to 300),
+  on `POST /internal/queue-wakeup` as on any other route. A request that fails for another reason,
+  including the attempt that found the store down, carries `Retry-After: 5`, as does the bootstrap
+  entry's `/readyz`.
 
 With `HOBO_CI_EVENTS_URL` set, each failure below is also delivered as a CloudEvent (see the
 [runner queue runbook](../ci/RUNNER-QUEUE.md)).
@@ -764,6 +840,7 @@ start looked like a relay nobody was calling.
 | `hobo_ci_webhook_ingest_failed` | A signed delivery could not be committed (GitHub redelivers) | `event` |
 | `hobo_ci_control_failed` | An account or registration API call threw | `method`, `route` |
 | `hobo_ci_ready_check_failed` | The readiness check itself threw | none |
+| `hobo_ci_queue_handoff_deferred` | The queue consumer could not hand a wakeup over (relay `503`, or store back-off) and asked the queue to redeliver it later | `status` (0 when the back-off was raised in-process), `afterSeconds`, `deliveryCount` |
 
 The GitHub App bootstrap store reports `bootstrap store initialization failed` with the database
 error as its cause, so the line shows why the store could not be reached.

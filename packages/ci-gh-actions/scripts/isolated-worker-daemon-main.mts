@@ -1,12 +1,17 @@
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { cpus, homedir, hostname, loadavg } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from a local SQLite journal (default) or a shared Postgres relay partition. */
 import { toJsonString } from "@bufbuild/protobuf";
-import { ConfigurationSchema, type Lease, parseConfiguration } from "@hobo/ci";
+import {
+	ConfigurationSchema,
+	type Lease,
+	memoryAdmitHeadroom,
+	parseConfiguration,
+} from "@hobo/ci";
 import {
 	attachPostgresPoolErrorHandler,
 	boxGitMirrorPath,
@@ -21,11 +26,13 @@ import {
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
+	createHeadroomTrunkOverflow,
 	createHostedRelayRuntime,
 	createHostHealthMonitor,
 	createIsolatedContainerController,
 	createJobDurations,
 	createMemoryPeaks,
+	createMergeQueuePositionCache,
 	createNodeWorkerStorageFileSystem,
 	createPnpmStoreMaintenance,
 	createPollIngestCoalesce,
@@ -37,18 +44,22 @@ import {
 	createWorkerStorageAdmission,
 	type DepsImageProcessRequest,
 	defaultDepsRoot,
+	defaultGitMirrorFallbackRoot,
+	defaultGitMirrorPreferredRoot,
 	describeWaitingJobs,
 	generalLeaseIdsFor,
 	type HostedInboxStore,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
 	memoryRequestForJob,
+	mergeDrainInFlightCount,
 	meshSettingsFromEnv,
 	parseWorkerStopMode,
 	readAvailableMemoryMb,
 	readHostHealthSample,
 	readHostMemory,
 	relayTraceSinkFromEnv,
+	resolveGitMirrorRoot,
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
@@ -299,7 +310,6 @@ const fleetRoutesFlag = process.env.HOBO_CI_FLEET_ROUTES ?? "0";
 if (fleetRoutesFlag !== "0" && fleetRoutesFlag !== "1")
 	throw new Error("invalid HOBO_CI_FLEET_ROUTES");
 const publishFleetRoutes = fleetRoutesFlag === "1";
-const NO_OFFERS: ReadonlySet<string> = new Set();
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
@@ -509,6 +519,25 @@ try {
 		},
 		log,
 	});
+	const listWorkerContainers = () => {
+		if (docker.listWorkerContainers) return docker.listWorkerContainers();
+		if (!docker.list) throw new Error("docker driver missing list");
+		return docker.list("hobo.ci/isolated=1");
+	};
+	try {
+		for (const container of await listWorkerContainers()) {
+			if (container.state !== "running" || !container.name.startsWith("hobo-"))
+				continue;
+			log("hobo_ci_worker_adopt_running_container", {
+				name: container.name,
+				containerId: container.containerId,
+			});
+		}
+	} catch (error) {
+		log("hobo_ci_worker_adopt_failed", {
+			message: error instanceof Error ? error.message : "unknown",
+		});
+	}
 	const hostHealthPaths = [dockerDataRoot, workRoot];
 	// Collection cannot start inside the tick that noticed the pressure; it is
 	// asked for here and started when that tick ends.
@@ -532,7 +561,11 @@ try {
 		log,
 		// Collect now, not at the next interval: a job is about to need the room.
 		onPressure: (verdict) => {
-			if (verdict.reasons.some((reason) => reason.startsWith("storage")))
+			if (
+				verdict.state === "pressured" ||
+				verdict.state === "critical" ||
+				verdict.reasons.some((reason) => reason.startsWith("storage"))
+			)
 				gcRequested = true;
 		},
 	});
@@ -541,8 +574,17 @@ try {
 		string,
 		{ event?: string; jobCreatedAt?: string }
 	>();
-	const gitMirrorRoot =
-		process.env.HOBO_CI_GIT_MIRROR_ROOT ?? "/var/lib/hobo-ci/git";
+	const preferredGitMirrorRoot = defaultGitMirrorPreferredRoot();
+	const gitMirrorRoot = resolveGitMirrorRoot(
+		preferredGitMirrorRoot,
+		defaultGitMirrorFallbackRoot(),
+	);
+	if (gitMirrorRoot !== preferredGitMirrorRoot) {
+		log("hobo_ci_git_mirror_root_fallback", {
+			preferred: preferredGitMirrorRoot,
+			root: gitMirrorRoot,
+		});
+	}
 	const gitMirrorEnabled = process.env.HOBO_CI_GIT_MIRROR !== "0";
 	const gitMirrors = new Map<string, ReturnType<typeof createBoxGitMirror>>();
 	function gitMirrorFor(repository: string) {
@@ -552,6 +594,20 @@ try {
 		const created = createBoxGitMirror({ root: gitMirrorRoot, repository });
 		gitMirrors.set(key, created);
 		return created;
+	}
+	const containerEnv: Record<string, string> = {};
+	const memoryPeaksPath = join(workRoot, "memory-peaks.json");
+	const memoryPeaksTarget = "/run/hobo-ci/memory-peaks.json";
+	if (existsSync(memoryPeaksPath)) {
+		containerEnv.HOBO_CI_MEMORY_PEAKS_PATH = memoryPeaksTarget;
+	}
+	if (pnpmStore) {
+		containerEnv.npm_config_store_dir = PNPM_STORE_TARGET;
+		containerEnv.npm_config_package_import_method = "hardlink";
+		containerEnv.HOBO_CI_PNPM_STORE_MOUNTED = "1";
+	}
+	if (gitMirrorEnabled) {
+		containerEnv.HOBO_CI_GIT_MIRROR_ROOT = gitMirrorRoot;
 	}
 	const worker = createIsolatedContainerController({
 		store,
@@ -591,16 +647,19 @@ try {
 			}),
 		log,
 		slots,
-		volumes: pnpmStore
-			? [{ source: pnpmStore, target: PNPM_STORE_TARGET }]
-			: [],
-		containerEnv: pnpmStore
-			? {
-					npm_config_store_dir: PNPM_STORE_TARGET,
-					npm_config_package_import_method: "hardlink",
-					HOBO_CI_PNPM_STORE_MOUNTED: "1",
-				}
-			: {},
+		volumes: [
+			...(pnpmStore ? [{ source: pnpmStore, target: PNPM_STORE_TARGET }] : []),
+			...(existsSync(memoryPeaksPath)
+				? [
+						{
+							source: memoryPeaksPath,
+							target: memoryPeaksTarget,
+							readonly: true,
+						},
+					]
+				: []),
+		],
+		containerEnv,
 		workRoot,
 		workFs,
 		scheduleRetiredSweep: retiredSweep.trigger,
@@ -675,29 +734,73 @@ try {
 	const host = createCompositeIsolatedHost({ store, worker: worker.host });
 	if (!host) throw new Error("worker host unavailable");
 	let workerReconcileMs = 0;
+	const mergeQueueBranch = process.env.HOBO_CI_MERGE_QUEUE_BRANCH ?? "main";
+	const mergeQueueCache = createMergeQueuePositionCache({
+		github,
+		branch: mergeQueueBranch,
+		connections: async () =>
+			(await store.configuration())?.configuration?.connections ?? [],
+	});
+	const capacityVolatilityMb = Number(
+		process.env.HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB ?? "1024",
+	);
+	if (
+		!Number.isFinite(capacityVolatilityMb) ||
+		capacityVolatilityMb < 0 ||
+		!Number.isInteger(capacityVolatilityMb)
+	)
+		throw new Error("invalid HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB");
 	const fleetRoutes = publishFleetRoutes
 		? createFleetRoutePublisher({
 				github,
 				log,
-				// A critically short host stops being the fleet's first choice.
-				// Only this worker's offers: another host's health is its own.
-				unhealthyOfferIds: (account) =>
-					hostHealth.current().state === "critical"
-						? new Set(
-								account.offers
-									.filter(
-										(offer) =>
-											isIsolatedContainerOffer(offer) &&
-											offer.providerAccountId === workerAccountId,
-									)
-									.map((offer) => offer.id),
-							)
-						: NO_OFFERS,
+				unhealthyOfferIds: (account) => {
+					const bad = new Set<string>();
+					const isolated = account.offers.filter(
+						(offer) =>
+							isIsolatedContainerOffer(offer) &&
+							offer.providerAccountId === workerAccountId,
+					);
+					if (hostHealth.current().state === "critical") {
+						for (const offer of isolated) bad.add(offer.id);
+						return bad;
+					}
+					const availableMb = readAvailableMemoryMb();
+					if (
+						!memoryAdmitHeadroom(
+							availableMb,
+							memoryConfig.classes.heavy,
+							memoryConfig.reserveMb,
+							capacityVolatilityMb,
+						)
+					) {
+						for (const offer of isolated) bad.add(offer.id);
+					}
+					return bad;
+				},
 			})
 		: undefined;
 	const fleetCapacity = publishFleetRoutes
 		? createFleetCapacityPublisher({ github, log })
 		: undefined;
+	const trunkHeadroomOverflowMs = Number(
+		process.env.HOBO_CI_TRUNK_HEADROOM_OVERFLOW_MS ?? "120000",
+	);
+	if (
+		!Number.isFinite(trunkHeadroomOverflowMs) ||
+		trunkHeadroomOverflowMs < 0 ||
+		!Number.isInteger(trunkHeadroomOverflowMs)
+	)
+		throw new Error("invalid HOBO_CI_TRUNK_HEADROOM_OVERFLOW_MS");
+	const headroomTrunkOverflow = createHeadroomTrunkOverflow({
+		github,
+		memoryAdmission,
+		availableMemoryMb: readAvailableMemoryMb,
+		volatilityMb: capacityVolatilityMb,
+		overflowAfterMs: trunkHeadroomOverflowMs,
+		now: () => Date.now(),
+		log,
+	});
 	let mesh: ReturnType<typeof createWorkerMesh> | undefined;
 	const runtime = createHostedRelayRuntime({
 		store,
@@ -714,7 +817,9 @@ try {
 		lendTrunkSlots,
 		memoryAdmission,
 		storageAdmission,
+		mergeQueuePositions: () => mergeQueueCache.snapshot(),
 		fleetRoutes,
+		headroomTrunkOverflow,
 		fleetCapacity: fleetCapacity
 			? {
 					publish: (input) => fleetCapacity.publish(input),
@@ -873,6 +978,7 @@ try {
 						}),
 					onGithubError: (failure) =>
 						log("hobo_ci_isolated_worker_github_read_failed", { ...failure }),
+					beforePoll: () => mergeQueueCache.refresh(),
 				})
 			: undefined;
 	const pollWorthLogging = createPollLogFilter();
@@ -1050,6 +1156,7 @@ try {
 	runDepsImageEnsure();
 
 	let shutdownOnce: Promise<void> | undefined;
+	let runningWorkerContainers = 0;
 
 	async function shutdown(signal: string) {
 		if (shutdownOnce) return shutdownOnce;
@@ -1079,8 +1186,20 @@ try {
 				inUseWorkerMemoryMb = reconciliation.inUseMemoryMb;
 				await worker.reconcileOrphanJobs();
 				if (reconciliation.inventoryKnown) await runtime.tick({ admit: false });
+				try {
+					const listed = await listWorkerContainers();
+					runningWorkerContainers = listed.filter(
+						(c) => c.state === "running" && c.name.startsWith("hobo-"),
+					).length;
+				} catch {
+					runningWorkerContainers = 0;
+				}
 			};
-			const inFlight = async () => liveWorkerLeaseIds.size;
+			const inFlight = async () =>
+				mergeDrainInFlightCount(
+					liveWorkerLeaseIds.size,
+					runningWorkerContainers,
+				);
 			await reconcileDrain();
 			if (stopMode === "drain")
 				log("hobo_ci_isolated_worker_drain_started", {

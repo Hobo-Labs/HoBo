@@ -12,7 +12,9 @@ import {
 	githubDefaultBranch,
 } from "./github-queue.js";
 import type { ResolutionEngine } from "./resolver.js";
+import type { CommitSigningKey } from "./signing.js";
 import { createSqliteJournal } from "./sqlite-journal.js";
+import type { StructuredMerger } from "./structured-merge.js";
 
 const REPOSITORY = /^(?!\.)[A-Za-z0-9_.-]+\/(?!\.)[A-Za-z0-9_.-]+$/;
 
@@ -38,27 +40,38 @@ export function createRelayAgent(options: {
 	token: (installationId: number) => Promise<string>;
 	stateDirectory: string;
 	engines: readonly ResolutionEngine[];
+	/** The syntax-aware merge tried before any engine; see `resolution.structuredMerge`. */
+	structured?: StructuredMerger | undefined;
+	/** Signs every commit the agent writes; see `commit.signingKey`. */
+	signingKey?: CommitSigningKey | undefined;
 	intervalMs?: number;
-	fetch?: typeof fetch;
+	fetch?: typeof fetch | undefined;
 	git?: string;
 	/** Where a repository is fetched from and pushed to; GitHub over HTTPS by default. */
-	remoteUrl?: (repository: string) => string;
+	remoteUrl?: ((repository: string) => string) | undefined;
 	now?: () => string;
+	/** Told of each repository's report, after its tick. */
+	onReport?: ((report: AgentTickReport) => void) | undefined;
 }) {
 	mkdirSync(join(options.stateDirectory, "repositories"), { recursive: true });
 	const journal = createSqliteJournal(
 		join(options.stateDirectory, "agent.sqlite"),
 	);
-	const agents = new Map<string, CiAgent>();
+	/** One agent per repository, rebuilt when its installation or default branch changes. */
+	const agents = new Map<string, { identity: string; agent: CiAgent }>();
 	const run = promisify(execFile);
 
 	async function agentFor(connection: RelayConnection): Promise<CiAgent> {
 		const { repository, installationId } = connection;
-		const existing = agents.get(repository);
-		if (existing) return existing;
 		if (!REPOSITORY.test(repository))
 			throw new Error("invalid repository name");
 		const token = () => options.token(installationId);
+		const graphql = createGithubGraphql({ token, fetch: options.fetch });
+		// Read every pass: a repository can rename its default branch.
+		const baseRef = await githubDefaultBranch(graphql, repository);
+		const identity = `${installationId}@${baseRef}`;
+		const existing = agents.get(repository);
+		if (existing?.identity === identity) return existing.agent;
 		const directory = join(
 			options.stateDirectory,
 			"repositories",
@@ -77,10 +90,9 @@ export function createRelayAgent(options: {
 			],
 			{ cwd: directory },
 		);
-		const graphql = createGithubGraphql({ token, fetch: options.fetch });
 		const queue = createGithubQueue({
 			repository,
-			baseRef: await githubDefaultBranch(graphql, repository),
+			baseRef,
 			label: agentPolicies(options.config).queue.label,
 			graphql,
 			now: options.now,
@@ -93,12 +105,15 @@ export function createRelayAgent(options: {
 				directory,
 				auth: token,
 				git: options.git,
+				identity: agentPolicies(options.config).commit,
+				signer: options.signingKey,
 			}),
 			engines: options.engines,
+			structured: options.structured,
 			journal,
 			now: options.now,
 		});
-		agents.set(repository, agent);
+		agents.set(repository, { identity, agent });
 		return agent;
 	}
 
@@ -108,7 +123,9 @@ export function createRelayAgent(options: {
 		let failed = 0;
 		for (const connection of await options.connections())
 			try {
-				reports.push(await (await agentFor(connection)).tick());
+				const report = await (await agentFor(connection)).tick();
+				reports.push(report);
+				options.onReport?.(report);
 			} catch {
 				failed++;
 			}
@@ -129,4 +146,29 @@ export function createRelayAgent(options: {
 			journal.close();
 		},
 	};
+}
+
+/**
+ * What a tick report says to an operator, as log entries: one summary, and
+ * one entry per engine failure. Counts, ids, fixed reasons and HTTP statuses
+ * only; never repository or model text.
+ */
+export function reportLogEntries(
+	report: AgentTickReport,
+): readonly Readonly<Record<string, string | number>>[] {
+	return [
+		{
+			event: "agent.pass",
+			resolutions: report.resolutions.length,
+			enqueued: report.enqueued.length,
+			ejected: report.ejected.length,
+			failures: report.failures,
+		},
+		...report.engineFailures.map((failure) => ({
+			event: "agent.engine_failed",
+			engine: failure.engineId,
+			reason: failure.reason,
+			status: failure.status,
+		})),
+	];
 }

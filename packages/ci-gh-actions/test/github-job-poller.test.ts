@@ -2562,6 +2562,8 @@ describe("pull-mode box worker over SQLite", () => {
 				runId: 700,
 				runEvent: "merge_group",
 				label: "hobo-trunk",
+				jitLabels: "hobo-trunk",
+				jobLabels: "hobo-trunk",
 				jobCreatedAt: "2026-11-04T06:16:45Z",
 				admittedAt: "2026-11-04T06:16:47.000Z",
 				containerStartedAt: "2026-11-04T06:16:47.000Z",

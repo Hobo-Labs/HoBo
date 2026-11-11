@@ -2,7 +2,10 @@ import { once } from "node:events";
 import { createServer, request } from "node:http";
 import { afterEach, expect, it } from "vitest";
 import { z } from "zod";
-import { createNodeRelayHandler } from "../src/node-http.js";
+import {
+	createNodeRelayHandler,
+	unavailableRetryAfterSeconds,
+} from "../src/node-http.js";
 
 const servers: ReturnType<typeof createServer>[] = [];
 afterEach(async () => {
@@ -105,4 +108,50 @@ it("serves plain HTTP only for an explicitly allowed loopback origin", () => {
 			allowLoopbackHttp: true,
 		}),
 	).not.toThrow();
+});
+
+it("answers a failed request with 503 and the Retry-After its error states", async () => {
+	// The store back-off's error: it knows when the store will be tried again.
+	class StoreUnavailable extends Error {
+		constructor(readonly retryAfterMs: number) {
+			super("store unavailable; not retried yet");
+		}
+	}
+	let failure: Error = new Error("anything else");
+	const port = await listen(async () => {
+		throw failure;
+	});
+	// Both the buffered path and the streamed one end in the same answer.
+	for (const path of ["/internal/queue-wakeup", "/sandbox/egress/artifact"]) {
+		failure = new Error("anything else");
+		const fallback = await fetch(`http://127.0.0.1:${port}${path}`);
+		expect(fallback.status).toBe(503);
+		expect(fallback.headers.get("retry-after")).toBe("5");
+		expect(await fallback.text()).toBe('{"error":"service unavailable"}');
+
+		failure = new StoreUnavailable(39_001);
+		const stated = await fetch(`http://127.0.0.1:${port}${path}`);
+		expect(stated.status).toBe(503);
+		expect(stated.headers.get("retry-after")).toBe("40");
+		expect(stated.headers.get("cache-control")).toBe("no-store");
+		// The error's text never reaches the caller.
+		expect(await stated.text()).toBe('{"error":"service unavailable"}');
+	}
+});
+
+it("states a Retry-After of 1 to 300 whole seconds, and 5 when the error says nothing usable", () => {
+	const hinted = (retryAfterMs: number | string | undefined) =>
+		unavailableRetryAfterSeconds(
+			Object.assign(new Error("unavailable"), { retryAfterMs }),
+		);
+	expect(unavailableRetryAfterSeconds(undefined)).toBe(5);
+	expect(unavailableRetryAfterSeconds(new Error("plain"))).toBe(5);
+	expect(hinted(1)).toBe(1);
+	expect(hinted(5_000)).toBe(5);
+	expect(hinted(60_000)).toBe(60);
+	expect(hinted(3_600_000)).toBe(300);
+	for (const unusable of [0, -1, Number.NaN, Number.POSITIVE_INFINITY])
+		expect(hinted(unusable)).toBe(5);
+	expect(hinted("soon")).toBe(5);
+	expect(hinted(undefined)).toBe(5);
 });

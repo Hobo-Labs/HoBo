@@ -93,9 +93,14 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 		jobText("pr_gate_validation"),
 		/- name: Assert CI fabric contract\n[ \t]+if: github\.event_name == 'merge_group'/u,
 	);
-	assert.match(
-		jobText("ci-guard"),
-		/^ {4}if: github\.event_name == 'pull_request'$/mu,
+	// Pull requests only, and skipped there only for a signed local run the
+	// route job verified as covering this job by id.
+	assert.ok(
+		jobText("ci-guard")
+			.split("\n")
+			.includes(
+				"    if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"ci-guard\"')) }}",
+			),
 	);
 });
 

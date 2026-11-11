@@ -5,6 +5,7 @@ import {
 	computeJobMemoryConfig,
 	type JobMemoryConfig,
 } from "../../packages/ci-gh-actions/src/isolated-worker/job-memory-config.ts";
+import type { MemoryPeakHistories } from "../../packages/ci-gh-actions/src/isolated-worker/memory-peaks.ts";
 
 export type { JobMemoryConfig };
 export { computeJobMemoryConfig };
@@ -48,6 +49,24 @@ function readCgroupMemoryMaxMb(): number | undefined {
 	}
 }
 
+export function recentPeakMbForJob(
+	jobName: string,
+	peaksPath: string | undefined,
+): number | undefined {
+	if (!peaksPath || jobName === "") return undefined;
+	try {
+		// SAFETY: worker-owned JSON; shape matches MemoryPeakHistories.
+		const parsed = JSON.parse(
+			readFileSync(peaksPath, "utf8"),
+		) as MemoryPeakHistories;
+		const history = parsed[jobName];
+		if (!history?.peaksMb?.length) return undefined;
+		return Math.max(...history.peaksMb);
+	} catch {
+		return undefined;
+	}
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
 	const githubEnv = process.env.GITHUB_ENV;
 	if (!githubEnv) throw new Error("missing GITHUB_ENV");
@@ -55,10 +74,19 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
 		totalMemMb: Math.floor(totalmem() / MIB),
 		cgroupMemoryMaxMb: readCgroupMemoryMaxMb(),
 	});
-	const config = computeJobMemoryConfig({
+	const jobName = process.env.GITHUB_JOB ?? "";
+	const recentPeakMb = recentPeakMbForJob(
+		jobName,
+		process.env.HOBO_CI_MEMORY_PEAKS_PATH,
+	);
+	const memoryInput: Parameters<typeof computeJobMemoryConfig>[0] = {
 		limitMb,
 		cpuCount: availableParallelism(),
-	});
+	};
+	if (recentPeakMb !== undefined) {
+		memoryInput.recentPeakMb = recentPeakMb;
+	}
+	const config = computeJobMemoryConfig(memoryInput);
 	appendFileSync(githubEnv, `${jobMemoryEnvLines(config).join("\n")}\n`);
 	console.error(
 		`memory-env: limitMb=${limitMb} heapMb=${config.heapMb} HOBO_TEST_MAX_WORKERS=${config.vitestMaxWorkers} HOBO_TURBO_CONCURRENCY=${config.turboConcurrency}`,

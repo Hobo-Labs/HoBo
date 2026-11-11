@@ -106,14 +106,21 @@ export function planUnits(
 	return [...new Set([...full, ...subsets.keys()])].sort();
 }
 
-/** Workspaces Turbo would run for this plan (test tasks only for repo-wide plans). */
+/**
+ * Workspaces Turbo would run for this plan (test tasks only for repo-wide plans).
+ *
+ * A repo-wide plan reads the test task graph. `graph` is injectable like the
+ * workspace list beside it, so a caller that describes a tree in memory
+ * describes its graph too instead of being compared with this repository's.
+ */
 export function testWorkspaceUnits(
 	plan: TestPlan,
 	workspaces: readonly Workspace[],
+	graph: TestGraph = turboTestGraph,
 ): string[] {
 	if (plan.mode !== "all") return planUnits(plan, workspaces);
 	const workspaceDirs = new Set(workspaces.map((ws) => ws.dir));
-	const tests = turboTestGraph([]).filter((task) => task.task === "test");
+	const tests = graph([]).filter((task) => task.task === "test");
 	const dirs = tests
 		.map((task) => task.directory)
 		.filter((dir) => workspaceDirs.has(dir));
@@ -180,6 +187,7 @@ export function shardTestPlan(
 	index: number,
 	count: number,
 	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
+	graph: TestGraph = turboTestGraph,
 ): TestPlan {
 	if (
 		!Number.isSafeInteger(index) ||
@@ -190,11 +198,11 @@ export function shardTestPlan(
 		index >= count
 	)
 		throw new Error("invalid workspace test shard");
-	const full =
-		plan.mode === "all" ? testWorkspaceUnits(plan, workspaces) : [...plan.full];
+	// Read once: for a repo-wide plan this is a `turbo --dry=json` run.
+	const dirs = testWorkspaceUnits(plan, workspaces, graph);
+	const full = plan.mode === "all" ? dirs : [...plan.full];
 	const subsets =
 		plan.mode === "all" ? new Map<string, readonly string[]>() : plan.subsets;
-	const dirs = testWorkspaceUnits(plan, workspaces);
 	const selected = new Set(
 		partitionUnitsByWeight(dirs, durations, count)[index],
 	);
@@ -220,11 +228,12 @@ export function planShardCountBalanced(
 	max: number,
 	targetSeconds: number,
 	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
+	graph: TestGraph = turboTestGraph,
 ): number {
 	if (!Number.isSafeInteger(max) || max < 1 || max > 64)
 		throw new Error("invalid workspace test shard");
 	if (!(targetSeconds > 0)) throw new Error("invalid workspace shard target");
-	const units = testWorkspaceUnits(plan, workspaces);
+	const units = testWorkspaceUnits(plan, workspaces, graph);
 	if (units.length === 0) return 1;
 	let count = 1;
 	while (count < max) {
@@ -841,7 +850,7 @@ export function planDependentTests(
 	// A package that declares no dependency can still reach a change: a path
 	// outside every package (the root vitest config, a shared setup file, a doc
 	// a test reads), or another package's file it imports by relative path
-	// (`packages/stations` importing `../../broker/src/budget-signals.js`). Only a
+	// (`packages/code` importing `../../cli/src/cloud/loader.js`). Only a
 	// closure that actually reaches it counts: walking every package strictly
 	// would run all of them for a docs edit.
 	const bystanders = repo.workspaces
@@ -929,6 +938,10 @@ export type TestGraph = (dirs: readonly string[]) => readonly GraphTask[];
  * (`--only`) with its files passed through to the package's `vitest run`.
  * `turboArgs` go to the first call only.
  */
+function turboAffectedArgs(): readonly string[] {
+	return process.env.HOBO_TURBO_USE_AFFECTED === "1" ? ["--affected"] : [];
+}
+
 export function planCommands(
 	plan: TestPlan,
 	turboArgs: readonly string[],
@@ -937,12 +950,15 @@ export function planCommands(
 ): readonly (readonly string[])[] {
 	const test = ["exec", "turbo", "run", "test"];
 	const parallel = `--concurrency=${concurrency}`;
-	if (plan.mode === "all") return [[...test, parallel, ...turboArgs]];
+	const affected = turboAffectedArgs();
+	if (plan.mode === "all")
+		return [[...test, ...affected, parallel, ...turboArgs]];
 	const commands: string[][] = [];
 	if (plan.subsets.size === 0) {
 		if (plan.full.length > 0)
 			commands.push([
 				...test,
+				...affected,
 				...plan.full.map((dir) => `--filter=./${dir}`),
 				"--continue",
 				parallel,
@@ -979,20 +995,35 @@ export function planCommands(
 	return commands;
 }
 
+export type TurboGraphOptions = Readonly<{
+	/** When true, plan with `turbo run test --affected --dry=json`. */
+	affected?: boolean;
+	/** Sets `TURBO_SCM_BASE` for the dry run (required with `affected`). */
+	scmBase?: string;
+}>;
+
 /** Reads the `test` task graph from `turbo run test --dry=json`. */
-export function turboTestGraph(dirs: readonly string[]): readonly GraphTask[] {
-	const dry = spawnSync(
-		"pnpm",
-		[
-			"exec",
-			"turbo",
-			"run",
-			"test",
-			...dirs.map((dir) => `--filter=./${dir}`),
-			"--dry=json",
-		],
-		{ encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
-	);
+export function turboTestGraph(
+	dirs: readonly string[],
+	options?: TurboGraphOptions,
+): readonly GraphTask[] {
+	const turboArgs = [
+		"exec",
+		"turbo",
+		"run",
+		"test",
+		...(options?.affected
+			? ["--affected"]
+			: dirs.map((dir) => `--filter=./${dir}`)),
+		"--dry=json",
+	];
+	const env = { ...process.env };
+	if (options?.scmBase) env.TURBO_SCM_BASE = options.scmBase;
+	const dry = spawnSync("pnpm", turboArgs, {
+		encoding: "utf8",
+		maxBuffer: 256 * 1024 * 1024,
+		env,
+	});
 	if (dry.status !== 0)
 		throw new Error(`turbo --dry=json failed:\n${dry.stderr}`);
 	const parsed: Json = JSON.parse(dry.stdout);
@@ -1016,8 +1047,84 @@ export function turboTestGraph(dirs: readonly string[]): readonly GraphTask[] {
 	return tasks;
 }
 
+/** Package dirs Turbo would schedule a `test` task for under `--affected`. */
+export function turboAffectedTestDirectories(
+	scmBase: string,
+): ReadonlySet<string> {
+	const tasks = turboTestGraph([], { affected: true, scmBase });
+	return new Set(
+		tasks.filter((task) => task.task === "test").map((task) => task.directory),
+	);
+}
+
+/**
+ * Drop planner units Turbo's affected graph would not run; add Turbo-only
+ * workspaces the import walk skipped.
+ */
+export function intersectScopedPlanWithTurboAffected(
+	plan: TestPlan,
+	affected: ReadonlySet<string>,
+	workspaces: readonly Workspace[],
+): TestPlan {
+	if (plan.mode === "all") return plan;
+	const workspaceDirs = new Set(workspaces.map((ws) => ws.dir));
+	const keep = (dir: string) => affected.has(dir) && workspaceDirs.has(dir);
+	const full = plan.full.filter(keep);
+	const subsets = new Map([...plan.subsets].filter(([dir]) => keep(dir)));
+	for (const dir of affected) {
+		if (!workspaceDirs.has(dir) || full.includes(dir) || subsets.has(dir))
+			continue;
+		full.push(dir);
+	}
+	full.sort();
+	return {
+		mode: "scoped",
+		full,
+		subsets,
+		skipped: plan.skipped.filter((dir) => !keep(dir)),
+	};
+}
+
+/** Plan workspace tests for a main push, narrowed to Turbo `--affected`. */
+export function planDependentTestsForTurboAffected(
+	changedPaths: readonly string[],
+	repo: Repo,
+	scmBase: string,
+	readRootFile?: ReadRootFile,
+): TestPlan {
+	const plan = planDependentTests(changedPaths, repo, readRootFile);
+	if (plan.mode === "all") return plan;
+	const affected = turboAffectedTestDirectories(scmBase);
+	if (affected.size === 0)
+		return { mode: "scoped", full: [], subsets: new Map(), skipped: [] };
+	return intersectScopedPlanWithTurboAffected(plan, affected, repo.workspaces);
+}
+
+function alignPlanWithTurboAffectedFromEnv(
+	plan: TestPlan,
+	workspaces: readonly Workspace[],
+): TestPlan {
+	if (plan.mode === "all" || process.env.HOBO_TURBO_USE_AFFECTED !== "1")
+		return plan;
+	const scmBase = process.env.TURBO_SCM_BASE?.trim();
+	if (!scmBase) return plan;
+	return intersectScopedPlanWithTurboAffected(
+		plan,
+		turboAffectedTestDirectories(scmBase),
+		workspaces,
+	);
+}
+
 /** Runs the plan. Every part runs, so one failure hides no other. */
 function runPlan(plan: TestPlan, turboArgs: readonly string[]): number {
+	if (
+		plan.mode === "scoped" &&
+		plan.full.length === 0 &&
+		plan.subsets.size === 0
+	) {
+		console.error("dependent-tests: no workspace tests selected");
+		return 0;
+	}
 	let status = 0;
 	for (const args of planCommands(
 		plan,
@@ -1105,6 +1212,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 			? undefined
 			: cliRootFileReader(baseArgument.slice("--base=".length)),
 	);
+	plan = alignPlanWithTurboAffectedFromEnv(plan, repo.workspaces);
 	if (planShards !== undefined) {
 		const count = planShardCount(
 			plan,

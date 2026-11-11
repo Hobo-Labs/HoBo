@@ -12,6 +12,16 @@ message AgentConfig {
   QueuePolicy queue = 3;
   ResolutionPolicy resolution = 4;
   AgentBudget budget = 5;
+  CommitPolicy commit = 6;
+}
+
+// Who the agent's commits are by, and the key that signs them.
+message CommitPolicy {
+  string name = 1;
+  string email = 2;
+  // A reference ("env:NAME", "github-secret:NAME") to an unencrypted ed25519
+  // key; empty leaves commits unsigned.
+  string signing_key = 3;
 }
 
 message AgentEngine {
@@ -49,6 +59,11 @@ message ResolutionPolicy {
   double min_confidence = 5;
   // Lines of unconflicted text shown on each side of a conflict region.
   uint32 context_lines = 6;
+  // Corrected resolutions tried after the repository's checks fail on one.
+  uint32 max_repairs = 7;
+  // Try a syntax-aware merge (mergiraf) of each conflicted file before any
+  // model. The operator installs `mergiraf` beside the agent.
+  bool structured_merge = 8;
 }
 
 message AgentBudget {
@@ -133,6 +148,8 @@ message ResolvedFile {
   // The lowest confidence the engine reported for a region of this file.
   double confidence = 3;
   string content_sha256 = 4;
+  // The structured merge settled the whole file, not only its conflict regions.
+  bool structured = 5;
 }
 
 // The outcome of one attempt to merge `ours_sha` and `theirs_sha`.
@@ -155,6 +172,19 @@ message Resolution {
   string commit_sha = 12;
   // Where it was published; empty in observe mode.
   string published_ref = 13;
+  // The key of the resolution whose failed checks this one repairs.
+  string repairs = 14;
+  // 0 for a first resolution; one more for each repair.
+  uint32 attempt = 15;
+  // The text each conflict region was resolved with. Reused for the same
+  // conflict once this resolution's checks have passed.
+  repeated RecordedRegion regions = 16;
+}
+
+message RecordedRegion {
+  // SHA-256 over the region's ours, base and theirs text.
+  string conflict_sha256 = 1;
+  string resolution = 2;
 }
 
 // The agent's journal record. Replay rebuilds spent budget and attempted keys.
@@ -163,7 +193,8 @@ message AgentEvent {
   // "ci.agent.PlanProposed" | "ci.agent.ResolutionSettled" |
   // "ci.agent.ResolutionPublished" | "ci.agent.RollupPublished" |
   // "ci.agent.EntryEnqueued" | "ci.agent.BudgetExhausted" |
-  // "ci.agent.ApplyWithheld"
+  // "ci.agent.ApplyWithheld" | "ci.agent.ResolutionChecked" |
+  // "ci.agent.EntryEjected"
   string type = 2;
   string at = 3;
   string repository = 4;
@@ -173,4 +204,6 @@ message AgentEvent {
   repeated uint32 numbers = 7;
   // The commit an EntryEnqueued event enqueued. It is never enqueued again.
   string head_sha = 8;
+  // A ResolutionChecked event's result: "success" | "failure".
+  string checks_state = 9;
 }

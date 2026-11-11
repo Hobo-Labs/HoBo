@@ -127,10 +127,16 @@ export function planQueue(input: {
 	/** Entries that do not merge onto the base branch, with the conflicted paths. */
 	baseConflicts: ReadonlyMap<number, readonly string[]>;
 	policy: QueuePolicy;
+	/**
+	 * Entries the merge queue ejected at their current commit. Each is
+	 * batched alone, so a failure that may be its own cannot fail others.
+	 */
+	isolated?: ReadonlySet<number>;
 }): QueuePlan {
 	const { snapshot, policy } = input;
 	const entries = snapshot.entries.slice(0, policy.maxDepth);
 	const verdictOf = createVerdicts(input.verdicts);
+	const isolated = input.isolated ?? new Set<number>();
 	const conflicts = (a: QueueEntry, b: QueueEntry) =>
 		verdictOf(a, b).verdict !== "clean";
 	const nowMs = Date.parse(snapshot.observedAt);
@@ -186,6 +192,8 @@ export function planQueue(input: {
 			batch &&
 			batch.length < policy.maxBatchSize &&
 			!input.baseConflicts.has(entry.number) &&
+			!isolated.has(entry.number) &&
+			batch.every((member) => !isolated.has(member.number)) &&
 			batch.every(
 				(member) =>
 					!input.baseConflicts.has(member.number) && !conflicts(member, entry),

@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AdmissionOrder } from "../admission-order.js";
 import type { GithubTransport } from "../github.js";
 import type { JobDurations } from "../job-durations.js";
+import { runnerCustody } from "../job-runner-custody.js";
 import { servedRunnerLabel } from "../runner-labels.js";
 import type { PollIngestCoalesce } from "./poll-ingest-coalesce.js";
 
@@ -33,6 +34,8 @@ export interface GithubJobPollerOptions {
 	durations?: Pick<JobDurations, "observe">;
 	/** Primed from the run lists already read here, at no extra GitHub request. */
 	admissionOrder?: Pick<AdmissionOrder, "prime">;
+	/** Runs before each poll (merge queue positions, etc.). */
+	beforePoll?: () => Promise<void>;
 	ingestCoalesce?: PollIngestCoalesce;
 	/**
 	 * Asked once per poll for each queued job before it is taken in. False
@@ -105,12 +108,50 @@ const Runs = z.object({
 			run_attempt: z.number().int().positive().optional(),
 			status: z.string().nullable().optional(),
 			event: z.string().optional(),
+			head_branch: z.string().nullable().optional(),
 			head_sha: z.string().optional(),
+			path: z.string().optional(),
 			run_started_at: z.string().nullable().optional(),
 		}),
 	),
 });
 type Run = z.infer<typeof Runs>["workflow_runs"][number];
+
+/** Workflow file path for {@link HOBO_CI_FABRIC_WORKFLOW_BASENAME}. */
+// public-contract: shared workflow basename for superseded main-push poll filtering.
+export const HOBO_CI_FABRIC_WORKFLOW_BASENAME = "hobo-ci.yml";
+
+function runStartedAtMs(run: Run): number {
+	const parsed = Date.parse(run.run_started_at ?? "");
+	return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * Older in-flight main pushes superseded by GitHub `cancel-in-progress` on HoBo
+ * CI Fabric. Their queued jobs must not hold fleet slots behind the live SHA.
+ */
+export function supersededMainFabricPushRunIds(
+	runs: readonly Run[],
+	workflowBasename = HOBO_CI_FABRIC_WORKFLOW_BASENAME,
+): ReadonlySet<number> {
+	const mainPush = runs.filter((run) => {
+		if (run.event !== "push") return false;
+		if (run.head_branch !== "main") return false;
+		const path = run.path ?? "";
+		if (!path.endsWith(`/${workflowBasename}`)) return false;
+		const status = run.status ?? "";
+		return status === "queued" || status === "in_progress";
+	});
+	if (mainPush.length <= 1) return new Set();
+	const sorted = [...mainPush].sort(
+		(a, b) => runStartedAtMs(b) - runStartedAtMs(a),
+	);
+	const newest = sorted[0]?.id;
+	if (newest === undefined) return new Set();
+	return new Set(
+		sorted.filter((run) => run.id !== newest).map((run) => run.id),
+	);
+}
 const Jobs = z.object({
 	jobs: z.array(
 		z.object({
@@ -245,11 +286,13 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 		readThisPoll = new Map();
 		const stillSettled = new Set<string>();
 		try {
+			await options.beforePoll?.();
 			for (const connection of await options.connections()) {
 				if (seen.has(connection.repositoryId)) continue;
 				seen.add(connection.repositoryId);
 				summary.repositories++;
 				const runIds = new Set<number>();
+				const activeRuns: Run[] = [];
 				for (const status of RUN_STATUSES) {
 					const runs = await getJson(
 						connection.installationId,
@@ -258,7 +301,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						summary,
 					);
 					primeRuns(runs?.workflow_runs);
-					for (const run of runs?.workflow_runs ?? []) runIds.add(run.id);
+					for (const run of runs?.workflow_runs ?? []) {
+						runIds.add(run.id);
+						activeRuns.push(run);
+					}
 				}
 				const newest = await getJson(
 					connection.installationId,
@@ -270,7 +316,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 				const newestCompleted: Run[] = [];
 				for (const run of newest?.workflow_runs ?? []) {
 					if (run.status === "completed") newestCompleted.push(run);
-					else runIds.add(run.id);
+					else {
+						runIds.add(run.id);
+						activeRuns.push(run);
+					}
 				}
 				// A run that finished drops out of queued/in_progress before its last
 				// job's completion is seen; without it the runner's container is only
@@ -310,8 +359,10 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					if (key !== undefined && run.run_attempt !== undefined)
 						settling.set(run.id, { key, attempt: run.run_attempt });
 				}
+				const supersededRuns = supersededMainFabricPushRunIds(activeRuns);
 				summary.runs += runIds.size;
 				for (const runId of runIds) {
+					if (supersededRuns.has(runId)) continue;
 					const jobs = await getJson(
 						connection.installationId,
 						`/repos/${connection.repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
@@ -335,12 +386,25 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						// Assignment is only useful once GitHub names the runner.
 						if (status.data !== "queued" && !job.runner_name) continue;
 						summary.hoboJobs++;
+						const queuedSinceMs =
+							job.created_at !== undefined
+								? Date.parse(job.created_at)
+								: undefined;
+						if (supersededRuns.has(job.run_id)) {
+							summary.waiting.push({
+								jobId: job.id,
+								runId: job.run_id,
+								result: "superseded-main-push",
+							});
+							continue;
+						}
 						if (
 							status.data === "queued" &&
 							options.ingestCoalesce?.shouldSkip(
 								connection.repositoryId,
 								job.id,
 								job.run_attempt,
+								queuedSinceMs,
 							)
 						) {
 							summary.waiting.push({
@@ -393,9 +457,13 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 						// The runner name is part of the body, so it is part of the id: a job
 						// GitHub reassigns to another runner is a new observation, not a
 						// conflicting replay of the old one.
-						const runnerKey = job.runner_name
-							? `-${createHash("sha256").update(job.runner_name).digest("hex").slice(0, 12)}`
-							: "";
+						const runnerKey =
+							runnerCustody(job.runner_name) === "foreign"
+								? `-${createHash("sha256")
+										.update(job.runner_name ?? "")
+										.digest("hex")
+										.slice(0, 12)}`
+								: "";
 						let result: Awaited<ReturnType<typeof options.ingest>>;
 						try {
 							result = await options.ingest({

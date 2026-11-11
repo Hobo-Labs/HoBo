@@ -11,7 +11,8 @@ name: hobo-data-engines-live
 
 services:
   postgres:
-    image: postgres:16
+    # Pinned in live-engine-images.json; CI starts the same images.
+    image: postgres:16@sha256:f9a7b9ebf6f56201f949db745e47bc423c0f0f8294bafe991cc10bf74b029657
     # Logical decoding (change capture) and the logical-copy fast path need
     # wal_level=logical; every capture subscription holds a replication slot.
     command:
@@ -27,15 +28,22 @@ services:
     ports:
       - "127.0.0.1:55432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      # Over TCP: the image's first-start init server listens on the unix
+      # socket only, so this cannot report healthy just before the restart.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres"]
       interval: 2s
       timeout: 5s
       retries: 30
 
   mongodb:
-    image: mongo:8.0
+    image: mongo:8.0@sha256:b9924c330a8bbc5800fe9c69f04a84e221eca7b28fd049a0354147d9908fa142
     # Transactions and change streams need a replica set; one member is enough.
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    # MongoDB 8.0 refuses to start on Linux 6.19 through 7.0.13, and before
+    # 8.0.37 on fixed Ubuntu kernels too (SERVER-121912), unless glibc
+    # owns rseq; see scripts/ci/data-live-servers.mts.
+    environment:
+      GLIBC_TUNABLES: glibc.pthread.rseq=1
     ports:
       - "127.0.0.1:57017:27017"
     healthcheck:

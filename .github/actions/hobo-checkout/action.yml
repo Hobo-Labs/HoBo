@@ -132,6 +132,17 @@ runs:
       if: steps.checkout1.outcome != 'success'
       shell: bash
       run: rm -rf .git
+    - name: Disable box git mirror after transport errors
+      if: steps.checkout1.outcome != 'success'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -z "${GIT_CONFIG_SYSTEM:-}" ]; then
+          exit 0
+        fi
+        echo "Disabling box git mirror after checkout failure; later attempts use GitHub"
+        rm -f "${GIT_CONFIG_SYSTEM}"
+        echo "GIT_CONFIG_SYSTEM=" >> "$GITHUB_ENV"
     - name: Sparse checkout (attempt 2)
       id: checkout2
       if: steps.checkout1.outcome != 'success'

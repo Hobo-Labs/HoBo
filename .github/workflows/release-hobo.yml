@@ -188,6 +188,10 @@ jobs:
     outputs:
       runner: ${{ steps.route.outputs.runner }}
       tier: ${{ steps.route.outputs.tier }}
+      # A signed local run verified for this tree (scripts/ci/verify-attestation.mts):
+      # the jobs it covers are skipped. `false` and `[]` when there is none.
+      attested: ${{ steps.route.outputs.attested }}
+      attested-jobs: ${{ steps.route.outputs.attested-jobs }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -197,6 +201,8 @@ jobs:
           sparse-checkout: |
             .github/actions/route-runner
             scripts/ci/route-runner.mts
+            scripts/ci/attestation.mts
+            scripts/ci/verify-attestation.mts
             packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.github/actions/route-runner
@@ -273,6 +279,9 @@ jobs:
   release-contract:
     name: Release contract + affected OCI images
     needs: route
+    # Skipped when the route job verified a signed local run of this job for this
+    # tree. A local run signs for this job only when no OCI image is affected.
+    if: ${{ !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"release-contract"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
     timeout-minutes: 20
     steps:
@@ -780,21 +789,40 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Fail closed when release contract is red
+        env:
+          CONTRACT_RESULT: ${{ needs.release-contract.result }}
+          ROUTE_RESULT: ${{ needs.route.result }}
+          ATTESTED: ${{ needs.route.outputs.attested }}
+          ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}
         run: |
           set -euo pipefail
+          # A skipped job counts only when the route job itself succeeded and
+          # reported a verified signed local run that covers that job by id.
+          attested() {
+            [ "${ROUTE_RESULT:-}" = "success" ] || return 1
+            [ "${ATTESTED:-}" = "true" ] || return 1
+            case "${ATTESTED_JOBS:-}" in
+              *"\"$1\""*) return 0 ;;
+            esac
+            return 1
+          }
           # A contract skipped because routing failed was never evaluated.
-          if [ "${{ needs.route.result }}" != "success" ]; then
-            echo "::error::Runner routing did not succeed (result=${{ needs.route.result }})"
+          if [ "${ROUTE_RESULT:-}" != "success" ]; then
+            echo "::error::Runner routing did not succeed (result=${ROUTE_RESULT:-})"
             exit 1
           fi
-          case "${{ needs.release-contract.result }}" in
+          case "${CONTRACT_RESULT:-}" in
             success) exit 0 ;;
             skipped)
-              echo "::warning::release-contract skipped; not treating as merge blocker"
-              exit 0
+              if attested release-contract; then
+                echo "release-contract skipped for a verified signed local run"
+                exit 0
+              fi
+              echo "::error::Release contract was skipped without a verified signed local run"
+              exit 1
               ;;
             *)
-              echo "::error::Release contract + affected OCI images must pass (result=${{ needs.release-contract.result }})"
+              echo "::error::Release contract + affected OCI images must pass (result=${CONTRACT_RESULT:-})"
               exit 1
               ;;
           esac

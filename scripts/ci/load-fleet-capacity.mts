@@ -1,11 +1,35 @@
-import { z } from "zod";
+/**
+ * Reads `HOBO_CI_FLEET_CAPACITY` for main-gate-plan (no workspace install).
+ * Node builtins only — must not import packages or other deps.
+ */
+
 import {
-	DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP,
-	FLEET_CAPACITY_VARIABLE,
-	type FleetCapacityPublished,
-	mainWorkspaceParallelCap,
-	parseFleetCapacityPublished,
-} from "../../packages/ci/src/fleet/capacity-input.ts";
+	isNonNegativeInt,
+	isObject,
+	isString,
+	type Json,
+	parseUnknownJson,
+} from "../lib/pins-json.ts";
+
+/** Repository variable the worker publishes capacity snapshots to. */
+export const FLEET_CAPACITY_VARIABLE = "HOBO_CI_FLEET_CAPACITY";
+
+const MAX_PARALLEL_CAP = 8;
+
+/** Conservative default when the variable is unset or unreadable. */
+export const DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP = 4;
+
+export type FleetCapacityMember = Readonly<{
+	freeSlots: number;
+}>;
+
+export type FleetCapacityPublished = Readonly<{
+	version: 1;
+	admittedParallel: number;
+	hobo?: FleetCapacityMember;
+	arc?: FleetCapacityMember;
+	publishedAt?: string;
+}>;
 
 export type LoadFleetCapacityOptions = Readonly<{
 	repository?: string;
@@ -13,6 +37,107 @@ export type LoadFleetCapacityOptions = Readonly<{
 	fetch?: (url: string, init: RequestInit) => Promise<Response>;
 	variable?: string;
 }>;
+
+function parseMember(value: Json | undefined): FleetCapacityMember | undefined {
+	if (!isObject(value)) return undefined;
+	const keys = Object.keys(value);
+	if (keys.length !== 1 || keys[0] !== "freeSlots") return undefined;
+	const freeSlots = value.freeSlots;
+	if (!isNonNegativeInt(freeSlots)) return undefined;
+	return { freeSlots };
+}
+
+function fleetCapacitySnapshot(
+	hoboFreeSlots: number,
+	arcFreeSlots = 0,
+	publishedAt?: string,
+): FleetCapacityPublished {
+	const hobo = Math.max(0, Math.floor(hoboFreeSlots));
+	const arc = Math.max(0, Math.floor(arcFreeSlots));
+	const admittedParallel = Math.min(MAX_PARALLEL_CAP, hobo + arc);
+	const snapshot: FleetCapacityPublished = {
+		version: 1,
+		admittedParallel,
+		hobo: { freeSlots: hobo },
+		arc: { freeSlots: arc },
+	};
+	if (publishedAt !== undefined) {
+		return { ...snapshot, publishedAt };
+	}
+	return snapshot;
+}
+
+/**
+ * Parse a published capacity snapshot. Returns `undefined` when the payload
+ * is missing or invalid.
+ */
+export function parseFleetCapacityPublished(
+	text: string,
+): FleetCapacityPublished | undefined {
+	const trimmed = text.trim();
+	if (trimmed.length === 0) return undefined;
+	let parsed: Json | undefined;
+	try {
+		parsed = parseUnknownJson(JSON.parse(trimmed));
+	} catch {
+		return undefined;
+	}
+	if (!isObject(parsed)) return undefined;
+	if (parsed.version !== 1) return undefined;
+
+	const admittedRaw = parsed.admittedParallel;
+	const hobo = parseMember(parsed.hobo);
+	const arc = parseMember(parsed.arc);
+	const publishedAt = parsed.publishedAt;
+	if (publishedAt !== undefined && !isString(publishedAt)) {
+		return undefined;
+	}
+	const extraKeys = Object.keys(parsed).filter(
+		(key) =>
+			key !== "version" &&
+			key !== "admittedParallel" &&
+			key !== "hobo" &&
+			key !== "arc" &&
+			key !== "publishedAt",
+	);
+	if (extraKeys.length > 0) return undefined;
+
+	if (admittedRaw !== undefined) {
+		if (!isNonNegativeInt(admittedRaw) || admittedRaw > MAX_PARALLEL_CAP)
+			return undefined;
+		const snapshot = fleetCapacitySnapshot(
+			hobo?.freeSlots ?? 0,
+			arc?.freeSlots ?? 0,
+			publishedAt,
+		);
+		return { ...snapshot, admittedParallel: admittedRaw };
+	}
+
+	const hoboSlots = hobo?.freeSlots ?? 0;
+	const arcSlots = arc?.freeSlots ?? 0;
+	const admitted = Math.min(MAX_PARALLEL_CAP, hoboSlots + arcSlots);
+	if (admitted === 0 && hoboSlots === 0 && arcSlots === 0) return undefined;
+	return fleetCapacitySnapshot(hoboSlots, arcSlots, publishedAt);
+}
+
+/**
+ * How many main workspace shard jobs may run in parallel for this snapshot.
+ */
+export function mainWorkspaceParallelCap(
+	snapshot: FleetCapacityPublished | undefined,
+	fallback = DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP,
+): number {
+	const raw = snapshot?.admittedParallel ?? fallback;
+	if (!Number.isFinite(raw) || raw < 1) return fallback;
+	return Math.min(MAX_PARALLEL_CAP, Math.max(1, Math.floor(raw)));
+}
+
+function readGithubVariableValue(body: Json | undefined): string | undefined {
+	if (!isObject(body)) return undefined;
+	const value = body.value;
+	if (!isString(value) || value.length === 0) return undefined;
+	return value;
+}
 
 export async function fetchFleetCapacityVariable(
 	options: LoadFleetCapacityOptions,
@@ -41,10 +166,10 @@ export async function fetchFleetCapacityVariable(
 		);
 		return undefined;
 	}
-	const body: unknown = await response.json();
-	const value = z.object({ value: z.string().min(1) }).safeParse(body);
-	if (!value.success) return undefined;
-	return parseFleetCapacityPublished(value.data.value);
+	const body = parseUnknownJson(await response.json());
+	const value = readGithubVariableValue(body);
+	if (value === undefined) return undefined;
+	return parseFleetCapacityPublished(value);
 }
 
 export async function resolveMainWorkspaceParallelCap(

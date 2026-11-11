@@ -20,6 +20,7 @@ export const schemaSource: RelaySchemaSource = {
 	packageRoot: new URL("../", import.meta.url),
 	directory: new URL("./migrations/", import.meta.url),
 	loadSchema: () => import("./schema.js"),
+	loadShipped: () => import("../src/_generated-assets/schema-migrations.js"),
 	initializeEmbedded: async (pool) => {
 		// Both arguments are the same database, so the probe succeeds and
 		// removes its own marker row.

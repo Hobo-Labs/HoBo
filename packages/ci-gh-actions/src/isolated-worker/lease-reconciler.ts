@@ -1,6 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { ACTIVE_STATES, JobSchema, type Lease } from "@hobo/ci";
 import type { HostedRelayStore } from "../hosted-relay.js";
+import { leaseIdFromBoxRunnerName } from "../job-runner-custody.js";
 import { containerPastHardTimeout } from "./container-timeout.js";
 import { workerOfferKey, workerOfferKeys } from "./daemon-shutdown.js";
 import type { DockerContainer, DockerDriver } from "./docker-driver.js";
@@ -95,9 +96,25 @@ export function hasIsolatedStopIntent(lease: Lease): boolean {
 	);
 }
 
+/** A lease that may still be executing a GitHub job; drain must not drop it. */
+export function leaseHoldDuringWorkerDrain(lease: Lease): boolean {
+	if (["running", "dispatched", "claiming"].includes(lease.state)) return true;
+	if (
+		lease.state === "reserved" &&
+		(lease.sandboxSessionId !== "" ||
+			lease.actualJobId > 0 ||
+			lease.runnerId > 0)
+	)
+		return true;
+	return false;
+}
+
 export function createWorkerLeaseReconciler(options: {
 	store: WorkerLeaseReconciliationStore;
-	docker: Pick<DockerDriver, "list" | "stop" | "remove">;
+	docker: Pick<
+		DockerDriver,
+		"list" | "listWorkerContainers" | "stop" | "remove"
+	>;
 	workerAccountId: string;
 	workerMemoryMb: number;
 	orphanGraceMs?: number;
@@ -108,6 +125,14 @@ export function createWorkerLeaseReconciler(options: {
 	onOrphanJob?: (candidate: OrphanJobCandidate) => void;
 	protectedContainerNames?: () => ReadonlySet<string>;
 	protectedLeaseIds?: () => ReadonlySet<string>;
+	/**
+	 * When this returns true, a running container must not be stopped even if it
+	 * is not on the active lease name/id sets (custody record or GitHub job).
+	 */
+	containerCustody?: (input: {
+		container: DockerContainer;
+		leaseId?: string;
+	}) => Promise<boolean>;
 }) {
 	const now = options.now ?? Date.now;
 	const orphanGraceMs = options.orphanGraceMs ?? 2 * 60_000;
@@ -143,9 +168,11 @@ export function createWorkerLeaseReconciler(options: {
 		);
 		let containers: readonly DockerContainer[];
 		try {
-			if (!options.docker.list)
-				throw new Error("docker container listing unavailable");
-			containers = await options.docker.list("hobo.ci/isolated=1");
+			if (options.docker.listWorkerContainers)
+				containers = await options.docker.listWorkerContainers();
+			else if (options.docker.list)
+				containers = await options.docker.list("hobo.ci/isolated=1");
+			else throw new Error("docker container listing unavailable");
 		} catch (error) {
 			options.log?.("hobo_ci_lease_reconciliation_failed", {
 				message: error instanceof Error ? error.message : "unknown",
@@ -362,6 +389,10 @@ export function createWorkerLeaseReconciler(options: {
 				continue;
 			} else {
 				reason = "container-missing";
+				if (reconcileOptions.draining && leaseHoldDuringWorkerDrain(lease)) {
+					liveLeaseIds.add(lease.id);
+					continue;
+				}
 				if (!reconcileOptions.draining && ageMs < orphanGraceMs) continue;
 				await options.store.abortIsolatedAndRequeue(
 					lease.id,
@@ -371,7 +402,8 @@ export function createWorkerLeaseReconciler(options: {
 			}
 			const current = await options.store.get(lease.id);
 			if (current && ACTIVE_STATES.has(current.state)) continue;
-			if (reason === "container-missing") await options.afterRelease?.(lease);
+			if (reason === "container-missing" && !reconcileOptions.draining)
+				await options.afterRelease?.(lease);
 			const orphan =
 				reason !== "container-exited" && lease.runnerName === `hobo-${lease.id}`
 					? orphanJobCandidateForLease(lease, now())
@@ -388,9 +420,12 @@ export function createWorkerLeaseReconciler(options: {
 					lease.memoryMb >= 512 ? lease.memoryMb : options.workerMemoryMb,
 			});
 		}
-		const leasedNames = new Set(
-			leases.map((lease) => lease.sandboxName || `hobo-${lease.id}`),
-		);
+		const leasedNames = new Set<string>();
+		for (const lease of leases) {
+			if (lease.sandboxName) leasedNames.add(lease.sandboxName);
+			if (lease.runnerName) leasedNames.add(lease.runnerName);
+			leasedNames.add(lease.sandboxName || `hobo-${lease.id}`);
+		}
 		const leasedContainerIds = new Set(
 			leases
 				.map((lease) => lease.sandboxSessionId)
@@ -405,22 +440,42 @@ export function createWorkerLeaseReconciler(options: {
 				protectedNames.has(container.name)
 			)
 				continue;
-			const staleTimedOut =
-				container.state === "running" &&
-				container.timeoutMs !== undefined &&
-				container.createdAtMs !== undefined &&
-				containerPastHardTimeout(
-					container.createdAtMs,
-					container.timeoutMs,
-					now(),
-				);
+			if (container.state === "running") {
+				if (reconcileOptions.draining) continue;
+				if (container.createdAtMs === undefined) continue;
+				const leaseId = leaseIdFromBoxRunnerName(container.name);
+				if (options.containerCustody) {
+					const custodyInput =
+						leaseId === undefined ? { container } : { container, leaseId };
+					if (await options.containerCustody(custodyInput)) continue;
+				} else if (!leaseId) {
+					continue;
+				}
+				const ageMs = Math.max(0, now() - container.createdAtMs);
+				if (ageMs < orphanGraceMs) continue;
+				try {
+					if (options.docker.stop)
+						await options.docker.stop(container.name, container.containerId);
+					await options.docker.remove(container.name, container.containerId);
+					options.log?.("hobo_ci_container_orphan_removed", {
+						name: container.name,
+						containerId: container.containerId,
+						state: container.state,
+						running: true,
+						ageMs,
+					});
+				} catch (error) {
+					options.log?.("hobo_ci_container_orphan_remove_failed", {
+						name: container.name,
+						containerId: container.containerId,
+						message: error instanceof Error ? error.message : "unknown",
+					});
+				}
+				continue;
+			}
 			try {
-				if (container.state === "running")
-					await options.docker.stop(container.name, container.containerId);
 				await options.docker.remove(container.name, container.containerId);
-				const event = staleTimedOut
-					? "hobo_ci_container_timeout_enforced"
-					: "hobo_ci_container_orphan_removed";
+				const event = "hobo_ci_container_orphan_removed";
 				if (container.timeoutMs !== undefined) {
 					options.log?.(event, {
 						name: container.name,
