@@ -109,6 +109,8 @@ export function createHostedRelayRuntime(options: {
 	jobPickupMetadata?: JobPickupMetadataCache;
 	/** See `HostedRelay`: whether shared-label runs may borrow trunk slots. */
 	lendTrunkSlots?: boolean;
+	/** See `HostedRelay`: local trunk slot count for fleet deferral. */
+	trunkSlots?: number;
 	memoryAdmission?: WorkerMemoryAdmission;
 	storageAdmission?: WorkerStorageAdmission;
 	storageJobReserve?: ConstructorParameters<
@@ -185,6 +187,8 @@ export function createHostedRelayRuntime(options: {
 			relayOptions.mergeGroupLeaseLimit = options.mergeGroupLeaseLimit;
 		if (options.lendTrunkSlots !== undefined)
 			relayOptions.lendTrunkSlots = options.lendTrunkSlots;
+		if (options.trunkSlots !== undefined)
+			relayOptions.trunkSlots = options.trunkSlots;
 		if (options.memoryAdmission)
 			relayOptions.memoryAdmission = options.memoryAdmission;
 		if (options.storageAdmission)

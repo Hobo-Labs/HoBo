@@ -62,12 +62,27 @@ export type AdmissionRef = Readonly<{
 
 const MAIN_WORKSPACE_SHARD = /^Main workspace test shard (\d+)$/u;
 
+/** HoBo CI Fabric main push trunk phases (lower admits first on the same run). */
+export const MAIN_WORKSPACE_PLAN_JOB = "Main workspace plan";
+export const MAIN_FULL_GATE_JOB = "Main full gate";
+
 function mainWorkspaceShardIndex(
 	jobName: string | undefined,
 ): number | undefined {
 	if (!jobName) return undefined;
 	const match = MAIN_WORKSPACE_SHARD.exec(jobName);
 	return match ? Number(match[1]) : undefined;
+}
+
+export function isMainWorkspaceShardJob(jobName: string | undefined): boolean {
+	return mainWorkspaceShardIndex(jobName) !== undefined;
+}
+
+function mainFabricTrunkPhase(jobName: string | undefined): number {
+	if (jobName === MAIN_WORKSPACE_PLAN_JOB) return 0;
+	if (jobName === MAIN_FULL_GATE_JOB) return 1;
+	if (isMainWorkspaceShardJob(jobName)) return 2;
+	return 3;
 }
 
 /**
@@ -191,6 +206,9 @@ export function createAdmissionOrder(
 				} else if (a.key.startedAtMs !== b.key.startedAtMs)
 					return a.key.startedAtMs - b.key.startedAtMs;
 				if (a.ref.runId === b.ref.runId) {
+					const phaseA = mainFabricTrunkPhase(a.ref.jobName);
+					const phaseB = mainFabricTrunkPhase(b.ref.jobName);
+					if (phaseA !== phaseB) return phaseA - phaseB;
 					const shardA = mainWorkspaceShardIndex(a.ref.jobName);
 					const shardB = mainWorkspaceShardIndex(b.ref.jobName);
 					if (shardA !== undefined && shardB !== undefined && shardA !== shardB)

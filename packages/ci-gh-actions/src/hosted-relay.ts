@@ -22,6 +22,7 @@ import {
 import {
 	type AdmissionOrder,
 	createAdmissionOrder,
+	isMainWorkspaceShardJob,
 	TRUNK_RANK,
 } from "./admission-order.js";
 import type { FleetCapacityPublisher } from "./fleet-capacity.js";
@@ -273,6 +274,8 @@ export class HostedRelay {
 			jobPickupMetadata?: JobPickupMetadataCache;
 			/** Let shared-label runs exceed the limit until a trunk-label job waits. */
 			lendTrunkSlots?: boolean;
+			/** Local trunk reservations this box may hold; defers extra shards when mesh has room. */
+			trunkSlots?: number;
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
 			/** Per-job byte/inode reservation for storage admission (learned + class budget). */
@@ -460,6 +463,27 @@ export class HostedRelay {
 		);
 		cache.set(key, bound);
 		return bound;
+	}
+
+	private localTrunkReservationCount(
+		active: readonly Lease[],
+		memoryTrunk?: ReadonlySet<string>,
+	): number {
+		if (memoryTrunk) return memoryTrunk.size;
+		let count = 0;
+		for (const lease of active) {
+			const label = this.servedRunnerLabels.get(
+				`${lease.repository}:${lease.jobId}`,
+			);
+			if (label !== TRUNK_RUNNER_LABEL) continue;
+			if (
+				lease.state === "reserved" ||
+				lease.state === "dispatching" ||
+				lease.state === "running"
+			)
+				count += 1;
+		}
+		return count;
 	}
 
 	private reReserveCooldownBlocks(
@@ -1221,7 +1245,7 @@ export class HostedRelay {
 	}
 	private reportTrunkWait(
 		job: Job,
-		reason: "lease-capacity" | "storage" | "headroom",
+		reason: "lease-capacity" | "storage" | "headroom" | "fleet-capacity",
 	): string {
 		const key = this.trunkWaitKey(job);
 		const nowMs = Date.parse(this.now());
@@ -1297,6 +1321,10 @@ export class HostedRelay {
 		let rankZeroWaiting = false;
 		let storageRefused = false;
 		const waitingTrunk = new Set<string>();
+		let localTrunkReserved = this.localTrunkReservationCount(
+			active,
+			memoryTrunk,
+		);
 		for (const job of pending) {
 			if (this.queueExpired(job.queueDeadlineAt)) {
 				await this.options.store.expireQueued?.(
@@ -1380,6 +1408,18 @@ export class HostedRelay {
 				)
 			)
 				continue;
+			if (
+				trunk &&
+				this.options.trunkSlots !== undefined &&
+				this.options.trunkSlots > 0 &&
+				nonLocalFreeSlots !== undefined &&
+				nonLocalFreeSlots > 0 &&
+				localTrunkReserved >= this.options.trunkSlots &&
+				isMainWorkspaceShardJob(job.name)
+			) {
+				waitingTrunk.add(this.reportTrunkWait(job, "fleet-capacity"));
+				continue;
+			}
 			// A policy can become stricter while demand is queued. Never reserve a
 			// bridge from a pending job admitted under the previous connection.
 			if (connection.isolatedOnly) job.isolatedRequired = true;
@@ -1498,6 +1538,7 @@ export class HostedRelay {
 					general?.add(lease.id);
 					memoryGeneral?.add(lease.id);
 				}
+				if (trunk) localTrunkReserved += 1;
 				if (mergeGroupKey !== undefined) activeMergeGroups.add(mergeGroupKey);
 			}
 		}
