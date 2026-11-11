@@ -10,15 +10,14 @@ on:
 permissions:
   contents: read
 
-# Keyed by the CI run's conclusion: a dropped or failed main run completes too, and the job
-# skips it, so it must not cancel a publish that a green run started.
-concurrency:
-  group: ci-deps-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}
-  cancel-in-progress: true
-
 jobs:
   publish:
     name: Publish local deps image (non-blocking)
+    # Keyed by the CI run's conclusion: a dropped or failed main run completes too, and the
+    # job skips it, so it must not cancel a publish that a green run started.
+    concurrency:
+      group: ci-deps-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}
+      cancel-in-progress: true
     if: >-
       github.repository == 'Hobo-Labs/HoBo' &&
       (github.event_name == 'workflow_dispatch' ||
@@ -39,3 +38,63 @@ jobs:
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh
+
+  # HoBo CI Fabric builds the worker image on a main push only when that push's own commits
+  # touch an image input. A push that waited behind a running main run and was dropped is
+  # listed by no later push, so its image change was never built or published, and release
+  # jobs on ARC pull the worker from GHCR (finding 113). After every green main run this
+  # publishes the image for that commit's content key if GHCR lacks it, built from that
+  # commit here, never taken from the box's Docker cache, where pull requests build too.
+  runner-image:
+    name: Publish worker image if GHCR lacks it (non-blocking)
+    if: >-
+      github.repository == 'Hobo-Labs/HoBo' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
+    # A build takes several minutes; a newer green run waits for it rather than cancelling it,
+    # and then finds the image published (or publishes its own content key).
+    concurrency:
+      group: ci-runner-image-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}
+      cancel-in-progress: false
+    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+          clean: false
+          fetch-depth: 1
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Ask GHCR for this commit's worker image
+        id: status
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts --published-status
+      - name: Build the worker image from this commit and publish it
+        if: steps.status.outputs.ghcr != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MISE_EXPERIMENTAL: "1"
+          VERSION: ${{ steps.status.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Drop any image under this tag first: a pull request's job may have built one on this
+          # box, and build.sh would reuse it as is.
+          docker image rm "hobo-ci-worker:${VERSION}" >/dev/null 2>&1 || true
+          HOBO_CI_SKIP_GHCR_PULL=1 node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+          node --no-warnings scripts/ci/push-ci-runner-image-ghcr.mts
+      - name: Fail unless GHCR now has it
+        if: steps.status.outputs.ghcr != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          out="$(GITHUB_OUTPUT=/dev/null node --no-warnings scripts/ci/ensure-ci-worker-image.mts --published-status)"
+          echo "$out"
+          case "$out" in
+            *"ghcr=true"*) ;;
+            *) echo "::error title=Worker image not published::GHCR still has no image for this commit's content key; release jobs on ARC pods cannot pull it."; exit 1 ;;
+          esac

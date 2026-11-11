@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { describe, it } from "node:test";
-import { resolveMainTestBase } from "../ci/resolve-main-test-base.mts";
+import {
+	fetchLastGreenMainSha,
+	resolveMainTestBase,
+} from "../ci/resolve-main-test-base.mts";
 
 describe("resolveMainTestBase", () => {
 	it("prefers last green over push before", () => {
@@ -47,5 +50,29 @@ describe("resolveMainTestBase", () => {
 		});
 		assert.equal(resolved.source, "push-before");
 		assert.equal(resolved.base, before);
+	});
+});
+
+describe("fetchLastGreenMainSha", () => {
+	it("lists only this workflow's main pushes, with a time limit", async () => {
+		const seen: { url: string; signal: AbortSignal | null | undefined }[] = [];
+		const found = await fetchLastGreenMainSha({
+			repository: "Hobo-Labs/HoBo",
+			token: "t",
+			workflowBasename: "hobo-ci.yml",
+			head: "f".repeat(40),
+			fetch: async (url, init) => {
+				seen.push({ url, signal: init.signal });
+				return new Response(JSON.stringify({ workflow_runs: [] }), {
+					status: 200,
+				});
+			},
+		});
+		assert.equal(found, undefined);
+		assert.equal(
+			seen[0]?.url,
+			"https://api.github.com/repos/Hobo-Labs/HoBo/actions/workflows/hobo-ci.yml/runs?branch=main&event=push&status=completed&per_page=30",
+		);
+		assert.ok(seen[0]?.signal instanceof AbortSignal);
 	});
 });

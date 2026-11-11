@@ -51,8 +51,11 @@ export async function fetchLastGreenMainSha(
 ): Promise<string | undefined> {
 	const [owner, repo] = options.repository.split("/");
 	if (!owner || !repo) return undefined;
-	const url = `https://api.github.com/repos/${owner}/${repo}/actions/runs?branch=main&event=push&status=completed&per_page=30`;
+	// Runs of this one workflow: the repository-wide list mixes in every other
+	// workflow's push runs, which could crowd the last green one out of the page.
+	const url = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${encodeURIComponent(options.workflowBasename)}/runs?branch=main&event=push&status=completed&per_page=30`;
 	const response = await options.fetch(url, {
+		signal: AbortSignal.timeout(15_000),
 		headers: {
 			Accept: "application/vnd.github+json",
 			Authorization: `Bearer ${options.token}`,

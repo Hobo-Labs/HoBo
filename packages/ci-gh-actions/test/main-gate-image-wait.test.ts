@@ -21,25 +21,12 @@ const imageInputPrefixes = [
 ];
 
 describe("Main full gate image dependency", () => {
-	it("runs on every main push and asks what is published, not what the push touched", () => {
-		// Finding 113: a push that waited behind a running one and was dropped
-		// carried image-input changes no later push lists.
-		expect(imageJob.if).toBe("github.event_name != 'merge_group'");
-		const detect = imageJob.steps.find(
-			(step) => step.name === "Detect runner image inputs changed",
-		);
-		expect(detect.run).toContain(
-			'if [ "${{ github.event_name }}" = "push" ]; then\n  GITHUB_TOKEN="${GHCR_TOKEN}" node --no-warnings scripts/ci/ensure-ci-worker-image.mts --published-status\n  exit 0',
-		);
-		const publish = imageJob.steps.find(
-			(step) => step.name === "Push runner image to GHCR (optional)",
-		);
-		expect(publish.if).toContain(
-			"github.event_name == 'push' && steps.rebuild.outputs.ghcr != 'true'",
-		);
-	});
+	it("keeps the push condition and Detect regex on the same image-input paths", () => {
+		const containsPaths = [
+			...imageJob.if.matchAll(/contains\(format\(.*?\), '"([^']+)'\)/gu),
+		].map((match) => match[1]);
+		expect(containsPaths).toEqual(imageInputPrefixes);
 
-	it("keeps the pull request Detect regex on the image-input paths", () => {
 		const detect = imageJob.steps.find(
 			(step) => step.name === "Detect runner image inputs changed",
 		);
@@ -51,6 +38,16 @@ describe("Main full gate image dependency", () => {
 		for (const path of imageInputPrefixes) {
 			expect(detectRegex.test(path), path).toBe(true);
 		}
+
+		const payload =
+			"format('{0}{1}{2}', toJSON(github.event.commits.*.added), toJSON(github.event.commits.*.modified), toJSON(github.event.commits.*.removed))";
+		expect(imageJob.if.split(payload)).toHaveLength(
+			imageInputPrefixes.length + 1,
+		);
+		expect(imageJob.if).toContain("github.event_name != 'merge_group'");
+		expect(imageJob.if).toContain("github.event_name != 'push'");
+		expect(imageJob.if).toContain("github.event.commits[0] == null");
+		expect(imageJob.if).toContain("github.event.forced == true");
 	});
 
 	it("covers every ciRunnerImageVersion input", () => {

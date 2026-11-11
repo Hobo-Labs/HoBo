@@ -208,20 +208,20 @@ export function ensureCiWorkerImage(): string {
 	return candidate;
 }
 
-/**
- * Whether this tree's worker image (by content key) is on this host and in GHCR.
- * A main push asks this instead of diffing its own commits: a push that waited
- * behind a running one and was dropped carried image-input changes no later
- * push lists, and an image a pull request built on this box was never
- * published. Either way the image this tree needs would be missing.
- */
 /** Where this tree's worker image is present. */
 export interface CiWorkerImagePresence {
 	readonly version: string;
 	readonly host: boolean;
+	/** False when GHCR said no, and also when the check could not run (no token, login failed). */
 	readonly ghcr: boolean;
 }
 
+/**
+ * Whether this tree's worker image (by content key) is on this host and in GHCR.
+ * The publisher in ci-deps-publish.yml asks this after every green main run,
+ * because a main push whose CI run was dropped never built or published the
+ * image its commits needed (finding 113).
+ */
 export function ciWorkerImagePublished(): CiWorkerImagePresence {
 	const version = ciRunnerImageVersion(root);
 	const host = dockerImagePresent(`hobo-ci-worker:${version}`);
@@ -247,7 +247,7 @@ function main(): void {
 		if (out) {
 			appendFileSync(
 				out,
-				`needed=${status.host && status.ghcr ? "false" : "true"}\nghcr=${status.ghcr}\n`,
+				`version=${status.version}\nneeded=${status.host && status.ghcr ? "false" : "true"}\nghcr=${status.ghcr}\n`,
 			);
 		}
 		return;

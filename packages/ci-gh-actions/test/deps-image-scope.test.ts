@@ -86,14 +86,16 @@ describe("CI deps image push scope", () => {
 			branches: ["main"],
 		});
 		expect(publisher.on.workflow_dispatch).toBeNull();
-		expect(publisher.concurrency).toEqual({
-			// Keyed by the CI run's conclusion (finding 113): a skipped completion
-			// must not cancel a publish a green run started.
+		const job = publisher.jobs.publish;
+		// Per job, so the worker image build is never cancelled with it. Keyed by
+		// the CI run's conclusion (finding 113): a skipped completion must not
+		// cancel a publish a green run started.
+		expect(publisher.concurrency).toBeUndefined();
+		expect(job.concurrency).toEqual({
 			group:
 				"ci-deps-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}",
 			"cancel-in-progress": true,
 		});
-		const job = publisher.jobs.publish;
 		expect(job["timeout-minutes"]).toBe(20);
 		// The publisher pushes the fleet's own image and the deps job builds
 		// it in the box's Docker context, so neither is routed: both ask for
@@ -110,6 +112,37 @@ describe("CI deps image push scope", () => {
 		expect(job.steps[1].run).toBe(
 			"bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh",
 		);
+	});
+
+	it("publishes the worker image after a green main run when GHCR lacks it", () => {
+		// Finding 113: a dropped main push's image change is built by no later
+		// push, and release jobs on ARC pull the worker from GHCR.
+		const job = publisher.jobs["runner-image"];
+		expect(job.if).toContain(
+			"github.event.workflow_run.conclusion == 'success'",
+		);
+		expect(job.concurrency["cancel-in-progress"]).toBe(false);
+		expect(job["runs-on"]).toBe(publisher.jobs.publish["runs-on"]);
+		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
+		expect(job.steps[0].with.ref).toContain(
+			"github.event.workflow_run.head_sha",
+		);
+		const named = (name: string) =>
+			job.steps.find((step: { name?: string }) => step.name === name);
+		expect(named("Ask GHCR for this commit's worker image").run).toBe(
+			"node --no-warnings scripts/ci/ensure-ci-worker-image.mts --published-status",
+		);
+		const build = named(
+			"Build the worker image from this commit and publish it",
+		);
+		expect(build.if).toBe("steps.status.outputs.ghcr != 'true'");
+		// Never publish an image a pull request left under this tag on the box.
+		expect(build.run).toContain('docker image rm "hobo-ci-worker:${VERSION}"');
+		expect(build.run.indexOf("docker image rm")).toBeLessThan(
+			build.run.indexOf("ensure-ci-worker-image.mts"),
+		);
+		expect(build.run).toContain("HOBO_CI_SKIP_GHCR_PULL=1");
+		expect(named("Fail unless GHCR now has it").run).toContain("ghcr=true");
 	});
 
 	it("does not make either gate wait for the deps image", () => {

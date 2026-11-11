@@ -92,7 +92,7 @@ describe("ensure-ci-worker-image", () => {
 		}
 	});
 
-	// A main push asks what is published rather than what its commits touched.
+	// The post-green publisher asks what GHCR has for this tree (finding 113).
 	function publishedStatus(stub: { host: boolean; manifest: boolean }) {
 		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-status-"));
 		try {
@@ -137,23 +137,23 @@ describe("ensure-ci-worker-image", () => {
 	}
 
 	it("needs nothing when the box and GHCR both have this tree's image", () => {
-		assert.equal(
+		assert.match(
 			publishedStatus({ host: true, manifest: true }),
-			"needed=false\nghcr=true\n",
+			/^version=v[0-9a-f]+\nneeded=false\nghcr=true\n$/u,
 		);
 	});
 
-	it("publishes an image the box has but GHCR lacks", () => {
-		assert.equal(
+	it("reports an image the box has but GHCR lacks as unpublished", () => {
+		assert.match(
 			publishedStatus({ host: true, manifest: false }),
-			"needed=true\nghcr=false\n",
+			/^version=v[0-9a-f]+\nneeded=true\nghcr=false\n$/u,
 		);
 	});
 
-	it("pulls, without republishing, an image only GHCR has", () => {
-		assert.equal(
+	it("reports an image only GHCR has as published", () => {
+		assert.match(
 			publishedStatus({ host: false, manifest: true }),
-			"needed=true\nghcr=true\n",
+			/^version=v[0-9a-f]+\nneeded=true\nghcr=true\n$/u,
 		);
 	});
 
