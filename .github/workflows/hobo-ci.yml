@@ -1298,6 +1298,121 @@ jobs:
           pnpm --filter "ts-autocode-*" run build
           node --import tsx scripts/ci/dev-cold-loop-timing.mts'
 
+  data-live:
+    # The data engines against real servers: the conformance kit, change
+    # capture, the write fence under load and the native logical-copy path only
+    # mean something on a real PostgreSQL and a real MongoDB replica set. On a
+    # pull request it runs when the diff can reach those suites; the nightly and
+    # manual runs always do. Not on merge_group: the merge queue's required set
+    # does not include it, and it would hold a box slot there for nothing.
+    # The name is also a key in the worker's memory classes (`heavy`).
+    name: Live data engines (PostgreSQL 16, MongoDB 8)
+    needs: route
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          submodules: recursive
+          clean: false
+          # Depth 2 holds the PR merge commit and its first parent (the base tip).
+          fetch-depth: 2
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Decide whether the diff reaches the live data-engine suites
+        id: scope
+        run: |
+          set -euo pipefail
+          # Only a pull request is scoped by its diff. A nightly or a manual run
+          # whose tip happens to be a merge commit must not take that path.
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ] || ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then
+            echo "not a pull request's merge commit; running the lane"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only HEAD^1 HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/job-scope.mts \
+              scripts/ci/data-live-servers.mts \
+              scripts/ensure-built.mts \
+              vitest.config.ts \
+              packages/data-core/test/conformance.test.ts \
+              packages/data-sqlite/test/conformance.test.ts \
+              packages/data-postgres/test/engine-live.test.ts \
+              packages/data-postgres/test/engine-hardening-live.test.ts \
+              packages/data-postgres/test/native-live.test.ts \
+              packages/data-postgres/test/cross-engine-live.test.ts \
+              packages/data-mongodb/test/live.test.ts \
+              packages/data-mongodb/test/cross-engine-live.test.ts \
+              packages/trails/test/data-patterns-e2e.test.ts \
+              >> "$GITHUB_OUTPUT"
+      - name: Turbo cache
+        if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      - uses: ./.github/actions/pnpm-store
+        if: steps.scope.outputs.run == 'true'
+      - if: steps.scope.outputs.run == 'true'
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Build the data packages and what they import
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 4
+        run: >-
+          pnpm exec turbo run build
+          --filter=@hobo/data-core...
+          --filter=@hobo/data-sqlite...
+          --filter=@hobo/data-postgres...
+          --filter=@hobo/data-mongodb...
+          --filter=@hobo/trails...
+          --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
+      # Sibling containers on the host engine, reached at their bridge address
+      # (scripts/ci/data-live-servers.mts). The script prints the two URLs the
+      # suites read.
+      - name: Start PostgreSQL and MongoDB
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 5
+        run: node --experimental-strip-types --no-warnings scripts/ci/data-live-servers.mts up >> "$GITHUB_ENV"
+      # Not through turbo: it passes HOBO_* through without keying its cache on
+      # them, so a cached run without servers would replay as a live pass.
+      # The live tests skip themselves when their variable is missing, so a
+      # green exit is not enough: `verify` reads the output and fails unless
+      # every package ran and no test was skipped.
+      - name: Live data-engine suites
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          [ -n "${HOBO_TEST_POSTGRES_URL:-}" ] || { echo "::error::the start step set no PostgreSQL URL"; exit 1; }
+          [ -n "${HOBO_TEST_MONGODB_URL:-}" ] || { echo "::error::the start step set no MongoDB URL"; exit 1; }
+          # These packages read the root vitest config, which does not apply
+          # the job's memory-derived worker cap; vitest reads this one itself.
+          export VITEST_MAX_WORKERS="${HOBO_TEST_MAX_WORKERS:-1}"
+          pnpm run test:data-live 2>&1 | tee "${RUNNER_TEMP}/data-live.log"
+          node --experimental-strip-types --no-warnings scripts/ci/data-live-servers.mts verify "${RUNNER_TEMP}/data-live.log"
+      - name: Server logs
+        if: failure() && steps.scope.outputs.run == 'true'
+        run: node --experimental-strip-types --no-warnings scripts/ci/data-live-servers.mts logs
+      - name: Stop PostgreSQL and MongoDB
+        if: always() && steps.scope.outputs.run == 'true'
+        run: node --experimental-strip-types --no-warnings scripts/ci/data-live-servers.mts down
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
+      - name: CI trace
+        if: always()
+        uses: ./.github/actions/ci-trace
+
   ci-guard:
     name: CI fabric contract guard
     needs: route

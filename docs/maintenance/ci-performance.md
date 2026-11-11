@@ -118,6 +118,45 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   re-runs the same tree), and `pr-offpath` diffs the PR merge commit against its first parent: when
   `affected-lanes.mts` prints nothing and no pin, submodule or package-boundary path changed, it skips
   install, the ts-autocode surface tests and `build:packages` and frees its slot in seconds.
+- **Live data engines.** `data-live` runs the data packages' suites against a real PostgreSQL 16 and a
+  real MongoDB 8 replica set (`pnpm run test:data-live`). A fleet job is a container on the host
+  engine, so `scripts/ci/data-live-servers.mts` starts the two servers as *sibling* containers on the
+  `bridge` network the job container is on and hands the suites their addresses there: a published
+  port would bind the host's loopback, which is not the job's, and the fleet has no `services:`. The
+  containers carry the lane's own label (`hobo.data-live`), not the worker's — the daemon removes
+  lease-less containers under `hobo.ci/isolated` — and are bounded at 1 GiB each because they sit
+  outside the job's cgroup. They are not started with `--rm`: when a server dies during start-up the
+  start step prints its logs before removing it, and when the step itself is killed the failure step
+  prints them.
+  Teardown does not rely on the job surviving. An `always()` step removes the containers; a job that
+  is killed never runs it, so each server runs under `timeout` and stops itself after 25 minutes
+  (longer than the 20-minute job, so never under a live one), and every job's preflight removes
+  containers of the lane older than 30 minutes. A leaked pair therefore holds memory for at most 25
+  minutes and disk until the next job starts on that box.
+  The job is in the worker's `heavy` memory class (it installs, builds about two dozen packages and
+  runs five suites). The two servers are **not** counted by admission — up to 2 GiB beside the job
+  that the daemon does not see — which the heavy reservation is meant to leave room for; this has
+  not been measured on a box.
+  The images are digest-pinned in `packages/data-core/deploy/live-engine-images.json`.
+  MongoDB is started with `GLIBC_TUNABLES=glibc.pthread.rseq=1`: MongoDB 8's allocator misuses
+  restartable sequences on Linux 6.19 through 7.0.13 (SERVER-121912), recent 8.0 releases refuse to
+  start there, and until 8.0.37 they also refused on Ubuntu kernels that already carry the fix — the
+  lane's first run failed on a GitHub-hosted runner for exactly that. With glibc owning rseq the
+  allocator falls back to per-thread caches and the host's kernel stops mattering.
+  The suites do not run through turbo: it passes `HOBO_*` through without keying its cache on them,
+  so a cached offline result would replay as a live pass. A green exit is not taken as proof either:
+  the live tests skip themselves when their variable is missing, so the step ends with
+  `data-live-servers.mts verify`, which reads the run's output and fails unless each of the five
+  packages printed a summary and no test in it was skipped, failed or left todo. The start step
+  prints the server versions and addresses the run was against. These packages read the root vitest
+  config, which does not apply `HOBO_TEST_MAX_WORKERS`, so the step passes the cap to vitest as
+  `VITEST_MAX_WORKERS`. The job is scoped like `artifact-trust` (below) to the live test files, so a
+  pull request that cannot reach the data engines frees the slot after checkout
+  (`scripts/test/job-scope.test.ts` pins the entry list and checks it against the repository, so
+  changing the entries means changing that test); the nightly schedule
+  and a manual dispatch always run it, whatever their tip commit is, and `merge_group` never does.
+  On a GitHub-hosted runner the servers are up in under half a minute and the suites take about a
+  minute and a half.
 - **PR jobs skip what the diff cannot reach.** `artifact-trust` and `dev-cold-loop-gate` each test a
   fixed subject (the artifact trust proof's `publish-verify.test.ts` with the root `vitest.config.ts` and
   its setup files; `scripts/ci/dev-cold-loop-timing.mts`). `scripts/ci/job-scope.mts` walks those
