@@ -1,11 +1,11 @@
 ---
 type: CI Performance Finding
-title: "Finding 89: pr diff base stale event sha"
+title: "Finding 108: pr diff base stale event sha"
 description: "PR jobs diffed against the event's base SHA, so main's later changes read as the PR's: unrelated PRs built multi-GB deps images and filled the fleet's Docker disk."
 tags: [hobo, ci, fleet, docker, disk, pull-request]
 ---
 
-# Finding 89: pr diff base stale event sha
+# Finding 108: pr diff base stale event sha
 
 ## Evidence
 
@@ -30,3 +30,7 @@ A PR job checks out `refs/pull/N/merge`, a merge commit whose first parent is th
 On GitHub's PR merge commit, both steps take its first parent (`HEAD^1`) as the base: exactly what the PR was merged into, so the diff is the PR's own change. The merge commit is recognised by its second parent being the PR head (`pull_request.head.sha`), so any other merge at HEAD, such as a PR head that merged main in, keeps the earlier behaviour. The deps job now fetches two deep so the parents exist. The event SHA, still validated, is used whenever HEAD is not that merge commit.
 
 `scripts/test/pr-diff-base.test.ts` runs both steps' shell against a real repository with the stale-base shape. A PR that leaves the deps inputs alone does not build, one that changes them does, the affected set starts at the first parent, and a merge whose second parent is not the PR head falls back to the event's base. The first three fail against the previous workflow.
+
+## Also: the scope list lost two inputs
+
+#1880 made `worker-storage-fs.ts` import two sibling modules, `work-dir-inode-breakdown.ts` and `work-dir-local-inodes.ts`, which the deps mount probe now loads. They were not in the job's scope list, so a PR that changed only them would have skipped the job that verifies them, and `ci-deps-image-contract.test.ts` was red on main. Both are in the list now. The contract that `worker-storage-fs` imports nothing an install would provide now allows its own node-only siblings; the graph test still holds every loaded file to node built-ins and to the scope.

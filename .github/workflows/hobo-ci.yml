@@ -244,6 +244,8 @@ jobs:
               scripts/lib/deps-key.mts \
               scripts/lib/ts-source-resolve.mts \
               packages/ci-gh-actions/src/isolated-worker/worker-storage-fs.ts \
+              packages/ci-gh-actions/src/isolated-worker/work-dir-inode-breakdown.ts \
+              packages/ci-gh-actions/src/isolated-worker/work-dir-local-inodes.ts \
               scripts/test/ci-deps-image-mount.test.ts)"
             if [ -z "$changed" ]; then run=false; fi
           fi
