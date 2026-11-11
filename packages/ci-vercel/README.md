@@ -681,6 +681,18 @@ Node 24 is required. Bootstrap mode uses these Vercel secret bindings:
   Supabase's and Amazon RDS's do. The certificate is verified against it;
   verification is never switched off. Without it such a connection fails with
   `unable to verify the first certificate`.
+
+  Without it, a connection string that asks for TLS is held to `verify-full`:
+  the system trust store and a hostname check. `sslmode=prefer`, `require` and
+  `verify-ca` are rewritten to `verify-full` before `pg` sees them, as are
+  `sslmode=no-verify` and `ssl=no-verify`, and `uselibpqcompat` is dropped.
+  `pg` 8 already reads the first three as `verify-full` unless
+  `uselibpqcompat=true` is set, in which case `require` and `prefer` accept any
+  certificate and `verify-ca` skips the hostname check; `pg` 9 is announced to
+  make that the default. `sslmode=disable` and a string with no TLS parameter still connect
+  without TLS, and a string that is not a URL is refused, since it cannot be
+  inspected. `PGSSLMODE` in the environment is not covered: `pg` reads it only
+  when the string names no TLS setting.
 - `HOBO_CI_PUBLIC_URL`: the stable HTTPS origin used by GitHub.
 - `HOBO_CI_SESSION_KEY`: a canonical, unpadded base64url encoding of 32 random bytes.
 - `HOBO_CI_BOOTSTRAP_ACCOUNT_ID` and `HOBO_CI_BOOTSTRAP_TOKEN_SHA256`: the owner
