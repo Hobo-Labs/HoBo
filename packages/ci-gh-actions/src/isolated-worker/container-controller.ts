@@ -33,6 +33,7 @@ import {
 	resolveRunnerAssignedJob,
 	runnerHoldsActiveJob,
 } from "../jit-runner-correlation.js";
+import { deregisterGithubRunner } from "../jit-runner-deregister.js";
 import {
 	type JobPickupMetadataCache,
 	jobPickupMetadataKey,
@@ -46,7 +47,6 @@ import {
 	RUNNER_LABEL,
 	type RunnerLabel,
 } from "../runner-labels.js";
-import { deregisterGithubRunner } from "../jit-runner-deregister.js";
 import { adoptRunnerAssignment } from "../runner-lease-adoption.js";
 import {
 	capIsolatedContainerTimeoutMs,
@@ -57,6 +57,10 @@ import {
 	containerResourceWeightsForRank,
 	type DockerDriver,
 } from "./docker-driver.js";
+import {
+	type ContainerStallGuard,
+	hostResourcePressureLogFields,
+} from "./host-resource-pressure.js";
 import {
 	createWorkerLeaseReconciler,
 	hasIsolatedStopIntent,
@@ -71,10 +75,6 @@ import {
 	type WorkerMemoryClasses,
 } from "./memory-classes.js";
 import type { MemoryPeaks } from "./memory-peaks.js";
-import {
-	type ContainerStallGuard,
-	hostResourcePressureLogFields,
-} from "./host-resource-pressure.js";
 import {
 	createOrphanJobTracker,
 	type OrphanJobEvent,
@@ -1925,11 +1925,7 @@ export function createIsolatedContainerController(options: {
 								...hostResourcePressureLogFields(signal.sample),
 							});
 							stallRecovery.register(
-								stallRecoveryRecordForLease(
-									lease,
-									signal,
-									Date.parse(now()),
-								),
+								stallRecoveryRecordForLease(lease, signal, Date.parse(now())),
 							);
 							stallRecoveryLeaseIds.add(lease.id);
 							options.containerStallGuard.clear(lease.id);
@@ -1941,12 +1937,7 @@ export function createIsolatedContainerController(options: {
 			}
 			if (running && stop) await measureMemoryPeak(lease);
 			const deadWhileRunning = !stop && lease.state === "running" && !running;
-			if (
-				!stop &&
-				!running &&
-				runnerCustodyHoldsActive &&
-				lease.runnerId > 0
-			) {
+			if (!stop && !running && runnerCustodyHoldsActive && lease.runnerId > 0) {
 				await deregisterLeaseRunner(lease, "ghost-runner-active-binding");
 				options.log?.("hobo_ci_jit_runner_ghost_released", {
 					leaseId: lease.id,

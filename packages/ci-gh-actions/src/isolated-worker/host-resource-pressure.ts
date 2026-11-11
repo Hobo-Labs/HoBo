@@ -7,7 +7,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { loadavg, cpus } from "node:os";
+import { cpus, loadavg } from "node:os";
 import { memoryAdmitHeadroom } from "@hobo/ci";
 import { parseAvailableMemoryMb } from "./memory-classes.js";
 
@@ -64,7 +64,8 @@ export function parsePsiAverages(text: string): PsiAverages | undefined {
 	if (!some?.[1] || !full?.[1]) return undefined;
 	const someAvg10 = Number(some[1]);
 	const fullAvg10 = Number(full[1]);
-	if (!Number.isFinite(someAvg10) || !Number.isFinite(fullAvg10)) return undefined;
+	if (!Number.isFinite(someAvg10) || !Number.isFinite(fullAvg10))
+		return undefined;
 	return { someAvg10, fullAvg10 };
 }
 
@@ -105,7 +106,10 @@ export function readHostResourcePressureSample(
 	try {
 		meminfo = readFileSync(meminfoPath, "utf8");
 	} catch {
-		return { atMs, loadPerCpu: (loadavg()[0] ?? 0) / Math.max(1, cpus().length) };
+		return {
+			atMs,
+			loadPerCpu: (loadavg()[0] ?? 0) / Math.max(1, cpus().length),
+		};
 	}
 	const parsedAvailable = parseAvailableMemoryMb(meminfo);
 	const swap = parseSwapMb(meminfo);
@@ -183,7 +187,9 @@ function round3(value: number): number {
 	return Math.round(value * 1000) / 1000;
 }
 
-export function hostResourcePressureLogFields(sample: HostResourcePressureSample) {
+export function hostResourcePressureLogFields(
+	sample: HostResourcePressureSample,
+) {
 	const fields = {
 		atMs: sample.atMs,
 		loadPerCpu: round3(sample.loadPerCpu ?? -1),
@@ -231,8 +237,7 @@ export function createContainerStallGuard(options: {
 	now?: () => number;
 	read?: () => HostResourcePressureSample;
 }) {
-	const thresholds =
-		options.thresholds ?? DEFAULT_CONTAINER_STALL_THRESHOLDS;
+	const thresholds = options.thresholds ?? DEFAULT_CONTAINER_STALL_THRESHOLDS;
 	const now = options.now ?? Date.now;
 	const read =
 		options.read ??

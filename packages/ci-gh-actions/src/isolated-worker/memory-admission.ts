@@ -1,9 +1,9 @@
 import type { Lease } from "@hobo/ci";
 import { leaseOccupiesWorkerResources } from "../lease-resource-occupancy.js";
 import {
+	type HostResourcePressureSample,
 	hostMemoryAdmitFits,
 	hostPressureBlocksAdmission,
-	type HostResourcePressureSample,
 } from "./host-resource-pressure.js";
 import type {
 	WorkerMemoryClassName,

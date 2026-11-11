@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { GithubTransport } from "../src/github.js";
 import {
 	createStallJobRecovery,
-	stallJobRerunAllowed,
 	type StallRecoveryRecord,
+	stallJobRerunAllowed,
 } from "../src/isolated-worker/stall-job-recovery.js";
 
 type Call = Readonly<{
@@ -74,7 +74,8 @@ describe("stall job recovery", () => {
 	it("never reruns or force-cancels a pull_request run from another branch", async () => {
 		const { github, calls } = githubWith((call) => {
 			if (call.path.endsWith("/actions/jobs/100")) return job("completed");
-			if (call.path.endsWith("/actions/runs/900")) return run("pull_request", "feature/x");
+			if (call.path.endsWith("/actions/runs/900"))
+				return run("pull_request", "feature/x");
 			return new Response(null, { status: 500 });
 		});
 		const log = vi.fn();
@@ -83,10 +84,12 @@ describe("stall job recovery", () => {
 
 		await recovery.reconcile();
 
-		expect(calls.some((call) => call.path.includes("force-cancel"))).toBe(false);
-		expect(
-			calls.some((call) => call.path.endsWith("/rerun-failed-jobs")),
-		).toBe(false);
+		expect(calls.some((call) => call.path.includes("force-cancel"))).toBe(
+			false,
+		);
+		expect(calls.some((call) => call.path.endsWith("/rerun-failed-jobs"))).toBe(
+			false,
+		);
 		expect(calls.some((call) => call.path.endsWith("/jobs/100/rerun"))).toBe(
 			false,
 		);
@@ -107,10 +110,12 @@ describe("stall job recovery", () => {
 		const recovery = createStallJobRecovery({ github, now: () => 60_000 });
 		recovery.register(RECORD);
 		await recovery.reconcile();
-		expect(calls.some((call) => call.path.includes("force-cancel"))).toBe(false);
-		expect(
-			calls.some((call) => call.path.endsWith("/rerun-failed-jobs")),
-		).toBe(false);
+		expect(calls.some((call) => call.path.includes("force-cancel"))).toBe(
+			false,
+		);
+		expect(calls.some((call) => call.path.endsWith("/rerun-failed-jobs"))).toBe(
+			false,
+		);
 	});
 
 	it("reruns one main push job within fifteen minutes and never twice", async () => {
@@ -128,9 +133,9 @@ describe("stall job recovery", () => {
 		recovery.register(RECORD);
 		await recovery.reconcile();
 
-		expect(calls.filter((call) => call.path.endsWith("/jobs/100/rerun"))).toHaveLength(
-			1,
-		);
+		expect(
+			calls.filter((call) => call.path.endsWith("/jobs/100/rerun")),
+		).toHaveLength(1);
 		expect(log).toHaveBeenCalledWith(
 			"hobo_ci_stall_job_rerun",
 			expect.objectContaining({ status: 201 }),
@@ -139,9 +144,9 @@ describe("stall job recovery", () => {
 		calls = [];
 		recovery.register(RECORD);
 		await recovery.reconcile();
-		expect(calls.filter((call) => call.path.endsWith("/jobs/100/rerun"))).toHaveLength(
-			0,
-		);
+		expect(
+			calls.filter((call) => call.path.endsWith("/jobs/100/rerun")),
+		).toHaveLength(0);
 	});
 
 	it("skips rerun outside the fifteen-minute window", () => {

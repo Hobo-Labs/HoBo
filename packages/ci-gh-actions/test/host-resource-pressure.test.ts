@@ -27,9 +27,7 @@ describe("host resource pressure", () => {
 			memoryPsi: { someAvg10: 30, fullAvg10: 20 },
 		};
 		expect(hostPressureBlocksAdmission(sample)).toBe(true);
-		expect(
-			hostMemoryAdmitFits(5_500, 2_048, 2_048, 1_024, sample),
-		).toBe(false);
+		expect(hostMemoryAdmitFits(5_500, 2_048, 2_048, 1_024, sample)).toBe(false);
 	});
 
 	it("requires volatility margin on MemAvailable headroom", () => {

@@ -7,8 +7,13 @@
  */
 
 import type { Lease } from "@hobo/ci";
+import {
+	type GithubTransport,
+	getJob,
+	getRun,
+	rerunWorkflowJob,
+} from "../github.js";
 import type { ContainerStallSignal } from "./host-resource-pressure.js";
-import { type GithubTransport, getJob, getRun, rerunWorkflowJob } from "../github.js";
 
 export type StallJobRecoveryEvent =
 	| "hobo_ci_stall_job_recovery_registered"
@@ -131,7 +136,10 @@ export function createStallJobRecovery(options: {
 	const now = options.now ?? Date.now;
 	const mainBranch = options.mainBranch ?? DEFAULT_MAIN_BRANCH;
 	const rerunWindowMs = options.rerunWindowMs ?? DEFAULT_RERUN_WINDOW_MS;
-	const active = new Map<string, StallRecoveryRecord & { jobRerunDone: boolean }>();
+	const active = new Map<
+		string,
+		StallRecoveryRecord & { jobRerunDone: boolean }
+	>();
 	const retired = new Set<string>();
 
 	function drop(record: StallRecoveryRecord, reason: string): void {
@@ -154,7 +162,10 @@ export function createStallJobRecovery(options: {
 			else active.delete(oldest);
 		}
 		active.set(key, { ...record, jobRerunDone: false });
-		options.log?.("hobo_ci_stall_job_recovery_registered", recordFields(record));
+		options.log?.(
+			"hobo_ci_stall_job_recovery_registered",
+			recordFields(record),
+		);
 	}
 
 	async function reconcile(): Promise<void> {

@@ -41,14 +41,14 @@ import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.j
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
 import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
 import type { WorkerStorageReserve } from "./isolated-worker/storage-job-classes.js";
+import { deregisterGithubRunner } from "./jit-runner-deregister.js";
+import { decideGhostBoxRunnerBinding } from "./jit-runner-ghost.js";
 import type { JobDurations } from "./job-durations.js";
 import {
 	type JobPickupMetadataCache,
 	jobPickupMetadataKey,
 	observeJobPickupMetadata,
 } from "./job-pickup.js";
-import { deregisterGithubRunner } from "./jit-runner-deregister.js";
-import { decideGhostBoxRunnerBinding } from "./jit-runner-ghost.js";
 import {
 	activeLeaseCoversJob,
 	hasOutstandingBoxCustody,

@@ -158,24 +158,6 @@ export {
 } from "./isolated-worker/github-job-poller.js";
 export { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
 export {
-	createContainerStallGuard,
-	DEFAULT_CONTAINER_STALL_THRESHOLDS,
-	DEFAULT_HOST_PRESSURE_ADMISSION_THRESHOLDS,
-	hostMemoryAdmitFits,
-	hostPressureBlocksAdmission,
-	hostResourcePressureLogFields,
-	parsePsiAverages,
-	type ContainerStallGuard,
-	type HostResourcePressureSample,
-	readHostResourcePressureSample,
-} from "./isolated-worker/host-resource-pressure.js";
-export {
-	createStallJobRecovery,
-	stallJobRerunAllowed,
-	stallRecoveryRecordForLease,
-	type StallJobRecovery,
-} from "./isolated-worker/stall-job-recovery.js";
-export {
 	classifyHostHealth,
 	createHostHealthMonitor,
 	DEFAULT_HOST_HEALTH_THRESHOLDS,
@@ -187,6 +169,18 @@ export {
 	type HostHealthVerdict,
 	readHostHealthSample,
 } from "./isolated-worker/host-health.js";
+export {
+	type ContainerStallGuard,
+	createContainerStallGuard,
+	DEFAULT_CONTAINER_STALL_THRESHOLDS,
+	DEFAULT_HOST_PRESSURE_ADMISSION_THRESHOLDS,
+	type HostResourcePressureSample,
+	hostMemoryAdmitFits,
+	hostPressureBlocksAdmission,
+	hostResourcePressureLogFields,
+	parsePsiAverages,
+	readHostResourcePressureSample,
+} from "./isolated-worker/host-resource-pressure.js";
 export {
 	selectWorkerImagesForDeletion,
 	selectWorkerImageTagsForDeletion,
@@ -227,6 +221,12 @@ export {
 } from "./isolated-worker/postgres-pool.js";
 export { createRetiredWorkDirectorySweeper } from "./isolated-worker/retired-work-directory-sweeper.js";
 export { singleFlight } from "./isolated-worker/single-flight.js";
+export {
+	createStallJobRecovery,
+	type StallJobRecovery,
+	stallJobRerunAllowed,
+	stallRecoveryRecordForLease,
+} from "./isolated-worker/stall-job-recovery.js";
 export {
 	createNodeWorkerStorageFileSystem,
 	createWorkerStorageAdmission,

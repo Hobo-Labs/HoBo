@@ -29,14 +29,7 @@ export function decideGhostBoxRunnerBinding(
 	const runnerId = githubJob.runner_id ?? 0;
 	for (const lease of activeLeases) {
 		if (!ACTIVE_STATES.has(lease.state)) continue;
-		if (
-			activeLeaseCoversJob(
-				lease,
-				job.repositoryId,
-				job.id,
-				job.runAttempt,
-			)
-		)
+		if (activeLeaseCoversJob(lease, job.repositoryId, job.id, job.runAttempt))
 			return { kind: "covered", leaseId: lease.id };
 		if (lease.runnerName === runnerName)
 			return { kind: "covered", leaseId: lease.id };

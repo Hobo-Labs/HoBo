@@ -1800,9 +1800,7 @@ describe("pull-mode box worker over SQLite", () => {
 			).length;
 		const afterRequeue = originalJobReads();
 		await runtime.tick({ maxDeliveries: 10 });
-		expect(originalJobReads()).toBe(
-			afterRequeue + 1,
-		); // one ghost-binding guard read before reserve
+		expect(originalJobReads()).toBe(afterRequeue + 1); // one ghost-binding guard read before reserve
 
 		await store.transition(
 			first.id,
