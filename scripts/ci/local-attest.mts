@@ -795,7 +795,7 @@ type Shard = Readonly<{ index: number; total: number; value: ExprValue }>;
  */
 export function localContext(state: {
 	event: AttestationEvent;
-	target: Pick<RunTarget, "mergeCommit" | "base" | "baseBranch">;
+	target: Pick<RunTarget, "mergeCommit" | "base" | "baseBranch" | "head">;
 	/** Outputs of this job's earlier steps, by step id. */
 	steps: ReadonlyMap<string, Readonly<Record<string, string>>>;
 	env: Readonly<Record<string, string>>;
@@ -814,6 +814,9 @@ export function localContext(state: {
 			return eventValue("pull_request", target.baseBranch);
 		if (path === "github.event.pull_request.base.sha")
 			return eventValue("pull_request", target.base);
+		// The merge commit's second parent, as on GitHub's PR merge ref.
+		if (path === "github.event.pull_request.head.sha")
+			return eventValue("pull_request", target.head);
 		if (path === "github.event.merge_group.base_sha")
 			return eventValue("merge_group", target.base);
 		// Not known on a developer's machine: no pull request number, no
