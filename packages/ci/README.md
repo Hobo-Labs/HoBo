@@ -328,7 +328,7 @@ declaration. Three packages own tables, and each keeps its own `db/` directory:
 |---|---|---|
 | `@hobo/ci` | [`db/schema.ts`](db/schema.ts) | the 13 `PostgresCiStore` tables: partitions, snapshot backups, events, leases, terminal/assigned/pending jobs, configuration, control records, sandbox egress, sandbox proxies and their requests, inbox |
 | `@hobo/ci-gh-actions` | [`../ci-gh-actions/db/schema.ts`](../ci-gh-actions/db/schema.ts) | 13 tables: App states, credentials and installations; OAuth states and sessions; the platform-App fence, attempts and invitations; queued-scan cursors and API budget; webhook repairs, scan cursors and successes |
-| `@hobo/ci-vercel` | [`../ci-vercel/db/schema.ts`](../ci-vercel/db/schema.ts) | 2 tables: database probes, worker health |
+| `@hobo/ci-vercel` | [`../ci-vercel/db/schema.ts`](../ci-vercel/db/schema.ts) | 3 tables: database probes, worker health, store selection marker (the last added by the package's second migration, `0001_store_selection`) |
 
 The shared tooling is in [`db/tooling/`](db/tooling/index.ts). It is development
 and operations code: nothing under `src/` imports it, `drizzle-orm` and
@@ -354,6 +354,7 @@ applies migrations at run time (see [Standbys](#standbys-get-their-schema-from-t
 |---|---|---|
 | `0000_baseline` | all three | Every table as the stores' embedded DDL creates it |
 | `0001_events_account` | `@hobo/ci` | `hobo_ci_events.account_id` (nullable `text`) and `hobo_ci_events_account_seq (partition_id, account_id, seq)`, for the [exact per-account event read](#event-cursor). Two additive statements; it rewrites and fills in no row |
+| `0001_store_selection` | `@hobo/ci-vercel` | `hobo_ci_store_selection`, the generation a store holds when the relay [chooses between attached stores](../ci-vercel/README.md#a-second-store-attached-to-the-project). One `CREATE TABLE`; the ledger is keyed by scope and id, so it and `@hobo/ci`'s `0001_events_account` are separate rows |
 
 ### How a migration is produced
 

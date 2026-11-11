@@ -233,6 +233,7 @@ export {
 	reconcileFleet,
 } from "./fleet/reconcile.js";
 export {
+	copySnapshot,
 	DEFAULT_REPLICATION_LIMITS,
 	type PostgresFleetWatermark,
 	REPLICATION_REFUSALS,
@@ -240,12 +241,15 @@ export {
 	type ReplicationLimits,
 	type ReplicationOutcome,
 	type ReplicationRefusal,
+	ReplicationRefused,
 	type ReplicationRequest,
 	readDataDigests,
 	readSequencePositions,
 	readWatermark,
 	replicateSnapshot,
 	type SequencePosition,
+	type SnapshotCopy,
+	type SnapshotCopyRequest,
 	standbyLagMs,
 } from "./fleet/replication.js";
 export {

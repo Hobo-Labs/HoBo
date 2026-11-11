@@ -154,10 +154,14 @@ export function defineSchemaSuite(
 					(step) => step.phase !== "expand" || step.destructive,
 				),
 			).toEqual([]);
+			// A table is created once, by the baseline or by the later
+			// migration that introduced it.
 			expect(
-				plan?.steps
+				(journal?.migrations ?? [])
+					.flatMap((entry) => entry.plan.steps)
 					.filter((step) => step.kind === "create-table")
-					.map((step) => step.table),
+					.map((step) => step.table)
+					.sort(),
 			).toEqual(expected.tables);
 		});
 

@@ -28,6 +28,12 @@ function required(env: NodeJS.ProcessEnv, name: string): string {
 	return value;
 }
 
+/** How long a store that has failed `failures` times in a row is left alone:
+ * 5 s, doubling to a minute. */
+export function storeBackoffMs(failures: number): number {
+	return Math.min(60_000, 5_000 * 2 ** (failures - 1));
+}
+
 export { StoreUnavailable };
 
 /** Serve first-App setup before the relay exists, then load the encrypted App into the runtime. */
@@ -165,8 +171,7 @@ export function createBootstrapEntry(options: {
 		} catch (error) {
 			if (started === pending) started = undefined;
 			storeFailures += 1;
-			storeRetryAt =
-				clock() + Math.min(60_000, 5_000 * 2 ** (storeFailures - 1));
+			storeRetryAt = clock() + storeBackoffMs(storeFailures);
 			throw error;
 		}
 	}

@@ -29,15 +29,29 @@ const scrub = (text: string) =>
 		.replace(SECRET_LIKE, "[redacted]")
 		.slice(0, 300);
 
+/** A PostgreSQL SQLSTATE: five characters, a class and a condition. It says
+ * why a database refused (`28P01` a bad password, `53300` too many
+ * connections) and is never a secret. */
+const SQLSTATE = /^[0-9A-Z]{5}$/;
+
+function sqlstateOf(error: Error | undefined): string {
+	if (!error || !("code" in error)) return "";
+	const code = String(error.code);
+	return SQLSTATE.test(code) ? code : "";
+}
+
 /** The error's class and message, and its cause's: `fetch failed` alone says nothing. */
 export function describeFailure(error: Error | undefined) {
 	if (!error) return { error: "unknown", message: "", cause: "" };
 	const cause = error.cause instanceof Error ? error.cause : undefined;
-	return {
+	const described = {
 		error: error.name.slice(0, 80),
 		message: scrub(error.message),
 		cause: cause ? scrub(`${cause.name}: ${cause.message}`) : "",
 	};
+	// Present only for a database refusal, so every other line is unchanged.
+	const sqlstate = sqlstateOf(cause) || sqlstateOf(error);
+	return sqlstate ? { ...described, sqlstate } : described;
 }
 
 /** Ids and long segments out of a path, so one route is one log key. */

@@ -2,8 +2,12 @@ import { defineSchemaSuite } from "../../ci/db/tooling/suite.js";
 import { schemaSource } from "../db/source.js";
 
 defineSchemaSuite(schemaSource, {
-	migrations: ["0000_baseline"],
-	tables: ["hobo_ci_database_probes", "hobo_ci_worker_health"],
+	migrations: ["0000_baseline", "0001_store_selection"],
+	tables: [
+		"hobo_ci_database_probes",
+		"hobo_ci_store_selection",
+		"hobo_ci_worker_health",
+	],
 	impedance: {
 		// `created_at DEFAULT now()`.
 		DRIZZLE_DEFAULT_UNREPRESENTABLE: 1,
