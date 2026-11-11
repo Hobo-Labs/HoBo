@@ -1245,33 +1245,51 @@ jobs:
           fetch-depth: 0
           filter: blob:none
           fetch-tags: false
-      - name: Checkout repository (git fallback)
-        id: repo_checkout_git
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        id: repo_checkout_retry
         if: steps.repo_checkout.outcome != 'success'
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "${GITHUB_WORKSPACE}"
-          rm -rf .git
-          git init -q
-          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
-          git -c protocol.version=2 fetch --no-tags --prune origin "${GITHUB_SHA}"
-      - name: Record finish workspace availability
+        continue-on-error: true
+        with:
+          clean: false
+          fetch-depth: 0
+          filter: blob:none
+          fetch-tags: false
+      - name: Ensure finish workspace checkout
         id: workspace
-        if: always()
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f scripts/ci/gitleaks-main-scan.mts ]; then
+          marker="scripts/ci/gitleaks-main-scan.mts"
+          if [ -f "$marker" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "ready=false" >> "$GITHUB_OUTPUT"
-          echo "::warning title=Finish checkout skipped::Post-main secret scan and CI trace skipped because the workspace was not checked out (often a transient actions/checkout download timeout)."
+          cd "${GITHUB_WORKSPACE}"
+          repo="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          for attempt in 1 2 3 4; do
+            rm -rf .git
+            git init -q
+            if git remote get-url origin >/dev/null 2>&1; then
+              git remote set-url origin "$repo"
+            else
+              git remote add origin "$repo"
+            fi
+            if git -c protocol.version=2 fetch --no-tags --prune origin "${GITHUB_SHA}" \
+              && git checkout -f FETCH_HEAD; then
+              if [ -f "$marker" ]; then
+                echo "ready=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              echo "finish workspace checkout retry ${attempt}/4 (git fallback)"
+              sleep $(( attempt * 4 ))
+            fi
+          done
+          echo "::error title=Finish workspace checkout failed::${marker} is still missing after actions/checkout retries and git fallback (metadata download timeout or fetch failure)."
+          exit 1
       - uses: ./.github/actions/ci-runner-preflight
-        if: steps.workspace.outputs.ready == 'true'
       - name: Secret scan (full history)
-        if: steps.workspace.outputs.ready == 'true'
         env:
           EVENT_NAME: ${{ github.event_name }}
           PUSH_BEFORE: ${{ github.event.before }}
@@ -1286,7 +1304,7 @@ jobs:
           node --experimental-strip-types --no-warnings \
             scripts/ci/gitleaks-main-scan.mts --wait --dir "$dir"
       - name: CI trace
-        if: always() && steps.workspace.outputs.ready == 'true'
+        if: always()
         uses: ./.github/actions/ci-trace
         with:
           disambiguator: finish

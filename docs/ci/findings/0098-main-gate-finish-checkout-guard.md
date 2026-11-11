@@ -16,9 +16,9 @@ tags: [hobo, ci, main-gate, gitleaks, ci-trace]
 
 ## Change
 
-- Bootstrap and full checkout: `continue-on-error` plus sparse/full git fetch fallbacks (no GitHub Actions metadata download).
-- `workspace.ready` output gates gitleaks, preflight, and trace when checkout did not populate scripts.
-- `ci-trace` composite no-ops when `scripts/ci/ci-trace.mts` is missing (belt-and-suspenders).
+- Bootstrap and full checkout: `continue-on-error`, a second `actions/checkout` retry, then git fetch/checkout fallback with exponential backoff (no GitHub Actions metadata download).
+- **Fail closed:** if `scripts/ci/gitleaks-main-scan.mts` is still absent after retries, the finish job exits **1** — gitleaks and preflight are never skipped on a green main gate.
+- `ci-trace` composite no-ops when `scripts/ci/ci-trace.mts` is missing (telemetry only).
 
 ## Proof
 

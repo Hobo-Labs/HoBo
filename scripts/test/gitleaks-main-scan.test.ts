@@ -177,17 +177,30 @@ describe("main-gate wiring", () => {
 		assert.ok(RANGE_WAIT_SECONDS <= 105);
 	});
 
-	it("guards finish post-steps when checkout never populated scripts", () => {
+	it("requires finish workspace checkout before gitleaks (fail closed)", () => {
 		assert.ok(
-			mainGateFinish.includes("id: workspace"),
-			"finish records workspace availability",
+			mainGateFinish.includes("Ensure finish workspace checkout"),
+			"finish must populate the workspace or fail",
 		);
-		assert.ok(
+		assert.ok(mainGateFinish.includes("Finish workspace checkout failed"));
+		assert.ok(mainGateFinish.includes("repo_checkout_retry"));
+		assert.equal(
 			mainGateFinish.includes("steps.workspace.outputs.ready == 'true'"),
+			false,
+			"gitleaks and preflight must not be skipped when workspace is missing",
 		);
 		assert.ok(
 			mainGateFinish.includes("Bootstrap composite actions (git fallback)"),
 		);
-		assert.ok(mainGateFinish.includes("Checkout repository (git fallback)"));
+		const secretScan = mainGateFinish.indexOf(
+			"name: Secret scan (full history)",
+		);
+		const preflight = mainGateFinish.indexOf(
+			"./.github/actions/ci-runner-preflight",
+		);
+		assert.ok(
+			preflight > -1 && secretScan > -1,
+			"preflight and secret scan steps must remain unconditional after workspace ensure",
+		);
 	});
 });
