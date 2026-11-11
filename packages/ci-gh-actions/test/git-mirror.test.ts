@@ -1,11 +1,5 @@
 import { execFileSync } from "node:child_process";
-import {
-	chmodSync,
-	mkdirSync,
-	mkdtempSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -63,16 +57,23 @@ describe("resolveGitMirrorRoot", () => {
 	});
 
 	it("falls back when the preferred root cannot be created", () => {
-		const parent = mkdtempSync(join(tmpdir(), "hobo-git-mirror-parent-"));
-		const preferred = join(parent, "git");
 		const fallback = mkdtempSync(join(tmpdir(), "hobo-git-mirror-fb-"));
-		roots.push(parent, fallback);
-		chmodSync(parent, 0o555);
-		try {
-			expect(resolveGitMirrorRoot(preferred, fallback)).toBe(fallback);
-		} finally {
-			chmodSync(parent, 0o755);
-		}
+		roots.push(fallback);
+		// A permission failure is simulated: as root, a read-only parent
+		// directory would not stop mkdir, and this test runs as root in containers.
+		for (const code of ["EACCES", "EPERM", "EROFS"])
+			expect(
+				resolveGitMirrorRoot("/var/lib/hobo-ci/git", fallback, (root) => {
+					if (root !== fallback)
+						throw Object.assign(new Error("denied"), { code });
+				}),
+			).toBe(fallback);
+		// Any other failure is not a reason to fall back.
+		expect(() =>
+			resolveGitMirrorRoot("/var/lib/hobo-ci/git", fallback, () => {
+				throw Object.assign(new Error("full"), { code: "ENOSPC" });
+			}),
+		).toThrow("full");
 	});
 
 	it("defaultGitMirrorFallbackRoot is absolute", () => {
