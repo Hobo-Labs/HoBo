@@ -56,7 +56,6 @@ export async function fetchLastGreenMainSha(
 	const url = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${encodeURIComponent(options.workflowBasename)}/runs?branch=main&event=push&status=completed&per_page=30`;
 	// Every caller falls back without a last green commit (push parent, the push's
 	// own range), so a slow, refused or unreadable answer is "none", never a throw.
-	let runs: readonly WorkflowRunRow[];
 	try {
 		const response = await options.fetch(url, {
 			signal: AbortSignal.timeout(15_000),
@@ -71,21 +70,20 @@ export async function fetchLastGreenMainSha(
 		const body = (await response.json()) as {
 			workflow_runs?: WorkflowRunRow[];
 		};
-		runs = body.workflow_runs ?? [];
+		for (const run of body.workflow_runs ?? []) {
+			if (run.conclusion !== "success") continue;
+			if (!run.path.endsWith(`/${options.workflowBasename}`)) continue;
+			const sha = run.head_sha.trim();
+			if (!/^[0-9a-f]{40}$/iu.test(sha)) continue;
+			if (sha === options.head) continue;
+			if (!commitExists(sha)) continue;
+			if (!isAncestor(sha, options.head)) continue;
+			return sha;
+		}
+		return undefined;
 	} catch {
 		return undefined;
 	}
-	for (const run of runs) {
-		if (run.conclusion !== "success") continue;
-		if (!run.path.endsWith(`/${options.workflowBasename}`)) continue;
-		const sha = run.head_sha.trim();
-		if (!/^[0-9a-f]{40}$/iu.test(sha)) continue;
-		if (sha === options.head) continue;
-		if (!commitExists(sha)) continue;
-		if (!isAncestor(sha, options.head)) continue;
-		return sha;
-	}
-	return undefined;
 }
 
 export function resolveMainTestBase(input: {

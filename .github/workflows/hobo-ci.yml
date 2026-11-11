@@ -109,7 +109,7 @@ jobs:
     # the runner the box launched for a main job went to an older PR job instead.
     # scripts/lint-actions.ts allows this expression, the trunk expression and `hobo`.
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -160,7 +160,7 @@ jobs:
       - name: Build base + mise oci layers (native arch)
         id: ci_runner_image_build
         if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
-        timeout-minutes: 15
+        timeout-minutes: 25
         env:
           MISE_EXPERIMENTAL: "1"
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}

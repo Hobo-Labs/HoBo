@@ -95,5 +95,14 @@ describe("fetchLastGreenMainSha", () => {
 			fetch: async () => new Response("<html>", { status: 200 }),
 		});
 		assert.equal(garbled, undefined);
+		const malformed = await fetchLastGreenMainSha({
+			...base,
+			fetch: async () =>
+				new Response(
+					JSON.stringify({ workflow_runs: [{ conclusion: "success" }] }),
+					{ status: 200 },
+				),
+		});
+		assert.equal(malformed, undefined);
 	});
 });

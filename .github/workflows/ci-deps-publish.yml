@@ -23,8 +23,12 @@ jobs:
     concurrency:
       group: ci-deps-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}
       cancel-in-progress: true
+    # Runs when the runner-image job succeeded, failed or skipped, but not when it was cancelled:
+    # a waiting runner-image job that a newer run replaced is cancelled, and this run's deps
+    # build would then race the build still running (the newer run publishes deps instead).
     if: >-
-      always() &&
+      !cancelled() &&
+      needs.runner-image.result != 'cancelled' &&
       github.repository == 'Hobo-Labs/HoBo' &&
       (github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
@@ -97,16 +101,10 @@ jobs:
             echo "::error title=Worker image tag still present::could not remove ${tag} before building"
             exit 1
           fi
-          # build.sh moves the box's :local, which the daemon starts job containers from. Put it
-          # back afterwards unless another build moved it meanwhile (a newer main commit's).
-          before="$(docker image inspect -f '{{.Id}}' hobo-ci-worker:local 2>/dev/null || true)"
+          # build.sh leaves the box's :local on this image, the green main commit's, which is what
+          # the box's next main jobs want; the next image-changing build moves it again.
           HOBO_CI_SKIP_GHCR_PULL=1 node --no-warnings scripts/ci/ensure-ci-worker-image.mts
-          built="$(docker image inspect -f '{{.Id}}' "$tag")"
           node --no-warnings scripts/ci/push-ci-runner-image-ghcr.mts
-          now="$(docker image inspect -f '{{.Id}}' hobo-ci-worker:local 2>/dev/null || true)"
-          if [ -n "$before" ] && [ "$now" = "$built" ] && [ "$before" != "$built" ]; then
-            docker tag "$before" hobo-ci-worker:local
-          fi
       - name: Fail unless GHCR now has it
         if: steps.status.outputs.ghcr != 'true'
         env:

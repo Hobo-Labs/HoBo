@@ -145,11 +145,11 @@ describe("CI deps image push scope", () => {
 		expect(build.run).toContain("Worker image tag still present");
 		// A cold build outlasts ensure-ci-worker-image's 10-minute default.
 		expect(build.env.HOBO_CI_WORKER_BUILD_BUDGET_SEC).toBe("1500");
-		// The box's :local goes back unless a newer build moved it meanwhile.
-		expect(build.run).toContain('docker tag "$before" hobo-ci-worker:local');
 		// The deps build waits, so it pulls the image instead of racing build.sh.
 		expect(publisher.jobs.publish.needs).toEqual(["runner-image"]);
-		expect(publisher.jobs.publish.if).toMatch(/^always\(\) &&/u);
+		expect(publisher.jobs.publish.if).toMatch(
+			/^!cancelled\(\) && needs\.runner-image\.result != 'cancelled' &&/u,
+		);
 		expect(build.run).toContain("HOBO_CI_SKIP_GHCR_PULL=1");
 		expect(named("Fail unless GHCR now has it").run).toContain("ghcr=true");
 	});
