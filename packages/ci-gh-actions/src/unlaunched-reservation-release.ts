@@ -161,8 +161,7 @@ export function pickTrunkHeadroomFleetReleases(
 		waitedMs: number;
 	}>
 > {
-	if (!fleetCanAbsorbUnlaunchedRelease(context.nonLocalFreeSlots))
-		return [];
+	if (!fleetCanAbsorbUnlaunchedRelease(context.nonLocalFreeSlots)) return [];
 	const releases: {
 		leaseId: string;
 		jobId: number;

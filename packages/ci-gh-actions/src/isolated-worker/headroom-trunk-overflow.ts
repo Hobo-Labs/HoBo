@@ -2,9 +2,9 @@ import { type Job, type Lease, memoryAdmitHeadroom } from "@hobo/ci";
 import type { GithubTransport } from "../github.js";
 import { getJob, rerunWorkflowRun } from "../github.js";
 import { servedRunnerLabel, TRUNK_RUNNER_LABEL } from "../runner-labels.js";
+import { type TrunkWaitCache, trunkWaitKey } from "../trunk-wait.js";
 import type { WorkerMemoryAdmission } from "./memory-admission.js";
 import { memoryRequestForStoredJob } from "./memory-classes.js";
-import { type TrunkWaitCache, trunkWaitKey } from "../trunk-wait.js";
 
 export type HeadroomTrunkOverflowLog = (
 	event: "hobo_ci_trunk_headroom_overflow",
